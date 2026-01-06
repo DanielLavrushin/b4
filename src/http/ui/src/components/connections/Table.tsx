@@ -2,14 +2,19 @@ import { ParsedLog } from "@b4.connections";
 import { AddIcon } from "@b4.icons";
 import { ProtocolChip } from "@common/ProtocolChip";
 import { SortableTableCell, SortDirection } from "@common/SortableTableCell";
-import { colors } from "@design";
 import { Badge } from "@design/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHeader,
+  TableRow,
+} from "@design/components/ui/table";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@design/components/ui/tooltip";
-import { cn } from "@design/lib/utils";
 import { asnStorage } from "@utils";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -47,40 +52,26 @@ const TableRowMemo = memo<{
     }, [log.destination]);
 
     return (
-      <tr
-        className={cn(
-          "h-10.25 hover:bg-accent transition-colors",
-          `hover:bg-[${colors.accent.primaryStrong}]`
-        )}
-      >
-        <td className="text-muted-foreground font-mono text-xs border-b border-border py-2 px-4">
-          {log.timestamp.split(" ")[1]}
-        </td>
-        <td className="border-b border-border py-2 px-4">
+      <TableRow>
+        <TableCell variant="mono">{log.timestamp.split(" ")[1]}</TableCell>
+        <TableCell>
           <ProtocolChip protocol={log.protocol} />
-        </td>
-        <td className="border-b border-border py-2 px-4">
+        </TableCell>
+        <TableCell>
           {(log.ipSet || log.hostSet) && (
             <Badge variant="secondary">{log.ipSet || log.hostSet}</Badge>
           )}
-        </td>
-        <td
-          className={cn(
-            "text-foreground border-b border-border py-2 px-4",
-            log.domain &&
-              !log.hostSet &&
-              "cursor-pointer hover:bg-accent hover:text-accent-foreground"
-          )}
+        </TableCell>
+        <TableCell
           onClick={() =>
             log.domain && !log.hostSet && onDomainClick(log.domain)
           }
         >
-          <div className="flex flex-row gap-2 items-center">
+          <div>
             {log.domain && <span>{log.domain}</span>}
             <div className="flex-1" />
             {log.domain && !log.hostSet && (
               <AddIcon
-                className="h-4 w-4 cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
                 onClick={(e) => {
                   e.stopPropagation();
                   onDomainClick(log.domain!);
@@ -88,8 +79,8 @@ const TableRowMemo = memo<{
               />
             )}
           </div>
-        </td>
-        <td className="text-muted-foreground font-mono text-xs border-b border-border py-2 px-4">
+        </TableCell>
+        <TableCell variant="mono">
           <Tooltip>
             <TooltipTrigger asChild>
               <span>
@@ -104,14 +95,10 @@ const TableRowMemo = memo<{
               <p>{log.source}</p>
             </TooltipContent>
           </Tooltip>
-        </td>
-        <td className="text-foreground border-b border-border py-2 px-4">
-          <div className="flex flex-row gap-2 items-center">
+        </TableCell>
+        <TableCell>
+          <div>
             <span
-              className={cn(
-                !log.ipSet &&
-                  "cursor-pointer hover:bg-accent hover:text-accent-foreground"
-              )}
               onClick={() =>
                 log.destination && !log.ipSet && onIpClick(log.destination)
               }
@@ -122,7 +109,6 @@ const TableRowMemo = memo<{
             <div className="flex-1" />
             {!log.ipSet && (
               <AddIcon
-                className="h-4 w-4 cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
                 onClick={(e) => {
                   e.stopPropagation();
                   onIpClick(log.destination!);
@@ -130,8 +116,8 @@ const TableRowMemo = memo<{
               />
             )}
           </div>
-        </td>
-      </tr>
+        </TableCell>
+      </TableRow>
     );
   },
   (prev, next) => prev.log.raw === next.log.raw
@@ -210,9 +196,9 @@ export const DomainsTable = ({
       onScroll={handleScroll}
       className="flex-1 bg-background overflow-auto"
     >
-      <table className="w-full border-collapse">
-        <thead className="sticky top-0 z-1">
-          <tr>
+      <Table className="[&>div]:overflow-visible">
+        <TableHeader className="sticky top-0 z-1">
+          <TableRow>
             <SortableTableCell
               label="Time"
               active={sortColumn === "timestamp"}
@@ -249,28 +235,28 @@ export const DomainsTable = ({
               direction={sortColumn === "destination" ? sortDirection : null}
               onSort={() => onSort("destination")}
             />
-          </tr>
-        </thead>
-        <tbody>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {data.length === 0 ? (
-            <tr>
-              <td
+            <TableRow>
+              <TableCell
                 colSpan={6}
-                className="text-center py-8 text-muted-foreground italic bg-background border-none"
+                className="text-center py-8 text-muted-foreground italic"
               >
                 Waiting for connections...
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ) : (
             <>
               {startIndex > 0 && (
-                <tr>
-                  <td
+                <TableRow>
+                  <TableCell
                     colSpan={6}
                     style={{ height: startIndex * ROW_HEIGHT }}
-                    className="p-0 border-none"
+                    className="p-0 border-0"
                   />
-                </tr>
+                </TableRow>
               )}
 
               {visibleData.map((log) => (
@@ -283,18 +269,18 @@ export const DomainsTable = ({
               ))}
 
               {endIndex < data.length && (
-                <tr>
-                  <td
+                <TableRow>
+                  <TableCell
                     colSpan={6}
                     style={{ height: (data.length - endIndex) * ROW_HEIGHT }}
-                    className="p-0 border-none"
+                    className="p-0 border-0"
                   />
-                </tr>
+                </TableRow>
               )}
             </>
           )}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 };
