@@ -1,6 +1,7 @@
 package nfq
 
 import (
+	"bytes"
 	"net"
 	"time"
 
@@ -17,6 +18,10 @@ func (w *Worker) sendComboFragmentsV6(cfg *config.SetConfig, packet []byte, dst 
 	}
 
 	combo := &cfg.Fragmentation.Combo
+
+	if combo.DecoyEnabled && len(combo.DecoySNIs) > 0 {
+		w.sendDecoyPacketV6(cfg, packet, pi, dst)
+	}
 
 	splits := GetComboSplitPoints(pi.Payload, pi.PayloadLen, combo, cfg.Fragmentation.MiddleSNI)
 	splits = uniqueSorted(splits, pi.PayloadLen)
@@ -83,5 +88,42 @@ func (w *Worker) sendComboFragmentsV6(cfg *config.SetConfig, packet []byte, dst 
 		} else if i < len(segments)-1 {
 			time.Sleep(time.Duration(r.Intn(jitterMaxUs)) * time.Microsecond)
 		}
+	}
+}
+
+func (w *Worker) sendDecoyPacketV6(cfg *config.SetConfig, packet []byte, pi PacketInfo, dst net.IP) {
+	sniStart, sniEnd, ok := locateSNI(pi.Payload)
+	if !ok || sniEnd <= sniStart {
+		return
+	}
+
+	decoySNIs := cfg.Fragmentation.Combo.DecoySNIs
+
+	sniLen := sniEnd - sniStart
+	fakeSNI := []byte(decoySNIs[pi.Seq0%uint32(len(decoySNIs))])
+
+	if len(fakeSNI) < sniLen {
+		fakeSNI = append(fakeSNI, bytes.Repeat([]byte{'.'}, sniLen-len(fakeSNI))...)
+	} else if len(fakeSNI) > sniLen {
+		fakeSNI = fakeSNI[:sniLen]
+	}
+
+	decoyPkt := make([]byte, len(packet))
+	copy(decoyPkt, packet)
+
+	copy(decoyPkt[pi.PayloadStart+sniStart:pi.PayloadStart+sniEnd], fakeSNI)
+
+	hopLimit := cfg.Faking.TTL
+	if hopLimit == 0 {
+		hopLimit = 3
+	}
+	decoyPkt[7] = hopLimit
+
+	sock.FixTCPChecksumV6(decoyPkt)
+
+	_ = w.sock.SendIPv6(decoyPkt, dst)
+
+	if cfg.TCP.Seg2Delay > 0 {
+		time.Sleep(time.Duration(cfg.TCP.Seg2Delay) * time.Millisecond)
 	}
 }

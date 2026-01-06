@@ -61,6 +61,14 @@ func NewPool(cfg *config.Config) *Pool {
 	}
 	log.Infof("DHCP: initial load %d IP->MAC mappings", len(initialMappings))
 
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			connState.Cleanup()
+		}
+	}()
+
 	return pool
 }
 
@@ -93,11 +101,13 @@ func (p *Pool) Stop() {
 		close(done)
 	}()
 
+	timeout := 5 * time.Second
+
 	select {
 	case <-done:
 		log.Infof("All NFQueue workers stopped")
-	case <-time.After(3 * time.Second):
-		log.Errorf("Timeout waiting for NFQueue workers to stop")
+	case <-time.After(timeout):
+		log.Errorf("Timeout (%v) waiting for NFQueue workers to stop", timeout)
 	}
 }
 

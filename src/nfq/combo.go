@@ -1,6 +1,7 @@
 package nfq
 
 import (
+	"bytes"
 	"net"
 	"time"
 
@@ -17,6 +18,10 @@ func (w *Worker) sendComboFragments(cfg *config.SetConfig, packet []byte, dst ne
 	}
 
 	combo := &cfg.Fragmentation.Combo
+
+	if combo.DecoyEnabled && len(combo.DecoySNIs) > 0 {
+		w.sendDecoyPacketV4(cfg, packet, pi, dst)
+	}
 
 	splits := GetComboSplitPoints(pi.Payload, pi.PayloadLen, combo, cfg.Fragmentation.MiddleSNI)
 	splits = uniqueSorted(splits, pi.PayloadLen)
@@ -63,9 +68,7 @@ func (w *Worker) sendComboFragments(cfg *config.SetConfig, packet []byte, dst ne
 		jitterMaxUs = 2000
 	}
 
-	// Send with overlap: fake first, then real
 	for i, seg := range segments {
-		// For first segment, send fake overlap before real
 		if i == 0 && seqovlLen > 0 {
 			payloadLen := len(seg.Data) - pi.PayloadStart
 			if seqovlLen <= payloadLen {
@@ -86,5 +89,43 @@ func (w *Worker) sendComboFragments(cfg *config.SetConfig, packet []byte, dst ne
 		} else if i < len(segments)-1 {
 			time.Sleep(time.Duration(r.Intn(jitterMaxUs)) * time.Microsecond)
 		}
+	}
+}
+
+func (w *Worker) sendDecoyPacketV4(cfg *config.SetConfig, packet []byte, pi PacketInfo, dst net.IP) {
+	sniStart, sniEnd, ok := locateSNI(pi.Payload)
+	if !ok || sniEnd <= sniStart {
+		return
+	}
+
+	decoySNIs := cfg.Fragmentation.Combo.DecoySNIs
+
+	sniLen := sniEnd - sniStart
+	fakeSNI := []byte(decoySNIs[pi.Seq0%uint32(len(decoySNIs))])
+
+	if len(fakeSNI) < sniLen {
+		fakeSNI = append(fakeSNI, bytes.Repeat([]byte{'.'}, sniLen-len(fakeSNI))...)
+	} else if len(fakeSNI) > sniLen {
+		fakeSNI = fakeSNI[:sniLen]
+	}
+
+	decoyPkt := make([]byte, len(packet))
+	copy(decoyPkt, packet)
+
+	copy(decoyPkt[pi.PayloadStart+sniStart:pi.PayloadStart+sniEnd], fakeSNI)
+
+	ttl := cfg.Faking.TTL
+	if ttl == 0 {
+		ttl = 3
+	}
+	decoyPkt[8] = ttl
+
+	sock.FixIPv4Checksum(decoyPkt[:pi.IPHdrLen])
+	sock.FixTCPChecksum(decoyPkt)
+
+	_ = w.sock.SendIPv4(decoyPkt, dst)
+
+	if cfg.TCP.Seg2Delay > 0 {
+		time.Sleep(time.Duration(cfg.TCP.Seg2Delay) * time.Millisecond)
 	}
 }

@@ -20,13 +20,13 @@ type WindowManipulator struct {
 
 // NewWindowManipulator creates a window manipulator
 func NewWindowManipulator(cfg *config.TCPConfig) *WindowManipulator {
-	values := cfg.WinValues
+	values := cfg.Win.Values
 	if len(values) == 0 {
 		values = []int{0, 1460, 8192, 65535}
 	}
 
 	return &WindowManipulator{
-		mode:   cfg.WinMode,
+		mode:   cfg.Win.Mode,
 		values: values,
 		index:  0,
 	}
@@ -34,7 +34,7 @@ func NewWindowManipulator(cfg *config.TCPConfig) *WindowManipulator {
 
 // ManipulateWindowIPv4 sends packets with manipulated TCP window
 func (w *Worker) ManipulateWindowIPv4(cfg *config.SetConfig, packet []byte, dst net.IP) {
-	if cfg.TCP.WinMode == config.ConfigOff {
+	if cfg.TCP.Win.Mode == config.ConfigOff {
 		return
 	}
 
@@ -206,7 +206,7 @@ func (w *Worker) sendEscalatingWindows(packet []byte, dst net.IP, ipHdrLen int) 
 
 // ManipulateWindowIPv6 for IPv6 packets
 func (w *Worker) ManipulateWindowIPv6(cfg *config.SetConfig, packet []byte, dst net.IP) {
-	if cfg.TCP.WinMode == config.ConfigOff {
+	if cfg.TCP.Win.Mode == config.ConfigOff {
 		return
 	}
 

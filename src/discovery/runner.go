@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"encoding/json"
 	"sync"
 	"time"
 
@@ -49,21 +50,12 @@ func CancelCheckSuite(id string) error {
 	return nil
 }
 
-func (ts *CheckSuite) GetSnapshot() *CheckSuite {
+func (ts *CheckSuite) MarshalJSON() ([]byte, error) {
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 
-	return &CheckSuite{
-		Id:                     ts.Id,
-		Status:                 ts.Status,
-		StartTime:              ts.StartTime,
-		EndTime:                ts.EndTime,
-		TotalChecks:            ts.TotalChecks,
-		CompletedChecks:        ts.CompletedChecks,
-		SuccessfulChecks:       ts.SuccessfulChecks,
-		FailedChecks:           ts.FailedChecks,
-		CheckURL:               ts.CheckURL,
-		DomainDiscoveryResults: ts.DomainDiscoveryResults,
-		CurrentPhase:           ts.CurrentPhase,
-	}
+	type Alias CheckSuite
+	return json.Marshal(&struct {
+		*Alias
+	}{Alias: (*Alias)(ts)})
 }

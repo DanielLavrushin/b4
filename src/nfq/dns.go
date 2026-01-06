@@ -21,7 +21,9 @@ func (w *Worker) processDnsPacket(ipVersion byte, sport uint16, dport uint16, pa
 
 				targetIP := net.ParseIP(set.DNS.TargetDNS)
 				if targetIP == nil {
-					_ = w.q.SetVerdict(id, nfqueue.NfAccept)
+					if err := w.q.SetVerdict(id, nfqueue.NfAccept); err != nil {
+						log.Tracef("failed to set verdict on packet %d: %v", id, err)
+					}
 					return 0
 				}
 
@@ -29,7 +31,9 @@ func (w *Worker) processDnsPacket(ipVersion byte, sport uint16, dport uint16, pa
 					targetDNS := targetIP.To4()
 					if targetDNS == nil {
 						// Target is IPv6 but packet is IPv4 - can't redirect
-						_ = w.q.SetVerdict(id, nfqueue.NfAccept)
+						if err := w.q.SetVerdict(id, nfqueue.NfAccept); err != nil {
+							log.Tracef("failed to set verdict on packet %d: %v", id, err)
+						}
 						return 0
 					}
 
@@ -46,20 +50,26 @@ func (w *Worker) processDnsPacket(ipVersion byte, sport uint16, dport uint16, pa
 					} else {
 						_ = w.sock.SendIPv4(raw, targetDNS)
 					}
-					_ = w.q.SetVerdict(id, nfqueue.NfDrop)
+					if err := w.q.SetVerdict(id, nfqueue.NfDrop); err != nil {
+						log.Tracef("failed to set drop verdict on packet %d: %v", id, err)
+					}
 					log.Infof("DNS redirect: %s -> %s (set: %s)", domain, set.DNS.TargetDNS, set.Name)
 					return 0
 
 				} else { // IPv6
 					cfg := w.getConfig()
 					if !cfg.Queue.IPv6Enabled {
-						_ = w.q.SetVerdict(id, nfqueue.NfAccept)
+						if err := w.q.SetVerdict(id, nfqueue.NfAccept); err != nil {
+							log.Tracef("failed to set verdict on packet %d: %v", id, err)
+						}
 						return 0
 					}
 
 					targetDNS := targetIP.To16()
 					if targetDNS == nil {
-						_ = w.q.SetVerdict(id, nfqueue.NfAccept)
+						if err := w.q.SetVerdict(id, nfqueue.NfAccept); err != nil {
+							log.Tracef("failed to set verdict on packet %d: %v", id, err)
+						}
 						return 0
 					}
 
@@ -76,7 +86,9 @@ func (w *Worker) processDnsPacket(ipVersion byte, sport uint16, dport uint16, pa
 					} else {
 						_ = w.sock.SendIPv6(raw, targetDNS)
 					}
-					_ = w.q.SetVerdict(id, nfqueue.NfDrop)
+					if err := w.q.SetVerdict(id, nfqueue.NfDrop); err != nil {
+						log.Tracef("failed to set drop verdict on packet %d: %v", id, err)
+					}
 					log.Infof("DNS redirect (IPv6): %s -> %s (set: %s)", domain, set.DNS.TargetDNS, set.Name)
 					return 0
 				}
@@ -92,7 +104,9 @@ func (w *Worker) processDnsPacket(ipVersion byte, sport uint16, dport uint16, pa
 				sock.FixUDPChecksum(raw, ihl)
 				dns.DnsNATDelete(net.IP(raw[16:20]), dport)
 				_ = w.sock.SendIPv4(raw, net.IP(raw[16:20]))
-				_ = w.q.SetVerdict(id, nfqueue.NfDrop)
+				if err := w.q.SetVerdict(id, nfqueue.NfDrop); err != nil {
+					log.Tracef("failed to set drop verdict on packet %d: %v", id, err)
+				}
 				return 0
 			}
 		} else { // IPv6
@@ -103,14 +117,18 @@ func (w *Worker) processDnsPacket(ipVersion byte, sport uint16, dport uint16, pa
 					sock.FixUDPChecksumV6(raw)
 					dns.DnsNATDelete(net.IP(raw[24:40]), dport)
 					_ = w.sock.SendIPv6(raw, net.IP(raw[24:40]))
-					_ = w.q.SetVerdict(id, nfqueue.NfDrop)
+					if err := w.q.SetVerdict(id, nfqueue.NfDrop); err != nil {
+						log.Tracef("failed to set drop verdict on packet %d: %v", id, err)
+					}
 					return 0
 				}
 			}
 		}
 	}
 
-	_ = w.q.SetVerdict(id, nfqueue.NfAccept)
+	if err := w.q.SetVerdict(id, nfqueue.NfAccept); err != nil {
+		log.Tracef("failed to set verdict on packet %d: %v", id, err)
+	}
 	return 0
 }
 

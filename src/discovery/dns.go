@@ -243,7 +243,12 @@ func (p *DNSProber) getSystemResolverIPs(ctx context.Context) []string {
 		}
 
 		ips, err := net.DefaultResolver.LookupIP(ctx, network, p.domain)
-		if err != nil || len(ips) == 0 {
+		if err != nil {
+			log.DiscoveryLogf("  DNS FAILED: system resolver error: %v", err)
+			continue
+		}
+		if len(ips) == 0 {
+			log.DiscoveryLogf("  DNS FAILED: system resolver returned empty (no error)")
 			continue
 		}
 

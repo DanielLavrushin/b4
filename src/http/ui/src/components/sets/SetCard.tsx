@@ -83,7 +83,6 @@ const STRATEGY_LABELS: Record<string, string> = {
   combo: "COMBO",
   hybrid: "HYBRID",
   disorder: "DISORDER",
-  overlap: "OVERLAP",
   extsplit: "EXT SPLIT",
   firstbyte: "1ST BYTE",
   tcp: "TCP FRAG",

@@ -47,7 +47,6 @@ export type FragmentationStrategy =
   | "tls"
   | "oob"
   | "disorder"
-  | "overlap"
   | "extsplit"
   | "firstbyte"
   | "combo"
@@ -67,7 +66,6 @@ export interface FragmentationConfig {
 
   combo: ComboFragConfig;
   disorder: DisorderFragConfig;
-  overlap: OverlapFragConfig;
 }
 
 export enum LogLevel {
@@ -146,6 +144,9 @@ export interface DiscoveryConfig {
 
 export type WindowMode = "off" | "oscillate" | "zero" | "random" | "escalate";
 export type DesyncMode = "off" | "rst" | "fin" | "ack" | "combo" | "full";
+export type IncomingMode = "off" | "fake" | "reset" | "fin" | "desync";
+export type IncomingStrategy = "badsum" | "badseq" | "badack" | "rand" | "all";
+
 export interface TcpConfig {
   conn_bytes_limit: number;
   seg2delay: number;
@@ -154,16 +155,35 @@ export interface TcpConfig {
   syn_ttl: number;
   drop_sack: boolean;
 
-  win_mode: WindowMode;
-  win_values: number[];
+  desync: DesyncConfig;
+  win: WinConfig;
+  incoming: IncomingConfig;
+}
 
-  desync_mode: DesyncMode;
-  desync_ttl: number;
-  desync_count: number;
+export interface IncomingConfig {
+  mode: IncomingMode;
+  min: number;
+  max: number;
+  fake_ttl: number;
+  fake_count: number;
+  strategy: IncomingStrategy;
+}
+
+export interface WinConfig {
+  mode: WindowMode;
+  values: number[];
+}
+
+export interface DesyncConfig {
+  mode: DesyncMode;
+  ttl: number;
+  count: number;
+  post_desync: boolean;
 }
 
 export interface WebServerConfig {
   port: number;
+  bind_address: string;
 }
 export interface TableConfig {
   monitor_interval: number;
@@ -217,6 +237,8 @@ export interface ComboFragConfig {
   shuffle_mode: ComboShuffleMode;
   first_delay_ms: number;
   jitter_max_us: number;
+  decoy_enabled: boolean;
+  decoy_snis: string[];
 }
 
 export type DisorderShuffleMode = "full" | "reverse";
@@ -224,10 +246,6 @@ export interface DisorderFragConfig {
   shuffle_mode: DisorderShuffleMode;
   min_jitter_us: number;
   max_jitter_us: number;
-}
-
-export interface OverlapFragConfig {
-  fake_snis: string[];
 }
 
 export interface DNSConfig {

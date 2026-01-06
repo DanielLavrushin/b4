@@ -566,23 +566,33 @@ detect_architecture() {
         fi
         ;;
     mips64)
-        # Check MIPS endianness from cpuinfo or uname
-        if grep -qi "mips.*el\|el.*mips" /proc/cpuinfo 2>/dev/null; then
-            arch_variant="mips64le"
-        elif uname -m | grep -qi "el"; then
+        # Check MIPS endianness
+        if grep -qi "mips.*el\|el.*mips" /proc/cpuinfo 2>/dev/null || uname -m | grep -qi "el"; then
             arch_variant="mips64le"
         else
             arch_variant="mips64"
         fi
+        # Check for softfloat (no FPU)
+        if [ -f /proc/cpuinfo ]; then
+            if ! grep -qi "fpu" /proc/cpuinfo 2>/dev/null || grep -qi "nofpu\|no fpu" /proc/cpuinfo 2>/dev/null; then
+                arch_variant="${arch_variant}_softfloat"
+                print_warning "No FPU detected, using softfloat binary"
+            fi
+        fi
         ;;
     mips*)
-        # 32-bit MIPS
-        if grep -qi "mips.*el\|el.*mips" /proc/cpuinfo 2>/dev/null; then
-            arch_variant="mipsle"
-        elif uname -m | grep -qi "el"; then
+        # 32-bit MIPS - determine endianness
+        if grep -qi "mips.*el\|el.*mips" /proc/cpuinfo 2>/dev/null || uname -m | grep -qi "el"; then
             arch_variant="mipsle"
         else
             arch_variant="mips"
+        fi
+        # Check for softfloat (no FPU)
+        if [ -f /proc/cpuinfo ]; then
+            if ! grep -qi "fpu" /proc/cpuinfo 2>/dev/null || grep -qi "nofpu\|no fpu" /proc/cpuinfo 2>/dev/null; then
+                arch_variant="${arch_variant}_softfloat"
+                print_warning "No FPU detected, using softfloat binary"
+            fi
         fi
         ;;
     ppc64le)

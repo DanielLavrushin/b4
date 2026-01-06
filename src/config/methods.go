@@ -284,14 +284,20 @@ func (set *SetConfig) ResetToDefaults() {
 	set.Name = name
 	set.Targets = targets
 
-	set.TCP.WinValues = make([]int, len(defaultSet.TCP.WinValues))
-	copy(set.TCP.WinValues, defaultSet.TCP.WinValues)
+	set.TCP.Win.Values = make([]int, len(defaultSet.TCP.Win.Values))
+	copy(set.TCP.Win.Values, defaultSet.TCP.Win.Values)
 
 	set.Faking.SNIMutation.FakeSNIs = make([]string, len(defaultSet.Faking.SNIMutation.FakeSNIs))
 	copy(set.Faking.SNIMutation.FakeSNIs, defaultSet.Faking.SNIMutation.FakeSNIs)
 
-	set.Fragmentation.Overlap.FakeSNIs = make([]string, len(defaultSet.Fragmentation.Overlap.FakeSNIs))
-	copy(set.Fragmentation.Overlap.FakeSNIs, defaultSet.Fragmentation.Overlap.FakeSNIs)
+	set.Fragmentation.Combo.DecoySNIs = make([]string, len(defaultSet.Fragmentation.Combo.DecoySNIs))
+	copy(set.Fragmentation.Combo.DecoySNIs, defaultSet.Fragmentation.Combo.DecoySNIs)
+
+	set.Fragmentation.SeqOverlapPattern = make([]string, len(defaultSet.Fragmentation.SeqOverlapPattern))
+	copy(set.Fragmentation.SeqOverlapPattern, defaultSet.Fragmentation.SeqOverlapPattern)
+
+	set.Faking.TLSMod = make([]string, len(defaultSet.Faking.TLSMod))
+	copy(set.Faking.TLSMod, defaultSet.Faking.TLSMod)
 
 }
 

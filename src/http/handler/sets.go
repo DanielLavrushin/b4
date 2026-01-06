@@ -285,8 +285,8 @@ func (api *API) initializeSetDefaults(set *config.SetConfig) {
 	if set.Targets.GeoIpCategories == nil {
 		set.Targets.GeoIpCategories = []string{}
 	}
-	if set.TCP.WinValues == nil {
-		set.TCP.WinValues = []int{0, 1460, 8192, 65535}
+	if set.TCP.Win.Values == nil {
+		set.TCP.Win.Values = []int{0, 1460, 8192, 65535}
 	}
 	if set.Faking.SNIMutation.FakeSNIs == nil {
 		set.Faking.SNIMutation.FakeSNIs = []string{}

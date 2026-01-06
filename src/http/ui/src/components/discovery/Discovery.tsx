@@ -1,3 +1,4 @@
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   DiscoveryPhase,
   DomainPresetResult,
@@ -47,12 +48,12 @@ import {
 } from "@design/components/ui/tooltip";
 import { cn } from "@design/lib/utils";
 import { useSets } from "@hooks/useSets";
+import { useCaptures } from "@b4.capture";
 import { B4SetConfig } from "@models/config";
-import { useCallback, useRef, useState } from "react";
 import { DiscoveryAddDialog } from "./AddDialog";
 import { DiscoveryLogPanel } from "./LogPanel";
+import { DiscoveryOptionsPanel, DiscoveryOptions } from "./Options";
 
-// Friendly names for strategy families
 const familyNames: Record<StrategyFamily, string> = {
   none: "Baseline",
   tcp_frag: "TCP Fragmentation",
@@ -65,16 +66,15 @@ const familyNames: Record<StrategyFamily, string> = {
   desync: "Desync",
   delay: "Delay",
   disorder: "Disorder",
-  overlap: "Overlap",
   extsplit: "Extension Split",
   firstbyte: "First-Byte",
   combo: "Combo",
   hybrid: "Hybrid",
   window: "Window Manipulation",
   mutation: "Mutation",
+  incoming: "Incoming",
 };
 
-// Friendly names for phases
 const phaseNames: Record<DiscoveryPhase, string> = {
   baseline: "Baseline Test",
   strategy_detection: "Strategy Detection",
@@ -102,7 +102,22 @@ export const DiscoveryRunner = () => {
     new Set()
   );
 
+  const { captures, loadCaptures } = useCaptures();
+  const [options, setOptions] = useState<DiscoveryOptions>(() => ({
+    skipDNS: localStorage.getItem("b4_discovery_skipdns") === "true",
+    payloadFiles: [],
+  }));
+
+  useEffect(() => {
+    void loadCaptures();
+  }, [loadCaptures]);
+
+  useEffect(() => {
+    localStorage.setItem("b4_discovery_skipdns", String(options.skipDNS));
+  }, [options.skipDNS]);
+
   const [checkUrl, setCheckUrl] = useState("");
+
   const [addingPreset, setAddingPreset] = useState(false);
   const [addDialog, setAddDialog] = useState<{
     open: boolean;
@@ -113,7 +128,7 @@ export const DiscoveryRunner = () => {
   const domainInputRef = useRef<HTMLInputElement | null>(null);
 
   const progress = suite
-    ? (suite.completed_checks / suite.total_checks) * 100
+    ? Math.min((suite.completed_checks / suite.total_checks) * 100, 100)
     : 0;
   const isReconnecting = suiteId && running && !suite;
 
@@ -142,9 +157,9 @@ export const DiscoveryRunner = () => {
       if (e.key !== "Enter") return;
       if (!checkUrl.trim()) return;
       e.preventDefault();
-      void startDiscovery(checkUrl);
+      void startDiscovery(checkUrl, options.skipDNS, options.payloadFiles);
     },
-    [checkUrl, startDiscovery]
+    [checkUrl, options.skipDNS, options.payloadFiles, startDiscovery]
   );
 
   const handleAddNew = async (name: string, domain: string) => {
@@ -192,7 +207,6 @@ export const DiscoveryRunner = () => {
     setExpandedDomains(new Set());
   }, [resetDiscovery]);
 
-  // Group results by phase for display
   const groupResultsByPhase = (results: Record<string, DomainPresetResult>) => {
     const grouped: Record<DiscoveryPhase, DomainPresetResult[]> = {
       baseline: [],
@@ -261,7 +275,11 @@ export const DiscoveryRunner = () => {
                 {!running && !suite && (
                   <Button
                     onClick={() => {
-                      void startDiscovery(checkUrl);
+                      void startDiscovery(
+                        checkUrl,
+                        options.skipDNS,
+                        options.payloadFiles
+                      );
                     }}
                     disabled={!checkUrl.trim()}
                     className="whitespace-nowrap"
@@ -299,6 +317,12 @@ export const DiscoveryRunner = () => {
               </FieldDescription>
             </Field>
           </div>
+          <DiscoveryOptionsPanel
+            options={options}
+            onChange={setOptions}
+            captures={captures}
+            disabled={running || !!isReconnecting}
+          />
           {error && (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>

@@ -77,21 +77,19 @@ func (w *Worker) dropAndInjectTCPv6(cfg *config.SetConfig, raw []byte, dst net.I
 		raw = w.MutateClientHelloV6(cfg, raw, dst)
 	}
 
-	if cfg.TCP.DesyncMode != config.ConfigOff {
+	if cfg.TCP.Desync.Mode != config.ConfigOff {
 		w.ExecuteDesyncIPv6(cfg, raw, dst)
 		time.Sleep(time.Duration(cfg.TCP.Seg2Delay) * time.Millisecond)
 	}
 
-	if cfg.TCP.WinMode != config.ConfigOff {
+	if cfg.TCP.Win.Mode != config.ConfigOff {
 		w.ManipulateWindowIPv6(cfg, raw, dst)
 	}
 
-	// Inject fake SNI packets if configured
 	if cfg.Faking.SNI && cfg.Faking.SNISeqLength > 0 {
 		w.sendFakeSNISequencev6(cfg, raw, dst)
 	}
 
-	// Apply fragmentation strategy
 	switch cfg.Fragmentation.Strategy {
 	case "tcp":
 		w.sendTCPSegmentsv6(cfg, raw, dst)
@@ -103,8 +101,6 @@ func (w *Worker) dropAndInjectTCPv6(cfg *config.SetConfig, raw []byte, dst net.I
 		w.sendTLSFragmentsV6(cfg, raw, dst)
 	case "disorder":
 		w.sendDisorderFragmentsV6(cfg, raw, dst)
-	case "overlap":
-		w.sendOverlapFragmentsV6(cfg, raw, dst)
 	case "extsplit":
 		w.sendExtSplitFragmentsV6(cfg, raw, dst)
 	case "firstbyte":
@@ -117,6 +113,11 @@ func (w *Worker) dropAndInjectTCPv6(cfg *config.SetConfig, raw []byte, dst net.I
 		_ = w.sock.SendIPv6(raw, dst)
 	default:
 		w.sendComboFragmentsV6(cfg, raw, dst)
+	}
+
+	if cfg.TCP.Desync.PostDesync {
+		time.Sleep(50 * time.Millisecond)
+		w.sendPostDesyncRSTv6(cfg, raw, dst)
 	}
 }
 

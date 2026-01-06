@@ -108,7 +108,7 @@ export const TcpIpSettings = ({ config, onChange }: TcpIpSettingsProps) => {
                 onChange("fragmentation.sni_position", values[0])
               }
               min={0}
-              max={10}
+              max={50}
               step={1}
               className="w-full"
             />

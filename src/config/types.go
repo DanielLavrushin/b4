@@ -2,9 +2,9 @@ package config
 
 import "github.com/daniellavrushin/b4/log"
 
-const (
-	ConfigOff = "off"
+const ConfigOff = "off"
 
+const (
 	FakePayloadRandom = iota
 	FakePayloadCustom
 	FakePayloadDefault1
@@ -40,13 +40,30 @@ type TCPConfig struct {
 	SynTTL         uint8 `json:"syn_ttl" bson:"syn_ttl"`
 	DropSACK       bool  `json:"drop_sack" bson:"drop_sack"`
 
-	WinMode   string `json:"win_mode" bson:"win_mode"`     // "off", "oscillate", "zero", "random", "escalate"
-	WinValues []int  `json:"win_values" bson:"win_values"` // Custom window values
+	Incoming IncomingConfig `json:"incoming" bson:"incoming"`
+	Desync   DesyncConfig   `json:"desync" bson:"desync"`
+	Win      WinConfig      `json:"win" bson:"win"`
+}
 
-	DesyncMode  string `json:"desync_mode" bson:"desync_mode"`   // "off" "rst", "fin", "ack", "combo", "full"
-	DesyncTTL   uint8  `json:"desync_ttl" bson:"desync_ttl"`     // TTL for desync packets
-	DesyncCount int    `json:"desync_count" bson:"desync_count"` // Number of desync packets
+type WinConfig struct {
+	Mode   string `json:"mode" bson:"mode"`     // "off", "oscillate", "zero", "random", "escalate"
+	Values []int  `json:"values" bson:"values"` // Custom window values
+}
 
+type DesyncConfig struct {
+	Mode       string `json:"mode" bson:"mode"`               // "off" "rst", "fin", "ack", "combo", "full"
+	TTL        uint8  `json:"ttl" bson:"ttl"`                 // TTL for desync packets
+	Count      int    `json:"count" bson:"count"`             // Number of desync packets
+	PostDesync bool   `json:"post_desync" bson:"post_desync"` // Send fake RST after ClientHello
+}
+
+type IncomingConfig struct {
+	Mode      string `json:"mode" bson:"mode"` // "off", "fake", "reset", "fin", "desync"
+	Min       int    `json:"min" bson:"min"`   // threshold min (KB)
+	Max       int    `json:"max" bson:"max"`   // threshold max (KB), if 0 or eq MinKB -> uses MinKB
+	FakeTTL   uint8  `json:"fake_ttl" bson:"fake_ttl"`
+	FakeCount int    `json:"fake_count" bson:"fake_count"`
+	Strategy  string `json:"strategy" bson:"strategy"` // "badsum", "badseq", "badack",  "rand", "all"
 }
 
 type UDPConfig struct {
@@ -62,7 +79,7 @@ type UDPConfig struct {
 }
 
 type FragmentationConfig struct {
-	Strategy     string `json:"strategy" bson:"strategy"` // Values: "tcp", "ip", "oob", "tls", "disorder", "overlap", "extsplit", "firstbyte", "combo", "none"
+	Strategy     string `json:"strategy" bson:"strategy"` // Values: "tcp", "ip", "oob", "tls", "disorder",  "extsplit", "firstbyte", "combo", "none"
 	ReverseOrder bool   `json:"reverse_order" bson:"reverse_order"`
 
 	TLSRecordPosition int `json:"tlsrec_pos" bson:"tlsrec_pos"` // where to split TLS record
@@ -78,7 +95,6 @@ type FragmentationConfig struct {
 
 	Combo    ComboFragConfig    `json:"combo" bson:"combo"`
 	Disorder DisorderFragConfig `json:"disorder" bson:"disorder"`
-	Overlap  OverlapFragConfig  `json:"overlap" bson:"overlap"`
 }
 
 type FakingConfig struct {
@@ -128,12 +144,12 @@ type TablesConfig struct {
 }
 
 type WebServerConfig struct {
-	Port      int  `json:"port" bson:"port"`
-	IsEnabled bool `json:"-" bson:"-"`
+	Port        int    `json:"port" bson:"port"`
+	BindAddress string `json:"bind_address" bson:"bind_address"`
+	IsEnabled   bool   `json:"-" bson:"-"`
 }
 
 type DiscoveryConfig struct {
-	// Discovery settings
 	DiscoveryTimeoutSec int      `yaml:"discovery_timeout" json:"discovery_timeout"`
 	ConfigPropagateMs   int      `yaml:"config_propagate_ms" json:"config_propagate_ms"`
 	ReferenceDomain     string   `yaml:"reference_domain" json:"reference_domain"`
@@ -167,11 +183,13 @@ type GeoDatConfig struct {
 }
 
 type ComboFragConfig struct {
-	FirstByteSplit bool   `json:"first_byte_split" bson:"first_byte_split"`
-	ExtensionSplit bool   `json:"extension_split" bson:"extension_split"`
-	ShuffleMode    string `json:"shuffle_mode" bson:"shuffle_mode"` // "middle", "full", "reverse"
-	FirstDelayMs   int    `json:"first_delay_ms" bson:"first_delay_ms"`
-	JitterMaxUs    int    `json:"jitter_max_us" bson:"jitter_max_us"`
+	FirstByteSplit bool     `json:"first_byte_split" bson:"first_byte_split"`
+	ExtensionSplit bool     `json:"extension_split" bson:"extension_split"`
+	ShuffleMode    string   `json:"shuffle_mode" bson:"shuffle_mode"` // "middle", "full", "reverse"
+	FirstDelayMs   int      `json:"first_delay_ms" bson:"first_delay_ms"`
+	JitterMaxUs    int      `json:"jitter_max_us" bson:"jitter_max_us"`
+	DecoyEnabled   bool     `json:"decoy_enabled" bson:"decoy_enabled"`
+	DecoySNIs      []string `json:"decoy_snis" bson:"decoy_snis"`
 }
 
 type DisorderFragConfig struct {
@@ -184,8 +202,4 @@ type DNSConfig struct {
 	Enabled       bool   `json:"enabled" bson:"enabled"`
 	TargetDNS     string `json:"target_dns" bson:"target_dns"`
 	FragmentQuery bool   `json:"fragment_query" bson:"fragment_query"`
-}
-
-type OverlapFragConfig struct {
-	FakeSNIs []string `json:"fake_snis" bson:"fake_snis"`
 }

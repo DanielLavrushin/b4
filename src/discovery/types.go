@@ -49,6 +49,7 @@ const (
 	FamilyFirstByte StrategyFamily = "firstbyte"
 	FamilyCombo     StrategyFamily = "combo"
 	FamilyHybrid    StrategyFamily = "hybrid"
+	FamilyIncoming  StrategyFamily = "incoming"
 )
 
 type CheckResult struct {
@@ -148,9 +149,18 @@ type DiscoverySuite struct {
 	cfg          *config.Config
 	domainResult *DomainDiscoveryResult
 
-	// Detected working payload(s)
 	workingPayloads []PayloadTestResult
 	bestPayload     int
+	bestPayloadFile string
+
+	customPayloads []CustomPayload
 
 	dnsResult *DNSDiscoveryResult
+	skipDNS   bool
+}
+
+type CustomPayload struct {
+	Name     string `json:"name"`
+	Filepath string `json:"filepath"`
+	Data     []byte `json:"-"`
 }

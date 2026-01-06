@@ -1,5 +1,38 @@
 # B4 - Bye Bye Big Bro
 
+## [1.30.1] - 2026-01-02
+
+- FIXED: White screen when importing old set configurations (sets saved before v1.29 now automatically convert to current format).
+
+## [1.30.0] - 2026-01-02
+
+- ADDED: Custom payload support in `Discovery` - test bypass strategies using your own captured TLS payloads instead of built-in defaults.
+- FIXED: Crash during `Discovery` when checking status (e.g. clicking "Create Set" or refreshing page while discovery is running. Reported by `Andrew B.`).
+
+## [1.29.1] - 2026-01-01
+
+- ADDED: Incoming response bypass - defeats TSPU throttling that blocks downloads after ~15KB. I nmost cases - select TCP incoming  `fake` for all strategies.
+- FIXED: Discovery progress bar sometimes showing over 100%.
+
+## [1.28.1] - 2025-12-30
+
+- ADDED: Web server bind address setting - control which network interface the web UI listens on (e.g., `127.0.0.1` for localhost-only access, `0.0.0.0` for all interfaces). Supports `IPv6`.
+- ADDED: Added `Skip DNS` toggle in `Discovery` - useful when you know DNS isn't blocked and want faster results.
+- ADDED: Support for `MIPS` devices with soft float.
+- ADDED: Post-ClientHello RST injection - sends fake connection reset after the initial handshake to confuse DPI systems that track connection state. Enable with `Post-ClientHello RST` toggle in TCP Desync Set settings.
+- IMPROVED: `Discovery` now finds the optimal TTL for a specific network, instead of using a fixed value.
+- IMPROVED: Removed DPI fingerprinting phase from discovery - it was slow and unreliable. Discovery now starts testing bypass strategies immediately, making the process faster.
+- IMPROVED: Shutdown behavior - B4 now waits up to 5 seconds for in-flight packet operations to complete gracefully before terminating.
+- FIXED: DPI bypass not working for LAN devices on routers using `nftables` (e.g., OpenWrt with fw4 firewall).
+- FIXED: TCP `desync` bypass methods (`rst`, `fin`, `ack`, `combo`, `full` modes) were sending malformed packets, causing them to fail or be ignored. Affects both `IPv4` and `IPv6`.
+- FIXED: Restored missing `Packet Mark` setting in Network Configuration - allows customizing the firewall mark used for traffic routing.
+- FIXED: Potential connection hangs caused by packets getting stuck in the processing queue without verdicts being set.
+- FIXED: Memory leak where packet injection operations could continue running after service shutdown, potentially causing crashes or instability during restart.
+- FIXED: Race condition in network interface name caching that could cause incorrect packet filtering decisions on multi-interface systems.
+- FIXED: Fragmented IP packets now bypass B4 processing entirely to prevent incomplete packet inspection and potential protocol violations.
+- REMOVED: Fragmentation strategy `overlap` — functionality merged into `combo`.
+- CHANGED: Fragmentation `combo` now supports decoy packets. When `enabled`, B4 sends a fake `ClientHello` with a whitelisted domain (e.g., ya.ru, vk.com) before sending the real fragmented request. Can be found in Fragmentaiton Tab set settings.
+  
 ## [1.27.2] - 2025-12-27
 
 - FIXED: Adding multiple services with many UDP ports (Discord, WhatsApp, etc.) could cause `iptables` firewall rules to fail, preventing B4 from starting or restarting properly.

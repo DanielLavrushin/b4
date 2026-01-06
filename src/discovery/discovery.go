@@ -20,21 +20,16 @@ import (
 type FailureMode string
 
 const (
-	MIN_BYTES_FOR_SUCCESS = 4 * 1024   // At least 4KB downloaded
-	MIN_SPEED_FOR_SUCCESS = 100 * 1024 // At least 100 KB/s
-)
-
-const (
 	FailureRSTImmediate FailureMode = "rst_immediate"
 	FailureTimeout      FailureMode = "timeout"
 	FailureTLSError     FailureMode = "tls_error"
 	FailureUnknown      FailureMode = "unknown"
 )
 
-func NewDiscoverySuite(input string, pool *nfq.Pool) *DiscoverySuite {
-
+func NewDiscoverySuite(input string, pool *nfq.Pool, skipDNS bool, payloadFiles []string) *DiscoverySuite {
 	suite := NewCheckSuite(input)
-	return &DiscoverySuite{
+
+	ds := &DiscoverySuite{
 		CheckSuite: suite,
 		pool:       pool,
 		domainResult: &DomainDiscoveryResult{
@@ -42,8 +37,18 @@ func NewDiscoverySuite(input string, pool *nfq.Pool) *DiscoverySuite {
 			Results: make(map[string]*DomainPresetResult),
 		},
 		workingPayloads: []PayloadTestResult{},
-		bestPayload:     config.FakePayloadDefault1, // default
+		bestPayload:     config.FakePayloadDefault1,
+		skipDNS:         skipDNS,
 	}
+
+	if len(payloadFiles) > 0 {
+		cfg := pool.GetFirstWorkerConfig()
+		if cfg != nil {
+			ds.customPayloads = loadCustomPayloads(cfg, payloadFiles)
+		}
+	}
+
+	return ds
 }
 
 func parseDiscoveryInput(input string) (domain string, testURL string) {
@@ -94,28 +99,33 @@ func (ds *DiscoverySuite) RunDiscovery() {
 
 	log.DiscoveryLogf("Starting discovery for domain: %s", ds.Domain)
 
-	ds.setPhase(PhaseDNS)
-	dnsResult := ds.runDNSDiscovery()
-	ds.domainResult.DNSResult = dnsResult
+	var dnsResult *DNSDiscoveryResult
+	if ds.skipDNS {
+		log.DiscoveryLogf("Skipping DNS discovery (user requested)")
+	} else {
+		ds.setPhase(PhaseDNS)
+		dnsResult = ds.runDNSDiscovery()
+		ds.domainResult.DNSResult = dnsResult
 
-	if dnsResult != nil && len(dnsResult.ExpectedIPs) > 0 {
-		ds.dnsResult = dnsResult
-		log.DiscoveryLogf("Stored %d target IPs for preset testing: %v", len(dnsResult.ExpectedIPs), dnsResult.ExpectedIPs)
-	}
-
-	if dnsResult != nil && dnsResult.IsPoisoned {
-		if dnsResult.hasWorkingConfig() {
-			log.DiscoveryLogf("DNS poisoned - applying discovered DNS bypass for TCP testing")
-			ds.applyDNSConfig(dnsResult)
-		} else if len(dnsResult.ExpectedIPs) > 0 {
-			log.DiscoveryLogf("DNS poisoned, no bypass - using direct IPs: %v", dnsResult.ExpectedIPs)
-		} else {
-			log.DiscoveryLogf("DNS poisoned but no expected IP known - discovery may fail")
+		if dnsResult != nil && len(dnsResult.ExpectedIPs) > 0 {
+			ds.dnsResult = dnsResult
+			log.DiscoveryLogf("Stored %d target IPs for preset testing: %v", len(dnsResult.ExpectedIPs), dnsResult.ExpectedIPs)
 		}
-	}
 
-	if dnsResult != nil && len(dnsResult.ExpectedIPs) > 0 {
-		ds.dnsResult = dnsResult
+		if dnsResult != nil && dnsResult.IsPoisoned {
+			if dnsResult.hasWorkingConfig() {
+				log.DiscoveryLogf("DNS poisoned - applying discovered DNS bypass for TCP testing")
+				ds.applyDNSConfig(dnsResult)
+			} else if len(dnsResult.ExpectedIPs) > 0 {
+				log.DiscoveryLogf("DNS poisoned, no bypass - using direct IPs: %v", dnsResult.ExpectedIPs)
+			} else {
+				log.DiscoveryLogf("DNS poisoned but no expected IP known - discovery may fail")
+			}
+		}
+
+		if dnsResult != nil && len(dnsResult.ExpectedIPs) > 0 {
+			ds.dnsResult = dnsResult
+		}
 	}
 
 	phase1Presets := GetPhase1Presets()
@@ -129,26 +139,39 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	ds.determineBest(baselineSpeed)
 
 	if baselineWorks {
-		dnsNeeded := dnsResult != nil && dnsResult.IsPoisoned && dnsResult.hasWorkingConfig()
-
-		if !dnsNeeded {
-			ds.CheckSuite.mu.Lock()
-			ds.TotalChecks = 1
-			ds.domainResult.BestPreset = "no-bypass"
-			ds.domainResult.BestSpeed = baselineSpeed
-			ds.domainResult.BestSuccess = true
-			ds.domainResult.BaselineSpeed = baselineSpeed
-			ds.domainResult.Improvement = 0
-			ds.CheckSuite.mu.Unlock()
-
-			log.DiscoveryLogf("Baseline succeeded for %s - no DPI bypass needed", ds.Domain)
-			ds.restoreConfig()
-			ds.finalize()
-			ds.logDiscoverySummary()
-			return
+		phase1Presets := GetPhase1Presets()
+		if len(phase1Presets) > 1 {
+			provenPreset := phase1Presets[1]
+			if existingResult, exists := ds.domainResult.Results[provenPreset.Name]; exists {
+				if existingResult.Status == CheckStatusComplete && existingResult.Speed > baselineSpeed*1.5 {
+					log.DiscoveryLogf("  Bypass 50%%+ faster than baseline - DPI bypass needed")
+					baselineWorks = false
+				}
+			}
 		}
 
-		log.DiscoveryLogf("TCP works for %s but DNS bypass required - testing minimal preset", ds.Domain)
+		if baselineWorks {
+			dnsNeeded := dnsResult != nil && dnsResult.IsPoisoned && dnsResult.hasWorkingConfig()
+
+			if !dnsNeeded {
+				ds.CheckSuite.mu.Lock()
+				ds.TotalChecks = 2
+				ds.domainResult.BestPreset = "no-bypass"
+				ds.domainResult.BestSpeed = baselineSpeed
+				ds.domainResult.BestSuccess = true
+				ds.domainResult.BaselineSpeed = baselineSpeed
+				ds.domainResult.Improvement = 0
+				ds.CheckSuite.mu.Unlock()
+
+				log.DiscoveryLogf("Verified: no DPI bypass needed for %s", ds.Domain)
+				ds.restoreConfig()
+				ds.finalize()
+				ds.logDiscoverySummary()
+				return
+			}
+
+			log.DiscoveryLogf("TCP works for %s but DNS bypass required - testing minimal preset", ds.Domain)
+		}
 	}
 
 	if len(workingFamilies) == 0 {
@@ -197,7 +220,7 @@ func (ds *DiscoverySuite) runPhase1(presets []ConfigPreset) ([]StrategyFamily, f
 	baselineWorks := baselineResult.Status == CheckStatusComplete
 	if baselineWorks {
 		baselineSpeed = baselineResult.Speed
-		return workingFamilies, baselineSpeed, true
+		log.DiscoveryLogf("  Baseline succeeded - verifying with bypass test...")
 	}
 
 	ds.detectWorkingPayloads(presets)
@@ -232,93 +255,6 @@ func (ds *DiscoverySuite) runPhase1(presets []ConfigPreset) ([]StrategyFamily, f
 	return workingFamilies, baselineSpeed, false
 }
 
-func (ds *DiscoverySuite) detectWorkingPayloads(presets []ConfigPreset) {
-	log.DiscoveryLogf("  Testing payload variants...")
-
-	var payload1Preset, payload2Preset *ConfigPreset
-	for i := range presets {
-		if presets[i].Name == "proven-combo" {
-			payload1Preset = &presets[i]
-		}
-		if presets[i].Name == "proven-combo-alt" {
-			payload2Preset = &presets[i]
-		}
-	}
-
-	if payload1Preset != nil {
-		if _, exists := ds.domainResult.Results["proven-combo"]; !exists {
-			result1 := ds.testPreset(*payload1Preset)
-			ds.storeResult(*payload1Preset, result1)
-
-			ds.workingPayloads = append(ds.workingPayloads, PayloadTestResult{
-				Payload: config.FakePayloadDefault1,
-				Works:   result1.Status == CheckStatusComplete,
-				Speed:   result1.Speed,
-			})
-
-			if result1.Status == CheckStatusComplete {
-				log.DiscoveryLogf("    Payload 1 (google): SUCCESS (%.2f KB/s)", result1.Speed/1024)
-			} else {
-				log.DiscoveryLogf("    Payload 1 (google): FAILED")
-			}
-		}
-	}
-
-	if payload2Preset != nil {
-		if _, exists := ds.domainResult.Results["proven-combo-alt"]; !exists {
-			result2 := ds.testPreset(*payload2Preset)
-			ds.storeResult(*payload2Preset, result2)
-
-			ds.workingPayloads = append(ds.workingPayloads, PayloadTestResult{
-				Payload: config.FakePayloadDefault2,
-				Works:   result2.Status == CheckStatusComplete,
-				Speed:   result2.Speed,
-			})
-
-			if result2.Status == CheckStatusComplete {
-				log.DiscoveryLogf("    Payload 2 (duckduckgo): SUCCESS (%.2f KB/s)", result2.Speed/1024)
-			} else {
-				log.DiscoveryLogf("    Payload 2 (duckduckgo): FAILED")
-			}
-		}
-	}
-
-	ds.selectBestPayload()
-}
-
-func (ds *DiscoverySuite) selectBestPayload() {
-	var bestSpeed float64
-	ds.bestPayload = config.FakePayloadDefault1 // default fallback
-
-	workingCount := 0
-	for _, pr := range ds.workingPayloads {
-		if pr.Works {
-			workingCount++
-			if pr.Speed > bestSpeed {
-				bestSpeed = pr.Speed
-				ds.bestPayload = pr.Payload
-			}
-		}
-	}
-
-	switch workingCount {
-	case 0:
-		log.DiscoveryLogf("  Neither payload worked in baseline - will test both during discovery")
-	case 1:
-		payloadName := "google"
-		if ds.bestPayload == config.FakePayloadDefault2 {
-			payloadName = "duckduckgo"
-		}
-		log.DiscoveryLogf("  Selected payload: %s (only one works)", payloadName)
-	case 2:
-		payloadName := "google"
-		if ds.bestPayload == config.FakePayloadDefault2 {
-			payloadName = "duckduckgo"
-		}
-		log.DiscoveryLogf("  Selected payload: %s (faster of both working)", payloadName)
-	}
-}
-
 // filterTestedPresets removes presets we've already tested
 func (ds *DiscoverySuite) filterTestedPresets(presets []ConfigPreset) []ConfigPreset {
 	filtered := []ConfigPreset{}
@@ -329,67 +265,6 @@ func (ds *DiscoverySuite) filterTestedPresets(presets []ConfigPreset) []ConfigPr
 		filtered = append(filtered, p)
 	}
 	return filtered
-}
-
-// testPresetWithBestPayload tests a preset using the detected best payload
-func (ds *DiscoverySuite) testPresetWithBestPayload(preset ConfigPreset) CheckResult {
-	defer func() {
-		ds.CheckSuite.mu.Lock()
-		ds.CompletedChecks++
-		ds.CheckSuite.mu.Unlock()
-	}()
-
-	hasWorkingPayload := false
-	for _, pr := range ds.workingPayloads {
-		if pr.Works {
-			hasWorkingPayload = true
-			break
-		}
-	}
-
-	if hasWorkingPayload {
-		return ds.testPresetWithPayload(preset, ds.bestPayload)
-	}
-
-	result1 := ds.testPresetWithPayload(preset, config.FakePayloadDefault1)
-	if result1.Status == CheckStatusComplete {
-		ds.updatePayloadKnowledge(config.FakePayloadDefault1, result1.Speed)
-		return result1
-	}
-
-	result2 := ds.testPresetWithPayload(preset, config.FakePayloadDefault2)
-	if result2.Status == CheckStatusComplete {
-		ds.updatePayloadKnowledge(config.FakePayloadDefault2, result2.Speed)
-		return result2
-	}
-
-	return result1
-}
-
-func (ds *DiscoverySuite) testPresetWithPayload(preset ConfigPreset, payloadType int) CheckResult {
-	modifiedPreset := preset
-	modifiedPreset.Config.Faking.SNIType = payloadType
-	return ds.testPresetInternal(modifiedPreset)
-}
-
-func (ds *DiscoverySuite) updatePayloadKnowledge(payload int, speed float64) {
-	for i, pr := range ds.workingPayloads {
-		if pr.Payload == payload {
-			if !pr.Works || speed > pr.Speed {
-				ds.workingPayloads[i].Works = true
-				ds.workingPayloads[i].Speed = speed
-			}
-			ds.selectBestPayload()
-			return
-		}
-	}
-
-	ds.workingPayloads = append(ds.workingPayloads, PayloadTestResult{
-		Payload: payload,
-		Works:   true,
-		Speed:   speed,
-	})
-	ds.selectBestPayload()
 }
 
 func (ds *DiscoverySuite) runPhase2(families []StrategyFamily) map[StrategyFamily]ConfigPreset {
@@ -814,21 +689,15 @@ func (ds *DiscoverySuite) fetchWithTimeoutUsingIP(timeout time.Duration, ip stri
 	var bytesRead int64
 	lastProgress := time.Now()
 
-	for bytesRead < 100*1024 {
+	maxRead := int64(100 * 1024)
+	if result.ContentSize > 0 && result.ContentSize < maxRead {
+		maxRead = result.ContentSize
+	}
+
+	for bytesRead < maxRead {
 		select {
 		case <-ctx.Done():
-			result.Duration = time.Since(start)
-			result.BytesRead = bytesRead
-			if bytesRead >= MIN_BYTES_FOR_SUCCESS {
-				result.Status = CheckStatusComplete
-				if result.Duration.Seconds() > 0 {
-					result.Speed = float64(bytesRead) / result.Duration.Seconds()
-				}
-			} else {
-				result.Status = CheckStatusFailed
-				result.Error = fmt.Sprintf("timeout after %d bytes (need %d)", bytesRead, MIN_BYTES_FOR_SUCCESS)
-			}
-			return result
+			goto evaluate
 		default:
 		}
 
@@ -858,43 +727,32 @@ func (ds *DiscoverySuite) fetchWithTimeoutUsingIP(timeout time.Duration, ip stri
 		}
 	}
 
+evaluate:
 	duration := time.Since(start)
 	result.Duration = duration
 	result.BytesRead = bytesRead
-
-	if bytesRead < MIN_BYTES_FOR_SUCCESS {
-		if result.ContentSize > 0 {
-			if bytesRead >= result.ContentSize {
-				result.Status = CheckStatusComplete
-				result.Speed = 0
-				log.Tracef("Small but complete response (%d/%d bytes, HTTP %d)", bytesRead, result.ContentSize, resp.StatusCode)
-				return result
-			}
-			result.Status = CheckStatusFailed
-			result.Error = fmt.Sprintf("truncated: got %d of %d bytes", bytesRead, result.ContentSize)
-			return result
-		}
-
-		if resp.StatusCode >= 200 && resp.StatusCode < 500 && bytesRead > 0 {
-			result.Status = CheckStatusComplete
-			result.Speed = 0
-			log.Tracef("Small response without Content-Length (%d bytes, HTTP %d)", bytesRead, resp.StatusCode)
-			return result
-		}
-
-		result.Status = CheckStatusFailed
-		result.Error = fmt.Sprintf("insufficient data: %d bytes (need %d)", bytesRead, MIN_BYTES_FOR_SUCCESS)
-		return result
-	}
 
 	if duration.Seconds() > 0 {
 		result.Speed = float64(bytesRead) / duration.Seconds()
 	}
 
+	if result.ContentSize > 0 {
+		expectedBytes := result.ContentSize
+		if expectedBytes > 100*1024 {
+			expectedBytes = 100 * 1024
+		}
+
+		if bytesRead < expectedBytes*9/10 {
+			result.Status = CheckStatusFailed
+			result.Error = fmt.Sprintf("truncated: %d/%d bytes (%.0f%%)",
+				bytesRead, expectedBytes, float64(bytesRead)*100/float64(expectedBytes))
+			return result
+		}
+	}
+
 	result.Status = CheckStatusComplete
 	return result
 }
-
 func (ds *DiscoverySuite) storeResult(preset ConfigPreset, result CheckResult) {
 	ds.CheckSuite.mu.Lock()
 	defer ds.CheckSuite.mu.Unlock()
@@ -974,11 +832,11 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 	mainSet.Faking = preset.Config.Faking
 	mainSet.DNS = ds.cfg.MainSet.DNS
 
-	if mainSet.TCP.WinMode == "" {
-		mainSet.TCP.WinMode = config.ConfigOff
+	if mainSet.TCP.Win.Mode == "" {
+		mainSet.TCP.Win.Mode = config.ConfigOff
 	}
-	if mainSet.TCP.DesyncMode == "" {
-		mainSet.TCP.DesyncMode = config.ConfigOff
+	if mainSet.TCP.Desync.Mode == "" {
+		mainSet.TCP.Desync.Mode = config.ConfigOff
 	}
 
 	if mainSet.Faking.SNIMutation.Mode == "" {
@@ -990,6 +848,7 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 
 	if preset.Name == "no-bypass" {
 		mainSet.Enabled = false
+		mainSet.DNS = config.DNSConfig{}
 	} else {
 		mainSet.Enabled = true
 		mainSet.Targets.SNIDomains = []string{ds.Domain}
@@ -1004,20 +863,21 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 				mainSet.Targets.GeoSiteCategories = geosite
 			}
 
-			if len(ds.cfg.System.Checker.ReferenceDNS) > 0 {
-				mainSet.DNS = config.DNSConfig{
-					Enabled:       true,
-					TargetDNS:     ds.cfg.System.Checker.ReferenceDNS[0],
-					FragmentQuery: true,
-				}
-			} else {
-				mainSet.DNS = config.DNSConfig{
-					Enabled:       true,
-					TargetDNS:     "9.9.9.9",
-					FragmentQuery: true,
+			if !ds.skipDNS {
+				if len(ds.cfg.System.Checker.ReferenceDNS) > 0 {
+					mainSet.DNS = config.DNSConfig{
+						Enabled:       true,
+						TargetDNS:     ds.cfg.System.Checker.ReferenceDNS[0],
+						FragmentQuery: true,
+					}
+				} else {
+					mainSet.DNS = config.DNSConfig{
+						Enabled:       true,
+						TargetDNS:     "9.9.9.9",
+						FragmentQuery: true,
+					}
 				}
 			}
-
 			tempCfg := &config.Config{System: ds.cfg.System}
 			domains, ips, err := tempCfg.GetTargetsForSet(&mainSet)
 			if err != nil {

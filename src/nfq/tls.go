@@ -8,15 +8,14 @@ import (
 	"github.com/daniellavrushin/b4/sock"
 )
 
-// splitTLSRecord splits a ClientHello into multiple TLS records
 func (w *Worker) sendTLSFragments(cfg *config.SetConfig, packet []byte, dst net.IP) {
 	ipHdrLen := int((packet[0] & 0x0F) * 4)
 	tcpHdrLen := int((packet[ipHdrLen+12] >> 4) * 4)
 	payloadStart := ipHdrLen + tcpHdrLen
 	payload := packet[payloadStart:]
+	payloadLen := len(payload)
 
-	// Validate TLS record
-	if len(payload) < 5 || payload[0] != 0x16 {
+	if payloadLen < 5 || payload[0] != 0x16 {
 		_ = w.sock.SendIPv4(packet, dst)
 		return
 	}
@@ -26,64 +25,49 @@ func (w *Worker) sendTLSFragments(cfg *config.SetConfig, packet []byte, dst net.
 		splitPos = 1
 	}
 
-	// TLS record: [type(1)][version(2)][length(2)][data...]
-	recordLen := int(binary.BigEndian.Uint16(payload[3:5]))
-	if 5+recordLen > len(payload) {
-		recordLen = len(payload) - 5
+	absoluteSplit := 5 + splitPos
+	if absoluteSplit >= payloadLen {
+		absoluteSplit = payloadLen / 2
 	}
 
-	if splitPos >= recordLen {
-		splitPos = recordLen / 2
+	if absoluteSplit < 6 {
+		absoluteSplit = 6
 	}
 
-	// Build first TLS record (first part of ClientHello)
-	rec1Len := 5 + splitPos
-	pkt1 := make([]byte, payloadStart+rec1Len)
-	copy(pkt1[:payloadStart], packet[:payloadStart])
-	pkt1[payloadStart] = 0x16                                                         // TLS Handshake
-	copy(pkt1[payloadStart+1:payloadStart+3], payload[1:3])                           // Version
-	binary.BigEndian.PutUint16(pkt1[payloadStart+3:payloadStart+5], uint16(splitPos)) // Length
-	copy(pkt1[payloadStart+5:], payload[5:5+splitPos])
+	seg1Len := payloadStart + absoluteSplit
+	seg1 := make([]byte, seg1Len)
+	copy(seg1, packet[:seg1Len])
 
-	// Update IP total length
-	binary.BigEndian.PutUint16(pkt1[2:4], uint16(len(pkt1)))
-	sock.FixIPv4Checksum(pkt1[:ipHdrLen])
-	sock.FixTCPChecksum(pkt1)
+	seg2Len := payloadStart + (payloadLen - absoluteSplit)
+	seg2 := make([]byte, seg2Len)
+	copy(seg2[:payloadStart], packet[:payloadStart])
+	copy(seg2[payloadStart:], packet[payloadStart+absoluteSplit:])
 
-	// Build second TLS record (rest of ClientHello)
-	rec2DataLen := recordLen - splitPos
-	rec2Len := 5 + rec2DataLen
-	pkt2 := make([]byte, payloadStart+rec2Len)
-	copy(pkt2[:payloadStart], packet[:payloadStart])
-	pkt2[payloadStart] = 0x16                               // TLS Handshake
-	copy(pkt2[payloadStart+1:payloadStart+3], payload[1:3]) // Version
-	binary.BigEndian.PutUint16(pkt2[payloadStart+3:payloadStart+5], uint16(rec2DataLen))
-	copy(pkt2[payloadStart+5:], payload[5+splitPos:5+recordLen])
+	binary.BigEndian.PutUint16(seg1[2:4], uint16(seg1Len))
+	sock.FixIPv4Checksum(seg1[:ipHdrLen])
+	sock.FixTCPChecksum(seg1)
 
-	// Update TCP sequence for second packet
-	seq := binary.BigEndian.Uint32(pkt2[ipHdrLen+4 : ipHdrLen+8])
-	binary.BigEndian.PutUint32(pkt2[ipHdrLen+4:ipHdrLen+8], seq+uint32(rec1Len))
+	seq := binary.BigEndian.Uint32(seg2[ipHdrLen+4 : ipHdrLen+8])
+	binary.BigEndian.PutUint32(seg2[ipHdrLen+4:ipHdrLen+8], seq+uint32(absoluteSplit))
 
-	// Update IP ID and total length
-	id := binary.BigEndian.Uint16(pkt1[4:6])
-	binary.BigEndian.PutUint16(pkt2[4:6], id+1)
-	binary.BigEndian.PutUint16(pkt2[2:4], uint16(len(pkt2)))
-	sock.FixIPv4Checksum(pkt2[:ipHdrLen])
-	sock.FixTCPChecksum(pkt2)
+	id := binary.BigEndian.Uint16(seg1[4:6])
+	binary.BigEndian.PutUint16(seg2[4:6], id+1)
+	binary.BigEndian.PutUint16(seg2[2:4], uint16(seg2Len))
+	sock.FixIPv4Checksum(seg2[:ipHdrLen])
+	sock.FixTCPChecksum(seg2)
 
 	seg2d := cfg.TCP.Seg2Delay
-
-	w.SendTwoSegmentsV4(pkt1, pkt2, dst, seg2d, cfg.Fragmentation.ReverseOrder)
+	w.SendTwoSegmentsV4(seg1, seg2, dst, seg2d, cfg.Fragmentation.ReverseOrder)
 }
 
-// IPv6 version
 func (w *Worker) sendTLSFragmentsV6(cfg *config.SetConfig, packet []byte, dst net.IP) {
 	ipv6HdrLen := 40
 	tcpHdrLen := int((packet[ipv6HdrLen+12] >> 4) * 4)
 	payloadStart := ipv6HdrLen + tcpHdrLen
 	payload := packet[payloadStart:]
+	payloadLen := len(payload)
 
-	if len(payload) < 5 || payload[0] != 0x16 {
+	if payloadLen < 5 || payload[0] != 0x16 {
 		_ = w.sock.SendIPv6(packet, dst)
 		return
 	}
@@ -93,43 +77,33 @@ func (w *Worker) sendTLSFragmentsV6(cfg *config.SetConfig, packet []byte, dst ne
 		splitPos = 1
 	}
 
-	recordLen := int(binary.BigEndian.Uint16(payload[3:5]))
-	if 5+recordLen > len(payload) {
-		recordLen = len(payload) - 5
+	absoluteSplit := 5 + splitPos
+	if absoluteSplit >= payloadLen {
+		absoluteSplit = payloadLen / 2
 	}
 
-	if splitPos >= recordLen {
-		splitPos = recordLen / 2
+	if absoluteSplit < 6 {
+		absoluteSplit = 6
 	}
 
-	// First TLS record
-	rec1Len := 5 + splitPos
-	pkt1 := make([]byte, payloadStart+rec1Len)
-	copy(pkt1[:payloadStart], packet[:payloadStart])
-	pkt1[payloadStart] = 0x16
-	copy(pkt1[payloadStart+1:payloadStart+3], payload[1:3])
-	binary.BigEndian.PutUint16(pkt1[payloadStart+3:payloadStart+5], uint16(splitPos))
-	copy(pkt1[payloadStart+5:], payload[5:5+splitPos])
+	seg1Len := payloadStart + absoluteSplit
+	seg1 := make([]byte, seg1Len)
+	copy(seg1, packet[:seg1Len])
 
-	binary.BigEndian.PutUint16(pkt1[4:6], uint16(len(pkt1)-ipv6HdrLen))
-	sock.FixTCPChecksumV6(pkt1)
+	seg2Len := payloadStart + (payloadLen - absoluteSplit)
+	seg2 := make([]byte, seg2Len)
+	copy(seg2[:payloadStart], packet[:payloadStart])
+	copy(seg2[payloadStart:], packet[payloadStart+absoluteSplit:])
 
-	// Second TLS record
-	rec2DataLen := recordLen - splitPos
-	rec2Len := 5 + rec2DataLen
-	pkt2 := make([]byte, payloadStart+rec2Len)
-	copy(pkt2[:payloadStart], packet[:payloadStart])
-	pkt2[payloadStart] = 0x16
-	copy(pkt2[payloadStart+1:payloadStart+3], payload[1:3])
-	binary.BigEndian.PutUint16(pkt2[payloadStart+3:payloadStart+5], uint16(rec2DataLen))
-	copy(pkt2[payloadStart+5:], payload[5+splitPos:5+recordLen])
+	binary.BigEndian.PutUint16(seg1[4:6], uint16(seg1Len-ipv6HdrLen))
+	sock.FixTCPChecksumV6(seg1)
 
-	seq := binary.BigEndian.Uint32(pkt2[ipv6HdrLen+4 : ipv6HdrLen+8])
-	binary.BigEndian.PutUint32(pkt2[ipv6HdrLen+4:ipv6HdrLen+8], seq+uint32(rec1Len))
-	binary.BigEndian.PutUint16(pkt2[4:6], uint16(len(pkt2)-ipv6HdrLen))
-	sock.FixTCPChecksumV6(pkt2)
+	seq := binary.BigEndian.Uint32(seg2[ipv6HdrLen+4 : ipv6HdrLen+8])
+	binary.BigEndian.PutUint32(seg2[ipv6HdrLen+4:ipv6HdrLen+8], seq+uint32(absoluteSplit))
+
+	binary.BigEndian.PutUint16(seg2[4:6], uint16(seg2Len-ipv6HdrLen))
+	sock.FixTCPChecksumV6(seg2)
 
 	seg2d := cfg.TCP.Seg2Delay
-
-	w.SendTwoSegmentsV6(pkt1, pkt2, dst, seg2d, cfg.Fragmentation.ReverseOrder)
+	w.SendTwoSegmentsV6(seg1, seg2, dst, seg2d, cfg.Fragmentation.ReverseOrder)
 }

@@ -28,7 +28,13 @@ import {
 import { Separator } from "@design/components/ui/separator";
 import { Slider } from "@design/components/ui/slider";
 import { Switch } from "@design/components/ui/switch";
-import { B4SetConfig, DesyncMode, WindowMode } from "@models/config";
+import {
+  B4SetConfig,
+  DesyncMode,
+  WindowMode,
+  IncomingMode,
+  IncomingStrategy,
+} from "@models/config";
 import { useState } from "react";
 
 interface TcpSettingsProps {
@@ -74,18 +80,50 @@ const windowModeDescriptions: Record<WindowMode, string> = {
   escalate: "Gradually increase: 0 → 100 → 500 → 1460 → 8192 → 32768 → 65535",
 };
 
+const incomingModeOptions: { label: string; value: IncomingMode }[] = [
+  { label: "Disabled", value: "off" },
+  { label: "Fake Packets", value: "fake" },
+  { label: "Reset Injection", value: "reset" },
+  { label: "FIN Injection", value: "fin" },
+  { label: "Desync Combo", value: "desync" },
+];
+
+const incomingModeDescriptions: Record<IncomingMode, string> = {
+  off: "No incoming packet manipulation",
+  fake: "Inject corrupted ACK packets toward server with low TTL on every incoming data packet",
+  reset: "Inject fake RST packets when incoming bytes threshold reached",
+  fin: "Inject fake FIN packets when incoming bytes threshold reached",
+  desync: "Inject RST+FIN+ACK combo when incoming bytes threshold reached",
+};
+
+const incomingStrategyOptions: { label: string; value: string }[] = [
+  { label: "Bad Checksum", value: "badsum" },
+  { label: "Bad Sequence", value: "badseq" },
+  { label: "Bad ACK", value: "badack" },
+  { label: "Random", value: "rand" },
+  { label: "All Corruptions", value: "all" },
+];
+
+const incomingStrategyDescriptions: Record<string, string> = {
+  badsum: "Corrupt TCP checksum only - packets dropped by kernel",
+  badseq: "Corrupt sequence number - packets ignored by TCP stack",
+  badack: "Corrupt ACK number - packets ignored by TCP stack",
+  rand: "Randomly pick corruption method per packet",
+  all: "Apply all corruptions: bad seq + bad ack + bad checksum",
+};
+
 export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
   const [newWinValue, setNewWinValue] = useState("");
 
-  const winValues = config.tcp.win_values || [0, 1460, 8192, 65535];
-  const showWinValues = ["oscillate", "random"].includes(config.tcp.win_mode);
-  const isDesyncEnabled = config.tcp.desync_mode !== "off";
+  const winValues = config.tcp.win.values || [0, 1460, 8192, 65535];
+  const showWinValues = ["oscillate", "random"].includes(config.tcp.win.mode);
+  const isDesyncEnabled = config.tcp.desync.mode !== "off";
 
   const handleAddWinValue = () => {
     const val = parseInt(newWinValue, 10);
     if (!isNaN(val) && val >= 0 && val <= 65535 && !winValues.includes(val)) {
       onChange(
-        "tcp.win_values",
+        "tcp.win.values",
         [...winValues, val].sort((a, b) => a - b)
       );
       setNewWinValue("");
@@ -94,7 +132,7 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
 
   const handleRemoveWinValue = (val: number) => {
     onChange(
-      "tcp.win_values",
+      "tcp.win.values",
       winValues.filter((v) => v !== val)
     );
   };
@@ -172,7 +210,10 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
           {/* SACK and SYN Fake */}
           <div>
             <label htmlFor="switch-tcp-drop-sack">
-              <Field orientation="horizontal" className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2">
+              <Field
+                orientation="horizontal"
+                className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
+              >
                 <FieldContent>
                   <FieldTitle>Drop SACK Options</FieldTitle>
                   <FieldDescription>
@@ -193,17 +234,23 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
 
           <div>
             <label htmlFor="switch-tcp-syn-fake">
-              <Field orientation="horizontal" className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2">
+              <Field
+                orientation="horizontal"
+                className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
+              >
                 <FieldContent>
                   <FieldTitle>SYN Fake Packets</FieldTitle>
                   <FieldDescription>
-                    Send fake SYN packets during handshake (aggressive technique)
+                    Send fake SYN packets during handshake (aggressive
+                    technique)
                   </FieldDescription>
                 </FieldContent>
                 <Switch
                   id="switch-tcp-syn-fake"
                   checked={config.tcp.syn_fake || false}
-                  onCheckedChange={(checked) => onChange("tcp.syn_fake", checked)}
+                  onCheckedChange={(checked) =>
+                    onChange("tcp.syn_fake", checked)
+                  }
                 />
               </Field>
             </label>
@@ -243,7 +290,7 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                       SYN Fake TTL
                     </FieldLabel>
                     <Badge variant="secondary" className="font-semibold">
-                      {config.tcp.syn_ttl || 0} ms
+                      {config.tcp.syn_ttl || 0}
                     </Badge>
                   </div>
                   <Slider
@@ -285,9 +332,9 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
             <Field>
               <FieldLabel>Window Mode</FieldLabel>
               <Select
-                value={config.tcp.win_mode}
+                value={config.tcp.win.mode}
                 onValueChange={(value) =>
-                  onChange("tcp.win_mode", value as string)
+                  onChange("tcp.win.mode", value as string)
                 }
               >
                 <SelectTrigger>
@@ -305,7 +352,7 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                 </SelectContent>
               </Select>
               <FieldDescription>
-                {windowModeDescriptions[config.tcp.win_mode]}
+                {windowModeDescriptions[config.tcp.win.mode]}
               </FieldDescription>
             </Field>
           </div>
@@ -314,7 +361,7 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
             <div className="md:col-span-2">
               <p className="text-sm font-semibold mb-1">Custom Window Values</p>
               <p className="text-xs text-muted-foreground mb-4">
-                {config.tcp.win_mode === "oscillate"
+                {config.tcp.win.mode === "oscillate"
                   ? "Packets will cycle through these values in order"
                   : "Random values will be picked from this list"}
               </p>
@@ -379,9 +426,9 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
             <Field>
               <FieldLabel>Desync Mode</FieldLabel>
               <Select
-                value={config.tcp.desync_mode}
+                value={config.tcp.desync.mode}
                 onValueChange={(value) =>
-                  onChange("tcp.desync_mode", value as string)
+                  onChange("tcp.desync.mode", value as string)
                 }
               >
                 <SelectTrigger>
@@ -399,7 +446,7 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                 </SelectContent>
               </Select>
               <FieldDescription>
-                {desyncModeDescriptions[config.tcp.desync_mode]}
+                {desyncModeDescriptions[config.tcp.desync.mode]}
               </FieldDescription>
             </Field>
           </div>
@@ -411,13 +458,13 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                   Desync TTL
                 </FieldLabel>
                 <Badge variant="secondary" className="font-semibold">
-                  {config.tcp.desync_ttl}
+                  {config.tcp.desync.ttl}
                 </Badge>
               </div>
               <Slider
-                value={[config.tcp.desync_ttl]}
+                value={[config.tcp.desync.ttl]}
                 onValueChange={(values) =>
-                  onChange("tcp.desync_ttl", values[0])
+                  onChange("tcp.desync.ttl", values[0])
                 }
                 min={1}
                 max={20}
@@ -440,13 +487,13 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                   Desync Packet Count
                 </FieldLabel>
                 <Badge variant="secondary" className="font-semibold">
-                  {config.tcp.desync_count}
+                  {config.tcp.desync.count}
                 </Badge>
               </div>
               <Slider
-                value={[config.tcp.desync_count]}
+                value={[config.tcp.desync.count]}
                 onValueChange={(values) =>
-                  onChange("tcp.desync_count", values[0])
+                  onChange("tcp.desync.count", values[0])
                 }
                 min={1}
                 max={20}
@@ -458,6 +505,227 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                 {isDesyncEnabled
                   ? "Number of fake packets per desync attack"
                   : "Enable desync mode first"}
+              </FieldDescription>
+            </Field>
+          </div>
+
+          <div>
+            <label htmlFor="switch-tcp-post-desync">
+              <Field
+                orientation="horizontal"
+                className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
+              >
+                <FieldContent>
+                  <FieldTitle>Post-ClientHello RST</FieldTitle>
+                  <FieldDescription>
+                    Send fake RST after ClientHello to evict connection from DPI
+                    tracking table
+                  </FieldDescription>
+                </FieldContent>
+                <Switch
+                  id="switch-tcp-post-desync"
+                  checked={config.tcp.desync.post_desync || false}
+                  onCheckedChange={(checked) =>
+                    onChange("tcp.desync.post_desync", checked)
+                  }
+                />
+              </Field>
+            </label>
+          </div>
+        </div>
+
+        {/* Incoming Response Manipulation */}
+        <div className="relative my-4 md:col-span-2 flex items-center">
+          <Separator className="absolute inset-0 top-1/2" />
+          <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+            Incoming Response Bypass
+          </span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <Alert className="md:col-span-2">
+            <AlertDescription>
+              Manipulates incoming server responses to bypass DPI that throttles
+              connections after receiving ~15-20KB. Experimental feature for
+              TSPU-style behavioral throttling.
+            </AlertDescription>
+          </Alert>
+
+          <div>
+            <Field>
+              <FieldLabel>Incoming Mode</FieldLabel>
+              <Select
+                value={config.tcp.incoming?.mode || "off"}
+                onValueChange={(value) =>
+                  onChange("tcp.incoming.mode", value as string)
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select incoming mode" />
+                </SelectTrigger>
+                <SelectContent>
+                  {incomingModeOptions.map((option) => (
+                    <SelectItem
+                      key={option.value}
+                      value={option.value.toString()}
+                    >
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FieldDescription>
+                {incomingModeDescriptions[config.tcp.incoming?.mode || "off"]}
+              </FieldDescription>
+            </Field>
+          </div>
+
+          <div>
+            <Field>
+              <FieldLabel>Corruption Strategy</FieldLabel>
+              <Select
+                value={config.tcp.incoming?.strategy || "badsum"}
+                onValueChange={(value) =>
+                  onChange("tcp.incoming.strategy", value as string)
+                }
+                disabled={config.tcp.incoming?.mode === "off"}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select strategy" />
+                </SelectTrigger>
+                <SelectContent>
+                  {incomingStrategyOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FieldDescription>
+                {config.tcp.incoming?.mode === "off"
+                  ? "Enable incoming mode first"
+                  : incomingStrategyDescriptions[
+                      config.tcp.incoming?.strategy || "badsum"
+                    ]}
+              </FieldDescription>
+            </Field>
+          </div>
+
+          <div>
+            <Field className="w-full space-y-2">
+              <div className="flex items-center justify-between">
+                <FieldLabel className="text-sm font-medium">
+                  Threshold Min
+                </FieldLabel>
+                <Badge variant="secondary" className="font-semibold">
+                  {config.tcp.incoming?.min || 14} KB
+                </Badge>
+              </div>
+              <Slider
+                value={[config.tcp.incoming?.min || 14]}
+                onValueChange={(values) =>
+                  onChange("tcp.incoming.min", values[0])
+                }
+                min={5}
+                max={config.tcp.incoming?.max || 50}
+                step={1}
+                disabled={
+                  config.tcp.incoming?.mode === "off" ||
+                  config.tcp.incoming?.mode === "fake"
+                }
+                className="w-full"
+              />
+              <FieldDescription>
+                {config.tcp.incoming?.mode === "fake"
+                  ? "Not used in fake mode (triggers on every packet)"
+                  : "Minimum threshold for injection trigger"}
+              </FieldDescription>
+            </Field>
+          </div>
+
+          <div>
+            <Field className="w-full space-y-2">
+              <div className="flex items-center justify-between">
+                <FieldLabel className="text-sm font-medium">
+                  Threshold Max
+                </FieldLabel>
+                <Badge variant="secondary" className="font-semibold">
+                  {config.tcp.incoming?.max || 14} KB
+                </Badge>
+              </div>
+              <Slider
+                value={[config.tcp.incoming?.max || 14]}
+                onValueChange={(values) =>
+                  onChange("tcp.incoming.max", values[0])
+                }
+                min={config.tcp.incoming?.min || 5}
+                max={50}
+                step={1}
+                disabled={
+                  config.tcp.incoming?.mode === "off" ||
+                  config.tcp.incoming?.mode === "fake"
+                }
+                className="w-full"
+              />
+              <FieldDescription>
+                {config.tcp.incoming?.mode === "fake"
+                  ? "Not used in fake mode"
+                  : config.tcp.incoming?.min === config.tcp.incoming?.max
+                  ? "Fixed threshold (min = max)"
+                  : "Threshold randomized between min-max per connection"}
+              </FieldDescription>
+            </Field>
+          </div>
+
+          <div>
+            <Field className="w-full space-y-2">
+              <div className="flex items-center justify-between">
+                <FieldLabel className="text-sm font-medium">
+                  Fake TTL
+                </FieldLabel>
+                <Badge variant="secondary" className="font-semibold">
+                  {config.tcp.incoming?.fake_ttl || 3}
+                </Badge>
+              </div>
+              <Slider
+                value={[config.tcp.incoming?.fake_ttl || 3]}
+                onValueChange={(values) =>
+                  onChange("tcp.incoming.fake_ttl", values[0])
+                }
+                min={1}
+                max={20}
+                step={1}
+                disabled={config.tcp.incoming?.mode === "off"}
+                className="w-full"
+              />
+              <FieldDescription>
+                Low TTL ensures fakes expire before reaching server
+              </FieldDescription>
+            </Field>
+          </div>
+
+          <div>
+            <Field className="w-full space-y-2">
+              <div className="flex items-center justify-between">
+                <FieldLabel className="text-sm font-medium">
+                  Fake Count
+                </FieldLabel>
+                <Badge variant="secondary" className="font-semibold">
+                  {config.tcp.incoming?.fake_count || 3}
+                </Badge>
+              </div>
+              <Slider
+                value={[config.tcp.incoming?.fake_count || 3]}
+                onValueChange={(values) =>
+                  onChange("tcp.incoming.fake_count", values[0])
+                }
+                min={1}
+                max={10}
+                step={1}
+                disabled={config.tcp.incoming?.mode === "off"}
+                className="w-full"
+              />
+              <FieldDescription>
+                Number of fake packets per injection
               </FieldDescription>
             </Field>
           </div>

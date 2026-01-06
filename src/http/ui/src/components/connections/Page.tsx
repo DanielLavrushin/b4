@@ -38,7 +38,10 @@ export function ConnectionsPage() {
     resetDomainsBadge,
   } = useWebSocket();
 
-  const [filter, setFilter] = useState("");
+  const [filter, setFilter] = useState(() => {
+    return localStorage.getItem("b4_connections_filter") || "";
+  });
+
   const [sortColumn, setSortColumn] = useState<SortColumn | null>(() => {
     const saved = loadSortState();
     return saved.column as SortColumn | null;
@@ -64,6 +67,10 @@ export function ConnectionsPage() {
   const [ipInfoToken, setIpInfoToken] = useState<string>("");
   const [devicesEnabled, setDevicesEnabled] = useState<boolean>(false);
   const [deviceMap, setDeviceMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    localStorage.setItem("b4_connections_filter", filter);
+  }, [filter]);
 
   useEffect(() => {
     saveSortState(sortColumn, sortDirection);

@@ -8,7 +8,6 @@ require (
 	github.com/josharian/native v1.1.0 // indirect
 	github.com/mdlayher/netlink v1.7.2 // indirect
 	github.com/mdlayher/socket v0.4.1 // indirect
-	golang.org/x/net v0.46.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect
 )
 
@@ -22,6 +21,7 @@ require (
 	github.com/urlesistiana/v2dat v0.0.0-20221215035016-47b8ee51fb52
 	github.com/yl2chen/cidranger v1.0.2
 	golang.org/x/crypto v0.43.0
+	golang.org/x/net v0.46.0
 	golang.org/x/sys v0.37.0
 	google.golang.org/protobuf v1.33.0
 )

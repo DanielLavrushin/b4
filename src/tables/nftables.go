@@ -117,6 +117,11 @@ func (n *NFTablesManager) Apply() error {
 	log.Tracef("NFTABLES: adding rules")
 	loadKernelModules()
 
+	// Clear existing table to prevent rule duplication
+	if n.tableExists() {
+		n.Clear()
+	}
+
 	// Set IP version filter
 	switch {
 	case cfg.Queue.IPv4Enabled && cfg.Queue.IPv6Enabled:
@@ -131,20 +136,22 @@ func (n *NFTablesManager) Apply() error {
 		return err
 	}
 
-	if err := n.createChain("output", "output", 149, "accept"); err != nil {
+	if err := n.createChain(nftChainName, "", 0, ""); err != nil {
 		return err
 	}
+
 	if err := n.createChain("prerouting", "prerouting", -150, "accept"); err != nil {
 		return err
 	}
-	if err := n.createChain(nftChainName, "", 0, ""); err != nil {
+
+	if err := n.createChain("output", "output", -150, "accept"); err != nil {
 		return err
 	}
 
 	markAccept := fmt.Sprintf("0x%x", cfg.Queue.Mark)
 
 	if cfg.Queue.Devices.Enabled && len(cfg.Queue.Devices.Mac) > 0 {
-		if err := n.createChain("forward", "forward", -1, "accept"); err != nil {
+		if err := n.createChain("forward", "forward", -150, "accept"); err != nil {
 			return err
 		}
 
@@ -169,7 +176,8 @@ func (n *NFTablesManager) Apply() error {
 			}
 		}
 	} else {
-		if err := n.createChain("postrouting", "postrouting", 149, "accept"); err != nil {
+
+		if err := n.createChain("postrouting", "postrouting", -150, "accept"); err != nil {
 			return err
 		}
 		if err := n.addRule("postrouting", "jump", nftChainName); err != nil {
@@ -177,12 +185,16 @@ func (n *NFTablesManager) Apply() error {
 		}
 	}
 
+	if err := n.addRule("output", "oifname", `"lo"`, "return"); err != nil {
+		return err
+	}
 	if err := n.addRule("output", "meta", "mark", markAccept, "accept"); err != nil {
 		return err
 	}
 	if err := n.addRule("output", "jump", nftChainName); err != nil {
 		return err
 	}
+
 	if err := n.addRule(nftChainName, "meta", "mark", markAccept, "return"); err != nil {
 		return err
 	}
@@ -190,24 +202,23 @@ func (n *NFTablesManager) Apply() error {
 	tcpLimit := fmt.Sprintf("%d", cfg.MainSet.TCP.ConnBytesLimit+1)
 	udpLimit := fmt.Sprintf("%d", cfg.MainSet.UDP.ConnBytesLimit+1)
 
-	// TCP 443
 	if err := n.addQueueRule(nftChainName, "tcp", "dport", "443", "ct", "original", "packets", "<", tcpLimit, "counter"); err != nil {
 		return err
 	}
 
-	// DNS query
 	if err := n.addQueueRule(nftChainName, "udp", "dport", "53", "counter"); err != nil {
 		return err
 	}
 
-	// DNS response
 	if err := n.addQueueRule("prerouting", "udp", "sport", "53", "counter"); err != nil {
 		return err
 	}
 
-	// UDP ports
-	udpPorts := cfg.CollectUDPPorts()
+	if err := n.addQueueRule("prerouting", "tcp", "sport", "443", "ct", "original", "packets", "<", tcpLimit, "counter"); err != nil {
+		return err
+	}
 
+	udpPorts := cfg.CollectUDPPorts()
 	var udpPortExpr string
 	if len(udpPorts) == 1 {
 		udpPortExpr = udpPorts[0]

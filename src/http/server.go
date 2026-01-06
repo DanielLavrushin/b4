@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	stdhttp "net/http"
+	"strings"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
@@ -35,7 +36,18 @@ func StartServer(cfg *config.Config, pool *nfq.Pool) (*stdhttp.Server, error) {
 	var httpHandler stdhttp.Handler = mux
 	httpHandler = cors(httpHandler)
 
-	addr := fmt.Sprintf("0.0.0.0:%d", cfg.System.WebServer.Port)
+	bindAddr := cfg.System.WebServer.BindAddress
+	if bindAddr == "" {
+		bindAddr = "0.0.0.0"
+	}
+
+	var addr string
+	if strings.Contains(bindAddr, ":") {
+		addr = fmt.Sprintf("[%s]:%d", bindAddr, cfg.System.WebServer.Port)
+	} else {
+		addr = fmt.Sprintf("%s:%d", bindAddr, cfg.System.WebServer.Port)
+	}
+
 	log.Infof("Starting web server on %s", addr)
 
 	metrics := handler.GetMetricsCollector()

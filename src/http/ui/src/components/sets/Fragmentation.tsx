@@ -30,7 +30,6 @@ import { ComboSettings } from "./frags/Combo";
 import { DisorderSettings } from "./frags/Disorder";
 import { ExtSplitSettings } from "./frags/ExtSplit";
 import { FirstByteSettings } from "./frags/FirstByte";
-import { OverlapSettings } from "./frags/Overlap";
 import { TcpIpSettings } from "./frags/TcpIp";
 
 interface FragmentationSettingsProps {
@@ -46,7 +45,6 @@ const fragmentationOptions: { label: string; value: FragmentationStrategy }[] =
     { label: "Combo", value: "combo" },
     { label: "Hybrid", value: "hybrid" },
     { label: "Disorder", value: "disorder" },
-    { label: "Overlap", value: "overlap" },
     { label: "Extension Split", value: "extsplit" },
     { label: "First-Byte Desync", value: "firstbyte" },
     { label: "TCP Segmentation", value: "tcp" },
@@ -112,10 +110,15 @@ export const FragmentationSettings = ({
 
           <div>
             <label htmlFor="switch-fragmentation-reverse-order">
-              <Field orientation="horizontal" className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2">
+              <Field
+                orientation="horizontal"
+                className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
+              >
                 <FieldContent>
                   <FieldTitle>Reverse Fragment Order</FieldTitle>
-                  <FieldDescription>Send second fragment first</FieldDescription>
+                  <FieldDescription>
+                    Send second fragment first
+                  </FieldDescription>
                 </FieldContent>
                 <Switch
                   id="switch-fragmentation-reverse-order"
@@ -136,10 +139,6 @@ export const FragmentationSettings = ({
 
           {strategy === "disorder" && (
             <DisorderSettings config={config} onChange={onChange} />
-          )}
-
-          {strategy === "overlap" && (
-            <OverlapSettings config={config} onChange={onChange} />
           )}
           {strategy === "extsplit" && <ExtSplitSettings />}
 

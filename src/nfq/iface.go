@@ -8,8 +8,7 @@ import (
 )
 
 var (
-	ifaceCache   = make(map[uint32]string)
-	ifaceCacheMu sync.RWMutex
+	ifaceCache sync.Map
 )
 
 func getIfaceName(idx uint32) string {
@@ -17,11 +16,8 @@ func getIfaceName(idx uint32) string {
 		return ""
 	}
 
-	ifaceCacheMu.RLock()
-	name, ok := ifaceCache[idx]
-	ifaceCacheMu.RUnlock()
-	if ok {
-		return name
+	if v, ok := ifaceCache.Load(idx); ok {
+		return v.(string)
 	}
 
 	iface, err := net.InterfaceByIndex(int(idx))
@@ -29,11 +25,8 @@ func getIfaceName(idx uint32) string {
 		return ""
 	}
 
-	ifaceCacheMu.Lock()
-	ifaceCache[idx] = iface.Name
-	ifaceCacheMu.Unlock()
-
-	return iface.Name
+	actual, _ := ifaceCache.LoadOrStore(idx, iface.Name)
+	return actual.(string)
 }
 
 func (w *Worker) matchesInterface(a nfqueue.Attribute) bool {

@@ -34,6 +34,7 @@ type PacketInfo struct {
 
 type Worker struct {
 	packetsProcessed uint64
+	lastOverflowLog  int64
 	cfg              atomic.Value
 	qnum             uint16
 	ctx              context.Context
@@ -43,4 +44,5 @@ type Worker struct {
 	matcher          atomic.Value
 	sock             *sock.Sender
 	ipToMac          atomic.Value
+	connState        sync.Map
 }

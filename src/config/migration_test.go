@@ -78,7 +78,7 @@ func TestApplyMigrations(t *testing.T) {
 		set.Enabled = false
 		cfg.Sets = []*SetConfig{&set}
 
-		if err := cfg.applyMigrations(0); err != nil {
+		if err := cfg.applyMigrations(0, map[string]interface{}{}); err != nil {
 			t.Fatalf("migration failed: %v", err)
 		}
 		if !cfg.Sets[0].Enabled {

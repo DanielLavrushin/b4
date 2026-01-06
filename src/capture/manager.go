@@ -19,46 +19,13 @@ var (
 	once     sync.Once
 )
 
-type Manager struct {
-	mu              sync.RWMutex
-	metadata        map[string]map[string]*CaptureMetadata
-	outputPath      string
-	metadataFile    string
-	activeProbes    map[string]time.Time
-	pendingCaptures map[string]*PendingCapture
-	connToDomain    map[string]string
-}
-
-type PendingCapture struct {
-	protocol  string
-	domain    string
-	data      []byte
-	firstSeen time.Time
-}
-
-type CaptureMetadata struct {
-	Timestamp time.Time `json:"timestamp"`
-	Size      int       `json:"size"`
-	Filepath  string    `json:"filepath"`
-}
-
-// API response structure
-type Capture struct {
-	Protocol  string    `json:"protocol"`
-	Domain    string    `json:"domain"`
-	Timestamp time.Time `json:"timestamp"`
-	Size      int       `json:"size"`
-	Filepath  string    `json:"filepath"`
-	HexData   string    `json:"hex_data"`
-}
-
 func GetManager(cfg *config.Config) *Manager {
 	once.Do(func() {
 		baseDirPath := filepath.Dir(cfg.ConfigPath)
 		outputPath := filepath.Join(baseDirPath, "captures")
 
 		instance = &Manager{
-			metadata:        make(map[string]map[string]*CaptureMetadata),
+			metadata:        make(map[string]map[string]*PayloadMetadata),
 			outputPath:      outputPath,
 			metadataFile:    filepath.Join(outputPath, "payloads.json"),
 			activeProbes:    make(map[string]time.Time),
@@ -121,7 +88,7 @@ func (m *Manager) loadMetadata() {
 
 func (m *Manager) saveMetadata() error {
 	if m.metadata == nil {
-		m.metadata = make(map[string]map[string]*CaptureMetadata)
+		m.metadata = make(map[string]map[string]*PayloadMetadata)
 	}
 	data, err := json.MarshalIndent(m.metadata, "", "  ")
 	if err != nil {
@@ -264,10 +231,10 @@ func (m *Manager) CapturePayload(connKey, domain, protocol string, payload []byt
 
 	// Update metadata
 	if m.metadata[pending.domain] == nil {
-		m.metadata[pending.domain] = make(map[string]*CaptureMetadata)
+		m.metadata[pending.domain] = make(map[string]*PayloadMetadata)
 	}
 
-	m.metadata[pending.domain][protocol] = &CaptureMetadata{
+	m.metadata[pending.domain][protocol] = &PayloadMetadata{
 		Timestamp: time.Now(),
 		Size:      len(captureData),
 		Filepath:  filename,
@@ -416,7 +383,7 @@ func (m *Manager) ClearAll() error {
 	}
 
 	// Clear metadata
-	m.metadata = make(map[string]map[string]*CaptureMetadata)
+	m.metadata = make(map[string]map[string]*PayloadMetadata)
 
 	// Save empty metadata
 	if err := m.saveMetadata(); err != nil {
@@ -453,10 +420,10 @@ func (m *Manager) SaveUploadedCapture(protocol, domain string, data []byte) erro
 	}
 
 	if m.metadata[domain] == nil {
-		m.metadata[domain] = make(map[string]*CaptureMetadata)
+		m.metadata[domain] = make(map[string]*PayloadMetadata)
 	}
 
-	m.metadata[domain][protocol] = &CaptureMetadata{
+	m.metadata[domain][protocol] = &PayloadMetadata{
 		Timestamp: time.Now(),
 		Size:      len(data),
 		Filepath:  filename,
@@ -468,4 +435,11 @@ func (m *Manager) SaveUploadedCapture(protocol, domain string, data []byte) erro
 
 	log.Infof("✓ Saved uploaded %s payload for %s (%d bytes)", protocol, domain, len(data))
 	return nil
+}
+
+func (m *Manager) LoadCaptureData(c *Capture) ([]byte, error) {
+	if c == nil || c.Filepath == "" {
+		return nil, fmt.Errorf("invalid capture")
+	}
+	return os.ReadFile(c.Filepath)
 }

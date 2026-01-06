@@ -233,11 +233,16 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
         syn_fake_len: 0,
         syn_ttl: 3,
         drop_sack: false,
-        win_mode: "off",
-        win_values: [0, 1460, 8192, 65535],
-        desync_mode: "off",
-        desync_ttl: 3,
-        desync_count: 3,
+        win: { mode: "off", values: [0, 1460, 8192, 65535] },
+        desync: { mode: "off", ttl: 3, count: 3, post_desync: false },
+        incoming: {
+          mode: "off",
+          min: 14,
+          max: 14,
+          fake_ttl: 3,
+          fake_count: 3,
+          strategy: "badsum",
+        },
       } as B4SetConfig["tcp"],
       udp: {
         mode: "fake",
@@ -271,14 +276,13 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
           shuffle_mode: "middle",
           first_delay_ms: 100,
           jitter_max_us: 2000,
+          decoy_enabled: false,
+          decoy_snis: ["ya.ru", "vk.com", "mail.ru"],
         },
         disorder: {
           shuffle_mode: "full",
           min_jitter_us: 1000,
           max_jitter_us: 3000,
-        },
-        overlap: {
-          fake_snis: [],
         },
       } as B4SetConfig["fragmentation"],
       faking: {

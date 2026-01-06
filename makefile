@@ -13,6 +13,7 @@ LDFLAGS := -X main.Version=$(VERSION) -X main.Commit=$(VERSION_COMMIT) -X main.D
 # Linux architectures
 LINUX_ARCHS := 386 amd64 arm64 armv5 armv6 armv7 \
                loong64 mips mipsle mips64 mips64le \
+               mips_softfloat mipsle_softfloat \
                ppc64 ppc64le riscv64 s390x
 
 # Android architectures (optional)
@@ -47,9 +48,11 @@ linux-%:
 		armv5) GOARCH=arm GOARM=5 ;; \
 		armv6) GOARCH=arm GOARM=6 ;; \
 		armv7) GOARCH=arm GOARM=7 ;; \
+		mips_softfloat)   GOARCH=mips   GOMIPS=softfloat ;; \
+		mipsle_softfloat) GOARCH=mipsle GOMIPS=softfloat ;; \
 		*)     GOARCH=$(ARCH) ;; \
 	esac; \
-	$(MAKE) --no-print-directory build-target GOOS=linux GOARCH=$$GOARCH GOARM=$$GOARM TARGET=$(TARGET)
+	$(MAKE) --no-print-directory build-target GOOS=linux GOARCH=$$GOARCH GOARM=$$GOARM GOMIPS=$$GOMIPS TARGET=$(TARGET)
 
 # Build all Linux targets
 .PHONY: linux-all
@@ -88,7 +91,7 @@ build-target:
 	@OUT_PATH="$(OUT_DIR)/$(GOOS)-$(TARGET)"
 	@echo "  → $(GOOS)/$(TARGET)"
 	@mkdir -p "$(OUT_DIR)/$(GOOS)-$(TARGET)" "$(OUT_DIR)/assets"
-	@GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM=$(GOARM) CGO_ENABLED=$(CGO_ENABLED) CC=$(CC) \
+	@GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM=$(GOARM) GOMIPS=$(GOMIPS) CGO_ENABLED=$(CGO_ENABLED) CC=$(CC) \
 		go -C $(SRC_DIR) build -ldflags "$(LDFLAGS)" \
 		-o ../$(OUT_DIR)/$(GOOS)-$(TARGET)/$(BINARY_NAME)
 	@tar -czf "$(OUT_DIR)/assets/$(BINARY_NAME)-$(GOOS)-$(TARGET).tar.gz" \

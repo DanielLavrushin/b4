@@ -229,7 +229,17 @@ func (manager *IPTablesManager) buildManifest() (Manifest, error) {
 			manager.buildNFQSpec(queueNum, threads)...,
 		)
 
+		tcpResponseSpec := append(
+			[]string{"-p", "tcp", "--sport", "443",
+				"-m", "connbytes", "--connbytes-dir", "reply",
+				"--connbytes-mode", "packets", "--connbytes", tcpConnbytesRange},
+			manager.buildNFQSpec(queueNum, threads)...,
+		)
+
 		rules = append(rules,
+			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "PREROUTING", Action: "I", Spec: dnsResponseSpec},
+			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "PREROUTING", Action: "I", Spec: tcpResponseSpec},
+
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: tcpSpec},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: dnsSpec},
 		)

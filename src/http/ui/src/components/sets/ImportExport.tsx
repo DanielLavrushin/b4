@@ -48,9 +48,75 @@ export const ImportExportSettings = ({
     setValidationSuccess(false);
   };
 
+  function migrateSetConfig(set: Record<string, unknown>): B4SetConfig {
+    const tcp = set.tcp as Record<string, unknown> | undefined;
+
+    if (tcp) {
+      // Migrate flat win_mode/win_values to nested win object
+      if ("win_mode" in tcp && !tcp.win) {
+        tcp.win = {
+          mode: tcp.win_mode || "off",
+          values: tcp.win_values || [0, 1460, 8192, 65535],
+        };
+        delete tcp.win_mode;
+        delete tcp.win_values;
+      }
+
+      // Migrate flat desync fields to nested desync object
+      if ("desync_mode" in tcp && !tcp.desync) {
+        tcp.desync = {
+          mode: tcp.desync_mode || "off",
+          ttl: tcp.desync_ttl || 3,
+          count: tcp.desync_count || 3,
+          post_desync: tcp.post_desync || false,
+        };
+        delete tcp.desync_mode;
+        delete tcp.desync_ttl;
+        delete tcp.desync_count;
+        delete tcp.post_desync;
+      }
+
+      // Ensure incoming exists
+      if (!tcp.incoming) {
+        tcp.incoming = {
+          mode: "off",
+          min: 14,
+          max: 14,
+          fake_ttl: 3,
+          fake_count: 3,
+          strategy: "badsum",
+        };
+      }
+    }
+
+    // Ensure fragmentation.seq_overlap_pattern exists
+    const frag = set.fragmentation as Record<string, unknown> | undefined;
+    if (frag) {
+      if (!frag.seq_overlap_pattern) {
+        frag.seq_overlap_pattern = [];
+      }
+      // Remove deprecated overlap field
+      delete frag.overlap;
+    }
+
+    // Ensure faking.tls_mod exists
+    const faking = set.faking as Record<string, unknown> | undefined;
+    if (faking) {
+      if (!faking.tls_mod) {
+        faking.tls_mod = [];
+      }
+      if (!faking.payload_file) {
+        faking.payload_file = "";
+      }
+    }
+
+    return set as unknown as B4SetConfig;
+  }
+
   const handleValidate = () => {
     try {
-      const parsed = JSON.parse(jsonValue) as B4SetConfig;
+      const raw = JSON.parse(jsonValue) as Record<string, unknown>;
+      const parsed = migrateSetConfig(raw);
 
       // Validate required fields
       if (

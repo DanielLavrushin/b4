@@ -140,5 +140,19 @@
   "[dotenv]": {
     "editor.defaultFormatter": "foxundermoon.shell-format"
   },
-  "css.lint.unknownAtRules": "ignore"
+  "css.lint.unknownAtRules": "ignore",
+  "favorites.resources": [
+    {
+      "filePath": "src/http/ui/src/models/config.ts",
+      "group": "Default"
+    },
+    {
+      "filePath": "src/config/types.go",
+      "group": "Default"
+    },
+    {
+      "filePath": "src/config/config.go",
+      "group": "Default"
+    }
+  ]
 }

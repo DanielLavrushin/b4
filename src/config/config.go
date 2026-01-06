@@ -41,16 +41,30 @@ var DefaultSetConfig = SetConfig{
 		Seg2Delay:      0,
 		SynFake:        false,
 		SynFakeLen:     0,
-		SynTTL:         3,
+		SynTTL:         7,
 
 		DropSACK: false,
 
-		WinMode:   ConfigOff,
-		WinValues: []int{0, 1460, 8192, 65535},
+		Win: WinConfig{
+			Mode:   ConfigOff,
+			Values: []int{0, 1460, 8192, 65535},
+		},
 
-		DesyncMode:  ConfigOff,
-		DesyncTTL:   3,
-		DesyncCount: 3,
+		Desync: DesyncConfig{
+			Mode:       ConfigOff,
+			TTL:        7,
+			Count:      3,
+			PostDesync: false,
+		},
+
+		Incoming: IncomingConfig{
+			Mode:      ConfigOff,
+			Min:       14,
+			Max:       14,
+			FakeTTL:   7,
+			FakeCount: 3,
+			Strategy:  "badsum",
+		},
 	},
 
 	DNS: DNSConfig{
@@ -60,7 +74,7 @@ var DefaultSetConfig = SetConfig{
 	},
 
 	Fragmentation: FragmentationConfig{
-		Strategy:          "tcp", // "tcp", "ip", "tls", "oob", "none", "combo", "hybrid", "disorder", "overlap", "extsplit", "firstbyte"
+		Strategy:          "tcp", // "tcp", "ip", "tls", "oob", "none", "combo", "hybrid", "disorder",  "extsplit", "firstbyte"
 		ReverseOrder:      true,
 		MiddleSNI:         true,
 		SNIPosition:       1,
@@ -77,6 +91,8 @@ var DefaultSetConfig = SetConfig{
 			ShuffleMode:    "full",
 			FirstDelayMs:   30,
 			JitterMaxUs:    1000,
+			DecoyEnabled:   false,
+			DecoySNIs:      []string{"ya.ru", "vk.com", "mail.ru", "dzen.ru"},
 		},
 
 		Disorder: DisorderFragConfig{
@@ -84,15 +100,11 @@ var DefaultSetConfig = SetConfig{
 			MinJitterUs: 1000,
 			MaxJitterUs: 3000,
 		},
-
-		Overlap: OverlapFragConfig{
-			FakeSNIs: []string{"ya.ru", "vk.com", "max.ru", "dzen.ru", "mail.ru"},
-		},
 	},
 
 	Faking: FakingConfig{
 		SNI:           true,
-		TTL:           8,
+		TTL:           7,
 		SNISeqLength:  1,
 		SNIType:       FakePayloadDefault1,
 		CustomPayload: "",
@@ -155,8 +167,9 @@ var DefaultConfig = Config{
 		},
 
 		WebServer: WebServerConfig{
-			Port:      7000,
-			IsEnabled: true,
+			Port:        7000,
+			BindAddress: "0.0.0.0",
+			IsEnabled:   true,
 		},
 
 		Logging: Logging{
@@ -181,13 +194,13 @@ var DefaultConfig = Config{
 func NewSetConfig() SetConfig {
 	cfg := DefaultSetConfig
 
-	cfg.TCP.WinValues = append(make([]int, 0), DefaultSetConfig.TCP.WinValues...)
+	cfg.TCP.Win.Values = append(make([]int, 0), DefaultSetConfig.TCP.Win.Values...)
 	cfg.Faking.SNIMutation.FakeSNIs = append(make([]string, 0), DefaultSetConfig.Faking.SNIMutation.FakeSNIs...)
 	cfg.Targets.SNIDomains = append(make([]string, 0), DefaultSetConfig.Targets.SNIDomains...)
 	cfg.Targets.IPs = append(make([]string, 0), DefaultSetConfig.Targets.IPs...)
 	cfg.Targets.GeoSiteCategories = append(make([]string, 0), DefaultSetConfig.Targets.GeoSiteCategories...)
 	cfg.Targets.GeoIpCategories = append(make([]string, 0), DefaultSetConfig.Targets.GeoIpCategories...)
-	cfg.Fragmentation.Overlap.FakeSNIs = append(make([]string, 0), DefaultSetConfig.Fragmentation.Overlap.FakeSNIs...)
+	cfg.Fragmentation.Combo.DecoySNIs = append(make([]string, 0), DefaultSetConfig.Fragmentation.Combo.DecoySNIs...)
 	cfg.Fragmentation.SeqOverlapPattern = append(make([]string, 0), DefaultSetConfig.Fragmentation.SeqOverlapPattern...)
 	cfg.Faking.TLSMod = append(make([]string, 0), DefaultSetConfig.Faking.TLSMod...)
 

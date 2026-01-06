@@ -73,7 +73,14 @@ export const WebSocketProvider = ({
   const [domains, setDomains] = useState<string[]>([]);
   const [pauseLogs, setPauseLogs] = useState(false);
   const [pauseDomains, setPauseDomains] = useState(false);
-  const [showAll, setShowAll] = useState(false);
+  const [showAll, setShowAll] = useState(() => {
+    return localStorage.getItem("b4_connections_showall") === "true";
+  });
+
+  useEffect(() => {
+    localStorage.setItem("b4_connections_showall", String(showAll));
+  }, [showAll]);
+
   const [unseenDomainsCount, setUnseenDomainsCount] = useState(0);
 
   // Use refs to avoid stale closures and unnecessary re-renders

@@ -39,10 +39,8 @@ func (api *API) handleCheckStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	snapshot := suite.GetSnapshot()
-
 	setJsonHeader(w)
-	json.NewEncoder(w).Encode(snapshot)
+	json.NewEncoder(w).Encode(suite)
 }
 
 func (api *API) handleCancelCheck(w http.ResponseWriter, r *http.Request) {
@@ -89,7 +87,7 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	suite := discovery.NewDiscoverySuite(req.CheckURL, globalPool)
+	suite := discovery.NewDiscoverySuite(req.CheckURL, globalPool, req.SkipDNS, req.PayloadFiles)
 
 	phase1Count := len(discovery.GetPhase1Presets())
 
@@ -102,7 +100,7 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 		Id:             suite.Id,
 		Domain:         suite.Domain,
 		CheckURL:       suite.CheckURL,
-		EstimatedTests: phase1Count + 15, // rough estimate
+		EstimatedTests: phase1Count + 15,
 		Message:        fmt.Sprintf("Discovery started for %s", suite.Domain),
 	}
 
