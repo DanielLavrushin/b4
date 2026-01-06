@@ -344,7 +344,6 @@ export const CaptureSettings = () => {
                         </a>
                       </p>
                       <Badge
-                        variant="default"
                         className={cn(
                           "text-xs px-1.5 py-0.5 font-semibold min-w-12",
                           countdown <= 10

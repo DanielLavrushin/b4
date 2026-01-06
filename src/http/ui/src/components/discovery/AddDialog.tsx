@@ -126,7 +126,6 @@ export const DiscoveryAddDialog = ({
                 {variants.map((v) => (
                   <Badge
                     key={v}
-                    variant="default"
                     onClick={() => setSelectedVariant(v)}
                     className={cn(
                       "cursor-pointer transition-all",

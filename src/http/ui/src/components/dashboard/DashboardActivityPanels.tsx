@@ -47,7 +47,7 @@ export const DashboardActivityPanels = ({
                   <span className="text-sm">
                     {index + 1}. {domain}
                   </span>
-                  <Badge variant="default">{formatNumber(count)}</Badge>
+                  <Badge>{formatNumber(count)}</Badge>
                 </li>
               ))}
             </ul>
@@ -72,10 +72,7 @@ export const DashboardActivityPanels = ({
                     <ProtocolChip protocol={conn.protocol} />
                     <span className="text-sm">{conn.domain}</span>
                     {conn.is_target && (
-                      <Badge
-                        variant="default"
-                        className="font-semibold bg-green-500/20 text-green-500"
-                      >
+                      <Badge className="font-semibold bg-green-500/20 text-green-500">
                         TARGET
                       </Badge>
                     )}

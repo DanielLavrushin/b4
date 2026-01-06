@@ -1,6 +1,4 @@
-import {
-  IconArrowsExchange,
-} from "@b4.icons";
+import { IconArrowsExchange } from "@b4.icons";
 import { Badge } from "@design/components/ui/badge";
 import { Card } from "@design/components/ui/card";
 import {
@@ -201,7 +199,6 @@ export const SetCompare = ({ open, setA, setB, onClose }: SetCompareProps) => {
                           </div>
                           <div className="col-span-2 flex items-center justify-center">
                             <Badge
-                              variant="default"
                               className={cn(
                                 "text-xs px-1.5 py-0.5 h-6 inline-flex items-center text-muted-foreground",
                                 diff.type === "added"

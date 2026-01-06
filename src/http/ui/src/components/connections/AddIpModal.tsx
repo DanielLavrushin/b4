@@ -308,7 +308,6 @@ export const AddIpModal = ({
                 </p>
                 <div className="flex flex-row gap-2 mb-4">
                   <Badge
-                    variant="default"
                     className="cursor-pointer"
                     onClick={() => {
                       setAddMode("single");
@@ -347,31 +346,30 @@ export const AddIpModal = ({
                       description = "~256 IPs - local subnet";
                     else if (cidr === "16")
                       description = "~65K IPs - network block";
-                    else if (cidr === "8")
-                      description = "~16M IPs - class A";
+                    else if (cidr === "8") description = "~16M IPs - class A";
                     else if (cidr === "64") description = "IPv6 subnet";
                     else if (cidr === "48") description = "IPv6 site";
                     else description = "IPv6 ISP range";
 
-                      return (
-                        <Label key={variant} htmlFor={`variant-${variant}`}>
-                          <Field
-                            orientation="horizontal"
-                            className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 border border-border rounded-md p-2"
-                          >
-                            <FieldContent>
-                              <FieldTitle>
-                                <div className="font-medium">{variant}</div>
-                              </FieldTitle>
-                              <FieldDescription>{description}</FieldDescription>
-                            </FieldContent>
-                            <RadioGroupItem
-                              value={variant}
-                              id={`variant-${variant}`}
-                            />
-                          </Field>
-                        </Label>
-                      );
+                    return (
+                      <Label key={variant} htmlFor={`variant-${variant}`}>
+                        <Field
+                          orientation="horizontal"
+                          className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 border border-border rounded-md p-2"
+                        >
+                          <FieldContent>
+                            <FieldTitle>
+                              <div className="font-medium">{variant}</div>
+                            </FieldTitle>
+                            <FieldDescription>{description}</FieldDescription>
+                          </FieldContent>
+                          <RadioGroupItem
+                            value={variant}
+                            id={`variant-${variant}`}
+                          />
+                        </Field>
+                      </Label>
+                    );
                   })}
                 </RadioGroup>
               </>

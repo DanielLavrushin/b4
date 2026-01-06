@@ -1,5 +1,11 @@
 import dns from "@assets/dns.json";
-import { DnsIcon, BlockIcon, CheckIcon, SpeedIcon, SecurityIcon } from "@b4.icons";
+import {
+  DnsIcon,
+  BlockIcon,
+  CheckIcon,
+  SpeedIcon,
+  SecurityIcon,
+} from "@b4.icons";
 import { Alert, AlertDescription } from "@design/components/ui/alert";
 import { Badge } from "@design/components/ui/badge";
 import {
@@ -76,12 +82,15 @@ export function DnsSettings({ config, onChange, ipv6 }: DnsSettingsProps) {
 
           <div>
             <label htmlFor="switch-dns-enabled">
-              <Field orientation="horizontal" className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2">
+              <Field
+                orientation="horizontal"
+                className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
+              >
                 <FieldContent>
                   <FieldTitle>Enable DNS Redirect</FieldTitle>
                   <FieldDescription>
-                    Redirect DNS queries for domains in this set to specified DNS
-                    server
+                    Redirect DNS queries for domains in this set to specified
+                    DNS server
                   </FieldDescription>
                 </FieldContent>
                 <Switch
@@ -100,12 +109,15 @@ export function DnsSettings({ config, onChange, ipv6 }: DnsSettingsProps) {
               {/* Custom IP input */}
               <div>
                 <label htmlFor="switch-dns-fragment-query">
-                  <Field orientation="horizontal" className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2">
+                  <Field
+                    orientation="horizontal"
+                    className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
+                  >
                     <FieldContent>
                       <FieldTitle>Fragment DNS Queries</FieldTitle>
                       <FieldDescription>
-                        Split DNS packets using IP fragmentation to bypass DPI that
-                        pattern-matches domain names in queries
+                        Split DNS packets using IP fragmentation to bypass DPI
+                        that pattern-matches domain names in queries
                       </FieldDescription>
                     </FieldContent>
                     <Switch
@@ -234,26 +246,19 @@ export function DnsSettings({ config, onChange, ipv6 }: DnsSettingsProps) {
                     HOW IT WORKS
                   </p>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <Badge className="bg-accent">
-                      App
-                    </Badge>
+                    <Badge className="bg-accent">App</Badge>
                     <p className="text-xs text-muted-foreground">
                       → DNS query for
                     </p>
-                    <Badge
-                      className="bg-accent text-accent-foreground"
-                    >
+                    <Badge className="bg-accent text-accent-foreground">
                       instagram.com
                     </Badge>
                     <p className="text-xs text-muted-foreground">→</p>
-                    <Badge
-                      className="bg-destructive/20 text-destructive line-through"
-                    >
+                    <Badge className="bg-destructive/20 text-destructive line-through">
                       poisoned DNS
                     </Badge>
                     <p className="text-xs text-muted-foreground">→</p>
                     <Badge
-                      variant="default"
                       className={cn(
                         "text-xs px-1.5 py-0.5",
                         dns.target_dns
