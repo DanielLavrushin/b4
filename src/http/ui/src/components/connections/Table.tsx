@@ -67,11 +67,15 @@ const TableRowMemo = memo<{
             log.domain && !log.hostSet && onDomainClick(log.domain)
           }
         >
-          <div>
-            {log.domain && <span>{log.domain}</span>}
-            <div className="flex-1" />
+          <div className="flex items-center gap-2 min-w-0">
+            {log.domain && (
+              <span className="flex-1 min-w-0 wrap-break-word">
+                {log.domain}
+              </span>
+            )}
             {log.domain && !log.hostSet && (
               <AddIcon
+                className="shrink-0"
                 onClick={(e) => {
                   e.stopPropagation();
                   onDomainClick(log.domain!);
@@ -96,24 +100,28 @@ const TableRowMemo = memo<{
             </TooltipContent>
           </Tooltip>
         </TableCell>
-        <TableCell>
-          <div>
-            <span
-              onClick={() =>
-                log.destination && !log.ipSet && onIpClick(log.destination)
-              }
-            >
+        <TableCell
+          onClick={() =>
+            log.destination && !log.ipSet && onIpClick(log.destination)
+          }
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="flex-1 min-w-0 wrap-break-word">
               {log.destination}
             </span>
-            {asnName && <Badge variant="outline">{asnName}</Badge>}
-            <div className="flex-1" />
             {!log.ipSet && (
               <AddIcon
+                className="shrink-0 align-sub"
                 onClick={(e) => {
                   e.stopPropagation();
                   onIpClick(log.destination!);
                 }}
               />
+            )}
+            {asnName && (
+              <Badge variant="outline" className="shrink-0">
+                {asnName}
+              </Badge>
             )}
           </div>
         </TableCell>
@@ -194,7 +202,7 @@ export const DomainsTable = ({
     <div
       ref={containerRef}
       onScroll={handleScroll}
-      className="flex-1 bg-background overflow-auto"
+      className="absolute inset-0 bg-background overflow-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/50"
     >
       <Table className="[&>div]:overflow-visible">
         <TableHeader className="sticky top-0 z-1">

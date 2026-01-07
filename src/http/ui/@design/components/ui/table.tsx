@@ -4,10 +4,7 @@ import { cn } from "@design/lib/utils";
 
 function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
-    <div
-      data-slot="table-container"
-      className="relative w-full overflow-x-auto"
-    >
+    <div data-slot="table-container" className="relative w-full">
       <table
         data-slot="table"
         className={cn(
@@ -24,7 +21,10 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   return (
     <thead
       data-slot="table-header"
-      className={cn("[&_tr]:border-b bg-background", className)}
+      className={cn(
+        "[&_tr]:border-b bg-background sticky top-0 z-10",
+        className
+      )}
       {...props}
     />
   );

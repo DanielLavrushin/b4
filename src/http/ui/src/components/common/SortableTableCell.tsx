@@ -27,7 +27,7 @@ export const SortableTableCell = ({
   return (
     <th
       className={cn(
-        "bg-card font-semibold border-b-2 border-border cursor-pointer select-none z-[1] px-4 py-2 sticky top-0 group",
+        "bg-card font-semibold border-b-2 border-border cursor-pointer select-none px-4 py-2 group",
         "hover:border-secondary hover:bg-muted/50 transition-colors",
         alignClasses[align]
       )}

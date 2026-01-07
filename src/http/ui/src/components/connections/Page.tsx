@@ -2,6 +2,7 @@ import { devicesApi } from "@b4.devices";
 import { SortDirection } from "@common/SortableTableCell";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { cn } from "@design/lib/utils";
+import { Card, CardContent, CardDescription } from "@design/components/ui/card";
 import { Kbd, KbdGroup } from "@design/components/ui/kbd";
 import {
   useDomainActions,
@@ -239,15 +240,17 @@ export function ConnectionsPage() {
           onReset={clearDomains}
         />
 
-        <DomainsTable
-          data={sortedData}
-          sortColumn={sortColumn}
-          sortDirection={sortDirection}
-          onSort={handleSort}
-          onDomainClick={handleDomainClick}
-          onIpClick={handleIpClick}
-          onScrollStateChange={handleScrollStateChange}
-        />
+        <div className="flex-1 min-h-0 relative">
+          <DomainsTable
+            data={sortedData}
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={handleSort}
+            onDomainClick={handleDomainClick}
+            onIpClick={handleIpClick}
+            onScrollStateChange={handleScrollStateChange}
+          />
+        </div>
       </div>
 
       <AddSniModal
@@ -287,22 +290,24 @@ export function ConnectionsPage() {
         }}
       />
 
-      <div className="fixed bottom-10 right-10 z-40">
-        <div className="bg-background/80 border border-dashed shadow-lg p-3 space-y-2">
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">Clear</span>
-            <KbdGroup>
-              <Kbd>Ctrl</Kbd>
-              <Kbd>X</Kbd>
-              <span className="text-muted-foreground">/</span>
-              <Kbd>Del</Kbd>
-            </KbdGroup>
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">Pause</span>
-            <Kbd>P</Kbd>
-          </div>
-        </div>
+      <div className="fixed bottom-10 right-10">
+        <Card size="sm" variant="transparent">
+          <CardContent className="space-y-2">
+            <div className="flex gap-2">
+              <CardDescription>Clear</CardDescription>
+              <KbdGroup>
+                <Kbd>Ctrl</Kbd>
+                <Kbd>X</Kbd>
+                <CardDescription>/</CardDescription>
+                <Kbd>Del</Kbd>
+              </KbdGroup>
+            </div>
+            <div className="flex gap-2">
+              <CardDescription>Pause</CardDescription>
+              <Kbd>P</Kbd>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
