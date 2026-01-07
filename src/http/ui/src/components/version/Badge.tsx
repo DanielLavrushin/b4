@@ -1,14 +1,12 @@
 import { NewReleaseIcon } from "@b4.icons";
 import { Badge } from "@design/components/ui/badge";
 import { Button } from "@design/components/ui/button";
-import { Item } from "@design/components/ui/item";
 import { Spinner } from "@design/components/ui/spinner";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@design/components/ui/tooltip";
-import { cn } from "@design/lib/utils";
 
 interface VersionBadgeProps {
   version: string;

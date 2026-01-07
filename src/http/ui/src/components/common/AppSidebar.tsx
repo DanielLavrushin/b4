@@ -1,4 +1,15 @@
-import { useLocation, useNavigate } from "react-router-dom";
+import {
+  ConnectionIcon,
+  CoreIcon,
+  DashboardIcon,
+  DescriptionIcon,
+  DiscoveryIcon,
+  GitHubIcon,
+  LogsIcon,
+  SetsIcon,
+} from "@b4.icons";
+import { Button } from "@design/components/ui/button";
+import { Separator } from "@design/components/ui/separator";
 import {
   Sidebar,
   SidebarContent,
@@ -11,20 +22,9 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@design/components/ui/sidebar";
-import { Button } from "@design/components/ui/button";
-import {
-  DashboardIcon,
-  ConnectionIcon,
-  SetsIcon,
-  CoreIcon,
-  DiscoveryIcon,
-  LogsIcon,
-  GitHubIcon,
-  DescriptionIcon,
-} from "@b4.icons";
-import { Logo } from "./Logo";
+import { useLocation, useNavigate } from "react-router-dom";
 import Version from "../version/Version";
-import { Separator } from "@design/components/ui/separator";
+import { Logo } from "./Logo";
 
 const menuItems = [
   {

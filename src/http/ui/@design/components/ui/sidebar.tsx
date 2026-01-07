@@ -1,10 +1,9 @@
 "use client";
 
-import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "radix-ui";
+import * as React from "react";
 
-import { cn } from "@design/lib/utils";
 import { Button } from "@design/components/ui/button";
 import { Input } from "@design/components/ui/input";
 import { Separator } from "@design/components/ui/separator";
@@ -22,6 +21,7 @@ import {
   TooltipTrigger,
 } from "@design/components/ui/tooltip";
 import { useIsMobile } from "@design/hooks/use-mobile";
+import { cn } from "@design/lib/utils";
 import { IconLayoutSidebar } from "@tabler/icons-react";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
