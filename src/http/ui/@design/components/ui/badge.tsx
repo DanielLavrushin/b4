@@ -27,7 +27,7 @@ const Badge = React.forwardRef<
   HTMLSpanElement,
   React.ComponentProps<"span"> &
     VariantProps<typeof badgeVariants> & { asChild?: boolean }
->(({ className, variant = "default", asChild = false, ...props }, ref) => {
+>(({ className, variant = "default", asChild = false, onClick, ...props }, ref) => {
   const Comp = asChild ? Slot.Root : "span"
 
   return (
@@ -35,7 +35,8 @@ const Badge = React.forwardRef<
       ref={ref}
       data-slot="badge"
       data-variant={variant}
-      className={cn(badgeVariants({ variant }), className)}
+      className={cn(badgeVariants({ variant }), onClick && "cursor-pointer", className)}
+      onClick={onClick}
       {...props}
     />
   )

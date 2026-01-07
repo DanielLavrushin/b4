@@ -3,6 +3,7 @@ import { SetSelector } from "@common/SetSelector";
 import { Alert, AlertDescription } from "@design/components/ui/alert";
 import { Badge } from "@design/components/ui/badge";
 import { Button } from "@design/components/ui/button";
+import { Card, CardContent } from "@design/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -202,30 +203,27 @@ export const AddIpModal = ({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+            <Button variant="secondary" size="icon" className="shrink-0">
               <DomainIcon />
-            </div>
-            <div className="flex-1">
-              <DialogTitle>Add IP/CIDR to Manual List</DialogTitle>
-            </div>
+            </Button>
+            <DialogTitle>Add IP/CIDR to Manual List</DialogTitle>
           </div>
         </DialogHeader>
-        <div className="py-4">
-          <>
-            <Alert className="mb-4">
-              <AlertDescription>
-                Select the desired IP or CIDR range. You can enrich with network
-                information to load all ASN prefixes.
-              </AlertDescription>
-            </Alert>
+        <div className="space-y-4">
+          <Alert>
+            <AlertDescription>
+              Select the desired IP or CIDR range. You can enrich with network
+              information to load all ASN prefixes.
+            </AlertDescription>
+          </Alert>
 
-            <div className="mb-6">
-              {!ipInfo ? (
-                <div className="flex flex-row gap-4 items-center">
-                  <p className="text-sm text-muted-foreground">
-                    Original IP: <Badge>{ip}</Badge>
-                  </p>
-                  <div className="flex-1" />
+          <div className="space-y-4">
+            {!ipInfo ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Original IP: <Badge>{ip}</Badge>
+                </p>
+                <div className="flex flex-col gap-2">
                   {ipInfoToken && (
                     <Button
                       variant="outline"
@@ -245,136 +243,130 @@ export const AddIpModal = ({
                     {loadingInfo ? "Loading..." : "Load Network Info"}
                   </Button>
                 </div>
-              ) : (
-                <>
-                  <p className="text-sm text-muted-foreground mb-2">
-                    Original IP: <Badge variant="secondary">{ip}</Badge>
-                  </p>
-                  <div className="p-4 bg-muted rounded-md border border-border">
-                    <div className="flex flex-row gap-4 items-center flex-wrap">
-                      <div className="flex-1">
-                        {ipInfo.org && (
-                          <p className="text-sm text-foreground">
-                            <strong>Org:</strong> {ipInfo.org}
-                          </p>
-                        )}
-                        {ipInfo.hostname && (
-                          <p className="text-sm text-muted-foreground">
-                            <strong>Hostname:</strong> {ipInfo.hostname}
-                          </p>
-                        )}
-                        {(ipInfo.city || ipInfo.region || ipInfo.country) && (
-                          <p className="text-sm text-muted-foreground">
-                            <strong>Location:</strong>{" "}
-                            {[ipInfo.city, ipInfo.region, ipInfo.country]
-                              .filter(Boolean)
-                              .join(", ")}
-                          </p>
-                        )}
-                        {asn && loadingPrefixes && (
-                          <p className="text-sm text-secondary mt-2">
-                            Loading AS{asn} prefixes...
-                          </p>
-                        )}
-                      </div>
-                      {ipInfo.hostname && onAddHostname && (
-                        <Button size="sm" onClick={handleAddHostname}>
-                          Add Hostname
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {sets.length > 0 && (
-              <div className="mb-4">
-                <SetSelector
-                  sets={sets}
-                  value={selectedSetId}
-                  onChange={(setId, name) => {
-                    setSelectedSetId(setId);
-                    if (name) setNewSetName(name);
-                  }}
-                />
-              </div>
-            )}
-
-            {prefixes.length > 0 ? (
-              <>
-                <p className="text-sm text-muted-foreground mb-2 mt-4">
-                  Loaded {prefixes.length} prefixes from AS{asn}
-                </p>
-                <div className="flex flex-row gap-2 mb-4">
-                  <Badge
-                    className="cursor-pointer"
-                    onClick={() => {
-                      setAddMode("single");
-                      onSelectVariant(initialVariants[0]);
-                    }}
-                  >
-                    {`Add ${ip} only`}
-                  </Badge>
-                  <Badge
-                    variant="outline"
-                    className="cursor-pointer"
-                    onClick={() => {
-                      setAddMode("all");
-                      onSelectVariant(prefixes);
-                    }}
-                  >
-                    {`Add all ${prefixes.length} prefixes`}
-                  </Badge>
-                </div>
               </>
             ) : (
               <>
-                <p className="text-sm text-muted-foreground mb-2 mt-4">
-                  CIDR variants:
+                <p className="text-sm text-muted-foreground">
+                  Original IP: <Badge variant="secondary">{ip}</Badge>
                 </p>
-                <RadioGroup
-                  value={selected}
-                  onValueChange={(value) => onSelectVariant(value)}
-                >
-                  {variants.map((variant) => {
-                    const [, cidr] = variant.split("/");
-                    let description: string;
-                    if (cidr === "32" || cidr === "128")
-                      description = "Single IP";
-                    else if (cidr === "24")
-                      description = "~256 IPs - local subnet";
-                    else if (cidr === "16")
-                      description = "~65K IPs - network block";
-                    else if (cidr === "8") description = "~16M IPs - class A";
-                    else if (cidr === "64") description = "IPv6 subnet";
-                    else if (cidr === "48") description = "IPv6 site";
-                    else description = "IPv6 ISP range";
-
-                    return (
-                      <Label key={variant} htmlFor={`variant-${variant}`}>
-                        <Field
-                          orientation="horizontal"
-                          className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 border border-border rounded-md p-2"
-                        >
-                          <FieldContent>
-                            <FieldTitle>
-                              <div className="font-medium">{variant}</div>
-                            </FieldTitle>
-                            <FieldDescription>{description}</FieldDescription>
-                          </FieldContent>
-                          <RadioGroupItem
-                            value={variant}
-                            id={`variant-${variant}`}
-                          />
-                        </Field>
-                      </Label>
-                    );
-                  })}
-                </RadioGroup>
+                <Card>
+                  <CardContent className="flex gap-4 items-center flex-wrap">
+                    <div className="flex-1 space-y-1">
+                      {ipInfo.org && (
+                        <p className="text-sm">
+                          <strong>Org:</strong> {ipInfo.org}
+                        </p>
+                      )}
+                      {ipInfo.hostname && (
+                        <p className="text-sm text-muted-foreground">
+                          <strong>Hostname:</strong> {ipInfo.hostname}
+                        </p>
+                      )}
+                      {(ipInfo.city || ipInfo.region || ipInfo.country) && (
+                        <p className="text-sm text-muted-foreground">
+                          <strong>Location:</strong>{" "}
+                          {[ipInfo.city, ipInfo.region, ipInfo.country]
+                            .filter(Boolean)
+                            .join(", ")}
+                        </p>
+                      )}
+                      {asn && loadingPrefixes && (
+                        <p className="text-sm text-secondary">
+                          Loading AS{asn} prefixes...
+                        </p>
+                      )}
+                    </div>
+                    {ipInfo.hostname && onAddHostname && (
+                      <Button size="sm" onClick={handleAddHostname}>
+                        Add Hostname
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
               </>
             )}
-          </>
+          </div>
+
+          {sets.length > 0 && (
+            <SetSelector
+              sets={sets}
+              value={selectedSetId}
+              onChange={(setId, name) => {
+                setSelectedSetId(setId);
+                if (name) setNewSetName(name);
+              }}
+            />
+          )}
+
+          {prefixes.length > 0 ? (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Loaded {prefixes.length} prefixes from AS{asn}
+              </p>
+              <div className="flex gap-2">
+                <Badge
+                  onClick={() => {
+                    setAddMode("single");
+                    onSelectVariant(initialVariants[0]);
+                  }}
+                >
+                  {`Add ${ip} only`}
+                </Badge>
+                <Badge
+                  variant="outline"
+                  onClick={() => {
+                    setAddMode("all");
+                    onSelectVariant(prefixes);
+                  }}
+                >
+                  {`Add all ${prefixes.length} prefixes`}
+                </Badge>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground">CIDR variants:</p>
+              <RadioGroup
+                value={selected}
+                onValueChange={(value) => onSelectVariant(value)}
+              >
+                {variants.map((variant) => {
+                  const [, cidr] = variant.split("/");
+                  let description: string;
+                  if (cidr === "32" || cidr === "128")
+                    description = "Single IP";
+                  else if (cidr === "24")
+                    description = "~256 IPs - local subnet";
+                  else if (cidr === "16")
+                    description = "~65K IPs - network block";
+                  else if (cidr === "8") description = "~16M IPs - class A";
+                  else if (cidr === "64") description = "IPv6 subnet";
+                  else if (cidr === "48") description = "IPv6 site";
+                  else description = "IPv6 ISP range";
+
+                  return (
+                    <Label key={variant} htmlFor={`variant-${variant}`}>
+                      <Field
+                        orientation="horizontal"
+                        className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 border border-border rounded-md p-2"
+                      >
+                        <FieldContent>
+                          <FieldTitle className="font-medium">
+                            {variant}
+                          </FieldTitle>
+                          <FieldDescription>{description}</FieldDescription>
+                        </FieldContent>
+                        <RadioGroupItem
+                          value={variant}
+                          id={`variant-${variant}`}
+                        />
+                      </Field>
+                    </Label>
+                  );
+                })}
+              </RadioGroup>
+            </>
+          )}
         </div>
         <Separator />
         <DialogFooter>
@@ -386,7 +378,7 @@ export const AddIpModal = ({
             onClick={handleAdd}
             disabled={!selected && prefixes.length === 0}
           >
-            <AddIcon className="h-4 w-4 mr-2" />
+            <AddIcon />
             {addMode === "all" && prefixes.length > 0
               ? `Add All ${prefixes.length} Prefixes`
               : "Add IP/CIDR"}

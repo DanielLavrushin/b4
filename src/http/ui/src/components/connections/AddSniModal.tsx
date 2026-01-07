@@ -67,70 +67,64 @@ export const AddSniModal = ({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+            <Button variant="secondary" size="icon" className="shrink-0">
               <DomainIcon />
-            </div>
-            <div className="flex-1">
-              <DialogTitle>Add Domain to Manual List</DialogTitle>
-            </div>
+            </Button>
+            <DialogTitle>Add Domain to Manual List</DialogTitle>
           </div>
         </DialogHeader>
-        <div className="py-4">
-          <>
-            <Alert className="mb-4">
-              <AlertDescription>
-                Select which domain pattern to add to the manual domains list.
-                More specific patterns will only match exact subdomains, while
-                broader patterns will match all subdomains.
-              </AlertDescription>
-            </Alert>
-            <p className="text-sm text-muted-foreground mb-2">
-              Original domain: <Badge>{domain}</Badge>
-            </p>
-            {!createNewSet && sets.length > 0 && (
-              <div className="mb-4">
-                <SetSelector
-                  sets={sets}
-                  value={selectedSetId}
-                  onChange={(setId, name) => {
-                    setSelectedSetId(setId);
-                    if (name) setSetName(name);
-                  }}
-                />
-              </div>
-            )}
-            <RadioGroup
-              value={selected}
-              onValueChange={(value) => onSelectVariant(value)}
-            >
-              {variants.map((variant, index) => {
-                let description: string;
-                if (index === 0) {
-                  description = "Most specific - exact match only";
-                } else if (index === variants.length - 1) {
-                  description = "Broadest - matches all subdomains";
-                } else {
-                  description = "Intermediate specificity";
-                }
-                return (
-                  <Label key={variant} htmlFor={`variant-${variant}`}>
-                    <Field
-                      orientation="horizontal"
-                      className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 border border-border rounded-md p-2"
-                    >
-                      <FieldContent>
-                        <FieldTitle>
-                          <div className="font-medium">{variant}</div>
-                        </FieldTitle>
-                        <FieldDescription>{description}</FieldDescription>
-                      </FieldContent>
-                      <RadioGroupItem value={variant} id={`variant-${variant}`} />
-                    </Field>
-                  </Label>
-                );
-              })}
-            </RadioGroup>
-          </>
+        <div className="space-y-4">
+          <Alert>
+            <AlertDescription>
+              Select which domain pattern to add to the manual domains list.
+              More specific patterns will only match exact subdomains, while
+              broader patterns will match all subdomains.
+            </AlertDescription>
+          </Alert>
+          <p className="text-sm text-muted-foreground">
+            Original domain: <Badge>{domain}</Badge>
+          </p>
+          {!createNewSet && sets.length > 0 && (
+            <SetSelector
+              sets={sets}
+              value={selectedSetId}
+              onChange={(setId, name) => {
+                setSelectedSetId(setId);
+                if (name) setSetName(name);
+              }}
+            />
+          )}
+          <RadioGroup
+            value={selected}
+            onValueChange={(value) => onSelectVariant(value)}
+          >
+            {variants.map((variant, index) => {
+              let description: string;
+              if (index === 0) {
+                description = "Most specific - exact match only";
+              } else if (index === variants.length - 1) {
+                description = "Broadest - matches all subdomains";
+              } else {
+                description = "Intermediate specificity";
+              }
+              return (
+                <Label key={variant} htmlFor={`variant-${variant}`}>
+                  <Field
+                    orientation="horizontal"
+                    className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 border border-border rounded-md p-2"
+                  >
+                    <FieldContent>
+                      <FieldTitle>
+                        <div className="font-medium">{variant}</div>
+                      </FieldTitle>
+                      <FieldDescription>{description}</FieldDescription>
+                    </FieldContent>
+                    <RadioGroupItem value={variant} id={`variant-${variant}`} />
+                  </Field>
+                </Label>
+              );
+            })}
+          </RadioGroup>
         </div>
         <Separator />
         <DialogFooter>
@@ -138,10 +132,7 @@ export const AddSniModal = ({
             Cancel
           </Button>
           <div className="flex-1" />
-          <Button
-            onClick={handleAdd}
-            disabled={!selected || !selectedSetId}
-          >
+          <Button onClick={handleAdd} disabled={!selected || !selectedSetId}>
             <AddIcon className="h-4 w-4 mr-2" />
             Add Domain
           </Button>
