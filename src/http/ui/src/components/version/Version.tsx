@@ -1,5 +1,3 @@
-import { GitHubIcon, DescriptionIcon } from "@b4.icons";
-import { Separator } from "@design/components/ui/separator";
 import { dismissVersion, useGitHubRelease } from "@hooks/useGitHubRelease";
 import { useState } from "react";
 import { VersionBadge } from "./Badge";
@@ -30,37 +28,12 @@ export default function Version() {
 
   return (
     <>
-      <div className="py-4">
-        <Separator className="mb-4" />
-        <div className="flex flex-col items-center gap-3">
-          <div className="flex flex-col items-center gap-2 w-full">
-            <a
-              href="https://github.com/daniellavrushin/b4"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 text-xs text-primary underline-offset-4 hover:underline transition-colors"
-            >
-              <GitHubIcon className="h-4 w-4" />
-              <span>DanielLavrushin/b4</span>
-            </a>
-            <a
-              href="https://daniellavrushin.github.io/b4/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 text-xs text-primary underline-offset-4 hover:underline transition-colors"
-            >
-              <DescriptionIcon className="h-4 w-4" />
-              <span>Documentation</span>
-            </a>
-          </div>
-          <VersionBadge
-            version={currentVersion}
-            hasUpdate={isNewVersionAvailable}
-            isLoading={isLoading}
-            onClick={handleVersionClick}
-          />
-        </div>
-      </div>
+      <VersionBadge
+        version={currentVersion}
+        hasUpdate={isNewVersionAvailable}
+        isLoading={isLoading}
+        onClick={handleVersionClick}
+      />
 
       <UpdateModal
         open={updateModalOpen}

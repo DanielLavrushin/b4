@@ -85,13 +85,39 @@ function DialogContent({
   );
 }
 
-function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
+function DialogHeader({
+  className,
+  icon,
+  children,
+  ...props
+}: React.ComponentProps<"div"> & {
+  icon?: React.ReactNode;
+}) {
+  if (icon) {
+    return (
+      <div
+        data-slot="dialog-header"
+        className={cn("gap-1 flex flex-col", className)}
+        {...props}
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+            {icon}
+          </div>
+          <div className="flex-1">{children}</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       data-slot="dialog-header"
       className={cn("gap-1 flex flex-col", className)}
       {...props}
-    />
+    >
+      {children}
+    </div>
   );
 }
 

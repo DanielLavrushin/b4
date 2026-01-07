@@ -12,6 +12,12 @@ import { Alert, AlertDescription } from "@design/components/ui/alert";
 import { Badge } from "@design/components/ui/badge";
 import { Button } from "@design/components/ui/button";
 import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@design/components/ui/card";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -19,6 +25,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@design/components/ui/dialog";
+import {
+  ItemActions,
+  ItemContent,
+  ItemGroup,
+} from "@design/components/ui/item";
 import { Label } from "@design/components/ui/label";
 import { Progress } from "@design/components/ui/progress";
 import {
@@ -48,9 +59,7 @@ interface UpdateModalProps {
 
 const H2Typography = forwardRef<HTMLHeadingElement, React.ComponentProps<"h2">>(
   function H2Typography(props, ref) {
-    return (
-      <h2 className="text-sm font-extrabold uppercase" ref={ref} {...props} />
-    );
+    return <CardTitle ref={ref} {...props} />;
   }
 );
 
@@ -160,23 +169,23 @@ export const UpdateModal = ({
       case "updating":
       case "reconnecting":
         return (
-          <div className="mb-6">
-            <p className="mb-2 text-muted-foreground">{updateMessage}</p>
-            <Progress />
-          </div>
+          <ItemGroup>
+            <ItemContent>
+              <p className="text-muted-foreground">{updateMessage}</p>
+              <Progress />
+            </ItemContent>
+          </ItemGroup>
         );
       case "success":
         return (
-          <Alert className="mb-4">
-            <CheckCircleIcon className="h-3.5 w-3.5" />
-            <AlertDescription>
-              <div className="flex items-center gap-2">{updateMessage}</div>
-            </AlertDescription>
+          <Alert>
+            <CheckCircleIcon />
+            <AlertDescription>{updateMessage}</AlertDescription>
           </Alert>
         );
       case "error":
         return (
-          <Alert variant="destructive" className="mb-4">
+          <Alert variant="destructive">
             <AlertDescription>{updateMessage}</AlertDescription>
           </Alert>
         );
@@ -190,15 +199,15 @@ export const UpdateModal = ({
       {getStatusContent()}
 
       {updateStatus === "idle" && (
-        <div className="mb-6">
-          <div className="flex flex-row gap-4 items-center mb-4 mt-4">
-            <div className="min-w-55">
-              <Label>Select Version</Label>
+        <ItemGroup>
+          <ItemGroup>
+            <ItemContent>
+              <Label htmlFor="select-version">Select Version</Label>
               <Select
                 value={selectedVersion}
                 onValueChange={(value) => setSelectedVersion(value)}
               >
-                <SelectTrigger>
+                <SelectTrigger id="select-version">
                   <SelectValue placeholder="Select Version" />
                 </SelectTrigger>
                 <SelectContent>
@@ -211,60 +220,43 @@ export const UpdateModal = ({
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div className="flex items-center space-x-2">
+            </ItemContent>
+            <ItemActions>
               <Switch
                 checked={includePrerelease}
                 onCheckedChange={(checked) => onTogglePrerelease(checked)}
               />
               <Label>Include pre-releases</Label>
-            </div>
-          </div>
-          <div className="flex flex-row gap-2">
-            <Badge>
-              {`Current: v${currentVersion}`}
-            </Badge>
-            {!isCurrent && (
-              <Badge
-                variant={isDowngrade ? "destructive" : "secondary"}
-                className="font-semibold"
-              >
-                {isDowngrade ? "Downgrade" : "Upgrade"}
-              </Badge>
-            )}
-            {selectedRelease?.prerelease && (
-              <Badge variant="outline">
-                Pre-release
-              </Badge>
-            )}
-          </div>
-        </div>
-      )}
+            </ItemActions>
+          </ItemGroup>
+          <ItemActions>
+            <Badge>{`Current: v${currentVersion}`}</Badge>
 
+            {selectedRelease?.prerelease && (
+              <Badge variant="outline">Pre-release</Badge>
+            )}
+          </ItemActions>
+        </ItemGroup>
+      )}
+      <Separator />
       {selectedRelease && (
-        <div className="max-h-100 overflow-auto p-4 bg-background rounded-md border border-border">
-          <h6 className="text-secondary mb-4 font-semibold uppercase">
-            Release Notes - {selectedRelease.tag_name}
-          </h6>
-          <div className="text-foreground [&_h1]:text-secondary [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-secondary [&_h2]:mt-4 [&_h2]:mb-2 [&_h3]:text-secondary [&_h3]:mt-4 [&_h3]:mb-2 [&_p]:mb-2 [&_p]:leading-relaxed [&_ul]:pl-6 [&_ul]:mb-2 [&_ol]:pl-6 [&_ol]:mb-2 [&_code]:bg-card [&_code]:text-secondary [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-sm [&_a]:text-secondary">
+        <Card>
+          <CardContent>
             <ReactMarkdown components={{ h2: H2Typography }}>
               {selectedRelease.body || "No release notes available."}
             </ReactMarkdown>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       )}
-
-      <Separator className="my-4" />
-
-      <div className="flex flex-row gap-4 justify-center">
+      <Separator />
+      <ItemGroup>
         <Button variant="outline" asChild>
           <a
             href="https://github.com/DanielLavrushin/b4/blob/main/changelog.md"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2"
           >
-            <DescriptionIcon className="h-4 w-4" />
+            <DescriptionIcon />
             Full Changelog
           </a>
         </Button>
@@ -274,21 +266,20 @@ export const UpdateModal = ({
               href={selectedRelease.html_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2"
             >
-              <OpenInNewIcon className="h-4 w-4" />
+              <OpenInNewIcon />
               View on GitHub
             </a>
           </Button>
         )}
-      </div>
+      </ItemGroup>
     </>
   );
 
   const dialogActions = () => (
     <>
       <Button onClick={onDismiss} variant="ghost" disabled={isUpdating}>
-        <CloseIcon className="h-4 w-4 mr-2" />
+        <CloseIcon />
         Don't Show Again
       </Button>
       <div className="flex-1" />
@@ -310,9 +301,7 @@ export const UpdateModal = ({
         </>
       )}
       {updateStatus === "success" && (
-        <Button
-          onClick={() => globalThis.window.location.reload()}
-        >
+        <Button onClick={() => globalThis.window.location.reload()}>
           Reload Page
         </Button>
       )}
@@ -327,25 +316,17 @@ export const UpdateModal = ({
       onOpenChange={(open) => !open && (isUpdating ? () => {} : onClose())}
     >
       <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
-              {dialogProps.icon}
-            </div>
-            <div className="flex-1">
-              <DialogTitle>{dialogProps.title}</DialogTitle>
-              {dialogProps.subtitle && (
-                <DialogDescription className="mt-1">
-                  {dialogProps.subtitle}
-                </DialogDescription>
-              )}
-            </div>
-          </div>
+        <DialogHeader icon={dialogProps.icon}>
+          <DialogTitle>{dialogProps.title}</DialogTitle>
+          {dialogProps.subtitle && (
+            <DialogDescription className="mt-1">
+              {dialogProps.subtitle}
+            </DialogDescription>
+          )}
         </DialogHeader>
-        <div className="py-4">{dialogContent()}</div>
+        {dialogContent()}
         {dialogActions() && (
           <>
-            <Separator />
             <DialogFooter>{dialogActions()}</DialogFooter>
           </>
         )}

@@ -23,7 +23,7 @@ export const VersionBadge = ({
 }: VersionBadgeProps) => {
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 px-4">
+      <div className="flex items-center justify-center gap-2 p-2 h-8">
         <Spinner className="h-4 w-4" />
         <span className="text-muted-foreground text-xs">
           Checking for updates...
@@ -34,7 +34,7 @@ export const VersionBadge = ({
 
   return (
     <div
-      className="flex items-center gap-2 px-4 cursor-pointer"
+      className="flex items-center justify-center gap-2 p-2 cursor-pointer h-8"
       onClick={onClick}
     >
       {hasUpdate ? (
@@ -52,12 +52,12 @@ export const VersionBadge = ({
               </Badge>
             </div>
           </TooltipTrigger>
-          <TooltipContent>
+          <TooltipContent side="right">
             <p>New version available! Click to view details</p>
           </TooltipContent>
         </Tooltip>
       ) : (
-        <span className="text-secondary text-xs">v{version}</span>
+        <Badge variant="ghost">v{version}</Badge>
       )}
     </div>
   );

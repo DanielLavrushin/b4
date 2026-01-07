@@ -11,6 +11,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@design/components/ui/sidebar";
+import { Button } from "@design/components/ui/button";
 import {
   DashboardIcon,
   ConnectionIcon,
@@ -18,9 +19,12 @@ import {
   CoreIcon,
   DiscoveryIcon,
   LogsIcon,
+  GitHubIcon,
+  DescriptionIcon,
 } from "@b4.icons";
 import { Logo } from "./Logo";
 import Version from "../version/Version";
+import { Separator } from "@design/components/ui/separator";
 
 const menuItems = [
   {
@@ -94,7 +98,28 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      <Separator />
       <SidebarFooter>
+        <Button variant="link" asChild>
+          <a
+            href="https://github.com/daniellavrushin/b4"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <GitHubIcon />
+            DanielLavrushin/b4
+          </a>
+        </Button>
+        <Button variant="link" asChild>
+          <a
+            href="https://daniellavrushin.github.io/b4/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <DescriptionIcon />
+            Documentation
+          </a>
+        </Button>
         <Version />
       </SidebarFooter>
     </Sidebar>
