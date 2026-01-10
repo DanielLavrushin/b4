@@ -24,7 +24,6 @@ export const ApiSettings = ({ config, onChange }: ApiSettingsProps) => {
   return (
     <div className="space-y-6">
       <Alert>
-        <ApiIcon className="h-3.5 w-3.5" />
         <AlertDescription>
           Here you can setup API settings for different services that can be
           used by B4.
