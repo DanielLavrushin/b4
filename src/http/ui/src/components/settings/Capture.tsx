@@ -1,34 +1,47 @@
-import { useState, useEffect } from "react";
-import {
-  Grid,
-  Stack,
-  Typography,
-  Button,
-  Box,
-  Paper,
-  CircularProgress,
-  Tooltip,
-  IconButton,
-} from "@mui/material";
+import { Capture, useCaptures } from "@b4.capture";
 import {
   CaptureIcon,
-  CopyIcon,
   ClearIcon,
+  CopyIcon,
   DownloadIcon,
   RefreshIcon,
   SuccessIcon,
   UploadIcon,
 } from "@b4.icons";
 import { useSnackbar } from "@context/SnackbarProvider";
+import { Alert, AlertDescription } from "@design/components/ui/alert";
+import { Badge } from "@design/components/ui/badge";
+import { Button } from "@design/components/ui/button";
 import {
-  B4Dialog,
-  B4TextField,
-  B4Section,
-  B4Alert,
-  B4Badge,
-} from "@b4.elements";
-import { useCaptures, Capture } from "@b4.capture";
-import { colors, radius } from "@design";
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@design/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@design/components/ui/dialog";
+import {
+  Field,
+  FieldDescription,
+  FieldLabel,
+} from "@design/components/ui/field";
+import { Input } from "@design/components/ui/input";
+import { Separator } from "@design/components/ui/separator";
+import { Spinner } from "@design/components/ui/spinner";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@design/components/ui/tooltip";
+import { cn } from "@design/lib/utils";
+import { useEffect, useState } from "react";
 
 export const CaptureSettings = () => {
   const { showError, showSuccess } = useSnackbar();
@@ -139,278 +152,318 @@ export const CaptureSettings = () => {
   };
 
   return (
-    <Stack spacing={3}>
+    <div className="space-y-6">
       {/* Info */}
-      <B4Alert icon={<CaptureIcon />}>
-        <Typography variant="subtitle2" gutterBottom>
-          Capture real TLS ClientHello for custom payload generation
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          One capture per domain. Use in Faking → Captured Payload
-        </Typography>
-      </B4Alert>
+      <Alert>
+        <CaptureIcon className="h-3.5 w-3.5" />
+        <AlertDescription>
+          <h6 className="text-sm font-semibold mb-2">
+            Capture real TLS ClientHello for custom payload generation
+          </h6>
+          <p className="text-xs text-muted-foreground">
+            One capture per domain. Use in Faking → Captured Payload
+          </p>
+        </AlertDescription>
+      </Alert>
 
       {/* Upload + Capture side by side */}
-      <Grid container spacing={3}>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Section
-            title="Upload Custom Payload"
-            description="Upload your own binary payload file (max 64KB)"
-            icon={<UploadIcon />}
-          >
-            <Stack spacing={2}>
-              <B4TextField
-                label="Name/Domain"
-                value={uploadForm.domain}
-                onChange={(e) =>
-                  setUploadForm({
-                    ...uploadForm,
-                    domain: e.target.value.toLowerCase(),
-                  })
-                }
-                placeholder="youtube.com"
-                helperText="Name associated with the uploaded payload"
-                disabled={loading}
-              />
-              <Stack direction="row" spacing={1} alignItems="center">
-                <Button
-                  component="label"
-                  color="secondary"
-                  variant="outlined"
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <UploadIcon className="h-5 w-5" />
+              <CardTitle>Upload Custom Payload</CardTitle>
+            </div>
+            <CardDescription>
+              Upload your own binary payload file (max 64KB)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <Field>
+                <FieldLabel>Name/Domain</FieldLabel>
+                <Input
+                  value={uploadForm.domain}
+                  onChange={(e) =>
+                    setUploadForm({
+                      ...uploadForm,
+                      domain: e.target.value.toLowerCase(),
+                    })
+                  }
+                  placeholder="youtube.com"
                   disabled={loading}
-                  sx={{ flexShrink: 0 }}
+                />
+                <FieldDescription>
+                  Name associated with the uploaded payload
+                </FieldDescription>
+              </Field>
+              <div className="flex flex-row gap-2 items-center">
+                <Button
+                  variant="outline"
+                  disabled={loading}
+                  className="shrink-0"
+                  asChild
                 >
-                  {uploadForm.file ? uploadForm.file.name : "Choose File..."}
-                  <input
-                    type="file"
-                    hidden
-                    accept=".bin,application/octet-stream"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0] || null;
-                      setUploadForm({ ...uploadForm, file });
-                    }}
-                  />
+                  <label>
+                    {uploadForm.file ? uploadForm.file.name : "Choose File..."}
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".bin,application/octet-stream"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] || null;
+                        setUploadForm({ ...uploadForm, file });
+                      }}
+                    />
+                  </label>
                 </Button>
                 {uploadForm.file && (
-                  <Typography variant="caption" color="text.secondary">
+                  <p className="text-xs text-muted-foreground">
                     {uploadForm.file.size} bytes
-                  </Typography>
+                  </p>
                 )}
                 <Button
-                  variant="contained"
-                  startIcon={
-                    loading ? <CircularProgress size={16} /> : <UploadIcon />
-                  }
                   onClick={() => void uploadCapture()}
                   disabled={loading || !uploadForm.file || !uploadForm.domain}
                 >
-                  {loading ? "Uploading..." : "Upload"}
+                  {loading ? (
+                    <>
+                      <Spinner className="h-4 w-4 mr-2" />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <UploadIcon className="h-4 w-4 mr-2" />
+                      Upload
+                    </>
+                  )}
                 </Button>
-              </Stack>
-            </Stack>
-          </B4Section>
-        </Grid>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Section
-            title="Capture Payload"
-            description="Probe domain to capture its TLS ClientHello"
-            icon={<CaptureIcon />}
-          >
-            <Stack spacing={2}>
-              <B4TextField
-                label="Domain"
-                value={probeForm.domain}
-                onChange={(e) =>
-                  setProbeForm({ domain: e.target.value.toLowerCase() })
-                }
-                onKeyPress={(e) => {
-                  if (e.key === "Enter" && !loading && probeForm.domain) {
-                    void probeCapture();
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <CaptureIcon className="h-5 w-5" />
+              <CardTitle>Capture Payload</CardTitle>
+            </div>
+            <CardDescription>
+              Probe domain to capture its TLS ClientHello
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <Field>
+                <FieldLabel>Domain</FieldLabel>
+                <Input
+                  value={probeForm.domain}
+                  onChange={(e) =>
+                    setProbeForm({ domain: e.target.value.toLowerCase() })
                   }
-                }}
-                placeholder="youtube.com"
-                helperText="Enter domain to capture from"
-                disabled={loading}
-              />
-              <Stack direction="row" spacing={1}>
+                  onKeyPress={(e) => {
+                    if (e.key === "Enter" && !loading && probeForm.domain) {
+                      void probeCapture();
+                    }
+                  }}
+                  placeholder="youtube.com"
+                  disabled={loading}
+                />
+                <FieldDescription>
+                  Enter domain to capture from
+                </FieldDescription>
+              </Field>
+              <div className="flex flex-row gap-2">
                 <Button
-                  fullWidth
-                  variant="contained"
-                  startIcon={
-                    loading ? <CircularProgress size={16} /> : <CaptureIcon />
-                  }
+                  className="flex-1"
                   onClick={() => void probeCapture()}
                   disabled={loading || !probeForm.domain}
                 >
-                  {loading ? "Capturing..." : "Capture"}
+                  {loading ? (
+                    <>
+                      <Spinner className="h-4 w-4 mr-2" />
+                      Capturing...
+                    </>
+                  ) : (
+                    <>
+                      <CaptureIcon className="h-4 w-4 mr-2" />
+                      Capture
+                    </>
+                  )}
                 </Button>
-                <Tooltip title="Refresh list">
-                  <IconButton
-                    onClick={() => void loadCaptures()}
-                    disabled={loading}
-                  >
-                    <RefreshIcon />
-                  </IconButton>
-                </Tooltip>
-                {captures.length > 0 && (
-                  <Tooltip title="Clear all captures">
-                    <IconButton
-                      onClick={() => void handleClear()}
-                      color="error"
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => void loadCaptures()}
                       disabled={loading}
                     >
-                      <ClearIcon />
-                    </IconButton>
+                      <RefreshIcon className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Refresh list</p>
+                  </TooltipContent>
+                </Tooltip>
+                {captures.length > 0 && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => void handleClear()}
+                        disabled={loading}
+                      >
+                        <ClearIcon className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Clear all captures</p>
+                    </TooltipContent>
                   </Tooltip>
                 )}
-              </Stack>
+              </div>
               {loading && countdown !== null && (
-                <B4Alert>
-                  <Typography variant="subtitle2" gutterBottom>
-                    Capture window is open for {probeForm.domain}
-                  </Typography>
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Typography variant="caption">
-                      Visit{" "}
-                      <a
-                        href={`https://${probeForm.domain}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ color: colors.secondary }}
-                      >
-                        https://{probeForm.domain}
-                      </a>
-                    </Typography>
-                    <B4Badge
-                      label={`${countdown}s`}
-                      size="small"
-                      sx={{
-                        bgcolor:
+                <Alert>
+                  <AlertDescription>
+                    <h6 className="text-sm font-semibold mb-2">
+                      Capture window is open for {probeForm.domain}
+                    </h6>
+                    <div className="flex flex-row gap-2 items-center">
+                      <p className="text-xs">
+                        Visit{" "}
+                        <a
+                          href={`https://${probeForm.domain}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-secondary hover:underline"
+                        >
+                          https://{probeForm.domain}
+                        </a>
+                      </p>
+                      <Badge
+                        className={cn(
+                          "text-xs px-1.5 py-0.5 font-semibold min-w-12",
                           countdown <= 10
-                            ? colors.accent.secondary
-                            : colors.accent.primary,
-                        fontWeight: 600,
-                        minWidth: 48,
-                      }}
-                    />
-                  </Stack>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ mt: 1, display: "block" }}
-                  >
-                    Or run:{" "}
-                    <code style={{ color: colors.secondary }}>
-                      curl -o /dev/null -s https://{probeForm.domain}
-                    </code>{" "}
-                    in your terminal
-                  </Typography>
-                </B4Alert>
+                            ? "bg-accent text-accent-foreground"
+                            : ""
+                        )}
+                      >
+                        {`${countdown}s`}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Or run:{" "}
+                      <code className="text-secondary">
+                        curl -o /dev/null -s https://{probeForm.domain}
+                      </code>{" "}
+                      in your terminal
+                    </p>
+                  </AlertDescription>
+                </Alert>
               )}
-            </Stack>
-          </B4Section>
-        </Grid>
-      </Grid>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Captured Payloads - Flat grid like SetCards */}
       {captures.length > 0 && (
-        <B4Section
-          title="Captured Payloads"
-          description={`${captures.length} payload${
-            captures.length !== 1 ? "s" : ""
-          } ready for use`}
-          icon={<DownloadIcon />}
-        >
-          <Grid container spacing={3}>
-            {captures.map((capture) => (
-              <Grid
-                key={`${capture.protocol}:${capture.domain}`}
-                size={{ xs: 12, sm: 6, lg: 4, xl: 3 }}
-              >
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <DownloadIcon className="h-5 w-5" />
+              <CardTitle>Captured Payloads</CardTitle>
+            </div>
+            <CardDescription>
+              {captures.length} payload{captures.length !== 1 ? "s" : ""} ready
+              for use
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-6">
+              {captures.map((capture) => (
                 <CaptureCard
+                  key={`${capture.protocol}:${capture.domain}`}
                   capture={capture}
                   onViewHex={() => setHexDialog({ open: true, capture })}
                   onDownload={() => download(capture)}
                   onDelete={() => void handleDelete(capture)}
                 />
-              </Grid>
-            ))}
-          </Grid>
-        </B4Section>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Empty State */}
       {captures.length === 0 && !loading && (
-        <Paper
-          elevation={0}
-          sx={{
-            p: 4,
-            textAlign: "center",
-            border: `1px dashed ${colors.border.default}`,
-            borderRadius: radius.md,
-          }}
-        >
-          <CaptureIcon
-            sx={{ fontSize: 48, color: colors.text.secondary, mb: 2 }}
-          />
-          <Typography variant="h6" color="text.secondary">
+        <div className="p-8 text-center border border-dashed border-border rounded-md">
+          <CaptureIcon className="h-12 w-12 text-muted-foreground mb-4 mx-auto" />
+          <h6 className="text-lg font-semibold text-muted-foreground mb-2">
             No captured payloads yet
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
+          </h6>
+          <p className="text-sm text-muted-foreground">
             Enter a domain above and click Capture to get started
-          </Typography>
-        </Paper>
+          </p>
+        </div>
       )}
 
       {/* Hex Dialog */}
-      <B4Dialog
-        title="Payload Hex Data"
-        subtitle="Copy for use in Faking → Custom Payload"
-        icon={<CaptureIcon />}
+      <Dialog
         open={hexDialog.open}
-        onClose={() => setHexDialog({ open: false, capture: null })}
-        maxWidth="md"
-        fullWidth
-        actions={
-          <Button
-            variant="contained"
-            onClick={() => {
-              if (hexDialog.capture?.hex_data) {
-                copyHex(hexDialog.capture.hex_data);
-              }
-              setHexDialog({ open: false, capture: null });
-            }}
-          >
-            Copy & Close
-          </Button>
+        onOpenChange={(open) =>
+          !open && setHexDialog({ open: false, capture: null })
         }
       >
-        {hexDialog.capture && (
-          <Stack spacing={2}>
-            <B4Alert icon={<SuccessIcon />}>
-              TLS payload for {hexDialog.capture.domain} •{" "}
-              {hexDialog.capture.size} bytes
-            </B4Alert>
-            <Box
-              sx={{
-                p: 2,
-                bgcolor: colors.background.dark,
-                borderRadius: radius.sm,
-                fontFamily: "monospace",
-                fontSize: "0.8rem",
-                wordBreak: "break-all",
-                maxHeight: 400,
-                overflow: "auto",
-                userSelect: "all",
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+                <CaptureIcon />
+              </div>
+              <div className="flex-1">
+                <DialogTitle>Payload Hex Data</DialogTitle>
+                <DialogDescription className="mt-1">
+                  Copy for use in Faking → Custom Payload
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          <div className="py-4">
+            {hexDialog.capture && (
+              <div className="space-y-4">
+                <Alert>
+                  <SuccessIcon className="h-3.5 w-3.5" />
+                  <AlertDescription>
+                    TLS payload for {hexDialog.capture.domain} •{" "}
+                    {hexDialog.capture.size} bytes
+                  </AlertDescription>
+                </Alert>
+                <div className="p-4 bg-muted rounded-md font-mono text-xs break-all max-h-100 overflow-auto select-all">
+                  {hexDialog.capture.hex_data}
+                </div>
+              </div>
+            )}
+          </div>
+          <Separator />
+          <DialogFooter>
+            <Button
+              onClick={() => {
+                if (hexDialog.capture?.hex_data) {
+                  copyHex(hexDialog.capture.hex_data);
+                }
+                setHexDialog({ open: false, capture: null });
               }}
             >
-              {hexDialog.capture.hex_data}
-            </Box>
-          </Stack>
-        )}
-      </B4Dialog>
-    </Stack>
+              Copy & Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 };
 
@@ -429,83 +482,62 @@ const CaptureCard = ({
   onDelete,
 }: CaptureCardProps) => {
   return (
-    <Paper
-      elevation={0}
-      sx={{
-        p: 2,
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        border: `1px solid ${colors.border.default}`,
-        borderRadius: radius.md,
-        transition: "all 0.2s ease",
-        "&:hover": {
-          borderColor: colors.secondary,
-          transform: "translateY(-2px)",
-          boxShadow: `0 4px 12px ${colors.accent.primary}40`,
-        },
-      }}
-    >
+    <Card className="p-4 h-full flex flex-col transition-all border border-border hover:border-secondary hover:-translate-y-0.5 hover:shadow-lg cursor-pointer">
       {/* Header */}
-      <Stack
-        direction="row"
-        justifyContent="space-between"
-        alignItems="flex-start"
-        mb={1}
-      >
-        <Box sx={{ minWidth: 0, flex: 1 }}>
-          <Typography
-            variant="subtitle1"
-            fontWeight={600}
-            sx={{
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
+      <div className="flex flex-row justify-between items-start mb-2">
+        <div className="min-w-0 flex-1">
+          <h6 className="text-sm font-semibold overflow-hidden text-ellipsis whitespace-nowrap">
             {capture.domain}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
+          </h6>
+          <p className="text-xs text-muted-foreground">
             {capture.size.toLocaleString()} bytes
-          </Typography>
-        </Box>
-        <CaptureIcon sx={{ color: colors.secondary, fontSize: 20, ml: 1 }} />
-      </Stack>
+          </p>
+        </div>
+        <CaptureIcon className="h-5 w-5 text-secondary ml-2 shrink-0" />
+      </div>
 
       {/* Timestamp */}
-      <Typography variant="caption" color="text.secondary" sx={{ mb: 2 }}>
+      <p className="text-xs text-muted-foreground mb-4">
         {new Date(capture.timestamp).toLocaleString()}
-      </Typography>
+      </p>
 
       {/* Spacer */}
-      <Box sx={{ flex: 1 }} />
+      <div className="flex-1" />
 
       {/* Actions */}
-      <Stack
-        direction="row"
-        spacing={1}
-        sx={{
-          pt: 2,
-          borderTop: `1px solid ${colors.border.light}`,
-        }}
-      >
-        <Tooltip title="View/Copy hex">
-          <IconButton size="small" onClick={onViewHex}>
-            <CopyIcon fontSize="small" />
-          </IconButton>
+      <div className="flex flex-row gap-1 pt-4 border-t border-border">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button size="sm" variant="ghost" onClick={onViewHex}>
+              <CopyIcon className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>View/Copy hex</p>
+          </TooltipContent>
         </Tooltip>
-        <Tooltip title="Download .bin">
-          <IconButton size="small" onClick={onDownload}>
-            <DownloadIcon fontSize="small" />
-          </IconButton>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button size="sm" variant="ghost" onClick={onDownload}>
+              <DownloadIcon className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Download .bin</p>
+          </TooltipContent>
         </Tooltip>
-        <Box sx={{ flex: 1 }} />
-        <Tooltip title="Delete">
-          <IconButton size="small" onClick={onDelete}>
-            <ClearIcon fontSize="small" />
-          </IconButton>
+        <div className="flex-1" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button size="sm" variant="ghost" onClick={onDelete}>
+              <ClearIcon className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Delete</p>
+          </TooltipContent>
         </Tooltip>
-      </Stack>
-    </Paper>
+      </div>
+    </Card>
   );
 };

@@ -1,15 +1,24 @@
-import { useState } from "react";
-import { Box, Grid, IconButton } from "@mui/material";
 import { AddIcon, DiscoveryIcon } from "@b4.icons";
-import { B4Config } from "@models/config";
-import { colors } from "@design";
+import { ChipList } from "@components/common/ChipList";
+import { Badge } from "@design/components/ui/badge";
+import { Button } from "@design/components/ui/button";
 import {
-  B4Slider,
-  B4Section,
-  B4TextField,
-  B4FormHeader,
-  B4ChipList,
-} from "@b4.elements";
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@design/components/ui/card";
+import {
+  Field,
+  FieldDescription,
+  FieldLabel,
+} from "@design/components/ui/field";
+import { Input } from "@design/components/ui/input";
+import { Separator } from "@design/components/ui/separator";
+import { Slider } from "@design/components/ui/slider";
+import { B4Config } from "@models/config";
+import { useState } from "react";
 
 interface CheckerSettingsProps {
   config: B4Config;
@@ -41,89 +50,121 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
   };
 
   return (
-    <B4Section
-      title="Testing Configuration"
-      description="Configure testing behavior and output"
-      icon={<DiscoveryIcon />}
-    >
-      <Grid container spacing={2}>
-        <Grid size={{ xs: 12, lg: 6 }}>
-          <B4Slider
-            label="Discovery Timeout"
-            value={config.system.checker.discovery_timeout || 5}
-            onChange={(value) =>
-              onChange("system.checker.discovery_timeout", value)
-            }
-            min={3}
-            max={30}
-            step={1}
-            valueSuffix=" sec"
-            helperText="Timeout per preset during discovery"
-          />
-        </Grid>
-        <Grid size={{ xs: 12, lg: 6 }}>
-          <B4Slider
-            label="Config Propagation Delay"
-            value={config.system.checker.config_propagate_ms || 1500}
-            onChange={(value) =>
-              onChange("system.checker.config_propagate_ms", value)
-            }
-            min={500}
-            max={5000}
-            step={100}
-            valueSuffix=" ms"
-            helperText="Delay for config to propagate to workers (increase on slow devices)"
-          />
-        </Grid>
-        <Grid size={{ xs: 12, lg: 6 }}>
-          <B4TextField
-            label="Reference Domain"
-            value={config.system.checker.reference_domain || "yandex.ru"}
-            onChange={(e) =>
-              onChange("system.checker.reference_domain", e.target.value)
-            }
-            placeholder="yandex.ru"
-            helperText="Fast domain to measure your network baseline speed"
-          />
-        </Grid>
-
-        <B4FormHeader label="DNS Configuration" />
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
-            <B4TextField
-              label="Add DNS Server"
-              value={newDns}
-              onChange={(e) => setNewDns(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleAddDns();
-                }
-              }}
-              placeholder="e.g., 8.8.8.8"
-              helperText="Additional DNS servers to test"
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <DiscoveryIcon className="h-5 w-5" />
+          <CardTitle>Testing Configuration</CardTitle>
+        </div>
+        <CardDescription>Configure testing behavior and output</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Field className="w-full space-y-2">
+            <div className="flex items-center justify-between">
+              <FieldLabel className="text-sm font-medium">
+                Discovery Timeout
+              </FieldLabel>
+              <Badge variant="secondary" className="font-semibold">
+                {config.system.checker.discovery_timeout || 5} sec
+              </Badge>
+            </div>
+            <Slider
+              value={[config.system.checker.discovery_timeout || 5]}
+              onValueChange={(values) =>
+                onChange("system.checker.discovery_timeout", values[0])
+              }
+              min={3}
+              max={30}
+              step={1}
+              className="w-full"
             />
-            <IconButton
-              onClick={handleAddDns}
-              sx={{
-                bgcolor: colors.accent.secondary,
-                color: colors.secondary,
-                "&:hover": { bgcolor: colors.accent.secondaryHover },
-              }}
-            >
-              <AddIcon />
-            </IconButton>
-          </Box>
-        </Grid>
-        <B4ChipList
-          items={config.system.checker.reference_dns || []}
-          getKey={(d) => d}
-          getLabel={(d) => d}
-          onDelete={handleRemoveDns}
-          title="Active DNS servers to test:"
-          gridSize={{ xs: 12, md: 6 }}
-        />
-      </Grid>
-    </B4Section>
+            <FieldDescription>
+              Timeout per preset during discovery
+            </FieldDescription>
+          </Field>
+          <Field className="w-full space-y-2">
+            <div className="flex items-center justify-between">
+              <FieldLabel className="text-sm font-medium">
+                Config Propagation Delay
+              </FieldLabel>
+              <Badge variant="secondary" className="font-semibold">
+                {config.system.checker.config_propagate_ms || 1500} ms
+              </Badge>
+            </div>
+            <Slider
+              value={[config.system.checker.config_propagate_ms || 1500]}
+              onValueChange={(values) =>
+                onChange("system.checker.config_propagate_ms", values[0])
+              }
+              min={500}
+              max={5000}
+              step={100}
+              className="w-full"
+            />
+            <FieldDescription>
+              Delay for config to propagate to workers (increase on slow
+              devices)
+            </FieldDescription>
+          </Field>
+          <Field>
+            <FieldLabel>Reference Domain</FieldLabel>
+            <Input
+              value={config.system.checker.reference_domain || "yandex.ru"}
+              onChange={(e) =>
+                onChange("system.checker.reference_domain", e.target.value)
+              }
+              placeholder="yandex.ru"
+            />
+            <FieldDescription>
+              Fast domain to measure your network baseline speed
+            </FieldDescription>
+          </Field>
+
+          <div className="relative my-4 lg:col-span-2 flex items-center">
+            <Separator className="absolute inset-0 top-1/2" />
+            <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+              DNS Configuration
+            </span>
+          </div>
+          <div className="col-span-1 md:col-span-2">
+            <div className="flex flex-col gap-1.5">
+              <FieldLabel>Add DNS Server</FieldLabel>
+              <div className="flex gap-2 items-start">
+                <Input
+                  value={newDns}
+                  onChange={(e) => setNewDns(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddDns();
+                    }
+                  }}
+                  placeholder="e.g., 8.8.8.8"
+                  className="flex-1"
+                />
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  onClick={handleAddDns}
+                  disabled={!newDns.trim()}
+                >
+                  <AddIcon className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+          <div className="col-span-1 md:col-span-2">
+            <ChipList
+              items={config.system.checker.reference_dns || []}
+              getKey={(d) => d}
+              getLabel={(d) => d}
+              onDelete={handleRemoveDns}
+              title="Active DNS servers to test:"
+            />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 };

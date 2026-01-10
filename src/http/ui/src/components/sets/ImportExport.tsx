@@ -1,7 +1,19 @@
-import { useState, useEffect } from "react";
-import { Box, Button, Stack } from "@mui/material";
-import { ImportExportIcon, RefreshIcon } from "@b4.icons";
-import { B4Alert, B4Section, B4TextField } from "@b4.elements";
+import { ImportExportIcon, CheckIcon, RefreshIcon } from "@b4.icons";
+import { Alert, AlertDescription } from "@design/components/ui/alert";
+import { Button } from "@design/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@design/components/ui/card";
+import {
+  Field,
+  FieldDescription,
+  FieldLabel,
+} from "@design/components/ui/field";
+import { Textarea } from "@design/components/ui/textarea";
+import { useEffect, useState } from "react";
 
 import { B4SetConfig } from "@models/config";
 
@@ -17,6 +29,7 @@ export const ImportExportSettings = ({
   const [jsonValue, setJsonValue] = useState("");
   const [originalJson, setOriginalJson] = useState("");
   const [validationError, setValidationError] = useState("");
+  const [validationSuccess, setValidationSuccess] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
@@ -24,6 +37,7 @@ export const ImportExportSettings = ({
     setJsonValue(formatted);
     setOriginalJson(formatted);
     setValidationError("");
+    setValidationSuccess(false);
     setHasChanges(false);
   }, [config]);
 
@@ -31,6 +45,7 @@ export const ImportExportSettings = ({
     setJsonValue(value);
     setHasChanges(value !== originalJson);
     setValidationError("");
+    setValidationSuccess(false);
   };
 
   function migrateSetConfig(set: Record<string, unknown>): B4SetConfig {
@@ -115,15 +130,18 @@ export const ImportExportSettings = ({
         setValidationError(
           "Invalid set configuration: missing required fields"
         );
+        setValidationSuccess(false);
         return null;
       }
 
       setValidationError("");
+      setValidationSuccess(true);
       return parsed;
     } catch (error) {
       setValidationError(
         error instanceof Error ? error.message : "Invalid JSON format"
       );
+      setValidationSuccess(false);
       return null;
     }
   };
@@ -141,53 +159,80 @@ export const ImportExportSettings = ({
     setJsonValue(originalJson);
     setHasChanges(false);
     setValidationError("");
+    setValidationSuccess(false);
   };
 
   return (
-    <B4Section
-      title="Import/Export Set configuration"
-      icon={<ImportExportIcon />}
-    >
-      <B4Alert severity="info" sx={{ mb: 2 }}>
-        You can export the current set configuration as JSON, or import a new
-        configuration by pasting valid JSON below.
-      </B4Alert>
-      <Stack spacing={2}>
-        <B4TextField
-          label="Set Configuration JSON"
-          value={jsonValue}
-          onChange={(e) => handleJsonChange(e.target.value)}
-          multiline
-          rows={10}
-          helperText="Edit directly or paste a configuration. Changes must be applied to take effect."
-        />
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+            <ImportExportIcon />
+          </div>
+          <div className="flex-1">
+            <CardTitle>Import/Export Set configuration</CardTitle>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <Alert className="mb-4">
+          <AlertDescription>
+            You can export the current set configuration as JSON, or import a
+            new configuration by pasting valid JSON below.
+          </AlertDescription>
+        </Alert>
+        <div className="flex flex-col gap-4">
+          <Field>
+            <FieldLabel>Set Configuration JSON</FieldLabel>
+            <Textarea
+              value={jsonValue}
+              onChange={(e) => handleJsonChange(e.target.value)}
+              rows={10}
+              spellCheck={false}
+            />
+            <FieldDescription>
+              Edit directly or paste a configuration. Changes must be applied to
+              take effect.
+            </FieldDescription>
+          </Field>
 
-        {validationError && (
-          <B4Alert severity="error">{validationError}</B4Alert>
-        )}
+          {validationError && (
+            <Alert variant="destructive">
+              <AlertDescription>{validationError}</AlertDescription>
+            </Alert>
+          )}
 
-        <Box sx={{ display: "flex", gap: 2 }}>
-          <Button
-            variant="outlined"
-            startIcon={<RefreshIcon />}
-            onClick={handleReset}
-            disabled={!hasChanges}
-          >
-            Reset
-          </Button>
-          <Box sx={{ flex: 1 }} />
-          <Button variant="outlined" onClick={handleValidate}>
-            Validate
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleApply}
-            disabled={!hasChanges}
-          >
-            Apply Changes
-          </Button>
-        </Box>
-      </Stack>
-    </B4Section>
+          <div className="flex gap-4">
+            <Button
+              variant="outline"
+              onClick={handleReset}
+              disabled={!hasChanges}
+            >
+              <RefreshIcon className="h-4 w-4 mr-2" />
+              Reset
+            </Button>
+            <div className="flex-1" />
+            <div className="flex items-center gap-2">
+              {validationSuccess && !validationError && (
+                <CheckIcon className="h-4 w-4 text-primary" />
+              )}
+              <Button
+                variant="outline"
+                onClick={handleValidate}
+                className="hover:bg-input/50 hover:text-foreground"
+              >
+                Validate
+              </Button>
+            </div>
+            <Button
+              onClick={handleApply}
+              disabled={!hasChanges}
+            >
+              Apply Changes
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 };

@@ -1,20 +1,24 @@
-import { useState, useEffect } from "react";
-import {
-  Stack,
-  Typography,
-  Button,
-  RadioGroup,
-  FormControlLabel,
-  Radio,
-  Box,
-  Chip,
-  CircularProgress,
-} from "@mui/material";
 import { AddIcon } from "@b4.icons";
-import { B4TextField, B4Dialog } from "@b4.elements";
-import { colors } from "@design";
+import { Badge } from "@design/components/ui/badge";
+import { Button } from "@design/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@design/components/ui/dialog";
+import { Field, FieldLabel } from "@design/components/ui/field";
+import { Input } from "@design/components/ui/input";
+import { Label } from "@design/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@design/components/ui/radio-group";
+import { Separator } from "@design/components/ui/separator";
+import { Spinner } from "@design/components/ui/spinner";
+import { cn } from "@design/lib/utils";
 import { B4SetConfig } from "@models/config";
 import { generateDomainVariants } from "@utils";
+import { useEffect, useState } from "react";
 
 interface SimilarSet {
   id: string;
@@ -96,144 +100,143 @@ export const DiscoveryAddDialog = ({
   };
 
   return (
-    <B4Dialog
-      open={open}
-      onClose={onClose}
-      title="Add Configuration"
-      subtitle={`Strategy: ${presetName}`}
-      icon={<AddIcon />}
-      maxWidth="sm"
-      fullWidth
-      actions={
-        <Stack direction="row" spacing={2}>
-          <Button onClick={onClose} disabled={loading}>
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleConfirm}
-            disabled={loading || (mode === "existing" && !selectedSetId)}
-            startIcon={loading ? <CircularProgress size={18} /> : <AddIcon />}
-            sx={{ bgcolor: colors.secondary }}
-          >
-            {mode === "new" ? "Create Set" : "Add to Set"}
-          </Button>
-        </Stack>
-      }
-    >
-      <Stack spacing={3} sx={{ mt: 1 }}>
-        {/* Domain variant selection */}
-        <Box>
-          <Typography
-            variant="subtitle2"
-            sx={{ mb: 1, color: colors.text.secondary }}
-          >
-            Domain Pattern
-          </Typography>
-          <Stack direction="row" spacing={1} flexWrap="wrap" gap={1}>
-            {variants.map((v) => (
-              <Chip
-                key={v}
-                label={v}
-                onClick={() => setSelectedVariant(v)}
-                sx={{
-                  bgcolor:
-                    v === selectedVariant
-                      ? colors.accent.secondary
-                      : colors.background.dark,
-                  border:
-                    v === selectedVariant
-                      ? `2px solid ${colors.secondary}`
-                      : `1px solid ${colors.border.default}`,
-                  cursor: "pointer",
-                }}
-              />
-            ))}
-          </Stack>
-        </Box>
-
-        {/* Mode selection - only show if similar sets exist */}
-        {similarSets.length > 0 && (
-          <Box>
-            <Typography
-              variant="subtitle2"
-              sx={{ mb: 1, color: colors.text.secondary }}
-            >
-              Add to
-            </Typography>
-            <RadioGroup
-              value={mode}
-              onChange={(e) => setMode(e.target.value as "new" | "existing")}
-            >
-              <FormControlLabel
-                value="new"
-                control={<Radio />}
-                label="Create new set"
-              />
-              <FormControlLabel
-                value="existing"
-                control={<Radio />}
-                label="Add to existing similar set"
-              />
-            </RadioGroup>
-          </Box>
-        )}
-
-        {/* New set name input */}
-        {mode === "new" && (
-          <B4TextField
-            label="Set Name"
-            value={name}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              setName(e.target.value)
-            }
-            fullWidth
-          />
-        )}
-
-        {/* Similar sets list */}
-        {mode === "existing" && similarSets.length > 0 && (
-          <Box>
-            <Typography
-              variant="subtitle2"
-              sx={{ mb: 1, color: colors.text.secondary }}
-            >
-              Similar Sets
-            </Typography>
-            <Stack spacing={1}>
-              {similarSets.map((set) => (
-                <Box
-                  key={set.id}
-                  onClick={() => setSelectedSetId(set.id)}
-                  sx={{
-                    p: 2,
-                    borderRadius: 1,
-                    cursor: "pointer",
-                    bgcolor:
-                      set.id === selectedSetId
-                        ? colors.accent.secondary
-                        : colors.background.dark,
-                    border:
-                      set.id === selectedSetId
-                        ? `2px solid ${colors.secondary}`
-                        : `1px solid ${colors.border.default}`,
-                  }}
-                >
-                  <Typography sx={{ fontWeight: 600 }}>{set.name}</Typography>
-                  <Typography
-                    variant="caption"
-                    sx={{ color: colors.text.secondary }}
+    <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+              <AddIcon />
+            </div>
+            <div className="flex-1">
+              <DialogTitle>Add Configuration</DialogTitle>
+              <DialogDescription className="mt-1">
+                Strategy: {presetName}
+              </DialogDescription>
+            </div>
+          </div>
+        </DialogHeader>
+        <div className="py-4">
+          <div className="space-y-6 mt-2">
+            {/* Domain variant selection */}
+            <div>
+              <h6 className="text-sm font-semibold mb-2 text-muted-foreground">
+                Domain Pattern
+              </h6>
+              <div className="flex flex-row gap-2 flex-wrap">
+                {variants.map((v) => (
+                  <Badge
+                    key={v}
+                    onClick={() => setSelectedVariant(v)}
+                    className={cn(
+                      "cursor-pointer transition-all",
+                      v === selectedVariant
+                        ? "bg-accent border-2 border-secondary"
+                        : "bg-muted border border-border"
+                    )}
                   >
-                    {set.domains.slice(0, 3).join(", ")}
-                    {set.domains.length > 3 &&
-                      ` +${set.domains.length - 3} more`}
-                  </Typography>
-                </Box>
-              ))}
-            </Stack>
-          </Box>
-        )}
-      </Stack>
-    </B4Dialog>
+                    {v}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            {/* Mode selection - only show if similar sets exist */}
+            {similarSets.length > 0 && (
+              <div>
+                <h6 className="text-sm font-semibold mb-2 text-muted-foreground">
+                  Add to
+                </h6>
+                <RadioGroup
+                  value={mode}
+                  onValueChange={(value) =>
+                    setMode(value as "new" | "existing")
+                  }
+                >
+                  <div className="flex items-center space-x-2 mb-2">
+                    <RadioGroupItem value="new" id="mode-new" />
+                    <Label htmlFor="mode-new" className="cursor-pointer">
+                      Create new set
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="existing" id="mode-existing" />
+                    <Label htmlFor="mode-existing" className="cursor-pointer">
+                      Add to existing similar set
+                    </Label>
+                  </div>
+                </RadioGroup>
+              </div>
+            )}
+
+            {/* New set name input */}
+            {mode === "new" && (
+              <Field>
+                <FieldLabel>Set Name</FieldLabel>
+                <Input
+                  value={name}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    setName(e.target.value)
+                  }
+                />
+              </Field>
+            )}
+
+            {/* Similar sets list */}
+            {mode === "existing" && similarSets.length > 0 && (
+              <div>
+                <h6 className="text-sm font-semibold mb-2 text-muted-foreground">
+                  Similar Sets
+                </h6>
+                <div className="space-y-2">
+                  {similarSets.map((set) => (
+                    <div
+                      key={set.id}
+                      onClick={() => setSelectedSetId(set.id)}
+                      className={cn(
+                        "p-4 rounded-md cursor-pointer transition-all",
+                        set.id === selectedSetId
+                          ? "bg-accent border-2 border-secondary"
+                          : "bg-muted border border-border"
+                      )}
+                    >
+                      <p className="font-semibold">{set.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {set.domains.slice(0, 3).join(", ")}
+                        {set.domains.length > 3 &&
+                          ` +${set.domains.length - 3} more`}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        <Separator />
+        <DialogFooter>
+          <div className="flex gap-4">
+            <Button onClick={onClose} variant="ghost" disabled={loading}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirm}
+              disabled={loading || (mode === "existing" && !selectedSetId)}
+            >
+              {loading ? (
+                <>
+                  <Spinner className="h-4 w-4 mr-2" />
+                  Adding...
+                </>
+              ) : (
+                <>
+                  <AddIcon className="h-4 w-4 mr-2" />
+                  {mode === "new" ? "Create Set" : "Add to Set"}
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };

@@ -1,34 +1,37 @@
-import { useState, useEffect } from "react";
+import { DeviceInfo, DevicesSettingsProps, useDevices } from "@b4.devices";
+import { B4InlineEdit } from "@b4.elements";
 import {
-  Grid,
-  Box,
-  Typography,
-  Chip,
-  CircularProgress,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Checkbox,
-  Paper,
-  IconButton,
+  DeviceUnknowIcon,
+  EditIcon,
+  RefreshIcon,
+  RestoreIcon,
+} from "@b4.icons";
+import { Alert, AlertDescription } from "@design/components/ui/alert";
+import { Badge } from "@design/components/ui/badge";
+import { Button } from "@design/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@design/components/ui/card";
+import { Checkbox } from "@design/components/ui/checkbox";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldTitle,
+} from "@design/components/ui/field";
+import { Spinner } from "@design/components/ui/spinner";
+import { Switch } from "@design/components/ui/switch";
+import {
   Tooltip,
-} from "@mui/material";
-import { DeviceUnknowIcon, RefreshIcon } from "@b4.icons";
-import EditIcon from "@mui/icons-material/Edit";
-import RestoreIcon from "@mui/icons-material/Restore";
-import { colors } from "@design";
-import {
-  B4Section,
-  B4Switch,
-  B4Alert,
-  B4TooltipButton,
-  B4Badge,
-  B4InlineEdit,
-} from "@b4.elements";
-import { useDevices, DeviceInfo, DevicesSettingsProps } from "@b4.devices";
+  TooltipContent,
+  TooltipTrigger,
+} from "@design/components/ui/tooltip";
+import { cn } from "@design/lib/utils";
+import { useEffect, useState } from "react";
 
 const DeviceNameCell = ({
   device,
@@ -60,39 +63,47 @@ const DeviceNameCell = ({
   }
 
   return (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+    <div className="flex items-center gap-1">
       {displayName ? (
-        <B4Badge
-          label={displayName}
-          color="primary"
-          variant={isSelected ? "filled" : "outlined"}
-        />
+        <Badge variant={isSelected ? "default" : "outline"}>
+          {displayName}
+        </Badge>
       ) : (
-        <Typography variant="caption" color="text.secondary">
-          Unknown
-        </Typography>
+        <span className="text-xs text-muted-foreground">Unknown</span>
       )}
-      <Tooltip title="Edit name">
-        <IconButton
-          size="small"
-          onClick={onStartEdit}
-          sx={{ opacity: 0.6, "&:hover": { opacity: 1 } }}
-        >
-          <EditIcon sx={{ fontSize: 16 }} />
-        </IconButton>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onStartEdit}
+            className="h-6 w-6 p-0 opacity-60 hover:opacity-100"
+          >
+            <EditIcon className="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>Edit name</p>
+        </TooltipContent>
       </Tooltip>
       {device.alias && (
-        <Tooltip title="Reset to vendor name">
-          <IconButton
-            size="small"
-            onClick={() => void onResetAlias()}
-            sx={{ opacity: 0.6, "&:hover": { opacity: 1 } }}
-          >
-            <RestoreIcon sx={{ fontSize: 16 }} />
-          </IconButton>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void onResetAlias()}
+              className="h-6 w-6 p-0 opacity-60 hover:opacity-100"
+            >
+              <RestoreIcon className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Reset to vendor name</p>
+          </TooltipContent>
         </Tooltip>
       )}
-    </Box>
+    </div>
   );
 };
 
@@ -134,189 +145,214 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
     selectedMacs.length > 0 && selectedMacs.length < devices.length;
 
   return (
-    <B4Section
-      title="Device Filtering"
-      description="Filter traffic by source device MAC address"
-      icon={<DeviceUnknowIcon />}
-    >
-      <Grid container spacing={2}>
-        <Grid size={{ xs: 12 }}>
-          <Box sx={{ display: "flex", gap: 3, alignItems: "center" }}>
-            <B4Switch
-              label="Enable Device Filtering"
-              checked={enabled}
-              onChange={(checked) => onChange("queue.devices.enabled", checked)}
-              description="Only process traffic from selected devices"
-            />
-            <B4Switch
-              label="Invert Selection (Blacklist)"
-              checked={wisb}
-              onChange={(checked) => onChange("queue.devices.wisb", checked)}
-              description={
-                wisb ? "Block selected devices" : "Allow only selected devices"
-              }
-              disabled={!enabled}
-            />
-          </Box>
-        </Grid>
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <DeviceUnknowIcon className="h-5 w-5" />
+          <CardTitle>Device Filtering</CardTitle>
+        </div>
+        <CardDescription>
+          Filter traffic by source device MAC address
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 gap-4">
+          <div className="grid grid-cols-2 gap-6 items-start">
+            <Field
+              orientation="horizontal"
+              className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
+            >
+              <FieldContent>
+                <FieldTitle>Enable Device Filtering</FieldTitle>
+                <FieldDescription>
+                  Only process traffic from selected devices
+                </FieldDescription>
+              </FieldContent>
+              <Switch
+                checked={enabled}
+                onCheckedChange={(checked) =>
+                  onChange("queue.devices.enabled", checked)
+                }
+              />
+            </Field>
+            <Field
+              orientation="horizontal"
+              className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
+            >
+              <FieldContent>
+                <FieldTitle>Invert Selection (Blacklist)</FieldTitle>
+                <FieldDescription>
+                  {wisb
+                    ? "Block selected devices"
+                    : "Allow only selected devices"}
+                </FieldDescription>
+              </FieldContent>
+              <Switch
+                checked={wisb}
+                onCheckedChange={(checked) =>
+                  onChange("queue.devices.wisb", checked)
+                }
+                disabled={!enabled}
+              />
+            </Field>
+          </div>
 
-        {enabled && (
-          <>
-            <B4Alert severity={wisb ? "warning" : "info"}>
-              {wisb
-                ? "Blacklist mode: Selected devices will be EXCLUDED from DPI bypass"
-                : "Whitelist mode: Only selected devices will use DPI bypass"}
-            </B4Alert>
+          {enabled && (
+            <>
+              <Alert variant={wisb ? "destructive" : "default"}>
+                <AlertDescription>
+                  {wisb
+                    ? "Blacklist mode: Selected devices will be EXCLUDED from DPI bypass"
+                    : "Whitelist mode: Only selected devices will use DPI bypass"}
+                </AlertDescription>
+              </Alert>
 
-            {!available ? (
-              <B4Alert severity="warning">
-                DHCP lease source not detected. Device discovery unavailable.
-              </B4Alert>
-            ) : (
-              <Grid size={{ xs: 12 }}>
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    mb: 1,
-                  }}
-                >
-                  <Typography variant="subtitle2">
-                    Available Devices
-                    {source && (
-                      <Chip
-                        label={source}
-                        size="small"
-                        sx={{
-                          ml: 1,
-                          bgcolor: colors.accent.secondary,
-                          color: colors.secondary,
-                        }}
-                      />
-                    )}
-                  </Typography>
-                  <B4TooltipButton
-                    title="Refresh devices"
-                    icon={
-                      loading ? <CircularProgress size={18} /> : <RefreshIcon />
-                    }
-                    onClick={() => void loadDevices()}
-                  />
-                </Box>
-
-                <TableContainer
-                  component={Paper}
-                  sx={{
-                    bgcolor: colors.background.paper,
-                    border: `1px solid ${colors.border.default}`,
-                    maxHeight: 300,
-                  }}
-                >
-                  <Table size="small" stickyHeader>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell
-                          padding="checkbox"
-                          sx={{ bgcolor: colors.background.dark }}
-                        >
-                          <Checkbox
-                            color="secondary"
-                            indeterminate={someSelected}
-                            checked={allSelected}
-                            onChange={(e) =>
-                              onChange(
-                                "queue.devices.mac",
-                                e.target.checked
-                                  ? devices.map((d) => d.mac)
-                                  : []
-                              )
-                            }
-                          />
-                        </TableCell>
-                        {["MAC Address", "IP", "Name"].map((label) => (
-                          <TableCell
-                            key={label}
-                            sx={{
-                              bgcolor: colors.background.dark,
-                              color: colors.text.secondary,
-                            }}
-                          >
-                            {label}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {devices.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={4} align="center">
-                            {loading
-                              ? "Loading devices..."
-                              : "No devices found"}
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        devices.map((device) => (
-                          <TableRow
-                            key={device.mac}
-                            hover
-                            onClick={() => handleMacToggle(device.mac)}
-                            sx={{ cursor: "pointer" }}
-                          >
-                            <TableCell padding="checkbox">
-                              <Checkbox
-                                checked={isSelected(device.mac)}
-                                color="secondary"
-                              />
-                            </TableCell>
-                            <TableCell
-                              sx={{
-                                fontFamily: "monospace",
-                                fontSize: "0.85rem",
-                              }}
-                            >
-                              {device.mac}
-                            </TableCell>
-                            <TableCell
-                              sx={{
-                                fontFamily: "monospace",
-                                fontSize: "0.85rem",
-                              }}
-                            >
-                              {device.ip}
-                            </TableCell>
-                            <TableCell onClick={(e) => e.stopPropagation()}>
-                              <DeviceNameCell
-                                device={device}
-                                isSelected={isSelected(device.mac)}
-                                isEditing={editingMac === device.mac}
-                                onStartEdit={() => setEditingMac(device.mac)}
-                                onSaveAlias={async (alias) => {
-                                  const result = await setAlias(
-                                    device.mac,
-                                    alias
-                                  );
-                                  if (result.success) setEditingMac(null);
-                                }}
-                                onResetAlias={async () => {
-                                  const result = await resetAlias(device.mac);
-                                  if (result.success) setEditingMac(null);
-                                }}
-                                onCancelEdit={() => setEditingMac(null)}
-                              />
-                            </TableCell>
-                          </TableRow>
-                        ))
+              {!available ? (
+                <Alert variant="destructive">
+                  <AlertDescription>
+                    DHCP lease source not detected. Device discovery
+                    unavailable.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <div className="col-span-1">
+                  <div className="flex justify-between items-center mb-2">
+                    <div className="flex items-center gap-2">
+                      <h6 className="text-sm font-semibold">
+                        Available Devices
+                      </h6>
+                      {source && (
+                        <Badge variant="secondary">
+                          {source}
+                        </Badge>
                       )}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              </Grid>
-            )}
-          </>
-        )}
-      </Grid>
-    </B4Section>
+                    </div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => void loadDevices()}
+                        >
+                          {loading ? (
+                            <Spinner className="h-4 w-4" />
+                          ) : (
+                            <RefreshIcon />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Refresh devices</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+
+                  <div className="bg-card border border-border rounded-md max-h-75 overflow-auto">
+                    <table className="w-full border-collapse">
+                      <thead className="sticky top-0 z-[1] bg-card">
+                        <tr>
+                          <th className="bg-card px-4 py-2 text-left">
+                            <div className="relative">
+                              <Checkbox
+                                checked={allSelected || someSelected}
+                                onCheckedChange={(checked) =>
+                                  onChange(
+                                    "queue.devices.mac",
+                                    checked ? devices.map((d) => d.mac) : []
+                                  )
+                                }
+                                className={cn(
+                                  someSelected && !allSelected && "opacity-50"
+                                )}
+                              />
+                              {someSelected && !allSelected && (
+                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                  <div className="h-1.5 w-1.5 bg-primary rounded-sm" />
+                                </div>
+                              )}
+                            </div>
+                          </th>
+                          {["MAC Address", "IP", "Name"].map((label) => (
+                            <th
+                              key={label}
+                              className="bg-card text-muted-foreground font-semibold px-4 py-2 text-left"
+                            >
+                              {label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {devices.length === 0 ? (
+                          <tr>
+                            <td
+                              colSpan={4}
+                              className="text-center py-8 text-muted-foreground"
+                            >
+                              {loading
+                                ? "Loading devices..."
+                                : "No devices found"}
+                            </td>
+                          </tr>
+                        ) : (
+                          devices.map((device) => (
+                            <tr
+                              key={device.mac}
+                              onClick={() => handleMacToggle(device.mac)}
+                              className="cursor-pointer hover:bg-muted transition-colors"
+                            >
+                              <td
+                                className="px-4 py-2"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Checkbox
+                                  checked={isSelected(device.mac)}
+                                  onCheckedChange={() =>
+                                    handleMacToggle(device.mac)
+                                  }
+                                />
+                              </td>
+                              <td className="font-mono text-xs px-4 py-2">
+                                {device.mac}
+                              </td>
+                              <td className="font-mono text-xs px-4 py-2">
+                                {device.ip}
+                              </td>
+                              <td
+                                className="px-4 py-2"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <DeviceNameCell
+                                  device={device}
+                                  isSelected={isSelected(device.mac)}
+                                  isEditing={editingMac === device.mac}
+                                  onStartEdit={() => setEditingMac(device.mac)}
+                                  onSaveAlias={async (alias) => {
+                                    const result = await setAlias(
+                                      device.mac,
+                                      alias
+                                    );
+                                    if (result.success) setEditingMac(null);
+                                  }}
+                                  onResetAlias={async () => {
+                                    const result = await resetAlias(device.mac);
+                                    if (result.success) setEditingMac(null);
+                                  }}
+                                  onCancelEdit={() => setEditingMac(null)}
+                                />
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 };

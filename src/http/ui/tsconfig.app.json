@@ -1,0 +1,43 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "noImplicitAny": true,
+    "paths": {
+      "@/*": ["./src/*"],
+      "@design": ["./@design"],
+      "@design/*": ["./@design/*"],
+      "@hooks/*": ["./src/hooks/*"],
+      "@utils": ["./src/utils/index.ts"],
+      "@models/*": ["./src/models/*"],
+      "@context/*": ["./src/context/*"],
+      "@api/*": ["./src/api/*"],
+      "@components/*": ["./src/components/*"],
+      "@common/*": ["./src/components/common/*"],
+      "@assets/*": ["./src/assets/*"],
+
+      "@b4.sets": ["./src/barrels/sets.ts"],
+      "@b4.discovery": ["./src/barrels/discovery.ts"],
+      "@b4.logs": ["./src/barrels/logs.ts"],
+      "@b4.metrics": ["./src/barrels/metrics.ts"],
+      "@b4.connections": ["./src/barrels/connections.ts"],
+      "@b4.settings": ["./src/barrels/settings.ts"],
+      "@b4.dashboard": ["./src/barrels/dashboard.ts"],
+      "@b4.fields": ["./src/barrels/fields.ts"],
+      "@b4.elements": ["./src/barrels/elements.ts"],
+      "@b4.icons": ["./src/barrels/icons.ts"],
+      "@b4.devices": ["./src/barrels/devices.ts"],
+      "@b4.capture": ["./src/barrels/capture.ts"]
+    }
+  },
+  "include": ["src"]
+}
+

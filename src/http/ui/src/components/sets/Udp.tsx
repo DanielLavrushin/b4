@@ -1,14 +1,31 @@
-import { Grid } from "@mui/material";
-import { DnsIcon, WarningIcon } from "@b4.icons";
+import { WarningIcon, UdpIcon } from "@b4.icons";
+import { Alert, AlertDescription } from "@design/components/ui/alert";
+import { Badge } from "@design/components/ui/badge";
 import {
-  B4Slider,
-  B4Switch,
-  B4Select,
-  B4TextField,
-  B4Section,
-  B4Alert,
-  B4FormHeader,
-} from "@b4.elements";
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@design/components/ui/card";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldLabel,
+  FieldTitle,
+} from "@design/components/ui/field";
+import { Input } from "@design/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@design/components/ui/select";
+import { Separator } from "@design/components/ui/separator";
+import { Slider } from "@design/components/ui/slider";
+import { Switch } from "@design/components/ui/switch";
 import { B4SetConfig } from "@models/config";
 
 interface UdpSettingsProps {
@@ -78,182 +95,335 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
   const showNoProcessingWarning = !willProcessUdp;
 
   return (
-    <B4Section
-      title="UDP & QUIC Configuration"
-      description="Configure UDP packet processing and QUIC filtering"
-      icon={<DnsIcon />}
-    >
-      <Grid container spacing={3}>
-        <B4FormHeader label="What UDP Traffic to Process" />
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+            <UdpIcon />
+          </div>
+          <div className="flex-1">
+            <CardTitle>UDP & QUIC Configuration</CardTitle>
+            <CardDescription className="mt-1">
+              Configure UDP packet processing and QUIC filtering
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="relative my-4 md:col-span-2 flex items-center">
+            <Separator className="absolute inset-0 top-1/2" />
+            <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+              What UDP Traffic to Process
+            </span>
+          </div>
 
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Select
-            label="QUIC Filter"
-            value={config.udp.filter_quic}
-            options={UDP_QUIC_FILTERS}
-            onChange={(e) =>
-              onChange("udp.filter_quic", e.target.value as string)
-            }
-            helperText={
-              UDP_QUIC_FILTERS.find((o) => o.value === config.udp.filter_quic)
-                ?.description
-            }
-          />
-        </Grid>
-
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4TextField
-            label="Port Filter"
-            value={config.udp.dport_filter}
-            onChange={(e) => onChange("udp.dport_filter", e.target.value)}
-            placeholder="e.g., 5000-6000,8000"
-            helperText="Match specific UDP ports (VoIP, gaming, etc.) - leave empty to disable"
-          />
-        </Grid>
-
-        {/* STUN Filter */}
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Switch
-            label="Filter STUN Packets"
-            checked={config.udp.filter_stun}
-            onChange={(checked) => onChange("udp.filter_stun", checked)}
-            description="Ignore STUN packets (recommended for voice/video calls)"
-          />
-        </Grid>
-
-        {/* Parse mode warning */}
-        {showParseWarning && (
-          <B4Alert severity="warning" icon={<WarningIcon />}>
-            <strong>Parse mode requires domains:</strong> Add domains in the
-            Targets section for SNI matching to work. Without domains, no QUIC
-            traffic will be processed.
-          </B4Alert>
-        )}
-
-        {/* No processing warning */}
-        {showNoProcessingWarning && (
-          <B4Alert>
-            <strong>UDP processing disabled:</strong> Enable QUIC filtering or
-            add port filters to process UDP traffic. Currently, all UDP packets
-            will pass through unchanged.
-          </B4Alert>
-        )}
-
-        {/* Section 2: Action Settings (only if traffic will be processed) */}
-        {showActionSettings && (
-          <>
-            <B4FormHeader label="How to Handle Matched Traffic" />
-
-            {/* UDP Mode */}
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4Select
-                label="Action Mode"
-                value={config.udp.mode}
-                options={UDP_MODES}
-                onChange={(e) => onChange("udp.mode", e.target.value as string)}
-                helperText={
-                  UDP_MODES.find((o) => o.value === config.udp.mode)
-                    ?.description
+          <div>
+            <Field>
+              <FieldLabel>QUIC Filter</FieldLabel>
+              <Select
+                value={config.udp.filter_quic}
+                onValueChange={(value) =>
+                  onChange("udp.filter_quic", value as string)
                 }
-              />
-            </Grid>
-
-            {/* Connection Packets Limit */}
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4Slider
-                label="Connection Packets Limit"
-                value={config.udp.conn_bytes_limit}
-                onChange={(value) => onChange("udp.conn_bytes_limit", value)}
-                min={1}
-                max={main.id === config.id ? 30 : main.udp.conn_bytes_limit}
-                step={1}
-                helperText={
-                  main.id === config.id
-                    ? "Main set limit (changing requires service restart to take effect)"
-                    : `Max: ${main.udp.conn_bytes_limit} (limited by main set)`
-                }
-              />
-            </Grid>
-
-            {/* Info about current mode */}
-            <B4Alert>
-              {isFakeMode ? (
-                <>
-                  <strong>Fake mode:</strong> Matched UDP packets will be
-                  preceded by fake packets and fragmented to bypass DPI systems.
-                  Configure fake packet settings below.
-                </>
-              ) : (
-                <>
-                  <strong>Drop mode:</strong> Matched UDP packets will be
-                  dropped, forcing the application to fall back to TCP (e.g.,
-                  QUIC → HTTPS).
-                </>
-              )}
-            </B4Alert>
-          </>
-        )}
-
-        {/* Section 3: Fake Mode Settings (only if fake mode is enabled) */}
-        {showFakeSettings && (
-          <>
-            <B4FormHeader label="Fake Packet Configuration" />
-
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4Select
-                label="Faking Strategy"
-                value={config.udp.faking_strategy}
-                options={UDP_FAKING_STRATEGIES}
-                onChange={(e) =>
-                  onChange("udp.faking_strategy", e.target.value as string)
-                }
-                helperText={
-                  UDP_FAKING_STRATEGIES.find(
-                    (o) => o.value === config.udp.faking_strategy
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select QUIC filter" />
+                </SelectTrigger>
+                <SelectContent>
+                  {UDP_QUIC_FILTERS.map((option) => (
+                    <SelectItem
+                      key={option.value}
+                      value={option.value.toString()}
+                    >
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FieldDescription>
+                {
+                  UDP_QUIC_FILTERS.find(
+                    (o) => o.value === config.udp.filter_quic
                   )?.description
                 }
-              />
-            </Grid>
+              </FieldDescription>
+            </Field>
+          </div>
 
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4Slider
-                label="Fake Packet Count"
-                value={config.udp.fake_seq_length}
-                onChange={(value) => onChange("udp.fake_seq_length", value)}
-                min={1}
-                max={20}
-                step={1}
-                helperText="Number of fake packets sent before real packet"
+          <div>
+            <Field>
+              <FieldLabel>Port Filter</FieldLabel>
+              <Input
+                value={config.udp.dport_filter}
+                onChange={(e) => onChange("udp.dport_filter", e.target.value)}
+                placeholder="e.g., 5000-6000,8000"
               />
-            </Grid>
+              <FieldDescription>
+                Match specific UDP ports (VoIP, gaming, etc.) - leave empty to
+                disable
+              </FieldDescription>
+            </Field>
+          </div>
 
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4Slider
-                label="Fake Packet Size"
-                value={config.udp.fake_len}
-                onChange={(value) => onChange("udp.fake_len", value)}
-                min={32}
-                max={1500}
-                step={8}
-                valueSuffix=" bytes"
-                helperText="Size of each fake UDP packet payload"
-              />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4Slider
-                label="Segment 2 Delay"
-                value={config.udp.seg2delay}
-                onChange={(value) => onChange("udp.seg2delay", value)}
-                min={0}
-                max={1000}
-                step={10}
-                valueSuffix=" ms"
-                helperText="Delay between segments"
-              />
-            </Grid>
-          </>
-        )}
-      </Grid>
-    </B4Section>
+          {/* STUN Filter */}
+          <div>
+            <label htmlFor="switch-udp-filter-stun">
+              <Field orientation="horizontal" className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2">
+                <FieldContent>
+                  <FieldTitle>Filter STUN Packets</FieldTitle>
+                  <FieldDescription>
+                    Ignore STUN packets (recommended for voice/video calls)
+                  </FieldDescription>
+                </FieldContent>
+                <Switch
+                  id="switch-udp-filter-stun"
+                  checked={config.udp.filter_stun}
+                  onCheckedChange={(checked) =>
+                    onChange("udp.filter_stun", checked)
+                  }
+                />
+              </Field>
+            </label>
+          </div>
+
+          {/* Parse mode warning */}
+          {showParseWarning && (
+            <Alert variant="destructive">
+              <WarningIcon className="h-3.5 w-3.5" />
+              <AlertDescription>
+                <strong>Parse mode requires domains:</strong> Add domains in the
+                Targets section for SNI matching to work. Without domains, no
+                QUIC traffic will be processed.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* No processing warning */}
+          {showNoProcessingWarning && (
+            <Alert>
+              <AlertDescription>
+                <strong>UDP processing disabled:</strong> Enable QUIC filtering
+                or add port filters to process UDP traffic. Currently, all UDP
+                packets will pass through unchanged.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Section 2: Action Settings (only if traffic will be processed) */}
+          {showActionSettings && (
+            <>
+              <div className="relative my-4 md:col-span-2 flex items-center">
+                <Separator className="absolute inset-0 top-1/2" />
+                <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+                  How to Handle Matched Traffic
+                </span>
+              </div>
+
+              {/* UDP Mode */}
+              <div>
+                <Field>
+                  <FieldLabel>Action Mode</FieldLabel>
+                  <Select
+                    value={config.udp.mode}
+                    onValueChange={(value) =>
+                      onChange("udp.mode", value as string)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select action mode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {UDP_MODES.map((option) => (
+                        <SelectItem
+                          key={option.value}
+                          value={option.value.toString()}
+                        >
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FieldDescription>
+                    {
+                      UDP_MODES.find((o) => o.value === config.udp.mode)
+                        ?.description
+                    }
+                  </FieldDescription>
+                </Field>
+              </div>
+
+              {/* Connection Packets Limit */}
+              <div>
+                <Field className="w-full space-y-2">
+                  <div className="flex items-center justify-between">
+                    <FieldLabel className="text-sm font-medium">
+                      Connection Packets Limit
+                    </FieldLabel>
+                    <Badge variant="secondary" className="font-semibold">
+                      {config.udp.conn_bytes_limit}
+                    </Badge>
+                  </div>
+                  <Slider
+                    value={[config.udp.conn_bytes_limit]}
+                    onValueChange={(values) =>
+                      onChange("udp.conn_bytes_limit", values[0])
+                    }
+                    min={1}
+                    max={main.id === config.id ? 30 : main.udp.conn_bytes_limit}
+                    step={1}
+                    className="w-full"
+                  />
+                  <FieldDescription>
+                    {main.id === config.id
+                      ? "Main set limit (changing requires service restart to take effect)"
+                      : `Max: ${main.udp.conn_bytes_limit} (limited by main set)`}
+                  </FieldDescription>
+                </Field>
+              </div>
+
+              {/* Info about current mode */}
+              <Alert>
+                <AlertDescription>
+                  {isFakeMode ? (
+                    <>
+                      <strong>Fake mode:</strong> Matched UDP packets will be
+                      preceded by fake packets and fragmented to bypass DPI
+                      systems. Configure fake packet settings below.
+                    </>
+                  ) : (
+                    <>
+                      <strong>Drop mode:</strong> Matched UDP packets will be
+                      dropped, forcing the application to fall back to TCP
+                      (e.g., QUIC → HTTPS).
+                    </>
+                  )}
+                </AlertDescription>
+              </Alert>
+            </>
+          )}
+
+          {/* Section 3: Fake Mode Settings (only if fake mode is enabled) */}
+          {showFakeSettings && (
+            <>
+              <div className="relative my-4 md:col-span-2 flex items-center">
+                <Separator className="absolute inset-0 top-1/2" />
+                <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+                  Fake Packet Configuration
+                </span>
+              </div>
+
+              <div>
+                <Field>
+                  <FieldLabel>Faking Strategy</FieldLabel>
+                  <Select
+                    value={config.udp.faking_strategy}
+                    onValueChange={(value) =>
+                      onChange("udp.faking_strategy", value as string)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select faking strategy" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {UDP_FAKING_STRATEGIES.map((option) => (
+                        <SelectItem
+                          key={option.value}
+                          value={option.value.toString()}
+                        >
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FieldDescription>
+                    {
+                      UDP_FAKING_STRATEGIES.find(
+                        (o) => o.value === config.udp.faking_strategy
+                      )?.description
+                    }
+                  </FieldDescription>
+                </Field>
+              </div>
+
+              <div>
+                <Field className="w-full space-y-2">
+                  <div className="flex items-center justify-between">
+                    <FieldLabel className="text-sm font-medium">
+                      Fake Packet Count
+                    </FieldLabel>
+                    <Badge variant="secondary" className="font-semibold">
+                      {config.udp.fake_seq_length}
+                    </Badge>
+                  </div>
+                  <Slider
+                    value={[config.udp.fake_seq_length]}
+                    onValueChange={(values) =>
+                      onChange("udp.fake_seq_length", values[0])
+                    }
+                    min={1}
+                    max={20}
+                    step={1}
+                    className="w-full"
+                  />
+                  <FieldDescription>
+                    Number of fake packets sent before real packet
+                  </FieldDescription>
+                </Field>
+              </div>
+
+              <div>
+                <Field className="w-full space-y-2">
+                  <div className="flex items-center justify-between">
+                    <FieldLabel className="text-sm font-medium">
+                      Fake Packet Size
+                    </FieldLabel>
+                    <Badge variant="secondary" className="font-semibold">
+                      {config.udp.fake_len} bytes
+                    </Badge>
+                  </div>
+                  <Slider
+                    value={[config.udp.fake_len]}
+                    onValueChange={(values) =>
+                      onChange("udp.fake_len", values[0])
+                    }
+                    min={32}
+                    max={1500}
+                    step={8}
+                    className="w-full"
+                  />
+                  <FieldDescription>
+                    Size of each fake UDP packet payload
+                  </FieldDescription>
+                </Field>
+              </div>
+              <div>
+                <Field className="w-full space-y-2">
+                  <div className="flex items-center justify-between">
+                    <FieldLabel className="text-sm font-medium">
+                      Segment 2 Delay
+                    </FieldLabel>
+                    <Badge variant="secondary" className="font-semibold">
+                      {config.udp.seg2delay} ms
+                    </Badge>
+                  </div>
+                  <Slider
+                    value={[config.udp.seg2delay]}
+                    onValueChange={(values) =>
+                      onChange("udp.seg2delay", values[0])
+                    }
+                    min={0}
+                    max={1000}
+                    step={10}
+                    className="w-full"
+                  />
+                  <FieldDescription>Delay between segments</FieldDescription>
+                </Field>
+              </div>
+            </>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 };

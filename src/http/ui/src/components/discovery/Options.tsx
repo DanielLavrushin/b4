@@ -1,16 +1,30 @@
 import { useState, useEffect } from "react";
+import { CollapseIcon, ExpandIcon } from "@b4.icons";
+import { Badge } from "@design/components/ui/badge";
+import { Button } from "@design/components/ui/button";
 import {
-  Box,
-  Stack,
-  Typography,
-  Collapse,
-  Autocomplete,
-  Paper,
-} from "@mui/material";
-import { FilterIcon, ExpandIcon, CollapseIcon } from "@b4.icons";
-import { B4Badge, B4FormGroup, B4Switch, B4TextField } from "@b4.elements";
-import { colors } from "@design";
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@design/components/ui/collapsible";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldLabel,
+  FieldTitle,
+} from "@design/components/ui/field";
+import { Separator } from "@design/components/ui/separator";
+import { Switch } from "@design/components/ui/switch";
 import { Capture } from "@b4.capture";
+import { ChipList } from "@components/common/ChipList";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@design/components/ui/select";
 
 export interface DiscoveryOptions {
   skipDNS: boolean;
@@ -41,136 +55,135 @@ export const DiscoveryOptionsPanel = ({
   const tlsCaptures = captures.filter((c) => c.protocol === "tls");
   const hasOptions = options.skipDNS || options.payloadFiles.length > 0;
 
+  const handleAddPayload = (domain: string) => {
+    if (!options.payloadFiles.includes(domain)) {
+      onChange({ ...options, payloadFiles: [...options.payloadFiles, domain] });
+    }
+  };
+
+  const handleRemovePayload = (domain: string) => {
+    onChange({
+      ...options,
+      payloadFiles: options.payloadFiles.filter((d) => d !== domain),
+    });
+  };
+
   return (
-    <Box
-      sx={{
-        border: `1px solid ${colors.border.default}`,
-        borderRadius: 1,
-        overflow: "hidden",
-      }}
-    >
+    <div className="border border-border rounded-md overflow-hidden">
       {/* Header */}
-      <Box
-        onClick={() => setExpanded((e) => !e)}
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          p: 1.5,
-          cursor: "pointer",
-          bgcolor: colors.background.dark,
-          "&:hover": { bgcolor: colors.accent.primary },
-        }}
-      >
-        <Stack direction="row" alignItems="center" spacing={1}>
-          <FilterIcon sx={{ fontSize: 18, color: colors.text.secondary }} />
-          <Typography variant="body2" sx={{ color: colors.text.secondary }}>
-            Discovery Options
-          </Typography>
-          {!expanded && hasOptions && (
-            <B4Badge
-              label={getOptionsSummary(options)}
-              sx={{
-                height: 20,
-                fontSize: "0.7rem",
-                bgcolor: colors.accent.secondary,
-                color: colors.secondary,
-              }}
-            />
-          )}
-        </Stack>
-        {expanded ? (
-          <CollapseIcon sx={{ fontSize: 18, color: colors.text.secondary }} />
-        ) : (
-          <ExpandIcon sx={{ fontSize: 18, color: colors.text.secondary }} />
-        )}
-      </Box>
+      <Collapsible open={expanded} onOpenChange={setExpanded}>
+        <CollapsibleTrigger asChild>
+          <div className="p-3 bg-accent flex items-center justify-between cursor-pointer hover:bg-accent/80 transition-colors">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">
+                Discovery Options
+              </span>
+              {!expanded && hasOptions && (
+                <Badge variant="secondary" className="text-xs">
+                  {getOptionsSummary(options)}
+                </Badge>
+              )}
+            </div>
+            {expanded ? (
+              <CollapseIcon className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ExpandIcon className="h-4 w-4 text-muted-foreground" />
+            )}
+          </div>
+        </CollapsibleTrigger>
 
-      {/* Content */}
-      <Collapse in={expanded}>
-        <Paper
-          sx={{
-            p: 3,
-            bgcolor: colors.background.paper,
-            border: `1px solid ${colors.border.default}`,
-            display: "flex",
-            flexDirection: "column",
-          }}
-          variant="outlined"
-        >
-          <B4FormGroup label="Discovery Options" columns={2}>
-            <B4Switch
-              label="Skip DNS Discovery"
-              checked={options.skipDNS}
-              onChange={(checked) => onChange({ ...options, skipDNS: checked })}
-              disabled={disabled}
-            />
-
-            {/* Custom Payloads */}
-            {tlsCaptures.length > 0 && (
-              <Box>
-                <Typography variant="body1" sx={{ mb: 1 }}>
-                  Custom Payloads
-                </Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ mb: 1, display: "block" }}
+        {/* Content */}
+        <CollapsibleContent>
+          <div className="p-4 bg-card border-t border-border space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Skip DNS Switch */}
+              <label htmlFor="switch-skip-dns">
+                <Field
+                  orientation="horizontal"
+                  className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
                 >
-                  Test with captured TLS ClientHello instead of built-in
-                  payloads
-                </Typography>
-                <Autocomplete
-                  multiple
-                  size="small"
-                  options={tlsCaptures.map((c) => c.domain)}
-                  value={options.payloadFiles}
-                  onChange={(_, newValue) =>
-                    onChange({ ...options, payloadFiles: newValue })
-                  }
-                  disabled={disabled}
-                  renderInput={(params) => (
-                    <B4TextField
-                      {...params}
-                      placeholder={
-                        options.payloadFiles.length === 0
-                          ? "Select captured payloads..."
-                          : ""
-                      }
-                      size="small"
-                    />
-                  )}
-                  renderValue={(value, getTagProps) =>
-                    value.map((domain, index) => (
-                      <B4Badge
-                        {...getTagProps({ index })}
-                        key={domain}
-                        label={domain}
-                        size="small"
-                        sx={{
-                          bgcolor: colors.accent.secondary,
-                          border: `1px solid ${colors.secondary}`,
-                        }}
-                      />
-                    ))
-                  }
-                />
-              </Box>
-            )}
+                  <FieldContent>
+                    <FieldTitle>Skip DNS Discovery</FieldTitle>
+                    <FieldDescription>
+                      Skip DNS detection phase for faster results
+                    </FieldDescription>
+                  </FieldContent>
+                  <Switch
+                    id="switch-skip-dns"
+                    checked={options.skipDNS}
+                    onCheckedChange={(checked) =>
+                      onChange({ ...options, skipDNS: checked })
+                    }
+                    disabled={disabled}
+                  />
+                </Field>
+              </label>
 
-            {tlsCaptures.length === 0 && (
-              <Typography variant="caption" color="text.secondary">
-                No captured payloads available.{" "}
-                <a href="/settings#capture" style={{ color: colors.secondary }}>
-                  Capture payloads
-                </a>{" "}
-                to test with custom TLS ClientHello.
-              </Typography>
-            )}
-          </B4FormGroup>
-        </Paper>
-      </Collapse>
-    </Box>
+              {/* Custom Payloads */}
+              {tlsCaptures.length > 0 && (
+                <div className="md:col-span-2">
+                  <Field>
+                    <FieldLabel>Custom Payloads</FieldLabel>
+                    <FieldDescription className="mb-2">
+                      Test with captured TLS ClientHello instead of built-in
+                      payloads
+                    </FieldDescription>
+                    <Select
+                      onValueChange={handleAddPayload}
+                      disabled={disabled}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select captured payloads..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {tlsCaptures
+                          .filter(
+                            (c) => !options.payloadFiles.includes(c.domain)
+                          )
+                          .map((capture) => (
+                            <SelectItem
+                              key={capture.domain}
+                              value={capture.domain}
+                            >
+                              {capture.domain}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    {options.payloadFiles.length > 0 && (
+                      <div className="mt-2">
+                        <ChipList
+                          items={options.payloadFiles}
+                          getKey={(d) => d}
+                          getLabel={(d) => d}
+                          onDelete={handleRemovePayload}
+                          emptyMessage="No payloads selected"
+                        />
+                      </div>
+                    )}
+                  </Field>
+                </div>
+              )}
+
+              {tlsCaptures.length === 0 && (
+                <div className="md:col-span-2">
+                  <p className="text-xs text-muted-foreground">
+                    No captured payloads available.{" "}
+                    <a
+                      href="/settings#capture"
+                      className="text-primary hover:underline"
+                    >
+                      Capture payloads
+                    </a>{" "}
+                    to test with custom TLS ClientHello.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
   );
 };
 

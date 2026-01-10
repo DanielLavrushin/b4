@@ -1,29 +1,30 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { Container, Paper } from "@mui/material";
-import { DomainsControlBar } from "./ControlBar";
-import { AddSniModal } from "./AddSniModal";
-import { DomainsTable, SortColumn } from "./Table";
+import { devicesApi } from "@b4.devices";
 import { SortDirection } from "@common/SortableTableCell";
+import { useSnackbar } from "@context/SnackbarProvider";
+import { cn } from "@design/lib/utils";
+import { Card, CardContent, CardDescription } from "@design/components/ui/card";
+import { Kbd, KbdGroup } from "@design/components/ui/kbd";
 import {
   useDomainActions,
-  useParsedLogs,
   useEnrichedLogs,
   useFilteredLogs,
+  useParsedLogs,
   useSortedLogs,
 } from "@hooks/useDomainActions";
 import { useIpActions } from "@hooks/useIpActions";
+import { B4Config, B4SetConfig } from "@models/config";
 import {
   generateDomainVariants,
+  generateIpVariants,
   loadSortState,
   saveSortState,
-  generateIpVariants,
 } from "@utils";
-import { colors } from "@design";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useWebSocket } from "../../context/B4WsProvider";
 import { AddIpModal } from "./AddIpModal";
-import { B4Config, B4SetConfig } from "@models/config";
-import { useSnackbar } from "@context/SnackbarProvider";
-import { devicesApi } from "@b4.devices";
+import { AddSniModal } from "./AddSniModal";
+import { DomainsControlBar } from "./ControlBar";
+import { DomainsTable, SortColumn } from "./Table";
 
 const MAX_DISPLAY_ROWS = 1000;
 
@@ -135,23 +136,28 @@ export function ConnectionsPage() {
 
   const handleScrollStateChange = useCallback(() => {}, []);
 
-  const handleSort = useCallback((column: SortColumn) => {
-    setSortColumn((prevColumn) => {
-      if (prevColumn === column) {
-        setSortDirection((prevDir) => {
-          if (prevDir === "asc") return "desc";
-          if (prevDir === "desc") {
-            setSortColumn(null);
-            return null;
-          }
-          return "asc";
-        });
-        return prevColumn;
+  const handleSort = useCallback(
+    (column: SortColumn) => {
+      if (sortColumn === column) {
+        // Same column clicked - cycle through: asc -> desc -> null
+        if (sortDirection === "asc") {
+          setSortDirection("desc");
+        } else if (sortDirection === "desc") {
+          // Reset sort
+          setSortColumn(null);
+          setSortDirection(null);
+        } else {
+          // null -> asc
+          setSortDirection("asc");
+        }
+      } else {
+        // Different column clicked - set to asc
+        setSortColumn(column);
+        setSortDirection("asc");
       }
-      setSortDirection("asc");
-      return column;
-    });
-  }, []);
+    },
+    [sortColumn, sortDirection]
+  );
 
   const handleClearSort = useCallback(() => {
     setSortColumn(null);
@@ -213,31 +219,12 @@ export function ConnectionsPage() {
   }, [handleHotkeysDown]);
 
   return (
-    <Container
-      maxWidth={false}
-      sx={{
-        flex: 1,
-        py: 3,
-        px: 3,
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-      }}
-    >
-      <Paper
-        elevation={0}
-        variant="outlined"
-        sx={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-          border: "1px solid",
-          borderColor: pauseDomains
-            ? colors.border.strong
-            : colors.border.default,
-          transition: "border-color 0.3s",
-        }}
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div
+        className={cn(
+          "flex-1 flex flex-col overflow-hidden border transition-colors",
+          pauseDomains ? "border-[rgba(158,28,96,0.5)]" : "border-border"
+        )}
       >
         <DomainsControlBar
           filter={filter}
@@ -253,16 +240,18 @@ export function ConnectionsPage() {
           onReset={clearDomains}
         />
 
-        <DomainsTable
-          data={sortedData}
-          sortColumn={sortColumn}
-          sortDirection={sortDirection}
-          onSort={handleSort}
-          onDomainClick={handleDomainClick}
-          onIpClick={handleIpClick}
-          onScrollStateChange={handleScrollStateChange}
-        />
-      </Paper>
+        <div className="flex-1 min-h-0 relative">
+          <DomainsTable
+            data={sortedData}
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={handleSort}
+            onDomainClick={handleDomainClick}
+            onIpClick={handleIpClick}
+            onScrollStateChange={handleScrollStateChange}
+          />
+        </div>
+      </div>
 
       <AddSniModal
         open={modalState.open}
@@ -300,6 +289,26 @@ export function ConnectionsPage() {
           openModal(hostname, variants);
         }}
       />
-    </Container>
+
+      <div className="fixed bottom-10 right-10">
+        <Card size="sm" variant="transparent">
+          <CardContent className="space-y-2">
+            <div className="flex gap-2">
+              <CardDescription>Clear</CardDescription>
+              <KbdGroup>
+                <Kbd>Ctrl</Kbd>
+                <Kbd>X</Kbd>
+                <CardDescription>/</CardDescription>
+                <Kbd>Del</Kbd>
+              </KbdGroup>
+            </div>
+            <div className="flex gap-2">
+              <CardDescription>Pause</CardDescription>
+              <Kbd>P</Kbd>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }

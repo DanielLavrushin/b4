@@ -1,19 +1,28 @@
 import { TcpIcon, UdpIcon } from "@b4.icons";
-import { B4Badge } from "@b4.elements";
+import { Badge } from "@design/components/ui/badge";
+import { cn } from "@design/lib/utils";
 
 interface ProtocolChipProps {
   protocol: "TCP" | "UDP";
 }
 
 export const ProtocolChip = ({ protocol }: ProtocolChipProps) => {
-  const icon = protocol === "TCP" ? <TcpIcon /> : <UdpIcon />;
+  const icon =
+    protocol === "TCP" ? (
+      <TcpIcon className="h-3 w-3" />
+    ) : (
+      <UdpIcon className="h-3 w-3" />
+    );
 
   return (
-    <B4Badge
-      icon={icon}
-      label={protocol}
-      variant="outlined"
-      color={protocol === "TCP" ? "primary" : "secondary"}
-    />
+    <Badge
+      variant="outline"
+      className={cn(
+        protocol === "UDP" && "text-primary bg-primary/5 dark:bg-primary/10"
+      )}
+    >
+      {icon}
+      {protocol}
+    </Badge>
   );
 };

@@ -1,7 +1,8 @@
+import { Button } from "@design/components/ui/button";
+import { Input } from "@design/components/ui/input";
+import { cn } from "@design/lib/utils";
+import { CheckIcon, CloseIcon } from "@b4.icons";
 import { useState } from "react";
-import { Box, IconButton, TextField } from "@mui/material";
-import CheckIcon from "@mui/icons-material/Check";
-import CloseIcon from "@mui/icons-material/Close";
 
 interface B4InlineEditProps {
   value: string;
@@ -9,6 +10,7 @@ interface B4InlineEditProps {
   onCancel: () => void;
   disabled?: boolean;
   width?: number;
+  className?: string;
 }
 
 export const B4InlineEdit = ({
@@ -17,6 +19,7 @@ export const B4InlineEdit = ({
   onCancel,
   disabled = false,
   width = 150,
+  className,
 }: B4InlineEditProps) => {
   const [value, setValue] = useState(initialValue);
   const [saving, setSaving] = useState(false);
@@ -32,9 +35,11 @@ export const B4InlineEdit = ({
   };
 
   return (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-      <TextField
-        size="small"
+    <div
+      className={cn("flex items-center gap-1", className)}
+      style={{ width: `${width}px` }}
+    >
+      <Input
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
@@ -43,22 +48,25 @@ export const B4InlineEdit = ({
         }}
         autoFocus
         disabled={saving || disabled}
-        sx={{
-          width,
-          "& .MuiInputBase-input": { py: 0.5, fontSize: "0.85rem" },
-        }}
+        className="h-7 text-xs py-0.5"
       />
-      <IconButton
-        size="small"
+      <Button
+        size="icon-sm"
         onClick={() => void handleSave()}
         disabled={saving || !value.trim()}
-        color="success"
+        variant="ghost"
+        className="text-primary hover:text-primary"
       >
-        <CheckIcon fontSize="small" />
-      </IconButton>
-      <IconButton size="small" onClick={onCancel} disabled={saving}>
-        <CloseIcon fontSize="small" />
-      </IconButton>
-    </Box>
+        <CheckIcon className="h-3.5 w-3.5" />
+      </Button>
+      <Button
+        size="icon-sm"
+        onClick={onCancel}
+        disabled={saving}
+        variant="ghost"
+      >
+        <CloseIcon className="h-3.5 w-3.5" />
+      </Button>
+    </div>
   );
 };

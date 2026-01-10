@@ -1,19 +1,38 @@
 import { useEffect, useState } from "react";
-import { Box, Stack, Button, Paper, CircularProgress } from "@mui/material";
 
 import {
-  DomainIcon,
+  ImportExportIcon,
+  DnsIcon,
+  FakingIcon,
+  FragIcon,
   TcpIcon,
   UdpIcon,
-  DnsIcon,
-  FragIcon,
-  FakingIcon,
-  ImportExportIcon,
+  DomainIcon,
 } from "@b4.icons";
 
-import { B4Dialog, B4Tab, B4Tabs, B4TextField } from "@b4.elements";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@design/components/ui/dialog";
+import {
+  Field,
+  FieldDescription,
+  FieldLabel,
+} from "@design/components/ui/field";
+import { Input } from "@design/components/ui/input";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@design/components/ui/tabs";
 
-import { colors } from "@design";
+import { Button } from "@design/components/ui/button";
+import { Spinner } from "@design/components/ui/spinner";
 import {
   B4Config,
   B4SetConfig,
@@ -21,14 +40,14 @@ import {
   SystemConfig,
 } from "@models/config";
 
+import { DnsSettings } from "./Dns";
+import { FakingSettings } from "./Faking";
+import { FragmentationSettings } from "./Fragmentation";
+import { ImportExportSettings } from "./ImportExport";
+import { SetStats } from "./Manager";
 import { TargetSettings } from "./Target";
 import { TcpSettings } from "./Tcp";
 import { UdpSettings } from "./Udp";
-import { FragmentationSettings } from "./Fragmentation";
-import { ImportExportSettings } from "./ImportExport";
-import { DnsSettings } from "./Dns";
-import { FakingSettings } from "./Faking";
-import { SetStats } from "./Manager";
 
 export interface SetEditorProps {
   open: boolean;
@@ -110,133 +129,157 @@ export const SetEditor = ({
 
   if (!editedSet) return null;
 
-  const dialogContent = (
-    <Stack spacing={3} sx={{ mt: 2 }}>
-      <Paper
-        elevation={0}
-        sx={{
-          bgcolor: colors.background.paper,
-          borderRadius: 2,
-          border: `1px solid ${colors.border.default}`,
-        }}
-      >
-        <Box sx={{ mt: 2, p: 3 }}>
-          <B4TextField
-            label="Set Name"
-            value={editedSet.name}
-            onChange={(e) => handleChange("name", e.target.value)}
-            placeholder="e.g., YouTube Bypass, Gaming, Streaming"
-            helperText="Give this set a descriptive name"
-            required
-          />
-        </Box>
-        {/* Configuration Tabs */}
-        <B4Tabs value={activeTab} onChange={(_, v: number) => setActiveTab(v)}>
-          <B4Tab icon={<DomainIcon />} label="Targets" />
-          <B4Tab icon={<TcpIcon />} label="TCP" />
-          <B4Tab icon={<UdpIcon />} label="UDP" />
-          <B4Tab icon={<DnsIcon />} label="DNS" />
-          <B4Tab icon={<FragIcon />} label="Fragmentation" />
-          <B4Tab icon={<FakingIcon />} label="Faking" />
-          <B4Tab icon={<ImportExportIcon />} label="Import/Export" />
-        </B4Tabs>
-      </Paper>
-      <Box>
-        {/* TCP Settings */}
-        <Box hidden={activeTab !== TABS.TCP}>
-          <Stack spacing={2}>
-            <TcpSettings
-              config={editedSet}
-              main={mainSet}
-              onChange={handleChange}
-            />
-          </Stack>
-        </Box>
-
-        {/* UDP Settings */}
-        <Box hidden={activeTab !== TABS.UDP}>
-          <Stack spacing={2}>
-            <UdpSettings
-              config={editedSet}
-              main={mainSet}
-              onChange={handleChange}
-            />
-          </Stack>
-        </Box>
-
-        {/* DNS Settings */}
-        <Box hidden={activeTab !== TABS.DNS}>
-          <Stack spacing={2}>
-            <DnsSettings
-              config={editedSet}
-              onChange={handleChange}
-              ipv6={config.queue.ipv6}
-            />
-          </Stack>
-        </Box>
-
-        {/* Fragmentation Settings */}
-        <Box hidden={activeTab !== TABS.FRAGMENTATION}>
-          <Stack spacing={2}>
-            <FragmentationSettings config={editedSet} onChange={handleChange} />
-          </Stack>
-        </Box>
-
-        {/* Faking Settings */}
-        <Box hidden={activeTab !== TABS.FAKING}>
-          <Stack spacing={2}>
-            <FakingSettings config={editedSet} onChange={handleChange} />
-          </Stack>
-        </Box>
-
-        {/* Target Settings */}
-        <Box hidden={activeTab !== TABS.TARGETS}>
-          <Stack spacing={2}>
-            <TargetSettings
-              geo={settings.geo}
-              config={editedSet}
-              stats={stats}
-              onChange={handleChange}
-            />
-          </Stack>
-        </Box>
-
-        {/* Import/Export Settings */}
-        <Box hidden={activeTab !== TABS.IMPORT_EXPORT}>
-          <Stack spacing={2}>
-            <ImportExportSettings
-              config={editedSet}
-              onImport={handleApplyImport}
-            />
-          </Stack>
-        </Box>
-      </Box>
-    </Stack>
-  );
-
   return (
-    <B4Dialog
-      title={isNew ? "Create New Set" : `Edit Set: ${editedSet.name}`}
-      open={open}
-      onClose={onClose}
-      icon={<ImportExportIcon />}
-      fullWidth={true}
-      maxWidth="lg"
-      actions={
-        <>
-          <Button onClick={onClose} disabled={saving}>
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-h-[90vh] flex flex-col max-w-[90vw] sm:max-w-[90vw] w-[90vw]">
+        <DialogHeader>
+          <DialogTitle>
+            {isNew ? "Create New Set" : `Edit Set: ${editedSet.name}`}
+          </DialogTitle>
+          <DialogDescription>
+            {isNew
+              ? "Configure your new set settings"
+              : "Modify set configuration and settings"}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-hidden flex flex-col gap-4">
+          <Field>
+            <FieldLabel>Set Name</FieldLabel>
+            <Input
+              value={editedSet.name}
+              onChange={(e) => handleChange("name", e.target.value)}
+              placeholder="e.g., YouTube Bypass, Gaming, Streaming"
+              required
+            />
+            <FieldDescription>
+              Give this set a descriptive name
+            </FieldDescription>
+          </Field>
+
+          <Tabs
+            value={activeTab.toString()}
+            onValueChange={(v) => setActiveTab(Number(v) as TABS)}
+            className="flex-1 flex flex-col overflow-hidden"
+          >
+            <TabsList className="grid w-full grid-cols-7">
+              <TabsTrigger value={TABS.TARGETS.toString()}>
+                <DomainIcon className="h-4 w-4 mr-2" />
+                Targets
+              </TabsTrigger>
+              <TabsTrigger value={TABS.TCP.toString()}>
+                <TcpIcon className="h-4 w-4 mr-2" />
+                TCP
+              </TabsTrigger>
+              <TabsTrigger value={TABS.UDP.toString()}>
+                <UdpIcon className="h-4 w-4 mr-2" />
+                UDP
+              </TabsTrigger>
+              <TabsTrigger value={TABS.DNS.toString()}>
+                <DnsIcon className="h-4 w-4 mr-2" />
+                DNS
+              </TabsTrigger>
+              <TabsTrigger value={TABS.FRAGMENTATION.toString()}>
+                <FragIcon className="h-4 w-4 mr-2" />
+                Fragmentation
+              </TabsTrigger>
+              <TabsTrigger value={TABS.FAKING.toString()}>
+                <FakingIcon className="h-4 w-4 mr-2" />
+                Faking
+              </TabsTrigger>
+              <TabsTrigger value={TABS.IMPORT_EXPORT.toString()}>
+                <ImportExportIcon className="h-4 w-4 mr-2" />
+                Import/Export
+              </TabsTrigger>
+            </TabsList>
+
+            <div className="flex-1 overflow-y-auto mt-4">
+              <TabsContent value={TABS.TARGETS.toString()} className="mt-0">
+                <div className="flex flex-col gap-4">
+                  <TargetSettings
+                    geo={settings.geo}
+                    config={editedSet}
+                    stats={stats}
+                    onChange={handleChange}
+                  />
+                </div>
+              </TabsContent>
+
+              <TabsContent value={TABS.TCP.toString()} className="mt-0">
+                <div className="flex flex-col gap-4">
+                  <TcpSettings
+                    config={editedSet}
+                    main={mainSet}
+                    onChange={handleChange}
+                  />
+                </div>
+              </TabsContent>
+
+              <TabsContent value={TABS.UDP.toString()} className="mt-0">
+                <div className="flex flex-col gap-4">
+                  <UdpSettings
+                    config={editedSet}
+                    main={mainSet}
+                    onChange={handleChange}
+                  />
+                </div>
+              </TabsContent>
+
+              <TabsContent value={TABS.DNS.toString()} className="mt-0">
+                <div className="flex flex-col gap-4">
+                  <DnsSettings
+                    config={editedSet}
+                    onChange={handleChange}
+                    ipv6={config.queue.ipv6}
+                  />
+                </div>
+              </TabsContent>
+
+              <TabsContent
+                value={TABS.FRAGMENTATION.toString()}
+                className="mt-0"
+              >
+                <div className="flex flex-col gap-4">
+                  <FragmentationSettings
+                    config={editedSet}
+                    onChange={handleChange}
+                  />
+                </div>
+              </TabsContent>
+
+              <TabsContent value={TABS.FAKING.toString()} className="mt-0">
+                <div className="flex flex-col gap-4">
+                  <FakingSettings config={editedSet} onChange={handleChange} />
+                </div>
+              </TabsContent>
+
+              <TabsContent
+                value={TABS.IMPORT_EXPORT.toString()}
+                className="mt-0"
+              >
+                <div className="flex flex-col gap-4">
+                  <ImportExportSettings
+                    config={editedSet}
+                    onImport={handleApplyImport}
+                  />
+                </div>
+              </TabsContent>
+            </div>
+          </Tabs>
+        </div>
+
+        <DialogFooter>
+          <Button onClick={onClose} variant="outline" disabled={saving}>
             Cancel
           </Button>
-          <Box sx={{ flex: 1 }} />
           <Button
-            variant="contained"
             onClick={handleSave}
             disabled={!editedSet.name.trim() || saving}
-            sx={{ minWidth: 140 }}
+            className="min-w-35"
           >
             {saving ? (
               <>
-                <CircularProgress size={16} sx={{ mr: 1, color: "inherit" }} />
+                <Spinner className="h-4 w-4 mr-2" />
                 Saving...
               </>
             ) : isNew ? (
@@ -245,10 +288,8 @@ export const SetEditor = ({
               "Save Changes"
             )}
           </Button>
-        </>
-      }
-    >
-      {dialogContent}
-    </B4Dialog>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };

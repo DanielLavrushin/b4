@@ -1,7 +1,6 @@
-import { Paper, Stack, Typography } from "@mui/material";
-import { StatusBadge } from "./StatusBadge";
+import { Card } from "@design/components/ui/card";
 import { formatNumber } from "@utils";
-import { colors } from "@design";
+import { StatusBadge } from "./StatusBadge";
 
 interface DashboardStatusBarProps {
   metrics: {
@@ -15,19 +14,11 @@ interface DashboardStatusBarProps {
 
 export const DashboardStatusBar = ({ metrics }: DashboardStatusBarProps) => {
   return (
-    <Paper
-      sx={{
-        p: 2,
-        mb: 3,
-        bgcolor: colors.background.paper,
-        borderColor: colors.border.default,
-      }}
-      variant="outlined"
-    >
-      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
-        <Typography variant="subtitle2" sx={{ color: colors.text.secondary }}>
+    <Card className="p-4 mb-6 border border-border">
+      <div className="flex flex-row gap-4 items-center flex-wrap">
+        <p className="text-sm font-medium text-muted-foreground">
           System Status:
-        </Typography>
+        </p>
         <StatusBadge
           label={`NFQueue: ${metrics.nfqueue_status}`}
           status="active"
@@ -48,7 +39,7 @@ export const DashboardStatusBar = ({ metrics }: DashboardStatusBarProps) => {
           label={`UDP: ${formatNumber(metrics.udp_connections)}`}
           status="active"
         />
-      </Stack>
-    </Paper>
+      </div>
+    </Card>
   );
 };

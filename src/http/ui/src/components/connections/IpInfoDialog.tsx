@@ -1,15 +1,17 @@
-import { useEffect, useState } from "react";
+import { AddIcon, InfoIcon } from "@b4.icons";
+import { Alert, AlertDescription } from "@design/components/ui/alert";
+import { Badge } from "@design/components/ui/badge";
+import { Button } from "@design/components/ui/button";
 import {
-  Button,
-  Typography,
-  Box,
-  CircularProgress,
-  Stack,
-} from "@mui/material";
-import { InfoIcon, AddIcon } from "@b4.icons";
-import { B4Dialog } from "@common/B4Dialog";
-import { B4Badge } from "@common/B4Badge";
-import { B4Alert } from "@b4.elements";
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@design/components/ui/dialog";
+import { Separator } from "@design/components/ui/separator";
+import { Spinner } from "@design/components/ui/spinner";
+import { useEffect, useState } from "react";
 
 interface IpInfo {
   ip: string;
@@ -74,131 +76,122 @@ export const IpInfoModal = ({
   };
 
   return (
-    <B4Dialog
-      title="IP Information"
-      icon={<InfoIcon />}
-      open={open}
-      onClose={onClose}
-      actions={
-        <>
+    <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+              <InfoIcon />
+            </div>
+            <div className="flex-1">
+              <DialogTitle>IP Information</DialogTitle>
+            </div>
+          </div>
+        </DialogHeader>
+        <div className="py-4">
+          <>
+            {loading && (
+              <div className="flex justify-center py-8">
+                <Spinner />
+              </div>
+            )}
+
+            {error && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+
+            {ipInfo && !loading && (
+              <div className="flex flex-col gap-4">
+                {ipInfo.org && (
+                  <div>
+                    <p className="text-xs text-secondary mb-1">Organization</p>
+                    <p className="text-sm">
+                      <a
+                        href={"https://ipinfo.io/" + ipInfo.org.split(" ")[0]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        {ipInfo.org}
+                      </a>
+                    </p>
+                  </div>
+                )}
+
+                {ipInfo.hostname && (
+                  <div>
+                    <p className="text-xs text-secondary mb-1">Hostname</p>
+                    <p className="text-sm font-mono">
+                      <Badge variant="secondary">{ipInfo.hostname}</Badge>
+                    </p>
+                  </div>
+                )}
+
+                <div>
+                  <p className="text-xs text-secondary mb-1">IP Address</p>
+                  <p className="text-sm font-mono">
+                    <a
+                      href={"https://ipinfo.io/" + ipInfo.ip}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      {ipInfo.ip}
+                    </a>
+                  </p>
+                </div>
+
+                {(ipInfo.city || ipInfo.region || ipInfo.country) && (
+                  <div>
+                    <p className="text-xs text-secondary mb-1">Location</p>
+                    <p className="text-sm">
+                      {[ipInfo.city, ipInfo.region, ipInfo.country]
+                        .filter(Boolean)
+                        .join(", ")}
+                    </p>
+                  </div>
+                )}
+
+                {ipInfo.loc && (
+                  <div>
+                    <p className="text-xs text-secondary mb-1">Coordinates</p>
+                    <p className="text-sm font-mono">{ipInfo.loc}</p>
+                  </div>
+                )}
+
+                {ipInfo.timezone && (
+                  <div>
+                    <p className="text-xs text-secondary mb-1">Timezone</p>
+                    <p className="text-sm">{ipInfo.timezone}</p>
+                  </div>
+                )}
+
+                {ipInfo.postal && (
+                  <div>
+                    <p className="text-xs text-secondary mb-1">Postal Code</p>
+                    <p className="text-sm">{ipInfo.postal}</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        </div>
+        <Separator />
+        <DialogFooter>
           {ipInfo?.hostname && onAddHostname && (
-            <Button
-              onClick={handleAddHostname}
-              variant="contained"
-              startIcon={<AddIcon />}
-            >
+            <Button onClick={handleAddHostname}>
+              <AddIcon className="h-4 w-4 mr-2" />
               Add Hostname
             </Button>
           )}
-          <Box sx={{ flex: 1 }} />
-          <Button onClick={onClose} variant="outlined">
+          <div className="flex-1" />
+          <Button onClick={onClose} variant="outline">
             Close
           </Button>
-        </>
-      }
-    >
-      <>
-        {loading && (
-          <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
-            <CircularProgress />
-          </Box>
-        )}
-
-        {error && (
-          <B4Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </B4Alert>
-        )}
-
-        {ipInfo && !loading && (
-          <Stack spacing={2}>
-            {ipInfo.org && (
-              <Box>
-                <Typography variant="caption" color="text.secondary">
-                  Organization
-                </Typography>
-                <Typography variant="body1">
-                  <a
-                    href={"https://ipinfo.io/" + ipInfo.org.split(" ")[0]}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {ipInfo.org}
-                  </a>
-                </Typography>
-              </Box>
-            )}
-
-            {ipInfo.hostname && (
-              <Box>
-                <Typography variant="caption" color="text.secondary">
-                  Hostname
-                </Typography>
-                <Typography variant="body1" fontFamily="monospace">
-                  <B4Badge label={ipInfo.hostname} color="secondary" />
-                </Typography>
-              </Box>
-            )}
-
-            <Box>
-              <Typography variant="caption" color="text.secondary">
-                IP Address
-              </Typography>
-              <Typography variant="body1" fontFamily="monospace">
-                <a
-                  href={"https://ipinfo.io/" + ipInfo.ip}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {ipInfo.ip}
-                </a>
-              </Typography>
-            </Box>
-
-            {(ipInfo.city || ipInfo.region || ipInfo.country) && (
-              <Box>
-                <Typography variant="caption" color="text.secondary">
-                  Location
-                </Typography>
-                <Typography variant="body1">
-                  {[ipInfo.city, ipInfo.region, ipInfo.country]
-                    .filter(Boolean)
-                    .join(", ")}
-                </Typography>
-              </Box>
-            )}
-
-            {ipInfo.loc && (
-              <Box>
-                <Typography variant="caption" color="text.secondary">
-                  Coordinates
-                </Typography>
-                <Typography variant="body1" fontFamily="monospace">
-                  {ipInfo.loc}
-                </Typography>
-              </Box>
-            )}
-
-            {ipInfo.timezone && (
-              <Box>
-                <Typography variant="caption" color="text.secondary">
-                  Timezone
-                </Typography>
-                <Typography variant="body1">{ipInfo.timezone}</Typography>
-              </Box>
-            )}
-
-            {ipInfo.postal && (
-              <Box>
-                <Typography variant="caption" color="text.secondary">
-                  Postal Code
-                </Typography>
-                <Typography variant="body1">{ipInfo.postal}</Typography>
-              </Box>
-            )}
-          </Stack>
-        )}
-      </>
-    </B4Dialog>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };

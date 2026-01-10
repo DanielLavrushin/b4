@@ -1,17 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Box,
-  Container,
-  IconButton,
-  Paper,
-  Stack,
-  Typography,
-} from "@mui/material";
-import { ClearIcon } from "@b4.icons";
-import { B4Badge, B4TextField, B4Switch, B4TooltipButton } from "@b4.elements";
-import { ArrowDownIcon } from "@b4.icons";
+import { ArrowDownIcon, ClearIcon } from "@b4.icons";
 import { useWebSocket } from "@context/B4WsProvider";
 import { useSnackbar } from "@context/SnackbarProvider";
+import { Badge } from "@design/components/ui/badge";
+import { Button } from "@design/components/ui/button";
+import { Input } from "@design/components/ui/input";
+import { Label } from "@design/components/ui/label";
+import { Switch } from "@design/components/ui/switch";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@design/components/ui/tooltip";
+import { cn } from "@design/lib/utils";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export function LogsPage() {
   const { showSuccess } = useSnackbar();
@@ -83,153 +84,96 @@ export function LogsPage() {
   }, [handleHotkeysDown]);
 
   return (
-    <Container
-      maxWidth={false}
-      sx={{
-        flex: 1,
-        py: 3,
-        px: 3,
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-      }}
-    >
-      <Paper
-        elevation={0}
-        variant="outlined"
-        sx={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-          border: "1px solid",
-          borderColor: pauseLogs
-            ? "rgba(245, 173, 24, 0.5)"
-            : "rgba(245, 173, 24, 0.24)",
-          transition: "border-color 0.3s",
-        }}
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div
+        className={cn(
+          "flex-1 flex flex-col overflow-hidden border transition-colors",
+          pauseLogs ? "border-border/50" : "border-border"
+        )}
       >
         {/* Controls Bar */}
-        <Box
-          sx={{
-            p: 2,
-            borderBottom: "1px solid",
-            borderColor: "rgba(245, 173, 24, 0.12)",
-            bgcolor: "rgba(31, 18, 24, 0.6)",
-          }}
-        >
-          <Stack direction="row" spacing={2} alignItems="center">
-            <B4TextField
-              size="small"
+        <div className="p-4 border-b border-border/50 bg-card">
+          <div className="flex flex-row gap-4 items-center">
+            <Input
               placeholder="Filter logs..."
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
+              className="flex-1"
             />
-            <Stack direction="row" spacing={1} alignItems="center">
-              <B4Badge label={`${logs.length} lines`} size="small" />
+            <div className="flex flex-row gap-2 items-center">
+              <Badge>
+                {`${logs.length} lines`}
+              </Badge>
               {filter && (
-                <B4Badge label={`${filtered.length} filtered`} size="small" />
+                <Badge>
+                  {`${filtered.length} filtered`}
+                </Badge>
               )}
-            </Stack>
-            <B4Switch
-              label={pauseLogs ? "Paused" : "Streaming"}
-              checked={pauseLogs}
-              onChange={(checked: boolean) => setPauseLogs(checked)}
-            />
-            <B4TooltipButton
-              title={"Clear Logs"}
-              onClick={clearLogs}
-              icon={<ClearIcon />}
-            />
-          </Stack>
-        </Box>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={pauseLogs}
+                onCheckedChange={(checked: boolean) => setPauseLogs(checked)}
+              />
+              <Label className="font-medium cursor-pointer">
+                {pauseLogs ? "Paused" : "Streaming"}
+              </Label>
+            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon-sm" onClick={clearLogs}>
+                  <ClearIcon />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Clear Logs</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
 
-        <Box
+        <div
           ref={logRef}
           onScroll={handleScroll}
-          sx={{
-            flex: 1,
-            overflowY: "auto",
-            position: "relative",
-            p: 2,
-            fontFamily:
-              'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
-            fontSize: 13,
-            lineHeight: 1.6,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-            backgroundColor: "#0f0a0e",
-            color: "text.primary",
-          }}
+          className="flex-1 overflow-y-auto relative p-4 font-mono text-[13px] leading-relaxed whitespace-pre-wrap wrap-break-word bg-background text-foreground"
         >
           {(() => {
             if (filtered.length === 0 && logs.length === 0) {
               return (
-                <Typography
-                  sx={{
-                    color: "text.secondary",
-                    textAlign: "center",
-                    mt: 4,
-                    fontStyle: "italic",
-                  }}
-                >
+                <p className="text-muted-foreground text-center mt-8 italic">
                   Waiting for logs...
-                </Typography>
+                </p>
               );
             } else if (filtered.length === 0) {
               return (
-                <Typography
-                  sx={{
-                    color: "text.secondary",
-                    textAlign: "center",
-                    mt: 4,
-                    fontStyle: "italic",
-                  }}
-                >
+                <p className="text-muted-foreground text-center mt-8 italic">
                   No logs match your filter
-                </Typography>
+                </p>
               );
             } else {
               return filtered.map((l, i) => (
-                <Typography
+                <div
                   key={l + "_" + i}
-                  component="div"
-                  sx={{
-                    fontFamily: "inherit",
-                    fontSize: "inherit",
-                    "&:hover": {
-                      bgcolor: "rgba(158, 28, 96, 0.1)",
-                    },
-                  }}
+                  className="font-mono text-[13px] hover:bg-accent/50"
                 >
                   {l}
-                </Typography>
+                </div>
               ));
             }
           })()}
 
           {/* Scroll to Bottom Button */}
           {showScrollBtn && (
-            <IconButton
+            <Button
               onClick={scrollToBottom}
-              sx={{
-                position: "absolute",
-                bottom: 16,
-                right: 16,
-                bgcolor: "#9E1C60",
-                color: "#fff",
-                boxShadow: "0 4px 12px rgba(158, 28, 96, 0.4)",
-                "&:hover": {
-                  bgcolor: "#811844",
-                },
-              }}
-              size="small"
+              size="icon"
+              className="absolute bottom-4 right-4 bg-primary text-primary-foreground shadow-lg hover:bg-primary/80"
             >
-              <ArrowDownIcon />
-            </IconButton>
+              <ArrowDownIcon className="h-4 w-4" />
+            </Button>
           )}
-        </Box>
-      </Paper>
-    </Container>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -140,6 +140,7 @@
   "[dotenv]": {
     "editor.defaultFormatter": "foxundermoon.shell-format"
   },
+  "css.lint.unknownAtRules": "ignore",
   "favorites.resources": [
     {
       "filePath": "src/http/ui/src/models/config.ts",

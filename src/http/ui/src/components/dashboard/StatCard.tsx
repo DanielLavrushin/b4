@@ -1,6 +1,6 @@
-import { B4Card } from "@common/B4Card";
-import { Box, Stack, Typography } from "@mui/material";
-import { colors, spacing, radius } from "@design";
+import { colors } from "@design";
+import { Card } from "@design/components/ui/card";
+import { cn } from "@design/lib/utils";
 
 interface StatCardProps {
   title: string;
@@ -25,103 +25,75 @@ export const StatCard = ({
   variant = "outlined",
   onClick,
   trend,
-}: StatCardProps) => (
-  <B4Card
-    variant={variant}
-    sx={{
-      border: `1px solid ${color}33`,
-      cursor: onClick ? "pointer" : "default",
-      transition: "all 0.2s ease",
-      width: "100%",
-      display: "flex",
-      flexDirection: "column",
-      "&:hover": onClick
-        ? {
-            borderColor: `${color}66`,
-            boxShadow: `0 0 20px ${color}22`,
-            transform: "translateY(-2px)",
-          }
-        : {
-            borderColor: `${color}66`,
-            boxShadow: `0 0 20px ${color}22`,
-          },
-    }}
-    onClick={onClick}
-  >
-    <Box sx={{ p: spacing.md, flex: 1 }}>
-      <Stack
-        direction="row"
-        justifyContent="space-between"
-        alignItems="flex-start"
-      >
-        <Box sx={{ flex: 1 }}>
-          <Typography
-            variant="caption"
-            sx={{
-              color: colors.text.secondary,
-              textTransform: "uppercase",
-              letterSpacing: "0.5px",
-            }}
-          >
-            {title}
-          </Typography>
-          <Typography
-            variant="h4"
-            sx={{
-              color: colors.text.primary,
-              fontWeight: 600,
-              mt: 0.5,
-              mb: 0.5,
-            }}
-          >
-            {value}
-          </Typography>
-          {subtitle && (
-            <Typography variant="caption" sx={{ color: colors.text.secondary }}>
-              {subtitle}
-            </Typography>
-          )}
-          {trend && (
-            <Box
-              sx={{ display: "flex", alignItems: "center", gap: 0.5, mt: 0.5 }}
-            >
-              <Typography
-                variant="caption"
-                sx={{
-                  color: trend.value > 0 ? "#4caf50" : "#f44336",
-                  fontWeight: 600,
-                }}
-              >
-                {trend.value > 0 ? "+" : ""}
-                {trend.value.toFixed(1)}%
-              </Typography>
-              {trend.label && (
-                <Typography
-                  variant="caption"
-                  sx={{ color: colors.text.secondary }}
+}: StatCardProps) => {
+  const colorStyle = color.startsWith("#")
+    ? color
+    : color.startsWith("rgb")
+    ? color
+    : `var(--${color})`;
+
+  return (
+    <Card
+      className={cn(
+        "w-full flex flex-col transition-all duration-200 border border-border",
+        variant === "outlined"
+          ? "border border-border"
+          : variant === "elevated"
+          ? "border-none shadow-lg"
+          : "border-none",
+        onClick && "cursor-pointer hover:-translate-y-0.5",
+        "hover:border-border hover:shadow-lg"
+      )}
+      onClick={onClick}
+      onMouseEnter={(e) => {
+        if (onClick) {
+          e.currentTarget.style.transform = "translateY(-2px)";
+        }
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.transform = "";
+      }}
+    >
+      <div className="p-4 flex-1">
+        <div className="flex flex-row justify-between items-start">
+          <div className="flex-1">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider">
+              {title}
+            </p>
+            <h4 className="text-2xl font-semibold text-foreground mt-1 mb-1">
+              {value}
+            </h4>
+            {subtitle && (
+              <p className="text-xs text-muted-foreground">{subtitle}</p>
+            )}
+            {trend && (
+              <div className="flex items-center gap-1 mt-1">
+                <p
+                  className={cn(
+                    "text-xs font-semibold",
+                    trend.value > 0 ? "text-green-500" : "text-red-500"
+                  )}
                 >
-                  {trend.label}
-                </Typography>
-              )}
-            </Box>
-          )}
-        </Box>
-        <Box
-          sx={{
-            p: 1.5,
-            borderRadius: radius.lg,
-            bgcolor: `${color}22`,
-            color,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            minWidth: 56,
-            minHeight: 56,
-          }}
-        >
-          {icon}
-        </Box>
-      </Stack>
-    </Box>
-  </B4Card>
-);
+                  {trend.value > 0 ? "+" : ""}
+                  {trend.value.toFixed(1)}%
+                </p>
+                {trend.label && (
+                  <p className="text-xs text-muted-foreground">{trend.label}</p>
+                )}
+              </div>
+            )}
+          </div>
+          <div
+            className="p-3 flex items-center justify-center min-w-14 min-h-14"
+            style={{
+              backgroundColor: `${colorStyle}22`,
+              color: colorStyle,
+            }}
+          >
+            {icon}
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+};

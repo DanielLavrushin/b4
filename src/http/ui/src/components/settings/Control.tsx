@@ -1,10 +1,15 @@
-import { useState } from "react";
-import { Button, Grid } from "@mui/material";
-import SettingSection from "@common/B4Section";
 import { ControlIcon, RestartIcon, RestoreIcon } from "@b4.icons";
-import { RestartDialog } from "./RestartDialog";
-import { spacing } from "@design";
+import { Button } from "@design/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@design/components/ui/card";
+import { useState } from "react";
 import { ResetDialog } from "./ResetDialog";
+import { RestartDialog } from "./RestartDialog";
 
 interface ControlSettingsProps {
   loadConfig: () => void;
@@ -20,42 +25,49 @@ export const ControlSettings = ({ loadConfig }: ControlSettingsProps) => {
   };
 
   return (
-    <SettingSection
-      title="Core Controls"
-      description="Control core service and config operations"
-      icon={<ControlIcon />}
-    >
-      <Grid container spacing={spacing.lg}>
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={<RestartIcon />}
-          onClick={() => setShowRestartDialog(true)}
-          disabled={saving}
-        >
-          Restart B4 System Service
-        </Button>
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={<RestoreIcon />}
-          onClick={() => setShowResetDialog(true)}
-          disabled={saving}
-        >
-          Reset the configuration to default settings
-        </Button>
-      </Grid>
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <ControlIcon className="h-5 w-5" />
+          <CardTitle>Core Controls</CardTitle>
+        </div>
+        <CardDescription>
+          Control core service and config operations
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-col gap-4">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowRestartDialog(true)}
+            disabled={saving}
+          >
+            <RestartIcon className="h-4 w-4 mr-2" />
+            Restart B4 System Service
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={() => setShowResetDialog(true)}
+            disabled={saving}
+          >
+            <RestoreIcon className="h-4 w-4 mr-2" />
+            Reset the configuration to default settings
+          </Button>
+        </div>
 
-      <RestartDialog
-        open={showRestartDialog}
-        onClose={() => setShowRestartDialog(false)}
-      />
+        <RestartDialog
+          open={showRestartDialog}
+          onClose={() => setShowRestartDialog(false)}
+        />
 
-      <ResetDialog
-        open={showResetDialog}
-        onClose={() => setShowResetDialog(false)}
-        onSuccess={handleResetSuccess}
-      />
-    </SettingSection>
+        <ResetDialog
+          open={showResetDialog}
+          onClose={() => setShowResetDialog(false)}
+          onSuccess={handleResetSuccess}
+        />
+      </CardContent>
+    </Card>
   );
 };

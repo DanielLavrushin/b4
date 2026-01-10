@@ -1,20 +1,34 @@
-import { B4Config } from "@models/config";
-import {
-  Grid,
-  Stack,
-  Typography,
-  Button,
-  MenuItem,
-  CircularProgress,
-  Box,
-  Chip,
-  Divider,
-} from "@mui/material";
-import { DomainIcon, DownloadIcon, SuccessIcon } from "@b4.icons";
-import { B4Alert, B4FormHeader, B4Section, B4TextField } from "@b4.elements";
-import { useState, useEffect, useCallback } from "react";
-import { colors } from "@design";
+import { GeodatIcon, DownloadIcon, SuccessIcon } from "@b4.icons";
 import { geodatApi, GeodatSource, GeoFileInfo } from "@b4.settings";
+import { Alert, AlertDescription } from "@design/components/ui/alert";
+import { Badge } from "@design/components/ui/badge";
+import { Button } from "@design/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@design/components/ui/card";
+import {
+  Field,
+  FieldDescription,
+  FieldLabel,
+} from "@design/components/ui/field";
+import { Input } from "@design/components/ui/input";
+import { Label } from "@design/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@design/components/ui/select";
+import { Separator } from "@design/components/ui/separator";
+import { Spinner } from "@design/components/ui/spinner";
+import { cn } from "@design/lib/utils";
+import { B4Config } from "@models/config";
+import { useCallback, useEffect, useState } from "react";
 
 export interface GeoSettingsProps {
   config: B4Config;
@@ -139,307 +153,248 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
   };
 
   return (
-    <Stack spacing={3}>
-      <B4Alert>
-        <Typography variant="subtitle2" gutterBottom>
-          Download GeoSite/GeoIP database files for domain and IP
-          categorization.
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          Files will be saved to <strong>{destPath}</strong>
-        </Typography>
-      </B4Alert>
+    <div className="space-y-6">
+      <Alert>
+        <AlertDescription>
+          <h6 className="text-sm font-semibold mb-2">
+            Download GeoSite/GeoIP database files for domain and IP
+            categorization.
+          </h6>
+          <p className="text-xs text-muted-foreground">
+            Files will be saved to <strong>{destPath}</strong>
+          </p>
+        </AlertDescription>
+      </Alert>
 
       {/* Current Files Status */}
-      <B4Section
-        title="Current Files"
-        description="Status of currently configured geodat files"
-        icon={<DomainIcon />}
-      >
-        <Grid container spacing={2}>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Box
-              sx={{
-                p: 2,
-                borderRadius: 1,
-                border: `1px solid ${colors.border.default}`,
-                bgcolor: colors.background.paper,
-              }}
-            >
-              <Stack spacing={1}>
-                <Box
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <Typography variant="subtitle2" fontWeight={600}>
-                    Geosite Database
-                  </Typography>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <GeodatIcon className="h-5 w-5" />
+            <CardTitle>Current Files</CardTitle>
+          </div>
+          <CardDescription>
+            Status of currently configured geodat files
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-4 rounded-md border border-border bg-card">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h6 className="text-sm font-semibold">Geosite Database</h6>
                   {geositeInfo.exists ? (
-                    <Chip
-                      size="small"
-                      icon={<SuccessIcon />}
-                      label="Active"
-                      sx={{
-                        bgcolor: colors.accent.secondary,
-                        color: colors.secondary,
-                      }}
-                    />
+                    <Badge
+                      variant="secondary"
+                      className="inline-flex items-center gap-1"
+                    >
+                      <SuccessIcon className="h-3 w-3" />
+                      Active
+                    </Badge>
                   ) : (
-                    <Chip
-                      size="small"
-                      label="Not Found"
-                      sx={{ bgcolor: colors.accent.tertiary }}
-                    />
+                    <Badge variant="outline">
+                      Not Found
+                    </Badge>
                   )}
-                </Box>
+                </div>
 
-                <Typography variant="caption" color="text.secondary">
-                  Path
-                </Typography>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    fontFamily: "monospace",
-                    fontSize: "0.8rem",
-                    wordBreak: "break-all",
-                  }}
-                >
+                <p className="text-xs text-muted-foreground">Path</p>
+                <p className="font-mono text-xs break-all">
                   {config.system.geo.sitedat_path || "Not configured"}
-                </Typography>
+                </p>
 
                 {config.system.geo.sitedat_url && (
                   <>
-                    <Typography variant="caption" color="text.secondary">
-                      Source
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        fontFamily: "monospace",
-                        fontSize: "0.8rem",
-                        wordBreak: "break-all",
-                      }}
-                    >
+                    <p className="text-xs text-muted-foreground">Source</p>
+                    <p className="font-mono text-xs break-all">
                       {config.system.geo.sitedat_url}
-                    </Typography>
+                    </p>
                   </>
                 )}
 
                 {geositeInfo.exists && (
                   <>
-                    <Divider sx={{ my: 0.5 }} />
-                    <Box
-                      sx={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      <Typography variant="caption" color="text.secondary">
+                    <Separator className="my-1" />
+                    <div className="flex justify-between">
+                      <p className="text-xs text-muted-foreground">
                         Size: {formatFileSize(geositeInfo.size)}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
+                      </p>
+                      <p className="text-xs text-muted-foreground">
                         {formatDate(geositeInfo.last_modified)}
-                      </Typography>
-                    </Box>
+                      </p>
+                    </div>
                   </>
                 )}
-              </Stack>
-            </Box>
-          </Grid>
+              </div>
+            </div>
 
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Box
-              sx={{
-                p: 2,
-                borderRadius: 1,
-                border: `1px solid ${colors.border.default}`,
-                bgcolor: colors.background.paper,
-              }}
-            >
-              <Stack spacing={1}>
-                <Box
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <Typography variant="subtitle2" fontWeight={600}>
-                    GeoIP Database
-                  </Typography>
+            <div className="p-4 rounded-md border border-border bg-card">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h6 className="text-sm font-semibold">GeoIP Database</h6>
                   {geoipInfo.exists ? (
-                    <Chip
-                      size="small"
-                      icon={<SuccessIcon />}
-                      label="Active"
-                      sx={{
-                        bgcolor: colors.accent.secondary,
-                        color: colors.secondary,
-                      }}
-                    />
+                    <Badge
+                      variant="secondary"
+                      className="inline-flex items-center gap-1"
+                    >
+                      <SuccessIcon className="h-3 w-3" />
+                      Active
+                    </Badge>
                   ) : (
-                    <Chip
-                      size="small"
-                      label="Not Found"
-                      sx={{ bgcolor: colors.accent.tertiary }}
-                    />
+                    <Badge variant="outline">
+                      Not Found
+                    </Badge>
                   )}
-                </Box>
+                </div>
 
-                <Typography variant="caption" color="text.secondary">
-                  Path
-                </Typography>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    fontFamily: "monospace",
-                    fontSize: "0.8rem",
-                    wordBreak: "break-all",
-                  }}
-                >
+                <p className="text-xs text-muted-foreground">Path</p>
+                <p className="font-mono text-xs break-all">
                   {config.system.geo.ipdat_path || "Not configured"}
-                </Typography>
+                </p>
 
                 {config.system.geo.ipdat_url && (
                   <>
-                    <Typography variant="caption" color="text.secondary">
-                      Source
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        fontFamily: "monospace",
-                        fontSize: "0.8rem",
-                        wordBreak: "break-all",
-                      }}
-                    >
+                    <p className="text-xs text-muted-foreground">Source</p>
+                    <p className="font-mono text-xs break-all">
                       {config.system.geo.ipdat_url}
-                    </Typography>
+                    </p>
                   </>
                 )}
 
                 {geoipInfo.exists && (
                   <>
-                    <Divider sx={{ my: 0.5 }} />
-                    <Box
-                      sx={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      <Typography variant="caption" color="text.secondary">
+                    <Separator className="my-1" />
+                    <div className="flex justify-between">
+                      <p className="text-xs text-muted-foreground">
                         Size: {formatFileSize(geoipInfo.size)}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
+                      </p>
+                      <p className="text-xs text-muted-foreground">
                         {formatDate(geoipInfo.last_modified)}
-                      </Typography>
-                    </Box>
+                      </p>
+                    </div>
                   </>
                 )}
-              </Stack>
-            </Box>
-          </Grid>
-        </Grid>
-      </B4Section>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Download Section */}
-      <B4Section
-        title="Download Files"
-        description="Select a preset source or enter custom URLs"
-        icon={<DownloadIcon />}
-      >
-        <Grid container spacing={2}>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <B4TextField
-              select
-              label="Preset Source"
-              value={selectedSource}
-              onChange={(e) => handleSourceChange(e.target.value)}
-              helperText="Select a predefined geodat source"
-            >
-              {sources.map((source) => (
-                <MenuItem key={source.name} value={source.name}>
-                  {source.name}
-                </MenuItem>
-              ))}
-            </B4TextField>
-          </Grid>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <B4TextField
-              label="Destination Path"
-              value={destPath}
-              onChange={(e) => {
-                setDestPath(e.target.value);
-              }}
-              placeholder="https://example.com/geosite.dat"
-              helperText="Full URL to geosite.dat file"
-            />
-          </Grid>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <DownloadIcon className="h-5 w-5" />
+            <CardTitle>Download Files</CardTitle>
+          </div>
+          <CardDescription>
+            Select a preset source or enter custom URLs
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label>Preset Source</Label>
+              <Select value={selectedSource} onValueChange={handleSourceChange}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a preset source" />
+                </SelectTrigger>
+                <SelectContent>
+                  {sources.map((source) => (
+                    <SelectItem key={source.name} value={source.name}>
+                      {source.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Select a predefined geodat source
+              </p>
+            </div>
+            <Field>
+              <FieldLabel>Destination Path</FieldLabel>
+              <Input
+                value={destPath}
+                onChange={(e) => {
+                  setDestPath(e.target.value);
+                }}
+                placeholder="/etc/b4"
+              />
+              <FieldDescription>
+                Directory where files will be saved
+              </FieldDescription>
+            </Field>
 
-          <B4FormHeader label="Custom URLs" />
+            <div className="relative my-4 md:col-span-2 flex items-center">
+              <Separator className="absolute inset-0 top-1/2" />
+              <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+                Custom URLs
+              </span>
+            </div>
 
-          <Grid size={{ xs: 12, md: 6 }}>
-            <B4TextField
-              label="Custom Geosite URL"
-              value={customGeositeURL}
-              onChange={(e) => {
-                setCustomGeositeURL(e.target.value);
-                if (e.target.value) setSelectedSource("");
-              }}
-              placeholder="https://example.com/geosite.dat"
-              helperText="Full URL to geosite.dat file"
-            />
-          </Grid>
+            <Field>
+              <FieldLabel>Custom Geosite URL</FieldLabel>
+              <Input
+                value={customGeositeURL}
+                onChange={(e) => {
+                  setCustomGeositeURL(e.target.value);
+                  if (e.target.value) setSelectedSource("");
+                }}
+                placeholder="https://example.com/geosite.dat"
+              />
+              <FieldDescription>Full URL to geosite.dat file</FieldDescription>
+            </Field>
 
-          <Grid size={{ xs: 12, md: 6 }}>
-            <B4TextField
-              label="Custom GeoIP URL"
-              value={customGeoipURL}
-              onChange={(e) => {
-                setCustomGeoipURL(e.target.value);
-                if (e.target.value) setSelectedSource("");
-              }}
-              placeholder="https://example.com/geoip.dat"
-              helperText="Full URL to geoip.dat file"
-            />
-          </Grid>
+            <Field>
+              <FieldLabel>Custom GeoIP URL</FieldLabel>
+              <Input
+                value={customGeoipURL}
+                onChange={(e) => {
+                  setCustomGeoipURL(e.target.value);
+                  if (e.target.value) setSelectedSource("");
+                }}
+                placeholder="https://example.com/geoip.dat"
+              />
+              <FieldDescription>Full URL to geoip.dat file</FieldDescription>
+            </Field>
 
-          <Grid size={{ xs: 12 }}>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-              <Button
-                variant="contained"
-                startIcon={
-                  downloading ? (
-                    <CircularProgress size={16} />
-                  ) : (
-                    <DownloadIcon />
-                  )
-                }
-                onClick={() => void handleDownload()}
-                disabled={downloading}
-              >
-                {downloading ? "Downloading..." : "Download Files"}
-              </Button>
-
-              {downloadStatus && (
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: downloadStatus.includes("✓")
-                      ? colors.secondary
-                      : colors.quaternary,
-                  }}
+            <div className="col-span-1 md:col-span-2">
+              <div className="flex items-center gap-4">
+                <Button
+                  onClick={() => void handleDownload()}
+                  disabled={downloading}
                 >
-                  {downloadStatus}
-                </Typography>
-              )}
-            </Box>
-          </Grid>
-        </Grid>
-      </B4Section>
-    </Stack>
+                  {downloading ? (
+                    <>
+                      <Spinner className="h-4 w-4 mr-2" />
+                      Downloading...
+                    </>
+                  ) : (
+                    <>
+                      <DownloadIcon className="h-4 w-4 mr-2" />
+                      Download Files
+                    </>
+                  )}
+                </Button>
+
+                {downloadStatus && (
+                  <p
+                    className={cn(
+                      "text-sm",
+                      downloadStatus.includes("✓") ||
+                        downloadStatus.includes("successfully")
+                        ? "text-secondary"
+                        : "text-destructive"
+                    )}
+                  >
+                    {downloadStatus}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 };

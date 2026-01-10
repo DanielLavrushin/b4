@@ -1,16 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
-import {
-  Container,
-  Box,
-  Backdrop,
-  CircularProgress,
-  Stack,
-  Typography,
-} from "@mui/material";
 import { useSnackbar } from "@context/SnackbarProvider";
-import { SetsManager, SetWithStats } from "./Manager";
+import { Spinner } from "@design/components/ui/spinner";
 import { B4Config } from "@models/config";
-import { colors } from "@design";
+import { useCallback, useEffect, useState } from "react";
+import { SetsManager, SetWithStats } from "./Manager";
 
 export function SetsPage() {
   const { showError } = useSnackbar();
@@ -41,31 +33,20 @@ export function SetsPage() {
 
   if (loading || !config) {
     return (
-      <Backdrop open sx={{ zIndex: 9999 }}>
-        <Stack alignItems="center" spacing={2}>
-          <CircularProgress sx={{ color: colors.secondary }} />
-          <Typography sx={{ color: colors.text.primary }}>
-            Loading...
-          </Typography>
-        </Stack>
-      </Backdrop>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+        <div className="flex flex-col items-center gap-4">
+          <Spinner className="h-12 w-12" />
+          <p className="text-foreground">Loading...</p>
+        </div>
+      </div>
     );
   }
 
   return (
-    <Container
-      maxWidth={false}
-      sx={{
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-        py: 3,
-      }}
-    >
-      <Box sx={{ flex: 1, overflow: "auto" }}>
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="flex-1 overflow-auto">
         <SetsManager config={config} onRefresh={() => void loadConfig()} />
-      </Box>
-    </Container>
+      </div>
+    </div>
   );
 }

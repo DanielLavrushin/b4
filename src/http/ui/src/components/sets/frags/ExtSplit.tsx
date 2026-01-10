@@ -1,134 +1,53 @@
-import { Grid, Box, Typography } from "@mui/material";
-import { colors } from "@design";
-import { B4Alert, B4FormHeader } from "@b4.elements";
+import { Alert, AlertDescription } from "@design/components/ui/alert";
+import { Separator } from "@design/components/ui/separator";
 
 export const ExtSplitSettings = () => {
   return (
     <>
-      <B4FormHeader label="Extension Split" />
-      <B4Alert severity="info" sx={{ m: 0 }}>
-        Automatically splits TLS ClientHello just before the SNI extension. DPI
-        sees incomplete extension list and fails to parse SNI.
-      </B4Alert>
+      <div className="relative my-4 md:col-span-2 flex items-center">
+        <Separator className="absolute inset-0 top-1/2" />
+        <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+          Extension Split
+        </span>
+      </div>
+      <Alert className="m-0">
+        <AlertDescription>
+          Automatically splits TLS ClientHello just before the SNI extension.
+          DPI sees incomplete extension list and fails to parse SNI.
+        </AlertDescription>
+      </Alert>
 
-      <Grid size={{ xs: 12 }}>
-        <Box
-          sx={{
-            p: 2,
-            bgcolor: colors.background.paper,
-            borderRadius: 1,
-            border: `1px solid ${colors.border.default}`,
-          }}
-        >
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            component="div"
-            sx={{ mb: 1 }}
-          >
+      <div className="md:col-span-2">
+        <div className="p-4 bg-card rounded-md border border-border">
+          <p className="text-xs text-muted-foreground mb-2">
             TLS CLIENTHELLO STRUCTURE
-          </Typography>
-          <Box
-            sx={{
-              display: "flex",
-              gap: 0.5,
-              fontFamily: "monospace",
-              fontSize: "0.7rem",
-              flexWrap: "wrap",
-            }}
-          >
-            <Box
-              sx={{
-                p: 1,
-                bgcolor: colors.accent.primary,
-                borderRadius: 0.5,
-              }}
-            >
-              TLS Header
-            </Box>
-            <Box
-              sx={{
-                p: 1,
-                bgcolor: colors.accent.primary,
-                borderRadius: 0.5,
-              }}
-            >
-              Handshake
-            </Box>
-            <Box
-              sx={{
-                p: 1,
-                bgcolor: colors.accent.primary,
-                borderRadius: 0.5,
-              }}
-            >
-              Ciphers
-            </Box>
-            <Box
-              sx={{
-                p: 1,
-                bgcolor: colors.accent.secondary,
-                borderRadius: 0.5,
-              }}
-            >
-              Ext₁
-            </Box>
-            <Box
-              sx={{
-                p: 1,
-                bgcolor: colors.accent.secondary,
-                borderRadius: 0.5,
-              }}
-            >
-              Ext₂
-            </Box>
-            <Box
-              sx={{
-                p: 1,
-                bgcolor: colors.tertiary,
-                borderRadius: 0.5,
-                position: "relative",
-              }}
-            >
-              <Box
-                component="span"
-                sx={{
-                  position: "absolute",
-                  left: -2,
-                  top: 0,
-                  bottom: 0,
-                  width: 3,
-                  bgcolor: colors.quaternary,
-                }}
-              />
+          </p>
+          <div className="flex gap-1 font-mono text-xs flex-wrap">
+            <div className="p-2 bg-accent rounded">TLS Header</div>
+            <div className="p-2 bg-accent rounded">Handshake</div>
+            <div className="p-2 bg-accent rounded">Ciphers</div>
+            <div className="p-2 bg-accent-secondary rounded">Ext₁</div>
+            <div className="p-2 bg-accent-secondary rounded">Ext₂</div>
+            <div className="p-2 bg-tertiary rounded relative">
+              <span className="absolute -left-2 top-0 bottom-0 w-0.75 bg-quaternary" />
               SNI: youtube.com
-            </Box>
-            <Box
-              sx={{
-                p: 1,
-                bgcolor: colors.accent.secondary,
-                borderRadius: 0.5,
-              }}
-            >
-              Ext...
-            </Box>
-          </Box>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ mt: 1, display: "block" }}
-          >
+            </div>
+            <div className="p-2 bg-accent-secondary rounded">Ext...</div>
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
             Split happens at the yellow line — before SNI extension starts
-          </Typography>
-        </Box>
-      </Grid>
+          </p>
+        </div>
+      </div>
 
-      <Grid size={{ xs: 12 }}>
-        <B4Alert severity="success" sx={{ m: 0 }}>
-          No configuration needed. Uses <strong>Reverse Order</strong> toggle
-          above and <strong>Seg2 Delay</strong> from TCP tab.
-        </B4Alert>
-      </Grid>
+      <div className="md:col-span-2">
+        <Alert className="m-0">
+          <AlertDescription>
+            No configuration needed. Uses <strong>Reverse Order</strong> toggle
+            above and <strong>Seg2 Delay</strong> from TCP tab.
+          </AlertDescription>
+        </Alert>
+      </div>
     </>
   );
 };

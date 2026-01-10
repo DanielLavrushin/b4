@@ -1,23 +1,22 @@
-import { useRef, useState, useEffect, useCallback, useMemo, memo } from "react";
+import { ParsedLog } from "@b4.connections";
+import { AddIcon } from "@b4.icons";
+import { ProtocolChip } from "@common/ProtocolChip";
+import { SortableTableCell, SortDirection } from "@common/SortableTableCell";
+import { Badge } from "@design/components/ui/badge";
 import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
-  TableHead,
+  TableHeader,
   TableRow,
-  Typography,
-  Stack,
-  Box,
+} from "@design/components/ui/table";
+import {
   Tooltip,
-} from "@mui/material";
-import { AddIcon } from "@b4.icons";
-import { SortableTableCell, SortDirection } from "@common/SortableTableCell";
-import { ProtocolChip } from "@common/ProtocolChip";
-import { colors } from "@design";
-import { B4Badge } from "@common/B4Badge";
+  TooltipContent,
+  TooltipTrigger,
+} from "@design/components/ui/tooltip";
 import { asnStorage } from "@utils";
-import { ParsedLog } from "@b4.connections";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type SortColumn =
   | "timestamp"
@@ -53,141 +52,78 @@ const TableRowMemo = memo<{
     }, [log.destination]);
 
     return (
-      <TableRow
-        sx={{
-          height: ROW_HEIGHT,
-          "&:hover": {
-            bgcolor: colors.accent.primaryStrong,
-          },
-        }}
-      >
-        <TableCell
-          sx={{
-            color: "text.secondary",
-            fontFamily: "monospace",
-            fontSize: 12,
-            borderBottom: `1px solid ${colors.border.light}`,
-            py: 1,
-          }}
-        >
-          {log.timestamp.split(" ")[1]}
-        </TableCell>
-        <TableCell
-          sx={{
-            borderBottom: `1px solid ${colors.border.light}`,
-            py: 1,
-          }}
-        >
+      <TableRow>
+        <TableCell variant="mono">{log.timestamp.split(" ")[1]}</TableCell>
+        <TableCell>
           <ProtocolChip protocol={log.protocol} />
         </TableCell>
-        <TableCell
-          sx={{
-            borderBottom: `1px solid ${colors.border.light}`,
-            py: 1,
-          }}
-        >
+        <TableCell>
           {(log.ipSet || log.hostSet) && (
-            <B4Badge color="secondary" label={log.ipSet || log.hostSet} />
+            <Badge variant="secondary">{log.ipSet || log.hostSet}</Badge>
           )}
         </TableCell>
         <TableCell
-          sx={{
-            color: "text.primary",
-            borderBottom: `1px solid ${colors.border.light}`,
-            cursor: log.domain && !log.hostSet ? "pointer" : "default",
-            py: 1,
-            "&:hover":
-              log.domain && !log.hostSet
-                ? {
-                    bgcolor: colors.accent.primary,
-                    color: colors.secondary,
-                  }
-                : {},
-          }}
           onClick={() =>
             log.domain && !log.hostSet && onDomainClick(log.domain)
           }
         >
-          <Stack direction="row" spacing={1} alignItems="center">
-            {log.domain && <Typography>{log.domain}</Typography>}
-            <Box sx={{ flex: 1 }} />
+          <div className="flex items-center gap-2 min-w-0">
+            {log.domain && (
+              <span className="flex-1 min-w-0 wrap-break-word">
+                {log.domain}
+              </span>
+            )}
             {log.domain && !log.hostSet && (
               <AddIcon
-                sx={{
-                  fontSize: 16,
-                  bgcolor: `${colors.secondary}88`,
-                  color: colors.background.default,
-                  borderRadius: "50%",
-                  cursor: "pointer",
-                  "&:hover": {
-                    bgcolor: colors.secondary,
-                  },
+                className="shrink-0"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDomainClick(log.domain!);
                 }}
               />
             )}
-          </Stack>
+          </div>
         </TableCell>
-        <TableCell
-          sx={{
-            color: "text.secondary",
-            fontFamily: "monospace",
-            fontSize: 12,
-            borderBottom: `1px solid ${colors.border.light}`,
-            py: 1,
-          }}
-        >
-          <Tooltip title={log.source} placement="top" arrow>
-            {log.deviceName ? (
-              <B4Badge label={log.deviceName} color="primary" />
-            ) : (
-              <span>{log.source}</span>
-            )}
+        <TableCell variant="mono">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                {log.deviceName ? (
+                  <Badge>{log.deviceName}</Badge>
+                ) : (
+                  <span>{log.source}</span>
+                )}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{log.source}</p>
+            </TooltipContent>
           </Tooltip>
         </TableCell>
         <TableCell
-          sx={{
-            color: "text.primary",
-            borderBottom: `1px solid ${colors.border.light}`,
-            py: 1,
-          }}
+          onClick={() =>
+            log.destination && !log.ipSet && onIpClick(log.destination)
+          }
         >
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Box
-              sx={{
-                cursor: !log.ipSet ? "pointer" : "default",
-                "&:hover": !log.ipSet
-                  ? {
-                      bgcolor: colors.accent.primary,
-                      color: colors.secondary,
-                    }
-                  : {},
-              }}
-              onClick={() =>
-                log.destination && !log.ipSet && onIpClick(log.destination)
-              }
-            >
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="flex-1 min-w-0 wrap-break-word">
               {log.destination}
-            </Box>
-            {asnName && (
-              <B4Badge variant="outlined" color="primary" label={asnName} />
-            )}
-            <Box sx={{ flex: 1 }} />
+            </span>
             {!log.ipSet && (
               <AddIcon
-                onClick={() => onIpClick(log.destination)}
-                sx={{
-                  fontSize: 16,
-                  bgcolor: `${colors.secondary}88`,
-                  color: colors.background.default,
-                  borderRadius: "50%",
-                  cursor: "pointer",
-                  "&:hover": {
-                    bgcolor: colors.secondary,
-                  },
+                className="shrink-0 align-sub"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onIpClick(log.destination!);
                 }}
               />
             )}
-          </Stack>
+            {asnName && (
+              <Badge variant="outline" className="shrink-0">
+                {asnName}
+              </Badge>
+            )}
+          </div>
         </TableCell>
       </TableRow>
     );
@@ -263,17 +199,13 @@ export const DomainsTable = ({
   }, [data.length]);
 
   return (
-    <TableContainer
+    <div
       ref={containerRef}
       onScroll={handleScroll}
-      sx={{
-        flex: 1,
-        backgroundColor: colors.background.dark,
-        overflow: "auto",
-      }}
+      className="absolute inset-0 bg-background overflow-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/50"
     >
-      <Table stickyHeader size="small">
-        <TableHead>
+      <Table className="[&>div]:overflow-visible">
+        <TableHeader className="sticky top-0 z-1">
           <TableRow>
             <SortableTableCell
               label="Time"
@@ -312,20 +244,13 @@ export const DomainsTable = ({
               onSort={() => onSort("destination")}
             />
           </TableRow>
-        </TableHead>
+        </TableHeader>
         <TableBody>
           {data.length === 0 ? (
             <TableRow>
               <TableCell
                 colSpan={6}
-                sx={{
-                  textAlign: "center",
-                  py: 4,
-                  color: "text.secondary",
-                  fontStyle: "italic",
-                  bgcolor: colors.background.dark,
-                  borderBottom: "none",
-                }}
+                className="text-center py-8 text-muted-foreground italic"
               >
                 Waiting for connections...
               </TableCell>
@@ -336,11 +261,8 @@ export const DomainsTable = ({
                 <TableRow>
                   <TableCell
                     colSpan={6}
-                    sx={{
-                      height: startIndex * ROW_HEIGHT,
-                      p: 0,
-                      border: "none",
-                    }}
+                    style={{ height: startIndex * ROW_HEIGHT }}
+                    className="p-0 border-0"
                   />
                 </TableRow>
               )}
@@ -358,11 +280,8 @@ export const DomainsTable = ({
                 <TableRow>
                   <TableCell
                     colSpan={6}
-                    sx={{
-                      height: (data.length - endIndex) * ROW_HEIGHT,
-                      p: 0,
-                      border: "none",
-                    }}
+                    style={{ height: (data.length - endIndex) * ROW_HEIGHT }}
+                    className="p-0 border-0"
                   />
                 </TableRow>
               )}
@@ -370,6 +289,6 @@ export const DomainsTable = ({
           )}
         </TableBody>
       </Table>
-    </TableContainer>
+    </div>
   );
 };

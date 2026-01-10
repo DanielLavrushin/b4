@@ -1,16 +1,19 @@
-import { useState } from "react";
+import { CheckIcon, ErrorIcon, RestartIcon } from "@b4.icons";
+import { Alert, AlertDescription } from "@design/components/ui/alert";
+import { Button } from "@design/components/ui/button";
 import {
-  Button,
-  CircularProgress,
-  Stack,
-  Typography,
-  LinearProgress,
-  Box,
-} from "@mui/material";
-import { RestartIcon, CheckIcon, ErrorIcon } from "@b4.icons";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@design/components/ui/dialog";
+import { Progress } from "@design/components/ui/progress";
+import { Separator } from "@design/components/ui/separator";
+import { Spinner } from "@design/components/ui/spinner";
 import { useSystemRestart } from "@hooks/useSystemRestart";
-import { colors } from "@design";
-import { B4Alert, B4Dialog } from "@b4.elements";
+import { useState } from "react";
 
 interface RestartDialogProps {
   open: boolean;
@@ -104,117 +107,72 @@ export const RestartDialog = ({ open, onClose }: RestartDialogProps) => {
     switch (state) {
       case "confirm":
         return (
-          <B4Alert>
-            <Typography variant="body2" sx={{ mb: 1 }}>
-              This will restart the B4 service. The web interface will be
-              temporarily unavailable during the restart.
-            </Typography>
-            <Typography variant="caption" sx={{ color: colors.text.secondary }}>
-              Expected downtime: 5-10 seconds
-            </Typography>
-          </B4Alert>
+          <Alert>
+            <AlertDescription>
+              <p className="text-sm mb-2">
+                This will restart the B4 service. The web interface will be
+                temporarily unavailable during the restart.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Expected downtime: 5-10 seconds
+              </p>
+            </AlertDescription>
+          </Alert>
         );
 
       case "restarting":
       case "waiting":
         return (
-          <Stack spacing={3} alignItems="center" sx={{ py: 4 }}>
-            <Box
-              sx={{
-                p: 2,
-                borderRadius: 3,
-                bgcolor: colors.accent.secondary,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <CircularProgress size={48} sx={{ color: colors.secondary }} />
-            </Box>
-            <Box sx={{ textAlign: "center" }}>
-              <Typography
-                variant="h6"
-                sx={{ color: colors.text.primary, mb: 1 }}
-              >
+          <div className="flex flex-col items-center gap-6 py-8">
+            <div className="p-4 rounded-xl bg-accent flex items-center justify-center">
+              <Spinner className="h-12 w-12" />
+            </div>
+            <div className="text-center">
+              <h6 className="text-lg font-semibold text-foreground mb-2">
                 {message}
-              </Typography>
-              <Typography
-                variant="caption"
-                sx={{ color: colors.text.secondary }}
-              >
+              </h6>
+              <p className="text-xs text-muted-foreground">
                 Please wait, do not close this window...
-              </Typography>
-            </Box>
-            <Box sx={{ width: "100%", px: 2 }}>
-              <LinearProgress
-                sx={{
-                  height: 6,
-                  borderRadius: 3,
-                  bgcolor: colors.background.dark,
-                  "& .MuiLinearProgress-bar": {
-                    bgcolor: colors.secondary,
-                    borderRadius: 3,
-                  },
-                }}
-              />
-            </Box>
-          </Stack>
+              </p>
+            </div>
+            <div className="w-full px-4">
+              <Progress />
+            </div>
+          </div>
         );
 
       case "success":
         return (
-          <Stack spacing={3} alignItems="center" sx={{ py: 4 }}>
-            <Box
-              sx={{
-                p: 2,
-                borderRadius: 3,
-                bgcolor: colors.accent.secondary,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <CheckIcon sx={{ fontSize: 64, color: colors.secondary }} />
-            </Box>
-            <Box sx={{ textAlign: "center" }}>
-              <Typography
-                variant="h6"
-                sx={{ color: colors.text.primary, mb: 1 }}
-              >
+          <div className="flex flex-col items-center gap-6 py-8">
+            <div className="p-4 rounded-xl bg-accent flex items-center justify-center">
+              <CheckIcon className="h-16 w-16 text-secondary" />
+            </div>
+            <div className="text-center">
+              <h6 className="text-lg font-semibold text-foreground mb-2">
                 {message}
-              </Typography>
-              <Typography variant="body2" sx={{ color: colors.text.secondary }}>
+              </h6>
+              <p className="text-sm text-muted-foreground">
                 Reloading interface...
-              </Typography>
-            </Box>
-          </Stack>
+              </p>
+            </div>
+          </div>
         );
 
       case "error":
         return (
-          <Stack spacing={3} alignItems="center" sx={{ py: 4 }}>
-            <Box
-              sx={{
-                p: 2,
-                borderRadius: 3,
-                bgcolor: `${colors.quaternary}22`,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <ErrorIcon sx={{ fontSize: 64, color: colors.quaternary }} />
-            </Box>
-            <Box sx={{ textAlign: "center", width: "100%" }}>
-              <Typography
-                variant="h6"
-                sx={{ color: colors.text.primary, mb: 2 }}
-              >
+          <div className="flex flex-col items-center gap-6 py-8">
+            <div className="p-4 rounded-xl bg-destructive/10 flex items-center justify-center">
+              <ErrorIcon className="h-16 w-16 text-destructive" />
+            </div>
+            <div className="text-center w-full">
+              <h6 className="text-lg font-semibold text-foreground mb-4">
                 Restart Failed
-              </Typography>
-              <B4Alert severity="error">{message}</B4Alert>
-            </Box>
-          </Stack>
+              </h6>
+              <Alert variant="destructive">
+                <AlertDescription>{message}</AlertDescription>
+              </Alert>
+            </div>
+          </div>
         );
     }
   };
@@ -225,50 +183,55 @@ export const RestartDialog = ({ open, onClose }: RestartDialogProps) => {
       case "confirm":
         return (
           <>
-            <Button onClick={handleClose}>Cancel</Button>
-            <Box sx={{ flex: 1 }} />
+            <Button onClick={handleClose} variant="ghost">
+              Cancel
+            </Button>
+            <div className="flex-1" />
             <Button
               onClick={() => {
                 void handleRestart();
               }}
-              variant="contained"
-              startIcon={<RestartIcon />}
             >
+              <RestartIcon className="h-4 w-4 mr-2" />
               Restart Service
             </Button>
           </>
         );
 
       case "error":
-        return (
-          <Button
-            onClick={handleClose}
-            variant="contained"
-            sx={{
-              bgcolor: colors.secondary,
-              color: colors.background.default,
-              "&:hover": { bgcolor: colors.primary },
-            }}
-          >
-            Close
-          </Button>
-        );
+        return <Button onClick={handleClose}>Close</Button>;
 
       default:
         return null;
     }
   };
 
+  const dialogProps = getDialogProps();
+
   return (
-    <B4Dialog
-      {...getDialogProps()}
-      open={open}
-      onClose={handleClose}
-      maxWidth="sm"
-      fullWidth
-      actions={renderActions()}
-    >
-      {renderContent()}
-    </B4Dialog>
+    <Dialog open={open} onOpenChange={(open) => !open && handleClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+              {dialogProps.icon}
+            </div>
+            <div className="flex-1">
+              <DialogTitle>{dialogProps.title}</DialogTitle>
+              <DialogDescription className="mt-1">
+                {dialogProps.subtitle}
+              </DialogDescription>
+            </div>
+          </div>
+        </DialogHeader>
+        <div className="py-4">{renderContent()}</div>
+        {renderActions() && (
+          <>
+            <Separator />
+            <DialogFooter>{renderActions()}</DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 };

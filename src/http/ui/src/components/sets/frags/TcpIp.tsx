@@ -1,10 +1,16 @@
-import { Grid, Box, Typography } from "@mui/material";
-
-import { B4Slider, B4Switch } from "@b4.fields";
+import { Alert, AlertDescription } from "@design/components/ui/alert";
+import { Badge } from "@design/components/ui/badge";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldLabel,
+  FieldTitle,
+} from "@design/components/ui/field";
+import { Separator } from "@design/components/ui/separator";
+import { Slider } from "@design/components/ui/slider";
+import { Switch } from "@design/components/ui/switch";
 import { B4SetConfig } from "@models/config";
-import { colors } from "@design";
-import { B4Alert } from "@components/common/B4Alert";
-import { B4FormHeader } from "@b4.elements";
 
 interface TcpIpSettingsProps {
   config: B4SetConfig;
@@ -24,151 +30,102 @@ export const TcpIpSettings = ({ config, onChange }: TcpIpSettingsProps) => {
 
   return (
     <>
-      <B4FormHeader label="Where to Split" />
+      <div className="relative my-4 md:col-span-2 flex items-center">
+        <Separator className="absolute inset-0 top-1/2" />
+        <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+          Where to Split
+        </span>
+      </div>
 
-      <Grid size={{ xs: 12 }}>
-        <B4Switch
-          label="Smart SNI Split"
-          checked={config.fragmentation.middle_sni}
-          onChange={(checked: boolean) =>
-            onChange("fragmentation.middle_sni", checked)
-          }
-          description="Automatically split in the middle of the SNI hostname (recommended)"
-        />
-      </Grid>
+      <div className="md:col-span-2">
+        <label htmlFor="switch-tcpip-middle-sni">
+          <Field orientation="horizontal" className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2">
+            <FieldContent>
+              <FieldTitle>Smart SNI Split</FieldTitle>
+              <FieldDescription>
+                Automatically split in the middle of the SNI hostname (recommended)
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="switch-tcpip-middle-sni"
+              checked={config.fragmentation.middle_sni}
+              onCheckedChange={(checked: boolean) =>
+                onChange("fragmentation.middle_sni", checked)
+              }
+            />
+          </Field>
+        </label>
+      </div>
 
       {/* Visual explanation */}
-      <Grid size={{ xs: 12 }}>
-        <Box
-          sx={{
-            p: 2,
-            bgcolor: colors.background.paper,
-            borderRadius: 1,
-            border: `1px solid ${colors.border.default}`,
-          }}
-        >
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            component="div"
-            sx={{ mb: 1 }}
-          >
+      <div className="md:col-span-2">
+        <div className="p-4 bg-card rounded-md border border-border">
+          <p className="text-xs text-muted-foreground mb-2">
             TCP PACKET STRUCTURE EXAMPLE
-          </Typography>
-          <Box
-            sx={{
-              display: "flex",
-              gap: 0.5,
-              fontFamily: "monospace",
-              fontSize: "0.75rem",
-            }}
-          >
-            <Box
-              sx={{
-                p: 1,
-                bgcolor: colors.accent.primary,
-                borderRadius: 0.5,
-                textAlign: "center",
-                minWidth: 60,
-              }}
-            >
+          </p>
+          <div className="flex gap-1 font-mono text-xs">
+            <div className="p-2 bg-accent rounded text-center min-w-15">
               TLS Header
-            </Box>
-            <Box
-              sx={{
-                p: 1,
-                bgcolor: colors.accent.secondary,
-                borderRadius: 0.5,
-                textAlign: "center",
-                flex: 1,
-                position: "relative",
-              }}
-            >
+            </div>
+            <div className="p-2 bg-accent-secondary rounded text-center flex-1 relative">
               {/* Fixed position split line */}
               {config.fragmentation.sni_position > 0 && (
-                <Box
-                  component="span"
-                  sx={{
-                    position: "absolute",
-                    left: "20%",
-                    top: 0,
-                    bottom: 0,
-                    width: 2,
-                    bgcolor: colors.tertiary,
-                    transform: "translateX(-50%)",
-                  }}
-                />
+                <span className="absolute left-[20%] top-0 bottom-0 w-0.5 bg-tertiary -translate-x-1/2" />
               )}
               {/* Middle SNI split line */}
               {config.fragmentation.middle_sni && (
-                <Box
-                  component="span"
-                  sx={{
-                    position: "absolute",
-                    left: "50%",
-                    top: 0,
-                    bottom: 0,
-                    width: 2,
-                    bgcolor: colors.quaternary,
-                    transform: "translateX(-50%)",
-                  }}
-                />
+                <span className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-quaternary -translate-x-1/2" />
               )}
               SNI: youtube.com
-            </Box>
-            <Box
-              sx={{
-                p: 1,
-                bgcolor: colors.accent.primary,
-                borderRadius: 0.5,
-                textAlign: "center",
-                minWidth: 80,
-              }}
-            >
+            </div>
+            <div className="p-2 bg-accent rounded text-center min-w-20">
               Extensions...
-            </Box>
-          </Box>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ mt: 1, display: "block" }}
-          >
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
             {getSplitModeDescription()}
-          </Typography>
-        </Box>
-      </Grid>
+          </p>
+        </div>
+      </div>
 
-      <Grid size={{ xs: 12 }}>
-        <Typography
-          variant="caption"
-          color="warning.main"
-          gutterBottom
-          component="div"
-        >
+      <div className="md:col-span-2">
+        <p className="text-xs text-warning mb-2">
           Manual override — use if Smart SNI Split doesn't work for your ISP
-        </Typography>
-        <Grid container spacing={2} sx={{ mt: 1 }}>
-          <Grid size={{ xs: 12, md: 12 }}>
-            <B4Slider
-              label="Fixed Split Position"
-              value={config.fragmentation.sni_position}
-              onChange={(value: number) =>
-                onChange("fragmentation.sni_position", value)
+        </p>
+        <div className="mt-2">
+          <Field className="w-full space-y-2">
+            <div className="flex items-center justify-between">
+              <FieldLabel className="text-sm font-medium">
+                Fixed Split Position
+              </FieldLabel>
+              <Badge variant="secondary" className="font-semibold">
+                {config.fragmentation.sni_position}
+              </Badge>
+            </div>
+            <Slider
+              value={[config.fragmentation.sni_position]}
+              onValueChange={(values) =>
+                onChange("fragmentation.sni_position", values[0])
               }
               min={0}
               max={50}
               step={1}
-              helperText="Bytes from TLS payload start (0 = disabled)"
+              className="w-full"
             />
-          </Grid>
-        </Grid>
+            <FieldDescription>
+              Bytes from TLS payload start (0 = disabled)
+            </FieldDescription>
+          </Field>
+        </div>
         {config.fragmentation.sni_position > 0 &&
           config.fragmentation.middle_sni && (
-            <B4Alert severity="info" sx={{ mt: 2 }}>
-              Both enabled → packet splits into 3 segments
-            </B4Alert>
+            <Alert className="mt-4">
+              <AlertDescription>
+                Both enabled → packet splits into 3 segments
+              </AlertDescription>
+            </Alert>
           )}
-      </Grid>
+      </div>
     </>
   );
 };

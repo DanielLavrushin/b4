@@ -1,6 +1,12 @@
-import { Box, Chip, CircularProgress, Tooltip } from "@mui/material";
-import { colors } from "@design";
 import { NewReleaseIcon } from "@b4.icons";
+import { Badge } from "@design/components/ui/badge";
+import { Button } from "@design/components/ui/button";
+import { Spinner } from "@design/components/ui/spinner";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@design/components/ui/tooltip";
 
 interface VersionBadgeProps {
   version: string;
@@ -17,61 +23,32 @@ export const VersionBadge = ({
 }: VersionBadgeProps) => {
   if (isLoading) {
     return (
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 2 }}>
-        <CircularProgress size={12} sx={{ color: colors.secondary }} />
-        <span style={{ color: colors.text.secondary, fontSize: "0.75rem" }}>
-          Checking for updates...
-        </span>
-      </Box>
+      <Button variant="ghost" disabled>
+        <Spinner />
+        Checking for updates...
+      </Button>
     );
   }
 
   return (
-    <Box
-      sx={{
-        display: "flex",
-        alignItems: "center",
-        gap: 1,
-        px: 2,
-        cursor: "pointer",
-      }}
-      onClick={onClick}
-    >
+    <>
       {hasUpdate ? (
-        <Tooltip title="New version available! Click to view details">
-          <Chip
-            label={`v${version}`}
-            size="small"
-            icon={<NewReleaseIcon />}
-            sx={{
-              bgcolor: colors.accent.secondary,
-              color: colors.secondary,
-              fontWeight: 600,
-              animation: "pulse 2s ease-in-out infinite",
-              "@keyframes pulse": {
-                "0%, 100%": {
-                  opacity: 1,
-                },
-                "50%": {
-                  opacity: 0.7,
-                },
-              },
-              "& .MuiChip-icon": {
-                color: colors.secondary,
-              },
-              "&:hover": {
-                bgcolor: colors.accent.secondaryHover,
-                transform: "scale(1.05)",
-              },
-              transition: "all 0.2s ease",
-            }}
-          />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge onClick={onClick}>
+              <NewReleaseIcon />
+              {`v${version}`}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <p>New version available! Click to view details</p>
+          </TooltipContent>
         </Tooltip>
       ) : (
-        <span style={{ color: colors.secondary, fontSize: "0.75rem" }}>
+        <Badge variant="ghost" onClick={onClick}>
           v{version}
-        </span>
+        </Badge>
       )}
-    </Box>
+    </>
   );
 };

@@ -1,22 +1,26 @@
-import { useEffect, useState } from "react";
-import {
-  Button,
-  Typography,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemText,
-  ListItemIcon,
-  Radio,
-  Box,
-} from "@mui/material";
 import { AddIcon, DomainIcon } from "@b4.icons";
-import { B4Alert } from "@b4.elements";
-import { colors } from "@design";
-import { B4Dialog } from "@common/B4Dialog";
-import { B4Badge } from "@common/B4Badge";
-import { B4SetConfig, MAIN_SET_ID, NEW_SET_ID } from "@models/config";
 import { SetSelector } from "@common/SetSelector";
+import { Alert, AlertDescription } from "@design/components/ui/alert";
+import { Badge } from "@design/components/ui/badge";
+import { Button } from "@design/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@design/components/ui/dialog";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldTitle,
+} from "@design/components/ui/field";
+import { Label } from "@design/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@design/components/ui/radio-group";
+import { Separator } from "@design/components/ui/separator";
+import { B4SetConfig, MAIN_SET_ID, NEW_SET_ID } from "@models/config";
+import { useEffect, useState } from "react";
 
 interface AddSniModalProps {
   open: boolean;
@@ -59,91 +63,81 @@ export const AddSniModal = ({
   }, [open, sets, createNewSet]);
 
   return (
-    <B4Dialog
-      title="Add Domain to Manual List"
-      icon={<DomainIcon />}
-      open={open}
-      onClose={onClose}
-      actions={
-        <>
-          <Button onClick={onClose}>Cancel</Button>
-          <Box sx={{ flex: 1 }} />
-          <Button
-            onClick={handleAdd}
-            variant="contained"
-            startIcon={<AddIcon />}
-            disabled={!selected || !selectedSetId}
+    <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <div className="flex items-center gap-3">
+            <Button variant="secondary" size="icon" className="shrink-0">
+              <DomainIcon />
+            </Button>
+            <DialogTitle>Add Domain to Manual List</DialogTitle>
+          </div>
+        </DialogHeader>
+        <div className="space-y-4">
+          <Alert>
+            <AlertDescription>
+              Select which domain pattern to add to the manual domains list.
+              More specific patterns will only match exact subdomains, while
+              broader patterns will match all subdomains.
+            </AlertDescription>
+          </Alert>
+          <p className="text-sm text-muted-foreground">
+            Original domain: <Badge>{domain}</Badge>
+          </p>
+          {!createNewSet && sets.length > 0 && (
+            <SetSelector
+              sets={sets}
+              value={selectedSetId}
+              onChange={(setId, name) => {
+                setSelectedSetId(setId);
+                if (name) setSetName(name);
+              }}
+            />
+          )}
+          <RadioGroup
+            value={selected}
+            onValueChange={(value) => onSelectVariant(value)}
           >
+            {variants.map((variant, index) => {
+              let description: string;
+              if (index === 0) {
+                description = "Most specific - exact match only";
+              } else if (index === variants.length - 1) {
+                description = "Broadest - matches all subdomains";
+              } else {
+                description = "Intermediate specificity";
+              }
+              return (
+                <Label key={variant} htmlFor={`variant-${variant}`}>
+                  <Field
+                    orientation="horizontal"
+                    className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 border border-border rounded-md p-2"
+                  >
+                    <FieldContent>
+                      <FieldTitle>
+                        <div className="font-medium">{variant}</div>
+                      </FieldTitle>
+                      <FieldDescription>{description}</FieldDescription>
+                    </FieldContent>
+                    <RadioGroupItem value={variant} id={`variant-${variant}`} />
+                  </Field>
+                </Label>
+              );
+            })}
+          </RadioGroup>
+        </div>
+        <Separator />
+        <DialogFooter>
+          <Button onClick={onClose} variant="ghost">
+            Cancel
+          </Button>
+          <div className="flex-1" />
+          <Button onClick={handleAdd} disabled={!selected || !selectedSetId}>
+            <AddIcon className="h-4 w-4 mr-2" />
             Add Domain
           </Button>
-        </>
-      }
-    >
-      <>
-        <B4Alert severity="info" sx={{ mb: 2 }}>
-          Select which domain pattern to add to the manual domains list. More
-          specific patterns will only match exact subdomains, while broader
-          patterns will match all subdomains.
-        </B4Alert>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-          Original domain: <B4Badge label={domain} color="primary" />
-        </Typography>
-        {!createNewSet && sets.length > 0 && (
-          <SetSelector
-            sets={sets}
-            value={selectedSetId}
-            onChange={(setId, name) => {
-              setSelectedSetId(setId);
-              if (name) setSetName(name);
-            }}
-          />
-        )}
-        <List>
-          {variants.map((variant, index) => (
-            <ListItem key={variant} disablePadding>
-              <ListItemButton
-                onClick={() => onSelectVariant(variant)}
-                selected={selected === variant}
-                sx={{
-                  borderRadius: 1,
-                  mb: 0.5,
-                  "&.Mui-selected": {
-                    bgcolor: colors.accent.primary,
-                    "&:hover": {
-                      bgcolor: colors.accent.primaryHover,
-                    },
-                  },
-                }}
-              >
-                <ListItemIcon>
-                  <Radio
-                    checked={selected === variant}
-                    sx={{
-                      color: colors.border.default,
-                      "&.Mui-checked": {
-                        color: colors.primary,
-                      },
-                    }}
-                  />
-                </ListItemIcon>
-                {(() => {
-                  let secondaryText: string;
-                  if (index === 0) {
-                    secondaryText = "Most specific - exact match only";
-                  } else if (index === variants.length - 1) {
-                    secondaryText = "Broadest - matches all subdomains";
-                  } else {
-                    secondaryText = "Intermediate specificity";
-                  }
-                  return (
-                    <ListItemText primary={variant} secondary={secondaryText} />
-                  );
-                })()}
-              </ListItemButton>
-            </ListItem>
-          ))}
-        </List>
-      </>
-    </B4Dialog>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };

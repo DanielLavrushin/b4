@@ -1,13 +1,12 @@
-import { Grid } from "@mui/material";
-import {
-  Speed as SpeedIcon,
-  Storage as StorageIcon,
-  SwapHoriz as SwapHorizIcon,
-  Memory as MemoryIcon,
-} from "@mui/icons-material";
 import { StatCard } from "./StatCard";
 import { formatBytes, formatNumber } from "@utils";
 import { colors } from "@design";
+import {
+  DashboardIcon,
+  IconDatabase,
+  IconArrowsExchange,
+  IconCpu,
+} from "@b4.icons";
 
 interface DashboardMetricsGridProps {
   metrics: {
@@ -28,50 +27,50 @@ export const DashboardMetricsGrid = ({
   metrics,
 }: DashboardMetricsGridProps) => {
   return (
-    <Grid container spacing={3}>
-      <Grid size={{ xs: 12, sm: 6, md: 3 }} sx={{ display: "flex" }}>
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
+      <div className="flex">
         <StatCard
           title="Total Connections"
           value={formatNumber(metrics.total_connections)}
           subtitle={`${metrics.targeted_connections} targeted`}
-          icon={<SwapHorizIcon />}
+          icon={<IconArrowsExchange />}
           color={colors.primary}
           variant="outlined"
         />
-      </Grid>
+      </div>
 
-      <Grid size={{ xs: 12, sm: 6, md: 3 }} sx={{ display: "flex" }}>
+      <div className="flex">
         <StatCard
           title="Active Flows"
           value={formatNumber(metrics.active_flows)}
           subtitle={`${metrics.current_cps.toFixed(1)} conn/s`}
-          icon={<SpeedIcon />}
+          icon={<DashboardIcon />}
           color={colors.secondary}
           variant="outlined"
         />
-      </Grid>
+      </div>
 
-      <Grid size={{ xs: 12, sm: 6, md: 3 }} sx={{ display: "flex" }}>
+      <div className="flex">
         <StatCard
           title="Packets Processed"
           value={formatNumber(metrics.packets_processed)}
           subtitle={`${metrics.current_pps.toFixed(1)} pkt/s`}
-          icon={<StorageIcon />}
+          icon={<IconDatabase />}
           color={colors.tertiary}
           variant="outlined"
         />
-      </Grid>
+      </div>
 
-      <Grid size={{ xs: 12, sm: 6, md: 3 }} sx={{ display: "flex" }}>
+      <div className="flex">
         <StatCard
           title="Data Processed"
           value={formatBytes(metrics.bytes_processed)}
           subtitle={`Memory: ${metrics.memory_usage.percent.toFixed(1)}%`}
-          icon={<MemoryIcon />}
+          icon={<IconCpu />}
           color={colors.quaternary}
           variant="outlined"
         />
-      </Grid>
-    </Grid>
+      </div>
+    </div>
   );
 };

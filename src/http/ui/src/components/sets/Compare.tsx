@@ -1,17 +1,17 @@
-import { useMemo } from "react";
+import { IconArrowsExchange } from "@b4.icons";
+import { Badge } from "@design/components/ui/badge";
+import { Card } from "@design/components/ui/card";
 import {
-  Box,
-  Stack,
-  Typography,
-  Paper,
-  Chip,
-  Divider,
-  Grid,
-} from "@mui/material";
-import { CompareIcon, AddIcon, ClearIcon, SwapIcon } from "@b4.icons";
-import { B4Dialog } from "@common/B4Dialog";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@design/components/ui/dialog";
+import { Separator } from "@design/components/ui/separator";
+import { cn } from "@design/lib/utils";
 import { B4SetConfig } from "@models/config";
-import { colors } from "@design";
+import { useMemo } from "react";
 
 interface SetCompareProps {
   open: boolean;
@@ -128,157 +128,111 @@ export const SetCompare = ({ open, setA, setB, onClose }: SetCompareProps) => {
   if (!setA || !setB) return null;
 
   return (
-    <B4Dialog
-      open={open}
-      onClose={onClose}
-      title="Compare Sets"
-      subtitle={`${setA.name} vs ${setB.name}`}
-      icon={<CompareIcon />}
-      maxWidth="lg"
-      fullWidth
-    >
-      <Box sx={{ mt: 2 }}>
-        {/* Header */}
-        <Grid container spacing={2} sx={{ mb: 2 }}>
-          <Grid size={{ xs: 5 }}>
-            <Paper
-              sx={{
-                p: 1.5,
-                bgcolor: colors.accent.primary,
-                textAlign: "center",
-              }}
-            >
-              <Typography variant="subtitle1" fontWeight={600}>
-                {setA.name}
-              </Typography>
-            </Paper>
-          </Grid>
-          <Grid
-            size={{ xs: 2 }}
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <CompareIcon sx={{ color: colors.text.secondary }} />
-          </Grid>
-          <Grid size={{ xs: 5 }}>
-            <Paper
-              sx={{
-                p: 1.5,
-                bgcolor: colors.accent.secondary,
-                textAlign: "center",
-              }}
-            >
-              <Typography variant="subtitle1" fontWeight={600}>
-                {setB.name}
-              </Typography>
-            </Paper>
-          </Grid>
-        </Grid>
+    <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
+        <DialogHeader>
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+              <IconArrowsExchange />
+            </div>
+            <div className="flex-1">
+              <DialogTitle>Compare Sets</DialogTitle>
+              <DialogDescription className="mt-1">
+                {setA.name} vs {setB.name}
+              </DialogDescription>
+            </div>
+          </div>
+        </DialogHeader>
+        <div className="flex-1 overflow-y-auto py-4">
+          <div className="mt-4">
+            {/* Header */}
+            <div className="grid grid-cols-12 gap-4 mb-4">
+              <div className="col-span-5">
+                <Card className="p-3 bg-accent text-center border border-border">
+                  <p className="text-sm font-semibold">{setA.name}</p>
+                </Card>
+              </div>
+              <div className="col-span-2 flex items-center justify-center">
+                <IconArrowsExchange className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <div className="col-span-5">
+                <Card className="p-3 bg-accent-secondary text-center border border-border">
+                  <p className="text-sm font-semibold">{setB.name}</p>
+                </Card>
+              </div>
+            </div>
 
-        {diffs.length === 0 ? (
-          <Paper
-            sx={{ p: 3, textAlign: "center", bgcolor: colors.background.paper }}
-          >
-            <Typography color="text.secondary">Sets are identical</Typography>
-          </Paper>
-        ) : (
-          <Stack spacing={2}>
-            {Object.entries(groupedDiffs).map(([section, items]) => (
-              <Paper
-                key={section}
-                sx={{
-                  overflow: "hidden",
-                  border: `1px solid ${colors.border.default}`,
-                }}
-              >
-                <Box sx={{ px: 2, py: 1, bgcolor: colors.background.dark }}>
-                  <Typography variant="subtitle2" textTransform="uppercase">
-                    {section}
-                  </Typography>
-                </Box>
-                <Divider />
-                <Stack divider={<Divider />}>
-                  {items.map((diff) => (
-                    <Grid container key={diff.path} sx={{ p: 1.5 }}>
-                      <Grid size={{ xs: 5 }}>
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            fontFamily: "monospace",
-                            color:
-                              diff.type === "removed"
-                                ? colors.quaternary
-                                : colors.text.primary,
-                            textDecoration:
-                              diff.type === "added" ? "none" : undefined,
-                          }}
+            {diffs.length === 0 ? (
+              <Card className="p-6 text-center bg-card border border-border">
+                <p className="text-muted-foreground">Sets are identical</p>
+              </Card>
+            ) : (
+              <div className="flex flex-col gap-4">
+                {Object.entries(groupedDiffs).map(([section, items]) => (
+                  <Card
+                    key={section}
+                    className="overflow-hidden border border-border"
+                  >
+                    <div className="px-4 py-2 bg-muted">
+                      <p className="text-xs font-semibold uppercase text-center">
+                        {section}
+                      </p>
+                    </div>
+                    <Separator />
+                    <div className="divide-y divide-border">
+                      {items.map((diff) => (
+                        <div
+                          key={diff.path}
+                          className="grid grid-cols-12 gap-4 p-3"
                         >
-                          {formatValue(diff.valueA)}
-                        </Typography>
-                      </Grid>
-                      <Grid
-                        size={{ xs: 2 }}
-                        sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <Chip
-                          size="small"
-                          icon={
-                            diff.type === "added" ? (
-                              <AddIcon />
-                            ) : diff.type === "removed" ? (
-                              <ClearIcon />
-                            ) : (
-                              <SwapIcon />
-                            )
-                          }
-                          label={diff.label.split(" → ").pop()}
-                          sx={{
-                            fontSize: "0.7rem",
-                            height: 24,
-                            bgcolor:
-                              diff.type === "added"
-                                ? `${colors.tertiary}22`
-                                : diff.type === "removed"
-                                ? `${colors.quaternary}22`
-                                : `${colors.secondary}22`,
-                            color:
-                              diff.type === "added"
-                                ? colors.tertiary
-                                : diff.type === "removed"
-                                ? colors.quaternary
-                                : colors.secondary,
-                          }}
-                        />
-                      </Grid>
-                      <Grid size={{ xs: 5 }}>
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            fontFamily: "monospace",
-                            color:
-                              diff.type === "added"
-                                ? colors.tertiary
-                                : colors.text.primary,
-                          }}
-                        >
-                          {formatValue(diff.valueB)}
-                        </Typography>
-                      </Grid>
-                    </Grid>
-                  ))}
-                </Stack>
-              </Paper>
-            ))}
-          </Stack>
-        )}
-      </Box>
-    </B4Dialog>
+                          <div className="col-span-5">
+                            <p
+                              className={cn(
+                                "text-sm font-mono",
+                                diff.type === "removed"
+                                  ? "text-destructive/70 line-through"
+                                  : "text-foreground"
+                              )}
+                            >
+                              {formatValue(diff.valueA)}
+                            </p>
+                          </div>
+                          <div className="col-span-2 flex items-center justify-center">
+                            <Badge
+                              className={cn(
+                                "text-xs px-1.5 py-0.5 h-6 inline-flex items-center text-muted-foreground",
+                                diff.type === "added"
+                                  ? "bg-primary/20"
+                                  : diff.type === "removed"
+                                  ? "bg-destructive/20"
+                                  : "bg-secondary/20"
+                              )}
+                            >
+                              {diff.label.split(" → ").pop() || ""}
+                            </Badge>
+                          </div>
+                          <div className="col-span-5">
+                            <p
+                              className={cn(
+                                "text-sm font-mono text-right",
+                                diff.type === "added"
+                                  ? "text-primary"
+                                  : "text-foreground"
+                              )}
+                            >
+                              {formatValue(diff.valueB)}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 };

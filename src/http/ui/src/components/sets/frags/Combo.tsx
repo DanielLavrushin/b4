@@ -1,9 +1,28 @@
 import { useState } from "react";
-import { Grid, Box, Typography } from "@mui/material";
-import { B4Slider, B4Switch, B4Select, B4TextField } from "@b4.fields";
+import { Alert, AlertDescription } from "@design/components/ui/alert";
+import { Badge } from "@design/components/ui/badge";
+import { Button } from "@design/components/ui/button";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldLabel,
+  FieldTitle,
+} from "@design/components/ui/field";
+import { Input } from "@design/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@design/components/ui/select";
+import { Separator } from "@design/components/ui/separator";
+import { Slider } from "@design/components/ui/slider";
+import { Switch } from "@design/components/ui/switch";
 import { B4SetConfig, ComboShuffleMode } from "@models/config";
-import { colors } from "@design";
-import { B4Alert, B4ChipList, B4FormHeader, B4PlusButton } from "@b4.elements";
+import { ChipList } from "@components/common/ChipList";
+import { AddIcon } from "@b4.icons";
 
 interface ComboSettingsProps {
   config: B4SetConfig;
@@ -55,350 +74,345 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
 
   return (
     <>
-      <B4FormHeader label="Combo Strategy" />
+      <div className="relative my-4 md:col-span-2 flex items-center">
+        <Separator className="absolute inset-0 top-1/2" />
+        <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+          Combo Strategy
+        </span>
+      </div>
 
-      <Grid size={{ xs: 12 }}>
-        <B4Alert severity="info">
-          Combo combines multiple split points and sends segments out of order
-          with timing jitter to confuse stateful DPI.
-        </B4Alert>
-      </Grid>
+      <div>
+        <Alert>
+          <AlertDescription>
+            Combo combines multiple split points and sends segments out of order
+            with timing jitter to confuse stateful DPI.
+          </AlertDescription>
+        </Alert>
+      </div>
 
       {/* Decoy Settings */}
-      <B4FormHeader label="Decoy Packet" />
+      <div className="relative my-4 md:col-span-2 flex items-center">
+        <Separator className="absolute inset-0 top-1/2" />
+        <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+          Decoy Packet
+        </span>
+      </div>
 
-      <Grid size={{ xs: 12 }}>
-        <B4Switch
-          label="Enable Decoy"
-          checked={combo.decoy_enabled}
-          onChange={(checked: boolean) =>
-            onChange("fragmentation.combo.decoy_enabled", checked)
-          }
-          description="Send fake ClientHello with whitelisted SNI before real traffic"
-        />
-      </Grid>
+      <div>
+        <label htmlFor="switch-combo-decoy">
+          <Field
+            orientation="horizontal"
+            className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
+          >
+            <FieldContent>
+              <FieldTitle>Enable Decoy</FieldTitle>
+              <FieldDescription>
+                Send fake ClientHello with whitelisted SNI before real traffic
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="switch-combo-decoy"
+              checked={combo.decoy_enabled}
+              onCheckedChange={(checked: boolean) =>
+                onChange("fragmentation.combo.decoy_enabled", checked)
+              }
+            />
+          </Field>
+        </label>
+      </div>
 
       {combo.decoy_enabled && (
         <>
-          <Grid size={{ xs: 12 }}>
-            <Typography variant="subtitle2">Decoy SNI Domains</Typography>
-            <Typography variant="caption" color="text.secondary">
-              Whitelisted domains used in decoy packet. DPI sees these instead
-              of real target.
-            </Typography>
-          </Grid>
+          <div className="md:col-span-2">
+            <Field>
+              <FieldLabel>Decoy SNI Domains</FieldLabel>
+              <FieldDescription className="mb-2">
+                Whitelisted domains used in decoy packet. DPI sees these instead
+                of real target.
+              </FieldDescription>
+              <div className="flex gap-2">
+                <Input
+                  value={newDomain}
+                  onChange={(e) => setNewDomain(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="e.g., allowed-site.ru"
+                  className="flex-1"
+                />
+                <Button
+                  onClick={handleAddDomain}
+                  disabled={!newDomain.trim()}
+                  size="icon"
+                  variant="outline"
+                >
+                  <AddIcon className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="mt-2">
+                <ChipList
+                  items={decoySNIs}
+                  getKey={(d) => d}
+                  getLabel={(d) => d}
+                  onDelete={handleRemoveDomain}
+                  emptyMessage="Using defaults: ya.ru, vk.com, mail.ru, dzen.ru"
+                  showEmpty
+                />
+              </div>
+            </Field>
+          </div>
 
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
-              <B4TextField
-                label="Add Domain"
-                value={newDomain}
-                onChange={(e) => setNewDomain(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="e.g., allowed-site.ru"
-              />
-              <B4PlusButton
-                onClick={handleAddDomain}
-                disabled={!newDomain.trim()}
-              />
-            </Box>
-          </Grid>
-          <B4ChipList
-            items={decoySNIs}
-            getKey={(d) => d}
-            getLabel={(d) => d}
-            onDelete={handleRemoveDomain}
-            emptyMessage="Using defaults: ya.ru, vk.com, mail.ru, dzen.ru"
-            showEmpty
-          />
-          <Grid size={{ xs: 12 }}>
-            <Box
-              sx={{
-                p: 2,
-                bgcolor: colors.background.paper,
-                borderRadius: 1,
-                border: `1px solid ${colors.border.default}`,
-              }}
-            >
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                component="div"
-                sx={{ mb: 1 }}
-              >
+          {/* How Decoy Works Visualization */}
+          <div className="md:col-span-2">
+            <div className="p-4 bg-card rounded-md border border-border">
+              <p className="text-xs text-muted-foreground mb-3 font-semibold uppercase">
                 HOW DECOY WORKS
-              </Typography>
-              <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <Typography
-                    variant="caption"
-                    sx={{ minWidth: 80, color: colors.text.secondary }}
-                  >
+              </p>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground min-w-20">
                     Sent 1st:
-                  </Typography>
-                  <Box
-                    sx={{
-                      p: 1,
-                      bgcolor: colors.tertiary,
-                      borderRadius: 0.5,
-                      fontFamily: "monospace",
-                      fontSize: "0.7rem",
-                      border: `2px dashed ${colors.secondary}`,
-                    }}
-                  >
+                  </span>
+                  <code className="px-2 py-1 bg-tertiary rounded text-xs font-mono border-2 border-dashed border-secondary">
                     {decoySNIs[0] || "ya.ru"} (DECOY, low TTL)
-                  </Box>
-                  <Typography
-                    variant="caption"
-                    sx={{ color: colors.secondary, ml: 1 }}
-                  >
+                  </code>
+                  <span className="text-xs text-secondary ml-2">
                     → DPI sees, dies before server
-                  </Typography>
-                </Box>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <Typography
-                    variant="caption"
-                    sx={{ minWidth: 80, color: colors.text.secondary }}
-                  >
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground min-w-20">
                     Sent 2nd:
-                  </Typography>
-                  <Box
-                    sx={{
-                      display: "flex",
-                      gap: 0.5,
-                      fontFamily: "monospace",
-                      fontSize: "0.7rem",
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        p: 1,
-                        bgcolor: colors.accent.secondary,
-                        borderRadius: 0.5,
-                        border: `2px solid ${colors.secondary}`,
-                      }}
-                    >
-                      REAL (fragmented)
-                    </Box>
-                  </Box>
-                  <Typography
-                    variant="caption"
-                    sx={{ color: colors.secondary, ml: 1 }}
-                  >
+                  </span>
+                  <code className="px-2 py-1 bg-accent-secondary rounded text-xs font-mono border-2 border-solid border-secondary">
+                    REAL (fragmented)
+                  </code>
+                  <span className="text-xs text-secondary ml-2">
                     → Server receives
-                  </Typography>
-                </Box>
-              </Box>
-            </Box>
-          </Grid>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
         </>
       )}
 
       {/* Split Points */}
-      <B4FormHeader label="Split Points" />
+      <div className="relative my-4 md:col-span-2 flex items-center">
+        <Separator className="absolute inset-0 top-1/2" />
+        <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+          Split Points
+        </span>
+      </div>
 
-      <Grid size={{ xs: 12, md: 4 }}>
-        <B4Switch
-          label="First Byte"
-          checked={combo.first_byte_split}
-          onChange={(checked: boolean) =>
-            onChange("fragmentation.combo.first_byte_split", checked)
-          }
-          description="Split after 1st byte (timing desync)"
-        />
-      </Grid>
+      <div>
+        <label htmlFor="switch-combo-first-byte">
+          <Field
+            orientation="horizontal"
+            className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
+          >
+            <FieldContent>
+              <FieldTitle>First Byte</FieldTitle>
+              <FieldDescription>
+                Split after 1st byte (timing desync)
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="switch-combo-first-byte"
+              checked={combo.first_byte_split}
+              onCheckedChange={(checked: boolean) =>
+                onChange("fragmentation.combo.first_byte_split", checked)
+              }
+            />
+          </Field>
+        </label>
+      </div>
 
-      <Grid size={{ xs: 12, md: 4 }}>
-        <B4Switch
-          label="Extension Split"
-          checked={combo.extension_split}
-          onChange={(checked: boolean) =>
-            onChange("fragmentation.combo.extension_split", checked)
-          }
-          description="Split before SNI extension"
-        />
-      </Grid>
+      <div>
+        <label htmlFor="switch-combo-extension">
+          <Field
+            orientation="horizontal"
+            className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
+          >
+            <FieldContent>
+              <FieldTitle>Extension Split</FieldTitle>
+              <FieldDescription>Split before SNI extension</FieldDescription>
+            </FieldContent>
+            <Switch
+              id="switch-combo-extension"
+              checked={combo.extension_split}
+              onCheckedChange={(checked: boolean) =>
+                onChange("fragmentation.combo.extension_split", checked)
+              }
+            />
+          </Field>
+        </label>
+      </div>
 
-      <Grid size={{ xs: 12, md: 4 }}>
-        <B4Switch
-          label="SNI Split"
-          checked={middleSni}
-          onChange={(checked: boolean) =>
-            onChange("fragmentation.middle_sni", checked)
-          }
-          description="Split in middle of SNI hostname"
-        />
-      </Grid>
+      <div>
+        <label htmlFor="switch-combo-sni">
+          <Field
+            orientation="horizontal"
+            className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
+          >
+            <FieldContent>
+              <FieldTitle>SNI Split</FieldTitle>
+              <FieldDescription>
+                Split in middle of SNI hostname
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="switch-combo-sni"
+              checked={middleSni}
+              onCheckedChange={(checked: boolean) =>
+                onChange("fragmentation.middle_sni", checked)
+              }
+            />
+          </Field>
+        </label>
+      </div>
 
       {/* Visual */}
-      <Grid size={{ xs: 12 }}>
-        <Box
-          sx={{
-            p: 2,
-            bgcolor: colors.background.paper,
-            borderRadius: 1,
-            border: `1px solid ${colors.border.default}`,
-          }}
-        >
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            component="div"
-            sx={{ mb: 1 }}
-          >
+      <div className="md:col-span-2">
+        <div className="p-4 bg-card rounded-md border border-border">
+          <p className="text-xs text-muted-foreground mb-2">
             SEGMENT VISUALIZATION
-          </Typography>
-          <Box
-            sx={{
-              display: "flex",
-              gap: 0.5,
-              fontFamily: "monospace",
-              fontSize: "0.7rem",
-              flexWrap: "wrap",
-            }}
-          >
+          </p>
+          <div className="flex gap-1 font-mono text-xs flex-wrap">
             {combo.first_byte_split && (
-              <Box
-                sx={{
-                  p: 1,
-                  bgcolor: colors.tertiary,
-                  borderRadius: 0.5,
-                  textAlign: "center",
-                  minWidth: 40,
-                }}
-              >
+              <div className="p-2 bg-tertiary rounded text-center min-w-10">
                 1B
-              </Box>
+              </div>
             )}
             {combo.extension_split && (
-              <Box
-                sx={{
-                  p: 1,
-                  bgcolor: colors.accent.primary,
-                  borderRadius: 0.5,
-                  textAlign: "center",
-                  flex: 1,
-                  minWidth: 60,
-                }}
-              >
+              <div className="p-2 bg-accent rounded text-center flex-1 min-w-15">
                 Pre-SNI Ext
-              </Box>
+              </div>
             )}
             {middleSni && (
               <>
-                <Box
-                  sx={{
-                    p: 1,
-                    bgcolor: colors.accent.secondary,
-                    borderRadius: 0.5,
-                    textAlign: "center",
-                    minWidth: 50,
-                  }}
-                >
+                <div className="p-2 bg-accent-secondary rounded text-center min-w-12.5">
                   SNI₁
-                </Box>
-                <Box
-                  sx={{
-                    p: 1,
-                    bgcolor: colors.accent.secondary,
-                    borderRadius: 0.5,
-                    textAlign: "center",
-                    minWidth: 50,
-                  }}
-                >
+                </div>
+                <div className="p-2 bg-accent-secondary rounded text-center min-w-12.5">
                   SNI₂
-                </Box>
+                </div>
               </>
             )}
-            <Box
-              sx={{
-                p: 1,
-                bgcolor: colors.quaternary,
-                borderRadius: 0.5,
-                textAlign: "center",
-                flex: 1,
-                minWidth: 60,
-              }}
-            >
+            <div className="p-2 bg-quaternary rounded text-center flex-1 min-w-15">
               Rest...
-            </Box>
-          </Box>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ mt: 1, display: "block" }}
-          >
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
             {enabledSplits.length > 0
               ? `Active splits: ${enabledSplits.join(" → ")} → creates ${
                   enabledSplits.length + 1
                 } segments`
               : "No splits enabled - packet sent as single segment"}
-          </Typography>
-        </Box>
-      </Grid>
+          </p>
+        </div>
+      </div>
 
       {/* Shuffle Mode */}
-      <Grid size={{ xs: 12, md: 6 }}>
-        <B4Select
-          label="Shuffle Mode"
-          value={combo.shuffle_mode}
-          options={shuffleModeOptions}
-          onChange={(e) =>
-            onChange(
-              "fragmentation.combo.shuffle_mode",
-              e.target.value as string
-            )
-          }
-          helperText="How to reorder segments before sending"
-        />
-      </Grid>
+      <div>
+        <Field>
+          <FieldLabel>Shuffle Mode</FieldLabel>
+          <Select
+            value={combo.shuffle_mode}
+            onValueChange={(value) =>
+              onChange("fragmentation.combo.shuffle_mode", value as string)
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select shuffle mode" />
+            </SelectTrigger>
+            <SelectContent>
+              {shuffleModeOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value.toString()}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <FieldDescription>
+            How to reorder segments before sending
+          </FieldDescription>
+        </Field>
+      </div>
 
-      <Grid size={{ xs: 12, md: 6 }}>
-        <B4Alert sx={{ my: 0 }}>
-          {combo.shuffle_mode === "middle" &&
-            "Middle: Keep first & last in place, shuffle middle segments"}
-          {combo.shuffle_mode === "full" &&
-            "Full: Randomly shuffle all segments"}
-          {combo.shuffle_mode === "reverse" &&
-            "Reverse: Send segments in reverse order"}
-        </B4Alert>
-      </Grid>
+      <div>
+        <Alert className="my-0">
+          <AlertDescription>
+            {combo.shuffle_mode === "middle" &&
+              "Middle: Keep first & last in place, shuffle middle segments"}
+            {combo.shuffle_mode === "full" &&
+              "Full: Randomly shuffle all segments"}
+            {combo.shuffle_mode === "reverse" &&
+              "Reverse: Send segments in reverse order"}
+          </AlertDescription>
+        </Alert>
+      </div>
 
-      <B4FormHeader label="Timing Settings" />
+      <div className="relative my-4 md:col-span-2 flex items-center">
+        <Separator className="absolute inset-0 top-1/2" />
+        <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+          Timing Settings
+        </span>
+      </div>
 
-      <Grid size={{ xs: 12, md: 6 }}>
-        <B4Slider
-          label="First Segment Delay"
-          value={combo.first_delay_ms}
-          onChange={(value: number) =>
-            onChange("fragmentation.combo.first_delay_ms", value)
-          }
-          min={10}
-          max={500}
-          step={10}
-          helperText="Delay after first segment (ms)"
-        />
-      </Grid>
+      <div>
+        <Field className="w-full space-y-2">
+          <div className="flex items-center justify-between">
+            <FieldLabel className="text-sm font-medium">
+              First Segment Delay
+            </FieldLabel>
+            <Badge variant="secondary" className="font-semibold">
+              {combo.first_delay_ms} ms
+            </Badge>
+          </div>
+          <Slider
+            value={[combo.first_delay_ms]}
+            onValueChange={(values) =>
+              onChange("fragmentation.combo.first_delay_ms", values[0])
+            }
+            min={10}
+            max={500}
+            step={10}
+            className="w-full"
+          />
+          <FieldDescription>Delay after first segment (ms)</FieldDescription>
+        </Field>
+      </div>
 
-      <Grid size={{ xs: 12, md: 6 }}>
-        <B4Slider
-          label="Jitter Max"
-          value={combo.jitter_max_us}
-          onChange={(value: number) =>
-            onChange("fragmentation.combo.jitter_max_us", value)
-          }
-          min={100}
-          max={10000}
-          step={100}
-          helperText="Max random delay between other segments (μs)"
-        />
-      </Grid>
+      <div>
+        <Field className="w-full space-y-2">
+          <div className="flex items-center justify-between">
+            <FieldLabel className="text-sm font-medium">Jitter Max</FieldLabel>
+            <Badge variant="secondary" className="font-semibold">
+              {combo.jitter_max_us} μs
+            </Badge>
+          </div>
+          <Slider
+            value={[combo.jitter_max_us]}
+            onValueChange={(values) =>
+              onChange("fragmentation.combo.jitter_max_us", values[0])
+            }
+            min={100}
+            max={10000}
+            step={100}
+            className="w-full"
+          />
+          <FieldDescription>
+            Max random delay between other segments (μs)
+          </FieldDescription>
+        </Field>
+      </div>
 
       {!combo.first_byte_split && !combo.extension_split && !middleSni && (
-        <B4Alert severity="warning">
-          No split points enabled. Enable at least one for Combo to work
-          effectively.
-        </B4Alert>
+        <Alert variant="destructive" className="md:col-span-2">
+          <AlertDescription>
+            No split points enabled. Enable at least one for Combo to work
+            effectively.
+          </AlertDescription>
+        </Alert>
       )}
     </>
   );

@@ -1,10 +1,6 @@
-import { Chip } from "@mui/material";
-import {
-  CheckCircle as CheckCircleIcon,
-  Warning as WarningIcon,
-  Error as ErrorIcon,
-} from "@mui/icons-material";
+import { WarningIcon, CheckIcon, CloseIcon } from "@b4.icons";
 import { colors } from "@design";
+import { Badge } from "@design/components/ui/badge";
 
 interface StatusBadgeProps {
   label: string;
@@ -15,30 +11,32 @@ export const StatusBadge = ({ label, status }: StatusBadgeProps) => {
   const statusConfig = {
     active: {
       color: "#4caf50",
-      icon: <CheckCircleIcon sx={{ fontSize: 16 }} />,
+      icon: <CheckIcon className="h-4 w-4" />,
     },
     inactive: {
       color: colors.text.secondary,
-      icon: <ErrorIcon sx={{ fontSize: 16 }} />,
+      icon: <CloseIcon className="h-4 w-4" />,
     },
-    warning: { color: "#ff9800", icon: <WarningIcon sx={{ fontSize: 16 }} /> },
-    error: { color: "#f44336", icon: <ErrorIcon sx={{ fontSize: 16 }} /> },
+    warning: {
+      color: "#ff9800",
+      icon: <WarningIcon className="h-4 w-4" />,
+    },
+    error: { color: "#f44336", icon: <CloseIcon className="h-4 w-4" /> },
   };
 
   const config = statusConfig[status];
 
   return (
-    <Chip
-      label={label}
-      icon={config.icon}
-      size="small"
-      sx={{
-        bgcolor: config.color + "22",
+    <Badge
+      className="font-semibold inline-flex items-center gap-1"
+      style={{
+        backgroundColor: `${config.color}22`,
         color: config.color,
-        borderColor: config.color + "44",
-        fontWeight: 600,
+        borderColor: `${config.color}44`,
       }}
-      variant="outlined"
-    />
+    >
+      {config.icon}
+      {label}
+    </Badge>
   );
 };

@@ -1,7 +1,14 @@
-import { Box, Stack, TextField } from "@mui/material";
 import { ClearIcon } from "@b4.icons";
-import { B4Badge, B4Switch, B4TooltipButton } from "@b4.elements";
-import { colors } from "@design";
+import { Badge } from "@design/components/ui/badge";
+import { Button } from "@design/components/ui/button";
+import { Input } from "@design/components/ui/input";
+import { Label } from "@design/components/ui/label";
+import { Switch } from "@design/components/ui/switch";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@design/components/ui/tooltip";
 
 interface DomainsControlBarProps {
   filter: string;
@@ -31,63 +38,49 @@ export const DomainsControlBar = ({
   onReset,
 }: DomainsControlBarProps) => {
   return (
-    <Box
-      sx={{
-        p: 2,
-        borderBottom: "1px solid",
-        borderColor: colors.border.light,
-        bgcolor: colors.background.control,
-      }}
-    >
-      <Stack direction="row" spacing={2} alignItems="center">
-        <TextField
-          size="small"
+    <div className="p-4 border-b border-border bg-muted/50">
+      <div className="flex flex-row gap-4 items-center">
+        <Input
           placeholder="Filter (combine with +, exclude with !, e.g. tcp+!domain:google.com)"
           value={filter}
           onChange={(e) => onFilterChange(e.target.value)}
-          sx={{ flex: 1 }}
-          slotProps={{
-            input: {
-              sx: {
-                bgcolor: colors.background.dark,
-                "& fieldset": {
-                  borderColor: `${colors.border.default} !important`,
-                },
-              },
-            },
-          }}
+          className="flex-1"
         />
-        <Stack direction="row" spacing={1} alignItems="center">
-          <B4Badge label={`${totalCount} connections`} />
+        <div className="flex flex-row gap-2 items-center">
+          <Badge>{`${totalCount} connections`}</Badge>
           {filter && (
-            <B4Badge label={`${filteredCount} filtered`} variant="outlined" />
+            <Badge variant="outline">{`${filteredCount} filtered`}</Badge>
           )}
-          {sortColumn && (
-            <B4Badge
-              label={`Sorted by ${sortColumn}`}
-              size="small"
-              onDelete={onClearSort}
-              variant="outlined"
-              color="primary"
-            />
-          )}
-        </Stack>
-        <B4Switch
-          label={showAll ? "All packets" : "Domains only"}
-          checked={showAll}
-          onChange={(checked: boolean) => onShowAllChange(checked)}
-        />
-        <B4Switch
-          label={paused ? "Paused" : "Streaming"}
-          checked={paused}
-          onChange={(checked: boolean) => onPauseChange(checked)}
-        />
-        <B4TooltipButton
-          title={"Clear Connections"}
-          onClick={onReset}
-          icon={<ClearIcon />}
-        />
-      </Stack>
-    </Box>
+        </div>
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={showAll}
+            onCheckedChange={(checked: boolean) => onShowAllChange(checked)}
+          />
+          <Label className="font-medium cursor-pointer">
+            {showAll ? "All packets" : "Domains only"}
+          </Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={paused}
+            onCheckedChange={(checked: boolean) => onPauseChange(checked)}
+          />
+          <Label className="font-medium cursor-pointer">
+            {paused ? "Paused" : "Streaming"}
+          </Label>
+        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon-sm" onClick={onReset}>
+              <ClearIcon />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Clear Connections</p>
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    </div>
   );
 };

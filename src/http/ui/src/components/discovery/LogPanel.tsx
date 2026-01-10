@@ -1,16 +1,19 @@
-import { useEffect, useRef, useState } from "react";
-import {
-  Box,
-  IconButton,
-  Typography,
-  Stack,
-  Tooltip,
-  Paper,
-} from "@mui/material";
-import { ExpandIcon, CollapseIcon, ClearIcon, LogsIcon } from "@b4.icons";
-import { colors } from "@design";
 import { useDiscoveryLogs } from "@b4.discovery";
-import { B4Badge } from "@b4.elements";
+import { ClearIcon, CollapseIcon, ExpandIcon, LogsIcon } from "@b4.icons";
+import { Badge } from "@design/components/ui/badge";
+import { Button } from "@design/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@design/components/ui/collapsible";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@design/components/ui/tooltip";
+import { cn } from "@design/lib/utils";
+import { useEffect, useRef, useState } from "react";
 
 interface DiscoveryLogPanelProps {
   running: boolean;
@@ -41,118 +44,102 @@ export const DiscoveryLogPanel = ({ running }: DiscoveryLogPanelProps) => {
   if (!running && logs.length === 0) return null;
 
   return (
-    <Paper
-      elevation={0}
-      sx={{
-        bgcolor: colors.background.paper,
-        border: `1px solid ${colors.border.default}`,
-        borderRadius: 2,
-        overflow: "hidden",
-      }}
-    >
-      {/* Header */}
-      <Stack
-        direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        sx={{
-          p: 2,
-          bgcolor: colors.accent.primary,
-          cursor: "pointer",
-        }}
-        onClick={() => setExpanded((e) => !e)}
-      >
-        <Stack direction="row" alignItems="center" spacing={1.5}>
-          <LogsIcon sx={{ fontSize: 20, color: colors.secondary }} />
-          <Typography variant="h6" sx={{ color: colors.text.primary }}>
-            Discovery Logs
-          </Typography>
-          <Box
-            sx={{
-              width: 16,
-              height: 16,
-              borderRadius: "50%",
-              bgcolor: connected ? colors.secondary : colors.text.disabled,
-            }}
-          />
-          {logs.length > 0 && (
-            <B4Badge variant="filled" label={`${logs.length} lines`} />
-          )}
-        </Stack>
-        <Stack direction="row" alignItems="center" spacing={1}>
-          {logs.length > 0 && (
-            <Tooltip title="Clear logs">
-              <IconButton
-                size="small"
+    <div className="flex flex-col overflow-hidden border transition-colors border-border">
+      <Collapsible open={expanded} onOpenChange={setExpanded}>
+        {/* Header */}
+        <CollapsibleTrigger asChild>
+          <div className="p-4 border-b border-border/50 bg-card flex items-center justify-between cursor-pointer hover:bg-accent/50 transition-colors">
+            <div className="flex items-center gap-3">
+              <LogsIcon className="h-5 w-5 text-secondary" />
+              <h6 className="text-base font-semibold text-foreground">
+                Discovery Logs
+              </h6>
+              <div
+                className={cn(
+                  "w-4 h-4 rounded-full",
+                  connected ? "bg-secondary" : "bg-muted-foreground"
+                )}
+              />
+              {logs.length > 0 && (
+                <Badge>{`${logs.length} lines`}</Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-1">
+              {logs.length > 0 && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        clearLogs();
+                      }}
+                      className="h-8 w-8 p-0"
+                    >
+                      <ClearIcon className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Clear logs</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
                 onClick={(e) => {
                   e.stopPropagation();
-                  clearLogs();
+                  setExpanded((prev) => !prev);
                 }}
-                sx={{ color: colors.text.secondary }}
+                className="h-8 w-8 p-0"
               >
-                <ClearIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          )}
-          <IconButton
-            size="small"
-            onClick={(e) => {
-              e.stopPropagation();
-              setExpanded((prev) => !prev);
-            }}
-            sx={{ color: colors.text.secondary }}
-          >
-            {expanded ? <CollapseIcon /> : <ExpandIcon />}
-          </IconButton>
-        </Stack>
-      </Stack>
+                {expanded ? (
+                  <CollapseIcon className="h-4 w-4" />
+                ) : (
+                  <ExpandIcon className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          </div>
+        </CollapsibleTrigger>
 
-      {/* Log content - simple div, not Box */}
-      {expanded && (
-        <div
-          ref={scrollRef}
-          style={{
-            height: 150,
-            overflowY: "auto",
-            backgroundColor: colors.background.dark,
-            fontFamily: "monospace",
-            fontSize: 12,
-            padding: 16,
-          }}
-        >
-          {logs.length === 0 ? (
-            <Typography
-              sx={{ color: colors.text.disabled, fontStyle: "italic" }}
-            >
-              Waiting for discovery logs...
-            </Typography>
-          ) : (
-            logs.map((line, i) => (
-              <div
-                key={i}
-                style={{
-                  color: getLogColor(line),
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  lineHeight: 1.6,
-                }}
-              >
-                {line}
-              </div>
-            ))
-          )}
-        </div>
-      )}
-    </Paper>
+        {/* Log content */}
+        <CollapsibleContent>
+          <div
+            ref={scrollRef}
+            className="h-37.5 overflow-y-auto relative p-4 font-mono text-[13px] leading-relaxed whitespace-pre-wrap wrap-break-word bg-background text-foreground"
+          >
+            {logs.length === 0 ? (
+              <p className="text-muted-foreground italic">
+                Waiting for discovery logs...
+              </p>
+            ) : (
+              logs.map((line, i) => (
+                <div
+                  key={i}
+                  className={cn(
+                    "font-mono text-[13px] hover:bg-accent/50",
+                    getLogColorClass(line)
+                  )}
+                >
+                  {line}
+                </div>
+              ))
+            )}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
   );
 };
 
-function getLogColor(line: string): string {
+function getLogColorClass(line: string): string {
   const lower = line.toLowerCase();
   if (lower.includes("success") || line.includes("✓") || lower.includes("best"))
-    return colors.secondary;
+    return "text-secondary-foreground";
   if (lower.includes("failed") || line.includes("✗") || lower.includes("fail"))
-    return colors.primary;
-  if (lower.includes("phase")) return colors.text.secondary;
-  return colors.text.primary;
+    return "text-destructive";
+  if (lower.includes("phase")) return "text-muted-foreground";
+  return "text-foreground";
 }

@@ -1,37 +1,24 @@
 import { useMemo, useState } from "react";
-import {
-  Box,
-  Grid,
-  Stack,
-  Button,
-  Typography,
-  List,
-  ListItem,
-  ListItemText,
-  Paper,
-  TextField,
-  InputAdornment,
-} from "@mui/material";
 
 import {
-  AddIcon,
-  SetsIcon,
-  DomainIcon,
   WarningIcon,
   CompareIcon,
   CheckIcon,
+  AddIcon,
+  IconSearch,
+  SetsIcon,
+  DomainIcon,
 } from "@b4.icons";
-import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 
 import {
   DndContext,
-  closestCenter,
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
   PointerSensor,
+  closestCenter,
   useSensor,
   useSensors,
-  DragEndEvent,
-  DragStartEvent,
-  DragOverlay,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -41,16 +28,33 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { v4 as uuidv4 } from "uuid";
 
-import { B4Section, B4Dialog } from "@b4.elements";
 import { useSnackbar } from "@context/SnackbarProvider";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@design/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@design/components/ui/dialog";
+import { Input } from "@design/components/ui/input";
+import { Separator } from "@design/components/ui/separator";
 
+import { SetCompare } from "./Compare";
 import { SetEditor } from "./Editor";
 import { SetCard } from "./SetCard";
-import { SetCompare } from "./Compare";
 
-import { colors, radius } from "@design";
-import { B4Config, B4SetConfig } from "@models/config";
+import { Button } from "@design/components/ui/button";
+import { cn } from "@design/lib/utils";
 import { useSets } from "@hooks/useSets";
+import { B4Config, B4SetConfig } from "@models/config";
 
 export interface SetStats {
   manual_domains: number;
@@ -90,7 +94,7 @@ const SortableCardWrapper = ({ id, children }: SortableCardWrapperProps) => {
   } = useSortable({ id });
 
   return (
-    <Box
+    <div
       ref={setNodeRef}
       style={{
         transform: CSS.Transform.toString(transform),
@@ -103,7 +107,7 @@ const SortableCardWrapper = ({ id, children }: SortableCardWrapperProps) => {
       {typeof children === "function"
         ? children({ ...attributes, ...listeners })
         : children}
-    </Box>
+    </div>
   );
 };
 
@@ -369,176 +373,137 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
   };
 
   return (
-    <Stack spacing={3}>
-      <B4Section
-        title="Configuration Sets"
-        description="Manage bypass configurations for different domains and scenarios"
-        icon={<SetsIcon />}
-      >
-        {/* Summary Stats Bar */}
-        <Paper
-          elevation={0}
-          sx={{
-            p: 2,
-            mb: 3,
-            bgcolor: colors.background.dark,
-            border: `1px solid ${colors.border.default}`,
-            borderRadius: radius.md,
-          }}
-        >
-          <Stack
-            direction="row"
-            spacing={4}
-            alignItems="center"
-            justifyContent="space-between"
-            flexWrap="wrap"
-            useFlexGap
+    <div className="flex flex-col gap-6">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <SetsIcon className="h-5 w-5" />
+            <CardTitle>Configuration Sets</CardTitle>
+          </div>
+          <CardDescription>
+            Manage bypass configurations for different domains and scenarios
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {/* Summary Stats Bar */}
+          <Card className="p-4 mb-6 bg-muted border border-border rounded-md">
+            <div className="flex flex-row gap-8 items-center justify-between flex-wrap">
+              <div className="flex flex-row gap-8">
+                <StatItem
+                  value={summaryStats.total}
+                  label="total sets"
+                  color="text-foreground"
+                />
+                <StatItem
+                  value={summaryStats.enabled}
+                  label="enabled"
+                  color="text-primary"
+                  icon={<CheckIcon className="h-4 w-4" />}
+                />
+                <StatItem
+                  value={summaryStats.totalDomains.toLocaleString()}
+                  label="domains"
+                  color="text-primary"
+                  icon={<DomainIcon className="h-4 w-4" />}
+                />
+              </div>
+
+              {/* Search & Add */}
+              <div className="flex flex-row gap-4">
+                <div className="relative w-50">
+                  <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search sets..."
+                    value={filterText}
+                    onChange={(e) => setFilterText(e.target.value)}
+                    className="w-full pl-10"
+                  />
+                </div>
+                <Button onClick={handleAddSet}>
+                  <AddIcon className="h-4 w-4 mr-2" />
+                  Create Set
+                </Button>
+              </div>
+            </div>
+          </Card>
+
+          {/* Cards Grid */}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
           >
-            <Stack direction="row" spacing={4}>
-              <StatItem
-                value={summaryStats.total}
-                label="total sets"
-                color={colors.text.primary}
-              />
-              <StatItem
-                value={summaryStats.enabled}
-                label="enabled"
-                color={colors.tertiary}
-                icon={<CheckIcon sx={{ fontSize: 16 }} />}
-              />
-              <StatItem
-                value={summaryStats.totalDomains.toLocaleString()}
-                label="domains"
-                color={colors.secondary}
-                icon={<DomainIcon sx={{ fontSize: 16 }} />}
-              />
-            </Stack>
+            <SortableContext
+              items={filteredSets.map((s) => s.id)}
+              strategy={rectSortingStrategy}
+            >
+              <div className="flex flex-col gap-4">
+                {filteredSets.map((set) => {
+                  const index = sets.findIndex((s) => s.id === set.id);
+                  const stats = setsStats[index] || undefined;
 
-            {/* Search & Add */}
-            <Stack direction="row" spacing={2}>
-              <TextField
-                size="small"
-                placeholder="Search sets..."
-                value={filterText}
-                onChange={(e) => setFilterText(e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchOutlinedIcon
-                        sx={{ fontSize: 20, color: colors.text.secondary }}
-                      />
-                    </InputAdornment>
-                  ),
-                }}
-                sx={{
-                  width: 200,
-                  "& .MuiOutlinedInput-root": {
-                    bgcolor: colors.background.paper,
-                  },
-                }}
-              />
-              <Button
-                startIcon={<AddIcon />}
-                onClick={handleAddSet}
-                variant="contained"
-              >
-                Create Set
-              </Button>
-            </Stack>
-          </Stack>
-        </Paper>
+                  return (
+                    <div key={set.id}>
+                      <SortableCardWrapper id={set.id}>
+                        {(
+                          dragHandleProps: React.HTMLAttributes<HTMLDivElement>
+                        ) => (
+                          <SetCard
+                            set={set}
+                            stats={stats}
+                            index={index}
+                            onEdit={() => handleEditSet(set)}
+                            onDuplicate={() => handleDuplicateSet(set)}
+                            onCompare={() =>
+                              setCompareDialog({
+                                open: true,
+                                setA: set,
+                                setB: null,
+                              })
+                            }
+                            onDelete={() =>
+                              setDeleteDialog({ open: true, setId: set.id })
+                            }
+                            onToggleEnabled={(enabled) =>
+                              handleToggleEnabled(set, enabled)
+                            }
+                            dragHandleProps={dragHandleProps}
+                          />
+                        )}
+                      </SortableCardWrapper>
+                    </div>
+                  );
+                })}
+              </div>
+            </SortableContext>
 
-        {/* Cards Grid */}
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={filteredSets.map((s) => s.id)}
-            strategy={rectSortingStrategy}
-          >
-            <Grid container spacing={3}>
-              {filteredSets.map((set) => {
-                const index = sets.findIndex((s) => s.id === set.id);
-                const stats = setsStats[index] || undefined;
+            <DragOverlay>
+              {activeSet ? (
+                <div
+                  className={cn(
+                    "p-6 bg-card border-2 border-secondary rounded-md shadow-lg min-w-70"
+                  )}
+                >
+                  <h6 className="text-lg font-semibold">{activeSet.name}</h6>
+                  <p className="text-xs text-muted-foreground">
+                    {activeSet.fragmentation.strategy.toUpperCase()}
+                  </p>
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
 
-                return (
-                  <Grid key={set.id} size={{ xs: 12, sm: 6, lg: 4, xl: 3 }}>
-                    <SortableCardWrapper id={set.id}>
-                      {(
-                        dragHandleProps: React.HTMLAttributes<HTMLDivElement>
-                      ) => (
-                        <SetCard
-                          set={set}
-                          stats={stats}
-                          index={index}
-                          onEdit={() => handleEditSet(set)}
-                          onDuplicate={() => handleDuplicateSet(set)}
-                          onCompare={() =>
-                            setCompareDialog({
-                              open: true,
-                              setA: set,
-                              setB: null,
-                            })
-                          }
-                          onDelete={() =>
-                            setDeleteDialog({ open: true, setId: set.id })
-                          }
-                          onToggleEnabled={(enabled) =>
-                            handleToggleEnabled(set, enabled)
-                          }
-                          dragHandleProps={dragHandleProps}
-                        />
-                      )}
-                    </SortableCardWrapper>
-                  </Grid>
-                );
-              })}
-            </Grid>
-          </SortableContext>
-
-          <DragOverlay>
-            {activeSet ? (
-              <Box
-                sx={{
-                  p: 3,
-                  bgcolor: colors.background.paper,
-                  border: `2px solid ${colors.secondary}`,
-                  borderRadius: radius.md,
-                  boxShadow: `0 16px 48px ${colors.accent.primary}60`,
-                  minWidth: 280,
-                }}
-              >
-                <Typography variant="h6" fontWeight={600}>
-                  {activeSet.name}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {activeSet.fragmentation.strategy.toUpperCase()}
-                </Typography>
-              </Box>
-            ) : null}
-          </DragOverlay>
-        </DndContext>
-
-        {/* Empty state */}
-        {filteredSets.length === 0 && filterText && (
-          <Paper
-            elevation={0}
-            sx={{
-              p: 4,
-              textAlign: "center",
-              border: `1px dashed ${colors.border.default}`,
-              borderRadius: radius.md,
-            }}
-          >
-            <Typography color="text.secondary">
-              No sets match "{filterText}"
-            </Typography>
-          </Paper>
-        )}
-      </B4Section>
+          {/* Empty state */}
+          {filteredSets.length === 0 && filterText && (
+            <Card className="p-8 text-center border-dashed border border-border">
+              <p className="text-muted-foreground">
+                No sets match "{filterText}"
+              </p>
+            </Card>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Edit Dialog */}
       <SetEditor
@@ -557,64 +522,94 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
       />
 
       {/* Delete Confirmation */}
-      <B4Dialog
+      <Dialog
         open={deleteDialog.open}
-        title="Delete Configuration Set"
-        subtitle="This action cannot be undone"
-        icon={<WarningIcon />}
-        onClose={() => setDeleteDialog({ open: false, setId: null })}
-        actions={
-          <>
+        onOpenChange={(open) =>
+          !open && setDeleteDialog({ open: false, setId: null })
+        }
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+                <WarningIcon />
+              </div>
+              <div className="flex-1">
+                <DialogTitle>Delete Configuration Set</DialogTitle>
+                <DialogDescription className="mt-1">
+                  This action cannot be undone
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          <div className="py-4">
+            <p>
+              Are you sure you want to delete{" "}
+              <strong>
+                {sets.find((s) => s.id === deleteDialog.setId)?.name}
+              </strong>
+              ?
+            </p>
+          </div>
+          <Separator />
+          <DialogFooter>
             <Button
               onClick={() => setDeleteDialog({ open: false, setId: null })}
+              variant="outline"
             >
               Cancel
             </Button>
-            <Box sx={{ flex: 1 }} />
-            <Button onClick={handleDeleteSet} variant="contained" color="error">
+            <div className="flex-1" />
+            <Button
+              onClick={handleDeleteSet}
+              className="bg-destructive hover:bg-destructive/90"
+            >
               Delete Set
             </Button>
-          </>
-        }
-      >
-        <Typography>
-          Are you sure you want to delete{" "}
-          <strong>{sets.find((s) => s.id === deleteDialog.setId)?.name}</strong>
-          ?
-        </Typography>
-      </B4Dialog>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Compare Selection Dialog */}
-      <B4Dialog
+      <Dialog
         open={compareDialog.open && !compareDialog.setB}
-        onClose={() =>
-          setCompareDialog({ open: false, setA: null, setB: null })
+        onOpenChange={(open) =>
+          !open && setCompareDialog({ open: false, setA: null, setB: null })
         }
-        title="Select Set to Compare"
-        subtitle={`Comparing with: ${compareDialog.setA?.name}`}
-        icon={<CompareIcon />}
       >
-        <List>
-          {sets
-            .filter((s) => s.id !== compareDialog.setA?.id)
-            .map((s) => (
-              <ListItem
-                key={s.id}
-                component="div"
-                onClick={() =>
-                  setCompareDialog((prev) => ({ ...prev, setB: s }))
-                }
-                sx={{
-                  cursor: "pointer",
-                  borderRadius: 1,
-                  "&:hover": { bgcolor: colors.accent.primary },
-                }}
-              >
-                <ListItemText primary={s.name} />
-              </ListItem>
-            ))}
-        </List>
-      </B4Dialog>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+                <CompareIcon />
+              </div>
+              <div className="flex-1">
+                <DialogTitle>Select Set to Compare</DialogTitle>
+                <DialogDescription className="mt-1">
+                  Comparing with: {compareDialog.setA?.name}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="flex flex-col gap-2">
+              {sets
+                .filter((s) => s.id !== compareDialog.setA?.id)
+                .map((s) => (
+                  <div
+                    key={s.id}
+                    onClick={() =>
+                      setCompareDialog((prev) => ({ ...prev, setB: s }))
+                    }
+                    className="cursor-pointer p-3 rounded-md hover:bg-accent transition-colors"
+                  >
+                    <p className="text-sm font-medium">{s.name}</p>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <SetCompare
         open={compareDialog.open && !!compareDialog.setB}
@@ -624,7 +619,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
           setCompareDialog({ open: false, setA: null, setB: null })
         }
       />
-    </Stack>
+    </div>
   );
 };
 
@@ -636,13 +631,9 @@ interface StatItemProps {
 }
 
 const StatItem = ({ value, label, color, icon }: StatItemProps) => (
-  <Stack direction="row" alignItems="center" spacing={1}>
-    {icon && <Box sx={{ color, display: "flex" }}>{icon}</Box>}
-    <Typography variant="h5" fontWeight={700} sx={{ color }}>
-      {value}
-    </Typography>
-    <Typography variant="body2" color="text.secondary">
-      {label}
-    </Typography>
-  </Stack>
+  <div className="flex flex-row items-center gap-2">
+    {icon && <div className={cn("flex", color)}>{icon}</div>}
+    <h5 className={cn("text-2xl font-bold", color)}>{value}</h5>
+    <p className="text-sm text-muted-foreground">{label}</p>
+  </div>
 );

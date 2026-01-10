@@ -1,7 +1,6 @@
-import { Grid, Box, Typography } from "@mui/material";
-import { colors } from "@design";
+import { Alert, AlertDescription } from "@design/components/ui/alert";
+import { Separator } from "@design/components/ui/separator";
 import { B4SetConfig } from "@models/config";
-import { B4Alert, B4FormHeader } from "@b4.elements";
 
 interface FirstByteSettingsProps {
   config: B4SetConfig;
@@ -10,100 +9,51 @@ interface FirstByteSettingsProps {
 export const FirstByteSettings = ({ config }: FirstByteSettingsProps) => {
   return (
     <>
-      <B4FormHeader label="First-Byte Desync" />
+      <div className="relative my-4 md:col-span-2 flex items-center">
+        <Separator className="absolute inset-0 top-1/2" />
+        <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+          First-Byte Desync
+        </span>
+      </div>
 
-      <B4Alert severity="info" sx={{ m: 0 }}>
-        Sends just 1 byte, waits, then sends the rest. Exploits DPI timeout —
-        incomplete TLS record can't be parsed.
-      </B4Alert>
+      <Alert className="m-0">
+        <AlertDescription>
+          Sends just 1 byte, waits, then sends the rest. Exploits DPI timeout —
+          incomplete TLS record can't be parsed.
+        </AlertDescription>
+      </Alert>
 
-      <Grid size={{ xs: 12 }}>
-        <Box
-          sx={{
-            p: 2,
-            bgcolor: colors.background.paper,
-            borderRadius: 1,
-            border: `1px solid ${colors.border.default}`,
-          }}
-        >
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            component="div"
-            sx={{ mb: 1 }}
-          >
-            TIMING ATTACK
-          </Typography>
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              gap: 1,
-              fontFamily: "monospace",
-              fontSize: "0.75rem",
-            }}
-          >
-            <Box
-              sx={{
-                p: 1,
-                bgcolor: colors.tertiary,
-                borderRadius: 0.5,
-                minWidth: 40,
-                textAlign: "center",
-              }}
-            >
+      <div className="md:col-span-2">
+        <div className="p-4 bg-card rounded-md border border-border">
+          <p className="text-xs text-muted-foreground mb-2">TIMING ATTACK</p>
+          <div className="flex items-center gap-2 font-mono text-xs">
+            <div className="p-2 bg-tertiary rounded min-w-10 text-center">
               0x16
-            </Box>
-            <Box
-              sx={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                color: colors.text.secondary,
-              }}
-            >
-              <Typography variant="caption">
-                ⏱️ {config.tcp.seg2delay || 30}ms+
-              </Typography>
-              <Box
-                sx={{
-                  width: 60,
-                  height: 2,
-                  bgcolor: colors.quaternary,
-                  my: 0.5,
-                }}
-              />
-            </Box>
-            <Box
-              sx={{
-                p: 1,
-                bgcolor: colors.accent.secondary,
-                borderRadius: 0.5,
-                flex: 1,
-                textAlign: "center",
-              }}
-            >
+            </div>
+            <div className="flex flex-col items-center text-muted-foreground">
+              <p className="text-xs">⏱️ {config.tcp.seg2delay || 30}ms+</p>
+              <div className="w-15 h-0.5 bg-quaternary my-1" />
+            </div>
+            <div className="p-2 bg-accent-secondary rounded flex-1 text-center">
               Rest of TLS ClientHello...
-            </Box>
-          </Box>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ mt: 1, display: "block" }}
-          >
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
             DPI sees 1 byte (TLS record type), waits for more, times out before
             SNI arrives
-          </Typography>
-        </Box>
-      </Grid>
+          </p>
+        </div>
+      </div>
 
-      <Grid size={{ xs: 12 }}>
-        <B4Alert severity="success" sx={{ m: 0 }}>
-          No configuration needed. Delay controlled by{" "}
-          <strong>Seg2 Delay</strong> in TCP tab (minimum 100ms applied
-          automatically).
-        </B4Alert>
-      </Grid>
+      <div className="md:col-span-2">
+        <Alert className="m-0">
+          <AlertDescription>
+            No configuration needed. Delay controlled by{" "}
+            <strong>Seg2 Delay</strong> in TCP tab (minimum 100ms applied
+            automatically).
+          </AlertDescription>
+        </Alert>
+      </div>
     </>
   );
 };

@@ -1,5 +1,5 @@
-import { TableCell, TableSortLabel } from "@mui/material";
-import { colors } from "@design";
+import { cn } from "@design/lib/utils";
+import { ExpandIcon, CollapseIcon } from "@b4.icons";
 
 export type SortDirection = "asc" | "desc" | null;
 
@@ -18,43 +18,51 @@ export const SortableTableCell = ({
   onSort,
   align = "left",
 }: SortableTableCellProps) => {
+  const alignClasses = {
+    left: "text-left",
+    center: "text-center",
+    right: "text-right",
+  };
+
   return (
-    <TableCell
-      sx={{
-        bgcolor: colors.background.paper,
-        color: colors.secondary,
-        fontWeight: 600,
-        borderBottom: `2px solid ${colors.border.default}`,
-        cursor: "pointer",
-        userSelect: "none",
-        zIndex: 10,
-        backgroundImage: "none !important",
-        "&:hover": {
-          borderBottomColor: colors.secondary,
-          "& .MuiTableSortLabel-root": {
-            color: `${colors.primary} !important`,
-          },
-        },
-      }}
-      align={align}
+    <th
+      className={cn(
+        "bg-card font-semibold border-b-2 border-border cursor-pointer select-none px-4 py-2 group",
+        "hover:border-secondary hover:bg-muted/50 transition-colors",
+        alignClasses[align]
+      )}
+      onClick={onSort}
     >
-      <TableSortLabel
-        active={active}
-        direction={active && direction ? direction : "asc"}
-        onClick={onSort}
-        sx={{
-          color: `${colors.secondary} !important`,
-          transition: "color 0.2s ease",
-          "&.Mui-active": {
-            color: `${colors.primary} !important`,
-            "& .MuiTableSortLabel-icon": {
-              color: `${colors.primary} !important`,
-            },
-          },
-        }}
-      >
-        {label}
-      </TableSortLabel>
-    </TableCell>
+      <div className="flex items-center gap-2">
+        <span
+          className={cn(
+            "transition-colors",
+            active
+              ? "text-primary"
+              : "text-muted-foreground group-hover:text-foreground"
+          )}
+        >
+          {label}
+        </span>
+        <div className="flex flex-col -space-y-1">
+          <CollapseIcon
+            className={cn(
+              "h-3 w-3 transition-colors",
+              active && direction === "asc"
+                ? "text-primary"
+                : "text-muted-foreground opacity-30 group-hover:opacity-60"
+            )}
+          />
+          <ExpandIcon
+            className={cn(
+              "h-3 w-3 transition-colors",
+              active && direction === "desc"
+                ? "text-primary"
+                : "text-muted-foreground opacity-30 group-hover:opacity-60"
+            )}
+          />
+        </div>
+      </div>
+    </th>
   );
 };

@@ -1,73 +1,49 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
-import {
-  Container,
-  Box,
-  Stack,
-  Button,
-  CircularProgress,
-  Typography,
-  Paper,
-  Chip,
-  Fade,
-  Backdrop,
-  DialogContent,
-  DialogContentText,
-  Grid,
-} from "@mui/material";
+import { Badge } from "@design/components/ui/badge";
+import { Button } from "@design/components/ui/button";
+import { Card } from "@design/components/ui/card";
+import { Spinner } from "@design/components/ui/spinner";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import {
-  CoreIcon,
-  DomainIcon,
   ApiIcon,
   CaptureIcon,
-  SaveIcon,
-  RefreshIcon,
+  CoreIcon,
   DiscoveryIcon,
+  GeodatIcon,
+  RefreshIcon,
+  SaveIcon,
   WarningIcon,
 } from "@b4.icons";
 import { useSnackbar } from "@context/SnackbarProvider";
+import { ApiSettings } from "./Api";
 import { CaptureSettings } from "./Capture";
-import { NetworkSettings } from "./Network";
-import { LoggingSettings } from "./Logging";
-import { FeatureSettings } from "./Feature";
-import { CheckerSettings } from "./Discovery";
 import { ControlSettings } from "./Control";
 import { DevicesSettings } from "./Devices";
+import { CheckerSettings } from "./Discovery";
+import { FeatureSettings } from "./Feature";
 import { GeoSettings } from "./Geo";
-import { ApiSettings } from "./Api";
+import { LoggingSettings } from "./Logging";
+import { NetworkSettings } from "./Network";
 
-import { B4Config, B4SetConfig } from "@models/config";
-import { colors, spacing } from "@design";
-import { B4Alert, B4Dialog, B4Tab, B4Tabs } from "@b4.elements";
 import { configApi } from "@b4.settings";
-
-interface TabPanelProps {
-  children?: React.ReactNode;
-  index: number;
-  value: number;
-}
-
-function TabPanel({
-  children,
-  value,
-  index,
-  ...other
-}: Readonly<TabPanelProps>) {
-  return (
-    <div
-      role="tabpanel"
-      hidden={value !== index}
-      id={`settings-tabpanel-${index}`}
-      aria-labelledby={`settings-tab-${index}`}
-      {...other}
-    >
-      {value === index && (
-        <Fade in>{<Box sx={{ pt: 3 }}>{children}</Box>}</Fade>
-      )}
-    </div>
-  );
-}
+import { Alert, AlertDescription } from "@design/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@design/components/ui/dialog";
+import { Separator } from "@design/components/ui/separator";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@design/components/ui/tabs";
+import { B4Config, B4SetConfig } from "@models/config";
 
 enum TABS {
   GENERAL = 0,
@@ -91,7 +67,7 @@ const SETTING_CATEGORIES = [
     id: TABS.DOMAINS,
     path: "domains",
     label: "Geodat Settings",
-    icon: <DomainIcon />,
+    icon: <GeodatIcon />,
     description: "Global geodata configuration",
     requiresRestart: false,
   },
@@ -282,195 +258,195 @@ export function SettingsPage() {
 
   if (loading || !config) {
     return (
-      <Backdrop open sx={{ zIndex: 9999 }}>
-        <Stack alignItems="center" spacing={2}>
-          <CircularProgress sx={{ color: colors.secondary }} />
-          <Typography sx={{ color: colors.text.primary }}>
-            Loading configuration...
-          </Typography>
-        </Stack>
-      </Backdrop>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+        <div className="flex flex-col items-center gap-4">
+          <Spinner className="h-12 w-12" />
+          <p className="text-foreground">Loading configuration...</p>
+        </div>
+      </div>
     );
   }
 
   const validTab = Math.max(currentTab, 0);
 
   return (
-    <Container
-      maxWidth={false}
-      sx={{
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-        py: 3,
-      }}
-    >
+    <div className="h-full flex flex-col overflow-hidden">
       {/* Header with tabs */}
-      <Paper
-        elevation={0}
-        sx={{
-          bgcolor: colors.background.paper,
-          borderRadius: 2,
-          border: `1px solid ${colors.border.default}`,
-        }}
-      >
-        <Box sx={{ p: 2, pb: 0 }}>
-          {/* Action bar */}
-          <Stack
-            direction="row"
-            justifyContent="space-between"
-            alignItems="center"
-            sx={{ mb: 2 }}
-          >
-            <Stack direction="row" spacing={2} alignItems="center">
-              <Typography variant="h6" sx={{ color: colors.text.primary }}>
-                Configuration
-              </Typography>
-              {hasChanges && (
-                <Chip
-                  label="Modified"
-                  size="small"
-                  icon={<WarningIcon />}
-                  sx={{
-                    bgcolor: colors.accent.secondary,
-                    color: colors.secondary,
-                  }}
-                />
-              )}
-            </Stack>
+      <Card className="p-4 border border-border mb-4">
+        {/* Action bar */}
+        <div className="flex flex-row justify-between items-center mb-4">
+          <div className="flex flex-row gap-4 items-center">
+            <h6 className="text-lg font-semibold text-foreground">
+              Configuration
+            </h6>
+            {hasChanges && (
+              <Badge
+                variant="secondary"
+                className="inline-flex items-center gap-1"
+              >
+                <WarningIcon className="h-3 w-3" />
+                Modified
+              </Badge>
+            )}
+          </div>
 
-            <Stack direction="row" spacing={1}>
-              {categoryHasChanges[TABS.GENERAL] && (
-                <B4Alert severity="warning" sx={{ py: 0, px: spacing.sm }}>
+          <div className="flex flex-row gap-2">
+            {categoryHasChanges[TABS.GENERAL] && (
+              <Alert variant="destructive" className="py-0 px-2">
+                <AlertDescription>
                   Core settings require <strong>B4</strong> restart to take
                   effect
-                </B4Alert>
-              )}
-              <Button
-                size="small"
-                variant="text"
-                onClick={() => setShowResetDialog(true)}
-                disabled={!hasChanges || saving}
-              >
-                Discard Changes
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<RefreshIcon />}
-                onClick={() => {
-                  void loadConfig();
-                }}
-                disabled={saving}
-              >
-                Reload
-              </Button>
-
-              <Button
-                size="small"
-                variant="contained"
-                startIcon={
-                  saving ? <CircularProgress size={16} /> : <SaveIcon />
-                }
-                onClick={() => {
-                  void saveConfig();
-                }}
-                disabled={!hasChanges || saving}
-              >
-                {saving ? "Saving..." : "Save Changes"}
-              </Button>
-            </Stack>
-          </Stack>
-
-          {/* Tabs */}
-          <B4Tabs value={validTab} onChange={handleTabChange}>
-            {SETTING_CATEGORIES.sort((a, b) => a.id - b.id).map((cat) => (
-              <B4Tab
-                key={cat.id}
-                icon={cat.icon}
-                label={cat.label}
-                inline
-                hasChanges={categoryHasChanges[cat.id]}
-              />
-            ))}
-          </B4Tabs>
-        </Box>
-      </Paper>
-
-      <Box sx={{ flex: 1, overflow: "auto", pb: 2 }}>
-        <TabPanel value={validTab} index={TABS.GENERAL}>
-          <Grid container spacing={spacing.lg} alignItems="stretch">
-            <Grid size={{ xs: 12 }}>
-              <NetworkSettings config={config} onChange={handleChange} />
-            </Grid>
-
-            <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex" }}>
-              <Box sx={{ width: "100%" }}>
-                <ControlSettings loadConfig={() => void loadConfig()} />
-              </Box>
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex" }}>
-              <Box sx={{ width: "100%" }}>
-                <LoggingSettings config={config} onChange={handleChange} />
-              </Box>
-            </Grid>
-
-            <Grid size={{ xs: 12, md: 6 }}>
-              <FeatureSettings config={config} onChange={handleChange} />
-            </Grid>
-
-            <Grid size={{ xs: 12, md: 6 }}>
-              <DevicesSettings config={config} onChange={handleChange} />
-            </Grid>
-          </Grid>
-        </TabPanel>
-
-        <TabPanel value={validTab} index={TABS.DOMAINS}>
-          <GeoSettings
-            config={config}
-            onChange={handleChange}
-            loadConfig={() => {
-              void loadConfig();
-            }}
-          />
-        </TabPanel>
-
-        <TabPanel value={validTab} index={TABS.API}>
-          <ApiSettings config={config} onChange={handleChange} />
-        </TabPanel>
-
-        <TabPanel value={validTab} index={TABS.DISCOVERY}>
-          <CheckerSettings config={config} onChange={handleChange} />
-        </TabPanel>
-
-        <TabPanel value={validTab} index={TABS.CAPTURE}>
-          <CaptureSettings />
-        </TabPanel>
-      </Box>
-
-      {/* Reset Confirmation Dialog */}
-      <B4Dialog
-        title="Discard changes"
-        open={showResetDialog}
-        onClose={() => setShowResetDialog(false)}
-        actions={
-          <>
-            <Button onClick={() => setShowResetDialog(false)}>Cancel</Button>
-            <Box sx={{ flex: 1 }} />
-            <Button onClick={resetChanges} variant="contained">
+                </AlertDescription>
+              </Alert>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowResetDialog(true)}
+              disabled={!hasChanges || saving}
+            >
               Discard Changes
             </Button>
-          </>
-        }
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                void loadConfig();
+              }}
+              disabled={saving}
+            >
+              <RefreshIcon className="h-4 w-4 mr-2" />
+              Reload
+            </Button>
+
+            <Button
+              size="sm"
+              onClick={() => {
+                void saveConfig();
+              }}
+              disabled={!hasChanges || saving}
+            >
+              {saving ? (
+                <>
+                  <Spinner className="h-4 w-4 mr-2" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <SaveIcon className="h-4 w-4 mr-2" />
+                  Save Changes
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <Tabs
+          value={String(validTab)}
+          onValueChange={(value) =>
+            handleTabChange({} as React.SyntheticEvent, Number(value))
+          }
+          className="w-full"
+        >
+          <TabsList className="w-full grid grid-cols-5 mt-4">
+            {SETTING_CATEGORIES.sort((a, b) => a.id - b.id).map((cat) => (
+              <TabsTrigger key={cat.id} value={String(cat.id)}>
+                <div className="flex items-center gap-1.5">
+                  {cat.icon}
+                  <span>{cat.label}</span>
+                  {categoryHasChanges[cat.id] && (
+                    <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+                  )}
+                </div>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      </Card>
+
+      <div className="flex-1 overflow-auto pb-4">
+        <Tabs
+          value={String(validTab)}
+          onValueChange={(value) =>
+            handleTabChange({} as React.SyntheticEvent, Number(value))
+          }
+          className="w-full"
+        >
+          <TabsContent value={String(TABS.GENERAL)} className="mt-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+              <div className="col-span-1 md:col-span-2">
+                <NetworkSettings config={config} onChange={handleChange} />
+              </div>
+
+              <div className="col-span-1 flex">
+                <div className="w-full">
+                  <ControlSettings loadConfig={() => void loadConfig()} />
+                </div>
+              </div>
+              <div className="col-span-1 flex">
+                <div className="w-full">
+                  <LoggingSettings config={config} onChange={handleChange} />
+                </div>
+              </div>
+
+              <div className="col-span-1">
+                <FeatureSettings config={config} onChange={handleChange} />
+              </div>
+
+              <div className="col-span-1">
+                <DevicesSettings config={config} onChange={handleChange} />
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value={String(TABS.DOMAINS)} className="mt-2">
+            <GeoSettings
+              config={config}
+              onChange={handleChange}
+              loadConfig={() => {
+                void loadConfig();
+              }}
+            />
+          </TabsContent>
+
+          <TabsContent value={String(TABS.API)} className="mt-2">
+            <ApiSettings config={config} onChange={handleChange} />
+          </TabsContent>
+
+          <TabsContent value={String(TABS.DISCOVERY)} className="mt-2">
+            <CheckerSettings config={config} onChange={handleChange} />
+          </TabsContent>
+
+          <TabsContent value={String(TABS.CAPTURE)} className="mt-2">
+            <CaptureSettings />
+          </TabsContent>
+        </Tabs>
+      </div>
+
+      {/* Reset Confirmation Dialog */}
+      <Dialog
+        open={showResetDialog}
+        onOpenChange={(open) => !open && setShowResetDialog(false)}
       >
-        <DialogContent>
-          <DialogContentText>
-            Are you sure you want to discard all unsaved changes? This action
-            cannot be undone.
-          </DialogContentText>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Discard changes</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to discard all unsaved changes? This action
+              cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <Separator />
+          <DialogFooter>
+            <Button onClick={() => setShowResetDialog(false)}>Cancel</Button>
+            <div className="flex-1" />
+            <Button onClick={resetChanges}>
+              Discard Changes
+            </Button>
+          </DialogFooter>
         </DialogContent>
-      </B4Dialog>
-    </Container>
+      </Dialog>
+    </div>
   );
 }

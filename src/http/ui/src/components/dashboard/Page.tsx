@@ -1,21 +1,11 @@
-import { useEffect, useState, useRef } from "react";
-import {
-  Box,
-  Container,
-  Typography,
-  Stack,
-  Chip,
-  LinearProgress,
-} from "@mui/material";
-import {
-  CheckCircle as CheckCircleIcon,
-  Error as ErrorIcon,
-} from "@mui/icons-material";
+import { CheckIcon, CloseIcon } from "@b4.icons";
+import { Badge } from "@design/components/ui/badge";
+import { Progress } from "@design/components/ui/progress";
+import { useEffect, useRef, useState } from "react";
+import { DashboardActivityPanels } from "./DashboardActivityPanels";
+import { DashboardCharts } from "./DashboardCharts";
 import { DashboardMetricsGrid } from "./DashboardMetricsGrid";
 import { DashboardStatusBar } from "./DashboardStatusBar";
-import { DashboardCharts } from "./DashboardCharts";
-import { DashboardActivityPanels } from "./DashboardActivityPanels";
-import { colors } from "@design";
 
 export interface Metrics {
   total_connections: number;
@@ -280,59 +270,57 @@ export function DashboardPage() {
 
   if (!metrics) {
     return (
-      <Container maxWidth={false} sx={{ py: 3 }}>
-        <Box sx={{ textAlign: "center", py: 8 }}>
-          <LinearProgress sx={{ mb: 2 }} />
-          <Typography>Loading dashboard metrics...</Typography>
-        </Box>
-      </Container>
+      <div className="py-6 px-4">
+        <div className="text-center py-16">
+          <Progress className="mb-4" />
+          <p>Loading dashboard metrics...</p>
+        </div>
+      </div>
     );
   }
 
   return (
-    <Container maxWidth={false} sx={{ p: 3 }}>
-      <Box
-        sx={{
-          mb: 3,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <Stack direction="row" spacing={2} alignItems="center">
-          <Chip
-            label={connected ? "Connected" : "Disconnected"}
-            color={connected ? "success" : "error"}
-            size="small"
-            icon={connected ? <CheckCircleIcon /> : <ErrorIcon />}
-          />
-          <Typography variant="caption" sx={{ color: colors.text.secondary }}>
+    <div className="h-full">
+      <div className="mb-6 flex justify-between items-center">
+        <div className="flex flex-row gap-4 items-center">
+          <Badge
+            variant={connected ? "default" : "destructive"}
+            className="inline-flex items-center gap-1"
+          >
+            {connected ? (
+              <CheckIcon className="h-3 w-3" />
+            ) : (
+              <CloseIcon className="h-3 w-3" />
+            )}
+            {connected ? "Connected" : "Disconnected"}
+          </Badge>
+          <p className="text-sm text-muted-foreground">
             Uptime: {metrics.uptime}
-          </Typography>
-        </Stack>
-      </Box>
+          </p>
+        </div>
+      </div>
 
       {/* Key Metrics Cards */}
-      <Box sx={{ mb: 3 }}>
+      <div className="mb-6">
         <DashboardMetricsGrid metrics={metrics} />
-      </Box>
+      </div>
 
       {/* Status Bar */}
       <DashboardStatusBar metrics={metrics} />
 
       {/* Charts Row */}
-      <Box sx={{ mb: 3 }}>
+      <div className="mb-6">
         <DashboardCharts
           connectionRate={metrics.connection_rate}
           protocolDist={metrics.protocol_dist}
         />
-      </Box>
+      </div>
 
       {/* Activity Panels */}
       <DashboardActivityPanels
         topDomains={metrics.top_domains}
         recentConnections={metrics.recent_connections}
       />
-    </Container>
+    </div>
   );
 }
