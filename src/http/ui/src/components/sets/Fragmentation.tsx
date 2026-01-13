@@ -110,10 +110,7 @@ export const FragmentationSettings = ({
 
           <div>
             <label htmlFor="switch-fragmentation-reverse-order">
-              <Field
-                orientation="horizontal"
-                className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
-              >
+              <Field orientation="horizontal">
                 <FieldContent>
                   <FieldTitle>Reverse Fragment Order</FieldTitle>
                   <FieldDescription>

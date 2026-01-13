@@ -100,10 +100,7 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
 
       <div>
         <label htmlFor="switch-combo-decoy">
-          <Field
-            orientation="horizontal"
-            className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
-          >
+          <Field orientation="horizontal">
             <FieldContent>
               <FieldTitle>Enable Decoy</FieldTitle>
               <FieldDescription>
@@ -205,10 +202,7 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
 
       <div>
         <label htmlFor="switch-combo-first-byte">
-          <Field
-            orientation="horizontal"
-            className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
-          >
+          <Field orientation="horizontal">
             <FieldContent>
               <FieldTitle>First Byte</FieldTitle>
               <FieldDescription>
@@ -228,10 +222,7 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
 
       <div>
         <label htmlFor="switch-combo-extension">
-          <Field
-            orientation="horizontal"
-            className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
-          >
+          <Field orientation="horizontal">
             <FieldContent>
               <FieldTitle>Extension Split</FieldTitle>
               <FieldDescription>Split before SNI extension</FieldDescription>
@@ -249,10 +240,7 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
 
       <div>
         <label htmlFor="switch-combo-sni">
-          <Field
-            orientation="horizontal"
-            className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
-          >
+          <Field orientation="horizontal">
             <FieldContent>
               <FieldTitle>SNI Split</FieldTitle>
               <FieldDescription>

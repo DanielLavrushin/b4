@@ -210,10 +210,7 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
           {/* SACK and SYN Fake */}
           <div>
             <label htmlFor="switch-tcp-drop-sack">
-              <Field
-                orientation="horizontal"
-                className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
-              >
+              <Field orientation="horizontal">
                 <FieldContent>
                   <FieldTitle>Drop SACK Options</FieldTitle>
                   <FieldDescription>
@@ -234,10 +231,7 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
 
           <div>
             <label htmlFor="switch-tcp-syn-fake">
-              <Field
-                orientation="horizontal"
-                className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
-              >
+              <Field orientation="horizontal">
                 <FieldContent>
                   <FieldTitle>SYN Fake Packets</FieldTitle>
                   <FieldDescription>
@@ -258,10 +252,7 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
 
           <div>
             <label htmlFor="switch-tcp-syn-md5">
-              <Field
-                orientation="horizontal"
-                className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
-              >
+              <Field orientation="horizontal">
                 <FieldContent>
                   <FieldTitle>SYN MD5 Signature</FieldTitle>
                   <FieldDescription>
@@ -534,10 +525,7 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
 
           <div>
             <label htmlFor="switch-tcp-post-desync">
-              <Field
-                orientation="horizontal"
-                className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
-              >
+              <Field orientation="horizontal">
                 <FieldContent>
                   <FieldTitle>Post-ClientHello RST</FieldTitle>
                   <FieldDescription>

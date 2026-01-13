@@ -39,11 +39,12 @@ export const TcpIpSettings = ({ config, onChange }: TcpIpSettingsProps) => {
 
       <div className="md:col-span-2">
         <label htmlFor="switch-tcpip-middle-sni">
-          <Field orientation="horizontal" className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2">
+          <Field orientation="horizontal">
             <FieldContent>
               <FieldTitle>Smart SNI Split</FieldTitle>
               <FieldDescription>
-                Automatically split in the middle of the SNI hostname (recommended)
+                Automatically split in the middle of the SNI hostname
+                (recommended)
               </FieldDescription>
             </FieldContent>
             <Switch

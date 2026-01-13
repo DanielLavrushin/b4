@@ -169,7 +169,7 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
           {/* STUN Filter */}
           <div>
             <label htmlFor="switch-udp-filter-stun">
-              <Field orientation="horizontal" className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2">
+              <Field orientation="horizontal">
                 <FieldContent>
                   <FieldTitle>Filter STUN Packets</FieldTitle>
                   <FieldDescription>

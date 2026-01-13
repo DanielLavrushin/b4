@@ -158,10 +158,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
       <CardContent>
         <div className="grid grid-cols-1 gap-4">
           <div className="grid grid-cols-2 gap-6 items-start">
-            <Field
-              orientation="horizontal"
-              className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
-            >
+            <Field orientation="horizontal">
               <FieldContent>
                 <FieldTitle>Enable Device Filtering</FieldTitle>
                 <FieldDescription>
@@ -175,10 +172,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                 }
               />
             </Field>
-            <Field
-              orientation="horizontal"
-              className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
-            >
+            <Field orientation="horizontal">
               <FieldContent>
                 <FieldTitle>Invert Selection (Blacklist)</FieldTitle>
                 <FieldDescription>

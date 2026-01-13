@@ -148,10 +148,7 @@ export const DisorderSettings = ({
       {/* SNI Split Toggle */}
       <div>
         <label htmlFor="switch-disorder-sni">
-          <Field
-            orientation="horizontal"
-            className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
-          >
+          <Field orientation="horizontal">
             <FieldContent>
               <FieldTitle>SNI-Based Splitting</FieldTitle>
               <FieldDescription>

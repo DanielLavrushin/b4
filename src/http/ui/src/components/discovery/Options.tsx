@@ -98,10 +98,7 @@ export const DiscoveryOptionsPanel = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Skip DNS Switch */}
               <label htmlFor="switch-skip-dns">
-                <Field
-                  orientation="horizontal"
-                  className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
-                >
+                <Field orientation="horizontal">
                   <FieldContent>
                     <FieldTitle>Skip DNS Discovery</FieldTitle>
                     <FieldDescription>

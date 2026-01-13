@@ -82,10 +82,7 @@ export function DnsSettings({ config, onChange, ipv6 }: DnsSettingsProps) {
 
           <div>
             <label htmlFor="switch-dns-enabled">
-              <Field
-                orientation="horizontal"
-                className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
-              >
+              <Field orientation="horizontal">
                 <FieldContent>
                   <FieldTitle>Enable DNS Redirect</FieldTitle>
                   <FieldDescription>
@@ -109,10 +106,7 @@ export function DnsSettings({ config, onChange, ipv6 }: DnsSettingsProps) {
               {/* Custom IP input */}
               <div>
                 <label htmlFor="switch-dns-fragment-query">
-                  <Field
-                    orientation="horizontal"
-                    className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
-                  >
+                  <Field orientation="horizontal">
                     <FieldContent>
                       <FieldTitle>Fragment DNS Queries</FieldTitle>
                       <FieldDescription>

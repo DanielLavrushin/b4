@@ -52,10 +52,7 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
           </FieldLabel>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <label htmlFor="switch-queue-ipv4">
-              <Field
-                orientation="horizontal"
-                className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
-              >
+              <Field orientation="horizontal">
                 <FieldContent>
                   <FieldTitle>Enable IPv4 Support</FieldTitle>
                   <FieldDescription>Enable IPv4 support</FieldDescription>
@@ -70,10 +67,7 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
               </Field>
             </label>
             <label htmlFor="switch-queue-ipv6">
-              <Field
-                orientation="horizontal"
-                className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
-              >
+              <Field orientation="horizontal">
                 <FieldContent>
                   <FieldTitle>Enable IPv6 Support</FieldTitle>
                   <FieldDescription>Enable IPv6 support</FieldDescription>
@@ -95,10 +89,7 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
           </FieldLabel>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <label htmlFor="switch-system-tables-skip-setup">
-              <Field
-                orientation="horizontal"
-                className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
-              >
+              <Field orientation="horizontal">
                 <FieldContent>
                   <FieldTitle>Skip IPTables/NFTables Setup</FieldTitle>
                   <FieldDescription>

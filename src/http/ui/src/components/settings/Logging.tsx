@@ -99,10 +99,7 @@ export const LoggingSettings = ({ config, onChange }: LoggingSettingsProps) => {
             </Field>
           </div>
           <div className="space-y-4">
-            <Field
-              orientation="horizontal"
-              className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
-            >
+            <Field orientation="horizontal">
               <FieldContent>
                 <FieldTitle>Instant Flush</FieldTitle>
                 <FieldDescription>
@@ -116,10 +113,7 @@ export const LoggingSettings = ({ config, onChange }: LoggingSettingsProps) => {
                 }
               />
             </Field>
-            <Field
-              orientation="horizontal"
-              className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
-            >
+            <Field orientation="horizontal">
               <FieldContent>
                 <FieldTitle>Syslog</FieldTitle>
                 <FieldDescription>Enable syslog output</FieldDescription>
