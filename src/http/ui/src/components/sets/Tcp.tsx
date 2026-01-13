@@ -490,7 +490,7 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                   onChange("tcp.desync.ttl", values[0])
                 }
                 min={1}
-                max={20}
+                max={50}
                 step={1}
                 disabled={!isDesyncEnabled}
                 className="w-full"
