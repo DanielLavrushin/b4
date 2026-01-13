@@ -60,9 +60,7 @@ export const DiscoveryLogPanel = ({ running }: DiscoveryLogPanelProps) => {
                   connected ? "bg-secondary" : "bg-muted-foreground"
                 )}
               />
-              {logs.length > 0 && (
-                <Badge>{`${logs.length} lines`}</Badge>
-              )}
+              {logs.length > 0 && <Badge>{`${logs.length} lines`}</Badge>}
             </div>
             <div className="flex items-center gap-1">
               {logs.length > 0 && (
@@ -77,7 +75,7 @@ export const DiscoveryLogPanel = ({ running }: DiscoveryLogPanelProps) => {
                       }}
                       className="h-8 w-8 p-0"
                     >
-                      <ClearIcon className="h-4 w-4" />
+                      <ClearIcon />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -94,11 +92,7 @@ export const DiscoveryLogPanel = ({ running }: DiscoveryLogPanelProps) => {
                 }}
                 className="h-8 w-8 p-0"
               >
-                {expanded ? (
-                  <CollapseIcon className="h-4 w-4" />
-                ) : (
-                  <ExpandIcon className="h-4 w-4" />
-                )}
+                {expanded ? <CollapseIcon /> : <ExpandIcon />}
               </Button>
             </div>
           </div>

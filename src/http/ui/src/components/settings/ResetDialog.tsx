@@ -74,7 +74,7 @@ export const ResetDialog = ({ open, onClose, onSuccess }: ResetDialogProps) => {
           ...defaultProps,
           title: "Resetting Configuration",
           subtitle: "Please wait...",
-          icon: <Spinner className="h-4 w-4" />,
+          icon: <Spinner />,
         };
       case "success":
         return {
@@ -116,11 +116,7 @@ export const ResetDialog = ({ open, onClose, onSuccess }: ResetDialogProps) => {
           </>
         );
       case "error":
-        return (
-          <Button onClick={handleClose}>
-            Close
-          </Button>
-        );
+        return <Button onClick={handleClose}>Close</Button>;
 
       case "success":
       default:

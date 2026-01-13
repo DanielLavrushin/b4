@@ -11,17 +11,17 @@ export const StatusBadge = ({ label, status }: StatusBadgeProps) => {
   const statusConfig = {
     active: {
       color: "#4caf50",
-      icon: <CheckIcon className="h-4 w-4" />,
+      icon: <CheckIcon />,
     },
     inactive: {
       color: colors.text.secondary,
-      icon: <CloseIcon className="h-4 w-4" />,
+      icon: <CloseIcon />,
     },
     warning: {
       color: "#ff9800",
-      icon: <WarningIcon className="h-4 w-4" />,
+      icon: <WarningIcon />,
     },
-    error: { color: "#f44336", icon: <CloseIcon className="h-4 w-4" /> },
+    error: { color: "#f44336", icon: <CloseIcon /> },
   };
 
   const config = statusConfig[status];

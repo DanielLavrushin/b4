@@ -101,14 +101,8 @@ export function LogsPage() {
               className="flex-1"
             />
             <div className="flex flex-row gap-2 items-center">
-              <Badge>
-                {`${logs.length} lines`}
-              </Badge>
-              {filter && (
-                <Badge>
-                  {`${filtered.length} filtered`}
-                </Badge>
-              )}
+              <Badge>{`${logs.length} lines`}</Badge>
+              {filter && <Badge>{`${filtered.length} filtered`}</Badge>}
             </div>
             <div className="flex items-center gap-2">
               <Switch
@@ -169,7 +163,7 @@ export function LogsPage() {
               size="icon"
               className="absolute bottom-4 right-4 bg-primary text-primary-foreground shadow-lg hover:bg-primary/80"
             >
-              <ArrowDownIcon className="h-4 w-4" />
+              <ArrowDownIcon />
             </Button>
           )}
         </div>

@@ -144,7 +144,7 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
                   size="icon"
                   variant="outline"
                 >
-                  <AddIcon className="h-4 w-4" />
+                  <AddIcon />
                 </Button>
               </div>
               <div className="mt-2">

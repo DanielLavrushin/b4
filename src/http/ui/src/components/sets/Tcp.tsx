@@ -412,7 +412,7 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                     onClick={handleAddWinValue}
                     disabled={!newWinValue}
                   >
-                    <AddIcon className="h-4 w-4" />
+                    <AddIcon />
                   </Button>
                 </div>
                 <div>

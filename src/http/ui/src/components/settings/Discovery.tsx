@@ -149,7 +149,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
                   onClick={handleAddDns}
                   disabled={!newDns.trim()}
                 >
-                  <AddIcon className="h-4 w-4" />
+                  <AddIcon />
                 </Button>
               </div>
             </div>

@@ -79,7 +79,7 @@ const DeviceNameCell = ({
             onClick={onStartEdit}
             className="h-6 w-6 p-0 opacity-60 hover:opacity-100"
           >
-            <EditIcon className="h-4 w-4" />
+            <EditIcon />
           </Button>
         </TooltipTrigger>
         <TooltipContent>
@@ -95,7 +95,7 @@ const DeviceNameCell = ({
               onClick={() => void onResetAlias()}
               className="h-6 w-6 p-0 opacity-60 hover:opacity-100"
             >
-              <RestoreIcon className="h-4 w-4" />
+              <RestoreIcon />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
@@ -221,11 +221,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                       <h6 className="text-sm font-semibold">
                         Available Devices
                       </h6>
-                      {source && (
-                        <Badge variant="secondary">
-                          {source}
-                        </Badge>
-                      )}
+                      {source && <Badge variant="secondary">{source}</Badge>}
                     </div>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -234,11 +230,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                           size="icon-sm"
                           onClick={() => void loadDevices()}
                         >
-                          {loading ? (
-                            <Spinner className="h-4 w-4" />
-                          ) : (
-                            <RefreshIcon />
-                          )}
+                          {loading ? <Spinner /> : <RefreshIcon />}
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
@@ -249,7 +241,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
 
                   <div className="bg-card border border-border rounded-md max-h-75 overflow-auto">
                     <table className="w-full border-collapse">
-                      <thead className="sticky top-0 z-[1] bg-card">
+                      <thead className="sticky top-0 z-1 bg-card">
                         <tr>
                           <th className="bg-card px-4 py-2 text-left">
                             <div className="relative">

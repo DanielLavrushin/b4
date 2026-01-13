@@ -142,7 +142,10 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
               <label htmlFor="switch-faking-sni">
-                <Field orientation="horizontal" className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2">
+                <Field
+                  orientation="horizontal"
+                  className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
+                >
                   <FieldContent>
                     <FieldTitle>Enable Fake SNI</FieldTitle>
                     <FieldDescription>
@@ -362,7 +365,10 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
                 </p>
                 <div className="flex flex-row gap-4">
                   <label htmlFor="switch-faking-tls-rnd">
-                    <Field orientation="horizontal" className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2">
+                    <Field
+                      orientation="horizontal"
+                      className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
+                    >
                       <FieldContent>
                         <FieldTitle>Randomize TLS Random</FieldTitle>
                         <FieldDescription>
@@ -384,7 +390,10 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
                     </Field>
                   </label>
                   <label htmlFor="switch-faking-tls-dupsid">
-                    <Field orientation="horizontal" className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2">
+                    <Field
+                      orientation="horizontal"
+                      className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
+                    >
                       <FieldContent>
                         <FieldTitle>Duplicate Session ID</FieldTitle>
                         <FieldDescription>
@@ -615,7 +624,7 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
                           onClick={handleAddFakeSni}
                           disabled={!newFakeSni.trim()}
                         >
-                          <AddIcon className="h-4 w-4" />
+                          <AddIcon />
                         </Button>
                       </div>
                     </div>

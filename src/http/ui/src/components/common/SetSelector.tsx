@@ -98,7 +98,7 @@ export const SetSelector = ({
             className="font-semibold text-primary border-b border-border"
           >
             <div className="flex items-center gap-2">
-              <AddIcon className="h-4 w-4" />
+              <AddIcon />
               Create New Set
             </div>
           </SelectItem>

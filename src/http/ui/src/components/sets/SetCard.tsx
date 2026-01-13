@@ -226,10 +226,7 @@ export const SetCard = ({
               </Tooltip>
 
               {isMain && (
-                <Badge
-                  variant="secondary"
-                  className="shrink-0"
-                >
+                <Badge variant="secondary" className="shrink-0">
                   MAIN
                 </Badge>
               )}
@@ -268,7 +265,7 @@ export const SetCard = ({
                     variant="ghost"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <IconDotsVertical className="h-4 w-4" />
+                    <IconDotsVertical />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
@@ -314,9 +311,7 @@ export const SetCard = ({
                     />
                   ))}
                   {totalTargets > 2 && (
-                    <Badge variant="outline">
-                      +{totalTargets - 2}
-                    </Badge>
+                    <Badge variant="outline">+{totalTargets - 2}</Badge>
                   )}
                 </div>
               ) : (
@@ -328,7 +323,10 @@ export const SetCard = ({
           </div>
 
           {/* Domain/IP counts */}
-          <div className="flex flex-col gap-1 shrink-0" style={{ flex: "0 0 20%" }}>
+          <div
+            className="flex flex-col gap-1 shrink-0"
+            style={{ flex: "0 0 20%" }}
+          >
             <Tooltip>
               <TooltipTrigger asChild>
                 <div className="flex items-center gap-1.5 w-fit">
@@ -377,7 +375,9 @@ export const SetCard = ({
 
               {/* QUIC Filter Badge */}
               <Badge
-                variant={set.udp.filter_quic !== "disabled" ? "default" : "ghost"}
+                variant={
+                  set.udp.filter_quic !== "disabled" ? "default" : "ghost"
+                }
                 className="text-xs shrink-0"
               >
                 {QUIC_FILTER_LABELS[set.udp.filter_quic] || "QUIC"}
@@ -388,9 +388,7 @@ export const SetCard = ({
                 variant={set.dns?.enabled ? "default" : "ghost"}
                 className="text-xs shrink-0 max-w-full truncate"
               >
-                {set.dns?.enabled
-                  ? set.dns.target_dns || "DNS"
-                  : "DNS"}
+                {set.dns?.enabled ? set.dns.target_dns || "DNS" : "DNS"}
               </Badge>
 
               {/* Fake SNI Badge */}
@@ -399,7 +397,8 @@ export const SetCard = ({
                 className="text-xs shrink-0"
               >
                 {set.faking.sni
-                  ? FAKE_STRATEGY_LABELS[set.faking.strategy] || set.faking.strategy.toUpperCase()
+                  ? FAKE_STRATEGY_LABELS[set.faking.strategy] ||
+                    set.faking.strategy.toUpperCase()
                   : "FAKE"}
               </Badge>
             </div>

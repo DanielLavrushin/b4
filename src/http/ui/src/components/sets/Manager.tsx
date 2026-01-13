@@ -398,13 +398,13 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                   value={summaryStats.enabled}
                   label="enabled"
                   color="text-primary"
-                  icon={<CheckIcon className="h-4 w-4" />}
+                  icon={<CheckIcon />}
                 />
                 <StatItem
                   value={summaryStats.totalDomains.toLocaleString()}
                   label="domains"
                   color="text-primary"
-                  icon={<DomainIcon className="h-4 w-4" />}
+                  icon={<DomainIcon />}
                 />
               </div>
 

@@ -85,12 +85,7 @@ export function SnackbarProvider({ children }: { children: ReactNode }) {
           >
             <AlertDescription>{state.message}</AlertDescription>
             <AlertAction>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={handleClose}
-                className="h-4 w-4"
-              >
+              <Button variant="ghost" size="icon-xs" onClick={handleClose}>
                 <IconX className="h-3 w-3" />
               </Button>
             </AlertAction>

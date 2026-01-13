@@ -331,7 +331,7 @@ export const DiscoveryRunner = () => {
 
           {isReconnecting && (
             <div className="flex items-center gap-4">
-              <Spinner className="h-4 w-4" />
+              <Spinner />
               <p className="text-sm text-muted-foreground">
                 Reconnecting to running discovery...
               </p>
@@ -411,11 +411,7 @@ export const DiscoveryRunner = () => {
                               variant="ghost"
                               className="h-6 w-6 p-0"
                             >
-                              {isExpanded ? (
-                                <CollapseIcon className="h-4 w-4" />
-                              ) : (
-                                <ExpandIcon className="h-4 w-4" />
-                              )}
+                              {isExpanded ? <CollapseIcon /> : <ExpandIcon />}
                             </Button>
                             <h6 className="text-base font-semibold text-foreground">
                               {domainResult.domain}
@@ -640,7 +636,7 @@ export const DiscoveryRunner = () => {
                     {!domainResult.best_success && running && (
                       <div className="p-4 bg-background">
                         <p className="text-sm text-muted-foreground flex items-center gap-2">
-                          <Spinner className="h-4 w-4" />
+                          <Spinner />
                           {suite && suite.total_checks > totalCount
                             ? `${
                                 suite.total_checks - totalCount

@@ -300,7 +300,7 @@ export const CaptureSettings = () => {
                       onClick={() => void loadCaptures()}
                       disabled={loading}
                     >
-                      <RefreshIcon className="h-4 w-4" />
+                      <RefreshIcon />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -316,7 +316,7 @@ export const CaptureSettings = () => {
                         onClick={() => void handleClear()}
                         disabled={loading}
                       >
-                        <ClearIcon className="h-4 w-4" />
+                        <ClearIcon />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
@@ -509,7 +509,7 @@ const CaptureCard = ({
         <Tooltip>
           <TooltipTrigger asChild>
             <Button size="sm" variant="ghost" onClick={onViewHex}>
-              <CopyIcon className="h-4 w-4" />
+              <CopyIcon />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
@@ -519,7 +519,7 @@ const CaptureCard = ({
         <Tooltip>
           <TooltipTrigger asChild>
             <Button size="sm" variant="ghost" onClick={onDownload}>
-              <DownloadIcon className="h-4 w-4" />
+              <DownloadIcon />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
@@ -530,7 +530,7 @@ const CaptureCard = ({
         <Tooltip>
           <TooltipTrigger asChild>
             <Button size="sm" variant="ghost" onClick={onDelete}>
-              <ClearIcon className="h-4 w-4" />
+              <ClearIcon />
             </Button>
           </TooltipTrigger>
           <TooltipContent>

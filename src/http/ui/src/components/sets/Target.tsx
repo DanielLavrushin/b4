@@ -478,7 +478,7 @@ export const TargetSettings = ({
                             }
                             disabled={!newBypassDomain.trim()}
                           >
-                            <AddIcon className="h-4 w-4" />
+                            <AddIcon />
                           </Button>
                         </div>
                       </div>
@@ -614,7 +614,7 @@ export const TargetSettings = ({
                             }
                             disabled={!newBypassIP.trim()}
                           >
-                            <AddIcon className="h-4 w-4" />
+                            <AddIcon />
                           </Button>
                         </div>
                       </div>
