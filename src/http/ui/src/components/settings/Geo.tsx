@@ -170,7 +170,7 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <GeodatIcon className="h-5 w-5" />
+            <GeodatIcon />
             <CardTitle>Current Files</CardTitle>
           </div>
           <CardDescription>
@@ -192,9 +192,7 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
                       Active
                     </Badge>
                   ) : (
-                    <Badge variant="outline">
-                      Not Found
-                    </Badge>
+                    <Badge variant="outline">Not Found</Badge>
                   )}
                 </div>
 
@@ -241,9 +239,7 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
                       Active
                     </Badge>
                   ) : (
-                    <Badge variant="outline">
-                      Not Found
-                    </Badge>
+                    <Badge variant="outline">Not Found</Badge>
                   )}
                 </div>
 
@@ -284,7 +280,7 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <DownloadIcon className="h-5 w-5" />
+            <DownloadIcon />
             <CardTitle>Download Files</CardTitle>
           </div>
           <CardDescription>

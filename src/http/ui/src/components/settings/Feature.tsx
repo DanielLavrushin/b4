@@ -40,7 +40,7 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
     <Card>
       <CardHeader>
         <div className="flex items-center gap-2">
-          <ToggleOnIcon className="h-5 w-5" />
+          <ToggleOnIcon />
           <CardTitle>Feature Flags</CardTitle>
         </div>
         <CardDescription>Enable or disable advanced features</CardDescription>

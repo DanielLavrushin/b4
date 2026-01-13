@@ -53,7 +53,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
     <Card>
       <CardHeader>
         <div className="flex items-center gap-2">
-          <DiscoveryIcon className="h-5 w-5" />
+          <DiscoveryIcon />
           <CardTitle>Testing Configuration</CardTitle>
         </div>
         <CardDescription>Configure testing behavior and output</CardDescription>

@@ -33,7 +33,7 @@ export const ApiSettings = ({ config, onChange }: ApiSettingsProps) => {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
-              <ApiIcon className="h-5 w-5" />
+              <ApiIcon />
               <CardTitle>IPINFO.IO Settings</CardTitle>
             </div>
             <CardDescription>

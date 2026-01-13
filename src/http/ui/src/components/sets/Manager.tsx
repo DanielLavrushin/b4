@@ -377,7 +377,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <SetsIcon className="h-5 w-5" />
+            <SetsIcon />
             <CardTitle>Configuration Sets</CardTitle>
           </div>
           <CardDescription>

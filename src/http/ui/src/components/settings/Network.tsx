@@ -29,7 +29,7 @@ export const NetworkSettings = ({ config, onChange }: NetworkSettingsProps) => (
   <Card>
     <CardHeader>
       <div className="flex items-center gap-2">
-        <NetworkIcon className="h-5 w-5" />
+        <NetworkIcon />
         <CardTitle>Network Configuration</CardTitle>
       </div>
       <CardDescription>

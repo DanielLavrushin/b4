@@ -148,7 +148,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
     <Card>
       <CardHeader>
         <div className="flex items-center gap-2">
-          <DeviceUnknowIcon className="h-5 w-5" />
+          <DeviceUnknowIcon />
           <CardTitle>Device Filtering</CardTitle>
         </div>
         <CardDescription>

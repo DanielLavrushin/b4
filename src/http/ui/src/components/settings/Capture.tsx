@@ -171,7 +171,7 @@ export const CaptureSettings = () => {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
-              <UploadIcon className="h-5 w-5" />
+              <UploadIcon />
               <CardTitle>Upload Custom Payload</CardTitle>
             </div>
             <CardDescription>
@@ -246,7 +246,7 @@ export const CaptureSettings = () => {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
-              <CaptureIcon className="h-5 w-5" />
+              <CaptureIcon />
               <CardTitle>Capture Payload</CardTitle>
             </div>
             <CardDescription>
@@ -374,7 +374,7 @@ export const CaptureSettings = () => {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
-              <DownloadIcon className="h-5 w-5" />
+              <DownloadIcon />
               <CardTitle>Captured Payloads</CardTitle>
             </div>
             <CardDescription>

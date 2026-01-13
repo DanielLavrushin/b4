@@ -28,7 +28,7 @@ export const ControlSettings = ({ loadConfig }: ControlSettingsProps) => {
     <Card>
       <CardHeader>
         <div className="flex items-center gap-2">
-          <ControlIcon className="h-5 w-5" />
+          <ControlIcon />
           <CardTitle>Core Controls</CardTitle>
         </div>
         <CardDescription>
