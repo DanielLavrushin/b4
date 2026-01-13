@@ -142,3 +142,50 @@ func (w *Worker) sendFakeSynV6(set *config.SetConfig, raw []byte, ipHdrLen, tcpH
 	dst := net.IP(fakePkt[24:40])
 	_ = w.sock.SendIPv6(fakePkt, dst)
 }
+
+func (w *Worker) sendFakeSynWithMD5(set *config.SetConfig, raw []byte, ihl int, dst net.IP) {
+	fakeSyn := make([]byte, len(raw))
+	copy(fakeSyn, raw)
+
+	// Low TTL - reaches DPI but dies before server
+	ttl := set.Faking.TTL
+	if ttl == 0 {
+		ttl = 3
+	}
+	fakeSyn[8] = ttl
+
+	// Modify seq so server ignores if it arrives
+	seq := binary.BigEndian.Uint32(fakeSyn[ihl+4 : ihl+8])
+	binary.BigEndian.PutUint32(fakeSyn[ihl+4:ihl+8], seq-10000)
+
+	sock.FixIPv4Checksum(fakeSyn[:ihl])
+	sock.FixTCPChecksum(fakeSyn)
+
+	// Add MD5 option
+	fakeSyn = sock.AddTCPMD5Option(fakeSyn, false)
+
+	_ = w.sock.SendIPv4(fakeSyn, dst)
+}
+
+func (w *Worker) sendFakeSynWithMD5V6(set *config.SetConfig, raw []byte, dst net.IP) {
+	const ipv6HdrLen = 40
+
+	fakeSyn := make([]byte, len(raw))
+	copy(fakeSyn, raw)
+
+	// Low hop limit - reaches DPI but dies before server
+	ttl := set.Faking.TTL
+	if ttl == 0 {
+		ttl = 3
+	}
+	fakeSyn[7] = ttl
+
+	// Modify seq so server ignores if it arrives
+	seq := binary.BigEndian.Uint32(fakeSyn[ipv6HdrLen+4 : ipv6HdrLen+8])
+	binary.BigEndian.PutUint32(fakeSyn[ipv6HdrLen+4:ipv6HdrLen+8], seq-10000)
+
+	// Add MD5 option (also fixes checksums)
+	fakeSyn = sock.AddTCPMD5Option(fakeSyn, true)
+
+	_ = w.sock.SendIPv6(fakeSyn, dst)
+}

@@ -138,14 +138,25 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 	if len(set.Targets.SNIDomains) > 0 {
 		baseName := extractDomainName(set.Targets.SNIDomains[0])
 		if baseName != "" && api.geodataManager.IsGeositeConfigured() {
-			// Check if category exists
-			tags, err := api.geodataManager.ListCategories(api.geodataManager.GetGeositePath())
-			if err == nil {
-				for _, tag := range tags {
-					if tag == baseName {
-						set.Targets.GeoSiteCategories = append(set.Targets.GeoSiteCategories, baseName)
-						log.Infof("Auto-added geosite category '%s' for domain %s", baseName, set.Targets.SNIDomains[0])
-						break
+			// Check if category already exists in the set
+			alreadyHasCategory := false
+			for _, cat := range set.Targets.GeoSiteCategories {
+				if cat == baseName {
+					alreadyHasCategory = true
+					break
+				}
+			}
+
+			// Only add if not already present
+			if !alreadyHasCategory {
+				tags, err := api.geodataManager.ListCategories(api.geodataManager.GetGeositePath())
+				if err == nil {
+					for _, tag := range tags {
+						if tag == baseName {
+							set.Targets.GeoSiteCategories = append(set.Targets.GeoSiteCategories, baseName)
+							log.Infof("Auto-added geosite category '%s' for domain %s", baseName, set.Targets.SNIDomains[0])
+							break
+						}
 					}
 				}
 			}

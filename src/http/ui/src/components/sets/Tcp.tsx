@@ -256,6 +256,29 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
             </label>
           </div>
 
+          <div>
+            <label htmlFor="switch-tcp-syn-md5">
+              <Field
+                orientation="horizontal"
+                className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 p-2"
+              >
+                <FieldContent>
+                  <FieldTitle>SYN MD5 Signature</FieldTitle>
+                  <FieldDescription>
+                    Send fake SYN with TCP MD5 option before real handshake
+                  </FieldDescription>
+                </FieldContent>
+                <Switch
+                  id="switch-tcp-syn-md5"
+                  checked={config.faking.tcp_md5 || false}
+                  onCheckedChange={(checked) =>
+                    onChange("faking.tcp_md5", checked)
+                  }
+                />
+              </Field>
+            </label>
+          </div>
+
           {config.tcp.syn_fake && (
             <>
               <div>

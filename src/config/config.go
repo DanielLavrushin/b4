@@ -113,6 +113,7 @@ var DefaultSetConfig = SetConfig{
 		PayloadFile:   "",
 		PayloadData:   []byte{},
 		TLSMod:        []string{},
+		TCPMD5:        false,
 
 		SNIMutation: SNIMutationConfig{
 			Mode:         ConfigOff, // "off", "random", "grease", "padding", "fakeext", "fakesni", "advanced"

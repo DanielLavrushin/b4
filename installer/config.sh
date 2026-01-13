@@ -14,6 +14,8 @@ TEMP_DIR="/tmp/b4_install_$$"
 QUIET_MODE="0"
 GEOSITE_SRC=""
 GEOSITE_DST=""
+# Proxy configuration for GitHub fallback
+PROXY_BASE_URL="https://proxy.lavrush.in/github"
 
 # geodat sources (pipe-delimited: number|name|url)
 GEODAT_SOURCES="1|Loyalsoldier source|https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download

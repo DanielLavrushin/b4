@@ -13,7 +13,6 @@ import (
 
 var modulesLoaded sync.Once
 
-// AddRulesAuto automatically detects and uses the appropriate firewall backend
 func AddRules(cfg *config.Config) error {
 	if cfg.System.Tables.SkipSetup {
 		return nil
@@ -34,13 +33,11 @@ func AddRules(cfg *config.Config) error {
 		return nft.Apply()
 	}
 
-	// Fall back to iptables
 	ipt := NewIPTablesManager(cfg)
 
 	return ipt.Apply()
 }
 
-// ClearRulesAuto automatically detects and clears the appropriate firewall rules
 func ClearRules(cfg *config.Config) error {
 
 	backend := detectFirewallBackend()
@@ -50,7 +47,6 @@ func ClearRules(cfg *config.Config) error {
 		return nft.Clear()
 	}
 
-	// Fall back to iptables
 	ipt := NewIPTablesManager(cfg)
 	return ipt.Clear()
 }
@@ -73,29 +69,22 @@ func getSysctlOrProc(name string) string {
 	return strings.TrimSpace(out)
 }
 
-// detectFirewallBackend determines whether to use iptables or nftables
 func detectFirewallBackend() string {
-	// First check if nft exists and has rules
 	if hasBinary("nft") {
 		out, err := run("nft", "list", "tables")
 		if err == nil && out != "" {
-			// nftables is present and has tables
 			return "nftables"
 		}
 	}
 
-	// Check for iptables
 	if hasBinary("iptables") {
-		// Check if iptables-legacy or iptables-nft
 		out, _ := run("iptables", "--version")
 		if strings.Contains(out, "nf_tables") {
-			// iptables-nft detected (uses nftables backend)
 			return "nftables"
 		}
 		return "iptables"
 	}
 
-	// Default to iptables if nothing found
 	return "iptables"
 }
 
@@ -109,6 +98,7 @@ func loadKernelModules() {
 		_, _ = run("sh", "-c", "modprobe -q nf_conntrack 2>/dev/null || true")
 		_, _ = run("sh", "-c", "modprobe -q xt_connbytes 2>/dev/null || true")
 		_, _ = run("sh", "-c", "modprobe -q xt_NFQUEUE 2>/dev/null || true")
+		_, _ = run("sh", "-c", "modprobe -q xt_multiport 2>/dev/null || true")
 		_, _ = run("sh", "-c", "modprobe -q nf_tables 2>/dev/null || true")
 		_, _ = run("sh", "-c", "modprobe -q nft_queue 2>/dev/null || true")
 		_, _ = run("sh", "-c", "modprobe -q nft_ct 2>/dev/null || true")

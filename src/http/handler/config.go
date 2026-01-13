@@ -241,12 +241,6 @@ func (a *API) updateConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := newConfig.Validate(); err != nil {
-		log.Errorf("Invalid configuration: %v", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
 	if err := a.saveAndPushConfig(&newConfig); err != nil {
 		log.Errorf("Failed to update config: %v", err)
 		http.Error(w, "Failed to update config", http.StatusInternalServerError)
@@ -294,14 +288,6 @@ func (a *API) resetConfig(w http.ResponseWriter, r *http.Request) {
 		defaultCfg.Sets = append(defaultCfg.Sets, set)
 	}
 
-	err := defaultCfg.Validate()
-
-	if err != nil {
-		log.Errorf("Failed to validate reset config: %v", err)
-		http.Error(w, "Failed to reset config", http.StatusInternalServerError)
-		return
-	}
-
 	if err := a.saveAndPushConfig(&defaultCfg); err != nil {
 		log.Errorf("Failed to reset config: %v", err)
 		http.Error(w, "Failed to reset config", http.StatusInternalServerError)
@@ -321,6 +307,10 @@ func (a *API) resetConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) saveAndPushConfig(newCfg *config.Config) error {
+
+	if err := newCfg.Validate(); err != nil {
+		return log.Errorf("Invalid configuration: %v", err)
+	}
 
 	if globalPool != nil {
 		err := globalPool.UpdateConfig(newCfg)

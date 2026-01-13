@@ -50,6 +50,7 @@ const (
 	FamilyCombo     StrategyFamily = "combo"
 	FamilyHybrid    StrategyFamily = "hybrid"
 	FamilyIncoming  StrategyFamily = "incoming"
+	FamilyTCPMD5    StrategyFamily = "tcpmd5"
 )
 
 type CheckResult struct {

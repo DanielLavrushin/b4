@@ -22,26 +22,7 @@ func BuildFakeSNIPacketV6(original []byte, cfg *config.SetConfig) []byte {
 		originalTLS = original[ipv6HdrLen+tcpHdrLen:]
 	}
 
-	var fakePayload []byte
-	switch cfg.Faking.SNIType {
-	case config.FakePayloadRandom:
-		fakePayload = make([]byte, 1200)
-		rand.Read(fakePayload)
-	case config.FakePayloadCustom:
-		fakePayload = []byte(cfg.Faking.CustomPayload)
-	case config.FakePayloadDefault1:
-		fakePayload = make([]byte, len(FakeSNI1))
-		copy(fakePayload, FakeSNI1)
-	case config.FakePayloadDefault2:
-		fakePayload = make([]byte, len(FakeSNI2))
-		copy(fakePayload, FakeSNI2)
-	case config.FakePayloadCapture:
-		fakePayload = make([]byte, len(cfg.Faking.PayloadData))
-		copy(fakePayload, cfg.Faking.PayloadData)
-	default:
-		fakePayload = make([]byte, len(FakeSNI1))
-		copy(fakePayload, FakeSNI1)
-	}
+	var fakePayload = GetPayload(&cfg.Faking)
 
 	if len(cfg.Faking.TLSMod) > 0 {
 		flags := ParseTLSMod(cfg.Faking.TLSMod)

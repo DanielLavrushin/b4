@@ -159,34 +159,95 @@ stop_process() {
     fi
 }
 
-# Download file from URL
+# Convert GitHub URL to proxy URL
+convert_to_proxy_url() {
+    url="$1"
+    # Check if URL is from allowed GitHub domains
+    case "$url" in
+    https://raw.githubusercontent.com/DanielLavrushin/* | \
+        https://github.com/DanielLavrushin/* | \
+        https://objects.githubusercontent.com/DanielLavrushin/* | \
+        https://codeload.github.com/DanielLavrushin/* | \
+        https://gist.githubusercontent.com/DanielLavrushin/* | \
+        https://api.github.com/repos/DanielLavrushin/*)
+        echo "${PROXY_BASE_URL}/${url}"
+        ;;
+    *)
+        echo "$url"
+        ;;
+    esac
+}
+
+# Download file from URL with GitHub fallback
 fetch_file() {
     url="$1"
     output="$2"
 
+    # Try direct GitHub download first
     if command_exists wget; then
-        wget -q -O "$output" "$url" 2>/dev/null
-        return $?
+        if wget -q --timeout=10 -O "$output" "$url" 2>/dev/null; then
+            return 0
+        fi
     elif command_exists curl; then
-        curl -sfL -o "$output" "$url" 2>/dev/null
-        return $?
+        if curl -sfL --max-time 10 -o "$output" "$url" 2>/dev/null; then
+            return 0
+        fi
     else
         print_error "Neither wget nor curl found"
         return 1
     fi
+
+    # If direct download failed, try proxy fallback
+    proxy_url=$(convert_to_proxy_url "$url")
+    if [ "$proxy_url" != "$url" ]; then
+        print_warning "Direct download failed, trying proxy (proxy.lavrush.in)..."
+        if command_exists wget; then
+            wget -q --timeout=15 -O "$output" "$proxy_url" 2>/dev/null
+            return $?
+        elif command_exists curl; then
+            curl -sfL --max-time 15 -o "$output" "$proxy_url" 2>/dev/null
+            return $?
+        fi
+    fi
+
+    print_error "Failed to download file from $url"
+    return 1
 }
 
-# Fetch URL content to stdout
+# Fetch URL content to stdout with GitHub fallback
 fetch_stdout() {
     url="$1"
 
+    # Try direct GitHub download first
+    result=""
     if command_exists wget; then
-        wget -qO- "$url" 2>/dev/null
+        result=$(wget -qO- --timeout=10 "$url" 2>/dev/null)
+        if [ $? -eq 0 ] && [ -n "$result" ]; then
+            echo "$result"
+            return 0
+        fi
     elif command_exists curl; then
-        curl -sfL "$url" 2>/dev/null
+        result=$(curl -sfL --max-time 10 "$url" 2>/dev/null)
+        if [ $? -eq 0 ] && [ -n "$result" ]; then
+            echo "$result"
+            return 0
+        fi
     else
         return 1
     fi
+
+    # If direct download failed, try proxy fallback
+    proxy_url=$(convert_to_proxy_url "$url")
+    if [ "$proxy_url" != "$url" ]; then
+        if command_exists wget; then
+            wget -qO- --timeout=15 "$proxy_url" 2>/dev/null
+        elif command_exists curl; then
+            curl -sfL --max-time 15 "$proxy_url" 2>/dev/null
+        fi
+        return $?
+    fi
+
+    return 1
 }
 
 detect_pkg_manager() {

@@ -89,6 +89,7 @@ func (n *NFTablesManager) buildNFQueueAction() string {
 
 func (n *NFTablesManager) addRule(chain string, args ...string) error {
 	cmd := append([]string{"add", "rule", "inet", nftTableName, chain}, args...)
+	log.Tracef("NFTABLES: adding rule to %s: %v", chain, args)
 	_, err := n.runNft(cmd...)
 	if err != nil {
 		return fmt.Errorf("failed to add rule to %s: %w", chain, err)
@@ -215,6 +216,10 @@ func (n *NFTablesManager) Apply() error {
 	}
 
 	if err := n.addQueueRule("prerouting", "tcp", "sport", "443", "ct", "original", "packets", "<", tcpLimit, "counter"); err != nil {
+		return err
+	}
+
+	if err := n.addQueueRule("prerouting", "tcp", "sport", "443", "tcp", "flags", "&", "(syn|ack)", "==", "(syn|ack)", "counter"); err != nil {
 		return err
 	}
 

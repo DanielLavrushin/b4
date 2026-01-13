@@ -14,11 +14,42 @@ import (
 )
 
 type IPTablesManager struct {
-	cfg *config.Config
+	cfg              *config.Config
+	multiportSupport map[string]bool // per-binary cache (iptables vs ip6tables may differ)
 }
 
 func NewIPTablesManager(cfg *config.Config) *IPTablesManager {
-	return &IPTablesManager{cfg: cfg}
+	return &IPTablesManager{cfg: cfg, multiportSupport: make(map[string]bool)}
+}
+
+// hasMultiportSupport checks if iptables multiport module is available
+func (im *IPTablesManager) hasMultiportSupport(ipt string) bool {
+	if result, ok := im.multiportSupport[ipt]; ok {
+		return result
+	}
+
+	// Try to add and immediately remove a test rule using multiport
+	testSpec := []string{"-p", "tcp", "-m", "multiport", "--dports", "80,443", "-j", "ACCEPT"}
+	_, err := run(append([]string{ipt, "-w", "-t", "filter", "-C", "INPUT"}, testSpec...)...)
+	if err == nil {
+		// Rule exists (unlikely), multiport works
+		im.multiportSupport[ipt] = true
+		return true
+	}
+
+	// Try to add the rule
+	_, err = run(append([]string{ipt, "-w", "-t", "filter", "-A", "INPUT"}, testSpec...)...)
+	if err == nil {
+		// Success - remove it immediately
+		_, _ = run(append([]string{ipt, "-w", "-t", "filter", "-D", "INPUT"}, testSpec...)...)
+		im.multiportSupport[ipt] = true
+		log.Tracef("IPTABLES[%s]: multiport module is available", ipt)
+		return true
+	}
+
+	log.Warnf("IPTABLES[%s]: multiport module not available, using individual port rules", ipt)
+	im.multiportSupport[ipt] = false
+	return false
 }
 
 func (im *IPTablesManager) existsChain(ipt, table, chain string) bool {
@@ -236,9 +267,15 @@ func (manager *IPTablesManager) buildManifest() (Manifest, error) {
 			manager.buildNFQSpec(queueNum, threads)...,
 		)
 
+		synackSpec := append(
+			[]string{"-p", "tcp", "--sport", "443", "--tcp-flags", "SYN,ACK", "SYN,ACK"},
+			manager.buildNFQSpec(queueNum, threads)...,
+		)
+
 		rules = append(rules,
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "PREROUTING", Action: "I", Spec: dnsResponseSpec},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "PREROUTING", Action: "I", Spec: tcpResponseSpec},
+			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "PREROUTING", Action: "I", Spec: synackSpec},
 
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: tcpSpec},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: dnsSpec},
@@ -249,16 +286,31 @@ func (manager *IPTablesManager) buildManifest() (Manifest, error) {
 			udpPorts[i] = strings.ReplaceAll(p, "-", ":")
 		}
 
-		udpPortChunks := chunkPorts(udpPorts, 15)
-		for _, chunk := range udpPortChunks {
-			udpPortSpec := []string{"-p", "udp", "-m", "multiport", "--dports", strings.Join(chunk, ",")}
-			udpSpec := append(
-				append(udpPortSpec,
-					"-m", "connbytes", "--connbytes-dir", "original",
-					"--connbytes-mode", "packets", "--connbytes", udpConnbytesRange),
-				manager.buildNFQSpec(queueNum, threads)...,
-			)
-			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: udpSpec})
+		if manager.hasMultiportSupport(ipt) {
+			// Use multiport for efficiency (batches up to 15 ports per rule)
+			udpPortChunks := chunkPorts(udpPorts, 15)
+			for _, chunk := range udpPortChunks {
+				udpPortSpec := []string{"-p", "udp", "-m", "multiport", "--dports", strings.Join(chunk, ",")}
+				udpSpec := append(
+					append(udpPortSpec,
+						"-m", "connbytes", "--connbytes-dir", "original",
+						"--connbytes-mode", "packets", "--connbytes", udpConnbytesRange),
+					manager.buildNFQSpec(queueNum, threads)...,
+				)
+				rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: udpSpec})
+			}
+		} else {
+			// Fallback: create individual rules for each port/range
+			for _, port := range udpPorts {
+				udpPortSpec := []string{"-p", "udp", "--dport", port}
+				udpSpec := append(
+					append(udpPortSpec,
+						"-m", "connbytes", "--connbytes-dir", "original",
+						"--connbytes-mode", "packets", "--connbytes", udpConnbytesRange),
+					manager.buildNFQSpec(queueNum, threads)...,
+				)
+				rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: udpSpec})
+			}
 		}
 
 		if cfg.Queue.Devices.Enabled && len(cfg.Queue.Devices.Mac) > 0 {

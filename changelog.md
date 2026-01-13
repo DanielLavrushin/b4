@@ -1,5 +1,12 @@
 # B4 - Bye Bye Big Bro
 
+## [1.31.0] - 2026-01-11
+
+- ADDED: TCP MD5 option support.
+- ADDED: TCP MD5 preset in Discovery - automatically tests `TCP MD5` bypass strategy during configuration discovery.
+- ADDED: `iptables` multiport module support - improves firewall rule efficiency when filtering multiple ports. The installer now detects and uses the `multiport` extension when available.
+- IMPROVED: Import/Export now automatically migrates old set configurations (pre-v1.29) to the current format when importing.
+
 ## [1.30.1] - 2026-01-02
 
 - FIXED: White screen when importing old set configurations (sets saved before v1.29 now automatically convert to current format).

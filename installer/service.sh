@@ -49,8 +49,11 @@ kernel_mod_load() {
     [ -n "$connbytes_mod_path" ] && insmod "$connbytes_mod_path" >/dev/null 2>&1
     nfqueue_mod_path=$(find /lib/modules/$KERNEL -name "xt_NFQUEUE.ko*" 2>/dev/null | head -1)
     [ -n "$nfqueue_mod_path" ] && insmod "$nfqueue_mod_path" >/dev/null 2>&1
+    multiport_mod_path=$(find /lib/modules/$KERNEL -name "xt_multiport.ko*" 2>/dev/null | head -1)
+    [ -n "$multiport_mod_path" ] && insmod "$multiport_mod_path" >/dev/null 2>&1
     modprobe xt_connbytes >/dev/null 2>&1 || true
     modprobe xt_NFQUEUE >/dev/null 2>&1 || true
+    modprobe xt_multiport >/dev/null 2>&1 || true
 }
 
 start() {
@@ -148,8 +151,11 @@ kernel_mod_load() {
     [ -n "$connbytes_mod_path" ] && insmod "$connbytes_mod_path" >/dev/null 2>&1
     nfqueue_mod_path=$(find /lib/modules/$KERNEL -name "xt_NFQUEUE.ko*" 2>/dev/null | head -1)
     [ -n "$nfqueue_mod_path" ] && insmod "$nfqueue_mod_path" >/dev/null 2>&1
+    multiport_mod_path=$(find /lib/modules/$KERNEL -name "xt_multiport.ko*" 2>/dev/null | head -1)
+    [ -n "$multiport_mod_path" ] && insmod "$multiport_mod_path" >/dev/null 2>&1
     modprobe xt_connbytes >/dev/null 2>&1 || true
     modprobe xt_NFQUEUE >/dev/null 2>&1 || true
+    modprobe xt_multiport >/dev/null 2>&1 || true
 }
 
 [ "$1" = "start" ] || [ "$1" = "restart" ] && kernel_mod_load

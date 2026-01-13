@@ -2,7 +2,10 @@ package config
 
 import "github.com/daniellavrushin/b4/log"
 
-const ConfigOff = "off"
+const (
+	ConfigOff  = "off"
+	ConfigNone = "none"
+)
 
 const (
 	FakePayloadRandom = iota
@@ -110,6 +113,7 @@ type FakingConfig struct {
 	TLSMod        []string `json:"tls_mod" bson:"tls_mod"` // e.g. ["rnd", "dupsid"]
 
 	SNIMutation SNIMutationConfig `json:"sni_mutation" bson:"sni_mutation"`
+	TCPMD5      bool              `json:"tcp_md5" bson:"tcp_md5"` // Enable TCP MD5 option insertion
 }
 
 type SNIMutationConfig struct {

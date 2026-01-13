@@ -220,30 +220,40 @@ func (w *Worker) Start() error {
 					log.Tracef("RST received from %s:%d", dstStr, dport)
 				}
 
-				if set.TCP.SynFake && isSyn && !isAck && dport == HTTPSPort {
+				if isSyn && !isAck && dport == HTTPSPort && matched {
+					log.Tracef("TCP SYN to %s:%d (set: %s)", dstStr, dport, set.Name)
 
-					if matched {
-						log.Tracef("TCP SYN to %s:%d - sending fake SYN (set: %s)", dstStr, dport, set.Name)
+					metrics := metrics.GetMetricsCollector()
+					metrics.RecordConnection("TCP-SYN", "", srcStr, dstStr, true)
 
-						metrics := metrics.GetMetricsCollector()
-						metrics.RecordConnection("TCP-SYN", "", srcStr, dstStr, true)
+					if v == IPv4 {
+						// Syndata - modify SYN packet to include payload
+						modsyn := raw
 
-						if v == IPv4 {
+						// SynFake - independent
+						if set.TCP.SynFake {
 							w.sendFakeSyn(set, raw, ihl, datOff)
-							_ = w.sock.SendIPv4(raw, dst)
-						} else {
+						}
+
+						if set.Fragmentation.Strategy != config.ConfigNone && set.Faking.TCPMD5 {
+							w.sendFakeSynWithMD5(set, raw, ihl, dst)
+						}
+
+						_ = w.sock.SendIPv4(modsyn, dst)
+					} else {
+						if set.TCP.SynFake {
 							w.sendFakeSynV6(set, raw, ihl, datOff)
-							_ = w.sock.SendIPv6(raw, dst)
 						}
-						if err := q.SetVerdict(id, nfqueue.NfDrop); err != nil {
-							log.Tracef("failed to set drop verdict on packet %d: %v", id, err)
+
+						if set.Fragmentation.Strategy != config.ConfigNone && set.Faking.TCPMD5 {
+							w.sendFakeSynWithMD5V6(set, raw, dst)
 						}
-						return 0
+
+						_ = w.sock.SendIPv6(raw, dst)
 					}
 
-					log.Tracef("TCP SYN to %s:%d - passing through", dstStr, dport)
-					if err := q.SetVerdict(id, nfqueue.NfAccept); err != nil {
-						log.Tracef("failed to set verdict on packet %d: %v", id, err)
+					if err := q.SetVerdict(id, nfqueue.NfDrop); err != nil {
+						log.Tracef("failed to set drop verdict on packet %d: %v", id, err)
 					}
 					return 0
 				}
@@ -616,7 +626,7 @@ func (w *Worker) dropAndInjectTCP(cfg *config.SetConfig, raw []byte, dst net.IP)
 		w.sendComboFragments(cfg, raw, dst)
 	case "hybrid":
 		w.sendHybridFragments(cfg, raw, dst)
-	case "none":
+	case config.ConfigNone:
 		_ = w.sock.SendIPv4(raw, dst)
 	default:
 		w.sendComboFragments(cfg, raw, dst)

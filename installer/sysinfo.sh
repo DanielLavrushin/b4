@@ -86,6 +86,33 @@ detect_firewall_backend() {
     return 0
 }
 
+# Check if iptables multiport module works
+check_multiport_support() {
+    if ! command_exists iptables; then
+        echo "no_iptables"
+        return 0
+    fi
+
+    # Try to add a test rule using multiport
+    # Try with -w first (lock wait), fall back without it for older iptables
+    if iptables -w -t filter -A INPUT -p tcp -m multiport --dports 80,443 -j ACCEPT 2>/dev/null || \
+       iptables -t filter -A INPUT -p tcp -m multiport --dports 80,443 -j ACCEPT 2>/dev/null; then
+        # Success - remove it immediately (try both variants)
+        iptables -w -t filter -D INPUT -p tcp -m multiport --dports 80,443 -j ACCEPT 2>/dev/null || \
+        iptables -t filter -D INPUT -p tcp -m multiport --dports 80,443 -j ACCEPT 2>/dev/null
+        # Check if loaded as module or built-in
+        if lsmod 2>/dev/null | grep -q "^xt_multiport"; then
+            echo "works_module"
+        else
+            echo "works_builtin"
+        fi
+        return 0
+    fi
+
+    echo "not_available"
+    return 0
+}
+
 # System information display function
 show_system_info() {
 
@@ -344,7 +371,7 @@ show_system_info() {
     print_header "Kernel Modules"
 
     # Netfilter modules
-    modules="nf_conntrack xt_connbytes xt_NFQUEUE nf_tables nft_queue nft_ct"
+    modules="nf_conntrack xt_connbytes xt_NFQUEUE xt_multiport nf_tables nft_queue nft_ct"
     for mod in $modules; do
         status=$(check_kernel_module "$mod" || true)
         case "$status" in
@@ -377,6 +404,22 @@ show_system_info() {
         else
             print_detail "tcp_be_liberal" "${YELLOW}Disabled${NC}"
         fi
+    fi
+
+    # Check multiport support (iptables only)
+    if [ "$firewall_backend" != "nftables" ] && command_exists iptables; then
+        multiport_status=$(check_multiport_support)
+        case "$multiport_status" in
+        works_module)
+            print_detail "iptables multiport" "${GREEN}Available (module)${NC}"
+            ;;
+        works_builtin)
+            print_detail "iptables multiport" "${GREEN}Available (built-in)${NC}"
+            ;;
+        not_available)
+            print_detail "iptables multiport" "${YELLOW}Not available (fallback mode)${NC}"
+            ;;
+        esac
     fi
 
     # Dependencies Check

@@ -6,9 +6,6 @@ import (
 	"github.com/daniellavrushin/b4/config"
 )
 
-// GetPhase1Presets returns minimal presets for strategy family detection
-// These are the "does this approach work at all?" tests
-// IMPORTANT: Most DPI requires COMBINATIONS of techniques, not single techniques
 func GetPhase1Presets() []ConfigPreset {
 	return []ConfigPreset{
 
@@ -20,6 +17,51 @@ func GetPhase1Presets() []ConfigPreset {
 			Phase:       PhaseBaseline,
 			Priority:    0,
 			Config:      baselineConfig(),
+		},
+
+		// 1a. TCP MD5 option - bypasses TSPU 16KB block
+		{
+			Name:        "tcpmd5-combo",
+			Description: "TCP MD5 option to bypass TSPU 16KB throttling block",
+			Family:      FamilyTCPMD5,
+			Phase:       PhaseBaseline,
+			Priority:    1,
+			Config: config.SetConfig{
+				TCP: config.TCPConfig{
+					ConnBytesLimit: 19,
+				},
+				UDP: config.UDPConfig{
+					Mode:           "fake",
+					FakeSeqLength:  6,
+					FakeLen:        64,
+					FakingStrategy: "none",
+					FilterQUIC:     "disabled",
+					FilterSTUN:     true,
+					ConnBytesLimit: 8,
+				},
+				Fragmentation: config.FragmentationConfig{
+					Strategy:     "combo",
+					ReverseOrder: true,
+					MiddleSNI:    true,
+					SNIPosition:  1,
+					Combo: config.ComboFragConfig{
+						FirstByteSplit: true,
+						ExtensionSplit: true,
+						ShuffleMode:    "full",
+						FirstDelayMs:   30,
+						JitterMaxUs:    1000,
+					},
+				},
+				Faking: config.FakingConfig{
+					SNI:          true,
+					TTL:          8,
+					Strategy:     "pastseq",
+					SeqOffset:    10000,
+					SNISeqLength: 1,
+					SNIType:      config.FakePayloadDefault1,
+					TCPMD5:       true,
+				},
+			},
 		},
 
 		// 1d. Incoming fake bypass - TSPU behavioral throttling bypass
