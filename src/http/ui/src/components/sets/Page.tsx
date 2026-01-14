@@ -33,7 +33,7 @@ export function SetsPage() {
 
   if (loading || !config) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+      <div className="bg-background/80 fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm">
         <div className="flex flex-col items-center gap-4">
           <Spinner className="h-12 w-12" />
           <p className="text-foreground">Loading...</p>
@@ -43,7 +43,7 @@ export function SetsPage() {
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
+    <div className="flex h-full flex-col overflow-hidden">
       <div className="flex-1 overflow-auto">
         <SetsManager config={config} onRefresh={() => void loadConfig()} />
       </div>

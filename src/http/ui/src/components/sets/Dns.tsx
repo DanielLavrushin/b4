@@ -44,7 +44,7 @@ interface DnsSettingsProps {
 }
 
 const POPULAR_DNS = (dns as DnsEntry[]).sort((a, b) =>
-  a.name.localeCompare(b.name)
+  a.name.localeCompare(b.name),
 );
 
 export function DnsSettings({ config, onChange, ipv6 }: DnsSettingsProps) {
@@ -59,7 +59,7 @@ export function DnsSettings({ config, onChange, ipv6 }: DnsSettingsProps) {
     <Card>
       <CardHeader>
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+          <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
             <DnsIcon />
           </div>
           <div className="flex-1">
@@ -71,7 +71,7 @@ export function DnsSettings({ config, onChange, ipv6 }: DnsSettingsProps) {
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           <Alert className="m-0 md:col-span-2">
             <AlertDescription>
               Some ISPs intercept DNS queries (especially to 8.8.8.8) and return
@@ -140,9 +140,9 @@ export function DnsSettings({ config, onChange, ipv6 }: DnsSettingsProps) {
 
               <div>
                 {selectedServer && (
-                  <div className="p-4 bg-card rounded-md border border-border h-full">
+                  <div className="bg-card border-border h-full rounded-md border p-4">
                     <div className="flex items-center gap-2">
-                      <DnsIcon className="h-5 w-5 text-primary" />
+                      <DnsIcon className="text-primary h-5 w-5" />
                       <p className="text-sm font-semibold">
                         {selectedServer.name}
                       </p>
@@ -156,7 +156,7 @@ export function DnsSettings({ config, onChange, ipv6 }: DnsSettingsProps) {
                         </Badge>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground mt-2">
+                    <p className="text-muted-foreground mt-2 text-xs">
                       {selectedServer.desc}
                     </p>
                   </div>
@@ -165,63 +165,63 @@ export function DnsSettings({ config, onChange, ipv6 }: DnsSettingsProps) {
 
               {/* DNS server list */}
               <div className="md:col-span-2">
-                <p className="text-sm font-semibold mb-2">
+                <p className="mb-2 text-sm font-semibold">
                   Recommended DNS Servers
                 </p>
-                <div className="border border-border rounded-md bg-card max-h-80 overflow-auto">
-                  <div className="divide-y divide-border">
+                <div className="border-border bg-card max-h-80 overflow-auto rounded-md border">
+                  <div className="divide-border divide-y">
                     {POPULAR_DNS.filter((server) =>
-                      ipv6 ? server.ipv6 : !server.ipv6
+                      ipv6 ? server.ipv6 : !server.ipv6,
                     ).map((server) => (
                       <button
                         key={server.ip}
                         onClick={() => handleServerSelect(server.ip)}
                         className={cn(
-                          "w-full p-3 text-left hover:bg-accent transition-colors flex items-start gap-3 border-l-3",
+                          "hover:bg-accent flex w-full items-start gap-3 border-l-3 p-3 text-left transition-colors",
                           dns.target_dns === server.ip
                             ? "bg-accent border-l-secondary"
                             : server.warn
-                            ? "border-l-quaternary"
-                            : "border-l-transparent"
+                              ? "border-l-quaternary"
+                              : "border-l-transparent",
                         )}
                       >
-                        <div className="min-w-9 flex items-center">
+                        <div className="flex min-w-9 items-center">
                           {dns.target_dns === server.ip ? (
-                            <CheckIcon className="h-5 w-5 text-primary" />
+                            <CheckIcon className="text-primary h-5 w-5" />
                           ) : server.warn ? (
-                            <BlockIcon className="h-5 w-5 text-destructive" />
+                            <BlockIcon className="text-destructive h-5 w-5" />
                           ) : (
-                            <DnsIcon className="h-5 w-5 text-muted-foreground" />
+                            <DnsIcon className="text-muted-foreground h-5 w-5" />
                           )}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
                             <p
                               className={cn(
-                                "text-sm font-mono",
+                                "font-mono text-sm",
                                 server.warn
                                   ? "text-destructive"
-                                  : "text-foreground"
+                                  : "text-foreground",
                               )}
                             >
                               {server.name}
                             </p>
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-muted-foreground text-sm">
                               {server.ip}
                             </p>
                             {server.tags.includes("fast") && (
-                              <SpeedIcon className="h-3.5 w-3.5 text-primary" />
+                              <SpeedIcon className="text-primary h-3.5 w-3.5" />
                             )}
                             {server.tags.includes("adblock") && (
-                              <BlockIcon className="h-3.5 w-3.5 text-primary" />
+                              <BlockIcon className="text-primary h-3.5 w-3.5" />
                             )}
                           </div>
                           <p
                             className={cn(
-                              "text-xs mt-1",
+                              "mt-1 text-xs",
                               server.warn
                                 ? "text-destructive"
-                                : "text-muted-foreground"
+                                : "text-muted-foreground",
                             )}
                           >
                             {server.desc}
@@ -235,34 +235,34 @@ export function DnsSettings({ config, onChange, ipv6 }: DnsSettingsProps) {
 
               {/* Visual explanation */}
               <div className="md:col-span-2">
-                <div className="p-4 bg-card rounded-md border border-border">
-                  <p className="text-xs text-muted-foreground mb-2">
+                <div className="bg-card border-border rounded-md border p-4">
+                  <p className="text-muted-foreground mb-2 text-xs">
                     HOW IT WORKS
                   </p>
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Badge className="bg-accent">App</Badge>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-muted-foreground text-xs">
                       → DNS query for
                     </p>
                     <Badge className="bg-accent text-accent-foreground">
                       instagram.com
                     </Badge>
-                    <p className="text-xs text-muted-foreground">→</p>
+                    <p className="text-muted-foreground text-xs">→</p>
                     <Badge className="bg-destructive/20 text-destructive line-through">
                       poisoned DNS
                     </Badge>
-                    <p className="text-xs text-muted-foreground">→</p>
+                    <p className="text-muted-foreground text-xs">→</p>
                     <Badge
                       className={cn(
-                        "text-xs px-1.5 py-0.5",
+                        "px-1.5 py-0.5 text-xs",
                         dns.target_dns
                           ? "bg-primary text-primary-foreground"
-                          : "bg-accent text-accent-foreground"
+                          : "bg-accent text-accent-foreground",
                       )}
                     >
                       {dns.target_dns || "select DNS"}
                     </Badge>
-                    <p className="text-xs text-muted-foreground">→ Real IP</p>
+                    <p className="text-muted-foreground text-xs">→ Real IP</p>
                   </div>
                 </div>
               </div>

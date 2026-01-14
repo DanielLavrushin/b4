@@ -21,12 +21,12 @@ export function loadSortState(): DomainSortState {
 
 export function saveSortState(
   column: string | null,
-  direction: "asc" | "desc" | null
+  direction: "asc" | "desc" | null,
 ): void {
   try {
     localStorage.setItem(
       SORT_STORAGE_KEY,
-      JSON.stringify({ column, direction })
+      JSON.stringify({ column, direction }),
     );
   } catch (e) {
     console.error("Failed to save sort state:", e);
@@ -132,7 +132,7 @@ export function persistLogLines(lines: string[]): void {
   try {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify(lines.slice(-MAX_STORED_LINES))
+      JSON.stringify(lines.slice(-MAX_STORED_LINES)),
     );
   } catch (e) {
     console.error("Failed to persist domains:", e);

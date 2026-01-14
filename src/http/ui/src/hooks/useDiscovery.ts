@@ -57,7 +57,7 @@ export function useDiscovery() {
     async (
       url: string,
       skipDNS: boolean = false,
-      payloadFiles: string[] = []
+      payloadFiles: string[] = [],
     ): Promise<ApiResponse<void>> => {
       setError(null);
       setSuite(null);
@@ -78,7 +78,7 @@ export function useDiscovery() {
         return { success: false, error: String(e) };
       }
     },
-    []
+    [],
   );
 
   const cancelDiscovery = useCallback(async (): Promise<void> => {
@@ -111,7 +111,7 @@ export function useDiscovery() {
         return { success: false, error: String(e) };
       }
     },
-    []
+    [],
   );
 
   return {

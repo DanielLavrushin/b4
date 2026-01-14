@@ -35,13 +35,13 @@ export function ChipList<T>({
       {title && <h3 className="text-sm font-medium">{title}</h3>}
       <div
         className={cn(
-          "flex flex-wrap gap-2 p-2 border border-dashed rounded-md bg-card min-h-10 items-center",
-          maxHeight && "overflow-y-auto"
+          "bg-card flex min-h-10 flex-wrap items-center gap-2 rounded-md border border-dashed p-2",
+          maxHeight && "overflow-y-auto",
         )}
         style={maxHeight ? { maxHeight: `${maxHeight}px` } : undefined}
       >
         {items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{emptyMessage}</p>
+          <p className="text-muted-foreground text-sm">{emptyMessage}</p>
         ) : (
           items.map((item) => (
             <Badge
@@ -49,7 +49,7 @@ export function ChipList<T>({
               variant="secondary"
               className={cn(
                 "flex items-center gap-1",
-                onClick && "cursor-pointer hover:bg-secondary/80"
+                onClick && "hover:bg-secondary/80 cursor-pointer",
               )}
               onClick={onClick ? () => onClick(item) : undefined}
             >
@@ -60,7 +60,7 @@ export function ChipList<T>({
                     e.stopPropagation();
                     onDelete(item);
                   }}
-                  className="ml-1 rounded-full hover:bg-secondary-foreground/20 p-0.5"
+                  className="hover:bg-secondary-foreground/20 ml-1 rounded-full p-0.5"
                 >
                   <CloseIcon className="h-3 w-3" />
                 </button>

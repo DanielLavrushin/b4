@@ -4,9 +4,9 @@ import { Separator } from "@design/components/ui/separator";
 export const ExtSplitSettings = () => {
   return (
     <>
-      <div className="relative my-4 md:col-span-2 flex items-center">
+      <div className="relative my-4 flex items-center md:col-span-2">
         <Separator className="absolute inset-0 top-1/2" />
-        <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+        <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
           Extension Split
         </span>
       </div>
@@ -18,23 +18,23 @@ export const ExtSplitSettings = () => {
       </Alert>
 
       <div className="md:col-span-2">
-        <div className="p-4 bg-card rounded-md border border-border">
-          <p className="text-xs text-muted-foreground mb-2">
+        <div className="bg-card border-border rounded-md border p-4">
+          <p className="text-muted-foreground mb-2 text-xs">
             TLS CLIENTHELLO STRUCTURE
           </p>
-          <div className="flex gap-1 font-mono text-xs flex-wrap">
-            <div className="p-2 bg-accent rounded">TLS Header</div>
-            <div className="p-2 bg-accent rounded">Handshake</div>
-            <div className="p-2 bg-accent rounded">Ciphers</div>
-            <div className="p-2 bg-accent-secondary rounded">Ext₁</div>
-            <div className="p-2 bg-accent-secondary rounded">Ext₂</div>
-            <div className="p-2 bg-tertiary rounded relative">
-              <span className="absolute -left-2 top-0 bottom-0 w-0.75 bg-quaternary" />
+          <div className="flex flex-wrap gap-1 font-mono text-xs">
+            <div className="bg-accent rounded p-2">TLS Header</div>
+            <div className="bg-accent rounded p-2">Handshake</div>
+            <div className="bg-accent rounded p-2">Ciphers</div>
+            <div className="bg-accent-secondary rounded p-2">Ext₁</div>
+            <div className="bg-accent-secondary rounded p-2">Ext₂</div>
+            <div className="bg-tertiary relative rounded p-2">
+              <span className="bg-quaternary absolute top-0 bottom-0 -left-2 w-0.75" />
               SNI: youtube.com
             </div>
-            <div className="p-2 bg-accent-secondary rounded">Ext...</div>
+            <div className="bg-accent-secondary rounded p-2">Ext...</div>
           </div>
-          <p className="text-xs text-muted-foreground mt-2">
+          <p className="text-muted-foreground mt-2 text-xs">
             Split happens at the yellow line — before SNI extension starts
           </p>
         </div>

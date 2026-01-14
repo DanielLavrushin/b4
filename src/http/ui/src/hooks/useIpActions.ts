@@ -66,7 +66,7 @@ export function useIpActions() {
               Array.isArray(modalState.selected)
                 ? modalState.selected.length + " entries"
                 : modalState.selected
-            } added successfully`
+            } added successfully`,
           );
           closeModal();
         } else {
@@ -77,7 +77,7 @@ export function useIpActions() {
         showError(`Failed to add ip: ${String(error)}`);
       }
     },
-    [modalState.selected, closeModal, showError, showSuccess]
+    [modalState.selected, closeModal, showError, showSuccess],
   );
 
   return {

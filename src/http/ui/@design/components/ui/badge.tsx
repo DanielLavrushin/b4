@@ -24,7 +24,7 @@ const badgeVariants = cva(
     defaultVariants: {
       variant: "default",
     },
-  }
+  },
 );
 
 const Badge = React.forwardRef<
@@ -34,7 +34,7 @@ const Badge = React.forwardRef<
 >(
   (
     { className, variant = "default", asChild = false, onClick, ...props },
-    ref
+    ref,
   ) => {
     const Comp = asChild ? Slot.Root : "span";
 
@@ -46,13 +46,13 @@ const Badge = React.forwardRef<
         className={cn(
           badgeVariants({ variant }),
           onClick && "cursor-pointer",
-          className
+          className,
         )}
         onClick={onClick}
         {...props}
       />
     );
-  }
+  },
 );
 
 Badge.displayName = "Badge";

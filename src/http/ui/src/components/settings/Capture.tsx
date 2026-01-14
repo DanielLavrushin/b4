@@ -157,17 +157,17 @@ export const CaptureSettings = () => {
       <Alert>
         <CaptureIcon className="h-3.5 w-3.5" />
         <AlertDescription>
-          <h6 className="text-sm font-semibold mb-2">
+          <h6 className="mb-2 text-sm font-semibold">
             Capture real TLS ClientHello for custom payload generation
           </h6>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-muted-foreground text-xs">
             One capture per domain. Use in Faking → Captured Payload
           </p>
         </AlertDescription>
       </Alert>
 
       {/* Upload + Capture side by side */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
@@ -197,7 +197,7 @@ export const CaptureSettings = () => {
                   Name associated with the uploaded payload
                 </FieldDescription>
               </Field>
-              <div className="flex flex-row gap-2 items-center">
+              <div className="flex flex-row items-center gap-2">
                 <Button
                   variant="outline"
                   disabled={loading}
@@ -218,7 +218,7 @@ export const CaptureSettings = () => {
                   </label>
                 </Button>
                 {uploadForm.file && (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-muted-foreground text-xs">
                     {uploadForm.file.size} bytes
                   </p>
                 )}
@@ -228,12 +228,12 @@ export const CaptureSettings = () => {
                 >
                   {loading ? (
                     <>
-                      <Spinner className="h-4 w-4 mr-2" />
+                      <Spinner className="mr-2 h-4 w-4" />
                       Uploading...
                     </>
                   ) : (
                     <>
-                      <UploadIcon className="h-4 w-4 mr-2" />
+                      <UploadIcon className="mr-2 h-4 w-4" />
                       Upload
                     </>
                   )}
@@ -282,12 +282,12 @@ export const CaptureSettings = () => {
                 >
                   {loading ? (
                     <>
-                      <Spinner className="h-4 w-4 mr-2" />
+                      <Spinner className="mr-2 h-4 w-4" />
                       Capturing...
                     </>
                   ) : (
                     <>
-                      <CaptureIcon className="h-4 w-4 mr-2" />
+                      <CaptureIcon className="mr-2 h-4 w-4" />
                       Capture
                     </>
                   )}
@@ -328,10 +328,10 @@ export const CaptureSettings = () => {
               {loading && countdown !== null && (
                 <Alert>
                   <AlertDescription>
-                    <h6 className="text-sm font-semibold mb-2">
+                    <h6 className="mb-2 text-sm font-semibold">
                       Capture window is open for {probeForm.domain}
                     </h6>
-                    <div className="flex flex-row gap-2 items-center">
+                    <div className="flex flex-row items-center gap-2">
                       <p className="text-xs">
                         Visit{" "}
                         <a
@@ -345,16 +345,16 @@ export const CaptureSettings = () => {
                       </p>
                       <Badge
                         className={cn(
-                          "text-xs px-1.5 py-0.5 font-semibold min-w-12",
+                          "min-w-12 px-1.5 py-0.5 text-xs font-semibold",
                           countdown <= 10
                             ? "bg-accent text-accent-foreground"
-                            : ""
+                            : "",
                         )}
                       >
                         {`${countdown}s`}
                       </Badge>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-2">
+                    <p className="text-muted-foreground mt-2 text-xs">
                       Or run:{" "}
                       <code className="text-secondary">
                         curl -o /dev/null -s https://{probeForm.domain}
@@ -383,7 +383,7 @@ export const CaptureSettings = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4">
               {captures.map((capture) => (
                 <CaptureCard
                   key={`${capture.protocol}:${capture.domain}`}
@@ -400,12 +400,12 @@ export const CaptureSettings = () => {
 
       {/* Empty State */}
       {captures.length === 0 && !loading && (
-        <div className="p-8 text-center border border-dashed border-border rounded-md">
-          <CaptureIcon className="h-12 w-12 text-muted-foreground mb-4 mx-auto" />
-          <h6 className="text-lg font-semibold text-muted-foreground mb-2">
+        <div className="border-border rounded-md border border-dashed p-8 text-center">
+          <CaptureIcon className="text-muted-foreground mx-auto mb-4 h-12 w-12" />
+          <h6 className="text-muted-foreground mb-2 text-lg font-semibold">
             No captured payloads yet
           </h6>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-muted-foreground text-sm">
             Enter a domain above and click Capture to get started
           </p>
         </div>
@@ -421,7 +421,7 @@ export const CaptureSettings = () => {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+              <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
                 <CaptureIcon />
               </div>
               <div className="flex-1">
@@ -442,7 +442,7 @@ export const CaptureSettings = () => {
                     {hexDialog.capture.size} bytes
                   </AlertDescription>
                 </Alert>
-                <div className="p-4 bg-muted rounded-md font-mono text-xs break-all max-h-100 overflow-auto select-all">
+                <div className="bg-muted max-h-100 overflow-auto rounded-md p-4 font-mono text-xs break-all select-all">
                   {hexDialog.capture.hex_data}
                 </div>
               </div>
@@ -482,22 +482,22 @@ const CaptureCard = ({
   onDelete,
 }: CaptureCardProps) => {
   return (
-    <Card className="p-4 h-full flex flex-col transition-all border border-border hover:border-secondary hover:-translate-y-0.5 hover:shadow-lg cursor-pointer">
+    <Card className="border-border hover:border-secondary flex h-full cursor-pointer flex-col border p-4 transition-all hover:-translate-y-0.5 hover:shadow-lg">
       {/* Header */}
-      <div className="flex flex-row justify-between items-start mb-2">
+      <div className="mb-2 flex flex-row items-start justify-between">
         <div className="min-w-0 flex-1">
-          <h6 className="text-sm font-semibold overflow-hidden text-ellipsis whitespace-nowrap">
+          <h6 className="overflow-hidden text-sm font-semibold text-ellipsis whitespace-nowrap">
             {capture.domain}
           </h6>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-muted-foreground text-xs">
             {capture.size.toLocaleString()} bytes
           </p>
         </div>
-        <CaptureIcon className="h-5 w-5 text-secondary ml-2 shrink-0" />
+        <CaptureIcon className="text-secondary ml-2 h-5 w-5 shrink-0" />
       </div>
 
       {/* Timestamp */}
-      <p className="text-xs text-muted-foreground mb-4">
+      <p className="text-muted-foreground mb-4 text-xs">
         {new Date(capture.timestamp).toLocaleString()}
       </p>
 
@@ -505,7 +505,7 @@ const CaptureCard = ({
       <div className="flex-1" />
 
       {/* Actions */}
-      <div className="flex flex-row gap-1 pt-4 border-t border-border">
+      <div className="border-border flex flex-row gap-1 border-t pt-4">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button size="sm" variant="ghost" onClick={onViewHex}>

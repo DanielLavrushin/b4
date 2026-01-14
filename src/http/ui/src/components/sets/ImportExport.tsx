@@ -128,7 +128,7 @@ export const ImportExportSettings = ({
         !parsed.targets
       ) {
         setValidationError(
-          "Invalid set configuration: missing required fields"
+          "Invalid set configuration: missing required fields",
         );
         setValidationSuccess(false);
         return null;
@@ -139,7 +139,7 @@ export const ImportExportSettings = ({
       return parsed;
     } catch (error) {
       setValidationError(
-        error instanceof Error ? error.message : "Invalid JSON format"
+        error instanceof Error ? error.message : "Invalid JSON format",
       );
       setValidationSuccess(false);
       return null;
@@ -166,7 +166,7 @@ export const ImportExportSettings = ({
     <Card>
       <CardHeader>
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+          <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
             <ImportExportIcon />
           </div>
           <div className="flex-1">
@@ -208,13 +208,13 @@ export const ImportExportSettings = ({
               onClick={handleReset}
               disabled={!hasChanges}
             >
-              <RefreshIcon className="h-4 w-4 mr-2" />
+              <RefreshIcon className="mr-2 h-4 w-4" />
               Reset
             </Button>
             <div className="flex-1" />
             <div className="flex items-center gap-2">
               {validationSuccess && !validationError && (
-                <CheckIcon className="h-4 w-4 text-primary" />
+                <CheckIcon className="text-primary h-4 w-4" />
               )}
               <Button
                 variant="outline"
@@ -224,10 +224,7 @@ export const ImportExportSettings = ({
                 Validate
               </Button>
             </div>
-            <Button
-              onClick={handleApply}
-              disabled={!hasChanges}
-            >
+            <Button onClick={handleApply} disabled={!hasChanges}>
               Apply Changes
             </Button>
           </div>

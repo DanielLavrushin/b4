@@ -73,7 +73,7 @@ export function LogsPage() {
         showSuccess(`Logs ${!pauseLogs ? "paused" : "resumed"}`);
       }
     },
-    [clearLogs, pauseLogs, setPauseLogs, showSuccess]
+    [clearLogs, pauseLogs, setPauseLogs, showSuccess],
   );
 
   useEffect(() => {
@@ -84,23 +84,23 @@ export function LogsPage() {
   }, [handleHotkeysDown]);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex flex-1 flex-col overflow-hidden">
       <div
         className={cn(
-          "flex-1 flex flex-col overflow-hidden border transition-colors",
-          pauseLogs ? "border-border/50" : "border-border"
+          "flex flex-1 flex-col overflow-hidden border transition-colors",
+          pauseLogs ? "border-border/50" : "border-border",
         )}
       >
         {/* Controls Bar */}
-        <div className="p-4 border-b border-border/50 bg-card">
-          <div className="flex flex-row gap-4 items-center">
+        <div className="border-border/50 bg-card border-b p-4">
+          <div className="flex flex-row items-center gap-4">
             <Input
               placeholder="Filter logs..."
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               className="flex-1"
             />
-            <div className="flex flex-row gap-2 items-center">
+            <div className="flex flex-row items-center gap-2">
               <Badge>{`${logs.length} lines`}</Badge>
               {filter && <Badge>{`${filtered.length} filtered`}</Badge>}
             </div>
@@ -109,7 +109,7 @@ export function LogsPage() {
                 checked={pauseLogs}
                 onCheckedChange={(checked: boolean) => setPauseLogs(checked)}
               />
-              <Label className="font-medium cursor-pointer">
+              <Label className="cursor-pointer font-medium">
                 {pauseLogs ? "Paused" : "Streaming"}
               </Label>
             </div>
@@ -129,18 +129,18 @@ export function LogsPage() {
         <div
           ref={logRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto relative p-4 font-mono text-[13px] leading-relaxed whitespace-pre-wrap wrap-break-word bg-background text-foreground"
+          className="bg-background text-foreground relative flex-1 overflow-y-auto p-4 font-mono text-[13px] leading-relaxed wrap-break-word whitespace-pre-wrap"
         >
           {(() => {
             if (filtered.length === 0 && logs.length === 0) {
               return (
-                <p className="text-muted-foreground text-center mt-8 italic">
+                <p className="text-muted-foreground mt-8 text-center italic">
                   Waiting for logs...
                 </p>
               );
             } else if (filtered.length === 0) {
               return (
-                <p className="text-muted-foreground text-center mt-8 italic">
+                <p className="text-muted-foreground mt-8 text-center italic">
                   No logs match your filter
                 </p>
               );
@@ -148,7 +148,7 @@ export function LogsPage() {
               return filtered.map((l, i) => (
                 <div
                   key={l + "_" + i}
-                  className="font-mono text-[13px] hover:bg-accent/50"
+                  className="hover:bg-accent/50 font-mono text-[13px]"
                 >
                   {l}
                 </div>
@@ -161,7 +161,7 @@ export function LogsPage() {
             <Button
               onClick={scrollToBottom}
               size="icon"
-              className="absolute bottom-4 right-4 bg-primary text-primary-foreground shadow-lg hover:bg-primary/80"
+              className="bg-primary text-primary-foreground hover:bg-primary/80 absolute right-4 bottom-4 shadow-lg"
             >
               <ArrowDownIcon />
             </Button>

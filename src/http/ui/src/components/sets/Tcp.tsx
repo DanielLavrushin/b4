@@ -42,7 +42,7 @@ interface TcpSettingsProps {
   main: B4SetConfig;
   onChange: (
     field: string,
-    value: string | number | boolean | number[]
+    value: string | number | boolean | number[],
   ) => void;
 }
 
@@ -124,7 +124,7 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
     if (!isNaN(val) && val >= 0 && val <= 65535 && !winValues.includes(val)) {
       onChange(
         "tcp.win.values",
-        [...winValues, val].sort((a, b) => a - b)
+        [...winValues, val].sort((a, b) => a - b),
       );
       setNewWinValue("");
     }
@@ -133,7 +133,7 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
   const handleRemoveWinValue = (val: number) => {
     onChange(
       "tcp.win.values",
-      winValues.filter((v) => v !== val)
+      winValues.filter((v) => v !== val),
     );
   };
 
@@ -141,7 +141,7 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
     <Card className="flex flex-col">
       <CardHeader>
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+          <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
             <TcpIcon />
           </div>
           <div className="flex-1">
@@ -155,7 +155,7 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
       <Separator className="mb-4" />
       <CardContent className="flex flex-col gap-4">
         {/* Basic TCP Settings */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           <div>
             <Field className="w-full space-y-2">
               <div className="flex items-center justify-between">
@@ -327,13 +327,13 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
         </div>
 
         {/* TCP Window Configuration */}
-        <div className="relative my-4 md:col-span-2 flex items-center">
+        <div className="relative my-4 flex items-center md:col-span-2">
           <Separator className="absolute inset-0 top-1/2" />
-          <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+          <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
             TCP Window Manipulation
           </span>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           <Alert className="md:col-span-2">
             <AlertDescription>
               Window manipulation sends fake ACK packets with modified TCP
@@ -373,15 +373,15 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
 
           {showWinValues && (
             <div className="md:col-span-2">
-              <p className="text-sm font-semibold mb-1">Custom Window Values</p>
-              <p className="text-xs text-muted-foreground mb-4">
+              <p className="mb-1 text-sm font-semibold">Custom Window Values</p>
+              <p className="text-muted-foreground mb-4 text-xs">
                 {config.tcp.win.mode === "oscillate"
                   ? "Packets will cycle through these values in order"
                   : "Random values will be picked from this list"}
               </p>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
-                <div className="flex gap-4 mt-2 items-center">
+              <div className="grid grid-cols-1 items-center gap-4 md:grid-cols-2">
+                <div className="mt-2 flex items-center gap-4">
                   <Field className="flex-1">
                     <FieldLabel>Add Value (0-65535)</FieldLabel>
                     <Input
@@ -422,13 +422,13 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
         </div>
 
         {/* TCP Desync Configuration */}
-        <div className="relative my-4 md:col-span-2 flex items-center">
+        <div className="relative my-4 flex items-center md:col-span-2">
           <Separator className="absolute inset-0 top-1/2" />
-          <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+          <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
             TCP Desync Attack
           </span>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
           <Alert className="md:col-span-3">
             <AlertDescription>
               Desync attacks inject fake TCP control packets (RST/FIN/ACK) with
@@ -546,13 +546,13 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
         </div>
 
         {/* Incoming Response Manipulation */}
-        <div className="relative my-4 md:col-span-2 flex items-center">
+        <div className="relative my-4 flex items-center md:col-span-2">
           <Separator className="absolute inset-0 top-1/2" />
-          <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+          <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
             Incoming Response Bypass
           </span>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           <Alert className="md:col-span-2">
             <AlertDescription>
               Manipulates incoming server responses to bypass DPI that throttles
@@ -681,8 +681,8 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                 {config.tcp.incoming?.mode === "fake"
                   ? "Not used in fake mode"
                   : config.tcp.incoming?.min === config.tcp.incoming?.max
-                  ? "Fixed threshold (min = max)"
-                  : "Threshold randomized between min-max per connection"}
+                    ? "Fixed threshold (min = max)"
+                    : "Threshold randomized between min-max per connection"}
               </FieldDescription>
             </Field>
           </div>

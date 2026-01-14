@@ -54,7 +54,7 @@ interface DisorderSettingsProps {
   config: B4SetConfig;
   onChange: (
     field: string,
-    value: string | boolean | number | string[]
+    value: string | boolean | number | string[],
   ) => void;
 }
 
@@ -84,7 +84,7 @@ export const DisorderSettings = ({
         p.value !== "none" &&
         p.value !== "custom" &&
         p.pattern.length === seqPattern.length &&
-        p.pattern.every((b, i) => b === seqPattern[i])
+        p.pattern.every((b, i) => b === seqPattern[i]),
     );
     return match?.value || "custom";
   };
@@ -126,15 +126,15 @@ export const DisorderSettings = ({
   const handleRemoveByte = (index: number) => {
     onChange(
       "fragmentation.seq_overlap_pattern",
-      seqPattern.filter((_, i) => i !== index)
+      seqPattern.filter((_, i) => i !== index),
     );
   };
 
   return (
     <>
-      <div className="relative my-4 md:col-span-2 flex items-center">
+      <div className="relative my-4 flex items-center md:col-span-2">
         <Separator className="absolute inset-0 top-1/2" />
-        <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+        <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
           Disorder Strategy
         </span>
       </div>
@@ -192,16 +192,16 @@ export const DisorderSettings = ({
 
       {/* Visual */}
       <div className="md:col-span-2">
-        <div className="p-4 bg-card rounded-md border border-border">
-          <p className="text-xs text-muted-foreground mb-2">
+        <div className="bg-card border-border rounded-md border p-4">
+          <p className="text-muted-foreground mb-2 text-xs">
             SEGMENT ORDER EXAMPLE
           </p>
-          <div className="flex gap-2 items-center">
+          <div className="flex items-center gap-2">
             <div className="flex gap-1 font-mono">
               {["①", "②", "③", "④"].map((n, i) => (
                 <div
                   key={i}
-                  className="p-2 bg-accent rounded min-w-8 text-center"
+                  className="bg-accent min-w-8 rounded p-2 text-center"
                 >
                   {n}
                 </div>
@@ -215,14 +215,14 @@ export const DisorderSettings = ({
               ).map((n, i) => (
                 <div
                   key={i}
-                  className="p-2 bg-tertiary rounded min-w-8 text-center"
+                  className="bg-tertiary min-w-8 rounded p-2 text-center"
                 >
                   {n}
                 </div>
               ))}
             </div>
           </div>
-          <p className="text-xs text-muted-foreground mt-2">
+          <p className="text-muted-foreground mt-2 text-xs">
             {disorder.shuffle_mode === "full"
               ? "Segments sent in random order (example shown)"
               : "Segments sent in reverse order"}
@@ -230,9 +230,9 @@ export const DisorderSettings = ({
         </div>
       </div>
 
-      <div className="relative my-4 md:col-span-2 flex items-center">
+      <div className="relative my-4 flex items-center md:col-span-2">
         <Separator className="absolute inset-0 top-1/2" />
-        <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+        <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
           Timing Jitter
         </span>
       </div>
@@ -298,9 +298,9 @@ export const DisorderSettings = ({
         </Alert>
       )}
 
-      <div className="relative my-4 md:col-span-2 flex items-center">
+      <div className="relative my-4 flex items-center md:col-span-2">
         <Separator className="absolute inset-0 top-1/2" />
-        <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+        <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
           Sequence Overlap (seqovl)
         </span>
       </div>
@@ -335,21 +335,21 @@ export const DisorderSettings = ({
       </div>
       {seqPattern.length > 0 && (
         <div>
-          <div className="p-4 bg-card rounded-md border border-border">
-            <p className="text-xs text-muted-foreground mb-2">
+          <div className="bg-card border-border rounded-md border p-4">
+            <p className="text-muted-foreground mb-2 text-xs">
               SEQOVL VISUALIZATION
             </p>
-            <div className="flex gap-1 font-mono text-xs items-center">
-              <div className="p-2 bg-tertiary rounded border-2 border-dashed border-secondary">
+            <div className="flex items-center gap-1 font-mono text-xs">
+              <div className="bg-tertiary border-secondary rounded border-2 border-dashed p-2">
                 [{seqPattern.join(" ")}] (fake, seq-
                 {seqPattern.length})
               </div>
               <p className="mx-1">+</p>
-              <div className="p-2 bg-accent-secondary rounded flex-1">
+              <div className="bg-accent-secondary flex-1 rounded p-2">
                 Real TLS ClientHello...
               </div>
             </div>
-            <p className="text-xs text-muted-foreground mt-2">
+            <p className="text-muted-foreground mt-2 text-xs">
               DPI sees fake header at decreased seq#, server reassembles
               correctly
             </p>

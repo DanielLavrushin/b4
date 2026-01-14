@@ -94,7 +94,7 @@ export const SetEditor = ({
 
   const handleChange = (
     field: string,
-    value: string | number | boolean | string[] | number[] | null | undefined
+    value: string | number | boolean | string[] | number[] | null | undefined,
   ) => {
     if (!editedSet) return;
 
@@ -131,7 +131,7 @@ export const SetEditor = ({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-h-[90vh] flex flex-col max-w-[90vw] sm:max-w-[90vw] w-[90vw]">
+      <DialogContent className="flex max-h-[90vh] w-[90vw] max-w-[90vw] flex-col sm:max-w-[90vw]">
         <DialogHeader>
           <DialogTitle>
             {isNew ? "Create New Set" : `Edit Set: ${editedSet.name}`}
@@ -143,7 +143,7 @@ export const SetEditor = ({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-hidden flex flex-col gap-4">
+        <div className="flex flex-1 flex-col gap-4 overflow-hidden">
           <Field>
             <FieldLabel>Set Name</FieldLabel>
             <Input
@@ -160,40 +160,40 @@ export const SetEditor = ({
           <Tabs
             value={activeTab.toString()}
             onValueChange={(v) => setActiveTab(Number(v) as TABS)}
-            className="flex-1 flex flex-col overflow-hidden"
+            className="flex flex-1 flex-col overflow-hidden"
           >
             <TabsList className="grid w-full grid-cols-7">
               <TabsTrigger value={TABS.TARGETS.toString()}>
-                <DomainIcon className="h-4 w-4 mr-2" />
+                <DomainIcon className="mr-2 h-4 w-4" />
                 Targets
               </TabsTrigger>
               <TabsTrigger value={TABS.TCP.toString()}>
-                <TcpIcon className="h-4 w-4 mr-2" />
+                <TcpIcon className="mr-2 h-4 w-4" />
                 TCP
               </TabsTrigger>
               <TabsTrigger value={TABS.UDP.toString()}>
-                <UdpIcon className="h-4 w-4 mr-2" />
+                <UdpIcon className="mr-2 h-4 w-4" />
                 UDP
               </TabsTrigger>
               <TabsTrigger value={TABS.DNS.toString()}>
-                <DnsIcon className="h-4 w-4 mr-2" />
+                <DnsIcon className="mr-2 h-4 w-4" />
                 DNS
               </TabsTrigger>
               <TabsTrigger value={TABS.FRAGMENTATION.toString()}>
-                <FragIcon className="h-4 w-4 mr-2" />
+                <FragIcon className="mr-2 h-4 w-4" />
                 Fragmentation
               </TabsTrigger>
               <TabsTrigger value={TABS.FAKING.toString()}>
-                <FakingIcon className="h-4 w-4 mr-2" />
+                <FakingIcon className="mr-2 h-4 w-4" />
                 Faking
               </TabsTrigger>
               <TabsTrigger value={TABS.IMPORT_EXPORT.toString()}>
-                <ImportExportIcon className="h-4 w-4 mr-2" />
+                <ImportExportIcon className="mr-2 h-4 w-4" />
                 Import/Export
               </TabsTrigger>
             </TabsList>
 
-            <div className="flex-1 overflow-y-auto mt-4">
+            <div className="mt-4 flex-1 overflow-y-auto">
               <TabsContent value={TABS.TARGETS.toString()} className="mt-0">
                 <div className="flex flex-col gap-4">
                   <TargetSettings
@@ -279,7 +279,7 @@ export const SetEditor = ({
           >
             {saving ? (
               <>
-                <Spinner className="h-4 w-4 mr-2" />
+                <Spinner className="mr-2 h-4 w-4" />
                 Saving...
               </>
             ) : isNew ? (

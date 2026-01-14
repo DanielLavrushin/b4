@@ -21,7 +21,7 @@ interface NetworkSettingsProps {
   config: B4Config;
   onChange: (
     field: string,
-    value: number | boolean | string | string[]
+    value: number | boolean | string | string[],
   ) => void;
 }
 
@@ -38,10 +38,10 @@ export const NetworkSettings = ({ config, onChange }: NetworkSettingsProps) => (
     </CardHeader>
     <CardContent>
       <div className="mb-4">
-        <FieldLabel className="text-base font-semibold mb-4">
+        <FieldLabel className="mb-4 text-base font-semibold">
           Queue Settings
         </FieldLabel>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <Field>
             <FieldLabel>Queue Start Number</FieldLabel>
             <Input
@@ -94,10 +94,10 @@ export const NetworkSettings = ({ config, onChange }: NetworkSettingsProps) => (
       <Separator className="my-6" />
 
       <div>
-        <FieldLabel className="text-base font-semibold mb-4">
+        <FieldLabel className="mb-4 text-base font-semibold">
           Web Server
         </FieldLabel>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <Field>
             <FieldLabel>Bind Address</FieldLabel>
             <Input

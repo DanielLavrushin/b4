@@ -69,7 +69,7 @@ const DeviceNameCell = ({
           {displayName}
         </Badge>
       ) : (
-        <span className="text-xs text-muted-foreground">Unknown</span>
+        <span className="text-muted-foreground text-xs">Unknown</span>
       )}
       <Tooltip>
         <TooltipTrigger asChild>
@@ -157,7 +157,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 gap-4">
-          <div className="grid grid-cols-2 gap-6 items-start">
+          <div className="grid grid-cols-2 items-start gap-6">
             <Field orientation="horizontal">
               <FieldContent>
                 <FieldTitle>Enable Device Filtering</FieldTitle>
@@ -210,7 +210,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                 </Alert>
               ) : (
                 <div className="col-span-1">
-                  <div className="flex justify-between items-center mb-2">
+                  <div className="mb-2 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <h6 className="text-sm font-semibold">
                         Available Devices
@@ -233,9 +233,9 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                     </Tooltip>
                   </div>
 
-                  <div className="bg-card border border-border rounded-md max-h-75 overflow-auto">
+                  <div className="bg-card border-border max-h-75 overflow-auto rounded-md border">
                     <table className="w-full border-collapse">
-                      <thead className="sticky top-0 z-1 bg-card">
+                      <thead className="bg-card sticky top-0 z-1">
                         <tr>
                           <th className="bg-card px-4 py-2 text-left">
                             <div className="relative">
@@ -244,16 +244,16 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                                 onCheckedChange={(checked) =>
                                   onChange(
                                     "queue.devices.mac",
-                                    checked ? devices.map((d) => d.mac) : []
+                                    checked ? devices.map((d) => d.mac) : [],
                                   )
                                 }
                                 className={cn(
-                                  someSelected && !allSelected && "opacity-50"
+                                  someSelected && !allSelected && "opacity-50",
                                 )}
                               />
                               {someSelected && !allSelected && (
-                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                  <div className="h-1.5 w-1.5 bg-primary rounded-sm" />
+                                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                                  <div className="bg-primary h-1.5 w-1.5 rounded-sm" />
                                 </div>
                               )}
                             </div>
@@ -261,7 +261,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                           {["MAC Address", "IP", "Name"].map((label) => (
                             <th
                               key={label}
-                              className="bg-card text-muted-foreground font-semibold px-4 py-2 text-left"
+                              className="bg-card text-muted-foreground px-4 py-2 text-left font-semibold"
                             >
                               {label}
                             </th>
@@ -273,7 +273,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                           <tr>
                             <td
                               colSpan={4}
-                              className="text-center py-8 text-muted-foreground"
+                              className="text-muted-foreground py-8 text-center"
                             >
                               {loading
                                 ? "Loading devices..."
@@ -285,7 +285,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                             <tr
                               key={device.mac}
                               onClick={() => handleMacToggle(device.mac)}
-                              className="cursor-pointer hover:bg-muted transition-colors"
+                              className="hover:bg-muted cursor-pointer transition-colors"
                             >
                               <td
                                 className="px-4 py-2"
@@ -298,10 +298,10 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                                   }
                                 />
                               </td>
-                              <td className="font-mono text-xs px-4 py-2">
+                              <td className="px-4 py-2 font-mono text-xs">
                                 {device.mac}
                               </td>
-                              <td className="font-mono text-xs px-4 py-2">
+                              <td className="px-4 py-2 font-mono text-xs">
                                 {device.ip}
                               </td>
                               <td
@@ -316,7 +316,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                                   onSaveAlias={async (alias) => {
                                     const result = await setAlias(
                                       device.mac,
-                                      alias
+                                      alias,
                                     );
                                     if (result.success) setEditingMac(null);
                                   }}

@@ -110,7 +110,7 @@ export const ResetDialog = ({ open, onClose, onSuccess }: ResetDialogProps) => {
                 void handleReset();
               }}
             >
-              <RestoreIcon className="h-4 w-4 mr-2" />
+              <RestoreIcon className="mr-2 h-4 w-4" />
               Reset to Defaults
             </Button>
           </>
@@ -141,21 +141,21 @@ export const ResetDialog = ({ open, onClose, onSuccess }: ResetDialogProps) => {
                 This will reset all configuration to default values except:
               </AlertDescription>
             </Alert>
-            <ul className="space-y-2 mt-4">
+            <ul className="mt-4 space-y-2">
               <li className="flex items-start gap-3">
-                <SecurityIcon className="h-5 w-5 text-secondary mt-0.5 shrink-0" />
+                <SecurityIcon className="text-secondary mt-0.5 h-5 w-5 shrink-0" />
                 <div>
                   <p className="text-sm font-medium">Domain Configuration</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-muted-foreground text-xs">
                     All domain filters and geodata settings will be preserved
                   </p>
                 </div>
               </li>
               <li className="flex items-start gap-3">
-                <SecurityIcon className="h-5 w-5 text-secondary mt-0.5 shrink-0" />
+                <SecurityIcon className="text-secondary mt-0.5 h-5 w-5 shrink-0" />
                 <div>
                   <p className="text-sm font-medium">Testing Configuration</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-muted-foreground text-xs">
                     Checker settings and test domains will be preserved
                   </p>
                 </div>
@@ -168,22 +168,22 @@ export const ResetDialog = ({ open, onClose, onSuccess }: ResetDialogProps) => {
         return (
           <div className="flex flex-col items-center gap-6 py-8">
             <Spinner className="h-12 w-12" />
-            <h6 className="text-lg font-semibold text-foreground">{message}</h6>
+            <h6 className="text-foreground text-lg font-semibold">{message}</h6>
           </div>
         );
 
       case "success":
         return (
           <div className="flex flex-col items-center gap-6 py-8">
-            <CheckIcon className="h-16 w-16 text-secondary" />
-            <h6 className="text-lg font-semibold text-foreground">{message}</h6>
+            <CheckIcon className="text-secondary h-16 w-16" />
+            <h6 className="text-foreground text-lg font-semibold">{message}</h6>
           </div>
         );
 
       case "error":
         return (
           <div className="flex flex-col items-center gap-6 py-8">
-            <ErrorIcon className="h-16 w-16 text-destructive" />
+            <ErrorIcon className="text-destructive h-16 w-16" />
             <Alert variant="destructive">
               <AlertDescription>{message}</AlertDescription>
             </Alert>
@@ -199,7 +199,7 @@ export const ResetDialog = ({ open, onClose, onSuccess }: ResetDialogProps) => {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+            <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
               {dialogProps.icon}
             </div>
             <div className="flex-1">

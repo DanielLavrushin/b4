@@ -17,7 +17,7 @@ try {
       <WebSocketProvider>
         <App />
       </WebSocketProvider>
-    </BrowserRouter>
+    </BrowserRouter>,
   );
 } catch (error) {
   console.error("Failed to render app:", error);
@@ -25,6 +25,6 @@ try {
     <div style={{ padding: "20px", color: "red" }}>
       <h1>Error loading application</h1>
       <pre>{String(error)}</pre>
-    </div>
+    </div>,
   );
 }

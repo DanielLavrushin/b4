@@ -28,7 +28,7 @@ export const StatusBadge = ({ label, status }: StatusBadgeProps) => {
 
   return (
     <Badge
-      className="font-semibold inline-flex items-center gap-1"
+      className="inline-flex items-center gap-1 font-semibold"
       style={{
         backgroundColor: `${config.color}22`,
         color: config.color,

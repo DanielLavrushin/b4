@@ -109,11 +109,11 @@ export const RestartDialog = ({ open, onClose }: RestartDialogProps) => {
         return (
           <Alert>
             <AlertDescription>
-              <p className="text-sm mb-2">
+              <p className="mb-2 text-sm">
                 This will restart the B4 service. The web interface will be
                 temporarily unavailable during the restart.
               </p>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 Expected downtime: 5-10 seconds
               </p>
             </AlertDescription>
@@ -124,14 +124,14 @@ export const RestartDialog = ({ open, onClose }: RestartDialogProps) => {
       case "waiting":
         return (
           <div className="flex flex-col items-center gap-6 py-8">
-            <div className="p-4 rounded-xl bg-accent flex items-center justify-center">
+            <div className="bg-accent flex items-center justify-center rounded-xl p-4">
               <Spinner className="h-12 w-12" />
             </div>
             <div className="text-center">
-              <h6 className="text-lg font-semibold text-foreground mb-2">
+              <h6 className="text-foreground mb-2 text-lg font-semibold">
                 {message}
               </h6>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 Please wait, do not close this window...
               </p>
             </div>
@@ -144,14 +144,14 @@ export const RestartDialog = ({ open, onClose }: RestartDialogProps) => {
       case "success":
         return (
           <div className="flex flex-col items-center gap-6 py-8">
-            <div className="p-4 rounded-xl bg-accent flex items-center justify-center">
-              <CheckIcon className="h-16 w-16 text-secondary" />
+            <div className="bg-accent flex items-center justify-center rounded-xl p-4">
+              <CheckIcon className="text-secondary h-16 w-16" />
             </div>
             <div className="text-center">
-              <h6 className="text-lg font-semibold text-foreground mb-2">
+              <h6 className="text-foreground mb-2 text-lg font-semibold">
                 {message}
               </h6>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-muted-foreground text-sm">
                 Reloading interface...
               </p>
             </div>
@@ -161,11 +161,11 @@ export const RestartDialog = ({ open, onClose }: RestartDialogProps) => {
       case "error":
         return (
           <div className="flex flex-col items-center gap-6 py-8">
-            <div className="p-4 rounded-xl bg-destructive/10 flex items-center justify-center">
-              <ErrorIcon className="h-16 w-16 text-destructive" />
+            <div className="bg-destructive/10 flex items-center justify-center rounded-xl p-4">
+              <ErrorIcon className="text-destructive h-16 w-16" />
             </div>
-            <div className="text-center w-full">
-              <h6 className="text-lg font-semibold text-foreground mb-4">
+            <div className="w-full text-center">
+              <h6 className="text-foreground mb-4 text-lg font-semibold">
                 Restart Failed
               </h6>
               <Alert variant="destructive">
@@ -192,7 +192,7 @@ export const RestartDialog = ({ open, onClose }: RestartDialogProps) => {
                 void handleRestart();
               }}
             >
-              <RestartIcon className="h-4 w-4 mr-2" />
+              <RestartIcon className="mr-2 h-4 w-4" />
               Restart Service
             </Button>
           </>
@@ -213,7 +213,7 @@ export const RestartDialog = ({ open, onClose }: RestartDialogProps) => {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+            <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
               {dialogProps.icon}
             </div>
             <div className="flex-1">

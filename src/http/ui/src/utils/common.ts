@@ -1,5 +1,5 @@
 export const formatBytes = (
-  bytes: number | string | null | undefined
+  bytes: number | string | null | undefined,
 ): string => {
   if (bytes === null || bytes === undefined) return "0 B";
 
@@ -18,7 +18,7 @@ export const formatBytes = (
 };
 
 export const formatNumber = (
-  num: number | string | null | undefined
+  num: number | string | null | undefined,
 ): string => {
   if (num === null || num === undefined) return "0";
 

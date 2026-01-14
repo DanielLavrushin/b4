@@ -17,7 +17,7 @@ export const useNotification = () => {
     (message: string, severity: NotificationState["severity"] = "info") => {
       setNotification({ open: true, message, severity });
     },
-    []
+    [],
   );
 
   const hideNotification = useCallback(() => {

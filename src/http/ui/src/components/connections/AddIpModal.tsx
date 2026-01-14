@@ -109,7 +109,7 @@ export const AddIpModal = ({
     try {
       const cleanIp = ip.split(":")[0].replace(/[[\]]/g, "");
       const response = await fetch(
-        `/api/integration/ipinfo?ip=${encodeURIComponent(cleanIp)}`
+        `/api/integration/ipinfo?ip=${encodeURIComponent(cleanIp)}`,
       );
       if (response.ok) {
         const data = (await response.json()) as IpInfo;
@@ -135,7 +135,7 @@ export const AddIpModal = ({
     try {
       const cleanIp = ip.split(":")[0].replace(/[[\]]/g, "");
       const response = await fetch(
-        `/api/integration/ripestat?ip=${encodeURIComponent(cleanIp)}`
+        `/api/integration/ripestat?ip=${encodeURIComponent(cleanIp)}`,
       );
       if (response.ok) {
         const data = (await response.json()) as { data: RipeNetworkInfo };
@@ -161,7 +161,7 @@ export const AddIpModal = ({
     setLoadingPrefixes(true);
     try {
       const response = await fetch(
-        `/api/integration/ripestat/asn?asn=${encodeURIComponent(asn)}`
+        `/api/integration/ripestat/asn?asn=${encodeURIComponent(asn)}`,
       );
       if (response.ok) {
         const data = (await response.json()) as {
@@ -220,7 +220,7 @@ export const AddIpModal = ({
           <div className="space-y-4">
             {!ipInfo ? (
               <>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-muted-foreground text-sm">
                   Original IP: <Badge>{ip}</Badge>
                 </p>
                 <div className="flex flex-col gap-2">
@@ -246,11 +246,11 @@ export const AddIpModal = ({
               </>
             ) : (
               <>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-muted-foreground text-sm">
                   Original IP: <Badge variant="secondary">{ip}</Badge>
                 </p>
                 <Card>
-                  <CardContent className="flex gap-4 items-center flex-wrap">
+                  <CardContent className="flex flex-wrap items-center gap-4">
                     <div className="flex-1 space-y-1">
                       {ipInfo.org && (
                         <p className="text-sm">
@@ -258,12 +258,12 @@ export const AddIpModal = ({
                         </p>
                       )}
                       {ipInfo.hostname && (
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-muted-foreground text-sm">
                           <strong>Hostname:</strong> {ipInfo.hostname}
                         </p>
                       )}
                       {(ipInfo.city || ipInfo.region || ipInfo.country) && (
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-muted-foreground text-sm">
                           <strong>Location:</strong>{" "}
                           {[ipInfo.city, ipInfo.region, ipInfo.country]
                             .filter(Boolean)
@@ -271,7 +271,7 @@ export const AddIpModal = ({
                         </p>
                       )}
                       {asn && loadingPrefixes && (
-                        <p className="text-sm text-secondary">
+                        <p className="text-secondary text-sm">
                           Loading AS{asn} prefixes...
                         </p>
                       )}
@@ -300,7 +300,7 @@ export const AddIpModal = ({
 
           {prefixes.length > 0 ? (
             <>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-muted-foreground text-sm">
                 Loaded {prefixes.length} prefixes from AS{asn}
               </p>
               <div className="flex gap-2">
@@ -325,7 +325,7 @@ export const AddIpModal = ({
             </>
           ) : (
             <>
-              <p className="text-sm text-muted-foreground">CIDR variants:</p>
+              <p className="text-muted-foreground text-sm">CIDR variants:</p>
               <RadioGroup
                 value={selected}
                 onValueChange={(value) => onSelectVariant(value)}
@@ -348,7 +348,7 @@ export const AddIpModal = ({
                     <Label key={variant} htmlFor={`variant-${variant}`}>
                       <Field
                         orientation="horizontal"
-                        className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 border border-border rounded-md p-2"
+                        className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 border-border rounded-md border p-2"
                       >
                         <FieldContent>
                           <FieldTitle className="font-medium">

@@ -73,7 +73,7 @@ export const useSystemUpdate = () => {
         return null;
       }
     },
-    []
+    [],
   );
 
   const waitForReconnection = useCallback(
@@ -108,7 +108,7 @@ export const useSystemUpdate = () => {
       setError("Update did not complete within expected time");
       return false;
     },
-    []
+    [],
   );
 
   return {

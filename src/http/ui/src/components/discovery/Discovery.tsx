@@ -99,7 +99,7 @@ export const DiscoveryRunner = () => {
   const { addDomainToSet } = useSets();
 
   const [expandedDomains, setExpandedDomains] = useState<Set<string>>(
-    new Set()
+    new Set(),
   );
 
   const { captures, loadCaptures } = useCaptures();
@@ -159,7 +159,7 @@ export const DiscoveryRunner = () => {
       e.preventDefault();
       void startDiscovery(checkUrl, options.skipDNS, options.payloadFiles);
     },
-    [checkUrl, options.skipDNS, options.payloadFiles, startDiscovery]
+    [checkUrl, options.skipDNS, options.payloadFiles, startDiscovery],
   );
 
   const handleAddNew = async (name: string, domain: string) => {
@@ -230,7 +230,7 @@ export const DiscoveryRunner = () => {
       <Card className="flex flex-col">
         <CardHeader>
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+            <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
               <DiscoveryIcon />
             </div>
             <div className="flex-1">
@@ -255,12 +255,12 @@ export const DiscoveryRunner = () => {
             </AlertDescription>
           </Alert>
           {/* Header with actions */}
-          <div className="flex gap-4 items-end">
+          <div className="flex items-end gap-4">
             <Field className="flex-1">
               <FieldLabel htmlFor="discovery-url-input">
                 Domain or URL to test
               </FieldLabel>
-              <div className="flex gap-4 items-center">
+              <div className="flex items-center gap-4">
                 <div className="flex-1">
                   <Input
                     id="discovery-url-input"
@@ -278,13 +278,13 @@ export const DiscoveryRunner = () => {
                       void startDiscovery(
                         checkUrl,
                         options.skipDNS,
-                        options.payloadFiles
+                        options.payloadFiles,
                       );
                     }}
                     disabled={!checkUrl.trim()}
                     className="whitespace-nowrap"
                   >
-                    <StartIcon className="h-4 w-4 mr-2" />
+                    <StartIcon className="mr-2 h-4 w-4" />
                     Start Discovery
                   </Button>
                 )}
@@ -296,7 +296,7 @@ export const DiscoveryRunner = () => {
                     }}
                     className="whitespace-nowrap"
                   >
-                    <StopIcon className="h-4 w-4 mr-2" />
+                    <StopIcon className="mr-2 h-4 w-4" />
                     Cancel
                   </Button>
                 )}
@@ -306,7 +306,7 @@ export const DiscoveryRunner = () => {
                     onClick={handleReset}
                     className="whitespace-nowrap"
                   >
-                    <RefreshIcon className="h-4 w-4 mr-2" />
+                    <RefreshIcon className="mr-2 h-4 w-4" />
                     New Discovery
                   </Button>
                 )}
@@ -332,7 +332,7 @@ export const DiscoveryRunner = () => {
           {isReconnecting && (
             <div className="flex items-center gap-4">
               <Spinner />
-              <p className="text-sm text-muted-foreground">
+              <p className="text-muted-foreground text-sm">
                 Reconnecting to running discovery...
               </p>
             </div>
@@ -340,9 +340,9 @@ export const DiscoveryRunner = () => {
           {/* Progress indicator */}
           {running && suite && (
             <div>
-              <div className="flex justify-between items-center mb-2">
+              <div className="mb-2 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-muted-foreground text-sm">
                     {suite.current_phase && (
                       <Badge
                         variant="secondary"
@@ -357,7 +357,7 @@ export const DiscoveryRunner = () => {
                   </p>
                 </div>
                 {suite.current_phase !== "dns_detection" && (
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-muted-foreground text-sm">
                     {isNaN(progress) ? "0" : progress.toFixed(0)}%
                   </p>
                 )}
@@ -384,17 +384,17 @@ export const DiscoveryRunner = () => {
               .map((domainResult) => {
                 const isExpanded = expandedDomains.has(domainResult.domain);
                 const groupedResults = groupResultsByPhase(
-                  domainResult.results
+                  domainResult.results,
                 );
                 const successCount = Object.values(domainResult.results).filter(
-                  (r) => r.status === "complete"
+                  (r) => r.status === "complete",
                 ).length;
                 const totalCount = Object.keys(domainResult.results).length;
 
                 return (
                   <Card
                     key={domainResult.domain}
-                    className="overflow-hidden gap-0 py-0 rounded-none border border-border"
+                    className="border-border gap-0 overflow-hidden rounded-none border py-0"
                   >
                     {/* Domain Header */}
                     <Collapsible
@@ -404,7 +404,7 @@ export const DiscoveryRunner = () => {
                       }
                     >
                       <CollapsibleTrigger asChild>
-                        <div className="p-4 bg-accent flex items-center justify-between cursor-pointer">
+                        <div className="bg-accent flex cursor-pointer items-center justify-between p-4">
                           <div className="flex items-center gap-4">
                             <Button
                               size="sm"
@@ -413,7 +413,7 @@ export const DiscoveryRunner = () => {
                             >
                               {isExpanded ? <CollapseIcon /> : <ExpandIcon />}
                             </Button>
-                            <h6 className="text-base font-semibold text-foreground">
+                            <h6 className="text-foreground text-base font-semibold">
                               {domainResult.domain}
                             </h6>
                             {domainResult.best_success ? (
@@ -441,7 +441,7 @@ export const DiscoveryRunner = () => {
                                 "text-base font-semibold",
                                 domainResult.best_success
                                   ? "text-secondary"
-                                  : "text-muted-foreground"
+                                  : "text-muted-foreground",
                               )}
                             >
                               {domainResult.best_success
@@ -451,8 +451,8 @@ export const DiscoveryRunner = () => {
                                     1024
                                   ).toFixed(2)} MB/s`
                                 : running
-                                ? `${totalCount} tested...`
-                                : "No working config"}
+                                  ? `${totalCount} tested...`
+                                  : "No working config"}
                             </h6>
                           </div>
                         </div>
@@ -462,24 +462,24 @@ export const DiscoveryRunner = () => {
                       {(domainResult.best_success ||
                         (running &&
                           Object.values(domainResult.results).some(
-                            (r) => r.status === "complete"
+                            (r) => r.status === "complete",
                           ))) && (
                         <div>
                           <div
                             className={cn(
-                              "p-4 bg-background flex items-center justify-between",
-                              !running && "border-b border-border"
+                              "bg-background flex items-center justify-between p-4",
+                              !running && "border-border border-b",
                             )}
                           >
                             <div className="flex items-center gap-4">
-                              <SpeedIcon className="h-5 w-5 text-secondary" />
+                              <SpeedIcon className="text-secondary h-5 w-5" />
                               <div>
-                                <p className="text-xs text-muted-foreground">
+                                <p className="text-muted-foreground text-xs">
                                   {running
                                     ? "Current Best"
                                     : "Best Configuration"}
                                 </p>
-                                <p className="text-base font-semibold text-foreground">
+                                <p className="text-foreground text-base font-semibold">
                                   {domainResult.best_preset}
                                   {domainResult.best_preset &&
                                     domainResult.results[
@@ -507,19 +507,19 @@ export const DiscoveryRunner = () => {
                                   ];
                                 void handleAddStrategy(
                                   domainResult.domain,
-                                  bestResult
+                                  bestResult,
                                 );
                               }}
                               disabled={addingPreset}
                             >
                               {addingPreset ? (
                                 <>
-                                  <Spinner className="h-4 w-4 mr-2" />
+                                  <Spinner className="mr-2 h-4 w-4" />
                                   Adding...
                                 </>
                               ) : (
                                 <>
-                                  <AddIcon className="h-4 w-4 mr-2" />
+                                  <AddIcon className="mr-2 h-4 w-4" />
                                   {running
                                     ? "Use Current Best"
                                     : "Use This Strategy"}
@@ -529,7 +529,7 @@ export const DiscoveryRunner = () => {
                           </div>
                           {/* Info message while still running */}
                           {running && domainResult.best_success && (
-                            <Alert className="rounded-none border-b border-border">
+                            <Alert className="border-border rounded-none border-b">
                               <AlertDescription>
                                 Found a working configuration! Still testing{" "}
                                 {suite
@@ -558,11 +558,11 @@ export const DiscoveryRunner = () => {
                             .filter((phase) => groupedResults[phase].length > 0)
                             .map((phase) => (
                               <div key={phase} className="mb-6">
-                                <h6 className="text-xs uppercase text-muted-foreground mb-3 flex items-center gap-2">
+                                <h6 className="text-muted-foreground mb-3 flex items-center gap-2 text-xs uppercase">
                                   {phaseNames[phase]}
                                   <Badge>{groupedResults[phase].length}</Badge>
                                 </h6>
-                                <div className="flex flex-row gap-2 flex-wrap">
+                                <div className="flex flex-row flex-wrap gap-2">
                                   {groupedResults[phase]
                                     .sort((a, b) => b.speed - a.speed)
                                     .map((result) => (
@@ -598,11 +598,11 @@ export const DiscoveryRunner = () => {
                                                   onClick={() => {
                                                     void handleAddStrategy(
                                                       domainResult.domain,
-                                                      result
+                                                      result,
                                                     );
                                                   }}
                                                   disabled={addingPreset}
-                                                  className="h-6 w-6 p-0 bg-muted border border-border hover:bg-accent hover:border-secondary"
+                                                  className="bg-muted border-border hover:bg-accent hover:border-secondary h-6 w-6 border p-0"
                                                 >
                                                   <AddIcon className="h-3 w-3" />
                                                 </Button>
@@ -634,8 +634,8 @@ export const DiscoveryRunner = () => {
                       </div>
                     )}
                     {!domainResult.best_success && running && (
-                      <div className="p-4 bg-background">
-                        <p className="text-sm text-muted-foreground flex items-center gap-2">
+                      <div className="bg-background p-4">
+                        <p className="text-muted-foreground flex items-center gap-2 text-sm">
                           <Spinner />
                           {suite && suite.total_checks > totalCount
                             ? `${

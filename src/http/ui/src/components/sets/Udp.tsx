@@ -98,7 +98,7 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
     <Card>
       <CardHeader>
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+          <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
             <UdpIcon />
           </div>
           <div className="flex-1">
@@ -110,10 +110,10 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="relative my-4 md:col-span-2 flex items-center">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div className="relative my-4 flex items-center md:col-span-2">
             <Separator className="absolute inset-0 top-1/2" />
-            <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+            <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
               What UDP Traffic to Process
             </span>
           </div>
@@ -144,7 +144,7 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
               <FieldDescription>
                 {
                   UDP_QUIC_FILTERS.find(
-                    (o) => o.value === config.udp.filter_quic
+                    (o) => o.value === config.udp.filter_quic,
                   )?.description
                 }
               </FieldDescription>
@@ -213,9 +213,9 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
           {/* Section 2: Action Settings (only if traffic will be processed) */}
           {showActionSettings && (
             <>
-              <div className="relative my-4 md:col-span-2 flex items-center">
+              <div className="relative my-4 flex items-center md:col-span-2">
                 <Separator className="absolute inset-0 top-1/2" />
-                <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+                <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
                   How to Handle Matched Traffic
                 </span>
               </div>
@@ -306,9 +306,9 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
           {/* Section 3: Fake Mode Settings (only if fake mode is enabled) */}
           {showFakeSettings && (
             <>
-              <div className="relative my-4 md:col-span-2 flex items-center">
+              <div className="relative my-4 flex items-center md:col-span-2">
                 <Separator className="absolute inset-0 top-1/2" />
-                <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+                <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
                   Fake Packet Configuration
                 </span>
               </div>
@@ -339,7 +339,7 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                   <FieldDescription>
                     {
                       UDP_FAKING_STRATEGIES.find(
-                        (o) => o.value === config.udp.faking_strategy
+                        (o) => o.value === config.udp.faking_strategy,
                       )?.description
                     }
                   </FieldDescription>

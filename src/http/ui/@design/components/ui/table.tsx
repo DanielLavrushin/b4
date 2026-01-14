@@ -8,8 +8,8 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
       <table
         data-slot="table"
         className={cn(
-          "w-full caption-bottom text-xs border-collapse",
-          className
+          "w-full caption-bottom border-collapse text-xs",
+          className,
         )}
         {...props}
       />
@@ -22,8 +22,8 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
     <thead
       data-slot="table-header"
       className={cn(
-        "[&_tr]:border-b bg-background sticky top-0 z-10",
-        className
+        "bg-background sticky top-0 z-10 [&_tr]:border-b",
+        className,
       )}
       {...props}
     />
@@ -46,7 +46,7 @@ function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
       data-slot="table-footer"
       className={cn(
         "bg-muted/50 border-t font-medium [&>tr]:last:border-b-0",
-        className
+        className,
       )}
       {...props}
     />
@@ -58,8 +58,8 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
     <tr
       data-slot="table-row"
       className={cn(
-        "h-10.25 hover:bg-muted/50 data-[state=selected]:bg-muted border-b transition-colors",
-        className
+        "hover:bg-muted/50 data-[state=selected]:bg-muted h-10.25 border-b transition-colors",
+        className,
       )}
       {...props}
     />
@@ -72,7 +72,7 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
       data-slot="table-head"
       className={cn(
         "text-foreground h-10 px-2 text-left align-middle font-medium whitespace-nowrap [&:has([role=checkbox])]:pr-0",
-        className
+        className,
       )}
       {...props}
     />
@@ -95,12 +95,12 @@ function TableCell({
       className={cn(
         "p-2 align-middle [&:has([role=checkbox])]:pr-0",
         "[&>div]:flex [&>div]:items-center [&>div]:gap-2",
-        "[&_svg]:h-4 [&_svg]:w-4 [&_svg]:cursor-pointer [&_svg]:text-muted-foreground [&_svg]:hover:text-foreground [&_svg]:transition-colors",
-        "[&>div>span]:cursor-pointer [&>div>span]:hover:bg-accent [&>div>span]:hover:text-accent-foreground",
+        "[&_svg]:text-muted-foreground [&_svg]:hover:text-foreground [&_svg]:h-4 [&_svg]:w-4 [&_svg]:cursor-pointer [&_svg]:transition-colors",
+        "[&>div>span]:hover:bg-accent [&>div>span]:hover:text-accent-foreground [&>div>span]:cursor-pointer",
         onClick &&
-          "cursor-pointer hover:bg-accent hover:text-accent-foreground",
+          "hover:bg-accent hover:text-accent-foreground cursor-pointer",
         variant === "mono" && "text-muted-foreground font-mono text-xs",
-        className
+        className,
       )}
       onClick={onClick}
       {...props}

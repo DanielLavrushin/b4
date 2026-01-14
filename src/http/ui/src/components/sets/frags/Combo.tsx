@@ -28,7 +28,7 @@ interface ComboSettingsProps {
   config: B4SetConfig;
   onChange: (
     field: string,
-    value: string | boolean | number | string[]
+    value: string | boolean | number | string[],
   ) => void;
 }
 
@@ -61,7 +61,7 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
   const handleRemoveDomain = (domain: string) => {
     onChange(
       "fragmentation.combo.decoy_snis",
-      decoySNIs.filter((d) => d !== domain)
+      decoySNIs.filter((d) => d !== domain),
     );
   };
 
@@ -74,9 +74,9 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
 
   return (
     <>
-      <div className="relative my-4 md:col-span-2 flex items-center">
+      <div className="relative my-4 flex items-center md:col-span-2">
         <Separator className="absolute inset-0 top-1/2" />
-        <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+        <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
           Combo Strategy
         </span>
       </div>
@@ -91,9 +91,9 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
       </div>
 
       {/* Decoy Settings */}
-      <div className="relative my-4 md:col-span-2 flex items-center">
+      <div className="relative my-4 flex items-center md:col-span-2">
         <Separator className="absolute inset-0 top-1/2" />
-        <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+        <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
           Decoy Packet
         </span>
       </div>
@@ -159,30 +159,30 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
 
           {/* How Decoy Works Visualization */}
           <div className="md:col-span-2">
-            <div className="p-4 bg-card rounded-md border border-border">
-              <p className="text-xs text-muted-foreground mb-3 font-semibold uppercase">
+            <div className="bg-card border-border rounded-md border p-4">
+              <p className="text-muted-foreground mb-3 text-xs font-semibold uppercase">
                 HOW DECOY WORKS
               </p>
               <div className="flex flex-col gap-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground min-w-20">
+                  <span className="text-muted-foreground min-w-20 text-xs">
                     Sent 1st:
                   </span>
-                  <code className="px-2 py-1 bg-tertiary rounded text-xs font-mono border-2 border-dashed border-secondary">
+                  <code className="bg-tertiary border-secondary rounded border-2 border-dashed px-2 py-1 font-mono text-xs">
                     {decoySNIs[0] || "ya.ru"} (DECOY, low TTL)
                   </code>
-                  <span className="text-xs text-secondary ml-2">
+                  <span className="text-secondary ml-2 text-xs">
                     → DPI sees, dies before server
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground min-w-20">
+                  <span className="text-muted-foreground min-w-20 text-xs">
                     Sent 2nd:
                   </span>
-                  <code className="px-2 py-1 bg-accent-secondary rounded text-xs font-mono border-2 border-solid border-secondary">
+                  <code className="bg-accent-secondary border-secondary rounded border-2 border-solid px-2 py-1 font-mono text-xs">
                     REAL (fragmented)
                   </code>
-                  <span className="text-xs text-secondary ml-2">
+                  <span className="text-secondary ml-2 text-xs">
                     → Server receives
                   </span>
                 </div>
@@ -193,9 +193,9 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
       )}
 
       {/* Split Points */}
-      <div className="relative my-4 md:col-span-2 flex items-center">
+      <div className="relative my-4 flex items-center md:col-span-2">
         <Separator className="absolute inset-0 top-1/2" />
-        <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+        <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
           Split Points
         </span>
       </div>
@@ -260,36 +260,36 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
 
       {/* Visual */}
       <div className="md:col-span-2">
-        <div className="p-4 bg-card rounded-md border border-border">
-          <p className="text-xs text-muted-foreground mb-2">
+        <div className="bg-card border-border rounded-md border p-4">
+          <p className="text-muted-foreground mb-2 text-xs">
             SEGMENT VISUALIZATION
           </p>
-          <div className="flex gap-1 font-mono text-xs flex-wrap">
+          <div className="flex flex-wrap gap-1 font-mono text-xs">
             {combo.first_byte_split && (
-              <div className="p-2 bg-tertiary rounded text-center min-w-10">
+              <div className="bg-tertiary min-w-10 rounded p-2 text-center">
                 1B
               </div>
             )}
             {combo.extension_split && (
-              <div className="p-2 bg-accent rounded text-center flex-1 min-w-15">
+              <div className="bg-accent min-w-15 flex-1 rounded p-2 text-center">
                 Pre-SNI Ext
               </div>
             )}
             {middleSni && (
               <>
-                <div className="p-2 bg-accent-secondary rounded text-center min-w-12.5">
+                <div className="bg-accent-secondary min-w-12.5 rounded p-2 text-center">
                   SNI₁
                 </div>
-                <div className="p-2 bg-accent-secondary rounded text-center min-w-12.5">
+                <div className="bg-accent-secondary min-w-12.5 rounded p-2 text-center">
                   SNI₂
                 </div>
               </>
             )}
-            <div className="p-2 bg-quaternary rounded text-center flex-1 min-w-15">
+            <div className="bg-quaternary min-w-15 flex-1 rounded p-2 text-center">
               Rest...
             </div>
           </div>
-          <p className="text-xs text-muted-foreground mt-2">
+          <p className="text-muted-foreground mt-2 text-xs">
             {enabledSplits.length > 0
               ? `Active splits: ${enabledSplits.join(" → ")} → creates ${
                   enabledSplits.length + 1
@@ -339,9 +339,9 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
         </Alert>
       </div>
 
-      <div className="relative my-4 md:col-span-2 flex items-center">
+      <div className="relative my-4 flex items-center md:col-span-2">
         <Separator className="absolute inset-0 top-1/2" />
-        <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+        <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
           Timing Settings
         </span>
       </div>

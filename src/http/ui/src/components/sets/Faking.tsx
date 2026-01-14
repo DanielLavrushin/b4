@@ -39,7 +39,7 @@ interface FakingSettingsProps {
   config: B4SetConfig;
   onChange: (
     field: string,
-    value: string | boolean | number | string[]
+    value: string | boolean | number | string[],
   ) => void;
 }
 
@@ -118,7 +118,7 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
     const current = mutation.fake_snis || [];
     onChange(
       "faking.sni_mutation.fake_snis",
-      current.filter((s) => s !== sni)
+      current.filter((s) => s !== sni),
     );
   };
 
@@ -127,7 +127,7 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+            <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
               <FakingIcon />
             </div>
             <div className="flex-1">
@@ -139,7 +139,7 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="md:col-span-2">
               <label htmlFor="switch-faking-sni">
                 <Field orientation="horizontal">
@@ -238,7 +238,7 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
               </div>
             </div>
             {config.faking.sni_type === FakingPayloadType.CAPTURE && (
-              <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:col-span-2 md:grid-cols-2">
                 {captures.length > 0 && (
                   <div>
                     <Field>
@@ -354,10 +354,10 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
             {/* TLS Mod Options - only show when payload has TLS structure */}
             {config.faking.sni_type !== FakingPayloadType.RANDOM && (
               <div className="md:col-span-2">
-                <p className="text-sm font-semibold mb-2">
+                <p className="mb-2 text-sm font-semibold">
                   Fake Packet TLS Modification
                 </p>
-                <p className="text-xs text-muted-foreground mb-4">
+                <p className="text-muted-foreground mb-4 text-xs">
                   Modify fake TLS ClientHello to improve bypass (zapret-style)
                 </p>
                 <div className="flex flex-row gap-4">
@@ -394,7 +394,7 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
                       <Switch
                         id="switch-faking-tls-dupsid"
                         checked={(config.faking.tls_mod || []).includes(
-                          "dupsid"
+                          "dupsid",
                         )}
                         onCheckedChange={(checked: boolean) => {
                           const current = config.faking.tls_mod || [];
@@ -421,7 +421,7 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+            <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
               <ClientHelloIcon className="rotate-45" />
             </div>
             <div className="flex-1">
@@ -433,7 +433,7 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <Field>
                 <FieldLabel>Mutation Mode</FieldLabel>
@@ -467,9 +467,9 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
               <>
                 {showGreaseSettings && (
                   <>
-                    <div className="relative my-4 md:col-span-2 flex items-center">
+                    <div className="relative my-4 flex items-center md:col-span-2">
                       <Separator className="absolute inset-0 top-1/2" />
-                      <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+                      <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
                         GREASE Configuration
                       </span>
                     </div>
@@ -488,7 +488,7 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
                           onValueChange={(values) =>
                             onChange(
                               "faking.sni_mutation.grease_count",
-                              values[0]
+                              values[0],
                             )
                           }
                           min={1}
@@ -506,9 +506,9 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
 
                 {showPaddingSettings && (
                   <>
-                    <div className="relative my-4 md:col-span-2 flex items-center">
+                    <div className="relative my-4 flex items-center md:col-span-2">
                       <Separator className="absolute inset-0 top-1/2" />
-                      <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+                      <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
                         Padding Configuration
                       </span>
                     </div>
@@ -527,7 +527,7 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
                           onValueChange={(values) =>
                             onChange(
                               "faking.sni_mutation.padding_size",
-                              values[0]
+                              values[0],
                             )
                           }
                           min={256}
@@ -545,9 +545,9 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
 
                 {showFakeExtSettings && (
                   <>
-                    <div className="relative my-4 md:col-span-2 flex items-center">
+                    <div className="relative my-4 flex items-center md:col-span-2">
                       <Separator className="absolute inset-0 top-1/2" />
-                      <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+                      <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
                         Fake Extensions Configuration
                       </span>
                     </div>
@@ -566,7 +566,7 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
                           onValueChange={(values) =>
                             onChange(
                               "faking.sni_mutation.fake_ext_count",
-                              values[0]
+                              values[0],
                             )
                           }
                           min={1}
@@ -584,14 +584,14 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
 
                 {showFakeSniSettings && (
                   <>
-                    <div className="relative my-4 md:col-span-2 flex items-center">
+                    <div className="relative my-4 flex items-center md:col-span-2">
                       <Separator className="absolute inset-0 top-1/2" />
-                      <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+                      <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
                         Fake SNI Configuration
                       </span>
                     </div>
                     <div>
-                      <div className="flex gap-2 items-start">
+                      <div className="flex items-start gap-2">
                         <Field className="flex-1">
                           <FieldLabel>Add Fake SNI</FieldLabel>
                           <Input

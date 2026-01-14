@@ -14,9 +14,9 @@ interface DashboardStatusBarProps {
 
 export const DashboardStatusBar = ({ metrics }: DashboardStatusBarProps) => {
   return (
-    <Card className="p-4 mb-6 border border-border">
-      <div className="flex flex-row gap-4 items-center flex-wrap">
-        <p className="text-sm font-medium text-muted-foreground">
+    <Card className="border-border mb-6 border p-4">
+      <div className="flex flex-row flex-wrap items-center gap-4">
+        <p className="text-muted-foreground text-sm font-medium">
           System Status:
         </p>
         <StatusBadge

@@ -30,9 +30,9 @@ export const TcpIpSettings = ({ config, onChange }: TcpIpSettingsProps) => {
 
   return (
     <>
-      <div className="relative my-4 md:col-span-2 flex items-center">
+      <div className="relative my-4 flex items-center md:col-span-2">
         <Separator className="absolute inset-0 top-1/2" />
-        <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+        <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
           Where to Split
         </span>
       </div>
@@ -60,37 +60,37 @@ export const TcpIpSettings = ({ config, onChange }: TcpIpSettingsProps) => {
 
       {/* Visual explanation */}
       <div className="md:col-span-2">
-        <div className="p-4 bg-card rounded-md border border-border">
-          <p className="text-xs text-muted-foreground mb-2">
+        <div className="bg-card border-border rounded-md border p-4">
+          <p className="text-muted-foreground mb-2 text-xs">
             TCP PACKET STRUCTURE EXAMPLE
           </p>
           <div className="flex gap-1 font-mono text-xs">
-            <div className="p-2 bg-accent rounded text-center min-w-15">
+            <div className="bg-accent min-w-15 rounded p-2 text-center">
               TLS Header
             </div>
-            <div className="p-2 bg-accent-secondary rounded text-center flex-1 relative">
+            <div className="bg-accent-secondary relative flex-1 rounded p-2 text-center">
               {/* Fixed position split line */}
               {config.fragmentation.sni_position > 0 && (
-                <span className="absolute left-[20%] top-0 bottom-0 w-0.5 bg-tertiary -translate-x-1/2" />
+                <span className="bg-tertiary absolute top-0 bottom-0 left-[20%] w-0.5 -translate-x-1/2" />
               )}
               {/* Middle SNI split line */}
               {config.fragmentation.middle_sni && (
-                <span className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-quaternary -translate-x-1/2" />
+                <span className="bg-quaternary absolute top-0 bottom-0 left-1/2 w-0.5 -translate-x-1/2" />
               )}
               SNI: youtube.com
             </div>
-            <div className="p-2 bg-accent rounded text-center min-w-20">
+            <div className="bg-accent min-w-20 rounded p-2 text-center">
               Extensions...
             </div>
           </div>
-          <p className="text-xs text-muted-foreground mt-2">
+          <p className="text-muted-foreground mt-2 text-xs">
             {getSplitModeDescription()}
           </p>
         </div>
       </div>
 
       <div className="md:col-span-2">
-        <p className="text-xs text-warning mb-2">
+        <p className="text-warning mb-2 text-xs">
           Manual override — use if Smart SNI Split doesn't work for your ISP
         </p>
         <div className="mt-2">

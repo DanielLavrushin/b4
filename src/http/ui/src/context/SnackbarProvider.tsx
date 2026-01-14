@@ -42,16 +42,16 @@ export function SnackbarProvider({ children }: { children: ReactNode }) {
     (message: string, severity: Severity = "info") => {
       setState({ open: true, message, severity });
     },
-    []
+    [],
   );
 
   const showError = useCallback(
     (message: string) => showSnackbar(message, "error"),
-    [showSnackbar]
+    [showSnackbar],
   );
   const showSuccess = useCallback(
     (message: string) => showSnackbar(message, "success"),
-    [showSnackbar]
+    [showSnackbar],
   );
 
   const handleClose = useCallback(() => {
@@ -72,16 +72,16 @@ export function SnackbarProvider({ children }: { children: ReactNode }) {
       {children}
       <div
         className={cn(
-          "fixed bottom-4 right-4 z-50 transition-all duration-300",
+          "fixed right-4 bottom-4 z-50 transition-all duration-300",
           state.open
             ? "translate-y-0 opacity-100"
-            : "translate-y-2 opacity-0 pointer-events-none"
+            : "pointer-events-none translate-y-2 opacity-0",
         )}
       >
         {state.open && (
           <Alert
             variant={state.severity === "error" ? "destructive" : "default"}
-            className="min-w-75 max-w-md shadow-lg"
+            className="max-w-md min-w-75 shadow-lg"
           >
             <AlertDescription>{state.message}</AlertDescription>
             <AlertAction>

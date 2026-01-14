@@ -183,31 +183,31 @@ export const SetCard = ({
         "relative flex flex-row transition-all",
         set.enabled ? "opacity-100" : "opacity-50",
         "hover:shadow-lg",
-        isMain && "border-primary"
+        isMain && "border-primary",
       )}
     >
       {/* Left accent bar */}
       <div
         className={cn(
-          "w-1 rounded-l-lg shrink-0",
-          isMain ? "bg-primary" : "bg-secondary"
+          "w-1 shrink-0 rounded-l-lg",
+          isMain ? "bg-primary" : "bg-secondary",
         )}
       />
 
       {/* Drag handle */}
       <div
         {...dragHandleProps}
-        className="cursor-grab text-muted-foreground hover:text-foreground transition-colors shrink-0 flex items-center self-center"
+        className="text-muted-foreground hover:text-foreground flex shrink-0 cursor-grab items-center self-center transition-colors"
       >
         <DragIcon />
       </div>
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex flex-1 flex-col">
         {/* Header */}
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 flex-1 min-w-0">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div
@@ -234,15 +234,15 @@ export const SetCard = ({
               {/* Name */}
               <h6
                 className={cn(
-                  "font-semibold uppercase text-sm truncate",
-                  set.enabled ? "text-foreground" : "text-muted-foreground"
+                  "truncate text-sm font-semibold uppercase",
+                  set.enabled ? "text-foreground" : "text-muted-foreground",
                 )}
               >
                 {set.name}
               </h6>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex shrink-0 items-center gap-2">
               <Button
                 size="sm"
                 variant="secondary"
@@ -251,7 +251,7 @@ export const SetCard = ({
                   handleAction(onEdit);
                 }}
               >
-                <EditIcon className="h-4 w-4 mr-2" />
+                <EditIcon className="mr-2 h-4 w-4" />
                 Edit
               </Button>
               <DropdownMenu
@@ -273,11 +273,11 @@ export const SetCard = ({
                   onClick={(e) => e.stopPropagation()}
                 >
                   <DropdownMenuItem onClick={() => handleAction(onDuplicate)}>
-                    <CopyIcon className="h-4 w-4 mr-2" />
+                    <CopyIcon className="mr-2 h-4 w-4" />
                     Duplicate
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => handleAction(onCompare)}>
-                    <IconArrowsExchange className="h-4 w-4 mr-2" />
+                    <IconArrowsExchange className="mr-2 h-4 w-4" />
                     Compare
                   </DropdownMenuItem>
                   {!isMain && <DropdownMenuSeparator />}
@@ -286,7 +286,7 @@ export const SetCard = ({
                       onClick={() => handleAction(onDelete)}
                       className="text-destructive"
                     >
-                      <ClearIcon className="h-4 w-4 mr-2" />
+                      <ClearIcon className="mr-2 h-4 w-4" />
                       Delete
                     </DropdownMenuItem>
                   )}
@@ -297,12 +297,12 @@ export const SetCard = ({
         </CardHeader>
 
         {/* Content */}
-        <CardContent className="flex-1 flex flex-row gap-6 items-center">
+        <CardContent className="flex flex-1 flex-row items-center gap-6">
           {/* Target preview */}
           <div style={{ flex: "1 1 40%", minWidth: 0 }}>
-            <div className="p-3 rounded-md bg-muted border border-border flex items-center">
+            <div className="bg-muted border-border flex items-center rounded-md border p-3">
               {totalTargets > 0 ? (
-                <div className="flex flex-wrap gap-1.5 w-full">
+                <div className="flex w-full flex-wrap gap-1.5">
                   {previewTargets.map((target) => (
                     <TargetBadge
                       key={`${target.type}-${target.label}`}
@@ -315,7 +315,7 @@ export const SetCard = ({
                   )}
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground italic w-full text-center">
+                <p className="text-muted-foreground w-full text-center text-xs italic">
                   No targets configured
                 </p>
               )}
@@ -324,17 +324,17 @@ export const SetCard = ({
 
           {/* Domain/IP counts */}
           <div
-            className="flex flex-col gap-1 shrink-0"
+            className="flex shrink-0 flex-col gap-1"
             style={{ flex: "0 0 20%" }}
           >
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="flex items-center gap-1.5 w-fit">
-                  <DomainIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <span className="text-sm font-semibold text-foreground">
+                <div className="flex w-fit items-center gap-1.5">
+                  <DomainIcon className="text-muted-foreground h-4 w-4 shrink-0" />
+                  <span className="text-foreground text-sm font-semibold">
                     {domainCount.toLocaleString()}
                   </span>
-                  <span className="text-xs text-muted-foreground">domains</span>
+                  <span className="text-muted-foreground text-xs">domains</span>
                 </div>
               </TooltipTrigger>
               <TooltipContent>
@@ -346,12 +346,12 @@ export const SetCard = ({
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="flex items-center gap-1.5 w-fit">
-                  <IpIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <span className="text-sm font-semibold text-foreground">
+                <div className="flex w-fit items-center gap-1.5">
+                  <IpIcon className="text-muted-foreground h-4 w-4 shrink-0" />
+                  <span className="text-foreground text-sm font-semibold">
                     {ipCount.toLocaleString()}
                   </span>
-                  <span className="text-xs text-muted-foreground">IPs</span>
+                  <span className="text-muted-foreground text-xs">IPs</span>
                 </div>
               </TooltipTrigger>
               <TooltipContent>
@@ -368,7 +368,7 @@ export const SetCard = ({
               {/* Fragmentation Badge */}
               <Badge
                 variant={strategy !== "none" ? "default" : "ghost"}
-                className="text-xs shrink-0"
+                className="shrink-0 text-xs"
               >
                 {STRATEGY_LABELS[strategy] || strategy.toUpperCase()}
               </Badge>
@@ -378,7 +378,7 @@ export const SetCard = ({
                 variant={
                   set.udp.filter_quic !== "disabled" ? "default" : "ghost"
                 }
-                className="text-xs shrink-0"
+                className="shrink-0 text-xs"
               >
                 {QUIC_FILTER_LABELS[set.udp.filter_quic] || "QUIC"}
               </Badge>
@@ -386,7 +386,7 @@ export const SetCard = ({
               {/* DNS Redirect Badge */}
               <Badge
                 variant={set.dns?.enabled ? "default" : "ghost"}
-                className="text-xs shrink-0 max-w-full truncate"
+                className="max-w-full shrink-0 truncate text-xs"
               >
                 {set.dns?.enabled ? set.dns.target_dns || "DNS" : "DNS"}
               </Badge>
@@ -394,7 +394,7 @@ export const SetCard = ({
               {/* Fake SNI Badge */}
               <Badge
                 variant={set.faking.sni ? "default" : "ghost"}
-                className="text-xs shrink-0"
+                className="shrink-0 text-xs"
               >
                 {set.faking.sni
                   ? FAKE_STRATEGY_LABELS[set.faking.strategy] ||
@@ -424,13 +424,13 @@ const QuickFlag = ({ icon, label, enabled, tooltip }: QuickFlagProps) => {
       <TooltipTrigger asChild>
         <div
           className={cn(
-            "flex items-center gap-1.5 flex-1 justify-center py-1.5 px-2 rounded-md transition-colors",
-            isActive ? "bg-accent" : "bg-transparent"
+            "flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 transition-colors",
+            isActive ? "bg-accent" : "bg-transparent",
           )}
         >
           <div
             className={cn(
-              isActive ? "text-foreground" : "text-muted-foreground"
+              isActive ? "text-foreground" : "text-muted-foreground",
             )}
           >
             {icon}
@@ -439,7 +439,7 @@ const QuickFlag = ({ icon, label, enabled, tooltip }: QuickFlagProps) => {
             <span
               className={cn(
                 "text-xs font-semibold",
-                isActive ? "text-foreground" : "text-muted-foreground"
+                isActive ? "text-foreground" : "text-muted-foreground",
               )}
             >
               {label}
@@ -448,7 +448,7 @@ const QuickFlag = ({ icon, label, enabled, tooltip }: QuickFlagProps) => {
             enabled !== undefined && (
               <div
                 className={cn(
-                  isActive ? "text-foreground" : "text-muted-foreground"
+                  isActive ? "text-foreground" : "text-muted-foreground",
                 )}
               >
                 {enabled ? (

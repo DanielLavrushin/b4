@@ -48,7 +48,7 @@ export const B4InlineEdit = ({
         }}
         autoFocus
         disabled={saving || disabled}
-        className="h-7 text-xs py-0.5"
+        className="h-7 py-0.5 text-xs"
       />
       <Button
         size="icon-sm"

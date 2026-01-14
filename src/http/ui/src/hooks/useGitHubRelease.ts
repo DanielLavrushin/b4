@@ -76,7 +76,7 @@ export const useGitHubRelease = (): UseGitHubReleaseResult => {
       } catch {
         return false;
       }
-    }
+    },
   );
 
   const currentVersion = import.meta.env.VITE_APP_VERSION || "dev";
@@ -117,7 +117,7 @@ export const useGitHubRelease = (): UseGitHubReleaseResult => {
     void fetchReleases();
     const interval = setInterval(
       () => void fetchReleases(),
-      6 * 60 * 60 * 1000
+      6 * 60 * 60 * 1000,
     );
     return () => clearInterval(interval);
   }, []);

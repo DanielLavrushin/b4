@@ -92,7 +92,7 @@ export const useSystemRestart = () => {
             console.warn(
               `Attempt ${attempts + 1}: Service not available yet - ${
                 err.message
-              }`
+              }`,
             );
           } else {
             console.warn(`Attempt ${attempts + 1}: Service not available yet`);
@@ -105,7 +105,7 @@ export const useSystemRestart = () => {
       setError("Service did not restart within expected time");
       return false;
     },
-    []
+    [],
   );
 
   return {

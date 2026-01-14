@@ -117,7 +117,7 @@ export function SettingsPage() {
   // Handle tab change
   const handleTabChange = (_: React.SyntheticEvent, newValue: number) => {
     const category = SETTING_CATEGORIES.find(
-      (cat) => cat.id === (newValue as TABS)
+      (cat) => cat.id === (newValue as TABS),
     );
     if (category) {
       navigate(`/settings/${category.path}`);
@@ -207,7 +207,7 @@ export function SettingsPage() {
       showSuccess(
         requiresRestart
           ? "Configuration saved! Please restart B4 for core settings to take effect."
-          : "Configuration saved successfully!"
+          : "Configuration saved successfully!",
       );
     } catch (error) {
       showError(error instanceof Error ? error.message : "Failed to save");
@@ -234,7 +234,7 @@ export function SettingsPage() {
       | string[]
       | B4SetConfig[]
       | null
-      | undefined
+      | undefined,
   ) => {
     if (!config) return;
 
@@ -258,7 +258,7 @@ export function SettingsPage() {
 
   if (loading || !config) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+      <div className="bg-background/80 fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm">
         <div className="flex flex-col items-center gap-4">
           <Spinner className="h-12 w-12" />
           <p className="text-foreground">Loading configuration...</p>
@@ -270,13 +270,13 @@ export function SettingsPage() {
   const validTab = Math.max(currentTab, 0);
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
+    <div className="flex h-full flex-col overflow-hidden">
       {/* Header with tabs */}
-      <Card className="p-4 border border-border mb-4">
+      <Card className="border-border mb-4 border p-4">
         {/* Action bar */}
-        <div className="flex flex-row justify-between items-center mb-4">
-          <div className="flex flex-row gap-4 items-center">
-            <h6 className="text-lg font-semibold text-foreground">
+        <div className="mb-4 flex flex-row items-center justify-between">
+          <div className="flex flex-row items-center gap-4">
+            <h6 className="text-foreground text-lg font-semibold">
               Configuration
             </h6>
             {hasChanges && (
@@ -292,7 +292,7 @@ export function SettingsPage() {
 
           <div className="flex flex-row gap-2">
             {categoryHasChanges[TABS.GENERAL] && (
-              <Alert variant="destructive" className="py-0 px-2">
+              <Alert variant="destructive" className="px-2 py-0">
                 <AlertDescription>
                   Core settings require <strong>B4</strong> restart to take
                   effect
@@ -315,7 +315,7 @@ export function SettingsPage() {
               }}
               disabled={saving}
             >
-              <RefreshIcon className="h-4 w-4 mr-2" />
+              <RefreshIcon className="mr-2 h-4 w-4" />
               Reload
             </Button>
 
@@ -328,12 +328,12 @@ export function SettingsPage() {
             >
               {saving ? (
                 <>
-                  <Spinner className="h-4 w-4 mr-2" />
+                  <Spinner className="mr-2 h-4 w-4" />
                   Saving...
                 </>
               ) : (
                 <>
-                  <SaveIcon className="h-4 w-4 mr-2" />
+                  <SaveIcon className="mr-2 h-4 w-4" />
                   Save Changes
                 </>
               )}
@@ -349,14 +349,14 @@ export function SettingsPage() {
           }
           className="w-full"
         >
-          <TabsList className="w-full grid grid-cols-5 mt-4">
+          <TabsList className="mt-4 grid w-full grid-cols-5">
             {SETTING_CATEGORIES.sort((a, b) => a.id - b.id).map((cat) => (
               <TabsTrigger key={cat.id} value={String(cat.id)}>
                 <div className="flex items-center gap-1.5">
                   {cat.icon}
                   <span>{cat.label}</span>
                   {categoryHasChanges[cat.id] && (
-                    <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+                    <div className="bg-primary h-1.5 w-1.5 rounded-full" />
                   )}
                 </div>
               </TabsTrigger>
@@ -374,29 +374,12 @@ export function SettingsPage() {
           className="w-full"
         >
           <TabsContent value={String(TABS.GENERAL)} className="mt-2">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
-              <div className="col-span-1 md:col-span-2">
-                <NetworkSettings config={config} onChange={handleChange} />
-              </div>
-
-              <div className="col-span-1 flex">
-                <div className="w-full">
-                  <ControlSettings loadConfig={() => void loadConfig()} />
-                </div>
-              </div>
-              <div className="col-span-1 flex">
-                <div className="w-full">
-                  <LoggingSettings config={config} onChange={handleChange} />
-                </div>
-              </div>
-
-              <div className="col-span-1">
-                <FeatureSettings config={config} onChange={handleChange} />
-              </div>
-
-              <div className="col-span-1">
-                <DevicesSettings config={config} onChange={handleChange} />
-              </div>
+            <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-2">
+              <NetworkSettings config={config} onChange={handleChange} />
+              <FeatureSettings config={config} onChange={handleChange} />
+              <LoggingSettings config={config} onChange={handleChange} />
+              <ControlSettings loadConfig={() => void loadConfig()} />
+              <DevicesSettings config={config} onChange={handleChange} />
             </div>
           </TabsContent>
 
@@ -441,9 +424,7 @@ export function SettingsPage() {
           <DialogFooter>
             <Button onClick={() => setShowResetDialog(false)}>Cancel</Button>
             <div className="flex-1" />
-            <Button onClick={resetChanges}>
-              Discard Changes
-            </Button>
+            <Button onClick={resetChanges}>Discard Changes</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

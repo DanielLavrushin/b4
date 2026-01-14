@@ -80,7 +80,7 @@ export function ConnectionsPage() {
   // Limit displayed rows for performance
   const recentDomains = useMemo(
     () => domains.slice(-MAX_DISPLAY_ROWS),
-    [domains]
+    [domains],
   );
 
   const parsedLogs = useParsedLogs(recentDomains, showAll);
@@ -156,7 +156,7 @@ export function ConnectionsPage() {
         setSortDirection("asc");
       }
     },
-    [sortColumn, sortDirection]
+    [sortColumn, sortDirection],
   );
 
   const handleClearSort = useCallback(() => {
@@ -169,7 +169,7 @@ export function ConnectionsPage() {
       const variants = generateIpVariants(ip);
       openIpModal(ip, variants);
     },
-    [openIpModal]
+    [openIpModal],
   );
 
   const handleDomainClick = useCallback(
@@ -177,7 +177,7 @@ export function ConnectionsPage() {
       const variants = generateDomainVariants(domain);
       openModal(domain, variants);
     },
-    [openModal]
+    [openModal],
   );
 
   const handleHotkeysDown = useCallback(
@@ -208,7 +208,7 @@ export function ConnectionsPage() {
       setPauseDomains,
       resetDomainsBadge,
       showSuccess,
-    ]
+    ],
   );
 
   useEffect(() => {
@@ -219,11 +219,11 @@ export function ConnectionsPage() {
   }, [handleHotkeysDown]);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex flex-1 flex-col overflow-hidden">
       <div
         className={cn(
-          "flex-1 flex flex-col overflow-hidden border transition-colors",
-          pauseDomains ? "border-[rgba(158,28,96,0.5)]" : "border-border"
+          "flex flex-1 flex-col overflow-hidden border transition-colors",
+          pauseDomains ? "border-[rgba(158,28,96,0.5)]" : "border-border",
         )}
       >
         <DomainsControlBar
@@ -240,7 +240,7 @@ export function ConnectionsPage() {
           onReset={clearDomains}
         />
 
-        <div className="flex-1 min-h-0 relative">
+        <div className="relative min-h-0 flex-1">
           <DomainsTable
             data={sortedData}
             sortColumn={sortColumn}
@@ -290,7 +290,7 @@ export function ConnectionsPage() {
         }}
       />
 
-      <div className="fixed bottom-10 right-10">
+      <div className="fixed right-10 bottom-10">
         <Card size="sm" variant="transparent">
           <CardContent className="space-y-2">
             <div className="flex gap-2">

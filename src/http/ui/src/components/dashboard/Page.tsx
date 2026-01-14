@@ -115,7 +115,7 @@ const normalizeMetrics = (data: null | Metrics): Metrics => {
           (item: { timestamp: number; value: number }) => ({
             timestamp: safeNumber(item?.timestamp),
             value: safeNumber(item?.value),
-          })
+          }),
         )
       : [],
     packet_rate: Array.isArray(data.packet_rate)
@@ -130,7 +130,7 @@ const normalizeMetrics = (data: null | Metrics): Metrics => {
             Object.entries(data.top_domains).map(([k, v]) => [
               String(k),
               safeNumber(v),
-            ])
+            ]),
           )
         : {},
     protocol_dist:
@@ -139,7 +139,7 @@ const normalizeMetrics = (data: null | Metrics): Metrics => {
             Object.entries(data.protocol_dist).map(([k, v]) => [
               String(k),
               safeNumber(v),
-            ])
+            ]),
           )
         : {},
     geo_dist:
@@ -148,7 +148,7 @@ const normalizeMetrics = (data: null | Metrics): Metrics => {
             Object.entries(data.geo_dist).map(([k, v]) => [
               String(k),
               safeNumber(v),
-            ])
+            ]),
           )
         : {},
     start_time: String(data.start_time || new Date().toISOString()),
@@ -169,7 +169,7 @@ const normalizeMetrics = (data: null | Metrics): Metrics => {
             id: safeNumber(w?.id),
             status: String(w?.status || "unknown"),
             processed: safeNumber(w?.processed),
-          })
+          }),
         )
       : [],
     nfqueue_status: String(data.nfqueue_status || "unknown"),
@@ -193,7 +193,7 @@ const normalizeMetrics = (data: null | Metrics): Metrics => {
             source: String(conn?.source || ""),
             destination: String(conn?.destination || ""),
             is_target: Boolean(conn?.is_target),
-          })
+          }),
         )
       : [],
     recent_events: Array.isArray(data.recent_events)
@@ -202,7 +202,7 @@ const normalizeMetrics = (data: null | Metrics): Metrics => {
             timestamp: String(evt?.timestamp || ""),
             level: String(evt?.level || ""),
             message: String(evt?.message || ""),
-          })
+          }),
         )
       : [],
     current_cps: safeNumber(data.current_cps),
@@ -221,7 +221,7 @@ export function DashboardPage() {
       const ws = new WebSocket(
         (location.protocol === "https:" ? "wss://" : "ws://") +
           location.host +
-          "/api/ws/metrics"
+          "/api/ws/metrics",
       );
 
       ws.onopen = () => {
@@ -270,8 +270,8 @@ export function DashboardPage() {
 
   if (!metrics) {
     return (
-      <div className="py-6 px-4">
-        <div className="text-center py-16">
+      <div className="px-4 py-6">
+        <div className="py-16 text-center">
           <Progress className="mb-4" />
           <p>Loading dashboard metrics...</p>
         </div>
@@ -281,8 +281,8 @@ export function DashboardPage() {
 
   return (
     <div className="h-full">
-      <div className="mb-6 flex justify-between items-center">
-        <div className="flex flex-row gap-4 items-center">
+      <div className="mb-6 flex items-center justify-between">
+        <div className="flex flex-row items-center gap-4">
           <Badge
             variant={connected ? "default" : "destructive"}
             className="inline-flex items-center gap-1"
@@ -294,7 +294,7 @@ export function DashboardPage() {
             )}
             {connected ? "Connected" : "Disconnected"}
           </Badge>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-muted-foreground text-sm">
             Uptime: {metrics.uptime}
           </p>
         </div>

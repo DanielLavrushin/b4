@@ -119,7 +119,7 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
     try {
       const result = await geodatApi.download(geositeURL, geoipURL, destPath);
       setDownloadStatus(
-        `Downloaded successfully to ${extractDir(result.geosite_path)}`
+        `Downloaded successfully to ${extractDir(result.geosite_path)}`,
       );
       loadConfig();
       setTimeout(() => setDownloadStatus(""), 5000);
@@ -156,11 +156,11 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
     <div className="space-y-6">
       <Alert>
         <AlertDescription>
-          <h6 className="text-sm font-semibold mb-2">
+          <h6 className="mb-2 text-sm font-semibold">
             Download GeoSite/GeoIP database files for domain and IP
             categorization.
           </h6>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-muted-foreground text-xs">
             Files will be saved to <strong>{destPath}</strong>
           </p>
         </AlertDescription>
@@ -178,8 +178,8 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 rounded-md border border-border bg-card">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="border-border bg-card rounded-md border p-4">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h6 className="text-sm font-semibold">Geosite Database</h6>
@@ -196,14 +196,14 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
                   )}
                 </div>
 
-                <p className="text-xs text-muted-foreground">Path</p>
+                <p className="text-muted-foreground text-xs">Path</p>
                 <p className="font-mono text-xs break-all">
                   {config.system.geo.sitedat_path || "Not configured"}
                 </p>
 
                 {config.system.geo.sitedat_url && (
                   <>
-                    <p className="text-xs text-muted-foreground">Source</p>
+                    <p className="text-muted-foreground text-xs">Source</p>
                     <p className="font-mono text-xs break-all">
                       {config.system.geo.sitedat_url}
                     </p>
@@ -214,10 +214,10 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
                   <>
                     <Separator className="my-1" />
                     <div className="flex justify-between">
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-muted-foreground text-xs">
                         Size: {formatFileSize(geositeInfo.size)}
                       </p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-muted-foreground text-xs">
                         {formatDate(geositeInfo.last_modified)}
                       </p>
                     </div>
@@ -226,7 +226,7 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
               </div>
             </div>
 
-            <div className="p-4 rounded-md border border-border bg-card">
+            <div className="border-border bg-card rounded-md border p-4">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h6 className="text-sm font-semibold">GeoIP Database</h6>
@@ -243,14 +243,14 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
                   )}
                 </div>
 
-                <p className="text-xs text-muted-foreground">Path</p>
+                <p className="text-muted-foreground text-xs">Path</p>
                 <p className="font-mono text-xs break-all">
                   {config.system.geo.ipdat_path || "Not configured"}
                 </p>
 
                 {config.system.geo.ipdat_url && (
                   <>
-                    <p className="text-xs text-muted-foreground">Source</p>
+                    <p className="text-muted-foreground text-xs">Source</p>
                     <p className="font-mono text-xs break-all">
                       {config.system.geo.ipdat_url}
                     </p>
@@ -261,10 +261,10 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
                   <>
                     <Separator className="my-1" />
                     <div className="flex justify-between">
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-muted-foreground text-xs">
                         Size: {formatFileSize(geoipInfo.size)}
                       </p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-muted-foreground text-xs">
                         {formatDate(geoipInfo.last_modified)}
                       </p>
                     </div>
@@ -288,7 +288,7 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label>Preset Source</Label>
               <Select value={selectedSource} onValueChange={handleSourceChange}>
@@ -303,7 +303,7 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 Select a predefined geodat source
               </p>
             </div>
@@ -321,9 +321,9 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
               </FieldDescription>
             </Field>
 
-            <div className="relative my-4 md:col-span-2 flex items-center">
+            <div className="relative my-4 flex items-center md:col-span-2">
               <Separator className="absolute inset-0 top-1/2" />
-              <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+              <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
                 Custom URLs
               </span>
             </div>
@@ -362,12 +362,12 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
                 >
                   {downloading ? (
                     <>
-                      <Spinner className="h-4 w-4 mr-2" />
+                      <Spinner className="mr-2 h-4 w-4" />
                       Downloading...
                     </>
                   ) : (
                     <>
-                      <DownloadIcon className="h-4 w-4 mr-2" />
+                      <DownloadIcon className="mr-2 h-4 w-4" />
                       Download Files
                     </>
                   )}
@@ -380,7 +380,7 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
                       downloadStatus.includes("✓") ||
                         downloadStatus.includes("successfully")
                         ? "text-secondary"
-                        : "text-destructive"
+                        : "text-destructive",
                     )}
                   >
                     {downloadStatus}

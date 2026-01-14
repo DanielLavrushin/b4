@@ -31,7 +31,7 @@ function ComboboxTrigger({
       {...props}
     >
       {children}
-      <IconChevronDown className="text-muted-foreground size-3.5 pointer-events-none" />
+      <IconChevronDown className="text-muted-foreground pointer-events-none size-3.5" />
     </ComboboxPrimitive.Trigger>
   );
 }
@@ -71,7 +71,7 @@ const ComboboxInput = React.forwardRef<
       showClear = false,
       ...props
     },
-    ref
+    ref,
   ) => {
     return (
       <InputGroup className={cn("w-auto", className)}>
@@ -98,7 +98,7 @@ const ComboboxInput = React.forwardRef<
         {children}
       </InputGroup>
     );
-  }
+  },
 );
 
 ComboboxInput.displayName = "ComboboxInput";
@@ -130,8 +130,8 @@ function ComboboxContent({
           data-slot="combobox-content"
           data-chips={!!anchor}
           className={cn(
-            "bg-popover text-popover-foreground data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 ring-foreground/10 *:data-[slot=input-group]:bg-input/20 dark:bg-popover rounded-lg shadow-md ring-1 duration-100 *:data-[slot=input-group]:m-1 *:data-[slot=input-group]:mb-0 *:data-[slot=input-group]:h-7 *:data-[slot=input-group]:border-none *:data-[slot=input-group]:shadow-none group/combobox-content relative flex flex-col max-h-(--available-height) w-(--anchor-width) max-w-(--available-width) min-w-[calc(var(--anchor-width)+var(--spacing-7))] origin-(--transform-origin) data-[chips=true]:min-w-(--anchor-width) overflow-x-hidden pointer-events-auto",
-            className
+            "bg-popover text-popover-foreground data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 ring-foreground/10 *:data-[slot=input-group]:bg-input/20 dark:bg-popover group/combobox-content pointer-events-auto relative flex max-h-(--available-height) w-(--anchor-width) max-w-(--available-width) min-w-[calc(var(--anchor-width)+var(--spacing-7))] origin-(--transform-origin) flex-col overflow-x-hidden rounded-lg shadow-md ring-1 duration-100 data-[chips=true]:min-w-(--anchor-width) *:data-[slot=input-group]:m-1 *:data-[slot=input-group]:mb-0 *:data-[slot=input-group]:h-7 *:data-[slot=input-group]:border-none *:data-[slot=input-group]:shadow-none",
+            className,
           )}
           {...props}
         />
@@ -163,7 +163,7 @@ const ComboboxList = React.forwardRef<
         ).current = node;
       }
     },
-    [ref]
+    [ref],
   );
   React.useEffect(() => {
     if (internalRef.current) {
@@ -181,7 +181,7 @@ const ComboboxList = React.forwardRef<
           const maxScrollTop = node.scrollHeight - node.clientHeight;
           const newScrollTop = Math.max(
             0,
-            Math.min(maxScrollTop, currentScrollTop + e.deltaY)
+            Math.min(maxScrollTop, currentScrollTop + e.deltaY),
           );
           node.scrollTop = newScrollTop;
         }
@@ -199,8 +199,8 @@ const ComboboxList = React.forwardRef<
       ref={combinedRef}
       data-slot="combobox-list"
       className={cn(
-        "scroll-py-1 overflow-y-auto overflow-x-hidden p-1 data-empty:p-0 overscroll-contain flex-1 min-h-0 flex flex-col pointer-events-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/50 group/combobox-list",
-        className
+        "[&::-webkit-scrollbar-thumb]:bg-border hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/50 group/combobox-list pointer-events-auto flex min-h-0 flex-1 scroll-py-1 flex-col overflow-x-hidden overflow-y-auto overscroll-contain p-1 data-empty:p-0 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding [&::-webkit-scrollbar-track]:bg-transparent",
+        className,
       )}
       {...props}
     />
@@ -218,8 +218,8 @@ function ComboboxItem({
     <ComboboxPrimitive.Item
       data-slot="combobox-item"
       className={cn(
-        "data-highlighted:bg-accent data-highlighted:text-accent-foreground not-data-[variant=destructive]:data-highlighted:**:text-accent-foreground min-h-7 gap-2 rounded-md px-2 py-1 text-xs/relaxed [&_svg:not([class*='size-'])]:size-3.5 relative flex w-full cursor-default items-center outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
-        className
+        "data-highlighted:bg-accent data-highlighted:text-accent-foreground not-data-[variant=destructive]:data-highlighted:**:text-accent-foreground relative flex min-h-7 w-full cursor-default items-center gap-2 rounded-md px-2 py-1 text-xs/relaxed outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+        className,
       )}
       {...props}
     >
@@ -269,8 +269,8 @@ function ComboboxEmpty({ className, ...props }: ComboboxPrimitive.Empty.Props) {
     <ComboboxPrimitive.Empty
       data-slot="combobox-empty"
       className={cn(
-        "text-muted-foreground hidden w-full justify-center py-2 text-center text-xs/relaxed group-data-empty/combobox-list:flex pointer-events-none",
-        className
+        "text-muted-foreground pointer-events-none hidden w-full justify-center py-2 text-center text-xs/relaxed group-data-empty/combobox-list:flex",
+        className,
       )}
       {...props}
     />
@@ -300,7 +300,7 @@ function ComboboxChips({
       data-slot="combobox-chips"
       className={cn(
         "bg-input/20 dark:bg-input/30 border-input focus-within:border-ring focus-within:ring-ring/30 has-aria-invalid:ring-destructive/20 dark:has-aria-invalid:ring-destructive/40 has-aria-invalid:border-destructive dark:has-aria-invalid:border-destructive/50 flex min-h-7 flex-wrap items-center gap-1 rounded-md border bg-clip-padding px-2 py-0.5 text-xs/relaxed transition-colors focus-within:ring-2 has-aria-invalid:ring-2 has-data-[slot=combobox-chip]:px-1",
-        className
+        className,
       )}
       {...props}
     />
@@ -321,8 +321,8 @@ function ComboboxChip({
     <ComboboxPrimitive.Chip
       data-slot="combobox-chip"
       className={cn(
-        "bg-muted-foreground/10 text-foreground flex h-[calc(--spacing(4.75))] w-fit items-center justify-center gap-1 rounded-[calc(var(--radius-sm)-2px)] px-1.5 text-xs/relaxed font-medium whitespace-nowrap has-data-[slot=combobox-chip-remove]:pr-0 has-disabled:pointer-events-none has-disabled:cursor-not-allowed has-disabled:opacity-50",
-        className
+        "bg-muted-foreground/10 text-foreground flex h-[calc(--spacing(4.75))] w-fit items-center justify-center gap-1 rounded-[calc(var(--radius-sm)-2px)] px-1.5 text-xs/relaxed font-medium whitespace-nowrap has-disabled:pointer-events-none has-disabled:cursor-not-allowed has-disabled:opacity-50 has-data-[slot=combobox-chip-remove]:pr-0",
+        className,
       )}
       {...props}
     >

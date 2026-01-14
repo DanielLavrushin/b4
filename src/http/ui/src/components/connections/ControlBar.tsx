@@ -38,15 +38,15 @@ export const DomainsControlBar = ({
   onReset,
 }: DomainsControlBarProps) => {
   return (
-    <div className="p-4 border-b border-border bg-muted/50">
-      <div className="flex flex-row gap-4 items-center">
+    <div className="border-border bg-muted/50 border-b p-4">
+      <div className="flex flex-row items-center gap-4">
         <Input
           placeholder="Filter (combine with +, exclude with !, e.g. tcp+!domain:google.com)"
           value={filter}
           onChange={(e) => onFilterChange(e.target.value)}
           className="flex-1"
         />
-        <div className="flex flex-row gap-2 items-center">
+        <div className="flex flex-row items-center gap-2">
           <Badge>{`${totalCount} connections`}</Badge>
           {filter && (
             <Badge variant="outline">{`${filteredCount} filtered`}</Badge>
@@ -57,7 +57,7 @@ export const DomainsControlBar = ({
             checked={showAll}
             onCheckedChange={(checked: boolean) => onShowAllChange(checked)}
           />
-          <Label className="font-medium cursor-pointer">
+          <Label className="cursor-pointer font-medium">
             {showAll ? "All packets" : "Domains only"}
           </Label>
         </div>
@@ -66,7 +66,7 @@ export const DomainsControlBar = ({
             checked={paused}
             onCheckedChange={(checked: boolean) => onPauseChange(checked)}
           />
-          <Label className="font-medium cursor-pointer">
+          <Label className="cursor-pointer font-medium">
             {paused ? "Paused" : "Streaming"}
           </Label>
         </div>

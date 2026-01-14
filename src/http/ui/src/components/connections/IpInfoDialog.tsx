@@ -53,7 +53,7 @@ export const IpInfoModal = ({
       try {
         const cleanIp = ip.split(":")[0].replace(/[[\]]/g, "");
         const response = await fetch(
-          `/api/integration/ipinfo?ip=${encodeURIComponent(cleanIp)}`
+          `/api/integration/ipinfo?ip=${encodeURIComponent(cleanIp)}`,
         );
         if (!response.ok) throw new Error("Failed to fetch IP info");
         const data = (await response.json()) as IpInfo;
@@ -80,7 +80,7 @@ export const IpInfoModal = ({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+            <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
               <InfoIcon />
             </div>
             <div className="flex-1">
@@ -106,7 +106,7 @@ export const IpInfoModal = ({
               <div className="flex flex-col gap-4">
                 {ipInfo.org && (
                   <div>
-                    <p className="text-xs text-secondary mb-1">Organization</p>
+                    <p className="text-secondary mb-1 text-xs">Organization</p>
                     <p className="text-sm">
                       <a
                         href={"https://ipinfo.io/" + ipInfo.org.split(" ")[0]}
@@ -122,16 +122,16 @@ export const IpInfoModal = ({
 
                 {ipInfo.hostname && (
                   <div>
-                    <p className="text-xs text-secondary mb-1">Hostname</p>
-                    <p className="text-sm font-mono">
+                    <p className="text-secondary mb-1 text-xs">Hostname</p>
+                    <p className="font-mono text-sm">
                       <Badge variant="secondary">{ipInfo.hostname}</Badge>
                     </p>
                   </div>
                 )}
 
                 <div>
-                  <p className="text-xs text-secondary mb-1">IP Address</p>
-                  <p className="text-sm font-mono">
+                  <p className="text-secondary mb-1 text-xs">IP Address</p>
+                  <p className="font-mono text-sm">
                     <a
                       href={"https://ipinfo.io/" + ipInfo.ip}
                       target="_blank"
@@ -145,7 +145,7 @@ export const IpInfoModal = ({
 
                 {(ipInfo.city || ipInfo.region || ipInfo.country) && (
                   <div>
-                    <p className="text-xs text-secondary mb-1">Location</p>
+                    <p className="text-secondary mb-1 text-xs">Location</p>
                     <p className="text-sm">
                       {[ipInfo.city, ipInfo.region, ipInfo.country]
                         .filter(Boolean)
@@ -156,21 +156,21 @@ export const IpInfoModal = ({
 
                 {ipInfo.loc && (
                   <div>
-                    <p className="text-xs text-secondary mb-1">Coordinates</p>
-                    <p className="text-sm font-mono">{ipInfo.loc}</p>
+                    <p className="text-secondary mb-1 text-xs">Coordinates</p>
+                    <p className="font-mono text-sm">{ipInfo.loc}</p>
                   </div>
                 )}
 
                 {ipInfo.timezone && (
                   <div>
-                    <p className="text-xs text-secondary mb-1">Timezone</p>
+                    <p className="text-secondary mb-1 text-xs">Timezone</p>
                     <p className="text-sm">{ipInfo.timezone}</p>
                   </div>
                 )}
 
                 {ipInfo.postal && (
                   <div>
-                    <p className="text-xs text-secondary mb-1">Postal Code</p>
+                    <p className="text-secondary mb-1 text-xs">Postal Code</p>
                     <p className="text-sm">{ipInfo.postal}</p>
                   </div>
                 )}
@@ -182,7 +182,7 @@ export const IpInfoModal = ({
         <DialogFooter>
           {ipInfo?.hostname && onAddHostname && (
             <Button onClick={handleAddHostname}>
-              <AddIcon className="h-4 w-4 mr-2" />
+              <AddIcon className="mr-2 h-4 w-4" />
               Add Hostname
             </Button>
           )}

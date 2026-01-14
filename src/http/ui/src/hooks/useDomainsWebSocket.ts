@@ -15,7 +15,7 @@ export function useDomainsWebSocket({
     const ws = new WebSocket(
       (location.protocol === "https:" ? "wss://" : "ws://") +
         location.host +
-        "/api/ws/logs"
+        "/api/ws/logs",
     );
 
     ws.onmessage = (ev) => {

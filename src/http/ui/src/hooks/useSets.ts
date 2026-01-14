@@ -22,7 +22,7 @@ export function useSets() {
         setLoading(false);
       }
     },
-    []
+    [],
   );
 
   const updateSet = useCallback(
@@ -41,7 +41,7 @@ export function useSets() {
         setLoading(false);
       }
     },
-    []
+    [],
   );
 
   const deleteSet = useCallback(
@@ -60,7 +60,7 @@ export function useSets() {
         setLoading(false);
       }
     },
-    []
+    [],
   );
 
   const duplicateSet = useCallback(
@@ -68,7 +68,7 @@ export function useSets() {
       const { id: _, ...rest } = structuredClone(set);
       return createSet({ ...rest, name: `${set.name} (copy)` });
     },
-    [createSet]
+    [createSet],
   );
 
   const reorderSets = useCallback(
@@ -87,7 +87,7 @@ export function useSets() {
         setLoading(false);
       }
     },
-    []
+    [],
   );
 
   const addDomainToSet = useCallback(
@@ -105,7 +105,7 @@ export function useSets() {
         return { success: false, error: String(e) };
       }
     },
-    []
+    [],
   );
 
   return {

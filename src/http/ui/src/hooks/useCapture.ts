@@ -36,7 +36,7 @@ export function useCaptures() {
         const found = list.some(
           (c) =>
             c.domain === normalizedDomain &&
-            (protocol === "both" || c.protocol === protocol)
+            (protocol === "both" || c.protocol === protocol),
         );
         if (found) {
           setCaptures(list);
@@ -55,7 +55,7 @@ export function useCaptures() {
       await captureApi.delete(protocol, domain);
       await loadCaptures();
     },
-    [loadCaptures]
+    [loadCaptures],
   );
 
   const clearAll = useCallback(async () => {
@@ -74,12 +74,12 @@ export function useCaptures() {
         setLoading(false);
       }
     },
-    [loadCaptures]
+    [loadCaptures],
   );
 
   const download = useCallback((capture: Capture) => {
     const url = `/api/capture/download?file=${encodeURIComponent(
-      capture.filepath
+      capture.filepath,
     )}`;
     const link = document.createElement("a");
     link.href = url;

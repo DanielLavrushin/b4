@@ -104,7 +104,7 @@ export const DiscoveryAddDialog = ({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+            <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
               <AddIcon />
             </div>
             <div className="flex-1">
@@ -116,13 +116,13 @@ export const DiscoveryAddDialog = ({
           </div>
         </DialogHeader>
         <div className="py-4">
-          <div className="space-y-6 mt-2">
+          <div className="mt-2 space-y-6">
             {/* Domain variant selection */}
             <div>
-              <h6 className="text-sm font-semibold mb-2 text-muted-foreground">
+              <h6 className="text-muted-foreground mb-2 text-sm font-semibold">
                 Domain Pattern
               </h6>
-              <div className="flex flex-row gap-2 flex-wrap">
+              <div className="flex flex-row flex-wrap gap-2">
                 {variants.map((v) => (
                   <Badge
                     key={v}
@@ -130,8 +130,8 @@ export const DiscoveryAddDialog = ({
                     className={cn(
                       "cursor-pointer transition-all",
                       v === selectedVariant
-                        ? "bg-accent border-2 border-secondary"
-                        : "bg-muted border border-border"
+                        ? "bg-accent border-secondary border-2"
+                        : "bg-muted border-border border",
                     )}
                   >
                     {v}
@@ -143,7 +143,7 @@ export const DiscoveryAddDialog = ({
             {/* Mode selection - only show if similar sets exist */}
             {similarSets.length > 0 && (
               <div>
-                <h6 className="text-sm font-semibold mb-2 text-muted-foreground">
+                <h6 className="text-muted-foreground mb-2 text-sm font-semibold">
                   Add to
                 </h6>
                 <RadioGroup
@@ -152,7 +152,7 @@ export const DiscoveryAddDialog = ({
                     setMode(value as "new" | "existing")
                   }
                 >
-                  <div className="flex items-center space-x-2 mb-2">
+                  <div className="mb-2 flex items-center space-x-2">
                     <RadioGroupItem value="new" id="mode-new" />
                     <Label htmlFor="mode-new" className="cursor-pointer">
                       Create new set
@@ -184,7 +184,7 @@ export const DiscoveryAddDialog = ({
             {/* Similar sets list */}
             {mode === "existing" && similarSets.length > 0 && (
               <div>
-                <h6 className="text-sm font-semibold mb-2 text-muted-foreground">
+                <h6 className="text-muted-foreground mb-2 text-sm font-semibold">
                   Similar Sets
                 </h6>
                 <div className="space-y-2">
@@ -193,14 +193,14 @@ export const DiscoveryAddDialog = ({
                       key={set.id}
                       onClick={() => setSelectedSetId(set.id)}
                       className={cn(
-                        "p-4 rounded-md cursor-pointer transition-all",
+                        "cursor-pointer rounded-md p-4 transition-all",
                         set.id === selectedSetId
-                          ? "bg-accent border-2 border-secondary"
-                          : "bg-muted border border-border"
+                          ? "bg-accent border-secondary border-2"
+                          : "bg-muted border-border border",
                       )}
                     >
                       <p className="font-semibold">{set.name}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-muted-foreground text-xs">
                         {set.domains.slice(0, 3).join(", ")}
                         {set.domains.length > 3 &&
                           ` +${set.domains.length - 3} more`}
@@ -224,12 +224,12 @@ export const DiscoveryAddDialog = ({
             >
               {loading ? (
                 <>
-                  <Spinner className="h-4 w-4 mr-2" />
+                  <Spinner className="mr-2 h-4 w-4" />
                   Adding...
                 </>
               ) : (
                 <>
-                  <AddIcon className="h-4 w-4 mr-2" />
+                  <AddIcon className="mr-2 h-4 w-4" />
                   {mode === "new" ? "Create Set" : "Add to Set"}
                 </>
               )}

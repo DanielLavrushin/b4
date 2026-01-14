@@ -150,13 +150,13 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
   const setsData = config.sets || [];
   const sets = setsData.map((s) => ("set" in s ? s.set : s)) as B4SetConfig[];
   const setsStats = setsData.map((s) =>
-    "stats" in s ? s.stats : null
+    "stats" in s ? s.stats : null,
   ) as (SetStats | null)[];
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
-    })
+    }),
   );
 
   // Summary stats
@@ -164,7 +164,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
     const enabledCount = sets.filter((s) => s.enabled).length;
     const totalDomains = setsStats.reduce(
       (acc, s) => acc + (s?.total_domains || 0),
-      0
+      0,
     );
     const totalIps = setsStats.reduce((acc, s) => acc + (s?.total_ips || 0), 0);
     return {
@@ -186,7 +186,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
         return true;
       if (
         set.targets?.geosite_categories?.some((c) =>
-          c.toLowerCase().includes(lower)
+          c.toLowerCase().includes(lower),
         )
       )
         return true;
@@ -386,8 +386,8 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
         </CardHeader>
         <CardContent>
           {/* Summary Stats Bar */}
-          <Card className="p-4 mb-6 bg-muted border border-border rounded-md">
-            <div className="flex flex-row gap-8 items-center justify-between flex-wrap">
+          <Card className="bg-muted border-border mb-6 rounded-md border p-4">
+            <div className="flex flex-row flex-wrap items-center justify-between gap-8">
               <div className="flex flex-row gap-8">
                 <StatItem
                   value={summaryStats.total}
@@ -411,7 +411,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
               {/* Search & Add */}
               <div className="flex flex-row gap-4">
                 <div className="relative w-50">
-                  <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                  <IconSearch className="text-muted-foreground absolute top-1/2 left-3 h-5 w-5 -translate-y-1/2" />
                   <Input
                     placeholder="Search sets..."
                     value={filterText}
@@ -420,7 +420,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                   />
                 </div>
                 <Button onClick={handleAddSet}>
-                  <AddIcon className="h-4 w-4 mr-2" />
+                  <AddIcon className="mr-2 h-4 w-4" />
                   Create Set
                 </Button>
               </div>
@@ -447,7 +447,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                     <div key={set.id}>
                       <SortableCardWrapper id={set.id}>
                         {(
-                          dragHandleProps: React.HTMLAttributes<HTMLDivElement>
+                          dragHandleProps: React.HTMLAttributes<HTMLDivElement>,
                         ) => (
                           <SetCard
                             set={set}
@@ -482,11 +482,11 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
               {activeSet ? (
                 <div
                   className={cn(
-                    "p-6 bg-card border-2 border-secondary rounded-md shadow-lg min-w-70"
+                    "bg-card border-secondary min-w-70 rounded-md border-2 p-6 shadow-lg",
                   )}
                 >
                   <h6 className="text-lg font-semibold">{activeSet.name}</h6>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-muted-foreground text-xs">
                     {activeSet.fragmentation.strategy.toUpperCase()}
                   </p>
                 </div>
@@ -496,7 +496,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
 
           {/* Empty state */}
           {filteredSets.length === 0 && filterText && (
-            <Card className="p-8 text-center border-dashed border border-border">
+            <Card className="border-border border border-dashed p-8 text-center">
               <p className="text-muted-foreground">
                 No sets match "{filterText}"
               </p>
@@ -531,7 +531,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+              <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
                 <WarningIcon />
               </div>
               <div className="flex-1">
@@ -580,7 +580,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+              <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
                 <CompareIcon />
               </div>
               <div className="flex-1">
@@ -601,7 +601,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                     onClick={() =>
                       setCompareDialog((prev) => ({ ...prev, setB: s }))
                     }
-                    className="cursor-pointer p-3 rounded-md hover:bg-accent transition-colors"
+                    className="hover:bg-accent cursor-pointer rounded-md p-3 transition-colors"
                   >
                     <p className="text-sm font-medium">{s.name}</p>
                   </div>
@@ -634,6 +634,6 @@ const StatItem = ({ value, label, color, icon }: StatItemProps) => (
   <div className="flex flex-row items-center gap-2">
     {icon && <div className={cn("flex", color)}>{icon}</div>}
     <h5 className={cn("text-2xl font-bold", color)}>{value}</h5>
-    <p className="text-sm text-muted-foreground">{label}</p>
+    <p className="text-muted-foreground text-sm">{label}</p>
   </div>
 );

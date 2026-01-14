@@ -81,7 +81,7 @@ export const AddSniModal = ({
               broader patterns will match all subdomains.
             </AlertDescription>
           </Alert>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-muted-foreground text-sm">
             Original domain: <Badge>{domain}</Badge>
           </p>
           {!createNewSet && sets.length > 0 && (
@@ -111,7 +111,7 @@ export const AddSniModal = ({
                 <Label key={variant} htmlFor={`variant-${variant}`}>
                   <Field
                     orientation="horizontal"
-                    className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 border border-border rounded-md p-2"
+                    className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 border-border rounded-md border p-2"
                   >
                     <FieldContent>
                       <FieldTitle>
@@ -133,7 +133,7 @@ export const AddSniModal = ({
           </Button>
           <div className="flex-1" />
           <Button onClick={handleAdd} disabled={!selected || !selectedSetId}>
-            <AddIcon className="h-4 w-4 mr-2" />
+            <AddIcon className="mr-2 h-4 w-4" />
             Add Domain
           </Button>
         </DialogFooter>

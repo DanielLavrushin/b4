@@ -45,7 +45,7 @@ const IGNORE_KEYS = new Set([
 
 const flattenObject = (
   obj: Record<string, unknown>,
-  prefix = ""
+  prefix = "",
 ): Record<string, unknown> => {
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(obj)) {
@@ -55,7 +55,7 @@ const flattenObject = (
     if (value && typeof value === "object" && !Array.isArray(value)) {
       Object.assign(
         result,
-        flattenObject(value as Record<string, unknown>, path)
+        flattenObject(value as Record<string, unknown>, path),
       );
     } else {
       result[path] = value;
@@ -129,10 +129,10 @@ export const SetCompare = ({ open, setA, setB, onClose }: SetCompareProps) => {
 
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
+      <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-2xl">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+            <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
               <IconArrowsExchange />
             </div>
             <div className="flex-1">
@@ -146,24 +146,24 @@ export const SetCompare = ({ open, setA, setB, onClose }: SetCompareProps) => {
         <div className="flex-1 overflow-y-auto py-4">
           <div className="mt-4">
             {/* Header */}
-            <div className="grid grid-cols-12 gap-4 mb-4">
+            <div className="mb-4 grid grid-cols-12 gap-4">
               <div className="col-span-5">
-                <Card className="p-3 bg-accent text-center border border-border">
+                <Card className="bg-accent border-border border p-3 text-center">
                   <p className="text-sm font-semibold">{setA.name}</p>
                 </Card>
               </div>
               <div className="col-span-2 flex items-center justify-center">
-                <IconArrowsExchange className="h-5 w-5 text-muted-foreground" />
+                <IconArrowsExchange className="text-muted-foreground h-5 w-5" />
               </div>
               <div className="col-span-5">
-                <Card className="p-3 bg-accent-secondary text-center border border-border">
+                <Card className="bg-accent-secondary border-border border p-3 text-center">
                   <p className="text-sm font-semibold">{setB.name}</p>
                 </Card>
               </div>
             </div>
 
             {diffs.length === 0 ? (
-              <Card className="p-6 text-center bg-card border border-border">
+              <Card className="bg-card border-border border p-6 text-center">
                 <p className="text-muted-foreground">Sets are identical</p>
               </Card>
             ) : (
@@ -171,15 +171,15 @@ export const SetCompare = ({ open, setA, setB, onClose }: SetCompareProps) => {
                 {Object.entries(groupedDiffs).map(([section, items]) => (
                   <Card
                     key={section}
-                    className="overflow-hidden border border-border"
+                    className="border-border overflow-hidden border"
                   >
-                    <div className="px-4 py-2 bg-muted">
-                      <p className="text-xs font-semibold uppercase text-center">
+                    <div className="bg-muted px-4 py-2">
+                      <p className="text-center text-xs font-semibold uppercase">
                         {section}
                       </p>
                     </div>
                     <Separator />
-                    <div className="divide-y divide-border">
+                    <div className="divide-border divide-y">
                       {items.map((diff) => (
                         <div
                           key={diff.path}
@@ -188,10 +188,10 @@ export const SetCompare = ({ open, setA, setB, onClose }: SetCompareProps) => {
                           <div className="col-span-5">
                             <p
                               className={cn(
-                                "text-sm font-mono",
+                                "font-mono text-sm",
                                 diff.type === "removed"
                                   ? "text-destructive/70 line-through"
-                                  : "text-foreground"
+                                  : "text-foreground",
                               )}
                             >
                               {formatValue(diff.valueA)}
@@ -200,12 +200,12 @@ export const SetCompare = ({ open, setA, setB, onClose }: SetCompareProps) => {
                           <div className="col-span-2 flex items-center justify-center">
                             <Badge
                               className={cn(
-                                "text-xs px-1.5 py-0.5 h-6 inline-flex items-center text-muted-foreground",
+                                "text-muted-foreground inline-flex h-6 items-center px-1.5 py-0.5 text-xs",
                                 diff.type === "added"
                                   ? "bg-primary/20"
                                   : diff.type === "removed"
-                                  ? "bg-destructive/20"
-                                  : "bg-secondary/20"
+                                    ? "bg-destructive/20"
+                                    : "bg-secondary/20",
                               )}
                             >
                               {diff.label.split(" → ").pop() || ""}
@@ -214,10 +214,10 @@ export const SetCompare = ({ open, setA, setB, onClose }: SetCompareProps) => {
                           <div className="col-span-5">
                             <p
                               className={cn(
-                                "text-sm font-mono text-right",
+                                "text-right font-mono text-sm",
                                 diff.type === "added"
                                   ? "text-primary"
-                                  : "text-foreground"
+                                  : "text-foreground",
                               )}
                             >
                               {formatValue(diff.valueB)}

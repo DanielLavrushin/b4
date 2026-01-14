@@ -60,7 +60,7 @@ interface UpdateModalProps {
 const H2Typography = forwardRef<HTMLHeadingElement, React.ComponentProps<"h2">>(
   function H2Typography(props, ref) {
     return <CardTitle ref={ref} {...props} />;
-  }
+  },
 );
 
 export const UpdateModal = ({
@@ -131,7 +131,7 @@ export const UpdateModal = ({
     } else {
       setUpdateStatus("error");
       setUpdateMessage(
-        "Update may have completed but service did not restart. Please check manually."
+        "Update may have completed but service did not restart. Please check manually.",
       );
     }
   };
@@ -292,10 +292,10 @@ export const UpdateModal = ({
             onClick={() => void handleUpdate()}
             disabled={isUpdating || isCurrent}
             className={cn(
-              isDowngrade && "bg-destructive hover:bg-destructive/90"
+              isDowngrade && "bg-destructive hover:bg-destructive/90",
             )}
           >
-            <CloudDownloadIcon className="h-4 w-4 mr-2" />
+            <CloudDownloadIcon className="mr-2 h-4 w-4" />
             {isDowngrade ? "Downgrade" : "Update"}
           </Button>
         </>

@@ -29,29 +29,31 @@ export const MetricCard = ({
   return (
     <Card
       className={cn(
-        "relative overflow-visible transition-all hover:shadow-lg border border-border hover:border-border"
+        "border-border hover:border-border relative overflow-visible border transition-all hover:shadow-lg",
       )}
     >
       <div className="p-6">
-        <div className="flex flex-row justify-between items-start">
+        <div className="flex flex-row items-start justify-between">
           <div>
-            <p className="text-xs uppercase text-secondary mb-1">{title}</p>
-            <h4 className="text-2xl font-semibold text-primary mt-1">{value}</h4>
+            <p className="text-secondary mb-1 text-xs uppercase">{title}</p>
+            <h4 className="text-primary mt-1 text-2xl font-semibold">
+              {value}
+            </h4>
             {subtitle && (
-              <p className="text-xs text-secondary mt-1">{subtitle}</p>
+              <p className="text-secondary mt-1 text-xs">{subtitle}</p>
             )}
             {trend !== undefined && (
-              <div className="flex items-center mt-1">
+              <div className="mt-1 flex items-center">
                 <ImprovementIcon
                   className={cn(
-                    "h-4 w-4 mr-1",
-                    trend > 0 ? "text-green-500" : "text-red-500"
+                    "mr-1 h-4 w-4",
+                    trend > 0 ? "text-green-500" : "text-red-500",
                   )}
                 />
                 <p
                   className={cn(
                     "text-xs",
-                    trend > 0 ? "text-green-500" : "text-red-500"
+                    trend > 0 ? "text-green-500" : "text-red-500",
                   )}
                 >
                   {trend > 0 ? "+" : ""}
@@ -61,7 +63,7 @@ export const MetricCard = ({
             )}
           </div>
           <div
-            className="p-2 rounded-lg flex items-center justify-center"
+            className="flex items-center justify-center rounded-lg p-2"
             style={{
               backgroundColor: bgColor,
               color: colorHex,

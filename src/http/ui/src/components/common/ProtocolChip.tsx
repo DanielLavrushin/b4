@@ -18,7 +18,7 @@ export const ProtocolChip = ({ protocol }: ProtocolChipProps) => {
     <Badge
       variant="outline"
       className={cn(
-        protocol === "UDP" && "text-primary bg-primary/5 dark:bg-primary/10"
+        protocol === "UDP" && "text-primary bg-primary/5 dark:bg-primary/10",
       )}
     >
       {icon}

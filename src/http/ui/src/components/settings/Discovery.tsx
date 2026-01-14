@@ -24,7 +24,7 @@ interface CheckerSettingsProps {
   config: B4Config;
   onChange: (
     field: string,
-    value: string | boolean | number | string[]
+    value: string | boolean | number | string[],
   ) => void;
 }
 
@@ -45,7 +45,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
     const current = config.system.checker.reference_dns || [];
     onChange(
       "system.checker.reference_dns",
-      current.filter((s) => s !== dns)
+      current.filter((s) => s !== dns),
     );
   };
 
@@ -59,7 +59,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
         <CardDescription>Configure testing behavior and output</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Field className="w-full space-y-2">
             <div className="flex items-center justify-between">
               <FieldLabel className="text-sm font-medium">
@@ -121,16 +121,16 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
             </FieldDescription>
           </Field>
 
-          <div className="relative my-4 lg:col-span-2 flex items-center">
+          <div className="relative my-4 flex items-center lg:col-span-2">
             <Separator className="absolute inset-0 top-1/2" />
-            <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+            <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
               DNS Configuration
             </span>
           </div>
           <div className="col-span-1 md:col-span-2">
             <div className="flex flex-col gap-1.5">
               <FieldLabel>Add DNS Server</FieldLabel>
-              <div className="flex gap-2 items-start">
+              <div className="flex items-start gap-2">
                 <Input
                   value={newDns}
                   onChange={(e) => setNewDns(e.target.value)}

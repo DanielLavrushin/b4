@@ -44,20 +44,20 @@ export const DiscoveryLogPanel = ({ running }: DiscoveryLogPanelProps) => {
   if (!running && logs.length === 0) return null;
 
   return (
-    <div className="flex flex-col overflow-hidden border transition-colors border-border">
+    <div className="border-border flex flex-col overflow-hidden border transition-colors">
       <Collapsible open={expanded} onOpenChange={setExpanded}>
         {/* Header */}
         <CollapsibleTrigger asChild>
-          <div className="p-4 border-b border-border/50 bg-card flex items-center justify-between cursor-pointer hover:bg-accent/50 transition-colors">
+          <div className="border-border/50 bg-card hover:bg-accent/50 flex cursor-pointer items-center justify-between border-b p-4 transition-colors">
             <div className="flex items-center gap-3">
-              <LogsIcon className="h-5 w-5 text-secondary" />
-              <h6 className="text-base font-semibold text-foreground">
+              <LogsIcon className="text-secondary h-5 w-5" />
+              <h6 className="text-foreground text-base font-semibold">
                 Discovery Logs
               </h6>
               <div
                 className={cn(
-                  "w-4 h-4 rounded-full",
-                  connected ? "bg-secondary" : "bg-muted-foreground"
+                  "h-4 w-4 rounded-full",
+                  connected ? "bg-secondary" : "bg-muted-foreground",
                 )}
               />
               {logs.length > 0 && <Badge>{`${logs.length} lines`}</Badge>}
@@ -102,7 +102,7 @@ export const DiscoveryLogPanel = ({ running }: DiscoveryLogPanelProps) => {
         <CollapsibleContent>
           <div
             ref={scrollRef}
-            className="h-37.5 overflow-y-auto relative p-4 font-mono text-[13px] leading-relaxed whitespace-pre-wrap wrap-break-word bg-background text-foreground"
+            className="bg-background text-foreground relative h-37.5 overflow-y-auto p-4 font-mono text-[13px] leading-relaxed wrap-break-word whitespace-pre-wrap"
           >
             {logs.length === 0 ? (
               <p className="text-muted-foreground italic">
@@ -113,8 +113,8 @@ export const DiscoveryLogPanel = ({ running }: DiscoveryLogPanelProps) => {
                 <div
                   key={i}
                   className={cn(
-                    "font-mono text-[13px] hover:bg-accent/50",
-                    getLogColorClass(line)
+                    "hover:bg-accent/50 font-mono text-[13px]",
+                    getLogColorClass(line),
                   )}
                 >
                   {line}

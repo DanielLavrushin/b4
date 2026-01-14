@@ -117,7 +117,7 @@ function CategoryList({
       }
       return patternIndex === patternLower.length;
     },
-    []
+    [],
   );
 
   // Filter options using fuzzy search with deferred value for better performance
@@ -162,7 +162,7 @@ function CategoryList({
       }
       setInputValue("");
     },
-    [valueSet, value, onValueChange]
+    [valueSet, value, onValueChange],
   );
 
   // Memoize rendered items to avoid re-rendering on every state change
@@ -177,7 +177,7 @@ function CategoryList({
           onClick={() => handleToggleMemo(option)}
         >
           <span
-            className="flex-1 text-sm cursor-pointer flex items-center gap-2"
+            className="flex flex-1 cursor-pointer items-center gap-2 text-sm"
             onClick={(e) => {
               e.stopPropagation();
               onCategoryClick?.(option);
@@ -219,7 +219,7 @@ function CategoryList({
         <ComboboxContent anchor={anchor} className="max-h-75">
           {loading ? (
             <div className="flex items-center justify-center py-8">
-              <IconLoader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <IconLoader2 className="text-muted-foreground h-4 w-4 animate-spin" />
             </div>
           ) : (
             <ComboboxList>
@@ -232,7 +232,7 @@ function CategoryList({
         </ComboboxContent>
       </Combobox>
       {helperText && (
-        <p className="text-xs text-muted-foreground">{helperText}</p>
+        <p className="text-muted-foreground text-xs">{helperText}</p>
       )}
     </div>
   );
@@ -273,7 +273,7 @@ function useCategories(endpoint: string, enabled: boolean) {
 function useListManager<T extends string>(
   currentList: T[],
   onChange: (field: string, value: T[]) => void,
-  field: string
+  field: string,
 ) {
   const addItems = React.useCallback(
     (input: string, setInput: (v: string) => void) => {
@@ -292,17 +292,17 @@ function useListManager<T extends string>(
       }
       setInput("");
     },
-    [currentList, onChange, field]
+    [currentList, onChange, field],
   );
 
   const removeItem = React.useCallback(
     (item: T) => {
       onChange(
         field,
-        currentList.filter((i) => i !== item)
+        currentList.filter((i) => i !== item),
       );
     },
-    [currentList, onChange, field]
+    [currentList, onChange, field],
   );
 
   const clearAll = React.useCallback(() => {
@@ -339,7 +339,7 @@ export const TargetSettings = ({
   const domainsManager = useListManager(
     config.targets.sni_domains,
     onChange,
-    "targets.sni_domains"
+    "targets.sni_domains",
   );
   const ipsManager = useListManager(config.targets.ip, onChange, "targets.ip");
 
@@ -347,7 +347,7 @@ export const TargetSettings = ({
     setPreviewDialog({ open: true, category, loading: true });
     try {
       const response = await fetch(
-        `/api/geosite/category?tag=${encodeURIComponent(category)}`
+        `/api/geosite/category?tag=${encodeURIComponent(category)}`,
       );
       if (response.ok) {
         const data = (await response.json()) as CategoryPreview;
@@ -368,14 +368,14 @@ export const TargetSettings = ({
         <div className="flex items-center gap-1">
           <span>{category}</span>
           {count && (
-            <span className="bg-accent px-1 rounded font-semibold text-xs">
+            <span className="bg-accent rounded px-1 text-xs font-semibold">
               {count}
             </span>
           )}
         </div>
       );
     },
-    []
+    [],
   );
 
   return (
@@ -384,7 +384,7 @@ export const TargetSettings = ({
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+              <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
                 <DomainIcon />
               </div>
               <div className="flex-1">
@@ -396,7 +396,7 @@ export const TargetSettings = ({
             </div>
           </CardHeader>
           <CardContent>
-            <div className="border-b border-border mb-0">
+            <div className="border-border mb-0 border-b">
               <Tabs
                 value={tabValue.toString()}
                 onValueChange={(v) => setTabValue(Number(v))}
@@ -404,11 +404,11 @@ export const TargetSettings = ({
               >
                 <TabsList
                   variant="line"
-                  className="border-b border-border rounded-none bg-transparent p-0 h-auto"
+                  className="border-border h-auto rounded-none border-b bg-transparent p-0"
                 >
                   <TabsTrigger
                     value="0"
-                    className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none border-b-2 border-transparent"
+                    className="data-[state=active]:border-primary rounded-none border-b-2 border-transparent data-[state=active]:border-b-2"
                   >
                     <div className="flex items-center gap-1.5">
                       <DomainIcon />
@@ -417,7 +417,7 @@ export const TargetSettings = ({
                   </TabsTrigger>
                   <TabsTrigger
                     value="1"
-                    className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none border-b-2 border-transparent"
+                    className="data-[state=active]:border-primary rounded-none border-b-2 border-transparent data-[state=active]:border-b-2"
                   >
                     <div className="flex items-center gap-1.5">
                       <IpIcon />
@@ -428,7 +428,7 @@ export const TargetSettings = ({
 
                 {/* DPI Bypass Tab */}
                 <TabsContent value="0" className="pt-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     {/* Manual Bypass Domains */}
                     <div>
                       <div className="flex flex-col gap-1.5">
@@ -436,14 +436,14 @@ export const TargetSettings = ({
                           <DomainIcon /> Manual Bypass Domains
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <InfoIcon className="h-4 w-4 text-muted-foreground" />
+                              <InfoIcon className="text-muted-foreground h-4 w-4" />
                             </TooltipTrigger>
                             <TooltipContent>
                               <p>Add specific domains to bypass DPI.</p>
                             </TooltipContent>
                           </Tooltip>
                         </Label>
-                        <div className="flex gap-2 items-start">
+                        <div className="flex items-start gap-2">
                           <Field className="flex-1">
                             <Input
                               value={newBypassDomain}
@@ -459,7 +459,7 @@ export const TargetSettings = ({
                                   e.preventDefault();
                                   domainsManager.addItems(
                                     newBypassDomain,
-                                    setNewBypassDomain
+                                    setNewBypassDomain,
                                   );
                                 }
                               }}
@@ -472,7 +472,7 @@ export const TargetSettings = ({
                             onClick={() =>
                               domainsManager.addItems(
                                 newBypassDomain,
-                                setNewBypassDomain
+                                setNewBypassDomain,
                               )
                             }
                             disabled={!newBypassDomain.trim()}
@@ -491,7 +491,7 @@ export const TargetSettings = ({
                             <CategoryIcon /> Bypass GeoSite Categories
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <InfoIcon className="h-4 w-4 text-muted-foreground" />
+                                <InfoIcon className="text-muted-foreground h-4 w-4" />
                               </TooltipTrigger>
                               <TooltipContent>
                                 <p>
@@ -518,7 +518,7 @@ export const TargetSettings = ({
                             getCategoryLabel={(c) =>
                               renderCategoryLabel(
                                 c,
-                                stats?.geosite_category_breakdown
+                                stats?.geosite_category_breakdown,
                               )
                             }
                           />
@@ -527,7 +527,7 @@ export const TargetSettings = ({
                     )}
                   </div>
                   {/* ChipLists Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 my-4">
+                  <div className="my-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
                       <ChipList
                         items={config.targets.sni_domains}
@@ -547,15 +547,15 @@ export const TargetSettings = ({
                             getLabel={(c) =>
                               renderCategoryLabel(
                                 c,
-                                stats?.geosite_category_breakdown
+                                stats?.geosite_category_breakdown,
                               )
                             }
                             onDelete={(c) =>
                               onChange(
                                 "targets.geosite_categories",
                                 config.targets.geosite_categories.filter(
-                                  (cat) => cat !== c
-                                )
+                                  (cat) => cat !== c,
+                                ),
                               )
                             }
                             onClick={(c) => void previewCategory(c)}
@@ -568,7 +568,7 @@ export const TargetSettings = ({
 
                 {/* Bypass IPs Tab */}
                 <TabsContent value="1" className="pt-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     {/* Manual Bypass IPs */}
                     <div>
                       <div className="flex flex-col gap-1.5">
@@ -576,14 +576,14 @@ export const TargetSettings = ({
                           <DomainIcon /> Manual Bypass IPs
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <InfoIcon className="h-4 w-4 text-muted-foreground" />
+                              <InfoIcon className="text-muted-foreground h-4 w-4" />
                             </TooltipTrigger>
                             <TooltipContent>
                               <p>Add specific ip/cidr to bypass DPI.</p>
                             </TooltipContent>
                           </Tooltip>
                         </Label>
-                        <div className="flex gap-2 items-start">
+                        <div className="flex items-start gap-2">
                           <Field className="flex-1">
                             <Input
                               value={newBypassIP}
@@ -597,7 +597,7 @@ export const TargetSettings = ({
                                   e.preventDefault();
                                   ipsManager.addItems(
                                     newBypassIP,
-                                    setNewBypassIP
+                                    setNewBypassIP,
                                   );
                                 }
                               }}
@@ -626,7 +626,7 @@ export const TargetSettings = ({
                             <CategoryIcon /> Bypass GeoIP Categories
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <InfoIcon className="h-4 w-4 text-muted-foreground" />
+                                <InfoIcon className="text-muted-foreground h-4 w-4" />
                               </TooltipTrigger>
                               <TooltipContent>
                                 <p>
@@ -648,7 +648,7 @@ export const TargetSettings = ({
                             getCategoryLabel={(c: string) =>
                               renderCategoryLabel(
                                 c,
-                                stats?.geoip_category_breakdown
+                                stats?.geoip_category_breakdown,
                               )
                             }
                           />
@@ -657,7 +657,7 @@ export const TargetSettings = ({
                     )}
                   </div>
                   {/* ChipLists Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 my-4">
+                  <div className="my-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
                       <ChipList
                         items={config.targets.ip}
@@ -678,15 +678,15 @@ export const TargetSettings = ({
                             getLabel={(c) =>
                               renderCategoryLabel(
                                 c,
-                                stats?.geoip_category_breakdown
+                                stats?.geoip_category_breakdown,
                               )
                             }
                             onDelete={(c) =>
                               onChange(
                                 "targets.geoip_categories",
                                 config.targets.geoip_categories.filter(
-                                  (cat) => cat !== c
-                                )
+                                  (cat) => cat !== c,
+                                ),
                               )
                             }
                           />
@@ -712,7 +712,7 @@ export const TargetSettings = ({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+              <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
                 <CategoryIcon />
               </div>
               <div className="flex-1">
@@ -727,10 +727,10 @@ export const TargetSettings = ({
           </DialogHeader>
           <div className="py-4">
             {previewDialog.loading ? (
-              <div className="p-4 space-y-2">
-                <div className="h-4 bg-muted rounded animate-pulse" />
-                <div className="h-4 bg-muted rounded animate-pulse" />
-                <div className="h-4 bg-muted rounded animate-pulse" />
+              <div className="space-y-2 p-4">
+                <div className="bg-muted h-4 animate-pulse rounded" />
+                <div className="bg-muted h-4 animate-pulse rounded" />
+                <div className="bg-muted h-4 animate-pulse rounded" />
               </div>
             ) : previewDialog.data ? (
               <>
@@ -743,9 +743,9 @@ export const TargetSettings = ({
                       ` (showing first ${previewDialog.data.preview_count})`}
                   </AlertDescription>
                 </Alert>
-                <div className="max-h-150 overflow-auto space-y-1">
+                <div className="max-h-150 space-y-1 overflow-auto">
                   {previewDialog.data.preview.map((domain) => (
-                    <div key={domain} className="p-2 hover:bg-accent rounded">
+                    <div key={domain} className="hover:bg-accent rounded p-2">
                       <p className="text-sm">{domain}</p>
                     </div>
                   ))}

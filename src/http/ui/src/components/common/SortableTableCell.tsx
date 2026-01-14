@@ -27,9 +27,9 @@ export const SortableTableCell = ({
   return (
     <th
       className={cn(
-        "bg-card font-semibold border-b-2 border-border cursor-pointer select-none px-4 py-2 group",
+        "bg-card border-border group cursor-pointer border-b-2 px-4 py-2 font-semibold select-none",
         "hover:border-secondary hover:bg-muted/50 transition-colors",
-        alignClasses[align]
+        alignClasses[align],
       )}
       onClick={onSort}
     >
@@ -39,7 +39,7 @@ export const SortableTableCell = ({
             "transition-colors",
             active
               ? "text-primary"
-              : "text-muted-foreground group-hover:text-foreground"
+              : "text-muted-foreground group-hover:text-foreground",
           )}
         >
           {label}
@@ -50,7 +50,7 @@ export const SortableTableCell = ({
               "h-3 w-3 transition-colors",
               active && direction === "asc"
                 ? "text-primary"
-                : "text-muted-foreground opacity-30 group-hover:opacity-60"
+                : "text-muted-foreground opacity-30 group-hover:opacity-60",
             )}
           />
           <ExpandIcon
@@ -58,7 +58,7 @@ export const SortableTableCell = ({
               "h-3 w-3 transition-colors",
               active && direction === "desc"
                 ? "text-primary"
-                : "text-muted-foreground opacity-30 group-hover:opacity-60"
+                : "text-muted-foreground opacity-30 group-hover:opacity-60",
             )}
           />
         </div>

@@ -10,7 +10,7 @@ export function Logo({ className }: LogoProps) {
   return (
     <div className={cn("flex flex-col gap-0", className)}>
       <div
-        className="text-[0.65rem] opacity-70 tracking-widest uppercase"
+        className="text-[0.65rem] tracking-widest uppercase opacity-70"
         style={{
           color: colors.text.secondary,
         }}

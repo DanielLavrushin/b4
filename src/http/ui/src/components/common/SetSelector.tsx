@@ -95,7 +95,7 @@ export const SetSelector = ({
         <SelectContent>
           <SelectItem
             value={NEW_SET_ID}
-            className="font-semibold text-primary border-b border-border"
+            className="text-primary border-border border-b font-semibold"
           >
             <div className="flex items-center gap-2">
               <AddIcon />

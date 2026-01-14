@@ -29,14 +29,14 @@ export function useDevices() {
       try {
         await devicesApi.setAlias(mac, alias);
         setDevices((prev) =>
-          prev.map((d) => (d.mac === mac ? { ...d, alias } : d))
+          prev.map((d) => (d.mac === mac ? { ...d, alias } : d)),
         );
         return { success: true };
       } catch (e) {
         return { success: false, error: String(e) };
       }
     },
-    []
+    [],
   );
 
   const resetAlias = useCallback(
@@ -44,14 +44,14 @@ export function useDevices() {
       try {
         await devicesApi.resetAlias(mac);
         setDevices((prev) =>
-          prev.map((d) => (d.mac === mac ? { ...d, alias: undefined } : d))
+          prev.map((d) => (d.mac === mac ? { ...d, alias: undefined } : d)),
         );
         return { success: true };
       } catch (e) {
         return { success: false, error: String(e) };
       }
     },
-    []
+    [],
   );
 
   return {

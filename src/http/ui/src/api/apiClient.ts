@@ -22,7 +22,7 @@ export class ApiError extends Error {
     public url: string,
     public status: number,
     public statusText: string,
-    public body?: unknown
+    public body?: unknown,
   ) {
     super(`${status} ${statusText}`);
     this.name = "B4ApiError";
@@ -44,7 +44,7 @@ export class ApiError extends Error {
 
 export async function apiFetch<T>(
   url: string,
-  options?: RequestInit & { expect?: ContentType }
+  options?: RequestInit & { expect?: ContentType },
 ): Promise<T> {
   const { expect = "json", ...fetchOptions } = options ?? {};
 
@@ -76,7 +76,7 @@ export async function apiGet<T>(url: string, expect?: ContentType): Promise<T> {
 export async function apiPost<T>(
   url: string,
   body?: unknown,
-  expect?: ContentType
+  expect?: ContentType,
 ): Promise<T> {
   return apiFetch<T>(url, {
     method: "POST",
@@ -91,7 +91,7 @@ export async function apiPost<T>(
 export async function apiPut<T>(
   url: string,
   body: unknown,
-  expect?: ContentType
+  expect?: ContentType,
 ): Promise<T> {
   return apiFetch<T>(url, {
     method: "PUT",
@@ -105,7 +105,7 @@ export async function apiPut<T>(
 
 export async function apiDelete(
   url: string,
-  expect?: ContentType
+  expect?: ContentType,
 ): Promise<void> {
   return apiFetch(url, {
     method: "DELETE",
@@ -115,7 +115,7 @@ export async function apiDelete(
 
 export async function apiUpload<T>(
   url: string,
-  formData: FormData
+  formData: FormData,
 ): Promise<T> {
   const r = await fetch(url, {
     method: "POST",

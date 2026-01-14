@@ -69,13 +69,13 @@ export const DiscoveryOptionsPanel = ({
   };
 
   return (
-    <div className="border border-border rounded-md overflow-hidden">
+    <div className="border-border overflow-hidden rounded-md border">
       {/* Header */}
       <Collapsible open={expanded} onOpenChange={setExpanded}>
         <CollapsibleTrigger asChild>
-          <div className="p-3 bg-accent flex items-center justify-between cursor-pointer hover:bg-accent/80 transition-colors">
+          <div className="bg-accent hover:bg-accent/80 flex cursor-pointer items-center justify-between p-3 transition-colors">
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">
+              <span className="text-muted-foreground text-sm">
                 Discovery Options
               </span>
               {!expanded && hasOptions && (
@@ -85,17 +85,17 @@ export const DiscoveryOptionsPanel = ({
               )}
             </div>
             {expanded ? (
-              <CollapseIcon className="h-4 w-4 text-muted-foreground" />
+              <CollapseIcon className="text-muted-foreground h-4 w-4" />
             ) : (
-              <ExpandIcon className="h-4 w-4 text-muted-foreground" />
+              <ExpandIcon className="text-muted-foreground h-4 w-4" />
             )}
           </div>
         </CollapsibleTrigger>
 
         {/* Content */}
         <CollapsibleContent>
-          <div className="p-4 bg-card border-t border-border space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-card border-border space-y-4 border-t p-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {/* Skip DNS Switch */}
               <label htmlFor="switch-skip-dns">
                 <Field orientation="horizontal">
@@ -135,7 +135,7 @@ export const DiscoveryOptionsPanel = ({
                       <SelectContent>
                         {tlsCaptures
                           .filter(
-                            (c) => !options.payloadFiles.includes(c.domain)
+                            (c) => !options.payloadFiles.includes(c.domain),
                           )
                           .map((capture) => (
                             <SelectItem
@@ -164,7 +164,7 @@ export const DiscoveryOptionsPanel = ({
 
               {tlsCaptures.length === 0 && (
                 <div className="md:col-span-2">
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-muted-foreground text-xs">
                     No captured payloads available.{" "}
                     <a
                       href="/settings#capture"
@@ -191,7 +191,7 @@ function getOptionsSummary(options: DiscoveryOptions): string {
     parts.push(
       `${options.payloadFiles.length} payload${
         options.payloadFiles.length > 1 ? "s" : ""
-      }`
+      }`,
     );
   }
   return parts.join(", ");

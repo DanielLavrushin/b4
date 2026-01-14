@@ -36,7 +36,7 @@ interface FragmentationSettingsProps {
   config: B4SetConfig;
   onChange: (
     field: string,
-    value: string | boolean | number | string[]
+    value: string | boolean | number | string[],
   ) => void;
 }
 
@@ -68,7 +68,7 @@ export const FragmentationSettings = ({
     <Card>
       <CardHeader>
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+          <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
             <FragIcon />
           </div>
           <div className="flex-1">
@@ -80,7 +80,7 @@ export const FragmentationSettings = ({
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           {/* Strategy Selection */}
           <div>
             <Field>
@@ -143,9 +143,9 @@ export const FragmentationSettings = ({
 
           {isOob && (
             <>
-              <div className="relative my-4 md:col-span-2 flex items-center">
+              <div className="relative my-4 flex items-center md:col-span-2">
                 <Separator className="absolute inset-0 top-1/2" />
-                <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+                <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
                   OOB (Out-of-Band) Strategy
                 </span>
               </div>
@@ -185,11 +185,11 @@ export const FragmentationSettings = ({
 
               <div>
                 <div>
-                  <p className="text-sm mb-2">
+                  <p className="mb-2 text-sm">
                     OOB Byte:{" "}
-                    <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">
+                    <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">
                       {String.fromCharCode(
-                        config.fragmentation.oob_char || 120
+                        config.fragmentation.oob_char || 120,
                       )}
                     </code>{" "}
                     (0x
@@ -206,9 +206,9 @@ export const FragmentationSettings = ({
           {/* TLS Record Settings */}
           {isTls && (
             <>
-              <div className="relative my-4 md:col-span-2 flex items-center">
+              <div className="relative my-4 flex items-center md:col-span-2">
                 <Separator className="absolute inset-0 top-1/2" />
-                <span className="text-xs font-medium text-muted-foreground px-2 uppercase bg-card relative mx-auto block w-fit">
+                <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
                   TLS Record Splitting Strategy
                 </span>
               </div>

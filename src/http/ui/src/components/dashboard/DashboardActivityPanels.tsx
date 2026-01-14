@@ -31,7 +31,7 @@ export const DashboardActivityPanels = ({
     .slice(0, 10);
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
       <Card>
         <CardHeader>
           <CardTitle>Top Domains</CardTitle>
@@ -42,7 +42,7 @@ export const DashboardActivityPanels = ({
               {topDomainsData.map(([domain, count], index) => (
                 <li
                   key={domain}
-                  className="flex justify-between items-center py-2"
+                  className="flex items-center justify-between py-2"
                 >
                   <span className="text-sm">
                     {index + 1}. {domain}
@@ -52,7 +52,7 @@ export const DashboardActivityPanels = ({
               ))}
             </ul>
           ) : (
-            <p className="text-muted-foreground text-center py-8">
+            <p className="text-muted-foreground py-8 text-center">
               No domain data available yet
             </p>
           )}
@@ -68,16 +68,16 @@ export const DashboardActivityPanels = ({
             <ul className="max-h-100 overflow-auto">
               {recentConnections.map((conn) => (
                 <li key={conn.timestamp} className="py-2">
-                  <div className="flex gap-2 items-center">
+                  <div className="flex items-center gap-2">
                     <ProtocolChip protocol={conn.protocol} />
                     <span className="text-sm">{conn.domain}</span>
                     {conn.is_target && (
-                      <Badge className="font-semibold bg-green-500/20 text-green-500">
+                      <Badge className="bg-green-500/20 font-semibold text-green-500">
                         TARGET
                       </Badge>
                     )}
                   </div>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-muted-foreground text-xs">
                     {conn.source} → {conn.destination} •{" "}
                     {new Date(conn.timestamp).toLocaleTimeString()}
                   </span>
@@ -85,7 +85,7 @@ export const DashboardActivityPanels = ({
               ))}
             </ul>
           ) : (
-            <p className="text-muted-foreground text-center py-8">
+            <p className="text-muted-foreground py-8 text-center">
               No recent connections
             </p>
           )}

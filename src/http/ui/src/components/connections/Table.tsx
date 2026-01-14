@@ -67,9 +67,9 @@ const TableRowMemo = memo<{
             log.domain && !log.hostSet && onDomainClick(log.domain)
           }
         >
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex min-w-0 items-center gap-2">
             {log.domain && (
-              <span className="flex-1 min-w-0 wrap-break-word">
+              <span className="min-w-0 flex-1 wrap-break-word">
                 {log.domain}
               </span>
             )}
@@ -105,8 +105,8 @@ const TableRowMemo = memo<{
             log.destination && !log.ipSet && onIpClick(log.destination)
           }
         >
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="flex-1 min-w-0 wrap-break-word">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 flex-1 wrap-break-word">
               {log.destination}
             </span>
             {!log.ipSet && (
@@ -128,7 +128,7 @@ const TableRowMemo = memo<{
       </TableRow>
     );
   },
-  (prev, next) => prev.log.raw === next.log.raw
+  (prev, next) => prev.log.raw === next.log.raw,
 );
 
 TableRowMemo.displayName = "TableRowMemo";
@@ -152,7 +152,7 @@ export const DomainsTable = ({
 
   const visibleData = useMemo(
     () => data.slice(startIndex, endIndex),
-    [data, startIndex, endIndex]
+    [data, startIndex, endIndex],
   );
 
   const handleScroll = useCallback(
@@ -164,7 +164,7 @@ export const DomainsTable = ({
         target.scrollHeight - target.scrollTop - target.clientHeight < 50;
       onScrollStateChange(isAtBottom);
     },
-    [onScrollStateChange]
+    [onScrollStateChange],
   );
 
   useEffect(() => {
@@ -202,7 +202,7 @@ export const DomainsTable = ({
     <div
       ref={containerRef}
       onScroll={handleScroll}
-      className="absolute inset-0 bg-background overflow-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/50"
+      className="bg-background [&::-webkit-scrollbar-thumb]:bg-border hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/50 absolute inset-0 overflow-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding [&::-webkit-scrollbar-track]:bg-transparent"
     >
       <Table className="[&>div]:overflow-visible">
         <TableHeader className="sticky top-0 z-1">
@@ -250,7 +250,7 @@ export const DomainsTable = ({
             <TableRow>
               <TableCell
                 colSpan={6}
-                className="text-center py-8 text-muted-foreground italic"
+                className="text-muted-foreground py-8 text-center italic"
               >
                 Waiting for connections...
               </TableCell>
@@ -262,7 +262,7 @@ export const DomainsTable = ({
                   <TableCell
                     colSpan={6}
                     style={{ height: startIndex * ROW_HEIGHT }}
-                    className="p-0 border-0"
+                    className="border-0 p-0"
                   />
                 </TableRow>
               )}
@@ -281,7 +281,7 @@ export const DomainsTable = ({
                   <TableCell
                     colSpan={6}
                     style={{ height: (data.length - endIndex) * ROW_HEIGHT }}
-                    className="p-0 border-0"
+                    className="border-0 p-0"
                   />
                 </TableRow>
               )}
