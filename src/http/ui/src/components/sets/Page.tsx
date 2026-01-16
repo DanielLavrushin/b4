@@ -35,7 +35,7 @@ export function SetsPage() {
     return (
       <div className="bg-background/80 fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm">
         <div className="flex flex-col items-center gap-4">
-          <Spinner className="h-12 w-12" />
+          <Spinner className="size-12" />
           <p className="text-foreground">Loading...</p>
         </div>
       </div>

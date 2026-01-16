@@ -288,9 +288,9 @@ export function DashboardPage() {
             className="inline-flex items-center gap-1"
           >
             {connected ? (
-              <CheckIcon className="h-3 w-3" />
+              <CheckIcon className="size-3" />
             ) : (
-              <CloseIcon className="h-3 w-3" />
+              <CloseIcon className="size-3" />
             )}
             {connected ? "Connected" : "Disconnected"}
           </Badge>

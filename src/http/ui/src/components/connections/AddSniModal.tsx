@@ -133,7 +133,7 @@ export const AddSniModal = ({
           </Button>
           <div className="flex-1" />
           <Button onClick={handleAdd} disabled={!selected || !selectedSetId}>
-            <AddIcon className="mr-2 h-4 w-4" />
+            <AddIcon className="mr-2 size-4" />
             Add Domain
           </Button>
         </DialogFooter>

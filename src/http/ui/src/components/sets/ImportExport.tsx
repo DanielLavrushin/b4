@@ -166,7 +166,7 @@ export const ImportExportSettings = ({
     <Card>
       <CardHeader>
         <div className="flex items-center gap-3">
-          <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
+          <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
             <ImportExportIcon />
           </div>
           <div className="flex-1">
@@ -208,13 +208,13 @@ export const ImportExportSettings = ({
               onClick={handleReset}
               disabled={!hasChanges}
             >
-              <RefreshIcon className="mr-2 h-4 w-4" />
+              <RefreshIcon className="mr-2 size-4" />
               Reset
             </Button>
             <div className="flex-1" />
             <div className="flex items-center gap-2">
               {validationSuccess && !validationError && (
-                <CheckIcon className="text-primary h-4 w-4" />
+                <CheckIcon className="text-primary size-4" />
               )}
               <Button
                 variant="outline"

@@ -164,31 +164,31 @@ export const SetEditor = ({
           >
             <TabsList className="grid w-full grid-cols-7">
               <TabsTrigger value={TABS.TARGETS.toString()}>
-                <DomainIcon className="mr-2 h-4 w-4" />
+                <DomainIcon className="mr-2 size-4" />
                 Targets
               </TabsTrigger>
               <TabsTrigger value={TABS.TCP.toString()}>
-                <TcpIcon className="mr-2 h-4 w-4" />
+                <TcpIcon className="mr-2 size-4" />
                 TCP
               </TabsTrigger>
               <TabsTrigger value={TABS.UDP.toString()}>
-                <UdpIcon className="mr-2 h-4 w-4" />
+                <UdpIcon className="mr-2 size-4" />
                 UDP
               </TabsTrigger>
               <TabsTrigger value={TABS.DNS.toString()}>
-                <DnsIcon className="mr-2 h-4 w-4" />
+                <DnsIcon className="mr-2 size-4" />
                 DNS
               </TabsTrigger>
               <TabsTrigger value={TABS.FRAGMENTATION.toString()}>
-                <FragIcon className="mr-2 h-4 w-4" />
+                <FragIcon className="mr-2 size-4" />
                 Fragmentation
               </TabsTrigger>
               <TabsTrigger value={TABS.FAKING.toString()}>
-                <FakingIcon className="mr-2 h-4 w-4" />
+                <FakingIcon className="mr-2 size-4" />
                 Faking
               </TabsTrigger>
               <TabsTrigger value={TABS.IMPORT_EXPORT.toString()}>
-                <ImportExportIcon className="mr-2 h-4 w-4" />
+                <ImportExportIcon className="mr-2 size-4" />
                 Import/Export
               </TabsTrigger>
             </TabsList>
@@ -279,7 +279,7 @@ export const SetEditor = ({
           >
             {saving ? (
               <>
-                <Spinner className="mr-2 h-4 w-4" />
+                <Spinner className="mr-2 size-4" />
                 Saving...
               </>
             ) : isNew ? (

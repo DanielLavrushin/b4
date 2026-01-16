@@ -84,7 +84,7 @@ export const TargetSettings = ({
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
-              <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
+              <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
                 <DomainIcon />
               </div>
               <div className="flex-1">
@@ -134,7 +134,7 @@ export const TargetSettings = ({
                       <DomainIcon /> Manual Bypass Domains
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <InfoIcon className="text-muted-foreground h-4 w-4" />
+                          <InfoIcon className="text-muted-foreground size-4" />
                         </TooltipTrigger>
                         <TooltipContent>
                           <p>Add specific domains to bypass DPI.</p>
@@ -157,7 +157,7 @@ export const TargetSettings = ({
                         <CategoryIcon /> Bypass GeoSite Categories
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <InfoIcon className="text-muted-foreground h-4 w-4" />
+                            <InfoIcon className="text-muted-foreground size-4" />
                           </TooltipTrigger>
                           <TooltipContent>
                             <p>
@@ -194,7 +194,7 @@ export const TargetSettings = ({
                       <IpIcon /> Manual Bypass IPs
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <InfoIcon className="text-muted-foreground h-4 w-4" />
+                          <InfoIcon className="text-muted-foreground size-4" />
                         </TooltipTrigger>
                         <TooltipContent>
                           <p>Add specific ip/cidr to bypass DPI.</p>
@@ -215,7 +215,7 @@ export const TargetSettings = ({
                         <CategoryIcon /> Bypass GeoIP Categories
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <InfoIcon className="text-muted-foreground h-4 w-4" />
+                            <InfoIcon className="text-muted-foreground size-4" />
                           </TooltipTrigger>
                           <TooltipContent>
                             <p>

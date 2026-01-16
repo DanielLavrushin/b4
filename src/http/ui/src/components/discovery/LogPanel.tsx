@@ -50,13 +50,13 @@ export const DiscoveryLogPanel = ({ running }: DiscoveryLogPanelProps) => {
         <CollapsibleTrigger asChild>
           <div className="border-border/50 bg-card hover:bg-accent/50 flex cursor-pointer items-center justify-between border-b p-4 transition-colors">
             <div className="flex items-center gap-3">
-              <LogsIcon className="text-secondary h-5 w-5" />
+              <LogsIcon className="text-secondary size-5" />
               <h6 className="text-foreground text-base font-semibold">
                 Discovery Logs
               </h6>
               <div
                 className={cn(
-                  "h-4 w-4 rounded-full",
+                  "size-4 rounded-full",
                   connected ? "bg-secondary" : "bg-muted-foreground",
                 )}
               />
@@ -73,7 +73,7 @@ export const DiscoveryLogPanel = ({ running }: DiscoveryLogPanelProps) => {
                         e.stopPropagation();
                         clearLogs();
                       }}
-                      className="h-8 w-8 p-0"
+                      className="size-8 p-0"
                     >
                       <ClearIcon />
                     </Button>
@@ -90,7 +90,7 @@ export const DiscoveryLogPanel = ({ running }: DiscoveryLogPanelProps) => {
                   e.stopPropagation();
                   setExpanded((prev) => !prev);
                 }}
-                className="h-8 w-8 p-0"
+                className="size-8 p-0"
               >
                 {expanded ? <CollapseIcon /> : <ExpandIcon />}
               </Button>

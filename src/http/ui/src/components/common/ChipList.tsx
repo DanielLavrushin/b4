@@ -62,7 +62,7 @@ export function ChipList<T>({
                   }}
                   className="hover:bg-secondary-foreground/20 ml-1 rounded-full p-0.5"
                 >
-                  <CloseIcon className="h-3 w-3" />
+                  <CloseIcon className="size-3" />
                 </button>
               )}
             </Badge>

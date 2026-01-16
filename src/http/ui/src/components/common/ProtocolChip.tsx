@@ -9,9 +9,9 @@ interface ProtocolChipProps {
 export const ProtocolChip = ({ protocol }: ProtocolChipProps) => {
   const icon =
     protocol === "TCP" ? (
-      <TcpIcon className="h-3 w-3" />
+      <TcpIcon className="size-3" />
     ) : (
-      <UdpIcon className="h-3 w-3" />
+      <UdpIcon className="size-3" />
     );
 
   return (

@@ -66,9 +66,7 @@ const TargetBadge = ({ label, type }: TargetBadgeProps) => {
           variant={isGeo ? "secondary" : "outline"}
           className="inline-flex items-center gap-1"
         >
-          {(type === "ip" || type === "geoip") && (
-            <IpIcon className="h-3 w-3" />
-          )}
+          {(type === "ip" || type === "geoip") && <IpIcon className="size-3" />}
           {truncated}
         </Badge>
       </TooltipTrigger>
@@ -251,7 +249,7 @@ export const SetCard = ({
                   handleAction(onEdit);
                 }}
               >
-                <EditIcon className="mr-2 h-4 w-4" />
+                <EditIcon className="mr-2 size-4" />
                 Edit
               </Button>
               <DropdownMenu
@@ -273,11 +271,11 @@ export const SetCard = ({
                   onClick={(e) => e.stopPropagation()}
                 >
                   <DropdownMenuItem onClick={() => handleAction(onDuplicate)}>
-                    <CopyIcon className="mr-2 h-4 w-4" />
+                    <CopyIcon className="mr-2 size-4" />
                     Duplicate
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => handleAction(onCompare)}>
-                    <IconArrowsExchange className="mr-2 h-4 w-4" />
+                    <IconArrowsExchange className="mr-2 size-4" />
                     Compare
                   </DropdownMenuItem>
                   {!isMain && <DropdownMenuSeparator />}
@@ -286,7 +284,7 @@ export const SetCard = ({
                       onClick={() => handleAction(onDelete)}
                       className="text-destructive"
                     >
-                      <ClearIcon className="mr-2 h-4 w-4" />
+                      <ClearIcon className="mr-2 size-4" />
                       Delete
                     </DropdownMenuItem>
                   )}
@@ -330,7 +328,7 @@ export const SetCard = ({
             <Tooltip>
               <TooltipTrigger asChild>
                 <div className="flex w-fit items-center gap-1.5">
-                  <DomainIcon className="text-muted-foreground h-4 w-4 shrink-0" />
+                  <DomainIcon className="text-muted-foreground size-4 shrink-0" />
                   <span className="text-foreground text-sm font-semibold">
                     {domainCount.toLocaleString()}
                   </span>
@@ -347,7 +345,7 @@ export const SetCard = ({
             <Tooltip>
               <TooltipTrigger asChild>
                 <div className="flex w-fit items-center gap-1.5">
-                  <IpIcon className="text-muted-foreground h-4 w-4 shrink-0" />
+                  <IpIcon className="text-muted-foreground size-4 shrink-0" />
                   <span className="text-foreground text-sm font-semibold">
                     {ipCount.toLocaleString()}
                   </span>
@@ -452,9 +450,9 @@ const QuickFlag = ({ icon, label, enabled, tooltip }: QuickFlagProps) => {
                 )}
               >
                 {enabled ? (
-                  <CheckIcon className="h-3 w-3" />
+                  <CheckIcon className="size-3" />
                 ) : (
-                  <CloseIcon className="h-3 w-3" />
+                  <CloseIcon className="size-3" />
                 )}
               </div>
             )

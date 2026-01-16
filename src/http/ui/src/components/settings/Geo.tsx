@@ -188,7 +188,7 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
                       variant="secondary"
                       className="inline-flex items-center gap-1"
                     >
-                      <SuccessIcon className="h-3 w-3" />
+                      <SuccessIcon className="size-3" />
                       Active
                     </Badge>
                   ) : (
@@ -235,7 +235,7 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
                       variant="secondary"
                       className="inline-flex items-center gap-1"
                     >
-                      <SuccessIcon className="h-3 w-3" />
+                      <SuccessIcon className="size-3" />
                       Active
                     </Badge>
                   ) : (
@@ -362,12 +362,12 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
                 >
                   {downloading ? (
                     <>
-                      <Spinner className="mr-2 h-4 w-4" />
+                      <Spinner className="mr-2 size-4" />
                       Downloading...
                     </>
                   ) : (
                     <>
-                      <DownloadIcon className="mr-2 h-4 w-4" />
+                      <DownloadIcon className="mr-2 size-4" />
                       Download Files
                     </>
                   )}

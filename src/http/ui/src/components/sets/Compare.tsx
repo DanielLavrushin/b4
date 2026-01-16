@@ -132,7 +132,7 @@ export const SetCompare = ({ open, setA, setB, onClose }: SetCompareProps) => {
       <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-2xl">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
+            <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
               <IconArrowsExchange />
             </div>
             <div className="flex-1">
@@ -153,7 +153,7 @@ export const SetCompare = ({ open, setA, setB, onClose }: SetCompareProps) => {
                 </Card>
               </div>
               <div className="col-span-2 flex items-center justify-center">
-                <IconArrowsExchange className="text-muted-foreground h-5 w-5" />
+                <IconArrowsExchange className="text-muted-foreground size-5" />
               </div>
               <div className="col-span-5">
                 <Card className="bg-accent-secondary border-border border p-3 text-center">

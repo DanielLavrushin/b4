@@ -59,7 +59,7 @@ export function DnsSettings({ config, onChange, ipv6 }: DnsSettingsProps) {
     <Card>
       <CardHeader>
         <div className="flex items-center gap-3">
-          <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
+          <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
             <DnsIcon />
           </div>
           <div className="flex-1">
@@ -142,7 +142,7 @@ export function DnsSettings({ config, onChange, ipv6 }: DnsSettingsProps) {
                 {selectedServer && (
                   <div className="bg-card border-border h-full rounded-md border p-4">
                     <div className="flex items-center gap-2">
-                      <DnsIcon className="text-primary h-5 w-5" />
+                      <DnsIcon className="text-primary size-5" />
                       <p className="text-sm font-semibold">
                         {selectedServer.name}
                       </p>
@@ -151,7 +151,7 @@ export function DnsSettings({ config, onChange, ipv6 }: DnsSettingsProps) {
                           variant="outline"
                           className="inline-flex items-center gap-1"
                         >
-                          <SecurityIcon className="h-3 w-3" />
+                          <SecurityIcon className="size-3" />
                           DNSSEC
                         </Badge>
                       )}
@@ -187,11 +187,11 @@ export function DnsSettings({ config, onChange, ipv6 }: DnsSettingsProps) {
                       >
                         <div className="flex min-w-9 items-center">
                           {dns.target_dns === server.ip ? (
-                            <CheckIcon className="text-primary h-5 w-5" />
+                            <CheckIcon className="text-primary size-5" />
                           ) : server.warn ? (
-                            <BlockIcon className="text-destructive h-5 w-5" />
+                            <BlockIcon className="text-destructive size-5" />
                           ) : (
-                            <DnsIcon className="text-muted-foreground h-5 w-5" />
+                            <DnsIcon className="text-muted-foreground size-5" />
                           )}
                         </div>
                         <div className="min-w-0 flex-1">

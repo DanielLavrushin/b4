@@ -80,7 +80,7 @@ export const IpInfoModal = ({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
+            <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
               <InfoIcon />
             </div>
             <div className="flex-1">
@@ -182,7 +182,7 @@ export const IpInfoModal = ({
         <DialogFooter>
           {ipInfo?.hostname && onAddHostname && (
             <Button onClick={handleAddHostname}>
-              <AddIcon className="mr-2 h-4 w-4" />
+              <AddIcon className="mr-2 size-4" />
               Add Hostname
             </Button>
           )}

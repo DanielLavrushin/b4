@@ -47,7 +47,7 @@ export const SortableTableCell = ({
         <div className="flex flex-col -space-y-1">
           <CollapseIcon
             className={cn(
-              "h-3 w-3 transition-colors",
+              "size-3 transition-colors",
               active && direction === "asc"
                 ? "text-primary"
                 : "text-muted-foreground opacity-30 group-hover:opacity-60",
@@ -55,7 +55,7 @@ export const SortableTableCell = ({
           />
           <ExpandIcon
             className={cn(
-              "h-3 w-3 transition-colors",
+              "size-3 transition-colors",
               active && direction === "desc"
                 ? "text-primary"
                 : "text-muted-foreground opacity-30 group-hover:opacity-60",

@@ -230,7 +230,7 @@ export const DiscoveryRunner = () => {
       <Card className="flex flex-col">
         <CardHeader>
           <div className="flex items-center gap-3">
-            <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
+            <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
               <DiscoveryIcon />
             </div>
             <div className="flex-1">
@@ -284,7 +284,7 @@ export const DiscoveryRunner = () => {
                     disabled={!checkUrl.trim()}
                     className="whitespace-nowrap"
                   >
-                    <StartIcon className="mr-2 h-4 w-4" />
+                    <StartIcon className="mr-2 size-4" />
                     Start Discovery
                   </Button>
                 )}
@@ -296,7 +296,7 @@ export const DiscoveryRunner = () => {
                     }}
                     className="whitespace-nowrap"
                   >
-                    <StopIcon className="mr-2 h-4 w-4" />
+                    <StopIcon className="mr-2 size-4" />
                     Cancel
                   </Button>
                 )}
@@ -306,7 +306,7 @@ export const DiscoveryRunner = () => {
                     onClick={handleReset}
                     className="whitespace-nowrap"
                   >
-                    <RefreshIcon className="mr-2 h-4 w-4" />
+                    <RefreshIcon className="mr-2 size-4" />
                     New Discovery
                   </Button>
                 )}
@@ -409,7 +409,7 @@ export const DiscoveryRunner = () => {
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-6 w-6 p-0"
+                              className="size-6 p-0"
                             >
                               {isExpanded ? <CollapseIcon /> : <ExpandIcon />}
                             </Button>
@@ -432,7 +432,7 @@ export const DiscoveryRunner = () => {
                                   variant="secondary"
                                   className="inline-flex items-center gap-1"
                                 >
-                                  <ImprovementIcon className="h-3 w-3" />
+                                  <ImprovementIcon className="size-3" />
                                   {`+${domainResult.improvement.toFixed(0)}%`}
                                 </Badge>
                               )}
@@ -472,7 +472,7 @@ export const DiscoveryRunner = () => {
                             )}
                           >
                             <div className="flex items-center gap-4">
-                              <SpeedIcon className="text-secondary h-5 w-5" />
+                              <SpeedIcon className="text-secondary size-5" />
                               <div>
                                 <p className="text-muted-foreground text-xs">
                                   {running
@@ -514,12 +514,12 @@ export const DiscoveryRunner = () => {
                             >
                               {addingPreset ? (
                                 <>
-                                  <Spinner className="mr-2 h-4 w-4" />
+                                  <Spinner className="mr-2 size-4" />
                                   Adding...
                                 </>
                               ) : (
                                 <>
-                                  <AddIcon className="mr-2 h-4 w-4" />
+                                  <AddIcon className="mr-2 size-4" />
                                   {running
                                     ? "Use Current Best"
                                     : "Use This Strategy"}
@@ -602,9 +602,9 @@ export const DiscoveryRunner = () => {
                                                     );
                                                   }}
                                                   disabled={addingPreset}
-                                                  className="bg-muted border-border hover:bg-accent hover:border-secondary h-6 w-6 border p-0"
+                                                  className="bg-muted border-border hover:bg-accent hover:border-secondary size-6 border p-0"
                                                 >
-                                                  <AddIcon className="h-3 w-3" />
+                                                  <AddIcon className="size-3" />
                                                 </Button>
                                               </TooltipTrigger>
                                               <TooltipContent>

@@ -260,7 +260,7 @@ export function SettingsPage() {
     return (
       <div className="bg-background/80 fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm">
         <div className="flex flex-col items-center gap-4">
-          <Spinner className="h-12 w-12" />
+          <Spinner className="size-12" />
           <p className="text-foreground">Loading configuration...</p>
         </div>
       </div>
@@ -284,7 +284,7 @@ export function SettingsPage() {
                 variant="secondary"
                 className="inline-flex items-center gap-1"
               >
-                <WarningIcon className="h-3 w-3" />
+                <WarningIcon className="size-3" />
                 Modified
               </Badge>
             )}
@@ -315,7 +315,7 @@ export function SettingsPage() {
               }}
               disabled={saving}
             >
-              <RefreshIcon className="mr-2 h-4 w-4" />
+              <RefreshIcon className="mr-2 size-4" />
               Reload
             </Button>
 
@@ -328,12 +328,12 @@ export function SettingsPage() {
             >
               {saving ? (
                 <>
-                  <Spinner className="mr-2 h-4 w-4" />
+                  <Spinner className="mr-2 size-4" />
                   Saving...
                 </>
               ) : (
                 <>
-                  <SaveIcon className="mr-2 h-4 w-4" />
+                  <SaveIcon className="mr-2 size-4" />
                   Save Changes
                 </>
               )}

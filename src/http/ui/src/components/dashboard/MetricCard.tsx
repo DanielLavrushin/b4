@@ -46,7 +46,7 @@ export const MetricCard = ({
               <div className="mt-1 flex items-center">
                 <ImprovementIcon
                   className={cn(
-                    "mr-1 h-4 w-4",
+                    "mr-1 size-4",
                     trend > 0 ? "text-green-500" : "text-red-500",
                   )}
                 />

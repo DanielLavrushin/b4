@@ -228,12 +228,12 @@ export const CaptureSettings = () => {
                 >
                   {loading ? (
                     <>
-                      <Spinner className="mr-2 h-4 w-4" />
+                      <Spinner className="mr-2 size-4" />
                       Uploading...
                     </>
                   ) : (
                     <>
-                      <UploadIcon className="mr-2 h-4 w-4" />
+                      <UploadIcon className="mr-2 size-4" />
                       Upload
                     </>
                   )}
@@ -282,12 +282,12 @@ export const CaptureSettings = () => {
                 >
                   {loading ? (
                     <>
-                      <Spinner className="mr-2 h-4 w-4" />
+                      <Spinner className="mr-2 size-4" />
                       Capturing...
                     </>
                   ) : (
                     <>
-                      <CaptureIcon className="mr-2 h-4 w-4" />
+                      <CaptureIcon className="mr-2 size-4" />
                       Capture
                     </>
                   )}
@@ -401,7 +401,7 @@ export const CaptureSettings = () => {
       {/* Empty State */}
       {captures.length === 0 && !loading && (
         <div className="border-border rounded-md border border-dashed p-8 text-center">
-          <CaptureIcon className="text-muted-foreground mx-auto mb-4 h-12 w-12" />
+          <CaptureIcon className="text-muted-foreground mx-auto mb-4 size-12" />
           <h6 className="text-muted-foreground mb-2 text-lg font-semibold">
             No captured payloads yet
           </h6>
@@ -421,7 +421,7 @@ export const CaptureSettings = () => {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <div className="flex items-center gap-3">
-              <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
+              <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
                 <CaptureIcon />
               </div>
               <div className="flex-1">
@@ -493,7 +493,7 @@ const CaptureCard = ({
             {capture.size.toLocaleString()} bytes
           </p>
         </div>
-        <CaptureIcon className="text-secondary ml-2 h-5 w-5 shrink-0" />
+        <CaptureIcon className="text-secondary ml-2 size-5 shrink-0" />
       </div>
 
       {/* Timestamp */}

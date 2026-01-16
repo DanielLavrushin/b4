@@ -77,7 +77,7 @@ const DeviceNameCell = ({
             size="sm"
             variant="ghost"
             onClick={onStartEdit}
-            className="h-6 w-6 p-0 opacity-60 hover:opacity-100"
+            className="size-6 p-0 opacity-60 hover:opacity-100"
           >
             <EditIcon />
           </Button>
@@ -93,7 +93,7 @@ const DeviceNameCell = ({
               size="sm"
               variant="ghost"
               onClick={() => void onResetAlias()}
-              className="h-6 w-6 p-0 opacity-60 hover:opacity-100"
+              className="size-6 p-0 opacity-60 hover:opacity-100"
             >
               <RestoreIcon />
             </Button>

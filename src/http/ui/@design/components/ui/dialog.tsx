@@ -101,7 +101,7 @@ function DialogHeader({
         {...props}
       >
         <div className="flex items-center gap-3">
-          <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
+          <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
             {icon}
           </div>
           <div className="flex-1">{children}</div>

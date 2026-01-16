@@ -110,7 +110,7 @@ export const ResetDialog = ({ open, onClose, onSuccess }: ResetDialogProps) => {
                 void handleReset();
               }}
             >
-              <RestoreIcon className="mr-2 h-4 w-4" />
+              <RestoreIcon className="mr-2 size-4" />
               Reset to Defaults
             </Button>
           </>
@@ -143,7 +143,7 @@ export const ResetDialog = ({ open, onClose, onSuccess }: ResetDialogProps) => {
             </Alert>
             <ul className="mt-4 space-y-2">
               <li className="flex items-start gap-3">
-                <SecurityIcon className="text-secondary mt-0.5 h-5 w-5 shrink-0" />
+                <SecurityIcon className="text-secondary mt-0.5 size-5 shrink-0" />
                 <div>
                   <p className="text-sm font-medium">Domain Configuration</p>
                   <p className="text-muted-foreground text-xs">
@@ -152,7 +152,7 @@ export const ResetDialog = ({ open, onClose, onSuccess }: ResetDialogProps) => {
                 </div>
               </li>
               <li className="flex items-start gap-3">
-                <SecurityIcon className="text-secondary mt-0.5 h-5 w-5 shrink-0" />
+                <SecurityIcon className="text-secondary mt-0.5 size-5 shrink-0" />
                 <div>
                   <p className="text-sm font-medium">Testing Configuration</p>
                   <p className="text-muted-foreground text-xs">
@@ -167,7 +167,7 @@ export const ResetDialog = ({ open, onClose, onSuccess }: ResetDialogProps) => {
       case "resetting":
         return (
           <div className="flex flex-col items-center gap-6 py-8">
-            <Spinner className="h-12 w-12" />
+            <Spinner className="size-12" />
             <h6 className="text-foreground text-lg font-semibold">{message}</h6>
           </div>
         );
@@ -175,7 +175,7 @@ export const ResetDialog = ({ open, onClose, onSuccess }: ResetDialogProps) => {
       case "success":
         return (
           <div className="flex flex-col items-center gap-6 py-8">
-            <CheckIcon className="text-secondary h-16 w-16" />
+            <CheckIcon className="text-secondary size-16" />
             <h6 className="text-foreground text-lg font-semibold">{message}</h6>
           </div>
         );
@@ -183,7 +183,7 @@ export const ResetDialog = ({ open, onClose, onSuccess }: ResetDialogProps) => {
       case "error":
         return (
           <div className="flex flex-col items-center gap-6 py-8">
-            <ErrorIcon className="text-destructive h-16 w-16" />
+            <ErrorIcon className="text-destructive size-16" />
             <Alert variant="destructive">
               <AlertDescription>{message}</AlertDescription>
             </Alert>
@@ -199,7 +199,7 @@ export const ResetDialog = ({ open, onClose, onSuccess }: ResetDialogProps) => {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
+            <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
               {dialogProps.icon}
             </div>
             <div className="flex-1">

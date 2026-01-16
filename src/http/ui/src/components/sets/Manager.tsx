@@ -411,7 +411,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
               {/* Search & Add */}
               <div className="flex flex-row gap-4">
                 <div className="relative w-50">
-                  <IconSearch className="text-muted-foreground absolute top-1/2 left-3 h-5 w-5 -translate-y-1/2" />
+                  <IconSearch className="text-muted-foreground absolute top-1/2 left-3 size-5 -translate-y-1/2" />
                   <Input
                     placeholder="Search sets..."
                     value={filterText}
@@ -420,7 +420,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                   />
                 </div>
                 <Button onClick={handleAddSet}>
-                  <AddIcon className="mr-2 h-4 w-4" />
+                  <AddIcon className="mr-2 size-4" />
                   Create Set
                 </Button>
               </div>
@@ -531,7 +531,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <div className="flex items-center gap-3">
-              <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
+              <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
                 <WarningIcon />
               </div>
               <div className="flex-1">
@@ -580,7 +580,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <div className="flex items-center gap-3">
-              <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
+              <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
                 <CompareIcon />
               </div>
               <div className="flex-1">

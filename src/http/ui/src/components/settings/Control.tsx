@@ -43,7 +43,7 @@ export const ControlSettings = ({ loadConfig }: ControlSettingsProps) => {
             onClick={() => setShowRestartDialog(true)}
             disabled={saving}
           >
-            <RestartIcon className="mr-2 h-4 w-4" />
+            <RestartIcon className="mr-2 size-4" />
             Restart B4 System Service
           </Button>
           <Button
@@ -52,7 +52,7 @@ export const ControlSettings = ({ loadConfig }: ControlSettingsProps) => {
             onClick={() => setShowResetDialog(true)}
             disabled={saving}
           >
-            <RestoreIcon className="mr-2 h-4 w-4" />
+            <RestoreIcon className="mr-2 size-4" />
             Reset the configuration to default settings
           </Button>
         </div>

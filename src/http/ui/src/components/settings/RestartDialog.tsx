@@ -125,7 +125,7 @@ export const RestartDialog = ({ open, onClose }: RestartDialogProps) => {
         return (
           <div className="flex flex-col items-center gap-6 py-8">
             <div className="bg-accent flex items-center justify-center rounded-xl p-4">
-              <Spinner className="h-12 w-12" />
+              <Spinner className="size-12" />
             </div>
             <div className="text-center">
               <h6 className="text-foreground mb-2 text-lg font-semibold">
@@ -145,7 +145,7 @@ export const RestartDialog = ({ open, onClose }: RestartDialogProps) => {
         return (
           <div className="flex flex-col items-center gap-6 py-8">
             <div className="bg-accent flex items-center justify-center rounded-xl p-4">
-              <CheckIcon className="text-secondary h-16 w-16" />
+              <CheckIcon className="text-secondary size-16" />
             </div>
             <div className="text-center">
               <h6 className="text-foreground mb-2 text-lg font-semibold">
@@ -162,7 +162,7 @@ export const RestartDialog = ({ open, onClose }: RestartDialogProps) => {
         return (
           <div className="flex flex-col items-center gap-6 py-8">
             <div className="bg-destructive/10 flex items-center justify-center rounded-xl p-4">
-              <ErrorIcon className="text-destructive h-16 w-16" />
+              <ErrorIcon className="text-destructive size-16" />
             </div>
             <div className="w-full text-center">
               <h6 className="text-foreground mb-4 text-lg font-semibold">
@@ -192,7 +192,7 @@ export const RestartDialog = ({ open, onClose }: RestartDialogProps) => {
                 void handleRestart();
               }}
             >
-              <RestartIcon className="mr-2 h-4 w-4" />
+              <RestartIcon className="mr-2 size-4" />
               Restart Service
             </Button>
           </>
@@ -213,7 +213,7 @@ export const RestartDialog = ({ open, onClose }: RestartDialogProps) => {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <div className="bg-accent text-accent-foreground flex h-10 w-10 items-center justify-center rounded-md">
+            <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
               {dialogProps.icon}
             </div>
             <div className="flex-1">

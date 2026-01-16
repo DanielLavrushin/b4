@@ -85,9 +85,9 @@ export const DiscoveryOptionsPanel = ({
               )}
             </div>
             {expanded ? (
-              <CollapseIcon className="text-muted-foreground h-4 w-4" />
+              <CollapseIcon className="text-muted-foreground size-4" />
             ) : (
-              <ExpandIcon className="text-muted-foreground h-4 w-4" />
+              <ExpandIcon className="text-muted-foreground size-4" />
             )}
           </div>
         </CollapsibleTrigger>
