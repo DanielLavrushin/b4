@@ -6,30 +6,30 @@ import {
   RefreshIcon,
   RestoreIcon,
 } from "@b4.icons";
-import { Alert, AlertDescription } from "@design/components/ui/alert";
-import { Badge } from "@design/components/ui/badge";
-import { Button } from "@design/components/ui/button";
+import { Alert, AlertDescription } from "@primitives/alert";
+import { Badge } from "@primitives/badge";
+import { Button } from "@primitives/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@design/components/ui/card";
-import { Checkbox } from "@design/components/ui/checkbox";
+} from "@primitives/card";
+import { Checkbox } from "@primitives/checkbox";
 import {
   Field,
   FieldContent,
   FieldDescription,
   FieldTitle,
-} from "@design/components/ui/field";
-import { Spinner } from "@design/components/ui/spinner";
-import { Switch } from "@design/components/ui/switch";
+} from "@primitives/field";
+import { Spinner } from "@primitives/spinner";
+import { Switch } from "@primitives/switch";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@design/components/ui/tooltip";
+} from "@primitives/tooltip";
 import { cn } from "@design/lib/utils";
 import { useEffect, useState } from "react";
 

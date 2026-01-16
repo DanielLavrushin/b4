@@ -1,6 +1,6 @@
 import { WarningIcon, CheckIcon, CloseIcon } from "@b4.icons";
 import { colors } from "@design";
-import { Badge } from "@design/components/ui/badge";
+import { Badge } from "@primitives/badge";
 
 interface StatusBadgeProps {
   label: string;

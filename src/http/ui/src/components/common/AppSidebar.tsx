@@ -8,8 +8,8 @@ import {
   LogsIcon,
   SetsIcon,
 } from "@b4.icons";
-import { Button } from "@design/components/ui/button";
-import { Separator } from "@design/components/ui/separator";
+import { Button } from "@primitives/button";
+import { Separator } from "@primitives/separator";
 import {
   Sidebar,
   SidebarContent,
@@ -21,7 +21,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@design/components/ui/sidebar";
+} from "@composed/sidebar";
 import { useLocation, useNavigate } from "react-router-dom";
 import Version from "../version/Version";
 import { Logo } from "./Logo";

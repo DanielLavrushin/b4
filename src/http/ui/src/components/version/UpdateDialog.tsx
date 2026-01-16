@@ -8,15 +8,15 @@ import {
   NewReleaseIcon,
   OpenInNewIcon,
 } from "@b4.icons";
-import { Alert, AlertDescription } from "@design/components/ui/alert";
-import { Badge } from "@design/components/ui/badge";
-import { Button } from "@design/components/ui/button";
+import { Alert, AlertDescription } from "@primitives/alert";
+import { Badge } from "@primitives/badge";
+import { Button } from "@primitives/button";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-} from "@design/components/ui/card";
+} from "@primitives/card";
 import {
   Dialog,
   DialogContent,
@@ -24,23 +24,23 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@design/components/ui/dialog";
+} from "@primitives/dialog";
 import {
   ItemActions,
   ItemContent,
   ItemGroup,
-} from "@design/components/ui/item";
-import { Label } from "@design/components/ui/label";
-import { Progress } from "@design/components/ui/progress";
+} from "@primitives/item";
+import { Label } from "@primitives/label";
+import { Progress } from "@primitives/progress";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@design/components/ui/select";
-import { Separator } from "@design/components/ui/separator";
-import { Switch } from "@design/components/ui/switch";
+} from "@primitives/select";
+import { Separator } from "@primitives/separator";
+import { Switch } from "@primitives/switch";
 import { cn } from "@design/lib/utils";
 import { GitHubRelease, compareVersions } from "@hooks/useGitHubRelease";
 import { useSystemUpdate } from "@hooks/useSystemUpdate";

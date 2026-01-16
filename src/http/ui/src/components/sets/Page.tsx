@@ -1,5 +1,5 @@
 import { useSnackbar } from "@context/SnackbarProvider";
-import { Spinner } from "@design/components/ui/spinner";
+import { Spinner } from "@primitives/spinner";
 import { B4Config } from "@models/config";
 import { useCallback, useEffect, useState } from "react";
 import { SetsManager, SetWithStats } from "./Manager";

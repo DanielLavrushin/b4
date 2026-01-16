@@ -5,7 +5,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@design/components/ui/card";
+} from "@primitives/card";
 import {
   Field,
   FieldContent,
@@ -13,17 +13,17 @@ import {
   FieldGroup,
   FieldLabel,
   FieldTitle,
-} from "@design/components/ui/field";
-import { Input } from "@design/components/ui/input";
+} from "@primitives/field";
+import { Input } from "@primitives/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@design/components/ui/select";
-import { Separator } from "@design/components/ui/separator";
-import { Switch } from "@design/components/ui/switch";
+} from "@primitives/select";
+import { Separator } from "@primitives/separator";
+import { Switch } from "@primitives/switch";
 import { B4Config, LogLevel } from "@models/config";
 
 interface LoggingSettingsProps {

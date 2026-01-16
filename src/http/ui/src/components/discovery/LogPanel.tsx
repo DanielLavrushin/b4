@@ -1,17 +1,17 @@
 import { useDiscoveryLogs } from "@b4.discovery";
 import { ClearIcon, CollapseIcon, ExpandIcon, LogsIcon } from "@b4.icons";
-import { Badge } from "@design/components/ui/badge";
-import { Button } from "@design/components/ui/button";
+import { Badge } from "@primitives/badge";
+import { Button } from "@primitives/button";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@design/components/ui/collapsible";
+} from "@primitives/collapsible";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@design/components/ui/tooltip";
+} from "@primitives/tooltip";
 import { cn } from "@design/lib/utils";
 import { useEffect, useRef, useState } from "react";
 

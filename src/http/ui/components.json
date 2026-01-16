@@ -12,11 +12,11 @@
   },
   "iconLibrary": "tabler",
   "aliases": {
-    "components": "@design/components",
-    "utils": "@design/lib/utils",
-    "ui": "@design/components/ui",
-    "lib": "@design/lib",
-    "hooks": "@design/hooks"
+    "components": "src/design",
+    "utils": "src/design/lib/utils",
+    "ui": "src/design/primitives",
+    "lib": "src/design/lib",
+    "hooks": "src/design/hooks"
   },
   "menuColor": "default",
   "menuAccent": "bold",

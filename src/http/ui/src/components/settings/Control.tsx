@@ -1,12 +1,12 @@
 import { ControlIcon, RestartIcon, RestoreIcon } from "@b4.icons";
-import { Button } from "@design/components/ui/button";
+import { Button } from "@primitives/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@design/components/ui/card";
+} from "@primitives/card";
 import { useState } from "react";
 import { ResetDialog } from "./ResetDialog";
 import { RestartDialog } from "./RestartDialog";

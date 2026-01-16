@@ -13,7 +13,7 @@ import {
   ComboboxList,
   ComboboxValue,
   useComboboxAnchor,
-} from "@design/components/ui/combobox";
+} from "@primitives/combobox";
 
 export interface ComboboxMultipleProps {
   items: string[];

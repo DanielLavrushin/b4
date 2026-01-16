@@ -1,25 +1,25 @@
 import { AddIcon, DomainIcon } from "@b4.icons";
 import { SetSelector } from "@common/SetSelector";
-import { Alert, AlertDescription } from "@design/components/ui/alert";
-import { Badge } from "@design/components/ui/badge";
-import { Button } from "@design/components/ui/button";
-import { Card, CardContent } from "@design/components/ui/card";
+import { Alert, AlertDescription } from "@primitives/alert";
+import { Badge } from "@primitives/badge";
+import { Button } from "@primitives/button";
+import { Card, CardContent } from "@primitives/card";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@design/components/ui/dialog";
+} from "@primitives/dialog";
 import {
   Field,
   FieldContent,
   FieldDescription,
   FieldTitle,
-} from "@design/components/ui/field";
-import { Label } from "@design/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@design/components/ui/radio-group";
-import { Separator } from "@design/components/ui/separator";
+} from "@primitives/field";
+import { Label } from "@primitives/label";
+import { RadioGroup, RadioGroupItem } from "@primitives/radio-group";
+import { Separator } from "@primitives/separator";
 import { clearAsnLookupCache } from "@hooks/useDomainActions";
 import { B4SetConfig, MAIN_SET_ID } from "@models/config";
 import { asnStorage } from "@utils";

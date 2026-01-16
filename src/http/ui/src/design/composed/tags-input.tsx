@@ -7,7 +7,7 @@ import {
   Combobox,
   ComboboxChip,
   ComboboxChips,
-} from "@design/components/ui/combobox";
+} from "@primitives/combobox";
 
 export interface TagsInputProps {
   value: string[];

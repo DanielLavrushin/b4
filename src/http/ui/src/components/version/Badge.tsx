@@ -1,12 +1,12 @@
 import { NewReleaseIcon } from "@b4.icons";
-import { Badge } from "@design/components/ui/badge";
-import { Button } from "@design/components/ui/button";
-import { Spinner } from "@design/components/ui/spinner";
+import { Badge } from "@primitives/badge";
+import { Button } from "@primitives/button";
+import { Spinner } from "@primitives/spinner";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@design/components/ui/tooltip";
+} from "@primitives/tooltip";
 
 interface VersionBadgeProps {
   version: string;

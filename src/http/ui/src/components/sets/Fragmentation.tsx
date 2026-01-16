@@ -1,30 +1,30 @@
 import { FragIcon } from "@b4.icons";
-import { Alert, AlertDescription } from "@design/components/ui/alert";
-import { Badge } from "@design/components/ui/badge";
+import { Alert, AlertDescription } from "@primitives/alert";
+import { Badge } from "@primitives/badge";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@design/components/ui/card";
+} from "@primitives/card";
 import {
   Field,
   FieldContent,
   FieldDescription,
   FieldLabel,
   FieldTitle,
-} from "@design/components/ui/field";
+} from "@primitives/field";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@design/components/ui/select";
-import { Separator } from "@design/components/ui/separator";
-import { Slider } from "@design/components/ui/slider";
-import { Switch } from "@design/components/ui/switch";
+} from "@primitives/select";
+import { Separator } from "@primitives/separator";
+import { Slider } from "@primitives/slider";
+import { Switch } from "@primitives/switch";
 import { B4SetConfig, FragmentationStrategy } from "@models/config";
 import { ComboSettings } from "./frags/Combo";
 import { DisorderSettings } from "./frags/Disorder";

@@ -12,8 +12,10 @@
     "skipLibCheck": true,
     "noImplicitAny": true,
     "paths": {
-      "@design": ["./@design"],
-      "@design/*": ["./@design/*"],
+      "@design": ["./src/design/index.ts"],
+      "@design/*": ["./src/design/*"],
+      "@primitives/*": ["./src/design/primitives/*"],
+      "@composed/*": ["./src/design/composed/*"],
       "@hooks/*": ["./src/hooks/*"],
       "@utils": ["./src/utils/index.ts"],
       "@models/*": ["./src/models/*"],
@@ -37,5 +39,5 @@
       "@b4.capture": ["./src/barrels/capture.ts"]
     }
   },
-  "include": ["src", "@design"]
+  "include": ["src"]
 }

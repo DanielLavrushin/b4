@@ -6,7 +6,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from "@design/components/ui/chart";
+} from "@primitives/chart";
 import { colors } from "@design";
 
 interface SimpleChartProps {

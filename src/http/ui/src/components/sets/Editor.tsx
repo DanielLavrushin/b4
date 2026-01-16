@@ -17,22 +17,22 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@design/components/ui/dialog";
+} from "@primitives/dialog";
 import {
   Field,
   FieldDescription,
   FieldLabel,
-} from "@design/components/ui/field";
-import { Input } from "@design/components/ui/input";
+} from "@primitives/field";
+import { Input } from "@primitives/input";
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "@design/components/ui/tabs";
+} from "@primitives/tabs";
 
-import { Button } from "@design/components/ui/button";
-import { Spinner } from "@design/components/ui/spinner";
+import { Button } from "@primitives/button";
+import { Spinner } from "@primitives/spinner";
 import {
   B4Config,
   B4SetConfig,

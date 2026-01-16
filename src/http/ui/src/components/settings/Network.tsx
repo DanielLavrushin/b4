@@ -1,20 +1,20 @@
 import { NetworkIcon } from "@b4.icons";
-import { Badge } from "@design/components/ui/badge";
+import { Badge } from "@primitives/badge";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@design/components/ui/card";
+} from "@primitives/card";
 import {
   Field,
   FieldDescription,
   FieldLabel,
-} from "@design/components/ui/field";
-import { Input } from "@design/components/ui/input";
-import { Separator } from "@design/components/ui/separator";
-import { Slider } from "@design/components/ui/slider";
+} from "@primitives/field";
+import { Input } from "@primitives/input";
+import { Separator } from "@primitives/separator";
+import { Slider } from "@primitives/slider";
 import { B4Config } from "@models/config";
 
 interface NetworkSettingsProps {

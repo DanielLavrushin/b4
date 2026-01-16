@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Badge } from "@design/components/ui/badge";
+import { Badge } from "@primitives/badge";
 import { CloseIcon } from "@b4.icons";
 import { cn } from "@design/lib/utils";
 

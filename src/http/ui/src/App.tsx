@@ -2,7 +2,7 @@ import {
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
-} from "@design/components/ui/sidebar";
+} from "@composed/sidebar";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppSidebar } from "./components/common/AppSidebar";
 import { ConnectionsPage } from "./components/connections/Page";

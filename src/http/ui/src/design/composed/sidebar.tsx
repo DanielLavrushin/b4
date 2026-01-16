@@ -4,22 +4,22 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "radix-ui";
 import * as React from "react";
 
-import { Button } from "@design/components/ui/button";
-import { Input } from "@design/components/ui/input";
-import { Separator } from "@design/components/ui/separator";
+import { Button } from "@primitives/button";
+import { Input } from "@primitives/input";
+import { Separator } from "@primitives/separator";
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from "@design/components/ui/sheet";
-import { Skeleton } from "@design/components/ui/skeleton";
+} from "@primitives/sheet";
+import { Skeleton } from "@primitives/skeleton";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@design/components/ui/tooltip";
+} from "@primitives/tooltip";
 import { useIsMobile } from "@design/hooks/use-mobile";
 import { cn } from "@design/lib/utils";
 import { IconLayoutSidebar } from "@tabler/icons-react";

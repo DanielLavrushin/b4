@@ -5,7 +5,7 @@ import {
   CardHeader,
   CardTitle,
   CardContent,
-} from "@design/components/ui/card";
+} from "@primitives/card";
 
 interface DashboardChartsProps {
   connectionRate: { timestamp: number; value: number }[];

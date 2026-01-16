@@ -1,14 +1,14 @@
 import { IconArrowsExchange } from "@b4.icons";
-import { Badge } from "@design/components/ui/badge";
-import { Card } from "@design/components/ui/card";
+import { Badge } from "@primitives/badge";
+import { Card } from "@primitives/card";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@design/components/ui/dialog";
-import { Separator } from "@design/components/ui/separator";
+} from "@primitives/dialog";
+import { Separator } from "@primitives/separator";
 import { cn } from "@design/lib/utils";
 import { B4SetConfig } from "@models/config";
 import { useMemo } from "react";

@@ -1,5 +1,5 @@
 import { colors } from "@design";
-import { Card } from "@design/components/ui/card";
+import { Card } from "@primitives/card";
 import { cn } from "@design/lib/utils";
 
 interface StatCardProps {

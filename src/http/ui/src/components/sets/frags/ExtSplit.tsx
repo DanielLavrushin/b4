@@ -1,5 +1,5 @@
-import { Alert, AlertDescription } from "@design/components/ui/alert";
-import { Separator } from "@design/components/ui/separator";
+import { Alert, AlertDescription } from "@primitives/alert";
+import { Separator } from "@primitives/separator";
 
 export const ExtSplitSettings = () => {
   return (

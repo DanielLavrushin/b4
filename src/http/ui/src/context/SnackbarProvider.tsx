@@ -1,9 +1,5 @@
-import {
-  Alert,
-  AlertAction,
-  AlertDescription,
-} from "@design/components/ui/alert";
-import { Button } from "@design/components/ui/button";
+import { Alert, AlertAction, AlertDescription } from "@primitives/alert";
+import { Button } from "@primitives/button";
 import { cn } from "@design/lib/utils";
 import { IconX } from "@tabler/icons-react";
 import {

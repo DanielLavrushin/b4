@@ -1,6 +1,6 @@
 import { AddIcon } from "@b4.icons";
-import { Badge } from "@design/components/ui/badge";
-import { Button } from "@design/components/ui/button";
+import { Badge } from "@primitives/badge";
+import { Button } from "@primitives/button";
 import {
   Dialog,
   DialogContent,
@@ -8,13 +8,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@design/components/ui/dialog";
-import { Field, FieldLabel } from "@design/components/ui/field";
-import { Input } from "@design/components/ui/input";
-import { Label } from "@design/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@design/components/ui/radio-group";
-import { Separator } from "@design/components/ui/separator";
-import { Spinner } from "@design/components/ui/spinner";
+} from "@primitives/dialog";
+import { Field, FieldLabel } from "@primitives/field";
+import { Input } from "@primitives/input";
+import { Label } from "@primitives/label";
+import { RadioGroup, RadioGroupItem } from "@primitives/radio-group";
+import { Separator } from "@primitives/separator";
+import { Spinner } from "@primitives/spinner";
 import { cn } from "@design/lib/utils";
 import { B4SetConfig } from "@models/config";
 import { generateDomainVariants } from "@utils";

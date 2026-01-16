@@ -2,19 +2,19 @@ import { ParsedLog } from "@b4.connections";
 import { AddIcon } from "@b4.icons";
 import { ProtocolChip } from "@common/ProtocolChip";
 import { SortableTableCell, SortDirection } from "@common/SortableTableCell";
-import { Badge } from "@design/components/ui/badge";
+import { Badge } from "@primitives/badge";
 import {
   Table,
   TableBody,
   TableCell,
   TableHeader,
   TableRow,
-} from "@design/components/ui/table";
+} from "@primitives/table";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@design/components/ui/tooltip";
+} from "@primitives/tooltip";
 import { asnStorage } from "@utils";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 

@@ -1,18 +1,18 @@
 import { ApiIcon } from "@b4.icons";
-import { Alert, AlertDescription } from "@design/components/ui/alert";
+import { Alert, AlertDescription } from "@primitives/alert";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@design/components/ui/card";
+} from "@primitives/card";
 import {
   Field,
   FieldDescription,
   FieldLabel,
-} from "@design/components/ui/field";
-import { Input } from "@design/components/ui/input";
+} from "@primitives/field";
+import { Input } from "@primitives/input";
 import { B4Config } from "@models/config";
 
 export interface ApiSettingsProps {

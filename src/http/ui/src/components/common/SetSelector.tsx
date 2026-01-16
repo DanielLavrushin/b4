@@ -1,14 +1,14 @@
-import { Button } from "@design/components/ui/button";
-import { Field, FieldLabel } from "@design/components/ui/field";
-import { Input } from "@design/components/ui/input";
-import { Label } from "@design/components/ui/label";
+import { Button } from "@primitives/button";
+import { Field, FieldLabel } from "@primitives/field";
+import { Input } from "@primitives/input";
+import { Label } from "@primitives/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@design/components/ui/select";
+} from "@primitives/select";
 import { B4SetConfig, MAIN_SET_ID, NEW_SET_ID } from "@models/config";
 import { AddIcon } from "@b4.icons";
 import { useState } from "react";

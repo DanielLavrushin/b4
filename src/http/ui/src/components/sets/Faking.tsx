@@ -1,35 +1,35 @@
 import { useCaptures } from "@b4.capture";
 import { ClientHelloIcon, FakingIcon, AddIcon, SecurityIcon } from "@b4.icons";
 import { ChipList } from "@components/common/ChipList";
-import { Alert, AlertDescription } from "@design/components/ui/alert";
-import { Badge } from "@design/components/ui/badge";
-import { Button } from "@design/components/ui/button";
+import { Alert, AlertDescription } from "@primitives/alert";
+import { Badge } from "@primitives/badge";
+import { Button } from "@primitives/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@design/components/ui/card";
+} from "@primitives/card";
 import {
   Field,
   FieldContent,
   FieldDescription,
   FieldLabel,
   FieldTitle,
-} from "@design/components/ui/field";
-import { Input } from "@design/components/ui/input";
+} from "@primitives/field";
+import { Input } from "@primitives/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@design/components/ui/select";
-import { Separator } from "@design/components/ui/separator";
-import { Slider } from "@design/components/ui/slider";
-import { Switch } from "@design/components/ui/switch";
-import { Textarea } from "@design/components/ui/textarea";
+} from "@primitives/select";
+import { Separator } from "@primitives/separator";
+import { Slider } from "@primitives/slider";
+import { Switch } from "@primitives/switch";
+import { Textarea } from "@primitives/textarea";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 

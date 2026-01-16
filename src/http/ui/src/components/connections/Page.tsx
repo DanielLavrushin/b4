@@ -2,8 +2,8 @@ import { devicesApi } from "@b4.devices";
 import { SortDirection } from "@common/SortableTableCell";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { cn } from "@design/lib/utils";
-import { Card, CardContent, CardDescription } from "@design/components/ui/card";
-import { Kbd, KbdGroup } from "@design/components/ui/kbd";
+import { Card, CardContent, CardDescription } from "@primitives/card";
+import { Kbd, KbdGroup } from "@primitives/kbd";
 import {
   useDomainActions,
   useEnrichedLogs,

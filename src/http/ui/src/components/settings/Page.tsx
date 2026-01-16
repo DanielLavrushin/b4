@@ -1,7 +1,7 @@
-import { Badge } from "@design/components/ui/badge";
-import { Button } from "@design/components/ui/button";
-import { Card } from "@design/components/ui/card";
-import { Spinner } from "@design/components/ui/spinner";
+import { Badge } from "@primitives/badge";
+import { Button } from "@primitives/button";
+import { Card } from "@primitives/card";
+import { Spinner } from "@primitives/spinner";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -27,7 +27,7 @@ import { LoggingSettings } from "./Logging";
 import { NetworkSettings } from "./Network";
 
 import { configApi } from "@b4.settings";
-import { Alert, AlertDescription } from "@design/components/ui/alert";
+import { Alert, AlertDescription } from "@primitives/alert";
 import {
   Dialog,
   DialogContent,
@@ -35,14 +35,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@design/components/ui/dialog";
-import { Separator } from "@design/components/ui/separator";
+} from "@primitives/dialog";
+import { Separator } from "@primitives/separator";
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "@design/components/ui/tabs";
+} from "@primitives/tabs";
 import { B4Config, B4SetConfig } from "@models/config";
 
 enum TABS {

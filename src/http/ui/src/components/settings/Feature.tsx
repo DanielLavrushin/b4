@@ -1,13 +1,13 @@
 import { ToggleOnIcon } from "@b4.icons";
-import { Alert, AlertDescription } from "@design/components/ui/alert";
-import { Badge } from "@design/components/ui/badge";
+import { Alert, AlertDescription } from "@primitives/alert";
+import { Badge } from "@primitives/badge";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@design/components/ui/card";
+} from "@primitives/card";
 import {
   Field,
   FieldContent,
@@ -18,12 +18,12 @@ import {
   FieldSeparator,
   FieldSet,
   FieldTitle,
-} from "@design/components/ui/field";
-import { Slider } from "@design/components/ui/slider";
-import { Switch } from "@design/components/ui/switch";
+} from "@primitives/field";
+import { Slider } from "@primitives/slider";
+import { Switch } from "@primitives/switch";
 import { B4Config } from "@models/config";
-import { Separator } from "@design/components/ui/separator";
-import { Label } from "@design/components/ui/label";
+import { Separator } from "@primitives/separator";
+import { Label } from "@primitives/label";
 
 interface FeatureSettingsProps {
   config: B4Config;

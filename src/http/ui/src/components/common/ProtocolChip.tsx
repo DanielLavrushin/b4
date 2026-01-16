@@ -1,5 +1,5 @@
 import { TcpIcon, UdpIcon } from "@b4.icons";
-import { Badge } from "@design/components/ui/badge";
+import { Badge } from "@primitives/badge";
 import { cn } from "@design/lib/utils";
 
 interface ProtocolChipProps {

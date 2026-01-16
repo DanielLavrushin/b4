@@ -1,4 +1,4 @@
-import { Card } from "@design/components/ui/card";
+import { Card } from "@primitives/card";
 import { formatNumber } from "@utils";
 import { StatusBadge } from "./StatusBadge";
 

@@ -1,18 +1,18 @@
 import { ImportExportIcon, CheckIcon, RefreshIcon } from "@b4.icons";
-import { Alert, AlertDescription } from "@design/components/ui/alert";
-import { Button } from "@design/components/ui/button";
+import { Alert, AlertDescription } from "@primitives/alert";
+import { Button } from "@primitives/button";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-} from "@design/components/ui/card";
+} from "@primitives/card";
 import {
   Field,
   FieldDescription,
   FieldLabel,
-} from "@design/components/ui/field";
-import { Textarea } from "@design/components/ui/textarea";
+} from "@primitives/field";
+import { Textarea } from "@primitives/textarea";
 import { useEffect, useState } from "react";
 
 import { B4SetConfig } from "@models/config";

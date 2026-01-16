@@ -1,16 +1,16 @@
 import { ArrowDownIcon, ClearIcon } from "@b4.icons";
 import { useWebSocket } from "@context/B4WsProvider";
 import { useSnackbar } from "@context/SnackbarProvider";
-import { Badge } from "@design/components/ui/badge";
-import { Button } from "@design/components/ui/button";
-import { Input } from "@design/components/ui/input";
-import { Label } from "@design/components/ui/label";
-import { Switch } from "@design/components/ui/switch";
+import { Badge } from "@primitives/badge";
+import { Button } from "@primitives/button";
+import { Input } from "@primitives/input";
+import { Label } from "@primitives/label";
+import { Switch } from "@primitives/switch";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@design/components/ui/tooltip";
+} from "@primitives/tooltip";
 import { cn } from "@design/lib/utils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 

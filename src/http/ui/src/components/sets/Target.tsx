@@ -7,21 +7,12 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@design/components/ui/card";
-import { ComboboxMultiple } from "@design/components/ui/combobox-multiple";
-import { Label } from "@design/components/ui/label";
-import { TagsInput } from "@design/components/ui/tags-input";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@design/components/ui/tabs";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@design/components/ui/tooltip";
+} from "@primitives/card";
+import { ComboboxMultiple } from "@composed/combobox-multiple";
+import { Label } from "@primitives/label";
+import { TagsInput } from "@composed/tags-input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@primitives/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
 import { B4SetConfig, GeoConfig } from "@models/config";
 import { SetStats } from "./Manager";
 

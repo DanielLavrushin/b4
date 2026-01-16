@@ -8,8 +8,8 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@design/components/ui/dialog";
-import { InputGroup, InputGroupAddon } from "@design/components/ui/input-group";
+} from "./dialog";
+import { InputGroup, InputGroupAddon } from "./input-group";
 import { IconSearch, IconCheck } from "@tabler/icons-react";
 
 function Command({

@@ -35,7 +35,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@design/components/ui/card";
+} from "@primitives/card";
 import {
   Dialog,
   DialogContent,
@@ -43,15 +43,15 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@design/components/ui/dialog";
-import { Input } from "@design/components/ui/input";
-import { Separator } from "@design/components/ui/separator";
+} from "@primitives/dialog";
+import { Input } from "@primitives/input";
+import { Separator } from "@primitives/separator";
 
 import { SetCompare } from "./Compare";
 import { SetEditor } from "./Editor";
 import { SetCard } from "./SetCard";
 
-import { Button } from "@design/components/ui/button";
+import { Button } from "@primitives/button";
 import { cn } from "@design/lib/utils";
 import { useSets } from "@hooks/useSets";
 import { B4Config, B4SetConfig } from "@models/config";

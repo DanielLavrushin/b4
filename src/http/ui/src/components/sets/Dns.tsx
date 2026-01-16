@@ -6,24 +6,24 @@ import {
   SpeedIcon,
   SecurityIcon,
 } from "@b4.icons";
-import { Alert, AlertDescription } from "@design/components/ui/alert";
-import { Badge } from "@design/components/ui/badge";
+import { Alert, AlertDescription } from "@primitives/alert";
+import { Badge } from "@primitives/badge";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@design/components/ui/card";
+} from "@primitives/card";
 import {
   Field,
   FieldContent,
   FieldDescription,
   FieldLabel,
   FieldTitle,
-} from "@design/components/ui/field";
-import { Input } from "@design/components/ui/input";
-import { Switch } from "@design/components/ui/switch";
+} from "@primitives/field";
+import { Input } from "@primitives/input";
+import { Switch } from "@primitives/switch";
 import { cn } from "@design/lib/utils";
 import { B4SetConfig } from "@models/config";
 

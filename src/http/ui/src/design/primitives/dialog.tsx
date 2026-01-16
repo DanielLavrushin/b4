@@ -2,7 +2,7 @@ import * as React from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 
 import { cn } from "@design/lib/utils";
-import { Button } from "@design/components/ui/button";
+import { Button } from "./button";
 import { IconX } from "@tabler/icons-react";
 
 function Dialog({

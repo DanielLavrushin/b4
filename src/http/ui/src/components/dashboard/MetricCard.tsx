@@ -1,5 +1,5 @@
 import { ImprovementIcon } from "@b4.icons";
-import { Card } from "@design/components/ui/card";
+import { Card } from "@primitives/card";
 import { colors } from "@design";
 import { cn } from "@design/lib/utils";
 

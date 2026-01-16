@@ -1,5 +1,5 @@
-import { Button } from "@design/components/ui/button";
-import { Input } from "@design/components/ui/input";
+import { Button } from "@primitives/button";
+import { Input } from "@primitives/input";
 import { cn } from "@design/lib/utils";
 import { CheckIcon, CloseIcon } from "@b4.icons";
 import { useState } from "react";

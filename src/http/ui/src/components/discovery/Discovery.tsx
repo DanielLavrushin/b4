@@ -17,35 +17,35 @@ import {
   StopIcon,
 } from "@b4.icons";
 import { useSnackbar } from "@context/SnackbarProvider";
-import { Alert, AlertDescription } from "@design/components/ui/alert";
-import { Badge } from "@design/components/ui/badge";
-import { Button } from "@design/components/ui/button";
+import { Alert, AlertDescription } from "@primitives/alert";
+import { Badge } from "@primitives/badge";
+import { Button } from "@primitives/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@design/components/ui/card";
+} from "@primitives/card";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@design/components/ui/collapsible";
+} from "@primitives/collapsible";
 import {
   Field,
   FieldDescription,
   FieldLabel,
-} from "@design/components/ui/field";
-import { Input } from "@design/components/ui/input";
-import { Progress } from "@design/components/ui/progress";
-import { Separator } from "@design/components/ui/separator";
-import { Spinner } from "@design/components/ui/spinner";
+} from "@primitives/field";
+import { Input } from "@primitives/input";
+import { Progress } from "@primitives/progress";
+import { Separator } from "@primitives/separator";
+import { Spinner } from "@primitives/spinner";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@design/components/ui/tooltip";
+} from "@primitives/tooltip";
 import { cn } from "@design/lib/utils";
 import { useSets } from "@hooks/useSets";
 import { useCaptures } from "@b4.capture";

@@ -10,27 +10,27 @@ import {
   DomainIcon,
   CloseIcon,
 } from "@b4.icons";
-import { Badge } from "@design/components/ui/badge";
-import { Button } from "@design/components/ui/button";
+import { Badge } from "@primitives/badge";
+import { Button } from "@primitives/button";
 import {
   Card,
   CardContent,
   CardFooter,
   CardHeader,
-} from "@design/components/ui/card";
+} from "@primitives/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@design/components/ui/dropdown-menu";
-import { Switch } from "@design/components/ui/switch";
+} from "@primitives/dropdown-menu";
+import { Switch } from "@primitives/switch";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@design/components/ui/tooltip";
+} from "@primitives/tooltip";
 import { cn } from "@design/lib/utils";
 import { B4SetConfig, MAIN_SET_ID } from "@models/config";
 import { useMemo, useState } from "react";

@@ -1,6 +1,6 @@
 import { CheckIcon, ErrorIcon, RestoreIcon, SecurityIcon } from "@b4.icons";
-import { Alert, AlertDescription } from "@design/components/ui/alert";
-import { Button } from "@design/components/ui/button";
+import { Alert, AlertDescription } from "@primitives/alert";
+import { Button } from "@primitives/button";
 import {
   Dialog,
   DialogContent,
@@ -8,9 +8,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@design/components/ui/dialog";
-import { Separator } from "@design/components/ui/separator";
-import { Spinner } from "@design/components/ui/spinner";
+} from "@primitives/dialog";
+import { Separator } from "@primitives/separator";
+import { Spinner } from "@primitives/spinner";
 import { useConfigReset } from "@hooks/useConfig";
 import { useState } from "react";
 

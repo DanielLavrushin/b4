@@ -1,15 +1,15 @@
-import { Alert, AlertDescription } from "@design/components/ui/alert";
-import { Badge } from "@design/components/ui/badge";
+import { Alert, AlertDescription } from "@primitives/alert";
+import { Badge } from "@primitives/badge";
 import {
   Field,
   FieldContent,
   FieldDescription,
   FieldLabel,
   FieldTitle,
-} from "@design/components/ui/field";
-import { Separator } from "@design/components/ui/separator";
-import { Slider } from "@design/components/ui/slider";
-import { Switch } from "@design/components/ui/switch";
+} from "@primitives/field";
+import { Separator } from "@primitives/separator";
+import { Slider } from "@primitives/slider";
+import { Switch } from "@primitives/switch";
 import { B4SetConfig } from "@models/config";
 
 interface TcpIpSettingsProps {

@@ -1,6 +1,6 @@
 import { CheckIcon, CloseIcon } from "@b4.icons";
-import { Badge } from "@design/components/ui/badge";
-import { Progress } from "@design/components/ui/progress";
+import { Badge } from "@primitives/badge";
+import { Progress } from "@primitives/progress";
 import { useEffect, useRef, useState } from "react";
 import { DashboardActivityPanels } from "./DashboardActivityPanels";
 import { DashboardCharts } from "./DashboardCharts";
