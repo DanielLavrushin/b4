@@ -36,13 +36,9 @@ function ComboboxTrigger({
   );
 }
 
-const ComboboxClear = React.forwardRef<
-  React.ElementRef<typeof ComboboxPrimitive.Clear>,
-  ComboboxPrimitive.Clear.Props
->(({ className, ...props }, ref) => {
+function ComboboxClear({ className, ...props }: ComboboxPrimitive.Clear.Props) {
   return (
     <ComboboxPrimitive.Clear
-      ref={ref}
       data-slot="combobox-clear"
       render={<InputGroupButton variant="ghost" size="icon-xs" />}
       className={cn(className)}
@@ -51,57 +47,44 @@ const ComboboxClear = React.forwardRef<
       <IconX className="pointer-events-none" />
     </ComboboxPrimitive.Clear>
   );
-});
+}
 
-ComboboxClear.displayName = "ComboboxClear";
-
-const ComboboxInput = React.forwardRef<
-  React.ElementRef<typeof ComboboxPrimitive.Input>,
-  ComboboxPrimitive.Input.Props & {
-    showTrigger?: boolean;
-    showClear?: boolean;
-  }
->(
-  (
-    {
-      className,
-      children,
-      disabled = false,
-      showTrigger = true,
-      showClear = false,
-      ...props
-    },
-    ref,
-  ) => {
-    return (
-      <InputGroup className={cn("w-auto", className)}>
-        <ComboboxPrimitive.Input
-          ref={ref}
-          render={<InputGroupInput disabled={disabled} />}
-          {...props}
-        />
-        <InputGroupAddon align="inline-end">
-          {showTrigger && (
-            <InputGroupButton
-              size="icon-xs"
-              variant="ghost"
-              asChild
-              data-slot="input-group-button"
-              className="group-has-data-[slot=combobox-clear]/input-group:hidden data-pressed:bg-transparent"
-              disabled={disabled}
-            >
-              <ComboboxTrigger />
-            </InputGroupButton>
-          )}
-          {showClear && <ComboboxClear disabled={disabled} />}
-        </InputGroupAddon>
-        {children}
-      </InputGroup>
-    );
-  },
-);
-
-ComboboxInput.displayName = "ComboboxInput";
+function ComboboxInput({
+  className,
+  children,
+  disabled = false,
+  showTrigger = true,
+  showClear = false,
+  ...props
+}: ComboboxPrimitive.Input.Props & {
+  showTrigger?: boolean;
+  showClear?: boolean;
+}) {
+  return (
+    <InputGroup className={cn("w-auto", className)}>
+      <ComboboxPrimitive.Input
+        render={<InputGroupInput disabled={disabled} />}
+        {...props}
+      />
+      <InputGroupAddon align="inline-end">
+        {showTrigger && (
+          <InputGroupButton
+            size="icon-xs"
+            variant="ghost"
+            asChild
+            data-slot="input-group-button"
+            className="group-has-data-[slot=combobox-clear]/input-group:hidden data-pressed:bg-transparent"
+            disabled={disabled}
+          >
+            <ComboboxTrigger />
+          </InputGroupButton>
+        )}
+        {showClear && <ComboboxClear disabled={disabled} />}
+      </InputGroupAddon>
+      {children}
+    </InputGroup>
+  );
+}
 
 function ComboboxContent({
   className,
@@ -130,7 +113,7 @@ function ComboboxContent({
           data-slot="combobox-content"
           data-chips={!!anchor}
           className={cn(
-            "bg-popover text-popover-foreground data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 ring-foreground/10 *:data-[slot=input-group]:bg-input/20 dark:bg-popover group/combobox-content pointer-events-auto relative flex max-h-(--available-height) w-(--anchor-width) max-w-(--available-width) min-w-[calc(var(--anchor-width)+var(--spacing-7))] origin-(--transform-origin) flex-col overflow-x-hidden rounded-lg shadow-md ring-1 duration-100 data-[chips=true]:min-w-(--anchor-width) *:data-[slot=input-group]:m-1 *:data-[slot=input-group]:mb-0 *:data-[slot=input-group]:h-7 *:data-[slot=input-group]:border-none *:data-[slot=input-group]:shadow-none",
+            "bg-popover text-popover-foreground data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 ring-foreground/10 *:data-[slot=input-group]:bg-input/20 dark:bg-popover group/combobox-content relative max-h-72 w-(--anchor-width) max-w-(--available-width) min-w-32 origin-(--transform-origin) overflow-hidden rounded-lg shadow-md ring-1 duration-100 data-[chips=true]:min-w-(--anchor-width) *:data-[slot=input-group]:m-1 *:data-[slot=input-group]:mb-0 *:data-[slot=input-group]:h-7 *:data-[slot=input-group]:border-none *:data-[slot=input-group]:shadow-none",
             className,
           )}
           {...props}
@@ -140,74 +123,18 @@ function ComboboxContent({
   );
 }
 
-const ComboboxList = React.forwardRef<
-  React.ElementRef<typeof ComboboxPrimitive.List>,
-  ComboboxPrimitive.List.Props
->(({ className, ...props }, ref) => {
-  const internalRef =
-    React.useRef<React.ElementRef<typeof ComboboxPrimitive.List>>(null);
-  const combinedRef = React.useCallback(
-    (node: React.ElementRef<typeof ComboboxPrimitive.List> | null) => {
-      (
-        internalRef as React.MutableRefObject<React.ElementRef<
-          typeof ComboboxPrimitive.List
-        > | null>
-      ).current = node;
-      if (typeof ref === "function") {
-        ref(node);
-      } else if (ref) {
-        (
-          ref as React.MutableRefObject<React.ElementRef<
-            typeof ComboboxPrimitive.List
-          > | null>
-        ).current = node;
-      }
-    },
-    [ref],
-  );
-  React.useEffect(() => {
-    if (internalRef.current) {
-      const node = internalRef.current;
-
-      // Handle wheel events and manually scroll if needed
-      // This ensures scrolling works even if parent blocks events
-      const handleWheel = (e: WheelEvent) => {
-        const canScroll = node.scrollHeight > node.clientHeight;
-
-        if (canScroll && e.deltaY !== 0) {
-          e.preventDefault();
-          e.stopPropagation();
-          const currentScrollTop = node.scrollTop;
-          const maxScrollTop = node.scrollHeight - node.clientHeight;
-          const newScrollTop = Math.max(
-            0,
-            Math.min(maxScrollTop, currentScrollTop + e.deltaY),
-          );
-          node.scrollTop = newScrollTop;
-        }
-      };
-
-      node.addEventListener("wheel", handleWheel, { passive: false });
-
-      return () => {
-        node.removeEventListener("wheel", handleWheel);
-      };
-    }
-  }, []);
+function ComboboxList({ className, ...props }: ComboboxPrimitive.List.Props) {
   return (
     <ComboboxPrimitive.List
-      ref={combinedRef}
       data-slot="combobox-list"
       className={cn(
-        "[&::-webkit-scrollbar-thumb]:bg-border hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/50 group/combobox-list pointer-events-auto flex min-h-0 flex-1 scroll-py-1 flex-col overflow-x-hidden overflow-y-auto overscroll-contain p-1 data-empty:p-0 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding [&::-webkit-scrollbar-track]:bg-transparent",
+        "max-h-[min(calc(--spacing(72)---spacing(9)),calc(var(--available-height)---spacing(9)))] scroll-py-1 overflow-y-auto overscroll-contain p-1 data-empty:p-0",
         className,
       )}
       {...props}
     />
   );
-});
-
-ComboboxList.displayName = "ComboboxList";
+}
 
 function ComboboxItem({
   className,
@@ -269,7 +196,7 @@ function ComboboxEmpty({ className, ...props }: ComboboxPrimitive.Empty.Props) {
     <ComboboxPrimitive.Empty
       data-slot="combobox-empty"
       className={cn(
-        "text-muted-foreground pointer-events-none hidden w-full justify-center py-2 text-center text-xs/relaxed group-data-empty/combobox-list:flex",
+        "text-muted-foreground hidden w-full justify-center py-2 text-center text-xs/relaxed group-data-empty/combobox-content:flex",
         className,
       )}
       {...props}
@@ -290,13 +217,14 @@ function ComboboxSeparator({
   );
 }
 
-function ComboboxChips({
-  className,
-  ...props
-}: React.ComponentPropsWithRef<typeof ComboboxPrimitive.Chips> &
-  ComboboxPrimitive.Chips.Props) {
+const ComboboxChips = React.forwardRef<
+  HTMLDivElement,
+  React.ComponentPropsWithRef<typeof ComboboxPrimitive.Chips> &
+    ComboboxPrimitive.Chips.Props
+>(({ className, ...props }, ref) => {
   return (
     <ComboboxPrimitive.Chips
+      ref={ref}
       data-slot="combobox-chips"
       className={cn(
         "bg-input/20 dark:bg-input/30 border-input focus-within:border-ring focus-within:ring-ring/30 has-aria-invalid:ring-destructive/20 dark:has-aria-invalid:ring-destructive/40 has-aria-invalid:border-destructive dark:has-aria-invalid:border-destructive/50 flex min-h-7 flex-wrap items-center gap-1 rounded-md border bg-clip-padding px-2 py-0.5 text-xs/relaxed transition-colors focus-within:ring-2 has-aria-invalid:ring-2 has-data-[slot=combobox-chip]:px-1",
@@ -305,17 +233,16 @@ function ComboboxChips({
       {...props}
     />
   );
-}
+});
+ComboboxChips.displayName = "ComboboxChips";
 
 function ComboboxChip({
   className,
   children,
   showRemove = true,
-  onRemove,
   ...props
 }: ComboboxPrimitive.Chip.Props & {
   showRemove?: boolean;
-  onRemove?: () => void;
 }) {
   return (
     <ComboboxPrimitive.Chip
@@ -332,10 +259,6 @@ function ComboboxChip({
           render={<Button variant="ghost" size="icon-xs" />}
           className="-ml-1 opacity-50 hover:opacity-100"
           data-slot="combobox-chip-remove"
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove?.();
-          }}
         >
           <IconX className="pointer-events-none" />
         </ComboboxPrimitive.ChipRemove>
