@@ -16,6 +16,34 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    // Optimize chunk size
+    cssCodeSplit: true,
+    minify: "terser",
+    terserOptions: {
+      compress: {
+        drop_console: true,
+        drop_debugger: true,
+        pure_funcs: ["console.log", "console.debug", "console.trace"],
+      },
+    },
+    rollupOptions: {
+      output: {
+        // Manual chunk splitting for better caching
+        manualChunks: (id) => {
+          if (id.includes("node_modules")) {
+            // Icons in separate chunk (they're huge!)
+            if (id.includes("@mui/icons-material")) {
+              return "mui-icons";
+            }
+            if (id.includes("@mui")) {
+              return "mui";
+            }
+            return "vendor";
+          }
+        },
+      },
+    },
+    chunkSizeWarningLimit: 800,
   },
   define: {
     "import.meta.env.VITE_APP_VERSION": JSON.stringify(APP_VERSION),

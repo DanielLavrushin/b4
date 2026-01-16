@@ -8,7 +8,8 @@ OUT_DIR := ./out
 
 # Build flags
 CGO_ENABLED ?= 0
-LDFLAGS := -X main.Version=$(VERSION) -X main.Commit=$(VERSION_COMMIT) -X main.Date=$(VERSION_DATE)
+LDFLAGS := -s -w -X main.Version=$(VERSION) -X main.Commit=$(VERSION_COMMIT) -X main.Date=$(VERSION_DATE)
+BUILDFLAGS := -trimpath
 
 # Linux architectures
 LINUX_ARCHS := 386 amd64 arm64 armv5 armv6 armv7 \
@@ -28,7 +29,7 @@ ANDROID_MIN_API := 21
 build:
 	@echo "Building $(BINARY_NAME) $(VERSION) for current platform..."
 	@mkdir -p $(OUT_DIR)
-	go -C $(SRC_DIR) build -ldflags "$(LDFLAGS)" -o ../$(OUT_DIR)/$(BINARY_NAME)
+	go -C $(SRC_DIR) build $(BUILDFLAGS) -ldflags "$(LDFLAGS)" -o ../$(OUT_DIR)/$(BINARY_NAME)
 
 # Build for all Linux architectures
 .PHONY: build-all
@@ -92,7 +93,7 @@ build-target:
 	@echo "  → $(GOOS)/$(TARGET)"
 	@mkdir -p "$(OUT_DIR)/$(GOOS)-$(TARGET)" "$(OUT_DIR)/assets"
 	@GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM=$(GOARM) GOMIPS=$(GOMIPS) CGO_ENABLED=$(CGO_ENABLED) CC=$(CC) \
-		go -C $(SRC_DIR) build -ldflags "$(LDFLAGS)" \
+		go -C $(SRC_DIR) build $(BUILDFLAGS) -ldflags "$(LDFLAGS)" \
 		-o ../$(OUT_DIR)/$(GOOS)-$(TARGET)/$(BINARY_NAME)
 	@tar -czf "$(OUT_DIR)/assets/$(BINARY_NAME)-$(GOOS)-$(TARGET).tar.gz" \
 		-C "$(OUT_DIR)/$(GOOS)-$(TARGET)" "$(BINARY_NAME)"

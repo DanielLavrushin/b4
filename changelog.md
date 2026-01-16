@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.31.2] - 2026-01-16
+
+- FIXED: Custom payload files not working in `Discovery` feature - old configurations with relative paths like `captures/payload.bin` now work correctly.
+
 ## [1.31.0] - 2026-01-11
 
 - ADDED: TCP MD5 option support.
@@ -18,7 +22,7 @@
 
 ## [1.29.1] - 2026-01-01
 
-- ADDED: Incoming response bypass - defeats TSPU throttling that blocks downloads after ~15KB. I nmost cases - select TCP incoming  `fake` for all strategies.
+- ADDED: Incoming response bypass - defeats TSPU throttling that blocks downloads after ~15KB. I nmost cases - select TCP incoming `fake` for all strategies.
 - FIXED: Discovery progress bar sometimes showing over 100%.
 
 ## [1.28.1] - 2025-12-30
@@ -39,7 +43,7 @@
 - FIXED: Fragmented IP packets now bypass B4 processing entirely to prevent incomplete packet inspection and potential protocol violations.
 - REMOVED: Fragmentation strategy `overlap` — functionality merged into `combo`.
 - CHANGED: Fragmentation `combo` now supports decoy packets. When `enabled`, B4 sends a fake `ClientHello` with a whitelisted domain (e.g., ya.ru, vk.com) before sending the real fragmented request. Can be found in Fragmentaiton Tab set settings.
-  
+
 ## [1.27.2] - 2025-12-27
 
 - FIXED: Adding multiple services with many UDP ports (Discord, WhatsApp, etc.) could cause `iptables` firewall rules to fail, preventing B4 from starting or restarting properly.
