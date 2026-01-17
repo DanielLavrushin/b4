@@ -133,7 +133,7 @@ importers:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@4.1.18)
       terser:
-        specifier: ^5.37.0
+        specifier: ^5.46.0
         version: 5.46.0
       typescript:
         specifier: ^5.9.3
