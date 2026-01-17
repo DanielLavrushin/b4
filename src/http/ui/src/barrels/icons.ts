@@ -74,4 +74,5 @@ export {
   IconCpu,
   IconHandStop as ClientHelloIcon,
   IconFile as GeodatIcon,
+  IconEyeClosed as B4Icon,
 } from "@tabler/icons-react";

@@ -6,10 +6,8 @@ import {
   DiscoveryIcon,
   GitHubIcon,
   LogsIcon,
-  SetsIcon,
+  SetsIcon
 } from "@b4.icons";
-import { Button } from "@primitives/button";
-import { Separator } from "@primitives/separator";
 import {
   Sidebar,
   SidebarContent,
@@ -22,6 +20,8 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@composed/sidebar";
+import { Button } from "@primitives/button";
+import { Separator } from "@primitives/separator";
 import { useLocation, useNavigate } from "react-router-dom";
 import Version from "../version/Version";
 import { Logo } from "./Logo";
@@ -65,10 +65,8 @@ export function AppSidebar() {
 
   return (
     <Sidebar variant="inset">
-      <SidebarHeader className="h-16 flex-row items-center">
-        <div className="px-2 py-1.5">
-          <Logo />
-        </div>
+      <SidebarHeader>
+        <Logo />
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>

@@ -1,6 +1,8 @@
-import { colors } from "@design";
+import { B4Icon } from "@b4.icons";
 import DecryptedText from "@common/DecryptedText";
-import { cn } from "@design/lib/utils";
+import { Button } from "@design/primitives/button";
+import { Item } from "@design/primitives/item";
+import { ItemMedia } from "@design/primitives/item";
 
 interface LogoProps {
   className?: string;
@@ -8,15 +10,15 @@ interface LogoProps {
 
 export function Logo({ className }: LogoProps) {
   return (
-    <div className={cn("flex flex-col gap-0", className)}>
-      <div
-        className="text-[0.65rem] tracking-widest uppercase opacity-70"
-        style={{
-          color: colors.text.secondary,
-        }}
-      >
-        <DecryptedText text="Bye Bye Big Bro" />
-      </div>
-    </div>
+
+        <Item className="p-2">
+          <ItemMedia>
+            <Button size="icon" className="size-10">
+              <B4Icon className="size-6" />
+            </Button>
+            <DecryptedText text="Bye Bye Big Bro" animateOn="both"/>
+          </ItemMedia>
+        </Item>
+
   );
 }

@@ -155,7 +155,4 @@
       "group": "Default"
     }
   ],
-  "[typescriptreact]": {
-    "editor.defaultFormatter": "rvest.vs-code-prettier-eslint"
-  }
 }
