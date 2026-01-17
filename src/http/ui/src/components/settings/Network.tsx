@@ -10,7 +10,11 @@ import {
 import {
   Field,
   FieldDescription,
+  FieldGroup,
   FieldLabel,
+  FieldLegend,
+  FieldSet,
+  FieldTitle,
 } from "@primitives/field";
 import { Input } from "@primitives/input";
 import { Separator } from "@primitives/separator";
@@ -36,12 +40,11 @@ export const NetworkSettings = ({ config, onChange }: NetworkSettingsProps) => (
         Configure netfilter queue and network processing parameters
       </CardDescription>
     </CardHeader>
+    <Separator />
     <CardContent>
-      <div className="mb-4">
-        <FieldLabel className="mb-4 text-base font-semibold">
-          Queue Settings
-        </FieldLabel>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <FieldSet>
+        <FieldLegend>Queue Settings</FieldLegend>
+        <FieldGroup>
           <Field>
             <FieldLabel>Queue Start Number</FieldLabel>
             <Input
@@ -66,38 +69,34 @@ export const NetworkSettings = ({ config, onChange }: NetworkSettingsProps) => (
               Netfilter packet mark for iptables rules (default: 32768)
             </FieldDescription>
           </Field>
-          <Field className="w-full space-y-2 md:col-span-2">
-            <div className="flex items-center justify-between">
-              <FieldLabel className="text-sm font-medium">
-                Worker Threads
-              </FieldLabel>
+          <Field className="md:col-span-2">
+
+            <FieldLabel>Worker Threads
               <Badge variant="secondary" className="font-semibold">
                 {config.queue.threads}
               </Badge>
-            </div>
+            </FieldLabel>
+            
             <Slider
               value={[config.queue.threads]}
               onValueChange={(values) => onChange("queue.threads", values[0])}
               min={1}
               max={16}
               step={1}
-              className="w-full"
             />
             <FieldDescription>
               Number of worker threads for processing packets simultaneously
               (default 4)
             </FieldDescription>
           </Field>
-        </div>
-      </div>
+        </FieldGroup>
+      </FieldSet>
 
       <Separator className="my-6" />
 
-      <div>
-        <FieldLabel className="mb-4 text-base font-semibold">
-          Web Server
-        </FieldLabel>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <FieldSet>
+        <FieldLegend>Web Server</FieldLegend>
+        <FieldGroup>
           <Field>
             <FieldLabel>Bind Address</FieldLabel>
             <Input
@@ -121,10 +120,10 @@ export const NetworkSettings = ({ config, onChange }: NetworkSettingsProps) => (
                 onChange("system.web_server.port", Number(e.target.value))
               }
             />
-            <FieldDescription>Web UI port (default: 7000)</FieldDescription>
+            <FieldDescription>Web Server port (default: 7000)</FieldDescription>
           </Field>
-        </div>
-      </div>
+        </FieldGroup>
+      </FieldSet>
     </CardContent>
   </Card>
 );

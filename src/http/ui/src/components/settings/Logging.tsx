@@ -52,8 +52,9 @@ export const LoggingSettings = ({ config, onChange }: LoggingSettingsProps) => {
         <CardDescription>Configure logging behavior and output</CardDescription>
       </CardHeader>
       <Separator />
+      
       <CardContent>
-        <FieldGroup className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <FieldGroup>
           <Field>
             <FieldLabel>Log Level</FieldLabel>
             <Select
@@ -77,9 +78,10 @@ export const LoggingSettings = ({ config, onChange }: LoggingSettingsProps) => {
               </SelectContent>
             </Select>
             <FieldDescription>
-              Set the verbosity of logging output
+              Verbosity of logging output
             </FieldDescription>
           </Field>
+
           <Field>
             <FieldLabel>Error File Path</FieldLabel>
             <Input

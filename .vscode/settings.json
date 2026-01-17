@@ -154,5 +154,8 @@
       "filePath": "src/config/config.go",
       "group": "Default"
     }
-  ]
+  ],
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "rvest.vs-code-prettier-eslint"
+  }
 }

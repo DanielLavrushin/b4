@@ -1,6 +1,7 @@
 import { ToggleOnIcon } from "@b4.icons";
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Badge } from "@primitives/badge";
+import { Checkbox } from "@primitives/checkbox";
 import {
   Card,
   CardContent,
@@ -34,13 +35,6 @@ interface FeatureSettingsProps {
 }
 
 export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
-  const handleInterfaceToggle = (iface: string) => {
-    const current = config.queue.interfaces || [];
-    const updated = current.includes(iface)
-      ? current.filter((i) => i !== iface)
-      : [...current, iface];
-    onChange("queue.interfaces", updated);
-  };
 
   return (
     <Card>
@@ -106,7 +100,7 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
             <div className="flex justify-between">
               <FieldTitle>Firewall Monitor Interval</FieldTitle>
               <Badge variant="secondary" className="font-semibold">
-                {config.system.tables.monitor_interval}
+                {config.system.tables.monitor_interval || "off"}
               </Badge>
             </div>
             <Slider
@@ -131,41 +125,43 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
           <FieldDescription>
             Select interfaces to monitor (empty = all interfaces)
           </FieldDescription>
-          <FieldGroup>
-            <div className="grid grid-cols-1 gap-4">
-              <div>
-                <div className="flex flex-wrap gap-2">
-                  {config.available_ifaces.map((iface) => {
-                    const isSelected = (config.queue.interfaces || []).includes(
-                      iface,
-                    );
-                    return (
-                      <Badge
-                        key={iface}
-                        variant={isSelected ? "default" : "outline"}
-                        className="cursor-pointer"
-                        onClick={() => handleInterfaceToggle(iface)}
-                      >
-                        {iface}
-                      </Badge>
-                    );
-                  })}
-                </div>
-                {config.available_ifaces.length === 0 && (
-                  <Alert variant="destructive" className="mt-4">
-                    <AlertDescription>No interfaces detected</AlertDescription>
-                  </Alert>
-                )}
-                {config.queue.interfaces?.length === 0 && (
-                  <Alert className="mt-4">
-                    <AlertDescription>
-                      B4 will listen on all available interfaces if none are
-                      selected.
-                    </AlertDescription>
-                  </Alert>
-                )}
-              </div>
-            </div>
+          <FieldGroup className="flex flex-col">
+            {config.available_ifaces.map((iface) => {
+              const isSelected = (config.queue.interfaces || []).includes(
+                iface,
+              );
+              return (
+                <Field key={iface} orientation="horizontal">
+                  <Checkbox
+                    id={`interface-${iface}`}
+                    checked={isSelected}
+                    onCheckedChange={(checked) => {
+                      const current = config.queue.interfaces || [];
+                      const updated = checked
+                        ? [...current, iface]
+                        : current.filter((i) => i !== iface);
+                      onChange("queue.interfaces", updated);
+                    }}
+                  />
+                  <FieldLabel htmlFor={`interface-${iface}`} className="font-normal">
+                    {iface}
+                  </FieldLabel>
+                </Field>
+              );
+            })}
+            {config.available_ifaces.length === 0 && (
+              <Alert variant="destructive" className="mt-4">
+                <AlertDescription>No interfaces detected</AlertDescription>
+              </Alert>
+            )}
+            {config.queue.interfaces?.length === 0 && (
+              <Alert className="mt-4">
+                <AlertDescription>
+                  B4 will listen on all available interfaces if none are
+                  selected.
+                </AlertDescription>
+              </Alert>
+            )}
           </FieldGroup>
         </FieldSet>
       </CardContent>

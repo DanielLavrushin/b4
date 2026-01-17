@@ -48,16 +48,17 @@ export const B4InlineEdit = ({
         }}
         autoFocus
         disabled={saving || disabled}
-        className="h-7 py-0.5 text-xs"
+        className="h-5"
+
       />
       <Button
         size="icon-sm"
         onClick={() => void handleSave()}
         disabled={saving || !value.trim()}
         variant="ghost"
-        className="text-primary hover:text-primary"
+
       >
-        <CheckIcon className="h-3.5 w-3.5" />
+        <CheckIcon />
       </Button>
       <Button
         size="icon-sm"
@@ -65,7 +66,7 @@ export const B4InlineEdit = ({
         disabled={saving}
         variant="ghost"
       >
-        <CloseIcon className="h-3.5 w-3.5" />
+        <CloseIcon />
       </Button>
     </div>
   );

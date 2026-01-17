@@ -7,6 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@primitives/card";
+import { FieldGroup } from "@primitives/field";
 import { useState } from "react";
 import { ResetDialog } from "./ResetDialog";
 import { RestartDialog } from "./RestartDialog";
@@ -36,26 +37,26 @@ export const ControlSettings = ({ loadConfig }: ControlSettingsProps) => {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="flex flex-col gap-4">
+        <FieldGroup className="flex flex-col" >
           <Button
-            size="sm"
+            size="lg"
             variant="outline"
             onClick={() => setShowRestartDialog(true)}
             disabled={saving}
           >
-            <RestartIcon className="mr-2 size-4" />
+            <RestartIcon/>
             Restart B4 System Service
           </Button>
           <Button
-            size="sm"
+            size="lg"
             variant="destructive"
             onClick={() => setShowResetDialog(true)}
             disabled={saving}
           >
-            <RestoreIcon className="mr-2 size-4" />
-            Reset the configuration to default settings
+            <RestoreIcon />
+            Reset to default settings
           </Button>
-        </div>
+        </FieldGroup>
 
         <RestartDialog
           open={showRestartDialog}
