@@ -22,6 +22,7 @@ export interface ComboboxMultipleProps {
   placeholder?: string;
   emptyMessage?: string;
   disabled?: boolean;
+  loading?: boolean;
   breakdown?: Record<string, number>;
 }
 
@@ -32,18 +33,20 @@ export function ComboboxMultiple({
   placeholder = "Search...",
   emptyMessage = "No items found.",
   disabled = false,
+  loading = false,
   breakdown,
 }: ComboboxMultipleProps) {
   const anchor = useComboboxAnchor();
+  const itemsLoaded = items.length > 0;
 
   return (
     <Combobox
       multiple
       autoHighlight
       items={items}
-      value={value}
-      onValueChange={onValueChange}
-      disabled={disabled}
+      value={itemsLoaded ? value || [] : []}
+      onValueChange={itemsLoaded ? onValueChange : () => {}}
+      disabled={disabled || loading}
     >
       <ComboboxChips ref={anchor}>
         <ComboboxValue>
