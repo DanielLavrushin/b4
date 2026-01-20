@@ -7,6 +7,11 @@ import {
 
 export const captureApi = {
   list: () => apiGet<Capture[]>("/api/capture/list"),
+  generate: (domain: string, protocol: string) =>
+    apiPost<CaptureProbeResponse>("/api/capture/generate", {
+      domain,
+      protocol,
+    }),
   probe: (domain: string, protocol: string) =>
     apiPost<CaptureProbeResponse>("/api/capture/probe", { domain, protocol }),
   delete: (protocol: string, domain: string) =>

@@ -20,11 +20,68 @@ type CaptureRequest struct {
 
 func (api *API) RegisterCaptureApi() {
 	api.mux.HandleFunc("/api/capture/probe", api.handleProbeCapture)
+	api.mux.HandleFunc("/api/capture/generate", api.handleGenerateCapture)
 	api.mux.HandleFunc("/api/capture/list", api.handleListCaptures)
 	api.mux.HandleFunc("/api/capture/delete", api.handleDeleteCapture)
 	api.mux.HandleFunc("/api/capture/clear", api.handleClearCaptures)
 	api.mux.HandleFunc("/api/capture/download", api.handleDownloadCapture)
 	api.mux.HandleFunc("/api/capture/upload", api.handleUploadCapture)
+}
+
+func (api *API) handleGenerateCapture(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req CaptureRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if req.Domain == "" {
+		http.Error(w, "Domain required", http.StatusBadRequest)
+		return
+	}
+
+	req.Domain = strings.ToLower(strings.TrimSpace(req.Domain))
+	req.Domain = strings.TrimPrefix(req.Domain, "http://")
+	req.Domain = strings.TrimPrefix(req.Domain, "https://")
+	req.Domain = strings.Split(req.Domain, "/")[0]
+
+	if req.Protocol == "" {
+		req.Protocol = "tls"
+	}
+
+	if req.Protocol != "tls" {
+		http.Error(w, "Only 'tls' protocol supported for generation", http.StatusBadRequest)
+		return
+	}
+
+	manager := capture.GetManager(api.cfg)
+
+	if err := manager.GenerateCapture(req.Domain, req.Protocol); err != nil {
+		if strings.Contains(err.Error(), "already captured") {
+			setJsonHeader(w)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success":          true,
+				"message":          fmt.Sprintf("Payload for %s already exists", req.Domain),
+				"already_captured": true,
+			})
+			return
+		}
+
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	setJsonHeader(w)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Generated optimized %s payload for %s (SNI-first for DPI bypass)", req.Protocol, req.Domain),
+		"method":  "generated",
+	})
 }
 
 // Trigger traffic to capture payload

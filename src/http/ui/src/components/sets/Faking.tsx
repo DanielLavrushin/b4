@@ -217,10 +217,10 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
                     }
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select a capture..." />
+                      <SelectValue placeholder="Select payload..." />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Select a capture...</SelectItem>
+                      <SelectItem value="none">Select payload...</SelectItem>
                       {captures.map((c) => (
                         <SelectItem key={c.filepath} value={c.filepath}>
                           {c.domain} ({c.size} bytes)
@@ -230,7 +230,7 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
                   </Select>
                   <FieldDescription>
                     {captures.length === 0
-                      ? "No TLS captures available. Use Capture feature first."
+                      ? "No payloads available.Capture one in Settings."
                       : "Select a previously captured/uploaded TLS ClientHello"}
                   </FieldDescription>
                 </Field>
@@ -242,8 +242,8 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
                       "No TLS captures available. You can use the Capture feature to record ClientHello payloads or  upload your own capture files. "}
 
                     <Link to="/settings/capture">
-                      Navigate to the Settings section to capture or upload your
-                      own TLS ClientHello payloads.
+                      Navigate to Settings to capture or upload TLS ClientHello
+                      payloads.
                     </Link>
                   </AlertDescription>
                 </Alert>

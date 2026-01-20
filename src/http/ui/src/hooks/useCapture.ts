@@ -20,6 +20,22 @@ export function useCaptures() {
     }
   }, []);
 
+  const generate = useCallback(
+    async (domain: string, protocol: string) => {
+      setLoading(true);
+      try {
+        const result = await captureApi.generate(domain, protocol);
+
+        await loadCaptures();
+
+        return result;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [loadCaptures],
+  );
+
   const probe = useCallback(async (domain: string, protocol: string) => {
     setLoading(true);
     try {
@@ -93,6 +109,7 @@ export function useCaptures() {
     captures,
     loading,
     loadCaptures,
+    generate,
     probe,
     deleteCapture,
     clearAll,

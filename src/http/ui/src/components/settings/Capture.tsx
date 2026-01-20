@@ -15,13 +15,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@design/primitives/empty";
-import {
-  Alert,
-  AlertAction,
-  AlertDescription,
-  AlertTitle,
-} from "@primitives/alert";
-import { Badge } from "@primitives/badge";
+import { Alert, AlertDescription } from "@primitives/alert";
 import { Button } from "@primitives/button";
 import {
   Card,
@@ -53,13 +47,12 @@ export const CaptureSettings = () => {
     domain: string;
     file: File | null;
   }>({ domain: "", file: null });
-  const [countdown, setCountdown] = useState<number | null>(null);
 
   const {
     captures,
     loading,
     loadCaptures,
-    probe,
+    generate, // NEW: instant generation
     deleteCapture,
     clearAll,
     upload,
@@ -76,40 +69,25 @@ export const CaptureSettings = () => {
     }
   }, [uploadForm]);
 
-  const probeCapture = async () => {
+  const generateCapture = async () => {
     if (!probeForm.domain) return;
 
     const capturedDomain = probeForm.domain.toLowerCase().trim();
 
-    setCountdown(30);
-    const countdownInterval = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev === null || prev <= 1) {
-          clearInterval(countdownInterval);
-          return null;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
     try {
-      const result = await probe(capturedDomain, "tls");
-      clearInterval(countdownInterval);
-      setCountdown(null);
+      const result = await generate(capturedDomain, "tls");
 
       if (result.already_captured) {
         showSuccess(`Already have payload for ${capturedDomain}`);
-      } else if (captures.some((c) => c.domain === capturedDomain)) {
-        showSuccess(`Captured payload for ${capturedDomain}`);
-        setProbeForm({ domain: "" });
       } else {
-        showError(`Capture timed out for ${capturedDomain}`);
+        showSuccess(
+          `Generated optimized payload for ${capturedDomain} (SNI-first for DPI bypass)`,
+        );
+        setProbeForm({ domain: "" });
       }
     } catch (error) {
-      clearInterval(countdownInterval);
-      setCountdown(null);
-      console.error("Failed to probe:", error);
-      showError("Failed to initiate capture");
+      console.error("Failed to generate:", error);
+      showError("Failed to generate payload");
     }
   };
 
@@ -179,7 +157,7 @@ export const CaptureSettings = () => {
                     domain: e.target.value.toLowerCase(),
                   })
                 }
-                placeholder="youtube.com"
+                placeholder="max.ru"
                 disabled={loading}
               />
               <FieldDescription>
@@ -245,12 +223,12 @@ export const CaptureSettings = () => {
                 onChange={(e) =>
                   setProbeForm({ domain: e.target.value.toLowerCase() })
                 }
-                onKeyPress={(e) => {
+                onKeyDown={(e) => {
                   if (e.key === "Enter" && !loading && probeForm.domain) {
-                    void probeCapture();
+                    void generateCapture();
                   }
                 }}
-                placeholder="youtube.com"
+                placeholder="max.ru"
                 disabled={loading}
               />
               <FieldDescription>Enter domain to capture from</FieldDescription>
@@ -273,14 +251,14 @@ export const CaptureSettings = () => {
               </TooltipContent>
             </Tooltip>
             <Button
-              onClick={() => void probeCapture()}
+              onClick={() => void generateCapture()}
               disabled={loading || !probeForm.domain}
               className="ml-auto"
             >
               {loading ? (
                 <>
                   <Spinner />
-                  Capturing...
+                  Generating...
                 </>
               ) : (
                 <>
@@ -294,7 +272,7 @@ export const CaptureSettings = () => {
               <Tooltip>
                 <TooltipTrigger>
                   <Button
-                    variant="outline"
+                    variant="destructive"
                     size="icon"
                     onClick={() => void handleClear()}
                     disabled={loading}
@@ -311,35 +289,7 @@ export const CaptureSettings = () => {
         </Card>
       </div>
 
-      {loading && countdown !== null && (
-        <Alert>
-          <AlertTitle>Capture window is open for {probeForm.domain}</AlertTitle>
-          <AlertAction>
-            <Badge className="ml-auto">{`${countdown}s`}</Badge>
-          </AlertAction>
-          <AlertDescription>
-            <ul>
-              <li>
-                Visit{" "}
-                <a
-                  href={`https://${probeForm.domain}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  https://{probeForm.domain}
-                </a>
-              </li>
-              <li>
-                Or run:{" "}
-                <code>curl -o /dev/null -s https://{probeForm.domain}</code> in
-                your terminal
-              </li>
-            </ul>
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Captured Payloads - Flat grid like SetCards */}
+      {/* Generated Payloads - Flat grid like SetCards */}
       {captures.length > 0 && (
         <Card>
           <CardHeader>
@@ -349,8 +299,8 @@ export const CaptureSettings = () => {
             </CardTitle>
 
             <CardDescription>
-              {captures.length} payload{captures.length !== 1 ? "s" : ""} ready
-              for use
+              {captures.length} optimized payloads
+              {captures.length !== 1 ? "s" : ""} ready for use
             </CardDescription>
           </CardHeader>
           <CardContent>

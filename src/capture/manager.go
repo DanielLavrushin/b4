@@ -280,6 +280,50 @@ func (m *Manager) ProbeCapture(domain, protocol string) error {
 	return nil
 }
 
+func (m *Manager) GenerateCapture(domain, protocol string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.metadata[domain] != nil && m.metadata[domain][protocol] != nil {
+		return fmt.Errorf("already captured")
+	}
+
+	if protocol != "tls" {
+		return fmt.Errorf("generation only supported for TLS (use 'probe' for QUIC)")
+	}
+
+	payload, err := GenerateTLSClientHello(domain)
+	if err != nil {
+		return fmt.Errorf("failed to generate payload: %v", err)
+	}
+
+	filename := fmt.Sprintf("%s_%s.bin", protocol, sanitizeDomain(domain))
+	filepath := filepath.Join(m.outputPath, filename)
+
+	if err := os.WriteFile(filepath, payload, 0644); err != nil {
+		return fmt.Errorf("failed to save payload: %v", err)
+	}
+
+	if m.metadata[domain] == nil {
+		m.metadata[domain] = make(map[string]*PayloadMetadata)
+	}
+
+	m.metadata[domain][protocol] = &PayloadMetadata{
+		Timestamp: time.Now(),
+		Size:      len(payload),
+		Filepath:  filename,
+	}
+
+	if err := m.saveMetadata(); err != nil {
+		log.Errorf("Failed to save metadata: %v", err)
+	}
+
+	log.Infof("✓ Generated %s payload for %s (%d bytes, SNI-first for DPI bypass)",
+		protocol, domain, len(payload))
+
+	return nil
+}
+
 // ListCaptures returns all captured payloads for API
 func (m *Manager) ListCaptures() []*Capture {
 	m.mu.RLock()

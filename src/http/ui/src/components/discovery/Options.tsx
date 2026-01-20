@@ -89,7 +89,9 @@ export const DiscoveryOptionsPanel = ({
               <Field>
                 <FieldLabel>
                   Validation Tries
-                  <Badge variant="secondary">{options.validationTries}</Badge>
+                  <Badge variant="secondary" className="ml-auto">
+                    {options.validationTries}
+                  </Badge>
                 </FieldLabel>
                 <Slider
                   value={[options.validationTries]}
@@ -138,7 +140,7 @@ export const DiscoveryOptionsPanel = ({
                     <AlertDescription>
                       No captured payloads available.{" "}
                       <a
-                        href="/settings#capture"
+                        href="/settings/capture"
                         className="text-primary hover:underline"
                       >
                         Capture payloads
