@@ -65,6 +65,7 @@ export {
   IconCircleCheck as CheckCircleIcon,
   IconBrandGithub as GitHubIcon,
   IconChevronDown as ArrowDownIcon,
+  IconArrowLeft as IconGoBack,
   IconDeviceDesktop as DeviceUnknowIcon,
   IconUpload as UploadIcon,
   IconLoader2,
