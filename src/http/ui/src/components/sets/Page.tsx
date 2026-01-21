@@ -2,7 +2,9 @@ import { useSnackbar } from "@context/SnackbarProvider";
 import { Spinner } from "@primitives/spinner";
 import { B4Config } from "@models/config";
 import { useCallback, useEffect, useState } from "react";
+import { Routes, Route } from "react-router-dom";
 import { SetsManager, SetWithStats } from "./Manager";
+import { SetEditorPage } from "./Editor";
 
 export function SetsPage() {
   const { showError } = useSnackbar();
@@ -45,7 +47,26 @@ export function SetsPage() {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="flex-1 overflow-auto">
-        <SetsManager config={config} onRefresh={() => void loadConfig()} />
+        <Routes>
+          <Route
+            index
+            element={
+              <SetsManager
+                config={config}
+                onRefresh={() => void loadConfig()}
+              />
+            }
+          />
+          <Route
+            path=":setId/*"
+            element={
+              <SetEditorPage
+                config={config}
+                onRefresh={() => void loadConfig()}
+              />
+            }
+          />
+        </Routes>
       </div>
     </div>
   );

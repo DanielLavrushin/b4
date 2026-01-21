@@ -27,7 +27,7 @@ export function App() {
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/connections" element={<ConnectionsPage />} />
-              <Route path="/sets" element={<SetsPage />} />
+              <Route path="/sets/*" element={<SetsPage />} />
               <Route path="/settings/*" element={<SettingsPage />} />
               <Route path="/discovery" element={<DiscoveryPage />} />
               <Route path="/logs" element={<LogsPage />} />
