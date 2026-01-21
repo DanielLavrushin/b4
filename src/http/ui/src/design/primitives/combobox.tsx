@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Combobox as ComboboxPrimitive } from "@base-ui/react";
+import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 
 import { cn } from "@design/lib/utils";
 import { Button } from "./button";
@@ -113,7 +114,7 @@ function ComboboxContent({
           data-slot="combobox-content"
           data-chips={!!anchor}
           className={cn(
-            "bg-popover text-popover-foreground data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 ring-foreground/10 *:data-[slot=input-group]:bg-input/20 dark:bg-popover group/combobox-content relative max-h-72 w-(--anchor-width) max-w-(--available-width) min-w-32 origin-(--transform-origin) overflow-hidden rounded-lg shadow-md ring-1 duration-100 data-[chips=true]:min-w-(--anchor-width) *:data-[slot=input-group]:m-1 *:data-[slot=input-group]:mb-0 *:data-[slot=input-group]:h-7 *:data-[slot=input-group]:border-none *:data-[slot=input-group]:shadow-none pointer-events-auto",
+            "bg-popover text-popover-foreground data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 ring-foreground/10 *:data-[slot=input-group]:bg-input/20 dark:bg-popover group/combobox-content pointer-events-auto relative max-h-72 w-(--anchor-width) max-w-(--available-width) min-w-32 origin-(--transform-origin) overflow-hidden rounded-lg shadow-md ring-1 duration-100 data-[chips=true]:min-w-(--anchor-width) *:data-[slot=input-group]:m-1 *:data-[slot=input-group]:mb-0 *:data-[slot=input-group]:h-7 *:data-[slot=input-group]:border-none *:data-[slot=input-group]:shadow-none",
             className,
           )}
           {...props}
@@ -137,13 +138,13 @@ function ComboboxList({ className, ...props }: ComboboxPrimitive.List.Props) {
   );
 }
 
-function ComboboxItem({
-  className,
-  children,
-  ...props
-}: ComboboxPrimitive.Item.Props) {
+const ComboboxItem = React.forwardRef<
+  React.ElementRef<typeof ComboboxPrimitive.Item>,
+  ComboboxPrimitive.Item.Props
+>(({ className, children, ...props }, ref) => {
   return (
     <ComboboxPrimitive.Item
+      ref={ref}
       data-slot="combobox-item"
       className={cn(
         "data-highlighted:bg-accent data-highlighted:text-accent-foreground not-data-[variant=destructive]:data-highlighted:**:text-accent-foreground relative flex min-h-7 w-full cursor-default items-center gap-2 rounded-md px-2 py-1 text-xs/relaxed outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
@@ -161,7 +162,8 @@ function ComboboxItem({
       </ComboboxPrimitive.ItemIndicator>
     </ComboboxPrimitive.Item>
   );
-}
+});
+ComboboxItem.displayName = "ComboboxItem";
 
 function ComboboxGroup({ className, ...props }: ComboboxPrimitive.Group.Props) {
   return (
@@ -281,6 +283,127 @@ function ComboboxChipsInput({
   );
 }
 
+type ComboboxVirtualizedListProps<T> = {
+  items: T[];
+  renderItem: (item: T, index: number) => React.ReactNode;
+  itemKey?: (item: T, index: number) => React.Key;
+  estimateSize?: number;
+  overscan?: number;
+  enabled?: boolean;
+  paddingStart?: number;
+  paddingEnd?: number;
+  scrollPaddingStart?: number;
+  scrollPaddingEnd?: number;
+  viewportClassName?: string;
+  virtualizerRef?: React.MutableRefObject<Virtualizer<
+    HTMLDivElement,
+    HTMLDivElement
+  > | null>;
+} & Omit<ComboboxPrimitive.List.Props, "children">;
+
+function ComboboxVirtualizedList<T>({
+  items,
+  renderItem,
+  itemKey,
+  estimateSize = 32,
+  overscan = 20,
+  enabled = true,
+  paddingStart = 8,
+  paddingEnd = 8,
+  scrollPaddingStart = 8,
+  scrollPaddingEnd = 8,
+  className,
+  viewportClassName,
+  virtualizerRef,
+  ...props
+}: ComboboxVirtualizedListProps<T>) {
+  const scrollElementRef = React.useRef<HTMLDivElement | null>(null);
+
+  const virtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+    enabled,
+    count: items.length,
+    getScrollElement: () => scrollElementRef.current,
+    estimateSize: () => estimateSize,
+    overscan,
+    paddingStart,
+    paddingEnd,
+    scrollPaddingEnd,
+    scrollPaddingStart,
+  });
+
+  React.useEffect(() => {
+    if (virtualizerRef) {
+      virtualizerRef.current = virtualizer;
+    }
+  }, [virtualizer, virtualizerRef]);
+
+  const handleScrollElementRef = React.useCallback(
+    (element: HTMLDivElement | null) => {
+      scrollElementRef.current = element;
+      if (element) {
+        virtualizer.measure();
+      }
+    },
+    [virtualizer],
+  );
+
+  const totalSize = virtualizer.getTotalSize();
+
+  return (
+    <ComboboxPrimitive.List
+      data-slot="combobox-list"
+      className={cn(className)}
+      {...props}
+    >
+      <div
+        role="presentation"
+        ref={handleScrollElementRef}
+        className={cn(
+          "h-[min(22rem,var(--total-size))] max-h-(--available-height) scroll-p-1 overflow-auto overscroll-contain p-1 data-empty:p-0",
+          viewportClassName,
+        )}
+        style={{ "--total-size": `${totalSize}px` } as React.CSSProperties}
+        onWheel={(e) => e.stopPropagation()}
+      >
+        <div
+          role="presentation"
+          className="relative w-full"
+          style={{ height: totalSize }}
+        >
+          {virtualizer.getVirtualItems().map((virtualItem) => {
+            const item = items[virtualItem.index];
+            if (!item) {
+              return null;
+            }
+
+            const key = itemKey?.(item, virtualItem.index) ?? virtualItem.key;
+
+            return (
+              <ComboboxItem
+                key={key}
+                ref={virtualizer.measureElement}
+                index={virtualItem.index}
+                data-index={virtualItem.index}
+                value={item as unknown as ComboboxPrimitive.Item.Props["value"]}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: virtualItem.size,
+                  transform: `translateY(${virtualItem.start}px)`,
+                }}
+              >
+                {renderItem(item, virtualItem.index)}
+              </ComboboxItem>
+            );
+          })}
+        </div>
+      </div>
+    </ComboboxPrimitive.List>
+  );
+}
+
 function useComboboxAnchor() {
   return React.useRef<HTMLDivElement | null>(null);
 }
@@ -299,6 +422,7 @@ export {
   ComboboxChips,
   ComboboxChip,
   ComboboxChipsInput,
+  ComboboxVirtualizedList,
   ComboboxTrigger,
   ComboboxValue,
   useComboboxAnchor,
