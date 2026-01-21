@@ -1,21 +1,25 @@
-import { ImportExportIcon, CheckIcon, RefreshIcon } from "@b4.icons";
+import { CheckIcon, RefreshIcon } from "@b4.icons";
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Button } from "@primitives/button";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
 } from "@primitives/card";
 import {
   Field,
   FieldDescription,
+  FieldGroup,
   FieldLabel,
+  FieldSet,
 } from "@primitives/field";
 import { Textarea } from "@primitives/textarea";
 import { useEffect, useState } from "react";
 
 import { B4SetConfig } from "@models/config";
+import { Separator } from "@design/primitives/separator";
 
 interface ImportExportSettingsProps {
   config: B4SetConfig;
@@ -165,23 +169,17 @@ export const ImportExportSettings = ({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-3">
-          <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
-            <ImportExportIcon />
-          </div>
-          <div className="flex-1">
-            <CardTitle>Import/Export Set configuration</CardTitle>
-          </div>
-        </div>
+        <CardTitle>Import/Export Set configuration</CardTitle>
+        <CardDescription>
+          You can export the current set configuration as JSON, or import a new
+          configuration by pasting valid JSON below.
+        </CardDescription>
       </CardHeader>
+
+      <Separator />
+
       <CardContent>
-        <Alert className="mb-4">
-          <AlertDescription>
-            You can export the current set configuration as JSON, or import a
-            new configuration by pasting valid JSON below.
-          </AlertDescription>
-        </Alert>
-        <div className="flex flex-col gap-4">
+        <FieldSet>
           <Field>
             <FieldLabel>Set Configuration JSON</FieldLabel>
             <Textarea
@@ -197,38 +195,37 @@ export const ImportExportSettings = ({
           </Field>
 
           {validationError && (
-            <Alert variant="destructive">
-              <AlertDescription>{validationError}</AlertDescription>
-            </Alert>
+            <Field>
+              <Alert variant="destructive">
+                <AlertDescription>{validationError}</AlertDescription>
+              </Alert>
+            </Field>
           )}
-
-          <div className="flex gap-4">
-            <Button
-              variant="outline"
-              onClick={handleReset}
-              disabled={!hasChanges}
-            >
-              <RefreshIcon className="mr-2 size-4" />
-              Reset
-            </Button>
-            <div className="flex-1" />
-            <div className="flex items-center gap-2">
-              {validationSuccess && !validationError && (
-                <CheckIcon className="text-primary size-4" />
-              )}
+          <FieldGroup>
+            <Field orientation="horizontal">
               <Button
                 variant="outline"
-                onClick={handleValidate}
-                className="hover:bg-input/50 hover:text-foreground"
+                onClick={handleReset}
+                disabled={!hasChanges}
               >
+                <RefreshIcon />
+                Reset
+              </Button>
+            </Field>
+
+            <Field orientation="horizontal" className="justify-end">
+              {validationSuccess && !validationError && <CheckIcon />}
+
+              <Button variant="outline" onClick={handleValidate}>
                 Validate
               </Button>
-            </div>
-            <Button onClick={handleApply} disabled={!hasChanges}>
-              Apply Changes
-            </Button>
-          </div>
-        </div>
+
+              <Button onClick={handleApply} disabled={!hasChanges}>
+                Apply Changes
+              </Button>
+            </Field>
+          </FieldGroup>
+        </FieldSet>
       </CardContent>
     </Card>
   );

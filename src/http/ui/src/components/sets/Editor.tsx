@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 
 import {
-  ImportExportIcon,
   DnsIcon,
+  DomainIcon,
   FakingIcon,
   FragIcon,
+  ImportExportIcon,
   TcpIcon,
   UdpIcon,
-  DomainIcon,
 } from "@b4.icons";
 
 import {
@@ -18,27 +18,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@primitives/dialog";
-import {
-  Field,
-  FieldDescription,
-  FieldLabel,
-} from "@primitives/field";
+import { Field, FieldDescription, FieldLabel } from "@primitives/field";
 import { Input } from "@primitives/input";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@primitives/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@primitives/tabs";
 
-import { Button } from "@primitives/button";
-import { Spinner } from "@primitives/spinner";
 import {
   B4Config,
   B4SetConfig,
   MAIN_SET_ID,
   SystemConfig,
 } from "@models/config";
+import { Button } from "@primitives/button";
+import { Spinner } from "@primitives/spinner";
 
 import { DnsSettings } from "./Dns";
 import { FakingSettings } from "./Faking";
@@ -48,6 +39,7 @@ import { SetStats } from "./Manager";
 import { TargetSettings } from "./Target";
 import { TcpSettings } from "./Tcp";
 import { UdpSettings } from "./Udp";
+import { Separator } from "@design/primitives/separator";
 
 export interface SetEditorProps {
   open: boolean;
@@ -96,24 +88,26 @@ export const SetEditor = ({
     field: string,
     value: string | number | boolean | string[] | number[] | null | undefined,
   ) => {
-    if (!editedSet) return;
+    setEditedSet((prev) => {
+      if (!prev) return prev;
 
-    const keys = field.split(".");
+      const keys = field.split(".");
 
-    if (keys.length === 1) {
-      setEditedSet({ ...editedSet, [field]: value });
-    } else {
-      const newConfig = { ...editedSet };
-      let current: Record<string, unknown> = newConfig;
+      if (keys.length === 1) {
+        return { ...prev, [field]: value };
+      } else {
+        const newConfig = { ...prev };
+        let current: Record<string, unknown> = newConfig;
 
-      for (let i = 0; i < keys.length - 1; i++) {
-        current[keys[i]] = { ...(current[keys[i]] as object) };
-        current = current[keys[i]] as Record<string, unknown>;
+        for (let i = 0; i < keys.length - 1; i++) {
+          current[keys[i]] = { ...(current[keys[i]] as object) };
+          current = current[keys[i]] as Record<string, unknown>;
+        }
+
+        current[keys[keys.length - 1]] = value;
+        return newConfig;
       }
-
-      current[keys[keys.length - 1]] = value;
-      setEditedSet(newConfig);
-    }
+    });
   };
 
   const handleSave = () => {
@@ -131,7 +125,7 @@ export const SetEditor = ({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="flex max-h-[90vh] w-[90vw] max-w-[90vw] flex-col sm:max-w-[90vw]">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>
             {isNew ? "Create New Set" : `Edit Set: ${editedSet.name}`}
@@ -143,130 +137,103 @@ export const SetEditor = ({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-1 flex-col gap-4 overflow-hidden">
-          <Field>
-            <FieldLabel>Set Name</FieldLabel>
-            <Input
-              value={editedSet.name}
-              onChange={(e) => handleChange("name", e.target.value)}
-              placeholder="e.g., YouTube Bypass, Gaming, Streaming"
-              required
+        <Separator />
+
+        <Field>
+          <FieldLabel>Set Name</FieldLabel>
+          <Input
+            value={editedSet.name}
+            onChange={(e) => handleChange("name", e.target.value)}
+            placeholder="e.g., YouTube Bypass, Gaming, Streaming"
+            required
+          />
+          <FieldDescription>Give this set a descriptive name</FieldDescription>
+        </Field>
+
+        <Tabs
+          value={activeTab.toString()}
+          onValueChange={(v) => setActiveTab(Number(v) as TABS)}
+          className="overflow-hidden"
+        >
+          <TabsList className="flex w-full flex-wrap md:flex-nowrap">
+            <TabsTrigger value={TABS.TARGETS.toString()}>
+              <DomainIcon />
+              Targets
+            </TabsTrigger>
+            <TabsTrigger value={TABS.TCP.toString()}>
+              <TcpIcon />
+              TCP
+            </TabsTrigger>
+            <TabsTrigger value={TABS.UDP.toString()}>
+              <UdpIcon />
+              UDP
+            </TabsTrigger>
+            <TabsTrigger value={TABS.DNS.toString()}>
+              <DnsIcon />
+              DNS
+            </TabsTrigger>
+            <TabsTrigger value={TABS.FRAGMENTATION.toString()}>
+              <FragIcon />
+              Fragmentation
+            </TabsTrigger>
+            <TabsTrigger value={TABS.FAKING.toString()}>
+              <FakingIcon />
+              Faking
+            </TabsTrigger>
+            <TabsTrigger value={TABS.IMPORT_EXPORT.toString()}>
+              <ImportExportIcon />
+              Import/Export
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value={TABS.TARGETS.toString()}>
+            <TargetSettings
+              geo={settings.geo}
+              config={editedSet}
+              stats={stats}
+              onChange={handleChange}
             />
-            <FieldDescription>
-              Give this set a descriptive name
-            </FieldDescription>
-          </Field>
+          </TabsContent>
 
-          <Tabs
-            value={activeTab.toString()}
-            onValueChange={(v) => setActiveTab(Number(v) as TABS)}
-            className="flex flex-1 flex-col overflow-hidden"
-          >
-            <TabsList className="grid w-full grid-cols-7">
-              <TabsTrigger value={TABS.TARGETS.toString()}>
-                <DomainIcon className="mr-2 size-4" />
-                Targets
-              </TabsTrigger>
-              <TabsTrigger value={TABS.TCP.toString()}>
-                <TcpIcon className="mr-2 size-4" />
-                TCP
-              </TabsTrigger>
-              <TabsTrigger value={TABS.UDP.toString()}>
-                <UdpIcon className="mr-2 size-4" />
-                UDP
-              </TabsTrigger>
-              <TabsTrigger value={TABS.DNS.toString()}>
-                <DnsIcon className="mr-2 size-4" />
-                DNS
-              </TabsTrigger>
-              <TabsTrigger value={TABS.FRAGMENTATION.toString()}>
-                <FragIcon className="mr-2 size-4" />
-                Fragmentation
-              </TabsTrigger>
-              <TabsTrigger value={TABS.FAKING.toString()}>
-                <FakingIcon className="mr-2 size-4" />
-                Faking
-              </TabsTrigger>
-              <TabsTrigger value={TABS.IMPORT_EXPORT.toString()}>
-                <ImportExportIcon className="mr-2 size-4" />
-                Import/Export
-              </TabsTrigger>
-            </TabsList>
+          <TabsContent value={TABS.TCP.toString()}>
+            <TcpSettings
+              config={editedSet}
+              main={mainSet}
+              onChange={handleChange}
+            />
+          </TabsContent>
 
-            <div className="mt-4 flex-1 overflow-y-auto">
-              <TabsContent value={TABS.TARGETS.toString()} className="mt-0">
-                <div className="flex flex-col gap-4">
-                  <TargetSettings
-                    geo={settings.geo}
-                    config={editedSet}
-                    stats={stats}
-                    onChange={handleChange}
-                  />
-                </div>
-              </TabsContent>
+          <TabsContent value={TABS.UDP.toString()}>
+            <UdpSettings
+              config={editedSet}
+              main={mainSet}
+              onChange={handleChange}
+            />
+          </TabsContent>
 
-              <TabsContent value={TABS.TCP.toString()} className="mt-0">
-                <div className="flex flex-col gap-4">
-                  <TcpSettings
-                    config={editedSet}
-                    main={mainSet}
-                    onChange={handleChange}
-                  />
-                </div>
-              </TabsContent>
+          <TabsContent value={TABS.DNS.toString()}>
+            <DnsSettings
+              config={editedSet}
+              onChange={handleChange}
+              ipv6={config.queue.ipv6}
+            />
+          </TabsContent>
 
-              <TabsContent value={TABS.UDP.toString()} className="mt-0">
-                <div className="flex flex-col gap-4">
-                  <UdpSettings
-                    config={editedSet}
-                    main={mainSet}
-                    onChange={handleChange}
-                  />
-                </div>
-              </TabsContent>
+          <TabsContent value={TABS.FRAGMENTATION.toString()}>
+            <FragmentationSettings config={editedSet} onChange={handleChange} />
+          </TabsContent>
 
-              <TabsContent value={TABS.DNS.toString()} className="mt-0">
-                <div className="flex flex-col gap-4">
-                  <DnsSettings
-                    config={editedSet}
-                    onChange={handleChange}
-                    ipv6={config.queue.ipv6}
-                  />
-                </div>
-              </TabsContent>
+          <TabsContent value={TABS.FAKING.toString()}>
+            <FakingSettings config={editedSet} onChange={handleChange} />
+          </TabsContent>
 
-              <TabsContent
-                value={TABS.FRAGMENTATION.toString()}
-                className="mt-0"
-              >
-                <div className="flex flex-col gap-4">
-                  <FragmentationSettings
-                    config={editedSet}
-                    onChange={handleChange}
-                  />
-                </div>
-              </TabsContent>
-
-              <TabsContent value={TABS.FAKING.toString()} className="mt-0">
-                <div className="flex flex-col gap-4">
-                  <FakingSettings config={editedSet} onChange={handleChange} />
-                </div>
-              </TabsContent>
-
-              <TabsContent
-                value={TABS.IMPORT_EXPORT.toString()}
-                className="mt-0"
-              >
-                <div className="flex flex-col gap-4">
-                  <ImportExportSettings
-                    config={editedSet}
-                    onImport={handleApplyImport}
-                  />
-                </div>
-              </TabsContent>
-            </div>
-          </Tabs>
-        </div>
+          <TabsContent value={TABS.IMPORT_EXPORT.toString()}>
+            <ImportExportSettings
+              config={editedSet}
+              onImport={handleApplyImport}
+            />
+          </TabsContent>
+        </Tabs>
 
         <DialogFooter>
           <Button onClick={onClose} variant="outline" disabled={saving}>
@@ -275,11 +242,10 @@ export const SetEditor = ({
           <Button
             onClick={handleSave}
             disabled={!editedSet.name.trim() || saving}
-            className="min-w-35"
           >
             {saving ? (
               <>
-                <Spinner className="mr-2 size-4" />
+                <Spinner />
                 Saving...
               </>
             ) : isNew ? (

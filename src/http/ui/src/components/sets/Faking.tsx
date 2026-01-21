@@ -1,9 +1,8 @@
 import { useCaptures } from "@b4.capture";
-import { ClientHelloIcon, FakingIcon, AddIcon, SecurityIcon } from "@b4.icons";
-import { ChipList } from "@components/common/ChipList";
+import { ClientHelloIcon, SecurityIcon } from "@b4.icons";
+import { TagsInput } from "@composed/tags-input";
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Badge } from "@primitives/badge";
-import { Button } from "@primitives/button";
 import {
   Card,
   CardContent,
@@ -15,7 +14,10 @@ import {
   Field,
   FieldContent,
   FieldDescription,
+  FieldGroup,
   FieldLabel,
+  FieldLegend,
+  FieldSet,
   FieldTitle,
 } from "@primitives/field";
 import { Input } from "@primitives/input";
@@ -30,7 +32,7 @@ import { Separator } from "@primitives/separator";
 import { Slider } from "@primitives/slider";
 import { Switch } from "@primitives/switch";
 import { Textarea } from "@primitives/textarea";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 
 import { B4SetConfig, FakingPayloadType, MutationMode } from "@models/config";
@@ -80,7 +82,6 @@ const mutationModeDescriptions: Record<MutationMode, string> = {
 };
 
 export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
-  const [newFakeSni, setNewFakeSni] = useState("");
   const { captures, loadCaptures } = useCaptures();
 
   useEffect(() => {
@@ -101,540 +102,422 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
   const showFakeExtSettings = ["fakeext", "advanced"].includes(mutation.mode);
   const showFakeSniSettings = ["fakesni", "advanced"].includes(mutation.mode);
 
-  const handleAddFakeSni = () => {
-    if (newFakeSni.trim()) {
-      const current = mutation.fake_snis || [];
-      if (!current.includes(newFakeSni.trim())) {
-        onChange("faking.sni_mutation.fake_snis", [
-          ...current,
-          newFakeSni.trim(),
-        ]);
-      }
-      setNewFakeSni("");
-    }
-  };
-
-  const handleRemoveFakeSni = (sni: string) => {
-    const current = mutation.fake_snis || [];
-    onChange(
-      "faking.sni_mutation.fake_snis",
-      current.filter((s) => s !== sni),
-    );
-  };
-
   return (
-    <>
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
-              <FakingIcon />
-            </div>
-            <div className="flex-1">
-              <CardTitle>Fake SNI Configuration</CardTitle>
-              <CardDescription className="mt-1">
-                Configure fake SNI packets to confuse DPI
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="md:col-span-2">
-              <label htmlFor="switch-faking-sni">
-                <Field orientation="horizontal">
-                  <FieldContent>
-                    <FieldTitle>Enable Fake SNI</FieldTitle>
-                    <FieldDescription>
-                      Send fake SNI packets before real ClientHello
-                    </FieldDescription>
-                  </FieldContent>
-                  <Switch
-                    id="switch-faking-sni"
-                    checked={config.faking.sni}
-                    onCheckedChange={(checked: boolean) =>
-                      onChange("faking.sni", checked)
-                    }
-                  />
-                </Field>
-              </label>
-            </div>
-            <div>
-              <Field>
-                <FieldLabel>Fake Strategy</FieldLabel>
-                <Select
-                  value={config.faking.strategy}
-                  onValueChange={(value) =>
-                    onChange("faking.strategy", value as string)
-                  }
-                  disabled={!config.faking.sni}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select fake strategy" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {FAKE_STRATEGIES.map((option) => (
-                      <SelectItem
-                        key={option.value}
-                        value={option.value.toString()}
-                      >
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FieldDescription>
-                  How to make fake packets unprocessable by server
-                </FieldDescription>
-              </Field>
-            </div>
-            <div>
-              <div className="flex flex-col gap-4">
+    <Card>
+      <CardHeader>
+        <CardTitle>Fake SNI Configuration</CardTitle>
+        <CardDescription>
+          Configure fake SNI packets to confuse DPI
+        </CardDescription>
+      </CardHeader>
+
+      <Separator />
+
+      <CardContent>
+        <FieldSet>
+          <Field orientation="horizontal">
+            <FieldContent>
+              <FieldTitle>Enable Fake SNI</FieldTitle>
+              <FieldDescription>
+                Send fake SNI packets before real ClientHello
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="switch-faking-sni"
+              checked={config.faking.sni}
+              onCheckedChange={(checked: boolean) =>
+                onChange("faking.sni", checked)
+              }
+            />
+          </Field>
+
+          <Field>
+            <FieldLabel>Fake Strategy</FieldLabel>
+            <Select
+              value={config.faking.strategy}
+              onValueChange={(value) =>
+                onChange("faking.strategy", value as string)
+              }
+              disabled={!config.faking.sni}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select fake strategy" />
+              </SelectTrigger>
+              <SelectContent>
+                {FAKE_STRATEGIES.map((option) => (
+                  <SelectItem
+                    key={option.value}
+                    value={option.value.toString()}
+                  >
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FieldDescription>
+              How to make fake packets unprocessable by server
+            </FieldDescription>
+          </Field>
+
+          <Field>
+            <FieldLabel>Fake Payload Type</FieldLabel>
+            <Select
+              value={config.faking.sni_type?.toString()}
+              onValueChange={(value) =>
+                onChange("faking.sni_type", Number(value))
+              }
+              disabled={!config.faking.sni}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select payload type" />
+              </SelectTrigger>
+              <SelectContent>
+                {FAKE_PAYLOAD_TYPES.map((option) => (
+                  <SelectItem
+                    key={option.value}
+                    value={option.value.toString()}
+                  >
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FieldDescription>Content of fake packets</FieldDescription>
+          </Field>
+
+          {config.faking.sni_type === FakingPayloadType.CUSTOM && (
+            <Field>
+              <FieldLabel>Custom Payload (Hex)</FieldLabel>
+              <Textarea
+                value={config.faking.custom_payload}
+                onChange={(e) =>
+                  onChange("faking.custom_payload", e.target.value)
+                }
+                disabled={!config.faking.sni}
+                rows={2}
+              />
+              <FieldDescription>
+                Hex-encoded payload for fake packets (use Capture feature to get
+                real payloads)
+              </FieldDescription>
+            </Field>
+          )}
+
+          {config.faking.sni_type === FakingPayloadType.CAPTURE && (
+            <>
+              {captures.length > 0 && (
                 <Field>
-                  <FieldLabel>Fake Payload Type</FieldLabel>
+                  <FieldLabel>Captured Payload</FieldLabel>
                   <Select
-                    value={config.faking.sni_type?.toString()}
+                    value={config.faking.payload_file ?? "none"}
                     onValueChange={(value) =>
-                      onChange("faking.sni_type", Number(value))
+                      onChange(
+                        "faking.payload_file",
+                        value === "none" ? "" : (value as string),
+                      )
                     }
-                    disabled={!config.faking.sni}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select payload type" />
+                      <SelectValue placeholder="Select a capture..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {FAKE_PAYLOAD_TYPES.map((option) => (
-                        <SelectItem
-                          key={option.value}
-                          value={option.value.toString()}
-                        >
-                          {option.label}
+                      <SelectItem value="none">Select a capture...</SelectItem>
+                      {captures.map((c) => (
+                        <SelectItem key={c.filepath} value={c.filepath}>
+                          {c.domain} ({c.size} bytes)
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <FieldDescription>Content of fake packets</FieldDescription>
+                  <FieldDescription>
+                    {captures.length === 0
+                      ? "No TLS captures available. Use Capture feature first."
+                      : "Select a previously captured/uploaded TLS ClientHello"}
+                  </FieldDescription>
                 </Field>
-
-                {config.faking.sni_type === FakingPayloadType.CUSTOM && (
-                  <div className="mt-4">
-                    <Field>
-                      <FieldLabel>Custom Payload (Hex)</FieldLabel>
-                      <Textarea
-                        value={config.faking.custom_payload}
-                        onChange={(e) =>
-                          onChange("faking.custom_payload", e.target.value)
-                        }
-                        disabled={!config.faking.sni}
-                        rows={2}
-                      />
-                      <FieldDescription>
-                        Hex-encoded payload for fake packets (use Capture
-                        feature to get real payloads)
-                      </FieldDescription>
-                    </Field>
-                  </div>
-                )}
-              </div>
-            </div>
-            {config.faking.sni_type === FakingPayloadType.CAPTURE && (
-              <div className="grid grid-cols-1 gap-4 md:col-span-2 md:grid-cols-2">
-                {captures.length > 0 && (
-                  <div>
-                    <Field>
-                      <FieldLabel>Captured Payload</FieldLabel>
-                      <Select
-                        value={config.faking.payload_file || ""}
-                        onValueChange={(value) =>
-                          onChange("faking.payload_file", value as string)
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a capture..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="">Select a capture...</SelectItem>
-                          {captures.map((c) => (
-                            <SelectItem key={c.filepath} value={c.filepath}>
-                              {c.domain} ({c.size} bytes)
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FieldDescription>
-                        {captures.length === 0
-                          ? "No TLS captures available. Use Capture feature first."
-                          : "Select a previously captured/uploaded TLS ClientHello"}
-                      </FieldDescription>
-                    </Field>
-                  </div>
-                )}
-                <div className={captures.length > 0 ? "" : "md:col-span-2"}>
-                  <Alert>
-                    <AlertDescription>
-                      {captures.length === 0 &&
-                        "No TLS captures available. You can use the Capture feature to record ClientHello payloads or  upload your own capture files."}
-
-                      <Link to="/settings/capture">
-                        {" "}
-                        Navigate to the Settings section to capture or upload
-                        your own TLS ClientHello payloads.
-                      </Link>
-                    </AlertDescription>
-                  </Alert>
-                </div>
-              </div>
-            )}
-            <div>
-              <Field className="w-full space-y-2">
-                <div className="flex items-center justify-between">
-                  <FieldLabel className="text-sm font-medium">
-                    Fake TTL
-                  </FieldLabel>
-                  <Badge variant="secondary" className="font-semibold">
-                    {config.faking.ttl}
-                  </Badge>
-                </div>
-                <Slider
-                  value={[config.faking.ttl]}
-                  onValueChange={(values) => onChange("faking.ttl", values[0])}
-                  min={1}
-                  max={64}
-                  step={1}
-                  disabled={!config.faking.sni}
-                  className="w-full"
-                />
-                <FieldDescription>
-                  TTL for fake packets (should expire before server)
-                </FieldDescription>
-              </Field>
-            </div>
-            <div>
+              )}
               <Field>
-                <FieldLabel>Sequence Offset</FieldLabel>
-                <Input
-                  type="number"
-                  value={config.faking.seq_offset}
-                  onChange={(e) =>
-                    onChange("faking.seq_offset", Number(e.target.value))
-                  }
+                <Alert>
+                  <AlertDescription>
+                    {captures.length === 0 &&
+                      "No TLS captures available. You can use the Capture feature to record ClientHello payloads or  upload your own capture files. "}
+
+                    <Link to="/settings/capture">
+                      Navigate to the Settings section to capture or upload your
+                      own TLS ClientHello payloads.
+                    </Link>
+                  </AlertDescription>
+                </Alert>
+              </Field>
+            </>
+          )}
+
+          <Field>
+            <FieldLabel>
+              Fake TTL
+              <Badge variant="secondary" className="font-semibold">
+                {config.faking.ttl}
+              </Badge>
+            </FieldLabel>
+            <Slider
+              value={[config.faking.ttl]}
+              onValueChange={(values) => onChange("faking.ttl", values[0])}
+              min={1}
+              max={64}
+              step={1}
+              disabled={!config.faking.sni}
+            />
+            <FieldDescription>
+              TTL for fake packets (should expire before server)
+            </FieldDescription>
+          </Field>
+
+          <Field>
+            <FieldLabel>Sequence Offset</FieldLabel>
+            <Input
+              type="number"
+              value={config.faking.seq_offset}
+              onChange={(e) =>
+                onChange("faking.seq_offset", Number(e.target.value))
+              }
+              disabled={!config.faking.sni}
+            />
+            <FieldDescription>
+              TCP sequence number offset for pastseq strategy
+            </FieldDescription>
+          </Field>
+
+          <Field>
+            <FieldLabel>
+              Fake Packet Count
+              <Badge variant="secondary">{config.faking.sni_seq_length}</Badge>
+            </FieldLabel>
+            <Slider
+              value={[config.faking.sni_seq_length]}
+              onValueChange={(values) =>
+                onChange("faking.sni_seq_length", values[0])
+              }
+              min={1}
+              max={20}
+              step={1}
+              disabled={!config.faking.sni}
+            />
+            <FieldDescription>Number of fake packets to send</FieldDescription>
+          </Field>
+        </FieldSet>
+
+        <Separator className="my-4" />
+
+        {/* TLS Mod Options - only show when payload has TLS structure */}
+        {config.faking.sni_type !== FakingPayloadType.RANDOM && (
+          <FieldSet>
+            <FieldLegend>Fake Packet TLS Modification</FieldLegend>
+            <FieldDescription>
+              Modify fake TLS ClientHello to improve bypass (zapret-style)
+            </FieldDescription>
+            <FieldGroup>
+              <Field orientation="horizontal">
+                <FieldContent>
+                  <FieldTitle>Randomize TLS Random</FieldTitle>
+                  <FieldDescription>
+                    Replace 32-byte Random field in fake packets
+                  </FieldDescription>
+                </FieldContent>
+                <Switch
+                  id="switch-faking-tls-rnd"
+                  checked={(config.faking.tls_mod || []).includes("rnd")}
+                  onCheckedChange={(checked: boolean) => {
+                    const current = config.faking.tls_mod || [];
+                    const next = checked
+                      ? [...current.filter((m) => m !== "rnd"), "rnd"]
+                      : current.filter((m) => m !== "rnd");
+                    onChange("faking.tls_mod", next);
+                  }}
                   disabled={!config.faking.sni}
                 />
-                <FieldDescription>
-                  TCP sequence number offset for pastseq strategy
-                </FieldDescription>
               </Field>
-            </div>
-            <div>
-              <Field className="w-full space-y-2">
-                <div className="flex items-center justify-between">
-                  <FieldLabel className="text-sm font-medium">
-                    Fake Packet Count
+
+              <Field orientation="horizontal">
+                <FieldContent>
+                  <FieldTitle>Duplicate Session ID</FieldTitle>
+                  <FieldDescription>
+                    Copy Session ID from real ClientHello into fake
+                  </FieldDescription>
+                </FieldContent>
+                <Switch
+                  id="switch-faking-tls-dupsid"
+                  checked={(config.faking.tls_mod || []).includes("dupsid")}
+                  onCheckedChange={(checked: boolean) => {
+                    const current = config.faking.tls_mod || [];
+                    const next = checked
+                      ? [...current.filter((m) => m !== "dupsid"), "dupsid"]
+                      : current.filter((m) => m !== "dupsid");
+                    onChange("faking.tls_mod", next);
+                  }}
+                  disabled={!config.faking.sni}
+                />
+              </Field>
+            </FieldGroup>
+          </FieldSet>
+        )}
+
+        <Separator className="my-4" />
+
+        {/* SNI Mutation Section */}
+        <FieldSet>
+          <FieldLegend>ClientHello Mutation</FieldLegend>
+          <FieldDescription>
+            Modify TLS ClientHello structure to evade fingerprinting
+          </FieldDescription>
+
+          <Field>
+            <FieldLabel>Mutation Mode</FieldLabel>
+            <Select
+              value={mutation.mode}
+              onValueChange={(value) =>
+                onChange("faking.sni_mutation.mode", value as string)
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select mutation mode" />
+              </SelectTrigger>
+              <SelectContent>
+                {MUTATION_MODES.map((option) => (
+                  <SelectItem
+                    key={option.value}
+                    value={option.value.toString()}
+                  >
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FieldDescription>
+              {mutationModeDescriptions[mutation.mode]}
+            </FieldDescription>
+          </Field>
+        </FieldSet>
+
+        {isMutationEnabled && (
+          <>
+            <Separator className="my-4" />
+            {showGreaseSettings && (
+              <FieldSet>
+                <FieldLegend>GREASE Configuration</FieldLegend>
+                <Field>
+                  <FieldLabel>
+                    GREASE Extension Count
+                    <Badge variant="secondary">{mutation.grease_count}</Badge>
                   </FieldLabel>
-                  <Badge variant="secondary" className="font-semibold">
-                    {config.faking.sni_seq_length}
-                  </Badge>
-                </div>
-                <Slider
-                  value={[config.faking.sni_seq_length]}
-                  onValueChange={(values) =>
-                    onChange("faking.sni_seq_length", values[0])
-                  }
-                  min={1}
-                  max={20}
-                  step={1}
-                  disabled={!config.faking.sni}
-                  className="w-full"
-                />
-                <FieldDescription>
-                  Number of fake packets to send
-                </FieldDescription>
-              </Field>
-            </div>
-            {/* TLS Mod Options - only show when payload has TLS structure */}
-            {config.faking.sni_type !== FakingPayloadType.RANDOM && (
-              <div className="md:col-span-2">
-                <p className="mb-2 text-sm font-semibold">
-                  Fake Packet TLS Modification
-                </p>
-                <p className="text-muted-foreground mb-4 text-xs">
-                  Modify fake TLS ClientHello to improve bypass (zapret-style)
-                </p>
-                <div className="flex flex-row gap-4">
-                  <label htmlFor="switch-faking-tls-rnd">
-                    <Field orientation="horizontal">
-                      <FieldContent>
-                        <FieldTitle>Randomize TLS Random</FieldTitle>
-                        <FieldDescription>
-                          Replace 32-byte Random field in fake packets
-                        </FieldDescription>
-                      </FieldContent>
-                      <Switch
-                        id="switch-faking-tls-rnd"
-                        checked={(config.faking.tls_mod || []).includes("rnd")}
-                        onCheckedChange={(checked: boolean) => {
-                          const current = config.faking.tls_mod || [];
-                          const next = checked
-                            ? [...current.filter((m) => m !== "rnd"), "rnd"]
-                            : current.filter((m) => m !== "rnd");
-                          onChange("faking.tls_mod", next);
-                        }}
-                        disabled={!config.faking.sni}
-                      />
-                    </Field>
-                  </label>
-                  <label htmlFor="switch-faking-tls-dupsid">
-                    <Field orientation="horizontal">
-                      <FieldContent>
-                        <FieldTitle>Duplicate Session ID</FieldTitle>
-                        <FieldDescription>
-                          Copy Session ID from real ClientHello into fake
-                        </FieldDescription>
-                      </FieldContent>
-                      <Switch
-                        id="switch-faking-tls-dupsid"
-                        checked={(config.faking.tls_mod || []).includes(
-                          "dupsid",
-                        )}
-                        onCheckedChange={(checked: boolean) => {
-                          const current = config.faking.tls_mod || [];
-                          const next = checked
-                            ? [
-                                ...current.filter((m) => m !== "dupsid"),
-                                "dupsid",
-                              ]
-                            : current.filter((m) => m !== "dupsid");
-                          onChange("faking.tls_mod", next);
-                        }}
-                        disabled={!config.faking.sni}
-                      />
-                    </Field>
-                  </label>
-                </div>
-              </div>
+                  <Slider
+                    value={[mutation.grease_count]}
+                    onValueChange={(values) =>
+                      onChange("faking.sni_mutation.grease_count", values[0])
+                    }
+                    min={1}
+                    max={10}
+                    step={1}
+                  />
+                  <FieldDescription>
+                    Number of GREASE extensions to insert
+                  </FieldDescription>
+                </Field>
+              </FieldSet>
             )}
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* SNI Mutation Section */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
-              <ClientHelloIcon className="rotate-45" />
-            </div>
-            <div className="flex-1">
-              <CardTitle>ClientHello Mutation</CardTitle>
-              <CardDescription className="mt-1">
-                Modify TLS ClientHello structure to evade fingerprinting
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div>
-              <Field>
-                <FieldLabel>Mutation Mode</FieldLabel>
-                <Select
-                  value={mutation.mode}
-                  onValueChange={(value) =>
-                    onChange("faking.sni_mutation.mode", value as string)
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select mutation mode" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MUTATION_MODES.map((option) => (
-                      <SelectItem
-                        key={option.value}
-                        value={option.value.toString()}
-                      >
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FieldDescription>
-                  {mutationModeDescriptions[mutation.mode]}
-                </FieldDescription>
-              </Field>
-            </div>
-
-            {isMutationEnabled && (
+            {showPaddingSettings && (
               <>
-                {showGreaseSettings && (
-                  <>
-                    <div className="relative my-4 flex items-center md:col-span-2">
-                      <Separator className="absolute inset-0 top-1/2" />
-                      <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
-                        GREASE Configuration
-                      </span>
-                    </div>
-                    <div className="md:col-span-2">
-                      <Field className="w-full space-y-2">
-                        <div className="flex items-center justify-between">
-                          <FieldLabel className="text-sm font-medium">
-                            GREASE Extension Count
-                          </FieldLabel>
-                          <Badge variant="secondary" className="font-semibold">
-                            {mutation.grease_count}
-                          </Badge>
-                        </div>
-                        <Slider
-                          value={[mutation.grease_count]}
-                          onValueChange={(values) =>
-                            onChange(
-                              "faking.sni_mutation.grease_count",
-                              values[0],
-                            )
-                          }
-                          min={1}
-                          max={10}
-                          step={1}
-                          className="w-full"
-                        />
-                        <FieldDescription>
-                          Number of GREASE extensions to insert
-                        </FieldDescription>
-                      </Field>
-                    </div>
-                  </>
-                )}
+                <Separator className="my-4" />
+                <FieldSet>
+                  <FieldLegend>Padding Configuration</FieldLegend>
 
-                {showPaddingSettings && (
-                  <>
-                    <div className="relative my-4 flex items-center md:col-span-2">
-                      <Separator className="absolute inset-0 top-1/2" />
-                      <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
-                        Padding Configuration
-                      </span>
-                    </div>
-                    <div className="md:col-span-2">
-                      <Field className="w-full space-y-2">
-                        <div className="flex items-center justify-between">
-                          <FieldLabel className="text-sm font-medium">
-                            Padding Size
-                          </FieldLabel>
-                          <Badge variant="secondary" className="font-semibold">
-                            {mutation.padding_size} bytes
-                          </Badge>
-                        </div>
-                        <Slider
-                          value={[mutation.padding_size]}
-                          onValueChange={(values) =>
-                            onChange(
-                              "faking.sni_mutation.padding_size",
-                              values[0],
-                            )
-                          }
-                          min={256}
-                          max={16384}
-                          step={256}
-                          className="w-full"
-                        />
-                        <FieldDescription>
-                          Target ClientHello size with padding
-                        </FieldDescription>
-                      </Field>
-                    </div>
-                  </>
-                )}
-
-                {showFakeExtSettings && (
-                  <>
-                    <div className="relative my-4 flex items-center md:col-span-2">
-                      <Separator className="absolute inset-0 top-1/2" />
-                      <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
-                        Fake Extensions Configuration
-                      </span>
-                    </div>
-                    <div className="md:col-span-2">
-                      <Field className="w-full space-y-2">
-                        <div className="flex items-center justify-between">
-                          <FieldLabel className="text-sm font-medium">
-                            Fake Extension Count
-                          </FieldLabel>
-                          <Badge variant="secondary" className="font-semibold">
-                            {mutation.fake_ext_count}
-                          </Badge>
-                        </div>
-                        <Slider
-                          value={[mutation.fake_ext_count]}
-                          onValueChange={(values) =>
-                            onChange(
-                              "faking.sni_mutation.fake_ext_count",
-                              values[0],
-                            )
-                          }
-                          min={1}
-                          max={15}
-                          step={1}
-                          className="w-full"
-                        />
-                        <FieldDescription>
-                          Number of fake TLS extensions to insert
-                        </FieldDescription>
-                      </Field>
-                    </div>
-                  </>
-                )}
-
-                {showFakeSniSettings && (
-                  <>
-                    <div className="relative my-4 flex items-center md:col-span-2">
-                      <Separator className="absolute inset-0 top-1/2" />
-                      <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
-                        Fake SNI Configuration
-                      </span>
-                    </div>
-                    <div>
-                      <div className="flex items-start gap-2">
-                        <Field className="flex-1">
-                          <FieldLabel>Add Fake SNI</FieldLabel>
-                          <Input
-                            value={newFakeSni}
-                            onChange={(e) => setNewFakeSni(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                                handleAddFakeSni();
-                              }
-                            }}
-                            placeholder="e.g., ya.ru, vk.com"
-                          />
-                          <FieldDescription>
-                            Additional SNI values to inject into ClientHello
-                          </FieldDescription>
-                        </Field>
-                        <Button
-                          variant="secondary"
-                          size="icon"
-                          onClick={handleAddFakeSni}
-                          disabled={!newFakeSni.trim()}
-                        >
-                          <AddIcon />
-                        </Button>
-                      </div>
-                    </div>
-                    <div>
-                      <ChipList
-                        items={mutation.fake_snis || []}
-                        getKey={(s) => s}
-                        getLabel={(s) => s}
-                        onDelete={handleRemoveFakeSni}
-                        title="Active Fake SNIs"
-                      />
-                    </div>
-                  </>
-                )}
+                  <Field>
+                    <FieldLabel>
+                      Padding Size
+                      <Badge variant="secondary">
+                        {mutation.padding_size} bytes
+                      </Badge>
+                    </FieldLabel>
+                    <Slider
+                      value={[mutation.padding_size]}
+                      onValueChange={(values) =>
+                        onChange("faking.sni_mutation.padding_size", values[0])
+                      }
+                      min={256}
+                      max={16384}
+                      step={256}
+                    />
+                    <FieldDescription>
+                      Target ClientHello size with padding
+                    </FieldDescription>
+                  </Field>
+                </FieldSet>
               </>
             )}
-          </div>
-        </CardContent>
-      </Card>
-    </>
+
+            {showFakeExtSettings && (
+              <>
+                <Separator className="my-4" />
+                <FieldSet>
+                  <FieldLegend>Fake Extensions Configuration</FieldLegend>
+                  <Field>
+                    <FieldLabel>
+                      Fake Extension Count
+                      <Badge variant="secondary">
+                        {mutation.fake_ext_count}
+                      </Badge>
+                    </FieldLabel>
+                    <Slider
+                      value={[mutation.fake_ext_count]}
+                      onValueChange={(values) =>
+                        onChange(
+                          "faking.sni_mutation.fake_ext_count",
+                          values[0],
+                        )
+                      }
+                      min={1}
+                      max={15}
+                      step={1}
+                    />
+                    <FieldDescription>
+                      Number of fake TLS extensions to insert
+                    </FieldDescription>
+                  </Field>
+                </FieldSet>
+              </>
+            )}
+
+            {showFakeSniSettings && (
+              <>
+                <Separator className="my-4" />
+                <FieldSet>
+                  <FieldLegend>Fake SNI Configuration</FieldLegend>
+                  <Field>
+                    <FieldLabel>Add Fake SNI</FieldLabel>
+                    <TagsInput
+                      value={mutation.fake_snis || []}
+                      onValueChange={(values) => {
+                        const clean = Array.from(
+                          new Set(
+                            values
+                              .map((v) => v.trim().toLowerCase())
+                              .filter(Boolean),
+                          ),
+                        );
+                        onChange("faking.sni_mutation.fake_snis", clean);
+                      }}
+                      placeholder="e.g., ya.ru, vk.com"
+                    />
+                    <FieldDescription>
+                      Additional SNI values to inject into ClientHello
+                    </FieldDescription>
+                  </Field>
+                </FieldSet>
+              </>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 };

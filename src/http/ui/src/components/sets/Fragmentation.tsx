@@ -1,4 +1,4 @@
-import { FragIcon } from "@b4.icons";
+import { B4SetConfig, FragmentationStrategy } from "@models/config";
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Badge } from "@primitives/badge";
 import {
@@ -12,7 +12,10 @@ import {
   Field,
   FieldContent,
   FieldDescription,
+  FieldGroup,
   FieldLabel,
+  FieldLegend,
+  FieldSet,
   FieldTitle,
 } from "@primitives/field";
 import {
@@ -25,7 +28,6 @@ import {
 import { Separator } from "@primitives/separator";
 import { Slider } from "@primitives/slider";
 import { Switch } from "@primitives/switch";
-import { B4SetConfig, FragmentationStrategy } from "@models/config";
 import { ComboSettings } from "./frags/Combo";
 import { DisorderSettings } from "./frags/Disorder";
 import { ExtSplitSettings } from "./frags/ExtSplit";
@@ -67,196 +69,154 @@ export const FragmentationSettings = ({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-3">
-          <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
-            <FragIcon />
-          </div>
-          <div className="flex-1">
-            <CardTitle>Fragmentation Strategy</CardTitle>
-            <CardDescription className="mt-1">
-              Split packets to evade DPI pattern matching
-            </CardDescription>
-          </div>
-        </div>
+        <CardTitle>Fragmentation Strategy</CardTitle>
+        <CardDescription>
+          Split packets to evade DPI pattern matching
+        </CardDescription>
       </CardHeader>
+
+      <Separator />
+
       <CardContent>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          {/* Strategy Selection */}
-          <div>
+        {/* Strategy Selection */}
+        <FieldGroup>
+          <Field>
+            <FieldLabel>Method</FieldLabel>
+            <Select
+              value={strategy}
+              onValueChange={(value) =>
+                onChange("fragmentation.strategy", value as string)
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select fragmentation method" />
+              </SelectTrigger>
+              <SelectContent>
+                {fragmentationOptions.map((option) => (
+                  <SelectItem
+                    key={option.value}
+                    value={option.value.toString()}
+                  >
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field orientation="horizontal">
+            <FieldContent>
+              <FieldTitle>Reverse Fragment Order</FieldTitle>
+              <FieldDescription>Send second fragment first</FieldDescription>
+            </FieldContent>
+            <Switch
+              id="switch-fragmentation-reverse-order"
+              checked={config.fragmentation.reverse_order}
+              onCheckedChange={(checked: boolean) =>
+                onChange("fragmentation.reverse_order", checked)
+              }
+            />
+          </Field>
+        </FieldGroup>
+
+        <Separator className="my-4" />
+
+        {isTcpOrIp && <TcpIpSettings config={config} onChange={onChange} />}
+
+        {strategy === "combo" && (
+          <ComboSettings config={config} onChange={onChange} />
+        )}
+
+        {strategy === "disorder" && (
+          <DisorderSettings config={config} onChange={onChange} />
+        )}
+        {strategy === "extsplit" && <ExtSplitSettings />}
+
+        {strategy === "firstbyte" && <FirstByteSettings config={config} />}
+
+        {isOob && (
+          <FieldSet>
+            <FieldLegend>OOB (Out-of-Band) Strategy</FieldLegend>
+            <FieldDescription>
+              Inserts a byte with TCP URG flag. Server ignores it, but stateful
+              DPI gets confused.
+            </FieldDescription>
+
             <Field>
-              <FieldLabel>Method</FieldLabel>
-              <Select
-                value={strategy}
-                onValueChange={(value) =>
-                  onChange("fragmentation.strategy", value as string)
+              <FieldLabel>
+                Insert Position
+                <Badge variant="secondary">
+                  {config.fragmentation.oob_position || 1}
+                </Badge>
+              </FieldLabel>
+              <Slider
+                value={[config.fragmentation.oob_position || 1]}
+                onValueChange={(values) =>
+                  onChange("fragmentation.oob_position", values[0])
                 }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select fragmentation method" />
-                </SelectTrigger>
-                <SelectContent>
-                  {fragmentationOptions.map((option) => (
-                    <SelectItem
-                      key={option.value}
-                      value={option.value.toString()}
-                    >
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                min={1}
+                max={50}
+                step={1}
+              />
+              <FieldDescription>Bytes before OOB insertion</FieldDescription>
             </Field>
-          </div>
+            <Field>
+              <FieldDescription>
+                OOB Byte:{" "}
+                <code className="font-mono text-xs">
+                  {String.fromCharCode(config.fragmentation.oob_char || 120)}
+                </code>{" "}
+                (0x
+                {(config.fragmentation.oob_char || 120)
+                  .toString(16)
+                  .padStart(2, "0")}
+                )
+              </FieldDescription>
+            </Field>
+          </FieldSet>
+        )}
 
-          <div>
-            <label htmlFor="switch-fragmentation-reverse-order">
-              <Field orientation="horizontal">
-                <FieldContent>
-                  <FieldTitle>Reverse Fragment Order</FieldTitle>
-                  <FieldDescription>
-                    Send second fragment first
-                  </FieldDescription>
-                </FieldContent>
-                <Switch
-                  id="switch-fragmentation-reverse-order"
-                  checked={config.fragmentation.reverse_order}
-                  onCheckedChange={(checked: boolean) =>
-                    onChange("fragmentation.reverse_order", checked)
-                  }
-                />
-              </Field>
-            </label>
-          </div>
+        {/* TLS Record Settings */}
+        {isTls && (
+          <FieldSet>
+            <FieldLegend>TLS Record Split Position</FieldLegend>
+            <FieldDescription>
+              Splits ClientHello into multiple TLS records. DPI expecting
+              single-record handshake fails to match.
+            </FieldDescription>
 
-          {isTcpOrIp && <TcpIpSettings config={config} onChange={onChange} />}
+            <Field>
+              <FieldLabel>
+                Record Split Position
+                <Badge variant="secondary">
+                  {config.fragmentation.tlsrec_pos || 1}
+                </Badge>
+              </FieldLabel>
+              <Slider
+                value={[config.fragmentation.tlsrec_pos || 1]}
+                onValueChange={(values) =>
+                  onChange("fragmentation.tlsrec_pos", values[0])
+                }
+                min={1}
+                max={100}
+                step={1}
+                className="w-full"
+              />
+              <FieldDescription>
+                First TLS record size in bytes
+              </FieldDescription>
+            </Field>
+          </FieldSet>
+        )}
 
-          {strategy === "combo" && (
-            <ComboSettings config={config} onChange={onChange} />
-          )}
-
-          {strategy === "disorder" && (
-            <DisorderSettings config={config} onChange={onChange} />
-          )}
-          {strategy === "extsplit" && <ExtSplitSettings />}
-
-          {strategy === "firstbyte" && <FirstByteSettings config={config} />}
-
-          {isOob && (
-            <>
-              <div className="relative my-4 flex items-center md:col-span-2">
-                <Separator className="absolute inset-0 top-1/2" />
-                <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
-                  OOB (Out-of-Band) Strategy
-                </span>
-              </div>
-
-              <Alert className="md:col-span-2">
-                <AlertDescription>
-                  Inserts a byte with TCP URG flag. Server ignores it, but
-                  stateful DPI gets confused.
-                </AlertDescription>
-              </Alert>
-
-              <div>
-                <Field className="w-full space-y-2">
-                  <div className="flex items-center justify-between">
-                    <FieldLabel className="text-sm font-medium">
-                      Insert Position
-                    </FieldLabel>
-                    <Badge variant="secondary" className="font-semibold">
-                      {config.fragmentation.oob_position || 1}
-                    </Badge>
-                  </div>
-                  <Slider
-                    value={[config.fragmentation.oob_position || 1]}
-                    onValueChange={(values) =>
-                      onChange("fragmentation.oob_position", values[0])
-                    }
-                    min={1}
-                    max={50}
-                    step={1}
-                    className="w-full"
-                  />
-                  <FieldDescription>
-                    Bytes before OOB insertion
-                  </FieldDescription>
-                </Field>
-              </div>
-
-              <div>
-                <div>
-                  <p className="mb-2 text-sm">
-                    OOB Byte:{" "}
-                    <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">
-                      {String.fromCharCode(
-                        config.fragmentation.oob_char || 120,
-                      )}
-                    </code>{" "}
-                    (0x
-                    {(config.fragmentation.oob_char || 120)
-                      .toString(16)
-                      .padStart(2, "0")}
-                    )
-                  </p>
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* TLS Record Settings */}
-          {isTls && (
-            <>
-              <div className="relative my-4 flex items-center md:col-span-2">
-                <Separator className="absolute inset-0 top-1/2" />
-                <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
-                  TLS Record Splitting Strategy
-                </span>
-              </div>
-
-              <Alert className="md:col-span-2">
-                <AlertDescription>
-                  Splits ClientHello into multiple TLS records. DPI expecting
-                  single-record handshake fails to match.
-                </AlertDescription>
-              </Alert>
-
-              <div>
-                <Field className="w-full space-y-2">
-                  <div className="flex items-center justify-between">
-                    <FieldLabel className="text-sm font-medium">
-                      Record Split Position
-                    </FieldLabel>
-                    <Badge variant="secondary" className="font-semibold">
-                      {config.fragmentation.tlsrec_pos || 1}
-                    </Badge>
-                  </div>
-                  <Slider
-                    value={[config.fragmentation.tlsrec_pos || 1]}
-                    onValueChange={(values) =>
-                      onChange("fragmentation.tlsrec_pos", values[0])
-                    }
-                    min={1}
-                    max={100}
-                    step={1}
-                    className="w-full"
-                  />
-                  <FieldDescription>
-                    First TLS record size in bytes
-                  </FieldDescription>
-                </Field>
-              </div>
-            </>
-          )}
-
-          {!isActive && (
-            <Alert variant="destructive" className="md:col-span-2">
-              <AlertDescription>
-                Fragmentation disabled. Only fake packets (if enabled) will be
-                used for bypass.
-              </AlertDescription>
-            </Alert>
-          )}
-        </div>
+        {!isActive && (
+          <Alert variant="destructive" className="md:col-span-2">
+            <AlertDescription>
+              Fragmentation disabled. Only fake packets (if enabled) will be
+              used for bypass.
+            </AlertDescription>
+          </Alert>
+        )}
       </CardContent>
     </Card>
   );

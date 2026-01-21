@@ -129,19 +129,12 @@ export const SetCompare = ({ open, setA, setB, onClose }: SetCompareProps) => {
 
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-2xl">
+      <DialogContent>
         <DialogHeader>
-          <div className="flex items-center gap-3">
-            <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
-              <IconArrowsExchange />
-            </div>
-            <div className="flex-1">
-              <DialogTitle>Compare Sets</DialogTitle>
-              <DialogDescription className="mt-1">
-                {setA.name} vs {setB.name}
-              </DialogDescription>
-            </div>
-          </div>
+          <DialogTitle>Compare Sets</DialogTitle>
+          <DialogDescription className="mt-1">
+            {setA.name} vs {setB.name}
+          </DialogDescription>
         </DialogHeader>
         <div className="flex-1 overflow-y-auto py-4">
           <div className="mt-4">

@@ -1,4 +1,6 @@
-import { WarningIcon, UdpIcon } from "@b4.icons";
+import { WarningIcon } from "@b4.icons";
+import { TagsInput } from "@composed/tags-input";
+import { validatePortFilter, parsePortFilter } from "@utils";
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Badge } from "@primitives/badge";
 import {
@@ -12,10 +14,12 @@ import {
   Field,
   FieldContent,
   FieldDescription,
+  FieldGroup,
   FieldLabel,
+  FieldLegend,
+  FieldSet,
   FieldTitle,
 } from "@primitives/field";
-import { Input } from "@primitives/input";
 import {
   Select,
   SelectContent,
@@ -94,31 +98,25 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
     config.udp.filter_quic === "parse" && !hasDomainsConfigured;
   const showNoProcessingWarning = !willProcessUdp;
 
+  const handlePortFilterChange = (values: string[]) => {
+    onChange("udp.dport_filter", validatePortFilter(values));
+  };
+
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-3">
-          <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
-            <UdpIcon />
-          </div>
-          <div className="flex-1">
-            <CardTitle>UDP & QUIC Configuration</CardTitle>
-            <CardDescription className="mt-1">
-              Configure UDP packet processing and QUIC filtering
-            </CardDescription>
-          </div>
-        </div>
+        <CardTitle>UDP & QUIC Configuration</CardTitle>
+        <CardDescription>
+          Configure UDP packet processing and QUIC filtering
+        </CardDescription>
       </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          <div className="relative my-4 flex items-center md:col-span-2">
-            <Separator className="absolute inset-0 top-1/2" />
-            <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
-              What UDP Traffic to Process
-            </span>
-          </div>
 
-          <div>
+      <Separator />
+
+      <CardContent>
+        <FieldSet>
+          <FieldLegend>What UDP Traffic to Process</FieldLegend>
+          <FieldGroup>
             <Field>
               <FieldLabel>QUIC Filter</FieldLabel>
               <Select
@@ -149,43 +147,36 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                 }
               </FieldDescription>
             </Field>
-          </div>
 
-          <div>
             <Field>
               <FieldLabel>Port Filter</FieldLabel>
-              <Input
-                value={config.udp.dport_filter}
-                onChange={(e) => onChange("udp.dport_filter", e.target.value)}
-                placeholder="e.g., 5000-6000,8000"
+              <TagsInput
+                value={parsePortFilter(config.udp.dport_filter)}
+                onValueChange={handlePortFilterChange}
+                placeholder="1-65535 or 1000-2000"
               />
               <FieldDescription>
                 Match specific UDP ports (VoIP, gaming, etc.) - leave empty to
                 disable
               </FieldDescription>
             </Field>
-          </div>
 
-          {/* STUN Filter */}
-          <div>
-            <label htmlFor="switch-udp-filter-stun">
-              <Field orientation="horizontal">
-                <FieldContent>
-                  <FieldTitle>Filter STUN Packets</FieldTitle>
-                  <FieldDescription>
-                    Ignore STUN packets (recommended for voice/video calls)
-                  </FieldDescription>
-                </FieldContent>
-                <Switch
-                  id="switch-udp-filter-stun"
-                  checked={config.udp.filter_stun}
-                  onCheckedChange={(checked) =>
-                    onChange("udp.filter_stun", checked)
-                  }
-                />
-              </Field>
-            </label>
-          </div>
+            <Field orientation="horizontal">
+              <FieldContent>
+                <FieldTitle>Filter STUN Packets</FieldTitle>
+                <FieldDescription>
+                  Ignore STUN packets (recommended for voice/video calls)
+                </FieldDescription>
+              </FieldContent>
+              <Switch
+                id="switch-udp-filter-stun"
+                checked={config.udp.filter_stun}
+                onCheckedChange={(checked) =>
+                  onChange("udp.filter_stun", checked)
+                }
+              />
+            </Field>
+          </FieldGroup>
 
           {/* Parse mode warning */}
           {showParseWarning && (
@@ -209,19 +200,15 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
               </AlertDescription>
             </Alert>
           )}
+        </FieldSet>
 
-          {/* Section 2: Action Settings (only if traffic will be processed) */}
-          {showActionSettings && (
-            <>
-              <div className="relative my-4 flex items-center md:col-span-2">
-                <Separator className="absolute inset-0 top-1/2" />
-                <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
-                  How to Handle Matched Traffic
-                </span>
-              </div>
-
-              {/* UDP Mode */}
-              <div>
+        {/* Section 2: Action Settings (only if traffic will be processed) */}
+        {showActionSettings && (
+          <>
+            <Separator className="my-4" />
+            <FieldSet>
+              <FieldLegend>How to Handle Matched Traffic</FieldLegend>
+              <FieldGroup>
                 <Field>
                   <FieldLabel>Action Mode</FieldLabel>
                   <Select
@@ -251,19 +238,16 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                     }
                   </FieldDescription>
                 </Field>
-              </div>
 
-              {/* Connection Packets Limit */}
-              <div>
-                <Field className="w-full space-y-2">
-                  <div className="flex items-center justify-between">
-                    <FieldLabel className="text-sm font-medium">
+                <Field>
+                  <FieldContent>
+                    <FieldLabel>
                       Connection Packets Limit
+                      <Badge variant="secondary">
+                        {config.udp.conn_bytes_limit}
+                      </Badge>
                     </FieldLabel>
-                    <Badge variant="secondary" className="font-semibold">
-                      {config.udp.conn_bytes_limit}
-                    </Badge>
-                  </div>
+                  </FieldContent>
                   <Slider
                     value={[config.udp.conn_bytes_limit]}
                     onValueChange={(values) =>
@@ -272,7 +256,6 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                     min={1}
                     max={main.id === config.id ? 30 : main.udp.conn_bytes_limit}
                     step={1}
-                    className="w-full"
                   />
                   <FieldDescription>
                     {main.id === config.id
@@ -280,7 +263,7 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                       : `Max: ${main.udp.conn_bytes_limit} (limited by main set)`}
                   </FieldDescription>
                 </Field>
-              </div>
+              </FieldGroup>
 
               {/* Info about current mode */}
               <Alert>
@@ -300,20 +283,17 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                   )}
                 </AlertDescription>
               </Alert>
-            </>
-          )}
+            </FieldSet>
+          </>
+        )}
 
-          {/* Section 3: Fake Mode Settings (only if fake mode is enabled) */}
-          {showFakeSettings && (
-            <>
-              <div className="relative my-4 flex items-center md:col-span-2">
-                <Separator className="absolute inset-0 top-1/2" />
-                <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
-                  Fake Packet Configuration
-                </span>
-              </div>
-
-              <div>
+        {/* Section 3: Fake Mode Settings (only if fake mode is enabled) */}
+        {showFakeSettings && (
+          <>
+            <Separator className="my-4" />
+            <FieldSet>
+              <FieldLegend>Fake Packet Configuration</FieldLegend>
+              <FieldGroup>
                 <Field>
                   <FieldLabel>Faking Strategy</FieldLabel>
                   <Select
@@ -344,18 +324,16 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                     }
                   </FieldDescription>
                 </Field>
-              </div>
 
-              <div>
-                <Field className="w-full space-y-2">
-                  <div className="flex items-center justify-between">
-                    <FieldLabel className="text-sm font-medium">
+                <Field>
+                  <FieldContent>
+                    <FieldLabel>
                       Fake Packet Count
+                      <Badge variant="secondary">
+                        {config.udp.fake_seq_length}
+                      </Badge>
                     </FieldLabel>
-                    <Badge variant="secondary" className="font-semibold">
-                      {config.udp.fake_seq_length}
-                    </Badge>
-                  </div>
+                  </FieldContent>
                   <Slider
                     value={[config.udp.fake_seq_length]}
                     onValueChange={(values) =>
@@ -364,24 +342,21 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                     min={1}
                     max={20}
                     step={1}
-                    className="w-full"
                   />
                   <FieldDescription>
                     Number of fake packets sent before real packet
                   </FieldDescription>
                 </Field>
-              </div>
 
-              <div>
-                <Field className="w-full space-y-2">
-                  <div className="flex items-center justify-between">
-                    <FieldLabel className="text-sm font-medium">
+                <Field>
+                  <FieldContent>
+                    <FieldLabel>
                       Fake Packet Size
+                      <Badge variant="secondary">
+                        {config.udp.fake_len} bytes
+                      </Badge>
                     </FieldLabel>
-                    <Badge variant="secondary" className="font-semibold">
-                      {config.udp.fake_len} bytes
-                    </Badge>
-                  </div>
+                  </FieldContent>
                   <Slider
                     value={[config.udp.fake_len]}
                     onValueChange={(values) =>
@@ -390,23 +365,21 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                     min={32}
                     max={1500}
                     step={8}
-                    className="w-full"
                   />
                   <FieldDescription>
                     Size of each fake UDP packet payload
                   </FieldDescription>
                 </Field>
-              </div>
-              <div>
-                <Field className="w-full space-y-2">
-                  <div className="flex items-center justify-between">
-                    <FieldLabel className="text-sm font-medium">
+
+                <Field>
+                  <FieldContent>
+                    <FieldLabel>
                       Segment 2 Delay
+                      <Badge variant="secondary">
+                        {config.udp.seg2delay} ms
+                      </Badge>
                     </FieldLabel>
-                    <Badge variant="secondary" className="font-semibold">
-                      {config.udp.seg2delay} ms
-                    </Badge>
-                  </div>
+                  </FieldContent>
                   <Slider
                     value={[config.udp.seg2delay]}
                     onValueChange={(values) =>
@@ -415,14 +388,13 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                     min={0}
                     max={1000}
                     step={10}
-                    className="w-full"
                   />
                   <FieldDescription>Delay between segments</FieldDescription>
                 </Field>
-              </div>
-            </>
-          )}
-        </div>
+              </FieldGroup>
+            </FieldSet>
+          </>
+        )}
       </CardContent>
     </Card>
   );

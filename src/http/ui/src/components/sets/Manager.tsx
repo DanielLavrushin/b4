@@ -55,6 +55,17 @@ import { Button } from "@primitives/button";
 import { cn } from "@design/lib/utils";
 import { useSets } from "@hooks/useSets";
 import { B4Config, B4SetConfig } from "@models/config";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogMedia,
+  AlertDialogTitle,
+} from "@design/primitives/alert-dialog";
 
 export interface SetStats {
   manual_domains: number;
@@ -522,53 +533,39 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
       />
 
       {/* Delete Confirmation */}
-      <Dialog
+      <AlertDialog
         open={deleteDialog.open}
         onOpenChange={(open) =>
           !open && setDeleteDialog({ open: false, setId: null })
         }
       >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <div className="flex items-center gap-3">
-              <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
-                <WarningIcon />
-              </div>
-              <div className="flex-1">
-                <DialogTitle>Delete Configuration Set</DialogTitle>
-                <DialogDescription className="mt-1">
-                  This action cannot be undone
-                </DialogDescription>
-              </div>
-            </div>
-          </DialogHeader>
-          <div className="py-4">
-            <p>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogMedia>
+              <WarningIcon />
+            </AlertDialogMedia>
+
+            <AlertDialogTitle>Delete Configuration Set</AlertDialogTitle>
+
+            <AlertDialogDescription>
               Are you sure you want to delete{" "}
               <strong>
                 {sets.find((s) => s.id === deleteDialog.setId)?.name}
               </strong>
               ?
-            </p>
-          </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
           <Separator />
-          <DialogFooter>
-            <Button
-              onClick={() => setDeleteDialog({ open: false, setId: null })}
-              variant="outline"
-            >
-              Cancel
-            </Button>
-            <div className="flex-1" />
-            <Button
-              onClick={handleDeleteSet}
-              className="bg-destructive hover:bg-destructive/90"
-            >
+
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteSet}>
               Delete Set
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Compare Selection Dialog */}
       <Dialog
@@ -579,34 +576,28 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <div className="flex items-center gap-3">
-              <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
-                <CompareIcon />
-              </div>
-              <div className="flex-1">
-                <DialogTitle>Select Set to Compare</DialogTitle>
-                <DialogDescription className="mt-1">
-                  Comparing with: {compareDialog.setA?.name}
-                </DialogDescription>
-              </div>
-            </div>
+            <DialogTitle>Select Set to Compare</DialogTitle>
+            <DialogDescription>
+              Comparing with: {compareDialog.setA?.name}
+            </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <div className="flex flex-col gap-2">
-              {sets
-                .filter((s) => s.id !== compareDialog.setA?.id)
-                .map((s) => (
-                  <div
-                    key={s.id}
-                    onClick={() =>
-                      setCompareDialog((prev) => ({ ...prev, setB: s }))
-                    }
-                    className="hover:bg-accent cursor-pointer rounded-md p-3 transition-colors"
-                  >
-                    <p className="text-sm font-medium">{s.name}</p>
-                  </div>
-                ))}
-            </div>
+
+          <Separator />
+
+          <div className="flex flex-col gap-2">
+            {sets
+              .filter((s) => s.id !== compareDialog.setA?.id)
+              .map((s) => (
+                <div
+                  key={s.id}
+                  onClick={() =>
+                    setCompareDialog((prev) => ({ ...prev, setB: s }))
+                  }
+                  className="hover:bg-accent cursor-pointer rounded-md p-3 transition-colors"
+                >
+                  <p className="text-sm font-medium">{s.name}</p>
+                </div>
+              ))}
           </div>
         </DialogContent>
       </Dialog>

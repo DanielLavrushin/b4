@@ -1,8 +1,7 @@
-import { AddIcon, TcpIcon } from "@b4.icons";
-import { ChipList } from "@components/common/ChipList";
+import { InfoIcon } from "@b4.icons";
+import { TagsInput } from "@composed/tags-input";
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Badge } from "@primitives/badge";
-import { Button } from "@primitives/button";
 import {
   Card,
   CardContent,
@@ -14,10 +13,12 @@ import {
   Field,
   FieldContent,
   FieldDescription,
+  FieldGroup,
   FieldLabel,
+  FieldLegend,
+  FieldSet,
   FieldTitle,
 } from "@primitives/field";
-import { Input } from "@primitives/input";
 import {
   Select,
   SelectContent,
@@ -35,7 +36,11 @@ import {
   IncomingMode,
   IncomingStrategy,
 } from "@models/config";
-import { useState } from "react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@design/primitives/tooltip";
 
 interface TcpSettingsProps {
   config: B4SetConfig;
@@ -113,59 +118,47 @@ const incomingStrategyDescriptions: Record<string, string> = {
 };
 
 export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
-  const [newWinValue, setNewWinValue] = useState("");
-
   const winValues = config.tcp.win.values || [0, 1460, 8192, 65535];
   const showWinValues = ["oscillate", "random"].includes(config.tcp.win.mode);
   const isDesyncEnabled = config.tcp.desync.mode !== "off";
 
-  const handleAddWinValue = () => {
-    const val = parseInt(newWinValue, 10);
-    if (!isNaN(val) && val >= 0 && val <= 65535 && !winValues.includes(val)) {
-      onChange(
-        "tcp.win.values",
-        [...winValues, val].sort((a, b) => a - b),
-      );
-      setNewWinValue("");
-    }
-  };
+  const handleWinValuesChange = (values: string[]) => {
+    // Валидация: только числа от 0 до 65535, уникальные
+    const validNumbers = values
+      .map((v) => parseInt(v.trim(), 10))
+      .filter((v) => !isNaN(v) && v >= 0 && v <= 65535)
+      .filter((v, index, arr) => arr.indexOf(v) === index); // Уникальные
 
-  const handleRemoveWinValue = (val: number) => {
     onChange(
       "tcp.win.values",
-      winValues.filter((v) => v !== val),
+      validNumbers.sort((a, b) => a - b),
     );
   };
 
   return (
-    <Card className="flex flex-col">
+    <Card>
       <CardHeader>
-        <div className="flex items-center gap-3">
-          <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
-            <TcpIcon />
-          </div>
-          <div className="flex-1">
-            <CardTitle>TCP Configuration</CardTitle>
-            <CardDescription className="mt-1">
-              Configure TCP packet handling and DPI bypass techniques
-            </CardDescription>
-          </div>
-        </div>
+        <CardTitle>TCP Configuration</CardTitle>
+        <CardDescription>
+          Configure TCP packet handling and DPI bypass techniques
+        </CardDescription>
       </CardHeader>
-      <Separator className="mb-4" />
-      <CardContent className="flex flex-col gap-4">
+
+      <Separator />
+
+      <CardContent>
         {/* Basic TCP Settings */}
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          <div>
-            <Field className="w-full space-y-2">
-              <div className="flex items-center justify-between">
-                <FieldLabel className="text-sm font-medium">
+        <FieldSet>
+          <FieldGroup>
+            <Field>
+              <FieldContent>
+                <FieldLabel>
                   Connection Bytes Limit
+                  <Badge variant="secondary">
+                    {config.tcp.conn_bytes_limit}
+                  </Badge>
                 </FieldLabel>
-                <Badge variant="secondary" className="font-semibold">
-                  {config.tcp.conn_bytes_limit}
-                </Badge>
-              </div>
+              </FieldContent>
               <Slider
                 value={[config.tcp.conn_bytes_limit]}
                 onValueChange={(values) =>
@@ -174,7 +167,6 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                 min={1}
                 max={main.id === config.id ? 100 : main.tcp.conn_bytes_limit}
                 step={1}
-                className="w-full"
               />
               <FieldDescription>
                 {main.id === config.id
@@ -182,106 +174,85 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                   : `Max: ${main.tcp.conn_bytes_limit} (limited by main set)`}
               </FieldDescription>
             </Field>
-          </div>
-          <div>
-            <Field className="w-full space-y-2">
-              <div className="flex items-center justify-between">
-                <FieldLabel className="text-sm font-medium">
+            <Field>
+              <FieldContent>
+                <FieldLabel>
                   Segment 2 Delay
+                  <Badge variant="secondary">{config.tcp.seg2delay} ms</Badge>
                 </FieldLabel>
-                <Badge variant="secondary" className="font-semibold">
-                  {config.tcp.seg2delay} ms
-                </Badge>
-              </div>
+              </FieldContent>
               <Slider
                 value={[config.tcp.seg2delay]}
                 onValueChange={(values) => onChange("tcp.seg2delay", values[0])}
                 min={0}
                 max={1000}
                 step={10}
-                className="w-full"
               />
               <FieldDescription>
                 Delay between TCP segments (helps with timing-based DPI)
               </FieldDescription>
             </Field>
-          </div>
 
-          {/* SACK and SYN Fake */}
-          <div>
-            <label htmlFor="switch-tcp-drop-sack">
-              <Field orientation="horizontal">
-                <FieldContent>
-                  <FieldTitle>Drop SACK Options</FieldTitle>
-                  <FieldDescription>
-                    Strip Selective Acknowledgment from TCP headers to confuse
-                    stateful DPI
-                  </FieldDescription>
-                </FieldContent>
-                <Switch
-                  id="switch-tcp-drop-sack"
-                  checked={config.tcp.drop_sack || false}
-                  onCheckedChange={(checked) =>
-                    onChange("tcp.drop_sack", checked)
-                  }
-                />
-              </Field>
-            </label>
-          </div>
+            {/* SACK and SYN Fake */}
 
-          <div>
-            <label htmlFor="switch-tcp-syn-fake">
-              <Field orientation="horizontal">
-                <FieldContent>
-                  <FieldTitle>SYN Fake Packets</FieldTitle>
-                  <FieldDescription>
-                    Send fake SYN packets during handshake (aggressive
-                    technique)
-                  </FieldDescription>
-                </FieldContent>
-                <Switch
-                  id="switch-tcp-syn-fake"
-                  checked={config.tcp.syn_fake || false}
-                  onCheckedChange={(checked) =>
-                    onChange("tcp.syn_fake", checked)
-                  }
-                />
-              </Field>
-            </label>
-          </div>
+            <Field orientation="horizontal">
+              <FieldContent>
+                <FieldTitle>Drop SACK Options</FieldTitle>
+                <FieldDescription>
+                  Strip Selective Acknowledgment from TCP headers to confuse
+                  stateful DPI
+                </FieldDescription>
+              </FieldContent>
+              <Switch
+                id="switch-tcp-drop-sack"
+                checked={config.tcp.drop_sack || false}
+                onCheckedChange={(checked) =>
+                  onChange("tcp.drop_sack", checked)
+                }
+              />
+            </Field>
 
-          <div>
-            <label htmlFor="switch-tcp-syn-md5">
-              <Field orientation="horizontal">
-                <FieldContent>
-                  <FieldTitle>SYN MD5 Signature</FieldTitle>
-                  <FieldDescription>
-                    Send fake SYN with TCP MD5 option before real handshake
-                  </FieldDescription>
-                </FieldContent>
-                <Switch
-                  id="switch-tcp-syn-md5"
-                  checked={config.faking.tcp_md5 || false}
-                  onCheckedChange={(checked) =>
-                    onChange("faking.tcp_md5", checked)
-                  }
-                />
-              </Field>
-            </label>
-          </div>
+            <Field orientation="horizontal">
+              <FieldContent>
+                <FieldTitle>SYN Fake Packets</FieldTitle>
+                <FieldDescription>
+                  Send fake SYN packets during handshake (aggressive technique)
+                </FieldDescription>
+              </FieldContent>
+              <Switch
+                id="switch-tcp-syn-fake"
+                checked={config.tcp.syn_fake || false}
+                onCheckedChange={(checked) => onChange("tcp.syn_fake", checked)}
+              />
+            </Field>
 
-          {config.tcp.syn_fake && (
-            <>
-              <div>
-                <Field className="w-full space-y-2">
-                  <div className="flex items-center justify-between">
-                    <FieldLabel className="text-sm font-medium">
+            <Field orientation="horizontal">
+              <FieldContent>
+                <FieldTitle>SYN MD5 Signature</FieldTitle>
+                <FieldDescription>
+                  Send fake SYN with TCP MD5 option before real handshake
+                </FieldDescription>
+              </FieldContent>
+              <Switch
+                id="switch-tcp-syn-md5"
+                checked={config.faking.tcp_md5 || false}
+                onCheckedChange={(checked) =>
+                  onChange("faking.tcp_md5", checked)
+                }
+              />
+            </Field>
+
+            {config.tcp.syn_fake && (
+              <FieldGroup>
+                <Field>
+                  <FieldContent>
+                    <FieldLabel>
                       SYN Fake Payload Length
+                      <Badge variant="secondary">
+                        {config.tcp.syn_fake_len || 0} bytes
+                      </Badge>
                     </FieldLabel>
-                    <Badge variant="secondary" className="font-semibold">
-                      {config.tcp.syn_fake_len || 0} bytes
-                    </Badge>
-                  </div>
+                  </FieldContent>
                   <Slider
                     value={[config.tcp.syn_fake_len || 0]}
                     onValueChange={(values) =>
@@ -290,23 +261,20 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                     min={0}
                     max={1200}
                     step={64}
-                    className="w-full"
                   />
                   <FieldDescription>
                     0 = header only, {">"}0 = add fake TLS payload
                   </FieldDescription>
                 </Field>
-              </div>
-              <div>
-                <Field className="w-full space-y-2">
-                  <div className="flex items-center justify-between">
-                    <FieldLabel className="text-sm font-medium">
+                <Field>
+                  <FieldContent>
+                    <FieldLabel>
                       SYN Fake TTL
+                      <Badge variant="secondary">
+                        {config.tcp.syn_ttl || 0}
+                      </Badge>
                     </FieldLabel>
-                    <Badge variant="secondary" className="font-semibold">
-                      {config.tcp.syn_ttl || 0}
-                    </Badge>
-                  </div>
+                  </FieldContent>
                   <Slider
                     value={[config.tcp.syn_ttl || 0]}
                     onValueChange={(values) =>
@@ -315,34 +283,28 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                     min={1}
                     max={100}
                     step={1}
-                    className="w-full"
                   />
                   <FieldDescription>
                     TTL value for SYN fake packets (default 3 if unset)
                   </FieldDescription>
                 </Field>
-              </div>
-            </>
-          )}
-        </div>
-
+              </FieldGroup>
+            )}
+          </FieldGroup>
+        </FieldSet>
+        <Separator className="my-4" />
         {/* TCP Window Configuration */}
-        <div className="relative my-4 flex items-center md:col-span-2">
-          <Separator className="absolute inset-0 top-1/2" />
-          <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
+        <FieldSet>
+          <FieldLegend className="flex items-center gap-2">
             TCP Window Manipulation
-          </span>
-        </div>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          <Alert className="md:col-span-2">
-            <AlertDescription>
-              Window manipulation sends fake ACK packets with modified TCP
-              window sizes before your real packet. These fakes use low TTL so
-              they expire before reaching the server but confuse middlebox DPI.
-            </AlertDescription>
-          </Alert>
+          </FieldLegend>
+          <FieldDescription>
+            Window manipulation sends fake ACK packets with modified TCP window
+            sizes before your real packet. These fakes use low TTL so they
+            expire before reaching the server but confuse middlebox DPI.
+          </FieldDescription>
 
-          <div>
+          <FieldGroup>
             <Field>
               <FieldLabel>Window Mode</FieldLabel>
               <Select
@@ -369,74 +331,39 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                 {windowModeDescriptions[config.tcp.win.mode]}
               </FieldDescription>
             </Field>
-          </div>
 
-          {showWinValues && (
-            <div className="md:col-span-2">
-              <p className="mb-1 text-sm font-semibold">Custom Window Values</p>
-              <p className="text-muted-foreground mb-4 text-xs">
-                {config.tcp.win.mode === "oscillate"
-                  ? "Packets will cycle through these values in order"
-                  : "Random values will be picked from this list"}
-              </p>
+            {showWinValues && (
+              <Field>
+                <FieldLabel>Custom Window Values</FieldLabel>
+                <TagsInput
+                  value={winValues.map((v) => v.toString())}
+                  onValueChange={handleWinValuesChange}
+                  placeholder="0-65535"
+                />
+                <FieldDescription>
+                  {config.tcp.win.mode === "oscillate"
+                    ? "Packets will cycle through these values in order"
+                    : "Random values will be picked from this list"}
+                </FieldDescription>
+              </Field>
+            )}
+          </FieldGroup>
+        </FieldSet>
 
-              <div className="grid grid-cols-1 items-center gap-4 md:grid-cols-2">
-                <div className="mt-2 flex items-center gap-4">
-                  <Field className="flex-1">
-                    <FieldLabel>Add Value (0-65535)</FieldLabel>
-                    <Input
-                      value={newWinValue}
-                      onChange={(e) => setNewWinValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          handleAddWinValue();
-                        }
-                      }}
-                      type="number"
-                    />
-                  </Field>
-
-                  <Button
-                    variant="secondary"
-                    size="icon"
-                    onClick={handleAddWinValue}
-                    disabled={!newWinValue}
-                  >
-                    <AddIcon />
-                  </Button>
-                </div>
-                <div>
-                  <ChipList
-                    items={winValues}
-                    getKey={(v) => v}
-                    getLabel={(v) => v.toLocaleString()}
-                    onDelete={handleRemoveWinValue}
-                    emptyMessage="No values configured - defaults will be used"
-                    showEmpty
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+        <Separator className="my-4" />
 
         {/* TCP Desync Configuration */}
-        <div className="relative my-4 flex items-center md:col-span-2">
-          <Separator className="absolute inset-0 top-1/2" />
-          <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
+        <FieldSet>
+          <FieldLegend className="flex items-center gap-2">
             TCP Desync Attack
-          </span>
-        </div>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-          <Alert className="md:col-span-3">
-            <AlertDescription>
-              Desync attacks inject fake TCP control packets (RST/FIN/ACK) with
-              corrupted checksums and low TTL. These packets confuse stateful
-              DPI systems but are discarded by the real server.
-            </AlertDescription>
-          </Alert>
-          <div>
+          </FieldLegend>
+          <FieldDescription>
+            Desync attacks inject fake TCP control packets (RST/FIN/ACK) with
+            corrupted checksums and low TTL. These packets confuse stateful DPI
+            systems but are discarded by the real server.
+          </FieldDescription>
+
+          <FieldGroup>
             <Field>
               <FieldLabel>Desync Mode</FieldLabel>
               <Select
@@ -463,47 +390,12 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                 {desyncModeDescriptions[config.tcp.desync.mode]}
               </FieldDescription>
             </Field>
-          </div>
 
-          <div>
-            <Field className="w-full space-y-2">
-              <div className="flex items-center justify-between">
-                <FieldLabel className="text-sm font-medium">
-                  Desync TTL
-                </FieldLabel>
-                <Badge variant="secondary" className="font-semibold">
-                  {config.tcp.desync.ttl}
-                </Badge>
-              </div>
-              <Slider
-                value={[config.tcp.desync.ttl]}
-                onValueChange={(values) =>
-                  onChange("tcp.desync.ttl", values[0])
-                }
-                min={1}
-                max={50}
-                step={1}
-                disabled={!isDesyncEnabled}
-                className="w-full"
-              />
-              <FieldDescription>
-                {isDesyncEnabled
-                  ? "Low TTL ensures packets expire before reaching server"
-                  : "Enable desync mode first"}
-              </FieldDescription>
-            </Field>
-          </div>
-
-          <div>
-            <Field className="w-full space-y-2">
-              <div className="flex items-center justify-between">
-                <FieldLabel className="text-sm font-medium">
-                  Desync Packet Count
-                </FieldLabel>
-                <Badge variant="secondary" className="font-semibold">
-                  {config.tcp.desync.count}
-                </Badge>
-              </div>
+            <Field>
+              <FieldLabel>
+                Desync Packet Count
+                <Badge variant="secondary">{config.tcp.desync.count}</Badge>
+              </FieldLabel>
               <Slider
                 value={[config.tcp.desync.count]}
                 onValueChange={(values) =>
@@ -513,7 +405,6 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                 max={20}
                 step={1}
                 disabled={!isDesyncEnabled}
-                className="w-full"
               />
               <FieldDescription>
                 {isDesyncEnabled
@@ -521,47 +412,61 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                   : "Enable desync mode first"}
               </FieldDescription>
             </Field>
-          </div>
 
-          <div>
-            <label htmlFor="switch-tcp-post-desync">
-              <Field orientation="horizontal">
-                <FieldContent>
-                  <FieldTitle>Post-ClientHello RST</FieldTitle>
-                  <FieldDescription>
-                    Send fake RST after ClientHello to evict connection from DPI
-                    tracking table
-                  </FieldDescription>
-                </FieldContent>
-                <Switch
-                  id="switch-tcp-post-desync"
-                  checked={config.tcp.desync.post_desync || false}
-                  onCheckedChange={(checked) =>
-                    onChange("tcp.desync.post_desync", checked)
-                  }
-                />
-              </Field>
-            </label>
-          </div>
-        </div>
+            <Field orientation="horizontal">
+              <FieldContent>
+                <FieldTitle>Post-ClientHello RST</FieldTitle>
+                <FieldDescription>
+                  Send fake RST after ClientHello to evict connection from DPI
+                  tracking table
+                </FieldDescription>
+              </FieldContent>
+              <Switch
+                id="switch-tcp-post-desync"
+                checked={config.tcp.desync.post_desync || false}
+                onCheckedChange={(checked) =>
+                  onChange("tcp.desync.post_desync", checked)
+                }
+              />
+            </Field>
 
+            <Field>
+              <FieldLabel>
+                Desync TTL
+                <Badge variant="secondary">{config.tcp.desync.ttl}</Badge>
+              </FieldLabel>
+              <Slider
+                value={[config.tcp.desync.ttl]}
+                onValueChange={(values) =>
+                  onChange("tcp.desync.ttl", values[0])
+                }
+                min={1}
+                max={50}
+                step={1}
+                disabled={!isDesyncEnabled}
+              />
+              <FieldDescription>
+                {isDesyncEnabled
+                  ? "Low TTL ensures packets expire before reaching server"
+                  : "Enable desync mode first"}
+              </FieldDescription>
+            </Field>
+          </FieldGroup>
+        </FieldSet>
+
+        <Separator className="my-4" />
         {/* Incoming Response Manipulation */}
-        <div className="relative my-4 flex items-center md:col-span-2">
-          <Separator className="absolute inset-0 top-1/2" />
-          <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
+        <FieldSet>
+          <FieldLegend className="flex items-center gap-2">
             Incoming Response Bypass
-          </span>
-        </div>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          <Alert className="md:col-span-2">
-            <AlertDescription>
-              Manipulates incoming server responses to bypass DPI that throttles
-              connections after receiving ~15-20KB. Experimental feature for
-              TSPU-style behavioral throttling.
-            </AlertDescription>
-          </Alert>
+          </FieldLegend>
+          <FieldDescription>
+            Manipulates incoming server responses to bypass DPI that throttles
+            connections after receiving ~15-20KB. Experimental feature for
+            TSPU-style behavioral throttling.
+          </FieldDescription>
 
-          <div>
+          <FieldGroup>
             <Field>
               <FieldLabel>Incoming Mode</FieldLabel>
               <Select
@@ -588,159 +493,130 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                 {incomingModeDescriptions[config.tcp.incoming?.mode || "off"]}
               </FieldDescription>
             </Field>
-          </div>
 
-          <div>
-            <Field>
-              <FieldLabel>Corruption Strategy</FieldLabel>
-              <Select
-                value={config.tcp.incoming?.strategy || "badsum"}
-                onValueChange={(value) =>
-                  onChange("tcp.incoming.strategy", value as string)
-                }
-                disabled={config.tcp.incoming?.mode === "off"}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select strategy" />
-                </SelectTrigger>
-                <SelectContent>
-                  {incomingStrategyOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FieldDescription>
-                {config.tcp.incoming?.mode === "off"
-                  ? "Enable incoming mode first"
-                  : incomingStrategyDescriptions[
-                      config.tcp.incoming?.strategy || "badsum"
-                    ]}
-              </FieldDescription>
-            </Field>
-          </div>
+            {config.tcp.incoming?.mode !== "off" && (
+              <>
+                <Field>
+                  <FieldLabel>Corruption Strategy</FieldLabel>
+                  <Select
+                    value={config.tcp.incoming?.strategy || "badsum"}
+                    onValueChange={(value) =>
+                      onChange("tcp.incoming.strategy", value as string)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select strategy" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {incomingStrategyOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FieldDescription>
+                    {
+                      incomingStrategyDescriptions[
+                        config.tcp.incoming?.strategy || "badsum"
+                      ]
+                    }
+                  </FieldDescription>
+                </Field>
 
-          <div>
-            <Field className="w-full space-y-2">
-              <div className="flex items-center justify-between">
-                <FieldLabel className="text-sm font-medium">
-                  Threshold Min
-                </FieldLabel>
-                <Badge variant="secondary" className="font-semibold">
-                  {config.tcp.incoming?.min || 14} KB
-                </Badge>
-              </div>
-              <Slider
-                value={[config.tcp.incoming?.min || 14]}
-                onValueChange={(values) =>
-                  onChange("tcp.incoming.min", values[0])
-                }
-                min={5}
-                max={config.tcp.incoming?.max || 50}
-                step={1}
-                disabled={
-                  config.tcp.incoming?.mode === "off" ||
-                  config.tcp.incoming?.mode === "fake"
-                }
-                className="w-full"
-              />
-              <FieldDescription>
-                {config.tcp.incoming?.mode === "fake"
-                  ? "Not used in fake mode (triggers on every packet)"
-                  : "Minimum threshold for injection trigger"}
-              </FieldDescription>
-            </Field>
-          </div>
+                {config.tcp.incoming?.mode !== "fake" && (
+                  <>
+                    <Field>
+                      <FieldLabel>
+                        Threshold Min
+                        <Badge variant="secondary">
+                          {config.tcp.incoming?.min || 14} KB
+                        </Badge>
+                      </FieldLabel>
+                      <Slider
+                        value={[config.tcp.incoming?.min || 14]}
+                        onValueChange={(values) =>
+                          onChange("tcp.incoming.min", values[0])
+                        }
+                        min={5}
+                        max={config.tcp.incoming?.max || 50}
+                        step={1}
+                      />
+                      <FieldDescription>
+                        Minimum threshold for injection trigger
+                      </FieldDescription>
+                    </Field>
 
-          <div>
-            <Field className="w-full space-y-2">
-              <div className="flex items-center justify-between">
-                <FieldLabel className="text-sm font-medium">
-                  Threshold Max
-                </FieldLabel>
-                <Badge variant="secondary" className="font-semibold">
-                  {config.tcp.incoming?.max || 14} KB
-                </Badge>
-              </div>
-              <Slider
-                value={[config.tcp.incoming?.max || 14]}
-                onValueChange={(values) =>
-                  onChange("tcp.incoming.max", values[0])
-                }
-                min={config.tcp.incoming?.min || 5}
-                max={50}
-                step={1}
-                disabled={
-                  config.tcp.incoming?.mode === "off" ||
-                  config.tcp.incoming?.mode === "fake"
-                }
-                className="w-full"
-              />
-              <FieldDescription>
-                {config.tcp.incoming?.mode === "fake"
-                  ? "Not used in fake mode"
-                  : config.tcp.incoming?.min === config.tcp.incoming?.max
-                    ? "Fixed threshold (min = max)"
-                    : "Threshold randomized between min-max per connection"}
-              </FieldDescription>
-            </Field>
-          </div>
+                    <Field>
+                      <FieldLabel>
+                        Threshold Max
+                        <Badge variant="secondary">
+                          {config.tcp.incoming?.max || 14} KB
+                        </Badge>
+                      </FieldLabel>
+                      <Slider
+                        value={[config.tcp.incoming?.max || 14]}
+                        onValueChange={(values) =>
+                          onChange("tcp.incoming.max", values[0])
+                        }
+                        min={config.tcp.incoming?.min || 5}
+                        max={50}
+                        step={1}
+                      />
+                      <FieldDescription>
+                        {config.tcp.incoming?.min === config.tcp.incoming?.max
+                          ? "Fixed threshold (min = max)"
+                          : "Threshold randomized between min-max per connection"}
+                      </FieldDescription>
+                    </Field>
+                  </>
+                )}
 
-          <div>
-            <Field className="w-full space-y-2">
-              <div className="flex items-center justify-between">
-                <FieldLabel className="text-sm font-medium">
-                  Fake TTL
-                </FieldLabel>
-                <Badge variant="secondary" className="font-semibold">
-                  {config.tcp.incoming?.fake_ttl || 3}
-                </Badge>
-              </div>
-              <Slider
-                value={[config.tcp.incoming?.fake_ttl || 3]}
-                onValueChange={(values) =>
-                  onChange("tcp.incoming.fake_ttl", values[0])
-                }
-                min={1}
-                max={20}
-                step={1}
-                disabled={config.tcp.incoming?.mode === "off"}
-                className="w-full"
-              />
-              <FieldDescription>
-                Low TTL ensures fakes expire before reaching server
-              </FieldDescription>
-            </Field>
-          </div>
+                <Field>
+                  <FieldLabel>
+                    Fake TTL
+                    <Badge variant="secondary">
+                      {config.tcp.incoming?.fake_ttl || 3}
+                    </Badge>
+                  </FieldLabel>
+                  <Slider
+                    value={[config.tcp.incoming?.fake_ttl || 3]}
+                    onValueChange={(values) =>
+                      onChange("tcp.incoming.fake_ttl", values[0])
+                    }
+                    min={1}
+                    max={20}
+                    step={1}
+                  />
+                  <FieldDescription>
+                    Low TTL ensures fakes expire before reaching server
+                  </FieldDescription>
+                </Field>
 
-          <div>
-            <Field className="w-full space-y-2">
-              <div className="flex items-center justify-between">
-                <FieldLabel className="text-sm font-medium">
-                  Fake Count
-                </FieldLabel>
-                <Badge variant="secondary" className="font-semibold">
-                  {config.tcp.incoming?.fake_count || 3}
-                </Badge>
-              </div>
-              <Slider
-                value={[config.tcp.incoming?.fake_count || 3]}
-                onValueChange={(values) =>
-                  onChange("tcp.incoming.fake_count", values[0])
-                }
-                min={1}
-                max={10}
-                step={1}
-                disabled={config.tcp.incoming?.mode === "off"}
-                className="w-full"
-              />
-              <FieldDescription>
-                Number of fake packets per injection
-              </FieldDescription>
-            </Field>
-          </div>
-        </div>
+                <Field>
+                  <FieldLabel>
+                    Fake Count
+                    <Badge variant="secondary">
+                      {config.tcp.incoming?.fake_count || 3}
+                    </Badge>
+                  </FieldLabel>
+                  <Slider
+                    value={[config.tcp.incoming?.fake_count || 3]}
+                    onValueChange={(values) =>
+                      onChange("tcp.incoming.fake_count", values[0])
+                    }
+                    min={1}
+                    max={10}
+                    step={1}
+                  />
+                  <FieldDescription>
+                    Number of fake packets per injection
+                  </FieldDescription>
+                </Field>
+              </>
+            )}
+          </FieldGroup>
+        </FieldSet>
       </CardContent>
     </Card>
   );

@@ -1,4 +1,4 @@
-import { CategoryIcon, DomainIcon, InfoIcon, IpIcon } from "@b4.icons";
+import { DomainIcon, InfoIcon, IpIcon } from "@b4.icons";
 import { useEffect, useState } from "react";
 
 import { ComboboxMultiple } from "@composed/combobox-multiple";
@@ -11,10 +11,19 @@ import {
   CardHeader,
   CardTitle,
 } from "@primitives/card";
-import { Label } from "@primitives/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@primitives/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
 import { SetStats } from "./Manager";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  FieldSet,
+  FieldTitle,
+} from "@design/primitives/field";
+import { Separator } from "@design/primitives/separator";
 
 interface TargetSettingsProps {
   config: B4SetConfig;
@@ -70,42 +79,39 @@ export const TargetSettings = ({
   } = useCategories("/api/geoip", !!geo.ipdat_path);
 
   return (
-    <div className="flex flex-col gap-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Domain Filtering Configuration</CardTitle>
-          <CardDescription>
-            Configure domain matching for DPI bypass and blocking
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="border-border mb-0 border-b">
-            <Tabs
-              value={tabValue.toString()}
-              onValueChange={(v) => setTabValue(Number(v))}
-              className="w-full"
-            >
-              <TabsList variant="line" className="p-0">
-                <TabsTrigger value="0">
-                  <div className="flex items-center gap-1.5">
-                    <DomainIcon />
-                    <span>Bypass Domains</span>
-                  </div>
-                </TabsTrigger>
-                <TabsTrigger value="1">
-                  <div className="flex items-center gap-1.5">
-                    <IpIcon />
-                    <span>Bypass IPs</span>
-                  </div>
-                </TabsTrigger>
-              </TabsList>
+    <Card>
+      <CardHeader>
+        <CardTitle>Domain Filtering Configuration</CardTitle>
+        <CardDescription>
+          Configure domain matching for DPI bypass and blocking
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Tabs
+          value={tabValue.toString()}
+          onValueChange={(v) => setTabValue(Number(v))}
+          className="w-full"
+        >
+          <TabsList variant="line" className="p-0">
+            <TabsTrigger value="0">
+              <DomainIcon />
+              Bypass Domains
+            </TabsTrigger>
+            <TabsTrigger value="1">
+              <IpIcon />
+              Bypass IPs
+            </TabsTrigger>
+          </TabsList>
 
-              {/* DPI Bypass Tab */}
-              <TabsContent value="0" className="pt-6">
-                {/* Manual Bypass Domains */}
-                <div className="flex flex-col gap-1.5">
-                  <Label className="text-sm font-medium">
-                    <DomainIcon /> Manual Bypass Domains
+          <Separator className="my-4" />
+
+          {/* DPI Bypass Tab */}
+          <TabsContent value="0">
+            <FieldSet>
+              <Field>
+                <FieldContent>
+                  <FieldLabel>
+                    Manual Bypass Domains
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <InfoIcon className="text-muted-foreground size-4" />
@@ -114,21 +120,23 @@ export const TargetSettings = ({
                         <p>Add specific domains to bypass DPI.</p>
                       </TooltipContent>
                     </Tooltip>
-                  </Label>
-                  <TagsInput
-                    value={config.targets.sni_domains}
-                    onValueChange={(values) =>
-                      onChange("targets.sni_domains", values)
-                    }
-                    placeholder="example.com"
-                  />
-                </div>
+                  </FieldLabel>
+                </FieldContent>
+                <TagsInput
+                  value={config.targets.sni_domains}
+                  onValueChange={(values) =>
+                    onChange("targets.sni_domains", values)
+                  }
+                  placeholder="example.com"
+                />
+              </Field>
 
-                {/* GeoSite Categories */}
-                {geo.sitedat_path && (
-                  <div className="mt-4 flex flex-col gap-1.5">
-                    <Label className="text-sm font-medium">
-                      <CategoryIcon /> Bypass GeoSite Categories
+              {/* GeoSite Categories */}
+              {geo.sitedat_path && (
+                <Field>
+                  <FieldContent>
+                    <FieldLabel>
+                      Bypass GeoSite Categories
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <InfoIcon className="text-muted-foreground size-4" />
@@ -140,32 +148,33 @@ export const TargetSettings = ({
                           </p>
                         </TooltipContent>
                       </Tooltip>
-                    </Label>
-                    <ComboboxMultiple
-                      items={availableCategories}
-                      value={config.targets.geosite_categories}
-                      onValueChange={(values) =>
-                        onChange("targets.geosite_categories", values)
-                      }
-                      placeholder={
-                        loadingCategories
-                          ? "Loading..."
-                          : "Search categories..."
-                      }
-                      emptyMessage="No categories found."
-                      loading={loadingCategories}
-                      breakdown={stats?.geosite_category_breakdown}
-                    />
-                  </div>
-                )}
-              </TabsContent>
+                    </FieldLabel>
+                  </FieldContent>
+                  <ComboboxMultiple
+                    items={availableCategories}
+                    value={config.targets.geosite_categories}
+                    onValueChange={(values) =>
+                      onChange("targets.geosite_categories", values)
+                    }
+                    placeholder={
+                      loadingCategories ? "Loading..." : "Search categories..."
+                    }
+                    emptyMessage="No categories found."
+                    loading={loadingCategories}
+                    breakdown={stats?.geosite_category_breakdown}
+                  />
+                </Field>
+              )}
+            </FieldSet>
+          </TabsContent>
 
-              {/* Bypass IPs Tab */}
-              <TabsContent value="1" className="pt-6">
-                {/* Manual Bypass IPs */}
-                <div className="flex flex-col gap-1.5">
-                  <Label className="text-sm font-medium">
-                    <IpIcon /> Manual Bypass IPs
+          {/* Bypass IPs Tab */}
+          <TabsContent value="1">
+            <FieldSet>
+              <Field>
+                <FieldContent>
+                  <FieldLabel>
+                    Manual Bypass IPs
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <InfoIcon className="text-muted-foreground size-4" />
@@ -174,19 +183,21 @@ export const TargetSettings = ({
                         <p>Add specific ip/cidr to bypass DPI.</p>
                       </TooltipContent>
                     </Tooltip>
-                  </Label>
-                  <TagsInput
-                    value={config.targets.ip}
-                    onValueChange={(values) => onChange("targets.ip", values)}
-                    placeholder="192.168.1.1"
-                  />
-                </div>
+                  </FieldLabel>
+                </FieldContent>
+                <TagsInput
+                  value={config.targets.ip}
+                  onValueChange={(values) => onChange("targets.ip", values)}
+                  placeholder="192.168.1.1"
+                />
+              </Field>
 
-                {/* GeoIP Categories */}
-                {geo.ipdat_path && (
-                  <div className="mt-4 flex flex-col gap-1.5">
-                    <Label className="text-sm font-medium">
-                      <CategoryIcon /> Bypass GeoIP Categories
+              {/* GeoIP Categories */}
+              {geo.ipdat_path && (
+                <Field>
+                  <FieldContent>
+                    <FieldLabel>
+                      Bypass GeoIP Categories
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <InfoIcon className="text-muted-foreground size-4" />
@@ -198,29 +209,29 @@ export const TargetSettings = ({
                           </p>
                         </TooltipContent>
                       </Tooltip>
-                    </Label>
-                    <ComboboxMultiple
-                      items={availableGeoIPCategories}
-                      value={config.targets.geoip_categories}
-                      onValueChange={(values) =>
-                        onChange("targets.geoip_categories", values)
-                      }
-                      placeholder={
-                        loadingGeoIPCategories
-                          ? "Loading..."
-                          : "Search categories..."
-                      }
-                      emptyMessage="No categories found."
-                      loading={loadingGeoIPCategories}
-                      breakdown={stats?.geoip_category_breakdown}
-                    />
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+                    </FieldLabel>
+                  </FieldContent>
+                  <ComboboxMultiple
+                    items={availableGeoIPCategories}
+                    value={config.targets.geoip_categories}
+                    onValueChange={(values) =>
+                      onChange("targets.geoip_categories", values)
+                    }
+                    placeholder={
+                      loadingGeoIPCategories
+                        ? "Loading..."
+                        : "Search categories..."
+                    }
+                    emptyMessage="No categories found."
+                    loading={loadingGeoIPCategories}
+                    breakdown={stats?.geoip_category_breakdown}
+                  />
+                </Field>
+              )}
+            </FieldSet>
+          </TabsContent>
+        </Tabs>
+      </CardContent>
+    </Card>
   );
 };

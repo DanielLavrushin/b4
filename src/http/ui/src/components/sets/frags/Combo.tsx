@@ -1,15 +1,18 @@
-import { useState } from "react";
+import { TagsInput } from "@composed/tags-input";
+import { B4SetConfig, ComboShuffleMode } from "@models/config";
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Badge } from "@primitives/badge";
-import { Button } from "@primitives/button";
+import { Checkbox } from "@primitives/checkbox";
 import {
   Field,
   FieldContent,
   FieldDescription,
+  FieldGroup,
   FieldLabel,
+  FieldLegend,
+  FieldSet,
   FieldTitle,
 } from "@primitives/field";
-import { Input } from "@primitives/input";
 import {
   Select,
   SelectContent,
@@ -20,9 +23,6 @@ import {
 import { Separator } from "@primitives/separator";
 import { Slider } from "@primitives/slider";
 import { Switch } from "@primitives/switch";
-import { B4SetConfig, ComboShuffleMode } from "@models/config";
-import { ChipList } from "@components/common/ChipList";
-import { AddIcon } from "@b4.icons";
 
 interface ComboSettingsProps {
   config: B4SetConfig;
@@ -39,7 +39,6 @@ const shuffleModeOptions: { label: string; value: ComboShuffleMode }[] = [
 ];
 
 export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
-  const [newDomain, setNewDomain] = useState("");
   const combo = config.fragmentation.combo;
   const middleSni = config.fragmentation.middle_sni;
   const decoySNIs = combo.decoy_snis || [];
@@ -50,115 +49,56 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
     middleSni && "SNI",
   ].filter(Boolean);
 
-  const handleAddDomain = () => {
-    const domain = newDomain.trim().toLowerCase();
-    if (domain && !decoySNIs.includes(domain)) {
-      onChange("fragmentation.combo.decoy_snis", [...decoySNIs, domain]);
-      setNewDomain("");
-    }
-  };
-
-  const handleRemoveDomain = (domain: string) => {
-    onChange(
-      "fragmentation.combo.decoy_snis",
-      decoySNIs.filter((d) => d !== domain),
-    );
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleAddDomain();
-    }
-  };
-
   return (
     <>
-      <div className="relative my-4 flex items-center md:col-span-2">
-        <Separator className="absolute inset-0 top-1/2" />
-        <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
-          Combo Strategy
-        </span>
-      </div>
+      <FieldSet>
+        <FieldLegend>Combo Strategy</FieldLegend>
 
-      <div>
-        <Alert>
-          <AlertDescription>
-            Combo combines multiple split points and sends segments out of order
-            with timing jitter to confuse stateful DPI.
-          </AlertDescription>
-        </Alert>
-      </div>
+        <FieldDescription>
+          Combo combines multiple split points and sends segments out of order
+          with timing jitter to confuse stateful DPI.
+        </FieldDescription>
 
-      {/* Decoy Settings */}
-      <div className="relative my-4 flex items-center md:col-span-2">
-        <Separator className="absolute inset-0 top-1/2" />
-        <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
-          Decoy Packet
-        </span>
-      </div>
+        {/* Decoy Settings */}
 
-      <div>
-        <label htmlFor="switch-combo-decoy">
-          <Field orientation="horizontal">
-            <FieldContent>
-              <FieldTitle>Enable Decoy</FieldTitle>
-              <FieldDescription>
-                Send fake ClientHello with whitelisted SNI before real traffic
-              </FieldDescription>
-            </FieldContent>
-            <Switch
-              id="switch-combo-decoy"
-              checked={combo.decoy_enabled}
-              onCheckedChange={(checked: boolean) =>
-                onChange("fragmentation.combo.decoy_enabled", checked)
-              }
-            />
-          </Field>
-        </label>
-      </div>
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldTitle>Enable Decoy</FieldTitle>
+            <FieldDescription>
+              Send fake ClientHello with whitelisted SNI before real traffic
+            </FieldDescription>
+          </FieldContent>
+          <Switch
+            id="switch-combo-decoy"
+            checked={combo.decoy_enabled}
+            onCheckedChange={(checked: boolean) =>
+              onChange("fragmentation.combo.decoy_enabled", checked)
+            }
+          />
+        </Field>
 
-      {combo.decoy_enabled && (
-        <>
-          <div className="md:col-span-2">
+        {combo.decoy_enabled && (
+          <>
             <Field>
               <FieldLabel>Decoy SNI Domains</FieldLabel>
-              <FieldDescription className="mb-2">
+              <TagsInput
+                value={decoySNIs}
+                onValueChange={(values) => {
+                  onChange(
+                    "fragmentation.combo.decoy_snis",
+                    values.map((v) => v.trim().toLowerCase()),
+                  );
+                }}
+                placeholder="e.g. ya.ru, vk.com, mail.ru, dzen.ru"
+              />
+              <FieldDescription>
                 Whitelisted domains used in decoy packet. DPI sees these instead
                 of real target.
               </FieldDescription>
-              <div className="flex gap-2">
-                <Input
-                  value={newDomain}
-                  onChange={(e) => setNewDomain(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="e.g., allowed-site.ru"
-                  className="flex-1"
-                />
-                <Button
-                  onClick={handleAddDomain}
-                  disabled={!newDomain.trim()}
-                  size="icon"
-                  variant="outline"
-                >
-                  <AddIcon />
-                </Button>
-              </div>
-              <div className="mt-2">
-                <ChipList
-                  items={decoySNIs}
-                  getKey={(d) => d}
-                  getLabel={(d) => d}
-                  onDelete={handleRemoveDomain}
-                  emptyMessage="Using defaults: ya.ru, vk.com, mail.ru, dzen.ru"
-                  showEmpty
-                />
-              </div>
             </Field>
-          </div>
 
-          {/* How Decoy Works Visualization */}
-          <div className="md:col-span-2">
+            {/* How Decoy Works Visualization */}
+
             <div className="bg-card border-border rounded-md border p-4">
               <p className="text-muted-foreground mb-3 text-xs font-semibold uppercase">
                 HOW DECOY WORKS
@@ -188,119 +128,101 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
                 </div>
               </div>
             </div>
-          </div>
-        </>
-      )}
+          </>
+        )}
+      </FieldSet>
+
+      <Separator className="my-4" />
 
       {/* Split Points */}
-      <div className="relative my-4 flex items-center md:col-span-2">
-        <Separator className="absolute inset-0 top-1/2" />
-        <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
-          Split Points
-        </span>
-      </div>
+      <FieldSet>
+        <FieldLegend>Split Points</FieldLegend>
+        <FieldDescription>Where to split the packet</FieldDescription>
 
-      <div>
-        <label htmlFor="switch-combo-first-byte">
-          <Field orientation="horizontal">
-            <FieldContent>
-              <FieldTitle>First Byte</FieldTitle>
-              <FieldDescription>
-                Split after 1st byte (timing desync)
-              </FieldDescription>
-            </FieldContent>
-            <Switch
-              id="switch-combo-first-byte"
-              checked={combo.first_byte_split}
-              onCheckedChange={(checked: boolean) =>
-                onChange("fragmentation.combo.first_byte_split", checked)
-              }
-            />
-          </Field>
-        </label>
-      </div>
+        <Field orientation="horizontal">
+          <Checkbox
+            id="checkbox-combo-first-byte"
+            checked={combo.first_byte_split}
+            onCheckedChange={(checked: boolean) =>
+              onChange("fragmentation.combo.first_byte_split", checked)
+            }
+          />
+          <FieldLabel>First Byte</FieldLabel>
+        </Field>
 
-      <div>
-        <label htmlFor="switch-combo-extension">
-          <Field orientation="horizontal">
-            <FieldContent>
-              <FieldTitle>Extension Split</FieldTitle>
-              <FieldDescription>Split before SNI extension</FieldDescription>
-            </FieldContent>
-            <Switch
-              id="switch-combo-extension"
-              checked={combo.extension_split}
-              onCheckedChange={(checked: boolean) =>
-                onChange("fragmentation.combo.extension_split", checked)
-              }
-            />
-          </Field>
-        </label>
-      </div>
+        <Field orientation="horizontal">
+          <Checkbox
+            id="checkbox-combo-extension"
+            checked={combo.extension_split}
+            onCheckedChange={(checked: boolean) =>
+              onChange("fragmentation.combo.extension_split", checked)
+            }
+          />
+          <FieldLabel>Extension Split</FieldLabel>
+        </Field>
 
-      <div>
-        <label htmlFor="switch-combo-sni">
-          <Field orientation="horizontal">
-            <FieldContent>
-              <FieldTitle>SNI Split</FieldTitle>
-              <FieldDescription>
-                Split in middle of SNI hostname
-              </FieldDescription>
-            </FieldContent>
-            <Switch
-              id="switch-combo-sni"
-              checked={middleSni}
-              onCheckedChange={(checked: boolean) =>
-                onChange("fragmentation.middle_sni", checked)
-              }
-            />
-          </Field>
-        </label>
-      </div>
+        <Field orientation="horizontal">
+          <Checkbox
+            id="checkbox-combo-sni"
+            checked={middleSni}
+            onCheckedChange={(checked: boolean) =>
+              onChange("fragmentation.middle_sni", checked)
+            }
+          />
+          <FieldLabel>SNI Split</FieldLabel>
+        </Field>
 
-      {/* Visual */}
-      <div className="md:col-span-2">
-        <div className="bg-card border-border rounded-md border p-4">
-          <p className="text-muted-foreground mb-2 text-xs">
-            SEGMENT VISUALIZATION
-          </p>
-          <div className="flex flex-wrap gap-1 font-mono text-xs">
-            {combo.first_byte_split && (
-              <div className="bg-tertiary min-w-10 rounded p-2 text-center">
-                1B
-              </div>
-            )}
-            {combo.extension_split && (
-              <div className="bg-accent min-w-15 flex-1 rounded p-2 text-center">
-                Pre-SNI Ext
-              </div>
-            )}
-            {middleSni && (
-              <>
-                <div className="bg-accent-secondary min-w-12.5 rounded p-2 text-center">
-                  SNI₁
+        {/* Visual */}
+        <div className="md:col-span-2">
+          <div className="bg-card border-border rounded-md border p-4">
+            <p className="text-muted-foreground mb-2 text-xs">
+              SEGMENT VISUALIZATION
+            </p>
+            <div className="flex flex-wrap gap-1 font-mono text-xs">
+              {combo.first_byte_split && (
+                <div className="bg-tertiary min-w-10 rounded p-2 text-center">
+                  1B
                 </div>
-                <div className="bg-accent-secondary min-w-12.5 rounded p-2 text-center">
-                  SNI₂
+              )}
+              {combo.extension_split && (
+                <div className="bg-accent min-w-15 flex-1 rounded p-2 text-center">
+                  Pre-SNI Ext
                 </div>
-              </>
-            )}
-            <div className="bg-quaternary min-w-15 flex-1 rounded p-2 text-center">
-              Rest...
+              )}
+              {middleSni && (
+                <>
+                  <div className="bg-accent-secondary min-w-12.5 rounded p-2 text-center">
+                    SNI₁
+                  </div>
+                  <div className="bg-accent-secondary min-w-12.5 rounded p-2 text-center">
+                    SNI₂
+                  </div>
+                </>
+              )}
+              <div className="bg-quaternary min-w-15 flex-1 rounded p-2 text-center">
+                Rest...
+              </div>
             </div>
+            <p className="text-muted-foreground mt-2 text-xs">
+              {enabledSplits.length > 0
+                ? `Active splits: ${enabledSplits.join(" → ")} → creates ${
+                    enabledSplits.length + 1
+                  } segments`
+                : "No splits enabled - packet sent as single segment"}
+            </p>
           </div>
-          <p className="text-muted-foreground mt-2 text-xs">
-            {enabledSplits.length > 0
-              ? `Active splits: ${enabledSplits.join(" → ")} → creates ${
-                  enabledSplits.length + 1
-                } segments`
-              : "No splits enabled - packet sent as single segment"}
-          </p>
         </div>
-      </div>
+      </FieldSet>
+
+      <Separator className="my-4" />
 
       {/* Shuffle Mode */}
-      <div>
+
+      <FieldSet>
+        <FieldLegend>Shuffle</FieldLegend>
+        <FieldDescription>
+          How to reorder segments before sending
+        </FieldDescription>
         <Field>
           <FieldLabel>Shuffle Mode</FieldLabel>
           <Select
@@ -321,78 +243,62 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
             </SelectContent>
           </Select>
           <FieldDescription>
-            How to reorder segments before sending
-          </FieldDescription>
-        </Field>
-      </div>
-
-      <div>
-        <Alert className="my-0">
-          <AlertDescription>
             {combo.shuffle_mode === "middle" &&
               "Middle: Keep first & last in place, shuffle middle segments"}
             {combo.shuffle_mode === "full" &&
               "Full: Randomly shuffle all segments"}
             {combo.shuffle_mode === "reverse" &&
               "Reverse: Send segments in reverse order"}
-          </AlertDescription>
-        </Alert>
-      </div>
-
-      <div className="relative my-4 flex items-center md:col-span-2">
-        <Separator className="absolute inset-0 top-1/2" />
-        <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
-          Timing Settings
-        </span>
-      </div>
-
-      <div>
-        <Field className="w-full space-y-2">
-          <div className="flex items-center justify-between">
-            <FieldLabel className="text-sm font-medium">
-              First Segment Delay
-            </FieldLabel>
-            <Badge variant="secondary" className="font-semibold">
-              {combo.first_delay_ms} ms
-            </Badge>
-          </div>
-          <Slider
-            value={[combo.first_delay_ms]}
-            onValueChange={(values) =>
-              onChange("fragmentation.combo.first_delay_ms", values[0])
-            }
-            min={10}
-            max={500}
-            step={10}
-            className="w-full"
-          />
-          <FieldDescription>Delay after first segment (ms)</FieldDescription>
-        </Field>
-      </div>
-
-      <div>
-        <Field className="w-full space-y-2">
-          <div className="flex items-center justify-between">
-            <FieldLabel className="text-sm font-medium">Jitter Max</FieldLabel>
-            <Badge variant="secondary" className="font-semibold">
-              {combo.jitter_max_us} μs
-            </Badge>
-          </div>
-          <Slider
-            value={[combo.jitter_max_us]}
-            onValueChange={(values) =>
-              onChange("fragmentation.combo.jitter_max_us", values[0])
-            }
-            min={100}
-            max={10000}
-            step={100}
-            className="w-full"
-          />
-          <FieldDescription>
-            Max random delay between other segments (μs)
           </FieldDescription>
         </Field>
-      </div>
+      </FieldSet>
+
+      <Separator className="my-4" />
+
+      <FieldSet>
+        <FieldLegend>Timing Settings</FieldLegend>
+        <FieldDescription>Delay between segments</FieldDescription>
+
+        <FieldGroup>
+          <Field>
+            <FieldLabel>
+              First Segment Delay
+              <Badge variant="secondary">{combo.first_delay_ms} ms</Badge>
+            </FieldLabel>
+            <Slider
+              value={[combo.first_delay_ms]}
+              onValueChange={(values) =>
+                onChange("fragmentation.combo.first_delay_ms", values[0])
+              }
+              min={10}
+              max={500}
+              step={10}
+            />
+            <FieldDescription>Delay after first segment (ms)</FieldDescription>
+          </Field>
+
+          <Field>
+            <FieldLabel>
+              Jitter Max
+              <Badge variant="secondary" className="font-semibold">
+                {combo.jitter_max_us} μs
+              </Badge>
+            </FieldLabel>
+            <Slider
+              value={[combo.jitter_max_us]}
+              onValueChange={(values) =>
+                onChange("fragmentation.combo.jitter_max_us", values[0])
+              }
+              min={100}
+              max={10000}
+              step={100}
+            />
+            <FieldDescription>
+              Max random delay between other segments (μs)
+            </FieldDescription>
+          </Field>
+        </FieldGroup>
+      </FieldSet>
 
       {!combo.first_byte_split && !combo.extension_split && !middleSni && (
         <Alert variant="destructive" className="md:col-span-2">

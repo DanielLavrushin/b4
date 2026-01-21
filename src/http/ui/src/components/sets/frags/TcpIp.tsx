@@ -1,3 +1,4 @@
+import { B4SetConfig } from "@models/config";
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Badge } from "@primitives/badge";
 import {
@@ -5,12 +6,12 @@ import {
   FieldContent,
   FieldDescription,
   FieldLabel,
+  FieldLegend,
+  FieldSet,
   FieldTitle,
 } from "@primitives/field";
-import { Separator } from "@primitives/separator";
 import { Slider } from "@primitives/slider";
 import { Switch } from "@primitives/switch";
-import { B4SetConfig } from "@models/config";
 
 interface TcpIpSettingsProps {
   config: B4SetConfig;
@@ -29,34 +30,25 @@ export const TcpIpSettings = ({ config, onChange }: TcpIpSettingsProps) => {
   };
 
   return (
-    <>
-      <div className="relative my-4 flex items-center md:col-span-2">
-        <Separator className="absolute inset-0 top-1/2" />
-        <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
-          Where to Split
-        </span>
-      </div>
+    <FieldSet>
+      <FieldLegend>Tcp/Ip Fragmentation</FieldLegend>
+      <FieldDescription>Where to split</FieldDescription>
 
-      <div className="md:col-span-2">
-        <label htmlFor="switch-tcpip-middle-sni">
-          <Field orientation="horizontal">
-            <FieldContent>
-              <FieldTitle>Smart SNI Split</FieldTitle>
-              <FieldDescription>
-                Automatically split in the middle of the SNI hostname
-                (recommended)
-              </FieldDescription>
-            </FieldContent>
-            <Switch
-              id="switch-tcpip-middle-sni"
-              checked={config.fragmentation.middle_sni}
-              onCheckedChange={(checked: boolean) =>
-                onChange("fragmentation.middle_sni", checked)
-              }
-            />
-          </Field>
-        </label>
-      </div>
+      <Field orientation="horizontal">
+        <FieldContent>
+          <FieldTitle>Smart SNI Split</FieldTitle>
+          <FieldDescription>
+            Automatically split in the middle of the SNI hostname (recommended)
+          </FieldDescription>
+        </FieldContent>
+        <Switch
+          id="switch-tcpip-middle-sni"
+          checked={config.fragmentation.middle_sni}
+          onCheckedChange={(checked: boolean) =>
+            onChange("fragmentation.middle_sni", checked)
+          }
+        />
+      </Field>
 
       {/* Visual explanation */}
       <div className="md:col-span-2">
@@ -89,44 +81,33 @@ export const TcpIpSettings = ({ config, onChange }: TcpIpSettingsProps) => {
         </div>
       </div>
 
-      <div className="md:col-span-2">
-        <p className="text-warning mb-2 text-xs">
-          Manual override — use if Smart SNI Split doesn't work for your ISP
-        </p>
-        <div className="mt-2">
-          <Field className="w-full space-y-2">
-            <div className="flex items-center justify-between">
-              <FieldLabel className="text-sm font-medium">
-                Fixed Split Position
-              </FieldLabel>
-              <Badge variant="secondary" className="font-semibold">
-                {config.fragmentation.sni_position}
-              </Badge>
-            </div>
-            <Slider
-              value={[config.fragmentation.sni_position]}
-              onValueChange={(values) =>
-                onChange("fragmentation.sni_position", values[0])
-              }
-              min={0}
-              max={50}
-              step={1}
-              className="w-full"
-            />
-            <FieldDescription>
-              Bytes from TLS payload start (0 = disabled)
-            </FieldDescription>
-          </Field>
-        </div>
-        {config.fragmentation.sni_position > 0 &&
-          config.fragmentation.middle_sni && (
-            <Alert className="mt-4">
-              <AlertDescription>
-                Both enabled → packet splits into 3 segments
-              </AlertDescription>
-            </Alert>
-          )}
-      </div>
-    </>
+      <Field>
+        <FieldLabel>
+          Fixed Split Position
+          <Badge variant="secondary">{config.fragmentation.sni_position}</Badge>
+        </FieldLabel>
+        <Slider
+          value={[config.fragmentation.sni_position]}
+          onValueChange={(values) =>
+            onChange("fragmentation.sni_position", values[0])
+          }
+          min={0}
+          max={50}
+          step={1}
+        />
+        <FieldDescription>
+          Bytes from TLS payload start (0 = disabled)
+        </FieldDescription>
+      </Field>
+
+      {config.fragmentation.sni_position > 0 &&
+        config.fragmentation.middle_sni && (
+          <Alert className="mt-4">
+            <AlertDescription>
+              Both enabled → packet splits into 3 segments
+            </AlertDescription>
+          </Alert>
+        )}
+    </FieldSet>
   );
 };
