@@ -27,7 +27,7 @@ import {
 
 import { Badge } from "@primitives/badge";
 import { Button } from "@primitives/button";
-import { Card } from "@primitives/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@primitives/card";
 import { Field, FieldDescription, FieldLabel } from "@primitives/field";
 import { Input } from "@primitives/input";
 import { Separator } from "@primitives/separator";
@@ -392,24 +392,21 @@ export function SetEditorPage({ config, onRefresh }: SetEditorPageProps) {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Header with tabs */}
-      <Card className="border-border mb-4 border p-4">
+      <Card>
         {/* Action bar */}
-        <div className="mb-4 flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-between">
           <div className="flex flex-row items-center gap-4">
             <Button variant="ghost" size="sm" onClick={handleCancel}>
-              <IconGoBack className="size-4" />
+              <IconGoBack />
               Back
             </Button>
-            <Separator orientation="vertical" className="h-6" />
-            <h6 className="text-foreground text-lg font-semibold">
+            <Separator orientation="vertical" />
+            <CardTitle className="text-lg font-semibold">
               {isNew ? "Create New Set" : `Edit Set: ${editedSet.name}`}
-            </h6>
+            </CardTitle>
             {hasChanges && (
-              <Badge
-                variant="secondary"
-                className="inline-flex items-center gap-1"
-              >
-                <WarningIcon className="size-3" />
+              <Badge variant="secondary">
+                <WarningIcon />
                 Modified
               </Badge>
             )}
@@ -430,7 +427,7 @@ export function SetEditorPage({ config, onRefresh }: SetEditorPageProps) {
               onClick={handleReload}
               disabled={saving}
             >
-              <RefreshIcon className="mr-2 size-4" />
+              <RefreshIcon />
               Reload
             </Button>
             <Button
@@ -440,48 +437,47 @@ export function SetEditorPage({ config, onRefresh }: SetEditorPageProps) {
             >
               {saving ? (
                 <>
-                  <Spinner className="mr-2 size-4" />
+                  <Spinner />
                   Saving...
                 </>
               ) : (
                 <>
-                  <SaveIcon className="mr-2 size-4" />
+                  <SaveIcon />
                   {isNew ? "Create Set" : "Save Changes"}
                 </>
               )}
             </Button>
           </div>
-        </div>
+        </CardHeader>
 
         {/* Set Name */}
-        <Field className="mb-4">
-          <FieldLabel>Set Name</FieldLabel>
+        <CardContent>
           <Input
             value={editedSet.name}
             onChange={(e) => handleChange("name", e.target.value)}
             placeholder="e.g., YouTube Bypass, Gaming, Streaming"
             required
+            className="my-4"
           />
-          <FieldDescription>Give this set a descriptive name</FieldDescription>
-        </Field>
 
-        {/* Tabs */}
-        <Tabs
-          value={String(currentTab)}
-          onValueChange={(value) => handleTabChange(Number(value))}
-          className="w-full"
-        >
-          <TabsList className="grid w-full grid-cols-7">
-            {TAB_CATEGORIES.map((cat) => (
-              <TabsTrigger key={cat.id} value={String(cat.id)}>
-                <div className="flex items-center gap-1.5">
-                  {cat.icon}
-                  <span className="hidden lg:inline">{cat.label}</span>
-                </div>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+          {/* Tabs */}
+
+          <Tabs
+            value={String(currentTab)}
+            onValueChange={(value) => handleTabChange(Number(value))}
+          >
+            <TabsList className="w-full">
+              {TAB_CATEGORIES.map((cat) => (
+                <TabsTrigger key={cat.id} value={String(cat.id)}>
+                  <div className="flex items-center gap-1.5">
+                    {cat.icon}
+                    <span className="hidden lg:inline">{cat.label}</span>
+                  </div>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </CardContent>
       </Card>
 
       {/* Tab content */}
