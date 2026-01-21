@@ -1,7 +1,16 @@
-import { useState, useEffect } from "react";
-import { CollapseIcon, ExpandIcon } from "@b4.icons";
+import { Capture } from "@b4.capture";
+import { ComboboxMultiple } from "@composed/combobox-multiple";
+import { Alert, AlertDescription } from "@design/primitives/alert";
+import { Separator } from "@design/primitives/separator";
+import { Slider } from "@design/primitives/slider";
 import { Badge } from "@primitives/badge";
-import { Button } from "@primitives/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@primitives/card";
 import {
   Collapsible,
   CollapsibleContent,
@@ -12,23 +21,16 @@ import {
   FieldContent,
   FieldDescription,
   FieldLabel,
+  FieldSet,
   FieldTitle,
 } from "@primitives/field";
-import { Separator } from "@primitives/separator";
 import { Switch } from "@primitives/switch";
-import { Capture } from "@b4.capture";
-import { ChipList } from "@components/common/ChipList";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@primitives/select";
+import { useEffect, useState } from "react";
 
 export interface DiscoveryOptions {
   skipDNS: boolean;
   payloadFiles: string[];
+  validationTries: number;
 }
 
 interface DiscoveryOptionsPanelProps {
@@ -53,51 +55,26 @@ export const DiscoveryOptionsPanel = ({
   }, [expanded]);
 
   const tlsCaptures = captures.filter((c) => c.protocol === "tls");
-  const hasOptions = options.skipDNS || options.payloadFiles.length > 0;
-
-  const handleAddPayload = (domain: string) => {
-    if (!options.payloadFiles.includes(domain)) {
-      onChange({ ...options, payloadFiles: [...options.payloadFiles, domain] });
-    }
-  };
-
-  const handleRemovePayload = (domain: string) => {
-    onChange({
-      ...options,
-      payloadFiles: options.payloadFiles.filter((d) => d !== domain),
-    });
-  };
+  const hasOptions =
+    options.skipDNS ||
+    options.payloadFiles.length > 0 ||
+    options.validationTries > 1;
 
   return (
-    <div className="border-border overflow-hidden rounded-md border">
-      {/* Header */}
-      <Collapsible open={expanded} onOpenChange={setExpanded}>
-        <CollapsibleTrigger asChild>
-          <div className="bg-accent hover:bg-accent/80 flex cursor-pointer items-center justify-between p-3 transition-colors">
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground text-sm">
-                Discovery Options
-              </span>
-              {!expanded && hasOptions && (
-                <Badge variant="secondary" className="text-xs">
-                  {getOptionsSummary(options)}
-                </Badge>
-              )}
-            </div>
-            {expanded ? (
-              <CollapseIcon className="text-muted-foreground size-4" />
-            ) : (
-              <ExpandIcon className="text-muted-foreground size-4" />
-            )}
-          </div>
+    <Collapsible open={expanded} onOpenChange={setExpanded}>
+      <Card>
+        <CollapsibleTrigger asChild className="cursor-pointer">
+          <CardHeader>
+            <CardTitle>Discovery Options</CardTitle>
+            <CardDescription>{getOptionsSummary(options)}</CardDescription>
+          </CardHeader>
         </CollapsibleTrigger>
 
-        {/* Content */}
-        <CollapsibleContent>
-          <div className="bg-card border-border space-y-4 border-t p-4">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {/* Skip DNS Switch */}
-              <label htmlFor="switch-skip-dns">
+        <CollapsibleContent asChild>
+          <>
+            <Separator />
+            <CardContent>
+              <FieldSet>
                 <Field orientation="horizontal">
                   <FieldContent>
                     <FieldTitle>Skip DNS Discovery</FieldTitle>
@@ -114,79 +91,81 @@ export const DiscoveryOptionsPanel = ({
                     disabled={disabled}
                   />
                 </Field>
-              </label>
 
-              {/* Custom Payloads */}
-              {tlsCaptures.length > 0 && (
-                <div className="md:col-span-2">
+                {/* Validation Tries */}
+                <Field>
+                  <FieldLabel>
+                    Validation Tries
+                    <Badge variant="secondary">{options.validationTries}</Badge>
+                  </FieldLabel>
+                  <Slider
+                    value={[options.validationTries]}
+                    onValueChange={(values: number[]) =>
+                      onChange({ ...options, validationTries: values[0] })
+                    }
+                    min={1}
+                    max={5}
+                    step={1}
+                  />
+                  <FieldDescription>
+                    Number of successful connection attempts required to
+                    validate a preset
+                  </FieldDescription>
+                </Field>
+
+                {/* Custom Payloads */}
+                {tlsCaptures.length > 0 && (
+                  <div className="md:col-span-2">
+                    <Field>
+                      <FieldLabel>Custom Payloads</FieldLabel>
+                      <FieldDescription>
+                        Test with captured TLS ClientHello instead of built-in
+                        payloads
+                      </FieldDescription>
+                      <ComboboxMultiple
+                        items={tlsCaptures.map((c) => c.domain)}
+                        value={options.payloadFiles}
+                        onValueChange={(values) =>
+                          onChange({ ...options, payloadFiles: values })
+                        }
+                        placeholder="Search captured payloads..."
+                        emptyMessage="No captured payloads found."
+                        disabled={disabled}
+                      />
+                    </Field>
+                  </div>
+                )}
+
+                {tlsCaptures.length === 0 && (
                   <Field>
-                    <FieldLabel>Custom Payloads</FieldLabel>
-                    <FieldDescription className="mb-2">
-                      Test with captured TLS ClientHello instead of built-in
-                      payloads
-                    </FieldDescription>
-                    <Select
-                      onValueChange={handleAddPayload}
-                      disabled={disabled}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select captured payloads..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {tlsCaptures
-                          .filter(
-                            (c) => !options.payloadFiles.includes(c.domain),
-                          )
-                          .map((capture) => (
-                            <SelectItem
-                              key={capture.domain}
-                              value={capture.domain}
-                            >
-                              {capture.domain}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                    {options.payloadFiles.length > 0 && (
-                      <div className="mt-2">
-                        <ChipList
-                          items={options.payloadFiles}
-                          getKey={(d) => d}
-                          getLabel={(d) => d}
-                          onDelete={handleRemovePayload}
-                          emptyMessage="No payloads selected"
-                        />
-                      </div>
-                    )}
+                    <Alert>
+                      <AlertDescription>
+                        No captured payloads available.{" "}
+                        <a
+                          href="/settings#capture"
+                          className="text-primary hover:underline"
+                        >
+                          Capture payloads
+                        </a>{" "}
+                        to test with custom TLS ClientHello.
+                      </AlertDescription>
+                    </Alert>
                   </Field>
-                </div>
-              )}
-
-              {tlsCaptures.length === 0 && (
-                <div className="md:col-span-2">
-                  <p className="text-muted-foreground text-xs">
-                    No captured payloads available.{" "}
-                    <a
-                      href="/settings#capture"
-                      className="text-primary hover:underline"
-                    >
-                      Capture payloads
-                    </a>{" "}
-                    to test with custom TLS ClientHello.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
+                )}
+              </FieldSet>
+            </CardContent>
+          </>
         </CollapsibleContent>
-      </Collapsible>
-    </div>
+      </Card>
+    </Collapsible>
   );
 };
 
 function getOptionsSummary(options: DiscoveryOptions): string {
   const parts: string[] = [];
   if (options.skipDNS) parts.push("Skip DNS");
+  if (options.validationTries > 1)
+    parts.push(`${options.validationTries} tries`);
   if (options.payloadFiles.length > 0) {
     parts.push(
       `${options.payloadFiles.length} payload${

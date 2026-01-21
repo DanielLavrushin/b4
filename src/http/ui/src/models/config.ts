@@ -141,6 +141,7 @@ export interface DiscoveryConfig {
   config_propagate_ms: number;
   reference_domain: string;
   reference_dns: string[];
+  validation_tries: number;
 }
 
 export type WindowMode = "off" | "oscillate" | "zero" | "random" | "escalate";

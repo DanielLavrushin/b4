@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/yl2chen/cidranger"
@@ -41,6 +42,12 @@ type SuffixSet struct {
 	domainCacheMu    sync.RWMutex
 	domainCacheLimit int
 
+	learnedIPCache      map[string]*learnedIPEntry
+	learnedIPCacheLRU   *list.List
+	learnedIPCacheMu    sync.RWMutex
+	learnedIPCacheLimit int
+	learnedIPTTL        time.Duration
+
 	regexCacheSize int32
 }
 
@@ -48,6 +55,13 @@ type cacheEntry struct {
 	matched bool
 	set     *config.SetConfig
 	element *list.Element
+}
+
+type learnedIPEntry struct {
+	domain    string
+	set       *config.SetConfig
+	learnedAt time.Time
+	element   *list.Element
 }
 
 type regexWithSet struct {
@@ -72,6 +86,11 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 		domainCache:      make(map[string]*cacheEntry),
 		domainCacheLRU:   list.New(),
 		domainCacheLimit: 2000,
+
+		learnedIPCache:      make(map[string]*learnedIPEntry),
+		learnedIPCacheLRU:   list.New(),
+		learnedIPCacheLimit: 5000,
+		learnedIPTTL:        10 * time.Minute,
 	}
 
 	seenRegexes := make(map[string]bool)
@@ -344,6 +363,76 @@ func (s *SuffixSet) matchRegex(host string) (bool, *config.SetConfig) {
 	return matched, matchedSet
 }
 
+func (s *SuffixSet) LearnIPToDomain(ip net.IP, domain string, set *config.SetConfig) {
+	if s == nil || ip == nil || domain == "" || set == nil {
+		return
+	}
+
+	ipStr := ip.String()
+
+	s.learnedIPCacheMu.Lock()
+	defer s.learnedIPCacheMu.Unlock()
+
+	if entry, exists := s.learnedIPCache[ipStr]; exists {
+		s.learnedIPCacheLRU.MoveToFront(entry.element)
+		entry.domain = domain
+		entry.set = set
+		entry.learnedAt = time.Now()
+		return
+	}
+
+	if len(s.learnedIPCache) >= s.learnedIPCacheLimit {
+		oldest := s.learnedIPCacheLRU.Back()
+		if oldest != nil {
+			delete(s.learnedIPCache, oldest.Value.(string))
+			s.learnedIPCacheLRU.Remove(oldest)
+		}
+	}
+
+	element := s.learnedIPCacheLRU.PushFront(ipStr)
+	s.learnedIPCache[ipStr] = &learnedIPEntry{
+		domain:    domain,
+		set:       set,
+		learnedAt: time.Now(),
+		element:   element,
+	}
+}
+
+func (s *SuffixSet) MatchLearnedIP(ip net.IP) (bool, *config.SetConfig, string) {
+	if s == nil || ip == nil {
+		return false, nil, ""
+	}
+
+	ipStr := ip.String()
+
+	s.learnedIPCacheMu.RLock()
+	entry, exists := s.learnedIPCache[ipStr]
+	s.learnedIPCacheMu.RUnlock()
+
+	if !exists {
+		return false, nil, ""
+	}
+
+	s.learnedIPCacheMu.Lock()
+	defer s.learnedIPCacheMu.Unlock()
+
+	entry, exists = s.learnedIPCache[ipStr]
+	if !exists {
+		return false, nil, ""
+	}
+
+	if time.Since(entry.learnedAt) > s.learnedIPTTL {
+		if currentEntry, stillExists := s.learnedIPCache[ipStr]; stillExists && currentEntry == entry {
+			delete(s.learnedIPCache, ipStr)
+			s.learnedIPCacheLRU.Remove(entry.element)
+		}
+		return false, nil, ""
+	}
+
+	s.learnedIPCacheLRU.MoveToFront(entry.element)
+	return true, entry.set, entry.domain
+}
+
 func (s *SuffixSet) GetCacheStats() map[string]interface{} {
 	if s == nil {
 		return nil
@@ -357,15 +446,21 @@ func (s *SuffixSet) GetCacheStats() map[string]interface{} {
 	domainCacheSize := len(s.domainCache)
 	s.domainCacheMu.RUnlock()
 
+	s.learnedIPCacheMu.RLock()
+	learnedIPCacheSize := len(s.learnedIPCache)
+	s.learnedIPCacheMu.RUnlock()
+
 	regexCacheSize := atomic.LoadInt32(&s.regexCacheSize)
 
 	return map[string]interface{}{
-		"ip_cache_size":      ipCacheSize,
-		"ip_cache_limit":     s.ipCacheLimit,
-		"domain_cache_size":  domainCacheSize,
-		"domain_cache_limit": s.domainCacheLimit,
-		"regex_cache_size":   regexCacheSize,
-		"regex_cache_limit":  10000,
+		"ip_cache_size":          ipCacheSize,
+		"ip_cache_limit":         s.ipCacheLimit,
+		"domain_cache_size":      domainCacheSize,
+		"domain_cache_limit":     s.domainCacheLimit,
+		"learned_ip_cache_size":  learnedIPCacheSize,
+		"learned_ip_cache_limit": s.learnedIPCacheLimit,
+		"regex_cache_size":       regexCacheSize,
+		"regex_cache_limit":      10000,
 	}
 }
 

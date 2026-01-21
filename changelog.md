@@ -1,5 +1,12 @@
 # B4 - Bye Bye Big Bro
 
+## [1.32.0] - 2026-01-19
+
+- ADDED: Validation tries setting in `Discovery` - require multiple successful connections before accepting a configuration as reliable (default: 1, configurable 1-5). Helps filter out unstable bypass methods.
+- IMPROVED: UDP/QUIC filtering now correctly matches packets from domain-specified targets. When you add a domain like `youtube.com`, B4 now tracks which IP addresses belong to that domain and properly handles all UDP traffic to those IPs, not just the initial connection.
+- IMPROVED: Connection logs now show domain names for `QUIC` traffic even when not actively filtering those connections.
+- FIXED: UDP port filtering incorrectly matching unrelated traffic. Previously, specifying port 443 for one service could accidentally match all UDP traffic on port 443, including other services.
+
 ## [1.31.2] - 2026-01-16
 
 - FIXED: Custom payload files not working in `Discovery` feature - old configurations with relative paths like `captures/payload.bin` now work correctly.

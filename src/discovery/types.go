@@ -156,8 +156,9 @@ type DiscoverySuite struct {
 
 	customPayloads []CustomPayload
 
-	dnsResult *DNSDiscoveryResult
-	skipDNS   bool
+	dnsResult       *DNSDiscoveryResult
+	skipDNS         bool
+	validationTries int
 }
 
 type CustomPayload struct {

@@ -32,20 +32,12 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@primitives/collapsible";
-import {
-  Field,
-  FieldDescription,
-  FieldLabel,
-} from "@primitives/field";
+import { Field, FieldDescription, FieldLabel } from "@primitives/field";
 import { Input } from "@primitives/input";
 import { Progress } from "@primitives/progress";
 import { Separator } from "@primitives/separator";
 import { Spinner } from "@primitives/spinner";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@primitives/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
 import { cn } from "@design/lib/utils";
 import { useSets } from "@hooks/useSets";
 import { useCaptures } from "@b4.capture";
@@ -106,6 +98,9 @@ export const DiscoveryRunner = () => {
   const [options, setOptions] = useState<DiscoveryOptions>(() => ({
     skipDNS: localStorage.getItem("b4_discovery_skipdns") === "true",
     payloadFiles: [],
+    validationTries:
+      parseInt(localStorage.getItem("b4_discovery_validation_tries") || "1") ||
+      1,
   }));
 
   useEffect(() => {
@@ -116,6 +111,12 @@ export const DiscoveryRunner = () => {
     localStorage.setItem("b4_discovery_skipdns", String(options.skipDNS));
   }, [options.skipDNS]);
 
+  useEffect(() => {
+    localStorage.setItem(
+      "b4_discovery_validation_tries",
+      String(options.validationTries),
+    );
+  }, [options.validationTries]);
   const [checkUrl, setCheckUrl] = useState("");
 
   const [addingPreset, setAddingPreset] = useState(false);
@@ -157,7 +158,12 @@ export const DiscoveryRunner = () => {
       if (e.key !== "Enter") return;
       if (!checkUrl.trim()) return;
       e.preventDefault();
-      void startDiscovery(checkUrl, options.skipDNS, options.payloadFiles);
+      void startDiscovery(
+        checkUrl,
+        options.skipDNS,
+        options.payloadFiles,
+        options.validationTries,
+      );
     },
     [checkUrl, options.skipDNS, options.payloadFiles, startDiscovery],
   );

@@ -283,6 +283,8 @@ func (w *Worker) Start() error {
 							matchedSNI = true
 							matched = true
 							set = stSNI
+							// Learn IP-to-domain association for future UDP packets
+							matcher.LearnIPToDomain(dst, host, stSNI)
 						}
 					}
 				}
@@ -374,7 +376,6 @@ func (w *Worker) Start() error {
 				}
 
 				matchedIP := matched
-				matchedPort := false
 				matchedQUIC := false
 				isSTUN := false
 				host := ""
@@ -385,17 +386,24 @@ func (w *Worker) Start() error {
 					ipTarget = st.Name
 				}
 
-				if matchedIP && matcher.PortMatchesSet(dport, st) {
-					matchedPort = true
-				} else if !matchedIP {
-					if mport, portSet := matcher.MatchUDPPortOnly(dport); mport {
-						matchedPort = true
-						set = portSet
-						ipTarget = portSet.Name
+				if !matchedIP {
+					if mLearned, learnedSet, learnedDomain := matcher.MatchLearnedIP(dst); mLearned {
+						matchedIP = true
+						matched = true
+						set = learnedSet
+						host = learnedDomain
+						sniTarget = learnedSet.Name
+						ipTarget = learnedSet.Name
 					}
 				}
 
 				isSTUN = stun.IsSTUNMessage(payload)
+
+				if host == "" {
+					if h, ok := sni.ParseQUICClientHelloSNI(payload); ok {
+						host = h
+					}
+				}
 
 				switch set.UDP.FilterQUIC {
 				case "disabled":
@@ -403,18 +411,15 @@ func (w *Worker) Start() error {
 				case "all":
 					if quic.IsInitial(payload) {
 						matchedQUIC = true
-						if h, ok := sni.ParseQUICClientHelloSNI(payload); ok {
-							host = h
-						}
 					}
 
 				case "parse":
-					if h, ok := sni.ParseQUICClientHelloSNI(payload); ok {
-						host = h
+					if host != "" {
 						if mSNI, sniSet := matcher.MatchSNI(host); mSNI {
 							matchedQUIC = true
 							set = sniSet
 							sniTarget = sniSet.Name
+							matcher.LearnIPToDomain(dst, host, sniSet)
 						}
 					}
 				}
@@ -423,7 +428,7 @@ func (w *Worker) Start() error {
 					captureManager.CapturePayload(connKey, host, "quic", payload)
 				}
 
-				shouldHandle := (matchedPort || matchedIP || matchedQUIC) && !(isSTUN && set.UDP.FilterSTUN)
+				shouldHandle := (matchedIP || matchedQUIC) && !(isSTUN && set.UDP.FilterSTUN)
 
 				matched = shouldHandle
 

@@ -185,6 +185,7 @@ var DefaultConfig = Config{
 			ConfigPropagateMs:   1500,
 			ReferenceDomain:     "yandex.ru",
 			ReferenceDNS:        []string{"9.9.9.9", "1.1.1.1", "8.8.8.8", "9.9.1.1", "8.8.4.4"},
+			ValidationTries:     1,
 		},
 		API: ApiConfig{
 			IPInfoToken: "",

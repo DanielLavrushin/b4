@@ -24,10 +24,17 @@ const (
 	FailureTimeout      FailureMode = "timeout"
 	FailureTLSError     FailureMode = "tls_error"
 	FailureUnknown      FailureMode = "unknown"
+
+	validationRetryDelay = 100 * time.Millisecond
 )
 
-func NewDiscoverySuite(input string, pool *nfq.Pool, skipDNS bool, payloadFiles []string) *DiscoverySuite {
+func NewDiscoverySuite(input string, pool *nfq.Pool, skipDNS bool, payloadFiles []string, validationTries int) *DiscoverySuite {
 	suite := NewCheckSuite(input)
+
+	// Ensure validationTries is at least 1
+	if validationTries < 1 {
+		validationTries = 1
+	}
 
 	ds := &DiscoverySuite{
 		CheckSuite: suite,
@@ -39,6 +46,7 @@ func NewDiscoverySuite(input string, pool *nfq.Pool, skipDNS bool, payloadFiles 
 		workingPayloads: []PayloadTestResult{},
 		bestPayload:     config.FakePayloadDefault1,
 		skipDNS:         skipDNS,
+		validationTries: validationTries,
 	}
 
 	if len(payloadFiles) > 0 {
@@ -541,15 +549,44 @@ func (ds *DiscoverySuite) testPresetInternal(preset ConfigPreset) CheckResult {
 
 	time.Sleep(time.Duration(ds.cfg.System.Checker.ConfigPropagateMs) * time.Millisecond)
 
-	result := ds.fetchWithTimeout(time.Duration(ds.cfg.System.Checker.DiscoveryTimeoutSec) * time.Second)
-	result.Set = testConfig.MainSet
+	// Run validation tries
+	successCount := 0
+	var lastResult CheckResult
 
-	if result.Status == CheckStatusComplete {
-		log.DiscoveryLogf("    → OK (%.2f KB/s, %d bytes)", result.Speed/1024, result.BytesRead)
-	} else {
-		log.DiscoveryLogf("    → FAILED (%s)", result.Error)
+	for i := 0; i < ds.validationTries; i++ {
+		result := ds.fetchWithTimeout(time.Duration(ds.cfg.System.Checker.DiscoveryTimeoutSec) * time.Second)
+		result.Set = testConfig.MainSet
+		lastResult = result
+
+		if result.Status == CheckStatusComplete {
+			successCount++
+		}
+
+		// If we have multiple tries, add a small delay between attempts
+		if i < ds.validationTries-1 {
+			time.Sleep(validationRetryDelay)
+		}
 	}
-	return result
+
+	// Consider the preset valid only if all tries succeeded
+	if successCount == ds.validationTries {
+		if ds.validationTries > 1 {
+			log.DiscoveryLogf("    → OK (%.2f KB/s, %d bytes) - %d/%d tries succeeded",
+				lastResult.Speed/1024, lastResult.BytesRead, successCount, ds.validationTries)
+		} else {
+			log.DiscoveryLogf("    → OK (%.2f KB/s, %d bytes)", lastResult.Speed/1024, lastResult.BytesRead)
+		}
+		return lastResult
+	} else {
+		if ds.validationTries > 1 {
+			log.DiscoveryLogf("    → FAILED (%d/%d tries succeeded)", successCount, ds.validationTries)
+			lastResult.Status = CheckStatusFailed
+			lastResult.Error = fmt.Sprintf("validation failed: %d/%d tries succeeded", successCount, ds.validationTries)
+		} else {
+			log.DiscoveryLogf("    → FAILED (%s)", lastResult.Error)
+		}
+		return lastResult
+	}
 }
 
 func (ds *DiscoverySuite) testPreset(preset ConfigPreset) CheckResult {

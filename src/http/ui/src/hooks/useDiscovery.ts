@@ -58,6 +58,7 @@ export function useDiscovery() {
       url: string,
       skipDNS: boolean = false,
       payloadFiles: string[] = [],
+      validationTries: number = 1,
     ): Promise<ApiResponse<void>> => {
       setError(null);
       setSuite(null);
@@ -67,7 +68,12 @@ export function useDiscovery() {
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
           url = `https://${url}`;
         }
-        const res = await discoveryApi.start(url, skipDNS, payloadFiles);
+        const res = await discoveryApi.start(
+          url,
+          skipDNS,
+          payloadFiles,
+          validationTries,
+        );
         setSuiteId(res.id);
         return { success: true };
       } catch (e) {

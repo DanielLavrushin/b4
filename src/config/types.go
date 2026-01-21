@@ -158,6 +158,7 @@ type DiscoveryConfig struct {
 	ConfigPropagateMs   int      `yaml:"config_propagate_ms" json:"config_propagate_ms"`
 	ReferenceDomain     string   `yaml:"reference_domain" json:"reference_domain"`
 	ReferenceDNS        []string `yaml:"reference_dns" json:"reference_dns"`
+	ValidationTries     int      `yaml:"validation_tries" json:"validation_tries"`
 }
 
 type Logging struct {
