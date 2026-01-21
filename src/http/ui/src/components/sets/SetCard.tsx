@@ -17,6 +17,7 @@ import {
   CardContent,
   CardFooter,
   CardHeader,
+  CardTitle,
 } from "@primitives/card";
 import {
   DropdownMenu,
@@ -26,11 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@primitives/dropdown-menu";
 import { Switch } from "@primitives/switch";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@primitives/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
 import { cn } from "@design/lib/utils";
 import { B4SetConfig, MAIN_SET_ID } from "@models/config";
 import { useMemo, useState } from "react";
@@ -178,24 +175,20 @@ export const SetCard = ({
   return (
     <Card
       className={cn(
-        "relative flex flex-row transition-all",
+        "flex flex-row transition-all",
         set.enabled ? "opacity-100" : "opacity-50",
         "hover:shadow-lg",
-        isMain && "border-primary",
       )}
     >
       {/* Left accent bar */}
       <div
-        className={cn(
-          "w-1 shrink-0 rounded-l-lg",
-          isMain ? "bg-primary" : "bg-secondary",
-        )}
+        className={cn("w-1 shrink-0", isMain ? "bg-primary" : "bg-secondary")}
       />
 
       {/* Drag handle */}
       <div
         {...dragHandleProps}
-        className="text-muted-foreground hover:text-foreground flex shrink-0 cursor-grab items-center self-center transition-colors"
+        className="text-muted-foreground hover:text-foreground flex shrink-0 cursor-grab self-center transition-colors"
       >
         <DragIcon />
       </div>
@@ -230,14 +223,13 @@ export const SetCard = ({
               )}
 
               {/* Name */}
-              <h6
+              <CardTitle
                 className={cn(
-                  "truncate text-sm font-semibold uppercase",
                   set.enabled ? "text-foreground" : "text-muted-foreground",
                 )}
               >
                 {set.name}
-              </h6>
+              </CardTitle>
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
@@ -249,7 +241,7 @@ export const SetCard = ({
                   handleAction(onEdit);
                 }}
               >
-                <EditIcon className="mr-2 size-4" />
+                <EditIcon />
                 Edit
               </Button>
               <DropdownMenu
@@ -297,27 +289,25 @@ export const SetCard = ({
         {/* Content */}
         <CardContent className="flex flex-1 flex-row items-center gap-6">
           {/* Target preview */}
-          <div style={{ flex: "1 1 40%", minWidth: 0 }}>
-            <div className="bg-muted border-border flex items-center rounded-md border p-3">
-              {totalTargets > 0 ? (
-                <div className="flex w-full flex-wrap gap-1.5">
-                  {previewTargets.map((target) => (
-                    <TargetBadge
-                      key={`${target.type}-${target.label}`}
-                      label={target.label}
-                      type={target.type}
-                    />
-                  ))}
-                  {totalTargets > 2 && (
-                    <Badge variant="outline">+{totalTargets - 2}</Badge>
-                  )}
-                </div>
-              ) : (
-                <p className="text-muted-foreground w-full text-center text-xs italic">
-                  No targets configured
-                </p>
-              )}
-            </div>
+          <div className="bg-muted border-border flex-1/3 items-center border p-3">
+            {totalTargets > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {previewTargets.map((target) => (
+                  <TargetBadge
+                    key={`${target.type}-${target.label}`}
+                    label={target.label}
+                    type={target.type}
+                  />
+                ))}
+                {totalTargets > 2 && (
+                  <Badge variant="outline">+{totalTargets - 2}</Badge>
+                )}
+              </div>
+            ) : (
+              <p className="text-muted-foreground w-full text-center text-xs italic">
+                No targets configured
+              </p>
+            )}
           </div>
 
           {/* Domain/IP counts */}
