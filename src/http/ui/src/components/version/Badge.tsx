@@ -46,9 +46,9 @@ export const VersionBadge = ({
           </TooltipContent>
         </Tooltip>
       ) : (
-        <Badge variant="ghost" onClick={onClick}>
+        <Button variant="ghost" onClick={onClick} className="w-fit self-center">
           v{version}
-        </Badge>
+        </Button>
       )}
     </>
   );
