@@ -1,16 +1,9 @@
 import { useState, useCallback, useMemo, useRef } from "react";
-import { SortDirection } from "@common/SortableTableCell";
 import { asnStorage } from "@utils";
 import { useSnackbar } from "@context/SnackbarProvider";
+import { SortColumn, SortDirection } from "@components/connections/Table";
 
 // Types
-export type SortColumn =
-  | "timestamp"
-  | "set"
-  | "protocol"
-  | "domain"
-  | "source"
-  | "destination";
 
 export interface ParsedLog {
   timestamp: string;

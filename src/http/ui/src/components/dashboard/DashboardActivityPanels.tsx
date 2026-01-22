@@ -1,11 +1,6 @@
 import { ProtocolChip } from "@common/ProtocolChip";
 import { Badge } from "@primitives/badge";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@primitives/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@primitives/card";
 import { formatNumber } from "@utils";
 
 interface Connection {

@@ -1,11 +1,6 @@
 import { SimpleLineChart } from "./SimpleLineChart";
 import { colors } from "@design";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from "@primitives/card";
+import { Card, CardHeader, CardTitle, CardContent } from "@primitives/card";
 
 interface DashboardChartsProps {
   connectionRate: { timestamp: number; value: number }[];

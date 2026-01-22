@@ -52,7 +52,7 @@ export const LoggingSettings = ({ config, onChange }: LoggingSettingsProps) => {
         <CardDescription>Configure logging behavior and output</CardDescription>
       </CardHeader>
       <Separator />
-      
+
       <CardContent>
         <FieldGroup>
           <Field>
@@ -77,9 +77,7 @@ export const LoggingSettings = ({ config, onChange }: LoggingSettingsProps) => {
                 ))}
               </SelectContent>
             </Select>
-            <FieldDescription>
-              Verbosity of logging output
-            </FieldDescription>
+            <FieldDescription>Verbosity of logging output</FieldDescription>
           </Field>
 
           <Field>

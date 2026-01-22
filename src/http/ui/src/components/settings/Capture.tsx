@@ -27,19 +27,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@primitives/dialog";
-import {
-  Field,
-  FieldDescription,
-  FieldLabel,
-} from "@primitives/field";
+import { Field, FieldDescription, FieldLabel } from "@primitives/field";
 import { Input } from "@primitives/input";
 import { Separator } from "@primitives/separator";
 import { Spinner } from "@primitives/spinner";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@primitives/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
 import { cn } from "@design/lib/utils";
 import { useEffect, useState } from "react";
 
@@ -202,7 +194,6 @@ export const CaptureSettings = () => {
                   variant="outline"
                   disabled={loading}
                   className="shrink-0"
-                  asChild
                 >
                   <label>
                     {uploadForm.file ? uploadForm.file.name : "Choose File..."}
@@ -293,7 +284,7 @@ export const CaptureSettings = () => {
                   )}
                 </Button>
                 <Tooltip>
-                  <TooltipTrigger asChild>
+                  <TooltipTrigger>
                     <Button
                       variant="outline"
                       size="icon"
@@ -309,7 +300,7 @@ export const CaptureSettings = () => {
                 </Tooltip>
                 {captures.length > 0 && (
                   <Tooltip>
-                    <TooltipTrigger asChild>
+                    <TooltipTrigger>
                       <Button
                         variant="outline"
                         size="icon"
@@ -507,7 +498,7 @@ const CaptureCard = ({
       {/* Actions */}
       <div className="border-border flex flex-row gap-1 border-t pt-4">
         <Tooltip>
-          <TooltipTrigger asChild>
+          <TooltipTrigger>
             <Button size="sm" variant="ghost" onClick={onViewHex}>
               <CopyIcon />
             </Button>
@@ -517,7 +508,7 @@ const CaptureCard = ({
           </TooltipContent>
         </Tooltip>
         <Tooltip>
-          <TooltipTrigger asChild>
+          <TooltipTrigger>
             <Button size="sm" variant="ghost" onClick={onDownload}>
               <DownloadIcon />
             </Button>
@@ -528,7 +519,7 @@ const CaptureCard = ({
         </Tooltip>
         <div className="flex-1" />
         <Tooltip>
-          <TooltipTrigger asChild>
+          <TooltipTrigger>
             <Button size="sm" variant="ghost" onClick={onDelete}>
               <ClearIcon />
             </Button>

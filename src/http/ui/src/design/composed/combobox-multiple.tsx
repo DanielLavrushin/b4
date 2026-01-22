@@ -1,7 +1,7 @@
 "use client";
 
+import { useVirtualizer } from "@tanstack/react-virtual";
 import * as React from "react";
-import { type Virtualizer } from "@tanstack/react-virtual";
 
 import {
   Combobox,
@@ -10,7 +10,8 @@ import {
   ComboboxChipsInput,
   ComboboxContent,
   ComboboxEmpty,
-  ComboboxVirtualizedList,
+  ComboboxItem,
+  ComboboxList,
   ComboboxValue,
   useComboboxAnchor,
 } from "@primitives/combobox";
@@ -40,33 +41,55 @@ export function ComboboxMultiple({
   const itemsLoaded = items.length > 0;
   const [open, setOpen] = React.useState(false);
   const [searchValue, setSearchValue] = React.useState("");
-  const virtualizerRef = React.useRef<Virtualizer<
-    HTMLDivElement,
-    HTMLDivElement
-  > | null>(null);
-
-  const deferredSearchValue = React.useDeferredValue(searchValue);
-
-  const resolvedSearchValue =
-    searchValue === "" || deferredSearchValue === ""
-      ? searchValue
-      : deferredSearchValue;
+  const scrollElementRef = React.useRef<HTMLDivElement | null>(null);
+  const [shouldRenderList, setShouldRenderList] = React.useState(false);
 
   const filteredItems = React.useMemo(() => {
     if (!itemsLoaded) return [];
-    if (!resolvedSearchValue) return items;
-    const searchLower = resolvedSearchValue.toLowerCase();
+    if (!searchValue) return items;
+    const searchLower = searchValue.toLowerCase();
     return items.filter((item: string) =>
       item.toLowerCase().includes(searchLower),
     );
-  }, [resolvedSearchValue, items, itemsLoaded]);
+  }, [searchValue, items, itemsLoaded]);
+
+  React.useEffect(() => {
+    if (open) {
+      const timeoutId = requestAnimationFrame(() => {
+        setShouldRenderList(true);
+      });
+      return () => {
+        cancelAnimationFrame(timeoutId);
+      };
+    } else {
+      setShouldRenderList(false);
+    }
+  }, [open]);
+
+  const virtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+    enabled: shouldRenderList,
+    count: filteredItems.length,
+    getScrollElement: () => scrollElementRef.current,
+    estimateSize: () => 32,
+    overscan: 20,
+  });
+
+  const handleScrollElementRef = React.useCallback(
+    (element: HTMLDivElement | null) => {
+      scrollElementRef.current = element;
+      if (element && open) {
+        virtualizer.measure();
+      }
+    },
+    [virtualizer, open],
+  );
 
   const handleItemHighlighted = React.useCallback(
     (
       highlightedValue: string | undefined,
       eventDetails: { reason: string; index: number },
     ) => {
-      if (!highlightedValue || !virtualizerRef.current) {
+      if (!highlightedValue) {
         return;
       }
 
@@ -78,13 +101,13 @@ export function ComboboxMultiple({
 
       if (shouldScroll) {
         queueMicrotask(() => {
-          virtualizerRef.current?.scrollToIndex(index, {
+          virtualizer.scrollToIndex(index, {
             align: isEnd ? "start" : "end",
           });
         });
       }
     },
-    [filteredItems.length],
+    [filteredItems.length, virtualizer],
   );
 
   return (
@@ -103,34 +126,82 @@ export function ComboboxMultiple({
       onInputValueChange={setSearchValue}
       onItemHighlighted={handleItemHighlighted}
     >
-      <ComboboxChips ref={anchor}>
-        <ComboboxValue>
-          {(values: string[]) => (
-            <React.Fragment>
-              {values.map((v) => (
-                <ComboboxChip key={v}>
-                  {v}
-                  {breakdown?.[v] != null && (
-                    <span className="text-muted-foreground ml-1">
-                      ({breakdown[v]})
-                    </span>
-                  )}
-                </ComboboxChip>
-              ))}
-              <ComboboxChipsInput placeholder={placeholder} />
-            </React.Fragment>
-          )}
-        </ComboboxValue>
-      </ComboboxChips>
+      <div ref={anchor}>
+        <ComboboxChips>
+          <ComboboxValue>
+            {(values: string[]) => (
+              <React.Fragment>
+                {values.map((v) => (
+                  <ComboboxChip key={v}>
+                    {v}
+                    {breakdown?.[v] != null && (
+                      <span className="text-muted-foreground ml-1">
+                        ({breakdown[v]})
+                      </span>
+                    )}
+                  </ComboboxChip>
+                ))}
+                <ComboboxChipsInput placeholder={placeholder} />
+              </React.Fragment>
+            )}
+          </ComboboxValue>
+        </ComboboxChips>
+      </div>
       <ComboboxContent anchor={anchor}>
         <ComboboxEmpty>{emptyMessage}</ComboboxEmpty>
-        <ComboboxVirtualizedList
-          items={filteredItems}
-          renderItem={(item) => item}
-          itemKey={(item) => item}
-          enabled={open}
-          virtualizerRef={virtualizerRef}
-        />
+        {shouldRenderList ? (
+          <ComboboxList>
+            {filteredItems.length > 0 && (
+              <div
+                role="presentation"
+                ref={handleScrollElementRef}
+                className="overflow-y-auto overscroll-contain"
+                style={{
+                  maxHeight: "inherit",
+                }}
+              >
+                <div
+                  role="presentation"
+                  className="relative w-full"
+                  style={{ height: virtualizer.getTotalSize() }}
+                >
+                  {virtualizer.getVirtualItems().map((virtualItem) => {
+                    const item = filteredItems[virtualItem.index];
+                    if (!item) {
+                      return null;
+                    }
+                    return (
+                      <ComboboxItem
+                        key={item}
+                        index={virtualItem.index}
+                        data-index={virtualItem.index}
+                        ref={virtualizer.measureElement}
+                        value={item}
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: "100%",
+                          height: virtualItem.size,
+                          transform: `translateY(${virtualItem.start}px)`,
+                        }}
+                      >
+                        {item}
+                        {breakdown?.[item] != null && (
+                          <span className="text-muted-foreground ml-1">
+                            ({breakdown[item]})
+                          </span>
+                        )}
+                      </ComboboxItem>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </ComboboxList>
+        ) : (
+          <ComboboxList />
+        )}
       </ComboboxContent>
     </Combobox>
   );

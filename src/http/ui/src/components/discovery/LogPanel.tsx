@@ -7,11 +7,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@primitives/collapsible";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@primitives/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
 import { cn } from "@design/lib/utils";
 import { useEffect, useRef, useState } from "react";
 
@@ -47,7 +43,7 @@ export const DiscoveryLogPanel = ({ running }: DiscoveryLogPanelProps) => {
     <div className="border-border flex flex-col overflow-hidden border transition-colors">
       <Collapsible open={expanded} onOpenChange={setExpanded}>
         {/* Header */}
-        <CollapsibleTrigger asChild>
+        <CollapsibleTrigger>
           <div className="border-border/50 bg-card hover:bg-accent/50 flex cursor-pointer items-center justify-between border-b p-4 transition-colors">
             <div className="flex items-center gap-3">
               <LogsIcon className="text-secondary size-5" />
@@ -65,7 +61,7 @@ export const DiscoveryLogPanel = ({ running }: DiscoveryLogPanelProps) => {
             <div className="flex items-center gap-1">
               {logs.length > 0 && (
                 <Tooltip>
-                  <TooltipTrigger asChild>
+                  <TooltipTrigger>
                     <Button
                       size="sm"
                       variant="ghost"

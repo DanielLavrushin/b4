@@ -81,7 +81,7 @@ const DeviceNameCell = ({
         <span className="text-muted-foreground text-xs">Unknown</span>
       )}
       <Tooltip>
-        <TooltipTrigger asChild>
+        <TooltipTrigger>
           <Button
             size="sm"
             variant="ghost"
@@ -97,7 +97,7 @@ const DeviceNameCell = ({
       </Tooltip>
       {device.alias && (
         <Tooltip>
-          <TooltipTrigger asChild>
+          <TooltipTrigger>
             <Button
               size="sm"
               variant="ghost"
@@ -210,7 +210,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                 </FieldLegend>
 
                 <Tooltip>
-                  <TooltipTrigger asChild>
+                  <TooltipTrigger>
                     <Button
                       variant="ghost"
                       size="icon-sm"
@@ -234,19 +234,19 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
               ) : (
                 <div className="bg-card border-border max-h-75 overflow-auto border">
                   <Table>
-                     <TableHeader>
-                       <TableRow>
-                         <TableHead>
-                           <Checkbox
-                             checked={allSelected}
-                             onCheckedChange={(checked) =>
-                               onChange(
-                                 "queue.devices.mac",
-                                 checked ? devices.map((d) => d.mac) : [],
-                               )
-                             }
-                           />
-                         </TableHead>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>
+                          <Checkbox
+                            checked={allSelected}
+                            onCheckedChange={(checked) =>
+                              onChange(
+                                "queue.devices.mac",
+                                checked ? devices.map((d) => d.mac) : [],
+                              )
+                            }
+                          />
+                        </TableHead>
                         {["MAC Address", "IP", "Name"].map((label) => (
                           <TableHead key={label}>{label}</TableHead>
                         ))}
@@ -275,8 +275,8 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                                 }
                               />
                             </TableCell>
-                            <TableCell variant="mono">{device.mac}</TableCell>
-                            <TableCell variant="mono">{device.ip}</TableCell>
+                            <TableCell>{device.mac}</TableCell>
+                            <TableCell>{device.ip}</TableCell>
                             <TableCell>
                               <DeviceNameCell
                                 device={device}

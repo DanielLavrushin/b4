@@ -7,11 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@primitives/card";
-import {
-  Field,
-  FieldDescription,
-  FieldLabel,
-} from "@primitives/field";
+import { Field, FieldDescription, FieldLabel } from "@primitives/field";
 import { Input } from "@primitives/input";
 import { B4Config } from "@models/config";
 

@@ -179,7 +179,7 @@ export const ImportExportSettings = ({
       <Separator />
 
       <CardContent>
-        <FieldSet>
+        <FieldGroup>
           <Field>
             <FieldLabel>Set Configuration JSON</FieldLabel>
             <Textarea
@@ -201,31 +201,26 @@ export const ImportExportSettings = ({
               </Alert>
             </Field>
           )}
-          <FieldGroup>
-            <Field orientation="horizontal">
-              <Button
-                variant="outline"
-                onClick={handleReset}
-                disabled={!hasChanges}
-              >
-                <RefreshIcon />
-                Reset
-              </Button>
-            </Field>
 
-            <Field orientation="horizontal" className="justify-end">
-              {validationSuccess && !validationError && <CheckIcon />}
+          <Field orientation="horizontal" className="justify-end">
+            {validationSuccess && !validationError && <CheckIcon />}
 
-              <Button variant="outline" onClick={handleValidate}>
-                Validate
-              </Button>
-
-              <Button onClick={handleApply} disabled={!hasChanges}>
-                Apply Changes
-              </Button>
-            </Field>
-          </FieldGroup>
-        </FieldSet>
+            <Button variant="outline" onClick={handleValidate}>
+              Validate
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleReset}
+              disabled={!hasChanges}
+            >
+              <RefreshIcon />
+              Reset
+            </Button>
+            <Button onClick={handleApply} disabled={!hasChanges}>
+              Apply Changes
+            </Button>
+          </Field>
+        </FieldGroup>
       </CardContent>
     </Card>
   );

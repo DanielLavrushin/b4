@@ -37,14 +37,14 @@ export const ControlSettings = ({ loadConfig }: ControlSettingsProps) => {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <FieldGroup className="flex flex-col" >
+        <FieldGroup className="flex flex-col">
           <Button
             size="lg"
             variant="outline"
             onClick={() => setShowRestartDialog(true)}
             disabled={saving}
           >
-            <RestartIcon/>
+            <RestartIcon />
             Restart B4 System Service
           </Button>
           <Button

@@ -70,13 +70,13 @@ export const NetworkSettings = ({ config, onChange }: NetworkSettingsProps) => (
             </FieldDescription>
           </Field>
           <Field className="md:col-span-2">
-
-            <FieldLabel>Worker Threads
+            <FieldLabel>
+              Worker Threads
               <Badge variant="secondary" className="font-semibold">
                 {config.queue.threads}
               </Badge>
             </FieldLabel>
-            
+
             <Slider
               value={[config.queue.threads]}
               onValueChange={(values) => onChange("queue.threads", values[0])}
