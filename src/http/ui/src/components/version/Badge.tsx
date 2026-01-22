@@ -1,8 +1,12 @@
 import { NewReleaseIcon } from "@b4.icons";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@design/primitives/tooltip";
 import { Badge } from "@primitives/badge";
 import { Button } from "@primitives/button";
 import { Spinner } from "@primitives/spinner";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
 
 interface VersionBadgeProps {
   version: string;
@@ -30,12 +34,13 @@ export const VersionBadge = ({
     <>
       {hasUpdate ? (
         <Tooltip>
-          <TooltipTrigger asChild>
-            <Badge onClick={onClick}>
+          <TooltipTrigger className="w-fit self-center">
+            <Button onClick={onClick}>
               <NewReleaseIcon />
               {`v${version}`}
-            </Badge>
+            </Button>
           </TooltipTrigger>
+
           <TooltipContent side="right">
             <p>New version available! Click to view details</p>
           </TooltipContent>
