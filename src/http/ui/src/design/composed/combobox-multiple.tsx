@@ -126,25 +126,27 @@ export function ComboboxMultiple({
       onInputValueChange={setSearchValue}
       onItemHighlighted={handleItemHighlighted}
     >
-      <ComboboxChips ref={anchor}>
-        <ComboboxValue>
-          {(values: string[]) => (
-            <React.Fragment>
-              {values.map((v) => (
-                <ComboboxChip key={v}>
-                  {v}
-                  {breakdown?.[v] != null && (
-                    <span className="text-muted-foreground ml-1">
-                      ({breakdown[v]})
-                    </span>
-                  )}
-                </ComboboxChip>
-              ))}
-              <ComboboxChipsInput placeholder={placeholder} />
-            </React.Fragment>
-          )}
-        </ComboboxValue>
-      </ComboboxChips>
+      <div ref={anchor}>
+        <ComboboxChips>
+          <ComboboxValue>
+            {(values: string[]) => (
+              <React.Fragment>
+                {values.map((v) => (
+                  <ComboboxChip key={v}>
+                    {v}
+                    {breakdown?.[v] != null && (
+                      <span className="text-muted-foreground ml-1">
+                        ({breakdown[v]})
+                      </span>
+                    )}
+                  </ComboboxChip>
+                ))}
+                <ComboboxChipsInput placeholder={placeholder} />
+              </React.Fragment>
+            )}
+          </ComboboxValue>
+        </ComboboxChips>
+      </div>
       <ComboboxContent anchor={anchor}>
         <ComboboxEmpty>{emptyMessage}</ComboboxEmpty>
         {shouldRenderList ? (
