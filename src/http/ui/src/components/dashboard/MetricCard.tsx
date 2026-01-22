@@ -1,14 +1,12 @@
 import { ImprovementIcon } from "@b4.icons";
-import { Card } from "@primitives/card";
-import { colors } from "@design";
 import { cn } from "@design/lib/utils";
+import { Card } from "@primitives/card";
 
 interface MetricCardProps {
   title: string;
   value: string | number;
   subtitle?: string;
   icon: React.ReactNode;
-  color?: string;
   trend?: number;
 }
 
@@ -17,15 +15,8 @@ export const MetricCard = ({
   value,
   subtitle,
   icon,
-  color = colors.primary,
   trend,
 }: MetricCardProps) => {
-  const colorHex = color || colors.primary;
-  const borderColor = `${colorHex}33`;
-  const hoverBorderColor = `${colorHex}66`;
-  const shadowColor = `${colorHex}22`;
-  const bgColor = `${colorHex}22`;
-
   return (
     <Card
       className={cn(
@@ -62,13 +53,7 @@ export const MetricCard = ({
               </div>
             )}
           </div>
-          <div
-            className="flex items-center justify-center rounded-lg p-2"
-            style={{
-              backgroundColor: bgColor,
-              color: colorHex,
-            }}
-          >
+          <div className="flex items-center justify-center rounded-lg p-2">
             {icon}
           </div>
         </div>

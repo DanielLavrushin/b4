@@ -1,4 +1,3 @@
-import { colors } from "@design";
 import { Card } from "@primitives/card";
 import { cn } from "@design/lib/utils";
 
@@ -7,7 +6,6 @@ interface StatCardProps {
   value: string | number;
   subtitle?: string;
   icon: React.ReactNode;
-  color?: string;
   variant?: "default" | "outlined" | "elevated";
   onClick?: () => void;
   trend?: {
@@ -21,17 +19,10 @@ export const StatCard = ({
   value,
   subtitle,
   icon,
-  color = colors.primary,
   variant = "outlined",
   onClick,
   trend,
 }: StatCardProps) => {
-  const colorStyle = color.startsWith("#")
-    ? color
-    : color.startsWith("rgb")
-      ? color
-      : `var(--${color})`;
-
   return (
     <Card
       className={cn(
@@ -83,13 +74,7 @@ export const StatCard = ({
               </div>
             )}
           </div>
-          <div
-            className="flex min-h-14 min-w-14 items-center justify-center p-3"
-            style={{
-              backgroundColor: `${colorStyle}22`,
-              color: colorStyle,
-            }}
-          >
+          <div className="flex min-h-14 min-w-14 items-center justify-center p-3">
             {icon}
           </div>
         </div>
