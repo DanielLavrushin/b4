@@ -1,5 +1,4 @@
 import { devicesApi } from "@b4.devices";
-import { SortDirection } from "@common/SortableTableCell";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { cn } from "@design/lib/utils";
 import { Card, CardContent, CardDescription } from "@primitives/card";
@@ -24,7 +23,7 @@ import { useWebSocket } from "../../context/B4WsProvider";
 import { AddIpModal } from "./AddIpModal";
 import { AddSniModal } from "./AddSniModal";
 import { DomainsControlBar } from "./ControlBar";
-import { DomainsTable, SortColumn } from "./Table";
+import { DomainsTable, SortColumn, SortDirection } from "./Table";
 
 const MAX_DISPLAY_ROWS = 1000;
 
