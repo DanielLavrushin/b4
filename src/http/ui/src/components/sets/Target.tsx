@@ -3,6 +3,13 @@ import { useEffect, useState } from "react";
 
 import { ComboboxMultiple } from "@composed/combobox-multiple";
 import { TagsInput } from "@composed/tags-input";
+import {
+  Field,
+  FieldContent,
+  FieldLabel,
+  FieldSet,
+} from "@design/primitives/field";
+import { Separator } from "@design/primitives/separator";
 import { B4SetConfig, GeoConfig } from "@models/config";
 import {
   Card,
@@ -14,16 +21,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@primitives/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
 import { SetStats } from "./Manager";
-import {
-  Field,
-  FieldContent,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-  FieldSet,
-  FieldTitle,
-} from "@design/primitives/field";
-import { Separator } from "@design/primitives/separator";
+import { Badge } from "@design/primitives/badge";
 
 interface TargetSettingsProps {
   config: B4SetConfig;
@@ -110,17 +108,7 @@ export const TargetSettings = ({
             <FieldSet>
               <Field>
                 <FieldContent>
-                  <FieldLabel>
-                    Manual Bypass Domains
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <InfoIcon className="text-muted-foreground size-4" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Add specific domains to bypass DPI.</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </FieldLabel>
+                  <FieldLabel>Manual Bypass Domains</FieldLabel>
                 </FieldContent>
                 <TagsInput
                   value={config.targets.sni_domains}
@@ -135,20 +123,7 @@ export const TargetSettings = ({
               {geo.sitedat_path && (
                 <Field>
                   <FieldContent>
-                    <FieldLabel>
-                      Bypass GeoSite Categories
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <InfoIcon className="text-muted-foreground size-4" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>
-                            Load predefined domain lists from GeoSite database
-                            for DPI bypass
-                          </p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </FieldLabel>
+                    <FieldLabel>Bypass GeoSite Categories</FieldLabel>
                   </FieldContent>
                   <ComboboxMultiple
                     items={availableCategories}
@@ -173,17 +148,7 @@ export const TargetSettings = ({
             <FieldSet>
               <Field>
                 <FieldContent>
-                  <FieldLabel>
-                    Manual Bypass IPs
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <InfoIcon className="text-muted-foreground size-4" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Add specific ip/cidr to bypass DPI.</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </FieldLabel>
+                  <FieldLabel>Manual Bypass IPs</FieldLabel>
                 </FieldContent>
                 <TagsInput
                   value={config.targets.ip}
@@ -196,20 +161,7 @@ export const TargetSettings = ({
               {geo.ipdat_path && (
                 <Field>
                   <FieldContent>
-                    <FieldLabel>
-                      Bypass GeoIP Categories
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <InfoIcon className="text-muted-foreground size-4" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>
-                            Load predefined IP lists from GeoIP database for DPI
-                            bypass
-                          </p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </FieldLabel>
+                    <FieldLabel>Bypass GeoIP Categories</FieldLabel>
                   </FieldContent>
                   <ComboboxMultiple
                     items={availableGeoIPCategories}
