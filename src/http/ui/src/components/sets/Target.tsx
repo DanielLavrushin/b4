@@ -1,4 +1,4 @@
-import { DomainIcon, InfoIcon, IpIcon } from "@b4.icons";
+import { DomainIcon, IpIcon } from "@b4.icons";
 import { useEffect, useState } from "react";
 
 import { ComboboxMultiple } from "@composed/combobox-multiple";
@@ -19,9 +19,7 @@ import {
   CardTitle,
 } from "@primitives/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@primitives/tabs";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
 import { SetStats } from "./Manager";
-import { Badge } from "@design/primitives/badge";
 
 interface TargetSettingsProps {
   config: B4SetConfig;

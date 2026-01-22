@@ -1,8 +1,7 @@
 "use client";
 
+import { useVirtualizer } from "@tanstack/react-virtual";
 import * as React from "react";
-import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
-import { Combobox as ComboboxPrimitive } from "@base-ui/react";
 
 import {
   Combobox,
@@ -16,7 +15,6 @@ import {
   ComboboxValue,
   useComboboxAnchor,
 } from "@primitives/combobox";
-import { cn } from "@design/lib/utils";
 
 export interface ComboboxMultipleProps {
   items: string[];
@@ -27,11 +25,6 @@ export interface ComboboxMultipleProps {
   disabled?: boolean;
   loading?: boolean;
   breakdown?: Record<string, number>;
-  /**
-   * Включить виртуализацию для больших списков (рекомендуется для 200+ элементов).
-   * По умолчанию: определяется автоматически на основе количества элементов (>150).
-   */
-  virtualized?: boolean;
 }
 
 export function ComboboxMultiple({
@@ -43,44 +36,60 @@ export function ComboboxMultiple({
   disabled = false,
   loading = false,
   breakdown,
-  virtualized: virtualizedProp,
 }: ComboboxMultipleProps) {
   const anchor = useComboboxAnchor();
   const itemsLoaded = items.length > 0;
   const [open, setOpen] = React.useState(false);
   const [searchValue, setSearchValue] = React.useState("");
-  const virtualizerRef = React.useRef<Virtualizer<
-    HTMLDivElement,
-    HTMLDivElement
-  > | null>(null);
-
-  // Автоматически определяем, нужна ли виртуализация (для списков >150 элементов)
-  // Если проп явно передан, используем его значение, иначе определяем автоматически
-  const shouldVirtualize =
-    virtualizedProp !== undefined ? virtualizedProp : items.length > 150;
-
-  const deferredSearchValue = React.useDeferredValue(searchValue);
-
-  const resolvedSearchValue =
-    searchValue === "" || deferredSearchValue === ""
-      ? searchValue
-      : deferredSearchValue;
+  const scrollElementRef = React.useRef<HTMLDivElement | null>(null);
+  const [shouldRenderList, setShouldRenderList] = React.useState(false);
 
   const filteredItems = React.useMemo(() => {
     if (!itemsLoaded) return [];
-    if (!resolvedSearchValue) return items;
-    const searchLower = resolvedSearchValue.toLowerCase();
+    if (!searchValue) return items;
+    const searchLower = searchValue.toLowerCase();
     return items.filter((item: string) =>
       item.toLowerCase().includes(searchLower),
     );
-  }, [resolvedSearchValue, items, itemsLoaded]);
+  }, [searchValue, items, itemsLoaded]);
+
+  React.useEffect(() => {
+    if (open) {
+      const timeoutId = requestAnimationFrame(() => {
+        setShouldRenderList(true);
+      });
+      return () => {
+        cancelAnimationFrame(timeoutId);
+      };
+    } else {
+      setShouldRenderList(false);
+    }
+  }, [open]);
+
+  const virtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+    enabled: shouldRenderList,
+    count: filteredItems.length,
+    getScrollElement: () => scrollElementRef.current,
+    estimateSize: () => 32,
+    overscan: 20,
+  });
+
+  const handleScrollElementRef = React.useCallback(
+    (element: HTMLDivElement | null) => {
+      scrollElementRef.current = element;
+      if (element && open) {
+        virtualizer.measure();
+      }
+    },
+    [virtualizer, open],
+  );
 
   const handleItemHighlighted = React.useCallback(
     (
       highlightedValue: string | undefined,
       eventDetails: { reason: string; index: number },
     ) => {
-      if (!shouldVirtualize || !highlightedValue || !virtualizerRef.current) {
+      if (!highlightedValue) {
         return;
       }
 
@@ -92,19 +101,19 @@ export function ComboboxMultiple({
 
       if (shouldScroll) {
         queueMicrotask(() => {
-          virtualizerRef.current?.scrollToIndex(index, {
+          virtualizer.scrollToIndex(index, {
             align: isEnd ? "start" : "end",
           });
         });
       }
     },
-    [filteredItems.length, shouldVirtualize],
+    [filteredItems.length, virtualizer],
   );
 
   return (
     <Combobox
       multiple
-      virtualized={shouldVirtualize}
+      virtualized
       autoHighlight
       items={items}
       filteredItems={filteredItems}
@@ -115,7 +124,7 @@ export function ComboboxMultiple({
       onOpenChange={setOpen}
       inputValue={searchValue}
       onInputValueChange={setSearchValue}
-      onItemHighlighted={shouldVirtualize ? handleItemHighlighted : undefined}
+      onItemHighlighted={handleItemHighlighted}
     >
       <ComboboxChips ref={anchor}>
         <ComboboxValue>
@@ -138,139 +147,60 @@ export function ComboboxMultiple({
       </ComboboxChips>
       <ComboboxContent anchor={anchor}>
         <ComboboxEmpty>{emptyMessage}</ComboboxEmpty>
-        {shouldVirtualize ? (
-          <VirtualizedList
-            items={filteredItems}
-            renderItem={(item) => {
-              return (
-                <>
-                  {item}
-                  {breakdown?.[item] != null && (
-                    <span className="text-muted-foreground ml-1">
-                      ({breakdown[item]})
-                    </span>
-                  )}
-                </>
-              );
-            }}
-            itemKey={(item) => item}
-            enabled={open}
-            virtualizerRef={virtualizerRef}
-          />
-        ) : (
+        {shouldRenderList ? (
           <ComboboxList>
-            {filteredItems.map((item) => (
-              <ComboboxItem key={item} value={item}>
-                {item}
-                {breakdown?.[item] != null && (
-                  <span className="text-muted-foreground ml-1">
-                    ({breakdown[item]})
-                  </span>
-                )}
-              </ComboboxItem>
-            ))}
+            {filteredItems.length > 0 && (
+              <div
+                role="presentation"
+                ref={handleScrollElementRef}
+                className="overflow-y-auto overscroll-contain"
+                style={{
+                  maxHeight: "inherit",
+                }}
+              >
+                <div
+                  role="presentation"
+                  className="relative w-full"
+                  style={{ height: virtualizer.getTotalSize() }}
+                >
+                  {virtualizer.getVirtualItems().map((virtualItem) => {
+                    const item = filteredItems[virtualItem.index];
+                    if (!item) {
+                      return null;
+                    }
+                    return (
+                      <ComboboxItem
+                        key={item}
+                        index={virtualItem.index}
+                        data-index={virtualItem.index}
+                        ref={virtualizer.measureElement}
+                        value={item}
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: "100%",
+                          height: virtualItem.size,
+                          transform: `translateY(${virtualItem.start}px)`,
+                        }}
+                      >
+                        {item}
+                        {breakdown?.[item] != null && (
+                          <span className="text-muted-foreground ml-1">
+                            ({breakdown[item]})
+                          </span>
+                        )}
+                      </ComboboxItem>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </ComboboxList>
+        ) : (
+          <ComboboxList />
         )}
       </ComboboxContent>
     </Combobox>
-  );
-}
-
-// Внутренний компонент виртуализированного списка
-interface VirtualizedListProps<T> {
-  items: T[];
-  renderItem: (item: T) => React.ReactNode;
-  itemKey: (item: T) => string | number;
-  enabled?: boolean;
-  virtualizerRef?: React.MutableRefObject<Virtualizer<
-    HTMLDivElement,
-    HTMLDivElement
-  > | null>;
-}
-
-function VirtualizedList<T>({
-  items,
-  renderItem,
-  itemKey,
-  enabled = true,
-  virtualizerRef,
-}: VirtualizedListProps<T>) {
-  const scrollElementRef = React.useRef<HTMLDivElement>(null);
-
-  const virtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
-    count: items.length,
-    getScrollElement: () => scrollElementRef.current,
-    estimateSize: () => 32,
-    enabled,
-    overscan: 20,
-  });
-
-  React.useEffect(() => {
-    if (virtualizerRef) {
-      virtualizerRef.current = virtualizer as Virtualizer<
-        HTMLDivElement,
-        HTMLDivElement
-      >;
-    }
-  }, [virtualizer, virtualizerRef]);
-
-  React.useEffect(() => {
-    if (scrollElementRef.current) {
-      virtualizer.measure();
-    }
-  }, [virtualizer]);
-
-  const totalSize = virtualizer.getTotalSize();
-
-  return (
-    <ComboboxPrimitive.List
-      data-slot="combobox-list"
-      className={cn(
-        "no-scrollbar max-h-[min(calc(--spacing(72)---spacing(9)),calc(var(--available-height)---spacing(9)))] scroll-py-1 p-1 data-empty:p-0",
-      )}
-    >
-      {items.length > 0 && (
-        <div
-          role="presentation"
-          ref={scrollElementRef}
-          className="overflow-y-auto overscroll-contain"
-          style={{
-            maxHeight: "inherit",
-          }}
-        >
-          <div
-            role="presentation"
-            className="relative w-full"
-            style={{ height: totalSize }}
-          >
-            {virtualizer.getVirtualItems().map((virtualItem) => {
-              const item = items[virtualItem.index];
-              if (!item) {
-                return null;
-              }
-              return (
-                <ComboboxItem
-                  key={itemKey(item)}
-                  index={virtualItem.index}
-                  data-index={virtualItem.index}
-                  ref={virtualizer.measureElement}
-                  value={String(itemKey(item))}
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    height: virtualItem.size,
-                    transform: `translateY(${virtualItem.start}px)`,
-                  }}
-                >
-                  {renderItem(item)}
-                </ComboboxItem>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </ComboboxPrimitive.List>
   );
 }
