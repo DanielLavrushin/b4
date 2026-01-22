@@ -46,6 +46,30 @@ interface DomainsTableProps {
 const ROW_HEIGHT = 41;
 const OVERSCAN = 5;
 
+const SortableHeader = ({
+  label,
+  column,
+  onSort,
+}: {
+  label: string;
+  column: { getIsSorted: () => false | "asc" | "desc" };
+  onSort: () => void;
+}) => {
+  const sortState = column.getIsSorted();
+  return (
+    <Button variant="ghost" onClick={onSort}>
+      {label}
+      {sortState === "asc" ? (
+        <ArrowUp />
+      ) : sortState === "desc" ? (
+        <ArrowDown />
+      ) : (
+        <ArrowUpDown />
+      )}
+    </Button>
+  );
+};
+
 export const DomainsTable = ({
   data,
   sortColumn,
@@ -69,56 +93,35 @@ export const DomainsTable = ({
     () => [
       {
         accessorKey: "timestamp",
-        header: ({ column }) => {
-          return (
-            <Button variant="ghost" onClick={() => onSort("timestamp")}>
-              Time
-              {column.getIsSorted() === "asc" ? (
-                <ArrowUp className="ml-2 h-4 w-4" />
-              ) : column.getIsSorted() === "desc" ? (
-                <ArrowDown className="ml-2 h-4 w-4" />
-              ) : (
-                <ArrowUpDown className="ml-2 h-4 w-4" />
-              )}
-            </Button>
-          );
-        },
+        header: ({ column }) => (
+          <SortableHeader
+            label="Time"
+            column={column}
+            onSort={() => onSort("timestamp")}
+          />
+        ),
         cell: ({ row }) => row.original.timestamp.split(" ")[1],
       },
       {
         accessorKey: "protocol",
-        header: ({ column }) => {
-          return (
-            <Button variant="ghost" onClick={() => onSort("protocol")}>
-              Protocol
-              {column.getIsSorted() === "asc" ? (
-                <ArrowUp className="ml-2 h-4 w-4" />
-              ) : column.getIsSorted() === "desc" ? (
-                <ArrowDown className="ml-2 h-4 w-4" />
-              ) : (
-                <ArrowUpDown className="ml-2 h-4 w-4" />
-              )}
-            </Button>
-          );
-        },
+        header: ({ column }) => (
+          <SortableHeader
+            label="Protocol"
+            column={column}
+            onSort={() => onSort("protocol")}
+          />
+        ),
         cell: ({ row }) => <ProtocolChip protocol={row.original.protocol} />,
       },
       {
         accessorKey: "set",
-        header: ({ column }) => {
-          return (
-            <Button variant="ghost" onClick={() => onSort("set")}>
-              Set
-              {column.getIsSorted() === "asc" ? (
-                <ArrowUp className="ml-2 h-4 w-4" />
-              ) : column.getIsSorted() === "desc" ? (
-                <ArrowDown className="ml-2 h-4 w-4" />
-              ) : (
-                <ArrowUpDown className="ml-2 h-4 w-4" />
-              )}
-            </Button>
-          );
-        },
+        header: ({ column }) => (
+          <SortableHeader
+            label="Set"
+            column={column}
+            onSort={() => onSort("set")}
+          />
+        ),
         cell: ({ row }) => {
           const log = row.original;
           return log.ipSet || log.hostSet ? (
@@ -128,20 +131,13 @@ export const DomainsTable = ({
       },
       {
         accessorKey: "domain",
-        header: ({ column }) => {
-          return (
-            <Button variant="ghost" onClick={() => onSort("domain")}>
-              Domain
-              {column.getIsSorted() === "asc" ? (
-                <ArrowUp className="ml-2 h-4 w-4" />
-              ) : column.getIsSorted() === "desc" ? (
-                <ArrowDown className="ml-2 h-4 w-4" />
-              ) : (
-                <ArrowUpDown className="ml-2 h-4 w-4" />
-              )}
-            </Button>
-          );
-        },
+        header: ({ column }) => (
+          <SortableHeader
+            label="Domain"
+            column={column}
+            onSort={() => onSort("domain")}
+          />
+        ),
         cell: ({ row }) => {
           const log = row.original;
           return (
@@ -171,20 +167,13 @@ export const DomainsTable = ({
       },
       {
         accessorKey: "source",
-        header: ({ column }) => {
-          return (
-            <Button variant="ghost" onClick={() => onSort("source")}>
-              Source
-              {column.getIsSorted() === "asc" ? (
-                <ArrowUp className="ml-2 h-4 w-4" />
-              ) : column.getIsSorted() === "desc" ? (
-                <ArrowDown className="ml-2 h-4 w-4" />
-              ) : (
-                <ArrowUpDown className="ml-2 h-4 w-4" />
-              )}
-            </Button>
-          );
-        },
+        header: ({ column }) => (
+          <SortableHeader
+            label="Source"
+            column={column}
+            onSort={() => onSort("source")}
+          />
+        ),
         cell: ({ row }) => {
           const log = row.original;
           return (
@@ -209,20 +198,13 @@ export const DomainsTable = ({
       },
       {
         accessorKey: "destination",
-        header: ({ column }) => {
-          return (
-            <Button variant="ghost" onClick={() => onSort("destination")}>
-              Destination
-              {column.getIsSorted() === "asc" ? (
-                <ArrowUp className="ml-2 h-4 w-4" />
-              ) : column.getIsSorted() === "desc" ? (
-                <ArrowDown className="ml-2 h-4 w-4" />
-              ) : (
-                <ArrowUpDown className="ml-2 h-4 w-4" />
-              )}
-            </Button>
-          );
-        },
+        header: ({ column }) => (
+          <SortableHeader
+            label="Destination"
+            column={column}
+            onSort={() => onSort("destination")}
+          />
+        ),
         cell: ({ row }) => {
           const log = row.original;
           const asnName = log.destination
