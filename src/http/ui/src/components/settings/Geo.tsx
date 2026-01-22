@@ -10,11 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@primitives/card";
-import {
-  Field,
-  FieldDescription,
-  FieldLabel,
-} from "@primitives/field";
+import { Field, FieldDescription, FieldLabel } from "@primitives/field";
 import { Input } from "@primitives/input";
 import { Label } from "@primitives/label";
 import {

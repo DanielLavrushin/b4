@@ -49,14 +49,12 @@ export const B4InlineEdit = ({
         autoFocus
         disabled={saving || disabled}
         className="h-5"
-
       />
       <Button
         size="icon-sm"
         onClick={() => void handleSave()}
         disabled={saving || !value.trim()}
         variant="ghost"
-
       >
         <CheckIcon />
       </Button>

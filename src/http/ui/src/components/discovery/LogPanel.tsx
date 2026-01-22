@@ -7,11 +7,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@primitives/collapsible";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@primitives/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
 import { cn } from "@design/lib/utils";
 import { useEffect, useRef, useState } from "react";
 

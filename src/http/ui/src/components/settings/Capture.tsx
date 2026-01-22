@@ -27,19 +27,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@primitives/dialog";
-import {
-  Field,
-  FieldDescription,
-  FieldLabel,
-} from "@primitives/field";
+import { Field, FieldDescription, FieldLabel } from "@primitives/field";
 import { Input } from "@primitives/input";
 import { Separator } from "@primitives/separator";
 import { Spinner } from "@primitives/spinner";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@primitives/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
 import { cn } from "@design/lib/utils";
 import { useEffect, useState } from "react";
 

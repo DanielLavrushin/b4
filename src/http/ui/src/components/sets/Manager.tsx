@@ -122,12 +122,7 @@ const SortableCardWrapper = ({ id, children }: SortableCardWrapperProps) => {
 export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
   const { showSuccess, showError } = useSnackbar();
   const navigate = useNavigate();
-  const {
-    deleteSet,
-    duplicateSet,
-    reorderSets,
-    updateSet,
-  } = useSets();
+  const { deleteSet, duplicateSet, reorderSets, updateSet } = useSets();
 
   const [filterText, setFilterText] = useState("");
   const [deleteDialog, setDeleteDialog] = useState<{

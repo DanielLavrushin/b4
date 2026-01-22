@@ -2,11 +2,7 @@ import { NewReleaseIcon } from "@b4.icons";
 import { Badge } from "@primitives/badge";
 import { Button } from "@primitives/button";
 import { Spinner } from "@primitives/spinner";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@primitives/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
 
 interface VersionBadgeProps {
   version: string;

@@ -234,19 +234,19 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
               ) : (
                 <div className="bg-card border-border max-h-75 overflow-auto border">
                   <Table>
-                     <TableHeader>
-                       <TableRow>
-                         <TableHead>
-                           <Checkbox
-                             checked={allSelected}
-                             onCheckedChange={(checked) =>
-                               onChange(
-                                 "queue.devices.mac",
-                                 checked ? devices.map((d) => d.mac) : [],
-                               )
-                             }
-                           />
-                         </TableHead>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>
+                          <Checkbox
+                            checked={allSelected}
+                            onCheckedChange={(checked) =>
+                              onChange(
+                                "queue.devices.mac",
+                                checked ? devices.map((d) => d.mac) : [],
+                              )
+                            }
+                          />
+                        </TableHead>
                         {["MAC Address", "IP", "Name"].map((label) => (
                           <TableHead key={label}>{label}</TableHead>
                         ))}

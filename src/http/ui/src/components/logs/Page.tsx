@@ -6,11 +6,7 @@ import { Button } from "@primitives/button";
 import { Input } from "@primitives/input";
 import { Label } from "@primitives/label";
 import { Switch } from "@primitives/switch";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@primitives/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
 import { cn } from "@design/lib/utils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 

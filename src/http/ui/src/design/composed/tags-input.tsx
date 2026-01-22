@@ -3,11 +3,7 @@
 import * as React from "react";
 import { useCallback, useRef, useState } from "react";
 
-import {
-  Combobox,
-  ComboboxChip,
-  ComboboxChips,
-} from "@primitives/combobox";
+import { Combobox, ComboboxChip, ComboboxChips } from "@primitives/combobox";
 
 export interface TagsInputProps {
   value: string[];

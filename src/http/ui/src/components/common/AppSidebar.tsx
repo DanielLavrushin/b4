@@ -6,7 +6,7 @@ import {
   DiscoveryIcon,
   GitHubIcon,
   LogsIcon,
-  SetsIcon
+  SetsIcon,
 } from "@b4.icons";
 import {
   Sidebar,

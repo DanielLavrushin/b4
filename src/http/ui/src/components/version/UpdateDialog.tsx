@@ -11,12 +11,7 @@ import {
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Badge } from "@primitives/badge";
 import { Button } from "@primitives/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@primitives/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@primitives/card";
 import {
   Dialog,
   DialogContent,
@@ -25,11 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@primitives/dialog";
-import {
-  ItemActions,
-  ItemContent,
-  ItemGroup,
-} from "@primitives/item";
+import { ItemActions, ItemContent, ItemGroup } from "@primitives/item";
 import { Label } from "@primitives/label";
 import { Progress } from "@primitives/progress";
 import {

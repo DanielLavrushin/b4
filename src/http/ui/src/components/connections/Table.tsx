@@ -10,11 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@primitives/table";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@primitives/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
 import { asnStorage } from "@utils";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
