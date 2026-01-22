@@ -35,7 +35,6 @@ interface FeatureSettingsProps {
 }
 
 export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
-
   return (
     <Card>
       <CardHeader>
@@ -52,7 +51,7 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
             <FieldContent>
               <FieldTitle>Enable IPv4 Support</FieldTitle>
               <FieldDescription>
-                Whether to procces IPv4 traffic
+                Whether to proccess IPv4 traffic
               </FieldDescription>
             </FieldContent>
             <Switch
@@ -68,7 +67,7 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
             <FieldContent>
               <FieldTitle>Enable IPv6 Support</FieldTitle>
               <FieldDescription>
-                Whether to procces IPv6 traffic
+                Whether to proccess IPv6 traffic
               </FieldDescription>
             </FieldContent>
             <Switch
@@ -106,7 +105,10 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
             <Slider
               value={[config.system.tables.monitor_interval]}
               onValueChange={(values) =>
-                onChange("system.tables.monitor_interval", values[0])
+                onChange(
+                  "system.tables.monitor_interval",
+                  Array.isArray(values) ? values[0] : values,
+                )
               }
               min={0}
               max={120}
@@ -143,7 +145,10 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
                       onChange("queue.interfaces", updated);
                     }}
                   />
-                  <FieldLabel htmlFor={`interface-${iface}`} className="font-normal">
+                  <FieldLabel
+                    htmlFor={`interface-${iface}`}
+                    className="font-normal"
+                  >
                     {iface}
                   </FieldLabel>
                 </Field>
