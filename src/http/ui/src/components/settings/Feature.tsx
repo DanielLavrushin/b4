@@ -35,7 +35,6 @@ interface FeatureSettingsProps {
 }
 
 export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
-
   return (
     <Card>
       <CardHeader>
@@ -143,7 +142,10 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
                       onChange("queue.interfaces", updated);
                     }}
                   />
-                  <FieldLabel htmlFor={`interface-${iface}`} className="font-normal">
+                  <FieldLabel
+                    htmlFor={`interface-${iface}`}
+                    className="font-normal"
+                  >
                     {iface}
                   </FieldLabel>
                 </Field>

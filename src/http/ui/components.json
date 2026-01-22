@@ -1,6 +1,6 @@
 {
   "$schema": "https://ui.shadcn.com/schema.json",
-  "style": "radix-mira",
+  "style": "base-nova",
   "rsc": false,
   "tsx": true,
   "tailwind": {
@@ -12,11 +12,11 @@
   },
   "iconLibrary": "tabler",
   "aliases": {
-    "components": "src/design",
-    "utils": "src/design/lib/utils",
-    "ui": "src/design/primitives",
-    "lib": "src/design/lib",
-    "hooks": "src/design/hooks"
+    "components": "@design",
+    "utils": "@design/lib/utils",
+    "ui": "@design/primitives",
+    "lib": "@design/lib",
+    "hooks": "@design/hooks"
   },
   "menuColor": "default",
   "menuAccent": "bold",

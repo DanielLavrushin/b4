@@ -6,7 +6,7 @@ import {
   DiscoveryIcon,
   GitHubIcon,
   LogsIcon,
-  SetsIcon
+  SetsIcon,
 } from "@b4.icons";
 import {
   Sidebar,
@@ -98,23 +98,23 @@ export function AppSidebar() {
       </SidebarContent>
       <Separator />
       <SidebarFooter>
-        <Button variant="link" asChild>
+        <Button variant="link">
+          <GitHubIcon />
           <a
             href="https://github.com/daniellavrushin/b4"
             target="_blank"
             rel="noopener noreferrer"
           >
-            <GitHubIcon />
             DanielLavrushin/b4
           </a>
         </Button>
-        <Button variant="link" asChild>
+        <Button variant="link">
+          <DescriptionIcon />
           <a
             href="https://daniellavrushin.github.io/b4/"
             target="_blank"
             rel="noopener noreferrer"
           >
-            <DescriptionIcon />
             Documentation
           </a>
         </Button>

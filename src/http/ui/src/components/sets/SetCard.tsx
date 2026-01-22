@@ -58,7 +58,7 @@ const TargetBadge = ({ label, type }: TargetBadgeProps) => {
 
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
+      <TooltipTrigger>
         <Badge
           variant={isGeo ? "secondary" : "outline"}
           className="inline-flex items-center gap-1"
@@ -200,7 +200,7 @@ export const SetCard = ({
           <div className="flex items-center justify-between">
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <Tooltip>
-                <TooltipTrigger asChild>
+                <TooltipTrigger>
                   <div
                     onClick={(e) => e.stopPropagation()}
                     className="shrink-0"
@@ -249,7 +249,7 @@ export const SetCard = ({
                 onOpenChange={setMenuOpen}
                 modal={false}
               >
-                <DropdownMenuTrigger asChild>
+                <DropdownMenuTrigger>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -316,7 +316,7 @@ export const SetCard = ({
             style={{ flex: "0 0 20%" }}
           >
             <Tooltip>
-              <TooltipTrigger asChild>
+              <TooltipTrigger>
                 <div className="flex w-fit items-center gap-1.5">
                   <DomainIcon className="text-muted-foreground size-4 shrink-0" />
                   <span className="text-foreground text-sm font-semibold">
@@ -333,7 +333,7 @@ export const SetCard = ({
               </TooltipContent>
             </Tooltip>
             <Tooltip>
-              <TooltipTrigger asChild>
+              <TooltipTrigger>
                 <div className="flex w-fit items-center gap-1.5">
                   <IpIcon className="text-muted-foreground size-4 shrink-0" />
                   <span className="text-foreground text-sm font-semibold">
@@ -409,7 +409,7 @@ const QuickFlag = ({ icon, label, enabled, tooltip }: QuickFlagProps) => {
 
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
+      <TooltipTrigger>
         <div
           className={cn(
             "flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 transition-colors",

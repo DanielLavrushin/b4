@@ -370,7 +370,7 @@ export const DiscoveryRunner = () => {
               </div>
               <Progress
                 value={
-                  suite.current_phase === "dns_detection" ? undefined : progress
+                  suite.current_phase === "dns_detection" ? null : progress
                 }
                 className="h-2"
               />
@@ -409,7 +409,7 @@ export const DiscoveryRunner = () => {
                         toggleDomainExpand(domainResult.domain)
                       }
                     >
-                      <CollapsibleTrigger asChild>
+                      <CollapsibleTrigger>
                         <div className="bg-accent flex cursor-pointer items-center justify-between p-4">
                           <div className="flex items-center gap-4">
                             <Button
@@ -597,7 +597,7 @@ export const DiscoveryRunner = () => {
                                           result.preset_name !==
                                             domainResult.best_preset && (
                                             <Tooltip>
-                                              <TooltipTrigger asChild>
+                                              <TooltipTrigger>
                                                 <Button
                                                   size="sm"
                                                   variant="ghost"

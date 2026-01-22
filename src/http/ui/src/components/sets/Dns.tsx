@@ -200,7 +200,7 @@ export function DnsSettings({ config, onChange, ipv6 }: DnsSettingsProps) {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell variant="mono">{server.ip}</TableCell>
+                      <TableCell>{server.ip}</TableCell>
                       <TableCell
                         className={cn(server.warn && "text-destructive")}
                       >

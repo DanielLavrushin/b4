@@ -37,12 +37,7 @@ import {
   DialogTitle,
 } from "@primitives/dialog";
 import { Separator } from "@primitives/separator";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@primitives/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@primitives/tabs";
 import { B4Config, B4SetConfig } from "@models/config";
 
 enum TABS {

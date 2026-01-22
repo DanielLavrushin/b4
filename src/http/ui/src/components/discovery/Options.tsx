@@ -63,14 +63,14 @@ export const DiscoveryOptionsPanel = ({
   return (
     <Collapsible open={expanded} onOpenChange={setExpanded}>
       <Card>
-        <CollapsibleTrigger asChild className="cursor-pointer">
+        <CollapsibleTrigger className="cursor-pointer">
           <CardHeader>
             <CardTitle>Discovery Options</CardTitle>
             <CardDescription>{getOptionsSummary(options)}</CardDescription>
           </CardHeader>
         </CollapsibleTrigger>
 
-        <CollapsibleContent asChild>
+        <CollapsibleContent>
           <>
             <Separator />
             <CardContent>
@@ -100,9 +100,10 @@ export const DiscoveryOptionsPanel = ({
                   </FieldLabel>
                   <Slider
                     value={[options.validationTries]}
-                    onValueChange={(values: number[]) =>
-                      onChange({ ...options, validationTries: values[0] })
-                    }
+                    onValueChange={(value) => {
+                      const values = Array.isArray(value) ? value : [value];
+                      onChange({ ...options, validationTries: values[0] });
+                    }}
                     min={1}
                     max={5}
                     step={1}
