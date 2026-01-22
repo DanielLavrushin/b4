@@ -1,6 +1,10 @@
-import { InfoIcon } from "@b4.icons";
 import { TagsInput } from "@composed/tags-input";
-import { Alert, AlertDescription } from "@primitives/alert";
+import {
+  B4SetConfig,
+  DesyncMode,
+  IncomingMode,
+  WindowMode,
+} from "@models/config";
 import { Badge } from "@primitives/badge";
 import {
   Card,
@@ -29,18 +33,6 @@ import {
 import { Separator } from "@primitives/separator";
 import { Slider } from "@primitives/slider";
 import { Switch } from "@primitives/switch";
-import {
-  B4SetConfig,
-  DesyncMode,
-  WindowMode,
-  IncomingMode,
-  IncomingStrategy,
-} from "@models/config";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@design/primitives/tooltip";
 
 interface TcpSettingsProps {
   config: B4SetConfig;
@@ -162,7 +154,10 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
               <Slider
                 value={[config.tcp.conn_bytes_limit]}
                 onValueChange={(values) =>
-                  onChange("tcp.conn_bytes_limit", values[0])
+                  onChange(
+                    "tcp.conn_bytes_limit",
+                    Array.isArray(values) ? values[0] : values,
+                  )
                 }
                 min={1}
                 max={main.id === config.id ? 100 : main.tcp.conn_bytes_limit}
@@ -183,7 +178,12 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
               </FieldContent>
               <Slider
                 value={[config.tcp.seg2delay]}
-                onValueChange={(values) => onChange("tcp.seg2delay", values[0])}
+                onValueChange={(values) =>
+                  onChange(
+                    "tcp.seg2delay",
+                    Array.isArray(values) ? values[0] : values,
+                  )
+                }
                 min={0}
                 max={1000}
                 step={10}
@@ -256,7 +256,10 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                   <Slider
                     value={[config.tcp.syn_fake_len || 0]}
                     onValueChange={(values) =>
-                      onChange("tcp.syn_fake_len", values[0])
+                      onChange(
+                        "tcp.syn_fake_len",
+                        Array.isArray(values) ? values[0] : values,
+                      )
                     }
                     min={0}
                     max={1200}
@@ -278,7 +281,10 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                   <Slider
                     value={[config.tcp.syn_ttl || 0]}
                     onValueChange={(values) =>
-                      onChange("tcp.syn_ttl", values[0])
+                      onChange(
+                        "tcp.syn_ttl",
+                        Array.isArray(values) ? values[0] : values,
+                      )
                     }
                     min={1}
                     max={100}
@@ -399,7 +405,10 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
               <Slider
                 value={[config.tcp.desync.count]}
                 onValueChange={(values) =>
-                  onChange("tcp.desync.count", values[0])
+                  onChange(
+                    "tcp.desync.count",
+                    Array.isArray(values) ? values[0] : values,
+                  )
                 }
                 min={1}
                 max={20}
@@ -438,7 +447,10 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
               <Slider
                 value={[config.tcp.desync.ttl]}
                 onValueChange={(values) =>
-                  onChange("tcp.desync.ttl", values[0])
+                  onChange(
+                    "tcp.desync.ttl",
+                    Array.isArray(values) ? values[0] : values,
+                  )
                 }
                 min={1}
                 max={50}
@@ -536,7 +548,10 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                       <Slider
                         value={[config.tcp.incoming?.min || 14]}
                         onValueChange={(values) =>
-                          onChange("tcp.incoming.min", values[0])
+                          onChange(
+                            "tcp.incoming.min",
+                            Array.isArray(values) ? values[0] : values,
+                          )
                         }
                         min={5}
                         max={config.tcp.incoming?.max || 50}
@@ -557,7 +572,10 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                       <Slider
                         value={[config.tcp.incoming?.max || 14]}
                         onValueChange={(values) =>
-                          onChange("tcp.incoming.max", values[0])
+                          onChange(
+                            "tcp.incoming.max",
+                            Array.isArray(values) ? values[0] : values,
+                          )
                         }
                         min={config.tcp.incoming?.min || 5}
                         max={50}
@@ -582,7 +600,10 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                   <Slider
                     value={[config.tcp.incoming?.fake_ttl || 3]}
                     onValueChange={(values) =>
-                      onChange("tcp.incoming.fake_ttl", values[0])
+                      onChange(
+                        "tcp.incoming.fake_ttl",
+                        Array.isArray(values) ? values[0] : values,
+                      )
                     }
                     min={1}
                     max={20}
@@ -603,7 +624,10 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                   <Slider
                     value={[config.tcp.incoming?.fake_count || 3]}
                     onValueChange={(values) =>
-                      onChange("tcp.incoming.fake_count", values[0])
+                      onChange(
+                        "tcp.incoming.fake_count",
+                        Array.isArray(values) ? values[0] : values,
+                      )
                     }
                     min={1}
                     max={10}
