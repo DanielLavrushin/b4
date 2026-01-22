@@ -37,6 +37,7 @@ import { GitHubRelease, compareVersions } from "@hooks/useGitHubRelease";
 import { useSystemUpdate } from "@hooks/useSystemUpdate";
 import React from "react";
 import ReactMarkdown from "react-markdown";
+import { Spinner } from "@design/primitives/spinner";
 
 interface UpdateModalProps {
   open: boolean;
@@ -163,7 +164,7 @@ export const UpdateModal = ({
           <ItemGroup>
             <ItemContent>
               <p className="text-muted-foreground">{updateMessage}</p>
-              <Progress />
+              <Spinner />
             </ItemContent>
           </ItemGroup>
         );
@@ -196,7 +197,7 @@ export const UpdateModal = ({
               <Label htmlFor="select-version">Select Version</Label>
               <Select
                 value={selectedVersion}
-                onValueChange={(value) => setSelectedVersion(value)}
+                onValueChange={(value) => setSelectedVersion(value as string)}
               >
                 <SelectTrigger id="select-version">
                   <SelectValue placeholder="Select Version" />
@@ -241,7 +242,7 @@ export const UpdateModal = ({
       )}
       <Separator />
       <ItemGroup>
-        <Button variant="outline" asChild>
+        <Button variant="link">
           <a
             href="https://github.com/DanielLavrushin/b4/blob/main/changelog.md"
             target="_blank"
@@ -252,7 +253,7 @@ export const UpdateModal = ({
           </a>
         </Button>
         {selectedRelease && (
-          <Button variant="outline" asChild>
+          <Button variant="link">
             <a
               href={selectedRelease.html_url}
               target="_blank"
@@ -307,7 +308,7 @@ export const UpdateModal = ({
       onOpenChange={(open) => !open && (isUpdating ? () => {} : onClose())}
     >
       <DialogContent className="sm:max-w-2xl">
-        <DialogHeader icon={dialogProps.icon}>
+        <DialogHeader>
           <DialogTitle>{dialogProps.title}</DialogTitle>
           {dialogProps.subtitle && (
             <DialogDescription className="mt-1">

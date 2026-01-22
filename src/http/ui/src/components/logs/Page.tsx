@@ -110,7 +110,7 @@ export function LogsPage() {
               </Label>
             </div>
             <Tooltip>
-              <TooltipTrigger asChild>
+              <TooltipTrigger>
                 <Button variant="ghost" size="icon-sm" onClick={clearLogs}>
                   <ClearIcon />
                 </Button>

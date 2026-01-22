@@ -67,7 +67,7 @@ export const DomainsControlBar = ({
           </Label>
         </div>
         <Tooltip>
-          <TooltipTrigger asChild>
+          <TooltipTrigger>
             <Button variant="ghost" size="icon-sm" onClick={onReset}>
               <ClearIcon />
             </Button>
