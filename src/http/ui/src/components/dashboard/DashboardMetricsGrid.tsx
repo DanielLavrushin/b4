@@ -1,11 +1,5 @@
-import { StatCard } from "./StatCard";
 import { formatBytes, formatNumber } from "@utils";
-import {
-  DashboardIcon,
-  IconDatabase,
-  IconArrowsExchange,
-  IconCpu,
-} from "@b4.icons";
+import { MetricCard } from "./MetricCard";
 
 interface DashboardMetricsGridProps {
   metrics: {
@@ -26,46 +20,30 @@ export const DashboardMetricsGrid = ({
   metrics,
 }: DashboardMetricsGridProps) => {
   return (
-    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-4">
-      <div className="flex">
-        <StatCard
-          title="Total Connections"
-          value={formatNumber(metrics.total_connections)}
-          subtitle={`${metrics.targeted_connections} targeted`}
-          icon={<IconArrowsExchange />}
-          variant="outlined"
-        />
-      </div>
+    <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
+      <MetricCard
+        title="Total Connections"
+        value={formatNumber(metrics.total_connections)}
+        subtitle={`${metrics.targeted_connections} targeted`}
+      />
 
-      <div className="flex">
-        <StatCard
-          title="Active Flows"
-          value={formatNumber(metrics.active_flows)}
-          subtitle={`${metrics.current_cps.toFixed(1)} conn/s`}
-          icon={<DashboardIcon />}
-          variant="outlined"
-        />
-      </div>
+      <MetricCard
+        title="Active Flows"
+        value={formatNumber(metrics.active_flows)}
+        subtitle={`${metrics.current_cps.toFixed(1)} conn/s`}
+      />
 
-      <div className="flex">
-        <StatCard
-          title="Packets Processed"
-          value={formatNumber(metrics.packets_processed)}
-          subtitle={`${metrics.current_pps.toFixed(1)} pkt/s`}
-          icon={<IconDatabase />}
-          variant="outlined"
-        />
-      </div>
+      <MetricCard
+        title="Packets Processed"
+        value={formatNumber(metrics.packets_processed)}
+        subtitle={`${metrics.current_pps.toFixed(1)} pkt/s`}
+      />
 
-      <div className="flex">
-        <StatCard
-          title="Data Processed"
-          value={formatBytes(metrics.bytes_processed)}
-          subtitle={`Memory: ${metrics.memory_usage.percent.toFixed(1)}%`}
-          icon={<IconCpu />}
-          variant="outlined"
-        />
-      </div>
+      <MetricCard
+        title="Data Processed"
+        value={formatBytes(metrics.bytes_processed)}
+        subtitle={`Memory: ${metrics.memory_usage.percent.toFixed(1)}%`}
+      />
     </div>
   );
 };

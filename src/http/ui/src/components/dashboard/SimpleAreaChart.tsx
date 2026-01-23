@@ -1,28 +1,22 @@
 "use client";
 
-import { Line, LineChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
 } from "@primitives/chart";
-import { colors } from "@design";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
 interface SimpleChartProps {
   data: { timestamp: number; value: number }[];
-  color?: string;
 }
 
-export const SimpleLineChart = ({
-  data,
-  color = colors.secondary,
-}: SimpleChartProps) => {
+export const SimpleAreaChart = ({ data }: SimpleChartProps) => {
   if (data.length === 0) {
     return <p className="text-muted-foreground">No data</p>;
   }
 
-  // Преобразуем данные для recharts
   const chartData = data.map((d, index) => ({
     index,
     value: d.value,
@@ -31,14 +25,13 @@ export const SimpleLineChart = ({
 
   const chartConfig = {
     value: {
-      label: "Value",
-      color: color,
+      label: "conn/s",
     },
   } satisfies ChartConfig;
 
   return (
     <ChartContainer config={chartConfig} className="h-50 w-full">
-      <LineChart
+      <AreaChart
         data={chartData}
         margin={{ left: 12, right: 12, top: 12, bottom: 12 }}
       >
@@ -55,14 +48,15 @@ export const SimpleLineChart = ({
           cursor={false}
           content={<ChartTooltipContent hideLabel />}
         />
-        <Line
-          type="monotone"
+        <Area
           dataKey="value"
-          stroke={`var(--color-value)`}
           strokeWidth={2}
           dot={false}
+          stroke="var(--chart-1)"
+          fill="var(--chart-1)"
+          fillOpacity={0.2}
         />
-      </LineChart>
+      </AreaChart>
     </ChartContainer>
   );
 };

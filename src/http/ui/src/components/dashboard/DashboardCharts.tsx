@@ -1,6 +1,5 @@
-import { SimpleLineChart } from "./SimpleLineChart";
-import { colors } from "@design";
-import { Card, CardHeader, CardTitle, CardContent } from "@primitives/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@primitives/card";
+import { SimpleAreaChart } from "./SimpleAreaChart";
 
 interface DashboardChartsProps {
   connectionRate: { timestamp: number; value: number }[];
@@ -14,7 +13,7 @@ export const DashboardCharts = ({ connectionRate }: DashboardChartsProps) => {
         <CardTitle>Connection Rate (last 60s)</CardTitle>
       </CardHeader>
       <CardContent>
-        <SimpleLineChart data={connectionRate} />
+        <SimpleAreaChart data={connectionRate} />
       </CardContent>
     </Card>
   );

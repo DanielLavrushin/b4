@@ -1,6 +1,6 @@
 import { CheckIcon, CloseIcon } from "@b4.icons";
+import { Spinner } from "@design/primitives/spinner";
 import { Badge } from "@primitives/badge";
-import { Progress } from "@primitives/progress";
 import { useEffect, useRef, useState } from "react";
 import { DashboardActivityPanels } from "./DashboardActivityPanels";
 import { DashboardCharts } from "./DashboardCharts";
@@ -270,18 +270,18 @@ export function DashboardPage() {
 
   if (!metrics) {
     return (
-      <div className="px-4 py-6">
-        <div className="py-16 text-center">
-          <Progress className="mb-4" />
-          <p>Loading dashboard metrics...</p>
+      <div className="bg-background/80 fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm">
+        <div className="flex flex-col items-center gap-4">
+          <Spinner className="size-12" />
+          <p className="text-foreground">Loading...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="flex h-full flex-col gap-6">
+      <div className="flex items-center justify-between">
         <div className="flex flex-row items-center gap-4">
           <Badge
             variant={connected ? "default" : "destructive"}
@@ -301,20 +301,16 @@ export function DashboardPage() {
       </div>
 
       {/* Key Metrics Cards */}
-      <div className="mb-6">
-        <DashboardMetricsGrid metrics={metrics} />
-      </div>
+      <DashboardMetricsGrid metrics={metrics} />
 
       {/* Status Bar */}
       <DashboardStatusBar metrics={metrics} />
 
       {/* Charts Row */}
-      <div className="mb-6">
-        <DashboardCharts
-          connectionRate={metrics.connection_rate}
-          protocolDist={metrics.protocol_dist}
-        />
-      </div>
+      <DashboardCharts
+        connectionRate={metrics.connection_rate}
+        protocolDist={metrics.protocol_dist}
+      />
 
       {/* Activity Panels */}
       <DashboardActivityPanels

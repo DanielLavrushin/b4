@@ -1,4 +1,4 @@
-import { Card } from "@primitives/card";
+import { Card, CardContent } from "@primitives/card";
 import { formatNumber } from "@utils";
 import { StatusBadge } from "./StatusBadge";
 
@@ -14,8 +14,8 @@ interface DashboardStatusBarProps {
 
 export const DashboardStatusBar = ({ metrics }: DashboardStatusBarProps) => {
   return (
-    <Card className="border-border mb-6 border p-4">
-      <div className="flex flex-row flex-wrap items-center gap-4">
+    <Card>
+      <CardContent className="flex flex-row flex-wrap gap-4">
         <p className="text-muted-foreground text-sm font-medium">
           System Status:
         </p>
@@ -39,7 +39,7 @@ export const DashboardStatusBar = ({ metrics }: DashboardStatusBarProps) => {
           label={`UDP: ${formatNumber(metrics.udp_connections)}`}
           status="active"
         />
-      </div>
+      </CardContent>
     </Card>
   );
 };

@@ -1,63 +1,53 @@
-import { ImprovementIcon } from "@b4.icons";
 import { cn } from "@design/lib/utils";
-import { Card } from "@primitives/card";
+import { Card, CardContent } from "@primitives/card";
 
 interface MetricCardProps {
   title: string;
   value: string | number;
   subtitle?: string;
-  icon: React.ReactNode;
-  trend?: number;
+
+  trend?: {
+    value: number;
+    label?: string;
+  };
 }
 
 export const MetricCard = ({
   title,
   value,
   subtitle,
-  icon,
+
   trend,
 }: MetricCardProps) => {
   return (
-    <Card
-      className={cn(
-        "border-border hover:border-border relative overflow-visible border transition-all hover:shadow-lg",
-      )}
-    >
-      <div className="p-6">
-        <div className="flex flex-row items-start justify-between">
-          <div>
-            <p className="text-secondary mb-1 text-xs uppercase">{title}</p>
-            <h4 className="text-primary mt-1 text-2xl font-semibold">
-              {value}
-            </h4>
-            {subtitle && (
-              <p className="text-secondary mt-1 text-xs">{subtitle}</p>
-            )}
-            {trend !== undefined && (
-              <div className="mt-1 flex items-center">
-                <ImprovementIcon
-                  className={cn(
-                    "mr-1 size-4",
-                    trend > 0 ? "text-green-500" : "text-red-500",
-                  )}
-                />
-                <p
-                  className={cn(
-                    "text-xs",
-                    trend > 0 ? "text-green-500" : "text-red-500",
-                  )}
-                >
-                  {trend > 0 ? "+" : ""}
-                  {trend.toFixed(1)}%
-                </p>
-              </div>
+    <Card>
+      <CardContent>
+        <p className="text-muted-foreground text-xs tracking-wider uppercase">
+          {title}
+        </p>
+        <h4 className="text-foreground mt-1 mb-1 text-2xl font-semibold">
+          {value}
+        </h4>
+        {subtitle && (
+          <p className="text-muted-foreground text-xs">{subtitle}</p>
+        )}
+        {trend && (
+          <div className="mt-1 flex items-center gap-1">
+            <p
+              className={cn(
+                "text-xs font-semibold",
+                trend.value > 0 ? "text-green-500" : "text-red-500",
+              )}
+            >
+              {trend.value > 0 ? "+" : ""}
+              {trend.value.toFixed(1)}%
+            </p>
+            {trend.label && (
+              <p className="text-muted-foreground text-xs">{trend.label}</p>
             )}
           </div>
-          <div className="flex items-center justify-center rounded-lg p-2">
-            {icon}
-          </div>
-        </div>
-      </div>
+        )}
+      </CardContent>
     </Card>
   );
 };
