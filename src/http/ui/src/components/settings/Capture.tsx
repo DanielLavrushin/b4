@@ -10,6 +10,12 @@ import {
 } from "@b4.icons";
 import { useSnackbar } from "@context/SnackbarProvider";
 import {
+  Empty,
+  EmptyDescription,
+  EmptyMedia,
+  EmptyTitle,
+} from "@design/primitives/empty";
+import {
   Alert,
   AlertAction,
   AlertDescription,
@@ -38,14 +44,7 @@ import { Input } from "@primitives/input";
 import { Separator } from "@primitives/separator";
 import { Spinner } from "@primitives/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
-import { cn } from "@design/lib/utils";
 import { useEffect, useState } from "react";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyMedia,
-  EmptyTitle,
-} from "@design/primitives/empty";
 
 export const CaptureSettings = () => {
   const { showError, showSuccess } = useSnackbar();

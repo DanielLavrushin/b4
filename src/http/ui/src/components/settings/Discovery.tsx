@@ -1,7 +1,7 @@
-import { AddIcon, DiscoveryIcon } from "@b4.icons";
-import { ChipList } from "@components/common/ChipList";
+import { DiscoveryIcon } from "@b4.icons";
+import TagsInput from "@design/composed/tags-input";
+import { B4Config } from "@models/config";
 import { Badge } from "@primitives/badge";
-import { Button } from "@primitives/button";
 import {
   Card,
   CardContent,
@@ -19,9 +19,7 @@ import {
 import { Input } from "@primitives/input";
 import { Separator } from "@primitives/separator";
 import { Slider } from "@primitives/slider";
-import { B4Config } from "@models/config";
 import { useState } from "react";
-import TagsInput from "@design/composed/tags-input";
 
 interface CheckerSettingsProps {
   config: B4Config;

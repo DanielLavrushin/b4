@@ -13,13 +13,12 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldSet,
 } from "@primitives/field";
 import { Textarea } from "@primitives/textarea";
 import { useEffect, useState } from "react";
 
-import { B4SetConfig } from "@models/config";
 import { Separator } from "@design/primitives/separator";
+import { B4SetConfig } from "@models/config";
 
 interface ImportExportSettingsProps {
   config: B4SetConfig;

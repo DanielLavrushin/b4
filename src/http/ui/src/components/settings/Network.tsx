@@ -1,4 +1,5 @@
 import { NetworkIcon } from "@b4.icons";
+import { B4Config } from "@models/config";
 import { Badge } from "@primitives/badge";
 import {
   Card,
@@ -12,15 +13,11 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldLegend,
   FieldSeparator,
-  FieldSet,
-  FieldTitle,
 } from "@primitives/field";
 import { Input } from "@primitives/input";
 import { Separator } from "@primitives/separator";
 import { Slider } from "@primitives/slider";
-import { B4Config } from "@models/config";
 
 interface NetworkSettingsProps {
   config: B4Config;
