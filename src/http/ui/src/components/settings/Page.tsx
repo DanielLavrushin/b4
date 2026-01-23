@@ -1,6 +1,6 @@
 import { Badge } from "@primitives/badge";
 import { Button } from "@primitives/button";
-import { Card } from "@primitives/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@primitives/card";
 import { Spinner } from "@primitives/spinner";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -61,7 +61,7 @@ const SETTING_CATEGORIES = [
   {
     id: TABS.DOMAINS,
     path: "domains",
-    label: "Geodat Settings",
+    label: "Geodat",
     icon: <GeodatIcon />,
     description: "Global geodata configuration",
     requiresRestart: false,
@@ -267,97 +267,96 @@ export function SettingsPage() {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Header with tabs */}
-      <Card className="border-border mb-4 border p-4">
-        {/* Action bar */}
-        <div className="mb-4 flex flex-row items-center justify-between">
-          <div className="flex flex-row items-center gap-4">
-            <h6 className="text-foreground text-lg font-semibold">
-              Configuration
-            </h6>
-            {hasChanges && (
-              <Badge
-                variant="secondary"
-                className="inline-flex items-center gap-1"
-              >
-                <WarningIcon className="size-3" />
-                Modified
-              </Badge>
-            )}
-          </div>
-
-          <div className="flex flex-row gap-2">
-            {categoryHasChanges[TABS.GENERAL] && (
-              <Alert variant="destructive" className="px-2 py-0">
-                <AlertDescription>
-                  Core settings require <strong>B4</strong> restart to take
-                  effect
-                </AlertDescription>
-              </Alert>
-            )}
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setShowResetDialog(true)}
-              disabled={!hasChanges || saving}
-            >
-              Discard Changes
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                void loadConfig();
-              }}
-              disabled={saving}
-            >
-              <RefreshIcon className="mr-2 size-4" />
-              Reload
-            </Button>
-
-            <Button
-              size="sm"
-              onClick={() => {
-                void saveConfig();
-              }}
-              disabled={!hasChanges || saving}
-            >
-              {saving ? (
-                <>
-                  <Spinner className="mr-2 size-4" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <SaveIcon className="mr-2 size-4" />
-                  Save Changes
-                </>
+      <Card>
+        <CardHeader>
+          {/* Action bar */}
+          <div className="mb-4 flex flex-row items-center justify-between">
+            <div className="flex flex-row items-center gap-4">
+              <CardTitle className="text-lg font-semibold">
+                Configuration
+              </CardTitle>
+              {hasChanges && (
+                <Badge variant="secondary">
+                  <WarningIcon />
+                  Modified
+                </Badge>
               )}
-            </Button>
+            </div>
+
+            <div className="flex flex-row gap-2">
+              {categoryHasChanges[TABS.GENERAL] && (
+                <Alert variant="destructive">
+                  <AlertDescription>
+                    Core settings require <strong>B4</strong> restart
+                  </AlertDescription>
+                </Alert>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowResetDialog(true)}
+                disabled={!hasChanges || saving}
+              >
+                Discard Changes
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  void loadConfig();
+                }}
+                disabled={saving}
+              >
+                <RefreshIcon />
+                Reload
+              </Button>
+
+              <Button
+                size="sm"
+                onClick={() => {
+                  void saveConfig();
+                }}
+                disabled={!hasChanges || saving}
+              >
+                {saving ? (
+                  <>
+                    <Spinner />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <SaveIcon />
+                    Save Changes
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
-        </div>
+        </CardHeader>
 
         {/* Tabs */}
-        <Tabs
-          value={String(validTab)}
-          onValueChange={(value) =>
-            handleTabChange({} as React.SyntheticEvent, Number(value))
-          }
-          className="w-full"
-        >
-          <TabsList className="mt-4 grid w-full grid-cols-5">
-            {SETTING_CATEGORIES.sort((a, b) => a.id - b.id).map((cat) => (
-              <TabsTrigger key={cat.id} value={String(cat.id)}>
-                <div className="flex items-center gap-1.5">
-                  {cat.icon}
-                  <span>{cat.label}</span>
-                  {categoryHasChanges[cat.id] && (
-                    <div className="bg-primary h-1.5 w-1.5 rounded-full" />
-                  )}
-                </div>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        <CardContent>
+          <Tabs
+            value={String(validTab)}
+            onValueChange={(value) =>
+              handleTabChange({} as React.SyntheticEvent, Number(value))
+            }
+          >
+            <TabsList className="w-full">
+              {SETTING_CATEGORIES.sort((a, b) => a.id - b.id).map((cat) => (
+                <TabsTrigger key={cat.id} value={String(cat.id)}>
+                  <div className="flex items-center gap-1.5">
+                    {cat.icon}
+                    <span className="hidden lg:inline">{cat.label}</span>
+                    {categoryHasChanges[cat.id] && (
+                      <div className="bg-primary h-1.5 w-1.5 rounded-full" />
+                    )}
+                  </div>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </CardContent>
       </Card>
 
       <div className="flex-1 overflow-auto pb-4">
