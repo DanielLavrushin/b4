@@ -154,10 +154,11 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-2">
+        <CardTitle className="flex items-center gap-2">
           <DeviceUnknowIcon />
-          <CardTitle>Device Filtering</CardTitle>
-        </div>
+          Device Filtering
+        </CardTitle>
+
         <CardDescription>
           Filter traffic by source device MAC address
         </CardDescription>
@@ -165,37 +166,39 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
       <Separator />
       <CardContent>
         <FieldGroup>
-          <Field orientation="horizontal">
-            <FieldContent>
-              <FieldTitle>Enable Device Filtering</FieldTitle>
-              <FieldDescription>
-                Only process traffic from selected devices
-              </FieldDescription>
-            </FieldContent>
-            <Switch
-              checked={enabled}
-              onCheckedChange={(checked) =>
-                onChange("queue.devices.enabled", checked)
-              }
-            />
-          </Field>
-          <Field orientation="horizontal">
-            <FieldContent>
-              <FieldTitle>Invert Selection (Blacklist)</FieldTitle>
-              <FieldDescription>
-                {wisb
-                  ? "Block selected devices"
-                  : "Allow only selected devices"}
-              </FieldDescription>
-            </FieldContent>
-            <Switch
-              checked={wisb}
-              onCheckedChange={(checked) =>
-                onChange("queue.devices.wisb", checked)
-              }
-              disabled={!enabled}
-            />
-          </Field>
+          <div className="flex flex-row gap-4">
+            <Field orientation="horizontal">
+              <FieldContent>
+                <FieldTitle>Enable Device Filtering</FieldTitle>
+                <FieldDescription>
+                  Only process traffic from selected devices
+                </FieldDescription>
+              </FieldContent>
+              <Switch
+                checked={enabled}
+                onCheckedChange={(checked) =>
+                  onChange("queue.devices.enabled", checked)
+                }
+              />
+            </Field>
+            <Field orientation="horizontal">
+              <FieldContent>
+                <FieldTitle>Invert Selection (Blacklist)</FieldTitle>
+                <FieldDescription>
+                  {wisb
+                    ? "Block selected devices"
+                    : "Allow only selected devices"}
+                </FieldDescription>
+              </FieldContent>
+              <Switch
+                checked={wisb}
+                onCheckedChange={(checked) =>
+                  onChange("queue.devices.wisb", checked)
+                }
+                disabled={!enabled}
+              />
+            </Field>
+          </div>
         </FieldGroup>
 
         {enabled && (

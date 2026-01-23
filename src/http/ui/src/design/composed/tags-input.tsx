@@ -3,7 +3,13 @@
 import * as React from "react";
 import { useCallback, useRef, useState } from "react";
 
-import { Combobox, ComboboxChip, ComboboxChips } from "@primitives/combobox";
+import {
+  Combobox,
+  ComboboxChip,
+  ComboboxChips,
+  ComboboxChipsInput,
+  ComboboxValue,
+} from "@primitives/combobox";
 
 export interface TagsInputProps {
   value: string[];
@@ -58,20 +64,24 @@ export function TagsInput({
         className={className}
         onClick={() => inputRef.current?.focus()}
       >
-        {value.map((tag) => (
-          <ComboboxChip key={tag}>{tag}</ComboboxChip>
-        ))}
-        <input
-          ref={inputRef}
-          type="text"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onBlur={() => inputValue && addTags(inputValue)}
-          placeholder={value.length === 0 ? placeholder : ""}
-          disabled={disabled}
-          className="placeholder:text-muted-foreground min-w-16 flex-1 bg-transparent outline-none"
-        />
+        <ComboboxValue>
+          {(values: string[]) => (
+            <React.Fragment>
+              {values.map((tag) => (
+                <ComboboxChip key={tag}>{tag}</ComboboxChip>
+              ))}
+              <ComboboxChipsInput
+                ref={inputRef}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onBlur={() => inputValue && addTags(inputValue)}
+                placeholder={values.length === 0 ? placeholder : ""}
+                disabled={disabled}
+              />
+            </React.Fragment>
+          )}
+        </ComboboxValue>
       </ComboboxChips>
     </Combobox>
   );

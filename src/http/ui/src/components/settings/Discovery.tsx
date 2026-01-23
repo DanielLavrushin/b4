@@ -9,12 +9,19 @@ import {
   CardHeader,
   CardTitle,
 } from "@primitives/card";
-import { Field, FieldDescription, FieldLabel } from "@primitives/field";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  FieldSeparator,
+} from "@primitives/field";
 import { Input } from "@primitives/input";
 import { Separator } from "@primitives/separator";
 import { Slider } from "@primitives/slider";
 import { B4Config } from "@models/config";
 import { useState } from "react";
+import TagsInput from "@design/composed/tags-input";
 
 interface CheckerSettingsProps {
   config: B4Config;
@@ -46,121 +53,101 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <DiscoveryIcon />
-          <CardTitle>Testing Configuration</CardTitle>
-        </div>
-        <CardDescription>Configure testing behavior and output</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <Field className="w-full space-y-2">
-            <div className="flex items-center justify-between">
-              <FieldLabel className="text-sm font-medium">
-                Discovery Timeout
-              </FieldLabel>
-              <Badge variant="secondary" className="font-semibold">
-                {config.system.checker.discovery_timeout || 5} sec
-              </Badge>
-            </div>
-            <Slider
-              value={[config.system.checker.discovery_timeout || 5]}
-              onValueChange={(values) =>
-                onChange("system.checker.discovery_timeout", values[0])
-              }
-              min={3}
-              max={30}
-              step={1}
-              className="w-full"
-            />
-            <FieldDescription>
-              Timeout per preset during discovery
-            </FieldDescription>
-          </Field>
-          <Field className="w-full space-y-2">
-            <div className="flex items-center justify-between">
-              <FieldLabel className="text-sm font-medium">
-                Config Propagation Delay
-              </FieldLabel>
-              <Badge variant="secondary" className="font-semibold">
-                {config.system.checker.config_propagate_ms || 1500} ms
-              </Badge>
-            </div>
-            <Slider
-              value={[config.system.checker.config_propagate_ms || 1500]}
-              onValueChange={(values) =>
-                onChange("system.checker.config_propagate_ms", values[0])
-              }
-              min={500}
-              max={5000}
-              step={100}
-              className="w-full"
-            />
-            <FieldDescription>
-              Delay for config to propagate to workers (increase on slow
-              devices)
-            </FieldDescription>
-          </Field>
-          <Field>
-            <FieldLabel>Reference Domain</FieldLabel>
-            <Input
-              value={config.system.checker.reference_domain || "yandex.ru"}
-              onChange={(e) =>
-                onChange("system.checker.reference_domain", e.target.value)
-              }
-              placeholder="yandex.ru"
-            />
-            <FieldDescription>
-              Fast domain to measure your network baseline speed
-            </FieldDescription>
-          </Field>
+    <div className="flex flex-col gap-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <DiscoveryIcon />
+            Testing Configuration
+          </CardTitle>
+          <CardDescription>
+            Configure testing behavior and output
+          </CardDescription>
+        </CardHeader>
 
-          <div className="relative my-4 flex items-center lg:col-span-2">
-            <Separator className="absolute inset-0 top-1/2" />
-            <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
-              DNS Configuration
-            </span>
-          </div>
-          <div className="col-span-1 md:col-span-2">
-            <div className="flex flex-col gap-1.5">
-              <FieldLabel>Add DNS Server</FieldLabel>
-              <div className="flex items-start gap-2">
-                <Input
-                  value={newDns}
-                  onChange={(e) => setNewDns(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleAddDns();
-                    }
-                  }}
-                  placeholder="e.g., 8.8.8.8"
-                  className="flex-1"
+        <Separator />
+
+        <CardContent>
+          <FieldGroup>
+            <div className="flex flex-row gap-4">
+              <Field>
+                <FieldLabel>
+                  Discovery Timeout
+                  <Badge variant="secondary" className="ml-auto">
+                    {config.system.checker.discovery_timeout || 5} sec
+                  </Badge>
+                </FieldLabel>
+                <Slider
+                  value={[config.system.checker.discovery_timeout || 5]}
+                  onValueChange={(values) =>
+                    onChange(
+                      "system.checker.discovery_timeout",
+                      Array.isArray(values) ? values[0] : values,
+                    )
+                  }
+                  min={3}
+                  max={30}
+                  step={1}
                 />
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  onClick={handleAddDns}
-                  disabled={!newDns.trim()}
-                >
-                  <AddIcon />
-                </Button>
-              </div>
+                <FieldDescription>
+                  Timeout per preset during discovery
+                </FieldDescription>
+              </Field>
+              <Field>
+                <FieldLabel>
+                  Config Propagation Delay
+                  <Badge variant="secondary" className="ml-auto">
+                    {config.system.checker.config_propagate_ms || 1500} ms
+                  </Badge>
+                </FieldLabel>
+                <Slider
+                  value={[config.system.checker.config_propagate_ms || 1500]}
+                  onValueChange={(values) =>
+                    onChange(
+                      "system.checker.config_propagate_ms",
+                      Array.isArray(values) ? values[0] : values,
+                    )
+                  }
+                  min={500}
+                  max={5000}
+                  step={100}
+                />
+                <FieldDescription>
+                  Delay for config to propagate to workers (increase on slow
+                  devices)
+                </FieldDescription>
+              </Field>
             </div>
-          </div>
-          <div className="col-span-1 md:col-span-2">
-            <ChipList
-              items={config.system.checker.reference_dns || []}
-              getKey={(d) => d}
-              getLabel={(d) => d}
-              onDelete={handleRemoveDns}
-              title="Active DNS servers to test:"
+
+            <Field>
+              <FieldLabel>Reference Domain</FieldLabel>
+              <Input
+                value={config.system.checker.reference_domain || "yandex.ru"}
+                onChange={(e) =>
+                  onChange("system.checker.reference_domain", e.target.value)
+                }
+                placeholder="max.ru"
+              />
+              <FieldDescription>
+                Fast domain to measure your network baseline speed
+              </FieldDescription>
+            </Field>
+          </FieldGroup>
+          <FieldSeparator className="my-6">DNS Configuration</FieldSeparator>
+
+          <Field>
+            <FieldLabel>Add DNS Server</FieldLabel>
+            <TagsInput
+              value={config.system.checker.reference_dns || []}
+              onValueChange={(values: string[]) =>
+                onChange("system.checker.reference_dns", values)
+              }
+              placeholder="e.g., 8.8.8.8"
             />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+            <FieldDescription>DNS servers to test</FieldDescription>
+          </Field>
+        </CardContent>
+      </Card>
+    </div>
   );
 };

@@ -9,13 +9,19 @@ import {
   UploadIcon,
 } from "@b4.icons";
 import { useSnackbar } from "@context/SnackbarProvider";
-import { Alert, AlertDescription } from "@primitives/alert";
+import {
+  Alert,
+  AlertAction,
+  AlertDescription,
+  AlertTitle,
+} from "@primitives/alert";
 import { Badge } from "@primitives/badge";
 import { Button } from "@primitives/button";
 import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from "@primitives/card";
@@ -34,6 +40,12 @@ import { Spinner } from "@primitives/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
 import { cn } from "@design/lib/utils";
 import { useEffect, useState } from "react";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyMedia,
+  EmptyTitle,
+} from "@design/primitives/empty";
 
 export const CaptureSettings = () => {
   const { showError, showSuccess } = useSnackbar();
@@ -145,229 +157,198 @@ export const CaptureSettings = () => {
 
   return (
     <div className="space-y-6">
-      {/* Info */}
-      <Alert>
-        <CaptureIcon className="h-3.5 w-3.5" />
-        <AlertDescription>
-          <h6 className="mb-2 text-sm font-semibold">
-            Capture real TLS ClientHello for custom payload generation
-          </h6>
-          <p className="text-muted-foreground text-xs">
-            One capture per domain. Use in Faking → Captured Payload
-          </p>
-        </AlertDescription>
-      </Alert>
-
       {/* Upload + Capture side by side */}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <div className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2">
               <UploadIcon />
-              <CardTitle>Upload Custom Payload</CardTitle>
-            </div>
+              Upload Custom Payload
+            </CardTitle>
             <CardDescription>
               Upload your own binary payload file (max 64KB)
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <Field>
-                <FieldLabel>Name/Domain</FieldLabel>
-                <Input
-                  value={uploadForm.domain}
-                  onChange={(e) =>
-                    setUploadForm({
-                      ...uploadForm,
-                      domain: e.target.value.toLowerCase(),
-                    })
-                  }
-                  placeholder="youtube.com"
-                  disabled={loading}
-                />
-                <FieldDescription>
-                  Name associated with the uploaded payload
-                </FieldDescription>
-              </Field>
-              <div className="flex flex-row items-center gap-2">
-                <Button
-                  variant="outline"
-                  disabled={loading}
-                  className="shrink-0"
-                >
-                  <label>
-                    {uploadForm.file ? uploadForm.file.name : "Choose File..."}
-                    <input
-                      type="file"
-                      className="hidden"
-                      accept=".bin,application/octet-stream"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0] || null;
-                        setUploadForm({ ...uploadForm, file });
-                      }}
-                    />
-                  </label>
-                </Button>
-                {uploadForm.file && (
-                  <p className="text-muted-foreground text-xs">
-                    {uploadForm.file.size} bytes
-                  </p>
-                )}
-                <Button
-                  onClick={() => void uploadCapture()}
-                  disabled={loading || !uploadForm.file || !uploadForm.domain}
-                >
-                  {loading ? (
-                    <>
-                      <Spinner className="mr-2 size-4" />
-                      Uploading...
-                    </>
-                  ) : (
-                    <>
-                      <UploadIcon className="mr-2 size-4" />
-                      Upload
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
+            <Field>
+              <FieldLabel>Name/Domain</FieldLabel>
+              <Input
+                value={uploadForm.domain}
+                onChange={(e) =>
+                  setUploadForm({
+                    ...uploadForm,
+                    domain: e.target.value.toLowerCase(),
+                  })
+                }
+                placeholder="youtube.com"
+                disabled={loading}
+              />
+              <FieldDescription>
+                Name associated with the uploaded payload
+              </FieldDescription>
+            </Field>
           </CardContent>
+          <CardFooter>
+            <Button variant="outline" disabled={loading} className="shrink-0">
+              <label>
+                {uploadForm.file ? uploadForm.file.name : "Choose File..."}
+                <input
+                  type="file"
+                  className="hidden"
+                  accept=".bin,application/octet-stream"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    setUploadForm({ ...uploadForm, file });
+                  }}
+                />
+              </label>
+            </Button>
+            {uploadForm.file && (
+              <p className="text-muted-foreground ml-auto text-xs">
+                {uploadForm.file.size} bytes
+              </p>
+            )}
+            <Button
+              onClick={() => void uploadCapture()}
+              disabled={loading || !uploadForm.file || !uploadForm.domain}
+              className="ml-auto"
+            >
+              {loading ? (
+                <>
+                  <Spinner />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <UploadIcon />
+                  Upload
+                </>
+              )}
+            </Button>
+          </CardFooter>
         </Card>
 
         <Card>
           <CardHeader>
-            <div className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2">
               <CaptureIcon />
-              <CardTitle>Capture Payload</CardTitle>
-            </div>
+              Capture Payload
+            </CardTitle>
             <CardDescription>
               Probe domain to capture its TLS ClientHello
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <Field>
-                <FieldLabel>Domain</FieldLabel>
-                <Input
-                  value={probeForm.domain}
-                  onChange={(e) =>
-                    setProbeForm({ domain: e.target.value.toLowerCase() })
+            <Field>
+              <FieldLabel>Domain</FieldLabel>
+              <Input
+                value={probeForm.domain}
+                onChange={(e) =>
+                  setProbeForm({ domain: e.target.value.toLowerCase() })
+                }
+                onKeyPress={(e) => {
+                  if (e.key === "Enter" && !loading && probeForm.domain) {
+                    void probeCapture();
                   }
-                  onKeyPress={(e) => {
-                    if (e.key === "Enter" && !loading && probeForm.domain) {
-                      void probeCapture();
-                    }
-                  }}
-                  placeholder="youtube.com"
-                  disabled={loading}
-                />
-                <FieldDescription>
-                  Enter domain to capture from
-                </FieldDescription>
-              </Field>
-              <div className="flex flex-row gap-2">
-                <Button
-                  className="flex-1"
-                  onClick={() => void probeCapture()}
-                  disabled={loading || !probeForm.domain}
-                >
-                  {loading ? (
-                    <>
-                      <Spinner className="mr-2 size-4" />
-                      Capturing...
-                    </>
-                  ) : (
-                    <>
-                      <CaptureIcon className="mr-2 size-4" />
-                      Capture
-                    </>
-                  )}
-                </Button>
-                <Tooltip>
-                  <TooltipTrigger>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => void loadCaptures()}
-                      disabled={loading}
-                    >
-                      <RefreshIcon />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Refresh list</p>
-                  </TooltipContent>
-                </Tooltip>
-                {captures.length > 0 && (
-                  <Tooltip>
-                    <TooltipTrigger>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => void handleClear()}
-                        disabled={loading}
-                      >
-                        <ClearIcon />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Clear all captures</p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-              </div>
-              {loading && countdown !== null && (
-                <Alert>
-                  <AlertDescription>
-                    <h6 className="mb-2 text-sm font-semibold">
-                      Capture window is open for {probeForm.domain}
-                    </h6>
-                    <div className="flex flex-row items-center gap-2">
-                      <p className="text-xs">
-                        Visit{" "}
-                        <a
-                          href={`https://${probeForm.domain}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-secondary hover:underline"
-                        >
-                          https://{probeForm.domain}
-                        </a>
-                      </p>
-                      <Badge
-                        className={cn(
-                          "min-w-12 px-1.5 py-0.5 text-xs font-semibold",
-                          countdown <= 10
-                            ? "bg-accent text-accent-foreground"
-                            : "",
-                        )}
-                      >
-                        {`${countdown}s`}
-                      </Badge>
-                    </div>
-                    <p className="text-muted-foreground mt-2 text-xs">
-                      Or run:{" "}
-                      <code className="text-secondary">
-                        curl -o /dev/null -s https://{probeForm.domain}
-                      </code>{" "}
-                      in your terminal
-                    </p>
-                  </AlertDescription>
-                </Alert>
-              )}
-            </div>
+                }}
+                placeholder="youtube.com"
+                disabled={loading}
+              />
+              <FieldDescription>Enter domain to capture from</FieldDescription>
+            </Field>
           </CardContent>
+          <CardFooter>
+            <Tooltip>
+              <TooltipTrigger>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => void loadCaptures()}
+                  disabled={loading}
+                >
+                  <RefreshIcon />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Refresh list</p>
+              </TooltipContent>
+            </Tooltip>
+            <Button
+              onClick={() => void probeCapture()}
+              disabled={loading || !probeForm.domain}
+              className="ml-auto"
+            >
+              {loading ? (
+                <>
+                  <Spinner />
+                  Capturing...
+                </>
+              ) : (
+                <>
+                  <CaptureIcon />
+                  Capture
+                </>
+              )}
+            </Button>
+
+            {captures.length > 0 && (
+              <Tooltip>
+                <TooltipTrigger>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => void handleClear()}
+                    disabled={loading}
+                  >
+                    <ClearIcon />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Clear all captures</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </CardFooter>
         </Card>
       </div>
+
+      {loading && countdown !== null && (
+        <Alert>
+          <AlertTitle>Capture window is open for {probeForm.domain}</AlertTitle>
+          <AlertAction>
+            <Badge className="ml-auto">{`${countdown}s`}</Badge>
+          </AlertAction>
+          <AlertDescription>
+            <ul>
+              <li>
+                Visit{" "}
+                <a
+                  href={`https://${probeForm.domain}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  https://{probeForm.domain}
+                </a>
+              </li>
+              <li>
+                Or run:{" "}
+                <code>curl -o /dev/null -s https://{probeForm.domain}</code> in
+                your terminal
+              </li>
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Captured Payloads - Flat grid like SetCards */}
       {captures.length > 0 && (
         <Card>
           <CardHeader>
-            <div className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2">
               <DownloadIcon />
-              <CardTitle>Captured Payloads</CardTitle>
-            </div>
+              Captured Payloads
+            </CardTitle>
+
             <CardDescription>
               {captures.length} payload{captures.length !== 1 ? "s" : ""} ready
               for use
@@ -391,15 +372,15 @@ export const CaptureSettings = () => {
 
       {/* Empty State */}
       {captures.length === 0 && !loading && (
-        <div className="border-border rounded-md border border-dashed p-8 text-center">
-          <CaptureIcon className="text-muted-foreground mx-auto mb-4 size-12" />
-          <h6 className="text-muted-foreground mb-2 text-lg font-semibold">
-            No captured payloads yet
-          </h6>
-          <p className="text-muted-foreground text-sm">
+        <Empty className="border">
+          <EmptyMedia variant="icon">
+            <CaptureIcon />
+          </EmptyMedia>
+          <EmptyTitle>No captured payloads yet</EmptyTitle>
+          <EmptyDescription>
             Enter a domain above and click Capture to get started
-          </p>
-        </div>
+          </EmptyDescription>
+        </Empty>
       )}
 
       {/* Hex Dialog */}

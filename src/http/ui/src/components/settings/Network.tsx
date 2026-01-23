@@ -13,6 +13,7 @@ import {
   FieldGroup,
   FieldLabel,
   FieldLegend,
+  FieldSeparator,
   FieldSet,
   FieldTitle,
 } from "@primitives/field";
@@ -32,19 +33,19 @@ interface NetworkSettingsProps {
 export const NetworkSettings = ({ config, onChange }: NetworkSettingsProps) => (
   <Card>
     <CardHeader>
-      <div className="flex items-center gap-2">
+      <CardTitle className="flex items-center gap-2">
         <NetworkIcon />
-        <CardTitle>Network Configuration</CardTitle>
-      </div>
+        Network Configuration
+      </CardTitle>
+
       <CardDescription>
         Configure netfilter queue and network processing parameters
       </CardDescription>
     </CardHeader>
     <Separator />
     <CardContent>
-      <FieldSet>
-        <FieldLegend>Queue Settings</FieldLegend>
-        <FieldGroup>
+      <FieldGroup>
+        <div className="flex flex-row gap-4">
           <Field>
             <FieldLabel>Queue Start Number</FieldLabel>
             <Input
@@ -66,64 +67,66 @@ export const NetworkSettings = ({ config, onChange }: NetworkSettingsProps) => (
               onChange={(e) => onChange("queue.mark", Number(e.target.value))}
             />
             <FieldDescription>
-              Netfilter packet mark for iptables rules (default: 32768)
+              Netfilter packet mark (default: 32768)
             </FieldDescription>
           </Field>
-          <Field className="md:col-span-2">
-            <FieldLabel>
-              Worker Threads
-              <Badge variant="secondary" className="font-semibold">
-                {config.queue.threads}
-              </Badge>
-            </FieldLabel>
+        </div>
 
-            <Slider
-              value={[config.queue.threads]}
-              onValueChange={(values) => onChange("queue.threads", values[0])}
-              min={1}
-              max={16}
-              step={1}
-            />
-            <FieldDescription>
-              Number of worker threads for processing packets simultaneously
-              (default 4)
-            </FieldDescription>
-          </Field>
-        </FieldGroup>
-      </FieldSet>
+        <Field>
+          <FieldLabel>
+            Worker Threads
+            <Badge variant="secondary" className="ml-auto">
+              {config.queue.threads}
+            </Badge>
+          </FieldLabel>
 
-      <Separator className="my-6" />
+          <Slider
+            value={[config.queue.threads]}
+            onValueChange={(values) =>
+              onChange(
+                "queue.threads",
+                Array.isArray(values) ? values[0] : values,
+              )
+            }
+            min={1}
+            max={16}
+            step={1}
+          />
+          <FieldDescription>
+            Number of worker threads for processing packets simultaneously
+            (default 4)
+          </FieldDescription>
+        </Field>
+      </FieldGroup>
+      <FieldSeparator className="my-6">Web Server</FieldSeparator>
 
-      <FieldSet>
-        <FieldLegend>Web Server</FieldLegend>
-        <FieldGroup>
-          <Field>
-            <FieldLabel>Bind Address</FieldLabel>
-            <Input
-              value={config.system.web_server.bind_address || "0.0.0.0"}
-              onChange={(e) =>
-                onChange("system.web_server.bind_address", e.target.value)
-              }
-              placeholder="0.0.0.0"
-            />
-            <FieldDescription>
-              IP to bind (0.0.0.0 = all, 127.0.0.1 = localhost only, :: = all
-              IPv6)
-            </FieldDescription>
-          </Field>
-          <Field>
-            <FieldLabel>Port</FieldLabel>
-            <Input
-              type="number"
-              value={config.system.web_server.port}
-              onChange={(e) =>
-                onChange("system.web_server.port", Number(e.target.value))
-              }
-            />
-            <FieldDescription>Web Server port (default: 7000)</FieldDescription>
-          </Field>
-        </FieldGroup>
-      </FieldSet>
+      <FieldGroup className="flex-row gap-4">
+        <Field>
+          <FieldLabel>Bind Address</FieldLabel>
+          <Input
+            value={config.system.web_server.bind_address || "0.0.0.0"}
+            onChange={(e) =>
+              onChange("system.web_server.bind_address", e.target.value)
+            }
+            placeholder="0.0.0.0"
+          />
+          <FieldDescription>
+            IP to bind (0.0.0.0 = all, 127.0.0.1 = localhost only, :: = all
+            IPv6)
+          </FieldDescription>
+        </Field>
+        <Field>
+          <FieldLabel>Port</FieldLabel>
+          <Input
+            type="number"
+            value={config.system.web_server.port}
+            onChange={(e) =>
+              onChange("system.web_server.port", Number(e.target.value))
+            }
+          />
+          <FieldDescription>Web Server port (default: 7000)</FieldDescription>
+        </Field>
+      </FieldGroup>
     </CardContent>
   </Card>
 );

@@ -18,49 +18,42 @@ export interface ApiSettingsProps {
 
 export const ApiSettings = ({ config, onChange }: ApiSettingsProps) => {
   return (
-    <div className="space-y-6">
-      <Alert>
-        <AlertDescription>
-          Here you can setup API settings for different services that can be
-          used by B4.
-        </AlertDescription>
-      </Alert>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <ApiIcon />
-              <CardTitle>IPINFO.IO Settings</CardTitle>
-            </div>
-            <CardDescription>
-              Configure your IPINFO.IO API token here.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Field>
-              <FieldLabel>Token</FieldLabel>
-              <Input
-                value={config.system.api.ipinfo_token}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  onChange("system.api.ipinfo_token", e.target.value)
-                }
-                placeholder="abcd1234efgh"
-              />
-              <FieldDescription>
-                Get the token from{" "}
-                <a
-                  href="https://ipinfo.io/dashboard/token"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline"
-                >
-                  IPINFO.IO Dashboard
-                </a>
-              </FieldDescription>
-            </Field>
-          </CardContent>
-        </Card>
-      </div>
+    <div className="flex flex-col gap-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ApiIcon />
+            IPINFO.IO Settings
+          </CardTitle>
+
+          <CardDescription>
+            Configure your IPINFO.IO API token here.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Field>
+            <FieldLabel>Token</FieldLabel>
+            <Input
+              value={config.system.api.ipinfo_token}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                onChange("system.api.ipinfo_token", e.target.value)
+              }
+              placeholder="abcd1234efgh"
+            />
+            <FieldDescription>
+              Get the token from{" "}
+              <a
+                href="https://ipinfo.io/dashboard/token"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+              >
+                IPINFO.IO Dashboard
+              </a>
+            </FieldDescription>
+          </Field>
+        </CardContent>
+      </Card>
     </div>
   );
 };

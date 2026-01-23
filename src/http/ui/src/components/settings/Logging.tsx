@@ -50,81 +50,84 @@ export const LoggingSettings = ({ config, onChange }: LoggingSettingsProps) => {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-2">
+        <CardTitle className="flex items-center gap-2">
           <LogsIcon />
-          <CardTitle>Logging Configuration</CardTitle>
-        </div>
+          Logging Configuration
+        </CardTitle>
+
         <CardDescription>Configure logging behavior and output</CardDescription>
       </CardHeader>
       <Separator />
 
       <CardContent>
         <FieldGroup>
-          <Field>
-            <FieldLabel>Log Level</FieldLabel>
-            <Select
-              value={currentValue}
-              onValueChange={(value) =>
-                onChange("system.logging.level", Number(value))
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select log level">
-                  {currentLabel || null}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {LOG_LEVELS.map((option) => (
-                  <SelectItem
-                    key={option.value}
-                    value={option.value.toString()}
-                  >
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <FieldDescription>Verbosity of logging output</FieldDescription>
-          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field>
+              <FieldLabel>Log Level</FieldLabel>
+              <Select
+                value={currentValue}
+                onValueChange={(value) =>
+                  onChange("system.logging.level", Number(value))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select log level">
+                    {currentLabel || null}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {LOG_LEVELS.map((option) => (
+                    <SelectItem
+                      key={option.value}
+                      value={option.value.toString()}
+                    >
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FieldDescription>Verbosity of logging output</FieldDescription>
+            </Field>
 
-          <Field>
-            <FieldLabel>Error File Path</FieldLabel>
-            <Input
-              value={config.system.logging.error_file}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                onChange("system.logging.error_file", e.target.value)
-              }
-              placeholder="/var/log/b4/errors.log"
-            />
-            <FieldDescription>Full path to error log file</FieldDescription>
-          </Field>
+            <Field>
+              <FieldLabel>Error File Path</FieldLabel>
+              <Input
+                value={config.system.logging.error_file}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  onChange("system.logging.error_file", e.target.value)
+                }
+                placeholder="/var/log/b4/errors.log"
+              />
+              <FieldDescription>Full path to error log file</FieldDescription>
+            </Field>
 
-          <Field orientation="horizontal">
-            <FieldContent>
-              <FieldTitle>Instant Flush</FieldTitle>
-              <FieldDescription>
-                Flush logs immediately (may impact performance)
-              </FieldDescription>
-            </FieldContent>
-            <Switch
-              checked={config?.system?.logging?.instaflush}
-              onCheckedChange={(checked: boolean) =>
-                onChange("system.logging.instaflush", Boolean(checked))
-              }
-            />
-          </Field>
-          <Field orientation="horizontal">
-            <FieldContent>
-              <FieldTitle>Syslog</FieldTitle>
-              <FieldDescription>Enable syslog output</FieldDescription>
-            </FieldContent>
-            <Switch
-              checked={config?.system?.logging?.syslog}
-              onCheckedChange={(checked: boolean) =>
-                onChange("system.logging.syslog", Boolean(checked))
-              }
-            />
-          </Field>
+            <Field orientation="horizontal">
+              <FieldContent>
+                <FieldTitle>Instant Flush</FieldTitle>
+                <FieldDescription>
+                  Flush logs immediately (may impact performance)
+                </FieldDescription>
+              </FieldContent>
+              <Switch
+                checked={config?.system?.logging?.instaflush}
+                onCheckedChange={(checked: boolean) =>
+                  onChange("system.logging.instaflush", Boolean(checked))
+                }
+              />
+            </Field>
+            <Field orientation="horizontal">
+              <FieldContent>
+                <FieldTitle>Syslog</FieldTitle>
+                <FieldDescription>Enable syslog output</FieldDescription>
+              </FieldContent>
+              <Switch
+                checked={config?.system?.logging?.syslog}
+                onCheckedChange={(checked: boolean) =>
+                  onChange("system.logging.syslog", Boolean(checked))
+                }
+              />
+            </Field>
+          </div>
         </FieldGroup>
       </CardContent>
     </Card>

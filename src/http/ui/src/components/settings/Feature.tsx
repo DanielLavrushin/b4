@@ -38,47 +38,51 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-2">
+        <CardTitle className="flex items-center gap-2">
           <ToggleOnIcon />
-          <CardTitle>Feature Flags</CardTitle>
-        </div>
+          Feature Flags
+        </CardTitle>
+
         <CardDescription>Enable or disable advanced features</CardDescription>
       </CardHeader>
+
       <Separator />
+
       <CardContent>
         <FieldGroup>
-          <Field orientation="horizontal">
-            <FieldContent>
-              <FieldTitle>Enable IPv4 Support</FieldTitle>
-              <FieldDescription>
-                Whether to proccess IPv4 traffic
-              </FieldDescription>
-            </FieldContent>
-            <Switch
-              id="switch-queue-ipv4"
-              checked={config.queue.ipv4}
-              onCheckedChange={(checked: boolean) =>
-                onChange("queue.ipv4", checked)
-              }
-            />
-          </Field>
+          <div className="flex flex-row gap-4">
+            <Field orientation="horizontal">
+              <FieldContent>
+                <FieldTitle>Enable IPv4 Support</FieldTitle>
+                <FieldDescription>
+                  Whether to proccess IPv4 traffic
+                </FieldDescription>
+              </FieldContent>
+              <Switch
+                id="switch-queue-ipv4"
+                checked={config.queue.ipv4}
+                onCheckedChange={(checked: boolean) =>
+                  onChange("queue.ipv4", checked)
+                }
+              />
+            </Field>
 
-          <Field orientation="horizontal">
-            <FieldContent>
-              <FieldTitle>Enable IPv6 Support</FieldTitle>
-              <FieldDescription>
-                Whether to proccess IPv6 traffic
-              </FieldDescription>
-            </FieldContent>
-            <Switch
-              id="switch-queue-ipv6"
-              checked={config.queue.ipv6}
-              onCheckedChange={(checked: boolean) =>
-                onChange("queue.ipv6", checked)
-              }
-            />
-          </Field>
-
+            <Field orientation="horizontal">
+              <FieldContent>
+                <FieldTitle>Enable IPv6 Support</FieldTitle>
+                <FieldDescription>
+                  Whether to proccess IPv6 traffic
+                </FieldDescription>
+              </FieldContent>
+              <Switch
+                id="switch-queue-ipv6"
+                checked={config.queue.ipv6}
+                onCheckedChange={(checked: boolean) =>
+                  onChange("queue.ipv6", checked)
+                }
+              />
+            </Field>
+          </div>
           <Field orientation="horizontal">
             <FieldContent>
               <FieldTitle>Skip IPTables/NFTables Setup</FieldTitle>
@@ -96,12 +100,12 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
           </Field>
 
           <Field>
-            <div className="flex justify-between">
-              <FieldTitle>Firewall Monitor Interval</FieldTitle>
-              <Badge variant="secondary" className="font-semibold">
+            <FieldLabel>
+              Firewall Monitor Interval
+              <Badge variant="secondary" className="ml-auto">
                 {config.system.tables.monitor_interval || "off"}
               </Badge>
-            </div>
+            </FieldLabel>
             <Slider
               value={[config.system.tables.monitor_interval]}
               onValueChange={(values) =>
@@ -120,19 +124,13 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
           </Field>
         </FieldGroup>
 
-        <Separator className="my-4" />
+        <FieldSeparator className="my-6">Network Interfaces</FieldSeparator>
 
-        <FieldSet>
-          <FieldLegend>Network Interfaces</FieldLegend>
-          <FieldDescription>
-            Select interfaces to monitor (empty = all interfaces)
-          </FieldDescription>
-          <FieldGroup className="flex flex-col">
-            {config.available_ifaces.map((iface) => {
-              const isSelected = (config.queue.interfaces || []).includes(
-                iface,
-              );
-              return (
+        <FieldGroup>
+          {config.available_ifaces.map((iface) => {
+            const isSelected = (config.queue.interfaces || []).includes(iface);
+            return (
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
                 <Field key={iface} orientation="horizontal">
                   <Checkbox
                     id={`interface-${iface}`}
@@ -152,23 +150,22 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
                     {iface}
                   </FieldLabel>
                 </Field>
-              );
-            })}
-            {config.available_ifaces.length === 0 && (
-              <Alert variant="destructive" className="mt-4">
-                <AlertDescription>No interfaces detected</AlertDescription>
-              </Alert>
-            )}
-            {config.queue.interfaces?.length === 0 && (
-              <Alert className="mt-4">
-                <AlertDescription>
-                  B4 will listen on all available interfaces if none are
-                  selected.
-                </AlertDescription>
-              </Alert>
-            )}
-          </FieldGroup>
-        </FieldSet>
+              </div>
+            );
+          })}
+          {config.available_ifaces.length === 0 && (
+            <Alert variant="destructive" className="mt-4">
+              <AlertDescription>No interfaces detected</AlertDescription>
+            </Alert>
+          )}
+          {config.queue.interfaces?.length === 0 && (
+            <Alert className="mt-4">
+              <AlertDescription>
+                B4 will listen on all available interfaces if none are selected.
+              </AlertDescription>
+            </Alert>
+          )}
+        </FieldGroup>
       </CardContent>
     </Card>
   );

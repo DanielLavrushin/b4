@@ -27,6 +27,7 @@ import { LoggingSettings } from "./Logging";
 import { NetworkSettings } from "./Network";
 
 import { configApi } from "@b4.settings";
+import { B4Config, B4SetConfig } from "@models/config";
 import { Alert, AlertDescription } from "@primitives/alert";
 import {
   Dialog,
@@ -38,29 +39,61 @@ import {
 } from "@primitives/dialog";
 import { Separator } from "@primitives/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@primitives/tabs";
-import { B4Config, B4SetConfig } from "@models/config";
 
 enum TABS {
-  GENERAL = 0,
-  DOMAINS,
+  CORE = 0,
+  GEODAT,
   DISCOVERY,
   API,
   CAPTURE,
 }
 
-// Settings categories with route paths
+// hasChanges utilities
+const deepEqual = (a: unknown, b: unknown): boolean => {
+  return JSON.stringify(a) === JSON.stringify(b);
+};
+
+const getNestedValue = (obj: unknown, path: string): unknown => {
+  if (typeof obj !== "object" || obj === null) return undefined;
+  let current: unknown = obj;
+  for (const key of path.split(".")) {
+    if (current && typeof current === "object" && key in current) {
+      current = (current as Record<string, unknown>)[key];
+    } else {
+      return undefined;
+    }
+  }
+  return current;
+};
+
+const CATEGORY_CONFIG_PATHS: Record<TABS, string[]> = {
+  [TABS.CORE]: [
+    "system.logging",
+    "queue",
+    "system.web_server",
+    "system.tables",
+    "queue.devices",
+  ],
+  [TABS.GEODAT]: ["system.geo"],
+  [TABS.DISCOVERY]: ["system.checker"],
+  [TABS.API]: ["system.api"],
+  [TABS.CAPTURE]: [],
+};
+
+//
+
 const SETTING_CATEGORIES = [
   {
-    id: TABS.GENERAL,
-    path: "general",
+    id: TABS.CORE,
+    path: "core",
     label: "Core",
     icon: <CoreIcon />,
     description: "Global network and queue configuration",
     requiresRestart: true,
   },
   {
-    id: TABS.DOMAINS,
-    path: "domains",
+    id: TABS.GEODAT,
+    path: "geodat",
     label: "Geodat",
     icon: <GeodatIcon />,
     description: "Global geodata configuration",
@@ -104,20 +137,10 @@ export function SettingsPage() {
   const location = useLocation();
 
   // Determine current tab based on URL
-  const currentTabPath = location.pathname.split("/settings/")[1] || "general";
-  const currentTab =
-    SETTING_CATEGORIES.find((cat) => cat.path === currentTabPath)?.id ??
-    TABS.GENERAL;
-
-  // Handle tab change
-  const handleTabChange = (_: React.SyntheticEvent, newValue: number) => {
-    const category = SETTING_CATEGORIES.find(
-      (cat) => cat.id === (newValue as TABS),
-    );
-    if (category) {
-      navigate(`/settings/${category.path}`);
-    }
-  };
+  const currentTab = useMemo(() => {
+    const path = location.pathname.split("/settings/")[1] || "core";
+    return SETTING_CATEGORIES.find((cat) => cat.path === path)?.id ?? TABS.CORE;
+  }, [location.pathname]);
 
   // Navigate to default tab if no specific tab is in URL
   useEffect(() => {
@@ -125,51 +148,45 @@ export function SettingsPage() {
       location.pathname === "/settings" ||
       location.pathname === "/settings/"
     ) {
-      navigate("/settings/general", { replace: true });
+      navigate("/settings/core", { replace: true });
     }
   }, [location.pathname, navigate]);
+
+  // Handle tab change
+  const handleTabChange = useCallback(
+    (value: string) => {
+      const tabId = Number(value) as TABS;
+      const category = SETTING_CATEGORIES.find((cat) => cat.id === tabId);
+      if (category) {
+        navigate(`/settings/${category.path}`);
+      }
+    },
+    [navigate],
+  );
 
   // Check if configuration has been modified
   const hasChanges = useMemo(() => {
     if (!config || !originalConfig) return false;
-    return JSON.stringify(config) !== JSON.stringify(originalConfig);
+    return !deepEqual(config, originalConfig);
   }, [config, originalConfig]);
 
   // Check which categories have changes
   const categoryHasChanges = useMemo(() => {
-    if (!hasChanges || !config || !originalConfig) return {};
+    if (!hasChanges || !config || !originalConfig)
+      return {} as Record<TABS, boolean>;
 
-    return {
-      // Core
-      [TABS.GENERAL]:
-        JSON.stringify(config.system.logging) !==
-          JSON.stringify(originalConfig.system.logging) ||
-        JSON.stringify(config.queue) !== JSON.stringify(originalConfig.queue) ||
-        JSON.stringify(config.system.web_server) !==
-          JSON.stringify(originalConfig.system.web_server) ||
-        JSON.stringify(config.system.tables) !==
-          JSON.stringify(originalConfig.system.tables) ||
-        JSON.stringify(config.queue.devices) !==
-          JSON.stringify(originalConfig.queue.devices),
+    const changes: Record<TABS, boolean> = {} as Record<TABS, boolean>;
 
-      // Geosite Settings
-      [TABS.DOMAINS]:
-        JSON.stringify(config.system.geo) !==
-        JSON.stringify(originalConfig.system.geo),
+    (Object.keys(CATEGORY_CONFIG_PATHS) as unknown as TABS[]).forEach((tab) => {
+      const paths = CATEGORY_CONFIG_PATHS[tab];
+      changes[tab] = paths.some((path) => {
+        const current = getNestedValue(config, path);
+        const original = getNestedValue(originalConfig, path);
+        return !deepEqual(current, original);
+      });
+    });
 
-      // Discovery
-      [TABS.DISCOVERY]:
-        JSON.stringify(config.system.checker) !==
-        JSON.stringify(originalConfig.system.checker),
-
-      // API
-      [TABS.API]:
-        JSON.stringify(config.system.api) !==
-        JSON.stringify(originalConfig.system.api),
-
-      // Capture
-      [TABS.CAPTURE]: false,
-    };
+    return changes;
   }, [config, originalConfig, hasChanges]);
 
   const loadConfig = useCallback(async () => {
@@ -198,7 +215,7 @@ export function SettingsPage() {
       await configApi.save(config);
       setOriginalConfig(structuredClone(config));
 
-      const requiresRestart = categoryHasChanges[0];
+      const requiresRestart = categoryHasChanges[TABS.CORE];
       showSuccess(
         requiresRestart
           ? "Configuration saved! Please restart B4 for core settings to take effect."
@@ -262,14 +279,12 @@ export function SettingsPage() {
     );
   }
 
-  const validTab = Math.max(currentTab, 0);
+  const tabValue = String(Math.max(currentTab, 0));
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      {/* Header with tabs */}
+    <div className="flex h-full flex-col gap-6 overflow-hidden">
       <Card>
         <CardHeader>
-          {/* Action bar */}
           <div className="mb-4 flex flex-row items-center justify-between">
             <div className="flex flex-row items-center gap-4">
               <CardTitle className="text-lg font-semibold">
@@ -284,7 +299,7 @@ export function SettingsPage() {
             </div>
 
             <div className="flex flex-row gap-2">
-              {categoryHasChanges[TABS.GENERAL] && (
+              {categoryHasChanges[TABS.CORE] && (
                 <Alert variant="destructive">
                   <AlertDescription>
                     Core settings require <strong>B4</strong> restart
@@ -302,20 +317,15 @@ export function SettingsPage() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => {
-                  void loadConfig();
-                }}
+                onClick={() => void loadConfig()}
                 disabled={saving}
               >
                 <RefreshIcon />
                 Reload
               </Button>
-
               <Button
                 size="sm"
-                onClick={() => {
-                  void saveConfig();
-                }}
+                onClick={() => void saveConfig()}
                 disabled={!hasChanges || saving}
               >
                 {saving ? (
@@ -334,16 +344,10 @@ export function SettingsPage() {
           </div>
         </CardHeader>
 
-        {/* Tabs */}
         <CardContent>
-          <Tabs
-            value={String(validTab)}
-            onValueChange={(value) =>
-              handleTabChange({} as React.SyntheticEvent, Number(value))
-            }
-          >
+          <Tabs value={tabValue} onValueChange={handleTabChange}>
             <TabsList className="w-full">
-              {SETTING_CATEGORIES.sort((a, b) => a.id - b.id).map((cat) => (
+              {SETTING_CATEGORIES.map((cat) => (
                 <TabsTrigger key={cat.id} value={String(cat.id)}>
                   <div className="flex items-center gap-1.5">
                     {cat.icon}
@@ -359,43 +363,41 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
-      <div className="flex-1 overflow-auto pb-4">
+      <div className="flex-1 overflow-auto">
         <Tabs
-          value={String(validTab)}
-          onValueChange={(value) =>
-            handleTabChange({} as React.SyntheticEvent, Number(value))
-          }
+          value={tabValue}
+          onValueChange={handleTabChange}
           className="w-full"
         >
-          <TabsContent value={String(TABS.GENERAL)} className="mt-2">
-            <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-2">
-              <NetworkSettings config={config} onChange={handleChange} />
-              <FeatureSettings config={config} onChange={handleChange} />
-              <LoggingSettings config={config} onChange={handleChange} />
-              <ControlSettings loadConfig={() => void loadConfig()} />
+          <TabsContent value={String(TABS.CORE)}>
+            <div className="flex flex-col gap-6">
+              <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-2">
+                <NetworkSettings config={config} onChange={handleChange} />
+                <FeatureSettings config={config} onChange={handleChange} />
+                <LoggingSettings config={config} onChange={handleChange} />
+                <ControlSettings loadConfig={() => void loadConfig()} />
+              </div>
               <DevicesSettings config={config} onChange={handleChange} />
             </div>
           </TabsContent>
 
-          <TabsContent value={String(TABS.DOMAINS)} className="mt-2">
+          <TabsContent value={String(TABS.GEODAT)}>
             <GeoSettings
               config={config}
               onChange={handleChange}
-              loadConfig={() => {
-                void loadConfig();
-              }}
+              loadConfig={() => void loadConfig()}
             />
           </TabsContent>
 
-          <TabsContent value={String(TABS.API)} className="mt-2">
+          <TabsContent value={String(TABS.API)}>
             <ApiSettings config={config} onChange={handleChange} />
           </TabsContent>
 
-          <TabsContent value={String(TABS.DISCOVERY)} className="mt-2">
+          <TabsContent value={String(TABS.DISCOVERY)}>
             <CheckerSettings config={config} onChange={handleChange} />
           </TabsContent>
 
-          <TabsContent value={String(TABS.CAPTURE)} className="mt-2">
+          <TabsContent value={String(TABS.CAPTURE)}>
             <CaptureSettings />
           </TabsContent>
         </Tabs>

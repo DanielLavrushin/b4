@@ -10,7 +10,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@primitives/card";
-import { Field, FieldDescription, FieldLabel } from "@primitives/field";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  FieldSeparator,
+} from "@primitives/field";
 import { Input } from "@primitives/input";
 import { Label } from "@primitives/label";
 import {
@@ -149,26 +155,15 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
   };
 
   return (
-    <div className="space-y-6">
-      <Alert>
-        <AlertDescription>
-          <h6 className="mb-2 text-sm font-semibold">
-            Download GeoSite/GeoIP database files for domain and IP
-            categorization.
-          </h6>
-          <p className="text-muted-foreground text-xs">
-            Files will be saved to <strong>{destPath}</strong>
-          </p>
-        </AlertDescription>
-      </Alert>
-
+    <div className="flex flex-col gap-6">
       {/* Current Files Status */}
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2">
             <GeodatIcon />
-            <CardTitle>Current Files</CardTitle>
-          </div>
+            Current Files
+          </CardTitle>
+
           <CardDescription>
             Status of currently configured geodat files
           </CardDescription>
@@ -180,11 +175,8 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
                 <div className="flex items-center justify-between">
                   <h6 className="text-sm font-semibold">Geosite Database</h6>
                   {geositeInfo.exists ? (
-                    <Badge
-                      variant="secondary"
-                      className="inline-flex items-center gap-1"
-                    >
-                      <SuccessIcon className="size-3" />
+                    <Badge variant="secondary">
+                      <SuccessIcon />
                       Active
                     </Badge>
                   ) : (
@@ -208,7 +200,7 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
 
                 {geositeInfo.exists && (
                   <>
-                    <Separator className="my-1" />
+                    <Separator className="my-4" />
                     <div className="flex justify-between">
                       <p className="text-muted-foreground text-xs">
                         Size: {formatFileSize(geositeInfo.size)}
@@ -255,7 +247,7 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
 
                 {geoipInfo.exists && (
                   <>
-                    <Separator className="my-1" />
+                    <Separator className="my-4" />
                     <div className="flex justify-between">
                       <p className="text-muted-foreground text-xs">
                         Size: {formatFileSize(geoipInfo.size)}
@@ -275,19 +267,22 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
       {/* Download Section */}
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2">
             <DownloadIcon />
-            <CardTitle>Download Files</CardTitle>
-          </div>
+            Download Files
+          </CardTitle>
           <CardDescription>
             Select a preset source or enter custom URLs
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
-              <Label>Preset Source</Label>
-              <Select value={selectedSource} onValueChange={handleSourceChange}>
+          <FieldGroup className="flex-row gap-4">
+            <Field>
+              <FieldLabel>Preset Source</FieldLabel>
+              <Select
+                value={selectedSource}
+                onValueChange={(value) => handleSourceChange(value || "")}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Choose a preset source" />
                 </SelectTrigger>
@@ -299,10 +294,10 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-muted-foreground text-xs">
+              <FieldDescription>
                 Select a predefined geodat source
-              </p>
-            </div>
+              </FieldDescription>
+            </Field>
             <Field>
               <FieldLabel>Destination Path</FieldLabel>
               <Input
@@ -316,14 +311,11 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
                 Directory where files will be saved
               </FieldDescription>
             </Field>
+          </FieldGroup>
 
-            <div className="relative my-4 flex items-center md:col-span-2">
-              <Separator className="absolute inset-0 top-1/2" />
-              <span className="text-muted-foreground bg-card relative mx-auto block w-fit px-2 text-xs font-medium uppercase">
-                Custom URLs
-              </span>
-            </div>
+          <FieldSeparator className="my-6">Custom URLs</FieldSeparator>
 
+          <FieldGroup>
             <Field>
               <FieldLabel>Custom Geosite URL</FieldLabel>
               <Input
@@ -350,41 +342,38 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
               <FieldDescription>Full URL to geoip.dat file</FieldDescription>
             </Field>
 
-            <div className="col-span-1 md:col-span-2">
-              <div className="flex items-center gap-4">
-                <Button
-                  onClick={() => void handleDownload()}
-                  disabled={downloading}
-                >
-                  {downloading ? (
-                    <>
-                      <Spinner className="mr-2 size-4" />
-                      Downloading...
-                    </>
-                  ) : (
-                    <>
-                      <DownloadIcon className="mr-2 size-4" />
-                      Download Files
-                    </>
-                  )}
-                </Button>
-
-                {downloadStatus && (
-                  <p
-                    className={cn(
-                      "text-sm",
-                      downloadStatus.includes("✓") ||
-                        downloadStatus.includes("successfully")
-                        ? "text-secondary"
-                        : "text-destructive",
-                    )}
-                  >
-                    {downloadStatus}
-                  </p>
+            <Field orientation="horizontal">
+              <Button
+                onClick={() => void handleDownload()}
+                disabled={downloading}
+              >
+                {downloading ? (
+                  <>
+                    <Spinner />
+                    Downloading...
+                  </>
+                ) : (
+                  <>
+                    <DownloadIcon />
+                    Download Files
+                  </>
                 )}
-              </div>
-            </div>
-          </div>
+              </Button>
+            </Field>
+            {downloadStatus && (
+              <p
+                className={cn(
+                  "text-sm",
+                  downloadStatus.includes("✓") ||
+                    downloadStatus.includes("successfully")
+                    ? "text-secondary"
+                    : "text-destructive",
+                )}
+              >
+                {downloadStatus}
+              </p>
+            )}
+          </FieldGroup>
         </CardContent>
       </Card>
     </div>
