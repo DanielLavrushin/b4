@@ -126,6 +126,11 @@
   body {
     @apply bg-background text-foreground m-0 h-full font-sans;
   }
+  button,
+  [data-slot="switch"],
+  [data-slot="slider-thumb"] {
+    @apply hover:cursor-pointer;
+  }
   #root {
     @apply h-full;
   }
