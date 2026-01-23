@@ -24,7 +24,7 @@ export function App() {
         <div className="flex flex-1 flex-col overflow-auto p-6">
           <SnackbarProvider>
             <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/*" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/connections" element={<ConnectionsPage />} />
               <Route path="/sets/*" element={<SetsPage />} />
