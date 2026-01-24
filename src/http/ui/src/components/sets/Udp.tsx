@@ -250,7 +250,7 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                   </FieldContent>
                   <Slider
                     value={[config.udp.conn_bytes_limit]}
-                    onValueChange={([value]) =>
+                    onValueChange={([value]: [number]) =>
                       onChange("udp.conn_bytes_limit", value)
                     }
                     min={1}
@@ -336,7 +336,7 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                   </FieldContent>
                   <Slider
                     value={[config.udp.fake_seq_length]}
-                    onValueChange={([value]) =>
+                    onValueChange={([value]: [number]) =>
                       onChange("udp.fake_seq_length", value)
                     }
                     min={1}
@@ -359,7 +359,9 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                   </FieldContent>
                   <Slider
                     value={[config.udp.fake_len]}
-                    onValueChange={([value]) => onChange("udp.fake_len", value)}
+                    onValueChange={([value]: [number]) =>
+                      onChange("udp.fake_len", value)
+                    }
                     min={32}
                     max={1500}
                     step={8}
@@ -380,7 +382,9 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                   </FieldContent>
                   <Slider
                     value={[config.udp.seg2delay]}
-                    onValueChange={([value]) => onChange("udp.seg2delay", value)}
+                    onValueChange={([value]: [number]) =>
+                      onChange("udp.seg2delay", value)
+                    }
                     min={0}
                     max={1000}
                     step={10}

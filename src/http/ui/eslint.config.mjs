@@ -1,12 +1,18 @@
 import eslint from "@eslint/js";
-import tseslint from "typescript-eslint";
 import react from "eslint-plugin-react";
 import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
+import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "build/**", "node_modules/**"],
+    ignores: [
+      "dist/**",
+      "build/**",
+      "node_modules/**",
+      "playwright-report/**",
+      "src/design/primitives/**",
+    ],
   },
   eslint.configs.recommended,
   {

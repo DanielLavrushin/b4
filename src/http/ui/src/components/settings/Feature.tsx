@@ -105,7 +105,7 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
             </FieldLabel>
             <Slider
               value={[config.system.tables.monitor_interval]}
-              onValueChange={([value]) =>
+              onValueChange={([value]: [number]) =>
                 onChange("system.tables.monitor_interval", value)
               }
               min={0}

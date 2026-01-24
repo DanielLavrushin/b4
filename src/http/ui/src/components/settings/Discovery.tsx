@@ -77,7 +77,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
                 </FieldLabel>
                 <Slider
                   value={[config.system.checker.discovery_timeout || 5]}
-                  onValueChange={([value]) =>
+                  onValueChange={([value]: [number]) =>
                     onChange("system.checker.discovery_timeout", value)
                   }
                   min={3}
@@ -97,7 +97,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
                 </FieldLabel>
                 <Slider
                   value={[config.system.checker.config_propagate_ms || 1500]}
-                  onValueChange={([value]) =>
+                  onValueChange={([value]: [number]) =>
                     onChange("system.checker.config_propagate_ms", value)
                   }
                   min={500}
