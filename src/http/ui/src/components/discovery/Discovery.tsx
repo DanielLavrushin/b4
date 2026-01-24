@@ -17,7 +17,13 @@ import {
   StopIcon,
 } from "@b4.icons";
 import { useSnackbar } from "@context/SnackbarProvider";
-import { cn } from "@design/lib/utils";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemMedia,
+} from "@design/primitives/item";
 import { useSets } from "@hooks/useSets";
 import { B4SetConfig } from "@models/config";
 import { Alert, AlertDescription } from "@primitives/alert";
@@ -25,6 +31,7 @@ import { Badge } from "@primitives/badge";
 import { Button } from "@primitives/button";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -396,30 +403,18 @@ export const DiscoveryRunner = () => {
                 const totalCount = Object.keys(domainResult.results).length;
 
                 return (
-                  <Card
+                  <Collapsible
                     key={domainResult.domain}
-                    className="border-border gap-0 overflow-hidden rounded-none border py-0"
+                    open={isExpanded}
+                    onOpenChange={() => toggleDomainExpand(domainResult.domain)}
                   >
-                    {/* Domain Header */}
-                    <Collapsible
-                      open={isExpanded}
-                      onOpenChange={() =>
-                        toggleDomainExpand(domainResult.domain)
-                      }
-                    >
+                    <Card>
                       <CollapsibleTrigger>
-                        <div className="bg-accent flex cursor-pointer items-center justify-between p-4">
-                          <div className="flex items-center gap-4">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="size-6 p-0"
-                            >
-                              {isExpanded ? <CollapseIcon /> : <ExpandIcon />}
-                            </Button>
-                            <h6 className="text-foreground text-base font-semibold">
-                              {domainResult.domain}
-                            </h6>
+                        {/* Domain Header */}
+                        <CardHeader>
+                          <CardTitle className="flex flex-row items-center gap-2">
+                            {domainResult.domain}
+
                             {domainResult.best_success ? (
                               <Badge>Success</Badge>
                             ) : running ? (
@@ -432,21 +427,17 @@ export const DiscoveryRunner = () => {
                             </Badge>
                             {domainResult.improvement &&
                               domainResult.improvement > 0 && (
-                                <Badge
-                                  variant="secondary"
-                                  className="inline-flex items-center gap-1"
-                                >
+                                <Badge variant="secondary">
                                   <ImprovementIcon className="size-3" />
                                   {`+${domainResult.improvement.toFixed(0)}%`}
                                 </Badge>
                               )}
-                            <h6
-                              className={cn(
-                                "text-base font-semibold",
+                            <Badge
+                              variant={
                                 domainResult.best_success
-                                  ? "text-secondary"
-                                  : "text-muted-foreground",
-                              )}
+                                  ? "default"
+                                  : "outline"
+                              }
                             >
                               {domainResult.best_success
                                 ? `${(
@@ -457,199 +448,195 @@ export const DiscoveryRunner = () => {
                                 : running
                                   ? `${totalCount} tested...`
                                   : "No working config"}
-                            </h6>
-                          </div>
-                        </div>
+                            </Badge>
+                          </CardTitle>
+                          <CardAction>
+                            <Button size="sm" variant="ghost">
+                              {isExpanded ? <CollapseIcon /> : <ExpandIcon />}
+                            </Button>
+                          </CardAction>
+                        </CardHeader>
                       </CollapsibleTrigger>
 
-                      {/* Best Configuration Quick View (always visible) */}
-                      {(domainResult.best_success ||
-                        (running &&
-                          Object.values(domainResult.results).some(
-                            (r) => r.status === "complete",
-                          ))) && (
-                        <div>
-                          <div
-                            className={cn(
-                              "bg-background flex items-center justify-between p-4",
-                              !running && "border-border border-b",
-                            )}
-                          >
-                            <div className="flex items-center gap-4">
-                              <SpeedIcon className="text-secondary size-5" />
-                              <div>
-                                <p className="text-muted-foreground text-xs">
-                                  {running
-                                    ? "Current Best"
-                                    : "Best Configuration"}
-                                </p>
-                                <p className="text-foreground text-base font-semibold">
-                                  {domainResult.best_preset}
-                                  {domainResult.best_preset &&
+                      <CardContent className="p-0">
+                        {/* Best Configuration Quick View (always visible) */}
+                        {(domainResult.best_success ||
+                          (running &&
+                            Object.values(domainResult.results).some(
+                              (r) => r.status === "complete",
+                            ))) && (
+                          <Item className="bg-background">
+                            <ItemMedia variant="icon">
+                              <SpeedIcon />
+                            </ItemMedia>
+                            <ItemContent>
+                              <p className="text-foreground text-base font-semibold">
+                                {domainResult.best_preset}
+                                {domainResult.best_preset &&
+                                  domainResult.results[domainResult.best_preset]
+                                    ?.family && (
+                                    <Badge className="ml-2">
+                                      {
+                                        familyNames[
+                                          domainResult.results[
+                                            domainResult.best_preset
+                                          ].family!
+                                        ]
+                                      }
+                                    </Badge>
+                                  )}
+                              </p>
+                              <ItemDescription>
+                                {running
+                                  ? "Current Best"
+                                  : "Best Configuration"}
+                              </ItemDescription>
+                            </ItemContent>
+                            <ItemActions>
+                              <Button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const bestResult =
                                     domainResult.results[
                                       domainResult.best_preset
-                                    ]?.family && (
-                                      <Badge className="ml-2">
-                                        {
-                                          familyNames[
-                                            domainResult.results[
-                                              domainResult.best_preset
-                                            ].family!
-                                          ]
-                                        }
+                                    ];
+                                  void handleAddStrategy(
+                                    domainResult.domain,
+                                    bestResult,
+                                  );
+                                }}
+                                disabled={addingPreset}
+                              >
+                                {addingPreset ? (
+                                  <>
+                                    <Spinner />
+                                    Adding...
+                                  </>
+                                ) : (
+                                  <>
+                                    <AddIcon />
+                                    {running
+                                      ? "Use Current Best"
+                                      : "Use This Strategy"}
+                                  </>
+                                )}
+                              </Button>
+                            </ItemActions>
+                          </Item>
+                        )}
+                        <CollapsibleContent>
+                          {/* Expanded Details */}
+                          {isExpanded && (
+                            <CardContent>
+                              <Separator className="my-4" />
+                              {/* Results by Phase */}
+                              {(
+                                [
+                                  "baseline",
+                                  "strategy_detection",
+                                  "optimization",
+                                  "combination",
+                                ] as DiscoveryPhase[]
+                              )
+                                .filter(
+                                  (phase) => groupedResults[phase].length > 0,
+                                )
+                                .map((phase) => (
+                                  <div key={phase} className="mb-6">
+                                    <h6 className="text-muted-foreground mb-3 flex items-center gap-2 text-xs uppercase">
+                                      {phaseNames[phase]}
+                                      <Badge>
+                                        {groupedResults[phase].length}
                                       </Badge>
-                                    )}
-                                </p>
-                              </div>
-                            </div>
-                            <Button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const bestResult =
-                                  domainResult.results[
-                                    domainResult.best_preset
-                                  ];
-                                void handleAddStrategy(
-                                  domainResult.domain,
-                                  bestResult,
-                                );
-                              }}
-                              disabled={addingPreset}
-                            >
-                              {addingPreset ? (
-                                <>
-                                  <Spinner className="mr-2 size-4" />
-                                  Adding...
-                                </>
-                              ) : (
-                                <>
-                                  <AddIcon className="mr-2 size-4" />
-                                  {running
-                                    ? "Use Current Best"
-                                    : "Use This Strategy"}
-                                </>
-                              )}
-                            </Button>
-                          </div>
-                          {/* Info message while still running */}
-                          {running && domainResult.best_success && (
-                            <Alert className="border-border rounded-none border-b">
-                              <AlertDescription>
-                                Found a working configuration! Still testing{" "}
-                                {suite
-                                  ? suite.total_checks - totalCount
-                                  : "..."}{" "}
-                                more configs — a faster option may be found.
-                              </AlertDescription>
-                            </Alert>
+                                    </h6>
+                                    <div className="flex flex-row flex-wrap gap-2">
+                                      {groupedResults[phase]
+                                        .sort((a, b) => b.speed - a.speed)
+                                        .map((result) => (
+                                          <div
+                                            key={result.preset_name}
+                                            className="flex items-center gap-1"
+                                          >
+                                            <Badge
+                                              variant={
+                                                result.status === "complete"
+                                                  ? "default"
+                                                  : "destructive"
+                                              }
+                                            >
+                                              {`${result.preset_name}: ${
+                                                result.status === "complete"
+                                                  ? `${(
+                                                      result.speed /
+                                                      1024 /
+                                                      1024
+                                                    ).toFixed(2)} MB/s`
+                                                  : "Failed"
+                                              }`}
+                                            </Badge>
+                                            {result.status === "complete" &&
+                                              result.preset_name !==
+                                                domainResult.best_preset && (
+                                                <Tooltip>
+                                                  <TooltipTrigger>
+                                                    <Button
+                                                      size="sm"
+                                                      variant="ghost"
+                                                      onClick={() => {
+                                                        void handleAddStrategy(
+                                                          domainResult.domain,
+                                                          result,
+                                                        );
+                                                      }}
+                                                      disabled={addingPreset}
+                                                    >
+                                                      <AddIcon />
+                                                    </Button>
+                                                  </TooltipTrigger>
+                                                  <TooltipContent>
+                                                    <p>
+                                                      Use this configuration
+                                                    </p>
+                                                  </TooltipContent>
+                                                </Tooltip>
+                                              )}
+                                          </div>
+                                        ))}
+                                    </div>
+                                  </div>
+                                ))}
+                            </CardContent>
                           )}
-                        </div>
-                      )}
 
-                      {/* Expanded Details */}
-                      <CollapsibleContent>
-                        <div className="p-6">
-                          <Separator className="my-4" />
-                          {/* Results by Phase */}
-                          {(
-                            [
-                              "baseline",
-                              "strategy_detection",
-                              "optimization",
-                              "combination",
-                            ] as DiscoveryPhase[]
-                          )
-                            .filter((phase) => groupedResults[phase].length > 0)
-                            .map((phase) => (
-                              <div key={phase} className="mb-6">
-                                <h6 className="text-muted-foreground mb-3 flex items-center gap-2 text-xs uppercase">
-                                  {phaseNames[phase]}
-                                  <Badge>{groupedResults[phase].length}</Badge>
-                                </h6>
-                                <div className="flex flex-row flex-wrap gap-2">
-                                  {groupedResults[phase]
-                                    .sort((a, b) => b.speed - a.speed)
-                                    .map((result) => (
-                                      <div
-                                        key={result.preset_name}
-                                        className="flex items-center gap-1"
-                                      >
-                                        <Badge
-                                          variant={
-                                            result.status === "complete"
-                                              ? "default"
-                                              : "destructive"
-                                          }
-                                        >
-                                          {`${result.preset_name}: ${
-                                            result.status === "complete"
-                                              ? `${(
-                                                  result.speed /
-                                                  1024 /
-                                                  1024
-                                                ).toFixed(2)} MB/s`
-                                              : "Failed"
-                                          }`}
-                                        </Badge>
-                                        {result.status === "complete" &&
-                                          result.preset_name !==
-                                            domainResult.best_preset && (
-                                            <Tooltip>
-                                              <TooltipTrigger>
-                                                <Button
-                                                  size="sm"
-                                                  variant="ghost"
-                                                  onClick={() => {
-                                                    void handleAddStrategy(
-                                                      domainResult.domain,
-                                                      result,
-                                                    );
-                                                  }}
-                                                  disabled={addingPreset}
-                                                  className="bg-muted border-border hover:bg-accent hover:border-secondary size-6 border p-0"
-                                                >
-                                                  <AddIcon className="size-3" />
-                                                </Button>
-                                              </TooltipTrigger>
-                                              <TooltipContent>
-                                                <p>Use this configuration</p>
-                                              </TooltipContent>
-                                            </Tooltip>
-                                          )}
-                                      </div>
-                                    ))}
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                      </CollapsibleContent>
-                    </Collapsible>
-
-                    {/* Failed state */}
-                    {!domainResult.best_success && !running && (
-                      <div className="p-6">
-                        <Alert variant="destructive">
-                          <AlertDescription>
-                            All {Object.keys(domainResult.results).length}{" "}
-                            tested configurations failed for this domain. Check
-                            your network connection and domain accessibility.
-                          </AlertDescription>
-                        </Alert>
-                      </div>
-                    )}
-                    {!domainResult.best_success && running && (
-                      <div className="bg-background p-4">
-                        <p className="text-muted-foreground flex items-center gap-2 text-sm">
-                          <Spinner />
-                          {suite && suite.total_checks > totalCount
-                            ? `${
-                                suite.total_checks - totalCount
-                              } more configurations to test...`
-                            : "Testing configurations..."}
-                        </p>
-                      </div>
-                    )}
-                  </Card>
+                          {/* Failed state */}
+                          {!domainResult.best_success && !running && (
+                            <div className="p-6">
+                              <Alert variant="destructive">
+                                <AlertDescription>
+                                  All {Object.keys(domainResult.results).length}{" "}
+                                  tested configurations failed for this domain.
+                                  Check your network connection and domain
+                                  accessibility.
+                                </AlertDescription>
+                              </Alert>
+                            </div>
+                          )}
+                          {!domainResult.best_success && running && (
+                            <div className="bg-background p-4">
+                              <p className="text-muted-foreground flex items-center gap-2 text-sm">
+                                <Spinner />
+                                {suite && suite.total_checks > totalCount
+                                  ? `${
+                                      suite.total_checks - totalCount
+                                    } more configurations to test...`
+                                  : "Testing configurations..."}
+                              </p>
+                            </div>
+                          )}
+                        </CollapsibleContent>
+                      </CardContent>
+                    </Card>
+                  </Collapsible>
                 );
               })}
           </div>
