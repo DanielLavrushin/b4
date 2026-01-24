@@ -162,7 +162,7 @@ export function useDiscoveryLogs() {
 
       ws.onmessage = (ev) => {
         const line = String(ev.data);
-        logsRef.current = [...logsRef.current, line].slice(-MAX_LOGS);
+        logsRef.current = [line, ...logsRef.current].slice(0, MAX_LOGS);
         setLogs(logsRef.current);
       };
 

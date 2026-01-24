@@ -41,7 +41,7 @@ import { Progress } from "@primitives/progress";
 import { Separator } from "@primitives/separator";
 import { Spinner } from "@primitives/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DiscoveryAddDialog } from "./AddDialog";
 import { DiscoveryLogPanel } from "./LogPanel";
 import { DiscoveryOptions, DiscoveryOptionsPanel } from "./Options";
@@ -126,7 +126,6 @@ export const DiscoveryRunner = () => {
     presetName: string;
     setConfig: B4SetConfig | null;
   }>({ open: false, domain: "", presetName: "", setConfig: null });
-  const domainInputRef = useRef<HTMLInputElement | null>(null);
 
   const progress = suite
     ? Math.min((suite.completed_checks / suite.total_checks) * 100, 100)
@@ -273,7 +272,6 @@ export const DiscoveryRunner = () => {
                     value={checkUrl}
                     onChange={(e) => setCheckUrl(e.target.value)}
                     onKeyDown={handleDomainKeyDown}
-                    ref={domainInputRef}
                     placeholder="youtube.com or https://youtube.com/some/path"
                     disabled={running || !!isReconnecting}
                   />

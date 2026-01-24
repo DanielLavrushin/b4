@@ -1,7 +1,6 @@
 import { Capture } from "@b4.capture";
 import { ComboboxMultiple } from "@composed/combobox-multiple";
 import { Alert, AlertDescription } from "@design/primitives/alert";
-import { Separator } from "@design/primitives/separator";
 import { Slider } from "@design/primitives/slider";
 import { Badge } from "@primitives/badge";
 import {
@@ -20,8 +19,8 @@ import {
   Field,
   FieldContent,
   FieldDescription,
+  FieldGroup,
   FieldLabel,
-  FieldSet,
   FieldTitle,
 } from "@primitives/field";
 import { Switch } from "@primitives/switch";
@@ -63,7 +62,7 @@ export const DiscoveryOptionsPanel = ({
   return (
     <Collapsible open={expanded} onOpenChange={setExpanded}>
       <Card>
-        <CollapsibleTrigger className="cursor-pointer">
+        <CollapsibleTrigger>
           <CardHeader>
             <CardTitle>Discovery Options</CardTitle>
             <CardDescription>{getOptionsSummary(options)}</CardDescription>
@@ -72,9 +71,8 @@ export const DiscoveryOptionsPanel = ({
 
         <CollapsibleContent>
           <>
-            <Separator />
             <CardContent>
-              <FieldSet>
+              <FieldGroup>
                 <Field orientation="horizontal">
                   <FieldContent>
                     <FieldTitle>Skip DNS Discovery</FieldTitle>
@@ -99,10 +97,12 @@ export const DiscoveryOptionsPanel = ({
                     <Badge variant="secondary">{options.validationTries}</Badge>
                   </FieldLabel>
                   <Slider
-                    value={[options.validationTries]}
-                    onValueChange={(values) => {
-                      const [value] = values as [number];
-                      onChange({ ...options, validationTries: value });
+                    value={options.validationTries}
+                    onValueChange={(value) => {
+                      onChange({
+                        ...options,
+                        validationTries: value as number,
+                      });
                     }}
                     min={1}
                     max={5}
@@ -153,7 +153,7 @@ export const DiscoveryOptionsPanel = ({
                     </Alert>
                   </Field>
                 )}
-              </FieldSet>
+              </FieldGroup>
             </CardContent>
           </>
         </CollapsibleContent>

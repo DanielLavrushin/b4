@@ -1,5 +1,15 @@
 import { useDiscoveryLogs } from "@b4.discovery";
-import { ClearIcon, CollapseIcon, ExpandIcon, LogsIcon } from "@b4.icons";
+import { ClearIcon, LogsIcon } from "@b4.icons";
+import { cn } from "@design/lib/utils";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@design/primitives/card";
+import { Item } from "@design/primitives/item";
+import { ScrollArea } from "@design/primitives/scroll-area";
 import { Badge } from "@primitives/badge";
 import { Button } from "@primitives/button";
 import {
@@ -8,7 +18,6 @@ import {
   CollapsibleTrigger,
 } from "@primitives/collapsible";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
-import { cn } from "@design/lib/utils";
 import { useEffect, useRef, useState } from "react";
 
 interface DiscoveryLogPanelProps {
@@ -18,7 +27,6 @@ interface DiscoveryLogPanelProps {
 export const DiscoveryLogPanel = ({ running }: DiscoveryLogPanelProps) => {
   const { logs, connected, clearLogs } = useDiscoveryLogs();
   const [expanded, setExpanded] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
   const hasAutoExpanded = useRef(false);
 
   useEffect(() => {
@@ -31,35 +39,24 @@ export const DiscoveryLogPanel = ({ running }: DiscoveryLogPanelProps) => {
     }
   }, [running, logs.length]);
 
-  useEffect(() => {
-    if (scrollRef.current && expanded) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [logs, expanded]);
-
   if (!running && logs.length === 0) return null;
 
   return (
-    <div className="border-border flex flex-col overflow-hidden border transition-colors">
-      <Collapsible open={expanded} onOpenChange={setExpanded}>
-        {/* Header */}
+    <Collapsible open={expanded} onOpenChange={setExpanded}>
+      {/* Header */}
+      <Card>
         <CollapsibleTrigger>
-          <div className="border-border/50 bg-card hover:bg-accent/50 flex cursor-pointer items-center justify-between border-b p-4 transition-colors">
-            <div className="flex items-center gap-3">
-              <LogsIcon className="text-secondary size-5" />
-              <h6 className="text-foreground text-base font-semibold">
-                Discovery Logs
-              </h6>
-              <div
-                className={cn(
-                  "size-4 rounded-full",
-                  connected ? "bg-secondary" : "bg-muted-foreground",
-                )}
-              />
-              {logs.length > 0 && <Badge>{`${logs.length} lines`}</Badge>}
-            </div>
-            <div className="flex items-center gap-1">
+          <CardHeader>
+            <CardTitle className="flex flex-row items-center gap-2">
+              <LogsIcon />
+              Discovery Logs
               {logs.length > 0 && (
+                <Badge className="ml-auto">{`${logs.length} lines`}</Badge>
+              )}
+            </CardTitle>
+
+            {logs.length > 0 && (
+              <CardAction>
                 <Tooltip>
                   <TooltipTrigger>
                     <Button
@@ -69,7 +66,6 @@ export const DiscoveryLogPanel = ({ running }: DiscoveryLogPanelProps) => {
                         e.stopPropagation();
                         clearLogs();
                       }}
-                      className="size-8 p-0"
                     >
                       <ClearIcon />
                     </Button>
@@ -78,56 +74,41 @@ export const DiscoveryLogPanel = ({ running }: DiscoveryLogPanelProps) => {
                     <p>Clear logs</p>
                   </TooltipContent>
                 </Tooltip>
-              )}
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setExpanded((prev) => !prev);
-                }}
-                className="size-8 p-0"
-              >
-                {expanded ? <CollapseIcon /> : <ExpandIcon />}
-              </Button>
-            </div>
-          </div>
+              </CardAction>
+            )}
+          </CardHeader>
         </CollapsibleTrigger>
 
         {/* Log content */}
         <CollapsibleContent>
-          <div
-            ref={scrollRef}
-            className="bg-background text-foreground relative h-37.5 overflow-y-auto p-4 font-mono text-[13px] leading-relaxed wrap-break-word whitespace-pre-wrap"
-          >
-            {logs.length === 0 ? (
-              <p className="text-muted-foreground italic">
-                Waiting for discovery logs...
-              </p>
-            ) : (
-              logs.map((line, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    "hover:bg-accent/50 font-mono text-[13px]",
-                    getLogColorClass(line),
-                  )}
-                >
-                  {line}
-                </div>
-              ))
-            )}
-          </div>
+          <CardContent className="p-0">
+            <ScrollArea className="bg-background h-37.5 wrap-break-word whitespace-pre-wrap">
+              {logs.length === 0 ? (
+                <Item className="text-muted-foreground">
+                  Waiting for discovery logs...
+                </Item>
+              ) : (
+                logs.map((line, i) => (
+                  <p
+                    key={i}
+                    className={cn("hover:bg-accent/50", getLogColorClass(line))}
+                  >
+                    {line}
+                  </p>
+                ))
+              )}
+            </ScrollArea>
+          </CardContent>
         </CollapsibleContent>
-      </Collapsible>
-    </div>
+      </Card>
+    </Collapsible>
   );
 };
 
 function getLogColorClass(line: string): string {
   const lower = line.toLowerCase();
-  if (lower.includes("success") || line.includes("✓") || lower.includes("best"))
-    return "text-secondary-foreground";
+  if (lower.includes("success") || lower.includes("best"))
+    return "text-primary";
   if (lower.includes("failed") || line.includes("✗") || lower.includes("fail"))
     return "text-destructive";
   if (lower.includes("phase")) return "text-muted-foreground";
