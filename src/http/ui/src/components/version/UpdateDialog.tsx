@@ -9,6 +9,7 @@ import {
   OpenInNewIcon,
 } from "@b4.icons";
 import { cn } from "@design/lib/utils";
+import { Field, FieldGroup, FieldLabel } from "@design/primitives/field";
 import { Spinner } from "@design/primitives/spinner";
 import { GitHubRelease, compareVersions } from "@hooks/useGitHubRelease";
 import { useSystemUpdate } from "@hooks/useSystemUpdate";
@@ -24,8 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@primitives/dialog";
-import { ItemActions, ItemContent, ItemGroup } from "@primitives/item";
-import { Label } from "@primitives/label";
+import { ItemContent, ItemGroup } from "@primitives/item";
 import {
   Select,
   SelectContent,
@@ -191,9 +191,12 @@ export const UpdateModal = ({
 
       {updateStatus === "idle" && (
         <ItemGroup>
-          <ItemGroup>
-            <ItemContent>
-              <Label htmlFor="select-version">Select Version</Label>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="select-version">
+                Select Version
+                <Badge className="ml-auto">{`Current: v${currentVersion}`}</Badge>
+              </FieldLabel>
               <Select
                 value={selectedVersion}
                 onValueChange={(value) => setSelectedVersion(value as string)}
@@ -211,22 +214,19 @@ export const UpdateModal = ({
                   ))}
                 </SelectContent>
               </Select>
-            </ItemContent>
-            <ItemActions>
+            </Field>
+            <Field orientation="horizontal">
+              <FieldLabel>Include pre-releases</FieldLabel>
               <Switch
                 checked={includePrerelease}
                 onCheckedChange={(checked) => onTogglePrerelease(checked)}
               />
-              <Label>Include pre-releases</Label>
-            </ItemActions>
-          </ItemGroup>
-          <ItemActions>
-            <Badge>{`Current: v${currentVersion}`}</Badge>
+            </Field>
+          </FieldGroup>
 
-            {selectedRelease?.prerelease && (
-              <Badge variant="outline">Pre-release</Badge>
-            )}
-          </ItemActions>
+          {selectedRelease?.prerelease && (
+            <Badge variant="outline">Pre-release</Badge>
+          )}
         </ItemGroup>
       )}
       <Separator />
@@ -240,25 +240,25 @@ export const UpdateModal = ({
         </Card>
       )}
       <Separator />
-      <ItemGroup>
+      <ItemGroup className="flex-row justify-between">
         <Button variant="link">
+          <DescriptionIcon />
           <a
             href="https://github.com/DanielLavrushin/b4/blob/main/changelog.md"
             target="_blank"
             rel="noopener noreferrer"
           >
-            <DescriptionIcon />
             Full Changelog
           </a>
         </Button>
         {selectedRelease && (
           <Button variant="link">
+            <OpenInNewIcon />
             <a
               href={selectedRelease.html_url}
               target="_blank"
               rel="noopener noreferrer"
             >
-              <OpenInNewIcon />
               View on GitHub
             </a>
           </Button>
