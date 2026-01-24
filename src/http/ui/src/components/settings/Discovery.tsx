@@ -19,7 +19,6 @@ import {
 import { Input } from "@primitives/input";
 import { Separator } from "@primitives/separator";
 import { Slider } from "@primitives/slider";
-import { useState } from "react";
 
 interface CheckerSettingsProps {
   config: B4Config;
@@ -30,26 +29,6 @@ interface CheckerSettingsProps {
 }
 
 export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
-  const [newDns, setNewDns] = useState("");
-
-  const handleAddDns = () => {
-    if (newDns.trim()) {
-      const current = config.system.checker.reference_dns || [];
-      if (!current.includes(newDns.trim())) {
-        onChange("system.checker.reference_dns", [...current, newDns.trim()]);
-      }
-      setNewDns("");
-    }
-  };
-
-  const handleRemoveDns = (dns: string) => {
-    const current = config.system.checker.reference_dns || [];
-    onChange(
-      "system.checker.reference_dns",
-      current.filter((s) => s !== dns),
-    );
-  };
-
   return (
     <div className="flex flex-col gap-6">
       <Card>
@@ -77,9 +56,10 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
                 </FieldLabel>
                 <Slider
                   value={[config.system.checker.discovery_timeout || 5]}
-                  onValueChange={([value]: [number]) =>
-                    onChange("system.checker.discovery_timeout", value)
-                  }
+                  onValueChange={(values) => {
+                    const [value] = values as [number];
+                    onChange("system.checker.discovery_timeout", value);
+                  }}
                   min={3}
                   max={30}
                   step={1}
@@ -97,9 +77,10 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
                 </FieldLabel>
                 <Slider
                   value={[config.system.checker.config_propagate_ms || 1500]}
-                  onValueChange={([value]: [number]) =>
-                    onChange("system.checker.config_propagate_ms", value)
-                  }
+                  onValueChange={(values) => {
+                    const [value] = values as [number];
+                    onChange("system.checker.config_propagate_ms", value);
+                  }}
                   min={500}
                   max={5000}
                   step={100}

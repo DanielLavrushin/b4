@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useCaptures } from "@b4.capture";
 import {
   DiscoveryPhase,
   DomainPresetResult,
@@ -17,6 +17,9 @@ import {
   StopIcon,
 } from "@b4.icons";
 import { useSnackbar } from "@context/SnackbarProvider";
+import { cn } from "@design/lib/utils";
+import { useSets } from "@hooks/useSets";
+import { B4SetConfig } from "@models/config";
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Badge } from "@primitives/badge";
 import { Button } from "@primitives/button";
@@ -38,13 +41,10 @@ import { Progress } from "@primitives/progress";
 import { Separator } from "@primitives/separator";
 import { Spinner } from "@primitives/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
-import { cn } from "@design/lib/utils";
-import { useSets } from "@hooks/useSets";
-import { useCaptures } from "@b4.capture";
-import { B4SetConfig } from "@models/config";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DiscoveryAddDialog } from "./AddDialog";
 import { DiscoveryLogPanel } from "./LogPanel";
-import { DiscoveryOptionsPanel, DiscoveryOptions } from "./Options";
+import { DiscoveryOptions, DiscoveryOptionsPanel } from "./Options";
 
 const familyNames: Record<StrategyFamily, string> = {
   none: "Baseline",

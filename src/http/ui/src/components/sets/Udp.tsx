@@ -1,6 +1,6 @@
 import { WarningIcon } from "@b4.icons";
 import { TagsInput } from "@composed/tags-input";
-import { validatePortFilter, parsePortFilter } from "@utils";
+import { B4SetConfig } from "@models/config";
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Badge } from "@primitives/badge";
 import {
@@ -30,7 +30,7 @@ import {
 import { Separator } from "@primitives/separator";
 import { Slider } from "@primitives/slider";
 import { Switch } from "@primitives/switch";
-import { B4SetConfig } from "@models/config";
+import { parsePortFilter, validatePortFilter } from "@utils";
 
 interface UdpSettingsProps {
   config: B4SetConfig;
@@ -250,9 +250,10 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                   </FieldContent>
                   <Slider
                     value={[config.udp.conn_bytes_limit]}
-                    onValueChange={([value]: [number]) =>
-                      onChange("udp.conn_bytes_limit", value)
-                    }
+                    onValueChange={(values) => {
+                      const [value] = values as [number];
+                      onChange("udp.conn_bytes_limit", value);
+                    }}
                     min={1}
                     max={main.id === config.id ? 30 : main.udp.conn_bytes_limit}
                     step={1}
@@ -336,9 +337,10 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                   </FieldContent>
                   <Slider
                     value={[config.udp.fake_seq_length]}
-                    onValueChange={([value]: [number]) =>
-                      onChange("udp.fake_seq_length", value)
-                    }
+                    onValueChange={(values) => {
+                      const [value] = values as [number];
+                      onChange("udp.fake_seq_length", value);
+                    }}
                     min={1}
                     max={20}
                     step={1}
@@ -359,9 +361,10 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                   </FieldContent>
                   <Slider
                     value={[config.udp.fake_len]}
-                    onValueChange={([value]: [number]) =>
-                      onChange("udp.fake_len", value)
-                    }
+                    onValueChange={(values) => {
+                      const [value] = values as [number];
+                      onChange("udp.fake_len", value);
+                    }}
                     min={32}
                     max={1500}
                     step={8}
@@ -382,9 +385,10 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                   </FieldContent>
                   <Slider
                     value={[config.udp.seg2delay]}
-                    onValueChange={([value]: [number]) =>
-                      onChange("udp.seg2delay", value)
-                    }
+                    onValueChange={(values) => {
+                      const [value] = values as [number];
+                      onChange("udp.seg2delay", value);
+                    }}
                     min={0}
                     max={1000}
                     step={10}

@@ -1,11 +1,11 @@
 import { DeviceInfo, DevicesSettingsProps, useDevices } from "@b4.devices";
-import { B4InlineEdit } from "@b4.elements";
 import {
   DeviceUnknowIcon,
   EditIcon,
   RefreshIcon,
   RestoreIcon,
 } from "@b4.icons";
+import { B4InlineEdit } from "@common/B4InlineEdit";
 import { Separator } from "@design/primitives/separator";
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Badge } from "@primitives/badge";

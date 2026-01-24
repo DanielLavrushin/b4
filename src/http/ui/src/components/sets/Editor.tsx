@@ -21,6 +21,7 @@ import { useSets } from "@hooks/useSets";
 import {
   B4Config,
   B4SetConfig,
+  FakingPayloadType,
   FakingStrategy,
   IncomingStrategy,
   MAIN_SET_ID,
@@ -177,10 +178,11 @@ function createDefaultSet(): B4SetConfig {
       strategy: "pastseq" as FakingStrategy,
       seq_offset: 10000,
       sni_seq_length: 1,
-      sni_type: 2,
+      sni_type: FakingPayloadType.CAPTURE,
       custom_payload: "",
       payload_file: "",
       tls_mod: [] as string[],
+      tcp_md5: false,
       sni_mutation: {
         mode: "off",
         grease_count: 3,

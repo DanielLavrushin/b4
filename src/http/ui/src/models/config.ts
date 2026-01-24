@@ -8,8 +8,6 @@ export type FakingStrategy =
 export enum FakingPayloadType {
   RANDOM = 0,
   CUSTOM = 1,
-  DEFAULT = 2,
-  DEFAULT2 = 3,
   CAPTURE = 4,
 }
 
@@ -88,21 +86,6 @@ export interface TargetsConfig {
   ip: string[];
   geosite_categories: string[];
   geoip_categories: string[];
-}
-
-export interface DomainStatisticsConfig {
-  manual_domains: number;
-  geosite_domains: number;
-  total_domains: number;
-  category_breakdown?: Record<string, number>;
-  geosite_available: boolean;
-}
-
-export interface CategoryPreviewConfig {
-  category: string;
-  total_domains: number;
-  preview_count: number;
-  preview: string[];
 }
 
 export type UdpMode = "drop" | "fake";
