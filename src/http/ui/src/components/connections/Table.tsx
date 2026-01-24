@@ -1,5 +1,5 @@
 import { ParsedLog } from "@b4.connections";
-import { AddIcon } from "@b4.icons";
+import { AddIcon, CollapseIcon, ExpandIcon, SortIcon } from "@b4.icons";
 import { ProtocolChip } from "@common/ProtocolChip";
 import { Badge } from "@primitives/badge";
 import { Button } from "@primitives/button";
@@ -20,7 +20,6 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { asnStorage } from "@utils";
-import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type SortColumn =
@@ -60,11 +59,11 @@ const SortableHeader = ({
     <Button variant="ghost" onClick={onSort}>
       {label}
       {sortState === "asc" ? (
-        <ArrowUp />
+        <CollapseIcon />
       ) : sortState === "desc" ? (
-        <ArrowDown />
+        <ExpandIcon />
       ) : (
-        <ArrowUpDown />
+        <SortIcon />
       )}
     </Button>
   );
