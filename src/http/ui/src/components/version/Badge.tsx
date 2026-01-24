@@ -4,7 +4,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@design/primitives/tooltip";
-import { Badge } from "@primitives/badge";
 import { Button } from "@primitives/button";
 import { Spinner } from "@primitives/spinner";
 

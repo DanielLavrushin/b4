@@ -18,7 +18,7 @@ import { Textarea } from "@primitives/textarea";
 import { useEffect, useState } from "react";
 
 import { Separator } from "@design/primitives/separator";
-import { B4SetConfig } from "@models/config";
+import { B4SetConfig, IncomingStrategy } from "@models/config";
 
 interface ImportExportSettingsProps {
   config: B4SetConfig;
@@ -87,7 +87,7 @@ export const ImportExportSettings = ({
           max: 14,
           fake_ttl: 3,
           fake_count: 3,
-          strategy: "badsum",
+          strategy: "badsum" as IncomingStrategy,
         };
       }
     }

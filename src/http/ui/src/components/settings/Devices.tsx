@@ -6,6 +6,7 @@ import {
   RefreshIcon,
   RestoreIcon,
 } from "@b4.icons";
+import { Separator } from "@design/primitives/separator";
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Badge } from "@primitives/badge";
 import { Button } from "@primitives/button";
@@ -22,7 +23,6 @@ import {
   FieldContent,
   FieldDescription,
   FieldGroup,
-  FieldLabel,
   FieldLegend,
   FieldSet,
   FieldTitle,
@@ -38,9 +38,7 @@ import {
   TableRow,
 } from "@primitives/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
-import { cn } from "@design/lib/utils";
 import { useEffect, useState } from "react";
-import { Separator } from "@design/primitives/separator";
 
 const DeviceNameCell = ({
   device,

@@ -1,5 +1,5 @@
 import { ApiIcon } from "@b4.icons";
-import { Alert, AlertDescription } from "@primitives/alert";
+import { B4Config } from "@models/config";
 import {
   Card,
   CardContent,
@@ -9,7 +9,6 @@ import {
 } from "@primitives/card";
 import { Field, FieldDescription, FieldLabel } from "@primitives/field";
 import { Input } from "@primitives/input";
-import { B4Config } from "@models/config";
 
 export interface ApiSettingsProps {
   config: B4Config;

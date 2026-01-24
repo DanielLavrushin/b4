@@ -1,5 +1,4 @@
 import { useCaptures } from "@b4.capture";
-import { ClientHelloIcon, SecurityIcon } from "@b4.icons";
 import { TagsInput } from "@composed/tags-input";
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Badge } from "@primitives/badge";
@@ -35,7 +34,12 @@ import { Textarea } from "@primitives/textarea";
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
 
-import { B4SetConfig, FakingPayloadType, MutationMode } from "@models/config";
+import {
+  B4SetConfig,
+  FakingPayloadType,
+  FakingStrategy,
+  MutationMode,
+} from "@models/config";
 
 interface FakingSettingsProps {
   config: B4SetConfig;
@@ -45,7 +49,7 @@ interface FakingSettingsProps {
   ) => void;
 }
 
-const FAKE_STRATEGIES = [
+const FAKE_STRATEGIES: { value: FakingStrategy; label: string }[] = [
   { value: "ttl", label: "TTL" },
   { value: "randseq", label: "Random Sequence" },
   { value: "pastseq", label: "Past Sequence" },
@@ -136,7 +140,7 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
             <Select
               value={config.faking.strategy}
               onValueChange={(value) =>
-                onChange("faking.strategy", value as string)
+                onChange("faking.strategy", value as FakingStrategy)
               }
               disabled={!config.faking.sni}
             >
@@ -145,10 +149,7 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
               </SelectTrigger>
               <SelectContent>
                 {FAKE_STRATEGIES.map((option) => (
-                  <SelectItem
-                    key={option.value}
-                    value={option.value.toString()}
-                  >
+                  <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>
                 ))}
@@ -261,7 +262,7 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
             </FieldLabel>
             <Slider
               value={[config.faking.ttl]}
-              onValueChange={(values) => onChange("faking.ttl", values[0])}
+              onValueChange={([value]) => onChange("faking.ttl", value)}
               min={1}
               max={64}
               step={1}
@@ -294,8 +295,8 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
             </FieldLabel>
             <Slider
               value={[config.faking.sni_seq_length]}
-              onValueChange={(values) =>
-                onChange("faking.sni_seq_length", values[0])
+              onValueChange={([value]) =>
+                onChange("faking.sni_seq_length", value)
               }
               min={1}
               max={20}
@@ -411,8 +412,8 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
                   </FieldLabel>
                   <Slider
                     value={[mutation.grease_count]}
-                    onValueChange={(values) =>
-                      onChange("faking.sni_mutation.grease_count", values[0])
+                    onValueChange={([value]) =>
+                      onChange("faking.sni_mutation.grease_count", value)
                     }
                     min={1}
                     max={10}
@@ -440,8 +441,8 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
                     </FieldLabel>
                     <Slider
                       value={[mutation.padding_size]}
-                      onValueChange={(values) =>
-                        onChange("faking.sni_mutation.padding_size", values[0])
+                      onValueChange={([value]) =>
+                        onChange("faking.sni_mutation.padding_size", value)
                       }
                       min={256}
                       max={16384}
@@ -469,11 +470,8 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
                     </FieldLabel>
                     <Slider
                       value={[mutation.fake_ext_count]}
-                      onValueChange={(values) =>
-                        onChange(
-                          "faking.sni_mutation.fake_ext_count",
-                          values[0],
-                        )
+                      onValueChange={([value]) =>
+                        onChange("faking.sni_mutation.fake_ext_count", value)
                       }
                       min={1}
                       max={15}

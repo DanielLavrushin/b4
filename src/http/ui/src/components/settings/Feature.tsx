@@ -1,7 +1,7 @@
 import { ToggleOnIcon } from "@b4.icons";
+import { B4Config } from "@models/config";
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Badge } from "@primitives/badge";
-import { Checkbox } from "@primitives/checkbox";
 import {
   Card,
   CardContent,
@@ -9,22 +9,19 @@ import {
   CardHeader,
   CardTitle,
 } from "@primitives/card";
+import { Checkbox } from "@primitives/checkbox";
 import {
   Field,
   FieldContent,
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldLegend,
   FieldSeparator,
-  FieldSet,
   FieldTitle,
 } from "@primitives/field";
+import { Separator } from "@primitives/separator";
 import { Slider } from "@primitives/slider";
 import { Switch } from "@primitives/switch";
-import { B4Config } from "@models/config";
-import { Separator } from "@primitives/separator";
-import { Label } from "@primitives/label";
 
 interface FeatureSettingsProps {
   config: B4Config;
@@ -108,11 +105,8 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
             </FieldLabel>
             <Slider
               value={[config.system.tables.monitor_interval]}
-              onValueChange={(values) =>
-                onChange(
-                  "system.tables.monitor_interval",
-                  Array.isArray(values) ? values[0] : values,
-                )
+              onValueChange={([value]) =>
+                onChange("system.tables.monitor_interval", value)
               }
               min={0}
               max={120}

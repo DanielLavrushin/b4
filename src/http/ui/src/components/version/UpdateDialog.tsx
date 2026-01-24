@@ -8,10 +8,14 @@ import {
   NewReleaseIcon,
   OpenInNewIcon,
 } from "@b4.icons";
+import { cn } from "@design/lib/utils";
+import { Spinner } from "@design/primitives/spinner";
+import { GitHubRelease, compareVersions } from "@hooks/useGitHubRelease";
+import { useSystemUpdate } from "@hooks/useSystemUpdate";
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Badge } from "@primitives/badge";
 import { Button } from "@primitives/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@primitives/card";
+import { Card, CardContent, CardTitle } from "@primitives/card";
 import {
   Dialog,
   DialogContent,
@@ -22,7 +26,6 @@ import {
 } from "@primitives/dialog";
 import { ItemActions, ItemContent, ItemGroup } from "@primitives/item";
 import { Label } from "@primitives/label";
-import { Progress } from "@primitives/progress";
 import {
   Select,
   SelectContent,
@@ -32,12 +35,8 @@ import {
 } from "@primitives/select";
 import { Separator } from "@primitives/separator";
 import { Switch } from "@primitives/switch";
-import { cn } from "@design/lib/utils";
-import { GitHubRelease, compareVersions } from "@hooks/useGitHubRelease";
-import { useSystemUpdate } from "@hooks/useSystemUpdate";
 import React from "react";
 import ReactMarkdown from "react-markdown";
-import { Spinner } from "@design/primitives/spinner";
 
 interface UpdateModalProps {
   open: boolean;

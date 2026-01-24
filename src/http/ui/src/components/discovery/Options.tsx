@@ -100,9 +100,8 @@ export const DiscoveryOptionsPanel = ({
                   </FieldLabel>
                   <Slider
                     value={[options.validationTries]}
-                    onValueChange={(value) => {
-                      const values = Array.isArray(value) ? value : [value];
-                      onChange({ ...options, validationTries: values[0] });
+                    onValueChange={([value]) => {
+                      onChange({ ...options, validationTries: value });
                     }}
                     min={1}
                     max={5}

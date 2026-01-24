@@ -1,6 +1,7 @@
-import { GeodatIcon, DownloadIcon, SuccessIcon } from "@b4.icons";
+import { DownloadIcon, GeodatIcon, SuccessIcon } from "@b4.icons";
 import { geodatApi, GeodatSource, GeoFileInfo } from "@b4.settings";
-import { Alert, AlertDescription } from "@primitives/alert";
+import { cn } from "@design/lib/utils";
+import { B4Config } from "@models/config";
 import { Badge } from "@primitives/badge";
 import { Button } from "@primitives/button";
 import {
@@ -18,7 +19,6 @@ import {
   FieldSeparator,
 } from "@primitives/field";
 import { Input } from "@primitives/input";
-import { Label } from "@primitives/label";
 import {
   Select,
   SelectContent,
@@ -28,8 +28,6 @@ import {
 } from "@primitives/select";
 import { Separator } from "@primitives/separator";
 import { Spinner } from "@primitives/spinner";
-import { cn } from "@design/lib/utils";
-import { B4Config } from "@models/config";
 import { useCallback, useEffect, useState } from "react";
 
 export interface GeoSettingsProps {

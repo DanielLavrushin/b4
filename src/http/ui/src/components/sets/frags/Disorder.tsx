@@ -1,4 +1,5 @@
-import { Alert, AlertDescription } from "@primitives/alert";
+import { TagsInput } from "@composed/tags-input";
+import { B4SetConfig, DisorderShuffleMode } from "@models/config";
 import { Badge } from "@primitives/badge";
 import {
   Field,
@@ -10,7 +11,6 @@ import {
   FieldSet,
   FieldTitle,
 } from "@primitives/field";
-import { TagsInput } from "@composed/tags-input";
 import {
   Select,
   SelectContent,
@@ -21,7 +21,6 @@ import {
 import { Separator } from "@primitives/separator";
 import { Slider } from "@primitives/slider";
 import { Switch } from "@primitives/switch";
-import { B4SetConfig, DisorderShuffleMode } from "@models/config";
 import { useState } from "react";
 
 const SEQ_OVERLAP_PRESETS = [
@@ -215,7 +214,7 @@ export const DisorderSettings = ({
           <Slider
             value={[disorder.min_jitter_us, disorder.max_jitter_us]}
             onValueChange={(values) => {
-              const [min, max] = values;
+              const [min, max] = values as number[];
               onChange("fragmentation.disorder.min_jitter_us", min);
               onChange("fragmentation.disorder.max_jitter_us", max);
             }}

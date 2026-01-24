@@ -250,8 +250,8 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                   </FieldContent>
                   <Slider
                     value={[config.udp.conn_bytes_limit]}
-                    onValueChange={(values) =>
-                      onChange("udp.conn_bytes_limit", values[0])
+                    onValueChange={([value]) =>
+                      onChange("udp.conn_bytes_limit", value)
                     }
                     min={1}
                     max={main.id === config.id ? 30 : main.udp.conn_bytes_limit}
@@ -336,8 +336,8 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                   </FieldContent>
                   <Slider
                     value={[config.udp.fake_seq_length]}
-                    onValueChange={(values) =>
-                      onChange("udp.fake_seq_length", values[0])
+                    onValueChange={([value]) =>
+                      onChange("udp.fake_seq_length", value)
                     }
                     min={1}
                     max={20}
@@ -359,9 +359,7 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                   </FieldContent>
                   <Slider
                     value={[config.udp.fake_len]}
-                    onValueChange={(values) =>
-                      onChange("udp.fake_len", values[0])
-                    }
+                    onValueChange={([value]) => onChange("udp.fake_len", value)}
                     min={32}
                     max={1500}
                     step={8}
@@ -382,9 +380,7 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                   </FieldContent>
                   <Slider
                     value={[config.udp.seg2delay]}
-                    onValueChange={(values) =>
-                      onChange("udp.seg2delay", values[0])
-                    }
+                    onValueChange={([value]) => onChange("udp.seg2delay", value)}
                     min={0}
                     max={1000}
                     step={10}

@@ -1,24 +1,20 @@
 import {
-  IconArrowsExchange,
   CheckIcon,
-  CopyIcon,
-  IconDotsVertical,
-  EditIcon,
-  DragIcon,
-  IpIcon,
   ClearIcon,
-  DomainIcon,
   CloseIcon,
+  CopyIcon,
+  DomainIcon,
+  DragIcon,
+  EditIcon,
+  IconArrowsExchange,
+  IconDotsVertical,
+  IpIcon,
 } from "@b4.icons";
+import { cn } from "@design/lib/utils";
+import { B4SetConfig, MAIN_SET_ID } from "@models/config";
 import { Badge } from "@primitives/badge";
 import { Button } from "@primitives/button";
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@primitives/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@primitives/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,8 +24,6 @@ import {
 } from "@primitives/dropdown-menu";
 import { Switch } from "@primitives/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
-import { cn } from "@design/lib/utils";
-import { B4SetConfig, MAIN_SET_ID } from "@models/config";
 import { useMemo, useState } from "react";
 import { SetStats } from "./Manager";
 

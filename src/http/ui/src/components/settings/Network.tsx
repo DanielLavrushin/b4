@@ -79,12 +79,7 @@ export const NetworkSettings = ({ config, onChange }: NetworkSettingsProps) => (
 
           <Slider
             value={[config.queue.threads]}
-            onValueChange={(values) =>
-              onChange(
-                "queue.threads",
-                Array.isArray(values) ? values[0] : values,
-              )
-            }
+            onValueChange={([value]) => onChange("queue.threads", value)}
             min={1}
             max={16}
             step={1}

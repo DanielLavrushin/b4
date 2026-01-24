@@ -7,13 +7,13 @@ import {
   DomainIcon,
   FakingIcon,
   FragIcon,
+  IconGoBack,
   ImportExportIcon,
   RefreshIcon,
   SaveIcon,
   TcpIcon,
   UdpIcon,
   WarningIcon,
-  IconGoBack,
 } from "@b4.icons";
 
 import { useSnackbar } from "@context/SnackbarProvider";
@@ -21,6 +21,8 @@ import { useSets } from "@hooks/useSets";
 import {
   B4Config,
   B4SetConfig,
+  FakingStrategy,
+  IncomingStrategy,
   MAIN_SET_ID,
   SystemConfig,
 } from "@models/config";
@@ -28,11 +30,6 @@ import {
 import { Badge } from "@primitives/badge";
 import { Button } from "@primitives/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@primitives/card";
-import { Field, FieldDescription, FieldLabel } from "@primitives/field";
-import { Input } from "@primitives/input";
-import { Separator } from "@primitives/separator";
-import { Spinner } from "@primitives/spinner";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@primitives/tabs";
 import {
   Dialog,
   DialogContent,
@@ -41,6 +38,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@primitives/dialog";
+import { Input } from "@primitives/input";
+import { Separator } from "@primitives/separator";
+import { Spinner } from "@primitives/spinner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@primitives/tabs";
 
 import { DnsSettings } from "./Dns";
 import { FakingSettings } from "./Faking";
@@ -126,7 +127,7 @@ function createDefaultSet(): B4SetConfig {
         max: 14,
         fake_ttl: 3,
         fake_count: 3,
-        strategy: "badsum",
+        strategy: "badsum" as IncomingStrategy,
       },
     } as B4SetConfig["tcp"],
     udp: {
@@ -173,7 +174,7 @@ function createDefaultSet(): B4SetConfig {
     faking: {
       sni: true,
       ttl: 8,
-      strategy: "pastseq",
+      strategy: "pastseq" as FakingStrategy,
       seq_offset: 10000,
       sni_seq_length: 1,
       sni_type: 2,
