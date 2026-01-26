@@ -71,6 +71,14 @@ export default [
       "require-yield": ["error"],
       "use-isnan": ["error"],
       "valid-typeof": ["error"],
+
+      // Disable type-checked rules (Codacy can't resolve types)
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-unsafe-argument": "off",
+      "@typescript-eslint/no-unsafe-assignment": "off",
+      "@typescript-eslint/no-unsafe-call": "off",
+      "@typescript-eslint/no-unsafe-member-access": "off",
+      "@typescript-eslint/no-unsafe-return": "off",
     },
   },
 ];
