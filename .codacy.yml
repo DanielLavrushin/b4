@@ -1,11 +1,11 @@
 ---
 engines:
-  eslint:
+  eslint-9:
     enabled: true
     exclude_paths:
       - "src/http/ui/dist/**"
       - "src/http/ui/node_modules/**"
-    base_sub_dir: "src/http/ui"
+      - "docs/**"
   typescript:
     enabled: true
     base_sub_dir: "src/http/ui"
