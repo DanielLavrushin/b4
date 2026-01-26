@@ -6,7 +6,6 @@ engines:
       - "src/http/ui/dist/**"
       - "src/http/ui/node_modules/**"
     base_sub_dir: "src/http/ui"
-    config_file: "eslint.config.mjs"
   typescript:
     enabled: true
     base_sub_dir: "src/http/ui"

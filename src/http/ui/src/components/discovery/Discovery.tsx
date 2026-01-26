@@ -106,8 +106,9 @@ export const DiscoveryRunner = () => {
     skipDNS: localStorage.getItem("b4_discovery_skipdns") === "true",
     payloadFiles: [],
     validationTries:
-      parseInt(localStorage.getItem("b4_discovery_validation_tries") || "1") ||
-      1,
+      Number.parseInt(
+        localStorage.getItem("b4_discovery_validation_tries") || "1",
+      ) || 1,
   }));
 
   useEffect(() => {
@@ -369,7 +370,7 @@ export const DiscoveryRunner = () => {
                 </div>
                 {suite.current_phase !== "dns_detection" && (
                   <p className="text-muted-foreground text-sm">
-                    {isNaN(progress) ? "0" : progress.toFixed(0)}%
+                    {Number.isNaN(progress) ? "0" : progress.toFixed(0)}%
                   </p>
                 )}
               </div>
@@ -500,7 +501,7 @@ export const DiscoveryRunner = () => {
                                     domainResult.results[
                                       domainResult.best_preset
                                     ];
-                                  void handleAddStrategy(
+                                  handleAddStrategy(
                                     domainResult.domain,
                                     bestResult,
                                   );
