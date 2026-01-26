@@ -155,4 +155,8 @@
       "group": "Default"
     }
   ],
+  "sonarlint.connectedMode.project": {
+    "connectionId": "daniellavrushin",
+    "projectKey": "DanielLavrushin_b4"
+  },
 }
