@@ -1,4 +1,6 @@
 import { IconArrowsExchange } from "@b4.icons";
+import { cn } from "@design/lib/utils";
+import { B4SetConfig } from "@models/config";
 import { Badge } from "@primitives/badge";
 import { Card } from "@primitives/card";
 import {
@@ -9,8 +11,6 @@ import {
   DialogTitle,
 } from "@primitives/dialog";
 import { Separator } from "@primitives/separator";
-import { cn } from "@design/lib/utils";
-import { B4SetConfig } from "@models/config";
 import { useMemo } from "react";
 
 interface SetCompareProps {
@@ -136,7 +136,7 @@ export const SetCompare = ({ open, setA, setB, onClose }: SetCompareProps) => {
             {setA.name} vs {setB.name}
           </DialogDescription>
         </DialogHeader>
-        <div className="flex-1 overflow-y-auto py-4">
+        <div className="no-scrollbar max-h-[70vh] overflow-y-auto">
           <div className="mt-4">
             {/* Header */}
             <div className="mb-4 grid grid-cols-12 gap-4">

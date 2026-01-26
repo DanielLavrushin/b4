@@ -174,9 +174,9 @@ export const DisorderSettings = ({
         </FieldDescription>
         <div className="flex items-center gap-2">
           <div className="flex gap-1 font-mono">
-            {["1", "2", "3", "4"].map((n, i) => (
+            {["1", "2", "3", "4"].map((n) => (
               <div
-                key={i}
+                key={n}
                 className="bg-accent min-w-8 rounded p-2 text-center"
               >
                 {n}
@@ -188,8 +188,8 @@ export const DisorderSettings = ({
             {(disorder.shuffle_mode === "reverse"
               ? ["4", "3", "2", "1"]
               : ["3", "1", "4", "2"]
-            ).map((n, i) => (
-              <div key={i} className="bg-tertiary min-w-8 p-2 text-center">
+            ).map((n) => (
+              <div key={n} className="bg-secondary min-w-8 p-2 text-center">
                 {n}
               </div>
             ))}

@@ -54,10 +54,6 @@ export const DiscoveryOptionsPanel = ({
   }, [expanded]);
 
   const tlsCaptures = captures.filter((c) => c.protocol === "tls");
-  const hasOptions =
-    options.skipDNS ||
-    options.payloadFiles.length > 0 ||
-    options.validationTries > 1;
 
   return (
     <Collapsible open={expanded} onOpenChange={setExpanded}>
@@ -70,92 +66,90 @@ export const DiscoveryOptionsPanel = ({
         </CollapsibleTrigger>
 
         <CollapsibleContent>
-          <>
-            <CardContent>
-              <FieldGroup>
-                <Field orientation="horizontal">
-                  <FieldContent>
-                    <FieldTitle>Skip DNS Discovery</FieldTitle>
-                    <FieldDescription>
-                      Skip DNS detection phase for faster results
-                    </FieldDescription>
-                  </FieldContent>
-                  <Switch
-                    id="switch-skip-dns"
-                    checked={options.skipDNS}
-                    onCheckedChange={(checked) =>
-                      onChange({ ...options, skipDNS: checked })
-                    }
-                    disabled={disabled}
-                  />
-                </Field>
-
-                {/* Validation Tries */}
-                <Field>
-                  <FieldLabel>
-                    Validation Tries
-                    <Badge variant="secondary">{options.validationTries}</Badge>
-                  </FieldLabel>
-                  <Slider
-                    value={options.validationTries}
-                    onValueChange={(value) => {
-                      onChange({
-                        ...options,
-                        validationTries: value as number,
-                      });
-                    }}
-                    min={1}
-                    max={5}
-                    step={1}
-                  />
+          <CardContent>
+            <FieldGroup>
+              <Field orientation="horizontal">
+                <FieldContent>
+                  <FieldTitle>Skip DNS Discovery</FieldTitle>
                   <FieldDescription>
-                    Number of successful connection attempts required to
-                    validate a preset
+                    Skip DNS detection phase for faster results
                   </FieldDescription>
-                </Field>
+                </FieldContent>
+                <Switch
+                  id="switch-skip-dns"
+                  checked={options.skipDNS}
+                  onCheckedChange={(checked) =>
+                    onChange({ ...options, skipDNS: checked })
+                  }
+                  disabled={disabled}
+                />
+              </Field>
 
-                {/* Custom Payloads */}
-                {tlsCaptures.length > 0 && (
-                  <div className="md:col-span-2">
-                    <Field>
-                      <FieldLabel>Custom Payloads</FieldLabel>
-                      <FieldDescription>
-                        Test with captured TLS ClientHello instead of built-in
-                        payloads
-                      </FieldDescription>
-                      <ComboboxMultiple
-                        items={tlsCaptures.map((c) => c.domain)}
-                        value={options.payloadFiles}
-                        onValueChange={(values) =>
-                          onChange({ ...options, payloadFiles: values })
-                        }
-                        placeholder="Search captured payloads..."
-                        emptyMessage="No captured payloads found."
-                        disabled={disabled}
-                      />
-                    </Field>
-                  </div>
-                )}
+              {/* Validation Tries */}
+              <Field>
+                <FieldLabel>
+                  Validation Tries
+                  <Badge variant="secondary">{options.validationTries}</Badge>
+                </FieldLabel>
+                <Slider
+                  value={options.validationTries}
+                  onValueChange={(value) => {
+                    onChange({
+                      ...options,
+                      validationTries: value as number,
+                    });
+                  }}
+                  min={1}
+                  max={5}
+                  step={1}
+                />
+                <FieldDescription>
+                  Number of successful connection attempts required to validate
+                  a preset
+                </FieldDescription>
+              </Field>
 
-                {tlsCaptures.length === 0 && (
+              {/* Custom Payloads */}
+              {tlsCaptures.length > 0 && (
+                <div className="md:col-span-2">
                   <Field>
-                    <Alert>
-                      <AlertDescription>
-                        No captured payloads available.{" "}
-                        <a
-                          href="/settings#capture"
-                          className="text-primary hover:underline"
-                        >
-                          Capture payloads
-                        </a>{" "}
-                        to test with custom TLS ClientHello.
-                      </AlertDescription>
-                    </Alert>
+                    <FieldLabel>Custom Payloads</FieldLabel>
+                    <FieldDescription>
+                      Test with captured TLS ClientHello instead of built-in
+                      payloads
+                    </FieldDescription>
+                    <ComboboxMultiple
+                      items={tlsCaptures.map((c) => c.domain)}
+                      value={options.payloadFiles}
+                      onValueChange={(values) =>
+                        onChange({ ...options, payloadFiles: values })
+                      }
+                      placeholder="Search captured payloads..."
+                      emptyMessage="No captured payloads found."
+                      disabled={disabled}
+                    />
                   </Field>
-                )}
-              </FieldGroup>
-            </CardContent>
-          </>
+                </div>
+              )}
+
+              {tlsCaptures.length === 0 && (
+                <Field>
+                  <Alert>
+                    <AlertDescription>
+                      No captured payloads available.{" "}
+                      <a
+                        href="/settings#capture"
+                        className="text-primary hover:underline"
+                      >
+                        Capture payloads
+                      </a>{" "}
+                      to test with custom TLS ClientHello.
+                    </AlertDescription>
+                  </Alert>
+                </Field>
+              )}
+            </FieldGroup>
+          </CardContent>
         </CollapsibleContent>
       </Card>
     </Collapsible>

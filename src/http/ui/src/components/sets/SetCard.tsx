@@ -1,7 +1,5 @@
 import {
-  CheckIcon,
   ClearIcon,
-  CloseIcon,
   CopyIcon,
   DomainIcon,
   DragIcon,
@@ -349,7 +347,7 @@ export const SetCard = ({
             <div className="flex flex-wrap gap-1.5">
               {/* Fragmentation Badge */}
               <Badge
-                variant={strategy !== "none" ? "default" : "ghost"}
+                variant={strategy === "none" ? "ghost" : "default"}
                 className="shrink-0 text-xs"
               >
                 {STRATEGY_LABELS[strategy] || strategy.toUpperCase()}
@@ -358,7 +356,7 @@ export const SetCard = ({
               {/* QUIC Filter Badge */}
               <Badge
                 variant={
-                  set.udp.filter_quic !== "disabled" ? "default" : "ghost"
+                  set.udp.filter_quic === "disabled" ? "ghost" : "default"
                 }
                 className="shrink-0 text-xs"
               >
@@ -388,64 +386,5 @@ export const SetCard = ({
         </CardContent>
       </div>
     </Card>
-  );
-};
-
-interface QuickFlagProps {
-  icon: React.ReactNode;
-  label?: string;
-  enabled?: boolean;
-  tooltip: string;
-}
-
-const QuickFlag = ({ icon, label, enabled, tooltip }: QuickFlagProps) => {
-  const isActive = enabled !== undefined ? enabled : true;
-
-  return (
-    <Tooltip>
-      <TooltipTrigger>
-        <div
-          className={cn(
-            "flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 transition-colors",
-            isActive ? "bg-accent" : "bg-transparent",
-          )}
-        >
-          <div
-            className={cn(
-              isActive ? "text-foreground" : "text-muted-foreground",
-            )}
-          >
-            {icon}
-          </div>
-          {label ? (
-            <span
-              className={cn(
-                "text-xs font-semibold",
-                isActive ? "text-foreground" : "text-muted-foreground",
-              )}
-            >
-              {label}
-            </span>
-          ) : (
-            enabled !== undefined && (
-              <div
-                className={cn(
-                  isActive ? "text-foreground" : "text-muted-foreground",
-                )}
-              >
-                {enabled ? (
-                  <CheckIcon className="size-3" />
-                ) : (
-                  <CloseIcon className="size-3" />
-                )}
-              </div>
-            )
-          )}
-        </div>
-      </TooltipTrigger>
-      <TooltipContent>
-        <p>{tooltip}</p>
-      </TooltipContent>
-    </Tooltip>
   );
 };

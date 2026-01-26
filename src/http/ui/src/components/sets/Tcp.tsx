@@ -121,14 +121,12 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
   const handleWinValuesChange = (values: string[]) => {
     // Валидация: только числа от 0 до 65535, уникальные
     const validNumbers = values
-      .map((v) => parseInt(v.trim(), 10))
-      .filter((v) => !isNaN(v) && v >= 0 && v <= 65535)
+      .map((v) => Number.parseInt(v.trim(), 10))
+      .filter((v) => !Number.isNaN(v) && v >= 0 && v <= 65535)
       .filter((v, index, arr) => arr.indexOf(v) === index); // Уникальные
 
-    onChange(
-      "tcp.win.values",
-      validNumbers.sort((a, b) => a - b),
-    );
+    const sortedNumbers = validNumbers.sort((a, b) => a - b);
+    onChange("tcp.win.values", sortedNumbers);
   };
 
   return (

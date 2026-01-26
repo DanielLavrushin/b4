@@ -25,7 +25,7 @@ interface DiscoveryLogPanelProps {
 }
 
 export const DiscoveryLogPanel = ({ running }: DiscoveryLogPanelProps) => {
-  const { logs, connected, clearLogs } = useDiscoveryLogs();
+  const { logs, clearLogs } = useDiscoveryLogs();
   const [expanded, setExpanded] = useState(false);
   const hasAutoExpanded = useRef(false);
 

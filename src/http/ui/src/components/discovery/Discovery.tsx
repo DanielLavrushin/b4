@@ -106,8 +106,9 @@ export const DiscoveryRunner = () => {
     skipDNS: localStorage.getItem("b4_discovery_skipdns") === "true",
     payloadFiles: [],
     validationTries:
-      parseInt(localStorage.getItem("b4_discovery_validation_tries") || "1") ||
-      1,
+      Number.parseInt(
+        localStorage.getItem("b4_discovery_validation_tries") || "1",
+      ) || 1,
   }));
 
   useEffect(() => {
