@@ -20,7 +20,15 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { asnStorage } from "@utils";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 export type SortColumn =
   | "timestamp"
@@ -45,6 +53,22 @@ interface DomainsTableProps {
 const ROW_HEIGHT = 41;
 const OVERSCAN = 5;
 
+const SortableHeaderContext = createContext<{
+  onSort: (column: SortColumn) => void;
+} | null>(null);
+
+const SORTABLE_COLUMN_CONFIG: Record<
+  string,
+  { label: string; sortKey: SortColumn }
+> = {
+  timestamp: { label: "Time", sortKey: "timestamp" },
+  protocol: { label: "Protocol", sortKey: "protocol" },
+  set: { label: "Set", sortKey: "set" },
+  domain: { label: "Domain", sortKey: "domain" },
+  source: { label: "Source", sortKey: "source" },
+  destination: { label: "Destination", sortKey: "destination" },
+};
+
 const SortableHeader = ({
   label,
   column,
@@ -55,17 +79,34 @@ const SortableHeader = ({
   onSort: () => void;
 }) => {
   const sortState = column.getIsSorted();
+  const Icon =
+    sortState === "asc"
+      ? CollapseIcon
+      : sortState === "desc"
+        ? ExpandIcon
+        : SortIcon;
   return (
     <Button variant="ghost" onClick={onSort}>
       {label}
-      {sortState === "asc" ? (
-        <CollapseIcon />
-      ) : sortState === "desc" ? (
-        <ExpandIcon />
-      ) : (
-        <SortIcon />
-      )}
+      <Icon />
     </Button>
+  );
+};
+
+interface SortableHeaderRendererProps {
+  column: { id: string; getIsSorted: () => false | "asc" | "desc" };
+}
+
+const SortableHeaderRenderer = ({ column }: SortableHeaderRendererProps) => {
+  const ctx = useContext(SortableHeaderContext);
+  const config = SORTABLE_COLUMN_CONFIG[column.id];
+  if (!ctx || !config) return null;
+  return (
+    <SortableHeader
+      label={config.label}
+      column={column}
+      onSort={() => ctx.onSort(config.sortKey)}
+    />
   );
 };
 
@@ -92,35 +133,17 @@ export const DomainsTable = ({
     () => [
       {
         accessorKey: "timestamp",
-        header: ({ column }) => (
-          <SortableHeader
-            label="Time"
-            column={column}
-            onSort={() => onSort("timestamp")}
-          />
-        ),
+        header: SortableHeaderRenderer,
         cell: ({ row }) => row.original.timestamp.split(" ")[1],
       },
       {
         accessorKey: "protocol",
-        header: ({ column }) => (
-          <SortableHeader
-            label="Protocol"
-            column={column}
-            onSort={() => onSort("protocol")}
-          />
-        ),
+        header: SortableHeaderRenderer,
         cell: ({ row }) => <ProtocolChip protocol={row.original.protocol} />,
       },
       {
         accessorKey: "set",
-        header: ({ column }) => (
-          <SortableHeader
-            label="Set"
-            column={column}
-            onSort={() => onSort("set")}
-          />
-        ),
+        header: SortableHeaderRenderer,
         cell: ({ row }) => {
           const log = row.original;
           return log.ipSet || log.hostSet ? (
@@ -130,35 +153,29 @@ export const DomainsTable = ({
       },
       {
         accessorKey: "domain",
-        header: ({ column }) => (
-          <SortableHeader
-            label="Domain"
-            column={column}
-            onSort={() => onSort("domain")}
-          />
-        ),
+        header: SortableHeaderRenderer,
         cell: ({ row }) => {
           const log = row.original;
-          return (
-            <div
-              className="flex min-w-0 items-center gap-2"
-              onClick={() =>
-                log.domain && !log.hostSet && onDomainClick(log.domain)
-              }
+          const interactive = Boolean(log.domain && !log.hostSet);
+          const baseClass = "flex min-w-0 items-center gap-2";
+          return interactive ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className={`${baseClass} h-auto min-h-0 w-full justify-start rounded-none border-0 bg-transparent p-0 font-inherit hover:bg-muted/50`}
+              onClick={() => onDomainClick(log.domain!)}
             >
+              <span className="min-w-0 flex-1 wrap-break-word">
+                {log.domain}
+              </span>
+              <AddIcon className="shrink-0" aria-hidden />
+            </Button>
+          ) : (
+            <div className={baseClass}>
               {log.domain && (
                 <span className="min-w-0 flex-1 wrap-break-word">
                   {log.domain}
                 </span>
-              )}
-              {log.domain && !log.hostSet && (
-                <AddIcon
-                  className="shrink-0"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDomainClick(log.domain);
-                  }}
-                />
               )}
             </div>
           );
@@ -166,13 +183,7 @@ export const DomainsTable = ({
       },
       {
         accessorKey: "source",
-        header: ({ column }) => (
-          <SortableHeader
-            label="Source"
-            column={column}
-            onSort={() => onSort("source")}
-          />
-        ),
+        header: SortableHeaderRenderer,
         cell: ({ row }) => {
           const log = row.original;
           return (
@@ -197,38 +208,37 @@ export const DomainsTable = ({
       },
       {
         accessorKey: "destination",
-        header: ({ column }) => (
-          <SortableHeader
-            label="Destination"
-            column={column}
-            onSort={() => onSort("destination")}
-          />
-        ),
+        header: SortableHeaderRenderer,
         cell: ({ row }) => {
           const log = row.original;
           const asnName = log.destination
             ? asnStorage.findAsnForIp(log.destination)?.name || null
             : null;
+          const interactive = Boolean(log.destination && !log.ipSet);
+          const baseClass = "flex min-w-0 items-center gap-2";
 
-          return (
-            <div
-              className="flex min-w-0 items-center gap-2"
-              onClick={() =>
-                log.destination && !log.ipSet && onIpClick(log.destination)
-              }
+          return interactive ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className={`${baseClass} h-auto min-h-0 w-full justify-start rounded-none border-0 bg-transparent p-0 font-inherit hover:bg-muted/50`}
+              onClick={() => onIpClick(log.destination!)}
             >
               <span className="min-w-0 flex-1 wrap-break-word">
                 {log.destination}
               </span>
-              {!log.ipSet && (
-                <AddIcon
-                  className="shrink-0 align-sub"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onIpClick(log.destination);
-                  }}
-                />
+              <AddIcon className="shrink-0 align-sub" aria-hidden />
+              {asnName && (
+                <Badge variant="outline" className="shrink-0">
+                  {asnName}
+                </Badge>
               )}
+            </Button>
+          ) : (
+            <div className={baseClass}>
+              <span className="min-w-0 flex-1 wrap-break-word">
+                {log.destination}
+              </span>
               {asnName && (
                 <Badge variant="outline" className="shrink-0">
                   {asnName}
@@ -239,7 +249,7 @@ export const DomainsTable = ({
         },
       },
     ],
-    [onSort, onDomainClick, onIpClick],
+    [onDomainClick, onIpClick],
   );
 
   const table = useReactTable({
@@ -306,87 +316,89 @@ export const DomainsTable = ({
   }, [data.length]);
 
   return (
-    <div
-      ref={containerRef}
-      onScroll={handleScroll}
-      className="bg-background [&::-webkit-scrollbar-thumb]:bg-border hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/50 absolute inset-0 overflow-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding [&::-webkit-scrollbar-track]:bg-transparent"
-    >
-      <div className="overflow-hidden rounded-md border">
-        <Table>
-          <TableHeader className="bg-background sticky top-0 z-10">
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
-                  return (
-                    <TableHead key={header.id}>
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
+    <SortableHeaderContext.Provider value={{ onSort }}>
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="bg-background [&::-webkit-scrollbar-thumb]:bg-border hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/50 absolute inset-0 overflow-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding [&::-webkit-scrollbar-track]:bg-transparent"
+      >
+        <div className="overflow-hidden rounded-md border">
+          <Table>
+            <TableHeader className="bg-background sticky top-0 z-10">
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => {
+                    return (
+                      <TableHead key={header.id}>
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(
+                              header.column.columnDef.header,
+                              header.getContext(),
+                            )}
+                      </TableHead>
+                    );
+                  })}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows?.length ? (
+                <>
+                  {startIndex > 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={columns.length}
+                        style={{ height: startIndex * ROW_HEIGHT }}
+                        className="border-0 p-0"
+                      />
+                    </TableRow>
+                  )}
+
+                  {visibleRows.map((row) => (
+                    <TableRow
+                      key={row.id}
+                      data-state={row.getIsSelected() && "selected"}
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id}>
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext(),
                           )}
-                    </TableHead>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows?.length ? (
-              <>
-                {startIndex > 0 && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={columns.length}
-                      style={{ height: startIndex * ROW_HEIGHT }}
-                      className="border-0 p-0"
-                    />
-                  </TableRow>
-                )}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
 
-                {visibleRows.map((row) => (
-                  <TableRow
-                    key={row.id}
-                    data-state={row.getIsSelected() && "selected"}
+                  {endIndex < table.getRowModel().rows.length && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={columns.length}
+                        style={{
+                          height:
+                            (table.getRowModel().rows.length - endIndex) *
+                            ROW_HEIGHT,
+                        }}
+                        className="border-0 p-0"
+                      />
+                    </TableRow>
+                  )}
+                </>
+              ) : (
+                <TableRow>
+                  <TableCell
+                    colSpan={columns.length}
+                    className="h-24 text-center"
                   >
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext(),
-                        )}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
-
-                {endIndex < table.getRowModel().rows.length && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={columns.length}
-                      style={{
-                        height:
-                          (table.getRowModel().rows.length - endIndex) *
-                          ROW_HEIGHT,
-                      }}
-                      className="border-0 p-0"
-                    />
-                  </TableRow>
-                )}
-              </>
-            ) : (
-              <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="h-24 text-center"
-                >
-                  Waiting for connections...
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+                    Waiting for connections...
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </div>
-    </div>
+    </SortableHeaderContext.Provider>
   );
 };

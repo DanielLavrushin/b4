@@ -4,7 +4,6 @@ import { Button } from "@primitives/button";
 import { Input } from "@primitives/input";
 import { Label } from "@primitives/label";
 import { Switch } from "@primitives/switch";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
 
 interface DomainsControlBarProps {
   filter: string;
@@ -16,7 +15,6 @@ interface DomainsControlBarProps {
   onPauseChange: (paused: boolean) => void;
   showAll: boolean;
   onShowAllChange: (showAll: boolean) => void;
-  onClearSort: () => void;
   onReset: () => void;
 }
 
@@ -25,12 +23,10 @@ export const DomainsControlBar = ({
   onFilterChange,
   totalCount,
   filteredCount,
-  sortColumn,
   paused,
   showAll,
   onShowAllChange,
   onPauseChange,
-  onClearSort,
   onReset,
 }: DomainsControlBarProps) => {
   return (
@@ -66,16 +62,10 @@ export const DomainsControlBar = ({
             {paused ? "Paused" : "Streaming"}
           </Label>
         </div>
-        <Tooltip>
-          <TooltipTrigger>
-            <Button variant="ghost" size="icon-sm" onClick={onReset}>
-              <ClearIcon />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>Clear Connections</p>
-          </TooltipContent>
-        </Tooltip>
+
+        <Button variant="ghost" size="icon-sm" onClick={onReset}>
+          <ClearIcon />
+        </Button>
       </div>
     </div>
   );
