@@ -3,11 +3,7 @@ import DecryptedText from "@common/DecryptedText";
 import { Button } from "@design/primitives/button";
 import { Item, ItemMedia } from "@design/primitives/item";
 
-interface LogoProps {
-  className?: string;
-}
-
-export function Logo({ className }: LogoProps) {
+export function Logo() {
   return (
     <Item className="p-2">
       <ItemMedia>
