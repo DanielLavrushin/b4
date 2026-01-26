@@ -1,4 +1,6 @@
 import { AddIcon } from "@b4.icons";
+import { cn } from "@design/lib/utils";
+import { B4SetConfig } from "@models/config";
 import { Badge } from "@primitives/badge";
 import { Button } from "@primitives/button";
 import {
@@ -9,14 +11,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@primitives/dialog";
-import { Field, FieldLabel } from "@primitives/field";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldLabel,
+  FieldTitle,
+} from "@primitives/field";
 import { Input } from "@primitives/input";
 import { Label } from "@primitives/label";
 import { RadioGroup, RadioGroupItem } from "@primitives/radio-group";
-import { Separator } from "@primitives/separator";
 import { Spinner } from "@primitives/spinner";
-import { cn } from "@design/lib/utils";
-import { B4SetConfig } from "@models/config";
 import { generateDomainVariants } from "@utils";
 import { useEffect, useState } from "react";
 
@@ -187,32 +192,36 @@ export const DiscoveryAddDialog = ({
                 <h6 className="text-muted-foreground mb-2 text-sm font-semibold">
                   Similar Sets
                 </h6>
-                <div className="space-y-2">
+                <RadioGroup
+                  value={selectedSetId || ""}
+                  onValueChange={(value) => setSelectedSetId(value)}
+                >
                   {similarSets.map((set) => (
-                    <div
-                      key={set.id}
-                      onClick={() => setSelectedSetId(set.id)}
-                      className={cn(
-                        "cursor-pointer rounded-md p-4 transition-all",
-                        set.id === selectedSetId
-                          ? "bg-accent border-secondary border-2"
-                          : "bg-muted border-border border",
-                      )}
-                    >
-                      <p className="font-semibold">{set.name}</p>
-                      <p className="text-muted-foreground text-xs">
-                        {set.domains.slice(0, 3).join(", ")}
-                        {set.domains.length > 3 &&
-                          ` +${set.domains.length - 3} more`}
-                      </p>
-                    </div>
+                    <Label key={set.id} htmlFor={`set-${set.id}`}>
+                      <Field
+                        orientation="horizontal"
+                        className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 border-border rounded-md border p-2"
+                      >
+                        <FieldContent>
+                          <FieldTitle>
+                            <div className="font-medium">{set.name}</div>
+                          </FieldTitle>
+                          <FieldDescription>
+                            {set.domains.slice(0, 3).join(", ")}
+                            {set.domains.length > 3 &&
+                              ` +${set.domains.length - 3} more`}
+                          </FieldDescription>
+                        </FieldContent>
+                        <RadioGroupItem value={set.id} id={`set-${set.id}`} />
+                      </Field>
+                    </Label>
                   ))}
-                </div>
+                </RadioGroup>
               </div>
             )}
           </div>
         </div>
-        <Separator />
+
         <DialogFooter>
           <div className="flex gap-4">
             <Button onClick={onClose} variant="ghost" disabled={loading}>
