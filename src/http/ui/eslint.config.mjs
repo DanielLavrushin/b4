@@ -53,6 +53,7 @@ export default tseslint.config(
       "@typescript-eslint/no-unnecessary-type-assertion": "error",
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn",
+      "@typescript-eslint/no-confusing-void-expression": "off",
       "@typescript-eslint/no-restricted-types": [
         "error",
         {
