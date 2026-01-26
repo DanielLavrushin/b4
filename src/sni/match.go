@@ -429,6 +429,7 @@ func (s *SuffixSet) MatchLearnedIP(ip net.IP) (bool, *config.SetConfig, string) 
 		return false, nil, ""
 	}
 
+	entry.learnedAt = time.Now()
 	s.learnedIPCacheLRU.MoveToFront(entry.element)
 	return true, entry.set, entry.domain
 }

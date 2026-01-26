@@ -405,22 +405,18 @@ func (w *Worker) Start() error {
 					}
 				}
 
-				switch set.UDP.FilterQUIC {
-				case "disabled":
+				if host != "" {
+					if mSNI, sniSet := matcher.MatchSNI(host); mSNI {
+						matchedQUIC = true
+						set = sniSet
+						sniTarget = sniSet.Name
+						matcher.LearnIPToDomain(dst, host, sniSet)
+					}
+				}
 
-				case "all":
+				if !matchedQUIC && matchedIP && set.UDP.FilterQUIC == "all" {
 					if quic.IsInitial(payload) {
 						matchedQUIC = true
-					}
-
-				case "parse":
-					if host != "" {
-						if mSNI, sniSet := matcher.MatchSNI(host); mSNI {
-							matchedQUIC = true
-							set = sniSet
-							sniTarget = sniSet.Name
-							matcher.LearnIPToDomain(dst, host, sniSet)
-						}
 					}
 				}
 
@@ -435,7 +431,7 @@ func (w *Worker) Start() error {
 				if !log.IsDiscoveryActive() {
 					log.Infof(",UDP,%s,%s,%s:%d,%s,%s:%d,%s", sniTarget, host, srcStr, sport, ipTarget, dstStr, dport, srcMac)
 				}
-				// Early exit for STUN
+
 				if isSTUN && set.UDP.FilterSTUN {
 					if err := q.SetVerdict(id, nfqueue.NfAccept); err != nil {
 						log.Tracef("failed to set verdict on packet %d: %v", id, err)
@@ -443,7 +439,6 @@ func (w *Worker) Start() error {
 					return 0
 				}
 
-				// Accept if no match
 				if !shouldHandle {
 					if err := q.SetVerdict(id, nfqueue.NfAccept); err != nil {
 						log.Tracef("failed to set verdict on packet %d: %v", id, err)
@@ -455,7 +450,6 @@ func (w *Worker) Start() error {
 				metrics.RecordConnection("UDP", host, srcStr, dstStr, matched)
 				metrics.RecordPacket(uint64(len(raw)))
 
-				// Apply configured UDP mode
 				switch set.UDP.Mode {
 				case "drop":
 					if err := q.SetVerdict(id, nfqueue.NfDrop); err != nil {
