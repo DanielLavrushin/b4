@@ -21,6 +21,7 @@ import {
   FieldGroup,
   FieldLabel,
   FieldLegend,
+  FieldSeparator,
   FieldSet,
   FieldTitle,
 } from "@primitives/field";
@@ -144,52 +145,53 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
         {/* Basic TCP Settings */}
         <FieldSet>
           <FieldGroup>
-            <Field>
-              <FieldContent>
+            <div className="flex flex-row gap-4">
+              <Field>
                 <FieldLabel>
                   Connection Bytes Limit
-                  <Badge variant="secondary">
+                  <Badge variant="secondary" className="ml-auto">
                     {config.tcp.conn_bytes_limit}
                   </Badge>
                 </FieldLabel>
-              </FieldContent>
-              <Slider
-                value={[config.tcp.conn_bytes_limit]}
-                onValueChange={(values) => {
-                  const [value] = values as [number];
-                  onChange("tcp.conn_bytes_limit", value);
-                }}
-                min={1}
-                max={main.id === config.id ? 100 : main.tcp.conn_bytes_limit}
-                step={1}
-              />
-              <FieldDescription>
-                {main.id === config.id
-                  ? "Main set limit (changing requires service restart to take effect)"
-                  : `Max: ${main.tcp.conn_bytes_limit} (limited by main set)`}
-              </FieldDescription>
-            </Field>
-            <Field>
-              <FieldContent>
+
+                <Slider
+                  value={[config.tcp.conn_bytes_limit]}
+                  onValueChange={(val) =>
+                    onChange("tcp.conn_bytes_limit", val as number)
+                  }
+                  min={1}
+                  max={main.id === config.id ? 100 : main.tcp.conn_bytes_limit}
+                  step={1}
+                />
+                <FieldDescription>
+                  {main.id === config.id
+                    ? "Main set limit (changing requires service restart to take effect)"
+                    : `Max: ${main.tcp.conn_bytes_limit} (limited by main set)`}
+                </FieldDescription>
+              </Field>
+
+              <Field>
                 <FieldLabel>
                   Segment 2 Delay
-                  <Badge variant="secondary">{config.tcp.seg2delay} ms</Badge>
+                  <Badge variant="secondary" className="ml-auto">
+                    {config.tcp.seg2delay} ms
+                  </Badge>
                 </FieldLabel>
-              </FieldContent>
-              <Slider
-                value={[config.tcp.seg2delay]}
-                onValueChange={(values) => {
-                  const [value] = values as [number];
-                  onChange("tcp.seg2delay", value);
-                }}
-                min={0}
-                max={1000}
-                step={10}
-              />
-              <FieldDescription>
-                Delay between TCP segments (helps with timing-based DPI)
-              </FieldDescription>
-            </Field>
+
+                <Slider
+                  value={[config.tcp.seg2delay]}
+                  onValueChange={(val) =>
+                    onChange("tcp.seg2delay", val as number)
+                  }
+                  min={0}
+                  max={1000}
+                  step={10}
+                />
+                <FieldDescription>
+                  Delay between TCP segments (helps with timing-based DPI)
+                </FieldDescription>
+              </Field>
+            </div>
 
             {/* SACK and SYN Fake */}
 
@@ -210,89 +212,98 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
               />
             </Field>
 
-            <Field orientation="horizontal">
-              <FieldContent>
-                <FieldTitle>SYN Fake Packets</FieldTitle>
-                <FieldDescription>
-                  Send fake SYN packets during handshake (aggressive technique)
-                </FieldDescription>
-              </FieldContent>
-              <Switch
-                id="switch-tcp-syn-fake"
-                checked={config.tcp.syn_fake || false}
-                onCheckedChange={(checked) => onChange("tcp.syn_fake", checked)}
-              />
-            </Field>
+            <div className="flex flex-row gap-4">
+              <Field orientation="horizontal">
+                <FieldContent>
+                  <FieldTitle>SYN Fake Packets</FieldTitle>
+                  <FieldDescription>
+                    Send fake SYN packets during handshake (aggressive
+                    technique)
+                  </FieldDescription>
+                </FieldContent>
+                <Switch
+                  id="switch-tcp-syn-fake"
+                  checked={config.tcp.syn_fake || false}
+                  onCheckedChange={(checked) =>
+                    onChange("tcp.syn_fake", checked)
+                  }
+                />
+              </Field>
 
-            <Field orientation="horizontal">
-              <FieldContent>
-                <FieldTitle>SYN MD5 Signature</FieldTitle>
-                <FieldDescription>
-                  Send fake SYN with TCP MD5 option before real handshake
-                </FieldDescription>
-              </FieldContent>
-              <Switch
-                id="switch-tcp-syn-md5"
-                checked={config.faking.tcp_md5 || false}
-                onCheckedChange={(checked) =>
-                  onChange("faking.tcp_md5", checked)
-                }
-              />
-            </Field>
+              <Field orientation="horizontal">
+                <FieldContent>
+                  <FieldTitle>SYN MD5 Signature</FieldTitle>
+                  <FieldDescription>
+                    Send fake SYN with TCP MD5 option before real handshake
+                  </FieldDescription>
+                </FieldContent>
+                <Switch
+                  id="switch-tcp-syn-md5"
+                  checked={config.faking.tcp_md5 || false}
+                  onCheckedChange={(checked) =>
+                    onChange("faking.tcp_md5", checked)
+                  }
+                />
+              </Field>
+            </div>
 
             {config.tcp.syn_fake && (
-              <FieldGroup>
-                <Field>
-                  <FieldContent>
-                    <FieldLabel>
-                      SYN Fake Payload Length
-                      <Badge variant="secondary">
-                        {config.tcp.syn_fake_len || 0} bytes
-                      </Badge>
-                    </FieldLabel>
-                  </FieldContent>
-                  <Slider
-                    value={[config.tcp.syn_fake_len || 0]}
-                    onValueChange={(values) => {
-                      const [value] = values as [number];
-                      onChange("tcp.syn_fake_len", value);
-                    }}
-                    min={0}
-                    max={1200}
-                    step={64}
-                  />
-                  <FieldDescription>
-                    0 = header only, {">"}0 = add fake TLS payload
-                  </FieldDescription>
-                </Field>
-                <Field>
-                  <FieldContent>
-                    <FieldLabel>
-                      SYN Fake TTL
-                      <Badge variant="secondary">
-                        {config.tcp.syn_ttl || 0}
-                      </Badge>
-                    </FieldLabel>
-                  </FieldContent>
-                  <Slider
-                    value={[config.tcp.syn_ttl || 0]}
-                    onValueChange={(values) => {
-                      const [value] = values as [number];
-                      onChange("tcp.syn_ttl", value);
-                    }}
-                    min={1}
-                    max={100}
-                    step={1}
-                  />
-                  <FieldDescription>
-                    TTL value for SYN fake packets (default 3 if unset)
-                  </FieldDescription>
-                </Field>
-              </FieldGroup>
+              <>
+                <FieldSeparator>SYN Fake Packets</FieldSeparator>
+                <FieldGroup>
+                  <div className="flex flex-row gap-4">
+                    <Field>
+                      <FieldLabel>
+                        SYN Fake Payload Length
+                        <Badge variant="secondary" className="ml-auto">
+                          {config.tcp.syn_fake_len || 0} bytes
+                        </Badge>
+                      </FieldLabel>
+
+                      <Slider
+                        value={[config.tcp.syn_fake_len || 0]}
+                        onValueChange={(val) =>
+                          onChange("tcp.syn_fake_len", val as number)
+                        }
+                        min={0}
+                        max={1200}
+                        step={64}
+                      />
+                      <FieldDescription>
+                        0 = header only, {">"}0 = add fake TLS payload
+                      </FieldDescription>
+                    </Field>
+
+                    <Field>
+                      <FieldLabel>
+                        SYN Fake TTL
+                        <Badge variant="secondary" className="ml-auto">
+                          {config.tcp.syn_ttl || 0}
+                        </Badge>
+                      </FieldLabel>
+
+                      <Slider
+                        value={[config.tcp.syn_ttl || 0]}
+                        onValueChange={(val) =>
+                          onChange("tcp.syn_ttl", val as number)
+                        }
+                        min={1}
+                        max={100}
+                        step={1}
+                      />
+                      <FieldDescription>
+                        TTL value for SYN fake packets (default 3 if unset)
+                      </FieldDescription>
+                    </Field>
+                  </div>
+                </FieldGroup>
+              </>
             )}
           </FieldGroup>
         </FieldSet>
+
         <Separator className="my-4" />
+
         {/* TCP Window Configuration */}
         <FieldSet>
           <FieldLegend className="flex items-center gap-2">
@@ -398,10 +409,9 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
               </FieldLabel>
               <Slider
                 value={[config.tcp.desync.count]}
-                onValueChange={(values) => {
-                  const [value] = values as [number];
-                  onChange("tcp.desync.count", value);
-                }}
+                onValueChange={(val) =>
+                  onChange("tcp.desync.count", val as number)
+                }
                 min={1}
                 max={20}
                 step={1}
@@ -438,10 +448,9 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
               </FieldLabel>
               <Slider
                 value={[config.tcp.desync.ttl]}
-                onValueChange={(values) => {
-                  const [value] = values as [number];
-                  onChange("tcp.desync.ttl", value);
-                }}
+                onValueChange={(val) =>
+                  onChange("tcp.desync.ttl", val as number)
+                }
                 min={1}
                 max={50}
                 step={1}
@@ -540,10 +549,9 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                       </FieldLabel>
                       <Slider
                         value={[config.tcp.incoming?.min || 14]}
-                        onValueChange={(values) => {
-                          const [value] = values as [number];
-                          onChange("tcp.incoming.min", value);
-                        }}
+                        onValueChange={(val) =>
+                          onChange("tcp.incoming.min", val as number)
+                        }
                         min={5}
                         max={config.tcp.incoming?.max || 50}
                         step={1}
@@ -562,10 +570,9 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                       </FieldLabel>
                       <Slider
                         value={[config.tcp.incoming?.max || 14]}
-                        onValueChange={(values) => {
-                          const [value] = values as [number];
-                          onChange("tcp.incoming.max", value);
-                        }}
+                        onValueChange={(val) =>
+                          onChange("tcp.incoming.max", val as number)
+                        }
                         min={config.tcp.incoming?.min || 5}
                         max={50}
                         step={1}
@@ -588,10 +595,9 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                   </FieldLabel>
                   <Slider
                     value={[config.tcp.incoming?.fake_ttl || 3]}
-                    onValueChange={(values) => {
-                      const [value] = values as [number];
-                      onChange("tcp.incoming.fake_ttl", value);
-                    }}
+                    onValueChange={(val) =>
+                      onChange("tcp.incoming.fake_ttl", val as number)
+                    }
                     min={1}
                     max={20}
                     step={1}
@@ -610,10 +616,9 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
                   </FieldLabel>
                   <Slider
                     value={[config.tcp.incoming?.fake_count || 3]}
-                    onValueChange={(values) => {
-                      const [value] = values as [number];
-                      onChange("tcp.incoming.fake_count", value);
-                    }}
+                    onValueChange={(val) =>
+                      onChange("tcp.incoming.fake_count", val as number)
+                    }
                     min={1}
                     max={10}
                     step={1}

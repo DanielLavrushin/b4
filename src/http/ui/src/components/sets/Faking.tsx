@@ -262,10 +262,7 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
             </FieldLabel>
             <Slider
               value={[config.faking.ttl]}
-              onValueChange={(values) => {
-                const [value] = values as [number];
-                onChange("faking.ttl", value);
-              }}
+              onValueChange={(val) => onChange("faking.ttl", val as number)}
               min={1}
               max={64}
               step={1}
@@ -298,10 +295,9 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
             </FieldLabel>
             <Slider
               value={[config.faking.sni_seq_length]}
-              onValueChange={(values) => {
-                const [value] = values as [number];
-                onChange("faking.sni_seq_length", value);
-              }}
+              onValueChange={(val) =>
+                onChange("faking.sni_seq_length", val as number)
+              }
               min={1}
               max={20}
               step={1}
@@ -416,10 +412,12 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
                   </FieldLabel>
                   <Slider
                     value={[mutation.grease_count]}
-                    onValueChange={(values) => {
-                      const [value] = values as [number];
-                      onChange("faking.sni_mutation.grease_count", value);
-                    }}
+                    onValueChange={(val) =>
+                      onChange(
+                        "faking.sni_mutation.grease_count",
+                        val as number,
+                      )
+                    }
                     min={1}
                     max={10}
                     step={1}
@@ -446,10 +444,12 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
                     </FieldLabel>
                     <Slider
                       value={[mutation.padding_size]}
-                      onValueChange={(values) => {
-                        const [value] = values as [number];
-                        onChange("faking.sni_mutation.padding_size", value);
-                      }}
+                      onValueChange={(val) =>
+                        onChange(
+                          "faking.sni_mutation.padding_size",
+                          val as number,
+                        )
+                      }
                       min={256}
                       max={16384}
                       step={256}
@@ -476,10 +476,12 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
                     </FieldLabel>
                     <Slider
                       value={[mutation.fake_ext_count]}
-                      onValueChange={(values) => {
-                        const [value] = values as [number];
-                        onChange("faking.sni_mutation.fake_ext_count", value);
-                      }}
+                      onValueChange={(val) =>
+                        onChange(
+                          "faking.sni_mutation.fake_ext_count",
+                          val as number,
+                        )
+                      }
                       min={1}
                       max={15}
                       step={1}

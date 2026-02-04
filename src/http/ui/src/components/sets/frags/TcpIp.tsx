@@ -88,8 +88,8 @@ export const TcpIpSettings = ({ config, onChange }: TcpIpSettingsProps) => {
         </FieldLabel>
         <Slider
           value={[config.fragmentation.sni_position]}
-          onValueChange={([value]: [number]) =>
-            onChange("fragmentation.sni_position", value)
+          onValueChange={(val) =>
+            onChange("fragmentation.sni_position", val as number)
           }
           min={0}
           max={50}

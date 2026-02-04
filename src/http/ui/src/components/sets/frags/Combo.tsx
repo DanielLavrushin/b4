@@ -267,10 +267,9 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
             </FieldLabel>
             <Slider
               value={[combo.first_delay_ms]}
-              onValueChange={(values) => {
-                const [value] = values as [number];
-                onChange("fragmentation.combo.first_delay_ms", value);
-              }}
+              onValueChange={(val) =>
+                onChange("fragmentation.combo.first_delay_ms", val as number)
+              }
               min={10}
               max={500}
               step={10}
@@ -287,10 +286,9 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
             </FieldLabel>
             <Slider
               value={[combo.jitter_max_us]}
-              onValueChange={(values) => {
-                const [value] = values as [number];
-                onChange("fragmentation.combo.jitter_max_us", value);
-              }}
+              onValueChange={(val) =>
+                onChange("fragmentation.combo.jitter_max_us", val as number)
+              }
               min={100}
               max={10000}
               step={100}

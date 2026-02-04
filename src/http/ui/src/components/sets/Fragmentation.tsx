@@ -151,8 +151,8 @@ export const FragmentationSettings = ({
               </FieldLabel>
               <Slider
                 value={[config.fragmentation.oob_position || 1]}
-                onValueChange={([value]: [number]) =>
-                  onChange("fragmentation.oob_position", value)
+                onValueChange={(val) =>
+                  onChange("fragmentation.oob_position", val as number)
                 }
                 min={1}
                 max={50}
@@ -194,8 +194,8 @@ export const FragmentationSettings = ({
               </FieldLabel>
               <Slider
                 value={[config.fragmentation.tlsrec_pos || 1]}
-                onValueChange={([value]: [number]) =>
-                  onChange("fragmentation.tlsrec_pos", value)
+                onValueChange={(val) =>
+                  onChange("fragmentation.tlsrec_pos", val as number)
                 }
                 min={1}
                 max={100}

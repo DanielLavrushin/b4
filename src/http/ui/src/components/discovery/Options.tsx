@@ -92,13 +92,13 @@ export const DiscoveryOptionsPanel = ({
                   <Badge variant="secondary">{options.validationTries}</Badge>
                 </FieldLabel>
                 <Slider
-                  value={options.validationTries}
-                  onValueChange={(value) => {
+                  value={[options.validationTries]}
+                  onValueChange={(val) =>
                     onChange({
                       ...options,
-                      validationTries: value as number,
-                    });
-                  }}
+                      validationTries: val as number,
+                    })
+                  }
                   min={1}
                   max={5}
                   step={1}

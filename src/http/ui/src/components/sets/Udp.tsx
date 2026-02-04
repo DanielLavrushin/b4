@@ -250,10 +250,9 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                   </FieldContent>
                   <Slider
                     value={[config.udp.conn_bytes_limit]}
-                    onValueChange={(values) => {
-                      const [value] = values as [number];
-                      onChange("udp.conn_bytes_limit", value);
-                    }}
+                    onValueChange={(val) =>
+                      onChange("udp.conn_bytes_limit", val as number)
+                    }
                     min={1}
                     max={main.id === config.id ? 30 : main.udp.conn_bytes_limit}
                     step={1}
@@ -337,10 +336,9 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                   </FieldContent>
                   <Slider
                     value={[config.udp.fake_seq_length]}
-                    onValueChange={(values) => {
-                      const [value] = values as [number];
-                      onChange("udp.fake_seq_length", value);
-                    }}
+                    onValueChange={(val) =>
+                      onChange("udp.fake_seq_length", val as number)
+                    }
                     min={1}
                     max={20}
                     step={1}
@@ -361,10 +359,9 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                   </FieldContent>
                   <Slider
                     value={[config.udp.fake_len]}
-                    onValueChange={(values) => {
-                      const [value] = values as [number];
-                      onChange("udp.fake_len", value);
-                    }}
+                    onValueChange={(val) =>
+                      onChange("udp.fake_len", val as number)
+                    }
                     min={32}
                     max={1500}
                     step={8}
@@ -385,10 +382,9 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                   </FieldContent>
                   <Slider
                     value={[config.udp.seg2delay]}
-                    onValueChange={(values) => {
-                      const [value] = values as [number];
-                      onChange("udp.seg2delay", value);
-                    }}
+                    onValueChange={(val) =>
+                      onChange("udp.seg2delay", val as number)
+                    }
                     min={0}
                     max={1000}
                     step={10}
