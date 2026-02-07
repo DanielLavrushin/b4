@@ -149,7 +149,7 @@ export const SetCompare = ({ open, setA, setB, onClose }: SetCompareProps) => {
                 <IconArrowsExchange className="text-muted-foreground size-5" />
               </div>
               <div className="col-span-5">
-                <Card className="bg-accent-secondary border-border border p-3 text-center">
+                <Card className="border-border border p-3 text-center">
                   <p className="text-sm font-semibold">{setB.name}</p>
                 </Card>
               </div>

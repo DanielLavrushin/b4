@@ -14,8 +14,7 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldLegend,
-  FieldSet,
+  FieldSeparator,
   FieldTitle,
 } from "@primitives/field";
 import {
@@ -61,10 +60,6 @@ export const FragmentationSettings = ({
   onChange,
 }: FragmentationSettingsProps) => {
   const strategy = config.fragmentation.strategy;
-  const isTcpOrIp = strategy === "tcp" || strategy === "ip";
-  const isOob = strategy === "oob";
-  const isTls = strategy === "tls";
-  const isActive = strategy !== "none";
 
   return (
     <Card>
@@ -87,6 +82,7 @@ export const FragmentationSettings = ({
               onValueChange={(value) =>
                 onChange("fragmentation.strategy", value as string)
               }
+              items={fragmentationOptions}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select fragmentation method" />
@@ -119,9 +115,9 @@ export const FragmentationSettings = ({
           </Field>
         </FieldGroup>
 
-        <Separator className="my-4" />
-
-        {isTcpOrIp && <TcpIpSettings config={config} onChange={onChange} />}
+        {(strategy == "tcp" || strategy == "ip") && (
+          <TcpIpSettings config={config} onChange={onChange} />
+        )}
 
         {strategy === "combo" && (
           <ComboSettings config={config} onChange={onChange} />
@@ -134,88 +130,93 @@ export const FragmentationSettings = ({
 
         {strategy === "firstbyte" && <FirstByteSettings config={config} />}
 
-        {isOob && (
-          <FieldSet>
-            <FieldLegend>OOB (Out-of-Band) Strategy</FieldLegend>
-            <FieldDescription>
-              Inserts a byte with TCP URG flag. Server ignores it, but stateful
-              DPI gets confused.
-            </FieldDescription>
+        {strategy === "oob" && (
+          <>
+            <FieldSeparator className="my-6">
+              OOB (Out-of-Band) Strategy
+            </FieldSeparator>
 
-            <Field>
-              <FieldLabel>
-                Insert Position
-                <Badge variant="secondary">
-                  {config.fragmentation.oob_position || 1}
-                </Badge>
-              </FieldLabel>
-              <Slider
-                value={[config.fragmentation.oob_position || 1]}
-                onValueChange={(val) =>
-                  onChange("fragmentation.oob_position", val as number)
-                }
-                min={1}
-                max={50}
-                step={1}
-              />
-              <FieldDescription>Bytes before OOB insertion</FieldDescription>
-            </Field>
-            <Field>
-              <FieldDescription>
-                OOB Byte:{" "}
-                <code className="font-mono text-xs">
-                  {String.fromCharCode(config.fragmentation.oob_char || 120)}
-                </code>{" "}
-                (0x
-                {(config.fragmentation.oob_char || 120)
-                  .toString(16)
-                  .padStart(2, "0")}
-                )
-              </FieldDescription>
-            </Field>
-          </FieldSet>
+            <FieldGroup>
+              <Field>
+                <Alert>
+                  <AlertDescription className="text-center">
+                    Inserts a byte with TCP URG flag. Server ignores it, but
+                    stateful DPI gets confused.
+                  </AlertDescription>
+                </Alert>
+              </Field>
+              <Field>
+                <FieldLabel>
+                  Insert Position
+                  <Badge variant="secondary" className="ml-auto">
+                    {config.fragmentation.oob_position || 1}
+                  </Badge>
+                </FieldLabel>
+                <Slider
+                  value={[config.fragmentation.oob_position || 1]}
+                  onValueChange={(val) =>
+                    onChange("fragmentation.oob_position", val as number)
+                  }
+                  min={1}
+                  max={50}
+                  step={1}
+                />
+                <FieldDescription>Bytes before OOB insertion</FieldDescription>
+              </Field>
+              <Field>
+                <FieldDescription>
+                  OOB Byte:{" "}
+                  <code className="font-mono text-xs">
+                    {String.fromCharCode(config.fragmentation.oob_char || 120)}
+                  </code>{" "}
+                  (0x
+                  {(config.fragmentation.oob_char || 120)
+                    .toString(16)
+                    .padStart(2, "0")}
+                  )
+                </FieldDescription>
+              </Field>
+            </FieldGroup>
+          </>
         )}
 
         {/* TLS Record Settings */}
-        {isTls && (
-          <FieldSet>
-            <FieldLegend>TLS Record Split Position</FieldLegend>
-            <FieldDescription>
-              Splits ClientHello into multiple TLS records. DPI expecting
-              single-record handshake fails to match.
-            </FieldDescription>
+        {strategy === "tls" && (
+          <>
+            <FieldSeparator className="my-6">
+              TLS Record Split Position
+            </FieldSeparator>
 
-            <Field>
-              <FieldLabel>
-                Record Split Position
-                <Badge variant="secondary">
-                  {config.fragmentation.tlsrec_pos || 1}
-                </Badge>
-              </FieldLabel>
-              <Slider
-                value={[config.fragmentation.tlsrec_pos || 1]}
-                onValueChange={(val) =>
-                  onChange("fragmentation.tlsrec_pos", val as number)
-                }
-                min={1}
-                max={100}
-                step={1}
-                className="w-full"
-              />
-              <FieldDescription>
-                First TLS record size in bytes
-              </FieldDescription>
-            </Field>
-          </FieldSet>
-        )}
+            <FieldGroup>
+              <Alert>
+                <AlertDescription className="text-center">
+                  Splits ClientHello into multiple TLS records. DPI expecting
+                  single-record handshake fails to match.
+                </AlertDescription>
+              </Alert>
 
-        {!isActive && (
-          <Alert variant="destructive" className="md:col-span-2">
-            <AlertDescription>
-              Fragmentation disabled. Only fake packets (if enabled) will be
-              used for bypass.
-            </AlertDescription>
-          </Alert>
+              <Field>
+                <FieldLabel>
+                  Record Split Position
+                  <Badge variant="secondary" className="ml-auto">
+                    {config.fragmentation.tlsrec_pos || 1}
+                  </Badge>
+                </FieldLabel>
+                <Slider
+                  value={[config.fragmentation.tlsrec_pos || 1]}
+                  onValueChange={(val) =>
+                    onChange("fragmentation.tlsrec_pos", val as number)
+                  }
+                  min={1}
+                  max={100}
+                  step={1}
+                />
+                <FieldDescription>
+                  First TLS record size in bytes
+                </FieldDescription>
+              </Field>
+            </FieldGroup>
+          </>
         )}
       </CardContent>
     </Card>

@@ -1,7 +1,5 @@
-import { WarningIcon } from "@b4.icons";
 import { TagsInput } from "@composed/tags-input";
 import { B4SetConfig } from "@models/config";
-import { Alert, AlertDescription } from "@primitives/alert";
 import { Badge } from "@primitives/badge";
 import {
   Card,
@@ -16,8 +14,7 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldLegend,
-  FieldSet,
+  FieldSeparator,
   FieldTitle,
 } from "@primitives/field";
 import {
@@ -83,9 +80,6 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
   const isQuicEnabled = config.udp.filter_quic !== "disabled";
   const hasPortFilter =
     config.udp.dport_filter && config.udp.dport_filter.trim() !== "";
-  const hasDomainsConfigured =
-    config.targets?.sni_domains?.length > 0 ||
-    config.targets?.geosite_categories?.length > 0;
 
   const willProcessUdp = isQuicEnabled || hasPortFilter;
 
@@ -93,10 +87,6 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
 
   const isFakeMode = config.udp.mode === "fake";
   const showFakeSettings = showActionSettings && isFakeMode;
-
-  const showParseWarning =
-    config.udp.filter_quic === "parse" && !hasDomainsConfigured;
-  const showNoProcessingWarning = !willProcessUdp;
 
   const handlePortFilterChange = (values: string[]) => {
     onChange("udp.dport_filter", validatePortFilter(values));
@@ -114,101 +104,76 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
       <Separator />
 
       <CardContent>
-        <FieldSet>
-          <FieldLegend>What UDP Traffic to Process</FieldLegend>
-          <FieldGroup>
-            <Field>
-              <FieldLabel>QUIC Filter</FieldLabel>
-              <Select
-                value={config.udp.filter_quic}
-                onValueChange={(value) =>
-                  onChange("udp.filter_quic", value as string)
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select QUIC filter" />
-                </SelectTrigger>
-                <SelectContent>
-                  {UDP_QUIC_FILTERS.map((option) => (
-                    <SelectItem
-                      key={option.value}
-                      value={option.value.toString()}
-                    >
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+        <FieldGroup>
+          <Field>
+            <FieldLabel>QUIC Filter</FieldLabel>
+            <Select
+              value={config.udp.filter_quic}
+              onValueChange={(value) =>
+                onChange("udp.filter_quic", value as string)
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select QUIC filter" />
+              </SelectTrigger>
+              <SelectContent>
+                {UDP_QUIC_FILTERS.map((option) => (
+                  <SelectItem
+                    key={option.value}
+                    value={option.value.toString()}
+                  >
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FieldDescription>
+              {
+                UDP_QUIC_FILTERS.find((o) => o.value === config.udp.filter_quic)
+                  ?.description
+              }
+            </FieldDescription>
+          </Field>
+
+          <Field>
+            <FieldLabel>Port Filter</FieldLabel>
+            <TagsInput
+              value={parsePortFilter(config.udp.dport_filter)}
+              onValueChange={handlePortFilterChange}
+              placeholder="1-65535 or 1000-2000"
+            />
+            <FieldDescription>
+              Match specific UDP ports (VoIP, gaming, etc.) - leave empty to
+              disable
+            </FieldDescription>
+          </Field>
+
+          <Field orientation="horizontal">
+            <FieldContent>
+              <FieldTitle>Filter STUN Packets</FieldTitle>
               <FieldDescription>
-                {
-                  UDP_QUIC_FILTERS.find(
-                    (o) => o.value === config.udp.filter_quic,
-                  )?.description
-                }
+                Ignore STUN packets (recommended for voice/video calls)
               </FieldDescription>
-            </Field>
-
-            <Field>
-              <FieldLabel>Port Filter</FieldLabel>
-              <TagsInput
-                value={parsePortFilter(config.udp.dport_filter)}
-                onValueChange={handlePortFilterChange}
-                placeholder="1-65535 or 1000-2000"
-              />
-              <FieldDescription>
-                Match specific UDP ports (VoIP, gaming, etc.) - leave empty to
-                disable
-              </FieldDescription>
-            </Field>
-
-            <Field orientation="horizontal">
-              <FieldContent>
-                <FieldTitle>Filter STUN Packets</FieldTitle>
-                <FieldDescription>
-                  Ignore STUN packets (recommended for voice/video calls)
-                </FieldDescription>
-              </FieldContent>
-              <Switch
-                id="switch-udp-filter-stun"
-                checked={config.udp.filter_stun}
-                onCheckedChange={(checked) =>
-                  onChange("udp.filter_stun", checked)
-                }
-              />
-            </Field>
-          </FieldGroup>
-
-          {/* Parse mode warning */}
-          {showParseWarning && (
-            <Alert variant="destructive">
-              <WarningIcon className="h-3.5 w-3.5" />
-              <AlertDescription>
-                <strong>Parse mode requires domains:</strong> Add domains in the
-                Targets section for SNI matching to work. Without domains, no
-                QUIC traffic will be processed.
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {/* No processing warning */}
-          {showNoProcessingWarning && (
-            <Alert>
-              <AlertDescription>
-                <strong>UDP processing disabled:</strong> Enable QUIC filtering
-                or add port filters to process UDP traffic. Currently, all UDP
-                packets will pass through unchanged.
-              </AlertDescription>
-            </Alert>
-          )}
-        </FieldSet>
+            </FieldContent>
+            <Switch
+              id="switch-udp-filter-stun"
+              checked={config.udp.filter_stun}
+              onCheckedChange={(checked) =>
+                onChange("udp.filter_stun", checked)
+              }
+            />
+          </Field>
+        </FieldGroup>
 
         {/* Section 2: Action Settings (only if traffic will be processed) */}
         {showActionSettings && (
           <>
-            <Separator className="my-4" />
-            <FieldSet>
-              <FieldLegend>How to Handle Matched Traffic</FieldLegend>
-              <FieldGroup>
+            <FieldSeparator className="my-6">
+              How to Handle Matched Traffic
+            </FieldSeparator>
+
+            <FieldGroup>
+              <div className="flex flex-row gap-4">
                 <Field>
                   <FieldLabel>Action Mode</FieldLabel>
                   <Select
@@ -240,14 +205,13 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                 </Field>
 
                 <Field>
-                  <FieldContent>
-                    <FieldLabel>
-                      Connection Packets Limit
-                      <Badge variant="secondary">
-                        {config.udp.conn_bytes_limit}
-                      </Badge>
-                    </FieldLabel>
-                  </FieldContent>
+                  <FieldLabel>
+                    Connection Packets Limit
+                    <Badge variant="secondary" className="ml-auto">
+                      {config.udp.conn_bytes_limit}
+                    </Badge>
+                  </FieldLabel>
+
                   <Slider
                     value={[config.udp.conn_bytes_limit]}
                     onValueChange={(val) =>
@@ -263,37 +227,20 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                       : `Max: ${main.udp.conn_bytes_limit} (limited by main set)`}
                   </FieldDescription>
                 </Field>
-              </FieldGroup>
-
-              {/* Info about current mode */}
-              <Alert>
-                <AlertDescription>
-                  {isFakeMode ? (
-                    <>
-                      <strong>Fake mode:</strong> Matched UDP packets will be
-                      preceded by fake packets and fragmented to bypass DPI
-                      systems. Configure fake packet settings below.
-                    </>
-                  ) : (
-                    <>
-                      <strong>Drop mode:</strong> Matched UDP packets will be
-                      dropped, forcing the application to fall back to TCP
-                      (e.g., QUIC → HTTPS).
-                    </>
-                  )}
-                </AlertDescription>
-              </Alert>
-            </FieldSet>
+              </div>
+            </FieldGroup>
           </>
         )}
 
         {/* Section 3: Fake Mode Settings (only if fake mode is enabled) */}
         {showFakeSettings && (
           <>
-            <Separator className="my-4" />
-            <FieldSet>
-              <FieldLegend>Fake Packet Configuration</FieldLegend>
-              <FieldGroup>
+            <FieldSeparator className="my-6">
+              Fake Packet Configuration
+            </FieldSeparator>
+
+            <FieldGroup>
+              <div className="grid grid-cols-2 gap-4">
                 <Field>
                   <FieldLabel>Faking Strategy</FieldLabel>
                   <Select
@@ -326,14 +273,13 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                 </Field>
 
                 <Field>
-                  <FieldContent>
-                    <FieldLabel>
-                      Fake Packet Count
-                      <Badge variant="secondary">
-                        {config.udp.fake_seq_length}
-                      </Badge>
-                    </FieldLabel>
-                  </FieldContent>
+                  <FieldLabel>
+                    Fake Packet Count
+                    <Badge variant="secondary" className="ml-auto">
+                      {config.udp.fake_seq_length}
+                    </Badge>
+                  </FieldLabel>
+
                   <Slider
                     value={[config.udp.fake_seq_length]}
                     onValueChange={(val) =>
@@ -349,14 +295,13 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                 </Field>
 
                 <Field>
-                  <FieldContent>
-                    <FieldLabel>
-                      Fake Packet Size
-                      <Badge variant="secondary">
-                        {config.udp.fake_len} bytes
-                      </Badge>
-                    </FieldLabel>
-                  </FieldContent>
+                  <FieldLabel>
+                    Fake Packet Size
+                    <Badge variant="secondary" className="ml-auto">
+                      {config.udp.fake_len} bytes
+                    </Badge>
+                  </FieldLabel>
+
                   <Slider
                     value={[config.udp.fake_len]}
                     onValueChange={(val) =>
@@ -372,14 +317,13 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                 </Field>
 
                 <Field>
-                  <FieldContent>
-                    <FieldLabel>
-                      Segment 2 Delay
-                      <Badge variant="secondary">
-                        {config.udp.seg2delay} ms
-                      </Badge>
-                    </FieldLabel>
-                  </FieldContent>
+                  <FieldLabel>
+                    Segment 2 Delay
+                    <Badge variant="secondary" className="ml-auto">
+                      {config.udp.seg2delay} ms
+                    </Badge>
+                  </FieldLabel>
+
                   <Slider
                     value={[config.udp.seg2delay]}
                     onValueChange={(val) =>
@@ -391,8 +335,8 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                   />
                   <FieldDescription>Delay between segments</FieldDescription>
                 </Field>
-              </FieldGroup>
-            </FieldSet>
+              </div>
+            </FieldGroup>
           </>
         )}
       </CardContent>

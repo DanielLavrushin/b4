@@ -1,4 +1,5 @@
 import { TagsInput } from "@composed/tags-input";
+import { Alert, AlertDescription } from "@design/primitives/alert";
 import { B4SetConfig, DisorderShuffleMode } from "@models/config";
 import { Badge } from "@primitives/badge";
 import {
@@ -7,8 +8,7 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldLegend,
-  FieldSet,
+  FieldSeparator,
   FieldTitle,
 } from "@primitives/field";
 import {
@@ -18,7 +18,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@primitives/select";
-import { Separator } from "@primitives/separator";
 import { Slider } from "@primitives/slider";
 import { Switch } from "@primitives/switch";
 import { useState } from "react";
@@ -110,15 +109,19 @@ export const DisorderSettings = ({
 
   return (
     <>
-      <FieldSet>
-        <FieldLegend>Disorder Strategy</FieldLegend>
-        <FieldDescription>
-          Disorder sends real TCP segments out of order with timing jitter. No
-          fake packets — exploits DPI that expects sequential data.
-        </FieldDescription>
+      <FieldSeparator className="my-6">Disorder Strategy</FieldSeparator>
+      <FieldGroup>
+        <Field>
+          <Alert>
+            <AlertDescription className="text-center">
+              Disorder sends real TCP segments out of order with timing jitter.
+              No fake packets — exploits DPI that expects sequential data.
+            </AlertDescription>
+          </Alert>
+        </Field>
 
         {/* SNI Split Toggle */}
-        <FieldGroup>
+        <div className="flex flex-row gap-4">
           <Field>
             <FieldLabel>Shuffle Mode</FieldLabel>
             <Select
@@ -126,6 +129,7 @@ export const DisorderSettings = ({
               onValueChange={(value) =>
                 onChange("fragmentation.disorder.shuffle_mode", value as string)
               }
+              items={shuffleModeOptions}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select shuffle mode" />
@@ -159,55 +163,24 @@ export const DisorderSettings = ({
               }
             />
           </Field>
-        </FieldGroup>
-      </FieldSet>
-
-      <Separator className="my-4" />
-
-      {/* Visual */}
-      <FieldSet>
-        <FieldLegend>Segment Order Example</FieldLegend>
-        <FieldDescription>
-          {disorder.shuffle_mode === "full"
-            ? "Segments sent in random order"
-            : "Segments sent in reverse order"}
-        </FieldDescription>
-        <div className="flex items-center gap-2">
-          <div className="flex gap-1 font-mono">
-            {["1", "2", "3", "4"].map((n) => (
-              <div
-                key={n}
-                className="bg-accent min-w-8 rounded p-2 text-center"
-              >
-                {n}
-              </div>
-            ))}
-          </div>
-          <p className="mx-2">→</p>
-          <div className="flex gap-1 font-mono">
-            {(disorder.shuffle_mode === "reverse"
-              ? ["4", "3", "2", "1"]
-              : ["3", "1", "4", "2"]
-            ).map((n) => (
-              <div key={n} className="bg-secondary min-w-8 p-2 text-center">
-                {n}
-              </div>
-            ))}
-          </div>
         </div>
-      </FieldSet>
+      </FieldGroup>
 
-      <Separator className="my-4" />
+      <FieldSeparator className="my-6">Timing Jitter</FieldSeparator>
 
-      <FieldSet>
-        <FieldLegend>Timing Jitter</FieldLegend>
-        <FieldDescription>
-          Random delay between segments. Used when TCP Seg2Delay is 0.
-        </FieldDescription>
+      <FieldGroup>
+        <Field>
+          <Alert>
+            <AlertDescription className="text-center">
+              Random delay between segments. Used when TCP Seg2Delay is 0.
+            </AlertDescription>
+          </Alert>
+        </Field>
+
         <Field>
           <FieldLabel>
             Jitter Range
-            <Badge variant="secondary">
+            <Badge variant="secondary" className="ml-auto">
               {disorder.min_jitter_us} - {disorder.max_jitter_us} μs
             </Badge>
           </FieldLabel>
@@ -221,28 +194,32 @@ export const DisorderSettings = ({
             min={100}
             max={10000}
             step={100}
-            className="w-full"
           />
           <FieldDescription>
             Minimum and maximum delay between segments (μs)
           </FieldDescription>
         </Field>
-      </FieldSet>
+      </FieldGroup>
+      <FieldSeparator className="my-6">
+        Sequence Overlap (seqovl)
+      </FieldSeparator>
 
-      <Separator className="my-4" />
-
-      <FieldSet>
-        <FieldLegend>Sequence Overlap (seqovl)</FieldLegend>
-        <FieldDescription>
-          Prepends fake bytes with decreased TCP sequence number. DPI sees fake
-          protocol header, server discards overlap.
-        </FieldDescription>
+      <FieldGroup>
+        <Field>
+          <Alert>
+            <AlertDescription className="text-center">
+              Prepends fake bytes with decreased TCP sequence number. DPI sees
+              fake protocol header, server discards overlap.
+            </AlertDescription>
+          </Alert>
+        </Field>
 
         <Field>
           <FieldLabel>Overlap Pattern</FieldLabel>
           <Select
             value={getCurrentPreset()}
             onValueChange={(value) => handlePresetChange(value as string)}
+            items={SEQ_OVERLAP_PRESETS}
           >
             <SelectTrigger>
               <SelectValue placeholder="Select overlap pattern" />
@@ -283,28 +260,31 @@ export const DisorderSettings = ({
             </FieldDescription>
           </Field>
         )}
-      </FieldSet>
 
-      {seqPattern.length > 0 && (
-        <>
-          <Separator className="my-4" />
+        {seqPattern.length > 0 && (
+          <Field>
+            <div className="md:col-span-2">
+              <div className="bg-card border-border border p-4">
+                <p className="text-muted-foreground mb-2 text-xs">
+                  SEQOVL Visualization
+                </p>
 
-          <FieldSet>
-            <FieldLegend>SEQOVL Visualization</FieldLegend>
-            <FieldDescription>
-              DPI sees fake header at decreased seq#, server reassembles
-              correctly
-            </FieldDescription>
-            <div className="flex items-center gap-2">
-              <div className="border-secondary border-2 border-dashed p-2">
-                [{seqPattern.join(" ")}] (fake, seq-{seqPattern.length})
+                <div className="flex items-center gap-2">
+                  <div className="border-secondary border-2 border-dashed p-2">
+                    [{seqPattern.join(" ")}] (fake, seq-{seqPattern.length})
+                  </div>
+                  <p className="mx-2">+</p>
+                  <div className="flex-1 p-2">Real TLS ClientHello...</div>
+                </div>
+                <p className="text-muted-foreground mt-2 text-xs">
+                  DPI sees fake header at decreased seq#, server reassembles
+                  correctly
+                </p>
               </div>
-              <p className="mx-2">+</p>
-              <div className="flex-1 p-2">Real TLS ClientHello...</div>
             </div>
-          </FieldSet>
-        </>
-      )}
+          </Field>
+        )}
+      </FieldGroup>
     </>
   );
 };

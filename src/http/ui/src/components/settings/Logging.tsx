@@ -42,11 +42,6 @@ const LOG_LEVELS: Array<{ value: LogLevel; label: string }> = [
 ] as const;
 
 export const LoggingSettings = ({ config, onChange }: LoggingSettingsProps) => {
-  const currentValue = config.system.logging.level?.toString();
-  const currentLabel = LOG_LEVELS.find(
-    (option) => option.value.toString() === currentValue,
-  )?.label;
-
   return (
     <Card>
       <CardHeader>
@@ -65,22 +60,18 @@ export const LoggingSettings = ({ config, onChange }: LoggingSettingsProps) => {
             <Field>
               <FieldLabel>Log Level</FieldLabel>
               <Select
-                value={currentValue}
+                value={config.system.logging.level}
                 onValueChange={(value) =>
-                  onChange("system.logging.level", Number(value))
+                  onChange("system.logging.level", value as LogLevel)
                 }
+                items={LOG_LEVELS}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select log level">
-                    {currentLabel || null}
-                  </SelectValue>
+                  <SelectValue placeholder="Select log level" />
                 </SelectTrigger>
                 <SelectContent>
                   {LOG_LEVELS.map((option) => (
-                    <SelectItem
-                      key={option.value}
-                      value={option.value.toString()}
-                    >
+                    <SelectItem key={option.value} value={option.value}>
                       {option.label}
                     </SelectItem>
                   ))}

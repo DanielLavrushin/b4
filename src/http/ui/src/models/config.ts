@@ -8,6 +8,8 @@ export type FakingStrategy =
 export enum FakingPayloadType {
   RANDOM = 0,
   CUSTOM = 1,
+  DEFAULT = 2,
+  DEFAULT2 = 3,
   CAPTURE = 4,
 }
 
