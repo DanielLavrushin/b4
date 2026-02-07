@@ -10,7 +10,6 @@ interface DomainsControlBarProps {
   onFilterChange: (filter: string) => void;
   totalCount: number;
   filteredCount: number;
-  sortColumn: string | null;
   paused: boolean;
   onPauseChange: (paused: boolean) => void;
   showAll: boolean;

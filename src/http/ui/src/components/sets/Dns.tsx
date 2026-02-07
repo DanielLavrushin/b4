@@ -1,11 +1,13 @@
 import dns from "@assets/dns.json";
 import {
-  DnsIcon,
   BlockIcon,
   CheckIcon,
-  SpeedIcon,
+  DnsIcon,
   SecurityIcon,
+  SpeedIcon,
 } from "@b4.icons";
+import { cn } from "@design/lib/utils";
+import { B4SetConfig } from "@models/config";
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Badge } from "@primitives/badge";
 import {
@@ -26,6 +28,7 @@ import {
   FieldTitle,
 } from "@primitives/field";
 import { Input } from "@primitives/input";
+import { Separator } from "@primitives/separator";
 import { Switch } from "@primitives/switch";
 import {
   Table,
@@ -35,9 +38,6 @@ import {
   TableHeader,
   TableRow,
 } from "@primitives/table";
-import { cn } from "@design/lib/utils";
-import { B4SetConfig } from "@models/config";
-import { Separator } from "@primitives/separator";
 
 interface DnsEntry {
   name: string;
@@ -174,11 +174,13 @@ export function DnsSettings({ config, onChange, ipv6 }: DnsSettingsProps) {
                       }
                     >
                       <TableCell>
-                        {dns.target_dns === server.ip ? (
+                        {dns.target_dns === server.ip && (
                           <CheckIcon className="text-primary size-5" />
-                        ) : server.warn ? (
+                        )}
+                        {dns.target_dns !== server.ip && server.warn && (
                           <BlockIcon className="text-destructive size-5" />
-                        ) : (
+                        )}
+                        {dns.target_dns !== server.ip && !server.warn && (
                           <DnsIcon className="text-muted-foreground size-5" />
                         )}
                       </TableCell>

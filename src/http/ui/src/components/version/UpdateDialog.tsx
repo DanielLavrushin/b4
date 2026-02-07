@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useState } from "react";
+import React, { forwardRef, useEffect, useState } from "react";
 
 import {
   CheckCircleIcon,
@@ -35,7 +35,6 @@ import {
 } from "@primitives/select";
 import { Separator } from "@primitives/separator";
 import { Switch } from "@primitives/switch";
-import React from "react";
 import ReactMarkdown from "react-markdown";
 
 interface UpdateModalProps {
@@ -104,7 +103,7 @@ export const UpdateModal = ({
     setUpdateMessage("Initiating update...");
 
     const result = await performUpdate(selectedVersion);
-    if (!result || !result.success) {
+    if (!result?.success) {
       setUpdateStatus("error");
       setUpdateMessage(result?.message || "Failed to initiate update.");
       return;
@@ -316,11 +315,7 @@ export const UpdateModal = ({
           )}
         </DialogHeader>
         {dialogContent()}
-        {dialogActions() && (
-          <>
-            <DialogFooter>{dialogActions()}</DialogFooter>
-          </>
-        )}
+        {dialogActions() && <DialogFooter>{dialogActions()}</DialogFooter>}
       </DialogContent>
     </Dialog>
   );

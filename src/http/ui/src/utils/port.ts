@@ -9,20 +9,31 @@ export function validatePortFilter(values: string[]): string {
   for (const v of values.map((s) => s.trim()).filter(Boolean)) {
     // Normalize ":" to "-" for range separator
     const normalized = v.replace(":", "-");
-    
+
     if (normalized.includes("-")) {
-      const [s, e] = normalized.split("-").map((n) => parseInt(n.trim(), 10));
-      if (!isNaN(s) && !isNaN(e) && s >= 1 && e >= 1 && s < e && e <= 65535) {
+      const [s, e] = normalized
+        .split("-")
+        .map((n) => Number.parseInt(n.trim(), 10));
+      if (
+        !Number.isNaN(s) &&
+        !Number.isNaN(e) &&
+        s >= 1 &&
+        e >= 1 &&
+        s < e &&
+        e <= 65535
+      ) {
         valid.push(`${s}-${e}`);
       }
     } else {
-      const p = parseInt(normalized, 10);
-      if (!isNaN(p) && p >= 1 && p <= 65535) valid.push(p.toString());
+      const p = Number.parseInt(normalized, 10);
+      if (!Number.isNaN(p) && p >= 1 && p <= 65535) valid.push(p.toString());
     }
   }
   return [...new Set(valid)]
     .sort(
-      (a, b) => parseInt(a.split("-")[0], 10) - parseInt(b.split("-")[0], 10),
+      (a, b) =>
+        Number.parseInt(a.split("-")[0], 10) -
+        Number.parseInt(b.split("-")[0], 10),
     )
     .join(",");
 }

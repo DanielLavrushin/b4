@@ -300,7 +300,7 @@ export const CaptureSettings = () => {
 
             <CardDescription>
               {captures.length} optimized payloads
-              {captures.length !== 1 ? "s" : ""} ready for use
+              {captures.length === 1 ? "" : "s"} ready for use
             </CardDescription>
           </CardHeader>
           <CardContent>

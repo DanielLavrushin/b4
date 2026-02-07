@@ -99,7 +99,6 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
     fake_snis: [],
   };
 
-  const isMutationEnabled = mutation.mode !== "off";
   const showGreaseSettings = ["grease", "advanced"].includes(mutation.mode);
   const showPaddingSettings = ["padding", "advanced"].includes(mutation.mode);
   const showFakeExtSettings = ["fakeext", "advanced"].includes(mutation.mode);

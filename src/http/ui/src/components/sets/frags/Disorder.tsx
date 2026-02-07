@@ -136,10 +136,7 @@ export const DisorderSettings = ({
               </SelectTrigger>
               <SelectContent>
                 {shuffleModeOptions.map((option) => (
-                  <SelectItem
-                    key={option.value}
-                    value={option.value.toString()}
-                  >
+                  <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>
                 ))}

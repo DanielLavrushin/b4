@@ -124,7 +124,10 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
           {config.available_ifaces.map((iface) => {
             const isSelected = (config.queue.interfaces || []).includes(iface);
             return (
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+              <div
+                className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4"
+                key={iface}
+              >
                 <Field key={iface} orientation="horizontal">
                   <Checkbox
                     id={`interface-${iface}`}

@@ -229,13 +229,14 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
             onValueChange={(value) =>
               onChange("fragmentation.combo.shuffle_mode", value as string)
             }
+            items={shuffleModeOptions}
           >
             <SelectTrigger>
               <SelectValue placeholder="Select shuffle mode" />
             </SelectTrigger>
             <SelectContent>
               {shuffleModeOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value.toString()}>
+                <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>
               ))}

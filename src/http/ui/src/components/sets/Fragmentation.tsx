@@ -89,10 +89,7 @@ export const FragmentationSettings = ({
               </SelectTrigger>
               <SelectContent>
                 {fragmentationOptions.map((option) => (
-                  <SelectItem
-                    key={option.value}
-                    value={option.value.toString()}
-                  >
+                  <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>
                 ))}

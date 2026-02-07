@@ -118,13 +118,12 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
   const isDesyncEnabled = config.tcp.desync.mode !== "off";
 
   const handleWinValuesChange = (values: string[]) => {
-    // Валидация: только числа от 0 до 65535, уникальные
     const validNumbers = values
       .map((v) => Number.parseInt(v.trim(), 10))
       .filter((v) => !Number.isNaN(v) && v >= 0 && v <= 65535)
-      .filter((v, index, arr) => arr.indexOf(v) === index); // Уникальные
+      .filter((v, index, arr) => arr.indexOf(v) === index); // unique
 
-    const sortedNumbers = validNumbers.sort((a, b) => a - b);
+    const sortedNumbers = validNumbers.sort((a: number, b: number) => a - b);
     onChange("tcp.win.values", sortedNumbers);
   };
 
@@ -308,16 +307,14 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
               onValueChange={(value) =>
                 onChange("tcp.win.mode", value as string)
               }
+              items={windowModeOptions}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select window mode" />
               </SelectTrigger>
               <SelectContent>
                 {windowModeOptions.map((option) => (
-                  <SelectItem
-                    key={option.value}
-                    value={option.value.toString()}
-                  >
+                  <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>
                 ))}
@@ -357,16 +354,14 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
               onValueChange={(value) =>
                 onChange("tcp.desync.mode", value as string)
               }
+              items={desyncModeOptions}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select desync mode" />
               </SelectTrigger>
               <SelectContent>
                 {desyncModeOptions.map((option) => (
-                  <SelectItem
-                    key={option.value}
-                    value={option.value.toString()}
-                  >
+                  <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>
                 ))}
@@ -459,16 +454,14 @@ export const TcpSettings = ({ config, main, onChange }: TcpSettingsProps) => {
               onValueChange={(value) =>
                 onChange("tcp.incoming.mode", value as string)
               }
+              items={incomingModeOptions}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select incoming mode" />
               </SelectTrigger>
               <SelectContent>
                 {incomingModeOptions.map((option) => (
-                  <SelectItem
-                    key={option.value}
-                    value={option.value.toString()}
-                  >
+                  <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>
                 ))}

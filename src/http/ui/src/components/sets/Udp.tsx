@@ -112,16 +112,14 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
               onValueChange={(value) =>
                 onChange("udp.filter_quic", value as string)
               }
+              items={UDP_QUIC_FILTERS}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select QUIC filter" />
               </SelectTrigger>
               <SelectContent>
                 {UDP_QUIC_FILTERS.map((option) => (
-                  <SelectItem
-                    key={option.value}
-                    value={option.value.toString()}
-                  >
+                  <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>
                 ))}
@@ -181,16 +179,14 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                     onValueChange={(value) =>
                       onChange("udp.mode", value as string)
                     }
+                    items={UDP_MODES}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select action mode" />
                     </SelectTrigger>
                     <SelectContent>
                       {UDP_MODES.map((option) => (
-                        <SelectItem
-                          key={option.value}
-                          value={option.value.toString()}
-                        >
+                        <SelectItem key={option.value} value={option.value}>
                           {option.label}
                         </SelectItem>
                       ))}
@@ -248,16 +244,14 @@ export const UdpSettings = ({ config, main, onChange }: UdpSettingsProps) => {
                     onValueChange={(value) =>
                       onChange("udp.faking_strategy", value as string)
                     }
+                    items={UDP_FAKING_STRATEGIES}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select faking strategy" />
                     </SelectTrigger>
                     <SelectContent>
                       {UDP_FAKING_STRATEGIES.map((option) => (
-                        <SelectItem
-                          key={option.value}
-                          value={option.value.toString()}
-                        >
+                        <SelectItem key={option.value} value={option.value}>
                           {option.label}
                         </SelectItem>
                       ))}
