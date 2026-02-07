@@ -1,9 +1,10 @@
 # B4 - Bye Bye Big Bro
 
-## [1.33.1] - 2026-01-26
+## [1.33.2] - 2026-02-07
 
+- ADDED: `TCP Timestamp` faking strategy - a new way to make fake packets look wrong to the real server (so it ignores them) while still fooling DPI. Instead of using a low TTL or wrong sequence number, B4 sends fake packets with an outdated timestamp. Inspired by the [youtubeUnblock](https://github.com/Waujito/youtubeUnblock) project. Select `TCP Timestamp` in the Faking strategy dropdown to use it.
 - FIXED: UDP/QUIC traffic stopping to match after some time. B4 now keeps server-to-domain associations active as long as traffic is flowing, preventing the "works at first, then stops" issue.
-- IMPROVED: Rewrite TLS ClientHello payload generation.
+- IMPROVED: Rewrite TLS `ClientHello` payload generation.
 
 ## [1.32.0] - 2026-01-19
 

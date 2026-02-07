@@ -1414,21 +1414,26 @@ func GetPhase2Presets(family StrategyFamily) []ConfigPreset {
 		}
 
 		// Strategy variations
-		strategies := []string{"ttl", "pastseq", "randseq", "tcp_check", "md5sum"}
+		strategies := []string{"ttl", "pastseq", "randseq", "tcp_check", "md5sum", "timestamp"}
 		for i, strat := range strategies {
+			cfg := config.FakingConfig{
+				SNI:          true,
+				TTL:          7,
+				Strategy:     strat,
+				SeqOffset:    10000,
+				SNISeqLength: 1,
+				SNIType:      config.FakePayloadDefault1,
+			}
+			// Set default timestamp decrease for timestamp strategy
+			if strat == "timestamp" {
+				cfg.TimestampDecrease = 600000
+			}
 			presets = append(presets, ConfigPreset{
 				Name:     formatName("fake-%s", strat),
 				Family:   FamilyFakeSNI,
 				Phase:    PhaseOptimize,
 				Priority: i + 20,
-				Config: withFaking(base, config.FakingConfig{
-					SNI:          true,
-					TTL:          7,
-					Strategy:     strat,
-					SeqOffset:    10000,
-					SNISeqLength: 1,
-					SNIType:      config.FakePayloadDefault1,
-				}),
+				Config:   withFaking(base, cfg),
 			})
 		}
 

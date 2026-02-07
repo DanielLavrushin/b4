@@ -54,6 +54,7 @@ const FAKE_STRATEGIES: { value: FakingStrategy; label: string }[] = [
   { value: "pastseq", label: "Past Sequence" },
   { value: "tcp_check", label: "TCP Check" },
   { value: "md5sum", label: "MD5 Sum" },
+  { value: "timestamp", label: "TCP Timestamp" },
 ];
 
 const FAKE_PAYLOAD_TYPES: Array<{ value: FakingPayloadType; label: string }> = [
@@ -308,8 +309,24 @@ export const FakingSettings = ({ config, onChange }: FakingSettingsProps) => {
               TCP sequence number offset for pastseq strategy
             </FieldDescription>
           </Field>
-        </FieldGroup>
 
+          {config.faking.strategy === "timestamp" && (
+            <Field>
+              <FieldLabel>Timestamp Decrease</FieldLabel>
+              <Input
+                type="number"
+                value={config.faking.timestamp_decrease}
+                onChange={(e) =>
+                  onChange("faking.timestamp_decrease", Number(e.target.value))
+                }
+                disabled={!config.faking.sni}
+              />
+              <FieldDescription>
+                Amount to decrease TCP timestamp option
+              </FieldDescription>
+            </Field>
+          )}
+        </FieldGroup>
         {/* TLS Mod Options - only show when payload has TLS structure */}
         {config.faking.sni_type !== FakingPayloadType.RANDOM && (
           <>

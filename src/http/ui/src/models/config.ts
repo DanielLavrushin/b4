@@ -3,7 +3,8 @@ export type FakingStrategy =
   | "pastseq"
   | "randseq"
   | "tcp_check"
-  | "md5sum";
+  | "md5sum"
+  | "timestamp";
 
 export enum FakingPayloadType {
   RANDOM = 0,
@@ -41,6 +42,7 @@ export interface FakingConfig {
   payload_file: string;
   tls_mod: string[];
   tcp_md5: boolean;
+  timestamp_decrease: number;
 }
 export type FragmentationStrategy =
   | "tcp"

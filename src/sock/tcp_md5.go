@@ -21,14 +21,14 @@ func AddTCPMD5Option(packet []byte, isIPv6 bool) []byte {
 	payloadStart := ipHdrLen + tcpHdrLen
 
 	md5Opt := make([]byte, 20)
-	md5Opt[0] = 1           // NOP
-	md5Opt[1] = 1           // NOP
-	md5Opt[2] = 19          // MD5 kind
-	md5Opt[3] = 18          // MD5 length
-	rand.Read(md5Opt[4:20]) // 16 bytes fake MD5
+	md5Opt[0] = 1
+	md5Opt[1] = 1
+	md5Opt[2] = 19
+	md5Opt[3] = 18
+	rand.Read(md5Opt[4:20])
 
 	newTCPHdrLen := tcpHdrLen + 20
-	if newTCPHdrLen > 60 { // Max TCP header is 60 bytes
+	if newTCPHdrLen > 60 {
 		return packet
 	}
 

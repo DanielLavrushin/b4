@@ -61,6 +61,12 @@ func BuildFakeSNIPacketV4(original []byte, cfg *config.SetConfig) []byte {
 			off := uint32(cfg.Faking.SeqOffset) + uint32(dlen)
 			binary.BigEndian.PutUint32(fake[ipHdrLen+4:ipHdrLen+8], seq-off)
 		}
+	case "timestamp":
+		decrease := cfg.Faking.TimestampDecrease
+		if decrease == 0 {
+			decrease = 600000 // Default value matching youtubeUnblock
+		}
+		DecreaseTCPTimestamp(fake, decrease, false)
 	case "tcp_check":
 	default:
 	}

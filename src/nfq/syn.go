@@ -62,6 +62,13 @@ func (w *Worker) sendFakeSyn(set *config.SetConfig, raw []byte, ipHdrLen, tcpHdr
 			seq -= offset
 		}
 		binary.BigEndian.PutUint32(fakePkt[ipHdrLen+4:ipHdrLen+8], seq)
+
+	case "timestamp":
+		decrease := set.Faking.TimestampDecrease
+		if decrease == 0 {
+			decrease = 600000 // Default value matching youtubeUnblock
+		}
+		sock.DecreaseTCPTimestamp(fakePkt, decrease, false)
 	}
 
 	sock.FixIPv4Checksum(fakePkt[:ipHdrLen])
@@ -131,6 +138,13 @@ func (w *Worker) sendFakeSynV6(set *config.SetConfig, raw []byte, ipHdrLen, tcpH
 			seq -= offset
 		}
 		binary.BigEndian.PutUint32(fakePkt[ipHdrLen+4:ipHdrLen+8], seq)
+
+	case "timestamp":
+		decrease := set.Faking.TimestampDecrease
+		if decrease == 0 {
+			decrease = 600000 // Default value matching youtubeUnblock
+		}
+		sock.DecreaseTCPTimestamp(fakePkt, decrease, true)
 	}
 
 	sock.FixTCPChecksumV6(fakePkt)

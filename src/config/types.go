@@ -101,16 +101,17 @@ type FragmentationConfig struct {
 }
 
 type FakingConfig struct {
-	SNI           bool     `json:"sni" bson:"sni"`
-	TTL           uint8    `json:"ttl" bson:"ttl"`
-	Strategy      string   `json:"strategy" bson:"strategy"`
-	SeqOffset     int32    `json:"seq_offset" bson:"seq_offset"`
-	SNISeqLength  int      `json:"sni_seq_length" bson:"sni_seq_length"`
-	SNIType       int      `json:"sni_type" bson:"sni_type"`
-	CustomPayload string   `json:"custom_payload" bson:"custom_payload"`
-	PayloadFile   string   `json:"payload_file" bson:"payload_file"`
-	PayloadData   []byte   `json:"-" bson:"-"`
-	TLSMod        []string `json:"tls_mod" bson:"tls_mod"` // e.g. ["rnd", "dupsid"]
+	SNI               bool     `json:"sni" bson:"sni"`
+	TTL               uint8    `json:"ttl" bson:"ttl"`
+	Strategy          string   `json:"strategy" bson:"strategy"`
+	SeqOffset         int32    `json:"seq_offset" bson:"seq_offset"`
+	SNISeqLength      int      `json:"sni_seq_length" bson:"sni_seq_length"`
+	SNIType           int      `json:"sni_type" bson:"sni_type"`
+	CustomPayload     string   `json:"custom_payload" bson:"custom_payload"`
+	PayloadFile       string   `json:"payload_file" bson:"payload_file"`
+	PayloadData       []byte   `json:"-" bson:"-"`
+	TLSMod            []string `json:"tls_mod" bson:"tls_mod"`                       // e.g. ["rnd", "dupsid"]
+	TimestampDecrease uint32   `json:"timestamp_decrease" bson:"timestamp_decrease"` // Amount to decrease TCP timestamp option
 
 	SNIMutation SNIMutationConfig `json:"sni_mutation" bson:"sni_mutation"`
 	TCPMD5      bool              `json:"tcp_md5" bson:"tcp_md5"` // Enable TCP MD5 option insertion

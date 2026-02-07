@@ -103,17 +103,18 @@ var DefaultSetConfig = SetConfig{
 	},
 
 	Faking: FakingConfig{
-		SNI:           true,
-		TTL:           7,
-		SNISeqLength:  1,
-		SNIType:       FakePayloadDefault1,
-		CustomPayload: "",
-		Strategy:      "pastseq",
-		SeqOffset:     10000,
-		PayloadFile:   "",
-		PayloadData:   []byte{},
-		TLSMod:        []string{},
-		TCPMD5:        false,
+		SNI:               true,
+		TTL:               7,
+		SNISeqLength:      1,
+		SNIType:           FakePayloadDefault1,
+		CustomPayload:     "",
+		Strategy:          "pastseq",
+		SeqOffset:         10000,
+		PayloadFile:       "",
+		PayloadData:       []byte{},
+		TLSMod:            []string{},
+		TimestampDecrease: 600000, // Default value for timestamp faking strategy
+		TCPMD5:            false,
 
 		SNIMutation: SNIMutationConfig{
 			Mode:         ConfigOff, // "off", "random", "grease", "padding", "fakeext", "fakesni", "advanced"

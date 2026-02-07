@@ -67,7 +67,6 @@ func (w *Worker) Start() error {
 				return 0
 			}
 
-			// Interface filtering
 			if !w.matchesInterface(a) {
 				if err := q.SetVerdict(id, nfqueue.NfAccept); err != nil {
 					log.Tracef("failed to set verdict on packet %d: %v", id, err)
@@ -118,7 +117,6 @@ func (w *Worker) Start() error {
 					return 0
 				}
 
-				// Check for IP fragmentation
 				fragOffset := binary.BigEndian.Uint16(raw[6:8]) & 0x1FFF
 				moreFragments := (binary.BigEndian.Uint16(raw[6:8]) & 0x2000) != 0
 
@@ -146,7 +144,7 @@ func (w *Worker) Start() error {
 
 				for {
 					switch nextHeader {
-					case 0, 43, 60: // Hop-by-Hop, Routing, Destination Options
+					case 0, 43, 60:
 						if len(raw) < offset+2 {
 							if err := q.SetVerdict(id, nfqueue.NfAccept); err != nil {
 								log.Tracef("failed to set verdict on packet %d: %v", id, err)
@@ -188,7 +186,6 @@ func (w *Worker) Start() error {
 				set = st
 			}
 
-			// TCP processing
 			if proto == 6 && len(raw) >= ihl+TCPHeaderMinLen {
 				tcp := raw[ihl:]
 				if len(tcp) < TCPHeaderMinLen {
@@ -213,8 +210,8 @@ func (w *Worker) Start() error {
 				}
 
 				tcpFlags := tcp[13]
-				isSyn := (tcpFlags & 0x02) != 0 // SYN flag
-				isAck := (tcpFlags & 0x10) != 0 // ACK flag
+				isSyn := (tcpFlags & 0x02) != 0
+				isAck := (tcpFlags & 0x10) != 0
 				isRst := (tcpFlags & 0x04) != 0
 				if isRst && dport == HTTPSPort {
 					log.Tracef("RST received from %s:%d", dstStr, dport)
@@ -227,10 +224,8 @@ func (w *Worker) Start() error {
 					metrics.RecordConnection("TCP-SYN", "", srcStr, dstStr, true)
 
 					if v == IPv4 {
-						// Syndata - modify SYN packet to include payload
 						modsyn := raw
 
-						// SynFake - independent
 						if set.TCP.SynFake {
 							w.sendFakeSyn(set, raw, ihl, datOff)
 						}
@@ -283,7 +278,6 @@ func (w *Worker) Start() error {
 							matchedSNI = true
 							matched = true
 							set = stSNI
-							// Learn IP-to-domain association for future UDP packets
 							matcher.LearnIPToDomain(dst, host, stSNI)
 						}
 					}
@@ -348,7 +342,6 @@ func (w *Worker) Start() error {
 				return 0
 			}
 
-			// UDP processing
 			if proto == 17 && len(raw) >= ihl+8 {
 				udp := raw[ihl:]
 				if len(udp) < 8 {
@@ -363,7 +356,6 @@ func (w *Worker) Start() error {
 				dport := binary.BigEndian.Uint16(udp[2:4])
 				connKey := fmt.Sprintf("%s:%d->%s:%d", srcStr, sport, dstStr, dport)
 
-				// Handle DNS packets
 				if sport == 53 || dport == 53 {
 					return w.processDnsPacket(v, sport, dport, payload, raw, ihl, id)
 				}
@@ -551,14 +543,12 @@ func (w *Worker) dropAndInjectQUIC(cfg *config.SetConfig, raw []byte, dst net.IP
 		}
 	}
 
-	// Try to locate SNI within encrypted QUIC payload
-	splitPos := 24 // fallback
+	splitPos := 24
 	ipHdrLen := int((raw[0] & 0x0F) * 4)
 	if len(raw) >= ipHdrLen+8 {
-		quicPayload := raw[ipHdrLen+8:] // skip IP + UDP headers
+		quicPayload := raw[ipHdrLen+8:]
 		sniOff, sniLen := quic.LocateSNIOffset(quicPayload)
 		if sniOff > 0 && sniLen > 0 {
-			// Split in middle of SNI
 			splitPos = sniOff + sniLen/2
 		}
 	}
@@ -666,7 +656,6 @@ func (w *Worker) sendTCPFragments(cfg *config.SetConfig, packet []byte, dst net.
 		}
 	}
 
-	// Ensure p2 is within bounds
 	if p2 >= payloadLen {
 		p2 = payloadLen - 1
 	}
@@ -783,10 +772,8 @@ func (w *Worker) sendIPFragments(cfg *config.SetConfig, packet []byte, dst net.I
 
 	payload := packet[payloadStart:]
 
-	// Determine split position (relative to payload start)
 	splitPos := cfg.Fragmentation.SNIPosition
 
-	// Override with middle_sni if enabled and SNI found
 	if cfg.Fragmentation.MiddleSNI {
 		if s, e, ok := locateSNI(payload); ok && e-s >= 4 {
 			sniLen := e - s
@@ -803,10 +790,8 @@ func (w *Worker) sendIPFragments(cfg *config.SetConfig, packet []byte, dst net.I
 		return
 	}
 
-	// Convert to absolute position
 	splitPos = payloadStart + splitPos
 
-	// Align to 8-byte boundary (IP fragmentation requirement)
 	dataLen := splitPos - ipHdrLen
 	dataLen = (dataLen + 7) &^ 7
 	splitPos = ipHdrLen + dataLen
@@ -858,13 +843,10 @@ func (w *Worker) sendFakeSNISequence(cfg *config.SetConfig, original []byte, dst
 	for i := 0; i < fk.SNISeqLength; i++ {
 		_ = w.sock.SendIPv4(fake, dst)
 
-		// Update for next iteration
 		if i+1 < fk.SNISeqLength {
-			// Increment IP ID
 			id := binary.BigEndian.Uint16(fake[4:6])
 			binary.BigEndian.PutUint16(fake[4:6], id+1)
 
-			// Adjust sequence number for non-past/rand strategies
 			if fk.Strategy != "pastseq" && fk.Strategy != "randseq" {
 				payloadLen := len(fake) - (ipHdrLen + tcpHdrLen)
 				seq := binary.BigEndian.Uint32(fake[ipHdrLen+4 : ipHdrLen+8])
