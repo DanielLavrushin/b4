@@ -164,7 +164,7 @@ export const FragmentationSettings = ({
                 <FieldDescription>
                   OOB Byte:{" "}
                   <code className="font-mono text-xs">
-                    {String.fromCharCode(config.fragmentation.oob_char || 120)}
+                    {String.fromCodePoint(config.fragmentation.oob_char || 120)}
                   </code>{" "}
                   (0x
                   {(config.fragmentation.oob_char || 120)
