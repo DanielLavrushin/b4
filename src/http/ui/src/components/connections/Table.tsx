@@ -162,7 +162,7 @@ export const DomainsTable = ({
             <Button
               type="button"
               variant="ghost"
-              className={`${baseClass} h-auto min-h-0 w-full justify-start rounded-none border-0 bg-transparent p-0 font-inherit hover:bg-muted/50`}
+              className={`${baseClass} font-inherit hover:bg-muted/50 h-auto min-h-0 w-full justify-start rounded-none border-0 bg-transparent p-0`}
               onClick={() => onDomainClick(log.domain!)}
             >
               <span className="min-w-0 flex-1 wrap-break-word">
@@ -221,7 +221,7 @@ export const DomainsTable = ({
             <Button
               type="button"
               variant="ghost"
-              className={`${baseClass} h-auto min-h-0 w-full justify-start rounded-none border-0 bg-transparent p-0 font-inherit hover:bg-muted/50`}
+              className={`${baseClass} font-inherit hover:bg-muted/50 h-auto min-h-0 w-full justify-start rounded-none border-0 bg-transparent p-0`}
               onClick={() => onIpClick(log.destination!)}
             >
               <span className="min-w-0 flex-1 wrap-break-word">

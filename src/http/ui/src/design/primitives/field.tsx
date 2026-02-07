@@ -1,5 +1,5 @@
-import { cva, type VariantProps } from "class-variance-authority";
 import { useMemo } from "react";
+import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@design/lib/utils";
 import { Label } from "@design/primitives/label";
@@ -224,13 +224,13 @@ function FieldError({
 
 export {
   Field,
-  FieldContent,
+  FieldLabel,
   FieldDescription,
   FieldError,
   FieldGroup,
-  FieldLabel,
   FieldLegend,
   FieldSeparator,
   FieldSet,
+  FieldContent,
   FieldTitle,
 };
