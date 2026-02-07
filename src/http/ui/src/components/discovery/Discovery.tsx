@@ -370,7 +370,7 @@ export const DiscoveryRunner = () => {
                 </div>
                 {suite.current_phase !== "dns_detection" && (
                   <p className="text-muted-foreground text-sm">
-                    {isNaN(progress) ? "0" : progress.toFixed(0)}%
+                    {Number.isNaN(progress) ? "0" : progress.toFixed(0)}%
                   </p>
                 )}
               </div>
@@ -501,7 +501,7 @@ export const DiscoveryRunner = () => {
                                     domainResult.results[
                                       domainResult.best_preset
                                     ];
-                                  void handleAddStrategy(
+                                  handleAddStrategy(
                                     domainResult.domain,
                                     bestResult,
                                   );

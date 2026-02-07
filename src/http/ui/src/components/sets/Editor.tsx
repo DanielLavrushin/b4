@@ -205,7 +205,10 @@ interface SetEditorPageProps {
   onRefresh: () => void;
 }
 
-export function SetEditorPage({ config, onRefresh }: SetEditorPageProps) {
+export function SetEditorPage({
+  config,
+  onRefresh,
+}: Readonly<SetEditorPageProps>) {
   const { showError, showSuccess } = useSnackbar();
   const navigate = useNavigate();
   const location = useLocation();

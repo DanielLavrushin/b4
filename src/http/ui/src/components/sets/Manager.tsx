@@ -413,7 +413,6 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
               <strong>
                 {sets.find((s) => s.id === deleteDialog.setId)?.name}
               </strong>
-              ?
             </AlertDialogDescription>
           </AlertDialogHeader>
 
