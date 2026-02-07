@@ -353,7 +353,7 @@ export function SettingsPage() {
                     {cat.icon}
                     <span className="hidden lg:inline">{cat.label}</span>
                     {categoryHasChanges[cat.id] && (
-                      <div className="bg-primary h-1.5 w-1.5 rounded-full" />
+                      <div className="bg-primary h-1.5 w-1.5" />
                     )}
                   </div>
                 </TabsTrigger>

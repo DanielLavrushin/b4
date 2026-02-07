@@ -162,7 +162,7 @@ export const DomainsTable = ({
             <Button
               type="button"
               variant="ghost"
-              className={`${baseClass} font-inherit hover:bg-muted/50 h-auto min-h-0 w-full justify-start rounded-none border-0 bg-transparent p-0`}
+              className={`${baseClass} font-inherit hover:bg-muted/50 h-auto min-h-0 w-full justify-start border-0 bg-transparent p-0`}
               onClick={() => onDomainClick(log.domain!)}
             >
               <span className="min-w-0 flex-1 wrap-break-word">
@@ -221,7 +221,7 @@ export const DomainsTable = ({
             <Button
               type="button"
               variant="ghost"
-              className={`${baseClass} font-inherit hover:bg-muted/50 h-auto min-h-0 w-full justify-start rounded-none border-0 bg-transparent p-0`}
+              className={`${baseClass} font-inherit hover:bg-muted/50 h-auto min-h-0 w-full justify-start border-0 bg-transparent p-0`}
               onClick={() => onIpClick(log.destination!)}
             >
               <span className="min-w-0 flex-1 wrap-break-word">
@@ -320,9 +320,9 @@ export const DomainsTable = ({
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="bg-background [&::-webkit-scrollbar-thumb]:bg-border hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/50 absolute inset-0 overflow-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding [&::-webkit-scrollbar-track]:bg-transparent"
+        className="bg-background [&::-webkit-scrollbar-thumb]:bg-border hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/50 absolute inset-0 overflow-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding [&::-webkit-scrollbar-track]:bg-transparent"
       >
-        <div className="overflow-hidden rounded-md border">
+        <div className="overflow-hidden border">
           <Table>
             <TableHeader className="bg-background sticky top-0 z-10">
               {table.getHeaderGroups().map((headerGroup) => (

@@ -1,4 +1,5 @@
 import { CheckIcon, ErrorIcon, RestoreIcon, SecurityIcon } from "@b4.icons";
+import { useConfigReset } from "@hooks/useConfig";
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Button } from "@primitives/button";
 import {
@@ -11,7 +12,6 @@ import {
 } from "@primitives/dialog";
 import { Separator } from "@primitives/separator";
 import { Spinner } from "@primitives/spinner";
-import { useConfigReset } from "@hooks/useConfig";
 import { useState } from "react";
 
 interface ResetDialogProps {
@@ -199,7 +199,7 @@ export const ResetDialog = ({ open, onClose, onSuccess }: ResetDialogProps) => {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
+            <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center">
               {dialogProps.icon}
             </div>
             <div className="flex-1">

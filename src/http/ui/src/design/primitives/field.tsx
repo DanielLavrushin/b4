@@ -1,5 +1,5 @@
-import { useMemo } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
+import { useMemo } from "react";
 
 import { cn } from "@design/lib/utils";
 import { Label } from "@design/primitives/label";
@@ -104,7 +104,7 @@ function FieldLabel({
     <Label
       data-slot="field-label"
       className={cn(
-        "has-data-checked:bg-primary/5 has-data-checked:border-primary/30 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary/10 group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-[>[data-slot=field]]:rounded-lg has-[>[data-slot=field]]:border *:data-[slot=field]:p-2.5",
+        "has-data-checked:bg-primary/5 has-data-checked:border-primary/30 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary/10 group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-[>[data-slot=field]]:border *:data-[slot=field]:p-2.5",
         "has-[>[data-slot=field]]:w-full has-[>[data-slot=field]]:flex-col",
         className,
       )}
@@ -224,13 +224,13 @@ function FieldError({
 
 export {
   Field,
-  FieldLabel,
+  FieldContent,
   FieldDescription,
   FieldError,
   FieldGroup,
+  FieldLabel,
   FieldLegend,
   FieldSeparator,
   FieldSet,
-  FieldContent,
   FieldTitle,
 };

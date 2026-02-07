@@ -1,7 +1,7 @@
-import * as React from "react";
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 import { cva, type VariantProps } from "class-variance-authority";
+import * as React from "react";
 
 import { cn } from "@design/lib/utils";
 import { Separator } from "@design/primitives/separator";
@@ -35,7 +35,7 @@ function ItemSeparator({
 }
 
 const itemVariants = cva(
-  "[a]:hover:bg-muted rounded-lg border text-sm w-full group/item focus-visible:border-ring focus-visible:ring-ring/50 flex items-center flex-wrap outline-none transition-colors duration-100 focus-visible:ring-[3px] [a]:transition-colors",
+  "[a]:hover:bg-muted  border text-sm w-full group/item focus-visible:border-ring focus-visible:ring-ring/50 flex items-center flex-wrap outline-none transition-colors duration-100 focus-visible:ring-[3px] [a]:transition-colors",
   {
     variants: {
       variant: {
@@ -88,7 +88,7 @@ const itemMediaVariants = cva(
         default: "bg-transparent",
         icon: "[&_svg:not([class*='size-'])]:size-4",
         image:
-          "size-10 overflow-hidden rounded-sm group-data-[size=sm]/item:size-8 group-data-[size=xs]/item:size-6 [&_img]:size-full [&_img]:object-cover",
+          "size-10 overflow-hidden  group-data-[size=sm]/item:size-8 group-data-[size=xs]/item:size-6 [&_img]:size-full [&_img]:object-cover",
       },
     },
     defaultVariants: {
@@ -189,13 +189,13 @@ function ItemFooter({ className, ...props }: React.ComponentProps<"div">) {
 
 export {
   Item,
-  ItemMedia,
-  ItemContent,
   ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemFooter,
   ItemGroup,
+  ItemHeader,
+  ItemMedia,
   ItemSeparator,
   ItemTitle,
-  ItemDescription,
-  ItemHeader,
-  ItemFooter,
 };

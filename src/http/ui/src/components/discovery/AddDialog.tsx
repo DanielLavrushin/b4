@@ -109,7 +109,7 @@ export const DiscoveryAddDialog = ({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
+            <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center">
               <AddIcon />
             </div>
             <div className="flex-1">
@@ -200,7 +200,7 @@ export const DiscoveryAddDialog = ({
                     <Label key={set.id} htmlFor={`set-${set.id}`}>
                       <Field
                         orientation="horizontal"
-                        className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 border-border rounded-md border p-2"
+                        className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 border-border border p-2"
                       >
                         <FieldContent>
                           <FieldTitle>

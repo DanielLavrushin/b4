@@ -168,7 +168,7 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="border-border bg-card rounded-md border p-4">
+            <div className="border-border bg-card border p-4">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h6 className="text-sm font-semibold">Geosite Database</h6>
@@ -212,7 +212,7 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
               </div>
             </div>
 
-            <div className="border-border bg-card rounded-md border p-4">
+            <div className="border-border bg-card border p-4">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h6 className="text-sm font-semibold">GeoIP Database</h6>

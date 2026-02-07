@@ -1,5 +1,7 @@
 import { AddIcon, DomainIcon } from "@b4.icons";
 import { SetSelector } from "@common/SetSelector";
+import { clearAsnLookupCache } from "@hooks/useDomainActions";
+import { B4SetConfig, MAIN_SET_ID } from "@models/config";
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Badge } from "@primitives/badge";
 import { Button } from "@primitives/button";
@@ -20,8 +22,6 @@ import {
 import { Label } from "@primitives/label";
 import { RadioGroup, RadioGroupItem } from "@primitives/radio-group";
 import { Separator } from "@primitives/separator";
-import { clearAsnLookupCache } from "@hooks/useDomainActions";
-import { B4SetConfig, MAIN_SET_ID } from "@models/config";
 import { asnStorage } from "@utils";
 import { useCallback, useEffect, useState } from "react";
 
@@ -348,7 +348,7 @@ export const AddIpModal = ({
                     <Label key={variant} htmlFor={`variant-${variant}`}>
                       <Field
                         orientation="horizontal"
-                        className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 border-border rounded-md border p-2"
+                        className="has-[>[data-state=checked]]:bg-primary/5 dark:has-[>[data-state=checked]]:bg-primary/10 has-[>[data-checked]]:bg-primary/5 dark:has-[>[data-checked]]:bg-primary/10 border-border border p-2"
                       >
                         <FieldContent>
                           <FieldTitle className="font-medium">

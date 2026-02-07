@@ -342,7 +342,7 @@ export const CaptureSettings = () => {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <div className="flex items-center gap-3">
-              <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
+              <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center">
                 <CaptureIcon />
               </div>
               <div className="flex-1">
@@ -363,7 +363,7 @@ export const CaptureSettings = () => {
                     {hexDialog.capture.size} bytes
                   </AlertDescription>
                 </Alert>
-                <div className="bg-muted max-h-100 overflow-auto rounded-md p-4 font-mono text-xs break-all select-all">
+                <div className="bg-muted max-h-100 overflow-auto p-4 font-mono text-xs break-all select-all">
                   {hexDialog.capture.hex_data}
                 </div>
               </div>

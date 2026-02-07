@@ -1,4 +1,5 @@
 import { CheckIcon, ErrorIcon, RestartIcon } from "@b4.icons";
+import { useSystemRestart } from "@hooks/useSystemRestart";
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Button } from "@primitives/button";
 import {
@@ -12,7 +13,6 @@ import {
 import { Progress } from "@primitives/progress";
 import { Separator } from "@primitives/separator";
 import { Spinner } from "@primitives/spinner";
-import { useSystemRestart } from "@hooks/useSystemRestart";
 import { useState } from "react";
 
 interface RestartDialogProps {
@@ -124,7 +124,7 @@ export const RestartDialog = ({ open, onClose }: RestartDialogProps) => {
       case "waiting":
         return (
           <div className="flex flex-col items-center gap-6 py-8">
-            <div className="bg-accent flex items-center justify-center rounded-xl p-4">
+            <div className="bg-accent flex items-center justify-center p-4">
               <Spinner className="size-12" />
             </div>
             <div className="text-center">
@@ -144,7 +144,7 @@ export const RestartDialog = ({ open, onClose }: RestartDialogProps) => {
       case "success":
         return (
           <div className="flex flex-col items-center gap-6 py-8">
-            <div className="bg-accent flex items-center justify-center rounded-xl p-4">
+            <div className="bg-accent flex items-center justify-center p-4">
               <CheckIcon className="text-secondary size-16" />
             </div>
             <div className="text-center">
@@ -161,7 +161,7 @@ export const RestartDialog = ({ open, onClose }: RestartDialogProps) => {
       case "error":
         return (
           <div className="flex flex-col items-center gap-6 py-8">
-            <div className="bg-destructive/10 flex items-center justify-center rounded-xl p-4">
+            <div className="bg-destructive/10 flex items-center justify-center p-4">
               <ErrorIcon className="text-destructive size-16" />
             </div>
             <div className="w-full text-center">
@@ -213,7 +213,7 @@ export const RestartDialog = ({ open, onClose }: RestartDialogProps) => {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center rounded-md">
+            <div className="bg-accent text-accent-foreground flex size-10 items-center justify-center">
               {dialogProps.icon}
             </div>
             <div className="flex-1">

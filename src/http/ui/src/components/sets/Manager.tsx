@@ -2,12 +2,12 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
-  WarningIcon,
-  CheckIcon,
   AddIcon,
+  CheckIcon,
+  DomainIcon,
   IconSearch,
   SetsIcon,
-  DomainIcon,
+  WarningIcon,
 } from "@b4.icons";
 
 import {
@@ -48,10 +48,7 @@ import { Separator } from "@primitives/separator";
 import { SetCompare } from "./Compare";
 import { SetCard } from "./SetCard";
 
-import { Button } from "@primitives/button";
 import { cn } from "@design/lib/utils";
-import { useSets } from "@hooks/useSets";
-import { B4Config, B4SetConfig } from "@models/config";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -63,6 +60,9 @@ import {
   AlertDialogMedia,
   AlertDialogTitle,
 } from "@design/primitives/alert-dialog";
+import { useSets } from "@hooks/useSets";
+import { B4Config, B4SetConfig } from "@models/config";
+import { Button } from "@primitives/button";
 
 export interface SetStats {
   manual_domains: number;
@@ -274,7 +274,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
         </CardHeader>
         <CardContent>
           {/* Summary Stats Bar */}
-          <Card className="bg-muted border-border mb-6 rounded-md border p-4">
+          <Card className="bg-muted border-border mb-6 border p-4">
             <div className="flex flex-row flex-wrap items-center justify-between gap-8">
               <div className="flex flex-row gap-8">
                 <StatItem
@@ -370,7 +370,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
               {activeSet ? (
                 <div
                   className={cn(
-                    "bg-card border-secondary min-w-70 rounded-md border-2 p-6 shadow-lg",
+                    "bg-card border-secondary min-w-70 border-2 p-6 shadow-lg",
                   )}
                 >
                   <h6 className="text-lg font-semibold">{activeSet.name}</h6>
@@ -453,7 +453,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                   onClick={() =>
                     setCompareDialog((prev) => ({ ...prev, setB: s }))
                   }
-                  className="hover:bg-accent cursor-pointer rounded-md p-3 transition-colors"
+                  className="hover:bg-accent cursor-pointer p-3 transition-colors"
                 >
                   <p className="text-sm font-medium">{s.name}</p>
                 </div>
