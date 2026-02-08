@@ -1,8 +1,6 @@
 import { devicesApi } from "@b4.devices";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { cn } from "@design/lib/utils";
-import { Card, CardContent, CardDescription } from "@primitives/card";
-import { Kbd, KbdGroup } from "@primitives/kbd";
 import {
   useDomainActions,
   useEnrichedLogs,
@@ -12,6 +10,8 @@ import {
 } from "@hooks/useDomainActions";
 import { useIpActions } from "@hooks/useIpActions";
 import { B4Config, B4SetConfig } from "@models/config";
+import { Card, CardContent, CardDescription } from "@primitives/card";
+import { Kbd, KbdGroup } from "@primitives/kbd";
 import {
   generateDomainVariants,
   generateIpVariants,
@@ -158,11 +158,6 @@ export function ConnectionsPage() {
     [sortColumn, sortDirection],
   );
 
-  const handleClearSort = useCallback(() => {
-    setSortColumn(null);
-    setSortDirection(null);
-  }, []);
-
   const handleIpClick = useCallback(
     (ip: string) => {
       const variants = generateIpVariants(ip);
@@ -222,7 +217,7 @@ export function ConnectionsPage() {
       <div
         className={cn(
           "flex flex-1 flex-col overflow-hidden border transition-colors",
-          pauseDomains ? "border-[rgba(158,28,96,0.5)]" : "border-border",
+          pauseDomains ? "border-accent/50" : "border-border",
         )}
       >
         <DomainsControlBar
@@ -230,12 +225,10 @@ export function ConnectionsPage() {
           onFilterChange={setFilter}
           totalCount={enrichedLogs.length}
           filteredCount={filteredLogs.length}
-          sortColumn={sortColumn}
           paused={pauseDomains}
           showAll={showAll}
           onShowAllChange={setShowAll}
           onPauseChange={setPauseDomains}
-          onClearSort={handleClearSort}
           onReset={clearDomains}
         />
 
@@ -290,7 +283,7 @@ export function ConnectionsPage() {
       />
 
       <div className="fixed right-10 bottom-10">
-        <Card size="sm" variant="transparent">
+        <Card size="sm" className="pointer-events-none opacity-90">
           <CardContent className="space-y-2">
             <div className="flex gap-2">
               <CardDescription>Clear</CardDescription>

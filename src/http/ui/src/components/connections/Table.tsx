@@ -79,12 +79,14 @@ const SortableHeader = ({
   onSort: () => void;
 }) => {
   const sortState = column.getIsSorted();
-  const Icon =
-    sortState === "asc"
-      ? CollapseIcon
-      : sortState === "desc"
-        ? ExpandIcon
-        : SortIcon;
+  let Icon;
+  if (sortState === "asc") {
+    Icon = CollapseIcon;
+  } else if (sortState === "desc") {
+    Icon = ExpandIcon;
+  } else {
+    Icon = SortIcon;
+  }
   return (
     <Button variant="ghost" onClick={onSort}>
       {label}
@@ -163,7 +165,7 @@ export const DomainsTable = ({
               type="button"
               variant="ghost"
               className={`${baseClass} font-inherit hover:bg-muted/50 h-auto min-h-0 w-full justify-start border-0 bg-transparent p-0`}
-              onClick={() => onDomainClick(log.domain!)}
+              onClick={() => onDomainClick(log.domain)}
             >
               <span className="min-w-0 flex-1 wrap-break-word">
                 {log.domain}
@@ -222,7 +224,7 @@ export const DomainsTable = ({
               type="button"
               variant="ghost"
               className={`${baseClass} font-inherit hover:bg-muted/50 h-auto min-h-0 w-full justify-start border-0 bg-transparent p-0`}
-              onClick={() => onIpClick(log.destination!)}
+              onClick={() => onIpClick(log.destination)}
             >
               <span className="min-w-0 flex-1 wrap-break-word">
                 {log.destination}

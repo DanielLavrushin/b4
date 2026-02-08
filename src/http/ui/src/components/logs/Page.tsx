@@ -1,20 +1,19 @@
-import { ArrowDownIcon, ClearIcon } from "@b4.icons";
+import { ClearIcon } from "@b4.icons";
 import { useWebSocket } from "@context/B4WsProvider";
 import { useSnackbar } from "@context/SnackbarProvider";
+import { cn } from "@design/lib/utils";
 import { Badge } from "@primitives/badge";
 import { Button } from "@primitives/button";
 import { Input } from "@primitives/input";
 import { Label } from "@primitives/label";
 import { Switch } from "@primitives/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@primitives/tooltip";
-import { cn } from "@design/lib/utils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export function LogsPage() {
   const { showSuccess } = useSnackbar();
   const [filter, setFilter] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
-  const [showScrollBtn, setShowScrollBtn] = useState(false);
   const logRef = useRef<HTMLDivElement | null>(null);
   const { logs, pauseLogs, setPauseLogs, clearLogs } = useWebSocket();
 
@@ -30,16 +29,6 @@ export function LogsPage() {
     if (el) {
       const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
       setAutoScroll(isAtBottom);
-      setShowScrollBtn(!isAtBottom);
-    }
-  };
-
-  const scrollToBottom = () => {
-    const el = logRef.current;
-    if (el) {
-      el.scrollTop = el.scrollHeight;
-      setAutoScroll(true);
-      setShowScrollBtn(false);
     }
   };
 
@@ -66,7 +55,7 @@ export function LogsPage() {
       } else if (e.key === "p" || e.key === "Pause") {
         e.preventDefault();
         setPauseLogs(!pauseLogs);
-        showSuccess(`Logs ${!pauseLogs ? "paused" : "resumed"}`);
+        showSuccess(`Logs ${pauseLogs ? "resumed" : "paused"}`);
       }
     },
     [clearLogs, pauseLogs, setPauseLogs, showSuccess],
@@ -151,17 +140,6 @@ export function LogsPage() {
               ));
             }
           })()}
-
-          {/* Scroll to Bottom Button */}
-          {showScrollBtn && (
-            <Button
-              onClick={scrollToBottom}
-              size="icon"
-              className="bg-primary text-primary-foreground hover:bg-primary/80 absolute right-4 bottom-4 shadow-lg"
-            >
-              <ArrowDownIcon />
-            </Button>
-          )}
         </div>
       </div>
     </div>
