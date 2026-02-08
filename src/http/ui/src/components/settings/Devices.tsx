@@ -6,6 +6,7 @@ import {
   RestoreIcon,
 } from "@b4.icons";
 import { B4InlineEdit } from "@common/B4InlineEdit";
+import { ScrollArea } from "@design/primitives/scroll-area";
 import { Separator } from "@design/primitives/separator";
 import { Alert, AlertDescription } from "@primitives/alert";
 import { Badge } from "@primitives/badge";
@@ -233,7 +234,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                   </AlertDescription>
                 </Alert>
               ) : (
-                <div className="bg-card border-border max-h-75 overflow-auto border">
+                <ScrollArea className="bg-background h-75 overflow-auto border">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -303,7 +304,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                       )}
                     </TableBody>
                   </Table>
-                </div>
+                </ScrollArea>
               )}
             </FieldSet>
           </>
