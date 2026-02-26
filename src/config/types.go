@@ -158,6 +158,8 @@ type TablesConfig struct {
 type WebServerConfig struct {
 	Port        int    `json:"port" bson:"port"`
 	BindAddress string `json:"bind_address" bson:"bind_address"`
+	TLSCert     string `json:"tls_cert" bson:"tls_cert"`
+	TLSKey      string `json:"tls_key" bson:"tls_key"`
 	IsEnabled   bool   `json:"-" bson:"-"`
 }
 
