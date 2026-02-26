@@ -284,6 +284,13 @@ sudo b4 --config /home/username/b4custom.json
 - Интеграция api ipinfo.io для сканирования ASN
 - Захват TLS и QUIC Payload
 
+## Поддержка HTTPS/TLS
+Вы можете включить HTTPS для веб-интерфейса, предоставив файлы сертификатов и ключей с помощью флагов:
+```bash
+b4 --tls-cert /path/to/server.crt --tls-key /path/to/server.key
+```
+Пользователи OpenWRT: Установщик автоматически обнаруживает системные сертификаты (из uhttpd) и включает режим HTTPS по умолчанию, если они найдены.
+
 ## Интеграция Geosite
 
 B4 поддерживает файлы [`geosite.dat` от v2ray/xray](https://github.com/v2fly/domain-list-community) из различных источников:
