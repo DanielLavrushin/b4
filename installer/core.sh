@@ -225,7 +225,6 @@ main_install() {
     install_b4 "$ARCH" "$VERSION"
 
     # Create service files
-        # Create service files
     create_systemd_service
     if [ "$SYSTEMCTL_CREATED" != "1" ]; then
         create_sysv_service
