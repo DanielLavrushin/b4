@@ -60,7 +60,15 @@ func StartServer(cfg *config.Config, pool *nfq.Pool) (*stdhttp.Server, error) {
 	}
 
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != stdhttp.ErrServerClosed {
+		var err error
+		if cfg.System.WebServer.TLSCert != "" && cfg.System.WebServer.TLSKey != "" {
+			log.Infof("Starting Web Server in HTTPS mode using cert: %s", cfg.System.WebServer.TLSCert)
+			err = srv.ListenAndServeTLS(cfg.System.WebServer.TLSCert, cfg.System.WebServer.TLSKey)
+		} else {
+			err = srv.ListenAndServe()
+		}
+		
+		if err != nil && err != stdhttp.ErrServerClosed {
 			log.Errorf("Web server error: %v", err)
 			metrics := handler.GetMetricsCollector()
 			metrics.RecordEvent("error", fmt.Sprintf("Web server error: %v", err))
