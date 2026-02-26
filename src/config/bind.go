@@ -22,5 +22,10 @@ func (c *Config) BindFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&c.System.Logging.Syslog, "syslog", c.System.Logging.Syslog, "Enable syslog output")
 	cmd.Flags().StringVar(&c.System.Logging.ErrorFile, "error-file", c.System.Logging.ErrorFile, "Path to error log file (empty disables)")
 
+	// Web Server configuration
 	cmd.Flags().IntVar(&c.System.WebServer.Port, "web-port", c.System.WebServer.Port, "Port for internal web server (0 disables)")
+	
+	// TLS configuration
+	cmd.Flags().StringVar(&c.System.WebServer.TLSCert, "tls-cert", c.System.WebServer.TLSCert, "Path to TLS certificate file")
+	cmd.Flags().StringVar(&c.System.WebServer.TLSKey, "tls-key", c.System.WebServer.TLSKey, "Path to TLS key file")
 }
