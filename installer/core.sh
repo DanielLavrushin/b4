@@ -73,10 +73,16 @@ install_b4() {
 
 # Print web interface access information
 print_web_interface_info() {
-
     local web_port
+    local protocol="http"
+    
     if [ -f "$CONFIG_FILE" ] && command_exists jq; then
         web_port=$(jq -r '.web_server.port // 7000' "$CONFIG_FILE" 2>/dev/null)
+    fi
+    
+    # Проверяем, есть ли сертификаты uhttpd, которые мы используем для HTTPS
+    if [ -f "/etc/uhttpd.crt" ] && [ -f "/etc/uhttpd.key" ]; then
+        protocol="https"
     fi
 
     echo ""
@@ -84,6 +90,32 @@ print_web_interface_info() {
     echo "  Web Interface Access"
     echo "======================================="
     echo ""
+
+    # Get LAN IP (br0 interface on routers)
+    lan_ip=""
+    if command_exists ip; then
+        lan_ip=$(ip -4 addr show br0 2>/dev/null | grep 'inet ' | awk '{print $2}' | cut -d'/' -f1)
+    fi
+    if [ -z "$lan_ip" ] && command_exists ifconfig; then
+        lan_ip=$(ifconfig br0 2>/dev/null | grep 'inet addr:' | awk '{print $2}' | cut -d':' -f2)
+    fi
+    if [ -z "$lan_ip" ]; then
+        if command_exists ip; then
+            lan_ip=$(ip -4 addr show 2>/dev/null | grep 'inet 192.168' | head -n1 | awk '{print $2}' | cut -d'/' -f1)
+        elif command_exists ifconfig; then
+            lan_ip=$(ifconfig 2>/dev/null | grep 'inet addr:192.168' | head -n1 | awk '{print $2}' | cut -d':' -f2)
+        fi
+    fi
+
+    if [ -n "$lan_ip" ]; then
+        print_info "Local network access (LAN):"
+        # Выводим ссылку с учетом протокола (http/https)
+        printf "        ${GREEN}%s://%s:%s${NC}\n" "$protocol" "$lan_ip" "$web_port"
+        printf "        (remember to start the service first)\n"
+    fi
+
+    echo ""
+}
 
     # Get LAN IP (br0 interface on routers)
     lan_ip=""
@@ -193,9 +225,18 @@ main_install() {
     install_b4 "$ARCH" "$VERSION"
 
     # Create service files
+        # Create service files
     create_systemd_service
     if [ "$SYSTEMCTL_CREATED" != "1" ]; then
         create_sysv_service
+        
+        if [ -f "/etc/init.d/b4" ] && [ -f "/etc/uhttpd.crt" ] && [ -f "/etc/uhttpd.key" ]; then
+            print_info "OpenWrt SSL certificates detected. Enabling HTTPS for b4..."
+ 
+            sed -i 's|procd_set_param command $PROG|procd_set_param command $PROG --tls-cert /etc/uhttpd.crt --tls-key /etc/uhttpd.key|' /etc/init.d/b4
+            
+            /etc/init.d/b4 enable >/dev/null 2>&1
+        fi
     fi
 
     if [ "$QUIET_MODE" = "0" ]; then
