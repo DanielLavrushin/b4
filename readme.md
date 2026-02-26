@@ -178,6 +178,13 @@ The web interface is available at `http://your-ip:7000` (default port, can be ch
 - ipinfo.io api integration for ASN scanning
 - Custom payload capturing for faking
 
+## HTTPS / TLS Support
+You can enable HTTPS for the web interface by providing certificate and key files via flags:
+```bash
+b4 --tls-cert /path/to/server.crt --tls-key /path/to/server.key
+```
+OpenWrt Users: The installer automatically detects system certificates (from uhttpd) and enables HTTPS mode by default if they are found.
+
 ## Geosite Integration
 
 B4 supports [v2ray/xray `geosite.dat`](https://github.com/v2fly/domain-list-community) files from various sources:
