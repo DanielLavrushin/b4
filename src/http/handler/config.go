@@ -91,12 +91,13 @@ func (a *API) getConfig(w http.ResponseWriter) {
 		}
 	}
 
-	//get list of interfaces from system
+	//get list of interfaces from system - return empty array on error
 	ifaces, err := getSystemInterfaces()
 	if err != nil {
 		log.Errorf("Failed to get system interfaces: %v", err)
-		http.Error(w, "Failed to get system interfaces", http.StatusInternalServerError)
-		return
+		ifaces = []string{} // empty but not nil - serializes as [] not null
+	} else if ifaces == nil {
+		ifaces = []string{} // ensure never nil
 	}
 	sort.Strings(ifaces)
 
@@ -121,7 +122,7 @@ func getSystemInterfaces() ([]string, error) {
 	excludePrefixes := []string{
 		"lo", "dummy", "gre", "erspan", "ifb", "imq",
 		"ip6_vti", "ip6gre", "ip6tnl", "ip_vti", "sit",
-		"spu_", "bcmsw", "blog", "veth", "docker", "virbr",
+		"spu_", "bcmsw", "blog",
 	}
 
 	var ifaceNames []string
@@ -136,7 +137,7 @@ func getSystemInterfaces() ([]string, error) {
 			continue
 		}
 
-		// Skip known virtual prefixes
+		// Skip known virtual prefixes (but keep veth, docker, virbr in host mode)
 		skip := false
 		for _, prefix := range excludePrefixes {
 			if strings.HasPrefix(iface.Name, prefix) {
@@ -148,16 +149,8 @@ func getSystemInterfaces() ([]string, error) {
 			continue
 		}
 
-		// Keep if it has addresses OR is a bridge/wireless (br*, wl*, tun*, tap*)
-		addrs, _ := iface.Addrs()
-		isBridgeOrWireless := strings.HasPrefix(iface.Name, "br") ||
-			strings.HasPrefix(iface.Name, "wl") ||
-			strings.HasPrefix(iface.Name, "tun") ||
-			strings.HasPrefix(iface.Name, "tap")
-
-		if len(addrs) > 0 || isBridgeOrWireless {
-			ifaceNames = append(ifaceNames, iface.Name)
-		}
+		// Keep all interfaces that are UP (no address requirement for host mode)
+		ifaceNames = append(ifaceNames, iface.Name)
 	}
 
 	return ifaceNames, nil

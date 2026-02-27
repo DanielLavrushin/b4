@@ -12,5 +12,5 @@ type ConfigResponse struct {
 	Message             string         `json:"message"`
 	Sets                []SetWithStats `json:"sets"`
 	Warnings            []string       `json:"warnings,omitempty"`
-	AvailableInterfaces []string       `json:"available_ifaces,omitempty"`
+	AvailableInterfaces []string       `json:"available_ifaces"`
 }
