@@ -71,7 +71,16 @@ func (b *routeNftBackend) addElements(setName string, ips []string, ttlSec int) 
 			}
 		}
 		args = append(args, "}")
-		runLogged(fmt.Sprintf("routing: add %d element(s) to %s", len(chunk), setName), args...)
+		if _, err := run(args...); err != nil {
+			// nft can reject a whole batch on duplicate element; fall back to per-IP add.
+			for _, ip := range chunk {
+				single := []string{
+					"nft", "add", "element", "inet", routeNftTable, setName,
+					"{", ip, "timeout", ttl, "}",
+				}
+				runLogged("routing: add element "+ip+" to "+setName, single...)
+			}
+		}
 	}
 }
 
