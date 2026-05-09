@@ -17,18 +17,18 @@ import (
 const hostRouteCTMark = uint32(0x40000000)
 
 type routeState struct {
-	mode       string
-	mark       uint32
-	table      int
-	iface      string
-	tproxyPort int
+	mode        string
+	mark        uint32
+	table       int
+	iface       string
+	tproxyPort  int
 	upstreamKey string
-	sourcesKey string
-	setV4      string
-	setV6      string
-	chainPre   string
-	chainOut   string
-	chainSNAT  string
+	sourcesKey  string
+	setV4       string
+	setV6       string
+	chainPre    string
+	chainOut    string
+	chainSNAT   string
 }
 
 type routeBackend interface {
@@ -726,6 +726,34 @@ func routeDefaultGatewayForIface(iface string, ipv6 bool) string {
 	out, err := run(args...)
 	if err != nil {
 		log.Tracef("Routing: gateway lookup failed for %s: %v", iface, err)
+	} else {
+		for _, line := range strings.Split(out, "\n") {
+			fields := strings.Fields(line)
+			for i := 0; i+1 < len(fields); i++ {
+				if fields[i] == "via" {
+					return fields[i+1]
+				}
+			}
+		}
+	}
+
+	// fallback
+	if gw := routeMainDefaultGateway(ipv6); gw != "" && ifaceReachesIP(iface, gw) {
+		return gw
+	}
+	return ""
+}
+
+func routeMainDefaultGateway(ipv6 bool) string {
+	args := []string{"ip"}
+	if ipv6 {
+		args = append(args, "-6")
+	} else {
+		args = append(args, "-4")
+	}
+	args = append(args, "route", "show", "default")
+	out, err := run(args...)
+	if err != nil {
 		return ""
 	}
 	for _, line := range strings.Split(out, "\n") {
@@ -737,6 +765,31 @@ func routeDefaultGatewayForIface(iface string, ipv6 bool) string {
 		}
 	}
 	return ""
+}
+
+func ifaceReachesIP(iface, ip string) bool {
+	target := net.ParseIP(ip)
+	if target == nil {
+		return false
+	}
+	ifaceObj, err := net.InterfaceByName(iface)
+	if err != nil {
+		return false
+	}
+	addrs, err := ifaceObj.Addrs()
+	if err != nil {
+		return false
+	}
+	for _, a := range addrs {
+		ipNet, ok := a.(*net.IPNet)
+		if !ok || ipNet == nil {
+			continue
+		}
+		if ipNet.Contains(target) {
+			return true
+		}
+	}
+	return false
 }
 
 func routeGetIfaceAddr(iface string, wantV6 bool) string {
