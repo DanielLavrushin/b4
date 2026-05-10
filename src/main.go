@@ -455,11 +455,11 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, httpServer *http.Serve
 }
 
 func ensureSingleInstance() (func(), error) {
-	candidates := []string{"/var/run/b4.pid", "/run/b4.pid", "/tmp/b4.pid"}
+	candidates := []string{"/var/run/b4.pid", "/run/b4.pid"}
 	var f *os.File
 	var path string
 	for _, p := range candidates {
-		fp, err := os.OpenFile(p, os.O_CREATE|os.O_RDWR, 0644)
+		fp, err := os.OpenFile(p, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0600)
 		if err == nil {
 			f = fp
 			path = p
@@ -485,10 +485,9 @@ func ensureSingleInstance() (func(), error) {
 		return nil, fmt.Errorf("another b4 instance is already running (pid %s)", pid)
 	}
 
-	f.Truncate(0)
-	f.Seek(0, 0)
-	fmt.Fprintf(f, "%d\n", os.Getpid())
-	f.Sync()
+	if err := writePidFile(f, os.Getpid()); err != nil {
+		fmt.Fprintf(os.Stderr, "[INIT] could not update pidfile %s: %v\n", path, err)
+	}
 
 	cleanup := func() {
 		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
@@ -496,6 +495,19 @@ func ensureSingleInstance() (func(), error) {
 		os.Remove(path)
 	}
 	return cleanup, nil
+}
+
+func writePidFile(f *os.File, pid int) error {
+	if err := f.Truncate(0); err != nil {
+		return err
+	}
+	if _, err := f.Seek(0, 0); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(f, "%d\n", pid); err != nil {
+		return err
+	}
+	return f.Sync()
 }
 
 func initMemoryLimit() {
