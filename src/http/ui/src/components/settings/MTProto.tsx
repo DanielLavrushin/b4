@@ -247,33 +247,6 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
           disabled={!config.system.mtproto?.enabled}
           helperText={t("settings.MTProto.fakeSNIHelp")}
         />
-        <B4TextField
-          label={t("settings.MTProto.dcRelay")}
-          value={config.system.mtproto?.dc_relay || ""}
-          onChange={(e) => onChange("system.mtproto.dc_relay", e.target.value)}
-          placeholder="vps-ip:7007"
-          disabled={!config.system.mtproto?.enabled}
-          helperText={t("settings.MTProto.dcRelayHelp")}
-          slotProps={{
-            input: {
-              endAdornment: (
-                <InputAdornment position="end">
-                  <Tooltip title={t("settings.MTProto.dcRelayHelpButton")}>
-                    <span>
-                      <IconButton
-                        size="small"
-                        onClick={openRelayHelp}
-                        disabled={!config.system.mtproto?.enabled}
-                      >
-                        <HelpOutlineIcon fontSize="small" />
-                      </IconButton>
-                    </span>
-                  </Tooltip>
-                </InputAdornment>
-              ),
-            },
-          }}
-        />
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
           <B4TextField
             label={t("settings.MTProto.secret")}
@@ -327,7 +300,12 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
           </Button>
         </Box>
       </B4FormGroup>
-      {!dcRelay && (
+      {(() => {
+        const mode = config.system.mtproto?.upstream_mode || "auto";
+        const enabled = !!config.system.mtproto?.enabled;
+        const fallback = config.system.mtproto?.ws_fallback_tcp ?? true;
+        const showDcRelay = mode === "tcp" || (mode === "auto" && fallback);
+        return (
         <B4FormGroup
           label={t("settings.MTProto.upstreamTitle")}
           description={t("settings.MTProto.upstreamDesc")}
@@ -335,63 +313,60 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
         >
           <B4Select
             label={t("settings.MTProto.upstreamMode")}
-            value={config.system.mtproto?.upstream_mode || "auto"}
+            value={mode}
             onChange={(e) =>
               onChange(
                 "system.mtproto.upstream_mode",
                 String(e.target.value),
               )
             }
-            disabled={!config.system.mtproto?.enabled}
+            disabled={!enabled || !!dcRelay}
             options={[
               { value: "tcp", label: t("settings.MTProto.upstreamTcp") },
               { value: "auto", label: t("settings.MTProto.upstreamAuto") },
               { value: "ws", label: t("settings.MTProto.upstreamWs") },
             ]}
-            helperText={t(
-              `settings.MTProto.upstream${upstreamDescSuffix(
-                config.system.mtproto?.upstream_mode || "auto",
-              )}Desc`,
-            )}
-          />
-          <B4Switch
-            label={t("settings.MTProto.wsFallbackTcp")}
-            checked={config.system.mtproto?.ws_fallback_tcp ?? true}
-            onChange={(checked: boolean) =>
-              onChange("system.mtproto.ws_fallback_tcp", checked)
-            }
-            description={t("settings.MTProto.wsFallbackTcpDesc")}
-            disabled={
-              !config.system.mtproto?.enabled ||
-              (config.system.mtproto?.upstream_mode || "auto") !== "auto"
+            helperText={
+              dcRelay
+                ? t("settings.MTProto.upstreamIgnoredWhenRelay")
+                : t(`settings.MTProto.upstream${upstreamDescSuffix(mode)}Desc`)
             }
           />
-          <B4TextField
-            label={t("settings.MTProto.wsCustomDomain")}
-            value={config.system.mtproto?.ws_custom_domain || ""}
-            onChange={(e) =>
-              onChange("system.mtproto.ws_custom_domain", e.target.value)
-            }
-            placeholder="your-domain.com"
-            disabled={
-              !config.system.mtproto?.enabled ||
-              (config.system.mtproto?.upstream_mode || "auto") === "tcp"
-            }
-            helperText={t("settings.MTProto.wsCustomDomainHelp")}
-          />
-          <B4TextField
-            label={t("settings.MTProto.wsEndpointHost")}
-            value={config.system.mtproto?.ws_endpoint_host || ""}
-            onChange={(e) =>
-              onChange("system.mtproto.ws_endpoint_host", e.target.value)
-            }
-            placeholder="149.154.167.220"
-            disabled={
-              !config.system.mtproto?.enabled ||
-              (config.system.mtproto?.upstream_mode || "auto") === "tcp"
-            }
-            helperText={t("settings.MTProto.wsEndpointHostHelp")}
-          />
+          {mode === "auto" && (
+            <B4Switch
+              label={t("settings.MTProto.wsFallbackTcp")}
+              checked={config.system.mtproto?.ws_fallback_tcp ?? true}
+              onChange={(checked: boolean) =>
+                onChange("system.mtproto.ws_fallback_tcp", checked)
+              }
+              description={t("settings.MTProto.wsFallbackTcpDesc")}
+              disabled={!enabled || !!dcRelay}
+            />
+          )}
+          {mode !== "tcp" && (
+            <B4TextField
+              label={t("settings.MTProto.wsCustomDomain")}
+              value={config.system.mtproto?.ws_custom_domain || ""}
+              onChange={(e) =>
+                onChange("system.mtproto.ws_custom_domain", e.target.value)
+              }
+              placeholder="your-domain.com"
+              disabled={!enabled || !!dcRelay}
+              helperText={t("settings.MTProto.wsCustomDomainHelp")}
+            />
+          )}
+          {mode !== "tcp" && (
+            <B4TextField
+              label={t("settings.MTProto.wsEndpointHost")}
+              value={config.system.mtproto?.ws_endpoint_host || ""}
+              onChange={(e) =>
+                onChange("system.mtproto.ws_endpoint_host", e.target.value)
+              }
+              placeholder="149.154.167.220"
+              disabled={!enabled || !!dcRelay}
+              helperText={t("settings.MTProto.wsEndpointHostHelp")}
+            />
+          )}
           <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
             <Button
               variant="outlined"
@@ -447,8 +422,38 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
               </Stack>
             )}
           </Box>
+          {showDcRelay && (
+            <B4TextField
+              label={t("settings.MTProto.dcRelay")}
+              value={config.system.mtproto?.dc_relay || ""}
+              onChange={(e) => onChange("system.mtproto.dc_relay", e.target.value)}
+              placeholder="vps-ip:7007"
+              disabled={!enabled}
+              helperText={t("settings.MTProto.dcRelayHelp")}
+              slotProps={{
+                input: {
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <Tooltip title={t("settings.MTProto.dcRelayHelpButton")}>
+                        <span>
+                          <IconButton
+                            size="small"
+                            onClick={openRelayHelp}
+                            disabled={!enabled}
+                          >
+                            <HelpOutlineIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </InputAdornment>
+                  ),
+                },
+              }}
+            />
+          )}
         </B4FormGroup>
-      )}
+        );
+      })()}
       <B4Dialog
         open={shareOpen}
         onClose={() => setShareOpen(false)}

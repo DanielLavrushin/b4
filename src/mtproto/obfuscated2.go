@@ -136,13 +136,6 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 	if absDC < 0 {
 		absDC = -absDC
 	}
-	if cfg.DCRelay != "" {
-		addr, err := ResolveDC(dc, queueCfg.IPv6Enabled, cfg.DCRelay)
-		if err != nil {
-			return nil, err
-		}
-		return []transportPlan{{kind: transportTCP, addr: addr}}, nil
-	}
 
 	mode := cfg.UpstreamMode
 	if mode == "" {
@@ -178,7 +171,7 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 
 	allowTCP := mode == "tcp" || (mode == "auto" && cfg.WSFallbackTCP) || len(plans) == 0
 	if allowTCP {
-		addr, err := ResolveDC(dc, queueCfg.IPv6Enabled, "")
+		addr, err := ResolveDC(dc, queueCfg.IPv6Enabled, cfg.DCRelay)
 		if err != nil {
 			if len(plans) == 0 {
 				return nil, err

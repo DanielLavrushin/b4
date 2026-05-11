@@ -1,6 +1,7 @@
 package mtproto
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
@@ -154,7 +155,65 @@ func TestPlanTransports_CustomDomain_HighDCStillWorks(t *testing.T) {
 	}
 }
 
-func TestPlanTransports_DCRelay_TCPOnly(t *testing.T) {
+func TestPlanTransports_DCRelay_TCPMode_TargetsRelay(t *testing.T) {
+	cfg := &config.MTProtoConfig{
+		UpstreamMode: "tcp",
+		DCRelay:      "127.0.0.1:4443",
+	}
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(plans) != 1 || plans[0].kind != transportTCP {
+		t.Fatalf("tcp mode + DCRelay should yield single TCP plan, got %+v", plans)
+	}
+	if !strings.HasPrefix(plans[0].addr, "127.0.0.1:") {
+		t.Fatalf("TCP plan should target relay address, got %s", plans[0].addr)
+	}
+}
+
+func TestPlanTransports_DCRelay_AutoFallbackOn_WSPlansPlusRelayTCP(t *testing.T) {
+	cfg := &config.MTProtoConfig{
+		UpstreamMode:  "auto",
+		WSFallbackTCP: true,
+		DCRelay:       "127.0.0.1:4443",
+	}
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(wsSNIs(plans)) == 0 {
+		t.Fatalf("auto + fallback: expected WS plans first, got none")
+	}
+	if !hasTCP(plans) {
+		t.Fatalf("auto + fallback: expected TCP plan as fallback")
+	}
+	for _, p := range plans {
+		if p.kind == transportTCP && !strings.HasPrefix(p.addr, "127.0.0.1:") {
+			t.Fatalf("TCP fallback should target relay, got %s", p.addr)
+		}
+	}
+}
+
+func TestPlanTransports_DCRelay_AutoFallbackOff_IgnoredForKnownDC(t *testing.T) {
+	cfg := &config.MTProtoConfig{
+		UpstreamMode:  "auto",
+		WSFallbackTCP: false,
+		DCRelay:       "127.0.0.1:4443",
+	}
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if hasTCP(plans) {
+		t.Fatalf("auto + fallback off: DCRelay must NOT introduce a TCP plan; got %+v", plans)
+	}
+	if len(wsSNIs(plans)) == 0 {
+		t.Fatalf("expected WS plans, got none")
+	}
+}
+
+func TestPlanTransports_DCRelay_IgnoredInWSMode(t *testing.T) {
 	cfg := &config.MTProtoConfig{
 		UpstreamMode: "ws",
 		DCRelay:      "127.0.0.1:4443",
@@ -163,7 +222,10 @@ func TestPlanTransports_DCRelay_TCPOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(plans) != 1 || plans[0].kind != transportTCP {
-		t.Fatalf("DCRelay should yield single TCP plan, got %+v", plans)
+	if hasTCP(plans) {
+		t.Fatalf("DCRelay in ws mode must NOT yield TCP plans (user explicitly chose ws only); got %+v", plans)
+	}
+	if len(wsSNIs(plans)) == 0 {
+		t.Fatalf("expected WS plans for DC 2 in ws mode, got none")
 	}
 }
