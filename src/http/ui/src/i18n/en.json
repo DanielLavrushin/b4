@@ -137,8 +137,8 @@
       "udpLimitHelp": "Max UDP packets per connection to inspect (default 8). Sets cannot exceed this value."
     },
     "Logging": {
-      "title": "Logging Configuration",
-      "description": "Configure logging behavior and output",
+      "title": "Service",
+      "description": "Service controls, logging, timezone, and process limits",
       "logLevel": "Log Level",
       "logLevelHelp": "Set the verbosity of logging output",
       "errorFilePath": "Error File Path",
@@ -154,7 +154,10 @@
       "levelDebug": "Debug",
       "timezone": "Time Zone",
       "timezoneAuto": "Auto (system default)",
-      "timezoneHelp": "Timezone for log timestamps (default: system)"
+      "timezoneHelp": "Timezone for log timestamps (default: system)",
+      "memoryLimit": "Memory Limit",
+      "memoryLimitPlaceholder": "auto",
+      "memoryLimitHelp": "Soft cap on b4 memory use. Accepts e.g. 128MiB, 256m, 1g. Leave empty or 'auto' for half of system RAM. Use 'off' to disable. Takes effect on save."
     },
     "Feature": {
       "title": "Feature Flags",

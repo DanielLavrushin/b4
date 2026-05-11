@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -96,13 +95,18 @@ func runB4(cmd *cobra.Command, args []string) error {
 	}
 
 	initTimezone()
-	initMemoryLimit()
 
 	cfg.LoadWithMigration(cfg.ConfigPath)
 	cfg.SaveToFile(cfg.ConfigPath)
 
 	if cfg.System.Timezone != "" {
 		config.ApplyTimezone(cfg.System.Timezone)
+	}
+
+	if limit, err := config.ApplyMemoryLimit(cfg.System.MemoryLimit); err != nil {
+		fmt.Fprintf(os.Stderr, "[INIT] invalid system.memory_limit %q: %v\n", cfg.System.MemoryLimit, err)
+	} else if limit > 0 {
+		fmt.Fprintf(os.Stderr, "[INIT] Memory limit set to %d MB\n", limit/(1024*1024))
 	}
 
 	if cmd.Flags().Changed("verbose") {
@@ -281,6 +285,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 		tproxyMgr.SyncConfig(c)
 		tables.RoutingSyncConfig(c)
 		aiManager.Update(c.System.AI)
+		if _, err := config.ApplyMemoryLimit(c.System.MemoryLimit); err != nil {
+			log.Errorf("invalid system.memory_limit %q: %v", c.System.MemoryLimit, err)
+		}
 		return nil
 	})
 	wd.Start()
@@ -508,30 +515,6 @@ func writePidFile(f *os.File, pid int) error {
 		return err
 	}
 	return f.Sync()
-}
-
-func initMemoryLimit() {
-	if os.Getenv("GOMEMLIMIT") != "" {
-		return
-	}
-
-	var info syscall.Sysinfo_t
-	if err := syscall.Sysinfo(&info); err != nil {
-		return
-	}
-
-	totalRAM := uint64(info.Totalram) * uint64(info.Unit)
-
-	limit := int64(totalRAM / 2)
-
-	const minLimit = 32 * 1024 * 1024
-	if limit < minLimit {
-		limit = minLimit
-	}
-
-	debug.SetMemoryLimit(limit)
-	fmt.Fprintf(os.Stderr, "[INIT] Memory limit set to %d MB (total RAM: %d MB)\n",
-		limit/(1024*1024), totalRAM/(1024*1024))
 }
 
 func initTimezone() {

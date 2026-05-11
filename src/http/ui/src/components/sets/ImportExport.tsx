@@ -46,6 +46,64 @@ function stripDefaults(obj: unknown, defaults: unknown): unknown {
   return obj === defaults ? undefined : obj;
 }
 
+const FEATURE_OFF_RULES: Array<{
+  path: string[];
+  toggle: string;
+  offValue: unknown;
+}> = [
+  { path: ["faking"], toggle: "sni", offValue: false },
+  { path: ["tcp", "duplicate"], toggle: "enabled", offValue: false },
+  { path: ["tcp", "ip_block_detect"], toggle: "enabled", offValue: false },
+  { path: ["tcp", "rst_protection"], toggle: "enabled", offValue: false },
+  { path: ["tcp", "desync"], toggle: "mode", offValue: "off" },
+  { path: ["tcp", "win"], toggle: "mode", offValue: "off" },
+  { path: ["tcp", "incoming"], toggle: "mode", offValue: "off" },
+  { path: ["fragmentation"], toggle: "strategy", offValue: "none" },
+  { path: ["dns"], toggle: "enabled", offValue: false },
+  { path: ["routing"], toggle: "enabled", offValue: false },
+];
+
+function resolveObjPath(root: Obj, path: string[]): Obj | undefined {
+  let node: unknown = root;
+  for (const seg of path) {
+    if (!isPlainObject(node)) return undefined;
+    node = node[seg];
+  }
+  return isPlainObject(node) ? node : undefined;
+}
+
+function setObjPath(root: Obj, path: string[], value: Obj): void {
+  let node: Obj = root;
+  for (let i = 0; i < path.length - 1; i++) {
+    const next = node[path[i]];
+    if (!isPlainObject(next)) return;
+    node = next;
+  }
+  const lastKey = path.at(-1);
+  if (lastKey !== undefined) node[lastKey] = value;
+}
+
+function resetDisabledFeatures(cfg: Obj, defaults: Obj): void {
+  for (const rule of FEATURE_OFF_RULES) {
+    const node = resolveObjPath(cfg, rule.path);
+    const def = resolveObjPath(defaults, rule.path);
+    if (node && def && node[rule.toggle] === rule.offValue) {
+      setObjPath(cfg, rule.path, { ...def, [rule.toggle]: rule.offValue });
+    }
+  }
+
+  const udp = resolveObjPath(cfg, ["udp"]);
+  const udpDef = resolveObjPath(defaults, ["udp"]);
+  if (
+    udp &&
+    udpDef &&
+    udp.filter_quic === "disabled" &&
+    (typeof udp.dport_filter !== "string" || udp.dport_filter.trim() === "")
+  ) {
+    cfg.udp = { ...udpDef };
+  }
+}
+
 function mergeObjectWithDefaults(partial: Obj, defaults: Obj): Obj {
   const result = { ...defaults };
   for (const [key, value] of Object.entries(partial)) {
@@ -54,7 +112,6 @@ function mergeObjectWithDefaults(partial: Obj, defaults: Obj): Obj {
   return result;
 }
 
-/** Deep merge partial config with defaults to reconstruct full config */
 function mergeWithDefaults(partial: unknown, defaults: unknown): unknown {
   if (partial === undefined || partial === null) return defaults;
   if (Array.isArray(defaults)) {
@@ -68,13 +125,16 @@ function mergeWithDefaults(partial: unknown, defaults: unknown): unknown {
   return partial;
 }
 
-/** Build export JSON: version + name/enabled/targets always included, rest only if non-default */
 function buildExportJson(config: B4SetConfig): Record<string, unknown> {
   const defaults = createDefaultSet(0);
   const alwaysInclude = new Set(["name", "enabled"]);
   const skip = new Set(["id", "stats"]);
-  const configObj = config as unknown as Record<string, unknown>;
+  const configObj = structuredClone(config) as unknown as Record<
+    string,
+    unknown
+  >;
   const defaultsObj = defaults as unknown as Record<string, unknown>;
+  resetDisabledFeatures(configObj, defaultsObj);
 
   const result: Record<string, unknown> = {
     b4_version: import.meta.env.VITE_APP_VERSION || "dev",
@@ -196,10 +256,10 @@ export const ImportExportSettings = ({
       const { b4_version: _, ...configFields } = raw;
 
       const defaults = createDefaultSet(0);
-      const fullConfig = mergeWithDefaults(
-        configFields,
-        defaults,
-      ) as Record<string, unknown>;
+      const fullConfig = mergeWithDefaults(configFields, defaults) as Record<
+        string,
+        unknown
+      >;
 
       const parsed = migrateSetConfig(fullConfig);
 

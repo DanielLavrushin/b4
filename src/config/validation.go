@@ -83,6 +83,11 @@ func (c *Config) Validate() error {
 		return v.result()
 	}
 
+	if _, err := ParseMemoryLimit(c.System.MemoryLimit); err != nil {
+		v.addf("system.memory_limit", "invalid_value", map[string]any{"value": c.System.MemoryLimit}, "%v", err)
+		return v.result()
+	}
+
 	if c.Queue.TCPConnBytesLimit < DefaultConfig.Queue.TCPConnBytesLimit {
 		c.Queue.TCPConnBytesLimit = DefaultConfig.Queue.TCPConnBytesLimit
 	} else if c.Queue.TCPConnBytesLimit > 100 {

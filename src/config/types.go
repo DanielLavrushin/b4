@@ -191,16 +191,17 @@ type TargetsConfig struct {
 }
 
 type SystemConfig struct {
-	Tables    TablesConfig    `json:"tables"`
-	Logging   Logging         `json:"logging"`
-	WebServer WebServerConfig `json:"web_server"`
-	Socks5    Socks5Config    `json:"socks5"`
-	MTProto   MTProtoConfig   `json:"mtproto"`
-	Checker   DiscoveryConfig `json:"checker"`
-	Geo       GeoDatConfig    `json:"geo"`
-	API       ApiConfig       `json:"api"`
-	AI        AIConfig        `json:"ai"`
-	Timezone  string          `json:"timezone"`
+	Tables      TablesConfig    `json:"tables"`
+	Logging     Logging         `json:"logging"`
+	WebServer   WebServerConfig `json:"web_server"`
+	Socks5      Socks5Config    `json:"socks5"`
+	MTProto     MTProtoConfig   `json:"mtproto"`
+	Checker     DiscoveryConfig `json:"checker"`
+	Geo         GeoDatConfig    `json:"geo"`
+	API         ApiConfig       `json:"api"`
+	AI          AIConfig        `json:"ai"`
+	Timezone    string          `json:"timezone"`
+	MemoryLimit string          `json:"memory_limit,omitempty"`
 }
 
 type AIConfig struct {

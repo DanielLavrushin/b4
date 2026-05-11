@@ -307,6 +307,7 @@ export interface SystemConfig {
   api: ApiConfig;
   ai: AIConfig;
   timezone: string;
+  memory_limit?: string;
 }
 
 export interface B4Config {

@@ -33,12 +33,11 @@ import { useSnackbar } from "@context/SnackbarProvider";
 import { useAiStatus } from "@context/AiStatusProvider";
 import { ApiSettings } from "./Api";
 import { CaptureSettings } from "./Capture";
-import { ControlSettings } from "./Control";
 import { DevicesSettings } from "./Devices";
 import { CheckerSettings } from "./Discovery";
 import { FeatureSettings } from "./Feature";
 import { GeoSettings } from "./Geo";
-import { LoggingSettings } from "./Logging";
+import { LoggingSettings } from "./Core";
 import { MSSClampingSettings } from "./MSSClamping";
 import { QueueSettings } from "./Queue";
 import { Socks5Settings } from "./Socks5";
@@ -448,15 +447,9 @@ export function SettingsPage() {
           <Grid container spacing={spacing.lg} alignItems="stretch">
             <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex" }}>
               <Box sx={{ width: "100%" }}>
-                <ControlSettings />
-              </Box>
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex" }}>
-              <Box sx={{ width: "100%" }}>
                 <LoggingSettings config={config} onChange={handleChange} />
               </Box>
             </Grid>
-
             <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex" }}>
               <Box sx={{ width: "100%" }}>
                 <QueueSettings config={config} onChange={handleChange} />

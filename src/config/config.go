@@ -284,7 +284,8 @@ var DefaultConfig = Config{
 			TimeoutSec:  120,
 		},
 
-		Timezone: "",
+		Timezone:    "",
+		MemoryLimit: "",
 	},
 }
 

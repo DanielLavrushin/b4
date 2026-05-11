@@ -2,10 +2,12 @@
 
 ## [1.62.0] - 2026-05-11
 
+- ADDED: **Memory limit setting** - new "Memory Limit" field in Settings → Logging. Caps how much memory b4 may use. Leave empty for auto (half of system RAM, the previous default). Useful on routers with little RAM where other services compete for memory. Accepts values like `128MiB`, `256m`, `1g`, or `off` to disable.
 - ADDED: **MTProto proxy works in censored networks** - the built-in Telegram proxy can now reach Telegram over WebSocket, in addition to direct TCP. New "Upstream Transport" section in Settings → MTProto Proxy with three modes: Auto (WebSocket → TCP, the new default), WebSocket only, and Direct TCP. Existing installs are switched to Auto on upgrade, so networks without filtering see no change.
 - ADDED: **Cloudflare fallback for the MTProto proxy** - optional "Cloudflare custom domain" field. If Telegram's own WebSocket endpoint is ever blocked too, pointing a Cloudflare zone at the Telegram data center IPs lets the proxy tunnel through Cloudflare instead.
 - FIXED: **MTProto proxy was incompatible with some Telegram clients** - clients using transport variants other than padded-intermediate were silently dropped during the handshake. All three Telegram transport variants are now accepted, and the client's choice is forwarded to the data center.
 - FIXED: **Upstream SOCKS5 proxy routing did not work on some OpenWrt setups** — traffic skipped the proxy and went straight to the internet on installs missing two required kernel modules. The modules are now installed and loaded automatically, and a clear error is shown if they are still missing. [#221](https://github.com/DanielLavrushin/b4/issues/221)
+- IMPROVED: **Cleaner Import/Export for sets** - the exported JSON of a set now hides settings for features that are turned off, so you only see what actually matters. Easier to read, share and compare.
 
 ## [1.61.4] - 2026-05-10
 

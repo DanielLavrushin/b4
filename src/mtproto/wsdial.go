@@ -63,12 +63,15 @@ func (c *wsConn) Read(p []byte) (int, error) {
 		return n, nil
 	}
 	for {
-		op, payload, err := c.readFrame()
+		op, fin, payload, err := c.readFrame()
 		if err != nil {
 			return 0, err
 		}
 		switch op {
 		case wsOpcodeBinary, 0x1:
+			if !fin {
+				return 0, errors.New("ws: fragmented data frames not supported")
+			}
 			n := copy(p, payload)
 			if n < len(payload) {
 				c.rxBuf = append(c.rxBuf, payload[n:]...)
@@ -83,6 +86,8 @@ func (c *wsConn) Read(p []byte) (int, error) {
 			c.closed.Store(true)
 			_ = c.writeFrame(wsOpcodeClose, nil)
 			return 0, io.EOF
+		default:
+			return 0, fmt.Errorf("ws: unsupported opcode 0x%x", op)
 		}
 	}
 }
@@ -112,11 +117,12 @@ func (c *wsConn) SetDeadline(t time.Time) error {
 func (c *wsConn) SetReadDeadline(t time.Time) error  { return c.tls.SetReadDeadline(t) }
 func (c *wsConn) SetWriteDeadline(t time.Time) error { return c.tls.SetWriteDeadline(t) }
 
-func (c *wsConn) readFrame() (op byte, payload []byte, err error) {
+func (c *wsConn) readFrame() (op byte, fin bool, payload []byte, err error) {
 	hdr := make([]byte, 2)
 	if _, err = io.ReadFull(c.br, hdr); err != nil {
-		return 0, nil, err
+		return 0, false, nil, err
 	}
+	fin = hdr[0]&0x80 != 0
 	op = hdr[0] & 0x0F
 	masked := hdr[1]&0x80 != 0
 	length := uint64(hdr[1] & 0x7F)
@@ -124,35 +130,35 @@ func (c *wsConn) readFrame() (op byte, payload []byte, err error) {
 	case 126:
 		ext := make([]byte, 2)
 		if _, err = io.ReadFull(c.br, ext); err != nil {
-			return 0, nil, err
+			return 0, false, nil, err
 		}
 		length = uint64(binary.BigEndian.Uint16(ext))
 	case 127:
 		ext := make([]byte, 8)
 		if _, err = io.ReadFull(c.br, ext); err != nil {
-			return 0, nil, err
+			return 0, false, nil, err
 		}
 		length = binary.BigEndian.Uint64(ext)
 	}
 	var maskKey [4]byte
 	if masked {
 		if _, err = io.ReadFull(c.br, maskKey[:]); err != nil {
-			return 0, nil, err
+			return 0, false, nil, err
 		}
 	}
 	if length > 16*1024*1024 {
-		return 0, nil, fmt.Errorf("ws frame too large: %d", length)
+		return 0, false, nil, fmt.Errorf("ws frame too large: %d", length)
 	}
 	payload = make([]byte, length)
 	if _, err = io.ReadFull(c.br, payload); err != nil {
-		return 0, nil, err
+		return 0, false, nil, err
 	}
 	if masked {
 		for i := range payload {
 			payload[i] ^= maskKey[i%4]
 		}
 	}
-	return op, payload, nil
+	return op, fin, payload, nil
 }
 
 func (c *wsConn) writeFrame(op byte, payload []byte) error {
@@ -263,6 +269,7 @@ func dialWS(host, sni string, timeout time.Duration, mark uint) (net.Conn, error
 		}
 	}
 	if !strings.EqualFold(resp.Header.Get("Upgrade"), "websocket") {
+		resp.Body.Close()
 		tlsConn.Close()
 		return nil, errors.New("ws upgrade header missing")
 	}

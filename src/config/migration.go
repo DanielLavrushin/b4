@@ -58,6 +58,13 @@ var migrationRegistry = map[int]MigrationFunc{
 	35: migrateV35to36, // Add fragmentation seq overlap length
 	36: migrateV36to37, // Add UDP fake_payload_file field
 	37: migrateV37to38, // Add MTProto upstream transport (WS) fields
+	38: migrateV38to39, // Add system.memory_limit
+}
+
+func migrateV38to39(c *Config, _ map[string]interface{}) error {
+	log.Tracef("Migration v38->v39: Adding system.memory_limit")
+	c.System.MemoryLimit = DefaultConfig.System.MemoryLimit
+	return nil
 }
 
 func migrateV37to38(c *Config, _ map[string]interface{}) error {
