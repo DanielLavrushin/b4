@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -36,7 +37,10 @@ func (api *API) handleMTProtoTestWS(w http.ResponseWriter, r *http.Request) {
 		WSCustomDomain string `json:"ws_custom_domain"`
 		DC             int    `json:"dc"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		writeJsonError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
 
 	cfg := api.getCfg()
 	probeCfg := cfg.System.MTProto
@@ -44,7 +48,7 @@ func (api *API) handleMTProtoTestWS(w http.ResponseWriter, r *http.Request) {
 		probeCfg.UpstreamMode = req.UpstreamMode
 	}
 	probeCfg.WSCustomDomain = req.WSCustomDomain
-	if probeCfg.UpstreamMode == "" || probeCfg.UpstreamMode == "tcp" {
+	if probeCfg.UpstreamMode == "" {
 		probeCfg.UpstreamMode = "auto"
 	}
 	dc := req.DC
