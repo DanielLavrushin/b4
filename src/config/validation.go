@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -293,6 +294,13 @@ func (c *Config) checkPortCollisions(v *validator) {
 			v.addf("system.mtproto.ws_custom_domain", "missing_placeholder",
 				map[string]any{"value": d},
 				"ws_custom_domain must contain the {dc} placeholder, e.g. kws{dc}.example.com")
+		}
+		if h := c.System.MTProto.WSEndpointHost; h != "" {
+			if strings.HasPrefix(h, "[") || (strings.Contains(h, ":") && net.ParseIP(h) == nil) {
+				v.addf("system.mtproto.ws_endpoint_host", "invalid_host",
+					map[string]any{"value": h},
+					"ws_endpoint_host must be a host or IP without port (got %q)", h)
+			}
 		}
 	}
 	for i := 0; i < len(refs); i++ {
