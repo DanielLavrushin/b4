@@ -157,7 +157,7 @@
       "timezoneHelp": "Timezone for log timestamps (default: system)",
       "memoryLimit": "Memory Limit",
       "memoryLimitPlaceholder": "auto",
-      "memoryLimitHelp": "Soft cap on b4 memory use. Accepts e.g. 128MiB, 256m, 1g. Leave empty or 'auto' for half of system RAM. Use 'off' to disable. Takes effect on save."
+      "memoryLimitHelp": "Soft cap on b4 memory use. Accepts e.g. 128MiB, 256m, 1g. Leave empty or 'auto' for half of system RAM. Use 'off' to disable."
     },
     "Feature": {
       "title": "Feature Flags",

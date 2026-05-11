@@ -156,10 +156,16 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 		if edgeIP == "" {
 			edgeIP = telegramWSEdgeIP
 		}
-		plans = append(plans,
-			transportPlan{kind: transportWS, sni: fmt.Sprintf("kws%d.web.telegram.org", absDC), dialHost: edgeIP},
-			transportPlan{kind: transportWS, sni: fmt.Sprintf("kws%d-1.web.telegram.org", absDC), dialHost: edgeIP},
-		)
+		wsDC := absDC
+		if absDC == 203 {
+			wsDC = 2
+		}
+		if wsDC >= 1 && wsDC <= 5 {
+			plans = append(plans,
+				transportPlan{kind: transportWS, sni: fmt.Sprintf("kws%d.web.telegram.org", wsDC), dialHost: edgeIP},
+				transportPlan{kind: transportWS, sni: fmt.Sprintf("kws%d-1.web.telegram.org", wsDC), dialHost: edgeIP},
+			)
+		}
 		if d := strings.TrimSpace(cfg.WSCustomDomain); d != "" {
 			sni := strings.ReplaceAll(d, "{dc}", strconv.Itoa(absDC))
 			plans = append(plans, transportPlan{
@@ -169,7 +175,7 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 		}
 	}
 
-	allowTCP := mode == "tcp" || (mode == "auto" && cfg.WSFallbackTCP)
+	allowTCP := mode == "tcp" || (mode == "auto" && cfg.WSFallbackTCP) || len(plans) == 0
 	if allowTCP {
 		addr, err := ResolveDC(dc, queueCfg.IPv6Enabled, "")
 		if err != nil {
