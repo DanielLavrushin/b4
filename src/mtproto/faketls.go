@@ -213,6 +213,9 @@ func proxyToMaskingDomain(client net.Conn, initial []byte, host string, mark uin
 	go func() { io.Copy(upstream, client); done <- struct{}{} }()
 	go func() { io.Copy(client, upstream); done <- struct{}{} }()
 	<-done
+	upstream.Close()
+	client.Close()
+	<-done
 }
 
 func extractSessionID(helloBody []byte) []byte {
