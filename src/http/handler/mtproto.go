@@ -32,14 +32,21 @@ func (api *API) handleMTProtoTestWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		UpstreamMode   string `json:"upstream_mode"`
-		WSCustomDomain string `json:"ws_custom_domain"`
-		WSFallbackTCP  *bool  `json:"ws_fallback_tcp"`
+		UpstreamMode   string  `json:"upstream_mode"`
+		WSCustomDomain *string `json:"ws_custom_domain"`
+		WSFallbackTCP  *bool   `json:"ws_fallback_tcp"`
 		WSEndpointHost *string `json:"ws_endpoint_host"`
-		DC             int    `json:"dc"`
+		DC             int     `json:"dc"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
 		writeJsonError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	switch req.UpstreamMode {
+	case "", "tcp", "ws", "auto":
+	default:
+		writeJsonError(w, http.StatusBadRequest, "upstream_mode must be tcp, ws or auto")
 		return
 	}
 
@@ -48,7 +55,9 @@ func (api *API) handleMTProtoTestWS(w http.ResponseWriter, r *http.Request) {
 	if req.UpstreamMode != "" {
 		probeCfg.UpstreamMode = req.UpstreamMode
 	}
-	probeCfg.WSCustomDomain = req.WSCustomDomain
+	if req.WSCustomDomain != nil {
+		probeCfg.WSCustomDomain = *req.WSCustomDomain
+	}
 	if req.WSFallbackTCP != nil {
 		probeCfg.WSFallbackTCP = *req.WSFallbackTCP
 	}
