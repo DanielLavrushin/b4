@@ -157,6 +157,10 @@ func (s *Server) handleConn(raw net.Conn) {
 	tlsConn, err := AcceptFakeTLS(raw, s.secret)
 	if err != nil {
 		log.Debugf("MTProto fake-TLS failed from %s: %v", clientAddr, err)
+		var vErr *FakeTLSVerifyError
+		if errors.As(err, &vErr) && s.cfg.System.MTProto.FakeSNI != "" {
+			proxyToMaskingDomain(raw, vErr.Initial, s.cfg.System.MTProto.FakeSNI, s.cfg.Queue.Mark)
+		}
 		return
 	}
 	log.Debugf("MTProto fake-TLS handshake OK from %s", clientAddr)
@@ -178,10 +182,14 @@ func (s *Server) handleConn(raw net.Conn) {
 
 	log.Infof("MTProto relay: %s <-> DC%d (%s)", clientAddr, result.DC, transport)
 
-	s.relay(result.Conn, dcConn, fmt.Sprintf("%s<->DC%d", clientAddr, result.DC))
+	var splitter *msgSplitter
+	if _, ok := dcConn.Conn.(*wsConn); ok {
+		splitter = newMsgSplitter(result.ProtoTag)
+	}
+	s.relay(result.Conn, dcConn, splitter, fmt.Sprintf("%s<->DC%d", clientAddr, result.DC))
 }
 
-func (s *Server) relay(client, dc io.ReadWriteCloser, label string) {
+func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string) {
 	errCh := make(chan error, 2)
 
 	cp := func(dst io.Writer, src io.Reader, dir string) {
@@ -192,7 +200,40 @@ func (s *Server) relay(client, dc io.ReadWriteCloser, label string) {
 		errCh <- err
 	}
 
-	go cp(dc, client, "client->DC")
+	cpSplit := func(dst io.Writer, src io.Reader, dir string) {
+		bufPtr := s.bufPool.Get().(*[]byte)
+		defer s.bufPool.Put(bufPtr)
+		buf := *bufPtr
+		var total int64
+		var err error
+		for {
+			var n int
+			n, err = src.Read(buf)
+			if n > 0 {
+				for _, pkt := range splitter.split(buf[:n]) {
+					if _, werr := dst.Write(pkt); werr != nil {
+						err = werr
+						break
+					}
+					total += int64(len(pkt))
+				}
+			}
+			if err != nil {
+				if tail := splitter.flush(); len(tail) > 0 {
+					_, _ = dst.Write(tail)
+				}
+				break
+			}
+		}
+		log.Debugf("MTProto relay %s %s: %d bytes, err=%v", label, dir, total, err)
+		errCh <- err
+	}
+
+	if splitter != nil {
+		go cpSplit(dc, client, "client->DC")
+	} else {
+		go cp(dc, client, "client->DC")
+	}
 	go cp(client, dc, "DC->client")
 
 	<-errCh

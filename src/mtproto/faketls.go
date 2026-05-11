@@ -9,7 +9,10 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -94,6 +97,17 @@ func (c *FakeTLSConn) Write(p []byte) (int, error) {
 	return total, nil
 }
 
+// FakeTLSVerifyError signals that a TLS-shaped ClientHello arrived but
+// failed verification. Initial holds the bytes already read so the caller
+// can forward them to a masking domain (anti-prober disguise).
+type FakeTLSVerifyError struct {
+	Err     error
+	Initial []byte
+}
+
+func (e *FakeTLSVerifyError) Error() string { return e.Err.Error() }
+func (e *FakeTLSVerifyError) Unwrap() error { return e.Err }
+
 func AcceptFakeTLS(conn net.Conn, secret *Secret) (*FakeTLSConn, error) {
 	recHdr := make([]byte, 5)
 	if _, err := io.ReadFull(conn, recHdr); err != nil {
@@ -104,8 +118,8 @@ func AcceptFakeTLS(conn net.Conn, secret *Secret) (*FakeTLSConn, error) {
 	}
 
 	recLen := int(binary.BigEndian.Uint16(recHdr[3:5]))
-	if recLen < 39 || recLen > 4096 {
-		return nil, fmt.Errorf("invalid ClientHello length: %d", recLen)
+	if recLen < 39 || recLen > 16384 {
+		return nil, &FakeTLSVerifyError{Err: fmt.Errorf("invalid ClientHello length: %d", recLen), Initial: recHdr}
 	}
 
 	body := make([]byte, recLen)
@@ -113,14 +127,14 @@ func AcceptFakeTLS(conn net.Conn, secret *Secret) (*FakeTLSConn, error) {
 		return nil, fmt.Errorf("read ClientHello body: %w", err)
 	}
 
-	if body[0] != handshakeClientHello {
-		return nil, fmt.Errorf("not a ClientHello: type 0x%02x", body[0])
-	}
-
 	clientHello := append(recHdr, body...)
 
+	if body[0] != handshakeClientHello {
+		return nil, &FakeTLSVerifyError{Err: fmt.Errorf("not a ClientHello: type 0x%02x", body[0]), Initial: clientHello}
+	}
+
 	if len(body) < 38 {
-		return nil, fmt.Errorf("ClientHello too short")
+		return nil, &FakeTLSVerifyError{Err: fmt.Errorf("ClientHello too short"), Initial: clientHello}
 	}
 	clientRandom := make([]byte, 32)
 	copy(clientRandom, body[6:38])
@@ -137,7 +151,7 @@ func AcceptFakeTLS(conn net.Conn, secret *Secret) (*FakeTLSConn, error) {
 
 	for i := 0; i < 28; i++ {
 		if clientRandom[i] != expected[i] {
-			return nil, fmt.Errorf("HMAC verification failed at byte %d", i)
+			return nil, &FakeTLSVerifyError{Err: fmt.Errorf("HMAC verification failed at byte %d", i), Initial: clientHello}
 		}
 	}
 
@@ -152,7 +166,7 @@ func AcceptFakeTLS(conn net.Conn, secret *Secret) (*FakeTLSConn, error) {
 		diff = -diff
 	}
 	if diff > timestampTolerance {
-		return nil, fmt.Errorf("timestamp out of range: diff=%ds", diff)
+		return nil, &FakeTLSVerifyError{Err: fmt.Errorf("timestamp out of range: diff=%ds", diff), Initial: clientHello}
 	}
 
 	sessionID := extractSessionID(body)
@@ -163,6 +177,42 @@ func AcceptFakeTLS(conn net.Conn, secret *Secret) (*FakeTLSConn, error) {
 	}
 
 	return &FakeTLSConn{Conn: conn}, nil
+}
+
+func proxyToMaskingDomain(client net.Conn, initial []byte, host string, mark uint) {
+	if host == "" {
+		return
+	}
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	if mark > 0 {
+		dialer.Control = func(network, address string, c syscall.RawConn) error {
+			var sErr error
+			if err := c.Control(func(fd uintptr) {
+				sErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, unix.SO_MARK, int(mark))
+			}); err != nil {
+				return err
+			}
+			return sErr
+		}
+	}
+	upstream, err := dialer.Dial("tcp", net.JoinHostPort(host, "443"))
+	if err != nil {
+		return
+	}
+	defer upstream.Close()
+
+	if len(initial) > 0 {
+		if _, err := upstream.Write(initial); err != nil {
+			return
+		}
+	}
+
+	_ = client.SetDeadline(time.Time{})
+
+	done := make(chan struct{}, 2)
+	go func() { io.Copy(upstream, client); done <- struct{}{} }()
+	go func() { io.Copy(client, upstream); done <- struct{}{} }()
+	<-done
 }
 
 func extractSessionID(helloBody []byte) []byte {
@@ -220,7 +270,9 @@ func buildServerHello(secret *Secret, clientRandom, sessionID []byte) []byte {
 
 	changeCipher := []byte{tlsRecordChangeCipher, 0x03, 0x03, 0x00, 0x01, 0x01}
 
-	noiseLen := 512 + int(randomByte())%512
+	var nb [2]byte
+	rand.Read(nb[:])
+	noiseLen := 1900 + int(binary.BigEndian.Uint16(nb[:]))%201
 	noise := make([]byte, noiseLen)
 	rand.Read(noise)
 	var noiseRecord bytes.Buffer
@@ -261,8 +313,3 @@ func findServerRandomOffset(data []byte) int {
 	return 11
 }
 
-func randomByte() byte {
-	b := make([]byte, 1)
-	rand.Read(b)
-	return b[0]
-}

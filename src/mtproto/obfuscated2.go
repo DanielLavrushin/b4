@@ -161,10 +161,13 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 			wsDC = 2
 		}
 		if wsDC >= 1 && wsDC <= 5 {
-			plans = append(plans,
-				transportPlan{kind: transportWS, sni: fmt.Sprintf("kws%d.web.telegram.org", wsDC), dialHost: edgeIP},
-				transportPlan{kind: transportWS, sni: fmt.Sprintf("kws%d-1.web.telegram.org", wsDC), dialHost: edgeIP},
-			)
+			primary := transportPlan{kind: transportWS, sni: fmt.Sprintf("kws%d.web.telegram.org", wsDC), dialHost: edgeIP}
+			media := transportPlan{kind: transportWS, sni: fmt.Sprintf("kws%d-1.web.telegram.org", wsDC), dialHost: edgeIP}
+			if dc < 0 {
+				plans = append(plans, media, primary)
+			} else {
+				plans = append(plans, primary, media)
+			}
 		}
 		if d := strings.TrimSpace(cfg.WSCustomDomain); d != "" {
 			sni := strings.ReplaceAll(d, "{dc}", strconv.Itoa(absDC))
@@ -337,14 +340,14 @@ func generateFrame(dc int, protoTag uint32) []byte {
 		if frame[0] == 0xef {
 			continue
 		}
-		first4 := binary.BigEndian.Uint32(frame[0:4])
+		first4 := binary.LittleEndian.Uint32(frame[0:4])
 		if first4 == 0x44414548 || first4 == 0x54534f50 ||
 			first4 == 0x20544547 || first4 == 0x4954504f ||
 			first4 == 0x02010316 || first4 == 0xdddddddd ||
 			first4 == 0xeeeeeeee {
 			continue
 		}
-		if binary.BigEndian.Uint32(frame[4:8]) == 0 {
+		if binary.LittleEndian.Uint32(frame[4:8]) == 0 {
 			continue
 		}
 		break
