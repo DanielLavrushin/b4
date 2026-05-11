@@ -92,7 +92,7 @@ platform_keenetic_check_deps() {
 }
 
 _keenetic_load_kmods() {
-    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq; do
+    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq nft_tproxy nft_socket; do
         _kmod_available "$mod" && continue
         modprobe "$mod" 2>/dev/null && continue
         kver=$(uname -r)

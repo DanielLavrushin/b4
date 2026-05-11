@@ -181,6 +181,8 @@ func loadKernelModules() {
 		_, _ = run("sh", "-c", "modprobe -q nft_ct 2>/dev/null || true")
 		_, _ = run("sh", "-c", "modprobe -q nf_nat 2>/dev/null || true")
 		_, _ = run("sh", "-c", "modprobe -q nft_masq 2>/dev/null || true")
+		_, _ = run("sh", "-c", "modprobe -q nft_tproxy 2>/dev/null || true")
+		_, _ = run("sh", "-c", "modprobe -q nft_socket 2>/dev/null || true")
 		_, _ = run("sh", "-c", "modprobe -q xt_MASQUERADE 2>/dev/null || true")
 		_, _ = run("sh", "-c", "modprobe -q xt_set 2>/dev/null || true")
 	})

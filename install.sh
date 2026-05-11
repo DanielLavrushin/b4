@@ -975,7 +975,7 @@ _generic_linux_check_lxc() {
 }
 
 _generic_linux_check_kmods() {
-    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq; do
+    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq nft_tproxy nft_socket; do
         _kmod_available "$mod" && continue
         modprobe "$mod" 2>/dev/null || true
     done
@@ -1090,7 +1090,7 @@ platform_keenetic_check_deps() {
 }
 
 _keenetic_load_kmods() {
-    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq; do
+    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq nft_tproxy nft_socket; do
         _kmod_available "$mod" && continue
         modprobe "$mod" 2>/dev/null && continue
         kver=$(uname -r)
@@ -1232,7 +1232,7 @@ platform_merlinwrt_check_deps() {
 }
 
 _merlinwrt_load_kmods() {
-    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq; do
+    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq nft_tproxy nft_socket; do
         _kmod_available "$mod" && continue
         modprobe "$mod" 2>/dev/null && continue
         kver=$(uname -r)
@@ -1377,7 +1377,7 @@ platform_openwrt_check_deps() {
 }
 
 _openwrt_load_kmods() {
-    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq; do
+    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq nft_tproxy nft_socket; do
         _kmod_available "$mod" && continue
         modprobe "$mod" 2>/dev/null && continue
         kver=$(uname -r)
@@ -1413,6 +1413,13 @@ _openwrt_check_recommended() {
         if ! _kmod_available "nf_nat"; then
             rec_missing="${rec_missing} kmod-nft-nat"
         fi
+    fi
+
+    if ! _kmod_available "nft_tproxy"; then
+        rec_missing="${rec_missing} kmod-nft-tproxy"
+    fi
+    if ! _kmod_available "nft_socket"; then
+        rec_missing="${rec_missing} kmod-nft-socket"
     fi
 
     if ! _nft_functional; then
@@ -2030,7 +2037,7 @@ PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:
 
 kernel_mod_load() {
     KERNEL=\$(uname -r)
-    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq; do
+    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq nft_tproxy nft_socket; do
         modprobe "\$mod" >/dev/null 2>&1 && continue
         mod_path=\$(find /lib/modules/\$KERNEL -name "\${mod}.ko*" 2>/dev/null | head -1)
         [ -n "\$mod_path" ] && insmod "\$mod_path" >/dev/null 2>&1 || true
@@ -2054,7 +2061,7 @@ PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:
 
 kernel_mod_load() {
     KERNEL=\$(uname -r)
-    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq; do
+    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq nft_tproxy nft_socket; do
         modprobe "\$mod" >/dev/null 2>&1 && continue
         mod_path=\$(find /lib/modules/\$KERNEL -name "\${mod}.ko*" 2>/dev/null | head -1)
         [ -n "\$mod_path" ] && insmod "\$mod_path" >/dev/null 2>&1 || true
@@ -2176,7 +2183,7 @@ depend() {
 
 start_pre() {
     # Load kernel modules
-    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq; do
+    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq nft_tproxy nft_socket; do
         modprobe "\$mod" >/dev/null 2>&1 || true
     done
 }
@@ -2231,7 +2238,7 @@ CONFIG="${B4_CONFIG_FILE}"
 
 kernel_mod_load() {
     KERNEL=\$(uname -r)
-    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq; do
+    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq nft_tproxy nft_socket; do
         modprobe "\$mod" >/dev/null 2>&1 && continue
         mod_path=\$(find /lib/modules/\$KERNEL -name "\${mod}.ko*" 2>/dev/null | head -1)
         [ -n "\$mod_path" ] && insmod "\$mod_path" >/dev/null 2>&1 || true
@@ -2373,7 +2380,7 @@ PIDFILE="/var/run/b4.pid"
 
 kernel_mod_load() {
     KERNEL=\$(uname -r)
-    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq; do
+    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq nft_tproxy nft_socket; do
         modprobe "\$mod" >/dev/null 2>&1 && continue
         mod_path=\$(find /lib/modules/\$KERNEL -name "\${mod}.ko*" 2>/dev/null | head -1)
         [ -n "\$mod_path" ] && insmod "\$mod_path" >/dev/null 2>&1 || true

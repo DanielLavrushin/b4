@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
@@ -13,6 +14,67 @@ import (
 const proxyRulePriority = 5
 
 const proxyLocalDeliveryTable = 252
+
+var proxyNftPreflightOnce sync.Once
+
+func proxyNftPreflight() {
+	proxyNftPreflightOnce.Do(func() {
+		_, _ = run("sh", "-c", "modprobe -q nft_tproxy 2>/dev/null || true")
+		_, _ = run("sh", "-c", "modprobe -q nft_socket 2>/dev/null || true")
+
+		const probeTable = "_b4_proxy_probe"
+		_, _ = run("nft", "delete", "table", "inet", probeTable)
+		if _, err := run("nft", "add", "table", "inet", probeTable); err != nil {
+			return
+		}
+		defer func() { _, _ = run("nft", "delete", "table", "inet", probeTable) }()
+		if _, err := run("nft", "add", "chain", "inet", probeTable, "test"); err != nil {
+			return
+		}
+
+		var missing []string
+		if _, err := run("nft", "add", "rule", "inet", probeTable, "test",
+			"socket", "transparent", "1", "drop"); err != nil {
+			missing = append(missing, "nft_socket")
+		}
+		if _, err := run("nft", "add", "rule", "inet", probeTable, "test",
+			"ip", "protocol", "tcp", "tproxy", "ip", "to", ":1", "drop"); err != nil {
+			missing = append(missing, "nft_tproxy")
+		}
+		if len(missing) == 0 {
+			return
+		}
+
+		pkgs := make([]string, 0, len(missing))
+		for _, m := range missing {
+			switch m {
+			case "nft_socket":
+				pkgs = append(pkgs, "kmod-nft-socket")
+			case "nft_tproxy":
+				pkgs = append(pkgs, "kmod-nft-tproxy")
+			}
+		}
+		log.Errorf("Routing (proxy mode): kernel module(s) missing: %s — tproxy/socket nft rules will fail and traffic will NOT be diverted to the upstream proxy. Install: apk add %s (or opkg install %s on older OpenWrt), then restart b4.",
+			strings.Join(missing, ", "), strings.Join(pkgs, " "), strings.Join(pkgs, " "))
+	})
+}
+
+// proxyInputChain returns the (table, chain) tuple that holds the system's
+// input filter chain, so the proxy mark-accept rule can be inserted there.
+// OpenWrt 22.03+ firewall4 uses `inet fw4 input`; bespoke / non-fw4 systems
+// typically have `inet filter input`. Returns ok=false if neither exists.
+func proxyInputChain() (table, chain string, ok bool) {
+	candidates := [][2]string{
+		{"filter", "input"},
+		{"fw4", "input"},
+	}
+	for _, c := range candidates {
+		if _, err := run("nft", "list", "chain", "inet", c[0], c[1]); err == nil {
+			return c[0], c[1], true
+		}
+	}
+	return "", "", false
+}
 
 func proxyMarkAndPort(set *config.SetConfig) (uint32, int) {
 	mark := tproxy.MarkForSet(set.Id, set.Routing.FWMark)
@@ -35,6 +97,9 @@ func proxyActiveCount() int {
 }
 
 func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState, sources []string) error {
+	if be.name() == backendNFTables {
+		proxyNftPreflight()
+	}
 	if cfg.Queue.IPv4Enabled {
 		if err := be.ensureIPSet(st.setV4, false); err != nil {
 			return err
@@ -339,8 +404,13 @@ func addProxyDivertRuleNft(chain string, v6 bool, setName string, mark uint32) {
 func addProxyInputAccept(be routeBackend, mark uint32) {
 	markHex := fmt.Sprintf("0x%x/0x%x", mark, mark)
 	if be.name() == backendNFTables {
+		table, chain, ok := proxyInputChain()
+		if !ok {
+			log.Tracef("routing: no nft input filter chain found (tried inet filter, inet fw4); skipping input accept rule")
+			return
+		}
 		runLogged("routing: add input accept (proxy)",
-			"nft", "insert", "rule", "inet", "filter", "input",
+			"nft", "insert", "rule", "inet", table, chain,
 			"meta", "mark", "&", fmt.Sprintf("0x%x", mark), "==", fmt.Sprintf("0x%x", mark), "accept")
 		return
 	}
@@ -362,26 +432,28 @@ func removeProxyInputAccept(be routeBackend, mark uint32) {
 	markHex := fmt.Sprintf("0x%x/0x%x", mark, mark)
 	if be.name() == backendNFTables {
 		markStr := fmt.Sprintf("0x%x", mark)
-		out, err := run("nft", "-a", "list", "chain", "inet", "filter", "input")
-		if err != nil {
-			log.Tracef("routing: list nft inet filter input failed: %v", err)
-			return
-		}
-		for _, line := range strings.Split(out, "\n") {
-			handleIdx := strings.LastIndex(line, "# handle ")
-			if handleIdx == -1 {
+		for _, c := range [][2]string{{"filter", "input"}, {"fw4", "input"}} {
+			table, chain := c[0], c[1]
+			out, err := run("nft", "-a", "list", "chain", "inet", table, chain)
+			if err != nil {
 				continue
 			}
-			rule := strings.TrimSpace(line[:handleIdx])
-			if !strings.Contains(rule, markStr) || !strings.Contains(rule, "accept") {
-				continue
+			for _, line := range strings.Split(out, "\n") {
+				handleIdx := strings.LastIndex(line, "# handle ")
+				if handleIdx == -1 {
+					continue
+				}
+				rule := strings.TrimSpace(line[:handleIdx])
+				if !strings.Contains(rule, markStr) || !strings.Contains(rule, "accept") {
+					continue
+				}
+				handle := strings.TrimSpace(line[handleIdx+len("# handle "):])
+				if handle == "" {
+					continue
+				}
+				runLogged("routing: delete input accept (proxy)",
+					"nft", "delete", "rule", "inet", table, chain, "handle", handle)
 			}
-			handle := strings.TrimSpace(line[handleIdx+len("# handle "):])
-			if handle == "" {
-				continue
-			}
-			runLogged("routing: delete input accept (proxy)",
-				"nft", "delete", "rule", "inet", "filter", "input", "handle", handle)
 		}
 		return
 	}
