@@ -160,7 +160,6 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
         body: JSON.stringify({
           upstream_mode: config.system.mtproto?.upstream_mode || "auto",
           ws_custom_domain: config.system.mtproto?.ws_custom_domain || "",
-          ws_fallback_tcp: config.system.mtproto?.ws_fallback_tcp ?? true,
           ws_endpoint_host: config.system.mtproto?.ws_endpoint_host || "",
           dc: 2,
         }),
@@ -303,9 +302,8 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
       {(() => {
         const mode = config.system.mtproto?.upstream_mode || "auto";
         const enabled = !!config.system.mtproto?.enabled;
-        const fallback = config.system.mtproto?.ws_fallback_tcp ?? true;
         const showDcRelay =
-          !!dcRelay || mode === "tcp" || (mode === "auto" && fallback);
+          !!dcRelay || mode === "tcp" || mode === "auto";
         return (
           <B4FormGroup
             label={t("settings.MTProto.upstreamTitle")}
@@ -328,15 +326,38 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
                 `settings.MTProto.upstream${upstreamDescSuffix(mode)}Desc`,
               )}
             />
-            {mode === "auto" && (
-              <B4Switch
-                label={t("settings.MTProto.wsFallbackTcp")}
-                checked={config.system.mtproto?.ws_fallback_tcp ?? true}
-                onChange={(checked: boolean) =>
-                  onChange("system.mtproto.ws_fallback_tcp", checked)
+            {showDcRelay && (
+              <B4TextField
+                label={t("settings.MTProto.dcRelay")}
+                value={config.system.mtproto?.dc_relay || ""}
+                onChange={(e) =>
+                  onChange("system.mtproto.dc_relay", e.target.value)
                 }
-                description={t("settings.MTProto.wsFallbackTcpDesc")}
+                placeholder="vps-ip:7007"
                 disabled={!enabled}
+                helperText={t("settings.MTProto.dcRelayHelp")}
+                slotProps={{
+                  input: {
+                    endAdornment: (
+                      <InputAdornment position="end" sx={{ mr: -0.5 }}>
+                        <Tooltip
+                          title={t("settings.MTProto.dcRelayHelpButton")}
+                        >
+                          <span style={{ display: "inline-flex" }}>
+                            <IconButton
+                              size="small"
+                              onClick={openRelayHelp}
+                              disabled={!enabled}
+                              sx={{ px: 0 }}
+                            >
+                              <HelpOutlineIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </InputAdornment>
+                    ),
+                  },
+                }}
               />
             )}
             {mode !== "tcp" && (
@@ -416,40 +437,6 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
                 </Stack>
               )}
             </Box>
-            {showDcRelay && (
-              <B4TextField
-                label={t("settings.MTProto.dcRelay")}
-                value={config.system.mtproto?.dc_relay || ""}
-                onChange={(e) =>
-                  onChange("system.mtproto.dc_relay", e.target.value)
-                }
-                placeholder="vps-ip:7007"
-                disabled={!enabled}
-                helperText={t("settings.MTProto.dcRelayHelp")}
-                slotProps={{
-                  input: {
-                    endAdornment: (
-                      <InputAdornment position="end" sx={{ mr: -0.5 }}>
-                        <Tooltip
-                          title={t("settings.MTProto.dcRelayHelpButton")}
-                        >
-                          <span style={{ display: "inline-flex" }}>
-                            <IconButton
-                              size="small"
-                              onClick={openRelayHelp}
-                              disabled={!enabled}
-                              sx={{ px: 0 }}
-                            >
-                              <HelpOutlineIcon fontSize="small" />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                      </InputAdornment>
-                    ),
-                  },
-                }}
-              />
-            )}
           </B4FormGroup>
         );
       })()}

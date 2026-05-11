@@ -224,7 +224,6 @@ type MTProtoConfig struct {
 	DCRelay        string `json:"dc_relay"`
 	UpstreamMode   string `json:"upstream_mode"`
 	WSCustomDomain string `json:"ws_custom_domain"`
-	WSFallbackTCP  bool   `json:"ws_fallback_tcp"`
 	WSEndpointHost string `json:"ws_endpoint_host"`
 }
 

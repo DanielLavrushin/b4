@@ -76,8 +76,8 @@ func TestPlanTransports_UnknownDC_NoKwsPlans(t *testing.T) {
 	}
 }
 
-func TestPlanTransports_AutoMode_IncludesTCPWhenFallbackEnabled(t *testing.T) {
-	cfg := &config.MTProtoConfig{UpstreamMode: "auto", WSFallbackTCP: true}
+func TestPlanTransports_AutoMode_AlwaysIncludesTCPFallback(t *testing.T) {
+	cfg := &config.MTProtoConfig{UpstreamMode: "auto"}
 	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -86,18 +86,7 @@ func TestPlanTransports_AutoMode_IncludesTCPWhenFallbackEnabled(t *testing.T) {
 		t.Fatalf("auto mode for DC 2 should include both kws plans")
 	}
 	if !hasTCP(plans) {
-		t.Fatalf("auto + fallback should include TCP")
-	}
-}
-
-func TestPlanTransports_AutoMode_NoTCPWhenFallbackDisabled(t *testing.T) {
-	cfg := &config.MTProtoConfig{UpstreamMode: "auto", WSFallbackTCP: false}
-	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if hasTCP(plans) {
-		t.Fatalf("auto without fallback should not include TCP for DC 2")
+		t.Fatalf("auto mode must always include TCP fallback")
 	}
 }
 
@@ -172,44 +161,25 @@ func TestPlanTransports_DCRelay_TCPMode_TargetsRelay(t *testing.T) {
 	}
 }
 
-func TestPlanTransports_DCRelay_AutoFallbackOn_WSPlansPlusRelayTCP(t *testing.T) {
+func TestPlanTransports_DCRelay_AutoMode_WSPlansPlusRelayTCP(t *testing.T) {
 	cfg := &config.MTProtoConfig{
-		UpstreamMode:  "auto",
-		WSFallbackTCP: true,
-		DCRelay:       "127.0.0.1:4443",
+		UpstreamMode: "auto",
+		DCRelay:      "127.0.0.1:4443",
 	}
 	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(wsSNIs(plans)) == 0 {
-		t.Fatalf("auto + fallback: expected WS plans first, got none")
+		t.Fatalf("auto: expected WS plans first, got none")
 	}
 	if !hasTCP(plans) {
-		t.Fatalf("auto + fallback: expected TCP plan as fallback")
+		t.Fatalf("auto: expected TCP plan as fallback")
 	}
 	for _, p := range plans {
 		if p.kind == transportTCP && !strings.HasPrefix(p.addr, "127.0.0.1:") {
 			t.Fatalf("TCP fallback should target relay, got %s", p.addr)
 		}
-	}
-}
-
-func TestPlanTransports_DCRelay_AutoFallbackOff_IgnoredForKnownDC(t *testing.T) {
-	cfg := &config.MTProtoConfig{
-		UpstreamMode:  "auto",
-		WSFallbackTCP: false,
-		DCRelay:       "127.0.0.1:4443",
-	}
-	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if hasTCP(plans) {
-		t.Fatalf("auto + fallback off: DCRelay must NOT introduce a TCP plan; got %+v", plans)
-	}
-	if len(wsSNIs(plans)) == 0 {
-		t.Fatalf("expected WS plans, got none")
 	}
 }
 

@@ -285,15 +285,13 @@
       "upstreamAutoDesc": "Try WebSocket first via kws*.web.telegram.org, fall back to direct TCP. Recommended for censored networks.",
       "upstreamWs": "WebSocket only",
       "upstreamWsDesc": "Strict WebSocket transport via kws*.web.telegram.org. No TCP fallback.",
-      "wsFallbackTcp": "Allow TCP fallback",
-      "wsFallbackTcpDesc": "In Auto mode, fall back to direct TCP if all WebSocket attempts fail.",
       "wsCustomDomain": "Custom WebSocket domain",
       "wsCustomDomainHelp": "Optional. Enter the base domain (e.g. your-domain.com) that proxies WebSocket traffic to Telegram. b4 prepends kws1., kws2., ... per DC automatically. Leave empty to use Telegram's native kws*.web.telegram.org.",
       "wsEndpointHost": "Telegram WS edge IP (advanced)",
       "wsEndpointHostHelp": "Override the IP used when WS uses native kws*.web.telegram.org SNI. Default: 149.154.167.220. Leave empty for default. Does not affect the custom WebSocket domain path.",
-      "testWs": "Test transports",
+      "testWs": "Test connection",
       "testWsRunning": "Testing…",
-      "testWsHelp": "Probes DC 2 over each configured transport and reports latency."
+      "testWsHelp": "Probes DC 2 over the configured transport(s) and reports latency."
     },
     "MSSClamping": {
       "title": "Global MSS Clamping",

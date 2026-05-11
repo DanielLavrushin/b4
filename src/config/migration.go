@@ -70,7 +70,6 @@ func migrateV38to39(c *Config, _ map[string]interface{}) error {
 func migrateV37to38(c *Config, _ map[string]interface{}) error {
 	log.Tracef("Migration v37->v38: Adding MTProto upstream transport (WS) fields")
 	c.System.MTProto.UpstreamMode = "auto"
-	c.System.MTProto.WSFallbackTCP = true
 	c.System.MTProto.WSCustomDomain = ""
 	c.System.MTProto.WSEndpointHost = "149.154.167.220"
 	return nil

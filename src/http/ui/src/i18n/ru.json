@@ -281,15 +281,13 @@
       "upstreamAutoDesc": "Сначала WebSocket через kws*.web.telegram.org, при неудаче — прямой TCP. Рекомендуется для сетей с цензурой.",
       "upstreamWs": "Только WebSocket",
       "upstreamWsDesc": "Жёсткий WebSocket-транспорт через kws*.web.telegram.org. Без TCP-резерва.",
-      "wsFallbackTcp": "Разрешить TCP-резерв",
-      "wsFallbackTcpDesc": "В режиме Авто переключаться на прямой TCP, если все попытки WebSocket провалились.",
       "wsCustomDomain": "Свой WebSocket-домен",
       "wsCustomDomainHelp": "Опционально. Укажите базовый домен (например, your-domain.com), который проксирует WebSocket-трафик к Telegram. b4 сам подставит kws1., kws2., ... перед каждым DC. Пусто — использовать встроенный kws*.web.telegram.org.",
       "wsEndpointHost": "IP edge-сервера Telegram (расширенное)",
       "wsEndpointHostHelp": "IP, к которому подключаемся для встроенного kws*.web.telegram.org SNI. По умолчанию 149.154.167.220. Оставьте пустым для значения по умолчанию. Не влияет на путь через свой WebSocket-домен.",
-      "testWs": "Проверить транспорты",
+      "testWs": "Проверить соединение",
       "testWsRunning": "Проверка…",
-      "testWsHelp": "Пробует достучаться до DC 2 каждым настроенным транспортом и измеряет задержку."
+      "testWsHelp": "Пробует достучаться до DC 2 настроенным транспортом (или транспортами) и измеряет задержку."
     },
     "MSSClamping": {
       "title": "Глобальный MSS Clamping",

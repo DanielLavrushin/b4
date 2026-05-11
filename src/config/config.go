@@ -242,7 +242,6 @@ var DefaultConfig = Config{
 			BindAddress:    "0.0.0.0",
 			FakeSNI:        "storage.googleapis.com",
 			UpstreamMode:   "auto",
-			WSFallbackTCP:  true,
 			WSEndpointHost: "149.154.167.220",
 		},
 

@@ -169,7 +169,7 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 		}
 	}
 
-	allowTCP := mode == "tcp" || (mode == "auto" && cfg.WSFallbackTCP) || len(plans) == 0
+	allowTCP := mode == "tcp" || mode == "auto" || len(plans) == 0
 	if allowTCP {
 		addr, err := ResolveDC(dc, queueCfg.IPv6Enabled, cfg.DCRelay)
 		if err != nil {
