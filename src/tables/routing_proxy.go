@@ -65,8 +65,8 @@ func proxyNftPreflight() {
 // typically have `inet filter input`. Returns ok=false if neither exists.
 func proxyInputChain() (table, chain string, ok bool) {
 	candidates := [][2]string{
-		{"filter", "input"},
 		{"fw4", "input"},
+		{"filter", "input"},
 	}
 	for _, c := range candidates {
 		if _, err := run("nft", "list", "chain", "inet", c[0], c[1]); err == nil {
@@ -406,7 +406,7 @@ func addProxyInputAccept(be routeBackend, mark uint32) {
 	if be.name() == backendNFTables {
 		table, chain, ok := proxyInputChain()
 		if !ok {
-			log.Tracef("routing: no nft input filter chain found (tried inet filter, inet fw4); skipping input accept rule")
+			log.Tracef("routing: no nft input filter chain found (tried inet fw4, inet filter); skipping input accept rule")
 			return
 		}
 		runLogged("routing: add input accept (proxy)",
