@@ -160,6 +160,8 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
         body: JSON.stringify({
           upstream_mode: config.system.mtproto?.upstream_mode || "auto",
           ws_custom_domain: config.system.mtproto?.ws_custom_domain || "",
+          ws_fallback_tcp: config.system.mtproto?.ws_fallback_tcp ?? true,
+          ws_endpoint_host: config.system.mtproto?.ws_endpoint_host || "",
           dc: 2,
         }),
       });
