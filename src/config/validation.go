@@ -290,11 +290,6 @@ func (c *Config) checkPortCollisions(v *validator) {
 				map[string]any{"value": c.System.MTProto.UpstreamMode, "allowed": []string{"tcp", "ws", "auto"}},
 				"upstream_mode must be one of tcp, ws, auto (got %q)", c.System.MTProto.UpstreamMode)
 		}
-		if d := c.System.MTProto.WSCustomDomain; d != "" && !strings.Contains(d, "{dc}") {
-			v.addf("system.mtproto.ws_custom_domain", "missing_placeholder",
-				map[string]any{"value": d},
-				"ws_custom_domain must contain the {dc} placeholder, e.g. kws{dc}.example.com")
-		}
 		if h := c.System.MTProto.WSEndpointHost; h != "" {
 			if strings.HasPrefix(h, "[") || (strings.Contains(h, ":") && net.ParseIP(h) == nil) {
 				v.addf("system.mtproto.ws_endpoint_host", "invalid_host",

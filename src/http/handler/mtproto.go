@@ -5,7 +5,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"strings"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
@@ -208,10 +207,6 @@ func (api *API) updateMTProtoConfig(w http.ResponseWriter, r *http.Request) {
 	case "", "tcp", "ws", "auto":
 	default:
 		writeJsonError(w, http.StatusBadRequest, "upstream_mode must be tcp, ws or auto")
-		return
-	}
-	if req.WSCustomDomain != "" && !strings.Contains(req.WSCustomDomain, "{dc}") {
-		writeJsonError(w, http.StatusBadRequest, "ws_custom_domain must contain {dc} placeholder, e.g. kws{dc}.example.com")
 		return
 	}
 

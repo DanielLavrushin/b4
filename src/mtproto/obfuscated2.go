@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -170,10 +169,9 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 			}
 		}
 		if d := strings.TrimSpace(cfg.WSCustomDomain); d != "" {
-			sni := strings.ReplaceAll(d, "{dc}", strconv.Itoa(absDC))
 			plans = append(plans, transportPlan{
 				kind: transportWS,
-				sni:  sni,
+				sni:  fmt.Sprintf("kws%d.%s", absDC, d),
 			})
 		}
 	}

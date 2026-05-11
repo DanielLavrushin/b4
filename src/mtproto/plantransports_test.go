@@ -114,10 +114,10 @@ func TestPlanTransports_TCPOnly(t *testing.T) {
 	}
 }
 
-func TestPlanTransports_CustomDomainTemplated(t *testing.T) {
+func TestPlanTransports_CustomDomain_PrependsKwsPrefix(t *testing.T) {
 	cfg := &config.MTProtoConfig{
 		UpstreamMode:   "ws",
-		WSCustomDomain: "kws{dc}.example.com",
+		WSCustomDomain: "example.com",
 	}
 	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 4)
 	if err != nil {
@@ -132,14 +132,14 @@ func TestPlanTransports_CustomDomainTemplated(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("custom domain not templated correctly, got %v", snis)
+		t.Fatalf("expected kws4.example.com in plans, got %v", snis)
 	}
 }
 
 func TestPlanTransports_CustomDomain_HighDCStillWorks(t *testing.T) {
 	cfg := &config.MTProtoConfig{
 		UpstreamMode:   "ws",
-		WSCustomDomain: "kws{dc}.example.com",
+		WSCustomDomain: "example.com",
 	}
 	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 99)
 	if err != nil {

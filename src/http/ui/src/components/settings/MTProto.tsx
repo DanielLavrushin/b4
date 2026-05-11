@@ -372,7 +372,7 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
             onChange={(e) =>
               onChange("system.mtproto.ws_custom_domain", e.target.value)
             }
-            placeholder="kws{dc}.your-domain.com"
+            placeholder="your-domain.com"
             disabled={
               !config.system.mtproto?.enabled ||
               (config.system.mtproto?.upstream_mode || "auto") === "tcp"
