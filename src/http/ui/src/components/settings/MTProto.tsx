@@ -304,7 +304,8 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
         const mode = config.system.mtproto?.upstream_mode || "auto";
         const enabled = !!config.system.mtproto?.enabled;
         const fallback = config.system.mtproto?.ws_fallback_tcp ?? true;
-        const showDcRelay = mode === "tcp" || (mode === "auto" && fallback);
+        const showDcRelay =
+          !!dcRelay || mode === "tcp" || (mode === "auto" && fallback);
         return (
           <B4FormGroup
             label={t("settings.MTProto.upstreamTitle")}
@@ -317,19 +318,15 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
               onChange={(e) =>
                 onChange("system.mtproto.upstream_mode", String(e.target.value))
               }
-              disabled={!enabled || !!dcRelay}
+              disabled={!enabled}
               options={[
                 { value: "tcp", label: t("settings.MTProto.upstreamTcp") },
                 { value: "auto", label: t("settings.MTProto.upstreamAuto") },
                 { value: "ws", label: t("settings.MTProto.upstreamWs") },
               ]}
-              helperText={
-                dcRelay
-                  ? t("settings.MTProto.upstreamIgnoredWhenRelay")
-                  : t(
-                      `settings.MTProto.upstream${upstreamDescSuffix(mode)}Desc`,
-                    )
-              }
+              helperText={t(
+                `settings.MTProto.upstream${upstreamDescSuffix(mode)}Desc`,
+              )}
             />
             {mode === "auto" && (
               <B4Switch
@@ -339,7 +336,7 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
                   onChange("system.mtproto.ws_fallback_tcp", checked)
                 }
                 description={t("settings.MTProto.wsFallbackTcpDesc")}
-                disabled={!enabled || !!dcRelay}
+                disabled={!enabled}
               />
             )}
             {mode !== "tcp" && (
@@ -350,7 +347,7 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
                   onChange("system.mtproto.ws_custom_domain", e.target.value)
                 }
                 placeholder="your-domain.com"
-                disabled={!enabled || !!dcRelay}
+                disabled={!enabled}
                 helperText={t("settings.MTProto.wsCustomDomainHelp")}
               />
             )}
@@ -362,7 +359,7 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
                   onChange("system.mtproto.ws_endpoint_host", e.target.value)
                 }
                 placeholder="149.154.167.220"
-                disabled={!enabled || !!dcRelay}
+                disabled={!enabled}
                 helperText={t("settings.MTProto.wsEndpointHostHelp")}
               />
             )}

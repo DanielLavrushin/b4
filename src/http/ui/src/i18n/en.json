@@ -285,7 +285,6 @@
       "upstreamAutoDesc": "Try WebSocket first via kws*.web.telegram.org, fall back to direct TCP. Recommended for censored networks.",
       "upstreamWs": "WebSocket only",
       "upstreamWsDesc": "Strict WebSocket transport via kws*.web.telegram.org. No TCP fallback.",
-      "upstreamIgnoredWhenRelay": "Ignored when DC Relay is set below.",
       "wsFallbackTcp": "Allow TCP fallback",
       "wsFallbackTcpDesc": "In Auto mode, fall back to direct TCP if all WebSocket attempts fail.",
       "wsCustomDomain": "Custom WebSocket domain",

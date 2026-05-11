@@ -281,7 +281,6 @@
       "upstreamAutoDesc": "Сначала WebSocket через kws*.web.telegram.org, при неудаче — прямой TCP. Рекомендуется для сетей с цензурой.",
       "upstreamWs": "Только WebSocket",
       "upstreamWsDesc": "Жёсткий WebSocket-транспорт через kws*.web.telegram.org. Без TCP-резерва.",
-      "upstreamIgnoredWhenRelay": "Игнорируется, если задан DC Relay ниже.",
       "wsFallbackTcp": "Разрешить TCP-резерв",
       "wsFallbackTcpDesc": "В режиме Авто переключаться на прямой TCP, если все попытки WebSocket провалились.",
       "wsCustomDomain": "Свой WebSocket-домен",
