@@ -12,6 +12,8 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -50,7 +52,8 @@ type wsConn struct {
 	tls    *tls.Conn
 	br     *bufio.Reader
 	rxBuf  []byte
-	closed bool
+	wMu    sync.Mutex
+	closed atomic.Bool
 }
 
 func (c *wsConn) Read(p []byte) (int, error) {
@@ -77,7 +80,7 @@ func (c *wsConn) Read(p []byte) (int, error) {
 			}
 		case wsOpcodePong:
 		case wsOpcodeClose:
-			c.closed = true
+			c.closed.Store(true)
 			_ = c.writeFrame(wsOpcodeClose, nil)
 			return 0, io.EOF
 		}
@@ -85,7 +88,7 @@ func (c *wsConn) Read(p []byte) (int, error) {
 }
 
 func (c *wsConn) Write(p []byte) (int, error) {
-	if c.closed {
+	if c.closed.Load() {
 		return 0, net.ErrClosed
 	}
 	if err := c.writeFrame(wsOpcodeBinary, p); err != nil {
@@ -95,8 +98,7 @@ func (c *wsConn) Write(p []byte) (int, error) {
 }
 
 func (c *wsConn) Close() error {
-	if !c.closed {
-		c.closed = true
+	if !c.closed.Swap(true) {
 		_ = c.writeFrame(wsOpcodeClose, nil)
 	}
 	return c.tls.Close()
@@ -181,6 +183,8 @@ func (c *wsConn) writeFrame(op byte, payload []byte) error {
 	for i := range payload {
 		masked[i] = payload[i] ^ maskKey[i%4]
 	}
+	c.wMu.Lock()
+	defer c.wMu.Unlock()
 	if _, err := c.tls.Write(hdr[:off]); err != nil {
 		return err
 	}
