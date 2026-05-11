@@ -5,7 +5,7 @@ import { ApiError, type FieldError } from "@api/apiClient";
 export function localizeFieldError(f: FieldError): string {
   const key = `errors.${f.code}`;
   if (i18n.exists(key)) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+     
     const out: unknown = i18n.t(key, f.params ?? {});
     if (typeof out === "string") return out;
   }

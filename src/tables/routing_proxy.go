@@ -54,8 +54,8 @@ func proxyNftPreflight() {
 				pkgs = append(pkgs, "kmod-nft-tproxy")
 			}
 		}
-		log.Errorf("Routing (proxy mode): kernel module(s) missing: %s — tproxy/socket nft rules will fail and traffic will NOT be diverted to the upstream proxy. Install: apk add %s (or opkg install %s on older OpenWrt), then restart b4.",
-			strings.Join(missing, ", "), strings.Join(pkgs, " "), strings.Join(pkgs, " "))
+		log.Errorf("Routing (proxy mode): missing kernel module(s) %s — proxy diversion inactive. Required package(s): %s",
+			strings.Join(missing, ", "), strings.Join(pkgs, " "))
 	})
 }
 

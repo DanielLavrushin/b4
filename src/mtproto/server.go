@@ -166,24 +166,17 @@ func (s *Server) handleConn(raw net.Conn) {
 		log.Tracef("MTProto obfuscated2 failed from %s: %v", clientAddr, err)
 		return
 	}
-	log.Debugf("MTProto client from %s wants DC %d", clientAddr, result.DC)
+	log.Debugf("MTProto client from %s wants DC %d proto=0x%08x", clientAddr, result.DC, result.ProtoTag)
 	_ = raw.SetDeadline(time.Time{})
 
-	dcAddr, err := ResolveDC(result.DC, s.cfg.Queue.IPv6Enabled, s.cfg.System.MTProto.DCRelay)
-
+	dcConn, transport, err := DialObfuscatedDC(&s.cfg.System.MTProto, s.cfg.Queue, result.DC, result.ProtoTag)
 	if err != nil {
-		log.Errorf("MTProto unknown DC %d from %s", result.DC, clientAddr)
-		return
-	}
-
-	dcConn, err := DialObfuscatedDC(dcAddr, result.DC, s.cfg.Queue.Mark)
-	if err != nil {
-		log.Errorf("MTProto dial DC %d (%s): %v", result.DC, dcAddr, err)
+		log.Errorf("MTProto dial DC %d: %v", result.DC, err)
 		return
 	}
 	defer dcConn.Close()
 
-	log.Infof("MTProto relay: %s <-> DC%d (%s)", clientAddr, result.DC, dcAddr)
+	log.Infof("MTProto relay: %s <-> DC%d (%s)", clientAddr, result.DC, transport)
 
 	s.relay(result.Conn, dcConn, fmt.Sprintf("%s<->DC%d", clientAddr, result.DC))
 }
@@ -202,6 +195,9 @@ func (s *Server) relay(client, dc io.ReadWriteCloser, label string) {
 	go cp(dc, client, "client->DC")
 	go cp(client, dc, "DC->client")
 
+	<-errCh
+	_ = client.Close()
+	_ = dc.Close()
 	<-errCh
 }
 

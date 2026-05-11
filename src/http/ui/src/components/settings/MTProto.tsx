@@ -3,24 +3,29 @@ import { useTranslation } from "react-i18next";
 import {
   Button,
   Box,
+  CircularProgress,
   IconButton,
   InputAdornment,
   Tooltip,
   Typography,
   Chip,
+  Stack,
 } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import CheckIcon from "@mui/icons-material/Check";
+import CloseIcon from "@mui/icons-material/Close";
 import IosShareIcon from "@mui/icons-material/IosShare";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import AutorenewIcon from "@mui/icons-material/Autorenew";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
+import NetworkPingIcon from "@mui/icons-material/NetworkPing";
 import { MTProtoRelayHelpDialog } from "./MTProtoRelayHelpDialog";
 import { QRCodeSVG } from "qrcode.react";
 import { ConnectionIcon } from "@b4.icons";
 import {
   B4FormGroup,
   B4Section,
+  B4Select,
   B4Switch,
   B4TextField,
   B4Alert,
@@ -29,6 +34,19 @@ import {
 import { copyText } from "@utils";
 import { B4Config } from "@models/config";
 import { SettingsPropHandlerType } from "@models/settings";
+
+type WsProbeResult = {
+  transport: string;
+  ok: boolean;
+  latency_ms?: number;
+  error?: string;
+};
+
+const upstreamDescSuffix = (mode: string) => {
+  if (mode === "tcp") return "Tcp";
+  if (mode === "ws") return "Ws";
+  return "Auto";
+};
 
 interface MTProtoSettingsProps {
   config: B4Config;
@@ -48,6 +66,9 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
   const [shareHost, setShareHost] = useState("");
   const [copied, setCopied] = useState(false);
   const [relayHelpOpen, setRelayHelpOpen] = useState(false);
+  const [wsTesting, setWsTesting] = useState(false);
+  const [wsResults, setWsResults] = useState<WsProbeResult[] | null>(null);
+  const [wsTestError, setWsTestError] = useState<string | null>(null);
 
   const port = config.system.mtproto?.port ?? 3128;
   const secret = config.system.mtproto?.secret || "";
@@ -125,6 +146,37 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
       setRefreshResult({ ok: false, error: String(e) });
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  const handleTestWS = async () => {
+    setWsTesting(true);
+    setWsResults(null);
+    setWsTestError(null);
+    try {
+      const res = await fetch("/api/mtproto/test-ws", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          upstream_mode: config.system.mtproto?.upstream_mode || "auto",
+          ws_custom_domain: config.system.mtproto?.ws_custom_domain || "",
+          dc: 2,
+        }),
+      });
+      const data = (await res.json()) as {
+        success: boolean;
+        results?: WsProbeResult[];
+        error?: string;
+      };
+      if (data.success && data.results) {
+        setWsResults(data.results);
+      } else {
+        setWsTestError(data.error || "unknown error");
+      }
+    } catch (e) {
+      setWsTestError(String(e));
+    } finally {
+      setWsTesting(false);
     }
   };
 
@@ -273,6 +325,128 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
           </Button>
         </Box>
       </B4FormGroup>
+      {!dcRelay && (
+        <B4FormGroup
+          label={t("settings.MTProto.upstreamTitle")}
+          description={t("settings.MTProto.upstreamDesc")}
+          columns={2}
+        >
+          <B4Select
+            label={t("settings.MTProto.upstreamMode")}
+            value={config.system.mtproto?.upstream_mode || "auto"}
+            onChange={(e) =>
+              onChange(
+                "system.mtproto.upstream_mode",
+                String(e.target.value),
+              )
+            }
+            disabled={!config.system.mtproto?.enabled}
+            options={[
+              { value: "tcp", label: t("settings.MTProto.upstreamTcp") },
+              { value: "auto", label: t("settings.MTProto.upstreamAuto") },
+              { value: "ws", label: t("settings.MTProto.upstreamWs") },
+            ]}
+            helperText={t(
+              `settings.MTProto.upstream${upstreamDescSuffix(
+                config.system.mtproto?.upstream_mode || "auto",
+              )}Desc`,
+            )}
+          />
+          <B4Switch
+            label={t("settings.MTProto.wsFallbackTcp")}
+            checked={config.system.mtproto?.ws_fallback_tcp ?? true}
+            onChange={(checked: boolean) =>
+              onChange("system.mtproto.ws_fallback_tcp", checked)
+            }
+            description={t("settings.MTProto.wsFallbackTcpDesc")}
+            disabled={
+              !config.system.mtproto?.enabled ||
+              (config.system.mtproto?.upstream_mode || "auto") !== "auto"
+            }
+          />
+          <B4TextField
+            label={t("settings.MTProto.wsCustomDomain")}
+            value={config.system.mtproto?.ws_custom_domain || ""}
+            onChange={(e) =>
+              onChange("system.mtproto.ws_custom_domain", e.target.value)
+            }
+            placeholder="kws{dc}.your-domain.com"
+            disabled={
+              !config.system.mtproto?.enabled ||
+              (config.system.mtproto?.upstream_mode || "auto") === "tcp"
+            }
+            helperText={t("settings.MTProto.wsCustomDomainHelp")}
+          />
+          <B4TextField
+            label={t("settings.MTProto.wsEndpointHost")}
+            value={config.system.mtproto?.ws_endpoint_host || ""}
+            onChange={(e) =>
+              onChange("system.mtproto.ws_endpoint_host", e.target.value)
+            }
+            placeholder="149.154.167.220"
+            disabled={
+              !config.system.mtproto?.enabled ||
+              (config.system.mtproto?.upstream_mode || "auto") === "tcp"
+            }
+            helperText={t("settings.MTProto.wsEndpointHostHelp")}
+          />
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={
+                wsTesting ? (
+                  <CircularProgress size={14} />
+                ) : (
+                  <NetworkPingIcon fontSize="small" />
+                )
+              }
+              onClick={() => void handleTestWS()}
+              disabled={!config.system.mtproto?.enabled || wsTesting}
+              sx={{ alignSelf: "flex-start" }}
+            >
+              {wsTesting
+                ? t("settings.MTProto.testWsRunning")
+                : t("settings.MTProto.testWs")}
+            </Button>
+            {wsTestError && (
+              <B4Alert severity="error">{wsTestError}</B4Alert>
+            )}
+            {wsResults && (
+              <Stack spacing={0.5}>
+                {wsResults.map((r) => (
+                  <Chip
+                    key={r.transport}
+                    size="small"
+                    icon={
+                      r.ok ? (
+                        <CheckIcon fontSize="small" />
+                      ) : (
+                        <CloseIcon fontSize="small" />
+                      )
+                    }
+                    color={r.ok ? "success" : "default"}
+                    variant={r.ok ? "filled" : "outlined"}
+                    label={
+                      r.ok
+                        ? `${r.transport} — ${r.latency_ms} ms`
+                        : `${r.transport} — ${r.error}`
+                    }
+                    sx={{
+                      justifyContent: "flex-start",
+                      maxWidth: "100%",
+                      "& .MuiChip-label": {
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      },
+                    }}
+                  />
+                ))}
+              </Stack>
+            )}
+          </Box>
+        </B4FormGroup>
+      )}
       <B4Dialog
         open={shareOpen}
         onClose={() => setShareOpen(false)}

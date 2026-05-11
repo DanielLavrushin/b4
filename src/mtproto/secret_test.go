@@ -131,7 +131,7 @@ func TestObfuscatedRoundTrip(t *testing.T) {
 	defer server.Close()
 
 	go func() {
-		frame := generateFrame(2)
+		frame := generateFrame(2, connectionTagPadded)
 		origKeyIV := make([]byte, 48)
 		copy(origKeyIV, frame[8:56])
 
@@ -154,5 +154,38 @@ func TestObfuscatedRoundTrip(t *testing.T) {
 	}
 	if result.DC != 2 {
 		t.Fatalf("expected DC 2, got %d", result.DC)
+	}
+	if result.ProtoTag != connectionTagPadded {
+		t.Fatalf("expected proto tag 0x%08x, got 0x%08x", uint32(connectionTagPadded), result.ProtoTag)
+	}
+}
+
+func TestAcceptObfuscatedAllProtocols(t *testing.T) {
+	sec, _ := GenerateSecret("example.com")
+	for _, tag := range []uint32{connectionTagAbridged, connectionTagInter, connectionTagPadded} {
+		client, server := net.Pipe()
+		go func(tag uint32) {
+			defer client.Close()
+			frame := generateFrame(2, tag)
+			origKeyIV := make([]byte, 48)
+			copy(origKeyIV, frame[8:56])
+			encKey := deriveKey(frame[8:40], sec.Key[:])
+			encIV := make([]byte, 16)
+			copy(encIV, frame[40:56])
+			encStream, _ := newAESCTR(encKey, encIV)
+			encrypted := make([]byte, obfuscatedFrameLen)
+			copy(encrypted, frame)
+			encStream.XORKeyStream(encrypted, encrypted)
+			copy(encrypted[8:56], origKeyIV)
+			client.Write(encrypted)
+		}(tag)
+		result, err := AcceptObfuscated(server, sec)
+		server.Close()
+		if err != nil {
+			t.Fatalf("tag 0x%08x: %v", tag, err)
+		}
+		if result.ProtoTag != tag {
+			t.Fatalf("tag 0x%08x: got 0x%08x", tag, result.ProtoTag)
+		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"strings"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
@@ -14,6 +15,55 @@ func (api *API) RegisterMTProtoApi() {
 	api.mux.HandleFunc("/api/mtproto/generate-secret", api.handleMTProtoGenerateSecret)
 	api.mux.HandleFunc("/api/mtproto/config", api.handleMTProtoConfig)
 	api.mux.HandleFunc("/api/mtproto/refresh-dcs", api.handleMTProtoRefreshDCs)
+	api.mux.HandleFunc("/api/mtproto/test-ws", api.handleMTProtoTestWS)
+}
+
+// @Summary Probe MTProto upstream transports
+// @Tags MTProto
+// @Accept json
+// @Produce json
+// @Param body body object false "optional overrides: upstream_mode, ws_custom_domain, dc"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /mtproto/test-ws [post]
+func (api *API) handleMTProtoTestWS(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		UpstreamMode   string `json:"upstream_mode"`
+		WSCustomDomain string `json:"ws_custom_domain"`
+		DC             int    `json:"dc"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	cfg := api.getCfg()
+	probeCfg := cfg.System.MTProto
+	if req.UpstreamMode != "" {
+		probeCfg.UpstreamMode = req.UpstreamMode
+	}
+	if req.WSCustomDomain != "" {
+		probeCfg.WSCustomDomain = req.WSCustomDomain
+	}
+	if probeCfg.UpstreamMode == "" || probeCfg.UpstreamMode == "tcp" {
+		probeCfg.UpstreamMode = "auto"
+	}
+	dc := req.DC
+	if dc == 0 {
+		dc = 2
+	}
+
+	results, err := mtproto.ProbeTransports(&probeCfg, cfg.Queue, dc)
+	if err != nil {
+		writeJsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	sendResponse(w, map[string]interface{}{
+		"success": true,
+		"dc":      dc,
+		"results": results,
+	})
 }
 
 // @Summary Refresh MTProto DCs
@@ -142,6 +192,17 @@ func (api *API) updateMTProtoConfig(w http.ResponseWriter, r *http.Request) {
 			writeJsonError(w, http.StatusBadRequest, "Invalid DC relay address, expected host:port")
 			return
 		}
+	}
+
+	switch req.UpstreamMode {
+	case "", "tcp", "ws", "auto":
+	default:
+		writeJsonError(w, http.StatusBadRequest, "upstream_mode must be tcp, ws or auto")
+		return
+	}
+	if req.WSCustomDomain != "" && !strings.Contains(req.WSCustomDomain, "{dc}") {
+		writeJsonError(w, http.StatusBadRequest, "ws_custom_domain must contain {dc} placeholder, e.g. kws{dc}.example.com")
+		return
 	}
 
 	cfg := api.getCfg()

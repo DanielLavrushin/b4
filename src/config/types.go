@@ -215,12 +215,16 @@ type AIConfig struct {
 }
 
 type MTProtoConfig struct {
-	Enabled     bool   `json:"enabled"`
-	Port        int    `json:"port"`
-	BindAddress string `json:"bind_address"`
-	Secret      string `json:"secret"`
-	FakeSNI     string `json:"fake_sni"`
-	DCRelay     string `json:"dc_relay"`
+	Enabled        bool   `json:"enabled"`
+	Port           int    `json:"port"`
+	BindAddress    string `json:"bind_address"`
+	Secret         string `json:"secret"`
+	FakeSNI        string `json:"fake_sni"`
+	DCRelay        string `json:"dc_relay"`
+	UpstreamMode   string `json:"upstream_mode"`
+	WSCustomDomain string `json:"ws_custom_domain"`
+	WSFallbackTCP  bool   `json:"ws_fallback_tcp"`
+	WSEndpointHost string `json:"ws_endpoint_host"`
 }
 
 type Socks5Config struct {

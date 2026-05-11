@@ -277,6 +277,18 @@ func (c *Config) checkPortCollisions(v *validator) {
 		} else {
 			refs = append(refs, portRef{"system.mtproto.port", c.System.MTProto.Port})
 		}
+		switch c.System.MTProto.UpstreamMode {
+		case "", "tcp", "ws", "auto":
+		default:
+			v.addf("system.mtproto.upstream_mode", "invalid_value",
+				map[string]any{"value": c.System.MTProto.UpstreamMode, "allowed": []string{"tcp", "ws", "auto"}},
+				"upstream_mode must be one of tcp, ws, auto (got %q)", c.System.MTProto.UpstreamMode)
+		}
+		if d := c.System.MTProto.WSCustomDomain; d != "" && !strings.Contains(d, "{dc}") {
+			v.addf("system.mtproto.ws_custom_domain", "missing_placeholder",
+				map[string]any{"value": d},
+				"ws_custom_domain must contain the {dc} placeholder, e.g. kws{dc}.example.com")
+		}
 	}
 	for i := 0; i < len(refs); i++ {
 		for j := i + 1; j < len(refs); j++ {

@@ -57,6 +57,16 @@ var migrationRegistry = map[int]MigrationFunc{
 	34: migrateV34to35, // Add routing mode and upstream proxy config
 	35: migrateV35to36, // Add fragmentation seq overlap length
 	36: migrateV36to37, // Add UDP fake_payload_file field
+	37: migrateV37to38, // Add MTProto upstream transport (WS) fields
+}
+
+func migrateV37to38(c *Config, _ map[string]interface{}) error {
+	log.Tracef("Migration v37->v38: Adding MTProto upstream transport (WS) fields")
+	c.System.MTProto.UpstreamMode = "auto"
+	c.System.MTProto.WSFallbackTCP = true
+	c.System.MTProto.WSCustomDomain = ""
+	c.System.MTProto.WSEndpointHost = "149.154.167.220"
+	return nil
 }
 
 func migrateV36to37(c *Config, _ map[string]interface{}) error {
