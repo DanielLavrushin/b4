@@ -431,7 +431,7 @@ func addProxyInputAccept(be routeBackend, mark uint32) {
 func removeProxyInputAccept(be routeBackend, mark uint32) {
 	markHex := fmt.Sprintf("0x%x/0x%x", mark, mark)
 	if be.name() == backendNFTables {
-		markStr := fmt.Sprintf("0x%x", mark)
+		sig := fmt.Sprintf("meta mark & 0x%x == 0x%x accept", mark, mark)
 		for _, c := range [][2]string{{"filter", "input"}, {"fw4", "input"}} {
 			table, chain := c[0], c[1]
 			out, err := run("nft", "-a", "list", "chain", "inet", table, chain)
@@ -444,7 +444,7 @@ func removeProxyInputAccept(be routeBackend, mark uint32) {
 					continue
 				}
 				rule := strings.TrimSpace(line[:handleIdx])
-				if !strings.Contains(rule, markStr) || !strings.Contains(rule, "accept") {
+				if !strings.Contains(rule, sig) {
 					continue
 				}
 				handle := strings.TrimSpace(line[handleIdx+len("# handle "):])
