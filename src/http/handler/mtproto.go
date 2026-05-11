@@ -43,9 +43,7 @@ func (api *API) handleMTProtoTestWS(w http.ResponseWriter, r *http.Request) {
 	if req.UpstreamMode != "" {
 		probeCfg.UpstreamMode = req.UpstreamMode
 	}
-	if req.WSCustomDomain != "" {
-		probeCfg.WSCustomDomain = req.WSCustomDomain
-	}
+	probeCfg.WSCustomDomain = req.WSCustomDomain
 	if probeCfg.UpstreamMode == "" || probeCfg.UpstreamMode == "tcp" {
 		probeCfg.UpstreamMode = "auto"
 	}
