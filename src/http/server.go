@@ -34,11 +34,11 @@ func (f errLogFilter) Write(p []byte) (int, error) {
 	return f.w.Write(p)
 }
 
-func StartServer(cfgPtr *atomic.Pointer[config.Config], pool *nfq.Pool) (*stdhttp.Server, error) {
+func StartServer(cfgPtr *atomic.Pointer[config.Config], pool *nfq.Pool) (*stdhttp.Server, *handler.API, error) {
 	cfg := cfgPtr.Load()
 	if cfg.System.WebServer.Port == 0 {
 		log.Infof("Web server disabled (port 0)")
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	mux := stdhttp.NewServeMux()
@@ -46,7 +46,7 @@ func StartServer(cfgPtr *atomic.Pointer[config.Config], pool *nfq.Pool) (*stdhtt
 	handler.SetNFQPool(pool)
 	registerWebSocketEndpoints(mux)
 
-	registerAPIEndpoints(mux, cfgPtr)
+	api := registerAPIEndpoints(mux, cfgPtr)
 	registerAuthEndpoints(mux, cfgPtr)
 
 	handler.RegisterSpa(mux, uiDist)
@@ -111,7 +111,7 @@ func StartServer(cfgPtr *atomic.Pointer[config.Config], pool *nfq.Pool) (*stdhtt
 		}
 	}()
 
-	return srv, nil
+	return srv, api, nil
 }
 
 // registerWebSocketEndpoints registers all WebSocket handlers
@@ -124,12 +124,13 @@ func registerWebSocketEndpoints(mux *stdhttp.ServeMux) {
 }
 
 // registerAPIEndpoints registers all REST API handlers
-func registerAPIEndpoints(mux *stdhttp.ServeMux, cfgPtr *atomic.Pointer[config.Config]) {
+func registerAPIEndpoints(mux *stdhttp.ServeMux, cfgPtr *atomic.Pointer[config.Config]) *handler.API {
 
 	api := handler.NewAPIHandler(cfgPtr)
 	api.RegisterEndpoints(mux, cfgPtr)
 
 	log.Tracef("REST API endpoints registered")
+	return api
 }
 
 func LogWriter() io.Writer {

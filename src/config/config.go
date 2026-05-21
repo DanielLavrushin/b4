@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -206,7 +207,7 @@ var DefaultConfig = Config{
 	Sets: []*SetConfig{},
 
 	System: SystemConfig{
-		Geo: GeoDatConfig{
+		Geo: geodat.GeoDatConfig{
 			GeoSitePath: "",
 			GeoIpPath:   "",
 			GeoSiteURL:  "",

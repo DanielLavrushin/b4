@@ -465,7 +465,17 @@
       "uploadingGeosite": "Uploading geosite.dat...",
       "uploadingGeoip": "Uploading geoip.dat...",
       "uploadSuccess": "Uploaded successfully",
-      "selectSource": "Please select a source or enter a URL"
+      "selectSource": "Please select a source or enter a URL",
+      "autoUpdate": "Auto-update",
+      "autoUpdateOnStartup": "Refresh on startup",
+      "autoUpdateOnStartupDesc": "Re-download both files when b4 starts. Missing files (e.g. when stored in /tmp) are always re-downloaded if a source URL is set.",
+      "autoUpdateInterval": "Schedule",
+      "autoUpdateIntervalHelp": "Run periodic refresh in the background using the configured source URLs",
+      "autoUpdateOff": "Off",
+      "autoUpdateDaily": "Daily",
+      "autoUpdateWeekly": "Weekly",
+      "autoUpdateMonthly": "Monthly",
+      "autoUpdateLastRun": "Last run"
     },
     "Backup": {
       "alert": "Create a backup of your B4 configuration directory or restore from a previous backup. Backups include configuration, discovery history, detector history, device aliases, and captured payloads. Geodat files (.dat) and OUI database are excluded.",

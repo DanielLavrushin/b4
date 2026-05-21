@@ -553,6 +553,21 @@ ensure_dir() {
     return 0
 }
 
+is_abs_path() {
+    case "$1" in
+    /*) return 0 ;;
+    *) return 1 ;;
+    esac
+}
+
+require_abs_path() {
+    if ! is_abs_path "$1"; then
+        log_err "${2:-Path} must be an absolute path (got: ${1:-empty})"
+        return 1
+    fi
+    return 0
+}
+
 check_exit() {
     case "$1" in
     [eEqQ] | exit | EXIT | quit | QUIT)
@@ -645,6 +660,14 @@ wizard_auto_detect() {
 
     _user_bin_dir="$B4_BIN_DIR"
     _user_data_dir="$B4_DATA_DIR"
+    if [ -n "$_user_bin_dir" ] && ! is_abs_path "$_user_bin_dir"; then
+        log_err "B4_BIN_DIR must be an absolute path (got: $_user_bin_dir)"
+        exit 1
+    fi
+    if [ -n "$_user_data_dir" ] && ! is_abs_path "$_user_data_dir"; then
+        log_err "B4_DATA_DIR must be an absolute path (got: $_user_data_dir)"
+        exit 1
+    fi
     platform_call info
     [ -n "$_user_bin_dir" ] && B4_BIN_DIR="$_user_bin_dir"
     [ -n "$_user_data_dir" ] && B4_DATA_DIR="$_user_data_dir"
@@ -697,12 +720,24 @@ wizard_manual_configure() {
 
     platform_call info
 
-    read_input "Binary directory [${B4_BIN_DIR}]: " "$B4_BIN_DIR"
-    B4_BIN_DIR="$_INPUT"
+    while true; do
+        read_input "Binary directory [${B4_BIN_DIR}]: " "$B4_BIN_DIR"
+        if is_abs_path "$_INPUT"; then
+            B4_BIN_DIR="$_INPUT"
+            break
+        fi
+        log_warn "Binary directory must be an absolute path (got: ${_INPUT:-empty})"
+    done
 
-    read_input "Data directory [${B4_DATA_DIR}]: " "$B4_DATA_DIR"
-    B4_DATA_DIR="$_INPUT"
-    B4_CONFIG_FILE="${B4_DATA_DIR}/b4.json"
+    while true; do
+        read_input "Data directory [${B4_DATA_DIR}]: " "$B4_DATA_DIR"
+        if is_abs_path "$_INPUT"; then
+            B4_DATA_DIR="$_INPUT"
+            B4_CONFIG_FILE="${B4_DATA_DIR}/b4.json"
+            break
+        fi
+        log_warn "Data directory must be an absolute path (got: ${_INPUT:-empty})"
+    done
 
     echo ""
     echo "  Service types: systemd, openrc, procd, sysv, entware, none"
@@ -1674,13 +1709,28 @@ feature_geoip_run() {
         if [ -f "$B4_CONFIG_FILE" ] && command_exists jq; then
             existing=$(jq -r '.system.geo.ipdat_path // empty' "$B4_CONFIG_FILE" 2>/dev/null) || true
             if [ -n "$existing" ] && [ "$existing" != "null" ]; then
-                save_dir=$(dirname "$existing")
-                log_info "Found existing geoip path: $save_dir"
+                if is_abs_path "$existing"; then
+                    save_dir=$(dirname "$existing")
+                    log_info "Found existing geoip path: $save_dir"
+                else
+                    log_warn "Ignoring non-absolute geoip path in config: $existing"
+                fi
             fi
         fi
 
-        read_input "Save directory [${save_dir}]: " "$save_dir"
-        save_dir="$_INPUT"
+        while true; do
+            read_input "Save directory [${save_dir}]: " "$save_dir"
+            if is_abs_path "$_INPUT"; then
+                save_dir="$_INPUT"
+                break
+            fi
+            log_warn "Save directory must be an absolute path (got: ${_INPUT:-empty})"
+        done
+    fi
+
+    if ! is_abs_path "$save_dir"; then
+        log_err "GeoIP save directory must be an absolute path (got: ${save_dir:-empty})"
+        return 1
     fi
 
     ensure_dir "$save_dir" "GeoIP directory" || return 1
@@ -1739,13 +1789,28 @@ feature_geosite_run() {
         if [ -f "$B4_CONFIG_FILE" ] && command_exists jq; then
             existing=$(jq -r '.system.geo.sitedat_path // empty' "$B4_CONFIG_FILE" 2>/dev/null) || true
             if [ -n "$existing" ] && [ "$existing" != "null" ]; then
-                save_dir=$(dirname "$existing")
-                log_info "Found existing geosite path: $save_dir"
+                if is_abs_path "$existing"; then
+                    save_dir=$(dirname "$existing")
+                    log_info "Found existing geosite path: $save_dir"
+                else
+                    log_warn "Ignoring non-absolute geosite path in config: $existing"
+                fi
             fi
         fi
 
-        read_input "Save directory [${save_dir}]: " "$save_dir"
-        save_dir="$_INPUT"
+        while true; do
+            read_input "Save directory [${save_dir}]: " "$save_dir"
+            if is_abs_path "$_INPUT"; then
+                save_dir="$_INPUT"
+                break
+            fi
+            log_warn "Save directory must be an absolute path (got: ${_INPUT:-empty})"
+        done
+    fi
+
+    if ! is_abs_path "$save_dir"; then
+        log_err "Geosite save directory must be an absolute path (got: ${save_dir:-empty})"
+        return 1
     fi
 
     ensure_dir "$save_dir" "GeoSite directory" || return 1
@@ -2482,6 +2547,14 @@ action_install() {
         WIZARD_MODE="auto"
         _user_bin_dir="$B4_BIN_DIR"
         _user_data_dir="$B4_DATA_DIR"
+        if [ -n "$_user_bin_dir" ] && ! is_abs_path "$_user_bin_dir"; then
+            log_err "B4_BIN_DIR must be an absolute path (got: $_user_bin_dir)"
+            exit 1
+        fi
+        if [ -n "$_user_data_dir" ] && ! is_abs_path "$_user_data_dir"; then
+            log_err "B4_DATA_DIR must be an absolute path (got: $_user_data_dir)"
+            exit 1
+        fi
         platform_auto_detect
         platform_call info
         [ -n "$_user_bin_dir" ] && B4_BIN_DIR="$_user_bin_dir"
@@ -3325,7 +3398,12 @@ main() {
             B4_BIN_DIR="${arg#*=}"
             ;;
         --data-dir=*)
-            B4_DATA_DIR="${arg#*=}"
+            _dd="${arg#*=}"
+            if ! is_abs_path "$_dd"; then
+                printf 'ERROR: --data-dir must be an absolute path (got: %s)\n' "${_dd:-empty}" >&2
+                exit 1
+            fi
+            B4_DATA_DIR="$_dd"
             ;;
         --help | -h)
             _show_help

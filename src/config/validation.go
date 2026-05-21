@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -98,6 +99,15 @@ func (c *Config) Validate() error {
 		c.Queue.UDPConnBytesLimit = DefaultConfig.Queue.UDPConnBytesLimit
 	} else if c.Queue.UDPConnBytesLimit > 30 {
 		c.Queue.UDPConnBytesLimit = 30
+	}
+
+	if c.System.Geo.GeoSitePath != "" && !filepath.IsAbs(c.System.Geo.GeoSitePath) {
+		v.addf("system.geo.sitedat_path", "must_be_absolute", map[string]any{"path": c.System.Geo.GeoSitePath}, "geosite path must be an absolute path (got: %q)", c.System.Geo.GeoSitePath)
+		return v.result()
+	}
+	if c.System.Geo.GeoIpPath != "" && !filepath.IsAbs(c.System.Geo.GeoIpPath) {
+		v.addf("system.geo.ipdat_path", "must_be_absolute", map[string]any{"path": c.System.Geo.GeoIpPath}, "geoip path must be an absolute path (got: %q)", c.System.Geo.GeoIpPath)
+		return v.result()
 	}
 
 	for setIdx, set := range c.Sets {

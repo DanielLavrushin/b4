@@ -50,9 +50,16 @@ wizard_auto_detect() {
         exit 1
     fi
 
-    # 2. Load platform defaults (preserve user overrides)
     _user_bin_dir="$B4_BIN_DIR"
     _user_data_dir="$B4_DATA_DIR"
+    if [ -n "$_user_bin_dir" ] && ! is_abs_path "$_user_bin_dir"; then
+        log_err "B4_BIN_DIR must be an absolute path (got: $_user_bin_dir)"
+        exit 1
+    fi
+    if [ -n "$_user_data_dir" ] && ! is_abs_path "$_user_data_dir"; then
+        log_err "B4_DATA_DIR must be an absolute path (got: $_user_data_dir)"
+        exit 1
+    fi
     platform_call info
     [ -n "$_user_bin_dir" ] && B4_BIN_DIR="$_user_bin_dir"
     [ -n "$_user_data_dir" ] && B4_DATA_DIR="$_user_data_dir"
@@ -111,14 +118,24 @@ wizard_manual_configure() {
     # Load platform defaults first
     platform_call info
 
-    # 2. Binary directory
-    read_input "Binary directory [${B4_BIN_DIR}]: " "$B4_BIN_DIR"
-    B4_BIN_DIR="$_INPUT"
+    while true; do
+        read_input "Binary directory [${B4_BIN_DIR}]: " "$B4_BIN_DIR"
+        if is_abs_path "$_INPUT"; then
+            B4_BIN_DIR="$_INPUT"
+            break
+        fi
+        log_warn "Binary directory must be an absolute path (got: ${_INPUT:-empty})"
+    done
 
-    # 3. Data/config directory
-    read_input "Data directory [${B4_DATA_DIR}]: " "$B4_DATA_DIR"
-    B4_DATA_DIR="$_INPUT"
-    B4_CONFIG_FILE="${B4_DATA_DIR}/b4.json"
+    while true; do
+        read_input "Data directory [${B4_DATA_DIR}]: " "$B4_DATA_DIR"
+        if is_abs_path "$_INPUT"; then
+            B4_DATA_DIR="$_INPUT"
+            B4_CONFIG_FILE="${B4_DATA_DIR}/b4.json"
+            break
+        fi
+        log_warn "Data directory must be an absolute path (got: ${_INPUT:-empty})"
+    done
 
     # 4. Service type
     echo ""

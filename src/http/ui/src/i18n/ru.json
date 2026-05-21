@@ -461,7 +461,17 @@
       "uploadingGeosite": "Загрузка geosite.dat...",
       "uploadingGeoip": "Загрузка geoip.dat...",
       "uploadSuccess": "Успешно загружено",
-      "selectSource": "Выберите источник или введите URL"
+      "selectSource": "Выберите источник или введите URL",
+      "autoUpdate": "Автообновление",
+      "autoUpdateOnStartup": "Обновлять при запуске",
+      "autoUpdateOnStartupDesc": "Перекачивать оба файла при старте b4. Отсутствующие файлы (например при хранении в /tmp) скачиваются всегда, если задан URL источника.",
+      "autoUpdateInterval": "Расписание",
+      "autoUpdateIntervalHelp": "Периодическое обновление в фоне с использованием заданных URL источников",
+      "autoUpdateOff": "Выключено",
+      "autoUpdateDaily": "Ежедневно",
+      "autoUpdateWeekly": "Еженедельно",
+      "autoUpdateMonthly": "Ежемесячно",
+      "autoUpdateLastRun": "Последний запуск"
     },
     "Backup": {
       "alert": "Создайте бэкап директории конфигурации B4 или восстановите из предыдущего. Бэкап включает конфигурацию, историю поиска, историю детектора, псевдонимы устройств и захваченные payloads. Файлы геоданных (.dat) и база OUI исключены.",

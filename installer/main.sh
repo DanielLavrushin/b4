@@ -31,7 +31,12 @@ main() {
             B4_BIN_DIR="${arg#*=}"
             ;;
         --data-dir=*)
-            B4_DATA_DIR="${arg#*=}"
+            _dd="${arg#*=}"
+            if ! is_abs_path "$_dd"; then
+                printf 'ERROR: --data-dir must be an absolute path (got: %s)\n' "${_dd:-empty}" >&2
+                exit 1
+            fi
+            B4_DATA_DIR="$_dd"
             ;;
         --help | -h)
             _show_help

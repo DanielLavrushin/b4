@@ -79,7 +79,7 @@ func TestStartServer_DisabledWithPort0(t *testing.T) {
 
 	cfgPtr := &atomic.Pointer[config.Config]{}
 	cfgPtr.Store(&cfg)
-	srv, err := StartServer(cfgPtr, nil)
+	srv, _, err := StartServer(cfgPtr, nil)
 
 	if err != nil {
 		t.Errorf("expected no error, got %v", err)

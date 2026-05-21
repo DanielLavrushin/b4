@@ -2,6 +2,7 @@
 
 ## [1.6x.x] - 2026-05-xx
 
+- FIXED: **Geo databases sometimes saved to a broken `b4` folder after install** - in rare cases the installer would record `b4/geosite.dat` instead of a full path like `/etc/b4/geosite.dat`, and the Web UI then refused to download new files. The installer now refuses non-absolute paths, b4 fixes any broken path it finds on startup, and the UI falls back to a safe default if the stored path looks wrong.
 - ADDED: **Quick toggle for all sets** - new switch in the Sets page top bar that turns every set on or off in one click. Useful for temporarily disabling all bypass, or for isolating one set while debugging.
 - ADDED: **"Test direct TCP" button for the MTProto proxy** - new button in Settings → MTProto Proxy next to "Test connection". Probes Telegram directly, bypassing the DC Relay. Use it to tell whether a problem is on your relay/VPS or somewhere between b4 and Telegram.
 - IMPROVED: **MTProto connection test now detects upstream drops** - the existing "Test connection" button used to only check that an IP was reachable. It now also completes the MTProto handshake and watches whether Telegram (or your relay) closes the connection right after - the failure mode users actually hit. Results show which stage broke (connect, handshake, or dropped after handshake).
@@ -11,6 +12,7 @@
 - FIXED: **Geosite/geoip updates didn't take effect until the next set edit** - after downloading or uploading a new geosite or geoip file from the Web UI, b4 kept matching against the old domain and IP lists. The new file is now applied to all sets immediately.
 - IMPROVED: **Watchdog keeps checking while it repairs a broken site** - previously, when b4 detected one site was blocked and started repairing it, the watchdog stopped checking every other site until the repair was done. If a second site broke at the same time, it had to wait its turn. The watchdog now keeps monitoring all sites during a repair, and if several sites break close together they are repaired in one go.
 - FIXED: **Some sites would not load through the built-in SOCKS5 server** - sites like YouTube failed when accessed via the SOCKS5 proxy while working fine in direct mode.
+- ADDED: **Auto-update for geo databases** - new "Auto-update" section in Settings → Geo Databases. Optional "Refresh on startup" re-downloads both files every time b4 starts (handy when files are kept in `/tmp` and get wiped on reboot). A separate "Schedule" picker (Off / Daily / Weekly / Monthly) runs a background refresh on its own. Missing files are also re-downloaded automatically at startup whenever a source URL is set, even with both options off.
 
 ## [1.62.1] - 2026-05-11
 

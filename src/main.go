@@ -20,6 +20,7 @@ import (
 	"github.com/daniellavrushin/b4/ai"
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discovery"
+	"github.com/daniellavrushin/b4/geodat"
 	b4http "github.com/daniellavrushin/b4/http"
 	"github.com/daniellavrushin/b4/http/handler"
 	"github.com/daniellavrushin/b4/log"
@@ -246,7 +247,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	}
 
 	// Start internal web server if configured
-	httpServer, err := b4http.StartServer(&cfgPtr, pool)
+	httpServer, apiHandler, err := b4http.StartServer(&cfgPtr, pool)
 	if err != nil {
 		metrics.RecordEvent("error", fmt.Sprintf("Failed to start web server: %v", err))
 		return log.Errorf("failed to start web server: %w", err)
@@ -293,6 +294,25 @@ func runB4(cmd *cobra.Command, args []string) error {
 	wd.Start()
 	handler.SetWatchdog(wd)
 
+	var geoScheduler *geodat.Scheduler
+	if apiHandler != nil {
+		geoScheduler = geodat.NewScheduler(
+			func() geodat.GeoDatConfig { return cfgPtr.Load().System.Geo },
+			func(dest, siteURL, ipURL string) error {
+				_, _, err := apiHandler.RefreshGeodat(dest, siteURL, ipURL)
+				return err
+			},
+			func(ts string) {
+				c := cfgPtr.Load()
+				c.System.Geo.AutoUpdate.LastRun = ts
+				if err := c.SaveToFile(c.ConfigPath); err != nil {
+					log.Errorf("failed to persist geo last_run: %v", err)
+				}
+			},
+		)
+		geoScheduler.Start()
+	}
+
 	log.Infof("B4 is running. Press Ctrl+C to stop")
 	metrics.RecordEvent("info", "B4 is fully operational")
 
@@ -305,6 +325,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 	metrics.RecordEvent("info", fmt.Sprintf("Shutdown initiated by signal: %v", sig))
 
 	wd.Stop()
+	if geoScheduler != nil {
+		geoScheduler.Stop()
+	}
 	tproxyMgr.Stop()
 
 	// Perform graceful shutdown with timeout

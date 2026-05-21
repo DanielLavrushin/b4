@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/google/uuid"
 )
@@ -59,6 +60,13 @@ var migrationRegistry = map[int]MigrationFunc{
 	36: migrateV36to37, // Add UDP fake_payload_file field
 	37: migrateV37to38, // Add MTProto upstream transport (WS) fields
 	38: migrateV38to39, // Add system.memory_limit
+	39: migrateV39to40, // Add geo auto_update config
+}
+
+func migrateV39to40(c *Config, _ map[string]interface{}) error {
+	log.Tracef("Migration v39->v40: Adding geo auto_update config")
+	c.System.Geo.AutoUpdate = geodat.GeoAutoUpdateConfig{}
+	return nil
 }
 
 func migrateV38to39(c *Config, _ map[string]interface{}) error {
@@ -671,6 +679,8 @@ func (c *Config) LoadWithMigration(path string) error {
 			return err
 		}
 	}
+
+	c.System.Geo.SanitizePaths(filepath.Dir(c.ConfigPath))
 
 	return nil
 }

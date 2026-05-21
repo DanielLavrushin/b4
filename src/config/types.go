@@ -3,6 +3,7 @@ package config
 import (
 	"math/rand"
 
+	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -197,7 +198,7 @@ type SystemConfig struct {
 	Socks5      Socks5Config    `json:"socks5"`
 	MTProto     MTProtoConfig   `json:"mtproto"`
 	Checker     DiscoveryConfig `json:"checker"`
-	Geo         GeoDatConfig    `json:"geo"`
+	Geo         geodat.GeoDatConfig `json:"geo"`
 	API         ApiConfig       `json:"api"`
 	AI          AIConfig        `json:"ai"`
 	Timezone    string          `json:"timezone"`
@@ -307,12 +308,6 @@ type EscalateConfig struct {
 	TtlSec       int    `json:"ttl_sec"`         // 0 -> 3600
 }
 
-type GeoDatConfig struct {
-	GeoSitePath string `json:"sitedat_path"`
-	GeoIpPath   string `json:"ipdat_path"`
-	GeoSiteURL  string `json:"sitedat_url"`
-	GeoIpURL    string `json:"ipdat_url"`
-}
 
 type ComboFragConfig struct {
 	FirstByteSplit     bool   `json:"first_byte_split"`

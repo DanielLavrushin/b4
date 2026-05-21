@@ -113,55 +113,10 @@ func (api *API) handleGeodatDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := os.MkdirAll(req.DestinationPath, 0755); err != nil {
-		msg := fmt.Sprintf("Failed to create directory %s: %v", req.DestinationPath, err)
-		log.Errorf("geodat download: %s", msg)
-		writeJsonError(w, http.StatusInternalServerError, msg)
-		return
-	}
-
-	var geositeSize, geoipSize int64
-
-	if req.GeositeURL != "" {
-		geositePath := filepath.Join(req.DestinationPath, "geosite.dat")
-		var err error
-		geositeSize, err = downloadFile(req.GeositeURL, geositePath)
-		if err != nil {
-			msg := fmt.Sprintf("Failed to download geosite.dat: %v", err)
-			log.Errorf("geodat download: %s", msg)
-			writeJsonError(w, http.StatusInternalServerError, msg)
-			return
-		}
-		api.getCfg().System.Geo.GeoSitePath = geositePath
-		api.getCfg().System.Geo.GeoSiteURL = req.GeositeURL
-	}
-
-	if req.GeoipURL != "" {
-		geoipPath := filepath.Join(req.DestinationPath, "geoip.dat")
-		var err error
-		geoipSize, err = downloadFile(req.GeoipURL, geoipPath)
-		if err != nil {
-			msg := fmt.Sprintf("Failed to download geoip.dat: %v", err)
-			log.Errorf("geodat download: %s", msg)
-			writeJsonError(w, http.StatusInternalServerError, msg)
-			return
-		}
-		api.getCfg().System.Geo.GeoIpPath = geoipPath
-		api.getCfg().System.Geo.GeoIpURL = req.GeoipURL
-	}
-
-	api.geodataManager.UpdatePaths(api.getCfg().System.Geo.GeoSitePath, api.getCfg().System.Geo.GeoIpPath)
-	api.geodataManager.ClearCache()
-
-	for _, set := range api.getCfg().Sets {
-		log.Infof("Reloading geo targets for set: %s", set.Name)
-		api.loadTargetsForSetCached(set)
-	}
-
-	if err := api.saveAndPushConfig(api.getCfg()); err != nil {
-		msg := fmt.Sprintf("Failed to save configuration: %v", err)
-		log.Errorf("geodat download: %s", msg)
-		writeJsonError(w, http.StatusInternalServerError, msg)
+	geositeSize, geoipSize, err := api.RefreshGeodat(req.DestinationPath, req.GeositeURL, req.GeoipURL)
+	if err != nil {
+		log.Errorf("geodat download: %v", err)
+		writeJsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -185,6 +140,50 @@ func (api *API) handleGeodatDownload(w http.ResponseWriter, r *http.Request) {
 
 	setJsonHeader(w)
 	json.NewEncoder(w).Encode(response)
+}
+
+func (api *API) RefreshGeodat(destPath, geositeURL, geoipURL string) (int64, int64, error) {
+	if err := os.MkdirAll(destPath, 0755); err != nil {
+		return 0, 0, fmt.Errorf("failed to create directory %s: %v", destPath, err)
+	}
+
+	var geositeSize, geoipSize int64
+
+	if geositeURL != "" {
+		geositePath := filepath.Join(destPath, "geosite.dat")
+		size, err := downloadFile(geositeURL, geositePath)
+		if err != nil {
+			return 0, 0, fmt.Errorf("failed to download geosite.dat: %v", err)
+		}
+		geositeSize = size
+		api.getCfg().System.Geo.GeoSitePath = geositePath
+		api.getCfg().System.Geo.GeoSiteURL = geositeURL
+	}
+
+	if geoipURL != "" {
+		geoipPath := filepath.Join(destPath, "geoip.dat")
+		size, err := downloadFile(geoipURL, geoipPath)
+		if err != nil {
+			return geositeSize, 0, fmt.Errorf("failed to download geoip.dat: %v", err)
+		}
+		geoipSize = size
+		api.getCfg().System.Geo.GeoIpPath = geoipPath
+		api.getCfg().System.Geo.GeoIpURL = geoipURL
+	}
+
+	api.geodataManager.UpdatePaths(api.getCfg().System.Geo.GeoSitePath, api.getCfg().System.Geo.GeoIpPath)
+	api.geodataManager.ClearCache()
+
+	for _, set := range api.getCfg().Sets {
+		log.Infof("Reloading geo targets for set: %s", set.Name)
+		api.loadTargetsForSetCached(set)
+	}
+
+	if err := api.saveAndPushConfig(api.getCfg()); err != nil {
+		return geositeSize, geoipSize, fmt.Errorf("failed to save configuration: %v", err)
+	}
+
+	return geositeSize, geoipSize, nil
 }
 
 var deniedPathPrefixes = []string{

@@ -545,6 +545,21 @@ ensure_dir() {
     return 0
 }
 
+is_abs_path() {
+    case "$1" in
+    /*) return 0 ;;
+    *) return 1 ;;
+    esac
+}
+
+require_abs_path() {
+    if ! is_abs_path "$1"; then
+        log_err "${2:-Path} must be an absolute path (got: ${1:-empty})"
+        return 1
+    fi
+    return 0
+}
+
 # --- Check if user wants to exit ---
 check_exit() {
     case "$1" in

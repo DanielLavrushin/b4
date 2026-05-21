@@ -18,7 +18,6 @@ feature_geosite_default_enabled() {
 }
 
 feature_geosite_run() {
-    # Default source (RUNET Freedom = 2)
     base_url=$(echo "$GEOSITE_SOURCES" | grep "^2|" | cut -d'|' -f3)
     save_dir="$B4_DATA_DIR"
 
@@ -26,7 +25,6 @@ feature_geosite_run() {
         log_sep
         echo ""
 
-        # Select source
         echo "  Available geosite sources:"
         echo "$GEOSITE_SOURCES" | while IFS='|' read -r num name _url; do
             [ -n "$num" ] && printf "    ${BOLD}%s${NC}) %s\n" "$num" "$name"
@@ -38,17 +36,31 @@ feature_geosite_run() {
         _sel_url=$(echo "$GEOSITE_SOURCES" | grep "^${_INPUT}|" | cut -d'|' -f3) || true
         [ -n "$_sel_url" ] && base_url="$_sel_url" || log_warn "Invalid selection, using default"
 
-        # Check if config already has a geosite path
         if [ -f "$B4_CONFIG_FILE" ] && command_exists jq; then
             existing=$(jq -r '.system.geo.sitedat_path // empty' "$B4_CONFIG_FILE" 2>/dev/null) || true
             if [ -n "$existing" ] && [ "$existing" != "null" ]; then
-                save_dir=$(dirname "$existing")
-                log_info "Found existing geosite path: $save_dir"
+                if is_abs_path "$existing"; then
+                    save_dir=$(dirname "$existing")
+                    log_info "Found existing geosite path: $save_dir"
+                else
+                    log_warn "Ignoring non-absolute geosite path in config: $existing"
+                fi
             fi
         fi
 
-        read_input "Save directory [${save_dir}]: " "$save_dir"
-        save_dir="$_INPUT"
+        while true; do
+            read_input "Save directory [${save_dir}]: " "$save_dir"
+            if is_abs_path "$_INPUT"; then
+                save_dir="$_INPUT"
+                break
+            fi
+            log_warn "Save directory must be an absolute path (got: ${_INPUT:-empty})"
+        done
+    fi
+
+    if ! is_abs_path "$save_dir"; then
+        log_err "Geosite save directory must be an absolute path (got: ${save_dir:-empty})"
+        return 1
     fi
 
     ensure_dir "$save_dir" "GeoSite directory" || return 1

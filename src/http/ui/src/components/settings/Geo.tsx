@@ -11,11 +11,11 @@ import {
   Divider,
 } from "@mui/material";
 import { DomainIcon, DownloadIcon, SuccessIcon, UploadIcon } from "@b4.icons";
-import { B4Alert, B4Section, B4TextField } from "@b4.elements";
+import { B4Alert, B4FormGroup, B4Hint, B4Section, B4Switch, B4TextField } from "@b4.elements";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { colors } from "@design";
-import { geodatApi, GeodatSource, GeoFileInfo } from "@b4.settings";
+import { geodatApi, GeodatSource, GeoFileInfo, SettingsPropHandlerType } from "@b4.settings";
 
 const CUSTOM_SOURCE = "__custom__";
 
@@ -246,9 +246,10 @@ const GeoFileCard = ({
 export interface GeoSettingsProps {
   config: B4Config;
   loadConfig: () => void;
+  onChange: (field: string, value: SettingsPropHandlerType) => void;
 }
 
-export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
+export const GeoSettings = ({ config, loadConfig, onChange }: GeoSettingsProps) => {
   const { t } = useTranslation();
   const [sources, setSources] = useState<GeodatSource[]>([]);
   const [destPath, setDestPath] = useState<string>("/etc/b4");
@@ -283,7 +284,8 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
 
   useEffect(() => {
     void loadSources();
-    setDestPath(extractDir(config.system.geo.sitedat_path) || "/etc/b4");
+    const dir = extractDir(config.system.geo.sitedat_path);
+    setDestPath(dir.startsWith("/") ? dir : "/etc/b4");
   }, [config.system.geo.sitedat_path]);
 
   const checkFileStatus = useCallback(async () => {
@@ -353,9 +355,9 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
   }, [geoipSources, geoipSource, config.system.geo.ipdat_url, config.system.geo.ipdat_path]);
 
   const extractDir = (path: string): string => {
-    if (!path) return "";
+    if (!path?.startsWith("/")) return "";
     const lastSlash = path.lastIndexOf("/");
-    return lastSlash > 0 ? path.substring(0, lastSlash) : path;
+    return lastSlash > 0 ? path.substring(0, lastSlash) : "/";
   };
 
   const handleGeositeSourceChange = (value: string) => {
@@ -479,6 +481,37 @@ export const GeoSettings = ({ config, loadConfig }: GeoSettingsProps) => {
           placeholder="/etc/b4"
           helperText={t("settings.Geo.destDirHelp")}
         />
+
+        <B4FormGroup label={t("settings.Geo.autoUpdate")} columns={2}>
+          <B4Switch
+            label={t("settings.Geo.autoUpdateOnStartup")}
+            checked={config.system.geo.auto_update?.on_startup ?? false}
+            onChange={(checked: boolean) =>
+              onChange("system.geo.auto_update.on_startup", checked)
+            }
+            description={t("settings.Geo.autoUpdateOnStartupDesc")}
+          />
+          <B4TextField
+            select
+            label={t("settings.Geo.autoUpdateInterval")}
+            value={config.system.geo.auto_update?.interval ?? ""}
+            onChange={(e) =>
+              onChange("system.geo.auto_update.interval", e.target.value)
+            }
+            helperText={t("settings.Geo.autoUpdateIntervalHelp")}
+          >
+            <MenuItem value="">{t("settings.Geo.autoUpdateOff")}</MenuItem>
+            <MenuItem value="daily">{t("settings.Geo.autoUpdateDaily")}</MenuItem>
+            <MenuItem value="weekly">{t("settings.Geo.autoUpdateWeekly")}</MenuItem>
+            <MenuItem value="monthly">{t("settings.Geo.autoUpdateMonthly")}</MenuItem>
+          </B4TextField>
+        </B4FormGroup>
+        {config.system.geo.auto_update?.last_run && (
+          <B4Hint>
+            {t("settings.Geo.autoUpdateLastRun")}:{" "}
+            {new Date(config.system.geo.auto_update.last_run).toLocaleString()}
+          </B4Hint>
+        )}
 
         <Grid container spacing={2} sx={{ mt: 1 }}>
           <Grid size={{ xs: 12, md: 6 }}>
