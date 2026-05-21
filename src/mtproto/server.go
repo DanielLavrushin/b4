@@ -88,7 +88,6 @@ func (s *Server) Start() error {
 	log.Infof("MTProto proxy listening on %s (SNI: %s)", addr, sec.Host)
 
 	go s.acceptLoop()
-	StartDCRefresher(s.ctx)
 	return nil
 }
 
@@ -241,4 +240,3 @@ func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, lab
 	_ = dc.Close()
 	<-errCh
 }
-

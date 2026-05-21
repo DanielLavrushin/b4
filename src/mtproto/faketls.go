@@ -21,9 +21,9 @@ const (
 	tlsRecordAppData      = 0x17
 	handshakeClientHello  = 0x01
 	handshakeServerHello  = 0x02
-	maxTLSRecordPayload  = 16379
-	timestampTolerance   = 120
-	secondDuration       = time.Second
+	maxTLSRecordPayload   = 16379
+	timestampTolerance    = 120
+	secondDuration        = time.Second
 )
 
 type FakeTLSConn struct {
@@ -315,4 +315,3 @@ func findServerRandomOffset(data []byte) int {
 	}
 	return 11
 }
-
