@@ -211,7 +211,9 @@ func (w *Watchdog) healBatch(domains []string) {
 
 	w.mu.Lock()
 	for _, domain := range domains {
-		w.domainStates[domain].Status = StatusEscalating
+		if st, ok := w.domainStates[domain]; ok {
+			st.Status = StatusEscalating
+		}
 	}
 	w.mu.Unlock()
 
@@ -225,7 +227,10 @@ func (w *Watchdog) healBatch(domains []string) {
 		log.Warnf("[WATCHDOG] failed to start discovery: %v", err)
 		w.mu.Lock()
 		for _, domain := range domains {
-			st := w.domainStates[domain]
+			st, ok := w.domainStates[domain]
+			if !ok {
+				continue
+			}
 			st.Status = StatusDegraded
 			st.ConsecutiveFailures = 0
 			st.CooldownUntil = time.Now().Add(time.Duration(wdCfg.Cooldown) * time.Second)
@@ -282,7 +287,10 @@ func (w *Watchdog) healBatch(domains []string) {
 		log.Warnf("[WATCHDOG] discovery suite disappeared")
 		w.mu.Lock()
 		for _, domain := range domains {
-			st := w.domainStates[domain]
+			st, ok := w.domainStates[domain]
+			if !ok {
+				continue
+			}
 			st.Status = StatusDegraded
 			st.ConsecutiveFailures = 0
 			st.CooldownUntil = time.Now().Add(time.Duration(wdCfg.Cooldown) * time.Second)
@@ -298,7 +306,10 @@ func (w *Watchdog) healBatch(domains []string) {
 	defer w.mu.Unlock()
 
 	for _, domain := range domains {
-		st := w.domainStates[domain]
+		st, ok := w.domainStates[domain]
+		if !ok {
+			continue
+		}
 		if err, failed := applyErrors[domain]; failed && err != nil {
 			log.Warnf("[WATCHDOG] %s: %v, cooldown %ds", domain, err, wdCfg.Cooldown)
 			st.Status = StatusDegraded
