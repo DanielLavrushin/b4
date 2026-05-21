@@ -439,7 +439,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                           ml: 1,
                         }}
                       >
-                        {summaryStats.enabled > 0
+                        {summaryStats.enabled === summaryStats.total
                           ? t("sets.manager.disableAll")
                           : t("sets.manager.enableAll")}
                       </Typography>
