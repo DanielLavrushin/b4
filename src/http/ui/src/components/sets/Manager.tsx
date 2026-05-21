@@ -426,7 +426,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                     control={
                       <Switch
                         size="small"
-                        checked={summaryStats.enabled > 0}
+                        checked={summaryStats.enabled === summaryStats.total}
                         onChange={(_, checked) => handleToggleAll(checked)}
                       />
                     }
