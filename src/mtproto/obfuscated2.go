@@ -148,7 +148,7 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 	var plans []transportPlan
 
 	appendTCP := func() {
-		addrs, err := ResolveDCAll(dc, queueCfg.IPv6Enabled, cfg.DCRelay)
+		addrs, err := ResolveDCAll(dc, queueCfg.IPv6Enabled, strings.TrimSpace(cfg.DCRelay))
 		if err != nil {
 			return
 		}
