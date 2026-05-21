@@ -336,6 +336,7 @@ export interface B4SetConfig {
   dns: DNSConfig;
   routing: RoutingConfig;
   escalate?: EscalateConfig;
+  mss_clamp?: MSSClampConfig;
 }
 
 export interface EscalateConfig {

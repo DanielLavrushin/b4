@@ -431,8 +431,9 @@ func (n *NFTablesManager) ApplyMSSClamp() error {
 	cfg := n.cfg
 	global, globalSize := cfg.HasGlobalMSSClamp()
 	deviceClamps := cfg.CollectDeviceMSSClamps()
+	setClamps := cfg.CollectSetMSSClamps()
 
-	if !global && len(deviceClamps) == 0 {
+	if !global && len(deviceClamps) == 0 && len(setClamps) == 0 {
 		return nil
 	}
 
@@ -443,8 +444,7 @@ func (n *NFTablesManager) ApplyMSSClamp() error {
 		return []string{"tcp", "option", "maxseg", "size", "set", fmt.Sprintf("%d", size)}
 	}
 
-	// Ensure forward chain exists if any MSS clamp rules need it
-	needsForward := global || len(deviceClamps) > 0
+	needsForward := global || len(deviceClamps) > 0 || len(setClamps) > 0
 	if needsForward && !n.chainExists("forward") {
 		if err := n.createChain("forward", "forward", -150, "accept"); err != nil {
 			return fmt.Errorf("failed to create forward chain for MSS clamp: %w", err)
@@ -497,6 +497,115 @@ func (n *NFTablesManager) ApplyMSSClamp() error {
 			}
 			log.Infof("NFTABLES: per-device MSS clamp for %d devices (size: %d)", len(macs), size)
 		}
+	}
+
+	for _, e := range setClamps {
+		setName4 := fmt.Sprintf("b4_mss_%d_v4", e.SetIdx)
+		setName6 := fmt.Sprintf("b4_mss_%d_v6", e.SetIdx)
+		hasV4 := len(e.IPv4) > 0 && cfg.Queue.IPv4Enabled
+		hasV6 := len(e.IPv6) > 0 && cfg.Queue.IPv6Enabled
+
+		if hasV4 {
+			if err := n.createSet(setName4, "ipv4_addr", "flags interval ;"); err != nil {
+				return fmt.Errorf("failed to create set MSS ipv4 set: %w", err)
+			}
+			if err := n.addSetElements(setName4, e.IPv4); err != nil {
+				return fmt.Errorf("failed to populate set MSS ipv4 set: %w", err)
+			}
+		}
+		if hasV6 {
+			if err := n.createSet(setName6, "ipv6_addr", "flags interval ;"); err != nil {
+				return fmt.Errorf("failed to create set MSS ipv6 set: %w", err)
+			}
+			if err := n.addSetElements(setName6, e.IPv6); err != nil {
+				return fmt.Errorf("failed to populate set MSS ipv6 set: %w", err)
+			}
+		}
+
+		emitOut := func(chain, family, addrFamily, setName, macSaddr string) error {
+			args := []string{"meta", "nfproto", family}
+			if macSaddr != "" {
+				args = append(args, "ether", "saddr", macSaddr)
+			}
+			if setName != "" {
+				args = append(args, addrFamily, "daddr", "@"+setName)
+			}
+			args = append(args, "tcp", "dport", "443")
+			args = append(args, synMatch...)
+			args = append(args, mssSet(e.Size)...)
+			if err := n.addRule(chain, args...); err != nil {
+				return fmt.Errorf("failed to add per-set MSS outgoing rule (chain=%s, set=%s): %w", chain, e.SetID, err)
+			}
+			return nil
+		}
+		emitIn := func(chain, family, addrFamily, setName, macDaddr string) error {
+			args := []string{"meta", "nfproto", family}
+			if macDaddr != "" {
+				args = append(args, "ether", "daddr", macDaddr)
+			}
+			if setName != "" {
+				args = append(args, addrFamily, "saddr", "@"+setName)
+			}
+			args = append(args, "tcp", "sport", "443")
+			args = append(args, synMatch...)
+			args = append(args, mssSet(e.Size)...)
+			if err := n.addRule(chain, args...); err != nil {
+				return fmt.Errorf("failed to add per-set MSS incoming rule (chain=%s, set=%s): %w", chain, e.SetID, err)
+			}
+			return nil
+		}
+
+		applyFamily := func(family, addrFamily, setName string, enabled bool) error {
+			if !enabled && setName != "" {
+				return nil
+			}
+			if len(e.MACs) > 0 {
+				for _, mac := range e.MACs {
+					if err := emitOut("forward", family, addrFamily, setName, mac); err != nil {
+						return err
+					}
+					if err := emitIn("forward", family, addrFamily, setName, mac); err != nil {
+						return err
+					}
+				}
+			} else {
+				if err := emitOut("output", family, addrFamily, setName, ""); err != nil {
+					return err
+				}
+				if err := emitOut("forward", family, addrFamily, setName, ""); err != nil {
+					return err
+				}
+				if err := emitIn("prerouting", family, addrFamily, setName, ""); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+
+		if hasV4 {
+			if err := applyFamily("ipv4", "ip", setName4, true); err != nil {
+				return err
+			}
+		}
+		if hasV6 {
+			if err := applyFamily("ipv6", "ip6", setName6, true); err != nil {
+				return err
+			}
+		}
+		if !hasV4 && !hasV6 && len(e.MACs) > 0 {
+			if cfg.Queue.IPv4Enabled {
+				if err := applyFamily("ipv4", "", "", false); err != nil {
+					return err
+				}
+			}
+			if cfg.Queue.IPv6Enabled {
+				if err := applyFamily("ipv6", "", "", false); err != nil {
+					return err
+				}
+			}
+		}
+		log.Infof("NFTABLES: per-set MSS clamp for set %q (size: %d, v4=%d v6=%d macs=%d)",
+			e.SetID, e.Size, len(e.IPv4), len(e.IPv6), len(e.MACs))
 	}
 
 	return nil

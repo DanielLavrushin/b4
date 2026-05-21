@@ -536,6 +536,51 @@ func (cfg *Config) CollectDeviceMSSClamps() map[int][]string {
 	return result
 }
 
+func (cfg *Config) CollectSetMSSClamps() []SetMSSClampEntry {
+	var entries []SetMSSClampEntry
+	for i, set := range cfg.Sets {
+		if set == nil || !set.Enabled || !set.MSSClamp.Enabled || set.MSSClamp.Size <= 0 {
+			continue
+		}
+		entry := SetMSSClampEntry{SetID: set.Id, SetIdx: i, Size: set.MSSClamp.Size}
+		seen4 := make(map[string]struct{})
+		seen6 := make(map[string]struct{})
+		for _, ipStr := range set.Targets.IpsToMatch {
+			ipStr = strings.TrimSpace(ipStr)
+			if ipStr == "" {
+				continue
+			}
+			if strings.Contains(ipStr, ":") {
+				if _, ok := seen6[ipStr]; !ok {
+					seen6[ipStr] = struct{}{}
+					entry.IPv6 = append(entry.IPv6, ipStr)
+				}
+			} else {
+				if _, ok := seen4[ipStr]; !ok {
+					seen4[ipStr] = struct{}{}
+					entry.IPv4 = append(entry.IPv4, ipStr)
+				}
+			}
+		}
+		seenMAC := make(map[string]struct{})
+		for _, m := range set.Targets.SourceDevices {
+			m = strings.ToUpper(strings.TrimSpace(m))
+			if m == "" {
+				continue
+			}
+			if _, ok := seenMAC[m]; !ok {
+				seenMAC[m] = struct{}{}
+				entry.MACs = append(entry.MACs, m)
+			}
+		}
+		if len(entry.IPv4) == 0 && len(entry.IPv6) == 0 && len(entry.MACs) == 0 {
+			continue
+		}
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
 func (dc *DevicesConfig) SelectedMACs() []string {
 	var macs []string
 	for _, d := range dc.Devices {
@@ -589,6 +634,20 @@ func (cfg *Config) MSSClampFingerprint() string {
 	for size, macs := range deviceClamps {
 		sort.Strings(macs)
 		parts = append(parts, fmt.Sprintf("dev:%d:%s", size, strings.Join(macs, ",")))
+	}
+
+	for _, e := range cfg.CollectSetMSSClamps() {
+		ipv4 := append([]string(nil), e.IPv4...)
+		ipv6 := append([]string(nil), e.IPv6...)
+		macs := append([]string(nil), e.MACs...)
+		sort.Strings(ipv4)
+		sort.Strings(ipv6)
+		sort.Strings(macs)
+		parts = append(parts, fmt.Sprintf("set:%s:%d:v4=%s:v6=%s:mac=%s",
+			e.SetID, e.Size,
+			strings.Join(ipv4, ","),
+			strings.Join(ipv6, ","),
+			strings.Join(macs, ",")))
 	}
 
 	sort.Strings(parts)

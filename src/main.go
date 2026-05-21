@@ -303,11 +303,13 @@ func runB4(cmd *cobra.Command, args []string) error {
 				return err
 			},
 			func(ts string) {
-				c := cfgPtr.Load()
+				c := cfgPtr.Load().Clone()
 				c.System.Geo.AutoUpdate.LastRun = ts
 				if err := c.SaveToFile(c.ConfigPath); err != nil {
 					log.Errorf("failed to persist geo last_run: %v", err)
+					return
 				}
+				cfgPtr.Store(c)
 			},
 		)
 		geoScheduler.Start()

@@ -1,5 +1,12 @@
 import { Box, Grid, MenuItem, Typography } from "@mui/material";
-import { B4Alert, B4Badge, B4Hint, B4Switch, B4TextField } from "@b4.elements";
+import {
+  B4Alert,
+  B4Badge,
+  B4Hint,
+  B4NumberField,
+  B4Switch,
+  B4TextField,
+} from "@b4.elements";
 import { B4SetConfig, RoutingMode } from "@models/config";
 import { colors } from "@design";
 import { useTranslation } from "react-i18next";
@@ -294,19 +301,16 @@ export const TrafficRouting = ({
                   }
                   helperText={t("sets.routing.upstreamHostHelper")}
                   placeholder="127.0.0.1"
+                  selectOnFocus
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 4 }}>
-                <B4TextField
+                <B4NumberField
                   label={t("sets.routing.upstreamPort")}
-                  type="number"
-                  value={upstream.port || ""}
-                  onChange={(e) =>
-                    onChange(
-                      "routing.upstream.port",
-                      Number(e.target.value) || 0,
-                    )
-                  }
+                  value={upstream.port ?? 0}
+                  onChange={(n) => onChange("routing.upstream.port", n)}
+                  min={0}
+                  max={65535}
                   helperText={t("sets.routing.upstreamPortHelper")}
                   placeholder="1080"
                 />
@@ -366,13 +370,11 @@ export const TrafficRouting = ({
           )}
 
           <Grid size={{ xs: 12, md: 6 }}>
-            <B4TextField
+            <B4NumberField
               label={t("sets.routing.ipTtl")}
-              type="number"
               value={routing.ip_ttl_seconds}
-              onChange={(e) =>
-                onChange("routing.ip_ttl_seconds", Number(e.target.value))
-              }
+              onChange={(n) => onChange("routing.ip_ttl_seconds", n)}
+              min={0}
               helperText={t("sets.routing.ipTtlHelper")}
               slotProps={{ inputLabel: { shrink: true } }}
             />

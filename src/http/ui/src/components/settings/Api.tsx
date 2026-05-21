@@ -19,6 +19,7 @@ import {
   B4Alert,
   B4Dialog,
   B4FormGroup,
+  B4NumberField,
   B4Section,
   B4Select,
   B4Switch,
@@ -480,33 +481,29 @@ const AISection = ({ config, onChange }: ApiSettingsProps) => {
         )}
 
         <B4FormGroup label={t("settings.Ai.advanced")} columns={2}>
-          <B4TextField
+          <B4NumberField
             label={t("settings.Ai.maxTokens")}
-            type="number"
             value={ai?.max_tokens ?? 1024}
-            onChange={(e) =>
-              onChange("system.ai.max_tokens", Number(e.target.value) || 0)
-            }
+            onChange={(n) => onChange("system.ai.max_tokens", n)}
+            min={1}
             disabled={!ai?.enabled}
             helperText={t("settings.Ai.maxTokensHelp")}
           />
-          <B4TextField
+          <B4NumberField
             label={t("settings.Ai.temperature")}
-            type="number"
             value={ai?.temperature ?? 0.2}
-            onChange={(e) =>
-              onChange("system.ai.temperature", Number(e.target.value) || 0)
-            }
+            onChange={(n) => onChange("system.ai.temperature", n)}
+            allowDecimal
+            min={0}
+            max={2}
             disabled={!ai?.enabled}
             helperText={t("settings.Ai.temperatureHelp")}
           />
-          <B4TextField
+          <B4NumberField
             label={t("settings.Ai.timeout")}
-            type="number"
             value={ai?.timeout_sec ?? 120}
-            onChange={(e) =>
-              onChange("system.ai.timeout_sec", Number(e.target.value) || 0)
-            }
+            onChange={(n) => onChange("system.ai.timeout_sec", n)}
+            min={1}
             disabled={!ai?.enabled}
             helperText={t("settings.Ai.timeoutHelp")}
           />

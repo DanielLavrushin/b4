@@ -64,8 +64,10 @@ var migrationRegistry = map[int]MigrationFunc{
 }
 
 func migrateV39to40(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v39->v40: Adding geo auto_update config")
 	c.System.Geo.AutoUpdate = geodat.GeoAutoUpdateConfig{}
+	for _, set := range c.Sets {
+		set.MSSClamp = MSSClampConfig{}
+	}
 	return nil
 }
 

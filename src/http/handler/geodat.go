@@ -148,6 +148,7 @@ func (api *API) RefreshGeodat(destPath, geositeURL, geoipURL string) (int64, int
 	}
 
 	var geositeSize, geoipSize int64
+	var newGeoSitePath, newGeoIpPath string
 
 	if geositeURL != "" {
 		geositePath := filepath.Join(destPath, "geosite.dat")
@@ -156,8 +157,7 @@ func (api *API) RefreshGeodat(destPath, geositeURL, geoipURL string) (int64, int
 			return 0, 0, fmt.Errorf("failed to download geosite.dat: %v", err)
 		}
 		geositeSize = size
-		api.getCfg().System.Geo.GeoSitePath = geositePath
-		api.getCfg().System.Geo.GeoSiteURL = geositeURL
+		newGeoSitePath = geositePath
 	}
 
 	if geoipURL != "" {
@@ -167,7 +167,15 @@ func (api *API) RefreshGeodat(destPath, geositeURL, geoipURL string) (int64, int
 			return geositeSize, 0, fmt.Errorf("failed to download geoip.dat: %v", err)
 		}
 		geoipSize = size
-		api.getCfg().System.Geo.GeoIpPath = geoipPath
+		newGeoIpPath = geoipPath
+	}
+
+	if newGeoSitePath != "" {
+		api.getCfg().System.Geo.GeoSitePath = newGeoSitePath
+		api.getCfg().System.Geo.GeoSiteURL = geositeURL
+	}
+	if newGeoIpPath != "" {
+		api.getCfg().System.Geo.GeoIpPath = newGeoIpPath
 		api.getCfg().System.Geo.GeoIpURL = geoipURL
 	}
 
@@ -342,7 +350,6 @@ func (api *API) handleGeodatUpload(w http.ResponseWriter, r *http.Request) {
 		"size":    size,
 	})
 }
-
 
 // @Summary Get geodat file info
 // @Tags Geodat

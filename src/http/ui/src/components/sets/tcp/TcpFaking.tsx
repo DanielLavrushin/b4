@@ -5,6 +5,7 @@ import {
   B4ChipList,
   B4FormHeader,
   B4Hint,
+  B4NumberField,
   B4PlusButton,
   B4Select,
   B4Slider,
@@ -377,13 +378,10 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
           {(config.faking.strategy === "pastseq" ||
             config.faking.strategy === "randseq") && (
             <Grid size={{ xs: 12, md: 4 }}>
-              <B4TextField
+              <B4NumberField
                 label={t("sets.faking.fakeSni.seqOffset")}
-                type="number"
                 value={config.faking.seq_offset}
-                onChange={(e) =>
-                  onChange("faking.seq_offset", Number(e.target.value))
-                }
+                onChange={(n) => onChange("faking.seq_offset", n)}
                 helperText={t("sets.faking.fakeSni.seqOffsetHelper")}
                 disabled={!config.faking.sni}
               />
@@ -391,13 +389,11 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
           )}
           {config.faking.strategy === "timestamp" && (
             <Grid size={{ xs: 12, md: 4 }}>
-              <B4TextField
+              <B4NumberField
                 label={t("sets.faking.fakeSni.timestampDecrease")}
-                type="number"
                 value={config.faking.timestamp_decrease || 600000}
-                onChange={(e) =>
-                  onChange("faking.timestamp_decrease", Number(e.target.value))
-                }
+                onChange={(n) => onChange("faking.timestamp_decrease", n)}
+                min={0}
                 helperText={t("sets.faking.fakeSni.timestampDecreaseHelper")}
                 disabled={!config.faking.sni}
               />

@@ -779,7 +779,15 @@
         "rstEnable": "Enable RST Protection",
         "rstEnableDesc": "Drop RST packets with mismatched TTL to prevent DPI-injected connection resets",
         "rstTtlTolerance": "TTL Tolerance",
-        "rstTtlToleranceHelper": "Maximum allowed difference between the server's reference TTL and an incoming RST packet's TTL"
+        "rstTtlToleranceHelper": "Maximum allowed difference between the server's reference TTL and an incoming RST packet's TTL",
+        "mssClamp": "MSS Clamping",
+        "mssEnable": "Enable per-set MSS",
+        "mssEnableDesc": "Override TCP MSS for connections matching this set's IP, GeoIP, or device targets",
+        "mssScopeHint": "MSS is set on the TCP SYN, before the TLS handshake. It can only be scoped by IP / GeoIP / source device. SNI domain, GeoSite and TLS version filters do not participate in MSS clamping.",
+        "mssScopeRequired": "Add an IP, GeoIP, or source device target before enabling per-set MSS.",
+        "mssAppliesTo": "Scope: IPs {{ips}}  Devices {{macs}}",
+        "mssSize": "MSS size (bytes)",
+        "mssSizeHelper": "Typical TSPU workaround for Smart TVs on YouTube: 88"
       },
       "splitting": {
         "header": "Splitting Strategy",

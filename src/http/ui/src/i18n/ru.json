@@ -776,7 +776,15 @@
         "rstEnable": "Включить защиту от RST-инъекций",
         "rstEnableDesc": "Отбрасывать RST пакеты с несовпадающим TTL для защиты от принудительного разрыва соединений",
         "rstTtlTolerance": "Допуск TTL",
-        "rstTtlToleranceHelper": "Максимально допустимая разница между TTL сервера и TTL входящего RST пакета"
+        "rstTtlToleranceHelper": "Максимально допустимая разница между TTL сервера и TTL входящего RST пакета",
+        "mssClamp": "MSS Clamping",
+        "mssEnable": "Включить MSS для сета",
+        "mssEnableDesc": "Переопределить TCP MSS для соединений, попадающих под IP, GeoIP или устройства этого сета",
+        "mssScopeHint": "MSS выставляется в TCP SYN, до TLS handshake. Поэтому область действия ограничена IP / GeoIP / source device. Фильтры по SNI домену, GeoSite и версии TLS в MSS clamping не участвуют.",
+        "mssScopeRequired": "Перед включением MSS добавьте в сет цель по IP, GeoIP или source device.",
+        "mssAppliesTo": "Область: IPs {{ips}}  Devices {{macs}}",
+        "mssSize": "Размер MSS (байт)",
+        "mssSizeHelper": "Типичный обход ТСПУ для Smart TV на YouTube: 88"
       },
       "splitting": {
         "header": "Стратегия разделения",

@@ -1,5 +1,5 @@
 import { Grid } from "@mui/material";
-import { B4SetConfig, QueueConfig } from "@models/config";
+import { B4SetConfig, MSSClampConfig, QueueConfig } from "@models/config";
 import {
   B4Slider,
   B4RangeSlider,
@@ -34,6 +34,12 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
     ttl_tolerance: 3,
     ...config.tcp.rst_protection,
   };
+  const mss: MSSClampConfig = config.mss_clamp ?? { enabled: false, size: 88 };
+  const hasIPScope =
+    (config.targets?.ip?.length ?? 0) > 0 ||
+    (config.targets?.geoip_categories?.length ?? 0) > 0;
+  const hasMACScope = (config.targets?.source_devices?.length ?? 0) > 0;
+  const mssScopeOk = hasIPScope || hasMACScope;
 
   return (
     <>
@@ -234,6 +240,56 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
               step={1}
               helperText={t("sets.tcp.general.rstTtlToleranceHelper")}
               aiTopic="tcp.rst_protection.ttl_tolerance"
+            />
+          </Grid>
+        )}
+      </Grid>
+
+      <B4FormHeader label={t("sets.tcp.general.mssClamp")} />
+      <Grid container spacing={3} mt={2}>
+        <Grid size={{ xs: 12, md: 4 }}>
+          <B4Switch
+            label={t("sets.tcp.general.mssEnable")}
+            description={t("sets.tcp.general.mssEnableDesc")}
+            checked={mss.enabled}
+            onChange={(checked) => {
+              onChange("mss_clamp.enabled", checked);
+              if (checked && (!mss.size || mss.size < 10)) {
+                onChange("mss_clamp.size", 88);
+              }
+            }}
+            disabled={!mssScopeOk}
+            aiTopic="mss_clamp"
+            aiContext={{ size: mss.size }}
+          />
+        </Grid>
+        <Grid size={{ xs: 12, md: 8 }}>
+          <B4Hint sx={{ mt: 1 }}>{t("sets.tcp.general.mssScopeHint")}</B4Hint>
+          {!mssScopeOk && (
+            <B4Alert severity="warning">
+              {t("sets.tcp.general.mssScopeRequired")}
+            </B4Alert>
+          )}
+          {mss.enabled && mssScopeOk && (
+            <B4Alert severity="info">
+              {t("sets.tcp.general.mssAppliesTo", {
+                ips: hasIPScope ? "✓" : "—",
+                macs: hasMACScope ? "✓" : "—",
+              })}
+            </B4Alert>
+          )}
+        </Grid>
+        {mss.enabled && mssScopeOk && (
+          <Grid size={{ xs: 12, md: 6 }}>
+            <B4Slider
+              label={t("sets.tcp.general.mssSize")}
+              value={mss.size}
+              onChange={(value: number) => onChange("mss_clamp.size", value)}
+              min={10}
+              max={1460}
+              step={1}
+              helperText={t("sets.tcp.general.mssSizeHelper")}
+              aiTopic="mss_clamp.size"
             />
           </Grid>
         )}

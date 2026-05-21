@@ -2,6 +2,7 @@ import { Grid, Box, Typography } from "@mui/material";
 import {
   B4Select,
   B4FormHeader,
+  B4NumberField,
   B4TextField,
   B4PlusButton,
   B4ChipList,
@@ -167,14 +168,11 @@ export const SeqOverlapPatternFields = ({
         <B4Hint>{t("sets.tcp.splitting.disorder.seqOverlapAlert")}</B4Hint>
       </Grid>
       <Grid size={{ xs: 12, md: 6 }}>
-        <B4TextField
+        <B4NumberField
           label={t("sets.tcp.splitting.disorder.seqOverlapLength")}
-          type="number"
-          value={length === 0 ? "" : String(length)}
-          onChange={(e) => {
-            const v = Number.parseInt(e.target.value, 10);
-            onLengthChange(Number.isNaN(v) || v < 0 ? 0 : v);
-          }}
+          value={length}
+          onChange={(n) => onLengthChange(n)}
+          min={0}
           placeholder="0"
           helperText={t("sets.tcp.splitting.disorder.seqOverlapLengthHelper")}
           aiTopic="fragmentation.seq_overlap_length"
