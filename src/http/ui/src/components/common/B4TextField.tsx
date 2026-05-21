@@ -7,6 +7,7 @@ interface B4TextFieldProps extends Omit<TextFieldProps, "variant"> {
   aiTopic?: string;
   aiContext?: Record<string, unknown>;
   aiQuestion?: string;
+  selectOnFocus?: boolean;
 }
 
 export const B4TextField = ({
@@ -14,6 +15,8 @@ export const B4TextField = ({
   aiTopic,
   aiContext,
   aiQuestion,
+  selectOnFocus,
+  onFocus,
   ...props
 }: B4TextFieldProps) => {
   const tf = (
@@ -23,6 +26,10 @@ export const B4TextField = ({
       size="small"
       fullWidth
       helperText={helperText}
+      onFocus={(e) => {
+        if (selectOnFocus) e.target.select();
+        onFocus?.(e);
+      }}
       sx={{
         "& .MuiOutlinedInput-root": {
           bgcolor: colors.background.dark,

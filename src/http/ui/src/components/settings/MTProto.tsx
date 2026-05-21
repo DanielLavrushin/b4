@@ -24,6 +24,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { ConnectionIcon } from "@b4.icons";
 import {
   B4FormGroup,
+  B4NumberField,
   B4Section,
   B4Select,
   B4Switch,
@@ -240,14 +241,14 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
           placeholder={t("settings.MTProto.bindAddressPlaceholder")}
           disabled={!config.system.mtproto?.enabled}
           helperText={t("settings.MTProto.bindAddressHelp")}
+          selectOnFocus
         />
-        <B4TextField
+        <B4NumberField
           label={t("settings.MTProto.port")}
-          type="number"
           value={config.system.mtproto?.port ?? 3128}
-          onChange={(e) =>
-            onChange("system.mtproto.port", Number(e.target.value))
-          }
+          onChange={(n) => onChange("system.mtproto.port", n)}
+          min={1}
+          max={65535}
           disabled={!config.system.mtproto?.enabled}
           helperText={t("settings.MTProto.portHelp")}
         />
@@ -352,6 +353,7 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
                 placeholder="vps-ip:7007"
                 disabled={!enabled}
                 helperText={t("settings.MTProto.dcRelayHelp")}
+                selectOnFocus
                 slotProps={{
                   input: {
                     endAdornment: (
@@ -386,6 +388,7 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
                 placeholder="your-domain.com"
                 disabled={!enabled}
                 helperText={t("settings.MTProto.wsCustomDomainHelp")}
+                selectOnFocus
               />
             )}
             {mode !== "tcp" && (
@@ -398,6 +401,7 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
                 placeholder="149.154.167.220"
                 disabled={!enabled}
                 helperText={t("settings.MTProto.wsEndpointHostHelp")}
+                selectOnFocus
               />
             )}
             <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>

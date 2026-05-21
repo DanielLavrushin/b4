@@ -1,6 +1,11 @@
 import { useTranslation } from "react-i18next";
 import { NetworkIcon } from "@b4.icons";
-import { B4FormGroup, B4Section, B4TextField, B4Slider } from "@b4.elements";
+import {
+  B4FormGroup,
+  B4NumberField,
+  B4Section,
+  B4Slider,
+} from "@b4.elements";
 import { B4Config } from "@models/config";
 import { SettingsPropHandlerType } from "@models/settings";
 
@@ -19,18 +24,18 @@ export const QueueSettings = ({ config, onChange }: QueueSettingsProps) => {
       icon={<NetworkIcon />}
     >
       <B4FormGroup label={t("settings.Queue.groupLabel")} columns={2}>
-        <B4TextField
+        <B4NumberField
           label={t("settings.Queue.queueStart")}
-          type="number"
           value={config.queue.start_num}
-          onChange={(e) => onChange("queue.start_num", Number(e.target.value))}
+          onChange={(n) => onChange("queue.start_num", n)}
+          min={0}
           helperText={t("settings.Queue.queueStartHelp")}
         />
-        <B4TextField
+        <B4NumberField
           label={t("settings.Queue.packetMark")}
-          type="number"
           value={config.queue.mark}
-          onChange={(e) => onChange("queue.mark", Number(e.target.value))}
+          onChange={(n) => onChange("queue.mark", n)}
+          min={0}
           helperText={t("settings.Queue.packetMarkHelp")}
         />
         <B4Slider

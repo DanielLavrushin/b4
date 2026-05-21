@@ -4,6 +4,7 @@ import { ApiIcon } from "@b4.icons";
 import {
   B4Alert,
   B4FormGroup,
+  B4NumberField,
   B4Section,
   B4Select,
   B4TextField,
@@ -48,14 +49,14 @@ export const WebServerSettings = ({
           }
           placeholder={t("settings.WebServer.bindAddressPlaceholder")}
           helperText={t("settings.WebServer.bindAddressHelp")}
+          selectOnFocus
         />
-        <B4TextField
+        <B4NumberField
           label={t("settings.WebServer.port")}
-          type="number"
           value={config.system.web_server.port}
-          onChange={(e) =>
-            onChange("system.web_server.port", Number(e.target.value))
-          }
+          onChange={(n) => onChange("system.web_server.port", n)}
+          min={1}
+          max={65535}
           helperText={t("settings.WebServer.portHelp")}
         />
         <B4TextField

@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import { ConnectionIcon } from "@b4.icons";
 import {
   B4FormGroup,
+  B4NumberField,
   B4Section,
   B4Switch,
   B4TextField,
@@ -42,14 +43,14 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
           placeholder={t("settings.Socks5.bindAddressPlaceholder")}
           disabled={!config.system.socks5?.enabled}
           helperText={t("settings.Socks5.bindAddressHelp")}
+          selectOnFocus
         />
-        <B4TextField
+        <B4NumberField
           label={t("settings.Socks5.port")}
-          type="number"
           value={config.system.socks5?.port ?? 1080}
-          onChange={(e) =>
-            onChange("system.socks5.port", Number(e.target.value))
-          }
+          onChange={(n) => onChange("system.socks5.port", n)}
+          min={1}
+          max={65535}
           disabled={!config.system.socks5?.enabled}
           helperText={t("settings.Socks5.portHelp")}
         />
