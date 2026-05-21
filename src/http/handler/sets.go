@@ -573,12 +573,21 @@ func (api *API) handleBatchSetEnabled(w http.ResponseWriter, r *http.Request) {
 		target[id] = true
 	}
 
+	matched := 0
 	updated := 0
 	for _, set := range api.getCfg().Sets {
-		if target[set.Id] && set.Enabled != req.Enabled {
-			set.Enabled = req.Enabled
-			updated++
+		if target[set.Id] {
+			matched++
+			if set.Enabled != req.Enabled {
+				set.Enabled = req.Enabled
+				updated++
+			}
 		}
+	}
+
+	if matched == 0 {
+		writeAPIError(w, ErrNotFound("No matching sets found"))
+		return
 	}
 
 	if updated == 0 {
