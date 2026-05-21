@@ -631,14 +631,6 @@ func (manager *IPTablesManager) buildManifest() (Manifest, error) {
 							Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "I", Spec: spec},
 						)
 					}
-					if hasIPs && !global {
-						spec := []string{"-p", "tcp", "--sport", "443",
-							"-m", "set", "--match-set", setName, "src",
-							"--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--set-mss", tcpMSSSpec}
-						rules = append(rules,
-							Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "I", Spec: spec},
-						)
-					}
 				} else if hasIPs {
 					rules = append(rules,
 						Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I",
