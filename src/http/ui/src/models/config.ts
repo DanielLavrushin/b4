@@ -299,6 +299,8 @@ export interface MTProtoConfig {
   upstream_mode: "tcp" | "ws" | "auto";
   ws_custom_domain: string;
   ws_endpoint_host: string;
+  cfproxy_enabled: boolean;
+  cfproxy_url: string;
 }
 
 

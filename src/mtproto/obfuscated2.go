@@ -119,6 +119,7 @@ type transportPlan struct {
 	sni      string
 	dialHost string
 	dc       int
+	cfBase   string // CF-proxy base domain (without "kwsN."); set => pin in balancer on success
 }
 
 func (p transportPlan) describe() string {
@@ -186,10 +187,23 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 		}
 		if d := strings.TrimSpace(cfg.WSCustomDomain); d != "" {
 			plans = append(plans, transportPlan{
-				kind: transportWS,
-				dc:   dc,
-				sni:  fmt.Sprintf("kws%d.%s", absDC, d),
+				kind:   transportWS,
+				dc:     dc,
+				sni:    fmt.Sprintf("kws%d.%s", absDC, d),
+				cfBase: d,
 			})
+		}
+		// CF-proxy fallback pool (matches tg-ws-proxy). Tried after TG's own edge so
+		// the fast path wins when it works; CF rescues DCs the network blocks (esp. DC 1).
+		if cfg.CFProxyEnabled {
+			for _, base := range cfBalancerInst.domainsForDC(dc) {
+				plans = append(plans, transportPlan{
+					kind:   transportWS,
+					dc:     dc,
+					sni:    fmt.Sprintf("kws%d.%s", absDC, base),
+					cfBase: base,
+				})
+			}
 		}
 	}
 
@@ -270,6 +284,13 @@ func DialObfuscatedDCWithPool(cfg *config.MTProtoConfig, queueCfg config.QueueCo
 		}
 		if p.kind == transportWS {
 			wsRecordSuccess(dc)
+			// pin successful CF-proxy domain for this DC so subsequent connections
+			// try it first (mirrors tg-ws-proxy/proxy/balancer.py:update_domain_for_dc)
+			if p.cfBase != "" {
+				if cfBalancerInst.pin(dc, p.cfBase) {
+					log.Infof("MTProto DC %d switched active CF domain to %s", dc, p.cfBase)
+				}
+			}
 		} else {
 			tcpRecordSuccess(p.addr)
 		}

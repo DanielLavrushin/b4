@@ -226,6 +226,8 @@ type MTProtoConfig struct {
 	UpstreamMode   string `json:"upstream_mode"`
 	WSCustomDomain string `json:"ws_custom_domain"`
 	WSEndpointHost string `json:"ws_endpoint_host"`
+	CFProxyEnabled bool   `json:"cfproxy_enabled"` // enable Cloudflare-proxied fallback WS domains (rescues DCs the network blocks)
+	CFProxyURL     string `json:"cfproxy_url"`     // URL to refresh CF-proxy domain list; empty = built-in default
 }
 
 type Socks5Config struct {

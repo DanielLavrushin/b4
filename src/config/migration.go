@@ -61,6 +61,14 @@ var migrationRegistry = map[int]MigrationFunc{
 	37: migrateV37to38, // Add MTProto upstream transport (WS) fields
 	38: migrateV38to39, // Add system.memory_limit
 	39: migrateV39to40, // Add geo auto_update config
+	40: migrateV40to41, // Add MTProto CF-proxy fallback config
+}
+
+func migrateV40to41(c *Config, _ map[string]interface{}) error {
+	log.Tracef("Migration v40->v41: Adding MTProto CF-proxy fallback config")
+	c.System.MTProto.CFProxyEnabled = true
+	c.System.MTProto.CFProxyURL = DefaultConfig.System.MTProto.CFProxyURL
+	return nil
 }
 
 func migrateV39to40(c *Config, _ map[string]interface{}) error {

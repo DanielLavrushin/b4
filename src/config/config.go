@@ -244,6 +244,8 @@ var DefaultConfig = Config{
 			FakeSNI:        "storage.googleapis.com",
 			UpstreamMode:   "auto",
 			WSEndpointHost: "149.154.167.220",
+			CFProxyEnabled: true,
+			CFProxyURL:     "https://raw.githubusercontent.com/Flowseal/tg-ws-proxy/main/.github/cfproxy-domains.txt",
 		},
 
 		Logging: Logging{

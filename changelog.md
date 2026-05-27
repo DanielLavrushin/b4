@@ -2,7 +2,7 @@
 
 ## [1.63.1] - 2026-05-27
 
-- FIXED: **Videos in some Telegram channels would not load through the MTProto proxy** - media hosted on certain Telegram data centers was unreachable through the WebSocket path. Now fixed for all data centers.
+- FIXED: **Videos and media in some Telegram channels would not load through the MTProto proxy** - certain Telegram data centers (notably the one used during file downloads for foreign channels) were unreachable from networks that block direct connections. b4 now uses a rotating list of Cloudflare-proxied fallback domains to reach those data centers transparently, and refreshes the list once an hour from a public source. A new "CF proxy fallback" toggle in Settings → MTProto Proxy lets you turn it off or point at your own list.
 - IMPROVED: **MTProto proxy feels faster and stays steady when Telegram acts up** - b4 keeps a small pool of ready connections to Telegram, so opening a chat or waking the app no longer waits for a fresh handshake. Broken data centers are remembered for a short time so retries fall back instantly instead of stalling, and the error log no longer floods with the same failure - one clear report per minute showing exactly which paths were tried and why each failed.
 
 ## [1.63.0] - 2026-05-22

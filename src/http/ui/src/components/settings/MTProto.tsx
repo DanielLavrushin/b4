@@ -404,6 +404,30 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
                 selectOnFocus
               />
             )}
+            {mode !== "tcp" && (
+              <B4Switch
+                label={t("settings.MTProto.cfProxyEnabled")}
+                checked={config.system.mtproto?.cfproxy_enabled ?? false}
+                onChange={(checked: boolean) =>
+                  onChange("system.mtproto.cfproxy_enabled", checked)
+                }
+                description={t("settings.MTProto.cfProxyEnabledHelp")}
+              />
+            )}
+            {mode !== "tcp" &&
+              (config.system.mtproto?.cfproxy_enabled ?? false) && (
+                <B4TextField
+                  label={t("settings.MTProto.cfProxyURL")}
+                  value={config.system.mtproto?.cfproxy_url || ""}
+                  onChange={(e) =>
+                    onChange("system.mtproto.cfproxy_url", e.target.value)
+                  }
+                  placeholder="https://raw.githubusercontent.com/Flowseal/tg-ws-proxy/main/.github/cfproxy-domains.txt"
+                  disabled={!enabled}
+                  helperText={t("settings.MTProto.cfProxyURLHelp")}
+                  selectOnFocus
+                />
+              )}
             <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
               <Stack direction="row" spacing={1}>
                 <Button
