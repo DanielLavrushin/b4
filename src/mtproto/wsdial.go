@@ -62,6 +62,7 @@ func (c *wsConn) Read(p []byte) (int, error) {
 		c.rxBuf = c.rxBuf[n:]
 		return n, nil
 	}
+	var assembled []byte // accumulates fragmented data frames until FIN
 	for {
 		op, fin, payload, err := c.readFrame()
 		if err != nil {
@@ -69,14 +70,34 @@ func (c *wsConn) Read(p []byte) (int, error) {
 		}
 		switch op {
 		case wsOpcodeBinary, 0x1:
+			// fragmented data frame: start accumulating; continuation frames will follow
 			if !fin {
-				return 0, errors.New("ws: fragmented data frames not supported")
+				assembled = append(assembled, payload...)
+				continue
 			}
-			n := copy(p, payload)
-			if n < len(payload) {
-				c.rxBuf = append(c.rxBuf, payload[n:]...)
+			full := payload
+			if len(assembled) > 0 {
+				full = append(assembled, payload...)
+				assembled = nil
+			}
+			n := copy(p, full)
+			if n < len(full) {
+				c.rxBuf = append(c.rxBuf, full[n:]...)
 			}
 			return n, nil
+		case 0x0: // continuation frame
+			if assembled == nil {
+				return 0, errors.New("ws: continuation frame without prior data frame")
+			}
+			assembled = append(assembled, payload...)
+			if fin {
+				n := copy(p, assembled)
+				if n < len(assembled) {
+					c.rxBuf = append(c.rxBuf, assembled[n:]...)
+				}
+				assembled = nil
+				return n, nil
+			}
 		case wsOpcodePing:
 			if err := c.writeFrame(wsOpcodePong, payload); err != nil {
 				return 0, err
@@ -107,6 +128,34 @@ func (c *wsConn) Close() error {
 		_ = c.writeFrame(wsOpcodeClose, nil)
 	}
 	return c.tls.Close()
+}
+
+// alive does a non-destructive liveness check on the conn. Pool entries can
+// sit idle long enough for TG to FIN/RST them; handing such a conn to a client
+// causes up=N down=0 short-lived sessions, which break short RPCs (notably
+// auth.importAuthorization on secondary DCs - the exact path that makes
+// foreign-channel media downloads fail). Cheap (~few ms) since FIN/RST is
+// already in the kernel buffer if it happened.
+func (c *wsConn) alive() bool {
+	if c.closed.Load() {
+		return false
+	}
+	if err := c.tls.SetReadDeadline(time.Now().Add(5 * time.Millisecond)); err != nil {
+		return false
+	}
+	defer func() { _ = c.tls.SetReadDeadline(time.Time{}) }()
+	buf, err := c.br.Peek(1)
+	if err == nil && len(buf) >= 1 {
+		// any buffered byte indicates the conn is alive; reject if it's a CLOSE frame
+		if buf[0]&0x0F == wsOpcodeClose {
+			return false
+		}
+		return true
+	}
+	if ne, ok := err.(net.Error); ok && ne.Timeout() {
+		return true
+	}
+	return false
 }
 
 func (c *wsConn) LocalAddr() net.Addr  { return c.tls.LocalAddr() }
@@ -216,6 +265,10 @@ func dialWS(host, sni string, timeout time.Duration, mark uint) (net.Conn, error
 	}
 	if tc, ok := raw.(*net.TCPConn); ok {
 		_ = tc.SetNoDelay(true)
+		// match tg-ws-proxy: 256KB send/recv buffers - kernel default (~87KB recv,
+		// ~16KB send) limits BDP for big media transfers from EU TG edge
+		_ = tc.SetReadBuffer(256 * 1024)
+		_ = tc.SetWriteBuffer(256 * 1024)
 	}
 	// Telegram's WS edge only presents proper certs for kws2/kws4; kws1/kws3/kws5
 	// fall back to a *.telegram.org cert that doesn't match the 3-label SNI.

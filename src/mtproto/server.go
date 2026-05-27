@@ -17,7 +17,7 @@ import (
 
 const (
 	maxConnections = 512
-	relayBufSize   = 16384
+	relayBufSize   = 65536
 )
 
 type Server struct {
@@ -142,6 +142,13 @@ func (s *Server) acceptLoop() {
 			continue
 		}
 
+		// match tg-ws-proxy: tune accepted client socket to 256KB buffers + nodelay
+		if tc, ok := conn.(*net.TCPConn); ok {
+			_ = tc.SetNoDelay(true)
+			_ = tc.SetReadBuffer(256 * 1024)
+			_ = tc.SetWriteBuffer(256 * 1024)
+		}
+
 		s.active.Add(1)
 		go func(c net.Conn) {
 			defer func() {
@@ -210,16 +217,35 @@ func (s *Server) handleConn(raw net.Conn) {
 
 func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string) {
 	errCh := make(chan error, 2)
+	start := time.Now()
+	var upBytes, downBytes atomic.Int64
 
-	cp := func(dst io.Writer, src io.Reader, dir string) {
+	cp := func(dst io.Writer, src io.Reader, dir string, counter *atomic.Int64) {
 		bufPtr := s.bufPool.Get().(*[]byte)
 		defer s.bufPool.Put(bufPtr)
-		n, err := io.CopyBuffer(dst, src, *bufPtr)
-		log.Debugf("MTProto relay %s %s: %d bytes, err=%v", label, dir, n, err)
+		buf := *bufPtr
+		var total int64
+		var err error
+		for {
+			var n int
+			n, err = src.Read(buf)
+			if n > 0 {
+				if _, werr := dst.Write(buf[:n]); werr != nil {
+					err = werr
+				} else {
+					total += int64(n)
+				}
+			}
+			if err != nil {
+				break
+			}
+		}
+		counter.Store(total)
+		log.Debugf("MTProto relay %s %s: %d bytes, err=%v", label, dir, total, err)
 		errCh <- err
 	}
 
-	cpSplit := func(dst io.Writer, src io.Reader, dir string) {
+	cpSplit := func(dst io.Writer, src io.Reader, dir string, counter *atomic.Int64) {
 		bufPtr := s.bufPool.Get().(*[]byte)
 		defer s.bufPool.Put(bufPtr)
 		buf := *bufPtr
@@ -244,19 +270,21 @@ func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, lab
 				break
 			}
 		}
+		counter.Store(total)
 		log.Debugf("MTProto relay %s %s: %d bytes, err=%v", label, dir, total, err)
 		errCh <- err
 	}
 
 	if splitter != nil {
-		go cpSplit(dc, client, "client->DC")
+		go cpSplit(dc, client, "client->DC", &upBytes)
 	} else {
-		go cp(dc, client, "client->DC")
+		go cp(dc, client, "client->DC", &upBytes)
 	}
-	go cp(client, dc, "DC->client")
+	go cp(client, dc, "DC->client", &downBytes)
 
 	<-errCh
 	_ = client.Close()
 	_ = dc.Close()
 	<-errCh
+	log.Infof("MTProto session %s closed: up=%d down=%d in %dms", label, upBytes.Load(), downBytes.Load(), time.Since(start).Milliseconds())
 }

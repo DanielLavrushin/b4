@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	wsPoolMaxAge          = 120 * time.Second
-	wsPoolDefaultSize     = 2
+	wsPoolMaxAge          = 60 * time.Second
+	wsPoolDefaultSize     = 4
 	wsDCFailCooldown      = 30 * time.Second
 	wsDialTimeoutCooldown = 2 * time.Second
 	tcpFailCooldown       = 30 * time.Second
@@ -223,7 +223,11 @@ func (p *wsPool) get(dc int) *wsConn {
 	for len(bucket) > 0 {
 		e := bucket[0]
 		bucket = bucket[1:]
-		if e.conn.closed.Load() || now.Sub(e.created) > p.maxAge {
+		// stale check: TG may FIN/RST an idle conn server-side; handing such a conn
+		// to a client produces an up=N down=0 session (RPC sent, never answered).
+		// This is the path that breaks auth.importAuthorization on secondary DCs
+		// and makes foreign-channel media downloads hang.
+		if e.conn.closed.Load() || now.Sub(e.created) > p.maxAge || !e.conn.alive() {
 			go func(c *wsConn) { _ = c.Close() }(e.conn)
 			continue
 		}
@@ -275,25 +279,44 @@ func (p *wsPool) refill(dc int) {
 		return
 	}
 
+	// parallel dials so the pool fills in ~one RTT instead of need*RTT;
+	// individual failures don't abort siblings, matching tg-ws-proxy
+	type result struct {
+		conn *wsConn
+		err  error
+	}
+	results := make(chan result, need)
 	for i := 0; i < need; i++ {
-		if p.ctx.Err() != nil {
-			return
+		go func() {
+			if p.ctx.Err() != nil {
+				results <- result{}
+				return
+			}
+			c, err := p.dialFresh(dc)
+			results <- result{conn: c, err: err}
+		}()
+	}
+	added := 0
+	for i := 0; i < need; i++ {
+		r := <-results
+		if r.err != nil || r.conn == nil {
+			if r.err != nil {
+				log.Tracef("MTProto WS pool refill %s slot failed: %v", k, r.err)
+			}
+			continue
 		}
-		c, err := p.dialFresh(dc)
-		if err != nil {
-			log.Tracef("MTProto WS pool refill %s failed: %v", k, err)
-			return
-		}
-		// pool may have been closed during dial - don't leak conn
 		if p.ctx.Err() != nil {
-			_ = c.Close()
-			return
+			_ = r.conn.Close()
+			continue
 		}
 		p.mu.Lock()
-		p.idle[k] = append(p.idle[k], wsPoolEntry{conn: c, created: time.Now()})
+		p.idle[k] = append(p.idle[k], wsPoolEntry{conn: r.conn, created: time.Now()})
 		p.mu.Unlock()
+		added++
 	}
-	log.Debugf("MTProto WS pool %s refilled to target=%d", k, p.target)
+	if added > 0 {
+		log.Debugf("MTProto WS pool %s refilled +%d (target=%d)", k, added, p.target)
+	}
 }
 
 // dialFresh opens a raw WS connection (TLS + Upgrade) to a TG edge for `dc`.

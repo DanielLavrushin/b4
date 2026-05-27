@@ -439,7 +439,11 @@ func completeObfuscation(conn net.Conn, dc int, protoTag uint32) (*ObfuscatedCon
 	encrypted := make([]byte, obfuscatedFrameLen)
 	copy(encrypted, frame)
 	encStream.XORKeyStream(encrypted, encrypted)
-	copy(encrypted[8:56], frame[8:56])
+	// Restore bytes 0:56 to plaintext - only bytes 56:64 (proto_tag||dc||rnd) are
+	// sent encrypted. tg-ws-proxy keeps the SKIP region (0:8) as plaintext too;
+	// b4 was only restoring 8:56, leaving 0:7 as ciphertext on the wire. Some TG
+	// endpoints inspect the SKIP bytes before decryption.
+	copy(encrypted[0:56], frame[0:56])
 
 	if _, err := conn.Write(encrypted); err != nil {
 		return nil, fmt.Errorf("send handshake: %w", err)
