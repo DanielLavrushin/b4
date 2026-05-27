@@ -104,6 +104,8 @@
       "geodatDesc": "Глобальная конфигурация геоданных",
       "discovery": "Дискавери",
       "discoveryDesc": "Тестирование доменов для обхода DPI",
+      "mtproto": "MTProto-прокси",
+      "mtprotoDesc": "Встроенный Telegram-прокси",
       "api": "API",
       "apiDesc": "Настройки API для различных сервисов",
       "payloads": "Пэйлоады",

@@ -104,6 +104,8 @@
       "geodatDesc": "Global geodata configuration",
       "discovery": "Discovery",
       "discoveryDesc": "DPI bypass domains testing",
+      "mtproto": "MTProto Proxy",
+      "mtprotoDesc": "Built-in Telegram proxy",
       "api": "API",
       "apiDesc": "API settings for various services",
       "payloads": "Payloads",

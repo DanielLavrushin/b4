@@ -22,6 +22,7 @@ import {
   ApiIcon,
   BackupIcon,
   CaptureIcon,
+  ConnectionIcon,
   CoreIcon,
   DiscoveryIcon,
   DomainIcon,
@@ -83,6 +84,7 @@ enum TABS {
   GENERAL = 0,
   DOMAINS,
   DISCOVERY,
+  MTPROTO,
   API,
   PAYLOADS,
   BACKUP,
@@ -126,6 +128,14 @@ export function SettingsPage() {
         icon: <DiscoveryIcon />,
         description: t("settings.tabs.discoveryDesc"),
         requiresRestart: false,
+      },
+      {
+        id: TABS.MTPROTO,
+        path: "mtproto",
+        label: t("settings.tabs.mtproto"),
+        icon: <ConnectionIcon />,
+        description: t("settings.tabs.mtprotoDesc"),
+        requiresRestart: true,
       },
       {
         id: TABS.API,
@@ -199,8 +209,6 @@ export function SettingsPage() {
           JSON.stringify(originalConfig.system.web_server) ||
         JSON.stringify(config.system.socks5) !==
           JSON.stringify(originalConfig.system.socks5) ||
-        JSON.stringify(config.system.mtproto) !==
-          JSON.stringify(originalConfig.system.mtproto) ||
         JSON.stringify(config.system.tables) !==
           JSON.stringify(originalConfig.system.tables) ||
         JSON.stringify(config.queue.devices) !==
@@ -215,6 +223,11 @@ export function SettingsPage() {
       [TABS.DISCOVERY]:
         JSON.stringify(config.system.checker) !==
         JSON.stringify(originalConfig.system.checker),
+
+      // MTProto
+      [TABS.MTPROTO]:
+        JSON.stringify(config.system.mtproto) !==
+        JSON.stringify(originalConfig.system.mtproto),
 
       // API
       [TABS.API]:
@@ -471,11 +484,6 @@ export function SettingsPage() {
                 <Socks5Settings config={config} onChange={handleChange} />
               </Box>
             </Grid>
-            <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex" }}>
-              <Box sx={{ width: "100%" }}>
-                <MTProtoSettings config={config} onChange={handleChange} />
-              </Box>
-            </Grid>
 
             <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex" }}>
               <Box sx={{ width: "100%" }}>
@@ -506,6 +514,16 @@ export function SettingsPage() {
 
         <TabPanel value={validTab} index={TABS.DISCOVERY}>
           <CheckerSettings config={config} onChange={handleChange} />
+        </TabPanel>
+
+        <TabPanel value={validTab} index={TABS.MTPROTO}>
+          <Grid container spacing={spacing.lg} alignItems="stretch">
+            <Grid size={{ xs: 12 }} sx={{ display: "flex" }}>
+              <Box sx={{ width: "100%" }}>
+                <MTProtoSettings config={config} onChange={handleChange} />
+              </Box>
+            </Grid>
+          </Grid>
         </TabPanel>
 
         <TabPanel value={validTab} index={TABS.PAYLOADS}>
