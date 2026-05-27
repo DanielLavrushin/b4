@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -117,6 +118,7 @@ type transportPlan struct {
 	addr     string
 	sni      string
 	dialHost string
+	dc       int
 }
 
 func (p transportPlan) describe() string {
@@ -153,6 +155,9 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 			return
 		}
 		for _, a := range addrs {
+			if tcpAddrInCooldown(a) {
+				continue
+			}
 			plans = append(plans, transportPlan{kind: transportTCP, addr: a})
 		}
 	}
@@ -161,7 +166,7 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 		appendTCP()
 	}
 
-	if mode == "ws" || mode == "auto" {
+	if (mode == "ws" || mode == "auto") && !wsIsBlacklisted(dc) {
 		edgeIP := strings.TrimSpace(cfg.WSEndpointHost)
 		if edgeIP == "" {
 			edgeIP = telegramWSEdgeIP
@@ -171,8 +176,8 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 			wsDC = 2
 		}
 		if wsDC >= 1 && wsDC <= 5 {
-			primary := transportPlan{kind: transportWS, sni: fmt.Sprintf("kws%d.web.telegram.org", wsDC), dialHost: edgeIP}
-			media := transportPlan{kind: transportWS, sni: fmt.Sprintf("kws%d-1.web.telegram.org", wsDC), dialHost: edgeIP}
+			primary := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d.web.telegram.org", wsDC), dialHost: edgeIP}
+			media := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d-1.web.telegram.org", wsDC), dialHost: edgeIP}
 			if dc < 0 {
 				plans = append(plans, media, primary)
 			} else {
@@ -182,6 +187,7 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 		if d := strings.TrimSpace(cfg.WSCustomDomain); d != "" {
 			plans = append(plans, transportPlan{
 				kind: transportWS,
+				dc:   dc,
 				sni:  fmt.Sprintf("kws%d.%s", absDC, d),
 			})
 		}
@@ -202,35 +208,117 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 }
 
 func DialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc int, protoTag uint32) (*ObfuscatedConn, string, error) {
+	return DialObfuscatedDCWithPool(cfg, queueCfg, dc, protoTag, nil)
+}
+
+func DialObfuscatedDCWithPool(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc int, protoTag uint32, pool *wsPool) (*ObfuscatedConn, string, error) {
+	if pool != nil && !wsIsBlacklisted(dc) {
+		if raw := pool.get(dc); raw != nil {
+			obf, err := completeObfuscation(raw, dc, protoTag)
+			if err == nil {
+				log.Infof("MTProto DC %d connected via ws-pool", dc)
+				wsRecordSuccess(dc)
+				return obf, "ws-pool", nil
+			}
+			log.Debugf("MTProto DC %d pool conn obf init failed: %v", dc, err)
+			_ = raw.Close()
+		}
+	}
+
 	plans, err := planTransports(cfg, queueCfg, dc)
 	if err != nil {
 		return nil, "", err
 	}
 
-	var lastErr error
+	wsTimeout := wsDialTimeout
+	if wsCooldownActive(dc) {
+		wsTimeout = wsDialTimeoutCooldown
+	}
+
+	var attempts []string
+	wsTried := 0
+	wsRedirects := 0
 	for _, p := range plans {
 		log.Debugf("MTProto DC %d dialing %s", dc, p.describe())
 		start := time.Now()
-		conn, err := dialOne(p, queueCfg.Mark)
-		if err != nil {
-			lastErr = err
-			log.Debugf("MTProto DC %d %s failed after %dms: %v", dc, p.describe(), time.Since(start).Milliseconds(), err)
+		var conn net.Conn
+		var derr error
+		if p.kind == transportWS {
+			conn, derr = dialOneWS(p, queueCfg.Mark, wsTimeout)
+		} else {
+			conn, derr = dialOne(p, queueCfg.Mark)
+		}
+		if derr != nil {
+			attempts = append(attempts, fmt.Sprintf("%s: %s", p.describe(), shortErr(derr)))
+			if p.kind == transportWS {
+				wsTried++
+				if isWSRedirect(derr) {
+					wsRedirects++
+				}
+			} else if isDialTimeout(derr) {
+				tcpRecordFailure(p.addr)
+			}
+			log.Debugf("MTProto DC %d %s failed after %dms: %v", dc, p.describe(), time.Since(start).Milliseconds(), derr)
 			continue
 		}
-		obfConn, err := completeObfuscation(conn, dc, protoTag)
-		if err != nil {
-			lastErr = err
+		obfConn, oerr := completeObfuscation(conn, dc, protoTag)
+		if oerr != nil {
+			attempts = append(attempts, fmt.Sprintf("%s: %s", p.describe(), shortErr(oerr)))
 			conn.Close()
-			log.Debugf("MTProto DC %d obf init failed on %s: %v", dc, p.describe(), err)
+			log.Debugf("MTProto DC %d obf init failed on %s: %v", dc, p.describe(), oerr)
 			continue
+		}
+		if p.kind == transportWS {
+			wsRecordSuccess(dc)
+		} else {
+			tcpRecordSuccess(p.addr)
 		}
 		log.Infof("MTProto DC %d connected via %s in %dms", dc, p.describe(), time.Since(start).Milliseconds())
 		return obfConn, p.describe(), nil
 	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("no transport succeeded")
+
+	if wsTried > 0 {
+		wsRecordFailure(dc, wsRedirects == wsTried)
 	}
-	return nil, "", lastErr
+	if len(attempts) == 0 {
+		return nil, "", fmt.Errorf("no transport available (all in cooldown or blacklisted)")
+	}
+	return nil, "", fmt.Errorf("all transports failed: %s", strings.Join(attempts, "; "))
+}
+
+func isDialTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return true
+	}
+	return strings.Contains(err.Error(), "i/o timeout")
+}
+
+func shortErr(err error) string {
+	s := err.Error()
+	for _, p := range []string{"tcp dial ", "tls handshake ", "ws read response: ", "ws write upgrade: ", "ws handshake "} {
+		s = strings.TrimPrefix(s, p)
+	}
+	return s
+}
+
+func isWSRedirect(err error) bool {
+	var he *wsHandshakeError
+	if !errors.As(err, &he) {
+		return false
+	}
+	return he.isRedirect()
+}
+
+func dialOneWS(p transportPlan, mark uint, timeout time.Duration) (net.Conn, error) {
+	host := p.dialHost
+	if host == "" {
+		host = p.sni
+	}
+	return dialWS(host, p.sni, timeout, mark)
 }
 
 type TransportProbeResult struct {

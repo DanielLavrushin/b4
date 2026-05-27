@@ -182,24 +182,19 @@ func (c *wsConn) writeFrame(op byte, payload []byte) error {
 	if _, err := rand.Read(hdr[off : off+4]); err != nil {
 		return err
 	}
-	maskKey := hdr[off : off+4]
 	off += 4
 
-	masked := make([]byte, n)
-	for i := range payload {
-		masked[i] = payload[i] ^ maskKey[i%4]
+	// single buffer + single tls.Write to avoid emitting two TLS records per frame
+	buf := make([]byte, off+n)
+	copy(buf, hdr[:off])
+	maskKey := buf[off-4 : off]
+	for i := 0; i < n; i++ {
+		buf[off+i] = payload[i] ^ maskKey[i%4]
 	}
 	c.wMu.Lock()
 	defer c.wMu.Unlock()
-	if _, err := c.tls.Write(hdr[:off]); err != nil {
-		return err
-	}
-	if n > 0 {
-		if _, err := c.tls.Write(masked); err != nil {
-			return err
-		}
-	}
-	return nil
+	_, err := c.tls.Write(buf)
+	return err
 }
 
 func dialWS(host, sni string, timeout time.Duration, mark uint) (net.Conn, error) {
@@ -222,9 +217,14 @@ func dialWS(host, sni string, timeout time.Duration, mark uint) (net.Conn, error
 	if tc, ok := raw.(*net.TCPConn); ok {
 		_ = tc.SetNoDelay(true)
 	}
+	// Telegram's WS edge only presents proper certs for kws2/kws4; kws1/kws3/kws5
+	// fall back to a *.telegram.org cert that doesn't match the 3-label SNI.
+	// Cert verification adds no real security here - the MTProto payload is
+	// already end-to-end encrypted with the proxy secret. Match tg-ws-proxy.
 	tlsConn := tls.Client(raw, &tls.Config{
-		ServerName: sni,
-		MinVersion: tls.VersionTLS12,
+		ServerName:         sni,
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: true,
 	})
 	_ = tlsConn.SetDeadline(time.Now().Add(timeout))
 	if err := tlsConn.Handshake(); err != nil {

@@ -1,5 +1,10 @@
 # B4 - Bye Bye Big Bro
 
+## [1.63.1] - 2026-05-27
+
+- FIXED: **Videos in some Telegram channels would not load through the MTProto proxy** - media hosted on certain Telegram data centers was unreachable through the WebSocket path. Now fixed for all data centers.
+- IMPROVED: **MTProto proxy feels faster and stays steady when Telegram acts up** - b4 keeps a small pool of ready connections to Telegram, so opening a chat or waking the app no longer waits for a fresh handshake. Broken data centers are remembered for a short time so retries fall back instantly instead of stalling, and the error log no longer floods with the same failure - one clear report per minute showing exactly which paths were tried and why each failed.
+
 ## [1.63.0] - 2026-05-22
 
 - FIXED: **Geo databases sometimes saved to a broken `b4` folder after install** - in rare cases the installer would record `b4/geosite.dat` instead of a full path like `/etc/b4/geosite.dat`, and the Web UI then refused to download new files. The installer now refuses non-absolute paths, b4 fixes any broken path it finds on startup, and the UI falls back to a safe default if the stored path looks wrong.

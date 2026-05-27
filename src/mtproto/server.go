@@ -29,6 +29,7 @@ type Server struct {
 	active   atomic.Int64
 	connSem  chan struct{}
 	bufPool  sync.Pool
+	wsPool   *wsPool
 }
 
 func NewServer(cfg *config.Config) *Server {
@@ -87,6 +88,16 @@ func (s *Server) Start() error {
 
 	log.Infof("MTProto proxy listening on %s (SNI: %s)", addr, sec.Host)
 
+	// pre-warm WS pool only when WS upstream is actually selectable
+	if mode := mtCfg.UpstreamMode; mode == "ws" || mode == "auto" || mode == "" {
+		wsResetState()
+		s.wsPool = newWSPool(MTProtoUpstream{
+			WSEndpointHost: mtCfg.WSEndpointHost,
+			WSCustomDomain: mtCfg.WSCustomDomain,
+		}, s.cfg.Queue.Mark, wsPoolDefaultSize)
+		s.wsPool.warmup([]int{1, 2, 3, 4, 5})
+	}
+
 	go s.acceptLoop()
 	return nil
 }
@@ -94,6 +105,10 @@ func (s *Server) Start() error {
 func (s *Server) Stop() error {
 	if s.cancel != nil {
 		s.cancel()
+	}
+	if s.wsPool != nil {
+		s.wsPool.close()
+		s.wsPool = nil
 	}
 	if s.listener != nil {
 		return s.listener.Close()
@@ -172,9 +187,14 @@ func (s *Server) handleConn(raw net.Conn) {
 	log.Debugf("MTProto client from %s wants DC %d proto=0x%08x", clientAddr, result.DC, result.ProtoTag)
 	_ = raw.SetDeadline(time.Time{})
 
-	dcConn, transport, err := DialObfuscatedDC(&s.cfg.System.MTProto, s.cfg.Queue, result.DC, result.ProtoTag)
+	dcConn, transport, err := DialObfuscatedDCWithPool(&s.cfg.System.MTProto, s.cfg.Queue, result.DC, result.ProtoTag, s.wsPool)
 	if err != nil {
-		log.Errorf("MTProto dial DC %d: %v", result.DC, err)
+		// throttle ERROR-level spam from a permanently-broken DC; full detail still goes to Debug
+		if shouldLogDialError(result.DC) {
+			log.Errorf("MTProto dial DC %d: %v", result.DC, err)
+		} else {
+			log.Debugf("MTProto dial DC %d (suppressed): %v", result.DC, err)
+		}
 		return
 	}
 	defer dcConn.Close()
