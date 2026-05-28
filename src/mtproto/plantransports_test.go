@@ -44,27 +44,30 @@ func TestPlanTransports_WSOnly_DC2(t *testing.T) {
 
 func TestPlanTransports_MediaDC_ReversesOrdering(t *testing.T) {
 	cfg := &config.MTProtoConfig{UpstreamMode: "ws"}
-	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, -3)
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, -4)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	got := wsSNIs(plans)
-	want := []string{"kws3-1.web.telegram.org", "kws3.web.telegram.org"}
+	want := []string{"kws4-1.web.telegram.org", "kws4.web.telegram.org"}
 	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
-		t.Fatalf("media DC -3 order: got %v want %v", got, want)
+		t.Fatalf("media DC -4 order: got %v want %v", got, want)
 	}
 }
 
-func TestPlanTransports_DC203_RemapsToKws2(t *testing.T) {
-	cfg := &config.MTProtoConfig{UpstreamMode: "ws"}
+func TestPlanTransports_DC203_NoDirectEdge(t *testing.T) {
+	cfg := &config.MTProtoConfig{UpstreamMode: "auto"}
 	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 203)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	got := wsSNIs(plans)
-	want := []string{"kws2.web.telegram.org", "kws2-1.web.telegram.org"}
-	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
-		t.Fatalf("DC 203 should remap to kws2: got %v want %v", got, want)
+	for _, s := range wsSNIs(plans) {
+		if strings.HasSuffix(s, ".web.telegram.org") {
+			t.Fatalf("DC 203 must not use the TG WS edge (front cannot serve CDN), got %q", s)
+		}
+	}
+	if !hasTCP(plans) {
+		t.Fatalf("DC 203 should fall back to TCP, got %+v", plans)
 	}
 }
 

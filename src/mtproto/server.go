@@ -95,7 +95,7 @@ func (s *Server) Start() error {
 			WSEndpointHost: mtCfg.WSEndpointHost,
 			WSCustomDomain: mtCfg.WSCustomDomain,
 		}, s.cfg.Queue.Mark, wsPoolDefaultSize)
-		s.wsPool.warmup([]int{1, 2, 3, 4, 5})
+		s.wsPool.warmup([]int{2, 4})
 
 		// CF-proxy auto-refresh: matches tg-ws-proxy. Built-in defaults are already
 		// loaded in cfBalancerInst; this just keeps the pool fresh.

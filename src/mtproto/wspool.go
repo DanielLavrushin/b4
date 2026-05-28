@@ -212,7 +212,7 @@ func (p *wsPool) get(dc int) *wsConn {
 		return nil
 	}
 	k := wsKeyFromDC(dc)
-	if wsIsBlacklisted(dc) {
+	if !wsEdgeServesDC(k.dc) || wsIsBlacklisted(dc) {
 		return nil
 	}
 
@@ -351,11 +351,6 @@ func wsPlansForDC(dc int, cfg *MTProtoUpstream) []transportPlan {
 	if absDC < 0 {
 		absDC = -absDC
 	}
-	wsDC := absDC
-	if absDC == 203 {
-		wsDC = 2
-	}
-
 	var plans []transportPlan
 	edgeIP := ""
 	if cfg != nil {
@@ -364,9 +359,9 @@ func wsPlansForDC(dc int, cfg *MTProtoUpstream) []transportPlan {
 	if edgeIP == "" {
 		edgeIP = telegramWSEdgeIP
 	}
-	if wsDC >= 1 && wsDC <= 5 {
-		primary := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(wsDC, ""), dialHost: edgeIP}
-		media := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(wsDC, "-1"), dialHost: edgeIP}
+	if wsEdgeServesDC(absDC) {
+		primary := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(absDC, ""), dialHost: edgeIP}
+		media := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(absDC, "-1"), dialHost: edgeIP}
 		if dc < 0 {
 			plans = append(plans, media, primary)
 		} else {

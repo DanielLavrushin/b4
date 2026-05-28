@@ -30,6 +30,12 @@ const (
 	tcpDialTimeout   = 8 * time.Second
 )
 
+var wsEdgeServedDCs = map[int]bool{2: true, 4: true}
+
+func wsEdgeServesDC(absDC int) bool {
+	return wsEdgeServedDCs[absDC]
+}
+
 type ObfuscatedConn struct {
 	net.Conn
 	reader cipher.Stream
@@ -172,13 +178,9 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 		if edgeIP == "" {
 			edgeIP = telegramWSEdgeIP
 		}
-		wsDC := absDC
-		if absDC == 203 {
-			wsDC = 2
-		}
-		if wsDC >= 1 && wsDC <= 5 {
-			primary := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d.web.telegram.org", wsDC), dialHost: edgeIP}
-			media := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d-1.web.telegram.org", wsDC), dialHost: edgeIP}
+		if wsEdgeServesDC(absDC) {
+			primary := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d.web.telegram.org", absDC), dialHost: edgeIP}
+			media := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d-1.web.telegram.org", absDC), dialHost: edgeIP}
 			if dc < 0 {
 				plans = append(plans, media, primary)
 			} else {
