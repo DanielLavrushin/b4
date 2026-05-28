@@ -264,7 +264,6 @@
       "refreshingDCs": "Загрузка…",
       "refreshDCsOk": "Загружено {{count}} записей DC от Telegram.",
       "refreshDCsErr": "Не удалось обновить: {{error}}",
-      "restartNote": "Перезапустите B4 после изменения настроек MTProto.",
       "shareLink": "Поделиться ссылкой",
       "shareNative": "Поделиться",
       "shareDialogTitle": "Поделиться подключением MTProto",

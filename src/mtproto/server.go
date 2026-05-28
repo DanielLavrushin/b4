@@ -21,20 +21,23 @@ const (
 )
 
 type Server struct {
-	cfg      *config.Config
-	secret   *Secret
+	connSem chan struct{}
+	bufPool sync.Pool
+	active  atomic.Int64
+
+	cfg    atomic.Pointer[config.Config]
+	secret atomic.Pointer[Secret]
+	wsPool atomic.Pointer[wsPool]
+
+	mu       sync.Mutex
+	running  bool
 	listener net.Listener
 	ctx      context.Context
 	cancel   context.CancelFunc
-	active   atomic.Int64
-	connSem  chan struct{}
-	bufPool  sync.Pool
-	wsPool   *wsPool
 }
 
 func NewServer(cfg *config.Config) *Server {
-	return &Server{
-		cfg:     cfg,
+	s := &Server{
 		connSem: make(chan struct{}, maxConnections),
 		bufPool: sync.Pool{
 			New: func() interface{} {
@@ -43,10 +46,19 @@ func NewServer(cfg *config.Config) *Server {
 			},
 		},
 	}
+	s.cfg.Store(cfg)
+	return s
 }
 
 func (s *Server) Start() error {
-	mtCfg := &s.cfg.System.MTProto
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.startLocked()
+}
+
+func (s *Server) startLocked() error {
+	cfg := s.cfg.Load()
+	mtCfg := &cfg.System.MTProto
 	if !mtCfg.Enabled {
 		log.Infof("MTProto proxy disabled")
 		return nil
@@ -66,8 +78,8 @@ func (s *Server) Start() error {
 			return fmt.Errorf("MTProto generate secret: %w", err)
 		}
 		mtCfg.Secret = sec.Hex()
-		if s.cfg.ConfigPath != "" {
-			if err := s.cfg.SaveToFile(s.cfg.ConfigPath); err != nil {
+		if cfg.ConfigPath != "" {
+			if err := cfg.SaveToFile(cfg.ConfigPath); err != nil {
 				log.Warnf("MTProto: failed to persist generated secret: %v", err)
 			}
 		}
@@ -75,63 +87,118 @@ func (s *Server) Start() error {
 	} else {
 		return fmt.Errorf("MTProto: either secret or fake_sni must be configured")
 	}
-	s.secret = sec
 
 	addr := net.JoinHostPort(mtCfg.BindAddress, strconv.Itoa(mtCfg.Port))
-	s.ctx, s.cancel = context.WithCancel(context.Background())
 
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("MTProto listen: %w", err)
 	}
 	s.listener = ln
+	s.secret.Store(sec)
+	s.ctx, s.cancel = context.WithCancel(context.Background())
 
 	log.Infof("MTProto proxy listening on %s (SNI: %s)", addr, sec.Host)
 
-	// pre-warm WS pool only when WS upstream is actually selectable
 	if mode := mtCfg.UpstreamMode; mode == "ws" || mode == "auto" || mode == "" {
 		wsResetState()
-		s.wsPool = newWSPool(MTProtoUpstream{
+		pool := newWSPool(MTProtoUpstream{
 			WSEndpointHost: mtCfg.WSEndpointHost,
 			WSCustomDomain: mtCfg.WSCustomDomain,
-		}, s.cfg.Queue.Mark, wsPoolDefaultSize)
-		s.wsPool.warmup([]int{2, 4})
+		}, cfg.Queue.Mark, wsPoolDefaultSize)
+		pool.warmup([]int{2, 4})
+		s.wsPool.Store(pool)
 
-		// CF-proxy auto-refresh: matches tg-ws-proxy. Built-in defaults are already
-		// loaded in cfBalancerInst; this just keeps the pool fresh.
 		if mtCfg.CFProxyEnabled {
 			go runCFProxyRefreshLoop(s.ctx, mtCfg.CFProxyURL)
 		}
+	} else {
+		s.wsPool.Store(nil)
 	}
 
-	go s.acceptLoop()
+	s.running = true
+	go s.acceptLoop(ln)
 	return nil
 }
 
 func (s *Server) Stop() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stopLocked()
+}
+
+func (s *Server) stopLocked() error {
 	if s.cancel != nil {
 		s.cancel()
+		s.cancel = nil
 	}
-	if s.wsPool != nil {
-		s.wsPool.close()
-		s.wsPool = nil
+	if pool := s.wsPool.Swap(nil); pool != nil {
+		pool.close()
 	}
+	var err error
 	if s.listener != nil {
-		return s.listener.Close()
+		err = s.listener.Close()
+		s.listener = nil
 	}
-	return nil
+	s.running = false
+	return err
+}
+
+func (s *Server) UpdateConfig(newCfg *config.Config) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	old := s.cfg.Load()
+	s.cfg.Store(newCfg)
+
+	if old != nil && !mtprotoNeedsRestart(old, newCfg) {
+		return
+	}
+
+	wasEnabled := old != nil && old.System.MTProto.Enabled
+	if s.running {
+		_ = s.stopLocked()
+	}
+
+	if newCfg.System.MTProto.Enabled {
+		if err := s.startLocked(); err != nil {
+			log.Errorf("MTProto reload failed: %v (proxy stopped; fix in Settings)", err)
+		} else {
+			log.Infof("MTProto reloaded with updated configuration")
+		}
+	} else if wasEnabled {
+		log.Infof("MTProto proxy stopped (disabled in configuration)")
+	}
+}
+
+func mtprotoNeedsRestart(old, newCfg *config.Config) bool {
+	o := old.System.MTProto
+	n := newCfg.System.MTProto
+	if o.Enabled != n.Enabled ||
+		o.Port != n.Port ||
+		o.BindAddress != n.BindAddress ||
+		o.Secret != n.Secret ||
+		o.FakeSNI != n.FakeSNI ||
+		o.UpstreamMode != n.UpstreamMode ||
+		o.WSEndpointHost != n.WSEndpointHost ||
+		o.WSCustomDomain != n.WSCustomDomain ||
+		o.CFProxyEnabled != n.CFProxyEnabled ||
+		o.CFProxyURL != n.CFProxyURL {
+		return true
+	}
+	return old.Queue.Mark != newCfg.Queue.Mark
 }
 
 func (s *Server) GetSecret() string {
-	if s.secret != nil {
-		return s.secret.Hex()
+	if sec := s.secret.Load(); sec != nil {
+		return sec.Hex()
 	}
 	return ""
 }
 
-func (s *Server) acceptLoop() {
+func (s *Server) acceptLoop(ln net.Listener) {
 	for {
-		conn, err := s.listener.Accept()
+		conn, err := ln.Accept()
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
 				return
@@ -177,22 +244,28 @@ func (s *Server) handleConn(raw net.Conn) {
 		}
 	}()
 
+	secret := s.secret.Load()
+	if secret == nil {
+		return
+	}
+	cfg := s.cfg.Load()
+
 	if err := raw.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
 		return
 	}
 
-	tlsConn, err := AcceptFakeTLS(raw, s.secret)
+	tlsConn, err := AcceptFakeTLS(raw, secret)
 	if err != nil {
 		log.Debugf("MTProto fake-TLS failed from %s: %v", clientAddr, err)
 		var vErr *FakeTLSVerifyError
-		if errors.As(err, &vErr) && s.cfg.System.MTProto.FakeSNI != "" {
-			proxyToMaskingDomain(raw, vErr.Initial, s.cfg.System.MTProto.FakeSNI, s.cfg.Queue.Mark)
+		if errors.As(err, &vErr) && cfg.System.MTProto.FakeSNI != "" {
+			proxyToMaskingDomain(raw, vErr.Initial, cfg.System.MTProto.FakeSNI, cfg.Queue.Mark)
 		}
 		return
 	}
 	log.Debugf("MTProto fake-TLS handshake OK from %s", clientAddr)
 
-	result, err := AcceptObfuscated(tlsConn, s.secret)
+	result, err := AcceptObfuscated(tlsConn, secret)
 	if err != nil {
 		log.Tracef("MTProto obfuscated2 failed from %s: %v", clientAddr, err)
 		return
@@ -200,7 +273,7 @@ func (s *Server) handleConn(raw net.Conn) {
 	log.Debugf("MTProto client from %s wants DC %d proto=0x%08x", clientAddr, result.DC, result.ProtoTag)
 	_ = raw.SetDeadline(time.Time{})
 
-	dcConn, transport, err := DialObfuscatedDCWithPool(&s.cfg.System.MTProto, s.cfg.Queue, result.DC, result.ProtoTag, s.wsPool)
+	dcConn, transport, err := DialObfuscatedDCWithPool(&cfg.System.MTProto, cfg.Queue, result.DC, result.ProtoTag, s.wsPool.Load())
 	if err != nil {
 		// throttle ERROR-level spam from a permanently-broken DC; full detail still goes to Debug
 		if shouldLogDialError(result.DC) {

@@ -219,12 +219,12 @@ func (api *API) updateMTProtoConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg := api.getCfg()
-	cfg.System.MTProto = req
+	cur := api.getCfg()
+	newCfg := cur.Clone()
+	newCfg.System.MTProto = req
 
-	if err := cfg.SaveToFile(cfg.ConfigPath); err != nil {
-		log.Errorf("Failed to save MTProto config: %v", err)
-		writeJsonError(w, http.StatusInternalServerError, "Failed to save configuration")
+	if err := api.saveAndPushConfig(newCfg); err != nil {
+		writeAPIError(w, err)
 		return
 	}
 
@@ -232,6 +232,6 @@ func (api *API) updateMTProtoConfig(w http.ResponseWriter, r *http.Request) {
 
 	sendResponse(w, map[string]interface{}{
 		"success": true,
-		"message": "MTProto configuration updated. Restart required for changes to take effect.",
+		"message": "MTProto configuration updated and applied.",
 	})
 }

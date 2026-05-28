@@ -135,7 +135,7 @@ export function SettingsPage() {
         label: t("settings.tabs.mtproto"),
         icon: <ConnectionIcon />,
         description: t("settings.tabs.mtprotoDesc"),
-        requiresRestart: true,
+        requiresRestart: false,
       },
       {
         id: TABS.API,

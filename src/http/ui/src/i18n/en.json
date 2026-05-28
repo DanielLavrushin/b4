@@ -268,7 +268,6 @@
       "refreshingDCs": "Fetching…",
       "refreshDCsOk": "Loaded {{count}} DC entries from Telegram.",
       "refreshDCsErr": "Refresh failed: {{error}}",
-      "restartNote": "Restart B4 after changing MTProto settings for changes to take effect.",
       "shareLink": "Share connection link",
       "shareNative": "Share",
       "shareDialogTitle": "Share MTProto connection",

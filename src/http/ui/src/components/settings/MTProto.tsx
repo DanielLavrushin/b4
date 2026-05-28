@@ -227,11 +227,6 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
           }
           description={t("settings.MTProto.enableDesc")}
         />
-        {config.system.mtproto?.enabled && (
-          <B4Alert severity="warning">
-            {t("settings.MTProto.restartNote")}
-          </B4Alert>
-        )}
         <B4TextField
           label={t("settings.MTProto.bindAddress")}
           value={config.system.mtproto?.bind_address || "0.0.0.0"}

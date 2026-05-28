@@ -268,6 +268,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		metrics.RecordEvent("error", fmt.Sprintf("Failed to start MTProto server: %v", err))
 		log.Errorf("MTProto server did not start: %v (b4 continues without it; fix in Settings or config)", err)
 	}
+	handler.SetMTProtoServer(mtprotoServer)
 
 	wd := watchdog.New(&cfgPtr, discoveryRT, func(c *config.Config) error {
 		if err := c.Validate(); err != nil {
@@ -282,6 +283,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to save config: %v", err)
 		}
 		cfgPtr.Store(c)
+		mtprotoServer.UpdateConfig(c)
 		tproxyResolver.Set(pool.GetMatcher())
 		tproxyMgr.SyncConfig(c)
 		tables.RoutingSyncConfig(c)

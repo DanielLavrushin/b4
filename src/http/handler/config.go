@@ -368,6 +368,10 @@ func (a *API) saveAndPushConfig(newCfg *config.Config) error {
 		globalSocks5Server.UpdateConfig(newCfg)
 	}
 
+	if globalMTProtoServer != nil {
+		globalMTProtoServer.UpdateConfig(newCfg)
+	}
+
 	err := newCfg.SaveToFile(newCfg.ConfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to save config to file: %v", err)
