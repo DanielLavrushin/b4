@@ -11,11 +11,21 @@ import (
 )
 
 type Manager struct {
-	mu        sync.Mutex
-	listeners map[string]*Listener
-	resolver  DomainResolver
-	ctx       context.Context
-	cancel    context.CancelFunc
+	mu            sync.Mutex
+	listeners     map[string]*Listener
+	resolver      DomainResolver
+	mtprotoBridge MTProtoBridge
+	ctx           context.Context
+	cancel        context.CancelFunc
+}
+
+func (m *Manager) SetMTProtoBridge(b MTProtoBridge) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.mtprotoBridge = b
+	for _, l := range m.listeners {
+		l.Bridge = b
+	}
 }
 
 func NewManager(resolver DomainResolver) *Manager {
@@ -52,7 +62,7 @@ func (m *Manager) SyncConfig(cfg *config.Config) {
 		if set == nil || !set.Enabled || !set.Routing.Enabled {
 			continue
 		}
-		if set.Routing.Mode != config.RoutingModeProxy {
+		if !config.RoutingUsesTProxy(set.Routing.Mode) {
 			continue
 		}
 		desired[set.Id] = set
@@ -72,7 +82,9 @@ func (m *Manager) SyncConfig(cfg *config.Config) {
 		if desiredHost == "" {
 			desiredHost = "127.0.0.1"
 		}
+		isMTWS := set.Routing.Mode == config.RoutingModeMTProtoWS
 		if l.Port != port ||
+			l.MTProtoWS != isMTWS ||
 			l.Upstream.Host != desiredHost ||
 			l.Upstream.Port != set.Routing.Upstream.Port ||
 			l.Upstream.Username != set.Routing.Upstream.Username ||
@@ -111,6 +123,8 @@ func (m *Manager) SyncConfig(cfg *config.Config) {
 			UseDomain: set.Routing.Upstream.UseDomain,
 			FailOpen:  set.Routing.Upstream.FailOpen,
 			Resolver:  m.resolver,
+			MTProtoWS: set.Routing.Mode == config.RoutingModeMTProtoWS,
+			Bridge:    m.mtprotoBridge,
 		}
 		if err := l.Start(m.ctx); err != nil {
 			log.Errorf("tproxy: failed to start listener for set %q: %v", set.Name, err)

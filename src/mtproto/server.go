@@ -295,13 +295,17 @@ func (s *Server) handleConn(raw net.Conn) {
 }
 
 func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string) {
+	relayConns(client, dc, splitter, label, &s.bufPool)
+}
+
+func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string, bufPool *sync.Pool) {
 	errCh := make(chan error, 2)
 	start := time.Now()
 	var upBytes, downBytes atomic.Int64
 
 	cp := func(dst io.Writer, src io.Reader, dir string, counter *atomic.Int64) {
-		bufPtr := s.bufPool.Get().(*[]byte)
-		defer s.bufPool.Put(bufPtr)
+		bufPtr := bufPool.Get().(*[]byte)
+		defer bufPool.Put(bufPtr)
 		buf := *bufPtr
 		var total int64
 		var err error
@@ -325,8 +329,8 @@ func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, lab
 	}
 
 	cpSplit := func(dst io.Writer, src io.Reader, dir string, counter *atomic.Int64) {
-		bufPtr := s.bufPool.Get().(*[]byte)
-		defer s.bufPool.Put(bufPtr)
+		bufPtr := bufPool.Get().(*[]byte)
+		defer bufPool.Put(bufPtr)
 		buf := *bufPtr
 		var total int64
 		var err error

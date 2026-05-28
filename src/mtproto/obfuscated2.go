@@ -63,15 +63,28 @@ type ClientHandshakeResult struct {
 }
 
 func AcceptObfuscated(conn net.Conn, secret *Secret) (*ClientHandshakeResult, error) {
+	return acceptObfuscatedFrame(conn, func(raw []byte) []byte {
+		return deriveKey(raw, secret.Key[:])
+	})
+}
+
+func AcceptObfuscatedDirect(conn net.Conn) (*ClientHandshakeResult, error) {
+	return acceptObfuscatedFrame(conn, func(raw []byte) []byte {
+		out := make([]byte, len(raw))
+		copy(out, raw)
+		return out
+	})
+}
+
+func acceptObfuscatedFrame(conn net.Conn, derive func(raw []byte) []byte) (*ClientHandshakeResult, error) {
 	frame := make([]byte, obfuscatedFrameLen)
 	if _, err := io.ReadFull(conn, frame); err != nil {
 		return nil, fmt.Errorf("read handshake: %w", err)
 	}
 
-	decKey := deriveKey(frame[8:40], secret.Key[:])
 	decIV := make([]byte, 16)
 	copy(decIV, frame[40:56])
-	decStream, err := newAESCTR(decKey, decIV)
+	decStream, err := newAESCTR(derive(frame[8:40]), decIV)
 	if err != nil {
 		return nil, fmt.Errorf("init decrypt: %w", err)
 	}
@@ -80,10 +93,9 @@ func AcceptObfuscated(conn net.Conn, secret *Secret) (*ClientHandshakeResult, er
 	for i := 0; i < 48; i++ {
 		reversed[i] = frame[55-i]
 	}
-	encKey := deriveKey(reversed[:32], secret.Key[:])
 	encIV := make([]byte, 16)
 	copy(encIV, reversed[32:48])
-	encStream, err := newAESCTR(encKey, encIV)
+	encStream, err := newAESCTR(derive(reversed[:32]), encIV)
 	if err != nil {
 		return nil, fmt.Errorf("init encrypt: %w", err)
 	}

@@ -17,7 +17,12 @@ const FakePayloadAutoQUIC = "@quic_initial"
 const (
 	RoutingModeInterface = "interface"
 	RoutingModeProxy     = "proxy"
+	RoutingModeMTProtoWS = "mtproto-ws"
 )
+
+func RoutingUsesTProxy(mode string) bool {
+	return mode == RoutingModeProxy || mode == RoutingModeMTProtoWS
+}
 
 const (
 	FakePayloadRandom = iota

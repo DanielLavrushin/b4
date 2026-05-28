@@ -63,6 +63,40 @@ func DCSnapshotAll() map[int][]string {
 	return out
 }
 
+func dcForIP(ip net.IP) (int, bool) {
+	if ip == nil {
+		return 0, false
+	}
+	target := ip.String()
+
+	dcRuntimeMu.RLock()
+	for dc, addrs := range dcRuntime {
+		for _, a := range addrs {
+			host, _, err := net.SplitHostPort(a)
+			if err != nil {
+				host = a
+			}
+			if host == target {
+				dcRuntimeMu.RUnlock()
+				return dc, true
+			}
+		}
+	}
+	dcRuntimeMu.RUnlock()
+
+	for dc, a := range dcAddressesV4 {
+		if host, _, err := net.SplitHostPort(a); err == nil && host == target {
+			return dc, true
+		}
+	}
+	for dc, a := range dcAddressesV6 {
+		if host, _, err := net.SplitHostPort(a); err == nil && host == target {
+			return dc, true
+		}
+	}
+	return 0, false
+}
+
 func RefreshDCs() error {
 	cli := &http.Client{Timeout: 3 * time.Second}
 	var body []byte

@@ -89,7 +89,7 @@ func proxyTable() int {
 func proxyActiveCount() int {
 	n := 0
 	for _, st := range routeRuleCache {
-		if st.mode == config.RoutingModeProxy {
+		if config.RoutingUsesTProxy(st.mode) {
 			n++
 		}
 	}

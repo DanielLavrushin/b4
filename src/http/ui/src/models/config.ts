@@ -379,7 +379,7 @@ export interface DNSConfig {
   fragment_query: boolean;
 }
 
-export type RoutingMode = "interface" | "proxy";
+export type RoutingMode = "interface" | "proxy" | "mtproto-ws";
 
 export interface UpstreamProxyConfig {
   host: string;

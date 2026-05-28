@@ -36,6 +36,7 @@ var (
 	globalPool          *nfq.Pool
 	globalSocks5Server  ConfigRefresher
 	globalMTProtoServer ConfigRefresher
+	globalMTProtoBridge ConfigRefresher
 	tablesRefreshFunc   func() error
 	routingSyncFunc    func(*config.Config)
 	discoveryRuntime   *discovery.Runtime
@@ -71,6 +72,10 @@ func SetSocks5Server(s ConfigRefresher) {
 
 func SetMTProtoServer(s ConfigRefresher) {
 	globalMTProtoServer = s
+}
+
+func SetMTProtoBridge(s ConfigRefresher) {
+	globalMTProtoBridge = s
 }
 
 func NewAPIHandler(cfgPtr *atomic.Pointer[config.Config]) *API {
