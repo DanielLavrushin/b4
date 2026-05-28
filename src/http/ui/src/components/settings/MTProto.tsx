@@ -6,6 +6,7 @@ import {
   CircularProgress,
   IconButton,
   InputAdornment,
+  Link,
   Tooltip,
   Typography,
   Chip,
@@ -310,8 +311,7 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
       {(() => {
         const mode = config.system.mtproto?.upstream_mode || "auto";
         const enabled = !!config.system.mtproto?.enabled;
-        const showDcRelay =
-          !!dcRelay || mode === "tcp" || mode === "auto";
+        const showDcRelay = !!dcRelay || mode === "tcp" || mode === "auto";
         return (
           <B4FormGroup
             label={t("settings.MTProto.upstreamTitle")}
@@ -470,6 +470,22 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
           </B4FormGroup>
         );
       })()}
+      <Typography variant="caption">
+        {t("settings.MTProto.credit")}{" "}
+        <Link
+          href="https://github.com/Flowseal/tg-ws-proxy"
+          target="_blank"
+          rel="noreferrer"
+          sx={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 0.25,
+          }}
+        >
+          tg-ws-proxy
+          <OpenInNewIcon sx={{ fontSize: 12 }} />
+        </Link>
+      </Typography>
       <B4Dialog
         open={shareOpen}
         onClose={() => setShareOpen(false)}

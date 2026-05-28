@@ -228,6 +228,7 @@
     "MTProto": {
       "title": "MTProto Прокси",
       "description": "Встроенный Telegram MTProto прокси с fake-TLS обфускацией",
+      "credit": "Идея WebSocket-транспорта вдохновлена проектом",
       "settings": "Настройки MTProto",
       "enable": "Включить MTProto прокси",
       "enableDesc": "Telegram прокси, оборачивающий трафик в fake TLS для обхода DPI",

@@ -232,6 +232,7 @@
     "MTProto": {
       "title": "MTProto Proxy",
       "description": "Built-in Telegram MTProto proxy with fake-TLS obfuscation",
+      "credit": "WebSocket transport idea inspired by",
       "settings": "MTProto Settings",
       "enable": "Enable MTProto Proxy",
       "enableDesc": "Telegram proxy that wraps traffic in fake TLS to bypass DPI",
