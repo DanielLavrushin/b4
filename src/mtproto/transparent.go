@@ -1,6 +1,7 @@
 package mtproto
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -84,27 +85,43 @@ func (b *TransparentBridge) getPool() *wsPool {
 }
 
 func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int) (bool, net.Conn) {
-	dc, ok := dcForIP(origIP)
-	if !ok {
-		return false, client
+	_ = client.SetReadDeadline(time.Now().Add(5 * time.Second))
+	init := make([]byte, obfuscatedFrameLen)
+	head, herr := io.ReadFull(client, init[:4])
+	if herr != nil {
+		_ = client.SetReadDeadline(time.Time{})
+		if head == 0 {
+			return true, nil
+		}
+		return false, &prefixConn{Conn: client, prefix: append([]byte(nil), init[:head]...)}
 	}
-
-	_ = client.SetReadDeadline(time.Now().Add(15 * time.Second))
-	first := make([]byte, 1)
-	if _, err := io.ReadFull(client, first); err != nil {
-		return true, nil
+	if reservedFirst4(init[:4]) {
+		_ = client.SetReadDeadline(time.Time{})
+		log.Debugf("MTProto transparent: non-obfuscated transport (% x) from %s -> fail open", init[:4], origIP)
+		return false, &prefixConn{Conn: client, prefix: append([]byte(nil), init[:4]...)}
 	}
-	if !looksObfuscated2(first[0]) {
-		log.Debugf("MTProto transparent: non-obfuscated transport (0x%02x) for DC%d from %s -> fail open", first[0], dc, origIP)
-		return false, &prefixConn{Conn: client, prefix: first}
-	}
-
-	res, err := AcceptObfuscatedDirect(&prefixConn{Conn: client, prefix: first})
-	if err != nil {
-		log.Debugf("MTProto transparent: obfuscated accept failed for DC%d from %s: %v", dc, origIP, err)
-		return true, nil
-	}
+	n, rerr := io.ReadFull(client, init[4:])
 	_ = client.SetReadDeadline(time.Time{})
+	if rerr != nil {
+		return false, &prefixConn{Conn: client, prefix: append([]byte(nil), init[:4+n]...)}
+	}
+
+	res, derr := decodeObfuscatedDirect(init, client)
+	if derr != nil {
+		log.Debugf("MTProto transparent: obfuscated decode failed from %s: %v -> fail open", origIP, derr)
+		return false, &prefixConn{Conn: client, prefix: append([]byte(nil), init...)}
+	}
+
+	dc := res.DC
+	dcSrc := "handshake"
+	if !validTransparentDC(dc) {
+		if mapped, ok := dcForIP(origIP); ok {
+			dc, dcSrc = mapped, "ip"
+		} else {
+			log.Debugf("MTProto transparent: unresolved DC for %s (handshake dc=%d proto=0x%08x) -> fail open", origIP, res.DC, res.ProtoTag)
+			return false, &prefixConn{Conn: client, prefix: append([]byte(nil), init...)}
+		}
+	}
 
 	cfg := b.cfg.Load()
 	mtCfg := cfg.System.MTProto
@@ -124,7 +141,7 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 	defer dcConn.Close()
 
 	label := fmt.Sprintf("%s<->DC%d(transparent)", client.RemoteAddr(), dc)
-	log.Infof("MTProto transparent relay: %s -> DC%d (%s)", origIP, dc, transport)
+	log.Infof("MTProto transparent relay: %s -> DC%d (%s) [dc-from=%s]", origIP, dc, transport, dcSrc)
 
 	var splitter *msgSplitter
 	if _, isWS := dcConn.Conn.(*wsConn); isWS {
@@ -134,10 +151,21 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 	return true, nil
 }
 
-func looksObfuscated2(b byte) bool {
-	switch b {
-	case 0xef, 0xee, 0xdd, 0x16, 0x44, 0x47, 0x48, 0x4f, 0x50, 0x43, 0x54:
-		return false
+func validTransparentDC(dc int) bool {
+	a := dc
+	if a < 0 {
+		a = -a
 	}
-	return true
+	return (a >= 1 && a <= 5) || a == 203
+}
+
+func reservedFirst4(b []byte) bool {
+	if b[0] == 0xef {
+		return true
+	}
+	switch binary.LittleEndian.Uint32(b[:4]) {
+	case 0x44414548, 0x54534f50, 0x20544547, 0x4954504f, 0x02010316, 0xdddddddd, 0xeeeeeeee:
+		return true
+	}
+	return false
 }

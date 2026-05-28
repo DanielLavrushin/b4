@@ -128,6 +128,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	mtprotoBridge := mtproto.NewTransparentBridge(&cfg)
 	tproxyMgr.SetMTProtoBridge(mtprotoBridge)
 	handler.SetMTProtoBridge(mtprotoBridge)
+	go func() { _ = mtproto.RefreshDCs() }()
 
 	handler.SetTablesRefreshFunc(func() error {
 		c := cfgPtr.Load()

@@ -68,20 +68,23 @@ func AcceptObfuscated(conn net.Conn, secret *Secret) (*ClientHandshakeResult, er
 	})
 }
 
-func AcceptObfuscatedDirect(conn net.Conn) (*ClientHandshakeResult, error) {
-	return acceptObfuscatedFrame(conn, func(raw []byte) []byte {
+func acceptObfuscatedFrame(conn net.Conn, derive func(raw []byte) []byte) (*ClientHandshakeResult, error) {
+	frame := make([]byte, obfuscatedFrameLen)
+	if _, err := io.ReadFull(conn, frame); err != nil {
+		return nil, fmt.Errorf("read handshake: %w", err)
+	}
+	return decodeObfuscatedFrame(frame, conn, derive)
+}
+
+func decodeObfuscatedDirect(frame []byte, conn net.Conn) (*ClientHandshakeResult, error) {
+	return decodeObfuscatedFrame(frame, conn, func(raw []byte) []byte {
 		out := make([]byte, len(raw))
 		copy(out, raw)
 		return out
 	})
 }
 
-func acceptObfuscatedFrame(conn net.Conn, derive func(raw []byte) []byte) (*ClientHandshakeResult, error) {
-	frame := make([]byte, obfuscatedFrameLen)
-	if _, err := io.ReadFull(conn, frame); err != nil {
-		return nil, fmt.Errorf("read handshake: %w", err)
-	}
-
+func decodeObfuscatedFrame(frame []byte, conn net.Conn, derive func(raw []byte) []byte) (*ClientHandshakeResult, error) {
 	decIV := make([]byte, 16)
 	copy(decIV, frame[40:56])
 	decStream, err := newAESCTR(derive(frame[8:40]), decIV)
