@@ -332,13 +332,11 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
                 { value: "auto", label: t("settings.MTProto.upstreamAuto") },
                 { value: "ws", label: t("settings.MTProto.upstreamWs") },
               ]}
-              helperText={
+              helperText={`${
                 mode === "auto" && dcRelay
                   ? t("settings.MTProto.upstreamAutoRelayDesc")
-                  : t(
-                      `settings.MTProto.upstream${upstreamDescSuffix(mode)}Desc`,
-                    )
-              }
+                  : t(`settings.MTProto.upstream${upstreamDescSuffix(mode)}Desc`)
+              } ${t("settings.MTProto.upstreamBridgeNote")}`}
             />
             {showDcRelay && (
               <B4TextField
