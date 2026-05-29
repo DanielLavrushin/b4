@@ -219,7 +219,11 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
       description={t("settings.MTProto.description")}
       icon={<ConnectionIcon />}
     >
-      <B4FormGroup label={t("settings.MTProto.settings")} columns={2}>
+      <B4FormGroup
+        label={t("settings.MTProto.settings")}
+        description={t("settings.MTProto.serverDesc")}
+        columns={2}
+      >
         <B4Switch
           label={t("settings.MTProto.enable")}
           checked={config.system.mtproto?.enabled ?? false}
@@ -310,7 +314,6 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
       </B4FormGroup>
       {(() => {
         const mode = config.system.mtproto?.upstream_mode || "auto";
-        const enabled = !!config.system.mtproto?.enabled;
         const showDcRelay = !!dcRelay || mode === "tcp" || mode === "auto";
         return (
           <B4FormGroup
@@ -324,7 +327,6 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
               onChange={(e) =>
                 onChange("system.mtproto.upstream_mode", String(e.target.value))
               }
-              disabled={!enabled}
               options={[
                 { value: "tcp", label: t("settings.MTProto.upstreamTcp") },
                 { value: "auto", label: t("settings.MTProto.upstreamAuto") },
@@ -346,7 +348,6 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
                   onChange("system.mtproto.dc_relay", e.target.value)
                 }
                 placeholder="vps-ip:7007"
-                disabled={!enabled}
                 helperText={t("settings.MTProto.dcRelayHelp")}
                 selectOnFocus
                 slotProps={{
@@ -360,7 +361,6 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
                             <IconButton
                               size="small"
                               onClick={openRelayHelp}
-                              disabled={!enabled}
                               sx={{ px: 0 }}
                             >
                               <HelpOutlineIcon fontSize="small" />
@@ -386,9 +386,7 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
                     )
                   }
                   onClick={() => void handleTestWS()}
-                  disabled={
-                    !config.system.mtproto?.enabled || wsTesting !== null
-                  }
+                  disabled={wsTesting !== null}
                 >
                   {wsTesting === "configured"
                     ? t("settings.MTProto.testWsRunning")
@@ -405,9 +403,7 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
                         ) : undefined
                       }
                       onClick={() => void handleTestDirectTCP()}
-                      disabled={
-                        !config.system.mtproto?.enabled || wsTesting !== null
-                      }
+                      disabled={wsTesting !== null}
                     >
                       {wsTesting === "direct"
                         ? t("settings.MTProto.testWsRunning")

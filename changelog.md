@@ -1,7 +1,8 @@
 # B4 - Bye Bye Big Bro
 
-## [1.63.1] - 2026-05-27
+## [1.64.x] - 2026-05-xx
 
+- FIXED: **MTProto WebSocket routing (bridge mode) did not work on phones while it worked on desktop** - the bridge needs to know which Telegram data center each intercepted connection is for. It read that from the connection's obfuscation header, but that field is only filled in when a client talks to an MTProxy; for the direct connections the bridge intercepts it is meaningless. Desktop happened to work because it connected to an IP b4 already knew, while phones used data center IPs b4 could not match, so their connections were never routed correctly. b4 now resolves the data center from the destination IP first (covering the address ranges phones use for DC2 and DC4), and only falls back to the header as a last resort, so it no longer routes a connection to the wrong data center.
 - FIXED: **Videos and media in some Telegram channels would not load through the MTProto proxy** - certain Telegram data centers (notably the one used during file downloads for foreign channels) were unreachable from networks that block direct connections. b4 now uses a rotating list of Cloudflare-proxied fallback domains to reach those data centers transparently, and refreshes the list once an hour from a public source. A new "CF proxy fallback" toggle in Settings → MTProto Proxy lets you turn it off or point at your own list.
 - IMPROVED: **MTProto proxy feels faster and stays steady when Telegram acts up** - b4 keeps a small pool of ready connections to Telegram, so opening a chat or waking the app no longer waits for a fresh handshake. Broken data centers are remembered for a short time so retries fall back instantly instead of stalling, and the error log no longer floods with the same failure - one clear report per minute showing exactly which paths were tried and why each failed.
 

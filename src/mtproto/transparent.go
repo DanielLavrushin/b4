@@ -112,15 +112,17 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 		return false, &prefixConn{Conn: client, prefix: append([]byte(nil), init...)}
 	}
 
-	dc := res.DC
-	dcSrc := "handshake"
-	if !validTransparentDC(dc) {
-		if mapped, ok := dcForIP(origIP); ok {
-			dc, dcSrc = mapped, "ip"
-		} else {
-			log.Debugf("MTProto transparent: unresolved DC for %s (handshake dc=%d proto=0x%08x) -> fail open", origIP, res.DC, res.ProtoTag)
-			return false, &prefixConn{Conn: client, prefix: append([]byte(nil), init...)}
-		}
+	var dc int
+	var dcSrc string
+	if mapped, ok := dcForIP(origIP); ok {
+		dc, dcSrc = mapped, "ip"
+	} else if mapped, ok := dcForIPRange(origIP); ok {
+		dc, dcSrc = mapped, "ip-range"
+	} else if validTransparentDC(res.DC) {
+		dc, dcSrc = res.DC, "handshake"
+	} else {
+		log.Debugf("MTProto transparent: unresolved DC for %s (handshake dc=%d proto=0x%08x) -> fail open", origIP, res.DC, res.ProtoTag)
+		return false, &prefixConn{Conn: client, prefix: append([]byte(nil), init...)}
 	}
 
 	cfg := b.cfg.Load()
