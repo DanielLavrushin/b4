@@ -257,14 +257,14 @@ func pipe(a, b net.Conn) {
 	go func() {
 		defer wg.Done()
 		_, _ = io.Copy(a, b)
-		if c, ok := a.(*net.TCPConn); ok {
+		if c, ok := a.(interface{ CloseWrite() error }); ok {
 			_ = c.CloseWrite()
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		_, _ = io.Copy(b, a)
-		if c, ok := b.(*net.TCPConn); ok {
+		if c, ok := b.(interface{ CloseWrite() error }); ok {
 			_ = c.CloseWrite()
 		}
 	}()

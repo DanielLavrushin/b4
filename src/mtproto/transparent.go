@@ -28,6 +28,13 @@ func (c *prefixConn) Read(p []byte) (int, error) {
 	return c.Conn.Read(p)
 }
 
+func (c *prefixConn) CloseWrite() error {
+	if cw, ok := c.Conn.(interface{ CloseWrite() error }); ok {
+		return cw.CloseWrite()
+	}
+	return nil
+}
+
 type TransparentBridge struct {
 	cfg     atomic.Pointer[config.Config]
 	bufPool sync.Pool
