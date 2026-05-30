@@ -102,6 +102,7 @@ func (s *Server) startLocked() error {
 
 	if mode := mtCfg.UpstreamMode; mode == "ws" || mode == "auto" || mode == "" {
 		wsResetState()
+		tcpResetState()
 		pool := newWSPool(MTProtoUpstream{
 			WSEndpointHost: mtCfg.WSEndpointHost,
 			WSCustomDomain: mtCfg.WSCustomDomain,

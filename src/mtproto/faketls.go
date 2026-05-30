@@ -23,7 +23,6 @@ const (
 	handshakeServerHello  = 0x02
 	maxTLSRecordPayload   = 16379
 	timestampTolerance    = 120
-	secondDuration        = time.Second
 )
 
 type FakeTLSConn struct {
