@@ -250,3 +250,98 @@ func TestPlanTransports_DCRelay_IgnoredInWSMode(t *testing.T) {
 		t.Fatalf("expected WS plans for DC 2 in ws mode, got none")
 	}
 }
+
+func TestPlanTransports_WorkerForDC2BeforeCFPool(t *testing.T) {
+	cfg := &config.MTProtoConfig{
+		UpstreamMode:   "ws",
+		CFWorkerDomain: "my-worker-123.user.workers.dev",
+		CFProxyEnabled: true,
+	}
+	plans, err := planTransports(cfg, config.QueueConfig{}, 2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var workerIdx, cfIdx, edgeIdx = -1, -1, -1
+	for i, p := range plans {
+		switch {
+		case p.isWorker && workerIdx == -1:
+			workerIdx = i
+		case p.cfBase != "" && cfIdx == -1:
+			cfIdx = i
+		case !p.isWorker && p.cfBase == "" && edgeIdx == -1:
+			edgeIdx = i
+		}
+	}
+	if workerIdx == -1 {
+		t.Fatal("expected a worker plan for DC2")
+	}
+	if edgeIdx == -1 || workerIdx < edgeIdx {
+		t.Errorf("worker (%d) should come after native edge (%d)", workerIdx, edgeIdx)
+	}
+	if cfIdx != -1 && workerIdx > cfIdx {
+		t.Errorf("worker (%d) should come before shared CF pool (%d)", workerIdx, cfIdx)
+	}
+	wp := plans[workerIdx]
+	if wp.wsPath != "/apiws?dst=149.154.167.51&dc=2" {
+		t.Errorf("unexpected worker path %q", wp.wsPath)
+	}
+	if wp.sni != "my-worker-123.user.workers.dev" || wp.dialHost != wp.sni {
+		t.Errorf("worker sni/dialHost wrong: sni=%q dialHost=%q", wp.sni, wp.dialHost)
+	}
+}
+
+func TestPlanTransports_WorkerForDC1NoNativeEdge(t *testing.T) {
+	cfg := &config.MTProtoConfig{
+		UpstreamMode:   "ws",
+		CFWorkerDomain: "w.user.workers.dev",
+	}
+	plans, err := planTransports(cfg, config.QueueConfig{}, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	found := false
+	for _, p := range plans {
+		if p.isWorker {
+			found = true
+			if p.wsPath != "/apiws?dst=149.154.175.50&dc=1" {
+				t.Errorf("unexpected DC1 worker path %q", p.wsPath)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected a worker plan for DC1 (no native edge)")
+	}
+}
+
+func TestPlanTransports_MultipleWorkerDomains(t *testing.T) {
+	cfg := &config.MTProtoConfig{
+		UpstreamMode:   "ws",
+		CFWorkerDomain: " a.workers.dev , b.workers.dev ",
+	}
+	plans, err := planTransports(cfg, config.QueueConfig{}, 2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	n := 0
+	for _, p := range plans {
+		if p.isWorker {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Errorf("expected 2 worker plans (trimmed), got %d", n)
+	}
+}
+
+func TestPlanTransports_NoWorkerWhenUnset(t *testing.T) {
+	cfg := &config.MTProtoConfig{UpstreamMode: "ws"}
+	plans, err := planTransports(cfg, config.QueueConfig{}, 2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, p := range plans {
+		if p.isWorker {
+			t.Error("did not expect worker plans when CFWorkerDomain is empty")
+		}
+	}
+}

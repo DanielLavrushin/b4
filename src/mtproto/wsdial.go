@@ -271,7 +271,10 @@ func (c *wsConn) writeFrame(op byte, payload []byte) error {
 	return err
 }
 
-func dialWS(host, sni string, timeout time.Duration, mark uint) (net.Conn, error) {
+func dialWS(host, sni, path string, timeout time.Duration, mark uint) (net.Conn, error) {
+	if path == "" {
+		path = "/apiws"
+	}
 	dialer := &net.Dialer{Timeout: timeout}
 	if mark > 0 {
 		dialer.Control = func(network, address string, c syscall.RawConn) error {
@@ -317,7 +320,7 @@ func dialWS(host, sni string, timeout time.Duration, mark uint) (net.Conn, error
 	}
 	wsKey := base64.StdEncoding.EncodeToString(keyBytes)
 
-	req := "GET /apiws HTTP/1.1\r\n" +
+	req := "GET " + path + " HTTP/1.1\r\n" +
 		"Host: " + sni + "\r\n" +
 		"Upgrade: websocket\r\n" +
 		"Connection: Upgrade\r\n" +

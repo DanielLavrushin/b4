@@ -62,6 +62,13 @@ var migrationRegistry = map[int]MigrationFunc{
 	38: migrateV38to39, // Add system.memory_limit
 	39: migrateV39to40, // Add geo auto_update config
 	40: migrateV40to41, // Add MTProto CF-proxy fallback config
+	41: migrateV41to42, // Add MTProto CF Worker domain config
+}
+
+func migrateV41to42(c *Config, _ map[string]interface{}) error {
+	log.Tracef("Migration v41->v42: Adding MTProto CF Worker domain config")
+	c.System.MTProto.CFWorkerDomain = ""
+	return nil
 }
 
 func migrateV40to41(c *Config, _ map[string]interface{}) error {

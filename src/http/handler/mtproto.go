@@ -35,6 +35,7 @@ func (api *API) handleMTProtoTestWS(w http.ResponseWriter, r *http.Request) {
 		UpstreamMode   string  `json:"upstream_mode"`
 		WSCustomDomain *string `json:"ws_custom_domain"`
 		WSEndpointHost *string `json:"ws_endpoint_host"`
+		CFWorkerDomain *string `json:"cfworker_domain"`
 		DCRelay        *string `json:"dc_relay"`
 		DC             int     `json:"dc"`
 	}
@@ -60,6 +61,9 @@ func (api *API) handleMTProtoTestWS(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.WSEndpointHost != nil {
 		probeCfg.WSEndpointHost = *req.WSEndpointHost
+	}
+	if req.CFWorkerDomain != nil {
+		probeCfg.CFWorkerDomain = *req.CFWorkerDomain
 	}
 	if req.DCRelay != nil {
 		probeCfg.DCRelay = *req.DCRelay

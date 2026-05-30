@@ -36,6 +36,35 @@ func wsEdgeServesDC(absDC int) bool {
 	return wsEdgeServedDCs[absDC]
 }
 
+// workerDomains parses the comma-separated CF Worker domain list from config.
+func workerDomains(cfg *config.MTProtoConfig) []string {
+	raw := strings.TrimSpace(cfg.CFWorkerDomain)
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for _, d := range strings.Split(raw, ",") {
+		if d = strings.TrimSpace(d); d != "" {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// workerDstIP returns the canonical public DC IP the worker should TCP-connect to
+// (the worker's ?dst= target). Mirrors tg-ws-proxy DC_DEFAULT_IPS.
+func workerDstIP(absDC int) string {
+	addr, ok := dcAddressesV4[absDC]
+	if !ok {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	return host
+}
+
 type ObfuscatedConn struct {
 	net.Conn
 	reader cipher.Stream
@@ -141,11 +170,16 @@ type transportPlan struct {
 	dialHost string
 	dc       int
 	cfBase   string // CF-proxy base domain (without "kwsN."); set => pin in balancer on success
+	wsPath   string // WS request path; "" defaults to /apiws. CF Worker uses /apiws?dst=&dc=
+	isWorker bool   // CF Worker plan: dedicated per-user relay, reaches any DC via ?dst=
 }
 
 func (p transportPlan) describe() string {
 	switch p.kind {
 	case transportWS:
+		if p.isWorker {
+			return "wsworker://" + p.sni
+		}
 		if p.dialHost != "" && p.dialHost != p.sni {
 			return fmt.Sprintf("ws://%s@%s", p.sni, p.dialHost)
 		}
@@ -200,6 +234,23 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 				plans = append(plans, media, primary)
 			} else {
 				plans = append(plans, primary, media)
+			}
+		}
+		// CF Worker (free per-user workers.dev relay). Tried after TG's own edge so
+		// the fast native path wins for DC2/4, but before the shared CF pool so DCs
+		// without a native edge (1/3/5) and throttled cases use the dedicated worker
+		// instead of the rate-limited shared domains. The worker reaches any DC via
+		// ?dst=<canonical DC IP>&dc=<n> (matches tg-ws-proxy CfWorker mode).
+		if dst := workerDstIP(absDC); dst != "" {
+			for _, wd := range workerDomains(cfg) {
+				plans = append(plans, transportPlan{
+					kind:     transportWS,
+					dc:       dc,
+					sni:      wd,
+					dialHost: wd,
+					wsPath:   fmt.Sprintf("/apiws?dst=%s&dc=%d", dst, absDC),
+					isWorker: true,
+				})
 			}
 		}
 		if d := strings.TrimSpace(cfg.WSCustomDomain); d != "" {
@@ -371,7 +422,7 @@ func dialOneWS(p transportPlan, mark uint, timeout time.Duration) (net.Conn, err
 	if host == "" {
 		host = p.sni
 	}
-	return dialWS(host, p.sni, timeout, mark)
+	return dialWS(host, p.sni, p.wsPath, timeout, mark)
 }
 
 type TransportProbeResult struct {
@@ -441,7 +492,7 @@ func dialOne(p transportPlan, mark uint) (net.Conn, error) {
 		if host == "" {
 			host = p.sni
 		}
-		return dialWS(host, p.sni, wsDialTimeout, mark)
+		return dialWS(host, p.sni, p.wsPath, wsDialTimeout, mark)
 	default:
 		dialer := net.Dialer{Timeout: tcpDialTimeout}
 		if mark > 0 {

@@ -301,6 +301,7 @@ export interface MTProtoConfig {
   ws_endpoint_host: string;
   cfproxy_enabled: boolean;
   cfproxy_url: string;
+  cfworker_domain: string;
 }
 
 

@@ -170,6 +170,7 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
           upstream_mode: config.system.mtproto?.upstream_mode || "auto",
           ws_custom_domain: config.system.mtproto?.ws_custom_domain || "",
           ws_endpoint_host: config.system.mtproto?.ws_endpoint_host || "",
+          cfworker_domain: config.system.mtproto?.cfworker_domain || "",
           dc: 2,
           ...overrides,
         }),
@@ -371,6 +372,38 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
                 }}
               />
             )}
+            <B4TextField
+              label={t("settings.MTProto.cfWorkerDomain")}
+              value={config.system.mtproto?.cfworker_domain || ""}
+              onChange={(e) =>
+                onChange("system.mtproto.cfworker_domain", e.target.value)
+              }
+              placeholder="my-worker-1234.username.workers.dev"
+              helperText={t("settings.MTProto.cfWorkerDomainHelp")}
+              selectOnFocus
+              slotProps={{
+                input: {
+                  endAdornment: (
+                    <InputAdornment position="end" sx={{ mr: -0.5 }}>
+                      <Tooltip title={t("settings.MTProto.cfWorkerSetup")}>
+                        <span style={{ display: "inline-flex" }}>
+                          <IconButton
+                            size="small"
+                            component="a"
+                            href="https://daniellavrushin.github.io/b4/docs/mtproto/cfworker"
+                            target="_blank"
+                            rel="noreferrer"
+                            sx={{ px: 0 }}
+                          >
+                            <OpenInNewIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </InputAdornment>
+                  ),
+                },
+              }}
+            />
             <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
               <Stack direction="row" spacing={1}>
                 <Button
