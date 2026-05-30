@@ -19,6 +19,11 @@ const (
 	cfProxyRefreshInt  = time.Hour
 	cfProxyMinValid    = 3
 	cfProxyFetchMaxLen = 65536
+	// cfProxyDomainCooldown is how long a CF-proxy domain is skipped after it
+	// returns 429/503. Shared public domains get rate-limited in bursts; without
+	// this, every dial re-hammers all 11 and DC1/3/5 (which have no Telegram WS
+	// edge) stall entirely. Matches the observed recovery window in the field.
+	cfProxyDomainCooldown = 60 * time.Second
 )
 
 // defaultCFProxyEncoded mirrors tg-ws-proxy/proxy/config.py:_CFPROXY_ENC.
@@ -135,15 +140,17 @@ func normalizeCFDomains(in []string) []string {
 // Per-DC sticky domain selection over a rotating pool; the active domain is
 // tried first, the remaining pool is shuffled.
 type cfBalancer struct {
-	mu      sync.Mutex
-	domains []string
-	perDC   map[int]string
+	mu       sync.Mutex
+	domains  []string
+	perDC    map[int]string
+	cooldown map[string]time.Time
 }
 
 func newCFBalancer() *cfBalancer {
 	b := &cfBalancer{
-		domains: defaultCFProxyDomains(),
-		perDC:   map[int]string{},
+		domains:  defaultCFProxyDomains(),
+		perDC:    map[int]string{},
+		cooldown: map[string]time.Time{},
 	}
 	b.seedPerDC()
 	return b
@@ -174,18 +181,21 @@ func (b *cfBalancer) updateDomainsList(list []string) {
 }
 
 // domainsForDC returns the trial order for `dc`: current pinned first, then a
-// shuffle of the rest. Empty if the pool is empty.
+// shuffle of the rest. Domains in 429/503 cooldown are dropped, unless that
+// would leave nothing (DC1/3/5 have no other WS path), in which case cooldown
+// is ignored so we still try. Empty only if the pool itself is empty.
 func (b *cfBalancer) domainsForDC(dc int) []string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if len(b.domains) == 0 {
 		return nil
 	}
-	out := make([]string, 0, len(b.domains))
-	current := b.perDC[dc]
-	if current != "" {
-		out = append(out, current)
+	now := time.Now()
+	cooled := func(d string) bool {
+		t, ok := b.cooldown[d]
+		return ok && now.Before(t)
 	}
+	current := b.perDC[dc]
 	others := make([]string, 0, len(b.domains))
 	for _, d := range b.domains {
 		if d != current {
@@ -193,8 +203,35 @@ func (b *cfBalancer) domainsForDC(dc int) []string {
 		}
 	}
 	cfproxyShuffle(others)
-	out = append(out, others...)
-	return out
+
+	out := make([]string, 0, len(b.domains))
+	if current != "" && !cooled(current) {
+		out = append(out, current)
+	}
+	for _, d := range others {
+		if !cooled(d) {
+			out = append(out, d)
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	// everything is cooled down: fall back to trying all (still better than no path)
+	if current != "" {
+		out = append(out, current)
+	}
+	return append(out, others...)
+}
+
+// penalize puts a CF-proxy domain into cooldown after a 429/503 so subsequent
+// dials skip it until it recovers.
+func (b *cfBalancer) penalize(domain string, d time.Duration) {
+	if domain == "" {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.cooldown[domain] = time.Now().Add(d)
 }
 
 // pin records that `domain` worked for `dc`. Returns true if the pin changed.

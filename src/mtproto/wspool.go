@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	wsPoolMaxAge          = 60 * time.Second
+	wsPoolMaxAge          = 20 * time.Second
 	wsPoolDefaultSize     = 4
 	wsDCFailCooldown      = 30 * time.Second
 	wsDialTimeoutCooldown = 2 * time.Second

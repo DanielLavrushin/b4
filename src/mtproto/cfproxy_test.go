@@ -59,8 +59,13 @@ func TestBalancer_PinAndRotation(t *testing.T) {
 	if len(domains) != b.size() {
 		t.Fatalf("expected %d domains for DC2, got %d", b.size(), len(domains))
 	}
-	// pin a domain and verify it's listed first
-	target := "cakeisalie.co.uk"
+	// pin a domain different from the randomly-seeded current one and verify
+	// it's listed first. Picking != current avoids a flake when seedPerDC
+	// happened to seed our target as DC2's active domain already.
+	target := domains[0]
+	if target == b.perDC[2] {
+		target = domains[len(domains)-1]
+	}
 	if !b.pin(2, target) {
 		t.Fatal("first pin should report change=true")
 	}

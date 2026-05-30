@@ -246,12 +246,16 @@ func DialObfuscatedDCWithPool(cfg *config.MTProtoConfig, queueCfg config.QueueCo
 	if pool != nil && !wsIsBlacklisted(dc) {
 		if raw := pool.get(dc); raw != nil {
 			obf, err := completeObfuscation(raw, dc, protoTag)
-			if err == nil {
+			if err == nil && raw.liveNow() {
 				log.Infof("MTProto DC %d connected via ws-pool", dc)
 				wsRecordSuccess(dc)
 				return obf, "ws-pool", nil
 			}
-			log.Debugf("MTProto DC %d pool conn obf init failed: %v", dc, err)
+			if err != nil {
+				log.Debugf("MTProto DC %d pool conn obf init failed: %v", dc, err)
+			} else {
+				log.Debugf("MTProto DC %d pool conn died before relay; re-dialing fresh", dc)
+			}
 			_ = raw.Close()
 		}
 	}
@@ -285,6 +289,9 @@ func DialObfuscatedDCWithPool(cfg *config.MTProtoConfig, queueCfg config.QueueCo
 				wsTried++
 				if isWSRedirect(derr) {
 					wsRedirects++
+				}
+				if p.cfBase != "" && wsRateLimited(derr) {
+					cfBalancerInst.penalize(p.cfBase, cfProxyDomainCooldown)
 				}
 			} else if isDialTimeout(derr) {
 				tcpRecordFailure(p.addr)
@@ -349,6 +356,14 @@ func isWSRedirect(err error) bool {
 		return false
 	}
 	return he.isRedirect()
+}
+
+func wsRateLimited(err error) bool {
+	var he *wsHandshakeError
+	if !errors.As(err, &he) {
+		return false
+	}
+	return he.statusCode == 429 || he.statusCode == 503
 }
 
 func dialOneWS(p transportPlan, mark uint, timeout time.Duration) (net.Conn, error) {
