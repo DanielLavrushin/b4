@@ -560,6 +560,37 @@ func completeObfuscation(conn net.Conn, dc int, protoTag uint32) (*ObfuscatedCon
 	}, nil
 }
 
+// reservedFirst4Words are the first-4-byte little-endian values an obfuscated
+// frame must never start with: they collide with TLS/HTTP and the obfuscation
+// transport tags, so TG treats a connection beginning with one of them as a
+// different protocol. generateFrame avoids producing them; reservedFirst4
+// (transparent bridge) uses them to detect a non-obfuscated transport. Keep the
+// two in sync via this single list.
+var reservedFirst4Words = []uint32{
+	0x44414548, // "HEAD"
+	0x54534f50, // "POST"
+	0x20544547, // "GET "
+	0x4954504f, // "OPTI"
+	0x02010316, // TLS record header
+	0xdddddddd, // padded intermediate tag
+	0xeeeeeeee, // intermediate tag
+}
+
+// isReservedFirst4 reports whether the first 4 bytes are a reserved value
+// (0xef abridged-tag first byte, or any reservedFirst4Words value).
+func isReservedFirst4(b []byte) bool {
+	if b[0] == 0xef {
+		return true
+	}
+	first4 := binary.LittleEndian.Uint32(b[:4])
+	for _, w := range reservedFirst4Words {
+		if first4 == w {
+			return true
+		}
+	}
+	return false
+}
+
 func generateFrame(dc int, protoTag uint32) []byte {
 	frame := make([]byte, obfuscatedFrameLen)
 	for {
@@ -567,14 +598,7 @@ func generateFrame(dc int, protoTag uint32) []byte {
 			continue
 		}
 
-		if frame[0] == 0xef {
-			continue
-		}
-		first4 := binary.LittleEndian.Uint32(frame[0:4])
-		if first4 == 0x44414548 || first4 == 0x54534f50 ||
-			first4 == 0x20544547 || first4 == 0x4954504f ||
-			first4 == 0x02010316 || first4 == 0xdddddddd ||
-			first4 == 0xeeeeeeee {
+		if isReservedFirst4(frame[0:4]) {
 			continue
 		}
 		if binary.LittleEndian.Uint32(frame[4:8]) == 0 {

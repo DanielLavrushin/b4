@@ -1,7 +1,6 @@
 package mtproto
 
 import (
-	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -160,12 +159,5 @@ func validTransparentDC(dc int) bool {
 }
 
 func reservedFirst4(b []byte) bool {
-	if b[0] == 0xef {
-		return true
-	}
-	switch binary.LittleEndian.Uint32(b[:4]) {
-	case 0x44414548, 0x54534f50, 0x20544547, 0x4954504f, 0x02010316, 0xdddddddd, 0xeeeeeeee:
-		return true
-	}
-	return false
+	return isReservedFirst4(b)
 }
