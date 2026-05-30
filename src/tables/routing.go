@@ -125,7 +125,7 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 
 	if _, ok := routeRuleCache[set.Id]; !ok {
 		var err error
-		if cur.mode == config.RoutingModeProxy {
+		if config.RoutingUsesTProxy(cur.mode) {
 			err = routeEnsureProxyRule(be, cfg, set, cur, sources)
 		} else {
 			err = routeEnsureRule(be, cfg, set, cur, sources)
@@ -135,9 +135,12 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 			return
 		}
 		routeRuleCache[set.Id] = cur
-		if cur.mode == config.RoutingModeProxy {
+		switch cur.mode {
+		case config.RoutingModeMTProtoWS:
+			log.Infof("Routing [%s]: enabled MTProto-WS set '%s' mark=0x%x port=%d", be.name(), set.Name, cur.mark, cur.tproxyPort)
+		case config.RoutingModeProxy:
 			log.Infof("Routing [%s]: enabled proxy set '%s' -> %s:%d mark=0x%x port=%d", be.name(), set.Name, set.Routing.Upstream.Host, set.Routing.Upstream.Port, cur.mark, cur.tproxyPort)
-		} else {
+		default:
 			log.Infof("Routing [%s]: enabled set '%s' -> iface=%s mark=0x%x table=%d", be.name(), set.Name, set.Routing.EgressInterface, cur.mark, cur.table)
 		}
 	}
@@ -167,7 +170,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		chainPre: chainPre, chainOut: chainOut, chainSNAT: chainSNAT,
 	}
 
-	if mode == config.RoutingModeProxy {
+	if config.RoutingUsesTProxy(mode) {
 		mark, port := proxyMarkAndPort(set)
 		st.mark = mark
 		st.table = proxyTable()
@@ -193,7 +196,7 @@ func routeStateEqual(a, b routeState) bool {
 }
 
 func routeCleanupAny(be routeBackend, st routeState) {
-	if st.mode == config.RoutingModeProxy {
+	if config.RoutingUsesTProxy(st.mode) {
 		routeCleanupProxyRule(be, st)
 		return
 	}
@@ -389,7 +392,7 @@ func RoutingSyncConfig(cfg *config.Config) {
 
 		if _, ok := routeRuleCache[set.Id]; !ok {
 			var err error
-			if cur.mode == config.RoutingModeProxy {
+			if config.RoutingUsesTProxy(cur.mode) {
 				err = routeEnsureProxyRule(be, cfg, set, cur, sources)
 			} else {
 				err = routeEnsureRule(be, cfg, set, cur, sources)
@@ -413,7 +416,7 @@ func RoutingSyncConfig(cfg *config.Config) {
 
 	routeIfaceAuto = make(map[string]routeState)
 	for _, st := range routeRuleCache {
-		if st.mode == config.RoutingModeProxy || st.iface == "" {
+		if config.RoutingUsesTProxy(st.mode) || st.iface == "" {
 			continue
 		}
 		if _, ok := routeIfaceAuto[st.iface]; !ok {
@@ -588,7 +591,7 @@ func routeAddMasqueradeRules(be routeBackend, iface, chain string, mark uint32, 
 func interfaceShareCount(mark uint32, table int) int {
 	n := 0
 	for _, st := range routeRuleCache {
-		if st.mode == config.RoutingModeProxy {
+		if config.RoutingUsesTProxy(st.mode) {
 			continue
 		}
 		if st.mark == mark && st.table == table {
@@ -676,7 +679,7 @@ func RoutingReinstallForInterface(cfg *config.Config, iface string) {
 	ipv6 := cfg.Queue.IPv6Enabled
 	count := 0
 	for _, st := range routeRuleCache {
-		if st.mode == config.RoutingModeProxy || st.iface != iface {
+		if config.RoutingUsesTProxy(st.mode) || st.iface != iface {
 			continue
 		}
 		routeEnsurePolicyRouting(st.iface, st.mark, st.table, ipv4, ipv6)

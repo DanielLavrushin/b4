@@ -26,6 +26,10 @@ type DomainResolver interface {
 	DomainFor(ip net.IP) string
 }
 
+type MTProtoBridge interface {
+	Handle(client net.Conn, origIP net.IP, origPort int) (bool, net.Conn)
+}
+
 type Listener struct {
 	SetID     string
 	SetName   string
@@ -36,6 +40,8 @@ type Listener struct {
 	UseDomain bool
 	FailOpen  bool
 	Resolver  DomainResolver
+	MTProtoWS bool
+	Bridge    MTProtoBridge
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -170,6 +176,25 @@ func (l *Listener) handle(client net.Conn) {
 	origIP := tcpAddr.IP
 	origPort := tcpAddr.Port
 
+	if l.MTProtoWS {
+		src := ""
+		if r := client.RemoteAddr(); r != nil {
+			src = r.String()
+		}
+		log.LogConnectionStr("TCP", l.SetName, "", src, "",
+			net.JoinHostPort(origIP.String(), fmt.Sprintf("%d", origPort)),
+			"", "", "mtproto-ws")
+		if l.Bridge != nil {
+			if handled, failover := l.Bridge.Handle(client, origIP, origPort); handled {
+				return
+			} else if failover != nil {
+				client = failover
+			}
+		}
+		l.failOpenDirect(client, origIP, origPort)
+		return
+	}
+
 	domain := ""
 	if l.Resolver != nil {
 		domain = l.Resolver.DomainFor(origIP)
@@ -213,20 +238,33 @@ func (l *Listener) handle(client net.Conn) {
 	pipe(client, upstream)
 }
 
+func (l *Listener) failOpenDirect(client net.Conn, origIP net.IP, origPort int) {
+	dialer := markedDialer(10*time.Second, l.Upstream.BypassMark)
+	ctx, cancel := context.WithTimeout(l.ctx, 10*time.Second)
+	direct, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(origIP.String(), fmt.Sprintf("%d", origPort)))
+	cancel()
+	if err != nil {
+		log.Tracef("tproxy: mtproto-ws fail-open direct dial failed for %s:%d: %v", origIP, origPort, err)
+		return
+	}
+	defer direct.Close()
+	pipe(client, direct)
+}
+
 func pipe(a, b net.Conn) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		_, _ = io.Copy(a, b)
-		if c, ok := a.(*net.TCPConn); ok {
+		if c, ok := a.(interface{ CloseWrite() error }); ok {
 			_ = c.CloseWrite()
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		_, _ = io.Copy(b, a)
-		if c, ok := b.(*net.TCPConn); ok {
+		if c, ok := b.(interface{ CloseWrite() error }); ok {
 			_ = c.CloseWrite()
 		}
 	}()

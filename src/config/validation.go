@@ -120,7 +120,7 @@ func (c *Config) Validate() error {
 		switch set.Routing.Mode {
 		case "":
 			set.Routing.Mode = RoutingModeInterface
-		case RoutingModeProxy, RoutingModeInterface:
+		case RoutingModeProxy, RoutingModeInterface, RoutingModeMTProtoWS:
 		default:
 			v.addf(fmt.Sprintf("sets[%d].routing.mode", setIdx), "invalid_routing_mode", map[string]any{"set": set.Name, "mode": set.Routing.Mode}, "set %q: unknown routing mode %q", set.Name, set.Routing.Mode)
 			return v.result()

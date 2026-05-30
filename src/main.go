@@ -125,6 +125,11 @@ func runB4(cmd *cobra.Command, args []string) error {
 	tproxyResolver := tproxy.NewLearnedIPResolver(nil)
 	tproxyMgr := tproxy.NewManager(tproxyResolver)
 
+	mtprotoBridge := mtproto.NewTransparentBridge(&cfg)
+	tproxyMgr.SetMTProtoBridge(mtprotoBridge)
+	handler.SetMTProtoBridge(mtprotoBridge)
+	go func() { _ = mtproto.RefreshDCs() }()
+
 	handler.SetTablesRefreshFunc(func() error {
 		c := cfgPtr.Load()
 		if c.System.Tables.SkipSetup {
@@ -284,6 +289,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		}
 		cfgPtr.Store(c)
 		mtprotoServer.UpdateConfig(c)
+		mtprotoBridge.UpdateConfig(c)
 		tproxyResolver.Set(pool.GetMatcher())
 		tproxyMgr.SyncConfig(c)
 		tables.RoutingSyncConfig(c)

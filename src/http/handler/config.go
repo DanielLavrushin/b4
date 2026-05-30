@@ -372,6 +372,10 @@ func (a *API) saveAndPushConfig(newCfg *config.Config) error {
 		globalMTProtoServer.UpdateConfig(newCfg)
 	}
 
+	if globalMTProtoBridge != nil {
+		globalMTProtoBridge.UpdateConfig(newCfg)
+	}
+
 	err := newCfg.SaveToFile(newCfg.ConfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to save config to file: %v", err)

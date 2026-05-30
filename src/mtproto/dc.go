@@ -31,6 +31,58 @@ var dcAddressesV6 = map[int]string{
 	5: "[2001:b28:f23f:f005::a]:443",
 }
 
+type dcNet struct {
+	net *net.IPNet
+	dc  int
+}
+
+func mustParseDCNets(pairs [][2]interface{}) []dcNet {
+	out := make([]dcNet, 0, len(pairs))
+	for _, p := range pairs {
+		cidr, _ := p[0].(string)
+		dc, _ := p[1].(int)
+		_, n, err := net.ParseCIDR(cidr)
+		if err != nil || n == nil {
+			continue
+		}
+		out = append(out, dcNet{net: n, dc: dc})
+	}
+	return out
+}
+
+var dcRangesV4 = mustParseDCNets([][2]interface{}{
+	{"149.154.167.0/24", 2},
+	{"149.154.161.0/24", 2},
+	{"149.154.165.0/24", 4},
+	{"149.154.166.0/24", 4},
+	{"91.108.4.0/22", 4},
+})
+
+var dcRangesV6 = mustParseDCNets([][2]interface{}{
+	{"2001:67c:4e8:f002::/64", 2},
+	{"2001:67c:4e8:f004::/64", 4},
+})
+
+func dcForIPRange(ip net.IP) (int, bool) {
+	if ip == nil {
+		return 0, false
+	}
+	if ip.To4() != nil {
+		for _, e := range dcRangesV4 {
+			if e.net.Contains(ip) {
+				return e.dc, true
+			}
+		}
+		return 0, false
+	}
+	for _, e := range dcRangesV6 {
+		if e.net.Contains(ip) {
+			return e.dc, true
+		}
+	}
+	return 0, false
+}
+
 var (
 	dcRuntimeMu sync.RWMutex
 	dcRuntime   = map[int][]string{}
@@ -61,6 +113,40 @@ func DCSnapshotAll() map[int][]string {
 		out[k] = append([]string(nil), v...)
 	}
 	return out
+}
+
+func dcForIP(ip net.IP) (int, bool) {
+	if ip == nil {
+		return 0, false
+	}
+	target := ip.String()
+
+	dcRuntimeMu.RLock()
+	for dc, addrs := range dcRuntime {
+		for _, a := range addrs {
+			host, _, err := net.SplitHostPort(a)
+			if err != nil {
+				host = a
+			}
+			if host == target {
+				dcRuntimeMu.RUnlock()
+				return dc, true
+			}
+		}
+	}
+	dcRuntimeMu.RUnlock()
+
+	for dc, a := range dcAddressesV4 {
+		if host, _, err := net.SplitHostPort(a); err == nil && host == target {
+			return dc, true
+		}
+	}
+	for dc, a := range dcAddressesV6 {
+		if host, _, err := net.SplitHostPort(a); err == nil && host == target {
+			return dc, true
+		}
+	}
+	return 0, false
 }
 
 func RefreshDCs() error {

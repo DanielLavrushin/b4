@@ -158,6 +158,31 @@ func (c *wsConn) alive() bool {
 	return false
 }
 
+// liveNow is a zero-wait liveness poll used right after the obfuscated handshake
+// is written to a pooled conn, to catch conns Telegram FIN/RST'd between the
+// pool's alive() check and the relay's first write (the up=N down=0 in ~1ms
+// failure). Uses an already-expired read deadline so Peek returns immediately:
+// a pending FIN/RST surfaces as a non-timeout error (dead), an idle-but-open
+// conn surfaces as a timeout (alive). Peek does not consume, so buffered data is
+// preserved for the relay. Cost is microseconds, unlike alive()'s 5ms wait.
+func (c *wsConn) liveNow() bool {
+	if c.closed.Load() {
+		return false
+	}
+	if err := c.tls.SetReadDeadline(time.Now().Add(-time.Second)); err != nil {
+		return false
+	}
+	defer func() { _ = c.tls.SetReadDeadline(time.Time{}) }()
+	buf, err := c.br.Peek(1)
+	if err == nil && len(buf) >= 1 {
+		return buf[0]&0x0F != wsOpcodeClose
+	}
+	if ne, ok := err.(net.Error); ok && ne.Timeout() {
+		return true
+	}
+	return false
+}
+
 func (c *wsConn) LocalAddr() net.Addr  { return c.tls.LocalAddr() }
 func (c *wsConn) RemoteAddr() net.Addr { return c.tls.RemoteAddr() }
 func (c *wsConn) SetDeadline(t time.Time) error {
@@ -246,7 +271,10 @@ func (c *wsConn) writeFrame(op byte, payload []byte) error {
 	return err
 }
 
-func dialWS(host, sni string, timeout time.Duration, mark uint) (net.Conn, error) {
+func dialWS(host, sni, path string, timeout time.Duration, mark uint) (net.Conn, error) {
+	if path == "" {
+		path = "/apiws"
+	}
 	dialer := &net.Dialer{Timeout: timeout}
 	if mark > 0 {
 		dialer.Control = func(network, address string, c syscall.RawConn) error {
@@ -292,7 +320,7 @@ func dialWS(host, sni string, timeout time.Duration, mark uint) (net.Conn, error
 	}
 	wsKey := base64.StdEncoding.EncodeToString(keyBytes)
 
-	req := "GET /apiws HTTP/1.1\r\n" +
+	req := "GET " + path + " HTTP/1.1\r\n" +
 		"Host: " + sni + "\r\n" +
 		"Upgrade: websocket\r\n" +
 		"Connection: Upgrade\r\n" +

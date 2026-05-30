@@ -28,14 +28,21 @@ export const TrafficRouting = ({
 }: TrafficRoutingProps) => {
   const { t } = useTranslation();
   const routing = config.routing;
-  const mode: RoutingMode = routing.mode === "proxy" ? "proxy" : "interface";
+  const mode: RoutingMode =
+    routing.mode === "proxy"
+      ? "proxy"
+      : routing.mode === "mtproto-ws"
+        ? "mtproto-ws"
+        : "interface";
   const isProxy = mode === "proxy";
+  const isMTProtoWS = mode === "mtproto-ws";
+  const isInterface = mode === "interface";
 
   const selectedIfaceAvailable = availableIfaces.includes(
     routing.egress_interface,
   );
   const shouldShowUnavailableSelected = Boolean(
-    !isProxy && routing.egress_interface && !selectedIfaceAvailable,
+    isInterface && routing.egress_interface && !selectedIfaceAvailable,
   );
 
   const toggleSourceIface = (iface: string) => {
@@ -61,6 +68,8 @@ export const TrafficRouting = ({
       upstream.host && upstream.port
         ? `${upstream.host}:${upstream.port}`
         : t("sets.routing.flowNoUpstream");
+  } else if (isMTProtoWS) {
+    flowDestination = t("sets.routing.flowMTProtoWS");
   } else {
     flowDestination =
       routing.egress_interface || t("sets.routing.flowNoOutput");
@@ -75,7 +84,7 @@ export const TrafficRouting = ({
           onChange={(checked: boolean) => onChange("routing.enabled", checked)}
           description={t("sets.routing.enableDesc")}
           disabled={
-            !isProxy && availableIfaces.length === 0 && !routing.enabled
+            isInterface && availableIfaces.length === 0 && !routing.enabled
           }
         />
       </Grid>
@@ -94,7 +103,15 @@ export const TrafficRouting = ({
                 {t("sets.routing.modeInterface")}
               </MenuItem>
               <MenuItem value="proxy">{t("sets.routing.modeProxy")}</MenuItem>
+              <MenuItem value="mtproto-ws">
+                {t("sets.routing.modeMTProtoWS")}
+              </MenuItem>
             </B4TextField>
+            {isMTProtoWS && (
+              <B4Alert severity="info" sx={{ mt: 2 }}>
+                {t("sets.routing.mtprotoWsNote")}
+              </B4Alert>
+            )}
           </Grid>
 
           <Grid size={{ xs: 12 }}>
@@ -193,7 +210,9 @@ export const TrafficRouting = ({
               >
                 {isProxy
                   ? t("sets.routing.flowProxyCaption")
-                  : t("sets.routing.flowCaption")}
+                  : isMTProtoWS
+                    ? t("sets.routing.flowMTProtoWSCaption")
+                    : t("sets.routing.flowCaption")}
               </Typography>
             </Box>
           </Grid>
@@ -201,7 +220,9 @@ export const TrafficRouting = ({
           <B4Hint>
             {isProxy
               ? t("sets.routing.howItWorksProxy")
-              : t("sets.routing.howItWorks")}
+              : isMTProtoWS
+                ? t("sets.routing.howItWorksMTProtoWS")
+                : t("sets.routing.howItWorks")}
           </B4Hint>
 
           <Grid size={{ xs: 12 }}>
@@ -240,7 +261,7 @@ export const TrafficRouting = ({
               })}
             </Box>
 
-            {availableIfaces.length === 0 && !isProxy && (
+            {availableIfaces.length === 0 && isInterface && (
               <B4Alert severity="warning" sx={{ mt: 2 }}>
                 {t("sets.routing.noInterfaces")}
               </B4Alert>
@@ -255,11 +276,15 @@ export const TrafficRouting = ({
             )}
 
             <B4Hint sx={{ mt: 2 }}>
-              {isProxy ? t("sets.routing.infoProxy") : t("sets.routing.info")}
+              {isProxy
+                ? t("sets.routing.infoProxy")
+                : isMTProtoWS
+                  ? t("sets.routing.infoMTProtoWS")
+                  : t("sets.routing.info")}
             </B4Hint>
           </Grid>
 
-          {!isProxy && (
+          {isInterface && (
             <Grid size={{ xs: 12, md: 6 }}>
               <B4TextField
                 label={t("sets.routing.outputInterface")}

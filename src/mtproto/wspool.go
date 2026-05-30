@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	wsPoolMaxAge          = 60 * time.Second
+	wsPoolMaxAge          = 20 * time.Second
 	wsPoolDefaultSize     = 4
 	wsDCFailCooldown      = 30 * time.Second
 	wsDialTimeoutCooldown = 2 * time.Second
@@ -161,10 +161,10 @@ type wsPool struct {
 	target    int
 	maxAge    time.Duration
 
-	cfg      *MTProtoUpstream
-	mark     uint
-	ctx      context.Context
-	cancel   context.CancelFunc
+	cfg    *MTProtoUpstream
+	mark   uint
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // MTProtoUpstream is the minimal upstream config the pool needs (subset of config.MTProtoConfig).
@@ -330,7 +330,7 @@ func (p *wsPool) dialFresh(dc int) (*wsConn, error) {
 		if host == "" {
 			host = pl.sni
 		}
-		conn, err := dialWS(host, pl.sni, wsDialTimeout, p.mark)
+		conn, err := dialWS(host, pl.sni, pl.wsPath, wsDialTimeout, p.mark)
 		if err != nil {
 			lastErr = err
 			continue
