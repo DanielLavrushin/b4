@@ -134,6 +134,7 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 	cfg := b.cfg.Load()
 	mtCfg := cfg.System.MTProto
 	mtCfg.UpstreamMode = "auto"
+	mtCfg.DCRelay = ""
 
 	dcConn, transport, err := DialObfuscatedDCWithPool(&mtCfg, cfg.Queue, dc, res.ProtoTag, b.getPool())
 	if err != nil {

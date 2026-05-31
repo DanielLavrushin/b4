@@ -37,7 +37,18 @@ The transport-mode dropdown applies to the **proxy server** only. The **WebSocke
 
 ### Cloudflare Worker domain (recommended fallback)
 
-If media, reactions, or stickers fail to load, set a **Cloudflare Worker domain**. It is a free per-user WebSocket relay on `workers.dev` that reaches all data centers and avoids the shared-domain rate limits. Comma-separate multiple workers. See the setup link next to the field in the UI.
+If media, reactions, or stickers fail to load, set a **Cloudflare Worker domain**. It is a free per-user WebSocket relay you host on your own Cloudflare account (`*.workers.dev`). B4 can reach any data center through it, so it rescues DCs with no native WebSocket edge (1, 3, 5) and connections throttled on the shared CF pool. The worker is tried after Telegram's own edge (so the fast native path still wins for DC 2/4) and before the shared CF pool.
+
+Setup, in short:
+
+1. Create a free Cloudflare account.
+2. In **Compute → Workers & Pages**, create a Worker from the default template and deploy it.
+3. Replace the worker code with the proxy script, then redeploy.
+4. Copy the worker's `name-1234.username.workers.dev` domain into the **Cloudflare Worker domain** field. Comma-separate multiple workers.
+
+Make sure `cloudflare.com`, `cloudflare.dev`, and `workers.dev` are reachable (not blocked) on your network.
+
+The worker script and the full step-by-step are maintained by tg-ws-proxy: [CfWorker.md](https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfWorker.md). B4 dials the worker at `/apiws`, matching that script.
 
 ### CF proxy fallback
 
@@ -214,3 +225,9 @@ In the logs: `DC->client: 0 bytes`.
 
 - Direct TCP and no relay: Telegram servers are blocked by IP. Switch the transport to Auto/WebSocket, or set up a DC Relay.
 - DC Relay set: `socat` is not running on the VPS, or the wrong port was specified.
+
+---
+
+## Credits
+
+The WebSocket transport and the Cloudflare Worker relay are inspired by [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy).
