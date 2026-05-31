@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/daniellavrushin/b4/log"
@@ -342,12 +343,26 @@ func cfproxyCacheBust() string {
 	return hex.EncodeToString(b[:])
 }
 
-// runCFProxyRefreshLoop is intended to be run as a goroutine. It performs an
-// initial refresh then loops on cfProxyRefreshInt until ctx is done.
-func runCFProxyRefreshLoop(ctx interface {
-	Done() <-chan struct{}
-}, url string) {
-	if err := cfBalancerInst.refreshFromURL(url); err != nil {
+var (
+	cfRefreshOnce sync.Once
+	cfRefreshURL  atomic.Pointer[string]
+)
+
+func StartCFProxyRefresh(ctx interface{ Done() <-chan struct{} }, url string) {
+	cfRefreshURL.Store(&url)
+	cfRefreshOnce.Do(func() {
+		go runCFProxyRefreshLoop(ctx)
+	})
+}
+
+func runCFProxyRefreshLoop(ctx interface{ Done() <-chan struct{} }) {
+	currentURL := func() string {
+		if p := cfRefreshURL.Load(); p != nil {
+			return *p
+		}
+		return ""
+	}
+	if err := cfBalancerInst.refreshFromURL(currentURL()); err != nil {
 		log.Warnf("CF proxy refresh failed at startup: %v", err)
 	} else {
 		log.Infof("CF proxy pool refreshed (%d domains)", cfBalancerInst.size())
@@ -359,7 +374,7 @@ func runCFProxyRefreshLoop(ctx interface {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := cfBalancerInst.refreshFromURL(url); err != nil {
+			if err := cfBalancerInst.refreshFromURL(currentURL()); err != nil {
 				log.Debugf("CF proxy refresh failed: %v", err)
 			} else {
 				log.Debugf("CF proxy pool refreshed (%d domains)", cfBalancerInst.size())

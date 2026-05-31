@@ -109,10 +109,6 @@ func (s *Server) startLocked() error {
 		}, cfg.Queue.Mark, wsPoolDefaultSize)
 		pool.warmup([]int{2, 4})
 		s.wsPool.Store(pool)
-
-		if mtCfg.CFProxyEnabled {
-			go runCFProxyRefreshLoop(s.ctx, mtCfg.CFProxyURL)
-		}
 	} else {
 		s.wsPool.Store(nil)
 	}

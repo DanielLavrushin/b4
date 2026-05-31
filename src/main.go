@@ -117,6 +117,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 	var cfgPtr atomic.Pointer[config.Config]
 	cfgPtr.Store(&cfg)
 
+	appCtx, appCancel := context.WithCancel(context.Background())
+	defer appCancel()
+
 	aiManager := ai.NewManager(cfg.System.AI, cfg.ConfigPath)
 	handler.SetAIManager(aiManager)
 
@@ -129,6 +132,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 	tproxyMgr.SetMTProtoBridge(mtprotoBridge)
 	handler.SetMTProtoBridge(mtprotoBridge)
 	go func() { _ = mtproto.RefreshDCs() }()
+	if cfg.System.MTProto.CFProxyEnabled {
+		mtproto.StartCFProxyRefresh(appCtx, cfg.System.MTProto.CFProxyURL)
+	}
 
 	handler.SetTablesRefreshFunc(func() error {
 		c := cfgPtr.Load()
@@ -290,6 +296,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 		cfgPtr.Store(c)
 		mtprotoServer.UpdateConfig(c)
 		mtprotoBridge.UpdateConfig(c)
+		if c.System.MTProto.CFProxyEnabled {
+			mtproto.StartCFProxyRefresh(appCtx, c.System.MTProto.CFProxyURL)
+		}
 		tproxyResolver.Set(pool.GetMatcher())
 		tproxyMgr.SyncConfig(c)
 		tables.RoutingSyncConfig(c)
