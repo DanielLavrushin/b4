@@ -171,6 +171,7 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
           ws_custom_domain: config.system.mtproto?.ws_custom_domain || "",
           ws_endpoint_host: config.system.mtproto?.ws_endpoint_host || "",
           cfworker_domain: config.system.mtproto?.cfworker_domain || "",
+          cfproxy_enabled: config.system.mtproto?.cfproxy_enabled ?? true,
           dc: 2,
           ...overrides,
         }),

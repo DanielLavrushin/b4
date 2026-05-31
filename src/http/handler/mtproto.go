@@ -22,7 +22,7 @@ func (api *API) RegisterMTProtoApi() {
 // @Tags MTProto
 // @Accept json
 // @Produce json
-// @Param body body object false "optional overrides: upstream_mode, ws_custom_domain, dc"
+// @Param body body object false "optional overrides: upstream_mode, ws_custom_domain, ws_endpoint_host, cfworker_domain, cfproxy_enabled, dc_relay, dc"
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @Router /mtproto/test-ws [post]
@@ -36,6 +36,7 @@ func (api *API) handleMTProtoTestWS(w http.ResponseWriter, r *http.Request) {
 		WSCustomDomain *string `json:"ws_custom_domain"`
 		WSEndpointHost *string `json:"ws_endpoint_host"`
 		CFWorkerDomain *string `json:"cfworker_domain"`
+		CFProxyEnabled *bool   `json:"cfproxy_enabled"`
 		DCRelay        *string `json:"dc_relay"`
 		DC             int     `json:"dc"`
 	}
@@ -64,6 +65,9 @@ func (api *API) handleMTProtoTestWS(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.CFWorkerDomain != nil {
 		probeCfg.CFWorkerDomain = *req.CFWorkerDomain
+	}
+	if req.CFProxyEnabled != nil {
+		probeCfg.CFProxyEnabled = *req.CFProxyEnabled
 	}
 	if req.DCRelay != nil {
 		probeCfg.DCRelay = *req.DCRelay
