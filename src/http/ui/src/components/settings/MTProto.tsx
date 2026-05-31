@@ -337,7 +337,9 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
               helperText={`${
                 mode === "auto" && dcRelay
                   ? t("settings.MTProto.upstreamAutoRelayDesc")
-                  : t(`settings.MTProto.upstream${upstreamDescSuffix(mode)}Desc`)
+                  : t(
+                      `settings.MTProto.upstream${upstreamDescSuffix(mode)}Desc`,
+                    )
               } ${t("settings.MTProto.upstreamBridgeNote")}`}
             />
             {showDcRelay && (
@@ -391,7 +393,7 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
                           <IconButton
                             size="small"
                             component="a"
-                            href="https://daniellavrushin.github.io/b4/docs/mtproto/cfworker"
+                            href="https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfWorker.md"
                             target="_blank"
                             rel="noreferrer"
                             sx={{ px: 0 }}

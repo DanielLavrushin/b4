@@ -5,7 +5,7 @@ title: MTProto / Telegram
 
 # Telegram with B4
 
-B4 can keep Telegram working on a censored network in two independent ways:
+B4 can keep Telegram working on a censored network in two ways. They are independent and can run at the same time:
 
 1. **MTProto proxy server** - clients add B4 as an MTProto proxy inside the Telegram app (with a secret). Use this when a device should connect *to* B4, for example a phone on a cellular network reaching your home B4.
 2. **Telegram over WebSocket (transparent bridge)** - a per-set routing mode that intercepts Telegram traffic from LAN devices and relays it for them. No in-app proxy and no secret. Use this to fix Telegram for every device behind B4 at once.
@@ -23,7 +23,7 @@ Both rely on the same **Telegram upstream** settings (how B4 itself reaches Tele
 
 ## Telegram upstream (shared)
 
-Settings → **General** → **MTProto Proxy** → **Telegram upstream**. This controls how B4 reaches Telegram's data centers. It is used by the proxy server *and* by the WebSocket bridge mode, so it applies even when the proxy server is turned off.
+Settings → **MTProto Proxy** → **Telegram upstream**. This controls how B4 reaches Telegram's data centers. It is used by the proxy server *and* by the WebSocket bridge mode, so it applies even when the proxy server is turned off.
 
 ### Transport mode
 
@@ -54,11 +54,11 @@ A rotating pool of Cloudflare-proxied domains used as a fallback when Telegram's
 
 A Telegram proxy that clients connect to with a secret. B4 disguises the traffic as a regular HTTPS connection to a popular website.
 
-![mtproto](/img/mtproto/20260322135051.png)
+![20260531200322](../../../../static/img/mtproto/20260531200322.png)
 
 ### Step 1: Configure B4
 
-In the B4 web UI → **Settings** → **General** → **MTProto Proxy**:
+In the B4 web UI → **Settings** → **MTProto Proxy**:
 
 1. **Enable MTProto Proxy** - turn it on
 2. **Port** - listen port (recommended: `443`)
@@ -97,10 +97,24 @@ This mode runs on its own. The MTProto proxy server under Settings → MTProto d
 
 ### Setup
 
-1. Create or open a set and pair it with the **`telegram`** geoip target (so the set matches Telegram's IP ranges).
+1. Create or open a set and give it the **`telegram`** target in both the geosite and geoip categories (so the set matches Telegram's domains and IP ranges).
 2. In the set's **Routing** tab, enable routing and set **Routing mode** to **Telegram over WebSocket (built-in)**.
-3. Choose the **source interfaces** (the LAN interfaces whose devices should be bridged).
+3. Choose the **source interfaces** (the LAN interfaces whose devices should be bridged). Leave empty to bridge all devices.
 4. Save.
+
+A minimal set for this mode:
+
+```json
+{
+  "name": "telegram-ws",
+  "targets": {
+    "geosite_categories": ["telegram"],
+    "geoip_categories": ["telegram"]
+  },
+  "enabled": true,
+  "routing": { "enabled": true, "mode": "mtproto-ws" }
+}
+```
 
 The shared **Telegram upstream** settings (Settings → MTProto) apply here, so configure a Cloudflare Worker domain there if media fails to load.
 
@@ -131,7 +145,7 @@ apt install -y socat
 
 ### Step 2: Set the DC Relay address
 
-In **Settings** → **General** → **MTProto Proxy**, set **DC Relay** to the VPS address with the base port (e.g. `my-vps.com:7007`). The field appears when the transport mode is Direct TCP or Auto.
+In **Settings** → **MTProto Proxy**, set **DC Relay** to the VPS address with the base port (e.g. `my-vps.com:7007`). The field appears when the transport mode is Direct TCP or Auto.
 
 With Auto + a DC Relay configured, relay TCP is tried first and WebSocket is used as the fallback.
 

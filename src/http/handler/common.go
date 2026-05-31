@@ -16,8 +16,8 @@ import (
 	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/nfq"
-	"github.com/daniellavrushin/b4/watchdog"
 	"github.com/daniellavrushin/b4/utils"
+	"github.com/daniellavrushin/b4/watchdog"
 	"golang.org/x/sys/unix"
 )
 
@@ -33,15 +33,16 @@ type ConfigRefresher interface {
 }
 
 var (
-	globalPool          *nfq.Pool
-	globalSocks5Server  ConfigRefresher
-	globalMTProtoServer ConfigRefresher
-	globalMTProtoBridge ConfigRefresher
-	tablesRefreshFunc   func() error
-	routingSyncFunc    func(*config.Config)
-	discoveryRuntime   *discovery.Runtime
-	globalWatchdog     *watchdog.Watchdog
-	globalAIManager    *ai.Manager
+	globalPool           *nfq.Pool
+	globalSocks5Server   ConfigRefresher
+	globalMTProtoServer  ConfigRefresher
+	globalMTProtoBridge  ConfigRefresher
+	tablesRefreshFunc    func() error
+	routingSyncFunc      func(*config.Config)
+	mtprotoCFRefreshFunc func(*config.Config)
+	discoveryRuntime     *discovery.Runtime
+	globalWatchdog       *watchdog.Watchdog
+	globalAIManager      *ai.Manager
 )
 
 func SetAIManager(m *ai.Manager) {
@@ -122,7 +123,7 @@ func NewAPIHandler(cfgPtr *atomic.Pointer[config.Config]) *API {
 		cfgPtr:         cfgPtr,
 		geodataManager: geodataManager,
 		discoveryRT:    discoveryRuntime,
-		asnStore: config.NewAsnStore(cfg.ConfigPath),
+		asnStore:       config.NewAsnStore(cfg.ConfigPath),
 	}
 }
 func (api *API) RegisterEndpoints(mux *http.ServeMux, cfgPtr *atomic.Pointer[config.Config]) {
@@ -167,6 +168,10 @@ func SetTablesRefreshFunc(fn func() error) {
 
 func SetRoutingSyncFunc(fn func(*config.Config)) {
 	routingSyncFunc = fn
+}
+
+func SetMTProtoCFRefreshFunc(fn func(*config.Config)) {
+	mtprotoCFRefreshFunc = fn
 }
 
 func SetDiscoveryRuntime(rt *discovery.Runtime) {
