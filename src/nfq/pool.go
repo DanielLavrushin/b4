@@ -102,6 +102,10 @@ func (p *Pool) Start() error {
 }
 
 func (p *Pool) Stop() {
+	if p.Dhcp != nil {
+		p.Dhcp.Stop()
+	}
+
 	// Stop the connState cleanup goroutine
 	select {
 	case <-p.stopCleanup:
