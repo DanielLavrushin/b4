@@ -1,6 +1,10 @@
 import { useState, useCallback, useMemo } from "react";
 import { SortDirection } from "@common/SortableTableCell";
-import { asnStorage } from "@utils";
+import {
+  asnStorage,
+  matchesConnectionFilter,
+  parseConnectionFilter,
+} from "@utils";
 import { useSnackbar } from "@context/SnackbarProvider";
 
 // Types
@@ -231,41 +235,8 @@ export function useFilteredLogs(
   filter: string,
 ): ParsedLog[] {
   return useMemo(() => {
-    const f = filter.trim().toLowerCase();
-    if (!f) return parsedLogs;
-
-    const filters = f
-      .split("+")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-    if (filters.length === 0) return parsedLogs;
-
-    const fieldFilters: Record<string, string[]> = {};
-    const fieldExcludes: Record<string, string[]> = {};
-    const globalFilters: string[] = [];
-    const globalExcludes: string[] = [];
-
-    for (const filterTerm of filters) {
-      const isExclude = filterTerm.startsWith("!");
-      const term = isExclude ? filterTerm.slice(1) : filterTerm;
-
-      const colonIndex = term.indexOf(":");
-      if (colonIndex > 0) {
-        const field = term.substring(0, colonIndex);
-        const value = term.substring(colonIndex + 1);
-        if (isExclude) {
-          if (!fieldExcludes[field]) fieldExcludes[field] = [];
-          fieldExcludes[field].push(value);
-        } else {
-          if (!fieldFilters[field]) fieldFilters[field] = [];
-          fieldFilters[field].push(value);
-        }
-      } else if (isExclude) {
-        globalExcludes.push(term);
-      } else {
-        globalFilters.push(term);
-      }
-    }
+    const parsed = parseConnectionFilter(filter);
+    if (!parsed) return parsedLogs;
 
     const getFieldValue = (log: ParsedLog, field: string): string => {
       if (field === "asn") {
@@ -290,33 +261,13 @@ export function useFilteredLogs(
       getAsnForIp(log.destination),
     ];
 
-    return parsedLogs.filter((log: ParsedLog) => {
-      for (const [field, values] of Object.entries(fieldFilters)) {
-        const fieldValue = getFieldValue(log, field);
-        if (!values.some((value) => fieldValue.includes(value))) return false;
-      }
-
-      for (const [field, values] of Object.entries(fieldExcludes)) {
-        const fieldValue = getFieldValue(log, field);
-        if (values.some((value) => fieldValue.includes(value))) return false;
-      }
-
-      for (const filterTerm of globalFilters) {
-        const matches = getSearchableValues(log).some((value) =>
-          value?.toLowerCase().includes(filterTerm),
-        );
-        if (!matches) return false;
-      }
-
-      for (const excludeTerm of globalExcludes) {
-        const matches = getSearchableValues(log).some((value) =>
-          value?.toLowerCase().includes(excludeTerm),
-        );
-        if (matches) return false;
-      }
-
-      return true;
-    });
+    return parsedLogs.filter((log: ParsedLog) =>
+      matchesConnectionFilter(
+        parsed,
+        (field) => getFieldValue(log, field),
+        getSearchableValues(log),
+      ),
+    );
   }, [parsedLogs, filter]);
 }
 

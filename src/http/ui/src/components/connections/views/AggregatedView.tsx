@@ -3,6 +3,7 @@ import { Box, Fab, Tooltip } from "@mui/material";
 import { StartIcon, StopIcon } from "@b4.icons";
 import { colors } from "@design";
 import { useConnectionGroups, type EnrichedGroup } from "@hooks/useConnectionGroups";
+import { matchesConnectionFilter, parseConnectionFilter } from "@utils";
 import { AggregatedControlBar, TimeWindow } from "./AggregatedControlBar";
 import { DeviceSidebar } from "./DeviceSidebar";
 import { GroupList } from "./GroupList";
@@ -26,26 +27,42 @@ interface Props {
   onDeleteAsn: (asnId: string) => void;
 }
 
-const matchesFilter = (g: EnrichedGroup, f: string): boolean => {
-  if (!f) return true;
-  const needle = f.toLowerCase();
-  const hay = [
-    g.domain,
-    g.destIp,
-    g.asnName,
-    g.hostSet,
-    g.ipSet,
-    g.deviceName,
-    g.mac,
-    g.protocol,
-    g.tls,
-    g.flags,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  return hay.includes(needle);
+const getGroupFieldValue = (g: EnrichedGroup, field: string): string => {
+  switch (field) {
+    case "asn":
+      return g.asnName?.toLowerCase() || "";
+    case "alias":
+    case "device":
+      return `${g.deviceName || ""} ${g.mac || ""}`.toLowerCase();
+    case "domain":
+      return g.domain.toLowerCase();
+    case "destination":
+      return g.destIp.toLowerCase();
+    case "protocol":
+      return g.protocol.toLowerCase();
+    case "tls":
+      return g.tls.toLowerCase();
+    case "flags":
+      return g.flags.toLowerCase();
+    case "set":
+      return `${g.hostSet || ""} ${g.ipSet || ""}`.toLowerCase();
+    default:
+      return "";
+  }
 };
+
+const getGroupSearchableValues = (g: EnrichedGroup): (string | null)[] => [
+  g.domain,
+  g.destIp,
+  g.asnName,
+  g.hostSet,
+  g.ipSet,
+  g.deviceName,
+  g.mac,
+  g.protocol,
+  g.tls,
+  g.flags,
+];
 
 export const AggregatedView = ({
   lines,
@@ -86,12 +103,21 @@ export const AggregatedView = ({
 
   const filteredGroups = useMemo(() => {
     const cutoff = window === 0 ? 0 : nowTick - window * 1000;
+    const parsedFilter = parseConnectionFilter(filter);
     return state.groups.filter((g) => {
       if (cutoff > 0 && g.lastSeen < cutoff) return false;
       if (unmatchedOnly && (g.hostSet || g.ipSet)) return false;
       if (!showAll && !g.domain) return false;
       if (selectedMac !== null && g.mac !== selectedMac) return false;
-      if (!matchesFilter(g, filter)) return false;
+      if (
+        parsedFilter &&
+        !matchesConnectionFilter(
+          parsedFilter,
+          (field) => getGroupFieldValue(g, field),
+          getGroupSearchableValues(g),
+        )
+      )
+        return false;
       return true;
     });
   }, [state.groups, window, unmatchedOnly, showAll, selectedMac, filter, nowTick]);
