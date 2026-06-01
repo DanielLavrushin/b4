@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,15 +15,17 @@ import (
 
 const dohContentType = "application/dns-message"
 
+var errDoHMethodNotAllowed = errors.New("doh method not allowed")
+
 func resolveDoHWire(ctx context.Context, client *http.Client, serverURL, domain string) (string, error) {
 	query := dns.BuildAQuery(domain, 0)
 
 	body, err := dohWirePOST(ctx, client, serverURL, query)
-	if err != nil {
+	if errors.Is(err, errDoHMethodNotAllowed) {
 		body, err = dohWireGET(ctx, client, serverURL, query)
-		if err != nil {
-			return "", err
-		}
+	}
+	if err != nil {
+		return "", err
 	}
 
 	ips := dns.ParseResponseIPs(body)
@@ -64,6 +67,10 @@ func dohWireDo(client *http.Client, req *http.Request) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusNotImplemented {
+		io.Copy(io.Discard, resp.Body)
+		return nil, errDoHMethodNotAllowed
+	}
 	if resp.StatusCode != http.StatusOK {
 		io.Copy(io.Discard, resp.Body)
 		return nil, fmt.Errorf("doh status %d", resp.StatusCode)
