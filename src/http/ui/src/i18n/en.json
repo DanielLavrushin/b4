@@ -1518,7 +1518,6 @@
       "avgLatency": "Avg latency",
       "reachable": "Reachable",
       "download": "Download",
-      "upload": "Upload",
       "datacenters": "Datacenters",
       "avgSpeed": "Avg speed",
       "peakSpeed": "Peak speed",

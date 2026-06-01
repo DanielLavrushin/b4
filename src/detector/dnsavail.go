@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 
@@ -41,8 +42,11 @@ func (s *DetectorSuite) runDNSAvailCheck(ctx context.Context) *DNSAvailResult {
 				Address:  server.Address,
 				Total:    len(domains),
 			}
+			var client *http.Client
 			if server.Kind == "doh" {
 				pr.Kind = DNSAvailDoH
+				client = markedHTTPClient(s.mark, dnsAvailTimeout)
+				defer client.CloseIdleConnections()
 			} else {
 				pr.Kind = DNSAvailUDP
 			}
@@ -52,7 +56,7 @@ func (s *DetectorSuite) runDNSAvailCheck(ctx context.Context) *DNSAvailResult {
 				if s.isCanceled() {
 					break
 				}
-				ms, ok := s.dnsAvailProbe(ctx, server, dom)
+				ms, ok := s.dnsAvailProbe(ctx, client, server, dom)
 				if ok {
 					pr.OkCount++
 					sum += ms
@@ -97,13 +101,12 @@ func (s *DetectorSuite) runDNSAvailCheck(ctx context.Context) *DNSAvailResult {
 	return result
 }
 
-func (s *DetectorSuite) dnsAvailProbe(ctx context.Context, server dnsAvailServer, domain string) (float64, bool) {
+func (s *DetectorSuite) dnsAvailProbe(ctx context.Context, client *http.Client, server dnsAvailServer, domain string) (float64, bool) {
 	probeCtx, cancel := context.WithTimeout(ctx, dnsAvailTimeout)
 	defer cancel()
 
 	start := time.Now()
 	if server.Kind == "doh" {
-		client := markedHTTPClient(s.mark, dnsAvailTimeout)
 		if _, err := resolveDoHWire(probeCtx, client, server.Address, domain); err != nil {
 			return 0, false
 		}

@@ -1516,7 +1516,6 @@
       "avgLatency": "Ср. задержка",
       "reachable": "Доступно",
       "download": "Загрузка",
-      "upload": "Отдача",
       "datacenters": "Дата-центры",
       "avgSpeed": "Ср. скорость",
       "peakSpeed": "Пик. скорость",
