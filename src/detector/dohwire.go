@@ -47,7 +47,7 @@ func dohWirePOST(ctx context.Context, client *http.Client, serverURL string, que
 func dohWireGET(ctx context.Context, client *http.Client, serverURL string, query []byte) ([]byte, error) {
 	enc := base64.RawURLEncoding.EncodeToString(query)
 	sep := "?"
-	if bytes.ContainsRune([]byte(serverURL), '?') {
+	if strings.ContainsRune(serverURL, '?') {
 		sep = "&"
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serverURL+sep+"dns="+enc, nil)
