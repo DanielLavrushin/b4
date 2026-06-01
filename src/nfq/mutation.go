@@ -9,6 +9,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sock"
+	"github.com/daniellavrushin/b4/utils"
 )
 
 const (
@@ -226,7 +227,7 @@ func (w *Worker) reorderExtensions(packet []byte, cfg *config.SetConfig) []byte 
 
 	// Random shuffle other extensions
 	for i := len(otherExts) - 1; i > 0; i-- {
-		j := int(randomUint32() % uint32(i+1))
+		j := int(utils.RandUint32() % uint32(i+1))
 		otherExts[i], otherExts[j] = otherExts[j], otherExts[i]
 	}
 
@@ -720,13 +721,4 @@ func (w *Worker) updatePacketLengths(packet []byte) {
 	// Fix checksums
 	sock.FixIPv4Checksum(packet[:ipHdrLen])
 	sock.FixTCPChecksum(packet)
-}
-
-// randomUint32 generates a random uint32 with thread safety
-func randomUint32() uint32 {
-	var b [4]byte
-	randMutex.Lock()
-	rand.Read(b[:])
-	randMutex.Unlock()
-	return binary.BigEndian.Uint32(b[:])
 }

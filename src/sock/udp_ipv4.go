@@ -2,7 +2,38 @@ package sock
 
 import (
 	"encoding/binary"
+	"net"
+
+	"github.com/daniellavrushin/b4/utils"
 )
+
+func BuildUDPPacketV4(srcIP, dstIP net.IP, srcPort, dstPort uint16, payload []byte) []byte {
+	src := srcIP.To4()
+	dst := dstIP.To4()
+	if src == nil || dst == nil {
+		return nil
+	}
+
+	total := 20 + 8 + len(payload)
+	pkt := make([]byte, total)
+
+	pkt[0] = 0x45
+	binary.BigEndian.PutUint16(pkt[2:4], uint16(total))
+	binary.BigEndian.PutUint16(pkt[4:6], utils.RandUint16())
+	pkt[8] = 64
+	pkt[9] = 17
+	copy(pkt[12:16], src)
+	copy(pkt[16:20], dst)
+
+	binary.BigEndian.PutUint16(pkt[20:22], srcPort)
+	binary.BigEndian.PutUint16(pkt[22:24], dstPort)
+	binary.BigEndian.PutUint16(pkt[24:26], uint16(8+len(payload)))
+	copy(pkt[28:], payload)
+
+	FixIPv4Checksum(pkt[:20])
+	FixUDPChecksum(pkt, 20)
+	return pkt
+}
 
 func udpChecksumIPv4(pkt []byte) {
 	ihl := int((pkt[0] & 0x0f) << 2)

@@ -2,8 +2,59 @@ package sock
 
 import (
 	"encoding/binary"
+	"net"
 	"testing"
 )
+
+func onesSum(b []byte) uint16 {
+	var sum uint32
+	for i := 0; i+1 < len(b); i += 2 {
+		sum += uint32(binary.BigEndian.Uint16(b[i : i+2]))
+	}
+	if len(b)%2 == 1 {
+		sum += uint32(b[len(b)-1]) << 8
+	}
+	for sum > 0xffff {
+		sum = (sum >> 16) + (sum & 0xffff)
+	}
+	return uint16(sum)
+}
+
+func TestBuildUDPPacketV4Checksums(t *testing.T) {
+	src := net.IPv4(8, 8, 8, 8)
+	dst := net.IPv4(192, 168, 1, 50)
+	payload := []byte{0x12, 0x34, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x07}
+
+	pkt := BuildUDPPacketV4(src, dst, 53, 40000, payload)
+	if pkt == nil {
+		t.Fatal("BuildUDPPacketV4 returned nil")
+	}
+	if len(pkt) != 20+8+len(payload) {
+		t.Fatalf("unexpected length %d", len(pkt))
+	}
+	if pkt[9] != 17 {
+		t.Fatalf("protocol = %d, want 17", pkt[9])
+	}
+	if !net.IP(pkt[12:16]).Equal(src.To4()) {
+		t.Fatalf("src mismatch: %v", net.IP(pkt[12:16]))
+	}
+	if !net.IP(pkt[16:20]).Equal(dst.To4()) {
+		t.Fatalf("dst mismatch: %v", net.IP(pkt[16:20]))
+	}
+
+	if got := onesSum(pkt[:20]); got != 0xffff {
+		t.Fatalf("ip header checksum invalid: folded sum = %#x", got)
+	}
+
+	pseudo := make([]byte, 12)
+	copy(pseudo[0:4], pkt[12:16])
+	copy(pseudo[4:8], pkt[16:20])
+	pseudo[9] = 17
+	binary.BigEndian.PutUint16(pseudo[10:12], uint16(8+len(payload)))
+	if got := onesSum(append(pseudo, pkt[20:]...)); got != 0xffff {
+		t.Fatalf("udp checksum invalid: folded sum = %#x", got)
+	}
+}
 
 func buildMinimalIPv4UDPPacket(payloadSize int) []byte {
 	ipHdrLen := 20

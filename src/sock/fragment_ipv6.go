@@ -1,15 +1,10 @@
 package sock
 
 import (
-	"crypto/rand"
 	"encoding/binary"
-)
 
-func generateFragmentID() uint32 {
-	var buf [4]byte
-	rand.Read(buf[:])
-	return binary.BigEndian.Uint32(buf[:])
-}
+	"github.com/daniellavrushin/b4/utils"
+)
 
 // IPv6FragmentPacket creates IPv6 fragments using Fragment extension headers
 // This implements true IPv6 fragmentation (IP-level)
@@ -41,7 +36,7 @@ func IPv6FragmentPacket(packet []byte, splitPos int) ([][]byte, bool) {
 	}
 
 	fragHdrLen := 8
-	var identification uint32 = generateFragmentID()
+	var identification uint32 = utils.RandUint32()
 
 	// First fragment
 	frag1Len := ipv6HdrLen + fragHdrLen + splitPos

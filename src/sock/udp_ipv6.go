@@ -2,7 +2,35 @@ package sock
 
 import (
 	"encoding/binary"
+	"net"
+
+	"github.com/daniellavrushin/b4/utils"
 )
+
+func BuildUDPPacketV6(srcIP, dstIP net.IP, srcPort, dstPort uint16, payload []byte) []byte {
+	src := srcIP.To16()
+	dst := dstIP.To16()
+	if src == nil || dst == nil || srcIP.To4() != nil || dstIP.To4() != nil {
+		return nil
+	}
+
+	pkt := make([]byte, 40+8+len(payload))
+
+	pkt[0] = 0x60
+	binary.BigEndian.PutUint16(pkt[4:6], uint16(8+len(payload)))
+	pkt[6] = 17
+	pkt[7] = 64
+	copy(pkt[8:24], src)
+	copy(pkt[24:40], dst)
+
+	binary.BigEndian.PutUint16(pkt[40:42], srcPort)
+	binary.BigEndian.PutUint16(pkt[42:44], dstPort)
+	binary.BigEndian.PutUint16(pkt[44:46], uint16(8+len(payload)))
+	copy(pkt[48:], payload)
+
+	FixUDPChecksumV6(pkt)
+	return pkt
+}
 
 func udpChecksumIPv6(pkt []byte) {
 	if len(pkt) < 48 {
@@ -113,7 +141,7 @@ func IPv6FragmentUDP(orig []byte, split int) ([][]byte, bool) {
 
 	fragHdrLen := 8
 
-	var identification uint32 = generateFragmentID()
+	var identification uint32 = utils.RandUint32()
 
 	frag1Len := ipv6HdrLen + fragHdrLen + firstDataAligned
 	frag1 := make([]byte, frag1Len)

@@ -7,6 +7,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/utils"
 )
 
 const ipv6HdrLen = 40
@@ -182,7 +183,7 @@ func (w *Worker) reorderExtensionsv6(packet []byte, cfg *config.SetConfig) []byt
 	}
 
 	for i := len(otherExts) - 1; i > 0; i-- {
-		j := int(randomUint32() % uint32(i+1))
+		j := int(utils.RandUint32() % uint32(i+1))
 		otherExts[i], otherExts[j] = otherExts[j], otherExts[i]
 	}
 

@@ -2,8 +2,41 @@ package sock
 
 import (
 	"encoding/binary"
+	"net"
 	"testing"
 )
+
+func TestBuildUDPPacketV6Checksums(t *testing.T) {
+	src := net.ParseIP("2001:db8::1")
+	dst := net.ParseIP("2001:db8::2")
+	payload := []byte{0xab, 0xcd, 0x01, 0x00, 0x00, 0x01}
+
+	pkt := BuildUDPPacketV6(src, dst, 53, 40000, payload)
+	if pkt == nil {
+		t.Fatal("BuildUDPPacketV6 returned nil")
+	}
+	if len(pkt) != 40+8+len(payload) {
+		t.Fatalf("unexpected length %d", len(pkt))
+	}
+	if pkt[6] != 17 {
+		t.Fatalf("next header = %d, want 17", pkt[6])
+	}
+
+	pseudo := make([]byte, 40)
+	copy(pseudo[0:16], pkt[8:24])
+	copy(pseudo[16:32], pkt[24:40])
+	binary.BigEndian.PutUint32(pseudo[32:36], uint32(8+len(payload)))
+	pseudo[39] = 17
+	if got := onesSum(append(pseudo, pkt[40:]...)); got != 0xffff {
+		t.Fatalf("udp6 checksum invalid: folded sum = %#x", got)
+	}
+}
+
+func TestBuildUDPPacketV6RejectsV4(t *testing.T) {
+	if pkt := BuildUDPPacketV6(net.IPv4(1, 1, 1, 1), net.ParseIP("2001:db8::2"), 53, 40000, nil); pkt != nil {
+		t.Fatal("expected nil for v4 source")
+	}
+}
 
 func buildMinimalIPv6UDPPacket(payloadSize int) []byte {
 	ipv6HdrLen := 40
