@@ -20,6 +20,18 @@ func onesSum(b []byte) uint16 {
 	return uint16(sum)
 }
 
+func TestBuildUDPPacketV4PayloadBounds(t *testing.T) {
+	src := net.IPv4(8, 8, 8, 8)
+	dst := net.IPv4(192, 168, 1, 50)
+
+	if pkt := BuildUDPPacketV4(src, dst, 53, 40000, make([]byte, 0xffff-28)); pkt == nil {
+		t.Error("expected non-nil at max payload size")
+	}
+	if pkt := BuildUDPPacketV4(src, dst, 53, 40000, make([]byte, 0xffff-27)); pkt != nil {
+		t.Error("expected nil for oversized payload (would overflow IPv4 total length)")
+	}
+}
+
 func TestBuildUDPPacketV4Checksums(t *testing.T) {
 	src := net.IPv4(8, 8, 8, 8)
 	dst := net.IPv4(192, 168, 1, 50)

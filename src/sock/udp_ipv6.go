@@ -13,6 +13,9 @@ func BuildUDPPacketV6(srcIP, dstIP net.IP, srcPort, dstPort uint16, payload []by
 	if src == nil || dst == nil || srcIP.To4() != nil || dstIP.To4() != nil {
 		return nil
 	}
+	if len(payload) > 0xffff-8 {
+		return nil
+	}
 
 	pkt := make([]byte, 40+8+len(payload))
 

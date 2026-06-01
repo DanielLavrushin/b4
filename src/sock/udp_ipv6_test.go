@@ -6,6 +6,18 @@ import (
 	"testing"
 )
 
+func TestBuildUDPPacketV6PayloadBounds(t *testing.T) {
+	src := net.ParseIP("2001:db8::1")
+	dst := net.ParseIP("2001:db8::2")
+
+	if pkt := BuildUDPPacketV6(src, dst, 53, 40000, make([]byte, 0xffff-8)); pkt == nil {
+		t.Error("expected non-nil at max payload size")
+	}
+	if pkt := BuildUDPPacketV6(src, dst, 53, 40000, make([]byte, 0xffff-7)); pkt != nil {
+		t.Error("expected nil for oversized payload (would overflow UDP/payload length)")
+	}
+}
+
 func TestBuildUDPPacketV6Checksums(t *testing.T) {
 	src := net.ParseIP("2001:db8::1")
 	dst := net.ParseIP("2001:db8::2")
