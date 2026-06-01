@@ -5,40 +5,51 @@ export interface ParsedConnectionFilter {
   globalExcludes: string[];
 }
 
+function addTerm(acc: ParsedConnectionFilter, rawTerm: string): void {
+  const isExclude = rawTerm.startsWith("!");
+  const term = (isExclude ? rawTerm.slice(1) : rawTerm).trim();
+  if (!term) return;
+
+  const colonIndex = term.indexOf(":");
+  if (colonIndex > 0) {
+    const field = term.substring(0, colonIndex).trim();
+    const value = term.substring(colonIndex + 1).trim();
+    if (!field || !value) return;
+    const target = isExclude ? acc.fieldExcludes : acc.fieldFilters;
+    target[field] ??= [];
+    target[field].push(value);
+    return;
+  }
+
+  if (isExclude) acc.globalExcludes.push(term);
+  else acc.globalFilters.push(term);
+}
+
+function hasAnyTerm(acc: ParsedConnectionFilter): boolean {
+  return (
+    acc.globalFilters.length > 0 ||
+    acc.globalExcludes.length > 0 ||
+    Object.keys(acc.fieldFilters).length > 0 ||
+    Object.keys(acc.fieldExcludes).length > 0
+  );
+}
+
 export function parseConnectionFilter(
   filter: string,
 ): ParsedConnectionFilter | null {
   const f = filter.trim().toLowerCase();
   if (!f) return null;
 
-  const terms = f
-    .split("+")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-  if (terms.length === 0) return null;
+  const acc: ParsedConnectionFilter = {
+    fieldFilters: {},
+    fieldExcludes: {},
+    globalFilters: [],
+    globalExcludes: [],
+  };
 
-  const fieldFilters: Record<string, string[]> = {};
-  const fieldExcludes: Record<string, string[]> = {};
-  const globalFilters: string[] = [];
-  const globalExcludes: string[] = [];
+  for (const rawTerm of f.split("+")) addTerm(acc, rawTerm);
 
-  for (const rawTerm of terms) {
-    const isExclude = rawTerm.startsWith("!");
-    const term = isExclude ? rawTerm.slice(1) : rawTerm;
-    const colonIndex = term.indexOf(":");
-    if (colonIndex > 0) {
-      const field = term.substring(0, colonIndex);
-      const value = term.substring(colonIndex + 1);
-      const target = isExclude ? fieldExcludes : fieldFilters;
-      (target[field] ??= []).push(value);
-    } else if (isExclude) {
-      globalExcludes.push(term);
-    } else {
-      globalFilters.push(term);
-    }
-  }
-
-  return { fieldFilters, fieldExcludes, globalFilters, globalExcludes };
+  return hasAnyTerm(acc) ? acc : null;
 }
 
 export function matchesConnectionFilter(

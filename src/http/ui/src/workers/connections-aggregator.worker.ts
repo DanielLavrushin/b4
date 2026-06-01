@@ -76,7 +76,9 @@ function stripPort(addr: string): string {
     const end = addr.indexOf("]");
     return end > 0 ? addr.slice(1, end) : addr.slice(1);
   }
-  if ((addr.match(/:/g) || []).length === 1) return addr.split(":")[0];
+  const firstColon = addr.indexOf(":");
+  if (firstColon !== -1 && firstColon === addr.lastIndexOf(":"))
+    return addr.slice(0, firstColon);
   return addr;
 }
 
