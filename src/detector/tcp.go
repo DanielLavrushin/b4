@@ -60,8 +60,8 @@ type fatProbeState struct {
 // FatProbe runs 16 sequential HEAD requests on a persistent keep-alive connection.
 // It detects TSPU-style connection drops by gradually increasing header size.
 // sni overrides the TLS ServerName; rttHint > 0 skips RTT calibration.
-func FatProbe(ctx context.Context, ip string, port int, sni string, rttHint float64) FatProbeResult {
-	state := newFatProbeState(ip, port, sni, rttHint)
+func FatProbe(ctx context.Context, mark uint, ip string, port int, sni string, rttHint float64) FatProbeResult {
+	state := newFatProbeState(mark, ip, port, sni, rttHint)
 	defer state.client.Transport.(*http.Transport).CloseIdleConnections()
 
 	for i := 0; i < fatProbeIterations; i++ {
@@ -83,7 +83,7 @@ func FatProbe(ctx context.Context, ip string, port int, sni string, rttHint floa
 	return FatProbeResult{Alive: true, RTT: state.measuredRTT}
 }
 
-func newFatProbeState(ip string, port int, sni string, rttHint float64) *fatProbeState {
+func newFatProbeState(mark uint, ip string, port int, sni string, rttHint float64) *fatProbeState {
 	scheme := "https"
 	if port == 80 {
 		scheme = "http"
@@ -111,8 +111,7 @@ func newFatProbeState(ip string, port int, sni string, rttHint float64) *fatProb
 		DisableKeepAlives:   false,
 		TLSClientConfig:     tlsConf,
 		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
-			d := net.Dialer{Timeout: fatConnectTimeout}
-			return d.DialContext(ctx, "tcp", addr)
+			return markedDialer(mark, fatConnectTimeout).DialContext(ctx, "tcp", addr)
 		},
 	}
 
@@ -193,12 +192,16 @@ func (s *fatProbeState) handleError(err error, iteration int) FatProbeResult {
 		return FatProbeResult{Alive: false, Detail: detail}
 	}
 	dropAtKB := (iteration * padSizePerIter) / 1024
+	suffix := ""
+	if dropAtKB >= 12 && dropAtKB <= 69 {
+		suffix = " [TSPU 16-20KB window]"
+	}
 	return FatProbeResult{
 		Alive:    true,
 		Detected: true,
 		DropAtKB: dropAtKB,
 		RTT:      s.measuredRTT,
-		Detail:   fmt.Sprintf("%s at %dKB", detail, dropAtKB),
+		Detail:   fmt.Sprintf("%s at %dKB%s", detail, dropAtKB, suffix),
 	}
 }
 
@@ -266,7 +269,7 @@ func (s *DetectorSuite) runTCPCheck(ctx context.Context) *TCPResult {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			fp := FatProbe(ctx, tgt.IP, tgt.Port, tgt.SNI, 0)
+			fp := FatProbe(ctx, s.mark, tgt.IP, tgt.Port, tgt.SNI, 0)
 			tr := TCPTargetResult{
 				Target:   tgt,
 				Alive:    fp.Alive,

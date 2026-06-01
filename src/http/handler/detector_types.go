@@ -1,7 +1,7 @@
 package handler
 
 type DetectorRequest struct {
-	Tests []string `json:"tests"` // "dns", "domains", "tcp"
+	Tests []string `json:"tests"` // "dns", "dns-availability", "domains", "tcp", "sni", "telegram"
 }
 
 type DetectorResponse struct {

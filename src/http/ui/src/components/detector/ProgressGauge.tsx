@@ -22,12 +22,20 @@ const SIZE = 140;
 const CENTER = SIZE / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
+const resultKeyMap: Record<DetectorTestType, keyof DetectorSuite> = {
+  dns: "dns_result",
+  "dns-availability": "dnsavail_result",
+  domains: "domains_result",
+  tcp: "tcp_result",
+  sni: "sni_result",
+  telegram: "telegram_result",
+};
+
 function getStepState(
   test: DetectorTestType,
   suite: DetectorSuite,
 ): "completed" | "running" | "failed" | "pending" {
-  const resultKey = `${test}_result` as keyof DetectorSuite;
-  if (suite[resultKey]) return "completed";
+  if (suite[resultKeyMap[test]]) return "completed";
   if (suite.current_test === test) {
     if (suite.status === "failed") return "failed";
     return "running";

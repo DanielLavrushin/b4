@@ -23,10 +23,12 @@ type HistoryEntry struct {
 	StartTime time.Time   `json:"start_time"`
 	EndTime   time.Time   `json:"end_time"`
 
-	DNSResult     *DNSResult     `json:"dns_result,omitempty"`
-	DomainsResult *DomainsResult `json:"domains_result,omitempty"`
-	TCPResult     *TCPResult     `json:"tcp_result,omitempty"`
-	SNIResult     *SNIResult     `json:"sni_result,omitempty"`
+	DNSResult      *DNSResult      `json:"dns_result,omitempty"`
+	DNSAvailResult *DNSAvailResult `json:"dnsavail_result,omitempty"`
+	DomainsResult  *DomainsResult  `json:"domains_result,omitempty"`
+	TCPResult      *TCPResult      `json:"tcp_result,omitempty"`
+	SNIResult      *SNIResult      `json:"sni_result,omitempty"`
+	TelegramResult *TelegramResult `json:"telegram_result,omitempty"`
 }
 
 // DetectorHistory manages persistent detector results.
@@ -94,15 +96,17 @@ func (dh *DetectorHistory) AddFromSuite(suite *DetectorSuite) {
 
 	suite.mu.RLock()
 	entry := HistoryEntry{
-		Id:            suite.Id,
-		Status:        suite.Status,
-		Tests:         suite.Tests,
-		StartTime:     suite.StartTime,
-		EndTime:       suite.EndTime,
-		DNSResult:     suite.DNSResult,
-		DomainsResult: suite.DomainsResult,
-		TCPResult:     suite.TCPResult,
-		SNIResult:     suite.SNIResult,
+		Id:             suite.Id,
+		Status:         suite.Status,
+		Tests:          suite.Tests,
+		StartTime:      suite.StartTime,
+		EndTime:        suite.EndTime,
+		DNSResult:      suite.DNSResult,
+		DNSAvailResult: suite.DNSAvailResult,
+		DomainsResult:  suite.DomainsResult,
+		TCPResult:      suite.TCPResult,
+		SNIResult:      suite.SNIResult,
+		TelegramResult: suite.TelegramResult,
 	}
 	suite.mu.RUnlock()
 

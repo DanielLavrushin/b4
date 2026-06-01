@@ -9,7 +9,14 @@ export function getTestDescription(t: TFunction, test: DetectorTestType): string
   return t(`detector.tests.descriptions.${test}`);
 }
 
-export const testSequence: DetectorTestType[] = ["dns", "domains", "tcp", "sni"];
+export const testSequence: DetectorTestType[] = [
+  "dns",
+  "dns-availability",
+  "domains",
+  "tcp",
+  "sni",
+  "telegram",
+];
 
 export const staggerContainer = {
   hidden: { opacity: 0 },

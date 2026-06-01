@@ -20,6 +20,10 @@ var (
 	CDNRedirectPatterns []string
 	TCPTargets          []TCPTarget
 	WhitelistSNI        []string
+	DNSAvailServers     []dnsAvailServer
+	DNSAvailDomains     []string
+	ISPIPRanges         []string
+	TelegramConfig      telegramTargets
 )
 
 type doHServer struct {
@@ -27,16 +31,33 @@ type doHServer struct {
 	URL  string `json:"url"`
 }
 
+type dnsAvailServer struct {
+	Name    string `json:"name"`
+	Address string `json:"address"`
+	Kind    string `json:"kind"`
+}
+
+type telegramTargets struct {
+	DownloadURL  string `json:"download_url"`
+	DownloadSize int64  `json:"download_size"`
+	UploadAddr   string `json:"upload_addr"`
+	UploadSize   int64  `json:"upload_size"`
+}
+
 type targetsData struct {
-	DNSCheckDomains     []string    `json:"dns_check_domains"`
-	CheckDomains        []string    `json:"check_domains"`
-	UDPDNSServers       []string    `json:"udp_dns_servers"`
-	DoHServers          []doHServer `json:"doh_servers"`
-	BlockMarkers        []string    `json:"block_markers"`
-	BodyBlockMarkers    []string    `json:"body_block_markers"`
-	CDNRedirectPatterns []string    `json:"cdn_redirect_patterns"`
-	TCPTargets          []TCPTarget `json:"tcp_targets"`
-	WhitelistSNI        []string    `json:"whitelist_sni"`
+	DNSCheckDomains     []string         `json:"dns_check_domains"`
+	CheckDomains        []string         `json:"check_domains"`
+	UDPDNSServers       []string         `json:"udp_dns_servers"`
+	DoHServers          []doHServer      `json:"doh_servers"`
+	BlockMarkers        []string         `json:"block_markers"`
+	BodyBlockMarkers    []string         `json:"body_block_markers"`
+	CDNRedirectPatterns []string         `json:"cdn_redirect_patterns"`
+	TCPTargets          []TCPTarget      `json:"tcp_targets"`
+	WhitelistSNI        []string         `json:"whitelist_sni"`
+	DNSAvailServers     []dnsAvailServer `json:"dns_avail_servers"`
+	DNSAvailDomains     []string         `json:"dns_avail_domains"`
+	ISPIPRanges         []string         `json:"isp_ip_ranges"`
+	Telegram            telegramTargets  `json:"telegram"`
 }
 
 func init() {
@@ -54,4 +75,9 @@ func init() {
 	CDNRedirectPatterns = data.CDNRedirectPatterns
 	TCPTargets = data.TCPTargets
 	WhitelistSNI = data.WhitelistSNI
+	DNSAvailServers = data.DNSAvailServers
+	DNSAvailDomains = data.DNSAvailDomains
+	ISPIPRanges = data.ISPIPRanges
+	TelegramConfig = data.Telegram
+	setISPRanges(ISPIPRanges)
 }

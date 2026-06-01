@@ -4,10 +4,12 @@ import (
 	"context"
 	"time"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 )
 
-func (s *DetectorSuite) Run(configPath string) {
+func (s *DetectorSuite) Run(cfg *config.Config) {
+	configPath := cfg.ConfigPath
 	s.mu.Lock()
 	s.Status = StatusRunning
 	s.StartTime = time.Now()
@@ -70,6 +72,18 @@ func (s *DetectorSuite) Run(configPath string) {
 			s.mu.Lock()
 			s.SNIResult = result
 			s.mu.Unlock()
+
+		case TestDNSAvail:
+			result := s.runDNSAvailCheck(ctx)
+			s.mu.Lock()
+			s.DNSAvailResult = result
+			s.mu.Unlock()
+
+		case TestTelegram:
+			result := s.runTelegramCheck(ctx)
+			s.mu.Lock()
+			s.TelegramResult = result
+			s.mu.Unlock()
 		}
 	}
 
@@ -108,6 +122,14 @@ func (s *DetectorSuite) estimateTotalChecks() int {
 			tcpRequested = true
 		case TestSNI:
 			total += estimateSNIChecks(tcpRequested)
+		case TestDNSAvail:
+			domains := DNSAvailDomains
+			if len(domains) == 0 {
+				domains = DNSCheckDomains
+			}
+			total += len(DNSAvailServers) * len(domains)
+		case TestTelegram:
+			total += 3
 		}
 	}
 	return total

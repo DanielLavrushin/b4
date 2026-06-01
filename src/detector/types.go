@@ -18,10 +18,12 @@ const (
 type TestType string
 
 const (
-	TestDNS     TestType = "dns"
-	TestDomains TestType = "domains"
-	TestTCP     TestType = "tcp"
-	TestSNI     TestType = "sni"
+	TestDNS      TestType = "dns"
+	TestDNSAvail TestType = "dns-availability"
+	TestDomains  TestType = "domains"
+	TestTCP      TestType = "tcp"
+	TestSNI      TestType = "sni"
+	TestTelegram TestType = "telegram"
 )
 
 // DNS check types
@@ -32,6 +34,11 @@ const (
 	DNSOk           DNSStatus = "OK"
 	DNSSpoofing     DNSStatus = "DNS_SPOOFING"
 	DNSInterception DNSStatus = "DNS_INTERCEPTION"
+	DNSFakeIP       DNSStatus = "FAKE_IP"
+	DNSFakeNXDomain DNSStatus = "FAKE_NXDOMAIN"
+	DNSFakeEmpty    DNSStatus = "FAKE_EMPTY"
+	DNSDoHBlocked   DNSStatus = "DOH_BLOCKED"
+	DNSBothUnavail  DNSStatus = "BOTH_UNAVAILABLE"
 	DNSTimeout      DNSStatus = "TIMEOUT"
 	DNSBlocked      DNSStatus = "BLOCKED"
 )
@@ -55,7 +62,78 @@ type DNSResult struct {
 	Summary        string            `json:"summary"`
 	SpoofCount     int               `json:"spoof_count"`
 	InterceptCount int               `json:"intercept_count"`
+	FakeIPCount    int               `json:"fakeip_count"`
 	OkCount        int               `json:"ok_count"`
+}
+
+// DNS availability check types
+
+type DNSAvailKind string
+
+const (
+	DNSAvailDoH DNSAvailKind = "doh"
+	DNSAvailUDP DNSAvailKind = "udp"
+)
+
+type DNSAvailProviderResult struct {
+	Provider string       `json:"provider"`
+	Kind     DNSAvailKind `json:"kind"`
+	Address  string       `json:"address"`
+	AvgMs    float64      `json:"avg_ms"`
+	Ok       bool         `json:"ok"`
+	OkCount  int          `json:"ok_count"`
+	Total    int          `json:"total"`
+}
+
+type DNSAvailResult struct {
+	Providers []DNSAvailProviderResult `json:"providers"`
+	DoHOk     int                      `json:"doh_ok"`
+	DoHTotal  int                      `json:"doh_total"`
+	UDPOk     int                      `json:"udp_ok"`
+	UDPTotal  int                      `json:"udp_total"`
+	Summary   string                   `json:"summary"`
+}
+
+// Telegram reachability/throughput check types
+
+type TelegramVerdict string
+
+const (
+	TGOk      TelegramVerdict = "ok"
+	TGSlow    TelegramVerdict = "slow"
+	TGStalled TelegramVerdict = "stalled"
+	TGBlocked TelegramVerdict = "blocked"
+	TGPartial TelegramVerdict = "partial"
+	TGError   TelegramVerdict = "error"
+)
+
+type TelegramThroughput struct {
+	Verdict    TelegramVerdict `json:"verdict"`
+	Bytes      int64           `json:"bytes"`
+	Expected   int64           `json:"expected"`
+	PctOk      float64         `json:"pct_ok"`
+	DurationMs int64           `json:"duration_ms"`
+	MbpsAvg    float64         `json:"mbps_avg"`
+	MbpsPeak   float64         `json:"mbps_peak"`
+	DropAtSec  int             `json:"drop_at_sec,omitempty"`
+	Detail     string          `json:"detail,omitempty"`
+}
+
+type TelegramDCPing struct {
+	DC      int     `json:"dc"`
+	Address string  `json:"address"`
+	Ok      bool    `json:"ok"`
+	RTTMs   float64 `json:"rtt_ms,omitempty"`
+}
+
+type TelegramResult struct {
+	Download    TelegramThroughput `json:"download"`
+	Upload      TelegramThroughput `json:"upload"`
+	DCPings     []TelegramDCPing   `json:"dc_pings"`
+	DCReachable int                `json:"dc_reachable"`
+	DCTotal     int                `json:"dc_total"`
+	Verdict     TelegramVerdict    `json:"verdict"`
+	Summary     string             `json:"summary"`
 }
 
 // Domain accessibility check types
@@ -63,14 +141,20 @@ type DNSResult struct {
 type DomainStatus string
 
 const (
-	DomainOk      DomainStatus = "OK"
-	DomainTLSDPI  DomainStatus = "TLS_DPI"
-	DomainTLSMITM DomainStatus = "TLS_MITM"
-	DomainISPPage DomainStatus = "ISP_PAGE"
-	DomainBlocked DomainStatus = "BLOCKED"
-	DomainDNSFake DomainStatus = "DNS_FAKE"
-	DomainTimeout DomainStatus = "TIMEOUT"
-	DomainError   DomainStatus = "ERROR"
+	DomainOk       DomainStatus = "OK"
+	DomainTLSDPI   DomainStatus = "TLS_DPI"
+	DomainTLSMITM  DomainStatus = "TLS_MITM"
+	DomainTLSSpoof DomainStatus = "TLS_SPOOF"
+	DomainTLSAlert DomainStatus = "TLS_ALERT"
+	DomainTLSReset DomainStatus = "TLS_RST"
+	DomainTLSDrop  DomainStatus = "TLS_DROP"
+	DomainSYNDrop  DomainStatus = "SYN_DROP"
+	DomainTCP16    DomainStatus = "TCP16"
+	DomainISPPage  DomainStatus = "ISP_PAGE"
+	DomainBlocked  DomainStatus = "BLOCKED"
+	DomainDNSFake  DomainStatus = "DNS_FAKE"
+	DomainTimeout  DomainStatus = "TIMEOUT"
+	DomainError    DomainStatus = "ERROR"
 )
 
 type TLSProbeResult struct {
@@ -179,11 +263,14 @@ type DetectorSuite struct {
 	TotalChecks     int        `json:"total_checks"`
 	CompletedChecks int        `json:"completed_checks"`
 
-	DNSResult     *DNSResult     `json:"dns_result,omitempty"`
-	DomainsResult *DomainsResult `json:"domains_result,omitempty"`
-	TCPResult     *TCPResult     `json:"tcp_result,omitempty"`
-	SNIResult     *SNIResult     `json:"sni_result,omitempty"`
+	DNSResult      *DNSResult      `json:"dns_result,omitempty"`
+	DNSAvailResult *DNSAvailResult `json:"dnsavail_result,omitempty"`
+	DomainsResult  *DomainsResult  `json:"domains_result,omitempty"`
+	TCPResult      *TCPResult      `json:"tcp_result,omitempty"`
+	SNIResult      *SNIResult      `json:"sni_result,omitempty"`
+	TelegramResult *TelegramResult `json:"telegram_result,omitempty"`
 
-	mu     sync.RWMutex `json:"-"`
+	mark   uint          `json:"-"`
+	mu     sync.RWMutex  `json:"-"`
 	cancel chan struct{} `json:"-"`
 }

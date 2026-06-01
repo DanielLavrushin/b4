@@ -51,31 +51,39 @@ func (api *API) handleStartDetector(w http.ResponseWriter, r *http.Request) {
 		switch t {
 		case "dns":
 			tests = append(tests, detector.TestDNS)
+		case "dns-availability":
+			tests = append(tests, detector.TestDNSAvail)
 		case "domains":
 			tests = append(tests, detector.TestDomains)
 		case "tcp":
 			tests = append(tests, detector.TestTCP)
 		case "sni":
 			tests = append(tests, detector.TestSNI)
+		case "telegram":
+			tests = append(tests, detector.TestTelegram)
 		default:
 			http.Error(w, fmt.Sprintf("Unknown test type: %s", t), http.StatusBadRequest)
 			return
 		}
 	}
 
-	// Enforce ordering: dns → domains → tcp → sni
 	testOrder := map[detector.TestType]int{
-		detector.TestDNS: 0, detector.TestDomains: 1,
-		detector.TestTCP: 2, detector.TestSNI: 3,
+		detector.TestDNS:      0,
+		detector.TestDNSAvail: 1,
+		detector.TestDomains:  2,
+		detector.TestTCP:      3,
+		detector.TestSNI:      4,
+		detector.TestTelegram: 5,
 	}
 	sort.Slice(tests, func(i, j int) bool {
 		return testOrder[tests[i]] < testOrder[tests[j]]
 	})
 
-	suite := detector.NewDetectorSuite(tests)
+	cfg := api.getCfg()
+	suite := detector.NewDetectorSuite(tests, cfg.DiscoveryFlowMark())
 
 	go func() {
-		suite.Run(api.getCfg().ConfigPath)
+		suite.Run(cfg)
 		log.Infof("Detector suite %s complete", suite.Id)
 	}()
 

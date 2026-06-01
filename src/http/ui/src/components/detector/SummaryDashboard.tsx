@@ -1,6 +1,6 @@
 import { Box, Grid, Stack, Typography } from "@mui/material";
 import { motion } from "motion/react";
-import { DnsIcon, DomainIcon, NetworkIcon, SniIcon } from "@b4.icons";
+import { DnsIcon, DomainIcon, NetworkIcon, SniIcon, SpeedIcon, ConnectionIcon } from "@b4.icons";
 import { colors, spacing, radius } from "@design";
 import { B4Card } from "@common/B4Card";
 import type { DetectorSuite } from "@models/detector";
@@ -99,6 +99,18 @@ export function SummaryDashboard({
     });
   }
 
+  if (suite.dnsavail_result) {
+    const r = suite.dnsavail_result;
+    const okAny = r.doh_ok > 0 || r.udp_ok > 0;
+    cards.push({
+      title: t("detector.summary.dnsAvailability"),
+      value: `${r.doh_ok + r.udp_ok}/${r.doh_total + r.udp_total}`,
+      subtitle: r.summary,
+      icon: <SpeedIcon sx={{ fontSize: 28 }} />,
+      color: okAny ? statusColors.ok : statusColors.error,
+    });
+  }
+
   if (suite.domains_result) {
     const r = suite.domains_result;
     cards.push({
@@ -142,6 +154,21 @@ export function SummaryDashboard({
           : r.tested_count > 0
             ? statusColors.warning
             : statusColors.ok,
+    });
+  }
+
+  if (suite.telegram_result) {
+    const r = suite.telegram_result;
+    const ok = r.verdict === "ok";
+    let color: string = statusColors.warning;
+    if (ok) color = statusColors.ok;
+    else if (r.verdict === "blocked" || r.verdict === "error") color = statusColors.error;
+    cards.push({
+      title: t("detector.summary.telegram"),
+      value: t(`detector.telegramVerdict.${r.verdict}`),
+      subtitle: r.summary,
+      icon: <ConnectionIcon sx={{ fontSize: 28 }} />,
+      color,
     });
   }
 

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Box, Grid, Stack, Typography } from "@mui/material";
 import { motion } from "motion/react";
-import { DnsIcon, DomainIcon, NetworkIcon, SniIcon } from "@b4.icons";
+import { DnsIcon, DomainIcon, NetworkIcon, SniIcon, SpeedIcon, ConnectionIcon } from "@b4.icons";
 import { colors, radius, spacing } from "@design";
 import { B4Card } from "@common/B4Card";
 import { B4Switch } from "@b4.fields";
@@ -17,9 +17,11 @@ import { useTranslation } from "react-i18next";
 
 const testIcons: Record<DetectorTestType, React.ReactNode> = {
   dns: <DnsIcon />,
+  "dns-availability": <SpeedIcon />,
   domains: <DomainIcon />,
   tcp: <NetworkIcon />,
   sni: <SniIcon />,
+  telegram: <ConnectionIcon />,
 };
 
 interface TestSelectionGridProps {

@@ -95,7 +95,7 @@ func (s *DetectorSuite) runBaseProbe(ctx context.Context) []TCPTargetResult {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			fp := FatProbe(ctx, tgt.IP, tgt.Port, tgt.SNI, 0)
+			fp := FatProbe(ctx, s.mark, tgt.IP, tgt.Port, tgt.SNI, 0)
 			results[idx] = TCPTargetResult{
 				Target:   tgt,
 				Alive:    fp.Alive,
@@ -208,8 +208,8 @@ func (s *DetectorSuite) probeSNIForASN(ctx context.Context, cand asnCandidate) s
 // probeSNIBatch tests a batch of SNI values concurrently, returning the first that passes.
 func (s *DetectorSuite) probeSNIBatch(ctx context.Context, cand asnCandidate, batch []string) string {
 	type sniResult struct {
-		sni  string
-		ok   bool
+		sni string
+		ok  bool
 	}
 
 	results := make(chan sniResult, len(batch))
@@ -221,7 +221,7 @@ func (s *DetectorSuite) probeSNIBatch(ctx context.Context, cand asnCandidate, ba
 		wg.Add(1)
 		go func(sni string) {
 			defer wg.Done()
-			fp := FatProbe(batchCtx, cand.IP, 443, sni, cand.RTT)
+			fp := FatProbe(batchCtx, s.mark, cand.IP, 443, sni, cand.RTT)
 			results <- sniResult{sni: sni, ok: !fp.Detected && fp.Alive}
 		}(sniVal)
 	}

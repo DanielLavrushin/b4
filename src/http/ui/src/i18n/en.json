@@ -1443,13 +1443,17 @@
         "dns": "DNS Integrity",
         "domains": "Domain Accessibility",
         "tcp": "TCP Fat Probe",
-        "sni": "SNI Whitelist Brute-Force"
+        "sni": "SNI Whitelist Brute-Force",
+        "dns-availability": "DNS Availability",
+        "telegram": "Telegram"
       },
       "descriptions": {
         "dns": "Compares UDP DNS vs DoH to detect spoofing and interception",
         "domains": "Probes blocked domains via TLS 1.3, TLS 1.2, and HTTP",
         "tcp": "Detects TSPU connection drops via keep-alive requests with increasing header size",
-        "sni": "Finds bypass SNI values for blocked ASNs by brute-forcing whitelist domains"
+        "sni": "Finds bypass SNI values for blocked ASNs by brute-forcing whitelist domains",
+        "dns-availability": "Measures per-provider DNS latency over UDP and DoH (RFC 8484)",
+        "telegram": "Measures Telegram download/upload throughput and datacenter reachability"
       }
     },
     "progress": {
@@ -1469,13 +1473,17 @@
       "detected": "{{count}} Detected",
       "found": "{{count}} Found",
       "noneFound": "None Found",
-      "notBlocked": "Not Blocked"
+      "notBlocked": "Not Blocked",
+      "dnsAvailability": "DNS Availability",
+      "telegram": "Telegram"
     },
     "sections": {
       "dnsIntegrityCheck": "DNS Integrity Check",
       "domainAccessibility": "Domain Accessibility",
       "tcpFatProbeTest": "TCP Fat Probe Test",
-      "sniWhitelistBruteForce": "SNI Whitelist Brute-Force"
+      "sniWhitelistBruteForce": "SNI Whitelist Brute-Force",
+      "dnsAvailability": "DNS Availability",
+      "telegram": "Telegram"
     },
     "alerts": {
       "dohBlocked": "All DNS-over-HTTPS servers are blocked. Your ISP is filtering encrypted DNS.",
@@ -1486,7 +1494,8 @@
       "stubIpDetected": "Stub/sinkhole IP detected",
       "fakeIp": "FAKE IP",
       "alive": "Alive",
-      "dead": "Dead"
+      "dead": "Dead",
+      "dnsAvailTimeout": "Timeout"
     },
     "labels": {
       "dohIp": "DoH IP",
@@ -1503,7 +1512,18 @@
       "sni": "SNI",
       "detail": "Detail",
       "provider": "Provider",
-      "foundSni": "Found SNI"
+      "foundSni": "Found SNI",
+      "address": "Address",
+      "kind": "Kind",
+      "avgLatency": "Avg latency",
+      "reachable": "Reachable",
+      "download": "Download",
+      "upload": "Upload",
+      "datacenters": "Datacenters",
+      "avgSpeed": "Avg speed",
+      "peakSpeed": "Peak speed",
+      "transferred": "Transferred",
+      "duration": "Duration"
     },
     "history": {
       "detectionsSaved": "{{count}} detection saved",
@@ -1517,7 +1537,58 @@
       "tspuClean": "TSPU: Clean",
       "tspuDetected": "TSPU: {{count}} detected",
       "sniFound": "SNI: {{count}} found",
-      "sniNone": "SNI: None"
+      "sniNone": "SNI: None",
+      "dnsAvail": "DNS avail: DoH {{doh}}, UDP {{udp}}",
+      "telegram": "Telegram: {{verdict}}"
+    },
+    "telegramVerdict": {
+      "ok": "OK",
+      "slow": "Slow",
+      "stalled": "Stalled",
+      "partial": "Partial",
+      "blocked": "Blocked",
+      "error": "Error"
+    },
+    "legend": {
+      "title": "Legend — how to read the results",
+      "groups": {
+        "dns": "DNS",
+        "tls": "TLS / DPI",
+        "tcp": "TCP fat probe",
+        "sni": "SNI whitelist",
+        "telegram": "Telegram"
+      },
+      "meanings": {
+        "OK": "No interference detected",
+        "DNS_SPOOFING": "UDP DNS returns a different IP than DoH (spoofing)",
+        "DNS_INTERCEPTION": "UDP DNS is intercepted or times out while DoH works",
+        "FAKE_IP": "Resolved to a fake-IP range (198.18.0.0/15)",
+        "FAKE_NXDOMAIN": "UDP returns NXDOMAIN while DoH resolves the domain",
+        "FAKE_EMPTY": "UDP returns an empty answer while DoH resolves the domain",
+        "DOH_BLOCKED": "All DNS-over-HTTPS servers are blocked",
+        "BOTH_UNAVAILABLE": "Neither UDP nor DoH resolution is available",
+        "TLS_DPI": "TLS interference consistent with DPI",
+        "TLS_SPOOF": "Non-TLS or garbage response injected in place of TLS",
+        "TLS_ALERT": "Forged TLS alert (e.g. unrecognized name / handshake failure)",
+        "TLS_RST": "Connection reset during or after the TLS handshake",
+        "TLS_DROP": "TLS handshake dropped (timeout)",
+        "SYN_DROP": "TCP SYN dropped, connection never established",
+        "TLS_MITM": "Certificate substitution (man-in-the-middle)",
+        "TCP16": "Connection dropped within the 12-69KB TSPU fat-flow window",
+        "ISP_PAGE": "Redirected to an ISP block page",
+        "DETECTED": "TSPU connection drop detected",
+        "TIMEOUT": "Connection timed out",
+        "ERROR": "Probe error",
+        "FOUND": "A working bypass SNI was found",
+        "NOT_FOUND": "No working bypass SNI found",
+        "NOT_BLOCKED": "ASN was not blocked, no brute-force needed",
+        "ok": "Reachable at full speed",
+        "slow": "Throttled or partial transfer",
+        "stalled": "Transfer stalled (no data for 10s)",
+        "partial": "Some datacenters unreachable",
+        "blocked": "Blocked / no data transferred",
+        "error": "Test error"
+      }
     }
   },
   "connections": {

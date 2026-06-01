@@ -11,28 +11,43 @@ export function StatusChip({
 
   switch (status) {
     case "OK":
+    case "FOUND":
+    case "ok":
       color = "primary";
       break;
     case "DNS_SPOOFING":
+    case "FAKE_IP":
+    case "FAKE_NXDOMAIN":
+    case "FAKE_EMPTY":
+    case "DOH_BLOCKED":
+    case "BOTH_UNAVAILABLE":
     case "TLS_DPI":
+    case "TLS_SPOOF":
+    case "TLS_RST":
+    case "TLS_DROP":
+    case "SYN_DROP":
+    case "TCP16":
     case "DETECTED":
     case "BLOCKED":
+    case "blocked":
       color = "error";
       break;
     case "DNS_INTERCEPTION":
     case "TLS_MITM":
+    case "TLS_ALERT":
     case "ISP_PAGE":
     case "DNS_FAKE":
     case "MIXED":
     case "NOT_FOUND":
+    case "slow":
+    case "stalled":
+    case "partial":
       color = "secondary";
-      break;
-    case "FOUND":
-      color = "primary";
       break;
     case "NOT_BLOCKED":
     case "TIMEOUT":
     case "ERROR":
+    case "error":
       color = "info";
       break;
   }

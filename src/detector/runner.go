@@ -12,11 +12,12 @@ var (
 	suitesMu     sync.RWMutex
 )
 
-func NewDetectorSuite(tests []TestType) *DetectorSuite {
+func NewDetectorSuite(tests []TestType, mark uint) *DetectorSuite {
 	suite := &DetectorSuite{
 		Id:     uuid.New().String(),
 		Status: StatusPending,
 		Tests:  tests,
+		mark:   mark,
 		cancel: make(chan struct{}),
 	}
 

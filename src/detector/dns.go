@@ -31,7 +31,7 @@ func (s *DetectorSuite) runDNSCheck(ctx context.Context) *DNSResult {
 	// Step 1: Find working DoH server
 	var dohURL string
 	for _, srv := range DoHServers {
-		ip, err := resolveDoH(ctx, srv.URL, "example.com")
+		ip, err := resolveDoH(ctx, s.mark, srv.URL, "example.com")
 		if err == nil && ip != "" {
 			dohURL = srv.URL
 			result.DoHServer = srv.Name
@@ -49,7 +49,7 @@ func (s *DetectorSuite) runDNSCheck(ctx context.Context) *DNSResult {
 	// Step 2: Find working UDP DNS server
 	var udpServer string
 	for _, srv := range UDPDNSServers {
-		_, err := resolveUDP(ctx, srv, "example.com")
+		_, err := resolveUDP(ctx, s.mark, srv, "example.com")
 		if err == nil {
 			udpServer = srv
 			result.UDPServer = srv
@@ -84,29 +84,41 @@ func (s *DetectorSuite) runDNSCheck(ctx context.Context) *DNSResult {
 
 			dr := DNSDomainResult{Domain: dom}
 
-			dohIP, dohErr := resolveDoH(ctx, dohURL, dom)
+			dohIP, dohErr := resolveDoH(ctx, s.mark, dohURL, dom)
+			trustedDoH := dohErr == nil && dohIP != ""
 			if dohErr != nil {
 				dr.DoHIP = "error"
 			} else {
 				dr.DoHIP = dohIP
 			}
 
-			udpIP, udpErr := resolveUDP(ctx, udpServer, dom)
+			udpIP, udpErr := resolveUDP(ctx, s.mark, udpServer, dom)
 			if udpErr != nil {
 				errMsg := udpErr.Error()
 				if isNXDomain(errMsg) {
 					dr.UDPIP = "NXDOMAIN"
-					dr.Status = DNSInterception
+					if trustedDoH {
+						dr.Status = DNSFakeNXDomain
+					} else {
+						dr.Status = DNSInterception
+					}
 				} else {
 					dr.UDPIP = "timeout"
 					dr.Status = DNSInterception
 				}
 			} else {
 				dr.UDPIP = udpIP
-				if dohIP != "" && udpIP != "" && dohIP != udpIP {
+				switch getFakeIPType(udpIP) {
+				case "fakeip":
+					dr.Status = DNSFakeIP
+				case "isp", "local":
 					dr.Status = DNSSpoofing
-				} else {
-					dr.Status = DNSOk
+				default:
+					if trustedDoH && udpIP != "" && dohIP != udpIP {
+						dr.Status = DNSSpoofing
+					} else {
+						dr.Status = DNSOk
+					}
 				}
 			}
 
@@ -149,23 +161,30 @@ func (s *DetectorSuite) runDNSCheck(ctx context.Context) *DNSResult {
 			result.OkCount++
 		case DNSSpoofing:
 			result.SpoofCount++
-		case DNSInterception:
+		case DNSFakeIP:
+			result.FakeIPCount++
+		case DNSInterception, DNSFakeNXDomain, DNSFakeEmpty:
 			result.InterceptCount++
 		}
 	}
 
 	result.Domains = domainResults
 
-	// Set overall status
-	if result.SpoofCount > 0 {
+	switch {
+	case result.SpoofCount > 0:
 		result.Status = DNSSpoofing
-	} else if result.InterceptCount > 0 {
+	case result.InterceptCount > 0:
 		result.Status = DNSInterception
+	case result.FakeIPCount > 0:
+		result.Status = DNSFakeIP
 	}
 
 	total := len(domainResults)
 	result.Summary = fmt.Sprintf("%d/%d OK, %d spoofed, %d intercepted",
 		result.OkCount, total, result.SpoofCount, result.InterceptCount)
+	if result.FakeIPCount > 0 {
+		result.Summary += fmt.Sprintf(", %d fake-IP", result.FakeIPCount)
+	}
 	if len(result.StubIPs) > 0 {
 		result.Summary += fmt.Sprintf(", %d stub IPs detected", len(result.StubIPs))
 	}
@@ -174,9 +193,11 @@ func (s *DetectorSuite) runDNSCheck(ctx context.Context) *DNSResult {
 	return result
 }
 
-func resolveDoH(ctx context.Context, serverURL, domain string) (string, error) {
+func resolveDoH(ctx context.Context, mark uint, serverURL, domain string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+
+	client := markedHTTPClient(mark, 5*time.Second)
 
 	reqURL := fmt.Sprintf("%s?name=%s&type=A", serverURL, domain)
 	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
@@ -185,9 +206,9 @@ func resolveDoH(ctx context.Context, serverURL, domain string) (string, error) {
 	}
 	req.Header.Set("Accept", "application/dns-json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return resolveDoHWire(ctx, client, serverURL, domain)
 	}
 	defer resp.Body.Close()
 
@@ -198,11 +219,11 @@ func resolveDoH(ctx context.Context, serverURL, domain string) (string, error) {
 
 	var doh dohResponse
 	if err := json.Unmarshal(body, &doh); err != nil {
-		return "", err
+		return resolveDoHWire(ctx, client, serverURL, domain)
 	}
 
 	for _, ans := range doh.Answer {
-		if ans.Type == 1 { // A record
+		if ans.Type == 1 {
 			return ans.Data, nil
 		}
 	}
@@ -210,15 +231,14 @@ func resolveDoH(ctx context.Context, serverURL, domain string) (string, error) {
 	return "", fmt.Errorf("no A record found")
 }
 
-func resolveUDP(ctx context.Context, server, domain string) (string, error) {
+func resolveUDP(ctx context.Context, mark uint, server, domain string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	resolver := &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			d := net.Dialer{Timeout: 5 * time.Second}
-			return d.DialContext(ctx, "udp", server+":53")
+			return markedDialer(mark, 5*time.Second).DialContext(ctx, "udp", server+":53")
 		},
 	}
 

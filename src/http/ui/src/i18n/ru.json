@@ -1441,13 +1441,17 @@
         "dns": "Целостность DNS",
         "domains": "Доступность доменов",
         "tcp": "TCP Fat Probe",
-        "sni": "Перебор SNI"
+        "sni": "Перебор SNI",
+        "dns-availability": "Доступность DNS",
+        "telegram": "Telegram"
       },
       "descriptions": {
         "dns": "Сравнивает UDP DNS с DoH для обнаружения подмены и перехвата",
         "domains": "Проверяет заблокированные домены через TLS 1.3, TLS 1.2 и HTTP",
         "tcp": "Обнаруживает обрывы ТСПУ через keep-alive запросы с увеличивающимся размером заголовка",
-        "sni": "Находит обходные SNI для заблокированных ASN перебором доменов из белого списка"
+        "sni": "Находит обходные SNI для заблокированных ASN перебором доменов из белого списка",
+        "dns-availability": "Измеряет задержку DNS по провайдерам через UDP и DoH (RFC 8484)",
+        "telegram": "Измеряет скорость загрузки/отдачи Telegram и доступность дата-центров"
       }
     },
     "progress": {
@@ -1467,13 +1471,17 @@
       "detected": "{{count}} обнаружено",
       "found": "{{count}} найдено",
       "noneFound": "Не найдено",
-      "notBlocked": "Не заблокировано"
+      "notBlocked": "Не заблокировано",
+      "dnsAvailability": "Доступность DNS",
+      "telegram": "Telegram"
     },
     "sections": {
       "dnsIntegrityCheck": "Проверка целостности DNS",
       "domainAccessibility": "Доступность доменов",
       "tcpFatProbeTest": "TCP Fat Probe тест",
-      "sniWhitelistBruteForce": "Перебор SNI по белому списку"
+      "sniWhitelistBruteForce": "Перебор SNI по белому списку",
+      "dnsAvailability": "Доступность DNS",
+      "telegram": "Telegram"
     },
     "alerts": {
       "dohBlocked": "Все DNS-over-HTTPS серверы заблокированы. Ваш провайдер фильтрует зашифрованный DNS.",
@@ -1484,7 +1492,8 @@
       "stubIpDetected": "Обнаружен IP-заглушка",
       "fakeIp": "ПОДМЕНА IP",
       "alive": "Доступен",
-      "dead": "Недоступен"
+      "dead": "Недоступен",
+      "dnsAvailTimeout": "Таймаут"
     },
     "labels": {
       "dohIp": "DoH IP",
@@ -1501,7 +1510,18 @@
       "sni": "SNI",
       "detail": "Детали",
       "provider": "Провайдер",
-      "foundSni": "Найденный SNI"
+      "foundSni": "Найденный SNI",
+      "address": "Адрес",
+      "kind": "Тип",
+      "avgLatency": "Ср. задержка",
+      "reachable": "Доступно",
+      "download": "Загрузка",
+      "upload": "Отдача",
+      "datacenters": "Дата-центры",
+      "avgSpeed": "Ср. скорость",
+      "peakSpeed": "Пик. скорость",
+      "transferred": "Передано",
+      "duration": "Длительность"
     },
     "history": {
       "detectionsSaved": "{{count}} проверка сохранена",
@@ -1515,7 +1535,58 @@
       "tspuClean": "ТСПУ: Чисто",
       "tspuDetected": "ТСПУ: {{count}} обнаружено",
       "sniFound": "SNI: {{count}} найдено",
-      "sniNone": "SNI: Нет"
+      "sniNone": "SNI: Нет",
+      "dnsAvail": "DNS дост.: DoH {{doh}}, UDP {{udp}}",
+      "telegram": "Telegram: {{verdict}}"
+    },
+    "telegramVerdict": {
+      "ok": "OK",
+      "slow": "Замедление",
+      "stalled": "Обрыв",
+      "partial": "Частично",
+      "blocked": "Недоступно",
+      "error": "Ошибка"
+    },
+    "legend": {
+      "title": "Легенда — как читать результаты",
+      "groups": {
+        "dns": "DNS",
+        "tls": "TLS / DPI",
+        "tcp": "TCP fat probe",
+        "sni": "Белые SNI",
+        "telegram": "Telegram"
+      },
+      "meanings": {
+        "OK": "Вмешательство не обнаружено",
+        "DNS_SPOOFING": "UDP DNS возвращает IP, отличный от DoH (подмена)",
+        "DNS_INTERCEPTION": "UDP DNS перехвачен или не отвечает, а DoH работает",
+        "FAKE_IP": "Резолвится в диапазон fake-IP (198.18.0.0/15)",
+        "FAKE_NXDOMAIN": "UDP возвращает NXDOMAIN, а DoH резолвит домен",
+        "FAKE_EMPTY": "UDP возвращает пустой ответ, а DoH резолвит домен",
+        "DOH_BLOCKED": "Все серверы DNS-over-HTTPS заблокированы",
+        "BOTH_UNAVAILABLE": "Недоступны ни UDP, ни DoH",
+        "TLS_DPI": "Вмешательство в TLS, характерное для DPI",
+        "TLS_SPOOF": "Вместо TLS внедрён не-TLS или мусорный ответ",
+        "TLS_ALERT": "Поддельный TLS alert (например unrecognized name / handshake failure)",
+        "TLS_RST": "Сброс соединения во время или после TLS-рукопожатия",
+        "TLS_DROP": "TLS-рукопожатие сброшено (таймаут)",
+        "SYN_DROP": "TCP SYN отброшен, соединение не установлено",
+        "TLS_MITM": "Подмена сертификата (man-in-the-middle)",
+        "TCP16": "Обрыв в окне TSPU 12-69 КБ",
+        "ISP_PAGE": "Редирект на страницу блокировки провайдера",
+        "DETECTED": "Обнаружен обрыв соединения TSPU",
+        "TIMEOUT": "Истекло время ожидания",
+        "ERROR": "Ошибка проверки",
+        "FOUND": "Найден рабочий обходной SNI",
+        "NOT_FOUND": "Рабочий обходной SNI не найден",
+        "NOT_BLOCKED": "ASN не заблокирован, перебор не требуется",
+        "ok": "Доступно на полной скорости",
+        "slow": "Замедление или частичная передача",
+        "stalled": "Передача оборвалась (нет данных 10с)",
+        "partial": "Часть дата-центров недоступна",
+        "blocked": "Недоступно / данные не переданы",
+        "error": "Ошибка теста"
+      }
     }
   },
   "connections": {

@@ -8,7 +8,7 @@ import { statusColors } from "./constants";
 
 interface ResultCardProps {
   status: "ok" | "error" | "warning";
-  title: string;
+  title: React.ReactNode;
   subtitle?: string;
   badge?: React.ReactNode;
   expandedContent?: React.ReactNode;

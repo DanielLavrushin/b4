@@ -19,6 +19,8 @@ import {
   DomainIcon,
   NetworkIcon,
   SniIcon,
+  SpeedIcon,
+  ConnectionIcon,
   WarningIcon,
   HistoryIcon,
   DeleteIcon,
@@ -36,10 +38,13 @@ import { TestSelectionGrid } from "./TestSelectionGrid";
 import { ProgressGauge } from "./ProgressGauge";
 import { SummaryDashboard } from "./SummaryDashboard";
 import { ResultSection } from "./ResultSection";
+import { Legend } from "./Legend";
 import { DNSResults } from "./results/DNSResults";
+import { DNSAvailabilityResults } from "./results/DNSAvailabilityResults";
 import { DomainsResults } from "./results/DomainsResults";
 import { TCPResults } from "./results/TCPResults";
 import { SNIResults } from "./results/SNIResults";
+import { TelegramResults } from "./results/TelegramResults";
 import { getTestName, statusColors } from "./constants";
 
 function getHistoryStatusColor(entry: DetectorHistoryEntry): string {
@@ -49,9 +54,11 @@ function getHistoryStatusColor(entry: DetectorHistoryEntry): string {
   const hasIssues =
     (entry.dns_result &&
       (entry.dns_result.spoof_count > 0 ||
-        entry.dns_result.intercept_count > 0)) ||
+        entry.dns_result.intercept_count > 0 ||
+        entry.dns_result.fakeip_count > 0)) ||
     (entry.domains_result && entry.domains_result.blocked_count > 0) ||
-    (entry.tcp_result && entry.tcp_result.detected_count > 0);
+    (entry.tcp_result && entry.tcp_result.detected_count > 0) ||
+    (entry.telegram_result && entry.telegram_result.verdict !== "ok");
 
   return hasIssues ? statusColors.error : statusColors.ok;
 }
@@ -73,9 +80,11 @@ export const DetectorRunner = () => {
 
   const defaultTests: Record<DetectorTestType, boolean> = {
     dns: true,
+    "dns-availability": false,
     domains: true,
     tcp: true,
     sni: false,
+    telegram: false,
   };
 
   const [selectedTests, setSelectedTests] = useState<
@@ -120,9 +129,11 @@ export const DetectorRunner = () => {
   const hasAnyResult =
     suite &&
     (suite.dns_result ||
+      suite.dnsavail_result ||
       suite.domains_result ||
       suite.tcp_result ||
-      suite.sni_result);
+      suite.sni_result ||
+      suite.telegram_result);
 
   function formatTimeAgo(dateStr: string): string {
     const date = new Date(dateStr);
@@ -149,8 +160,19 @@ export const DetectorRunner = () => {
 
     if (entry.dns_result) {
       const bad =
-        entry.dns_result.spoof_count + entry.dns_result.intercept_count;
+        entry.dns_result.spoof_count +
+        entry.dns_result.intercept_count +
+        entry.dns_result.fakeip_count;
       parts.push(bad > 0 ? t("detector.history.dnsIssues", { count: bad }) : t("detector.history.dnsOk"));
+    }
+    if (entry.dnsavail_result) {
+      const r = entry.dnsavail_result;
+      parts.push(
+        t("detector.history.dnsAvail", {
+          doh: `${r.doh_ok}/${r.doh_total}`,
+          udp: `${r.udp_ok}/${r.udp_total}`,
+        }),
+      );
     }
     if (entry.domains_result) {
       parts.push(
@@ -171,6 +193,13 @@ export const DetectorRunner = () => {
         entry.sni_result.found_count > 0
           ? t("detector.history.sniFound", { count: entry.sni_result.found_count })
           : t("detector.history.sniNone"),
+      );
+    }
+    if (entry.telegram_result) {
+      parts.push(
+        t("detector.history.telegram", {
+          verdict: t(`detector.telegramVerdict.${entry.telegram_result.verdict}`),
+        }),
       );
     }
 
@@ -333,6 +362,27 @@ export const DetectorRunner = () => {
             </Box>
           )}
 
+          {suite?.dnsavail_result && (
+            <Box sx={{ flex: "1 1 480px", minWidth: 0 }}>
+              <ResultSection
+                title={t("detector.sections.dnsAvailability")}
+                icon={<SpeedIcon />}
+                summary={suite.dnsavail_result.summary}
+                ok={
+                  suite.dnsavail_result.doh_ok > 0 ||
+                  suite.dnsavail_result.udp_ok > 0
+                }
+              >
+                {suite.dnsavail_result.providers &&
+                  suite.dnsavail_result.providers.length > 0 && (
+                    <DNSAvailabilityResults
+                      providers={suite.dnsavail_result.providers}
+                    />
+                  )}
+              </ResultSection>
+            </Box>
+          )}
+
           {suite?.domains_result && (
             <Box sx={{ flex: "2 1 480px", minWidth: 0 }}>
               <ResultSection
@@ -382,8 +432,23 @@ export const DetectorRunner = () => {
               </ResultSection>
             </Box>
           )}
+
+          {suite?.telegram_result && (
+            <Box sx={{ flex: "2 1 480px", minWidth: 0 }}>
+              <ResultSection
+                title={t("detector.sections.telegram")}
+                icon={<ConnectionIcon />}
+                summary={suite.telegram_result.summary}
+                ok={suite.telegram_result.verdict === "ok"}
+              >
+                <TelegramResults result={suite.telegram_result} />
+              </ResultSection>
+            </Box>
+          )}
         </Box>
       )}
+
+      <Legend />
 
       {/* Detection History */}
       {history.length > 0 && (
@@ -564,6 +629,26 @@ export const DetectorRunner = () => {
                               </ResultSection>
                             )}
 
+                            {/* DNS availability */}
+                            {entry.dnsavail_result && (
+                              <ResultSection
+                                title={t("detector.sections.dnsAvailability")}
+                                icon={<SpeedIcon />}
+                                summary={entry.dnsavail_result.summary}
+                                ok={
+                                  entry.dnsavail_result.doh_ok > 0 ||
+                                  entry.dnsavail_result.udp_ok > 0
+                                }
+                              >
+                                {entry.dnsavail_result.providers &&
+                                  entry.dnsavail_result.providers.length > 0 && (
+                                    <DNSAvailabilityResults
+                                      providers={entry.dnsavail_result.providers}
+                                    />
+                                  )}
+                              </ResultSection>
+                            )}
+
                             {/* Domains */}
                             {entry.domains_result && (
                               <ResultSection
@@ -617,6 +702,20 @@ export const DetectorRunner = () => {
                                       results={entry.sni_result.asn_results}
                                     />
                                   )}
+                              </ResultSection>
+                            )}
+
+                            {/* Telegram */}
+                            {entry.telegram_result && (
+                              <ResultSection
+                                title={t("detector.sections.telegram")}
+                                icon={<ConnectionIcon />}
+                                summary={entry.telegram_result.summary}
+                                ok={entry.telegram_result.verdict === "ok"}
+                              >
+                                <TelegramResults
+                                  result={entry.telegram_result}
+                                />
                               </ResultSection>
                             )}
                           </Stack>

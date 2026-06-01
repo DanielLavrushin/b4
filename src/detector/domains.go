@@ -115,9 +115,10 @@ func (s *DetectorSuite) runDomainsCheck(ctx context.Context, stubIPs map[string]
 		switch dr.Overall {
 		case DomainOk:
 			result.OkCount++
-		case DomainTLSDPI, DomainTLSMITM, DomainBlocked, DomainISPPage, DomainDNSFake:
+		case DomainTLSDPI, DomainTLSMITM, DomainTLSSpoof, DomainTLSAlert, DomainTLSReset,
+			DomainTLSDrop, DomainSYNDrop, DomainTCP16, DomainBlocked, DomainISPPage, DomainDNSFake:
 			result.BlockedCount++
-			if dr.Overall == DomainTLSDPI {
+			if isDPIStatus(dr.Overall) {
 				result.DPICount++
 			}
 		}
@@ -131,7 +132,7 @@ func (s *DetectorSuite) runDomainsCheck(ctx context.Context, stubIPs map[string]
 }
 
 func (s *DetectorSuite) probeTLS(ctx context.Context, domain, ip string, version uint16) *TLSProbeResult {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
 	start := time.Now()
@@ -143,10 +144,9 @@ func (s *DetectorSuite) probeTLS(ctx context.Context, domain, ip string, version
 		MaxVersion:         version,
 	}
 
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	conn, err := dialer.DialContext(ctx, "tcp", ip+":443")
+	conn, err := markedDialer(s.mark, 10*time.Second).DialContext(ctx, "tcp", ip+":443")
 	if err != nil {
-		status, detail := ClassifyTLSError(err)
+		status, detail := ClassifyTLSErrorStaged(err, stageConnect, 0)
 		return &TLSProbeResult{
 			Status:  status,
 			Detail:  detail,
@@ -160,7 +160,7 @@ func (s *DetectorSuite) probeTLS(ctx context.Context, domain, ip string, version
 
 	if err != nil {
 		conn.Close()
-		status, detail := ClassifyTLSError(err)
+		status, detail := ClassifyTLSErrorStaged(err, stageHandshake, 0)
 		return &TLSProbeResult{
 			Status:  status,
 			Detail:  detail,
@@ -168,13 +168,12 @@ func (s *DetectorSuite) probeTLS(ctx context.Context, domain, ip string, version
 		}
 	}
 
-	// Try to read a small response
 	req := fmt.Sprintf("GET / HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", domain)
-	tlsConn.SetDeadline(time.Now().Add(5 * time.Second))
+	tlsConn.SetDeadline(time.Now().Add(8 * time.Second))
 	_, err = tlsConn.Write([]byte(req))
 	if err != nil {
 		tlsConn.Close()
-		status, detail := ClassifyTLSError(err)
+		status, detail := ClassifyTLSErrorStaged(err, stageRead, 0)
 		return &TLSProbeResult{
 			Status:  status,
 			Detail:  detail,
@@ -182,12 +181,21 @@ func (s *DetectorSuite) probeTLS(ctx context.Context, domain, ip string, version
 		}
 	}
 
-	buf := make([]byte, 1024)
-	_, err = tlsConn.Read(buf)
+	buf := make([]byte, 16384)
+	bytesRead := 0
+	var readErr error
+	for bytesRead < tcp16MaxBytes+4096 {
+		n, e := tlsConn.Read(buf)
+		bytesRead += n
+		if e != nil {
+			readErr = e
+			break
+		}
+	}
 	tlsConn.Close()
 
-	if err != nil && err != io.EOF {
-		status, detail := ClassifyTLSError(err)
+	if readErr != nil && readErr != io.EOF {
+		status, detail := ClassifyTLSErrorStaged(readErr, stageRead, bytesRead)
 		return &TLSProbeResult{
 			Status:  status,
 			Detail:  detail,
@@ -213,8 +221,7 @@ func (s *DetectorSuite) probeHTTP(ctx context.Context, domain, ip string) *HTTPP
 
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			d := net.Dialer{Timeout: 10 * time.Second}
-			return d.DialContext(ctx, "tcp", ip+":80")
+			return markedDialer(s.mark, 10*time.Second).DialContext(ctx, "tcp", ip+":80")
 		},
 	}
 
@@ -309,21 +316,43 @@ func isCrossDomainRedirect(originalDomain, locationURL string) bool {
 	return true
 }
 
+var dpiStatusPriority = []DomainStatus{
+	DomainTLSSpoof,
+	DomainTLSDPI,
+	DomainTLSReset,
+	DomainTLSDrop,
+	DomainTCP16,
+	DomainSYNDrop,
+	DomainTLSAlert,
+	DomainTLSMITM,
+}
+
+func isDPIStatus(st DomainStatus) bool {
+	switch st {
+	case DomainTLSDPI, DomainTLSSpoof, DomainTLSAlert, DomainTLSReset, DomainTLSDrop, DomainSYNDrop, DomainTCP16:
+		return true
+	}
+	return false
+}
+
 func deriveOverallStatus(dr DomainCheckResult) DomainStatus {
 	if dr.IsFakeIP {
 		return DomainDNSFake
 	}
 
-	// If both TLS versions show DPI, that's definitive
-	if dr.TLS13 != nil && dr.TLS12 != nil {
-		if dr.TLS13.Status == DomainTLSDPI && dr.TLS12.Status == DomainTLSDPI {
-			return DomainTLSDPI
-		}
-		if dr.TLS13.Status == DomainTLSDPI || dr.TLS12.Status == DomainTLSDPI {
-			return DomainTLSDPI
-		}
-		if dr.TLS13.Status == DomainTLSMITM || dr.TLS12.Status == DomainTLSMITM {
-			return DomainTLSMITM
+	tlsStatuses := []DomainStatus{}
+	if dr.TLS13 != nil {
+		tlsStatuses = append(tlsStatuses, dr.TLS13.Status)
+	}
+	if dr.TLS12 != nil {
+		tlsStatuses = append(tlsStatuses, dr.TLS12.Status)
+	}
+
+	for _, want := range dpiStatusPriority {
+		for _, got := range tlsStatuses {
+			if got == want {
+				return want
+			}
 		}
 	}
 
@@ -331,7 +360,6 @@ func deriveOverallStatus(dr DomainCheckResult) DomainStatus {
 		return DomainISPPage
 	}
 
-	// If all three failed
 	allFailed := true
 	if dr.TLS13 != nil && dr.TLS13.Status == DomainOk {
 		allFailed = false

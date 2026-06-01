@@ -1,8 +1,24 @@
-export type DetectorTestType = "dns" | "domains" | "tcp" | "sni";
+export type DetectorTestType =
+  | "dns"
+  | "dns-availability"
+  | "domains"
+  | "tcp"
+  | "sni"
+  | "telegram";
 export type SuiteStatus = "pending" | "running" | "complete" | "failed" | "canceled";
 
 // DNS types
-export type DNSStatus = "OK" | "DNS_SPOOFING" | "DNS_INTERCEPTION" | "TIMEOUT" | "BLOCKED";
+export type DNSStatus =
+  | "OK"
+  | "DNS_SPOOFING"
+  | "DNS_INTERCEPTION"
+  | "FAKE_IP"
+  | "FAKE_NXDOMAIN"
+  | "FAKE_EMPTY"
+  | "DOH_BLOCKED"
+  | "BOTH_UNAVAILABLE"
+  | "TIMEOUT"
+  | "BLOCKED";
 
 export interface DNSDomainResult {
   domain: string;
@@ -23,7 +39,30 @@ export interface DNSResult {
   summary: string;
   spoof_count: number;
   intercept_count: number;
+  fakeip_count: number;
   ok_count: number;
+}
+
+// DNS availability types
+export type DNSAvailKind = "doh" | "udp";
+
+export interface DNSAvailProviderResult {
+  provider: string;
+  kind: DNSAvailKind;
+  address: string;
+  avg_ms: number;
+  ok: boolean;
+  ok_count: number;
+  total: number;
+}
+
+export interface DNSAvailResult {
+  providers: DNSAvailProviderResult[];
+  doh_ok: number;
+  doh_total: number;
+  udp_ok: number;
+  udp_total: number;
+  summary: string;
 }
 
 // Domain accessibility types
@@ -31,6 +70,12 @@ export type DomainStatus =
   | "OK"
   | "TLS_DPI"
   | "TLS_MITM"
+  | "TLS_SPOOF"
+  | "TLS_ALERT"
+  | "TLS_RST"
+  | "TLS_DROP"
+  | "SYN_DROP"
+  | "TCP16"
   | "ISP_PAGE"
   | "BLOCKED"
   | "DNS_FAKE"
@@ -114,6 +159,38 @@ export interface SNIResult {
   summary: string;
 }
 
+// Telegram types
+export type TelegramVerdict = "ok" | "slow" | "stalled" | "blocked" | "partial" | "error";
+
+export interface TelegramThroughput {
+  verdict: TelegramVerdict;
+  bytes: number;
+  expected: number;
+  pct_ok: number;
+  duration_ms: number;
+  mbps_avg: number;
+  mbps_peak: number;
+  drop_at_sec?: number;
+  detail?: string;
+}
+
+export interface TelegramDCPing {
+  dc: number;
+  address: string;
+  ok: boolean;
+  rtt_ms?: number;
+}
+
+export interface TelegramResult {
+  download: TelegramThroughput;
+  upload: TelegramThroughput;
+  dc_pings: TelegramDCPing[];
+  dc_reachable: number;
+  dc_total: number;
+  verdict: TelegramVerdict;
+  summary: string;
+}
+
 // Overall suite
 export interface DetectorSuite {
   id: string;
@@ -125,9 +202,11 @@ export interface DetectorSuite {
   total_checks: number;
   completed_checks: number;
   dns_result?: DNSResult;
+  dnsavail_result?: DNSAvailResult;
   domains_result?: DomainsResult;
   tcp_result?: TCPResult;
   sni_result?: SNIResult;
+  telegram_result?: TelegramResult;
 }
 
 export interface DetectorResponse {
@@ -144,7 +223,9 @@ export interface DetectorHistoryEntry {
   start_time: string;
   end_time: string;
   dns_result?: DNSResult;
+  dnsavail_result?: DNSAvailResult;
   domains_result?: DomainsResult;
   tcp_result?: TCPResult;
   sni_result?: SNIResult;
+  telegram_result?: TelegramResult;
 }
