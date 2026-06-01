@@ -97,10 +97,12 @@ func sendFragmentedQuery(conn *net.UDPConn, query []byte, target net.IP, port in
 		if !ok {
 			return false
 		}
-		sendTwoFragments(opts.Sender, true, frags, target, opts.Seg2Delay, opts.ReverseOrder)
-		return true
+		return sendTwoFragments(opts.Sender, true, frags, target, opts.Seg2Delay, opts.ReverseOrder) == nil
 	}
 
+	if !opts.Sender.IPv6Ready() {
+		return false
+	}
 	pkt := sock.BuildUDPPacketV6(la.IP, target, uint16(la.Port), uint16(port), query)
 	if pkt == nil {
 		return false
@@ -109,27 +111,27 @@ func sendFragmentedQuery(conn *net.UDPConn, query []byte, target net.IP, port in
 	if !ok {
 		return false
 	}
-	sendTwoFragments(opts.Sender, false, frags, target, opts.Seg2Delay, opts.ReverseOrder)
-	return true
+	return sendTwoFragments(opts.Sender, false, frags, target, opts.Seg2Delay, opts.ReverseOrder) == nil
 }
 
-func sendTwoFragments(s *sock.Sender, v4 bool, frags [][]byte, dst net.IP, delay int, reverse bool) {
-	send := func(p []byte) {
+func sendTwoFragments(s *sock.Sender, v4 bool, frags [][]byte, dst net.IP, delay int, reverse bool) error {
+	send := func(p []byte) error {
 		if v4 {
-			_ = s.SendIPv4(p, dst)
-		} else {
-			_ = s.SendIPv6(p, dst)
+			return s.SendIPv4(p, dst)
 		}
+		return s.SendIPv6(p, dst)
 	}
 	a, b := frags[0], frags[1]
 	if reverse {
 		a, b = b, a
 	}
-	send(a)
+	if err := send(a); err != nil {
+		return err
+	}
 	if delay > 0 {
 		time.Sleep(time.Duration(delay) * time.Millisecond)
 	}
-	send(b)
+	return send(b)
 }
 
 func findDNSSplitPoint(dnsPayload []byte) int {

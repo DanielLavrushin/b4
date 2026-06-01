@@ -72,6 +72,10 @@ func (s *Sender) SendIPv6(packet []byte, destIP net.IP) error {
 	return syscall.Sendto(s.fd6, packet, 0, &addr)
 }
 
+func (s *Sender) IPv6Ready() bool {
+	return s.fd6 >= 0
+}
+
 func (s *Sender) Close() {
 	if s.fd4 >= 0 {
 		_ = syscall.Close(s.fd4)
