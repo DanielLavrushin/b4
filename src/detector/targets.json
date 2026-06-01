@@ -1164,6 +1164,5 @@
   "telegram": {
     "download_url": "https://telegram.org/img/Telegram200million.png",
     "download_size": 32477141
-  },
-  "isp_ip_ranges": []
+  }
 }

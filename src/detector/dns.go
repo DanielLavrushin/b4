@@ -126,7 +126,7 @@ func (s *DetectorSuite) runDNSCheck(ctx context.Context) *DNSResult {
 				udpIP = udp.IP
 				dr.UDPIP = udpIP
 				switch {
-				case getFakeIPType(udpIP) == "fakeip":
+				case isFakeIP(udpIP):
 					dr.Status = DNSFakeIP
 				case trustedDoH && dohIP != udpIP:
 					dr.Status = DNSSpoofing

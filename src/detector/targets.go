@@ -22,7 +22,6 @@ var (
 	WhitelistSNI        []string
 	DNSAvailServers     []dnsAvailServer
 	DNSAvailDomains     []string
-	ISPIPRanges         []string
 	TelegramConfig      telegramTargets
 )
 
@@ -54,7 +53,6 @@ type targetsData struct {
 	WhitelistSNI        []string         `json:"whitelist_sni"`
 	DNSAvailServers     []dnsAvailServer `json:"dns_avail_servers"`
 	DNSAvailDomains     []string         `json:"dns_avail_domains"`
-	ISPIPRanges         []string         `json:"isp_ip_ranges"`
 	Telegram            telegramTargets  `json:"telegram"`
 }
 
@@ -75,7 +73,5 @@ func init() {
 	WhitelistSNI = data.WhitelistSNI
 	DNSAvailServers = data.DNSAvailServers
 	DNSAvailDomains = data.DNSAvailDomains
-	ISPIPRanges = data.ISPIPRanges
 	TelegramConfig = data.Telegram
-	setISPRanges(ISPIPRanges)
 }
