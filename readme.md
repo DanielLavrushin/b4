@@ -315,7 +315,8 @@ Based on research from:
 - [youtubeUnblock](https://github.com/Waujito/youtubeUnblock) - C-based DPI bypass
 - [GoodbyeDPI](https://github.com/ValdikSS/GoodbyeDPI) - Windows DPI circumvention
 - [zapret](https://github.com/bol-van/zapret) - Advanced DPI bypass techniques
-- [dpi-detector](https://github.com/Runnin4ik/dpi-detector) - DPI/TSPU detection techniques
+- [dpi-detector](https://github.com/Runnin4ik/dpi-detector) - DPI/TSPU detection techniques and test target lists (the DPI Detector feature is based on this project)
+- [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy) - Telegram MTProto-over-WebSocket bridging
 
 ## License
 
