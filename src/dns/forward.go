@@ -69,7 +69,7 @@ func ResolveUpstream(query []byte, target net.IP, opts ForwardOptions) ([]byte, 
 		return nil, err
 	}
 
-	buf := make([]byte, 4096)
+	buf := make([]byte, 65535)
 	n, err := conn.Read(buf)
 	if err != nil {
 		return nil, err
