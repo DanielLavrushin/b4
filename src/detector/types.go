@@ -128,7 +128,6 @@ type TelegramDCPing struct {
 
 type TelegramResult struct {
 	Download    TelegramThroughput `json:"download"`
-	Upload      TelegramThroughput `json:"upload"`
 	DCPings     []TelegramDCPing   `json:"dc_pings"`
 	DCReachable int                `json:"dc_reachable"`
 	DCTotal     int                `json:"dc_total"`

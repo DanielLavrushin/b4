@@ -129,7 +129,7 @@ func (s *DetectorSuite) estimateTotalChecks() int {
 			}
 			total += len(DNSAvailServers) * len(domains)
 		case TestTelegram:
-			total += 3
+			total += 2
 		}
 	}
 	return total

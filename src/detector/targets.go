@@ -40,8 +40,6 @@ type dnsAvailServer struct {
 type telegramTargets struct {
 	DownloadURL  string `json:"download_url"`
 	DownloadSize int64  `json:"download_size"`
-	UploadAddr   string `json:"upload_addr"`
-	UploadSize   int64  `json:"upload_size"`
 }
 
 type targetsData struct {

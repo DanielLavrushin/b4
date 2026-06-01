@@ -183,7 +183,6 @@ export interface TelegramDCPing {
 
 export interface TelegramResult {
   download: TelegramThroughput;
-  upload: TelegramThroughput;
   dc_pings: TelegramDCPing[];
   dc_reachable: number;
   dc_total: number;

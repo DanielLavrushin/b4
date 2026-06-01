@@ -1,7 +1,7 @@
 import { Box, Stack, Typography } from "@mui/material";
 import { colors } from "@design";
 import { B4Badge } from "@b4.elements";
-import { DownloadIcon, UploadIcon } from "@b4.icons";
+import { DownloadIcon } from "@b4.icons";
 import type {
   TelegramResult,
   TelegramThroughput,
@@ -120,12 +120,6 @@ export function TelegramResults({
           title={t("detector.labels.download")}
           icon={<DownloadIcon sx={{ fontSize: 18, color: colors.text.secondary }} />}
           tp={result.download}
-        />
-        <ThroughputCard
-          index={1}
-          title={t("detector.labels.upload")}
-          icon={<UploadIcon sx={{ fontSize: 18, color: colors.text.secondary }} />}
-          tp={result.upload}
         />
       </Box>
 
