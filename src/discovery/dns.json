@@ -29,9 +29,6 @@
             "ggpht.com",
             "youtube.*"
         ],
-        "geoip": [
-            "google"
-        ],
         "geosite": [
             "youtube"
         ]
