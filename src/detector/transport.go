@@ -1,8 +1,6 @@
 package detector
 
 import (
-	"context"
-	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -46,14 +44,9 @@ func markedHTTPClient(mark uint, timeout time.Duration) *http.Client {
 		ResponseHeaderTimeout: timeout,
 		MaxIdleConns:          100,
 		IdleConnTimeout:       30 * time.Second,
-		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
 	}
 	return &http.Client{
 		Transport: tr,
 		Timeout:   timeout,
 	}
-}
-
-func markedDialContext(ctx context.Context, mark uint, timeout time.Duration, network, addr string) (net.Conn, error) {
-	return markedDialer(mark, timeout).DialContext(ctx, network, addr)
 }
