@@ -58,12 +58,12 @@ export function matchesConnectionFilter(
   searchable: (string | null | undefined)[],
 ): boolean {
   for (const [field, values] of Object.entries(parsed.fieldFilters)) {
-    const fieldValue = getFieldValue(field);
+    const fieldValue = getFieldValue(field).toLowerCase();
     if (!values.some((value) => fieldValue.includes(value))) return false;
   }
 
   for (const [field, values] of Object.entries(parsed.fieldExcludes)) {
-    const fieldValue = getFieldValue(field);
+    const fieldValue = getFieldValue(field).toLowerCase();
     if (values.some((value) => fieldValue.includes(value))) return false;
   }
 
