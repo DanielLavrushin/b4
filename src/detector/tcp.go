@@ -194,7 +194,7 @@ func (s *fatProbeState) handleError(err error, iteration int) FatProbeResult {
 	dropAtKB := (iteration * padSizePerIter) / 1024
 	suffix := ""
 	if dropAtKB >= 12 && dropAtKB <= 69 {
-		suffix = " [TSPU 16-20KB window]"
+		suffix = " [TSPU 12-69KB window]"
 	}
 	return FatProbeResult{
 		Alive:    true,

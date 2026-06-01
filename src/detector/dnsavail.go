@@ -49,6 +49,9 @@ func (s *DetectorSuite) runDNSAvailCheck(ctx context.Context) *DNSAvailResult {
 
 			var sum float64
 			for _, dom := range domains {
+				if s.isCanceled() {
+					break
+				}
 				ms, ok := s.dnsAvailProbe(ctx, server, dom)
 				if ok {
 					pr.OkCount++

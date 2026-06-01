@@ -208,7 +208,7 @@ func resolveDoH(ctx context.Context, mark uint, serverURL, domain string) (strin
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return resolveDoHWire(ctx, client, serverURL, domain)
+		return "", err
 	}
 	defer resp.Body.Close()
 
@@ -219,7 +219,7 @@ func resolveDoH(ctx context.Context, mark uint, serverURL, domain string) (strin
 
 	var doh dohResponse
 	if err := json.Unmarshal(body, &doh); err != nil {
-		return resolveDoHWire(ctx, client, serverURL, domain)
+		return "", err
 	}
 
 	for _, ans := range doh.Answer {

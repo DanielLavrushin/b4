@@ -150,6 +150,7 @@ func (s *DetectorSuite) telegramDownload(ctx context.Context) TelegramThroughput
 	defer cancel()
 
 	client := telegramClient(s.mark)
+	defer client.CloseIdleConnections()
 	req, err := http.NewRequestWithContext(runCtx, http.MethodGet, url, nil)
 	if err != nil {
 		tp.Verdict = TGError
@@ -175,6 +176,9 @@ func (s *DetectorSuite) telegramDownload(ctx context.Context) TelegramThroughput
 	tp.MbpsPeak = bpsToMbps(peak)
 	if dur > 0 {
 		tp.MbpsAvg = bpsToMbps(float64(bytesRead) / dur.Seconds())
+	}
+	if tp.MbpsPeak == 0 {
+		tp.MbpsPeak = tp.MbpsAvg
 	}
 	if expected > 0 {
 		tp.PctOk = round1(float64(bytesRead) / float64(expected) * 100)
@@ -262,6 +266,9 @@ done:
 	tp.MbpsPeak = bpsToMbps(peak)
 	if dur > 0 {
 		tp.MbpsAvg = bpsToMbps(float64(sent) / dur.Seconds())
+	}
+	if tp.MbpsPeak == 0 {
+		tp.MbpsPeak = tp.MbpsAvg
 	}
 	if expected > 0 {
 		tp.PctOk = round1(float64(sent) / float64(expected) * 100)
@@ -355,10 +362,16 @@ func throughputVerdict(bytes, expected int64, stalled bool) TelegramVerdict {
 func telegramVerdict(r *TelegramResult) TelegramVerdict {
 	dl := r.Download.Verdict
 	ul := r.Upload.Verdict
+	if dl == TGBlocked && ul == TGBlocked {
+		return TGBlocked
+	}
 	if (dl == TGBlocked || ul == TGBlocked) && r.DCReachable == 0 {
 		return TGBlocked
 	}
-	if dl == TGStalled || ul == TGStalled || dl == TGSlow || ul == TGSlow {
+	if dl == TGStalled || ul == TGStalled {
+		return TGStalled
+	}
+	if dl == TGSlow || ul == TGSlow || dl == TGBlocked || ul == TGBlocked {
 		return TGSlow
 	}
 	if r.DCTotal > 0 && r.DCReachable > 0 && r.DCReachable < r.DCTotal {
