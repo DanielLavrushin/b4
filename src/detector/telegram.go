@@ -21,7 +21,7 @@ const (
 	tgOkThreshold     = 0.98
 	tgDCPingTimeout   = 5 * time.Second
 	tgDownloadDefault = "https://telegram.org/img/Telegram200million.png"
-	tgDownloadSize    = 30970000
+	tgDownloadSize    = 32477141
 	tgUploadAddr      = "149.154.167.220:443"
 	tgUploadSize      = 10 * 1024 * 1024
 	tgUploadChunk     = 16384
