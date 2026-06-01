@@ -19,7 +19,7 @@ func markControl(mark uint) func(string, string, syscall.RawConn) error {
 	return func(_, _ string, c syscall.RawConn) error {
 		var ctrlErr error
 		if err := c.Control(func(fd uintptr) {
-			ctrlErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_MARK, int(mark))
+			ctrlErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_MARK, int(uint32(mark)))
 		}); err != nil {
 			return err
 		}
