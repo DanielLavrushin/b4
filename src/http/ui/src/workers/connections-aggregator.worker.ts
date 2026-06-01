@@ -140,7 +140,7 @@ function ingest(lines: string[]): void {
         packets: 0,
         firstSeen: p.timestamp,
         lastSeen: p.timestamp,
-        buckets: new Array(bucketCount).fill(0),
+        buckets: new Array<number>(bucketCount).fill(0),
       };
       groups.set(key, g);
     }
@@ -167,7 +167,7 @@ function ingest(lines: string[]): void {
         packets: 0,
         groups: 0,
         lastSeen: p.timestamp,
-        buckets: new Array(bucketCount).fill(0),
+        buckets: new Array<number>(bucketCount).fill(0),
       };
       devices.set(mac, d);
     }
