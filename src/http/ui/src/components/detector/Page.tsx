@@ -7,13 +7,11 @@ export function DetectorPage() {
       maxWidth={false}
       sx={{
         height: "100%",
-        display: "flex",
-        flexDirection: "column",
         overflow: "auto",
         py: 3,
       }}
     >
-      <Stack spacing={3}>
+      <Stack spacing={3} sx={{ alignItems: "stretch" }}>
         <DetectorRunner />
       </Stack>
     </Container>
