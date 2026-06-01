@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -98,25 +97,18 @@ type dcEndpoint struct {
 }
 
 func telegramDCEndpoints() []dcEndpoint {
-	var endpoints []dcEndpoint
 	snap := mtproto.DCSnapshot()
-	if len(snap) > 0 {
-		dcs := make([]int, 0, len(snap))
-		for dc := range snap {
-			dcs = append(dcs, dc)
-		}
-		sort.Ints(dcs)
-		for _, dc := range dcs {
-			endpoints = append(endpoints, dcEndpoint{dc: dc, addr: snap[dc]})
-		}
-		return endpoints
-	}
+	var endpoints []dcEndpoint
 	for dc := 1; dc <= 5; dc++ {
-		addrs, err := mtproto.ResolveDCAll(dc, false, "")
-		if err != nil || len(addrs) == 0 {
-			continue
+		addr := snap[dc]
+		if addr == "" {
+			addrs, err := mtproto.ResolveDCAll(dc, false, "")
+			if err != nil || len(addrs) == 0 {
+				continue
+			}
+			addr = addrs[0]
 		}
-		endpoints = append(endpoints, dcEndpoint{dc: dc, addr: addrs[0]})
+		endpoints = append(endpoints, dcEndpoint{dc: dc, addr: addr})
 	}
 	return endpoints
 }
