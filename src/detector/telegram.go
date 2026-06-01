@@ -36,9 +36,6 @@ func (s *DetectorSuite) runTelegramCheck(ctx context.Context) *TelegramResult {
 			result.DCReachable++
 		}
 	}
-	s.mu.Lock()
-	s.CompletedChecks++
-	s.mu.Unlock()
 
 	if s.isCanceled() {
 		result.Verdict = TGError
@@ -84,6 +81,10 @@ func (s *DetectorSuite) telegramDCPings(ctx context.Context) []TelegramDCPing {
 				conn.Close()
 			}
 			pings[idx] = p
+
+			s.mu.Lock()
+			s.CompletedChecks++
+			s.mu.Unlock()
 		}(i, ep)
 	}
 
