@@ -72,6 +72,9 @@ func (s *DetectorSuite) runDNSAvailCheck(ctx context.Context) *DNSAvailResult {
 	wg.Wait()
 
 	for _, pr := range providers {
+		if pr.Provider == "" {
+			continue
+		}
 		result.Providers = append(result.Providers, pr)
 		switch pr.Kind {
 		case DNSAvailDoH:
