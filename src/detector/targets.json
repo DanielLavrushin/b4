@@ -821,13 +821,6 @@
       "provider": "DigitalOcean 1"
     },
     {
-      "id": "DO-05-1",
-      "ip": "45.55.107.70",
-      "port": 443,
-      "asn": "14061",
-      "provider": "DigitalOcean 1"
-    },
-    {
       "id": "FT-01",
       "ip": "107.189.29.143",
       "port": 443,
