@@ -65,7 +65,7 @@ A rotating pool of Cloudflare-proxied domains used as a fallback when Telegram's
 
 A Telegram proxy that clients connect to with a secret. B4 disguises the traffic as a regular HTTPS connection to a popular website.
 
-![20260531200322](../../../../static/img/mtproto/20260531200322.png)
+![20260531200322](/img/mtproto/20260531200322.png)
 
 ### Step 1: Configure B4
 
