@@ -684,6 +684,25 @@ func TestRouteCollectEntries(t *testing.T) {
 	})
 }
 
+func TestRoutingRulesPresent(t *testing.T) {
+	origCache := routeRuleCache
+	defer func() { routeRuleCache = origCache }()
+
+	t.Run("nil config", func(t *testing.T) {
+		if !RoutingRulesPresent(nil) {
+			t.Error("expected true for nil config")
+		}
+	})
+
+	t.Run("empty cache means nothing to verify", func(t *testing.T) {
+		routeRuleCache = make(map[string]routeState)
+		cfg := config.NewConfig()
+		if !RoutingRulesPresent(&cfg) {
+			t.Error("expected true when no routing rules are cached")
+		}
+	})
+}
+
 func TestRouteResolveIDs(t *testing.T) {
 	origCache := routeRuleCache
 	origAuto := routeIfaceAuto

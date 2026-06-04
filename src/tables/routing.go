@@ -330,6 +330,68 @@ func RoutingClearAll() {
 	routeLastReResolve = make(map[string]time.Time)
 }
 
+func RoutingRulesPresent(cfg *config.Config) bool {
+	if cfg == nil {
+		return true
+	}
+
+	routeMu.Lock()
+	defer routeMu.Unlock()
+
+	if len(routeRuleCache) == 0 {
+		return true
+	}
+
+	be := getRouteBackend(cfg)
+	if be == nil {
+		return true
+	}
+
+	switch eng := be.(type) {
+	case *routeNftBackend:
+		out, err := run("nft", "list", "table", "inet", routeNftTable)
+		return err == nil && strings.TrimSpace(out) != ""
+	case *routeIptBackend:
+		for _, st := range routeRuleCache {
+			if !routeIptChainPresent(eng, st) {
+				return false
+			}
+		}
+		return true
+	}
+	return true
+}
+
+func routeIptChainPresent(be *routeIptBackend, st routeState) bool {
+	table := "mangle"
+	if config.RoutingIsBlock(st.mode) {
+		table = "filter"
+	}
+	for _, v6 := range []bool{false, true} {
+		cmd := be.iptFor(v6)
+		if !hasBinary(cmd) {
+			continue
+		}
+		_, err := run(cmd, "-w", "-t", table, "-S", st.chainPre)
+		return err == nil
+	}
+	return true
+}
+
+func RoutingForceResync(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+
+	routeMu.Lock()
+	routeRuleCache = make(map[string]routeState)
+	routeIfaceAuto = make(map[string]routeState)
+	routeLastReResolve = make(map[string]time.Time)
+	routeMu.Unlock()
+
+	RoutingSyncConfig(cfg)
+}
+
 func RoutingSyncConfig(cfg *config.Config) {
 	if cfg == nil {
 		return

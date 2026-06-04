@@ -119,11 +119,18 @@ func (m *Monitor) monitorLoop() {
 					log.Infof("Tables rules restored successfully")
 				}
 				m.snapshotRoutingIfaces(cfg)
-			} else if m.routingIfacesChanged(cfg) {
+			}
+
+			if m.routingIfacesChanged(cfg) {
 				log.Warnf("Routing interface change detected, resyncing routing rules...")
 				RoutingSyncConfig(cfg)
 				m.snapshotRoutingIfaces(cfg)
 				log.Tracef("Routing rules resynced after interface change")
+			} else if !RoutingRulesPresent(cfg) {
+				log.Warnf("Routing rules missing, restoring...")
+				RoutingForceResync(cfg)
+				m.snapshotRoutingIfaces(cfg)
+				log.Infof("Routing rules restored successfully")
 			} else {
 				RoutingPeriodicReResolve(cfg)
 			}
