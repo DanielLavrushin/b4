@@ -27,7 +27,9 @@ func routeEnsureBlockRule(be routeBackend, cfg *config.Config, set *config.SetCo
 
 	switch be.name() {
 	case backendNFTables:
-		ensureBlockBaseNft()
+		if err := ensureBlockBaseNft(); err != nil {
+			return err
+		}
 		if err := be.ensureChain(st.chainPre, true); err != nil {
 			return err
 		}
@@ -42,7 +44,9 @@ func routeEnsureBlockRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		ensureBlockJumpNft(routeNftBlockOut, st.chainPre)
 	default:
 		legacy := isLegacyIptBackend(be)
-		ensureBlockChainIpt(st.chainPre, legacy)
+		if err := ensureBlockChainIpt(st.chainPre, legacy); err != nil {
+			return err
+		}
 		if cfg.Queue.IPv4Enabled {
 			addBlockRuleIpt(false, st.chainPre, st.setV4, st.blockAction, sources, legacy)
 		}
@@ -75,11 +79,16 @@ func routeCleanupBlockRule(be routeBackend, st routeState) {
 	be.destroyIPSet(st.setV6)
 }
 
-func ensureBlockBaseNft() {
-	runEnsure("nft", "add", "chain", "inet", routeNftTable, routeNftBlockFwd,
-		"{", "type", "filter", "hook", "forward", "priority", "-150", ";", "policy", "accept", ";", "}")
-	runEnsure("nft", "add", "chain", "inet", routeNftTable, routeNftBlockOut,
-		"{", "type", "filter", "hook", "output", "priority", "-150", ";", "policy", "accept", ";", "}")
+func ensureBlockBaseNft() error {
+	if err := runEnsure("nft", "add", "chain", "inet", routeNftTable, routeNftBlockFwd,
+		"{", "type", "filter", "hook", "forward", "priority", "-150", ";", "policy", "accept", ";", "}"); err != nil {
+		return fmt.Errorf("ensure block forward chain: %w", err)
+	}
+	if err := runEnsure("nft", "add", "chain", "inet", routeNftTable, routeNftBlockOut,
+		"{", "type", "filter", "hook", "output", "priority", "-150", ";", "policy", "accept", ";", "}"); err != nil {
+		return fmt.Errorf("ensure block output chain: %w", err)
+	}
+	return nil
 }
 
 func addBlockRuleNft(chain string, v6 bool, setName, action string, sources []string) {
@@ -142,7 +151,8 @@ func iptBlockCmd(v6, legacy bool) string {
 	return backendIPTables
 }
 
-func ensureBlockChainIpt(chain string, legacy bool) {
+func ensureBlockChainIpt(chain string, legacy bool) error {
+	ipt4 := iptBlockCmd(false, legacy)
 	for _, v6 := range []bool{false, true} {
 		cmd := iptBlockCmd(v6, legacy)
 		if !hasBinary(cmd) {
@@ -150,10 +160,14 @@ func ensureBlockChainIpt(chain string, legacy bool) {
 		}
 		out, err := run(cmd, "-w", "-t", "filter", "-N", chain)
 		if err != nil && !strings.Contains(strings.TrimSpace(out), "already exists") {
-			log.Tracef("routing: %s -N %s in filter failed: %s", cmd, chain, strings.TrimSpace(out))
+			if cmd == ipt4 {
+				return fmt.Errorf("%s -N %s in filter: %v: %s", cmd, chain, err, strings.TrimSpace(out))
+			}
+			log.Tracef("routing: %s -N %s in filter failed (non-fatal): %s", cmd, chain, strings.TrimSpace(out))
 		}
 		runLogged("routing: flush block chain "+chain, cmd, "-w", "-t", "filter", "-F", chain)
 	}
+	return nil
 }
 
 func flushDeleteBlockChainIpt(chain string, legacy bool) {
