@@ -397,6 +397,7 @@ type UpstreamProxyConfig struct {
 	Password  string `json:"password,omitempty"`
 	FailOpen  bool   `json:"fail_open"`
 	UseDomain bool   `json:"use_domain"`
+	UDP       bool   `json:"udp"`
 }
 
 type SetMSSClampEntry struct {

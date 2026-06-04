@@ -1234,6 +1234,8 @@
       "failOpen": "Fall back to direct on upstream failure",
       "failOpenDesc": "If the upstream proxy is unreachable, open a plain direct connection to the original destination instead of failing.",
       "failOpenWarning": "Fail-open exposes the destination to your ISP if the upstream goes down. Disable for whitelist-mode regions where direct connections do not work and you want failures to be visible.",
+      "udp": "Route UDP through upstream",
+      "udpDesc": "Also tunnel matched UDP traffic through the upstream SOCKS5 proxy (via UDP ASSOCIATE), not just TCP. Applies to forwarded traffic from LAN clients. Leave off for TCP-only routing.",
       "proxyManipulationNote": "In proxy mode, packet manipulation (faking, fragmentation, desync) is disabled for matched traffic. The upstream proxy handles obfuscation.",
       "flowNoUpstream": "upstream not configured",
       "flowProxyCaption": "Matched traffic is handed off to the upstream SOCKS5 proxy. The proxy is responsible for reaching the destination.",

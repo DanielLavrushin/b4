@@ -389,6 +389,7 @@ export interface UpstreamProxyConfig {
   password?: string;
   fail_open: boolean;
   use_domain: boolean;
+  udp: boolean;
 }
 
 export interface RoutingConfig {

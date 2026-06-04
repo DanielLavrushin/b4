@@ -41,12 +41,18 @@ type Listener struct {
 	FailOpen  bool
 	Resolver  DomainResolver
 	MTProtoWS bool
+	UDP       bool
 	Bridge    MTProtoBridge
 
 	ctx    context.Context
 	cancel context.CancelFunc
 	lnV4   net.Listener
 	lnV6   net.Listener
+
+	udpV4       *net.UDPConn
+	udpV6       *net.UDPConn
+	udpMu       sync.Mutex
+	udpSessions map[string]*udpSession
 
 	activeConns atomic.Int64
 }
@@ -76,6 +82,10 @@ func (l *Listener) Start(parent context.Context) error {
 	l.lnV4 = lnV4
 	go l.acceptLoop(lnV4, "v4")
 	log.Infof("tproxy: listening on %s (v4) for set %q -> %s:%d", addr4, l.SetName, l.Upstream.Host, l.Upstream.Port)
+
+	if l.UDP && !l.MTProtoWS {
+		l.startUDP(addr4, addr6)
+	}
 
 	lnV6, err := listenTransparent(l.ctx, "tcp6", addr6, true)
 	if err != nil {
@@ -127,6 +137,7 @@ func (l *Listener) Stop() error {
 	if l.cancel != nil {
 		l.cancel()
 	}
+	l.stopUDP()
 	var firstErr error
 	if l.lnV4 != nil {
 		if err := l.lnV4.Close(); err != nil && firstErr == nil {

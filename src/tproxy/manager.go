@@ -91,6 +91,7 @@ func (m *Manager) SyncConfig(cfg *config.Config) {
 			l.Upstream.Password != set.Routing.Upstream.Password ||
 			l.Upstream.BypassMark != bypassMark ||
 			l.UseDomain != set.Routing.Upstream.UseDomain ||
+			l.UDP != set.Routing.Upstream.UDP ||
 			l.FailOpen != set.Routing.Upstream.FailOpen {
 			log.Infof("tproxy: restarting listener for set %q (config changed)", set.Name)
 			_ = l.Stop()
@@ -121,6 +122,7 @@ func (m *Manager) SyncConfig(cfg *config.Config) {
 				BypassMark: bypassMark,
 			},
 			UseDomain: set.Routing.Upstream.UseDomain,
+			UDP:       set.Routing.Upstream.UDP,
 			FailOpen:  set.Routing.Upstream.FailOpen,
 			Resolver:  m.resolver,
 			MTProtoWS: set.Routing.Mode == config.RoutingModeMTProtoWS,

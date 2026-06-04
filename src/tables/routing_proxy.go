@@ -121,15 +121,23 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	port, _ := portFromState(st)
 	legacy := isLegacyIptBackend(be)
 
+	udp := set.Routing.Upstream.UDP
+
 	switch be.name() {
 	case backendNFTables:
 		if cfg.Queue.IPv4Enabled {
 			addProxyDivertRuleNft(st.chainPre, false, st.setV4, st.mark)
-			addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources)
+			addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "tcp")
+			if udp {
+				addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "udp")
+			}
 		}
 		if cfg.Queue.IPv6Enabled {
 			addProxyDivertRuleNft(st.chainPre, true, st.setV6, st.mark)
-			addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources)
+			addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "tcp")
+			if udp {
+				addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "udp")
+			}
 		}
 		ensureProxyOutputBaseRulesNft(cfg, st, queueMark)
 	default:
@@ -140,12 +148,18 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		be.addBypassRule(st.chainOut, queueMark)
 		if cfg.Queue.IPv4Enabled {
 			addProxyDivertRuleIpt(false, st.chainPre, st.setV4, st.mark, legacy)
-			addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy)
+			addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "tcp")
+			if udp {
+				addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "udp")
+			}
 			addProxyOutputMarkRuleIpt(false, st.chainOut, st.setV4, st.mark, legacy)
 		}
 		if cfg.Queue.IPv6Enabled {
 			addProxyDivertRuleIpt(true, st.chainPre, st.setV6, st.mark, legacy)
-			addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy)
+			addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "tcp")
+			if udp {
+				addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "udp")
+			}
 			addProxyOutputMarkRuleIpt(true, st.chainOut, st.setV6, st.mark, legacy)
 		}
 		insertProxyOutputJump(be, st.chainOut)
@@ -469,7 +483,7 @@ func removeProxyInputAccept(be routeBackend, mark uint32) {
 	}
 }
 
-func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, port int, sources []string) {
+func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, port int, sources []string, proto string) {
 	markHex := fmt.Sprintf("0x%x", mark)
 	portStr := fmt.Sprintf(":%d", port)
 
@@ -480,7 +494,7 @@ func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, p
 		}
 		if v6 {
 			args = append(args,
-				"meta", "l4proto", "tcp",
+				"meta", "l4proto", proto,
 				"ip6", "daddr", "@"+setName,
 				"meta", "mark", "set", markHex,
 				"tproxy", "ip6", "to", portStr,
@@ -488,7 +502,7 @@ func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, p
 			)
 		} else {
 			args = append(args,
-				"ip", "protocol", "tcp",
+				"ip", "protocol", proto,
 				"ip", "daddr", "@"+setName,
 				"meta", "mark", "set", markHex,
 				"tproxy", "ip", "to", portStr,
@@ -507,7 +521,7 @@ func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, p
 	}
 }
 
-func addProxyTProxyRuleIpt(v6 bool, chain, setName string, mark uint32, port int, sources []string, legacy bool) {
+func addProxyTProxyRuleIpt(v6 bool, chain, setName string, mark uint32, port int, sources []string, legacy bool, proto string) {
 	cmd := backendIPTables
 	if v6 {
 		cmd = backendIP6Tables
@@ -525,7 +539,7 @@ func addProxyTProxyRuleIpt(v6 bool, chain, setName string, mark uint32, port int
 	markHex := fmt.Sprintf("0x%x/0x%x", mark, mark)
 
 	emit := func(src string) {
-		args := []string{cmd, "-w", "-t", "mangle", "-A", chain, "-p", "tcp"}
+		args := []string{cmd, "-w", "-t", "mangle", "-A", chain, "-p", proto}
 		if src != "" {
 			args = append(args, "-i", src)
 		}

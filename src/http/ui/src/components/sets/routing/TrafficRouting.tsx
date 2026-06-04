@@ -60,6 +60,7 @@ export const TrafficRouting = ({
     password: "",
     fail_open: false,
     use_domain: true,
+    udp: false,
   };
 
   let flowDestination: string;
@@ -371,6 +372,16 @@ export const TrafficRouting = ({
                     onChange("routing.upstream.use_domain", checked)
                   }
                   description={t("sets.routing.useDomainDesc")}
+                />
+              </Grid>
+              <Grid size={{ xs: 12 }}>
+                <B4Switch
+                  label={t("sets.routing.udp")}
+                  checked={upstream.udp === true}
+                  onChange={(checked: boolean) =>
+                    onChange("routing.upstream.udp", checked)
+                  }
+                  description={t("sets.routing.udpDesc")}
                 />
               </Grid>
               <Grid size={{ xs: 12 }}>
