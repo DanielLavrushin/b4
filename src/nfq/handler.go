@@ -432,7 +432,8 @@ func (w *Worker) handleTCPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 		m.RecordPacket(uint64(len(pkt.raw)))
 	}
 
-	if matched && set != nil && set.Routing.Enabled && config.RoutingUsesTProxy(set.Routing.Mode) {
+	if matched && set != nil && set.Routing.Enabled &&
+		(config.RoutingUsesTProxy(set.Routing.Mode) || config.RoutingIsBlock(set.Routing.Mode)) {
 		return accept(q, id)
 	}
 

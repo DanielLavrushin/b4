@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.65.0] - 2026-06-xx
+
+- ADDED: **Block (blackhole) routing mode** - sets now have a "Block" option in the Set's Routing tab that drops or rejects all matched traffic instead of sending it anywhere. Point a set at ad/tracker domains, IPs, CIDRs, or a geosite category (for example `category-ads-all`) and B4 blocks them across the whole network - both LAN devices and the router itself. Three actions: "Drop" silently blackholes the connection (it times out, best for ads), "Reject (ICMP)" fails it with an unreachable error, and "Reject (TCP reset)" sends a TCP reset so apps fail instantly. Reuses the same domain/IP/geo targeting as the other routing modes, applied live without a restart.
+
 ## [1.64.0] - 2026-06-01
 
 - FIXED: **DNS redirect didn't work** - when a set sent its DNS lookups to a chosen server (the set's DNS tab), names failed to resolve and the internet seemed to hang. Redirected DNS now works as expected.

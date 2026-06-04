@@ -63,6 +63,17 @@ var migrationRegistry = map[int]MigrationFunc{
 	39: migrateV39to40, // Add geo auto_update config
 	40: migrateV40to41, // Add MTProto CF-proxy fallback config
 	41: migrateV41to42, // Add MTProto CF Worker domain config
+	42: migrateV42to43, // Add per-set routing block action
+}
+
+func migrateV42to43(c *Config, _ map[string]interface{}) error {
+	log.Tracef("Migration v42->v43: Adding per-set routing block action")
+	for _, set := range c.Sets {
+		if set.Routing.BlockAction == "" {
+			set.Routing.BlockAction = DefaultSetConfig.Routing.BlockAction
+		}
+	}
+	return nil
 }
 
 func migrateV41to42(c *Config, _ map[string]interface{}) error {

@@ -18,10 +18,30 @@ const (
 	RoutingModeInterface = "interface"
 	RoutingModeProxy     = "proxy"
 	RoutingModeMTProtoWS = "mtproto-ws"
+	RoutingModeBlock     = "block"
+)
+
+const (
+	BlockActionDrop      = "drop"
+	BlockActionReject    = "reject"
+	BlockActionRejectRST = "reject-tcp-reset"
 )
 
 func RoutingUsesTProxy(mode string) bool {
 	return mode == RoutingModeProxy || mode == RoutingModeMTProtoWS
+}
+
+func RoutingIsBlock(mode string) bool {
+	return mode == RoutingModeBlock
+}
+
+func NormalizeBlockAction(action string) string {
+	switch action {
+	case BlockActionReject, BlockActionRejectRST:
+		return action
+	default:
+		return BlockActionDrop
+	}
 }
 
 const (
@@ -388,6 +408,7 @@ type RoutingConfig struct {
 	Table            int                 `json:"table"`
 	SourceInterfaces []string            `json:"source_interfaces"`
 	IPTTLSeconds     int                 `json:"ip_ttl_seconds"`
+	BlockAction      string              `json:"block_action"`
 }
 
 type UpstreamProxyConfig struct {

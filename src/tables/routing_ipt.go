@@ -212,7 +212,7 @@ func (b *routeIptBackend) destroyIPSet(name string) {
 }
 
 func (b *routeIptBackend) clearAll() {
-	for _, table := range []string{"mangle", "nat"} {
+	for _, table := range []string{"mangle", "nat", "filter"} {
 		for _, cmd := range b.iptBoth() {
 			if !hasBinary(cmd) {
 				continue

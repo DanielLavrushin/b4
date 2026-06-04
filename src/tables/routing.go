@@ -24,6 +24,7 @@ type routeState struct {
 	tproxyPort  int
 	upstreamKey string
 	sourcesKey  string
+	blockAction string
 	setV4       string
 	setV6       string
 	chainPre    string
@@ -125,7 +126,9 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 
 	if _, ok := routeRuleCache[set.Id]; !ok {
 		var err error
-		if config.RoutingUsesTProxy(cur.mode) {
+		if config.RoutingIsBlock(cur.mode) {
+			err = routeEnsureBlockRule(be, cfg, set, cur, sources)
+		} else if config.RoutingUsesTProxy(cur.mode) {
 			err = routeEnsureProxyRule(be, cfg, set, cur, sources)
 		} else {
 			err = routeEnsureRule(be, cfg, set, cur, sources)
@@ -140,6 +143,8 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 			log.Infof("Routing [%s]: enabled MTProto-WS set '%s' mark=0x%x port=%d", be.name(), set.Name, cur.mark, cur.tproxyPort)
 		case config.RoutingModeProxy:
 			log.Infof("Routing [%s]: enabled proxy set '%s' -> %s:%d mark=0x%x port=%d", be.name(), set.Name, set.Routing.Upstream.Host, set.Routing.Upstream.Port, cur.mark, cur.tproxyPort)
+		case config.RoutingModeBlock:
+			log.Infof("Routing [%s]: enabled block set '%s' action=%s", be.name(), set.Name, cur.blockAction)
 		default:
 			log.Infof("Routing [%s]: enabled set '%s' -> iface=%s mark=0x%x table=%d", be.name(), set.Name, set.Routing.EgressInterface, cur.mark, cur.table)
 		}
@@ -170,7 +175,9 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		chainPre: chainPre, chainOut: chainOut, chainSNAT: chainSNAT,
 	}
 
-	if config.RoutingUsesTProxy(mode) {
+	if config.RoutingIsBlock(mode) {
+		st.blockAction = config.NormalizeBlockAction(set.Routing.BlockAction)
+	} else if config.RoutingUsesTProxy(mode) {
 		mark, port := proxyMarkAndPort(set)
 		st.mark = mark
 		st.table = proxyTable()
@@ -192,10 +199,15 @@ func routeStateEqual(a, b routeState) bool {
 		a.iface == b.iface &&
 		a.tproxyPort == b.tproxyPort &&
 		a.upstreamKey == b.upstreamKey &&
+		a.blockAction == b.blockAction &&
 		a.sourcesKey == b.sourcesKey
 }
 
 func routeCleanupAny(be routeBackend, st routeState) {
+	if config.RoutingIsBlock(st.mode) {
+		routeCleanupBlockRule(be, st)
+		return
+	}
 	if config.RoutingUsesTProxy(st.mode) {
 		routeCleanupProxyRule(be, st)
 		return
@@ -361,6 +373,9 @@ func RoutingSyncConfig(cfg *config.Config) {
 		if mode == config.RoutingModeProxy && set.Routing.Upstream.Port < 1 {
 			continue
 		}
+		if config.RoutingIsBlock(mode) && len(set.Targets.IpsToMatch) == 0 && len(set.Targets.SNIDomains) == 0 {
+			continue
+		}
 		desired[set.Id] = set
 	}
 
@@ -392,7 +407,9 @@ func RoutingSyncConfig(cfg *config.Config) {
 
 		if _, ok := routeRuleCache[set.Id]; !ok {
 			var err error
-			if config.RoutingUsesTProxy(cur.mode) {
+			if config.RoutingIsBlock(cur.mode) {
+				err = routeEnsureBlockRule(be, cfg, set, cur, sources)
+			} else if config.RoutingUsesTProxy(cur.mode) {
 				err = routeEnsureProxyRule(be, cfg, set, cur, sources)
 			} else {
 				err = routeEnsureRule(be, cfg, set, cur, sources)
