@@ -373,7 +373,7 @@ func RoutingSyncConfig(cfg *config.Config) {
 		if mode == config.RoutingModeProxy && set.Routing.Upstream.Port < 1 {
 			continue
 		}
-		if config.RoutingIsBlock(mode) && len(set.Targets.IpsToMatch) == 0 && len(set.Targets.SNIDomains) == 0 {
+		if config.RoutingIsBlock(mode) && len(set.Targets.IpsToMatch) == 0 && len(set.Targets.DomainsToMatch) == 0 {
 			continue
 		}
 		desired[set.Id] = set
