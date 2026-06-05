@@ -3,6 +3,7 @@
 ## [1.65.0] - 2026-06-06
 
 - ADDED: **Block (blackhole) routing mode** - a new "Block" option in a set's Routing tab that blocks all matched traffic (ad/tracker domains, IPs, or a GeoSite category like `category-ads-all`) across the whole network - every LAN device and the router itself - with no output interface needed. It blocks by name and not just by IP, so it keeps working even with encrypted DNS and won't break unrelated sites sharing the same servers. See [Blocking](https://daniellavrushin.github.io/b4/docs/sets/blocking) for setup and details.
+- ADDED: **Upstream SOCKS5 proxy now routes UDP too** - sets that send traffic to an upstream SOCKS5 proxy used to forward only regular (TCP) connections; UDP traffic - such as QUIC (used by YouTube and many Google and video services) and DNS - bypassed the proxy and went out directly. UDP from LAN devices now goes through the upstream proxy as well, so a set can route a device's full traffic through it. The proxy must accept UDP.
 
 ## [1.64.0] - 2026-06-01
 
