@@ -98,6 +98,9 @@ func (u *UDPUpstream) Read(buf []byte) (int, error) {
 	if n < 4 {
 		return 0, fmt.Errorf("short datagram")
 	}
+	if buf[0] != 0 || buf[1] != 0 {
+		return 0, fmt.Errorf("bad rsv")
+	}
 	if buf[2] != 0 {
 		return 0, fmt.Errorf("fragmented datagram")
 	}
