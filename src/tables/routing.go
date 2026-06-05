@@ -374,6 +374,7 @@ func RoutingClearAll() {
 	routeIfaceAuto = make(map[string]routeState)
 	routeEngine = nil
 	routeLastReResolve = make(map[string]time.Time)
+	routeLearnLast = make(map[string]time.Time)
 }
 
 func RoutingRulesPresent(cfg *config.Config) bool {
@@ -471,6 +472,7 @@ func RoutingForceResync(cfg *config.Config) {
 	routeRuleCache = make(map[string]routeState)
 	routeIfaceAuto = make(map[string]routeState)
 	routeLastReResolve = make(map[string]time.Time)
+	routeLearnLast = make(map[string]time.Time)
 	routeMu.Unlock()
 
 	RoutingSyncConfig(cfg)
