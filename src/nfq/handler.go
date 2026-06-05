@@ -432,8 +432,27 @@ func (w *Worker) handleTCPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 		m.RecordPacket(uint64(len(pkt.raw)))
 	}
 
-	if matched && set != nil && set.Routing.Enabled &&
-		(config.RoutingUsesTProxy(set.Routing.Mode) || config.RoutingIsBlock(set.Routing.Mode)) {
+	if matched && set != nil && set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) {
+		if matchedSNI || (matchedIP && !matchedLearned) {
+			if config.NormalizeBlockAction(set.Routing.BlockAction) != config.BlockActionDrop {
+				if pkt.ver == IPv4 {
+					w.sendRSTToClientV4(pkt.raw, pkt.ihl, pkt.src, pkt.dst)
+				} else {
+					w.sendRSTToClientV6(pkt.raw, pkt.src, pkt.dst)
+				}
+			}
+			if !cfg.Queue.IsDiscovery {
+				log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), "block")
+			}
+			if err := q.SetVerdict(id, nfqueue.NfDrop); err != nil {
+				log.Tracef("failed to set drop verdict on packet %d: %v", id, err)
+			}
+			return 0
+		}
+		return accept(q, id)
+	}
+
+	if matched && set != nil && set.Routing.Enabled && config.RoutingUsesTProxy(set.Routing.Mode) {
 		return accept(q, id)
 	}
 
@@ -565,6 +584,7 @@ func (w *Worker) handleUDPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 
 	matchedIP := st != nil
 	matchedQUIC := false
+	matchedLearned := false
 	isSTUN := false
 	host := ""
 	ipTarget := ""
@@ -585,6 +605,7 @@ func (w *Worker) handleUDPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 		if mLearned, learnedSet, learnedDomain := matcher.MatchLearnedIPWithSource(pkt.dst, pkt.srcMac); mLearned {
 			if learnedSet.MatchesUDPDPort(dport) {
 				matchedIP = true
+				matchedLearned = true
 				matched = true
 				set = learnedSet
 				host = learnedDomain
@@ -685,6 +706,19 @@ func (w *Worker) handleUDPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 	}
 	m.RecordConnection("UDP", host, pkt.srcStr, pkt.dstStr, matched, pkt.srcMac, setName, udpTLS)
 	m.RecordPacket(uint64(len(pkt.raw)))
+
+	if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) {
+		if matchedQUIC || (matchedIP && !matchedLearned) {
+			if !cfg.Queue.IsDiscovery {
+				log.LogConnection("UDP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, udpTLS, "block")
+			}
+			if err := q.SetVerdict(id, nfqueue.NfDrop); err != nil {
+				log.Tracef("failed to set drop verdict on packet %d: %v", id, err)
+			}
+			return 0
+		}
+		return accept(q, id)
+	}
 
 	switch set.UDP.Mode {
 	case "drop":

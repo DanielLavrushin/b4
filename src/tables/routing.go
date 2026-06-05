@@ -88,6 +88,12 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 	if cfg == nil || set == nil || !set.Routing.Enabled || len(ips) == 0 {
 		return
 	}
+	// Block-mode sets are enforced at the NFQUEUE layer by SNI, not by IP set.
+	// Never feed DNS-resolved (shared CDN) IPs into a block set, or legit traffic
+	// to those IPs gets rejected too.
+	if config.RoutingIsBlock(set.Routing.Mode) {
+		return
+	}
 	mode := set.Routing.Mode
 	if mode == "" {
 		mode = config.RoutingModeInterface
@@ -568,6 +574,9 @@ func RoutingPeriodicReResolve(cfg *config.Config) {
 
 func routePreResolveDomains(cfg *config.Config, sets []*config.SetConfig) {
 	for _, set := range sets {
+		if config.RoutingIsBlock(set.Routing.Mode) {
+			continue
+		}
 		for _, domain := range set.Targets.SNIDomains {
 			domain = strings.TrimSpace(domain)
 			if domain == "" {
