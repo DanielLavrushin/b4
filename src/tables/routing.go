@@ -359,7 +359,7 @@ func RoutingRulesPresent(cfg *config.Config) bool {
 		return err == nil && strings.TrimSpace(out) != ""
 	case *routeIptBackend:
 		for _, st := range routeRuleCache {
-			if !routeIptChainPresent(eng, st) {
+			if !routeIptChainPresent(eng, st, cfg) {
 				return false
 			}
 		}
@@ -368,18 +368,28 @@ func RoutingRulesPresent(cfg *config.Config) bool {
 	return true
 }
 
-func routeIptChainPresent(be *routeIptBackend, st routeState) bool {
+func routeIptChainPresent(be *routeIptBackend, st routeState, cfg *config.Config) bool {
 	table := "mangle"
 	if config.RoutingIsBlock(st.mode) {
 		table = "filter"
 	}
+	// Check every enabled IP family b4 actually installs rules for - not just the
+	// first available binary. Skip disabled families (e.g. IPv6 off but ip6tables
+	// present) so we don't flag a chain b4 never created and loop on restore.
 	for _, v6 := range []bool{false, true} {
+		if v6 && !cfg.Queue.IPv6Enabled {
+			continue
+		}
+		if !v6 && !cfg.Queue.IPv4Enabled {
+			continue
+		}
 		cmd := be.iptFor(v6)
 		if !hasBinary(cmd) {
 			continue
 		}
-		_, err := run(cmd, "-w", "-t", table, "-S", st.chainPre)
-		return err == nil
+		if _, err := run(cmd, "-w", "-t", table, "-S", st.chainPre); err != nil {
+			return false
+		}
 	}
 	return true
 }
