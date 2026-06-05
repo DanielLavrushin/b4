@@ -89,6 +89,8 @@ func (l *Listener) udpReadLoop(conn *net.UDPConn, v6 bool) {
 			if isClosedErr(err) {
 				return
 			}
+			log.Tracef("tproxy: UDP read error on set %q: %v", l.SetName, err)
+			time.Sleep(50 * time.Millisecond)
 			continue
 		}
 		dst, perr := parseOrigDst(oob[:oobn], v6)
