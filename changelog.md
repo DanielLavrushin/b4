@@ -2,7 +2,7 @@
 
 ## [1.65.0] - 2026-06-06
 
-- ADDED: **Block (blackhole) routing mode** - sets now have a "Block" option in the Set's Routing tab that drops or rejects all matched traffic instead of sending it anywhere. Point a set at ad/tracker domains, IPs, CIDRs, or a geosite category (for example `category-ads-all`) and B4 blocks them across the whole network - both LAN devices and the router itself. Three actions: "Drop" silently blackholes the connection (it times out, best for ads), "Reject (ICMP)" fails it with an unreachable error, and "Reject (TCP reset)" sends a TCP reset so apps fail instantly. Reuses the same domain/IP/geo targeting as the other routing modes, applied live without a restart.
+- ADDED: **Block (blackhole) routing mode** - sets now have a "Block" option in the Set's Routing tab that stops all matched traffic instead of sending it anywhere. Point a set at ad/tracker domains, IPs, CIDRs, or a geosite category (for example `category-ads-all`) and B4 blocks them across the whole network - both LAN devices and the router itself - reusing the same domain/IP/geo targeting as the other routing modes, applied live without a restart. Because it blocks by name and not just by IP address, it keeps working even for apps and browsers that hide their DNS lookups, and it won't take down unrelated sites that happen to share the same servers as an ad host. Two actions: "Reject" (the default) fails the connection instantly so ads and trackers give up right away, and "Drop" silently blackholes it so the connection just times out.
 
 ## [1.64.0] - 2026-06-01
 

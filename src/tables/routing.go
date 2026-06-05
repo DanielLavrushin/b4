@@ -401,26 +401,36 @@ func RoutingRulesPresent(cfg *config.Config) bool {
 		out, err := run("nft", "list", "table", "inet", routeNftTable)
 		return err == nil && strings.TrimSpace(out) != ""
 	case *routeIptBackend:
-		for _, st := range routeRuleCache {
-			if !routeIptChainPresent(eng, st, cfg) {
-				return false
-			}
-		}
-		return true
+		return routeIptRulesPresent(eng, cfg)
 	}
 	return true
 }
 
-func routeIptChainPresent(be *routeIptBackend, st routeState, cfg *config.Config) bool {
-	type chainRef struct{ chain, table string }
-	var chains []chainRef
+type routeChainRef struct{ chain, table string }
+
+func routeStateChains(st routeState) []routeChainRef {
 	switch {
 	case config.RoutingIsBlock(st.mode):
-		chains = []chainRef{{st.chainPre, "filter"}}
+		return []routeChainRef{{st.chainPre, "filter"}}
 	case config.RoutingUsesTProxy(st.mode):
-		chains = []chainRef{{st.chainPre, "mangle"}}
+		return []routeChainRef{{st.chainPre, "mangle"}}
 	default:
-		chains = []chainRef{{st.chainPre, "mangle"}, {st.chainOut, "mangle"}, {st.chainSNAT, "nat"}}
+		return []routeChainRef{{st.chainPre, "mangle"}, {st.chainOut, "mangle"}, {st.chainSNAT, "nat"}}
+	}
+}
+
+func routeIptRulesPresent(be *routeIptBackend, cfg *config.Config) bool {
+	needed := make(map[string]map[string]bool)
+	for _, st := range routeRuleCache {
+		for _, c := range routeStateChains(st) {
+			if needed[c.table] == nil {
+				needed[c.table] = make(map[string]bool)
+			}
+			needed[c.table][c.chain] = true
+		}
+	}
+	if len(needed) == 0 {
+		return true
 	}
 
 	for _, v6 := range []bool{false, true} {
@@ -434,9 +444,21 @@ func routeIptChainPresent(be *routeIptBackend, st routeState, cfg *config.Config
 		if !hasBinary(cmd) {
 			continue
 		}
-		for _, c := range chains {
-			if _, err := run(cmd, "-w", "-t", c.table, "-S", c.chain); err != nil {
+		for table, wantChains := range needed {
+			out, err := run(cmd, "-w", "-t", table, "-S")
+			if err != nil {
 				return false
+			}
+			present := make(map[string]bool)
+			for _, line := range strings.Split(out, "\n") {
+				if strings.HasPrefix(line, "-N ") {
+					present[strings.TrimSpace(line[len("-N "):])] = true
+				}
+			}
+			for chain := range wantChains {
+				if !present[chain] {
+					return false
+				}
 			}
 		}
 	}
