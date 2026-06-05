@@ -95,7 +95,7 @@ func parseOrigDst(oob []byte, v6 bool) (*net.UDPAddr, error) {
 	for _, m := range msgs {
 		if v6 {
 			if m.Header.Level == unix.IPPROTO_IPV6 && m.Header.Type == unix.IPV6_ORIGDSTADDR {
-				if len(m.Data) < int(unsafe.Sizeof(unix.RawSockaddrInet6{})) {
+				if len(m.Data) < unix.SizeofSockaddrInet6 {
 					continue
 				}
 				sa := (*unix.RawSockaddrInet6)(unsafe.Pointer(&m.Data[0]))
@@ -108,7 +108,7 @@ func parseOrigDst(oob []byte, v6 bool) (*net.UDPAddr, error) {
 			continue
 		}
 		if m.Header.Level == unix.IPPROTO_IP && m.Header.Type == unix.IP_ORIGDSTADDR {
-			if len(m.Data) < int(unsafe.Sizeof(unix.RawSockaddrInet4{})) {
+			if len(m.Data) < unix.SizeofSockaddrInet4 {
 				continue
 			}
 			sa := (*unix.RawSockaddrInet4)(unsafe.Pointer(&m.Data[0]))
