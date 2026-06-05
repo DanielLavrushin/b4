@@ -66,6 +66,12 @@ func (w *Worker) processDnsPacket(ipVersion byte, sport uint16, dport uint16, pa
 				cfg := w.getConfig()
 
 				if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) && !cfg.Queue.IsDiscovery {
+					if config.NormalizeBlockAction(set.Routing.BlockAction) == config.BlockActionDrop {
+						if err := w.q.SetVerdict(id, nfqueue.NfDrop); err != nil {
+							log.Tracef("failed to set drop verdict on packet %d: %v", id, err)
+						}
+						return 0
+					}
 					ipv6Disabled := ipVersion == IPv6 && !cfg.Queue.IPv6Enabled
 					if !ipv6Disabled {
 						if resp := dns.BuildBlockResponse(payload); resp != nil {
