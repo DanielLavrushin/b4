@@ -342,6 +342,7 @@ func (w *Worker) handleTCPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 					matched = true
 					set = stSNI
 					matcher.LearnIPToDomain(pkt.dst, host, stSNI)
+					registerLearnedRoute(cfg, stSNI, pkt.dst)
 				}
 			}
 		}
@@ -430,6 +431,26 @@ func (w *Worker) handleTCPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 		}
 		m.RecordConnection("TCP", host, pkt.srcStr, pkt.dstStr, matched, pkt.srcMac, setName, config.TLSVersionString(tlsVersion))
 		m.RecordPacket(uint64(len(pkt.raw)))
+	}
+
+	if matched && set != nil && set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) {
+		if matchedSNI || (matchedIP && !matchedLearned) {
+			if config.NormalizeBlockAction(set.Routing.BlockAction) != config.BlockActionDrop {
+				if pkt.ver == IPv4 {
+					w.sendRSTToClientV4(pkt.raw, pkt.ihl, pkt.src, pkt.dst)
+				} else {
+					w.sendRSTToClientV6(pkt.raw, pkt.src, pkt.dst)
+				}
+			}
+			if !cfg.Queue.IsDiscovery {
+				log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), "block")
+			}
+			if err := q.SetVerdict(id, nfqueue.NfDrop); err != nil {
+				log.Tracef("failed to set drop verdict on packet %d: %v", id, err)
+			}
+			return 0
+		}
+		return accept(q, id)
 	}
 
 	if matched && set != nil && set.Routing.Enabled && config.RoutingUsesTProxy(set.Routing.Mode) {
@@ -555,7 +576,7 @@ func (w *Worker) handleUDPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 	connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 
 	if sport == 53 || dport == 53 {
-		return w.processDnsPacket(pkt.ver, sport, dport, payload, pkt.raw, pkt.ihl, id, pkt.srcMac)
+		return w.processDnsPacket(pkt.ver, sport, dport, payload, pkt.raw, id, pkt.srcMac)
 	}
 
 	if utils.IsPrivateIP(pkt.dst) {
@@ -564,6 +585,7 @@ func (w *Worker) handleUDPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 
 	matchedIP := st != nil
 	matchedQUIC := false
+	matchedLearned := false
 	isSTUN := false
 	host := ""
 	ipTarget := ""
@@ -584,6 +606,7 @@ func (w *Worker) handleUDPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 		if mLearned, learnedSet, learnedDomain := matcher.MatchLearnedIPWithSource(pkt.dst, pkt.srcMac); mLearned {
 			if learnedSet.MatchesUDPDPort(dport) {
 				matchedIP = true
+				matchedLearned = true
 				matched = true
 				set = learnedSet
 				host = learnedDomain
@@ -622,6 +645,7 @@ func (w *Worker) handleUDPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 				set = sniSet
 				sniTarget = sniSet.Name
 				matcher.LearnIPToDomain(pkt.dst, host, sniSet)
+				registerLearnedRoute(cfg, sniSet, pkt.dst)
 			}
 		}
 	}
@@ -684,6 +708,31 @@ func (w *Worker) handleUDPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 	}
 	m.RecordConnection("UDP", host, pkt.srcStr, pkt.dstStr, matched, pkt.srcMac, setName, udpTLS)
 	m.RecordPacket(uint64(len(pkt.raw)))
+
+	if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) {
+		if matchedQUIC || (matchedIP && !matchedLearned) {
+			// UDP has no RST; both reject actions map to an ICMP unreachable.
+			if config.NormalizeBlockAction(set.Routing.BlockAction) != config.BlockActionDrop {
+				if pkt.ver == IPv4 {
+					if icmp := sock.BuildICMPv4Reject(pkt.raw, pkt.src.To4(), pkt.dst.To4()); icmp != nil {
+						_ = w.sock.SendIPv4(icmp, pkt.src)
+					}
+				} else {
+					if icmp := sock.BuildICMPv6Reject(pkt.raw, pkt.src.To16(), pkt.dst.To16()); icmp != nil {
+						_ = w.sock.SendIPv6(icmp, pkt.src)
+					}
+				}
+			}
+			if !cfg.Queue.IsDiscovery {
+				log.LogConnection("UDP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, udpTLS, "block")
+			}
+			if err := q.SetVerdict(id, nfqueue.NfDrop); err != nil {
+				log.Tracef("failed to set drop verdict on packet %d: %v", id, err)
+			}
+			return 0
+		}
+		return accept(q, id)
+	}
 
 	switch set.UDP.Mode {
 	case "drop":

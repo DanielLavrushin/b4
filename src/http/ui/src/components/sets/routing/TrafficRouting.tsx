@@ -33,10 +33,14 @@ export const TrafficRouting = ({
       ? "proxy"
       : routing.mode === "mtproto-ws"
         ? "mtproto-ws"
-        : "interface";
+        : routing.mode === "block"
+          ? "block"
+          : "interface";
   const isProxy = mode === "proxy";
   const isMTProtoWS = mode === "mtproto-ws";
+  const isBlock = mode === "block";
   const isInterface = mode === "interface";
+  const blockAction = routing.block_action || "reject";
 
   const selectedIfaceAvailable = availableIfaces.includes(
     routing.egress_interface,
@@ -71,6 +75,8 @@ export const TrafficRouting = ({
         : t("sets.routing.flowNoUpstream");
   } else if (isMTProtoWS) {
     flowDestination = t("sets.routing.flowMTProtoWS");
+  } else if (isBlock) {
+    flowDestination = t("sets.routing.flowBlocked");
   } else {
     flowDestination =
       routing.egress_interface || t("sets.routing.flowNoOutput");
@@ -107,11 +113,31 @@ export const TrafficRouting = ({
               <MenuItem value="mtproto-ws">
                 {t("sets.routing.modeMTProtoWS")}
               </MenuItem>
+              <MenuItem value="block">{t("sets.routing.modeBlock")}</MenuItem>
             </B4TextField>
             {isMTProtoWS && (
               <B4Alert severity="info" sx={{ mt: 2 }}>
                 {t("sets.routing.mtprotoWsNote")}
               </B4Alert>
+            )}
+            {isBlock && (
+              <B4TextField
+                label={t("sets.routing.blockActionLabel")}
+                select
+                value={blockAction}
+                onChange={(e) =>
+                  onChange("routing.block_action", e.target.value)
+                }
+                helperText={t("sets.routing.blockActionHelper")}
+                sx={{ mt: 2 }}
+              >
+                <MenuItem value="reject">
+                  {t("sets.routing.blockActionReject")}
+                </MenuItem>
+                <MenuItem value="drop">
+                  {t("sets.routing.blockActionDrop")}
+                </MenuItem>
+              </B4TextField>
             )}
           </Grid>
 
@@ -213,7 +239,9 @@ export const TrafficRouting = ({
                   ? t("sets.routing.flowProxyCaption")
                   : isMTProtoWS
                     ? t("sets.routing.flowMTProtoWSCaption")
-                    : t("sets.routing.flowCaption")}
+                    : isBlock
+                      ? t("sets.routing.flowBlockCaption")
+                      : t("sets.routing.flowCaption")}
               </Typography>
             </Box>
           </Grid>
@@ -223,7 +251,9 @@ export const TrafficRouting = ({
               ? t("sets.routing.howItWorksProxy")
               : isMTProtoWS
                 ? t("sets.routing.howItWorksMTProtoWS")
-                : t("sets.routing.howItWorks")}
+                : isBlock
+                  ? t("sets.routing.howItWorksBlock")
+                  : t("sets.routing.howItWorks")}
           </B4Hint>
 
           <Grid size={{ xs: 12 }}>
@@ -281,7 +311,9 @@ export const TrafficRouting = ({
                 ? t("sets.routing.infoProxy")
                 : isMTProtoWS
                   ? t("sets.routing.infoMTProtoWS")
-                  : t("sets.routing.info")}
+                  : isBlock
+                    ? t("sets.routing.infoBlock")
+                    : t("sets.routing.info")}
             </B4Hint>
           </Grid>
 

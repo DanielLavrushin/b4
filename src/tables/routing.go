@@ -24,6 +24,7 @@ type routeState struct {
 	tproxyPort  int
 	upstreamKey string
 	sourcesKey  string
+	blockAction string
 	setV4       string
 	setV6       string
 	chainPre    string
@@ -56,6 +57,7 @@ var (
 	routeIfaceAuto     = make(map[string]routeState)
 	routeEngine        routeBackend
 	routeLastReResolve = make(map[string]time.Time)
+	routeLearnLast     = make(map[string]time.Time)
 )
 
 func getRouteBackend(cfg *config.Config) routeBackend {
@@ -125,7 +127,9 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 
 	if _, ok := routeRuleCache[set.Id]; !ok {
 		var err error
-		if config.RoutingUsesTProxy(cur.mode) {
+		if config.RoutingIsBlock(cur.mode) {
+			err = routeEnsureBlockRule(be, cfg, set, cur, sources)
+		} else if config.RoutingUsesTProxy(cur.mode) {
 			err = routeEnsureProxyRule(be, cfg, set, cur, sources)
 		} else {
 			err = routeEnsureRule(be, cfg, set, cur, sources)
@@ -140,6 +144,8 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 			log.Infof("Routing [%s]: enabled MTProto-WS set '%s' mark=0x%x port=%d", be.name(), set.Name, cur.mark, cur.tproxyPort)
 		case config.RoutingModeProxy:
 			log.Infof("Routing [%s]: enabled proxy set '%s' -> %s:%d mark=0x%x port=%d", be.name(), set.Name, set.Routing.Upstream.Host, set.Routing.Upstream.Port, cur.mark, cur.tproxyPort)
+		case config.RoutingModeBlock:
+			log.Infof("Routing [%s]: enabled block set '%s' action=%s", be.name(), set.Name, cur.blockAction)
 		default:
 			log.Infof("Routing [%s]: enabled set '%s' -> iface=%s mark=0x%x table=%d", be.name(), set.Name, set.Routing.EgressInterface, cur.mark, cur.table)
 		}
@@ -151,6 +157,51 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 	}
 
 	routeAddIPsToSets(be, cur, ttl, ips, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+}
+
+func RoutingLearnIP(cfg *config.Config, set *config.SetConfig, ip net.IP) {
+	if cfg == nil || set == nil || ip == nil || !set.Routing.Enabled {
+		return
+	}
+	if config.RoutingIsBlock(set.Routing.Mode) {
+		return
+	}
+
+	routeMu.Lock()
+	defer routeMu.Unlock()
+
+	st, ok := routeRuleCache[set.Id]
+	if !ok {
+		return
+	}
+	be := routeEngine
+	if be == nil {
+		return
+	}
+
+	ttl := set.Routing.IPTTLSeconds
+	if ttl <= 0 {
+		ttl = 3600
+	}
+
+	now := time.Now()
+	refresh := time.Duration(ttl) * time.Second / 2
+	key := set.Id + "|" + ip.String()
+	if last, seen := routeLearnLast[key]; seen && now.Sub(last) < refresh {
+		return
+	}
+	routeLearnLast[key] = now
+
+	if len(routeLearnLast) > 4096 {
+		cutoff := time.Duration(ttl) * time.Second
+		for k, t := range routeLearnLast {
+			if now.Sub(t) > cutoff {
+				delete(routeLearnLast, k)
+			}
+		}
+	}
+
+	routeAddIPsToSets(be, st, ttl, []net.IP{ip}, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 }
 
 func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
@@ -170,7 +221,9 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		chainPre: chainPre, chainOut: chainOut, chainSNAT: chainSNAT,
 	}
 
-	if config.RoutingUsesTProxy(mode) {
+	if config.RoutingIsBlock(mode) {
+		st.blockAction = config.NormalizeBlockAction(set.Routing.BlockAction)
+	} else if config.RoutingUsesTProxy(mode) {
 		mark, port := proxyMarkAndPort(set)
 		st.mark = mark
 		st.table = proxyTable()
@@ -192,10 +245,15 @@ func routeStateEqual(a, b routeState) bool {
 		a.iface == b.iface &&
 		a.tproxyPort == b.tproxyPort &&
 		a.upstreamKey == b.upstreamKey &&
+		a.blockAction == b.blockAction &&
 		a.sourcesKey == b.sourcesKey
 }
 
 func routeCleanupAny(be routeBackend, st routeState) {
+	if config.RoutingIsBlock(st.mode) {
+		routeCleanupBlockRule(be, st)
+		return
+	}
 	if config.RoutingUsesTProxy(st.mode) {
 		routeCleanupProxyRule(be, st)
 		return
@@ -316,6 +374,132 @@ func RoutingClearAll() {
 	routeIfaceAuto = make(map[string]routeState)
 	routeEngine = nil
 	routeLastReResolve = make(map[string]time.Time)
+	routeLearnLast = make(map[string]time.Time)
+}
+
+func RoutingRulesPresent(cfg *config.Config) bool {
+	if cfg == nil {
+		return true
+	}
+
+	routeMu.Lock()
+	defer routeMu.Unlock()
+
+	if len(routeRuleCache) == 0 {
+		return true
+	}
+
+	be := getRouteBackend(cfg)
+	if be == nil {
+		return true
+	}
+
+	switch eng := be.(type) {
+	case *routeNftBackend:
+		return routeNftRulesPresent()
+	case *routeIptBackend:
+		return routeIptRulesPresent(eng, cfg)
+	}
+	return true
+}
+
+func routeNftRulesPresent() bool {
+	out, err := run("nft", "list", "table", "inet", routeNftTable)
+	if err != nil || strings.TrimSpace(out) == "" {
+		return false
+	}
+
+	present := make(map[string]bool)
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "chain ") {
+			name := strings.TrimSpace(strings.TrimSuffix(line[len("chain "):], "{"))
+			present[name] = true
+		}
+	}
+
+	for _, st := range routeRuleCache {
+		for _, c := range routeStateChains(st) {
+			if !present[c.chain] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+type routeChainRef struct{ chain, table string }
+
+func routeStateChains(st routeState) []routeChainRef {
+	switch {
+	case config.RoutingIsBlock(st.mode):
+		return []routeChainRef{{st.chainPre, "filter"}}
+	case config.RoutingUsesTProxy(st.mode):
+		return []routeChainRef{{st.chainPre, "mangle"}}
+	default:
+		return []routeChainRef{{st.chainPre, "mangle"}, {st.chainOut, "mangle"}, {st.chainSNAT, "nat"}}
+	}
+}
+
+func routeIptRulesPresent(be *routeIptBackend, cfg *config.Config) bool {
+	needed := make(map[string]map[string]bool)
+	for _, st := range routeRuleCache {
+		for _, c := range routeStateChains(st) {
+			if needed[c.table] == nil {
+				needed[c.table] = make(map[string]bool)
+			}
+			needed[c.table][c.chain] = true
+		}
+	}
+	if len(needed) == 0 {
+		return true
+	}
+
+	for _, v6 := range []bool{false, true} {
+		if v6 && !cfg.Queue.IPv6Enabled {
+			continue
+		}
+		if !v6 && !cfg.Queue.IPv4Enabled {
+			continue
+		}
+		cmd := be.iptFor(v6)
+		if !hasBinary(cmd) {
+			continue
+		}
+		for table, wantChains := range needed {
+			out, err := run(cmd, "-w", "-t", table, "-S")
+			if err != nil {
+				return false
+			}
+			present := make(map[string]bool)
+			for _, line := range strings.Split(out, "\n") {
+				if strings.HasPrefix(line, "-N ") {
+					present[strings.TrimSpace(line[len("-N "):])] = true
+				}
+			}
+			for chain := range wantChains {
+				if !present[chain] {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+func RoutingForceResync(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+
+	routeMu.Lock()
+	routeRuleCache = make(map[string]routeState)
+	routeIfaceAuto = make(map[string]routeState)
+	routeLastReResolve = make(map[string]time.Time)
+	routeLearnLast = make(map[string]time.Time)
+	routeMu.Unlock()
+
+	RoutingSyncConfig(cfg)
 }
 
 func RoutingSyncConfig(cfg *config.Config) {
@@ -361,6 +545,9 @@ func RoutingSyncConfig(cfg *config.Config) {
 		if mode == config.RoutingModeProxy && set.Routing.Upstream.Port < 1 {
 			continue
 		}
+		if config.RoutingIsBlock(mode) && len(set.Targets.IpsToMatch) == 0 && len(set.Targets.DomainsToMatch) == 0 {
+			continue
+		}
 		desired[set.Id] = set
 	}
 
@@ -392,7 +579,9 @@ func RoutingSyncConfig(cfg *config.Config) {
 
 		if _, ok := routeRuleCache[set.Id]; !ok {
 			var err error
-			if config.RoutingUsesTProxy(cur.mode) {
+			if config.RoutingIsBlock(cur.mode) {
+				err = routeEnsureBlockRule(be, cfg, set, cur, sources)
+			} else if config.RoutingUsesTProxy(cur.mode) {
 				err = routeEnsureProxyRule(be, cfg, set, cur, sources)
 			} else {
 				err = routeEnsureRule(be, cfg, set, cur, sources)
@@ -489,6 +678,9 @@ func RoutingPeriodicReResolve(cfg *config.Config) {
 
 func routePreResolveDomains(cfg *config.Config, sets []*config.SetConfig) {
 	for _, set := range sets {
+		if config.RoutingIsBlock(set.Routing.Mode) {
+			continue
+		}
 		for _, domain := range set.Targets.SNIDomains {
 			domain = strings.TrimSpace(domain)
 			if domain == "" {
@@ -740,7 +932,6 @@ func routeDefaultGatewayForIface(iface string, ipv6 bool) string {
 		}
 	}
 
-	// fallback
 	if gw := routeMainDefaultGateway(ipv6); gw != "" && ifaceReachesIP(iface, gw) {
 		return gw
 	}

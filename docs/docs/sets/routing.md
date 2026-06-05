@@ -68,6 +68,10 @@ Fragmentation only affects DNS queries for domains in the current set. Other DNS
 
 Routes traffic matched by the set through a specific network interface - for example, a VPN, WireGuard, or another tunnel.
 
+:::tip
+To **block** matched traffic instead of sending it anywhere, set the mode to Block. See [Blocking](./blocking.md).
+:::
+
 ### General diagram
 
 ```mermaid

@@ -54,7 +54,7 @@ func parseDNSName(msg []byte, offset int) (string, bool) {
 	return strings.Join(labels, "."), true
 }
 
-func (w *Worker) processDnsPacket(ipVersion byte, sport uint16, dport uint16, payload []byte, raw []byte, ihl int, id uint32, srcMac string) int {
+func (w *Worker) processDnsPacket(ipVersion byte, sport uint16, dport uint16, payload []byte, raw []byte, id uint32, srcMac string) int {
 
 	if dport == 53 {
 		domain, ok := dns.ParseQueryDomain(payload)
@@ -64,6 +64,42 @@ func (w *Worker) processDnsPacket(ipVersion byte, sport uint16, dport uint16, pa
 			matcher := w.getMatcher()
 			if matchedSet, set := matcher.MatchSNIWithSource(domain, srcMac); matchedSet {
 				cfg := w.getConfig()
+
+				if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) && !cfg.Queue.IsDiscovery {
+					if config.NormalizeBlockAction(set.Routing.BlockAction) == config.BlockActionDrop {
+						if err := w.q.SetVerdict(id, nfqueue.NfDrop); err != nil {
+							log.Tracef("failed to set drop verdict on packet %d: %v", id, err)
+						}
+						return 0
+					}
+					ipv6Disabled := ipVersion == IPv6 && !cfg.Queue.IPv6Enabled
+					if !ipv6Disabled {
+						if resp := dns.BuildBlockResponse(payload); resp != nil {
+							var clientIP, originalDst net.IP
+							switch ipVersion {
+							case IPv4:
+								clientIP = append(net.IP(nil), raw[12:16]...)
+								originalDst = append(net.IP(nil), raw[16:20]...)
+							default:
+								clientIP = append(net.IP(nil), raw[8:24]...)
+								originalDst = append(net.IP(nil), raw[24:40]...)
+							}
+							if ipVersion == IPv4 {
+								if pkt := sock.BuildUDPPacketV4(originalDst, clientIP, 53, sport, resp); pkt != nil {
+									_ = w.sock.SendIPv4(pkt, clientIP)
+								}
+							} else if pkt := sock.BuildUDPPacketV6(originalDst, clientIP, 53, sport, resp); pkt != nil {
+								_ = w.sock.SendIPv6(pkt, clientIP)
+							}
+							log.Tracef("DNS sinkhole: %s -> NXDOMAIN for %s (set: %s)", domain, clientIP, set.Name)
+							if err := w.q.SetVerdict(id, nfqueue.NfDrop); err != nil {
+								log.Tracef("failed to set drop verdict on packet %d: %v", id, err)
+							}
+							return 0
+						}
+					}
+				}
+
 				if txidOK && set.Routing.Enabled && !cfg.Queue.IsDiscovery {
 					var clientIP, dnsServerIP net.IP
 					switch ipVersion {

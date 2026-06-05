@@ -121,6 +121,8 @@ func (c *Config) Validate() error {
 		case "":
 			set.Routing.Mode = RoutingModeInterface
 		case RoutingModeProxy, RoutingModeInterface, RoutingModeMTProtoWS:
+		case RoutingModeBlock:
+			set.Routing.BlockAction = NormalizeBlockAction(set.Routing.BlockAction)
 		default:
 			v.addf(fmt.Sprintf("sets[%d].routing.mode", setIdx), "invalid_routing_mode", map[string]any{"set": set.Name, "mode": set.Routing.Mode}, "set %q: unknown routing mode %q", set.Name, set.Routing.Mode)
 			return v.result()

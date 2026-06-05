@@ -27,15 +27,20 @@ import {
   DnsIcon,
   FakingIcon,
   TcpIcon,
-  CheckIcon,
-  CloseIcon,
+  BlockIcon,
+  ProxyIcon,
+  NetworkIcon,
+  SwapIcon,
+  DeviceIcon,
+  FilterIcon,
+  SecurityIcon,
   EscalateOutIcon,
   EscalateInIcon,
 } from "@b4.icons";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import { B4Badge } from "@b4.elements";
 import { colors, radius } from "@design";
-import { B4SetConfig } from "@models/config";
+import { B4SetConfig, RoutingMode } from "@models/config";
 import { useTranslation } from "react-i18next";
 import { SetStats } from "./Manager";
 
@@ -116,6 +121,127 @@ const STRATEGY_LABELS: Record<string, string> = {
   none: "NONE",
 };
 
+type TFn = (key: string) => string;
+
+interface FacetChip {
+  key: string;
+  label: string;
+  icon: React.ReactElement;
+  tooltip: string;
+  variant?: "filled" | "outlined";
+  color?: "default" | "primary" | "secondary" | "info" | "error";
+}
+
+const buildScopeChips = (set: B4SetConfig, t: TFn): FacetChip[] => {
+  const chips: FacetChip[] = [];
+  if (set.targets.tls) {
+    chips.push({
+      key: "tls",
+      label: `TLS ${set.targets.tls}`,
+      icon: <SecurityIcon sx={{ fontSize: 12 }} />,
+      tooltip: t("sets.card.tlsFilter"),
+    });
+  }
+  if (set.tcp?.dport_filter) {
+    chips.push({
+      key: "tcp-ports",
+      label: `TCP ${set.tcp.dport_filter}`,
+      icon: <FilterIcon sx={{ fontSize: 12 }} />,
+      tooltip: t("sets.card.portFilter"),
+    });
+  }
+  if (set.udp?.dport_filter) {
+    chips.push({
+      key: "udp-ports",
+      label: `UDP ${set.udp.dport_filter}`,
+      icon: <FilterIcon sx={{ fontSize: 12 }} />,
+      tooltip: t("sets.card.portFilter"),
+    });
+  }
+  const deviceCount = set.targets.source_devices?.length ?? 0;
+  if (deviceCount > 0) {
+    chips.push({
+      key: "devices",
+      label: String(deviceCount),
+      icon: <DeviceIcon sx={{ fontSize: 12 }} />,
+      tooltip: t("sets.card.sourceDevices"),
+    });
+  }
+  if (set.mss_clamp?.enabled) {
+    chips.push({
+      key: "mss",
+      label: `MSS ${set.mss_clamp.size}`,
+      icon: <TcpIcon sx={{ fontSize: 12 }} />,
+      tooltip: t("sets.card.mssClamp"),
+    });
+  }
+  return chips;
+};
+
+const resolveRoutingMode = (mode: RoutingMode | undefined): RoutingMode => {
+  if (mode === "proxy") return "proxy";
+  if (mode === "mtproto-ws") return "mtproto-ws";
+  if (mode === "block") return "block";
+  return "interface";
+};
+
+const buildRouteChips = (set: B4SetConfig, t: TFn): FacetChip[] => {
+  const chips: FacetChip[] = [];
+  if (set.dns?.enabled) {
+    chips.push({
+      key: "dns",
+      label: set.dns.target_dns ? `DNS → ${set.dns.target_dns}` : "DNS",
+      icon: <DnsIcon sx={{ fontSize: 12 }} />,
+      tooltip: t("sets.card.dnsRedirect"),
+      variant: "outlined",
+      color: "secondary",
+    });
+  }
+  const routing = set.routing;
+  if (!routing?.enabled) return chips;
+
+  const mode = resolveRoutingMode(routing.mode);
+  if (mode === "block") {
+    chips.push({
+      key: "route",
+      label: "BLOCK",
+      icon: <BlockIcon sx={{ fontSize: 12 }} />,
+      tooltip: `${t("sets.card.routeBlock")}: ${routing.block_action || "reject"}`,
+      variant: "filled",
+      color: "error",
+    });
+  } else if (mode === "proxy") {
+    const up = routing.upstream;
+    chips.push({
+      key: "route",
+      label: up?.host && up?.port ? `→ ${up.host}:${up.port}` : "→ PROXY",
+      icon: <ProxyIcon sx={{ fontSize: 12 }} />,
+      tooltip: t("sets.card.routeProxy"),
+      variant: "outlined",
+      color: "info",
+    });
+  } else if (mode === "mtproto-ws") {
+    chips.push({
+      key: "route",
+      label: "MTPROTO-WS",
+      icon: <SwapIcon sx={{ fontSize: 12 }} />,
+      tooltip: t("sets.card.routeMtproto"),
+      variant: "outlined",
+      color: "info",
+    });
+  } else {
+    chips.push({
+      key: "route",
+      label: `→ ${routing.egress_interface || "?"}`,
+      icon: <NetworkIcon sx={{ fontSize: 12 }} />,
+      tooltip: t("sets.card.routeInterface"),
+      variant: "outlined",
+      color: "info",
+    });
+  }
+  return chips;
+};
+
 export const SetCard = ({
   set,
   stats,
@@ -145,6 +271,9 @@ export const SetCard = ({
   const domainCount = stats?.total_domains ?? set.targets.sni_domains.length;
   const ipCount = stats?.total_ips ?? set.targets.ip.length;
 
+  const scopeChips = buildScopeChips(set, t);
+  const routeChips = buildRouteChips(set, t);
+
   const handleMenuOpen = (e: React.MouseEvent<HTMLElement>) => {
     e.stopPropagation();
     setMenuAnchor(e.currentTarget);
@@ -162,6 +291,10 @@ export const SetCard = ({
       elevation={1}
       sx={{
         position: "relative",
+        overflow: "visible",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
         opacity: set.enabled ? 1 : 0.5,
         transition: "all 0.2s ease",
         border: `1px solid ${borderColor}`,
@@ -185,6 +318,34 @@ export const SetCard = ({
           borderRadius: `${radius.md}px ${radius.md}px 0 0`,
         }}
       />
+
+      <Box
+        sx={{
+          position: "absolute",
+          top: -9,
+          left: -9,
+          zIndex: 2,
+          minWidth: 24,
+          height: 24,
+          px: 0.5,
+          borderRadius: "12px",
+          bgcolor: colors.secondary,
+          color: colors.background.dark,
+          border: `2px solid ${colors.background.default}`,
+          boxShadow: `0 2px 6px rgba(0,0,0,0.45)`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Typography
+          variant="caption"
+          fontWeight={800}
+          sx={{ fontSize: "0.7rem" }}
+        >
+          {index + 1}
+        </Typography>
+      </Box>
 
       {/* Header row */}
       <Box
@@ -238,7 +399,6 @@ export const SetCard = ({
               onClick={(e) => e.stopPropagation()}
             />
           </Tooltip>
-
         </Stack>
 
         {!selectionMode && (
@@ -286,33 +446,79 @@ export const SetCard = ({
       </Box>
 
       {/* Clickable content area */}
-      <CardActionArea onClick={selectionMode ? onSelect : onEdit} sx={{ borderRadius: 0 }}>
-        <CardContent sx={{ pt: 0, pb: 2 }}>
+      <CardActionArea
+        onClick={selectionMode ? onSelect : onEdit}
+        sx={{
+          borderRadius: 0,
+          flexGrow: 1,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "stretch",
+          "& .MuiCardActionArea-focusHighlight": { display: "none" },
+        }}
+      >
+        <CardContent sx={{ pt: 0, pb: 1.5 }}>
           {/* Name */}
-          <Typography
-            variant="h6"
-            sx={{
-              fontWeight: 600,
-              my: 1,
-              textTransform: "uppercase",
-              color: set.enabled ? colors.text.primary : colors.text.secondary,
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
+          <Stack
+            direction="row"
+            alignItems="center"
+            spacing={1}
+            sx={{ my: 1, minHeight: 30 }}
           >
-            {set.name}
-          </Typography>
+            <Typography
+              variant="h6"
+              sx={{
+                flex: 1,
+                minWidth: 0,
+                fontWeight: 600,
+                textTransform: "uppercase",
+                color: set.enabled
+                  ? colors.text.primary
+                  : colors.text.secondary,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {set.name}
+            </Typography>
+            {routeChips.length > 0 && (
+              <Stack
+                direction="row"
+                spacing={0.5}
+                sx={{ flexShrink: 0, maxWidth: "55%" }}
+              >
+                {routeChips.map((chip) => (
+                  <Tooltip key={chip.key} title={chip.tooltip}>
+                    <B4Badge
+                      icon={chip.icon}
+                      label={chip.label}
+                      size="small"
+                      variant={chip.variant}
+                      color={chip.color}
+                      sx={{
+                        maxWidth: 160,
+                        "& .MuiChip-label": {
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        },
+                      }}
+                    />
+                  </Tooltip>
+                ))}
+              </Stack>
+            )}
+          </Stack>
 
           {/* Target preview */}
           <Box
             sx={{
-              p: 2,
-              mb: 2,
+              p: 1.5,
+              mb: 1.5,
               borderRadius: radius.sm,
               bgcolor: colors.background.dark,
               border: `1px solid ${colors.border.light}`,
-              minHeight: 48,
+              minHeight: 44,
             }}
           >
             {set.targets.geosite_categories.length > 0 ||
@@ -393,31 +599,8 @@ export const SetCard = ({
             )}
           </Box>
 
-          {/* Active techniques */}
-          <Stack direction="row" flexWrap="wrap" gap={0.5} sx={{ mb: 2 }}>
-            <B4Badge
-              label={STRATEGY_LABELS[strategy]}
-              size="small"
-              sx={{ bgcolor: colors.primary, color: colors.text.primary }}
-            />
-            {set.faking.sni && (
-              <B4Badge label="FAKE" size="small" color="primary" />
-            )}
-            {set.dns?.enabled && (
-              <B4Badge
-                label="DNS"
-                size="small"
-                variant="outlined"
-                color="secondary"
-              />
-            )}
-            {set.fragmentation.reverse_order && (
-              <B4Badge label="REV" size="small" variant="outlined" />
-            )}
-          </Stack>
-
           {/* Domain/IP counts */}
-          <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+          <Stack direction="row" spacing={2} sx={{ mb: 1.5 }}>
             <Tooltip
               title={`${stats?.manual_domains || 0} ${t("sets.card.manual")}, ${
                 stats?.geosite_domains || 0
@@ -470,55 +653,61 @@ export const SetCard = ({
             </Tooltip>
           </Stack>
 
-          {/* Quick flags */}
-          <Box
-            sx={{
-              display: "flex",
-              gap: 1,
-              p: 1,
-              borderRadius: radius.sm,
-              bgcolor: colors.background.dark,
-              border: `1px solid ${colors.border.light}`,
-            }}
+          <Stack
+            divider={
+              <Box sx={{ height: "1px", bgcolor: colors.border.light }} />
+            }
+            sx={{ borderTop: `1px solid ${colors.border.light}`, mt: 0.5 }}
           >
-            <QuickFlag
-              icon={<TcpIcon />}
-              label={`${set.tcp.conn_bytes_limit}B`}
-              tooltip={t("sets.card.tcpBytesLimit")}
-            />
-            <QuickFlag
-              icon={<FakingIcon />}
-              enabled={set.faking.sni}
-              tooltip={set.faking.sni ? t("sets.card.sniFakingOn") : t("sets.card.sniFakingOff")}
-            />
-            <QuickFlag
-              icon={<DnsIcon />}
-              enabled={set.dns?.enabled}
-              tooltip={
-                set.dns?.enabled ? `DNS → ${set.dns.target_dns}` : t("sets.card.dnsOff")
-              }
-            />
-          </Box>
+            <FacetRow label={t("sets.card.facetMethod")}>
+              <B4Badge
+                label={STRATEGY_LABELS[strategy]}
+                size="small"
+                sx={{ bgcolor: colors.primary, color: colors.text.primary }}
+              />
+              {set.faking.sni && (
+                <Tooltip title={t("sets.card.sniFakingOn")}>
+                  <B4Badge
+                    icon={<FakingIcon sx={{ fontSize: 12 }} />}
+                    label="FAKE"
+                    size="small"
+                    color="primary"
+                  />
+                </Tooltip>
+              )}
+              {set.fragmentation.reverse_order && (
+                <B4Badge label="REV" size="small" variant="outlined" />
+              )}
+            </FacetRow>
+
+            {scopeChips.length > 0 && (
+              <FacetRow label={t("sets.card.facetScope")}>
+                {scopeChips.map((chip) => (
+                  <Tooltip key={chip.key} title={chip.tooltip}>
+                    <B4Badge
+                      icon={chip.icon}
+                      label={chip.label}
+                      size="small"
+                      variant="outlined"
+                    />
+                  </Tooltip>
+                ))}
+              </FacetRow>
+            )}
+          </Stack>
         </CardContent>
       </CardActionArea>
 
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          gap: 1,
-          px: 2,
-          pb: 1.5,
-          minHeight: 30,
-        }}
-      >
+      {(escalatesTo || (escalatedFrom && escalatedFrom.length > 0)) && (
         <Box
           sx={{
             display: "flex",
             flexWrap: "wrap",
+            alignItems: "center",
             gap: 0.5,
-            flex: 1,
-            minWidth: 0,
+            px: 2,
+            pt: 1,
+            pb: 1.25,
           }}
         >
           {escalatesTo && (
@@ -542,81 +731,44 @@ export const SetCard = ({
             />
           ))}
         </Box>
-
-        <Box
-          sx={{
-            flexShrink: 0,
-            width: 22,
-            height: 22,
-            borderRadius: "50%",
-            bgcolor: colors.accent.primary,
-            border: `1px solid ${colors.border.default}`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            fontWeight={600}
-            sx={{ fontSize: "0.65rem" }}
-          >
-            {index + 1}
-          </Typography>
-        </Box>
-      </Box>
+      )}
     </Card>
   );
 };
 
-interface QuickFlagProps {
-  icon: React.ReactNode;
-  label?: string;
-  enabled?: boolean;
-  tooltip: string;
+interface FacetRowProps {
+  label: string;
+  children: React.ReactNode;
 }
 
-const QuickFlag = ({ icon, label, enabled, tooltip }: QuickFlagProps) => {
-  const isBoolean = enabled !== undefined;
-  const isActive = isBoolean ? enabled : true;
-  const color = isActive ? colors.secondary : colors.text.disabled;
-
-  return (
-    <Tooltip title={tooltip}>
-      <Stack
-        direction="row"
-        alignItems="center"
-        spacing={0.5}
-        sx={{
-          flex: 1,
-          justifyContent: "center",
-          py: 0.5,
-          px: 0.5,
-          borderRadius: radius.sm,
-          bgcolor: isActive ? colors.accent.secondary : "transparent",
-        }}
-      >
-        <Box sx={{ color, display: "flex", "& svg": { fontSize: 14 } }}>
-          {icon}
-        </Box>
-        {label ? (
-          <Typography
-            variant="caption"
-            fontWeight={600}
-            sx={{ color, fontSize: "0.7rem" }}
-          >
-            {label}
-          </Typography>
-        ) : (
-          <Box sx={{ color, display: "flex", "& svg": { fontSize: 12 } }}>
-            {enabled ? <CheckIcon /> : <CloseIcon />}
-          </Box>
-        )}
-      </Stack>
-    </Tooltip>
-  );
-};
+const FacetRow = ({ label, children }: FacetRowProps) => (
+  <Stack direction="row" alignItems="center" sx={{ py: 0.875, minHeight: 34 }}>
+    <Typography
+      variant="caption"
+      sx={{
+        color: colors.text.disabled,
+        fontWeight: 700,
+        fontSize: "0.6rem",
+        letterSpacing: "0.06em",
+        textTransform: "uppercase",
+        width: 56,
+        flexShrink: 0,
+        borderRight: `1px solid ${colors.border.light}`,
+        mr: 1.5,
+      }}
+    >
+      {label}
+    </Typography>
+    <Stack
+      direction="row"
+      flexWrap="wrap"
+      gap={0.5}
+      sx={{ flex: 1, minWidth: 0 }}
+    >
+      {children}
+    </Stack>
+  </Stack>
+);
 
 interface EscalationChipProps {
   icon: React.ReactNode;

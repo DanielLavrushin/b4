@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.65.0] - 2026-06-06
+
+- ADDED: **Block (blackhole) routing mode** - a new "Block" option in a set's Routing tab that blocks all matched traffic (ad/tracker domains, IPs, or a GeoSite category like `category-ads-all`) across the whole network - every LAN device and the router itself - with no output interface needed. It blocks by name and not just by IP, so it keeps working even with encrypted DNS and won't break unrelated sites sharing the same servers. See [Blocking](https://daniellavrushin.github.io/b4/docs/sets/blocking) for setup and details.
+
 ## [1.64.0] - 2026-06-01
 
 - FIXED: **DNS redirect didn't work** - when a set sent its DNS lookups to a chosen server (the set's DNS tab), names failed to resolve and the internet seemed to hang. Redirected DNS now works as expected.

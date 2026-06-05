@@ -684,6 +684,66 @@ func TestRouteCollectEntries(t *testing.T) {
 	})
 }
 
+func TestRoutingRulesPresent(t *testing.T) {
+	origCache := routeRuleCache
+	defer func() { routeRuleCache = origCache }()
+
+	t.Run("nil config", func(t *testing.T) {
+		if !RoutingRulesPresent(nil) {
+			t.Error("expected true for nil config")
+		}
+	})
+
+	t.Run("empty cache means nothing to verify", func(t *testing.T) {
+		routeRuleCache = make(map[string]routeState)
+		cfg := config.NewConfig()
+		if !RoutingRulesPresent(&cfg) {
+			t.Error("expected true when no routing rules are cached")
+		}
+	})
+}
+
+func TestRoutingLearnIP(t *testing.T) {
+	origCache := routeRuleCache
+	origLearn := routeLearnLast
+	defer func() {
+		routeRuleCache = origCache
+		routeLearnLast = origLearn
+	}()
+
+	newSet := func(mode string) *config.SetConfig {
+		s := &config.SetConfig{Id: "s1"}
+		s.Routing.Enabled = true
+		s.Routing.Mode = mode
+		s.Routing.EgressInterface = "wg0"
+		return s
+	}
+
+	t.Run("block mode is skipped", func(t *testing.T) {
+		routeRuleCache = make(map[string]routeState)
+		routeLearnLast = make(map[string]time.Time)
+		cfg := config.NewConfig()
+		RoutingLearnIP(&cfg, newSet(config.RoutingModeBlock), net.ParseIP("1.2.3.4"))
+		if len(routeLearnLast) != 0 {
+			t.Error("block-mode set must not be learned into the routing ipset")
+		}
+	})
+
+	t.Run("set with no installed rule is a no-op", func(t *testing.T) {
+		routeRuleCache = make(map[string]routeState)
+		routeLearnLast = make(map[string]time.Time)
+		cfg := config.NewConfig()
+		RoutingLearnIP(&cfg, newSet(config.RoutingModeInterface), net.ParseIP("1.2.3.4"))
+		if len(routeLearnLast) != 0 {
+			t.Error("set absent from routeRuleCache should be a no-op")
+		}
+	})
+
+	t.Run("nil args are safe", func(t *testing.T) {
+		RoutingLearnIP(nil, nil, nil)
+	})
+}
+
 func TestRouteResolveIDs(t *testing.T) {
 	origCache := routeRuleCache
 	origAuto := routeIfaceAuto

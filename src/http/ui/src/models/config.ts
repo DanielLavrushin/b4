@@ -380,7 +380,9 @@ export interface DNSConfig {
   fragment_query: boolean;
 }
 
-export type RoutingMode = "interface" | "proxy" | "mtproto-ws";
+export type RoutingMode = "interface" | "proxy" | "mtproto-ws" | "block";
+
+export type BlockAction = "drop" | "reject";
 
 export interface UpstreamProxyConfig {
   host: string;
@@ -401,6 +403,7 @@ export interface RoutingConfig {
   table: number;
   source_interfaces: string[];
   ip_ttl_seconds: number;
+  block_action: BlockAction;
 }
 
 export interface DuplicateConfig {

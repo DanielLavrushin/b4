@@ -18,10 +18,29 @@ const (
 	RoutingModeInterface = "interface"
 	RoutingModeProxy     = "proxy"
 	RoutingModeMTProtoWS = "mtproto-ws"
+	RoutingModeBlock     = "block"
+)
+
+const (
+	BlockActionDrop   = "drop"
+	BlockActionReject = "reject"
 )
 
 func RoutingUsesTProxy(mode string) bool {
 	return mode == RoutingModeProxy || mode == RoutingModeMTProtoWS
+}
+
+func RoutingIsBlock(mode string) bool {
+	return mode == RoutingModeBlock
+}
+
+func NormalizeBlockAction(action string) string {
+	if action == BlockActionDrop {
+		return BlockActionDrop
+	}
+	// Default (and any legacy value such as "reject-tcp-reset") -> fast reject:
+	// TCP RST, ICMP unreachable for UDP/QUIC.
+	return BlockActionReject
 }
 
 const (
@@ -388,6 +407,7 @@ type RoutingConfig struct {
 	Table            int                 `json:"table"`
 	SourceInterfaces []string            `json:"source_interfaces"`
 	IPTTLSeconds     int                 `json:"ip_ttl_seconds"`
+	BlockAction      string              `json:"block_action"`
 }
 
 type UpstreamProxyConfig struct {

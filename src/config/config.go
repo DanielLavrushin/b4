@@ -101,6 +101,7 @@ var DefaultSetConfig = SetConfig{
 		Table:            0,
 		SourceInterfaces: []string{},
 		IPTTLSeconds:     3600,
+		BlockAction:      BlockActionReject,
 	},
 
 	Fragmentation: FragmentationConfig{
