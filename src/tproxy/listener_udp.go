@@ -109,17 +109,32 @@ func (l *Listener) dispatchUDP(src, dst *net.UDPAddr, payload []byte, v6 bool) {
 
 	l.udpMu.Lock()
 	sess, ok := l.udpSessions[key]
+	l.udpMu.Unlock()
+
 	if !ok {
-		newSess, err := l.newUDPSession(src, dst, v6, key)
+		newSess, err := l.newUDPSession(src, dst, v6)
 		if err != nil {
-			l.udpMu.Unlock()
 			log.Tracef("tproxy: UDP session setup failed for %s on set %q: %v", dst, l.SetName, err)
 			return
 		}
-		l.udpSessions[key] = newSess
-		sess = newSess
+		l.udpMu.Lock()
+		if existing, dup := l.udpSessions[key]; dup {
+			l.udpMu.Unlock()
+			newSess.relay.Close()
+			newSess.reply.Close()
+			sess = existing
+		} else if l.ctx.Err() != nil {
+			l.udpMu.Unlock()
+			newSess.relay.Close()
+			newSess.reply.Close()
+			return
+		} else {
+			l.udpSessions[key] = newSess
+			l.udpMu.Unlock()
+			go l.udpReplyLoop(key, newSess)
+			sess = newSess
+		}
 	}
-	l.udpMu.Unlock()
 
 	sess.last.Store(time.Now().UnixNano())
 	if _, err := sess.relay.Write(payload); err != nil {
@@ -128,7 +143,7 @@ func (l *Listener) dispatchUDP(src, dst *net.UDPAddr, payload []byte, v6 bool) {
 	}
 }
 
-func (l *Listener) newUDPSession(src, dst *net.UDPAddr, v6 bool, key string) (*udpSession, error) {
+func (l *Listener) newUDPSession(src, dst *net.UDPAddr, v6 bool) (*udpSession, error) {
 	reply, err := openReplySocket(l.ctx, dst, v6)
 	if err != nil {
 		return nil, fmt.Errorf("reply socket: %w", err)
@@ -163,7 +178,6 @@ func (l *Listener) newUDPSession(src, dst *net.UDPAddr, v6 bool, key string) (*u
 
 	sess := &udpSession{relay: relay, reply: reply, client: src}
 	sess.last.Store(time.Now().UnixNano())
-	go l.udpReplyLoop(key, sess)
 	return sess, nil
 }
 
