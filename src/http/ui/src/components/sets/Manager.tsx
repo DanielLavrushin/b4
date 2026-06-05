@@ -108,6 +108,7 @@ const SortableCardWrapper = ({
     <Box
       ref={combinedRef}
       style={{
+        height: "100%",
         transform: CSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.4 : 1,
