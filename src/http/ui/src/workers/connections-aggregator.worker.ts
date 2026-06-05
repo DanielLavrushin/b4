@@ -18,6 +18,7 @@ let snapshotInterval = 500;
 
 const groups = new Map<string, ConnectionGroup>();
 const devices = new Map<string, DeviceSummary>();
+let ipToMac: Record<string, string> = {};
 let totalPackets = 0;
 let unmatchedCount = 0;
 let dirty = false;
@@ -118,9 +119,11 @@ function ingest(lines: string[]): void {
     const p = parseLine(line);
     if (!p) continue;
 
-    const mac = p.sourceAlias
-      ? normalizeMac(p.sourceAlias)
-      : stripPort(p.source);
+    let mac = p.sourceAlias ? normalizeMac(p.sourceAlias) : "";
+    if (!mac) {
+      const ip = stripPort(p.source);
+      mac = ipToMac[ip] || ip;
+    }
     const groupIdent = p.domain || p.destination || "?";
     const key = `${mac}|${p.protocol}|${groupIdent}`;
 
@@ -249,6 +252,9 @@ ctx.onmessage = (e: MessageEvent<AggregatorInput>) => {
     case "setBucketCount":
       bucketCount = Math.max(10, Math.min(300, msg.count));
       clearState();
+      break;
+    case "setIpToMac":
+      ipToMac = msg.map;
       break;
     case "flush":
       dirty = true;

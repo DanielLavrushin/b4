@@ -360,8 +360,9 @@ func wsPlansForDC(dc int, cfg *MTProtoUpstream) []transportPlan {
 		edgeIP = telegramWSEdgeIP
 	}
 	if wsEdgeServesDC(absDC) {
-		primary := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(absDC, ""), dialHost: edgeIP}
-		media := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(absDC, "-1"), dialHost: edgeIP}
+		edgeDC := edgeSNIDC(absDC)
+		primary := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(edgeDC, ""), dialHost: edgeIP}
+		media := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(edgeDC, "-1"), dialHost: edgeIP}
 		if dc < 0 {
 			plans = append(plans, media, primary)
 		} else {

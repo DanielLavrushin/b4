@@ -13,6 +13,7 @@ import { useTranslation } from "react-i18next";
 interface Props {
   lines: string[];
   deviceMap: Record<string, string>;
+  ipToMac: Record<string, string>;
   paused: boolean;
   onTogglePause: () => void;
   showAll: boolean;
@@ -67,6 +68,7 @@ const getGroupSearchableValues = (g: EnrichedGroup): (string | null)[] => [
 export const AggregatedView = ({
   lines,
   deviceMap,
+  ipToMac,
   paused,
   onTogglePause,
   showAll,
@@ -94,7 +96,7 @@ export const AggregatedView = ({
     localStorage.setItem("b4_connections_sidebar_collapsed", sidebarCollapsed ? "1" : "0");
   }, [sidebarCollapsed]);
 
-  const state = useConnectionGroups(lines, deviceMap, paused);
+  const state = useConnectionGroups(lines, deviceMap, paused, ipToMac);
 
   useEffect(() => {
     const id = globalThis.setInterval(() => setNowTick(Date.now()), 1000);

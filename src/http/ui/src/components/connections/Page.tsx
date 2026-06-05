@@ -105,6 +105,10 @@ export function ConnectionsPage() {
   const [ipInfoToken, setIpInfoToken] = useState<string>("");
   const [devicesEnabled, setDevicesEnabled] = useState<boolean>(false);
   const [deviceMap, setDeviceMap] = useState<Record<string, string>>({});
+  const [ipToMac, setIpToMac] = useState<Record<string, string>>({});
+  const [configIpToMac, setConfigIpToMac] = useState<Record<string, string>>(
+    {},
+  );
   const [configDeviceNames, setConfigDeviceNames] = useState<
     Record<string, string>
   >({});
@@ -122,23 +126,30 @@ export function ConnectionsPage() {
   useEffect(() => {
     if (!devicesEnabled) {
       setDeviceMap({ ...configDeviceNames });
+      setIpToMac({ ...configIpToMac });
       return;
     }
     devicesApi
       .list()
       .then((data) => {
         const map: Record<string, string> = {};
+        const ipMap: Record<string, string> = {};
         for (const d of data.devices || []) {
           const normalized = d.mac.toUpperCase().replaceAll("-", ":");
           map[normalized] = d.alias || d.vendor || "";
+          if (d.ip) ipMap[d.ip] = normalized;
         }
         for (const [mac, name] of Object.entries(configDeviceNames)) {
           map[mac] = name;
         }
+        for (const [ip, mac] of Object.entries(configIpToMac)) {
+          ipMap[ip] = mac;
+        }
         setDeviceMap(map);
+        setIpToMac(ipMap);
       })
       .catch(() => {});
-  }, [devicesEnabled, configDeviceNames]);
+  }, [devicesEnabled, configDeviceNames, configIpToMac]);
 
   const fetchSets = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -157,12 +168,18 @@ export function ConnectionsPage() {
             false,
         );
         const names: Record<string, string> = {};
+        const configIps: Record<string, string> = {};
         for (const d of data.queue?.devices?.devices || []) {
-          if (d.mac && d.name) {
-            names[d.mac.toUpperCase().replaceAll("-", ":")] = d.name;
+          const normalized = d.mac?.toUpperCase().replaceAll("-", ":");
+          if (normalized && d.name) {
+            names[normalized] = d.name;
+          }
+          if (normalized && d.ip) {
+            configIps[d.ip] = normalized;
           }
         }
         setConfigDeviceNames(names);
+        setConfigIpToMac(configIps);
       }
     } catch (error) {
       if ((error as Error).name !== "AbortError") {
@@ -359,6 +376,7 @@ export function ConnectionsPage() {
           <AggregatedView
             lines={domains}
             deviceMap={deviceMap}
+            ipToMac={ipToMac}
             paused={pauseDomains}
             onTogglePause={() => setPauseDomains(!pauseDomains)}
             showAll={showAll}

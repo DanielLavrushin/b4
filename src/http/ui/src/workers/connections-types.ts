@@ -36,6 +36,7 @@ export type AggregatorInput =
   | { type: "clear" }
   | { type: "setSnapshotInterval"; ms: number }
   | { type: "setBucketCount"; count: number }
+  | { type: "setIpToMac"; map: Record<string, string> }
   | { type: "flush" };
 
 export type AggregatorOutput = { type: "snapshot"; payload: AggregatorSnapshot };

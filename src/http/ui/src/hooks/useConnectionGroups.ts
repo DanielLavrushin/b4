@@ -38,6 +38,7 @@ export function useConnectionGroups(
   lines: string[],
   deviceMap: Record<string, string>,
   paused: boolean,
+  ipToMac: Record<string, string> = {},
 ): GroupsState {
   const workerRef = useRef<Worker | null>(null);
   const lastSentinelRef = useRef<string | null>(null);
@@ -57,6 +58,13 @@ export function useConnectionGroups(
       workerRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const w = workerRef.current;
+    if (!w) return;
+    const msg: AggregatorInput = { type: "setIpToMac", map: ipToMac };
+    w.postMessage(msg);
+  }, [ipToMac]);
 
   useEffect(() => {
     const w = workerRef.current;
