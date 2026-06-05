@@ -88,9 +88,6 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 	if cfg == nil || set == nil || !set.Routing.Enabled || len(ips) == 0 {
 		return
 	}
-	// Block-mode sets are enforced at the NFQUEUE layer by SNI, not by IP set.
-	// Never feed DNS-resolved (shared CDN) IPs into a block set, or legit traffic
-	// to those IPs gets rejected too.
 	if config.RoutingIsBlock(set.Routing.Mode) {
 		return
 	}
@@ -369,13 +366,17 @@ func RoutingRulesPresent(cfg *config.Config) bool {
 }
 
 func routeIptChainPresent(be *routeIptBackend, st routeState, cfg *config.Config) bool {
-	table := "mangle"
-	if config.RoutingIsBlock(st.mode) {
-		table = "filter"
+	type chainRef struct{ chain, table string }
+	var chains []chainRef
+	switch {
+	case config.RoutingIsBlock(st.mode):
+		chains = []chainRef{{st.chainPre, "filter"}}
+	case config.RoutingUsesTProxy(st.mode):
+		chains = []chainRef{{st.chainPre, "mangle"}}
+	default:
+		chains = []chainRef{{st.chainPre, "mangle"}, {st.chainOut, "mangle"}, {st.chainSNAT, "nat"}}
 	}
-	// Check every enabled IP family b4 actually installs rules for - not just the
-	// first available binary. Skip disabled families (e.g. IPv6 off but ip6tables
-	// present) so we don't flag a chain b4 never created and loop on restore.
+
 	for _, v6 := range []bool{false, true} {
 		if v6 && !cfg.Queue.IPv6Enabled {
 			continue
@@ -387,8 +388,10 @@ func routeIptChainPresent(be *routeIptBackend, st routeState, cfg *config.Config
 		if !hasBinary(cmd) {
 			continue
 		}
-		if _, err := run(cmd, "-w", "-t", table, "-S", st.chainPre); err != nil {
-			return false
+		for _, c := range chains {
+			if _, err := run(cmd, "-w", "-t", c.table, "-S", c.chain); err != nil {
+				return false
+			}
 		}
 	}
 	return true
@@ -838,7 +841,6 @@ func routeDefaultGatewayForIface(iface string, ipv6 bool) string {
 		}
 	}
 
-	// fallback
 	if gw := routeMainDefaultGateway(ipv6); gw != "" && ifaceReachesIP(iface, gw) {
 		return gw
 	}
