@@ -89,9 +89,6 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 	if cfg == nil || set == nil || !set.Routing.Enabled || len(ips) == 0 {
 		return
 	}
-	if config.RoutingIsBlock(set.Routing.Mode) {
-		return
-	}
 	mode := set.Routing.Mode
 	if mode == "" {
 		mode = config.RoutingModeInterface
