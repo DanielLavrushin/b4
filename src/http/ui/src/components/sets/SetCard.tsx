@@ -206,7 +206,7 @@ const buildRouteChips = (set: B4SetConfig, t: TFn): FacetChip[] => {
       key: "route",
       label: "BLOCK",
       icon: <BlockIcon sx={{ fontSize: 12 }} />,
-      tooltip: `${t("sets.card.routeBlock")}: ${routing.block_action || "drop"}`,
+      tooltip: `${t("sets.card.routeBlock")}: ${routing.block_action || "reject"}`,
       variant: "filled",
       color: "error",
     });
@@ -338,7 +338,11 @@ export const SetCard = ({
           justifyContent: "center",
         }}
       >
-        <Typography variant="caption" fontWeight={800} sx={{ fontSize: "0.7rem" }}>
+        <Typography
+          variant="caption"
+          fontWeight={800}
+          sx={{ fontSize: "0.7rem" }}
+        >
           {index + 1}
         </Typography>
       </Box>
@@ -395,7 +399,6 @@ export const SetCard = ({
               onClick={(e) => e.stopPropagation()}
             />
           </Tooltip>
-
         </Stack>
 
         {!selectionMode && (
