@@ -407,9 +407,9 @@ func addProxyDivertRuleNft(chain string, v6 bool, setName string, mark uint32) {
 	markHex := fmt.Sprintf("0x%x", mark)
 	args := []string{"add", "rule", "inet", routeNftTable, chain}
 	if v6 {
-		args = append(args, "ip6", "daddr", "@"+setName)
+		args = append(args, "meta", "l4proto", "tcp", "ip6", "daddr", "@"+setName)
 	} else {
-		args = append(args, "ip", "daddr", "@"+setName)
+		args = append(args, "ip", "protocol", "tcp", "ip", "daddr", "@"+setName)
 	}
 	args = append(args, "socket", "transparent", "1", "meta", "mark", "set", markHex, "accept")
 	runLogged("routing: add divert "+chain, append([]string{"nft"}, args...)...)
