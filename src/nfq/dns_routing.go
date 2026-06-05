@@ -14,6 +14,10 @@ import (
 // Set from main.go to break the tables ↔ nfq import cycle.
 var RoutingHandleDNSFunc func(cfg *config.Config, set *config.SetConfig, ips []net.IP)
 
+// RoutingLearnIPFunc adds a destination IP observed at SNI-match time to an existing
+// routing set's ipset (cheap, hot-path safe). Set from main.go.
+var RoutingLearnIPFunc func(cfg *config.Config, set *config.SetConfig, ip net.IP)
+
 func registerEscalatedRoute(cfg *config.Config, escSet *config.SetConfig, dst net.IP) {
 	if cfg == nil || escSet == nil || dst == nil || !escSet.Routing.Enabled || RoutingHandleDNSFunc == nil {
 		return
@@ -23,6 +27,19 @@ func registerEscalatedRoute(cfg *config.Config, escSet *config.SetConfig, dst ne
 	}
 	log.Tracef("registerEscalatedRoute: adding %s to %s ipset (mode=%s)", dst, escSet.Name, escSet.Routing.Mode)
 	RoutingHandleDNSFunc(cfg, escSet, []net.IP{dst})
+}
+
+// registerLearnedRoute steers future connections to dst by adding it to the matched
+// routing set's ipset, using the IP seen at the TLS/QUIC ClientHello. No-op for
+// non-routing and block-mode sets (filtered inside RoutingLearnIPFunc).
+func registerLearnedRoute(cfg *config.Config, set *config.SetConfig, dst net.IP) {
+	if cfg == nil || set == nil || dst == nil || !set.Routing.Enabled || RoutingLearnIPFunc == nil {
+		return
+	}
+	if cfg.Queue.IsDiscovery {
+		return
+	}
+	RoutingLearnIPFunc(cfg, set, dst)
 }
 
 type pendingDNSRoute struct {

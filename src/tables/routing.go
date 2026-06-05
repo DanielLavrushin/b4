@@ -57,6 +57,7 @@ var (
 	routeIfaceAuto     = make(map[string]routeState)
 	routeEngine        routeBackend
 	routeLastReResolve = make(map[string]time.Time)
+	routeLearnLast     = make(map[string]time.Time)
 )
 
 func getRouteBackend(cfg *config.Config) routeBackend {
@@ -159,6 +160,51 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 	}
 
 	routeAddIPsToSets(be, cur, ttl, ips, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+}
+
+func RoutingLearnIP(cfg *config.Config, set *config.SetConfig, ip net.IP) {
+	if cfg == nil || set == nil || ip == nil || !set.Routing.Enabled {
+		return
+	}
+	if config.RoutingIsBlock(set.Routing.Mode) {
+		return
+	}
+
+	routeMu.Lock()
+	defer routeMu.Unlock()
+
+	st, ok := routeRuleCache[set.Id]
+	if !ok {
+		return
+	}
+	be := routeEngine
+	if be == nil {
+		return
+	}
+
+	ttl := set.Routing.IPTTLSeconds
+	if ttl <= 0 {
+		ttl = 3600
+	}
+
+	now := time.Now()
+	refresh := time.Duration(ttl) * time.Second / 2
+	key := set.Id + "|" + ip.String()
+	if last, seen := routeLearnLast[key]; seen && now.Sub(last) < refresh {
+		return
+	}
+	routeLearnLast[key] = now
+
+	if len(routeLearnLast) > 4096 {
+		cutoff := time.Duration(ttl) * time.Second
+		for k, t := range routeLearnLast {
+			if now.Sub(t) > cutoff {
+				delete(routeLearnLast, k)
+			}
+		}
+	}
+
+	routeAddIPsToSets(be, st, ttl, []net.IP{ip}, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 }
 
 func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {

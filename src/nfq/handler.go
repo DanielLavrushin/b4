@@ -342,6 +342,7 @@ func (w *Worker) handleTCPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 					matched = true
 					set = stSNI
 					matcher.LearnIPToDomain(pkt.dst, host, stSNI)
+					registerLearnedRoute(cfg, stSNI, pkt.dst)
 				}
 			}
 		}
@@ -644,6 +645,7 @@ func (w *Worker) handleUDPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 				set = sniSet
 				sniTarget = sniSet.Name
 				matcher.LearnIPToDomain(pkt.dst, host, sniSet)
+				registerLearnedRoute(cfg, sniSet, pkt.dst)
 			}
 		}
 	}
