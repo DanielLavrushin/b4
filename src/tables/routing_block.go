@@ -110,7 +110,7 @@ func addBlockRuleNft(chain string, v6 bool, setName, action string, sources []st
 			rst = append(rst, "reject", "with", "tcp", "reset")
 			runLogged("routing: add block reset "+chain, rst...)
 			rej := append(append([]string{}, base...), daddr...)
-			rej = append(rej, "reject")
+			rej = append(rej, "reject", "with", "icmpx", "type", "port-unreachable")
 			runLogged("routing: add block reject "+chain, rej...)
 		default:
 			args := append(append([]string{}, base...), daddr...)
