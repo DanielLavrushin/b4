@@ -31,6 +31,56 @@ func buildDNSResponse(qdCount, anCount uint16, body []byte) []byte {
 	return msg
 }
 
+func buildDNSQuery(txid uint16, name string, qtype uint16) []byte {
+	msg := make([]byte, 12)
+	binary.BigEndian.PutUint16(msg[0:2], txid)
+	binary.BigEndian.PutUint16(msg[2:4], 0x0100) // RD set, standard query
+	binary.BigEndian.PutUint16(msg[4:6], 1)      // QDCOUNT
+	msg = append(msg, encodeDNSName(name)...)
+	q := make([]byte, 4)
+	binary.BigEndian.PutUint16(q[0:2], qtype)
+	binary.BigEndian.PutUint16(q[2:4], 1) // IN
+	return append(msg, q...)
+}
+
+func TestBuildBlockResponse(t *testing.T) {
+	t.Run("nxdomain echoes question and sets response flags", func(t *testing.T) {
+		query := buildDNSQuery(0xABCD, "ads.example.com", 1)
+		resp := BuildBlockResponse(query)
+		if resp == nil {
+			t.Fatal("expected non-nil response")
+		}
+		if binary.BigEndian.Uint16(resp[0:2]) != 0xABCD {
+			t.Errorf("txid not preserved: got 0x%x", binary.BigEndian.Uint16(resp[0:2]))
+		}
+		if resp[2]&0x80 == 0 {
+			t.Error("QR bit not set (should be a response)")
+		}
+		if resp[2]&0x01 == 0 {
+			t.Error("RD bit not preserved from query")
+		}
+		if resp[3]&0x0f != 3 {
+			t.Errorf("RCODE should be 3 (NXDOMAIN), got %d", resp[3]&0x0f)
+		}
+		if binary.BigEndian.Uint16(resp[4:6]) != 1 {
+			t.Error("QDCOUNT should be 1")
+		}
+		if binary.BigEndian.Uint16(resp[6:8]) != 0 {
+			t.Error("ANCOUNT should be 0")
+		}
+		domain, ok := ParseQueryDomain(resp)
+		if !ok || domain != "ads.example.com" {
+			t.Errorf("question not echoed: got %q ok=%v", domain, ok)
+		}
+	})
+
+	t.Run("short payload returns nil", func(t *testing.T) {
+		if BuildBlockResponse([]byte{0x00, 0x01}) != nil {
+			t.Error("expected nil for short payload")
+		}
+	})
+}
+
 func TestParseTransactionID(t *testing.T) {
 	t.Run("ok", func(t *testing.T) {
 		got, ok := ParseTransactionID([]byte{0x12, 0x34, 0x00})

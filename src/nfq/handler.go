@@ -575,7 +575,7 @@ func (w *Worker) handleUDPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 	connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 
 	if sport == 53 || dport == 53 {
-		return w.processDnsPacket(pkt.ver, sport, dport, payload, pkt.raw, pkt.ihl, id, pkt.srcMac)
+		return w.processDnsPacket(pkt.ver, sport, dport, payload, pkt.raw, id, pkt.srcMac)
 	}
 
 	if utils.IsPrivateIP(pkt.dst) {

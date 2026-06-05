@@ -42,6 +42,37 @@ func ParseTransactionID(payload []byte) (uint16, bool) {
 	return binary.BigEndian.Uint16(payload[:2]), true
 }
 
+// BuildBlockResponse builds an NXDOMAIN DNS response for the given query,
+// echoing the original question. This sinkholes the domain: the client gets
+// "no such host" and never obtains an IP, which blocks the domain regardless
+// of TLS SNI (defeating HTTP/2 connection coalescing and Encrypted ClientHello).
+// Returns nil if the query is too short or malformed to parse.
+func BuildBlockResponse(query []byte) []byte {
+	if len(query) < 12 {
+		return nil
+	}
+	qend, ok := skipDNSName(query, 12)
+	if !ok || qend+4 > len(query) {
+		return nil
+	}
+	questionEnd := qend + 4 // QTYPE + QCLASS
+
+	resp := make([]byte, questionEnd)
+	copy(resp, query[:questionEnd])
+
+	// Flags: QR=1, keep Opcode+RD, clear AA/TC, RA=1, RCODE=3 (NXDOMAIN).
+	resp[2] = 0x80 | (query[2] & 0x79)
+	resp[3] = 0x83
+
+	// QDCOUNT=1, ANCOUNT=0, NSCOUNT=0, ARCOUNT=0.
+	binary.BigEndian.PutUint16(resp[4:6], 1)
+	binary.BigEndian.PutUint16(resp[6:8], 0)
+	binary.BigEndian.PutUint16(resp[8:10], 0)
+	binary.BigEndian.PutUint16(resp[10:12], 0)
+
+	return resp
+}
+
 func ParseResponseIPs(payload []byte) []net.IP {
 	if len(payload) < 12 {
 		return nil
