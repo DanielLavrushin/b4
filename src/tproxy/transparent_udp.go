@@ -25,6 +25,10 @@ func udpSockControl(v6 bool, recvOrigDst bool) func(string, string, syscall.RawC
 				return
 			}
 			if v6 {
+				if e := unix.SetsockoptInt(f, unix.IPPROTO_IPV6, unix.IPV6_V6ONLY, 1); e != nil {
+					ctlErr = fmt.Errorf("IPV6_V6ONLY: %w", e)
+					return
+				}
 				if e := unix.SetsockoptInt(f, unix.SOL_IPV6, unix.IPV6_TRANSPARENT, 1); e != nil {
 					ctlErr = fmt.Errorf("IPV6_TRANSPARENT: %w", e)
 					return
