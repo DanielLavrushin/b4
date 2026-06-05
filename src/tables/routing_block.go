@@ -105,10 +105,6 @@ func addBlockRuleNft(chain string, v6 bool, setName, action string, sources []st
 
 		switch action {
 		case config.BlockActionReject:
-			args := append(append([]string{}, base...), daddr...)
-			args = append(args, "reject", "with", "icmpx", "type", "admin-prohibited")
-			runLogged("routing: add block reject "+chain, args...)
-		case config.BlockActionRejectRST:
 			rst := append(append([]string{}, base...), "meta", "l4proto", "tcp")
 			rst = append(rst, daddr...)
 			rst = append(rst, "reject", "with", "tcp", "reset")
@@ -196,13 +192,6 @@ func addBlockRuleIpt(v6 bool, chain, setName, action string, sources []string, l
 
 		switch action {
 		case config.BlockActionReject:
-			rw := "icmp-admin-prohibited"
-			if v6 {
-				rw = "icmp6-adm-prohibited"
-			}
-			args := append(append([]string{}, match...), "-j", "REJECT", "--reject-with", rw)
-			runLogged("routing: add block reject "+chain, args...)
-		case config.BlockActionRejectRST:
 			rst := []string{cmd, "-w", "-t", "filter", "-A", chain}
 			if src != "" {
 				rst = append(rst, "-i", src)

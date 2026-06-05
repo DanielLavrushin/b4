@@ -382,7 +382,7 @@ export interface DNSConfig {
 
 export type RoutingMode = "interface" | "proxy" | "mtproto-ws" | "block";
 
-export type BlockAction = "drop" | "reject" | "reject-tcp-reset";
+export type BlockAction = "drop" | "reject";
 
 export interface UpstreamProxyConfig {
   host: string;

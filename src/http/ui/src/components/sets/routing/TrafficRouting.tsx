@@ -40,7 +40,7 @@ export const TrafficRouting = ({
   const isMTProtoWS = mode === "mtproto-ws";
   const isBlock = mode === "block";
   const isInterface = mode === "interface";
-  const blockAction = routing.block_action || "drop";
+  const blockAction = routing.block_action || "reject";
 
   const selectedIfaceAvailable = availableIfaces.includes(
     routing.egress_interface,
@@ -130,14 +130,11 @@ export const TrafficRouting = ({
                 helperText={t("sets.routing.blockActionHelper")}
                 sx={{ mt: 2 }}
               >
-                <MenuItem value="drop">
-                  {t("sets.routing.blockActionDrop")}
-                </MenuItem>
                 <MenuItem value="reject">
                   {t("sets.routing.blockActionReject")}
                 </MenuItem>
-                <MenuItem value="reject-tcp-reset">
-                  {t("sets.routing.blockActionRejectRst")}
+                <MenuItem value="drop">
+                  {t("sets.routing.blockActionDrop")}
                 </MenuItem>
               </B4TextField>
             )}

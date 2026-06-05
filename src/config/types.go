@@ -22,9 +22,8 @@ const (
 )
 
 const (
-	BlockActionDrop      = "drop"
-	BlockActionReject    = "reject"
-	BlockActionRejectRST = "reject-tcp-reset"
+	BlockActionDrop   = "drop"
+	BlockActionReject = "reject"
 )
 
 func RoutingUsesTProxy(mode string) bool {
@@ -36,12 +35,12 @@ func RoutingIsBlock(mode string) bool {
 }
 
 func NormalizeBlockAction(action string) string {
-	switch action {
-	case BlockActionReject, BlockActionRejectRST:
-		return action
-	default:
+	if action == BlockActionDrop {
 		return BlockActionDrop
 	}
+	// Default (and any legacy value such as "reject-tcp-reset") -> fast reject:
+	// TCP RST, ICMP unreachable for UDP/QUIC.
+	return BlockActionReject
 }
 
 const (
