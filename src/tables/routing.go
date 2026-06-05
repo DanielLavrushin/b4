@@ -396,10 +396,34 @@ func RoutingRulesPresent(cfg *config.Config) bool {
 
 	switch eng := be.(type) {
 	case *routeNftBackend:
-		out, err := run("nft", "list", "table", "inet", routeNftTable)
-		return err == nil && strings.TrimSpace(out) != ""
+		return routeNftRulesPresent()
 	case *routeIptBackend:
 		return routeIptRulesPresent(eng, cfg)
+	}
+	return true
+}
+
+func routeNftRulesPresent() bool {
+	out, err := run("nft", "list", "table", "inet", routeNftTable)
+	if err != nil || strings.TrimSpace(out) == "" {
+		return false
+	}
+
+	present := make(map[string]bool)
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "chain ") {
+			name := strings.TrimSpace(strings.TrimSuffix(line[len("chain "):], "{"))
+			present[name] = true
+		}
+	}
+
+	for _, st := range routeRuleCache {
+		for _, c := range routeStateChains(st) {
+			if !present[c.chain] {
+				return false
+			}
+		}
 	}
 	return true
 }
