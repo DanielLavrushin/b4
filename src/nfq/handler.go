@@ -709,6 +709,18 @@ func (w *Worker) handleUDPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 
 	if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) {
 		if matchedQUIC || (matchedIP && !matchedLearned) {
+			// UDP has no RST; both reject actions map to an ICMP unreachable.
+			if config.NormalizeBlockAction(set.Routing.BlockAction) != config.BlockActionDrop {
+				if pkt.ver == IPv4 {
+					if icmp := sock.BuildICMPv4Reject(pkt.raw, pkt.src.To4(), pkt.dst.To4()); icmp != nil {
+						_ = w.sock.SendIPv4(icmp, pkt.src)
+					}
+				} else {
+					if icmp := sock.BuildICMPv6Reject(pkt.raw, pkt.src.To16(), pkt.dst.To16()); icmp != nil {
+						_ = w.sock.SendIPv6(icmp, pkt.src)
+					}
+				}
+			}
 			if !cfg.Queue.IsDiscovery {
 				log.LogConnection("UDP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, udpTLS, "block")
 			}
