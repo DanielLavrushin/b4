@@ -109,9 +109,9 @@ func addBlockRuleNft(chain string, v6 bool, setName, action string, sources []st
 			rst = append(rst, daddr...)
 			rst = append(rst, "reject", "with", "tcp", "reset")
 			runLogged("routing: add block reset "+chain, rst...)
-			drop := append(append([]string{}, base...), daddr...)
-			drop = append(drop, "drop")
-			runLogged("routing: add block drop "+chain, drop...)
+			rej := append(append([]string{}, base...), daddr...)
+			rej = append(rej, "reject")
+			runLogged("routing: add block reject "+chain, rej...)
 		default:
 			args := append(append([]string{}, base...), daddr...)
 			args = append(args, "drop")
@@ -199,8 +199,12 @@ func addBlockRuleIpt(v6 bool, chain, setName, action string, sources []string, l
 			rst = append(rst, "-p", "tcp", "-m", "set", "--match-set", setName, "dst",
 				"-j", "REJECT", "--reject-with", "tcp-reset")
 			runLogged("routing: add block reset "+chain, rst...)
-			drop := append(append([]string{}, match...), "-j", "DROP")
-			runLogged("routing: add block drop "+chain, drop...)
+			icmpReject := "icmp-port-unreachable"
+			if v6 {
+				icmpReject = "icmp6-port-unreachable"
+			}
+			rej := append(append([]string{}, match...), "-j", "REJECT", "--reject-with", icmpReject)
+			runLogged("routing: add block reject "+chain, rej...)
 		default:
 			args := append(append([]string{}, match...), "-j", "DROP")
 			runLogged("routing: add block drop "+chain, args...)
