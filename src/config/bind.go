@@ -38,8 +38,9 @@ func (c *Config) BindFlags(cmd *cobra.Command, o *CLIOverrides) {
 }
 
 var persistedOverrides struct {
-	snapshot *Config
-	fields   map[string]bool
+	snapshot  *Config
+	fields    map[string]bool
+	overrides CLIOverrides
 }
 
 func (c *Config) ApplyCLIOverrides(cmd *cobra.Command, o *CLIOverrides) {
@@ -97,9 +98,11 @@ func (c *Config) ApplyCLIOverrides(cmd *cobra.Command, o *CLIOverrides) {
 	if len(fields) > 0 {
 		persistedOverrides.snapshot = snapshot
 		persistedOverrides.fields = fields
+		persistedOverrides.overrides = *o
 	} else {
 		persistedOverrides.snapshot = nil
 		persistedOverrides.fields = nil
+		persistedOverrides.overrides = CLIOverrides{}
 	}
 }
 
@@ -109,45 +112,46 @@ func stripCLIOverrides(c *Config) *Config {
 	if snap == nil || len(f) == 0 {
 		return c
 	}
+	ov := persistedOverrides.overrides
 
 	clone := *c
-	if f["queue-num"] {
+	if f["queue-num"] && c.Queue.StartNum == ov.QueueNum {
 		clone.Queue.StartNum = snap.Queue.StartNum
 	}
-	if f["threads"] {
+	if f["threads"] && c.Queue.Threads == ov.Threads {
 		clone.Queue.Threads = snap.Queue.Threads
 	}
-	if f["mark"] {
+	if f["mark"] && c.Queue.Mark == ov.Mark {
 		clone.Queue.Mark = snap.Queue.Mark
 	}
-	if f["ipv4"] {
+	if f["ipv4"] && c.Queue.IPv4Enabled == ov.IPv4Enabled {
 		clone.Queue.IPv4Enabled = snap.Queue.IPv4Enabled
 	}
-	if f["ipv6"] {
+	if f["ipv6"] && c.Queue.IPv6Enabled == ov.IPv6Enabled {
 		clone.Queue.IPv6Enabled = snap.Queue.IPv6Enabled
 	}
-	if f["tables-monitor-interval"] {
+	if f["tables-monitor-interval"] && c.System.Tables.MonitorInterval == ov.MonitorInterval {
 		clone.System.Tables.MonitorInterval = snap.System.Tables.MonitorInterval
 	}
-	if f["skip-tables"] {
+	if f["skip-tables"] && c.System.Tables.SkipSetup == ov.SkipSetup {
 		clone.System.Tables.SkipSetup = snap.System.Tables.SkipSetup
 	}
-	if f["masquerade"] {
+	if f["masquerade"] && c.System.Tables.Masquerade == ov.Masquerade {
 		clone.System.Tables.Masquerade = snap.System.Tables.Masquerade
 	}
-	if f["masquerade-interface"] {
+	if f["masquerade-interface"] && c.System.Tables.MasqueradeInterface == ov.MasqueradeInterface {
 		clone.System.Tables.MasqueradeInterface = snap.System.Tables.MasqueradeInterface
 	}
-	if f["instaflush"] {
+	if f["instaflush"] && c.System.Logging.Instaflush == ov.Instaflush {
 		clone.System.Logging.Instaflush = snap.System.Logging.Instaflush
 	}
-	if f["syslog"] {
+	if f["syslog"] && c.System.Logging.Syslog == ov.Syslog {
 		clone.System.Logging.Syslog = snap.System.Logging.Syslog
 	}
-	if f["error-file"] {
+	if f["error-file"] && c.System.Logging.ErrorFile == ov.ErrorFile {
 		clone.System.Logging.ErrorFile = snap.System.Logging.ErrorFile
 	}
-	if f["web-port"] {
+	if f["web-port"] && c.System.WebServer.Port == ov.WebPort {
 		clone.System.WebServer.Port = snap.System.WebServer.Port
 	}
 	return &clone

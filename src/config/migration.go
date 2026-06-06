@@ -644,9 +644,9 @@ func discoverConfigPath() string {
 func (c *Config) LoadWithMigration(path string) (bool, error) {
 	if path == "" {
 		path = discoverConfigPath()
-		c.ConfigPath = path
 		log.Infof("Using config path: %s", path)
 	}
+	c.ConfigPath = path
 
 	info, err := os.Stat(path)
 	if err != nil {
