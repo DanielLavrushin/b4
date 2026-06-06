@@ -280,22 +280,23 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 }
 
 func DialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc int, protoTag uint32) (*ObfuscatedConn, string, error) {
-	return DialObfuscatedDCWithPool(cfg, queueCfg, dc, protoTag, nil)
+	return DialObfuscatedDCWithPool(cfg, queueCfg, dc, protoTag, nil, "")
 }
 
-func DialObfuscatedDCWithPool(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc int, protoTag uint32, pool *wsPool) (*ObfuscatedConn, string, error) {
+func DialObfuscatedDCWithPool(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc int, protoTag uint32, pool *wsPool, logID string) (*ObfuscatedConn, string, error) {
+	tag := tg(logID)
 	if pool != nil && !wsIsBlacklisted(dc) {
 		if raw := pool.get(dc); raw != nil {
 			obf, err := completeObfuscation(raw, dc, protoTag)
 			if err == nil && raw.liveNow() {
-				log.Infof("MTProto DC %d connected via ws-pool", dc)
+				log.Infof("%s DC %d connected via ws-pool", tag, dc)
 				wsRecordSuccess(dc)
 				return obf, "ws-pool", nil
 			}
 			if err != nil {
-				log.Debugf("MTProto DC %d pool conn obf init failed: %v", dc, err)
+				log.Debugf("%s DC %d pool conn obf init failed: %v", tag, dc, err)
 			} else {
-				log.Debugf("MTProto DC %d pool conn died before relay; re-dialing fresh", dc)
+				log.Debugf("%s DC %d pool conn died before relay; re-dialing fresh", tag, dc)
 			}
 			_ = raw.Close()
 		}
@@ -315,7 +316,7 @@ func DialObfuscatedDCWithPool(cfg *config.MTProtoConfig, queueCfg config.QueueCo
 	wsTried := 0
 	wsRedirects := 0
 	for _, p := range plans {
-		log.Debugf("MTProto DC %d dialing %s", dc, p.describe())
+		log.Debugf("%s DC %d dialing %s", tag, dc, p.describe())
 		start := time.Now()
 		var conn net.Conn
 		var derr error
@@ -337,27 +338,27 @@ func DialObfuscatedDCWithPool(cfg *config.MTProtoConfig, queueCfg config.QueueCo
 			} else if isDialTimeout(derr) {
 				tcpRecordFailure(p.addr)
 			}
-			log.Debugf("MTProto DC %d %s failed after %dms: %v", dc, p.describe(), time.Since(start).Milliseconds(), derr)
+			log.Debugf("%s DC %d %s failed after %dms: %v", tag, dc, p.describe(), time.Since(start).Milliseconds(), derr)
 			continue
 		}
 		obfConn, oerr := completeObfuscation(conn, dc, protoTag)
 		if oerr != nil {
 			attempts = append(attempts, fmt.Sprintf("%s: %s", p.describe(), shortErr(oerr)))
 			conn.Close()
-			log.Debugf("MTProto DC %d obf init failed on %s: %v", dc, p.describe(), oerr)
+			log.Debugf("%s DC %d obf init failed on %s: %v", tag, dc, p.describe(), oerr)
 			continue
 		}
 		if p.kind == transportWS {
 			wsRecordSuccess(dc)
 			if p.cfBase != "" {
 				if cfBalancerInst.pin(dc, p.cfBase) {
-					log.Infof("MTProto DC %d switched active CF domain to %s", dc, p.cfBase)
+					log.Infof("%s DC %d switched active CF domain to %s", tag, dc, p.cfBase)
 				}
 			}
 		} else {
 			tcpRecordSuccess(p.addr)
 		}
-		log.Infof("MTProto DC %d connected via %s in %dms", dc, p.describe(), time.Since(start).Milliseconds())
+		log.Infof("%s DC %d connected via %s in %dms", tag, dc, p.describe(), time.Since(start).Milliseconds())
 		return obfConn, p.describe(), nil
 	}
 

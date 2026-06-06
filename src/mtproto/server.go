@@ -233,11 +233,13 @@ func (s *Server) acceptLoop(ln net.Listener) {
 
 func (s *Server) handleConn(raw net.Conn) {
 	clientAddr := raw.RemoteAddr().String()
-	log.Infof("MTProto new connection from %s", clientAddr)
+	id := nextConnID()
+	tag := tg(id)
+	log.Infof("%s proxy new connection from %s", tag, clientAddr)
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Errorf("MTProto panic from %s: %v", clientAddr, r)
+			log.Errorf("%s proxy panic from %s: %v", tag, clientAddr, r)
 		}
 	}()
 
@@ -253,42 +255,41 @@ func (s *Server) handleConn(raw net.Conn) {
 
 	tlsConn, err := AcceptFakeTLS(raw, secret)
 	if err != nil {
-		log.Debugf("MTProto fake-TLS failed from %s: %v", clientAddr, err)
+		log.Debugf("%s proxy fake-TLS failed from %s: %v", tag, clientAddr, err)
 		var vErr *FakeTLSVerifyError
 		if errors.As(err, &vErr) && cfg.System.MTProto.FakeSNI != "" {
 			proxyToMaskingDomain(raw, vErr.Initial, cfg.System.MTProto.FakeSNI, cfg.Queue.Mark)
 		}
 		return
 	}
-	log.Debugf("MTProto fake-TLS handshake OK from %s", clientAddr)
+	log.Debugf("%s proxy fake-TLS handshake OK from %s", tag, clientAddr)
 
 	result, err := AcceptObfuscated(tlsConn, secret)
 	if err != nil {
-		log.Tracef("MTProto obfuscated2 failed from %s: %v", clientAddr, err)
+		log.Tracef("%s proxy obfuscated2 failed from %s: %v", tag, clientAddr, err)
 		return
 	}
-	log.Debugf("MTProto client from %s wants DC %d proto=0x%08x", clientAddr, result.DC, result.ProtoTag)
+	log.Debugf("%s proxy client from %s wants DC %d proto=0x%08x", tag, clientAddr, result.DC, result.ProtoTag)
 	_ = raw.SetDeadline(time.Time{})
 
-	dcConn, transport, err := DialObfuscatedDCWithPool(&cfg.System.MTProto, cfg.Queue, result.DC, result.ProtoTag, s.wsPool.Load())
+	dcConn, transport, err := DialObfuscatedDCWithPool(&cfg.System.MTProto, cfg.Queue, result.DC, result.ProtoTag, s.wsPool.Load(), id)
 	if err != nil {
-		// throttle ERROR-level spam from a permanently-broken DC; full detail still goes to Debug
 		if shouldLogDialError(result.DC) {
-			log.Errorf("MTProto dial DC %d: %v", result.DC, err)
+			log.Errorf("%s proxy dial DC %d failed: %v", tag, result.DC, err)
 		} else {
-			log.Debugf("MTProto dial DC %d (suppressed): %v", result.DC, err)
+			log.Debugf("%s proxy dial DC %d failed (suppressed): %v", tag, result.DC, err)
 		}
 		return
 	}
 	defer dcConn.Close()
 
-	log.Infof("MTProto relay: %s <-> DC%d (%s)", clientAddr, result.DC, transport)
+	log.Infof("%s proxy relay %s <-> DC%d via %s", tag, clientAddr, result.DC, transport)
 
 	var splitter *msgSplitter
 	if _, ok := dcConn.Conn.(*wsConn); ok {
 		splitter = newMsgSplitter(result.ProtoTag)
 	}
-	s.relay(result.Conn, dcConn, splitter, fmt.Sprintf("%s<->DC%d", clientAddr, result.DC))
+	s.relay(result.Conn, dcConn, splitter, fmt.Sprintf("%s %s<->DC%d", tag, clientAddr, result.DC))
 }
 
 func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string) {
@@ -321,7 +322,7 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 			}
 		}
 		counter.Store(total)
-		log.Debugf("MTProto relay %s %s: %d bytes, err=%v", label, dir, total, err)
+		log.Debugf("%s %s: %d bytes, err=%v", label, dir, total, err)
 		errCh <- err
 	}
 
@@ -351,7 +352,7 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 			}
 		}
 		counter.Store(total)
-		log.Debugf("MTProto relay %s %s: %d bytes, err=%v", label, dir, total, err)
+		log.Debugf("%s %s: %d bytes, err=%v", label, dir, total, err)
 		errCh <- err
 	}
 
@@ -366,5 +367,5 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 	_ = client.Close()
 	_ = dc.Close()
 	<-errCh
-	log.Infof("MTProto session %s closed: up=%d down=%d in %dms", label, upBytes.Load(), downBytes.Load(), time.Since(start).Milliseconds())
+	log.Infof("%s closed: up=%d down=%d in %dms", label, upBytes.Load(), downBytes.Load(), time.Since(start).Milliseconds())
 }

@@ -28,6 +28,7 @@ type DomainResolver interface {
 
 type MTProtoBridge interface {
 	Handle(client net.Conn, origIP net.IP, origPort int) (bool, net.Conn)
+	FailOpenViaWorker(client net.Conn, origIP net.IP, origPort int) bool
 }
 
 type Listener struct {
@@ -200,6 +201,9 @@ func (l *Listener) handle(client net.Conn) {
 				return
 			} else if failover != nil {
 				client = failover
+			}
+			if l.Bridge.FailOpenViaWorker(client, origIP, origPort) {
+				return
 			}
 		}
 		l.failOpenDirect(client, origIP, origPort)

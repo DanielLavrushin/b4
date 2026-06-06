@@ -254,7 +254,7 @@ type MTProtoConfig struct {
 	CFProxyURL     string `json:"cfproxy_url"`     // URL to refresh CF-proxy domain list; empty = built-in default
 	CFWorkerDomain string `json:"cfworker_domain"` // user's Cloudflare Worker domain(s) (workers.dev), comma-separated; free per-user WS relay tried before the shared CF pool
 
-	BridgeSkipNativeEdge bool `json:"-"` // transparent-bridge only: skip Telegram's WebK WS edge (kwsN) and relay through worker/TCP to the real DC. The edge is the wrong terminus for an intercepted direct-DC session (auth-DH dies after resPQ).
+	BridgeSkipNativeEdge bool `json:"-"`
 }
 
 type Socks5Config struct {
