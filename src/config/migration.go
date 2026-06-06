@@ -641,40 +641,38 @@ func discoverConfigPath() string {
 	return "/etc/b4/b4.json"
 }
 
-func (c *Config) LoadWithMigration(path string) error {
-	discovered := false
+func (c *Config) LoadWithMigration(path string) (bool, error) {
 	if path == "" {
 		path = discoverConfigPath()
 		c.ConfigPath = path
-		discovered = true
 		log.Infof("Using config path: %s", path)
 	}
 
 	info, err := os.Stat(path)
 	if err != nil {
-		if discovered && os.IsNotExist(err) {
+		if os.IsNotExist(err) {
 			log.Infof("Config file does not exist yet, using defaults: %s", path)
-			return nil
+			return true, nil
 		}
-		return log.Errorf("failed to stat config file: %v", err)
+		return false, log.Errorf("failed to stat config file: %v", err)
 	}
 	if info.IsDir() {
-		return log.Errorf("config path is a directory, not a file: %s", path)
+		return false, log.Errorf("config path is a directory, not a file: %s", path)
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return log.Errorf("failed to read config file: %v", err)
+		return false, log.Errorf("failed to read config file: %v", err)
 	}
 
 	var rawJSON map[string]interface{}
 	if err := json.Unmarshal(data, &rawJSON); err != nil {
-		return log.Errorf("failed to parse config file: %v", err)
+		return false, log.Errorf("failed to parse config file: %v", err)
 	}
 
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return log.Errorf("failed to parse config file: %v", err)
+		return false, log.Errorf("failed to parse config file: %v", err)
 	}
 
 	rawSets := raw["sets"]
@@ -682,35 +680,37 @@ func (c *Config) LoadWithMigration(path string) error {
 
 	withoutSets, _ := json.Marshal(raw)
 	if err := json.Unmarshal(withoutSets, c); err != nil {
-		return log.Errorf("failed to parse config file: %v", err)
+		return false, log.Errorf("failed to parse config file: %v", err)
 	}
 
 	if rawSets != nil {
 		var setArray []json.RawMessage
 		if err := json.Unmarshal(rawSets, &setArray); err != nil {
-			return log.Errorf("failed to parse sets: %v", err)
+			return false, log.Errorf("failed to parse sets: %v", err)
 		}
 		c.Sets = make([]*SetConfig, 0, len(setArray))
 		for _, rs := range setArray {
 			set := NewSetConfig()
 			if err := json.Unmarshal(rs, &set); err != nil {
-				return log.Errorf("failed to parse set: %v", err)
+				return false, log.Errorf("failed to parse set: %v", err)
 			}
 			c.Sets = append(c.Sets, &set)
 		}
 	}
 
+	migrated := false
 	if c.Version < CurrentConfigVersion {
+		migrated = true
 		log.Infof("Config version %d is older than current version %d, migrating",
 			c.Version, CurrentConfigVersion)
 		if err := c.applyMigrations(c.Version, rawJSON); err != nil {
-			return err
+			return false, err
 		}
 	}
 
 	c.System.Geo.SanitizePaths(filepath.Dir(c.ConfigPath))
 
-	return nil
+	return migrated, nil
 }
 
 func (c *Config) applyMigrations(startVersion int, rawJSON map[string]interface{}) error {

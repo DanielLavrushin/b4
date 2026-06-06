@@ -46,22 +46,25 @@ func TestLoadWithMigration(t *testing.T) {
 
 	t.Run("empty path with no default config returns nil", func(t *testing.T) {
 		cfg := NewConfig()
-		if err := cfg.LoadWithMigration(""); err != nil {
+		if _, err := cfg.LoadWithMigration(""); err != nil {
 			t.Errorf("expected nil for empty path with no discoverable config: %v", err)
 		}
 	})
 
-	t.Run("nonexistent file errors", func(t *testing.T) {
+	t.Run("nonexistent file signals creation", func(t *testing.T) {
 		cfg := NewConfig()
-		err := cfg.LoadWithMigration(filepath.Join(tmpDir, "nope.json"))
-		if err == nil {
-			t.Error("expected error for nonexistent file")
+		needsSave, err := cfg.LoadWithMigration(filepath.Join(tmpDir, "nope.json"))
+		if err != nil {
+			t.Errorf("expected no error for nonexistent file, got %v", err)
+		}
+		if !needsSave {
+			t.Error("expected needsSave=true for nonexistent file")
 		}
 	})
 
 	t.Run("directory path errors", func(t *testing.T) {
 		cfg := NewConfig()
-		err := cfg.LoadWithMigration(tmpDir)
+		_, err := cfg.LoadWithMigration(tmpDir)
 		if err == nil {
 			t.Error("expected error for directory path")
 		}
@@ -78,7 +81,7 @@ func TestLoadWithMigration(t *testing.T) {
 		os.WriteFile(path, []byte(v0Json), 0644)
 
 		cfg := NewConfig()
-		if err := cfg.LoadWithMigration(path); err != nil {
+		if _, err := cfg.LoadWithMigration(path); err != nil {
 			t.Fatalf("LoadWithMigration failed: %v", err)
 		}
 
@@ -97,7 +100,7 @@ func TestLoadWithMigration(t *testing.T) {
 		cfg.SaveToFile(path)
 
 		loaded := NewConfig()
-		if err := loaded.LoadWithMigration(path); err != nil {
+		if _, err := loaded.LoadWithMigration(path); err != nil {
 			t.Fatalf("LoadWithMigration failed: %v", err)
 		}
 		if loaded.Version != CurrentConfigVersion {
@@ -115,7 +118,7 @@ func TestLoadWithMigration(t *testing.T) {
 		cfg.SaveToFile(path)
 
 		loaded := NewConfig()
-		if err := loaded.LoadWithMigration(path); err != nil {
+		if _, err := loaded.LoadWithMigration(path); err != nil {
 			t.Fatalf("LoadWithMigration failed: %v", err)
 		}
 

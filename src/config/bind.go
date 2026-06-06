@@ -2,28 +2,153 @@ package config
 
 import "github.com/spf13/cobra"
 
-func (c *Config) BindFlags(cmd *cobra.Command) {
-	// Config path
+type CLIOverrides struct {
+	QueueNum            int
+	Threads             int
+	Mark                uint
+	IPv4Enabled         bool
+	IPv6Enabled         bool
+	MonitorInterval     int
+	SkipSetup           bool
+	Masquerade          bool
+	MasqueradeInterface string
+	Instaflush          bool
+	Syslog              bool
+	ErrorFile           string
+	WebPort             int
+}
+
+func (c *Config) BindFlags(cmd *cobra.Command, o *CLIOverrides) {
 	cmd.Flags().StringVar(&c.ConfigPath, "config", c.ConfigPath, "Path to config file")
 
-	// Queue configuration
-	cmd.Flags().IntVar(&c.Queue.StartNum, "queue-num", c.Queue.StartNum, "Netfilter queue number")
-	cmd.Flags().IntVar(&c.Queue.Threads, "threads", c.Queue.Threads, "Number of worker threads")
-	cmd.Flags().UintVar(&c.Queue.Mark, "mark", c.Queue.Mark, "Packet mark value (default 32768)")
-	cmd.Flags().BoolVar(&c.Queue.IPv4Enabled, "ipv4", c.Queue.IPv4Enabled, "Enable IPv4 processing")
-	cmd.Flags().BoolVar(&c.Queue.IPv6Enabled, "ipv6", c.Queue.IPv6Enabled, "Enable IPv6 processing")
+	d := DefaultConfig
+	cmd.Flags().IntVar(&o.QueueNum, "queue-num", d.Queue.StartNum, "Netfilter queue number")
+	cmd.Flags().IntVar(&o.Threads, "threads", d.Queue.Threads, "Number of worker threads")
+	cmd.Flags().UintVar(&o.Mark, "mark", d.Queue.Mark, "Packet mark value (default 32768)")
+	cmd.Flags().BoolVar(&o.IPv4Enabled, "ipv4", d.Queue.IPv4Enabled, "Enable IPv4 processing")
+	cmd.Flags().BoolVar(&o.IPv6Enabled, "ipv6", d.Queue.IPv6Enabled, "Enable IPv6 processing")
+	cmd.Flags().IntVar(&o.MonitorInterval, "tables-monitor-interval", d.System.Tables.MonitorInterval, "Tables monitor interval in seconds (default 10, 0 to disable)")
+	cmd.Flags().BoolVar(&o.SkipSetup, "skip-tables", d.System.Tables.SkipSetup, "Skip iptables/nftables setup on startup")
+	cmd.Flags().BoolVar(&o.Masquerade, "masquerade", d.System.Tables.Masquerade, "Enable NAT masquerade (useful for containers)")
+	cmd.Flags().StringVar(&o.MasqueradeInterface, "masquerade-interface", d.System.Tables.MasqueradeInterface, "Restrict masquerade to this output interface (empty = all)")
+	cmd.Flags().BoolVarP(&o.Instaflush, "instaflush", "i", d.System.Logging.Instaflush, "Flush logs immediately")
+	cmd.Flags().BoolVar(&o.Syslog, "syslog", d.System.Logging.Syslog, "Enable syslog output")
+	cmd.Flags().StringVar(&o.ErrorFile, "error-file", d.System.Logging.ErrorFile, "Path to error log file (empty disables)")
+	cmd.Flags().IntVar(&o.WebPort, "web-port", d.System.WebServer.Port, "Port for internal web server (0 disables)")
+}
 
-	// System configuration
-	cmd.Flags().IntVar(&c.System.Tables.MonitorInterval, "tables-monitor-interval", c.System.Tables.MonitorInterval, "Tables monitor interval in seconds (default 10, 0 to disable)")
-	cmd.Flags().BoolVar(&c.System.Tables.SkipSetup, "skip-tables", c.System.Tables.SkipSetup, "Skip iptables/nftables setup on startup")
-	cmd.Flags().BoolVar(&c.System.Tables.Masquerade, "masquerade", c.System.Tables.Masquerade, "Enable NAT masquerade (useful for containers)")
-	cmd.Flags().StringVar(&c.System.Tables.MasqueradeInterface, "masquerade-interface", c.System.Tables.MasqueradeInterface, "Restrict masquerade to this output interface (empty = all)")
+var persistedOverrides struct {
+	snapshot *Config
+	fields   map[string]bool
+}
 
-	// Logging configuration
-	cmd.Flags().BoolVarP(&c.System.Logging.Instaflush, "instaflush", "i", c.System.Logging.Instaflush, "Flush logs immediately")
-	cmd.Flags().BoolVar(&c.System.Logging.Syslog, "syslog", c.System.Logging.Syslog, "Enable syslog output")
-	cmd.Flags().StringVar(&c.System.Logging.ErrorFile, "error-file", c.System.Logging.ErrorFile, "Path to error log file (empty disables)")
+func (c *Config) ApplyCLIOverrides(cmd *cobra.Command, o *CLIOverrides) {
+	fields := make(map[string]bool)
+	changed := func(name string) bool {
+		if cmd.Flags().Changed(name) {
+			fields[name] = true
+			return true
+		}
+		return false
+	}
 
-	// Web Server configuration
-	cmd.Flags().IntVar(&c.System.WebServer.Port, "web-port", c.System.WebServer.Port, "Port for internal web server (0 disables)")
+	snapshot := &Config{Queue: c.Queue, System: c.System}
+
+	if changed("queue-num") {
+		c.Queue.StartNum = o.QueueNum
+	}
+	if changed("threads") {
+		c.Queue.Threads = o.Threads
+	}
+	if changed("mark") {
+		c.Queue.Mark = o.Mark
+	}
+	if changed("ipv4") {
+		c.Queue.IPv4Enabled = o.IPv4Enabled
+	}
+	if changed("ipv6") {
+		c.Queue.IPv6Enabled = o.IPv6Enabled
+	}
+	if changed("tables-monitor-interval") {
+		c.System.Tables.MonitorInterval = o.MonitorInterval
+	}
+	if changed("skip-tables") {
+		c.System.Tables.SkipSetup = o.SkipSetup
+	}
+	if changed("masquerade") {
+		c.System.Tables.Masquerade = o.Masquerade
+	}
+	if changed("masquerade-interface") {
+		c.System.Tables.MasqueradeInterface = o.MasqueradeInterface
+	}
+	if changed("instaflush") {
+		c.System.Logging.Instaflush = o.Instaflush
+	}
+	if changed("syslog") {
+		c.System.Logging.Syslog = o.Syslog
+	}
+	if changed("error-file") {
+		c.System.Logging.ErrorFile = o.ErrorFile
+	}
+	if changed("web-port") {
+		c.System.WebServer.Port = o.WebPort
+	}
+
+	if len(fields) > 0 {
+		persistedOverrides.snapshot = snapshot
+		persistedOverrides.fields = fields
+	} else {
+		persistedOverrides.snapshot = nil
+		persistedOverrides.fields = nil
+	}
+}
+
+func stripCLIOverrides(c *Config) *Config {
+	snap := persistedOverrides.snapshot
+	f := persistedOverrides.fields
+	if snap == nil || len(f) == 0 {
+		return c
+	}
+
+	clone := *c
+	if f["queue-num"] {
+		clone.Queue.StartNum = snap.Queue.StartNum
+	}
+	if f["threads"] {
+		clone.Queue.Threads = snap.Queue.Threads
+	}
+	if f["mark"] {
+		clone.Queue.Mark = snap.Queue.Mark
+	}
+	if f["ipv4"] {
+		clone.Queue.IPv4Enabled = snap.Queue.IPv4Enabled
+	}
+	if f["ipv6"] {
+		clone.Queue.IPv6Enabled = snap.Queue.IPv6Enabled
+	}
+	if f["tables-monitor-interval"] {
+		clone.System.Tables.MonitorInterval = snap.System.Tables.MonitorInterval
+	}
+	if f["skip-tables"] {
+		clone.System.Tables.SkipSetup = snap.System.Tables.SkipSetup
+	}
+	if f["masquerade"] {
+		clone.System.Tables.Masquerade = snap.System.Tables.Masquerade
+	}
+	if f["masquerade-interface"] {
+		clone.System.Tables.MasqueradeInterface = snap.System.Tables.MasqueradeInterface
+	}
+	if f["instaflush"] {
+		clone.System.Logging.Instaflush = snap.System.Logging.Instaflush
+	}
+	if f["syslog"] {
+		clone.System.Logging.Syslog = snap.System.Logging.Syslog
+	}
+	if f["error-file"] {
+		clone.System.Logging.ErrorFile = snap.System.Logging.ErrorFile
+	}
+	if f["web-port"] {
+		clone.System.WebServer.Port = snap.System.WebServer.Port
+	}
+	return &clone
 }

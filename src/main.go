@@ -37,6 +37,7 @@ import (
 
 var (
 	cfg             = config.NewConfig()
+	cliOverrides    config.CLIOverrides
 	verboseFlag     string
 	showVersion     bool
 	clearTables     bool
@@ -57,7 +58,7 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	// Bind all configuration flags
-	cfg.BindFlags(rootCmd)
+	cfg.BindFlags(rootCmd, &cliOverrides)
 
 	// Add verbosity flags separately since they need special handling
 	rootCmd.Flags().StringVar(&verboseFlag, "verbose", "info", "Set verbosity level (debug, trace, info, silent), default: info")
@@ -97,8 +98,11 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	initTimezone()
 
-	cfg.LoadWithMigration(cfg.ConfigPath)
-	cfg.SaveToFile(cfg.ConfigPath)
+	needsSave, _ := cfg.LoadWithMigration(cfg.ConfigPath)
+	if needsSave {
+		cfg.SaveToFile(cfg.ConfigPath)
+	}
+	cfg.ApplyCLIOverrides(cmd, &cliOverrides)
 
 	if cfg.System.Timezone != "" {
 		config.ApplyTimezone(cfg.System.Timezone)

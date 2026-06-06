@@ -1087,7 +1087,7 @@ func TestEscalateTo_RoundtripAndDefault(t *testing.T) {
 	}
 
 	loaded := NewConfig()
-	if err := loaded.LoadWithMigration(path); err != nil {
+	if _, err := loaded.LoadWithMigration(path); err != nil {
 		t.Fatalf("LoadWithMigration: %v", err)
 	}
 	if got := loaded.GetSetById("a"); got == nil || got.Escalate.To != "b" {
