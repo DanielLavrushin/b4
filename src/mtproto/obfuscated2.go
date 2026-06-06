@@ -30,17 +30,10 @@ const (
 	tcpDialTimeout   = 8 * time.Second
 )
 
-var wsEdgeServedDCs = map[int]bool{2: true, 4: true, 203: true}
+var wsEdgeServedDCs = map[int]bool{2: true, 4: true}
 
 func wsEdgeServesDC(absDC int) bool {
 	return wsEdgeServedDCs[absDC]
-}
-
-func edgeSNIDC(absDC int) int {
-	if absDC == 203 {
-		return 2
-	}
-	return absDC
 }
 
 func workerDomains(cfg *config.MTProtoConfig) []string {
@@ -231,10 +224,9 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 		if edgeIP == "" {
 			edgeIP = telegramWSEdgeIP
 		}
-		if wsEdgeServesDC(absDC) {
-			edgeDC := edgeSNIDC(absDC)
-			primary := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d.web.telegram.org", edgeDC), dialHost: edgeIP}
-			media := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d-1.web.telegram.org", edgeDC), dialHost: edgeIP}
+		if wsEdgeServesDC(absDC) && !cfg.BridgeSkipNativeEdge {
+			primary := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d.web.telegram.org", absDC), dialHost: edgeIP}
+			media := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d-1.web.telegram.org", absDC), dialHost: edgeIP}
 			if dc < 0 {
 				plans = append(plans, media, primary)
 			} else {

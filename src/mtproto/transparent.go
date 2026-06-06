@@ -122,10 +122,10 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 	var dcSrc string
 	if mapped, ok := dcForIP(origIP); ok {
 		dc, dcSrc = mapped, "ip"
-	} else if mapped, ok := dcForIPRange(origIP); ok {
-		dc, dcSrc = mapped, "ip-range"
 	} else if validTransparentDC(res.DC) {
 		dc, dcSrc = res.DC, "handshake"
+	} else if mapped, ok := dcForIPRange(origIP); ok {
+		dc, dcSrc = mapped, "ip-range"
 	} else {
 		log.Debugf("MTProto transparent: unresolved DC for %s (handshake dc=%d proto=0x%08x) -> fail open", origIP, res.DC, res.ProtoTag)
 		return false, &prefixConn{Conn: client, prefix: append([]byte(nil), init...)}
@@ -135,8 +135,9 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 	mtCfg := cfg.System.MTProto
 	mtCfg.UpstreamMode = "auto"
 	mtCfg.DCRelay = ""
+	mtCfg.BridgeSkipNativeEdge = true
 
-	dcConn, transport, err := DialObfuscatedDCWithPool(&mtCfg, cfg.Queue, dc, res.ProtoTag, b.getPool())
+	dcConn, transport, err := DialObfuscatedDCWithPool(&mtCfg, cfg.Queue, dc, res.ProtoTag, nil)
 	if err != nil {
 		if shouldLogDialError(dc) {
 			log.Errorf("MTProto transparent dial DC %d: %v", dc, err)
