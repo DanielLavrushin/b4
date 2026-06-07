@@ -130,14 +130,22 @@ export const Blackhole = ({
         >
           <BlockSection
             label={t("dashboard.blackhole.topDomains")}
-            rows={topDomains}
+            rows={topDomains.map(([domain, count]) => ({
+              id: domain,
+              name: domain,
+              count,
+            }))}
             empty={t("dashboard.blackhole.none")}
           />
         </Grid>
         <Grid size={{ xs: 12, sm: 6 }}>
           <BlockSection
             label={t("dashboard.blackhole.topDevices")}
-            rows={topDevices.map(([mac, count]) => [getDeviceName(mac), count])}
+            rows={topDevices.map(([mac, count]) => ({
+              id: mac,
+              name: getDeviceName(mac),
+              count,
+            }))}
             empty={t("dashboard.blackhole.none")}
           />
         </Grid>
@@ -146,9 +154,15 @@ export const Blackhole = ({
   );
 };
 
+interface BlockRow {
+  id: string;
+  name: string;
+  count: number;
+}
+
 interface BlockSectionProps {
   label: string;
-  rows: [string, number][];
+  rows: BlockRow[];
   empty: string;
 }
 
@@ -177,9 +191,9 @@ const BlockSection = ({ label, rows, empty }: BlockSectionProps) => (
         {empty}
       </Box>
     ) : (
-      rows.map(([name, count]) => (
+      rows.map(({ id, name, count }) => (
         <Box
-          key={name}
+          key={id}
           sx={{
             display: "flex",
             alignItems: "center",
