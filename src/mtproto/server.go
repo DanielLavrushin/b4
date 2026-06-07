@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	maxConnections = 512
-	relayBufSize   = 65536
+	maxConnections      = 512
+	relayBufSize        = 65536
+	wsKeepaliveInterval = 30 * time.Second
 )
 
 type Server struct {
@@ -363,9 +364,48 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 	}
 	go cp(client, dc, "DC->client", &downBytes)
 
+	stopKA := startWSKeepalive(dc, label)
 	<-errCh
+	close(stopKA)
 	_ = client.Close()
 	_ = dc.Close()
 	<-errCh
 	log.Infof("%s closed: up=%d down=%d in %dms", label, upBytes.Load(), downBytes.Load(), time.Since(start).Milliseconds())
+}
+
+func asWSConn(c io.ReadWriteCloser) *wsConn {
+	switch v := c.(type) {
+	case *wsConn:
+		return v
+	case *ObfuscatedConn:
+		if w, ok := v.Conn.(*wsConn); ok {
+			return w
+		}
+	}
+	return nil
+}
+
+func startWSKeepalive(dc io.ReadWriteCloser, label string) chan struct{} {
+	stop := make(chan struct{})
+	ws := asWSConn(dc)
+	if ws == nil {
+		return stop
+	}
+	go func() {
+		t := time.NewTicker(wsKeepaliveInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+				if err := ws.sendPing(); err != nil {
+					log.Debugf("%s ws keepalive ping failed: %v -> closing upstream", label, err)
+					_ = dc.Close()
+					return
+				}
+			}
+		}
+	}()
+	return stop
 }

@@ -271,6 +271,13 @@ func (c *wsConn) writeFrame(op byte, payload []byte) error {
 	return err
 }
 
+func (c *wsConn) sendPing() error {
+	if c.closed.Load() {
+		return net.ErrClosed
+	}
+	return c.writeFrame(wsOpcodePing, nil)
+}
+
 func dialWS(host, sni, path string, timeout time.Duration, mark uint) (net.Conn, error) {
 	if path == "" {
 		path = "/apiws"
