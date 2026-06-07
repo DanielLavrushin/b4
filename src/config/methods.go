@@ -583,12 +583,18 @@ func (cfg *Config) CollectSetMSSClamps() []SetMSSClampEntry {
 
 func (dc *DevicesConfig) SelectedMACs() []string {
 	var macs []string
+	seen := make(map[string]struct{})
 	for _, d := range dc.Devices {
 		if d.Selected && !d.IsManual {
 			mac := strings.ToUpper(strings.TrimSpace(d.MAC))
-			if mac != "" {
-				macs = append(macs, mac)
+			if mac == "" {
+				continue
 			}
+			if _, ok := seen[mac]; ok {
+				continue
+			}
+			seen[mac] = struct{}{}
+			macs = append(macs, mac)
 		}
 	}
 	return macs
