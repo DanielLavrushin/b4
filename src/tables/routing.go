@@ -24,6 +24,7 @@ type routeState struct {
 	tproxyPort  int
 	upstreamKey string
 	sourcesKey  string
+	deviceKey   string
 	blockAction string
 	setV4       string
 	setV6       string
@@ -217,6 +218,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 	st := routeState{
 		mode:       mode,
 		sourcesKey: sourcesKey,
+		deviceKey:  routeSetDeviceGate(cfg, set).key(),
 		setV4:      setV4, setV6: setV6,
 		chainPre: chainPre, chainOut: chainOut, chainSNAT: chainSNAT,
 	}
@@ -246,7 +248,8 @@ func routeStateEqual(a, b routeState) bool {
 		a.tproxyPort == b.tproxyPort &&
 		a.upstreamKey == b.upstreamKey &&
 		a.blockAction == b.blockAction &&
-		a.sourcesKey == b.sourcesKey
+		a.sourcesKey == b.sourcesKey &&
+		a.deviceKey == b.deviceKey
 }
 
 func routeCleanupAny(be routeBackend, st routeState) {
@@ -738,10 +741,13 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 	be.flushChain(st.chainSNAT, false)
 
 	queueMark := routeQueueBypassMark(cfg)
+	gate := routeSetDeviceGate(cfg, set)
 	be.addBypassRule(st.chainPre, queueMark)
 	be.addBypassRule(st.chainOut, queueMark)
 	be.addBypassRule(st.chainPre, st.mark)
 	be.addBypassRule(st.chainOut, st.mark)
+
+	routeAddBlacklistGate(be, "mangle", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
 
 	if cfg.Queue.IPv4Enabled {
 		routeAddMarkRules(be, st.chainPre, false, st.setV4, st.mark, sources, true)
@@ -752,7 +758,7 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 		routeAddMarkRules(be, st.chainOut, true, st.setV6, st.mark, nil, true)
 	}
 
-	be.ensureJumpRule("PREROUTING", st.chainPre, true)
+	routeEnsureGatedPreJump(be, st.chainPre, gate)
 	be.ensureJumpRule("OUTPUT", st.chainOut, true)
 	be.ensureJumpRule("POSTROUTING", st.chainSNAT, false)
 

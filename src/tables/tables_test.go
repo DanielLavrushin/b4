@@ -1045,14 +1045,14 @@ type mockRouteBackend struct {
 	addElementsFn func(setName string, ips []string, ttlSec int)
 }
 
-func (m *mockRouteBackend) name() string                                          { return "mock" }
-func (m *mockRouteBackend) available() bool                                       { return true }
-func (m *mockRouteBackend) ensureBase() error                                     { return nil }
-func (m *mockRouteBackend) ensureIPSet(name string, v6 bool) error                { return nil }
-func (m *mockRouteBackend) ensureChain(chain string, isMangle bool) error         { return nil }
-func (m *mockRouteBackend) flushChain(chain string, isMangle bool)                {}
-func (m *mockRouteBackend) deleteChain(chain string, isMangle bool)               {}
-func (m *mockRouteBackend) addBypassRule(chain string, mark uint32)               {}
+func (m *mockRouteBackend) name() string                                  { return "mock" }
+func (m *mockRouteBackend) available() bool                               { return true }
+func (m *mockRouteBackend) ensureBase() error                             { return nil }
+func (m *mockRouteBackend) ensureIPSet(name string, v6 bool) error        { return nil }
+func (m *mockRouteBackend) ensureChain(chain string, isMangle bool) error { return nil }
+func (m *mockRouteBackend) flushChain(chain string, isMangle bool)        {}
+func (m *mockRouteBackend) deleteChain(chain string, isMangle bool)       {}
+func (m *mockRouteBackend) addBypassRule(chain string, mark uint32)       {}
 func (m *mockRouteBackend) addMarkRule(chain string, v6 bool, setName string, mark uint32, sourceIface string, tagHostConntrack bool) {
 }
 func (m *mockRouteBackend) ensureJumpRule(baseChain, targetChain string, isMangle bool)  {}
@@ -1095,4 +1095,158 @@ func TestMonitor_BackendPropagation(t *testing.T) {
 			t.Errorf("expected %s, got %s", backendIPTablesLegacy, monitor.backend)
 		}
 	})
+}
+
+func gateCfg(enabled, wisb bool, devices ...config.Device) *config.Config {
+	cfg := config.NewConfig()
+	cfg.Queue.Devices.Enabled = enabled
+	cfg.Queue.Devices.WhiteIsBlack = wisb
+	cfg.Queue.Devices.Devices = devices
+	return &cfg
+}
+
+func TestRouteDeviceGateFor(t *testing.T) {
+	wl := config.Device{MAC: "aa:bb:cc:dd:ee:ff", Selected: true}
+	manual := config.Device{MAC: "02:b4:ac:10:0c:03", Selected: true, IsManual: true}
+
+	t.Run("disabled is inactive", func(t *testing.T) {
+		g := routeDeviceGateFor(gateCfg(false, false, wl))
+		if g.enabled || g.isWhitelist() || g.isBlacklist() {
+			t.Errorf("expected inactive gate, got %+v", g)
+		}
+	})
+
+	t.Run("enabled but no selection is inactive", func(t *testing.T) {
+		g := routeDeviceGateFor(gateCfg(true, false))
+		if g.enabled {
+			t.Errorf("expected inactive gate with no selected devices, got %+v", g)
+		}
+	})
+
+	t.Run("whitelist normalizes and uppercases", func(t *testing.T) {
+		g := routeDeviceGateFor(gateCfg(true, false, wl))
+		if !g.isWhitelist() || g.isBlacklist() {
+			t.Fatalf("expected whitelist gate, got %+v", g)
+		}
+		if len(g.macs) != 1 || g.macs[0] != "AA:BB:CC:DD:EE:FF" {
+			t.Errorf("expected normalized MAC, got %v", g.macs)
+		}
+	})
+
+	t.Run("blacklist mode", func(t *testing.T) {
+		g := routeDeviceGateFor(gateCfg(true, true, wl))
+		if !g.isBlacklist() || g.isWhitelist() {
+			t.Errorf("expected blacklist gate, got %+v", g)
+		}
+	})
+
+	t.Run("manual devices excluded", func(t *testing.T) {
+		g := routeDeviceGateFor(gateCfg(true, false, manual))
+		if g.enabled {
+			t.Errorf("manual-only selection must not activate routing gate, got %+v", g)
+		}
+	})
+}
+
+func TestRouteDeviceGateKey(t *testing.T) {
+	a := config.Device{MAC: "aa:bb:cc:dd:ee:ff", Selected: true}
+	b := config.Device{MAC: "11:22:33:44:55:66", Selected: true}
+
+	if k := routeDeviceGateFor(gateCfg(false, false, a)).key(); k != "" {
+		t.Errorf("disabled gate must have empty key, got %q", k)
+	}
+
+	k1 := routeDeviceGateFor(gateCfg(true, false, a, b)).key()
+	k2 := routeDeviceGateFor(gateCfg(true, false, b, a)).key()
+	if k1 != k2 {
+		t.Errorf("key must be order-independent: %q vs %q", k1, k2)
+	}
+
+	if wlKey, blKey := routeDeviceGateFor(gateCfg(true, false, a)).key(), routeDeviceGateFor(gateCfg(true, true, a)).key(); wlKey == blKey {
+		t.Errorf("whitelist and blacklist keys must differ, both %q", wlKey)
+	}
+}
+
+func macSet(g routeDeviceGate) map[string]bool {
+	out := make(map[string]bool, len(g.macs))
+	for _, m := range g.macs {
+		out[m] = true
+	}
+	return out
+}
+
+func TestRouteSetDeviceGate(t *testing.T) {
+	const a, b, c = "AA:AA:AA:AA:AA:AA", "BB:BB:BB:BB:BB:BB", "CC:CC:CC:CC:CC:CC"
+	setWith := func(macs ...string) *config.SetConfig {
+		s := &config.SetConfig{Id: "s", Name: "S"}
+		s.Routing.Mode = config.RoutingModeMTProtoWS
+		s.Targets.SourceDevices = macs
+		return s
+	}
+
+	t.Run("no per-set falls back to global", func(t *testing.T) {
+		g := routeSetDeviceGate(gateCfg(true, false, config.Device{MAC: a, Selected: true}), setWith())
+		if !g.isWhitelist() || !macSet(g)[a] || len(g.macs) != 1 {
+			t.Errorf("expected global whitelist {a}, got %+v", g)
+		}
+	})
+
+	t.Run("per-set only when global disabled", func(t *testing.T) {
+		g := routeSetDeviceGate(gateCfg(false, false), setWith(a, b))
+		if !g.isWhitelist() || !macSet(g)[a] || !macSet(g)[b] || len(g.macs) != 2 {
+			t.Errorf("expected per-set whitelist {a,b}, got %+v", g)
+		}
+	})
+
+	t.Run("global whitelist intersects per-set", func(t *testing.T) {
+		cfg := gateCfg(true, false, config.Device{MAC: a, Selected: true}, config.Device{MAC: b, Selected: true})
+		g := routeSetDeviceGate(cfg, setWith(b, c))
+		if !g.isWhitelist() || len(g.macs) != 1 || !macSet(g)[b] {
+			t.Errorf("expected intersection {b}, got %+v", g)
+		}
+	})
+
+	t.Run("global blacklist subtracts from per-set", func(t *testing.T) {
+		cfg := gateCfg(true, true, config.Device{MAC: a, Selected: true})
+		g := routeSetDeviceGate(cfg, setWith(a, b))
+		if !g.isWhitelist() || len(g.macs) != 1 || !macSet(g)[b] {
+			t.Errorf("expected per-set minus blacklist {b}, got %+v", g)
+		}
+	})
+
+	t.Run("empty intersection denies all but stays active", func(t *testing.T) {
+		cfg := gateCfg(true, false, config.Device{MAC: a, Selected: true})
+		g := routeSetDeviceGate(cfg, setWith(b))
+		if !g.enabled || len(g.macs) != 0 {
+			t.Errorf("expected active deny-all gate, got %+v", g)
+		}
+		if g.key() == "" {
+			t.Error("deny-all gate must have a non-empty key distinct from disabled")
+		}
+	})
+}
+
+func TestBuildRouteStateDeviceKeyInvalidatesCache(t *testing.T) {
+	set := &config.SetConfig{Id: "tg", Name: "TG"}
+	set.Routing.Mode = config.RoutingModeMTProtoWS
+
+	dev := config.Device{MAC: "aa:bb:cc:dd:ee:ff", Selected: true}
+
+	base := buildRouteState(gateCfg(false, false), set)
+	whitelisted := buildRouteState(gateCfg(true, false, dev), set)
+
+	if base.deviceKey == whitelisted.deviceKey {
+		t.Fatalf("device key must change when whitelist is enabled: %q", base.deviceKey)
+	}
+	if routeStateEqual(base, whitelisted) {
+		t.Error("routeStateEqual must report difference so routing rules rebuild when devices change")
+	}
+
+	perSet := &config.SetConfig{Id: "tg", Name: "TG"}
+	perSet.Routing.Mode = config.RoutingModeMTProtoWS
+	perSet.Targets.SourceDevices = []string{"11:22:33:44:55:66"}
+	scoped := buildRouteState(gateCfg(false, false), perSet)
+	if base.deviceKey == scoped.deviceKey {
+		t.Errorf("per-set source devices must change device key: %q", scoped.deviceKey)
+	}
 }

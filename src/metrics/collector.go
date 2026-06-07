@@ -25,7 +25,6 @@ type MetricsCollector struct {
 	BlockedTotal        uint64            `json:"blocked_total"`
 	CurrentCPS          float64           `json:"current_cps"`
 	CurrentPPS          float64           `json:"current_pps"`
-	CurrentBPS          float64           `json:"current_bps"`
 	CPUUsage            float64           `json:"cpu_usage"`
 
 	ConnectionRate    []TimeSeriesPoint            `json:"connection_rate"`
@@ -47,7 +46,6 @@ type MetricsCollector struct {
 	mu              sync.RWMutex `json:"-"`
 	lastConnCount   uint64       `json:"-"`
 	lastPacketCount uint64       `json:"-"`
-	lastBlockCount  uint64       `json:"-"`
 }
 
 type TimeSeriesPoint struct {
@@ -150,11 +148,9 @@ func (m *MetricsCollector) updateRates() {
 
 	connDiff := m.TotalConnections - m.lastConnCount
 	packetDiff := m.PacketsProcessed - m.lastPacketCount
-	blockDiff := m.BlockedTotal - m.lastBlockCount
 
 	m.CurrentCPS = float64(connDiff) / duration
 	m.CurrentPPS = float64(packetDiff) / duration
-	m.CurrentBPS = float64(blockDiff) / duration
 
 	nowMs := now.UnixMilli()
 
@@ -177,7 +173,6 @@ func (m *MetricsCollector) updateRates() {
 	m.lastUpdate = now
 	m.lastConnCount = m.TotalConnections
 	m.lastPacketCount = m.PacketsProcessed
-	m.lastBlockCount = m.BlockedTotal
 
 	m.Uptime = formatDuration(now.Sub(m.StartTime))
 }
@@ -401,7 +396,6 @@ func (m *MetricsCollector) ResetStats() {
 	m.TotalEscalations = 0
 	m.CurrentCPS = 0
 	m.CurrentPPS = 0
-	m.CurrentBPS = 0
 
 	m.TopDomains = make(map[string]uint64)
 	m.ProtocolDist = make(map[string]uint64)
@@ -422,7 +416,6 @@ func (m *MetricsCollector) ResetStats() {
 	m.lastUpdate = now
 	m.lastConnCount = 0
 	m.lastPacketCount = 0
-	m.lastBlockCount = 0
 	m.Uptime = "0s"
 }
 
@@ -457,7 +450,6 @@ func (m *MetricsCollector) GetSnapshot() *MetricsCollector {
 		TablesStatus:        m.TablesStatus,
 		CurrentCPS:          m.CurrentCPS,
 		CurrentPPS:          m.CurrentPPS,
-		CurrentBPS:          m.CurrentBPS,
 	}
 
 	if len(m.ConnectionRate) > 0 {

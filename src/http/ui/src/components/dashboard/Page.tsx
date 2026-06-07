@@ -30,7 +30,6 @@ export interface Metrics {
   targeted_connections: number;
   rst_dropped: number;
   blocked_total: number;
-  current_bps: number;
   blocked_domains: Record<string, number>;
   blocked_devices: Record<string, number>;
   connection_rate: { timestamp: number; value: number }[];
@@ -109,7 +108,6 @@ const normalizeMetrics = (data: null | Metrics): Metrics => {
       targeted_connections: 0,
       rst_dropped: 0,
       blocked_total: 0,
-      current_bps: 0,
       blocked_domains: {},
       blocked_devices: {},
       connection_rate: [],
@@ -153,7 +151,6 @@ const normalizeMetrics = (data: null | Metrics): Metrics => {
     targeted_connections: safeNumber(data.targeted_connections),
     rst_dropped: safeNumber(data.rst_dropped),
     blocked_total: safeNumber(data.blocked_total),
-    current_bps: safeNumber(data.current_bps),
     blocked_domains:
       data.blocked_domains && typeof data.blocked_domains === "object"
         ? Object.fromEntries(
@@ -439,7 +436,6 @@ export function DashboardPage() {
         <Box sx={{ mb: 1.5 }}>
           <Blackhole
             total={metrics.blocked_total}
-            currentBps={metrics.current_bps}
             blockedDomains={metrics.blocked_domains}
             blockedDevices={metrics.blocked_devices}
           />

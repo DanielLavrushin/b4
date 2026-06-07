@@ -602,7 +602,6 @@
     "blackhole": {
       "title": "Blackhole",
       "blocked": "blocked",
-      "perSec": "blk/s",
       "topDomains": "Top Blocked",
       "topDevices": "Top Devices",
       "none": "no data yet"

@@ -25,6 +25,7 @@ func routeEnsureBlockRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		}
 	}
 
+	gate := routeSetDeviceGate(cfg, set)
 	switch be.name() {
 	case backendNFTables:
 		if err := ensureBlockBaseNft(); err != nil {
@@ -34,27 +35,29 @@ func routeEnsureBlockRule(be routeBackend, cfg *config.Config, set *config.SetCo
 			return err
 		}
 		be.flushChain(st.chainPre, true)
+		routeAddBlacklistGate(be, "filter", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
 		if cfg.Queue.IPv4Enabled {
 			addBlockRuleNft(st.chainPre, false, st.setV4, st.blockAction, sources)
 		}
 		if cfg.Queue.IPv6Enabled {
 			addBlockRuleNft(st.chainPre, true, st.setV6, st.blockAction, sources)
 		}
-		ensureBlockJumpNft(routeNftBlockFwd, st.chainPre)
-		ensureBlockJumpNft(routeNftBlockOut, st.chainPre)
+		ensureBlockJumpNft(routeNftBlockFwd, st.chainPre, gate)
+		ensureBlockJumpNft(routeNftBlockOut, st.chainPre, routeDeviceGate{})
 	default:
 		legacy := isLegacyIptBackend(be)
 		if err := ensureBlockChainIpt(st.chainPre, legacy); err != nil {
 			return err
 		}
+		routeAddBlacklistGate(be, "filter", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
 		if cfg.Queue.IPv4Enabled {
 			addBlockRuleIpt(false, st.chainPre, st.setV4, st.blockAction, sources, legacy)
 		}
 		if cfg.Queue.IPv6Enabled {
 			addBlockRuleIpt(true, st.chainPre, st.setV6, st.blockAction, sources, legacy)
 		}
-		ensureBlockJumpIpt("FORWARD", st.chainPre, legacy)
-		ensureBlockJumpIpt("OUTPUT", st.chainPre, legacy)
+		ensureBlockJumpIpt("FORWARD", st.chainPre, legacy, gate)
+		ensureBlockJumpIpt("OUTPUT", st.chainPre, legacy, routeDeviceGate{})
 	}
 	return nil
 }
@@ -128,23 +131,13 @@ func addBlockRuleNft(chain string, v6 bool, setName, action string, sources []st
 	}
 }
 
-func ensureBlockJumpNft(base, target string) {
+func ensureBlockJumpNft(base, target string, gate routeDeviceGate) {
 	deleteNftJumpRules(routeNftTable, base, target)
-	runLogged("routing: add block jump "+base+"->"+target,
-		"nft", "add", "rule", "inet", routeNftTable, base, "jump", target)
+	nftEmitGatedJump(base, target, false, gate)
 }
 
 func iptBlockCmd(v6, legacy bool) string {
-	if legacy {
-		if v6 {
-			return backendIP6TablesLegacy
-		}
-		return backendIPTablesLegacy
-	}
-	if v6 {
-		return backendIP6Tables
-	}
-	return backendIPTables
+	return iptCmdFor(v6, legacy)
 }
 
 func ensureBlockChainIpt(chain string, legacy bool) error {
@@ -220,19 +213,14 @@ func addBlockRuleIpt(v6 bool, chain, setName, action string, sources []string, l
 	}
 }
 
-func ensureBlockJumpIpt(parent, chain string, legacy bool) {
+func ensureBlockJumpIpt(parent, chain string, legacy bool, gate routeDeviceGate) {
 	for _, v6 := range []bool{false, true} {
 		cmd := iptBlockCmd(v6, legacy)
 		if !hasBinary(cmd) {
 			continue
 		}
-		for i := 0; i < 100; i++ {
-			if _, err := run(cmd, "-w", "-t", "filter", "-D", parent, "-j", chain); err != nil {
-				break
-			}
-		}
-		runLogged("routing: add block jump "+parent+"->"+chain,
-			cmd, "-w", "-t", "filter", "-A", parent, "-j", chain)
+		iptDeleteJumpsTo(cmd, "filter", parent, chain)
+		iptEmitGatedJump(cmd, "filter", parent, chain, false, gate)
 	}
 }
 
@@ -242,10 +230,6 @@ func deleteBlockJumpIpt(parent, chain string, legacy bool) {
 		if !hasBinary(cmd) {
 			continue
 		}
-		for i := 0; i < 100; i++ {
-			if _, err := run(cmd, "-w", "-t", "filter", "-D", parent, "-j", chain); err != nil {
-				break
-			}
-		}
+		iptDeleteJumpsTo(cmd, "filter", parent, chain)
 	}
 }

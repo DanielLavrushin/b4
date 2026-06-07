@@ -16,14 +16,12 @@ interface DeviceInfo {
 
 interface BlackholeProps {
   total: number;
-  currentBps: number;
   blockedDomains: Record<string, number>;
   blockedDevices: Record<string, number>;
 }
 
 export const Blackhole = ({
   total,
-  currentBps,
   blockedDomains,
   blockedDevices,
 }: BlackholeProps) => {
@@ -120,8 +118,7 @@ export const Blackhole = ({
               color: colors.text.secondary,
             }}
           >
-            {t("dashboard.blackhole.blocked")} · {currentBps.toFixed(1)}{" "}
-            {t("dashboard.blackhole.perSec")}
+            {t("dashboard.blackhole.blocked")}
           </Box>
         </Box>
       </Box>

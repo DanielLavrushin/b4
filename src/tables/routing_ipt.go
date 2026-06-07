@@ -171,12 +171,7 @@ func (b *routeIptBackend) deleteJumpRules(baseChain, targetChain string, isMangl
 		if !hasBinary(cmd) {
 			continue
 		}
-		for i := 0; i < 100; i++ {
-			_, err := run(cmd, "-w", "-t", table, "-D", baseChain, "-j", targetChain)
-			if err != nil {
-				break
-			}
-		}
+		iptDeleteJumpsTo(cmd, table, baseChain, targetChain)
 	}
 }
 

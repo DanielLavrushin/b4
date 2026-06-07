@@ -116,7 +116,9 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	be.flushChain(st.chainPre, true)
 
 	queueMark := routeQueueBypassMark(cfg)
+	gate := routeSetDeviceGate(cfg, set)
 	be.addBypassRule(st.chainPre, queueMark)
+	routeAddBlacklistGate(be, "mangle", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
 
 	port, _ := portFromState(st)
 	legacy := isLegacyIptBackend(be)
@@ -165,7 +167,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		insertProxyOutputJump(be, st.chainOut)
 	}
 
-	insertProxyJumpAtTop(be, st.chainPre)
+	insertProxyJumpAtTop(be, st.chainPre, gate)
 	addProxyInputAccept(be, st.mark)
 
 	routeEnsureLocalDelivery(st.mark, st.table, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
@@ -264,23 +266,18 @@ func deleteNftJumpRules(table, parentChain, targetChain string) {
 	}
 }
 
-func insertProxyJumpAtTop(be routeBackend, chain string) {
+func insertProxyJumpAtTop(be routeBackend, chain string, gate routeDeviceGate) {
 	if be.name() == backendNFTables {
 		deleteNftJumpRules(routeNftTable, routeNftPrerouting, chain)
-		runLogged("routing: insert prerouting jump (proxy)", "nft", "insert", "rule", "inet", routeNftTable, routeNftPrerouting, "jump", chain)
+		nftEmitGatedJump(routeNftPrerouting, chain, true, gate)
 		return
 	}
 	for _, fam := range []string{backendIPTables, backendIP6Tables, backendIPTablesLegacy, backendIP6TablesLegacy} {
 		if !hasBinary(fam) {
 			continue
 		}
-		for i := 0; i < 100; i++ {
-			if _, err := run(fam, "-w", "-t", "mangle", "-D", "PREROUTING", "-j", chain); err != nil {
-				break
-			}
-		}
-		runLogged("routing: insert prerouting jump (proxy) "+fam,
-			fam, "-w", "-t", "mangle", "-I", "PREROUTING", "1", "-j", chain)
+		iptDeleteJumpsTo(fam, "mangle", "PREROUTING", chain)
+		iptEmitGatedJump(fam, "mangle", "PREROUTING", chain, true, gate)
 	}
 }
 
