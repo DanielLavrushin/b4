@@ -52,6 +52,19 @@ const upstreamDescSuffix = (mode: string) => {
   return "Auto";
 };
 
+const normalizeWorkerDomains = (raw: string) =>
+  raw
+    .split(",")
+    .map((d) =>
+      d
+        .trim()
+        .replace(/^[a-z][a-z0-9+.-]*:\/\//i, "")
+        .replace(/[/?#].*$/, "")
+        .trim(),
+    )
+    .filter(Boolean)
+    .join(", ");
+
 interface MTProtoSettingsProps {
   config: B4Config;
   onChange: (field: string, value: SettingsPropHandlerType) => void;
@@ -392,6 +405,12 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
               onChange={(e) =>
                 onChange("system.mtproto.cfworker_domain", e.target.value)
               }
+              onBlur={(e) => {
+                const cleaned = normalizeWorkerDomains(e.target.value);
+                if (cleaned !== e.target.value) {
+                  onChange("system.mtproto.cfworker_domain", cleaned);
+                }
+              }}
               placeholder="my-worker-1234.username.workers.dev"
               helperText={t("settings.MTProto.cfWorkerDomainHelp")}
               selectOnFocus

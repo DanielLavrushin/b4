@@ -36,6 +36,17 @@ func wsEdgeServesDC(absDC int) bool {
 	return wsEdgeServedDCs[absDC]
 }
 
+func normalizeWorkerDomain(d string) string {
+	d = strings.TrimSpace(d)
+	if i := strings.Index(d, "://"); i >= 0 {
+		d = d[i+3:]
+	}
+	if i := strings.IndexAny(d, "/?#"); i >= 0 {
+		d = d[:i]
+	}
+	return strings.TrimSpace(d)
+}
+
 func workerDomains(cfg *config.MTProtoConfig) []string {
 	raw := strings.TrimSpace(cfg.CFWorkerDomain)
 	if raw == "" {
@@ -43,7 +54,7 @@ func workerDomains(cfg *config.MTProtoConfig) []string {
 	}
 	var out []string
 	for _, d := range strings.Split(raw, ",") {
-		if d = strings.TrimSpace(d); d != "" {
+		if d = normalizeWorkerDomain(d); d != "" {
 			out = append(out, d)
 		}
 	}
