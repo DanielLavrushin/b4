@@ -135,7 +135,7 @@ func iptDeleteJumpsTo(cmd, table, parent, target string) {
 		}
 		args := strings.Fields(line)
 		args[0] = "-D"
-		runLogged("routing: delete device-gated jump "+parent+"->"+target,
+		runLogged("routing: delete jump "+parent+"->"+target,
 			append([]string{cmd, "-w", "-t", table}, args...)...)
 	}
 }
@@ -151,7 +151,7 @@ func iptEmitGatedJump(cmd, table, parent, target string, insertTop bool, gate ro
 		args := append([]string{cmd, "-w", "-t", table, op, parent}, pos...)
 		args = append(args, macMatch...)
 		args = append(args, "-j", target)
-		runLogged("routing: device-gated jump "+parent+"->"+target, args...)
+		runLogged("routing: add jump "+parent+"->"+target, args...)
 	}
 	if gate.isWhitelist() {
 		for _, mac := range gate.macs {
@@ -171,7 +171,7 @@ func nftEmitGatedJump(parent, target string, insertTop bool, gate routeDeviceGat
 		args := []string{"nft", op, "rule", "inet", routeNftTable, parent}
 		args = append(args, macMatch...)
 		args = append(args, "jump", target)
-		runLogged("routing: device-gated jump "+parent+"->"+target, args...)
+		runLogged("routing: add jump "+parent+"->"+target, args...)
 	}
 	if gate.isWhitelist() {
 		for _, mac := range gate.macs {

@@ -19,6 +19,7 @@ let snapshotInterval = 500;
 const groups = new Map<string, ConnectionGroup>();
 const devices = new Map<string, DeviceSummary>();
 let ipToMac: Record<string, string> = {};
+const learnedIpToMac = new Map<string, string>();
 let totalPackets = 0;
 let unmatchedCount = 0;
 let latestTs = 0;
