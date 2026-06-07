@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Fab, Tooltip } from "@mui/material";
 import { StartIcon, StopIcon } from "@b4.icons";
 import { colors } from "@design";
@@ -97,12 +97,28 @@ export const AggregatedView = ({
 
   const state = useConnectionGroups(lines, deviceMap, paused, ipToMac);
 
-  const now = useMemo(() => {
+  const dataLatest = useMemo(() => {
     let latest = 0;
     for (const g of state.groups) if (g.lastSeen > latest) latest = g.lastSeen;
     for (const d of state.devices) if (d.lastSeen > latest) latest = d.lastSeen;
     return latest;
   }, [state.groups, state.devices]);
+
+  const anchorRef = useRef({ data: 0, wall: 0 });
+  if (anchorRef.current.data !== dataLatest) {
+    anchorRef.current = { data: dataLatest, wall: Date.now() };
+  }
+
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    const update = () => {
+      const a = anchorRef.current;
+      setNow(a.data === 0 ? 0 : a.data + (Date.now() - a.wall));
+    };
+    update();
+    const id = globalThis.setInterval(update, 1000);
+    return () => globalThis.clearInterval(id);
+  }, []);
 
   const filteredGroups = useMemo(() => {
     const cutoff = window === 0 || now === 0 ? 0 : now - window * 1000;
