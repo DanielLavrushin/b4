@@ -158,7 +158,7 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 	}
 	defer dcConn.Close()
 
-	label := fmt.Sprintf("%s %s<->DC%d(transparent)", tag, client.RemoteAddr(), dc)
+	label := fmt.Sprintf("%s %s<->DC%d(transparent via %s)", tag, client.RemoteAddr(), dc, transport)
 	log.Infof("%s bridge relay %s:%d -> DC%d via %s [dc-from=%s]", tag, origIP, origPort, dc, transport, dcSrc)
 
 	var splitter *msgSplitter
