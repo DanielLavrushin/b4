@@ -321,60 +321,71 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
           <B4FormGroup
             label={t("settings.MTProto.upstreamTitle")}
             description={t("settings.MTProto.upstreamDesc")}
-            columns={2}
+            columns={1}
           >
-            <B4Select
-              label={t("settings.MTProto.upstreamMode")}
-              value={mode}
-              onChange={(e) =>
-                onChange("system.mtproto.upstream_mode", String(e.target.value))
-              }
-              options={[
-                { value: "tcp", label: t("settings.MTProto.upstreamTcp") },
-                { value: "auto", label: t("settings.MTProto.upstreamAuto") },
-                { value: "ws", label: t("settings.MTProto.upstreamWs") },
-              ]}
-              helperText={`${
-                mode === "auto" && dcRelay
-                  ? t("settings.MTProto.upstreamAutoRelayDesc")
-                  : t(
-                      `settings.MTProto.upstream${upstreamDescSuffix(mode)}Desc`,
-                    )
-              } ${t("settings.MTProto.upstreamBridgeNote")}`}
-            />
-            {showDcRelay && (
-              <B4TextField
-                label={t("settings.MTProto.dcRelay")}
-                value={config.system.mtproto?.dc_relay || ""}
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+                gap: 2,
+              }}
+            >
+              <B4Select
+                label={t("settings.MTProto.upstreamMode")}
+                value={mode}
                 onChange={(e) =>
-                  onChange("system.mtproto.dc_relay", e.target.value)
+                  onChange(
+                    "system.mtproto.upstream_mode",
+                    String(e.target.value),
+                  )
                 }
-                placeholder="vps-ip:7007"
-                helperText={t("settings.MTProto.dcRelayHelp")}
-                selectOnFocus
-                slotProps={{
-                  input: {
-                    endAdornment: (
-                      <InputAdornment position="end" sx={{ mr: -0.5 }}>
-                        <Tooltip
-                          title={t("settings.MTProto.dcRelayHelpButton")}
-                        >
-                          <span style={{ display: "inline-flex" }}>
-                            <IconButton
-                              size="small"
-                              onClick={openRelayHelp}
-                              sx={{ px: 0 }}
-                            >
-                              <HelpOutlineIcon fontSize="small" />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                      </InputAdornment>
-                    ),
-                  },
-                }}
+                options={[
+                  { value: "tcp", label: t("settings.MTProto.upstreamTcp") },
+                  { value: "auto", label: t("settings.MTProto.upstreamAuto") },
+                  { value: "ws", label: t("settings.MTProto.upstreamWs") },
+                ]}
+                helperText={`${
+                  mode === "auto" && dcRelay
+                    ? t("settings.MTProto.upstreamAutoRelayDesc")
+                    : t(
+                        `settings.MTProto.upstream${upstreamDescSuffix(mode)}Desc`,
+                      )
+                } ${t("settings.MTProto.upstreamBridgeNote")}`}
               />
-            )}
+              {showDcRelay && (
+                <B4TextField
+                  label={t("settings.MTProto.dcRelay")}
+                  value={config.system.mtproto?.dc_relay || ""}
+                  onChange={(e) =>
+                    onChange("system.mtproto.dc_relay", e.target.value)
+                  }
+                  placeholder="vps-ip:7007"
+                  helperText={t("settings.MTProto.dcRelayHelp")}
+                  selectOnFocus
+                  slotProps={{
+                    input: {
+                      endAdornment: (
+                        <InputAdornment position="end" sx={{ mr: -0.5 }}>
+                          <Tooltip
+                            title={t("settings.MTProto.dcRelayHelpButton")}
+                          >
+                            <span style={{ display: "inline-flex" }}>
+                              <IconButton
+                                size="small"
+                                onClick={openRelayHelp}
+                                sx={{ px: 0 }}
+                              >
+                                <HelpOutlineIcon fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        </InputAdornment>
+                      ),
+                    },
+                  }}
+                />
+              )}
+            </Box>
             <B4TextField
               label={t("settings.MTProto.cfWorkerDomain")}
               value={config.system.mtproto?.cfworker_domain || ""}
@@ -407,46 +418,50 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
                 },
               }}
             />
-            <B4Switch
-              label={t("settings.MTProto.cfProxyEnabled")}
-              checked={config.system.mtproto?.cfproxy_enabled ?? true}
-              onChange={(checked: boolean) =>
-                onChange("system.mtproto.cfproxy_enabled", checked)
-              }
-              description={t("settings.MTProto.cfProxyEnabledHelp")}
-            />
-            {config.system.mtproto?.cfproxy_enabled !== false && (
-              <B4TextField
-                label={t("settings.MTProto.cfProxyURL")}
-                value={config.system.mtproto?.cfproxy_url || ""}
-                onChange={(e) =>
-                  onChange("system.mtproto.cfproxy_url", e.target.value)
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+              <B4Switch
+                label={t("settings.MTProto.cfProxyEnabled")}
+                checked={config.system.mtproto?.cfproxy_enabled ?? true}
+                onChange={(checked: boolean) =>
+                  onChange("system.mtproto.cfproxy_enabled", checked)
                 }
-                placeholder="https://raw.githubusercontent.com/Flowseal/tg-ws-proxy/main/.github/cfproxy-domains.txt"
-                helperText={t("settings.MTProto.cfProxyURLHelp")}
-                selectOnFocus
+                description={t("settings.MTProto.cfProxyEnabledHelp")}
               />
-            )}
-            <B4Switch
-              label={t("settings.MTProto.dcFallbackEnabled")}
-              checked={config.system.mtproto?.dc_fallback_enabled ?? true}
-              onChange={(checked: boolean) =>
-                onChange("system.mtproto.dc_fallback_enabled", checked)
-              }
-              description={t("settings.MTProto.dcFallbackEnabledHelp")}
-            />
-            {config.system.mtproto?.dc_fallback_enabled !== false && (
-              <B4TextField
-                label={t("settings.MTProto.dcFallbackURL")}
-                value={config.system.mtproto?.dc_fallback_url || ""}
-                onChange={(e) =>
-                  onChange("system.mtproto.dc_fallback_url", e.target.value)
+              {config.system.mtproto?.cfproxy_enabled !== false && (
+                <B4TextField
+                  label={t("settings.MTProto.cfProxyURL")}
+                  value={config.system.mtproto?.cfproxy_url || ""}
+                  onChange={(e) =>
+                    onChange("system.mtproto.cfproxy_url", e.target.value)
+                  }
+                  placeholder="https://raw.githubusercontent.com/Flowseal/tg-ws-proxy/main/.github/cfproxy-domains.txt"
+                  helperText={t("settings.MTProto.cfProxyURLHelp")}
+                  selectOnFocus
+                />
+              )}
+            </Box>
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+              <B4Switch
+                label={t("settings.MTProto.dcFallbackEnabled")}
+                checked={config.system.mtproto?.dc_fallback_enabled ?? true}
+                onChange={(checked: boolean) =>
+                  onChange("system.mtproto.dc_fallback_enabled", checked)
                 }
-                placeholder="https://proxy.lavrush.in/telegram/getProxyConfig"
-                helperText={t("settings.MTProto.dcFallbackURLHelp")}
-                selectOnFocus
+                description={t("settings.MTProto.dcFallbackEnabledHelp")}
               />
-            )}
+              {config.system.mtproto?.dc_fallback_enabled !== false && (
+                <B4TextField
+                  label={t("settings.MTProto.dcFallbackURL")}
+                  value={config.system.mtproto?.dc_fallback_url || ""}
+                  onChange={(e) =>
+                    onChange("system.mtproto.dc_fallback_url", e.target.value)
+                  }
+                  placeholder="https://proxy.lavrush.in/telegram/getProxyConfig"
+                  helperText={t("settings.MTProto.dcFallbackURLHelp")}
+                  selectOnFocus
+                />
+              )}
+            </Box>
             <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
               <Stack direction="row" spacing={1}>
                 <Button
