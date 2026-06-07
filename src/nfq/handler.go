@@ -445,6 +445,11 @@ func (w *Worker) handleTCPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 			}
 			if !cfg.Queue.IsDiscovery {
 				log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), "block")
+				blockedTarget := host
+				if blockedTarget == "" {
+					blockedTarget = pkt.dstStr
+				}
+				metrics.GetMetricsCollector().RecordBlock(blockedTarget, pkt.srcMac)
 			}
 			if err := q.SetVerdict(id, nfqueue.NfDrop); err != nil {
 				log.Tracef("failed to set drop verdict on packet %d: %v", id, err)
@@ -726,6 +731,11 @@ func (w *Worker) handleUDPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 			}
 			if !cfg.Queue.IsDiscovery {
 				log.LogConnection("UDP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, udpTLS, "block")
+				blockedTarget := host
+				if blockedTarget == "" {
+					blockedTarget = pkt.dstStr
+				}
+				metrics.GetMetricsCollector().RecordBlock(blockedTarget, pkt.srcMac)
 			}
 			if err := q.SetVerdict(id, nfqueue.NfDrop); err != nil {
 				log.Tracef("failed to set drop verdict on packet %d: %v", id, err)

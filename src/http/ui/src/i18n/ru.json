@@ -595,6 +595,14 @@
       "rstDropped": "RST отклонено",
       "idle": "не активно"
     },
+    "blackhole": {
+      "title": "Блокировка",
+      "blocked": "заблокировано",
+      "perSec": "бл/с",
+      "topDomains": "Заблокированные",
+      "topDevices": "Устройства",
+      "none": "пока нет данных"
+    },
     "health": {
       "running": "Работает",
       "degraded": "Нестабильно",
@@ -1643,6 +1651,7 @@
       "devices": "Устройства",
       "allDevices": "Все устройства",
       "unknownDevice": "Неизвестно",
+      "router": "Роутер",
       "groupsCount": "{{count}} групп",
       "packetsCount": "{{count}} пакетов",
       "unmatchedCount": "{{count}} без правила",

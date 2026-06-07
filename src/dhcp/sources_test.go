@@ -5,6 +5,61 @@ import (
 	"testing"
 )
 
+func TestParseARPExcludesLocalInterfaces(t *testing.T) {
+	content := `IP address       HW type     Flags       HW address            Mask     Device
+192.168.31.1     0x1         0x2         a4:ba:70:a9:4c:b3     *        eth0
+192.168.31.1     0x1         0x2         a4:ba:70:a9:4c:b3     *        wlan0
+192.168.31.26    0x1         0x2         30:bb:7d:e0:92:bb     *        br-lan
+192.168.31.99    0x1         0x2         a4:ba:70:a9:4c:b3     *        br-lan
+192.168.31.50    0x1         0x2         de:ad:be:ef:00:01     *        br-lan
+`
+	f, err := os.CreateTemp("", "arp-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+	f.WriteString(content)
+	f.Close()
+
+	orig := localAddrs
+	localAddrs = func() (map[string]struct{}, map[string]struct{}) {
+		return map[string]struct{}{"A4:BA:70:A9:4C:B3": {}},
+			map[string]struct{}{"192.168.31.50": {}}
+	}
+	defer func() { localAddrs = orig }()
+
+	entries, err := parseARPFile(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry after excluding local interfaces, got %d: %+v", len(entries), entries)
+	}
+	if entries[0].IP != "192.168.31.26" || entries[0].MAC != "30:BB:7D:E0:92:BB" {
+		t.Errorf("unexpected entry: %+v", entries[0])
+	}
+}
+
+func TestLocalRouterIPsKeepsPrivateOnly(t *testing.T) {
+	orig := localAddrs
+	localAddrs = func() (map[string]struct{}, map[string]struct{}) {
+		return map[string]struct{}{},
+			map[string]struct{}{
+				"192.168.31.1": {},
+				"127.0.0.1":    {},
+				"8.8.8.8":      {},
+				"::1":          {},
+			}
+	}
+	defer func() { localAddrs = orig }()
+
+	got := LocalRouterIPs()
+	if len(got) != 1 || got[0] != "192.168.31.1" {
+		t.Fatalf("expected only the private LAN IP, got %v", got)
+	}
+}
+
 func TestParseDnsmasqHostnames(t *testing.T) {
 	content := `1712345678 aa:bb:cc:dd:ee:ff 192.168.1.10 my-phone 01:aa:bb:cc:dd:ee:ff
 1712345679 11:22:33:44:55:66 192.168.1.20 * 01:11:22:33:44:55:66

@@ -7,6 +7,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/sock"
 	"github.com/florianl/go-nfqueue"
 )
@@ -67,6 +68,7 @@ func (w *Worker) processDnsPacket(ipVersion byte, sport uint16, dport uint16, pa
 
 				if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) && !cfg.Queue.IsDiscovery {
 					if config.NormalizeBlockAction(set.Routing.BlockAction) == config.BlockActionDrop {
+						metrics.GetMetricsCollector().RecordBlock(domain, srcMac)
 						if err := w.q.SetVerdict(id, nfqueue.NfDrop); err != nil {
 							log.Tracef("failed to set drop verdict on packet %d: %v", id, err)
 						}
@@ -92,6 +94,7 @@ func (w *Worker) processDnsPacket(ipVersion byte, sport uint16, dport uint16, pa
 								_ = w.sock.SendIPv6(pkt, clientIP)
 							}
 							log.Tracef("DNS sinkhole: %s -> NXDOMAIN for %s (set: %s)", domain, clientIP, set.Name)
+							metrics.GetMetricsCollector().RecordBlock(domain, srcMac)
 							if err := w.q.SetVerdict(id, nfqueue.NfDrop); err != nil {
 								log.Tracef("failed to set drop verdict on packet %d: %v", id, err)
 							}

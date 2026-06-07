@@ -2,6 +2,8 @@
 
 ## [1.65.1] - 2026-06-07
 
+- ADDED: **Blocking stats on the Dashboard** - when a set uses Block (blackhole) mode and actually blocks something, the Dashboard now shows a "Blackhole" panel with the total number of blocked attempts, the current rate per second, the most-blocked domains, and which devices ran into the most blocks. The panel stays hidden until there is something to show, so it never clutters the page when nothing is being blocked.
+- FIXED: **The router itself showed up as a wrongly-named device on the Traffic page** - b4 mistook the router's own address for a regular client and listed it as a separate device (sometimes guessed as a phone brand), filing the router's own connections under it. b4 now recognizes its own interfaces and labels that traffic simply as "Router".
 - FIXED: **Discord voice and video calls could drop when blocking UDP** - on a set with UDP set to Drop or Reject, Discord calls could break because b4 did not recognize Discord's call traffic. b4 now lets it through (when "Filter STUN" is on, the default), so calls keep working.
 - FIXED: **b4 would not start on some Asus Merlin routers** - on certain firmware (for example the MerlinWRT) b4 quit right after starting and showed a confusing message about a missing `xt_connbytes` feature, even though the router actually supported it. The real cause was b4 using a newer firewall command option that the router's built-in tool did not understand. b4 now adapts to the router's own tools automatically, so it starts normally with nothing extra to install.
 

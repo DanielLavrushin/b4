@@ -237,6 +237,10 @@ func (m *Manager) SourceInfo() (name, path string) {
 	return "", ""
 }
 
+func (m *Manager) RouterIPs() []string {
+	return LocalRouterIPs()
+}
+
 func (m *Manager) GetHostnameForMAC(mac string) string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

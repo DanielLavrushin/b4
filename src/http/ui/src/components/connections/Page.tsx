@@ -139,6 +139,9 @@ export function ConnectionsPage() {
           map[normalized] = d.alias || d.vendor || "";
           if (d.ip) ipMap[d.ip] = normalized;
         }
+        for (const ip of data.router_ips || []) {
+          map[ip] = t("connections.aggregated.router");
+        }
         for (const [mac, name] of Object.entries(configDeviceNames)) {
           map[mac] = name;
         }
@@ -149,7 +152,7 @@ export function ConnectionsPage() {
         setIpToMac(ipMap);
       })
       .catch(() => {});
-  }, [devicesEnabled, configDeviceNames, configIpToMac]);
+  }, [devicesEnabled, configDeviceNames, configIpToMac, t]);
 
   const fetchSets = useCallback(async (signal?: AbortSignal) => {
     try {

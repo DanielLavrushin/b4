@@ -599,6 +599,14 @@
       "rstDropped": "RST Dropped",
       "idle": "idle"
     },
+    "blackhole": {
+      "title": "Blackhole",
+      "blocked": "blocked",
+      "perSec": "blk/s",
+      "topDomains": "Top Blocked",
+      "topDevices": "Top Devices",
+      "none": "no data yet"
+    },
     "health": {
       "running": "Running",
       "degraded": "Degraded",
@@ -1645,6 +1653,7 @@
       "devices": "Devices",
       "allDevices": "All devices",
       "unknownDevice": "Unknown",
+      "router": "Router",
       "groupsCount": "{{count}} groups",
       "packetsCount": "{{count}} packets",
       "unmatchedCount": "{{count}} unmatched",

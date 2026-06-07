@@ -86,6 +86,7 @@ func (a *API) getMetricsSummary(w http.ResponseWriter, r *http.Request) {
 		"current_cps":       m.CurrentCPS,
 		"current_pps":       m.CurrentPPS,
 		"rst_dropped":       m.RSTDropped,
+		"blocked_total":     m.BlockedTotal,
 		"uptime":            m.Uptime,
 		"memory_percent":    m.MemoryUsage.Percent,
 	}

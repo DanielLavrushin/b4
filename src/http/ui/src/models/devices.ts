@@ -14,6 +14,7 @@ export interface DevicesResponse {
   available: boolean;
   source?: string;
   devices: DeviceInfo[];
+  router_ips?: string[];
 }
 
 export interface DevicesSettingsProps {

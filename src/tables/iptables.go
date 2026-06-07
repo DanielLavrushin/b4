@@ -41,22 +41,19 @@ func (im *IPTablesManager) ip6tablesBin() string {
 }
 
 func (im *IPTablesManager) checkConnbytesSupport(ipt string) error {
-	if result, ok := im.connbytesSupport[ipt]; ok {
-		if result {
-			return nil
-		}
-		return fmt.Errorf("xt_connbytes kernel module is not available for %s — install it with: modprobe xt_connbytes (or apt install xtables-addons-common / linux-modules-extra-$(uname -r))", ipt)
+	if im.connbytesSupport[ipt] {
+		return nil
 	}
 
 	supported, probeErr := im.probeModuleInTempChain(ipt, []string{"-p", "tcp", "-m", "connbytes", "--connbytes-dir", "original",
 		"--connbytes-mode", "packets", "--connbytes", "0:10", "-j", "ACCEPT"})
-	im.connbytesSupport[ipt] = supported
 	if supported {
+		im.connbytesSupport[ipt] = true
 		log.Tracef("IPTABLES[%s]: connbytes module is available", ipt)
 		return nil
 	}
 
-	return fmt.Errorf("xt_connbytes kernel module is not available for %s (%v) — install it with: modprobe xt_connbytes (or apt install xtables-addons-common / linux-modules-extra-$(uname -r))", ipt, probeErr)
+	return fmt.Errorf("xt_connbytes kernel module is not available for %s (%v) - install it with: modprobe xt_connbytes (or apt install xtables-addons-common / linux-modules-extra-$(uname -r))", ipt, probeErr)
 }
 
 // hasMultiportSupport checks if iptables multiport module is available

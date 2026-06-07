@@ -45,6 +45,7 @@ type DevicesResponse struct {
 	Available bool         `json:"available"`
 	Source    string       `json:"source,omitempty"`
 	Devices   []DeviceInfo `json:"devices"`
+	RouterIPs []string     `json:"router_ips,omitempty"`
 }
 
 var (
@@ -334,6 +335,7 @@ func (api *API) handleDevices(w http.ResponseWriter, r *http.Request) {
 		Available: true,
 		Source:    sourceName,
 		Devices:   devices,
+		RouterIPs: globalPool.Dhcp.RouterIPs(),
 	})
 }
 

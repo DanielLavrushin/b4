@@ -12,6 +12,8 @@ type MetricsCollector struct {
 	TopDomains          map[string]uint64 `json:"top_domains"`
 	ProtocolDist        map[string]uint64 `json:"protocol_dist"`
 	GeoDist             map[string]uint64 `json:"geo_dist"`
+	BlockedDomains      map[string]uint64 `json:"blocked_domains"`
+	BlockedDevices      map[string]uint64 `json:"blocked_devices"`
 	TotalConnections    uint64            `json:"total_connections"`
 	ActiveFlows         uint64            `json:"active_flows"`
 	PacketsProcessed    uint64            `json:"packets_processed"`
@@ -20,29 +22,32 @@ type MetricsCollector struct {
 	UDPConnections      uint64            `json:"udp_connections"`
 	TargetedConnections uint64            `json:"targeted_connections"`
 	RSTDropped          uint64            `json:"rst_dropped"`
+	BlockedTotal        uint64            `json:"blocked_total"`
 	CurrentCPS          float64           `json:"current_cps"`
 	CurrentPPS          float64           `json:"current_pps"`
+	CurrentBPS          float64           `json:"current_bps"`
 	CPUUsage            float64           `json:"cpu_usage"`
 
-	ConnectionRate    []TimeSeriesPoint `json:"connection_rate"`
-	PacketRate        []TimeSeriesPoint `json:"packet_rate"`
-	StartTime         time.Time         `json:"start_time"`
-	Uptime            string            `json:"uptime"`
-	MemoryUsage       MemoryStats       `json:"memory_usage"`
-	WorkerStatus      []WorkerHealth    `json:"worker_status"`
-	NFQueueStatus     string            `json:"nfqueue_status"`
-	TablesStatus      string            `json:"tables_status"`
-	RecentConnections []ConnectionLog                    `json:"recent_connections"`
-	RecentEvents      []SystemEvent                      `json:"recent_events"`
-	DeviceDomains     map[string]map[string]uint64       `json:"device_domains"`
-	DomainTLS         map[string]string                  `json:"domain_tls"`
-	Escalations       []EscalationEntry                  `json:"escalations"`
-	TotalEscalations  uint64                             `json:"total_escalations"`
+	ConnectionRate    []TimeSeriesPoint            `json:"connection_rate"`
+	PacketRate        []TimeSeriesPoint            `json:"packet_rate"`
+	StartTime         time.Time                    `json:"start_time"`
+	Uptime            string                       `json:"uptime"`
+	MemoryUsage       MemoryStats                  `json:"memory_usage"`
+	WorkerStatus      []WorkerHealth               `json:"worker_status"`
+	NFQueueStatus     string                       `json:"nfqueue_status"`
+	TablesStatus      string                       `json:"tables_status"`
+	RecentConnections []ConnectionLog              `json:"recent_connections"`
+	RecentEvents      []SystemEvent                `json:"recent_events"`
+	DeviceDomains     map[string]map[string]uint64 `json:"device_domains"`
+	DomainTLS         map[string]string            `json:"domain_tls"`
+	Escalations       []EscalationEntry            `json:"escalations"`
+	TotalEscalations  uint64                       `json:"total_escalations"`
 
 	lastUpdate      time.Time    `json:"-"`
 	mu              sync.RWMutex `json:"-"`
 	lastConnCount   uint64       `json:"-"`
 	lastPacketCount uint64       `json:"-"`
+	lastBlockCount  uint64       `json:"-"`
 }
 
 type TimeSeriesPoint struct {
@@ -103,6 +108,8 @@ func GetMetricsCollector() *MetricsCollector {
 			TopDomains:        make(map[string]uint64),
 			ProtocolDist:      make(map[string]uint64),
 			GeoDist:           make(map[string]uint64),
+			BlockedDomains:    make(map[string]uint64),
+			BlockedDevices:    make(map[string]uint64),
 			ConnectionRate:    make([]TimeSeriesPoint, 0, 60),
 			PacketRate:        make([]TimeSeriesPoint, 0, 60),
 			RecentConnections: make([]ConnectionLog, 0, 10),
@@ -143,9 +150,11 @@ func (m *MetricsCollector) updateRates() {
 
 	connDiff := m.TotalConnections - m.lastConnCount
 	packetDiff := m.PacketsProcessed - m.lastPacketCount
+	blockDiff := m.BlockedTotal - m.lastBlockCount
 
 	m.CurrentCPS = float64(connDiff) / duration
 	m.CurrentPPS = float64(packetDiff) / duration
+	m.CurrentBPS = float64(blockDiff) / duration
 
 	nowMs := now.UnixMilli()
 
@@ -168,6 +177,7 @@ func (m *MetricsCollector) updateRates() {
 	m.lastUpdate = now
 	m.lastConnCount = m.TotalConnections
 	m.lastPacketCount = m.PacketsProcessed
+	m.lastBlockCount = m.BlockedTotal
 
 	m.Uptime = formatDuration(now.Sub(m.StartTime))
 }
@@ -285,6 +295,37 @@ func (m *MetricsCollector) RecordRSTDrop() {
 	m.RSTDropped++
 }
 
+func (m *MetricsCollector) RecordBlock(target, sourceMac string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.BlockedTotal++
+
+	if target != "" {
+		m.BlockedDomains[target]++
+		pruneCounterMap(m.BlockedDomains, 20)
+	}
+
+	if sourceMac != "" {
+		m.BlockedDevices[sourceMac]++
+		pruneCounterMap(m.BlockedDevices, 50)
+	}
+}
+
+func pruneCounterMap(m map[string]uint64, keep int) {
+	for len(m) > keep {
+		var minKey string
+		var minVal uint64 = ^uint64(0)
+		for k, v := range m {
+			if v < minVal {
+				minVal = v
+				minKey = k
+			}
+		}
+		delete(m, minKey)
+	}
+}
+
 func (m *MetricsCollector) RecordEscalation() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -356,13 +397,17 @@ func (m *MetricsCollector) ResetStats() {
 	m.UDPConnections = 0
 	m.TargetedConnections = 0
 	m.RSTDropped = 0
+	m.BlockedTotal = 0
 	m.TotalEscalations = 0
 	m.CurrentCPS = 0
 	m.CurrentPPS = 0
+	m.CurrentBPS = 0
 
 	m.TopDomains = make(map[string]uint64)
 	m.ProtocolDist = make(map[string]uint64)
 	m.GeoDist = make(map[string]uint64)
+	m.BlockedDomains = make(map[string]uint64)
+	m.BlockedDevices = make(map[string]uint64)
 	m.DeviceDomains = make(map[string]map[string]uint64)
 	m.DomainTLS = make(map[string]string)
 	m.Escalations = make([]EscalationEntry, 0)
@@ -377,6 +422,7 @@ func (m *MetricsCollector) ResetStats() {
 	m.lastUpdate = now
 	m.lastConnCount = 0
 	m.lastPacketCount = 0
+	m.lastBlockCount = 0
 	m.Uptime = "0s"
 }
 
@@ -401,6 +447,7 @@ func (m *MetricsCollector) GetSnapshot() *MetricsCollector {
 		UDPConnections:      m.UDPConnections,
 		TargetedConnections: m.TargetedConnections,
 		RSTDropped:          m.RSTDropped,
+		BlockedTotal:        m.BlockedTotal,
 		TotalEscalations:    m.TotalEscalations,
 		StartTime:           m.StartTime,
 		Uptime:              m.Uptime,
@@ -410,6 +457,7 @@ func (m *MetricsCollector) GetSnapshot() *MetricsCollector {
 		TablesStatus:        m.TablesStatus,
 		CurrentCPS:          m.CurrentCPS,
 		CurrentPPS:          m.CurrentPPS,
+		CurrentBPS:          m.CurrentBPS,
 	}
 
 	if len(m.ConnectionRate) > 0 {
@@ -439,6 +487,16 @@ func (m *MetricsCollector) GetSnapshot() *MetricsCollector {
 	snapshot.GeoDist = make(map[string]uint64)
 	for k, v := range m.GeoDist {
 		snapshot.GeoDist[k] = v
+	}
+
+	snapshot.BlockedDomains = make(map[string]uint64, len(m.BlockedDomains))
+	for k, v := range m.BlockedDomains {
+		snapshot.BlockedDomains[k] = v
+	}
+
+	snapshot.BlockedDevices = make(map[string]uint64, len(m.BlockedDevices))
+	for k, v := range m.BlockedDevices {
+		snapshot.BlockedDevices[k] = v
 	}
 
 	if len(m.WorkerStatus) > 0 {

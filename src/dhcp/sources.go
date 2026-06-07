@@ -12,13 +12,69 @@ import (
 
 const arpPath = "/proc/net/arp"
 
+var localAddrs = func() (macs map[string]struct{}, ips map[string]struct{}) {
+	macs = make(map[string]struct{})
+	ips = make(map[string]struct{})
+
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return macs, ips
+	}
+
+	for _, ifi := range ifaces {
+		if hw := ifi.HardwareAddr.String(); hw != "" {
+			macs[strings.ToUpper(hw)] = struct{}{}
+		}
+		addrs, err := ifi.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			var ip net.IP
+			switch v := a.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip != nil {
+				ips[ip.String()] = struct{}{}
+			}
+		}
+	}
+
+	return macs, ips
+}
+
+func LocalRouterIPs() []string {
+	_, ips := localAddrs()
+	out := make([]string, 0, len(ips))
+	for ip := range ips {
+		parsed := net.ParseIP(ip)
+		if parsed == nil || parsed.IsLoopback() || parsed.IsLinkLocalUnicast() || parsed.IsUnspecified() {
+			continue
+		}
+		if !utils.IsPrivateIP(parsed) {
+			continue
+		}
+		out = append(out, ip)
+	}
+	return out
+}
+
 // parseARP reads /proc/net/arp and returns complete entries with private IPs only.
 func parseARP() ([]ARPEntry, error) {
-	file, err := os.Open(arpPath)
+	return parseARPFile(arpPath)
+}
+
+func parseARPFile(path string) ([]ARPEntry, error) {
+	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
+
+	localMACs, localIPs := localAddrs()
 
 	var entries []ARPEntry
 	scanner := bufio.NewScanner(file)
@@ -34,7 +90,7 @@ func parseARP() ([]ARPEntry, error) {
 
 		ip := fields[0]
 		flags := fields[2]
-		mac := fields[3]
+		mac := strings.ToUpper(fields[3])
 		device := fields[5]
 
 		// Only keep complete entries (ATF_COM = 0x2)
@@ -43,7 +99,14 @@ func parseARP() ([]ARPEntry, error) {
 			continue
 		}
 
-		if mac == "00:00:00:00:00:00" || mac == "ff:ff:ff:ff:ff:ff" {
+		if mac == "00:00:00:00:00:00" || mac == "FF:FF:FF:FF:FF:FF" {
+			continue
+		}
+
+		if _, ok := localMACs[mac]; ok {
+			continue
+		}
+		if _, ok := localIPs[ip]; ok {
 			continue
 		}
 
@@ -55,7 +118,7 @@ func parseARP() ([]ARPEntry, error) {
 
 		entries = append(entries, ARPEntry{
 			IP:     ip,
-			MAC:    strings.ToUpper(mac),
+			MAC:    mac,
 			Device: device,
 		})
 	}

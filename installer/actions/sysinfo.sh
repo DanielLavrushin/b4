@@ -256,6 +256,15 @@ action_sysinfo() {
             fi
             $_nfq_ipt -t mangle -X B4_TEST 2>/dev/null || true
         fi
+        if $_nfq_ipt -t filter -N B4_CB_TEST 2>/dev/null; then
+            if $_nfq_ipt -t filter -A B4_CB_TEST -p tcp -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:10 -j ACCEPT 2>/dev/null; then
+                printf "    ${GREEN}  OK${NC}    %s\n" "connbytes works (functional test passed)" >&2
+            else
+                printf "    ${RED}  FAIL${NC}  %s\n" "connbytes not functional" >&2
+            fi
+            $_nfq_ipt -t filter -F B4_CB_TEST 2>/dev/null || true
+            $_nfq_ipt -t filter -X B4_CB_TEST 2>/dev/null || true
+        fi
     fi
 
     # --- Tools & dependencies ---
