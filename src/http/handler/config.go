@@ -13,6 +13,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/metrics"
+	"github.com/daniellavrushin/b4/mtproto"
 )
 
 func (api *API) RegisterConfigApi() {
@@ -377,6 +378,12 @@ func (a *API) saveAndPushConfig(newCfg *config.Config) error {
 
 	if mtprotoCFRefreshFunc != nil {
 		mtprotoCFRefreshFunc(newCfg)
+	}
+
+	oldMT := a.getCfg().System.MTProto
+	newMT := newCfg.System.MTProto
+	if oldMT.DCFallbackEnabled != newMT.DCFallbackEnabled || oldMT.DCFallbackURL != newMT.DCFallbackURL {
+		go func() { _ = mtproto.RefreshDCs(newMT.DCFallbackEnabled, newMT.DCFallbackURL) }()
 	}
 
 	err := newCfg.SaveToFile(newCfg.ConfigPath)
