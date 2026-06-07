@@ -13,13 +13,23 @@ interface FlagBadgesProps {
 
 export const FlagBadges = ({ flags }: FlagBadgesProps) => {
   const isBlocked = flags?.startsWith("ipblock");
+  const isBlackhole = flags === "block";
   const isSocks5 = flags === "socks5";
   const isDuplicate = flags === "tcp-dup";
 
-  if (!isBlocked && !isSocks5 && !isDuplicate) return null;
+  if (!isBlocked && !isBlackhole && !isSocks5 && !isDuplicate) return null;
 
   return (
     <Stack direction="row" spacing={0.5} alignItems="center">
+      {isBlackhole && (
+        <B4Badge
+          icon={<BlockIcon />}
+          label="block"
+          title="Blocked (blackhole)"
+          variant="filled"
+          color="error"
+        />
+      )}
       {isSocks5 && (
         <B4Badge
           icon={<ProxyIcon />}
