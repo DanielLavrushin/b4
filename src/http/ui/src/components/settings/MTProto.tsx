@@ -427,6 +427,26 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
                 selectOnFocus
               />
             )}
+            <B4Switch
+              label={t("settings.MTProto.dcFallbackEnabled")}
+              checked={config.system.mtproto?.dc_fallback_enabled ?? true}
+              onChange={(checked: boolean) =>
+                onChange("system.mtproto.dc_fallback_enabled", checked)
+              }
+              description={t("settings.MTProto.dcFallbackEnabledHelp")}
+            />
+            {config.system.mtproto?.dc_fallback_enabled !== false && (
+              <B4TextField
+                label={t("settings.MTProto.dcFallbackURL")}
+                value={config.system.mtproto?.dc_fallback_url || ""}
+                onChange={(e) =>
+                  onChange("system.mtproto.dc_fallback_url", e.target.value)
+                }
+                placeholder="https://proxy.lavrush.in/telegram/getProxyConfig"
+                helperText={t("settings.MTProto.dcFallbackURLHelp")}
+                selectOnFocus
+              />
+            )}
             <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
               <Stack direction="row" spacing={1}>
                 <Button

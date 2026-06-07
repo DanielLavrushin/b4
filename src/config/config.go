@@ -5,10 +5,6 @@ import (
 	"github.com/daniellavrushin/b4/log"
 )
 
-var (
-	CreateSetSentinel = "00000000-0000-0000-0000-000000000000"
-)
-
 type Config struct {
 	Version    int    `json:"version"`
 	ConfigPath string `json:"-"`
@@ -239,14 +235,16 @@ var DefaultConfig = Config{
 		},
 
 		MTProto: MTProtoConfig{
-			Enabled:        false,
-			Port:           3128,
-			BindAddress:    "0.0.0.0",
-			FakeSNI:        "storage.googleapis.com",
-			UpstreamMode:   "auto",
-			WSEndpointHost: "149.154.167.220",
-			CFProxyEnabled: true,
-			CFProxyURL:     "https://raw.githubusercontent.com/Flowseal/tg-ws-proxy/main/.github/cfproxy-domains.txt",
+			Enabled:           false,
+			Port:              3128,
+			BindAddress:       "0.0.0.0",
+			FakeSNI:           TGFakeSNI,
+			UpstreamMode:      "auto",
+			WSEndpointHost:    TGWSEndpointHost,
+			CFProxyEnabled:    true,
+			CFProxyURL:        TGCFProxyURL,
+			DCFallbackEnabled: true,
+			DCFallbackURL:     TGDCFallbackURL,
 		},
 
 		Logging: Logging{

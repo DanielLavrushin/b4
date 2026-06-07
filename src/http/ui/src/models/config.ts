@@ -302,6 +302,8 @@ export interface MTProtoConfig {
   cfproxy_enabled: boolean;
   cfproxy_url: string;
   cfworker_domain: string;
+  dc_fallback_enabled: boolean;
+  dc_fallback_url: string;
 }
 
 

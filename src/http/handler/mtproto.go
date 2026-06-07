@@ -103,7 +103,8 @@ func (api *API) handleMTProtoRefreshDCs(w http.ResponseWriter, r *http.Request) 
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	if err := mtproto.RefreshDCs(); err != nil {
+	mt := api.getCfg().System.MTProto
+	if err := mtproto.RefreshDCs(mt.DCFallbackEnabled, mt.DCFallbackURL); err != nil {
 		log.Warnf("MTProto manual DC refresh failed: %v", err)
 		writeJsonError(w, http.StatusBadGateway, err.Error())
 		return

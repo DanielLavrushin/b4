@@ -135,7 +135,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 	mtprotoBridge := mtproto.NewTransparentBridge(&cfg)
 	tproxyMgr.SetMTProtoBridge(mtprotoBridge)
 	handler.SetMTProtoBridge(mtprotoBridge)
-	go func() { _ = mtproto.RefreshDCs() }()
+	go func() {
+		_ = mtproto.RefreshDCs(cfg.System.MTProto.DCFallbackEnabled, cfg.System.MTProto.DCFallbackURL)
+	}()
 	startCFRefresh := func(c *config.Config) {
 		if c.System.MTProto.CFProxyEnabled {
 			mtproto.StartCFProxyRefresh(appCtx, c.System.MTProto.CFProxyURL)

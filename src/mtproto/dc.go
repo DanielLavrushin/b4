@@ -88,10 +88,10 @@ var (
 	dcRuntime   = map[int][]string{}
 )
 
-var proxyConfigURLs = []string{
-	"https://core.telegram.org/getProxyConfig",
-	"https://proxy.lavrush.in/telegram/getProxyConfig",
-}
+const (
+	officialProxyConfigURL = "https://core.telegram.org/getProxyConfig"
+	DefaultDCFallbackURL   = "https://proxy.lavrush.in/telegram/getProxyConfig"
+)
 
 func DCSnapshot() map[int]string {
 	dcRuntimeMu.RLock()
@@ -149,11 +149,18 @@ func dcForIP(ip net.IP) (int, bool) {
 	return 0, false
 }
 
-func RefreshDCs() error {
+func RefreshDCs(fallbackEnabled bool, fallbackURL string) error {
+	urls := []string{officialProxyConfigURL}
+	if fallbackEnabled {
+		if fallbackURL == "" {
+			fallbackURL = DefaultDCFallbackURL
+		}
+		urls = append(urls, fallbackURL)
+	}
 	cli := &http.Client{Timeout: 3 * time.Second}
 	var body []byte
 	var lastErr error
-	for _, u := range proxyConfigURLs {
+	for _, u := range urls {
 		req, err := http.NewRequest("GET", u, nil)
 		if err != nil {
 			lastErr = err

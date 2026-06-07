@@ -64,6 +64,14 @@ var migrationRegistry = map[int]MigrationFunc{
 	40: migrateV40to41, // Add MTProto CF-proxy fallback config
 	41: migrateV41to42, // Add MTProto CF Worker domain config
 	42: migrateV42to43, // Add per-set routing block action
+	43: migrateV43to44, // Add MTProto DC-list fallback source config
+}
+
+func migrateV43to44(c *Config, _ map[string]interface{}) error {
+	log.Tracef("Migration v43->v44: Adding MTProto DC-list fallback source config")
+	c.System.MTProto.DCFallbackEnabled = true
+	c.System.MTProto.DCFallbackURL = DefaultConfig.System.MTProto.DCFallbackURL
+	return nil
 }
 
 func migrateV42to43(c *Config, _ map[string]interface{}) error {
