@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.66.1] - 2026-06-07
+
+- FIXED: **Dummy network interfaces were missing from the interface lists** - a dummy interface (for example `dummy0`) did not appear in Settings, so it could not be picked for monitoring or NAT masquerade. Any dummy interface that is up now shows up in both lists.
+
 ## [1.66.0] - 2026-06-07
 
 - ADDED: **Blocking stats on the Dashboard** - when a set uses Block (blackhole) mode and actually blocks something, the Dashboard now shows a "Blackhole" panel with the total number of blocked attempts, the most-blocked domains, and which devices ran into the most blocks. The panel stays hidden until there is something to show, so it never clutters the page when nothing is being blocked. Blocked connections are also tagged with a "block" label on the Traffic page so you can spot them in the live feed.
