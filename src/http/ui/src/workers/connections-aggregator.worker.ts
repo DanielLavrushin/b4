@@ -21,6 +21,7 @@ const devices = new Map<string, DeviceSummary>();
 let ipToMac: Record<string, string> = {};
 let totalPackets = 0;
 let unmatchedCount = 0;
+let latestTs = 0;
 let dirty = false;
 let snapshotTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -51,7 +52,7 @@ function parseLine(line: string): {
     flags,
   ] = tokens;
   const cleanTs = rawTs.replaceAll(" [INFO]", "").trim().split(".")[0];
-  const ts = Date.parse(cleanTs.replaceAll("/", "-")) || Date.now();
+  const ts = Date.parse(cleanTs.replaceAll("/", "-")) || latestTs;
   if (protocol !== "TCP" && protocol !== "UDP") return null;
   return {
     timestamp: ts,
@@ -114,10 +115,12 @@ function evictIfNeeded(): void {
 }
 
 function ingest(lines: string[]): void {
-  const now = Date.now();
   for (const line of lines) {
     const p = parseLine(line);
     if (!p) continue;
+
+    if (p.timestamp > latestTs) latestTs = p.timestamp;
+    const now = latestTs;
 
     let mac = p.sourceAlias ? normalizeMac(p.sourceAlias) : "";
     if (!mac) {
@@ -196,7 +199,7 @@ function ingest(lines: string[]): void {
 }
 
 function buildSnapshot(): AggregatorSnapshot {
-  const now = Date.now();
+  const now = latestTs;
   const arrGroups: ConnectionGroup[] = [];
   for (const g of groups.values()) {
     rotateBuckets(g, now);
@@ -233,6 +236,7 @@ function clearState(): void {
   devices.clear();
   totalPackets = 0;
   unmatchedCount = 0;
+  latestTs = 0;
   dirty = true;
 }
 

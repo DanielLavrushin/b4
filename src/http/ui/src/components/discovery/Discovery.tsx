@@ -291,9 +291,14 @@ export const DiscoveryRunner = () => {
     setAddingPreset(false);
   };
 
-  const handleAddToExisting = async (setId: string, domain: string, allDomains?: string[]) => {
+  const handleAddToExisting = async (
+    setId: string,
+    domain: string,
+    allDomains?: string[],
+  ) => {
     setAddingPreset(true);
-    const domainsToAdd = allDomains && allDomains.length > 1 ? allDomains : [domain];
+    const domainsToAdd =
+      allDomains && allDomains.length > 1 ? allDomains : [domain];
     let allSuccess = true;
     for (const d of domainsToAdd) {
       const res = await addDomainToSet(setId, d);
@@ -516,9 +521,11 @@ export const DiscoveryRunner = () => {
                 },
               }}
             />
-            <Box sx={{ mt: 3 }}>
-              <DiscoveryLogPanel running={running} />
-            </Box>
+          </Box>
+        )}
+        {suite && (
+          <Box sx={{ mt: running ? 3 : 0 }}>
+            <DiscoveryLogPanel running={running} />
           </Box>
         )}
       </B4Section>
@@ -579,16 +586,16 @@ export const DiscoveryRunner = () => {
               {strategyGroups.map((group) => {
                 const groupKey = `${group.family}::${group.winnerPreset}`;
                 return (
-                <StrategyGroupCard
-                  key={groupKey}
-                  group={group}
-                  expanded={expandedDomains.has(groupKey)}
-                  onToggleExpand={() => toggleDomainExpand(groupKey)}
-                  onApply={() => handleAddGroupStrategy(group)}
-                  addingPreset={addingPreset}
-                  familyNames={familyNames}
-                  domainResults={suite.domain_discovery_results}
-                />
+                  <StrategyGroupCard
+                    key={groupKey}
+                    group={group}
+                    expanded={expandedDomains.has(groupKey)}
+                    onToggleExpand={() => toggleDomainExpand(groupKey)}
+                    onApply={() => handleAddGroupStrategy(group)}
+                    addingPreset={addingPreset}
+                    familyNames={familyNames}
+                    domainResults={suite.domain_discovery_results}
+                  />
                 );
               })}
 
@@ -607,7 +614,13 @@ export const DiscoveryRunner = () => {
       {history.length > 0 && (
         <B4Section
           title={t("core.history.title")}
-          description={history.length === 1 ? t("discovery.history.domainsTested", { count: history.length }) : t("discovery.history.domainsTested_plural", { count: history.length })}
+          description={
+            history.length === 1
+              ? t("discovery.history.domainsTested", { count: history.length })
+              : t("discovery.history.domainsTested_plural", {
+                  count: history.length,
+                })
+          }
           icon={<HistoryIcon />}
         >
           <Box sx={{ display: "flex", justifyContent: "flex-end", mt: -1 }}>
@@ -727,7 +740,11 @@ export const DiscoveryRunner = () => {
         onAddNew={(name: string, domain: string, allDomains?: string[]) => {
           void handleAddNew(name, domain, allDomains);
         }}
-        onAddToExisting={(setId: string, domain: string, allDomains?: string[]) => {
+        onAddToExisting={(
+          setId: string,
+          domain: string,
+          allDomains?: string[],
+        ) => {
           void handleAddToExisting(setId, domain, allDomains);
         }}
         loading={addingPreset}
