@@ -19,11 +19,11 @@ type IPTablesManager struct {
 	cfg              *config.Config
 	useLegacy        bool
 	multiportSupport map[string]bool // per-binary cache (iptables vs ip6tables may differ)
-	connbytesSupport map[string]bool // per-binary cache
+	connbytesSupport map[string]error // per-binary cache
 }
 
 func NewIPTablesManager(cfg *config.Config, useLegacy bool) *IPTablesManager {
-	return &IPTablesManager{cfg: cfg, useLegacy: useLegacy, multiportSupport: make(map[string]bool), connbytesSupport: make(map[string]bool)}
+	return &IPTablesManager{cfg: cfg, useLegacy: useLegacy, multiportSupport: make(map[string]bool), connbytesSupport: make(map[string]error)}
 }
 
 func (im *IPTablesManager) iptablesBin() string {
@@ -41,19 +41,21 @@ func (im *IPTablesManager) ip6tablesBin() string {
 }
 
 func (im *IPTablesManager) checkConnbytesSupport(ipt string) error {
-	if im.connbytesSupport[ipt] {
-		return nil
+	if err, ok := im.connbytesSupport[ipt]; ok {
+		return err
 	}
 
 	supported, probeErr := im.probeModuleInTempChain(ipt, []string{"-p", "tcp", "-m", "connbytes", "--connbytes-dir", "original",
 		"--connbytes-mode", "packets", "--connbytes", "0:10", "-j", "ACCEPT"})
 	if supported {
-		im.connbytesSupport[ipt] = true
+		im.connbytesSupport[ipt] = nil
 		log.Tracef("IPTABLES[%s]: connbytes module is available", ipt)
 		return nil
 	}
 
-	return fmt.Errorf("xt_connbytes kernel module is not available for %s (%v) - install it with: modprobe xt_connbytes (or apt install xtables-addons-common / linux-modules-extra-$(uname -r))", ipt, probeErr)
+	err := fmt.Errorf("xt_connbytes kernel module is not available for %s (%v) - install it with: modprobe xt_connbytes (or apt install xtables-addons-common / linux-modules-extra-$(uname -r))", ipt, probeErr)
+	im.connbytesSupport[ipt] = err
+	return err
 }
 
 // hasMultiportSupport checks if iptables multiport module is available
