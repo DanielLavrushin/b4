@@ -217,7 +217,7 @@ export const DiscoveryRunner = () => {
   const addUrls = useCallback((raw: string) => {
     const parts = raw
       .split(/[\n,]+/)
-      .map((l) => l.trim())
+      .map((l) => l.trim().replace(/^["'`]+|["'`]+$/g, "").trim())
       .filter((l) => l.length > 0);
     if (parts.length === 0) return;
     setCheckUrls((prev) => {

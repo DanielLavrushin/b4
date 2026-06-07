@@ -176,6 +176,8 @@ func NewDiscoverySuite(inputs []string, pool *nfq.Pool, skipDNS bool, skipCache 
 
 func parseDiscoveryInput(input string) (domain string, testURL string) {
 	input = strings.TrimSpace(input)
+	input = strings.Trim(input, "\"'`")
+	input = strings.TrimSpace(input)
 
 	if strings.HasPrefix(input, "http://") || strings.HasPrefix(input, "https://") {
 		u, err := url.Parse(input)
@@ -192,6 +194,9 @@ func parseDiscoveryInputs(inputs []string) []DomainInput {
 	var result []DomainInput
 	for _, input := range inputs {
 		domain, checkURL := parseDiscoveryInput(input)
+		if domain == "" {
+			continue
+		}
 		if !seen[domain] {
 			seen[domain] = true
 			result = append(result, DomainInput{Domain: domain, CheckURL: checkURL})

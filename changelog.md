@@ -1,6 +1,6 @@
 # B4 - Bye Bye Big Bro
 
-## [1.65.1] - 2026-06-07
+## [1.66.0] - 2026-06-07
 
 - ADDED: **Blocking stats on the Dashboard** - when a set uses Block (blackhole) mode and actually blocks something, the Dashboard now shows a "Blackhole" panel with the total number of blocked attempts, the most-blocked domains, and which devices ran into the most blocks. The panel stays hidden until there is something to show, so it never clutters the page when nothing is being blocked. Blocked connections are also tagged with a "block" label on the Traffic page so you can spot them in the live feed.
 - ADDED: **Control over the Telegram server-list backup** - to reach Telegram, b4 fetches Telegram's data center list from Telegram's official address, and falls back to a backup copy hosted by the b4 author only if that is blocked (`lavrush.in`).  Settings -> MTProto Proxy now has a "DC list fallback mirror" switch to turn it off or point it at your own copy.
@@ -11,6 +11,7 @@
 - FIXED: **Telegram no longer disconnects with a "proxy is not configured correctly" message after sitting idle** - when a Telegram connection through b4 was left idle for a while, your network could quietly drop it in the background, and Telegram would show "The proxy you are using is not configured correctly and will be disabled" even though the proxy was working fine. b4 now keeps these connections alive on its own, so they stay open and reconnect cleanly instead of being dropped.
 - FIXED: **Connections page showed nothing when the device clock was out of sync** - the time filter (30s / 1m / 5m / 15m) and the per-connection activity graph compared the live data against the browser's own clock, so a computer whose clock was off by even ~30 seconds could see an empty list and empty activity bars. Filtering and the activity graph now use the timestamps in the connection data itself, so they work regardless of the device clock or its timezone.
 - FIXED: **A device could still show up twice on the Traffic page** - one device sometimes appeared as two rows, once under its name and once under its bare IP. b4 now recognizes these as the same device and shows it only once.
+- FIXED: **Discovery found no working strategy when site names were entered with quotes** - if you added domains to Discovery wrapped in quotation marks (for example `"discord.com","youtube.com"`, as happens when pasting a copied list), b4 kept the quote marks as part of each name, so every lookup failed and Discovery reported nothing working for any site. Surrounding quotes are now removed automatically. [#241](https://github.com/DanielLavrushin/b4/issues/241)
 
 ## [1.65.0] - 2026-06-06
 
