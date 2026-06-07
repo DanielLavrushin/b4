@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -59,7 +62,63 @@ func DetectBackend(cfg *config.Config) string {
 	return detectFirewallBackend(cfg)
 }
 
+var iptWaitSupport sync.Map
+
+var iptVersionRe = regexp.MustCompile(`v(\d+)\.(\d+)(?:\.(\d+))?`)
+
+func isIPTablesBinary(name string) bool {
+	base := filepath.Base(name)
+	return strings.HasPrefix(base, "iptables") || strings.HasPrefix(base, "ip6tables")
+}
+
+func iptablesSupportsWait(bin string) bool {
+	if v, ok := iptWaitSupport.Load(bin); ok {
+		return v.(bool)
+	}
+	supported := true
+	out, err := exec.Command(bin, "--version").CombinedOutput()
+	if err == nil {
+		if m := iptVersionRe.FindStringSubmatch(string(out)); m != nil {
+			maj, _ := strconv.Atoi(m[1])
+			min, _ := strconv.Atoi(m[2])
+			patch := 0
+			if m[3] != "" {
+				patch, _ = strconv.Atoi(m[3])
+			}
+			if maj < 1 || (maj == 1 && (min < 4 || (min == 4 && patch < 20))) {
+				supported = false
+			}
+		}
+	}
+	iptWaitSupport.Store(bin, supported)
+	if !supported {
+		log.Warnf("IPTABLES[%s]: this iptables is too old for the '-w' lock flag (need >= 1.4.20); running without it", bin)
+	}
+	return supported
+}
+
+func dropWaitFlag(args []string) []string {
+	out := make([]string, 0, len(args))
+	for _, a := range args {
+		if a == "-w" || a == "--wait" {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+func WaitArgs(bin string) []string {
+	if iptablesSupportsWait(bin) {
+		return []string{"-w"}
+	}
+	return nil
+}
+
 func run(args ...string) (string, error) {
+	if len(args) > 1 && isIPTablesBinary(args[0]) && !iptablesSupportsWait(args[0]) {
+		args = dropWaitFlag(args)
+	}
 	var out bytes.Buffer
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Stdout = &out

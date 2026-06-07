@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/daniellavrushin/b4/tables"
 	"golang.org/x/sys/unix"
 )
 
@@ -283,7 +284,7 @@ func collectFirewallInfo() DiagFirewall {
 			if _, err := exec.LookPath(bin); err != nil {
 				continue
 			}
-			out, err := exec.Command(bin, "-w", "-t", "mangle", "-S", "B4").CombinedOutput()
+			out, err := exec.Command(bin, append(tables.WaitArgs(bin), "-t", "mangle", "-S", "B4")...).CombinedOutput()
 			if err == nil && len(out) > 0 {
 				if bin == "iptables-legacy" {
 					info.Backend = "iptables-legacy"
@@ -325,14 +326,17 @@ func testNFQueue(backend string) bool {
 		if backend == "iptables-legacy" {
 			bin = "iptables-legacy"
 		}
-		if _, err := exec.Command(bin, "-w", "-t", "mangle", "-N", "B4_DIAG_TEST").CombinedOutput(); err != nil {
+		iptArgs := func(rest ...string) []string {
+			return append(append([]string{}, tables.WaitArgs(bin)...), rest...)
+		}
+		if _, err := exec.Command(bin, iptArgs("-t", "mangle", "-N", "B4_DIAG_TEST")...).CombinedOutput(); err != nil {
 			return false
 		}
 		defer func() {
-			exec.Command(bin, "-w", "-t", "mangle", "-F", "B4_DIAG_TEST").CombinedOutput()
-			exec.Command(bin, "-w", "-t", "mangle", "-X", "B4_DIAG_TEST").CombinedOutput()
+			exec.Command(bin, iptArgs("-t", "mangle", "-F", "B4_DIAG_TEST")...).CombinedOutput()
+			exec.Command(bin, iptArgs("-t", "mangle", "-X", "B4_DIAG_TEST")...).CombinedOutput()
 		}()
-		_, err := exec.Command(bin, "-w", "-t", "mangle", "-A", "B4_DIAG_TEST", "-j", "NFQUEUE", "--queue-num", "0").CombinedOutput()
+		_, err := exec.Command(bin, iptArgs("-t", "mangle", "-A", "B4_DIAG_TEST", "-j", "NFQUEUE", "--queue-num", "0")...).CombinedOutput()
 		return err == nil
 	}
 
