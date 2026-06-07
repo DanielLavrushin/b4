@@ -220,13 +220,13 @@ func getSystemInterfaces() ([]string, error) {
 		} else {
 			// On host, require IP or known useful prefix
 			addrs, _ := iface.Addrs()
-			isBridgeOrWireless := strings.HasPrefix(iface.Name, "br") ||
+			allowedWithoutIP := strings.HasPrefix(iface.Name, "br") ||
 				strings.HasPrefix(iface.Name, "wl") ||
 				strings.HasPrefix(iface.Name, "tun") ||
 				strings.HasPrefix(iface.Name, "tap") ||
 				strings.HasPrefix(iface.Name, "dummy")
 
-			if len(addrs) > 0 || isBridgeOrWireless {
+			if len(addrs) > 0 || allowedWithoutIP {
 				ifaceNames = append(ifaceNames, iface.Name)
 			}
 		}
