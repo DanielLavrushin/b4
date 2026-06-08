@@ -69,6 +69,8 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
     setMode(next);
     if (next === "udp") {
       onChange("dns.doh_url", "");
+    } else {
+      onChange("dns.target_dns", "");
     }
   };
 
