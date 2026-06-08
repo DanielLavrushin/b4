@@ -368,8 +368,8 @@ func TestSetListsAnyDomain(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if setListsAnyDomain(set, tt.domains) != tt.expected {
-				t.Errorf("setListsAnyDomain(%v) = %v, want %v", tt.domains, !tt.expected, tt.expected)
+			if got := setListsAnyDomain(set, tt.domains); got != tt.expected {
+				t.Errorf("setListsAnyDomain(%v) = %v, want %v", tt.domains, got, tt.expected)
 			}
 		})
 	}
@@ -389,8 +389,8 @@ func TestDomainInSNIList(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if domainInSNIList(list, tt.domain) != tt.expected {
-				t.Errorf("domainInSNIList(%q) = %v, want %v", tt.domain, !tt.expected, tt.expected)
+			if got := domainInSNIList(list, tt.domain); got != tt.expected {
+				t.Errorf("domainInSNIList(%q) = %v, want %v", tt.domain, got, tt.expected)
 			}
 		})
 	}
