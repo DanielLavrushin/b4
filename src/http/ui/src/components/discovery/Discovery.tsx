@@ -48,6 +48,7 @@ import { RunningDomainCard } from "./RunningDomainCard";
 import { StrategyGroupCard } from "./StrategyGroupCard";
 import { FailedDomainCard } from "./FailedDomainCard";
 import { HistoryGroupCard } from "./HistoryGroupCard";
+import { configApi } from "@b4.settings";
 
 export const DiscoveryRunner = () => {
   const { t } = useTranslation();
@@ -151,6 +152,16 @@ export const DiscoveryRunner = () => {
     localStorage.setItem("b4_discovery_ip_version", options.ipVersion);
   }, [options.ipVersion]);
 
+  const [ipVersionEnabled, setIpVersionEnabled] = useState(true);
+  useEffect(() => {
+    void configApi
+      .get()
+      .then((c) => setIpVersionEnabled(!!c.queue?.ipv4 && !!c.queue?.ipv6))
+      .catch(() => {});
+  }, []);
+
+  const effectiveIpVersion = ipVersionEnabled ? options.ipVersion : "auto";
+
   const [checkUrls, setCheckUrls] = useState<string[]>([]);
   const [urlInput, setUrlInput] = useState("");
 
@@ -177,8 +188,8 @@ export const DiscoveryRunner = () => {
     let presetName = result.preset_name;
     if (options.tlsVersion === "tls12") presetName += "-tls12";
     else if (options.tlsVersion === "tls13") presetName += "-tls13";
-    if (options.ipVersion === "ipv4") presetName += "-ipv4";
-    else if (options.ipVersion === "ipv6") presetName += "-ipv6";
+    if (effectiveIpVersion === "ipv4") presetName += "-ipv4";
+    else if (effectiveIpVersion === "ipv6") presetName += "-ipv6";
 
     setAddDialog({
       open: true,
@@ -193,8 +204,8 @@ export const DiscoveryRunner = () => {
     let presetName = group.winnerPreset || familyNames[group.family];
     if (options.tlsVersion === "tls12") presetName += "-tls12";
     else if (options.tlsVersion === "tls13") presetName += "-tls13";
-    if (options.ipVersion === "ipv4") presetName += "-ipv4";
-    else if (options.ipVersion === "ipv6") presetName += "-ipv6";
+    if (effectiveIpVersion === "ipv4") presetName += "-ipv4";
+    else if (effectiveIpVersion === "ipv6") presetName += "-ipv6";
 
     setAddDialog({
       open: true,
@@ -229,7 +240,12 @@ export const DiscoveryRunner = () => {
   const addUrls = useCallback((raw: string) => {
     const parts = raw
       .split(/[\n,]+/)
-      .map((l) => l.trim().replace(/^["'`]+|["'`]+$/g, "").trim())
+      .map((l) =>
+        l
+          .trim()
+          .replace(/^["'`]+|["'`]+$/g, "")
+          .trim(),
+      )
       .filter((l) => l.length > 0);
     if (parts.length === 0) return;
     setCheckUrls((prev) => {
@@ -406,7 +422,7 @@ export const DiscoveryRunner = () => {
                     options.payloadFiles,
                     options.validationTries,
                     options.tlsVersion,
-                    options.ipVersion,
+                    effectiveIpVersion,
                   );
                 }}
                 disabled={checkUrls.length === 0}
@@ -458,6 +474,7 @@ export const DiscoveryRunner = () => {
         )}
         <DiscoveryOptionsPanel
           options={options}
+          ipVersionEnabled={ipVersionEnabled}
           onChange={setOptions}
           onClearCache={() => {
             void (async () => {

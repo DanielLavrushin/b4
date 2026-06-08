@@ -40,6 +40,7 @@ interface DiscoveryOptionsPanelProps {
   onClearCache?: () => void;
   captures: Capture[];
   disabled?: boolean;
+  ipVersionEnabled?: boolean;
 }
 
 export const DiscoveryOptionsPanel = ({
@@ -48,6 +49,7 @@ export const DiscoveryOptionsPanel = ({
   onClearCache,
   captures,
   disabled = false,
+  ipVersionEnabled = true,
 }: DiscoveryOptionsPanelProps) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(() => {
@@ -65,7 +67,7 @@ export const DiscoveryOptionsPanel = ({
     options.payloadFiles.length > 0 ||
     options.validationTries > 1 ||
     options.tlsVersion !== "auto" ||
-    options.ipVersion !== "auto";
+    (ipVersionEnabled && options.ipVersion !== "auto");
 
   return (
     <Box
@@ -95,7 +97,7 @@ export const DiscoveryOptionsPanel = ({
           </Typography>
           {!expanded && hasOptions && (
             <B4Badge
-              label={getOptionsSummary(options, t)}
+              label={getOptionsSummary(options, t, ipVersionEnabled)}
               sx={{
                 height: 20,
                 fontSize: "0.7rem",
@@ -208,47 +210,49 @@ export const DiscoveryOptionsPanel = ({
             </Box>
 
             {/* IP Version */}
-            <Box>
-              <Typography variant="body1" sx={{ mb: 1 }}>
-                {t("discovery.options.ipVersion")}
-              </Typography>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ mb: 1, display: "block" }}
-              >
-                {t("discovery.options.ipVersionHint")}
-              </Typography>
-              <ToggleButtonGroup
-                value={options.ipVersion}
-                exclusive
-                onChange={(_, value) => {
-                  if (value !== null) {
-                    onChange({ ...options, ipVersion: value as IPVersion });
-                  }
-                }}
-                disabled={disabled}
-                size="small"
-                sx={{
-                  "& .MuiToggleButton-root": {
-                    color: colors.text.secondary,
-                    borderColor: colors.border.default,
-                    textTransform: "none",
-                    px: 2,
-                    "&.Mui-selected": {
-                      bgcolor: colors.accent.secondary,
-                      color: colors.secondary,
-                      borderColor: colors.secondary,
-                      "&:hover": { bgcolor: colors.accent.secondary },
+            {ipVersionEnabled && (
+              <Box>
+                <Typography variant="body1" sx={{ mb: 1 }}>
+                  {t("discovery.options.ipVersion")}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ mb: 1, display: "block" }}
+                >
+                  {t("discovery.options.ipVersionHint")}
+                </Typography>
+                <ToggleButtonGroup
+                  value={options.ipVersion}
+                  exclusive
+                  onChange={(_, value) => {
+                    if (value !== null) {
+                      onChange({ ...options, ipVersion: value as IPVersion });
+                    }
+                  }}
+                  disabled={disabled}
+                  size="small"
+                  sx={{
+                    "& .MuiToggleButton-root": {
+                      color: colors.text.secondary,
+                      borderColor: colors.border.default,
+                      textTransform: "none",
+                      px: 2,
+                      "&.Mui-selected": {
+                        bgcolor: colors.accent.secondary,
+                        color: colors.secondary,
+                        borderColor: colors.secondary,
+                        "&:hover": { bgcolor: colors.accent.secondary },
+                      },
                     },
-                  },
-                }}
-              >
-                <ToggleButton value="auto">Auto</ToggleButton>
-                <ToggleButton value="ipv4">IPv4</ToggleButton>
-                <ToggleButton value="ipv6">IPv6</ToggleButton>
-              </ToggleButtonGroup>
-            </Box>
+                  }}
+                >
+                  <ToggleButton value="auto">Auto</ToggleButton>
+                  <ToggleButton value="ipv4">IPv4</ToggleButton>
+                  <ToggleButton value="ipv6">IPv6</ToggleButton>
+                </ToggleButtonGroup>
+              </Box>
+            )}
 
             {/* Custom Payloads */}
             {tlsCaptures.length > 0 && (
@@ -318,7 +322,10 @@ export const DiscoveryOptionsPanel = ({
             {tlsCaptures.length === 0 && (
               <Typography variant="caption" color="text.secondary">
                 {t("discovery.options.noPayloads")}{" "}
-                <a href="/settings/payloads" style={{ color: colors.secondary }}>
+                <a
+                  href="/settings/payloads"
+                  style={{ color: colors.secondary }}
+                >
                   {t("discovery.options.capturePayloads")}
                 </a>{" "}
                 {t("discovery.options.noPayloadsSuffix")}
@@ -331,21 +338,31 @@ export const DiscoveryOptionsPanel = ({
   );
 };
 
-function getOptionsSummary(options: DiscoveryOptions, t: (key: string, opts?: Record<string, unknown>) => string): string {
+function getOptionsSummary(
+  options: DiscoveryOptions,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+  ipVersionEnabled: boolean,
+): string {
   const parts: string[] = [];
   if (options.skipDNS) parts.push(t("discovery.options.summarySkipDns"));
   if (options.skipCache) parts.push(t("discovery.options.summarySkipCache"));
   if (options.tlsVersion === "tls12") parts.push("TLS 1.2");
   if (options.tlsVersion === "tls13") parts.push("TLS 1.3");
-  if (options.ipVersion === "ipv4") parts.push("IPv4");
-  if (options.ipVersion === "ipv6") parts.push("IPv6");
+  if (ipVersionEnabled && options.ipVersion === "ipv4") parts.push("IPv4");
+  if (ipVersionEnabled && options.ipVersion === "ipv6") parts.push("IPv6");
   if (options.validationTries > 1)
-    parts.push(t("discovery.options.summaryTries", { count: options.validationTries }));
+    parts.push(
+      t("discovery.options.summaryTries", { count: options.validationTries }),
+    );
   if (options.payloadFiles.length > 0) {
     parts.push(
       options.payloadFiles.length > 1
-        ? t("discovery.options.summaryPayloads_plural", { count: options.payloadFiles.length })
-        : t("discovery.options.summaryPayloads", { count: options.payloadFiles.length }),
+        ? t("discovery.options.summaryPayloads_plural", {
+            count: options.payloadFiles.length,
+          })
+        : t("discovery.options.summaryPayloads", {
+            count: options.payloadFiles.length,
+          }),
     );
   }
   return parts.join(", ");
