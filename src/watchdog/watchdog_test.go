@@ -264,6 +264,48 @@ func TestApplyGroup_ExistingSet(t *testing.T) {
 	}
 }
 
+func TestApplyGroup_SkipsRoutingSetMatchedViaGeosite(t *testing.T) {
+	adblock := config.NewSetConfig()
+	adblock.Name = "adblock"
+	adblock.Enabled = true
+	adblock.Routing.Enabled = true
+	adblock.Routing.Mode = config.RoutingModeBlock
+	adblock.Targets.SNIDomains = []string{"ad.doubleclick.net"}
+	adblock.Targets.DomainsToMatch = []string{"ad.doubleclick.net", "ads.youtube.com", "s2.youtube.com"}
+
+	youtube := config.NewSetConfig()
+	youtube.Name = "YouTubenew"
+	youtube.Enabled = true
+	youtube.Targets.SNIDomains = []string{"youtube.com"}
+	youtube.Targets.DomainsToMatch = []string{"youtube.com"}
+	youtube.Fragmentation.Strategy = "tcp"
+
+	cfg := &config.Config{
+		Sets: []*config.SetConfig{&adblock, &youtube},
+	}
+
+	refSet := &config.SetConfig{}
+	refSet.Fragmentation.Strategy = "combo"
+
+	group := []domainWithSet{
+		{domain: "youtube.com", set: refSet},
+	}
+
+	applyGroup(cfg, group)
+
+	if len(cfg.Sets) != 2 {
+		t.Fatalf("should reuse YouTube set, got %d sets", len(cfg.Sets))
+	}
+	for _, sni := range adblock.Targets.SNIDomains {
+		if sni == "youtube.com" {
+			t.Fatalf("youtube.com must not be added to the routing/block set")
+		}
+	}
+	if youtube.Fragmentation.Strategy != "combo" {
+		t.Errorf("youtube set should be healed to combo, got %s", youtube.Fragmentation.Strategy)
+	}
+}
+
 func TestApplyGroup_SkipsDisabledSet(t *testing.T) {
 	disabledSet := config.NewSetConfig()
 	disabledSet.Name = "Disabled"

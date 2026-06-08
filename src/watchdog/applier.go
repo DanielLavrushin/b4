@@ -97,7 +97,10 @@ func applyGroup(cfg *config.Config, group []domainWithSet) {
 		if !set.Enabled {
 			continue
 		}
-		if setContainsAnyDomain(set, groupDomains) {
+		if set.Routing.Enabled {
+			continue
+		}
+		if setListsAnyDomain(set, groupDomains) {
 			existingSet = set
 			break
 		}
@@ -134,6 +137,20 @@ func applyGroup(cfg *config.Config, group []domainWithSet) {
 		log.Infof("[WATCHDOG] %s: created set %q (strategy: %s)",
 			strings.Join(groupDomains, ", "), newSet.Name, refSet.Fragmentation.Strategy)
 	}
+}
+
+func setListsAnyDomain(set *config.SetConfig, domains []string) bool {
+	for _, sni := range set.Targets.SNIDomains {
+		for _, domain := range domains {
+			if sni == domain {
+				return true
+			}
+			if len(domain) > len(sni) && strings.HasSuffix(domain, "."+sni) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func setContainsAnyDomain(set *config.SetConfig, domains []string) bool {
