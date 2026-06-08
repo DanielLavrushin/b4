@@ -22,7 +22,7 @@ import doh from "@assets/doh.json";
 interface DnsEntry {
   name: string;
   ip: string;
-  ipv6: boolean;
+  ipv6?: boolean;
   desc: string;
   warn?: boolean;
 }
