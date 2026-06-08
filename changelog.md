@@ -1,5 +1,11 @@
 # B4 - Bye Bye Big Bro
 
+## [1.67.0] - 2026-06-08
+
+- ADDED: **Encrypted DNS (DoH) for a set** - a set's DNS tab can now send its name lookups over an encrypted DNS-over-HTTPS connection instead of to a plain DNS server's IP. Some services only work when looked up through a specific resolver (for example `xbox-dns.ru` for sites that say "not available in your country"), and some providers tamper with ordinary DNS - encrypted DNS gets around both. Switch the set between "Plain DNS" and "DNS-over-HTTPS", then pick a server from the built-in list or paste your own address. Only that set's lookups are affected, so the rest of your DNS stays as it is.
+- FIXED: **Sending a set's traffic to a proxy didn't work while bypass options were on** - when a set was set to route its traffic through an upstream proxy (or the Telegram bridge), b4 still tried to apply its DPI-bypass tricks to that same traffic, which fought with the routing and the connection failed to open. b4 now hands routed traffic straight to the proxy, so routing works even with the bypass options left enabled - and routed connections still show up on the Traffic page.
+- FIXED: **RST protection did nothing on sets that also used SYN-based bypass** - if a set combined "RST protection" with certain TCP bypass techniques, the protection was silently inactive because those connections weren't being tracked, so the site still got reset. RST protection now works in that combination. It also blocks the matching fake reset aimed at the destination server, not only the one aimed at your device.
+
 ## [1.66.0] - 2026-06-07
 
 - ADDED: **Blocking stats on the Dashboard** - when a set uses Block (blackhole) mode and actually blocks something, the Dashboard now shows a "Blackhole" panel with the total number of blocked attempts, the most-blocked domains, and which devices ran into the most blocks. The panel stays hidden until there is something to show, so it never clutters the page when nothing is being blocked. Blocked connections are also tagged with a "block" label on the Traffic page so you can spot them in the live feed.

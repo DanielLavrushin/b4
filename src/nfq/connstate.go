@@ -19,6 +19,7 @@ type connInfo struct {
 	responseSeen  bool
 	rstCount      int
 	serverHasOpts bool
+	established    bool
 }
 
 type tlsInfo struct {
@@ -479,6 +480,25 @@ func (t *connStateTracker) CheckRST(clientIP string, clientPort uint16, serverIP
 	}
 
 	return false, ""
+}
+
+func (t *connStateTracker) MarkEstablished(connKey string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if info, ok := t.conns[connKey]; ok {
+		info.established = true
+		info.lastSeen = time.Now()
+	}
+}
+
+func (t *connStateTracker) ShouldDropOutboundRST(connKey string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	info, ok := t.conns[connKey]
+	if !ok {
+		return false
+	}
+	return !info.established
 }
 
 func (t *connStateTracker) GetSetForIncoming(clientIP string, clientPort uint16, serverIP string, serverPort uint16) *config.SetConfig {
