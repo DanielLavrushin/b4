@@ -149,6 +149,11 @@ func (c *Config) Validate() error {
 			}
 		}
 
+		if set.DNS.Enabled && set.DNS.DoHURL != "" && !strings.HasPrefix(strings.ToLower(set.DNS.DoHURL), "https://") {
+			v.addf(fmt.Sprintf("sets[%d].dns.doh_url", setIdx), "doh_url_must_be_https", map[string]any{"set": set.Name}, "set %q: DNS-over-HTTPS URL must start with https://", set.Name)
+			return v.result()
+		}
+
 		if len(set.Fragmentation.SeqOverlapPattern) > 0 {
 			set.Fragmentation.SeqOverlapBytes = make([]byte, len(set.Fragmentation.SeqOverlapPattern))
 			for i, s := range set.Fragmentation.SeqOverlapPattern {

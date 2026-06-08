@@ -538,7 +538,7 @@ func TestMatchSNIWithSourceTLS_TLSFilter(t *testing.T) {
 	s.Targets.TLSVersion = "1.2"
 	ss := NewSuffixSet([]*config.SetConfig{s})
 
-	matched, _ := ss.MatchSNIWithSourceTLS("example.com", "", 0x0303)
+	matched, _ := ss.MatchSNIWithSourceTLS("example.com", "", 0x0303, 0)
 	if !matched {
 		t.Error("expected match for TLS 1.2")
 	}
@@ -551,12 +551,12 @@ func TestMatchSNIWithSourceTLS_PrefersExactTLSMatch(t *testing.T) {
 	tls13.Targets.TLSVersion = "1.3"
 	ss := NewSuffixSet([]*config.SetConfig{tls12, tls13})
 
-	_, set := ss.MatchSNIWithSourceTLS("example.com", "", 0x0304)
+	_, set := ss.MatchSNIWithSourceTLS("example.com", "", 0x0304, 0)
 	if set.Name != "tls13" {
 		t.Errorf("expected tls13 set for TLS 1.3 client, got %s", set.Name)
 	}
 
-	_, set = ss.MatchSNIWithSourceTLS("example.com", "", 0x0303)
+	_, set = ss.MatchSNIWithSourceTLS("example.com", "", 0x0303, 0)
 	if set.Name != "tls12" {
 		t.Errorf("expected tls12 set for TLS 1.2 client, got %s", set.Name)
 	}
@@ -569,7 +569,7 @@ func TestMatchSNIWithSourceTLS_FallbackWhenNoTLSMatch(t *testing.T) {
 	tls12.Targets.TLSVersion = "1.2"
 	ss := NewSuffixSet([]*config.SetConfig{tls12})
 
-	matched, set := ss.MatchSNIWithSourceTLS("example.com", "", 0x0304)
+	matched, set := ss.MatchSNIWithSourceTLS("example.com", "", 0x0304, 0)
 	if !matched {
 		t.Error("expected fallback match (retry with tlsVersion=0)")
 	}
@@ -583,9 +583,77 @@ func TestMatchSNIWithSourceTLS_ZeroTLSMatchesAny(t *testing.T) {
 	s.Targets.TLSVersion = "1.2"
 	ss := NewSuffixSet([]*config.SetConfig{s})
 
-	matched, _ := ss.MatchSNIWithSourceTLS("example.com", "", 0)
+	matched, _ := ss.MatchSNIWithSourceTLS("example.com", "", 0, 0)
 	if !matched {
 		t.Error("tlsVersion=0 should match any set")
+	}
+}
+
+// --- IP version filtering ---
+
+func TestMatchSNIWithSourceTLS_IPVersionFilter(t *testing.T) {
+	s := makeSetWithDomains("v6only", "example.com")
+	s.Targets.IPVersion = "6"
+	ss := NewSuffixSet([]*config.SetConfig{s})
+
+	matched, _ := ss.MatchSNIWithSourceTLS("example.com", "", 0, 6)
+	if !matched {
+		t.Error("expected match for IPv6 packet")
+	}
+}
+
+func TestMatchSNIWithSourceTLS_PrefersExactIPVersion(t *testing.T) {
+	v4 := makeSetWithDomains("v4", "example.com")
+	v4.Targets.IPVersion = "4"
+	v6 := makeSetWithDomains("v6", "example.com")
+	v6.Targets.IPVersion = "6"
+	ss := NewSuffixSet([]*config.SetConfig{v4, v6})
+
+	_, set := ss.MatchSNIWithSourceTLS("example.com", "", 0, 4)
+	if set == nil || set.Name != "v4" {
+		t.Errorf("expected v4 set for IPv4 packet, got %v", set)
+	}
+
+	_, set = ss.MatchSNIWithSourceTLS("example.com", "", 0, 6)
+	if set == nil || set.Name != "v6" {
+		t.Errorf("expected v6 set for IPv6 packet, got %v", set)
+	}
+}
+
+func TestMatchSNIWithSourceTLS_IPVersionFallback(t *testing.T) {
+	v4 := makeSetWithDomains("v4", "example.com")
+	v4.Targets.IPVersion = "4"
+	ss := NewSuffixSet([]*config.SetConfig{v4})
+
+	matched, set := ss.MatchSNIWithSourceTLS("example.com", "", 0, 6)
+	if !matched || set == nil || set.Name != "v4" {
+		t.Errorf("expected fallback to v4 set when only mismatched-version set exists, got %v", set)
+	}
+}
+
+func TestMatchSNIWithSourceTLS_ZeroIPVersionMatchesAny(t *testing.T) {
+	s := makeSetWithDomains("v6only", "example.com")
+	s.Targets.IPVersion = "6"
+	ss := NewSuffixSet([]*config.SetConfig{s})
+
+	matched, _ := ss.MatchSNIWithSourceTLS("example.com", "", 0, 0)
+	if !matched {
+		t.Error("ipVersion=0 should match any set")
+	}
+}
+
+func TestMatchIPWithSource_IPVersionDispatch(t *testing.T) {
+	v4 := makeSetWithIPs("v4", "203.0.113.0/24")
+	v4.Targets.IPVersion = "4"
+	v6 := makeSetWithIPs("v6", "2001:db8::/32")
+	v6.Targets.IPVersion = "6"
+	ss := NewSuffixSet([]*config.SetConfig{v4, v6})
+
+	if _, set := ss.MatchIPWithSource(net.ParseIP("203.0.113.5"), ""); set == nil || set.Name != "v4" {
+		t.Errorf("expected v4 set for IPv4 destination, got %v", set)
+	}
+	if _, set := ss.MatchIPWithSource(net.ParseIP("2001:db8::1"), ""); set == nil || set.Name != "v6" {
+		t.Errorf("expected v6 set for IPv6 destination, got %v", set)
 	}
 }
 
@@ -768,7 +836,7 @@ func TestGetCacheStats_Nil(t *testing.T) {
 // --- selectSetBySourceAndTLS ---
 
 func TestSelectSetBySourceAndTLS_NoMatchReturnsNil(t *testing.T) {
-	matched, set := selectSetBySourceAndTLS(nil, "", 0)
+	matched, set := selectSetBySourceAndTLS(nil, "", 0, 0)
 	if matched || set != nil {
 		t.Error("empty candidates should not match")
 	}

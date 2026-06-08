@@ -359,7 +359,7 @@ func (w *Worker) handleTCPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 		}
 
 		if host != "" {
-			if mSNI, stSNI := matcher.MatchSNIWithSourceTLS(host, pkt.srcMac, tlsVersion); mSNI {
+			if mSNI, stSNI := matcher.MatchSNIWithSourceTLS(host, pkt.srcMac, tlsVersion, pkt.ver); mSNI {
 				// If SNI-matched set has a port filter, verify port matches (AND logic)
 				if stSNI.MatchesTCPDPort(dport) {
 					matchedSNI = true
@@ -667,7 +667,7 @@ func (w *Worker) handleUDPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 	}
 
 	if host != "" {
-		if mSNI, sniSet := matcher.MatchSNIWithSourceTLS(host, pkt.srcMac, 0x0304); mSNI { // QUIC is always TLS 1.3
+		if mSNI, sniSet := matcher.MatchSNIWithSourceTLS(host, pkt.srcMac, 0x0304, pkt.ver); mSNI { // QUIC is always TLS 1.3
 			// If SNI-matched set has a port filter, verify port matches (AND logic)
 			if sniSet.MatchesUDPDPort(dport) {
 				matchedQUIC = true

@@ -719,6 +719,9 @@
       "tlsVersionFilter": "TLS Version Filter",
       "tlsAny": "Any",
       "tlsHelperText": "Match only specific TLS version",
+      "ipVersionFilter": "IP Version Filter",
+      "ipVersionAny": "Any",
+      "ipVersionHelperText": "Match only IPv4 or IPv6 traffic",
       "escalateTo": "Escalate to set",
       "escalateNone": "None",
       "escalateHelper": "If this set keeps failing for a site, b4 will use the chosen set for that site instead. After a while, b4 tries this set again.",
@@ -1819,6 +1822,7 @@
     "geoip_path_missing": "Geoip path must be configured to use geoip categories",
     "invalid_routing_mode": "Set \"{{set}}\": unknown routing mode \"{{mode}}\"",
     "socks5_loop": "Set \"{{set}}\": upstream proxy points to b4's own SOCKS5 server (loop)",
+    "doh_url_must_be_https": "Set \"{{set}}\": DNS-over-HTTPS URL must start with https://",
     "mark_conflict": "Mark value {{mark}} conflicts with reserved bits"
   }
 }

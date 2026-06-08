@@ -221,7 +221,8 @@ type TargetsConfig struct {
 	GeoSiteCategories []string `json:"geosite_categories"`
 	GeoIpCategories   []string `json:"geoip_categories"`
 	SourceDevices     []string `json:"source_devices"`
-	TLSVersion        string   `json:"tls"` // "1.2", "1.3", or "" (match any)
+	TLSVersion        string   `json:"tls"`        // "1.2", "1.3", or "" (match any)
+	IPVersion         string   `json:"ip_version"` // "4", "6", or "" (match any)
 	DomainsToMatch    []string `json:"-"`
 	IpsToMatch        []string `json:"-"`
 }

@@ -272,6 +272,8 @@ export const SetEditorPage = ({
             config={editedSet}
             stats={stats}
             otherSetsTargets={otherSetsTargets}
+            ipv4={config.queue.ipv4}
+            ipv6={config.queue.ipv6}
             onChange={handleChange}
           />
         </B4TabPanel>

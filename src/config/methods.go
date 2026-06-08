@@ -443,6 +443,25 @@ func (set *SetConfig) MatchesTLSVersion(tlsVersion uint16) bool {
 	return tlsVersion == filterVer
 }
 
+// MatchesIPVersion checks if the packet's IP version matches this set's filter.
+// Returns true if no filter is configured or if version is 0 (unknown).
+func (set *SetConfig) MatchesIPVersion(version uint8) bool {
+	if set.Targets.IPVersion == "" {
+		return true
+	}
+	if version == 0 {
+		return true
+	}
+	switch set.Targets.IPVersion {
+	case "4":
+		return version == 4
+	case "6":
+		return version == 6
+	default:
+		return false // invalid filter value — don't silently match everything
+	}
+}
+
 func (set *SetConfig) HasIPOrDomainTargets() bool {
 	return len(set.Targets.IpsToMatch) > 0 || len(set.Targets.DomainsToMatch) > 0
 }

@@ -101,6 +101,7 @@ export interface TargetsConfig {
   geoip_categories: string[];
   source_devices?: string[];
   tls?: string;
+  ip_version?: string;
 }
 
 export interface DomainStatisticsConfig {

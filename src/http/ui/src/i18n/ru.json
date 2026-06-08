@@ -716,6 +716,9 @@
       "tlsVersionFilter": "Фильтр версии TLS",
       "tlsAny": "Любая",
       "tlsHelperText": "Соответствие только определённой версии TLS",
+      "ipVersionFilter": "Фильтр версии IP",
+      "ipVersionAny": "Любая",
+      "ipVersionHelperText": "Соответствие только трафику IPv4 или IPv6",
       "escalateTo": "Переключаться на набор",
       "escalateNone": "Нет",
       "escalateHelper": "Если этот набор перестаёт справляться с сайтом, b4 будет использовать выбранный набор для этого сайта. Через некоторое время b4 снова пробует этот набор.",
@@ -1817,6 +1820,7 @@
     "geoip_path_missing": "Для использования категорий geoip необходимо указать путь к geoip",
     "invalid_routing_mode": "Сет \"{{set}}\": неизвестный режим маршрутизации \"{{mode}}\"",
     "socks5_loop": "Сет \"{{set}}\": upstream-прокси указывает на собственный SOCKS5-сервер b4 (петля)",
+    "doh_url_must_be_https": "Сет \"{{set}}\": URL DNS-over-HTTPS должен начинаться с https://",
     "mark_conflict": "Значение mark {{mark}} конфликтует с зарезервированными битами"
   }
 }

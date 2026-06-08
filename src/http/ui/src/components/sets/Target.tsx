@@ -63,6 +63,8 @@ interface TargetSettingsProps {
   geo: GeoConfig;
   stats?: SetStats;
   otherSetsTargets?: OtherSetsTargets;
+  ipv4?: boolean;
+  ipv6?: boolean;
   onChange: (field: string, value: string | string[]) => void;
 }
 
@@ -96,8 +98,11 @@ export const TargetSettings = ({
   geo,
   stats,
   otherSetsTargets,
+  ipv4,
+  ipv6,
 }: TargetSettingsProps) => {
   const { t } = useTranslation();
+  const showIpVersionFilter = (!!ipv4 && !!ipv6) || !!config.targets.ip_version;
   const [tabValue, setTabValue] = useState(0);
   const {
     devices,
@@ -432,20 +437,39 @@ export const TargetSettings = ({
           <B4TabPanel value={tabValue} index={0} idPrefix="target-tab">
             <B4Hint>{t("sets.targets.domainAlert")}</B4Hint>
 
-            <Box sx={{ my: 3, maxWidth: 260 }}>
-              <B4Select
-                label={t("sets.targets.tlsVersionFilter")}
-                value={config.targets.tls ?? ""}
-                options={[
-                  { value: "", label: t("sets.targets.tlsAny") },
-                  { value: "1.2", label: "TLS 1.2" },
-                  { value: "1.3", label: "TLS 1.3" },
-                ]}
-                helperText={t("sets.targets.tlsHelperText")}
-                onChange={(e) =>
-                  onChange("targets.tls", e.target.value as string)
-                }
-              />
+            <Box sx={{ my: 3, display: "flex", gap: 2, flexWrap: "wrap" }}>
+              <Box sx={{ maxWidth: 260, flex: 1, minWidth: 200 }}>
+                <B4Select
+                  label={t("sets.targets.tlsVersionFilter")}
+                  value={config.targets.tls ?? ""}
+                  options={[
+                    { value: "", label: t("sets.targets.tlsAny") },
+                    { value: "1.2", label: "TLS 1.2" },
+                    { value: "1.3", label: "TLS 1.3" },
+                  ]}
+                  helperText={t("sets.targets.tlsHelperText")}
+                  onChange={(e) =>
+                    onChange("targets.tls", e.target.value as string)
+                  }
+                />
+              </Box>
+              {showIpVersionFilter && (
+                <Box sx={{ maxWidth: 260, flex: 1, minWidth: 200 }}>
+                  <B4Select
+                    label={t("sets.targets.ipVersionFilter")}
+                    value={config.targets.ip_version ?? ""}
+                    options={[
+                      { value: "", label: t("sets.targets.ipVersionAny") },
+                      { value: "4", label: "IPv4" },
+                      { value: "6", label: "IPv6" },
+                    ]}
+                    helperText={t("sets.targets.ipVersionHelperText")}
+                    onChange={(e) =>
+                      onChange("targets.ip_version", e.target.value as string)
+                    }
+                  />
+                </Box>
+              )}
             </Box>
 
             <Grid container spacing={2}>

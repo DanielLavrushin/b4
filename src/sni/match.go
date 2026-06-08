@@ -561,38 +561,38 @@ func setMatchesSource(set *config.SetConfig, srcMAC string) bool {
 }
 
 func (s *SuffixSet) MatchSNIWithSource(host string, srcMAC string) (bool, *config.SetConfig) {
-	return s.MatchSNIWithSourceTLS(host, srcMAC, 0)
+	return s.MatchSNIWithSourceTLS(host, srcMAC, 0, 0)
 }
 
-// MatchSNIWithSourceTLS matches a domain with source MAC and TLS version filtering.
+// MatchSNIWithSourceTLS matches a domain with source MAC, TLS version and IP version filtering.
 // tlsVersion is the client's max TLS version in wire format (0x0303=1.2, 0x0304=1.3).
-// Pass 0 to skip TLS version filtering.
-func (s *SuffixSet) MatchSNIWithSourceTLS(host string, srcMAC string, tlsVersion uint16) (bool, *config.SetConfig) {
+// ipVersion is the packet's IP version (4 or 6). Pass 0 for either to skip that filter.
+func (s *SuffixSet) MatchSNIWithSourceTLS(host string, srcMAC string, tlsVersion uint16, ipVersion uint8) (bool, *config.SetConfig) {
 	if s == nil || (len(s.sets) == 0 && len(s.regexes) == 0) || host == "" {
 		return false, nil
 	}
 
 	lower := strings.ToLower(host)
 
-	if matched, set := s.matchDomainWithSourceTLS(lower, srcMAC, tlsVersion); matched {
+	if matched, set := s.matchDomainWithSourceTLS(lower, srcMAC, tlsVersion, ipVersion); matched {
 		return true, set
 	}
 
 	if len(s.regexes) > 0 {
-		return s.matchRegexWithSourceTLS(lower, srcMAC, tlsVersion)
+		return s.matchRegexWithSourceTLS(lower, srcMAC, tlsVersion, ipVersion)
 	}
 
 	return false, nil
 }
 
-func (s *SuffixSet) matchDomainWithSourceTLS(host string, srcMAC string, tlsVersion uint16) (bool, *config.SetConfig) {
+func (s *SuffixSet) matchDomainWithSourceTLS(host string, srcMAC string, tlsVersion uint16, ipVersion uint8) (bool, *config.SetConfig) {
 	candidates := s.findDomainCandidates(host)
 
 	if len(candidates) == 0 {
 		return false, nil
 	}
 
-	return selectSetBySourceAndTLS(candidates, srcMAC, tlsVersion)
+	return selectSetBySourceAndTLS(candidates, srcMAC, tlsVersion, ipVersion)
 }
 
 func (s *SuffixSet) findDomainCandidates(host string) []*config.SetConfig {
@@ -614,7 +614,7 @@ func (s *SuffixSet) findDomainCandidates(host string) []*config.SetConfig {
 	return nil
 }
 
-func (s *SuffixSet) matchRegexWithSourceTLS(host string, srcMAC string, tlsVersion uint16) (bool, *config.SetConfig) {
+func (s *SuffixSet) matchRegexWithSourceTLS(host string, srcMAC string, tlsVersion uint16, ipVersion uint8) (bool, *config.SetConfig) {
 	var candidates []*config.SetConfig
 	for _, rws := range s.regexes {
 		if rws.regex.MatchString(host) {
@@ -624,7 +624,7 @@ func (s *SuffixSet) matchRegexWithSourceTLS(host string, srcMAC string, tlsVersi
 	if len(candidates) == 0 {
 		return false, nil
 	}
-	return selectSetBySourceAndTLS(candidates, srcMAC, tlsVersion)
+	return selectSetBySourceAndTLS(candidates, srcMAC, tlsVersion, ipVersion)
 }
 
 func (s *SuffixSet) MatchIPWithSource(ip net.IP, srcMAC string) (bool, *config.SetConfig) {
@@ -645,7 +645,17 @@ func (s *SuffixSet) MatchIPWithSource(ip net.IP, srcMAC string) (bool, *config.S
 		candidates = append(candidates, e.(*ipRange).set)
 	}
 
-	return selectSetBySource(candidates, srcMAC)
+	return selectSetBySource(candidates, srcMAC, ipVersionOf(ip))
+}
+
+func ipVersionOf(ip net.IP) uint8 {
+	if ip == nil {
+		return 0
+	}
+	if ip.To4() != nil {
+		return 4
+	}
+	return 6
 }
 
 // sortEntriesBySpecificity sorts CIDR entries by prefix length descending,
@@ -692,7 +702,7 @@ func (s *SuffixSet) MatchLearnedIPWithSource(ip net.IP, srcMAC string) (bool, *c
 	}
 
 	if !setMatchesSource(entry.set, srcMAC) {
-		if matched, altSet := s.MatchSNIWithSource(entry.domain, srcMAC); matched {
+		if matched, altSet := s.MatchSNIWithSourceTLS(entry.domain, srcMAC, 0, ipVersionOf(ip)); matched {
 			entry.learnedAt = time.Now()
 			s.learnedIPCacheLRU.MoveToFront(entry.element)
 			return true, altSet, entry.domain
@@ -705,29 +715,29 @@ func (s *SuffixSet) MatchLearnedIPWithSource(ip net.IP, srcMAC string) (bool, *c
 	return true, entry.set, entry.domain
 }
 
-func selectSetBySource(candidates []*config.SetConfig, srcMAC string) (bool, *config.SetConfig) {
-	return selectSetBySourceAndTLS(candidates, srcMAC, 0)
+func selectSetBySource(candidates []*config.SetConfig, srcMAC string, ipVersion uint8) (bool, *config.SetConfig) {
+	return selectSetBySourceAndTLS(candidates, srcMAC, 0, ipVersion)
 }
 
-func selectSetBySourceAndTLS(candidates []*config.SetConfig, srcMAC string, tlsVersion uint16) (bool, *config.SetConfig) {
+func selectSetBySourceAndTLS(candidates []*config.SetConfig, srcMAC string, tlsVersion uint16, ipVersion uint8) (bool, *config.SetConfig) {
 	if len(candidates) == 0 {
 		return false, nil
 	}
 
 	for _, set := range candidates {
-		if len(set.Targets.SourceDevices) > 0 && setMatchesSource(set, srcMAC) && set.MatchesTLSVersion(tlsVersion) {
+		if len(set.Targets.SourceDevices) > 0 && setMatchesSource(set, srcMAC) && set.MatchesTLSVersion(tlsVersion) && set.MatchesIPVersion(ipVersion) {
 			return true, set
 		}
 	}
 
 	for _, set := range candidates {
-		if len(set.Targets.SourceDevices) == 0 && set.MatchesTLSVersion(tlsVersion) {
+		if len(set.Targets.SourceDevices) == 0 && set.MatchesTLSVersion(tlsVersion) && set.MatchesIPVersion(ipVersion) {
 			return true, set
 		}
 	}
 
-	if tlsVersion != 0 {
-		return selectSetBySourceAndTLS(candidates, srcMAC, 0)
+	if tlsVersion != 0 || ipVersion != 0 {
+		return selectSetBySourceAndTLS(candidates, srcMAC, 0, 0)
 	}
 
 	return false, nil
