@@ -172,6 +172,26 @@ func TestSetContainsAnyDomain(t *testing.T) {
 			t.Error("should match via DomainsToMatch")
 		}
 	})
+
+	t.Run("case-insensitive query", func(t *testing.T) {
+		if !setContainsAnyDomain(set, []string{"YouTube.com"}) {
+			t.Error("should match regardless of case")
+		}
+	})
+
+	t.Run("whitespace trimmed query", func(t *testing.T) {
+		if !setContainsAnyDomain(set, []string{"  youtube.com  "}) {
+			t.Error("should match after trimming whitespace")
+		}
+	})
+
+	t.Run("case-insensitive stored domain", func(t *testing.T) {
+		mixed := &config.SetConfig{}
+		mixed.Targets.SNIDomains = []string{"YouTube.COM"}
+		if !setContainsAnyDomain(mixed, []string{"youtube.com"}) {
+			t.Error("should match a mixed-case stored domain")
+		}
+	})
 }
 
 func TestDomainMatchesSuffix(t *testing.T) {
@@ -328,5 +348,83 @@ func TestApplyGroup_SkipsDisabledSet(t *testing.T) {
 
 	if len(cfg.Sets) != 2 {
 		t.Fatalf("should create new set (not reuse disabled), got %d sets", len(cfg.Sets))
+	}
+}
+
+func TestSetListsAnyDomain(t *testing.T) {
+	set := &config.SetConfig{}
+	set.Targets.SNIDomains = []string{"YouTube.com", " discord.com "}
+
+	tests := []struct {
+		name     string
+		domains  []string
+		expected bool
+	}{
+		{"exact after trim", []string{"discord.com"}, true},
+		{"case-insensitive", []string{"youtube.com"}, true},
+		{"whitespace trimmed", []string{"  youtube.com  "}, true},
+		{"subdomain", []string{"www.youtube.com"}, true},
+		{"unrelated", []string{"twitter.com"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if setListsAnyDomain(set, tt.domains) != tt.expected {
+				t.Errorf("setListsAnyDomain(%v) = %v, want %v", tt.domains, !tt.expected, tt.expected)
+			}
+		})
+	}
+}
+
+func TestDomainInSNIList(t *testing.T) {
+	list := []string{"YouTube.com", " discord.com "}
+
+	tests := []struct {
+		name     string
+		domain   string
+		expected bool
+	}{
+		{"case-insensitive present", "youtube.com", true},
+		{"whitespace trimmed present", "discord.com", true},
+		{"absent", "twitter.com", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if domainInSNIList(list, tt.domain) != tt.expected {
+				t.Errorf("domainInSNIList(%q) = %v, want %v", tt.domain, !tt.expected, tt.expected)
+			}
+		})
+	}
+}
+
+func TestApplyGroup_ExistingSet_CaseInsensitive(t *testing.T) {
+	existingSet := config.NewSetConfig()
+	existingSet.Name = "MyYouTube"
+	existingSet.Enabled = true
+	existingSet.Targets.SNIDomains = []string{"YouTube.com"}
+	existingSet.Targets.DomainsToMatch = []string{"YouTube.com"}
+	existingSet.Fragmentation.Strategy = "tcp"
+
+	cfg := &config.Config{
+		Sets: []*config.SetConfig{&existingSet},
+	}
+
+	refSet := &config.SetConfig{}
+	refSet.Fragmentation.Strategy = "combo"
+
+	group := []domainWithSet{
+		{domain: "youtube.com", set: refSet},
+	}
+
+	applyGroup(cfg, group)
+
+	if len(cfg.Sets) != 1 {
+		t.Fatalf("should reuse existing set despite case difference, got %d sets", len(cfg.Sets))
+	}
+	if len(cfg.Sets[0].Targets.SNIDomains) != 1 {
+		t.Errorf("should not append a case-variant duplicate, got %d: %v",
+			len(cfg.Sets[0].Targets.SNIDomains), cfg.Sets[0].Targets.SNIDomains)
+	}
+	if cfg.Sets[0].Fragmentation.Strategy != "combo" {
+		t.Errorf("strategy should be healed to combo, got %s", cfg.Sets[0].Fragmentation.Strategy)
 	}
 }
