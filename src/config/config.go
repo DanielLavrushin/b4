@@ -86,6 +86,7 @@ var DefaultSetConfig = SetConfig{
 		Enabled:       false,
 		FragmentQuery: false,
 		TargetDNS:     "",
+		DoHURL:        "",
 	},
 
 	Routing: RoutingConfig{

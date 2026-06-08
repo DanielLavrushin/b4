@@ -379,6 +379,7 @@ export interface DisorderFragConfig {
 export interface DNSConfig {
   enabled: boolean;
   target_dns: string;
+  doh_url: string;
   fragment_query: boolean;
 }
 

@@ -1,0 +1,52 @@
+[
+  {
+    "url": "https://xbox-dns.ru/dns-query",
+    "name": "xbox-dns.ru",
+    "desc": "Public DoH resolver (RU)"
+  },
+  {
+    "url": "https://dns.comss.one/dns-query",
+    "name": "Comss.one",
+    "desc": "AdGuard-based public resolver (RU)"
+  },
+  {
+    "url": "https://cloudflare-dns.com/dns-query",
+    "name": "Cloudflare",
+    "desc": "Fast, privacy-first"
+  },
+  {
+    "url": "https://dns.google/dns-query",
+    "name": "Google",
+    "desc": "Fast, global"
+  },
+  {
+    "url": "https://dns.quad9.net/dns-query",
+    "name": "Quad9",
+    "desc": "Security filter, malware blocking"
+  },
+  {
+    "url": "https://dns.adguard-dns.com/dns-query",
+    "name": "AdGuard",
+    "desc": "Blocks ads and trackers"
+  },
+  {
+    "url": "https://family.adguard-dns.com/dns-query",
+    "name": "AdGuard Family",
+    "desc": "Blocks ads, trackers and adult content"
+  },
+  {
+    "url": "https://dns.mullvad.net/dns-query",
+    "name": "Mullvad",
+    "desc": "Privacy-first, no logging"
+  },
+  {
+    "url": "https://protective.joindns4.eu/dns-query",
+    "name": "DNS4EU Protective",
+    "desc": "EU public resolver, blocks malware and phishing"
+  },
+  {
+    "url": "https://common.dot.dns.yandex.net/dns-query",
+    "name": "Yandex",
+    "desc": "Russian resolver, fast in RU/CIS"
+  }
+]

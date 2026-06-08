@@ -2,332 +2,239 @@
   {
     "ip": "8.8.4.4",
     "name": "Google Secondary",
-    "desc": "Fast, global (~14ms)",
-    "dnssec": true,
-    "tags": [],
+    "desc": "Fast, global",
     "warn": true
   },
   {
     "ip": "185.228.168.9",
     "name": "CleanBrowsing",
-    "desc": "Security filter, Seattle (~10ms)",
-    "dnssec": true,
-    "tags": ["fast", "security"]
+    "desc": "Security filter, Seattle"
   },
   {
     "ip": "95.85.95.85",
     "name": "Gcore",
-    "desc": "Fast CDN, Luxembourg (~11ms)",
-    "dnssec": true,
-    "tags": ["fast"]
+    "desc": "Fast CDN, Luxembourg"
   },
   {
     "ip": "2001:4860:4860::8844",
     "name": "Google IPv6",
-    "desc": "Fast, global (~11ms)",
-    "dnssec": true,
-    "tags": ["ipv6"],
-    "warn": true,
-    "ipv6": true
+    "desc": "Fast, global",
+    "ipv6": true,
+    "warn": true
   },
   {
     "ip": "195.46.39.105",
     "name": "SafeDNS",
-    "desc": "Frankfurt, content filter (~11ms)",
-    "dnssec": true,
-    "tags": ["fast", "filtering"]
+    "desc": "Frankfurt, content filter"
   },
   {
     "ip": "208.67.222.222",
     "name": "OpenDNS",
-    "desc": "Cisco, customizable (~12ms)",
-    "dnssec": true,
-    "tags": ["fast", "filtering"]
+    "desc": "Cisco, customizable"
   },
   {
     "ip": "2606:4700:4700::1001",
     "name": "Cloudflare IPv6",
-    "desc": "Fast, privacy-first (~12ms)",
-    "dnssec": true,
-    "tags": ["fast", "privacy", "ipv6"],
+    "desc": "Fast, privacy-first",
     "ipv6": true
   },
   {
     "ip": "1.1.1.1",
     "name": "Cloudflare",
-    "desc": "Fastest, privacy-first (~12ms)",
-    "dnssec": true,
-    "tags": ["fast", "privacy"]
+    "desc": "Fastest, privacy-first"
   },
   {
     "ip": "195.46.39.39",
     "name": "SafeDNS Primary",
-    "desc": "Frankfurt (~13ms)",
-    "dnssec": true,
-    "tags": ["fast", "filtering"]
+    "desc": "Frankfurt"
   },
   {
     "ip": "8.8.8.8",
     "name": "Google",
-    "desc": "Fast, global (~14ms)",
-    "dnssec": true,
-    "tags": [],
+    "desc": "Fast, global",
     "warn": true
   },
   {
     "ip": "223.6.6.6",
     "name": "Alibaba",
-    "desc": "China, may be slow/blocked (~15ms)",
-    "dnssec": false,
-    "tags": ["china", "poisoned"],
-    "china": true
+    "desc": "China, may be slow/blocked"
   },
   {
     "ip": "45.90.29.77",
     "name": "NextDNS",
-    "desc": "NY, customizable (~16ms)",
-    "dnssec": true,
-    "tags": ["fast", "privacy"]
+    "desc": "NY, customizable"
   },
   {
     "ip": "208.67.220.220",
     "name": "OpenDNS Secondary",
-    "desc": "Newark (~16ms)",
-    "dnssec": true,
-    "tags": ["fast", "filtering"]
+    "desc": "Newark"
   },
   {
     "ip": "2620:119:35::35",
     "name": "OpenDNS IPv6",
-    "desc": "Cisco (~16ms)",
-    "dnssec": true,
-    "tags": ["ipv6", "filtering"],
+    "desc": "Cisco",
     "ipv6": true
   },
   {
     "ip": "1.0.0.3",
     "name": "Cloudflare Family",
-    "desc": "Malware + adult filter (~17ms)",
-    "dnssec": true,
-    "tags": ["fast", "family"]
+    "desc": "Malware + adult filter"
   },
   {
     "ip": "8.26.56.26",
     "name": "Comodo Secure",
-    "desc": "Malware blocking (~17ms)",
-    "dnssec": true,
-    "tags": ["fast", "security"]
+    "desc": "Malware blocking"
   },
   {
     "ip": "208.67.222.220",
     "name": "OpenDNS Alt",
-    "desc": "Newark (~17ms)",
-    "dnssec": true,
-    "tags": ["filtering"]
+    "desc": "Newark"
   },
   {
     "ip": "2620:0:ccc::2",
     "name": "OpenDNS IPv6 Alt",
-    "desc": "NY (~19ms)",
-    "dnssec": true,
-    "tags": ["ipv6", "filtering"],
+    "desc": "NY",
     "ipv6": true
   },
   {
     "ip": "8.20.247.10",
     "name": "Comodo Secondary",
-    "desc": "NJ (~20ms)",
-    "dnssec": true,
-    "tags": ["security"]
+    "desc": "NJ"
   },
   {
     "ip": "223.5.5.5",
     "name": "Alibaba Primary",
-    "desc": "China, may be slow/blocked (~20ms)",
-    "dnssec": false,
-    "tags": ["china", "poisoned"],
-    "china": true
+    "desc": "China, may be slow/blocked"
   },
   {
     "ip": "1.1.1.2",
     "name": "Cloudflare Malware",
-    "desc": "Blocks malware (~20ms)",
-    "dnssec": true,
-    "tags": ["security"]
+    "desc": "Blocks malware"
   },
   {
     "ip": "1.0.0.2",
     "name": "Cloudflare Malware Alt",
-    "desc": "Blocks malware (~20ms)",
-    "dnssec": true,
-    "tags": ["security"]
+    "desc": "Blocks malware"
   },
   {
     "ip": "149.112.112.13",
     "name": "Quad9",
-    "desc": "SF, malware blocking (~24ms)",
-    "dnssec": true,
-    "tags": ["privacy", "security"]
+    "desc": "SF, malware blocking"
   },
   {
     "ip": "64.6.64.6",
     "name": "Neustar",
-    "desc": "NY, reliable (~24ms)",
-    "dnssec": true,
-    "tags": ["privacy"]
+    "desc": "NY, reliable"
   },
   {
     "ip": "2620:fe::10",
     "name": "Quad9 IPv6",
-    "desc": "SF (~25ms)",
-    "dnssec": true,
-    "tags": ["ipv6", "privacy", "security"],
+    "desc": "SF",
     "ipv6": true
   },
   {
     "ip": "2620:0:ccd::2",
     "name": "OpenDNS IPv6 Newark",
-    "desc": "Newark (~25ms)",
-    "dnssec": true,
-    "tags": ["ipv6", "filtering"],
+    "desc": "Newark",
     "ipv6": true
   },
   {
     "ip": "2400:3200:baba::1",
     "name": "Alibaba IPv6",
     "desc": "China, may be slow/blocked",
-    "dnssec": false,
-    "tags": ["ipv6", "china", "poisoned"],
-    "ipv6": true,
-    "china": true
+    "ipv6": true
   },
   {
     "ip": "149.112.112.9",
     "name": "Quad9 Alt",
-    "desc": "SF (~43ms)",
-    "dnssec": true,
-    "tags": ["privacy", "security"]
+    "desc": "SF"
   },
   {
     "ip": "94.140.14.140",
     "name": "AdGuard Family",
-    "desc": "Blocks ads + adult (~43ms)",
-    "dnssec": true,
-    "tags": ["adblock", "family"]
+    "desc": "Blocks ads + adult"
   },
   {
     "ip": "9.9.9.10",
     "name": "Quad9 No Filter",
-    "desc": "No malware blocking (~45ms)",
-    "dnssec": true,
-    "tags": ["privacy"]
+    "desc": "No malware blocking"
   },
   {
     "ip": "9.9.9.9",
     "name": "Quad9 Primary",
-    "desc": "Malware blocking (~51ms)",
-    "dnssec": true,
-    "tags": ["privacy", "security"]
+    "desc": "Malware blocking"
   },
   {
     "ip": "149.112.112.112",
     "name": "Quad9 Secondary",
-    "desc": "SF (~52ms)",
-    "dnssec": true,
-    "tags": ["privacy", "security"]
+    "desc": "SF"
   },
   {
     "ip": "8.26.56.10",
     "name": "Comodo Alt",
-    "desc": "Clifton (~62ms)",
-    "dnssec": true,
-    "tags": ["security"]
+    "desc": "Clifton"
   },
   {
     "ip": "149.112.112.11",
     "name": "Quad9 ECS",
-    "desc": "SF, with ECS (~64ms)",
-    "dnssec": true,
-    "tags": ["privacy"]
+    "desc": "SF, with ECS"
   },
   {
     "ip": "185.228.169.9",
     "name": "CleanBrowsing EU",
-    "desc": "Amsterdam (~80ms)",
-    "dnssec": true,
-    "tags": ["security"]
+    "desc": "Amsterdam"
   },
   {
     "ip": "205.171.3.66",
     "name": "Level3",
-    "desc": "CenturyLink, Chicago (~108ms)",
-    "dnssec": true,
-    "tags": []
+    "desc": "CenturyLink, Chicago"
   },
   {
     "ip": "2620:fe::fe",
     "name": "Quad9 IPv6 Primary",
-    "desc": "SF (~111ms)",
-    "dnssec": true,
-    "tags": ["ipv6", "privacy", "security"],
+    "desc": "SF",
     "ipv6": true
   },
   {
     "ip": "74.82.42.42",
     "name": "Hurricane Electric",
-    "desc": "Reliable backbone (~116ms)",
-    "dnssec": true,
-    "tags": ["privacy"]
+    "desc": "Reliable backbone"
   },
   {
     "ip": "77.88.8.8",
     "name": "Yandex",
     "desc": "⚠️ Russian, likely poisoned",
-    "dnssec": true,
-    "tags": ["poisoned"],
     "warn": true
   },
   {
     "ip": "204.194.232.200",
     "name": "OpenDNS Miami",
-    "desc": "Miami (~144ms)",
-    "dnssec": true,
-    "tags": ["filtering"]
+    "desc": "Miami"
   },
   {
     "ip": "216.146.35.35",
     "name": "Oracle Dyn",
-    "desc": "Ashburn (~149ms)",
-    "dnssec": true,
-    "tags": []
+    "desc": "Ashburn"
   },
   {
     "ip": "2.56.220.2",
     "name": "Gcore IPv4 Alt",
-    "desc": "Luxembourg (~194ms)",
-    "dnssec": true,
-    "tags": []
+    "desc": "Luxembourg"
   },
   {
     "ip": "94.140.15.15",
     "name": "AdGuard Secondary",
-    "desc": "Cyprus (~270ms)",
-    "dnssec": true,
-    "tags": ["adblock"]
+    "desc": "Cyprus"
   },
   {
     "ip": "8.20.247.20",
     "name": "Comodo Slow",
-    "desc": "Clifton (~316ms)",
-    "dnssec": true,
-    "tags": ["security"]
+    "desc": "Clifton"
   },
   {
     "ip": "2a10:50c0::1:ff",
     "name": "AdGuard IPv6",
-    "desc": "Cyprus (~480ms)",
-    "dnssec": true,
-    "tags": ["ipv6", "adblock"],
+    "desc": "Cyprus",
     "ipv6": true
   }
 ]

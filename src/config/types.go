@@ -401,6 +401,7 @@ func ResolveStrategyPool(pool []string, fallback string) string {
 type DNSConfig struct {
 	Enabled       bool   `json:"enabled"`
 	TargetDNS     string `json:"target_dns"`
+	DoHURL        string `json:"doh_url"`
 	FragmentQuery bool   `json:"fragment_query"`
 }
 

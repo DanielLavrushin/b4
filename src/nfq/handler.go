@@ -297,6 +297,11 @@ func (w *Worker) handleTCPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 			_ = w.sock.SendIPv6(pkt.raw, pkt.dst)
 		}
 
+		if set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.To != "" {
+			connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
+			w.connTracker.RegisterOutgoing(connKey, set)
+		}
+
 		if err := q.SetVerdict(id, nfqueue.NfDrop); err != nil {
 			log.Tracef("failed to set drop verdict on packet %d: %v", id, err)
 		}

@@ -65,6 +65,15 @@ var migrationRegistry = map[int]MigrationFunc{
 	41: migrateV41to42, // Add MTProto CF Worker domain config
 	42: migrateV42to43, // Add per-set routing block action
 	43: migrateV43to44, // Add MTProto DC-list fallback source config
+	44: migrateV44to45, // Add per-set DNS-over-HTTPS redirect target
+}
+
+func migrateV44to45(c *Config, _ map[string]interface{}) error {
+	log.Tracef("Migration v44->v45: Adding per-set DNS-over-HTTPS redirect target")
+	for _, set := range c.Sets {
+		set.DNS.DoHURL = DefaultSetConfig.DNS.DoHURL
+	}
+	return nil
 }
 
 func migrateV43to44(c *Config, _ map[string]interface{}) error {

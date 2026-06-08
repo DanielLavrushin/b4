@@ -1,8 +1,12 @@
 package nfq
 
 import (
+	"context"
 	"net"
+	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/dns"
@@ -11,6 +15,27 @@ import (
 	"github.com/daniellavrushin/b4/sock"
 	"github.com/florianl/go-nfqueue"
 )
+
+const dohRedirectTimeout = 5 * time.Second
+
+var (
+	dohClientMu   sync.Mutex
+	dohClientMark int
+	dohClient     *http.Client
+)
+
+func getDoHClient(mark int) *http.Client {
+	dohClientMu.Lock()
+	defer dohClientMu.Unlock()
+	if dohClient == nil || dohClientMark != mark {
+		if dohClient != nil {
+			dohClient.CloseIdleConnections()
+		}
+		dohClient = dns.MarkedDoHClient(mark, dohRedirectTimeout)
+		dohClientMark = mark
+	}
+	return dohClient
+}
 
 // parseDNSName parses a DNS domain name from msg starting at the given offset.
 func parseDNSName(msg []byte, offset int) (string, bool) {
@@ -65,6 +90,7 @@ func (w *Worker) processDnsPacket(ipVersion byte, sport uint16, dport uint16, pa
 			matcher := w.getMatcher()
 			if matchedSet, set := matcher.MatchSNIWithSource(domain, srcMac); matchedSet {
 				cfg := w.getConfig()
+				log.Tracef("DNS query: %s matched set %s (src %s)", domain, set.Name, srcMac)
 
 				if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) && !cfg.Queue.IsDiscovery {
 					if config.NormalizeBlockAction(set.Routing.BlockAction) == config.BlockActionDrop {
@@ -121,19 +147,25 @@ func (w *Worker) processDnsPacket(ipVersion byte, sport uint16, dport uint16, pa
 					}
 				}
 
-				if !(set.DNS.Enabled && set.DNS.TargetDNS != "") {
+				useDoH := set.DNS.DoHURL != ""
+
+				if !(set.DNS.Enabled && (set.DNS.TargetDNS != "" || useDoH)) {
+					log.Tracef("DNS redirect: %s matched set %s but no redirect target configured, passing through", domain, set.Name)
 					if err := w.q.SetVerdict(id, nfqueue.NfAccept); err != nil {
 						log.Tracef("failed to set verdict on packet %d: %v", id, err)
 					}
 					return 0
 				}
 
-				targetIP := net.ParseIP(set.DNS.TargetDNS)
-				if targetIP == nil {
-					if err := w.q.SetVerdict(id, nfqueue.NfAccept); err != nil {
-						log.Tracef("failed to set verdict on packet %d: %v", id, err)
+				var targetIP net.IP
+				if !useDoH {
+					targetIP = net.ParseIP(set.DNS.TargetDNS)
+					if targetIP == nil {
+						if err := w.q.SetVerdict(id, nfqueue.NfAccept); err != nil {
+							log.Tracef("failed to set verdict on packet %d: %v", id, err)
+						}
+						return 0
 					}
-					return 0
 				}
 
 				if ipVersion == IPv6 && !cfg.Queue.IPv6Enabled {
@@ -157,6 +189,12 @@ func (w *Worker) processDnsPacket(ipVersion byte, sport uint16, dport uint16, pa
 				ver := ipVersion
 				clientPort := sport
 				delay := config.ResolveSeg2Delay(set.UDP.Seg2Delay, set.UDP.Seg2DelayMax)
+
+				target := set.DNS.TargetDNS
+				if useDoH {
+					target = set.DNS.DoHURL
+				}
+				log.Tracef("DNS redirect: intercepting %s -> %s (set %s)", domain, target, set.Name)
 
 				if err := w.q.SetVerdict(id, nfqueue.NfDrop); err != nil {
 					log.Tracef("failed to set drop verdict on packet %d: %v", id, err)
@@ -213,16 +251,26 @@ func (w *Worker) processDnsPacket(ipVersion byte, sport uint16, dport uint16, pa
 }
 
 func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *config.Config, query []byte, clientIP net.IP, clientPort uint16, originalDst, targetIP net.IP, delay int) {
-	resp, err := dns.ResolveUpstream(query, targetIP, dns.ForwardOptions{
-		Sender:       w.sock,
-		Fragment:     set.DNS.FragmentQuery,
-		Seg2Delay:    delay,
-		ReverseOrder: set.Fragmentation.ReverseOrder,
-		Mark:         int(cfg.Queue.Mark),
-	})
-	if err != nil {
-		log.Tracef("DNS redirect: upstream %s failed: %v", set.DNS.TargetDNS, err)
-		return
+	var resp []byte
+	var err error
+	if set.DNS.DoHURL != "" {
+		resp, err = w.resolveDoHRedirect(set.DNS.DoHURL, int(cfg.Queue.Mark), query)
+		if err != nil {
+			log.Tracef("DNS redirect: DoH %s failed: %v", set.DNS.DoHURL, err)
+			return
+		}
+	} else {
+		resp, err = dns.ResolveUpstream(query, targetIP, dns.ForwardOptions{
+			Sender:       w.sock,
+			Fragment:     set.DNS.FragmentQuery,
+			Seg2Delay:    delay,
+			ReverseOrder: set.Fragmentation.ReverseOrder,
+			Mark:         int(cfg.Queue.Mark),
+		})
+		if err != nil {
+			log.Tracef("DNS redirect: upstream %s failed: %v", set.DNS.TargetDNS, err)
+			return
+		}
 	}
 
 	if ipVersion == IPv4 {
@@ -241,5 +289,15 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		}
 	}
 
-	log.Tracef("DNS redirect: %s -> %s answered for %s (set: %s)", originalDst, set.DNS.TargetDNS, clientIP, set.Name)
+	upstream := set.DNS.TargetDNS
+	if set.DNS.DoHURL != "" {
+		upstream = set.DNS.DoHURL
+	}
+	log.Tracef("DNS redirect: %s -> %s answered for %s with %d IPs (set: %s)", originalDst, upstream, clientIP, len(dns.ParseResponseIPs(resp)), set.Name)
+}
+
+func (w *Worker) resolveDoHRedirect(serverURL string, mark int, query []byte) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(w.ctx, dohRedirectTimeout)
+	defer cancel()
+	return dns.ResolveDoH(ctx, getDoHClient(mark), serverURL, query)
 }
