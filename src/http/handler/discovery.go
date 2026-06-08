@@ -150,6 +150,7 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 		PayloadFiles:    req.PayloadFiles,
 		ValidationTries: validationTries,
 		TLSVersion:      req.TLSVersion,
+		IPVersion:       req.IPVersion,
 	})
 	if err != nil {
 		if errors.Is(err, discovery.ErrDiscoveryAlreadyRunning) {

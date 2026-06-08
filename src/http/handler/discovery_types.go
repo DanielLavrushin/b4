@@ -8,6 +8,7 @@ type DiscoveryRequest struct {
 	PayloadFiles    []string `json:"payload_files,omitempty"`
 	ValidationTries int      `json:"validation_tries,omitempty"`
 	TLSVersion      string   `json:"tls_version,omitempty"` // "auto", "tls12", "tls13"
+	IPVersion       string   `json:"ip_version,omitempty"`  // "auto", "ipv4", "ipv6"
 }
 
 type DiscoveryResponse struct {

@@ -35,6 +35,7 @@ type StartSuiteOptions struct {
 	PayloadFiles    []string
 	ValidationTries int
 	TLSVersion      string
+	IPVersion       string
 }
 
 type Runtime struct {
@@ -128,6 +129,7 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 		opts.PayloadFiles,
 		opts.ValidationTries,
 		opts.TLSVersion,
+		opts.IPVersion,
 		runtimeState.FlowMark,
 	)
 	m.SetActiveSuiteID(suite.Id)

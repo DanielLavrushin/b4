@@ -10,6 +10,7 @@ export const discoveryApi = {
     payload_files?: string[],
     validation_tries?: number,
     tls_version?: string,
+    ip_version?: string,
   ) =>
     apiPost<DiscoveryResponse>("/api/discovery/start", {
       check_urls,
@@ -18,6 +19,7 @@ export const discoveryApi = {
       payload_files: payload_files ?? [],
       validation_tries: validation_tries ?? 1,
       tls_version: tls_version ?? "auto",
+      ip_version: ip_version ?? "auto",
     }),
   status: (id: string) => apiGet<DiscoverySuite>(`/api/discovery/status/${id}`),
   cancel: (id: string) => apiDelete(`/api/discovery/cancel/${id}`),

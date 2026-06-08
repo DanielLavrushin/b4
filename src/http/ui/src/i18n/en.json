@@ -1441,6 +1441,8 @@
       "clearCache": "Clear Cache",
       "tlsVersion": "TLS Version",
       "tlsVersionHint": "TLS version used for discovery probes. Some DPI systems handle TLS 1.2 and 1.3 differently.",
+      "ipVersion": "IP Version",
+      "ipVersionHint": "IP version used for discovery probes. The found strategy is saved scoped to this version. Some DPI systems handle IPv4 and IPv6 differently.",
       "customPayloads": "Custom Payloads",
       "customPayloadsHint": "Test with generated TLS ClientHello (SNI-first) instead of built-in payloads",
       "selectPayloads": "Select captured payloads...",

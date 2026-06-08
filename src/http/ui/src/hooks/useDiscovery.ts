@@ -96,6 +96,7 @@ export function useDiscovery() {
       payloadFiles: string[] = [],
       validationTries: number = 1,
       tlsVersion: string = "auto",
+      ipVersion: string = "auto",
     ): Promise<ApiResponse<void>> => {
       setError(null);
       setSuite(null);
@@ -121,6 +122,7 @@ export function useDiscovery() {
           payloadFiles,
           validationTries,
           tlsVersion,
+          ipVersion,
         );
         setSuiteId(res.id);
         return { success: true };

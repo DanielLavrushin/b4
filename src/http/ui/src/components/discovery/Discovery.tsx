@@ -118,6 +118,10 @@ export const DiscoveryRunner = () => {
       (localStorage.getItem(
         "b4_discovery_tls_version",
       ) as DiscoveryOptions["tlsVersion"]) || "auto",
+    ipVersion:
+      (localStorage.getItem(
+        "b4_discovery_ip_version",
+      ) as DiscoveryOptions["ipVersion"]) || "auto",
   }));
 
   useEffect(() => {
@@ -142,6 +146,10 @@ export const DiscoveryRunner = () => {
   useEffect(() => {
     localStorage.setItem("b4_discovery_tls_version", options.tlsVersion);
   }, [options.tlsVersion]);
+
+  useEffect(() => {
+    localStorage.setItem("b4_discovery_ip_version", options.ipVersion);
+  }, [options.ipVersion]);
 
   const [checkUrls, setCheckUrls] = useState<string[]>([]);
   const [urlInput, setUrlInput] = useState("");
@@ -169,6 +177,8 @@ export const DiscoveryRunner = () => {
     let presetName = result.preset_name;
     if (options.tlsVersion === "tls12") presetName += "-tls12";
     else if (options.tlsVersion === "tls13") presetName += "-tls13";
+    if (options.ipVersion === "ipv4") presetName += "-ipv4";
+    else if (options.ipVersion === "ipv6") presetName += "-ipv6";
 
     setAddDialog({
       open: true,
@@ -183,6 +193,8 @@ export const DiscoveryRunner = () => {
     let presetName = group.winnerPreset || familyNames[group.family];
     if (options.tlsVersion === "tls12") presetName += "-tls12";
     else if (options.tlsVersion === "tls13") presetName += "-tls13";
+    if (options.ipVersion === "ipv4") presetName += "-ipv4";
+    else if (options.ipVersion === "ipv6") presetName += "-ipv6";
 
     setAddDialog({
       open: true,
@@ -394,6 +406,7 @@ export const DiscoveryRunner = () => {
                     options.payloadFiles,
                     options.validationTries,
                     options.tlsVersion,
+                    options.ipVersion,
                   );
                 }}
                 disabled={checkUrls.length === 0}

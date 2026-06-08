@@ -23,6 +23,7 @@ import { Capture } from "@b4.capture";
 import { useTranslation } from "react-i18next";
 
 export type TLSVersion = "auto" | "tls12" | "tls13";
+export type IPVersion = "auto" | "ipv4" | "ipv6";
 
 export interface DiscoveryOptions {
   skipDNS: boolean;
@@ -30,6 +31,7 @@ export interface DiscoveryOptions {
   payloadFiles: string[];
   validationTries: number;
   tlsVersion: TLSVersion;
+  ipVersion: IPVersion;
 }
 
 interface DiscoveryOptionsPanelProps {
@@ -62,7 +64,8 @@ export const DiscoveryOptionsPanel = ({
     options.skipCache ||
     options.payloadFiles.length > 0 ||
     options.validationTries > 1 ||
-    options.tlsVersion !== "auto";
+    options.tlsVersion !== "auto" ||
+    options.ipVersion !== "auto";
 
   return (
     <Box
@@ -204,6 +207,49 @@ export const DiscoveryOptionsPanel = ({
               </ToggleButtonGroup>
             </Box>
 
+            {/* IP Version */}
+            <Box>
+              <Typography variant="body1" sx={{ mb: 1 }}>
+                {t("discovery.options.ipVersion")}
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ mb: 1, display: "block" }}
+              >
+                {t("discovery.options.ipVersionHint")}
+              </Typography>
+              <ToggleButtonGroup
+                value={options.ipVersion}
+                exclusive
+                onChange={(_, value) => {
+                  if (value !== null) {
+                    onChange({ ...options, ipVersion: value as IPVersion });
+                  }
+                }}
+                disabled={disabled}
+                size="small"
+                sx={{
+                  "& .MuiToggleButton-root": {
+                    color: colors.text.secondary,
+                    borderColor: colors.border.default,
+                    textTransform: "none",
+                    px: 2,
+                    "&.Mui-selected": {
+                      bgcolor: colors.accent.secondary,
+                      color: colors.secondary,
+                      borderColor: colors.secondary,
+                      "&:hover": { bgcolor: colors.accent.secondary },
+                    },
+                  },
+                }}
+              >
+                <ToggleButton value="auto">Auto</ToggleButton>
+                <ToggleButton value="ipv4">IPv4</ToggleButton>
+                <ToggleButton value="ipv6">IPv6</ToggleButton>
+              </ToggleButtonGroup>
+            </Box>
+
             {/* Custom Payloads */}
             {tlsCaptures.length > 0 && (
               <Box>
@@ -291,6 +337,8 @@ function getOptionsSummary(options: DiscoveryOptions, t: (key: string, opts?: Re
   if (options.skipCache) parts.push(t("discovery.options.summarySkipCache"));
   if (options.tlsVersion === "tls12") parts.push("TLS 1.2");
   if (options.tlsVersion === "tls13") parts.push("TLS 1.3");
+  if (options.ipVersion === "ipv4") parts.push("IPv4");
+  if (options.ipVersion === "ipv6") parts.push("IPv6");
   if (options.validationTries > 1)
     parts.push(t("discovery.options.summaryTries", { count: options.validationTries }));
   if (options.payloadFiles.length > 0) {

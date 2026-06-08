@@ -124,7 +124,7 @@ func HumanizeError(raw string) string {
 	return raw
 }
 
-func NewDiscoverySuite(inputs []string, pool *nfq.Pool, skipDNS bool, skipCache bool, payloadFiles []string, validationTries int, tlsVersion string, flowMark uint) *DiscoverySuite {
+func NewDiscoverySuite(inputs []string, pool *nfq.Pool, skipDNS bool, skipCache bool, payloadFiles []string, validationTries int, tlsVersion string, ipVersion string, flowMark uint) *DiscoverySuite {
 	domainInputs := parseDiscoveryInputs(inputs)
 	if len(domainInputs) == 0 {
 		suite := NewCheckSuite(domainInputs)
@@ -139,6 +139,10 @@ func NewDiscoverySuite(inputs []string, pool *nfq.Pool, skipDNS bool, skipCache 
 
 	if tlsVersion == "" {
 		tlsVersion = "auto"
+	}
+
+	if ipVersion == "" {
+		ipVersion = "auto"
 	}
 
 	domainResults := make(map[string]*DomainDiscoveryResult)
@@ -161,6 +165,7 @@ func NewDiscoverySuite(inputs []string, pool *nfq.Pool, skipDNS bool, skipCache 
 		skipCache:       skipCache,
 		validationTries: validationTries,
 		tlsVersion:      tlsVersion,
+		ipVersion:       ipVersion,
 		flowMark:        flowMark,
 	}
 
@@ -211,9 +216,16 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	for i, di := range ds.Domains {
 		domainNames[i] = di.Domain
 	}
-	if ds.tlsVersion != "" && ds.tlsVersion != "auto" {
+	tlsSet := ds.tlsVersion != "" && ds.tlsVersion != "auto"
+	ipSet := ds.ipVersion != "" && ds.ipVersion != "auto"
+	switch {
+	case tlsSet && ipSet:
+		log.DiscoveryLogf("Starting discovery for %d domains: %v (TLS: %s, IP: %s)", len(ds.Domains), domainNames, ds.tlsVersion, ds.ipVersion)
+	case tlsSet:
 		log.DiscoveryLogf("Starting discovery for %d domains: %v (TLS: %s)", len(ds.Domains), domainNames, ds.tlsVersion)
-	} else {
+	case ipSet:
+		log.DiscoveryLogf("Starting discovery for %d domains: %v (IP: %s)", len(ds.Domains), domainNames, ds.ipVersion)
+	default:
 		log.DiscoveryLogf("Starting discovery for %d domains: %v", len(ds.Domains), domainNames)
 	}
 	log.DiscoveryLogf("═══════════════════════════════════════")
@@ -1163,6 +1175,31 @@ func (ds *DiscoverySuite) tlsFilterVersion() string {
 	}
 }
 
+// ipFilterVersion converts the discovery IP version setting to a config IP filter value.
+func (ds *DiscoverySuite) ipFilterVersion() string {
+	switch ds.ipVersion {
+	case "ipv4":
+		return "4"
+	case "ipv6":
+		return "6"
+	default:
+		return ""
+	}
+}
+
+// dialNetwork forces the probe address family ("tcp4"/"tcp6") for an explicit
+// IP version run, or "" to leave family selection to the resolver/OS.
+func (ds *DiscoverySuite) dialNetwork() string {
+	switch ds.ipVersion {
+	case "ipv4":
+		return "tcp4"
+	case "ipv6":
+		return "tcp6"
+	default:
+		return ""
+	}
+}
+
 func (ds *DiscoverySuite) tlsConfig() *tls.Config {
 	cfg := &tls.Config{InsecureSkipVerify: true}
 	switch ds.tlsVersion {
@@ -1193,9 +1230,13 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 	}
 
 	baseDialer := markedDialer(ds.flowMark, timeout/2, timeout)
+	forcedNet := ds.dialNetwork()
 
-	if ip != "" {
-		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if forcedNet != "" {
+			network = forcedNet
+		}
+		if ip != "" {
 			_, port, _ := net.SplitHostPort(addr)
 			if port == "" {
 				port = "443"
@@ -1204,8 +1245,7 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 			log.Tracef("DNS bypass: connecting to %s instead of %s", directAddr, addr)
 			return baseDialer.DialContext(ctx, network, directAddr)
 		}
-	} else {
-		transport.DialContext = baseDialer.DialContext
+		return baseDialer.DialContext(ctx, network, addr)
 	}
 
 	client := &http.Client{
@@ -1506,6 +1546,7 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 		testSet.Targets.SNIDomains = []string{ds.Domain}
 		testSet.Targets.DomainsToMatch = []string{ds.Domain}
 		testSet.Targets.TLSVersion = ds.tlsFilterVersion()
+		testSet.Targets.IPVersion = ds.ipFilterVersion()
 
 		geoip, geosite := GetCDNCategories(ds.Domain)
 		if len(geoip) > 0 || len(geosite) > 0 {
@@ -1647,6 +1688,7 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 		testSet.Targets.SNIDomains = allDomains
 		testSet.Targets.DomainsToMatch = allDomains
 		testSet.Targets.TLSVersion = ds.tlsFilterVersion()
+		testSet.Targets.IPVersion = ds.ipFilterVersion()
 
 		if len(allIPs) > 0 {
 			cidrIPs := make([]string, 0, len(allIPs))

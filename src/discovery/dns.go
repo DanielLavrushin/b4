@@ -35,11 +35,12 @@ type CDNEntry struct {
 }
 
 type DNSProber struct {
-	domain   string
-	timeout  time.Duration
-	pool     *nfq.Pool
-	cfg      *config.Config
-	flowMark uint
+	domain    string
+	timeout   time.Duration
+	pool      *nfq.Pool
+	cfg       *config.Config
+	flowMark  uint
+	ipVersion string
 }
 
 var (
@@ -87,6 +88,7 @@ func (ds *DiscoverySuite) runDNSDiscoveryForDomain(domain string) *DNSDiscoveryR
 		ds.pool,
 		ds.cfg,
 		ds.flowMark,
+		ds.ipVersion,
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -131,14 +133,38 @@ func (r *DNSDiscoveryResult) hasWorkingConfig() bool {
 	return !r.IsPoisoned || r.BestServer != "" || r.NeedsFragment
 }
 
-func NewDNSProber(domain string, timeout time.Duration, pool *nfq.Pool, cfg *config.Config, flowMark uint) *DNSProber {
+func NewDNSProber(domain string, timeout time.Duration, pool *nfq.Pool, cfg *config.Config, flowMark uint, ipVersion string) *DNSProber {
 	return &DNSProber{
-		domain:   domain,
-		timeout:  timeout,
-		pool:     pool,
-		cfg:      cfg,
-		flowMark: flowMark,
+		domain:    domain,
+		timeout:   timeout,
+		pool:      pool,
+		cfg:       cfg,
+		flowMark:  flowMark,
+		ipVersion: ipVersion,
 	}
+}
+
+// ipNetwork returns the resolver network ("ip4"/"ip6") for this probe run.
+// An explicit per-run ipVersion wins; "auto" preserves the queue-config default.
+func (p *DNSProber) ipNetwork() string {
+	switch p.ipVersion {
+	case "ipv4":
+		return "ip4"
+	case "ipv6":
+		return "ip6"
+	}
+	if p.cfg.Queue.IPv6Enabled && !p.cfg.Queue.IPv4Enabled {
+		return "ip6"
+	}
+	return "ip4"
+}
+
+// dnsRecordType returns the DoH record type ("A"/"AAAA") matching ipNetwork.
+func (p *DNSProber) dnsRecordType() string {
+	if p.ipNetwork() == "ip6" {
+		return "AAAA"
+	}
+	return "A"
 }
 
 func (p *DNSProber) Probe(ctx context.Context) *DNSDiscoveryResult {
@@ -304,10 +330,7 @@ func uniqueIPs(primary, secondary []string) []string {
 }
 
 func (p *DNSProber) getSystemResolverIPs(ctx context.Context) []string {
-	network := "ip4"
-	if p.cfg.Queue.IPv6Enabled && !p.cfg.Queue.IPv4Enabled {
-		network = "ip6"
-	}
+	network := p.ipNetwork()
 
 	resolver := markedResolver(p.flowMark, p.timeout/2, "")
 	ips, err := resolver.LookupIP(ctx, network, p.domain)
@@ -335,10 +358,7 @@ func (p *DNSProber) getSystemResolverIPs(ctx context.Context) []string {
 }
 
 func (p *DNSProber) getExpectedIPs(ctx context.Context) []string {
-	recordType := "A"
-	if p.cfg.Queue.IPv6Enabled && !p.cfg.Queue.IPv4Enabled {
-		recordType = "AAAA"
-	}
+	recordType := p.dnsRecordType()
 
 	dohServers := []string{
 		"https://dns.google/resolve?name=%s&type=" + recordType,
@@ -423,10 +443,7 @@ func (p *DNSProber) getExpectedIPs(ctx context.Context) []string {
 }
 
 func (p *DNSProber) getExpectedIPFallback(ctx context.Context) string {
-	network := "ip4"
-	if p.cfg.Queue.IPv6Enabled && !p.cfg.Queue.IPv4Enabled {
-		network = "ip6"
-	}
+	network := p.ipNetwork()
 
 	for _, server := range p.cfg.System.Checker.ReferenceDNS {
 		resolver := markedResolver(p.flowMark, p.timeout/3, server)
@@ -455,10 +472,7 @@ func (p *DNSProber) testDNS(ctx context.Context, server string, fragmented bool,
 		resolver = markedResolver(p.flowMark, p.timeout, server)
 	}
 
-	network := "ip4"
-	if p.cfg.Queue.IPv6Enabled && !p.cfg.Queue.IPv4Enabled {
-		network = "ip6"
-	}
+	network := p.ipNetwork()
 
 	start := time.Now()
 	ips, err := resolver.LookupIP(ctx, network, p.domain)

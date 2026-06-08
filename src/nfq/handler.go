@@ -272,7 +272,7 @@ func (w *Worker) handleTCPPacket(q *nfqueue.Nfqueue, id uint32, pkt *pktInfo, cf
 	isAck := (tcpFlags & 0x10) != 0
 	isRst := (tcpFlags & 0x04) != 0
 	if isRst && cfg.IsTCPPort(dport) {
-		log.Tracef("RST received from %s:%d", pkt.dstStr, dport)
+		log.Tracef("RST to %s:%d", pkt.dstStr, dport)
 		if matched && set != nil && set.TCP.RSTProtection.Enabled {
 			connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 			if w.connTracker.ShouldDropOutboundRST(connKey) {

@@ -1439,6 +1439,8 @@
       "clearCache": "Очистить кэш",
       "tlsVersion": "Версия TLS",
       "tlsVersionHint": "Версия TLS для проб поиска. Некоторые DPI-системы обрабатывают TLS 1.2 и 1.3 по-разному.",
+      "ipVersion": "Версия IP",
+      "ipVersionHint": "Версия IP для проб поиска. Найденная стратегия сохраняется с привязкой к этой версии. Некоторые DPI-системы обрабатывают IPv4 и IPv6 по-разному.",
       "customPayloads": "Пользовательские payloads",
       "customPayloadsHint": "Тестировать с сгенерированным TLS ClientHello (SNI-first) вместо встроенных payloads",
       "selectPayloads": "Выберите захваченные payloads...",
