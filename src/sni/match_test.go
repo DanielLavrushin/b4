@@ -642,6 +642,16 @@ func TestMatchSNIWithSourceTLS_ZeroIPVersionMatchesAny(t *testing.T) {
 	}
 }
 
+func TestMatchSNIWithSourceTLS_InvalidIPVersionNeverMatches(t *testing.T) {
+	s := makeSetWithDomains("bad", "example.com")
+	s.Targets.IPVersion = "ipv6" // invalid: should be "6"
+	ss := NewSuffixSet([]*config.SetConfig{s})
+
+	if matched, _ := ss.MatchSNIWithSourceTLS("example.com", "", 0, 4); matched {
+		t.Error("invalid ip_version must not match, even via the ipVersion=0 fallback")
+	}
+}
+
 func TestMatchIPWithSource_IPVersionDispatch(t *testing.T) {
 	v4 := makeSetWithIPs("v4", "203.0.113.0/24")
 	v4.Targets.IPVersion = "4"

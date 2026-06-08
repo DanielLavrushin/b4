@@ -433,30 +433,23 @@ func (set *SetConfig) MatchesTLSVersion(tlsVersion uint16) bool {
 	if set.Targets.TLSVersion == "" {
 		return true
 	}
-	if tlsVersion == 0 {
-		return true
-	}
 	filterVer := TLSVersionCode(set.Targets.TLSVersion)
 	if filterVer == 0 {
 		return false // invalid filter value — don't silently match everything
 	}
-	return tlsVersion == filterVer
+	return tlsVersion == 0 || tlsVersion == filterVer
 }
 
 // MatchesIPVersion checks if the packet's IP version matches this set's filter.
 // Returns true if no filter is configured or if version is 0 (unknown).
 func (set *SetConfig) MatchesIPVersion(version uint8) bool {
-	if set.Targets.IPVersion == "" {
-		return true
-	}
-	if version == 0 {
-		return true
-	}
 	switch set.Targets.IPVersion {
+	case "":
+		return true
 	case "4":
-		return version == 4
+		return version == 0 || version == 4
 	case "6":
-		return version == 6
+		return version == 0 || version == 6
 	default:
 		return false // invalid filter value — don't silently match everything
 	}
