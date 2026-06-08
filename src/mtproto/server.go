@@ -16,9 +16,8 @@ import (
 )
 
 const (
-	maxConnections      = 512
-	relayBufSize        = 65536
-	wsKeepaliveInterval = 30 * time.Second
+	maxConnections = 512
+	relayBufSize   = 65536
 )
 
 type Server struct {
@@ -290,7 +289,7 @@ func (s *Server) handleConn(raw net.Conn) {
 	if _, ok := dcConn.Conn.(*wsConn); ok {
 		splitter = newMsgSplitter(result.ProtoTag)
 	}
-	s.relay(result.Conn, dcConn, splitter, fmt.Sprintf("%s %s<->DC%d", tag, clientAddr, result.DC))
+	s.relay(result.Conn, dcConn, splitter, fmt.Sprintf("%s %s<->DC%d via %s", tag, clientAddr, result.DC, transport))
 }
 
 func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string) {
@@ -298,7 +297,11 @@ func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, lab
 }
 
 func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string, bufPool *sync.Pool) {
-	errCh := make(chan error, 2)
+	type relayEnd struct {
+		dir string
+		err error
+	}
+	endCh := make(chan relayEnd, 2)
 	start := time.Now()
 	var upBytes, downBytes atomic.Int64
 
@@ -324,7 +327,7 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 		}
 		counter.Store(total)
 		log.Debugf("%s %s: %d bytes, err=%v", label, dir, total, err)
-		errCh <- err
+		endCh <- relayEnd{dir: dir, err: err}
 	}
 
 	cpSplit := func(dst io.Writer, src io.Reader, dir string, counter *atomic.Int64) {
@@ -354,7 +357,7 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 		}
 		counter.Store(total)
 		log.Debugf("%s %s: %d bytes, err=%v", label, dir, total, err)
-		errCh <- err
+		endCh <- relayEnd{dir: dir, err: err}
 	}
 
 	if splitter != nil {
@@ -364,48 +367,15 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 	}
 	go cp(client, dc, "DC->client", &downBytes)
 
-	stopKA := startWSKeepalive(dc, label)
-	<-errCh
-	close(stopKA)
+	first := <-endCh
 	_ = client.Close()
 	_ = dc.Close()
-	<-errCh
-	log.Infof("%s closed: up=%d down=%d in %dms", label, upBytes.Load(), downBytes.Load(), time.Since(start).Milliseconds())
-}
+	<-endCh
 
-func asWSConn(c io.ReadWriteCloser) *wsConn {
-	switch v := c.(type) {
-	case *wsConn:
-		return v
-	case *ObfuscatedConn:
-		if w, ok := v.Conn.(*wsConn); ok {
-			return w
-		}
+	up, down := upBytes.Load(), downBytes.Load()
+	stale := ""
+	if first.dir == "DC->client" && down == 0 {
+		stale = " stale-upstream?"
 	}
-	return nil
-}
-
-func startWSKeepalive(dc io.ReadWriteCloser, label string) chan struct{} {
-	stop := make(chan struct{})
-	ws := asWSConn(dc)
-	if ws == nil {
-		return stop
-	}
-	go func() {
-		t := time.NewTicker(wsKeepaliveInterval)
-		defer t.Stop()
-		for {
-			select {
-			case <-stop:
-				return
-			case <-t.C:
-				if err := ws.sendPing(); err != nil {
-					log.Debugf("%s ws keepalive ping failed: %v -> closing upstream", label, err)
-					_ = dc.Close()
-					return
-				}
-			}
-		}
-	}()
-	return stop
+	log.Infof("%s closed: first=%s err=%v up=%d down=%d in %dms%s", label, first.dir, first.err, up, down, time.Since(start).Milliseconds(), stale)
 }
