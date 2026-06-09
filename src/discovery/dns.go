@@ -91,7 +91,7 @@ func (ds *DiscoverySuite) runDNSDiscoveryForDomain(domain string) *DNSDiscoveryR
 		ds.ipVersion,
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := ds.fetchContext(30 * time.Second)
 	defer cancel()
 
 	return prober.Probe(ctx)
