@@ -128,7 +128,9 @@ func NewDiscoverySuite(inputs []string, pool *nfq.Pool, skipDNS bool, skipCache 
 	domainInputs := parseDiscoveryInputs(inputs)
 	if len(domainInputs) == 0 {
 		suite := NewCheckSuite(domainInputs)
-		return &DiscoverySuite{CheckSuite: suite}
+		ds := &DiscoverySuite{CheckSuite: suite}
+		ds.initCancelContext()
+		return ds
 	}
 	suite := NewCheckSuite(domainInputs)
 
@@ -176,6 +178,7 @@ func NewDiscoverySuite(inputs []string, pool *nfq.Pool, skipDNS bool, skipCache 
 		}
 	}
 
+	ds.initCancelContext()
 	return ds
 }
 
@@ -211,6 +214,7 @@ func parseDiscoveryInputs(inputs []string) []DomainInput {
 }
 
 func (ds *DiscoverySuite) RunDiscovery() {
+	defer ds.ctxCancel()
 	log.DiscoveryLogf("═══════════════════════════════════════")
 	domainNames := make([]string, len(ds.Domains))
 	for i, di := range ds.Domains {
@@ -665,16 +669,19 @@ func (ds *DiscoverySuite) canceled() bool {
 	}
 }
 
-func (ds *DiscoverySuite) fetchContext(timeout time.Duration) (context.Context, context.CancelFunc) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func (ds *DiscoverySuite) initCancelContext() {
+	ds.ctx, ds.ctxCancel = context.WithCancel(context.Background())
 	go func() {
 		select {
 		case <-ds.cancel:
-			cancel()
-		case <-ctx.Done():
+			ds.ctxCancel()
+		case <-ds.ctx.Done():
 		}
 	}()
-	return ctx, cancel
+}
+
+func (ds *DiscoverySuite) fetchContext(timeout time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ds.ctx, timeout)
 }
 
 func (ds *DiscoverySuite) optimizeCombo() ConfigPreset {

@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -164,6 +165,9 @@ type DiscoverySuite struct {
 	*CheckSuite
 	networkBaseline float64
 	optimalTTL      uint8
+
+	ctx       context.Context
+	ctxCancel context.CancelFunc
 
 	pool          *nfq.Pool
 	cfg           *config.Config
