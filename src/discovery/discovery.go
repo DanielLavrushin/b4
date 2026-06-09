@@ -665,6 +665,18 @@ func (ds *DiscoverySuite) canceled() bool {
 	}
 }
 
+func (ds *DiscoverySuite) fetchContext(timeout time.Duration) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	go func() {
+		select {
+		case <-ds.cancel:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	return ctx, cancel
+}
+
 func (ds *DiscoverySuite) optimizeCombo() ConfigPreset {
 	log.DiscoveryLogf("  Optimizing Combo with TTL scan + strategy rotation")
 
@@ -1235,7 +1247,7 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 		Timestamp: time.Now(),
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := ds.fetchContext(timeout)
 	defer cancel()
 
 	transport := &http.Transport{
@@ -2153,7 +2165,7 @@ func (ds *DiscoverySuite) measureNetworkBaseline() float64 {
 	log.DiscoveryLogf("Measuring network baseline using %s", referenceDomain)
 
 	testURL := fmt.Sprintf("https://%s/", referenceDomain)
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := ds.fetchContext(timeout)
 	defer cancel()
 
 	client := &http.Client{

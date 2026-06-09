@@ -81,6 +81,41 @@ func TestBuildBlockResponse(t *testing.T) {
 	})
 }
 
+func TestBuildServfailResponse(t *testing.T) {
+	t.Run("servfail echoes question and sets RCODE 2", func(t *testing.T) {
+		query := buildDNSQuery(0xABCD, "dns4.browserleaks.net", 1)
+		resp := BuildServfailResponse(query)
+		if resp == nil {
+			t.Fatal("expected non-nil response")
+		}
+		if binary.BigEndian.Uint16(resp[0:2]) != 0xABCD {
+			t.Errorf("txid not preserved: got 0x%x", binary.BigEndian.Uint16(resp[0:2]))
+		}
+		if resp[2]&0x80 == 0 {
+			t.Error("QR bit not set (should be a response)")
+		}
+		if resp[3]&0x0f != 2 {
+			t.Errorf("RCODE should be 2 (SERVFAIL), got %d", resp[3]&0x0f)
+		}
+		if resp[3]&0x80 == 0 {
+			t.Error("RA bit (upper nibble) should be preserved from the base response")
+		}
+		if binary.BigEndian.Uint16(resp[6:8]) != 0 {
+			t.Error("ANCOUNT should be 0")
+		}
+		domain, ok := ParseQueryDomain(resp)
+		if !ok || domain != "dns4.browserleaks.net" {
+			t.Errorf("question not echoed: got %q ok=%v", domain, ok)
+		}
+	})
+
+	t.Run("short payload returns nil", func(t *testing.T) {
+		if BuildServfailResponse([]byte{0x00, 0x01}) != nil {
+			t.Error("expected nil for short payload")
+		}
+	})
+}
+
 func TestParseTransactionID(t *testing.T) {
 	t.Run("ok", func(t *testing.T) {
 		got, ok := ParseTransactionID([]byte{0x12, 0x34, 0x00})
