@@ -6,7 +6,6 @@ import (
 )
 
 func ParseQueryDomain(payload []byte) (string, bool) {
-	// DNS header is 12 bytes
 	if len(payload) < 12 {
 		return "", false
 	}
@@ -42,11 +41,6 @@ func ParseTransactionID(payload []byte) (uint16, bool) {
 	return binary.BigEndian.Uint16(payload[:2]), true
 }
 
-// BuildBlockResponse builds an NXDOMAIN DNS response for the given query,
-// echoing the original question. This sinkholes the domain: the client gets
-// "no such host" and never obtains an IP, which blocks the domain regardless
-// of TLS SNI (defeating HTTP/2 connection coalescing and Encrypted ClientHello).
-// Returns nil if the query is too short or malformed to parse.
 func BuildBlockResponse(query []byte) []byte {
 	if len(query) < 12 {
 		return nil
@@ -60,11 +54,9 @@ func BuildBlockResponse(query []byte) []byte {
 	resp := make([]byte, questionEnd)
 	copy(resp, query[:questionEnd])
 
-	// Flags: QR=1, keep Opcode+RD, clear AA/TC, RA=1, RCODE=3 (NXDOMAIN).
 	resp[2] = 0x80 | (query[2] & 0x79)
 	resp[3] = 0x83
 
-	// QDCOUNT=1, ANCOUNT=0, NSCOUNT=0, ARCOUNT=0.
 	binary.BigEndian.PutUint16(resp[4:6], 1)
 	binary.BigEndian.PutUint16(resp[6:8], 0)
 	binary.BigEndian.PutUint16(resp[8:10], 0)
@@ -73,18 +65,11 @@ func BuildBlockResponse(query []byte) []byte {
 	return resp
 }
 
-// BuildServfailResponse builds a SERVFAIL DNS response for the given query,
-// echoing the original question. Used as a fail-closed answer when a redirect
-// target (DoH or upstream) cannot resolve the query: the client gets a
-// definitive resolution failure instead of a hang, and crucially does not fall
-// back to a plaintext path that would bypass the redirect and leak the lookup.
-// Returns nil if the query is too short or malformed to parse.
 func BuildServfailResponse(query []byte) []byte {
 	resp := BuildBlockResponse(query)
 	if resp == nil {
 		return nil
 	}
-	// RCODE=2 (SERVFAIL) instead of NXDOMAIN; keep QR/Opcode/RD/RA bits.
 	resp[3] = 0x82
 	return resp
 }
