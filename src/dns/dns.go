@@ -73,6 +73,22 @@ func BuildBlockResponse(query []byte) []byte {
 	return resp
 }
 
+// BuildServfailResponse builds a SERVFAIL DNS response for the given query,
+// echoing the original question. Used as a fail-closed answer when a redirect
+// target (DoH or upstream) cannot resolve the query: the client gets a
+// definitive resolution failure instead of a hang, and crucially does not fall
+// back to a plaintext path that would bypass the redirect and leak the lookup.
+// Returns nil if the query is too short or malformed to parse.
+func BuildServfailResponse(query []byte) []byte {
+	resp := BuildBlockResponse(query)
+	if resp == nil {
+		return nil
+	}
+	// RCODE=2 (SERVFAIL) instead of NXDOMAIN; keep QR/Opcode/RD/RA bits.
+	resp[3] = 0x82
+	return resp
+}
+
 func ParseResponseIPs(payload []byte) []net.IP {
 	if len(payload) < 12 {
 		return nil

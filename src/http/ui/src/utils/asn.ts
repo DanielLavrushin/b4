@@ -9,6 +9,8 @@ export interface AsnInfo {
 
 class AsnStorage {
   private cache: Record<string, AsnInfo> = {};
+  private v4Index: Array<[ipaddr.IPv4, number, AsnInfo]> = [];
+  private v6Index: Array<[ipaddr.IPv6, number, AsnInfo]> = [];
   private readonly lookupCache = new Map<string, AsnInfo | null>();
   private readonly MAX_CACHE_SIZE = 10000;
   private loaded = false;
@@ -37,7 +39,31 @@ class AsnStorage {
       // keep whatever is in cache
     }
     this.loaded = true;
+    this.rebuildIndex();
+  }
+
+  private rebuildIndex(): void {
+    this.v4Index = [];
+    this.v6Index = [];
+    for (const asn of Object.values(this.cache)) {
+      this.indexAsn(asn);
+    }
     this.lookupCache.clear();
+  }
+
+  private indexAsn(asn: AsnInfo): void {
+    for (const prefix of asn.prefixes) {
+      try {
+        const [addr, bits] = ipaddr.parseCIDR(prefix);
+        if (addr.kind() === "ipv4") {
+          this.v4Index.push([addr as ipaddr.IPv4, bits, asn]);
+        } else {
+          this.v6Index.push([addr as ipaddr.IPv6, bits, asn]);
+        }
+      } catch {
+        // skip malformed prefix
+      }
+    }
   }
 
   private async migrateFromLocalStorage(data: string): Promise<void> {
@@ -59,7 +85,7 @@ class AsnStorage {
   async addAsn(asnId: string, name: string, prefixes: string[]): Promise<void> {
     const info: AsnInfo = { id: asnId, name, prefixes };
     this.cache[asnId] = info;
-    this.lookupCache.clear();
+    this.rebuildIndex();
 
     try {
       await fetch("/api/asn", {
@@ -74,7 +100,7 @@ class AsnStorage {
 
   async deleteAsn(asnId: string): Promise<void> {
     delete this.cache[asnId];
-    this.lookupCache.clear();
+    this.rebuildIndex();
 
     try {
       await fetch(`/api/asn?id=${encodeURIComponent(asnId)}`, {
@@ -99,9 +125,7 @@ class AsnStorage {
       return cached;
     }
 
-    const result = Object.values(this.cache).find((asn) =>
-      asn.prefixes.some((prefix) => this.ipInCidr(cleanIp, prefix))
-    ) ?? null;
+    const result = this.scanIndex(cleanIp);
 
     if (this.lookupCache.size >= this.MAX_CACHE_SIZE) {
       const firstKey = this.lookupCache.keys().next().value;
@@ -112,14 +136,19 @@ class AsnStorage {
     return result;
   }
 
-  private ipInCidr(ip: string, cidr: string): boolean {
+  private scanIndex(cleanIp: string): AsnInfo | null {
     try {
-      const addr = ipaddr.process(ip);
-      const range = ipaddr.parseCIDR(cidr);
-      return addr.match(range);
+      const addr = ipaddr.process(cleanIp);
+      const index = addr.kind() === "ipv4" ? this.v4Index : this.v6Index;
+      for (const [range, bits, asn] of index) {
+        if (addr.match(range, bits)) {
+          return asn;
+        }
+      }
     } catch {
-      return false;
+      // unparseable IP -> no match
     }
+    return null;
   }
 
   async reload(): Promise<void> {

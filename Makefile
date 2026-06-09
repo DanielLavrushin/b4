@@ -194,7 +194,13 @@ SFTP_PORT ?= 22
 
 .PHONY: deploy-%
 deploy-%:
+
 	@$(eval ARCH := $(subst deploy-,,$@))
+
+	@$(MAKE) --no-print-directory build-ui
+	@$(MAKE) --no-print-directory $(ARCH)
+
+
 	@if [ ! -f .env ]; then \
 		echo "Error: .env file not found. Create one from .env.example"; \
 		exit 1; \

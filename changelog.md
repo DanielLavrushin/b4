@@ -1,5 +1,10 @@
 # B4 - Bye Bye Big Bro
 
+## [1.67.1] - 2026-06-09
+
+- FIXED: **Connections page slowed down the more network owners you looked up** - looking up the "AS..." label for many addresses made the live list sluggish over time. It now stays responsive no matter how many you add.
+- FIXED: **Slow page failures when a set's encrypted DNS server was briefly unreachable** - lookups used to hang until they timed out; they now fail right away instead of stalling, and never fall back to plain DNS.
+
 ## [1.67.0] - 2026-06-08
 
 - ADDED: **Encrypted DNS (DoH) for a set** - a set's DNS tab can now send its name lookups over an encrypted DNS-over-HTTPS connection instead of to a plain DNS server's IP. Some services only work when looked up through a specific resolver (for example `xbox-dns.ru` for sites that say "not available in your country"), and some providers tamper with ordinary DNS - encrypted DNS gets around both. Switch the set between "Plain DNS" and "DNS-over-HTTPS", then pick a server from the built-in list or paste your own address. Only that set's lookups are affected, so the rest of your DNS stays as it is.

@@ -256,7 +256,8 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 	if set.DNS.DoHURL != "" {
 		resp, err = w.resolveDoHRedirect(set.DNS.DoHURL, int(cfg.Queue.Mark), query)
 		if err != nil {
-			log.Tracef("DNS redirect: DoH %s failed: %v", set.DNS.DoHURL, err)
+			log.Tracef("DNS redirect: DoH %s failed: %v, answering SERVFAIL (fail-closed)", set.DNS.DoHURL, err)
+			w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, dns.BuildServfailResponse(query))
 			return
 		}
 	} else {
@@ -268,20 +269,13 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 			Mark:         int(cfg.Queue.Mark),
 		})
 		if err != nil {
-			log.Tracef("DNS redirect: upstream %s failed: %v", set.DNS.TargetDNS, err)
+			log.Tracef("DNS redirect: upstream %s failed: %v, answering SERVFAIL (fail-closed)", set.DNS.TargetDNS, err)
+			w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, dns.BuildServfailResponse(query))
 			return
 		}
 	}
 
-	if ipVersion == IPv4 {
-		if pkt := sock.BuildUDPPacketV4(originalDst, clientIP, 53, clientPort, resp); pkt != nil {
-			_ = w.sock.SendIPv4(pkt, clientIP)
-		}
-	} else {
-		if pkt := sock.BuildUDPPacketV6(originalDst, clientIP, 53, clientPort, resp); pkt != nil {
-			_ = w.sock.SendIPv6(pkt, clientIP)
-		}
-	}
+	w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, resp)
 
 	if set.Routing.Enabled && !cfg.Queue.IsDiscovery && RoutingHandleDNSFunc != nil {
 		if ips := dns.ParseResponseIPs(resp); len(ips) > 0 {
@@ -294,6 +288,23 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		upstream = set.DNS.DoHURL
 	}
 	log.Tracef("DNS redirect: %s -> %s answered for %s with %d IPs (set: %s)", originalDst, upstream, clientIP, len(dns.ParseResponseIPs(resp)), set.Name)
+}
+
+// sendDNSResponseToClient crafts a UDP DNS reply (server -> client) and sends it
+// over the raw socket. No-op when resp is nil (unparseable query).
+func (w *Worker) sendDNSResponseToClient(ipVersion byte, originalDst, clientIP net.IP, clientPort uint16, resp []byte) {
+	if len(resp) == 0 {
+		return
+	}
+	if ipVersion == IPv4 {
+		if pkt := sock.BuildUDPPacketV4(originalDst, clientIP, 53, clientPort, resp); pkt != nil {
+			_ = w.sock.SendIPv4(pkt, clientIP)
+		}
+	} else {
+		if pkt := sock.BuildUDPPacketV6(originalDst, clientIP, 53, clientPort, resp); pkt != nil {
+			_ = w.sock.SendIPv6(pkt, clientIP)
+		}
+	}
 }
 
 func (w *Worker) resolveDoHRedirect(serverURL string, mark int, query []byte) ([]byte, error) {
