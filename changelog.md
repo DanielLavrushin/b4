@@ -1,9 +1,10 @@
 # B4 - Bye Bye Big Bro
 
-## [1.67.1] - 2026-06-09
+## [1.67.1] - 2026-06-10
 
 - FIXED: **Connections page slowed down the more network owners you looked up** - looking up the "AS..." label for many addresses made the live list sluggish over time. It now stays responsive no matter how many you add.
 - FIXED: **Slow page failures when a set's encrypted DNS server was briefly unreachable** - lookups used to hang until they timed out; they now fail right away instead of stalling, and never fall back to plain DNS.
+- FIXED: **Cancelling Discovery did not stop it** - pressing Cancel left the search running, so starting another ran two at once with mixed-up, unreliable results. Cancel now stops the search promptly, and a new search waits until the previous one has stopped.
 
 ## [1.67.0] - 2026-06-08
 
