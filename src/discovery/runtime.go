@@ -136,9 +136,9 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 	RegisterSuite(suite.CheckSuite)
 
 	go func() {
+		defer m.Stop(cfg, suite.Id)
 		suite.RunDiscovery()
 		log.Infof("Discovery complete for %d domains", len(suite.Domains))
-		m.Stop(cfg, suite.Id)
 	}()
 
 	return suite, nil

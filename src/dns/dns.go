@@ -70,7 +70,8 @@ func BuildServfailResponse(query []byte) []byte {
 	if resp == nil {
 		return nil
 	}
-	resp[3] = 0x82
+	// Set only the RCODE nibble to SERVFAIL (2); preserve the upper flag bits.
+	resp[3] = (resp[3] & 0xF0) | 0x02
 	return resp
 }
 

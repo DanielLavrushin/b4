@@ -83,9 +83,6 @@ func (api *API) handleCancelCheck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Infof("Canceled test suite %s", testID)
-	if api.discoveryRT != nil {
-		api.discoveryRT.Stop(api.getCfg(), testID)
-	}
 
 	setJsonHeader(w)
 	json.NewEncoder(w).Encode(map[string]interface{}{

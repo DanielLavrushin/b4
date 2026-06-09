@@ -656,6 +656,15 @@ func (ds *DiscoverySuite) optimizeFakeSNI() ConfigPreset {
 	return basePreset
 }
 
+func (ds *DiscoverySuite) canceled() bool {
+	select {
+	case <-ds.cancel:
+		return true
+	default:
+		return false
+	}
+}
+
 func (ds *DiscoverySuite) optimizeCombo() ConfigPreset {
 	log.DiscoveryLogf("  Optimizing Combo with TTL scan + strategy rotation")
 
@@ -718,6 +727,9 @@ func (ds *DiscoverySuite) optimizeComboStrategy(basePreset ConfigPreset, optimal
 	bestSpeed := initialSpeed
 
 	for _, strat := range strategies {
+		if ds.canceled() {
+			return bestStrategy, bestSpeed
+		}
 		if strat == "ttl" {
 			continue // Already tested during TTL search
 		}
@@ -750,6 +762,9 @@ func (ds *DiscoverySuite) optimizeComboShuffleDelay(basePreset ConfigPreset, opt
 
 	for _, mode := range shuffleModes {
 		for _, d := range delays {
+			if ds.canceled() {
+				return bestShuffle, bestDelay, bestSpeed
+			}
 			if mode == bestShuffle && d == bestDelay {
 				continue
 			}
@@ -2047,6 +2062,9 @@ func (ds *DiscoverySuite) findOptimalPosition(basePreset ConfigPreset, maxPos in
 	log.DiscoveryLogf("Binary search for optimal position (range %d-%d)", low, high)
 
 	for low < high {
+		if ds.canceled() {
+			break
+		}
 		mid := (low + high) / 2
 
 		preset := basePreset
