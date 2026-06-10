@@ -46,9 +46,12 @@ service_dispatch() {
 service_show_crash_log() {
     _logdir=""
     if [ -f "$B4_CONFIG_FILE" ] && command_exists jq; then
-        _logdir=$(jq -r '.system.logging.directory // empty' "$B4_CONFIG_FILE" 2>/dev/null)
-        # Fall back to the legacy error_file's parent for not-yet-migrated configs
-        if [ -z "$_logdir" ]; then
+        if [ "$(jq -r '(.system.logging // {}) | has("directory")' "$B4_CONFIG_FILE" 2>/dev/null)" = "true" ]; then
+            # New config: an explicit empty directory means file logging is off
+            _logdir=$(jq -r '.system.logging.directory // ""' "$B4_CONFIG_FILE" 2>/dev/null)
+            [ -z "$_logdir" ] && return 0
+        else
+            # Older config without 'directory': fall back to the legacy error_file
             _ef=$(jq -r '.system.logging.error_file // empty' "$B4_CONFIG_FILE" 2>/dev/null)
             [ -n "$_ef" ] && _logdir=$(dirname "$_ef")
         fi

@@ -2104,8 +2104,10 @@ service_dispatch() {
 service_show_crash_log() {
     _logdir=""
     if [ -f "$B4_CONFIG_FILE" ] && command_exists jq; then
-        _logdir=$(jq -r '.system.logging.directory // empty' "$B4_CONFIG_FILE" 2>/dev/null)
-        if [ -z "$_logdir" ]; then
+        if [ "$(jq -r '(.system.logging // {}) | has("directory")' "$B4_CONFIG_FILE" 2>/dev/null)" = "true" ]; then
+            _logdir=$(jq -r '.system.logging.directory // ""' "$B4_CONFIG_FILE" 2>/dev/null)
+            [ -z "$_logdir" ] && return 0
+        else
             _ef=$(jq -r '.system.logging.error_file // empty' "$B4_CONFIG_FILE" 2>/dev/null)
             [ -n "$_ef" ] && _logdir=$(dirname "$_ef")
         fi
