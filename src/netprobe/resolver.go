@@ -187,21 +187,76 @@ func (r *Resolver) ResolveUDPOnce(ctx context.Context, server, domain, recordTyp
 }
 
 func (r *Resolver) ResolveResilient(ctx context.Context, domain, recordType string) (ResolveOutcome, error) {
+	dohAttempts := make([]func(context.Context) (ResolveOutcome, bool), 0, len(r.dohServers()))
 	for _, srv := range r.dohServers() {
-		ips, err := r.ResolveDoHOnce(ctx, srv, domain, recordType)
-		if err == nil && len(ips) > 0 {
-			return ResolveOutcome{IPs: ips, DoHURL: srv.URL}, nil
-		}
+		srv := srv
+		dohAttempts = append(dohAttempts, func(c context.Context) (ResolveOutcome, bool) {
+			ips, err := r.ResolveDoHOnce(c, srv, domain, recordType)
+			if err == nil && len(ips) > 0 {
+				return ResolveOutcome{IPs: ips, DoHURL: srv.URL}, true
+			}
+			return ResolveOutcome{}, false
+		})
+	}
+	if out, ok := r.race(ctx, dohAttempts); ok {
+		return out, nil
 	}
 
+	udpAttempts := make([]func(context.Context) (ResolveOutcome, bool), 0, len(r.udpServers()))
 	for _, server := range r.udpServers() {
-		ans, err := r.ResolveUDPOnce(ctx, server, domain, recordType)
-		if err == nil && len(ans.IPs) > 0 {
-			return ResolveOutcome{IPs: ans.IPs, UDPSrv: server}, nil
-		}
+		server := server
+		udpAttempts = append(udpAttempts, func(c context.Context) (ResolveOutcome, bool) {
+			ans, err := r.ResolveUDPOnce(c, server, domain, recordType)
+			if err == nil && len(ans.IPs) > 0 {
+				return ResolveOutcome{IPs: ans.IPs, UDPSrv: server}, true
+			}
+			return ResolveOutcome{}, false
+		})
+	}
+	if out, ok := r.race(ctx, udpAttempts); ok {
+		return out, nil
 	}
 
 	return ResolveOutcome{}, fmt.Errorf("no DoH or UDP server resolved %s", domain)
+}
+
+func (r *Resolver) phaseTimeout() time.Duration {
+	if t := r.timeout(); t < 5*time.Second {
+		return t
+	}
+	return 5 * time.Second
+}
+
+func (r *Resolver) race(ctx context.Context, attempts []func(context.Context) (ResolveOutcome, bool)) (ResolveOutcome, bool) {
+	if len(attempts) == 0 {
+		return ResolveOutcome{}, false
+	}
+	rctx, cancel := context.WithTimeout(ctx, r.phaseTimeout())
+	defer cancel()
+
+	ch := make(chan ResolveOutcome, len(attempts))
+	for _, a := range attempts {
+		a := a
+		go func() {
+			if out, ok := a(rctx); ok {
+				ch <- out
+				return
+			}
+			ch <- ResolveOutcome{}
+		}()
+	}
+
+	for range attempts {
+		select {
+		case out := <-ch:
+			if len(out.IPs) > 0 {
+				return out, true
+			}
+		case <-rctx.Done():
+			return ResolveOutcome{}, false
+		}
+	}
+	return ResolveOutcome{}, false
 }
 
 func filterIPStrings(ips []net.IP, recordType string) []string {

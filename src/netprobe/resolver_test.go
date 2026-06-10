@@ -94,6 +94,37 @@ func TestResolveResilientFallsThroughToUDP(t *testing.T) {
 	}
 }
 
+func TestResolveResilientUDPNotStarvedByBlockedDoH(t *testing.T) {
+	hang := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer hang.Close()
+
+	udpAddr, stop := startUDPResponder(t, dnsAResponse())
+	defer stop()
+
+	r := &Resolver{
+		Timeout: 1500 * time.Millisecond,
+		DoH: []DoHServer{
+			{URL: hang.URL, Format: DoHJSON},
+			{URL: hang.URL, Format: DoHJSON},
+			{URL: hang.URL, Format: DoHJSON},
+		},
+		UDP: []string{udpAddr},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	out, err := r.ResolveResilient(ctx, "example.com", "A")
+	if err != nil {
+		t.Fatalf("ResolveResilient error (blocked DoH starved UDP): %v", err)
+	}
+	if len(out.IPs) != 1 || out.IPs[0] != "5.6.7.8" || out.UDPSrv != udpAddr {
+		t.Fatalf("want UDP answer [5.6.7.8] from %s, got %+v", udpAddr, out)
+	}
+}
+
 func TestResolveUDPOnceNXDomain(t *testing.T) {
 	resp := make([]byte, 12)
 	resp[3] = 0x03
