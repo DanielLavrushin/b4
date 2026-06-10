@@ -25,13 +25,11 @@ const (
 )
 
 var (
-	CurLevel   atomic.Int32
-	errFile    *os.File
-	errLogger  *log.Logger
-	errMu      sync.Mutex
-	origStderr int
-	// errSessionHeader is written to the file lazily, right before the first
-	// error of a session, so restarts that log nothing don't grow the file.
+	CurLevel         atomic.Int32
+	errFile          *os.File
+	errLogger        *log.Logger
+	errMu            sync.Mutex
+	origStderr       int
 	errSessionHeader string
 	errHeaderPending bool
 )
@@ -123,9 +121,6 @@ func InitErrorFile(path string) error {
 	return openErrorFileLocked(path)
 }
 
-// SetErrorFile switches the error log to a new path at runtime, or disables
-// file logging (restoring stderr) when path is empty. Safe to call while b4 is
-// running — used when the log directory is changed live via the web UI.
 func SetErrorFile(path string) error {
 	errMu.Lock()
 	defer errMu.Unlock()
@@ -161,8 +156,10 @@ func openErrorFileLocked(path string) error {
 		return err
 	}
 
-	// Preserve the true original stderr only on the first open; later switches
-	// just re-point fd 2 at the new file so we never lose the real terminal.
+	// Capture the true original stderr (terminal / journald pipe) once, before
+	// redirecting fd 2. Verbose console logging keeps flowing to it via the
+	// MultiWriter set up in Init, so the error file stays error-level only;
+	// fd 2 is redirected to the file only so Go panics/fatals are captured.
 	if origStderr == 0 {
 		origStderr, _ = unix.Dup(int(os.Stderr.Fd()))
 	}
@@ -172,8 +169,6 @@ func openErrorFileLocked(path string) error {
 	errFile = f
 	errLogger = log.New(f, "", log.Ldate|log.Ltime|log.Lmicroseconds)
 
-	// Defer the session header until the first error is actually written, so a
-	// run that logs nothing leaves the file untouched (no per-restart growth).
 	errSessionHeader = fmt.Sprintf("=== b4 error log opened pid=%d at %s ===\n",
 		os.Getpid(), time.Now().Format(time.RFC3339))
 	errHeaderPending = true
@@ -186,9 +181,14 @@ func openErrorFileLocked(path string) error {
 	return nil
 }
 
+// OrigStderr returns a stable handle to the real original stderr (terminal /
+// journald pipe). It captures a dup on first use so that later redirecting
+// fd 2 to the error file never changes where console logging goes.
 func OrigStderr() *os.File {
+	errMu.Lock()
+	defer errMu.Unlock()
 	if origStderr == 0 {
-		return os.Stderr
+		origStderr, _ = unix.Dup(int(os.Stderr.Fd()))
 	}
 	return os.NewFile(uintptr(origStderr), "stderr")
 }
