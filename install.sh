@@ -561,11 +561,17 @@ b4_running_cmdline() {
 relaunch_b4() {
     _cmd="$1"
     [ -z "$_cmd" ] && return 1
+    case "$-" in
+    *f*) _had_noglob=1 ;;
+    *) _had_noglob=0 ;;
+    esac
+    set -f
     if command_exists setsid; then
-        setsid sh -c "exec $_cmd" >/dev/null 2>&1 &
+        setsid $_cmd >/dev/null 2>&1 &
     else
-        nohup sh -c "exec $_cmd" >/dev/null 2>&1 &
+        nohup $_cmd >/dev/null 2>&1 &
     fi
+    if [ "$_had_noglob" = 0 ]; then set +f; fi
     sleep 2
     is_b4_running
 }

@@ -165,8 +165,14 @@ func stripCLIOverrides(c *Config) *Config {
 	if f["log-dir"] && c.System.Logging.Directory == ov.LogDir {
 		clone.System.Logging.Directory = snap.System.Logging.Directory
 	}
-	if f["error-file"] && c.System.Logging.Directory == filepath.Dir(ov.ErrorFile) {
-		clone.System.Logging.Directory = snap.System.Logging.Directory
+	if f["error-file"] {
+		expected := ""
+		if ov.ErrorFile != "" {
+			expected = filepath.Dir(ov.ErrorFile)
+		}
+		if c.System.Logging.Directory == expected {
+			clone.System.Logging.Directory = snap.System.Logging.Directory
+		}
 	}
 	if f["web-port"] && c.System.WebServer.Port == ov.WebPort {
 		clone.System.WebServer.Port = snap.System.WebServer.Port

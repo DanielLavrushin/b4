@@ -4,7 +4,7 @@
 
 - FIXED: **Web UI update reported success but kept the old version on some setups** - where b4 isn't managed by a normal service (for example running directly in a container), the update replaced the program on disk but never restarted the running copy. It now stops the old copy and relaunches the new one, so the update actually takes effect.
 - FIXED: **Leftover "zombie" update processes piling up** - each update attempt left a finished helper process behind; these are now cleaned up.
-- ADDED: **Update log** - every Web UI update now writes a step-by-step trace to `/var/log/b4/update.log` (reset each attempt), making failed updates much easier to diagnose.
+- ADDED: **Update log** - every Web UI update now writes a step-by-step trace to `update.log` in the log folder (default `/var/log/b4`, reset each attempt), making failed updates much easier to diagnose.
 - ADDED: **Localized changelog** - the Web UI now shows the changelog in the selected language.
 - CHANGED: **Logging setting is now a folder, not a single file** - Settings → Service now asks for a log *directory* (default `/var/log/b4`) instead of a path to `errors.log`, so all of b4's log files (errors, updates, and any added later) live together and can be moved in one place. Existing configs are migrated automatically (your old folder is kept); leave the field empty to turn file logging off.
 
