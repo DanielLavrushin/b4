@@ -387,6 +387,14 @@ func (a *API) saveAndPushConfig(newCfg *config.Config) error {
 		go func() { _ = mtproto.RefreshDCs(newMT.DCFallbackEnabled, newMT.DCFallbackURL) }()
 	}
 
+	if a.getCfg().System.Logging.Directory != newCfg.System.Logging.Directory {
+		if err := log.SetErrorFile(newCfg.System.Logging.ErrorFilePath()); err != nil {
+			log.Errorf("Failed to switch error log to %q: %v", newCfg.System.Logging.Directory, err)
+		} else {
+			log.Infof("Error log directory changed to %q", newCfg.System.Logging.Directory)
+		}
+	}
+
 	err := newCfg.SaveToFile(newCfg.ConfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to save config to file: %v", err)

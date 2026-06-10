@@ -30,6 +30,10 @@ var (
 	errLogger  *log.Logger
 	errMu      sync.Mutex
 	origStderr int
+	// errSessionHeader is written to the file lazily, right before the first
+	// error of a session, so restarts that log nothing don't grow the file.
+	errSessionHeader string
+	errHeaderPending bool
 )
 
 type multi struct {
@@ -116,7 +120,33 @@ func InitErrorFile(path string) error {
 	}
 	errMu.Lock()
 	defer errMu.Unlock()
+	return openErrorFileLocked(path)
+}
 
+// SetErrorFile switches the error log to a new path at runtime, or disables
+// file logging (restoring stderr) when path is empty. Safe to call while b4 is
+// running — used when the log directory is changed live via the web UI.
+func SetErrorFile(path string) error {
+	errMu.Lock()
+	defer errMu.Unlock()
+
+	if path == "" {
+		if origStderr != 0 {
+			unix.Dup2(origStderr, int(os.Stderr.Fd()))
+		}
+		if errFile != nil {
+			_ = errFile.Sync()
+			_ = errFile.Close()
+			errFile = nil
+			errLogger = nil
+		}
+		errHeaderPending = false
+		return nil
+	}
+	return openErrorFileLocked(path)
+}
+
+func openErrorFileLocked(path string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create log directory: %w", err)
@@ -130,14 +160,28 @@ func InitErrorFile(path string) error {
 	if err != nil {
 		return err
 	}
+
+	// Preserve the true original stderr only on the first open; later switches
+	// just re-point fd 2 at the new file so we never lose the real terminal.
+	if origStderr == 0 {
+		origStderr, _ = unix.Dup(int(os.Stderr.Fd()))
+	}
+	unix.Dup2(int(f.Fd()), int(os.Stderr.Fd()))
+
+	old := errFile
 	errFile = f
 	errLogger = log.New(f, "", log.Ldate|log.Ltime|log.Lmicroseconds)
 
-	fmt.Fprintf(f, "=== b4 started pid=%d at %s ===\n",
+	// Defer the session header until the first error is actually written, so a
+	// run that logs nothing leaves the file untouched (no per-restart growth).
+	errSessionHeader = fmt.Sprintf("=== b4 error log opened pid=%d at %s ===\n",
 		os.Getpid(), time.Now().Format(time.RFC3339))
+	errHeaderPending = true
 
-	origStderr, _ = unix.Dup(int(os.Stderr.Fd()))
-	unix.Dup2(int(f.Fd()), int(os.Stderr.Fd()))
+	if old != nil {
+		_ = old.Sync()
+		_ = old.Close()
+	}
 
 	return nil
 }
@@ -166,6 +210,10 @@ func Errorf(format string, a ...any) error {
 
 	errMu.Lock()
 	if errLogger != nil {
+		if errHeaderPending && errFile != nil {
+			_, _ = errFile.WriteString(errSessionHeader)
+			errHeaderPending = false
+		}
 		errLogger.Println(msg)
 		if errFile != nil {
 			_ = errFile.Sync()
