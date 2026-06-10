@@ -110,6 +110,14 @@ func (c *Config) Validate() error {
 		return v.result()
 	}
 
+	if c.System.Logging.Directory != "" {
+		if !filepath.IsAbs(c.System.Logging.Directory) {
+			v.addf("system.logging.directory", "must_be_absolute", map[string]any{"path": c.System.Logging.Directory}, "log directory must be an absolute path (got: %q)", c.System.Logging.Directory)
+			return v.result()
+		}
+		c.System.Logging.Directory = filepath.Clean(c.System.Logging.Directory)
+	}
+
 	for setIdx, set := range c.Sets {
 		if set.Routing.Table < 0 {
 			set.Routing.Table = 0

@@ -189,6 +189,42 @@ func TestValidate_GeoPathMissing(t *testing.T) {
 	})
 }
 
+func TestValidate_LoggingDirectory(t *testing.T) {
+	t.Run("relative path rejected", func(t *testing.T) {
+		cfg := NewConfig()
+		cfg.System.Logging.Directory = "home/data/b4"
+
+		ve := mustValidationErr(t, cfg.Validate())
+		if findField(ve, "system.logging.directory", "must_be_absolute") == nil {
+			t.Errorf("missing must_be_absolute; got %+v", ve.Fields)
+		}
+	})
+
+	t.Run("trailing slash cleaned", func(t *testing.T) {
+		cfg := NewConfig()
+		cfg.System.Logging.Directory = "/home/dala/b4/"
+
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.System.Logging.Directory != "/home/dala/b4" {
+			t.Errorf("want cleaned /home/dala/b4, got %q", cfg.System.Logging.Directory)
+		}
+	})
+
+	t.Run("empty stays empty (file logging disabled)", func(t *testing.T) {
+		cfg := NewConfig()
+		cfg.System.Logging.Directory = ""
+
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.System.Logging.Directory != "" {
+			t.Errorf("want empty, got %q", cfg.System.Logging.Directory)
+		}
+	})
+}
+
 func TestValidate_RoutingMode(t *testing.T) {
 	t.Run("invalid routing mode", func(t *testing.T) {
 		cfg := NewConfig()
