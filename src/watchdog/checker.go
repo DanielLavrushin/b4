@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/daniellavrushin/b4/discovery"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/netprobe"
 	"golang.org/x/sys/unix"
@@ -74,7 +73,8 @@ func checkDomain(input string, mark uint, timeout time.Duration) CheckResult {
 	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
-		return CheckResult{Error: discovery.HumanizeError(err.Error())}
+		_, detail := netprobe.ClassifyTLSError(err)
+		return CheckResult{Error: detail}
 	}
 	defer resp.Body.Close()
 
@@ -119,7 +119,7 @@ evaluate:
 		speed = float64(bytesRead) / duration.Seconds()
 	}
 
-	if blockErr := discovery.DetectBlockPage(headBuf); blockErr != "" {
+	if blockErr := netprobe.DetectBlockPageBody(headBuf); blockErr != "" {
 		return CheckResult{Error: blockErr}
 	}
 

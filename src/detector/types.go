@@ -137,25 +137,6 @@ type TelegramResult struct {
 
 // Domain accessibility check types
 
-type DomainStatus string
-
-const (
-	DomainOk       DomainStatus = "OK"
-	DomainTLSDPI   DomainStatus = "TLS_DPI"
-	DomainTLSMITM  DomainStatus = "TLS_MITM"
-	DomainTLSSpoof DomainStatus = "TLS_SPOOF"
-	DomainTLSAlert DomainStatus = "TLS_ALERT"
-	DomainTLSReset DomainStatus = "TLS_RST"
-	DomainTLSDrop  DomainStatus = "TLS_DROP"
-	DomainSYNDrop  DomainStatus = "SYN_DROP"
-	DomainTCP16    DomainStatus = "TCP16"
-	DomainISPPage  DomainStatus = "ISP_PAGE"
-	DomainBlocked  DomainStatus = "BLOCKED"
-	DomainDNSFake  DomainStatus = "DNS_FAKE"
-	DomainTimeout  DomainStatus = "TIMEOUT"
-	DomainError    DomainStatus = "ERROR"
-)
-
 type TLSProbeResult struct {
 	Status  DomainStatus `json:"status"`
 	Detail  string       `json:"detail,omitempty"`

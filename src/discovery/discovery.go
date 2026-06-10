@@ -31,14 +31,6 @@ const (
 	validationRetryDelay = 100 * time.Millisecond
 )
 
-func DetectBlockPage(body []byte) string {
-	return netprobe.DetectBlockPageBody(body)
-}
-
-func HumanizeError(raw string) string {
-	return netprobe.ClassifyErrorString(raw)
-}
-
 func NewDiscoverySuite(inputs []string, pool *nfq.Pool, skipDNS bool, skipCache bool, payloadFiles []string, validationTries int, tlsVersion string, ipVersion string, flowMark uint) *DiscoverySuite {
 	domainInputs := parseDiscoveryInputs(inputs)
 	if len(domainInputs) == 0 {
@@ -1223,7 +1215,8 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 	resp, err := client.Do(req)
 	if err != nil {
 		result.Status = CheckStatusFailed
-		result.Error = HumanizeError(err.Error())
+		_, detail := netprobe.ClassifyTLSError(err)
+		result.Error = detail
 		result.Duration = time.Since(start)
 		return result
 	}
@@ -1312,7 +1305,7 @@ evaluate:
 	}
 
 	// Check for ISP block page in response body before marking as success.
-	if blockErr := DetectBlockPage(headBuf); blockErr != "" {
+	if blockErr := netprobe.DetectBlockPageBody(headBuf); blockErr != "" {
 		result.Status = CheckStatusFailed
 		result.Error = blockErr
 		return result

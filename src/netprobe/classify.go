@@ -2,58 +2,137 @@ package netprobe
 
 import "strings"
 
-func ClassifyErrorString(raw string) string {
-	lower := strings.ToLower(raw)
+type DomainStatus string
 
-	dpiPatterns := []struct {
-		pattern, desc string
-	}{
-		{"unexpected eof", "connection closed by DPI (unexpected EOF)"},
-		{"eof occurred in violation", "connection closed by DPI (EOF violation)"},
-		{"connection reset", "connection reset by DPI/firewall"},
-		{"bad record mac", "TLS record corrupted by DPI"},
-		{"decryption failed", "TLS decryption failed (DPI tampering)"},
-		{"illegal parameter", "TLS blocked (DPI injection)"},
-		{"decode error", "TLS blocked (DPI injection)"},
-		{"record overflow", "TLS record overflow (DPI injection)"},
-		{"unrecognized name", "blocked by SNI filtering"},
-		{"handshake failure", "TLS handshake blocked by DPI"},
-		{"close notify", "connection closed by DPI (alert injection)"},
-		{"wrong version number", "non-TLS response received (DPI replacement)"},
+const (
+	DomainOk       DomainStatus = "OK"
+	DomainTLSDPI   DomainStatus = "TLS_DPI"
+	DomainTLSMITM  DomainStatus = "TLS_MITM"
+	DomainTLSSpoof DomainStatus = "TLS_SPOOF"
+	DomainTLSAlert DomainStatus = "TLS_ALERT"
+	DomainTLSReset DomainStatus = "TLS_RST"
+	DomainTLSDrop  DomainStatus = "TLS_DROP"
+	DomainSYNDrop  DomainStatus = "SYN_DROP"
+	DomainTCP16    DomainStatus = "TCP16"
+	DomainISPPage  DomainStatus = "ISP_PAGE"
+	DomainBlocked  DomainStatus = "BLOCKED"
+	DomainDNSFake  DomainStatus = "DNS_FAKE"
+	DomainTimeout  DomainStatus = "TIMEOUT"
+	DomainError    DomainStatus = "ERROR"
+)
+
+type TLSStage int
+
+const (
+	StageConnect TLSStage = iota
+	StageHandshake
+	StageRead
+)
+
+const (
+	TCP16MinBytes = 12 * 1024
+	TCP16MaxBytes = 69 * 1024
+)
+
+func ClassifyTLSError(err error) (DomainStatus, string) {
+	return ClassifyTLSErrorStaged(err, StageHandshake, 0)
+}
+
+func ClassifyTLSErrorStaged(err error, stage TLSStage, bytesRead int) (DomainStatus, string) {
+	if err == nil {
+		return DomainOk, ""
 	}
-	for _, p := range dpiPatterns {
-		if strings.Contains(lower, p.pattern) {
-			return p.desc
+
+	msg := strings.ToLower(err.Error())
+
+	isTimeout := strings.Contains(msg, "timeout") || strings.Contains(msg, "deadline exceeded") || strings.Contains(msg, "timed out")
+	isEOF := strings.Contains(msg, "eof")
+	isReset := strings.Contains(msg, "connection reset") || strings.Contains(msg, "reset by peer")
+
+	if stage == StageRead && isTimeout && bytesRead >= TCP16MinBytes && bytesRead <= TCP16MaxBytes {
+		return DomainTCP16, "Read stalled after TSPU fat-flow window (12-69KB)"
+	}
+
+	if isTimeout {
+		switch stage {
+		case StageConnect:
+			return DomainSYNDrop, "TCP SYN dropped (no handshake)"
+		case StageHandshake:
+			return DomainTLSDrop, "TLS handshake timed out (drop)"
+		default:
+			return DomainTimeout, "Connection timed out"
 		}
 	}
 
-	mitmPatterns := []struct {
-		pattern, desc string
-	}{
-		{"self-signed", "fake certificate detected (possible MITM)"},
-		{"self signed", "fake certificate detected (possible MITM)"},
-		{"unknown authority", "unknown CA (possible MITM)"},
-		{"certificate has expired", "expired certificate (possible MITM)"},
-		{"x509", "certificate error (possible MITM)"},
+	if strings.Contains(msg, "wrong version number") {
+		return DomainTLSSpoof, "Non-TLS response received (DPI replacement)"
 	}
-	for _, p := range mitmPatterns {
-		if strings.Contains(lower, p.pattern) {
-			return p.desc
+	for _, p := range []string{"record overflow", "oversized", "record layer failure", "decode error", "decoding error", "illegal parameter", "bad record mac", "decryption failed"} {
+		if strings.Contains(msg, p) {
+			return DomainTLSSpoof, "Garbage TLS response (DPI injection)"
 		}
 	}
 
-	switch {
-	case strings.Contains(lower, "context deadline exceeded") || strings.Contains(lower, "i/o timeout"):
-		return "connection timed out (no response)"
-	case strings.Contains(lower, "connection refused"):
-		return "connection refused (port closed)"
-	case strings.Contains(lower, "no route to host"):
-		return "no route to host (IP unreachable)"
-	case strings.Contains(lower, "network is unreachable"):
-		return "network unreachable"
-	case strings.Contains(lower, "eof"):
-		return "connection closed unexpectedly"
+	if strings.Contains(msg, "alert") || strings.Contains(msg, "unrecognized name") || strings.Contains(msg, "handshake failure") {
+		switch {
+		case strings.Contains(msg, "unrecognized name"):
+			return DomainTLSAlert, "SNI blocked (unrecognized name)"
+		case strings.Contains(msg, "protocol version"):
+			return DomainTLSAlert, "TLS protocol version alert"
+		default:
+			return DomainTLSAlert, "TLS alert (DPI disruption)"
+		}
 	}
 
-	return raw
+	if isReset {
+		if stage == StageHandshake || stage == StageConnect {
+			return DomainTLSReset, "TCP RST during handshake (active reset)"
+		}
+		return DomainTLSReset, "TCP RST during transfer"
+	}
+
+	if isEOF {
+		if stage == StageHandshake || bytesRead == 0 {
+			return DomainTLSReset, "Connection terminated (EOF injection)"
+		}
+		return DomainTLSReset, "Connection dropped during transfer (EOF)"
+	}
+
+	for _, p := range []string{"self-signed", "self signed", "unknown authority", "certificate has expired", "certificate is not valid", "hostname mismatch", "name mismatch", "x509", "certificate"} {
+		if strings.Contains(msg, p) {
+			return DomainTLSMITM, "Certificate substitution (possible MITM)"
+		}
+	}
+
+	if strings.Contains(msg, "no shared cipher") || strings.Contains(msg, "cipher") {
+		return DomainTLSMITM, "Cipher mismatch (possible MITM)"
+	}
+
+	if strings.Contains(msg, "refused") {
+		return DomainBlocked, "Connection refused"
+	}
+	if strings.Contains(msg, "no such host") || strings.Contains(msg, "no address") {
+		return DomainError, "DNS resolution failed"
+	}
+	if strings.Contains(msg, "internal error") {
+		return DomainError, "TLS internal error"
+	}
+
+	return DomainError, err.Error()
+}
+
+func ClassifyHTTPResponse(statusCode int, location, body string) (DomainStatus, string) {
+	if statusCode == 451 {
+		return DomainISPPage, "HTTP 451 Unavailable For Legal Reasons"
+	}
+
+	if IsBlockPageRedirect(location) {
+		return DomainISPPage, "Redirect to ISP block page: " + location
+	}
+
+	if DetectBlockPageBody([]byte(body)) != "" {
+		return DomainISPPage, "ISP block page detected in response body"
+	}
+
+	return DomainOk, ""
 }

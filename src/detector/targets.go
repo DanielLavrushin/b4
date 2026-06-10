@@ -16,8 +16,6 @@ var (
 	CheckDomains        []string
 	UDPDNSServers       []string
 	DoHServers          []netprobe.DoHServer
-	BlockMarkers        []string
-	BodyBlockMarkers    []string
 	CDNRedirectPatterns []string
 	TCPTargets          []TCPTarget
 	WhitelistSNI        []string
@@ -58,8 +56,6 @@ func init() {
 	CheckDomains = data.CheckDomains
 	UDPDNSServers = netprobe.DefaultUDPServers
 	DoHServers = netprobe.DefaultDoHServers
-	BlockMarkers = netprobe.BlockPageRedirectMarkers
-	BodyBlockMarkers = netprobe.BlockPageBodyMarkers
 	CDNRedirectPatterns = data.CDNRedirectPatterns
 	TCPTargets = data.TCPTargets
 	WhitelistSNI = data.WhitelistSNI

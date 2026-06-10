@@ -1,22 +1,49 @@
 package netprobe
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
-func TestClassifyErrorString(t *testing.T) {
+func TestClassifyTLSError(t *testing.T) {
 	cases := []struct {
-		raw, want string
+		raw        string
+		stage      TLSStage
+		bytesRead  int
+		wantStatus DomainStatus
 	}{
-		{"read: connection reset by peer", "connection reset by DPI/firewall"},
-		{"tls: unrecognized name", "blocked by SNI filtering"},
-		{"x509: certificate signed by unknown authority", "unknown CA (possible MITM)"},
-		{"context deadline exceeded", "connection timed out (no response)"},
-		{"dial tcp: connection refused", "connection refused (port closed)"},
-		{"some unmapped error", "some unmapped error"},
+		{"read: connection reset by peer", StageHandshake, 0, DomainTLSReset},
+		{"tls: unrecognized name", StageHandshake, 0, DomainTLSAlert},
+		{"tls: wrong version number", StageHandshake, 0, DomainTLSSpoof},
+		{"x509: certificate signed by unknown authority", StageHandshake, 0, DomainTLSMITM},
+		{"dial tcp: i/o timeout", StageConnect, 0, DomainSYNDrop},
+		{"i/o timeout", StageRead, 20 * 1024, DomainTCP16},
+		{"connection refused", StageHandshake, 0, DomainBlocked},
+		{"no such host", StageHandshake, 0, DomainError},
 	}
 	for _, c := range cases {
-		if got := ClassifyErrorString(c.raw); got != c.want {
-			t.Errorf("ClassifyErrorString(%q) = %q, want %q", c.raw, got, c.want)
+		got, _ := ClassifyTLSErrorStaged(errors.New(c.raw), c.stage, c.bytesRead)
+		if got != c.wantStatus {
+			t.Errorf("ClassifyTLSErrorStaged(%q, stage=%d, n=%d) = %q, want %q", c.raw, c.stage, c.bytesRead, got, c.wantStatus)
 		}
+	}
+	if s, _ := ClassifyTLSError(nil); s != DomainOk {
+		t.Errorf("ClassifyTLSError(nil) = %q, want OK", s)
+	}
+}
+
+func TestClassifyHTTPResponse(t *testing.T) {
+	if s, _ := ClassifyHTTPResponse(451, "", ""); s != DomainISPPage {
+		t.Errorf("HTTP 451 should be ISP_PAGE, got %q", s)
+	}
+	if s, _ := ClassifyHTTPResponse(302, "https://warning.rt.ru/blocked", ""); s != DomainISPPage {
+		t.Errorf("block redirect should be ISP_PAGE, got %q", s)
+	}
+	if s, _ := ClassifyHTTPResponse(200, "", "Доступ заблокирован по решению суда"); s != DomainISPPage {
+		t.Errorf("block body should be ISP_PAGE, got %q", s)
+	}
+	if s, _ := ClassifyHTTPResponse(200, "", "<html>normal page</html>"); s != DomainOk {
+		t.Errorf("benign page should be OK, got %q", s)
 	}
 }
 
