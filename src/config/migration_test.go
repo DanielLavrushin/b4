@@ -159,4 +159,38 @@ func TestApplyMigrations(t *testing.T) {
 		}
 	})
 
+	t.Run("v45 to v46 derives directory from error_file", func(t *testing.T) {
+		cases := []struct {
+			name string
+			raw  map[string]interface{}
+			want string
+		}{
+			{
+				name: "custom path -> parent dir",
+				raw:  map[string]interface{}{"system": map[string]interface{}{"logging": map[string]interface{}{"error_file": "/mnt/logs/errors.log"}}},
+				want: "/mnt/logs",
+			},
+			{
+				name: "empty error_file -> disabled",
+				raw:  map[string]interface{}{"system": map[string]interface{}{"logging": map[string]interface{}{"error_file": ""}}},
+				want: "",
+			},
+			{
+				name: "absent error_file -> default kept",
+				raw:  map[string]interface{}{},
+				want: DefaultConfig.System.Logging.Directory,
+			},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				cfg := NewConfig()
+				if err := migrateV45to46(&cfg, tc.raw); err != nil {
+					t.Fatalf("migration failed: %v", err)
+				}
+				if cfg.System.Logging.Directory != tc.want {
+					t.Errorf("Directory: want %q, got %q", tc.want, cfg.System.Logging.Directory)
+				}
+			})
+		}
+	})
 }

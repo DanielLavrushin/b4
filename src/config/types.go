@@ -2,6 +2,7 @@ package config
 
 import (
 	"math/rand"
+	"path/filepath"
 
 	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/log"
@@ -326,7 +327,27 @@ type Logging struct {
 	Level      log.Level `json:"level"`
 	Instaflush bool      `json:"instaflush"`
 	Syslog     bool      `json:"syslog"`
-	ErrorFile  string    `json:"error_file"`
+	// Directory is the base folder for all b4 log files (errors.log, update.log, ...).
+	// Empty disables file logging entirely.
+	Directory string `json:"directory"`
+}
+
+// ErrorFilePath returns the path to the runtime error log, or "" when file
+// logging is disabled (empty Directory).
+func (l Logging) ErrorFilePath() string {
+	if l.Directory == "" {
+		return ""
+	}
+	return filepath.Join(l.Directory, "errors.log")
+}
+
+// UpdateLogPath returns the path to the web-UI update log, or "" when file
+// logging is disabled (empty Directory).
+func (l Logging) UpdateLogPath() string {
+	if l.Directory == "" {
+		return ""
+	}
+	return filepath.Join(l.Directory, "update.log")
 }
 
 type SetConfig struct {

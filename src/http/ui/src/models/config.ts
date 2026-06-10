@@ -91,7 +91,7 @@ export interface LoggingConfig {
   level: LogLevel;
   instaflush: boolean;
   syslog: boolean;
-  error_file: string;
+  directory: string;
 }
 
 export interface TargetsConfig {

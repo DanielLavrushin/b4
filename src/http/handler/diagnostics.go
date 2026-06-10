@@ -41,7 +41,7 @@ func (api *API) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		Firewall: collectFirewallInfo(),
 		Geodata:  api.collectGeodataInfo(),
 		Storage:  collectStorage(),
-		Paths:    collectPaths(cfg.ConfigPath, cfg.System.Logging.ErrorFile, cfg.System.Geo.GeoSitePath, cfg.System.Geo.GeoIpPath),
+		Paths:    collectPaths(cfg.ConfigPath, cfg.System.Logging.ErrorFilePath(), cfg.System.Geo.GeoSitePath, cfg.System.Geo.GeoIpPath),
 	}
 
 	sendResponse(w, DiagnosticsResponse{Success: true, Data: diag})

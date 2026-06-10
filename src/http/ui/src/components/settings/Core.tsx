@@ -139,13 +139,13 @@ export const LoggingSettings = ({ config, onChange }: LoggingSettingsProps) => {
               helperText={t("settings.Logging.logLevelHelp")}
             />
             <B4TextField
-              label={t("settings.Logging.errorFilePath")}
-              value={config.system.logging.error_file}
+              label={t("settings.Logging.logDirectory")}
+              value={config.system.logging.directory}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                onChange("system.logging.error_file", e.target.value)
+                onChange("system.logging.directory", e.target.value)
               }
-              placeholder={t("settings.Logging.errorFilePathPlaceholder")}
-              helperText={t("settings.Logging.errorFilePathHelp")}
+              placeholder={t("settings.Logging.logDirectoryPlaceholder")}
+              helperText={t("settings.Logging.logDirectoryHelp")}
             />
             <B4Select
               label={t("settings.Logging.timezone")}

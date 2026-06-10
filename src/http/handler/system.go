@@ -74,13 +74,10 @@ func isDockerEnvironment() bool {
 }
 
 func (api *API) updateLogPath() string {
-	dir := "/var/log/b4"
 	if cfg := api.getCfg(); cfg != nil {
-		if ef := cfg.System.Logging.ErrorFile; ef != "" {
-			dir = filepath.Dir(ef)
-		}
+		return cfg.System.Logging.UpdateLogPath()
 	}
-	return filepath.Join(dir, "update.log")
+	return ""
 }
 
 func writeUpdateLog(path, format string, args ...interface{}) {
@@ -260,8 +257,10 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	log.Infof("Update requested via web UI (service manager: %s, version: %s)", serviceManager, req.Version)
 
 	logPath := api.updateLogPath()
-	os.MkdirAll(filepath.Dir(logPath), 0755)
-	os.WriteFile(logPath, []byte{}, 0644)
+	if logPath != "" {
+		os.MkdirAll(filepath.Dir(logPath), 0755)
+		os.WriteFile(logPath, []byte{}, 0644)
+	}
 	writeUpdateLog(logPath, "=== Update session started ===")
 	writeUpdateLog(logPath, "Service manager: %s | requested version: %q | os/arch: %s/%s",
 		serviceManager, req.Version, runtime.GOOS, runtime.GOARCH)
@@ -408,11 +407,21 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		cmd.Env = append(cmd.Env, "B4_UPDATE_LOG="+logPath)
 
 		devNull, _ := os.Open("/dev/null")
-		logFile, _ := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-
 		cmd.Stdin = devNull
-		cmd.Stdout = logFile
-		cmd.Stderr = logFile
+
+		// Capture installer output into the update log. When file logging is
+		// disabled (empty path) fall back to /dev/null so the child still runs.
+		var logFile *os.File
+		if logPath != "" {
+			logFile, _ = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		}
+		if logFile != nil {
+			cmd.Stdout = logFile
+			cmd.Stderr = logFile
+		} else {
+			cmd.Stdout = devNull
+			cmd.Stderr = devNull
+		}
 
 		if err := cmd.Start(); err != nil {
 			log.Errorf("Update command failed to start: %v", err)

@@ -66,6 +66,28 @@ var migrationRegistry = map[int]MigrationFunc{
 	42: migrateV42to43, // Add per-set routing block action
 	43: migrateV43to44, // Add MTProto DC-list fallback source config
 	44: migrateV44to45, // Add per-set DNS-over-HTTPS redirect target
+	45: migrateV45to46, // Replace logging.error_file with logging.directory
+}
+
+func migrateV45to46(c *Config, raw map[string]interface{}) error {
+	log.Tracef("Migration v45->v46: Replacing logging.error_file with logging.directory")
+
+	system, _ := raw["system"].(map[string]interface{})
+	logging, _ := system["logging"].(map[string]interface{})
+	old, present := logging["error_file"]
+	if !present {
+		// Nothing to convert — keep the default directory already in place.
+		return nil
+	}
+
+	oldPath, _ := old.(string)
+	if oldPath == "" {
+		// Empty error_file meant "file logging disabled" — preserve that.
+		c.System.Logging.Directory = ""
+	} else {
+		c.System.Logging.Directory = filepath.Dir(oldPath)
+	}
+	return nil
 }
 
 func migrateV44to45(c *Config, _ map[string]interface{}) error {
@@ -540,7 +562,7 @@ func migrateV9to10(c *Config, _ map[string]interface{}) error {
 // Migration: v8 -> v9
 func migrateV8to9(c *Config, _ map[string]interface{}) error {
 	log.Tracef("Migration v8->v9: No changes, placeholder migration")
-	c.System.Logging.ErrorFile = DefaultConfig.System.Logging.ErrorFile
+	c.System.Logging.Directory = DefaultConfig.System.Logging.Directory
 	return nil
 }
 

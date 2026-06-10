@@ -6,6 +6,7 @@
 - FIXED: **Leftover "zombie" update processes piling up** - each update attempt left a finished helper process behind; these are now cleaned up.
 - ADDED: **Update log** - every Web UI update now writes a step-by-step trace to `/var/log/b4/update.log` (reset each attempt), making failed updates much easier to diagnose.
 - ADDED: **Localized changelog** - the Web UI now shows the changelog in the selected language.
+- CHANGED: **Logging setting is now a folder, not a single file** - Settings → Service now asks for a log *directory* (default `/var/log/b4`) instead of a path to `errors.log`, so all of b4's log files (errors, updates, and any added later) live together and can be moved in one place. Existing configs are migrated automatically (your old folder is kept); leave the field empty to turn file logging off.
 
 ## [1.67.1] - 2026-06-10
 

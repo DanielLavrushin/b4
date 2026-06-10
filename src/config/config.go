@@ -252,7 +252,7 @@ var DefaultConfig = Config{
 			Level:      log.LevelInfo,
 			Instaflush: true,
 			Syslog:     false,
-			ErrorFile:  "/var/log/b4/errors.log",
+			Directory:  "/var/log/b4",
 		},
 
 		Checker: DiscoveryConfig{

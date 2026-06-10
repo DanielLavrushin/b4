@@ -298,14 +298,14 @@ func TestLoadFromFile_NumericAbsentUsesDefault(t *testing.T) {
 }
 
 func TestLoadFromFile_StringEmptyUserSurvives(t *testing.T) {
-	path := writeTempJSON(t, `{"version":34,"system":{"logging":{"error_file":""}}}`)
+	path := writeTempJSON(t, `{"version":34,"system":{"logging":{"directory":""}}}`)
 
 	cfg := NewConfig()
 	if err := cfg.LoadFromFile(path); err != nil {
 		t.Fatalf("LoadFromFile: %v", err)
 	}
-	if cfg.System.Logging.ErrorFile != "" {
-		t.Errorf("ErrorFile: want \"\" (user), got %q", cfg.System.Logging.ErrorFile)
+	if cfg.System.Logging.Directory != "" {
+		t.Errorf("Directory: want \"\" (user), got %q", cfg.System.Logging.Directory)
 	}
 }
 
@@ -316,8 +316,8 @@ func TestLoadFromFile_StringAbsentUsesDefault(t *testing.T) {
 	if err := cfg.LoadFromFile(path); err != nil {
 		t.Fatalf("LoadFromFile: %v", err)
 	}
-	if cfg.System.Logging.ErrorFile != "/var/log/b4/errors.log" {
-		t.Errorf("ErrorFile default lost, got %q", cfg.System.Logging.ErrorFile)
+	if cfg.System.Logging.Directory != "/var/log/b4" {
+		t.Errorf("Directory default lost, got %q", cfg.System.Logging.Directory)
 	}
 	if cfg.System.WebServer.BindAddress != "0.0.0.0" {
 		t.Errorf("WebServer.BindAddress default lost, got %q", cfg.System.WebServer.BindAddress)
@@ -340,8 +340,8 @@ func TestLoadFromFile_NestedStructPartialKeepsSiblings(t *testing.T) {
 	if cfg.System.Logging.Instaflush != true {
 		t.Errorf("Instaflush sibling: want true, got %v", cfg.System.Logging.Instaflush)
 	}
-	if cfg.System.Logging.ErrorFile != "/var/log/b4/errors.log" {
-		t.Errorf("ErrorFile sibling: got %q", cfg.System.Logging.ErrorFile)
+	if cfg.System.Logging.Directory != "/var/log/b4" {
+		t.Errorf("Directory sibling: got %q", cfg.System.Logging.Directory)
 	}
 }
 

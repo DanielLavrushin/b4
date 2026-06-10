@@ -1,6 +1,10 @@
 package config
 
-import "github.com/spf13/cobra"
+import (
+	"path/filepath"
+
+	"github.com/spf13/cobra"
+)
 
 type CLIOverrides struct {
 	QueueNum            int
@@ -14,7 +18,8 @@ type CLIOverrides struct {
 	MasqueradeInterface string
 	Instaflush          bool
 	Syslog              bool
-	ErrorFile           string
+	LogDir              string
+	ErrorFile           string // deprecated: alias for --log-dir (uses its parent dir)
 	WebPort             int
 }
 
@@ -33,7 +38,9 @@ func (c *Config) BindFlags(cmd *cobra.Command, o *CLIOverrides) {
 	cmd.Flags().StringVar(&o.MasqueradeInterface, "masquerade-interface", d.System.Tables.MasqueradeInterface, "Restrict masquerade to this output interface (empty = all)")
 	cmd.Flags().BoolVarP(&o.Instaflush, "instaflush", "i", d.System.Logging.Instaflush, "Flush logs immediately")
 	cmd.Flags().BoolVar(&o.Syslog, "syslog", d.System.Logging.Syslog, "Enable syslog output")
-	cmd.Flags().StringVar(&o.ErrorFile, "error-file", d.System.Logging.ErrorFile, "Path to error log file (empty disables)")
+	cmd.Flags().StringVar(&o.LogDir, "log-dir", d.System.Logging.Directory, "Directory for b4 log files (empty disables file logging)")
+	cmd.Flags().StringVar(&o.ErrorFile, "error-file", "", "Deprecated: use --log-dir (the file's parent directory is used)")
+	_ = cmd.Flags().MarkDeprecated("error-file", "use --log-dir instead")
 	cmd.Flags().IntVar(&o.WebPort, "web-port", d.System.WebServer.Port, "Port for internal web server (0 disables)")
 }
 
@@ -88,8 +95,15 @@ func (c *Config) ApplyCLIOverrides(cmd *cobra.Command, o *CLIOverrides) {
 	if changed("syslog") {
 		c.System.Logging.Syslog = o.Syslog
 	}
+	if changed("log-dir") {
+		c.System.Logging.Directory = o.LogDir
+	}
 	if changed("error-file") {
-		c.System.Logging.ErrorFile = o.ErrorFile
+		if o.ErrorFile == "" {
+			c.System.Logging.Directory = ""
+		} else {
+			c.System.Logging.Directory = filepath.Dir(o.ErrorFile)
+		}
 	}
 	if changed("web-port") {
 		c.System.WebServer.Port = o.WebPort
@@ -148,8 +162,11 @@ func stripCLIOverrides(c *Config) *Config {
 	if f["syslog"] && c.System.Logging.Syslog == ov.Syslog {
 		clone.System.Logging.Syslog = snap.System.Logging.Syslog
 	}
-	if f["error-file"] && c.System.Logging.ErrorFile == ov.ErrorFile {
-		clone.System.Logging.ErrorFile = snap.System.Logging.ErrorFile
+	if f["log-dir"] && c.System.Logging.Directory == ov.LogDir {
+		clone.System.Logging.Directory = snap.System.Logging.Directory
+	}
+	if f["error-file"] && c.System.Logging.Directory == filepath.Dir(ov.ErrorFile) {
+		clone.System.Logging.Directory = snap.System.Logging.Directory
 	}
 	if f["web-port"] && c.System.WebServer.Port == ov.WebPort {
 		clone.System.WebServer.Port = snap.System.WebServer.Port

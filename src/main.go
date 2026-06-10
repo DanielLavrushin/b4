@@ -588,11 +588,11 @@ func initLogging(cfg *config.Config) error {
 		}
 	}
 
-	if cfg.System.Logging.ErrorFile != "" {
-		if err := log.InitErrorFile(cfg.System.Logging.ErrorFile); err != nil {
+	if errFilePath := cfg.System.Logging.ErrorFilePath(); errFilePath != "" {
+		if err := log.InitErrorFile(errFilePath); err != nil {
 			log.Errorf("Failed to open error log file: %v", err)
 		} else {
-			log.Infof("Error logging to file: %s", cfg.System.Logging.ErrorFile)
+			log.Infof("Error logging to file: %s", errFilePath)
 		}
 	}
 

@@ -44,11 +44,17 @@ service_dispatch() {
 }
 
 service_show_crash_log() {
-    _errlog=""
+    _logdir=""
     if [ -f "$B4_CONFIG_FILE" ] && command_exists jq; then
-        _errlog=$(jq -r '.system.logging.error_file // empty' "$B4_CONFIG_FILE" 2>/dev/null)
+        _logdir=$(jq -r '.system.logging.directory // empty' "$B4_CONFIG_FILE" 2>/dev/null)
+        # Fall back to the legacy error_file's parent for not-yet-migrated configs
+        if [ -z "$_logdir" ]; then
+            _ef=$(jq -r '.system.logging.error_file // empty' "$B4_CONFIG_FILE" 2>/dev/null)
+            [ -n "$_ef" ] && _logdir=$(dirname "$_ef")
+        fi
     fi
-    [ -z "$_errlog" ] && _errlog="/var/log/b4/errors.log"
+    [ -z "$_logdir" ] && _logdir="/var/log/b4"
+    _errlog="${_logdir}/errors.log"
     if [ -s "$_errlog" ]; then
         log_info "Last log entries from $_errlog:"
         tail -5 "$_errlog" 2>/dev/null | while IFS= read -r _line; do
