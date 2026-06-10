@@ -3,6 +3,8 @@ package tables
 import (
 	"fmt"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -10,6 +12,29 @@ import (
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/tproxy"
 )
+
+var nftMarkRuleRe = regexp.MustCompile(`meta mark & 0x([0-9a-fA-F]+) == 0x([0-9a-fA-F]+) (accept|return)`)
+
+func nftParseMarkRule(line string) (uint32, string, bool) {
+	m := nftMarkRuleRe.FindStringSubmatch(line)
+	if m == nil {
+		return 0, "", false
+	}
+	a, errA := strconv.ParseUint(m[1], 16, 32)
+	b, errB := strconv.ParseUint(m[2], 16, 32)
+	if errA != nil || errB != nil || a != b {
+		return 0, "", false
+	}
+	return uint32(a), m[3], true
+}
+
+func nftHandleFromLine(line string) string {
+	idx := strings.LastIndex(line, "# handle ")
+	if idx < 0 {
+		return ""
+	}
+	return strings.TrimSpace(line[idx+len("# handle "):])
+}
 
 const proxyRulePriority = 5
 
@@ -300,9 +325,17 @@ func insertProxyOutputJump(be routeBackend, chain string) {
 }
 
 func ensureProxyOutputBaseRulesNft(cfg *config.Config, st routeState, queueMark uint32) {
-	bypassSig := fmt.Sprintf("meta mark & 0x%x == 0x%x return", queueMark, queueMark)
 	out, err := run("nft", "list", "chain", "inet", routeNftTable, routeNftOutput)
-	if err == nil && !strings.Contains(out, bypassSig) {
+	hasBypass := false
+	if err == nil {
+		for _, line := range strings.Split(out, "\n") {
+			if m, verb, ok := nftParseMarkRule(line); ok && verb == "return" && m == queueMark {
+				hasBypass = true
+				break
+			}
+		}
+	}
+	if err == nil && !hasBypass {
 		runLogged("routing: insert output bypass (proxy)",
 			"nft", "insert", "rule", "inet", routeNftTable, routeNftOutput,
 			"meta", "mark", "&", fmt.Sprintf("0x%x", queueMark), "==", fmt.Sprintf("0x%x", queueMark), "return")
@@ -415,6 +448,7 @@ func addProxyDivertRuleNft(chain string, v6 bool, setName string, mark uint32) {
 func addProxyInputAccept(be routeBackend, mark uint32) {
 	markHex := fmt.Sprintf("0x%x/0x%x", mark, mark)
 	if be.name() == backendNFTables {
+		removeProxyInputAcceptNft(mark)
 		table, chain, ok := proxyInputChain()
 		if !ok {
 			log.Tracef("routing: no nft input filter chain found (tried inet fw4, inet filter); skipping input accept rule")
@@ -439,33 +473,94 @@ func addProxyInputAccept(be routeBackend, mark uint32) {
 	}
 }
 
+func removeProxyInputAcceptNft(mark uint32) {
+	for _, c := range [][2]string{{"filter", "input"}, {"fw4", "input"}} {
+		table, chain := c[0], c[1]
+		out, err := run("nft", "-a", "list", "chain", "inet", table, chain)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(out, "\n") {
+			m, verb, ok := nftParseMarkRule(line)
+			if !ok || verb != "accept" || m != mark {
+				continue
+			}
+			handle := nftHandleFromLine(line)
+			if handle == "" {
+				continue
+			}
+			runLogged("routing: delete input accept (proxy)",
+				"nft", "delete", "rule", "inet", table, chain, "handle", handle)
+		}
+	}
+}
+
+func sweepProxyInputAcceptsNft() {
+	for _, c := range [][2]string{{"filter", "input"}, {"fw4", "input"}} {
+		table, chain := c[0], c[1]
+		out, err := run("nft", "-a", "list", "chain", "inet", table, chain)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(out, "\n") {
+			m, verb, ok := nftParseMarkRule(line)
+			if !ok || verb != "accept" || !tproxy.InMarkRange(m) {
+				continue
+			}
+			handle := nftHandleFromLine(line)
+			if handle == "" {
+				continue
+			}
+			runLogged("routing: sweep input accept (proxy)",
+				"nft", "delete", "rule", "inet", table, chain, "handle", handle)
+		}
+	}
+}
+
+func sweepProxyInputAcceptsIpt(cmd string) {
+	out, err := run(cmd, "-w", "-S", "INPUT")
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "-A INPUT ") || !strings.HasSuffix(line, "-j ACCEPT") || !strings.Contains(line, "-m mark --mark ") {
+			continue
+		}
+		m, ok := iptMarkFromRule(line)
+		if !ok || !tproxy.InMarkRange(m) {
+			continue
+		}
+		args := strings.Fields(line)
+		args[0] = "-D"
+		runLogged("routing: sweep input accept (proxy)", append([]string{cmd, "-w"}, args...)...)
+	}
+}
+
+func iptMarkFromRule(line string) (uint32, bool) {
+	fields := strings.Fields(line)
+	for i, f := range fields {
+		if f != "--mark" || i+1 >= len(fields) {
+			continue
+		}
+		parts := strings.Split(fields[i+1], "/")
+		if len(parts) != 2 {
+			return 0, false
+		}
+		a, errA := strconv.ParseUint(strings.TrimPrefix(parts[0], "0x"), 16, 32)
+		b, errB := strconv.ParseUint(strings.TrimPrefix(parts[1], "0x"), 16, 32)
+		if errA != nil || errB != nil || a != b {
+			return 0, false
+		}
+		return uint32(a), true
+	}
+	return 0, false
+}
+
 func removeProxyInputAccept(be routeBackend, mark uint32) {
 	markHex := fmt.Sprintf("0x%x/0x%x", mark, mark)
 	if be.name() == backendNFTables {
-		sig := fmt.Sprintf("meta mark & 0x%x == 0x%x accept", mark, mark)
-		for _, c := range [][2]string{{"filter", "input"}, {"fw4", "input"}} {
-			table, chain := c[0], c[1]
-			out, err := run("nft", "-a", "list", "chain", "inet", table, chain)
-			if err != nil {
-				continue
-			}
-			for _, line := range strings.Split(out, "\n") {
-				handleIdx := strings.LastIndex(line, "# handle ")
-				if handleIdx == -1 {
-					continue
-				}
-				rule := strings.TrimSpace(line[:handleIdx])
-				if !strings.Contains(rule, sig) {
-					continue
-				}
-				handle := strings.TrimSpace(line[handleIdx+len("# handle "):])
-				if handle == "" {
-					continue
-				}
-				runLogged("routing: delete input accept (proxy)",
-					"nft", "delete", "rule", "inet", table, chain, "handle", handle)
-			}
-		}
+		removeProxyInputAcceptNft(mark)
 		return
 	}
 	for _, fam := range []string{backendIPTables, backendIP6Tables, backendIPTablesLegacy, backendIP6TablesLegacy} {

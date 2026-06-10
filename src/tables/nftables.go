@@ -326,8 +326,9 @@ func (n *NFTablesManager) Apply() error {
 		return err
 	}
 
-	setSysctlOrProc("net.netfilter.nf_conntrack_checksum", "0")
-	setSysctlOrProc("net.netfilter.nf_conntrack_tcp_be_liberal", "1")
+	for _, s := range b4SysctlSettings() {
+		s.Apply()
+	}
 
 	if err := n.ApplyMasquerade(); err != nil {
 		return err
@@ -362,6 +363,10 @@ func (n *NFTablesManager) Clear() error {
 		if _, err := n.runNft("delete", "table", "inet", nftTableName); err != nil {
 			log.Errorf("Failed to delete nftables table: %v", err)
 		}
+	}
+
+	for _, s := range b4SysctlSettings() {
+		s.RevertBack()
 	}
 
 	return nil

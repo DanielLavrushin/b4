@@ -956,10 +956,11 @@ func (ds *DiscoverySuite) testPresetAllDomains(preset ConfigPreset) map[string]C
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
+spawn:
 	for _, di := range ds.Domains {
 		select {
 		case <-ds.cancel:
-			return results
+			break spawn
 		default:
 		}
 
@@ -1464,14 +1465,11 @@ func (ds *DiscoverySuite) cdnDNSConfig() config.DNSConfig {
 	if ds.discoveredDNS.Enabled {
 		return ds.discoveredDNS
 	}
+	doh := "https://1.1.1.1/dns-query"
 	if len(netprobe.WireDoHServers) > 0 {
-		return config.DNSConfig{Enabled: true, DoHURL: netprobe.WireDoHServers[0]}
+		doh = netprobe.WireDoHServers[0]
 	}
-	server := "9.9.9.9"
-	if len(ds.cfg.System.Checker.ReferenceDNS) > 0 {
-		server = ds.cfg.System.Checker.ReferenceDNS[0]
-	}
-	return config.DNSConfig{Enabled: true, TargetDNS: server, FragmentQuery: true}
+	return config.DNSConfig{Enabled: true, DoHURL: doh}
 }
 
 func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {

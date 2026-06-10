@@ -170,6 +170,13 @@ type SysctlSetting struct {
 
 var sysctlSnapPath = "/tmp/b4_sysctl_snapshot.json"
 
+func b4SysctlSettings() []SysctlSetting {
+	return []SysctlSetting{
+		{Name: "net.netfilter.nf_conntrack_checksum", Desired: "0", Revert: "1"},
+		{Name: "net.netfilter.nf_conntrack_tcp_be_liberal", Desired: "1", Revert: "0"},
+	}
+}
+
 func loadSysctlSnapshot() map[string]string {
 	b, err := os.ReadFile(sysctlSnapPath)
 	if err != nil {
@@ -691,12 +698,7 @@ func (manager *IPTablesManager) buildManifest() (Manifest, error) {
 		}
 	}
 
-	sysctls := []SysctlSetting{
-		{Name: "net.netfilter.nf_conntrack_checksum", Desired: "0", Revert: "1"},
-		{Name: "net.netfilter.nf_conntrack_tcp_be_liberal", Desired: "1", Revert: "0"},
-	}
-
-	return Manifest{IPSets: ipsets, Chains: chains, Rules: rules, Sysctls: sysctls}, nil
+	return Manifest{IPSets: ipsets, Chains: chains, Rules: rules, Sysctls: b4SysctlSettings()}, nil
 }
 
 func (ipt *IPTablesManager) Apply() error {
@@ -728,6 +730,7 @@ func (ipt *IPTablesManager) Clear() error {
 	m.RemoveChains()
 	m.DestroyIPSets()
 	destroyOrphanMSSIPSets()
+	m.RevertSysctls()
 	return nil
 }
 

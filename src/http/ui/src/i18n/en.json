@@ -428,9 +428,9 @@
       "referenceDomain": "Reference Domain",
       "referenceDomainHelp": "A known accessible domain used to measure your raw network speed without DPI bypass. Discovery compares preset results against this baseline to evaluate performance. Choose a fast, reliable domain that is not blocked in your region.",
       "dnsConfig": "DNS Configuration",
-      "addDns": "Add DNS Server",
-      "addDnsHelp": "DNS servers used during discovery to detect DNS poisoning and find a working bypass. Each server is tested with plain and fragmented queries to determine if it can resolve blocked domains correctly.",
-      "activeDns": "Active DNS servers for poisoning detection:"
+      "addDns": "Add fallback DNS server",
+      "addDnsHelp": "Fallback UDP DNS servers used during discovery when DoH is unavailable. Discovery resolves over DoH first; if that fails, each server here is tested with plain and fragmented queries to find a working bypass.",
+      "activeDns": "Fallback UDP DNS servers:"
     },
     "Watchdog": {
       "title": "Watchdog",

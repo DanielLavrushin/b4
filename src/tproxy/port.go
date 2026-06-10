@@ -25,3 +25,7 @@ func PortFor(mark uint32) int {
 	return DefaultPortBase + int(mark%PortRange)
 }
 
+func InMarkRange(mark uint32) bool {
+	return mark >= MarkBase && mark < MarkBase+MarkRange
+}
+

@@ -63,7 +63,8 @@ func (a *API) AddGeoIpTag(w http.ResponseWriter, r *http.Request) {
 		req.SetId = config.CreateSetSentinel
 	}
 
-	set := a.getCfg().GetSetById(req.SetId)
+	newCfg := a.getCfg().Clone()
+	set := newCfg.GetSetById(req.SetId)
 
 	if set == nil && req.SetId == config.CreateSetSentinel {
 		newSet := config.DefaultSetConfig
@@ -73,10 +74,10 @@ func (a *API) AddGeoIpTag(w http.ResponseWriter, r *http.Request) {
 		if req.SetName != "" {
 			set.Name = req.SetName
 		} else {
-			set.Name = "Set " + fmt.Sprintf("%d", len(a.getCfg().Sets)+1)
+			set.Name = "Set " + fmt.Sprintf("%d", len(newCfg.Sets)+1)
 		}
 
-		a.getCfg().Sets = append([]*config.SetConfig{set}, a.getCfg().Sets...)
+		newCfg.Sets = append([]*config.SetConfig{set}, newCfg.Sets...)
 	}
 
 	if set == nil {
@@ -97,7 +98,7 @@ func (a *API) AddGeoIpTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Infof("Added CIDR '%s' to set '%s' domains list", req.Cidr, set.Id)
-	err = a.saveAndPushConfig(a.getCfg())
+	err = a.saveAndPushConfig(newCfg)
 
 	if err != nil {
 		log.Errorf("Failed to apply domain changes after adding domain: %v", err)

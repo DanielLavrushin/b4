@@ -235,6 +235,13 @@ func (b *routeIptBackend) clearAll() {
 		}
 	}
 
+	for _, cmd := range b.iptBoth() {
+		if !hasBinary(cmd) {
+			continue
+		}
+		sweepProxyInputAcceptsIpt(cmd)
+	}
+
 	// Clean up stale b4r_* ipsets
 	if hasBinary("ipset") {
 		out, _ := run("ipset", "list", "-n")

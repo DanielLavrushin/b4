@@ -1,5 +1,17 @@
 # B4 - Bye Bye Big Bro
 
+## [1.69.0] - 2026-06-10
+
+- FIXED: **Discovery found nothing on connections that tamper with DNS** - on networks where the provider tampers with DNS (so ordinary name lookups come back wrong or empty), Discovery could not look up its test sites and reported that nothing worked, even when a working setup existed. Discovery now looks those sites up over encrypted DNS, so it finds working setups again. When it saves the result for a site, it sets that set to use encrypted DNS (DNS-over-HTTPS) for its lookups by default, which keeps working where plain DNS is tampered with.
+- FIXED: **Cancelling Discovery could crash b4** - pressing Cancel while a search was testing several sites at once could crash the whole service, so it had to be restarted. Cancelling is now safe at any time.
+- FIXED: **Stopping b4 could leave its firewall rules on the router** - the cleanup at shutdown could be undone at the last moment, so the rules stayed in place after exit.
+- FIXED: **Routing through another interface broke after that interface changed its address** - when the chosen outgoing interface (for example a VPN or a modem) got a new address, the set's traffic kept using the old one until b4 was restarted.
+- FIXED: **Incomplete cleanup on stop** - stopping b4 (or `--clear-iptables`) left traces behind: adjusted system network settings, stray routing entries when two sets shared one outgoing interface, and a firewall rule that piled up with proxy or bridge routing.
+
+## [1.68.0] - 2026-06-10
+
+- FIXED: **Saving settings could leave the running configuration out of step** - changing the SOCKS5 proxy or your sets (adding domains or IPs, creating, editing, reordering, deleting, or bulk-toggling) could save a result that did not match what was actually running.
+
 ## [1.67.2] - 2026-06-10
 
 - FIXED: **Web UI update reported success but kept the old version on some setups** - where b4 isn't managed by a normal service (for example running directly in a container), the update replaced the program on disk but never restarted the running copy. It now stops the old copy and relaunches the new one, so the update actually takes effect.
@@ -702,7 +714,7 @@
 
 ## [1.10.1] - 2025-11-03
 
-- IMPROVED: Intermittent connection failures where blocked sites would randomly fail to load in certain browsers (`Safari`, `Firefox`, `Chrome`). Connections _should_ now be more stable and reliable across all browsers by optimizing packet fragmentation strategy.
+- IMPROVED: Intermittent connection failures where blocked sites would randomly fail to load in certain browsers (`Safari`, `Firefox`, `Chrome`). Connections *should* now be more stable and reliable across all browsers by optimizing packet fragmentation strategy.
 
 ## [1.10.0] - 2025-11-02
 

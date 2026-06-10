@@ -208,6 +208,7 @@ func (b *routeNftBackend) destroyIPSet(name string) {
 }
 
 func (b *routeNftBackend) clearAll() {
+	sweepProxyInputAcceptsNft()
 	runLogged("routing: flush route table", "nft", "flush", "table", "inet", routeNftTable)
 	runLogged("routing: delete route table", "nft", "delete", "table", "inet", routeNftTable)
 }

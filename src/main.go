@@ -356,6 +356,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 	if geoScheduler != nil {
 		geoScheduler.Stop()
 	}
+	if tablesMonitor != nil {
+		tablesMonitor.Stop()
+	}
 	tproxyMgr.Stop()
 
 	// Perform graceful shutdown with timeout
