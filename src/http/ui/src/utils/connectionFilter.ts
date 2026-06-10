@@ -14,7 +14,7 @@ function addTerm(acc: ParsedConnectionFilter, rawTerm: string): void {
   if (colonIndex > 0) {
     const field = term.substring(0, colonIndex).trim();
     const value = term.substring(colonIndex + 1).trim();
-    if (!field || !value) return;
+    if (!field) return;
     const target = isExclude ? acc.fieldExcludes : acc.fieldFilters;
     target[field] ??= [];
     target[field].push(value);
@@ -52,6 +52,10 @@ export function parseConnectionFilter(
   return hasAnyTerm(acc) ? acc : null;
 }
 
+function fieldMatches(fieldValue: string, value: string): boolean {
+  return value ? fieldValue.includes(value) : fieldValue.trim() === "";
+}
+
 export function matchesConnectionFilter(
   parsed: ParsedConnectionFilter,
   getFieldValue: (field: string) => string,
@@ -59,12 +63,12 @@ export function matchesConnectionFilter(
 ): boolean {
   for (const [field, values] of Object.entries(parsed.fieldFilters)) {
     const fieldValue = getFieldValue(field).toLowerCase();
-    if (!values.some((value) => fieldValue.includes(value))) return false;
+    if (!values.some((value) => fieldMatches(fieldValue, value))) return false;
   }
 
   for (const [field, values] of Object.entries(parsed.fieldExcludes)) {
     const fieldValue = getFieldValue(field).toLowerCase();
-    if (values.some((value) => fieldValue.includes(value))) return false;
+    if (values.some((value) => fieldMatches(fieldValue, value))) return false;
   }
 
   for (const term of parsed.globalFilters) {

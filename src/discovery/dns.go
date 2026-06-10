@@ -6,27 +6,19 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/netprobe"
 	"github.com/daniellavrushin/b4/nfq"
 )
 
 //go:embed dns.json
 var cdnJSON []byte
-
-type dohResponse struct {
-	Answer []struct {
-		Data string `json:"data"`
-		Type int    `json:"type"`
-	} `json:"Answer"`
-}
 
 type CDNEntry struct {
 	Match   []string `json:"match"`
@@ -320,7 +312,7 @@ func uniqueIPs(primary, secondary []string) []string {
 func (p *DNSProber) getSystemResolverIPs(ctx context.Context) []string {
 	network := p.ipNetwork()
 
-	resolver := markedResolver(p.flowMark, p.timeout/2, "")
+	resolver := netprobe.MarkedResolver(int(p.flowMark), p.timeout/2, "")
 	ips, err := resolver.LookupIP(ctx, network, p.domain)
 	if err != nil {
 		log.DiscoveryLogf("  DNS: system resolver error: %v", err)
@@ -346,80 +338,14 @@ func (p *DNSProber) getSystemResolverIPs(ctx context.Context) []string {
 }
 
 func (p *DNSProber) getExpectedIPs(ctx context.Context) []string {
-	recordType := p.dnsRecordType()
-
-	dohServers := []string{
-		"https://dns.google/resolve?name=%s&type=" + recordType,
-		"https://dns.quad9.net:5053/dns-query?name=%s&type=" + recordType,
-		"https://cloudflare-dns.com/dns-query?name=%s&type=" + recordType,
-	}
-
-	client := &http.Client{
+	r := &netprobe.Resolver{
+		Mark:    int(p.flowMark),
 		Timeout: p.timeout,
-		Transport: &http.Transport{
-			DialContext: markedDialer(p.flowMark, p.timeout/2, p.timeout).DialContext,
-		},
+		UDP:     append(append([]string{}, netprobe.DefaultUDPServers...), p.cfg.System.Checker.ReferenceDNS...),
 	}
 
-	seenIPs := make(map[string]bool)
-	var allIPs []string
-
-	for _, endpoint := range dohServers {
-		url := fmt.Sprintf(endpoint, p.domain)
-
-		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-		if err != nil {
-			continue
-		}
-		req.Header.Set("Accept", "application/dns-json")
-
-		resp, err := client.Do(req)
-		if err != nil {
-			log.Tracef("DoH %s failed: %v", endpoint, err)
-			continue
-		}
-
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-
-		var doh dohResponse
-		if err := json.Unmarshal(body, &doh); err != nil {
-			continue
-		}
-
-		wantType := 1
-		if recordType == "AAAA" {
-			wantType = 28
-		}
-
-		unvalidatedIPs := []string{}
-		for _, ans := range doh.Answer {
-			if ans.Type == wantType {
-				ip := ans.Data
-				if seenIPs[ip] {
-					continue
-				}
-				seenIPs[ip] = true
-				unvalidatedIPs = append(unvalidatedIPs, ip)
-
-				if p.testIPServesDomain(ctx, ip) {
-					log.Tracef("DoH: verified %s for %s", ip, p.domain)
-					allIPs = append(allIPs, ip)
-				}
-			}
-		}
-
-		if len(allIPs) == 0 && len(unvalidatedIPs) > 0 {
-			log.Tracef("DoH: TLS validation failed, trusting unvalidated IPs: %v", unvalidatedIPs)
-			allIPs = unvalidatedIPs
-		}
-
-		if len(allIPs) > 0 {
-			break
-		}
-	}
-
-	if len(allIPs) == 0 {
+	out, err := r.ResolveResilient(ctx, p.domain, p.dnsRecordType())
+	if err != nil || len(out.IPs) == 0 {
 		ip := p.getExpectedIPFallback(ctx)
 		if ip != "" {
 			return []string{ip}
@@ -427,14 +353,26 @@ func (p *DNSProber) getExpectedIPs(ctx context.Context) []string {
 		return nil
 	}
 
-	return allIPs
+	var validated []string
+	for _, ip := range out.IPs {
+		if p.testIPServesDomain(ctx, ip) {
+			log.Tracef("DoH: verified %s for %s", ip, p.domain)
+			validated = append(validated, ip)
+		}
+	}
+	if len(validated) > 0 {
+		return validated
+	}
+
+	log.Tracef("DoH: TLS validation failed for %s, trusting resolved IPs: %v", p.domain, out.IPs)
+	return out.IPs
 }
 
 func (p *DNSProber) getExpectedIPFallback(ctx context.Context) string {
 	network := p.ipNetwork()
 
 	for _, server := range p.cfg.System.Checker.ReferenceDNS {
-		resolver := markedResolver(p.flowMark, p.timeout/3, server)
+		resolver := netprobe.MarkedResolver(int(p.flowMark), p.timeout/3, server)
 
 		ips, err := resolver.LookupIP(ctx, network, p.domain)
 		if err == nil && len(ips) > 0 {
@@ -455,9 +393,9 @@ func (p *DNSProber) testDNS(ctx context.Context, server string, fragmented bool,
 		ExpectedIP: expectedIP,
 	}
 
-	resolver := markedResolver(p.flowMark, p.timeout, "")
+	resolver := netprobe.MarkedResolver(int(p.flowMark), p.timeout, "")
 	if server != "" {
-		resolver = markedResolver(p.flowMark, p.timeout, server)
+		resolver = netprobe.MarkedResolver(int(p.flowMark), p.timeout, server)
 	}
 
 	network := p.ipNetwork()
@@ -497,7 +435,7 @@ func (p *DNSProber) findValidIP(ctx context.Context, ips []string) string {
 func (p *DNSProber) anyIPConnectable(ctx context.Context, ips []string) bool {
 	connCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	dialer := markedDialer(p.flowMark, p.timeout/2, p.timeout)
+	dialer := netprobe.Dialer(int(p.flowMark), p.timeout/2, p.timeout)
 	for _, ip := range ips {
 		conn, err := dialer.DialContext(connCtx, "tcp", net.JoinHostPort(ip, "443"))
 		if err == nil {
@@ -509,7 +447,7 @@ func (p *DNSProber) anyIPConnectable(ctx context.Context, ips []string) bool {
 }
 
 func (p *DNSProber) testIPServesDomain(ctx context.Context, ip string) bool {
-	dialer := markedDialer(p.flowMark, p.timeout/2, p.timeout)
+	dialer := netprobe.Dialer(int(p.flowMark), p.timeout/2, p.timeout)
 	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(ip, "443"))
 	if err != nil {
 		return false
@@ -548,7 +486,7 @@ func (p *DNSProber) testDNSWithFragment(ctx context.Context, server string, expe
 	defer cancel()
 
 	start := time.Now()
-	resolver := markedResolver(p.flowMark, p.timeout/2, "")
+	resolver := netprobe.MarkedResolver(int(p.flowMark), p.timeout/2, "")
 	ips, err := resolver.LookupIPAddr(lookupCtx, p.domain)
 	result.Latency = time.Since(start)
 

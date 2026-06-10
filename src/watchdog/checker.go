@@ -13,6 +13,7 @@ import (
 
 	"github.com/daniellavrushin/b4/discovery"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/netprobe"
 	"golang.org/x/sys/unix"
 )
 
@@ -45,7 +46,7 @@ func checkDomain(input string, mark uint, timeout time.Duration) CheckResult {
 		},
 		ResponseHeaderTimeout: timeout,
 		IdleConnTimeout:       timeout,
-		DialContext:            dialer.DialContext,
+		DialContext:           dialer.DialContext,
 	}
 
 	client := &http.Client{
@@ -53,11 +54,8 @@ func checkDomain(input string, mark uint, timeout time.Duration) CheckResult {
 		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) > 0 {
-				locLower := strings.ToLower(req.URL.String())
-				for _, marker := range discovery.BlockPageRedirectMarkers {
-					if strings.Contains(locLower, marker) {
-						return fmt.Errorf("ISP block page (redirect to %s)", req.URL.String())
-					}
+				if netprobe.IsBlockPageRedirect(req.URL.String()) {
+					return fmt.Errorf("ISP block page (redirect to %s)", req.URL.String())
 				}
 			}
 			if len(via) >= 3 {

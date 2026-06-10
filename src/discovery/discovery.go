@@ -16,6 +16,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/netprobe"
 	"github.com/daniellavrushin/b4/nfq"
 )
 
@@ -30,98 +31,12 @@ const (
 	validationRetryDelay = 100 * time.Millisecond
 )
 
-// ISP block page detection markers (shared with detector module).
-var BlockPageRedirectMarkers = []string{
-	"lawfilter", "warning.rt.ru", "blocked", "access-denied",
-	"eais", "zapret-info", "rkn.gov.ru", "mvd.ru",
-}
-
-var BlockPageBodyMarkers = []string{
-	"заблокирован", "запрещён", "запрещен", "ограничен",
-	"единый реестр", "роскомнадзор", "rkn.gov.ru", "nap.gov.ru",
-	"eais.rkn.gov.ru", "warning.rt.ru", "решению суда",
-}
-
-// detectBlockPage checks response body for ISP block page markers.
-// Returns error description if block page detected, empty string otherwise.
 func DetectBlockPage(body []byte) string {
-	if len(body) == 0 {
-		return ""
-	}
-	bodyLower := strings.ToLower(string(body))
-	for _, marker := range BlockPageBodyMarkers {
-		if strings.Contains(bodyLower, marker) {
-			return "ISP block page detected in response"
-		}
-	}
-	return ""
+	return netprobe.DetectBlockPageBody(body)
 }
 
-// humanizeError converts raw Go error strings into user-friendly descriptions.
-// Uses the same DPI/MITM classification patterns as the detector module.
 func HumanizeError(raw string) string {
-	lower := strings.ToLower(raw)
-
-	// DPI interference patterns (from detector/classify.go)
-	dpiPatterns := []struct {
-		pattern, desc string
-	}{
-		{"unexpected eof", "connection closed by DPI (unexpected EOF)"},
-		{"eof occurred in violation", "connection closed by DPI (EOF violation)"},
-		{"connection reset", "connection reset by DPI/firewall"},
-		{"bad record mac", "TLS record corrupted by DPI"},
-		{"decryption failed", "TLS decryption failed (DPI tampering)"},
-		{"illegal parameter", "TLS blocked (DPI injection)"},
-		{"decode error", "TLS blocked (DPI injection)"},
-		{"record overflow", "TLS record overflow (DPI injection)"},
-		{"unrecognized name", "blocked by SNI filtering"},
-		{"handshake failure", "TLS handshake blocked by DPI"},
-		{"close notify", "connection closed by DPI (alert injection)"},
-		{"wrong version number", "non-TLS response received (DPI replacement)"},
-	}
-	for _, p := range dpiPatterns {
-		if strings.Contains(lower, p.pattern) {
-			return p.desc
-		}
-	}
-
-	// MITM patterns
-	mitmPatterns := []struct {
-		pattern, desc string
-	}{
-		{"self-signed", "fake certificate detected (possible MITM)"},
-		{"self signed", "fake certificate detected (possible MITM)"},
-		{"unknown authority", "unknown CA (possible MITM)"},
-		{"certificate has expired", "expired certificate (possible MITM)"},
-		{"x509", "certificate error (possible MITM)"},
-	}
-	for _, p := range mitmPatterns {
-		if strings.Contains(lower, p.pattern) {
-			return p.desc
-		}
-	}
-
-	// Network-level errors
-	switch {
-	case strings.Contains(lower, "context deadline exceeded") || strings.Contains(lower, "i/o timeout"):
-		return "connection timed out (no response)"
-	case strings.Contains(lower, "connection refused"):
-		return "connection refused (port closed)"
-	case strings.Contains(lower, "no route to host"):
-		return "no route to host (IP unreachable)"
-	case strings.Contains(lower, "network is unreachable"):
-		return "network unreachable"
-	case strings.Contains(lower, "eof"):
-		return "connection closed unexpectedly"
-	}
-
-	// Already human-readable
-	if strings.Contains(lower, "stalled") || strings.Contains(lower, "truncated") ||
-		strings.Contains(lower, "ips failed") || strings.Contains(lower, "isp block") {
-		return raw
-	}
-
-	return raw
+	return netprobe.ClassifyErrorString(raw)
 }
 
 func NewDiscoverySuite(inputs []string, pool *nfq.Pool, skipDNS bool, skipCache bool, payloadFiles []string, validationTries int, tlsVersion string, ipVersion string, flowMark uint) *DiscoverySuite {
@@ -1271,7 +1186,7 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 		IdleConnTimeout:       timeout,
 	}
 
-	baseDialer := markedDialer(ds.flowMark, timeout/2, timeout)
+	baseDialer := netprobe.Dialer(int(ds.flowMark), timeout/2, timeout)
 	forcedNet := ds.dialNetwork()
 
 	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -1325,14 +1240,11 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 		return result
 	}
 	if loc := resp.Header.Get("Location"); loc != "" {
-		locLower := strings.ToLower(loc)
-		for _, marker := range BlockPageRedirectMarkers {
-			if strings.Contains(locLower, marker) {
-				result.Status = CheckStatusFailed
-				result.Error = "ISP block page (redirect to " + loc + ")"
-				result.Duration = time.Since(start)
-				return result
-			}
+		if netprobe.IsBlockPageRedirect(loc) {
+			result.Status = CheckStatusFailed
+			result.Error = "ISP block page (redirect to " + loc + ")"
+			result.Duration = time.Since(start)
+			return result
 		}
 	}
 
@@ -2187,7 +2099,7 @@ func (ds *DiscoverySuite) measureNetworkBaseline() float64 {
 		Timeout: timeout,
 		Transport: &http.Transport{
 			TLSClientConfig: ds.tlsConfig(),
-			DialContext:     markedDialer(ds.flowMark, timeout/2, timeout).DialContext,
+			DialContext:     netprobe.Dialer(int(ds.flowMark), timeout/2, timeout).DialContext,
 		},
 	}
 

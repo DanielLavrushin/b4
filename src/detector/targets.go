@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/netprobe"
 )
 
 //go:embed targets.json
@@ -14,7 +15,7 @@ var (
 	DNSCheckDomains     []string
 	CheckDomains        []string
 	UDPDNSServers       []string
-	DoHServers          []doHServer
+	DoHServers          []netprobe.DoHServer
 	BlockMarkers        []string
 	BodyBlockMarkers    []string
 	CDNRedirectPatterns []string
@@ -24,11 +25,6 @@ var (
 	DNSAvailDomains     []string
 	TelegramConfig      telegramTargets
 )
-
-type doHServer struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
-}
 
 type dnsAvailServer struct {
 	Name    string `json:"name"`
@@ -44,10 +40,6 @@ type telegramTargets struct {
 type targetsData struct {
 	DNSCheckDomains     []string         `json:"dns_check_domains"`
 	CheckDomains        []string         `json:"check_domains"`
-	UDPDNSServers       []string         `json:"udp_dns_servers"`
-	DoHServers          []doHServer      `json:"doh_servers"`
-	BlockMarkers        []string         `json:"block_markers"`
-	BodyBlockMarkers    []string         `json:"body_block_markers"`
 	CDNRedirectPatterns []string         `json:"cdn_redirect_patterns"`
 	TCPTargets          []TCPTarget      `json:"tcp_targets"`
 	WhitelistSNI        []string         `json:"whitelist_sni"`
@@ -64,10 +56,10 @@ func init() {
 	}
 	DNSCheckDomains = data.DNSCheckDomains
 	CheckDomains = data.CheckDomains
-	UDPDNSServers = data.UDPDNSServers
-	DoHServers = data.DoHServers
-	BlockMarkers = data.BlockMarkers
-	BodyBlockMarkers = data.BodyBlockMarkers
+	UDPDNSServers = netprobe.DefaultUDPServers
+	DoHServers = netprobe.DefaultDoHServers
+	BlockMarkers = netprobe.BlockPageRedirectMarkers
+	BodyBlockMarkers = netprobe.BlockPageBodyMarkers
 	CDNRedirectPatterns = data.CDNRedirectPatterns
 	TCPTargets = data.TCPTargets
 	WhitelistSNI = data.WhitelistSNI

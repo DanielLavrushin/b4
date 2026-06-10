@@ -11,6 +11,7 @@ import (
 
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/mtproto"
+	"github.com/daniellavrushin/b4/netprobe"
 )
 
 const (
@@ -73,7 +74,7 @@ func (s *DetectorSuite) telegramDCPings(ctx context.Context) []TelegramDCPing {
 			defer cancel()
 
 			start := time.Now()
-			conn, err := markedDialer(s.mark, tgDCPingTimeout).DialContext(pingCtx, "tcp", e.addr)
+			conn, err := netprobe.Dialer(int(s.mark), tgDCPingTimeout, 0).DialContext(pingCtx, "tcp", e.addr)
 			if err == nil {
 				p.Ok = true
 				p.RTTMs = round1(float64(time.Since(start).Microseconds()) / 1000.0)
@@ -269,7 +270,7 @@ func telegramVerdict(r *TelegramResult) TelegramVerdict {
 }
 
 func telegramClient(mark uint) *http.Client {
-	d := markedDialer(mark, fatConnectTimeout)
+	d := netprobe.Dialer(int(mark), fatConnectTimeout, 0)
 	return &http.Client{
 		Transport: &http.Transport{
 			DialContext:         d.DialContext,

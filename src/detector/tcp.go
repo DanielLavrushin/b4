@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/netprobe"
 )
 
 const (
@@ -111,7 +112,7 @@ func newFatProbeState(mark uint, ip string, port int, sni string, rttHint float6
 		DisableKeepAlives:   false,
 		TLSClientConfig:     tlsConf,
 		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
-			return markedDialer(mark, fatConnectTimeout).DialContext(ctx, "tcp", addr)
+			return netprobe.Dialer(int(mark), fatConnectTimeout, 0).DialContext(ctx, "tcp", addr)
 		},
 	}
 

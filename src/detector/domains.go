@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/netprobe"
 )
 
 func (s *DetectorSuite) runDomainsCheck(ctx context.Context, stubIPs map[string]bool) *DomainsResult {
@@ -144,7 +145,7 @@ func (s *DetectorSuite) probeTLS(ctx context.Context, domain, ip string, version
 		MaxVersion:         version,
 	}
 
-	conn, err := markedDialer(s.mark, 10*time.Second).DialContext(ctx, "tcp", ip+":443")
+	conn, err := netprobe.Dialer(int(s.mark), 10*time.Second, 0).DialContext(ctx, "tcp", ip+":443")
 	if err != nil {
 		status, detail := ClassifyTLSErrorStaged(err, stageConnect, 0)
 		return &TLSProbeResult{
@@ -221,7 +222,7 @@ func (s *DetectorSuite) probeHTTP(ctx context.Context, domain, ip string) *HTTPP
 
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return markedDialer(s.mark, 10*time.Second).DialContext(ctx, "tcp", ip+":80")
+			return netprobe.Dialer(int(s.mark), 10*time.Second, 0).DialContext(ctx, "tcp", ip+":80")
 		},
 	}
 

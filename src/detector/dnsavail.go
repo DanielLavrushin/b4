@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/netprobe"
 )
 
 const dnsAvailTimeout = 5 * time.Second
@@ -45,7 +46,7 @@ func (s *DetectorSuite) runDNSAvailCheck(ctx context.Context) *DNSAvailResult {
 			var client *http.Client
 			if server.Kind == "doh" {
 				pr.Kind = DNSAvailDoH
-				client = markedHTTPClient(s.mark, dnsAvailTimeout)
+				client = netprobe.HTTPClient(int(s.mark), dnsAvailTimeout)
 				defer client.CloseIdleConnections()
 			} else {
 				pr.Kind = DNSAvailUDP
@@ -116,7 +117,7 @@ func (s *DetectorSuite) dnsAvailProbe(ctx context.Context, client *http.Client, 
 	resolver := &net.Resolver{
 		PreferGo: true,
 		Dial: func(c context.Context, network, address string) (net.Conn, error) {
-			return markedDialer(s.mark, dnsAvailTimeout).DialContext(c, "udp", net.JoinHostPort(server.Address, "53"))
+			return netprobe.Dialer(int(s.mark), dnsAvailTimeout, 0).DialContext(c, "udp", net.JoinHostPort(server.Address, "53"))
 		},
 	}
 	if _, err := resolver.LookupIPAddr(probeCtx, domain); err != nil {

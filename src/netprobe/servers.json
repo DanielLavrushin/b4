@@ -1,0 +1,22 @@
+{
+  "doh_servers": [
+    { "name": "Google (IP)", "url": "https://8.8.8.8/resolve", "format": "json" },
+    { "name": "Cloudflare (IP)", "url": "https://1.1.1.1/dns-query", "format": "json" },
+    { "name": "Google", "url": "https://dns.google/resolve", "format": "json" },
+    { "name": "Cloudflare", "url": "https://cloudflare-dns.com/dns-query", "format": "json" },
+    { "name": "Cloudflare (alt)", "url": "https://one.one.one.one/dns-query", "format": "json" },
+    { "name": "AdGuard", "url": "https://dns.adguard-dns.com/resolve", "format": "json" },
+    { "name": "Alibaba", "url": "https://dns.alidns.com/resolve", "format": "json" }
+  ],
+  "udp_dns_servers": [
+    "8.8.8.8",
+    "1.1.1.1",
+    "9.9.9.9",
+    "94.140.14.14",
+    "77.88.8.8",
+    "223.5.5.5",
+    "208.67.222.222",
+    "76.76.2.0",
+    "194.242.2.2"
+  ]
+}

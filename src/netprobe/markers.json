@@ -1,0 +1,26 @@
+{
+  "redirect_markers": [
+    "lawfilter",
+    "warning.rt.ru",
+    "blocked",
+    "access-denied",
+    "eais",
+    "zapret-info",
+    "rkn.gov.ru",
+    "mvd.ru",
+    "blocklist"
+  ],
+  "body_markers": [
+    "заблокирован",
+    "запрещён",
+    "запрещен",
+    "ограничен",
+    "единый реестр",
+    "роскомнадзор",
+    "rkn.gov.ru",
+    "nap.gov.ru",
+    "eais.rkn.gov.ru",
+    "warning.rt.ru",
+    "решению суда"
+  ]
+}
