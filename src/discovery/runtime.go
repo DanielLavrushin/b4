@@ -87,6 +87,10 @@ func (m *Runtime) Start(cfg *config.Config) (*StartResult, error) {
 	discoveryCfg.Queue.IsDiscovery = true
 	discoveryCfg.System.Tables.SkipSetup = true
 
+	for _, set := range discoveryCfg.Sets {
+		set.DNS = config.DNSConfig{}
+	}
+
 	pool := nfq.NewPool(discoveryCfg)
 	if err := pool.Start(); err != nil {
 		tables.ClearDiscoverySteeringRules(cfg, flowMark, injectedMark)
