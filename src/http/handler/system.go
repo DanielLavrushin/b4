@@ -81,6 +81,9 @@ func (api *API) updateLogPath() string {
 }
 
 func writeUpdateLog(path, format string, args ...interface{}) {
+	if path == "" {
+		return
+	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return
@@ -258,8 +261,13 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 
 	logPath := api.updateLogPath()
 	if logPath != "" {
-		os.MkdirAll(filepath.Dir(logPath), 0755)
-		os.WriteFile(logPath, []byte{}, 0644)
+		if err := os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
+			log.Warnf("Update log disabled: cannot create %s: %v", filepath.Dir(logPath), err)
+			logPath = ""
+		} else if err := os.WriteFile(logPath, []byte{}, 0644); err != nil {
+			log.Warnf("Update log disabled: cannot reset %s: %v", logPath, err)
+			logPath = ""
+		}
 	}
 	writeUpdateLog(logPath, "=== Update session started ===")
 	writeUpdateLog(logPath, "Service manager: %s | requested version: %q | os/arch: %s/%s",
