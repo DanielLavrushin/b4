@@ -86,11 +86,14 @@ func (r *Resolver) ResolveDoHOnce(ctx context.Context, srv DoHServer, domain, re
 	if recordType == "" {
 		recordType = "A"
 	}
-	reqURL := fmt.Sprintf("%s?name=%s&type=%s", srv.URL, domain, recordType)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
 	if err != nil {
 		return nil, err
 	}
+	q := req.URL.Query()
+	q.Set("name", domain)
+	q.Set("type", recordType)
+	req.URL.RawQuery = q.Encode()
 	req.Header.Set("Accept", "application/dns-json")
 
 	resp, err := client.Do(req)
