@@ -1,15 +1,12 @@
 # B4 - Bye Bye Big Bro
 
-## [1.69.0] - 2026-06-10
+## [1.68.0] - 2026-06-10
 
-- FIXED: **Discovery found nothing on connections that tamper with DNS** - on networks where the provider tampers with DNS (so ordinary name lookups come back wrong or empty), Discovery could not look up its test sites and reported that nothing worked, even when a working setup existed. Discovery now looks those sites up over encrypted DNS, so it finds working setups again. When it saves the result for a site, it sets that set to use encrypted DNS (DNS-over-HTTPS) for its lookups by default, which keeps working where plain DNS is tampered with.
-- FIXED: **Cancelling Discovery could crash b4** - pressing Cancel while a search was testing several sites at once could crash the whole service, so it had to be restarted. Cancelling is now safe at any time.
+- FIXED: **Discovery found nothing on connections that tamper with DNS** - on networks where the provider tampers with DNS (so ordinary name lookups came back wrong or empty), Discovery could not look up its test sites and reported that nothing worked, even when a working setup existed. It looks those sites up over encrypted DNS instead, and saves the result set to use encrypted DNS (DNS-over-HTTPS) for its lookups by default, which holds up where plain DNS is tampered with.
+- FIXED: **Cancelling Discovery could crash b4** - pressing Cancel while a search was testing several sites at once could crash the whole service and force a restart.
 - FIXED: **Stopping b4 could leave its firewall rules on the router** - the cleanup at shutdown could be undone at the last moment, so the rules stayed in place after exit.
 - FIXED: **Routing through another interface broke after that interface changed its address** - when the chosen outgoing interface (for example a VPN or a modem) got a new address, the set's traffic kept using the old one until b4 was restarted.
 - FIXED: **Incomplete cleanup on stop** - stopping b4 (or `--clear-iptables`) left traces behind: adjusted system network settings, stray routing entries when two sets shared one outgoing interface, and a firewall rule that piled up with proxy or bridge routing.
-
-## [1.68.0] - 2026-06-10
-
 - FIXED: **Saving settings could leave the running configuration out of step** - changing the SOCKS5 proxy or your sets (adding domains or IPs, creating, editing, reordering, deleting, or bulk-toggling) could save a result that did not match what was actually running.
 
 ## [1.67.2] - 2026-06-10
