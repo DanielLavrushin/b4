@@ -24,32 +24,45 @@ else
     RED='' GREEN='' YELLOW='' BLUE='' CYAN='' MAGENTA='' BOLD='' DIM='' NC=''
 fi
 QUIET_MODE=0
+B4_UPDATE_LOG="${B4_UPDATE_LOG:-}"
+
+_log_emit() {
+    [ -z "$B4_UPDATE_LOG" ] && return
+    printf '%s [%-4s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null)" "$1" "$2" \
+        >>"$B4_UPDATE_LOG" 2>/dev/null || true
+}
 
 log_info() {
+    _log_emit "INFO" "$1"
     [ "$QUIET_MODE" -eq 1 ] && return
     printf "${BLUE}[INFO]${NC} %s\n" "$1" >&2
 }
 
 log_ok() {
+    _log_emit "OK" "$1"
     [ "$QUIET_MODE" -eq 1 ] && return
     printf "${GREEN}[ OK ]${NC} %s\n" "$1" >&2
 }
 
 log_warn() {
+    _log_emit "WARN" "$1"
     [ "$QUIET_MODE" -eq 1 ] && return
     printf "${YELLOW}[WARN]${NC} %s\n" "$1" >&2
 }
 
 log_err() {
+    _log_emit "ERR" "$1"
     printf "${RED}[ERR ]${NC} %s\n" "$1" >&2
 }
 
 log_header() {
+    _log_emit "----" "$1"
     [ "$QUIET_MODE" -eq 1 ] && return
     printf "\n${MAGENTA}${BOLD}%s${NC}\n" "$1" >&2
 }
 
 log_detail() {
+    _log_emit "INFO" "$1: $2"
     [ "$QUIET_MODE" -eq 1 ] && return
     printf "  ${CYAN}%-22s${NC}: %b\n" "$1" "$2" >&2
 }
@@ -530,6 +543,31 @@ stop_b4() {
         pkill -x "$BINARY_NAME" 2>/dev/null || true
     fi
     sleep 2
+}
+
+b4_running_cmdline() {
+    _pid=""
+    if command_exists pgrep; then
+        _pid=$(pgrep -x "$BINARY_NAME" 2>/dev/null | head -1)
+    fi
+    [ -z "$_pid" ] && return 1
+    if [ -r "/proc/${_pid}/cmdline" ]; then
+        tr '\0' ' ' <"/proc/${_pid}/cmdline" 2>/dev/null | sed 's/ *$//'
+        return 0
+    fi
+    return 1
+}
+
+relaunch_b4() {
+    _cmd="$1"
+    [ -z "$_cmd" ] && return 1
+    if command_exists setsid; then
+        setsid sh -c "exec $_cmd" >/dev/null 2>&1 &
+    else
+        nohup sh -c "exec $_cmd" >/dev/null 2>&1 &
+    fi
+    sleep 2
+    is_b4_running
 }
 
 is_writable_dir() {
@@ -2965,12 +3003,21 @@ action_update() {
         exit 1
     }
 
+    saved_cmdline=$(b4_running_cmdline 2>/dev/null || true)
+    [ -n "$saved_cmdline" ] && log_info "Running command line: ${saved_cmdline}"
+
     if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
-        log_info "Stopping service..."
+        log_info "Stopping service (${B4_SERVICE_TYPE})..."
         service_call stop 2>/dev/null || true
         sleep 1
-    else
+    fi
+
+    if is_b4_running; then
+        log_info "Process still running after service stop — forcing stop"
         stop_b4
+    fi
+    if is_b4_running; then
+        log_warn "Could not stop the running b4 process; replacing binary anyway"
     fi
 
     ts=$(date '+%Y%m%d_%H%M%S')
@@ -2994,8 +3041,24 @@ action_update() {
     fi
 
     if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
-        log_info "Restarting service..."
+        log_info "Restarting service (${B4_SERVICE_TYPE})..."
         service_call start 2>/dev/null || true
+        sleep 1
+    fi
+
+    if is_b4_running; then
+        log_ok "b4 is running"
+    elif [ -n "$saved_cmdline" ]; then
+        log_info "Service manager did not restart b4 — relaunching directly"
+        if relaunch_b4 "$saved_cmdline"; then
+            log_ok "b4 relaunched with the new binary"
+        else
+            log_warn "Failed to relaunch b4 — start it manually:"
+            log_warn "  ${saved_cmdline}"
+        fi
+    else
+        log_warn "b4 is not running after update — start it manually:"
+        log_warn "  ${existing_bin} --config ${B4_CONFIG_FILE}"
     fi
 
     echo ""

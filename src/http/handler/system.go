@@ -57,10 +57,40 @@ func isDockerEnvironment() bool {
 	if _, err := os.Stat("/.dockerenv"); err == nil {
 		return true
 	}
+	if _, err := os.Stat("/run/.containerenv"); err == nil {
+		return true
+	}
 	if os.Getenv("container") != "" {
 		return true
 	}
+	if data, err := os.ReadFile("/proc/1/cgroup"); err == nil {
+		s := string(data)
+		if strings.Contains(s, "docker") || strings.Contains(s, "containerd") ||
+			strings.Contains(s, "lxc") || strings.Contains(s, "kubepods") {
+			return true
+		}
+	}
 	return false
+}
+
+func (api *API) updateLogPath() string {
+	dir := "/var/log/b4"
+	if cfg := api.getCfg(); cfg != nil {
+		if ef := cfg.System.Logging.ErrorFile; ef != "" {
+			dir = filepath.Dir(ef)
+		}
+	}
+	return filepath.Join(dir, "update.log")
+}
+
+func writeUpdateLog(path, format string, args ...interface{}) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	ts := time.Now().Format("2006-01-02 15:04:05")
+	fmt.Fprintf(f, "%s [HANDLER] %s\n", ts, fmt.Sprintf(format, args...))
 }
 
 // @Summary Get system information
@@ -229,7 +259,15 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	serviceManager := api.getServiceManager()
 	log.Infof("Update requested via web UI (service manager: %s, version: %s)", serviceManager, req.Version)
 
+	logPath := api.updateLogPath()
+	os.MkdirAll(filepath.Dir(logPath), 0755)
+	os.WriteFile(logPath, []byte{}, 0644)
+	writeUpdateLog(logPath, "=== Update session started ===")
+	writeUpdateLog(logPath, "Service manager: %s | requested version: %q | os/arch: %s/%s",
+		serviceManager, req.Version, runtime.GOOS, runtime.GOARCH)
+
 	if serviceManager == "docker" {
+		writeUpdateLog(logPath, "ABORTED: running inside Docker — update via image pull")
 		response := UpdateResponse{
 			Success:        false,
 			Message:        "Cannot update: B4 is running inside Docker. Pull the latest image and recreate your container to update.",
@@ -242,6 +280,7 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if serviceManager == "standalone" {
+		writeUpdateLog(logPath, "ABORTED: B4 is not running as a service (standalone) — manual update required")
 		response := UpdateResponse{
 			Success:        false,
 			Message:        "Cannot update: B4 is not running as a service. Please update manually.",
@@ -260,8 +299,10 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 			if src, err := os.ReadFile(configPath); err == nil {
 				if err := os.WriteFile(bakPath, src, fi.Mode().Perm()); err != nil {
 					log.Warnf("Failed to create config backup at %s: %v", bakPath, err)
+					writeUpdateLog(logPath, "WARN: failed to back up config to %s: %v", bakPath, err)
 				} else {
 					log.Infof("Config backed up to %s", bakPath)
+					writeUpdateLog(logPath, "Config backed up to %s", bakPath)
 				}
 			} else {
 				log.Warnf("Failed to read config for backup: %v", err)
@@ -301,13 +342,16 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		writeUpdateLog(logPath, "Downloading installer from %s", installerURL)
 		if _, err := downloadFile(installerURL, installerPath); err != nil {
 			log.Errorf("Failed to download installer: %v", err)
+			writeUpdateLog(logPath, "ERROR: failed to download installer: %v", err)
 			return
 		}
 
 		if err := os.Chmod(installerPath, 0755); err != nil {
 			log.Errorf("Failed to make installer executable: %v", err)
+			writeUpdateLog(logPath, "ERROR: failed to chmod installer: %v", err)
 			return
 		}
 
@@ -318,11 +362,13 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		if !strings.HasPrefix(string(header), "#!/") {
 			log.Errorf("Downloaded installer is not a valid shell script (got: %q)", string(header))
+			writeUpdateLog(logPath, "ERROR: downloaded installer is not a valid shell script (got: %q)", string(header))
 			return
 		}
 
 		log.Infof("Installer downloaded, starting update process...")
 		log.Infof("Service will stop now - this is expected")
+		writeUpdateLog(logPath, "Installer downloaded and validated; handing off to %s", installerPath)
 
 		existingBin := ""
 		if exe, err := os.Executable(); err == nil {
@@ -338,6 +384,7 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 			if existingBin != "" {
 				args = append(args, "--setenv=B4_EXISTING_BIN="+existingBin)
 			}
+			args = append(args, "--setenv=B4_UPDATE_LOG="+logPath)
 			args = append(args, installerPath, "--update", "--quiet")
 			if req.Version != "" {
 				args = append(args, req.Version)
@@ -358,9 +405,10 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		if existingBin != "" {
 			cmd.Env = append(cmd.Env, "B4_EXISTING_BIN="+existingBin)
 		}
+		cmd.Env = append(cmd.Env, "B4_UPDATE_LOG="+logPath)
 
 		devNull, _ := os.Open("/dev/null")
-		logFile, _ := os.OpenFile("/tmp/b4_update.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		logFile, _ := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 
 		cmd.Stdin = devNull
 		cmd.Stdout = logFile
@@ -368,6 +416,7 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 
 		if err := cmd.Start(); err != nil {
 			log.Errorf("Update command failed to start: %v", err)
+			writeUpdateLog(logPath, "ERROR: update command failed to start: %v", err)
 			if devNull != nil {
 				devNull.Close()
 			}
@@ -376,6 +425,16 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			log.Infof("Update process started (PID: %d)", cmd.Process.Pid)
+			writeUpdateLog(logPath, "Update process started (PID: %d, service manager: %s)", cmd.Process.Pid, serviceManager)
+			go func() {
+				_ = cmd.Wait()
+				if devNull != nil {
+					devNull.Close()
+				}
+				if logFile != nil {
+					logFile.Close()
+				}
+			}()
 		}
 	}()
 }

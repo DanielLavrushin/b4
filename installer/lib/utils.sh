@@ -522,6 +522,31 @@ stop_b4() {
     sleep 2
 }
 
+b4_running_cmdline() {
+    _pid=""
+    if command_exists pgrep; then
+        _pid=$(pgrep -x "$BINARY_NAME" 2>/dev/null | head -1)
+    fi
+    [ -z "$_pid" ] && return 1
+    if [ -r "/proc/${_pid}/cmdline" ]; then
+        tr '\0' ' ' <"/proc/${_pid}/cmdline" 2>/dev/null | sed 's/ *$//'
+        return 0
+    fi
+    return 1
+}
+
+relaunch_b4() {
+    _cmd="$1"
+    [ -z "$_cmd" ] && return 1
+    if command_exists setsid; then
+        setsid sh -c "exec $_cmd" >/dev/null 2>&1 &
+    else
+        nohup sh -c "exec $_cmd" >/dev/null 2>&1 &
+    fi
+    sleep 2
+    is_b4_running
+}
+
 # --- Directory helpers ---
 is_writable_dir() {
     dir="$1"

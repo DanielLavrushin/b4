@@ -1,5 +1,11 @@
 # B4 - Bye Bye Big Bro
 
+## [1.67.2] - 2026-06-10
+
+- FIXED: **Web UI update reported success but kept the old version on some setups** - where b4 isn't managed by a normal service (for example running directly in a container), the update replaced the program on disk but never restarted the running copy. It now stops the old copy and relaunches the new one, so the update actually takes effect.
+- FIXED: **Leftover "zombie" update processes piling up** - each update attempt left a finished helper process behind; these are now cleaned up.
+- ADDED: **Update log** - every Web UI update now writes a step-by-step trace to `/var/log/b4/update.log` (reset each attempt), making failed updates much easier to diagnose.
+
 ## [1.67.1] - 2026-06-10
 
 - FIXED: **Connections page slowed down the more network owners you looked up** - looking up the "AS..." label for many addresses made the live list sluggish over time. It now stays responsive no matter how many you add.

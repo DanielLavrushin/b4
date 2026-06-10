@@ -114,13 +114,22 @@ action_update() {
         exit 1
     }
 
+    saved_cmdline=$(b4_running_cmdline 2>/dev/null || true)
+    [ -n "$saved_cmdline" ] && log_info "Running command line: ${saved_cmdline}"
+
     # Stop service properly (prevents systemd/procd auto-restart race condition)
     if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
-        log_info "Stopping service..."
+        log_info "Stopping service (${B4_SERVICE_TYPE})..."
         service_call stop 2>/dev/null || true
         sleep 1
-    else
+    fi
+
+    if is_b4_running; then
+        log_info "Process still running after service stop — forcing stop"
         stop_b4
+    fi
+    if is_b4_running; then
+        log_warn "Could not stop the running b4 process; replacing binary anyway"
     fi
 
     ts=$(date '+%Y%m%d_%H%M%S')
@@ -147,8 +156,24 @@ action_update() {
 
     # Restart service if it was running
     if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
-        log_info "Restarting service..."
+        log_info "Restarting service (${B4_SERVICE_TYPE})..."
         service_call start 2>/dev/null || true
+        sleep 1
+    fi
+
+    if is_b4_running; then
+        log_ok "b4 is running"
+    elif [ -n "$saved_cmdline" ]; then
+        log_info "Service manager did not restart b4 — relaunching directly"
+        if relaunch_b4 "$saved_cmdline"; then
+            log_ok "b4 relaunched with the new binary"
+        else
+            log_warn "Failed to relaunch b4 — start it manually:"
+            log_warn "  ${saved_cmdline}"
+        fi
+    else
+        log_warn "b4 is not running after update — start it manually:"
+        log_warn "  ${existing_bin} --config ${B4_CONFIG_FILE}"
     fi
 
     echo ""
