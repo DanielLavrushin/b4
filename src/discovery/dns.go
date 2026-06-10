@@ -244,14 +244,6 @@ func (p *DNSProber) findDNSBypass(ctx context.Context, result *DNSDiscoveryResul
 		return
 	}
 
-	fragResult := p.testDNSWithFragment(ctx, "", expectedIP)
-	result.ProbeResults = append(result.ProbeResults, fragResult)
-	if fragResult.Works {
-		result.NeedsFragment = true
-		log.DiscoveryLogf("  DNS: fragmented query bypass works for %s", p.domain)
-		return
-	}
-
 	for _, server := range p.cfg.System.Checker.ReferenceDNS {
 		plainResult := p.testDNS(ctx, server, false, expectedIP)
 		result.ProbeResults = append(result.ProbeResults, plainResult)
