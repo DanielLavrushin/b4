@@ -109,6 +109,10 @@ func (r *Resolver) ResolveDoHOnce(ctx context.Context, srv DoHServer, domain, re
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, fmt.Errorf("doh %s: unexpected status %d", srv.URL, resp.StatusCode)
+	}
+
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 65536))
 	if err != nil {
 		return nil, err

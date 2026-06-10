@@ -289,7 +289,6 @@ func (p *DNSProber) findDoHBypass(ctx context.Context, result *DNSDiscoveryResul
 			return url
 		}
 
-		probe.IsPoisoned = true
 		result.ProbeResults = append(result.ProbeResults, probe)
 	}
 
