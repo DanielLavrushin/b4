@@ -30,6 +30,7 @@ var (
 	errLogger        *log.Logger
 	errMu            sync.Mutex
 	origStderr       int
+	origStderrFile   *os.File
 	errSessionHeader string
 	errHeaderPending bool
 )
@@ -181,16 +182,16 @@ func openErrorFileLocked(path string) error {
 	return nil
 }
 
-// OrigStderr returns a stable handle to the real original stderr (terminal /
-// journald pipe). It captures a dup on first use so that later redirecting
-// fd 2 to the error file never changes where console logging goes.
 func OrigStderr() *os.File {
 	errMu.Lock()
 	defer errMu.Unlock()
-	if origStderr == 0 {
-		origStderr, _ = unix.Dup(int(os.Stderr.Fd()))
+	if origStderrFile == nil {
+		if origStderr == 0 {
+			origStderr, _ = unix.Dup(int(os.Stderr.Fd()))
+		}
+		origStderrFile = os.NewFile(uintptr(origStderr), "stderr")
 	}
-	return os.NewFile(uintptr(origStderr), "stderr")
+	return origStderrFile
 }
 
 func CloseErrorFile() {
