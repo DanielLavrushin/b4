@@ -14,6 +14,7 @@ func TestClassifyTLSError(t *testing.T) {
 	}{
 		{"read: connection reset by peer", StageHandshake, 0, DomainTLSReset},
 		{"tls: unrecognized name", StageHandshake, 0, DomainTLSAlert},
+		{"remote error: tls: protocol version", StageHandshake, 0, DomainTLSAlert},
 		{"tls: wrong version number", StageHandshake, 0, DomainTLSSpoof},
 		{"x509: certificate signed by unknown authority", StageHandshake, 0, DomainTLSMITM},
 		{"dial tcp: i/o timeout", StageConnect, 0, DomainSYNDrop},
