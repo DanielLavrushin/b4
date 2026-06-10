@@ -31,6 +31,10 @@ import { systemApi } from "@api/settings";
 import { colors } from "@design";
 import { B4Dialog } from "@common/B4Dialog";
 import { GitHubRelease, compareVersions } from "@hooks/useGitHubRelease";
+import {
+  useLocalizedChangelog,
+  changelogNotesForTag,
+} from "@hooks/useLocalizedChangelog";
 import { useTranslation } from "react-i18next";
 
 interface UpdateModalProps {
@@ -67,7 +71,10 @@ export const UpdateModal = ({
   includePrerelease,
   onTogglePrerelease,
 }: UpdateModalProps) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const isLocalized = i18n.language === "ru";
+  const changelogFile = isLocalized ? "changelog_ru.md" : "changelog.md";
+  const localizedNotes = useLocalizedChangelog(changelogFile, isLocalized && open);
   const { performUpdate, waitForReconnection } = useSystemUpdate();
   const [updateStatus, setUpdateStatus] = useState<
     "idle" | "updating" | "reconnecting" | "success" | "error"
@@ -100,6 +107,13 @@ export const UpdateModal = ({
 
   const selectedRelease =
     releases.find((r) => r.tag_name === selectedVersion) || releases[0];
+
+  const releaseNotes = selectedRelease
+    ? (isLocalized &&
+        changelogNotesForTag(localizedNotes, selectedRelease.tag_name)) ||
+      selectedRelease.body ||
+      t("update.noReleaseNotes")
+    : t("update.noReleaseNotes");
 
   const isDowngrade =
     selectedVersion &&
@@ -295,7 +309,7 @@ export const UpdateModal = ({
             }}
           >
             <ReactMarkdown components={{ h2: H2Typography }}>
-              {selectedRelease.body || t("update.noReleaseNotes")}
+              {releaseNotes}
             </ReactMarkdown>
           </Box>
         </Box>
@@ -339,7 +353,7 @@ export const UpdateModal = ({
         <Button
           variant="outlined"
           startIcon={<DescriptionIcon />}
-          href="https://github.com/DanielLavrushin/b4/blob/main/changelog.md"
+          href={`https://github.com/DanielLavrushin/b4/blob/main/${changelogFile}`}
           target="_blank"
           disabled={isUpdating}
         >
