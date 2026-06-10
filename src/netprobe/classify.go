@@ -111,6 +111,12 @@ func ClassifyTLSErrorStaged(err error, stage TLSStage, bytesRead int) (DomainSta
 	if strings.Contains(msg, "refused") {
 		return DomainBlocked, "Connection refused"
 	}
+	if strings.Contains(msg, "no route to host") {
+		return DomainError, "No route to host (IP unreachable)"
+	}
+	if strings.Contains(msg, "network is unreachable") {
+		return DomainError, "Network unreachable"
+	}
 	if strings.Contains(msg, "no such host") || strings.Contains(msg, "no address") {
 		return DomainError, "DNS resolution failed"
 	}

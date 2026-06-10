@@ -20,6 +20,8 @@ func TestClassifyTLSError(t *testing.T) {
 		{"dial tcp: i/o timeout", StageConnect, 0, DomainSYNDrop},
 		{"i/o timeout", StageRead, 20 * 1024, DomainTCP16},
 		{"connection refused", StageHandshake, 0, DomainBlocked},
+		{"dial tcp 1.2.3.4:443: connect: no route to host", StageConnect, 0, DomainError},
+		{"dial tcp 1.2.3.4:443: connect: network is unreachable", StageConnect, 0, DomainError},
 		{"no such host", StageHandshake, 0, DomainError},
 	}
 	for _, c := range cases {
