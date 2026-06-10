@@ -90,24 +90,33 @@ func (ds *DiscoverySuite) runDNSDiscoveryForDomain(domain string) *DNSDiscoveryR
 }
 
 func (ds *DiscoverySuite) applyBestDNSConfig() {
-	var bestServer string
+	var bestDoH, bestServer string
 	needsFragment := false
 
 	for _, dnsResult := range ds.dnsResults {
 		if dnsResult == nil || !dnsResult.IsPoisoned {
 			continue
 		}
-		if dnsResult.BestServer != "" {
+		if bestDoH == "" && dnsResult.BestDoHURL != "" {
+			bestDoH = dnsResult.BestDoHURL
+		}
+		if bestServer == "" && dnsResult.BestServer != "" {
 			bestServer = dnsResult.BestServer
 			needsFragment = dnsResult.NeedsFragment
-			break
 		}
 		if dnsResult.NeedsFragment {
 			needsFragment = true
 		}
 	}
 
-	if bestServer != "" || needsFragment {
+	switch {
+	case bestDoH != "":
+		ds.discoveredDNS = config.DNSConfig{
+			Enabled: true,
+			DoHURL:  bestDoH,
+		}
+		log.DiscoveryLogf("  Applied DNS bypass: DoH=%s", bestDoH)
+	case bestServer != "" || needsFragment:
 		ds.discoveredDNS = config.DNSConfig{
 			Enabled:       true,
 			TargetDNS:     bestServer,
@@ -121,7 +130,7 @@ func (r *DNSDiscoveryResult) hasWorkingConfig() bool {
 	if r == nil {
 		return true
 	}
-	return !r.IsPoisoned || r.BestServer != "" || r.NeedsFragment
+	return !r.IsPoisoned || r.BestDoHURL != "" || r.BestServer != "" || r.NeedsFragment
 }
 
 func NewDNSProber(domain string, timeout time.Duration, pool *nfq.Pool, cfg *config.Config, flowMark uint, ipVersion string) *DNSProber {
@@ -229,6 +238,12 @@ func (p *DNSProber) Probe(ctx context.Context) *DNSDiscoveryResult {
 }
 
 func (p *DNSProber) findDNSBypass(ctx context.Context, result *DNSDiscoveryResult, expectedIP string) {
+	if url := p.findDoHBypass(ctx, result, expectedIP); url != "" {
+		result.BestDoHURL = url
+		log.DiscoveryLogf("  DNS: DoH bypass works for %s via %s", p.domain, url)
+		return
+	}
+
 	fragResult := p.testDNSWithFragment(ctx, "", expectedIP)
 	result.ProbeResults = append(result.ProbeResults, fragResult)
 	if fragResult.Works {
@@ -257,6 +272,28 @@ func (p *DNSProber) findDNSBypass(ctx context.Context, result *DNSDiscoveryResul
 	}
 
 	log.DiscoveryLogf("  DNS: no working DNS config found for %s", p.domain)
+}
+
+func (p *DNSProber) findDoHBypass(ctx context.Context, result *DNSDiscoveryResult, expectedIP string) string {
+	r := &netprobe.Resolver{Mark: int(p.flowMark), Timeout: p.timeout}
+	recordType := p.dnsRecordType()
+
+	for _, url := range netprobe.WireDoHServers {
+		probe := DNSProbeResult{Server: url, ExpectedIP: expectedIP}
+
+		ips, err := r.ResolveDoHOnce(ctx, netprobe.DoHServer{URL: url, Format: netprobe.DoHWire}, p.domain, recordType)
+		if err == nil && len(ips) > 0 {
+			probe.ResolvedIP = ips[0]
+			probe.Works = true
+			result.ProbeResults = append(result.ProbeResults, probe)
+			return url
+		}
+
+		probe.IsPoisoned = true
+		result.ProbeResults = append(result.ProbeResults, probe)
+	}
+
+	return ""
 }
 
 func sameSubnet(systemIPs, referenceIPs []string) bool {

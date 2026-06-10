@@ -151,6 +151,7 @@ type DNSDiscoveryResult struct {
 	TransportBlocked bool             `json:"transport_blocked,omitempty"`
 	ExpectedIPs      []string         `json:"expected_ips,omitempty"`
 	BestServer       string           `json:"best_server,omitempty"`
+	BestDoHURL       string           `json:"best_doh_url,omitempty"`
 	NeedsFragment    bool             `json:"needs_fragment"`
 	ProbeResults     []DNSProbeResult `json:"probe_results,omitempty"`
 }

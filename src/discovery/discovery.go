@@ -1460,6 +1460,20 @@ func (ds *DiscoverySuite) determineBest(baselineSpeed float64) {
 	}
 }
 
+func (ds *DiscoverySuite) cdnDNSConfig() config.DNSConfig {
+	if ds.discoveredDNS.Enabled {
+		return ds.discoveredDNS
+	}
+	if len(netprobe.WireDoHServers) > 0 {
+		return config.DNSConfig{Enabled: true, DoHURL: netprobe.WireDoHServers[0]}
+	}
+	server := "9.9.9.9"
+	if len(ds.cfg.System.Checker.ReferenceDNS) > 0 {
+		server = ds.cfg.System.Checker.ReferenceDNS[0]
+	}
+	return config.DNSConfig{Enabled: true, TargetDNS: server, FragmentQuery: true}
+}
+
 func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 	testSet := config.NewSetConfig()
 	testSet.Name = preset.Name
@@ -1505,19 +1519,7 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 			}
 
 			if !ds.skipDNS {
-				if len(ds.cfg.System.Checker.ReferenceDNS) > 0 {
-					testSet.DNS = config.DNSConfig{
-						Enabled:       true,
-						TargetDNS:     ds.cfg.System.Checker.ReferenceDNS[0],
-						FragmentQuery: true,
-					}
-				} else {
-					testSet.DNS = config.DNSConfig{
-						Enabled:       true,
-						TargetDNS:     "9.9.9.9",
-						FragmentQuery: true,
-					}
-				}
+				testSet.DNS = ds.cdnDNSConfig()
 			}
 			tempCfg := &config.Config{System: ds.cfg.System}
 			domains, ips, err := tempCfg.GetTargetsForSet(&testSet)
@@ -1653,19 +1655,7 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 		}
 
 		if hasCDN && !ds.skipDNS {
-			if len(ds.cfg.System.Checker.ReferenceDNS) > 0 {
-				testSet.DNS = config.DNSConfig{
-					Enabled:       true,
-					TargetDNS:     ds.cfg.System.Checker.ReferenceDNS[0],
-					FragmentQuery: true,
-				}
-			} else {
-				testSet.DNS = config.DNSConfig{
-					Enabled:       true,
-					TargetDNS:     "9.9.9.9",
-					FragmentQuery: true,
-				}
-			}
+			testSet.DNS = ds.cdnDNSConfig()
 		}
 
 		if len(testSet.Targets.GeoIpCategories) > 0 || len(testSet.Targets.GeoSiteCategories) > 0 {

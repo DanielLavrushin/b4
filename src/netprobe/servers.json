@@ -18,5 +18,11 @@
     "208.67.222.222",
     "76.76.2.0",
     "194.242.2.2"
+  ],
+  "wire_doh_servers": [
+    "https://1.1.1.1/dns-query",
+    "https://8.8.8.8/dns-query",
+    "https://9.9.9.9/dns-query",
+    "https://dns.google/dns-query"
   ]
 }
