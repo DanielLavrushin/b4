@@ -70,12 +70,19 @@ func matchesFamily(ip net.IP, recordType string) bool {
 	return ip.To4() != nil
 }
 
+func qtypeForRecord(recordType string) uint16 {
+	if wantsV6(recordType) {
+		return 28
+	}
+	return 1
+}
+
 func (r *Resolver) ResolveDoHOnce(ctx context.Context, srv DoHServer, domain, recordType string) ([]string, error) {
 	client := HTTPClient(r.Mark, r.timeout())
 	defer client.CloseIdleConnections()
 
 	if srv.Format == DoHWire {
-		query := dns.BuildAQuery(domain, 0)
+		query := dns.BuildQuery(domain, 0, qtypeForRecord(recordType))
 		body, err := dns.ResolveDoH(ctx, client, srv.URL, query)
 		if err != nil {
 			return nil, err
@@ -150,7 +157,7 @@ func (r *Resolver) ResolveUDPOnce(ctx context.Context, server, domain, recordTyp
 		conn.SetDeadline(deadline)
 	}
 
-	if _, err := conn.Write(dns.BuildAQuery(domain, 0x4242)); err != nil {
+	if _, err := conn.Write(dns.BuildQuery(domain, 0x4242, qtypeForRecord(recordType))); err != nil {
 		return UDPAnswer{}, err
 	}
 

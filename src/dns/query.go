@@ -6,6 +6,10 @@ import (
 )
 
 func BuildAQuery(domain string, txid uint16) []byte {
+	return BuildQuery(domain, txid, 1)
+}
+
+func BuildQuery(domain string, txid uint16, qtype uint16) []byte {
 	domain = strings.TrimSuffix(strings.TrimSpace(domain), ".")
 
 	buf := make([]byte, 12, 12+len(domain)+2+5)
@@ -30,10 +34,10 @@ func BuildAQuery(domain string, txid uint16) []byte {
 	}
 	buf = append(buf, 0)
 
-	qtype := make([]byte, 4)
-	binary.BigEndian.PutUint16(qtype[0:2], 1)
-	binary.BigEndian.PutUint16(qtype[2:4], 1)
-	buf = append(buf, qtype...)
+	qsuffix := make([]byte, 4)
+	binary.BigEndian.PutUint16(qsuffix[0:2], qtype)
+	binary.BigEndian.PutUint16(qsuffix[2:4], 1)
+	buf = append(buf, qsuffix...)
 
 	return buf
 }

@@ -73,7 +73,7 @@ func ClassifyTLSErrorStaged(err error, stage TLSStage, bytesRead int) (DomainSta
 		}
 	}
 
-	if strings.Contains(msg, "alert") || strings.Contains(msg, "unrecognized name") || strings.Contains(msg, "handshake failure") {
+	if strings.Contains(msg, "alert") || strings.Contains(msg, "unrecognized name") || strings.Contains(msg, "handshake failure") || strings.Contains(msg, "protocol version") {
 		switch {
 		case strings.Contains(msg, "unrecognized name"):
 			return DomainTLSAlert, "SNI blocked (unrecognized name)"
