@@ -18,7 +18,6 @@ import (
 	"github.com/daniellavrushin/b4/nfq"
 )
 
-//go:embed dns.json
 var cdnJSON []byte
 
 type dohResponse struct {
@@ -97,7 +96,6 @@ func (ds *DiscoverySuite) runDNSDiscoveryForDomain(domain string) *DNSDiscoveryR
 	return prober.Probe(ctx)
 }
 
-// applyBestDNSConfig applies the best DNS bypass config found across all domains.
 func (ds *DiscoverySuite) applyBestDNSConfig() {
 	var bestServer string
 	needsFragment := false
@@ -144,8 +142,6 @@ func NewDNSProber(domain string, timeout time.Duration, pool *nfq.Pool, cfg *con
 	}
 }
 
-// ipNetwork returns the resolver network ("ip4"/"ip6") for this probe run.
-// An explicit per-run ipVersion wins; "auto" preserves the queue-config default.
 func (p *DNSProber) ipNetwork() string {
 	switch p.ipVersion {
 	case "ipv4":
@@ -159,7 +155,6 @@ func (p *DNSProber) ipNetwork() string {
 	return "ip4"
 }
 
-// dnsRecordType returns the DoH record type ("A"/"AAAA") matching ipNetwork.
 func (p *DNSProber) dnsRecordType() string {
 	if p.ipNetwork() == "ip6" {
 		return "AAAA"
@@ -172,7 +167,6 @@ func (p *DNSProber) Probe(ctx context.Context) *DNSDiscoveryResult {
 		ProbeResults: []DNSProbeResult{},
 	}
 
-	// Run system resolver and DoH in parallel.
 	var expectedIPs, systemIPs []string
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -210,8 +204,8 @@ func (p *DNSProber) Probe(ctx context.Context) *DNSDiscoveryResult {
 	}
 	log.DiscoveryLogf("  DNS: system IPs %v, reference IPs (DoH): %v", systemIPs, expectedIPs)
 
-	if p.findValidIP(ctx, expectedIPs) == "" {
-		log.DiscoveryLogf("  DNS: neither system nor reference IPs serve %s (transport issue or site down)", p.domain)
+	if !p.anyIPConnectable(ctx, expectedIPs) {
+		log.DiscoveryLogf("  DNS: reference IPs for %s are unreachable at TCP level (transport issue or site down)", p.domain)
 		result.TransportBlocked = true
 		result.ExpectedIPs = uniqueIPs(expectedIPs, systemIPs)
 		return result
@@ -237,14 +231,11 @@ func (p *DNSProber) Probe(ctx context.Context) *DNSDiscoveryResult {
 	}
 	result.ProbeResults = append(result.ProbeResults, sysResult)
 
-	// Step 6: Try DNS bypass strategies.
 	p.findDNSBypass(ctx, result, expectedIPs[0])
 	return result
 }
 
-// findDNSBypass tries fragmentation and alternative DNS servers to bypass poisoning.
 func (p *DNSProber) findDNSBypass(ctx context.Context, result *DNSDiscoveryResult, expectedIP string) {
-	// Try fragmented query on system resolver first.
 	fragResult := p.testDNSWithFragment(ctx, "", expectedIP)
 	result.ProbeResults = append(result.ProbeResults, fragResult)
 	if fragResult.Works {
@@ -253,7 +244,6 @@ func (p *DNSProber) findDNSBypass(ctx context.Context, result *DNSDiscoveryResul
 		return
 	}
 
-	// Try alternative DNS servers (plain and fragmented).
 	for _, server := range p.cfg.System.Checker.ReferenceDNS {
 		plainResult := p.testDNS(ctx, server, false, expectedIP)
 		result.ProbeResults = append(result.ProbeResults, plainResult)
@@ -276,8 +266,6 @@ func (p *DNSProber) findDNSBypass(ctx context.Context, result *DNSDiscoveryResul
 	log.DiscoveryLogf("  DNS: no working DNS config found for %s", p.domain)
 }
 
-// sameSubnet checks if any system IP shares a /24 (IPv4) or /48 (IPv6) subnet
-// with any reference IP. Same-subnet IPs are CDN edge variance, not DNS poisoning.
 func sameSubnet(systemIPs, referenceIPs []string) bool {
 	refSubnets := make(map[string]bool)
 	for _, ipStr := range referenceIPs {
@@ -310,7 +298,6 @@ func sameSubnet(systemIPs, referenceIPs []string) bool {
 	return false
 }
 
-// uniqueIPs merges two IP lists, deduplicating entries.
 func uniqueIPs(primary, secondary []string) []string {
 	seen := make(map[string]bool, len(primary))
 	result := make([]string, 0, len(primary)+len(secondary))
@@ -495,8 +482,6 @@ func (p *DNSProber) testDNS(ctx context.Context, server string, fragmented bool,
 	return result
 }
 
-// findValidIP returns the first IP from the list that serves the domain (TLS handshake),
-// or empty string if none work.
 func (p *DNSProber) findValidIP(ctx context.Context, ips []string) string {
 	valCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -506,6 +491,20 @@ func (p *DNSProber) findValidIP(ctx context.Context, ips []string) string {
 		}
 	}
 	return ""
+}
+
+func (p *DNSProber) anyIPConnectable(ctx context.Context, ips []string) bool {
+	connCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	dialer := markedDialer(p.flowMark, p.timeout/2, p.timeout)
+	for _, ip := range ips {
+		conn, err := dialer.DialContext(connCtx, "tcp", net.JoinHostPort(ip, "443"))
+		if err == nil {
+			conn.Close()
+			return true
+		}
+	}
+	return false
 }
 
 func (p *DNSProber) testIPServesDomain(ctx context.Context, ip string) bool {
@@ -536,20 +535,17 @@ func (p *DNSProber) testDNSWithFragment(ctx context.Context, server string, expe
 		ExpectedIP: expectedIP,
 	}
 
-	// Apply DNS config to pool temporarily
 	testCfg := p.buildDNSTestConfig(server, true)
 	if err := p.pool.UpdateConfig(testCfg); err != nil {
 		return result
 	}
-	defer p.pool.UpdateConfig(p.cfg) // Restore
+	defer p.pool.UpdateConfig(p.cfg)
 
 	time.Sleep(time.Duration(p.cfg.System.Checker.ConfigPropagateMs) * time.Millisecond)
 
-	// Use a timeout so we don't hang if fragmented DNS gets no response
 	lookupCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	// Now DNS queries should be fragmented via NFQ
 	start := time.Now()
 	resolver := markedResolver(p.flowMark, p.timeout/2, "")
 	ips, err := resolver.LookupIPAddr(lookupCtx, p.domain)

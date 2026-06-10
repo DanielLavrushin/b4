@@ -1166,16 +1166,24 @@ func (ds *DiscoverySuite) collectTargetIPs(domain string, maxIPs int) []string {
 }
 
 func (ds *DiscoverySuite) fetchForDomain(di DomainInput, timeout time.Duration) CheckResult {
-	geoip, geosite := GetCDNCategories(di.Domain)
-	if len(geoip) > 0 || len(geosite) > 0 {
-		return ds.fetchUsingIPForDomain(di, timeout, "")
-	}
-
 	// Use IPs already collected during DNS discovery — no fresh DNS lookups.
 	// Fresh lookups are slow (poisoned DNS can timeout) and redundant since
 	// DNS discovery already gathered all valid IPs from DoH + system resolver.
 	// Limit to 2 IPs to avoid slow sequential fallback.
 	allIPs := ds.collectTargetIPs(di.Domain, 2)
+
+	geoip, geosite := GetCDNCategories(di.Domain)
+	if len(geoip) > 0 || len(geosite) > 0 {
+		// CDN domains are matched by geoip/geosite in a real config, but the
+		// validation fetch still needs a resolvable IP. Pin the IP discovered
+		// during the DNS phase; only fall back to system DNS when none exist
+		// (otherwise a poisoned system resolver fails every preset).
+		ip := ""
+		if len(allIPs) > 0 {
+			ip = allIPs[0]
+		}
+		return ds.fetchUsingIPForDomain(di, timeout, ip)
+	}
 
 	for _, ip := range allIPs {
 		result := ds.fetchUsingIPForDomain(di, timeout, ip)
