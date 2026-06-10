@@ -18,6 +18,7 @@ import (
 	"github.com/daniellavrushin/b4/nfq"
 )
 
+//go:embed dns.json
 var cdnJSON []byte
 
 type dohResponse struct {
