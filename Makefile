@@ -191,6 +191,8 @@ build-ui: gen-defaults
 	@echo "Web UI build complete."
 
 SFTP_PORT ?= 22
+SSH_OPTS ?= -o StrictHostKeyChecking=no -o IPQoS=none
+B4_RESTART_CMD ?= /opt/etc/init.d/S99b4
 
 .PHONY: deploy-%
 deploy-%:
@@ -210,15 +212,23 @@ deploy-%:
 	@$(MAKE) --no-print-directory $(ARCH)
 
 	@$(MAKE) --no-print-directory linux-$(ARCH)
-	@echo "Uploading to $(SFTP_USER)@$(SFTP_HOST):$(SFTP_PATH)/$(BINARY_NAME)..."
+	@echo "Uploading to $(SFTP_USER)@$(SFTP_HOST):$(SFTP_PATH)/$(BINARY_NAME).new (b4 stays up; avoids ETXTBSY)..."
 	@if [ -n "$(SFTP_PASS)" ]; then \
-		echo "put $(OUT_DIR)/linux-$(ARCH)/$(BINARY_NAME) $(SFTP_PATH)/$(BINARY_NAME)" | \
-			sshpass -p '$(SFTP_PASS)' sftp -oStrictHostKeyChecking=no -P $(SFTP_PORT) $(SFTP_USER)@$(SFTP_HOST); \
+		echo "put $(OUT_DIR)/linux-$(ARCH)/$(BINARY_NAME) $(SFTP_PATH)/$(BINARY_NAME).new" | \
+			sshpass -p '$(SFTP_PASS)' sftp $(SSH_OPTS) -P $(SFTP_PORT) $(SFTP_USER)@$(SFTP_HOST) || exit 1; \
 	else \
-		echo "put $(OUT_DIR)/linux-$(ARCH)/$(BINARY_NAME) $(SFTP_PATH)/$(BINARY_NAME)" | \
-			sftp -P $(SFTP_PORT) $(SFTP_USER)@$(SFTP_HOST); \
+		echo "put $(OUT_DIR)/linux-$(ARCH)/$(BINARY_NAME) $(SFTP_PATH)/$(BINARY_NAME).new" | \
+			sftp $(SSH_OPTS) -P $(SFTP_PORT) $(SFTP_USER)@$(SFTP_HOST) || exit 1; \
 	fi
-	@echo "Deploy complete!"
+	@echo "Swapping binary + restarting b4 (detached, survives the restart blip)..."
+	@if [ -n "$(SFTP_PASS)" ]; then \
+		sshpass -p '$(SFTP_PASS)' ssh $(SSH_OPTS) -p $(SFTP_PORT) $(SFTP_USER)@$(SFTP_HOST) \
+			'nohup sh -c "$(B4_RESTART_CMD) stop 2>/dev/null; sleep 1; mv -f $(SFTP_PATH)/$(BINARY_NAME).new $(SFTP_PATH)/$(BINARY_NAME); chmod +x $(SFTP_PATH)/$(BINARY_NAME); $(B4_RESTART_CMD) start" >/tmp/b4-deploy.log 2>&1 </dev/null &'; \
+	else \
+		ssh $(SSH_OPTS) -p $(SFTP_PORT) $(SFTP_USER)@$(SFTP_HOST) \
+			'nohup sh -c "$(B4_RESTART_CMD) stop 2>/dev/null; sleep 1; mv -f $(SFTP_PATH)/$(BINARY_NAME).new $(SFTP_PATH)/$(BINARY_NAME); chmod +x $(SFTP_PATH)/$(BINARY_NAME); $(B4_RESTART_CMD) start" >/tmp/b4-deploy.log 2>&1 </dev/null &'; \
+	fi
+	@echo "Deploy dispatched. b4 restarts on the router within a few seconds (see /tmp/b4-deploy.log)."
 
 # Show help
 .PHONY: help
