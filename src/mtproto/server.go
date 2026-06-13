@@ -119,8 +119,7 @@ func (s *Server) startLocked() error {
 	}
 
 	s.running = true
-	sem := make(chan struct{}, mtprotoMaxConnections(cfg))
-	go s.acceptLoop(ln, sem)
+	go s.acceptLoop(ln)
 	return nil
 }
 
@@ -180,7 +179,6 @@ func mtprotoNeedsRestart(old, newCfg *config.Config) bool {
 	if o.Enabled != n.Enabled ||
 		o.Port != n.Port ||
 		o.BindAddress != n.BindAddress ||
-		o.MaxConnections != n.MaxConnections ||
 		o.Secret != n.Secret ||
 		o.FakeSNI != n.FakeSNI ||
 		o.UpstreamMode != n.UpstreamMode ||
@@ -200,7 +198,7 @@ func (s *Server) GetSecret() string {
 	return ""
 }
 
-func (s *Server) acceptLoop(ln net.Listener, sem chan struct{}) {
+func (s *Server) acceptLoop(ln net.Listener) {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -211,10 +209,9 @@ func (s *Server) acceptLoop(ln net.Listener, sem chan struct{}) {
 			continue
 		}
 
-		select {
-		case sem <- struct{}{}:
-		default:
-			log.Tracef("MTProto connection limit reached")
+		limit := int64(mtprotoMaxConnections(s.cfg.Load()))
+		if s.active.Load() >= limit {
+			log.Tracef("MTProto connection limit reached (%d)", limit)
 			conn.Close()
 			continue
 		}
@@ -230,7 +227,6 @@ func (s *Server) acceptLoop(ln net.Listener, sem chan struct{}) {
 		go func(c net.Conn) {
 			defer func() {
 				c.Close()
-				<-sem
 				s.active.Add(-1)
 			}()
 			s.handleConn(c)

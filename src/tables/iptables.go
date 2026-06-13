@@ -873,7 +873,7 @@ func (ipt *IPTablesManager) clearB4JumpRules() {
 		// Clean MSS clamp rules (TCPMSS target) from OUTPUT, FORWARD, PREROUTING
 		for _, chain := range []string{"OUTPUT", "FORWARD", "PREROUTING"} {
 			iptDeleteListedLines(iptBin, "mangle", chain, func(line string) bool {
-				return iptListLineTarget(line) == "TCPMSS"
+				return iptListLineTarget(line) == "TCPMSS" && strings.Contains(line, "TCPMSS set ")
 			})
 		}
 	}
