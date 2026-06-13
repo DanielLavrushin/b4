@@ -341,6 +341,11 @@ func (c *Config) checkPortCollisions(v *validator) {
 					"ws_endpoint_host must be a host or IP without port (got %q)", h)
 			}
 		}
+		if mc := c.System.MTProto.MaxConnections; mc < 0 || mc > 100000 {
+			v.addf("system.mtproto.max_connections", "out_of_range",
+				map[string]any{"value": mc, "min": 0, "max": 100000},
+				"max_connections must be between 0 (default) and 100000 (got %d)", mc)
+		}
 	}
 	for i := 0; i < len(refs); i++ {
 		for j := i + 1; j < len(refs); j++ {
