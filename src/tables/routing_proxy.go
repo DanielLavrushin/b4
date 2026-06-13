@@ -518,33 +518,14 @@ func sweepProxyInputAcceptsNft() {
 }
 
 func sweepProxyInputAcceptsIpt(cmd string) {
-	for {
-		out, err := run(cmd, "-w", "-nL", "INPUT", "--line-numbers")
-		if err != nil {
-			return
+	iptDeleteListedLines(cmd, "filter", "INPUT", func(line string) bool {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || fields[1] != "ACCEPT" || !strings.Contains(line, "mark match") {
+			return false
 		}
-		removed := false
-		for _, line := range strings.Split(out, "\n") {
-			fields := strings.Fields(line)
-			if len(fields) < 2 || fields[1] != "ACCEPT" || !strings.Contains(line, "mark match") {
-				continue
-			}
-			if _, convErr := strconv.Atoi(fields[0]); convErr != nil {
-				continue
-			}
-			m, ok := iptMarkFromRule(line)
-			if !ok || !tproxy.InMarkRange(m) {
-				continue
-			}
-			if _, derr := run(cmd, "-w", "-D", "INPUT", fields[0]); derr == nil {
-				removed = true
-				break
-			}
-		}
-		if !removed {
-			break
-		}
-	}
+		m, ok := iptMarkFromRule(line)
+		return ok && tproxy.InMarkRange(m)
+	})
 }
 
 func iptMarkFromRule(line string) (uint32, bool) {

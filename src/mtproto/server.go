@@ -210,7 +210,8 @@ func (s *Server) acceptLoop(ln net.Listener) {
 		}
 
 		limit := int64(mtprotoMaxConnections(s.cfg.Load()))
-		if s.active.Load() >= limit {
+		if s.active.Add(1) > limit {
+			s.active.Add(-1)
 			log.Tracef("MTProto connection limit reached (%d)", limit)
 			conn.Close()
 			continue
@@ -223,7 +224,6 @@ func (s *Server) acceptLoop(ln net.Listener) {
 			_ = tc.SetWriteBuffer(256 * 1024)
 		}
 
-		s.active.Add(1)
 		go func(c net.Conn) {
 			defer func() {
 				c.Close()
