@@ -202,6 +202,11 @@ func (api *API) updateMTProtoConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.MaxConnections < 0 || req.MaxConnections > 100000 {
+		writeJsonError(w, http.StatusBadRequest, "Max connections must be between 0 (default) and 100000")
+		return
+	}
+
 	if req.Enabled && req.Secret == "" && req.FakeSNI == "" {
 		writeJsonError(w, http.StatusBadRequest, "Either secret or fake SNI domain is required when enabled")
 		return

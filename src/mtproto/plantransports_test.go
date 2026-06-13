@@ -83,6 +83,30 @@ func TestPlanTransports_DC203_RemapsToDC2SNIOnOwnIP(t *testing.T) {
 	}
 }
 
+func TestPlanTransports_DefaultConfig_DialsPerDCNotSharedEdge(t *testing.T) {
+	cfg := config.DefaultConfig.System.MTProto
+	cfg.UpstreamMode = "ws"
+	for dc, ip := range map[int]string{1: "149.154.175.50", 2: "149.154.167.51"} {
+		plans, err := planTransports(&cfg, config.QueueConfig{IPv4Enabled: true}, dc)
+		if err != nil {
+			t.Fatalf("DC %d: unexpected error: %v", dc, err)
+		}
+		var ws *transportPlan
+		for i := range plans {
+			if plans[i].kind == transportWS {
+				ws = &plans[i]
+				break
+			}
+		}
+		if ws == nil {
+			t.Fatalf("DC %d: default config produced no native WS plan", dc)
+		}
+		if ws.dialHost != ip {
+			t.Fatalf("DC %d: default config must dial the DC's own IP %s, got %q (a non-empty WSEndpointHost default would re-pin every DC to one shared edge and break media)", dc, ip, ws.dialHost)
+		}
+	}
+}
+
 func TestPlanTransports_StandardDCs_DialOwnIP(t *testing.T) {
 	want := map[int]string{
 		1: "149.154.175.50",

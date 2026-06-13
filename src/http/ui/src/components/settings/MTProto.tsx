@@ -267,6 +267,15 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
           disabled={!config.system.mtproto?.enabled}
           helperText={t("settings.MTProto.portHelp")}
         />
+        <B4NumberField
+          label={t("settings.MTProto.maxConnections")}
+          value={config.system.mtproto?.max_connections || 2048}
+          onChange={(n) => onChange("system.mtproto.max_connections", n)}
+          min={16}
+          max={100000}
+          disabled={!config.system.mtproto?.enabled}
+          helperText={t("settings.MTProto.maxConnectionsHelp")}
+        />
         <B4TextField
           label={t("settings.MTProto.fakeSNI")}
           value={config.system.mtproto?.fake_sni || "storage.googleapis.com"}

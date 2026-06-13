@@ -294,6 +294,7 @@ export interface MTProtoConfig {
   enabled: boolean;
   port: number;
   bind_address: string;
+  max_connections: number;
   secret: string;
   fake_sni: string;
   dc_relay: string;

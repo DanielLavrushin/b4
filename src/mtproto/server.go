@@ -16,12 +16,18 @@ import (
 )
 
 const (
-	maxConnections = 512
-	relayBufSize   = 65536
+	defaultMaxConnections = 2048
+	relayBufSize          = 65536
 )
 
+func mtprotoMaxConnections(cfg *config.Config) int {
+	if n := cfg.System.MTProto.MaxConnections; n > 0 {
+		return n
+	}
+	return defaultMaxConnections
+}
+
 type Server struct {
-	connSem chan struct{}
 	bufPool sync.Pool
 	active  atomic.Int64
 
@@ -38,7 +44,6 @@ type Server struct {
 
 func NewServer(cfg *config.Config) *Server {
 	s := &Server{
-		connSem: make(chan struct{}, maxConnections),
 		bufPool: sync.Pool{
 			New: func() interface{} {
 				buf := make([]byte, relayBufSize)
@@ -114,7 +119,8 @@ func (s *Server) startLocked() error {
 	}
 
 	s.running = true
-	go s.acceptLoop(ln)
+	sem := make(chan struct{}, mtprotoMaxConnections(cfg))
+	go s.acceptLoop(ln, sem)
 	return nil
 }
 
@@ -174,6 +180,7 @@ func mtprotoNeedsRestart(old, newCfg *config.Config) bool {
 	if o.Enabled != n.Enabled ||
 		o.Port != n.Port ||
 		o.BindAddress != n.BindAddress ||
+		o.MaxConnections != n.MaxConnections ||
 		o.Secret != n.Secret ||
 		o.FakeSNI != n.FakeSNI ||
 		o.UpstreamMode != n.UpstreamMode ||
@@ -193,7 +200,7 @@ func (s *Server) GetSecret() string {
 	return ""
 }
 
-func (s *Server) acceptLoop(ln net.Listener) {
+func (s *Server) acceptLoop(ln net.Listener, sem chan struct{}) {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -205,7 +212,7 @@ func (s *Server) acceptLoop(ln net.Listener) {
 		}
 
 		select {
-		case s.connSem <- struct{}{}:
+		case sem <- struct{}{}:
 		default:
 			log.Tracef("MTProto connection limit reached")
 			conn.Close()
@@ -223,7 +230,7 @@ func (s *Server) acceptLoop(ln net.Listener) {
 		go func(c net.Conn) {
 			defer func() {
 				c.Close()
-				<-s.connSem
+				<-sem
 				s.active.Add(-1)
 			}()
 			s.handleConn(c)

@@ -257,6 +257,7 @@ type MTProtoConfig struct {
 	Enabled        bool   `json:"enabled"`
 	Port           int    `json:"port"`
 	BindAddress    string `json:"bind_address"`
+	MaxConnections int    `json:"max_connections"` // max concurrent client connections; 0 = default (2048)
 	Secret         string `json:"secret"`
 	FakeSNI        string `json:"fake_sni"`
 	DCRelay        string `json:"dc_relay"`

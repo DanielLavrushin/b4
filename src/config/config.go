@@ -241,7 +241,6 @@ var DefaultConfig = Config{
 			BindAddress:       "0.0.0.0",
 			FakeSNI:           TGFakeSNI,
 			UpstreamMode:      "auto",
-			WSEndpointHost:    TGWSEndpointHost,
 			CFProxyEnabled:    true,
 			CFProxyURL:        TGCFProxyURL,
 			DCFallbackEnabled: true,

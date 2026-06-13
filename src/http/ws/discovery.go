@@ -17,8 +17,15 @@ func HandleDiscoveryWebSocket(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	hub := log.GetDiscoveryHub()
-	ch := hub.Subscribe()
+	ch, snapshot := hub.Subscribe()
 	defer hub.Unsubscribe(ch)
+
+	for _, msg := range snapshot {
+		conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		if err := conn.WriteMessage(websocket.TextMessage, []byte(msg)); err != nil {
+			return
+		}
+	}
 
 	// Ping ticker
 	pingTicker := time.NewTicker(30 * time.Second)

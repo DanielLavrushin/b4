@@ -238,6 +238,8 @@
       "bindAddressHelp": "IP для привязки (0.0.0.0 = все, 127.0.0.1 = только localhost)",
       "port": "Порт",
       "portHelp": "Порт MTProto (по умолчанию: 3128)",
+      "maxConnections": "Макс. подключений",
+      "maxConnectionsHelp": "Максимум одновременных клиентских подключений (по умолчанию: 2048). Каждый клиент Telegram использует несколько подключений для чатов и медиа; увеличьте для общего прокси со множеством пользователей.",
       "fakeSNI": "Домен для Fake SNI",
       "fakeSNIHelp": "Домен для имитации в TLS (например storage.googleapis.com)",
       "cfWorkerDomain": "Домен Cloudflare Worker",

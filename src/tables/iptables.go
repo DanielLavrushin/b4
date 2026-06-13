@@ -750,6 +750,43 @@ func destroyOrphanMSSIPSets() {
 	}
 }
 
+func iptDeleteListedLines(iptBin, table, chain string, match func(line string) bool) {
+	for {
+		out, err := run(iptBin, "-w", "-t", table, "-nL", chain, "--line-numbers")
+		if err != nil {
+			return
+		}
+		removed := false
+		for _, line := range strings.Split(out, "\n") {
+			fields := strings.Fields(line)
+			if len(fields) < 2 {
+				continue
+			}
+			if _, convErr := strconv.Atoi(fields[0]); convErr != nil {
+				continue
+			}
+			if !match(line) {
+				continue
+			}
+			if _, derr := run(iptBin, "-w", "-t", table, "-D", chain, fields[0]); derr == nil {
+				removed = true
+				break
+			}
+		}
+		if !removed {
+			break
+		}
+	}
+}
+
+func iptListLineTarget(line string) string {
+	fields := strings.Fields(line)
+	if len(fields) < 2 {
+		return ""
+	}
+	return fields[1]
+}
+
 func (ipt *IPTablesManager) clearB4JumpRules() {
 	ipts := []string{}
 	iptBin := ipt.iptablesBin()
@@ -771,40 +808,10 @@ func (ipt *IPTablesManager) clearB4JumpRules() {
 		}
 
 		// Clean FORWARD
-		for {
-			out, _ := run(iptBin, "-w", "-t", "mangle", "-S", "FORWARD")
-			if !strings.Contains(out, "B4") && !strings.Contains(out, "--mac-source") {
-				break
-			}
-
-			_, err1 := run(iptBin, "-w", "-t", "mangle", "-D", "FORWARD", "-j", "B4")
-
-			lines := strings.Split(out, "\n")
-			removedAny := false
-			for _, line := range lines {
-				if strings.Contains(line, "--mac-source") {
-					parts := strings.Fields(line)
-					for i, p := range parts {
-						if p == "--mac-source" && i+1 < len(parts) {
-							mac := strings.ToUpper(parts[i+1])
-							if _, err := run(iptBin, "-w", "-t", "mangle", "-D", "FORWARD",
-								"-m", "mac", "--mac-source", mac, "-j", "RETURN"); err == nil {
-								removedAny = true
-							}
-							if _, err := run(iptBin, "-w", "-t", "mangle", "-D", "FORWARD",
-								"-m", "mac", "--mac-source", mac, "-j", "B4"); err == nil {
-								removedAny = true
-							}
-							break
-						}
-					}
-				}
-			}
-
-			if err1 != nil && !removedAny {
-				break
-			}
-		}
+		iptDeleteListedLines(iptBin, "mangle", "FORWARD", func(line string) bool {
+			target := iptListLineTarget(line)
+			return target == "B4" || (target == "RETURN" && strings.Contains(line, "MAC "))
+		})
 
 		for {
 			_, err := run(iptBin, "-w", "-t", "mangle", "-D", "PREROUTING", "-j", "B4_PREROUTING")
@@ -836,37 +843,9 @@ func (ipt *IPTablesManager) clearB4JumpRules() {
 		}
 
 		// Clean OUTPUT - parse and remove any B4 mark rules
-		for {
-			out, _ := run(iptBin, "-w", "-t", "mangle", "-S", "OUTPUT")
-			if !strings.Contains(out, "ACCEPT") || !strings.Contains(out, "mark") {
-				break
-			}
-
-			removed := false
-			lines := strings.Split(out, "\n")
-			for _, line := range lines {
-				if strings.Contains(line, "-j ACCEPT") && strings.Contains(line, "--mark") {
-					parts := strings.Fields(line)
-					for i, p := range parts {
-						if p == "--mark" && i+1 < len(parts) {
-							mark := parts[i+1]
-							_, err := run(iptBin, "-w", "-t", "mangle", "-D", "OUTPUT",
-								"-m", "mark", "--mark", mark, "-j", "ACCEPT")
-							if err == nil {
-								removed = true
-							}
-							break
-						}
-					}
-					if removed {
-						break
-					}
-				}
-			}
-			if !removed {
-				break
-			}
-		}
+		iptDeleteListedLines(iptBin, "mangle", "OUTPUT", func(line string) bool {
+			return iptListLineTarget(line) == "ACCEPT" && strings.Contains(line, "mark match")
+		})
 
 		for {
 			_, err := run(iptBin, "-w", "-t", "mangle", "-D", "OUTPUT", "-j", "B4")
@@ -893,33 +872,9 @@ func (ipt *IPTablesManager) clearB4JumpRules() {
 
 		// Clean MSS clamp rules (TCPMSS target) from OUTPUT, FORWARD, PREROUTING
 		for _, chain := range []string{"OUTPUT", "FORWARD", "PREROUTING"} {
-			for {
-				out, _ := run(iptBin, "-w", "-t", "mangle", "-S", chain)
-				if !strings.Contains(out, "TCPMSS") {
-					break
-				}
-				removed := false
-				lines := strings.Split(out, "\n")
-				for _, line := range lines {
-					if !strings.Contains(line, "TCPMSS") || !strings.Contains(line, "--set-mss") {
-						continue
-					}
-					// Parse the rule spec from "-A CHAIN ..." format
-					parts := strings.Fields(line)
-					if len(parts) < 3 {
-						continue
-					}
-					// Remove "-A CHAIN" prefix to get the spec
-					spec := parts[2:]
-					if _, err := run(append([]string{iptBin, "-w", "-t", "mangle", "-D", chain}, spec...)...); err == nil {
-						removed = true
-						break
-					}
-				}
-				if !removed {
-					break
-				}
-			}
+			iptDeleteListedLines(iptBin, "mangle", chain, func(line string) bool {
+				return iptListLineTarget(line) == "TCPMSS"
+			})
 		}
 	}
 }

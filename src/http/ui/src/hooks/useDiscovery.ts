@@ -252,6 +252,8 @@ export function useDiscoveryLogs() {
 
       ws.onopen = () => {
         setConnected(true);
+        logsRef.current = [];
+        setLogs([]);
       };
 
       ws.onmessage = (ev) => {

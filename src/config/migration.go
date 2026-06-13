@@ -67,6 +67,15 @@ var migrationRegistry = map[int]MigrationFunc{
 	43: migrateV43to44, // Add MTProto DC-list fallback source config
 	44: migrateV44to45, // Add per-set DNS-over-HTTPS redirect target
 	45: migrateV45to46, // Replace logging.error_file with logging.directory
+	46: migrateV46to47, // Drop legacy MTProto WS endpoint host so per-DC WS routing applies
+}
+
+func migrateV46to47(c *Config, _ map[string]interface{}) error {
+	log.Tracef("Migration v46->v47: Dropping legacy MTProto WS endpoint host so per-DC WS routing applies")
+	if c.System.MTProto.WSEndpointHost == TGWSEndpointHost {
+		c.System.MTProto.WSEndpointHost = ""
+	}
+	return nil
 }
 
 func migrateV45to46(c *Config, raw map[string]interface{}) error {

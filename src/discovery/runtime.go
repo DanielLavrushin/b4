@@ -139,6 +139,8 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 	m.SetActiveSuiteID(suite.Id)
 	RegisterSuite(suite.CheckSuite)
 
+	log.GetDiscoveryHub().Reset()
+
 	go func() {
 		defer m.Stop(cfg, suite.Id)
 		suite.RunDiscovery()

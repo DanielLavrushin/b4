@@ -5,6 +5,8 @@ import (
 	"sync"
 )
 
+const discoveryRingSize = 1000
+
 var (
 	discoveryHub     *DiscoveryLogHub
 	discoveryHubOnce sync.Once
@@ -13,6 +15,9 @@ var (
 type DiscoveryLogHub struct {
 	mu        sync.RWMutex
 	listeners []chan string
+	ring      [discoveryRingSize]string
+	ringHead  int
+	ringFull  bool
 }
 
 func GetDiscoveryHub() *DiscoveryLogHub {
@@ -24,12 +29,22 @@ func GetDiscoveryHub() *DiscoveryLogHub {
 	return discoveryHub
 }
 
-func (h *DiscoveryLogHub) Subscribe() chan string {
+func (h *DiscoveryLogHub) Subscribe() (chan string, []string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	ch := make(chan string, 256)
 	h.listeners = append(h.listeners, ch)
-	return ch
+
+	var snap []string
+	if h.ringFull {
+		snap = make([]string, 0, discoveryRingSize)
+		snap = append(snap, h.ring[h.ringHead:]...)
+		snap = append(snap, h.ring[:h.ringHead]...)
+	} else {
+		snap = make([]string, h.ringHead)
+		copy(snap, h.ring[:h.ringHead])
+	}
+	return ch, snap
 }
 
 func (h *DiscoveryLogHub) Unsubscribe(ch chan string) {
@@ -43,10 +58,27 @@ func (h *DiscoveryLogHub) Unsubscribe(ch chan string) {
 	}
 }
 
+func (h *DiscoveryLogHub) Reset() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.ring = [discoveryRingSize]string{}
+	h.ringHead = 0
+	h.ringFull = false
+}
+
 func (h *DiscoveryLogHub) Broadcast(msg string) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	for _, ch := range h.listeners {
+	h.mu.Lock()
+	h.ring[h.ringHead] = msg
+	h.ringHead++
+	if h.ringHead >= discoveryRingSize {
+		h.ringHead = 0
+		h.ringFull = true
+	}
+	listeners := make([]chan string, len(h.listeners))
+	copy(listeners, h.listeners)
+	h.mu.Unlock()
+
+	for _, ch := range listeners {
 		select {
 		case ch <- msg:
 		default:
