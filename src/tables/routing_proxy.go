@@ -36,7 +36,7 @@ func nftHandleFromLine(line string) string {
 	return strings.TrimSpace(line[idx+len("# handle "):])
 }
 
-const proxyRulePriority = 5
+const proxyRulePriority = 3
 
 const proxyLocalDeliveryTable = 252
 

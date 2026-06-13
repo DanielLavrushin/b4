@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.69.0] - 2026-06-14
+
+- FIXED: **Routing could clash with another router app such as XrayUI** - a set sent through a proxy or the Telegram bridge could be handled by that other app instead, so it only worked while the app was installed.
+
 ## [1.68.0] - 2026-06-10
 
 - FIXED: **Discovery found nothing on connections that tamper with DNS** - on networks where the provider tampers with DNS (so ordinary name lookups came back wrong or empty), Discovery could not look up its test sites and reported that nothing worked, even when a working setup existed. It looks those sites up over encrypted DNS instead, and saves the result set to use encrypted DNS (DNS-over-HTTPS) for its lookups by default, which holds up where plain DNS is tampered with.

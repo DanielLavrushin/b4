@@ -103,7 +103,7 @@ func TestValidate(t *testing.T) {
 	})
 
 	t.Run("queue mark inside per-set space fails", func(t *testing.T) {
-		cases := []uint{0x4000, 0x100, 0x10000, 0x12345, 0x17DFF}
+		cases := []uint{0x4000, 0x100, 0x20000, 0x22345, 0x27DFF}
 		for _, m := range cases {
 			cfg := NewConfig()
 			cfg.Queue.Mark = m
@@ -114,7 +114,7 @@ func TestValidate(t *testing.T) {
 	})
 
 	t.Run("queue mark outside per-set space passes", func(t *testing.T) {
-		cases := []uint{0x8000, 0x18000, 0x20000, 0x80000000}
+		cases := []uint{0x8000, 0x10000, 0x28000, 0x80000000}
 		for _, m := range cases {
 			cfg := NewConfig()
 			cfg.Queue.Mark = m

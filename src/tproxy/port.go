@@ -5,7 +5,7 @@ import "hash/fnv"
 const (
 	DefaultPortBase = 13000
 	PortRange       = 50000
-	MarkBase        = 0x10000
+	MarkBase        = 0x20000
 	MarkRange       = 0x7E00
 )
 
