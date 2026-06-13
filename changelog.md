@@ -2,7 +2,10 @@
 
 ## [1.69.0] - 2026-06-14
 
+- ADDED: **Diagnostics now flag flow offloading** - many routers have a speed feature called `flow offloading` that sends traffic down a fast path which skips b4 entirely, so b4 looks installed and running but nothing is actually bypassed (a common puzzle on OpenWrt). The system diagnostics (Settings system info, and the installer's diagnostics screen) now show whether flow offloading is switched on, so this can be spotted at a glance and turned off.
 - FIXED: **Routing could clash with another router app such as XrayUI** - a set sent through a proxy or the Telegram bridge could be handled by that other app instead, so it only worked while the app was installed.
+- FIXED: **Discovery refused web addresses that contain a comma** - some perfectly valid links (for example certain Google image addresses) have a comma in them, which Discovery mistook for a separator between addresses and split the link into broken pieces, so it could not be added.
+- FIXED: **Could not pick individual results once a Discovery search had finished** - while a search was running you could add any of the configurations it turned up, but as soon as it stopped only the single best per group could be applied and the buttons to add the others disappeared. The buttons to add each result stay available after the search ends.
 
 ## [1.68.0] - 2026-06-10
 

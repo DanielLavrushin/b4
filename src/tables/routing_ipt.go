@@ -212,16 +212,11 @@ func (b *routeIptBackend) clearAll() {
 			if !hasBinary(cmd) {
 				continue
 			}
-			out, _ := run(cmd, "-w", "-t", table, "-S")
-			for _, line := range strings.Split(out, "\n") {
-				line = strings.TrimSpace(line)
-				if !strings.HasPrefix(line, "-A ") || !strings.Contains(line, "b4r_") {
-					continue
-				}
-				delRule := strings.Replace(line, "-A ", "-D ", 1)
-				parts := strings.Fields(delRule)
-				args := append([]string{cmd, "-w", "-t", table}, parts...)
-				runLogged("routing: cleanup leftover rule", args...)
+			for _, parent := range iptBuiltinParents(table) {
+				nums := iptJumpLineNumbers(cmd, table, parent, func(t string) bool {
+					return strings.HasPrefix(t, "b4r_")
+				})
+				iptDeleteJumpLines(cmd, table, parent, "routing: cleanup leftover rule", nums)
 			}
 			out2, _ := run(cmd, "-w", "-t", table, "-L", "-n")
 			for _, line := range strings.Split(out2, "\n") {

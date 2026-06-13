@@ -25,15 +25,49 @@ const (
 	connectionTagInter    = 0xeeeeeeee
 	connectionTagPadded   = 0xdddddddd
 
-	telegramWSEdgeIP = "149.154.167.220"
-	wsDialTimeout    = 8 * time.Second
-	tcpDialTimeout   = 8 * time.Second
+	wsDialTimeout  = 8 * time.Second
+	tcpDialTimeout = 8 * time.Second
 )
 
 var wsEdgeServedDCs = map[int]bool{2: true, 4: true}
 
 func wsEdgeServesDC(absDC int) bool {
 	return wsEdgeServedDCs[absDC]
+}
+
+// wsSNIDC maps a DC to the DC number used in its kwsN[.web.telegram.org] SNI.
+// Telegram's wildcard cert only covers DC 1-5, so DC 203 (the test/alternate
+// DC) borrows kws2 for cert validity while still dialing its own IP. Matches
+// tg-ws-proxy-rs default_dc_overrides().
+func wsSNIDC(absDC int) int {
+	if absDC == 203 {
+		return 2
+	}
+	return absDC
+}
+
+// wsNativeDialHosts returns the IP(s) to dial for a native Telegram WS edge
+// connection to dc. Each DC is reached at its OWN IP on :443 with the matching
+// kwsN SNI (matching tg-ws-proxy-rs), so WS serves every DC - not just the 2/4
+// that the legacy shared edge IP could front. A configured WSEndpointHost
+// override takes precedence for all DCs. Returns nil for DCs with no known IP.
+func wsNativeDialHosts(dc int, override string) []string {
+	if h := strings.TrimSpace(override); h != "" {
+		return []string{h}
+	}
+	addrs, err := ResolveDCAll(dc, false, "")
+	if err != nil {
+		return nil
+	}
+	hosts := make([]string, 0, len(addrs))
+	for _, a := range addrs {
+		if h, _, err := net.SplitHostPort(a); err == nil {
+			hosts = append(hosts, h)
+		} else {
+			hosts = append(hosts, a)
+		}
+	}
+	return hosts
 }
 
 func normalizeWorkerDomain(d string) string {
@@ -231,17 +265,16 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 	}
 
 	if (mode == "ws" || mode == "auto") && !wsIsBlacklisted(dc) {
-		edgeIP := strings.TrimSpace(cfg.WSEndpointHost)
-		if edgeIP == "" {
-			edgeIP = telegramWSEdgeIP
-		}
-		if wsEdgeServesDC(absDC) && !cfg.BridgeSkipNativeEdge {
-			primary := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d.web.telegram.org", absDC), dialHost: edgeIP}
-			media := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d-1.web.telegram.org", absDC), dialHost: edgeIP}
-			if dc < 0 {
-				plans = append(plans, media, primary)
-			} else {
-				plans = append(plans, primary, media)
+		if !cfg.BridgeSkipNativeEdge {
+			sniDC := wsSNIDC(absDC)
+			for _, dh := range wsNativeDialHosts(dc, cfg.WSEndpointHost) {
+				primary := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d.web.telegram.org", sniDC), dialHost: dh}
+				media := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d-1.web.telegram.org", sniDC), dialHost: dh}
+				if dc < 0 {
+					plans = append(plans, media, primary)
+				} else {
+					plans = append(plans, primary, media)
+				}
 			}
 		}
 		if dst := workerDstIP(absDC); dst != "" {

@@ -4,6 +4,7 @@ import {
   Stack,
   Typography,
   IconButton,
+  Tooltip,
   CircularProgress,
   Collapse,
   Divider,
@@ -12,7 +13,11 @@ import {
 import { AddIcon, ExpandIcon, CollapseIcon, ImprovementIcon } from "@b4.icons";
 import { colors } from "@design";
 import { B4Badge } from "@b4.elements";
-import { StrategyFamily, DiscoveryResult } from "@models/discovery";
+import {
+  StrategyFamily,
+  DiscoveryResult,
+  DomainPresetResult,
+} from "@models/discovery";
 import { StrategyGroup } from "../../utils/discovery";
 import { useTranslation } from "react-i18next";
 
@@ -21,6 +26,7 @@ interface StrategyGroupCardProps {
   expanded: boolean;
   onToggleExpand: () => void;
   onApply: () => void;
+  onAddStrategy: (domain: string, result: DomainPresetResult) => void;
   addingPreset: boolean;
   familyNames: Record<StrategyFamily, string>;
   domainResults?: Record<string, DiscoveryResult>;
@@ -31,6 +37,7 @@ export const StrategyGroupCard = ({
   expanded,
   onToggleExpand,
   onApply,
+  onAddStrategy,
   addingPreset,
   familyNames,
   domainResults,
@@ -197,6 +204,31 @@ export const StrategyGroupCard = ({
                           size="small"
                           color="primary"
                         />
+                        {dr?.results[dr.best_preset]?.set && (
+                          <Tooltip title={t("discovery.useThisConfig")}>
+                            <IconButton
+                              size="small"
+                              onClick={() =>
+                                onAddStrategy(
+                                  d.domain,
+                                  dr.results[dr.best_preset],
+                                )
+                              }
+                              disabled={addingPreset}
+                              sx={{
+                                p: 0.5,
+                                bgcolor: colors.background.paper,
+                                border: `1px solid ${colors.border.light}`,
+                                "&:hover": {
+                                  bgcolor: colors.accent.secondary,
+                                  borderColor: colors.secondary,
+                                },
+                              }}
+                            >
+                              <AddIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
                       </Box>
                       {!!d.improvement && d.improvement > 0 && (
                         <B4Badge
@@ -217,12 +249,42 @@ export const StrategyGroupCard = ({
                         {successResults
                           .filter((r) => r.preset_name !== dr.best_preset)
                           .map((result, idx) => (
-                            <B4Badge
+                            <Box
                               key={result.preset_name}
-                              label={`#${idx + 2} ${result.preset_name}`}
-                              size="small"
-                              color="default"
-                            />
+                              sx={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 0.5,
+                              }}
+                            >
+                              <B4Badge
+                                label={`#${idx + 2} ${result.preset_name}`}
+                                size="small"
+                                color="default"
+                              />
+                              {result.set && (
+                                <Tooltip title={t("discovery.useThisConfig")}>
+                                  <IconButton
+                                    size="small"
+                                    onClick={() =>
+                                      onAddStrategy(d.domain, result)
+                                    }
+                                    disabled={addingPreset}
+                                    sx={{
+                                      p: 0.5,
+                                      bgcolor: colors.background.paper,
+                                      border: `1px solid ${colors.border.light}`,
+                                      "&:hover": {
+                                        bgcolor: colors.accent.secondary,
+                                        borderColor: colors.secondary,
+                                      },
+                                    }}
+                                  >
+                                    <AddIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              )}
+                            </Box>
                           ))}
                       </Stack>
                     )}

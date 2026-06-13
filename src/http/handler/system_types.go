@@ -95,9 +95,10 @@ type DiagInterface struct {
 }
 
 type DiagFirewall struct {
-	Backend       string   `json:"backend"`
-	NFQueueWorks  bool     `json:"nfqueue_works"`
-	ActiveRules   []string `json:"active_rules,omitempty"`
+	Backend      string   `json:"backend"`
+	NFQueueWorks bool     `json:"nfqueue_works"`
+	FlowOffload  string   `json:"flow_offload"`
+	ActiveRules  []string `json:"active_rules,omitempty"`
 }
 
 type DiagGeodata struct {

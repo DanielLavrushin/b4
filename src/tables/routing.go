@@ -471,14 +471,17 @@ func routeIptRulesPresent(be *routeIptBackend, cfg *config.Config) bool {
 			continue
 		}
 		for table, wantChains := range needed {
-			out, err := run(cmd, "-w", "-t", table, "-S")
+			out, err := run(cmd, "-w", "-t", table, "-L", "-n")
 			if err != nil {
 				return false
 			}
 			present := make(map[string]bool)
 			for _, line := range strings.Split(out, "\n") {
-				if strings.HasPrefix(line, "-N ") {
-					present[strings.TrimSpace(line[len("-N "):])] = true
+				if strings.HasPrefix(line, "Chain ") {
+					fields := strings.Fields(line[len("Chain "):])
+					if len(fields) > 0 {
+						present[fields[0]] = true
+					}
 				}
 			}
 			for chain := range wantChains {

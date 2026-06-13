@@ -239,7 +239,7 @@ export const DiscoveryRunner = () => {
 
   const addUrls = useCallback((raw: string) => {
     const parts = raw
-      .split(/[\n,]+/)
+      .split(/\s+/)
       .map((l) =>
         l
           .trim()
@@ -264,7 +264,7 @@ export const DiscoveryRunner = () => {
 
   const handleUrlKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter" || e.key === "Tab" || e.key === ",") {
+      if (e.key === "Enter" || e.key === "Tab") {
         if (urlInput.trim()) {
           e.preventDefault();
           addUrls(urlInput);
@@ -277,7 +277,7 @@ export const DiscoveryRunner = () => {
   const handleUrlPaste = useCallback(
     (e: React.ClipboardEvent) => {
       const text = e.clipboardData.getData("text");
-      if (text.includes("\n") || text.includes(",")) {
+      if (/\s/.test(text)) {
         e.preventDefault();
         addUrls(text);
       }
@@ -622,6 +622,7 @@ export const DiscoveryRunner = () => {
                     expanded={expandedDomains.has(groupKey)}
                     onToggleExpand={() => toggleDomainExpand(groupKey)}
                     onApply={() => handleAddGroupStrategy(group)}
+                    onAddStrategy={handleAddStrategy}
                     addingPreset={addingPreset}
                     familyNames={familyNames}
                     domainResults={suite.domain_discovery_results}

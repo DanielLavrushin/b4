@@ -306,8 +306,46 @@ func collectFirewallInfo() DiagFirewall {
 	}
 
 	info.NFQueueWorks = testNFQueue(info.Backend)
+	info.FlowOffload = detectFlowOffload()
 
 	return info
+}
+
+// detectFlowOffload reports whether netfilter flow offloading is active on the
+// system. Offloaded flows take a fast path that skips the forward/postrouting
+// hooks where b4's NFQUEUE rules live, so an active flowtable means b4 never
+// sees the traffic. Returns "hardware", "software" or "off".
+func detectFlowOffload() string {
+	if _, err := exec.LookPath("nft"); err == nil {
+		out, err := exec.Command("nft", "list", "ruleset").CombinedOutput()
+		if err == nil {
+			s := string(out)
+			if strings.Contains(s, "flow add @") || strings.Contains(s, "flow offload @") {
+				for _, line := range strings.Split(s, "\n") {
+					l := strings.TrimSpace(line)
+					if strings.HasPrefix(l, "flags") && strings.Contains(l, "offload") {
+						return "hardware"
+					}
+				}
+				return "software"
+			}
+		}
+	}
+
+	for _, bin := range []string{"iptables", "iptables-legacy"} {
+		if _, err := exec.LookPath(bin); err != nil {
+			continue
+		}
+		out, err := exec.Command(bin, append(tables.WaitArgs(bin), "-t", "filter", "-S")...).CombinedOutput()
+		if err == nil && strings.Contains(string(out), "FLOWOFFLOAD") {
+			if strings.Contains(string(out), "--hw") {
+				return "hardware"
+			}
+			return "software"
+		}
+	}
+
+	return "off"
 }
 
 func testNFQueue(backend string) bool {

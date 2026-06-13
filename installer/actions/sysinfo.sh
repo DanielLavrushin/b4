@@ -267,6 +267,41 @@ action_sysinfo() {
         fi
     fi
 
+    # Flow offloading — offloaded flows skip the netfilter hooks where b4's
+    # NFQUEUE rules live, so b4 never sees the traffic (common cause of "b4
+    # installed but nothing is bypassed" on OpenWrt). Detect the active runtime
+    # state, not just the UCI config.
+    _flow_offload=""
+    if command_exists nft; then
+        _nft_ruleset=$(nft list ruleset 2>/dev/null)
+        if echo "$_nft_ruleset" | grep -q "flow add @\|flow offload @"; then
+            if echo "$_nft_ruleset" | grep -qE "flags[[:space:]]+offload"; then
+                _flow_offload="hardware"
+            else
+                _flow_offload="software"
+            fi
+        fi
+    fi
+    if [ -z "$_flow_offload" ]; then
+        for _fb in iptables iptables-legacy; do
+            command_exists "$_fb" || continue
+            _ipt_filter=$($_fb -t filter -S 2>/dev/null)
+            if echo "$_ipt_filter" | grep -q "FLOWOFFLOAD"; then
+                if echo "$_ipt_filter" | grep -q -- "--hw"; then
+                    _flow_offload="hardware"
+                else
+                    _flow_offload="software"
+                fi
+                break
+            fi
+        done
+    fi
+    if [ -n "$_flow_offload" ]; then
+        printf "    ${RED}  WARN${NC}  %s\n" "Flow offloading active (${_flow_offload}) — bypasses b4; disable it for b4 to work" >&2
+    else
+        printf "    ${GREEN}  OK${NC}    %s\n" "Flow offloading off (b4 can intercept traffic)" >&2
+    fi
+
     # --- Tools & dependencies ---
     echo ""
     log_info "Required tools:"

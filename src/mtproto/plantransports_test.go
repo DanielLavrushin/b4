@@ -1,6 +1,7 @@
 package mtproto
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -55,19 +56,61 @@ func TestPlanTransports_MediaDC_ReversesOrdering(t *testing.T) {
 	}
 }
 
-func TestPlanTransports_DC203_NoDirectEdge(t *testing.T) {
+func TestPlanTransports_DC203_RemapsToDC2SNIOnOwnIP(t *testing.T) {
 	cfg := &config.MTProtoConfig{UpstreamMode: "auto"}
 	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 203)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	for _, s := range wsSNIs(plans) {
-		if strings.HasSuffix(s, ".web.telegram.org") {
-			t.Fatalf("DC 203 must not use the TG WS edge (front cannot serve CDN), got %q", s)
+	var ws *transportPlan
+	for i := range plans {
+		if plans[i].kind == transportWS {
+			ws = &plans[i]
+			break
 		}
 	}
+	if ws == nil {
+		t.Fatal("DC 203 should have a native WS plan dialing its own IP")
+	}
+	if ws.sni != "kws2.web.telegram.org" {
+		t.Fatalf("DC 203 WS SNI must remap to kws2 for cert validity, got %q", ws.sni)
+	}
+	if ws.dialHost != "91.105.192.100" {
+		t.Fatalf("DC 203 WS must dial its own DC IP, got %q", ws.dialHost)
+	}
 	if !hasTCP(plans) {
-		t.Fatalf("DC 203 should fall back to TCP, got %+v", plans)
+		t.Fatalf("DC 203 should still fall back to TCP in auto mode, got %+v", plans)
+	}
+}
+
+func TestPlanTransports_StandardDCs_DialOwnIP(t *testing.T) {
+	want := map[int]string{
+		1: "149.154.175.50",
+		3: "149.154.175.100",
+		5: "149.154.171.5",
+	}
+	for dc, ip := range want {
+		cfg := &config.MTProtoConfig{UpstreamMode: "ws"}
+		plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, dc)
+		if err != nil {
+			t.Fatalf("DC %d: unexpected error: %v", dc, err)
+		}
+		var ws *transportPlan
+		for i := range plans {
+			if plans[i].kind == transportWS {
+				ws = &plans[i]
+				break
+			}
+		}
+		if ws == nil {
+			t.Fatalf("DC %d must have a native WS plan (media DCs need WS too)", dc)
+		}
+		if ws.sni != "kws"+strconv.Itoa(dc)+".web.telegram.org" {
+			t.Fatalf("DC %d WS SNI wrong: %q", dc, ws.sni)
+		}
+		if ws.dialHost != ip {
+			t.Fatalf("DC %d WS must dial its own IP %s, got %q", dc, ip, ws.dialHost)
+		}
 	}
 }
 
@@ -290,7 +333,7 @@ func TestPlanTransports_WorkerForDC2BeforeCFPool(t *testing.T) {
 	}
 }
 
-func TestPlanTransports_WorkerForDC1NoNativeEdge(t *testing.T) {
+func TestPlanTransports_WorkerForDC1AlongsideNativeEdge(t *testing.T) {
 	cfg := &config.MTProtoConfig{
 		UpstreamMode:   "ws",
 		CFWorkerDomain: "w.user.workers.dev",
@@ -299,17 +342,23 @@ func TestPlanTransports_WorkerForDC1NoNativeEdge(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	found := false
+	foundWorker, foundEdge := false, false
 	for _, p := range plans {
 		if p.isWorker {
-			found = true
+			foundWorker = true
 			if p.wsPath != "/apiws?dst=149.154.175.50&dc=1" {
 				t.Errorf("unexpected DC1 worker path %q", p.wsPath)
 			}
 		}
+		if p.kind == transportWS && !p.isWorker && p.cfBase == "" && p.sni == "kws1.web.telegram.org" {
+			foundEdge = true
+		}
 	}
-	if !found {
-		t.Fatal("expected a worker plan for DC1 (no native edge)")
+	if !foundWorker {
+		t.Fatal("expected a worker plan for DC1")
+	}
+	if !foundEdge {
+		t.Fatal("DC1 should now also have a native WS edge plan (per-DC IP routing)")
 	}
 }
 

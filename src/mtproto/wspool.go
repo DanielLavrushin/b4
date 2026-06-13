@@ -211,10 +211,10 @@ func (p *wsPool) get(dc int) *wsConn {
 	if p == nil {
 		return nil
 	}
-	k := wsKeyFromDC(dc)
-	if !wsEdgeServesDC(k.dc) || wsIsBlacklisted(dc) {
+	if wsIsBlacklisted(dc) {
 		return nil
 	}
+	k := wsKeyFromDC(dc)
 
 	p.mu.Lock()
 	bucket := p.idle[k]
@@ -352,16 +352,14 @@ func wsPlansForDC(dc int, cfg *MTProtoUpstream) []transportPlan {
 		absDC = -absDC
 	}
 	var plans []transportPlan
-	edgeIP := ""
+	override := ""
 	if cfg != nil {
-		edgeIP = cfg.WSEndpointHost
+		override = cfg.WSEndpointHost
 	}
-	if edgeIP == "" {
-		edgeIP = telegramWSEdgeIP
-	}
-	if wsEdgeServesDC(absDC) {
-		primary := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(absDC, ""), dialHost: edgeIP}
-		media := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(absDC, "-1"), dialHost: edgeIP}
+	sniDC := wsSNIDC(absDC)
+	for _, dh := range wsNativeDialHosts(dc, override) {
+		primary := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(sniDC, ""), dialHost: dh}
+		media := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(sniDC, "-1"), dialHost: dh}
 		if dc < 0 {
 			plans = append(plans, media, primary)
 		} else {

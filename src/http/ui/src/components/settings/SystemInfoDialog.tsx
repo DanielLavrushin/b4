@@ -78,6 +78,7 @@ interface DiagInterface {
 interface DiagFirewall {
   backend: string;
   nfqueue_works: boolean;
+  flow_offload: string;
   active_rules?: string[];
 }
 
@@ -383,6 +384,16 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
           {sectionTitle(t("settings.SystemInfo.firewall"))}
           {row(t("settings.SystemInfo.fwBackend"), data.firewall.backend)}
           {row("NFQUEUE", boolChip(data.firewall.nfqueue_works, "OK", "FAIL"))}
+          {row(
+            t("settings.SystemInfo.flowOffload"),
+            boolChip(
+              data.firewall.flow_offload === "off",
+              t("settings.SystemInfo.flowOffloadOff"),
+              data.firewall.flow_offload === "hardware"
+                ? t("settings.SystemInfo.flowOffloadHw")
+                : t("settings.SystemInfo.flowOffloadSw"),
+            ),
+          )}
           {data.firewall.active_rules &&
             data.firewall.active_rules.length > 0 && (
               <Box

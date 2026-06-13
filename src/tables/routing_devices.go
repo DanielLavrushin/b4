@@ -2,6 +2,7 @@ package tables
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/daniellavrushin/b4/config"
@@ -120,24 +121,48 @@ func iptCmdFor(v6, legacy bool) string {
 	}
 }
 
-func iptDeleteJumpsTo(cmd, table, parent, target string) {
-	out, err := run(cmd, "-w", "-t", table, "-S", parent)
+func iptBuiltinParents(table string) []string {
+	switch table {
+	case "nat":
+		return []string{"PREROUTING", "INPUT", "OUTPUT", "POSTROUTING"}
+	case "filter":
+		return []string{"INPUT", "FORWARD", "OUTPUT"}
+	default:
+		return []string{"PREROUTING", "INPUT", "FORWARD", "OUTPUT", "POSTROUTING"}
+	}
+}
+
+func iptJumpLineNumbers(cmd, table, parent string, match func(target string) bool) []int {
+	out, err := run(cmd, "-w", "-t", table, "-L", parent, "-n", "--line-numbers")
 	if err != nil {
-		return
+		return nil
 	}
+	var nums []int
 	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "-A "+parent+" ") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
 			continue
 		}
-		if !strings.HasSuffix(line, "-j "+target) {
+		n, convErr := strconv.Atoi(fields[0])
+		if convErr != nil {
 			continue
 		}
-		args := strings.Fields(line)
-		args[0] = "-D"
-		runLogged("routing: delete jump "+parent+"->"+target,
-			append([]string{cmd, "-w", "-t", table}, args...)...)
+		if match(fields[1]) {
+			nums = append(nums, n)
+		}
 	}
+	return nums
+}
+
+func iptDeleteJumpLines(cmd, table, parent, logMsg string, nums []int) {
+	for i := len(nums) - 1; i >= 0; i-- {
+		runLogged(logMsg, cmd, "-w", "-t", table, "-D", parent, strconv.Itoa(nums[i]))
+	}
+}
+
+func iptDeleteJumpsTo(cmd, table, parent, target string) {
+	nums := iptJumpLineNumbers(cmd, table, parent, func(t string) bool { return t == target })
+	iptDeleteJumpLines(cmd, table, parent, "routing: delete jump "+parent+"->"+target, nums)
 }
 
 func iptEmitGatedJump(cmd, table, parent, target string, insertTop bool, gate routeDeviceGate) {
