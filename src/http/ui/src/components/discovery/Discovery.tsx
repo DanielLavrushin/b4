@@ -50,6 +50,8 @@ import { FailedDomainCard } from "./FailedDomainCard";
 import { HistoryGroupCard } from "./HistoryGroupCard";
 import { configApi } from "@b4.settings";
 
+const URL_SEPARATORS = /\s+|,(?=\s|$)/;
+
 export const DiscoveryRunner = () => {
   const { t } = useTranslation();
 
@@ -239,7 +241,7 @@ export const DiscoveryRunner = () => {
 
   const addUrls = useCallback((raw: string) => {
     const parts = raw
-      .split(/\s+/)
+      .split(URL_SEPARATORS)
       .map((l) =>
         l
           .trim()
@@ -277,7 +279,7 @@ export const DiscoveryRunner = () => {
   const handleUrlPaste = useCallback(
     (e: React.ClipboardEvent) => {
       const text = e.clipboardData.getData("text");
-      if (/\s/.test(text)) {
+      if (URL_SEPARATORS.test(text)) {
         e.preventDefault();
         addUrls(text);
       }
