@@ -120,7 +120,7 @@ _openwrt_load_kmods() {
         if [ "$B4_PKG_MANAGER" = "apk" ]; then
             log_info "Try: apk add kmod-nft-queue kmod-nft-nat kmod-nft-compat"
         else
-            log_info "Try: opkg install kmod-nfnetlink-queue kmod-ipt-nfqueue iptables-mod-nfqueue kmod-ipt-conntrack-extra iptables-mod-conntrack-extra"
+            log_info "Try: opkg install kmod-nft-queue kmod-nft-conntrack kmod-nfnetlink-queue kmod-ipt-nfqueue iptables-mod-nfqueue kmod-ipt-conntrack-extra iptables-mod-conntrack-extra"
         fi
     fi
 }
@@ -137,7 +137,7 @@ _openwrt_check_recommended() {
     fi
 
     # Queue kernel modules for nftables-based OpenWrt
-    if [ "$B4_PKG_MANAGER" = "apk" ]; then
+    if _nft_functional; then
         if ! _kmod_available "nft_queue"; then
             rec_missing="${rec_missing} kmod-nft-queue"
         fi
