@@ -299,7 +299,10 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
     setSetsData(newData);
 
     void (async () => {
-      const result = await reorderSets(newData.map((s) => setItemId(s)));
+      const realIds = newData
+        .map((s) => setItemId(s))
+        .filter((id) => !id.startsWith("temp-"));
+      const result = await reorderSets(realIds);
       if (result.success) {
         onRefresh();
       } else {
@@ -324,6 +327,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
     if (!setId) return;
     setDeleteDialog({ open: false, setId: null });
     setSetsData((prev) => prev.filter((s) => setItemId(s) !== setId));
+    if (setId.startsWith("temp-")) return;
     void (async () => {
       const result = await deleteSet(setId);
       if (result.success) {
@@ -396,11 +400,13 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
 
   const handleBatchDelete = () => {
     if (selectedIds.size === 0) return;
-    const ids = Array.from(selectedIds);
+    const ids = Array.from(selectedIds).filter((id) => !id.startsWith("temp-"));
     const count = ids.length;
     setBatchDeleteDialog(false);
     handleExitSelectionMode();
-    setSetsData((prev) => prev.filter((s) => !selectedIds.has(setItemId(s))));
+    if (count === 0) return;
+    const idSet = new Set(ids);
+    setSetsData((prev) => prev.filter((s) => !idSet.has(setItemId(s))));
     void (async () => {
       const result = await deleteSets(ids);
       if (result.success) {
@@ -414,8 +420,10 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
   };
 
   const handleToggleAll = (enabled: boolean) => {
-    if (sets.length === 0) return;
-    const ids = setsData.map((s) => setItemId(s));
+    const ids = setsData
+      .map((s) => setItemId(s))
+      .filter((id) => !id.startsWith("temp-"));
+    if (ids.length === 0) return;
     setSetsData((prev) => prev.map((s) => setItemWithEnabled(s, enabled)));
     markSyncing(ids, true);
     void (async () => {
@@ -439,6 +447,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
         setItemId(s) === set.id ? setItemWithEnabled(s, enabled) : s,
       ),
     );
+    if (set.id.startsWith("temp-")) return;
     markSyncing([set.id], true);
     void (async () => {
       const result = await updateSet({ ...set, enabled });
