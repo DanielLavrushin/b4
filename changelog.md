@@ -2,6 +2,7 @@
 
 ## [1.69.1] - 2026-06-14
 
+- FIXED: **Sets manager felt frozen after enabling, reordering, duplicating, or deleting a set** - the screen only changed once the action had been saved and the whole configuration re-fetched a second or two later, so a click looked like nothing had happened, a dragged set snapped back to its old place before jumping to the new one, and a duplicate appeared out of nowhere after a pause.
 - FIXED: **MTProto proxy stopped connecting to Telegram on networks that block its data-center addresses** - 1.69.0 changed the proxy to reach each Telegram data center at its own address, which many restricted networks drop, so connections timed out and Telegram would not load through the proxy.
 
 ## [1.69.0] - 2026-06-14

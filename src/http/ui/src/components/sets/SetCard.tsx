@@ -15,6 +15,7 @@ import {
   Switch,
   Tooltip,
   Divider,
+  LinearProgress,
 } from "@mui/material";
 import {
   EditIcon,
@@ -58,6 +59,7 @@ interface SetCardProps {
   onCompare: () => void;
   onDelete: () => void;
   onToggleEnabled: (enabled: boolean) => void;
+  syncing?: boolean;
   dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
   selectionMode?: boolean;
   selected?: boolean;
@@ -251,6 +253,7 @@ export const SetCard = ({
   onCompare,
   onDelete,
   onToggleEnabled,
+  syncing,
   dragHandleProps,
   selectionMode,
   selected,
@@ -310,14 +313,25 @@ export const SetCard = ({
         },
       }}
     >
-      {/* Top accent bar */}
-      <Box
-        sx={{
-          height: 4,
-          bgcolor: colors.secondary,
-          borderRadius: `${radius.md}px ${radius.md}px 0 0`,
-        }}
-      />
+      {/* Top accent bar (becomes a progress indicator while syncing) */}
+      {syncing ? (
+        <LinearProgress
+          sx={{
+            height: 4,
+            borderRadius: `${radius.md}px ${radius.md}px 0 0`,
+            bgcolor: colors.background.dark,
+            "& .MuiLinearProgress-bar": { bgcolor: colors.secondary },
+          }}
+        />
+      ) : (
+        <Box
+          sx={{
+            height: 4,
+            bgcolor: colors.secondary,
+            borderRadius: `${radius.md}px ${radius.md}px 0 0`,
+          }}
+        />
+      )}
 
       <Box
         sx={{

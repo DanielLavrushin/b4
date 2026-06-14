@@ -681,6 +681,7 @@
       "allDisabled": "All sets disabled",
       "failedToToggleSets": "Failed to update sets",
       "failedToUpdate": "Failed to update",
+      "failedToReorder": "Failed to reorder sets",
       "noSets": "No configuration sets",
       "noSetsHint": "Create your first set to start configuring bypass rules"
     },

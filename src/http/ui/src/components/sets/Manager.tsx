@@ -14,7 +14,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 
 import {
@@ -71,6 +71,22 @@ export interface SetStats {
 export interface SetWithStats extends B4SetConfig {
   stats: SetStats;
 }
+
+const setItemId = (item: SetWithStats): string => {
+  const nested = item as unknown as { set?: B4SetConfig };
+  return nested.set ? nested.set.id : item.id;
+};
+
+const setItemWithEnabled = (
+  item: SetWithStats,
+  enabled: boolean,
+): SetWithStats => {
+  const nested = item as unknown as { set?: B4SetConfig };
+  if (nested.set) {
+    return { ...item, set: { ...nested.set, enabled } } as SetWithStats;
+  }
+  return { ...item, enabled };
+};
 
 interface SetsManagerProps {
   config: B4Config & { sets?: SetWithStats[] };
@@ -155,12 +171,29 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [highlightedSetId, setHighlightedSetId] = useState<string | null>(null);
   const cardRefs = useRef(new Map<string, HTMLDivElement>());
+  const tempIdSeq = useRef(0);
 
-  const setsData = config.sets || [];
+  const serverData = useMemo(() => config.sets || [], [config.sets]);
+  const [setsData, setSetsData] = useState<SetWithStats[]>(serverData);
+  const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setSetsData(serverData);
+  }, [serverData]);
+
+  const markSyncing = useCallback((ids: string[], on: boolean) => {
+    setSyncingIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (on) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }, []);
+
   const sets = setsData.map((s) => ("set" in s ? s.set : s)) as B4SetConfig[];
-  const setsStats = setsData.map((s) =>
-    "stats" in s ? s.stats : null,
-  ) as (SetStats | null)[];
+  const setsStats = setsData.map((s) => ("stats" in s ? s.stats : null));
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -255,18 +288,24 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
 
     if (!over || active.id === over.id) return;
 
-    const oldIndex = sets.findIndex((s) => s.id === active.id);
-    const newIndex = sets.findIndex((s) => s.id === over.id);
+    const oldIndex = setsData.findIndex((s) => setItemId(s) === active.id);
+    const newIndex = setsData.findIndex((s) => setItemId(s) === over.id);
 
     if (oldIndex === -1 || newIndex === -1) return;
 
-    const newOrder = [...sets];
-    const [removed] = newOrder.splice(oldIndex, 1);
-    newOrder.splice(newIndex, 0, removed);
+    const newData = [...setsData];
+    const [removed] = newData.splice(oldIndex, 1);
+    newData.splice(newIndex, 0, removed);
+    setSetsData(newData);
 
     void (async () => {
-      const result = await reorderSets(newOrder.map((s) => s.id));
-      if (result.success) onRefresh();
+      const result = await reorderSets(newData.map((s) => setItemId(s)));
+      if (result.success) {
+        onRefresh();
+      } else {
+        reportSaveError(result.error, showError, t, "sets.manager.failedToReorder");
+        onRefresh();
+      }
     })();
   };
 
@@ -283,25 +322,48 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
   const handleDeleteSet = () => {
     const { setId } = deleteDialog;
     if (!setId) return;
+    setDeleteDialog({ open: false, setId: null });
+    setSetsData((prev) => prev.filter((s) => setItemId(s) !== setId));
     void (async () => {
       const result = await deleteSet(setId);
       if (result.success) {
         showSuccess(t("sets.manager.setDeleted"));
-        setDeleteDialog({ open: false, setId: null });
         onRefresh();
       } else {
         reportSaveError(result.error, showError, t, "sets.manager.failedToDelete");
+        onRefresh();
       }
     })();
   };
 
   const handleDuplicateSet = (set: B4SetConfig) => {
+    tempIdSeq.current += 1;
+    const tempId = `temp-${tempIdSeq.current}`;
+    const srcIndex = setsData.findIndex((s) => setItemId(s) === set.id);
+    const srcStats = srcIndex >= 0 ? setsStats[srcIndex] : null;
+    const placeholder = {
+      ...set,
+      id: tempId,
+      name: `${set.name} (copy)`,
+      stats: srcStats ?? undefined,
+    } as unknown as SetWithStats;
+
+    setSetsData((prev) => {
+      const insertAt = srcIndex >= 0 ? srcIndex + 1 : prev.length;
+      const next = [...prev];
+      next.splice(insertAt, 0, placeholder);
+      return next;
+    });
+    markSyncing([tempId], true);
+
     void (async () => {
       const result = await duplicateSet(set);
+      markSyncing([tempId], false);
       if (result.success) {
         showSuccess(t("sets.manager.setDuplicated"));
         onRefresh();
       } else {
+        setSetsData((prev) => prev.filter((s) => setItemId(s) !== tempId));
         reportSaveError(result.error, showError, t, "sets.manager.failedToDuplicate");
       }
     })();
@@ -334,24 +396,31 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
 
   const handleBatchDelete = () => {
     if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    const count = ids.length;
+    setBatchDeleteDialog(false);
+    handleExitSelectionMode();
+    setSetsData((prev) => prev.filter((s) => !selectedIds.has(setItemId(s))));
     void (async () => {
-      const result = await deleteSets(Array.from(selectedIds));
+      const result = await deleteSets(ids);
       if (result.success) {
-        showSuccess(t("sets.manager.setsDeleted", { count: selectedIds.size }));
-        setBatchDeleteDialog(false);
-        handleExitSelectionMode();
+        showSuccess(t("sets.manager.setsDeleted", { count }));
         onRefresh();
       } else {
         reportSaveError(result.error, showError, t, "sets.manager.failedToDeleteSets");
+        onRefresh();
       }
     })();
   };
 
   const handleToggleAll = (enabled: boolean) => {
     if (sets.length === 0) return;
+    const ids = setsData.map((s) => setItemId(s));
+    setSetsData((prev) => prev.map((s) => setItemWithEnabled(s, enabled)));
+    markSyncing(ids, true);
     void (async () => {
-      const ids = sets.map((s) => s.id);
       const result = await setEnabledForSets(ids, enabled);
+      markSyncing(ids, false);
       if (result.success) {
         showSuccess(
           t(enabled ? "sets.manager.allEnabled" : "sets.manager.allDisabled"),
@@ -359,18 +428,26 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
         onRefresh();
       } else {
         reportSaveError(result.error, showError, t, "sets.manager.failedToToggleSets");
+        onRefresh();
       }
     })();
   };
 
   const handleToggleEnabled = (set: B4SetConfig, enabled: boolean) => {
+    setSetsData((prev) =>
+      prev.map((s) =>
+        setItemId(s) === set.id ? setItemWithEnabled(s, enabled) : s,
+      ),
+    );
+    markSyncing([set.id], true);
     void (async () => {
-      const updatedSet = { ...set, enabled };
-      const result = await updateSet(updatedSet);
+      const result = await updateSet({ ...set, enabled });
+      markSyncing([set.id], false);
       if (result.success) {
         onRefresh();
       } else {
         reportSaveError(result.error, showError, t, "sets.manager.failedToUpdate");
+        onRefresh();
       }
     })();
   };
@@ -574,6 +651,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                           onToggleEnabled={(enabled) =>
                             handleToggleEnabled(set, enabled)
                           }
+                          syncing={syncingIds.has(set.id)}
                           dragHandleProps={dragHandleProps}
                           selectionMode={selectionMode}
                           selected={selectedIds.has(set.id)}
