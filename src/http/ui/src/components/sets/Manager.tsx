@@ -72,6 +72,9 @@ export interface SetWithStats extends B4SetConfig {
   stats: SetStats;
 }
 
+const TEMP_ID_PREFIX = "temp-";
+const isTempId = (id: string): boolean => id.startsWith(TEMP_ID_PREFIX);
+
 const setItemId = (item: SetWithStats): string => {
   const nested = item as unknown as { set?: B4SetConfig };
   return nested.set ? nested.set.id : item.id;
@@ -301,7 +304,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
     void (async () => {
       const realIds = newData
         .map((s) => setItemId(s))
-        .filter((id) => !id.startsWith("temp-"));
+        .filter((id) => !isTempId(id));
       const result = await reorderSets(realIds);
       if (result.success) {
         onRefresh();
@@ -327,7 +330,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
     if (!setId) return;
     setDeleteDialog({ open: false, setId: null });
     setSetsData((prev) => prev.filter((s) => setItemId(s) !== setId));
-    if (setId.startsWith("temp-")) return;
+    if (isTempId(setId)) return;
     void (async () => {
       const result = await deleteSet(setId);
       if (result.success) {
@@ -342,7 +345,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
 
   const handleDuplicateSet = (set: B4SetConfig) => {
     tempIdSeq.current += 1;
-    const tempId = `temp-${tempIdSeq.current}`;
+    const tempId = `${TEMP_ID_PREFIX}${tempIdSeq.current}`;
     const srcIndex = setsData.findIndex((s) => setItemId(s) === set.id);
     const srcStats = srcIndex >= 0 ? setsStats[srcIndex] : null;
     const placeholder = {
@@ -400,7 +403,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
 
   const handleBatchDelete = () => {
     if (selectedIds.size === 0) return;
-    const ids = Array.from(selectedIds).filter((id) => !id.startsWith("temp-"));
+    const ids = Array.from(selectedIds).filter((id) => !isTempId(id));
     const count = ids.length;
     setBatchDeleteDialog(false);
     handleExitSelectionMode();
@@ -422,7 +425,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
   const handleToggleAll = (enabled: boolean) => {
     const ids = setsData
       .map((s) => setItemId(s))
-      .filter((id) => !id.startsWith("temp-"));
+      .filter((id) => !isTempId(id));
     if (ids.length === 0) return;
     setSetsData((prev) => prev.map((s) => setItemWithEnabled(s, enabled)));
     markSyncing(ids, true);
@@ -447,7 +450,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
         setItemId(s) === set.id ? setItemWithEnabled(s, enabled) : s,
       ),
     );
-    if (set.id.startsWith("temp-")) return;
+    if (isTempId(set.id)) return;
     markSyncing([set.id], true);
     void (async () => {
       const result = await updateSet({ ...set, enabled });
