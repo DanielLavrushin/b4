@@ -83,6 +83,10 @@ func main() {
 }
 
 func runB4(cmd *cobra.Command, args []string) error {
+	handler.Version = Version
+	handler.Commit = Commit
+	handler.Date = Date
+
 	if showVersion {
 		fmt.Printf("B4 version: %s (%s) %s\n", Version, Commit, Date)
 		return nil
