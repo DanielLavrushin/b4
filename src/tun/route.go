@@ -410,6 +410,16 @@ func (r *routeManager) refreshEgress() bool {
 	if src != "" {
 		r.srcIP = src
 	}
+	if r.resolvedCapture == "default" {
+		if gw != "" {
+			r.savedDefault = fmt.Sprintf("default via %s dev %s", gw, iface)
+		} else {
+			r.savedDefault = fmt.Sprintf("default dev %s", iface)
+		}
+		if src != "" {
+			r.savedDefault += " src " + src
+		}
+	}
 	if !r.skipTables {
 		r.savedRPFilter = ""
 		r.loosenRPFilter()
