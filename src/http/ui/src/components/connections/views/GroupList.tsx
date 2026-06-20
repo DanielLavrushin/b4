@@ -6,14 +6,17 @@ import { GroupRow, ROW_HEIGHT } from "./GroupRow";
 import type { EnrichedGroup } from "@hooks/useConnectionGroups";
 import { useTranslation } from "react-i18next";
 
-export type AggSortColumn =
-  | "protocol"
-  | "domain"
-  | "destination"
-  | "set"
-  | "source"
-  | "packets"
-  | "seen";
+export const AGG_SORT_COLUMNS = [
+  "protocol",
+  "domain",
+  "destination",
+  "set",
+  "source",
+  "packets",
+  "seen",
+] as const;
+
+export type AggSortColumn = (typeof AGG_SORT_COLUMNS)[number];
 
 interface Props {
   groups: EnrichedGroup[];

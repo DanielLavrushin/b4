@@ -13,7 +13,7 @@ import {
 import { SortDirection } from "@common/SortableTableCell";
 import { AggregatedControlBar, TimeWindow } from "./AggregatedControlBar";
 import { DeviceSidebar } from "./DeviceSidebar";
-import { AggSortColumn, GroupList } from "./GroupList";
+import { AGG_SORT_COLUMNS, AggSortColumn, GroupList } from "./GroupList";
 import { DetailPane } from "./DetailPane";
 import { useTranslation } from "react-i18next";
 
@@ -97,9 +97,12 @@ export const AggregatedView = ({
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     return localStorage.getItem("b4_connections_sidebar_collapsed") === "1";
   });
-  const [sortColumn, setSortColumn] = useState<AggSortColumn | null>(
-    () => loadSortState(AGG_SORT_STORAGE_KEY).column as AggSortColumn | null,
-  );
+  const [sortColumn, setSortColumn] = useState<AggSortColumn | null>(() => {
+    const col = loadSortState(AGG_SORT_STORAGE_KEY).column;
+    return col && (AGG_SORT_COLUMNS as readonly string[]).includes(col)
+      ? (col as AggSortColumn)
+      : null;
+  });
   const [sortDirection, setSortDirection] = useState<SortDirection>(
     () => loadSortState(AGG_SORT_STORAGE_KEY).direction,
   );
