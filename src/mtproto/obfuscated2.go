@@ -237,7 +237,12 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 		appendTCP()
 	}
 
-	if (mode == "ws" || mode == "auto") && !wsIsBlacklisted(dc) {
+	wsMode := mode == "ws" || mode == "auto"
+	wsBlacklisted := wsMode && wsIsBlacklisted(dc)
+	if wsBlacklisted {
+		log.Debugf("%s DC %d WS plans skipped (blacklisted)", tg(""), dc)
+	}
+	if wsMode && !wsBlacklisted {
 		if wsEdgeServesDC(absDC) && !cfg.BridgeSkipNativeEdge {
 			dh := wsNativeDialHost(cfg.WSEndpointHost)
 			primary := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d.web.telegram.org", absDC), dialHost: dh}

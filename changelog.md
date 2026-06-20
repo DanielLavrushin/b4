@@ -1,11 +1,13 @@
 # B4 - Bye Bye Big Bro
 
-## [1.70.0] - 2026-06-xx
+## [1.70.0] - 2026-06-21
 
 - ADDED: **New engine for devices without NFQUEUE** - some minimal devices lack the kernel modules b4 normally needs, so it could not run on them. A new mode under Settings → Feature Flags routes traffic through a virtual interface (TUN) instead. It inspects only the first packets of each TLS (port 443) and DNS connection, like the normal engine, rather than carrying every packet, and leaves the device's default route in place; on kernels that cannot count per-connection packets it routes the whole default route through the TUN instead.
+- ADDED: **Sortable columns in the Traffic page's Aggregated view** - clicking a column header sorts the grouped list by that column, ascending or descending, like the Raw feed.
 - CHANGED: **Web UI password is now stored securely** - it is kept only as a hash and is no longer shown on the settings page (leave the field blank to keep it, or type a new one to change it). Repeated failed logins are briefly blocked, and a session now expires after a day. Existing setups are migrated automatically.
 - FIXED: **A set's encrypted DNS (DoH) redirect failed in some setups** - lookups could time out or come back empty, so pages would not load. This affected gateway and container setups (for example b4 in a container on MikroTik) using NAT masquerade.
 - FIXED: **Routing set stopped updating its addresses on its own** - in some setups (for example b4 in a container on MikroTik) the set's addresses only filled in on restart or when the set was toggled, then expired and were never refreshed. The set now learns addresses live from DNS replies again.
+- FIXED: **Telegram bridge did not recover after an internet outage** - if the connection dropped and came back later, a set using the Telegram bridge kept failing until b4 was restarted by hand.
 
 ## [1.69.1] - 2026-06-14
 

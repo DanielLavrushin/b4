@@ -14,6 +14,7 @@ const (
 	wsPoolMaxAge          = 20 * time.Second
 	wsPoolDefaultSize     = 4
 	wsDCFailCooldown      = 30 * time.Second
+	wsBlacklistTTL        = 5 * time.Minute
 	wsDialTimeoutCooldown = 2 * time.Second
 	tcpFailCooldown       = 30 * time.Second
 )
@@ -33,7 +34,7 @@ func (k wsKey) String() string {
 
 var (
 	wsStateMu    sync.Mutex
-	wsBlacklist  = map[wsKey]bool{}
+	wsBlacklist  = map[wsKey]time.Time{}
 	wsCooldownTo = map[wsKey]time.Time{}
 
 	tcpStateMu    sync.Mutex
@@ -105,7 +106,16 @@ func wsIsBlacklisted(dc int) bool {
 	k := wsKeyFromDC(dc)
 	wsStateMu.Lock()
 	defer wsStateMu.Unlock()
-	return wsBlacklist[k]
+	t, ok := wsBlacklist[k]
+	if !ok {
+		return false
+	}
+	if time.Now().After(t) {
+		delete(wsBlacklist, k)
+		log.Debugf("%s WS %s blacklist expired, WS re-enabled", tg(""), k)
+		return false
+	}
+	return true
 }
 
 func wsCooldownActive(dc int) bool {
@@ -128,25 +138,32 @@ func wsRecordFailure(dc int, allRedirect bool) {
 	wsStateMu.Lock()
 	defer wsStateMu.Unlock()
 	if allRedirect {
-		wsBlacklist[k] = true
-		log.Warnf("MTProto WS %s blacklisted (all redirects)", k)
+		wsBlacklist[k] = time.Now().Add(wsBlacklistTTL)
+		log.Warnf("%s WS %s blacklisted (all redirects), retry in %v", tg(""), k, wsBlacklistTTL)
 	}
 	wsCooldownTo[k] = time.Now().Add(wsDCFailCooldown)
+	log.Debugf("%s WS %s dial failure, cooldown %v (allRedirect=%v)", tg(""), k, wsDCFailCooldown, allRedirect)
 }
 
 func wsRecordSuccess(dc int) {
 	k := wsKeyFromDC(dc)
 	wsStateMu.Lock()
 	defer wsStateMu.Unlock()
+	_, wasCooled := wsCooldownTo[k]
+	_, wasBlacklisted := wsBlacklist[k]
 	delete(wsCooldownTo, k)
 	delete(wsBlacklist, k)
+	if wasCooled || wasBlacklisted {
+		log.Debugf("%s WS %s recovered (cleared cooldown/blacklist)", tg(""), k)
+	}
 }
 
 func wsResetState() {
 	wsStateMu.Lock()
 	defer wsStateMu.Unlock()
-	wsBlacklist = map[wsKey]bool{}
+	wsBlacklist = map[wsKey]time.Time{}
 	wsCooldownTo = map[wsKey]time.Time{}
+	log.Debugf("%s WS cooldown/blacklist state reset", tg(""))
 }
 
 type wsPoolEntry struct {
@@ -301,7 +318,7 @@ func (p *wsPool) refill(dc int) {
 		r := <-results
 		if r.err != nil || r.conn == nil {
 			if r.err != nil {
-				log.Tracef("MTProto WS pool refill %s slot failed: %v", k, r.err)
+				log.Tracef("%s WS pool refill %s slot failed: %v", tg(""), k, r.err)
 			}
 			continue
 		}
@@ -315,7 +332,7 @@ func (p *wsPool) refill(dc int) {
 		added++
 	}
 	if added > 0 {
-		log.Debugf("MTProto WS pool %s refilled +%d (target=%d)", k, added, p.target)
+		log.Debugf("%s WS pool %s refilled +%d (target=%d)", tg(""), k, added, p.target)
 	}
 }
 

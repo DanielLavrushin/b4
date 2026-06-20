@@ -1,9 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Stack, Typography } from "@mui/material";
+import { Box, Stack, TableSortLabel, Typography } from "@mui/material";
 import { colors } from "@design";
+import { SortDirection } from "@common/SortableTableCell";
 import { GroupRow, ROW_HEIGHT } from "./GroupRow";
 import type { EnrichedGroup } from "@hooks/useConnectionGroups";
 import { useTranslation } from "react-i18next";
+
+export type AggSortColumn =
+  | "protocol"
+  | "domain"
+  | "destination"
+  | "set"
+  | "source"
+  | "packets"
+  | "seen";
 
 interface Props {
   groups: EnrichedGroup[];
@@ -14,10 +24,60 @@ interface Props {
   onAddIp: (ip: string) => void;
   onEnrichAsn: (ip: string) => void;
   enrichingIps: Set<string>;
+  sortColumn: AggSortColumn | null;
+  sortDirection: SortDirection;
+  onSort: (column: AggSortColumn) => void;
 }
 
 const OVERSCAN = 6;
 const HEADER_HEIGHT = 32;
+
+const SortHeader = ({
+  column,
+  label,
+  sortColumn,
+  sortDirection,
+  onSort,
+  align = "left",
+}: {
+  column: AggSortColumn;
+  label: string;
+  sortColumn: AggSortColumn | null;
+  sortDirection: SortDirection;
+  onSort: (column: AggSortColumn) => void;
+  align?: "left" | "right";
+}) => {
+  const active = sortColumn === column;
+  return (
+    <Box
+      onClick={() => onSort(column)}
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: align === "right" ? "flex-end" : "flex-start",
+        cursor: "pointer",
+        userSelect: "none",
+        "&:hover .MuiTableSortLabel-root": { color: colors.primary },
+      }}
+    >
+      <TableSortLabel
+        active={active}
+        direction={active && sortDirection ? sortDirection : "asc"}
+        sx={{
+          color: `${colors.secondary} !important`,
+          "&.Mui-active": {
+            color: `${colors.primary} !important`,
+            "& .MuiTableSortLabel-icon": { color: `${colors.primary} !important` },
+          },
+        }}
+      >
+        <Typography sx={{ color: "inherit", fontWeight: 600, fontSize: 14 }}>
+          {label}
+        </Typography>
+      </TableSortLabel>
+    </Box>
+  );
+};
 
 export const GroupList = ({
   groups,
@@ -28,6 +88,9 @@ export const GroupList = ({
   onAddIp,
   onEnrichAsn,
   enrichingIps,
+  sortColumn,
+  sortDirection,
+  onSort,
 }: Props) => {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -73,44 +136,74 @@ export const GroupList = ({
         }}
       >
         <Box sx={{ width: 170, flexShrink: 0 }}>
-          <Typography sx={{ color: colors.secondary, fontWeight: 600, fontSize: 14 }}>
-            {t("connections.table.protocol")}
-          </Typography>
+          <SortHeader
+            column="protocol"
+            label={t("connections.table.protocol")}
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={onSort}
+          />
         </Box>
         <Box sx={{ flex: 2, minWidth: 0 }}>
-          <Typography sx={{ color: colors.secondary, fontWeight: 600, fontSize: 14 }}>
-            {t("connections.table.domain")}
-          </Typography>
+          <SortHeader
+            column="domain"
+            label={t("connections.table.domain")}
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={onSort}
+          />
         </Box>
         <Box sx={{ flex: 1.5, minWidth: 0 }}>
-          <Typography sx={{ color: colors.secondary, fontWeight: 600, fontSize: 14 }}>
-            {t("connections.table.destination")}
-          </Typography>
+          <SortHeader
+            column="destination"
+            label={t("connections.table.destination")}
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={onSort}
+          />
         </Box>
         <Box sx={{ width: 130, flexShrink: 0 }}>
-          <Typography sx={{ color: colors.secondary, fontWeight: 600, fontSize: 14 }}>
-            {t("connections.table.set")}
-          </Typography>
+          <SortHeader
+            column="set"
+            label={t("connections.table.set")}
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={onSort}
+          />
         </Box>
         <Box sx={{ width: 100, flexShrink: 0 }}>
-          <Typography sx={{ color: colors.secondary, fontWeight: 600, fontSize: 14 }}>
-            {t("connections.table.source")}
-          </Typography>
+          <SortHeader
+            column="source"
+            label={t("connections.table.source")}
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={onSort}
+          />
         </Box>
         <Box sx={{ width: 120, flexShrink: 0 }}>
           <Typography sx={{ color: colors.secondary, fontWeight: 600, fontSize: 14 }}>
             {t("connections.aggregated.activity")}
           </Typography>
         </Box>
-        <Box sx={{ width: 60, flexShrink: 0, textAlign: "right" }}>
-          <Typography sx={{ color: colors.secondary, fontWeight: 600, fontSize: 14 }}>
-            {t("connections.aggregated.packets")}
-          </Typography>
+        <Box sx={{ width: 60, flexShrink: 0 }}>
+          <SortHeader
+            column="packets"
+            label={t("connections.aggregated.packets")}
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={onSort}
+            align="right"
+          />
         </Box>
-        <Box sx={{ width: 48, flexShrink: 0, textAlign: "right" }}>
-          <Typography sx={{ color: colors.secondary, fontWeight: 600, fontSize: 14 }}>
-            {t("connections.aggregated.seen")}
-          </Typography>
+        <Box sx={{ width: 48, flexShrink: 0 }}>
+          <SortHeader
+            column="seen"
+            label={t("connections.aggregated.seen")}
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={onSort}
+            align="right"
+          />
         </Box>
       </Box>
 

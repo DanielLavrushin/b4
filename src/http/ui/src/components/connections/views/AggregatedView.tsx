@@ -1,12 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Fab, Tooltip } from "@mui/material";
 import { StartIcon, StopIcon } from "@b4.icons";
 import { colors } from "@design";
 import { useConnectionGroups, type EnrichedGroup } from "@hooks/useConnectionGroups";
-import { matchesConnectionFilter, parseConnectionFilter } from "@utils";
+import {
+  AGG_SORT_STORAGE_KEY,
+  loadSortState,
+  matchesConnectionFilter,
+  parseConnectionFilter,
+  saveSortState,
+} from "@utils";
+import { SortDirection } from "@common/SortableTableCell";
 import { AggregatedControlBar, TimeWindow } from "./AggregatedControlBar";
 import { DeviceSidebar } from "./DeviceSidebar";
-import { GroupList } from "./GroupList";
+import { AggSortColumn, GroupList } from "./GroupList";
 import { DetailPane } from "./DetailPane";
 import { useTranslation } from "react-i18next";
 
@@ -90,10 +97,38 @@ export const AggregatedView = ({
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     return localStorage.getItem("b4_connections_sidebar_collapsed") === "1";
   });
+  const [sortColumn, setSortColumn] = useState<AggSortColumn | null>(
+    () => loadSortState(AGG_SORT_STORAGE_KEY).column as AggSortColumn | null,
+  );
+  const [sortDirection, setSortDirection] = useState<SortDirection>(
+    () => loadSortState(AGG_SORT_STORAGE_KEY).direction,
+  );
 
   useEffect(() => {
     localStorage.setItem("b4_connections_sidebar_collapsed", sidebarCollapsed ? "1" : "0");
   }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    saveSortState(sortColumn, sortDirection, AGG_SORT_STORAGE_KEY);
+  }, [sortColumn, sortDirection]);
+
+  const handleSort = useCallback((column: AggSortColumn) => {
+    setSortColumn((prevColumn) => {
+      if (prevColumn === column) {
+        setSortDirection((prevDir) => {
+          if (prevDir === "asc") return "desc";
+          if (prevDir === "desc") {
+            setSortColumn(null);
+            return null;
+          }
+          return "asc";
+        });
+        return prevColumn;
+      }
+      setSortDirection("asc");
+      return column;
+    });
+  }, []);
 
   const state = useConnectionGroups(lines, deviceMap, paused, ipToMac);
 
@@ -141,10 +176,25 @@ export const AggregatedView = ({
     });
   }, [state.groups, window, unmatchedOnly, showAll, selectedMac, filter, now]);
 
-  const sortedGroups = useMemo(
-    () => [...filteredGroups].sort((a, b) => b.lastSeen - a.lastSeen || b.packets - a.packets),
-    [filteredGroups],
-  );
+  const sortedGroups = useMemo(() => {
+    const arr = [...filteredGroups];
+    if (!sortColumn || !sortDirection) {
+      return arr.sort((a, b) => b.lastSeen - a.lastSeen || b.packets - a.packets);
+    }
+    const dir = sortDirection === "asc" ? 1 : -1;
+    return arr.sort((a, b) => {
+      let primary: number;
+      if (sortColumn === "packets") {
+        primary = a.packets - b.packets;
+      } else if (sortColumn === "seen") {
+        primary = a.lastSeen - b.lastSeen;
+      } else {
+        const field = sortColumn === "source" ? "device" : sortColumn;
+        primary = getGroupFieldValue(a, field).localeCompare(getGroupFieldValue(b, field));
+      }
+      return primary * dir || b.lastSeen - a.lastSeen;
+    });
+  }, [filteredGroups, sortColumn, sortDirection]);
 
   const selectedGroup = useMemo(
     () => (selectedKey ? state.groups.find((g) => g.key === selectedKey) ?? null : null),
@@ -187,6 +237,9 @@ export const AggregatedView = ({
           onAddIp={onAddIp}
           onEnrichAsn={onEnrichAsn}
           enrichingIps={enrichingIps}
+          sortColumn={sortColumn}
+          sortDirection={sortDirection}
+          onSort={handleSort}
         />
         {selectedGroup && (
           <Box
