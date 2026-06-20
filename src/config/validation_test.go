@@ -322,13 +322,27 @@ func TestValidate_QueueFields(t *testing.T) {
 		}
 	})
 
-	t.Run("tun mode requires out_interface", func(t *testing.T) {
+	t.Run("tun mode follows default route when out_interface is empty", func(t *testing.T) {
 		cfg := NewConfig()
 		cfg.Queue.Mode = "tun"
 		cfg.Queue.TUN.OutInterface = ""
-		ve := mustValidationErr(t, cfg.Validate())
-		if findField(ve, "queue.tun.out_interface", "required") == nil {
-			t.Errorf("missing queue.tun.out_interface required; got %+v", ve.Fields)
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("empty out_interface (follow-default) rejected: %v", err)
+		}
+		if !cfg.Queue.TUN.FollowsDefaultRoute() {
+			t.Errorf("empty out_interface should follow the default route")
+		}
+	})
+
+	t.Run("tun mode follows default route when out_interface is auto", func(t *testing.T) {
+		cfg := NewConfig()
+		cfg.Queue.Mode = "tun"
+		cfg.Queue.TUN.OutInterface = "auto"
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("out_interface=auto (follow-default) rejected: %v", err)
+		}
+		if !cfg.Queue.TUN.FollowsDefaultRoute() {
+			t.Errorf("out_interface=auto should follow the default route")
 		}
 	})
 
@@ -441,4 +455,3 @@ func TestValidate_Idempotent(t *testing.T) {
 		t.Errorf("Validate is not idempotent: marks/mode changed on second call")
 	}
 }
-

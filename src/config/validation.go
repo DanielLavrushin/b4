@@ -257,10 +257,6 @@ func (c *Config) Validate() error {
 	}
 
 	if c.Queue.Mode == "tun" {
-		if c.Queue.TUN.OutInterface == "" {
-			v.add("queue.tun.out_interface", "required", "tun out_interface is required in TUN mode (e.g. eth0, wan0, l2tp-vpn)", nil)
-			return v.result()
-		}
 		const tunReservedMarkBits = uint(engine.TunSteerMark | engine.TunClientMark | engine.ReinjectMarkBit)
 		if m := c.MainInjectedMark(); m&tunReservedMarkBits != 0 {
 			v.addf("queue.mark", "mark_conflict", map[string]any{"mark": fmt.Sprintf("0x%x", m)},

@@ -34,15 +34,14 @@ func (vc *verdictCtx) drop() bool {
 	return true
 }
 
-func (w *Worker) InitSender() error {
+func (w *Worker) InitSender(device string) error {
 	if w.sock != nil {
 		return nil
 	}
 	cfg := w.getConfig()
-	device := ""
 	reinjectMark := int(cfg.Queue.Mark)
-	if cfg.Queue.Mode == "tun" {
-		device = cfg.Queue.TUN.OutInterface
+	tun := cfg.Queue.Mode == "tun"
+	if tun {
 		reinjectMark |= engine.ReinjectMarkBit
 	}
 	s, err := sock.NewSenderWithMarkDevice(reinjectMark, device)
@@ -50,7 +49,7 @@ func (w *Worker) InitSender() error {
 		return err
 	}
 	w.sock = s
-	if device != "" {
+	if tun {
 		cs, err := sock.NewSenderWithMark(engine.TunClientMark)
 		if err != nil {
 			w.sock.Close()

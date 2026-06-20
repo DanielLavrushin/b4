@@ -95,6 +95,10 @@ type TUNConfig struct {
 	RouteTable   int    `json:"route_table"`
 }
 
+func (t TUNConfig) FollowsDefaultRoute() bool {
+	return t.OutInterface == "" || t.OutInterface == "auto"
+}
+
 type DevicesConfig struct {
 	Enabled      bool     `json:"enabled"`
 	VendorLookup bool     `json:"vendor_lookup"`

@@ -90,11 +90,13 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
               onChange("queue.tun.out_interface", e.target.value)
             }
             options={[
-              { value: "", label: t("settings.Feature.tunOutInterfaceNone") },
-              ...(config.available_ifaces ?? []).map((i) => ({
-                value: i,
-                label: i,
-              })),
+              { value: "", label: t("settings.Feature.tunOutInterfaceAuto") },
+              ...(config.available_ifaces ?? [])
+                .filter((i) => i !== (config.queue.tun?.device_name || "b4tun0"))
+                .map((i) => ({
+                  value: i,
+                  label: i,
+                })),
             ]}
             helperText={t("settings.Feature.tunOutInterfaceDesc")}
           />
@@ -103,7 +105,12 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
             value={config.queue.tun?.out_gateway || ""}
             onChange={(e) => onChange("queue.tun.out_gateway", e.target.value)}
             placeholder={t("settings.Feature.tunOutGatewayPlaceholder")}
-            helperText={t("settings.Feature.tunOutGatewayHelp")}
+            disabled={!config.queue.tun?.out_interface}
+            helperText={t(
+              config.queue.tun?.out_interface
+                ? "settings.Feature.tunOutGatewayHelp"
+                : "settings.Feature.tunOutGatewayAuto"
+            )}
             selectOnFocus
           />
           <B4TextField
@@ -121,8 +128,8 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
             selectOnFocus
           />
           {!config.queue.tun?.out_interface && (
-            <B4Alert severity="warning">
-              {t("settings.Feature.tunOutInterfaceRequired")}
+            <B4Alert severity="info">
+              {t("settings.Feature.tunOutInterfaceAutoHint")}
             </B4Alert>
           )}
         </B4FormGroup>

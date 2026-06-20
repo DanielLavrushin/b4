@@ -52,12 +52,38 @@ type routeManager struct {
 	dupIPs       []string
 	replyCapture bool
 
+	followDefault  bool
+	onEgressChange func(string) error
+
 	mu                sync.Mutex
 	srcIP             string
 	resolvedCapture   string
 	multiport         bool
 	captureRulesAdded bool
 	captureExcl       []string
+}
+
+func resolveDefaultEgress(skipDev string) (iface, gw, src string, ok bool) {
+	out, err := run("ip", "-4", "route", "show", "default")
+	if err != nil {
+		return "", "", "", false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		dev := extractField(line, "dev")
+		if dev == "" || dev == skipDev {
+			continue
+		}
+		src = extractField(line, "src")
+		if src == "" {
+			src = interfacePrimaryIPv4(dev)
+		}
+		return dev, extractGateway(line), src, true
+	}
+	return "", "", "", false
 }
 
 func (r *routeManager) setupNAT() {
@@ -166,18 +192,29 @@ func (r *routeManager) setup() error {
 	r.savedDefault = strings.TrimSpace(strings.SplitN(out, "\n", 2)[0])
 	log.Infof("TUN: saved default route: %s", r.savedDefault)
 
-	if r.outGateway == "" {
-		r.outGateway = extractGateway(r.savedDefault)
-		if r.outGateway != "" {
-			log.Infof("TUN: auto-detected gateway: %s", r.outGateway)
-		} else {
-			log.Infof("TUN: no gateway on default route, treating %s as point-to-point", r.outIface)
+	var srcIP string
+	if r.followDefault {
+		iface, gw, src, found := resolveDefaultEgress(r.tunName)
+		if !found {
+			return fmt.Errorf("TUN follow-default mode: no usable IPv4 default route to derive the uplink; bring up the WAN/VPN first or pin queue.tun.out_interface")
 		}
-	}
-
-	srcIP := extractField(r.savedDefault, "src")
-	if srcIP == "" {
-		srcIP = interfacePrimaryIPv4(r.outIface)
+		r.outIface = iface
+		r.outGateway = gw
+		srcIP = src
+		log.Infof("TUN: following default route (uplink=%s gw=%q src=%q)", iface, gw, src)
+	} else {
+		if r.outGateway == "" {
+			r.outGateway = extractGateway(r.savedDefault)
+			if r.outGateway != "" {
+				log.Infof("TUN: auto-detected gateway: %s", r.outGateway)
+			} else {
+				log.Infof("TUN: no gateway on default route, treating %s as point-to-point", r.outIface)
+			}
+		}
+		srcIP = extractField(r.savedDefault, "src")
+		if srcIP == "" {
+			srcIP = interfacePrimaryIPv4(r.outIface)
+		}
 	}
 	r.srcIP = srcIP
 
@@ -351,9 +388,63 @@ func (r *routeManager) setupDefaultCapture(srcIP string) error {
 	return nil
 }
 
+func (r *routeManager) refreshEgress() bool {
+	if !r.followDefault {
+		return false
+	}
+	iface, gw, src, ok := resolveDefaultEgress(r.tunName)
+	if !ok || (iface == r.outIface && gw == r.outGateway) {
+		return false
+	}
+	log.Infof("TUN: default route changed; re-pointing egress %s(gw %q) -> %s(gw %q)", r.outIface, r.outGateway, iface, gw)
+
+	if r.onEgressChange != nil {
+		if err := r.onEgressChange(iface); err != nil {
+			log.Warnf("TUN: keeping egress on %s; re-inject sender re-bind to %s failed (will retry): %v", r.outIface, iface, err)
+			return false
+		}
+	}
+
+	if !r.skipTables {
+		r.restoreRPFilter()
+	}
+	r.removeSNAT()
+	r.outIface = iface
+	r.outGateway = gw
+	if src != "" {
+		r.srcIP = src
+	}
+	if !r.skipTables {
+		r.savedRPFilter = ""
+		r.loosenRPFilter()
+	}
+
+	tableStr := strconv.Itoa(r.routeTable)
+	run("ip", "route", "flush", "table", tableStr)
+	if err := r.addBypassDefault(tableStr); err != nil {
+		log.Warnf("TUN: reconcile failed to rebuild bypass route for new uplink: %v", err)
+	}
+
+	if mtu := interfaceMTU(iface); mtu > 0 {
+		run("ip", "link", "set", r.tunName, "mtu", strconv.Itoa(mtu))
+	}
+
+	if r.resolvedCapture == "ports" {
+		if err := r.replaceCaptureDefault(strconv.Itoa(r.captureTable)); err != nil {
+			log.Warnf("TUN: reconcile failed to refresh capture src for new uplink: %v", err)
+		}
+	} else if err := r.replaceDefaultIntoTun(); err != nil {
+		log.Warnf("TUN: reconcile failed to refresh default-capture for new uplink: %v", err)
+	}
+
+	return true
+}
+
 func (r *routeManager) reconcile() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	r.refreshEgress()
 
 	if newIP := interfacePrimaryIPv4(r.outIface); newIP != "" && newIP != r.srcIP {
 		log.Infof("TUN: uplink %s address changed %q -> %q; updating SNAT and capture source", r.outIface, r.srcIP, newIP)
