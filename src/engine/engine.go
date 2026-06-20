@@ -1,6 +1,10 @@
 package engine
 
-const ReinjectMarkBit = 0x800000
+const (
+	TunSteerMark    = 0x80000
+	TunClientMark   = 0x100000
+	ReinjectMarkBit = 0x800000
+)
 
 type PacketVerdict int
 

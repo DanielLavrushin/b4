@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/tables"
 )
@@ -12,8 +13,8 @@ import (
 const (
 	tunCaptureChain   = "B4_TUN"
 	tunProbeChain     = "B4_TUN_PROBE"
-	defaultSteerMark  = 0x80000
-	defaultClientMark = 0x100000
+	defaultSteerMark  = engine.TunSteerMark
+	defaultClientMark = engine.TunClientMark
 	captureRulePrio   = 90
 )
 

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/utils"
 )
@@ -255,9 +256,18 @@ func (c *Config) Validate() error {
 		return v.result()
 	}
 
-	if c.Queue.Mode == "tun" && c.Queue.TUN.OutInterface == "" {
-		v.add("queue.tun.out_interface", "required", "tun out_interface is required in TUN mode (e.g. eth0, wan0, l2tp-vpn)", nil)
-		return v.result()
+	if c.Queue.Mode == "tun" {
+		if c.Queue.TUN.OutInterface == "" {
+			v.add("queue.tun.out_interface", "required", "tun out_interface is required in TUN mode (e.g. eth0, wan0, l2tp-vpn)", nil)
+			return v.result()
+		}
+		const tunReservedMarkBits = uint(engine.TunSteerMark | engine.TunClientMark | engine.ReinjectMarkBit)
+		if m := c.MainInjectedMark(); m&tunReservedMarkBits != 0 {
+			v.addf("queue.mark", "mark_conflict", map[string]any{"mark": fmt.Sprintf("0x%x", m)},
+				"queue mark 0x%x overlaps reserved TUN mark bits (0x%x steer, 0x%x client, 0x%x reinject); choose a mark clear of those bits",
+				m, uint(engine.TunSteerMark), uint(engine.TunClientMark), uint(engine.ReinjectMarkBit))
+			return v.result()
+		}
 	}
 
 	if c.Queue.StartNum < 0 || c.Queue.StartNum > 65535 {
