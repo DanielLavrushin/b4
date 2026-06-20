@@ -2,7 +2,6 @@ package tun
 
 import (
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -11,10 +10,6 @@ import (
 )
 
 func ClearStaleArtifacts(cfg *config.Config) {
-	if _, err := exec.LookPath("iptables"); err != nil {
-		return
-	}
-
 	device := cfg.Queue.TUN.DeviceName
 	if device == "" {
 		device = defaultDeviceName
@@ -90,7 +85,10 @@ func clearTunSNAT(device string) bool {
 	cleared := false
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "-A POSTROUTING") || !strings.Contains(line, "-o "+device) || !strings.Contains(line, "SNAT") {
+		if !strings.HasPrefix(line, "-A POSTROUTING") {
+			continue
+		}
+		if ruleFieldValue(line, "-o") != device || ruleFieldValue(line, "-j") != "SNAT" {
 			continue
 		}
 		spec := strings.Fields(strings.TrimPrefix(line, "-A POSTROUTING"))
