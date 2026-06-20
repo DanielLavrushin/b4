@@ -108,24 +108,28 @@ func clearOwnedRoutingTable(fwmark string, table int) bool {
 		return false
 	}
 	bare := strings.SplitN(fwmark, "/", 2)[0]
-	owned := false
+	marks := make(map[string]struct{})
 	for _, line := range strings.Split(out, "\n") {
 		if ruleFieldValue(line, "lookup") != tableStr {
 			continue
 		}
 		fw := ruleFieldValue(line, "fwmark")
+		if fw == "" {
+			continue
+		}
 		if fw == fwmark || fw == bare || strings.HasPrefix(fw, bare+"/") {
-			owned = true
-			break
+			marks[fw] = struct{}{}
 		}
 	}
-	if !owned {
+	if len(marks) == 0 {
 		return false
 	}
 	run("ip", "route", "flush", "table", tableStr)
-	for {
-		if _, err := run("ip", "rule", "del", "fwmark", fwmark, "lookup", tableStr); err != nil {
-			break
+	for fw := range marks {
+		for {
+			if _, err := run("ip", "rule", "del", "fwmark", fw, "lookup", tableStr); err != nil {
+				break
+			}
 		}
 	}
 	return true

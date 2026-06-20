@@ -199,9 +199,12 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	if clearTables {
 		log.Infof("Clearing iptables rules as requested (--clear-iptables)")
-		tables.ClearRules(&cfg)
+		clearErr := tables.ClearRules(&cfg)
 		tables.RoutingClearAll()
 		b4tun.ClearStaleArtifacts(&cfg)
+		if clearErr != nil {
+			return fmt.Errorf("failed to clear iptables/nftables rules: %w", clearErr)
+		}
 		log.Infof("IPTables rules cleared successfully")
 		return nil
 	}
