@@ -72,6 +72,14 @@ const getGroupSearchableValues = (g: EnrichedGroup): (string | null)[] => [
   g.flags,
 ];
 
+const loadAggSort = (): { column: AggSortColumn | null; direction: SortDirection } => {
+  const { column, direction } = loadSortState(AGG_SORT_STORAGE_KEY);
+  if (column && direction && (AGG_SORT_COLUMNS as readonly string[]).includes(column)) {
+    return { column: column as AggSortColumn, direction };
+  }
+  return { column: null, direction: null };
+};
+
 export const AggregatedView = ({
   lines,
   deviceMap,
@@ -97,14 +105,11 @@ export const AggregatedView = ({
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     return localStorage.getItem("b4_connections_sidebar_collapsed") === "1";
   });
-  const [sortColumn, setSortColumn] = useState<AggSortColumn | null>(() => {
-    const col = loadSortState(AGG_SORT_STORAGE_KEY).column;
-    return col && (AGG_SORT_COLUMNS as readonly string[]).includes(col)
-      ? (col as AggSortColumn)
-      : null;
-  });
+  const [sortColumn, setSortColumn] = useState<AggSortColumn | null>(
+    () => loadAggSort().column,
+  );
   const [sortDirection, setSortDirection] = useState<SortDirection>(
-    () => loadSortState(AGG_SORT_STORAGE_KEY).direction,
+    () => loadAggSort().direction,
   );
 
   useEffect(() => {
