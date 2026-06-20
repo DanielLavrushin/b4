@@ -30,6 +30,9 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
     onChange("queue.interfaces", updated);
   };
 
+  const tunOutInterface = config.queue.tun?.out_interface;
+  const tunFollowsDefault = !tunOutInterface || tunOutInterface === "auto";
+
   const masqueradeSwitch = (
     <B4Switch
       label={t("settings.Feature.natMasquerade")}
@@ -85,7 +88,7 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
         <B4FormGroup label={t("settings.Feature.tunSettings")} columns={2}>
           <B4Select
             label={t("settings.Feature.tunOutInterface")}
-            value={config.queue.tun?.out_interface || ""}
+            value={tunFollowsDefault ? "" : tunOutInterface ?? ""}
             onChange={(e) =>
               onChange("queue.tun.out_interface", e.target.value)
             }
@@ -105,11 +108,11 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
             value={config.queue.tun?.out_gateway || ""}
             onChange={(e) => onChange("queue.tun.out_gateway", e.target.value)}
             placeholder={t("settings.Feature.tunOutGatewayPlaceholder")}
-            disabled={!config.queue.tun?.out_interface}
+            disabled={tunFollowsDefault}
             helperText={t(
-              config.queue.tun?.out_interface
-                ? "settings.Feature.tunOutGatewayHelp"
-                : "settings.Feature.tunOutGatewayAuto"
+              tunFollowsDefault
+                ? "settings.Feature.tunOutGatewayAuto"
+                : "settings.Feature.tunOutGatewayHelp"
             )}
             selectOnFocus
           />
@@ -127,7 +130,7 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
             helperText={t("settings.Feature.tunDeviceNameHelp")}
             selectOnFocus
           />
-          {!config.queue.tun?.out_interface && (
+          {tunFollowsDefault && (
             <B4Alert severity="info">
               {t("settings.Feature.tunOutInterfaceAutoHint")}
             </B4Alert>
