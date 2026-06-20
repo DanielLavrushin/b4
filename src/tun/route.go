@@ -210,9 +210,9 @@ func (r *routeManager) setup() error {
 				log.Infof("TUN: no gateway on default route, treating %s as point-to-point", r.outIface)
 			}
 		}
-		srcIP = extractField(r.savedDefault, "src")
+		srcIP = interfacePrimaryIPv4(r.outIface)
 		if srcIP == "" {
-			srcIP = interfacePrimaryIPv4(r.outIface)
+			srcIP = extractField(r.savedDefault, "src")
 		}
 	}
 	r.srcIP = srcIP
