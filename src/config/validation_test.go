@@ -4,7 +4,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/daniellavrushin/b4/engine"
 )
 
 func mustValidationErr(t *testing.T, err error) *ValidationError {
@@ -335,6 +338,21 @@ func TestValidate_QueueFields(t *testing.T) {
 		cfg.Queue.TUN.OutInterface = "eth0"
 		if err := cfg.Validate(); err != nil {
 			t.Errorf("valid tun config rejected: %v", err)
+		}
+	})
+
+	t.Run("tun mode rejects mark overlapping reserved bits", func(t *testing.T) {
+		cfg := NewConfig()
+		cfg.Queue.Mode = "tun"
+		cfg.Queue.TUN.OutInterface = "eth0"
+		cfg.Queue.Mark = engine.TunSteerMark
+		ve := mustValidationErr(t, cfg.Validate())
+		f := findField(ve, "queue.mark", "mark_conflict")
+		if f == nil {
+			t.Fatalf("missing queue.mark mark_conflict; got %+v", ve.Fields)
+		}
+		if !strings.Contains(f.Message, "reserved TUN mark bits") {
+			t.Errorf("expected reserved-TUN-bits message, got %q", f.Message)
 		}
 	})
 }
