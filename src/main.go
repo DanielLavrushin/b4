@@ -244,6 +244,10 @@ func runB4(cmd *cobra.Command, args []string) error {
 			cfg.Queue.TUN.DeviceName, cfg.Queue.TUN.OutInterface, cfg.Queue.Threads)
 
 		if !cfg.System.Tables.SkipSetup {
+			log.Tracef("Clearing any pre-existing NFQUEUE/tables rules before TUN setup")
+			if err := tables.ClearRules(&cfg); err != nil {
+				log.Warnf("TUN: failed to clear pre-existing tables rules (continuing): %v", err)
+			}
 			if err := tables.ApplyMasqueradeOnly(&cfg); err != nil {
 				metrics.RecordEvent("error", fmt.Sprintf("Failed to apply masquerade: %v", err))
 				return fmt.Errorf("failed to apply masquerade: %w", err)
