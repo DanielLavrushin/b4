@@ -62,6 +62,9 @@ func ClearStaleArtifacts(cfg *config.Config) {
 	if clearOwnedRoutingTable(reinjectMarkMatch(), routeTable) {
 		cleared = true
 	}
+	if clearOwnedRoutingTable(fmt.Sprintf("0x%x", cfg.MainInjectedMark()), routeTable) {
+		cleared = true
+	}
 
 	if interfaceExists(device) && isTunDevice(device) {
 		run("ip", "link", "del", device)
