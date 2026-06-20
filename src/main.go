@@ -201,6 +201,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		log.Infof("Clearing iptables rules as requested (--clear-iptables)")
 		tables.ClearRules(&cfg)
 		tables.RoutingClearAll()
+		b4tun.ClearStaleArtifacts(&cfg)
 		log.Infof("IPTables rules cleared successfully")
 		return nil
 	}
@@ -290,6 +291,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		if !cfg.System.Tables.SkipSetup {
 			log.Tracef("Clearing existing iptables/nftables rules")
 			tables.ClearRules(&cfg)
+			b4tun.ClearStaleArtifacts(&cfg)
 
 			log.Tracef("Adding tables rules")
 			if err := tables.AddRules(&cfg); err != nil {
