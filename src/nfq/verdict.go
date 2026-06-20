@@ -51,7 +51,7 @@ func (w *Worker) InitSender() error {
 	}
 	w.sock = s
 	if device != "" {
-		cs, err := sock.NewSenderWithMark(0)
+		cs, err := sock.NewSenderWithMark(engine.TunClientMark)
 		if err != nil {
 			w.sock.Close()
 			w.sock = nil
