@@ -442,10 +442,16 @@ func (r *routeManager) reconcile() {
 
 	r.refreshEgress()
 
-	if newIP := interfacePrimaryIPv4(r.outIface); newIP != "" && newIP != r.srcIP {
-		log.Infof("TUN: uplink %s address changed %q -> %q; updating SNAT and capture source", r.outIface, r.srcIP, newIP)
+	newSrc := interfacePrimaryIPv4(r.outIface)
+	if r.followDefault {
+		if _, _, s, ok := resolveDefaultEgress(r.tunName); ok && s != "" {
+			newSrc = s
+		}
+	}
+	if newSrc != "" && newSrc != r.srcIP {
+		log.Infof("TUN: uplink %s source changed %q -> %q; updating SNAT and capture source", r.outIface, r.srcIP, newSrc)
 		r.removeSNAT()
-		r.srcIP = newIP
+		r.srcIP = newSrc
 		if r.resolvedCapture == "ports" {
 			if err := r.replaceCaptureDefault(strconv.Itoa(r.captureTable)); err != nil {
 				log.Warnf("TUN: reconcile failed to refresh capture-table src: %v", err)
