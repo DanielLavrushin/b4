@@ -27,7 +27,7 @@ type Engine struct {
 	tunFile       *os.File
 	tunName       string
 	routes        *routeManager
-	sender        atomic.Pointer[sock.Sender]
+	sender        *sock.Sender
 	clientSender  *sock.Sender
 	trigger       chan struct{}
 	egressW       *egressWatcher
@@ -73,17 +73,8 @@ func (e *Engine) Start() error {
 		routeTable = defaultRouteTable
 	}
 
-	outIface := tunCfg.OutInterface
-	if tunCfg.FollowsDefaultRoute() {
-		if iface, _, _, ok := resolveDefaultEgress(deviceName); ok {
-			outIface = iface
-		} else {
-			outIface = ""
-		}
-	}
-
 	for _, w := range e.pool.Workers {
-		if err := w.InitSender(outIface); err != nil {
+		if err := w.InitSender(); err != nil {
 			return err
 		}
 	}
@@ -107,13 +98,13 @@ func (e *Engine) Start() error {
 	e.tunName = name
 	log.Infof("TUN: opened device %s", name)
 
-	sender, err := sock.NewSenderWithMarkDevice(int(cfg.Queue.Mark)|engine.ReinjectMarkBit, outIface)
+	sender, err := sock.NewSenderWithMark(int(cfg.Queue.Mark) | engine.ReinjectMarkBit)
 	if err != nil {
 		e.tunFile.Close()
 		run("ip", "link", "del", name)
 		return err
 	}
-	e.sender.Store(sender)
+	e.sender = sender
 
 	replyCapture := replyCaptureNeeded(cfg)
 	if replyCapture {
@@ -145,23 +136,22 @@ func (e *Engine) Start() error {
 	dupV4, _ := cfg.CollectDuplicateIPs()
 
 	e.routes = &routeManager{
-		tunName:        name,
-		tunAddr:        address,
-		tunAddrV6:      tunCfg.AddressV6,
-		outIface:       tunCfg.OutInterface,
-		outGateway:     tunCfg.OutGateway,
-		mark:           cfg.Queue.Mark,
-		routeTable:     routeTable,
-		skipTables:     cfg.System.Tables.SkipSetup,
-		captureTable:   captureTable,
-		tcpPorts:       normalizePorts(cfg.CollectTCPPorts()),
-		udpPorts:       normalizePorts(cfg.CollectUDPPorts()),
-		tcpLimit:       tcpLimit,
-		udpLimit:       udpLimit,
-		dupIPs:         dupV4,
-		replyCapture:   replyCapture,
-		followDefault:  tunCfg.FollowsDefaultRoute(),
-		onEgressChange: e.rebindSender,
+		tunName:       name,
+		tunAddr:       address,
+		tunAddrV6:     tunCfg.AddressV6,
+		outIface:      tunCfg.OutInterface,
+		outGateway:    tunCfg.OutGateway,
+		mark:          cfg.Queue.Mark,
+		routeTable:    routeTable,
+		skipTables:    cfg.System.Tables.SkipSetup,
+		captureTable:  captureTable,
+		tcpPorts:      normalizePorts(cfg.CollectTCPPorts()),
+		udpPorts:      normalizePorts(cfg.CollectUDPPorts()),
+		tcpLimit:      tcpLimit,
+		udpLimit:      udpLimit,
+		dupIPs:        dupV4,
+		replyCapture:  replyCapture,
+		followDefault: tunCfg.FollowsDefaultRoute(),
 	}
 	if err := e.routes.setup(); err != nil {
 		e.routes.teardown()
@@ -279,17 +269,17 @@ func (e *Engine) forwardPacket(raw []byte) {
 
 func (e *Engine) senderFor(raw []byte) *sock.Sender {
 	if e.clientSender == nil || e.routes == nil {
-		return e.sender.Load()
+		return e.sender
 	}
 	ihl := int(raw[0]&0x0f) * 4
 	if ihl < 20 || raw[9] != 6 || len(raw) < ihl+2 {
-		return e.sender.Load()
+		return e.sender
 	}
 	sport := uint16(raw[ihl])<<8 | uint16(raw[ihl+1])
 	if portMatches(sport, e.routes.tcpPorts) {
 		return e.clientSender
 	}
-	return e.sender.Load()
+	return e.sender
 }
 
 func replyCaptureNeeded(cfg *config.Config) bool {
@@ -309,18 +299,6 @@ func (e *Engine) triggerReconcile() {
 	case e.trigger <- struct{}{}:
 	default:
 	}
-}
-
-func (e *Engine) rebindSender(iface string) error {
-	ns, err := sock.NewSenderWithMarkDevice(int(e.config().Queue.Mark)|engine.ReinjectMarkBit, iface)
-	if err != nil {
-		return err
-	}
-	if old := e.sender.Swap(ns); old != nil {
-		old.Close()
-	}
-	log.Infof("TUN: re-bound re-inject socket to new uplink %s", iface)
-	return nil
 }
 
 func (e *Engine) logForwardError(err error, src, dst string) {
@@ -349,8 +327,8 @@ func (e *Engine) Stop() {
 		if e.routes != nil {
 			e.routes.teardown()
 		}
-		if s := e.sender.Load(); s != nil {
-			s.Close()
+		if e.sender != nil {
+			e.sender.Close()
 		}
 		if e.clientSender != nil {
 			e.clientSender.Close()

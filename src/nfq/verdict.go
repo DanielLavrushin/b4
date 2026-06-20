@@ -34,7 +34,7 @@ func (vc *verdictCtx) drop() bool {
 	return true
 }
 
-func (w *Worker) InitSender(device string) error {
+func (w *Worker) InitSender() error {
 	if w.sock != nil {
 		return nil
 	}
@@ -44,7 +44,7 @@ func (w *Worker) InitSender(device string) error {
 	if tun {
 		reinjectMark |= engine.ReinjectMarkBit
 	}
-	s, err := sock.NewSenderWithMarkDevice(reinjectMark, device)
+	s, err := sock.NewSenderWithMark(reinjectMark)
 	if err != nil {
 		return err
 	}

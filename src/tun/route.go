@@ -52,8 +52,7 @@ type routeManager struct {
 	dupIPs       []string
 	replyCapture bool
 
-	followDefault  bool
-	onEgressChange func(string) error
+	followDefault bool
 
 	mu                sync.Mutex
 	srcIP             string
@@ -302,7 +301,7 @@ func (r *routeManager) restoreRPFilter() {
 
 func (r *routeManager) setupBypassTable() error {
 	tableStr := fmt.Sprintf("%d", r.routeTable)
-	markStr := fmt.Sprintf("0x%x", r.mark)
+	markStr := fmt.Sprintf("0x%x/0x%x", r.mark, r.mark)
 
 	if existing, err := run("ip", "route", "show", "table", tableStr); err == nil && strings.TrimSpace(existing) != "" {
 		if !r.ownsBypassTable(markStr, tableStr) {
@@ -340,7 +339,8 @@ func (r *routeManager) ownsBypassTable(markStr, tableStr string) bool {
 			continue
 		}
 		fw := ruleFieldValue(line, "fwmark")
-		if fw == markStr || strings.HasPrefix(fw, markStr+"/") {
+		bare := strings.SplitN(markStr, "/", 2)[0]
+		if fw == markStr || fw == bare || strings.HasPrefix(fw, bare+"/") {
 			return true
 		}
 	}
@@ -348,9 +348,12 @@ func (r *routeManager) ownsBypassTable(markStr, tableStr string) bool {
 }
 
 func (r *routeManager) delFwmarkRule(markStr, tableStr string) {
-	for {
-		if _, err := run("ip", "rule", "del", "fwmark", markStr, "lookup", tableStr); err != nil {
-			return
+	bare := strings.SplitN(markStr, "/", 2)[0]
+	for _, m := range []string{markStr, bare} {
+		for {
+			if _, err := run("ip", "rule", "del", "fwmark", m, "lookup", tableStr); err != nil {
+				break
+			}
 		}
 	}
 }
@@ -397,13 +400,6 @@ func (r *routeManager) refreshEgress() bool {
 		return false
 	}
 	log.Infof("TUN: default route changed; re-pointing egress %s(gw %q) -> %s(gw %q)", r.outIface, r.outGateway, iface, gw)
-
-	if r.onEgressChange != nil {
-		if err := r.onEgressChange(iface); err != nil {
-			log.Warnf("TUN: keeping egress on %s; re-inject sender re-bind to %s failed (will retry): %v", r.outIface, iface, err)
-			return false
-		}
-	}
 
 	if !r.skipTables {
 		r.restoreRPFilter()
@@ -499,7 +495,7 @@ func (r *routeManager) ensureNAT() {
 }
 
 func (r *routeManager) ensureBypass() {
-	markStr := fmt.Sprintf("0x%x", r.mark)
+	markStr := fmt.Sprintf("0x%x/0x%x", r.mark, r.mark)
 	tableStr := fmt.Sprintf("%d", r.routeTable)
 	if !r.ownsBypassTable(markStr, tableStr) {
 		if _, err := run("ip", "rule", "add", "fwmark", markStr, "lookup", tableStr, "priority", "100"); err != nil {
@@ -555,7 +551,7 @@ func (r *routeManager) addBypassDefault(tableStr string) error {
 }
 
 func (r *routeManager) teardown() {
-	markStr := fmt.Sprintf("0x%x", r.mark)
+	markStr := fmt.Sprintf("0x%x/0x%x", r.mark, r.mark)
 	tableStr := fmt.Sprintf("%d", r.routeTable)
 
 	if r.resolvedCapture == "ports" {
