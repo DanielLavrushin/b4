@@ -301,7 +301,7 @@ func (r *routeManager) restoreRPFilter() {
 
 func (r *routeManager) setupBypassTable() error {
 	tableStr := fmt.Sprintf("%d", r.routeTable)
-	markStr := fmt.Sprintf("0x%x/0x%x", r.mark, r.mark)
+	markStr := reinjectMarkMatch()
 
 	if existing, err := run("ip", "route", "show", "table", tableStr); err == nil && strings.TrimSpace(existing) != "" {
 		if !r.ownsBypassTable(markStr, tableStr) {
@@ -495,7 +495,7 @@ func (r *routeManager) ensureNAT() {
 }
 
 func (r *routeManager) ensureBypass() {
-	markStr := fmt.Sprintf("0x%x/0x%x", r.mark, r.mark)
+	markStr := reinjectMarkMatch()
 	tableStr := fmt.Sprintf("%d", r.routeTable)
 	if !r.ownsBypassTable(markStr, tableStr) {
 		if _, err := run("ip", "rule", "add", "fwmark", markStr, "lookup", tableStr, "priority", "100"); err != nil {
@@ -551,7 +551,7 @@ func (r *routeManager) addBypassDefault(tableStr string) error {
 }
 
 func (r *routeManager) teardown() {
-	markStr := fmt.Sprintf("0x%x/0x%x", r.mark, r.mark)
+	markStr := reinjectMarkMatch()
 	tableStr := fmt.Sprintf("%d", r.routeTable)
 
 	if r.resolvedCapture == "ports" {
