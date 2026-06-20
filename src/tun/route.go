@@ -340,7 +340,9 @@ func (r *routeManager) ownsBypassTable(markStr, tableStr string) bool {
 		}
 		fw := ruleFieldValue(line, "fwmark")
 		bare := strings.SplitN(markStr, "/", 2)[0]
-		if fw == markStr || fw == bare || strings.HasPrefix(fw, bare+"/") {
+		legacy := fmt.Sprintf("0x%x", r.mark)
+		if fw == markStr || fw == bare || strings.HasPrefix(fw, bare+"/") ||
+			fw == legacy || strings.HasPrefix(fw, legacy+"/") {
 			return true
 		}
 	}
@@ -349,7 +351,8 @@ func (r *routeManager) ownsBypassTable(markStr, tableStr string) bool {
 
 func (r *routeManager) delFwmarkRule(markStr, tableStr string) {
 	bare := strings.SplitN(markStr, "/", 2)[0]
-	for _, m := range []string{markStr, bare} {
+	legacy := fmt.Sprintf("0x%x", r.mark)
+	for _, m := range []string{markStr, bare, legacy, legacy + "/" + legacy} {
 		for {
 			if _, err := run("ip", "rule", "del", "fwmark", m, "lookup", tableStr); err != nil {
 				break
