@@ -50,21 +50,20 @@ const SortHeader = ({
   const active = sortColumn === column;
   return (
     <Box
-      onClick={() => onSort(column)}
       sx={{
         display: "flex",
         alignItems: "center",
         justifyContent: align === "right" ? "flex-end" : "flex-start",
-        cursor: "pointer",
-        userSelect: "none",
-        "&:hover .MuiTableSortLabel-root": { color: colors.primary },
       }}
     >
       <TableSortLabel
         active={active}
         direction={active && sortDirection ? sortDirection : "asc"}
+        onClick={() => onSort(column)}
         sx={{
+          userSelect: "none",
           color: `${colors.secondary} !important`,
+          "&:hover": { color: `${colors.primary} !important` },
           "&.Mui-active": {
             color: `${colors.primary} !important`,
             "& .MuiTableSortLabel-icon": { color: `${colors.primary} !important` },

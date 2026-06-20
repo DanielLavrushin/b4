@@ -12,7 +12,13 @@ export function loadSortState(key: string = SORT_STORAGE_KEY): DomainSortState {
   try {
     const stored = localStorage.getItem(key);
     if (stored) {
-      return JSON.parse(stored) as DomainSortState;
+      const parsed = JSON.parse(stored) as Partial<DomainSortState>;
+      const column = typeof parsed.column === "string" ? parsed.column : null;
+      const direction =
+        parsed.direction === "asc" || parsed.direction === "desc"
+          ? parsed.direction
+          : null;
+      return { column, direction };
     }
   } catch (e) {
     console.error("Failed to load sort state:", e);
