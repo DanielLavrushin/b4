@@ -1,5 +1,6 @@
-import { Grid } from "@mui/material";
+import { Box } from "@mui/material";
 import { StatCard } from "./StatCard";
+import { colors } from "@design";
 import { formatNumber } from "@utils";
 import { useTranslation } from "react-i18next";
 import type { Metrics } from "./Page";
@@ -18,33 +19,35 @@ export const MetricsCards = ({ metrics }: MetricsCardsProps) => {
   const isIdle = metrics.rst_dropped === 0;
 
   return (
-    <Grid container spacing={1.5} sx={{ height: "100%" }} alignItems="stretch">
-      <Grid size={{ xs: 12, sm: 4 }} sx={{ display: "flex" }}>
-        <StatCard
-          label={t("dashboard.metrics.targeted")}
-          value={formatNumber(metrics.targeted_connections)}
-          sub={`${targetRate}% ${t("dashboard.metrics.ofTotal")}`}
-          tone="secondary"
-        />
-      </Grid>
-
-      <Grid size={{ xs: 12, sm: 4 }} sx={{ display: "flex" }}>
-        <StatCard
-          label={t("dashboard.metrics.rstDropped")}
-          value={formatNumber(metrics.rst_dropped)}
-          sub={isIdle ? t("dashboard.metrics.idle") : undefined}
-          tone={isIdle ? "muted" : "primary"}
-        />
-      </Grid>
-
-      <Grid size={{ xs: 12, sm: 4 }} sx={{ display: "flex" }}>
-        <StatCard
-          label={t("dashboard.metrics.packets")}
-          value={formatNumber(metrics.packets_processed)}
-          sub={`${metrics.current_pps.toFixed(1)} ${t("dashboard.metrics.pktPerSec")}`}
-          tone="primary"
-        />
-      </Grid>
-    </Grid>
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: { xs: "row", lg: "column" },
+        height: "100%",
+        "& > *:not(:last-of-type)": {
+          borderBottom: { lg: `1px solid ${colors.border.light}` },
+          borderRight: { xs: `1px solid ${colors.border.light}`, lg: "none" },
+        },
+      }}
+    >
+      <StatCard
+        label={t("dashboard.metrics.targeted")}
+        value={formatNumber(metrics.targeted_connections)}
+        sub={`${targetRate}% ${t("dashboard.metrics.ofTotal")}`}
+        tone="secondary"
+      />
+      <StatCard
+        label={t("dashboard.metrics.rstDropped")}
+        value={formatNumber(metrics.rst_dropped)}
+        sub={isIdle ? t("dashboard.metrics.idle") : undefined}
+        tone={isIdle ? "muted" : "primary"}
+      />
+      <StatCard
+        label={t("dashboard.metrics.packets")}
+        value={formatNumber(metrics.packets_processed)}
+        sub={`${metrics.current_pps.toFixed(1)} ${t("dashboard.metrics.pktPerSec")}`}
+        tone="primary"
+      />
+    </Box>
   );
 };

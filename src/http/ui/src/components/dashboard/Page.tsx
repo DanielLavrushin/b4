@@ -5,17 +5,14 @@ import {
   Grid,
   Typography,
   LinearProgress,
-  Paper,
 } from "@mui/material";
 import { HealthBanner } from "./HealthBanner";
-import { MetricsCards } from "./MetricsCards";
+import { LiveSignal } from "./LiveSignal";
 import { ActiveSets } from "./ActiveSets";
 import { DeviceActivity } from "./DeviceActivity";
 import { Escalations } from "./Escalations";
 import { Blackhole } from "./Blackhole";
 import { UnmatchedDomains } from "./UnmatchedDomains";
-import { SimpleLineChart } from "./SimpleLineChart";
-import { colors, fonts } from "@design";
 import { useTranslation } from "react-i18next";
 import { useDashboardSets } from "@hooks/useDashboardSets";
 import { wsUrl } from "@utils";
@@ -366,62 +363,51 @@ export function DashboardPage() {
     );
   }
 
+  const hasDevices = Object.keys(metrics.device_domains).length > 0;
+
   return (
     <Container maxWidth={false} sx={{ p: 2 }}>
       <HealthBanner metrics={metrics} connected={connected} />
 
+      <Box sx={{ mb: 1.5 }}>
+        <LiveSignal metrics={metrics} />
+      </Box>
+
+      {sets.length > 0 && (
+        <Box sx={{ mb: 1.5 }}>
+          <ActiveSets sets={sets} />
+        </Box>
+      )}
+
       <Grid container spacing={1.5} sx={{ mb: 1.5 }} alignItems="stretch">
-        <Grid
-          size={{ xs: 12, lg: sets.length > 0 ? 6 : 12 }}
-          sx={{ display: "flex" }}
-        >
-          <Box sx={{ width: "100%" }}>
-            <MetricsCards metrics={metrics} />
-          </Box>
-        </Grid>
-        {sets.length > 0 && (
-          <Grid size={{ xs: 12, lg: 6 }} sx={{ display: "flex" }}>
+        {hasDevices && (
+          <Grid size={{ xs: 12, xl: 6 }} sx={{ display: "flex" }}>
             <Box sx={{ width: "100%" }}>
-              <ActiveSets sets={sets} />
+              <DeviceActivity
+                deviceDomains={metrics.device_domains}
+                domainTLS={metrics.domain_tls}
+                sets={sets}
+                targetedDomains={targetedDomains}
+                onRefreshSets={refreshSets}
+              />
             </Box>
           </Grid>
         )}
+        <Grid
+          size={{ xs: 12, xl: hasDevices ? 6 : 12 }}
+          sx={{ display: "flex" }}
+        >
+          <Box sx={{ width: "100%" }}>
+            <UnmatchedDomains
+              topDomains={metrics.top_domains}
+              domainTLS={metrics.domain_tls}
+              sets={sets}
+              targetedDomains={targetedDomains}
+              onRefreshSets={refreshSets}
+            />
+          </Box>
+        </Grid>
       </Grid>
-
-      {(() => {
-        const hasDevices = Object.keys(metrics.device_domains).length > 0;
-        return (
-          <Grid container spacing={1.5} sx={{ mb: 1.5 }} alignItems="stretch">
-            {hasDevices && (
-              <Grid size={{ xs: 12, xl: 6 }} sx={{ display: "flex" }}>
-                <Box sx={{ width: "100%" }}>
-                  <DeviceActivity
-                    deviceDomains={metrics.device_domains}
-                    domainTLS={metrics.domain_tls}
-                    sets={sets}
-                    targetedDomains={targetedDomains}
-                    onRefreshSets={refreshSets}
-                  />
-                </Box>
-              </Grid>
-            )}
-            <Grid
-              size={{ xs: 12, xl: hasDevices ? 6 : 12 }}
-              sx={{ display: "flex" }}
-            >
-              <Box sx={{ width: "100%" }}>
-                <UnmatchedDomains
-                  topDomains={metrics.top_domains}
-                  domainTLS={metrics.domain_tls}
-                  sets={sets}
-                  targetedDomains={targetedDomains}
-                  onRefreshSets={refreshSets}
-                />
-              </Box>
-            </Grid>
-          </Grid>
-        );
-      })()}
 
       {metrics.escalations.length > 0 && (
         <Box sx={{ mb: 1.5 }}>
@@ -440,59 +426,6 @@ export function DashboardPage() {
             blockedDevices={metrics.blocked_devices}
           />
         </Box>
-      )}
-
-      {metrics.connection_rate.length > 0 && (
-        <Paper
-          sx={{
-            p: "14px",
-            mt: 1.5,
-            bgcolor: colors.background.paper,
-            borderColor: colors.border.default,
-          }}
-          variant="outlined"
-        >
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              mb: 1,
-            }}
-          >
-            <Typography
-              variant="metricLabel"
-              sx={{
-                display: "block",
-                color: colors.text.secondary,
-                opacity: 0.8,
-              }}
-            >
-              {t("dashboard.connectionRate")}
-            </Typography>
-            <Box
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                fontFamily: fonts.mono,
-                fontSize: 11,
-                color: colors.text.secondary,
-              }}
-            >
-              <Box
-                component="span"
-                sx={{ width: 8, height: 2, bgcolor: colors.secondary }}
-              />
-              <Box component="span">{t("dashboard.connectionRateLegend")}</Box>
-            </Box>
-          </Box>
-          <SimpleLineChart
-            data={metrics.connection_rate}
-            color={colors.secondary}
-            height={120}
-          />
-        </Paper>
       )}
     </Container>
   );

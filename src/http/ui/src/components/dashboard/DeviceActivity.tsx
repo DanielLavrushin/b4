@@ -1,33 +1,20 @@
-import { useEffect, useState, useMemo } from "react";
-import {
-  Box,
-  Paper,
-  Typography,
-  IconButton,
-  Collapse,
-  Tooltip,
-  Menu,
-  MenuItem,
-} from "@mui/material";
+import { useState, useMemo } from "react";
+import { Box, Collapse, Tooltip } from "@mui/material";
 import {
   ExpandMore as ExpandMoreIcon,
-  AddCircleOutline as AddIcon,
   Check as CheckIcon,
 } from "@mui/icons-material";
-import { colors, fonts, radiusPx } from "@design";
+import { colors, fonts } from "@design";
 import { formatNumber } from "@utils";
 import { B4SetConfig } from "@models/config";
-import { setsApi } from "@b4.sets";
 import { B4ConfidencePill, B4CountPill } from "@b4.elements";
 import { useTranslation } from "react-i18next";
-
-interface DeviceInfo {
-  mac: string;
-  ip: string;
-  hostname: string;
-  vendor: string;
-  alias?: string;
-}
+import { useDeviceNames } from "@hooks/useDeviceNames";
+import { useDomainTargeting } from "@hooks/useDomainTargeting";
+import { DashboardPanel } from "./DashboardPanel";
+import { DataRow } from "./DataRow";
+import { DomainLabel } from "./DomainLabel";
+import { AddToSetButton } from "./AddToSetButton";
 
 interface DeviceActivityProps {
   deviceDomains: Record<string, Record<string, number>>;
@@ -47,34 +34,9 @@ export const DeviceActivity = ({
   onRefreshSets,
 }: DeviceActivityProps) => {
   const { t } = useTranslation();
-  const [devices, setDevices] = useState<DeviceInfo[]>([]);
+  const { getDeviceName, getDeviceMeta } = useDeviceNames();
+  const isDomainTargeted = useDomainTargeting(targetedDomains);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    fetch("/api/devices")
-      .then((r) => r.json())
-      .then((data: { devices?: DeviceInfo[] }) => {
-        if (data?.devices) setDevices(data.devices);
-      })
-      .catch(() => {});
-  }, []);
-
-  const isDomainTargeted = (domain: string): boolean => {
-    if (targetedDomains.has(domain)) return true;
-    const parts = domain.split(".");
-    for (let i = 1; i < parts.length; i++) {
-      if (targetedDomains.has(parts.slice(i).join("."))) return true;
-    }
-    return false;
-  };
-
-  const deviceMap = useMemo(() => {
-    const map: Record<string, DeviceInfo> = {};
-    for (const d of devices) {
-      map[d.mac] = d;
-    }
-    return map;
-  }, [devices]);
 
   const sortedDevices = useMemo(() => {
     return Object.entries(deviceDomains)
@@ -96,49 +58,10 @@ export const DeviceActivity = ({
     });
   };
 
-  const getDeviceName = (mac: string): string => {
-    const dev = deviceMap[mac];
-    if (dev?.alias) return dev.alias;
-    if (dev?.hostname) return dev.hostname;
-    if (dev?.vendor && dev.vendor !== "Private")
-      return `${dev.vendor} (${mac})`;
-    return mac;
-  };
-
-  const getDeviceMeta = (mac: string): string => {
-    const dev = deviceMap[mac];
-    if (!dev) return "";
-    const parts: string[] = [];
-    if (dev.ip) parts.push(dev.ip);
-    if (dev.vendor && dev.vendor !== "Private") parts.push(dev.vendor);
-    return parts.join(" · ");
-  };
-
   if (sortedDevices.length === 0) return null;
 
   return (
-    <Paper
-      variant="outlined"
-      sx={{
-        bgcolor: colors.background.paper,
-        borderColor: colors.border.default,
-        borderRadius: `${radiusPx.md}px`,
-        p: 0,
-        overflow: "hidden",
-        height: "100%",
-      }}
-    >
-      <Typography
-        variant="metricLabel"
-        sx={{
-          display: "block",
-          color: colors.text.secondary,
-          opacity: 0.8,
-          p: "12px 14px 6px",
-        }}
-      >
-        {t("dashboard.deviceActivity.title")}
-      </Typography>
+    <DashboardPanel eyebrow={t("dashboard.deviceActivity.title")} fill>
       {sortedDevices.map(({ mac, domains, total, domainCount }) => {
         const isExpanded = expanded.has(mac);
         const sortedDomains = Object.entries(domains).sort(
@@ -166,7 +89,7 @@ export const DeviceActivity = ({
                 borderBottom: `1px solid ${colors.border.light}`,
                 cursor: "pointer",
                 transition: "background-color 120ms ease",
-                "&:hover": { bgcolor: "rgba(255, 255, 255, 0.025)" },
+                "&:hover": { bgcolor: colors.background.hover },
               }}
             >
               <Box
@@ -239,140 +162,50 @@ export const DeviceActivity = ({
             </Box>
             <Collapse in={isExpanded} unmountOnExit>
               <Box sx={{ bgcolor: colors.background.default }}>
-                {sortedDomains.map(([domain, count]) => (
-                  <DeviceDomainRow
-                    key={domain}
-                    domain={domain}
-                    count={count}
-                    tls={domainTLS[domain]}
-                    isTargeted={isDomainTargeted(domain)}
-                    sets={sets}
-                    onAdded={onRefreshSets}
-                  />
-                ))}
+                {sortedDomains.map(([domain, count]) => {
+                  const targeted = isDomainTargeted(domain);
+                  return (
+                    <DataRow
+                      key={domain}
+                      indent
+                      leading={
+                        domainTLS[domain] ? (
+                          <B4ConfidencePill score={domainTLS[domain]} />
+                        ) : undefined
+                      }
+                      right={
+                        <>
+                          <B4CountPill value={formatNumber(count)} />
+                          {targeted ? (
+                            <Tooltip
+                              title={t("dashboard.deviceActivity.alreadyInSet")}
+                            >
+                              <CheckIcon
+                                sx={{
+                                  color: colors.state.success,
+                                  fontSize: 16,
+                                }}
+                              />
+                            </Tooltip>
+                          ) : (
+                            <AddToSetButton
+                              domain={domain}
+                              sets={sets}
+                              onAdded={onRefreshSets}
+                            />
+                          )}
+                        </>
+                      }
+                    >
+                      <DomainLabel value={domain} />
+                    </DataRow>
+                  );
+                })}
               </Box>
             </Collapse>
           </Box>
         );
       })}
-    </Paper>
-  );
-};
-
-interface DeviceDomainRowProps {
-  domain: string;
-  count: number;
-  tls?: string;
-  isTargeted: boolean;
-  sets: B4SetConfig[];
-  onAdded: () => void;
-}
-
-const DeviceDomainRow = ({
-  domain,
-  count,
-  tls,
-  isTargeted,
-  sets,
-  onAdded,
-}: DeviceDomainRowProps) => {
-  const { t } = useTranslation();
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const [adding, setAdding] = useState(false);
-  const enabledSets = sets.filter((s) => s.enabled);
-
-  const handleAdd = async (setId: string) => {
-    setAnchorEl(null);
-    setAdding(true);
-    try {
-      await setsApi.addDomainToSet(setId, domain);
-      onAdded();
-    } catch (e) {
-      console.error("Failed to add domain:", e);
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  return (
-    <Box
-      sx={{
-        display: "flex",
-        alignItems: "center",
-        gap: "10px",
-        p: "8px 14px 8px 28px",
-        borderBottom: `1px solid ${colors.border.light}`,
-        "&:last-of-type": { borderBottom: 0 },
-        transition: "background-color 120ms ease",
-        "&:hover": { bgcolor: "rgba(255, 255, 255, 0.025)" },
-      }}
-    >
-      {tls && <B4ConfidencePill score={tls} />}
-      <Box
-        component="span"
-        sx={{
-          fontFamily: fonts.mono,
-          fontSize: 11,
-          letterSpacing: "0.04em",
-          color: colors.text.primary,
-          textTransform: "uppercase",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          flex: 1,
-          minWidth: 0,
-        }}
-        title={domain}
-      >
-        {domain}
-      </Box>
-      <B4CountPill value={formatNumber(count)} />
-      {isTargeted && (
-        <Tooltip title={t("dashboard.deviceActivity.alreadyInSet")}>
-          <CheckIcon sx={{ color: colors.state.success, fontSize: 16 }} />
-        </Tooltip>
-      )}
-      {!isTargeted && enabledSets.length > 0 && (
-        <>
-          <Tooltip title={t("core.addToSet")}>
-            <IconButton
-              size="small"
-              onClick={(e) => setAnchorEl(e.currentTarget)}
-              disabled={adding}
-              sx={{
-                color: colors.text.secondary,
-                p: 0.25,
-                "&:hover": { color: colors.secondary },
-              }}
-            >
-              <AddIcon sx={{ fontSize: 16 }} />
-            </IconButton>
-          </Tooltip>
-          <Menu
-            anchorEl={anchorEl}
-            open={Boolean(anchorEl)}
-            onClose={() => setAnchorEl(null)}
-            slotProps={{
-              paper: {
-                sx: {
-                  bgcolor: colors.background.default,
-                  border: `1px solid ${colors.border.default}`,
-                },
-              },
-            }}
-          >
-            {enabledSets.map((set) => (
-              <MenuItem
-                key={set.id}
-                onClick={() => void handleAdd(set.id)}
-                sx={{ color: colors.text.primary, fontSize: "0.8rem" }}
-              >
-                {set.name}
-              </MenuItem>
-            ))}
-          </Menu>
-        </>
-      )}
-    </Box>
+    </DashboardPanel>
   );
 };

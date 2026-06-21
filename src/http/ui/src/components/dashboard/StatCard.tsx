@@ -1,5 +1,5 @@
 import { Box, Typography } from "@mui/material";
-import { colors, fonts, radiusPx } from "@design";
+import { colors, fonts } from "@design";
 
 type Tone = "primary" | "secondary" | "muted";
 
@@ -38,37 +38,26 @@ export const StatCard = ({
   return (
     <Box
       sx={{
-        bgcolor: colors.background.paper,
-        border: `1px solid ${colors.border.default}`,
-        borderRadius: `${radiusPx.md}px`,
-        p: "16px 18px",
         display: "flex",
         flexDirection: "column",
-        justifyContent: "space-between",
-        gap: "10px",
+        justifyContent: "center",
+        gap: "8px",
+        p: "14px 18px",
         minWidth: 0,
-        minHeight: 0,
-        width: "100%",
-        height: "100%",
+        flex: 1,
       }}
     >
       <Typography
         component="div"
-        sx={{
-          fontSize: 10,
-          letterSpacing: "0.18em",
-          textTransform: "uppercase",
-          color: colors.text.secondary,
-          opacity: 0.8,
-          lineHeight: 1,
-        }}
+        variant="metricLabel"
+        sx={{ color: colors.text.secondary, opacity: 0.8 }}
       >
         {label}
       </Typography>
       <Typography
         component="div"
         sx={{
-          fontSize: 30,
+          fontSize: 28,
           fontWeight: 700,
           color: colors.text.primary,
           lineHeight: 1,
@@ -81,7 +70,7 @@ export const StatCard = ({
           <Box
             component="span"
             sx={{
-              fontSize: 16,
+              fontSize: 15,
               fontWeight: 600,
               color: colors.text.secondary,
               ml: "2px",
@@ -114,7 +103,7 @@ export const StatCard = ({
             flexShrink: 0,
           }}
         />
-        {sub ?? " "}
+        {sub ?? " "}
       </Box>
     </Box>
   );

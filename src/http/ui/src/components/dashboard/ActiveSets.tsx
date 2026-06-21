@@ -1,12 +1,13 @@
-import { colors, radiusPx } from "@design";
+import { colors } from "@design";
 import { B4SetConfig } from "@models/config";
 import {
   Circle as CircleIcon,
   FolderOpen as FolderIcon,
 } from "@mui/icons-material";
-import { Box, Stack, Typography } from "@mui/material";
+import { Box, Stack } from "@mui/material";
 import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
+import { DashboardPanel } from "./DashboardPanel";
 
 interface ActiveSetsProps {
   sets: B4SetConfig[];
@@ -19,31 +20,8 @@ export const ActiveSets = ({ sets }: ActiveSetsProps) => {
   if (sets.length === 0) return null;
 
   return (
-    <Box
-      sx={{
-        width: "100%",
-        height: "100%",
-        p: "14px",
-        borderRadius: `${radiusPx.md}px`,
-        bgcolor: colors.background.paper,
-        border: `1px solid ${colors.border.default}`,
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      <Typography
-        variant="metricLabel"
-        sx={{ display: "block", color: colors.text.secondary, opacity: 0.8 }}
-      >
-        {t("dashboard.activeSets.title")}
-      </Typography>
-      <Stack
-        direction="row"
-        spacing={1}
-        flexWrap="wrap"
-        useFlexGap
-        sx={{ mt: 1 }}
-      >
+    <DashboardPanel eyebrow={t("dashboard.activeSets.title")} padded>
+      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
         {sets.map((set) => {
           const domainCount =
             (set.targets.sni_domains?.length || 0) +
@@ -114,6 +92,6 @@ export const ActiveSets = ({ sets }: ActiveSetsProps) => {
           );
         })}
       </Stack>
-    </Box>
+    </DashboardPanel>
   );
 };

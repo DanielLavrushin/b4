@@ -8,6 +8,7 @@ export const colors = {
     paper: "#1f1218",
     dark: "#0f0a0e",
     control: "rgba(31, 18, 24, 0.6)",
+    hover: "rgba(255, 255, 255, 0.025)",
   },
   text: {
     primary: "#ffe8f4",

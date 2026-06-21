@@ -1,18 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
-import { Box, Paper, Typography, Grid } from "@mui/material";
+import { useMemo } from "react";
+import { Box, Typography, Grid } from "@mui/material";
 import { BlockOutlined as BlockIcon } from "@mui/icons-material";
-import { colors, fonts, radiusPx } from "@design";
+import { colors, fonts } from "@design";
 import { formatNumber } from "@utils";
 import { B4CountPill } from "@b4.elements";
 import { useTranslation } from "react-i18next";
-
-interface DeviceInfo {
-  mac: string;
-  ip: string;
-  hostname: string;
-  vendor: string;
-  alias?: string;
-}
+import { useDeviceNames } from "@hooks/useDeviceNames";
+import { DashboardPanel } from "./DashboardPanel";
+import { DataRow } from "./DataRow";
+import { DomainLabel } from "./DomainLabel";
 
 interface BlackholeProps {
   total: number;
@@ -26,30 +22,7 @@ export const Blackhole = ({
   blockedDevices,
 }: BlackholeProps) => {
   const { t } = useTranslation();
-  const [devices, setDevices] = useState<DeviceInfo[]>([]);
-
-  useEffect(() => {
-    fetch("/api/devices")
-      .then((r) => r.json())
-      .then((data: { devices?: DeviceInfo[] }) => {
-        if (data?.devices) setDevices(data.devices);
-      })
-      .catch(() => {});
-  }, []);
-
-  const deviceMap = useMemo(() => {
-    const map: Record<string, DeviceInfo> = {};
-    for (const d of devices) map[d.mac] = d;
-    return map;
-  }, [devices]);
-
-  const getDeviceName = (mac: string): string => {
-    const dev = deviceMap[mac];
-    if (dev?.alias) return dev.alias;
-    if (dev?.hostname) return dev.hostname;
-    if (dev?.vendor && dev.vendor !== "Private") return `${dev.vendor} (${mac})`;
-    return mac;
-  };
+  const { getDeviceName } = useDeviceNames();
 
   const topDomains = useMemo(
     () =>
@@ -68,35 +41,11 @@ export const Blackhole = ({
   );
 
   return (
-    <Paper
-      variant="outlined"
-      sx={{
-        bgcolor: colors.background.paper,
-        borderColor: colors.border.default,
-        borderRadius: `${radiusPx.md}px`,
-        p: 0,
-        overflow: "hidden",
-      }}
-    >
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "12px",
-          p: "12px 14px",
-          borderBottom: `1px solid ${colors.border.light}`,
-        }}
-      >
-        <Box sx={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <BlockIcon sx={{ fontSize: 18, color: colors.state.error }} />
-          <Typography
-            variant="metricLabel"
-            sx={{ color: colors.text.secondary, opacity: 0.85 }}
-          >
-            {t("dashboard.blackhole.title")}
-          </Typography>
-        </Box>
+    <DashboardPanel
+      icon={<BlockIcon sx={{ fontSize: 18, color: colors.state.error }} />}
+      eyebrow={t("dashboard.blackhole.title")}
+      divider
+      right={
         <Box sx={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
           <Box
             component="span"
@@ -121,8 +70,8 @@ export const Blackhole = ({
             {t("dashboard.blackhole.blocked")}
           </Box>
         </Box>
-      </Box>
-
+      }
+    >
       <Grid container>
         <Grid
           size={{ xs: 12, sm: 6 }}
@@ -150,7 +99,7 @@ export const Blackhole = ({
           />
         </Grid>
       </Grid>
-    </Paper>
+    </DashboardPanel>
   );
 };
 
@@ -174,7 +123,7 @@ const BlockSection = ({ label, rows, empty }: BlockSectionProps) => (
         display: "block",
         color: colors.text.secondary,
         opacity: 0.7,
-        p: "10px 14px 4px",
+        p: "12px 14px 4px",
       }}
     >
       {label}
@@ -192,36 +141,9 @@ const BlockSection = ({ label, rows, empty }: BlockSectionProps) => (
       </Box>
     ) : (
       rows.map(({ id, name, count }) => (
-        <Box
-          key={id}
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            p: "8px 14px",
-            borderTop: `1px solid ${colors.border.light}`,
-            "&:hover": { bgcolor: "rgba(255, 255, 255, 0.025)" },
-          }}
-        >
-          <Box
-            component="span"
-            sx={{
-              fontFamily: fonts.mono,
-              fontSize: 11,
-              letterSpacing: "0.04em",
-              color: colors.text.primary,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              flex: 1,
-              minWidth: 0,
-            }}
-            title={name}
-          >
-            {name}
-          </Box>
-          <B4CountPill value={formatNumber(count)} />
-        </Box>
+        <DataRow key={id} right={<B4CountPill value={formatNumber(count)} />}>
+          <DomainLabel value={name} uppercase={false} />
+        </DataRow>
       ))
     )}
   </Box>

@@ -620,6 +620,12 @@
     "loading": "Loading dashboard...",
     "connectionRate": "Connection Rate",
     "connectionRateLegend": "conn / s · last 60s",
+    "signal": {
+      "title": "Live Signal",
+      "cps": "c/s",
+      "idle": "Awaiting traffic",
+      "idleHint": "Connection activity appears here once b4 sees traffic."
+    },
     "metrics": {
       "targeted": "Targeted",
       "ofTotal": "of total",
