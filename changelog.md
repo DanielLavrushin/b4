@@ -6,6 +6,7 @@
 - CHANGED: **b4's internal firewall marks moved to a less-contended range** - b4 tags its own packets with a firewall mark (fwmark); the values it used overlapped the range Tailscale and some other router apps use, which could misroute traffic when they ran alongside b4. The internal marks now use high bits that other tools rarely touch.
 - FIXED: **Bypass stopped working for mobile apps (for example the YouTube app on Android) on gateway/container setups with NAT Masquerade** - the fake and fragmented packets b4 sends to defeat DPI were no longer given the gateway's public address, so they never reached the server. This mainly hit QUIC traffic, which phone apps prefer, while ordinary websites over TCP kept working.
 - FIXED: **A set could fail to start when it mixed a country/service list with its own listed addresses** - if an address you added by hand was already covered by a chosen list (for example adding Instagram addresses alongside the Facebook list), b4 saw them as overlapping and refused to start.
+- FIXED: **In TUN mode every device appeared under the router's public address, so traffic could not be told apart by device** - the TUN engine tags packets with the router's WAN address before b4 inspects them, which flattened the connection logs, per-device statistics, and per-device set rules onto that one address and hid the phone, laptop, or TV behind it.
 
 ## [1.70.0] - 2026-06-21
 
