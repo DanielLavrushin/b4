@@ -160,6 +160,10 @@ func (e *Engine) Start() error {
 		return err
 	}
 
+	if !cfg.System.Tables.SkipSetup {
+		e.pool.EnableTUNSourceResolver(e.routes.currentSrcIP())
+	}
+
 	threads := cfg.Queue.Threads
 	if threads < 1 {
 		threads = 1
@@ -201,10 +205,12 @@ func (e *Engine) reconcileLoop() {
 		case <-e.trigger:
 			if e.routes != nil {
 				e.routes.reconcile()
+				e.pool.UpdateTUNSourceWAN(e.routes.currentSrcIP())
 			}
 		case <-ticker.C:
 			if e.routes != nil {
 				e.routes.reconcile()
+				e.pool.UpdateTUNSourceWAN(e.routes.currentSrcIP())
 			}
 		}
 	}

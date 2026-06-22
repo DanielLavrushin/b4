@@ -26,6 +26,25 @@ func NewWorkerWithQueue(cfg *config.Config, qnum uint16) *Worker {
 	return w
 }
 
+func (p *Pool) EnableTUNSourceResolver(wanIP string) {
+	if p.tunSrc == nil {
+		p.tunSrc = newTunSrcResolver(wanIP)
+	} else {
+		p.tunSrc.setWAN(wanIP)
+	}
+	for _, w := range p.Workers {
+		w.srcResolver = p.tunSrc
+	}
+	log.Infof("TUN: source attribution enabled (recovering LAN source from conntrack; uplink %s)", wanIP)
+}
+
+func (p *Pool) UpdateTUNSourceWAN(wanIP string) {
+	if p.tunSrc == nil || wanIP == "" {
+		return
+	}
+	p.tunSrc.setWAN(wanIP)
+}
+
 func NewPool(cfg *config.Config) *Pool {
 	threads := cfg.Queue.Threads
 	start := uint16(cfg.Queue.StartNum)

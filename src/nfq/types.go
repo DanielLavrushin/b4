@@ -21,6 +21,7 @@ type Pool struct {
 	Dhcp        *dhcp.Manager
 	stopCleanup chan struct{}
 	state       *runtimeState
+	tunSrc      *tunSrcResolver
 }
 
 type PacketInfo struct {
@@ -50,4 +51,5 @@ type Worker struct {
 	tlsCache         *tlsInfoCache
 	connTracker      *connStateTracker
 	destState        *destStateTracker
+	srcResolver      *tunSrcResolver
 }

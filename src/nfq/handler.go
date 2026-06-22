@@ -180,6 +180,14 @@ func (w *Worker) parseIPHeaders(raw []byte) (*pktInfo, bool) {
 		return nil, false
 	}
 
+	if w.srcResolver != nil && v == IPv4 && (p.proto == 6 || p.proto == 17) && len(raw) >= p.ihl+4 {
+		sport := uint16(raw[p.ihl])<<8 | uint16(raw[p.ihl+1])
+		dport := uint16(raw[p.ihl+2])<<8 | uint16(raw[p.ihl+3])
+		if lan, ok := w.srcResolver.resolve(p.proto, p.src, sport, p.dst, dport); ok {
+			p.src = lan
+		}
+	}
+
 	p.srcStr = p.src.String()
 	p.dstStr = p.dst.String()
 	p.srcMac = w.getMacByIp(p.srcStr)

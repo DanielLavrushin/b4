@@ -85,6 +85,12 @@ func resolveDefaultEgress(skipDev string) (iface, gw, src string, ok bool) {
 	return "", "", "", false
 }
 
+func (r *routeManager) currentSrcIP() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.srcIP
+}
+
 func (r *routeManager) setupNAT() {
 	markStr := reinjectMarkMatch()
 
