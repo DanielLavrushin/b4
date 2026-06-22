@@ -2,6 +2,7 @@
 
 ## [1.70.1] - 2026-06-22
 
+- ADDED: **System diagnostics now show the active engine and the firewall rules b4 has set up** - the diagnostics page tells you whether b4 is running in NFQUEUE or TUN mode (so TUN setups no longer look like a failed firewall), and lists the firewall rules b4 currently maintains, making it easier to see what is in place and share when asking for help.
 - FIXED: **A set could fail to start when it mixed a country/service list with its own listed addresses** - if an address you added by hand was already covered by a chosen list (for example adding Instagram addresses alongside the Facebook list), b4 saw them as overlapping and refused to start.
 
 ## [1.70.0] - 2026-06-21
