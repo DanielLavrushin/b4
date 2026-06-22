@@ -532,7 +532,7 @@ func (n *NFTablesManager) ApplyMSSClamp() error {
 		hasV6 := len(e.IPv6) > 0 && cfg.Queue.IPv6Enabled
 
 		if hasV4 {
-			if err := n.createSet(setName4, "ipv4_addr", "flags interval ;"); err != nil {
+			if err := n.createSet(setName4, "ipv4_addr", "flags interval ; auto-merge ;"); err != nil {
 				return fmt.Errorf("failed to create set MSS ipv4 set: %w", err)
 			}
 			if err := n.addSetElements(setName4, e.IPv4); err != nil {
@@ -540,7 +540,7 @@ func (n *NFTablesManager) ApplyMSSClamp() error {
 			}
 		}
 		if hasV6 {
-			if err := n.createSet(setName6, "ipv6_addr", "flags interval ;"); err != nil {
+			if err := n.createSet(setName6, "ipv6_addr", "flags interval ; auto-merge ;"); err != nil {
 				return fmt.Errorf("failed to create set MSS ipv6 set: %w", err)
 			}
 			if err := n.addSetElements(setName6, e.IPv6); err != nil {

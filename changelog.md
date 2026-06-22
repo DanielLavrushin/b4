@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.70.1] - 2026-06-22
+
+- FIXED: **A set could fail to start when it mixed a country/service list with its own listed addresses** - if an address you added by hand was already covered by a chosen list (for example adding Instagram addresses alongside the Facebook list), b4 saw them as overlapping and refused to start.
+
 ## [1.70.0] - 2026-06-21
 
 - ADDED: **New engine for devices without NFQUEUE** - some minimal devices lack the kernel modules b4 normally needs, so it could not run on them. A new mode under Settings → Feature Flags routes traffic through a virtual interface (TUN) instead. It inspects only the first packets of each TLS (port 443) and DNS connection, like the normal engine, rather than carrying every packet, and leaves the device's default route in place; on kernels that cannot count per-connection packets it routes the whole default route through the TUN instead. Strategy discovery (auto-tuning) still needs NFQUEUE, so it cannot run on these devices.
