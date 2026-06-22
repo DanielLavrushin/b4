@@ -129,6 +129,10 @@ func runB4(cmd *cobra.Command, args []string) error {
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
 
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigChan)
+
 	aiManager := ai.NewManager(cfg.System.AI, cfg.ConfigPath)
 	handler.SetAIManager(aiManager)
 
@@ -200,6 +204,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	if clearTables {
 		log.Infof("Clearing iptables rules as requested (--clear-iptables)")
 		clearErr := tables.ClearRules(&cfg)
+		b4tun.RestoreFromState()
 		tables.RoutingClearAll()
 		b4tun.ClearStaleArtifacts(&cfg)
 		if clearErr != nil {
@@ -234,6 +239,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	}
 
 	log.Infof("Loaded targets: %d domains, %d IPs across %d sets", totalDomains, totalIps, len(cfg.Sets))
+	b4tun.RestoreFromState()
 	tables.RoutingClearAll()
 
 	isTUN := cfg.Queue.Mode == "tun"
@@ -334,6 +340,25 @@ func runB4(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	shutdownHandled := false
+	defer func() {
+		if shutdownHandled {
+			return
+		}
+		c := cfgPtr.Load()
+		if tunEngine != nil {
+			tunEngine.Stop()
+			if !c.System.Tables.SkipSetup {
+				tables.ClearMasqueradeOnly(c)
+				tables.ClearMSSClampOnly(c)
+				tables.RevertConntrackSysctls()
+			}
+		} else if !c.System.Tables.SkipSetup {
+			tables.ClearRules(c)
+		}
+		tables.RoutingClearAll()
+	}()
+
 	tproxyResolver.Set(pool.GetMatcher())
 
 	// Start internal web server if configured
@@ -342,6 +367,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		metrics.RecordEvent("error", fmt.Sprintf("Failed to start web server: %v", err))
 		return log.Errorf("failed to start web server: %w", err)
 	}
+	handler.SetTUNEngine(tunEngine)
 
 	// Start SOCKS5 server if configured.
 	socks5Server := socks5.NewServer(&cfg)
@@ -418,8 +444,6 @@ func runB4(cmd *cobra.Command, args []string) error {
 	metrics.RecordEvent("info", "B4 is fully operational")
 
 	// Wait for shutdown signal
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	sig := <-sigChan
 
 	log.Infof("Received signal: %v, shutting down gracefully", sig)
@@ -435,6 +459,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	tproxyMgr.Stop()
 
 	// Perform graceful shutdown with timeout
+	shutdownHandled = true
 	return gracefulShutdown(cfgPtr.Load(), pool, tunEngine, httpServer, socks5Server, mtprotoServer, metrics, discoveryRT)
 }
 

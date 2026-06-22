@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/tables"
 	"golang.org/x/sys/unix"
 )
@@ -38,6 +39,7 @@ func (api *API) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		Kernel:   collectKernelModules(),
 		Tools:    collectTools(),
 		Network:  collectNetworkInterfaces(),
+		Engine:   collectEngineInfo(cfg),
 		Firewall: collectFirewallInfo(),
 		Geodata:  api.collectGeodataInfo(),
 		Storage:  collectStorage(),
@@ -264,51 +266,212 @@ func collectNetworkInterfaces() DiagNetwork {
 }
 
 func collectFirewallInfo() DiagFirewall {
-	info := DiagFirewall{}
+	info := DiagFirewall{Backend: detectFirewallBackend()}
 
-	if _, err := exec.LookPath("nft"); err == nil {
-		out, err := exec.Command("nft", "list", "table", "inet", "b4_mangle").CombinedOutput()
-		if err == nil && len(out) > 0 {
-			info.Backend = "nftables"
-			for _, line := range strings.Split(string(out), "\n") {
-				line = strings.TrimSpace(line)
-				if line != "" && !strings.HasPrefix(line, "table") && !strings.HasPrefix(line, "}") && !strings.HasPrefix(line, "chain") {
-					info.ActiveRules = append(info.ActiveRules, line)
-				}
-			}
-		}
-	}
-
-	if info.Backend == "" {
-		for _, bin := range []string{"iptables", "iptables-legacy"} {
-			if _, err := exec.LookPath(bin); err != nil {
-				continue
-			}
-			out, err := exec.Command(bin, append(tables.WaitArgs(bin), "-t", "mangle", "-S", "B4")...).CombinedOutput()
-			if err == nil && len(out) > 0 {
-				if bin == "iptables-legacy" {
-					info.Backend = "iptables-legacy"
-				} else {
-					info.Backend = "iptables"
-				}
-				for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-					if line != "" {
-						info.ActiveRules = append(info.ActiveRules, line)
-					}
-				}
-				break
-			}
-		}
-	}
-
-	if info.Backend == "" {
-		info.Backend = "none"
-	}
+	info.RuleGroups = append(info.RuleGroups, collectNftRuleGroups()...)
+	info.RuleGroups = append(info.RuleGroups, collectIptablesRuleGroups()...)
 
 	info.NFQueueWorks = testNFQueue(info.Backend)
 	info.FlowOffload = detectFlowOffload()
 
 	return info
+}
+
+func detectFirewallBackend() string {
+	if _, err := exec.LookPath("nft"); err == nil {
+		out, err := exec.Command("nft", "list", "table", "inet", "b4_mangle").CombinedOutput()
+		if err == nil && len(out) > 0 {
+			return "nftables"
+		}
+	}
+
+	for _, bin := range []string{"iptables", "iptables-legacy"} {
+		if _, err := exec.LookPath(bin); err != nil {
+			continue
+		}
+		out, err := exec.Command(bin, append(tables.WaitArgs(bin), "-t", "mangle", "-S", "B4")...).CombinedOutput()
+		if err == nil && len(out) > 0 {
+			if bin == "iptables-legacy" {
+				return "iptables-legacy"
+			}
+			return "iptables"
+		}
+	}
+
+	return "none"
+}
+
+func collectNftRuleGroups() []DiagRuleGroup {
+	if _, err := exec.LookPath("nft"); err != nil {
+		return nil
+	}
+
+	out, err := exec.Command("nft", "list", "tables").CombinedOutput()
+	if err != nil {
+		return nil
+	}
+
+	var groups []DiagRuleGroup
+	for _, line := range strings.Split(string(out), "\n") {
+		f := strings.Fields(line)
+		if len(f) != 3 || f[0] != "table" {
+			continue
+		}
+		family, name := f[1], f[2]
+		if !strings.HasPrefix(name, "b4_") {
+			continue
+		}
+
+		tout, terr := exec.Command("nft", "list", "table", family, name).CombinedOutput()
+		if terr != nil {
+			continue
+		}
+		if rules := nonEmptyLines(string(tout)); len(rules) > 0 {
+			groups = append(groups, DiagRuleGroup{
+				Title: fmt.Sprintf("nft %s %s", family, name),
+				Rules: rules,
+			})
+		}
+	}
+
+	return groups
+}
+
+func collectIptablesRuleGroups() []DiagRuleGroup {
+	bin := ""
+	for _, b := range []string{"iptables", "iptables-legacy"} {
+		if _, err := exec.LookPath(b); err == nil {
+			bin = b
+			break
+		}
+	}
+	if bin == "" {
+		return nil
+	}
+	wait := tables.WaitArgs(bin)
+
+	var groups []DiagRuleGroup
+
+	for _, chain := range []string{"B4", "B4_PREROUTING"} {
+		out, err := exec.Command(bin, append(append([]string{}, wait...), "-t", "mangle", "-S", chain)...).CombinedOutput()
+		if err != nil {
+			continue
+		}
+		if rules := nonEmptyLines(string(out)); len(rules) > 0 {
+			groups = append(groups, DiagRuleGroup{
+				Title: fmt.Sprintf("iptables mangle %s", chain),
+				Rules: rules,
+			})
+		}
+	}
+
+	for _, table := range []string{"mangle", "nat", "raw", "filter"} {
+		out, err := exec.Command(bin, append(append([]string{}, wait...), "-t", table, "-S")...).CombinedOutput()
+		if err != nil {
+			continue
+		}
+		var rules []string
+		for _, line := range strings.Split(string(out), "\n") {
+			l := strings.TrimSpace(line)
+			if l == "" || !isB4IptablesRule(l) {
+				continue
+			}
+			rules = append(rules, l)
+		}
+		if len(rules) > 0 {
+			groups = append(groups, DiagRuleGroup{
+				Title: fmt.Sprintf("iptables %s (b4)", table),
+				Rules: rules,
+			})
+		}
+	}
+
+	return groups
+}
+
+func isB4IptablesRule(l string) bool {
+	if strings.HasPrefix(l, "-N B4") || strings.HasPrefix(l, "-A B4") {
+		return false
+	}
+	return strings.Contains(l, "b4_") ||
+		strings.Contains(l, "b4tun") ||
+		strings.Contains(l, "NFQUEUE") ||
+		strings.Contains(l, "-j B4")
+}
+
+func nonEmptyLines(s string) []string {
+	var out []string
+	for _, line := range strings.Split(s, "\n") {
+		if strings.TrimRight(line, " \t") == "" {
+			continue
+		}
+		out = append(out, strings.TrimRight(line, " \t"))
+	}
+	return out
+}
+
+func collectEngineInfo(cfg *config.Config) DiagEngine {
+	mode := cfg.Queue.Mode
+	if mode == "" {
+		mode = "nfqueue"
+	}
+
+	de := DiagEngine{Mode: mode}
+	if mode == "tun" {
+		de.TUN = collectTUNInfo(cfg)
+	}
+
+	return de
+}
+
+func collectTUNInfo(cfg *config.Config) *DiagTUN {
+	tunCfg := cfg.Queue.TUN
+	t := &DiagTUN{
+		DeviceName:   tunCfg.DeviceName,
+		Address:      tunCfg.Address,
+		AddressV6:    tunCfg.AddressV6,
+		OutInterface: tunCfg.OutInterface,
+		OutGateway:   tunCfg.OutGateway,
+		RouteTable:   tunCfg.RouteTable,
+	}
+
+	if globalTUNEngine != nil {
+		di := globalTUNEngine.DiagInfo()
+		t.Running = true
+		if di.DeviceName != "" {
+			t.DeviceName = di.DeviceName
+		}
+		if di.Address != "" {
+			t.Address = di.Address
+		}
+		if di.AddressV6 != "" {
+			t.AddressV6 = di.AddressV6
+		}
+		if di.OutInterface != "" {
+			t.OutInterface = di.OutInterface
+		}
+		if di.OutGateway != "" {
+			t.OutGateway = di.OutGateway
+		}
+		if di.RouteTable != 0 {
+			t.RouteTable = di.RouteTable
+		}
+		t.ResolvedSrc = di.ResolvedSrc
+		t.Capture = di.Capture
+		t.ReplyCapture = di.ReplyCapture
+		t.PacketsForwarded = di.PacketsForwarded
+		t.ForwardErrors = di.ForwardErrors
+		t.IPv6Dropped = di.IPv6Dropped
+	}
+
+	if t.DeviceName != "" {
+		if iface, err := net.InterfaceByName(t.DeviceName); err == nil {
+			t.DeviceUp = iface.Flags&net.FlagUp != 0
+			t.MTU = iface.MTU
+		}
+	}
+
+	return t
 }
 
 // detectFlowOffload reports whether netfilter flow offloading is active on the

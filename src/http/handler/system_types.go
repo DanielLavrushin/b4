@@ -43,6 +43,7 @@ type Diagnostics struct {
 	Kernel     DiagKernel      `json:"kernel"`
 	Tools      DiagTools       `json:"tools"`
 	Network    DiagNetwork     `json:"network"`
+	Engine     DiagEngine      `json:"engine"`
 	Firewall   DiagFirewall    `json:"firewall"`
 	Geodata    DiagGeodata     `json:"geodata"`
 	Storage    []DiagMount     `json:"storage"`
@@ -94,11 +95,39 @@ type DiagInterface struct {
 	MTU   int      `json:"mtu"`
 }
 
+type DiagEngine struct {
+	Mode string   `json:"mode"`
+	TUN  *DiagTUN `json:"tun,omitempty"`
+}
+
+type DiagTUN struct {
+	Running          bool   `json:"running"`
+	DeviceName       string `json:"device_name"`
+	DeviceUp         bool   `json:"device_up"`
+	MTU              int    `json:"mtu,omitempty"`
+	Address          string `json:"address,omitempty"`
+	AddressV6        string `json:"address_v6,omitempty"`
+	OutInterface     string `json:"out_interface,omitempty"`
+	OutGateway       string `json:"out_gateway,omitempty"`
+	ResolvedSrc      string `json:"resolved_src,omitempty"`
+	Capture          string `json:"capture,omitempty"`
+	RouteTable       int    `json:"route_table,omitempty"`
+	ReplyCapture     bool   `json:"reply_capture"`
+	PacketsForwarded uint64 `json:"packets_forwarded"`
+	ForwardErrors    uint64 `json:"forward_errors"`
+	IPv6Dropped      uint64 `json:"ipv6_dropped"`
+}
+
 type DiagFirewall struct {
-	Backend      string   `json:"backend"`
-	NFQueueWorks bool     `json:"nfqueue_works"`
-	FlowOffload  string   `json:"flow_offload"`
-	ActiveRules  []string `json:"active_rules,omitempty"`
+	Backend      string          `json:"backend"`
+	NFQueueWorks bool            `json:"nfqueue_works"`
+	FlowOffload  string          `json:"flow_offload"`
+	RuleGroups   []DiagRuleGroup `json:"rule_groups,omitempty"`
+}
+
+type DiagRuleGroup struct {
+	Title string   `json:"title"`
+	Rules []string `json:"rules"`
 }
 
 type DiagGeodata struct {

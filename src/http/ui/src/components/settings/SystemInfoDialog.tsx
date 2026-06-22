@@ -75,11 +75,39 @@ interface DiagInterface {
   mtu: number;
 }
 
+interface DiagRuleGroup {
+  title: string;
+  rules: string[];
+}
+
 interface DiagFirewall {
   backend: string;
   nfqueue_works: boolean;
   flow_offload: string;
-  active_rules?: string[];
+  rule_groups?: DiagRuleGroup[];
+}
+
+interface DiagTUN {
+  running: boolean;
+  device_name: string;
+  device_up: boolean;
+  mtu?: number;
+  address?: string;
+  address_v6?: string;
+  out_interface?: string;
+  out_gateway?: string;
+  resolved_src?: string;
+  capture?: string;
+  route_table?: number;
+  reply_capture: boolean;
+  packets_forwarded: number;
+  forward_errors: number;
+  ipv6_dropped: number;
+}
+
+interface DiagEngine {
+  mode: string;
+  tun?: DiagTUN;
 }
 
 interface DiagGeodata {
@@ -108,6 +136,7 @@ interface Diagnostics {
   kernel: { modules: DiagModule[] };
   tools: { firewall: DiagTool[]; required: DiagTool[]; optional: DiagTool[] };
   network: { interfaces: DiagInterface[] };
+  engine: DiagEngine;
   firewall: DiagFirewall;
   geodata: DiagGeodata;
   storage: DiagMount[];
@@ -381,9 +410,110 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
             data.geodata.total_ips.toLocaleString(),
           )}
 
+          {sectionTitle(t("settings.SystemInfo.engine"))}
+          {row(
+            t("settings.SystemInfo.engineMode"),
+            <Chip
+              size="small"
+              label={
+                data.engine.mode === "tun"
+                  ? t("settings.SystemInfo.engineTun")
+                  : t("settings.SystemInfo.engineNfqueue")
+              }
+              sx={{
+                bgcolor: `${colors.secondary}22`,
+                color: colors.secondary,
+                fontSize: "0.7rem",
+                height: 22,
+              }}
+            />,
+          )}
+
+          {data.engine.mode === "tun" && data.engine.tun && (
+            <>
+              {row(
+                t("settings.SystemInfo.tunDevice"),
+                <Stack
+                  direction="row"
+                  spacing={spacing.sm}
+                  alignItems="center"
+                  justifyContent="flex-end"
+                >
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: colors.text.primary,
+                      fontFamily: "monospace",
+                    }}
+                  >
+                    {data.engine.tun.device_name}
+                  </Typography>
+                  {boolChip(
+                    data.engine.tun.device_up,
+                    "UP",
+                    data.engine.tun.running
+                      ? "DOWN"
+                      : t("settings.SystemInfo.tunStopped"),
+                  )}
+                </Stack>,
+              )}
+              {data.engine.tun.address &&
+                row(t("settings.SystemInfo.tunAddress"), data.engine.tun.address)}
+              {data.engine.tun.mtu
+                ? row("MTU", data.engine.tun.mtu)
+                : null}
+              {row(
+                t("settings.SystemInfo.tunEgress"),
+                data.engine.tun.out_interface || "auto",
+              )}
+              {data.engine.tun.out_gateway &&
+                row(
+                  t("settings.SystemInfo.tunGateway"),
+                  data.engine.tun.out_gateway,
+                )}
+              {data.engine.tun.resolved_src &&
+                row(
+                  t("settings.SystemInfo.tunSource"),
+                  data.engine.tun.resolved_src,
+                )}
+              {data.engine.tun.capture &&
+                row(
+                  t("settings.SystemInfo.tunCapture"),
+                  data.engine.tun.capture,
+                )}
+              {!!data.engine.tun.route_table &&
+                row(
+                  t("settings.SystemInfo.tunRouteTable"),
+                  data.engine.tun.route_table,
+                )}
+              {data.engine.tun.running && (
+                <>
+                  {row(
+                    t("settings.SystemInfo.tunForwarded"),
+                    data.engine.tun.packets_forwarded.toLocaleString(),
+                  )}
+                  {row(
+                    t("settings.SystemInfo.tunForwardErrors"),
+                    boolChip(
+                      data.engine.tun.forward_errors === 0,
+                      "0",
+                      String(data.engine.tun.forward_errors),
+                    ),
+                  )}
+                  {data.engine.tun.ipv6_dropped > 0 &&
+                    row(
+                      t("settings.SystemInfo.tunIpv6Dropped"),
+                      data.engine.tun.ipv6_dropped.toLocaleString(),
+                    )}
+                </>
+              )}
+            </>
+          )}
+
           {sectionTitle(t("settings.SystemInfo.firewall"))}
           {row(t("settings.SystemInfo.fwBackend"), data.firewall.backend)}
-          {row("NFQUEUE", boolChip(data.firewall.nfqueue_works, "OK", "FAIL"))}
+          {data.engine.mode !== "tun" &&
+            row("NFQUEUE", boolChip(data.firewall.nfqueue_works, "OK", "FAIL"))}
           {row(
             t("settings.SystemInfo.flowOffload"),
             boolChip(
@@ -394,8 +524,8 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
                 : t("settings.SystemInfo.flowOffloadSw"),
             ),
           )}
-          {data.firewall.active_rules &&
-            data.firewall.active_rules.length > 0 && (
+          {data.firewall.rule_groups &&
+            data.firewall.rule_groups.length > 0 && (
               <Box
                 sx={{
                   mt: 0.5,
@@ -403,24 +533,42 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
                   py: 0.5,
                   bgcolor: `${colors.background.dark}88`,
                   borderRadius: 1,
-                  maxHeight: 150,
+                  maxHeight: 240,
                   overflow: "auto",
                 }}
               >
-                {data.firewall.active_rules.map((rule) => (
-                  <Typography
-                    key={rule}
-                    variant="caption"
-                    sx={{
-                      color: colors.text.secondary,
-                      fontFamily: "monospace",
-                      fontSize: "0.65rem",
-                      display: "block",
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    {rule}
-                  </Typography>
+                {data.firewall.rule_groups.map((group) => (
+                  <Box key={group.title} sx={{ mb: 0.5 }}>
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        color: colors.secondary,
+                        fontFamily: "monospace",
+                        fontSize: "0.65rem",
+                        fontWeight: 600,
+                        display: "block",
+                        lineHeight: 1.8,
+                      }}
+                    >
+                      {group.title}
+                    </Typography>
+                    {group.rules.map((rule, i) => (
+                      <Typography
+                        key={`${group.title}-${i}`}
+                        variant="caption"
+                        sx={{
+                          color: colors.text.secondary,
+                          fontFamily: "monospace",
+                          fontSize: "0.65rem",
+                          display: "block",
+                          lineHeight: 1.5,
+                          whiteSpace: "pre",
+                        }}
+                      >
+                        {rule}
+                      </Typography>
+                    ))}
+                  </Box>
                 ))}
               </Box>
             )}

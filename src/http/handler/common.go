@@ -16,6 +16,7 @@ import (
 	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/nfq"
+	b4tun "github.com/daniellavrushin/b4/tun"
 	"github.com/daniellavrushin/b4/utils"
 	"github.com/daniellavrushin/b4/watchdog"
 	"golang.org/x/sys/unix"
@@ -43,7 +44,12 @@ var (
 	discoveryRuntime     *discovery.Runtime
 	globalWatchdog       *watchdog.Watchdog
 	globalAIManager      *ai.Manager
+	globalTUNEngine      *b4tun.Engine
 )
+
+func SetTUNEngine(e *b4tun.Engine) {
+	globalTUNEngine = e
+}
 
 func SetAIManager(m *ai.Manager) {
 	globalAIManager = m

@@ -255,6 +255,7 @@ func (r *routeManager) setup() error {
 	}
 
 	r.resolvedCapture = r.resolveCaptureMode()
+	r.saveState()
 	var capErr error
 	if r.resolvedCapture == "ports" {
 		capErr = r.setupPortCapture(srcIP)
@@ -427,6 +428,7 @@ func (r *routeManager) refreshEgress() bool {
 		r.savedRPFilter = ""
 		r.loosenRPFilter()
 	}
+	r.saveState()
 
 	tableStr := strconv.Itoa(r.routeTable)
 	run("ip", "route", "flush", "table", tableStr)
@@ -603,6 +605,8 @@ func (r *routeManager) teardown() {
 		r.teardownNAT()
 		r.restoreRPFilter()
 	}
+
+	removeStateFile()
 
 	log.Infof("TUN: routing teardown complete")
 }
