@@ -17,6 +17,10 @@ func reinjectMarkMatch() string {
 	return fmt.Sprintf("0x%x/0x%x", engine.ReinjectMarkBit, engine.ReinjectMarkBit)
 }
 
+func clientMarkMatch() string {
+	return fmt.Sprintf("0x%x/0x%x", engine.ClientMark, engine.ClientMark)
+}
+
 func interfaceMTU(iface string) int {
 	b, err := os.ReadFile("/sys/class/net/" + iface + "/mtu")
 	if err != nil {
@@ -40,9 +44,10 @@ type routeManager struct {
 	skipTables    bool
 	savedDefault  string
 	savedRPFilter string
-	fwdRulesAdded bool
-	snatAdded     bool
-	notrackAdded  bool
+	fwdRulesAdded      bool
+	snatAdded          bool
+	notrackAdded       bool
+	clientNotrackAdded bool
 
 	captureTable int
 	tcpPorts     []string
@@ -110,16 +115,28 @@ func (r *routeManager) setupNAT() {
 		log.Warnf("TUN: no source IP derived for %s; forwarded LAN traffic will not be NAT'd and replies will not return", r.outIface)
 	}
 
+	r.notrackAdded = r.installNotrack(markStr, "re-injected packets")
+	r.clientNotrackAdded = r.installNotrack(clientMarkMatch(), "client-direction re-injects")
+}
+
+func (r *routeManager) installNotrack(markStr, label string) bool {
 	notrack := []string{"-m", "mark", "--mark", markStr, "-j", "CT", "--notrack"}
-	if _, err := run(append([]string{"iptables", "-t", "raw", "-C", "OUTPUT"}, notrack...)...); err != nil {
-		if _, err := run(append([]string{"iptables", "-t", "raw", "-A", "OUTPUT"}, notrack...)...); err != nil {
-			log.Infof("TUN: NOTRACK not installed for mark %s (no raw table here); conntrack sysctls + SNAT cover it, so this is harmless: %v", markStr, err)
-		} else {
-			r.notrackAdded = true
-			log.Infof("TUN: NOTRACK installed for re-injected packets (mark %s)", markStr)
+	if _, err := run(append([]string{"iptables", "-t", "raw", "-C", "OUTPUT"}, notrack...)...); err == nil {
+		return true
+	}
+	if _, err := run(append([]string{"iptables", "-t", "raw", "-A", "OUTPUT"}, notrack...)...); err != nil {
+		log.Infof("TUN: NOTRACK not installed for mark %s (no raw table here); conntrack sysctls + SNAT cover it, so this is harmless: %v", markStr, err)
+		return false
+	}
+	log.Infof("TUN: NOTRACK installed for %s (mark %s)", label, markStr)
+	return true
+}
+
+func (r *routeManager) removeNotrack(markStr string) {
+	for {
+		if _, err := run("iptables", "-t", "raw", "-D", "OUTPUT", "-m", "mark", "--mark", markStr, "-j", "CT", "--notrack"); err != nil {
+			break
 		}
-	} else {
-		r.notrackAdded = true
 	}
 }
 
@@ -138,13 +155,12 @@ func (r *routeManager) removeSNAT() {
 func (r *routeManager) teardownNAT() {
 	r.removeSNAT()
 	if r.notrackAdded {
-		markStr := reinjectMarkMatch()
-		for {
-			if _, err := run("iptables", "-t", "raw", "-D", "OUTPUT", "-m", "mark", "--mark", markStr, "-j", "CT", "--notrack"); err != nil {
-				break
-			}
-		}
+		r.removeNotrack(reinjectMarkMatch())
 		r.notrackAdded = false
+	}
+	if r.clientNotrackAdded {
+		r.removeNotrack(clientMarkMatch())
+		r.clientNotrackAdded = false
 	}
 }
 
@@ -510,13 +526,18 @@ func (r *routeManager) ensureNAT() {
 			r.snatAdded = true
 		}
 	}
-	if r.notrackAdded {
-		markStr := reinjectMarkMatch()
-		notrack := []string{"-m", "mark", "--mark", markStr, "-j", "CT", "--notrack"}
-		if _, err := run(append([]string{"iptables", "-t", "raw", "-C", "OUTPUT"}, notrack...)...); err != nil {
-			if _, err := run(append([]string{"iptables", "-t", "raw", "-A", "OUTPUT"}, notrack...)...); err == nil {
-				log.Infof("TUN: reconcile restored NOTRACK (mark %s)", markStr)
-			}
+	r.ensureNotrack(&r.notrackAdded, reinjectMarkMatch())
+	r.ensureNotrack(&r.clientNotrackAdded, clientMarkMatch())
+}
+
+func (r *routeManager) ensureNotrack(added *bool, markStr string) {
+	if !*added {
+		return
+	}
+	notrack := []string{"-m", "mark", "--mark", markStr, "-j", "CT", "--notrack"}
+	if _, err := run(append([]string{"iptables", "-t", "raw", "-C", "OUTPUT"}, notrack...)...); err != nil {
+		if _, err := run(append([]string{"iptables", "-t", "raw", "-A", "OUTPUT"}, notrack...)...); err == nil {
+			log.Infof("TUN: reconcile restored NOTRACK (mark %s)", markStr)
 		}
 	}
 }
