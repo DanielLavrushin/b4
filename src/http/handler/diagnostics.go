@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/tables"
 	"golang.org/x/sys/unix"
 )
@@ -390,10 +391,12 @@ func isB4IptablesRule(l string) bool {
 	if strings.HasPrefix(l, "-N B4") || strings.HasPrefix(l, "-A B4") {
 		return false
 	}
+	clientMark := fmt.Sprintf("0x%x/0x%x", engine.ClientMark, engine.ClientMark)
 	return strings.Contains(l, "b4_") ||
 		strings.Contains(l, "b4tun") ||
 		strings.Contains(l, "NFQUEUE") ||
-		strings.Contains(l, "-j B4")
+		strings.Contains(l, "-j B4") ||
+		strings.Contains(l, clientMark)
 }
 
 func nonEmptyLines(s string) []string {
