@@ -1,7 +1,6 @@
 package tun
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -56,13 +55,10 @@ func ClearStaleArtifacts(cfg *config.Config) {
 		cleared = true
 	}
 
-	if clearOwnedRoutingTable(steerMarkMatch(), captureTable) {
+	if clearOwnedRoutingTable(captureTable) {
 		cleared = true
 	}
-	if clearOwnedRoutingTable(reinjectMarkMatch(), routeTable) {
-		cleared = true
-	}
-	if clearOwnedRoutingTable(fmt.Sprintf("0x%x", cfg.MainInjectedMark()), routeTable) {
+	if clearOwnedRoutingTable(routeTable) {
 		cleared = true
 	}
 
@@ -74,10 +70,6 @@ func ClearStaleArtifacts(cfg *config.Config) {
 	if cleared {
 		log.Infof("TUN: cleared stale TUN-engine artifacts left by a previous run")
 	}
-}
-
-func steerMarkMatch() string {
-	return fmt.Sprintf("0x%x/0x%x", defaultSteerMark, defaultSteerMark)
 }
 
 func clearTunSNAT(device string) bool {
@@ -102,23 +94,18 @@ func clearTunSNAT(device string) bool {
 	return cleared
 }
 
-func clearOwnedRoutingTable(fwmark string, table int) bool {
+func clearOwnedRoutingTable(table int) bool {
 	tableStr := strconv.Itoa(table)
 	out, err := run("ip", "rule", "show")
 	if err != nil {
 		return false
 	}
-	bare := strings.SplitN(fwmark, "/", 2)[0]
 	marks := make(map[string]struct{})
 	for _, line := range strings.Split(out, "\n") {
 		if ruleFieldValue(line, "lookup") != tableStr {
 			continue
 		}
-		fw := ruleFieldValue(line, "fwmark")
-		if fw == "" {
-			continue
-		}
-		if fw == fwmark || fw == bare || strings.HasPrefix(fw, bare+"/") {
+		if fw := ruleFieldValue(line, "fwmark"); fw != "" {
 			marks[fw] = struct{}{}
 		}
 	}
