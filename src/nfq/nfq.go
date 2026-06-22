@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/quic"
@@ -66,7 +67,12 @@ func (w *Worker) Start() error {
 		return err
 	}
 	w.sock = s
-	w.clientSock = s
+	cs, err := sock.NewSenderWithMark(int(mark) | engine.ClientMark)
+	if err != nil {
+		s.Close()
+		return err
+	}
+	w.clientSock = cs
 
 	c := nfqueue.Config{
 		NfQueue:      w.qnum,

@@ -269,7 +269,7 @@ func collectFirewallInfo() DiagFirewall {
 	info := DiagFirewall{Backend: detectFirewallBackend()}
 
 	info.RuleGroups = append(info.RuleGroups, collectNftRuleGroups()...)
-	info.RuleGroups = append(info.RuleGroups, collectIptablesRuleGroups()...)
+	info.RuleGroups = append(info.RuleGroups, collectIptablesRuleGroups(info.Backend)...)
 
 	info.NFQueueWorks = testNFQueue(info.Backend)
 	info.FlowOffload = detectFlowOffload()
@@ -337,15 +337,12 @@ func collectNftRuleGroups() []DiagRuleGroup {
 	return groups
 }
 
-func collectIptablesRuleGroups() []DiagRuleGroup {
-	bin := ""
-	for _, b := range []string{"iptables", "iptables-legacy"} {
-		if _, err := exec.LookPath(b); err == nil {
-			bin = b
-			break
-		}
+func collectIptablesRuleGroups(backend string) []DiagRuleGroup {
+	bin := "iptables"
+	if backend == "iptables-legacy" {
+		bin = "iptables-legacy"
 	}
-	if bin == "" {
+	if _, err := exec.LookPath(bin); err != nil {
 		return nil
 	}
 	wait := tables.WaitArgs(bin)

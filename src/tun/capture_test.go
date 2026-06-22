@@ -40,8 +40,8 @@ func TestEqualStringSet(t *testing.T) {
 
 func TestSteerMarkDefault(t *testing.T) {
 	r := &routeManager{}
-	if r.steerMarkStr() != "0x80000/0x80000" {
-		t.Errorf("steerMarkStr = %q, want 0x80000/0x80000", r.steerMarkStr())
+	if r.steerMarkStr() != "0x40000000/0x40000000" {
+		t.Errorf("steerMarkStr = %q, want 0x40000000/0x40000000", r.steerMarkStr())
 	}
 }
 
@@ -69,11 +69,11 @@ func TestSteerSpecsMultiport(t *testing.T) {
 	if !strings.Contains(all, "-p udp -m multiport --dports 443") || !strings.Contains(all, "--connbytes 0:8") {
 		t.Errorf("missing udp multiport/connbytes:\n%s", all)
 	}
-	if !strings.Contains(all, "-p udp --dport 53 -j MARK --set-xmark 0x80000/0x80000") {
+	if !strings.Contains(all, "-p udp --dport 53 -j MARK --set-xmark 0x40000000/0x40000000") {
 		t.Errorf("missing DNS steer rule:\n%s", all)
 	}
 	for _, s := range joined {
-		if !strings.HasSuffix(s, "-j MARK --set-xmark 0x80000/0x80000") {
+		if !strings.HasSuffix(s, "-j MARK --set-xmark 0x40000000/0x40000000") {
 			t.Errorf("steer spec does not end in MARK: %q", s)
 		}
 	}

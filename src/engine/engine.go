@@ -1,9 +1,9 @@
 package engine
 
 const (
-	TunSteerMark    = 0x80000
-	TunClientMark   = 0x100000
-	ReinjectMarkBit = 0x800000
+	TunSteerMark    = 0x40000000
+	ClientMark      = 0x20000000
+	ReinjectMarkBit = 0x10000000
 )
 
 type PacketVerdict int

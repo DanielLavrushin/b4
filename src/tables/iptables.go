@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -37,7 +38,7 @@ func (im *IPTablesManager) ApplyMasquerade() error {
 		masqSpec = []string{"-o", iface, "-j", "MASQUERADE"}
 	}
 
-	returnSpec := []string{"-m", "mark", "--mark", im.masqMarkAccept(), "-j", "RETURN"}
+	returnSpec := []string{"-m", "mark", "--mark", im.masqClientMark(), "-j", "RETURN"}
 	checkRet := append([]string{iptBin, "-w", "-t", "nat", "-C", "POSTROUTING"}, returnSpec...)
 	if _, err := run(checkRet...); err != nil {
 		insRet := append([]string{iptBin, "-w", "-t", "nat", "-I", "POSTROUTING"}, returnSpec...)
@@ -77,10 +78,12 @@ func (im *IPTablesManager) ClearMasquerade() {
 		}
 	}
 
-	retArgs := []string{iptBin, "-w", "-t", "nat", "-D", "POSTROUTING", "-m", "mark", "--mark", im.masqMarkAccept(), "-j", "RETURN"}
-	for {
-		if _, err := run(retArgs...); err != nil {
-			break
+	for _, mk := range []string{im.masqClientMark(), im.masqMarkAccept()} {
+		retArgs := []string{iptBin, "-w", "-t", "nat", "-D", "POSTROUTING", "-m", "mark", "--mark", mk, "-j", "RETURN"}
+		for {
+			if _, err := run(retArgs...); err != nil {
+				break
+			}
 		}
 	}
 }
@@ -90,6 +93,10 @@ func (im *IPTablesManager) masqMarkAccept() string {
 		return "0x8000/0x8000"
 	}
 	return fmt.Sprintf("0x%x/0x%x", im.cfg.Queue.Mark, im.cfg.Queue.Mark)
+}
+
+func (im *IPTablesManager) masqClientMark() string {
+	return fmt.Sprintf("0x%x/0x%x", engine.ClientMark, engine.ClientMark)
 }
 
 func (im *IPTablesManager) iptablesBin() string {
@@ -406,6 +413,7 @@ func (manager *IPTablesManager) buildManifest() (Manifest, error) {
 	if cfg.Queue.Mark == 0 {
 		markAccept = "0x8000/0x8000"
 	}
+	markClient := fmt.Sprintf("0x%x/0x%x", engine.ClientMark, engine.ClientMark)
 
 	var ipsets []IPSet
 	var chains []Chain
@@ -651,7 +659,7 @@ func (manager *IPTablesManager) buildManifest() (Manifest, error) {
 				masqSpec = []string{"-o", iface, "-j", "MASQUERADE"}
 			}
 			rules = append(rules,
-				Rule{manager: manager, IPT: ipt, Table: "nat", Chain: "POSTROUTING", Action: "I", Spec: []string{"-m", "mark", "--mark", markAccept, "-j", "RETURN"}},
+				Rule{manager: manager, IPT: ipt, Table: "nat", Chain: "POSTROUTING", Action: "I", Spec: []string{"-m", "mark", "--mark", markClient, "-j", "RETURN"}},
 				Rule{manager: manager, IPT: ipt, Table: "nat", Chain: "POSTROUTING", Action: "A", Spec: masqSpec},
 			)
 		}
@@ -971,10 +979,12 @@ func (ipt *IPTablesManager) clearB4JumpRules() {
 				}
 			}
 		}
-		for {
-			_, err := run(iptBin, "-w", "-t", "nat", "-D", "POSTROUTING", "-m", "mark", "--mark", ipt.masqMarkAccept(), "-j", "RETURN")
-			if err != nil {
-				break
+		for _, mk := range []string{ipt.masqClientMark(), ipt.masqMarkAccept()} {
+			for {
+				_, err := run(iptBin, "-w", "-t", "nat", "-D", "POSTROUTING", "-m", "mark", "--mark", mk, "-j", "RETURN")
+				if err != nil {
+					break
+				}
 			}
 		}
 

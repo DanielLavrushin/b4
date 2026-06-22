@@ -3,6 +3,8 @@
 ## [1.70.1] - 2026-06-22
 
 - ADDED: **System diagnostics now show the active engine and the firewall rules b4 has set up** - the diagnostics page tells you whether b4 is running in NFQUEUE or TUN mode (so TUN setups no longer look like a failed firewall), and lists the firewall rules b4 currently maintains, making it easier to see what is in place and share when asking for help.
+- CHANGED: **b4's internal firewall marks moved to a less-contended range** - b4 tags its own packets with a firewall mark (fwmark); the values it used overlapped the range Tailscale and some other router apps use, which could misroute traffic when they ran alongside b4. The internal marks now use high bits that other tools rarely touch.
+- FIXED: **Bypass stopped working for mobile apps (for example the YouTube app on Android) on gateway/container setups with NAT Masquerade** - the fake and fragmented packets b4 sends to defeat DPI were no longer given the gateway's public address, so they never reached the server. This mainly hit QUIC traffic, which phone apps prefer, while ordinary websites over TCP kept working.
 - FIXED: **A set could fail to start when it mixed a country/service list with its own listed addresses** - if an address you added by hand was already covered by a chosen list (for example adding Instagram addresses alongside the Facebook list), b4 saw them as overlapping and refused to start.
 
 ## [1.70.0] - 2026-06-21

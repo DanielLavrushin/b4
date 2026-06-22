@@ -369,6 +369,20 @@ func TestValidate_QueueFields(t *testing.T) {
 			t.Errorf("expected reserved-TUN-bits message, got %q", f.Message)
 		}
 	})
+
+	t.Run("nfqueue mode rejects mark overlapping client mark bit", func(t *testing.T) {
+		cfg := NewConfig()
+		cfg.System.Tables.Masquerade = true
+		cfg.Queue.Mark = engine.ClientMark
+		ve := mustValidationErr(t, cfg.Validate())
+		f := findField(ve, "queue.mark", "mark_conflict")
+		if f == nil {
+			t.Fatalf("missing queue.mark mark_conflict; got %+v", ve.Fields)
+		}
+		if !strings.Contains(f.Message, "client mark bit") {
+			t.Errorf("expected client-mark-bit message, got %q", f.Message)
+		}
+	})
 }
 
 func TestValidate_RequiredSetID(t *testing.T) {

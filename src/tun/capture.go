@@ -14,7 +14,7 @@ const (
 	tunCaptureChain   = "B4_TUN"
 	tunProbeChain     = "B4_TUN_PROBE"
 	defaultSteerMark  = engine.TunSteerMark
-	defaultClientMark = engine.TunClientMark
+	defaultClientMark = engine.ClientMark
 	captureRulePrio   = 90
 )
 

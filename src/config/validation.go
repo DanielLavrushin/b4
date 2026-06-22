@@ -257,11 +257,18 @@ func (c *Config) Validate() error {
 	}
 
 	if c.Queue.Mode == "tun" {
-		const tunReservedMarkBits = uint(engine.TunSteerMark | engine.TunClientMark | engine.ReinjectMarkBit)
+		const tunReservedMarkBits = uint(engine.TunSteerMark | engine.ClientMark | engine.ReinjectMarkBit)
 		if m := c.MainInjectedMark(); m&tunReservedMarkBits != 0 {
 			v.addf("queue.mark", "mark_conflict", map[string]any{"mark": fmt.Sprintf("0x%x", m)},
 				"queue mark 0x%x overlaps reserved TUN mark bits (0x%x steer, 0x%x client, 0x%x reinject); choose a mark clear of those bits",
-				m, uint(engine.TunSteerMark), uint(engine.TunClientMark), uint(engine.ReinjectMarkBit))
+				m, uint(engine.TunSteerMark), uint(engine.ClientMark), uint(engine.ReinjectMarkBit))
+			return v.result()
+		}
+	} else if c.System.Tables.Masquerade {
+		if m := c.MainInjectedMark(); m&uint(engine.ClientMark) != 0 {
+			v.addf("queue.mark", "mark_conflict", map[string]any{"mark": fmt.Sprintf("0x%x", m)},
+				"queue mark 0x%x overlaps the reserved client mark bit (0x%x) used by NAT masquerade; choose a mark clear of that bit",
+				m, uint(engine.ClientMark))
 			return v.result()
 		}
 	}

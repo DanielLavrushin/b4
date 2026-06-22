@@ -50,7 +50,7 @@ func (w *Worker) InitSender() error {
 	}
 	w.sock = s
 	if tun {
-		cs, err := sock.NewSenderWithMark(engine.TunClientMark)
+		cs, err := sock.NewSenderWithMark(engine.ClientMark)
 		if err != nil {
 			w.sock.Close()
 			w.sock = nil
@@ -58,7 +58,13 @@ func (w *Worker) InitSender() error {
 		}
 		w.clientSock = cs
 	} else {
-		w.clientSock = s
+		cs, err := sock.NewSenderWithMark(reinjectMark | engine.ClientMark)
+		if err != nil {
+			w.sock.Close()
+			w.sock = nil
+			return err
+		}
+		w.clientSock = cs
 	}
 	return nil
 }
