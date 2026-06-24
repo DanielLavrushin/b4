@@ -361,13 +361,14 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	tproxyResolver.Set(pool.GetMatcher())
 
+	handler.SetTUNEngine(tunEngine)
+
 	// Start internal web server if configured
 	httpServer, apiHandler, err := b4http.StartServer(&cfgPtr, pool)
 	if err != nil {
 		metrics.RecordEvent("error", fmt.Sprintf("Failed to start web server: %v", err))
 		return log.Errorf("failed to start web server: %w", err)
 	}
-	handler.SetTUNEngine(tunEngine)
 
 	// Start SOCKS5 server if configured.
 	socks5Server := socks5.NewServer(&cfg)

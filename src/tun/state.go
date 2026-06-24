@@ -25,6 +25,7 @@ type persistedState struct {
 func writeStateFile(st persistedState) {
 	data, err := json.Marshal(st)
 	if err != nil {
+		log.Tracef("TUN: could not marshal teardown state: %v", err)
 		return
 	}
 	for _, path := range stateFileCandidates {
