@@ -264,7 +264,7 @@ func (c *Config) Validate() error {
 				m, uint(engine.TunSteerMark), uint(engine.ClientMark), uint(engine.ReinjectMarkBit))
 			return v.result()
 		}
-	} else if c.System.Tables.Masquerade {
+	} else if c.System.Tables.Masquerade.Enabled {
 		if m := c.MainInjectedMark(); m&uint(engine.ClientMark) != 0 {
 			v.addf("queue.mark", "mark_conflict", map[string]any{"mark": fmt.Sprintf("0x%x", m)},
 				"queue mark 0x%x overlaps the reserved client mark bit (0x%x) used by NAT masquerade; choose a mark clear of that bit",

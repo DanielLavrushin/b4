@@ -372,7 +372,7 @@ func TestValidate_QueueFields(t *testing.T) {
 
 	t.Run("nfqueue mode rejects mark overlapping client mark bit", func(t *testing.T) {
 		cfg := NewConfig()
-		cfg.System.Tables.Masquerade = true
+		cfg.System.Tables.Masquerade.Enabled = true
 		cfg.Queue.Mark = engine.ClientMark
 		ve := mustValidationErr(t, cfg.Validate())
 		f := findField(ve, "queue.mark", "mark_conflict")

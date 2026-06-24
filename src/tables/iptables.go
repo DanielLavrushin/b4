@@ -27,16 +27,32 @@ func NewIPTablesManager(cfg *config.Config, useLegacy bool) *IPTablesManager {
 	return &IPTablesManager{cfg: cfg, useLegacy: useLegacy, multiportSupport: make(map[string]bool), connbytesSupport: make(map[string]error)}
 }
 
+func masqueradeSpecs(cfg *config.Config) [][]string {
+	ifaces := cfg.System.Tables.Masquerade.Interfaces
+	if len(ifaces) == 0 {
+		return [][]string{{"-j", "MASQUERADE"}}
+	}
+	specs := make([][]string, 0, len(ifaces))
+	for _, iface := range ifaces {
+		specs = append(specs, []string{"-o", iface, "-j", "MASQUERADE"})
+	}
+	return specs
+}
+
+func masqueradeLogLabel(cfg *config.Config) string {
+	ifaces := cfg.System.Tables.Masquerade.Interfaces
+	if len(ifaces) == 0 {
+		return "all"
+	}
+	return strings.Join(ifaces, ", ")
+}
+
 func (im *IPTablesManager) ApplyMasquerade() error {
-	if !im.cfg.System.Tables.Masquerade {
+	if !im.cfg.System.Tables.Masquerade.Enabled {
 		return nil
 	}
 
 	iptBin := im.iptablesBin()
-	masqSpec := []string{"-j", "MASQUERADE"}
-	if iface := im.cfg.System.Tables.MasqueradeInterface; iface != "" {
-		masqSpec = []string{"-o", iface, "-j", "MASQUERADE"}
-	}
 
 	returnSpec := []string{"-m", "mark", "--mark", im.masqClientMark(), "-j", "RETURN"}
 	checkRet := append([]string{iptBin, "-w", "-t", "nat", "-C", "POSTROUTING"}, returnSpec...)
@@ -47,34 +63,30 @@ func (im *IPTablesManager) ApplyMasquerade() error {
 		}
 	}
 
-	checkArgs := append([]string{iptBin, "-w", "-t", "nat", "-C", "POSTROUTING"}, masqSpec...)
-	if _, err := run(checkArgs...); err == nil {
-		return nil
+	for _, masqSpec := range masqueradeSpecs(im.cfg) {
+		checkArgs := append([]string{iptBin, "-w", "-t", "nat", "-C", "POSTROUTING"}, masqSpec...)
+		if _, err := run(checkArgs...); err == nil {
+			continue
+		}
+		addArgs := append([]string{iptBin, "-w", "-t", "nat", "-A", "POSTROUTING"}, masqSpec...)
+		if _, err := run(addArgs...); err != nil {
+			return fmt.Errorf("failed to add masquerade rule: %w", err)
+		}
 	}
 
-	addArgs := append([]string{iptBin, "-w", "-t", "nat", "-A", "POSTROUTING"}, masqSpec...)
-	if _, err := run(addArgs...); err != nil {
-		return fmt.Errorf("failed to add masquerade rule: %w", err)
-	}
-
-	iface := im.cfg.System.Tables.MasqueradeInterface
-	if iface == "" {
-		iface = "all"
-	}
-	log.Infof("IPTABLES: masquerade enabled (interface: %s)", iface)
+	log.Infof("IPTABLES: masquerade enabled (interface: %s)", masqueradeLogLabel(im.cfg))
 	return nil
 }
 
 func (im *IPTablesManager) ClearMasquerade() {
 	iptBin := im.iptablesBin()
-	args := []string{iptBin, "-w", "-t", "nat", "-D", "POSTROUTING"}
-	if iface := im.cfg.System.Tables.MasqueradeInterface; iface != "" {
-		args = append(args, "-o", iface)
-	}
-	args = append(args, "-j", "MASQUERADE")
-	for {
-		if _, err := run(args...); err != nil {
-			break
+	specs := append(masqueradeSpecs(im.cfg), []string{"-j", "MASQUERADE"})
+	for _, spec := range specs {
+		args := append([]string{iptBin, "-w", "-t", "nat", "-D", "POSTROUTING"}, spec...)
+		for {
+			if _, err := run(args...); err != nil {
+				break
+			}
 		}
 	}
 
@@ -652,16 +664,16 @@ func (manager *IPTablesManager) buildManifest() (Manifest, error) {
 		)
 	}
 
-	if cfg.System.Tables.Masquerade {
+	if cfg.System.Tables.Masquerade.Enabled {
 		for _, ipt := range ipts {
-			masqSpec := []string{"-j", "MASQUERADE"}
-			if iface := cfg.System.Tables.MasqueradeInterface; iface != "" {
-				masqSpec = []string{"-o", iface, "-j", "MASQUERADE"}
-			}
 			rules = append(rules,
 				Rule{manager: manager, IPT: ipt, Table: "nat", Chain: "POSTROUTING", Action: "I", Spec: []string{"-m", "mark", "--mark", markClient, "-j", "RETURN"}},
-				Rule{manager: manager, IPT: ipt, Table: "nat", Chain: "POSTROUTING", Action: "A", Spec: masqSpec},
 			)
+			for _, masqSpec := range masqueradeSpecs(cfg) {
+				rules = append(rules,
+					Rule{manager: manager, IPT: ipt, Table: "nat", Chain: "POSTROUTING", Action: "A", Spec: masqSpec},
+				)
+			}
 		}
 	}
 
@@ -971,7 +983,7 @@ func (ipt *IPTablesManager) clearB4JumpRules() {
 				break
 			}
 		}
-		if iface := ipt.cfg.System.Tables.MasqueradeInterface; iface != "" {
+		for _, iface := range ipt.cfg.System.Tables.Masquerade.Interfaces {
 			for {
 				_, err := run(iptBin, "-w", "-t", "nat", "-D", "POSTROUTING", "-o", iface, "-j", "MASQUERADE")
 				if err != nil {

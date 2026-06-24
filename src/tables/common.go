@@ -63,7 +63,7 @@ func DetectBackend(cfg *config.Config) string {
 }
 
 func ApplyMasqueradeOnly(cfg *config.Config) error {
-	if !cfg.System.Tables.Masquerade {
+	if !cfg.System.Tables.Masquerade.Enabled {
 		return nil
 	}
 	loadKernelModules()
@@ -89,7 +89,7 @@ func RevertConntrackSysctls() {
 }
 
 func ClearMasqueradeOnly(cfg *config.Config) {
-	if !cfg.System.Tables.Masquerade {
+	if !cfg.System.Tables.Masquerade.Enabled {
 		return
 	}
 	backend := detectFirewallBackend(cfg)

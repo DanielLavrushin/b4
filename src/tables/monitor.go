@@ -219,7 +219,7 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 			return false
 		}
 
-		if cfg.System.Tables.Masquerade {
+		if cfg.System.Tables.Masquerade.Enabled {
 			out, _ := run(ipt, "-w", "-t", "nat", "-S", "POSTROUTING")
 			if !strings.Contains(out, "MASQUERADE") {
 				log.Tracef("Monitor: POSTROUTING MASQUERADE rule missing")
@@ -305,7 +305,7 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 		return false
 	}
 
-	if cfg.System.Tables.Masquerade {
+	if cfg.System.Tables.Masquerade.Enabled {
 		if !nft.natTableExists() {
 			log.Tracef("Monitor: nftables nat table missing")
 			return false

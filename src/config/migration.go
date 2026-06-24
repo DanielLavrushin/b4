@@ -69,6 +69,17 @@ var migrationRegistry = map[int]MigrationFunc{
 	45: migrateV45to46, // Replace logging.error_file with logging.directory
 	46: migrateV46to47, // Drop the hardcoded legacy MTProto WS endpoint host (empty now falls back to it)
 	47: migrateV47to48, // Add TUN engine mode and config
+	48: migrateV48to49, // Convert masquerade to nested config (multi-interface)
+}
+
+func migrateV48to49(c *Config, raw map[string]interface{}) error {
+	log.Tracef("Migration v48->v49: Converting masquerade to nested config with multiple interfaces")
+	system, _ := raw["system"].(map[string]interface{})
+	tables, _ := system["tables"].(map[string]interface{})
+	if iface, ok := tables["masquerade_interface"].(string); ok && iface != "" {
+		c.System.Tables.Masquerade.Interfaces = []string{iface}
+	}
+	return nil
 }
 
 func migrateV47to48(c *Config, _ map[string]interface{}) error {
@@ -432,7 +443,6 @@ func migrateV22to23(c *Config, _ map[string]interface{}) error {
 func migrateV21to22(c *Config, _ map[string]interface{}) error {
 	log.Tracef("Migration v21->v22: Adding NAT masquerade config")
 	c.System.Tables.Masquerade = DefaultConfig.System.Tables.Masquerade
-	c.System.Tables.MasqueradeInterface = DefaultConfig.System.Tables.MasqueradeInterface
 	return nil
 }
 

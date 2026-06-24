@@ -496,10 +496,7 @@ func (a *API) PerformSoftRestart(newCfg *config.Config, oldCfg *config.Config) b
 		shouldUpdate = true
 	}
 
-	if oldCfg.System.Tables.Masquerade != newCfg.System.Tables.Masquerade {
-		shouldUpdate = true
-	}
-	if oldCfg.System.Tables.MasqueradeInterface != newCfg.System.Tables.MasqueradeInterface {
+	if !oldCfg.System.Tables.Masquerade.Equal(newCfg.System.Tables.Masquerade) {
 		shouldUpdate = true
 	}
 

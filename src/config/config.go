@@ -213,11 +213,13 @@ var DefaultConfig = Config{
 		},
 
 		Tables: TablesConfig{
-			MonitorInterval:     10,
-			SkipSetup:           false,
-			Engine:              "",
-			Masquerade:          false,
-			MasqueradeInterface: "",
+			MonitorInterval: 10,
+			SkipSetup:       false,
+			Engine:          "",
+			Masquerade: MasqueradeConfig{
+				Enabled:    false,
+				Interfaces: []string{},
+			},
 		},
 
 		WebServer: WebServerConfig{

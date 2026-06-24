@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.7x.x] - 2026-0x-xx
+
+- ADDED: **NAT Masquerade can now target several interfaces at once** - when NAT Masquerade is turned on (Settings → Feature), you can pick any combination of network interfaces for it to use — for example two out of three — instead of only a single interface or all of them.
+
 ## [1.70.1] - 2026-06-23
 
 - ADDED: **System diagnostics now show the active engine and the firewall rules b4 has set up** - the diagnostics page tells you whether b4 is running in NFQUEUE or TUN mode (so TUN setups no longer look like a failed firewall), and lists the firewall rules b4 currently maintains, making it easier to see what is in place and share when asking for help.

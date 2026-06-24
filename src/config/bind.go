@@ -1,26 +1,21 @@
 package config
 
 import (
-	"path/filepath"
-
 	"github.com/spf13/cobra"
 )
 
 type CLIOverrides struct {
-	QueueNum            int
-	Threads             int
-	Mark                uint
-	IPv4Enabled         bool
-	IPv6Enabled         bool
-	MonitorInterval     int
-	SkipSetup           bool
-	Masquerade          bool
-	MasqueradeInterface string
-	Instaflush          bool
-	Syslog              bool
-	LogDir              string
-	ErrorFile           string // deprecated: alias for --log-dir (uses its parent dir)
-	WebPort             int
+	QueueNum        int
+	Threads         int
+	Mark            uint
+	IPv4Enabled     bool
+	IPv6Enabled     bool
+	MonitorInterval int
+	SkipSetup       bool
+	Instaflush      bool
+	Syslog          bool
+	LogDir          string
+	WebPort         int
 }
 
 func (c *Config) BindFlags(cmd *cobra.Command, o *CLIOverrides) {
@@ -34,12 +29,9 @@ func (c *Config) BindFlags(cmd *cobra.Command, o *CLIOverrides) {
 	cmd.Flags().BoolVar(&o.IPv6Enabled, "ipv6", d.Queue.IPv6Enabled, "Enable IPv6 processing")
 	cmd.Flags().IntVar(&o.MonitorInterval, "tables-monitor-interval", d.System.Tables.MonitorInterval, "Tables monitor interval in seconds (default 10, 0 to disable)")
 	cmd.Flags().BoolVar(&o.SkipSetup, "skip-tables", d.System.Tables.SkipSetup, "Skip iptables/nftables setup on startup")
-	cmd.Flags().BoolVar(&o.Masquerade, "masquerade", d.System.Tables.Masquerade, "Enable NAT masquerade (useful for containers)")
-	cmd.Flags().StringVar(&o.MasqueradeInterface, "masquerade-interface", d.System.Tables.MasqueradeInterface, "Restrict masquerade to this output interface (empty = all)")
 	cmd.Flags().BoolVarP(&o.Instaflush, "instaflush", "i", d.System.Logging.Instaflush, "Flush logs immediately")
 	cmd.Flags().BoolVar(&o.Syslog, "syslog", d.System.Logging.Syslog, "Enable syslog output")
 	cmd.Flags().StringVar(&o.LogDir, "log-dir", d.System.Logging.Directory, "Directory for b4 log files (empty disables file logging)")
-	cmd.Flags().StringVar(&o.ErrorFile, "error-file", "", "Deprecated: use --log-dir (the file's parent directory is used)")
 	_ = cmd.Flags().MarkDeprecated("error-file", "use --log-dir instead")
 	cmd.Flags().IntVar(&o.WebPort, "web-port", d.System.WebServer.Port, "Port for internal web server (0 disables)")
 }
@@ -83,12 +75,6 @@ func (c *Config) ApplyCLIOverrides(cmd *cobra.Command, o *CLIOverrides) {
 	if changed("skip-tables") {
 		c.System.Tables.SkipSetup = o.SkipSetup
 	}
-	if changed("masquerade") {
-		c.System.Tables.Masquerade = o.Masquerade
-	}
-	if changed("masquerade-interface") {
-		c.System.Tables.MasqueradeInterface = o.MasqueradeInterface
-	}
 	if changed("instaflush") {
 		c.System.Logging.Instaflush = o.Instaflush
 	}
@@ -97,13 +83,6 @@ func (c *Config) ApplyCLIOverrides(cmd *cobra.Command, o *CLIOverrides) {
 	}
 	if changed("log-dir") {
 		c.System.Logging.Directory = o.LogDir
-	}
-	if changed("error-file") {
-		if o.ErrorFile == "" {
-			c.System.Logging.Directory = ""
-		} else {
-			c.System.Logging.Directory = filepath.Dir(o.ErrorFile)
-		}
 	}
 	if changed("web-port") {
 		c.System.WebServer.Port = o.WebPort
@@ -150,12 +129,6 @@ func stripCLIOverrides(c *Config) *Config {
 	if f["skip-tables"] && c.System.Tables.SkipSetup == ov.SkipSetup {
 		clone.System.Tables.SkipSetup = snap.System.Tables.SkipSetup
 	}
-	if f["masquerade"] && c.System.Tables.Masquerade == ov.Masquerade {
-		clone.System.Tables.Masquerade = snap.System.Tables.Masquerade
-	}
-	if f["masquerade-interface"] && c.System.Tables.MasqueradeInterface == ov.MasqueradeInterface {
-		clone.System.Tables.MasqueradeInterface = snap.System.Tables.MasqueradeInterface
-	}
 	if f["instaflush"] && c.System.Logging.Instaflush == ov.Instaflush {
 		clone.System.Logging.Instaflush = snap.System.Logging.Instaflush
 	}
@@ -164,15 +137,6 @@ func stripCLIOverrides(c *Config) *Config {
 	}
 	if f["log-dir"] && c.System.Logging.Directory == ov.LogDir {
 		clone.System.Logging.Directory = snap.System.Logging.Directory
-	}
-	if f["error-file"] {
-		expected := ""
-		if ov.ErrorFile != "" {
-			expected = filepath.Dir(ov.ErrorFile)
-		}
-		if c.System.Logging.Directory == expected {
-			clone.System.Logging.Directory = snap.System.Logging.Directory
-		}
 	}
 	if f["web-port"] && c.System.WebServer.Port == ov.WebPort {
 		clone.System.WebServer.Port = snap.System.WebServer.Port

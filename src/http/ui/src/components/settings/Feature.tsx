@@ -30,15 +30,23 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
     onChange("queue.interfaces", updated);
   };
 
+  const handleMasqueradeToggle = (iface: string) => {
+    const current = config.system.tables.masquerade.interfaces || [];
+    const updated = current.includes(iface)
+      ? current.filter((i) => i !== iface)
+      : [...current, iface];
+    onChange("system.tables.masquerade.interfaces", updated);
+  };
+
   const tunOutInterface = config.queue.tun?.out_interface;
   const tunFollowsDefault = !tunOutInterface || tunOutInterface === "auto";
 
   const masqueradeSwitch = (
     <B4Switch
       label={t("settings.Feature.natMasquerade")}
-      checked={config.system.tables.masquerade}
+      checked={config.system.tables.masquerade.enabled}
       onChange={(checked: boolean) =>
-        onChange("system.tables.masquerade", checked)
+        onChange("system.tables.masquerade.enabled", checked)
       }
       description={t("settings.Feature.natMasqueradeDesc")}
     />
@@ -190,7 +198,7 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
           {masqueradeSwitch}
         </B4FormGroup>
       )}
-      {config.system.tables.masquerade && (
+      {config.system.tables.masquerade.enabled && (
         <B4FormGroup
           label={t("settings.Feature.masqueradeInterface")}
           columns={1}
@@ -201,18 +209,14 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
             </Typography>
             <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
               {(config.available_ifaces ?? []).map((iface) => {
-                const isSelected =
-                  config.system.tables.masquerade_interface === iface;
+                const isSelected = (
+                  config.system.tables.masquerade.interfaces || []
+                ).includes(iface);
                 return (
                   <B4Badge
                     key={iface}
                     label={iface}
-                    onClick={() =>
-                      onChange(
-                        "system.tables.masquerade_interface",
-                        isSelected ? "" : iface,
-                      )
-                    }
+                    onClick={() => handleMasqueradeToggle(iface)}
                     variant={isSelected ? "filled" : "outlined"}
                     color={"primary"}
                   />
@@ -224,7 +228,7 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
                 {t("settings.Feature.noInterfacesDetected")}
               </B4Alert>
             )}
-            {!config.system.tables.masquerade_interface && (
+            {(config.system.tables.masquerade.interfaces || []).length === 0 && (
               <B4Alert severity="info" sx={{ mt: 2 }}>
                 {t("settings.Feature.masqueradeAllInterfaces")}
               </B4Alert>

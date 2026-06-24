@@ -253,12 +253,15 @@ export interface WebServerConfig {
   password_set?: boolean;
   language: string;
 }
+export interface MasqueradeConfig {
+  enabled: boolean;
+  interfaces: string[];
+}
 export interface TableConfig {
   monitor_interval: number;
   skip_setup: boolean;
   engine: string;
-  masquerade: boolean;
-  masquerade_interface: string;
+  masquerade: MasqueradeConfig;
 }
 
 export interface GeoConfig {
