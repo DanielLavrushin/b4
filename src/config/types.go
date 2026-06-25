@@ -255,6 +255,7 @@ type SystemConfig struct {
 	AI          AIConfig            `json:"ai"`
 	Timezone    string              `json:"timezone"`
 	MemoryLimit string              `json:"memory_limit,omitempty"`
+	Pprof       bool                `json:"pprof,omitempty"`
 }
 
 type AIConfig struct {

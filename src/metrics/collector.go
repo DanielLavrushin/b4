@@ -60,7 +60,11 @@ type MemoryStats struct {
 	Percent        float64 `json:"percent"`
 	HeapAlloc      uint64  `json:"heap_alloc"`
 	HeapInuse      uint64  `json:"heap_inuse"`
+	HeapSys        uint64  `json:"heap_sys"`
+	RSS            uint64  `json:"rss"`
 	NumGC          uint32  `json:"num_gc"`
+	Goroutines     int     `json:"goroutines"`
+	OpenFDs        int     `json:"open_fds"`
 }
 
 type WorkerHealth struct {
@@ -184,6 +188,8 @@ func (m *MetricsCollector) updateSystemStats() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	rss, fds := procStats()
+
 	m.MemoryUsage = MemoryStats{
 		Allocated:      memStats.Alloc,
 		TotalAllocated: memStats.TotalAlloc,
@@ -191,6 +197,10 @@ func (m *MetricsCollector) updateSystemStats() {
 		NumGC:          memStats.NumGC,
 		HeapAlloc:      memStats.HeapAlloc,
 		HeapInuse:      memStats.HeapInuse,
+		HeapSys:        memStats.HeapSys,
+		RSS:            rss,
+		Goroutines:     runtime.NumGoroutine(),
+		OpenFDs:        fds,
 		Percent:        float64(memStats.Alloc) / float64(memStats.Sys) * 100,
 	}
 
