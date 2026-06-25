@@ -96,15 +96,19 @@ export function useTraceSession(): TraceSession {
         setTraceStartMs(null);
         setTraceLines(s.lines);
         setDownloadReady(true);
-        await traceApi.download();
-        showSuccess(t("logs.trace.saved"));
+        try {
+          await traceApi.download();
+          showSuccess(t("logs.trace.saved"));
+        } catch {
+          showError(t("logs.trace.downloadFailed"));
+        }
       })
       .catch(() => showError(t("logs.trace.stopFailed")))
       .finally(() => setTraceBusy(false));
   };
 
   const downloadTrace = () => {
-    traceApi.download().catch(() => showError(t("logs.trace.stopFailed")));
+    traceApi.download().catch(() => showError(t("logs.trace.downloadFailed")));
   };
 
   return {

@@ -147,7 +147,7 @@ func (p *ollamaProvider) Stream(ctx context.Context, req Request) (<-chan Chunk,
 		for {
 			select {
 			case <-ctx.Done():
-				out <- Chunk{Err: ctx.Err()}
+				trySend(out, Chunk{Err: ctx.Err()})
 				return
 			default:
 			}
@@ -155,19 +155,19 @@ func (p *ollamaProvider) Stream(ctx context.Context, req Request) (<-chan Chunk,
 			if len(bytes.TrimSpace(line)) > 0 {
 				var c ollamaChunk
 				if jerr := json.Unmarshal(bytes.TrimSpace(line), &c); jerr != nil {
-					out <- Chunk{Err: fmt.Errorf("ollama: bad chunk: %w", jerr)}
+					trySend(out, Chunk{Err: fmt.Errorf("ollama: bad chunk: %w", jerr)})
 					return
 				}
 				if c.Error != "" {
-					out <- Chunk{Err: fmt.Errorf("ollama: %s", c.Error)}
+					trySend(out, Chunk{Err: fmt.Errorf("ollama: %s", c.Error)})
 					return
 				}
 				ch := Chunk{Delta: c.Message.Content, Done: c.Done}
 				if c.Done {
 					ch.Usage = &Usage{InputTokens: c.PromptEvalCount, OutputTokens: c.EvalCount}
 				}
-				if ch.Delta != "" || ch.Done {
-					out <- ch
+				if (ch.Delta != "" || ch.Done) && !sendChunk(ctx, out, ch) {
+					return
 				}
 				if c.Done {
 					return
@@ -175,7 +175,7 @@ func (p *ollamaProvider) Stream(ctx context.Context, req Request) (<-chan Chunk,
 			}
 			if err != nil {
 				if err != io.EOF {
-					out <- Chunk{Err: err}
+					trySend(out, Chunk{Err: err})
 				}
 				return
 			}

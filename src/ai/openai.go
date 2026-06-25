@@ -179,6 +179,32 @@ func parseOpenAIEvent(payload []byte) (Chunk, bool, bool) {
 	return out, true, false
 }
 
+// sendChunk delivers a data chunk, blocking until the consumer reads it or ctx
+// is canceled. The ctx escape is what prevents the producer goroutine (and the
+// underlying HTTP body) from leaking when the consumer returns early and stops
+// draining a full buffered channel. Returns false if the send was abandoned.
+func sendChunk(ctx context.Context, out chan<- Chunk, c Chunk) bool {
+	select {
+	case out <- c:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// trySend makes a best-effort, non-blocking delivery of a terminal chunk
+// (error or cancellation notice). It never blocks: if the consumer has stopped
+// reading and the buffer is full, the chunk is dropped rather than leaking the
+// producer. A plain ctx-select is wrong here because on cancellation ctx.Done
+// is already ready and would race the delivery, dropping the notice ~half the
+// time even when the consumer is still draining.
+func trySend(out chan<- Chunk, c Chunk) {
+	select {
+	case out <- c:
+	default:
+	}
+}
+
 func parseSSE(ctx context.Context, r io.Reader, out chan<- Chunk, parse func([]byte) (Chunk, bool, bool)) {
 	br := bufio.NewReader(r)
 	var dataBuf bytes.Buffer
@@ -189,12 +215,8 @@ func parseSSE(ctx context.Context, r io.Reader, out chan<- Chunk, parse func([]b
 		payload := bytes.TrimSpace(dataBuf.Bytes())
 		dataBuf.Reset()
 		c, emit, done := parse(payload)
-		if emit {
-			select {
-			case out <- c:
-			case <-ctx.Done():
-				return false
-			}
+		if emit && !sendChunk(ctx, out, c) {
+			return false
 		}
 		return !done
 	}
@@ -202,7 +224,7 @@ func parseSSE(ctx context.Context, r io.Reader, out chan<- Chunk, parse func([]b
 	for {
 		select {
 		case <-ctx.Done():
-			out <- Chunk{Err: ctx.Err()}
+			trySend(out, Chunk{Err: ctx.Err()})
 			return
 		default:
 		}
@@ -230,7 +252,7 @@ func parseSSE(ctx context.Context, r io.Reader, out chan<- Chunk, parse func([]b
 		if err != nil {
 			flush()
 			if err != io.EOF {
-				out <- Chunk{Err: err}
+				trySend(out, Chunk{Err: err})
 			}
 			return
 		}

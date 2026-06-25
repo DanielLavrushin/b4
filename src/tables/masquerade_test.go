@@ -82,40 +82,47 @@ func TestBuildMasqueradeManifest_GlobalStructure(t *testing.T) {
 		t.Fatalf("expected one nat %s chain, got %+v", masqChainName, chains)
 	}
 
-	var jumps, postroutingMasq int
-	for _, r := range rules {
+	var jumps, postroutingMasq, postroutingReturn int
+	returnIdx, jumpIdx := -1, -1
+	for i, r := range rules {
 		if r.Chain == "POSTROUTING" {
-			if !specContains(r.Spec, masqChainName) {
-				t.Errorf("unexpected rule directly in POSTROUTING: %v", r.Spec)
-			}
 			if specContains(r.Spec, "MASQUERADE") {
 				postroutingMasq++
 			}
-			jumps++
+			if specContains(r.Spec, "RETURN") {
+				postroutingReturn++
+				returnIdx = i
+				// The mark-bypass must short-circuit the whole built-in chain, so it
+				// has to be inserted (-I), not appended after the jump.
+				if r.Action != "I" {
+					t.Errorf("mark-bypass RETURN must use -I to sit above the jump, got action %q", r.Action)
+				}
+			}
+			if specContains(r.Spec, masqChainName) {
+				jumps++
+				jumpIdx = i
+			}
 			continue
 		}
 		if r.Chain != masqChainName {
 			t.Errorf("rule in unexpected chain %q: %v", r.Chain, r.Spec)
+		}
+		if specContains(r.Spec, "RETURN") {
+			t.Errorf("mark-bypass RETURN must live in POSTROUTING, not inside %s", masqChainName)
 		}
 	}
 
 	if jumps != 1 {
 		t.Errorf("expected exactly one POSTROUTING jump to %s, got %d", masqChainName, jumps)
 	}
+	if postroutingReturn != 1 {
+		t.Errorf("expected exactly one mark-bypass RETURN in POSTROUTING, got %d", postroutingReturn)
+	}
 	if postroutingMasq != 0 {
 		t.Errorf("expected no MASQUERADE rule directly in POSTROUTING, got %d", postroutingMasq)
 	}
-
-	// First rule inside the chain must be the mark-bypass RETURN, ahead of any MASQUERADE.
-	var firstChainRule []string
-	for _, r := range rules {
-		if r.Chain == masqChainName {
-			firstChainRule = r.Spec
-			break
-		}
-	}
-	if !specContains(firstChainRule, "RETURN") {
-		t.Errorf("expected mark-bypass RETURN first in chain, got %v", firstChainRule)
+	if returnIdx == -1 || jumpIdx == -1 || returnIdx > jumpIdx {
+		t.Errorf("mark-bypass RETURN must be emitted before the jump (return idx %d, jump idx %d)", returnIdx, jumpIdx)
 	}
 }
 

@@ -88,6 +88,7 @@ var (
 	buf        *bufio.Writer
 	logger     *log.Logger
 	flushTimer *time.Ticker
+	flushStop  chan struct{}
 	insta      bool
 )
 
@@ -332,21 +333,31 @@ func rebuildLocked() {
 func startFlusherLocked() {
 	stopFlusherLocked()
 	flushTimer = time.NewTicker(2 * time.Second)
-	go func(t *time.Ticker) {
-		for range t.C {
-			mu.Lock()
-			if buf != nil {
-				_ = buf.Flush()
+	flushStop = make(chan struct{})
+	go func(t *time.Ticker, stop chan struct{}) {
+		for {
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+				mu.Lock()
+				if buf != nil {
+					_ = buf.Flush()
+				}
+				mu.Unlock()
 			}
-			mu.Unlock()
 		}
-	}(flushTimer)
+	}(flushTimer, flushStop)
 }
 
 func stopFlusherLocked() {
 	if flushTimer != nil {
 		flushTimer.Stop()
 		flushTimer = nil
+	}
+	if flushStop != nil {
+		close(flushStop)
+		flushStop = nil
 	}
 }
 

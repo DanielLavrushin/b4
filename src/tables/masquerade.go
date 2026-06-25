@@ -43,14 +43,16 @@ func (im *IPTablesManager) ApplyMasquerade() error {
 		return fmt.Errorf("failed to flush masquerade chain: %w", err)
 	}
 
-	returnSpec := []string{"-m", "mark", "--mark", im.masqClientMark(), "-j", "RETURN"}
-	if _, err := run(append([]string{iptBin, "-w", "-t", "nat", "-A", masqChainName}, returnSpec...)...); err != nil {
-		return fmt.Errorf("failed to add masquerade mark-bypass rule: %w", err)
-	}
-
 	for _, masqSpec := range masqueradeSpecs(im.cfg) {
 		if _, err := run(append([]string{iptBin, "-w", "-t", "nat", "-A", masqChainName}, masqSpec...)...); err != nil {
 			return fmt.Errorf("failed to add masquerade rule (%s): %w", strings.Join(masqSpec, " "), err)
+		}
+	}
+
+	returnSpec := []string{"-m", "mark", "--mark", im.masqClientMark(), "-j", "RETURN"}
+	if !im.existsRule(iptBin, "nat", "POSTROUTING", returnSpec) {
+		if _, err := run(append([]string{iptBin, "-w", "-t", "nat", "-I", "POSTROUTING"}, returnSpec...)...); err != nil {
+			return fmt.Errorf("failed to add masquerade mark-bypass rule: %w", err)
 		}
 	}
 
@@ -69,8 +71,8 @@ func (manager *IPTablesManager) buildMasqueradeManifest(ipt string) ([]Chain, []
 	markClient := fmt.Sprintf("0x%x/0x%x", engine.ClientMark, engine.ClientMark)
 	chains := []Chain{{manager: manager, IPT: ipt, Table: "nat", Name: masqChainName}}
 	rules := []Rule{
+		{manager: manager, IPT: ipt, Table: "nat", Chain: "POSTROUTING", Action: "I", Spec: []string{"-m", "mark", "--mark", markClient, "-j", "RETURN"}},
 		{manager: manager, IPT: ipt, Table: "nat", Chain: "POSTROUTING", Action: "A", Spec: []string{"-j", masqChainName}},
-		{manager: manager, IPT: ipt, Table: "nat", Chain: masqChainName, Action: "A", Spec: []string{"-m", "mark", "--mark", markClient, "-j", "RETURN"}},
 	}
 	for _, masqSpec := range masqueradeSpecs(manager.cfg) {
 		rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "nat", Chain: masqChainName, Action: "A", Spec: masqSpec})
