@@ -74,7 +74,7 @@ func (im *IPTablesManager) ApplyMasquerade() error {
 		}
 	}
 
-	log.Infof("IPTABLES: masquerade enabled (interface: %s)", masqueradeLogLabel(im.cfg))
+	log.Infof("IPTABLES: masquerade enabled (interfaces: %s)", masqueradeLogLabel(im.cfg))
 	return nil
 }
 
