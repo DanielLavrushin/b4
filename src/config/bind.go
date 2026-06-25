@@ -32,7 +32,6 @@ func (c *Config) BindFlags(cmd *cobra.Command, o *CLIOverrides) {
 	cmd.Flags().BoolVarP(&o.Instaflush, "instaflush", "i", d.System.Logging.Instaflush, "Flush logs immediately")
 	cmd.Flags().BoolVar(&o.Syslog, "syslog", d.System.Logging.Syslog, "Enable syslog output")
 	cmd.Flags().StringVar(&o.LogDir, "log-dir", d.System.Logging.Directory, "Directory for b4 log files (empty disables file logging)")
-	_ = cmd.Flags().MarkDeprecated("error-file", "use --log-dir instead")
 	cmd.Flags().IntVar(&o.WebPort, "web-port", d.System.WebServer.Port, "Port for internal web server (0 disables)")
 }
 

@@ -24,6 +24,21 @@ const (
 	LevelDebug
 )
 
+func (l Level) String() string {
+	switch l {
+	case LevelError:
+		return "error"
+	case LevelInfo:
+		return "info"
+	case LevelTrace:
+		return "trace"
+	case LevelDebug:
+		return "debug"
+	default:
+		return "silent"
+	}
+}
+
 var (
 	CurLevel         atomic.Int32
 	errFile          *os.File
@@ -47,6 +62,24 @@ func (m *multi) Write(p []byte) (int, error) {
 		_, _ = w.Write(p)
 	}
 	return len(p), nil
+}
+
+func (m *multi) add(w io.Writer) {
+	m.mu.Lock()
+	m.ws = append(m.ws, w)
+	m.mu.Unlock()
+}
+
+func (m *multi) remove(w io.Writer) {
+	m.mu.Lock()
+	out := m.ws[:0]
+	for _, x := range m.ws {
+		if x != w {
+			out = append(out, x)
+		}
+	}
+	m.ws = out
+	m.mu.Unlock()
 }
 
 var (
@@ -111,6 +144,22 @@ func Flush() {
 	if buf != nil {
 		_ = buf.Flush()
 	}
+}
+
+func StartCapture(w io.Writer) {
+	if w == nil {
+		return
+	}
+	Flush()
+	base.add(w)
+}
+
+func StopCapture(w io.Writer) {
+	if w == nil {
+		return
+	}
+	Flush()
+	base.remove(w)
 }
 
 func InitErrorFile(path string) error {

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sock"
 )
 
@@ -54,6 +55,7 @@ func (w *Worker) sendPostDesyncRST(cfg *config.SetConfig, raw []byte, ipHdrLen i
 		sock.FixTCPChecksum(rst)
 		corruptTCPChecksum(rst, ipHdrLen)
 
+		log.Tracef("Sending post-desync RST to %s with flags 0x%02x and seq offset %d", dst.String(), ft.flags, ft.seqOff)
 		_ = w.sock.SendIPv4(rst, dst)
 		time.Sleep(100 * time.Microsecond)
 	}

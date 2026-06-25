@@ -423,10 +423,13 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			} else {
 				w.sendRSTToClientV6(pkt.raw, pkt.src, pkt.dst)
 			}
+
 			m := metrics.GetMetricsCollector()
 			m.RecordConnection("TCP", host, pkt.srcStr, pkt.dstStr, true, pkt.srcMac, set.Name, config.TLSVersionString(tlsVersion))
 			m.RecordPacket(uint64(len(pkt.raw)))
 			vc.drop()
+			log.Tracef("IPBlockDetect: dropped packet to %s:%d (cached)", pkt.dstStr, dport)
+
 			return 0
 		}
 	}
@@ -453,6 +456,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				} else {
 					w.sendRSTToClientV6(pkt.raw, pkt.src, pkt.dst)
 				}
+				log.Tracef("BLACKHOLE: sent RST to %s:%d (set: %s)", pkt.dstStr, dport, set.Name)
 			}
 			if !cfg.Queue.IsDiscovery {
 				log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), "block")

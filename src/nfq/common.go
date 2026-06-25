@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sock"
 )
 
@@ -129,12 +130,14 @@ func GetSNISplitPoints(payload []byte, payloadLen int, middleSNI bool, sniPositi
 
 func (w *Worker) SendTwoSegmentsV4(seg1, seg2 []byte, dst net.IP, delay int, reverse bool) {
 	if reverse {
+		log.Tracef("Sending two segments in reverse order to %s", dst.String())
 		_ = w.sock.SendIPv4(seg2, dst)
 		if delay > 0 {
 			time.Sleep(time.Duration(delay) * time.Millisecond)
 		}
 		_ = w.sock.SendIPv4(seg1, dst)
 	} else {
+		log.Tracef("Sending two segments to %s", dst.String())
 		_ = w.sock.SendIPv4(seg1, dst)
 		if delay > 0 {
 			time.Sleep(time.Duration(delay) * time.Millisecond)

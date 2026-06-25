@@ -149,5 +149,7 @@ func cleanupDNSPendingRoutes(now time.Time) int {
 		}
 		return true
 	})
+
+	log.Tracef("cleanupDNSPendingRoutes: removed %d expired entries", removed)
 	return removed
 }

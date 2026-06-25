@@ -118,9 +118,6 @@ func (m *Manager) CapturePayload(connKey, domain, protocol string, payload []byt
 		return false
 	}
 
-	log.Tracef("CapturePayload: connKey=%s, domain=%s, protocol=%s, len=%d",
-		connKey, domain, protocol, len(payload))
-
 	if domain != "" {
 		domain = strings.ToLower(strings.TrimSpace(domain))
 		m.connToDomain[connKey] = domain
@@ -177,6 +174,7 @@ func (m *Manager) CapturePayload(connKey, domain, protocol string, payload []byt
 	switch protocol {
 	case "tls":
 		if len(pending.data) < 9 {
+			log.Tracef("Not enough data for TLS ClientHello: have %d bytes, need at least 9", len(pending.data))
 			return false
 		}
 
@@ -219,9 +217,10 @@ func (m *Manager) CapturePayload(connKey, domain, protocol string, payload []byt
 	case "quic":
 		// QUIC Initial packet - capture first packet only
 		captureData = payload // Use only this packet, not accumulated
-		log.Infof("Capturing QUIC Initial for %s: %d bytes", pending.domain, len(captureData))
+		log.Tracef("Capturing QUIC Initial for %s: %d bytes", pending.domain, len(captureData))
 	default:
 		captureData = pending.data
+		log.Tracef("Capturing %s payload for %s: %d bytes", protocol, pending.domain, len(captureData))
 	}
 
 	filename := fmt.Sprintf(payloadFilenameFmt, protocol, sanitizeDomain(pending.domain))

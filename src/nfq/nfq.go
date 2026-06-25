@@ -139,6 +139,7 @@ func (w *Worker) dropAndInjectQUIC(cfg *config.SetConfig, raw []byte, dst net.IP
 						fake[ipHdrLen+7] ^= 0xFF
 					}
 				}
+				log.Tracef("Sending fake UDP packet %d/%d to %s", i+1, udpCfg.FakeSeqLength, dst.String())
 				_ = w.sock.SendIPv4(fake, dst)
 				if seg2d > 0 {
 					time.Sleep(time.Duration(seg2d) * time.Millisecond)
@@ -153,6 +154,7 @@ func (w *Worker) dropAndInjectQUIC(cfg *config.SetConfig, raw []byte, dst net.IP
 		realPayload = raw[ipHdrLen+8:]
 	}
 	if !quic.LooksLikeQUIC(realPayload) {
+		log.Tracef("Packet does not look like QUIC for %s, sending whole packet", dst.String())
 		_ = w.sock.SendIPv4(raw, dst)
 		return
 	}
@@ -164,6 +166,7 @@ func (w *Worker) dropAndInjectQUIC(cfg *config.SetConfig, raw []byte, dst net.IP
 
 	frags, ok := sock.IPv4FragmentUDP(raw, splitPos)
 	if !ok {
+		log.Warnf("Failed to fragment QUIC packet for %s, sending whole packet", dst.String())
 		_ = w.sock.SendIPv4(raw, dst)
 		return
 	}
@@ -207,6 +210,7 @@ func (w *Worker) dropAndInjectTCP(cfg *config.SetConfig, raw []byte, dst net.IP)
 
 	strategy := config.ResolveStrategyPool(cfg.Fragmentation.StrategyPool, cfg.Fragmentation.Strategy)
 
+	log.Tracef("Sending TCP packet with fragmentation strategy: %s", strategy)
 	switch strategy {
 	case "tcp":
 		w.sendTCPFragments(cfg, raw, dst)
@@ -318,6 +322,7 @@ func (w *Worker) sendTCPFragments(cfg *config.SetConfig, packet []byte, dst net.
 		sock.FixTCPChecksum(seg3)
 
 		if cfg.Fragmentation.ReverseOrder {
+			log.Tracef("Sending TCP fragments in reverse order to %s: seg3=%d, seg2=%d, seg1=%d", dst.String(), seg3Len, seg2Len, seg1Len)
 			_ = w.sock.SendIPv4(seg2, dst)
 			if seg2d > 0 {
 				time.Sleep(time.Duration(seg2d) * time.Millisecond)
@@ -328,6 +333,7 @@ func (w *Worker) sendTCPFragments(cfg *config.SetConfig, packet []byte, dst net.
 			}
 			_ = w.sock.SendIPv4(seg3, dst)
 		} else {
+			log.Tracef("Sending TCP fragments to %s: seg1=%d, seg2=%d, seg3=%d", dst.String(), seg1Len, seg2Len, seg3Len)
 			_ = w.sock.SendIPv4(seg1, dst)
 			if seg2d > 0 {
 				time.Sleep(time.Duration(seg2d) * time.Millisecond)
@@ -377,6 +383,7 @@ func (w *Worker) sendIPFragments(cfg *config.SetConfig, packet []byte, dst net.I
 	payloadLen := len(packet) - payloadStart
 
 	if payloadLen <= 0 {
+		log.Tracef("No payload to fragment for %s, sending whole packet", dst.String())
 		_ = w.sock.SendIPv4(packet, dst)
 		return
 	}
@@ -397,6 +404,7 @@ func (w *Worker) sendIPFragments(cfg *config.SetConfig, packet []byte, dst net.I
 	}
 
 	if splitPos <= 0 || splitPos >= payloadLen {
+		log.Warnf("Invalid split position for %s: %d", dst.String(), splitPos)
 		_ = w.sock.SendIPv4(packet, dst)
 		return
 	}
@@ -406,6 +414,7 @@ func (w *Worker) sendIPFragments(cfg *config.SetConfig, packet []byte, dst net.I
 
 	fragments, ok := sock.IPv4FragmentPacket(packet, adjustedSplit)
 	if !ok {
+		log.Warnf("Failed to fragment packet for %s, sending whole packet", dst.String())
 		_ = w.sock.SendIPv4(packet, dst)
 		return
 	}
@@ -424,6 +433,7 @@ func (w *Worker) sendFakeSNISequence(cfg *config.SetConfig, original []byte, dst
 	tcpHdrLen := int((fake[ipHdrLen+12] >> 4) * 4)
 
 	for i := 0; i < fk.SNISeqLength; i++ {
+		log.Tracef("Sending fake SNI packet %d/%d to %s", i+1, fk.SNISeqLength, dst.String())
 		_ = w.sock.SendIPv4(fake, dst)
 
 		if i+1 < fk.SNISeqLength {

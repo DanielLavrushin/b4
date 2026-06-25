@@ -2,21 +2,17 @@ package config
 
 import "testing"
 
-// stripCLIOverrides must restore the config-file value for a transient CLI
-// override so it isn't persisted. The deprecated --error-file flag maps to
-// Logging.Directory (its parent dir), and an empty value means "disabled" — the
-// strip comparison has to match ApplyCLIOverrides exactly for both forms.
-func TestStripCLIOverrides_ErrorFile(t *testing.T) {
+func TestStripCLIOverrides_LogDir(t *testing.T) {
 	saved := persistedOverrides
 	t.Cleanup(func() { persistedOverrides = saved })
 
 	cases := []struct {
-		name      string
-		errorFile string // value passed to --error-file
-		applied   string // Directory after ApplyCLIOverrides
+		name    string
+		logDir  string // value passed to --log-dir
+		applied string // Directory after ApplyCLIOverrides
 	}{
 		{"empty disables", "", ""},
-		{"custom path", "/custom/logs/errors.log", "/custom/logs"},
+		{"custom path", "/custom/logs", "/custom/logs"},
 	}
 
 	for _, tc := range cases {
@@ -25,8 +21,8 @@ func TestStripCLIOverrides_ErrorFile(t *testing.T) {
 			snap.System.Logging.Directory = "/var/log/b4" // value from config file
 
 			persistedOverrides.snapshot = snap
-			persistedOverrides.fields = map[string]bool{"error-file": true}
-			persistedOverrides.overrides = CLIOverrides{ErrorFile: tc.errorFile}
+			persistedOverrides.fields = map[string]bool{"log-dir": true}
+			persistedOverrides.overrides = CLIOverrides{LogDir: tc.logDir}
 
 			cur := &Config{}
 			cur.System.Logging.Directory = tc.applied

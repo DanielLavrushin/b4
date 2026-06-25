@@ -1790,7 +1790,18 @@
     "streamingLabel": "Streaming",
     "clearLogs": "Clear Logs",
     "waitingForLogs": "Waiting for logs...",
-    "noMatch": "No logs match your filter"
+    "noMatch": "No logs match your filter",
+    "trace": {
+      "start": "Start trace",
+      "startHint": "Record all logs to a file until you stop",
+      "stop": "Stop & save",
+      "recording": "REC",
+      "downloadLast": "Download last trace",
+      "started": "Trace started — reproduce the issue, then stop",
+      "saved": "Trace saved",
+      "startFailed": "Failed to start trace",
+      "stopFailed": "Failed to stop trace"
+    }
   },
   "login": {
     "subtitle": "Sign in to continue",
