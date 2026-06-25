@@ -1,6 +1,14 @@
 package netprobe
 
-import "strings"
+import (
+	"context"
+	"errors"
+	"io"
+	"net"
+	"os"
+	"strings"
+	"syscall"
+)
 
 type DomainStatus string
 
@@ -8,6 +16,7 @@ const (
 	DomainOk       DomainStatus = "OK"
 	DomainTLSDPI   DomainStatus = "TLS_DPI"
 	DomainTLSMITM  DomainStatus = "TLS_MITM"
+	DomainMTLS     DomainStatus = "MTLS"
 	DomainTLSSpoof DomainStatus = "TLS_SPOOF"
 	DomainTLSAlert DomainStatus = "TLS_ALERT"
 	DomainTLSReset DomainStatus = "TLS_RST"
@@ -38,16 +47,45 @@ func ClassifyTLSError(err error) (DomainStatus, string) {
 	return ClassifyTLSErrorStaged(err, StageHandshake, 0)
 }
 
+func isTimeoutError(err error) bool {
+	if errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
+}
+
 func ClassifyTLSErrorStaged(err error, stage TLSStage, bytesRead int) (DomainStatus, string) {
 	if err == nil {
 		return DomainOk, ""
 	}
 
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		switch {
+		case dnsErr.IsNotFound:
+			return DomainError, "DNS resolution failed (no such host)"
+		case dnsErr.IsTimeout:
+			return DomainTimeout, "DNS resolution timed out"
+		default:
+			return DomainError, "DNS resolution failed: " + dnsErr.Err
+		}
+	}
+
+	switch {
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return DomainBlocked, "Connection refused"
+	case errors.Is(err, syscall.ENETUNREACH):
+		return DomainError, "Network unreachable"
+	case errors.Is(err, syscall.EHOSTUNREACH):
+		return DomainError, "No route to host (IP unreachable)"
+	}
+
 	msg := strings.ToLower(err.Error())
 
-	isTimeout := strings.Contains(msg, "timeout") || strings.Contains(msg, "deadline exceeded") || strings.Contains(msg, "timed out")
-	isEOF := strings.Contains(msg, "eof")
-	isReset := strings.Contains(msg, "connection reset") || strings.Contains(msg, "reset by peer")
+	isTimeout := isTimeoutError(err) || strings.Contains(msg, "timeout") || strings.Contains(msg, "deadline exceeded") || strings.Contains(msg, "timed out")
+	isEOF := errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || strings.Contains(msg, "eof")
+	isReset := errors.Is(err, syscall.ECONNRESET) || strings.Contains(msg, "connection reset") || strings.Contains(msg, "reset by peer")
 
 	if stage == StageRead && isTimeout && bytesRead >= TCP16MinBytes && bytesRead <= TCP16MaxBytes {
 		return DomainTCP16, "Read stalled after TSPU fat-flow window (12-69KB)"
@@ -71,6 +109,10 @@ func ClassifyTLSErrorStaged(err error, stage TLSStage, bytesRead int) (DomainSta
 		if strings.Contains(msg, p) {
 			return DomainTLSSpoof, "Garbage TLS response (DPI injection)"
 		}
+	}
+
+	if strings.Contains(msg, "certificate required") || strings.Contains(msg, "certificate is required") {
+		return DomainMTLS, "Server requires client certificate (mTLS, not DPI)"
 	}
 
 	if strings.Contains(msg, "alert") || strings.Contains(msg, "unrecognized name") || strings.Contains(msg, "handshake failure") || strings.Contains(msg, "protocol version") {
@@ -104,7 +146,7 @@ func ClassifyTLSErrorStaged(err error, stage TLSStage, bytesRead int) (DomainSta
 		}
 	}
 
-	if strings.Contains(msg, "no shared cipher") || strings.Contains(msg, "cipher") {
+	if strings.Contains(msg, "no shared cipher") || strings.Contains(msg, "no cipher suite") || strings.Contains(msg, "cipher mismatch") {
 		return DomainTLSMITM, "Cipher mismatch (possible MITM)"
 	}
 

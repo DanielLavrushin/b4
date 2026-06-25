@@ -1857,6 +1857,9 @@
   "watchdog": {
     "title": "Watchdog Monitor",
     "description": "Domain health monitoring and automatic healing",
+    "alert": "<strong>Watchdog:</strong> Continuously monitors configured domains and, when a connection degrades, runs discovery to automatically heal it with a working bypass strategy. Failures are classified to tell DPI interference apart from genuine server-side rejection (e.g. servers that require a client certificate).",
+    "inspiredBy": "Reactive detection approach inspired by",
+    "project": "project",
     "enabled": "Enabled",
     "disabled": "Disabled",
     "issues": "issues",

@@ -214,6 +214,19 @@ export function WatchdogMonitor() {
       icon={<WatchdogIcon />}
     >
       <Stack spacing={2}>
+        <B4Alert icon={<WatchdogIcon />}>
+          <Trans i18nKey="watchdog.alert" />{" "}
+          {t("watchdog.inspiredBy")}{" "}
+          <a
+            href="https://github.com/belotserkovtsev/ladon"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            belotserkovtsev/ladon
+          </a>{" "}
+          {t("watchdog.project")}
+        </B4Alert>
+
         <Stack direction="row" justifyContent="space-between" alignItems="center">
           <Stack direction="row" spacing={1} alignItems="center">
             <B4Badge

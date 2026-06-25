@@ -316,6 +316,7 @@ Based on research from:
 - [GoodbyeDPI](https://github.com/ValdikSS/GoodbyeDPI) - Windows DPI circumvention
 - [zapret](https://github.com/bol-van/zapret) - Advanced DPI bypass techniques
 - [dpi-detector](https://github.com/Runnin4ik/dpi-detector) - DPI/TSPU detection techniques and test target lists (the DPI Detector feature is based on this project)
+- [Ladon](https://github.com/belotserkovtsev/ladon) - reactive Anti-DPI detection engine; its failure-classification approach (telling server-side rejection apart from DPI interference) informed the Watchdog feature
 - [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy) - Telegram MTProto-over-WebSocket bridging
 
 ## License

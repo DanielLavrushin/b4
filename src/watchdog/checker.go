@@ -66,20 +66,20 @@ func checkDomain(input string, mark uint, timeout time.Duration) CheckResult {
 
 	req, err := http.NewRequestWithContext(ctx, "GET", checkURL, nil)
 	if err != nil {
-		return CheckResult{Error: err.Error()}
+		return CheckResult{Error: err.Error(), Verdict: netprobe.DomainError}
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
 
 	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
-		_, detail := netprobe.ClassifyTLSError(err)
-		return CheckResult{Error: detail}
+		status, detail := netprobe.ClassifyTLSError(err)
+		return CheckResult{Error: detail, Verdict: status}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 451 {
-		return CheckResult{Error: "ISP block page (HTTP 451)"}
+		return CheckResult{Error: "ISP block page (HTTP 451)", Verdict: netprobe.DomainISPPage}
 	}
 
 	buf := make([]byte, 16*1024)
@@ -108,7 +108,8 @@ func checkDomain(input string, mark uint, timeout time.Duration) CheckResult {
 			break
 		}
 		if readErr != nil {
-			return CheckResult{Error: fmt.Sprintf("read error after %d bytes: %v", bytesRead, readErr)}
+			status, _ := netprobe.ClassifyTLSErrorStaged(readErr, netprobe.StageRead, int(bytesRead))
+			return CheckResult{Error: fmt.Sprintf("read error after %d bytes: %v", bytesRead, readErr), Verdict: status}
 		}
 	}
 
@@ -120,11 +121,11 @@ evaluate:
 	}
 
 	if blockErr := netprobe.DetectBlockPageBody(headBuf); blockErr != "" {
-		return CheckResult{Error: blockErr}
+		return CheckResult{Error: blockErr, Verdict: netprobe.DomainISPPage}
 	}
 
 	if bytesRead < 1024 {
-		return CheckResult{Error: fmt.Sprintf("insufficient data: %d bytes", bytesRead)}
+		return CheckResult{Error: fmt.Sprintf("insufficient data: %d bytes", bytesRead), Verdict: netprobe.DomainError}
 	}
 
 	return CheckResult{

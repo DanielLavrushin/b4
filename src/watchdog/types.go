@@ -4,6 +4,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/daniellavrushin/b4/netprobe"
 )
 
 type DomainStatus struct {
@@ -26,6 +28,7 @@ type CheckResult struct {
 	OK        bool
 	Speed     float64
 	Error     string
+	Verdict   netprobe.DomainStatus
 	BytesRead int64
 }
 

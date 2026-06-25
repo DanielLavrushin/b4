@@ -521,7 +521,7 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 
 	if discoveryRT != nil && discoveryRT.IsActive() {
 		log.Infof("Stopping active discovery...")
-		discoveryRT.Stop(cfg, "")
+		discoveryRT.Stop("")
 	}
 
 	// Stop NFQueue pool

@@ -8,6 +8,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discovery"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/netprobe"
 )
 
 type Watchdog struct {
@@ -181,7 +182,13 @@ func (w *Watchdog) tick() {
 		st.Status = StatusDegraded
 		st.Interval = wdCfg.FailureInterval
 		st.LastError = result.Error
-		log.Warnf("[WATCHDOG] %s: check FAILED (%s) [%d/%d]", domain, result.Error, st.ConsecutiveFailures, wdCfg.MaxRetries)
+		log.Warnf("[WATCHDOG] %s: check FAILED [%s] (%s) [%d/%d]", domain, result.Verdict, result.Error, st.ConsecutiveFailures, wdCfg.MaxRetries)
+
+		if result.Verdict == netprobe.DomainMTLS {
+			st.CooldownUntil = now.Add(time.Duration(wdCfg.Cooldown) * time.Second)
+			log.Warnf("[WATCHDOG] %s: server requires client certificate (mTLS), no DPI bypass applies — skipping heal, cooldown %ds", domain, wdCfg.Cooldown)
+			continue
+		}
 
 		if st.ConsecutiveFailures >= wdCfg.MaxRetries {
 			needsHealing = append(needsHealing, domain)
@@ -246,7 +253,7 @@ func (w *Watchdog) healBatch(domains []string) {
 		case <-w.stop:
 			log.Infof("[WATCHDOG] shutting down, canceling active discovery")
 			discovery.CancelCheckSuite(suite.Id)
-			w.discoveryRT.Stop(cfg, suite.Id)
+			w.discoveryRT.Stop(suite.Id)
 			return
 		case <-pollTicker.C:
 		}
@@ -255,7 +262,7 @@ func (w *Watchdog) healBatch(domains []string) {
 		if !currentCfg.System.Checker.Watchdog.Enabled {
 			log.Infof("[WATCHDOG] disabled during healing, canceling discovery")
 			discovery.CancelCheckSuite(suite.Id)
-			w.discoveryRT.Stop(currentCfg, suite.Id)
+			w.discoveryRT.Stop(suite.Id)
 			w.mu.Lock()
 			for _, domain := range domains {
 				if st, ok := w.domainStates[domain]; ok {

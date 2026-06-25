@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
@@ -14,14 +13,20 @@ import (
 
 var ErrDiscoveryAlreadyRunning = errors.New("discovery is already running")
 
+type poolStopper interface {
+	Stop()
+}
+
 type runtimeState struct {
-	pool              *nfq.Pool
+	pool              poolStopper
+	clearRules        func()
 	discoveryStartNum int
 	discoveryThreads  int
 	discoveryFlowMark uint
 	discoveryInjMark  uint
 	activeSuiteID     string
 	stopping          bool
+	wg                sync.WaitGroup
 }
 
 type StartResult struct {
@@ -99,6 +104,7 @@ func (m *Runtime) Start(cfg *config.Config) (*StartResult, error) {
 
 	m.state = &runtimeState{
 		pool:              pool,
+		clearRules:        func() { tables.ClearDiscoverySteeringRules(cfg, flowMark, injectedMark) },
 		discoveryStartNum: discoveryStart,
 		discoveryThreads:  discoveryThreads,
 		discoveryFlowMark: flowMark,
@@ -141,16 +147,31 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 
 	log.GetDiscoveryHub().Reset()
 
-	go func() {
-		defer m.Stop(cfg, suite.Id)
+	m.launchSuite(suite.Id, func() {
 		suite.RunDiscovery()
 		log.Infof("Discovery complete for %d domains", len(suite.Domains))
-	}()
+	})
 
 	return suite, nil
 }
 
-func (m *Runtime) Stop(cfg *config.Config, suiteID string) {
+func (m *Runtime) launchSuite(suiteID string, run func()) {
+	m.mu.Lock()
+	state := m.state
+	m.mu.Unlock()
+	if state == nil {
+		return
+	}
+
+	state.wg.Add(1)
+	go func() {
+		defer m.Stop(suiteID)
+		defer state.wg.Done()
+		run()
+	}()
+}
+
+func (m *Runtime) Stop(suiteID string) {
 	m.mu.Lock()
 	state := m.state
 	if state == nil || state.stopping {
@@ -167,11 +188,14 @@ func (m *Runtime) Stop(cfg *config.Config, suiteID string) {
 
 	if activeSuite != "" {
 		CancelCheckSuite(activeSuite)
-		time.Sleep(500 * time.Millisecond)
 	}
 
+	state.wg.Wait()
+
 	state.pool.Stop()
-	tables.ClearDiscoverySteeringRules(cfg, state.discoveryFlowMark, state.discoveryInjMark)
+	if state.clearRules != nil {
+		state.clearRules()
+	}
 	log.Infof("Discovery runtime stopped: queue=%d-%d", state.discoveryStartNum, state.discoveryStartNum+state.discoveryThreads-1)
 
 	m.mu.Lock()
