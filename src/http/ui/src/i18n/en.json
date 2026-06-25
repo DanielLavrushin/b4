@@ -649,6 +649,17 @@
       "rstDropped": "RST Dropped",
       "idle": "idle"
     },
+    "runtime": {
+      "title": "Runtime",
+      "rss": "Resident (RSS)",
+      "offHeap": "off-heap",
+      "heap": "Go heap",
+      "reserved": "reserved",
+      "goroutines": "Goroutines",
+      "goroutinesHint": "flat line is healthy",
+      "openFds": "Open FDs",
+      "gc": "GC cycles"
+    },
     "blackhole": {
       "title": "Blackhole",
       "blocked": "blocked",

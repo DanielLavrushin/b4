@@ -645,6 +645,17 @@
       "rstDropped": "RST отклонено",
       "idle": "не активно"
     },
+    "runtime": {
+      "title": "Среда выполнения",
+      "rss": "Резидентная (RSS)",
+      "offHeap": "вне кучи",
+      "heap": "Куча Go",
+      "reserved": "зарезервировано",
+      "goroutines": "Горутины",
+      "goroutinesHint": "ровная линия = норма",
+      "openFds": "Открытые FD",
+      "gc": "циклы GC"
+    },
     "blackhole": {
       "title": "Блокировка",
       "blocked": "заблокировано",

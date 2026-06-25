@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
-	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -25,90 +24,6 @@ type IPTablesManager struct {
 
 func NewIPTablesManager(cfg *config.Config, useLegacy bool) *IPTablesManager {
 	return &IPTablesManager{cfg: cfg, useLegacy: useLegacy, multiportSupport: make(map[string]bool), connbytesSupport: make(map[string]error)}
-}
-
-func masqueradeSpecs(cfg *config.Config) [][]string {
-	ifaces := cfg.System.Tables.Masquerade.Interfaces
-	if len(ifaces) == 0 {
-		return [][]string{{"-j", "MASQUERADE"}}
-	}
-	specs := make([][]string, 0, len(ifaces))
-	for _, iface := range ifaces {
-		specs = append(specs, []string{"-o", iface, "-j", "MASQUERADE"})
-	}
-	return specs
-}
-
-func masqueradeLogLabel(cfg *config.Config) string {
-	ifaces := cfg.System.Tables.Masquerade.Interfaces
-	if len(ifaces) == 0 {
-		return "all"
-	}
-	return strings.Join(ifaces, ", ")
-}
-
-func (im *IPTablesManager) ApplyMasquerade() error {
-	if !im.cfg.System.Tables.Masquerade.Enabled {
-		return nil
-	}
-
-	iptBin := im.iptablesBin()
-
-	returnSpec := []string{"-m", "mark", "--mark", im.masqClientMark(), "-j", "RETURN"}
-	checkRet := append([]string{iptBin, "-w", "-t", "nat", "-C", "POSTROUTING"}, returnSpec...)
-	if _, err := run(checkRet...); err != nil {
-		insRet := append([]string{iptBin, "-w", "-t", "nat", "-I", "POSTROUTING"}, returnSpec...)
-		if _, err := run(insRet...); err != nil {
-			return fmt.Errorf("failed to add masquerade mark-bypass rule: %w", err)
-		}
-	}
-
-	for _, masqSpec := range masqueradeSpecs(im.cfg) {
-		checkArgs := append([]string{iptBin, "-w", "-t", "nat", "-C", "POSTROUTING"}, masqSpec...)
-		if _, err := run(checkArgs...); err == nil {
-			continue
-		}
-		addArgs := append([]string{iptBin, "-w", "-t", "nat", "-A", "POSTROUTING"}, masqSpec...)
-		if _, err := run(addArgs...); err != nil {
-			return fmt.Errorf("failed to add masquerade rule: %w", err)
-		}
-	}
-
-	log.Infof("IPTABLES: masquerade enabled (interfaces: %s)", masqueradeLogLabel(im.cfg))
-	return nil
-}
-
-func (im *IPTablesManager) ClearMasquerade() {
-	iptBin := im.iptablesBin()
-	specs := append(masqueradeSpecs(im.cfg), []string{"-j", "MASQUERADE"})
-	for _, spec := range specs {
-		args := append([]string{iptBin, "-w", "-t", "nat", "-D", "POSTROUTING"}, spec...)
-		for {
-			if _, err := run(args...); err != nil {
-				break
-			}
-		}
-	}
-
-	for _, mk := range []string{im.masqClientMark(), im.masqMarkAccept()} {
-		retArgs := []string{iptBin, "-w", "-t", "nat", "-D", "POSTROUTING", "-m", "mark", "--mark", mk, "-j", "RETURN"}
-		for {
-			if _, err := run(retArgs...); err != nil {
-				break
-			}
-		}
-	}
-}
-
-func (im *IPTablesManager) masqMarkAccept() string {
-	if im.cfg.Queue.Mark == 0 {
-		return "0x8000/0x8000"
-	}
-	return fmt.Sprintf("0x%x/0x%x", im.cfg.Queue.Mark, im.cfg.Queue.Mark)
-}
-
-func (im *IPTablesManager) masqClientMark() string {
-	return fmt.Sprintf("0x%x/0x%x", engine.ClientMark, engine.ClientMark)
 }
 
 func (im *IPTablesManager) iptablesBin() string {
@@ -425,7 +340,6 @@ func (manager *IPTablesManager) buildManifest() (Manifest, error) {
 	if cfg.Queue.Mark == 0 {
 		markAccept = "0x8000/0x8000"
 	}
-	markClient := fmt.Sprintf("0x%x/0x%x", engine.ClientMark, engine.ClientMark)
 
 	var ipsets []IPSet
 	var chains []Chain
@@ -666,14 +580,9 @@ func (manager *IPTablesManager) buildManifest() (Manifest, error) {
 
 	if cfg.System.Tables.Masquerade.Enabled {
 		for _, ipt := range ipts {
-			rules = append(rules,
-				Rule{manager: manager, IPT: ipt, Table: "nat", Chain: "POSTROUTING", Action: "I", Spec: []string{"-m", "mark", "--mark", markClient, "-j", "RETURN"}},
-			)
-			for _, masqSpec := range masqueradeSpecs(cfg) {
-				rules = append(rules,
-					Rule{manager: manager, IPT: ipt, Table: "nat", Chain: "POSTROUTING", Action: "A", Spec: masqSpec},
-				)
-			}
+			mc, mr := manager.buildMasqueradeManifest(ipt)
+			chains = append(chains, mc...)
+			rules = append(rules, mr...)
 		}
 	}
 
@@ -850,6 +759,9 @@ func (ipt *IPTablesManager) Clear() error {
 	m.RemoveRules()
 	time.Sleep(30 * time.Millisecond)
 	m.RemoveChains()
+	for _, bin := range ipt.masqueradeBinaries() {
+		ipt.teardownMasqueradeChain(bin)
+	}
 	m.DestroyIPSets()
 	destroyOrphanMSSIPSets()
 	m.RevertSysctls()

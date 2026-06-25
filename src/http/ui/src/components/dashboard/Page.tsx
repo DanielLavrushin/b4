@@ -13,6 +13,7 @@ import { DeviceActivity } from "./DeviceActivity";
 import { Escalations } from "./Escalations";
 import { Blackhole } from "./Blackhole";
 import { UnmatchedDomains } from "./UnmatchedDomains";
+import { RuntimeHealth } from "./RuntimeHealth";
 import { useTranslation } from "react-i18next";
 import { useDashboardSets } from "@hooks/useDashboardSets";
 import { wsUrl } from "@utils";
@@ -44,6 +45,10 @@ export interface Metrics {
     num_gc: number;
     heap_alloc: number;
     heap_inuse: number;
+    heap_sys: number;
+    rss: number;
+    goroutines: number;
+    open_fds: number;
     percent: number;
   };
   worker_status: Array<{
@@ -122,6 +127,10 @@ const normalizeMetrics = (data: null | Metrics): Metrics => {
         num_gc: 0,
         heap_alloc: 0,
         heap_inuse: 0,
+        heap_sys: 0,
+        rss: 0,
+        goroutines: 0,
+        open_fds: 0,
         percent: 0,
       },
       worker_status: [],
@@ -217,6 +226,10 @@ const normalizeMetrics = (data: null | Metrics): Metrics => {
       num_gc: safeNumber(data?.memory_usage?.num_gc),
       heap_alloc: safeNumber(data?.memory_usage?.heap_alloc),
       heap_inuse: safeNumber(data?.memory_usage?.heap_inuse),
+      heap_sys: safeNumber(data?.memory_usage?.heap_sys),
+      rss: safeNumber(data?.memory_usage?.rss),
+      goroutines: safeNumber(data?.memory_usage?.goroutines),
+      open_fds: safeNumber(data?.memory_usage?.open_fds),
       percent: safeNumber(data?.memory_usage?.percent),
     },
     worker_status: Array.isArray(data.worker_status)
@@ -368,6 +381,10 @@ export function DashboardPage() {
   return (
     <Container maxWidth={false} sx={{ p: 2 }}>
       <HealthBanner metrics={metrics} connected={connected} />
+
+      <Box sx={{ mb: 1.5 }}>
+        <RuntimeHealth metrics={metrics} />
+      </Box>
 
       <Box sx={{ mb: 1.5 }}>
         <LiveSignal metrics={metrics} />
