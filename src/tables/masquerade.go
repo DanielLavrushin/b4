@@ -50,14 +50,14 @@ func (im *IPTablesManager) ApplyMasquerade() error {
 
 	for _, masqSpec := range masqueradeSpecs(im.cfg) {
 		if _, err := run(append([]string{iptBin, "-w", "-t", "nat", "-A", masqChainName}, masqSpec...)...); err != nil {
-			return fmt.Errorf("failed to add masquerade rule: %w", err)
+			return fmt.Errorf("failed to add masquerade rule (%s): %w", strings.Join(masqSpec, " "), err)
 		}
 	}
 
 	jumpSpec := []string{"-j", masqChainName}
 	if !im.existsRule(iptBin, "nat", "POSTROUTING", jumpSpec) {
 		if _, err := run(append([]string{iptBin, "-w", "-t", "nat", "-A", "POSTROUTING"}, jumpSpec...)...); err != nil {
-			return fmt.Errorf("failed to add masquerade jump rule: %w", err)
+			return fmt.Errorf("failed to add masquerade jump rule (%s): %w", strings.Join(jumpSpec, " "), err)
 		}
 	}
 

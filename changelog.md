@@ -1,6 +1,6 @@
 # B4 - Bye Bye Big Bro
 
-## [1.7x.x] - 2026-0x-xx
+## [1.71.0] - 2026-06-25
 
 - ADDED: **The Logs page is easier to read** - log lines are now colour-coded by importance, and each type (error, warning, info, and so on) can be shown or hidden with one click.
 - ADDED: **Record a log session and download it to share** - the Logs page now has a "Start trace" button that records everything until "Stop & save", which downloads a single log file to attach when asking for help. The file already includes system details, and recording stops on its own after 15 minutes.

@@ -138,19 +138,25 @@ func SetInstaflush(v bool) {
 	rebuildLocked()
 }
 
-func Flush() {
-	mu.Lock()
-	defer mu.Unlock()
+func flushLocked() {
 	if buf != nil {
 		_ = buf.Flush()
 	}
+}
+
+func Flush() {
+	mu.Lock()
+	defer mu.Unlock()
+	flushLocked()
 }
 
 func StartCapture(w io.Writer) {
 	if w == nil {
 		return
 	}
-	Flush()
+	mu.Lock()
+	defer mu.Unlock()
+	flushLocked()
 	base.add(w)
 }
 
@@ -158,7 +164,9 @@ func StopCapture(w io.Writer) {
 	if w == nil {
 		return
 	}
-	Flush()
+	mu.Lock()
+	defer mu.Unlock()
+	flushLocked()
 	base.remove(w)
 }
 
