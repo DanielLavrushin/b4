@@ -888,6 +888,26 @@ func (ipt *IPTablesManager) clearB4JumpRules() {
 			}
 		}
 
+		for {
+			out, _ := run(iptBin, "-w", "-t", "mangle", "--line-numbers", "-nL", "OUTPUT")
+			lines := strings.Split(out, "\n")
+			removed := false
+			for _, line := range lines {
+				if strings.Contains(line, "spt:53") && strings.Contains(line, "NFQUEUE") {
+					parts := strings.Fields(line)
+					if len(parts) > 0 {
+						if _, err := run(iptBin, "-w", "-t", "mangle", "-D", "OUTPUT", parts[0]); err == nil {
+							removed = true
+							break
+						}
+					}
+				}
+			}
+			if !removed {
+				break
+			}
+		}
+
 		// Clean nat POSTROUTING masquerade rules
 		for {
 			_, err := run(iptBin, "-w", "-t", "nat", "-D", "POSTROUTING", "-j", "MASQUERADE")
