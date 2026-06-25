@@ -411,7 +411,7 @@ func (n *NFTablesManager) ApplyMasquerade() error {
 		if _, err := n.runNft("add", "rule", "ip", nftNatTableName, nftNatChainName, "masquerade"); err != nil {
 			return fmt.Errorf("failed to add masquerade rule: %w", err)
 		}
-		log.Infof("NFTABLES: masquerade enabled (interface: all)")
+		log.Infof("NFTABLES: masquerade enabled (interfaces: all)")
 		return nil
 	}
 

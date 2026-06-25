@@ -14,7 +14,7 @@ import (
 	"github.com/daniellavrushin/b4/log"
 )
 
-const traceMaxDuration = 15 * time.Minute
+var traceMaxDuration = 15 * time.Minute
 
 type traceWriter struct {
 	f     *os.File
@@ -108,8 +108,6 @@ func (api *API) handleTraceStart(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 	}
 
-	diag := api.buildDiagnostics()
-
 	traceMu.Lock()
 	defer traceMu.Unlock()
 
@@ -117,6 +115,8 @@ func (api *API) handleTraceStart(w http.ResponseWriter, r *http.Request) {
 		writeJsonError(w, http.StatusConflict, "A trace session is already running")
 		return
 	}
+
+	diag := api.buildDiagnostics()
 
 	if lastTracePath != "" {
 		_ = os.Remove(lastTracePath)
