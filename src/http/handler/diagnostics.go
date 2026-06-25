@@ -31,10 +31,14 @@ func (api *API) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sendResponse(w, DiagnosticsResponse{Success: true, Data: api.buildDiagnostics()})
+}
+
+func (api *API) buildDiagnostics() Diagnostics {
 	cfg := api.getCfg()
 	serviceManager := api.getServiceManager()
 
-	diag := Diagnostics{
+	return Diagnostics{
 		System:   collectSystemInfo(),
 		B4:       collectB4Info(cfg.ConfigPath, serviceManager),
 		Kernel:   collectKernelModules(),
@@ -46,8 +50,6 @@ func (api *API) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		Storage:  collectStorage(),
 		Paths:    collectPaths(cfg.ConfigPath, cfg.System.Logging.ErrorFilePath(), cfg.System.Geo.GeoSitePath, cfg.System.Geo.GeoIpPath),
 	}
-
-	sendResponse(w, DiagnosticsResponse{Success: true, Data: diag})
 }
 
 func collectSystemInfo() DiagSystem {

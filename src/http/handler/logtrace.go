@@ -45,6 +45,21 @@ var (
 	lastTraceName string
 )
 
+type TraceStartRequest struct {
+	Note string `json:"note"`
+}
+
+type TraceStatusResponse struct {
+	Active        bool   `json:"active"`
+	StartedAt     string `json:"startedAt,omitempty"`
+	Note          string `json:"note,omitempty"`
+	Lines         int64  `json:"lines"`
+	Level         string `json:"level"`
+	DownloadReady bool   `json:"downloadReady"`
+	DownloadName  string `json:"downloadName,omitempty"`
+	MaxSeconds    int    `json:"maxSeconds"`
+}
+
 func (api *API) RegisterLogTraceApi() {
 	api.mux.HandleFunc("/api/logs/trace/start", api.handleTraceStart)
 	api.mux.HandleFunc("/api/logs/trace/stop", api.handleTraceStop)
@@ -56,38 +71,44 @@ func currentLevelName() string {
 	return log.Level(log.CurLevel.Load()).String()
 }
 
-func traceStatusResponse() map[string]any {
-	resp := map[string]any{
-		"active":        false,
-		"level":         currentLevelName(),
-		"lines":         int64(0),
-		"downloadReady": lastTracePath != "",
-		"maxSeconds":    int(traceMaxDuration.Seconds()),
+func traceStatusResponse() TraceStatusResponse {
+	resp := TraceStatusResponse{
+		Level:         currentLevelName(),
+		DownloadReady: lastTracePath != "",
+		DownloadName:  lastTraceName,
+		MaxSeconds:    int(traceMaxDuration.Seconds()),
 	}
 	if activeTrace != nil {
-		resp["active"] = true
-		resp["startedAt"] = activeTrace.startedAt.UTC().Format(time.RFC3339)
-		resp["note"] = activeTrace.note
-		resp["lines"] = activeTrace.writer.lines.Load()
-	}
-	if lastTraceName != "" {
-		resp["downloadName"] = lastTraceName
+		resp.Active = true
+		resp.StartedAt = activeTrace.startedAt.UTC().Format(time.RFC3339)
+		resp.Note = activeTrace.note
+		resp.Lines = activeTrace.writer.lines.Load()
 	}
 	return resp
 }
 
+// @Summary Start a log trace session
+// @Description Captures all log output to a file until stopped or the max duration elapses. The file is prefixed with build info and a full system diagnostics snapshot. Only one session may run at a time.
+// @Tags Logs
+// @Accept json
+// @Produce json
+// @Param body body TraceStartRequest false "Optional note describing the session"
+// @Success 200 {object} TraceStatusResponse
+// @Failure 409 {object} map[string]string "A trace session is already running"
+// @Security BearerAuth
+// @Router /logs/trace/start [post]
 func (api *API) handleTraceStart(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
 
-	var req struct {
-		Note string `json:"note"`
-	}
+	var req TraceStartRequest
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 	}
+
+	diag := api.buildDiagnostics()
 
 	traceMu.Lock()
 	defer traceMu.Unlock()
@@ -117,6 +138,11 @@ func (api *API) handleTraceStart(w http.ResponseWriter, r *http.Request) {
 	if req.Note != "" {
 		fmt.Fprintf(f, "note: %s\n", req.Note)
 	}
+	if data, err := json.MarshalIndent(diag, "", "  "); err == nil {
+		fmt.Fprintf(f, "--- system diagnostics ---\n")
+		_, _ = f.Write(data)
+		fmt.Fprintf(f, "\n")
+	}
 	fmt.Fprintf(f, "=========================\n")
 
 	tw := &traceWriter{f: f}
@@ -143,6 +169,14 @@ func (api *API) handleTraceStart(w http.ResponseWriter, r *http.Request) {
 	sendResponse(w, traceStatusResponse())
 }
 
+// @Summary Stop the active log trace session
+// @Description Finalizes the current trace file (writes footer, flushes, closes) and makes it available for download.
+// @Tags Logs
+// @Produce json
+// @Success 200 {object} TraceStatusResponse
+// @Failure 400 {object} map[string]string "No trace session is running"
+// @Security BearerAuth
+// @Router /logs/trace/stop [post]
 func (api *API) handleTraceStop(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -184,6 +218,13 @@ func finishTraceLocked(reason string) {
 	activeTrace = nil
 }
 
+// @Summary Get log trace session status
+// @Description Reports whether a trace is active, its captured line count and start time, and whether a finished trace is available to download.
+// @Tags Logs
+// @Produce json
+// @Success 200 {object} TraceStatusResponse
+// @Security BearerAuth
+// @Router /logs/trace/status [get]
 func (api *API) handleTraceStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -194,6 +235,14 @@ func (api *API) handleTraceStatus(w http.ResponseWriter, r *http.Request) {
 	sendResponse(w, traceStatusResponse())
 }
 
+// @Summary Download the last log trace file
+// @Description Streams the most recently finished trace file as a plain-text attachment.
+// @Tags Logs
+// @Produce plain
+// @Success 200 {file} binary
+// @Failure 404 {object} map[string]string "No trace file available"
+// @Security BearerAuth
+// @Router /logs/trace/download [get]
 func (api *API) handleTraceDownload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
