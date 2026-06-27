@@ -25,13 +25,17 @@ func ClearStaleArtifacts(cfg *config.Config) {
 	cleared := false
 
 	for _, base := range []string{"PREROUTING", "OUTPUT"} {
-		for {
-			if _, err := run("iptables", "-t", "mangle", "-D", base, "-j", tunCaptureChain); err != nil {
-				break
+		for _, ch := range []string{tunGateChain, tunCaptureChain} {
+			for {
+				if _, err := run("iptables", "-t", "mangle", "-D", base, "-j", ch); err != nil {
+					break
+				}
+				cleared = true
 			}
-			cleared = true
 		}
 	}
+	run("iptables", "-t", "mangle", "-F", tunGateChain)
+	run("iptables", "-t", "mangle", "-X", tunGateChain)
 	run("iptables", "-t", "mangle", "-F", tunCaptureChain)
 	run("iptables", "-t", "mangle", "-X", tunCaptureChain)
 
