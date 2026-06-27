@@ -410,7 +410,7 @@ func (n *NFTablesManager) ApplyMasquerade() error {
 		return fmt.Errorf("failed to add masquerade mark-bypass rule: %w", err)
 	}
 
-	ifaces := n.cfg.System.Tables.Masquerade.Interfaces
+	ifaces := masqueradeInterfaces(n.cfg)
 	if len(ifaces) == 0 {
 		if _, err := n.runNft("add", "rule", "ip", nftNatTableName, nftNatChainName, "masquerade"); err != nil {
 			return fmt.Errorf("failed to add masquerade rule: %w", err)

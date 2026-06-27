@@ -177,18 +177,19 @@ func (w *Watchdog) tick() {
 			continue
 		}
 
-		st.ConsecutiveFailures++
 		st.LastFailure = now
 		st.Status = StatusDegraded
 		st.Interval = wdCfg.FailureInterval
 		st.LastError = result.Error
-		log.Warnf("[WATCHDOG] %s: check FAILED [%s] (%s) [%d/%d]", domain, result.Verdict, result.Error, st.ConsecutiveFailures, wdCfg.MaxRetries)
 
 		if result.Verdict == netprobe.DomainMTLS {
 			st.CooldownUntil = now.Add(time.Duration(wdCfg.Cooldown) * time.Second)
 			log.Warnf("[WATCHDOG] %s: server requires client certificate (mTLS), no DPI bypass applies — skipping heal, cooldown %ds", domain, wdCfg.Cooldown)
 			continue
 		}
+
+		st.ConsecutiveFailures++
+		log.Warnf("[WATCHDOG] %s: check FAILED [%s] (%s) [%d/%d]", domain, result.Verdict, result.Error, st.ConsecutiveFailures, wdCfg.MaxRetries)
 
 		if st.ConsecutiveFailures >= wdCfg.MaxRetries {
 			needsHealing = append(needsHealing, domain)

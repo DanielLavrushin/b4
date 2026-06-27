@@ -48,6 +48,32 @@ func TestMasqueradeSpecs(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("empty and whitespace entries are trimmed and skipped", func(t *testing.T) {
+		cfg := config.NewConfig()
+		cfg.System.Tables.Masquerade.Interfaces = []string{"", "  eth0 ", "\t", "ppp0"}
+
+		specs := masqueradeSpecs(&cfg)
+		if len(specs) != 2 {
+			t.Fatalf("expected 2 specs after filtering, got %d (%v)", len(specs), specs)
+		}
+		if strings.Join(specs[0], " ") != "-o eth0 -j MASQUERADE" {
+			t.Errorf("spec 0 = %v, want trimmed eth0", specs[0])
+		}
+		if strings.Join(specs[1], " ") != "-o ppp0 -j MASQUERADE" {
+			t.Errorf("spec 1 = %v, want ppp0", specs[1])
+		}
+	})
+
+	t.Run("all-empty list falls back to global masquerade", func(t *testing.T) {
+		cfg := config.NewConfig()
+		cfg.System.Tables.Masquerade.Interfaces = []string{"", "   ", "\t"}
+
+		specs := masqueradeSpecs(&cfg)
+		if len(specs) != 1 || strings.Join(specs[0], " ") != "-j MASQUERADE" {
+			t.Errorf("expected global masquerade fallback, got %v", specs)
+		}
+	})
 }
 
 func TestMasqueradeLogLabel(t *testing.T) {

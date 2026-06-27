@@ -11,8 +11,19 @@ import (
 
 const masqChainName = "B4_MASQ"
 
+func masqueradeInterfaces(cfg *config.Config) []string {
+	raw := cfg.System.Tables.Masquerade.Interfaces
+	out := make([]string, 0, len(raw))
+	for _, iface := range raw {
+		if iface = strings.TrimSpace(iface); iface != "" {
+			out = append(out, iface)
+		}
+	}
+	return out
+}
+
 func masqueradeSpecs(cfg *config.Config) [][]string {
-	ifaces := cfg.System.Tables.Masquerade.Interfaces
+	ifaces := masqueradeInterfaces(cfg)
 	if len(ifaces) == 0 {
 		return [][]string{{"-j", "MASQUERADE"}}
 	}
@@ -24,7 +35,7 @@ func masqueradeSpecs(cfg *config.Config) [][]string {
 }
 
 func masqueradeLogLabel(cfg *config.Config) string {
-	ifaces := cfg.System.Tables.Masquerade.Interfaces
+	ifaces := masqueradeInterfaces(cfg)
 	if len(ifaces) == 0 {
 		return "all"
 	}
