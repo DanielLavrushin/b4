@@ -231,8 +231,9 @@ func (api *API) handleTraceStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	traceMu.Lock()
-	defer traceMu.Unlock()
-	sendResponse(w, traceStatusResponse())
+	resp := traceStatusResponse()
+	traceMu.Unlock()
+	sendResponse(w, resp)
 }
 
 // @Summary Download the last log trace file

@@ -65,6 +65,19 @@ func TestMasqueradeSpecs(t *testing.T) {
 		}
 	})
 
+	t.Run("duplicate interfaces are collapsed", func(t *testing.T) {
+		cfg := config.NewConfig()
+		cfg.System.Tables.Masquerade.Interfaces = []string{"eth0", " eth0 ", "ppp0", "eth0"}
+
+		specs := masqueradeSpecs(&cfg)
+		if len(specs) != 2 {
+			t.Fatalf("expected 2 deduped specs, got %d (%v)", len(specs), specs)
+		}
+		if strings.Join(specs[0], " ") != "-o eth0 -j MASQUERADE" || strings.Join(specs[1], " ") != "-o ppp0 -j MASQUERADE" {
+			t.Errorf("unexpected deduped specs: %v", specs)
+		}
+	})
+
 	t.Run("all-empty list falls back to global masquerade", func(t *testing.T) {
 		cfg := config.NewConfig()
 		cfg.System.Tables.Masquerade.Interfaces = []string{"", "   ", "\t"}

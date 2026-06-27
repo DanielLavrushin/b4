@@ -14,10 +14,17 @@ const masqChainName = "B4_MASQ"
 func masqueradeInterfaces(cfg *config.Config) []string {
 	raw := cfg.System.Tables.Masquerade.Interfaces
 	out := make([]string, 0, len(raw))
+	seen := make(map[string]struct{}, len(raw))
 	for _, iface := range raw {
-		if iface = strings.TrimSpace(iface); iface != "" {
-			out = append(out, iface)
+		iface = strings.TrimSpace(iface)
+		if iface == "" {
+			continue
 		}
+		if _, dup := seen[iface]; dup {
+			continue
+		}
+		seen[iface] = struct{}{}
+		out = append(out, iface)
 	}
 	return out
 }
