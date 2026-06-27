@@ -42,7 +42,7 @@ export const StatCard = ({
         flexDirection: "column",
         justifyContent: "center",
         gap: "8px",
-        p: "14px 18px",
+        p: "12px 18px",
         minWidth: 0,
         flex: 1,
       }}

@@ -13,7 +13,7 @@ interface RuntimeHealthProps {
 }
 
 const TREND_POINTS = 60;
-const CHART_HEIGHT = 120;
+const CHART_HEIGHT = 88;
 
 export const RuntimeHealth = ({ metrics }: RuntimeHealthProps) => {
   const { t } = useTranslation();
@@ -41,7 +41,7 @@ export const RuntimeHealth = ({ metrics }: RuntimeHealthProps) => {
   const hasTrend = trend.length > 1;
 
   return (
-    <DashboardPanel eyebrow={t("dashboard.runtime.title")} divider padded>
+    <DashboardPanel eyebrow={t("dashboard.runtime.title")} divider>
       <Box
         sx={{
           display: "flex",
@@ -49,14 +49,23 @@ export const RuntimeHealth = ({ metrics }: RuntimeHealthProps) => {
           alignItems: "stretch",
         }}
       >
-        <Box sx={{ width: { lg: 720 }, flexShrink: 0, overflow: "hidden" }}>
+        <Box
+          sx={{
+            width: { lg: 720 },
+            flexShrink: 0,
+            overflow: "hidden",
+            display: "flex",
+          }}
+        >
           <Box
             sx={{
+              flex: 1,
               display: "grid",
               gridTemplateColumns: {
                 xs: "repeat(2, 1fr)",
                 sm: "repeat(4, 1fr)",
               },
+              gridAutoRows: "1fr",
               mr: "-1px",
               mb: "-1px",
               "& > *": {
@@ -99,7 +108,8 @@ export const RuntimeHealth = ({ metrics }: RuntimeHealthProps) => {
             display: "flex",
             flexDirection: "column",
             justifyContent: "center",
-            pt: { xs: 1.5, lg: 0 },
+            pt: { xs: 1.5, lg: "6px" },
+            pb: { lg: "6px" },
             pl: { lg: 1.5 },
             borderLeft: { lg: `1px solid ${colors.border.light}` },
           }}
