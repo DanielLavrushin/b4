@@ -156,7 +156,7 @@ detect_architecture() {
         # Check for full ARMv7 VFP support, otherwise use armv5 for safety
         if [ -f /proc/cpuinfo ] &&
             grep -qE "(vfpv[3-9])" /proc/cpuinfo 2>/dev/null &&
-            grep -qE "CPU architecture:\s*7" /proc/cpuinfo 2>/dev/null; then
+            grep -qE "CPU architecture:[[:space:]]*7" /proc/cpuinfo 2>/dev/null; then
             echo "armv7"
         else
             echo "armv5"
@@ -166,9 +166,9 @@ detect_architecture() {
     armv5*) echo "armv5" ;;
     arm*)
         if [ -f /proc/cpuinfo ]; then
-            if grep -qE "CPU architecture:\s*7" /proc/cpuinfo 2>/dev/null; then
+            if grep -qE "CPU architecture:[[:space:]]*7" /proc/cpuinfo 2>/dev/null; then
                 echo "armv7"
-            elif grep -qE "CPU architecture:\s*6" /proc/cpuinfo 2>/dev/null; then
+            elif grep -qE "CPU architecture:[[:space:]]*6" /proc/cpuinfo 2>/dev/null; then
                 echo "armv6"
             else
                 echo "armv5"
