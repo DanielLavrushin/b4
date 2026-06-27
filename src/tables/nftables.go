@@ -400,6 +400,10 @@ func (n *NFTablesManager) ApplyMasquerade() error {
 		return fmt.Errorf("failed to create nat postrouting chain: %w", err)
 	}
 
+	if _, err := n.runNft("flush", "chain", "ip", nftNatTableName, nftNatChainName); err != nil {
+		return fmt.Errorf("failed to flush nat postrouting chain: %w", err)
+	}
+
 	markClient := fmt.Sprintf("0x%x", engine.ClientMark)
 	if _, err := n.runNft("add", "rule", "ip", nftNatTableName, nftNatChainName,
 		"meta", "mark", "&", markClient, "==", markClient, "return"); err != nil {
