@@ -635,6 +635,7 @@
     "loading": "Loading dashboard...",
     "connectionRate": "Connection Rate",
     "connectionRateLegend": "conn / s · last 60s",
+    "throughputLegend": "throughput · last 60s",
     "signal": {
       "title": "Live Signal",
       "cps": "c/s",
@@ -647,6 +648,10 @@
       "packets": "Packets",
       "pktPerSec": "pkt/s",
       "rstDropped": "RST Dropped",
+      "throughput": "Throughput",
+      "processed": "processed",
+      "active": "Active flows",
+      "liveNow": "live now",
       "idle": "idle"
     },
     "runtime": {

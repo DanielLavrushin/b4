@@ -631,6 +631,7 @@
     "loading": "Загрузка...",
     "connectionRate": "Скорость соединений",
     "connectionRateLegend": "соед / с · за 60с",
+    "throughputLegend": "трафик · за 60с",
     "signal": {
       "title": "Живой сигнал",
       "cps": "соед/с",
@@ -643,6 +644,10 @@
       "packets": "Пакеты",
       "pktPerSec": "пак/с",
       "rstDropped": "RST отклонено",
+      "throughput": "Трафик",
+      "processed": "обработано",
+      "active": "Активные потоки",
+      "liveNow": "сейчас",
       "idle": "не активно"
     },
     "runtime": {

@@ -32,6 +32,7 @@ export interface Metrics {
   blocked_devices: Record<string, number>;
   connection_rate: { timestamp: number; value: number }[];
   packet_rate: { timestamp: number; value: number }[];
+  byte_rate: { timestamp: number; value: number }[];
   top_domains: Record<string, number>;
   protocol_dist: Record<string, number>;
   geo_dist: Record<string, number>;
@@ -77,6 +78,7 @@ export interface Metrics {
   domain_tls: Record<string, string>;
   current_cps: number;
   current_pps: number;
+  current_bps: number;
   escalations: EscalationEntry[];
   total_escalations: number;
 }
@@ -114,6 +116,7 @@ const normalizeMetrics = (data: null | Metrics): Metrics => {
       blocked_devices: {},
       connection_rate: [],
       packet_rate: [],
+      byte_rate: [],
       top_domains: {},
       protocol_dist: {},
       geo_dist: {},
@@ -142,6 +145,7 @@ const normalizeMetrics = (data: null | Metrics): Metrics => {
       domain_tls: {},
       current_cps: 0,
       current_pps: 0,
+      current_bps: 0,
       escalations: [],
       total_escalations: 0,
     };
@@ -185,6 +189,12 @@ const normalizeMetrics = (data: null | Metrics): Metrics => {
       : [],
     packet_rate: Array.isArray(data.packet_rate)
       ? data.packet_rate.map((item: { timestamp: number; value: number }) => ({
+          timestamp: safeNumber(item?.timestamp),
+          value: safeNumber(item?.value),
+        }))
+      : [],
+    byte_rate: Array.isArray(data.byte_rate)
+      ? data.byte_rate.map((item: { timestamp: number; value: number }) => ({
           timestamp: safeNumber(item?.timestamp),
           value: safeNumber(item?.value),
         }))
@@ -301,6 +311,7 @@ const normalizeMetrics = (data: null | Metrics): Metrics => {
         : {},
     current_cps: safeNumber(data.current_cps),
     current_pps: safeNumber(data.current_pps),
+    current_bps: safeNumber(data.current_bps),
     escalations: normalizeEscalations(data.escalations),
     total_escalations: safeNumber(data.total_escalations),
   };

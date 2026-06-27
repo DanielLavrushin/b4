@@ -25,10 +25,12 @@ type MetricsCollector struct {
 	BlockedTotal        uint64            `json:"blocked_total"`
 	CurrentCPS          float64           `json:"current_cps"`
 	CurrentPPS          float64           `json:"current_pps"`
+	CurrentBPS          float64           `json:"current_bps"`
 	CPUUsage            float64           `json:"cpu_usage"`
 
 	ConnectionRate    []TimeSeriesPoint            `json:"connection_rate"`
 	PacketRate        []TimeSeriesPoint            `json:"packet_rate"`
+	BytesRate         []TimeSeriesPoint            `json:"byte_rate"`
 	StartTime         time.Time                    `json:"start_time"`
 	Uptime            string                       `json:"uptime"`
 	MemoryUsage       MemoryStats                  `json:"memory_usage"`
@@ -46,6 +48,7 @@ type MetricsCollector struct {
 	mu              sync.RWMutex `json:"-"`
 	lastConnCount   uint64       `json:"-"`
 	lastPacketCount uint64       `json:"-"`
+	lastByteCount   uint64       `json:"-"`
 }
 
 type TimeSeriesPoint struct {
@@ -114,6 +117,7 @@ func GetMetricsCollector() *MetricsCollector {
 			BlockedDevices:    make(map[string]uint64),
 			ConnectionRate:    make([]TimeSeriesPoint, 0, 60),
 			PacketRate:        make([]TimeSeriesPoint, 0, 60),
+			BytesRate:         make([]TimeSeriesPoint, 0, 60),
 			RecentConnections: make([]ConnectionLog, 0, 10),
 			RecentEvents:      make([]SystemEvent, 0, 20),
 			WorkerStatus:      make([]WorkerHealth, 0),
@@ -152,9 +156,11 @@ func (m *MetricsCollector) updateRates() {
 
 	connDiff := m.TotalConnections - m.lastConnCount
 	packetDiff := m.PacketsProcessed - m.lastPacketCount
+	byteDiff := m.BytesProcessed - m.lastByteCount
 
 	m.CurrentCPS = float64(connDiff) / duration
 	m.CurrentPPS = float64(packetDiff) / duration
+	m.CurrentBPS = float64(byteDiff) / duration
 
 	nowMs := now.UnixMilli()
 
@@ -174,9 +180,18 @@ func (m *MetricsCollector) updateRates() {
 		m.PacketRate = m.PacketRate[len(m.PacketRate)-60:]
 	}
 
+	m.BytesRate = append(m.BytesRate, TimeSeriesPoint{
+		Timestamp: nowMs,
+		Value:     m.CurrentBPS,
+	})
+	if len(m.BytesRate) > 60 {
+		m.BytesRate = m.BytesRate[len(m.BytesRate)-60:]
+	}
+
 	m.lastUpdate = now
 	m.lastConnCount = m.TotalConnections
 	m.lastPacketCount = m.PacketsProcessed
+	m.lastByteCount = m.BytesProcessed
 
 	m.Uptime = formatDuration(now.Sub(m.StartTime))
 }
@@ -406,6 +421,7 @@ func (m *MetricsCollector) ResetStats() {
 	m.TotalEscalations = 0
 	m.CurrentCPS = 0
 	m.CurrentPPS = 0
+	m.CurrentBPS = 0
 
 	m.TopDomains = make(map[string]uint64)
 	m.ProtocolDist = make(map[string]uint64)
@@ -418,6 +434,7 @@ func (m *MetricsCollector) ResetStats() {
 
 	m.ConnectionRate = make([]TimeSeriesPoint, 0, 60)
 	m.PacketRate = make([]TimeSeriesPoint, 0, 60)
+	m.BytesRate = make([]TimeSeriesPoint, 0, 60)
 	m.RecentConnections = make([]ConnectionLog, 0, 10)
 	m.RecentEvents = make([]SystemEvent, 0, 20)
 
@@ -426,6 +443,7 @@ func (m *MetricsCollector) ResetStats() {
 	m.lastUpdate = now
 	m.lastConnCount = 0
 	m.lastPacketCount = 0
+	m.lastByteCount = 0
 	m.Uptime = "0s"
 }
 
@@ -460,6 +478,7 @@ func (m *MetricsCollector) GetSnapshot() *MetricsCollector {
 		TablesStatus:        m.TablesStatus,
 		CurrentCPS:          m.CurrentCPS,
 		CurrentPPS:          m.CurrentPPS,
+		CurrentBPS:          m.CurrentBPS,
 	}
 
 	if len(m.ConnectionRate) > 0 {
@@ -474,6 +493,13 @@ func (m *MetricsCollector) GetSnapshot() *MetricsCollector {
 		copy(snapshot.PacketRate, m.PacketRate)
 	} else {
 		snapshot.PacketRate = make([]TimeSeriesPoint, 0)
+	}
+
+	if len(m.BytesRate) > 0 {
+		snapshot.BytesRate = make([]TimeSeriesPoint, len(m.BytesRate))
+		copy(snapshot.BytesRate, m.BytesRate)
+	} else {
+		snapshot.BytesRate = make([]TimeSeriesPoint, 0)
 	}
 
 	snapshot.TopDomains = make(map[string]uint64)
@@ -544,6 +570,7 @@ func (m *MetricsCollector) GetSnapshot() *MetricsCollector {
 
 	snapshot.ConnectionRate = smoothTimeSeriesData(m.ConnectionRate, 3)
 	snapshot.PacketRate = smoothTimeSeriesData(m.PacketRate, 3)
+	snapshot.BytesRate = smoothTimeSeriesData(m.BytesRate, 3)
 	return snapshot
 }
 

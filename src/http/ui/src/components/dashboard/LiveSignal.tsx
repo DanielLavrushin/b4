@@ -3,7 +3,7 @@ import { colors, fonts } from "@design";
 import { SimpleLineChart } from "./SimpleLineChart";
 import { StatCard } from "./StatCard";
 import { DashboardPanel } from "./DashboardPanel";
-import { formatNumber } from "@utils";
+import { formatBytes, formatNumber } from "@utils";
 import { useTranslation } from "react-i18next";
 import type { Metrics } from "./Page";
 
@@ -13,9 +13,15 @@ interface LiveSignalProps {
 
 const CHART_HEIGHT = 88;
 
+const formatRateAxis = (bytesPerSec: number): string => {
+  if (bytesPerSec < 1024) return String(Math.round(bytesPerSec));
+  if (bytesPerSec < 1024 * 1024) return `${Math.round(bytesPerSec / 1024)}k`;
+  return `${(bytesPerSec / (1024 * 1024)).toFixed(1)}M`;
+};
+
 export const LiveSignal = ({ metrics }: LiveSignalProps) => {
   const { t } = useTranslation();
-  const hasData = metrics.connection_rate.length > 0;
+  const hasData = metrics.byte_rate.length > 0;
 
   const targetRate =
     metrics.total_connections > 0
@@ -45,10 +51,10 @@ export const LiveSignal = ({ metrics }: LiveSignalProps) => {
           component="span"
           sx={{ width: 8, height: 2, bgcolor: colors.secondary }}
         />
-        {t("dashboard.connectionRateLegend")}
+        {t("dashboard.throughputLegend")}
       </Box>
       <Box component="span" sx={{ color: colors.text.primary, fontWeight: 700 }}>
-        {metrics.current_cps.toFixed(1)} {t("dashboard.signal.cps")}
+        {formatBytes(metrics.current_bps)}/s
       </Box>
     </Box>
   );
@@ -78,11 +84,16 @@ export const LiveSignal = ({ metrics }: LiveSignalProps) => {
             sx={{
               flex: 1,
               display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
+              gridTemplateColumns: {
+                xs: "repeat(2, 1fr)",
+                sm: "repeat(4, 1fr)",
+              },
               gridAutoRows: "1fr",
               mr: "-1px",
+              mb: "-1px",
               "& > *": {
                 borderRight: `1px solid ${colors.border.light}`,
+                borderBottom: `1px solid ${colors.border.light}`,
               },
             }}
           >
@@ -99,10 +110,16 @@ export const LiveSignal = ({ metrics }: LiveSignalProps) => {
               tone={isIdle ? "muted" : "primary"}
             />
             <StatCard
-              label={t("dashboard.metrics.packets")}
-              value={formatNumber(metrics.packets_processed)}
-              sub={`${metrics.current_pps.toFixed(1)} ${t("dashboard.metrics.pktPerSec")}`}
+              label={t("dashboard.metrics.throughput")}
+              value={formatBytes(metrics.bytes_processed)}
+              sub={t("dashboard.metrics.processed")}
               tone="primary"
+            />
+            <StatCard
+              label={t("dashboard.metrics.active")}
+              value={formatNumber(metrics.active_flows)}
+              sub={t("dashboard.metrics.liveNow")}
+              tone="secondary"
             />
           </Box>
         </Box>
@@ -122,9 +139,10 @@ export const LiveSignal = ({ metrics }: LiveSignalProps) => {
         >
           {hasData ? (
             <SimpleLineChart
-              data={metrics.connection_rate}
+              data={metrics.byte_rate}
               color={colors.secondary}
               height={CHART_HEIGHT}
+              formatValue={formatRateAxis}
             />
           ) : (
             <Box

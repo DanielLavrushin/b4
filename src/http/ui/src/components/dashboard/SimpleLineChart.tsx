@@ -9,6 +9,7 @@ interface SimpleChartProps {
   data: { timestamp: number; value: number }[];
   height?: number;
   color?: string;
+  formatValue?: (value: number) => string;
 }
 
 const createSmoothPath = (points: { x: number; y: number }[]): string => {
@@ -37,6 +38,7 @@ export const SimpleLineChart = ({
   data,
   height = 200,
   color = colors.secondary,
+  formatValue = (value) => value.toFixed(1),
 }: SimpleChartProps) => {
   const { t } = useTranslation();
   const svgRef = useRef<SVGSVGElement>(null);
@@ -164,13 +166,13 @@ export const SimpleLineChart = ({
         }}
       >
         <Typography component="span" sx={{ fontSize: 10, lineHeight: 1 }}>
-          {maxValue.toFixed(1)}
+          {formatValue(maxValue)}
         </Typography>
         <Typography component="span" sx={{ fontSize: 10, lineHeight: 1 }}>
-          {(minValue + range / 2).toFixed(1)}
+          {formatValue(minValue + range / 2)}
         </Typography>
         <Typography component="span" sx={{ fontSize: 10, lineHeight: 1 }}>
-          {minValue.toFixed(1)}
+          {formatValue(minValue)}
         </Typography>
       </Box>
     </Box>
