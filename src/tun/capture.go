@@ -137,9 +137,39 @@ func (r *routeManager) ensureGateChain() {
 		r.rebuildGateChain()
 		return
 	}
-	if !strings.Contains(out, "-j "+tunCaptureChain) {
+	if !equalStringSet(gateRulesFromDump(out), r.desiredGateRules()) {
 		r.rebuildGateChain()
 	}
+}
+
+func gateRulesFromDump(out string) []string {
+	var cur []string
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.HasPrefix(line, "-A "+tunGateChain) {
+			continue
+		}
+		cur = append(cur, ruleFieldValue(line, "--mac-source")+" "+ruleFieldValue(line, "-j"))
+	}
+	return cur
+}
+
+func (r *routeManager) desiredGateRules() []string {
+	var want []string
+	if r.whiteIsBlack {
+		for _, mac := range r.selectedMACs {
+			if mac = strings.ToUpper(strings.TrimSpace(mac)); mac != "" {
+				want = append(want, mac+" RETURN")
+			}
+		}
+		want = append(want, " "+tunCaptureChain)
+	} else {
+		for _, mac := range r.selectedMACs {
+			if mac = strings.ToUpper(strings.TrimSpace(mac)); mac != "" {
+				want = append(want, mac+" "+tunCaptureChain)
+			}
+		}
+	}
+	return want
 }
 
 func (r *routeManager) rebuildGateChain() {

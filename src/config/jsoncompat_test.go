@@ -37,6 +37,42 @@ func TestMasqueradeConfigUnmarshal(t *testing.T) {
 	}
 }
 
+func TestMasqueradeConfigEqual(t *testing.T) {
+	base := MasqueradeConfig{Enabled: true, Interfaces: []string{"eth0", "eth1"}}
+
+	if !base.Equal(MasqueradeConfig{Enabled: true, Interfaces: []string{"eth1", "eth0"}}) {
+		t.Error("Equal should ignore interface order (reorder must not force a soft restart)")
+	}
+	if base.Equal(MasqueradeConfig{Enabled: true, Interfaces: []string{"eth0"}}) {
+		t.Error("Equal should detect a differing interface set")
+	}
+	if base.Equal(MasqueradeConfig{Enabled: false, Interfaces: []string{"eth0", "eth1"}}) {
+		t.Error("Equal should detect an Enabled change")
+	}
+}
+
+func TestEqualStringSet(t *testing.T) {
+	cases := []struct {
+		name string
+		a, b []string
+		want bool
+	}{
+		{"empty", nil, nil, true},
+		{"same order", []string{"a", "b"}, []string{"a", "b"}, true},
+		{"reordered", []string{"a", "b"}, []string{"b", "a"}, true},
+		{"different length", []string{"a"}, []string{"a", "b"}, false},
+		{"same length different members", []string{"a", "b"}, []string{"a", "c"}, false},
+		{"duplicates vs distinct same length", []string{"a", "a"}, []string{"a", "b"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := equalStringSet(tc.a, tc.b); got != tc.want {
+				t.Errorf("equalStringSet(%v, %v) = %v, want %v", tc.a, tc.b, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestMasqueradeLegacyMigration(t *testing.T) {
 	tmpDir := t.TempDir()
 
