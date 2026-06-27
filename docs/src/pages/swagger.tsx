@@ -28,7 +28,17 @@ function buildSwaggerHtml(specUrl: string, server: string): string {
     fetch(${JSON.stringify(specUrl)})
       .then(r => r.json())
       .then(spec => {${serverScript}
-        SwaggerUIBundle({ spec, dom_id: "#swagger-ui" });
+        SwaggerUIBundle({
+          spec,
+          dom_id: "#swagger-ui",
+          requestInterceptor: (req) => {
+            const auth = req.headers && req.headers.Authorization;
+            if (auth && !/^Bearer\\s/i.test(auth)) {
+              req.headers.Authorization = "Bearer " + auth;
+            }
+            return req;
+          },
+        });
       });
   </script>
 </body>
