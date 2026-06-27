@@ -6,8 +6,10 @@
 - ADDED: **Record a log session and download it to share** - the Logs page now has a "Start trace" button that records everything until "Stop & save", which downloads a single log file to attach when asking for help. The file already includes system details, and recording stops on its own after 15 minutes.
 - ADDED: **NAT Masquerade can now target several interfaces at once** - when NAT Masquerade is turned on (Settings → Feature), you can pick any combination of network interfaces for it to use — for example two out of three — instead of only a single interface or all of them.
 - ADDED: **Runtime panel on the dashboard** - shows b4's memory use over time, with a live chart and a couple of health readings, so a slow climb is easy to keep an eye on.
+- ADDED: **Per-device filtering (whitelist/blacklist) works in TUN mode** - the Device Filtering list under Settings only took effect in NFQUEUE mode; in TUN mode every device's traffic was inspected regardless of the selection, so choosing which devices use the bypass changed nothing there.
 - CHANGED: **Live Signal panel reworked around throughput** - the connections- and packets-per-second readings hovered near zero on a home router and meant little, so they gave way to live throughput, total data handled, targeted share, and active connections.
 - FIXED: **Memory could slowly creep up the longer b4 ran** - a few background jobs (logging, AI chat streaming, Discovery) didn't always tidy up after themselves, so usage grew over long uptime.
+- FIXED: **After stopping b4 in TUN mode, new sites could stop loading while already-open ones kept working** - on an unclean stop (a forced kill, or a shutdown that ran past its time limit) the virtual TUN interface disappeared but its routing rule could be left behind, steering fresh connections and DNS lookups into a path that no longer existed until b4 was started by hand again.
 
 ## [1.70.1] - 2026-06-23
 

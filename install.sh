@@ -1469,7 +1469,7 @@ _openwrt_load_kmods() {
         if [ "$B4_PKG_MANAGER" = "apk" ]; then
             log_info "Try: apk add kmod-nft-queue kmod-nft-nat kmod-nft-compat"
         else
-            log_info "Try: opkg install kmod-nfnetlink-queue kmod-ipt-nfqueue iptables-mod-nfqueue kmod-ipt-conntrack-extra iptables-mod-conntrack-extra"
+            log_info "Try: opkg install kmod-nft-queue kmod-nft-conntrack kmod-nfnetlink-queue kmod-ipt-nfqueue iptables-mod-nfqueue kmod-ipt-conntrack-extra iptables-mod-conntrack-extra"
         fi
     fi
 }
@@ -1485,7 +1485,7 @@ _openwrt_check_recommended() {
         fi
     fi
 
-    if [ "$B4_PKG_MANAGER" = "apk" ]; then
+    if _nft_functional; then
         if ! _kmod_available "nft_queue"; then
             rec_missing="${rec_missing} kmod-nft-queue"
         fi
@@ -2149,6 +2149,7 @@ ARGS="--config=${B4_CONFIG_FILE}"
 PREARGS=""
 which nohup >/dev/null 2>&1 && PREARGS="nohup"
 DESC="\$PROCS"
+PRECMD="b4_purge_tun"
 PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 kernel_mod_load() {
@@ -2160,9 +2161,24 @@ kernel_mod_load() {
     done
 }
 
+b4_purge_tun() {
+    for ch in B4_TUN_GATE B4_TUN; do
+        iptables -t mangle -D PREROUTING -j \$ch 2>/dev/null
+        iptables -t mangle -D OUTPUT -j \$ch 2>/dev/null
+        iptables -t mangle -F \$ch 2>/dev/null
+        iptables -t mangle -X \$ch 2>/dev/null
+    done
+    while ip rule del fwmark 0x40000000/0x40000000 2>/dev/null; do :; done
+    ip route flush table 9998 2>/dev/null
+    ip link del b4tun0 2>/dev/null
+    return 0
+}
+
 [ "\$1" = "start" ] || [ "\$1" = "restart" ] && kernel_mod_load
 
 . /opt/etc/init.d/rc.func
+
+[ "\$1" = "stop" ] && b4_purge_tun
 EOF
 }
 
@@ -2184,10 +2200,24 @@ kernel_mod_load() {
     done
 }
 
+b4_purge_tun() {
+    for ch in B4_TUN_GATE B4_TUN; do
+        iptables -t mangle -D PREROUTING -j \$ch 2>/dev/null
+        iptables -t mangle -D OUTPUT -j \$ch 2>/dev/null
+        iptables -t mangle -F \$ch 2>/dev/null
+        iptables -t mangle -X \$ch 2>/dev/null
+    done
+    while ip rule del fwmark 0x40000000/0x40000000 2>/dev/null; do :; done
+    ip route flush table 9998 2>/dev/null
+    ip link del b4tun0 2>/dev/null
+    return 0
+}
+
 start() {
     echo "Starting b4..."
     [ -f "\$PIDFILE" ] && kill -0 \$(cat "\$PIDFILE") 2>/dev/null && echo "Already running" && return 1
     kernel_mod_load
+    b4_purge_tun
     if which nohup >/dev/null 2>&1; then
         nohup \$PROG --config \$CONFIG >/dev/null 2>&1 &
     elif which setsid >/dev/null 2>&1; then
@@ -2211,6 +2241,7 @@ stop() {
     [ -f "\$PIDFILE" ] && kill \$(cat "\$PIDFILE") 2>/dev/null
     rm -f "\$PIDFILE"
     killall b4 2>/dev/null || true
+    b4_purge_tun
     echo "b4 stopped"
 }
 
@@ -3324,6 +3355,37 @@ action_sysinfo() {
             $_nfq_ipt -t filter -F B4_CB_TEST 2>/dev/null || true
             $_nfq_ipt -t filter -X B4_CB_TEST 2>/dev/null || true
         fi
+    fi
+
+    _flow_offload=""
+    if command_exists nft; then
+        _nft_ruleset=$(nft list ruleset 2>/dev/null)
+        if echo "$_nft_ruleset" | grep -q "flow add @\|flow offload @"; then
+            if echo "$_nft_ruleset" | grep -qE "flags[[:space:]]+offload"; then
+                _flow_offload="hardware"
+            else
+                _flow_offload="software"
+            fi
+        fi
+    fi
+    if [ -z "$_flow_offload" ]; then
+        for _fb in iptables iptables-legacy; do
+            command_exists "$_fb" || continue
+            _ipt_filter=$($_fb -t filter -S 2>/dev/null)
+            if echo "$_ipt_filter" | grep -q "FLOWOFFLOAD"; then
+                if echo "$_ipt_filter" | grep -q -- "--hw"; then
+                    _flow_offload="hardware"
+                else
+                    _flow_offload="software"
+                fi
+                break
+            fi
+        done
+    fi
+    if [ -n "$_flow_offload" ]; then
+        printf "    ${RED}  WARN${NC}  %s\n" "Flow offloading active (${_flow_offload}) — bypasses b4; disable it for b4 to work" >&2
+    else
+        printf "    ${GREEN}  OK${NC}    %s\n" "Flow offloading off (b4 can intercept traffic)" >&2
     fi
 
     echo ""

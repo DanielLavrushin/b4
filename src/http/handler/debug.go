@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"net"
 	"net/http"
 	"net/http/pprof"
 	"os"
@@ -13,6 +14,15 @@ func pprofEnabled(cfg *config.Config) bool {
 		return true
 	}
 	return cfg.System.Pprof
+}
+
+func isLoopbackRemote(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (api *API) RegisterDebugApi() {
@@ -29,7 +39,13 @@ func (api *API) RegisterDebugApi() {
 
 func (api *API) pprofGuard(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !pprofEnabled(api.getCfg()) {
+		cfg := api.getCfg()
+		if !pprofEnabled(cfg) {
+			http.NotFound(w, r)
+			return
+		}
+		authConfigured := cfg.System.WebServer.Username != "" && cfg.System.WebServer.Password != ""
+		if !authConfigured && !isLoopbackRemote(r.RemoteAddr) {
 			http.NotFound(w, r)
 			return
 		}

@@ -158,12 +158,13 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 func (m *Runtime) launchSuite(suiteID string, run func()) {
 	m.mu.Lock()
 	state := m.state
-	m.mu.Unlock()
-	if state == nil {
+	if state == nil || state.stopping {
+		m.mu.Unlock()
 		return
 	}
-
 	state.wg.Add(1)
+	m.mu.Unlock()
+
 	go func() {
 		defer m.Stop(suiteID)
 		defer state.wg.Done()

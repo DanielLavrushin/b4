@@ -47,6 +47,7 @@ export function useTraceSession(): TraceSession {
 
   useEffect(() => {
     if (!tracing || traceStartMs == null) return;
+    let cancelled = false;
     const tick = () =>
       setTraceElapsed(Math.floor((Date.now() - traceStartMs) / 1000));
     tick();
@@ -55,6 +56,7 @@ export function useTraceSession(): TraceSession {
       traceApi
         .status()
         .then((s) => {
+          if (cancelled) return;
           setTraceLines(s.lines);
           if (!s.active) {
             setTracing(false);
@@ -65,6 +67,7 @@ export function useTraceSession(): TraceSession {
         .catch(() => undefined);
     }, 2000);
     return () => {
+      cancelled = true;
       clearInterval(elapsedTimer);
       clearInterval(pollTimer);
     };
