@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Box, Typography, Grid } from "@mui/material";
+import { Box, Typography } from "@mui/material";
 import { BlockOutlined as BlockIcon } from "@mui/icons-material";
 import { colors, fonts } from "@design";
 import { formatNumber } from "@utils";
@@ -72,11 +72,14 @@ export const Blackhole = ({
         </Box>
       }
     >
-      <Grid container>
-        <Grid
-          size={{ xs: 12, sm: 6 }}
-          sx={{ borderRight: { sm: `1px solid ${colors.border.light}` } }}
-        >
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: { xs: "column", sm: "row" },
+          alignItems: { sm: "flex-start" },
+        }}
+      >
+        <Box sx={{ flex: 1, minWidth: 0, width: "100%" }}>
           <BlockSection
             label={t("dashboard.blackhole.topDomains")}
             rows={topDomains.map(([domain, count]) => ({
@@ -86,8 +89,17 @@ export const Blackhole = ({
             }))}
             empty={t("dashboard.blackhole.none")}
           />
-        </Grid>
-        <Grid size={{ xs: 12, sm: 6 }}>
+        </Box>
+        <Box
+          sx={{
+            flexShrink: 0,
+            alignSelf: "stretch",
+            bgcolor: colors.border.light,
+            width: { xs: "100%", sm: "1px" },
+            height: { xs: "1px", sm: "auto" },
+          }}
+        />
+        <Box sx={{ flex: 1, minWidth: 0, width: "100%" }}>
           <BlockSection
             label={t("dashboard.blackhole.topDevices")}
             rows={topDevices.map(([mac, count]) => ({
@@ -97,8 +109,8 @@ export const Blackhole = ({
             }))}
             empty={t("dashboard.blackhole.none")}
           />
-        </Grid>
-      </Grid>
+        </Box>
+      </Box>
     </DashboardPanel>
   );
 };

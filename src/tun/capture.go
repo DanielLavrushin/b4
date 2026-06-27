@@ -12,6 +12,7 @@ import (
 
 const (
 	tunCaptureChain   = "B4_TUN"
+	tunGateChain      = "B4_TUN_GATE"
 	tunProbeChain     = "B4_TUN_PROBE"
 	defaultSteerMark  = engine.TunSteerMark
 	defaultClientMark = engine.ClientMark
@@ -96,12 +97,67 @@ func (r *routeManager) ensureCaptureChain() {
 	}
 }
 
+func (r *routeManager) deviceFilterActive() bool {
+	return r.devicesEnabled && len(r.selectedMACs) > 0
+}
+
+func (r *routeManager) ensureJump(base string, spec ...string) {
+	if _, err := run(append([]string{"iptables", "-t", "mangle", "-C", base}, spec...)...); err != nil {
+		if _, err := run(append([]string{"iptables", "-t", "mangle", "-I", base}, spec...)...); err != nil {
+			log.Warnf("TUN: failed to add capture jump from %s: %v", base, err)
+		}
+	}
+}
+
+func (r *routeManager) removeJump(base string, spec ...string) {
+	for {
+		if _, err := run(append([]string{"iptables", "-t", "mangle", "-D", base}, spec...)...); err != nil {
+			return
+		}
+	}
+}
+
 func (r *routeManager) ensureCaptureJumps() {
-	for _, base := range []string{"PREROUTING", "OUTPUT"} {
-		if _, err := run("iptables", "-t", "mangle", "-C", base, "-j", tunCaptureChain); err != nil {
-			if _, err := run("iptables", "-t", "mangle", "-I", base, "-j", tunCaptureChain); err != nil {
-				log.Warnf("TUN: failed to add capture jump from %s: %v", base, err)
+	r.ensureJump("OUTPUT", "-j", tunCaptureChain)
+
+	if r.deviceFilterActive() {
+		r.ensureGateChain()
+		r.ensureJump("PREROUTING", "-j", tunGateChain)
+		r.removeJump("PREROUTING", "-j", tunCaptureChain)
+	} else {
+		r.ensureJump("PREROUTING", "-j", tunCaptureChain)
+		r.removeJump("PREROUTING", "-j", tunGateChain)
+	}
+}
+
+func (r *routeManager) ensureGateChain() {
+	out, err := run("iptables", "-t", "mangle", "-S", tunGateChain)
+	if err != nil {
+		run("iptables", "-t", "mangle", "-N", tunGateChain)
+		r.rebuildGateChain()
+		return
+	}
+	if !strings.Contains(out, "-j "+tunCaptureChain) {
+		r.rebuildGateChain()
+	}
+}
+
+func (r *routeManager) rebuildGateChain() {
+	run("iptables", "-t", "mangle", "-F", tunGateChain)
+	if r.whiteIsBlack {
+		for _, mac := range r.selectedMACs {
+			if mac = strings.ToUpper(strings.TrimSpace(mac)); mac == "" {
+				continue
 			}
+			run("iptables", "-t", "mangle", "-A", tunGateChain, "-m", "mac", "--mac-source", mac, "-j", "RETURN")
+		}
+		run("iptables", "-t", "mangle", "-A", tunGateChain, "-j", tunCaptureChain)
+	} else {
+		for _, mac := range r.selectedMACs {
+			if mac = strings.ToUpper(strings.TrimSpace(mac)); mac == "" {
+				continue
+			}
+			run("iptables", "-t", "mangle", "-A", tunGateChain, "-m", "mac", "--mac-source", mac, "-j", tunCaptureChain)
 		}
 	}
 }
@@ -252,6 +308,9 @@ func (r *routeManager) teardownPortCapture() {
 			}
 		}
 	}
+	r.removeJump("PREROUTING", "-j", tunGateChain)
+	run("iptables", "-t", "mangle", "-F", tunGateChain)
+	run("iptables", "-t", "mangle", "-X", tunGateChain)
 	run("iptables", "-t", "mangle", "-F", tunCaptureChain)
 	run("iptables", "-t", "mangle", "-X", tunCaptureChain)
 

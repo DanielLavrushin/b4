@@ -1,11 +1,12 @@
 # B4 - Bye Bye Big Bro
 
-## [1.71.0] - 2026-06-25
+## [1.71.0] - 2026-06-28
 
 - ADDED: **The Logs page is easier to read** - log lines are now colour-coded by importance, and each type (error, warning, info, and so on) can be shown or hidden with one click.
 - ADDED: **Record a log session and download it to share** - the Logs page now has a "Start trace" button that records everything until "Stop & save", which downloads a single log file to attach when asking for help. The file already includes system details, and recording stops on its own after 15 minutes.
 - ADDED: **NAT Masquerade can now target several interfaces at once** - when NAT Masquerade is turned on (Settings → Feature), you can pick any combination of network interfaces for it to use — for example two out of three — instead of only a single interface or all of them.
 - ADDED: **Runtime panel on the dashboard** - shows b4's memory use over time, with a live chart and a couple of health readings, so a slow climb is easy to keep an eye on.
+- CHANGED: **Live Signal panel reworked around throughput** - the connections- and packets-per-second readings hovered near zero on a home router and meant little, so they gave way to live throughput, total data handled, targeted share, and active connections.
 - FIXED: **Memory could slowly creep up the longer b4 ran** - a few background jobs (logging, AI chat streaming, Discovery) didn't always tidy up after themselves, so usage grew over long uptime.
 
 ## [1.70.1] - 2026-06-23

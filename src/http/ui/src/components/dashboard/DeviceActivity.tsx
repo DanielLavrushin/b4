@@ -61,7 +61,7 @@ export const DeviceActivity = ({
   if (sortedDevices.length === 0) return null;
 
   return (
-    <DashboardPanel eyebrow={t("dashboard.deviceActivity.title")} fill>
+    <DashboardPanel eyebrow={t("dashboard.deviceActivity.title")}>
       {sortedDevices.map(({ mac, domains, total, domainCount }) => {
         const isExpanded = expanded.has(mac);
         const sortedDomains = Object.entries(domains).sort(
@@ -129,7 +129,54 @@ export const DeviceActivity = ({
                   {getDeviceMeta(mac)}
                 </Box>
               </Box>
-              <Box />
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  minWidth: 0,
+                  overflow: "hidden",
+                }}
+              >
+                {sortedDomains.slice(0, 3).map(([domain]) => (
+                  <Box
+                    key={domain}
+                    component="span"
+                    title={domain}
+                    sx={{
+                      fontFamily: fonts.mono,
+                      fontSize: 10,
+                      lineHeight: 1.4,
+                      color: colors.text.secondary,
+                      bgcolor: colors.background.default,
+                      border: `1px solid ${colors.border.light}`,
+                      borderRadius: "4px",
+                      px: "6px",
+                      py: "1px",
+                      maxWidth: 150,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      minWidth: 0,
+                    }}
+                  >
+                    {domain}
+                  </Box>
+                ))}
+                {domainCount > 3 && (
+                  <Box
+                    component="span"
+                    sx={{
+                      fontFamily: fonts.mono,
+                      fontSize: 10,
+                      color: colors.text.disabled,
+                      flexShrink: 0,
+                    }}
+                  >
+                    +{domainCount - 3}
+                  </Box>
+                )}
+              </Box>
               <Box
                 sx={{
                   fontFamily: fonts.mono,

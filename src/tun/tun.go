@@ -151,6 +151,11 @@ func (e *Engine) Start() error {
 		udpLimit:      udpLimit,
 		dupIPs:        dupV4,
 		replyCapture:  replyCapture,
+
+		devicesEnabled: cfg.Queue.Devices.Enabled,
+		whiteIsBlack:   cfg.Queue.Devices.WhiteIsBlack,
+		selectedMACs:   cfg.Queue.Devices.SelectedMACs(),
+
 		followDefault: tunCfg.FollowsDefaultRoute(),
 	}
 	if err := e.routes.setup(); err != nil {

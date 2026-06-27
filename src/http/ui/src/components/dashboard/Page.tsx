@@ -407,7 +407,7 @@ export function DashboardPage() {
         </Box>
       )}
 
-      <Grid container spacing={1.5} sx={{ mb: 1.5 }} alignItems="stretch">
+      <Grid container spacing={1.5} sx={{ mb: 1.5 }} alignItems="flex-start">
         {hasDevices && (
           <Grid size={{ xs: 12, xl: 6 }} sx={{ display: "flex" }}>
             <Box sx={{ width: "100%" }}>

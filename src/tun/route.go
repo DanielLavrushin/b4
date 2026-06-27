@@ -57,6 +57,10 @@ type routeManager struct {
 	dupIPs       []string
 	replyCapture bool
 
+	devicesEnabled bool
+	whiteIsBlack   bool
+	selectedMACs   []string
+
 	followDefault bool
 
 	mu                sync.Mutex

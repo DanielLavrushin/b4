@@ -37,7 +37,7 @@ export const UnmatchedDomains = ({
   if (unmatched.length === 0) return null;
 
   return (
-    <DashboardPanel eyebrow={t("dashboard.unmatchedDomains.title")} fill>
+    <DashboardPanel eyebrow={t("dashboard.unmatchedDomains.title")}>
       {unmatched.map(([domain, count]) => (
         <DataRow
           key={domain}
