@@ -46,7 +46,7 @@ func (im *IPTablesManager) checkConnbytesSupport(ipt string) error {
 		return err
 	}
 
-	supported, probeErr := im.probeModuleInTempChain(ipt, []string{"-p", "tcp", "-m", "connbytes", "--connbytes-dir", "original",
+	supported, probeErr := im.probeModuleInTempChain(ipt, "filter", []string{"-p", "tcp", "-m", "connbytes", "--connbytes-dir", "original",
 		"--connbytes-mode", "packets", "--connbytes", "0:10", "-j", "ACCEPT"})
 	if supported {
 		im.connbytesSupport[ipt] = nil
@@ -65,7 +65,7 @@ func (im *IPTablesManager) hasMultiportSupport(ipt string) bool {
 		return result
 	}
 
-	supported, _ := im.probeModuleInTempChain(ipt, []string{"-p", "tcp", "-m", "multiport", "--dports", "80,443", "-j", "ACCEPT"})
+	supported, _ := im.probeModuleInTempChain(ipt, "filter", []string{"-p", "tcp", "-m", "multiport", "--dports", "80,443", "-j", "ACCEPT"})
 	im.multiportSupport[ipt] = supported
 	if supported {
 		log.Tracef("IPTABLES[%s]: multiport module is available", ipt)
@@ -80,8 +80,8 @@ func (im *IPTablesManager) hasConnmarkSupport(ipt string) bool {
 		return result
 	}
 
-	matchOK, _ := im.probeModuleInTempChain(ipt, []string{"-m", "connmark", "--mark", "0x8000/0x8000", "-j", "RETURN"})
-	targetOK, _ := im.probeModuleInTempChain(ipt, []string{"-j", "CONNMARK", "--save-mark", "--nfmask", "0x8000", "--ctmask", "0x8000"})
+	matchOK, _ := im.probeModuleInTempChain(ipt, "mangle", []string{"-m", "connmark", "--mark", "0x8000/0x8000", "-j", "RETURN"})
+	targetOK, _ := im.probeModuleInTempChain(ipt, "mangle", []string{"-j", "CONNMARK", "--save-mark", "--nfmask", "0x8000", "--ctmask", "0x8000"})
 	supported := matchOK && targetOK
 	im.connmarkSupport[ipt] = supported
 	if supported {
@@ -93,19 +93,22 @@ func (im *IPTablesManager) hasConnmarkSupport(ipt string) bool {
 }
 
 // probeModuleInTempChain tests whether a rule spec is accepted by iptables
-// using a temporary chain, so the probe never touches live traffic.
-func (im *IPTablesManager) probeModuleInTempChain(ipt string, testSpec []string) (bool, error) {
+// using a temporary chain in the given table, so the probe never touches live
+// traffic. Probe in the table where the rule will actually be installed - some
+// targets (e.g. TPROXY) are table-restricted, so probing in the wrong table can
+// yield a false negative.
+func (im *IPTablesManager) probeModuleInTempChain(ipt, table string, testSpec []string) (bool, error) {
 	const tmpChain = "B4_MODULE_TEST"
-	_, _ = run(ipt, "-w", "-t", "filter", "-F", tmpChain)
-	_, _ = run(ipt, "-w", "-t", "filter", "-X", tmpChain)
-	if _, err := run(ipt, "-w", "-t", "filter", "-N", tmpChain); err != nil {
+	_, _ = run(ipt, "-w", "-t", table, "-F", tmpChain)
+	_, _ = run(ipt, "-w", "-t", table, "-X", tmpChain)
+	if _, err := run(ipt, "-w", "-t", table, "-N", tmpChain); err != nil {
 		return false, fmt.Errorf("could not create probe chain %s: %w", tmpChain, err)
 	}
 	defer func() {
-		_, _ = run(ipt, "-w", "-t", "filter", "-F", tmpChain)
-		_, _ = run(ipt, "-w", "-t", "filter", "-X", tmpChain)
+		_, _ = run(ipt, "-w", "-t", table, "-F", tmpChain)
+		_, _ = run(ipt, "-w", "-t", table, "-X", tmpChain)
 	}()
-	_, err := run(append([]string{ipt, "-w", "-t", "filter", "-A", tmpChain}, testSpec...)...)
+	_, err := run(append([]string{ipt, "-w", "-t", table, "-A", tmpChain}, testSpec...)...)
 	return err == nil, err
 }
 
