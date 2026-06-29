@@ -8,6 +8,20 @@ export function wsUrl(path: string): string {
   return protocol + location.host + path + query;
 }
 
+export function resolveDeviceName(d: DeviceInfo): string {
+  if (d.alias) return d.alias;
+  if (d.hostname) return d.hostname;
+  if (d.vendor && d.vendor !== "Private") return `${d.vendor} (${d.mac})`;
+  return d.mac;
+}
+
+export function resolveDeviceMeta(d: DeviceInfo): string {
+  const parts: string[] = [];
+  if (d.ip) parts.push(d.ip);
+  if (d.vendor && d.vendor !== "Private") parts.push(d.vendor);
+  return parts.join(" · ");
+}
+
 export function sortDevices(
   devices: DeviceInfo[],
   isSelected: (mac: string) => boolean,

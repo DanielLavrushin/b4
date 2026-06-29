@@ -17,6 +17,7 @@ import {
   generateIpVariants,
   asnStorage,
   stripPort,
+  resolveDeviceName,
 } from "@utils";
 import { colors } from "@design";
 import { useWebSocket } from "@context/B4WsProvider";
@@ -136,7 +137,8 @@ export function ConnectionsPage() {
         const ipMap: Record<string, string> = {};
         for (const d of data.devices || []) {
           const normalized = d.mac.toUpperCase().replaceAll("-", ":");
-          map[normalized] = d.alias || d.vendor || "";
+          const name = resolveDeviceName(d);
+          map[normalized] = name === d.mac ? "" : name;
           if (d.ip) ipMap[d.ip] = normalized;
         }
         for (const ip of data.router_ips || []) {
