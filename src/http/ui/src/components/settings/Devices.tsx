@@ -402,18 +402,19 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                                     sx={{ fontSize: "0.7rem", height: 20 }}
                                   />
                                 )}
-                                {!device.is_manual && !device.is_online && (
-                                  <Chip
-                                    label={t("core.devices.offline")}
-                                    size="small"
-                                    variant="outlined"
-                                    sx={{
-                                      fontSize: "0.7rem",
-                                      height: 20,
-                                      color: colors.text.secondary,
-                                    }}
-                                  />
-                                )}
+                                {!device.is_manual &&
+                                  device.is_online === false && (
+                                    <Chip
+                                      label={t("core.devices.offline")}
+                                      size="small"
+                                      variant="outlined"
+                                      sx={{
+                                        fontSize: "0.7rem",
+                                        height: 20,
+                                        color: colors.text.secondary,
+                                      }}
+                                    />
+                                  )}
                               </Box>
                             </TableCell>
                             <TableCell onClick={(e) => e.stopPropagation()}>

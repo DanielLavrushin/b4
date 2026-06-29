@@ -301,6 +301,10 @@ func (api *API) handleDevices(w http.ResponseWriter, r *http.Request) {
 	sourceName, _ := globalPool.Dhcp.SourceInfo()
 	mappings := globalPool.Dhcp.GetAllMappings()
 	hostnames := globalPool.Dhcp.GetAllHostnames()
+	hostnamesNorm := make(map[string]string, len(hostnames))
+	for mac, hn := range hostnames {
+		hostnamesNorm[normalizeMAC(mac)] = hn
+	}
 	devices := make([]DeviceInfo, 0, len(mappings))
 	seen := make(map[string]struct{}, len(mappings))
 
@@ -322,11 +326,11 @@ func (api *API) handleDevices(w http.ResponseWriter, r *http.Request) {
 			isManual = d.IsManual
 		}
 
-		seen[strings.ToUpper(macAddr)] = struct{}{}
+		seen[normalizeMAC(macAddr)] = struct{}{}
 		devices = append(devices, DeviceInfo{
 			MAC:       macAddr,
 			IP:        ip,
-			Hostname:  hostnames[macAddr],
+			Hostname:  hostnamesNorm[normalizeMAC(macAddr)],
 			Vendor:    vendor,
 			IsPrivate: isPrivate,
 			Alias:     alias,
@@ -340,7 +344,7 @@ func (api *API) handleDevices(w http.ResponseWriter, r *http.Request) {
 		if d.Name == "" || d.MAC == "" {
 			continue
 		}
-		mac := strings.ToUpper(strings.TrimSpace(d.MAC))
+		mac := normalizeMAC(d.MAC)
 		if _, ok := seen[mac]; ok {
 			continue
 		}
@@ -357,7 +361,7 @@ func (api *API) handleDevices(w http.ResponseWriter, r *http.Request) {
 		devices = append(devices, DeviceInfo{
 			MAC:       d.MAC,
 			IP:        d.IP,
-			Hostname:  hostnames[mac],
+			Hostname:  hostnamesNorm[mac],
 			Vendor:    vendor,
 			IsPrivate: isPrivate,
 			Alias:     d.Name,

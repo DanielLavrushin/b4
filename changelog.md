@@ -4,6 +4,7 @@
 
 - ADDED: **System Info now shows the router's kernel capabilities** - a new section reports whether the router supports the underlying features that advanced modes rely on.
 - FIXED: **Telegram bridge could be slow to connect or drop transfers** - in some setups b4 got in the way of its own connection out to Telegram, slowing the first connect and occasionally cutting transfers short; b4 now keeps its own traffic clear.
+- FIXED: **A named device sometimes showed as its address instead of its name** - on the dashboard and Traffic page a device you had named could appear as a plain hardware address while it was off the network (for example connected over VPN); its saved name now stays shown, and named devices remain listed in Device Filtering with an "offline" label.
 
 ## [1.71.0] - 2026-06-28
 
