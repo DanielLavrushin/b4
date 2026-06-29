@@ -1,5 +1,10 @@
 # B4 - Bye Bye Big Bro
 
+## [1.71.1] - 2026-06-29
+
+- ADDED: **System Info now shows the router's kernel capabilities** - a new section reports whether the router supports the underlying features that advanced modes.
+- FIXED: **Telegram bridge could be slow to connect or drop transfers** - in some setups b4 got in the way of its own connection out to Telegram, slowing the first connect and occasionally cutting transfers short; b4 now keeps its own traffic clear.
+
 ## [1.71.0] - 2026-06-28
 
 - ADDED: **The Logs page is easier to read** - log lines are now colour-coded by importance, and each type (error, warning, info, and so on) can be shown or hidden with one click.

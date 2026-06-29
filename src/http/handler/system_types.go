@@ -142,12 +142,21 @@ type DiagGeodata struct {
 }
 
 type DiagKernel struct {
-	Modules []DiagModule `json:"modules"`
+	Modules      []DiagModule     `json:"modules"`
+	Capabilities []DiagCapability `json:"capabilities,omitempty"`
 }
 
 type DiagModule struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
+}
+
+type DiagCapability struct {
+	Name      string   `json:"name"`
+	Available bool     `json:"available"`
+	Missing   []string `json:"missing,omitempty"`
+	Packages  []string `json:"packages,omitempty"`
+	Detail    string   `json:"detail,omitempty"`
 }
 
 type DiagTools struct {

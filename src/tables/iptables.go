@@ -20,10 +20,11 @@ type IPTablesManager struct {
 	useLegacy        bool
 	multiportSupport map[string]bool  // per-binary cache (iptables vs ip6tables may differ)
 	connbytesSupport map[string]error // per-binary cache
+	connmarkSupport  map[string]bool  // per-binary cache
 }
 
 func NewIPTablesManager(cfg *config.Config, useLegacy bool) *IPTablesManager {
-	return &IPTablesManager{cfg: cfg, useLegacy: useLegacy, multiportSupport: make(map[string]bool), connbytesSupport: make(map[string]error)}
+	return &IPTablesManager{cfg: cfg, useLegacy: useLegacy, multiportSupport: make(map[string]bool), connbytesSupport: make(map[string]error), connmarkSupport: make(map[string]bool)}
 }
 
 func (im *IPTablesManager) iptablesBin() string {
@@ -70,6 +71,23 @@ func (im *IPTablesManager) hasMultiportSupport(ipt string) bool {
 		log.Tracef("IPTABLES[%s]: multiport module is available", ipt)
 	} else {
 		log.Warnf("IPTABLES[%s]: multiport module not available, using individual port rules", ipt)
+	}
+	return supported
+}
+
+func (im *IPTablesManager) hasConnmarkSupport(ipt string) bool {
+	if result, ok := im.connmarkSupport[ipt]; ok {
+		return result
+	}
+
+	matchOK, _ := im.probeModuleInTempChain(ipt, []string{"-m", "connmark", "--mark", "0x8000/0x8000", "-j", "RETURN"})
+	targetOK, _ := im.probeModuleInTempChain(ipt, []string{"-j", "CONNMARK", "--save-mark", "--nfmask", "0x8000", "--ctmask", "0x8000"})
+	supported := matchOK && targetOK
+	im.connmarkSupport[ipt] = supported
+	if supported {
+		log.Tracef("IPTABLES[%s]: connmark module is available", ipt)
+	} else {
+		log.Warnf("IPTABLES[%s]: connmark module not available; b4's own marked connections (e.g. MTProto WS bridge upstream) will not be exempted from reply-side processing", ipt)
 	}
 	return supported
 }
@@ -576,6 +594,17 @@ func (manager *IPTablesManager) buildManifest() (Manifest, error) {
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "A",
 				Spec: []string{"-j", chainName}},
 		)
+
+		if cfg.Queue.Mark != 0 && manager.hasConnmarkSupport(ipt) {
+			markMaskHex := fmt.Sprintf("0x%x", cfg.Queue.Mark)
+			rules = append(rules,
+				Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I",
+					Spec: []string{"-m", "mark", "--mark", markAccept, "-j", "CONNMARK",
+						"--save-mark", "--nfmask", markMaskHex, "--ctmask", markMaskHex}},
+				Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I",
+					Spec: []string{"-m", "connmark", "--mark", markAccept, "-j", "RETURN"}},
+			)
+		}
 	}
 
 	if cfg.System.Tables.Masquerade.Enabled {

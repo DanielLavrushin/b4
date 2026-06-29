@@ -233,6 +233,11 @@ func (n *NFTablesManager) Apply() error {
 	if err := n.addRule("output", "oifname", `"lo"`, "return"); err != nil {
 		return err
 	}
+	if cfg.Queue.Mark != 0 {
+		if err := n.addRule("output", "meta", "mark", "&", markAccept, "==", markAccept, "ct", "mark", "set", "ct", "mark", "|", markAccept); err != nil {
+			log.Warnf("nftables: connmark save unavailable; b4's own marked connections (e.g. MTProto WS bridge upstream) will not be exempted from reply-side processing: %v", err)
+		}
+	}
 	if err := n.addRule("output", "meta", "mark", "&", markAccept, "==", markAccept, "accept"); err != nil {
 		return err
 	}
@@ -242,6 +247,12 @@ func (n *NFTablesManager) Apply() error {
 
 	if err := n.addRule(nftChainName, "meta", "mark", "&", markAccept, "==", markAccept, "return"); err != nil {
 		return err
+	}
+
+	if cfg.Queue.Mark != 0 {
+		if err := n.addRule("prerouting", "ct", "mark", "&", markAccept, "==", markAccept, "return"); err != nil {
+			log.Warnf("nftables: connmark reply-side bypass unavailable: %v", err)
+		}
 	}
 
 	// Collect TCP and UDP ports

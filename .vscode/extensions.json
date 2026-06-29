@@ -2,7 +2,6 @@
   "recommendations": [
     "golang.go",
     "chaunceyxie.vscode-markdown-paste-image-for-vuepress",
-    "ms-vscode.vscode-typescript-next",
-    "spencerwmiles.vscode-task-buttons"
+    "ms-vscode.vscode-typescript-next"
   ]
 }

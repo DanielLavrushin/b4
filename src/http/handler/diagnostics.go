@@ -41,7 +41,7 @@ func (api *API) buildDiagnostics() Diagnostics {
 	return Diagnostics{
 		System:   collectSystemInfo(),
 		B4:       collectB4Info(cfg.ConfigPath, serviceManager),
-		Kernel:   collectKernelModules(),
+		Kernel:   collectKernelModules(cfg),
 		Tools:    collectTools(),
 		Network:  collectNetworkInterfaces(),
 		Engine:   collectEngineInfo(cfg),
@@ -595,7 +595,7 @@ func (api *API) collectGeodataInfo() DiagGeodata {
 	return info
 }
 
-func collectKernelModules() DiagKernel {
+func collectKernelModules(cfg *config.Config) DiagKernel {
 	modules := []string{"xt_NFQUEUE", "nfnetlink_queue", "xt_connbytes", "xt_multiport", "nf_conntrack"}
 	result := DiagKernel{Modules: make([]DiagModule, 0, len(modules))}
 
@@ -623,6 +623,34 @@ func collectKernelModules() DiagKernel {
 
 		result.Modules = append(result.Modules, dm)
 	}
+
+	tproxyOK, tproxyMissing, tproxyPkgs := tables.ProbeTProxyCapability(cfg)
+	tproxyCap := DiagCapability{
+		Name:      "transparent_proxy",
+		Available: tproxyOK,
+		Missing:   tproxyMissing,
+		Packages:  tproxyPkgs,
+	}
+	if tproxyOK {
+		tproxyCap.Detail = "TPROXY + socket match available (proxy and mtproto-ws routing modes work)"
+	} else {
+		tproxyCap.Detail = "TPROXY/socket match unavailable — transparent redirect (proxy and mtproto-ws routing, e.g. Telegram bridge) will not work"
+	}
+	result.Capabilities = append(result.Capabilities, tproxyCap)
+
+	connmarkOK, connmarkMissing, connmarkPkgs := tables.ProbeConnmarkCapability(cfg)
+	connmarkCap := DiagCapability{
+		Name:      "reply_side_bypass",
+		Available: connmarkOK,
+		Missing:   connmarkMissing,
+		Packages:  connmarkPkgs,
+	}
+	if connmarkOK {
+		connmarkCap.Detail = "conntrack mark save/restore available (b4 exempts its own marked connections from reply-side processing)"
+	} else {
+		connmarkCap.Detail = "conntrack mark unavailable — b4 cannot exempt its own upstream (e.g. MTProto WS bridge) from reply-side processing; minor reliability impact"
+	}
+	result.Capabilities = append(result.Capabilities, connmarkCap)
 
 	return result
 }
