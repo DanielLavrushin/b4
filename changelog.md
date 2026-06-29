@@ -2,7 +2,7 @@
 
 ## [1.71.1] - 2026-06-29
 
-- ADDED: **System Info now shows the router's kernel capabilities** - a new section reports whether the router supports the underlying features that advanced modes.
+- ADDED: **System Info now shows the router's kernel capabilities** - a new section reports whether the router supports the underlying features that advanced modes rely on.
 - FIXED: **Telegram bridge could be slow to connect or drop transfers** - in some setups b4 got in the way of its own connection out to Telegram, slowing the first connect and occasionally cutting transfers short; b4 now keeps its own traffic clear.
 
 ## [1.71.0] - 2026-06-28
