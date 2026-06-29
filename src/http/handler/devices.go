@@ -39,6 +39,7 @@ type DeviceInfo struct {
 	IsPrivate bool   `json:"is_private"`
 	Alias     string `json:"alias,omitempty"`
 	IsManual  bool   `json:"is_manual,omitempty"`
+	IsOnline  bool   `json:"is_online"`
 }
 
 type DevicesResponse struct {
@@ -301,6 +302,7 @@ func (api *API) handleDevices(w http.ResponseWriter, r *http.Request) {
 	mappings := globalPool.Dhcp.GetAllMappings()
 	hostnames := globalPool.Dhcp.GetAllHostnames()
 	devices := make([]DeviceInfo, 0, len(mappings))
+	seen := make(map[string]struct{}, len(mappings))
 
 	for ip, macAddr := range mappings {
 		var vendor string
@@ -320,6 +322,7 @@ func (api *API) handleDevices(w http.ResponseWriter, r *http.Request) {
 			isManual = d.IsManual
 		}
 
+		seen[strings.ToUpper(macAddr)] = struct{}{}
 		devices = append(devices, DeviceInfo{
 			MAC:       macAddr,
 			IP:        ip,
@@ -328,6 +331,38 @@ func (api *API) handleDevices(w http.ResponseWriter, r *http.Request) {
 			IsPrivate: isPrivate,
 			Alias:     alias,
 			IsManual:  isManual,
+			IsOnline:  true,
+		})
+	}
+
+	for i := range cfg.Queue.Devices.Devices {
+		d := &cfg.Queue.Devices.Devices[i]
+		if d.Name == "" || d.MAC == "" {
+			continue
+		}
+		mac := strings.ToUpper(strings.TrimSpace(d.MAC))
+		if _, ok := seen[mac]; ok {
+			continue
+		}
+		seen[mac] = struct{}{}
+
+		var vendor string
+		isPrivate := isPrivateMAC(mac)
+		if isPrivate {
+			vendor = "Private"
+		} else if cfg.Queue.Devices.VendorLookup {
+			vendor = ouiDB.Lookup(mac)
+		}
+
+		devices = append(devices, DeviceInfo{
+			MAC:       d.MAC,
+			IP:        d.IP,
+			Hostname:  hostnames[mac],
+			Vendor:    vendor,
+			IsPrivate: isPrivate,
+			Alias:     d.Name,
+			IsManual:  d.IsManual,
+			IsOnline:  false,
 		})
 	}
 

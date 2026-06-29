@@ -8,6 +8,7 @@ export interface DeviceInfo {
   alias?: string;
   country: string;
   is_manual?: boolean;
+  is_online?: boolean;
 }
 
 export interface DevicesResponse {

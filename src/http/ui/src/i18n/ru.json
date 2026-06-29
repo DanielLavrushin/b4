@@ -93,7 +93,8 @@
       "macAddress": "MAC адрес",
       "deviceName": "Имя",
       "ip": "IP",
-      "manual": "вручную"
+      "manual": "вручную",
+      "offline": "не в сети"
     }
   },
   "settings": {
