@@ -42,7 +42,7 @@ const proxyLocalDeliveryTable = 252
 
 var (
 	proxyNftPreflightOnce sync.Once
-	proxyIptPreflightOnce sync.Once
+	proxyIptPreflightOnce [2]sync.Once // [0]=iptables, [1]=iptables-legacy
 	tproxyProbeMu         sync.Mutex
 )
 
@@ -253,7 +253,11 @@ func proxyNftPreflight() {
 }
 
 func proxyIptPreflight(legacy bool) {
-	proxyIptPreflightOnce.Do(func() {
+	idx := 0
+	if legacy {
+		idx = 1
+	}
+	proxyIptPreflightOnce[idx].Do(func() {
 		missing := tproxyMissingIpt(legacy)
 		if len(missing) == 0 {
 			return
