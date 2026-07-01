@@ -530,18 +530,22 @@ func ensureProxyOutputBaseRulesNft(cfg *config.Config, st routeState, queueMark 
 
 	markHex := fmt.Sprintf("0x%x", st.mark)
 	if cfg.Queue.IPv4Enabled {
-		runLogged("routing: add output mark rule (base)",
-			"nft", "add", "rule", "inet", routeNftTable, routeNftOutput,
-			"ip", "protocol", "tcp",
-			"ip", "daddr", "@"+st.setV4,
-			"meta", "mark", "set", markHex)
+		for _, sn := range []string{st.setV4, routeNftDynSet(st.setV4)} {
+			runLogged("routing: add output mark rule (base)",
+				"nft", "add", "rule", "inet", routeNftTable, routeNftOutput,
+				"ip", "protocol", "tcp",
+				"ip", "daddr", "@"+sn,
+				"meta", "mark", "set", markHex)
+		}
 	}
 	if cfg.Queue.IPv6Enabled {
-		runLogged("routing: add output mark rule (base)",
-			"nft", "add", "rule", "inet", routeNftTable, routeNftOutput,
-			"meta", "l4proto", "tcp",
-			"ip6", "daddr", "@"+st.setV6,
-			"meta", "mark", "set", markHex)
+		for _, sn := range []string{st.setV6, routeNftDynSet(st.setV6)} {
+			runLogged("routing: add output mark rule (base)",
+				"nft", "add", "rule", "inet", routeNftTable, routeNftOutput,
+				"meta", "l4proto", "tcp",
+				"ip6", "daddr", "@"+sn,
+				"meta", "mark", "set", markHex)
+		}
 	}
 }
 
@@ -619,14 +623,18 @@ func addProxyDivertRuleIpt(v6 bool, chain, setName string, mark uint32, legacy b
 
 func addProxyDivertRuleNft(chain string, v6 bool, setName string, mark uint32) {
 	markHex := fmt.Sprintf("0x%x", mark)
-	args := []string{"add", "rule", "inet", routeNftTable, chain}
-	if v6 {
-		args = append(args, "meta", "l4proto", "tcp", "ip6", "daddr", "@"+setName)
-	} else {
-		args = append(args, "ip", "protocol", "tcp", "ip", "daddr", "@"+setName)
+	emit := func(sn string) {
+		args := []string{"add", "rule", "inet", routeNftTable, chain}
+		if v6 {
+			args = append(args, "meta", "l4proto", "tcp", "ip6", "daddr", "@"+sn)
+		} else {
+			args = append(args, "ip", "protocol", "tcp", "ip", "daddr", "@"+sn)
+		}
+		args = append(args, "socket", "transparent", "1", "meta", "mark", "set", markHex, "accept")
+		runLogged("routing: add divert "+chain, append([]string{"nft"}, args...)...)
 	}
-	args = append(args, "socket", "transparent", "1", "meta", "mark", "set", markHex, "accept")
-	runLogged("routing: add divert "+chain, append([]string{"nft"}, args...)...)
+	emit(setName)
+	emit(routeNftDynSet(setName))
 }
 
 func addProxyInputAccept(be routeBackend, mark uint32) {
@@ -750,7 +758,7 @@ func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, p
 	markHex := fmt.Sprintf("0x%x", mark)
 	portStr := fmt.Sprintf(":%d", port)
 
-	emit := func(src string) {
+	emit := func(sn, src string) {
 		args := []string{"add", "rule", "inet", routeNftTable, chain}
 		if src != "" {
 			args = append(args, "iifname", fmt.Sprintf("%q", src))
@@ -758,7 +766,7 @@ func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, p
 		if v6 {
 			args = append(args,
 				"meta", "l4proto", proto,
-				"ip6", "daddr", "@"+setName,
+				"ip6", "daddr", "@"+sn,
 				"meta", "mark", "set", markHex,
 				"tproxy", "ip6", "to", portStr,
 				"accept",
@@ -766,7 +774,7 @@ func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, p
 		} else {
 			args = append(args,
 				"ip", "protocol", proto,
-				"ip", "daddr", "@"+setName,
+				"ip", "daddr", "@"+sn,
 				"meta", "mark", "set", markHex,
 				"tproxy", "ip", "to", portStr,
 				"accept",
@@ -775,12 +783,14 @@ func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, p
 		runLogged("routing: add tproxy rule "+chain, append([]string{"nft"}, args...)...)
 	}
 
-	if len(sources) == 0 {
-		emit("")
-		return
-	}
-	for _, src := range sources {
-		emit(src)
+	for _, sn := range []string{setName, routeNftDynSet(setName)} {
+		if len(sources) == 0 {
+			emit(sn, "")
+			continue
+		}
+		for _, src := range sources {
+			emit(sn, src)
+		}
 	}
 }
 

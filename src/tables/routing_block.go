@@ -95,12 +95,12 @@ func ensureBlockBaseNft() error {
 }
 
 func addBlockRuleNft(chain string, v6 bool, setName, action string, sources []string) {
-	daddr := []string{"ip", "daddr", "@" + setName}
-	if v6 {
-		daddr = []string{"ip6", "daddr", "@" + setName}
-	}
+	emit := func(sn, src string) {
+		daddr := []string{"ip", "daddr", "@" + sn}
+		if v6 {
+			daddr = []string{"ip6", "daddr", "@" + sn}
+		}
 
-	emit := func(src string) {
 		base := []string{"nft", "add", "rule", "inet", routeNftTable, chain}
 		if src != "" {
 			base = append(base, "iifname", fmt.Sprintf("%q", src))
@@ -122,12 +122,14 @@ func addBlockRuleNft(chain string, v6 bool, setName, action string, sources []st
 		}
 	}
 
-	if len(sources) == 0 {
-		emit("")
-		return
-	}
-	for _, src := range sources {
-		emit(src)
+	for _, sn := range []string{setName, routeNftDynSet(setName)} {
+		if len(sources) == 0 {
+			emit(sn, "")
+			continue
+		}
+		for _, src := range sources {
+			emit(sn, src)
+		}
 	}
 }
 

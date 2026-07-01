@@ -5,6 +5,7 @@
 - ADDED: **A separate MTProto secret for each person** - the MTProto proxy can now hold several named secrets instead of one shared code. Each one can be named (for example, per person), switched on or off on its own, and shared as its own link or QR code, so access can be given or taken away one person at a time.
 - ADDED: **See who is using the MTProto proxy** - the Traffic page now labels each proxy connection with the secret it used, and a new dashboard panel shows active connections, total sessions, and data used for each named secret.
 - FIXED: **Memory use jumped after saving settings** - saving the configuration made b4's memory use climb, even for changes that had nothing to do with the blocked-site lists.
+- FIXED: **A routing set could stop adding new addresses on some routers** - on certain setups (for example b4 in a container on MikroTik) the router rejected freshly discovered addresses, so a set routed through a chosen interface, proxy, or the Telegram bridge slowly stopped working. Those addresses are now stored in a form the router accepts.
 
 ## [1.71.1] - 2026-06-29
 

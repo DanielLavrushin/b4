@@ -38,6 +38,10 @@ func (b *routeNftBackend) ensureBase() error {
 	return nil
 }
 
+func routeNftDynSet(name string) string {
+	return name + "_d"
+}
+
 func (b *routeNftBackend) ensureIPSet(name string, v6 bool) error {
 	typ := "ipv4_addr"
 	if v6 {
@@ -54,12 +58,27 @@ func (b *routeNftBackend) ensureIPSet(name string, v6 bool) error {
 		"{", "type", typ, ";", "flags", "interval,timeout", ";", "auto-merge", ";", "}"); err != nil {
 		return fmt.Errorf("ensure set %s: %w", name, err)
 	}
+
+	dyn := routeNftDynSet(name)
+	dout, derr := run("nft", "list", "set", "inet", routeNftTable, dyn)
+	if derr == nil && dout != "" && (strings.Contains(dout, "interval") || strings.Contains(dout, "auto-merge")) {
+		runLogged("routing: recreate set "+dyn, "nft", "flush", "set", "inet", routeNftTable, dyn)
+		runLogged("routing: delete old set "+dyn, "nft", "delete", "set", "inet", routeNftTable, dyn)
+	}
+	if err := runEnsure("nft", "add", "set", "inet", routeNftTable, dyn,
+		"{", "type", typ, ";", "flags", "timeout", ";", "}"); err != nil {
+		return fmt.Errorf("ensure set %s: %w", dyn, err)
+	}
 	return nil
 }
 
 func (b *routeNftBackend) addElements(setName string, ips []string, ttlSec int) {
 	if len(ips) == 0 {
 		return
+	}
+
+	if ttlSec > 0 {
+		setName = routeNftDynSet(setName)
 	}
 
 	const chunkSize = 128
@@ -123,19 +142,23 @@ func (b *routeNftBackend) addBypassRule(chain string, mark uint32) {
 }
 
 func (b *routeNftBackend) addMarkRule(chain string, v6 bool, setName string, mark uint32, sourceIface string, tagHostConntrack bool) {
-	args := []string{"add", "rule", "inet", routeNftTable, chain}
-	if sourceIface != "" {
-		args = append(args, "iifname", fmt.Sprintf("%q", sourceIface))
+	emit := func(sn string) {
+		args := []string{"add", "rule", "inet", routeNftTable, chain}
+		if sourceIface != "" {
+			args = append(args, "iifname", fmt.Sprintf("%q", sourceIface))
+		}
+		if v6 {
+			args = append(args, "ip6", "daddr", "@"+sn, "meta", "mark", "set", fmt.Sprintf("0x%x", mark))
+		} else {
+			args = append(args, "ip", "daddr", "@"+sn, "meta", "mark", "set", fmt.Sprintf("0x%x", mark))
+		}
+		if tagHostConntrack {
+			args = append(args, "ct", "mark", "set", "ct", "mark", "or", fmt.Sprintf("0x%x", hostRouteCTMark))
+		}
+		runLogged("routing: add mark rule "+chain, append([]string{"nft"}, args...)...)
 	}
-	if v6 {
-		args = append(args, "ip6", "daddr", "@"+setName, "meta", "mark", "set", fmt.Sprintf("0x%x", mark))
-	} else {
-		args = append(args, "ip", "daddr", "@"+setName, "meta", "mark", "set", fmt.Sprintf("0x%x", mark))
-	}
-	if tagHostConntrack {
-		args = append(args, "ct", "mark", "set", "ct", "mark", "or", fmt.Sprintf("0x%x", hostRouteCTMark))
-	}
-	runLogged("routing: add mark rule "+chain, append([]string{"nft"}, args...)...)
+	emit(setName)
+	emit(routeNftDynSet(setName))
 }
 
 func nftRouteBaseChain(generic string) string {
@@ -201,10 +224,14 @@ func (b *routeNftBackend) addMasqueradeRule(chain string, mark uint32, iface str
 
 func (b *routeNftBackend) flushIPSet(name string) {
 	runLogged("routing: flush set "+name, "nft", "flush", "set", "inet", routeNftTable, name)
+	dyn := routeNftDynSet(name)
+	runLogged("routing: flush set "+dyn, "nft", "flush", "set", "inet", routeNftTable, dyn)
 }
 
 func (b *routeNftBackend) destroyIPSet(name string) {
 	runLogged("routing: delete set "+name, "nft", "delete", "set", "inet", routeNftTable, name)
+	dyn := routeNftDynSet(name)
+	runLogged("routing: delete set "+dyn, "nft", "delete", "set", "inet", routeNftTable, dyn)
 }
 
 func (b *routeNftBackend) clearAll() {
