@@ -54,7 +54,6 @@ type secretStat struct {
 	down   atomic.Int64
 }
 
-// SecretStat is a point-in-time snapshot of one secret's usage.
 type SecretStat struct {
 	Name      string
 	Active    int64
@@ -63,7 +62,6 @@ type SecretStat struct {
 	BytesDown int64
 }
 
-// Stats is a point-in-time snapshot of the proxy's usage, broken down per secret.
 type Stats struct {
 	Enabled           bool
 	Port              int
@@ -92,8 +90,6 @@ func (s *Server) secretStat(sec *Secret) *secretStat {
 	return st
 }
 
-// Stats returns per-secret usage for the currently loaded secrets only, so
-// deleted secrets drop off the dashboard.
 func (s *Server) Stats() Stats {
 	s.mu.Lock()
 	running := s.running
@@ -151,13 +147,8 @@ func (s *Server) Start() error {
 	return s.startLocked()
 }
 
-func (s *Server) startLocked() error {
-	cfg := s.cfg.Load()
+func buildSecrets(cfg *config.Config) ([]*Secret, error) {
 	mtCfg := &cfg.System.MTProto
-	if !mtCfg.Enabled {
-		log.Infof("MTProto proxy disabled")
-		return nil
-	}
 
 	var secrets []*Secret
 	for _, entry := range mtCfg.EffectiveSecrets() {
@@ -173,11 +164,11 @@ func (s *Server) startLocked() error {
 
 	if len(secrets) == 0 {
 		if mtCfg.FakeSNI == "" {
-			return fmt.Errorf("MTProto: at least one secret or fake_sni must be configured")
+			return nil, fmt.Errorf("MTProto: at least one secret or fake_sni must be configured")
 		}
 		sec, err := GenerateSecret(mtCfg.FakeSNI)
 		if err != nil {
-			return fmt.Errorf("MTProto generate secret: %w", err)
+			return nil, fmt.Errorf("MTProto generate secret: %w", err)
 		}
 		entry := config.MTProtoSecret{ID: uuid.NewString(), Name: "default", Secret: sec.Hex(), Enabled: true}
 		sec.ID = entry.ID
@@ -191,6 +182,22 @@ func (s *Server) startLocked() error {
 		}
 		log.Infof("MTProto secret generated and saved")
 		secrets = append(secrets, sec)
+	}
+
+	return secrets, nil
+}
+
+func (s *Server) startLocked() error {
+	cfg := s.cfg.Load()
+	mtCfg := &cfg.System.MTProto
+	if !mtCfg.Enabled {
+		log.Infof("MTProto proxy disabled")
+		return nil
+	}
+
+	secrets, err := buildSecrets(cfg)
+	if err != nil {
+		return err
 	}
 
 	addr := net.JoinHostPort(mtCfg.BindAddress, strconv.Itoa(mtCfg.Port))
@@ -246,6 +253,16 @@ func (s *Server) stopLocked() error {
 	return err
 }
 
+func (s *Server) reloadSecretsLocked(cfg *config.Config) {
+	secrets, err := buildSecrets(cfg)
+	if err != nil {
+		log.Errorf("MTProto secrets reload failed: %v (keeping previous secrets)", err)
+		return
+	}
+	s.secrets.Store(&secrets)
+	log.Infof("MTProto secrets reloaded live (%d active) without restart", len(secrets))
+}
+
 func (s *Server) UpdateConfig(newCfg *config.Config) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -254,6 +271,9 @@ func (s *Server) UpdateConfig(newCfg *config.Config) {
 	s.cfg.Store(newCfg)
 
 	if old != nil && !mtprotoNeedsRestart(old, newCfg) {
+		if s.running && mtprotoSecretsChanged(old.System.MTProto, newCfg.System.MTProto) {
+			s.reloadSecretsLocked(newCfg)
+		}
 		return
 	}
 
@@ -279,7 +299,6 @@ func mtprotoNeedsRestart(old, newCfg *config.Config) bool {
 	if o.Enabled != n.Enabled ||
 		o.Port != n.Port ||
 		o.BindAddress != n.BindAddress ||
-		mtprotoSecretsChanged(o, n) ||
 		o.FakeSNI != n.FakeSNI ||
 		o.UpstreamMode != n.UpstreamMode ||
 		o.WSEndpointHost != n.WSEndpointHost ||
@@ -338,7 +357,6 @@ func (s *Server) acceptLoop(ln net.Listener) {
 			continue
 		}
 
-		// match tg-ws-proxy: tune accepted client socket to 256KB buffers + nodelay
 		if tc, ok := conn.(*net.TCPConn); ok {
 			_ = tc.SetNoDelay(true)
 			_ = tc.SetReadBuffer(256 * 1024)
