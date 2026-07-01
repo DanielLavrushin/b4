@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"reflect"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -396,6 +397,8 @@ func (a *API) saveAndPushConfig(newCfg *config.Config) error {
 		return ErrValidation("Some ports are unavailable", fields...)
 	}
 
+	setsChanged := !reflect.DeepEqual(a.getCfg().Sets, newCfg.Sets)
+
 	if globalPool != nil {
 		err := globalPool.UpdateConfig(newCfg)
 		if err != nil {
@@ -455,7 +458,9 @@ func (a *API) saveAndPushConfig(newCfg *config.Config) error {
 		globalAIManager.Update(newCfg.System.AI)
 	}
 
-	go debug.FreeOSMemory()
+	if setsChanged {
+		go debug.FreeOSMemory()
+	}
 
 	return nil
 }

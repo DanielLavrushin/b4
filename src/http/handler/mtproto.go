@@ -186,6 +186,19 @@ func (api *API) handleMTProtoConfig(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @Router /mtproto/config [post]
+// sanitizeSecretName strips control characters (newlines, CR, tab, other C0
+// controls and DEL) from a user-provided secret name so it cannot corrupt the
+// one-line CSV connection log or the plain log lines it appears in.
+func sanitizeSecretName(name string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, name)
+	return strings.TrimSpace(cleaned)
+}
+
 func (api *API) updateMTProtoConfig(w http.ResponseWriter, r *http.Request) {
 	var req config.MTProtoConfig
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -212,6 +225,7 @@ func (api *API) updateMTProtoConfig(w http.ResponseWriter, r *http.Request) {
 
 	for i := range req.Secrets {
 		s := &req.Secrets[i]
+		s.Name = sanitizeSecretName(s.Name)
 		if strings.TrimSpace(s.Secret) != "" {
 			if _, err := mtproto.ParseSecret(s.Secret); err != nil {
 				label := s.Name

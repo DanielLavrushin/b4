@@ -304,7 +304,8 @@ func mtprotoSecretsChanged(o, n config.MTProtoConfig) bool {
 }
 
 func mtprotoConnMeta(user string) string {
-	u := strings.ReplaceAll(user, ",", " ")
+	u := strings.NewReplacer(",", " ", "\n", " ", "\r", " ", "\t", " ").Replace(user)
+	u = strings.TrimSpace(u)
 	if u == "" {
 		return "mtproto"
 	}
