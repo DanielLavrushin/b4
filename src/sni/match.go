@@ -77,9 +77,16 @@ func (e *ipRange) Network() net.IPNet {
 }
 
 func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
+	totalDomains := 0
+	for _, set := range sets {
+		if set.Enabled {
+			totalDomains += len(set.Targets.DomainsToMatch)
+		}
+	}
+
 	s := &SuffixSet{
-		sets:      make(map[string]*config.SetConfig),
-		multiSets: make(map[string][]*config.SetConfig),
+		sets:      make(map[string]*config.SetConfig, totalDomains),
+		multiSets: make(map[string][]*config.SetConfig, totalDomains),
 		regexes:   make([]*regexWithSet, 0),
 		ipRanger:  cidranger.NewPCTrieRanger(),
 

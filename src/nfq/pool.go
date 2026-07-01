@@ -3,6 +3,7 @@ package nfq
 import (
 	"context"
 	"os"
+	"reflect"
 	"sync"
 	"time"
 
@@ -199,11 +200,21 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 	p.configMu.Lock()
 	defer p.configMu.Unlock()
 
-	matcher := buildMatcher(newCfg)
-
+	var oldMatcher *sni.SuffixSet
+	reuse := false
 	if len(p.Workers) > 0 {
-		oldMatcher := p.Workers[0].getMatcher()
-		matcher.TransferLearnedIPs(oldMatcher)
+		oldMatcher = p.Workers[0].getMatcher()
+		if oldCfg := p.Workers[0].getConfig(); oldCfg != nil {
+			reuse = reflect.DeepEqual(oldCfg.Sets, newCfg.Sets)
+		}
+	}
+
+	matcher := oldMatcher
+	if !reuse {
+		matcher = buildMatcher(newCfg)
+		if oldMatcher != nil {
+			matcher.TransferLearnedIPs(oldMatcher)
+		}
 	}
 
 	for _, w := range p.Workers {
@@ -211,7 +222,7 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 		w.matcher.Store(matcher)
 	}
 
-	if p.state != nil && p.state.destState != nil {
+	if !reuse && p.state != nil && p.state.destState != nil {
 		p.state.destState.ResetEscalations()
 	}
 

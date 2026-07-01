@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"sort"
 	"strings"
 
@@ -453,6 +454,8 @@ func (a *API) saveAndPushConfig(newCfg *config.Config) error {
 	if globalAIManager != nil {
 		globalAIManager.Update(newCfg.System.AI)
 	}
+
+	go debug.FreeOSMemory()
 
 	return nil
 }
