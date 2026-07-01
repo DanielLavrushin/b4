@@ -107,7 +107,13 @@ type FakeTLSVerifyError struct {
 func (e *FakeTLSVerifyError) Error() string { return e.Err.Error() }
 func (e *FakeTLSVerifyError) Unwrap() error { return e.Err }
 
-func AcceptFakeTLS(conn net.Conn, secret *Secret) (*FakeTLSConn, error) {
+type clientHelloData struct {
+	clientHello  []byte
+	body         []byte
+	clientRandom []byte
+}
+
+func readClientHello(conn net.Conn) (*clientHelloData, error) {
 	recHdr := make([]byte, 5)
 	if _, err := io.ReadFull(conn, recHdr); err != nil {
 		return nil, fmt.Errorf("read TLS record header: %w", err)
@@ -138,8 +144,16 @@ func AcceptFakeTLS(conn net.Conn, secret *Secret) (*FakeTLSConn, error) {
 	clientRandom := make([]byte, 32)
 	copy(clientRandom, body[6:38])
 
-	zeroed := make([]byte, len(clientHello))
-	copy(zeroed, clientHello)
+	return &clientHelloData{clientHello: clientHello, body: body, clientRandom: clientRandom}, nil
+}
+
+// verify checks the ClientHello against a single secret. It returns
+// matched=true when the HMAC identifies this secret as the one the client
+// used; err is non-nil only when a matched secret fails a later check (e.g.
+// the replay-protection timestamp), which still counts as a match.
+func (ch *clientHelloData) verify(secret *Secret) (matched bool, err error) {
+	zeroed := make([]byte, len(ch.clientHello))
+	copy(zeroed, ch.clientHello)
 	for i := 0; i < 32; i++ {
 		zeroed[11+i] = 0
 	}
@@ -149,14 +163,14 @@ func AcceptFakeTLS(conn net.Conn, secret *Secret) (*FakeTLSConn, error) {
 	expected := mac.Sum(nil)
 
 	for i := 0; i < 28; i++ {
-		if clientRandom[i] != expected[i] {
-			return nil, &FakeTLSVerifyError{Err: fmt.Errorf("HMAC verification failed at byte %d", i), Initial: clientHello}
+		if ch.clientRandom[i] != expected[i] {
+			return false, nil
 		}
 	}
 
 	tsBytes := make([]byte, 4)
 	for i := 0; i < 4; i++ {
-		tsBytes[i] = clientRandom[28+i] ^ expected[28+i]
+		tsBytes[i] = ch.clientRandom[28+i] ^ expected[28+i]
 	}
 	ts := binary.LittleEndian.Uint32(tsBytes)
 	now := uint32(time.Now().Unix())
@@ -165,17 +179,44 @@ func AcceptFakeTLS(conn net.Conn, secret *Secret) (*FakeTLSConn, error) {
 		diff = -diff
 	}
 	if diff > timestampTolerance {
-		return nil, &FakeTLSVerifyError{Err: fmt.Errorf("timestamp out of range: diff=%ds", diff), Initial: clientHello}
+		return true, fmt.Errorf("timestamp out of range: diff=%ds", diff)
+	}
+	return true, nil
+}
+
+func AcceptFakeTLS(conn net.Conn, secret *Secret) (*FakeTLSConn, error) {
+	c, _, err := AcceptFakeTLSMulti(conn, []*Secret{secret})
+	return c, err
+}
+
+// AcceptFakeTLSMulti reads the ClientHello once and tries each secret in turn.
+// The secret is identified purely by the HMAC in the client random, so no
+// bytes are written back until a match is found. On success it returns the
+// matching secret so the caller can attribute the connection.
+func AcceptFakeTLSMulti(conn net.Conn, secrets []*Secret) (*FakeTLSConn, *Secret, error) {
+	ch, err := readClientHello(conn)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	sessionID := extractSessionID(body)
+	for _, secret := range secrets {
+		matched, verr := ch.verify(secret)
+		if !matched {
+			continue
+		}
+		if verr != nil {
+			return nil, nil, &FakeTLSVerifyError{Err: verr, Initial: ch.clientHello}
+		}
 
-	serverHello := buildServerHello(secret, clientRandom, sessionID)
-	if _, err := conn.Write(serverHello); err != nil {
-		return nil, fmt.Errorf("write ServerHello: %w", err)
+		sessionID := extractSessionID(ch.body)
+		serverHello := buildServerHello(secret, ch.clientRandom, sessionID)
+		if _, err := conn.Write(serverHello); err != nil {
+			return nil, nil, fmt.Errorf("write ServerHello: %w", err)
+		}
+		return &FakeTLSConn{Conn: conn}, secret, nil
 	}
 
-	return &FakeTLSConn{Conn: conn}, nil
+	return nil, nil, &FakeTLSVerifyError{Err: fmt.Errorf("HMAC verification failed for all secrets"), Initial: ch.clientHello}
 }
 
 func proxyToMaskingDomain(client net.Conn, initial []byte, host string, mark uint) {

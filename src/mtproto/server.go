@@ -13,6 +13,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/google/uuid"
 )
 
 const (
@@ -31,9 +32,9 @@ type Server struct {
 	bufPool sync.Pool
 	active  atomic.Int64
 
-	cfg    atomic.Pointer[config.Config]
-	secret atomic.Pointer[Secret]
-	wsPool atomic.Pointer[wsPool]
+	cfg     atomic.Pointer[config.Config]
+	secrets atomic.Pointer[[]*Secret]
+	wsPool  atomic.Pointer[wsPool]
 
 	mu       sync.Mutex
 	running  bool
@@ -69,19 +70,30 @@ func (s *Server) startLocked() error {
 		return nil
 	}
 
-	var sec *Secret
-	if mtCfg.Secret != "" {
-		var err error
-		sec, err = ParseSecret(mtCfg.Secret)
+	var secrets []*Secret
+	for _, entry := range mtCfg.EffectiveSecrets() {
+		sec, err := ParseSecret(entry.Secret)
 		if err != nil {
-			return fmt.Errorf("MTProto parse secret: %w", err)
+			log.Warnf("MTProto: skipping invalid secret %q: %v", entry.Name, err)
+			continue
 		}
-	} else if mtCfg.FakeSNI != "" {
-		var err error
-		sec, err = GenerateSecret(mtCfg.FakeSNI)
+		sec.ID = entry.ID
+		sec.Name = entry.Name
+		secrets = append(secrets, sec)
+	}
+
+	if len(secrets) == 0 {
+		if mtCfg.FakeSNI == "" {
+			return fmt.Errorf("MTProto: at least one secret or fake_sni must be configured")
+		}
+		sec, err := GenerateSecret(mtCfg.FakeSNI)
 		if err != nil {
 			return fmt.Errorf("MTProto generate secret: %w", err)
 		}
+		entry := config.MTProtoSecret{ID: uuid.NewString(), Name: "default", Secret: sec.Hex(), Enabled: true}
+		sec.ID = entry.ID
+		sec.Name = entry.Name
+		mtCfg.Secrets = append(mtCfg.Secrets, entry)
 		mtCfg.Secret = sec.Hex()
 		if cfg.ConfigPath != "" {
 			if err := cfg.SaveToFile(cfg.ConfigPath); err != nil {
@@ -89,8 +101,7 @@ func (s *Server) startLocked() error {
 			}
 		}
 		log.Infof("MTProto secret generated and saved")
-	} else {
-		return fmt.Errorf("MTProto: either secret or fake_sni must be configured")
+		secrets = append(secrets, sec)
 	}
 
 	addr := net.JoinHostPort(mtCfg.BindAddress, strconv.Itoa(mtCfg.Port))
@@ -100,10 +111,10 @@ func (s *Server) startLocked() error {
 		return fmt.Errorf("MTProto listen: %w", err)
 	}
 	s.listener = ln
-	s.secret.Store(sec)
+	s.secrets.Store(&secrets)
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 
-	log.Infof("MTProto proxy listening on %s (SNI: %s)", addr, sec.Host)
+	log.Infof("MTProto proxy listening on %s (SNI: %s, secrets: %d)", addr, secrets[0].Host, len(secrets))
 
 	if mode := mtCfg.UpstreamMode; mode == "ws" || mode == "auto" || mode == "" {
 		wsResetState()
@@ -179,7 +190,7 @@ func mtprotoNeedsRestart(old, newCfg *config.Config) bool {
 	if o.Enabled != n.Enabled ||
 		o.Port != n.Port ||
 		o.BindAddress != n.BindAddress ||
-		o.Secret != n.Secret ||
+		mtprotoSecretsChanged(o, n) ||
 		o.FakeSNI != n.FakeSNI ||
 		o.UpstreamMode != n.UpstreamMode ||
 		o.WSEndpointHost != n.WSEndpointHost ||
@@ -191,9 +202,21 @@ func mtprotoNeedsRestart(old, newCfg *config.Config) bool {
 	return old.Queue.Mark != newCfg.Queue.Mark
 }
 
+func mtprotoSecretsChanged(o, n config.MTProtoConfig) bool {
+	if o.Secret != n.Secret || len(o.Secrets) != len(n.Secrets) {
+		return true
+	}
+	for i := range o.Secrets {
+		if o.Secrets[i] != n.Secrets[i] {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) GetSecret() string {
-	if sec := s.secret.Load(); sec != nil {
-		return sec.Hex()
+	if ptr := s.secrets.Load(); ptr != nil && len(*ptr) > 0 {
+		return (*ptr)[0].Hex()
 	}
 	return ""
 }
@@ -246,17 +269,18 @@ func (s *Server) handleConn(raw net.Conn) {
 		}
 	}()
 
-	secret := s.secret.Load()
-	if secret == nil {
+	secretsPtr := s.secrets.Load()
+	if secretsPtr == nil || len(*secretsPtr) == 0 {
 		return
 	}
+	secrets := *secretsPtr
 	cfg := s.cfg.Load()
 
 	if err := raw.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
 		return
 	}
 
-	tlsConn, err := AcceptFakeTLS(raw, secret)
+	tlsConn, secret, err := AcceptFakeTLSMulti(raw, secrets)
 	if err != nil {
 		log.Debugf("%s proxy fake-TLS failed from %s: %v", tag, clientAddr, err)
 		var vErr *FakeTLSVerifyError
@@ -265,14 +289,15 @@ func (s *Server) handleConn(raw net.Conn) {
 		}
 		return
 	}
-	log.Debugf("%s proxy fake-TLS handshake OK from %s", tag, clientAddr)
+	user := secret.Label()
+	log.Debugf("%s proxy fake-TLS handshake OK from %s (secret=%s)", tag, clientAddr, user)
 
 	result, err := AcceptObfuscated(tlsConn, secret)
 	if err != nil {
 		log.Tracef("%s proxy obfuscated2 failed from %s: %v", tag, clientAddr, err)
 		return
 	}
-	log.Debugf("%s proxy client from %s wants DC %d proto=0x%08x", tag, clientAddr, result.DC, result.ProtoTag)
+	log.Debugf("%s proxy client [%s] from %s wants DC %d proto=0x%08x", tag, user, clientAddr, result.DC, result.ProtoTag)
 	_ = raw.SetDeadline(time.Time{})
 
 	dcConn, transport, err := DialObfuscatedDCWithPool(&cfg.System.MTProto, cfg.Queue, result.DC, result.ProtoTag, s.wsPool.Load(), id)
@@ -286,13 +311,13 @@ func (s *Server) handleConn(raw net.Conn) {
 	}
 	defer dcConn.Close()
 
-	log.Infof("%s proxy relay %s <-> DC%d via %s", tag, clientAddr, result.DC, transport)
+	log.Infof("%s proxy relay [%s] %s <-> DC%d via %s", tag, user, clientAddr, result.DC, transport)
 
 	var splitter *msgSplitter
 	if _, ok := dcConn.Conn.(*wsConn); ok {
 		splitter = newMsgSplitter(result.ProtoTag)
 	}
-	s.relay(result.Conn, dcConn, splitter, fmt.Sprintf("%s %s<->DC%d via %s", tag, clientAddr, result.DC, transport))
+	s.relay(result.Conn, dcConn, splitter, fmt.Sprintf("%s [%s] %s<->DC%d via %s", tag, user, clientAddr, result.DC, transport))
 }
 
 func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string) {

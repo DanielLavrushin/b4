@@ -2,7 +2,7 @@ import { Box, TextField, TextFieldProps } from "@mui/material";
 import { colors } from "@design";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
 
-interface B4TextFieldProps extends Omit<TextFieldProps, "variant"> {
+export interface B4TextFieldProps extends Omit<TextFieldProps, "variant"> {
   helperText?: React.ReactNode;
   aiTopic?: string;
   aiContext?: Record<string, unknown>;

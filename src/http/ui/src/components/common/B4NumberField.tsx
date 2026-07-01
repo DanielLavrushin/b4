@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import type { TextFieldProps } from "@mui/material";
-import { B4TextField } from "./B4TextField";
+import { B4TextField, type B4TextFieldProps } from "./B4TextField";
 
 interface B4NumberFieldProps
-  extends Omit<TextFieldProps, "variant" | "value" | "onChange" | "type"> {
+  extends Omit<B4TextFieldProps, "value" | "onChange" | "type"> {
   value: number | null | undefined;
   onChange: (n: number) => void;
   min?: number;

@@ -270,19 +270,20 @@ type AIConfig struct {
 }
 
 type MTProtoConfig struct {
-	Enabled        bool   `json:"enabled"`
-	Port           int    `json:"port"`
-	BindAddress    string `json:"bind_address"`
-	MaxConnections int    `json:"max_connections"` // max concurrent client connections; 0 = default (2048)
-	Secret         string `json:"secret"`
-	FakeSNI        string `json:"fake_sni"`
-	DCRelay        string `json:"dc_relay"`
-	UpstreamMode   string `json:"upstream_mode"`
-	WSCustomDomain string `json:"ws_custom_domain"`
-	WSEndpointHost string `json:"ws_endpoint_host"`
-	CFProxyEnabled bool   `json:"cfproxy_enabled"` // enable Cloudflare-proxied fallback WS domains (rescues DCs the network blocks)
-	CFProxyURL     string `json:"cfproxy_url"`     // URL to refresh CF-proxy domain list; empty = built-in default
-	CFWorkerDomain string `json:"cfworker_domain"` // user's Cloudflare Worker domain(s) (workers.dev), comma-separated; free per-user WS relay tried before the shared CF pool
+	Enabled        bool            `json:"enabled"`
+	Port           int             `json:"port"`
+	BindAddress    string          `json:"bind_address"`
+	MaxConnections int             `json:"max_connections"` // max concurrent client connections; 0 = default (2048)
+	Secret         string          `json:"secret"`          // legacy single secret; mirrors the first enabled entry in Secrets for backward compatibility
+	Secrets        []MTProtoSecret `json:"secrets,omitempty"`
+	FakeSNI        string          `json:"fake_sni"`
+	DCRelay        string          `json:"dc_relay"`
+	UpstreamMode   string          `json:"upstream_mode"`
+	WSCustomDomain string          `json:"ws_custom_domain"`
+	WSEndpointHost string          `json:"ws_endpoint_host"`
+	CFProxyEnabled bool            `json:"cfproxy_enabled"` // enable Cloudflare-proxied fallback WS domains (rescues DCs the network blocks)
+	CFProxyURL     string          `json:"cfproxy_url"`     // URL to refresh CF-proxy domain list; empty = built-in default
+	CFWorkerDomain string          `json:"cfworker_domain"` // user's Cloudflare Worker domain(s) (workers.dev), comma-separated; free per-user WS relay tried before the shared CF pool
 
 	DCFallbackEnabled bool   `json:"dc_fallback_enabled"` // fetch the DC IP list from DCFallbackURL when Telegram's official endpoint is blocked
 	DCFallbackURL     string `json:"dc_fallback_url"`     // fallback source for the Telegram DC list; empty = built-in default

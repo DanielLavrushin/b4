@@ -13,6 +13,21 @@ type Secret struct {
 	Key      [16]byte
 	Host     string
 	RawBytes []byte
+	ID       string
+	Name     string
+}
+
+func (s *Secret) Label() string {
+	if s == nil {
+		return ""
+	}
+	if s.Name != "" {
+		return s.Name
+	}
+	if s.ID != "" && s.ID != "legacy" {
+		return s.ID
+	}
+	return hex.EncodeToString(s.Key[:4])
 }
 
 func ParseSecret(s string) (*Secret, error) {

@@ -70,6 +70,21 @@ var migrationRegistry = map[int]MigrationFunc{
 	46: migrateV46to47, // Drop the hardcoded legacy MTProto WS endpoint host (empty now falls back to it)
 	47: migrateV47to48, // Add TUN engine mode and config
 	48: migrateV48to49, // Convert masquerade to nested config (multi-interface)
+	49: migrateV49to50, // Move the single MTProto secret into the secrets list
+}
+
+func migrateV49to50(c *Config, _ map[string]interface{}) error {
+	log.Tracef("Migration v49->v50: Moving single MTProto secret into secrets list")
+	m := &c.System.MTProto
+	if len(m.Secrets) == 0 && strings.TrimSpace(m.Secret) != "" {
+		m.Secrets = []MTProtoSecret{{
+			ID:      uuid.NewString(),
+			Name:    "default",
+			Secret:  m.Secret,
+			Enabled: true,
+		}}
+	}
+	return nil
 }
 
 func migrateV48to49(c *Config, raw map[string]interface{}) error {

@@ -17,10 +17,10 @@ import CheckIcon from "@mui/icons-material/Check";
 import CloseIcon from "@mui/icons-material/Close";
 import IosShareIcon from "@mui/icons-material/IosShare";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
-import AutorenewIcon from "@mui/icons-material/Autorenew";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import NetworkPingIcon from "@mui/icons-material/NetworkPing";
 import { MTProtoRelayHelpDialog } from "./MTProtoRelayHelpDialog";
+import { MTProtoSecrets } from "./MTProtoSecrets";
 import { QRCodeSVG } from "qrcode.react";
 import { ConnectionIcon } from "@b4.icons";
 import {
@@ -72,7 +72,6 @@ interface MTProtoSettingsProps {
 
 export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
   const { t } = useTranslation();
-  const [generating, setGenerating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshResult, setRefreshResult] = useState<
     | { ok: true; count: number; dcs: Record<string, string> }
@@ -81,6 +80,7 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
   >(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareHost, setShareHost] = useState("");
+  const [shareSecret, setShareSecret] = useState("");
   const [copied, setCopied] = useState(false);
   const [relayHelpOpen, setRelayHelpOpen] = useState(false);
   const [wsTesting, setWsTesting] = useState<null | "configured" | "direct">(
@@ -90,7 +90,6 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
   const [wsTestError, setWsTestError] = useState<string | null>(null);
 
   const port = config.system.mtproto?.port ?? 3128;
-  const secret = config.system.mtproto?.secret || "";
   const dcRelay = config.system.mtproto?.dc_relay || "";
 
   const relayInfo = useMemo(() => {
@@ -104,16 +103,17 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
 
   const shareLink = useMemo(() => {
     const host = (shareHost || "").trim();
-    if (!host || !secret) return "";
-    return `tg://proxy?server=${encodeURIComponent(host)}&port=${port}&secret=${encodeURIComponent(secret)}`;
-  }, [shareHost, port, secret]);
+    if (!host || !shareSecret) return "";
+    return `tg://proxy?server=${encodeURIComponent(host)}&port=${port}&secret=${encodeURIComponent(shareSecret)}`;
+  }, [shareHost, port, shareSecret]);
   const canShare =
     typeof navigator !== "undefined" && typeof navigator.share === "function";
 
-  const openShare = () => {
+  const openShare = (secretValue: string) => {
     const bind = config.system.mtproto?.bind_address || "";
     const isAnyAddr = !bind || bind === "0.0.0.0" || bind === "::";
     setShareHost(isAnyAddr ? globalThis.location.hostname : bind);
+    setShareSecret(secretValue);
     setCopied(false);
     setShareOpen(true);
   };
@@ -210,24 +210,6 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
   const handleTestDirectTCP = () =>
     runProbe("direct", { upstream_mode: "tcp", dc_relay: "" });
 
-  const handleGenerateSecret = async () => {
-    const sni = config.system.mtproto?.fake_sni || "storage.googleapis.com";
-    setGenerating(true);
-    try {
-      const res = await fetch("/api/mtproto/generate-secret", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fake_sni: sni }),
-      });
-      const data = (await res.json()) as { success: boolean; secret?: string };
-      if (data.success && data.secret) {
-        onChange("system.mtproto.secret", data.secret);
-      }
-    } finally {
-      setGenerating(false);
-    }
-  };
-
   return (
     <B4Section
       title={t("settings.MTProto.title")}
@@ -283,58 +265,17 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
           disabled={!config.system.mtproto?.enabled}
           helperText={t("settings.MTProto.fakeSNIHelp")}
         />
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-          <B4TextField
-            label={t("settings.MTProto.secret")}
-            value={config.system.mtproto?.secret || ""}
-            onChange={(e) => onChange("system.mtproto.secret", e.target.value)}
-            disabled={!config.system.mtproto?.enabled}
-            helperText={t("settings.MTProto.secretHelp")}
-            autoComplete="off"
-            slotProps={{
-              input: {
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <Chip
-                      size="small"
-                      icon={
-                        <AutorenewIcon
-                          sx={{
-                            animation: generating
-                              ? "spin 1s linear infinite"
-                              : "none",
-                            "@keyframes spin": {
-                              from: { transform: "rotate(0deg)" },
-                              to: { transform: "rotate(360deg)" },
-                            },
-                          }}
-                        />
-                      }
-                      label={
-                        generating
-                          ? t("settings.MTProto.generating")
-                          : t("settings.MTProto.generateSecret")
-                      }
-                      onClick={() => void handleGenerateSecret()}
-                      disabled={!config.system.mtproto?.enabled || generating}
-                      sx={{ cursor: "pointer" }}
-                    />
-                  </InputAdornment>
-                ),
-              },
-            }}
-          />
-          <Button
-            variant="contained"
-            size="small"
-            startIcon={<IosShareIcon />}
-            onClick={openShare}
-            disabled={!config.system.mtproto?.enabled || !secret}
-            sx={{ alignSelf: "flex-start" }}
-          >
-            {t("settings.MTProto.shareLink")}
-          </Button>
-        </Box>
+      </B4FormGroup>
+      <B4FormGroup
+        label={t("settings.MTProto.secretsTitle")}
+        description={t("settings.MTProto.secretsDesc")}
+        columns={1}
+      >
+        <MTProtoSecrets
+          config={config}
+          onChange={onChange}
+          onShare={openShare}
+        />
       </B4FormGroup>
       {(() => {
         const mode = config.system.mtproto?.upstream_mode || "auto";

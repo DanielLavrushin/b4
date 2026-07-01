@@ -5,10 +5,13 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/mtproto"
+	"github.com/google/uuid"
 )
 
 func (api *API) RegisterMTProtoApi() {
@@ -207,9 +210,21 @@ func (api *API) updateMTProtoConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Enabled && req.Secret == "" && req.FakeSNI == "" {
-		writeJsonError(w, http.StatusBadRequest, "Either secret or fake SNI domain is required when enabled")
-		return
+	for i := range req.Secrets {
+		s := &req.Secrets[i]
+		if strings.TrimSpace(s.Secret) != "" {
+			if _, err := mtproto.ParseSecret(s.Secret); err != nil {
+				label := s.Name
+				if label == "" {
+					label = "#" + strconv.Itoa(i+1)
+				}
+				writeJsonError(w, http.StatusBadRequest, "Invalid secret "+label+": "+err.Error())
+				return
+			}
+		}
+		if s.ID == "" {
+			s.ID = uuid.NewString()
+		}
 	}
 
 	if req.Secret != "" {
@@ -217,6 +232,18 @@ func (api *API) updateMTProtoConfig(w http.ResponseWriter, r *http.Request) {
 			writeJsonError(w, http.StatusBadRequest, "Invalid secret: "+err.Error())
 			return
 		}
+	}
+
+	// Keep the legacy single-secret field mirroring the first enabled entry so
+	// older clients and the share-link path stay consistent.
+	if len(req.Secrets) > 0 {
+		req.Secret = req.FirstEnabledSecret()
+	}
+
+	hasSecret := req.Secret != "" || len(req.EffectiveSecrets()) > 0
+	if req.Enabled && !hasSecret && req.FakeSNI == "" {
+		writeJsonError(w, http.StatusBadRequest, "At least one secret or a fake SNI domain is required when enabled")
+		return
 	}
 
 	if req.DCRelay != "" {
