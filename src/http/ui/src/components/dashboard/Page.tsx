@@ -13,6 +13,7 @@ import { DeviceActivity } from "./DeviceActivity";
 import { Escalations } from "./Escalations";
 import { Blackhole } from "./Blackhole";
 import { UnmatchedDomains } from "./UnmatchedDomains";
+import { MTProtoActivity } from "./MTProtoActivity";
 import { RuntimeHealth } from "./RuntimeHealth";
 import { useTranslation } from "react-i18next";
 import { useDashboardSets } from "@hooks/useDashboardSets";
@@ -81,6 +82,25 @@ export interface Metrics {
   current_bps: number;
   escalations: EscalationEntry[];
   total_escalations: number;
+  mtproto?: MTProtoStats;
+}
+
+export interface MTProtoSecretStat {
+  name: string;
+  active: number;
+  total: number;
+  bytes_up: number;
+  bytes_down: number;
+}
+
+export interface MTProtoStats {
+  enabled: boolean;
+  port: number;
+  active_connections: number;
+  total_connections: number;
+  bytes_up: number;
+  bytes_down: number;
+  secrets: MTProtoSecretStat[];
 }
 
 export interface EscalationEntry {
@@ -91,7 +111,10 @@ export interface EscalationEntry {
   expires_at: string;
 }
 
-const safeNumber = (val: number, defaultValue: number = 0): number => {
+const safeNumber = (
+  val: number | null | undefined,
+  defaultValue: number = 0,
+): number => {
   if (val === null || val === undefined) return defaultValue;
   const num = Number(val);
   if (Number.isNaN(num) || !Number.isFinite(num)) return defaultValue;
@@ -314,6 +337,29 @@ const normalizeMetrics = (data: null | Metrics): Metrics => {
     current_bps: safeNumber(data.current_bps),
     escalations: normalizeEscalations(data.escalations),
     total_escalations: safeNumber(data.total_escalations),
+    mtproto: normalizeMTProto(data.mtproto),
+  };
+};
+
+const normalizeMTProto = (raw: unknown): MTProtoStats | undefined => {
+  if (!raw || typeof raw !== "object") return undefined;
+  const m = raw as Partial<MTProtoStats>;
+  return {
+    enabled: Boolean(m.enabled),
+    port: safeNumber(m.port),
+    active_connections: safeNumber(m.active_connections),
+    total_connections: safeNumber(m.total_connections),
+    bytes_up: safeNumber(m.bytes_up),
+    bytes_down: safeNumber(m.bytes_down),
+    secrets: Array.isArray(m.secrets)
+      ? m.secrets.map((s: Partial<MTProtoSecretStat>) => ({
+          name: String(s?.name ?? ""),
+          active: safeNumber(s?.active),
+          total: safeNumber(s?.total),
+          bytes_up: safeNumber(s?.bytes_up),
+          bytes_down: safeNumber(s?.bytes_down),
+        }))
+      : [],
   };
 };
 
@@ -436,6 +482,12 @@ export function DashboardPage() {
           </Box>
         </Grid>
       </Grid>
+
+      {metrics.mtproto?.enabled && (
+        <Box sx={{ mb: 1.5 }}>
+          <MTProtoActivity stats={metrics.mtproto} />
+        </Box>
+      )}
 
       {metrics.escalations.length > 0 && (
         <Box sx={{ mb: 1.5 }}>

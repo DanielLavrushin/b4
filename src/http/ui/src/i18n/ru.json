@@ -685,6 +685,17 @@
       "topDevices": "Устройства",
       "none": "пока нет данных"
     },
+    "mtproto": {
+      "title": "MTProto Прокси",
+      "active": "активных",
+      "activeShort": "активн.",
+      "port": "порт",
+      "sessions": "сессий",
+      "sessionsShort": "всего",
+      "perUser": "По пользователям",
+      "unnamed": "без имени",
+      "none": "секреты не настроены"
+    },
     "health": {
       "running": "Работает",
       "degraded": "Нестабильно",

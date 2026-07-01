@@ -689,6 +689,17 @@
       "topDevices": "Top Devices",
       "none": "no data yet"
     },
+    "mtproto": {
+      "title": "MTProto Proxy",
+      "active": "active",
+      "activeShort": "active",
+      "port": "port",
+      "sessions": "sessions",
+      "sessionsShort": "total",
+      "perUser": "Per user",
+      "unnamed": "unnamed",
+      "none": "no secrets configured"
+    },
     "health": {
       "running": "Running",
       "degraded": "Degraded",

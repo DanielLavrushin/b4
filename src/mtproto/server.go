@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -36,11 +37,99 @@ type Server struct {
 	secrets atomic.Pointer[[]*Secret]
 	wsPool  atomic.Pointer[wsPool]
 
+	statsMu sync.Mutex
+	stats   map[string]*secretStat
+
 	mu       sync.Mutex
 	running  bool
 	listener net.Listener
 	ctx      context.Context
 	cancel   context.CancelFunc
+}
+
+type secretStat struct {
+	active atomic.Int64
+	total  atomic.Int64
+	up     atomic.Int64
+	down   atomic.Int64
+}
+
+// SecretStat is a point-in-time snapshot of one secret's usage.
+type SecretStat struct {
+	Name      string
+	Active    int64
+	Total     int64
+	BytesUp   int64
+	BytesDown int64
+}
+
+// Stats is a point-in-time snapshot of the proxy's usage, broken down per secret.
+type Stats struct {
+	Enabled           bool
+	Port              int
+	ActiveConnections int64
+	TotalConnections  int64
+	BytesUp           int64
+	BytesDown         int64
+	Secrets           []SecretStat
+}
+
+func (s *Server) secretStat(sec *Secret) *secretStat {
+	key := sec.ID
+	if key == "" {
+		key = sec.Label()
+	}
+	s.statsMu.Lock()
+	defer s.statsMu.Unlock()
+	if s.stats == nil {
+		s.stats = make(map[string]*secretStat)
+	}
+	st := s.stats[key]
+	if st == nil {
+		st = &secretStat{}
+		s.stats[key] = st
+	}
+	return st
+}
+
+// Stats returns per-secret usage for the currently loaded secrets only, so
+// deleted secrets drop off the dashboard.
+func (s *Server) Stats() Stats {
+	s.mu.Lock()
+	running := s.running
+	s.mu.Unlock()
+
+	out := Stats{Enabled: running}
+	if cfg := s.cfg.Load(); cfg != nil {
+		out.Port = cfg.System.MTProto.Port
+	}
+
+	secsPtr := s.secrets.Load()
+	if secsPtr == nil {
+		return out
+	}
+
+	s.statsMu.Lock()
+	defer s.statsMu.Unlock()
+	for _, sec := range *secsPtr {
+		key := sec.ID
+		if key == "" {
+			key = sec.Label()
+		}
+		ss := SecretStat{Name: sec.Label()}
+		if st := s.stats[key]; st != nil {
+			ss.Active = st.active.Load()
+			ss.Total = st.total.Load()
+			ss.BytesUp = st.up.Load()
+			ss.BytesDown = st.down.Load()
+		}
+		out.Secrets = append(out.Secrets, ss)
+		out.ActiveConnections += ss.Active
+		out.TotalConnections += ss.Total
+		out.BytesUp += ss.BytesUp
+		out.BytesDown += ss.BytesDown
+	}
+	return out
 }
 
 func NewServer(cfg *config.Config) *Server {
@@ -214,6 +303,14 @@ func mtprotoSecretsChanged(o, n config.MTProtoConfig) bool {
 	return false
 }
 
+func mtprotoConnMeta(user string) string {
+	u := strings.ReplaceAll(user, ",", " ")
+	if u == "" {
+		return "mtproto"
+	}
+	return "mtproto:" + u
+}
+
 func (s *Server) GetSecret() string {
 	if ptr := s.secrets.Load(); ptr != nil && len(*ptr) > 0 {
 		return (*ptr)[0].Hex()
@@ -313,18 +410,31 @@ func (s *Server) handleConn(raw net.Conn) {
 
 	log.Infof("%s proxy relay [%s] %s <-> DC%d via %s", tag, user, clientAddr, result.DC, transport)
 
+	dcAddr := fmt.Sprintf("DC%d", result.DC)
+	if ra := dcConn.RemoteAddr(); ra != nil {
+		dcAddr = ra.String()
+	}
+	log.LogConnectionStr("TCP", "", secret.Host, clientAddr, "", dcAddr, "", "", mtprotoConnMeta(user))
+
+	st := s.secretStat(secret)
+	st.active.Add(1)
+	st.total.Add(1)
+	defer st.active.Add(-1)
+
 	var splitter *msgSplitter
 	if _, ok := dcConn.Conn.(*wsConn); ok {
 		splitter = newMsgSplitter(result.ProtoTag)
 	}
-	s.relay(result.Conn, dcConn, splitter, fmt.Sprintf("%s [%s] %s<->DC%d via %s", tag, user, clientAddr, result.DC, transport))
+	up, down := s.relay(result.Conn, dcConn, splitter, fmt.Sprintf("%s [%s] %s<->DC%d via %s", tag, user, clientAddr, result.DC, transport))
+	st.up.Add(up)
+	st.down.Add(down)
 }
 
-func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string) {
-	relayConns(client, dc, splitter, label, &s.bufPool)
+func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string) (up, down int64) {
+	return relayConns(client, dc, splitter, label, &s.bufPool)
 }
 
-func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string, bufPool *sync.Pool) {
+func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string, bufPool *sync.Pool) (int64, int64) {
 	type relayEnd struct {
 		dir string
 		err error
@@ -406,4 +516,5 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 		stale = " stale-upstream?"
 	}
 	log.Infof("%s closed: first=%s err=%v up=%d down=%d in %dms%s", label, first.dir, first.err, up, down, time.Since(start).Milliseconds(), stale)
+	return up, down
 }

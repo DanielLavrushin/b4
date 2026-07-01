@@ -15,6 +15,8 @@ import (
 	"github.com/daniellavrushin/b4/discovery"
 	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/metrics"
+	"github.com/daniellavrushin/b4/mtproto"
 	"github.com/daniellavrushin/b4/nfq"
 	b4tun "github.com/daniellavrushin/b4/tun"
 	"github.com/daniellavrushin/b4/utils"
@@ -79,6 +81,32 @@ func SetSocks5Server(s ConfigRefresher) {
 
 func SetMTProtoServer(s ConfigRefresher) {
 	globalMTProtoServer = s
+	if p, ok := s.(interface{ Stats() mtproto.Stats }); ok {
+		metrics.SetMTProtoStatsProvider(func() *metrics.MTProtoStats {
+			return mtprotoStatsSnapshot(p.Stats())
+		})
+	}
+}
+
+func mtprotoStatsSnapshot(st mtproto.Stats) *metrics.MTProtoStats {
+	out := &metrics.MTProtoStats{
+		Enabled:           st.Enabled,
+		Port:              st.Port,
+		ActiveConnections: st.ActiveConnections,
+		TotalConnections:  st.TotalConnections,
+		BytesUp:           st.BytesUp,
+		BytesDown:         st.BytesDown,
+	}
+	for _, sec := range st.Secrets {
+		out.Secrets = append(out.Secrets, metrics.MTProtoSecretStat{
+			Name:      sec.Name,
+			Active:    sec.Active,
+			Total:     sec.Total,
+			BytesUp:   sec.BytesUp,
+			BytesDown: sec.BytesDown,
+		})
+	}
+	return out
 }
 
 func SetMTProtoBridge(s ConfigRefresher) {

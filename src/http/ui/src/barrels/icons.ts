@@ -79,4 +79,5 @@ export {
   Visibility as WatchdogIcon,
   CallMade as EscalateOutIcon,
   CallReceived as EscalateInIcon,
+  Telegram as TelegramIcon,
 } from "@mui/icons-material";

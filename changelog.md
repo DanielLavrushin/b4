@@ -1,5 +1,10 @@
 # B4 - Bye Bye Big Bro
 
+## [1.7x.x] - 2026-07-xx
+
+- ADDED: **A separate MTProto secret for each person** - the MTProto proxy can now hold several named secrets instead of one shared code. Each one can be named (for example, per person), switched on or off on its own, and shared as its own link or QR code, so access can be given or taken away one person at a time.
+- ADDED: **See who is using the MTProto proxy** - the Traffic page now labels each proxy connection with the secret it used, and a new dashboard panel shows active connections, total sessions, and data used for each named secret.
+
 ## [1.71.1] - 2026-06-29
 
 - ADDED: **System Info now shows the router's kernel capabilities** - a new section reports whether the router supports the underlying features that advanced modes rely on.

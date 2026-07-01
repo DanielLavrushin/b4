@@ -1,5 +1,12 @@
 import { Stack } from "@mui/material";
-import { TcpIcon, UdpIcon, BlockIcon, ProxyIcon, DuplicateIcon } from "@b4.icons";
+import {
+  TcpIcon,
+  UdpIcon,
+  BlockIcon,
+  ProxyIcon,
+  DuplicateIcon,
+  TelegramIcon,
+} from "@b4.icons";
 import { B4Badge } from "@b4.elements";
 
 interface ProtocolChipProps {
@@ -16,11 +23,27 @@ export const FlagBadges = ({ flags }: FlagBadgesProps) => {
   const isBlackhole = flags === "block";
   const isSocks5 = flags === "socks5";
   const isDuplicate = flags === "tcp-dup";
+  const isMtproto = flags?.startsWith("mtproto");
+  const mtprotoName = isMtproto
+    ? (flags as string).slice("mtproto".length).replace(/^:/, "").trim()
+    : "";
 
-  if (!isBlocked && !isBlackhole && !isSocks5 && !isDuplicate) return null;
+  if (!isBlocked && !isBlackhole && !isSocks5 && !isDuplicate && !isMtproto)
+    return null;
 
   return (
     <Stack direction="row" spacing={0.5} alignItems="center">
+      {isMtproto && (
+        <B4Badge
+          icon={<TelegramIcon />}
+          label={mtprotoName || "mtproto"}
+          title={
+            mtprotoName ? `MTProto Proxy — ${mtprotoName}` : "MTProto Proxy"
+          }
+          variant="outlined"
+          color="primary"
+        />
+      )}
       {isBlackhole && (
         <B4Badge
           icon={<BlockIcon />}
