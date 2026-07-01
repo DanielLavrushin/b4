@@ -42,6 +42,13 @@ export const TrafficRouting = ({
   const isInterface = mode === "interface";
   const blockAction = routing.block_action || "reject";
 
+  const domainOnly = config.targets.domain_only ?? false;
+  const hasDomains =
+    (config.targets.sni_domains?.length ?? 0) > 0 ||
+    (config.targets.geosite_categories?.length ?? 0) > 0;
+  const showDomainOnlyRoutingWarning =
+    routing.enabled && domainOnly && hasDomains;
+
   const selectedIfaceAvailable = availableIfaces.includes(
     routing.egress_interface,
   );
@@ -98,6 +105,13 @@ export const TrafficRouting = ({
 
       {routing.enabled && (
         <>
+          {showDomainOnlyRoutingWarning && (
+            <Grid size={{ xs: 12 }}>
+              <B4Alert severity="warning">
+                {t("sets.routing.domainOnlyConflict")}
+              </B4Alert>
+            </Grid>
+          )}
           <Grid size={{ xs: 12 }}>
             <B4TextField
               label={t("sets.routing.modeLabel")}

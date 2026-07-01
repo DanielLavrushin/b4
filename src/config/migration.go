@@ -71,6 +71,15 @@ var migrationRegistry = map[int]MigrationFunc{
 	47: migrateV47to48, // Add TUN engine mode and config
 	48: migrateV48to49, // Convert masquerade to nested config (multi-interface)
 	49: migrateV49to50, // Move the single MTProto secret into the secrets list
+	50: migrateV50to51, // Add per-set domain-only matching target
+}
+
+func migrateV50to51(c *Config, _ map[string]interface{}) error {
+	log.Tracef("Migration v50->v51: Adding per-set domain-only matching target")
+	for _, set := range c.Sets {
+		set.Targets.DomainOnly = false
+	}
+	return nil
 }
 
 func migrateV49to50(c *Config, _ map[string]interface{}) error {

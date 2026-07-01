@@ -184,6 +184,11 @@ func (c *Config) Validate() error {
 			}
 		}
 
+		if set.Targets.DomainOnly && set.Routing.Enabled &&
+			(len(set.Targets.SNIDomains) > 0 || len(set.Targets.GeoSiteCategories) > 0) {
+			log.Warnf("Set '%s' has both domain-only matching and routing enabled: the IPs behind its domains will not be routed (only explicitly listed IP targets are routed)", set.Name)
+		}
+
 		if set.TCP.ConnBytesLimit > c.Queue.TCPConnBytesLimit {
 			set.TCP.ConnBytesLimit = c.Queue.TCPConnBytesLimit
 		}

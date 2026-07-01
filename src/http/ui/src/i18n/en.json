@@ -1388,7 +1388,8 @@
       "flowCaption": "DNS queries for this set's domains are intercepted. Resolved IPs are routed through the selected output interface.",
       "howItWorks": "When a device on your network visits a matched domain, B4 intercepts the DNS response, learns the destination IP, and adds a routing rule so that traffic to that IP goes through the output interface you choose - for example, a VPN or a different WAN link.",
       "sourceInterfacesDesc": "Choose which network interfaces B4 should watch for traffic. For example, select your LAN or Wi-Fi bridge to only route traffic from devices on that network. Leave empty to route traffic from all interfaces.",
-      "ipTtlDesc": "After B4 learns an IP address from a DNS response, it keeps the routing rule for this many seconds. If the domain's IP changes (e.g. CDN rotation), the old rule expires and B4 picks up the new IP on the next DNS query."
+      "ipTtlDesc": "After B4 learns an IP address from a DNS response, it keeps the routing rule for this many seconds. If the domain's IP changes (e.g. CDN rotation), the old rule expires and B4 picks up the new IP on the next DNS query.",
+      "domainOnlyConflict": "Domain-only matching is enabled for this set, so the IP addresses behind its domains are not routed here - only IP addresses you list explicitly are. Turn off Domain-only matching to route these domains."
     },
     "importExport": {
       "sectionTitle": "Import/Export Set configuration",
