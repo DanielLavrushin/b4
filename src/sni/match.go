@@ -421,6 +421,9 @@ func (s *SuffixSet) LearnIPToDomain(ip net.IP, domain string, set *config.SetCon
 	if s == nil || ip == nil || domain == "" || set == nil {
 		return
 	}
+	if set.Targets.DomainOnly {
+		return
+	}
 
 	ipStr := ip.String()
 
@@ -466,12 +469,18 @@ func (s *SuffixSet) MatchLearnedIP(ip net.IP) (bool, *config.SetConfig, string) 
 	if !exists {
 		return false, nil, ""
 	}
+	if entry.set != nil && entry.set.Targets.DomainOnly {
+		return false, nil, ""
+	}
 
 	s.learnedIPCacheMu.Lock()
 	defer s.learnedIPCacheMu.Unlock()
 
 	entry, exists = s.learnedIPCache[ipStr]
 	if !exists {
+		return false, nil, ""
+	}
+	if entry.set != nil && entry.set.Targets.DomainOnly {
 		return false, nil, ""
 	}
 
@@ -691,12 +700,18 @@ func (s *SuffixSet) MatchLearnedIPWithSource(ip net.IP, srcMAC string) (bool, *c
 	if !exists {
 		return false, nil, ""
 	}
+	if entry.set != nil && entry.set.Targets.DomainOnly {
+		return false, nil, ""
+	}
 
 	s.learnedIPCacheMu.Lock()
 	defer s.learnedIPCacheMu.Unlock()
 
 	entry, exists = s.learnedIPCache[ipStr]
 	if !exists {
+		return false, nil, ""
+	}
+	if entry.set != nil && entry.set.Targets.DomainOnly {
 		return false, nil, ""
 	}
 

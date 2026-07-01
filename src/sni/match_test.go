@@ -397,6 +397,35 @@ func TestLearnedIP_BasicFlow(t *testing.T) {
 	}
 }
 
+func TestLearnedIP_DomainOnlySetIsNotLearned(t *testing.T) {
+	s := makeSetWithDomains("domain-only", "shared-cdn.example.com")
+	s.Targets.DomainOnly = true
+	ss := NewSuffixSet([]*config.SetConfig{s})
+
+	ip := net.ParseIP("1.2.3.4")
+	ss.LearnIPToDomain(ip, "shared-cdn.example.com", s)
+
+	if matched, _, _ := ss.MatchLearnedIP(ip); matched {
+		t.Error("domain-only set must not create learned IP matches")
+	}
+	if matched, _, _ := ss.MatchLearnedIPWithSource(ip, ""); matched {
+		t.Error("domain-only set must not create source-aware learned IP matches")
+	}
+}
+
+func TestDomainOnly_StillMatchesBySNI(t *testing.T) {
+	s := makeSetWithDomains("domain-only", "shared-cdn.example.com")
+	s.Targets.DomainOnly = true
+	ss := NewSuffixSet([]*config.SetConfig{s})
+
+	if matched, set := ss.MatchSNI("shared-cdn.example.com"); !matched || set.Name != "domain-only" {
+		t.Error("domain-only set must still match its exact domain by SNI")
+	}
+	if matched, set := ss.MatchSNI("sub.shared-cdn.example.com"); !matched || set.Name != "domain-only" {
+		t.Error("domain-only set must still suffix-match subdomains by SNI")
+	}
+}
+
 func TestLearnedIP_Update(t *testing.T) {
 	s1 := makeSetWithDomains("set1", "a.com")
 	s2 := makeSetWithDomains("set2", "b.com")

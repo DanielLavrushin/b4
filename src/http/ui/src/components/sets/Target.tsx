@@ -47,6 +47,7 @@ import {
   B4TooltipButton,
   B4Select,
   B4Hint,
+  B4Switch,
 } from "@b4.elements";
 import SettingAutocomplete from "@common/B4Autocomplete";
 import { B4SetConfig, GeoConfig, TargetsConfig } from "@models/config";
@@ -65,7 +66,7 @@ interface TargetSettingsProps {
   otherSetsTargets?: OtherSetsTargets;
   ipv4?: boolean;
   ipv6?: boolean;
-  onChange: (field: string, value: string | string[]) => void;
+  onChange: (field: string, value: string | string[] | boolean) => void;
 }
 
 export const wouldCreateEscalationCycle = (
@@ -438,6 +439,17 @@ export const TargetSettings = ({
             <B4Hint>{t("sets.targets.domainAlert")}</B4Hint>
 
             <Box sx={{ my: 3, display: "flex", gap: 2, flexWrap: "wrap" }}>
+              <Box sx={{ maxWidth: 360, flex: 1, minWidth: 260 }}>
+                <B4Switch
+                  label={t("sets.targets.domainOnly")}
+                  description={t("sets.targets.domainOnlyDesc")}
+                  checked={config.targets.domain_only ?? false}
+                  onChange={(checked: boolean) =>
+                    onChange("targets.domain_only", checked)
+                  }
+                  aiTopic="targets.domain_only"
+                />
+              </Box>
               <Box sx={{ maxWidth: 260, flex: 1, minWidth: 200 }}>
                 <B4Select
                   label={t("sets.targets.tlsVersionFilter")}

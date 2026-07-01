@@ -813,6 +813,8 @@
       "ipVersionFilter": "IP Version Filter",
       "ipVersionAny": "Any",
       "ipVersionHelperText": "Prefer IPv4 or IPv6 traffic (used as a fallback when no exact-version match exists)",
+      "domainOnly": "Domain-only matching",
+      "domainOnlyDesc": "Do not learn or route IPs from these domains. Use this for shared CDN IPs where another domain on the same IP needs a different strategy.",
       "escalateTo": "Escalate to set",
       "escalateNone": "None",
       "escalateHelper": "If this set keeps failing for a site, b4 will use the chosen set for that site instead. After a while, b4 tries this set again.",

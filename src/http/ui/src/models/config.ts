@@ -100,6 +100,7 @@ export interface TargetsConfig {
   geosite_categories: string[];
   geoip_categories: string[];
   source_devices?: string[];
+  domain_only?: boolean;
   tls?: string;
   ip_version?: string;
 }

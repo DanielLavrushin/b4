@@ -29,6 +29,9 @@ func registerLearnedRoute(cfg *config.Config, set *config.SetConfig, dst net.IP)
 	if cfg == nil || set == nil || dst == nil || !set.Routing.Enabled || RoutingLearnIPFunc == nil {
 		return
 	}
+	if set.Targets.DomainOnly {
+		return
+	}
 	if cfg.Queue.IsDiscovery {
 		return
 	}
