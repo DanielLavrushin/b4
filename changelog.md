@@ -7,6 +7,7 @@
 - ADDED: **Match a set by domain only, without learning its IPs** - a per-set "Domain-only matching" switch under the set's Targets. With it on, b4 decides the set purely from the domain or SNI it can see and does not remember or route the IP addresses behind those domains. It is meant for shared CDN addresses (YouTube, Google): a video domain and an unrelated one such as preview images can share a single IP, so the address b4 learned for the first one pulled the second onto the wrong bypass strategy.
 - FIXED: **Memory use jumped after saving settings** - saving the configuration made b4's memory use climb, even for changes that had nothing to do with the blocked-site lists.
 - FIXED: **A routing set could stop adding new addresses on some routers** - on certain setups (for example b4 in a container on MikroTik) the router rejected freshly discovered addresses, so a set routed through a chosen interface, proxy, or the Telegram bridge slowly stopped working. Those addresses are now stored in a form the router accepts. [#267](https://github.com/DanielLavrushin/b4/issues/267)
+- FIXED: **The log repeated "Tables rules missing, restoring..." every few seconds** - with NAT Masquerade turned on, b4 looked for one of its firewall rules in the wrong place, decided it was missing, and needlessly re-applied all its rules over and over. The rules were in fact fine; b4 now checks the right place and the endless restoring has stopped.
 
 ## [1.71.1] - 2026-06-29
 

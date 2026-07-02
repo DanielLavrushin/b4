@@ -220,9 +220,10 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 		}
 
 		if cfg.System.Tables.Masquerade.Enabled {
-			out, _ := run(ipt, "-w", "-t", "nat", "-S", "POSTROUTING")
-			if !strings.Contains(out, "MASQUERADE") {
-				log.Tracef("Monitor: POSTROUTING MASQUERADE rule missing")
+			postOut, _ := run(ipt, "-w", "-t", "nat", "-S", "POSTROUTING")
+			masqOut, _ := run(ipt, "-w", "-t", "nat", "-S", masqChainName)
+			if !masqueradeRulesPresent(postOut, masqOut) {
+				log.Tracef("Monitor: masquerade rules missing (POSTROUTING jump or %s chain)", masqChainName)
 				return false
 			}
 		}

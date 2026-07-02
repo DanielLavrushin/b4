@@ -85,6 +85,11 @@ func (im *IPTablesManager) ApplyMasquerade() error {
 	return nil
 }
 
+func masqueradeRulesPresent(postroutingOut, masqChainOut string) bool {
+	return strings.Contains(postroutingOut, masqChainName) &&
+		strings.Contains(masqChainOut, "MASQUERADE")
+}
+
 func (manager *IPTablesManager) buildMasqueradeManifest(ipt string) ([]Chain, []Rule) {
 	markClient := fmt.Sprintf("0x%x/0x%x", engine.ClientMark, engine.ClientMark)
 	chains := []Chain{{manager: manager, IPT: ipt, Table: "nat", Name: masqChainName}}

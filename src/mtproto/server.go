@@ -40,6 +40,9 @@ type Server struct {
 	statsMu sync.Mutex
 	stats   map[string]*secretStat
 
+	connsMu sync.Mutex
+	conns   map[string]*secretConnSet
+
 	mu       sync.Mutex
 	running  bool
 	listener net.Listener
@@ -88,6 +91,90 @@ func (s *Server) secretStat(sec *Secret) *secretStat {
 		s.stats[key] = st
 	}
 	return st
+}
+
+type secretConnSet struct {
+	label string
+	conns map[net.Conn]struct{}
+}
+
+func secretIdentity(sec *Secret) string {
+	key := sec.ID
+	if key == "" {
+		key = sec.Label()
+	}
+	return key + "|" + sec.Hex()
+}
+
+func (s *Server) trackConn(sec *Secret, c net.Conn) func() {
+	id := secretIdentity(sec)
+	s.connsMu.Lock()
+	if s.conns == nil {
+		s.conns = make(map[string]*secretConnSet)
+	}
+	set := s.conns[id]
+	if set == nil {
+		set = &secretConnSet{label: sec.Label(), conns: make(map[net.Conn]struct{})}
+		s.conns[id] = set
+	}
+	set.conns[c] = struct{}{}
+	s.connsMu.Unlock()
+	return func() {
+		s.connsMu.Lock()
+		if set := s.conns[id]; set != nil {
+			delete(set.conns, c)
+			if len(set.conns) == 0 {
+				delete(s.conns, id)
+			}
+		}
+		s.connsMu.Unlock()
+	}
+}
+
+func (s *Server) secretActive(sec *Secret) bool {
+	ptr := s.secrets.Load()
+	if ptr == nil {
+		return false
+	}
+	id := secretIdentity(sec)
+	for _, cur := range *ptr {
+		if secretIdentity(cur) == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) closeRevokedConns(active []*Secret) {
+	allowed := make(map[string]struct{}, len(active))
+	for _, sec := range active {
+		allowed[secretIdentity(sec)] = struct{}{}
+	}
+
+	type victim struct {
+		label string
+		conns []net.Conn
+	}
+	var victims []victim
+	s.connsMu.Lock()
+	for id, set := range s.conns {
+		if _, ok := allowed[id]; ok {
+			continue
+		}
+		v := victim{label: set.label, conns: make([]net.Conn, 0, len(set.conns))}
+		for c := range set.conns {
+			v.conns = append(v.conns, c)
+		}
+		victims = append(victims, v)
+	}
+	s.connsMu.Unlock()
+
+	for _, v := range victims {
+		for _, c := range v.conns {
+			_ = c.Close()
+		}
+		log.Infof("MTProto: closed %d active connection(s) for revoked secret %q", len(v.conns), v.label)
+	}
 }
 
 func (s *Server) Stats() Stats {
@@ -208,6 +295,7 @@ func (s *Server) startLocked() error {
 	}
 	s.listener = ln
 	s.secrets.Store(&secrets)
+	s.closeRevokedConns(secrets)
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 
 	log.Infof("MTProto proxy listening on %s (SNI: %s, secrets: %d)", addr, secrets[0].Host, len(secrets))
@@ -260,6 +348,7 @@ func (s *Server) reloadSecretsLocked(cfg *config.Config) {
 		return
 	}
 	s.secrets.Store(&secrets)
+	s.closeRevokedConns(secrets)
 	log.Infof("MTProto secrets reloaded live (%d active) without restart", len(secrets))
 }
 
@@ -285,11 +374,13 @@ func (s *Server) UpdateConfig(newCfg *config.Config) {
 	if newCfg.System.MTProto.Enabled {
 		if err := s.startLocked(); err != nil {
 			log.Errorf("MTProto reload failed: %v (proxy stopped; fix in Settings)", err)
+			s.closeRevokedConns(nil)
 		} else {
 			log.Infof("MTProto reloaded with updated configuration")
 		}
 	} else if wasEnabled {
 		log.Infof("MTProto proxy stopped (disabled in configuration)")
+		s.closeRevokedConns(nil)
 	}
 }
 
@@ -407,6 +498,13 @@ func (s *Server) handleConn(raw net.Conn) {
 	}
 	user := secret.Label()
 	log.Debugf("%s proxy fake-TLS handshake OK from %s (secret=%s)", tag, clientAddr, user)
+
+	untrack := s.trackConn(secret, raw)
+	defer untrack()
+	if !s.secretActive(secret) {
+		log.Infof("%s proxy secret %q revoked, dropping connection from %s", tag, user, clientAddr)
+		return
+	}
 
 	result, err := AcceptObfuscated(tlsConn, secret)
 	if err != nil {

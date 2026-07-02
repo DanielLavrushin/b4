@@ -190,3 +190,40 @@ func TestBuildMasqueradeManifest_PerInterface(t *testing.T) {
 		}
 	}
 }
+
+func TestMasqueradeRulesPresent(t *testing.T) {
+	postrouting := strings.Join([]string{
+		"-P POSTROUTING ACCEPT",
+		"-A POSTROUTING -m mark --mark 0x20000000/0x20000000 -j RETURN",
+		"-A POSTROUTING -j B4_MASQ",
+	}, "\n")
+	masqChain := strings.Join([]string{
+		"-N B4_MASQ",
+		"-A B4_MASQ -j MASQUERADE",
+	}, "\n")
+
+	t.Run("manifest layout passes the monitor check", func(t *testing.T) {
+		if !masqueradeRulesPresent(postrouting, masqChain) {
+			t.Error("expected masquerade layout with B4_MASQ chain to be detected as present")
+		}
+	})
+
+	t.Run("missing POSTROUTING jump detected", func(t *testing.T) {
+		if masqueradeRulesPresent("-P POSTROUTING ACCEPT", masqChain) {
+			t.Error("expected missing POSTROUTING jump to be detected")
+		}
+	})
+
+	t.Run("empty masquerade chain detected", func(t *testing.T) {
+		if masqueradeRulesPresent(postrouting, "-N B4_MASQ") {
+			t.Error("expected empty masquerade chain to be detected")
+		}
+	})
+
+	t.Run("per-interface rules pass", func(t *testing.T) {
+		perIface := "-N B4_MASQ\n-A B4_MASQ -o eth0 -j MASQUERADE\n-A B4_MASQ -o ppp0 -j MASQUERADE"
+		if !masqueradeRulesPresent(postrouting, perIface) {
+			t.Error("expected per-interface masquerade rules to be detected as present")
+		}
+	})
+}
