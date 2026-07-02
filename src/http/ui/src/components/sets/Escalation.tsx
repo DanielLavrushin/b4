@@ -10,7 +10,23 @@ import {
 } from "@b4.elements";
 import { B4SetConfig } from "@models/config";
 import { useTranslation } from "react-i18next";
-import { wouldCreateEscalationCycle } from "./Target";
+
+export const wouldCreateEscalationCycle = (
+  candidate: B4SetConfig,
+  currentId: string,
+  all: B4SetConfig[],
+): boolean => {
+  const byId = new Map(all.map((s) => [s.id, s]));
+  const seen = new Set<string>();
+  let cur: B4SetConfig | undefined = candidate;
+  while (cur?.escalate?.to) {
+    if (cur.escalate.to === currentId) return true;
+    if (seen.has(cur.escalate.to)) return false;
+    seen.add(cur.escalate.to);
+    cur = byId.get(cur.escalate.to);
+  }
+  return false;
+};
 
 interface EscalationSettingsProps {
   config: B4SetConfig;
