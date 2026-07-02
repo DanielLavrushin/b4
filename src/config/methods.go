@@ -574,15 +574,17 @@ func (cfg *Config) CollectSetMSSClamps() []SetMSSClampEntry {
 				}
 			}
 		}
-		seenMAC := make(map[string]struct{})
-		for _, m := range set.Targets.SourceDevices {
-			m = strings.ToUpper(strings.TrimSpace(m))
-			if m == "" {
-				continue
-			}
-			if _, ok := seenMAC[m]; !ok {
-				seenMAC[m] = struct{}{}
-				entry.MACs = append(entry.MACs, m)
+		if !set.Targets.SourceDevicesExclude {
+			seenMAC := make(map[string]struct{})
+			for _, m := range set.Targets.SourceDevices {
+				m = strings.ToUpper(strings.TrimSpace(m))
+				if m == "" {
+					continue
+				}
+				if _, ok := seenMAC[m]; !ok {
+					seenMAC[m] = struct{}{}
+					entry.MACs = append(entry.MACs, m)
+				}
 			}
 		}
 		if len(entry.IPv4) == 0 && len(entry.IPv6) == 0 && len(entry.MACs) == 0 {

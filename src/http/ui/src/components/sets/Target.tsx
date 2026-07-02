@@ -129,6 +129,7 @@ export const TargetSettings = ({
         >
           <DevicesTab
             selected={selectedSourceDevices}
+            exclude={config.targets.source_devices_exclude ?? false}
             devices={devices}
             loading={devicesLoading}
             available={devicesAvailable}
@@ -136,6 +137,9 @@ export const TargetSettings = ({
               loadDevices().catch(() => {});
             }}
             onChange={(macs) => onChange("targets.source_devices", macs)}
+            onExcludeChange={(exclude) =>
+              onChange("targets.source_devices_exclude", exclude)
+            }
           />
         </B4TabPanel>
       </B4Section>

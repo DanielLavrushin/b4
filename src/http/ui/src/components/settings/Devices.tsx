@@ -11,7 +11,6 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Checkbox,
   Paper,
   IconButton,
   TextField,
@@ -32,7 +31,7 @@ import {
   B4Hint,
 } from "@b4.elements";
 import { useDevices, DevicesSettingsProps } from "@b4.devices";
-import { sortDevices } from "@utils";
+import { B4DeviceTable } from "@common/B4DeviceTable";
 
 const toMac = (bytes: number[]): string =>
   `02:B4:${bytes.map((b) => b.toString(16).toUpperCase().padStart(2, "0")).join(":")}`;
@@ -206,17 +205,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
   };
 
   const isSelected = (mac: string) => findConfigDevice(mac)?.selected || false;
-  const allSelected =
-    devices.length > 0 && devices.every((d) => isSelected(d.mac));
-  const someSelected = devices.some((d) => isSelected(d.mac)) && !allSelected;
   const manualDevices = configDevices.filter((d) => d.is_manual);
-
-  const tableHeaders = [
-    t("core.devices.macAddress"),
-    t("core.devices.ip"),
-    t("core.devices.deviceName"),
-    t("settings.Devices.mss"),
-  ];
 
   return (
     <B4Section
@@ -305,214 +294,106 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                   />
                 </Box>
 
-                <TableContainer
-                  component={Paper}
-                  sx={{
-                    bgcolor: colors.background.paper,
-                    border: `1px solid ${colors.border.default}`,
-                    maxHeight: 300,
-                  }}
-                >
-                  <Table size="small" stickyHeader>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell
-                          padding="checkbox"
-                          sx={{ bgcolor: colors.background.dark }}
-                        >
-                          <Checkbox
-                            color="secondary"
-                            indeterminate={someSelected}
-                            checked={allSelected}
-                            onChange={(e) => handleSelectAll(e.target.checked)}
+                <B4DeviceTable
+                  devices={devices}
+                  loading={loading}
+                  isSelected={isSelected}
+                  onToggle={handleToggle}
+                  onSelectAll={handleSelectAll}
+                  showOfflineChip
+                  maxHeight={300}
+                  renderNameCell={(device) =>
+                    editingMac === device.mac ? (
+                      <B4InlineEdit
+                        value={
+                          findConfigDevice(device.mac)?.name ||
+                          device.alias ||
+                          device.vendor ||
+                          ""
+                        }
+                        onSave={(name) => {
+                          updateDevice(device.mac, { name });
+                          setEditingMac(null);
+                        }}
+                        onCancel={() => setEditingMac(null)}
+                      />
+                    ) : (
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 0.5,
+                        }}
+                      >
+                        {findConfigDevice(device.mac)?.name ||
+                        device.alias ||
+                        device.vendor ? (
+                          <B4Badge
+                            label={
+                              findConfigDevice(device.mac)?.name ||
+                              device.alias ||
+                              device.vendor ||
+                              ""
+                            }
+                            color="primary"
+                            variant={
+                              isSelected(device.mac) ? "filled" : "outlined"
+                            }
                           />
-                        </TableCell>
-                        {tableHeaders.map((label) => (
-                          <TableCell
-                            key={label}
-                            sx={{
-                              bgcolor: colors.background.dark,
-                              color: colors.text.secondary,
-                            }}
+                        ) : (
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
                           >
-                            {label}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {devices.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={5} align="center">
-                            {loading
-                              ? t("core.devices.loadingDevices")
-                              : t("core.devices.noDevices")}
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        sortDevices(devices, isSelected).map((device) => (
-                          <TableRow
-                            key={device.mac}
-                            hover
-                            onClick={() => handleToggle(device.mac)}
-                            sx={{ cursor: "pointer" }}
-                          >
-                            <TableCell padding="checkbox">
-                              <Checkbox
-                                checked={isSelected(device.mac)}
-                                color="secondary"
-                              />
-                            </TableCell>
-                            <TableCell
-                              sx={{
-                                fontFamily: "monospace",
-                                fontSize: "0.85rem",
-                              }}
-                            >
-                              {device.is_manual ? (
-                                <Typography
-                                  variant="caption"
-                                  color="text.secondary"
-                                >
-                                  —
-                                </Typography>
-                              ) : (
-                                device.mac
-                              )}
-                            </TableCell>
-                            <TableCell
-                              sx={{
-                                fontFamily: "monospace",
-                                fontSize: "0.85rem",
-                              }}
-                            >
-                              <Box
-                                sx={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 0.5,
-                                }}
-                              >
-                                {device.ip}
-                                {device.is_manual && (
-                                  <Chip
-                                    label={t("core.devices.manual")}
-                                    size="small"
-                                    variant="outlined"
-                                    sx={{ fontSize: "0.7rem", height: 20 }}
-                                  />
-                                )}
-                                {!device.is_manual &&
-                                  device.is_online === false && (
-                                    <Chip
-                                      label={t("core.devices.offline")}
-                                      size="small"
-                                      variant="outlined"
-                                      sx={{
-                                        fontSize: "0.7rem",
-                                        height: 20,
-                                        color: colors.text.secondary,
-                                      }}
-                                    />
-                                  )}
-                              </Box>
-                            </TableCell>
-                            <TableCell onClick={(e) => e.stopPropagation()}>
-                              {editingMac === device.mac ? (
-                                <B4InlineEdit
-                                  value={
-                                    findConfigDevice(device.mac)?.name ||
-                                    device.alias ||
-                                    device.vendor ||
-                                    ""
-                                  }
-                                  onSave={(name) => {
-                                    updateDevice(device.mac, { name });
-                                    setEditingMac(null);
-                                  }}
-                                  onCancel={() => setEditingMac(null)}
-                                />
-                              ) : (
-                                <Box
-                                  sx={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 0.5,
-                                  }}
-                                >
-                                  {findConfigDevice(device.mac)?.name ||
-                                  device.alias ||
-                                  device.vendor ? (
-                                    <B4Badge
-                                      label={
-                                        findConfigDevice(device.mac)?.name ||
-                                        device.alias ||
-                                        device.vendor ||
-                                        ""
-                                      }
-                                      color="primary"
-                                      variant={
-                                        isSelected(device.mac)
-                                          ? "filled"
-                                          : "outlined"
-                                      }
-                                    />
-                                  ) : (
-                                    <Typography
-                                      variant="caption"
-                                      color="text.secondary"
-                                    >
-                                      {t("core.unknown")}
-                                    </Typography>
-                                  )}
-                                  <IconButton
-                                    size="small"
-                                    onClick={() => setEditingMac(device.mac)}
-                                    sx={{
-                                      opacity: 0.6,
-                                      "&:hover": { opacity: 1 },
-                                    }}
-                                  >
-                                    <EditIcon sx={{ fontSize: 16 }} />
-                                  </IconButton>
-                                </Box>
-                              )}
-                            </TableCell>
-                            <TableCell onClick={(e) => e.stopPropagation()}>
-                              <TextField
-                                size="small"
-                                type="number"
-                                value={
-                                  findConfigDevice(device.mac)?.mss_clamp || ""
-                                }
-                                onChange={(e) => {
-                                  const val =
-                                    e.target.value === ""
-                                      ? undefined
-                                      : Number(e.target.value);
-                                  updateDevice(device.mac, { mss_clamp: val });
-                                }}
-                                placeholder="off"
-                                slotProps={{
-                                  htmlInput: {
-                                    min: 10,
-                                    max: 1460,
-                                    style: { width: 50, padding: "4px 8px" },
-                                  },
-                                }}
-                                sx={{
-                                  "& .MuiOutlinedInput-root": {
-                                    fontSize: "0.85rem",
-                                  },
-                                }}
-                              />
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
+                            {t("core.unknown")}
+                          </Typography>
+                        )}
+                        <IconButton
+                          size="small"
+                          onClick={() => setEditingMac(device.mac)}
+                          sx={{
+                            opacity: 0.6,
+                            "&:hover": { opacity: 1 },
+                          }}
+                        >
+                          <EditIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </Box>
+                    )
+                  }
+                  extraColumns={[
+                    {
+                      header: t("settings.Devices.mss"),
+                      renderCell: (device) => (
+                        <TextField
+                          size="small"
+                          type="number"
+                          value={findConfigDevice(device.mac)?.mss_clamp || ""}
+                          onChange={(e) => {
+                            const val =
+                              e.target.value === ""
+                                ? undefined
+                                : Number(e.target.value);
+                            updateDevice(device.mac, { mss_clamp: val });
+                          }}
+                          placeholder="off"
+                          slotProps={{
+                            htmlInput: {
+                              min: 10,
+                              max: 1460,
+                              style: { width: 50, padding: "4px 8px" },
+                            },
+                          }}
+                          sx={{
+                            "& .MuiOutlinedInput-root": {
+                              fontSize: "0.85rem",
+                            },
+                          }}
+                        />
+                      ),
+                    },
+                  ]}
+                />
               </Grid>
             ) : (
               <B4Alert severity="warning">

@@ -565,15 +565,16 @@ func setMatchesSource(set *config.SetConfig, srcMAC string) bool {
 	if len(set.Targets.SourceDevices) == 0 {
 		return true
 	}
+	exclude := set.Targets.SourceDevicesExclude
 	if srcMAC == "" {
-		return false
+		return exclude
 	}
 	for _, mac := range set.Targets.SourceDevices {
 		if strings.EqualFold(mac, srcMAC) {
-			return true
+			return !exclude
 		}
 	}
-	return false
+	return exclude
 }
 
 func (s *SuffixSet) MatchSNIWithSource(host string, srcMAC string) (bool, *config.SetConfig) {

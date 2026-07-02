@@ -1,42 +1,38 @@
 import {
   Box,
   Button,
-  Checkbox,
   Chip,
   CircularProgress,
   Grid,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Typography,
 } from "@mui/material";
 import { ClearIcon, RefreshIcon } from "@b4.icons";
-import { B4Alert, B4Badge, B4Hint, B4TooltipButton } from "@b4.elements";
+import { B4Alert, B4Hint, B4Switch, B4TooltipButton } from "@b4.elements";
 import { DeviceInfo } from "@b4.devices";
+import { B4DeviceTable } from "@common/B4DeviceTable";
 import { colors } from "@design";
-import { sortDevices } from "@utils";
 import { useTranslation } from "react-i18next";
 
 interface DevicesTabProps {
   selected: string[];
+  exclude: boolean;
   devices: DeviceInfo[];
   loading: boolean;
   available: boolean;
   onRefresh: () => void;
   onChange: (macs: string[]) => void;
+  onExcludeChange: (exclude: boolean) => void;
 }
 
 export const DevicesTab = ({
   selected,
+  exclude,
   devices,
   loading,
   available,
   onRefresh,
   onChange,
+  onExcludeChange,
 }: DevicesTabProps) => {
   const { t } = useTranslation();
 
@@ -48,6 +44,8 @@ export const DevicesTab = ({
     );
   };
 
+  const hasMssHints = devices.some((d) => d.mss_clamp);
+
   return (
     <>
       <B4Hint>{t("sets.targets.deviceAlert")}</B4Hint>
@@ -55,6 +53,15 @@ export const DevicesTab = ({
       {available ? (
         <Grid container spacing={2}>
           <Grid size={{ xs: 12 }}>
+            <Box sx={{ mt: 2, maxWidth: 480 }}>
+              <B4Switch
+                label={t("sets.targets.excludeDevices")}
+                description={t("sets.targets.excludeDevicesDesc")}
+                checked={exclude}
+                onChange={onExcludeChange}
+              />
+            </Box>
+
             <Box
               sx={{
                 display: "flex",
@@ -72,7 +79,13 @@ export const DevicesTab = ({
                     variant="caption"
                     sx={{ ml: 1, color: colors.secondary }}
                   >
-                    ({t("sets.targets.selectedCount", { count: selected.length })}
+                    (
+                    {t(
+                      exclude
+                        ? "sets.targets.excludedCount"
+                        : "sets.targets.selectedCount",
+                      { count: selected.length },
+                    )}
                     )
                   </Typography>
                 )}
@@ -86,137 +99,33 @@ export const DevicesTab = ({
               />
             </Box>
 
-            <TableContainer
-              component={Paper}
-              sx={{
-                bgcolor: colors.background.paper,
-                border: `1px solid ${colors.border.default}`,
-                maxHeight: 350,
-              }}
-            >
-              <Table size="small" stickyHeader>
-                <TableHead>
-                  <TableRow>
-                    <TableCell
-                      padding="checkbox"
-                      sx={{ bgcolor: colors.background.dark }}
-                    >
-                      <Checkbox
-                        color="secondary"
-                        indeterminate={
-                          selected.length > 0 &&
-                          selected.length < devices.length
-                        }
-                        checked={
-                          devices.length > 0 &&
-                          selected.length === devices.length
-                        }
-                        onChange={(e) =>
-                          onChange(
-                            e.target.checked ? devices.map((d) => d.mac) : [],
-                          )
-                        }
-                      />
-                    </TableCell>
-                    {[
-                      t("core.devices.macAddress"),
-                      t("core.devices.ip"),
-                      t("core.devices.deviceName"),
-                    ].map((label) => (
-                      <TableCell
-                        key={label}
-                        sx={{
-                          bgcolor: colors.background.dark,
-                          color: colors.text.secondary,
-                        }}
-                      >
-                        {label}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {devices.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={4} align="center">
-                        {loading
-                          ? t("core.devices.loadingDevices")
-                          : t("core.devices.noDevices")}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    sortDevices(devices, isSelected).map((device) => (
-                      <TableRow
-                        key={device.mac}
-                        hover
-                        onClick={() => handleToggle(device.mac)}
-                        sx={{ cursor: "pointer" }}
-                      >
-                        <TableCell padding="checkbox">
-                          <Checkbox
-                            checked={isSelected(device.mac)}
-                            color="secondary"
-                            onChange={(event) => {
-                              event.stopPropagation();
-                              handleToggle(device.mac);
-                            }}
-                          />
-                        </TableCell>
-                        <TableCell
-                          sx={{ fontFamily: "monospace", fontSize: "0.85rem" }}
-                        >
-                          {device.is_manual ? (
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                            >
-                              —
-                            </Typography>
-                          ) : (
-                            device.mac
-                          )}
-                        </TableCell>
-                        <TableCell
-                          sx={{ fontFamily: "monospace", fontSize: "0.85rem" }}
-                        >
-                          <Box
-                            sx={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 0.5,
-                            }}
-                          >
-                            {device.ip}
-                            {device.is_manual && (
-                              <Chip
-                                label={t("core.devices.manual")}
-                                size="small"
-                                variant="outlined"
-                                sx={{ fontSize: "0.7rem", height: 20 }}
-                              />
-                            )}
-                          </Box>
-                        </TableCell>
-                        <TableCell>
-                          <B4Badge
-                            label={
-                              device.alias ||
-                              device.vendor ||
-                              device.hostname ||
-                              t("core.unknown")
-                            }
-                            color="primary"
-                            variant={
-                              isSelected(device.mac) ? "filled" : "outlined"
-                            }
-                          />
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
+            <B4DeviceTable
+              devices={devices}
+              loading={loading}
+              isSelected={isSelected}
+              onToggle={handleToggle}
+              onSelectAll={(checked) =>
+                onChange(checked ? devices.map((d) => d.mac) : [])
+              }
+              extraColumns={
+                hasMssHints
+                  ? [
+                      {
+                        header: t("settings.Devices.mss"),
+                        renderCell: (device) =>
+                          device.mss_clamp ? (
+                            <Chip
+                              label={device.mss_clamp}
+                              size="small"
+                              variant="outlined"
+                              sx={{ fontSize: "0.7rem", height: 20 }}
+                            />
+                          ) : null,
+                      },
+                    ]
+                  : []
+              }
+            />
 
             {selected.length > 0 && (
               <Box sx={{ mt: 2 }}>

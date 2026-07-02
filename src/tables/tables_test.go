@@ -1224,6 +1224,43 @@ func TestRouteSetDeviceGate(t *testing.T) {
 			t.Error("deny-all gate must have a non-empty key distinct from disabled")
 		}
 	})
+
+	setExcluding := func(macs ...string) *config.SetConfig {
+		s := setWith(macs...)
+		s.Targets.SourceDevicesExclude = true
+		return s
+	}
+
+	t.Run("exclude becomes blacklist when global disabled", func(t *testing.T) {
+		g := routeSetDeviceGate(gateCfg(false, false), setExcluding(a, b))
+		if !g.isBlacklist() || !macSet(g)[a] || !macSet(g)[b] || len(g.macs) != 2 {
+			t.Errorf("expected per-set blacklist {a,b}, got %+v", g)
+		}
+	})
+
+	t.Run("exclude subtracts from global whitelist", func(t *testing.T) {
+		cfg := gateCfg(true, false, config.Device{MAC: a, Selected: true}, config.Device{MAC: b, Selected: true})
+		g := routeSetDeviceGate(cfg, setExcluding(b))
+		if !g.isWhitelist() || len(g.macs) != 1 || !macSet(g)[a] {
+			t.Errorf("expected whitelist {a}, got %+v", g)
+		}
+	})
+
+	t.Run("exclude unions with global blacklist", func(t *testing.T) {
+		cfg := gateCfg(true, true, config.Device{MAC: a, Selected: true})
+		g := routeSetDeviceGate(cfg, setExcluding(b))
+		if !g.isBlacklist() || len(g.macs) != 2 || !macSet(g)[a] || !macSet(g)[b] {
+			t.Errorf("expected blacklist {a,b}, got %+v", g)
+		}
+	})
+
+	t.Run("exclude key differs from whitelist key", func(t *testing.T) {
+		wl := routeSetDeviceGate(gateCfg(false, false), setWith(a))
+		bl := routeSetDeviceGate(gateCfg(false, false), setExcluding(a))
+		if wl.key() == bl.key() {
+			t.Errorf("whitelist and exclude gates must produce different keys, both %q", wl.key())
+		}
+	})
 }
 
 func TestBuildRouteStateDeviceKeyInvalidatesCache(t *testing.T) {

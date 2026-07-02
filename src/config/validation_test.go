@@ -192,6 +192,54 @@ func TestValidate_GeoPathMissing(t *testing.T) {
 	})
 }
 
+func TestValidate_MSSClampScope(t *testing.T) {
+	t.Run("source devices satisfy MAC scope", func(t *testing.T) {
+		cfg := NewConfig()
+		set := NewSetConfig()
+		set.Id = "s1"
+		set.MSSClamp.Enabled = true
+		set.MSSClamp.Size = 88
+		set.Targets.SourceDevices = []string{"AA:BB:CC:DD:EE:FF"}
+		cfg.Sets = []*SetConfig{&set}
+
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("expected valid config, got %v", err)
+		}
+	})
+
+	t.Run("excluded source devices do not satisfy MAC scope", func(t *testing.T) {
+		cfg := NewConfig()
+		set := NewSetConfig()
+		set.Id = "s1"
+		set.MSSClamp.Enabled = true
+		set.MSSClamp.Size = 88
+		set.Targets.SourceDevices = []string{"AA:BB:CC:DD:EE:FF"}
+		set.Targets.SourceDevicesExclude = true
+		cfg.Sets = []*SetConfig{&set}
+
+		ve := mustValidationErr(t, cfg.Validate())
+		if findField(ve, "sets[0].mss_clamp", "mss_clamp_scope_required") == nil {
+			t.Errorf("missing mss_clamp_scope_required; got %+v", ve.Fields)
+		}
+	})
+
+	t.Run("exclude with IP scope stays valid", func(t *testing.T) {
+		cfg := NewConfig()
+		set := NewSetConfig()
+		set.Id = "s1"
+		set.MSSClamp.Enabled = true
+		set.MSSClamp.Size = 88
+		set.Targets.IPs = []string{"1.2.3.4"}
+		set.Targets.SourceDevices = []string{"AA:BB:CC:DD:EE:FF"}
+		set.Targets.SourceDevicesExclude = true
+		cfg.Sets = []*SetConfig{&set}
+
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("expected valid config, got %v", err)
+		}
+	})
+}
+
 func TestValidate_LoggingDirectory(t *testing.T) {
 	t.Run("relative path rejected", func(t *testing.T) {
 		cfg := NewConfig()

@@ -40,6 +40,7 @@ type DeviceInfo struct {
 	Alias     string `json:"alias,omitempty"`
 	IsManual  bool   `json:"is_manual,omitempty"`
 	IsOnline  bool   `json:"is_online"`
+	MSSClamp  int    `json:"mss_clamp,omitempty"`
 }
 
 type DevicesResponse struct {
@@ -321,9 +322,11 @@ func (api *API) handleDevices(w http.ResponseWriter, r *http.Request) {
 
 		var alias string
 		var isManual bool
+		var mssClamp int
 		if d := cfg.Queue.Devices.FindByMAC(macAddr); d != nil {
 			alias = d.Name
 			isManual = d.IsManual
+			mssClamp = d.MSSClamp
 		}
 
 		seen[normalizeMAC(macAddr)] = struct{}{}
@@ -336,6 +339,7 @@ func (api *API) handleDevices(w http.ResponseWriter, r *http.Request) {
 			Alias:     alias,
 			IsManual:  isManual,
 			IsOnline:  true,
+			MSSClamp:  mssClamp,
 		})
 	}
 
@@ -367,6 +371,7 @@ func (api *API) handleDevices(w http.ResponseWriter, r *http.Request) {
 			Alias:     d.Name,
 			IsManual:  d.IsManual,
 			IsOnline:  false,
+			MSSClamp:  d.MSSClamp,
 		})
 	}
 

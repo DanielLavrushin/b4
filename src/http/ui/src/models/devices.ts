@@ -9,6 +9,7 @@ export interface DeviceInfo {
   country: string;
   is_manual?: boolean;
   is_online?: boolean;
+  mss_clamp?: number;
 }
 
 export interface DevicesResponse {

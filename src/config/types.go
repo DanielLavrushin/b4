@@ -232,16 +232,17 @@ type SNIMutationConfig struct {
 }
 
 type TargetsConfig struct {
-	SNIDomains        []string `json:"sni_domains"`
-	IPs               []string `json:"ip"`
-	GeoSiteCategories []string `json:"geosite_categories"`
-	GeoIpCategories   []string `json:"geoip_categories"`
-	SourceDevices     []string `json:"source_devices"`
-	DomainOnly        bool     `json:"domain_only"`
-	TLSVersion        string   `json:"tls"`        // "1.2", "1.3", or "" (match any)
-	IPVersion         string   `json:"ip_version"` // "4", "6", or "" (match any)
-	DomainsToMatch    []string `json:"-"`
-	IpsToMatch        []string `json:"-"`
+	SNIDomains           []string `json:"sni_domains"`
+	IPs                  []string `json:"ip"`
+	GeoSiteCategories    []string `json:"geosite_categories"`
+	GeoIpCategories      []string `json:"geoip_categories"`
+	SourceDevices        []string `json:"source_devices"`
+	SourceDevicesExclude bool     `json:"source_devices_exclude"`
+	DomainOnly           bool     `json:"domain_only"`
+	TLSVersion           string   `json:"tls"`        // "1.2", "1.3", or "" (match any)
+	IPVersion            string   `json:"ip_version"` // "4", "6", or "" (match any)
+	DomainsToMatch       []string `json:"-"`
+	IpsToMatch           []string `json:"-"`
 }
 
 type SystemConfig struct {

@@ -846,6 +846,21 @@ func TestSetMatchesSource_WithFilter(t *testing.T) {
 	}
 }
 
+func TestSetMatchesSource_Exclude(t *testing.T) {
+	s := makeSetWithSourceDevices("test", "AA:BB:CC:DD:EE:FF")
+	s.Targets.SourceDevicesExclude = true
+
+	if setMatchesSource(s, "aa:bb:cc:dd:ee:ff") {
+		t.Error("excluded MAC should not match")
+	}
+	if !setMatchesSource(s, "11:22:33:44:55:66") {
+		t.Error("non-excluded MAC should match")
+	}
+	if !setMatchesSource(s, "") {
+		t.Error("unknown source should match when filter is exclusive")
+	}
+}
+
 // --- GetCacheStats ---
 
 func TestGetCacheStats(t *testing.T) {

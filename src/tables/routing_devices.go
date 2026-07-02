@@ -54,6 +54,15 @@ func routeSetDeviceGate(cfg *config.Config, set *config.SetConfig) routeDeviceGa
 	if len(perSet) == 0 {
 		return global
 	}
+	if set.Targets.SourceDevicesExclude {
+		switch {
+		case global.isWhitelist():
+			return routeDeviceGate{enabled: true, blacklist: false, macs: subtractMACs(global.macs, perSet)}
+		case global.isBlacklist():
+			return routeDeviceGate{enabled: true, blacklist: true, macs: unionMACs(global.macs, perSet)}
+		}
+		return routeDeviceGate{enabled: true, blacklist: true, macs: perSet}
+	}
 	macs := perSet
 	switch {
 	case global.isWhitelist():
@@ -72,6 +81,24 @@ func intersectMACs(a, b []string) []string {
 	out := make([]string, 0, len(b))
 	for _, m := range b {
 		if _, ok := in[m]; ok {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func unionMACs(a, b []string) []string {
+	seen := make(map[string]struct{}, len(a)+len(b))
+	out := make([]string, 0, len(a)+len(b))
+	for _, m := range a {
+		if _, ok := seen[m]; !ok {
+			seen[m] = struct{}{}
+			out = append(out, m)
+		}
+	}
+	for _, m := range b {
+		if _, ok := seen[m]; !ok {
+			seen[m] = struct{}{}
 			out = append(out, m)
 		}
 	}

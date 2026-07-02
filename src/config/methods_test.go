@@ -585,6 +585,30 @@ func TestCollectDeviceMSSClamps(t *testing.T) {
 	})
 }
 
+func TestCollectSetMSSClamps_ExcludeSkipsMACs(t *testing.T) {
+	cfg := NewConfig()
+	set := NewSetConfig()
+	set.Id = "s1"
+	set.Enabled = true
+	set.MSSClamp.Enabled = true
+	set.MSSClamp.Size = 88
+	set.Targets.IpsToMatch = []string{"1.2.3.4"}
+	set.Targets.SourceDevices = []string{"AA:BB:CC:DD:EE:FF"}
+	set.Targets.SourceDevicesExclude = true
+	cfg.Sets = []*SetConfig{&set}
+
+	entries := cfg.CollectSetMSSClamps()
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if len(entries[0].MACs) != 0 {
+		t.Errorf("excluded source devices must not become MAC scope, got %v", entries[0].MACs)
+	}
+	if len(entries[0].IPv4) != 1 {
+		t.Errorf("expected IPv4 scope to remain, got %v", entries[0].IPv4)
+	}
+}
+
 func TestMSSClampFingerprint(t *testing.T) {
 	t.Run("stable ordering", func(t *testing.T) {
 		cfg := NewConfig()

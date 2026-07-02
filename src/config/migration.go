@@ -78,6 +78,7 @@ func migrateV50to51(c *Config, _ map[string]interface{}) error {
 	log.Tracef("Migration v50->v51: Adding per-set domain-only matching target")
 	for _, set := range c.Sets {
 		set.Targets.DomainOnly = false
+		set.Targets.SourceDevicesExclude = false
 	}
 	return nil
 }
