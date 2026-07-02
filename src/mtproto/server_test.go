@@ -214,6 +214,118 @@ func TestUntrackRemovesConn(t *testing.T) {
 	}
 }
 
+func TestBuildSecretsPolicy(t *testing.T) {
+	gen, err := GenerateSecret("x.example.com")
+	if err != nil {
+		t.Fatalf("GenerateSecret: %v", err)
+	}
+	valid := gen.Hex()
+
+	cases := []struct {
+		name           string
+		mt             config.MTProtoConfig
+		wantN          int
+		wantErr        bool
+		wantCfgSecrets int
+	}{
+		{
+			"valid enabled secret is used",
+			config.MTProtoConfig{Secrets: []config.MTProtoSecret{{ID: "a", Secret: valid, Enabled: true}}},
+			1, false, 1,
+		},
+		{
+			"all disabled is a lockout, nothing generated",
+			config.MTProtoConfig{FakeSNI: "s.example.com", Secrets: []config.MTProtoSecret{
+				{ID: "a", Secret: valid, Enabled: false},
+				{ID: "b", Secret: valid, Enabled: false},
+			}},
+			0, false, 2,
+		},
+		{
+			"all invalid is an error, nothing generated",
+			config.MTProtoConfig{FakeSNI: "s.example.com", Secrets: []config.MTProtoSecret{
+				{ID: "a", Secret: "not-hex", Enabled: true},
+			}},
+			0, true, 1,
+		},
+		{
+			"invalid legacy secret is an error, nothing generated",
+			config.MTProtoConfig{FakeSNI: "s.example.com", Secret: "junk"},
+			0, true, 0,
+		},
+		{
+			"nothing configured with fake sni generates one",
+			config.MTProtoConfig{FakeSNI: "s.example.com"},
+			1, false, 1,
+		},
+		{
+			"nothing configured without fake sni is an error",
+			config.MTProtoConfig{},
+			0, true, 0,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &config.Config{}
+			cfg.System.MTProto = tc.mt
+			secrets, err := buildSecrets(cfg)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("buildSecrets err = %v, wantErr %v", err, tc.wantErr)
+			}
+			if len(secrets) != tc.wantN {
+				t.Fatalf("buildSecrets returned %d secrets, want %d", len(secrets), tc.wantN)
+			}
+			if got := len(cfg.System.MTProto.Secrets); got != tc.wantCfgSecrets {
+				t.Fatalf("config now has %d secret entries, want %d", got, tc.wantCfgSecrets)
+			}
+		})
+	}
+}
+
+func TestDisableAllSecretsLocksOutEveryone(t *testing.T) {
+	srv, mkCfg, secA, secB := revocationTestServer(t)
+
+	connA := &closeRecordConn{}
+	connB := &closeRecordConn{}
+	srv.trackConn(secA, connA)
+	srv.trackConn(secB, connB)
+
+	srv.UpdateConfig(mkCfg(func(m *config.MTProtoConfig) {
+		m.Secrets[0].Enabled = false
+		m.Secrets[1].Enabled = false
+	}))
+
+	if !connA.closed.Load() || !connB.closed.Load() {
+		t.Fatalf("disabling all secrets left connections open: a=%v b=%v", connA.closed.Load(), connB.closed.Load())
+	}
+	ptr := srv.secrets.Load()
+	if ptr == nil || len(*ptr) != 0 {
+		t.Fatalf("expected empty live secret list after disabling all secrets")
+	}
+}
+
+func TestReloadPrunesRemovedSecretStats(t *testing.T) {
+	srv, mkCfg, secA, secB := revocationTestServer(t)
+	srv.secretStat(secA).total.Add(5)
+	srv.secretStat(secB).total.Add(7)
+
+	srv.UpdateConfig(mkCfg(func(m *config.MTProtoConfig) {
+		m.Secrets = m.Secrets[:1]
+	}))
+
+	srv.statsMu.Lock()
+	_, hasA := srv.stats["a"]
+	_, hasB := srv.stats["b"]
+	srv.statsMu.Unlock()
+	if !hasA {
+		t.Fatalf("stats for kept secret were pruned")
+	}
+	if hasB {
+		t.Fatalf("stats for removed secret were not pruned")
+	}
+}
+
 func TestMTProtoMaxConnections(t *testing.T) {
 	cases := []struct {
 		name string

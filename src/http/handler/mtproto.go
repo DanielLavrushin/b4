@@ -226,7 +226,8 @@ func (api *API) updateMTProtoConfig(w http.ResponseWriter, r *http.Request) {
 	for i := range req.Secrets {
 		s := &req.Secrets[i]
 		s.Name = sanitizeSecretName(s.Name)
-		if strings.TrimSpace(s.Secret) != "" {
+		s.Secret = strings.TrimSpace(s.Secret)
+		if s.Secret != "" {
 			if _, err := mtproto.ParseSecret(s.Secret); err != nil {
 				label := s.Name
 				if label == "" {
@@ -241,6 +242,7 @@ func (api *API) updateMTProtoConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	req.Secret = strings.TrimSpace(req.Secret)
 	if req.Secret != "" {
 		if _, err := mtproto.ParseSecret(req.Secret); err != nil {
 			writeJsonError(w, http.StatusBadRequest, "Invalid secret: "+err.Error())

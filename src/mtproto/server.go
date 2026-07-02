@@ -177,6 +177,40 @@ func (s *Server) closeRevokedConns(active []*Secret) {
 	}
 }
 
+func (s *Server) pruneStats(active []*Secret) {
+	keep := make(map[string]struct{}, len(active))
+	for _, sec := range active {
+		key := sec.ID
+		if key == "" {
+			key = sec.Label()
+		}
+		keep[key] = struct{}{}
+	}
+	s.statsMu.Lock()
+	for k := range s.stats {
+		if _, ok := keep[k]; !ok {
+			delete(s.stats, k)
+		}
+	}
+	s.statsMu.Unlock()
+}
+
+func secretHosts(secrets []*Secret) string {
+	if len(secrets) == 0 {
+		return "none"
+	}
+	seen := make(map[string]struct{}, len(secrets))
+	hosts := make([]string, 0, len(secrets))
+	for _, sec := range secrets {
+		if _, ok := seen[sec.Host]; ok {
+			continue
+		}
+		seen[sec.Host] = struct{}{}
+		hosts = append(hosts, sec.Host)
+	}
+	return strings.Join(hosts, ",")
+}
+
 func (s *Server) Stats() Stats {
 	s.mu.Lock()
 	running := s.running
@@ -238,9 +272,11 @@ func buildSecrets(cfg *config.Config) ([]*Secret, error) {
 	mtCfg := &cfg.System.MTProto
 
 	var secrets []*Secret
+	invalid := 0
 	for _, entry := range mtCfg.EffectiveSecrets() {
 		sec, err := ParseSecret(entry.Secret)
 		if err != nil {
+			invalid++
 			log.Warnf("MTProto: skipping invalid secret %q: %v", entry.Name, err)
 			continue
 		}
@@ -248,30 +284,40 @@ func buildSecrets(cfg *config.Config) ([]*Secret, error) {
 		sec.Name = entry.Name
 		secrets = append(secrets, sec)
 	}
-
-	if len(secrets) == 0 {
-		if mtCfg.FakeSNI == "" {
-			return nil, fmt.Errorf("MTProto: at least one secret or fake_sni must be configured")
-		}
-		sec, err := GenerateSecret(mtCfg.FakeSNI)
-		if err != nil {
-			return nil, fmt.Errorf("MTProto generate secret: %w", err)
-		}
-		entry := config.MTProtoSecret{ID: uuid.NewString(), Name: "default", Secret: sec.Hex(), Enabled: true}
-		sec.ID = entry.ID
-		sec.Name = entry.Name
-		mtCfg.Secrets = append(mtCfg.Secrets, entry)
-		mtCfg.Secret = sec.Hex()
-		if cfg.ConfigPath != "" {
-			if err := cfg.SaveToFile(cfg.ConfigPath); err != nil {
-				log.Warnf("MTProto: failed to persist generated secret: %v", err)
-			}
-		}
-		log.Infof("MTProto secret generated and saved")
-		secrets = append(secrets, sec)
+	if len(secrets) > 0 {
+		return secrets, nil
 	}
 
-	return secrets, nil
+	if invalid > 0 {
+		return nil, fmt.Errorf("MTProto: %d configured secret(s), none valid", invalid)
+	}
+
+	if len(mtCfg.Secrets) > 0 || strings.TrimSpace(mtCfg.Secret) != "" {
+		return nil, nil
+	}
+
+	if mtCfg.FakeSNI == "" {
+		return nil, fmt.Errorf("MTProto: at least one secret or fake_sni must be configured")
+	}
+	sec, err := GenerateSecret(mtCfg.FakeSNI)
+	if err != nil {
+		return nil, fmt.Errorf("MTProto generate secret: %w", err)
+	}
+	entry := config.MTProtoSecret{ID: uuid.NewString(), Name: "default", Secret: sec.Hex(), Enabled: true}
+	sec.ID = entry.ID
+	sec.Name = entry.Name
+	mtCfg.Secrets = append(mtCfg.Secrets, entry)
+	mtCfg.Secret = sec.Hex()
+	if cfg.ConfigPath != "" {
+		if err := cfg.SaveToFile(cfg.ConfigPath); err != nil {
+			log.Warnf("MTProto: failed to persist generated secret: %v", err)
+		} else {
+			log.Infof("MTProto secret generated and saved")
+		}
+	} else {
+		log.Infof("MTProto secret generated")
+	}
+	return []*Secret{sec}, nil
 }
 
 func (s *Server) startLocked() error {
@@ -296,9 +342,10 @@ func (s *Server) startLocked() error {
 	s.listener = ln
 	s.secrets.Store(&secrets)
 	s.closeRevokedConns(secrets)
+	s.pruneStats(secrets)
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 
-	log.Infof("MTProto proxy listening on %s (SNI: %s, secrets: %d)", addr, secrets[0].Host, len(secrets))
+	log.Infof("MTProto proxy listening on %s (SNI: %s, secrets: %d)", addr, secretHosts(secrets), len(secrets))
 
 	if mode := mtCfg.UpstreamMode; mode == "ws" || mode == "auto" || mode == "" {
 		wsResetState()
@@ -349,6 +396,7 @@ func (s *Server) reloadSecretsLocked(cfg *config.Config) {
 	}
 	s.secrets.Store(&secrets)
 	s.closeRevokedConns(secrets)
+	s.pruneStats(secrets)
 	log.Infof("MTProto secrets reloaded live (%d active) without restart", len(secrets))
 }
 

@@ -100,7 +100,7 @@ export const MTProtoActivity = ({ stats }: MTProtoActivityProps) => {
       ) : (
         secrets.map((s, i) => (
           <DataRow
-            key={s.name || i}
+            key={`${s.name}-${i}`}
             right={
               <Box
                 sx={{

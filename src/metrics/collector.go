@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -120,12 +121,16 @@ type MTProtoSecretStat struct {
 	BytesDown int64  `json:"bytes_down"`
 }
 
-var mtprotoStatsProvider func() *MTProtoStats
+var mtprotoStatsProvider atomic.Pointer[func() *MTProtoStats]
 
 // SetMTProtoStatsProvider registers a hook that GetSnapshot calls to attach
 // live MTProto proxy usage. Nil provider = no MTProto section in the snapshot.
 func SetMTProtoStatsProvider(fn func() *MTProtoStats) {
-	mtprotoStatsProvider = fn
+	if fn == nil {
+		mtprotoStatsProvider.Store(nil)
+		return
+	}
+	mtprotoStatsProvider.Store(&fn)
 }
 
 var (
@@ -599,8 +604,8 @@ func (m *MetricsCollector) GetSnapshot() *MetricsCollector {
 	snapshot.PacketRate = smoothTimeSeriesData(m.PacketRate, 3)
 	snapshot.BytesRate = smoothTimeSeriesData(m.BytesRate, 3)
 
-	if mtprotoStatsProvider != nil {
-		snapshot.MTProto = mtprotoStatsProvider()
+	if fn := mtprotoStatsProvider.Load(); fn != nil {
+		snapshot.MTProto = (*fn)()
 	}
 	return snapshot
 }

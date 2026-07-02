@@ -24,10 +24,10 @@ func (s *Secret) Label() string {
 	if s.Name != "" {
 		return s.Name
 	}
-	if s.ID != "" && s.ID != "legacy" {
+	if s.ID != "" {
 		return s.ID
 	}
-	return hex.EncodeToString(s.Key[:4])
+	return "unnamed"
 }
 
 func ParseSecret(s string) (*Secret, error) {

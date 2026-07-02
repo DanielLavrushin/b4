@@ -67,13 +67,18 @@ export const MTProtoSecrets = ({
 
   const fetchSecret = async (): Promise<string> => {
     const sni = config.system.mtproto?.fake_sni || "storage.googleapis.com";
-    const res = await fetch("/api/mtproto/generate-secret", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fake_sni: sni }),
-    });
-    const data = (await res.json()) as { success: boolean; secret?: string };
-    return data.success && data.secret ? data.secret : "";
+    try {
+      const res = await fetch("/api/mtproto/generate-secret", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fake_sni: sni }),
+      });
+      if (!res.ok) return "";
+      const data = (await res.json()) as { success: boolean; secret?: string };
+      return data.success && data.secret ? data.secret : "";
+    } catch {
+      return "";
+    }
   };
 
   const add = async () => {
