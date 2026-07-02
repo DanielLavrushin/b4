@@ -21,13 +21,23 @@ func (s *Secret) Label() string {
 	if s == nil {
 		return ""
 	}
-	if s.Name != "" {
-		return s.Name
+	if l := sanitizeLabel(s.Name); l != "" {
+		return l
 	}
-	if s.ID != "" {
-		return s.ID
+	if l := sanitizeLabel(s.ID); l != "" {
+		return l
 	}
 	return "unnamed"
+}
+
+func sanitizeLabel(v string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, v)
+	return strings.TrimSpace(cleaned)
 }
 
 func ParseSecret(s string) (*Secret, error) {

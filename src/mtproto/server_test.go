@@ -326,6 +326,49 @@ func TestReloadPrunesRemovedSecretStats(t *testing.T) {
 	}
 }
 
+func TestMTProtoConnMetaSanitizesControls(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"empty", "", "mtproto"},
+		{"plain name", "Ivan", "mtproto:Ivan"},
+		{"comma and newline", "Ivan,\nsecret", "mtproto:Ivan  secret"},
+		{"escape and del", "\x1b[2JIvan\x7f", "mtproto:[2JIvan"},
+		{"only controls", "\x00\x1b\x07", "mtproto"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := mtprotoConnMeta(tc.in); got != tc.want {
+				t.Fatalf("mtprotoConnMeta(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSecretLabelSanitized(t *testing.T) {
+	cases := []struct {
+		name string
+		sec  *Secret
+		want string
+	}{
+		{"nil secret", nil, ""},
+		{"plain name", &Secret{Name: "Max"}, "Max"},
+		{"name with controls", &Secret{Name: "M\x1bax\n"}, "M ax"},
+		{"control-only name falls back to id", &Secret{Name: "\x1b\x00", ID: "abc"}, "abc"},
+		{"legacy id", &Secret{ID: "legacy"}, "legacy"},
+		{"nothing set", &Secret{}, "unnamed"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.sec.Label(); got != tc.want {
+				t.Fatalf("Label() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestMTProtoMaxConnections(t *testing.T) {
 	cases := []struct {
 		name string

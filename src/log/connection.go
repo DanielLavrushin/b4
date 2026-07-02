@@ -140,7 +140,21 @@ func formatConnectionHuman(protocol, sniSet, domain, source, ipSet, destination,
 	return b.String()
 }
 
+func sanitizeConnField(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == ',' || r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, s)
+}
+
 func emitConnection(protocol, sniSet, domain, source, ipSet, destination, srcMac, tlsVersion, metadata string) {
+	sniSet = sanitizeConnField(sniSet)
+	domain = sanitizeConnField(domain)
+	ipSet = sanitizeConnField(ipSet)
+	srcMac = sanitizeConnField(srcMac)
+	metadata = sanitizeConnField(metadata)
 	csv := formatConnectionCSV(protocol, sniSet, domain, source, ipSet, destination, srcMac, tlsVersion, metadata)
 	GetConnectionHub().Broadcast(time.Now().Format(connectionTimestampLayout) + "," + csv)
 
