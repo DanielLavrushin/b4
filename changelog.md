@@ -1,9 +1,11 @@
 # B4 - Bye Bye Big Bro
 
-## [1.7x.x] - 2026-07-xx
+## [1.72.0] - 2026-07-02
 
 - ADDED: **A separate MTProto secret for each person** - the MTProto proxy can now hold several named secrets instead of one shared code. Each one can be named (for example, per person), switched on or off on its own, and shared as its own link or QR code, so access can be given or taken away one person at a time.
 - ADDED: **See who is using the MTProto proxy** - the Traffic page now labels each proxy connection with the secret it used, and a new dashboard panel shows active connections, total sessions, and data used for each named secret.
+- ADDED: **A set can now apply to every device except chosen ones** - in a set's Source Devices there is a new switch, "All devices except selected". With it on, the set applies to traffic from all devices except the ticked ones, instead of only to the ticked ones - handy when one device (say, a work laptop) should be left alone.
+- CHANGED: **The set's device list shows each device's MSS value** - if a device has an MSS limit set under Settings → Device Filtering, the set's Source Devices table now shows it next to the device, so there is no need to switch pages to check.
 - ADDED: **Match a set by domain only, without learning its IPs** - a per-set "Domain-only matching" switch under the set's Targets. With it on, b4 decides the set purely from the domain or SNI it can see and does not remember or route the IP addresses behind those domains. It is meant for shared CDN addresses (YouTube, Google): a video domain and an unrelated one such as preview images can share a single IP, so the address b4 learned for the first one pulled the second onto the wrong bypass strategy.
 - FIXED: **Memory use jumped after saving settings** - saving the configuration made b4's memory use climb, even for changes that had nothing to do with the blocked-site lists.
 - FIXED: **A routing set could stop adding new addresses on some routers** - on certain setups (for example b4 in a container on MikroTik) the router rejected freshly discovered addresses, so a set routed through a chosen interface, proxy, or the Telegram bridge slowly stopped working. Those addresses are now stored in a form the router accepts. [#267](https://github.com/DanielLavrushin/b4/issues/267)

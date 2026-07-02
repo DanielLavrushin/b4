@@ -61,7 +61,7 @@ func (b *routeNftBackend) ensureIPSet(name string, v6 bool) error {
 
 	dyn := routeNftDynSet(name)
 	dout, derr := run("nft", "list", "set", "inet", routeNftTable, dyn)
-	if derr == nil && dout != "" && (strings.Contains(dout, "interval") || strings.Contains(dout, "auto-merge")) {
+	if derr == nil && dout != "" && (!strings.Contains(dout, "timeout") || strings.Contains(dout, "interval") || strings.Contains(dout, "auto-merge")) {
 		runLogged("routing: recreate set "+dyn, "nft", "flush", "set", "inet", routeNftTable, dyn)
 		runLogged("routing: delete old set "+dyn, "nft", "delete", "set", "inet", routeNftTable, dyn)
 	}

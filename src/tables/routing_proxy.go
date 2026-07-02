@@ -307,7 +307,13 @@ func proxyActiveCount() int {
 func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState, sources []string) error {
 	if be.name() == backendNFTables {
 		proxyNftPreflight()
+		deleteNftRulesContaining(routeNftOutput, "@"+st.setV4)
+		deleteNftRulesContaining(routeNftOutput, "@"+st.setV6)
 	}
+	if err := be.ensureChain(st.chainPre, true); err != nil {
+		return err
+	}
+	be.flushChain(st.chainPre, true)
 	if cfg.Queue.IPv4Enabled {
 		if err := be.ensureIPSet(st.setV4, false); err != nil {
 			return err
@@ -318,10 +324,6 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 			return err
 		}
 	}
-	if err := be.ensureChain(st.chainPre, true); err != nil {
-		return err
-	}
-	be.flushChain(st.chainPre, true)
 
 	queueMark := routeQueueBypassMark(cfg)
 	gate := routeSetDeviceGate(cfg, set)
