@@ -188,7 +188,8 @@ func (api *API) handleMTProtoConfig(w http.ResponseWriter, r *http.Request) {
 // @Router /mtproto/config [post]
 // sanitizeSecretName strips control characters (newlines, CR, tab, other C0
 // controls and DEL) from a user-provided secret name so it cannot corrupt the
-// one-line CSV connection log or the plain log lines it appears in.
+// plain log lines it appears in. Commas are legal in names; the connection-log
+// emitter sanitizes every CSV field on write (log.emitConnection).
 func sanitizeSecretName(name string) string {
 	cleaned := strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f {
