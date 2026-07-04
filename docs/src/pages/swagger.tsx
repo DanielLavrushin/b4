@@ -25,19 +25,74 @@ function buildSwaggerHtml(specUrl: string, server: string): string {
   <div id="swagger-ui"></div>
   <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
   <script>
+    const API_BASE = ${JSON.stringify(server)};
+    let tokenCache = { key: "", token: "" };
+
+    async function ensureBearer(req) {
+      const auth = req.headers && req.headers.Authorization;
+      if (!auth) return req;
+      if (/^Bearer\\s/i.test(auth)) return req;
+      if (/^Basic\\s/i.test(auth)) {
+        const b64 = auth.replace(/^Basic\\s+/i, "");
+        let decoded = "";
+        try { decoded = atob(b64); } catch (e) { return req; }
+        const idx = decoded.indexOf(":");
+        const username = idx >= 0 ? decoded.slice(0, idx) : decoded;
+        const password = idx >= 0 ? decoded.slice(idx + 1) : "";
+        if (tokenCache.key === b64 && tokenCache.token) {
+          req.headers.Authorization = "Bearer " + tokenCache.token;
+          return req;
+        }
+        if (!API_BASE) { delete req.headers.Authorization; return req; }
+        try {
+          const resp = await fetch(API_BASE.replace(/\\/$/, "") + "/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, password }),
+          });
+          const data = await resp.json().catch(() => ({}));
+          if (resp.ok && data && data.token) {
+            tokenCache = { key: b64, token: data.token };
+            req.headers.Authorization = "Bearer " + data.token;
+          } else {
+            delete req.headers.Authorization;
+          }
+        } catch (e) {
+          delete req.headers.Authorization;
+        }
+        return req;
+      }
+      req.headers.Authorization = "Bearer " + auth;
+      return req;
+    }
+
     fetch(${JSON.stringify(specUrl)})
       .then(r => r.json())
       .then(spec => {${serverScript}
+        spec.securityDefinitions = spec.securityDefinitions || {};
+        spec.securityDefinitions.BasicAuth = {
+          type: "basic",
+          description: "Enter your b4 web UI username and password",
+        };
+        if (spec.paths) {
+          Object.keys(spec.paths).forEach(function (p) {
+            const item = spec.paths[p];
+            Object.keys(item).forEach(function (m) {
+              const op = item[m];
+              if (op && Array.isArray(op.security)) {
+                const hasBearer = op.security.some(function (s) { return s && s.BearerAuth; });
+                const hasBasic = op.security.some(function (s) { return s && s.BasicAuth; });
+                if (hasBearer && !hasBasic) {
+                  op.security.push({ BasicAuth: [] });
+                }
+              }
+            });
+          });
+        }
         SwaggerUIBundle({
           spec,
           dom_id: "#swagger-ui",
-          requestInterceptor: (req) => {
-            const auth = req.headers && req.headers.Authorization;
-            if (auth && !/^Bearer\\s/i.test(auth)) {
-              req.headers.Authorization = "Bearer " + auth;
-            }
-            return req;
-          },
+          requestInterceptor: ensureBearer,
         });
       });
   </script>
