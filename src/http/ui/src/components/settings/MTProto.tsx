@@ -260,7 +260,7 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
         />
         <B4NumberField
           label={t("settings.MTProto.tcpUserTimeout")}
-          value={config.system.mtproto?.tcp_user_timeout_sec ?? 120}
+          value={config.system.mtproto?.tcp_user_timeout_sec || 120}
           onChange={(n) => onChange("system.mtproto.tcp_user_timeout_sec", n)}
           min={-1}
           max={86400}
@@ -269,7 +269,7 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
         />
         <B4NumberField
           label={t("settings.MTProto.idleTimeout")}
-          value={config.system.mtproto?.idle_timeout_sec ?? 300}
+          value={config.system.mtproto?.idle_timeout_sec || 300}
           onChange={(n) => onChange("system.mtproto.idle_timeout_sec", n)}
           min={-1}
           max={86400}
