@@ -87,7 +87,7 @@ func TestRelayIdleReaperClosesSilentSession(t *testing.T) {
 	done := make(chan struct{})
 	start := time.Now()
 	go func() {
-		relayConns(clientA, dcA, nil, "idle-test", pool, 300*time.Millisecond)
+		relayConns(clientA, dcA, nil, "idle-test", pool, 300*time.Millisecond, nil)
 		close(done)
 	}()
 
@@ -110,7 +110,7 @@ func TestRelayIdleReaperDisabled(t *testing.T) {
 	pool := testRelayPool()
 	done := make(chan struct{})
 	go func() {
-		relayConns(clientA, dcA, nil, "no-idle-test", pool, 0)
+		relayConns(clientA, dcA, nil, "no-idle-test", pool, 0, nil)
 		close(done)
 	}()
 

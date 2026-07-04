@@ -165,7 +165,7 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 	if _, isWS := dcConn.Conn.(*wsConn); isWS {
 		splitter = newMsgSplitter(res.ProtoTag)
 	}
-	relayConns(res.Conn, dcConn, splitter, label, &b.bufPool, mtprotoIdleTimeout(cfg))
+	relayConns(res.Conn, dcConn, splitter, label, &b.bufPool, mtprotoIdleTimeout(cfg), nil)
 	return true, nil
 }
 
@@ -194,7 +194,7 @@ func (b *TransparentBridge) FailOpenViaWorker(client net.Conn, origIP net.IP, or
 		}
 		log.Infof("%s failopen relay %s:%d via wsworker://%s", tag, dst, origPort, wd)
 		label := fmt.Sprintf("%s %s<->%s:%d(failopen)", tag, client.RemoteAddr(), dst, origPort)
-		relayConns(client, wc, nil, label, &b.bufPool, mtprotoIdleTimeout(cfg))
+		relayConns(client, wc, nil, label, &b.bufPool, mtprotoIdleTimeout(cfg), nil)
 		return true
 	}
 	return false

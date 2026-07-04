@@ -4,18 +4,27 @@ import (
 	"net"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 )
 
 type closeRecordConn struct {
 	net.Conn
-	closed atomic.Bool
+	closed     atomic.Bool
+	remoteAddr net.Addr
 }
 
 func (c *closeRecordConn) Close() error {
 	c.closed.Store(true)
 	return nil
+}
+
+func (c *closeRecordConn) RemoteAddr() net.Addr {
+	if c.remoteAddr != nil {
+		return c.remoteAddr
+	}
+	return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12345}
 }
 
 func mtprotoCfg(mut func(*config.MTProtoConfig)) *config.Config {
@@ -205,12 +214,97 @@ func TestUntrackRemovesConn(t *testing.T) {
 	srv, _, secA, _ := revocationTestServer(t)
 
 	connA := &closeRecordConn{}
-	untrack := srv.trackConn(secA, connA)
+	_, untrack := srv.trackConn(secA, connA)
 	untrack()
 
 	srv.closeRevokedConns(nil)
 	if connA.closed.Load() {
 		t.Fatalf("untracked connection was closed by sweep")
+	}
+}
+
+func TestSessionsReportsTrackedConns(t *testing.T) {
+	srv, _, secA, secB := revocationTestServer(t)
+
+	if s := srv.Sessions(); len(s) != 0 {
+		t.Fatalf("expected no sessions before any conn, got %d", len(s))
+	}
+
+	connA1 := &closeRecordConn{remoteAddr: &net.TCPAddr{IP: net.ParseIP("85.233.150.240"), Port: 42378}}
+	connA2 := &closeRecordConn{remoteAddr: &net.TCPAddr{IP: net.ParseIP("178.130.140.98"), Port: 55120}}
+	connB := &closeRecordConn{remoteAddr: &net.TCPAddr{IP: net.ParseIP("10.0.0.1"), Port: 5000}}
+
+	infoA1, _ := srv.trackConn(secA, connA1)
+	srv.trackConn(secA, connA2)
+	_, untrackB := srv.trackConn(secB, connB)
+
+	dest := "149.154.167.220:443"
+	infoA1.dest.Store(&dest)
+
+	sessions := srv.Sessions()
+	if len(sessions) != 3 {
+		t.Fatalf("expected 3 sessions, got %d", len(sessions))
+	}
+
+	byPort := make(map[int]SessionInfo, len(sessions))
+	for _, s := range sessions {
+		byPort[s.ClientPort] = s
+	}
+
+	a1, ok := byPort[42378]
+	if !ok {
+		t.Fatalf("session for client port 42378 missing")
+	}
+	if a1.ID != "a" || a1.Name != "Max" {
+		t.Fatalf("unexpected secret identity: id=%q name=%q", a1.ID, a1.Name)
+	}
+	if a1.ClientIP != "85.233.150.240" {
+		t.Fatalf("unexpected client ip: %q", a1.ClientIP)
+	}
+	if a1.Destination != dest {
+		t.Fatalf("destination = %q, want %q", a1.Destination, dest)
+	}
+	if a1.ConnectedAt.IsZero() {
+		t.Fatalf("connected_at not set")
+	}
+	if a1.LastSeen.Before(a1.ConnectedAt) {
+		t.Fatalf("last_seen %v before connected_at %v", a1.LastSeen, a1.ConnectedAt)
+	}
+
+	if a2, ok := byPort[55120]; !ok {
+		t.Fatalf("second connection for secret a missing")
+	} else if a2.Destination != "" {
+		t.Fatalf("expected empty destination before dial, got %q", a2.Destination)
+	}
+
+	untrackB()
+	sessions = srv.Sessions()
+	if len(sessions) != 2 {
+		t.Fatalf("expected 2 sessions after untracking secret b, got %d", len(sessions))
+	}
+	for _, s := range sessions {
+		if s.ID == "b" {
+			t.Fatalf("untracked secret b still reported in sessions")
+		}
+	}
+}
+
+func TestSessionsLastSeenFollowsActivity(t *testing.T) {
+	srv, _, secA, _ := revocationTestServer(t)
+
+	connA := &closeRecordConn{}
+	infoA, _ := srv.trackConn(secA, connA)
+
+	before := srv.Sessions()[0].LastSeen
+	advanced := infoA.connectedAt.Add(30 * time.Second)
+	infoA.lastActive.Store(advanced.UnixNano())
+
+	got := srv.Sessions()[0].LastSeen
+	if !got.After(before) {
+		t.Fatalf("last_seen did not advance: before=%v after=%v", before, got)
+	}
+	if !got.Equal(advanced) {
+		t.Fatalf("last_seen = %v, want %v", got, advanced)
 	}
 }
 

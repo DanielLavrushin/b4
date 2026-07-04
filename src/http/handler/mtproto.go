@@ -5,8 +5,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
@@ -19,6 +21,121 @@ func (api *API) RegisterMTProtoApi() {
 	api.mux.HandleFunc("/api/mtproto/config", api.handleMTProtoConfig)
 	api.mux.HandleFunc("/api/mtproto/refresh-dcs", api.handleMTProtoRefreshDCs)
 	api.mux.HandleFunc("/api/mtproto/test-ws", api.handleMTProtoTestWS)
+	api.mux.HandleFunc("/api/mtproto/sessions", api.handleMTProtoSessions)
+	api.mux.HandleFunc("/api/mtproto/active-clients", api.handleMTProtoActiveClients)
+}
+
+func mtprotoSessions() []mtproto.SessionInfo {
+	if p, ok := globalMTProtoServer.(interface {
+		Sessions() []mtproto.SessionInfo
+	}); ok {
+		return p.Sessions()
+	}
+	return nil
+}
+
+// @Summary List active MTProto sessions
+// @Description One entry per live client connection, including client IP/port, upstream destination and activity timestamps.
+// @Tags MTProto
+// @Produce json
+// @Success 200 {array} object
+// @Security BearerAuth
+// @Router /mtproto/sessions [get]
+func (api *API) handleMTProtoSessions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	type sessionOut struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		ClientIP    string `json:"client_ip"`
+		ClientPort  int    `json:"client_port"`
+		Destination string `json:"destination"`
+		ConnectedAt string `json:"connected_at"`
+		LastSeen    string `json:"last_seen"`
+	}
+	sessions := mtprotoSessions()
+	out := make([]sessionOut, 0, len(sessions))
+	for _, s := range sessions {
+		out = append(out, sessionOut{
+			ID:          s.ID,
+			Name:        s.Name,
+			ClientIP:    s.ClientIP,
+			ClientPort:  s.ClientPort,
+			Destination: s.Destination,
+			ConnectedAt: s.ConnectedAt.UTC().Format(time.RFC3339),
+			LastSeen:    s.LastSeen.UTC().Format(time.RFC3339),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ConnectedAt < out[j].ConnectedAt
+	})
+	sendResponse(w, out)
+}
+
+// @Summary List active MTProto clients per secret
+// @Description Aggregated per-secret view: active connection count, the distinct client IPs currently using each secret, and last activity.
+// @Tags MTProto
+// @Produce json
+// @Success 200 {array} object
+// @Security BearerAuth
+// @Router /mtproto/active-clients [get]
+func (api *API) handleMTProtoActiveClients(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	type clientOut struct {
+		ID                string   `json:"id"`
+		Name              string   `json:"name"`
+		ActiveConnections int      `json:"active_connections"`
+		ActiveIPs         []string `json:"active_ips"`
+		ActiveIPCount     int      `json:"active_ip_count"`
+		LastSeen          string   `json:"last_seen"`
+	}
+
+	type agg struct {
+		out      clientOut
+		ips      []string
+		seenIP   map[string]struct{}
+		lastSeen time.Time
+	}
+	order := make([]string, 0)
+	byID := make(map[string]*agg)
+
+	for _, s := range mtprotoSessions() {
+		a := byID[s.ID]
+		if a == nil {
+			a = &agg{
+				out:    clientOut{ID: s.ID, Name: s.Name, ActiveIPs: []string{}},
+				seenIP: make(map[string]struct{}),
+			}
+			byID[s.ID] = a
+			order = append(order, s.ID)
+		}
+		a.out.ActiveConnections++
+		if s.ClientIP != "" {
+			if _, ok := a.seenIP[s.ClientIP]; !ok {
+				a.seenIP[s.ClientIP] = struct{}{}
+				a.ips = append(a.ips, s.ClientIP)
+			}
+		}
+		if s.LastSeen.After(a.lastSeen) {
+			a.lastSeen = s.LastSeen
+		}
+	}
+
+	out := make([]clientOut, 0, len(order))
+	for _, id := range order {
+		a := byID[id]
+		sort.Strings(a.ips)
+		a.out.ActiveIPs = a.ips
+		a.out.ActiveIPCount = len(a.ips)
+		a.out.LastSeen = a.lastSeen.UTC().Format(time.RFC3339)
+		out = append(out, a.out)
+	}
+	sendResponse(w, out)
 }
 
 // @Summary Probe MTProto upstream transports

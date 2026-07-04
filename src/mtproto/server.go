@@ -116,9 +116,29 @@ func (s *Server) secretStat(sec *Secret) *secretStat {
 	return st
 }
 
+type connInfo struct {
+	secretID    string
+	secretName  string
+	clientIP    string
+	clientPort  int
+	connectedAt time.Time
+	dest        atomic.Pointer[string]
+	lastActive  atomic.Int64
+}
+
 type secretConnSet struct {
 	label string
-	conns map[net.Conn]struct{}
+	conns map[net.Conn]*connInfo
+}
+
+type SessionInfo struct {
+	ID          string
+	Name        string
+	ClientIP    string
+	ClientPort  int
+	Destination string
+	ConnectedAt time.Time
+	LastSeen    time.Time
 }
 
 func secretIdentity(sec *Secret) string {
@@ -129,20 +149,33 @@ func secretIdentity(sec *Secret) string {
 	return key + "|" + sec.Hex()
 }
 
-func (s *Server) trackConn(sec *Secret, c net.Conn) func() {
+func (s *Server) trackConn(sec *Secret, c net.Conn) (*connInfo, func()) {
 	id := secretIdentity(sec)
+	info := &connInfo{
+		secretID:    sec.ID,
+		secretName:  sec.Label(),
+		connectedAt: time.Now(),
+	}
+	if host, port, err := net.SplitHostPort(c.RemoteAddr().String()); err == nil {
+		info.clientIP = host
+		if p, err := strconv.Atoi(port); err == nil {
+			info.clientPort = p
+		}
+	}
+	info.lastActive.Store(info.connectedAt.UnixNano())
+
 	s.connsMu.Lock()
 	if s.conns == nil {
 		s.conns = make(map[string]*secretConnSet)
 	}
 	set := s.conns[id]
 	if set == nil {
-		set = &secretConnSet{label: sec.Label(), conns: make(map[net.Conn]struct{})}
+		set = &secretConnSet{label: sec.Label(), conns: make(map[net.Conn]*connInfo)}
 		s.conns[id] = set
 	}
-	set.conns[c] = struct{}{}
+	set.conns[c] = info
 	s.connsMu.Unlock()
-	return func() {
+	return info, func() {
 		s.connsMu.Lock()
 		if set := s.conns[id]; set != nil {
 			delete(set.conns, c)
@@ -152,6 +185,29 @@ func (s *Server) trackConn(sec *Secret, c net.Conn) func() {
 		}
 		s.connsMu.Unlock()
 	}
+}
+
+func (s *Server) Sessions() []SessionInfo {
+	s.connsMu.Lock()
+	defer s.connsMu.Unlock()
+	out := make([]SessionInfo, 0, len(s.conns))
+	for _, set := range s.conns {
+		for _, info := range set.conns {
+			si := SessionInfo{
+				ID:          info.secretID,
+				Name:        info.secretName,
+				ClientIP:    info.clientIP,
+				ClientPort:  info.clientPort,
+				ConnectedAt: info.connectedAt,
+				LastSeen:    time.Unix(0, info.lastActive.Load()),
+			}
+			if d := info.dest.Load(); d != nil {
+				si.Destination = *d
+			}
+			out = append(out, si)
+		}
+	}
+	return out
 }
 
 func (s *Server) secretActive(sec *Secret) bool {
@@ -576,7 +632,7 @@ func (s *Server) handleConn(raw net.Conn) {
 	user := secret.Label()
 	log.Debugf("%s proxy fake-TLS handshake OK from %s (secret=%s)", tag, clientAddr, user)
 
-	untrack := s.trackConn(secret, raw)
+	info, untrack := s.trackConn(secret, raw)
 	defer untrack()
 	if !s.secretActive(secret) {
 		log.Infof("%s proxy secret %q revoked, dropping connection from %s", tag, user, clientAddr)
@@ -608,6 +664,7 @@ func (s *Server) handleConn(raw net.Conn) {
 	if ra := dcConn.RemoteAddr(); ra != nil {
 		dcAddr = ra.String()
 	}
+	info.dest.Store(&dcAddr)
 	log.LogConnectionStr("TCP", "", secret.Host, clientAddr, "", dcAddr, "", "", mtprotoConnMeta(user))
 
 	st := s.secretStat(secret)
@@ -619,16 +676,16 @@ func (s *Server) handleConn(raw net.Conn) {
 	if _, ok := dcConn.Conn.(*wsConn); ok {
 		splitter = newMsgSplitter(result.ProtoTag)
 	}
-	up, down := s.relay(result.Conn, dcConn, splitter, fmt.Sprintf("%s [%s] %s<->DC%d via %s", tag, user, clientAddr, result.DC, transport))
+	up, down := s.relay(result.Conn, dcConn, splitter, &info.lastActive, fmt.Sprintf("%s [%s] %s<->DC%d via %s", tag, user, clientAddr, result.DC, transport))
 	st.up.Add(up)
 	st.down.Add(down)
 }
 
-func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string) (up, down int64) {
-	return relayConns(client, dc, splitter, label, &s.bufPool, mtprotoIdleTimeout(s.cfg.Load()))
+func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, lastActive *atomic.Int64, label string) (up, down int64) {
+	return relayConns(client, dc, splitter, label, &s.bufPool, mtprotoIdleTimeout(s.cfg.Load()), lastActive)
 }
 
-func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string, bufPool *sync.Pool, idle time.Duration) (int64, int64) {
+func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string, bufPool *sync.Pool, idle time.Duration, lastActive *atomic.Int64) (int64, int64) {
 	type relayEnd struct {
 		dir string
 		err error
@@ -636,7 +693,9 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 	endCh := make(chan relayEnd, 2)
 	start := time.Now()
 	var upBytes, downBytes atomic.Int64
-	var lastActive atomic.Int64
+	if lastActive == nil {
+		lastActive = new(atomic.Int64)
+	}
 	lastActive.Store(start.UnixNano())
 
 	cp := func(dst io.Writer, src io.Reader, dir string, counter *atomic.Int64) {
