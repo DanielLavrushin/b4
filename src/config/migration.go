@@ -8,79 +8,25 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/google/uuid"
 )
 
 type MigrationFunc func(*Config, map[string]interface{}) error
 
-var (
-	CurrentConfigVersion = len(migrationRegistry)
+const (
+	CurrentConfigVersion = 51
 	MinSupportedVersion  = 0
 )
 
 var migrationRegistry = map[int]MigrationFunc{
-	0:  migrateV0to1, // Add enabled field to sets
-	1:  migrateV1to2,
-	2:  migrateV2to3,
-	3:  migrateV3to4,
-	4:  migrateV4to5,
-	5:  migrateV5to6,
-	6:  migrateV6to7, // Add TCP syn TTL and drop SACK settings
-	7:  migrateV7to8, // Add DNS redirect settings
-	8:  migrateV8to9,
-	9:  migrateV9to10,
-	10: migrateV10to11,
-	11: migrateV11to12,
-	12: migrateV12to13,
-	13: migrateV13to14,
-	14: migrateV14to15, // Flatten TCP desync settings into nested struct
-	15: migrateV15to16, // Add TCP Incoming config
-	16: migrateV16to17,
-	17: migrateV17to18, // Add TCP packet duplication config
-	18: migrateV18to19, // Add TLS certificate/key to web server config
-	19: migrateV19to20, // Add vendor lookup option to devices config
-	20: migrateV20to21, // Add SOCKS5 proxy server config
-	21: migrateV21to22, // Add NAT masquerade config
-	22: migrateV22to23, // Add TCP MSS clamping config
-	23: migrateV23to24, // Add multidisorder (fake per segment) and new payload types
-	24: migrateV24to25, // Remove main set, move ConnBytesLimit to queue config
-	25: migrateV25to26, // Add TLS version filter to targets
-	26: migrateV26to27, // Add tables engine config
-	27: migrateV27to28, // Add per-set routing config
-	28: migrateV28to29, // Add position ranges and strategy pool
-	29: migrateV29to30, // Add MTProto proxy config
-	30: migrateV30to31, // Add TCP IP block detection config
-	31: migrateV31to32, // Add watchdog config
-	32: migrateV32to33, // Add TCP RST protection config
-	33: migrateV33to34, // Add manual devices to device config
-	34: migrateV34to35, // Add routing mode and upstream proxy config
-	35: migrateV35to36, // Add fragmentation seq overlap length
-	36: migrateV36to37, // Add UDP fake_payload_file field
-	37: migrateV37to38, // Add MTProto upstream transport (WS) fields
-	38: migrateV38to39, // Add system.memory_limit
-	39: migrateV39to40, // Add geo auto_update config
-	40: migrateV40to41, // Add MTProto CF-proxy fallback config
-	41: migrateV41to42, // Add MTProto CF Worker domain config
-	42: migrateV42to43, // Add per-set routing block action
-	43: migrateV43to44, // Add MTProto DC-list fallback source config
-	44: migrateV44to45, // Add per-set DNS-over-HTTPS redirect target
-	45: migrateV45to46, // Replace logging.error_file with logging.directory
-	46: migrateV46to47, // Drop the hardcoded legacy MTProto WS endpoint host (empty now falls back to it)
-	47: migrateV47to48, // Add TUN engine mode and config
-	48: migrateV48to49, // Convert masquerade to nested config (multi-interface)
-	49: migrateV49to50, // Move the single MTProto secret into the secrets list
-	50: migrateV50to51, // Add per-set domain-only matching target
-}
-
-func migrateV50to51(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v50->v51: Adding per-set domain-only matching target")
-	for _, set := range c.Sets {
-		set.Targets.DomainOnly = false
-		set.Targets.SourceDevicesExclude = false
-	}
-	return nil
+	14: migrateV14to15,
+	24: migrateV24to25,
+	33: migrateV33to34,
+	45: migrateV45to46,
+	46: migrateV46to47,
+	48: migrateV48to49,
+	49: migrateV49to50,
 }
 
 func migrateV49to50(c *Config, raw map[string]interface{}) error {
@@ -113,13 +59,6 @@ func migrateV48to49(c *Config, raw map[string]interface{}) error {
 	return nil
 }
 
-func migrateV47to48(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v47->v48: Adding TUN engine mode and config")
-	c.Queue.Mode = DefaultConfig.Queue.Mode
-	c.Queue.TUN = DefaultConfig.Queue.TUN
-	return nil
-}
-
 func migrateV46to47(c *Config, _ map[string]interface{}) error {
 	log.Tracef("Migration v46->v47: Dropping hardcoded legacy MTProto WS endpoint host (empty falls back to the same edge)")
 	if c.System.MTProto.WSEndpointHost == TGWSEndpointHost {
@@ -145,93 +84,6 @@ func migrateV45to46(c *Config, raw map[string]interface{}) error {
 		c.System.Logging.Directory = ""
 	} else {
 		c.System.Logging.Directory = filepath.Dir(oldPath)
-	}
-	return nil
-}
-
-func migrateV44to45(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v44->v45: Adding per-set DNS-over-HTTPS redirect target")
-	for _, set := range c.Sets {
-		set.DNS.DoHURL = DefaultSetConfig.DNS.DoHURL
-	}
-	return nil
-}
-
-func migrateV43to44(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v43->v44: Adding MTProto DC-list fallback source config")
-	c.System.MTProto.DCFallbackEnabled = true
-	c.System.MTProto.DCFallbackURL = DefaultConfig.System.MTProto.DCFallbackURL
-	return nil
-}
-
-func migrateV42to43(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v42->v43: Adding per-set routing block action")
-	for _, set := range c.Sets {
-		if set.Routing.BlockAction == "" {
-			set.Routing.BlockAction = DefaultSetConfig.Routing.BlockAction
-		}
-	}
-	return nil
-}
-
-func migrateV41to42(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v41->v42: Adding MTProto CF Worker domain config")
-	c.System.MTProto.CFWorkerDomain = ""
-	return nil
-}
-
-func migrateV40to41(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v40->v41: Adding MTProto CF-proxy fallback config")
-	c.System.MTProto.CFProxyEnabled = true
-	c.System.MTProto.CFProxyURL = DefaultConfig.System.MTProto.CFProxyURL
-	return nil
-}
-
-func migrateV39to40(c *Config, _ map[string]interface{}) error {
-	c.System.Geo.AutoUpdate = geodat.GeoAutoUpdateConfig{}
-	for _, set := range c.Sets {
-		set.MSSClamp = MSSClampConfig{}
-	}
-	return nil
-}
-
-func migrateV38to39(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v38->v39: Adding system.memory_limit")
-	c.System.MemoryLimit = DefaultConfig.System.MemoryLimit
-	return nil
-}
-
-func migrateV37to38(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v37->v38: Adding MTProto upstream transport (WS) fields")
-	c.System.MTProto.UpstreamMode = "auto"
-	c.System.MTProto.WSCustomDomain = ""
-	c.System.MTProto.WSEndpointHost = "149.154.167.220"
-	return nil
-}
-
-func migrateV36to37(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v36->v37: Adding UDP fake_payload_file field")
-	for _, set := range c.Sets {
-		set.UDP.FakePayloadFile = DefaultSetConfig.UDP.FakePayloadFile
-	}
-	return nil
-}
-
-func migrateV35to36(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v35->v36: Adding fragmentation seq overlap length")
-	for _, set := range c.Sets {
-		set.Fragmentation.SeqOverlapLength = DefaultSetConfig.Fragmentation.SeqOverlapLength
-	}
-	return nil
-}
-
-func migrateV34to35(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v34->v35: Adding routing mode and upstream proxy config")
-	for _, set := range c.Sets {
-		if set.Routing.Mode == "" {
-			set.Routing.Mode = RoutingModeInterface
-		}
-		set.Routing.Upstream.UseDomain = true
 	}
 	return nil
 }
@@ -359,74 +211,6 @@ func loadAliasesForMigration(configPath string) map[string]string {
 	return aliases
 }
 
-func migrateV32to33(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v32->v33: Adding TCP RST protection config")
-	for _, set := range c.Sets {
-		set.TCP.RSTProtection = DefaultSetConfig.TCP.RSTProtection
-	}
-	return nil
-}
-
-func migrateV31to32(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v31->v32: Adding watchdog config")
-	c.System.Checker.Watchdog = DefaultConfig.System.Checker.Watchdog
-	return nil
-}
-
-func migrateV30to31(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v30->v31: Adding TCP IP block detection config")
-	for _, set := range c.Sets {
-		set.TCP.IPBlockDetect = DefaultSetConfig.TCP.IPBlockDetect
-	}
-	return nil
-}
-
-func migrateV29to30(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v29->v30: Adding MTProto proxy config")
-	c.System.MTProto = DefaultConfig.System.MTProto
-	return nil
-}
-
-func migrateV28to29(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v28->v29: Adding position ranges and strategy pool")
-	for _, set := range c.Sets {
-		if set.Fragmentation.StrategyPool == nil {
-			set.Fragmentation.StrategyPool = []string{}
-		}
-	}
-	return nil
-}
-
-func migrateV27to28(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v27->v28: Adding per-set routing config")
-	for _, set := range c.Sets {
-		if set.Routing.SourceInterfaces == nil {
-			set.Routing.SourceInterfaces = []string{}
-		}
-		if set.Routing.IPTTLSeconds <= 0 {
-			set.Routing.IPTTLSeconds = DefaultSetConfig.Routing.IPTTLSeconds
-		}
-	}
-	return nil
-}
-
-// Migration: v26 -> v27 (add tables engine config)
-func migrateV26to27(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v26->v27: Adding tables engine config")
-	c.System.Timezone = DefaultConfig.System.Timezone
-	c.System.Tables.Engine = DefaultConfig.System.Tables.Engine
-	return nil
-}
-
-// Migration: v25 -> v26 (add TLS version filter to targets)
-func migrateV25to26(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v25->v26: Adding TLS version filter to targets")
-	for _, set := range c.Sets {
-		set.Targets.TLSVersion = ""
-	}
-	return nil
-}
-
 // Migration: v24 -> v25 (remove main set, move ConnBytesLimit to queue config)
 func migrateV24to25(c *Config, _ map[string]interface{}) error {
 	log.Tracef("Migration v24->v25: Removing main set, moving ConnBytesLimit to queue config")
@@ -451,73 +235,6 @@ func migrateV24to25(c *Config, _ map[string]interface{}) error {
 		c.Queue.UDPConnBytesLimit = DefaultConfig.Queue.UDPConnBytesLimit
 	}
 
-	return nil
-}
-
-func migrateV23to24(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v23->v24: Adding multidisorder (fake per segment) to combo/disorder configs")
-	for _, set := range c.Sets {
-		set.Fragmentation.Combo.FakePerSegment = DefaultSetConfig.Fragmentation.Combo.FakePerSegment
-		set.Fragmentation.Combo.FakePerSegCount = DefaultSetConfig.Fragmentation.Combo.FakePerSegCount
-		set.Fragmentation.Disorder.FakePerSegment = DefaultSetConfig.Fragmentation.Disorder.FakePerSegment
-		set.Fragmentation.Disorder.FakePerSegCount = DefaultSetConfig.Fragmentation.Disorder.FakePerSegCount
-	}
-	return nil
-}
-
-func migrateV22to23(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v22->v23: Adding queue-level MSS clamping config")
-	c.Queue.MSSClamp = DefaultConfig.Queue.MSSClamp
-	return nil
-}
-
-func migrateV21to22(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v21->v22: Adding NAT masquerade config")
-	c.System.Tables.Masquerade = DefaultConfig.System.Tables.Masquerade
-	return nil
-}
-
-func migrateV20to21(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v20->v21: Adding SOCKS5 proxy server config")
-	c.System.Socks5 = DefaultConfig.System.Socks5
-	return nil
-}
-
-func migrateV19to20(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v19->v20: Adding vendor lookup option to devices config")
-	c.Queue.Devices.VendorLookup = false
-	return nil
-}
-
-func migrateV18to19(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v18->v19: Adding TLS certificate/key fields to web server config")
-	// TLS fields default to empty strings (TLS disabled), no action needed
-	return nil
-}
-
-func migrateV17to18(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v17->v18: Adding TCP packet duplication config")
-
-	for _, set := range c.Sets {
-		set.TCP.Duplicate = DefaultSetConfig.TCP.Duplicate
-	}
-	return nil
-}
-
-func migrateV16to17(c *Config, _ map[string]interface{}) error {
-
-	for _, set := range c.Sets {
-		set.Faking.TimestampDecrease = DefaultSetConfig.Faking.TimestampDecrease
-	}
-	return nil
-}
-
-func migrateV15to16(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v15->v16: Adding TCP Incoming config")
-
-	for _, set := range c.Sets {
-		set.TCP.Incoming = DefaultSetConfig.TCP.Incoming
-	}
 	return nil
 }
 
@@ -561,158 +278,6 @@ func migrateV14to15(c *Config, raw map[string]interface{}) error {
 		}
 
 	}
-	return nil
-}
-
-// Migration: v13 -> v14 (add fragmentation strategy field)
-func migrateV13to14(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v13->v14: Adding fragmentation strategy field")
-
-	c.System.WebServer.BindAddress = DefaultConfig.System.WebServer.BindAddress
-	for _, set := range c.Sets {
-		set.TCP.Desync.PostDesync = DefaultSetConfig.TCP.Desync.PostDesync
-		set.Fragmentation.Combo.DecoyEnabled = DefaultSetConfig.Fragmentation.Combo.DecoyEnabled
-	}
-	return nil
-}
-
-// Migration: v12 -> v13 (add payload file/data to faking config)
-func migrateV12to13(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v12->v13: Adding TLSMod to faking config")
-
-	for _, set := range c.Sets {
-		set.Faking.TLSMod = DefaultSetConfig.Faking.TLSMod
-	}
-	return nil
-}
-
-// Migration: v11 -> v12 (add TCP FilterSYN setting)
-func migrateV11to12(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v11->v12: Adding TCP FilterSYN setting")
-
-	for _, set := range c.Sets {
-		set.Faking.PayloadFile = DefaultSetConfig.Faking.PayloadFile
-		set.Faking.PayloadData = DefaultSetConfig.Faking.PayloadData
-
-		set.Fragmentation.SeqOverlapPattern = DefaultSetConfig.Fragmentation.SeqOverlapPattern
-		set.Fragmentation.SeqOverlapBytes = DefaultSetConfig.Fragmentation.SeqOverlapBytes
-	}
-	return nil
-}
-
-// Migration: v10 -> v11 (add devices config to queue)
-func migrateV10to11(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v10->v11: Adding devices config to queue")
-
-	c.Queue.Devices = DefaultConfig.Queue.Devices
-	return nil
-}
-
-// Migration: v9 -> v10 (add error log file setting)
-func migrateV9to10(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v9->v10: Adding error log file setting")
-
-	c.Queue.Interfaces = []string{}
-	return nil
-
-}
-
-// Migration: v8 -> v9
-func migrateV8to9(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v8->v9: No changes, placeholder migration")
-	c.System.Logging.Directory = DefaultConfig.System.Logging.Directory
-	return nil
-}
-
-// Migration: v7 -> v8 (add DNS redirect settings)
-func migrateV7to8(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v7->v8: Adding DNS redirect settings")
-
-	for _, set := range c.Sets {
-		set.DNS = DefaultSetConfig.DNS
-	}
-	c.System.Checker.ReferenceDNS = DefaultConfig.System.Checker.ReferenceDNS
-	return nil
-}
-
-// Migration: v6 -> v7 (add TCP syn TTL and drop SACK settings)
-func migrateV6to7(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v6->v7: Adding TCP syn TTL and drop SACK settings")
-
-	for _, set := range c.Sets {
-		set.TCP.SynTTL = DefaultSetConfig.TCP.SynTTL
-	}
-	return nil
-}
-
-// Migration: v5 -> v6 (add reference domain to discovery config)
-func migrateV5to6(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v5->v6: Initializing missing fields with default values")
-
-	for _, set := range c.Sets {
-		set.Fragmentation.Combo = DefaultSetConfig.Fragmentation.Combo
-		set.Fragmentation.Disorder = DefaultSetConfig.Fragmentation.Disorder
-		//	set.Fragmentation.Overlap = DefaultSetConfig.Fragmentation.Overlap
-	}
-	return nil
-}
-
-// Migration: v4 -> v5 (add reference domain to discovery config)
-func migrateV4to5(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v4->v5: Adding reference domain to discovery config")
-
-	c.System.Checker.ReferenceDomain = "max.ru"
-
-	return nil
-}
-
-// Migration: v0 -> v1 (add enabled field to sets)
-func migrateV0to1(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v0->v1: Adding 'enabled' field to all sets")
-
-	for _, set := range c.Sets {
-		set.Enabled = true
-	}
-
-	return nil
-}
-
-func migrateV1to2(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v1->v2: Renaming sni_reverse to reverse_order")
-
-	for _, set := range c.Sets {
-		set.Fragmentation.ReverseOrder = DefaultSetConfig.Fragmentation.ReverseOrder
-		set.Fragmentation.OOBChar = DefaultSetConfig.Fragmentation.OOBChar
-		set.Fragmentation.OOBPosition = DefaultSetConfig.Fragmentation.OOBPosition
-		set.Fragmentation.TLSRecordPosition = DefaultSetConfig.Fragmentation.TLSRecordPosition
-	}
-
-	return nil
-}
-
-func migrateV2to3(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v2->v3: Adding TCP desync/window settings and SNI mutation")
-
-	for _, set := range c.Sets {
-		// TCP desync settings
-		set.TCP.Desync = DefaultSetConfig.TCP.Desync
-
-		// TCP window manipulation
-		set.TCP.Win = DefaultSetConfig.TCP.Win
-
-		// SNI mutation
-		set.Faking.SNIMutation = DefaultSetConfig.Faking.SNIMutation
-	}
-
-	return nil
-}
-
-func migrateV3to4(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v3->v4: Initializing missing fields with default values")
-
-	c.System.Checker.ConfigPropagateMs = DefaultConfig.System.Checker.ConfigPropagateMs
-	c.System.Checker.DiscoveryTimeoutSec = DefaultConfig.System.Checker.DiscoveryTimeoutSec
-
 	return nil
 }
 
@@ -800,9 +365,13 @@ func (c *Config) LoadWithMigration(path string) (bool, error) {
 		migrated = true
 		log.Infof("Config version %d is older than current version %d, migrating",
 			c.Version, CurrentConfigVersion)
+		backupConfigBeforeMigration(path, data, c.Version)
 		if err := c.applyMigrations(c.Version, rawJSON); err != nil {
 			return false, err
 		}
+	} else if c.Version > CurrentConfigVersion {
+		log.Warnf("Config version %d is newer than the version %d supported by this binary; unknown settings will be dropped on the next save",
+			c.Version, CurrentConfigVersion)
 	}
 
 	c.System.Geo.SanitizePaths(filepath.Dir(c.ConfigPath))
@@ -812,6 +381,15 @@ func (c *Config) LoadWithMigration(path string) (bool, error) {
 	}
 
 	return migrated, nil
+}
+
+func backupConfigBeforeMigration(path string, data []byte, fromVersion int) {
+	backupPath := fmt.Sprintf("%s.v%d.bak", path, fromVersion)
+	if err := os.WriteFile(backupPath, data, 0644); err != nil {
+		log.Warnf("Failed to back up config to %s before migration: %v", backupPath, err)
+		return
+	}
+	log.Infof("Backed up pre-migration config to %s", backupPath)
 }
 
 func (c *Config) migratePasswordHash() bool {
@@ -833,7 +411,8 @@ func (c *Config) applyMigrations(startVersion int, rawJSON map[string]interface{
 	for v := startVersion; v < CurrentConfigVersion; v++ {
 		migrationFunc, exists := migrationRegistry[v]
 		if !exists {
-			return fmt.Errorf("no migration path from version %d to %d", v, v+1)
+			c.Version = v + 1
+			continue
 		}
 
 		log.Infof("Applying migration: v%d -> v%d", v, v+1)
