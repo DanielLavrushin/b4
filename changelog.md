@@ -1,6 +1,6 @@
 # B4 - Bye Bye Big Bro
 
-## [1.73.0] - 2026-07-04
+## [1.73.0] - 2026-07-05
 
 - FIXED: **A phone that dropped off mobile data could leave a Telegram proxy connection stuck** - when a mobile client backgrounded Telegram or lost signal, its connection frequently died without a clean close, yet b4 held the half-dead session and its link out to Telegram open for many minutes, in some cases until the app was reopened, so returning to Telegram could mean waiting on a dead socket instead of a clean reconnect.
 - FIXED: **A stalled link out to Telegram over a WebSocket bridge could wedge a proxy session** - if that link stalled mid-transfer, tearing the session down could itself block for many minutes on the stuck write, holding the client's slot and both connections until a kernel timeout expired.
