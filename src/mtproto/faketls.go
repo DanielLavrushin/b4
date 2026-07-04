@@ -240,6 +240,8 @@ func proxyToMaskingDomain(client net.Conn, initial []byte, host string, mark uin
 		return
 	}
 	defer upstream.Close()
+	setTCPUserTimeout(upstream, defaultUserTimeout)
+	setTCPUserTimeout(client, defaultUserTimeout)
 
 	if len(initial) > 0 {
 		if _, err := upstream.Write(initial); err != nil {

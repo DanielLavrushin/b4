@@ -258,6 +258,24 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
           disabled={!config.system.mtproto?.enabled}
           helperText={t("settings.MTProto.maxConnectionsHelp")}
         />
+        <B4NumberField
+          label={t("settings.MTProto.tcpUserTimeout")}
+          value={config.system.mtproto?.tcp_user_timeout_sec || 120}
+          onChange={(n) => onChange("system.mtproto.tcp_user_timeout_sec", n)}
+          min={-1}
+          max={86400}
+          disabled={!config.system.mtproto?.enabled}
+          helperText={t("settings.MTProto.tcpUserTimeoutHelp")}
+        />
+        <B4NumberField
+          label={t("settings.MTProto.idleTimeout")}
+          value={config.system.mtproto?.idle_timeout_sec || 300}
+          onChange={(n) => onChange("system.mtproto.idle_timeout_sec", n)}
+          min={-1}
+          max={86400}
+          disabled={!config.system.mtproto?.enabled}
+          helperText={t("settings.MTProto.idleTimeoutHelp")}
+        />
         <B4TextField
           label={t("settings.MTProto.fakeSNI")}
           value={config.system.mtproto?.fake_sni || "storage.googleapis.com"}

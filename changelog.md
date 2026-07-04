@@ -1,5 +1,11 @@
 # B4 - Bye Bye Big Bro
 
+## [1.72.1] - 2026-07-04
+
+- FIXED: **A phone that dropped off mobile data could leave a Telegram proxy connection stuck** - when a mobile client backgrounded Telegram or lost signal, its connection frequently died without a clean close, yet b4 held the half-dead session and its link out to Telegram open for many minutes, in some cases until the app was reopened, so returning to Telegram could mean waiting on a dead socket instead of a clean reconnect.
+- FIXED: **A stalled link out to Telegram over a WebSocket bridge could wedge a proxy session** - if that link stalled mid-transfer, tearing the session down could itself block for many minutes on the stuck write, holding the client's slot and both connections until a kernel timeout expired.
+- ADDED: **Tunable MTProto connection timeouts** - Settings → MTProto exposes a TCP user timeout and an idle timeout for the proxy, for unusual carrier networks or router kernels where the built-in defaults (about two minutes and five minutes) need adjusting or turning off.
+
 ## [1.72.0] - 2026-07-02
 
 - ADDED: **A separate MTProto secret for each person** - the MTProto proxy can now hold several named secrets instead of one shared code. Each one can be named (for example, per person), switched on or off on its own, and shared as its own link or QR code, so access can be given or taken away one person at a time.

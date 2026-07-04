@@ -99,13 +99,11 @@ func (c *wsConn) Read(p []byte) (int, error) {
 				return n, nil
 			}
 		case wsOpcodePing:
-			if err := c.writeFrame(wsOpcodePong, payload); err != nil {
-				return 0, err
-			}
+			c.tryWriteControl(wsOpcodePong, payload)
 		case wsOpcodePong:
 		case wsOpcodeClose:
+			c.tryWriteControl(wsOpcodeClose, nil)
 			c.closed.Store(true)
-			_ = c.writeFrame(wsOpcodeClose, nil)
 			return 0, io.EOF
 		default:
 			return 0, fmt.Errorf("ws: unsupported opcode 0x%x", op)
@@ -125,7 +123,8 @@ func (c *wsConn) Write(p []byte) (int, error) {
 
 func (c *wsConn) Close() error {
 	if !c.closed.Swap(true) {
-		_ = c.writeFrame(wsOpcodeClose, nil)
+		c.tryWriteControl(wsOpcodeClose, nil)
+		_ = c.tls.SetWriteDeadline(time.Now())
 	}
 	return c.tls.Close()
 }
@@ -235,7 +234,7 @@ func (c *wsConn) readFrame() (op byte, fin bool, payload []byte, err error) {
 	return op, fin, payload, nil
 }
 
-func (c *wsConn) writeFrame(op byte, payload []byte) error {
+func buildWSFrame(op byte, payload []byte) ([]byte, error) {
 	var hdr [14]byte
 	hdr[0] = 0x80 | op
 	n := len(payload)
@@ -254,21 +253,49 @@ func (c *wsConn) writeFrame(op byte, payload []byte) error {
 		off = 10
 	}
 	if _, err := rand.Read(hdr[off : off+4]); err != nil {
-		return err
+		return nil, err
 	}
 	off += 4
 
-	// single buffer + single tls.Write to avoid emitting two TLS records per frame
 	buf := make([]byte, off+n)
 	copy(buf, hdr[:off])
 	maskKey := buf[off-4 : off]
 	for i := 0; i < n; i++ {
 		buf[off+i] = payload[i] ^ maskKey[i%4]
 	}
+	return buf, nil
+}
+
+func (c *wsConn) writeFrame(op byte, payload []byte) error {
+	buf, err := buildWSFrame(op, payload)
+	if err != nil {
+		return err
+	}
 	c.wMu.Lock()
 	defer c.wMu.Unlock()
-	_, err := c.tls.Write(buf)
-	return err
+	_, werr := c.tls.Write(buf)
+	return werr
+}
+
+func (c *wsConn) writeFrameLocked(op byte, payload []byte) error {
+	buf, err := buildWSFrame(op, payload)
+	if err != nil {
+		return err
+	}
+	_, werr := c.tls.Write(buf)
+	return werr
+}
+
+func (c *wsConn) tryWriteControl(op byte, payload []byte) {
+	if !c.wMu.TryLock() {
+		return
+	}
+	defer c.wMu.Unlock()
+	_ = c.tls.SetWriteDeadline(time.Now().Add(time.Second))
+	_ = c.writeFrameLocked(op, payload)
+	if !c.closed.Load() {
+		_ = c.tls.SetWriteDeadline(time.Time{})
+	}
 }
 
 func dialWS(host, sni, path string, timeout time.Duration, mark uint) (net.Conn, error) {
@@ -297,6 +324,7 @@ func dialWS(host, sni, path string, timeout time.Duration, mark uint) (net.Conn,
 		// ~16KB send) limits BDP for big media transfers from EU TG edge
 		_ = tc.SetReadBuffer(256 * 1024)
 		_ = tc.SetWriteBuffer(256 * 1024)
+		setTCPUserTimeout(tc, defaultUserTimeout)
 	}
 	// Telegram's WS edge only presents proper certs for kws2/kws4; kws1/kws3/kws5
 	// fall back to a *.telegram.org cert that doesn't match the 3-label SNI.

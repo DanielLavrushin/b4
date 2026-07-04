@@ -22,6 +22,26 @@ func markedDialer(timeout time.Duration, bypassMark uint32) net.Dialer {
 	return d
 }
 
+const failOpenUserTimeout = 120 * time.Second
+
+func setTCPUserTimeout(c net.Conn, d time.Duration) {
+	tc, ok := c.(*net.TCPConn)
+	if !ok || d <= 0 {
+		return
+	}
+	ms := int(d.Milliseconds())
+	if ms <= 0 {
+		return
+	}
+	raw, err := tc.SyscallConn()
+	if err != nil {
+		return
+	}
+	_ = raw.Control(func(fd uintptr) {
+		_ = unix.SetsockoptInt(int(fd), unix.IPPROTO_TCP, unix.TCP_USER_TIMEOUT, ms)
+	})
+}
+
 type DomainResolver interface {
 	DomainFor(ip net.IP) string
 }
@@ -263,6 +283,8 @@ func (l *Listener) failOpenDirect(client net.Conn, origIP net.IP, origPort int) 
 		return
 	}
 	defer direct.Close()
+	setTCPUserTimeout(client, failOpenUserTimeout)
+	setTCPUserTimeout(direct, failOpenUserTimeout)
 	pipe(client, direct)
 }
 

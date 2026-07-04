@@ -374,6 +374,16 @@ func (c *Config) checkPortCollisions(v *validator) {
 				map[string]any{"value": mc, "min": 0, "max": 100000},
 				"max_connections must be between 0 (default) and 100000 (got %d)", mc)
 		}
+		if ut := c.System.MTProto.TCPUserTimeoutSec; ut < -1 || ut > 86400 {
+			v.addf("system.mtproto.tcp_user_timeout_sec", "out_of_range",
+				map[string]any{"value": ut, "min": -1, "max": 86400},
+				"tcp_user_timeout_sec must be -1 (disable), 0 (default 120), or up to 86400 (got %d)", ut)
+		}
+		if it := c.System.MTProto.IdleTimeoutSec; it < -1 || it > 86400 {
+			v.addf("system.mtproto.idle_timeout_sec", "out_of_range",
+				map[string]any{"value": it, "min": -1, "max": 86400},
+				"idle_timeout_sec must be -1 (disable), 0 (default 300), or up to 86400 (got %d)", it)
+		}
 	}
 	for i := 0; i < len(refs); i++ {
 		for j := i + 1; j < len(refs); j++ {

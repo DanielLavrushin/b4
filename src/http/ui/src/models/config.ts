@@ -319,6 +319,8 @@ export interface MTProtoConfig {
   port: number;
   bind_address: string;
   max_connections: number;
+  tcp_user_timeout_sec: number;
+  idle_timeout_sec: number;
   secret: string;
   secrets?: MTProtoSecret[];
   fake_sni: string;

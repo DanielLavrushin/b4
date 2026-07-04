@@ -521,6 +521,7 @@ func dialOne(p transportPlan, mark uint) (net.Conn, error) {
 		}
 		if tc, ok := conn.(*net.TCPConn); ok {
 			_ = tc.SetNoDelay(true)
+			setTCPUserTimeout(tc, defaultUserTimeout)
 		}
 		return conn, nil
 	}

@@ -20,6 +20,7 @@ import (
 const (
 	defaultMaxConnections = 2048
 	relayBufSize          = 65536
+	defaultIdleTimeout    = 300 * time.Second
 )
 
 func mtprotoMaxConnections(cfg *config.Config) int {
@@ -27,6 +28,28 @@ func mtprotoMaxConnections(cfg *config.Config) int {
 		return n
 	}
 	return defaultMaxConnections
+}
+
+func mtprotoTCPUserTimeout(cfg *config.Config) time.Duration {
+	switch n := cfg.System.MTProto.TCPUserTimeoutSec; {
+	case n < 0:
+		return 0
+	case n == 0:
+		return defaultUserTimeout
+	default:
+		return time.Duration(n) * time.Second
+	}
+}
+
+func mtprotoIdleTimeout(cfg *config.Config) time.Duration {
+	switch n := cfg.System.MTProto.IdleTimeoutSec; {
+	case n < 0:
+		return 0
+	case n == 0:
+		return defaultIdleTimeout
+	default:
+		return time.Duration(n) * time.Second
+	}
 }
 
 type Server struct {
@@ -505,6 +528,7 @@ func (s *Server) acceptLoop(ln net.Listener) {
 			_ = tc.SetNoDelay(true)
 			_ = tc.SetReadBuffer(256 * 1024)
 			_ = tc.SetWriteBuffer(256 * 1024)
+			setTCPUserTimeout(tc, mtprotoTCPUserTimeout(s.cfg.Load()))
 		}
 
 		go func(c net.Conn) {
@@ -601,10 +625,10 @@ func (s *Server) handleConn(raw net.Conn) {
 }
 
 func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string) (up, down int64) {
-	return relayConns(client, dc, splitter, label, &s.bufPool)
+	return relayConns(client, dc, splitter, label, &s.bufPool, mtprotoIdleTimeout(s.cfg.Load()))
 }
 
-func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string, bufPool *sync.Pool) (int64, int64) {
+func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string, bufPool *sync.Pool, idle time.Duration) (int64, int64) {
 	type relayEnd struct {
 		dir string
 		err error
@@ -612,6 +636,8 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 	endCh := make(chan relayEnd, 2)
 	start := time.Now()
 	var upBytes, downBytes atomic.Int64
+	var lastActive atomic.Int64
+	lastActive.Store(start.UnixNano())
 
 	cp := func(dst io.Writer, src io.Reader, dir string, counter *atomic.Int64) {
 		bufPtr := bufPool.Get().(*[]byte)
@@ -623,6 +649,7 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 			var n int
 			n, err = src.Read(buf)
 			if n > 0 {
+				lastActive.Store(time.Now().UnixNano())
 				if _, werr := dst.Write(buf[:n]); werr != nil {
 					err = werr
 				} else {
@@ -648,6 +675,7 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 			var n int
 			n, err = src.Read(buf)
 			if n > 0 {
+				lastActive.Store(time.Now().UnixNano())
 				for _, pkt := range splitter.split(buf[:n]) {
 					if _, werr := dst.Write(pkt); werr != nil {
 						err = werr
@@ -675,10 +703,39 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 	}
 	go cp(client, dc, "DC->client", &downBytes)
 
+	done := make(chan struct{})
+	if idle > 0 {
+		go func() {
+			interval := idle / 4
+			if interval < 100*time.Millisecond {
+				interval = 100 * time.Millisecond
+			}
+			if interval > 15*time.Second {
+				interval = 15 * time.Second
+			}
+			t := time.NewTicker(interval)
+			defer t.Stop()
+			for {
+				select {
+				case <-done:
+					return
+				case <-t.C:
+					if time.Since(time.Unix(0, lastActive.Load())) >= idle {
+						log.Infof("%s idle for %s, reaping", label, idle)
+						_ = client.Close()
+						_ = dc.Close()
+						return
+					}
+				}
+			}
+		}()
+	}
+
 	first := <-endCh
 	_ = client.Close()
 	_ = dc.Close()
 	<-endCh
+	close(done)
 
 	up, down := upBytes.Load(), downBytes.Load()
 	stale := ""
