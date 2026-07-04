@@ -371,7 +371,7 @@ func buildSecrets(cfg *config.Config) ([]*Secret, error) {
 		return nil, fmt.Errorf("MTProto: %d configured secret(s), none valid", invalid)
 	}
 
-	if len(mtCfg.Secrets) > 0 || strings.TrimSpace(mtCfg.Secret) != "" {
+	if len(mtCfg.Secrets) > 0 {
 		return nil, nil
 	}
 
@@ -386,7 +386,6 @@ func buildSecrets(cfg *config.Config) ([]*Secret, error) {
 	sec.ID = entry.ID
 	sec.Name = entry.Name
 	mtCfg.Secrets = append(mtCfg.Secrets, entry)
-	mtCfg.Secret = sec.Hex()
 	if cfg.ConfigPath != "" {
 		if err := cfg.SaveToFile(cfg.ConfigPath); err != nil {
 			log.Warnf("MTProto: failed to persist generated secret: %v", err)
@@ -529,7 +528,7 @@ func mtprotoNeedsRestart(old, newCfg *config.Config) bool {
 }
 
 func mtprotoSecretsChanged(o, n config.MTProtoConfig) bool {
-	if o.Secret != n.Secret || len(o.Secrets) != len(n.Secrets) {
+	if len(o.Secrets) != len(n.Secrets) {
 		return true
 	}
 	for i := range o.Secrets {

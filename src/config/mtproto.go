@@ -10,19 +10,13 @@ type MTProtoSecret struct {
 }
 
 func (m *MTProtoConfig) EffectiveSecrets() []MTProtoSecret {
-	if len(m.Secrets) > 0 {
-		out := make([]MTProtoSecret, 0, len(m.Secrets))
-		for _, s := range m.Secrets {
-			if s.Enabled && strings.TrimSpace(s.Secret) != "" {
-				out = append(out, s)
-			}
+	out := make([]MTProtoSecret, 0, len(m.Secrets))
+	for _, s := range m.Secrets {
+		if s.Enabled && strings.TrimSpace(s.Secret) != "" {
+			out = append(out, s)
 		}
-		return out
 	}
-	if strings.TrimSpace(m.Secret) != "" {
-		return []MTProtoSecret{{ID: "legacy", Secret: m.Secret, Enabled: true}}
-	}
-	return nil
+	return out
 }
 
 func (m *MTProtoConfig) FirstEnabledSecret() string {

@@ -32,14 +32,8 @@ const newId = () =>
     ? crypto.randomUUID()
     : `s-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 
-const currentSecrets = (config: B4Config): MTProtoSecret[] => {
-  const mt = config.system.mtproto;
-  if (mt?.secrets?.length) return mt.secrets;
-  if (mt?.secret) {
-    return [{ id: "legacy", name: "", secret: mt.secret, enabled: true }];
-  }
-  return [];
-};
+const currentSecrets = (config: B4Config): MTProtoSecret[] =>
+  config.system.mtproto?.secrets ?? [];
 
 export const MTProtoSecrets = ({
   config,
@@ -55,13 +49,10 @@ export const MTProtoSecrets = ({
 
   const commit = (next: MTProtoSecret[]) => {
     onChange("system.mtproto.secrets", next);
-    const firstEnabled = next.find((s) => s.enabled && s.secret) ?? next[0];
-    onChange("system.mtproto.secret", firstEnabled?.secret ?? "");
   };
 
   const update = (idx: number, patch: Partial<MTProtoSecret>) => {
     const next = secrets.map((s, i) => (i === idx ? { ...s, ...patch } : s));
-    if (next[idx].id === "legacy") next[idx].id = newId();
     commit(next);
   };
 

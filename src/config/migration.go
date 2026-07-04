@@ -83,14 +83,20 @@ func migrateV50to51(c *Config, _ map[string]interface{}) error {
 	return nil
 }
 
-func migrateV49to50(c *Config, _ map[string]interface{}) error {
+func migrateV49to50(c *Config, raw map[string]interface{}) error {
 	log.Tracef("Migration v49->v50: Moving single MTProto secret into secrets list")
 	m := &c.System.MTProto
-	if len(m.Secrets) == 0 && strings.TrimSpace(m.Secret) != "" {
+	if len(m.Secrets) > 0 {
+		return nil
+	}
+	system, _ := raw["system"].(map[string]interface{})
+	mt, _ := system["mtproto"].(map[string]interface{})
+	legacy, _ := mt["secret"].(string)
+	if strings.TrimSpace(legacy) != "" {
 		m.Secrets = []MTProtoSecret{{
 			ID:      uuid.NewString(),
 			Name:    "default",
-			Secret:  m.Secret,
+			Secret:  strings.TrimSpace(legacy),
 			Enabled: true,
 		}}
 	}

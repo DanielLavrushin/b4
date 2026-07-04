@@ -360,21 +360,7 @@ func (api *API) updateMTProtoConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	req.Secret = strings.TrimSpace(req.Secret)
-	if req.Secret != "" {
-		if _, err := mtproto.ParseSecret(req.Secret); err != nil {
-			writeJsonError(w, http.StatusBadRequest, "Invalid secret: "+err.Error())
-			return
-		}
-	}
-
-	// Keep the legacy single-secret field mirroring the first enabled entry so
-	// older clients and the share-link path stay consistent.
-	if len(req.Secrets) > 0 {
-		req.Secret = req.FirstEnabledSecret()
-	}
-
-	hasSecret := req.Secret != "" || len(req.EffectiveSecrets()) > 0
+	hasSecret := len(req.EffectiveSecrets()) > 0
 	if req.Enabled && !hasSecret && req.FakeSNI == "" {
 		writeJsonError(w, http.StatusBadRequest, "At least one secret or a fake SNI domain is required when enabled")
 		return

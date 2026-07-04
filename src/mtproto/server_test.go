@@ -343,11 +343,6 @@ func TestBuildSecretsPolicy(t *testing.T) {
 			0, true, 1,
 		},
 		{
-			"invalid legacy secret is an error, nothing generated",
-			config.MTProtoConfig{FakeSNI: "s.example.com", Secret: "junk"},
-			0, true, 0,
-		},
-		{
 			"nothing configured with fake sni generates one",
 			config.MTProtoConfig{FakeSNI: "s.example.com"},
 			1, false, 1,

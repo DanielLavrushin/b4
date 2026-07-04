@@ -278,7 +278,6 @@ type MTProtoConfig struct {
 	MaxConnections    int             `json:"max_connections"` // max concurrent client connections; 0 = default (2048)
 	TCPUserTimeoutSec int             `json:"tcp_user_timeout_sec"`
 	IdleTimeoutSec    int             `json:"idle_timeout_sec"`
-	Secret            string          `json:"secret"` // legacy single secret; mirrors the first enabled entry in Secrets for backward compatibility
 	Secrets           []MTProtoSecret `json:"secrets,omitempty"`
 	FakeSNI           string          `json:"fake_sni"`
 	DCRelay           string          `json:"dc_relay"`
