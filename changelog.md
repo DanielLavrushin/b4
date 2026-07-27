@@ -1,6 +1,6 @@
 # B4 - Bye Bye Big Bro
 
-## [1.73.1] - 2026-07-07
+## [1.74.0] - 2026-07-2x
 
 - FIXED: **b4 would not start on an OpenWRT router whose kernel has no packet-queue module** - startup ended with "failed to add tables rules ... Could not process rule: No such file or directory" followed by a copy of the firewall command, and nothing in that message pointed at the cause. b4 checks packet-queue support before it touches the firewall and names the missing kernel module, the package that provides it (kmod-nft-queue on OpenWRT), and TUN mode as the alternative that needs no NFQUEUE; before that check the raw firewall error was all there was to go on. [#275](https://github.com/DanielLavrushin/b4/issues/275)
 - FIXED: **The installer reported the router as ready when it could not run b4 at all** - the install-time check passed if any one of three queue modules was present, so a router carrying `nfnetlink_queue` but not `nft_queue` installed cleanly and only failed at the first start. The check now creates a real queue rule on the firewall backend the router actually uses, and the diagnostics report (`--sysinfo`) does the same instead of testing the iptables path on routers that only have nftables, where it printed no verdict at all.
