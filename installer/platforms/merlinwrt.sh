@@ -101,9 +101,8 @@ _merlinwrt_load_kmods() {
         [ -n "$mod_path" ] && insmod "$mod_path" 2>/dev/null || true
     done
 
-    if ! _kmod_available "xt_NFQUEUE" && ! _kmod_available "nfnetlink_queue" && ! _kmod_available "nft_queue"; then
-        log_warn "No netfilter queue module available — b4 may not work"
-        log_info "Check your firmware version supports NFQUEUE"
+    if ! _warn_if_queue_unavailable; then
+        log_info "Check that your firmware version supports NFQUEUE"
     fi
 }
 

@@ -111,13 +111,11 @@ _generic_linux_check_kmods() {
         modprobe "$mod" 2>/dev/null || true
     done
 
-    if ! _kmod_available "xt_NFQUEUE" && ! _kmod_available "nfnetlink_queue" && ! _kmod_available "nft_queue"; then
-        log_warn "No netfilter queue module available"
+    if ! _warn_if_queue_unavailable; then
         case "$B4_PKG_MANAGER" in
-        apt) log_info "Try: apt install xtables-addons-common" ;;
-        dnf | yum) log_info "Try: dnf install xtables-addons" ;;
+        apt) log_info "Try: apt install linux-modules-extra-$(uname -r) xtables-addons-common" ;;
+        dnf | yum) log_info "Try: dnf install kernel-modules-extra xtables-addons" ;;
         pacman) log_info "Try: pacman -S xtables-addons" ;;
-        apk) log_info "Try: apk add iptables-nft" ;;
         *) ;;
         esac
     fi

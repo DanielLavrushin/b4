@@ -21,10 +21,11 @@ type IPTablesManager struct {
 	multiportSupport map[string]bool  // per-binary cache (iptables vs ip6tables may differ)
 	connbytesSupport map[string]error // per-binary cache
 	connmarkSupport  map[string]bool  // per-binary cache
+	nfqueueSupport   map[string]error // per-binary cache
 }
 
 func NewIPTablesManager(cfg *config.Config, useLegacy bool) *IPTablesManager {
-	return &IPTablesManager{cfg: cfg, useLegacy: useLegacy, multiportSupport: make(map[string]bool), connbytesSupport: make(map[string]error), connmarkSupport: make(map[string]bool)}
+	return &IPTablesManager{cfg: cfg, useLegacy: useLegacy, multiportSupport: make(map[string]bool), connbytesSupport: make(map[string]error), connmarkSupport: make(map[string]bool), nfqueueSupport: make(map[string]error)}
 }
 
 func (im *IPTablesManager) iptablesBin() string {
@@ -56,6 +57,23 @@ func (im *IPTablesManager) checkConnbytesSupport(ipt string) error {
 
 	err := fmt.Errorf("xt_connbytes kernel module is not available for %s (%v) - install it with: modprobe xt_connbytes (or apt install xtables-addons-common / linux-modules-extra-$(uname -r))", ipt, probeErr)
 	im.connbytesSupport[ipt] = err
+	return err
+}
+
+func (im *IPTablesManager) checkNFQueueSupport(ipt string) error {
+	if err, ok := im.nfqueueSupport[ipt]; ok {
+		return err
+	}
+
+	supported, probeErr := im.probeModuleInTempChain(ipt, "mangle", []string{"-j", "NFQUEUE", "--queue-num", "0", "--queue-bypass"})
+	if supported {
+		im.nfqueueSupport[ipt] = nil
+		log.Tracef("IPTABLES[%s]: NFQUEUE target is available", ipt)
+		return nil
+	}
+
+	err := fmt.Errorf("%s rejected the NFQUEUE target (%v), so b4 cannot intercept packets - the usual cause is a missing queue module: install it with 'opkg install kmod-nfnetlink-queue kmod-ipt-nfqueue iptables-mod-nfqueue' and run 'modprobe nfnetlink_queue xt_NFQUEUE', or switch b4 to TUN mode (queue.mode = \"tun\"), which does not need NFQUEUE", ipt, probeErr)
+	im.nfqueueSupport[ipt] = err
 	return err
 }
 
@@ -389,6 +407,10 @@ func (manager *IPTablesManager) buildManifest() (Manifest, error) {
 		tcpPorts := cfg.CollectTCPPorts()
 		for i, p := range tcpPorts {
 			tcpPorts[i] = strings.ReplaceAll(p, "-", ":")
+		}
+
+		if err := manager.checkNFQueueSupport(ipt); err != nil {
+			return Manifest{}, err
 		}
 
 		if err := manager.checkConnbytesSupport(ipt); err != nil {

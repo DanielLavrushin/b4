@@ -634,6 +634,7 @@
       "tunIpv6Dropped": "Отброшено IPv6",
       "kernelModules": "Модули ядра",
       "kernelCapabilities": "Возможности ядра",
+      "capPacketQueue": "Перехват пакетов (NFQUEUE)",
       "capTransparentProxy": "Прозрачный прокси (TPROXY)",
       "capReplySideBypass": "Обход обратного трафика (connmark)",
       "capAvailable": "доступно",

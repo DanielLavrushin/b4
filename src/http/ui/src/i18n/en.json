@@ -638,6 +638,7 @@
       "tunIpv6Dropped": "IPv6 Dropped",
       "kernelModules": "Kernel Modules",
       "kernelCapabilities": "Kernel Capabilities",
+      "capPacketQueue": "Packet interception (NFQUEUE)",
       "capTransparentProxy": "Transparent proxy (TPROXY)",
       "capReplySideBypass": "Reply-side bypass (connmark)",
       "capAvailable": "available",
