@@ -321,6 +321,8 @@
       "upstreamTitle": "Telegram upstream (shared)",
       "upstreamDesc": "How b4 reaches Telegram data centers. Used by the proxy server above and by the 'Telegram over WebSocket' routing mode in sets, so it applies even when the proxy server is off. Use WebSocket if your network blocks direct TCP to 149.154.x.x.",
       "upstreamBridgeNote": "Transport mode applies to the proxy server only; the 'Telegram over WebSocket' routing mode always uses Auto (WebSocket-first with TCP fallback).",
+      "bridgeWait": "Bridge Handshake Wait (sec)",
+      "bridgeWaitHelp": "How long the 'Telegram over WebSocket' bridge waits for a client's first handshake byte before dropping the connection. Telegram opens connections to a data center before it has anything to send, and a client that gets closed too early counts it as a failure and keeps rotating data centers (default: 180, -1 to wait indefinitely).",
       "upstreamMode": "Transport mode",
       "upstreamTcp": "Direct TCP",
       "upstreamTcpDesc": "Fastest. Use when this host can reach 149.154.0.0/16 directly.",

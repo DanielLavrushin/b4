@@ -385,6 +385,11 @@ func (c *Config) checkPortCollisions(v *validator) {
 				"idle_timeout_sec must be -1 (disable), 0 (default 300), or up to 86400 (got %d)", it)
 		}
 	}
+	if bw := c.System.MTProto.BridgeWaitSec; bw < -1 || bw > 86400 {
+		v.addf("system.mtproto.bridge_wait_sec", "out_of_range",
+			map[string]any{"value": bw, "min": -1, "max": 86400},
+			"bridge_wait_sec must be -1 (wait indefinitely), 0 (default 180), or up to 86400 (got %d)", bw)
+	}
 	for i := 0; i < len(refs); i++ {
 		for j := i + 1; j < len(refs); j++ {
 			if refs[i].port == refs[j].port {

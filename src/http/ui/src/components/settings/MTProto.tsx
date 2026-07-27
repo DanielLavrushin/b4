@@ -378,6 +378,14 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
                 />
               )}
             </Box>
+            <B4NumberField
+              label={t("settings.MTProto.bridgeWait")}
+              value={config.system.mtproto?.bridge_wait_sec || 180}
+              onChange={(n) => onChange("system.mtproto.bridge_wait_sec", n)}
+              min={-1}
+              max={86400}
+              helperText={t("settings.MTProto.bridgeWaitHelp")}
+            />
             <B4TextField
               label={t("settings.MTProto.cfWorkerDomain")}
               value={config.system.mtproto?.cfworker_domain || ""}

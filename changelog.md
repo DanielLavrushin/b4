@@ -2,6 +2,7 @@
 
 ## [1.73.1] - 2026-07-07
 
+- FIXED: **Telegram on Android could sit at "Connecting" when a set routed it through the built-in Telegram bridge** - the bridge waited five seconds for a client's first handshake byte and closed the connection when nothing arrived. Telegram opens connections to a data center before it has anything to send on them, so those connections arrived silent, were closed as empty, and the app counted every close as a connection failure and moved on to the next data center, never keeping a connection alive long enough to use it. The grace period is three minutes and can be changed under Settings → MTProto → Telegram upstream ("Bridge Handshake Wait"). [#277](https://github.com/DanielLavrushin/b4/issues/277)
 - FIXED: **The DC Relay socat helper generated commands that pointed at the wrong Telegram servers** - the "?" dialog next to the DC Relay field built its `socat` commands from Telegram's published proxy list, whose addresses are internal middle-proxy backends on port 8888. Those backends close the socket right after the handshake, so a relay set up exactly as the helper showed failed every connection with "dropped after handshake". The helper now forwards to the public data-center addresses b4 dials over direct TCP, and no longer emits a dead command for the media DC 203, which reuses DC 2's relay port.
 
 ## [1.73.0] - 2026-07-05
