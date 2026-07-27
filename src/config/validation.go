@@ -129,7 +129,12 @@ func (c *Config) Validate() error {
 		switch set.Routing.Mode {
 		case "":
 			set.Routing.Mode = RoutingModeInterface
-		case RoutingModeProxy, RoutingModeInterface, RoutingModeMTProtoWS:
+		case RoutingModeProxy, RoutingModeInterface:
+		case RoutingModeMTProtoWS:
+			if set.Routing.Upstream.UDP {
+				log.Warnf("Set '%s': routing mode 'mtproto-ws' carries TCP only; ignoring routing.upstream.udp (it would divert UDP to a port with no listener and drop it)", set.Name)
+				set.Routing.Upstream.UDP = false
+			}
 		case RoutingModeBlock:
 			set.Routing.BlockAction = NormalizeBlockAction(set.Routing.BlockAction)
 		default:
