@@ -110,25 +110,23 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 		if !set.Enabled {
 			continue
 		}
-		for _, d := range set.Targets.DomainsToMatch {
-			d = strings.ToLower(strings.TrimSpace(d))
+		for _, entry := range set.Targets.DomainsToMatch {
+			d, isRegex := ParseDomainEntry(entry)
 			if d == "" {
 				continue
 			}
 
-			if strings.HasPrefix(d, "regexp:") {
-				pattern := strings.TrimPrefix(d, "regexp:")
-				if seenRegexes[pattern] {
+			if isRegex {
+				if seenRegexes[d] {
 					continue
 				}
-				if re, err := regexp.Compile(pattern); err == nil {
+				if re, err := regexp.Compile(d); err == nil {
 					s.regexes = append(s.regexes, &regexWithSet{regex: re, set: set})
-					seenRegexes[pattern] = true
+					seenRegexes[d] = true
 				}
 				continue
 			}
 
-			d = strings.TrimRight(d, ".")
 			s.multiSets[d] = append(s.multiSets[d], set)
 			if _, exists := s.sets[d]; !exists {
 				s.sets[d] = set
@@ -251,7 +249,10 @@ func (s *SuffixSet) MatchSNI(host string) (bool, *config.SetConfig) {
 		return false, nil
 	}
 
-	lower := strings.ToLower(host)
+	lower := NormalizeDomain(host)
+	if lower == "" {
+		return false, nil
+	}
 
 	if matched, set := s.matchDomain(lower); matched {
 		return true, set

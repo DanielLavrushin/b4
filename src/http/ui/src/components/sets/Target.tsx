@@ -97,7 +97,6 @@ export const TargetSettings = ({
             config={config}
             geo={geo}
             stats={stats}
-            otherSetsTargets={otherSetsTargets}
             ipv4={ipv4}
             ipv6={ipv6}
             geositeCategories={geositeCategories}

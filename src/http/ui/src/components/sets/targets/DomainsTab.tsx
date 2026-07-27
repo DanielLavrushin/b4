@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Box, Grid } from "@mui/material";
 import { DomainIcon } from "@b4.icons";
 import { B4Hint, B4Select, B4Switch } from "@b4.elements";
@@ -8,13 +8,28 @@ import { SetStats } from "../Manager";
 import { ManualEntryPanel } from "./ManualEntryPanel";
 import { GeoCategoryPanel } from "./GeoCategoryPanel";
 import { CategoryPreviewDialog } from "./CategoryPreviewDialog";
-import { OtherSetsTargets, findSetOverlaps } from "./overlap";
+
+interface SetDomainMatch {
+  domain: string;
+  set_name: string;
+  set_id: string;
+  via: string;
+  relation: string;
+  entry: string;
+  enabled: boolean;
+}
+
+const RELATION_KEYS: Record<string, string> = {
+  exact: "sets.targets.overlapExact",
+  covered: "sets.targets.overlapCovered",
+  regexp: "sets.targets.overlapRegexp",
+  covers: "sets.targets.overlapCovers",
+};
 
 interface DomainsTabProps {
   config: B4SetConfig;
   geo: GeoConfig;
   stats?: SetStats;
-  otherSetsTargets?: OtherSetsTargets;
   ipv4?: boolean;
   ipv6?: boolean;
   geositeCategories: string[];
@@ -26,7 +41,6 @@ export const DomainsTab = ({
   config,
   geo,
   stats,
-  otherSetsTargets,
   ipv4,
   ipv6,
   geositeCategories,
@@ -40,45 +54,57 @@ export const DomainsTab = ({
   const checkTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
+  const checkSeq = useRef(0);
+
+  const describeMatch = useCallback(
+    (match: SetDomainMatch) => {
+      const via = t(
+        match.via === "geosite"
+          ? "sets.targets.overlapViaGeosite"
+          : "sets.targets.overlapViaManual",
+      );
+      const source = match.enabled
+        ? via
+        : `${via}, ${t("sets.targets.overlapDisabled")}`;
+      return t(RELATION_KEYS[match.relation] ?? RELATION_KEYS.exact, {
+        domain: match.domain,
+        entry: match.entry,
+        set: match.set_name,
+        via: source,
+      });
+    },
+    [t],
+  );
 
   const checkDomainBackend = useCallback(
-    (domain: string) => {
+    (input: string) => {
+      const request = ++checkSeq.current;
       fetch(
-        `/api/sets/check-domain?domain=${encodeURIComponent(domain)}&exclude=${encodeURIComponent(config.id)}`,
+        `/api/sets/check-domain?domain=${encodeURIComponent(input)}&exclude=${encodeURIComponent(config.id)}`,
       )
         .then((res) => res.json())
-        .then((matches: { set_name: string; via: string }[]) => {
-          if (matches.length > 0) {
-            const msg = matches
-              .map((m) => `"${domain}" is in ${m.set_name} (${m.via})`)
-              .join("; ");
-            setDuplicateWarning(msg);
-          } else {
-            setDuplicateWarning("");
-          }
+        .then((matches: SetDomainMatch[]) => {
+          if (request !== checkSeq.current) return;
+          setDuplicateWarning(
+            Array.isArray(matches) ? matches.map(describeMatch).join("; ") : "",
+          );
         })
         .catch(() => {});
     },
-    [config.id],
+    [config.id, describeMatch],
   );
 
   const checkDuplicates = (input: string) => {
     clearTimeout(checkTimer.current);
     if (!input.trim()) {
+      checkSeq.current++;
       setDuplicateWarning("");
       return;
     }
-    setDuplicateWarning(
-      findSetOverlaps(input, otherSetsTargets, (v) => v.toLowerCase()),
-    );
-    const domains = input.split(/[\s,|]+/).filter(Boolean);
-    if (domains.length === 1) {
-      checkTimer.current = setTimeout(
-        () => checkDomainBackend(domains[0].trim()),
-        400,
-      );
-    }
+    checkTimer.current = setTimeout(() => checkDomainBackend(input), 400);
   };
+
+  useEffect(() => () => clearTimeout(checkTimer.current), []);
 
   return (
     <>
