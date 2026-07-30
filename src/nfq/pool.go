@@ -74,6 +74,7 @@ func NewPool(cfg *config.Config) *Pool {
 		w.connTracker = state.connState
 		w.destState = state.destState
 		w.pendingHello = state.pendingHello
+		w.hostHints = state.hostHints
 		ws = append(ws, w)
 	}
 
@@ -106,6 +107,7 @@ func NewPool(cfg *config.Config) *Pool {
 				pool.state.connState.Cleanup()
 				pool.state.tlsCache.Cleanup()
 				pool.state.destState.Cleanup(300 * time.Second)
+				pool.state.hostHints.Cleanup()
 			case <-escalationTicker.C:
 				pool.state.pendingHello.Cleanup()
 				metrics.GetMetricsCollector().UpdateEscalations(pool.GetEscalations())

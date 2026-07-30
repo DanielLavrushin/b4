@@ -374,11 +374,13 @@ type runtimeState struct {
 	connState    *connStateTracker
 	destState    *destStateTracker
 	pendingHello *pendingHelloCache
+	hostHints    *hostHintCache
 }
 
 func newRuntimeState() *runtimeState {
 	return &runtimeState{
 		pendingHello: newPendingHelloCache(),
+		hostHints:    newHostHintCache(),
 		tlsCache: &tlsInfoCache{
 			conns: make(map[string]*tlsInfo),
 		},

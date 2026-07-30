@@ -52,5 +52,6 @@ type Worker struct {
 	connTracker      *connStateTracker
 	destState        *destStateTracker
 	pendingHello     *pendingHelloCache
+	hostHints        *hostHintCache
 	srcResolver      *tunSrcResolver
 }

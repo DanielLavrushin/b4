@@ -120,6 +120,14 @@ func needsTCPSynInjection(set *config.SetConfig) bool {
 	return set.TCP.SynFake || (hasActiveStrategy && set.Faking.TCPMD5)
 }
 
+func needsPayloadlessInjection(set *config.SetConfig) bool {
+	if set == nil {
+		return false
+	}
+
+	return set.TCP.DropSACK
+}
+
 func (w *Worker) parseIPHeaders(raw []byte) (*pktInfo, bool) {
 	v := raw[0] >> 4
 	if v != IPv4 && v != IPv6 {
@@ -224,6 +232,19 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			set = learnedSet
 			st = learnedSet
 			matchedLearned = true
+		}
+	}
+
+	matchedHint := false
+	hintHost := ""
+	if !matched && cfg.IsTCPPort(dport) {
+		if hintSet, hinted := w.lookupHostHint(cfg, pkt.srcStr, pkt.dstStr, pkt.srcMac); hintSet != nil {
+			if hintSet.MatchesTCPDPort(dport) {
+				matched = true
+				set = hintSet
+				matchedHint = true
+				hintHost = hinted
+			}
 		}
 	}
 
@@ -389,6 +410,14 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				set = nil
 			}
 		}
+
+		if matchedHint && !matchedSNI && isClientHello && host != "" {
+			log.Tracef("host hint for %s dropped: %s carries a clear SNI that matches no set", pkt.dstStr, host)
+			matched = false
+			set = nil
+			matchedHint = false
+			hintHost = ""
+		}
 	}
 
 	if host == "" || tlsVersion == 0 {
@@ -401,6 +430,13 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				tlsVersion = cachedTLS
 			}
 		}
+	}
+
+	if host == "" && hintHost != "" {
+		host = hintHost
+	}
+	if matchedHint && !matchedSNI && classifyReason == "" {
+		classifyReason = "dns-hint"
 	}
 
 	if matchedSNI {
@@ -555,6 +591,10 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 
 		if routeTProxy || !needsTCPInjection(set) {
+			return vc.accept()
+		}
+
+		if len(payload) == 0 && !needsPayloadlessInjection(set) {
 			return vc.accept()
 		}
 

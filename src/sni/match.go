@@ -582,6 +582,13 @@ func setMatchesSource(set *config.SetConfig, srcMAC string) bool {
 	return exclude
 }
 
+func SetMatchesSource(set *config.SetConfig, srcMAC string) bool {
+	if set == nil {
+		return false
+	}
+	return setMatchesSource(set, srcMAC)
+}
+
 func (s *SuffixSet) MatchSNIWithSource(host string, srcMAC string) (bool, *config.SetConfig) {
 	return s.MatchSNIWithSourceTLS(host, srcMAC, 0, 0)
 }

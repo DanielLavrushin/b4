@@ -217,6 +217,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, ipVersion byte, sport uint16, 
 				clientMac := w.getMacByIp(clientIP.String())
 				if matched, set := w.getMatcher().MatchSNIWithSource(domain, clientMac); matched && set.Enabled {
 					ips := dns.ParseResponseIPs(payload)
+					w.storeHostHints(clientIP, set, domain, ips)
 					if set.Routing.Enabled && !set.Targets.DomainOnly && len(ips) > 0 {
 						cfg := w.getConfig()
 						if RoutingHandleDNSFunc != nil && !cfg.Queue.IsDiscovery {
@@ -232,8 +233,9 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, ipVersion byte, sport uint16, 
 			); hit && !routed {
 				if ips := dns.ParseResponseIPs(payload); len(ips) > 0 {
 					cfg := w.getConfig()
-					if set := cfg.GetSetById(setID); set != nil && !set.Targets.DomainOnly {
-						if RoutingHandleDNSFunc != nil && !cfg.Queue.IsDiscovery {
+					if set := cfg.GetSetById(setID); set != nil {
+						w.storeHostHints(clientIP, set, domain, ips)
+						if !set.Targets.DomainOnly && RoutingHandleDNSFunc != nil && !cfg.Queue.IsDiscovery {
 							RoutingHandleDNSFunc(cfg, set, ips)
 						}
 					}
@@ -272,8 +274,10 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 
 	w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, resp)
 
-	if set.Routing.Enabled && !set.Targets.DomainOnly && !cfg.Queue.IsDiscovery && RoutingHandleDNSFunc != nil {
-		if ips := dns.ParseResponseIPs(resp); len(ips) > 0 {
+	if ips := dns.ParseResponseIPs(resp); len(ips) > 0 {
+		domain, _ := dns.ParseQueryDomain(query)
+		w.storeHostHints(clientIP, set, strings.ToLower(domain), ips)
+		if set.Routing.Enabled && !set.Targets.DomainOnly && !cfg.Queue.IsDiscovery && RoutingHandleDNSFunc != nil {
 			RoutingHandleDNSFunc(cfg, set, ips)
 		}
 	}
