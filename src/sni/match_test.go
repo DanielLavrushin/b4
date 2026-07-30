@@ -957,3 +957,109 @@ func TestRegexCache(t *testing.T) {
 		t.Error("regex should match both times")
 	}
 }
+
+// --- overflow map for domains claimed by more than one set ---
+
+func TestNewSuffixSet_SingleSetDomainsStayOutOfOverflowMap(t *testing.T) {
+	a := makeSetWithDomains("a", "one.example", "two.example")
+	b := makeSetWithDomains("b", "three.example")
+	ss := NewSuffixSet([]*config.SetConfig{a, b})
+
+	if len(ss.sets) != 3 {
+		t.Fatalf("sets = %d, want 3", len(ss.sets))
+	}
+	if len(ss.multiSets) != 0 {
+		t.Fatalf("multiSets = %d, want 0 when no domain is shared", len(ss.multiSets))
+	}
+}
+
+func TestNewSuffixSet_SharedDomainEntersOverflowMapInOrder(t *testing.T) {
+	a := makeSetWithDomains("a", "shared.example", "only-a.example")
+	b := makeSetWithDomains("b", "shared.example")
+	c := makeSetWithDomains("c", "shared.example")
+	ss := NewSuffixSet([]*config.SetConfig{a, b, c})
+
+	if len(ss.multiSets) != 1 {
+		t.Fatalf("multiSets = %d, want only the shared domain", len(ss.multiSets))
+	}
+
+	multi := ss.multiSets["shared.example"]
+	if len(multi) != 3 {
+		t.Fatalf("shared.example has %d sets, want 3", len(multi))
+	}
+	for i, want := range []string{"a", "b", "c"} {
+		if multi[i].Name != want {
+			t.Errorf("multiSets[%d] = %s, want %s", i, multi[i].Name, want)
+		}
+	}
+	if ss.sets["shared.example"].Name != "a" {
+		t.Errorf("sets should keep the first claimant, got %s", ss.sets["shared.example"].Name)
+	}
+}
+
+func TestFindDomainCandidates_MostSpecificLevelWins(t *testing.T) {
+	specific := makeSetWithDomains("specific", "api.example.com")
+	parentA := makeSetWithDomains("parentA", "example.com")
+	parentB := makeSetWithDomains("parentB", "example.com")
+	ss := NewSuffixSet([]*config.SetConfig{specific, parentA, parentB})
+
+	single, multi := ss.findDomainCandidates("api.example.com")
+	if single == nil || single.Name != "specific" {
+		t.Fatalf("expected the specific single-set level to win, got single=%v multi=%v", single, multi)
+	}
+
+	single, multi = ss.findDomainCandidates("www.example.com")
+	if single != nil {
+		t.Fatalf("expected the shared parent level, got single=%s", single.Name)
+	}
+	if len(multi) != 2 {
+		t.Fatalf("expected both parent sets, got %d", len(multi))
+	}
+}
+
+func TestFindDomainCandidates_SharedSpecificBeatsSingleParent(t *testing.T) {
+	parent := makeSetWithDomains("parent", "example.com")
+	sharedA := makeSetWithDomains("sharedA", "api.example.com")
+	sharedB := makeSetWithDomains("sharedB", "api.example.com")
+	ss := NewSuffixSet([]*config.SetConfig{parent, sharedA, sharedB})
+
+	single, multi := ss.findDomainCandidates("v2.api.example.com")
+	if single != nil {
+		t.Fatalf("expected the shared api level, got single=%s", single.Name)
+	}
+	if len(multi) != 2 || multi[0].Name != "sharedA" {
+		t.Fatalf("expected [sharedA sharedB], got %v", multi)
+	}
+}
+
+func TestFindDomainCandidates_NoMatch(t *testing.T) {
+	ss := NewSuffixSet([]*config.SetConfig{makeSetWithDomains("a", "example.com")})
+
+	single, multi := ss.findDomainCandidates("nothing.test")
+	if single != nil || multi != nil {
+		t.Fatalf("expected no candidates, got single=%v multi=%v", single, multi)
+	}
+}
+
+func TestMatchSNIWithSourceTLS_SingleSetDomainStillMatches(t *testing.T) {
+	s := makeSetWithDomains("solo", "example.com")
+	ss := NewSuffixSet([]*config.SetConfig{s})
+
+	matched, set := ss.MatchSNIWithSourceTLS("deep.sub.example.com", "aa:bb:cc:dd:ee:ff", 0x0303, 4)
+	if !matched || set.Name != "solo" {
+		t.Fatalf("expected suffix match on a single-set domain, got matched=%v set=%v", matched, set)
+	}
+}
+
+func TestMatchSNIWithSourceTLS_SingleSetRespectsSourceFilter(t *testing.T) {
+	s := makeSetWithDomains("solo", "example.com")
+	s.Targets.SourceDevices = []string{"aa:bb:cc:dd:ee:ff"}
+	ss := NewSuffixSet([]*config.SetConfig{s})
+
+	if matched, _ := ss.MatchSNIWithSourceTLS("example.com", "aa:bb:cc:dd:ee:ff", 0, 0); !matched {
+		t.Error("expected match for the listed device")
+	}
+	if matched, _ := ss.MatchSNIWithSourceTLS("example.com", "11:22:33:44:55:66", 0, 0); matched {
+		t.Error("expected no match for an unlisted device")
+	}
+}
