@@ -2,6 +2,7 @@ package nfq
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -23,6 +24,7 @@ type pendingHelloCache struct {
 	mu    sync.Mutex
 	flows map[string]*pendingHello
 	bytes int
+	live  atomic.Int64
 }
 
 func newPendingHelloCache() *pendingHelloCache {
@@ -45,8 +47,13 @@ func (c *pendingHelloCache) Feed(connKey string, seq uint32, payload []byte) ([]
 		return nil, 0, false
 	}
 
+	if c.live.Load() == 0 && !truncatedClientHello(payload) {
+		return nil, 0, false
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	defer c.syncLiveLocked()
 
 	entry := c.flows[connKey]
 	if entry != nil && time.Since(entry.storedAt) > pendingHelloTTL {
@@ -106,6 +113,11 @@ func (c *pendingHelloCache) Drop(connKey string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.dropLocked(connKey)
+	c.syncLiveLocked()
+}
+
+func (c *pendingHelloCache) syncLiveLocked() {
+	c.live.Store(int64(len(c.flows)))
 }
 
 func (c *pendingHelloCache) dropLocked(connKey string) {
@@ -180,6 +192,7 @@ func (c *pendingHelloCache) Cleanup() {
 			delete(c.flows, k)
 		}
 	}
+	c.syncLiveLocked()
 }
 
 func (c *pendingHelloCache) Len() int {

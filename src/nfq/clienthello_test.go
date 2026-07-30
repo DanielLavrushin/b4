@@ -311,6 +311,91 @@ func TestPendingHelloCacheNilReceiver(t *testing.T) {
 	}
 }
 
+func TestPendingHelloCacheSkipsBulkPayloadWhenEmpty(t *testing.T) {
+	c := newPendingHelloCache()
+	bulk := bytes.Repeat([]byte{0x17, 0x03, 0x03}, 500)
+
+	if _, _, ok := c.Feed("flow", 1, bulk); ok {
+		t.Fatal("bulk data must not report a join")
+	}
+	if c.Len() != 0 {
+		t.Fatalf("bulk data must not be buffered, entries=%d", c.Len())
+	}
+	if c.live.Load() != 0 {
+		t.Fatalf("live counter should stay at zero, got %d", c.live.Load())
+	}
+}
+
+func TestPendingHelloCacheLiveCounterTracksEntries(t *testing.T) {
+	full := buildClientHello("i.ytimg.com", 1400, 0xAB)
+	seg1 := full[:1396]
+
+	c := newPendingHelloCache()
+	c.Feed("flow", 1, seg1)
+	if c.live.Load() != 1 {
+		t.Fatalf("live counter after store: want 1, got %d", c.live.Load())
+	}
+
+	bulk := bytes.Repeat([]byte{0x17, 0x03, 0x03}, 500)
+	if _, _, ok := c.Feed("other", 1, bulk); ok {
+		t.Fatal("an unrelated bulk payload must not join")
+	}
+
+	c.Feed("flow", 1+uint32(len(seg1)), full[1396:])
+	c.Drop("flow")
+	if c.live.Load() != 0 {
+		t.Fatalf("live counter after drop: want 0, got %d", c.live.Load())
+	}
+
+	c.Feed("flow", 1, seg1)
+	c.mu.Lock()
+	c.flows["flow"].storedAt = time.Now().Add(-2 * pendingHelloTTL)
+	c.mu.Unlock()
+	c.Cleanup()
+	if c.live.Load() != 0 {
+		t.Fatalf("live counter after cleanup: want 0, got %d", c.live.Load())
+	}
+}
+
+func BenchmarkPendingHelloFeedBulkPayload(b *testing.B) {
+	c := newPendingHelloCache()
+	bulk := bytes.Repeat([]byte{0x17, 0x03, 0x03}, 500)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		c.Feed("10.0.0.1:12345->1.2.3.4:443", uint32(i), bulk)
+	}
+}
+
+func BenchmarkPendingHelloFeedBulkPayloadParallel(b *testing.B) {
+	c := newPendingHelloCache()
+	bulk := bytes.Repeat([]byte{0x17, 0x03, 0x03}, 500)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for i := 0; pb.Next(); i++ {
+			c.Feed("10.0.0.1:12345->1.2.3.4:443", uint32(i), bulk)
+		}
+	})
+}
+
+func BenchmarkPendingHelloFeedBulkPayloadWhileBuffering(b *testing.B) {
+	c := newPendingHelloCache()
+	full := buildClientHello("i.ytimg.com", 1400, 0xAB)
+	c.Feed("some-other-flow", 1, full[:1396])
+	bulk := bytes.Repeat([]byte{0x17, 0x03, 0x03}, 500)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for i := 0; pb.Next(); i++ {
+			c.Feed("10.0.0.1:12345->1.2.3.4:443", uint32(i), bulk)
+		}
+	})
+}
+
 func TestLocateSNIInContinuationSegment(t *testing.T) {
 	full := buildClientHello("i.ytimg.com", 1400, 0xAB)
 	seg2 := full[1396:]
