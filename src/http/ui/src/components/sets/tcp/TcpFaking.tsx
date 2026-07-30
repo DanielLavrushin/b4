@@ -56,6 +56,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
     { value: 0, label: t("sets.faking.fakeSni.payloadRandom") },
     { value: 2, label: t("sets.faking.fakeSni.payloadGoogle") },
     { value: 3, label: t("sets.faking.fakeSni.payloadDuckDuckGo") },
+    { value: 8, label: t("sets.faking.fakeSni.payloadStun") },
     { value: 4, label: t("sets.faking.fakeSni.payloadFile") },
     { value: 5, label: t("sets.faking.fakeSni.payloadZeros") },
     { value: 6, label: t("sets.faking.fakeSni.payloadInverted") },
@@ -178,6 +179,11 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
       .filter(Boolean)
       .join(" + ") || "Disabled";
 
+  // The TTL slider only reaches the wire when the fake strategy is TTL, or when
+  // apply_ttl carries it alongside another strategy.
+  const isFakeTtlActive =
+    config.faking.strategy === "ttl" || !!config.faking.apply_ttl;
+
   const desyncStatus = isDesyncEnabled
     ? desyncModeOptions.find((o) => o.value === config.tcp.desync.mode)
         ?.label || "Enabled"
@@ -253,7 +259,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
         defaultExpanded
       >
         <Grid container spacing={2}>
-          <Grid size={{ xs: 12 }}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <B4Switch
               label={t("sets.faking.fakeSni.enable")}
               checked={config.faking.sni}
@@ -263,17 +269,22 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
             />
           </Grid>
           <Grid size={{ xs: 12, md: 6 }}>
-            <B4Select
-              label={t("sets.faking.fakeSni.strategy")}
-              value={config.faking.strategy}
-              options={FAKE_STRATEGIES}
-              onChange={(e) => onChange("faking.strategy", e.target.value)}
-              helperText={t("sets.faking.fakeSni.strategyHelper")}
+            <B4Slider
+              label={t("sets.faking.fakeSni.packetCount")}
+              value={config.faking.sni_seq_length}
+              onChange={(value: number) =>
+                onChange("faking.sni_seq_length", value)
+              }
+              min={1}
+              max={20}
+              step={1}
+              helperText={t("sets.faking.fakeSni.packetCountHelper")}
               disabled={!config.faking.sni}
-              aiTopic="faking.strategy"
-              aiContext={{ available: FAKE_STRATEGIES.map((s) => s.value) }}
             />
           </Grid>
+
+          <B4FormHeader label={t("sets.faking.fakeSni.payloadSection")} />
+
           <Grid size={{ xs: 12, md: 6 }}>
             <Stack>
               <B4Select
@@ -322,6 +333,18 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               )}
             </Stack>
           </Grid>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <B4Switch
+              label={t("sets.faking.fakeSni.matchLength")}
+              description={t("sets.faking.fakeSni.matchLengthDesc")}
+              checked={config.faking.fake_len_mode === "match"}
+              onChange={(checked) =>
+                onChange("faking.fake_len_mode", checked ? "match" : "")
+              }
+              disabled={!config.faking.sni}
+              aiTopic="faking.fake_len_mode"
+            />
+          </Grid>
           {config.faking.sni_type === FakingPayloadType.CAPTURE && (
             <Grid container size={{ xs: 12 }}>
               {captures.length > 0 && (
@@ -363,56 +386,6 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               </Grid>
             </Grid>
           )}
-          <Grid size={{ xs: 12, md: 4 }}>
-            <B4Slider
-              label={t("sets.faking.fakeSni.ttl")}
-              value={config.faking.ttl}
-              onChange={(value: number) => onChange("faking.ttl", value)}
-              min={1}
-              max={64}
-              step={1}
-              helperText={t("sets.faking.fakeSni.ttlHelper")}
-              disabled={!config.faking.sni}
-            />
-          </Grid>
-          {(config.faking.strategy === "pastseq" ||
-            config.faking.strategy === "randseq") && (
-            <Grid size={{ xs: 12, md: 4 }}>
-              <B4NumberField
-                label={t("sets.faking.fakeSni.seqOffset")}
-                value={config.faking.seq_offset}
-                onChange={(n) => onChange("faking.seq_offset", n)}
-                helperText={t("sets.faking.fakeSni.seqOffsetHelper")}
-                disabled={!config.faking.sni}
-              />
-            </Grid>
-          )}
-          {config.faking.strategy === "timestamp" && (
-            <Grid size={{ xs: 12, md: 4 }}>
-              <B4NumberField
-                label={t("sets.faking.fakeSni.timestampDecrease")}
-                value={config.faking.timestamp_decrease || 600000}
-                onChange={(n) => onChange("faking.timestamp_decrease", n)}
-                min={0}
-                helperText={t("sets.faking.fakeSni.timestampDecreaseHelper")}
-                disabled={!config.faking.sni}
-              />
-            </Grid>
-          )}
-          <Grid size={{ xs: 12, md: 4 }}>
-            <B4Slider
-              label={t("sets.faking.fakeSni.packetCount")}
-              value={config.faking.sni_seq_length}
-              onChange={(value: number) =>
-                onChange("faking.sni_seq_length", value)
-              }
-              min={1}
-              max={20}
-              step={1}
-              helperText={t("sets.faking.fakeSni.packetCountHelper")}
-              disabled={!config.faking.sni}
-            />
-          </Grid>
           {/* TLS Mod Options - only show when payload has TLS structure */}
           {config.faking.sni_type !== FakingPayloadType.RANDOM && (
             <Grid size={{ xs: 12 }}>
@@ -456,6 +429,78 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               </Stack>
             </Grid>
           )}
+
+          <B4FormHeader label={t("sets.faking.fakeSni.rejectionSection")} />
+
+          <Grid size={{ xs: 12, md: 6 }}>
+            <B4Select
+              label={t("sets.faking.fakeSni.strategy")}
+              value={config.faking.strategy}
+              options={FAKE_STRATEGIES}
+              onChange={(e) => onChange("faking.strategy", e.target.value)}
+              helperText={t("sets.faking.fakeSni.strategyHelper")}
+              disabled={!config.faking.sni}
+              aiTopic="faking.strategy"
+              aiContext={{ available: FAKE_STRATEGIES.map((s) => s.value) }}
+            />
+          </Grid>
+          {(config.faking.strategy === "pastseq" ||
+            config.faking.strategy === "randseq") && (
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4NumberField
+                label={t("sets.faking.fakeSni.seqOffset")}
+                value={config.faking.seq_offset}
+                onChange={(n) => onChange("faking.seq_offset", n)}
+                helperText={t("sets.faking.fakeSni.seqOffsetHelper")}
+                disabled={!config.faking.sni}
+              />
+            </Grid>
+          )}
+          {config.faking.strategy === "timestamp" && (
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4NumberField
+                label={t("sets.faking.fakeSni.timestampDecrease")}
+                value={config.faking.timestamp_decrease || 600000}
+                onChange={(n) => onChange("faking.timestamp_decrease", n)}
+                min={0}
+                helperText={t("sets.faking.fakeSni.timestampDecreaseHelper")}
+                disabled={!config.faking.sni}
+              />
+            </Grid>
+          )}
+
+          <Grid size={{ xs: 12, md: 4 }}>
+            <B4Slider
+              label={t("sets.faking.fakeSni.ttl")}
+              value={config.faking.ttl}
+              onChange={(value: number) => onChange("faking.ttl", value)}
+              min={1}
+              max={64}
+              step={1}
+              helperText={t("sets.faking.fakeSni.ttlHelper")}
+              disabled={!config.faking.sni || !isFakeTtlActive}
+            />
+          </Grid>
+          <Grid size={{ xs: 12, md: 4 }}>
+            <B4Switch
+              label={t("sets.faking.fakeSni.applyTtl")}
+              description={t("sets.faking.fakeSni.applyTtlDesc")}
+              checked={config.faking.apply_ttl || false}
+              onChange={(checked) => onChange("faking.apply_ttl", checked)}
+              disabled={!config.faking.sni || config.faking.strategy === "ttl"}
+              aiTopic="faking.apply_ttl"
+            />
+          </Grid>
+          <Grid size={{ xs: 12, md: 4 }}>
+            <B4Switch
+              label={t("sets.faking.fakeSni.md5OnFake")}
+              description={t("sets.faking.fakeSni.md5OnFakeDesc")}
+              checked={config.faking.md5_on_fake || false}
+              onChange={(checked) => onChange("faking.md5_on_fake", checked)}
+              disabled={!config.faking.sni}
+              aiTopic="faking.md5_on_fake"
+            />
+          </Grid>
         </Grid>
       </B4Accordion>
 

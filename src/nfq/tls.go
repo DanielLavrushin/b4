@@ -8,6 +8,45 @@ import (
 	"github.com/daniellavrushin/b4/sock"
 )
 
+// resolveTLSSplit picks the byte offset inside the TCP payload to split at.
+// TLSRecordPosition is measured from the end of the 5-byte record header, which
+// is what makes position 1 land right after it. When MiddleSNI is set the split
+// is placed inside the SNI itself, the equivalent of byedpi's "+s" offset flag.
+func resolveTLSSplit(cfg *config.SetConfig, payload []byte, payloadLen int) int {
+	split := 0
+
+	if cfg.Fragmentation.MiddleSNI {
+		if s, e, ok := locateSNI(payload); ok && e > s {
+			split = s + (e-s)/2
+		}
+	}
+
+	if split <= 0 {
+		pos := config.ResolveRange(cfg.Fragmentation.TLSRecordPosition, cfg.Fragmentation.TLSRecordPositionMax)
+		if pos <= 0 {
+			pos = 1
+		}
+		split = 5 + pos
+	}
+
+	if split >= payloadLen {
+		split = payloadLen / 2
+	}
+	if split < 6 {
+		split = 6
+	}
+	if split >= payloadLen {
+		split = payloadLen - 1
+	}
+
+	return split
+}
+
+// sendTLSFragments splits the TCP segment at an offset measured from the end of
+// the TLS record header, or at the SNI when MiddleSNI is set. This is a TCP-level
+// split at a record-relative position, not a rewrite into two TLS records: b4
+// operates on a live kernel flow, and inserting a second 5-byte record header
+// would shift every following sequence number in the connection.
 func (w *Worker) sendTLSFragments(cfg *config.SetConfig, packet []byte, dst net.IP) {
 	ipHdrLen := int((packet[0] & 0x0F) * 4)
 	tcpHdrLen := int((packet[ipHdrLen+12] >> 4) * 4)
@@ -20,19 +59,7 @@ func (w *Worker) sendTLSFragments(cfg *config.SetConfig, packet []byte, dst net.
 		return
 	}
 
-	splitPos := config.ResolveRange(cfg.Fragmentation.TLSRecordPosition, cfg.Fragmentation.TLSRecordPositionMax)
-	if splitPos <= 0 {
-		splitPos = 1
-	}
-
-	absoluteSplit := 5 + splitPos
-	if absoluteSplit >= payloadLen {
-		absoluteSplit = payloadLen / 2
-	}
-
-	if absoluteSplit < 6 {
-		absoluteSplit = 6
-	}
+	absoluteSplit := resolveTLSSplit(cfg, payload, payloadLen)
 
 	seg1Len := payloadStart + absoluteSplit
 	seg1 := make([]byte, seg1Len)
@@ -72,19 +99,7 @@ func (w *Worker) sendTLSFragmentsV6(cfg *config.SetConfig, packet []byte, dst ne
 		return
 	}
 
-	splitPos := config.ResolveRange(cfg.Fragmentation.TLSRecordPosition, cfg.Fragmentation.TLSRecordPositionMax)
-	if splitPos <= 0 {
-		splitPos = 1
-	}
-
-	absoluteSplit := 5 + splitPos
-	if absoluteSplit >= payloadLen {
-		absoluteSplit = payloadLen / 2
-	}
-
-	if absoluteSplit < 6 {
-		absoluteSplit = 6
-	}
+	absoluteSplit := resolveTLSSplit(cfg, payload, payloadLen)
 
 	seg1Len := payloadStart + absoluteSplit
 	seg1 := make([]byte, seg1Len)

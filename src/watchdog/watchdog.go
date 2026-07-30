@@ -11,6 +11,8 @@ import (
 	"github.com/daniellavrushin/b4/netprobe"
 )
 
+const verifyRetryDelay = 3 * time.Second
+
 type Watchdog struct {
 	cfgPtr       *atomic.Pointer[config.Config]
 	discoveryRT  *discovery.Runtime
@@ -227,9 +229,14 @@ func (w *Watchdog) healBatch(domains []string) {
 
 	log.Infof("[WATCHDOG] starting discovery for %d domains: %v", len(domains), domains)
 
+	tries := wdCfg.HealValidationTries
+	if tries < 1 {
+		tries = 1
+	}
+
 	suite, err := w.discoveryRT.StartSuite(cfg, domains, discovery.StartSuiteOptions{
 		SkipDNS:         true,
-		ValidationTries: 1,
+		ValidationTries: tries,
 	})
 	if err != nil {
 		log.Warnf("[WATCHDOG] failed to start discovery: %v", err)
@@ -282,8 +289,8 @@ func (w *Watchdog) healBatch(domains []string) {
 		if cs.Status == discovery.CheckStatusComplete || cs.Status == discovery.CheckStatusFailed || cs.Status == discovery.CheckStatusCanceled {
 			break
 		}
-		if cs.SuccessfulChecks >= len(domains) {
-			log.Infof("[WATCHDOG] working strategies found for all domains, canceling discovery early")
+		if cs.SuccessfulChecks >= len(domains) && tries > 1 {
+			log.Infof("[WATCHDOG] strategies found for all domains and confirmed over %d tries, canceling discovery early", tries)
 			discovery.CancelCheckSuite(suite.Id)
 			time.Sleep(1 * time.Second)
 			break
@@ -307,8 +314,28 @@ func (w *Watchdog) healBatch(domains []string) {
 		return
 	}
 
+	rollbackCfg := w.cfgPtr.Load().Clone()
 	freshCfg := w.cfgPtr.Load().Clone()
 	applyErrors := applyBatchResults(freshCfg, domains, cs, w.saveFunc)
+
+	applied := make([]string, 0, len(domains))
+	for _, domain := range domains {
+		if err, failed := applyErrors[domain]; failed && err != nil {
+			continue
+		}
+		applied = append(applied, domain)
+	}
+
+	verified := w.verifyApplied(applied, wdCfg)
+
+	rollback := len(applied) > 0 && len(verified) == 0
+	if rollback {
+		if err := w.saveFunc(rollbackCfg); err != nil {
+			log.Warnf("[WATCHDOG] failed to roll back config after failed verification: %v", err)
+		} else {
+			log.Warnf("[WATCHDOG] verification failed for all healed domains, rolled config back")
+		}
+	}
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -327,16 +354,77 @@ func (w *Watchdog) healBatch(domains []string) {
 		}
 
 		dr := cs.DomainDiscoveryResults[ExtractDomain(domain)]
-		if dr != nil && dr.BestSuccess {
-			log.Infof("[WATCHDOG] %s: healed (%s, %.0f KB/s)", domain, dr.BestPreset, dr.BestSpeed/1024)
+
+		if res, ok := verified[domain]; ok {
+			if dr != nil && dr.BestSuccess {
+				log.Infof("[WATCHDOG] %s: healed with %s, verified at %.0f KB/s", domain, dr.BestPreset, res.Speed/1024)
+			} else {
+				log.Infof("[WATCHDOG] %s: healed, verified at %.0f KB/s", domain, res.Speed/1024)
+			}
+			st.Status = StatusHealthy
+			st.ConsecutiveFailures = 0
+			st.Interval = wdCfg.IntervalSec
+			st.LastHeal = time.Now()
+			st.LastError = ""
+			st.CooldownUntil = time.Now().Add(time.Duration(wdCfg.Cooldown) * time.Second)
+			continue
 		}
-		st.Status = StatusHealthy
+
+		preset := "unknown"
+		if dr != nil && dr.BestPreset != "" {
+			preset = dr.BestPreset
+		}
+		log.Warnf("[WATCHDOG] %s: discovery reported %s working but it did not survive verification, not healed, cooldown %ds",
+			domain, preset, wdCfg.Cooldown)
+		st.Status = StatusDegraded
 		st.ConsecutiveFailures = 0
-		st.Interval = wdCfg.IntervalSec
-		st.LastHeal = time.Now()
-		st.LastError = ""
+		st.LastError = "applied strategy failed post-apply verification"
 		st.CooldownUntil = time.Now().Add(time.Duration(wdCfg.Cooldown) * time.Second)
 	}
+}
+
+// verifyApplied re-checks each domain through the live engine after the healed
+// config has been applied. Discovery runs on its own queues with its own probe
+// client, so a preset succeeding there is not evidence that normal traffic works.
+func (w *Watchdog) verifyApplied(domains []string, wdCfg config.WatchdogConfig) map[string]CheckResult {
+	verified := make(map[string]CheckResult, len(domains))
+	if len(domains) == 0 {
+		return verified
+	}
+
+	tries := wdCfg.VerifyTries
+	if tries < 1 {
+		tries = 1
+	}
+	cfg := w.cfgPtr.Load()
+	mark := cfg.Queue.Mark
+	timeout := time.Duration(wdCfg.TimeoutSec) * time.Second
+
+	pending := append([]string(nil), domains...)
+	for i := 0; i < tries && len(pending) > 0; i++ {
+		if i > 0 {
+			select {
+			case <-w.stop:
+				return verified
+			case <-time.After(verifyRetryDelay):
+			}
+		}
+
+		results := checkAllConcurrently(pending, mark, timeout)
+		var stillFailing []string
+		for _, domain := range pending {
+			res := results[domain]
+			if res.OK {
+				verified[domain] = res
+				continue
+			}
+			log.Warnf("[WATCHDOG] %s: post-apply verification try %d/%d failed (%s)", domain, i+1, tries, res.Error)
+			stillFailing = append(stillFailing, domain)
+		}
+		pending = stillFailing
+	}
+
+	return verified
 }
 
 func (w *Watchdog) syncDomainStates(wdCfg config.WatchdogConfig) {

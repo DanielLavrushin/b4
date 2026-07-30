@@ -107,7 +107,8 @@ func applyGroup(cfg *config.Config, group []domainWithSet) {
 	}
 
 	if existingSet != nil {
-		oldStrategy := existingSet.Fragmentation.Strategy
+		changes := describeSetChanges(existingSet, refSet)
+
 		existingSet.TCP = refSet.TCP
 		existingSet.UDP = refSet.UDP
 		existingSet.Fragmentation = refSet.Fragmentation
@@ -120,8 +121,13 @@ func applyGroup(cfg *config.Config, group []domainWithSet) {
 			}
 		}
 
-		log.Infof("[WATCHDOG] %s: applied to set %q (strategy: %s -> %s)",
-			strings.Join(groupDomains, ", "), existingSet.Name, oldStrategy, refSet.Fragmentation.Strategy)
+		if len(changes) == 0 {
+			log.Infof("[WATCHDOG] %s: set %q already matched the discovered strategy, left unchanged",
+				strings.Join(groupDomains, ", "), existingSet.Name)
+		} else {
+			log.Infof("[WATCHDOG] %s: overwrote tcp/udp/fragmentation/faking of set %q (%s)",
+				strings.Join(groupDomains, ", "), existingSet.Name, strings.Join(changes, ", "))
+		}
 	} else {
 		newSet := config.NewSetConfig()
 		newSet.Id = uuid.New().String()
@@ -137,6 +143,37 @@ func applyGroup(cfg *config.Config, group []domainWithSet) {
 		log.Infof("[WATCHDOG] %s: created set %q (strategy: %s)",
 			strings.Join(groupDomains, ", "), newSet.Name, refSet.Fragmentation.Strategy)
 	}
+}
+
+// describeSetChanges lists the fields the discovered strategy will overwrite, so
+// the log says what a heal actually did to a hand-tuned set rather than just
+// naming the fragmentation strategy.
+func describeSetChanges(old, next *config.SetConfig) []string {
+	var changes []string
+
+	add := func(field string, from, to any) {
+		if fmt.Sprint(from) == fmt.Sprint(to) {
+			return
+		}
+		changes = append(changes, fmt.Sprintf("%s %v -> %v", field, from, to))
+	}
+
+	add("fragmentation.strategy", old.Fragmentation.Strategy, next.Fragmentation.Strategy)
+	add("fragmentation.sni_position", old.Fragmentation.SNIPosition, next.Fragmentation.SNIPosition)
+	add("fragmentation.tlsrec_pos", old.Fragmentation.TLSRecordPosition, next.Fragmentation.TLSRecordPosition)
+	add("fragmentation.combo.shuffle_mode", old.Fragmentation.Combo.ShuffleMode, next.Fragmentation.Combo.ShuffleMode)
+	add("fragmentation.combo.first_delay_ms", old.Fragmentation.Combo.FirstDelayMs, next.Fragmentation.Combo.FirstDelayMs)
+	add("faking.strategy", old.Faking.Strategy, next.Faking.Strategy)
+	add("faking.ttl", old.Faking.TTL, next.Faking.TTL)
+	add("faking.sni_type", old.Faking.SNIType, next.Faking.SNIType)
+	add("faking.sni_seq_length", old.Faking.SNISeqLength, next.Faking.SNISeqLength)
+	add("faking.tcp_md5", old.Faking.TCPMD5, next.Faking.TCPMD5)
+	add("faking.tls_mod", strings.Join(old.Faking.TLSMod, "+"), strings.Join(next.Faking.TLSMod, "+"))
+	add("tcp.seg2delay", old.TCP.Seg2Delay, next.TCP.Seg2Delay)
+	add("tcp.conn_bytes_limit", old.TCP.ConnBytesLimit, next.TCP.ConnBytesLimit)
+	add("tcp.desync.mode", old.TCP.Desync.Mode, next.TCP.Desync.Mode)
+
+	return changes
 }
 
 func normalizeDomain(s string) string {

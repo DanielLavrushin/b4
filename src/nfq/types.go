@@ -51,5 +51,7 @@ type Worker struct {
 	tlsCache         *tlsInfoCache
 	connTracker      *connStateTracker
 	destState        *destStateTracker
+	pendingHello     *pendingHelloCache
+	hostHints        *hostHintCache
 	srcResolver      *tunSrcResolver
 }

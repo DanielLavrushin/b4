@@ -64,6 +64,7 @@ const (
 	FakePayloadZero     // All-zero payload (0x00000000)
 	FakePayloadInverted // Bitwise-inverted original TLS payload
 	FakePayloadDomain
+	FakePayloadSTUN
 )
 
 type ApiConfig struct {
@@ -221,6 +222,10 @@ type FakingConfig struct {
 
 	SNIMutation SNIMutationConfig `json:"sni_mutation"`
 	TCPMD5      bool              `json:"tcp_md5"` // Enable TCP MD5 option insertion
+
+	ApplyTTL    bool   `json:"apply_ttl"`     // Apply TTL to the fake regardless of Strategy
+	MD5OnFake   bool   `json:"md5_on_fake"`   // Put the TCP MD5 option on the fake ClientHello itself
+	FakeLenMode string `json:"fake_len_mode"` // "" = keep the payload's own length, "match" = size the fake to the real TLS payload
 }
 
 type SNIMutationConfig struct {
@@ -341,13 +346,15 @@ type DiscoveryConfig struct {
 }
 
 type WatchdogConfig struct {
-	Enabled         bool     `json:"enabled"`
-	Domains         []string `json:"domains"`
-	IntervalSec     int      `json:"interval_sec"`
-	FailureInterval int      `json:"failure_interval"`
-	Cooldown        int      `json:"cooldown_sec"`
-	TimeoutSec      int      `json:"timeout_sec"`
-	MaxRetries      int      `json:"max_retries"`
+	Enabled             bool     `json:"enabled"`
+	Domains             []string `json:"domains"`
+	IntervalSec         int      `json:"interval_sec"`
+	FailureInterval     int      `json:"failure_interval"`
+	Cooldown            int      `json:"cooldown_sec"`
+	TimeoutSec          int      `json:"timeout_sec"`
+	MaxRetries          int      `json:"max_retries"`
+	HealValidationTries int      `json:"heal_validation_tries"`
+	VerifyTries         int      `json:"verify_tries"`
 }
 
 type Logging struct {

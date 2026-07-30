@@ -768,6 +768,8 @@ func (c *Config) LoadCapturePayloads() {
 			set.Faking.PayloadData = FakeSNI1
 		case FakePayloadDefault2:
 			set.Faking.PayloadData = FakeSNI2
+		case FakePayloadSTUN:
+			set.Faking.PayloadData = FakeSTUN
 		case FakePayloadCustom:
 			set.Faking.PayloadData = []byte(set.Faking.CustomPayload)
 		case FakePayloadCapture:

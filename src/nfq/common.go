@@ -9,6 +9,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4/sock"
 )
 
@@ -160,6 +161,51 @@ func uniqueSorted(splits []int, maxVal int) []int {
 }
 
 func locateSNI(payload []byte) (start, end int, ok bool) {
+	if s, e, found := locateSNIInRecord(payload); found {
+		return s, e, true
+	}
+	return scanSNIExtension(payload)
+}
+
+func scanSNIExtension(payload []byte) (start, end int, ok bool) {
+	if len(payload) < 10 {
+		return 0, 0, false
+	}
+	switch payload[0] {
+	case 20, 21, 23, 24:
+		return 0, 0, false
+	}
+
+	for i := 0; i+9 <= len(payload); i++ {
+		if payload[i] != 0x00 || payload[i+1] != 0x00 {
+			continue
+		}
+		extLen := int(binary.BigEndian.Uint16(payload[i+2 : i+4]))
+		listLen := int(binary.BigEndian.Uint16(payload[i+4 : i+6]))
+		if listLen < 4 || extLen != listLen+2 {
+			continue
+		}
+		if payload[i+6] != 0x00 {
+			continue
+		}
+		nameLen := int(binary.BigEndian.Uint16(payload[i+7 : i+9]))
+		if nameLen != listLen-3 || nameLen > MaxSNILength {
+			continue
+		}
+		s := i + 9
+		e := s + nameLen
+		if e > len(payload) {
+			continue
+		}
+		if !sni.IsValidSNI(payload[s:e]) {
+			continue
+		}
+		return s, e, true
+	}
+	return 0, 0, false
+}
+
+func locateSNIInRecord(payload []byte) (start, end int, ok bool) {
 	if len(payload) < 5 || payload[0] != TLSHandshakeType {
 		return 0, 0, false
 	}

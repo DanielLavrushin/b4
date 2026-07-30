@@ -14,6 +14,7 @@ func Options(extra ...goleak.Option) []goleak.Option {
 		goleak.IgnoreTopFunction("github.com/daniellavrushin/b4/quic.cleanupStaleEntries"),
 		goleak.IgnoreTopFunction("github.com/daniellavrushin/b4/log.startFlusherLocked.func1"),
 		goleak.IgnoreTopFunction("github.com/daniellavrushin/b4/metrics.(*MetricsCollector).updateLoop"),
+		goleak.IgnoreTopFunction("github.com/daniellavrushin/b4/capture.(*Manager).cleanupExpiredProbes"),
 	}
 	return append(base, extra...)
 }

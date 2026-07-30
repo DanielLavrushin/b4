@@ -429,6 +429,12 @@ func (w *Worker) sendFakeSNISequence(cfg *config.SetConfig, original []byte, dst
 	}
 
 	fake := sock.BuildFakeSNIPacketV4(original, cfg)
+	if fake == nil {
+		return
+	}
+	if fk.MD5OnFake {
+		fake = sock.AddTCPMD5Option(fake, false)
+	}
 	ipHdrLen := int((fake[0] & 0x0F) * 4)
 	tcpHdrLen := int((fake[ipHdrLen+12] >> 4) * 4)
 

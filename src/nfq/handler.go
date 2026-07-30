@@ -120,6 +120,14 @@ func needsTCPSynInjection(set *config.SetConfig) bool {
 	return set.TCP.SynFake || (hasActiveStrategy && set.Faking.TCPMD5)
 }
 
+func needsPayloadlessInjection(set *config.SetConfig) bool {
+	if set == nil {
+		return false
+	}
+
+	return set.TCP.DropSACK
+}
+
 func (w *Worker) parseIPHeaders(raw []byte) (*pktInfo, bool) {
 	v := raw[0] >> 4
 	if v != IPv4 && v != IPv6 {
@@ -217,13 +225,28 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		set = nil
 	}
 
+	matchedHint := false
+	hintHost := ""
+	if !matched && cfg.IsTCPPort(dport) {
+		if hintSet, hinted := w.lookupHostHint(cfg, pkt.srcStr, pkt.dstStr, pkt.srcMac); hintSet != nil {
+			if hintSet.MatchesTCPDPort(dport) {
+				matched = true
+				set = hintSet
+				matchedHint = true
+				hintHost = hinted
+			}
+		}
+	}
+
 	matchedLearned := false
-	if mLearned, learnedSet, _ := matcher.MatchLearnedIPWithSource(pkt.dst, pkt.srcMac); mLearned {
-		if learnedSet.MatchesTCPDPort(dport) {
-			matched = true
-			set = learnedSet
-			st = learnedSet
-			matchedLearned = true
+	if !matchedHint {
+		if mLearned, learnedSet, _ := matcher.MatchLearnedIPWithSource(pkt.dst, pkt.srcMac); mLearned {
+			if learnedSet.MatchesTCPDPort(dport) {
+				matched = true
+				set = learnedSet
+				st = learnedSet
+				matchedLearned = true
+			}
 		}
 	}
 
@@ -296,7 +319,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			if set.TCP.SynFake {
 				w.sendFakeSyn(set, pkt.raw, pkt.ihl, datOff)
 			}
-			if set.Fragmentation.Strategy != config.ConfigNone && set.Faking.TCPMD5 {
+			if set.Faking.TCPMD5 {
 				w.sendFakeSynWithMD5(set, pkt.raw, pkt.ihl, pkt.dst)
 			}
 			_ = w.sock.SendIPv4(pkt.raw, pkt.dst)
@@ -304,7 +327,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			if set.TCP.SynFake {
 				w.sendFakeSynV6(set, pkt.raw, pkt.ihl, datOff)
 			}
-			if set.Fragmentation.Strategy != config.ConfigNone && set.Faking.TCPMD5 {
+			if set.Faking.TCPMD5 {
 				w.sendFakeSynWithMD5V6(set, pkt.raw, pkt.dst)
 			}
 			_ = w.sock.SendIPv6(pkt.raw, pkt.dst)
@@ -326,6 +349,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	matchedSNI := false
 	ipTarget := ""
 	sniTarget := ""
+	classifyReason := ""
 
 	if !matchedIP && matched && set != nil {
 		ipTarget = set.Name
@@ -340,6 +364,21 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 
 		host, tlsVersion, _ = sni.ParseTLSClientHelloSNI(payload)
+
+		if host == "" {
+			seq := binary.BigEndian.Uint32(tcp[4:8])
+			if joined, prefix, ok := w.pendingHello.Feed(connKey, seq, payload); ok {
+				if joinedHost, joinedTLS, _ := sni.ParseTLSClientHelloSNI(joined); joinedHost != "" {
+					host = joinedHost
+					tlsVersion = joinedTLS
+					classifyReason = "split-hello"
+					w.pendingHello.Drop(connKey)
+					log.Tracef("recovered SNI %q for %s:%d from split ClientHello (%d buffered + %d bytes)",
+						host, pkt.dstStr, dport, prefix, len(payload))
+				}
+			}
+		}
+
 		isClientHello = host != ""
 
 		if host != "" && tlsVersion != 0 {
@@ -373,6 +412,14 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				set = nil
 			}
 		}
+
+		if matchedHint && !matchedSNI && isClientHello && host != "" {
+			log.Tracef("host hint for %s dropped: %s carries a clear SNI that matches no set", pkt.dstStr, host)
+			matched = false
+			set = nil
+			matchedHint = false
+			hintHost = ""
+		}
 	}
 
 	if host == "" || tlsVersion == 0 {
@@ -385,6 +432,13 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				tlsVersion = cachedTLS
 			}
 		}
+	}
+
+	if host == "" && hintHost != "" {
+		host = hintHost
+	}
+	if matchedHint && !matchedSNI && classifyReason == "" {
+		classifyReason = "dns-hint"
 	}
 
 	if matchedSNI {
@@ -435,7 +489,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if !cfg.Queue.IsDiscovery {
-		log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), "")
+		log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), classifyReason)
 	}
 
 	{
@@ -539,6 +593,10 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 
 		if routeTProxy || !needsTCPInjection(set) {
+			return vc.accept()
+		}
+
+		if len(payload) == 0 && !needsPayloadlessInjection(set) {
 			return vc.accept()
 		}
 
@@ -656,6 +714,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				sniTarget = sniSet.Name
 				matcher.LearnIPToDomain(pkt.dst, host, sniSet)
 				registerLearnedRoute(cfg, sniSet, pkt.dst)
+				w.storeHostHint(pkt.srcStr, pkt.dstStr, sniSet, host, "quic")
 			}
 		}
 	}
