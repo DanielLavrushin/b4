@@ -36,31 +36,27 @@ func BuildFakeSNIPacketV4(original []byte, cfg *config.SetConfig) []byte {
 		fakePayload = ApplyTLSMod(fakePayload, originalTLS, flags)
 	}
 
+	fakePayload = MatchPayloadLength(fakePayload, originalTLS, cfg.Faking.FakeLenMode)
+
 	fakeLen := ipHdrLen + tcpHdrLen + len(fakePayload)
 	fake := make([]byte, fakeLen)
 	copy(fake[:ipHdrLen+tcpHdrLen], original[:ipHdrLen+tcpHdrLen])
 	copy(fake[ipHdrLen+tcpHdrLen:], fakePayload)
 
 	binary.BigEndian.PutUint16(fake[2:4], uint16(fakeLen))
+	setDistinctIPID(fake, original)
 
 	off := cfg.Faking.SeqOffset
 	if off <= 0 {
 		off = 10000
 	}
 
+	if cfg.Faking.ApplyTTL || cfg.Faking.Strategy == "ttl" {
+		fake[8] = resolveFakeTTL(cfg.Faking.TTL, original[8])
+	}
+
 	switch cfg.Faking.Strategy {
 	case "ttl":
-		ttl := cfg.Faking.TTL
-		if ttl == 0 {
-			ttl = 5
-		}
-		if origTTL := original[8]; ttl >= origTTL && origTTL > 1 {
-			ttl = origTTL - 1
-		}
-		if ttl < 1 {
-			ttl = 1
-		}
-		fake[8] = ttl
 	case "pastseq":
 		off := uint32(cfg.Faking.SeqOffset)
 		if off == 0 {

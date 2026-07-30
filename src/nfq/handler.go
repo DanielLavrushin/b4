@@ -319,7 +319,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			if set.TCP.SynFake {
 				w.sendFakeSyn(set, pkt.raw, pkt.ihl, datOff)
 			}
-			if set.Fragmentation.Strategy != config.ConfigNone && set.Faking.TCPMD5 {
+			if set.Faking.TCPMD5 {
 				w.sendFakeSynWithMD5(set, pkt.raw, pkt.ihl, pkt.dst)
 			}
 			_ = w.sock.SendIPv4(pkt.raw, pkt.dst)
@@ -327,7 +327,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			if set.TCP.SynFake {
 				w.sendFakeSynV6(set, pkt.raw, pkt.ihl, datOff)
 			}
-			if set.Fragmentation.Strategy != config.ConfigNone && set.Faking.TCPMD5 {
+			if set.Faking.TCPMD5 {
 				w.sendFakeSynWithMD5V6(set, pkt.raw, pkt.dst)
 			}
 			_ = w.sock.SendIPv6(pkt.raw, pkt.dst)

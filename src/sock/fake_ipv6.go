@@ -37,6 +37,8 @@ func BuildFakeSNIPacketV6(original []byte, cfg *config.SetConfig) []byte {
 		fakePayload = ApplyTLSMod(fakePayload, originalTLS, flags)
 	}
 
+	fakePayload = MatchPayloadLength(fakePayload, originalTLS, cfg.Faking.FakeLenMode)
+
 	fakeLen := ipv6HdrLen + tcpHdrLen + len(fakePayload)
 	fake := make([]byte, fakeLen)
 	copy(fake[:ipv6HdrLen+tcpHdrLen], original[:ipv6HdrLen+tcpHdrLen])
@@ -51,19 +53,12 @@ func BuildFakeSNIPacketV6(original []byte, cfg *config.SetConfig) []byte {
 		off = 10000
 	}
 
+	if cfg.Faking.ApplyTTL || cfg.Faking.Strategy == "ttl" {
+		fake[7] = resolveFakeTTL(cfg.Faking.TTL, original[7])
+	}
+
 	switch cfg.Faking.Strategy {
 	case "ttl":
-		ttl := cfg.Faking.TTL
-		if ttl == 0 {
-			ttl = 5
-		}
-		if origHL := original[7]; ttl >= origHL && origHL > 1 {
-			ttl = origHL - 1
-		}
-		if ttl < 1 {
-			ttl = 1
-		}
-		fake[7] = ttl
 	case "pastseq":
 		off := uint32(cfg.Faking.SeqOffset)
 		if off == 0 {

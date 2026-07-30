@@ -337,6 +337,9 @@ func (w *Worker) sendFakeSNISequencev6(cfg *config.SetConfig, original []byte, d
 	if fake == nil {
 		return
 	}
+	if faking.MD5OnFake {
+		fake = sock.AddTCPMD5Option(fake, true)
+	}
 
 	ipv6HdrLen := 40
 

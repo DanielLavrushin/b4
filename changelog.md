@@ -2,6 +2,16 @@
 
 ## [1.74.0] - 2026-07-2x
 
+- FIXED: **The watchdog reported a site as healed while it was still unreachable** - a healing run crowned a strategy after one successful fetch, and against a filter that blocks intermittently one of the twenty strategies it tries lands in a gap by chance. That result went straight into the set and the domain was marked healthy, with nothing checking whether ordinary traffic to the site worked afterwards. A healed strategy has to reproduce the fetch several times and survive a re-check through the live engine, or the configuration is put back.
+- FIXED: **A healing run could quietly replace a hand-tuned set** - it overwrote the whole tcp, udp, fragmentation and faking section while logging only the fragmentation strategy name, so a switch between two combo variants read as "combo -> combo" and every other tuned value disappeared without a trace.
+- FIXED: **A fetch that returned nothing counted as a working strategy during discovery** - a response without a declared length was accepted as complete even when zero bytes of the page arrived.
+- FIXED: **The fake packet sent before a blocked greeting did not resemble the greeting it shadowed** - it carried whatever length the fake payload happened to be, in one common case more than twice the real greeting, leaving a filter that reassembles the connection an untouched copy of the real bytes to read. Per-set `fake_len_mode: "match"` sizes it to the greeting.
+- FIXED: **The fake's TTL was ignored unless the faking strategy was set to "ttl"** - a set could carry a TTL value while its fake still went out at the full system TTL and reached the far end. Per-set `apply_ttl` applies it alongside any faking strategy.
+- ADDED: **The TCP MD5 option on the fake greeting itself** - `md5_on_fake` makes the far end discard the fake while a filter in between still reads it. The option only ever went on a separate fake connection opening, and only alongside a fragmentation strategy.
+- CHANGED: **The fake and the real packet no longer share an IP identification number** - one field gave away that both came from the same source.
+- ADDED: **Fake-only discovery strategies** - three built around a low-TTL fake with no fragmentation, plus MD5-signed variants of the TTL sweep. None of the sixteen strategies discovery started from used a TTL fake, so against a filter that reassembles TCP well enough to see through every split, discovery had nothing that could work.
+- CHANGED: **The TLS split position can follow the domain name** - `middle_sni` on a set using the `tls` fragmentation strategy places the split inside the domain name instead of a fixed offset from the record header.
+
 - FIXED: **b4 would not start on an OpenWRT router whose kernel has no packet-queue module** - startup ended with a raw firewall error that pointed nowhere near the missing kernel module. [#275](https://github.com/DanielLavrushin/b4/issues/275)
 - FIXED: **The installer reported the router as ready when it could not run b4 at all** - the check passed if any one of three queue modules was present, so a router carrying the wrong one installed cleanly and failed at first start.
 - FIXED: **The diagnostics report showed no queue number, worker count or queue mode** - it read them from config keys b4 has never written, so those lines were skipped on every router.

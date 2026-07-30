@@ -519,6 +519,90 @@ func GetPhase1Presets() []ConfigPreset {
 				},
 			},
 		},
+
+		// 17. Fake only, no fragmentation. Some DPIs reassemble TCP well enough
+		// that every split is pointless while a single low-TTL fake still lands.
+		{
+			Name:        "fake-ttl6-md5",
+			Description: "Low-TTL fake sized to the ClientHello and signed with TCP MD5, no fragmentation",
+			Family:      FamilyFakeSNI,
+			Phase:       PhaseBaseline,
+			Priority:    17,
+			Config: config.SetConfig{
+				TCP: config.TCPConfig{
+					ConnBytesLimit: 19,
+				},
+				UDP: udp,
+				Fragmentation: config.FragmentationConfig{
+					Strategy: config.ConfigNone,
+				},
+				Faking: config.FakingConfig{
+					SNI:          true,
+					TTL:          6,
+					ApplyTTL:     true,
+					Strategy:     "ttl",
+					SNISeqLength: 1,
+					SNIType:      config.FakePayloadDefault1,
+					FakeLenMode:  "match",
+					MD5OnFake:    true,
+				},
+			},
+		},
+
+		// 18. Same shape without MD5, for paths where the option is stripped.
+		{
+			Name:        "fake-ttl8",
+			Description: "Low-TTL fake sized to the ClientHello, no fragmentation, no MD5",
+			Family:      FamilyFakeSNI,
+			Phase:       PhaseBaseline,
+			Priority:    18,
+			Config: config.SetConfig{
+				TCP: config.TCPConfig{
+					ConnBytesLimit: 19,
+				},
+				UDP: udp,
+				Fragmentation: config.FragmentationConfig{
+					Strategy: config.ConfigNone,
+				},
+				Faking: config.FakingConfig{
+					SNI:          true,
+					TTL:          8,
+					ApplyTTL:     true,
+					Strategy:     "ttl",
+					SNISeqLength: 1,
+					SNIType:      config.FakePayloadDefault1,
+					FakeLenMode:  "match",
+				},
+			},
+		},
+
+		// 19. Low-TTL fake kept alongside combo fragmentation.
+		{
+			Name:        "fake-ttl6-combo",
+			Description: "Low-TTL matched fake combined with combo fragmentation",
+			Family:      FamilyFakeSNI,
+			Phase:       PhaseBaseline,
+			Priority:    19,
+			Config: config.SetConfig{
+				TCP: config.TCPConfig{
+					ConnBytesLimit: 19,
+					Seg2Delay:      20,
+					Seg2DelayMax:   50,
+				},
+				UDP:           udp,
+				Fragmentation: combo,
+				Faking: config.FakingConfig{
+					SNI:          true,
+					TTL:          6,
+					ApplyTTL:     true,
+					Strategy:     "ttl",
+					SNISeqLength: 1,
+					SNIType:      config.FakePayloadDefault1,
+					FakeLenMode:  "match",
+					MD5OnFake:    true,
+				},
+			},
+		},
 	}
 
 }
@@ -1016,9 +1100,28 @@ func GetPhase2Presets(family StrategyFamily) []ConfigPreset {
 				Config: withFaking(base, config.FakingConfig{
 					SNI:          true,
 					TTL:          ttl,
+					ApplyTTL:     true,
 					Strategy:     "ttl",
 					SNISeqLength: 1,
 					SNIType:      config.FakePayloadDefault1,
+					FakeLenMode:  "match",
+				}),
+			})
+
+			presets = append(presets, ConfigPreset{
+				Name:     formatName("fake-ttl%d-md5", ttl),
+				Family:   FamilyFakeSNI,
+				Phase:    PhaseOptimize,
+				Priority: int(ttl),
+				Config: withFaking(base, config.FakingConfig{
+					SNI:          true,
+					TTL:          ttl,
+					ApplyTTL:     true,
+					Strategy:     "ttl",
+					SNISeqLength: 1,
+					SNIType:      config.FakePayloadDefault1,
+					FakeLenMode:  "match",
+					MD5OnFake:    true,
 				}),
 			})
 		}

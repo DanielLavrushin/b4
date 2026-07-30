@@ -29,6 +29,8 @@ const (
 	FailureUnknown      FailureMode = "unknown"
 
 	validationRetryDelay = 100 * time.Millisecond
+
+	minSuccessBytes = 1024
 )
 
 func NewDiscoverySuite(inputs []string, pool *nfq.Pool, skipDNS bool, skipCache bool, payloadFiles []string, validationTries int, tlsVersion string, ipVersion string, flowMark uint) *DiscoverySuite {
@@ -1332,6 +1334,12 @@ evaluate:
 				bytesRead, expectedBytes, float64(bytesRead)*100/float64(expectedBytes))
 			return result
 		}
+	}
+
+	if bytesRead < minSuccessBytes {
+		result.Status = CheckStatusFailed
+		result.Error = fmt.Sprintf("insufficient data: %d bytes", bytesRead)
+		return result
 	}
 
 	result.Status = CheckStatusComplete
