@@ -80,7 +80,7 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
         dcs: Record<string, string>;
         direct?: Record<string, string>;
       }
-    | { ok: false; error: string }
+    | { ok: false; error: string; direct?: Record<string, string> }
     | null
   >(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -170,7 +170,11 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
           direct: data.direct,
         });
       } else {
-        setRefreshResult({ ok: false, error: data.error || "unknown error" });
+        setRefreshResult({
+          ok: false,
+          error: data.error || "unknown error",
+          direct: data.direct,
+        });
       }
     } catch (e) {
       setRefreshResult({ ok: false, error: String(e) });

@@ -31,6 +31,7 @@ interface RefreshOk {
 interface RefreshErr {
   ok: false;
   error: string;
+  direct?: Record<string, string>;
 }
 type RefreshResult = RefreshOk | RefreshErr | null;
 
@@ -64,8 +65,10 @@ export const MTProtoRelayHelpDialog = ({
   const [copiedRow, setCopiedRow] = useState<number | null>(null);
 
   const mappings = useMemo(() => {
-    if (!relayInfo || !refreshResult?.ok) return [];
-    const addrs = refreshResult.direct ?? refreshResult.dcs;
+    const addrs = refreshResult?.ok
+      ? (refreshResult.direct ?? refreshResult.dcs)
+      : refreshResult?.direct;
+    if (!relayInfo || !addrs) return [];
     return Object.entries(addrs)
       .map(([id, addr]) => {
         const absDc = Math.abs(Number(id));
@@ -182,8 +185,12 @@ export const MTProtoRelayHelpDialog = ({
         )}
 
         {fetchFailed && (
-          <B4Alert severity="error">
-            {t("settings.MTProto.dcRelayHelpFailed")}
+          <B4Alert severity={mappings.length > 0 ? "warning" : "error"}>
+            {t(
+              mappings.length > 0
+                ? "settings.MTProto.dcRelayHelpRefreshFailed"
+                : "settings.MTProto.dcRelayHelpFailed",
+            )}
           </B4Alert>
         )}
 

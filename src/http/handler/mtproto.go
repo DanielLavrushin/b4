@@ -226,7 +226,12 @@ func (api *API) handleMTProtoRefreshDCs(w http.ResponseWriter, r *http.Request) 
 	mt := api.getCfg().System.MTProto
 	if err := mtproto.RefreshDCs(mt.DCFallbackEnabled, mt.DCFallbackURL); err != nil {
 		log.Warnf("MTProto manual DC refresh failed: %v", err)
-		writeJsonError(w, http.StatusBadGateway, err.Error())
+		setJsonHeader(w)
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":  err.Error(),
+			"direct": mtproto.DirectAddresses(),
+		})
 		return
 	}
 	snap := mtproto.DCSnapshot()
