@@ -72,7 +72,7 @@ func (im *IPTablesManager) checkNFQueueSupport(ipt string) error {
 		return nil
 	}
 
-	err := fmt.Errorf("%s rejected the NFQUEUE target (%v), so b4 cannot intercept packets - the usual cause is a missing queue module: install it with 'opkg install kmod-nfnetlink-queue kmod-ipt-nfqueue iptables-mod-nfqueue' and run 'modprobe nfnetlink_queue xt_NFQUEUE', or switch b4 to TUN mode (queue.mode = \"tun\"), which does not need NFQUEUE", ipt, probeErr)
+	err := fmt.Errorf("%s rejected the NFQUEUE target (%v), so b4 cannot intercept packets - the usual cause is a missing queue module: load it with 'modprobe nfnetlink_queue xt_NFQUEUE' (OpenWrt/Entware: opkg install kmod-nfnetlink-queue kmod-ipt-nfqueue iptables-mod-nfqueue; Debian/Ubuntu: apt install linux-modules-extra-$(uname -r)), or switch b4 to TUN mode (queue.mode = \"tun\"), which does not need NFQUEUE", ipt, probeErr)
 	im.nfqueueSupport[ipt] = err
 	return err
 }

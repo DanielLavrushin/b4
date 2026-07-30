@@ -169,7 +169,7 @@ func (n *NFTablesManager) checkQueueSupport() error {
 	}
 
 	if !caps.queue {
-		return fmt.Errorf("nftables rejected the packet-queue rule [%s], so b4 cannot intercept packets: %v - the usual cause is a missing nft_queue kernel module: install it with 'opkg install kmod-nft-queue' or 'apk add kmod-nft-queue' and run 'modprobe nft_queue', or switch b4 to TUN mode (queue.mode = \"tun\"), which does not need NFQUEUE", n.buildNFQueueAction(), caps.queueErr)
+		return fmt.Errorf("nftables rejected the packet-queue rule [%s], so b4 cannot intercept packets: %v - the usual cause is a missing nft_queue kernel module: load it with 'modprobe nft_queue' (OpenWrt: opkg install kmod-nft-queue, or apk add kmod-nft-queue; Debian/Ubuntu: apt install linux-modules-extra-$(uname -r)), or switch b4 to TUN mode (queue.mode = \"tun\"), which does not need NFQUEUE", n.buildNFQueueAction(), caps.queueErr)
 	}
 
 	n.ctPacketsSupported = caps.ctPackets
