@@ -3,6 +3,7 @@ package nfq
 import (
 	"bytes"
 	"encoding/binary"
+	"strings"
 	"testing"
 	"time"
 
@@ -515,6 +516,39 @@ func TestHandlerClassifiesUnsplitClientHelloOnFirstPacket(t *testing.T) {
 	}
 	if w.pendingHello.Len() != 0 {
 		t.Fatalf("a classified flow must not be buffered, entries=%d", w.pendingHello.Len())
+	}
+}
+
+func buildBareSNIExtension(host string) []byte {
+	ext := make([]byte, 9+len(host))
+	binary.BigEndian.PutUint16(ext[0:2], 0)
+	binary.BigEndian.PutUint16(ext[2:4], uint16(5+len(host)))
+	binary.BigEndian.PutUint16(ext[4:6], uint16(3+len(host)))
+	ext[6] = 0
+	binary.BigEndian.PutUint16(ext[7:9], uint16(len(host)))
+	copy(ext[9:], host)
+	return ext
+}
+
+func TestScanSNIExtensionEnforcesMaxSNILength(t *testing.T) {
+	longest := strings.Repeat("a", MaxSNILength-4) + ".com"
+	if len(longest) != MaxSNILength {
+		t.Fatalf("fixture length: want %d, got %d", MaxSNILength, len(longest))
+	}
+
+	payload := append([]byte{0xAB, 0xCD}, buildBareSNIExtension(longest)...)
+	start, end, ok := scanSNIExtension(payload)
+	if !ok {
+		t.Fatal("a hostname at the maximum length should still be located")
+	}
+	if string(payload[start:end]) != longest {
+		t.Fatal("located hostname does not match the fixture")
+	}
+
+	oversized := strings.Repeat("a", MaxSNILength-3) + ".com"
+	payload = append([]byte{0xAB, 0xCD}, buildBareSNIExtension(oversized)...)
+	if _, _, ok := scanSNIExtension(payload); ok {
+		t.Fatalf("a hostname longer than %d bytes is not a legal SNI and must be rejected", MaxSNILength)
 	}
 }
 

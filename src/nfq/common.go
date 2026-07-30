@@ -189,7 +189,7 @@ func scanSNIExtension(payload []byte) (start, end int, ok bool) {
 			continue
 		}
 		nameLen := int(binary.BigEndian.Uint16(payload[i+7 : i+9]))
-		if nameLen != listLen-3 {
+		if nameLen != listLen-3 || nameLen > MaxSNILength {
 			continue
 		}
 		s := i + 9
