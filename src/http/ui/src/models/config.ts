@@ -47,7 +47,12 @@ export interface FakingConfig {
   tls_mod: string[];
   tcp_md5: boolean;
   timestamp_decrease: number;
+  apply_ttl: boolean;
+  md5_on_fake: boolean;
+  fake_len_mode: FakeLenMode;
 }
+
+export type FakeLenMode = "" | "match";
 export type FragmentationStrategy =
   | "tcp"
   | "ip"
