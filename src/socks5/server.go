@@ -65,6 +65,7 @@ type Server struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
+	running     atomic.Bool
 	activeConns atomic.Int64
 	connSem     chan struct{} // semaphore for connection limiting
 
@@ -111,6 +112,7 @@ func (s *Server) Start() error {
 		return fmt.Errorf("SOCKS5 TCP listen: %w", err)
 	}
 	s.listener = ln
+	s.running.Store(true)
 
 	log.Infof("SOCKS5 server listening on %s", addr)
 
@@ -121,6 +123,8 @@ func (s *Server) Start() error {
 
 // Stop gracefully shuts down the SOCKS5 server.
 func (s *Server) Stop() error {
+	s.running.Store(false)
+
 	if s.cancel != nil {
 		s.cancel()
 	}
@@ -397,6 +401,10 @@ func buildMatcher(cfg *config.Config) *sni.SuffixSet {
 }
 
 func (s *Server) UpdateConfig(newCfg *config.Config) {
+	if !s.running.Load() {
+		return
+	}
+
 	newMatcher := buildMatcher(newCfg)
 	old := s.getMatcher()
 
