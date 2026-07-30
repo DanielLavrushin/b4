@@ -56,6 +56,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
     { value: 0, label: t("sets.faking.fakeSni.payloadRandom") },
     { value: 2, label: t("sets.faking.fakeSni.payloadGoogle") },
     { value: 3, label: t("sets.faking.fakeSni.payloadDuckDuckGo") },
+    { value: 8, label: t("sets.faking.fakeSni.payloadStun") },
     { value: 4, label: t("sets.faking.fakeSni.payloadFile") },
     { value: 5, label: t("sets.faking.fakeSni.payloadZeros") },
     { value: 6, label: t("sets.faking.fakeSni.payloadInverted") },

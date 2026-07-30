@@ -90,6 +90,8 @@ func GetPayload(faking *config.FakingConfig) []byte {
 	switch faking.SNIType {
 	case config.FakePayloadDefault2:
 		return cloneBytes(config.FakeSNI2)
+	case config.FakePayloadSTUN:
+		return cloneBytes(config.FakeSTUN)
 	case config.FakePayloadCustom:
 		return []byte(faking.CustomPayload)
 	}

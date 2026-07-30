@@ -15,6 +15,7 @@ export enum FakingPayloadType {
   ZERO = 5,
   INVERTED = 6,
   DOMAIN = 7,
+  STUN = 8,
 }
 
 export type MutationMode =

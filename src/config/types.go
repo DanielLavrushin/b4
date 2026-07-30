@@ -64,6 +64,7 @@ const (
 	FakePayloadZero     // All-zero payload (0x00000000)
 	FakePayloadInverted // Bitwise-inverted original TLS payload
 	FakePayloadDomain
+	FakePayloadSTUN
 )
 
 type ApiConfig struct {

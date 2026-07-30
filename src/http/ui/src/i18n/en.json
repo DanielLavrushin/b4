@@ -1100,6 +1100,7 @@
         "payloadRandom": "Random",
         "payloadGoogle": "Preset: Google (classic)",
         "payloadDuckDuckGo": "Preset: DuckDuckGo",
+        "payloadStun": "Preset: STUN",
         "payloadFile": "My own Payload File",
         "payloadZeros": "All Zeros",
         "payloadInverted": "Inverted Original",

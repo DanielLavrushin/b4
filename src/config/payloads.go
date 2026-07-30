@@ -12,6 +12,9 @@ var FakeQUIC1 []byte
 //go:embed bin/quic2.bin
 var FakeQUIC2 []byte
 
+//go:embed bin/stun.bin
+var FakeSTUN []byte
+
 const (
 	FakePayloadPreset1 = "@preset:quic1"
 	FakePayloadPreset2 = "@preset:quic2"

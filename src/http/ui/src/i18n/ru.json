@@ -1097,6 +1097,7 @@
         "payloadRandom": "Случайное",
         "payloadGoogle": "Пресет: Google (классический)",
         "payloadDuckDuckGo": "Пресет: DuckDuckGo",
+        "payloadStun": "Пресет: STUN",
         "payloadFile": "Свой файл payload",
         "payloadZeros": "Все нули",
         "payloadInverted": "Инвертированный оригинал",
