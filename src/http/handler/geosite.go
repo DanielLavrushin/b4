@@ -163,21 +163,17 @@ func (a *API) previewGeoCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	domains, err := a.geodataManager.LoadGeositeCategory(category)
+	const previewLimit = 100
+
+	preview, total, err := a.geodataManager.PreviewGeositeCategory(category, previewLimit)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to load category: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	previewLimit := 100
-	preview := domains
-	if len(domains) > previewLimit {
-		preview = domains[:previewLimit]
-	}
-
 	response := map[string]interface{}{
 		"category":      category,
-		"total_domains": len(domains),
+		"total_domains": total,
 		"preview_count": len(preview),
 		"preview":       preview,
 	}

@@ -523,6 +523,20 @@ func (api *API) initializeSetDefaults(set *config.SetConfig) {
 	}
 }
 
+func (api *API) retainGeoCaches(sets []*config.SetConfig) {
+	if api.geodataManager == nil {
+		return
+	}
+
+	geosite := []string{}
+	geoip := []string{}
+	for _, set := range sets {
+		geosite = append(geosite, set.Targets.GeoSiteCategories...)
+		geoip = append(geoip, set.Targets.GeoIpCategories...)
+	}
+	api.geodataManager.RetainCategories(geosite, geoip)
+}
+
 func (api *API) loadTargetsForSetCached(set *config.SetConfig) {
 	domains := []string{}
 	ips := []string{}
