@@ -125,6 +125,10 @@ func ParseTLSClientHelloSNI(b []byte) (string, uint16, bool) {
 	return "", 0, false
 }
 
+func IsValidHostname(name []byte) bool {
+	return validateSNI(string(name))
+}
+
 func ParseTLSClientHelloBodySNI(ch []byte) (string, bool) {
 	sni, _, _, _ := parseTLSClientHelloMeta(ch)
 	if sni == "" {

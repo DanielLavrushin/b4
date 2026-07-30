@@ -326,6 +326,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	matchedSNI := false
 	ipTarget := ""
 	sniTarget := ""
+	classifyReason := ""
 
 	if !matchedIP && matched && set != nil {
 		ipTarget = set.Name
@@ -340,6 +341,21 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 
 		host, tlsVersion, _ = sni.ParseTLSClientHelloSNI(payload)
+
+		if host == "" {
+			seq := binary.BigEndian.Uint32(tcp[4:8])
+			if joined, prefix, ok := w.pendingHello.Feed(connKey, seq, payload); ok {
+				if joinedHost, joinedTLS, _ := sni.ParseTLSClientHelloSNI(joined); joinedHost != "" {
+					host = joinedHost
+					tlsVersion = joinedTLS
+					classifyReason = "split-hello"
+					w.pendingHello.Drop(connKey)
+					log.Tracef("recovered SNI %q for %s:%d from split ClientHello (%d buffered + %d bytes)",
+						host, pkt.dstStr, dport, prefix, len(payload))
+				}
+			}
+		}
+
 		isClientHello = host != ""
 
 		if host != "" && tlsVersion != 0 {
@@ -435,7 +451,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if !cfg.Queue.IsDiscovery {
-		log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), "")
+		log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), classifyReason)
 	}
 
 	{
