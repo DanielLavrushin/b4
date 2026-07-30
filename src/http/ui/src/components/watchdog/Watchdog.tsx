@@ -80,10 +80,12 @@ function formatTime(iso: string | undefined): string {
 
 function DomainRow({
   domain,
+  enabled,
   onForceCheck,
   onRemove,
 }: Readonly<{
   domain: WatchdogDomainStatus;
+  enabled: boolean;
   onForceCheck: (d: string) => void;
   onRemove: (d: string) => void;
 }>) {
@@ -155,12 +157,12 @@ function DomainRow({
       </TableCell>
       <TableCell align="right">
         <Stack direction="row" spacing={0.5} justifyContent="flex-end">
-          <Tooltip title={t("watchdog.forceCheck")}>
+          <Tooltip title={enabled ? t("watchdog.forceCheck") : t("watchdog.forceCheckDisabled")}>
             <span>
               <IconButton
                 size="small"
                 onClick={() => onForceCheck(domain.domain)}
-                disabled={isEscalating}
+                disabled={isEscalating || !enabled}
               >
                 <StartIcon sx={{ fontSize: 18 }} />
               </IconButton>
@@ -205,7 +207,10 @@ export function WatchdogMonitor() {
 
   const domains = state.domains ?? [];
   const healthyCount = domains.filter((d) => d.status === "healthy").length;
-  const degradedCount = domains.filter((d) => d.status !== "healthy").length;
+  const queuedCount = domains.filter((d) => d.status === "queued").length;
+  const degradedCount = domains.filter(
+    (d) => d.status !== "healthy" && d.status !== "queued",
+  ).length;
 
   return (
     <B4Section
@@ -239,11 +244,20 @@ export function WatchdogMonitor() {
             />
             {state.enabled && domains.length > 0 && (
               <>
-                <B4Badge
-                  label={`${healthyCount} ${t("watchdog.status.healthy")}`}
-                  color="primary"
-                  variant="outlined"
-                />
+                {healthyCount > 0 && (
+                  <B4Badge
+                    label={`${healthyCount} ${t("watchdog.status.healthy")}`}
+                    color="primary"
+                    variant="outlined"
+                  />
+                )}
+                {queuedCount > 0 && (
+                  <B4Badge
+                    label={`${queuedCount} ${t("watchdog.status.queued")}`}
+                    color="info"
+                    variant="outlined"
+                  />
+                )}
                 {degradedCount > 0 && (
                   <B4Badge
                     label={`${degradedCount} ${t("watchdog.issues")}`}
@@ -300,7 +314,7 @@ export function WatchdogMonitor() {
         )}
 
         {domains.length > 0 && (
-          <TableContainer>
+          <TableContainer sx={{ opacity: state.enabled ? 1 : 0.5 }}>
             <Table size="small">
               <TableHead>
                 <TableRow>
@@ -318,6 +332,7 @@ export function WatchdogMonitor() {
                   <DomainRow
                     key={domain.domain}
                     domain={domain}
+                    enabled={state.enabled}
                     onForceCheck={(d) => {
                       void forceCheck(d);
                     }}

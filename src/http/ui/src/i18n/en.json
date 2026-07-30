@@ -1934,6 +1934,7 @@
     "noDomainsHint": "No domains configured. Add domains in <link>Settings > Discovery</link> > Watchdog section.",
     "addPlaceholder": "Add domain to monitor, e.g. youtube.com",
     "forceCheck": "Force check now",
+    "forceCheckDisabled": "Watchdog is off, nothing is being checked",
     "removeDomain": "Remove from watchdog",
     "status": {
       "healthy": "Healthy",
