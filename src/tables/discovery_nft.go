@@ -109,14 +109,27 @@ func nftTableIsEmpty(listing string) bool {
 		switch {
 		case line == "", line == "}", line == "{":
 			continue
-		case strings.HasPrefix(line, "table "), strings.HasPrefix(line, "chain "):
+		case strings.HasPrefix(line, "table "):
 			continue
+		case strings.HasPrefix(line, "chain "):
+			if isDiscoveryBaseChain(line) {
+				continue
+			}
+			return false
 		case strings.HasPrefix(line, "type ") && strings.Contains(line, " hook "):
 			continue
 		}
 		return false
 	}
 	return true
+}
+
+func isDiscoveryBaseChain(declaration string) bool {
+	fields := strings.Fields(declaration)
+	if len(fields) < 2 {
+		return false
+	}
+	return fields[1] == "prerouting" || fields[1] == "output"
 }
 
 func (b *discoveryNftBackend) deleteDiscoveryRulesFromChain(chain string, flowMark uint, injectedMark uint) {

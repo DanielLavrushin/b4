@@ -34,6 +34,35 @@ func TestNftTableIsEmpty(t *testing.T) {
 		}
 	})
 
+	t.Run("main engine rebuild in progress", func(t *testing.T) {
+		listing := `table inet b4_mangle {
+	chain b4_chain {
+	}
+
+	chain prerouting {
+		type filter hook prerouting priority mangle; policy accept;
+	}
+
+	chain output {
+		type filter hook output priority mangle; policy accept;
+	}
+}`
+		if nftTableIsEmpty(listing) {
+			t.Error("table holding a chain discovery never creates must not be reported empty")
+		}
+	})
+
+	t.Run("foreign base chain present", func(t *testing.T) {
+		listing := `table inet b4_mangle {
+	chain forward {
+		type filter hook forward priority mangle; policy accept;
+	}
+}`
+		if nftTableIsEmpty(listing) {
+			t.Error("forward chain belongs to the MSS clamp path, not to discovery")
+		}
+	})
+
 	t.Run("sets present", func(t *testing.T) {
 		listing := `table inet b4_mangle {
 	set b4_ips {
