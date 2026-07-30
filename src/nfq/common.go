@@ -197,7 +197,7 @@ func scanSNIExtension(payload []byte) (start, end int, ok bool) {
 		if e > len(payload) {
 			continue
 		}
-		if !sni.IsValidHostname(payload[s:e]) {
+		if !sni.IsValidSNI(payload[s:e]) {
 			continue
 		}
 		return s, e, true

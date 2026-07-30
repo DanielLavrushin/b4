@@ -1429,7 +1429,10 @@
       "copiedToClipboard": "Copied to clipboard",
       "copyFailed": "Failed to copy to clipboard",
       "invalidFields": "Invalid set configuration: missing required fields",
-      "invalidJson": "Invalid JSON format"
+      "invalidJson": "Invalid JSON format",
+      "missingPayloads_one": "This set points to a payload file that does not exist on this device: {{files}}. Fake packets fall back to a built-in payload, so the set behaves differently than on the machine it was exported from. Ask the author for the .bin file and upload it under the same name.",
+      "missingPayloads_other": "This set points to payload files that do not exist on this device: {{files}}. Fake packets fall back to a built-in payload, so the set behaves differently than on the machine it was exported from. Ask the author for the .bin files and upload them under the same names.",
+      "missingPayloadsLink": "Open Payloads settings"
     },
     "editor": {
       "namePlaceholder": "Set name...",

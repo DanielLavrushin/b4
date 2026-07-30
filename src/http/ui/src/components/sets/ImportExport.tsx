@@ -1,16 +1,19 @@
 import { useState, useEffect, useMemo } from "react";
 import { Button, Stack, Typography } from "@mui/material";
+import { Link } from "react-router";
 import {
   ImportExportIcon,
   CopyIcon,
   DownloadIcon,
   CheckCircleIcon,
+  WarningIcon,
 } from "@b4.icons";
 import { B4Alert, B4Section, B4TextField } from "@b4.elements";
+import { useCaptures } from "@b4.capture";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useTranslation, Trans } from "react-i18next";
 
-import { B4SetConfig } from "@models/config";
+import { B4SetConfig, FakingPayloadType } from "@models/config";
 import { createDefaultSet } from "@models/defaults";
 import { copyText } from "@utils";
 
@@ -161,6 +164,25 @@ function buildExportJson(config: B4SetConfig): Record<string, unknown> {
   return result;
 }
 
+function payloadBaseName(path: string): string {
+  return path.split(/[\\/]/).pop() ?? path;
+}
+
+function collectPayloadRefs(cfg: B4SetConfig): string[] {
+  const refs: string[] = [];
+  if (
+    cfg.faking?.sni_type === FakingPayloadType.CAPTURE &&
+    cfg.faking.payload_file
+  ) {
+    refs.push(cfg.faking.payload_file);
+  }
+  const udpFile = cfg.udp?.fake_payload_file ?? "";
+  if (cfg.udp?.mode === "fake" && udpFile && !udpFile.startsWith("@")) {
+    refs.push(udpFile);
+  }
+  return [...new Set(refs)];
+}
+
 interface ImportExportSettingsProps {
   config: B4SetConfig;
   onImport: (importedConfig: B4SetConfig) => void;
@@ -173,7 +195,10 @@ export const ImportExportSettings = ({
   const { t } = useTranslation();
   const [jsonValue, setJsonValue] = useState("");
   const [importSuccess, setImportSuccess] = useState(false);
+  const [importedPayloadRefs, setImportedPayloadRefs] = useState<string[]>([]);
+  const [capturesReady, setCapturesReady] = useState(false);
   const { showSuccess, showError } = useSnackbar();
+  const { captures, loadCaptures } = useCaptures();
   const hasSourceDevices = useMemo(
     () => (config.targets.source_devices ?? []).length > 0,
     [config.targets.source_devices],
@@ -182,6 +207,18 @@ export const ImportExportSettings = ({
   useEffect(() => {
     setJsonValue(JSON.stringify(buildExportJson(config)));
   }, [config]);
+
+  useEffect(() => {
+    void loadCaptures().then(() => setCapturesReady(true));
+  }, [loadCaptures]);
+
+  const missingPayloads = useMemo(() => {
+    if (!capturesReady || importedPayloadRefs.length === 0) return [];
+    const available = new Set(captures.map((c) => payloadBaseName(c.filepath)));
+    return importedPayloadRefs.filter(
+      (ref) => !available.has(payloadBaseName(ref)),
+    );
+  }, [capturesReady, captures, importedPayloadRefs]);
 
   function migrateSetConfig(set: Record<string, unknown>): B4SetConfig {
     const tcp = set.tcp as Record<string, unknown> | undefined;
@@ -277,6 +314,8 @@ export const ImportExportSettings = ({
 
       parsed.id = config.id;
       onImport(parsed);
+      setImportedPayloadRefs(collectPayloadRefs(parsed));
+      void loadCaptures();
       setImportSuccess(true);
       return true;
     } catch {
@@ -316,6 +355,18 @@ export const ImportExportSettings = ({
           {t("sets.importExport.infoAlert")}
         </B4Alert>
       )}
+      {missingPayloads.length > 0 && (
+        <B4Alert severity="warning" icon={<WarningIcon />} sx={{ mb: 2 }}>
+          <Trans
+            i18nKey="sets.importExport.missingPayloads"
+            count={missingPayloads.length}
+            values={{ files: missingPayloads.join(", ") }}
+          />{" "}
+          <Link to="/settings/payloads">
+            {t("sets.importExport.missingPayloadsLink")}
+          </Link>
+        </B4Alert>
+      )}
       <Stack spacing={2}>
         <B4TextField
           label={t("sets.importExport.jsonLabel")}
@@ -324,6 +375,7 @@ export const ImportExportSettings = ({
           onChange={(e) => {
             setJsonValue(e.target.value);
             setImportSuccess(false);
+            setImportedPayloadRefs([]);
           }}
           onPaste={handlePaste}
           multiline
