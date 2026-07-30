@@ -26,17 +26,18 @@ type hostHintEntry struct {
 	candidates []hostHintCandidate
 }
 
+type hostHintKey struct {
+	client string
+	dest   string
+}
+
 type hostHintCache struct {
-	mu   sync.Mutex
-	keys map[string]*hostHintEntry
+	mu   sync.RWMutex
+	keys map[hostHintKey]*hostHintEntry
 }
 
 func newHostHintCache() *hostHintCache {
-	return &hostHintCache{keys: make(map[string]*hostHintEntry)}
-}
-
-func hostHintKey(clientIP, destIP string) string {
-	return clientIP + "|" + destIP
+	return &hostHintCache{keys: make(map[hostHintKey]*hostHintEntry)}
 }
 
 func (c *hostHintCache) Store(clientIP, destIP, setId, host string) {
@@ -48,7 +49,7 @@ func (c *hostHintCache) Store(clientIP, destIP, setId, host string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	key := hostHintKey(clientIP, destIP)
+	key := hostHintKey{client: clientIP, dest: destIP}
 	entry := c.keys[key]
 	if entry == nil {
 		c.evictLocked(now)
@@ -82,29 +83,34 @@ func (c *hostHintCache) Lookup(clientIP, destIP string) (string, string, bool) {
 	}
 
 	now := time.Now()
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
-	key := hostHintKey(clientIP, destIP)
-	entry := c.keys[key]
+	entry := c.keys[hostHintKey{client: clientIP, dest: destIP}]
 	if entry == nil {
 		return "", "", false
 	}
 
-	entry.candidates = pruneCandidates(entry.candidates, now)
-	if len(entry.candidates) == 0 {
-		delete(c.keys, key)
-		return "", "", false
-	}
-
-	setId := entry.candidates[0].setId
-	host := entry.candidates[0].host
-	for _, candidate := range entry.candidates[1:] {
+	setId := ""
+	host := ""
+	for _, candidate := range entry.candidates {
+		if !now.Before(candidate.expires) {
+			continue
+		}
+		if setId == "" {
+			setId = candidate.setId
+			host = candidate.host
+			continue
+		}
 		if candidate.setId != setId {
 			log.Tracef("host hint for %s -> %s is ambiguous between sets %s and %s, ignoring",
 				clientIP, destIP, setId, candidate.setId)
 			return "", "", false
 		}
+	}
+
+	if setId == "" {
+		return "", "", false
 	}
 
 	return setId, host, true
@@ -133,8 +139,9 @@ func (c *hostHintCache) evictLocked(now time.Time) {
 	}
 
 	for len(c.keys) >= maxHostHintEntries {
-		var oldestKey string
+		var oldestKey hostHintKey
 		var oldestAt time.Time
+		found := false
 		for key, entry := range c.keys {
 			at := entry.candidates[0].expires
 			for _, candidate := range entry.candidates[1:] {
@@ -142,12 +149,13 @@ func (c *hostHintCache) evictLocked(now time.Time) {
 					at = candidate.expires
 				}
 			}
-			if oldestAt.IsZero() || at.Before(oldestAt) {
+			if !found || at.Before(oldestAt) {
 				oldestKey = key
 				oldestAt = at
+				found = true
 			}
 		}
-		if oldestKey == "" {
+		if !found {
 			return
 		}
 		delete(c.keys, oldestKey)
@@ -222,7 +230,7 @@ func (c *hostHintCache) Len() int {
 	if c == nil {
 		return 0
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return len(c.keys)
 }

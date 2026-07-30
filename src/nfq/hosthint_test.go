@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -133,15 +134,20 @@ func TestHostHintExpiry(t *testing.T) {
 	c.Store("10.0.0.1", "1.2.3.4", "yt", "i.ytimg.com")
 
 	c.mu.Lock()
-	entry := c.keys[hostHintKey("10.0.0.1", "1.2.3.4")]
+	entry := c.keys[hostHintKey{client: "10.0.0.1", dest: "1.2.3.4"}]
 	entry.candidates[0].expires = time.Now().Add(-time.Second)
 	c.mu.Unlock()
 
 	if _, _, ok := c.Lookup("10.0.0.1", "1.2.3.4"); ok {
 		t.Fatal("expired hint must not resolve")
 	}
+	if c.Len() != 1 {
+		t.Fatalf("Lookup must not mutate the cache, entries=%d", c.Len())
+	}
+
+	c.Cleanup()
 	if c.Len() != 0 {
-		t.Fatalf("expired lookup should drop the key, entries=%d", c.Len())
+		t.Fatalf("Cleanup should drop the expired key, entries=%d", c.Len())
 	}
 }
 
@@ -169,7 +175,7 @@ func TestHostHintCandidateCap(t *testing.T) {
 	}
 
 	c.mu.Lock()
-	got := len(c.keys[hostHintKey("10.0.0.1", "1.2.3.4")].candidates)
+	got := len(c.keys[hostHintKey{client: "10.0.0.1", dest: "1.2.3.4"}].candidates)
 	c.mu.Unlock()
 
 	if got > maxHostHintCandidates {
@@ -197,6 +203,76 @@ func TestHostHintNilReceiver(t *testing.T) {
 	if c.Len() != 0 {
 		t.Fatal("nil cache must report zero entries")
 	}
+}
+
+func TestHostHintConcurrentReadersAndWriters(t *testing.T) {
+	c := newHostHintCache()
+	c.Store("10.0.0.1", "1.2.3.4", "yt", "i.ytimg.com")
+
+	var wg sync.WaitGroup
+	for w := 0; w < 4; w++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for i := 0; i < 2000; i++ {
+				c.Store(fmt.Sprintf("10.0.%d.%d", id, i&0xff), "1.2.3.4", "yt", "i.ytimg.com")
+			}
+		}(w)
+	}
+	for r := 0; r < 4; r++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 2000; i++ {
+				c.Lookup("10.0.0.1", "1.2.3.4")
+				c.Lookup("10.0.0.1", "9.9.9.9")
+			}
+		}()
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 200; i++ {
+			c.Cleanup()
+		}
+	}()
+	wg.Wait()
+
+	if _, _, ok := c.Lookup("10.0.0.1", "1.2.3.4"); !ok {
+		t.Fatal("the original hint should have survived concurrent access")
+	}
+}
+
+func BenchmarkHostHintLookupMiss(b *testing.B) {
+	c := newHostHintCache()
+	c.Store("10.0.0.9", "9.9.9.9", "yt", "i.ytimg.com")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		c.Lookup("10.0.0.1", "1.2.3.4")
+	}
+}
+
+func BenchmarkHostHintLookupMissIPv6(b *testing.B) {
+	c := newHostHintCache()
+	c.Store("2001:4860:4860::8888", "2606:4700:4700::1111", "yt", "i.ytimg.com")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		c.Lookup("2001:db8:85a3::8a2e:370:7334", "2606:4700:4700::1001")
+	}
+}
+
+func BenchmarkHostHintLookupMissParallel(b *testing.B) {
+	c := newHostHintCache()
+	c.Store("10.0.0.9", "9.9.9.9", "yt", "i.ytimg.com")
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			c.Lookup("10.0.0.1", "1.2.3.4")
+		}
+	})
 }
 
 func TestLookupHostHintRefusesDomainOnlySet(t *testing.T) {
