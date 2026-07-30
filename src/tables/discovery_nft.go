@@ -12,7 +12,24 @@ type discoveryNftBackend struct{}
 func (b *discoveryNftBackend) name() string    { return backendNFTables }
 func (b *discoveryNftBackend) available() bool { return hasBinary("nft") }
 
+func (b *discoveryNftBackend) ensureBase() error {
+	loadKernelModules()
+	if err := runEnsure("nft", "add", "table", "inet", nftTableName); err != nil {
+		return fmt.Errorf("failed to create table %s: %w", nftTableName, err)
+	}
+	for _, hook := range []string{"prerouting", "output"} {
+		spec := fmt.Sprintf("{ type filter hook %s priority %d ; policy accept ; }", hook, nftBaseChainPriority)
+		if err := runEnsure("nft", "add", "chain", "inet", nftTableName, hook, spec); err != nil {
+			return fmt.Errorf("failed to create %s chain: %w", hook, err)
+		}
+	}
+	return nil
+}
+
 func (b *discoveryNftBackend) apply(flowMark uint, injectedMark uint, queueStart int, threads int) error {
+	if err := b.ensureBase(); err != nil {
+		return err
+	}
 	if err := runEnsure("nft", "add", "chain", "inet", nftTableName, discoveryChainNFT); err != nil {
 		return fmt.Errorf("failed to create discovery chain: %w", err)
 	}
@@ -72,6 +89,47 @@ func (b *discoveryNftBackend) clear(flowMark uint, injectedMark uint) {
 	b.deleteDiscoveryRulesFromChain("prerouting", flowMark, injectedMark)
 	_, _ = run("nft", "flush", "chain", "inet", nftTableName, discoveryChainNFT)
 	_, _ = run("nft", "delete", "chain", "inet", nftTableName, discoveryChainNFT)
+	b.dropTableIfEmpty()
+}
+
+func (b *discoveryNftBackend) dropTableIfEmpty() {
+	out, err := run("nft", "list", "table", "inet", nftTableName)
+	if err != nil {
+		return
+	}
+	if !nftTableIsEmpty(out) {
+		return
+	}
+	_, _ = run("nft", "delete", "table", "inet", nftTableName)
+}
+
+func nftTableIsEmpty(listing string) bool {
+	for _, line := range strings.Split(listing, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case line == "", line == "}", line == "{":
+			continue
+		case strings.HasPrefix(line, "table "):
+			continue
+		case strings.HasPrefix(line, "chain "):
+			if isDiscoveryBaseChain(line) {
+				continue
+			}
+			return false
+		case strings.HasPrefix(line, "type ") && strings.Contains(line, " hook "):
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func isDiscoveryBaseChain(declaration string) bool {
+	fields := strings.Fields(declaration)
+	if len(fields) < 2 {
+		return false
+	}
+	return fields[1] == "prerouting" || fields[1] == "output"
 }
 
 func (b *discoveryNftBackend) deleteDiscoveryRulesFromChain(chain string, flowMark uint, injectedMark uint) {

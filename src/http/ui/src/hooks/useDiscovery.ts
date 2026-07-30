@@ -113,6 +113,7 @@ export function useDiscovery() {
         if (normalized.length === 0) {
           setDiscoveryRunning(false);
           setSuiteId(null);
+          setError("No URLs provided");
           return { success: false, error: "No URLs provided" };
         }
         const res = await discoveryApi.start(
@@ -128,10 +129,14 @@ export function useDiscovery() {
         return { success: true };
       } catch (e) {
         setDiscoveryRunning(false);
+        setSuiteId(null);
+        let message = String(e);
         if (e instanceof ApiError) {
-          return { success: false, error: JSON.stringify(e.body ?? e.message) };
+          const detail = typeof e.body === "string" ? e.body.trim() : "";
+          message = detail.length > 0 ? detail : e.message;
         }
-        return { success: false, error: String(e) };
+        setError(message);
+        return { success: false, error: message };
       }
     },
     [],

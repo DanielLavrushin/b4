@@ -1933,6 +1933,7 @@
     "noDomainsHint": "Домены не настроены. Добавьте домены в <link>Настройки > Дискавери</link> > раздел Мониторинг.",
     "addPlaceholder": "Добавить домен для мониторинга, напр. youtube.com",
     "forceCheck": "Проверить сейчас",
+    "forceCheckDisabled": "Watchdog выключен, проверки не выполняются",
     "removeDomain": "Убрать из watchdog",
     "status": {
       "healthy": "Доступен",

@@ -61,7 +61,7 @@ func (w *Watchdog) GetState() WatchdogState {
 		} else {
 			copy = DomainStatus{
 				Domain:   d,
-				Status:   StatusHealthy,
+				Status:   StatusQueued,
 				Interval: cfg.System.Checker.Watchdog.IntervalSec,
 			}
 		}
@@ -91,7 +91,7 @@ func (w *Watchdog) ForceCheck(domain string) {
 	if !ok {
 		st = &DomainStatus{
 			Domain: domain,
-			Status: StatusHealthy,
+			Status: StatusQueued,
 		}
 		w.domainStates[domain] = st
 	}
@@ -434,7 +434,7 @@ func (w *Watchdog) syncDomainStates(wdCfg config.WatchdogConfig) {
 		if _, ok := w.domainStates[d]; !ok {
 			w.domainStates[d] = &DomainStatus{
 				Domain:   d,
-				Status:   StatusHealthy,
+				Status:   StatusQueued,
 				Interval: wdCfg.IntervalSec,
 			}
 		}
