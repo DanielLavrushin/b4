@@ -1,9 +1,11 @@
 package mtproto
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -12,7 +14,22 @@ import (
 	"github.com/daniellavrushin/b4/log"
 )
 
-const transparentBufSize = 65536
+const (
+	transparentBufSize = 65536
+	defaultBridgeWait  = 180 * time.Second
+	bridgeFrameTimeout = 10 * time.Second
+)
+
+func bridgeWait(cfg *config.Config) time.Duration {
+	switch n := cfg.System.MTProto.BridgeWaitSec; {
+	case n < 0:
+		return 0
+	case n == 0:
+		return defaultBridgeWait
+	default:
+		return time.Duration(n) * time.Second
+	}
+}
 
 type prefixConn struct {
 	net.Conn
@@ -94,15 +111,32 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 	id := nextConnID()
 	tag := tg(id)
 	log.Tracef("%s bridge accept %s -> %s:%d", tag, client.RemoteAddr(), origIP, origPort)
-	_ = client.SetReadDeadline(time.Now().Add(5 * time.Second))
+
+	wait := bridgeWait(b.cfg.Load())
+	if wait > 0 {
+		_ = client.SetReadDeadline(time.Now().Add(wait))
+	} else {
+		_ = client.SetReadDeadline(time.Time{})
+	}
 	init := make([]byte, obfuscatedFrameLen)
-	head, herr := io.ReadFull(client, init[:4])
+	if _, ferr := io.ReadFull(client, init[:1]); ferr != nil {
+		_ = client.SetReadDeadline(time.Time{})
+		switch {
+		case errors.Is(ferr, io.EOF):
+			log.Tracef("%s bridge client closed before handshake from %s:%d -> drop", tag, origIP, origPort)
+		case errors.Is(ferr, os.ErrDeadlineExceeded):
+			log.Tracef("%s bridge no handshake within %s from %s:%d -> drop", tag, wait, origIP, origPort)
+		default:
+			log.Tracef("%s bridge handshake read from %s:%d failed: %v -> drop", tag, origIP, origPort, ferr)
+		}
+		return true, nil
+	}
+
+	_ = client.SetReadDeadline(time.Now().Add(bridgeFrameTimeout))
+	n, herr := io.ReadFull(client, init[1:4])
+	head := 1 + n
 	if herr != nil {
 		_ = client.SetReadDeadline(time.Time{})
-		if head == 0 {
-			log.Tracef("%s bridge empty conn from %s -> drop", tag, origIP)
-			return true, nil
-		}
 		log.Debugf("%s bridge short head (%d B) from %s:%d -> fail open", tag, head, origIP, origPort)
 		return false, &prefixConn{Conn: client, prefix: append([]byte(nil), init[:head]...)}
 	}

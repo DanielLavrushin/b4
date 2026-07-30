@@ -86,7 +86,7 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 
 	s := &SuffixSet{
 		sets:      make(map[string]*config.SetConfig, totalDomains),
-		multiSets: make(map[string][]*config.SetConfig, totalDomains),
+		multiSets: make(map[string][]*config.SetConfig),
 		regexes:   make([]*regexWithSet, 0),
 		ipRanger:  cidranger.NewPCTrieRanger(),
 
@@ -110,28 +110,30 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 		if !set.Enabled {
 			continue
 		}
-		for _, d := range set.Targets.DomainsToMatch {
-			d = strings.ToLower(strings.TrimSpace(d))
+		for _, entry := range set.Targets.DomainsToMatch {
+			d, isRegex := ParseDomainEntry(entry)
 			if d == "" {
 				continue
 			}
 
-			if strings.HasPrefix(d, "regexp:") {
-				pattern := strings.TrimPrefix(d, "regexp:")
-				if seenRegexes[pattern] {
+			if isRegex {
+				if seenRegexes[d] {
 					continue
 				}
-				if re, err := regexp.Compile(pattern); err == nil {
+				if re, err := regexp.Compile(d); err == nil {
 					s.regexes = append(s.regexes, &regexWithSet{regex: re, set: set})
-					seenRegexes[pattern] = true
+					seenRegexes[d] = true
 				}
 				continue
 			}
 
-			d = strings.TrimRight(d, ".")
-			s.multiSets[d] = append(s.multiSets[d], set)
-			if _, exists := s.sets[d]; !exists {
+			prev, exists := s.sets[d]
+			if !exists {
 				s.sets[d] = set
+			} else if multi, ok := s.multiSets[d]; ok {
+				s.multiSets[d] = append(multi, set)
+			} else {
+				s.multiSets[d] = []*config.SetConfig{prev, set}
 			}
 		}
 
@@ -251,7 +253,10 @@ func (s *SuffixSet) MatchSNI(host string) (bool, *config.SetConfig) {
 		return false, nil
 	}
 
-	lower := strings.ToLower(host)
+	lower := NormalizeDomain(host)
+	if lower == "" {
+		return false, nil
+	}
 
 	if matched, set := s.matchDomain(lower); matched {
 		return true, set
@@ -603,7 +608,12 @@ func (s *SuffixSet) MatchSNIWithSourceTLS(host string, srcMAC string, tlsVersion
 }
 
 func (s *SuffixSet) matchDomainWithSourceTLS(host string, srcMAC string, tlsVersion uint16, ipVersion uint8) (bool, *config.SetConfig) {
-	candidates := s.findDomainCandidates(host)
+	single, candidates := s.findDomainCandidates(host)
+
+	if single != nil {
+		only := [1]*config.SetConfig{single}
+		return selectSetBySourceAndTLS(only[:], srcMAC, tlsVersion, ipVersion)
+	}
 
 	if len(candidates) == 0 {
 		return false, nil
@@ -612,9 +622,12 @@ func (s *SuffixSet) matchDomainWithSourceTLS(host string, srcMAC string, tlsVers
 	return selectSetBySourceAndTLS(candidates, srcMAC, tlsVersion, ipVersion)
 }
 
-func (s *SuffixSet) findDomainCandidates(host string) []*config.SetConfig {
+func (s *SuffixSet) findDomainCandidates(host string) (*config.SetConfig, []*config.SetConfig) {
 	if sets, ok := s.multiSets[host]; ok {
-		return sets
+		return nil, sets
+	}
+	if set, ok := s.sets[host]; ok {
+		return set, nil
 	}
 
 	remaining := host
@@ -625,10 +638,13 @@ func (s *SuffixSet) findDomainCandidates(host string) []*config.SetConfig {
 		}
 		remaining = remaining[idx+1:]
 		if sets, ok := s.multiSets[remaining]; ok {
-			return sets
+			return nil, sets
+		}
+		if set, ok := s.sets[remaining]; ok {
+			return set, nil
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 func (s *SuffixSet) matchRegexWithSourceTLS(host string, srcMAC string, tlsVersion uint16, ipVersion uint8) (bool, *config.SetConfig) {

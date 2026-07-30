@@ -20,8 +20,10 @@ const (
 )
 
 type NFTablesManager struct {
-	cfg             *config.Config
-	ipVersionFilter string
+	cfg                *config.Config
+	ipVersionFilter    string
+	ctPacketsSupported bool
+	sysctlsApplied     bool
 }
 
 func NewNFTablesManager(cfg *config.Config) *NFTablesManager {
@@ -120,10 +122,7 @@ func (n *NFTablesManager) addSetElements(name string, elements []string) error {
 }
 
 func (n *NFTablesManager) buildNFQueueAction() string {
-	if n.cfg.Queue.Threads > 1 {
-		return fmt.Sprintf("queue num %d-%d bypass", n.cfg.Queue.StartNum, n.cfg.Queue.StartNum+n.cfg.Queue.Threads-1)
-	}
-	return fmt.Sprintf("queue num %d bypass", n.cfg.Queue.StartNum)
+	return nfqueueActionExpr(n.cfg.Queue.StartNum, n.cfg.Queue.Threads)
 }
 
 func (n *NFTablesManager) addRule(chain string, args ...string) error {
@@ -148,7 +147,47 @@ func (n *NFTablesManager) addQueueRule(chain string, args ...string) error {
 	return n.addFilteredRule(chain, args...)
 }
 
+func queueMatchWithLimit(match []string, limit string, ctPackets bool) []string {
+	args := make([]string, 0, len(match)+6)
+	args = append(args, match...)
+	if ctPackets {
+		args = append(args, "ct", "original", "packets", "<", limit)
+	}
+	return append(args, "counter")
+}
+
+func (n *NFTablesManager) addLimitedQueueRule(chain, limit string, match ...string) error {
+	return n.addQueueRule(chain, queueMatchWithLimit(match, limit, n.ctPacketsSupported)...)
+}
+
+func (n *NFTablesManager) checkQueueSupport() error {
+	caps := probeQueueNftCached(n.buildNFQueueAction())
+	if !caps.probed {
+		n.ctPacketsSupported = true
+		log.Tracef("NFTABLES: queue capability probe inconclusive, assuming full support")
+		return nil
+	}
+
+	if !caps.queue {
+		return fmt.Errorf("nftables rejected the packet-queue rule [%s], so b4 cannot intercept packets: %v - the usual cause is a missing nft_queue kernel module: load it with 'modprobe nft_queue' (OpenWrt: opkg install kmod-nft-queue, or apk add kmod-nft-queue; Debian/Ubuntu: apt install linux-modules-extra-$(uname -r)), or switch b4 to TUN mode (queue.mode = \"tun\"), which does not need NFQUEUE", n.buildNFQueueAction(), caps.queueErr)
+	}
+
+	n.ctPacketsSupported = caps.ctPackets
+	if !caps.ctPackets {
+		log.Warnf("nftables: conntrack packet counters (ct original packets) are unavailable, so every packet on the configured ports is queued instead of only the first few - install kmod-nft-core (kmod-nft-conntrack) to restore the per-connection limit")
+	}
+	return nil
+}
+
 func (n *NFTablesManager) Apply() error {
+	if err := n.apply(); err != nil {
+		n.clear(n.sysctlsApplied)
+		return err
+	}
+	return nil
+}
+
+func (n *NFTablesManager) apply() error {
 	cfg := n.cfg
 	if !hasBinary("nft") {
 		return fmt.Errorf("nft binary not found")
@@ -156,6 +195,10 @@ func (n *NFTablesManager) Apply() error {
 
 	log.Tracef("NFTABLES: adding rules")
 	loadKernelModules()
+
+	if err := n.checkQueueSupport(); err != nil {
+		return err
+	}
 
 	// Clear existing table to prevent rule duplication
 	if n.tableExists() {
@@ -296,7 +339,7 @@ func (n *NFTablesManager) Apply() error {
 	tcpLimit := fmt.Sprintf("%d", cfg.Queue.TCPConnBytesLimit+1)
 	udpLimit := fmt.Sprintf("%d", cfg.Queue.UDPConnBytesLimit+1)
 
-	if err := n.addQueueRule(nftChainName, "tcp", "dport", tcpPortExpr, "ct", "original", "packets", "<", tcpLimit, "counter"); err != nil {
+	if err := n.addLimitedQueueRule(nftChainName, tcpLimit, "tcp", "dport", tcpPortExpr); err != nil {
 		return err
 	}
 
@@ -315,7 +358,7 @@ func (n *NFTablesManager) Apply() error {
 		return err
 	}
 
-	if err := n.addQueueRule("prerouting", "tcp", "sport", tcpPortExpr, "ct", "original", "packets", "<", tcpLimit, "counter"); err != nil {
+	if err := n.addLimitedQueueRule("prerouting", tcpLimit, "tcp", "sport", tcpPortExpr); err != nil {
 		return err
 	}
 
@@ -334,13 +377,14 @@ func (n *NFTablesManager) Apply() error {
 	} else {
 		udpPortExpr = "{ " + strings.Join(udpPorts, ", ") + " }"
 	}
-	if err := n.addQueueRule(nftChainName, "udp", "dport", udpPortExpr, "ct", "original", "packets", "<", udpLimit, "counter"); err != nil {
+	if err := n.addLimitedQueueRule(nftChainName, udpLimit, "udp", "dport", udpPortExpr); err != nil {
 		return err
 	}
 
 	for _, s := range b4SysctlSettings() {
 		s.Apply()
 	}
+	n.sysctlsApplied = true
 
 	if err := n.ApplyMasquerade(); err != nil {
 		return err
@@ -359,6 +403,10 @@ func (n *NFTablesManager) Apply() error {
 }
 
 func (n *NFTablesManager) Clear() error {
+	return n.clear(true)
+}
+
+func (n *NFTablesManager) clear(revertSysctls bool) error {
 	if !hasBinary("nft") {
 		return nil
 	}
@@ -377,8 +425,10 @@ func (n *NFTablesManager) Clear() error {
 		}
 	}
 
-	for _, s := range b4SysctlSettings() {
-		s.RevertBack()
+	if revertSysctls {
+		for _, s := range b4SysctlSettings() {
+			s.RevertBack()
+		}
 	}
 
 	return nil

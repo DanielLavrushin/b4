@@ -1,5 +1,18 @@
 # B4 - Bye Bye Big Bro
 
+## [1.74.0] - 2026-07-2x
+
+- FIXED: **b4 would not start on an OpenWRT router whose kernel has no packet-queue module** - startup ended with a raw firewall error that pointed nowhere near the missing kernel module. [#275](https://github.com/DanielLavrushin/b4/issues/275)
+- FIXED: **The installer reported the router as ready when it could not run b4 at all** - the check passed if any one of three queue modules was present, so a router carrying the wrong one installed cleanly and failed at first start.
+- FIXED: **The diagnostics report showed no queue number, worker count or queue mode** - it read them from config keys b4 has never written, so those lines were skipped on every router.
+- FIXED: **A failed start left part of b4's firewall rules on the router** - when applying the rules stopped partway, the table, chains and hooks created up to that point stayed behind after b4 exited.
+- FIXED: **A kernel without connection packet counters stopped b4 from starting at all** - the whole queue rule was rejected and startup failed, over an optimisation that was never required.
+- CHANGED: **System Info listed the wrong kernel modules on nftables-only routers** - it marked the iptables-era modules as missing and said nothing about the nftables ones b4 depends on there.
+- FIXED: **Telegram on Android could sit at "Connecting" when a set routed it through the built-in Telegram bridge** - the bridge closed connections that stayed silent for five seconds, though Telegram opens them before it has anything to send. [#277](https://github.com/DanielLavrushin/b4/issues/277)
+- FIXED: **The "already exists in other sets" warning missed overlaps that do change routing** - it compared entries character for character while traffic is matched by domain suffix, so `example.com` in another set drew no warning for `www.example.com`. [#273](https://github.com/DanielLavrushin/b4/issues/273)
+- FIXED: **The DC Relay socat helper generated commands that pointed at the wrong Telegram servers** - it built them from Telegram's published proxy list, whose addresses drop the connection right after the handshake.
+- FIXED: **A set built from a large geosite category took several times more memory than its domains** - reading a few categories out of a 51 MB file needed around 90 MB, and the matcher and a switched-off SOCKS5 server each kept a spare copy of every domain.
+
 ## [1.73.0] - 2026-07-05
 
 - FIXED: **A phone that dropped off mobile data could leave a Telegram proxy connection stuck** - when a mobile client backgrounded Telegram or lost signal, its connection frequently died without a clean close, yet b4 held the half-dead session and its link out to Telegram open for many minutes, in some cases until the app was reopened, so returning to Telegram could mean waiting on a dead socket instead of a clean reconnect.

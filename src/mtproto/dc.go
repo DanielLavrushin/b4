@@ -93,6 +93,14 @@ const (
 	DefaultDCFallbackURL   = "https://proxy.lavrush.in/telegram/getProxyConfig"
 )
 
+func DirectAddresses() map[int]string {
+	out := make(map[int]string, len(dcAddressesV4))
+	for k, v := range dcAddressesV4 {
+		out[k] = v
+	}
+	return out
+}
+
 func DCSnapshot() map[int]string {
 	dcRuntimeMu.RLock()
 	defer dcRuntimeMu.RUnlock()

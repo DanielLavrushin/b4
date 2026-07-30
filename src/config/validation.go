@@ -129,7 +129,12 @@ func (c *Config) Validate() error {
 		switch set.Routing.Mode {
 		case "":
 			set.Routing.Mode = RoutingModeInterface
-		case RoutingModeProxy, RoutingModeInterface, RoutingModeMTProtoWS:
+		case RoutingModeProxy, RoutingModeInterface:
+		case RoutingModeMTProtoWS:
+			if set.Routing.Upstream.UDP {
+				log.Warnf("Set '%s': routing mode 'mtproto-ws' carries TCP only; ignoring routing.upstream.udp (it would divert UDP to a port with no listener and drop it)", set.Name)
+				set.Routing.Upstream.UDP = false
+			}
 		case RoutingModeBlock:
 			set.Routing.BlockAction = NormalizeBlockAction(set.Routing.BlockAction)
 		default:
@@ -384,6 +389,11 @@ func (c *Config) checkPortCollisions(v *validator) {
 				map[string]any{"value": it, "min": -1, "max": 86400},
 				"idle_timeout_sec must be -1 (disable), 0 (default 300), or up to 86400 (got %d)", it)
 		}
+	}
+	if bw := c.System.MTProto.BridgeWaitSec; bw < -1 || bw > 86400 {
+		v.addf("system.mtproto.bridge_wait_sec", "out_of_range",
+			map[string]any{"value": bw, "min": -1, "max": 86400},
+			"bridge_wait_sec must be -1 (wait indefinitely), 0 (default 180), or up to 86400 (got %d)", bw)
 	}
 	for i := 0; i < len(refs); i++ {
 		for j := i + 1; j < len(refs); j++ {

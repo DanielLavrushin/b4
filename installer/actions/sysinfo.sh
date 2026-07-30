@@ -202,14 +202,32 @@ action_sysinfo() {
     fi
 
     # Config-derived info (queue number, worker threads, geodat paths)
+    _si_tun_mode="no"
     if [ -n "$cfg_file" ] && command_exists jq; then
-        queue_num=$(jq -r '.system.queue_num // empty' "$cfg_file" 2>/dev/null) || true
-        workers=$(jq -r '.system.workers // empty' "$cfg_file" 2>/dev/null) || true
+        queue_mode=$(jq -r '.queue.mode // empty' "$cfg_file" 2>/dev/null) || true
+        queue_num=$(jq -r '.queue.start_num // empty' "$cfg_file" 2>/dev/null) || true
+        workers=$(jq -r '.queue.threads // empty' "$cfg_file" 2>/dev/null) || true
         geosite=$(jq -r '.system.geo.sitedat_path // empty' "$cfg_file" 2>/dev/null) || true
         geoip=$(jq -r '.system.geo.ipdat_path // empty' "$cfg_file" 2>/dev/null) || true
 
-        [ -n "$queue_num" ] && [ "$queue_num" != "null" ] && log_detail "Queue number" "$queue_num"
-        [ -n "$workers" ] && [ "$workers" != "null" ] && log_detail "Worker threads" "$workers"
+        if [ -z "$queue_mode" ] || [ "$queue_mode" = "null" ]; then
+            queue_mode="nfqueue (default)"
+        fi
+        if [ -z "$queue_num" ] || [ "$queue_num" = "null" ]; then
+            queue_num="537 (default)"
+        fi
+        if [ -z "$workers" ] || [ "$workers" = "null" ]; then
+            workers="4 (default)"
+        fi
+
+        case "$queue_mode" in
+        tun*) _si_tun_mode="yes" ;;
+        *) ;;
+        esac
+
+        log_detail "Queue mode" "$queue_mode"
+        log_detail "Queue number" "$queue_num"
+        log_detail "Worker threads" "$workers"
 
         if [ -n "$geosite" ] && [ "$geosite" != "null" ] && [ -f "$geosite" ]; then
             size=$(ls -lh "$geosite" 2>/dev/null | awk '{print $5}')
@@ -224,10 +242,27 @@ action_sysinfo() {
     log_sep
 
     # --- Kernel modules ---
+    [ -n "$B4_PKG_MANAGER" ] || detect_pkg_manager
+    _si_backend=$(_firewall_backend)
+    _si_queue_ok="no"
+    _si_counters_ok="no"
+    case "$_si_backend" in
+    nftables)
+        _nft_queue_works && _si_queue_ok="yes"
+        _nft_ct_counters_work && _si_counters_ok="yes"
+        ;;
+    iptables | iptables-legacy)
+        _ipt_nfqueue_works "$_si_backend" && _si_queue_ok="yes"
+        _ipt_connbytes_works "$_si_backend" && _si_counters_ok="yes"
+        ;;
+    *) ;;
+    esac
+
     echo ""
+    log_detail "Firewall backend" "$_si_backend"
     log_info "Kernel modules:"
-    for mod in xt_NFQUEUE nfnetlink_queue xt_connbytes xt_multiport nf_conntrack; do
-        if lsmod 2>/dev/null | grep -q "^${mod}"; then
+    for mod in $(_queue_modules_for_backend "$_si_backend"); do
+        if lsmod 2>/dev/null | grep -q "^${mod}[[:space:]]"; then
             printf "    ${GREEN}loaded${NC}   %s\n" "$mod" >&2
         elif _kmod_builtin "$mod"; then
             printf "    ${GREEN}built-in${NC} %s\n" "$mod" >&2
@@ -236,34 +271,27 @@ action_sysinfo() {
         fi
     done
 
-    # Functional test — does NFQUEUE actually work?
-    _nfq_ipt=""
-    if command_exists iptables; then
-        _nfq_ipt="iptables"
-    elif command_exists iptables-legacy; then
-        _nfq_ipt="iptables-legacy"
+    if [ "$_si_backend" = "none" ]; then
+        printf "    ${RED}  FAIL${NC}  %s\n" "No working firewall backend (neither nft nor iptables) - b4 cannot install its rules" >&2
+    elif [ "$_si_queue_ok" = "yes" ]; then
+        printf "    ${GREEN}  OK${NC}    %s\n" "Packet queue works (${_si_backend} functional test passed)" >&2
+    elif [ "$_si_tun_mode" = "yes" ]; then
+        printf "    ${YELLOW}  WARN${NC}  %s\n" "Packet queue not functional on ${_si_backend}, but b4 is configured for TUN mode, which does not use it" >&2
+    else
+        printf "    ${RED}  FAIL${NC}  %s\n" "Packet queue not functional on ${_si_backend} - b4 cannot start in NFQUEUE mode" >&2
+        case "$B4_PKG_MANAGER" in
+        apk) printf "    ${DIM}          Try: apk add %s${NC}\n" "$(_queue_pkgs_for_backend "$_si_backend")" >&2 ;;
+        opkg) printf "    ${DIM}          Try: opkg install %s${NC}\n" "$(_queue_pkgs_for_backend "$_si_backend")" >&2 ;;
+        *) printf "    ${DIM}          Needs these kernel modules: %s${NC}\n" "$(_queue_modules_for_backend "$_si_backend")" >&2 ;;
+        esac
+        printf "    ${DIM}          Or switch b4 to TUN mode (queue.mode = \"tun\"), which needs no NFQUEUE${NC}\n" >&2
     fi
-    if [ -n "$_nfq_ipt" ]; then
-        if $_nfq_ipt -t mangle -C B4_TEST -j NFQUEUE --queue-num 0 2>/dev/null; then
-            $_nfq_ipt -t mangle -D B4_TEST -j NFQUEUE --queue-num 0 2>/dev/null || true
-        fi
-        if $_nfq_ipt -t mangle -N B4_TEST 2>/dev/null; then
-            if $_nfq_ipt -t mangle -A B4_TEST -j NFQUEUE --queue-num 0 2>/dev/null; then
-                printf "    ${GREEN}  OK${NC}    %s\n" "NFQUEUE works (functional test passed)" >&2
-                $_nfq_ipt -t mangle -D B4_TEST -j NFQUEUE --queue-num 0 2>/dev/null || true
-            else
-                printf "    ${RED}  FAIL${NC}  %s\n" "NFQUEUE not functional" >&2
-            fi
-            $_nfq_ipt -t mangle -X B4_TEST 2>/dev/null || true
-        fi
-        if $_nfq_ipt -t filter -N B4_CB_TEST 2>/dev/null; then
-            if $_nfq_ipt -t filter -A B4_CB_TEST -p tcp -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:10 -j ACCEPT 2>/dev/null; then
-                printf "    ${GREEN}  OK${NC}    %s\n" "connbytes works (functional test passed)" >&2
-            else
-                printf "    ${RED}  FAIL${NC}  %s\n" "connbytes not functional" >&2
-            fi
-            $_nfq_ipt -t filter -F B4_CB_TEST 2>/dev/null || true
-            $_nfq_ipt -t filter -X B4_CB_TEST 2>/dev/null || true
+
+    if [ "$_si_backend" != "none" ]; then
+        if [ "$_si_counters_ok" = "yes" ]; then
+            printf "    ${GREEN}  OK${NC}    %s\n" "Connection packet counters work (b4 queues only the first packets of a connection)" >&2
+        else
+            printf "    ${YELLOW}  WARN${NC}  %s\n" "Connection packet counters unavailable - b4 inspects every packet on the configured ports" >&2
         fi
     fi
 
@@ -308,8 +336,7 @@ action_sysinfo() {
     # Firewall detection with functional nftables test
     _fw_found=0
     if command_exists nft; then
-        if nft add table inet _b4_test 2>/dev/null; then
-            nft delete table inet _b4_test 2>/dev/null || true
+        if _nft_functional; then
             printf "    ${GREEN}found${NC}   nft ${DIM}(nftables — functional)${NC}\n" >&2
             _fw_found=1
         else
@@ -337,7 +364,7 @@ action_sysinfo() {
         if command_exists "$tool"; then
             printf "    ${GREEN}found${NC}   %s\n" "$tool" >&2
         else
-            printf "    ${RED}missing${NC} %s ${DIM}(required for install)${NC}\n" >&2
+            printf "    ${RED}missing${NC} %s ${DIM}(required for install)${NC}\n" "$tool" >&2
         fi
     done
     # curl/wget with HTTPS check

@@ -114,15 +114,7 @@ _openwrt_load_kmods() {
         [ -n "$mod_path" ] && insmod "$mod_path" 2>/dev/null || true
     done
 
-    # Check if at least one queue mechanism is available
-    if ! _kmod_available "xt_NFQUEUE" && ! _kmod_available "nfnetlink_queue" && ! _kmod_available "nft_queue"; then
-        log_warn "No netfilter queue module available — b4 may not work"
-        if [ "$B4_PKG_MANAGER" = "apk" ]; then
-            log_info "Try: apk add kmod-nft-queue kmod-nft-nat kmod-nft-compat"
-        else
-            log_info "Try: opkg install kmod-nft-queue kmod-nft-conntrack kmod-nfnetlink-queue kmod-ipt-nfqueue iptables-mod-nfqueue kmod-ipt-conntrack-extra iptables-mod-conntrack-extra"
-        fi
-    fi
+    _warn_if_queue_unavailable || true
 }
 
 _openwrt_check_recommended() {

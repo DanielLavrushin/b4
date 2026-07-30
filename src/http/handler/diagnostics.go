@@ -597,6 +597,9 @@ func (api *API) collectGeodataInfo() DiagGeodata {
 
 func collectKernelModules(cfg *config.Config) DiagKernel {
 	modules := []string{"xt_NFQUEUE", "nfnetlink_queue", "xt_connbytes", "xt_multiport", "nf_conntrack"}
+	if tables.DetectBackend(cfg) == "nftables" {
+		modules = []string{"nft_queue", "nfnetlink_queue", "nft_ct", "nf_conntrack"}
+	}
 	result := DiagKernel{Modules: make([]DiagModule, 0, len(modules))}
 
 	lsmodOutput := ""
@@ -623,6 +626,20 @@ func collectKernelModules(cfg *config.Config) DiagKernel {
 
 		result.Modules = append(result.Modules, dm)
 	}
+
+	queueOK, queueMissing, queuePkgs := tables.ProbeNFQueueCapability(cfg)
+	queueCap := DiagCapability{
+		Name:      "packet_queue",
+		Available: queueOK,
+		Missing:   queueMissing,
+		Packages:  queuePkgs,
+	}
+	if queueOK {
+		queueCap.Detail = "NFQUEUE interception available (b4 can inspect and rewrite matched traffic)"
+	} else {
+		queueCap.Detail = "NFQUEUE interception unavailable - b4 cannot intercept packets on this firewall backend; install the missing modules or switch to TUN mode"
+	}
+	result.Capabilities = append(result.Capabilities, queueCap)
 
 	tproxyOK, tproxyMissing, tproxyPkgs := tables.ProbeTProxyCapability(cfg)
 	tproxyCap := DiagCapability{

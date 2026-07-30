@@ -26,10 +26,12 @@ interface RefreshOk {
   ok: true;
   count: number;
   dcs: Record<string, string>;
+  direct?: Record<string, string>;
 }
 interface RefreshErr {
   ok: false;
   error: string;
+  direct?: Record<string, string>;
 }
 type RefreshResult = RefreshOk | RefreshErr | null;
 
@@ -63,12 +65,17 @@ export const MTProtoRelayHelpDialog = ({
   const [copiedRow, setCopiedRow] = useState<number | null>(null);
 
   const mappings = useMemo(() => {
-    if (!relayInfo || !refreshResult?.ok) return [];
-    return Object.entries(refreshResult.dcs)
+    const addrs = refreshResult?.ok
+      ? (refreshResult.direct ?? refreshResult.dcs)
+      : refreshResult?.direct;
+    if (!relayInfo || !addrs) return [];
+    return Object.entries(addrs)
       .map(([id, addr]) => {
         const absDc = Math.abs(Number(id));
-        return { dc: absDc, addr, port: relayInfo.basePort + absDc - 1 };
+        return { dc: absDc, addr };
       })
+      .filter((m) => m.dc !== 203)
+      .map((m) => ({ ...m, port: relayInfo.basePort + m.dc - 1 }))
       .sort((a, b) => a.dc - b.dc);
   }, [relayInfo, refreshResult]);
 
@@ -178,8 +185,12 @@ export const MTProtoRelayHelpDialog = ({
         )}
 
         {fetchFailed && (
-          <B4Alert severity="error">
-            {t("settings.MTProto.dcRelayHelpFailed")}
+          <B4Alert severity={mappings.length > 0 ? "warning" : "error"}>
+            {t(
+              mappings.length > 0
+                ? "settings.MTProto.dcRelayHelpRefreshFailed"
+                : "settings.MTProto.dcRelayHelpFailed",
+            )}
           </B4Alert>
         )}
 

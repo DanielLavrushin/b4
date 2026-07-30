@@ -3,34 +3,46 @@ package geodat
 import (
 	"net/netip"
 	"os"
+	"strings"
 
 	"github.com/daniellavrushin/b4/log"
-	"github.com/urlesistiana/v2dat/v2data"
 )
 
-func LoadDomainsFromCategories(geodataPath string, categories []string) ([]string, error) {
-	if geodataPath == "" || len(categories) == 0 {
-		return []string{}, nil
+func geositeReadable(path string) bool {
+	if path == "" {
+		return false
 	}
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		log.Errorf("Geosite file not found: %s - categories will be ignored", path)
+		return false
+	}
+	return true
+}
 
-	if _, err := os.Stat(geodataPath); os.IsNotExist(err) {
-		log.Errorf("Geosite file not found: %s - categories will be ignored", geodataPath)
+func geoipReadable(path string) bool {
+	if path == "" {
+		return false
+	}
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		log.Errorf("GeoIP file not found: %s - categories will be ignored", path)
+		return false
+	}
+	return true
+}
+
+func LoadDomainsFromCategories(geodataPath string, categories []string) ([]string, error) {
+	if len(categories) == 0 || !geositeReadable(geodataPath) {
 		return []string{}, nil
 	}
 
 	allDomains := []string{}
-
-	save := func(tag string, domainList []*v2data.Domain) error {
-		for _, d := range domainList {
-			domain := extractDomainValue(d)
-			if domain != "" {
-				allDomains = append(allDomains, domain)
-			}
+	err := streamGeoSite(geodataPath, categories, func(_ string, kind uint64, value string) error {
+		if domain := formatDomainEntry(kind, value); domain != "" {
+			allDomains = append(allDomains, domain)
 		}
 		return nil
-	}
-
-	if err := streamGeoSite(geodataPath, categories, save); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
 
@@ -38,50 +50,100 @@ func LoadDomainsFromCategories(geodataPath string, categories []string) ([]strin
 }
 
 func LoadIpsFromCategories(geodataPath string, categories []string) ([]string, error) {
-	if geodataPath == "" || len(categories) == 0 {
-		return []string{}, nil
-	}
-
-	if _, err := os.Stat(geodataPath); os.IsNotExist(err) {
-		log.Errorf("GeoIP file not found: %s - categories will be ignored", geodataPath)
+	if len(categories) == 0 || !geoipReadable(geodataPath) {
 		return []string{}, nil
 	}
 
 	allIps := []string{}
-
-	save := func(tag string, geo *v2data.GeoIP) error {
-		for _, cidr := range geo.GetCidr() {
-			ip, ok := netip.AddrFromSlice(cidr.Ip)
-			if !ok {
-				continue
-			}
-			prefix, err := ip.Prefix(int(cidr.Prefix))
-			if err != nil {
-				continue
-			}
-			allIps = append(allIps, prefix.String())
-		}
+	err := streamGeoIP(geodataPath, categories, func(_ string, prefix netip.Prefix) error {
+		allIps = append(allIps, prefix.String())
 		return nil
-	}
-
-	if err := streamGeoIP(geodataPath, categories, save); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
 
 	return allIps, nil
 }
 
-func extractDomainValue(d *v2data.Domain) string {
-	switch d.Type {
-	case v2data.Domain_Plain:
-		return d.Value
-	case v2data.Domain_Regex:
-		return "regexp:" + d.Value
-	case v2data.Domain_Full:
-		return d.Value
-	case v2data.Domain_Domain:
-		return d.Value
-	default:
-		return d.Value
+func CountDomainsInCategories(geodataPath string, categories []string) (map[string]int, error) {
+	counts := make(map[string]int, len(categories))
+	if len(categories) == 0 || !geositeReadable(geodataPath) {
+		return counts, nil
 	}
+
+	byTag := make(map[string]int, len(categories))
+	err := streamGeoSite(geodataPath, categories, func(tag string, kind uint64, value string) error {
+		if formatDomainEntry(kind, value) != "" {
+			byTag[tag]++
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, category := range categories {
+		tag, _ := splitAttrs(category)
+		counts[category] = byTag[strings.ToLower(tag)]
+	}
+
+	return counts, nil
+}
+
+func CountIpsInCategories(geodataPath string, categories []string) (map[string]int, error) {
+	counts := make(map[string]int, len(categories))
+	if len(categories) == 0 || !geoipReadable(geodataPath) {
+		return counts, nil
+	}
+
+	byTag := make(map[string]int, len(categories))
+	err := streamGeoIP(geodataPath, categories, func(tag string, _ netip.Prefix) error {
+		byTag[tag]++
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, category := range categories {
+		counts[category] = byTag[strings.ToLower(category)]
+	}
+
+	return counts, nil
+}
+
+func PreviewDomainsInCategory(geodataPath, category string, limit int) ([]string, int, error) {
+	preview := []string{}
+	total := 0
+	if category == "" || !geositeReadable(geodataPath) {
+		return preview, 0, nil
+	}
+
+	err := streamGeoSite(geodataPath, []string{category}, func(_ string, kind uint64, value string) error {
+		domain := formatDomainEntry(kind, value)
+		if domain == "" {
+			return nil
+		}
+		total++
+		if len(preview) < limit {
+			preview = append(preview, domain)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return preview, total, nil
+}
+
+func formatDomainEntry(kind uint64, value string) string {
+	if value == "" {
+		return ""
+	}
+	if kind == domainTypeRegex {
+		return "regexp:" + value
+	}
+	return value
 }

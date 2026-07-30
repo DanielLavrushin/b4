@@ -74,8 +74,13 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
   const { t } = useTranslation();
   const [refreshing, setRefreshing] = useState(false);
   const [refreshResult, setRefreshResult] = useState<
-    | { ok: true; count: number; dcs: Record<string, string> }
-    | { ok: false; error: string }
+    | {
+        ok: true;
+        count: number;
+        dcs: Record<string, string>;
+        direct?: Record<string, string>;
+      }
+    | { ok: false; error: string; direct?: Record<string, string> }
     | null
   >(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -154,12 +159,22 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
         success: boolean;
         count?: number;
         dcs?: Record<string, string>;
+        direct?: Record<string, string>;
         error?: string;
       };
       if (data.success && typeof data.count === "number" && data.dcs) {
-        setRefreshResult({ ok: true, count: data.count, dcs: data.dcs });
+        setRefreshResult({
+          ok: true,
+          count: data.count,
+          dcs: data.dcs,
+          direct: data.direct,
+        });
       } else {
-        setRefreshResult({ ok: false, error: data.error || "unknown error" });
+        setRefreshResult({
+          ok: false,
+          error: data.error || "unknown error",
+          direct: data.direct,
+        });
       }
     } catch (e) {
       setRefreshResult({ ok: false, error: String(e) });
@@ -367,6 +382,14 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
                 />
               )}
             </Box>
+            <B4NumberField
+              label={t("settings.MTProto.bridgeWait")}
+              value={config.system.mtproto?.bridge_wait_sec || 180}
+              onChange={(n) => onChange("system.mtproto.bridge_wait_sec", n)}
+              min={-1}
+              max={86400}
+              helperText={t("settings.MTProto.bridgeWaitHelp")}
+            />
             <B4TextField
               label={t("settings.MTProto.cfWorkerDomain")}
               value={config.system.mtproto?.cfworker_domain || ""}

@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"unicode"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/sni"
 	"github.com/google/uuid"
 )
 
@@ -52,12 +54,46 @@ func (api *API) handleTargetedDomains(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
+type SetDomainMatch struct {
+	Domain   string `json:"domain"`
+	SetName  string `json:"set_name"`
+	SetId    string `json:"set_id"`
+	Via      string `json:"via"`
+	Relation string `json:"relation"`
+	Entry    string `json:"entry"`
+	Enabled  bool   `json:"enabled"`
+}
+
+const maxCheckDomains = 32
+
+func parseCheckDomains(raw string) []string {
+	fields := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == '|' || r == ';' || unicode.IsSpace(r)
+	})
+
+	seen := make(map[string]bool, len(fields))
+	domains := make([]string, 0, len(fields))
+	for _, field := range fields {
+		domain := sni.NormalizeDomain(field)
+		if domain == "" || seen[domain] {
+			continue
+		}
+		seen[domain] = true
+		domains = append(domains, domain)
+		if len(domains) >= maxCheckDomains {
+			break
+		}
+	}
+
+	return domains
+}
+
 // @Summary Check which sets match a domain
 // @Tags Sets
 // @Produce json
-// @Param domain query string true "Domain to check"
+// @Param domain query string true "Domain to check, several separated by comma or whitespace"
 // @Param exclude query string false "Set ID to exclude"
-// @Success 200 {array} object
+// @Success 200 {array} SetDomainMatch
 // @Security BearerAuth
 // @Router /sets/check-domain [get]
 func (api *API) handleCheckDomain(w http.ResponseWriter, r *http.Request) {
@@ -66,40 +102,74 @@ func (api *API) handleCheckDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	domain := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("domain")))
+	domains := parseCheckDomains(r.URL.Query().Get("domain"))
 	excludeId := r.URL.Query().Get("exclude")
 
-	if domain == "" {
+	if len(domains) == 0 {
 		writeJsonError(w, http.StatusBadRequest, "domain parameter required")
 		return
 	}
 
-	type setMatch struct {
-		SetName string `json:"set_name"`
-		SetId   string `json:"set_id"`
-		Via     string `json:"via"`
-	}
+	byDomain := make(map[string][]SetDomainMatch, len(domains))
+	exactRank := sni.RelationExact.Priority()
 
-	var matches []setMatch
 	for _, set := range api.getCfg().Sets {
 		if set.Id == excludeId {
 			continue
 		}
 
-		for _, d := range set.Targets.SNIDomains {
-			if strings.ToLower(d) == domain {
-				matches = append(matches, setMatch{SetName: set.Name, SetId: set.Id, Via: "manual"})
-				goto nextSet
+		best := make(map[string]SetDomainMatch, len(domains))
+		ranks := make(map[string]int, len(domains))
+
+		consider := func(entry, via string) {
+			for _, domain := range domains {
+				if ranks[domain] == exactRank {
+					continue
+				}
+				relation, matched := sni.MatchDomainEntry(entry, domain)
+				rank := relation.Priority()
+				if rank <= ranks[domain] {
+					continue
+				}
+				ranks[domain] = rank
+				best[domain] = SetDomainMatch{
+					Domain:   domain,
+					SetName:  set.Name,
+					SetId:    set.Id,
+					Via:      via,
+					Relation: string(relation),
+					Entry:    matched,
+					Enabled:  set.Enabled,
+				}
 			}
 		}
 
-		for _, d := range set.Targets.DomainsToMatch {
-			if strings.ToLower(d) == domain {
-				matches = append(matches, setMatch{SetName: set.Name, SetId: set.Id, Via: "geosite"})
-				goto nextSet
+		manual := make(map[string]bool, len(set.Targets.SNIDomains))
+		for _, entry := range set.Targets.SNIDomains {
+			if canonical := sni.CanonicalDomainEntry(entry); canonical != "" {
+				manual[canonical] = true
+			}
+			consider(entry, "manual")
+		}
+
+		for _, entry := range set.Targets.DomainsToMatch {
+			canonical := sni.CanonicalDomainEntry(entry)
+			if canonical == "" || manual[canonical] {
+				continue
+			}
+			consider(entry, "geosite")
+		}
+
+		for _, domain := range domains {
+			if ranks[domain] > 0 {
+				byDomain[domain] = append(byDomain[domain], best[domain])
 			}
 		}
-	nextSet:
+	}
+
+	matches := make([]SetDomainMatch, 0, len(domains))
+	for _, domain := range domains {
+		matches = append(matches, byDomain[domain]...)
 	}
 
 	setJsonHeader(w)
@@ -451,6 +521,20 @@ func (api *API) initializeSetDefaults(set *config.SetConfig) {
 	if set.Routing.IPTTLSeconds <= 0 {
 		set.Routing.IPTTLSeconds = config.DefaultSetConfig.Routing.IPTTLSeconds
 	}
+}
+
+func (api *API) retainGeoCaches(sets []*config.SetConfig) {
+	if api.geodataManager == nil {
+		return
+	}
+
+	geosite := []string{}
+	geoip := []string{}
+	for _, set := range sets {
+		geosite = append(geosite, set.Targets.GeoSiteCategories...)
+		geoip = append(geoip, set.Targets.GeoIpCategories...)
+	}
+	api.geodataManager.RetainCategories(geosite, geoip)
 }
 
 func (api *API) loadTargetsForSetCached(set *config.SetConfig) {

@@ -518,11 +518,13 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
               {sectionTitle(t("settings.SystemInfo.kernelCapabilities"))}
               {data.kernel.capabilities.map((cap) => {
                 const label =
-                  cap.name === "transparent_proxy"
-                    ? t("settings.SystemInfo.capTransparentProxy")
-                    : cap.name === "reply_side_bypass"
-                      ? t("settings.SystemInfo.capReplySideBypass")
-                      : cap.name;
+                  cap.name === "packet_queue"
+                    ? t("settings.SystemInfo.capPacketQueue")
+                    : cap.name === "transparent_proxy"
+                      ? t("settings.SystemInfo.capTransparentProxy")
+                      : cap.name === "reply_side_bypass"
+                        ? t("settings.SystemInfo.capReplySideBypass")
+                        : cap.name;
                 return (
                   <Stack key={cap.name} spacing={0.3} sx={{ py: 0.3, px: 1 }}>
                     <Stack

@@ -2,118 +2,99 @@ package geodat
 
 import (
 	"bufio"
-	"encoding/binary"
-	"fmt"
-	"io"
 	"net/netip"
 	"os"
 	"strings"
-
-	"github.com/urlesistiana/v2dat/v2data"
-	"google.golang.org/protobuf/proto"
 )
 
-func UnpackGeoIP(args *UnpackArgs) error {
-	filePath, wantTags := args.File, args.Filters
+type cidrFunc func(tag string, prefix netip.Prefix) error
 
-	save := func(tag string, geo *v2data.GeoIP) error {
-		return convertV2CidrToText(geo.GetCidr(), os.Stdout)
+func toPrefix(ip []byte, bits int) (netip.Prefix, bool) {
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return netip.Prefix{}, false
 	}
-
-	if len(wantTags) != 0 {
-		return streamGeoIP(filePath, wantTags, save)
-	}
-
-	b, err := os.ReadFile(filePath)
+	prefix, err := addr.Prefix(bits)
 	if err != nil {
-		return err
+		return netip.Prefix{}, false
 	}
-	geoIPList, err := v2data.LoadGeoIPListFromDAT(b)
-	if err != nil {
-		return err
-	}
-	for _, geo := range geoIPList.GetEntry() {
-		tag := strings.ToLower(geo.GetCountryCode())
-		if err := save(tag, geo); err != nil {
-			return err
-		}
-	}
-	return nil
+	return prefix, true
 }
 
-func streamGeoIP(file string, filters []string, save func(string, *v2data.GeoIP) error) error {
-	f, err := os.Open(file)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	want := map[string]struct{}{}
+func streamGeoIP(file string, filters []string, emit cidrFunc) error {
+	want := make(map[string]struct{}, len(filters))
 	for _, tag := range filters {
 		want[strings.ToLower(tag)] = struct{}{}
 	}
-	got := map[string]struct{}{}
+	if len(want) == 0 {
+		return nil
+	}
 
-	r := bufio.NewReaderSize(f, 32*1024)
-	for {
-		tagByte, err := r.ReadByte()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		if tagByte != 0x0A {
-			return fmt.Errorf("unexpected wire tag %02X", tagByte)
-		}
-		length, err := binary.ReadUvarint(r)
-		if err != nil {
-			return err
-		}
-		msg := make([]byte, length)
-		if _, err := io.ReadFull(r, msg); err != nil {
-			return err
-		}
-		tag, err := readCountryCode(msg)
-		if err != nil {
-			return err
-		}
+	got := make(map[string]struct{}, len(want))
+	var scratch []byte
+
+	return scanEntries(file, func(tag string, body *entryBody) error {
 		if _, ok := want[tag]; !ok {
-			continue
+			return nil
 		}
-		var geo v2data.GeoIP
-		if err := proto.Unmarshal(msg, &geo); err != nil {
-			return err
-		}
-		if err := save(tag, &geo); err != nil {
+		err := scanRecords(body, &scratch, func(rec []byte) error {
+			ip, bits, err := parseCIDR(rec)
+			if err != nil {
+				return err
+			}
+			prefix, ok := toPrefix(ip, bits)
+			if !ok {
+				return nil
+			}
+			return emit(tag, prefix)
+		})
+		if err != nil {
 			return err
 		}
 		got[tag] = struct{}{}
 		if len(got) == len(want) {
-			return nil
+			return errStopScan
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
-func convertV2CidrToText(cidr []*v2data.CIDR, w io.Writer) error {
-	bw := bufio.NewWriter(w)
-	for i, record := range cidr {
-		ip, ok := netip.AddrFromSlice(record.Ip)
-		if !ok {
-			return fmt.Errorf("invalid ip at index #%d, %s", i, record.Ip)
-		}
-		prefix, err := ip.Prefix(int(record.Prefix))
-		if !ok {
-			return fmt.Errorf("invalid prefix at index #%d, %w", i, err)
-		}
+func streamAllGeoIP(file string, emit cidrFunc) error {
+	var scratch []byte
+	return scanEntries(file, func(tag string, body *entryBody) error {
+		return scanRecords(body, &scratch, func(rec []byte) error {
+			ip, bits, err := parseCIDR(rec)
+			if err != nil {
+				return err
+			}
+			prefix, ok := toPrefix(ip, bits)
+			if !ok {
+				return nil
+			}
+			return emit(tag, prefix)
+		})
+	})
+}
 
-		if _, err := bw.WriteString(prefix.String()); err != nil {
+func UnpackGeoIP(args *UnpackArgs) error {
+	w := bufio.NewWriterSize(os.Stdout, 64*1024)
+
+	emit := func(_ string, prefix netip.Prefix) error {
+		if _, err := w.WriteString(prefix.String()); err != nil {
 			return err
 		}
-		if _, err := bw.WriteRune('\n'); err != nil {
-			return err
-		}
+		_, err := w.WriteString("\n")
+		return err
 	}
-	return bw.Flush()
+
+	var err error
+	if len(args.Filters) != 0 {
+		err = streamGeoIP(args.File, args.Filters, emit)
+	} else {
+		err = streamAllGeoIP(args.File, emit)
+	}
+	if err != nil {
+		return err
+	}
+	return w.Flush()
 }

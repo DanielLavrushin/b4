@@ -493,22 +493,143 @@ is_lxc_container() {
 _kmod_builtin() {
     _mod="$1"
     _kver=$(uname -r)
-    for _f in "/lib/modules/${_kver}/modules.builtin" "/lib/modules/${_kver}/modules.builtin.modinfo"; do
-        [ -f "$_f" ] && grep -q "${_mod}" "$_f" 2>/dev/null && return 0
-    done
+    _f="/lib/modules/${_kver}/modules.builtin"
+    [ -f "$_f" ] && grep -q "/${_mod}\.ko" "$_f" 2>/dev/null && return 0
+    _f="/lib/modules/${_kver}/modules.builtin.modinfo"
+    [ -f "$_f" ] && grep -q "${_mod}\.[a-z]" "$_f" 2>/dev/null && return 0
     [ -d "/sys/module/${_mod}" ] && return 0
     return 1
 }
 
 _kmod_available() {
-    lsmod 2>/dev/null | grep -q "^$1" && return 0
+    lsmod 2>/dev/null | grep -q "^${1}[[:space:]]" && return 0
     _kmod_builtin "$1" && return 0
     return 1
 }
 
 _nft_functional() {
     command_exists nft || return 1
-    nft list ruleset >/dev/null 2>&1
+    if [ -z "$B4_NFT_FUNCTIONAL" ]; then
+        if nft add table inet _b4_test >/dev/null 2>&1; then
+            nft delete table inet _b4_test >/dev/null 2>&1
+            B4_NFT_FUNCTIONAL="yes"
+        else
+            B4_NFT_FUNCTIONAL="no"
+        fi
+    fi
+    [ "$B4_NFT_FUNCTIONAL" = "yes" ]
+}
+
+_firewall_backend() {
+    if _nft_functional; then
+        echo "nftables"
+    elif command_exists iptables; then
+        if iptables --version 2>/dev/null | grep -q "nf_tables" && command_exists iptables-legacy; then
+            echo "iptables-legacy"
+        else
+            echo "iptables"
+        fi
+    elif command_exists iptables-legacy; then
+        echo "iptables-legacy"
+    else
+        echo "none"
+    fi
+}
+
+_nft_probe_rule() {
+    _pt="_b4_probe_$$"
+    nft delete table inet "$_pt" >/dev/null 2>&1
+    nft add table inet "$_pt" >/dev/null 2>&1 || return 1
+    _prc=1
+    if nft add chain inet "$_pt" test >/dev/null 2>&1; then
+        nft add rule inet "$_pt" test $1 >/dev/null 2>&1 && _prc=0
+    fi
+    nft delete table inet "$_pt" >/dev/null 2>&1
+    return $_prc
+}
+
+_nft_queue_works() {
+    _nft_functional || return 1
+    _nft_probe_rule "counter queue num 0 bypass"
+}
+
+_nft_ct_counters_work() {
+    _nft_functional || return 1
+    _nft_probe_rule "ct original packets < 20 counter accept"
+}
+
+_ipt_probe_rule() {
+    _ib="$1"
+    _itable="$2"
+    shift 2
+    command_exists "$_ib" || return 1
+    _ipc="B4_PROBE_$$"
+    $_ib -t "$_itable" -F "$_ipc" >/dev/null 2>&1
+    $_ib -t "$_itable" -X "$_ipc" >/dev/null 2>&1
+    $_ib -t "$_itable" -N "$_ipc" >/dev/null 2>&1 || return 1
+    _prc=1
+    $_ib -t "$_itable" -A "$_ipc" "$@" >/dev/null 2>&1 && _prc=0
+    $_ib -t "$_itable" -F "$_ipc" >/dev/null 2>&1
+    $_ib -t "$_itable" -X "$_ipc" >/dev/null 2>&1
+    return $_prc
+}
+
+_ipt_nfqueue_works() {
+    _ipt_probe_rule "$1" mangle -j NFQUEUE --queue-num 0 --queue-bypass
+}
+
+_ipt_connbytes_works() {
+    _ipt_probe_rule "$1" filter -p tcp -m connbytes --connbytes-dir original \
+        --connbytes-mode packets --connbytes 0:10 -j ACCEPT
+}
+
+_queue_functional() {
+    case "$1" in
+    nftables) _nft_queue_works ;;
+    iptables | iptables-legacy) _ipt_nfqueue_works "$1" ;;
+    *) return 1 ;;
+    esac
+}
+
+_queue_modules_for_backend() {
+    case "$1" in
+    nftables) echo "nft_queue nfnetlink_queue nft_ct nf_conntrack" ;;
+    *) echo "xt_NFQUEUE nfnetlink_queue xt_connbytes xt_multiport nf_conntrack" ;;
+    esac
+}
+
+_queue_pkgs_for_backend() {
+    if [ "$B4_PKG_MANAGER" = "apk" ]; then
+        case "$1" in
+        nftables) echo "kmod-nft-queue kmod-nft-nat kmod-nft-compat" ;;
+        *) echo "kmod-nft-compat kmod-nft-queue" ;;
+        esac
+        return 0
+    fi
+    case "$1" in
+    nftables) echo "kmod-nft-queue kmod-nfnetlink-queue kmod-nft-conntrack" ;;
+    *) echo "kmod-nfnetlink-queue kmod-ipt-nfqueue iptables-mod-nfqueue kmod-ipt-conntrack-extra iptables-mod-conntrack-extra" ;;
+    esac
+}
+
+_warn_if_queue_unavailable() {
+    _wq_backend=$(_firewall_backend)
+    if [ "$_wq_backend" = "none" ]; then
+        log_warn "No working firewall backend found (neither nft nor iptables) - b4 cannot install its rules"
+        return 1
+    fi
+    if _queue_functional "$_wq_backend"; then
+        return 0
+    fi
+
+    log_warn "The kernel cannot queue packets to b4 on the ${_wq_backend} backend - b4 will not start in NFQUEUE mode"
+    case "$B4_PKG_MANAGER" in
+    apk) log_info "Try: apk add $(_queue_pkgs_for_backend "$_wq_backend")" ;;
+    opkg) log_info "Try: opkg install $(_queue_pkgs_for_backend "$_wq_backend")" ;;
+    *) log_info "Load the queue modules: $(_queue_modules_for_backend "$_wq_backend")" ;;
+    esac
+    log_info "Or switch b4 to TUN mode (queue.mode = \"tun\"), which does not need NFQUEUE"
+    return 1
 }
 
 is_b4_running() {
@@ -1059,13 +1180,11 @@ _generic_linux_check_kmods() {
         modprobe "$mod" 2>/dev/null || true
     done
 
-    if ! _kmod_available "xt_NFQUEUE" && ! _kmod_available "nfnetlink_queue" && ! _kmod_available "nft_queue"; then
-        log_warn "No netfilter queue module available"
+    if ! _warn_if_queue_unavailable; then
         case "$B4_PKG_MANAGER" in
-        apt) log_info "Try: apt install xtables-addons-common" ;;
-        dnf | yum) log_info "Try: dnf install xtables-addons" ;;
+        apt) log_info "Try: apt install linux-modules-extra-$(uname -r) xtables-addons-common" ;;
+        dnf | yum) log_info "Try: dnf install kernel-modules-extra xtables-addons" ;;
         pacman) log_info "Try: pacman -S xtables-addons" ;;
-        apk) log_info "Try: apk add iptables-nft" ;;
         *) ;;
         esac
     fi
@@ -1177,8 +1296,7 @@ _keenetic_load_kmods() {
         [ -n "$mod_path" ] && insmod "$mod_path" 2>/dev/null || true
     done
 
-    if ! _kmod_available "xt_NFQUEUE" && ! _kmod_available "nfnetlink_queue" && ! _kmod_available "nft_queue"; then
-        log_warn "No netfilter queue module available — b4 may not work"
+    if ! _warn_if_queue_unavailable; then
         log_info "Check that your Keenetic firmware supports Netfilter Queue"
         log_info "You may need to enable 'Kernel modules for Netfilter' in the package manager"
     fi
@@ -1319,9 +1437,8 @@ _merlinwrt_load_kmods() {
         [ -n "$mod_path" ] && insmod "$mod_path" 2>/dev/null || true
     done
 
-    if ! _kmod_available "xt_NFQUEUE" && ! _kmod_available "nfnetlink_queue" && ! _kmod_available "nft_queue"; then
-        log_warn "No netfilter queue module available — b4 may not work"
-        log_info "Check your firmware version supports NFQUEUE"
+    if ! _warn_if_queue_unavailable; then
+        log_info "Check that your firmware version supports NFQUEUE"
     fi
 }
 
@@ -1464,14 +1581,7 @@ _openwrt_load_kmods() {
         [ -n "$mod_path" ] && insmod "$mod_path" 2>/dev/null || true
     done
 
-    if ! _kmod_available "xt_NFQUEUE" && ! _kmod_available "nfnetlink_queue" && ! _kmod_available "nft_queue"; then
-        log_warn "No netfilter queue module available — b4 may not work"
-        if [ "$B4_PKG_MANAGER" = "apk" ]; then
-            log_info "Try: apk add kmod-nft-queue kmod-nft-nat kmod-nft-compat"
-        else
-            log_info "Try: opkg install kmod-nft-queue kmod-nft-conntrack kmod-nfnetlink-queue kmod-ipt-nfqueue iptables-mod-nfqueue kmod-ipt-conntrack-extra iptables-mod-conntrack-extra"
-        fi
-    fi
+    _warn_if_queue_unavailable || true
 }
 
 _openwrt_check_recommended() {
@@ -3263,14 +3373,32 @@ action_sysinfo() {
         log_detail "Service status" "${YELLOW}not running${NC}"
     fi
 
+    _si_tun_mode="no"
     if [ -n "$cfg_file" ] && command_exists jq; then
-        queue_num=$(jq -r '.system.queue_num // empty' "$cfg_file" 2>/dev/null) || true
-        workers=$(jq -r '.system.workers // empty' "$cfg_file" 2>/dev/null) || true
+        queue_mode=$(jq -r '.queue.mode // empty' "$cfg_file" 2>/dev/null) || true
+        queue_num=$(jq -r '.queue.start_num // empty' "$cfg_file" 2>/dev/null) || true
+        workers=$(jq -r '.queue.threads // empty' "$cfg_file" 2>/dev/null) || true
         geosite=$(jq -r '.system.geo.sitedat_path // empty' "$cfg_file" 2>/dev/null) || true
         geoip=$(jq -r '.system.geo.ipdat_path // empty' "$cfg_file" 2>/dev/null) || true
 
-        [ -n "$queue_num" ] && [ "$queue_num" != "null" ] && log_detail "Queue number" "$queue_num"
-        [ -n "$workers" ] && [ "$workers" != "null" ] && log_detail "Worker threads" "$workers"
+        if [ -z "$queue_mode" ] || [ "$queue_mode" = "null" ]; then
+            queue_mode="nfqueue (default)"
+        fi
+        if [ -z "$queue_num" ] || [ "$queue_num" = "null" ]; then
+            queue_num="537 (default)"
+        fi
+        if [ -z "$workers" ] || [ "$workers" = "null" ]; then
+            workers="4 (default)"
+        fi
+
+        case "$queue_mode" in
+        tun*) _si_tun_mode="yes" ;;
+        *) ;;
+        esac
+
+        log_detail "Queue mode" "$queue_mode"
+        log_detail "Queue number" "$queue_num"
+        log_detail "Worker threads" "$workers"
 
         if [ -n "$geosite" ] && [ "$geosite" != "null" ] && [ -f "$geosite" ]; then
             size=$(ls -lh "$geosite" 2>/dev/null | awk '{print $5}')
@@ -3284,10 +3412,27 @@ action_sysinfo() {
 
     log_sep
 
+    [ -n "$B4_PKG_MANAGER" ] || detect_pkg_manager
+    _si_backend=$(_firewall_backend)
+    _si_queue_ok="no"
+    _si_counters_ok="no"
+    case "$_si_backend" in
+    nftables)
+        _nft_queue_works && _si_queue_ok="yes"
+        _nft_ct_counters_work && _si_counters_ok="yes"
+        ;;
+    iptables | iptables-legacy)
+        _ipt_nfqueue_works "$_si_backend" && _si_queue_ok="yes"
+        _ipt_connbytes_works "$_si_backend" && _si_counters_ok="yes"
+        ;;
+    *) ;;
+    esac
+
     echo ""
+    log_detail "Firewall backend" "$_si_backend"
     log_info "Kernel modules:"
-    for mod in xt_NFQUEUE nfnetlink_queue xt_connbytes xt_multiport nf_conntrack; do
-        if lsmod 2>/dev/null | grep -q "^${mod}"; then
+    for mod in $(_queue_modules_for_backend "$_si_backend"); do
+        if lsmod 2>/dev/null | grep -q "^${mod}[[:space:]]"; then
             printf "    ${GREEN}loaded${NC}   %s\n" "$mod" >&2
         elif _kmod_builtin "$mod"; then
             printf "    ${GREEN}built-in${NC} %s\n" "$mod" >&2
@@ -3296,33 +3441,27 @@ action_sysinfo() {
         fi
     done
 
-    _nfq_ipt=""
-    if command_exists iptables; then
-        _nfq_ipt="iptables"
-    elif command_exists iptables-legacy; then
-        _nfq_ipt="iptables-legacy"
+    if [ "$_si_backend" = "none" ]; then
+        printf "    ${RED}  FAIL${NC}  %s\n" "No working firewall backend (neither nft nor iptables) - b4 cannot install its rules" >&2
+    elif [ "$_si_queue_ok" = "yes" ]; then
+        printf "    ${GREEN}  OK${NC}    %s\n" "Packet queue works (${_si_backend} functional test passed)" >&2
+    elif [ "$_si_tun_mode" = "yes" ]; then
+        printf "    ${YELLOW}  WARN${NC}  %s\n" "Packet queue not functional on ${_si_backend}, but b4 is configured for TUN mode, which does not use it" >&2
+    else
+        printf "    ${RED}  FAIL${NC}  %s\n" "Packet queue not functional on ${_si_backend} - b4 cannot start in NFQUEUE mode" >&2
+        case "$B4_PKG_MANAGER" in
+        apk) printf "    ${DIM}          Try: apk add %s${NC}\n" "$(_queue_pkgs_for_backend "$_si_backend")" >&2 ;;
+        opkg) printf "    ${DIM}          Try: opkg install %s${NC}\n" "$(_queue_pkgs_for_backend "$_si_backend")" >&2 ;;
+        *) printf "    ${DIM}          Needs these kernel modules: %s${NC}\n" "$(_queue_modules_for_backend "$_si_backend")" >&2 ;;
+        esac
+        printf "    ${DIM}          Or switch b4 to TUN mode (queue.mode = \"tun\"), which needs no NFQUEUE${NC}\n" >&2
     fi
-    if [ -n "$_nfq_ipt" ]; then
-        if $_nfq_ipt -t mangle -C B4_TEST -j NFQUEUE --queue-num 0 2>/dev/null; then
-            $_nfq_ipt -t mangle -D B4_TEST -j NFQUEUE --queue-num 0 2>/dev/null || true
-        fi
-        if $_nfq_ipt -t mangle -N B4_TEST 2>/dev/null; then
-            if $_nfq_ipt -t mangle -A B4_TEST -j NFQUEUE --queue-num 0 2>/dev/null; then
-                printf "    ${GREEN}  OK${NC}    %s\n" "NFQUEUE works (functional test passed)" >&2
-                $_nfq_ipt -t mangle -D B4_TEST -j NFQUEUE --queue-num 0 2>/dev/null || true
-            else
-                printf "    ${RED}  FAIL${NC}  %s\n" "NFQUEUE not functional" >&2
-            fi
-            $_nfq_ipt -t mangle -X B4_TEST 2>/dev/null || true
-        fi
-        if $_nfq_ipt -t filter -N B4_CB_TEST 2>/dev/null; then
-            if $_nfq_ipt -t filter -A B4_CB_TEST -p tcp -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:10 -j ACCEPT 2>/dev/null; then
-                printf "    ${GREEN}  OK${NC}    %s\n" "connbytes works (functional test passed)" >&2
-            else
-                printf "    ${RED}  FAIL${NC}  %s\n" "connbytes not functional" >&2
-            fi
-            $_nfq_ipt -t filter -F B4_CB_TEST 2>/dev/null || true
-            $_nfq_ipt -t filter -X B4_CB_TEST 2>/dev/null || true
+
+    if [ "$_si_backend" != "none" ]; then
+        if [ "$_si_counters_ok" = "yes" ]; then
+            printf "    ${GREEN}  OK${NC}    %s\n" "Connection packet counters work (b4 queues only the first packets of a connection)" >&2
+        else
+            printf "    ${YELLOW}  WARN${NC}  %s\n" "Connection packet counters unavailable - b4 inspects every packet on the configured ports" >&2
         fi
     fi
 
@@ -3361,8 +3500,7 @@ action_sysinfo() {
     log_info "Required tools:"
     _fw_found=0
     if command_exists nft; then
-        if nft add table inet _b4_test 2>/dev/null; then
-            nft delete table inet _b4_test 2>/dev/null || true
+        if _nft_functional; then
             printf "    ${GREEN}found${NC}   nft ${DIM}(nftables — functional)${NC}\n" >&2
             _fw_found=1
         else
@@ -3389,7 +3527,7 @@ action_sysinfo() {
         if command_exists "$tool"; then
             printf "    ${GREEN}found${NC}   %s\n" "$tool" >&2
         else
-            printf "    ${RED}missing${NC} %s ${DIM}(required for install)${NC}\n" >&2
+            printf "    ${RED}missing${NC} %s ${DIM}(required for install)${NC}\n" "$tool" >&2
         fi
     done
     if command_exists curl; then

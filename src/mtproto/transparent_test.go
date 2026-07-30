@@ -127,6 +127,81 @@ func TestHandleEmptyConnReturnsHandledNil(t *testing.T) {
 	}
 }
 
+func TestHandleSilentConnWaitsForConfiguredTimeout(t *testing.T) {
+	// a client that opens a DC connection ahead of having anything to send must
+	// be given the configured grace period, not torn down immediately
+	cfg := &config.Config{}
+	cfg.System.MTProto.BridgeWaitSec = 1
+	b := NewTransparentBridge(cfg)
+
+	client, peer := net.Pipe()
+	defer peer.Close()
+
+	start := time.Now()
+	handled, failover := b.Handle(client, net.ParseIP("1.2.3.4"), 443)
+	elapsed := time.Since(start)
+
+	if !handled || failover != nil {
+		t.Fatalf("silent conn: got (handled=%v, failover=%v), want (true, nil)", handled, failover)
+	}
+	if elapsed < 900*time.Millisecond {
+		t.Errorf("silent conn dropped after %v, want it held for the full ~1s wait", elapsed)
+	}
+	if elapsed > 5*time.Second {
+		t.Errorf("silent conn held for %v, want it dropped near the 1s wait", elapsed)
+	}
+}
+
+func TestHandleAcceptsHandshakeAfterSilence(t *testing.T) {
+	// the handshake arriving well after the old fixed 5s deadline must still be
+	// processed instead of the connection having been dropped underneath it
+	cfg := &config.Config{}
+	cfg.System.MTProto.BridgeWaitSec = 10
+	b := NewTransparentBridge(cfg)
+
+	client, peer := net.Pipe()
+	defer peer.Close()
+
+	in := []byte{0x16, 0x03, 0x01, 0x02}
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		_, _ = peer.Write(in)
+	}()
+
+	handled, failover := b.Handle(client, net.ParseIP("1.2.3.4"), 443)
+	if handled {
+		t.Fatalf("late reserved prefix should fail open, not be handled")
+	}
+	if failover == nil {
+		t.Fatal("late reserved prefix: expected failover conn, got nil")
+	}
+	got := make([]byte, len(in))
+	if _, err := io.ReadFull(failover, got); err != nil {
+		t.Fatalf("replay read: %v", err)
+	}
+	if !bytes.Equal(got, in) {
+		t.Errorf("failover replayed % x, want % x", got, in)
+	}
+}
+
+func TestBridgeWait(t *testing.T) {
+	cases := []struct {
+		sec  int
+		want time.Duration
+	}{
+		{0, defaultBridgeWait},
+		{-1, 0},
+		{45, 45 * time.Second},
+	}
+	for _, c := range cases {
+		cfg := &config.Config{}
+		cfg.System.MTProto.BridgeWaitSec = c.sec
+		if got := bridgeWait(cfg); got != c.want {
+			t.Errorf("bridgeWait(%d) = %v, want %v", c.sec, got, c.want)
+		}
+	}
+}
+
 func TestHandleReservedPrefixFailsOpenWithBytes(t *testing.T) {
 	// non-obfuscated transport (TLS record header) -> fail open, replay the 4 bytes
 	b := newBridge()

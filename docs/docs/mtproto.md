@@ -162,14 +162,14 @@ With Auto + a DC Relay configured, relay TCP is tried first and WebSocket is use
 
 ### Step 3: Get the socat commands
 
-Click the **?** button next to the **DC Relay** field. The "DC Relay socat setup" dialog lists the current Telegram DCs and ready-to-run `socat` commands for each one (including the media DC). Click **Copy all**, switch to the VPS, and run them.
+Click the **?** button next to the **DC Relay** field. The "DC Relay socat setup" dialog lists Telegram's data centers and ready-to-run `socat` commands for each one. Click **Copy all**, switch to the VPS, and run them.
 
 :::info Why the helper
-The DC list is fetched live from `getProxyConfig` - Telegram's own published list. B4 computes the relay port as `base_port + |DC| - 1`. If Telegram adds a new DC or changes an IP, the helper shows up-to-date commands without needing to update this guide.
+Each `socat` forwards a relay port to the public data-center address B4 dials directly (`base_port + DC - 1` → the DC's `:443` endpoint). The media DC `203` reuses DC 2's relay port, so it needs no command of its own.
 :::
 
 :::warning VPS firewall
-Open every port the helper shows (the "Open these ports on the VPS firewall" line at the bottom of the dialog). This is typically 6 ports: five for the main DCs (1-5) and one for the media DC `203`.
+Open every port the helper shows (the "Open these ports on the VPS firewall" line at the bottom of the dialog). This is 5 ports, one for each main DC (1-5).
 :::
 
 :::tip

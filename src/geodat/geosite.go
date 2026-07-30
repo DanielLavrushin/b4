@@ -2,134 +2,98 @@ package geodat
 
 import (
 	"bufio"
-	"encoding/binary"
 	"io"
 	"os"
 	"strings"
-
-	"github.com/daniellavrushin/b4/log"
-	"github.com/urlesistiana/v2dat/v2data"
-	"google.golang.org/protobuf/proto"
 )
 
-func UnpackGeoSite(args *UnpackArgs) error {
-	filePath, suffixes := args.File, args.Filters
+type domainFunc func(tag string, kind uint64, value string) error
 
-	save := func(suffix string, domains []*v2data.Domain) error {
-		return convertV2DomainToText(domains, os.Stdout)
-	}
-
-	if len(suffixes) != 0 {
-		return streamGeoSite(filePath, suffixes, save)
-	}
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return err
-	}
-	geoSiteList, err := v2data.LoadGeoSiteList(data)
-	if err != nil {
-		return err
-	}
-	entries := make(map[string][]*v2data.Domain, len(geoSiteList.GetEntry()))
-	for _, gs := range geoSiteList.GetEntry() {
-		tag := strings.ToLower(gs.GetCountryCode())
-		entries[tag] = gs.GetDomain()
-	}
-	for tag, domains := range entries {
-		if err := save(tag, domains); err != nil {
-			return log.Errorf("failed to save %s: %w", tag, err)
-		}
-	}
-	return nil
-}
-
-func readCountryCode(msg []byte) (string, error) {
-	if len(msg) == 0 || msg[0] != 0x0A {
-		return "", log.Errorf("bad key")
-	}
-	l, n := binary.Uvarint(msg[1:])
-	if n <= 0 {
-		return "", log.Errorf("bad varint")
-	}
-	start := 1 + n
-	end := start + int(l)
-	if end > len(msg) {
-		return "", log.Errorf("string truncated")
-	}
-	return strings.ToLower(string(msg[start:end])), nil
-}
-
-func streamGeoSite(file string, filters []string, save func(string, []*v2data.Domain) error) error {
-	f, err := os.Open(file)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	want := map[string]struct{}{}
+func streamGeoSite(file string, filters []string, emit domainFunc) error {
+	want := make(map[string]struct{}, len(filters))
 	for _, s := range filters {
 		tag, _ := splitAttrs(s)
 		want[strings.ToLower(tag)] = struct{}{}
 	}
-	got := map[string]struct{}{}
-	r := bufio.NewReaderSize(f, 32*1024)
-	for {
-		tagByte, err := r.ReadByte()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		if tagByte != 0x0A {
-			return log.Errorf("unexpected wire tag %02X", tagByte)
-		}
-		length, err := binary.ReadUvarint(r)
-		if err != nil {
-			return err
-		}
-		msg := make([]byte, length)
-		if _, err := io.ReadFull(r, msg); err != nil {
-			return err
-		}
-		tag, err := readCountryCode(msg)
-		if err != nil {
-			return err
-		}
+	if len(want) == 0 {
+		return nil
+	}
+
+	got := make(map[string]struct{}, len(want))
+	var scratch []byte
+
+	return scanEntries(file, func(tag string, body *entryBody) error {
 		if _, ok := want[tag]; !ok {
-			continue
+			return nil
 		}
-		var gs v2data.GeoSite
-		if err := proto.Unmarshal(msg, &gs); err != nil {
-			return err
-		}
-		if err := save(tag, gs.GetDomain()); err != nil {
+		err := scanRecords(body, &scratch, func(rec []byte) error {
+			kind, value, err := parseDomain(rec)
+			if err != nil {
+				return err
+			}
+			return emit(tag, kind, value)
+		})
+		if err != nil {
 			return err
 		}
 		got[tag] = struct{}{}
 		if len(got) == len(want) {
-			return nil
+			return errStopScan
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
-func convertV2DomainToText(dom []*v2data.Domain, w io.Writer) error {
-	b := strings.Builder{}
-	// crude pre‑size: avg 30 bytes per line
-	b.Grow(len(dom) * 30)
+func streamAllGeoSite(file string, emit domainFunc) error {
+	var scratch []byte
+	return scanEntries(file, func(tag string, body *entryBody) error {
+		return scanRecords(body, &scratch, func(rec []byte) error {
+			kind, value, err := parseDomain(rec)
+			if err != nil {
+				return err
+			}
+			return emit(tag, kind, value)
+		})
+	})
+}
 
-	for _, d := range dom {
-		switch d.Type {
-		case v2data.Domain_Plain:
-			b.WriteString("keyword:")
-		case v2data.Domain_Regex:
-			b.WriteString("regexp:")
-		case v2data.Domain_Full:
-			b.WriteString("full:")
-		}
-		b.WriteString(d.Value)
-		b.WriteByte('\n')
+func UnpackGeoSite(args *UnpackArgs) error {
+	w := bufio.NewWriterSize(os.Stdout, 64*1024)
+
+	emit := func(_ string, kind uint64, value string) error {
+		return writeDomainLine(w, kind, value)
 	}
-	_, err := io.WriteString(w, b.String())
+
+	var err error
+	if len(args.Filters) != 0 {
+		err = streamGeoSite(args.File, args.Filters, emit)
+	} else {
+		err = streamAllGeoSite(args.File, emit)
+	}
+	if err != nil {
+		return err
+	}
+	return w.Flush()
+}
+
+func writeDomainLine(w io.StringWriter, kind uint64, value string) error {
+	switch kind {
+	case domainTypePlain:
+		if _, err := w.WriteString("keyword:"); err != nil {
+			return err
+		}
+	case domainTypeRegex:
+		if _, err := w.WriteString("regexp:"); err != nil {
+			return err
+		}
+	case domainTypeFull:
+		if _, err := w.WriteString("full:"); err != nil {
+			return err
+		}
+	}
+	if _, err := w.WriteString(value); err != nil {
+		return err
+	}
+	_, err := w.WriteString("\n")
 	return err
 }

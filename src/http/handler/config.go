@@ -459,6 +459,7 @@ func (a *API) saveAndPushConfig(newCfg *config.Config) error {
 	}
 
 	if setsChanged {
+		a.retainGeoCaches(newCfg.Sets)
 		go debug.FreeOSMemory()
 	}
 
