@@ -179,10 +179,14 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
       .filter(Boolean)
       .join(" + ") || "Disabled";
 
-  // The TTL slider only reaches the wire when the fake strategy is TTL, or when
-  // apply_ttl carries it alongside another strategy.
+  // faking.ttl reaches the wire on the fake ClientHello only under the TTL
+  // strategy or with apply_ttl, but the SYN fake paths read it regardless: as the
+  // fallback when tcp.syn_ttl is unset, and always for the MD5 fake SYN.
   const isFakeTtlActive =
-    config.faking.strategy === "ttl" || !!config.faking.apply_ttl;
+    config.faking.strategy === "ttl" ||
+    !!config.faking.apply_ttl ||
+    !!config.tcp.syn_fake ||
+    !!config.faking.tcp_md5;
 
   const desyncStatus = isDesyncEnabled
     ? desyncModeOptions.find((o) => o.value === config.tcp.desync.mode)

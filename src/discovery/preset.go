@@ -520,8 +520,11 @@ func GetPhase1Presets() []ConfigPreset {
 			},
 		},
 
-		// 17. Fake only, no fragmentation. Some DPIs reassemble TCP well enough
-		// that every split is pointless while a single low-TTL fake still lands.
+		// 17. Fake only, no fragmentation. Every other preset that carries a fake
+		// also fragments, and GetPhase2Presets builds the FamilyFakeSNI sweep on
+		// baseConfig(), whose fragmentation strategy is combo. Against a DPI that
+		// reassembles TCP well enough to see through any split, that shape is the
+		// one thing discovery could not reach at any phase.
 		{
 			Name:        "fake-ttl6-md5",
 			Description: "Low-TTL fake sized to the ClientHello and signed with TCP MD5, no fragmentation",
@@ -572,34 +575,6 @@ func GetPhase1Presets() []ConfigPreset {
 					SNISeqLength: 1,
 					SNIType:      config.FakePayloadDefault1,
 					FakeLenMode:  "match",
-				},
-			},
-		},
-
-		// 19. Low-TTL fake kept alongside combo fragmentation.
-		{
-			Name:        "fake-ttl6-combo",
-			Description: "Low-TTL matched fake combined with combo fragmentation",
-			Family:      FamilyFakeSNI,
-			Phase:       PhaseBaseline,
-			Priority:    19,
-			Config: config.SetConfig{
-				TCP: config.TCPConfig{
-					ConnBytesLimit: 19,
-					Seg2Delay:      20,
-					Seg2DelayMax:   50,
-				},
-				UDP:           udp,
-				Fragmentation: combo,
-				Faking: config.FakingConfig{
-					SNI:          true,
-					TTL:          6,
-					ApplyTTL:     true,
-					Strategy:     "ttl",
-					SNISeqLength: 1,
-					SNIType:      config.FakePayloadDefault1,
-					FakeLenMode:  "match",
-					MD5OnFake:    true,
 				},
 			},
 		},
@@ -1123,6 +1098,28 @@ func GetPhase2Presets(family StrategyFamily) []ConfigPreset {
 					FakeLenMode:  "match",
 					MD5OnFake:    true,
 				}),
+			})
+
+			// base carries combo fragmentation, so without this the whole sweep
+			// only ever tests a TTL fake paired with a split.
+			presets = append(presets, ConfigPreset{
+				Name:     formatName("fake-ttl%d-only", ttl),
+				Family:   FamilyFakeSNI,
+				Phase:    PhaseOptimize,
+				Priority: int(ttl),
+				Config: withFragmentation(
+					withFaking(base, config.FakingConfig{
+						SNI:          true,
+						TTL:          ttl,
+						ApplyTTL:     true,
+						Strategy:     "ttl",
+						SNISeqLength: 1,
+						SNIType:      config.FakePayloadDefault1,
+						FakeLenMode:  "match",
+						MD5OnFake:    true,
+					}),
+					config.FragmentationConfig{Strategy: config.ConfigNone},
+				),
 			})
 		}
 
