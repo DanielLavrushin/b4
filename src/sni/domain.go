@@ -105,8 +105,9 @@ func compileEntryRegex(pattern string) *regexp.Regexp {
 	}
 
 	if atomic.LoadInt32(&entryRegexCacheSize) < entryRegexCacheLimit {
-		entryRegexCache.Store(pattern, re)
-		atomic.AddInt32(&entryRegexCacheSize, 1)
+		if _, loaded := entryRegexCache.LoadOrStore(pattern, re); !loaded {
+			atomic.AddInt32(&entryRegexCacheSize, 1)
+		}
 	}
 
 	return re
