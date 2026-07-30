@@ -170,8 +170,17 @@ func (c *hostHintCache) Cleanup() {
 	}
 }
 
+func (w *Worker) storeHostHint(clientIP, destIP string, set *config.SetConfig, host, source string) {
+	if w == nil || set == nil || set.Id == "" || host == "" || clientIP == "" || destIP == "" {
+		return
+	}
+
+	w.hostHints.Store(clientIP, destIP, set.Id, host)
+	log.Tracef("host hint from %s: %s -> %s is %s (set: %s)", source, clientIP, destIP, host, set.Name)
+}
+
 func (w *Worker) storeHostHints(clientIP net.IP, set *config.SetConfig, host string, ips []net.IP) {
-	if w == nil || clientIP == nil || set == nil || set.Id == "" || len(ips) == 0 {
+	if w == nil || clientIP == nil || len(ips) == 0 {
 		return
 	}
 
@@ -180,9 +189,8 @@ func (w *Worker) storeHostHints(clientIP net.IP, set *config.SetConfig, host str
 		if ip == nil {
 			continue
 		}
-		w.hostHints.Store(client, ip.String(), set.Id, host)
+		w.storeHostHint(client, ip.String(), set, host, "dns")
 	}
-	log.Tracef("host hint: %s -> %d address(es) for %s (set: %s)", client, len(ips), host, set.Name)
 }
 
 func (w *Worker) lookupHostHint(cfg *config.Config, clientIP, destIP, srcMac string) (*config.SetConfig, string) {

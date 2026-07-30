@@ -225,16 +225,6 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		set = nil
 	}
 
-	matchedLearned := false
-	if mLearned, learnedSet, _ := matcher.MatchLearnedIPWithSource(pkt.dst, pkt.srcMac); mLearned {
-		if learnedSet.MatchesTCPDPort(dport) {
-			matched = true
-			set = learnedSet
-			st = learnedSet
-			matchedLearned = true
-		}
-	}
-
 	matchedHint := false
 	hintHost := ""
 	if !matched && cfg.IsTCPPort(dport) {
@@ -244,6 +234,18 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				set = hintSet
 				matchedHint = true
 				hintHost = hinted
+			}
+		}
+	}
+
+	matchedLearned := false
+	if !matchedHint {
+		if mLearned, learnedSet, _ := matcher.MatchLearnedIPWithSource(pkt.dst, pkt.srcMac); mLearned {
+			if learnedSet.MatchesTCPDPort(dport) {
+				matched = true
+				set = learnedSet
+				st = learnedSet
+				matchedLearned = true
 			}
 		}
 	}
@@ -712,6 +714,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				sniTarget = sniSet.Name
 				matcher.LearnIPToDomain(pkt.dst, host, sniSet)
 				registerLearnedRoute(cfg, sniSet, pkt.dst)
+				w.storeHostHint(pkt.srcStr, pkt.dstStr, sniSet, host, "quic")
 			}
 		}
 	}
