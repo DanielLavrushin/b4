@@ -59,8 +59,8 @@ func TestSyncDomainStates(t *testing.T) {
 
 	if st := w.domainStates["new.com"]; st == nil {
 		t.Fatal("new.com should have been created")
-	} else if st.Status != StatusHealthy {
-		t.Errorf("new.com should be healthy, got %s", st.Status)
+	} else if st.Status != StatusQueued {
+		t.Errorf("new.com should be queued, got %s", st.Status)
 	} else if st.Interval != 300 {
 		t.Errorf("new.com interval should be 300, got %d", st.Interval)
 	}

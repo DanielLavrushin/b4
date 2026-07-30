@@ -1,6 +1,6 @@
 # B4 - Bye Bye Big Bro
 
-## [1.74.0] - 2026-07-30
+## [1.74.1] - 2026-07-31
 
 - FIXED: **The watchdog reported a site as healed while it was still unreachable** - a healing run crowned a strategy after one successful fetch, and against a filter that blocks intermittently one of the twenty strategies it tries lands in a gap by chance. That result went straight into the set and the domain was marked healthy, with nothing checking whether ordinary traffic to the site worked afterwards. A healed strategy has to reproduce the fetch several times and survive a re-check through the live engine, or the configuration is put back.
 - FIXED: **A healing run could quietly replace a hand-tuned set** - it overwrote the whole tcp, udp, fragmentation and faking section while logging only the fragmentation strategy name, so a switch between two combo variants read as "combo -> combo" and every other tuned value disappeared without a trace.

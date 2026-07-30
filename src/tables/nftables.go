@@ -17,6 +17,8 @@ const (
 	nftChainName    = "b4_chain"
 	nftNatTableName = "b4_nat"
 	nftNatChainName = "b4_masq"
+
+	nftBaseChainPriority = -150
 )
 
 type NFTablesManager struct {
@@ -223,11 +225,11 @@ func (n *NFTablesManager) apply() error {
 		return err
 	}
 
-	if err := n.createChain("prerouting", "prerouting", -150, "accept"); err != nil {
+	if err := n.createChain("prerouting", "prerouting", nftBaseChainPriority, "accept"); err != nil {
 		return err
 	}
 
-	if err := n.createChain("output", "output", -150, "accept"); err != nil {
+	if err := n.createChain("output", "output", nftBaseChainPriority, "accept"); err != nil {
 		return err
 	}
 
@@ -239,7 +241,7 @@ func (n *NFTablesManager) apply() error {
 
 	selectedMACs := cfg.Queue.Devices.SelectedMACs()
 	if cfg.Queue.Devices.Enabled && len(selectedMACs) > 0 {
-		if err := n.createChain("forward", "forward", -150, "accept"); err != nil {
+		if err := n.createChain("forward", "forward", nftBaseChainPriority, "accept"); err != nil {
 			return err
 		}
 
@@ -265,7 +267,7 @@ func (n *NFTablesManager) apply() error {
 		}
 	} else {
 
-		if err := n.createChain("postrouting", "postrouting", -150, "accept"); err != nil {
+		if err := n.createChain("postrouting", "postrouting", nftBaseChainPriority, "accept"); err != nil {
 			return err
 		}
 		if err := n.addRule("postrouting", "jump", nftChainName); err != nil {
@@ -535,7 +537,7 @@ func (n *NFTablesManager) ApplyMSSClamp() error {
 
 	needsForward := global || len(deviceClamps) > 0 || len(setClamps) > 0
 	if needsForward && !n.chainExists("forward") {
-		if err := n.createChain("forward", "forward", -150, "accept"); err != nil {
+		if err := n.createChain("forward", "forward", nftBaseChainPriority, "accept"); err != nil {
 			return fmt.Errorf("failed to create forward chain for MSS clamp: %w", err)
 		}
 	}
