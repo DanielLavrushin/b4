@@ -31,6 +31,15 @@ export interface GeodatDownloadResult {
   geoip_path: string;
   geosite_size: number;
   geoip_size: number;
+  removed?: string[];
+}
+
+export type GeodatFileType = "geosite" | "geoip";
+
+export interface GeodatRemoveResult {
+  success: boolean;
+  message: string;
+  removed: string[];
 }
 
 export interface SystemInfo {

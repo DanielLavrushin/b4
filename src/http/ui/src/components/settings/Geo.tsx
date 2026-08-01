@@ -10,12 +10,33 @@ import {
   Chip,
   Divider,
 } from "@mui/material";
-import { DomainIcon, DownloadIcon, SuccessIcon, UploadIcon } from "@b4.icons";
-import { B4Alert, B4FormGroup, B4Hint, B4Section, B4Switch, B4TextField } from "@b4.elements";
+import {
+  DeleteIcon,
+  DomainIcon,
+  DownloadIcon,
+  SuccessIcon,
+  UploadIcon,
+  WarningIcon,
+} from "@b4.icons";
+import {
+  B4Alert,
+  B4Dialog,
+  B4FormGroup,
+  B4Hint,
+  B4Section,
+  B4Switch,
+  B4TextField,
+} from "@b4.elements";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { colors } from "@design";
-import { geodatApi, GeodatSource, GeoFileInfo, SettingsPropHandlerType } from "@b4.settings";
+import {
+  geodatApi,
+  GeodatFileType,
+  GeodatSource,
+  GeoFileInfo,
+  SettingsPropHandlerType,
+} from "@b4.settings";
 
 const CUSTOM_SOURCE = "__custom__";
 
@@ -32,9 +53,11 @@ interface GeoFileCardProps {
   onCustomURLChange: (value: string) => void;
   downloading: boolean;
   uploading: boolean;
+  removing: boolean;
   status: string;
   onDownload: () => void;
   onUpload: (file: File) => void;
+  onRemove: () => void;
 }
 
 const GeoFileCard = ({
@@ -50,9 +73,11 @@ const GeoFileCard = ({
   onCustomURLChange,
   downloading,
   uploading,
+  removing,
   status,
   onDownload,
   onUpload,
+  onRemove,
 }: GeoFileCardProps) => {
   const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -106,7 +131,11 @@ const GeoFileCard = ({
           ) : (
             <Chip
               size="small"
-              label={t("settings.Geo.notFound")}
+              label={
+                configPath
+                  ? t("settings.Geo.notFound")
+                  : t("settings.Geo.disabled")
+              }
               sx={{ bgcolor: colors.accent.tertiary }}
             />
           )}
@@ -129,7 +158,11 @@ const GeoFileCard = ({
           color="text.secondary"
           sx={{ wordBreak: "break-all" }}
         >
-          {t("settings.Geo.source")}: {configUrl || (fileInfo.exists ? t("settings.Geo.sourceLocal") : t("settings.Geo.notSet"))}
+          {t("settings.Geo.source")}:{" "}
+          {configUrl ||
+            (fileInfo.exists
+              ? t("settings.Geo.sourceLocal")
+              : t("settings.Geo.notSet"))}
         </Typography>
 
         {fileInfo.exists && (
@@ -151,7 +184,11 @@ const GeoFileCard = ({
           label={t("settings.Geo.source")}
           value={selectedSource}
           onChange={(e) => onSourceChange(e.target.value)}
-          helperText={sourceUrlKey === "geosite_url" ? t("settings.Geo.selectGeositeSource") : t("settings.Geo.selectGeoipSource")}
+          helperText={
+            sourceUrlKey === "geosite_url"
+              ? t("settings.Geo.selectGeositeSource")
+              : t("settings.Geo.selectGeoipSource")
+          }
         >
           {sources.map((source) => (
             <MenuItem key={source.name} value={source.name}>
@@ -175,41 +212,60 @@ const GeoFileCard = ({
         )}
 
         {/* Download & Upload buttons */}
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            flexWrap: "wrap",
+          }}
+        >
           <Button
             variant="contained"
             size="small"
             startIcon={
-              downloading ? (
-                <CircularProgress size={16} />
-              ) : (
-                <DownloadIcon />
-              )
+              downloading ? <CircularProgress size={16} /> : <DownloadIcon />
             }
             onClick={onDownload}
             disabled={
               downloading ||
               uploading ||
+              removing ||
               (selectedSource === CUSTOM_SOURCE && !customURL) ||
               !selectedSource
             }
           >
-            {downloading ? t("settings.Geo.updating") : t("settings.Geo.update")}
+            {downloading
+              ? t("settings.Geo.updating")
+              : t("settings.Geo.update")}
           </Button>
           <Button
             variant="outlined"
             size="small"
             startIcon={
-              uploading ? (
-                <CircularProgress size={16} />
-              ) : (
-                <UploadIcon />
-              )
+              uploading ? <CircularProgress size={16} /> : <UploadIcon />
             }
             onClick={() => fileInputRef.current?.click()}
-            disabled={downloading || uploading}
+            disabled={downloading || uploading || removing}
           >
             {uploading ? t("settings.Geo.uploading") : t("core.upload")}
+          </Button>
+          <Button
+            variant="outlined"
+            size="small"
+            color="error"
+            startIcon={
+              removing ? <CircularProgress size={16} /> : <DeleteIcon />
+            }
+            onClick={onRemove}
+            disabled={
+              downloading ||
+              uploading ||
+              removing ||
+              (!configPath && !fileInfo.exists)
+            }
+          >
+            {removing ? t("settings.Geo.removing") : t("settings.Geo.remove")}
           </Button>
           <input
             ref={fileInputRef}
@@ -249,7 +305,11 @@ export interface GeoSettingsProps {
   onChange: (field: string, value: SettingsPropHandlerType) => void;
 }
 
-export const GeoSettings = ({ config, loadConfig, onChange }: GeoSettingsProps) => {
+export const GeoSettings = ({
+  config,
+  loadConfig,
+  onChange,
+}: GeoSettingsProps) => {
   const { t } = useTranslation();
   const [sources, setSources] = useState<GeodatSource[]>([]);
   const [destPath, setDestPath] = useState<string>("/etc/b4");
@@ -262,6 +322,7 @@ export const GeoSettings = ({ config, loadConfig, onChange }: GeoSettingsProps) 
   const [geositeCustomURL, setGeositeCustomURL] = useState<string>("");
   const [geositeDownloading, setGeositeDownloading] = useState(false);
   const [geositeUploading, setGeositeUploading] = useState(false);
+  const [geositeRemoving, setGeositeRemoving] = useState(false);
   const [geositeStatus, setGeositeStatus] = useState<string>("");
 
   // GeoIP state
@@ -270,7 +331,10 @@ export const GeoSettings = ({ config, loadConfig, onChange }: GeoSettingsProps) 
   const [geoipCustomURL, setGeoipCustomURL] = useState<string>("");
   const [geoipDownloading, setGeoipDownloading] = useState(false);
   const [geoipUploading, setGeoipUploading] = useState(false);
+  const [geoipRemoving, setGeoipRemoving] = useState(false);
   const [geoipStatus, setGeoipStatus] = useState<string>("");
+
+  const [removeTarget, setRemoveTarget] = useState<GeodatFileType | null>(null);
 
   // Filter sources per file type
   const geositeSources = useMemo(
@@ -284,9 +348,11 @@ export const GeoSettings = ({ config, loadConfig, onChange }: GeoSettingsProps) 
 
   useEffect(() => {
     void loadSources();
-    const dir = extractDir(config.system.geo.sitedat_path);
-    setDestPath(dir.startsWith("/") ? dir : "/etc/b4");
-  }, [config.system.geo.sitedat_path]);
+    const dir = extractDir(
+      config.system.geo.sitedat_path || config.system.geo.ipdat_path,
+    );
+    if (dir.startsWith("/")) setDestPath(dir);
+  }, [config.system.geo.sitedat_path, config.system.geo.ipdat_path]);
 
   const checkFileStatus = useCallback(async () => {
     if (config.system.geo.sitedat_path) {
@@ -336,7 +402,12 @@ export const GeoSettings = ({ config, loadConfig, onChange }: GeoSettingsProps) 
     } else if (!config.system.geo.sitedat_path) {
       setGeositeSource(geositeSources[0].name);
     }
-  }, [geositeSources, geositeSource, config.system.geo.sitedat_url, config.system.geo.sitedat_path]);
+  }, [
+    geositeSources,
+    geositeSource,
+    config.system.geo.sitedat_url,
+    config.system.geo.sitedat_path,
+  ]);
 
   useEffect(() => {
     if (geoipSources.length === 0 || geoipSource) return;
@@ -352,7 +423,12 @@ export const GeoSettings = ({ config, loadConfig, onChange }: GeoSettingsProps) 
     } else if (!config.system.geo.ipdat_path) {
       setGeoipSource(geoipSources[0].name);
     }
-  }, [geoipSources, geoipSource, config.system.geo.ipdat_url, config.system.geo.ipdat_path]);
+  }, [
+    geoipSources,
+    geoipSource,
+    config.system.geo.ipdat_url,
+    config.system.geo.ipdat_path,
+  ]);
 
   const extractDir = (path: string): string => {
     if (!path?.startsWith("/")) return "";
@@ -391,7 +467,9 @@ export const GeoSettings = ({ config, loadConfig, onChange }: GeoSettingsProps) 
       void checkFileStatus();
       setTimeout(() => setGeositeStatus(""), 5000);
     } catch (error) {
-      setGeositeStatus(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      setGeositeStatus(
+        `Error: ${error instanceof Error ? error.message : String(error)}`,
+      );
     } finally {
       setGeositeDownloading(false);
     }
@@ -418,9 +496,48 @@ export const GeoSettings = ({ config, loadConfig, onChange }: GeoSettingsProps) 
       void checkFileStatus();
       setTimeout(() => setGeoipStatus(""), 5000);
     } catch (error) {
-      setGeoipStatus(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      setGeoipStatus(
+        `Error: ${error instanceof Error ? error.message : String(error)}`,
+      );
     } finally {
       setGeoipDownloading(false);
+    }
+  };
+
+  const handleRemove = async (type: GeodatFileType) => {
+    const setRemoving =
+      type === "geosite" ? setGeositeRemoving : setGeoipRemoving;
+    const setStatus = type === "geosite" ? setGeositeStatus : setGeoipStatus;
+
+    setRemoveTarget(null);
+    setRemoving(true);
+    setStatus(t("settings.Geo.removingFile"));
+
+    try {
+      const result = await geodatApi.remove(type);
+      if (type === "geosite") {
+        setGeositeInfo({ exists: false });
+        setGeositeSource("");
+        setGeositeCustomURL("");
+      } else {
+        setGeoipInfo({ exists: false });
+        setGeoipSource("");
+        setGeoipCustomURL("");
+      }
+      setStatus(
+        result.removed.length > 0
+          ? t("settings.Geo.removeSuccess")
+          : t("settings.Geo.removeCleared"),
+      );
+      loadConfig();
+      void checkFileStatus();
+      setTimeout(() => setStatus(""), 5000);
+    } catch (error) {
+      setStatus(
+        `Error: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      setRemoving(false);
     }
   };
 
@@ -435,7 +552,9 @@ export const GeoSettings = ({ config, loadConfig, onChange }: GeoSettingsProps) 
       void checkFileStatus();
       setTimeout(() => setGeositeStatus(""), 5000);
     } catch (error) {
-      setGeositeStatus(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      setGeositeStatus(
+        `Error: ${error instanceof Error ? error.message : String(error)}`,
+      );
     } finally {
       setGeositeUploading(false);
     }
@@ -452,11 +571,32 @@ export const GeoSettings = ({ config, loadConfig, onChange }: GeoSettingsProps) 
       void checkFileStatus();
       setTimeout(() => setGeoipStatus(""), 5000);
     } catch (error) {
-      setGeoipStatus(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      setGeoipStatus(
+        `Error: ${error instanceof Error ? error.message : String(error)}`,
+      );
     } finally {
       setGeoipUploading(false);
     }
   };
+
+  const configuredDir = extractDir(
+    config.system.geo.sitedat_path || config.system.geo.ipdat_path,
+  );
+  const relocationPending =
+    !!configuredDir && !!destPath && destPath !== configuredDir;
+
+  const removeTargetPath =
+    removeTarget === "geoip"
+      ? config.system.geo.ipdat_path
+      : config.system.geo.sitedat_path;
+
+  const affectedSets = (config.sets ?? [])
+    .filter((set) =>
+      removeTarget === "geoip"
+        ? (set.targets?.geoip_categories?.length ?? 0) > 0
+        : (set.targets?.geosite_categories?.length ?? 0) > 0,
+    )
+    .map((set) => set.name);
 
   return (
     <Stack spacing={3}>
@@ -482,6 +622,15 @@ export const GeoSettings = ({ config, loadConfig, onChange }: GeoSettingsProps) 
           helperText={t("settings.Geo.destDirHelp")}
         />
 
+        {relocationPending && (
+          <B4Hint>
+            {t("settings.Geo.destDirPending", {
+              from: configuredDir,
+              to: destPath,
+            })}
+          </B4Hint>
+        )}
+
         <B4FormGroup label={t("settings.Geo.autoUpdate")} columns={2}>
           <B4Switch
             label={t("settings.Geo.autoUpdateOnStartup")}
@@ -501,9 +650,15 @@ export const GeoSettings = ({ config, loadConfig, onChange }: GeoSettingsProps) 
             helperText={t("settings.Geo.autoUpdateIntervalHelp")}
           >
             <MenuItem value="">{t("settings.Geo.autoUpdateOff")}</MenuItem>
-            <MenuItem value="daily">{t("settings.Geo.autoUpdateDaily")}</MenuItem>
-            <MenuItem value="weekly">{t("settings.Geo.autoUpdateWeekly")}</MenuItem>
-            <MenuItem value="monthly">{t("settings.Geo.autoUpdateMonthly")}</MenuItem>
+            <MenuItem value="daily">
+              {t("settings.Geo.autoUpdateDaily")}
+            </MenuItem>
+            <MenuItem value="weekly">
+              {t("settings.Geo.autoUpdateWeekly")}
+            </MenuItem>
+            <MenuItem value="monthly">
+              {t("settings.Geo.autoUpdateMonthly")}
+            </MenuItem>
           </B4TextField>
         </B4FormGroup>
         {config.system.geo.auto_update?.last_run && (
@@ -528,9 +683,11 @@ export const GeoSettings = ({ config, loadConfig, onChange }: GeoSettingsProps) 
               onCustomURLChange={setGeositeCustomURL}
               downloading={geositeDownloading}
               uploading={geositeUploading}
+              removing={geositeRemoving}
               status={geositeStatus}
               onDownload={() => void handleGeositeDownload()}
               onUpload={(file) => void handleGeositeUpload(file)}
+              onRemove={() => setRemoveTarget("geosite")}
             />
           </Grid>
           <Grid size={{ xs: 12, md: 6 }}>
@@ -547,13 +704,71 @@ export const GeoSettings = ({ config, loadConfig, onChange }: GeoSettingsProps) 
               onCustomURLChange={setGeoipCustomURL}
               downloading={geoipDownloading}
               uploading={geoipUploading}
+              removing={geoipRemoving}
               status={geoipStatus}
               onDownload={() => void handleGeoipDownload()}
               onUpload={(file) => void handleGeoipUpload(file)}
+              onRemove={() => setRemoveTarget("geoip")}
             />
           </Grid>
         </Grid>
       </B4Section>
+
+      <B4Dialog
+        open={removeTarget !== null}
+        title={t("settings.Geo.removeDialogTitle")}
+        subtitle={
+          removeTarget === "geoip"
+            ? t("settings.Geo.geoipDb")
+            : t("settings.Geo.geositeDb")
+        }
+        icon={<WarningIcon />}
+        onClose={() => setRemoveTarget(null)}
+        actions={
+          <>
+            <Button onClick={() => setRemoveTarget(null)}>
+              {t("core.cancel")}
+            </Button>
+            <Box sx={{ flex: 1 }} />
+            <Button
+              variant="contained"
+              color="error"
+              onClick={() => removeTarget && void handleRemove(removeTarget)}
+            >
+              {t("settings.Geo.remove")}
+            </Button>
+          </>
+        }
+      >
+        <Typography sx={{ mb: 1 }}>
+          {t("settings.Geo.removeDialogConfirm")}
+        </Typography>
+        <Typography
+          variant="body2"
+          sx={{
+            fontFamily: "monospace",
+            fontSize: "0.8rem",
+            wordBreak: "break-all",
+          }}
+        >
+          {removeTargetPath || t("settings.Geo.notConfigured")}
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+          {t("settings.Geo.removeDialogEffect")}
+        </Typography>
+        {affectedSets.length > 0 && (
+          <B4Alert severity="warning" sx={{ mt: 2 }}>
+            <Typography variant="body2">
+              {t("settings.Geo.removeDialogSetsWarning", {
+                count: affectedSets.length,
+              })}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {affectedSets.join(", ")}
+            </Typography>
+          </B4Alert>
+        )}
+      </B4Dialog>
     </Stack>
   );
 };
