@@ -117,6 +117,62 @@ get_avail_kb() {
     df -Pk "$_path" 2>/dev/null | awk 'NR==2 {print $4}'
 }
 
+get_fs_device() {
+    df -Pk "$1" 2>/dev/null | awk 'NR==2 {print $1}'
+}
+
+same_filesystem() {
+    _sfs_a=$(get_fs_device "$1")
+    _sfs_b=$(get_fs_device "$2")
+    [ -n "$_sfs_a" ] && [ "$_sfs_a" = "$_sfs_b" ]
+}
+
+BIN_SLACK_KB=512
+
+ensure_bin_space() {
+    _ebs_dir="$1"
+    _ebs_src="$2"
+
+    [ -d "$_ebs_dir" ] || return 0
+    [ -f "$_ebs_src" ] || return 0
+    same_filesystem "$(dirname "$_ebs_src")" "$_ebs_dir" && return 0
+
+    _ebs_need=$(du -k "$_ebs_src" 2>/dev/null | awk '{print $1}')
+    [ -n "$_ebs_need" ] || return 0
+    _ebs_need=$((_ebs_need + BIN_SLACK_KB))
+
+    _ebs_avail=$(get_avail_kb "$_ebs_dir")
+    [ -n "$_ebs_avail" ] || return 0
+
+    if [ "$_ebs_avail" -lt "$_ebs_need" ] 2>/dev/null; then
+        log_err "Not enough disk space in ${_ebs_dir}: ${_ebs_avail}KB free, need ${_ebs_need}KB"
+        log_info "Free space there, or re-run with --bin-dir on external storage."
+        return 1
+    fi
+    return 0
+}
+
+stash_binary() {
+    _sb_bin="$1"
+    _sb_backup="$2"
+
+    rm -f "${_sb_bin}".backup.* 2>/dev/null || true
+    [ -f "$_sb_bin" ] || return 0
+    mv "$_sb_bin" "$_sb_backup" 2>/dev/null || return 1
+    return 0
+}
+
+restore_binary() {
+    _rb_bin="$1"
+    _rb_backup="$2"
+
+    [ -n "$_rb_backup" ] && [ -f "$_rb_backup" ] || return 1
+    rm -f "$_rb_bin" 2>/dev/null || true
+    mv "$_rb_backup" "$_rb_bin" 2>/dev/null || return 1
+    chmod +x "$_rb_bin" 2>/dev/null || true
+    return 0
+}
+
 TEMP_MIN_KB=20000
 
 setup_temp() {
@@ -2795,14 +2851,21 @@ action_install() {
 
     rm -f /var/log/b4.log /opt/var/log/b4.log /tmp/log/b4.log 2>/dev/null || true
 
+    ensure_bin_space "$B4_BIN_DIR" "${TEMP_DIR}/${BINARY_NAME}" || exit 1
+
+    ts=$(date '+%Y%m%d_%H%M%S')
+    backup_bin="${B4_BIN_DIR}/${BINARY_NAME}.backup.${ts}"
     if [ -f "${B4_BIN_DIR}/${BINARY_NAME}" ]; then
-        ts=$(date '+%Y%m%d_%H%M%S')
-        mv "${B4_BIN_DIR}/${BINARY_NAME}" "${B4_BIN_DIR}/${BINARY_NAME}.backup.${ts}"
-        log_info "Existing binary backed up"
+        log_info "Existing binary set aside for rollback"
     fi
+    stash_binary "${B4_BIN_DIR}/${BINARY_NAME}" "$backup_bin" || {
+        log_err "Could not move the existing binary aside"
+        exit 1
+    }
 
     mv "${BINARY_NAME}" "${B4_BIN_DIR}/" 2>/dev/null || cp "${BINARY_NAME}" "${B4_BIN_DIR}/" || {
         log_err "Failed to install binary to ${B4_BIN_DIR}"
+        restore_binary "${B4_BIN_DIR}/${BINARY_NAME}" "$backup_bin" && log_warn "Rolled back to the previous version"
         exit 1
     }
     chmod +x "${B4_BIN_DIR}/${BINARY_NAME}"
@@ -2813,7 +2876,7 @@ action_install() {
     if [ "$_ver_exit" -eq 0 ]; then
         installed_ver=$("${B4_BIN_DIR}/${BINARY_NAME}" --version 2>&1 | head -1)
         log_ok "Binary installed: ${installed_ver}"
-        rm -f "${B4_BIN_DIR}/${BINARY_NAME}".backup.* 2>/dev/null || true
+        rm -f "$backup_bin" 2>/dev/null || true
     elif [ "$_ver_exit" -gt 128 ] && echo "$B4_ARCH" | grep -q "^mips" && ! echo "$B4_ARCH" | grep -q "softfloat"; then
         _sf_arch="${B4_ARCH}_softfloat"
         log_warn "Binary crashed (exit code $_ver_exit) — likely hardfloat/softfloat mismatch"
@@ -2823,6 +2886,7 @@ action_install() {
         _sf_url="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${version}/${_sf_file}"
         _sf_archive="${TEMP_DIR}/${_sf_file}"
 
+        _sf_ok=0
         if fetch_file "$_sf_url" "$_sf_archive"; then
             cd "$TEMP_DIR"
             rm -f "${BINARY_NAME}" 2>/dev/null
@@ -2835,7 +2899,8 @@ action_install() {
                     log_ok "Softfloat binary works: ${installed_ver}"
                     log_info "Tip: use --arch=${_sf_arch} for future installs"
                     B4_ARCH="$_sf_arch"
-                    rm -f "${B4_BIN_DIR}/${BINARY_NAME}".backup.* 2>/dev/null || true
+                    _sf_ok=1
+                    rm -f "$backup_bin" 2>/dev/null || true
                 else
                     log_err "Softfloat binary also failed — manual troubleshooting needed"
                     log_info "Run with --sysinfo for diagnostics, or try --arch=<arch> manually"
@@ -2847,8 +2912,14 @@ action_install() {
             log_err "Could not download softfloat variant"
             log_info "Try reinstalling with: --arch=${_sf_arch}"
         fi
+        if [ "$_sf_ok" -eq 0 ] && restore_binary "${B4_BIN_DIR}/${BINARY_NAME}" "$backup_bin"; then
+            log_warn "Rolled back to the previously installed version"
+        fi
     else
         log_warn "Binary installed but version check failed (exit code: $_ver_exit)"
+        if restore_binary "${B4_BIN_DIR}/${BINARY_NAME}" "$backup_bin"; then
+            log_warn "Rolled back to the previously installed version"
+        fi
     fi
 
     log_info "Setting up service..."
@@ -3174,6 +3245,14 @@ action_update() {
         exit 1
     }
 
+    if [ ! -f "${TEMP_DIR}/${BINARY_NAME}" ]; then
+        log_err "Binary not found in archive"
+        exit 1
+    fi
+
+    bin_dir=$(dirname "$existing_bin")
+    ensure_bin_space "$bin_dir" "${TEMP_DIR}/${BINARY_NAME}" || exit 1
+
     saved_cmdline=$(b4_running_cmdline 2>/dev/null || true)
     [ -n "$saved_cmdline" ] && log_info "Running command line: ${saved_cmdline}"
 
@@ -3192,23 +3271,38 @@ action_update() {
     fi
 
     ts=$(date '+%Y%m%d_%H%M%S')
-    cp "$existing_bin" "${existing_bin}.backup.${ts}"
+    backup_bin="${existing_bin}.backup.${ts}"
 
-    rm -f "$existing_bin"
-    mv "${TEMP_DIR}/${BINARY_NAME}" "$existing_bin" 2>/dev/null ||
-        cp "${TEMP_DIR}/${BINARY_NAME}" "$existing_bin" ||
-        {
-            log_err "Failed to replace binary"
-            exit 1
-        }
-    chmod +x "$existing_bin"
+    stash_binary "$existing_bin" "$backup_bin" || {
+        log_err "Could not move the current binary aside"
+        exit 1
+    }
 
-    if "$existing_bin" --version >/dev/null 2>&1; then
+    update_failed=0
+    if mv "${TEMP_DIR}/${BINARY_NAME}" "$existing_bin" 2>/dev/null ||
+        cp "${TEMP_DIR}/${BINARY_NAME}" "$existing_bin"; then
+        chmod +x "$existing_bin"
+    else
+        log_err "Failed to replace binary"
+        update_failed=1
+    fi
+
+    if [ "$update_failed" -eq 0 ] && "$existing_bin" --version >/dev/null 2>&1; then
         new_ver=$("$existing_bin" --version 2>&1 | head -1)
         log_ok "Updated to: ${new_ver}"
-        rm -f "${existing_bin}".backup.* 2>/dev/null || true
+        rm -f "$backup_bin" 2>/dev/null || true
     else
-        log_warn "Updated binary failed version check"
+        if [ "$update_failed" -eq 0 ]; then
+            log_warn "Updated binary failed version check"
+        fi
+        update_failed=1
+        if restore_binary "$existing_bin" "$backup_bin"; then
+            log_ok "Rolled back to the previous version"
+        elif [ -f "$existing_bin" ]; then
+            log_warn "No backup to roll back to, keeping the new binary"
+        else
+            log_err "No working binary in ${bin_dir}, reinstall b4 manually"
+        fi
     fi
 
     refresh_legacy_service_script
@@ -3224,7 +3318,7 @@ action_update() {
     elif [ -n "$saved_cmdline" ]; then
         log_info "Service manager did not restart b4 — relaunching directly"
         if relaunch_b4 "$saved_cmdline"; then
-            log_ok "b4 relaunched with the new binary"
+            log_ok "b4 relaunched"
         else
             log_warn "Failed to relaunch b4 — start it manually:"
             log_warn "  ${saved_cmdline}"
@@ -3235,6 +3329,11 @@ action_update() {
     fi
 
     echo ""
+    if [ "$update_failed" -eq 1 ]; then
+        log_warn "Update did not complete, previous version is still in place"
+        echo ""
+        return 1
+    fi
     log_ok "Update complete"
     echo ""
 }

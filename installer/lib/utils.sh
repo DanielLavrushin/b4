@@ -54,6 +54,62 @@ get_avail_kb() {
     df -Pk "$_path" 2>/dev/null | awk 'NR==2 {print $4}'
 }
 
+get_fs_device() {
+    df -Pk "$1" 2>/dev/null | awk 'NR==2 {print $1}'
+}
+
+same_filesystem() {
+    _sfs_a=$(get_fs_device "$1")
+    _sfs_b=$(get_fs_device "$2")
+    [ -n "$_sfs_a" ] && [ "$_sfs_a" = "$_sfs_b" ]
+}
+
+BIN_SLACK_KB=512
+
+ensure_bin_space() {
+    _ebs_dir="$1"
+    _ebs_src="$2"
+
+    [ -d "$_ebs_dir" ] || return 0
+    [ -f "$_ebs_src" ] || return 0
+    same_filesystem "$(dirname "$_ebs_src")" "$_ebs_dir" && return 0
+
+    _ebs_need=$(du -k "$_ebs_src" 2>/dev/null | awk '{print $1}')
+    [ -n "$_ebs_need" ] || return 0
+    _ebs_need=$((_ebs_need + BIN_SLACK_KB))
+
+    _ebs_avail=$(get_avail_kb "$_ebs_dir")
+    [ -n "$_ebs_avail" ] || return 0
+
+    if [ "$_ebs_avail" -lt "$_ebs_need" ] 2>/dev/null; then
+        log_err "Not enough disk space in ${_ebs_dir}: ${_ebs_avail}KB free, need ${_ebs_need}KB"
+        log_info "Free space there, or re-run with --bin-dir on external storage."
+        return 1
+    fi
+    return 0
+}
+
+stash_binary() {
+    _sb_bin="$1"
+    _sb_backup="$2"
+
+    rm -f "${_sb_bin}".backup.* 2>/dev/null || true
+    [ -f "$_sb_bin" ] || return 0
+    mv "$_sb_bin" "$_sb_backup" 2>/dev/null || return 1
+    return 0
+}
+
+restore_binary() {
+    _rb_bin="$1"
+    _rb_backup="$2"
+
+    [ -n "$_rb_backup" ] && [ -f "$_rb_backup" ] || return 1
+    rm -f "$_rb_bin" 2>/dev/null || true
+    mv "$_rb_backup" "$_rb_bin" 2>/dev/null || return 1
+    chmod +x "$_rb_bin" 2>/dev/null || true
+    return 0
+}
+
 # --- Temp directory management ---
 # Required free space: ~20MB (archive + extracted binary simultaneously)
 TEMP_MIN_KB=20000

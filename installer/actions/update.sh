@@ -162,6 +162,14 @@ action_update() {
         exit 1
     }
 
+    if [ ! -f "${TEMP_DIR}/${BINARY_NAME}" ]; then
+        log_err "Binary not found in archive"
+        exit 1
+    fi
+
+    bin_dir=$(dirname "$existing_bin")
+    ensure_bin_space "$bin_dir" "${TEMP_DIR}/${BINARY_NAME}" || exit 1
+
     saved_cmdline=$(b4_running_cmdline 2>/dev/null || true)
     [ -n "$saved_cmdline" ] && log_info "Running command line: ${saved_cmdline}"
 
@@ -181,25 +189,39 @@ action_update() {
     fi
 
     ts=$(date '+%Y%m%d_%H%M%S')
-    cp "$existing_bin" "${existing_bin}.backup.${ts}"
+    backup_bin="${existing_bin}.backup.${ts}"
 
-    # Remove old binary first to avoid ETXTBSY if process is still running
-    rm -f "$existing_bin"
-    mv "${TEMP_DIR}/${BINARY_NAME}" "$existing_bin" 2>/dev/null ||
-        cp "${TEMP_DIR}/${BINARY_NAME}" "$existing_bin" ||
-        {
-            log_err "Failed to replace binary"
-            exit 1
-        }
-    chmod +x "$existing_bin"
+    stash_binary "$existing_bin" "$backup_bin" || {
+        log_err "Could not move the current binary aside"
+        exit 1
+    }
+
+    update_failed=0
+    if mv "${TEMP_DIR}/${BINARY_NAME}" "$existing_bin" 2>/dev/null ||
+        cp "${TEMP_DIR}/${BINARY_NAME}" "$existing_bin"; then
+        chmod +x "$existing_bin"
+    else
+        log_err "Failed to replace binary"
+        update_failed=1
+    fi
 
     # Verify
-    if "$existing_bin" --version >/dev/null 2>&1; then
+    if [ "$update_failed" -eq 0 ] && "$existing_bin" --version >/dev/null 2>&1; then
         new_ver=$("$existing_bin" --version 2>&1 | head -1)
         log_ok "Updated to: ${new_ver}"
-        rm -f "${existing_bin}".backup.* 2>/dev/null || true
+        rm -f "$backup_bin" 2>/dev/null || true
     else
-        log_warn "Updated binary failed version check"
+        if [ "$update_failed" -eq 0 ]; then
+            log_warn "Updated binary failed version check"
+        fi
+        update_failed=1
+        if restore_binary "$existing_bin" "$backup_bin"; then
+            log_ok "Rolled back to the previous version"
+        elif [ -f "$existing_bin" ]; then
+            log_warn "No backup to roll back to, keeping the new binary"
+        else
+            log_err "No working binary in ${bin_dir}, reinstall b4 manually"
+        fi
     fi
 
     refresh_legacy_service_script
@@ -216,7 +238,7 @@ action_update() {
     elif [ -n "$saved_cmdline" ]; then
         log_info "Service manager did not restart b4 — relaunching directly"
         if relaunch_b4 "$saved_cmdline"; then
-            log_ok "b4 relaunched with the new binary"
+            log_ok "b4 relaunched"
         else
             log_warn "Failed to relaunch b4 — start it manually:"
             log_warn "  ${saved_cmdline}"
@@ -227,6 +249,11 @@ action_update() {
     fi
 
     echo ""
+    if [ "$update_failed" -eq 1 ]; then
+        log_warn "Update did not complete, previous version is still in place"
+        echo ""
+        return 1
+    fi
     log_ok "Update complete"
     echo ""
 }
