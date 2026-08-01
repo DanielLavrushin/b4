@@ -272,8 +272,6 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		}
 	}
 
-	w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, resp)
-
 	if ips := dns.ParseResponseIPs(resp); len(ips) > 0 {
 		domain, _ := dns.ParseQueryDomain(query)
 		w.storeHostHints(clientIP, set, strings.ToLower(domain), ips)
@@ -281,6 +279,8 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 			RoutingHandleDNSFunc(cfg, set, ips)
 		}
 	}
+
+	w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, resp)
 
 	upstream := set.DNS.TargetDNS
 	if set.DNS.DoHURL != "" {

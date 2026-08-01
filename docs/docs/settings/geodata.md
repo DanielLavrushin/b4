@@ -64,6 +64,8 @@ The destination directory is not a saved setting, so editing the field does not 
 
 The **Remove** button on each card deletes the file from disk and clears its path and source URL. The database is switched off until you download or upload it again - scheduled and startup auto-update do not bring it back, because there is no source URL left to fetch from.
 
+Only files b4 wrote itself are deleted, meaning a `geosite.dat` or `geoip.dat` outside the excluded system directories. If the path points at something else - a database shared with another program, or a file under a custom name - the database is still switched off, but the file is left on disk and the status line says so.
+
 Sets that reference categories from a removed database keep their category list, but those categories match nothing until the database is restored. The confirmation dialog names the sets that are affected.
 
 :::tip Freeing space

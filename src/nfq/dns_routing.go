@@ -14,6 +14,8 @@ var RoutingHandleDNSFunc func(cfg *config.Config, set *config.SetConfig, ips []n
 
 var RoutingLearnIPFunc func(cfg *config.Config, set *config.SetConfig, ip net.IP)
 
+var RoutingLearnHostFunc func(cfg *config.Config, set *config.SetConfig, host string)
+
 func registerEscalatedRoute(cfg *config.Config, escSet *config.SetConfig, dst net.IP) {
 	if cfg == nil || escSet == nil || dst == nil || !escSet.Routing.Enabled || RoutingHandleDNSFunc == nil {
 		return
@@ -25,8 +27,8 @@ func registerEscalatedRoute(cfg *config.Config, escSet *config.SetConfig, dst ne
 	RoutingHandleDNSFunc(cfg, escSet, []net.IP{dst})
 }
 
-func registerLearnedRoute(cfg *config.Config, set *config.SetConfig, dst net.IP) {
-	if cfg == nil || set == nil || dst == nil || !set.Routing.Enabled || RoutingLearnIPFunc == nil {
+func registerLearnedRoute(cfg *config.Config, set *config.SetConfig, dst net.IP, host string) {
+	if cfg == nil || set == nil || dst == nil || !set.Routing.Enabled {
 		return
 	}
 	if set.Targets.DomainOnly {
@@ -35,7 +37,12 @@ func registerLearnedRoute(cfg *config.Config, set *config.SetConfig, dst net.IP)
 	if cfg.Queue.IsDiscovery {
 		return
 	}
-	RoutingLearnIPFunc(cfg, set, dst)
+	if RoutingLearnIPFunc != nil {
+		RoutingLearnIPFunc(cfg, set, dst)
+	}
+	if host != "" && RoutingLearnHostFunc != nil {
+		RoutingLearnHostFunc(cfg, set, host)
+	}
 }
 
 type pendingDNSRoute struct {

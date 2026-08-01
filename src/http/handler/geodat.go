@@ -3,6 +3,7 @@ package handler
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -39,6 +40,7 @@ type GeodatRemoveResponse struct {
 	Success bool     `json:"success"`
 	Message string   `json:"message"`
 	Removed []string `json:"removed"`
+	Kept    []string `json:"kept"`
 }
 
 type GeodatSource struct {
@@ -430,16 +432,20 @@ func (api *API) handleGeodatRemove(w http.ResponseWriter, r *http.Request) {
 
 	geo := &api.getCfg().System.Geo
 	removed := []string{}
+	kept := []string{}
 	cleared := []string{}
 
 	if req.Type == "geosite" || req.Type == "both" {
-		deleted, err := deleteGeodatFile(geo.GeoSitePath)
-		if err != nil {
+		deleted, err := deleteGeodatFile(geo.GeoSitePath, "geosite.dat")
+		switch {
+		case errors.Is(err, errUnmanagedGeodat):
+			log.Warnf("geodat remove: keeping %s on disk, %v", geo.GeoSitePath, err)
+			kept = append(kept, geo.GeoSitePath)
+		case err != nil:
 			log.Errorf("geodat remove: %v", err)
 			writeJsonError(w, http.StatusInternalServerError, err.Error())
 			return
-		}
-		if deleted != "" {
+		case deleted != "":
 			removed = append(removed, deleted)
 		}
 		geo.GeoSitePath = ""
@@ -448,13 +454,16 @@ func (api *API) handleGeodatRemove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Type == "geoip" || req.Type == "both" {
-		deleted, err := deleteGeodatFile(geo.GeoIpPath)
-		if err != nil {
+		deleted, err := deleteGeodatFile(geo.GeoIpPath, "geoip.dat")
+		switch {
+		case errors.Is(err, errUnmanagedGeodat):
+			log.Warnf("geodat remove: keeping %s on disk, %v", geo.GeoIpPath, err)
+			kept = append(kept, geo.GeoIpPath)
+		case err != nil:
 			log.Errorf("geodat remove: %v", err)
 			writeJsonError(w, http.StatusInternalServerError, err.Error())
 			return
-		}
-		if deleted != "" {
+		case deleted != "":
 			removed = append(removed, deleted)
 		}
 		geo.GeoIpPath = ""
@@ -472,9 +481,12 @@ func (api *API) handleGeodatRemove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	message := "Disabled: " + strings.Join(cleared, ", ")
-	if len(removed) > 0 {
+	switch {
+	case len(removed) > 0:
 		message += ". Deleted: " + strings.Join(removed, ", ")
-	} else {
+	case len(kept) > 0:
+		message += ". Kept on disk, not written by b4: " + strings.Join(kept, ", ")
+	default:
 		message += ". No file on disk to delete"
 	}
 	log.Infof("geodat remove: %s", message)
@@ -484,26 +496,28 @@ func (api *API) handleGeodatRemove(w http.ResponseWriter, r *http.Request) {
 		Success: true,
 		Message: message,
 		Removed: removed,
+		Kept:    kept,
 	})
 }
 
-func deleteGeodatFile(path string) (string, error) {
+var errUnmanagedGeodat = errors.New("file was not written by b4")
+
+func deleteGeodatFile(path, managedName string) (string, error) {
 	if path == "" {
 		return "", nil
 	}
 
 	cleaned := filepath.Clean(path)
 	if !filepath.IsAbs(cleaned) {
-		return "", fmt.Errorf("refusing to delete non-absolute path %s", path)
+		return "", fmt.Errorf("%s: %w", path, errUnmanagedGeodat)
 	}
 	for _, prefix := range deniedPathPrefixes {
 		if cleaned == prefix || strings.HasPrefix(cleaned, prefix+"/") {
-			return "", fmt.Errorf("refusing to delete %s: path is under %s", cleaned, prefix)
+			return "", fmt.Errorf("%s is under %s: %w", cleaned, prefix, errUnmanagedGeodat)
 		}
 	}
-	ext := strings.ToLower(filepath.Ext(cleaned))
-	if ext != ".dat" && ext != ".db" {
-		return "", fmt.Errorf("refusing to delete %s: not a .dat or .db file", cleaned)
+	if filepath.Base(cleaned) != managedName {
+		return "", fmt.Errorf("%s is not named %s: %w", cleaned, managedName, errUnmanagedGeodat)
 	}
 
 	if err := os.Remove(cleaned); err != nil {

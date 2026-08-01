@@ -52,13 +52,17 @@ type routeBackend interface {
 	clearAll()
 }
 
+const routeMaxLearnedHosts = 256
+
 var (
-	routeMu            sync.Mutex
-	routeRuleCache     = make(map[string]routeState)
-	routeIfaceAuto     = make(map[string]routeState)
-	routeEngine        routeBackend
-	routeLastReResolve = make(map[string]time.Time)
-	routeLearnLast     = make(map[string]time.Time)
+	routeMu             sync.Mutex
+	routeRuleCache      = make(map[string]routeState)
+	routeIfaceAuto      = make(map[string]routeState)
+	routeEngine         routeBackend
+	routeLastReResolve  = make(map[string]time.Time)
+	routeLearnLast      = make(map[string]time.Time)
+	routeLearnedHosts   = make(map[string]map[string]time.Time)
+	routeHostResolvedAt = make(map[string]time.Time)
 )
 
 func getRouteBackend(cfg *config.Config) routeBackend {
@@ -206,6 +210,100 @@ func RoutingLearnIP(cfg *config.Config, set *config.SetConfig, ip net.IP) {
 	}
 
 	routeAddIPsToSets(be, st, ttl, []net.IP{ip}, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+}
+
+// RoutingLearnHost records a hostname that matched a routing-enabled set by SNI
+// suffix and resolves it in full, so every address the name answers with lands
+// in the set instead of only the one destination that happened to be observed.
+// Without it a multi-address CDN leaks one direct connection per address.
+func RoutingLearnHost(cfg *config.Config, set *config.SetConfig, host string) {
+	if cfg == nil || set == nil || !set.Routing.Enabled {
+		return
+	}
+	if config.RoutingIsBlock(set.Routing.Mode) || set.Targets.DomainOnly {
+		return
+	}
+
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" || net.ParseIP(host) != nil {
+		return
+	}
+	for _, d := range set.Targets.SNIDomains {
+		if strings.ToLower(strings.TrimSpace(d)) == host {
+			return
+		}
+	}
+
+	ttl := set.Routing.IPTTLSeconds
+	if ttl <= 0 {
+		ttl = 3600
+	}
+
+	routeMu.Lock()
+	if _, ok := routeRuleCache[set.Id]; !ok {
+		routeMu.Unlock()
+		return
+	}
+
+	now := time.Now()
+	refresh := time.Duration(ttl) * time.Second / 2
+	key := set.Id + "|" + host
+	if last, seen := routeHostResolvedAt[key]; seen && now.Sub(last) < refresh {
+		routeMu.Unlock()
+		return
+	}
+	routeHostResolvedAt[key] = now
+
+	hosts := routeLearnedHosts[set.Id]
+	if hosts == nil {
+		hosts = make(map[string]time.Time)
+		routeLearnedHosts[set.Id] = hosts
+	}
+	hosts[host] = now
+	if len(hosts) > routeMaxLearnedHosts {
+		oldest, oldestAt := "", now
+		for h, t := range hosts {
+			if !t.After(oldestAt) {
+				oldest, oldestAt = h, t
+			}
+		}
+		if oldest != "" {
+			delete(hosts, oldest)
+			delete(routeHostResolvedAt, set.Id+"|"+oldest)
+		}
+	}
+	routeMu.Unlock()
+
+	cfgSnapshot := *cfg
+	go func(c *config.Config, s *config.SetConfig, h string) {
+		if ips := routeResolveHost(c, h); len(ips) > 0 {
+			log.Tracef("Routing: learned host %s -> %d IPs (set: %s)", h, len(ips), s.Name)
+			RoutingHandleDNS(c, s, ips)
+		}
+	}(&cfgSnapshot, set, host)
+}
+
+func routeResolveHost(cfg *config.Config, host string) []net.IP {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		log.Tracef("Routing: resolve %s failed: %v", host, err)
+		return nil
+	}
+
+	resolved := make([]net.IP, 0, len(addrs))
+	for _, a := range addrs {
+		if a.IP.To4() != nil && !cfg.Queue.IPv4Enabled {
+			continue
+		}
+		if a.IP.To4() == nil && !cfg.Queue.IPv6Enabled {
+			continue
+		}
+		resolved = append(resolved, a.IP)
+	}
+	return resolved
 }
 
 func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
@@ -382,6 +480,8 @@ func RoutingClearAll() {
 	routeEngine = nil
 	routeLastReResolve = make(map[string]time.Time)
 	routeLearnLast = make(map[string]time.Time)
+	routeLearnedHosts = make(map[string]map[string]time.Time)
+	routeHostResolvedAt = make(map[string]time.Time)
 }
 
 func RoutingActiveIPSetNames(ipv4, ipv6 bool) []string {
@@ -535,6 +635,7 @@ func RoutingForceResync(cfg *config.Config) {
 	routeIfaceAuto = make(map[string]routeState)
 	routeLastReResolve = make(map[string]time.Time)
 	routeLearnLast = make(map[string]time.Time)
+	routeHostResolvedAt = make(map[string]time.Time)
 	routeMu.Unlock()
 
 	RoutingSyncConfig(cfg)
@@ -593,6 +694,10 @@ func RoutingSyncConfig(cfg *config.Config) {
 		if _, ok := desired[setID]; !ok {
 			routeCleanupAny(be, st)
 			delete(routeRuleCache, setID)
+			for host := range routeLearnedHosts[setID] {
+				delete(routeHostResolvedAt, setID+"|"+host)
+			}
+			delete(routeLearnedHosts, setID)
 		}
 	}
 
@@ -719,34 +824,46 @@ func routePreResolveDomains(cfg *config.Config, sets []*config.SetConfig) {
 		if config.RoutingIsBlock(set.Routing.Mode) {
 			continue
 		}
-		for _, domain := range set.Targets.SNIDomains {
-			domain = strings.TrimSpace(domain)
-			if domain == "" {
-				continue
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			ips, err := net.DefaultResolver.LookupIPAddr(ctx, domain)
-			cancel()
-			if err != nil {
-				log.Tracef("Routing: pre-resolve %s failed: %v", domain, err)
-				continue
-			}
-			resolved := make([]net.IP, 0, len(ips))
-			for _, ip := range ips {
-				if ip.IP.To4() != nil && !cfg.Queue.IPv4Enabled {
-					continue
-				}
-				if ip.IP.To4() == nil && !cfg.Queue.IPv6Enabled {
-					continue
-				}
-				resolved = append(resolved, ip.IP)
-			}
+		for _, domain := range routeResolveTargets(set) {
+			resolved := routeResolveHost(cfg, domain)
 			if len(resolved) > 0 {
 				RoutingHandleDNS(cfg, set, resolved)
 				log.Tracef("Routing: pre-resolved %s -> %d IPs", domain, len(resolved))
 			}
 		}
 	}
+}
+
+// routeResolveTargets returns the configured SNI domains plus the hostnames
+// that matched this set by suffix at runtime. SNI matching is suffix-based, so
+// resolving only the configured names leaves every CDN subdomain unresolved.
+func routeResolveTargets(set *config.SetConfig) []string {
+	seen := make(map[string]struct{})
+	targets := make([]string, 0, len(set.Targets.SNIDomains))
+
+	for _, domain := range set.Targets.SNIDomains {
+		domain = strings.ToLower(strings.TrimSpace(domain))
+		if domain == "" {
+			continue
+		}
+		if _, ok := seen[domain]; ok {
+			continue
+		}
+		seen[domain] = struct{}{}
+		targets = append(targets, domain)
+	}
+
+	routeMu.Lock()
+	for host := range routeLearnedHosts[set.Id] {
+		if _, ok := seen[host]; ok {
+			continue
+		}
+		seen[host] = struct{}{}
+		targets = append(targets, host)
+	}
+	routeMu.Unlock()
+
+	return targets
 }
 
 func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState, sources []string) error {

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -172,24 +173,24 @@ func TestHandleGeodatRemove_Validation(t *testing.T) {
 
 func TestDeleteGeodatFile(t *testing.T) {
 	t.Run("empty path is a no-op", func(t *testing.T) {
-		removed, err := deleteGeodatFile("")
+		removed, err := deleteGeodatFile("", "geosite.dat")
 		if err != nil || removed != "" {
 			t.Errorf("expected no-op, got removed=%q err=%v", removed, err)
 		}
 	})
 
 	t.Run("missing file is not an error", func(t *testing.T) {
-		removed, err := deleteGeodatFile(filepath.Join(t.TempDir(), "geosite.dat"))
+		removed, err := deleteGeodatFile(filepath.Join(t.TempDir(), "geosite.dat"), "geosite.dat")
 		if err != nil || removed != "" {
 			t.Errorf("expected no-op, got removed=%q err=%v", removed, err)
 		}
 	})
 
-	t.Run("deletes dat file", func(t *testing.T) {
+	t.Run("deletes managed file", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "geosite.dat")
 		os.WriteFile(path, []byte("data"), 0644)
 
-		removed, err := deleteGeodatFile(path)
+		removed, err := deleteGeodatFile(path, "geosite.dat")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -201,27 +202,39 @@ func TestDeleteGeodatFile(t *testing.T) {
 		}
 	})
 
-	t.Run("refuses non-dat file", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "hosts")
+	t.Run("keeps file b4 did not write", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "geosite_ru.dat")
 		os.WriteFile(path, []byte("data"), 0644)
 
-		if _, err := deleteGeodatFile(path); err == nil {
-			t.Error("expected refusal for non-dat file")
+		if _, err := deleteGeodatFile(path, "geosite.dat"); !errors.Is(err, errUnmanagedGeodat) {
+			t.Errorf("expected errUnmanagedGeodat, got %v", err)
 		}
 		if _, err := os.Stat(path); err != nil {
 			t.Error("file should be untouched")
 		}
 	})
 
-	t.Run("refuses denied prefix", func(t *testing.T) {
-		if _, err := deleteGeodatFile("/proc/geosite.dat"); err == nil {
-			t.Error("expected refusal for /proc path")
+	t.Run("keeps file under the wrong name for its type", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "geosite.dat")
+		os.WriteFile(path, []byte("data"), 0644)
+
+		if _, err := deleteGeodatFile(path, "geoip.dat"); !errors.Is(err, errUnmanagedGeodat) {
+			t.Errorf("expected errUnmanagedGeodat, got %v", err)
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Error("file should be untouched")
 		}
 	})
 
-	t.Run("refuses relative path", func(t *testing.T) {
-		if _, err := deleteGeodatFile("geosite.dat"); err == nil {
-			t.Error("expected refusal for relative path")
+	t.Run("keeps denied prefix", func(t *testing.T) {
+		if _, err := deleteGeodatFile("/proc/geosite.dat", "geosite.dat"); !errors.Is(err, errUnmanagedGeodat) {
+			t.Errorf("expected errUnmanagedGeodat for /proc path, got %v", err)
+		}
+	})
+
+	t.Run("keeps relative path", func(t *testing.T) {
+		if _, err := deleteGeodatFile("geosite.dat", "geosite.dat"); !errors.Is(err, errUnmanagedGeodat) {
+			t.Errorf("expected errUnmanagedGeodat for relative path, got %v", err)
 		}
 	})
 }

@@ -40,6 +40,7 @@ export interface GeodatRemoveResult {
   success: boolean;
   message: string;
   removed: string[];
+  kept: string[];
 }
 
 export interface SystemInfo {

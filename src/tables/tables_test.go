@@ -744,6 +744,111 @@ func TestRoutingLearnIP(t *testing.T) {
 	})
 }
 
+func TestRoutingLearnHost(t *testing.T) {
+	origCache := routeRuleCache
+	origHosts := routeLearnedHosts
+	origResolved := routeHostResolvedAt
+	defer func() {
+		routeRuleCache = origCache
+		routeLearnedHosts = origHosts
+		routeHostResolvedAt = origResolved
+	}()
+
+	newSet := func() *config.SetConfig {
+		s := &config.SetConfig{Id: "s1"}
+		s.Routing.Enabled = true
+		s.Routing.Mode = config.RoutingModeProxy
+		s.Targets.SNIDomains = []string{"ipinfo.io"}
+		return s
+	}
+
+	reset := func() {
+		routeRuleCache = map[string]routeState{"s1": {mode: config.RoutingModeProxy}}
+		routeLearnedHosts = make(map[string]map[string]time.Time)
+		routeHostResolvedAt = make(map[string]time.Time)
+	}
+
+	t.Run("set with no installed rule is a no-op", func(t *testing.T) {
+		reset()
+		routeRuleCache = make(map[string]routeState)
+		cfg := config.NewConfig()
+		RoutingLearnHost(&cfg, newSet(), "cdn.test.invalid")
+		if len(routeLearnedHosts) != 0 {
+			t.Error("set absent from routeRuleCache should be a no-op")
+		}
+	})
+
+	t.Run("configured domain is not relearned", func(t *testing.T) {
+		reset()
+		cfg := config.NewConfig()
+		RoutingLearnHost(&cfg, newSet(), "IPinfo.IO")
+		if len(routeLearnedHosts) != 0 {
+			t.Error("a domain already in Targets.SNIDomains is covered by pre-resolve")
+		}
+	})
+
+	t.Run("block mode and domain-only are skipped", func(t *testing.T) {
+		reset()
+		cfg := config.NewConfig()
+
+		blockSet := newSet()
+		blockSet.Routing.Mode = config.RoutingModeBlock
+		RoutingLearnHost(&cfg, blockSet, "cdn.test.invalid")
+
+		domainOnly := newSet()
+		domainOnly.Targets.DomainOnly = true
+		RoutingLearnHost(&cfg, domainOnly, "cdn.test.invalid")
+
+		if len(routeLearnedHosts) != 0 {
+			t.Errorf("block-mode and domain-only sets must not learn hosts, got %v", routeLearnedHosts)
+		}
+	})
+
+	t.Run("an IP literal is not a hostname", func(t *testing.T) {
+		reset()
+		cfg := config.NewConfig()
+		RoutingLearnHost(&cfg, newSet(), "1.2.3.4")
+		if len(routeLearnedHosts) != 0 {
+			t.Error("an IP literal must not be queued for resolution")
+		}
+	})
+
+	t.Run("nil args are safe", func(t *testing.T) {
+		RoutingLearnHost(nil, nil, "")
+	})
+}
+
+func TestRouteResolveTargets(t *testing.T) {
+	origHosts := routeLearnedHosts
+	defer func() { routeLearnedHosts = origHosts }()
+
+	routeLearnedHosts = map[string]map[string]time.Time{
+		"s1": {
+			"website-cdn.assets.ipinfo.io": time.Now(),
+			"ipinfo.io":                    time.Now(),
+		},
+	}
+
+	set := &config.SetConfig{Id: "s1"}
+	set.Targets.SNIDomains = []string{"ipinfo.io", " IPinfo.IO ", ""}
+
+	got := routeResolveTargets(set)
+
+	seen := make(map[string]int)
+	for _, d := range got {
+		seen[d]++
+	}
+	if seen["ipinfo.io"] != 1 {
+		t.Errorf("configured domain must appear exactly once normalized, got %v", got)
+	}
+	if seen["website-cdn.assets.ipinfo.io"] != 1 {
+		t.Errorf("learned suffix match must be resolved too, got %v", got)
+	}
+	if len(got) != 2 {
+		t.Errorf("expected 2 resolve targets, got %v", got)
+	}
+}
+
 func TestRouteResolveIDs(t *testing.T) {
 	origCache := routeRuleCache
 	origAuto := routeIfaceAuto
