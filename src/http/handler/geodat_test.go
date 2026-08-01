@@ -266,6 +266,33 @@ func TestRemoveRelocatedGeodat(t *testing.T) {
 		}
 	})
 
+	t.Run("same path written unnormalized is a no-op", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "geosite.dat")
+		os.WriteFile(path, []byte("data"), 0644)
+		unclean := dir + "/./geosite.dat"
+
+		if got := removeRelocatedGeodat(unclean, path, "geosite.dat"); got != "" {
+			t.Errorf("expected no removal, got %q", got)
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Error("the freshly downloaded file was deleted")
+		}
+	})
+
+	t.Run("keeps relative path", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Chdir(dir)
+		os.WriteFile("geosite.dat", []byte("data"), 0644)
+
+		if got := removeRelocatedGeodat("geosite.dat", filepath.Join(dir, "sub", "geosite.dat"), "geosite.dat"); got != "" {
+			t.Errorf("expected no removal, got %q", got)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "geosite.dat")); err != nil {
+			t.Error("relative path should be untouched")
+		}
+	})
+
 	t.Run("keeps files b4 did not write", func(t *testing.T) {
 		oldPath := filepath.Join(t.TempDir(), "custom-geosite.dat")
 		os.WriteFile(oldPath, []byte("data"), 0644)

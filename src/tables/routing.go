@@ -212,10 +212,6 @@ func RoutingLearnIP(cfg *config.Config, set *config.SetConfig, ip net.IP) {
 	routeAddIPsToSets(be, st, ttl, []net.IP{ip}, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 }
 
-// RoutingLearnHost records a hostname that matched a routing-enabled set by SNI
-// suffix and resolves it in full, so every address the name answers with lands
-// in the set instead of only the one destination that happened to be observed.
-// Without it a multi-address CDN leaks one direct connection per address.
 func RoutingLearnHost(cfg *config.Config, set *config.SetConfig, host string) {
 	if cfg == nil || set == nil || !set.Routing.Enabled {
 		return
@@ -278,9 +274,36 @@ func RoutingLearnHost(cfg *config.Config, set *config.SetConfig, host string) {
 	go func(c *config.Config, s *config.SetConfig, h string) {
 		if ips := routeResolveHost(c, h); len(ips) > 0 {
 			log.Tracef("Routing: learned host %s -> %d IPs (set: %s)", h, len(ips), s.Name)
-			RoutingHandleDNS(c, s, ips)
+			routeAddResolvedIPs(c, s, ips)
 		}
 	}(&cfgSnapshot, set, host)
+}
+
+func routeAddResolvedIPs(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
+	if cfg == nil || set == nil || len(ips) == 0 {
+		return
+	}
+	if config.RoutingIsBlock(set.Routing.Mode) || set.Targets.DomainOnly {
+		return
+	}
+
+	routeMu.Lock()
+	defer routeMu.Unlock()
+
+	st, ok := routeRuleCache[set.Id]
+	if !ok {
+		return
+	}
+	be := routeEngine
+	if be == nil {
+		return
+	}
+
+	ttl := set.Routing.IPTTLSeconds
+	if ttl <= 0 {
+		ttl = 3600
+	}
+	routeAddIPsToSets(be, st, ttl, ips, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 }
 
 func routeResolveHost(cfg *config.Config, host string) []net.IP {
@@ -827,16 +850,13 @@ func routePreResolveDomains(cfg *config.Config, sets []*config.SetConfig) {
 		for _, domain := range routeResolveTargets(set) {
 			resolved := routeResolveHost(cfg, domain)
 			if len(resolved) > 0 {
-				RoutingHandleDNS(cfg, set, resolved)
+				routeAddResolvedIPs(cfg, set, resolved)
 				log.Tracef("Routing: pre-resolved %s -> %d IPs", domain, len(resolved))
 			}
 		}
 	}
 }
 
-// routeResolveTargets returns the configured SNI domains plus the hostnames
-// that matched this set by suffix at runtime. SNI matching is suffix-based, so
-// resolving only the configured names leaves every CDN subdomain unresolved.
 func routeResolveTargets(set *config.SetConfig) []string {
 	seen := make(map[string]struct{})
 	targets := make([]string, 0, len(set.Targets.SNIDomains))
