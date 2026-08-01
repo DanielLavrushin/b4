@@ -22,12 +22,23 @@ type GeodatDownloadRequest struct {
 }
 
 type GeodatDownloadResponse struct {
-	Success     bool   `json:"success"`
-	Message     string `json:"message"`
-	GeositePath string `json:"geosite_path"`
-	GeoipPath   string `json:"geoip_path"`
-	GeositeSize int64  `json:"geosite_size"`
-	GeoipSize   int64  `json:"geoip_size"`
+	Success     bool     `json:"success"`
+	Message     string   `json:"message"`
+	GeositePath string   `json:"geosite_path"`
+	GeoipPath   string   `json:"geoip_path"`
+	GeositeSize int64    `json:"geosite_size"`
+	GeoipSize   int64    `json:"geoip_size"`
+	Removed     []string `json:"removed,omitempty"`
+}
+
+type GeodatRemoveRequest struct {
+	Type string `json:"type"`
+}
+
+type GeodatRemoveResponse struct {
+	Success bool     `json:"success"`
+	Message string   `json:"message"`
+	Removed []string `json:"removed"`
 }
 
 type GeodatSource struct {
@@ -41,6 +52,7 @@ func (api *API) RegisterGeodatApi() {
 	api.mux.HandleFunc("/api/geodat/upload", api.handleGeodatUpload)
 	api.mux.HandleFunc("/api/geodat/sources", api.handleGeodatSources)
 	api.mux.HandleFunc("/api/geodat/info", api.handleFileInfo)
+	api.mux.HandleFunc("/api/geodat/remove", api.handleGeodatRemove)
 }
 
 //go:embed geodat.json
@@ -113,7 +125,7 @@ func (api *API) handleGeodatDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	geositeSize, geoipSize, err := api.RefreshGeodat(req.DestinationPath, req.GeositeURL, req.GeoipURL)
+	geositeSize, geoipSize, removed, err := api.RefreshGeodat(req.DestinationPath, req.GeositeURL, req.GeoipURL)
 	if err != nil {
 		log.Errorf("geodat download: %v", err)
 		writeJsonError(w, http.StatusInternalServerError, err.Error())
@@ -129,22 +141,28 @@ func (api *API) handleGeodatDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Infof("Downloaded geodat files: %s", strings.Join(parts, ", "))
 
+	message := "Downloaded: " + strings.Join(parts, ", ")
+	if len(removed) > 0 {
+		message += ". Removed previous copy: " + strings.Join(removed, ", ")
+	}
+
 	response := GeodatDownloadResponse{
 		Success:     true,
-		Message:     "Downloaded: " + strings.Join(parts, ", "),
+		Message:     message,
 		GeositePath: api.getCfg().System.Geo.GeoSitePath,
 		GeoipPath:   api.getCfg().System.Geo.GeoIpPath,
 		GeositeSize: geositeSize,
 		GeoipSize:   geoipSize,
+		Removed:     removed,
 	}
 
 	setJsonHeader(w)
 	json.NewEncoder(w).Encode(response)
 }
 
-func (api *API) RefreshGeodat(destPath, geositeURL, geoipURL string) (int64, int64, error) {
+func (api *API) RefreshGeodat(destPath, geositeURL, geoipURL string) (int64, int64, []string, error) {
 	if err := os.MkdirAll(destPath, 0755); err != nil {
-		return 0, 0, fmt.Errorf("failed to create directory %s: %v", destPath, err)
+		return 0, 0, nil, fmt.Errorf("failed to create directory %s: %v", destPath, err)
 	}
 
 	var geositeSize, geoipSize int64
@@ -154,7 +172,7 @@ func (api *API) RefreshGeodat(destPath, geositeURL, geoipURL string) (int64, int
 		geositePath := filepath.Join(destPath, "geosite.dat")
 		size, err := downloadFile(geositeURL, geositePath)
 		if err != nil {
-			return 0, 0, fmt.Errorf("failed to download geosite.dat: %v", err)
+			return 0, 0, nil, fmt.Errorf("failed to download geosite.dat: %v", err)
 		}
 		geositeSize = size
 		newGeoSitePath = geositePath
@@ -164,21 +182,38 @@ func (api *API) RefreshGeodat(destPath, geositeURL, geoipURL string) (int64, int
 		geoipPath := filepath.Join(destPath, "geoip.dat")
 		size, err := downloadFile(geoipURL, geoipPath)
 		if err != nil {
-			return geositeSize, 0, fmt.Errorf("failed to download geoip.dat: %v", err)
+			return geositeSize, 0, nil, fmt.Errorf("failed to download geoip.dat: %v", err)
 		}
 		geoipSize = size
 		newGeoIpPath = geoipPath
 	}
 
+	removed := []string{}
 	if newGeoSitePath != "" {
+		if old := removeRelocatedGeodat(api.getCfg().System.Geo.GeoSitePath, newGeoSitePath, "geosite.dat"); old != "" {
+			removed = append(removed, old)
+		}
 		api.getCfg().System.Geo.GeoSitePath = newGeoSitePath
 		api.getCfg().System.Geo.GeoSiteURL = geositeURL
 	}
 	if newGeoIpPath != "" {
+		if old := removeRelocatedGeodat(api.getCfg().System.Geo.GeoIpPath, newGeoIpPath, "geoip.dat"); old != "" {
+			removed = append(removed, old)
+		}
 		api.getCfg().System.Geo.GeoIpPath = newGeoIpPath
 		api.getCfg().System.Geo.GeoIpURL = geoipURL
 	}
 
+	api.applyGeodatPaths()
+
+	if err := api.saveAndPushConfig(api.getCfg()); err != nil {
+		return geositeSize, geoipSize, removed, fmt.Errorf("failed to save configuration: %v", err)
+	}
+
+	return geositeSize, geoipSize, removed, nil
+}
+
+func (api *API) applyGeodatPaths() {
 	api.geodataManager.UpdatePaths(api.getCfg().System.Geo.GeoSitePath, api.getCfg().System.Geo.GeoIpPath)
 	api.geodataManager.ClearCache()
 
@@ -186,12 +221,24 @@ func (api *API) RefreshGeodat(destPath, geositeURL, geoipURL string) (int64, int
 		log.Infof("Reloading geo targets for set: %s", set.Name)
 		api.loadTargetsForSetCached(set)
 	}
+}
 
-	if err := api.saveAndPushConfig(api.getCfg()); err != nil {
-		return geositeSize, geoipSize, fmt.Errorf("failed to save configuration: %v", err)
+func removeRelocatedGeodat(oldPath, newPath, managedName string) string {
+	if oldPath == "" || oldPath == newPath {
+		return ""
 	}
-
-	return geositeSize, geoipSize, nil
+	if filepath.Base(oldPath) != managedName {
+		log.Infof("geodat: keeping %s, not a b4-managed %s", oldPath, managedName)
+		return ""
+	}
+	if err := os.Remove(oldPath); err != nil {
+		if !os.IsNotExist(err) {
+			log.Warnf("geodat: failed to remove previous file %s: %v", oldPath, err)
+		}
+		return ""
+	}
+	log.Infof("geodat: removed previous file %s (relocated to %s)", oldPath, newPath)
+	return oldPath
 }
 
 var deniedPathPrefixes = []string{
@@ -317,21 +364,18 @@ func (api *API) handleGeodatUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	removed := ""
 	if fileType == "geosite" {
+		removed = removeRelocatedGeodat(api.getCfg().System.Geo.GeoSitePath, destFile, "geosite.dat")
 		api.getCfg().System.Geo.GeoSitePath = destFile
 		api.getCfg().System.Geo.GeoSiteURL = ""
 	} else {
+		removed = removeRelocatedGeodat(api.getCfg().System.Geo.GeoIpPath, destFile, "geoip.dat")
 		api.getCfg().System.Geo.GeoIpPath = destFile
 		api.getCfg().System.Geo.GeoIpURL = ""
 	}
 
-	api.geodataManager.UpdatePaths(api.getCfg().System.Geo.GeoSitePath, api.getCfg().System.Geo.GeoIpPath)
-	api.geodataManager.ClearCache()
-
-	for _, set := range api.getCfg().Sets {
-		log.Infof("Reloading geo targets for set: %s", set.Name)
-		api.loadTargetsForSetCached(set)
-	}
+	api.applyGeodatPaths()
 
 	if err := api.saveAndPushConfig(api.getCfg()); err != nil {
 		msg := fmt.Sprintf("Failed to save configuration: %v", err)
@@ -342,13 +386,133 @@ func (api *API) handleGeodatUpload(w http.ResponseWriter, r *http.Request) {
 
 	log.Infof("Uploaded %s.dat (%d bytes) from %s", fileType, size, header.Filename)
 
+	message := fmt.Sprintf("Uploaded %s.dat (%d bytes)", fileType, size)
+	if removed != "" {
+		message += ". Removed previous copy: " + removed
+	}
+
 	setJsonHeader(w)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
-		"message": fmt.Sprintf("Uploaded %s.dat (%d bytes)", fileType, size),
+		"message": message,
 		"path":    destFile,
 		"size":    size,
+		"removed": removed,
 	})
+}
+
+// @Summary Remove geodat files and disable geo databases
+// @Tags Geodat
+// @Accept json
+// @Produce json
+// @Param body body GeodatRemoveRequest true "Remove request"
+// @Success 200 {object} GeodatRemoveResponse
+// @Security BearerAuth
+// @Router /geodat/remove [post]
+func (api *API) handleGeodatRemove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req GeodatRemoveRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	switch req.Type {
+	case "geosite", "geoip", "both":
+	default:
+		http.Error(w, "Type must be 'geosite', 'geoip' or 'both'", http.StatusBadRequest)
+		return
+	}
+
+	geo := &api.getCfg().System.Geo
+	removed := []string{}
+	cleared := []string{}
+
+	if req.Type == "geosite" || req.Type == "both" {
+		deleted, err := deleteGeodatFile(geo.GeoSitePath)
+		if err != nil {
+			log.Errorf("geodat remove: %v", err)
+			writeJsonError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if deleted != "" {
+			removed = append(removed, deleted)
+		}
+		geo.GeoSitePath = ""
+		geo.GeoSiteURL = ""
+		cleared = append(cleared, "geosite")
+	}
+
+	if req.Type == "geoip" || req.Type == "both" {
+		deleted, err := deleteGeodatFile(geo.GeoIpPath)
+		if err != nil {
+			log.Errorf("geodat remove: %v", err)
+			writeJsonError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if deleted != "" {
+			removed = append(removed, deleted)
+		}
+		geo.GeoIpPath = ""
+		geo.GeoIpURL = ""
+		cleared = append(cleared, "geoip")
+	}
+
+	api.applyGeodatPaths()
+
+	if err := api.saveAndPushConfig(api.getCfg()); err != nil {
+		msg := fmt.Sprintf("Failed to save configuration: %v", err)
+		log.Errorf("geodat remove: %s", msg)
+		writeJsonError(w, http.StatusInternalServerError, msg)
+		return
+	}
+
+	message := "Disabled: " + strings.Join(cleared, ", ")
+	if len(removed) > 0 {
+		message += ". Deleted: " + strings.Join(removed, ", ")
+	} else {
+		message += ". No file on disk to delete"
+	}
+	log.Infof("geodat remove: %s", message)
+
+	setJsonHeader(w)
+	json.NewEncoder(w).Encode(GeodatRemoveResponse{
+		Success: true,
+		Message: message,
+		Removed: removed,
+	})
+}
+
+func deleteGeodatFile(path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+
+	cleaned := filepath.Clean(path)
+	if !filepath.IsAbs(cleaned) {
+		return "", fmt.Errorf("refusing to delete non-absolute path %s", path)
+	}
+	for _, prefix := range deniedPathPrefixes {
+		if cleaned == prefix || strings.HasPrefix(cleaned, prefix+"/") {
+			return "", fmt.Errorf("refusing to delete %s: path is under %s", cleaned, prefix)
+		}
+	}
+	ext := strings.ToLower(filepath.Ext(cleaned))
+	if ext != ".dat" && ext != ".db" {
+		return "", fmt.Errorf("refusing to delete %s: not a .dat or .db file", cleaned)
+	}
+
+	if err := os.Remove(cleaned); err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to delete %s: %v", cleaned, err)
+	}
+	return cleaned, nil
 }
 
 // @Summary Get geodat file info

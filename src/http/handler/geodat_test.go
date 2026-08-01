@@ -129,6 +129,144 @@ func TestHandleFileInfo(t *testing.T) {
 	})
 }
 
+func TestHandleGeodatRemove_Validation(t *testing.T) {
+	cfg := config.NewConfig()
+	api := &API{
+		cfgPtr:         testCfgPtr(&cfg),
+		geodataManager: geodat.NewGeodataManager("", ""),
+	}
+	mux := http.NewServeMux()
+	api.mux = mux
+	api.RegisterGeodatApi()
+
+	t.Run("GET not allowed", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/geodat/remove", nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("expected 405, got %d", rec.Code)
+		}
+	})
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/geodat/remove", strings.NewReader("not json"))
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", rec.Code)
+		}
+	})
+
+	t.Run("unknown type", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/geodat/remove", strings.NewReader(`{"type":"geodns"}`))
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", rec.Code)
+		}
+	})
+}
+
+func TestDeleteGeodatFile(t *testing.T) {
+	t.Run("empty path is a no-op", func(t *testing.T) {
+		removed, err := deleteGeodatFile("")
+		if err != nil || removed != "" {
+			t.Errorf("expected no-op, got removed=%q err=%v", removed, err)
+		}
+	})
+
+	t.Run("missing file is not an error", func(t *testing.T) {
+		removed, err := deleteGeodatFile(filepath.Join(t.TempDir(), "geosite.dat"))
+		if err != nil || removed != "" {
+			t.Errorf("expected no-op, got removed=%q err=%v", removed, err)
+		}
+	})
+
+	t.Run("deletes dat file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "geosite.dat")
+		os.WriteFile(path, []byte("data"), 0644)
+
+		removed, err := deleteGeodatFile(path)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if removed != path {
+			t.Errorf("expected removed=%s, got %s", path, removed)
+		}
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Error("file still on disk")
+		}
+	})
+
+	t.Run("refuses non-dat file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "hosts")
+		os.WriteFile(path, []byte("data"), 0644)
+
+		if _, err := deleteGeodatFile(path); err == nil {
+			t.Error("expected refusal for non-dat file")
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Error("file should be untouched")
+		}
+	})
+
+	t.Run("refuses denied prefix", func(t *testing.T) {
+		if _, err := deleteGeodatFile("/proc/geosite.dat"); err == nil {
+			t.Error("expected refusal for /proc path")
+		}
+	})
+
+	t.Run("refuses relative path", func(t *testing.T) {
+		if _, err := deleteGeodatFile("geosite.dat"); err == nil {
+			t.Error("expected refusal for relative path")
+		}
+	})
+}
+
+func TestRemoveRelocatedGeodat(t *testing.T) {
+	t.Run("removes old copy after relocation", func(t *testing.T) {
+		oldDir := t.TempDir()
+		oldPath := filepath.Join(oldDir, "geosite.dat")
+		os.WriteFile(oldPath, []byte("old"), 0644)
+		newPath := filepath.Join(t.TempDir(), "geosite.dat")
+
+		if got := removeRelocatedGeodat(oldPath, newPath, "geosite.dat"); got != oldPath {
+			t.Errorf("expected %s removed, got %q", oldPath, got)
+		}
+		if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+			t.Error("old file still on disk")
+		}
+	})
+
+	t.Run("same path is a no-op", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "geosite.dat")
+		os.WriteFile(path, []byte("data"), 0644)
+
+		if got := removeRelocatedGeodat(path, path, "geosite.dat"); got != "" {
+			t.Errorf("expected no removal, got %q", got)
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Error("file should be untouched")
+		}
+	})
+
+	t.Run("keeps files b4 did not write", func(t *testing.T) {
+		oldPath := filepath.Join(t.TempDir(), "custom-geosite.dat")
+		os.WriteFile(oldPath, []byte("data"), 0644)
+		newPath := filepath.Join(t.TempDir(), "geosite.dat")
+
+		if got := removeRelocatedGeodat(oldPath, newPath, "geosite.dat"); got != "" {
+			t.Errorf("expected no removal, got %q", got)
+		}
+		if _, err := os.Stat(oldPath); err != nil {
+			t.Error("custom file should be untouched")
+		}
+	})
+}
+
 func TestHandleGeodatDownload_Validation(t *testing.T) {
 	cfg := config.NewConfig()
 	api := &API{

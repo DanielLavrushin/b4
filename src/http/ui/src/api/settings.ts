@@ -3,6 +3,8 @@ import { B4Config } from "@models/config";
 import {
   GeoFileInfo,
   GeodatDownloadResult,
+  GeodatFileType,
+  GeodatRemoveResult,
   GeodatSource,
   RestartResponse,
   SystemInfo,
@@ -32,6 +34,8 @@ export const geodatApi = {
       geoip_url: geoipUrl ?? "",
       destination_path: destPath,
     }),
+  remove: (type: GeodatFileType | "both") =>
+    apiPost<GeodatRemoveResult>("/api/geodat/remove", { type }),
   upload: (file: File, type: "geosite" | "geoip", destPath: string) => {
     const formData = new FormData();
     formData.append("file", file);

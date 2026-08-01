@@ -2,6 +2,7 @@
 
 ## [1.74.2] - 2026-08-xx
 
+- ADDED: **A Remove button for each geo database** - a downloaded `geosite.dat` or `geoip.dat` could only be replaced, never taken off the device, and pointing the destination directory somewhere else left the previous copy at the old path, since editing that field alone changes nothing to save. On a router with little free storage that meant two copies of a 51 MB file with no way to reach either from the interface. Remove deletes the file and clears its path and source URL, so the scheduler does not fetch it back, and a download or upload into a different directory deletes the copy b4 wrote at the old location.
 - ADDED: **An IPv4/IPv6 switch in the DC Relay socat helper** - the generated commands could only reach Telegram over IPv4, so on a VPS whose working route to the data centers is the IPv6 one, the addresses had to be found elsewhere and pasted in by hand every time a host was lost. The switch emits `TCP6:` upstreams, and a DC Relay address written as an IPv6 literal (`[2001:db8::1]:7007`) also flips the listening side to `TCP6-LISTEN`.
 
 ## [1.74.1] - 2026-07-31

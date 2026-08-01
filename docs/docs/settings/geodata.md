@@ -51,9 +51,24 @@ Unlike country-based databases, b4geoip groups IPs by service, which allows prec
 The file status is shown next to the name:
 
 - **Active** - the file is found, size and date are shown
-- **Not Found** - the file is missing, it has to be downloaded
+- **Not Found** - a path is configured but the file is missing, it has to be downloaded
+- **Disabled** - no path is configured, the database is not in use
 
 Files can also be added manually through the **Upload** button (upload a `.dat` file).
+
+### Changing the destination directory
+
+The destination directory is not a saved setting, so editing the field does not enable the **Save** button. It takes effect on the next **Download** or **Upload**: the file is written to the new directory, and the copy b4 previously wrote at the old path is deleted. Files under a name b4 did not write itself (anything other than `geosite.dat` / `geoip.dat`) are left alone.
+
+## Removing a database
+
+The **Remove** button on each card deletes the file from disk and clears its path and source URL. The database is switched off until you download or upload it again - scheduled and startup auto-update do not bring it back, because there is no source URL left to fetch from.
+
+Sets that reference categories from a removed database keep their category list, but those categories match nothing until the database is restored. The confirmation dialog names the sets that are affected.
+
+:::tip Freeing space
+On a device with little storage, removing a database you do not use in any set frees the full file size at once. `geoip.dat` is often unnecessary if your sets only match by domain.
+:::
 
 :::warning File size
 GeoSite and GeoIP files can take up 5-15 MB each. On routers with limited storage, make sure there is enough space.
