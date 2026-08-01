@@ -74,6 +74,7 @@ type Listener struct {
 	udpV6       *net.UDPConn
 	udpMu       sync.Mutex
 	udpSessions map[string]*udpSession
+	udpFailWarn sync.Once
 
 	activeConns atomic.Int64
 }

@@ -837,6 +837,49 @@ func TestBuildRouteStateTracksUpstreamUDP(t *testing.T) {
 	if routeStateEqual(withUDP, withoutUDP) {
 		t.Error("toggling upstream.udp must change the rule state, otherwise the UDP tproxy rules are never rebuilt and keep diverting to a port with no listener")
 	}
+
+	if withUDP.quicReject {
+		t.Error("tunnelled UDP must not also be rejected")
+	}
+	if !withoutUDP.quicReject {
+		t.Error("a TCP-only upstream must reject QUIC so clients fall back to TCP instead of bypassing the proxy")
+	}
+
+	refs := routeStateChains(withoutUDP)
+	found := false
+	for _, r := range refs {
+		if r.chain == withoutUDP.chainQUIC && r.table == "filter" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the quic reject chain must be watched by the monitor, got %+v", refs)
+	}
+	if len(routeStateChains(withUDP)) != 1 {
+		t.Error("no quic chain should be watched when UDP is tunnelled")
+	}
+}
+
+func TestQUICRejectOnlyForProxyMode(t *testing.T) {
+	cfg := config.NewConfig()
+
+	mtws := &config.SetConfig{Id: "s2"}
+	mtws.Routing.Enabled = true
+	mtws.Routing.Mode = config.RoutingModeMTProtoWS
+	mtws.Routing.Upstream.Port = 8480
+
+	if buildRouteState(&cfg, mtws).quicReject {
+		t.Error("mtproto-ws carries TCP only and has no upstream to fall back to; rejecting QUIC there would break unrelated UDP")
+	}
+
+	iface := &config.SetConfig{Id: "s3"}
+	iface.Routing.Enabled = true
+	iface.Routing.Mode = config.RoutingModeInterface
+	iface.Routing.EgressInterface = "wg0"
+
+	if buildRouteState(&cfg, iface).quicReject {
+		t.Error("interface mode routes UDP fine and must not reject QUIC")
+	}
 }
 
 func TestRouteAddResolvedIPs(t *testing.T) {

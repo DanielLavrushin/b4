@@ -26,11 +26,13 @@ type routeState struct {
 	sourcesKey  string
 	deviceKey   string
 	blockAction string
+	quicReject  bool
 	setV4       string
 	setV6       string
 	chainPre    string
 	chainOut    string
 	chainSNAT   string
+	chainQUIC   string
 }
 
 type routeBackend interface {
@@ -345,6 +347,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		deviceKey:  routeSetDeviceGate(cfg, set).key(),
 		setV4:      setV4, setV6: setV6,
 		chainPre: chainPre, chainOut: chainOut, chainSNAT: chainSNAT,
+		chainQUIC: routeBuildQUICChainName(set.Id),
 	}
 
 	if config.RoutingIsBlock(mode) {
@@ -355,6 +358,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		st.table = proxyTable()
 		st.tproxyPort = port
 		st.upstreamKey = fmt.Sprintf("%s:%d|%s|udp=%t", set.Routing.Upstream.Host, set.Routing.Upstream.Port, set.Routing.Upstream.Username, set.Routing.Upstream.UDP)
+		st.quicReject = mode == config.RoutingModeProxy && !set.Routing.Upstream.UDP
 	} else {
 		mark, table := routeResolveIDs(cfg, set)
 		st.mark = mark
@@ -372,6 +376,7 @@ func routeStateEqual(a, b routeState) bool {
 		a.tproxyPort == b.tproxyPort &&
 		a.upstreamKey == b.upstreamKey &&
 		a.blockAction == b.blockAction &&
+		a.quicReject == b.quicReject &&
 		a.sourcesKey == b.sourcesKey &&
 		a.deviceKey == b.deviceKey
 }
@@ -593,7 +598,11 @@ func routeStateChains(st routeState) []routeChainRef {
 	case config.RoutingIsBlock(st.mode):
 		return []routeChainRef{{st.chainPre, "filter"}}
 	case config.RoutingUsesTProxy(st.mode):
-		return []routeChainRef{{st.chainPre, "mangle"}}
+		refs := []routeChainRef{{st.chainPre, "mangle"}}
+		if st.quicReject && st.chainQUIC != "" {
+			refs = append(refs, routeChainRef{st.chainQUIC, "filter"})
+		}
+		return refs
 	default:
 		return []routeChainRef{{st.chainPre, "mangle"}, {st.chainOut, "mangle"}, {st.chainSNAT, "nat"}}
 	}
@@ -1313,6 +1322,10 @@ func routeBuildSetNames(setID string) (string, string) {
 func routeBuildChainNames(setID string) (string, string, string) {
 	s := routeSanitizeSetID(setID)
 	return "b4r_" + s + "_pre", "b4r_" + s + "_out", "b4r_" + s + "_nat"
+}
+
+func routeBuildQUICChainName(setID string) string {
+	return "b4r_" + routeSanitizeSetID(setID) + "_quic"
 }
 
 func routeSanitizeSetID(setID string) string {
