@@ -818,6 +818,41 @@ func TestRoutingLearnHost(t *testing.T) {
 	})
 }
 
+func TestRouteAddResolvedIPs(t *testing.T) {
+	origCache := routeRuleCache
+	origEngine := routeEngine
+	defer func() {
+		routeRuleCache = origCache
+		routeEngine = origEngine
+	}()
+
+	set := &config.SetConfig{Id: "s1"}
+	set.Routing.Enabled = true
+	set.Routing.Mode = config.RoutingModeProxy
+	cfg := config.NewConfig()
+	ips := []net.IP{net.ParseIP("1.2.3.4")}
+
+	t.Run("a set removed during the lookup is not resurrected", func(t *testing.T) {
+		routeRuleCache = make(map[string]routeState)
+		routeEngine = nil
+		routeAddResolvedIPs(&cfg, set, ips)
+		if len(routeRuleCache) != 0 {
+			t.Error("addresses for an uninstalled set must be dropped, not used to install it")
+		}
+	})
+
+	t.Run("no backend is a no-op", func(t *testing.T) {
+		routeRuleCache = map[string]routeState{"s1": {mode: config.RoutingModeProxy}}
+		routeEngine = nil
+		routeAddResolvedIPs(&cfg, set, ips)
+	})
+
+	t.Run("nil and empty args are safe", func(t *testing.T) {
+		routeAddResolvedIPs(nil, nil, nil)
+		routeAddResolvedIPs(&cfg, set, nil)
+	})
+}
+
 func TestRouteResolveTargets(t *testing.T) {
 	origHosts := routeLearnedHosts
 	defer func() { routeLearnedHosts = origHosts }()

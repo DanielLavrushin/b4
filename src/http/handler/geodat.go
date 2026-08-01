@@ -226,21 +226,18 @@ func (api *API) applyGeodatPaths() {
 }
 
 func removeRelocatedGeodat(oldPath, newPath, managedName string) string {
-	if oldPath == "" || oldPath == newPath {
+	if oldPath == "" || filepath.Clean(oldPath) == filepath.Clean(newPath) {
 		return ""
 	}
-	if filepath.Base(oldPath) != managedName {
-		log.Infof("geodat: keeping %s, not a b4-managed %s", oldPath, managedName)
+	removed, err := deleteGeodatFile(oldPath, managedName)
+	if err != nil {
+		log.Warnf("geodat: keeping previous file %s: %v", oldPath, err)
 		return ""
 	}
-	if err := os.Remove(oldPath); err != nil {
-		if !os.IsNotExist(err) {
-			log.Warnf("geodat: failed to remove previous file %s: %v", oldPath, err)
-		}
-		return ""
+	if removed != "" {
+		log.Infof("geodat: removed previous file %s (relocated to %s)", removed, newPath)
 	}
-	log.Infof("geodat: removed previous file %s (relocated to %s)", oldPath, newPath)
-	return oldPath
+	return removed
 }
 
 var deniedPathPrefixes = []string{
