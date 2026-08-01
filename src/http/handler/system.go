@@ -80,11 +80,23 @@ func (api *API) updateLogPath() string {
 	return ""
 }
 
+const maxUpdateLogSize = 1 << 20
+
+func openUpdateLog(path string) (*os.File, error) {
+	if path == "" {
+		return nil, os.ErrInvalid
+	}
+	if st, err := os.Stat(path); err == nil && st.Size() > maxUpdateLogSize {
+		_ = os.Rename(path, path+".1")
+	}
+	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+}
+
 func writeUpdateLog(path, format string, args ...interface{}) {
 	if path == "" {
 		return
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	f, err := openUpdateLog(path)
 	if err != nil {
 		return
 	}
@@ -421,7 +433,7 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		// disabled (empty path) fall back to /dev/null so the child still runs.
 		var logFile *os.File
 		if logPath != "" {
-			logFile, _ = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+			logFile, _ = openUpdateLog(logPath)
 		}
 		if logFile != nil {
 			cmd.Stdout = logFile

@@ -39,16 +39,31 @@ func (l Level) String() string {
 	}
 }
 
+const maxErrorFileSize = 1 << 20
+
 var (
 	CurLevel         atomic.Int32
 	errFile          *os.File
 	errLogger        *log.Logger
 	errMu            sync.Mutex
+	errPath          string
+	errCount         *countingWriter
 	origStderr       int
 	origStderrFile   *os.File
 	errSessionHeader string
 	errHeaderPending bool
 )
+
+type countingWriter struct {
+	f *os.File
+	n int64
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.f.Write(p)
+	c.n += int64(n)
+	return n, err
+}
 
 type multi struct {
 	mu sync.Mutex
@@ -193,6 +208,8 @@ func SetErrorFile(path string) error {
 			_ = errFile.Close()
 			errFile = nil
 			errLogger = nil
+			errCount = nil
+			errPath = ""
 		}
 		errHeaderPending = false
 		return nil
@@ -206,7 +223,7 @@ func openErrorFileLocked(path string) error {
 		return fmt.Errorf("failed to create log directory: %w", err)
 	}
 
-	if st, err := os.Stat(path); err == nil && st.Size() > 1<<20 {
+	if st, err := os.Stat(path); err == nil && st.Size() > maxErrorFileSize {
 		_ = os.Rename(path, path+".1")
 	}
 
@@ -226,7 +243,12 @@ func openErrorFileLocked(path string) error {
 
 	old := errFile
 	errFile = f
-	errLogger = log.New(f, "", log.Ldate|log.Ltime|log.Lmicroseconds)
+	errPath = path
+	errCount = &countingWriter{f: f}
+	if st, err := f.Stat(); err == nil {
+		errCount.n = st.Size()
+	}
+	errLogger = log.New(errCount, "", log.Ldate|log.Ltime|log.Lmicroseconds)
 
 	errSessionHeader = fmt.Sprintf("=== b4 error log opened pid=%d at %s ===\n",
 		os.Getpid(), time.Now().Format(time.RFC3339))
@@ -260,6 +282,7 @@ func CloseErrorFile() {
 		_ = errFile.Close()
 		errFile = nil
 		errLogger = nil
+		errCount = nil
 	}
 }
 
@@ -269,13 +292,16 @@ func Errorf(format string, a ...any) error {
 
 	errMu.Lock()
 	if errLogger != nil {
-		if errHeaderPending && errFile != nil {
-			_, _ = errFile.WriteString(errSessionHeader)
+		if errHeaderPending && errCount != nil {
+			_, _ = errCount.Write([]byte(errSessionHeader))
 			errHeaderPending = false
 		}
 		errLogger.Println(msg)
 		if errFile != nil {
 			_ = errFile.Sync()
+		}
+		if errCount != nil && errCount.n > maxErrorFileSize && errPath != "" {
+			_ = openErrorFileLocked(errPath)
 		}
 	}
 	errMu.Unlock()

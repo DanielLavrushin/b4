@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -65,6 +66,19 @@ func (api *API) RegisterLogTraceApi() {
 	api.mux.HandleFunc("/api/logs/trace/stop", api.handleTraceStop)
 	api.mux.HandleFunc("/api/logs/trace/status", api.handleTraceStatus)
 	api.mux.HandleFunc("/api/logs/trace/download", api.handleTraceDownload)
+	removeOrphanedTraces()
+}
+
+func removeOrphanedTraces() {
+	matches, err := filepath.Glob(filepath.Join(os.TempDir(), "b4-trace-*.log"))
+	if err != nil {
+		return
+	}
+	for _, path := range matches {
+		if err := os.Remove(path); err != nil {
+			log.Tracef("Could not remove orphaned trace file %s: %v", path, err)
+		}
+	}
 }
 
 func currentLevelName() string {

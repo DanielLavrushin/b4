@@ -3021,6 +3021,54 @@ _remove_config_dirs() {
         fi
     done
 }
+LEGACY_SERVICE_LOGS="/var/log/b4.log /opt/var/log/b4.log /tmp/log/b4.log"
+
+installed_service_type() {
+    _svc="$1"
+    if grep -q "USE_PROCD\|procd_open_instance" "$_svc" 2>/dev/null; then
+        echo "procd"
+    elif grep -q "openrc-run" "$_svc" 2>/dev/null; then
+        echo "openrc"
+    elif grep -q "rc\.func\|/opt/var/run/b4\.pid" "$_svc" 2>/dev/null; then
+        echo "entware"
+    else
+        echo "sysv"
+    fi
+}
+
+refresh_legacy_service_script() {
+    [ -z "$B4_SERVICE_DIR" ] && return 0
+    [ -z "$B4_SERVICE_NAME" ] && return 0
+
+    _svc="${B4_SERVICE_DIR}/${B4_SERVICE_NAME}"
+    [ -f "$_svc" ] || return 0
+    grep -q "b4\.log" "$_svc" 2>/dev/null || return 0
+
+    _svc_type=$(installed_service_type "$_svc")
+    log_warn "Init script logs b4 output to a legacy file that is never rotated"
+    log_info "Refreshing ${_svc_type} service script: ${_svc}"
+
+    if service_dispatch "$_svc_type" install >/dev/null 2>&1; then
+        log_ok "Service script refreshed"
+    else
+        log_warn "Could not regenerate the service script, patching the redirect in place"
+        for _legacy in $LEGACY_SERVICE_LOGS; do
+            _esc=$(echo "$_legacy" | sed 's#\.#\\.#g')
+            sed -i "s#>${_esc} 2>&1#>/dev/null 2>\&1#g" "$_svc" 2>/dev/null || true
+            sed -i "s#\"${_esc}\"#\"/dev/null\"#g" "$_svc" 2>/dev/null || true
+            sed -i "s#${_esc}#/var/log/b4/errors.log#g" "$_svc" 2>/dev/null || true
+        done
+    fi
+
+    for _legacy in $LEGACY_SERVICE_LOGS; do
+        if [ -f "$_legacy" ]; then
+            _sz=$(du -sk "$_legacy" 2>/dev/null | awk '{print $1}')
+            [ -n "$_sz" ] && log_info "Removing stale log ${_legacy} (${_sz} KB)"
+            rm -f "$_legacy" 2>/dev/null || true
+        fi
+    done
+}
+
 action_update() {
     target_ver="$1"
     force_arch="$2"
@@ -3162,6 +3210,8 @@ action_update() {
     else
         log_warn "Updated binary failed version check"
     fi
+
+    refresh_legacy_service_script
 
     if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
         log_info "Restarting service (${B4_SERVICE_TYPE})..."

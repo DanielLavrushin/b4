@@ -661,11 +661,25 @@ func ensureSingleInstance() (func(), error) {
 	}
 
 	cleanup := func() {
+		if ownsPidFile(f, path) {
+			os.Remove(path)
+		}
 		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 		f.Close()
-		os.Remove(path)
 	}
 	return cleanup, nil
+}
+
+func ownsPidFile(f *os.File, path string) bool {
+	held, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	cur, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(held, cur)
 }
 
 func writePidFile(f *os.File, pid int) error {
