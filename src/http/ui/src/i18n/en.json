@@ -531,6 +531,7 @@
       "removingFile": "Removing file...",
       "removeSuccess": "File deleted, database disabled",
       "removeCleared": "Database disabled, no file was on disk",
+      "removeKept": "Database disabled, the file was kept because b4 did not download it",
       "removeDialogTitle": "Remove geo database",
       "removeDialogConfirm": "Delete this file from disk?",
       "removeDialogEffect": "The path and source URL are cleared, so the database stays off until you download or upload it again. Auto-update will not bring it back.",

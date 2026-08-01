@@ -524,11 +524,10 @@ export const GeoSettings = ({
         setGeoipSource("");
         setGeoipCustomURL("");
       }
-      setStatus(
-        result.removed.length > 0
-          ? t("settings.Geo.removeSuccess")
-          : t("settings.Geo.removeCleared"),
-      );
+      let statusKey = "settings.Geo.removeCleared";
+      if (result.removed.length > 0) statusKey = "settings.Geo.removeSuccess";
+      else if (result.kept.length > 0) statusKey = "settings.Geo.removeKept";
+      setStatus(t(statusKey));
       loadConfig();
       void checkFileStatus();
       setTimeout(() => setStatus(""), 5000);
