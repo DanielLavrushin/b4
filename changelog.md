@@ -1,6 +1,6 @@
 # B4 - Bye Bye Big Bro
 
-## [1.74.2] - 2026-08-xx
+## [1.74.2] - 2026-08-02
 
 - FIXED: **b4's own output filled a router's memory** - init scripts from older installers wrote b4's full log to a file kept in RAM on OpenWrt, and updates never replaced those scripts.
 - FIXED: **A restart could leave a second copy of b4 running alongside the first** - the departing process deleted the file that tracks the running service, after its replacement had already claimed it.
