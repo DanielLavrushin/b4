@@ -68,9 +68,13 @@ Fragmentation only affects DNS queries for domains in the current set. Other DNS
 
 Routes traffic matched by the set through a specific network interface - for example, a VPN, WireGuard, or another tunnel.
 
-:::tip
-To **block** matched traffic instead of sending it anywhere, set the mode to Block. See [Blocking](./blocking.md).
-:::
+**Routing mode** selects what happens to matched traffic:
+
+| Mode | Description |
+| --- | --- |
+| Output interface | Sends matched traffic out a network interface. Described below. |
+| Upstream SOCKS5 proxy | Hands matched traffic to a SOCKS5 proxy. See [Upstream SOCKS5 proxy](#upstream-socks5-proxy). |
+| Block | Drops or rejects matched traffic. See [Blocking](./blocking.md). |
 
 ### General diagram
 
@@ -200,3 +204,98 @@ When routing is turned off or a set is removed, b4 fully removes every rule it c
 - Clears and removes the chains and IP sets that were created
 
 When b4 fully stops, both backends (nftables and iptables) are cleaned to remove any leftover rules.
+
+---
+
+## Upstream SOCKS5 proxy
+
+Instead of sending matched traffic out an interface, b4 can hand it to a SOCKS5 proxy. Set **Routing mode** to *Upstream SOCKS5 proxy*.
+
+Use this to chain b4 into Xray, sing-box or a similar client, running either on the router itself or on another host on the network. It is also useful where blocking is whitelist-based and direct connections to addresses outside the whitelist are dropped.
+
+```mermaid
+flowchart LR
+    A["Device on the network"] -->|"Connection to a matched domain"| B["b4<br/>transparent listener"]
+    B -->|"SOCKS5 CONNECT"| C["Upstream proxy<br/>host:port"]
+    C --> D["Internet"]
+
+    style A fill:#4a9eff,color:#fff,stroke:none
+    style B fill:#e91e63,color:#fff,stroke:none
+    style C fill:#9c27b0,color:#fff,stroke:none
+    style D fill:#4caf50,color:#fff,stroke:none
+```
+
+### How it works
+
+1. **Collecting IPs.** Same sources as interface mode: DNS responses b4 observes, static IPs from the set targets, and pre-resolution of the set's domains. In addition, a hostname that matches the set by domain suffix is resolved in full, so every address it answers with enters the set rather than being learned one connection at a time.
+
+2. **Transparent listener.** b4 opens a listener on a port derived from the set and marks it transparent, so it can accept connections addressed to someone else.
+
+3. **Diversion.** TPROXY rules in **PREROUTING** send TCP with a destination in the set to that listener, together with an `ip rule` and a local route so the packet is delivered locally instead of being forwarded.
+
+4. **Relay.** For each accepted connection b4 opens a SOCKS5 CONNECT to the upstream and relays bytes in both directions.
+
+:::info
+In proxy mode, packet manipulation (faking, fragmentation, desync) is disabled for matched traffic. The upstream proxy is responsible for reaching the destination.
+:::
+
+### Requirements
+
+Transparent diversion needs kernel modules that are not part of a default OpenWrt install:
+
+```sh
+opkg install kmod-nft-tproxy kmod-nft-socket
+```
+
+On builds using `apk`:
+
+```sh
+apk add kmod-nft-tproxy kmod-nft-socket
+```
+
+On an iptables system the equivalents are `kmod-ipt-tproxy` and `kmod-ipt-socket`.
+
+:::tip
+**Settings -> Diagnostics** reports whether TPROXY is usable and names any missing modules and the packages that provide them.
+:::
+
+### Settings
+
+| Setting | Description |
+| --- | --- |
+| Upstream SOCKS5 host | Hostname or IP of the proxy. Use `127.0.0.1` when it runs on the same router, or the address of another host on the network. |
+| Upstream SOCKS5 port | Port the proxy listens on. |
+| Username / Password | Filled in only if the proxy requires authentication. |
+| Send domain name to upstream | Passes the domain instead of the address when b4 knows it, so the upstream resolves the name itself and can pick a geographically appropriate address. |
+| Route UDP through upstream | Tunnels matched UDP through the proxy using UDP ASSOCIATE. See [QUIC and HTTP/3](#quic-and-http3) below. |
+| Fall back to direct on upstream failure | Opens a plain direct connection to the original destination when the proxy is unreachable, instead of failing. Leave it off if a direct connection is worse than none. |
+
+### QUIC and HTTP/3
+
+Most SOCKS5 proxies carry TCP only. Xray and sing-box need UDP enabled explicitly on the inbound.
+
+With **Route UDP through upstream** off, b4 refuses matched UDP on port 443 with an ICMP port-unreachable. Browsers read that as a signal to fall back to TCP, which the proxy carries. Without it, any site advertising HTTP/3 through the `alt-svc` header would be reached over QUIC directly, bypassing the proxy entirely, and a browser remembers that preference for as long as the header's lifetime says.
+
+With the option on, matched UDP goes to the proxy through UDP ASSOCIATE. Turn it on only if the upstream implements it. If it does not, matched UDP is dropped and b4 logs a warning naming the set and the upstream.
+
+### Verifying that it works
+
+Do not judge by whether a web page renders. A page usually pulls assets from other hostnames on different addresses, so a page whose main document is routed and whose assets are not can look broken while routing is working correctly.
+
+Request a single endpoint instead:
+
+```sh
+curl -s https://ipinfo.io/ip
+```
+
+Then check the connection log for the matched connection. Traffic that went through the proxy is tagged `[proxy]`:
+
+```text
+TCP 192.168.1.37:20854 → 34.117.59.81:443 sni-set=ipinfo.io [proxy]
+```
+
+If there is no `[proxy]` line, the connection was never diverted. The usual cause is that the address it connected to is not in the set.
+
+:::warning
+If a client resolves through DNS-over-HTTPS or DNS-over-TLS, b4 never sees its DNS queries, and the set fills only from pre-resolution and from domains observed in TLS handshakes. Turn encrypted DNS off on the client, or add the domains to the set so they are pre-resolved.
+:::
