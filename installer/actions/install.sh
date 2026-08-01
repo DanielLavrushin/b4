@@ -111,16 +111,22 @@ action_install() {
     # Remove stale stdout log files from older service scripts
     rm -f /var/log/b4.log /opt/var/log/b4.log /tmp/log/b4.log 2>/dev/null || true
 
-    # Backup existing binary
+    ensure_bin_space "$B4_BIN_DIR" "${TEMP_DIR}/${BINARY_NAME}" || exit 1
+
+    ts=$(date '+%Y%m%d_%H%M%S')
+    backup_bin="${B4_BIN_DIR}/${BINARY_NAME}.backup.${ts}"
     if [ -f "${B4_BIN_DIR}/${BINARY_NAME}" ]; then
-        ts=$(date '+%Y%m%d_%H%M%S')
-        mv "${B4_BIN_DIR}/${BINARY_NAME}" "${B4_BIN_DIR}/${BINARY_NAME}.backup.${ts}"
-        log_info "Existing binary backed up"
+        log_info "Existing binary set aside for rollback"
     fi
+    stash_binary "${B4_BIN_DIR}/${BINARY_NAME}" "$backup_bin" || {
+        log_err "Could not move the existing binary aside"
+        exit 1
+    }
 
     # Install
     mv "${BINARY_NAME}" "${B4_BIN_DIR}/" 2>/dev/null || cp "${BINARY_NAME}" "${B4_BIN_DIR}/" || {
         log_err "Failed to install binary to ${B4_BIN_DIR}"
+        restore_binary "${B4_BIN_DIR}/${BINARY_NAME}" "$backup_bin" && log_warn "Rolled back to the previous version"
         exit 1
     }
     chmod +x "${B4_BIN_DIR}/${BINARY_NAME}"
@@ -132,7 +138,7 @@ action_install() {
     if [ "$_ver_exit" -eq 0 ]; then
         installed_ver=$("${B4_BIN_DIR}/${BINARY_NAME}" --version 2>&1 | head -1)
         log_ok "Binary installed: ${installed_ver}"
-        rm -f "${B4_BIN_DIR}/${BINARY_NAME}".backup.* 2>/dev/null || true
+        rm -f "$backup_bin" 2>/dev/null || true
     elif [ "$_ver_exit" -gt 128 ] && echo "$B4_ARCH" | grep -q "^mips" && ! echo "$B4_ARCH" | grep -q "softfloat"; then
         # Binary crashed (SIGILL/segfault) on MIPS hardfloat — retry with softfloat
         _sf_arch="${B4_ARCH}_softfloat"
@@ -143,6 +149,7 @@ action_install() {
         _sf_url="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${version}/${_sf_file}"
         _sf_archive="${TEMP_DIR}/${_sf_file}"
 
+        _sf_ok=0
         if fetch_file "$_sf_url" "$_sf_archive"; then
             cd "$TEMP_DIR"
             rm -f "${BINARY_NAME}" 2>/dev/null
@@ -155,7 +162,8 @@ action_install() {
                     log_ok "Softfloat binary works: ${installed_ver}"
                     log_info "Tip: use --arch=${_sf_arch} for future installs"
                     B4_ARCH="$_sf_arch"
-                    rm -f "${B4_BIN_DIR}/${BINARY_NAME}".backup.* 2>/dev/null || true
+                    _sf_ok=1
+                    rm -f "$backup_bin" 2>/dev/null || true
                 else
                     log_err "Softfloat binary also failed — manual troubleshooting needed"
                     log_info "Run with --sysinfo for diagnostics, or try --arch=<arch> manually"
@@ -167,8 +175,14 @@ action_install() {
             log_err "Could not download softfloat variant"
             log_info "Try reinstalling with: --arch=${_sf_arch}"
         fi
+        if [ "$_sf_ok" -eq 0 ] && restore_binary "${B4_BIN_DIR}/${BINARY_NAME}" "$backup_bin"; then
+            log_warn "Rolled back to the previously installed version"
+        fi
     else
         log_warn "Binary installed but version check failed (exit code: $_ver_exit)"
+        if restore_binary "${B4_BIN_DIR}/${BINARY_NAME}" "$backup_bin"; then
+            log_warn "Rolled back to the previously installed version"
+        fi
     fi
 
     # --- Install service ---
