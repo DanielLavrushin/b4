@@ -101,6 +101,14 @@ func DirectAddresses() map[int]string {
 	return out
 }
 
+func DirectAddressesV6() map[int]string {
+	out := make(map[int]string, len(dcAddressesV6))
+	for k, v := range dcAddressesV6 {
+		out[k] = v
+	}
+	return out
+}
+
 func DCSnapshot() map[int]string {
 	dcRuntimeMu.RLock()
 	defer dcRuntimeMu.RUnlock()

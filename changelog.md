@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.74.2] - 2026-08-xx
+
+- ADDED: **An IPv4/IPv6 switch in the DC Relay socat helper** - the generated commands could only reach Telegram over IPv4, so on a VPS whose working route to the data centers is the IPv6 one, the addresses had to be found elsewhere and pasted in by hand every time a host was lost. The switch emits `TCP6:` upstreams, and a DC Relay address written as an IPv6 literal (`[2001:db8::1]:7007`) also flips the listening side to `TCP6-LISTEN`.
+
 ## [1.74.1] - 2026-07-31
 
 - FIXED: **A domain added to the watchdog was listed as Healthy before anything had checked it** - the entry was created green and counted toward the healthy total, so a site the user already knows is blocked read as fine until the first check landed, and with the watchdog switched off it read that way forever. A domain waiting for its first check is marked Queued, and the force-check button is disabled while the watchdog is off, where it did nothing.

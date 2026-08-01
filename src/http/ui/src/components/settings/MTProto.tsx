@@ -79,8 +79,14 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
         count: number;
         dcs: Record<string, string>;
         direct?: Record<string, string>;
+        direct_v6?: Record<string, string>;
       }
-    | { ok: false; error: string; direct?: Record<string, string> }
+    | {
+        ok: false;
+        error: string;
+        direct?: Record<string, string>;
+        direct_v6?: Record<string, string>;
+      }
     | null
   >(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -103,7 +109,11 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
     if (!m) return null;
     const basePort = Number(m[2]);
     if (!basePort || basePort < 1 || basePort > 65535) return null;
-    return { host: m[1].replaceAll(/^\[|\]$/g, ""), basePort };
+    return {
+      host: m[1].replaceAll(/^\[|\]$/g, ""),
+      hostIsV6: m[1].startsWith("["),
+      basePort,
+    };
   }, [dcRelay]);
 
   const shareLink = useMemo(() => {
@@ -160,6 +170,7 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
         count?: number;
         dcs?: Record<string, string>;
         direct?: Record<string, string>;
+        direct_v6?: Record<string, string>;
         error?: string;
       };
       if (data.success && typeof data.count === "number" && data.dcs) {
@@ -168,12 +179,14 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
           count: data.count,
           dcs: data.dcs,
           direct: data.direct,
+          direct_v6: data.direct_v6,
         });
       } else {
         setRefreshResult({
           ok: false,
           error: data.error || "unknown error",
           direct: data.direct,
+          direct_v6: data.direct_v6,
         });
       }
     } catch (e) {

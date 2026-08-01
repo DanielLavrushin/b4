@@ -229,17 +229,19 @@ func (api *API) handleMTProtoRefreshDCs(w http.ResponseWriter, r *http.Request) 
 		setJsonHeader(w)
 		w.WriteHeader(http.StatusBadGateway)
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"error":  err.Error(),
-			"direct": mtproto.DirectAddresses(),
+			"error":     err.Error(),
+			"direct":    mtproto.DirectAddresses(),
+			"direct_v6": mtproto.DirectAddressesV6(),
 		})
 		return
 	}
 	snap := mtproto.DCSnapshot()
 	sendResponse(w, map[string]interface{}{
-		"success": true,
-		"count":   len(snap),
-		"dcs":     snap,
-		"direct":  mtproto.DirectAddresses(),
+		"success":   true,
+		"count":     len(snap),
+		"dcs":       snap,
+		"direct":    mtproto.DirectAddresses(),
+		"direct_v6": mtproto.DirectAddressesV6(),
 	})
 }
 

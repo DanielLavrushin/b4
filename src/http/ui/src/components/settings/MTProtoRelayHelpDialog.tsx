@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Box,
@@ -12,6 +12,8 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  ToggleButton,
+  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -27,18 +29,23 @@ interface RefreshOk {
   count: number;
   dcs: Record<string, string>;
   direct?: Record<string, string>;
+  direct_v6?: Record<string, string>;
 }
 interface RefreshErr {
   ok: false;
   error: string;
   direct?: Record<string, string>;
+  direct_v6?: Record<string, string>;
 }
 type RefreshResult = RefreshOk | RefreshErr | null;
 
 interface RelayInfo {
   host: string;
+  hostIsV6: boolean;
   basePort: number;
 }
+
+type Family = "v4" | "v6";
 
 interface Props {
   open: boolean;
@@ -49,8 +56,16 @@ interface Props {
   onRefresh: () => void;
 }
 
-const buildSocatCmd = (port: number, addr: string) =>
-  `socat TCP-LISTEN:${port},fork,reuseaddr TCP:${addr} &`;
+const buildSocatCmd = (
+  port: number,
+  addr: string,
+  upstreamV6: boolean,
+  listenV6: boolean,
+) => {
+  const listen = listenV6 ? "TCP6-LISTEN" : "TCP-LISTEN";
+  const upstream = upstreamV6 ? "TCP6" : "TCP";
+  return `socat ${listen}:${port},fork,reuseaddr ${upstream}:${addr} &`;
+};
 
 export const MTProtoRelayHelpDialog = ({
   open,
@@ -63,11 +78,23 @@ export const MTProtoRelayHelpDialog = ({
   const { t } = useTranslation();
   const [copiedAll, setCopiedAll] = useState(false);
   const [copiedRow, setCopiedRow] = useState<number | null>(null);
+  const [family, setFamily] = useState<Family>("v4");
+
+  const addrsV6 = refreshResult?.direct_v6;
+  const hasV6 = !!addrsV6 && Object.keys(addrsV6).length > 0;
+
+  useEffect(() => {
+    if (!hasV6) setFamily("v4");
+  }, [hasV6]);
+
+  const upstreamV6 = family === "v6" && hasV6;
+  const listenV6 = !!relayInfo?.hostIsV6;
 
   const mappings = useMemo(() => {
-    const addrs = refreshResult?.ok
+    const addrsV4 = refreshResult?.ok
       ? (refreshResult.direct ?? refreshResult.dcs)
       : refreshResult?.direct;
+    const addrs = upstreamV6 ? addrsV6 : addrsV4;
     if (!relayInfo || !addrs) return [];
     return Object.entries(addrs)
       .map(([id, addr]) => {
@@ -77,11 +104,14 @@ export const MTProtoRelayHelpDialog = ({
       .filter((m) => m.dc !== 203)
       .map((m) => ({ ...m, port: relayInfo.basePort + m.dc - 1 }))
       .sort((a, b) => a.dc - b.dc);
-  }, [relayInfo, refreshResult]);
+  }, [relayInfo, refreshResult, upstreamV6, addrsV6]);
 
   const allCommands = useMemo(
-    () => mappings.map((m) => buildSocatCmd(m.port, m.addr)).join("\n"),
-    [mappings],
+    () =>
+      mappings
+        .map((m) => buildSocatCmd(m.port, m.addr, upstreamV6, listenV6))
+        .join("\n"),
+    [mappings, upstreamV6, listenV6],
   );
 
   const portsList = useMemo(
@@ -167,6 +197,27 @@ export const MTProtoRelayHelpDialog = ({
           }}
         />
 
+        {hasV6 && (
+          <Stack direction="row" alignItems="center" gap={1.5}>
+            <Typography variant="body2" color="text.secondary">
+              {t("settings.MTProto.dcRelayHelpFamily")}
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              value={family}
+              onChange={(_, v: Family | null) => v && setFamily(v)}
+            >
+              <ToggleButton value="v4">
+                {t("settings.MTProto.dcRelayHelpFamilyV4")}
+              </ToggleButton>
+              <ToggleButton value="v6">
+                {t("settings.MTProto.dcRelayHelpFamilyV6")}
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </Stack>
+        )}
+
         {!relayInfo && (
           <B4Alert severity="info">
             {t("settings.MTProto.dcRelayHelpEmpty", {
@@ -217,7 +268,12 @@ export const MTProtoRelayHelpDialog = ({
                 </TableHead>
                 <TableBody>
                   {mappings.map((m, idx) => {
-                    const cmd = buildSocatCmd(m.port, m.addr);
+                    const cmd = buildSocatCmd(
+                      m.port,
+                      m.addr,
+                      upstreamV6,
+                      listenV6,
+                    );
                     return (
                       <TableRow key={m.dc}>
                         <TableCell>DC{m.dc}</TableCell>
@@ -265,6 +321,11 @@ export const MTProtoRelayHelpDialog = ({
                 </TableBody>
               </Table>
             </TableContainer>
+            {upstreamV6 && (
+              <B4Alert severity="info">
+                {t("settings.MTProto.dcRelayHelpV6Note")}
+              </B4Alert>
+            )}
             <B4Alert severity="info">
               {t("settings.MTProto.dcRelayHelpHint", { ports: portsList })}
             </B4Alert>
