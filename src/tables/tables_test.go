@@ -818,6 +818,27 @@ func TestRoutingLearnHost(t *testing.T) {
 	})
 }
 
+func TestBuildRouteStateTracksUpstreamUDP(t *testing.T) {
+	cfg := config.NewConfig()
+
+	newSet := func(udp bool) *config.SetConfig {
+		s := &config.SetConfig{Id: "s1"}
+		s.Routing.Enabled = true
+		s.Routing.Mode = config.RoutingModeProxy
+		s.Routing.Upstream.Host = "192.168.1.1"
+		s.Routing.Upstream.Port = 8480
+		s.Routing.Upstream.UDP = udp
+		return s
+	}
+
+	withUDP := buildRouteState(&cfg, newSet(true))
+	withoutUDP := buildRouteState(&cfg, newSet(false))
+
+	if routeStateEqual(withUDP, withoutUDP) {
+		t.Error("toggling upstream.udp must change the rule state, otherwise the UDP tproxy rules are never rebuilt and keep diverting to a port with no listener")
+	}
+}
+
 func TestRouteAddResolvedIPs(t *testing.T) {
 	origCache := routeRuleCache
 	origEngine := routeEngine

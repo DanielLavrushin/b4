@@ -354,7 +354,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		st.mark = mark
 		st.table = proxyTable()
 		st.tproxyPort = port
-		st.upstreamKey = fmt.Sprintf("%s:%d|%s", set.Routing.Upstream.Host, set.Routing.Upstream.Port, set.Routing.Upstream.Username)
+		st.upstreamKey = fmt.Sprintf("%s:%d|%s|udp=%t", set.Routing.Upstream.Host, set.Routing.Upstream.Port, set.Routing.Upstream.Username, set.Routing.Upstream.UDP)
 	} else {
 		mark, table := routeResolveIDs(cfg, set)
 		st.mark = mark
