@@ -32,6 +32,40 @@ func TestDCForIPRange(t *testing.T) {
 	}
 }
 
+func TestDirectAddressesV6(t *testing.T) {
+	got := DirectAddressesV6()
+	if len(got) != 5 {
+		t.Fatalf("DirectAddressesV6() returned %d entries, want 5", len(got))
+	}
+	for dc := 1; dc <= 5; dc++ {
+		addr, ok := got[dc]
+		if !ok {
+			t.Errorf("DirectAddressesV6() missing DC%d", dc)
+			continue
+		}
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			t.Errorf("DC%d address %q does not split: %v", dc, addr, err)
+			continue
+		}
+		if port != "443" {
+			t.Errorf("DC%d address %q port = %s, want 443", dc, addr, port)
+		}
+		ip := net.ParseIP(host)
+		if ip == nil || ip.To4() != nil {
+			t.Errorf("DC%d host %q is not an IPv6 literal", dc, host)
+		}
+	}
+	if _, ok := got[203]; ok {
+		t.Error("DirectAddressesV6() contains DC203, which has no IPv6 address")
+	}
+
+	got[1] = "mutated"
+	if DirectAddressesV6()[1] == "mutated" {
+		t.Error("DirectAddressesV6() returned a reference to the shared map, want a copy")
+	}
+}
+
 func TestDCForIPRangeOnlyWSServedDCs(t *testing.T) {
 	for _, e := range dcRangesV4 {
 		if !wsEdgeServesDC(e.dc) {

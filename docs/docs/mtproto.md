@@ -176,6 +176,30 @@ Open every port the helper shows (the "Open these ports on the VPS firewall" lin
 To auto-start `socat`, add the commands to `/etc/rc.local` or create a systemd service.
 :::
 
+### IPv4 or IPv6
+
+The dialog has an **Address family** switch that controls which Telegram addresses the generated commands connect to. It is useful when the VPS reaches Telegram over IPv6 but not over IPv4.
+
+The switch changes the upstream side of the command only:
+
+```bash
+# IPv4
+socat TCP-LISTEN:7007,fork,reuseaddr TCP:149.154.175.50:443 &
+
+# IPv6
+socat TCP-LISTEN:7007,fork,reuseaddr TCP6:[2001:b28:f23d:f001::a]:443 &
+```
+
+The listen side follows the **DC Relay** address instead. If it is an IPv6 literal, write it in brackets (`[2001:db8::1]:7007`) and the helper emits `TCP6-LISTEN`, so the VPS also accepts the connection from B4 over IPv6.
+
+The two sides are independent: an IPv4 relay address with IPv6 upstreams is a valid and common combination.
+
+:::note IPv6 addresses and Refresh
+The IPv6 data-center addresses are built into B4. **Refresh** does not change them, because Telegram's published proxy config lists IPv4 addresses only.
+
+Media DC `203` has no IPv6 address and shares DC 2's relay port, so media traffic follows whatever the DC 2 command points at. If media stops loading after switching to IPv6, put that one command back on IPv4 and leave the rest on IPv6.
+:::
+
 ---
 
 ## Choosing a fake SNI domain
