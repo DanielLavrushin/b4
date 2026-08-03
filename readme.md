@@ -2,6 +2,7 @@
 
 ![GitHub Release](https://img.shields.io/github/v/release/daniellavrushin/b4)
 ![GitHub Downloads](https://img.shields.io/github/downloads/daniellavrushin/b4/total)
+![Docker Pulls](https://img.shields.io/docker/pulls/lavrushin/b4)
 
 [[Documentation](https://daniellavrushin.github.io/b4/)] [[Документация (RU)](https://daniellavrushin.github.io/b4/ru/)] [[Telegram](https://t.me/byebyebigbro)]
 
