@@ -246,6 +246,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	isTUN := cfg.Queue.Mode == "tun"
 
 	pool := nfq.NewPool(&cfg)
+	tables.SetDNSTCPListenerReady(pool.DNSTCPReady())
 
 	var tunEngine *b4tun.Engine
 	var tablesMonitor *tables.Monitor
