@@ -57,7 +57,7 @@ type TransparentBridge struct {
 	bufPool sync.Pool
 
 	mu       sync.Mutex
-	pool     *wsPool
+	pool     *cfWorkerPool
 	poolInit bool
 }
 
@@ -75,8 +75,7 @@ func NewTransparentBridge(cfg *config.Config) *TransparentBridge {
 func (b *TransparentBridge) UpdateConfig(newCfg *config.Config) {
 	old := b.cfg.Swap(newCfg)
 	if old != nil &&
-		old.System.MTProto.WSEndpointHost == newCfg.System.MTProto.WSEndpointHost &&
-		old.System.MTProto.WSCustomDomain == newCfg.System.MTProto.WSCustomDomain &&
+		old.System.MTProto.CFWorkerDomain == newCfg.System.MTProto.CFWorkerDomain &&
 		old.Queue.Mark == newCfg.Queue.Mark {
 		return
 	}
@@ -85,23 +84,21 @@ func (b *TransparentBridge) UpdateConfig(newCfg *config.Config) {
 	b.pool = nil
 	b.poolInit = false
 	b.mu.Unlock()
-	if oldPool != nil {
-		oldPool.close()
-	}
+	oldPool.close()
 }
 
-func (b *TransparentBridge) getPool() *wsPool {
+// getPool returns the Worker pool, or nil when no Worker is configured. The
+// bridge forces BridgeSkipNativeEdge, so Telegram's own WS edge is never dialled
+// here and the native wsPool would have nothing to serve.
+func (b *TransparentBridge) getPool() *cfWorkerPool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if !b.poolInit {
 		cfg := b.cfg.Load()
 		mt := cfg.System.MTProto
-		p := newWSPool(MTProtoUpstream{
-			WSEndpointHost: mt.WSEndpointHost,
-			WSCustomDomain: mt.WSCustomDomain,
-		}, cfg.Queue.Mark, wsPoolDefaultSize)
-		p.warmup([]int{2, 4})
-		b.pool = p
+		if len(workerDomains(&mt)) > 0 {
+			b.pool = newCFWorkerPool(cfg.Queue.Mark)
+		}
 		b.poolInit = true
 	}
 	return b.pool
@@ -181,7 +178,7 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 	mtCfg.DCRelay = ""
 	mtCfg.BridgeSkipNativeEdge = true
 
-	dcConn, transport, err := DialObfuscatedDCWithPool(&mtCfg, cfg.Queue, dc, res.ProtoTag, nil, id)
+	dcConn, info, err := dialObfuscatedDC(&mtCfg, cfg.Queue, dc, res.ProtoTag, &dialPools{worker: b.getPool()}, id)
 	if err != nil {
 		if shouldLogDialError(dc) {
 			log.Errorf("%s bridge dial DC %d failed: %v", tag, dc, err)
@@ -192,13 +189,10 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 	}
 	defer dcConn.Close()
 
-	label := fmt.Sprintf("%s %s<->DC%d(transparent via %s)", tag, client.RemoteAddr(), dc, transport)
-	log.Infof("%s bridge relay %s:%d -> DC%d via %s [dc-from=%s]", tag, origIP, origPort, dc, transport, dcSrc)
+	label := fmt.Sprintf("%s %s<->DC%d(transparent via %s)", tag, client.RemoteAddr(), dc, info.transport)
+	log.Infof("%s bridge relay %s:%d -> DC%d via %s [dc-from=%s]", tag, origIP, origPort, dc, info.transport, dcSrc)
 
-	var splitter *msgSplitter
-	if _, isWS := dcConn.Conn.(*wsConn); isWS {
-		splitter = newMsgSplitter(res.ProtoTag)
-	}
+	splitter := newSplitterFor(dcConn, info, res.ProtoTag)
 	relayConns(res.Conn, dcConn, splitter, label, &b.bufPool, mtprotoIdleTimeout(cfg), nil)
 	return true, nil
 }

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	mrand "math/rand"
 	"net"
 	"strings"
 	"syscall"
@@ -65,6 +66,18 @@ func workerDomains(cfg *config.MTProtoConfig) []string {
 			out = append(out, d)
 		}
 	}
+	return out
+}
+
+// shuffledWorkerDomains randomises the configured Worker order so a user with
+// several workers spreads load and free-tier request quota across all of them
+// instead of hammering whichever one happens to be listed first.
+func shuffledWorkerDomains(cfg *config.MTProtoConfig) []string {
+	out := workerDomains(cfg)
+	if len(out) < 2 {
+		return out
+	}
+	mrand.Shuffle(len(out), func(i, j int) { out[i], out[j] = out[j], out[i] })
 	return out
 }
 
@@ -187,6 +200,7 @@ type transportPlan struct {
 	cfBase   string
 	wsPath   string
 	isWorker bool
+	native   bool
 }
 
 func (p transportPlan) describe() string {
@@ -220,13 +234,13 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 
 	var plans []transportPlan
 
-	appendTCP := func() {
+	appendTCP := func(ignoreCooldown bool) {
 		addrs, err := ResolveDCAll(dc, queueCfg.IPv6Enabled, strings.TrimSpace(cfg.DCRelay))
 		if err != nil {
 			return
 		}
 		for _, a := range addrs {
-			if tcpAddrInCooldown(a) {
+			if !ignoreCooldown && tcpAddrInCooldown(a) {
 				continue
 			}
 			plans = append(plans, transportPlan{kind: transportTCP, addr: a})
@@ -234,27 +248,31 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 	}
 
 	if mode == "tcp" || relayFirst {
-		appendTCP()
+		appendTCP(false)
 	}
 
 	wsMode := mode == "ws" || mode == "auto"
-	wsBlacklisted := wsMode && wsIsBlacklisted(dc)
-	if wsBlacklisted {
-		log.Debugf("%s DC %d WS plans skipped (blacklisted)", tg(""), dc)
-	}
-	if wsMode && !wsBlacklisted {
+	if wsMode {
+		// The blacklist records Telegram's own WS edge answering every kws* dial
+		// with a 302. That says nothing about a relay the user runs, so it must
+		// only suppress the native plans - gating the worker and CF-proxy plans on
+		// it too meant one 302 from kws2 silently switched off a working Worker.
 		if wsEdgeServesDC(absDC) && !cfg.BridgeSkipNativeEdge {
-			dh := wsNativeDialHost(cfg.WSEndpointHost)
-			primary := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d.web.telegram.org", absDC), dialHost: dh}
-			media := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d-1.web.telegram.org", absDC), dialHost: dh}
-			if dc < 0 {
-				plans = append(plans, media, primary)
+			if wsIsBlacklisted(dc) {
+				log.Debugf("%s DC %d native WS edge skipped (blacklisted)", tg(""), dc)
 			} else {
-				plans = append(plans, primary, media)
+				dh := wsNativeDialHost(cfg.WSEndpointHost)
+				primary := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d.web.telegram.org", absDC), dialHost: dh, native: true}
+				media := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d-1.web.telegram.org", absDC), dialHost: dh, native: true}
+				if dc < 0 {
+					plans = append(plans, media, primary)
+				} else {
+					plans = append(plans, primary, media)
+				}
 			}
 		}
 		if dst := workerDstIP(absDC); dst != "" {
-			for _, wd := range workerDomains(cfg) {
+			for _, wd := range shuffledWorkerDomains(cfg) {
 				plans = append(plans, transportPlan{
 					kind:     transportWS,
 					dc:       dc,
@@ -286,11 +304,16 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 	}
 
 	if mode == "auto" && !relayFirst {
-		appendTCP()
+		appendTCP(false)
 	}
 
+	// Last resort: every candidate is cooling off. Erroring out here fails the
+	// client in microseconds, and Telegram answers an instant failure with an
+	// instant reconnect, so one cooling DC address turns into a dial storm that
+	// never lets the cooldown lapse. Re-dialling the cooling address is slower
+	// but bounded.
 	if len(plans) == 0 && mode != "ws" {
-		appendTCP()
+		appendTCP(true)
 	}
 
 	if len(plans) == 0 {
@@ -299,19 +322,49 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 	return plans, nil
 }
 
-func DialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc int, protoTag uint32) (*ObfuscatedConn, string, error) {
-	return DialObfuscatedDCWithPool(cfg, queueCfg, dc, protoTag, nil, "")
+// dialInfo describes which transport a dial landed on. isWorker matters to the
+// caller because a Cloudflare Worker relays a raw TCP stream, so it must not get
+// the per-packet WS framing that Telegram's own edge requires.
+type dialInfo struct {
+	transport string
+	isWorker  bool
 }
 
-func DialObfuscatedDCWithPool(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc int, protoTag uint32, pool *wsPool, logID string) (*ObfuscatedConn, string, error) {
+// dialPools bundles the warm-connection pools a dial may draw from. Both the
+// struct pointer and either field may be nil.
+type dialPools struct {
+	ws     *wsPool
+	worker *cfWorkerPool
+}
+
+func (p *dialPools) wsPool() *wsPool {
+	if p == nil {
+		return nil
+	}
+	return p.ws
+}
+
+func (p *dialPools) workerPool() *cfWorkerPool {
+	if p == nil {
+		return nil
+	}
+	return p.worker
+}
+
+func DialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc int, protoTag uint32) (*ObfuscatedConn, string, error) {
+	conn, info, err := dialObfuscatedDC(cfg, queueCfg, dc, protoTag, nil, "")
+	return conn, info.transport, err
+}
+
+func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc int, protoTag uint32, pools *dialPools, logID string) (*ObfuscatedConn, dialInfo, error) {
 	tag := tg(logID)
-	if pool != nil && !wsIsBlacklisted(dc) {
+	if pool := pools.wsPool(); pool != nil && !wsIsBlacklisted(dc) {
 		if raw := pool.get(dc); raw != nil {
 			obf, err := completeObfuscation(raw, dc, protoTag)
 			if err == nil && raw.liveNow() {
 				log.Infof("%s DC %d connected via ws-pool", tag, dc)
 				wsRecordSuccess(dc)
-				return obf, "ws-pool", nil
+				return obf, dialInfo{transport: "ws-pool"}, nil
 			}
 			if err != nil {
 				log.Debugf("%s DC %d pool conn obf init failed: %v", tag, dc, err)
@@ -324,33 +377,57 @@ func DialObfuscatedDCWithPool(cfg *config.MTProtoConfig, queueCfg config.QueueCo
 
 	plans, err := planTransports(cfg, queueCfg, dc)
 	if err != nil {
-		return nil, "", err
+		return nil, dialInfo{}, err
 	}
 
-	wsTimeout := wsDialTimeout
-	if wsCooldownActive(dc) {
-		wsTimeout = wsDialTimeoutCooldown
-	}
+	nativeCooling := wsCooldownActive(dc)
+	workerPool := pools.workerPool()
 
 	var attempts []string
-	wsTried := 0
-	wsRedirects := 0
+	nativeTried := 0
+	nativeRedirects := 0
 	for _, p := range plans {
+		if p.isWorker {
+			if raw := workerPool.get(p); raw != nil {
+				obf, oerr := completeObfuscation(raw, dc, protoTag)
+				if oerr == nil && raw.liveNow() {
+					log.Infof("%s DC %d connected via %s (pooled)", tag, dc, p.describe())
+					workerPool.warm(p)
+					return obf, dialInfo{transport: p.describe(), isWorker: true}, nil
+				}
+				if oerr != nil {
+					log.Debugf("%s DC %d worker pool conn obf init failed: %v", tag, dc, oerr)
+				} else {
+					log.Debugf("%s DC %d worker pool conn died before relay; re-dialing fresh", tag, dc)
+				}
+				_ = raw.Close()
+			}
+		}
+
 		log.Debugf("%s DC %d dialing %s", tag, dc, p.describe())
 		start := time.Now()
 		var conn net.Conn
 		var derr error
 		if p.kind == transportWS {
-			conn, derr = dialOneWS(p, queueCfg.Mark, wsTimeout)
+			// the shortened timeout belongs to the native edge that just failed;
+			// applying it to a Worker or CF-proxy dial would cut those off early
+			// for a fault that is not theirs
+			timeout := wsDialTimeout
+			if p.native && nativeCooling {
+				timeout = wsDialTimeoutCooldown
+			}
+			conn, derr = dialOneWS(p, queueCfg.Mark, timeout)
 		} else {
 			conn, derr = dialOne(p, queueCfg.Mark)
 		}
 		if derr != nil {
 			attempts = append(attempts, fmt.Sprintf("%s: %s", p.describe(), shortErr(derr)))
 			if p.kind == transportWS {
-				wsTried++
-				if isWSRedirect(derr) {
-					wsRedirects++
+				if p.native {
+					nativeTried++
+					if isWSRedirect(derr) {
+						nativeRedirects++
+					}
 				}
 				if p.cfBase != "" && wsRateLimited(derr) {
 					cfBalancerInst.penalize(p.cfBase, cfProxyDomainCooldown)
@@ -369,7 +446,12 @@ func DialObfuscatedDCWithPool(cfg *config.MTProtoConfig, queueCfg config.QueueCo
 			continue
 		}
 		if p.kind == transportWS {
-			wsRecordSuccess(dc)
+			if p.native {
+				wsRecordSuccess(dc)
+			}
+			if p.isWorker {
+				workerPool.warm(p)
+			}
 			if p.cfBase != "" {
 				if cfBalancerInst.pin(dc, p.cfBase) {
 					log.Infof("%s DC %d switched active CF domain to %s", tag, dc, p.cfBase)
@@ -379,16 +461,16 @@ func DialObfuscatedDCWithPool(cfg *config.MTProtoConfig, queueCfg config.QueueCo
 			tcpRecordSuccess(p.addr)
 		}
 		log.Infof("%s DC %d connected via %s in %dms", tag, dc, p.describe(), time.Since(start).Milliseconds())
-		return obfConn, p.describe(), nil
+		return obfConn, dialInfo{transport: p.describe(), isWorker: p.isWorker}, nil
 	}
 
-	if wsTried > 0 {
-		wsRecordFailure(dc, wsRedirects == wsTried)
+	if nativeTried > 0 {
+		wsRecordFailure(dc, nativeRedirects == nativeTried)
 	}
 	if len(attempts) == 0 {
-		return nil, "", fmt.Errorf("no transport available (all in cooldown or blacklisted)")
+		return nil, dialInfo{}, fmt.Errorf("no transport available (all in cooldown or blacklisted)")
 	}
-	return nil, "", fmt.Errorf("all transports failed: %s", strings.Join(attempts, "; "))
+	return nil, dialInfo{}, fmt.Errorf("all transports failed: %s", strings.Join(attempts, "; "))
 }
 
 func isDialTimeout(err error) bool {
