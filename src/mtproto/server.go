@@ -56,9 +56,10 @@ type Server struct {
 	bufPool sync.Pool
 	active  atomic.Int64
 
-	cfg     atomic.Pointer[config.Config]
-	secrets atomic.Pointer[[]*Secret]
-	wsPool  atomic.Pointer[wsPool]
+	cfg        atomic.Pointer[config.Config]
+	secrets    atomic.Pointer[[]*Secret]
+	wsPool     atomic.Pointer[wsPool]
+	workerPool atomic.Pointer[cfWorkerPool]
 
 	statsMu sync.Mutex
 	stats   map[string]*secretStat
@@ -434,8 +435,14 @@ func (s *Server) startLocked() error {
 		}, cfg.Queue.Mark, wsPoolDefaultSize)
 		pool.warmup([]int{2, 4})
 		s.wsPool.Store(pool)
+		if len(workerDomains(mtCfg)) > 0 {
+			s.workerPool.Store(newCFWorkerPool(cfg.Queue.Mark))
+		} else {
+			s.workerPool.Store(nil)
+		}
 	} else {
 		s.wsPool.Store(nil)
+		s.workerPool.Store(nil)
 	}
 
 	s.running = true
@@ -457,6 +464,7 @@ func (s *Server) stopLocked() error {
 	if pool := s.wsPool.Swap(nil); pool != nil {
 		pool.close()
 	}
+	s.workerPool.Swap(nil).close()
 	var err error
 	if s.listener != nil {
 		err = s.listener.Close()
@@ -646,7 +654,7 @@ func (s *Server) handleConn(raw net.Conn) {
 	log.Debugf("%s proxy client [%s] from %s wants DC %d proto=0x%08x", tag, user, clientAddr, result.DC, result.ProtoTag)
 	_ = raw.SetDeadline(time.Time{})
 
-	dcConn, transport, err := DialObfuscatedDCWithPool(&cfg.System.MTProto, cfg.Queue, result.DC, result.ProtoTag, s.wsPool.Load(), id)
+	dcConn, dial, err := dialObfuscatedDC(&cfg.System.MTProto, cfg.Queue, result.DC, result.ProtoTag, &dialPools{ws: s.wsPool.Load(), worker: s.workerPool.Load()}, id)
 	if err != nil {
 		if shouldLogDialError(result.DC) {
 			log.Errorf("%s proxy dial DC %d failed: %v", tag, result.DC, err)
@@ -657,7 +665,7 @@ func (s *Server) handleConn(raw net.Conn) {
 	}
 	defer dcConn.Close()
 
-	log.Infof("%s proxy relay [%s] %s <-> DC%d via %s", tag, user, clientAddr, result.DC, transport)
+	log.Infof("%s proxy relay [%s] %s <-> DC%d via %s", tag, user, clientAddr, result.DC, dial.transport)
 
 	dcAddr := fmt.Sprintf("DC%d", result.DC)
 	if ra := dcConn.RemoteAddr(); ra != nil {
@@ -671,11 +679,8 @@ func (s *Server) handleConn(raw net.Conn) {
 	st.total.Add(1)
 	defer st.active.Add(-1)
 
-	var splitter *msgSplitter
-	if _, ok := dcConn.Conn.(*wsConn); ok {
-		splitter = newMsgSplitter(result.ProtoTag)
-	}
-	up, down := s.relay(result.Conn, dcConn, splitter, &info.lastActive, fmt.Sprintf("%s [%s] %s<->DC%d via %s", tag, user, clientAddr, result.DC, transport))
+	splitter := newSplitterFor(dcConn, dial, result.ProtoTag)
+	up, down := s.relay(result.Conn, dcConn, splitter, &info.lastActive, fmt.Sprintf("%s [%s] %s<->DC%d via %s", tag, user, clientAddr, result.DC, dial.transport))
 	st.up.Add(up)
 	st.down.Add(down)
 }

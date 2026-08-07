@@ -2,6 +2,21 @@ package mtproto
 
 import "encoding/binary"
 
+// newSplitterFor decides whether the upstream needs the MTProto stream carved
+// back into one transport packet per WS frame. Telegram's own WS edge does: it
+// treats every frame as a whole packet. A Cloudflare Worker does not - it pours
+// frame payloads straight into a TCP socket, so splitting there only turns one
+// write into many small ones for no gain.
+func newSplitterFor(conn *ObfuscatedConn, info dialInfo, protoTag uint32) *msgSplitter {
+	if info.isWorker {
+		return nil
+	}
+	if _, isWS := conn.Conn.(*wsConn); !isWS {
+		return nil
+	}
+	return newMsgSplitter(protoTag)
+}
+
 type msgSplitter struct {
 	proto    uint32
 	buf      []byte
