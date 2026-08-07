@@ -640,6 +640,14 @@ func (manager *IPTablesManager) buildManifest() (Manifest, error) {
 		}
 	}
 
+	if dnsTCPEnabled(cfg) {
+		for _, ipt := range ipts {
+			dc, dr := manager.buildDNSTCPManifest(ipt)
+			chains = append(chains, dc...)
+			rules = append(rules, dr...)
+		}
+	}
+
 	mssIPSets, mssRules := manager.buildMSSManifest(preChainName)
 	ipsets = append(ipsets, mssIPSets...)
 	rules = append(rules, mssRules...)
@@ -815,6 +823,7 @@ func (ipt *IPTablesManager) Clear() error {
 	m.RemoveChains()
 	for _, bin := range ipt.masqueradeBinaries() {
 		ipt.teardownMasqueradeChain(bin)
+		ipt.teardownDNSTCPChain(bin)
 	}
 	m.DestroyIPSets()
 	destroyOrphanMSSIPSets()

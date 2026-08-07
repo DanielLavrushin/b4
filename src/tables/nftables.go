@@ -396,6 +396,10 @@ func (n *NFTablesManager) apply() error {
 		return err
 	}
 
+	if err := n.ApplyDNSTCP(); err != nil {
+		return err
+	}
+
 	if log.Level(log.CurLevel.Load()) >= log.LevelTrace {
 		out, _ := n.runNft("list", "table", "inet", nftTableName)
 		log.Tracef("Current nftables rules:\n%s", out)
@@ -416,6 +420,7 @@ func (n *NFTablesManager) clear(revertSysctls bool) error {
 	log.Tracef("NFTABLES: clearing rules")
 
 	n.ClearMasquerade()
+	n.ClearDNSTCP()
 
 	if n.tableExists() {
 		if _, err := n.runNft("flush", "table", "inet", nftTableName); err != nil {

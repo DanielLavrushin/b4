@@ -22,6 +22,7 @@ type Pool struct {
 	stopCleanup chan struct{}
 	state       *runtimeState
 	tunSrc      *tunSrcResolver
+	dnsTCP      *dnsTCPServer
 }
 
 type PacketInfo struct {

@@ -79,6 +79,7 @@ func NewPool(cfg *config.Config) *Pool {
 	}
 
 	pool := &Pool{Workers: ws, Dhcp: dhcpMgr, stopCleanup: make(chan struct{}), state: state}
+	pool.startDNSTCP()
 
 	dhcpMgr.OnUpdate(func(ipToMAC map[string]string) {
 		for _, w := range pool.Workers {
@@ -132,7 +133,32 @@ func (p *Pool) Start() error {
 	return nil
 }
 
+func (p *Pool) startDNSTCP() {
+	if len(p.Workers) == 0 {
+		return
+	}
+	cfg := p.Workers[0].getConfig()
+	if cfg.Queue.IsDiscovery || !cfg.HasDNSRedirect() {
+		return
+	}
+	srv := newDNSTCPServer(p.Workers[0], config.DNSTCPPort)
+	if err := srv.Start(); err != nil {
+		log.Warnf("DNS: TCP listener could not bind port %d, DNS over TCP is left with the upstream resolver and no redirect rules are installed: %v", config.DNSTCPPort, err)
+		return
+	}
+	p.dnsTCP = srv
+}
+
+func (p *Pool) DNSTCPReady() bool {
+	return p.dnsTCP != nil
+}
+
 func (p *Pool) Stop() {
+	if p.dnsTCP != nil {
+		p.dnsTCP.Stop()
+		p.dnsTCP = nil
+	}
+
 	if p.Dhcp != nil {
 		p.Dhcp.Stop()
 	}

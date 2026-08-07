@@ -228,6 +228,16 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 			}
 		}
 
+		if dnsTCPEnabled(cfg) {
+			preOut, preErr := run(ipt, "-w", "-t", "nat", "-S", "PREROUTING")
+			chainOut, chainErr := run(ipt, "-w", "-t", "nat", "-S", dnsTCPChainName)
+			if preErr == nil && chainErr == nil &&
+				(!strings.Contains(preOut, dnsTCPChainName) || !strings.Contains(chainOut, "REDIRECT")) {
+				log.Tracef("Monitor: DNS-over-TCP redirect rules missing (PREROUTING jump or %s chain)", dnsTCPChainName)
+				return false
+			}
+		}
+
 		global, _ := cfg.HasGlobalMSSClamp()
 		deviceClamps := cfg.CollectDeviceMSSClamps()
 		if global || len(deviceClamps) > 0 {
@@ -314,6 +324,18 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 		natOut, _ := nft.runNft("list", "table", "ip", nftNatTableName)
 		if !strings.Contains(natOut, "masquerade") {
 			log.Tracef("Monitor: masquerade rule missing")
+			return false
+		}
+	}
+
+	if dnsTCPEnabled(cfg) {
+		if !nft.dnsTCPTableExists() {
+			log.Tracef("Monitor: DNS-over-TCP nat table missing")
+			return false
+		}
+		dnsOut, err := nft.runNft("list", "table", "ip", nftDNSTCPTableName)
+		if err == nil && !strings.Contains(dnsOut, "redirect") {
+			log.Tracef("Monitor: DNS-over-TCP redirect rule missing")
 			return false
 		}
 	}

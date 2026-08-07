@@ -238,6 +238,20 @@ func (c *Config) GetSetById(id string) *SetConfig {
 	return nil
 }
 
+const DNSTCPPort = 5453
+
+func (c *Config) HasDNSRedirect() bool {
+	for _, set := range c.Sets {
+		if set == nil || !set.Enabled || !set.DNS.Enabled {
+			continue
+		}
+		if set.DNS.DoHURL != "" || set.DNS.TargetDNS != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (set *SetConfig) ResetToDefaults() {
 	defaultSet := DefaultSetConfig
 

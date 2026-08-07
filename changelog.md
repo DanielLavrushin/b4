@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- ADDED: **A trace shows what happened to each DNS query, in the same format as the connections around it** - the trace lines describing DNS named the domain and the upstream but never the outcome, and three paths that hand a matched query straight to the upstream untouched - no redirect target, an unparseable `target_dns`, and an IPv6 query with IPv6 disabled - wrote nothing at all, so a query that quietly escaped looked identical to one that was never asked. At trace level each query now reads as a connection line carrying its verdict: `dns-doh->` and `dns-forward->` name the upstream it went to, `dns-sinkhole` and `dns-block` cover a blocking set, `dns-servfail` marks a failed upstream, and `dns-passthrough`, `dns-bad-target` and `dns-ipv6-disabled` name the three escapes. Queries matching no set are logged too, which separates "b4 let it through" from "b4 never saw it" when a leak test names a resolver you did not configure.
+- FIXED: **DNS sent over TCP escaped a set's DNS server entirely** - only UDP port 53 was ever intercepted, in both the iptables and the nftables backend, so a client that fell back to TCP after a truncated answer, or one configured to speak DNS over TCP outright, reached the router's upstream resolver with the set's DoH server never consulted. Nothing in the log mentioned it, because b4 never saw the packet. Port 53 over TCP is redirected into b4, which reads the query, resolves it through the same DoH or target server the set already uses for UDP, and answers on the same connection; a blocking set answers NXDOMAIN. Queries that match no set, or a set with no DNS server configured, are passed to the destination the client originally chose, so large and DNSSEC answers keep working instead of being cut off.
 - FIXED: **One refusal from Telegram's own WebSocket edge switched off a working Cloudflare Worker** - when every dial to `kws2.web.telegram.org` came back as a redirect, b4 marked WebSocket unusable for that data center and stopped planning *any* WebSocket route to it, including the relay the user runs on their own Cloudflare account and their own proxied domain. The refusal says something about Telegram's edge and nothing about a user's relay, so it only takes the edge out of the running.
 - FIXED: **A data center whose address had just timed out was answered instantly with a failure, and Telegram answered that with an instant reconnect** - once the address was put on its 30-second pause and the WebSocket edge was already out, b4 had nothing left to offer and reported "no transports available" in microseconds. Telegram treats an instant failure as grounds to try again immediately, so the log filled with hundreds of identical lines a second and the pause never got a chance to lapse. The paused address is retried as a last resort instead of leaving the client with nothing.
 - ADDED: **A warm spare connection to your Cloudflare Worker** - every Telegram connection through a Worker paid for a full TLS handshake, a WebSocket upgrade and the Worker's own connect out to Telegram before a single byte moved, and Telegram opens a great many connections. Measured from a router in Russia that is 65-90 ms per connection, spent again and again while the app is opening chats and loading media. b4 keeps one connection ready per Worker and data center and replaces it after each use, which costs one request per connection from the Worker's free daily allowance.
@@ -136,7 +136,7 @@
 - FIXED: **Leftover "zombie" update processes piling up** - each update attempt left a finished helper process behind; these are now cleaned up.
 - ADDED: **Update log** - every Web UI update now writes a step-by-step trace to `update.log` in the log folder (default `/var/log/b4`, reset each attempt), making failed updates much easier to diagnose.
 - ADDED: **Localized changelog** - the Web UI now shows the changelog in the selected language.
-- CHANGED: **Logging setting is now a folder, not a single file** - Settings → Service now asks for a log _directory_ (default `/var/log/b4`) instead of a path to `errors.log`, so all of b4's log files (errors, updates, and any added later) live together and can be moved in one place. Existing configs are migrated automatically (your old folder is kept); leave the field empty to turn file logging off.
+- CHANGED: **Logging setting is now a folder, not a single file** - Settings → Service now asks for a log *directory* (default `/var/log/b4`) instead of a path to `errors.log`, so all of b4's log files (errors, updates, and any added later) live together and can be moved in one place. Existing configs are migrated automatically (your old folder is kept); leave the field empty to turn file logging off.
 
 ## [1.67.1] - 2026-06-10
 
@@ -832,7 +832,7 @@
 
 ## [1.10.1] - 2025-11-03
 
-- IMPROVED: Intermittent connection failures where blocked sites would randomly fail to load in certain browsers (`Safari`, `Firefox`, `Chrome`). Connections _should_ now be more stable and reliable across all browsers by optimizing packet fragmentation strategy.
+- IMPROVED: Intermittent connection failures where blocked sites would randomly fail to load in certain browsers (`Safari`, `Firefox`, `Chrome`). Connections *should* now be more stable and reliable across all browsers by optimizing packet fragmentation strategy.
 
 ## [1.10.0] - 2025-11-02
 
