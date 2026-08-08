@@ -118,6 +118,7 @@ func Analyze(input string, opts Options) (*Result, error) {
 		ProfileDomains: opts.ProfileDomains,
 		ProfileModel:   spec.ProfileModel,
 		BreakKeys:      spec.ProfileBreak,
+		Defaults:       spec.Defaults,
 	})
 	noteUnaccounted(resolved, notes)
 

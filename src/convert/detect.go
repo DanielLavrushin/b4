@@ -5,8 +5,6 @@ import (
 	"strings"
 )
 
-const byedpiV013 = "0.13"
-
 var posHintRe = regexp.MustCompile(`^-{1,2}[A-Za-z-]*=?[+-]?[0-9]+(:[0-9]+)+|\+[shn][emrs]`)
 
 type usage struct {

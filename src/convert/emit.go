@@ -10,11 +10,9 @@ import (
 )
 
 const (
-	byedpiDefaultFakeTTL = 8
-	byedpiDefaultOOBByte = 'a'
-	maxSNIPosition       = 50
-	maxOOBPosition       = 50
-	maxTLSRecPosition    = 100
+	maxSNIPosition    = 50
+	maxOOBPosition    = 50
+	maxTLSRecPosition = 100
 )
 
 type emitOpts struct {
@@ -23,6 +21,7 @@ type emitOpts struct {
 	ProfileDomains map[int][]string
 	ProfileModel   string
 	BreakKeys      []string
+	Defaults       SpecDefaults
 }
 
 func noteBreakTokens(prof *Profile, ti tokenIndex, notes *noteSet, keys []string, model string) {
@@ -95,8 +94,8 @@ func emit(prog *Program, tokens []Token, notes *noteSet, opts emitOpts) []config
 		emitFilters(&set, prof, ti, notes, udpOnly)
 		emitUDP(&set, prof, ti, notes, udpOnly)
 		if !udpOnly {
-			emitSplits(&set, prof, ti, notes)
-			emitFake(&set, prog, prof, ti, notes)
+			emitSplits(&set, prof, ti, notes, opts)
+			emitFake(&set, prog, prof, ti, notes, opts.Defaults)
 		} else {
 			set.Fragmentation.Strategy = config.ConfigNone
 			set.Faking.SNI = false
@@ -111,8 +110,7 @@ func emit(prog *Program, tokens []Token, notes *noteSet, opts emitOpts) []config
 			})
 		}
 		emitMisc(&set, prog, prof, ti, notes)
-		emitZapretExtras(&set, prof, ti, notes)
-		noteDesyncModes(&set, prof, ti, notes)
+		runToolEmitter(prog.Tool, &set, prof, ti, notes)
 		noteBreakTokens(prof, ti, notes, opts.BreakKeys, opts.ProfileModel)
 
 		set.Targets.SNIDomains = append(set.Targets.SNIDomains, opts.domainsFor(prof)...)
@@ -310,7 +308,7 @@ func emitUDPFake(prof *Profile, ti tokenIndex, notes *noteSet) {
 	}
 }
 
-func emitSplits(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet) {
+func emitSplits(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet, opts emitOpts) {
 	var plain, disorder, oob, disoob, tlsrec, ipfrag []SplitOp
 	for _, s := range prof.Splits {
 		switch s.Kind {
@@ -364,7 +362,9 @@ func emitSplits(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *note
 		set.Fragmentation.Strategy = "oob"
 		pos := clamp(absOffset(oob[0].Pos, 1), 1, maxOOBPosition)
 		set.Fragmentation.OOBPosition = pos
-		set.Fragmentation.OOBChar = byedpiDefaultOOBByte
+		if opts.Defaults.OOBByte > 0 {
+			set.Fragmentation.OOBChar = byte(opts.Defaults.OOBByte)
+		}
 		ti.each(prof.Index, "oob", func(t Token) {
 			notes.set(t, StatusMapped, "oobMapped",
 				"fragmentation.strategy=oob", "fragmentation.oob_position="+strconv.Itoa(pos))
@@ -520,14 +520,14 @@ func describeSplitMapping(op SplitOp, strategy string, honoursFixed bool, set *c
 	return StatusMapped, "fixedPositionMapped", fields
 }
 
-func emitFake(set *config.SetConfig, prog *Program, prof *Profile, ti tokenIndex, notes *noteSet) {
+func emitFake(set *config.SetConfig, prog *Program, prof *Profile, ti tokenIndex, notes *noteSet, defaults SpecDefaults) {
 	if !prof.Fake.Present {
 		set.Faking.SNI = false
 		noteFakeOptionsUnused(prof, ti, notes)
 		return
 	}
 	set.Faking.SNI = true
-	applyFooling(set, prof, ti, notes)
+	applyFooling(set, prof, ti, notes, defaults)
 	if prof.Fake.Repeats > 0 {
 		set.Faking.SNISeqLength = prof.Fake.Repeats
 		if tok, ok := ti.first(prof.Index, "repeats"); ok {
@@ -647,124 +647,6 @@ func emitFake(set *config.SetConfig, prog *Program, prof *Profile, ti tokenIndex
 			notes.set(tok, StatusUnsupported, "ipOptUnsupported")
 		}
 	}
-}
-
-var zapretDroppedModes = map[string]bool{
-	"udplen": true, "tamper": true, "hopbyhop": true, "destopt": true,
-}
-
-func noteDesyncModes(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet) {
-	tok, ok := ti.first(prof.Index, "desync")
-	if !ok || len(prof.DesyncModes) == 0 {
-		return
-	}
-	var fields, dropped []string
-	if set.Fragmentation.Strategy != config.ConfigNone {
-		fields = append(fields, "fragmentation.strategy="+set.Fragmentation.Strategy)
-	}
-	if set.Faking.SNI {
-		fields = append(fields, "faking.sni=true")
-	}
-	if set.TCP.Desync.Mode != config.ConfigOff {
-		fields = append(fields, "tcp.desync.mode="+set.TCP.Desync.Mode)
-	}
-	if set.TCP.SynFake {
-		fields = append(fields, "tcp.syn_fake=true")
-	}
-	if prof.UDP.Present {
-		fields = append(fields, "udp.mode="+set.UDP.Mode)
-	}
-	for _, m := range prof.DesyncModes {
-		if zapretDroppedModes[m] {
-			dropped = append(dropped, m)
-		}
-	}
-	if len(dropped) > 0 {
-		n := notes.set(tok, StatusUnsupported, "desyncModesDropped", fields...)
-		n.Params = map[string]any{"dropped": strings.Join(dropped, ", ")}
-		return
-	}
-	if len(fields) == 0 {
-		notes.set(tok, StatusDegenerate, "desyncModesEmpty")
-		return
-	}
-	notes.set(tok, StatusApproximated, "desyncModesMapped", fields...)
-}
-
-func emitZapretExtras(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet) {
-	if prof.Desync.Mode != "" {
-		set.TCP.Desync.Mode = prof.Desync.Mode
-	}
-	if prof.SynFake.Enabled {
-		set.TCP.SynFake = true
-		set.TCP.SynFakeLen = prof.SynFake.Len
-	}
-	if prof.Duplicate > 0 {
-		set.TCP.Duplicate.Enabled = true
-		set.TCP.Duplicate.Count = clamp(prof.Duplicate, 1, 10)
-		if tok, ok := ti.first(prof.Index, "dup"); ok {
-			notes.set(tok, StatusMapped, "duplicateMapped",
-				"tcp.duplicate.enabled=true", "tcp.duplicate.count="+strconv.Itoa(set.TCP.Duplicate.Count))
-		}
-	}
-	if prof.SeqOvl.Length > 0 {
-		set.Fragmentation.SeqOverlapLength = prof.SeqOvl.Length
-		set.Fragmentation.SeqOverlapPattern = seqOvlPattern(prof.SeqOvl.Pattern)
-		if tok, ok := ti.first(prof.Index, "seqovl"); ok {
-			notes.set(tok, StatusMapped, "seqOvlMapped",
-				"fragmentation.seq_overlap_length="+strconv.Itoa(prof.SeqOvl.Length))
-		}
-		if tok, ok := ti.first(prof.Index, "seqovl_pat"); ok {
-			notes.set(tok, StatusApproximated, "seqOvlPatternMapped", "fragmentation.seq_overlap_pattern")
-		}
-	}
-	if prof.WinSize > 0 {
-		set.TCP.Win.Mode = "zero"
-		if tok, ok := ti.first(prof.Index, "wssize"); ok {
-			notes.set(tok, StatusApproximated, "wsSizeApproximated", "tcp.win.mode=zero")
-		}
-	}
-	if len(prof.Filters.Excluded) > 0 {
-		if tok, ok := ti.first(prof.Index, "hostlist_excl_dom", "hostlist_exclude"); ok {
-			notes.set(tok, StatusUnsupported, "excludeListUnsupported")
-		}
-	}
-	if prof.Skip {
-		set.Enabled = false
-		if tok, ok := ti.first(prof.Index, "skip"); ok {
-			notes.set(tok, StatusMapped, "skipMapped", "enabled=false")
-		}
-	}
-}
-
-func onlyExtSplit(plain, disorder []SplitOp) bool {
-	ops := append(append([]SplitOp{}, plain...), disorder...)
-	if len(ops) != 1 {
-		return false
-	}
-	return ops[0].Pos.Anchor == AnchorSNIExt && ops[0].Pos.Offset == 0
-}
-
-func plainOrDisorder(plain, disorder []SplitOp) SplitOp {
-	if len(plain) > 0 {
-		return plain[0]
-	}
-	return disorder[0]
-}
-
-func seqOvlPattern(raw string) []string {
-	hex := strings.TrimPrefix(strings.TrimPrefix(raw, "0x"), "0X")
-	if hex == "" || len(hex)%2 != 0 {
-		return []string{"0x16", "0x03", "0x03", "0x00", "0x00"}
-	}
-	out := make([]string, 0, len(hex)/2)
-	for i := 0; i+1 < len(hex); i += 2 {
-		if !isHex(hex[i]) || !isHex(hex[i+1]) {
-			return []string{"0x16", "0x03", "0x03", "0x00", "0x00"}
-		}
-		out = append(out, "0x"+hex[i:i+2])
-	}
-	return out
 }
 
 func emitMisc(set *config.SetConfig, prog *Program, prof *Profile, ti tokenIndex, notes *noteSet) {
@@ -902,13 +784,15 @@ var foolingToStrategy = map[string]string{
 	"ts":     "timestamp",
 }
 
-func applyFooling(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet) {
-	ttl := byedpiDefaultFakeTTL
-	if prof.Fake.TTLSet {
-		ttl = prof.Fake.TTL
+func applyFooling(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet, defaults SpecDefaults) {
+	switch {
+	case prof.Fake.TTLSet:
+		set.Faking.TTL = uint8(clamp(prof.Fake.TTL, 1, 255))
+		set.Faking.ApplyTTL = true
+	case defaults.FakeTTL > 0:
+		set.Faking.TTL = uint8(clamp(defaults.FakeTTL, 1, 255))
+		set.Faking.ApplyTTL = defaults.FakeTTLForced
 	}
-	set.Faking.TTL = uint8(clamp(ttl, 1, 255))
-	set.Faking.ApplyTTL = true
 	set.Faking.Strategy = "ttl"
 
 	var chosen string
