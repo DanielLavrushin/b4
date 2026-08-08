@@ -11,9 +11,10 @@ import {
   CircularProgress,
 } from "@mui/material";
 import { AddIcon } from "@b4.icons";
-import { B4TextField, B4Dialog } from "@b4.elements";
+import { B4TextField, B4Dialog, B4Alert } from "@b4.elements";
 import { colors } from "@design";
 import { B4SetConfig } from "@models/config";
+import { SetDomainMatch } from "@models/sets";
 import { generateDomainVariants } from "@utils";
 import { useTranslation } from "react-i18next";
 
@@ -54,6 +55,7 @@ export const DiscoveryAddDialog = ({
   const [mode, setMode] = useState<"new" | "existing">("new");
   const [similarSets, setSimilarSets] = useState<SimilarSet[]>([]);
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
+  const [claimedElsewhere, setClaimedElsewhere] = useState<SetDomainMatch[]>([]);
 
   useEffect(() => {
     if (open && domain) {
@@ -93,6 +95,39 @@ export const DiscoveryAddDialog = ({
 
     void fetchSimilar();
   }, [open, setConfig]);
+
+  useEffect(() => {
+    if (!open) {
+      setClaimedElsewhere([]);
+      return;
+    }
+
+    const targets = isMultiDomain ? domains! : [selectedVariant];
+    const query = targets.filter(Boolean).join(",");
+    if (!query) {
+      setClaimedElsewhere([]);
+      return;
+    }
+
+    let active = true;
+    fetch(`/api/sets/check-domain?domain=${encodeURIComponent(query)}`)
+      .then((res) => res.json())
+      .then((matches: SetDomainMatch[]) => {
+        if (!active) return;
+        setClaimedElsewhere(
+          Array.isArray(matches)
+            ? matches.filter((m) => m.enabled && m.relation === "exact")
+            : [],
+        );
+      })
+      .catch(() => {
+        if (active) setClaimedElsewhere([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [open, isMultiDomain, domains, selectedVariant]);
 
   const handleConfirm = () => {
     if (mode === "new") {
@@ -179,6 +214,19 @@ export const DiscoveryAddDialog = ({
               ))}
             </Stack>
           </Box>
+        )}
+
+        {claimedElsewhere.length > 0 && (
+          <B4Alert severity="warning">
+            {t("discovery.addDialog.overlapWarning", {
+              domains: [...new Set(claimedElsewhere.map((m) => m.domain))].join(
+                ", ",
+              ),
+              sets: [...new Set(claimedElsewhere.map((m) => m.set_name))].join(
+                ", ",
+              ),
+            })}
+          </B4Alert>
         )}
 
         {/* Mode selection - only show if similar sets exist */}

@@ -246,13 +246,22 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 	api.loadTargetsForSetCached(&set)
 	config.ApplySetDefaults(&set)
 
-	api.getCfg().Sets = append([]*config.SetConfig{&set}, api.getCfg().Sets...)
+	oldCfg := api.getCfg()
+	newCfg := oldCfg.Clone()
+
+	moved := api.releaseDomainsFromOtherSets(newCfg.Sets, set.Id, set.Targets.SNIDomains)
+
+	newCfg.Sets = append([]*config.SetConfig{&set}, newCfg.Sets...)
 
 	// Save configuration
-	if err := api.saveAndPushConfig(api.getCfg()); err != nil {
+	if err := api.saveAndPushConfig(newCfg); err != nil {
 		log.Errorf("Failed to save config: %v", err)
 		http.Error(w, "Failed to save configuration", http.StatusInternalServerError)
 		return
+	}
+
+	if api.PerformSoftRestart(newCfg, oldCfg) {
+		log.Infof("Soft restart completed successfully")
 	}
 
 	setJsonHeader(w)
@@ -260,6 +269,7 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": fmt.Sprintf("Added '%s' configuration", set.Name),
+		"moved":   moved,
 	})
 }
 

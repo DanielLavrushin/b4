@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -211,4 +212,60 @@ func itoa(v int) string {
 		v /= 10
 	}
 	return string(b[i:])
+}
+
+func TestDNSTCPServerStopIsPromptWithIdleConnection(t *testing.T) {
+	srv := newBlockingDNSTCPServer(t)
+	addr := net.JoinHostPort("127.0.0.1", itoa(srv.port))
+
+	conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+
+	if err := writeDNSTCPMessage(conn, buildDNSQuery("blocked.test", 0x1234), 5*time.Second); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := readDNSTCPMessage(conn); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+
+	done := make(chan time.Duration, 1)
+	go func() {
+		start := time.Now()
+		srv.Stop()
+		done <- time.Since(start)
+	}()
+
+	select {
+	case took := <-done:
+		if took > 3*time.Second {
+			t.Errorf("Stop took %v with an idle connection open; it must not wait out the idle timeout", took)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Stop blocked on an idle connection")
+	}
+}
+
+func TestDNSTCPServerStopRaceWithAccepts(t *testing.T) {
+	for round := 0; round < 20; round++ {
+		srv := newBlockingDNSTCPServer(t)
+		addr := net.JoinHostPort("127.0.0.1", itoa(srv.port))
+
+		var dialers sync.WaitGroup
+		for i := 0; i < 8; i++ {
+			dialers.Add(1)
+			go func() {
+				defer dialers.Done()
+				c, err := net.DialTimeout("tcp", addr, time.Second)
+				if err == nil {
+					_ = writeDNSTCPMessage(c, buildDNSQuery("blocked.test", 0x1234), time.Second)
+					_ = c.Close()
+				}
+			}()
+		}
+		srv.Stop()
+		dialers.Wait()
+	}
 }

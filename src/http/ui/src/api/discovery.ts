@@ -1,6 +1,13 @@
 import { apiDelete, apiPost, apiGet } from "./apiClient";
 import { B4SetConfig } from "@b4.sets";
 import { DiscoveryResponse, DiscoverySuite, HistoryEntry } from "@b4.discovery";
+import { DomainReassignment } from "@models/sets";
+
+export interface AddPresetResult {
+  success: boolean;
+  message: string;
+  moved?: DomainReassignment[];
+}
 
 export const discoveryApi = {
   start: (
@@ -24,7 +31,7 @@ export const discoveryApi = {
   status: (id: string) => apiGet<DiscoverySuite>(`/api/discovery/status/${id}`),
   cancel: (id: string) => apiDelete(`/api/discovery/cancel/${id}`),
   addPresetAsSet: (preset: B4SetConfig) =>
-    apiPost<B4SetConfig>("/api/discovery/add", preset),
+    apiPost<AddPresetResult>("/api/discovery/add", preset),
   clearCache: () => apiPost("/api/discovery/cache/clear", {}),
   current: () => apiGet<DiscoverySuite | null>("/api/discovery/current"),
   history: () => apiGet<HistoryEntry[]>("/api/discovery/history"),

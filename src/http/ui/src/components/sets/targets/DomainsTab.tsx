@@ -3,6 +3,7 @@ import { Box, Grid } from "@mui/material";
 import { DomainIcon } from "@b4.icons";
 import { B4Alert, B4Hint, B4Select, B4Switch } from "@b4.elements";
 import { B4SetConfig, GeoConfig } from "@models/config";
+import { SetDomainMatch } from "@models/sets";
 import { useTranslation } from "react-i18next";
 import { SetStats } from "../Manager";
 import { ManualEntryPanel } from "./ManualEntryPanel";
@@ -15,16 +16,6 @@ import {
   normalizeDomainEntry,
   setDomainCatchAll,
 } from "./catchall";
-
-interface SetDomainMatch {
-  domain: string;
-  set_name: string;
-  set_id: string;
-  via: string;
-  relation: string;
-  entry: string;
-  enabled: boolean;
-}
 
 const RELATION_KEYS: Record<string, string> = {
   exact: "sets.targets.overlapExact",
