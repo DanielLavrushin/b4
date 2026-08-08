@@ -47,7 +47,15 @@ interface DnsRedirectProps {
   ipv6: boolean;
   onChange: (
     field: string,
-    value: string | number | boolean | string[] | number[] | null | undefined,
+    value:
+      | string
+      | number
+      | boolean
+      | string[]
+      | number[]
+      | Record<string, string[]>
+      | null
+      | undefined,
   ) => void;
 }
 
@@ -74,6 +82,25 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
     }
   };
 
+  const pinsToText = (pins?: Record<string, string[]>) =>
+    Object.entries(pins ?? {})
+      .map(([domain, ips]) => `${domain} ${ips.join(", ")}`)
+      .join("\n");
+
+  const [pinsText, setPinsText] = useState(() => pinsToText(dnsConfig.pins));
+
+  const handlePinsChange = (text: string) => {
+    setPinsText(text);
+    const parsed: Record<string, string[]> = {};
+    for (const line of text.split("\n")) {
+      const parts = line.trim().split(/[\s,=]+/).filter(Boolean);
+      if (parts.length < 2) continue;
+      const [domain, ...ips] = parts;
+      parsed[domain.toLowerCase()] = ips;
+    }
+    onChange("dns.pins", parsed);
+  };
+
   const selectedServer = POPULAR_DNS.find((d) => d.ip === dnsConfig.target_dns);
   const selectedDoH = POPULAR_DOH.find((d) => d.url === dnsConfig.doh_url);
   const activeResolver = mode === "doh" ? dnsConfig.doh_url : dnsConfig.target_dns;
@@ -89,6 +116,21 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
           onChange={(checked: boolean) => onChange("dns.enabled", checked)}
           description={t("sets.dns.enableDesc")}
         />
+      </Grid>
+
+      <Grid size={{ lg: 12 }}>
+        <B4TextField
+          label={t("sets.dns.pins")}
+          value={pinsText}
+          onChange={(e) => handlePinsChange(e.target.value)}
+          placeholder={"www.instagram.com 157.240.0.174"}
+          multiline
+          minRows={2}
+          maxRows={8}
+          helperText={t("sets.dns.pinsHelper")}
+          aiTopic="dns.pins"
+        />
+        <B4Hint sx={{ mt: 1 }}>{t("sets.dns.pinsAlert")}</B4Hint>
       </Grid>
 
       {dnsConfig.enabled && (

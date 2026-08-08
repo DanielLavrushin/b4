@@ -18,7 +18,15 @@ interface RoutingSettingsProps {
   availableIfaces: string[];
   onChange: (
     field: string,
-    value: string | number | boolean | string[] | number[] | null | undefined,
+    value:
+      | string
+      | number
+      | boolean
+      | string[]
+      | number[]
+      | Record<string, string[]>
+      | null
+      | undefined,
   ) => void;
 }
 

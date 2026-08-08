@@ -10,7 +10,55 @@ import (
 	"github.com/daniellavrushin/b4/metrics"
 )
 
-const dnsTypeAAAA = 28
+const (
+	dnsTypeA    = 1
+	dnsTypeAAAA = 28
+)
+
+func (w *Worker) pinnedAnswer(set *config.SetConfig, query []byte, domain string) []byte {
+	if set == nil || len(query) == 0 {
+		return nil
+	}
+	pins := set.DNS.PinnedAddresses(domain)
+	if len(pins) == 0 {
+		return nil
+	}
+
+	qtype, ok := dns.QuestionType(query)
+	if !ok || (qtype != dnsTypeA && qtype != dnsTypeAAAA) {
+		return nil
+	}
+	want6 := qtype == dnsTypeAAAA
+
+	ips := make([]net.IP, 0, len(pins))
+	for _, pin := range pins {
+		ip := net.ParseIP(pin)
+		if ip == nil {
+			continue
+		}
+		if (ip.To4() == nil) != want6 {
+			continue
+		}
+		ips = append(ips, ip)
+	}
+	if len(ips) == 0 {
+		return nil
+	}
+
+	return dns.BuildAnswerFromIPs(query, config.DefaultDNSPinTTLSec, ips)
+}
+
+func (w *Worker) applyPinnedAnswer(cfg *config.Config, set *config.SetConfig, clientIP net.IP, domain string, pinned []byte) {
+	ips := dns.ParseResponseIPs(pinned)
+	if len(ips) == 0 {
+		return
+	}
+	w.storeHostHints(clientIP, set, domain, ips)
+	if cfg != nil && set.Routing.Enabled && !set.Targets.DomainOnly && !cfg.Queue.IsDiscovery && RoutingHandleDNSFunc != nil {
+		RoutingHandleDNSFunc(cfg, set, ips)
+	}
+	log.Infof("DNS pin: answering %s with %s (set: %s)", domain, ips[0], set.Name)
+}
 
 func synDetectEnabled(set *config.SetConfig) bool {
 	return set != nil && set.TCP.IPBlockDetect.Enabled && set.TCP.IPBlockDetect.SynDetect

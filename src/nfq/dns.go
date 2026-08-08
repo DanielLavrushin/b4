@@ -87,6 +87,7 @@ const (
 	dnsActionIPv6Disabled  = "dns-ipv6-disabled"
 	dnsActionServfail      = "dns-servfail"
 	dnsActionHeal          = "dns-heal"
+	dnsActionPin           = "dns-pin"
 	dnsActionDoHPrefix     = "dns-doh->"
 	dnsActionForwardPrefix = "dns-forward->"
 )
@@ -164,6 +165,16 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, ipVersion byte, sport uint16, 
 							return 0
 						}
 					}
+				}
+
+				if pinned := w.pinnedAnswer(set, payload, domain); pinned != nil {
+					if !vc.drop() {
+						return 0
+					}
+					w.applyPinnedAnswer(cfg, set, clientIP, domain, pinned)
+					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionPin)
+					w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, sport, pinned)
+					return 0
 				}
 
 				if txidOK && set.Routing.Enabled && !set.Targets.DomainOnly && !cfg.Queue.IsDiscovery {
