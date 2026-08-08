@@ -192,12 +192,18 @@ func (w *Worker) storeHostHints(clientIP net.IP, set *config.SetConfig, host str
 		return
 	}
 
+	observe := w.goodIPs != nil && host != "" && set != nil &&
+		set.TCP.IPBlockDetect.Enabled && set.TCP.IPBlockDetect.HealDNS
+
 	client := clientIP.String()
 	for _, ip := range ips {
 		if ip == nil {
 			continue
 		}
 		w.storeHostHint(client, ip.String(), set, host, "dns")
+		if observe {
+			w.goodIPs.Observe(host, ip)
+		}
 	}
 }
 

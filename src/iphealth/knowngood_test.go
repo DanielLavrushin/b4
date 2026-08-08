@@ -91,3 +91,44 @@ func TestKnownGoodIgnoresEmptyInput(t *testing.T) {
 		t.Errorf("Lookup = %v, want nil for an empty host", got)
 	}
 }
+
+func TestKnownGoodPrefersVerifiedOverObserved(t *testing.T) {
+	s := NewKnownGood()
+
+	s.Observe("example.com", net.ParseIP("1.1.1.1"))
+	time.Sleep(2 * time.Millisecond)
+	s.Remember("example.com", net.ParseIP("2.2.2.2"))
+
+	got := s.Lookup("example.com", false)
+	if len(got) != 2 {
+		t.Fatalf("Lookup returned %d addresses, want 2", len(got))
+	}
+	if got[0].String() != "2.2.2.2" {
+		t.Errorf("first = %s, want the handshake-verified address ahead of one merely seen in DNS", got[0])
+	}
+}
+
+func TestKnownGoodObserveDoesNotDowngradeVerified(t *testing.T) {
+	s := NewKnownGood()
+
+	s.Remember("example.com", net.ParseIP("1.1.1.1"))
+	s.Observe("example.com", net.ParseIP("1.1.1.1"))
+	s.Observe("example.com", net.ParseIP("2.2.2.2"))
+
+	got := s.Lookup("example.com", false)
+	if len(got) != 2 || got[0].String() != "1.1.1.1" {
+		t.Errorf("Lookup = %v, want the verified address still ranked first", got)
+	}
+}
+
+func TestKnownGoodObserveAloneIsUsable(t *testing.T) {
+	s := NewKnownGood()
+
+	s.Observe("www.instagram.com", net.ParseIP("157.240.205.174"))
+	s.Observe("www.instagram.com", net.ParseIP("157.240.0.174"))
+
+	got := s.Lookup("www.instagram.com", false)
+	if len(got) != 2 {
+		t.Fatalf("Lookup returned %d addresses, want both seen in DNS answers even with no handshake", len(got))
+	}
+}
