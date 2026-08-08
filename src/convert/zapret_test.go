@@ -379,3 +379,136 @@ func TestZapret_ConfigFileFormExtracts(t *testing.T) {
 		t.Fatalf("repeats: got %d", res.Sets[0].Faking.SNISeqLength)
 	}
 }
+
+const sharedGroupConfig = `--filter-tcp=80 --hostlist=/opt/zapret/ipset/zapret-hosts-user.txt --hostlist-exclude=/opt/zapret/ipset/zapret-hosts-user-exclude.txt --ipset-exclude=/opt/zapret/ipset/zapret-ip-exclude.txt --dpi-desync=fake,split2 --dpi-desync-autottl=2 --dpi-desync-fooling=md5sig --new
+--filter-tcp=443 --ipset=/opt/zapret/ipset/zapret-ip-user.txt --dpi-desync=split2 --dpi-desync-split-seqovl=681 --dpi-desync-split-seqovl-pattern=/opt/zapret/files/fake/tls_clienthello_www_google_com.bin --new
+--filter-tcp=443 --dpi-desync=fake,multidisorder --dpi-desync-fake-tls=0x00000000 --dpi-desync-fake-tls=! --dpi-desync-split-pos=1,midsld --dpi-desync-repeats=2 --dpi-desync-fooling=badseq --dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com --new
+--filter-udp=443 --dpi-desync=fake --dpi-desync-repeats=8 --dpi-desync-fake-quic=/opt/zapret/files/fake/quic_initial_www_google_com.bin --new
+--filter-tcp=443 --hostlist-domains=.googlevideo.com,.ytimg.com --dpi-desync=fake,split2 --dpi-desync-repeats=4 --dpi-desync-fooling=md5sig --new
+--filter-udp=50000-50099 --filter-l7=discord,stun --dpi-desync=fake --new
+--filter-udp=443,590-1400,3478 <HOSTLIST_NOAUTO> --dpi-desync=fake,multidisorder --dpi-desync-repeats=2 --dpi-desync-cutoff=d3 --new`
+
+func TestZapret_SharedGroupConfig(t *testing.T) {
+	res := analyze(t, sharedGroupConfig)
+
+	t.Run("noOrphanedNotes", func(t *testing.T) {
+		for _, n := range res.Notes {
+			if n.Profile < 0 || n.Profile >= len(res.Sets) {
+				t.Fatalf("note %q points at profile %d but there are %d sets",
+					n.Token, n.Profile, len(res.Sets))
+			}
+		}
+	})
+
+	t.Run("everyOptionAccountedFor", func(t *testing.T) {
+		for _, n := range res.Notes {
+			if n.Reason == "unaccountedOption" || n.Status == StatusUnknown {
+				t.Fatalf("%q was not accounted for: %s/%s", n.Token, n.Status, n.Reason)
+			}
+		}
+	})
+
+	t.Run("trailingSeparatorMakesNoSet", func(t *testing.T) {
+		last := res.Sets[len(res.Sets)-1]
+		if last.Fragmentation.Strategy == "none" && last.TCP.DPortFilter == "" &&
+			last.UDP.DPortFilter == "" && !last.Faking.SNI {
+			t.Fatal("a trailing --new must not produce an empty set")
+		}
+	})
+
+	t.Run("repeatedFakeTLSBothReported", func(t *testing.T) {
+		var hex, builtin bool
+		for _, n := range res.Notes {
+			switch n.Token {
+			case "--dpi-desync-fake-tls=0x00000000":
+				hex = n.Reason == "fakeHexPayload"
+			case "--dpi-desync-fake-tls=!":
+				builtin = n.Reason == "fakeBuiltinPayload"
+			}
+		}
+		if !hex || !builtin {
+			t.Fatalf("both --dpi-desync-fake-tls options must be reported (hex=%v builtin=%v)", hex, builtin)
+		}
+	})
+
+	t.Run("templatePlaceholderIsNotAnError", func(t *testing.T) {
+		n := noteFor(t, res, "<HOSTLIST_NOAUTO>")
+		if n.Status != StatusNotApplicable || n.Reason != "templatePlaceholder" {
+			t.Fatalf("got %+v", n)
+		}
+	})
+
+	t.Run("udpProfilesKeepTheirOwnPorts", func(t *testing.T) {
+		want := map[string]bool{"50000-50099": false, "443,590-1400,3478": false}
+		for _, s := range res.Sets {
+			if _, ok := want[s.UDP.DPortFilter]; ok {
+				want[s.UDP.DPortFilter] = true
+			}
+		}
+		for ports, seen := range want {
+			if !seen {
+				t.Fatalf("no set carries the UDP port filter %q", ports)
+			}
+		}
+	})
+}
+
+func TestZapret_FakeTLSModFullMapping(t *testing.T) {
+	res := analyze(t, "--dpi-desync=fake,multidisorder --dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com")
+	set := res.Sets[0]
+
+	if strings.Join(set.Faking.TLSMod, ",") != "rnd,dupsid" {
+		t.Fatalf("tls_mod: got %v, want [rnd dupsid]", set.Faking.TLSMod)
+	}
+	if set.Faking.SNIType != config.FakePayloadDomain || set.Faking.PayloadDomain != "www.google.com" {
+		t.Fatalf("sni=: got type=%d domain=%q", set.Faking.SNIType, set.Faking.PayloadDomain)
+	}
+	n := noteFor(t, res, "--dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com")
+	if n.Status != StatusMapped {
+		t.Fatalf("all three parts map exactly, got %+v", n)
+	}
+}
+
+func TestZapret_FakeTLSModPartial(t *testing.T) {
+	res := analyze(t, "--dpi-desync=fake --dpi-desync-fake-tls-mod=rnd,padencap")
+	n := noteFor(t, res, "--dpi-desync-fake-tls-mod=rnd,padencap")
+	if n.Status != StatusApproximated || n.Reason != "fakeTLSModPartial" {
+		t.Fatalf("got %+v", n)
+	}
+	if n.Params["dropped"] != "padencap" {
+		t.Fatalf("dropped: got %v", n.Params["dropped"])
+	}
+}
+
+func TestZapret_ManyUDPProfilesAreNotFolded(t *testing.T) {
+	res := analyze(t, "--filter-tcp=443 --dpi-desync=multisplit --new "+
+		"--filter-udp=443 --dpi-desync=fake --dpi-desync-repeats=8 --new "+
+		"--filter-udp=3478 --dpi-desync=fake --dpi-desync-repeats=2")
+
+	if len(res.Sets) != 3 {
+		t.Fatalf("with more than one UDP profile nothing may be folded away, got %d sets", len(res.Sets))
+	}
+	seen := map[int]bool{}
+	for _, s := range res.Sets {
+		if s.UDP.FakeSeqLength > 1 {
+			seen[s.UDP.FakeSeqLength] = true
+		}
+	}
+	if !seen[8] || !seen[2] {
+		t.Fatalf("both UDP profiles must keep their settings, got %v", seen)
+	}
+}
+
+func TestZapret_UDPOnlySetWarnsAboutProtocolScope(t *testing.T) {
+	res := analyze(t, "--filter-tcp=443 --dpi-desync=multisplit --new "+
+		"--filter-udp=443 --dpi-desync=fake --new --filter-udp=3478 --dpi-desync=fake")
+	var found bool
+	for _, n := range res.Notes {
+		if n.Reason == "udpOnlySetNotProtocolScoped" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("a UDP-only set that could steal domains from a TCP set must say so")
+	}
+}

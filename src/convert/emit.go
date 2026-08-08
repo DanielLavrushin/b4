@@ -102,6 +102,14 @@ func emit(prog *Program, tokens []Token, notes *noteSet, opts emitOpts) []config
 			set.Faking.SNI = false
 			emitUDPFake(prof, ti, notes)
 		}
+		if udpOnly && len(prog.Profiles) > 1 {
+			notes.extra = append(notes.extra, Note{
+				Token:   set.Name,
+				Profile: prof.Index,
+				Status:  StatusApproximated,
+				Reason:  "udpOnlySetNotProtocolScoped",
+			})
+		}
 		emitMisc(&set, prog, prof, ti, notes)
 		emitZapretExtras(&set, prof, ti, notes)
 		noteDesyncModes(&set, prof, ti, notes)
@@ -582,30 +590,51 @@ func emitFake(set *config.SetConfig, prog *Program, prof *Profile, ti tokenIndex
 	}
 
 	if prof.Fake.DataRef != "" {
-		if tok, ok := ti.first(prof.Index, "fake_data", "fake_tls"); ok {
+		if tok, ok := ti.first(prof.Index, "fake_data"); ok {
 			n := notes.set(tok, StatusApproximated, "fakeDataFileUnresolved")
 			n.Params = map[string]any{"path": prof.Fake.DataRef}
 		}
 	}
-	if tok, ok := ti.first(prof.Index, "fake_tls"); ok && prof.Fake.DataRef == "" {
-		if strings.HasPrefix(prof.Fake.DataInline, "0x") {
+	ti.each(prof.Index, "fake_tls", func(tok Token) {
+		v := strings.TrimSpace(tok.Value)
+		switch {
+		case strings.HasPrefix(v, "0x") || strings.HasPrefix(v, "0X"):
 			notes.set(tok, StatusUnsupported, "fakeHexPayload")
-		} else {
+		case v == "" || strings.HasPrefix(v, "!"):
 			notes.set(tok, StatusMapped, "fakeBuiltinPayload", "faking.sni_type=preset")
+		default:
+			n := notes.set(tok, StatusApproximated, "fakeDataFileUnresolved")
+			n.Params = map[string]any{"path": v}
 		}
-	}
+	})
 
+	var droppedMods []string
 	for _, m := range prof.Fake.TLSMod {
 		switch m {
-		case "r":
+		case "r", "rnd", "rndsni":
 			set.Faking.TLSMod = appendUnique(set.Faking.TLSMod, "rnd")
+		case "dupsid":
+			set.Faking.TLSMod = appendUnique(set.Faking.TLSMod, "dupsid")
+		default:
+			droppedMods = append(droppedMods, m)
 		}
 	}
 	if tok, ok := ti.first(prof.Index, "fake_tls_mod"); ok {
+		var fields []string
 		if len(set.Faking.TLSMod) > 0 {
-			notes.set(tok, StatusMapped, "fakeTLSModMapped", "faking.tls_mod=rnd")
-		} else {
+			fields = append(fields, "faking.tls_mod="+strings.Join(set.Faking.TLSMod, "+"))
+		}
+		if set.Faking.SNIType == config.FakePayloadDomain {
+			fields = append(fields, "faking.payload_domain="+set.Faking.PayloadDomain)
+		}
+		switch {
+		case len(fields) == 0:
 			notes.set(tok, StatusUnsupported, "fakeTLSModUnsupported")
+		case len(droppedMods) > 0:
+			n := notes.set(tok, StatusApproximated, "fakeTLSModPartial", fields...)
+			n.Params = map[string]any{"dropped": strings.Join(droppedMods, ", ")}
+		default:
+			notes.set(tok, StatusMapped, "fakeTLSModMapped", fields...)
 		}
 	}
 	if prof.Fake.OffsetSet {
