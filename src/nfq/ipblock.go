@@ -84,17 +84,24 @@ func (w *Worker) healingSet(cfg *config.Config, set *config.SetConfig) bool {
 	return ibd.Enabled && ibd.HealDNS
 }
 
-func (w *Worker) healDNSResponse(cfg *config.Config, set *config.SetConfig, domain string, resp []byte) []byte {
+func (w *Worker) healDNSResponse(cfg *config.Config, set *config.SetConfig, domain string, resp []byte, overTCP bool) []byte {
 	if w == nil || w.ipHealth == nil || len(resp) == 0 || !w.healingSet(cfg, set) {
 		return nil
 	}
 
+	maxSize := 0
+	if overTCP {
+		maxSize = dns.MaxTCPMessageSize
+	}
+
 	ttlCap := set.TCP.IPBlockDetect.ResolvedHealTTL()
-	out, verdict := dns.FilterAnswerIPs(resp, ttlCap, func(ip net.IP) bool {
+	out, verdict := dns.FilterAnswerIPs(resp, ttlCap, maxSize, func(ip net.IP) bool {
 		return w.ipHealth.IsDead(ip.String())
 	})
 
 	switch verdict {
+	case dns.FilterTooLarge:
+		log.Warnf("DNS heal: the curated answer for %s would not fit the response size the client allows, passing the original through (set: %s)", domain, set.Name)
 	case dns.FilterRewritten:
 		log.Infof("DNS heal: dropped unreachable addresses from the answer for %s (set: %s)", domain, set.Name)
 		return out

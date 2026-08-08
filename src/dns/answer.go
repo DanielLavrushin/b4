@@ -14,22 +14,26 @@ const (
 
 	ednsDNSSECOK = 0x8000
 
-	maxUnexpandedUDPResponse = 512
+	minUDPResponse       = 512
+	MaxTCPMessageSize    = 65535
+	maxCompressionOffset = 0x4000
 )
 
 const (
 	FilterUnchanged = iota
 	FilterRewritten
 	FilterAllDropped
+	FilterTooLarge
 )
 
 type answerRR struct {
-	name  string
-	typ   uint16
-	class uint16
-	ttl   uint32
-	rdata []byte
-	ip    net.IP
+	name   string
+	typ    uint16
+	class  uint16
+	ttl    uint32
+	rdata  []byte
+	ip     net.IP
+	target string
 }
 
 func readName(payload []byte, offset int) (string, int, bool) {
@@ -91,6 +95,16 @@ func encodeName(name string) []byte {
 	return append(buf, 0)
 }
 
+func responseSizeLimit(maxSize, ednsUDPSize int) int {
+	if maxSize > 0 {
+		return maxSize
+	}
+	if ednsUDPSize > minUDPResponse {
+		return ednsUDPSize
+	}
+	return minUDPResponse
+}
+
 func QuestionType(payload []byte) (uint16, bool) {
 	if len(payload) < 12 || binary.BigEndian.Uint16(payload[4:6]) != 1 {
 		return 0, false
@@ -102,7 +116,7 @@ func QuestionType(payload []byte) (uint16, bool) {
 	return binary.BigEndian.Uint16(payload[end : end+2]), true
 }
 
-func FilterAnswerIPs(payload []byte, ttlCap uint32, drop func(net.IP) bool) ([]byte, int) {
+func FilterAnswerIPs(payload []byte, ttlCap uint32, maxSize int, drop func(net.IP) bool) ([]byte, int) {
 	if len(payload) < 12 || drop == nil {
 		return nil, FilterUnchanged
 	}
@@ -161,6 +175,7 @@ func FilterAnswerIPs(payload []byte, ttlCap uint32, drop func(net.IP) bool) ([]b
 			if !targetOK {
 				return nil, FilterUnchanged
 			}
+			rr.target = target
 			rr.rdata = encodeName(target)
 		default:
 			return nil, FilterUnchanged
@@ -169,6 +184,7 @@ func FilterAnswerIPs(payload []byte, ttlCap uint32, drop func(net.IP) bool) ([]b
 	}
 
 	additionalStart := offset
+	ednsUDPSize := 0
 	for i := 0; i < arCount; i++ {
 		if offset >= len(payload) || payload[offset] != 0 || offset+11 > len(payload) {
 			return nil, FilterUnchanged
@@ -179,6 +195,9 @@ func FilterAnswerIPs(payload []byte, ttlCap uint32, drop func(net.IP) bool) ([]b
 		}
 		if binary.BigEndian.Uint16(payload[offset+7:offset+9])&ednsDNSSECOK != 0 {
 			return nil, FilterUnchanged
+		}
+		if advertised := int(binary.BigEndian.Uint16(payload[offset+3 : offset+5])); advertised > ednsUDPSize {
+			ednsUDPSize = advertised
 		}
 		rdLen := int(binary.BigEndian.Uint16(payload[offset+9 : offset+11]))
 		offset += 11 + rdLen
@@ -216,10 +235,17 @@ func FilterAnswerIPs(payload []byte, ttlCap uint32, drop func(net.IP) bool) ([]b
 	out = append(out, header...)
 	out = append(out, question...)
 
+	nameOffsets := make(map[string]int, len(kept))
 	for _, rr := range kept {
+		key := strings.ToLower(rr.name)
 		if strings.EqualFold(rr.name, qName) {
 			out = append(out, 0xC0, 0x0C)
+		} else if off, seen := nameOffsets[key]; seen && off < maxCompressionOffset {
+			out = append(out, byte(0xC0|off>>8), byte(off))
 		} else {
+			if len(out) < maxCompressionOffset {
+				nameOffsets[key] = len(out)
+			}
 			out = append(out, encodeName(rr.name)...)
 		}
 		ttl := rr.ttl
@@ -232,13 +258,18 @@ func FilterAnswerIPs(payload []byte, ttlCap uint32, drop func(net.IP) bool) ([]b
 		binary.BigEndian.PutUint32(fixed[4:8], ttl)
 		binary.BigEndian.PutUint16(fixed[8:10], uint16(len(rr.rdata)))
 		out = append(out, fixed[:]...)
+		if rr.target != "" && len(out) < maxCompressionOffset {
+			if _, seen := nameOffsets[strings.ToLower(rr.target)]; !seen {
+				nameOffsets[strings.ToLower(rr.target)] = len(out)
+			}
+		}
 		out = append(out, rr.rdata...)
 	}
 
 	out = append(out, additional...)
 
-	if len(out) > len(payload) && len(out) > maxUnexpandedUDPResponse {
-		return nil, FilterUnchanged
+	if len(out) > len(payload) && len(out) > responseSizeLimit(maxSize, ednsUDPSize) {
+		return nil, FilterTooLarge
 	}
 	return out, FilterRewritten
 }
