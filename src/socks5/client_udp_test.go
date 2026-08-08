@@ -2,6 +2,7 @@ package socks5
 
 import (
 	"context"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -106,6 +107,85 @@ func TestDialUpstreamUDPAuth(t *testing.T) {
 	defer u.Close()
 
 	msg := []byte("authed datagram")
+	if _, err := u.Write(msg); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_ = u.SetReadDeadline(time.Now().Add(3 * time.Second))
+	buf := make([]byte, 2048)
+	n, err := u.Read(buf)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(buf[:n]) != string(msg) {
+		t.Fatalf("echo mismatch: got %q want %q", buf[:n], msg)
+	}
+}
+
+func startStubAssociate(t *testing.T, advertised net.IP) (ctrlPort int) {
+	t.Helper()
+
+	relay, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { relay.Close() })
+	go func() {
+		buf := make([]byte, 2048)
+		for {
+			n, addr, err := relay.ReadFromUDP(buf)
+			if err != nil {
+				return
+			}
+			_, _ = relay.WriteToUDP(buf[:n], addr)
+		}
+	}()
+	relayPort := relay.LocalAddr().(*net.UDPAddr).Port
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		greet := make([]byte, 3)
+		if _, err := io.ReadFull(conn, greet); err != nil {
+			return
+		}
+		if _, err := conn.Write([]byte{socks5Version, authNone}); err != nil {
+			return
+		}
+		req := make([]byte, 10)
+		if _, err := io.ReadFull(conn, req); err != nil {
+			return
+		}
+		reply := []byte{socks5Version, repSuccess, 0x00, atypIPv4}
+		reply = append(reply, advertised.To4()...)
+		reply = append(reply, byte(relayPort>>8), byte(relayPort))
+		if _, err := conn.Write(reply); err != nil {
+			return
+		}
+		_, _ = io.Copy(io.Discard, conn)
+	}()
+
+	return ln.Addr().(*net.TCPAddr).Port
+}
+
+func TestDialUpstreamUDPPinsRelayToUpstreamHost(t *testing.T) {
+	port := startStubAssociate(t, net.IPv4(192, 0, 2, 1))
+
+	ucfg := ClientConfig{Host: "127.0.0.1", Port: port, Timeout: 3 * time.Second}
+	u, err := DialUpstreamUDP(context.Background(), ucfg, net.IPv4(127, 0, 0, 1), 9)
+	if err != nil {
+		t.Fatalf("dial upstream udp: %v", err)
+	}
+	defer u.Close()
+
+	msg := []byte("pinned relay")
 	if _, err := u.Write(msg); err != nil {
 		t.Fatalf("write: %v", err)
 	}
