@@ -260,6 +260,15 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			return
 		}
 
+		if pinned := s.worker.pinnedAnswer(set, query, domain); pinned != nil {
+			s.worker.applyPinnedAnswer(cfg, set, clientIP, domain, pinned)
+			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionPin)
+			if writeDNSTCPMessage(client, pinned, ioTimeout) != nil {
+				return
+			}
+			continue
+		}
+
 		useDoH := set.DNS.DoHURL != ""
 		if !(set.DNS.Enabled && (set.DNS.TargetDNS != "" || useDoH)) {
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionPassthrough)

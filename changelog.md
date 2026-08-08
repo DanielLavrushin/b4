@@ -3,6 +3,7 @@
 ## [1.75.1] - 2026-08-09
 
 - FIXED: **System diagnostics reported jq and other tools as missing when they were installed on a USB drive** - the check never looked outside the router's own folders.
+- ADDED: **Pinned addresses for a domain** - when a CDN keeps answering with an address the firewall drops, no bypass strategy reaches the server at all, and the only remedies were a hosts file on every device or a `dnsmasq` alias on the router, both redone by hand each time the CDN changed its addresses. `Sets > DNS`.
 - FIXED: **A curated DNS answer could name the very address b4 was about to reset** - when every address in an answer was unreachable, the replacement was taken from the addresses remembered for that name without checking whether any of them had since been marked unreachable as well, so a device could be handed one and have the connection reset on its first packet.
 - CHANGED: **Every address seen in a DNS answer is remembered, not only the ones that completed a handshake** - a name whose answers carry a single address, as the Meta CDN does, left nothing to fall back to once that address was dropped, because an address could only be remembered by connecting to it and the block is what stops the connection.
 

@@ -1153,6 +1153,9 @@
       "fakeSni": {
         "title": "Fake SNI Packets",
         "enable": "Enable Fake SNI",
+        "pins": "Pinned addresses",
+        "pinsHelper": "One per line: a domain, then the addresses to answer with. Applies to the domain and its subdomains, and takes precedence over the resolver above.",
+        "pinsAlert": "When a CDN keeps answering with an address the firewall drops, no bypass strategy can help, because nothing ever reaches the server. Pinning an address that does answer replaces what DNS hands out for that name, without editing a hosts file on every device.",
         "enableDesc": "Send fake SNI packets before real ClientHello",
         "payloadSection": "Fake payload",
         "rejectionSection": "How the server rejects it",

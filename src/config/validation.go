@@ -174,6 +174,10 @@ func (c *Config) Validate() error {
 			}
 		}
 
+		set.DNS.Pins = sanitizePins(set.DNS.Pins, func(domain, value string) {
+			log.Warnf("Set '%s': DNS pin for %q ignores %q, which is not an IP address", set.Name, domain, value)
+		})
+
 		if set.DNS.Enabled && set.DNS.DoHURL != "" && !strings.HasPrefix(strings.ToLower(set.DNS.DoHURL), "https://") {
 			v.addf(fmt.Sprintf("sets[%d].dns.doh_url", setIdx), "doh_url_must_be_https", map[string]any{"set": set.Name}, "set %q: DNS-over-HTTPS URL must start with https://", set.Name)
 			return v.result()

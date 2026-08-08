@@ -426,6 +426,7 @@ export interface DNSConfig {
   target_dns: string;
   doh_url: string;
   fragment_query: boolean;
+  pins?: Record<string, string[]>;
 }
 
 export type RoutingMode = "interface" | "proxy" | "mtproto-ws" | "block";

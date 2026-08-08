@@ -256,3 +256,83 @@ func TestStoreHostHintsObservesOnlyForHealingSets(t *testing.T) {
 		t.Errorf("a set without DNS healing recorded %v, want nothing kept", got)
 	}
 }
+
+func pinnedSet(pins map[string][]string) *config.SetConfig {
+	set := config.NewSetConfig()
+	set.Id = "meta-set"
+	set.Name = "meta"
+	set.Enabled = true
+	set.DNS.Pins = pins
+	return &set
+}
+
+func TestPinnedAnswerReplacesTheAddress(t *testing.T) {
+	w := healWorker(t)
+	set := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174"}})
+
+	query := dns.BuildQuery("www.instagram.com", 0x1234, 1)
+	pinned := w.pinnedAnswer(set, query, "www.instagram.com")
+	if pinned == nil {
+		t.Fatal("expected a pinned answer for a subdomain of the pinned name")
+	}
+
+	ips := dns.ParseResponseIPs(pinned)
+	if len(ips) != 1 || ips[0].String() != "157.240.0.174" {
+		t.Fatalf("addresses = %v, want [157.240.0.174]", ips)
+	}
+	if domain, ok := dns.ParseQueryDomain(pinned); !ok || domain != "www.instagram.com" {
+		t.Errorf("question = %q ok=%v, want the queried name preserved", domain, ok)
+	}
+	if pinned[2]&0x80 == 0 {
+		t.Errorf("response bit not set, the client would discard this")
+	}
+}
+
+func TestPinnedAnswerSkipsWrongFamilyAndTypes(t *testing.T) {
+	w := healWorker(t)
+	set := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174"}})
+
+	if got := w.pinnedAnswer(set, dns.BuildQuery("www.instagram.com", 1, 28), "www.instagram.com"); got != nil {
+		t.Errorf("an AAAA query must not be answered from an IPv4-only pin, got %d bytes", len(got))
+	}
+	if got := w.pinnedAnswer(set, dns.BuildQuery("www.instagram.com", 1, 15), "www.instagram.com"); got != nil {
+		t.Errorf("an MX query must not be answered from a pin")
+	}
+	if got := w.pinnedAnswer(set, dns.BuildQuery("example.com", 1, 1), "example.com"); got != nil {
+		t.Errorf("an unpinned name must not be answered")
+	}
+	if got := w.pinnedAnswer(pinnedSet(nil), dns.BuildQuery("www.instagram.com", 1, 1), "www.instagram.com"); got != nil {
+		t.Errorf("a set without pins must not answer")
+	}
+	if got := w.pinnedAnswer(nil, dns.BuildQuery("www.instagram.com", 1, 1), "www.instagram.com"); got != nil {
+		t.Errorf("a nil set must not answer")
+	}
+}
+
+func TestPinnedAnswerServesIPv6ForAAAA(t *testing.T) {
+	w := healWorker(t)
+	set := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174", "2a03:2880::1"}})
+
+	pinned := w.pinnedAnswer(set, dns.BuildQuery("www.instagram.com", 1, 28), "www.instagram.com")
+	if pinned == nil {
+		t.Fatal("expected the IPv6 pin to answer an AAAA query")
+	}
+	ips := dns.ParseResponseIPs(pinned)
+	if len(ips) != 1 || ips[0].String() != "2a03:2880::1" {
+		t.Errorf("addresses = %v, want only the IPv6 pin", ips)
+	}
+}
+
+func TestApplyPinnedAnswerRecordsTheHostHint(t *testing.T) {
+	w := healWorker(t)
+	set := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174"}})
+	client := net.ParseIP("192.168.1.10")
+
+	pinned := w.pinnedAnswer(set, dns.BuildQuery("www.instagram.com", 1, 1), "www.instagram.com")
+	w.applyPinnedAnswer(&config.Config{}, set, client, "www.instagram.com", pinned)
+
+	gotSet, host := w.lookupHostHint(&config.Config{Sets: []*config.SetConfig{set}}, client.String(), "157.240.0.174", "")
+	if gotSet == nil || host != "www.instagram.com" {
+		t.Errorf("host hint = %v/%q, want the pinned address tied back to the set so the connection still matches", gotSet, host)
+	}
+}

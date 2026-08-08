@@ -501,10 +501,11 @@ func ResolveStrategyPool(pool []string, fallback string) string {
 }
 
 type DNSConfig struct {
-	Enabled       bool   `json:"enabled"`
-	TargetDNS     string `json:"target_dns"`
-	DoHURL        string `json:"doh_url"`
-	FragmentQuery bool   `json:"fragment_query"`
+	Enabled       bool                `json:"enabled"`
+	TargetDNS     string              `json:"target_dns"`
+	DoHURL        string              `json:"doh_url"`
+	FragmentQuery bool                `json:"fragment_query"`
+	Pins          map[string][]string `json:"pins,omitempty"`
 }
 
 type DNSSystemConfig struct {
