@@ -112,7 +112,7 @@ func dnsRedirectAction(set *config.SetConfig) string {
 }
 
 func logDNSEvent(proto string, set *config.SetConfig, domain string, clientIP, serverIP net.IP, clientPort uint16, srcMac, action string) {
-	if log.Level(log.CurLevel.Load()) < log.LevelTrace {
+	if log.Level(log.CurLevel.Load()) < log.LevelInfo {
 		return
 	}
 	if clientIP == nil || serverIP == nil {
