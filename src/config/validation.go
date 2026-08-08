@@ -121,7 +121,6 @@ func (c *Config) Validate() error {
 
 	for setIdx, set := range c.Sets {
 		ibd := &set.TCP.IPBlockDetect
-		ibd.Action = NormalizeIPBlockAction(ibd.Action)
 		if ibd.SynThreshold <= 0 {
 			ibd.SynThreshold = DefaultIPBlockSynThreshold
 		}
@@ -131,11 +130,6 @@ func (c *Config) Validate() error {
 		if ibd.HealTTLSec <= 0 {
 			ibd.HealTTLSec = DefaultIPBlockHealTTLSec
 		}
-		if ibd.Enabled && ibd.Action == IPBlockActionProxy && !(set.Routing.Enabled && RoutingUsesTProxy(set.Routing.Mode)) {
-			log.Warnf("Set '%s': ip_block_detect.action 'proxy' needs routing enabled in proxy or mtproto-ws mode; falling back to 'rst'", set.Name)
-			ibd.Action = IPBlockActionRST
-		}
-
 		if set.Routing.Table < 0 {
 			set.Routing.Table = 0
 		}

@@ -32,13 +32,8 @@ func (w *Worker) handleSynHealth(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		return false
 	}
 
-	action := ibd.ResolvedAction()
-	if action == config.IPBlockActionProxy {
-		w.divertToProxy(cfg, set, pkt.dst)
-	}
-
 	host := w.hostForDest(cfg, pkt.srcStr, pkt.dstStr, pkt.srcMac)
-	log.LogConnection("TCP", set.Name, host, pkt.srcStr, sport, "", pkt.dstStr, dport, pkt.srcMac, "", "ipblock-syn->"+action)
+	log.LogConnection("TCP", set.Name, host, pkt.srcStr, sport, "", pkt.dstStr, dport, pkt.srcMac, "", "ipblock-syn")
 
 	m := metrics.GetMetricsCollector()
 	m.RecordConnection("TCP", host, pkt.srcStr, pkt.dstStr, true, pkt.srcMac, set.Name, "")
@@ -51,17 +46,6 @@ func (w *Worker) handleSynHealth(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 	vc.drop()
 	return true
-}
-
-func (w *Worker) divertToProxy(cfg *config.Config, set *config.SetConfig, dst net.IP) {
-	if cfg == nil || set == nil || dst == nil || RoutingLearnIPFunc == nil {
-		return
-	}
-	if !set.Routing.Enabled || !config.RoutingUsesTProxy(set.Routing.Mode) {
-		return
-	}
-	log.Tracef("ip-block: routing unreachable %s through the upstream proxy (set: %s)", dst, set.Name)
-	RoutingLearnIPFunc(cfg, set, dst)
 }
 
 func (w *Worker) hostForDest(cfg *config.Config, clientIP, destIP, srcMac string) string {
@@ -97,7 +81,7 @@ func (w *Worker) healingSet(cfg *config.Config, set *config.SetConfig) bool {
 		return false
 	}
 	ibd := &set.TCP.IPBlockDetect
-	return ibd.Enabled && ibd.ResolvedAction() == config.IPBlockActionHeal
+	return ibd.Enabled && ibd.HealDNS
 }
 
 func (w *Worker) healDNSResponse(cfg *config.Config, set *config.SetConfig, domain string, resp []byte) []byte {

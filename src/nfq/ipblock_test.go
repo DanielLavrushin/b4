@@ -89,18 +89,18 @@ func healWorker(t *testing.T, dead ...string) *Worker {
 	return &Worker{ipHealth: health, goodIPs: iphealth.NewKnownGood(), hostHints: newHostHintCache()}
 }
 
-func healSetWithAction(action string) *config.SetConfig {
+func healSetWith(healDNS bool) *config.SetConfig {
 	set := config.NewSetConfig()
 	set.Name = "github"
 	set.Enabled = true
 	set.TCP.IPBlockDetect.Enabled = true
-	set.TCP.IPBlockDetect.Action = action
+	set.TCP.IPBlockDetect.HealDNS = healDNS
 	return &set
 }
 
 func TestHealDNSResponseStripsUnreachableAddress(t *testing.T) {
 	w := healWorker(t, "185.199.110.133")
-	set := healSetWithAction(config.IPBlockActionHeal)
+	set := healSetWith(true)
 	resp := buildTestAResponse("raw.githubusercontent.com",
 		"185.199.108.133", "185.199.109.133", "185.199.110.133", "185.199.111.133")
 
@@ -120,20 +120,18 @@ func TestHealDNSResponseStripsUnreachableAddress(t *testing.T) {
 	}
 }
 
-func TestHealDNSResponseIgnoredForOtherActions(t *testing.T) {
+func TestHealDNSResponseIgnoredWhenHealingOff(t *testing.T) {
 	resp := buildTestAResponse("example.com", "1.1.1.1", "2.2.2.2")
 
-	for _, action := range []string{config.IPBlockActionRST, config.IPBlockActionProxy} {
-		w := healWorker(t, "2.2.2.2")
-		if healed := w.healDNSResponse(&config.Config{}, healSetWithAction(action), "example.com", resp); healed != nil {
-			t.Errorf("action %q must not rewrite DNS answers", action)
-		}
+	w := healWorker(t, "2.2.2.2")
+	if healed := w.healDNSResponse(&config.Config{}, healSetWith(false), "example.com", resp); healed != nil {
+		t.Errorf("DNS answers must be left alone while heal_dns is off")
 	}
 }
 
 func TestHealDNSResponseSkippedWhenDetectionOff(t *testing.T) {
 	w := healWorker(t, "2.2.2.2")
-	set := healSetWithAction(config.IPBlockActionHeal)
+	set := healSetWith(true)
 	set.TCP.IPBlockDetect.Enabled = false
 	resp := buildTestAResponse("example.com", "1.1.1.1", "2.2.2.2")
 
@@ -148,7 +146,7 @@ func TestHealDNSResponseSkippedInDiscovery(t *testing.T) {
 	cfg.Queue.IsDiscovery = true
 	resp := buildTestAResponse("example.com", "1.1.1.1", "2.2.2.2")
 
-	if healed := w.healDNSResponse(cfg, healSetWithAction(config.IPBlockActionHeal), "example.com", resp); healed != nil {
+	if healed := w.healDNSResponse(cfg, healSetWith(true), "example.com", resp); healed != nil {
 		t.Errorf("a discovery run must not rewrite DNS answers")
 	}
 }
@@ -158,7 +156,7 @@ func TestHealDNSResponseFallsBackToRememberedAddress(t *testing.T) {
 	w.goodIPs.Remember("example.com", net.ParseIP("3.3.3.3"))
 	resp := buildTestAResponse("example.com", "1.1.1.1", "2.2.2.2")
 
-	healed := w.healDNSResponse(&config.Config{}, healSetWithAction(config.IPBlockActionHeal), "example.com", resp)
+	healed := w.healDNSResponse(&config.Config{}, healSetWith(true), "example.com", resp)
 	if healed == nil {
 		t.Fatal("expected an answer built from the remembered address")
 	}
@@ -172,51 +170,13 @@ func TestHealDNSResponsePassesThroughWhenNothingRemembered(t *testing.T) {
 	w := healWorker(t, "1.1.1.1", "2.2.2.2")
 	resp := buildTestAResponse("example.com", "1.1.1.1", "2.2.2.2")
 
-	if healed := w.healDNSResponse(&config.Config{}, healSetWithAction(config.IPBlockActionHeal), "example.com", resp); healed != nil {
+	if healed := w.healDNSResponse(&config.Config{}, healSetWith(true), "example.com", resp); healed != nil {
 		t.Errorf("expected the original answer to pass through rather than an empty one")
 	}
 }
 
-func TestDivertToProxyOnlyForProxyRouting(t *testing.T) {
-	prev := RoutingLearnIPFunc
-	defer func() { RoutingLearnIPFunc = prev }()
-
-	var learned []string
-	RoutingLearnIPFunc = func(_ *config.Config, _ *config.SetConfig, ip net.IP) {
-		learned = append(learned, ip.String())
-	}
-
-	w := &Worker{}
-	cfg := &config.Config{}
-	dst := net.ParseIP("185.199.110.133")
-
-	direct := healSetWithAction(config.IPBlockActionProxy)
-	direct.Routing.Enabled = true
-	direct.Routing.Mode = config.RoutingModeInterface
-	w.divertToProxy(cfg, direct, dst)
-	if len(learned) != 0 {
-		t.Errorf("interface routing must not divert, got %v", learned)
-	}
-
-	off := healSetWithAction(config.IPBlockActionProxy)
-	off.Routing.Enabled = false
-	off.Routing.Mode = config.RoutingModeProxy
-	w.divertToProxy(cfg, off, dst)
-	if len(learned) != 0 {
-		t.Errorf("routing disabled must not divert, got %v", learned)
-	}
-
-	proxied := healSetWithAction(config.IPBlockActionProxy)
-	proxied.Routing.Enabled = true
-	proxied.Routing.Mode = config.RoutingModeProxy
-	w.divertToProxy(cfg, proxied, dst)
-	if len(learned) != 1 || learned[0] != "185.199.110.133" {
-		t.Errorf("learned = %v, want the unreachable address routed through the proxy", learned)
-	}
-}
-
 func TestSynDetectEnabled(t *testing.T) {
-	set := healSetWithAction(config.IPBlockActionRST)
+	set := healSetWith(false)
 	if !synDetectEnabled(set) {
 		t.Errorf("a new set with detection on should watch SYNs by default")
 	}
