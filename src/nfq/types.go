@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/daniellavrushin/b4/dhcp"
+	"github.com/daniellavrushin/b4/iphealth"
 	"github.com/daniellavrushin/b4/sock"
 	"github.com/florianl/go-nfqueue"
 )
@@ -54,7 +55,7 @@ type Worker struct {
 	destState        *destStateTracker
 	pendingHello     *pendingHelloCache
 	hostHints        *hostHintCache
-	ipHealth         *ipHealthStore
-	goodIPs          *goodIPStore
+	ipHealth         *iphealth.Tracker
+	goodIPs          *iphealth.KnownGood
 	srcResolver      *tunSrcResolver
 }

@@ -1,4 +1,4 @@
-package nfq
+package iphealth
 
 import (
 	"strconv"
@@ -7,10 +7,8 @@ import (
 	"time"
 )
 
-func newTestIPHealth(reachable func(ip string) bool) *ipHealthStore {
-	s := newIPHealthStore()
-	s.dial = func(ip string, _ uint16, _ int) bool { return reachable(ip) }
-	return s
+func newTestTracker(reachable func(ip string) bool) *Tracker {
+	return NewTracker(func(ip string, _ uint16, _ int) bool { return reachable(ip) })
 }
 
 func waitFor(t *testing.T, cond func() bool) bool {
@@ -25,10 +23,10 @@ func waitFor(t *testing.T, cond func() bool) bool {
 	return false
 }
 
-func TestIPHealthNeedsThresholdBeforeProbing(t *testing.T) {
+func TestTrackerNeedsThresholdBeforeProbing(t *testing.T) {
 	probed := false
 	var mu sync.Mutex
-	s := newTestIPHealth(func(string) bool {
+	s := newTestTracker(func(string) bool {
 		mu.Lock()
 		probed = true
 		mu.Unlock()
@@ -50,8 +48,8 @@ func TestIPHealthNeedsThresholdBeforeProbing(t *testing.T) {
 	}
 }
 
-func TestIPHealthMarksDeadWhenProbeFails(t *testing.T) {
-	s := newTestIPHealth(func(string) bool { return false })
+func TestTrackerMarksDeadWhenProbeFails(t *testing.T) {
+	s := newTestTracker(func(string) bool { return false })
 	defer s.Stop()
 
 	for i := 0; i < 3; i++ {
@@ -66,8 +64,8 @@ func TestIPHealthMarksDeadWhenProbeFails(t *testing.T) {
 	}
 }
 
-func TestIPHealthProbeRescuesFalsePositive(t *testing.T) {
-	s := newTestIPHealth(func(string) bool { return true })
+func TestTrackerProbeRescuesFalsePositive(t *testing.T) {
+	s := newTestTracker(func(string) bool { return true })
 	defer s.Stop()
 
 	for i := 0; i < 3; i++ {
@@ -87,8 +85,8 @@ func TestIPHealthProbeRescuesFalsePositive(t *testing.T) {
 	}
 }
 
-func TestIPHealthRecordAliveClearsDead(t *testing.T) {
-	s := newTestIPHealth(func(string) bool { return false })
+func TestTrackerRecordAliveClearsDead(t *testing.T) {
+	s := newTestTracker(func(string) bool { return false })
 	defer s.Stop()
 
 	for i := 0; i < 3; i++ {
@@ -104,10 +102,10 @@ func TestIPHealthRecordAliveClearsDead(t *testing.T) {
 	}
 }
 
-func TestIPHealthDeadStateExpiresAndReprobes(t *testing.T) {
+func TestTrackerDeadStateExpiresAndReprobes(t *testing.T) {
 	var mu sync.Mutex
 	reachable := false
-	s := newTestIPHealth(func(string) bool {
+	s := newTestTracker(func(string) bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return reachable
@@ -132,8 +130,8 @@ func TestIPHealthDeadStateExpiresAndReprobes(t *testing.T) {
 	}
 }
 
-func TestIPHealthDeadStateSurvivesWhenStillUnreachable(t *testing.T) {
-	s := newTestIPHealth(func(string) bool { return false })
+func TestTrackerDeadStateSurvivesWhenStillUnreachable(t *testing.T) {
+	s := newTestTracker(func(string) bool { return false })
 	defer s.Stop()
 
 	for i := 0; i < 3; i++ {
@@ -149,18 +147,18 @@ func TestIPHealthDeadStateSurvivesWhenStillUnreachable(t *testing.T) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		e := s.entries["1.2.3.4"]
-		return e != nil && !e.probing && e.state == ipHealthDead
+		return e != nil && !e.probing && e.state == stateDead
 	}) {
 		t.Fatal("re-probe did not restore the dead state for a still unreachable address")
 	}
 }
 
-func TestIPHealthBurstSuspendsDetection(t *testing.T) {
-	s := newTestIPHealth(func(string) bool { return false })
+func TestTrackerBurstSuspendsDetection(t *testing.T) {
+	s := newTestTracker(func(string) bool { return false })
 	defer s.Stop()
 
-	ips := make([]string, 0, ipHealthDeadBurst)
-	for i := 0; i < ipHealthDeadBurst; i++ {
+	ips := make([]string, 0, deadBurst)
+	for i := 0; i < deadBurst; i++ {
 		ip := "10.0.0." + strconv.Itoa(i+1)
 		ips = append(ips, ip)
 		for j := 0; j < 3; j++ {
@@ -186,8 +184,8 @@ func TestIPHealthBurstSuspendsDetection(t *testing.T) {
 	}
 }
 
-func TestIPHealthStopIsIdempotent(t *testing.T) {
-	s := newTestIPHealth(func(string) bool { return false })
+func TestTrackerStopIsIdempotent(t *testing.T) {
+	s := newTestTracker(func(string) bool { return false })
 	for i := 0; i < 3; i++ {
 		s.RecordSyn("1.2.3.4", 443, 0, 3, time.Hour)
 	}

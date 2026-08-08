@@ -1,4 +1,4 @@
-package nfq
+package iphealth
 
 import (
 	"net"
@@ -6,12 +6,12 @@ import (
 	"time"
 )
 
-func TestGoodIPStoreRemembersNewestFirst(t *testing.T) {
-	s := newGoodIPStore()
+func TestKnownGoodRemembersNewestFirst(t *testing.T) {
+	s := NewKnownGood()
 
-	s.Store("raw.githubusercontent.com", net.ParseIP("185.199.108.133"))
+	s.Remember("raw.githubusercontent.com", net.ParseIP("185.199.108.133"))
 	time.Sleep(2 * time.Millisecond)
-	s.Store("raw.githubusercontent.com", net.ParseIP("185.199.111.133"))
+	s.Remember("raw.githubusercontent.com", net.ParseIP("185.199.111.133"))
 
 	got := s.Lookup("raw.githubusercontent.com", false)
 	if len(got) != 2 {
@@ -22,11 +22,11 @@ func TestGoodIPStoreRemembersNewestFirst(t *testing.T) {
 	}
 }
 
-func TestGoodIPStoreSeparatesFamilies(t *testing.T) {
-	s := newGoodIPStore()
+func TestKnownGoodSeparatesFamilies(t *testing.T) {
+	s := NewKnownGood()
 
-	s.Store("example.com", net.ParseIP("1.1.1.1"))
-	s.Store("example.com", net.ParseIP("2001:db8::1"))
+	s.Remember("example.com", net.ParseIP("1.1.1.1"))
+	s.Remember("example.com", net.ParseIP("2001:db8::1"))
 
 	if got := s.Lookup("example.com", false); len(got) != 1 || got[0].String() != "1.1.1.1" {
 		t.Errorf("IPv4 lookup = %v, want [1.1.1.1]", got)
@@ -36,36 +36,36 @@ func TestGoodIPStoreSeparatesFamilies(t *testing.T) {
 	}
 }
 
-func TestGoodIPStoreIsCaseAndDotInsensitive(t *testing.T) {
-	s := newGoodIPStore()
+func TestKnownGoodIsCaseAndDotInsensitive(t *testing.T) {
+	s := NewKnownGood()
 
-	s.Store("Example.COM.", net.ParseIP("1.1.1.1"))
+	s.Remember("Example.COM.", net.ParseIP("1.1.1.1"))
 
 	if got := s.Lookup("example.com", false); len(got) != 1 {
 		t.Errorf("Lookup = %v, want the address stored under a differently cased name", got)
 	}
 }
 
-func TestGoodIPStoreCapsPerHost(t *testing.T) {
-	s := newGoodIPStore()
+func TestKnownGoodCapsPerHost(t *testing.T) {
+	s := NewKnownGood()
 
-	for i := 1; i <= maxGoodIPPerHost+3; i++ {
-		s.Store("example.com", net.IPv4(10, 0, 0, byte(i)))
+	for i := 1; i <= maxKnownGoodPerHost+3; i++ {
+		s.Remember("example.com", net.IPv4(10, 0, 0, byte(i)))
 		time.Sleep(time.Millisecond)
 	}
 
-	if got := s.Lookup("example.com", false); len(got) != maxGoodIPPerHost {
-		t.Errorf("Lookup returned %d addresses, want the cap of %d", len(got), maxGoodIPPerHost)
+	if got := s.Lookup("example.com", false); len(got) != maxKnownGoodPerHost {
+		t.Errorf("Lookup returned %d addresses, want the cap of %d", len(got), maxKnownGoodPerHost)
 	}
 }
 
-func TestGoodIPStoreExpires(t *testing.T) {
-	s := newGoodIPStore()
-	s.Store("example.com", net.ParseIP("1.1.1.1"))
+func TestKnownGoodExpires(t *testing.T) {
+	s := NewKnownGood()
+	s.Remember("example.com", net.ParseIP("1.1.1.1"))
 
 	s.mu.Lock()
 	entries := s.hosts["example.com"]
-	entries[0].seen = time.Now().Add(-2 * goodIPTTL)
+	entries[0].seen = time.Now().Add(-2 * knownGoodTTL)
 	s.hosts["example.com"] = entries
 	s.mu.Unlock()
 
@@ -78,11 +78,11 @@ func TestGoodIPStoreExpires(t *testing.T) {
 	}
 }
 
-func TestGoodIPStoreIgnoresEmptyInput(t *testing.T) {
-	s := newGoodIPStore()
+func TestKnownGoodIgnoresEmptyInput(t *testing.T) {
+	s := NewKnownGood()
 
-	s.Store("", net.ParseIP("1.1.1.1"))
-	s.Store("example.com", nil)
+	s.Remember("", net.ParseIP("1.1.1.1"))
+	s.Remember("example.com", nil)
 
 	if s.Len() != 0 {
 		t.Errorf("Len = %d, want nothing stored for empty input", s.Len())

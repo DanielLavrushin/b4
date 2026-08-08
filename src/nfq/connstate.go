@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/iphealth"
 )
 
 type connInfo struct {
@@ -372,16 +373,16 @@ type runtimeState struct {
 	destState    *destStateTracker
 	pendingHello *pendingHelloCache
 	hostHints    *hostHintCache
-	ipHealth     *ipHealthStore
-	goodIPs      *goodIPStore
+	ipHealth     *iphealth.Tracker
+	goodIPs      *iphealth.KnownGood
 }
 
 func newRuntimeState() *runtimeState {
 	return &runtimeState{
 		pendingHello: newPendingHelloCache(),
 		hostHints:    newHostHintCache(),
-		ipHealth:     newIPHealthStore(),
-		goodIPs:      newGoodIPStore(),
+		ipHealth:     iphealth.NewTracker(nil),
+		goodIPs:      iphealth.NewKnownGood(),
 		tlsCache: &tlsInfoCache{
 			conns: make(map[string]*tlsInfo),
 		},

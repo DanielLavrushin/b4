@@ -8,6 +8,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/dns"
+	"github.com/daniellavrushin/b4/iphealth"
 )
 
 func encodeTestName(name string) []byte {
@@ -59,10 +60,21 @@ func buildTestAResponse(domain string, ips ...string) []byte {
 	return msg
 }
 
+func waitFor(t *testing.T, cond func() bool) bool {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return true
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	return false
+}
+
 func healWorker(t *testing.T, dead ...string) *Worker {
 	t.Helper()
-	health := newIPHealthStore()
-	health.dial = func(string, uint16, int) bool { return false }
+	health := iphealth.NewTracker(func(string, uint16, int) bool { return false })
 	t.Cleanup(health.Stop)
 
 	for _, ip := range dead {
@@ -74,7 +86,7 @@ func healWorker(t *testing.T, dead ...string) *Worker {
 		t.Fatal("seed addresses never became dead")
 	}
 
-	return &Worker{ipHealth: health, goodIPs: newGoodIPStore(), hostHints: newHostHintCache()}
+	return &Worker{ipHealth: health, goodIPs: iphealth.NewKnownGood(), hostHints: newHostHintCache()}
 }
 
 func healSetWithAction(action string) *config.SetConfig {
@@ -143,7 +155,7 @@ func TestHealDNSResponseSkippedInDiscovery(t *testing.T) {
 
 func TestHealDNSResponseFallsBackToRememberedAddress(t *testing.T) {
 	w := healWorker(t, "1.1.1.1", "2.2.2.2")
-	w.goodIPs.Store("example.com", net.ParseIP("3.3.3.3"))
+	w.goodIPs.Remember("example.com", net.ParseIP("3.3.3.3"))
 	resp := buildTestAResponse("example.com", "1.1.1.1", "2.2.2.2")
 
 	healed := w.healDNSResponse(&config.Config{}, healSetWithAction(config.IPBlockActionHeal), "example.com", resp)
