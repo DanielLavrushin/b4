@@ -64,6 +64,8 @@ interface DiagFirewall {
   backend: string;
   nfqueue_works: boolean;
   flow_offload: string;
+  flow_offload_guard?: number;
+  flow_offload_safe: boolean;
   rule_groups?: DiagRuleGroup[];
 }
 

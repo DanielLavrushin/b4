@@ -45,7 +45,7 @@ func (api *API) buildDiagnostics() Diagnostics {
 		Tools:    collectTools(),
 		Network:  collectNetworkInterfaces(),
 		Engine:   collectEngineInfo(cfg),
-		Firewall: collectFirewallInfo(),
+		Firewall: collectFirewallInfo(cfg),
 		Geodata:  api.collectGeodataInfo(),
 		Storage:  collectStorage(),
 		Paths:    collectPaths(cfg.ConfigPath, cfg.System.Logging.ErrorFilePath(), cfg.System.Geo.GeoSitePath, cfg.System.Geo.GeoIpPath),
@@ -268,14 +268,15 @@ func collectNetworkInterfaces() DiagNetwork {
 	return DiagNetwork{Interfaces: result}
 }
 
-func collectFirewallInfo() DiagFirewall {
+func collectFirewallInfo(cfg *config.Config) DiagFirewall {
 	info := DiagFirewall{Backend: detectFirewallBackend()}
 
 	info.RuleGroups = append(info.RuleGroups, collectNftRuleGroups()...)
 	info.RuleGroups = append(info.RuleGroups, collectIptablesRuleGroups(info.Backend)...)
 
 	info.NFQueueWorks = testNFQueue(info.Backend)
-	info.FlowOffload = detectFlowOffload()
+	info.FlowOffload, info.FlowOffloadGuard = detectFlowOffload()
+	info.FlowOffloadSafe = flowOffloadSafe(info.FlowOffload, info.FlowOffloadGuard, cfg)
 
 	return info
 }
@@ -478,21 +479,38 @@ func collectTUNInfo(cfg *config.Config) *DiagTUN {
 
 // detectFlowOffload reports whether netfilter flow offloading is active on the
 // system. Offloaded flows take a fast path that skips the forward/postrouting
-// hooks where b4's NFQUEUE rules live, so an active flowtable means b4 never
-// sees the traffic. Returns "hardware", "software" or "off".
-func detectFlowOffload() string {
+// hooks where b4's NFQUEUE rules live, so an unguarded flowtable means b4 never
+// sees the traffic. Returns "hardware", "software" or "off", plus the smallest
+// original-direction packet count that has to pass before a flow is offloaded
+// (0 when offloading starts immediately).
+func detectFlowOffload() (string, int) {
 	if _, err := exec.LookPath("nft"); err == nil {
 		out, err := exec.Command("nft", "list", "ruleset").CombinedOutput()
 		if err == nil {
 			s := string(out)
-			if strings.Contains(s, "flow add @") || strings.Contains(s, "flow offload @") {
-				for _, line := range strings.Split(s, "\n") {
-					l := strings.TrimSpace(line)
-					if strings.HasPrefix(l, "flags") && strings.Contains(l, "offload") {
-						return "hardware"
-					}
+			hardware := false
+			mode := ""
+			guard := 0
+			for _, line := range strings.Split(s, "\n") {
+				l := strings.TrimSpace(line)
+				if strings.HasPrefix(l, "flags") && strings.Contains(l, "offload") {
+					hardware = true
+					continue
 				}
-				return "software"
+				if !strings.Contains(l, "flow add @") && !strings.Contains(l, "flow offload @") {
+					continue
+				}
+				g := nftFlowOffloadGuard(l)
+				if mode == "" || g < guard {
+					guard = g
+				}
+				mode = "software"
+			}
+			if mode != "" {
+				if hardware {
+					mode = "hardware"
+				}
+				return mode, guard
 			}
 		}
 	}
@@ -502,15 +520,110 @@ func detectFlowOffload() string {
 			continue
 		}
 		out, err := exec.Command(bin, append(tables.WaitArgs(bin), "-t", "filter", "-S")...).CombinedOutput()
-		if err == nil && strings.Contains(string(out), "FLOWOFFLOAD") {
-			if strings.Contains(string(out), "--hw") {
-				return "hardware"
-			}
-			return "software"
+		if err != nil || !strings.Contains(string(out), "FLOWOFFLOAD") {
+			continue
 		}
+		mode := "software"
+		guard := 0
+		first := true
+		for _, line := range strings.Split(string(out), "\n") {
+			if !strings.Contains(line, "FLOWOFFLOAD") {
+				continue
+			}
+			if strings.Contains(line, "--hw") {
+				mode = "hardware"
+			}
+			g := iptablesFlowOffloadGuard(line)
+			if first || g < guard {
+				guard = g
+				first = false
+			}
+		}
+		return mode, guard
 	}
 
-	return "off"
+	return "off", 0
+}
+
+// nftFlowOffloadGuard returns the minimum number of original-direction packets a
+// connection must carry before the given nftables flow-offload rule applies.
+// Only "ct original packets" guards count: a guard on any other counter cannot
+// be compared against b4's original-direction connbytes window.
+func nftFlowOffloadGuard(rule string) int {
+	idx := strings.Index(rule, "ct original packets")
+	if idx < 0 {
+		return 0
+	}
+	rest := strings.TrimSpace(rule[idx+len("ct original packets"):])
+
+	for _, op := range []string{">=", "ge", ">", "gt"} {
+		if !strings.HasPrefix(rest, op) {
+			continue
+		}
+		fields := strings.Fields(rest[len(op):])
+		if len(fields) == 0 {
+			return 0
+		}
+		n, err := strconv.Atoi(fields[0])
+		if err != nil || n <= 0 {
+			return 0
+		}
+		if op == ">" || op == "gt" {
+			return n + 1
+		}
+		return n
+	}
+
+	return 0
+}
+
+// iptablesFlowOffloadGuard is the xt_FLOWOFFLOAD equivalent of
+// nftFlowOffloadGuard, reading the lower bound of an original-direction
+// packet-mode connbytes match on the same rule.
+func iptablesFlowOffloadGuard(rule string) int {
+	if !strings.Contains(rule, "--connbytes-dir original") || !strings.Contains(rule, "--connbytes-mode packets") {
+		return 0
+	}
+	if strings.Contains(rule, "! --connbytes ") {
+		return 0
+	}
+	idx := strings.Index(rule, "--connbytes ")
+	if idx < 0 {
+		return 0
+	}
+	fields := strings.Fields(rule[idx+len("--connbytes "):])
+	if len(fields) == 0 {
+		return 0
+	}
+	lower, _, _ := strings.Cut(fields[0], ":")
+	n, err := strconv.Atoi(lower)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
+// flowOffloadSafe reports whether an active flowtable still lets b4 do its job:
+// every offloaded flow has to stay on the slow path for longer than the widest
+// connbytes window b4 queues on. Sets with TCP duplication are queued for the
+// whole life of the connection, so no guard is wide enough for them.
+func flowOffloadSafe(mode string, guard int, cfg *config.Config) bool {
+	if mode == "off" {
+		return true
+	}
+	if guard <= 0 || cfg == nil {
+		return false
+	}
+	if dup4, dup6 := cfg.CollectDuplicateIPs(); len(dup4) > 0 || len(dup6) > 0 {
+		return false
+	}
+
+	window := cfg.Queue.TCPConnBytesLimit
+	if cfg.Queue.UDPConnBytesLimit > window {
+		window = cfg.Queue.UDPConnBytesLimit
+	}
+
+	return guard > window
 }
 
 func testNFQueue(backend string) bool {

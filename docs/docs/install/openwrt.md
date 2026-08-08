@@ -143,3 +143,34 @@ Then start b4 again:
 ### Slow speed / video stuttering
 
 Check the **Software flow offloading** setting under Network -> Firewall. Try turning it on or off - on some devices this affects b4 performance.
+
+### Keeping flow offloading and b4 together
+
+Flow offloading moves an established connection to a fast path that skips the netfilter hooks b4 works from, so with it enabled b4 runs but never sees the traffic. On weaker hardware turning it off costs a lot of throughput.
+
+b4 only inspects the first packets of a connection (19 for TCP, 8 for UDP by default, see `queue.tcp_conn_bytes_limit` and `queue.udp_conn_bytes_limit`), so offloading can be delayed until b4 is done. Edit `/usr/share/firewall4/templates/ruleset.uc` and find:
+
+```text
+meta l4proto { tcp, udp } flow offload @ft;
+```
+
+Replace it with:
+
+```text
+meta l4proto { tcp, udp } ct original packets ge 40 flow offload @ft;
+```
+
+Then reload the firewall:
+
+```bash
+fw4 restart
+```
+
+Points to check:
+
+- The threshold has to stay above the packet limits configured in b4. Raising `tcp_conn_bytes_limit` above the threshold puts the connection on the fast path before b4 is finished with it.
+- `ct original packets` reads conntrack accounting. If `sysctl net.netfilter.nf_conntrack_acct` returns `0`, the counter stays at zero, the rule never matches and nothing is offloaded at all.
+- Sets with **Duplicate** enabled for TCP are inspected for the whole life of the connection, so no threshold is high enough for them.
+- The file belongs to the `firewall4` package and is overwritten by package upgrades and by sysupgrade.
+
+The system diagnostics (Settings -> System info, and the installer's diagnostics screen) report the threshold they find and compare it against b4's own limits.

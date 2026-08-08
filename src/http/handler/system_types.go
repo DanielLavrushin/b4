@@ -119,10 +119,12 @@ type DiagTUN struct {
 }
 
 type DiagFirewall struct {
-	Backend      string          `json:"backend"`
-	NFQueueWorks bool            `json:"nfqueue_works"`
-	FlowOffload  string          `json:"flow_offload"`
-	RuleGroups   []DiagRuleGroup `json:"rule_groups,omitempty"`
+	Backend          string          `json:"backend"`
+	NFQueueWorks     bool            `json:"nfqueue_works"`
+	FlowOffload      string          `json:"flow_offload"`
+	FlowOffloadGuard int             `json:"flow_offload_guard,omitempty"`
+	FlowOffloadSafe  bool            `json:"flow_offload_safe"`
+	RuleGroups       []DiagRuleGroup `json:"rule_groups,omitempty"`
 }
 
 type DiagRuleGroup struct {

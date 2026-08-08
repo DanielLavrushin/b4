@@ -656,6 +656,8 @@
       "flowOffloadOff": "off",
       "flowOffloadSw": "software (bypasses b4)",
       "flowOffloadHw": "hardware (bypasses b4)",
+      "flowOffloadSwGuarded": "software, after {{packets}} packets",
+      "flowOffloadHwGuarded": "hardware, after {{packets}} packets",
       "network": "Network",
       "engine": "Engine",
       "engineMode": "Mode",
