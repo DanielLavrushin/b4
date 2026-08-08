@@ -64,6 +64,59 @@ type SetDomainMatch struct {
 	Enabled  bool   `json:"enabled"`
 }
 
+type DomainReassignment struct {
+	Domain  string `json:"domain"`
+	SetName string `json:"set_name"`
+	SetId   string `json:"set_id"`
+}
+
+func (api *API) releaseDomainsFromOtherSets(sets []*config.SetConfig, keepSetId string, domains []string) []DomainReassignment {
+	claimed := make(map[string]bool, len(domains))
+	for _, domain := range domains {
+		if canonical := sni.CanonicalDomainEntry(domain); canonical != "" {
+			claimed[canonical] = true
+		}
+	}
+	if len(claimed) == 0 {
+		return nil
+	}
+
+	var moved []DomainReassignment
+	for _, set := range sets {
+		if set == nil || set.Id == keepSetId || !set.Enabled {
+			continue
+		}
+
+		kept := make([]string, 0, len(set.Targets.SNIDomains))
+		var removed []string
+		for _, entry := range set.Targets.SNIDomains {
+			canonical := sni.CanonicalDomainEntry(entry)
+			if canonical != "" && claimed[canonical] {
+				removed = append(removed, canonical)
+				continue
+			}
+			kept = append(kept, entry)
+		}
+		if len(removed) == 0 {
+			continue
+		}
+
+		set.Targets.SNIDomains = kept
+		api.loadTargetsForSetCached(set)
+
+		for _, domain := range removed {
+			moved = append(moved, DomainReassignment{Domain: domain, SetName: set.Name, SetId: set.Id})
+		}
+		log.Infof("Set '%s': released %v to the set being applied (a domain listed in several enabled sets resolves by config order)", set.Name, removed)
+
+		if len(set.Targets.DomainsToMatch) == 0 && len(set.Targets.IpsToMatch) == 0 {
+			log.Warnf("Set '%s' no longer targets any domain or IP", set.Name)
+		}
+	}
+
+	return moved
+}
+
 const maxCheckDomains = 32
 
 func parseCheckDomains(raw string) []string {
@@ -211,6 +264,8 @@ func (api *API) handleSetDomains(w http.ResponseWriter, r *http.Request) {
 			set.Targets.SNIDomains = append(set.Targets.SNIDomains, req.Domain)
 			set.Targets.DomainsToMatch = append(set.Targets.DomainsToMatch, req.Domain)
 
+			moved := api.releaseDomainsFromOtherSets(newCfg.Sets, setId, []string{req.Domain})
+
 			if err := api.saveAndPushConfig(newCfg); err != nil {
 				writeAPIError(w, err)
 				return
@@ -221,7 +276,7 @@ func (api *API) handleSetDomains(w http.ResponseWriter, r *http.Request) {
 			}
 
 			setJsonHeader(w)
-			json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "moved": moved})
 			return
 		}
 	}

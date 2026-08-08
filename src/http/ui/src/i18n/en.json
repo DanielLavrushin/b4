@@ -1603,7 +1603,8 @@
       "similarSets": "Similar Sets",
       "nMore": "+{{count}} more",
       "createSet": "Create Set",
-      "addToSet": "Add to Set"
+      "addToSet": "Add to Set",
+      "overlapWarning": "{{domains}} already targeted by: {{sets}}. These domains will be moved to this set. A domain listed in several enabled sets is resolved by config order, so leaving it in both would let the other set override this strategy."
     },
     "options": {
       "title": "Discovery Options",
@@ -1640,7 +1641,8 @@
       "success": "Success",
       "testing": "Testing...",
       "blocked": "Blocked"
-    }
+    },
+    "movedDomains": "Moved {{domains}} out of: {{sets}}, so only this set targets them."
   },
   "detector": {
     "title": "TSPU / DPI Detector",

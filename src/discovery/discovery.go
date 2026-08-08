@@ -1749,6 +1749,16 @@ func (ds *DiscoverySuite) finalize() {
 	}()
 }
 
+func scopeSetToDomains(set *config.SetConfig, domains []string) *config.SetConfig {
+	if set == nil || len(domains) == 0 {
+		return set
+	}
+	scoped := *set
+	scoped.Targets.SNIDomains = append([]string(nil), domains...)
+	scoped.Targets.DomainsToMatch = append([]string(nil), domains...)
+	return &scoped
+}
+
 func (ds *DiscoverySuite) buildStrategyGroups() {
 	ds.CheckSuite.mu.Lock()
 	defer ds.CheckSuite.mu.Unlock()
@@ -1873,7 +1883,7 @@ func (ds *DiscoverySuite) buildStrategyGroups() {
 			WinnerPreset: winner,
 			Family:       info.family,
 			Domains:      groupDomains,
-			Set:          info.set,
+			Set:          scopeSetToDomains(info.set, groupDomains),
 			MedianSpeed:  median,
 		})
 	}

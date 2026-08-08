@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -224,6 +225,26 @@ func (w *Worker) UpdateConfig(newCfg *config.Config) {
 	w.cfg.Store(newCfg)
 }
 
+func logDomainOverlaps(sets []*config.SetConfig) {
+	overlaps := sni.FindDomainOverlaps(sets)
+	if len(overlaps) == 0 {
+		return
+	}
+
+	const maxReported = 10
+	shown := overlaps
+	if len(shown) > maxReported {
+		shown = shown[:maxReported]
+	}
+	for _, o := range shown {
+		log.Warnf("Domain %q is targeted by %d enabled sets (%s): b4 applies the first match ('%s') and ignores the others for this domain, unless one of them has a matching source-device filter",
+			o.Entry, len(o.SetNames), strings.Join(o.SetNames, ", "), o.SetNames[0])
+	}
+	if len(overlaps) > len(shown) {
+		log.Warnf("... and %d more domain(s) targeted by several enabled sets", len(overlaps)-len(shown))
+	}
+}
+
 func buildMatcher(cfg *config.Config) *sni.SuffixSet {
 	if len(cfg.Sets) > 0 {
 		m := sni.NewSuffixSet(cfg.Sets)
@@ -235,6 +256,7 @@ func buildMatcher(cfg *config.Config) *sni.SuffixSet {
 		}
 		log.Infof("Built matcher with %d domains and %d IPs across %d sets",
 			totalDomains, totalIPs, len(cfg.Sets))
+		logDomainOverlaps(cfg.Sets)
 		return m
 	}
 	log.Tracef("Built empty matcher")

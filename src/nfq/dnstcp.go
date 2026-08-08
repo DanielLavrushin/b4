@@ -26,13 +26,14 @@ const (
 )
 
 type dnsTCPServer struct {
-	port   int
-	worker *Worker
-	ctx    context.Context
-	cancel context.CancelFunc
-	lnV4   net.Listener
-	lnV6   net.Listener
-	wg     sync.WaitGroup
+	port     int
+	worker   *Worker
+	ctx      context.Context
+	cancel   context.CancelFunc
+	lnV4     net.Listener
+	lnV6     net.Listener
+	wgAccept sync.WaitGroup
+	wg       sync.WaitGroup
 }
 
 func newDNSTCPServer(w *Worker, port int) *dnsTCPServer {
@@ -57,6 +58,7 @@ func (s *dnsTCPServer) Start() error {
 		var lnV4 net.Listener
 		if lnV4, err4 = lc.Listen(s.ctx, "tcp4", net.JoinHostPort("0.0.0.0", fmt.Sprintf("%d", s.port))); err4 == nil {
 			s.lnV4 = lnV4
+			s.wgAccept.Add(1)
 			go s.acceptLoop(lnV4, "v4")
 			log.Infof("DNS: TCP listener on 0.0.0.0:%d (matched queries resolved through the set's DNS, others forwarded)", s.port)
 		} else {
@@ -68,6 +70,7 @@ func (s *dnsTCPServer) Start() error {
 		var lnV6 net.Listener
 		if lnV6, err6 = lc.Listen(s.ctx, "tcp6", net.JoinHostPort("::", fmt.Sprintf("%d", s.port))); err6 == nil {
 			s.lnV6 = lnV6
+			s.wgAccept.Add(1)
 			go s.acceptLoop(lnV6, "v6")
 			log.Infof("DNS: TCP listener on [::]:%d", s.port)
 		} else {
@@ -94,10 +97,12 @@ func (s *dnsTCPServer) Stop() {
 	if s.lnV6 != nil {
 		_ = s.lnV6.Close()
 	}
+	s.wgAccept.Wait()
 	s.wg.Wait()
 }
 
 func (s *dnsTCPServer) acceptLoop(ln net.Listener, family string) {
+	defer s.wgAccept.Done()
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -195,6 +200,9 @@ func writeDNSTCPMessage(w net.Conn, msg []byte, timeout time.Duration) error {
 
 func (s *dnsTCPServer) handle(client net.Conn) {
 	defer client.Close()
+
+	stopOnShutdown := context.AfterFunc(s.ctx, func() { _ = client.Close() })
+	defer stopOnShutdown()
 
 	clientIP := net.IP(nil)
 	clientPort := 0

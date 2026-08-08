@@ -17,6 +17,7 @@ import {
 } from "@b4.icons";
 import { colors } from "@design";
 import { B4SetConfig } from "@models/config";
+import { DomainReassignment } from "@models/sets";
 import { DiscoveryAddDialog } from "./AddDialog";
 import {
   B4Alert,
@@ -291,6 +292,14 @@ export const DiscoveryRunner = () => {
     setCheckUrls((prev) => prev.filter((u) => u !== url));
   }, []);
 
+  const describeMovedDomains = (moved?: DomainReassignment[]): string => {
+    if (!moved || moved.length === 0) return "";
+    return t("discovery.movedDomains", {
+      domains: [...new Set(moved.map((m) => m.domain))].join(", "),
+      sets: [...new Set(moved.map((m) => m.set_name))].join(", "),
+    });
+  };
+
   const handleAddNew = async (
     name: string,
     domain: string,
@@ -307,7 +316,14 @@ export const DiscoveryRunner = () => {
     };
     const res = await addPresetAsSet(configToAdd);
     if (res.success) {
-      showSuccess(t("discovery.createdSet", { name }));
+      showSuccess(
+        [
+          t("discovery.createdSet", { name }),
+          describeMovedDomains(res.data),
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
       setAddDialog({
         open: false,
         domain: "",

@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { ApiError, ApiResponse } from "@api/apiClient";
 import { discoveryApi, DiscoverySuite, HistoryEntry } from "@b4.discovery";
 import { B4SetConfig } from "@b4.sets";
+import { DomainReassignment } from "@models/sets";
 import { wsUrl } from "@utils";
 
 export function useDiscovery() {
@@ -162,10 +163,10 @@ export function useDiscovery() {
   }, []);
 
   const addPresetAsSet = useCallback(
-    async (config: B4SetConfig): Promise<ApiResponse<void>> => {
+    async (config: B4SetConfig): Promise<ApiResponse<DomainReassignment[]>> => {
       try {
-        await discoveryApi.addPresetAsSet(config);
-        return { success: true };
+        const res = await discoveryApi.addPresetAsSet(config);
+        return { success: true, data: res?.moved ?? [] };
       } catch (e) {
         if (e instanceof ApiError) {
           return { success: false, error: JSON.stringify(e.body ?? e.message) };
