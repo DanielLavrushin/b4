@@ -79,6 +79,8 @@ func (b *routeNftBackend) addElements(setName string, ips []string, ttlSec int) 
 
 	if ttlSec > 0 {
 		setName = routeNftDynSet(setName)
+	} else {
+		ips = expandZeroPrefix(ips)
 	}
 
 	const chunkSize = 128

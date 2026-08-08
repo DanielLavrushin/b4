@@ -16,6 +16,10 @@ interface ManualEntryPanelProps {
   emptyMessage: string;
   items: string[];
   warning?: string;
+  notice?: string;
+  normalize?: (raw: string) => string[];
+  highlight?: (item: string) => boolean;
+  getItemLabel?: (item: string) => ReactNode;
   onItemsChange: (items: string[]) => void;
   onInputChange?: (value: string) => void;
 }
@@ -31,6 +35,10 @@ export const ManualEntryPanel = ({
   emptyMessage,
   items,
   warning,
+  notice,
+  normalize,
+  highlight,
+  getItemLabel,
   onItemsChange,
   onInputChange,
 }: ManualEntryPanelProps) => {
@@ -50,10 +58,12 @@ export const ManualEntryPanel = ({
     const existing = new Set(items);
     const next = [...items];
     for (const raw of value.split(/[\s,|]+/).filter(Boolean)) {
-      const item = raw.trim();
-      if (item && !existing.has(item)) {
-        existing.add(item);
-        next.push(item);
+      const expanded = normalize ? normalize(raw) : [raw.trim()];
+      for (const item of expanded) {
+        if (item && !existing.has(item)) {
+          existing.add(item);
+          next.push(item);
+        }
       }
     }
 
@@ -88,6 +98,11 @@ export const ManualEntryPanel = ({
         />
         <B4PlusButton onClick={handleAdd} disabled={!input.trim()} />
       </Box>
+      {notice && (
+        <B4Alert severity="info" sx={{ mt: 1 }}>
+          {notice}
+        </B4Alert>
+      )}
       {warning && (
         <B4Alert severity="warning" sx={{ mt: 1 }}>
           {t("sets.targets.duplicateWarning")} {warning}
@@ -125,7 +140,8 @@ export const ManualEntryPanel = ({
         <B4ChipList
           items={items}
           getKey={(item) => item}
-          getLabel={(item) => item}
+          getLabel={(item) => getItemLabel?.(item) ?? item}
+          highlight={highlight}
           onDelete={(item) => onItemsChange(items.filter((i) => i !== item))}
           emptyMessage={emptyMessage}
           showEmpty

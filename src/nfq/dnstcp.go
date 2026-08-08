@@ -21,9 +21,8 @@ import (
 )
 
 const (
-	dnsTCPMaxMessage   = 65535
-	dnsTCPMinQueryLen  = 12
-	dnsTCPActionPrefix = "tcp/"
+	dnsTCPMaxMessage  = 65535
+	dnsTCPMinQueryLen = 12
 )
 
 type dnsTCPServer struct {
@@ -308,7 +307,7 @@ func (s *dnsTCPServer) resolve(set *config.SetConfig, cfg *config.Config, query 
 }
 
 func (s *dnsTCPServer) logEvent(set *config.SetConfig, domain string, clientIP, serverIP net.IP, clientPort int, srcMac, action string) {
-	logDNSEvent(set, domain, clientIP, serverIP, uint16(clientPort), srcMac, dnsTCPActionPrefix+action)
+	logDNSEvent("TCP", set, domain, clientIP, serverIP, uint16(clientPort), srcMac, action)
 }
 
 func (s *dnsTCPServer) passthrough(client net.Conn, origIP net.IP, origPort int, origErr error, firstQuery []byte) {

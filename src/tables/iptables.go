@@ -276,14 +276,16 @@ func (s IPSet) Create() error {
 		return fmt.Errorf("failed to flush ipset %s: %w", s.Name, err)
 	}
 
+	entries := expandZeroPrefix(s.Entries)
+
 	const batchSize = 10000
-	for i := 0; i < len(s.Entries); i += batchSize {
+	for i := 0; i < len(entries); i += batchSize {
 		end := i + batchSize
-		if end > len(s.Entries) {
-			end = len(s.Entries)
+		if end > len(entries) {
+			end = len(entries)
 		}
 		var sb strings.Builder
-		for _, entry := range s.Entries[i:end] {
+		for _, entry := range entries[i:end] {
 			fmt.Fprintf(&sb, "add %s %s\n", s.Name, entry)
 		}
 		cmd := exec.Command("ipset", "restore", "-exist")
@@ -296,7 +298,7 @@ func (s IPSet) Create() error {
 		}
 	}
 
-	log.Tracef("Created ipset %s with %d entries", s.Name, len(s.Entries))
+	log.Tracef("Created ipset %s with %d entries", s.Name, len(entries))
 	return nil
 }
 

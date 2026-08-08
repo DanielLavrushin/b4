@@ -106,6 +106,8 @@ func (n *NFTablesManager) createSet(name, addrType, extraFlags string) error {
 }
 
 func (n *NFTablesManager) addSetElements(name string, elements []string) error {
+	elements = expandZeroPrefix(elements)
+
 	const batchSize = 10000
 	for i := 0; i < len(elements); i += batchSize {
 		end := i + batchSize

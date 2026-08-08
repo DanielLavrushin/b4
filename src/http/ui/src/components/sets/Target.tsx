@@ -117,6 +117,7 @@ export const TargetSettings = ({
             otherSetsTargets={otherSetsTargets}
             geoipCategories={geoipCategories}
             geoipLoading={geoipLoading}
+            ipv6={ipv6}
             onChange={onChange}
           />
         </B4TabPanel>
