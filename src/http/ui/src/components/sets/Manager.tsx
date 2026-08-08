@@ -45,7 +45,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-import { B4Dialog, B4Section } from "@b4.elements";
+import { B4Dialog, B4Hint, B4Section } from "@b4.elements";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { reportSaveError } from "@utils";
 
@@ -619,6 +619,12 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
             </Stack>
           </Stack>
         </Paper>
+
+        {sets.length > 1 && (
+          <Grid container sx={{ mb: 2 }}>
+            <B4Hint>{t("sets.manager.orderHint")}</B4Hint>
+          </Grid>
+        )}
 
         <DndContext
           sensors={sensors}

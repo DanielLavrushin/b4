@@ -1063,3 +1063,55 @@ func TestMatchSNIWithSourceTLS_SingleSetRespectsSourceFilter(t *testing.T) {
 		t.Error("expected no match for an unlisted device")
 	}
 }
+
+func TestMatchIP_EqualPrefixResolvesBySetOrder(t *testing.T) {
+	first := makeSetWithIPs("first", "10.0.0.0/8", "192.168.0.0/16")
+	second := makeSetWithIPs("second", "10.0.0.0/8", "192.168.0.0/16")
+
+	s := NewSuffixSet([]*config.SetConfig{first, second})
+
+	matched, set := s.MatchIP(net.ParseIP("10.1.2.3"))
+	if !matched || set != first {
+		t.Fatalf("MatchIP: matched=%v set=%v, want first", matched, set)
+	}
+
+	matched, set = s.MatchIPWithSource(net.ParseIP("192.168.1.1"), "")
+	if !matched || set != first {
+		t.Fatalf("MatchIPWithSource: matched=%v set=%v, want first", matched, set)
+	}
+}
+
+func TestMatchIP_LongestPrefixBeatsSetOrder(t *testing.T) {
+	broad := makeSetWithIPs("broad", "0.0.0.0/0")
+	narrow := makeSetWithIPs("narrow", "1.2.3.0/24")
+
+	s := NewSuffixSet([]*config.SetConfig{broad, narrow})
+
+	matched, set := s.MatchIP(net.ParseIP("1.2.3.4"))
+	if !matched || set != narrow {
+		t.Fatalf("MatchIP: matched=%v set=%v, want narrow", matched, set)
+	}
+
+	matched, set = s.MatchIP(net.ParseIP("8.8.8.8"))
+	if !matched || set != broad {
+		t.Fatalf("MatchIP: matched=%v set=%v, want broad", matched, set)
+	}
+}
+
+func TestMatchIPWithSource_DeviceSetWinsSharedCIDR(t *testing.T) {
+	device := makeSetWithIPs("device", "10.0.0.0/8")
+	device.Targets.SourceDevices = []string{"aa:bb:cc:dd:ee:ff"}
+	general := makeSetWithIPs("general", "10.0.0.0/8")
+
+	s := NewSuffixSet([]*config.SetConfig{device, general})
+
+	matched, set := s.MatchIPWithSource(net.ParseIP("10.1.2.3"), "aa:bb:cc:dd:ee:ff")
+	if !matched || set != device {
+		t.Fatalf("device client: matched=%v set=%v, want device", matched, set)
+	}
+
+	matched, set = s.MatchIPWithSource(net.ParseIP("10.1.2.3"), "11:22:33:44:55:66")
+	if !matched || set != general {
+		t.Fatalf("other client: matched=%v set=%v, want general", matched, set)
+	}
+}
