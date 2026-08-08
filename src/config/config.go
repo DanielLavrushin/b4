@@ -77,7 +77,6 @@ var DefaultSetConfig = SetConfig{
 			SynDetect:           true,
 			SynThreshold:        DefaultIPBlockSynThreshold,
 			HealDNS:             false,
-			BlockedTTLSec:       DefaultIPBlockBlockedTTLSec,
 			HealTTLSec:          DefaultIPBlockHealTTLSec,
 		},
 
@@ -300,6 +299,10 @@ var DefaultConfig = Config{
 			TCPIdleSec:      DefaultDNSTCPIdleSec,
 			TCPIOSec:        DefaultDNSTCPIOSec,
 			TCPDialSec:      DefaultDNSTCPDialSec,
+		},
+
+		IPHealth: IPHealthConfig{
+			RetestIntervalSec: DefaultIPHealthRetestSec,
 		},
 
 		Timezone:    "",

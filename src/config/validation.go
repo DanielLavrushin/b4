@@ -119,13 +119,14 @@ func (c *Config) Validate() error {
 		c.System.Logging.Directory = filepath.Clean(c.System.Logging.Directory)
 	}
 
+	if c.System.IPHealth.RetestIntervalSec <= 0 {
+		c.System.IPHealth.RetestIntervalSec = DefaultIPHealthRetestSec
+	}
+
 	for setIdx, set := range c.Sets {
 		ibd := &set.TCP.IPBlockDetect
 		if ibd.SynThreshold <= 0 {
 			ibd.SynThreshold = DefaultIPBlockSynThreshold
-		}
-		if ibd.BlockedTTLSec <= 0 {
-			ibd.BlockedTTLSec = DefaultIPBlockBlockedTTLSec
 		}
 		if ibd.HealTTLSec <= 0 {
 			ibd.HealTTLSec = DefaultIPBlockHealTTLSec

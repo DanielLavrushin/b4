@@ -109,12 +109,12 @@ func NewPool(cfg *config.Config) *Pool {
 		for {
 			select {
 			case <-cleanupTicker.C:
-				blockedTTL := pool.blockedCacheTTL()
+				retest := pool.retestInterval()
 				pool.state.connState.Cleanup()
 				pool.state.tlsCache.Cleanup()
-				pool.state.destState.Cleanup(blockedTTL)
+				pool.state.destState.Cleanup(retest)
 				pool.state.hostHints.Cleanup()
-				pool.state.ipHealth.Cleanup(blockedTTL)
+				pool.state.ipHealth.Cleanup(retest)
 				pool.state.goodIPs.Cleanup()
 			case <-escalationTicker.C:
 				pool.state.pendingHello.Cleanup()
@@ -335,21 +335,12 @@ func (p *Pool) GetIPBlockCache() IPBlockCache {
 	return p.state.destState
 }
 
-func (p *Pool) blockedCacheTTL() time.Duration {
-	ttl := time.Duration(config.DefaultIPBlockBlockedTTLSec) * time.Second
+func (p *Pool) retestInterval() time.Duration {
 	cfg := p.GetFirstWorkerConfig()
 	if cfg == nil {
-		return ttl
+		return config.DefaultIPHealthRetestSec * time.Second
 	}
-	for _, set := range cfg.Sets {
-		if set == nil || !set.TCP.IPBlockDetect.Enabled {
-			continue
-		}
-		if d := set.TCP.IPBlockDetect.ResolvedBlockedTTL(); d > ttl {
-			ttl = d
-		}
-	}
-	return ttl
+	return cfg.System.IPHealth.RetestInterval()
 }
 
 func (p *Pool) GetEscalations() []metrics.EscalationEntry {

@@ -40,9 +40,9 @@ const (
 )
 
 const (
-	DefaultIPBlockSynThreshold  = 3
-	DefaultIPBlockBlockedTTLSec = 300
-	DefaultIPBlockHealTTLSec    = 60
+	DefaultIPBlockSynThreshold = 3
+	DefaultIPBlockHealTTLSec   = 60
+	DefaultIPHealthRetestSec   = 300
 )
 
 const (
@@ -157,8 +157,18 @@ type IPBlockDetectConfig struct {
 	SynDetect           bool `json:"syn_detect"`
 	SynThreshold        int  `json:"syn_threshold"`
 	HealDNS             bool `json:"heal_dns"`
-	BlockedTTLSec       int  `json:"blocked_ttl_sec"`
 	HealTTLSec          int  `json:"heal_ttl_sec"`
+}
+
+type IPHealthConfig struct {
+	RetestIntervalSec int `json:"retest_interval_sec"`
+}
+
+func (c *IPHealthConfig) RetestInterval() time.Duration {
+	if c == nil || c.RetestIntervalSec <= 0 {
+		return DefaultIPHealthRetestSec * time.Second
+	}
+	return time.Duration(c.RetestIntervalSec) * time.Second
 }
 
 func (c *IPBlockDetectConfig) ResolvedSynThreshold() int {
@@ -166,13 +176,6 @@ func (c *IPBlockDetectConfig) ResolvedSynThreshold() int {
 		return DefaultIPBlockSynThreshold
 	}
 	return c.SynThreshold
-}
-
-func (c *IPBlockDetectConfig) ResolvedBlockedTTL() time.Duration {
-	if c == nil || c.BlockedTTLSec <= 0 {
-		return DefaultIPBlockBlockedTTLSec * time.Second
-	}
-	return time.Duration(c.BlockedTTLSec) * time.Second
 }
 
 func (c *IPBlockDetectConfig) ResolvedHealTTL() uint32 {
@@ -302,6 +305,7 @@ type SystemConfig struct {
 	API         ApiConfig           `json:"api"`
 	AI          AIConfig            `json:"ai"`
 	DNS         DNSSystemConfig     `json:"dns"`
+	IPHealth    IPHealthConfig      `json:"ip_health"`
 	Timezone    string              `json:"timezone"`
 	MemoryLimit string              `json:"memory_limit,omitempty"`
 	Pprof       bool                `json:"pprof,omitempty"`
