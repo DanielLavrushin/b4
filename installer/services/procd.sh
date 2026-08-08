@@ -15,6 +15,7 @@ USE_PROCD=1
 
 PROG="${B4_BIN_DIR}/${BINARY_NAME}"
 CONFIG="${B4_CONFIG_FILE}"
+export PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 kernel_mod_load() {
     KERNEL=\$(uname -r)
@@ -30,6 +31,7 @@ start_service() {
 
     procd_open_instance
     procd_set_param command \$PROG --config \$CONFIG
+    procd_set_param env PATH="\$PATH"
     procd_set_param respawn \${respawn_threshold:-3600} \${respawn_timeout:-5} \${respawn_retry:-5}
     procd_set_param stdout 0
     procd_set_param stderr 0

@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -344,22 +345,7 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		installerPath := "/tmp/b4install_update.sh"
 		installerURL := "https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh"
 
-		extraPaths := "/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-		currentPath := os.Getenv("PATH")
-		existing := make(map[string]struct{})
-		for _, entry := range strings.Split(currentPath, ":") {
-			existing[entry] = struct{}{}
-		}
-		fullPath := currentPath
-		for _, p := range strings.Split(extraPaths, ":") {
-			if _, ok := existing[p]; !ok && p != "" {
-				if fullPath != "" {
-					fullPath += ":"
-				}
-				fullPath += p
-				existing[p] = struct{}{}
-			}
-		}
+		fullPath := config.ExtendedPATH(os.Getenv("PATH"))
 
 		writeUpdateLog(logPath, "Downloading installer from %s", installerURL)
 		if _, err := downloadFile(installerURL, installerPath); err != nil {

@@ -328,13 +328,17 @@ action_sysinfo() {
             fi
         done
     fi
+    _flow_window=$(_b4_queue_window)
     if [ -z "$_flow_offload" ]; then
         printf "    ${GREEN}  OK${NC}    %s\n" "Flow offloading off (b4 can intercept traffic)" >&2
-    elif [ "$_flow_guard" -gt "$(_b4_queue_window)" ]; then
+    elif [ "$_flow_guard" -gt "$_flow_window" ]; then
         printf "    ${GREEN}  OK${NC}    %s\n" "Flow offloading active (${_flow_offload}), held off until packet ${_flow_guard} of a connection - b4 still sees the start of every connection" >&2
         if [ "$(_b4_duplicate_sets)" != "0" ]; then
             printf "    ${YELLOW}  WARN${NC}  %s\n" "A routing set has TCP duplication enabled, which needs every packet of the connection - turn flow offloading off or disable duplication" >&2
         fi
+    elif [ "$_flow_guard" -gt 0 ]; then
+        printf "    ${RED}  WARN${NC}  %s\n" "Flow offloading active (${_flow_offload}), held off only until packet ${_flow_guard} - b4 reads the first ${_flow_window} packets of a connection, so it loses the tail" >&2
+        printf "    ${DIM}          Raise the threshold above ${_flow_window} in /usr/share/firewall4/templates/ruleset.uc, then: fw4 restart${NC}\n" >&2
     else
         printf "    ${RED}  WARN${NC}  %s\n" "Flow offloading active (${_flow_offload}) - bypasses b4; disable it for b4 to work" >&2
         printf "    ${DIM}          Or hold it off until b4 has seen the start of a connection: in /usr/share/firewall4/templates/ruleset.uc${NC}\n" >&2

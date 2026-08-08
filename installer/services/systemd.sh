@@ -13,6 +13,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
+Environment=PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=${B4_BIN_DIR}/${BINARY_NAME} --config ${B4_CONFIG_FILE}
 Restart=on-failure
 RestartSec=5

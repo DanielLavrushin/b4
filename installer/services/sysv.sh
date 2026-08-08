@@ -11,6 +11,7 @@ service_sysv_install() {
 PROG="${B4_BIN_DIR}/${BINARY_NAME}"
 CONFIG="${B4_CONFIG_FILE}"
 PIDFILE="/var/run/b4.pid"
+export PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 kernel_mod_load() {
     KERNEL=\$(uname -r)

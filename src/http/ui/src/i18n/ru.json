@@ -654,6 +654,8 @@
       "flowOffloadHw": "аппаратный (в обход b4)",
       "flowOffloadSwGuarded": "программный, после {{packets}} пакетов",
       "flowOffloadHwGuarded": "аппаратный, после {{packets}} пакетов",
+      "flowOffloadSwGuardedUnsafe": "программный, после {{packets}} пакетов (в обход b4)",
+      "flowOffloadHwGuardedUnsafe": "аппаратный, после {{packets}} пакетов (в обход b4)",
       "network": "Сеть",
       "engine": "Движок",
       "engineMode": "Режим",

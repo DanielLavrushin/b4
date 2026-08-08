@@ -2523,6 +2523,8 @@ pidfile="/run/b4.pid"
 output_log="/dev/null"
 error_log="/dev/null"
 
+export PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 depend() {
     need net
 }
@@ -2581,6 +2583,7 @@ USE_PROCD=1
 
 PROG="${B4_BIN_DIR}/${BINARY_NAME}"
 CONFIG="${B4_CONFIG_FILE}"
+export PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 kernel_mod_load() {
     KERNEL=\$(uname -r)
@@ -2596,6 +2599,7 @@ start_service() {
 
     procd_open_instance
     procd_set_param command \$PROG --config \$CONFIG
+    procd_set_param env PATH="\$PATH"
     procd_set_param respawn \${respawn_threshold:-3600} \${respawn_timeout:-5} \${respawn_retry:-5}
     procd_set_param stdout 0
     procd_set_param stderr 0
@@ -2662,6 +2666,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
+Environment=PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=${B4_BIN_DIR}/${BINARY_NAME} --config ${B4_CONFIG_FILE}
 Restart=on-failure
 RestartSec=5
@@ -2723,6 +2728,7 @@ service_sysv_install() {
 PROG="${B4_BIN_DIR}/${BINARY_NAME}"
 CONFIG="${B4_CONFIG_FILE}"
 PIDFILE="/var/run/b4.pid"
+export PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 kernel_mod_load() {
     KERNEL=\$(uname -r)
@@ -3706,13 +3712,17 @@ action_sysinfo() {
             fi
         done
     fi
+    _flow_window=$(_b4_queue_window)
     if [ -z "$_flow_offload" ]; then
         printf "    ${GREEN}  OK${NC}    %s\n" "Flow offloading off (b4 can intercept traffic)" >&2
-    elif [ "$_flow_guard" -gt "$(_b4_queue_window)" ]; then
+    elif [ "$_flow_guard" -gt "$_flow_window" ]; then
         printf "    ${GREEN}  OK${NC}    %s\n" "Flow offloading active (${_flow_offload}), held off until packet ${_flow_guard} of a connection - b4 still sees the start of every connection" >&2
         if [ "$(_b4_duplicate_sets)" != "0" ]; then
             printf "    ${YELLOW}  WARN${NC}  %s\n" "A routing set has TCP duplication enabled, which needs every packet of the connection - turn flow offloading off or disable duplication" >&2
         fi
+    elif [ "$_flow_guard" -gt 0 ]; then
+        printf "    ${RED}  WARN${NC}  %s\n" "Flow offloading active (${_flow_offload}), held off only until packet ${_flow_guard} - b4 reads the first ${_flow_window} packets of a connection, so it loses the tail" >&2
+        printf "    ${DIM}          Raise the threshold above ${_flow_window} in /usr/share/firewall4/templates/ruleset.uc, then: fw4 restart${NC}\n" >&2
     else
         printf "    ${RED}  WARN${NC}  %s\n" "Flow offloading active (${_flow_offload}) - bypasses b4; disable it for b4 to work" >&2
         printf "    ${DIM}          Or hold it off until b4 has seen the start of a connection: in /usr/share/firewall4/templates/ruleset.uc${NC}\n" >&2

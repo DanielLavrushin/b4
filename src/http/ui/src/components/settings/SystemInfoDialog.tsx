@@ -70,19 +70,13 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
 
   const flowOffloadText = (fw: Diagnostics["firewall"]) => {
     if (fw.flow_offload === "off") return t("settings.SystemInfo.flowOffloadOff");
-    const hw = fw.flow_offload === "hardware";
-    if (fw.flow_offload_safe)
-      return t(
-        hw
-          ? "settings.SystemInfo.flowOffloadHwGuarded"
-          : "settings.SystemInfo.flowOffloadSwGuarded",
-        { packets: fw.flow_offload_guard ?? 0 },
-      );
-    return t(
-      hw
-        ? "settings.SystemInfo.flowOffloadHw"
-        : "settings.SystemInfo.flowOffloadSw",
-    );
+    const mode = fw.flow_offload === "hardware" ? "Hw" : "Sw";
+    const guard = fw.flow_offload_guard ?? 0;
+    if (guard <= 0) return t(`settings.SystemInfo.flowOffload${mode}`);
+    const verdict = fw.flow_offload_safe ? "Guarded" : "GuardedUnsafe";
+    return t(`settings.SystemInfo.flowOffload${mode}${verdict}`, {
+      packets: guard,
+    });
   };
 
   const boolChip = (ok: boolean, yesLabel: string, noLabel: string) => (
