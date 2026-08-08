@@ -109,11 +109,14 @@ func Analyze(input string, opts Options) (*Result, error) {
 
 	notes := newNoteSet()
 	prog, resolved := buildProgram(spec, version, tokens, notes)
+	runNormalizer(spec.Normalize, prog, resolved, notes)
 	resolved = foldUDPProfiles(prog, resolved)
 	sets := emit(prog, resolved, notes, emitOpts{
 		NamePrefix:     opts.NamePrefix,
 		Domains:        opts.Domains,
 		ProfileDomains: opts.ProfileDomains,
+		ProfileModel:   spec.ProfileModel,
+		BreakKeys:      spec.ProfileBreak,
 	})
 	noteUnaccounted(resolved, notes)
 
@@ -201,6 +204,9 @@ func buildWarnings(spec *Spec, argv []string, prog *Program, sets []config.SetCo
 	if enabled == 0 {
 		out = append(out, Warning{Code: "needsTargets", Params: map[string]any{"sets": len(sets)}})
 	}
+	if shadowed := countShadowed(sets); shadowed > 0 {
+		out = append(out, Warning{Code: "shadowedSets", Params: map[string]any{"count": shadowed}})
+	}
 	if prog.Globals.NoUDP {
 		out = append(out, Warning{Code: "udpDisabledUpstream"})
 	}
@@ -208,6 +214,16 @@ func buildWarnings(spec *Spec, argv []string, prog *Program, sets []config.SetCo
 		out = append(out, Warning{Code: "profilesAsSets", Params: map[string]any{"count": len(prog.Profiles)}})
 	}
 	return out
+}
+
+func countShadowed(sets []config.SetConfig) int {
+	n := 0
+	for _, s := range sets {
+		if !s.Enabled && len(s.Targets.SNIDomains) > 0 {
+			n++
+		}
+	}
+	return n
 }
 
 func score(notes []Note) Fidelity {

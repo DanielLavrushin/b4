@@ -8,13 +8,14 @@ import (
 )
 
 type Value struct {
-	Str  string
-	Int  int
-	Bool bool
-	Byte byte
-	Pos  Pos
-	List []string
-	Ref  string
+	Str       string
+	Int       int
+	Bool      bool
+	Byte      byte
+	Pos       Pos
+	Positions []Pos
+	List      []string
+	Ref       string
 }
 
 type grammarCtx struct {

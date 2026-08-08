@@ -19,6 +19,7 @@ const (
 	AnchorSNI    Anchor = "sni"
 	AnchorHost   Anchor = "host"
 	AnchorPacket Anchor = "packet"
+	AnchorSNIExt Anchor = "sniext"
 )
 
 type Rel string
@@ -50,6 +51,8 @@ const (
 	SplitDisOOB   SplitKind = "disoob"
 	SplitFake     SplitKind = "fake"
 	SplitTLSRec   SplitKind = "tlsrec"
+	SplitIPFrag   SplitKind = "ipfrag"
+	SplitExt      SplitKind = "extsplit"
 )
 
 type SplitOp struct {
@@ -74,13 +77,17 @@ type Trigger struct {
 }
 
 type Filters struct {
-	Protos   []string `json:"protos"`
-	Hosts    []string `json:"hosts"`
-	HostsRef string   `json:"hosts_ref"`
-	IPs      []string `json:"ips"`
-	IPsRef   string   `json:"ips_ref"`
-	PortMin  int      `json:"port_min"`
-	PortMax  int      `json:"port_max"`
+	Protos    []string `json:"protos"`
+	Hosts     []string `json:"hosts"`
+	HostsRef  string   `json:"hosts_ref"`
+	Excluded  []string `json:"excluded"`
+	IPs       []string `json:"ips"`
+	IPsRef    string   `json:"ips_ref"`
+	PortMin   int      `json:"port_min"`
+	PortMax   int      `json:"port_max"`
+	TCPPorts  []string `json:"tcp_ports"`
+	UDPPorts  []string `json:"udp_ports"`
+	IPVersion string   `json:"ip_version"`
 }
 
 func (f Filters) HasProto(p string) bool {
@@ -94,31 +101,69 @@ func (f Filters) HasProto(p string) bool {
 
 func (f Filters) Empty() bool {
 	return len(f.Protos) == 0 && len(f.Hosts) == 0 && f.HostsRef == "" &&
-		len(f.IPs) == 0 && f.IPsRef == "" && f.PortMin == 0
+		len(f.IPs) == 0 && f.IPsRef == "" && f.PortMin == 0 &&
+		len(f.TCPPorts) == 0 && len(f.UDPPorts) == 0 && f.IPVersion == ""
 }
 
 type FakeOp struct {
-	Present    bool     `json:"present"`
-	Pos        Pos      `json:"pos"`
-	TTL        int      `json:"ttl"`
-	TTLSet     bool     `json:"ttl_set"`
-	MD5Sig     bool     `json:"md5sig"`
-	IPOpt      bool     `json:"ip_opt"`
-	DataInline string   `json:"data_inline"`
-	DataRef    string   `json:"data_ref"`
-	SNIs       []string `json:"snis"`
-	TLSMod     []string `json:"tls_mod"`
-	TLSSize    int      `json:"tls_size"`
-	TLSSizeSet bool     `json:"tls_size_set"`
-	Offset     int      `json:"offset"`
-	OffsetSet  bool     `json:"offset_set"`
+	Present      bool     `json:"present"`
+	Pos          Pos      `json:"pos"`
+	TTL          int      `json:"ttl"`
+	TTLSet       bool     `json:"ttl_set"`
+	Fooling      []string `json:"fooling"`
+	Repeats      int      `json:"repeats"`
+	SeqIncrement int      `json:"seq_increment"`
+	TSIncrement  int      `json:"ts_increment"`
+	QUICRef      string   `json:"quic_ref"`
+	MD5Sig       bool     `json:"md5sig"`
+	IPOpt        bool     `json:"ip_opt"`
+	DataInline   string   `json:"data_inline"`
+	DataRef      string   `json:"data_ref"`
+	SNIs         []string `json:"snis"`
+	TLSMod       []string `json:"tls_mod"`
+	TLSSize      int      `json:"tls_size"`
+	TLSSizeSet   bool     `json:"tls_size_set"`
+	Offset       int      `json:"offset"`
+	OffsetSet    bool     `json:"offset_set"`
 }
 
 type UDPOp struct {
-	FakeCount int `json:"fake_count"`
+	FakeCount int      `json:"fake_count"`
+	Present   bool     `json:"present"`
+	Repeats   int      `json:"repeats"`
+	QUICRef   string   `json:"quic_ref"`
+	TTL       int      `json:"ttl"`
+	TTLSet    bool     `json:"ttl_set"`
+	Ports     []string `json:"ports"`
+}
+
+func (u UDPOp) Empty() bool {
+	return u.FakeCount == 0 && !u.Present && u.Repeats == 0 &&
+		u.QUICRef == "" && !u.TTLSet && len(u.Ports) == 0
+}
+
+type DesyncOp struct {
+	Mode    string `json:"mode"`
+	Repeats int    `json:"repeats"`
+}
+
+type SynFakeOp struct {
+	Enabled bool `json:"enabled"`
+	Len     int  `json:"len"`
+}
+
+type SeqOvlOp struct {
+	Length  int    `json:"length"`
+	Pattern string `json:"pattern"`
 }
 
 func (p *Profile) UDPOnly() bool {
+	if len(p.Filters.UDPPorts) > 0 && len(p.Filters.TCPPorts) == 0 {
+		return true
+	}
+	if p.Filters.HasProto("quic") || p.Filters.HasProto("stun") {
+		return !p.Filters.HasProto("tls") && !p.Filters.HasProto("http")
+	}
 	return len(p.Filters.Protos) > 0 && p.Filters.HasProto("udp") &&
 		!p.Filters.HasProto("tls") && !p.Filters.HasProto("http")
 }
@@ -146,8 +191,21 @@ type Profile struct {
 	TLSMinor int       `json:"tls_minor"`
 	Tokens   []int     `json:"tokens"`
 
+	Desync    DesyncOp  `json:"desync"`
+	SynFake   SynFakeOp `json:"syn_fake"`
+	SeqOvl    SeqOvlOp  `json:"seq_ovl"`
+	Duplicate int       `json:"duplicate"`
+	WinSize   int       `json:"win_size"`
+	Skip      bool      `json:"skip"`
+
+	DesyncModes    []string `json:"desync_modes"`
+	SplitPositions []Pos    `json:"split_positions"`
+
 	ProtoTokens       []int `json:"-"`
 	FoldedProtoTokens []int `json:"-"`
+	FoldedTokens      []int `json:"-"`
+	DesyncToken       int   `json:"-"`
+	SplitPosToken     int   `json:"-"`
 }
 
 type Globals struct {
