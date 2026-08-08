@@ -188,3 +188,26 @@ func TestSynDetectEnabled(t *testing.T) {
 		t.Errorf("a nil set must not enable SYN watching")
 	}
 }
+
+func TestRecordDestAliveSurvivesNilCaches(t *testing.T) {
+	health := iphealth.NewTracker(func(string, uint16, int) bool { return false })
+	defer health.Stop()
+
+	cases := map[string]*Worker{
+		"nil host hints": {ipHealth: health, goodIPs: iphealth.NewKnownGood()},
+		"nil good ips":   {ipHealth: health, hostHints: newHostHintCache()},
+		"both nil":       {ipHealth: health},
+		"nil ip health":  {goodIPs: iphealth.NewKnownGood(), hostHints: newHostHintCache()},
+	}
+
+	for name, w := range cases {
+		t.Run(name, func(t *testing.T) {
+			w.recordDestAlive("185.199.110.133", "192.168.1.10", true)
+			w.recordDestAlive("185.199.110.133", "192.168.1.10", false)
+			w.recordDestAlive("", "", true)
+		})
+	}
+
+	var nilWorker *Worker
+	nilWorker.recordDestAlive("1.2.3.4", "5.6.7.8", true)
+}
