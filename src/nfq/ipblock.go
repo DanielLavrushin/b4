@@ -84,7 +84,7 @@ func (w *Worker) recordDestAlive(serverIP, clientIP string, isSynAck bool) {
 		return
 	}
 	if _, host, ok := w.hostHints.Lookup(clientIP, serverIP); ok && host != "" {
-		w.goodIPs.Store(host, net.ParseIP(serverIP))
+		w.goodIPs.Remember(host, net.ParseIP(serverIP))
 	}
 }
 
