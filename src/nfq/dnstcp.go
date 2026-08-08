@@ -296,14 +296,14 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 
 func (s *dnsTCPServer) resolve(set *config.SetConfig, cfg *config.Config, query []byte, targetIP net.IP) ([]byte, error) {
 	if set.DNS.DoHURL != "" {
-		return s.worker.resolveDoHRedirect(set.DNS.DoHURL, int(cfg.Queue.Mark), query)
+		return s.worker.resolveDoHRedirect(set.DNS.DoHURL, int(cfg.MainInjectedMark()), query)
 	}
 	return dns.ResolveUpstream(query, targetIP, dns.ForwardOptions{
 		Sender:       s.worker.sock,
 		Fragment:     set.DNS.FragmentQuery,
 		Seg2Delay:    config.ResolveSeg2Delay(set.UDP.Seg2Delay, set.UDP.Seg2DelayMax),
 		ReverseOrder: set.Fragmentation.ReverseOrder,
-		Mark:         int(cfg.Queue.Mark),
+		Mark:         int(cfg.MainInjectedMark()),
 	})
 }
 
