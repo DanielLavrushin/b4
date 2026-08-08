@@ -17,6 +17,7 @@
 - ADDED: **A warm spare connection to your Cloudflare Worker** - one ready connection per Worker and data center, in place of the 65-90 ms handshake every new Telegram connection paid for.
 - FIXED: **Traffic to a Cloudflare Worker was cut into one small write per Telegram message** - that framing was only ever required by Telegram's own WebSocket edge.
 - CHANGED: **Several Worker addresses are tried in a random order** - they were tried strictly as written, so the first absorbed all the traffic and all the rate limiting.
+- FIXED: **Flow offloading was reported as a problem even when it had been set up to leave b4 alone** - the check could not tell a fast path that skips b4 entirely from one held back until b4 has seen the start of a connection.
 
 ## [1.74.2] - 2026-08-02
 

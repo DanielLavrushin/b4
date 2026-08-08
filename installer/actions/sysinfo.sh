@@ -295,11 +295,13 @@ action_sysinfo() {
         fi
     fi
 
-    # Flow offloading — offloaded flows skip the netfilter hooks where b4's
+    # Flow offloading - offloaded flows skip the netfilter hooks where b4's
     # NFQUEUE rules live, so b4 never sees the traffic (common cause of "b4
-    # installed but nothing is bypassed" on OpenWrt). Detect the active runtime
-    # state, not just the UCI config.
+    # installed but nothing is bypassed" on OpenWrt). A flowtable guarded by a
+    # packet counter is fine as long as it lets more packets through the slow
+    # path than b4 queues. Detect the active runtime state, not the UCI config.
     _flow_offload=""
+    _flow_guard=0
     if command_exists nft; then
         _nft_ruleset=$(nft list ruleset 2>/dev/null)
         if echo "$_nft_ruleset" | grep -q "flow add @\|flow offload @"; then
@@ -308,6 +310,7 @@ action_sysinfo() {
             else
                 _flow_offload="software"
             fi
+            _flow_guard=$(echo "$_nft_ruleset" | _nft_flow_guard)
         fi
     fi
     if [ -z "$_flow_offload" ]; then
@@ -320,14 +323,22 @@ action_sysinfo() {
                 else
                     _flow_offload="software"
                 fi
+                _flow_guard=$(echo "$_ipt_filter" | _ipt_flow_guard)
                 break
             fi
         done
     fi
-    if [ -n "$_flow_offload" ]; then
-        printf "    ${RED}  WARN${NC}  %s\n" "Flow offloading active (${_flow_offload}) — bypasses b4; disable it for b4 to work" >&2
-    else
+    if [ -z "$_flow_offload" ]; then
         printf "    ${GREEN}  OK${NC}    %s\n" "Flow offloading off (b4 can intercept traffic)" >&2
+    elif [ "$_flow_guard" -gt "$(_b4_queue_window)" ]; then
+        printf "    ${GREEN}  OK${NC}    %s\n" "Flow offloading active (${_flow_offload}), held off until packet ${_flow_guard} of a connection - b4 still sees the start of every connection" >&2
+        if [ "$(_b4_duplicate_sets)" != "0" ]; then
+            printf "    ${YELLOW}  WARN${NC}  %s\n" "A routing set has TCP duplication enabled, which needs every packet of the connection - turn flow offloading off or disable duplication" >&2
+        fi
+    else
+        printf "    ${RED}  WARN${NC}  %s\n" "Flow offloading active (${_flow_offload}) - bypasses b4; disable it for b4 to work" >&2
+        printf "    ${DIM}          Or hold it off until b4 has seen the start of a connection: in /usr/share/firewall4/templates/ruleset.uc${NC}\n" >&2
+        printf "    ${DIM}          replace 'flow offload @ft' with 'ct original packets ge 40 flow offload @ft', then: fw4 restart${NC}\n" >&2
     fi
 
     # --- Tools & dependencies ---

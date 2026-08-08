@@ -609,6 +609,70 @@ _ipt_connbytes_works() {
         --connbytes-mode packets --connbytes 0:10 -j ACCEPT
 }
 
+_nft_flow_guard() {
+    awk '
+        /flow add @|flow offload @/ {
+            g = 0
+            for (i = 1; i <= NF; i++) {
+                if ($i == "ct" && $(i + 1) == "original" && $(i + 2) == "packets") {
+                    op = $(i + 3)
+                    val = $(i + 4) + 0
+                    if (op == ">=" || op == "ge") g = val
+                    else if (op == ">" || op == "gt") g = val + 1
+                }
+            }
+            if (!seen || g < min) min = g
+            seen = 1
+        }
+        END { print (seen ? min : 0) }
+    '
+}
+
+_ipt_flow_guard() {
+    awk '
+        /FLOWOFFLOAD/ {
+            g = 0
+            if (index($0, "--connbytes-dir original") && index($0, "--connbytes-mode packets") && !index($0, "! --connbytes ")) {
+                for (i = 1; i <= NF; i++) {
+                    if ($i == "--connbytes") {
+                        split($(i + 1), b, ":")
+                        g = b[1] + 0
+                    }
+                }
+            }
+            if (!seen || g < min) min = g
+            seen = 1
+        }
+        END { print (seen ? min : 0) }
+    '
+}
+
+_b4_queue_window() {
+    _qw_tcp=19
+    _qw_udp=8
+    if [ -n "$B4_CONFIG_FILE" ] && [ -f "$B4_CONFIG_FILE" ] && command_exists jq; then
+        _qw_tcp=$(jq -r '.queue.tcp_conn_bytes_limit // 19' "$B4_CONFIG_FILE" 2>/dev/null || echo 19)
+        _qw_udp=$(jq -r '.queue.udp_conn_bytes_limit // 8' "$B4_CONFIG_FILE" 2>/dev/null || echo 8)
+    fi
+    case "$_qw_tcp" in '' | *[!0-9]*) _qw_tcp=19 ;; esac
+    case "$_qw_udp" in '' | *[!0-9]*) _qw_udp=8 ;; esac
+    if [ "$_qw_udp" -gt "$_qw_tcp" ]; then
+        echo "$_qw_udp"
+    else
+        echo "$_qw_tcp"
+    fi
+}
+
+_b4_duplicate_sets() {
+    if [ -z "$B4_CONFIG_FILE" ] || [ ! -f "$B4_CONFIG_FILE" ] || ! command_exists jq; then
+        echo 0
+        return 0
+    fi
+    _ds=$(jq -r '[.sets[]? | select(.enabled == true) | select(.tcp.duplicate.enabled == true)] | length' "$B4_CONFIG_FILE" 2>/dev/null || echo 0)
+    case "$_ds" in '' | *[!0-9]*) _ds=0 ;; esac
+    echo "$_ds"
+}
+
 _queue_functional() {
     case "$1" in
     nftables) _nft_queue_works ;;

@@ -68,6 +68,23 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
     );
   };
 
+  const flowOffloadText = (fw: Diagnostics["firewall"]) => {
+    if (fw.flow_offload === "off") return t("settings.SystemInfo.flowOffloadOff");
+    const hw = fw.flow_offload === "hardware";
+    if (fw.flow_offload_safe)
+      return t(
+        hw
+          ? "settings.SystemInfo.flowOffloadHwGuarded"
+          : "settings.SystemInfo.flowOffloadSwGuarded",
+        { packets: fw.flow_offload_guard ?? 0 },
+      );
+    return t(
+      hw
+        ? "settings.SystemInfo.flowOffloadHw"
+        : "settings.SystemInfo.flowOffloadSw",
+    );
+  };
+
   const boolChip = (ok: boolean, yesLabel: string, noLabel: string) => (
     <Chip
       size="small"
@@ -397,11 +414,9 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
           {row(
             t("settings.SystemInfo.flowOffload"),
             boolChip(
-              data.firewall.flow_offload === "off",
-              t("settings.SystemInfo.flowOffloadOff"),
-              data.firewall.flow_offload === "hardware"
-                ? t("settings.SystemInfo.flowOffloadHw")
-                : t("settings.SystemInfo.flowOffloadSw"),
+              data.firewall.flow_offload_safe,
+              flowOffloadText(data.firewall),
+              flowOffloadText(data.firewall),
             ),
           )}
           {data.firewall.rule_groups &&
