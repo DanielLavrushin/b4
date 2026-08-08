@@ -177,6 +177,13 @@ func (p *Profile) carriesNothing() bool {
 		p.Duplicate == 0 && p.WinSize == 0 && p.SeqOvl.Length == 0 && !p.Skip
 }
 
+func (p *Profile) carriesStrategy() bool {
+	return len(p.Splits) > 0 || p.Fake.Present || p.DropSACK || p.OOBSet ||
+		len(p.HTTPMod) > 0 || len(p.DesyncModes) > 0 || p.Desync.Mode != "" ||
+		p.SynFake.Enabled || p.Duplicate > 0 || p.WinSize > 0 || p.SeqOvl.Length > 0 ||
+		p.UDP.Present || p.UDP.FakeCount > 0 || p.UDP.QUICRef != "" || p.UDP.Repeats > 0
+}
+
 func (p *Profile) hasOwnTargets() bool {
 	return len(p.Filters.Hosts) > 0 || p.Filters.HostsRef != "" ||
 		len(p.Filters.IPs) > 0 || p.Filters.IPsRef != ""

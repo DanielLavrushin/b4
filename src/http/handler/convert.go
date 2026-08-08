@@ -132,6 +132,13 @@ func (api *API) handleConvertApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !res.Applicable {
+		writeAPIError(w, ErrBadRequest(
+			"None of the options that do the bypass were recognized, so the sets would carry no strategy. "+
+				"Analyze the configuration to see which options were not understood"))
+		return
+	}
+
 	created := assignSetIDs(res.Sets)
 	oldCfg := api.getCfg()
 	newCfg := oldCfg.Clone()

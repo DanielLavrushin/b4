@@ -76,6 +76,7 @@ export interface ConvertResult {
   unresolved: ConvertUnresolved[];
   fidelity: ConvertFidelity;
   plan: ConvertSetPlan[];
+  applicable: boolean;
 }
 
 export interface ConvertRequest {
