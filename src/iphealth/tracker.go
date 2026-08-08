@@ -161,7 +161,27 @@ func (t *Tracker) RecordSyn(ip string, port uint16, mark, threshold int, timeout
 	t.enqueue(probeRequest{ip: ip, port: port, mark: mark})
 }
 
-func (t *Tracker) RecordAlive(ip string) {
+func (t *Tracker) RecordResponse(ip string) {
+	if t == nil || ip == "" {
+		return
+	}
+
+	now := time.Now()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	e := t.entries[ip]
+	if e == nil || e.state == stateDead {
+		return
+	}
+	e.state = stateLive
+	e.syns = 0
+	e.probing = false
+	e.seen = now
+	e.changedAt = now
+}
+
+func (t *Tracker) RecordHandshake(ip string) {
 	if t == nil || ip == "" {
 		return
 	}
@@ -181,7 +201,7 @@ func (t *Tracker) RecordAlive(ip string) {
 	e.seen = now
 	e.changedAt = now
 	if wasDead {
-		log.Infof("IP health: %s responded again, no longer treated as unreachable", ip)
+		log.Infof("IP health: %s completed a handshake again, no longer treated as unreachable", ip)
 	}
 }
 

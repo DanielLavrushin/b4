@@ -78,9 +78,13 @@ func (w *Worker) recordDestAlive(serverIP, clientIP string, isSynAck bool) {
 	if w == nil || w.ipHealth == nil {
 		return
 	}
-	w.ipHealth.RecordAlive(serverIP)
+	if !isSynAck {
+		w.ipHealth.RecordResponse(serverIP)
+		return
+	}
+	w.ipHealth.RecordHandshake(serverIP)
 
-	if !isSynAck || w.goodIPs == nil || clientIP == "" {
+	if w.goodIPs == nil || clientIP == "" {
 		return
 	}
 	if _, host, ok := w.hostHints.Lookup(clientIP, serverIP); ok && host != "" {

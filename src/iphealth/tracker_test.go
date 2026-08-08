@@ -85,23 +85,6 @@ func TestTrackerProbeRescuesFalsePositive(t *testing.T) {
 	}
 }
 
-func TestTrackerRecordAliveClearsDead(t *testing.T) {
-	s := newTestTracker(func(string) bool { return false })
-	defer s.Stop()
-
-	for i := 0; i < 3; i++ {
-		s.RecordSyn("1.2.3.4", 443, 0, 3, time.Hour)
-	}
-	if !waitFor(t, func() bool { return s.IsDead("1.2.3.4") }) {
-		t.Fatal("destination never became dead")
-	}
-
-	s.RecordAlive("1.2.3.4")
-	if s.IsDead("1.2.3.4") {
-		t.Errorf("a reply from the destination did not clear the dead state")
-	}
-}
-
 func TestTrackerDeadStateExpiresAndReprobes(t *testing.T) {
 	var mu sync.Mutex
 	reachable := false
@@ -195,5 +178,58 @@ func TestTrackerStopIsIdempotent(t *testing.T) {
 	s.RecordSyn("5.6.7.8", 443, 0, 1, time.Hour)
 	if s.IsDead("5.6.7.8") {
 		t.Errorf("store kept condemning destinations after Stop")
+	}
+}
+
+func TestTrackerRecordResponseCannotResurrectDead(t *testing.T) {
+	s := newTestTracker(func(string) bool { return false })
+	defer s.Stop()
+
+	for i := 0; i < 3; i++ {
+		s.RecordSyn("1.2.3.4", 443, 0, 3, time.Hour)
+	}
+	if !waitFor(t, func() bool { return s.IsDead("1.2.3.4") }) {
+		t.Fatal("destination never became dead")
+	}
+
+	s.RecordResponse("1.2.3.4")
+
+	if !s.IsDead("1.2.3.4") {
+		t.Error("a bare inbound packet cleared the dead verdict; b4's own injected reset carries the destination as its source and loops back when the client is the router itself, so this resurrects the address on every reset")
+	}
+}
+
+func TestTrackerHandshakeClearsDead(t *testing.T) {
+	s := newTestTracker(func(string) bool { return false })
+	defer s.Stop()
+
+	for i := 0; i < 3; i++ {
+		s.RecordSyn("1.2.3.4", 443, 0, 3, time.Hour)
+	}
+	if !waitFor(t, func() bool { return s.IsDead("1.2.3.4") }) {
+		t.Fatal("destination never became dead")
+	}
+
+	s.RecordHandshake("1.2.3.4")
+
+	if s.IsDead("1.2.3.4") {
+		t.Error("a completed handshake must clear the dead verdict, otherwise a recovered address stays blocked")
+	}
+}
+
+func TestTrackerResponseStillRefreshesLiveEntry(t *testing.T) {
+	s := newTestTracker(func(string) bool { return false })
+	defer s.Stop()
+
+	s.RecordSyn("1.2.3.4", 443, 0, 3, time.Hour)
+	s.RecordResponse("1.2.3.4")
+
+	s.mu.Lock()
+	e := s.entries["1.2.3.4"]
+	syns, st := e.syns, e.state
+	s.mu.Unlock()
+
+	if syns != 0 || st != stateLive {
+		t.Errorf("syns=%d state=%v, want a reply to reset the SYN counter on a live entry", syns, st)
 	}
 }
