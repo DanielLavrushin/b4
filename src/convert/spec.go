@@ -71,11 +71,18 @@ type DetectSpec struct {
 	EnvVars   []string `json:"env_vars"`
 }
 
+type SpecDefaults struct {
+	FakeTTL       int  `json:"fake_ttl"`
+	FakeTTLForced bool `json:"fake_ttl_forced"`
+	OOBByte       int  `json:"oob_byte"`
+}
+
 type Spec struct {
 	Tool         string        `json:"tool"`
 	Label        string        `json:"label"`
 	Style        string        `json:"style"`
 	Homepage     string        `json:"homepage"`
+	Defaults     SpecDefaults  `json:"defaults"`
 	Detect       DetectSpec    `json:"detect"`
 	Versions     []VersionSpec `json:"versions"`
 	Ambiguous    []string      `json:"ambiguous"`

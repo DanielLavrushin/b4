@@ -3,101 +3,661 @@
   "label": "byedpi",
   "style": "getopt_long",
   "homepage": "https://github.com/hufrea/byedpi",
+  "defaults": {
+    "fake_ttl": 8,
+    "fake_ttl_forced": true,
+    "oob_byte": 97
+  },
   "detect": {
-    "markers": ["ciadpi", "byedpi"],
-    "signature": ["-K", "-A", "--proto", "--auto", "--disoob", "--tlsrec", "--oob-data"],
-    "reject": ["--dpi-desync", "--new", "--qnum", "--hostlist", "--filter-tcp"]
+    "markers": [
+      "ciadpi",
+      "byedpi"
+    ],
+    "signature": [
+      "-K",
+      "-A",
+      "--proto",
+      "--auto",
+      "--disoob",
+      "--tlsrec",
+      "--oob-data"
+    ],
+    "reject": [
+      "--dpi-desync",
+      "--new",
+      "--qnum",
+      "--hostlist",
+      "--filter-tcp"
+    ]
   },
   "versions": [
     {
       "id": "0.13",
       "label": "0.13",
-      "markers": ["-k", "--ip-opt"]
+      "markers": [
+        "-k",
+        "--ip-opt"
+      ]
     },
     {
       "id": "0.17",
       "label": "0.15 - 0.17",
       "markers": [
-        "-Q", "--fake-tls-mod",
-        "-L", "--auto-mode",
-        "-R", "--round",
-        "-j", "--ipset",
-        "-m", "--tlsminor",
-        "-B", "--copy",
-        "-C", "--connect-to",
-        "-y", "--cache-dump",
-        "-D", "--daemon",
-        "-E", "--transparent",
-        "-G", "--http-connect",
-        "-Z", "--wait-send"
+        "-Q",
+        "--fake-tls-mod",
+        "-L",
+        "--auto-mode",
+        "-R",
+        "--round",
+        "-j",
+        "--ipset",
+        "-m",
+        "--tlsminor",
+        "-B",
+        "--copy",
+        "-C",
+        "--connect-to",
+        "-y",
+        "--cache-dump",
+        "-D",
+        "--daemon",
+        "-E",
+        "--transparent",
+        "-G",
+        "--http-connect",
+        "-Z",
+        "--wait-send"
       ],
       "pos_hint": true,
       "default": true
     }
   ],
-  "ambiguous": ["-w", "-W", "-n", "-O"],
-  "profile_break": ["auto"],
+  "ambiguous": [
+    "-w",
+    "-W",
+    "-n",
+    "-O"
+  ],
+  "profile_break": [
+    "auto"
+  ],
   "options": [
-    { "key": "no_domain",     "short": "N", "long": "no-domain",     "arg": "none",     "scope": "global",  "target": "_.na", "note": "resolverBehaviour" },
-    { "key": "no_ipv6",       "short": "X", "long": "no-ipv6",       "arg": "none",     "scope": "global",  "target": "global.no_ipv6" },
-    { "key": "no_udp",        "short": "U", "long": "no-udp",        "arg": "none",     "scope": "global",  "target": "global.no_udp" },
-    { "key": "help",          "short": "h", "long": "help",          "arg": "none",     "scope": "global",  "target": "_.ignore" },
-    { "key": "show_version",  "short": "v", "long": "version",       "arg": "none",     "scope": "global",  "target": "_.ignore" },
-
-    { "key": "listen_ip",     "short": "i", "long": "ip",            "arg": "required", "scope": "global",  "grammar": "str",   "target": "_.na", "note": "proxyRuntime" },
-    { "key": "listen_port",   "short": "p", "long": "port",          "arg": "required", "scope": "global",  "grammar": "int",   "target": "_.na", "note": "proxyRuntime" },
-    { "key": "conn_ip",       "short": "I", "long": "conn-ip",       "arg": "required", "scope": "global",  "grammar": "str",   "target": "_.na", "note": "proxyRuntime" },
-    { "key": "buf_size",      "short": "b", "long": "buf-size",      "arg": "required", "scope": "global",  "grammar": "int",   "target": "_.na", "note": "proxyRuntime" },
-    { "key": "max_conn",      "short": "c", "long": "max-conn",      "arg": "required", "scope": "global",  "grammar": "int",   "target": "_.na", "note": "proxyRuntime" },
-    { "key": "debug",         "short": "x", "long": "debug",         "arg": "required", "scope": "global",  "grammar": "int",   "target": "_.na", "note": "proxyRuntime" },
-    { "key": "tfo",           "short": "F", "long": "tfo",           "arg": "none",     "scope": "global",  "target": "_.na", "note": "proxyRuntime" },
-    { "key": "protect_path",  "short": "P", "long": "protect-path",  "arg": "required", "scope": "global",  "grammar": "str",   "target": "_.na", "note": "proxyRuntime" },
-
-    { "key": "auto",          "short": "A", "long": "auto",          "arg": "required", "scope": "break",   "grammar": "csvfirstchar", "target": "trigger" },
-    { "key": "cache_ttl",     "short": "u", "long": "cache-ttl",     "arg": "required", "scope": "global",  "grammar": "int",   "target": "_.na", "note": "autoRetryTiming" },
-    { "key": "timeout",       "short": "T", "long": "timeout",       "arg": "required", "scope": "global",  "grammar": "float_sec", "target": "_.na", "note": "autoRetryTiming" },
-    { "key": "def_ttl",       "short": "g", "long": "def-ttl",       "arg": "required", "scope": "global",  "grammar": "int",   "target": "_.na", "note": "globalTTL" },
-
-    { "key": "proto",         "short": "K", "long": "proto",         "arg": "required", "scope": "profile", "grammar": "csvfirstchar", "target": "filters.proto" },
-    { "key": "hosts",         "short": "H", "long": "hosts",         "arg": "required", "scope": "profile", "grammar": "hostlist",     "target": "filters.hosts" },
-    { "key": "pf",            "short": "V", "long": "pf",            "arg": "required", "scope": "profile", "grammar": "portrange",    "target": "filters.ports" },
-
-    { "key": "split",         "short": "s", "long": "split",         "arg": "required", "scope": "profile", "grammar": "byedpi.pos", "target": "splits[]", "const": { "kind": "split" } },
-    { "key": "disorder",      "short": "d", "long": "disorder",      "arg": "required", "scope": "profile", "grammar": "byedpi.pos", "target": "splits[]", "const": { "kind": "disorder" } },
-    { "key": "oob",           "short": "o", "long": "oob",           "arg": "required", "scope": "profile", "grammar": "byedpi.pos", "target": "splits[]", "const": { "kind": "oob" } },
-    { "key": "disoob",        "short": "q", "long": "disoob",        "arg": "required", "scope": "profile", "grammar": "byedpi.pos", "target": "splits[]", "const": { "kind": "disoob" } },
-    { "key": "fake",          "short": "f", "long": "fake",          "arg": "required", "scope": "profile", "grammar": "byedpi.pos", "target": "splits[]", "const": { "kind": "fake" } },
-    { "key": "tlsrec",        "short": "r", "long": "tlsrec",        "arg": "required", "scope": "profile", "grammar": "byedpi.pos", "target": "splits[]", "const": { "kind": "tlsrec" } },
-
-    { "key": "ttl",           "short": "t", "long": "ttl",           "arg": "required", "scope": "profile", "grammar": "int",   "target": "fake.ttl" },
-    { "key": "md5sig",        "short": "S", "long": "md5sig",        "arg": "none",     "scope": "profile", "target": "fake.md5sig" },
-    { "key": "fake_data",     "short": "l", "long": "fake-data",     "arg": "required", "scope": "profile", "grammar": "cdata", "target": "fake.data" },
-    { "key": "oob_data",      "short": "e", "long": "oob-data",      "arg": "required", "scope": "profile", "grammar": "cchar", "target": "profile.oob_byte" },
-    { "key": "mod_http",      "short": "M", "long": "mod-http",      "arg": "required", "scope": "profile", "grammar": "csvfirstchar", "target": "profile.http_mod" },
-    { "key": "udp_fake",      "short": "a", "long": "udp-fake",      "arg": "required", "scope": "profile", "grammar": "int",   "target": "profile.udp_fake_count" },
-    { "key": "drop_sack",     "short": "Y", "long": "drop-sack",     "arg": "none",     "scope": "profile", "target": "profile.drop_sack" },
-
-    { "key": "ip_opt",        "short": "k", "long": "ip-opt",        "arg": "optional", "scope": "profile", "grammar": "cdata", "target": "fake.ip_opt",  "versions": ["0.13"] },
-    { "key": "tls_sni",       "short": "n", "long": "tls-sni",       "arg": "required", "scope": "global",  "grammar": "str",   "target": "global.fake_sni", "versions": ["0.13"] },
-    { "key": "fake_offset",   "short": "O", "long": "fake-offset",   "arg": "required", "scope": "profile", "grammar": "int",   "target": "fake.offset",  "versions": ["0.13"] },
-    { "key": "delay",         "short": "w", "long": "delay",         "arg": "required", "scope": "global",  "grammar": "int",   "target": "global.delay", "versions": ["0.13"] },
-    { "key": "not_wait_send", "short": "W", "long": "not-wait-send", "arg": "none",     "scope": "global",  "target": "_.na", "note": "proxyRuntime", "versions": ["0.13"] },
-
-    { "key": "fake_sni",      "short": "n", "long": "fake-sni",      "arg": "required", "scope": "profile", "grammar": "str",        "target": "fake.sni[]",       "versions": ["0.17"] },
-    { "key": "fake_offset_pos", "short": "O", "long": "fake-offset", "arg": "required", "scope": "profile", "grammar": "byedpi.pos", "target": "fake.offset_pos",  "versions": ["0.17"] },
-    { "key": "fake_tls_mod",  "short": "Q", "long": "fake-tls-mod",  "arg": "required", "scope": "profile", "grammar": "csvkv",      "target": "fake.tls_mod",     "versions": ["0.17"] },
-    { "key": "tls_minor",     "short": "m", "long": "tlsminor",      "arg": "required", "scope": "profile", "grammar": "int",        "target": "profile.tls_minor","versions": ["0.17"] },
-    { "key": "round",         "short": "R", "long": "round",         "arg": "required", "scope": "profile", "grammar": "range",      "target": "profile.round",    "versions": ["0.17"] },
-    { "key": "ipset",         "short": "j", "long": "ipset",         "arg": "required", "scope": "profile", "grammar": "iplist",     "target": "filters.ips",      "versions": ["0.17"] },
-    { "key": "connect_to",    "short": "C", "long": "connect-to",    "arg": "required", "scope": "profile", "grammar": "str",        "target": "profile.unsupported", "note": "noEquivalent", "versions": ["0.17"] },
-    { "key": "copy",          "short": "B", "long": "copy",          "arg": "required", "scope": "profile", "grammar": "str",        "target": "profile.unsupported", "note": "profileCopy", "versions": ["0.17"] },
-    { "key": "auto_mode",     "short": "L", "long": "auto-mode",     "arg": "required", "scope": "global",  "grammar": "csvfirstchar", "target": "_.na", "note": "autoRetryTiming", "versions": ["0.17"] },
-    { "key": "pidfile",       "short": "w", "long": "pidfile",       "arg": "required", "scope": "global",  "grammar": "str",   "target": "_.na", "note": "processControl", "versions": ["0.17"] },
-    { "key": "await_int",     "short": "W", "long": "await-int",     "arg": "required", "scope": "global",  "grammar": "int",   "target": "_.na", "note": "proxyRuntime",   "versions": ["0.17"] },
-    { "key": "cache_dump",    "short": "y", "long": "cache-dump",    "arg": "required", "scope": "global",  "grammar": "str",   "target": "_.na", "note": "processControl", "versions": ["0.17"] },
-    { "key": "daemon",        "short": "D", "long": "daemon",        "arg": "none",     "scope": "global",  "target": "_.na", "note": "processControl", "versions": ["0.17"] },
-    { "key": "transparent",   "short": "E", "long": "transparent",   "arg": "none",     "scope": "global",  "target": "_.na", "note": "proxyRuntime",   "versions": ["0.17"] },
-    { "key": "http_connect",  "short": "G", "long": "http-connect",  "arg": "none",     "scope": "global",  "target": "_.na", "note": "proxyRuntime",   "versions": ["0.17"] },
-    { "key": "wait_send",     "short": "Z", "long": "wait-send",     "arg": "none",     "scope": "global",  "target": "_.na", "note": "proxyRuntime",   "versions": ["0.17"] }
+    {
+      "key": "no_domain",
+      "short": "N",
+      "long": "no-domain",
+      "arg": "none",
+      "scope": "global",
+      "target": "_.na",
+      "note": "resolverBehaviour"
+    },
+    {
+      "key": "no_ipv6",
+      "short": "X",
+      "long": "no-ipv6",
+      "arg": "none",
+      "scope": "global",
+      "target": "global.no_ipv6"
+    },
+    {
+      "key": "no_udp",
+      "short": "U",
+      "long": "no-udp",
+      "arg": "none",
+      "scope": "global",
+      "target": "global.no_udp"
+    },
+    {
+      "key": "help",
+      "short": "h",
+      "long": "help",
+      "arg": "none",
+      "scope": "global",
+      "target": "_.ignore"
+    },
+    {
+      "key": "show_version",
+      "short": "v",
+      "long": "version",
+      "arg": "none",
+      "scope": "global",
+      "target": "_.ignore"
+    },
+    {
+      "key": "listen_ip",
+      "short": "i",
+      "long": "ip",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "str",
+      "target": "_.na",
+      "note": "proxyRuntime"
+    },
+    {
+      "key": "listen_port",
+      "short": "p",
+      "long": "port",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "int",
+      "target": "_.na",
+      "note": "proxyRuntime"
+    },
+    {
+      "key": "conn_ip",
+      "short": "I",
+      "long": "conn-ip",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "str",
+      "target": "_.na",
+      "note": "proxyRuntime"
+    },
+    {
+      "key": "buf_size",
+      "short": "b",
+      "long": "buf-size",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "int",
+      "target": "_.na",
+      "note": "proxyRuntime"
+    },
+    {
+      "key": "max_conn",
+      "short": "c",
+      "long": "max-conn",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "int",
+      "target": "_.na",
+      "note": "proxyRuntime"
+    },
+    {
+      "key": "debug",
+      "short": "x",
+      "long": "debug",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "int",
+      "target": "_.na",
+      "note": "proxyRuntime"
+    },
+    {
+      "key": "tfo",
+      "short": "F",
+      "long": "tfo",
+      "arg": "none",
+      "scope": "global",
+      "target": "_.na",
+      "note": "proxyRuntime"
+    },
+    {
+      "key": "protect_path",
+      "short": "P",
+      "long": "protect-path",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "str",
+      "target": "_.na",
+      "note": "proxyRuntime"
+    },
+    {
+      "key": "auto",
+      "short": "A",
+      "long": "auto",
+      "arg": "required",
+      "scope": "break",
+      "grammar": "csvfirstchar",
+      "target": "trigger"
+    },
+    {
+      "key": "cache_ttl",
+      "short": "u",
+      "long": "cache-ttl",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "int",
+      "target": "_.na",
+      "note": "autoRetryTiming"
+    },
+    {
+      "key": "timeout",
+      "short": "T",
+      "long": "timeout",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "float_sec",
+      "target": "_.na",
+      "note": "autoRetryTiming"
+    },
+    {
+      "key": "def_ttl",
+      "short": "g",
+      "long": "def-ttl",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "int",
+      "target": "_.na",
+      "note": "globalTTL"
+    },
+    {
+      "key": "proto",
+      "short": "K",
+      "long": "proto",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "csvfirstchar",
+      "target": "filters.proto"
+    },
+    {
+      "key": "hosts",
+      "short": "H",
+      "long": "hosts",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "hostlist",
+      "target": "filters.hosts"
+    },
+    {
+      "key": "pf",
+      "short": "V",
+      "long": "pf",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "portrange",
+      "target": "filters.ports"
+    },
+    {
+      "key": "split",
+      "short": "s",
+      "long": "split",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "byedpi.pos",
+      "target": "splits[]",
+      "const": {
+        "kind": "split"
+      }
+    },
+    {
+      "key": "disorder",
+      "short": "d",
+      "long": "disorder",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "byedpi.pos",
+      "target": "splits[]",
+      "const": {
+        "kind": "disorder"
+      }
+    },
+    {
+      "key": "oob",
+      "short": "o",
+      "long": "oob",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "byedpi.pos",
+      "target": "splits[]",
+      "const": {
+        "kind": "oob"
+      }
+    },
+    {
+      "key": "disoob",
+      "short": "q",
+      "long": "disoob",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "byedpi.pos",
+      "target": "splits[]",
+      "const": {
+        "kind": "disoob"
+      }
+    },
+    {
+      "key": "fake",
+      "short": "f",
+      "long": "fake",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "byedpi.pos",
+      "target": "splits[]",
+      "const": {
+        "kind": "fake"
+      }
+    },
+    {
+      "key": "tlsrec",
+      "short": "r",
+      "long": "tlsrec",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "byedpi.pos",
+      "target": "splits[]",
+      "const": {
+        "kind": "tlsrec"
+      }
+    },
+    {
+      "key": "ttl",
+      "short": "t",
+      "long": "ttl",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "fake.ttl"
+    },
+    {
+      "key": "md5sig",
+      "short": "S",
+      "long": "md5sig",
+      "arg": "none",
+      "scope": "profile",
+      "target": "fake.md5sig"
+    },
+    {
+      "key": "fake_data",
+      "short": "l",
+      "long": "fake-data",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "cdata",
+      "target": "fake.data"
+    },
+    {
+      "key": "oob_data",
+      "short": "e",
+      "long": "oob-data",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "cchar",
+      "target": "profile.oob_byte"
+    },
+    {
+      "key": "mod_http",
+      "short": "M",
+      "long": "mod-http",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "csvfirstchar",
+      "target": "profile.http_mod"
+    },
+    {
+      "key": "udp_fake",
+      "short": "a",
+      "long": "udp-fake",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "profile.udp_fake_count"
+    },
+    {
+      "key": "drop_sack",
+      "short": "Y",
+      "long": "drop-sack",
+      "arg": "none",
+      "scope": "profile",
+      "target": "profile.drop_sack"
+    },
+    {
+      "key": "ip_opt",
+      "short": "k",
+      "long": "ip-opt",
+      "arg": "optional",
+      "scope": "profile",
+      "grammar": "cdata",
+      "target": "fake.ip_opt",
+      "versions": [
+        "0.13"
+      ]
+    },
+    {
+      "key": "tls_sni",
+      "short": "n",
+      "long": "tls-sni",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "str",
+      "target": "global.fake_sni",
+      "versions": [
+        "0.13"
+      ]
+    },
+    {
+      "key": "fake_offset",
+      "short": "O",
+      "long": "fake-offset",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "fake.offset",
+      "versions": [
+        "0.13"
+      ]
+    },
+    {
+      "key": "delay",
+      "short": "w",
+      "long": "delay",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "int",
+      "target": "global.delay",
+      "versions": [
+        "0.13"
+      ]
+    },
+    {
+      "key": "not_wait_send",
+      "short": "W",
+      "long": "not-wait-send",
+      "arg": "none",
+      "scope": "global",
+      "target": "_.na",
+      "note": "proxyRuntime",
+      "versions": [
+        "0.13"
+      ]
+    },
+    {
+      "key": "fake_sni",
+      "short": "n",
+      "long": "fake-sni",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "str",
+      "target": "fake.sni[]",
+      "versions": [
+        "0.17"
+      ]
+    },
+    {
+      "key": "fake_offset_pos",
+      "short": "O",
+      "long": "fake-offset",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "byedpi.pos",
+      "target": "fake.offset_pos",
+      "versions": [
+        "0.17"
+      ]
+    },
+    {
+      "key": "fake_tls_mod",
+      "short": "Q",
+      "long": "fake-tls-mod",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "csvkv",
+      "target": "fake.tls_mod",
+      "versions": [
+        "0.17"
+      ]
+    },
+    {
+      "key": "tls_minor",
+      "short": "m",
+      "long": "tlsminor",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "profile.tls_minor",
+      "versions": [
+        "0.17"
+      ]
+    },
+    {
+      "key": "round",
+      "short": "R",
+      "long": "round",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "range",
+      "target": "profile.round",
+      "versions": [
+        "0.17"
+      ]
+    },
+    {
+      "key": "ipset",
+      "short": "j",
+      "long": "ipset",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "iplist",
+      "target": "filters.ips",
+      "versions": [
+        "0.17"
+      ]
+    },
+    {
+      "key": "connect_to",
+      "short": "C",
+      "long": "connect-to",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "str",
+      "target": "profile.unsupported",
+      "note": "noEquivalent",
+      "versions": [
+        "0.17"
+      ]
+    },
+    {
+      "key": "copy",
+      "short": "B",
+      "long": "copy",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "str",
+      "target": "profile.unsupported",
+      "note": "profileCopy",
+      "versions": [
+        "0.17"
+      ]
+    },
+    {
+      "key": "auto_mode",
+      "short": "L",
+      "long": "auto-mode",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "csvfirstchar",
+      "target": "_.na",
+      "note": "autoRetryTiming",
+      "versions": [
+        "0.17"
+      ]
+    },
+    {
+      "key": "pidfile",
+      "short": "w",
+      "long": "pidfile",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "str",
+      "target": "_.na",
+      "note": "processControl",
+      "versions": [
+        "0.17"
+      ]
+    },
+    {
+      "key": "await_int",
+      "short": "W",
+      "long": "await-int",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "int",
+      "target": "_.na",
+      "note": "proxyRuntime",
+      "versions": [
+        "0.17"
+      ]
+    },
+    {
+      "key": "cache_dump",
+      "short": "y",
+      "long": "cache-dump",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "str",
+      "target": "_.na",
+      "note": "processControl",
+      "versions": [
+        "0.17"
+      ]
+    },
+    {
+      "key": "daemon",
+      "short": "D",
+      "long": "daemon",
+      "arg": "none",
+      "scope": "global",
+      "target": "_.na",
+      "note": "processControl",
+      "versions": [
+        "0.17"
+      ]
+    },
+    {
+      "key": "transparent",
+      "short": "E",
+      "long": "transparent",
+      "arg": "none",
+      "scope": "global",
+      "target": "_.na",
+      "note": "proxyRuntime",
+      "versions": [
+        "0.17"
+      ]
+    },
+    {
+      "key": "http_connect",
+      "short": "G",
+      "long": "http-connect",
+      "arg": "none",
+      "scope": "global",
+      "target": "_.na",
+      "note": "proxyRuntime",
+      "versions": [
+        "0.17"
+      ]
+    },
+    {
+      "key": "wait_send",
+      "short": "Z",
+      "long": "wait-send",
+      "arg": "none",
+      "scope": "global",
+      "target": "_.na",
+      "note": "proxyRuntime",
+      "versions": [
+        "0.17"
+      ]
+    }
   ]
 }

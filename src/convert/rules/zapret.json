@@ -3,10 +3,18 @@
   "label": "zapret (nfqws)",
   "style": "long_only",
   "homepage": "https://github.com/bol-van/zapret",
+  "defaults": {
+    "fake_ttl": 7,
+    "fake_ttl_forced": true
+  },
   "normalize": "zapret",
   "profile_model": "alternative",
   "detect": {
-    "markers": ["nfqws", "winws", "zapret"],
+    "markers": [
+      "nfqws",
+      "winws",
+      "zapret"
+    ],
     "signature": [
       "--dpi-desync",
       "--new",
@@ -17,142 +25,1064 @@
       "--filter-udp",
       "--dpi-desync-split-pos"
     ],
-    "reject": ["--disoob", "--tlsrec", "--oob-data", "--fake-sni", "--mod-http"]
+    "reject": [
+      "--disoob",
+      "--tlsrec",
+      "--oob-data",
+      "--fake-sni",
+      "--mod-http"
+    ]
   },
-  "versions": [{ "id": "master", "label": "current", "default": true }],
-  "profile_break": ["new"],
+  "versions": [
+    {
+      "id": "master",
+      "label": "current",
+      "default": true
+    }
+  ],
+  "profile_break": [
+    "new"
+  ],
   "options": [
-    { "key": "new",  "long": "new",  "arg": "none", "scope": "break",   "target": "trigger" },
-    { "key": "skip", "long": "skip", "arg": "none", "scope": "profile", "target": "profile.skip" },
-
-    { "key": "desync",     "long": "dpi-desync",               "arg": "required", "scope": "profile", "grammar": "zapret.desync",   "target": "desync.modes" },
-    { "key": "split_pos",  "long": "dpi-desync-split-pos",     "arg": "required", "scope": "profile", "grammar": "zapret.splitpos", "target": "splits.positions" },
-    { "key": "fooling",    "long": "dpi-desync-fooling",       "arg": "required", "scope": "profile", "grammar": "zapret.fooling",  "target": "fake.fooling" },
-    { "key": "desync_ttl", "long": "dpi-desync-ttl",           "arg": "required", "scope": "profile", "grammar": "int",             "target": "fake.ttl" },
-    { "key": "repeats",    "long": "dpi-desync-repeats",       "arg": "required", "scope": "profile", "grammar": "int",             "target": "fake.repeats" },
-    { "key": "badseq_inc", "long": "dpi-desync-badseq-increment", "arg": "required", "scope": "profile", "grammar": "int",          "target": "fake.seq_increment" },
-    { "key": "ts_inc",     "long": "dpi-desync-ts-increment",  "arg": "required", "scope": "profile", "grammar": "int",             "target": "fake.ts_increment" },
-    { "key": "seqovl",     "long": "dpi-desync-split-seqovl",  "arg": "required", "scope": "profile", "grammar": "zapret.pos",      "target": "profile.seqovl_len" },
-    { "key": "seqovl_pat", "long": "dpi-desync-split-seqovl-pattern", "arg": "required", "scope": "profile", "grammar": "zapret.blob", "target": "profile.seqovl_pattern" },
-
-    { "key": "fake_tls",     "long": "dpi-desync-fake-tls",     "arg": "required", "scope": "profile", "grammar": "zapret.blob",    "target": "fake.blob" },
-    { "key": "fake_tls_mod", "long": "dpi-desync-fake-tls-mod", "arg": "required", "scope": "profile", "grammar": "zapret.modlist", "target": "fake.tls_sni" },
-    { "key": "fake_quic",    "long": "dpi-desync-fake-quic",    "arg": "required", "scope": "profile", "grammar": "zapret.blob",    "target": "fake.quic" },
-    { "key": "fake_http",    "long": "dpi-desync-fake-http",    "arg": "required", "scope": "profile", "grammar": "zapret.blob",    "target": "profile.unsupported", "note": "httpFakePayload" },
-    { "key": "fake_unknown", "long": "dpi-desync-fake-unknown", "arg": "required", "scope": "profile", "grammar": "zapret.blob",    "target": "profile.unsupported", "note": "noEquivalent" },
-    { "key": "fake_syndata", "long": "dpi-desync-fake-syndata", "arg": "required", "scope": "profile", "grammar": "zapret.blob",    "target": "profile.unsupported", "note": "noEquivalent" },
-    { "key": "fake_wg",      "long": "dpi-desync-fake-wireguard", "arg": "required", "scope": "profile", "grammar": "zapret.blob", "target": "profile.unsupported", "note": "noEquivalent" },
-    { "key": "fake_dht",     "long": "dpi-desync-fake-dht",     "arg": "required", "scope": "profile", "grammar": "zapret.blob",    "target": "profile.unsupported", "note": "noEquivalent" },
-    { "key": "fake_discord", "long": "dpi-desync-fake-discord", "arg": "required", "scope": "profile", "grammar": "zapret.blob",    "target": "profile.unsupported", "note": "noEquivalent" },
-    { "key": "fake_stun",    "long": "dpi-desync-fake-stun",    "arg": "required", "scope": "profile", "grammar": "zapret.blob",    "target": "profile.unsupported", "note": "noEquivalent" },
-    { "key": "fake_unk_udp", "long": "dpi-desync-fake-unknown-udp", "arg": "required", "scope": "profile", "grammar": "zapret.blob", "target": "profile.unsupported", "note": "noEquivalent" },
-
-    { "key": "autottl",       "long": "dpi-desync-autottl",       "arg": "required", "scope": "profile", "grammar": "zapret.autottl", "target": "profile.unsupported", "note": "autoTTLUnsupported" },
-    { "key": "autottl6",      "long": "dpi-desync-autottl6",      "arg": "required", "scope": "profile", "grammar": "zapret.autottl", "target": "profile.unsupported", "note": "autoTTLUnsupported" },
-    { "key": "desync_ttl6",   "long": "dpi-desync-ttl6",          "arg": "required", "scope": "profile", "grammar": "int",            "target": "profile.unsupported", "note": "ipv6OnlyKnob" },
-    { "key": "desync_start",  "long": "dpi-desync-start",         "arg": "required", "scope": "profile", "grammar": "zapret.startcutoff", "target": "profile.unsupported", "note": "packetWindowUnsupported" },
-    { "key": "desync_cutoff", "long": "dpi-desync-cutoff",        "arg": "required", "scope": "profile", "grammar": "zapret.startcutoff", "target": "profile.unsupported", "note": "packetWindowUnsupported" },
-    { "key": "flags_set",     "long": "dpi-desync-tcp-flags-set", "arg": "required", "scope": "profile", "grammar": "csv",            "target": "profile.unsupported", "note": "noEquivalent" },
-    { "key": "flags_unset",   "long": "dpi-desync-tcp-flags-unset", "arg": "required", "scope": "profile", "grammar": "csv",          "target": "profile.unsupported", "note": "noEquivalent" },
-    { "key": "fake_tcp_mod",  "long": "dpi-desync-fake-tcp-mod",  "arg": "required", "scope": "profile", "grammar": "zapret.modlist", "target": "profile.unsupported", "note": "noEquivalent" },
-    { "key": "fakedsplit_mod","long": "dpi-desync-fakedsplit-mod","arg": "required", "scope": "profile", "grammar": "zapret.modlist", "target": "profile.unsupported", "note": "noEquivalent" },
-    { "key": "fakedsplit_pat","long": "dpi-desync-fakedsplit-pattern","arg": "required","scope": "profile","grammar": "zapret.blob",  "target": "profile.unsupported", "note": "noEquivalent" },
-    { "key": "hfs_midhost",   "long": "dpi-desync-hostfakesplit-midhost", "arg": "required", "scope": "profile", "grammar": "zapret.pos", "target": "profile.unsupported", "note": "noEquivalent" },
-    { "key": "hfs_mod",       "long": "dpi-desync-hostfakesplit-mod", "arg": "required", "scope": "profile", "grammar": "zapret.modlist", "target": "profile.unsupported", "note": "noEquivalent" },
-    { "key": "ipfrag_tcp",    "long": "dpi-desync-ipfrag-pos-tcp", "arg": "required", "scope": "profile", "grammar": "int",           "target": "profile.unsupported", "note": "ipFragPosition" },
-    { "key": "ipfrag_udp",    "long": "dpi-desync-ipfrag-pos-udp", "arg": "required", "scope": "profile", "grammar": "int",           "target": "profile.unsupported", "note": "ipFragPosition" },
-    { "key": "udplen_inc",    "long": "dpi-desync-udplen-increment", "arg": "required", "scope": "profile", "grammar": "int",         "target": "profile.unsupported", "note": "noEquivalent" },
-    { "key": "udplen_pat",    "long": "dpi-desync-udplen-pattern", "arg": "required", "scope": "profile", "grammar": "zapret.blob",   "target": "profile.unsupported", "note": "noEquivalent" },
-    { "key": "any_protocol",  "long": "dpi-desync-any-protocol",  "arg": "optional", "scope": "profile", "grammar": "bool01",         "target": "profile.unsupported", "note": "anyProtocol" },
-    { "key": "skip_nosni",    "long": "dpi-desync-skip-nosni",    "arg": "optional", "scope": "profile", "grammar": "bool01",         "target": "_.na",  "note": "engineDetail" },
-    { "key": "desync_fwmark", "long": "dpi-desync-fwmark",        "arg": "required", "scope": "global",  "grammar": "str",            "target": "_.na",  "note": "engineDetail" },
-    { "key": "sockarg",       "long": "dpi-desync-sockarg",       "arg": "required", "scope": "global",  "grammar": "str",            "target": "_.na",  "note": "engineDetail" },
-
-    { "key": "dup",           "long": "dup",           "arg": "required", "scope": "profile", "grammar": "int",            "target": "profile.duplicate" },
-    { "key": "dup_replace",   "long": "dup-replace",   "arg": "optional", "scope": "profile", "grammar": "bool01",         "target": "_.na", "note": "engineDetail" },
-    { "key": "dup_ttl",       "long": "dup-ttl",       "arg": "required", "scope": "profile", "grammar": "int",            "target": "profile.unsupported", "note": "dupKnobUnsupported" },
-    { "key": "dup_ttl6",      "long": "dup-ttl6",      "arg": "required", "scope": "profile", "grammar": "int",            "target": "profile.unsupported", "note": "dupKnobUnsupported" },
-    { "key": "dup_autottl",   "long": "dup-autottl",   "arg": "required", "scope": "profile", "grammar": "zapret.autottl", "target": "profile.unsupported", "note": "autoTTLUnsupported" },
-    { "key": "dup_autottl6",  "long": "dup-autottl6",  "arg": "required", "scope": "profile", "grammar": "zapret.autottl", "target": "profile.unsupported", "note": "autoTTLUnsupported" },
-    { "key": "dup_fooling",   "long": "dup-fooling",   "arg": "required", "scope": "profile", "grammar": "zapret.fooling", "target": "profile.unsupported", "note": "dupKnobUnsupported" },
-    { "key": "dup_ts_inc",    "long": "dup-ts-increment",     "arg": "required", "scope": "profile", "grammar": "int", "target": "profile.unsupported", "note": "dupKnobUnsupported" },
-    { "key": "dup_badseq",    "long": "dup-badseq-increment", "arg": "required", "scope": "profile", "grammar": "int", "target": "profile.unsupported", "note": "dupKnobUnsupported" },
-    { "key": "dup_badack",    "long": "dup-badack-increment", "arg": "required", "scope": "profile", "grammar": "int", "target": "profile.unsupported", "note": "dupKnobUnsupported" },
-    { "key": "dup_ip_id",     "long": "dup-ip-id",     "arg": "required", "scope": "profile", "grammar": "str",            "target": "profile.unsupported", "note": "dupKnobUnsupported" },
-    { "key": "dup_start",     "long": "dup-start",     "arg": "required", "scope": "profile", "grammar": "zapret.startcutoff", "target": "profile.unsupported", "note": "packetWindowUnsupported" },
-    { "key": "dup_cutoff",    "long": "dup-cutoff",    "arg": "required", "scope": "profile", "grammar": "zapret.startcutoff", "target": "profile.unsupported", "note": "packetWindowUnsupported" },
-    { "key": "dup_flags_set", "long": "dup-tcp-flags-set",   "arg": "required", "scope": "profile", "grammar": "csv", "target": "profile.unsupported", "note": "noEquivalent" },
-    { "key": "dup_flags_unset","long": "dup-tcp-flags-unset","arg": "required", "scope": "profile", "grammar": "csv", "target": "profile.unsupported", "note": "noEquivalent" },
-
-    { "key": "wssize",        "long": "wssize",        "arg": "required", "scope": "profile", "grammar": "zapret.wsize", "target": "profile.win_size" },
-    { "key": "wsize",         "long": "wsize",         "arg": "required", "scope": "profile", "grammar": "zapret.wsize", "target": "profile.unsupported", "note": "obsoleteOption" },
-    { "key": "wssize_cutoff", "long": "wssize-cutoff", "arg": "required", "scope": "profile", "grammar": "zapret.startcutoff", "target": "profile.unsupported", "note": "packetWindowUnsupported" },
-    { "key": "wssize_forced", "long": "wssize-forced-cutoff", "arg": "optional", "scope": "profile", "grammar": "bool01", "target": "_.na", "note": "engineDetail" },
-
-    { "key": "orig_ttl",      "long": "orig-ttl",      "arg": "required", "scope": "profile", "grammar": "int",            "target": "profile.unsupported", "note": "origPacketTTL" },
-    { "key": "orig_ttl6",     "long": "orig-ttl6",     "arg": "required", "scope": "profile", "grammar": "int",            "target": "profile.unsupported", "note": "origPacketTTL" },
-    { "key": "orig_autottl",  "long": "orig-autottl",  "arg": "required", "scope": "profile", "grammar": "zapret.autottl", "target": "profile.unsupported", "note": "origPacketTTL" },
-    { "key": "orig_autottl6", "long": "orig-autottl6", "arg": "required", "scope": "profile", "grammar": "zapret.autottl", "target": "profile.unsupported", "note": "origPacketTTL" },
-    { "key": "orig_flags_set","long": "orig-tcp-flags-set",   "arg": "required", "scope": "profile", "grammar": "csv", "target": "profile.unsupported", "note": "noEquivalent" },
-    { "key": "orig_flags_unset","long": "orig-tcp-flags-unset","arg": "required","scope": "profile", "grammar": "csv", "target": "profile.unsupported", "note": "noEquivalent" },
-    { "key": "orig_mod_start","long": "orig-mod-start", "arg": "required", "scope": "profile", "grammar": "zapret.startcutoff", "target": "profile.unsupported", "note": "packetWindowUnsupported" },
-    { "key": "orig_mod_cutoff","long": "orig-mod-cutoff","arg": "required","scope": "profile", "grammar": "zapret.startcutoff", "target": "profile.unsupported", "note": "packetWindowUnsupported" },
-    { "key": "synack_split",  "long": "synack-split",  "arg": "required", "scope": "profile", "grammar": "str",            "target": "profile.unsupported", "note": "noEquivalent" },
-    { "key": "ip_id",         "long": "ip-id",         "arg": "required", "scope": "profile", "grammar": "str",            "target": "profile.unsupported", "note": "noEquivalent" },
-
-    { "key": "hostcase",      "long": "hostcase",      "arg": "none",     "scope": "profile", "target": "profile.unsupported", "note": "httpTamper" },
-    { "key": "hostspell",     "long": "hostspell",     "arg": "required", "scope": "profile", "grammar": "str", "target": "profile.unsupported", "note": "httpTamper" },
-    { "key": "hostnospace",   "long": "hostnospace",   "arg": "none",     "scope": "profile", "target": "profile.unsupported", "note": "httpTamper" },
-    { "key": "domcase",       "long": "domcase",       "arg": "none",     "scope": "profile", "target": "profile.unsupported", "note": "httpTamper" },
-    { "key": "methodeol",     "long": "methodeol",     "arg": "none",     "scope": "profile", "target": "profile.unsupported", "note": "httpTamper" },
-
-    { "key": "hostlist",          "long": "hostlist",                 "arg": "required", "scope": "profile", "grammar": "str", "target": "filters.hosts_ref" },
-    { "key": "hostlist_domains",  "long": "hostlist-domains",         "arg": "required", "scope": "profile", "grammar": "csv", "target": "filters.hosts_list" },
-    { "key": "hostlist_exclude",  "long": "hostlist-exclude",         "arg": "required", "scope": "profile", "grammar": "str", "target": "filters.hosts_exclude_ref" },
-    { "key": "hostlist_excl_dom", "long": "hostlist-exclude-domains", "arg": "required", "scope": "profile", "grammar": "csv", "target": "filters.hosts_exclude" },
-    { "key": "hostlist_auto",     "long": "hostlist-auto",            "arg": "required", "scope": "profile", "grammar": "str", "target": "profile.unsupported", "note": "hostlistAuto" },
-    { "key": "hl_auto_fail_thr",  "long": "hostlist-auto-fail-threshold",    "arg": "required", "scope": "profile", "grammar": "int", "target": "_.na", "note": "hostlistAuto" },
-    { "key": "hl_auto_fail_time", "long": "hostlist-auto-fail-time",         "arg": "required", "scope": "profile", "grammar": "int", "target": "_.na", "note": "hostlistAuto" },
-    { "key": "hl_auto_retrans",   "long": "hostlist-auto-retrans-threshold", "arg": "required", "scope": "profile", "grammar": "int", "target": "_.na", "note": "hostlistAuto" },
-    { "key": "hl_auto_debug",     "long": "hostlist-auto-debug",             "arg": "required", "scope": "profile", "grammar": "str", "target": "_.na", "note": "hostlistAuto" },
-
-    { "key": "ipset",         "long": "ipset",             "arg": "required", "scope": "profile", "grammar": "str", "target": "filters.ips_ref" },
-    { "key": "ipset_ip",      "long": "ipset-ip",          "arg": "required", "scope": "profile", "grammar": "csv", "target": "filters.ips_list" },
-    { "key": "ipset_exclude", "long": "ipset-exclude",     "arg": "required", "scope": "profile", "grammar": "str", "target": "profile.unsupported", "note": "excludeListUnsupported" },
-    { "key": "ipset_excl_ip", "long": "ipset-exclude-ip",  "arg": "required", "scope": "profile", "grammar": "csv", "target": "profile.unsupported", "note": "excludeListUnsupported" },
-
-    { "key": "filter_l3",   "long": "filter-l3",   "arg": "required", "scope": "profile", "grammar": "csv",           "target": "filters.l3" },
-    { "key": "filter_tcp",  "long": "filter-tcp",  "arg": "required", "scope": "profile", "grammar": "zapret.ports",  "target": "filters.tcp_ports" },
-    { "key": "filter_udp",  "long": "filter-udp",  "arg": "required", "scope": "profile", "grammar": "zapret.ports",  "target": "filters.udp_ports" },
-    { "key": "filter_l7",   "long": "filter-l7",   "arg": "required", "scope": "profile", "grammar": "csv",           "target": "filters.l7" },
-    { "key": "filter_ssid", "long": "filter-ssid", "arg": "required", "scope": "profile", "grammar": "csv",           "target": "profile.unsupported", "note": "ssidFilter" },
-
-    { "key": "qnum",       "long": "qnum",       "arg": "required", "scope": "global", "grammar": "int", "target": "_.na", "note": "engineDetail" },
-    { "key": "daemon",     "long": "daemon",     "arg": "none",     "scope": "global", "target": "_.na", "note": "processControl" },
-    { "key": "pidfile",    "long": "pidfile",    "arg": "required", "scope": "global", "grammar": "str", "target": "_.na", "note": "processControl" },
-    { "key": "user",       "long": "user",       "arg": "required", "scope": "global", "grammar": "str", "target": "_.na", "note": "processControl" },
-    { "key": "uid",        "long": "uid",        "arg": "required", "scope": "global", "grammar": "str", "target": "_.na", "note": "processControl" },
-    { "key": "debug",      "long": "debug",      "arg": "optional", "scope": "global", "grammar": "str", "target": "_.na", "note": "processControl" },
-    { "key": "dry_run",    "long": "dry-run",    "arg": "none",     "scope": "global", "target": "_.ignore" },
-    { "key": "version",    "long": "version",    "arg": "none",     "scope": "global", "target": "_.ignore" },
-    { "key": "comment",    "long": "comment",    "arg": "optional", "scope": "global", "grammar": "str", "target": "_.ignore" },
-    { "key": "bind_fix4",  "long": "bind-fix4",  "arg": "none",     "scope": "global", "target": "_.na", "note": "engineDetail" },
-    { "key": "bind_fix6",  "long": "bind-fix6",  "arg": "none",     "scope": "global", "target": "_.na", "note": "engineDetail" },
-    { "key": "ctrack_to",  "long": "ctrack-timeouts", "arg": "required", "scope": "global", "grammar": "str", "target": "_.na", "note": "engineDetail" },
-    { "key": "ctrack_off", "long": "ctrack-disable",  "arg": "optional", "scope": "global", "grammar": "bool01", "target": "_.na", "note": "engineDetail" },
-    { "key": "ipcache_lt", "long": "ipcache-lifetime", "arg": "required", "scope": "global", "grammar": "int", "target": "_.na", "note": "engineDetail" },
-    { "key": "ipcache_hn", "long": "ipcache-hostname", "arg": "optional", "scope": "global", "grammar": "bool01", "target": "_.na", "note": "engineDetail" },
-
-    { "key": "wf_iface",     "long": "wf-iface",     "arg": "required", "scope": "global", "grammar": "str", "target": "_.na", "note": "windowsOnly" },
-    { "key": "wf_l3",        "long": "wf-l3",        "arg": "required", "scope": "global", "grammar": "csv", "target": "_.na", "note": "windowsOnly" },
-    { "key": "wf_tcp",       "long": "wf-tcp",       "arg": "required", "scope": "global", "grammar": "zapret.ports", "target": "_.na", "note": "windowsOnly" },
-    { "key": "wf_udp",       "long": "wf-udp",       "arg": "required", "scope": "global", "grammar": "zapret.ports", "target": "_.na", "note": "windowsOnly" },
-    { "key": "wf_raw",       "long": "wf-raw",       "arg": "required", "scope": "global", "grammar": "str", "target": "_.na", "note": "windowsOnly" },
-    { "key": "wf_raw_part",  "long": "wf-raw-part",  "arg": "required", "scope": "global", "grammar": "str", "target": "_.na", "note": "windowsOnly" },
-    { "key": "wf_filter_lan","long": "wf-filter-lan","arg": "optional", "scope": "global", "grammar": "bool01", "target": "_.na", "note": "windowsOnly" },
-    { "key": "wf_save",      "long": "wf-save",      "arg": "required", "scope": "global", "grammar": "str", "target": "_.na", "note": "windowsOnly" },
-    { "key": "ssid_filter",  "long": "ssid-filter",  "arg": "required", "scope": "global", "grammar": "csv", "target": "_.na", "note": "windowsOnly" },
-    { "key": "nlm_filter",   "long": "nlm-filter",   "arg": "required", "scope": "global", "grammar": "csv", "target": "_.na", "note": "windowsOnly" },
-    { "key": "nlm_list",     "long": "nlm-list",     "arg": "optional", "scope": "global", "grammar": "str", "target": "_.na", "note": "windowsOnly" }
+    {
+      "key": "new",
+      "long": "new",
+      "arg": "none",
+      "scope": "break",
+      "target": "trigger"
+    },
+    {
+      "key": "skip",
+      "long": "skip",
+      "arg": "none",
+      "scope": "profile",
+      "target": "profile.skip"
+    },
+    {
+      "key": "desync",
+      "long": "dpi-desync",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.desync",
+      "target": "desync.modes"
+    },
+    {
+      "key": "split_pos",
+      "long": "dpi-desync-split-pos",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.splitpos",
+      "target": "splits.positions"
+    },
+    {
+      "key": "fooling",
+      "long": "dpi-desync-fooling",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.fooling",
+      "target": "fake.fooling"
+    },
+    {
+      "key": "desync_ttl",
+      "long": "dpi-desync-ttl",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "fake.ttl"
+    },
+    {
+      "key": "repeats",
+      "long": "dpi-desync-repeats",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "fake.repeats"
+    },
+    {
+      "key": "badseq_inc",
+      "long": "dpi-desync-badseq-increment",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "fake.seq_increment"
+    },
+    {
+      "key": "ts_inc",
+      "long": "dpi-desync-ts-increment",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "fake.ts_increment"
+    },
+    {
+      "key": "seqovl",
+      "long": "dpi-desync-split-seqovl",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.pos",
+      "target": "profile.seqovl_len"
+    },
+    {
+      "key": "seqovl_pat",
+      "long": "dpi-desync-split-seqovl-pattern",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.blob",
+      "target": "profile.seqovl_pattern"
+    },
+    {
+      "key": "fake_tls",
+      "long": "dpi-desync-fake-tls",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.blob",
+      "target": "fake.blob"
+    },
+    {
+      "key": "fake_tls_mod",
+      "long": "dpi-desync-fake-tls-mod",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.modlist",
+      "target": "fake.tls_sni"
+    },
+    {
+      "key": "fake_quic",
+      "long": "dpi-desync-fake-quic",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.blob",
+      "target": "fake.quic"
+    },
+    {
+      "key": "fake_http",
+      "long": "dpi-desync-fake-http",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.blob",
+      "target": "profile.unsupported",
+      "note": "httpFakePayload"
+    },
+    {
+      "key": "fake_unknown",
+      "long": "dpi-desync-fake-unknown",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.blob",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "fake_syndata",
+      "long": "dpi-desync-fake-syndata",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.blob",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "fake_wg",
+      "long": "dpi-desync-fake-wireguard",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.blob",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "fake_dht",
+      "long": "dpi-desync-fake-dht",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.blob",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "fake_discord",
+      "long": "dpi-desync-fake-discord",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.blob",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "fake_stun",
+      "long": "dpi-desync-fake-stun",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.blob",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "fake_unk_udp",
+      "long": "dpi-desync-fake-unknown-udp",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.blob",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "autottl",
+      "long": "dpi-desync-autottl",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.autottl",
+      "target": "profile.unsupported",
+      "note": "autoTTLUnsupported"
+    },
+    {
+      "key": "autottl6",
+      "long": "dpi-desync-autottl6",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.autottl",
+      "target": "profile.unsupported",
+      "note": "autoTTLUnsupported"
+    },
+    {
+      "key": "desync_ttl6",
+      "long": "dpi-desync-ttl6",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "profile.unsupported",
+      "note": "ipv6OnlyKnob"
+    },
+    {
+      "key": "desync_start",
+      "long": "dpi-desync-start",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.startcutoff",
+      "target": "profile.unsupported",
+      "note": "packetWindowUnsupported"
+    },
+    {
+      "key": "desync_cutoff",
+      "long": "dpi-desync-cutoff",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.startcutoff",
+      "target": "profile.unsupported",
+      "note": "packetWindowUnsupported"
+    },
+    {
+      "key": "flags_set",
+      "long": "dpi-desync-tcp-flags-set",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "csv",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "flags_unset",
+      "long": "dpi-desync-tcp-flags-unset",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "csv",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "fake_tcp_mod",
+      "long": "dpi-desync-fake-tcp-mod",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.modlist",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "fakedsplit_mod",
+      "long": "dpi-desync-fakedsplit-mod",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.modlist",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "fakedsplit_pat",
+      "long": "dpi-desync-fakedsplit-pattern",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.blob",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "hfs_midhost",
+      "long": "dpi-desync-hostfakesplit-midhost",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.pos",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "hfs_mod",
+      "long": "dpi-desync-hostfakesplit-mod",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.modlist",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "ipfrag_tcp",
+      "long": "dpi-desync-ipfrag-pos-tcp",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "profile.unsupported",
+      "note": "ipFragPosition"
+    },
+    {
+      "key": "ipfrag_udp",
+      "long": "dpi-desync-ipfrag-pos-udp",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "profile.unsupported",
+      "note": "ipFragPosition"
+    },
+    {
+      "key": "udplen_inc",
+      "long": "dpi-desync-udplen-increment",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "udplen_pat",
+      "long": "dpi-desync-udplen-pattern",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.blob",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "any_protocol",
+      "long": "dpi-desync-any-protocol",
+      "arg": "optional",
+      "scope": "profile",
+      "grammar": "bool01",
+      "target": "profile.unsupported",
+      "note": "anyProtocol"
+    },
+    {
+      "key": "skip_nosni",
+      "long": "dpi-desync-skip-nosni",
+      "arg": "optional",
+      "scope": "profile",
+      "grammar": "bool01",
+      "target": "_.na",
+      "note": "engineDetail"
+    },
+    {
+      "key": "desync_fwmark",
+      "long": "dpi-desync-fwmark",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "str",
+      "target": "_.na",
+      "note": "engineDetail"
+    },
+    {
+      "key": "sockarg",
+      "long": "dpi-desync-sockarg",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "str",
+      "target": "_.na",
+      "note": "engineDetail"
+    },
+    {
+      "key": "dup",
+      "long": "dup",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "profile.duplicate"
+    },
+    {
+      "key": "dup_replace",
+      "long": "dup-replace",
+      "arg": "optional",
+      "scope": "profile",
+      "grammar": "bool01",
+      "target": "_.na",
+      "note": "engineDetail"
+    },
+    {
+      "key": "dup_ttl",
+      "long": "dup-ttl",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "profile.unsupported",
+      "note": "dupKnobUnsupported"
+    },
+    {
+      "key": "dup_ttl6",
+      "long": "dup-ttl6",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "profile.unsupported",
+      "note": "dupKnobUnsupported"
+    },
+    {
+      "key": "dup_autottl",
+      "long": "dup-autottl",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.autottl",
+      "target": "profile.unsupported",
+      "note": "autoTTLUnsupported"
+    },
+    {
+      "key": "dup_autottl6",
+      "long": "dup-autottl6",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.autottl",
+      "target": "profile.unsupported",
+      "note": "autoTTLUnsupported"
+    },
+    {
+      "key": "dup_fooling",
+      "long": "dup-fooling",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.fooling",
+      "target": "profile.unsupported",
+      "note": "dupKnobUnsupported"
+    },
+    {
+      "key": "dup_ts_inc",
+      "long": "dup-ts-increment",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "profile.unsupported",
+      "note": "dupKnobUnsupported"
+    },
+    {
+      "key": "dup_badseq",
+      "long": "dup-badseq-increment",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "profile.unsupported",
+      "note": "dupKnobUnsupported"
+    },
+    {
+      "key": "dup_badack",
+      "long": "dup-badack-increment",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "profile.unsupported",
+      "note": "dupKnobUnsupported"
+    },
+    {
+      "key": "dup_ip_id",
+      "long": "dup-ip-id",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "str",
+      "target": "profile.unsupported",
+      "note": "dupKnobUnsupported"
+    },
+    {
+      "key": "dup_start",
+      "long": "dup-start",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.startcutoff",
+      "target": "profile.unsupported",
+      "note": "packetWindowUnsupported"
+    },
+    {
+      "key": "dup_cutoff",
+      "long": "dup-cutoff",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.startcutoff",
+      "target": "profile.unsupported",
+      "note": "packetWindowUnsupported"
+    },
+    {
+      "key": "dup_flags_set",
+      "long": "dup-tcp-flags-set",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "csv",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "dup_flags_unset",
+      "long": "dup-tcp-flags-unset",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "csv",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "wssize",
+      "long": "wssize",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.wsize",
+      "target": "profile.win_size"
+    },
+    {
+      "key": "wsize",
+      "long": "wsize",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.wsize",
+      "target": "profile.unsupported",
+      "note": "obsoleteOption"
+    },
+    {
+      "key": "wssize_cutoff",
+      "long": "wssize-cutoff",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.startcutoff",
+      "target": "profile.unsupported",
+      "note": "packetWindowUnsupported"
+    },
+    {
+      "key": "wssize_forced",
+      "long": "wssize-forced-cutoff",
+      "arg": "optional",
+      "scope": "profile",
+      "grammar": "bool01",
+      "target": "_.na",
+      "note": "engineDetail"
+    },
+    {
+      "key": "orig_ttl",
+      "long": "orig-ttl",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "profile.unsupported",
+      "note": "origPacketTTL"
+    },
+    {
+      "key": "orig_ttl6",
+      "long": "orig-ttl6",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "profile.unsupported",
+      "note": "origPacketTTL"
+    },
+    {
+      "key": "orig_autottl",
+      "long": "orig-autottl",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.autottl",
+      "target": "profile.unsupported",
+      "note": "origPacketTTL"
+    },
+    {
+      "key": "orig_autottl6",
+      "long": "orig-autottl6",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.autottl",
+      "target": "profile.unsupported",
+      "note": "origPacketTTL"
+    },
+    {
+      "key": "orig_flags_set",
+      "long": "orig-tcp-flags-set",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "csv",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "orig_flags_unset",
+      "long": "orig-tcp-flags-unset",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "csv",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "orig_mod_start",
+      "long": "orig-mod-start",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.startcutoff",
+      "target": "profile.unsupported",
+      "note": "packetWindowUnsupported"
+    },
+    {
+      "key": "orig_mod_cutoff",
+      "long": "orig-mod-cutoff",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.startcutoff",
+      "target": "profile.unsupported",
+      "note": "packetWindowUnsupported"
+    },
+    {
+      "key": "synack_split",
+      "long": "synack-split",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "str",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "ip_id",
+      "long": "ip-id",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "str",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "hostcase",
+      "long": "hostcase",
+      "arg": "none",
+      "scope": "profile",
+      "target": "profile.unsupported",
+      "note": "httpTamper"
+    },
+    {
+      "key": "hostspell",
+      "long": "hostspell",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "str",
+      "target": "profile.unsupported",
+      "note": "httpTamper"
+    },
+    {
+      "key": "hostnospace",
+      "long": "hostnospace",
+      "arg": "none",
+      "scope": "profile",
+      "target": "profile.unsupported",
+      "note": "httpTamper"
+    },
+    {
+      "key": "domcase",
+      "long": "domcase",
+      "arg": "none",
+      "scope": "profile",
+      "target": "profile.unsupported",
+      "note": "httpTamper"
+    },
+    {
+      "key": "methodeol",
+      "long": "methodeol",
+      "arg": "none",
+      "scope": "profile",
+      "target": "profile.unsupported",
+      "note": "httpTamper"
+    },
+    {
+      "key": "hostlist",
+      "long": "hostlist",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "str",
+      "target": "filters.hosts_ref"
+    },
+    {
+      "key": "hostlist_domains",
+      "long": "hostlist-domains",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "csv",
+      "target": "filters.hosts_list"
+    },
+    {
+      "key": "hostlist_exclude",
+      "long": "hostlist-exclude",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "str",
+      "target": "filters.hosts_exclude_ref"
+    },
+    {
+      "key": "hostlist_excl_dom",
+      "long": "hostlist-exclude-domains",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "csv",
+      "target": "filters.hosts_exclude"
+    },
+    {
+      "key": "hostlist_auto",
+      "long": "hostlist-auto",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "str",
+      "target": "profile.unsupported",
+      "note": "hostlistAuto"
+    },
+    {
+      "key": "hl_auto_fail_thr",
+      "long": "hostlist-auto-fail-threshold",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "_.na",
+      "note": "hostlistAuto"
+    },
+    {
+      "key": "hl_auto_fail_time",
+      "long": "hostlist-auto-fail-time",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "_.na",
+      "note": "hostlistAuto"
+    },
+    {
+      "key": "hl_auto_retrans",
+      "long": "hostlist-auto-retrans-threshold",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "_.na",
+      "note": "hostlistAuto"
+    },
+    {
+      "key": "hl_auto_debug",
+      "long": "hostlist-auto-debug",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "str",
+      "target": "_.na",
+      "note": "hostlistAuto"
+    },
+    {
+      "key": "ipset",
+      "long": "ipset",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "str",
+      "target": "filters.ips_ref"
+    },
+    {
+      "key": "ipset_ip",
+      "long": "ipset-ip",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "csv",
+      "target": "filters.ips_list"
+    },
+    {
+      "key": "ipset_exclude",
+      "long": "ipset-exclude",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "str",
+      "target": "profile.unsupported",
+      "note": "excludeListUnsupported"
+    },
+    {
+      "key": "ipset_excl_ip",
+      "long": "ipset-exclude-ip",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "csv",
+      "target": "profile.unsupported",
+      "note": "excludeListUnsupported"
+    },
+    {
+      "key": "filter_l3",
+      "long": "filter-l3",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "csv",
+      "target": "filters.l3"
+    },
+    {
+      "key": "filter_tcp",
+      "long": "filter-tcp",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.ports",
+      "target": "filters.tcp_ports"
+    },
+    {
+      "key": "filter_udp",
+      "long": "filter-udp",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.ports",
+      "target": "filters.udp_ports"
+    },
+    {
+      "key": "filter_l7",
+      "long": "filter-l7",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "csv",
+      "target": "filters.l7"
+    },
+    {
+      "key": "filter_ssid",
+      "long": "filter-ssid",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "csv",
+      "target": "profile.unsupported",
+      "note": "ssidFilter"
+    },
+    {
+      "key": "qnum",
+      "long": "qnum",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "int",
+      "target": "_.na",
+      "note": "engineDetail"
+    },
+    {
+      "key": "daemon",
+      "long": "daemon",
+      "arg": "none",
+      "scope": "global",
+      "target": "_.na",
+      "note": "processControl"
+    },
+    {
+      "key": "pidfile",
+      "long": "pidfile",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "str",
+      "target": "_.na",
+      "note": "processControl"
+    },
+    {
+      "key": "user",
+      "long": "user",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "str",
+      "target": "_.na",
+      "note": "processControl"
+    },
+    {
+      "key": "uid",
+      "long": "uid",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "str",
+      "target": "_.na",
+      "note": "processControl"
+    },
+    {
+      "key": "debug",
+      "long": "debug",
+      "arg": "optional",
+      "scope": "global",
+      "grammar": "str",
+      "target": "_.na",
+      "note": "processControl"
+    },
+    {
+      "key": "dry_run",
+      "long": "dry-run",
+      "arg": "none",
+      "scope": "global",
+      "target": "_.ignore"
+    },
+    {
+      "key": "version",
+      "long": "version",
+      "arg": "none",
+      "scope": "global",
+      "target": "_.ignore"
+    },
+    {
+      "key": "comment",
+      "long": "comment",
+      "arg": "optional",
+      "scope": "global",
+      "grammar": "str",
+      "target": "_.ignore"
+    },
+    {
+      "key": "bind_fix4",
+      "long": "bind-fix4",
+      "arg": "none",
+      "scope": "global",
+      "target": "_.na",
+      "note": "engineDetail"
+    },
+    {
+      "key": "bind_fix6",
+      "long": "bind-fix6",
+      "arg": "none",
+      "scope": "global",
+      "target": "_.na",
+      "note": "engineDetail"
+    },
+    {
+      "key": "ctrack_to",
+      "long": "ctrack-timeouts",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "str",
+      "target": "_.na",
+      "note": "engineDetail"
+    },
+    {
+      "key": "ctrack_off",
+      "long": "ctrack-disable",
+      "arg": "optional",
+      "scope": "global",
+      "grammar": "bool01",
+      "target": "_.na",
+      "note": "engineDetail"
+    },
+    {
+      "key": "ipcache_lt",
+      "long": "ipcache-lifetime",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "int",
+      "target": "_.na",
+      "note": "engineDetail"
+    },
+    {
+      "key": "ipcache_hn",
+      "long": "ipcache-hostname",
+      "arg": "optional",
+      "scope": "global",
+      "grammar": "bool01",
+      "target": "_.na",
+      "note": "engineDetail"
+    },
+    {
+      "key": "wf_iface",
+      "long": "wf-iface",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "str",
+      "target": "_.na",
+      "note": "windowsOnly"
+    },
+    {
+      "key": "wf_l3",
+      "long": "wf-l3",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "csv",
+      "target": "_.na",
+      "note": "windowsOnly"
+    },
+    {
+      "key": "wf_tcp",
+      "long": "wf-tcp",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "zapret.ports",
+      "target": "_.na",
+      "note": "windowsOnly"
+    },
+    {
+      "key": "wf_udp",
+      "long": "wf-udp",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "zapret.ports",
+      "target": "_.na",
+      "note": "windowsOnly"
+    },
+    {
+      "key": "wf_raw",
+      "long": "wf-raw",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "str",
+      "target": "_.na",
+      "note": "windowsOnly"
+    },
+    {
+      "key": "wf_raw_part",
+      "long": "wf-raw-part",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "str",
+      "target": "_.na",
+      "note": "windowsOnly"
+    },
+    {
+      "key": "wf_filter_lan",
+      "long": "wf-filter-lan",
+      "arg": "optional",
+      "scope": "global",
+      "grammar": "bool01",
+      "target": "_.na",
+      "note": "windowsOnly"
+    },
+    {
+      "key": "wf_save",
+      "long": "wf-save",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "str",
+      "target": "_.na",
+      "note": "windowsOnly"
+    },
+    {
+      "key": "ssid_filter",
+      "long": "ssid-filter",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "csv",
+      "target": "_.na",
+      "note": "windowsOnly"
+    },
+    {
+      "key": "nlm_filter",
+      "long": "nlm-filter",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "csv",
+      "target": "_.na",
+      "note": "windowsOnly"
+    },
+    {
+      "key": "nlm_list",
+      "long": "nlm-list",
+      "arg": "optional",
+      "scope": "global",
+      "grammar": "str",
+      "target": "_.na",
+      "note": "windowsOnly"
+    }
   ]
 }

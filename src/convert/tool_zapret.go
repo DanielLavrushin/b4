@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+
+	"github.com/daniellavrushin/b4/config"
 )
 
 var zapretDesyncModes = map[string]string{
@@ -50,6 +52,8 @@ var zapretPosMarkers = map[string]struct {
 }
 
 func init() {
+	registerNormalizer("zapret", normalizeZapret)
+	registerToolEmitter("zapret", emitZapret)
 	grammars["zapret.desync"] = gZapretDesync
 	grammars["zapret.fooling"] = gZapretFooling
 	grammars["zapret.splitpos"] = gZapretSplitPos
@@ -258,4 +262,187 @@ func gZapretWSize(raw string, _ grammarCtx) (Value, error) {
 		return Value{}, errors.New("expected <window>[:<scale>]")
 	}
 	return Value{Int: n, Str: raw}, nil
+}
+
+var zapretDroppedModes = map[string]bool{
+	"udplen": true, "tamper": true, "hopbyhop": true, "destopt": true,
+}
+
+func emitZapretExtras(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet) {
+	if prof.Desync.Mode != "" {
+		set.TCP.Desync.Mode = prof.Desync.Mode
+	}
+	if prof.SynFake.Enabled {
+		set.TCP.SynFake = true
+		set.TCP.SynFakeLen = prof.SynFake.Len
+	}
+	if prof.Duplicate > 0 {
+		set.TCP.Duplicate.Enabled = true
+		set.TCP.Duplicate.Count = clamp(prof.Duplicate, 1, 10)
+		if tok, ok := ti.first(prof.Index, "dup"); ok {
+			notes.set(tok, StatusMapped, "duplicateMapped",
+				"tcp.duplicate.enabled=true", "tcp.duplicate.count="+strconv.Itoa(set.TCP.Duplicate.Count))
+		}
+	}
+	if prof.SeqOvl.Length > 0 {
+		set.Fragmentation.SeqOverlapLength = prof.SeqOvl.Length
+		set.Fragmentation.SeqOverlapPattern = seqOvlPattern(prof.SeqOvl.Pattern)
+		if tok, ok := ti.first(prof.Index, "seqovl"); ok {
+			notes.set(tok, StatusMapped, "seqOvlMapped",
+				"fragmentation.seq_overlap_length="+strconv.Itoa(prof.SeqOvl.Length))
+		}
+		if tok, ok := ti.first(prof.Index, "seqovl_pat"); ok {
+			notes.set(tok, StatusApproximated, "seqOvlPatternMapped", "fragmentation.seq_overlap_pattern")
+		}
+	}
+	if prof.WinSize > 0 {
+		set.TCP.Win.Mode = "zero"
+		if tok, ok := ti.first(prof.Index, "wssize"); ok {
+			notes.set(tok, StatusApproximated, "wsSizeApproximated", "tcp.win.mode=zero")
+		}
+	}
+	if len(prof.Filters.Excluded) > 0 {
+		if tok, ok := ti.first(prof.Index, "hostlist_excl_dom", "hostlist_exclude"); ok {
+			notes.set(tok, StatusUnsupported, "excludeListUnsupported")
+		}
+	}
+	if prof.Skip {
+		set.Enabled = false
+		if tok, ok := ti.first(prof.Index, "skip"); ok {
+			notes.set(tok, StatusMapped, "skipMapped", "enabled=false")
+		}
+	}
+}
+
+func noteDesyncModes(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet) {
+	tok, ok := ti.first(prof.Index, "desync")
+	if !ok || len(prof.DesyncModes) == 0 {
+		return
+	}
+	var fields, dropped []string
+	if set.Fragmentation.Strategy != config.ConfigNone {
+		fields = append(fields, "fragmentation.strategy="+set.Fragmentation.Strategy)
+	}
+	if set.Faking.SNI {
+		fields = append(fields, "faking.sni=true")
+	}
+	if set.TCP.Desync.Mode != config.ConfigOff {
+		fields = append(fields, "tcp.desync.mode="+set.TCP.Desync.Mode)
+	}
+	if set.TCP.SynFake {
+		fields = append(fields, "tcp.syn_fake=true")
+	}
+	if prof.UDP.Present {
+		fields = append(fields, "udp.mode="+set.UDP.Mode)
+	}
+	for _, m := range prof.DesyncModes {
+		if zapretDroppedModes[m] {
+			dropped = append(dropped, m)
+		}
+	}
+	if len(dropped) > 0 {
+		n := notes.set(tok, StatusUnsupported, "desyncModesDropped", fields...)
+		n.Params = map[string]any{"dropped": strings.Join(dropped, ", ")}
+		return
+	}
+	if len(fields) == 0 {
+		notes.set(tok, StatusDegenerate, "desyncModesEmpty")
+		return
+	}
+	notes.set(tok, StatusApproximated, "desyncModesMapped", fields...)
+}
+
+func seqOvlPattern(raw string) []string {
+	hex := strings.TrimPrefix(strings.TrimPrefix(raw, "0x"), "0X")
+	if hex == "" || len(hex)%2 != 0 {
+		return []string{"0x16", "0x03", "0x03", "0x00", "0x00"}
+	}
+	out := make([]string, 0, len(hex)/2)
+	for i := 0; i+1 < len(hex); i += 2 {
+		if !isHex(hex[i]) || !isHex(hex[i+1]) {
+			return []string{"0x16", "0x03", "0x03", "0x00", "0x00"}
+		}
+		out = append(out, "0x"+hex[i:i+2])
+	}
+	return out
+}
+
+func onlyExtSplit(plain, disorder []SplitOp) bool {
+	ops := append(append([]SplitOp{}, plain...), disorder...)
+	if len(ops) != 1 {
+		return false
+	}
+	return ops[0].Pos.Anchor == AnchorSNIExt && ops[0].Pos.Offset == 0
+}
+
+func plainOrDisorder(plain, disorder []SplitOp) SplitOp {
+	if len(plain) > 0 {
+		return plain[0]
+	}
+	return disorder[0]
+}
+
+func emitZapret(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet) {
+	emitZapretExtras(set, prof, ti, notes)
+	noteDesyncModes(set, prof, ti, notes)
+}
+
+func normalizeZapret(prog *Program, _ []Token, notes *noteSet) {
+	for _, prof := range prog.Profiles {
+		normalizeZapretProfile(prof, notes)
+		promoteUDPFake(prof)
+	}
+}
+
+func promoteUDPFake(prof *Profile) {
+	if !prof.UDPOnly() {
+		return
+	}
+	prof.UDP.Present = prof.Fake.Present
+	prof.UDP.Repeats = prof.Fake.Repeats
+	prof.UDP.QUICRef = prof.Fake.QUICRef
+	prof.UDP.TTL = prof.Fake.TTL
+	prof.UDP.TTLSet = prof.Fake.TTLSet
+	prof.UDP.Ports = append(prof.UDP.Ports, prof.Filters.UDPPorts...)
+}
+
+func normalizeZapretProfile(prof *Profile, _ *noteSet) {
+	positions := prof.SplitPositions
+	token := prof.SplitPosToken
+	if len(positions) == 0 {
+		positions = []Pos{{Raw: "1", Offset: 1, Anchor: AnchorAbs, Rel: RelStart}}
+		token = prof.DesyncToken
+	}
+
+	for _, mode := range prof.DesyncModes {
+		switch mode {
+		case "fake", "fakeknown":
+			prof.Fake.Present = true
+		case "rst", "rstack":
+			prof.Desync.Mode = "rst"
+		case "synack":
+			prof.SynFake.Enabled = true
+		case "syndata":
+			prof.SynFake.Enabled = true
+			prof.SynFake.Len = 1
+		case "multisplit":
+			appendSplits(prof, SplitPlain, positions, token)
+		case "multidisorder":
+			appendSplits(prof, SplitDisorder, positions, token)
+		case "fakedsplit", "hostfakesplit":
+			prof.Fake.Present = true
+			appendSplits(prof, SplitPlain, positions[:1], token)
+		case "fakeddisorder":
+			prof.Fake.Present = true
+			appendSplits(prof, SplitDisorder, positions[:1], token)
+		case "ipfrag1", "ipfrag2":
+			appendSplits(prof, SplitIPFrag, positions[:1], token)
+		}
+	}
+}
+
+func appendSplits(prof *Profile, kind SplitKind, positions []Pos, token int) {
+	for _, p := range positions {
+		prof.Splits = append(prof.Splits, SplitOp{Kind: kind, Pos: p, Token: token})
+	}
 }
