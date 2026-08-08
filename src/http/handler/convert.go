@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/convert"
@@ -171,11 +172,27 @@ func (api *API) runConvert(req convertRequest) (*convert.Result, error) {
 		case errors.Is(err, convert.ErrNothingToParse):
 			return nil, ErrBadRequest("No recognizable options were found in the supplied text")
 		case errors.Is(err, convert.ErrUnsupportedTool):
-			return nil, ErrBadRequest("These options belong to a tool b4 cannot convert yet. Only byedpi command lines are supported so far")
+			return nil, ErrBadRequest("These options belong to a tool b4 cannot convert yet. Supported: " +
+				supportedToolList())
 		}
 		return nil, ErrBadRequest(err.Error())
 	}
 	return res, nil
+}
+
+func supportedToolList() string {
+	tools, err := convert.Tools()
+	if err != nil {
+		return "none"
+	}
+	names := make([]string, 0, len(tools))
+	for _, t := range tools {
+		names = append(names, t.Label)
+	}
+	if len(names) == 0 {
+		return "none"
+	}
+	return strings.Join(names, ", ")
 }
 
 func assignSetIDs(sets []config.SetConfig) []*config.SetConfig {

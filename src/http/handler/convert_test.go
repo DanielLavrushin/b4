@@ -143,6 +143,41 @@ func TestAssignSetIDs_DropsDanglingEscalation(t *testing.T) {
 	}
 }
 
+func TestSupportedToolList_NamesEveryRegisteredTool(t *testing.T) {
+	tools, err := convert.Tools()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tools) == 0 {
+		t.Fatal("no tools registered")
+	}
+	list := supportedToolList()
+	for _, x := range tools {
+		if !strings.Contains(list, x.Label) {
+			t.Errorf("%q is a supported tool but the message does not name it: %q", x.Label, list)
+		}
+	}
+}
+
+func TestHandleConvertAnalyze_UnsupportedToolNamesWhatIsSupported(t *testing.T) {
+	mux := convertAPI(t)
+	rec := postConvert(t, mux, "/api/convert/analyze",
+		`{"text":"--dpi-desync=fake --tlsrec=1 --mod-http=h"}`)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("got %d (%s), want 400", rec.Code, rec.Body.String())
+	}
+	tools, err := convert.Tools()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, x := range tools {
+		if !strings.Contains(rec.Body.String(), x.Label) {
+			t.Errorf("error body does not name %q: %s", x.Label, rec.Body.String())
+		}
+	}
+}
+
 func TestNormalizeDomains(t *testing.T) {
 	got := normalizeDomains([]string{" YouTube.com ", "https://youtube.com/watch", "", "vk.com:443"})
 	want := []string{"youtube.com", "vk.com"}

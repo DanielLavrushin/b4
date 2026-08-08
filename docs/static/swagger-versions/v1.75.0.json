@@ -4786,6 +4786,12 @@
                         "$ref": "#/definitions/convert.Note"
                     }
                 },
+                "plan": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/convert.SetPlan"
+                    }
+                },
                 "sets": {
                     "type": "array",
                     "items": {
@@ -4818,6 +4824,47 @@
                     "items": {
                         "$ref": "#/definitions/convert.Warning"
                     }
+                }
+            }
+        },
+        "convert.SetPlan": {
+            "type": "object",
+            "properties": {
+                "accepts_targets": {
+                    "type": "boolean"
+                },
+                "domains": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "faking": {
+                    "type": "boolean"
+                },
+                "fallback_for": {
+                    "type": "integer"
+                },
+                "ips": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "profile": {
+                    "type": "integer"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "strategy": {
+                    "type": "string"
                 }
             }
         },
@@ -6079,6 +6126,15 @@
                 },
                 "name_prefix": {
                     "type": "string"
+                },
+                "profile_domains": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
                 },
                 "text": {
                     "type": "string"
