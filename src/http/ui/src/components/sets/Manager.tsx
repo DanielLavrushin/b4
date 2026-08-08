@@ -23,9 +23,11 @@ import {
   ClearIcon,
   CompareIcon,
   DomainIcon,
+  ImportExportIcon,
   SetsIcon,
   WarningIcon,
 } from "@b4.icons";
+import { ImportToolDialog } from "./ImportTool";
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 
 import {
@@ -165,6 +167,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
     setId: null,
   });
   const [batchDeleteDialog, setBatchDeleteDialog] = useState(false);
+  const [importToolOpen, setImportToolOpen] = useState(false);
   const [compareDialog, setCompareDialog] = useState<{
     open: boolean;
     setA: B4SetConfig | null;
@@ -608,6 +611,14 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                     </Button>
                   )}
                   <Button
+                    startIcon={<ImportExportIcon />}
+                    onClick={() => setImportToolOpen(true)}
+                    variant="outlined"
+                    size="small"
+                  >
+                    {t("sets.manager.importFromTool")}
+                  </Button>
+                  <Button
                     startIcon={<AddIcon />}
                     onClick={handleAddSet}
                     variant="contained"
@@ -820,6 +831,12 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
             ))}
         </Box>
       </B4Dialog>
+
+      <ImportToolDialog
+        open={importToolOpen}
+        onClose={() => setImportToolOpen(false)}
+        onImported={onRefresh}
+      />
 
       <B4Dialog
         open={compareDialog.open && !compareDialog.setB}
