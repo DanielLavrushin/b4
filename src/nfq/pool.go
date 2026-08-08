@@ -76,6 +76,8 @@ func NewPool(cfg *config.Config) *Pool {
 		w.destState = state.destState
 		w.pendingHello = state.pendingHello
 		w.hostHints = state.hostHints
+		w.ipHealth = state.ipHealth
+		w.goodIPs = state.goodIPs
 		ws = append(ws, w)
 	}
 
@@ -107,10 +109,13 @@ func NewPool(cfg *config.Config) *Pool {
 		for {
 			select {
 			case <-cleanupTicker.C:
+				blockedTTL := pool.blockedCacheTTL()
 				pool.state.connState.Cleanup()
 				pool.state.tlsCache.Cleanup()
-				pool.state.destState.Cleanup(300 * time.Second)
+				pool.state.destState.Cleanup(blockedTTL)
 				pool.state.hostHints.Cleanup()
+				pool.state.ipHealth.Cleanup(blockedTTL)
+				pool.state.goodIPs.Cleanup()
 			case <-escalationTicker.C:
 				pool.state.pendingHello.Cleanup()
 				metrics.GetMetricsCollector().UpdateEscalations(pool.GetEscalations())
@@ -185,6 +190,10 @@ func (p *Pool) Stop() {
 		// already closed
 	default:
 		close(p.stopCleanup)
+	}
+
+	if p.state != nil {
+		p.state.ipHealth.Stop()
 	}
 
 	var wg sync.WaitGroup
@@ -324,6 +333,23 @@ func (p *Pool) reconcileDNSTCP(newCfg *config.Config) {
 
 func (p *Pool) GetIPBlockCache() IPBlockCache {
 	return p.state.destState
+}
+
+func (p *Pool) blockedCacheTTL() time.Duration {
+	ttl := time.Duration(config.DefaultIPBlockBlockedTTLSec) * time.Second
+	cfg := p.GetFirstWorkerConfig()
+	if cfg == nil {
+		return ttl
+	}
+	for _, set := range cfg.Sets {
+		if set == nil || !set.TCP.IPBlockDetect.Enabled {
+			continue
+		}
+		if d := set.TCP.IPBlockDetect.ResolvedBlockedTTL(); d > ttl {
+			ttl = d
+		}
+	}
+	return ttl
 }
 
 func (p *Pool) GetEscalations() []metrics.EscalationEntry {

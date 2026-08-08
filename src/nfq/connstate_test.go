@@ -2,6 +2,7 @@ package nfq
 
 import (
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 )
@@ -189,5 +190,33 @@ func TestCheckRST_FullFlow(t *testing.T) {
 	}
 	if reason == "" {
 		t.Fatal("should provide TTL mismatch reason")
+	}
+}
+
+func TestBlockedCacheExpiresWhileTrafficKeepsTouchingIt(t *testing.T) {
+	tracker := &destStateTracker{
+		conns:       make(map[string]*ipBlockEntry),
+		blocked:     make(map[string]time.Time),
+		escalations: make(map[string]*escalationEntry),
+		rstKills:    make(map[string]*rstKillEntry),
+	}
+
+	tracker.AddBlocked("185.199.110.133:443")
+	if !tracker.IsBlocked("185.199.110.133:443") {
+		t.Fatal("destination was not cached as blocked")
+	}
+
+	tracker.mu.Lock()
+	tracker.blocked["185.199.110.133:443"] = time.Now().Add(-10 * time.Minute)
+	tracker.mu.Unlock()
+
+	for i := 0; i < 5; i++ {
+		tracker.IsBlocked("185.199.110.133:443")
+	}
+
+	tracker.Cleanup(5 * time.Minute)
+
+	if tracker.IsBlocked("185.199.110.133:443") {
+		t.Error("a stale entry survived because lookups kept refreshing it, so the destination would be reset forever")
 	}
 }

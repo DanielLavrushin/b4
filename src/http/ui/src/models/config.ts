@@ -463,6 +463,11 @@ export interface IPBlockDetectConfig {
   retransmit_threshold: number;
   timeout_ms: number;
   cache_blocked_ips: boolean;
+  syn_detect: boolean;
+  syn_threshold: number;
+  action: string;
+  blocked_ttl_sec: number;
+  heal_ttl_sec: number;
 }
 
 export interface RSTProtectionConfig {

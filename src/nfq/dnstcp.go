@@ -295,6 +295,11 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			}
 		}
 
+		if healed := s.worker.healDNSResponse(cfg, set, domain, resp); healed != nil {
+			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionHeal)
+			resp = healed
+		}
+
 		if writeDNSTCPMessage(client, resp, ioTimeout) != nil {
 			return
 		}

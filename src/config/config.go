@@ -74,6 +74,11 @@ var DefaultSetConfig = SetConfig{
 			RetransmitThreshold: 3,
 			TimeoutMs:           3000,
 			CacheBlockedIPs:     true,
+			SynDetect:           true,
+			SynThreshold:        DefaultIPBlockSynThreshold,
+			Action:              IPBlockActionRST,
+			BlockedTTLSec:       DefaultIPBlockBlockedTTLSec,
+			HealTTLSec:          DefaultIPBlockHealTTLSec,
 		},
 
 		RSTProtection: RSTProtectionConfig{

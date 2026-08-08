@@ -7,6 +7,7 @@ import {
   B4Alert,
   B4FormHeader,
   B4Hint,
+  B4Select,
 } from "@b4.elements";
 import { B4Switch } from "@common/B4Switch";
 import { useTranslation } from "react-i18next";
@@ -23,12 +24,42 @@ interface TcpGeneralProps {
 export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
   const { t } = useTranslation();
   const dup = config.tcp.duplicate ?? { enabled: false, count: 3 };
-  const ibd = config.tcp.ip_block_detect ?? {
+  const ibd = {
     enabled: false,
     retransmit_threshold: 3,
     timeout_ms: 3000,
     cache_blocked_ips: true,
+    syn_detect: true,
+    syn_threshold: 3,
+    action: "rst",
+    blocked_ttl_sec: 300,
+    heal_ttl_sec: 60,
+    ...config.tcp.ip_block_detect,
   };
+  const IBD_ACTIONS = [
+    {
+      value: "rst",
+      label: t("sets.tcp.general.ibdActionRst"),
+      description: t("sets.tcp.general.ibdActionRstDesc"),
+    },
+    {
+      value: "heal",
+      label: t("sets.tcp.general.ibdActionHeal"),
+      description: t("sets.tcp.general.ibdActionHealDesc"),
+    },
+    {
+      value: "proxy",
+      label: t("sets.tcp.general.ibdActionProxy"),
+      description: t("sets.tcp.general.ibdActionProxyDesc"),
+    },
+  ];
+  const proxyActionUnavailable =
+    ibd.action === "proxy" &&
+    !(
+      config.routing?.enabled &&
+      (config.routing?.mode === "proxy" ||
+        config.routing?.mode === "mtproto-ws")
+    );
   const rstProt = {
     enabled: false,
     ttl_tolerance: 3,
@@ -161,6 +192,55 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
         {ibd.enabled && (
           <>
             <Grid size={{ xs: 12, md: 6 }}>
+              <B4Select
+                label={t("sets.tcp.general.ibdAction")}
+                value={ibd.action}
+                options={IBD_ACTIONS}
+                onChange={(e) =>
+                  onChange("tcp.ip_block_detect.action", e.target.value)
+                }
+                helperText={
+                  IBD_ACTIONS.find((o) => o.value === ibd.action)?.description
+                }
+                aiTopic="tcp.ip_block_detect.action"
+              />
+              {proxyActionUnavailable && (
+                <B4Alert severity="warning">
+                  {t("sets.tcp.general.ibdProxyWarn")}
+                </B4Alert>
+              )}
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Switch
+                label={t("sets.tcp.general.ibdSynDetect")}
+                description={t("sets.tcp.general.ibdSynDetectDesc")}
+                checked={ibd.syn_detect}
+                onChange={(checked) =>
+                  onChange("tcp.ip_block_detect.syn_detect", checked)
+                }
+                aiTopic="tcp.ip_block_detect.syn_detect"
+              />
+            </Grid>
+
+            {ibd.syn_detect && (
+              <Grid size={{ xs: 12, md: 6 }}>
+                <B4Slider
+                  label={t("sets.tcp.general.ibdSynThreshold")}
+                  value={ibd.syn_threshold}
+                  onChange={(value: number) =>
+                    onChange("tcp.ip_block_detect.syn_threshold", value)
+                  }
+                  min={2}
+                  max={8}
+                  step={1}
+                  helperText={t("sets.tcp.general.ibdSynThresholdHelper")}
+                  aiTopic="tcp.ip_block_detect.syn_threshold"
+                />
+              </Grid>
+            )}
+
+            <Grid size={{ xs: 12, md: 6 }}>
               <B4Slider
                 label={t("sets.tcp.general.ibdThreshold")}
                 value={ibd.retransmit_threshold}
@@ -194,6 +274,41 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
                 helperText={t("sets.tcp.general.ibdTimeoutHelper")}
               />
             </Grid>
+
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Slider
+                label={t("sets.tcp.general.ibdBlockedTtl")}
+                value={ibd.blocked_ttl_sec}
+                onChange={(value: number) =>
+                  onChange("tcp.ip_block_detect.blocked_ttl_sec", value)
+                }
+                min={60}
+                max={3600}
+                step={60}
+                valueSuffix=" s"
+                helperText={t("sets.tcp.general.ibdBlockedTtlHelper")}
+                aiTopic="tcp.ip_block_detect.blocked_ttl_sec"
+              />
+            </Grid>
+
+            {ibd.action === "heal" && (
+              <Grid size={{ xs: 12, md: 6 }}>
+                <B4Slider
+                  label={t("sets.tcp.general.ibdHealTtl")}
+                  value={ibd.heal_ttl_sec}
+                  onChange={(value: number) =>
+                    onChange("tcp.ip_block_detect.heal_ttl_sec", value)
+                  }
+                  min={10}
+                  max={600}
+                  step={10}
+                  valueSuffix=" s"
+                  helperText={t("sets.tcp.general.ibdHealTtlHelper")}
+                  aiTopic="tcp.ip_block_detect.heal_ttl_sec"
+                />
+              </Grid>
+            )}
+
             <Grid size={{ xs: 12, md: 6 }}>
               <B4Switch
                 label={t("sets.tcp.general.ibdCache")}
