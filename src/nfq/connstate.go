@@ -180,12 +180,9 @@ func (t *destStateTracker) MarkRSTSent(connKey string) {
 }
 
 func (t *destStateTracker) IsBlocked(dstIPPort string) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	_, ok := t.blocked[dstIPPort]
-	if ok {
-		t.blocked[dstIPPort] = time.Now()
-	}
 	return ok
 }
 
@@ -375,12 +372,16 @@ type runtimeState struct {
 	destState    *destStateTracker
 	pendingHello *pendingHelloCache
 	hostHints    *hostHintCache
+	ipHealth     *ipHealthStore
+	goodIPs      *goodIPStore
 }
 
 func newRuntimeState() *runtimeState {
 	return &runtimeState{
 		pendingHello: newPendingHelloCache(),
 		hostHints:    newHostHintCache(),
+		ipHealth:     newIPHealthStore(),
+		goodIPs:      newGoodIPStore(),
 		tlsCache: &tlsInfoCache{
 			conns: make(map[string]*tlsInfo),
 		},

@@ -309,6 +309,12 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		w.connTracker.MarkEstablished(connKey)
 	}
 
+	if isSyn && !isAck && !routeTProxy && cfg.IsTCPPort(dport) && matched {
+		if w.handleSynHealth(vc, pkt, cfg, set, sport, dport) {
+			return 0
+		}
+	}
+
 	if isSyn && !isAck && !routeTProxy && cfg.IsTCPPort(dport) && matched && !set.TCP.Duplicate.Enabled && needsTCPSynInjection(set) {
 		log.Tracef("TCP SYN to %s:%d (set: %s)", pkt.dstStr, dport, set.Name)
 

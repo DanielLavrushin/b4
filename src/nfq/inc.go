@@ -16,6 +16,13 @@ import (
 var corruptionStrategies = []string{"badsum", "badseq", "badack", "all"}
 
 func (w *Worker) HandleIncoming(vc *verdictCtx, v byte, raw []byte, ihl int, src net.IP, dstStr string, dport uint16, srcStr string, sport uint16, payload []byte) int {
+	isSynAck := false
+	if len(raw) > ihl+13 {
+		flags := raw[ihl+13]
+		isSynAck = flags&0x02 != 0 && flags&0x10 != 0
+	}
+	w.recordDestAlive(srcStr, dstStr, isSynAck)
+
 	incomingSet := w.connTracker.GetSetForIncoming(dstStr, dport, srcStr, sport)
 
 	if incomingSet != nil && len(raw) > ihl+13 {

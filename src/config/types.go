@@ -3,6 +3,7 @@ package config
 import (
 	"math/rand"
 	"path/filepath"
+	"time"
 
 	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/log"
@@ -39,6 +40,18 @@ const (
 )
 
 const (
+	IPBlockActionRST   = "rst"
+	IPBlockActionHeal  = "heal"
+	IPBlockActionProxy = "proxy"
+)
+
+const (
+	DefaultIPBlockSynThreshold  = 3
+	DefaultIPBlockBlockedTTLSec = 300
+	DefaultIPBlockHealTTLSec    = 60
+)
+
+const (
 	DefaultDNSTCPPort         = 5453
 	DefaultDNSQueryTimeoutSec = 5
 	DefaultDNSTCPIdleSec      = 30
@@ -52,6 +65,15 @@ func RoutingUsesTProxy(mode string) bool {
 
 func RoutingIsBlock(mode string) bool {
 	return mode == RoutingModeBlock
+}
+
+func NormalizeIPBlockAction(action string) string {
+	switch action {
+	case IPBlockActionHeal, IPBlockActionProxy:
+		return action
+	default:
+		return IPBlockActionRST
+	}
 }
 
 func NormalizeBlockAction(action string) string {
@@ -143,10 +165,43 @@ type TCPConfig struct {
 }
 
 type IPBlockDetectConfig struct {
-	Enabled             bool `json:"enabled"`
-	RetransmitThreshold int  `json:"retransmit_threshold"`
-	TimeoutMs           int  `json:"timeout_ms"`
-	CacheBlockedIPs     bool `json:"cache_blocked_ips"`
+	Enabled             bool   `json:"enabled"`
+	RetransmitThreshold int    `json:"retransmit_threshold"`
+	TimeoutMs           int    `json:"timeout_ms"`
+	CacheBlockedIPs     bool   `json:"cache_blocked_ips"`
+	SynDetect           bool   `json:"syn_detect"`
+	SynThreshold        int    `json:"syn_threshold"`
+	Action              string `json:"action"`
+	BlockedTTLSec       int    `json:"blocked_ttl_sec"`
+	HealTTLSec          int    `json:"heal_ttl_sec"`
+}
+
+func (c *IPBlockDetectConfig) ResolvedAction() string {
+	if c == nil {
+		return IPBlockActionRST
+	}
+	return NormalizeIPBlockAction(c.Action)
+}
+
+func (c *IPBlockDetectConfig) ResolvedSynThreshold() int {
+	if c == nil || c.SynThreshold <= 0 {
+		return DefaultIPBlockSynThreshold
+	}
+	return c.SynThreshold
+}
+
+func (c *IPBlockDetectConfig) ResolvedBlockedTTL() time.Duration {
+	if c == nil || c.BlockedTTLSec <= 0 {
+		return DefaultIPBlockBlockedTTLSec * time.Second
+	}
+	return time.Duration(c.BlockedTTLSec) * time.Second
+}
+
+func (c *IPBlockDetectConfig) ResolvedHealTTL() uint32 {
+	if c == nil || c.HealTTLSec <= 0 {
+		return DefaultIPBlockHealTTLSec
+	}
+	return uint32(c.HealTTLSec)
 }
 
 type RSTProtectionConfig struct {

@@ -54,5 +54,7 @@ type Worker struct {
 	destState        *destStateTracker
 	pendingHello     *pendingHelloCache
 	hostHints        *hostHintCache
+	ipHealth         *ipHealthStore
+	goodIPs          *goodIPStore
 	srcResolver      *tunSrcResolver
 }
