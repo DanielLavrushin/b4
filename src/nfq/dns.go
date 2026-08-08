@@ -281,7 +281,7 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 	var resp []byte
 	var err error
 	if set.DNS.DoHURL != "" {
-		resp, err = w.resolveDoHRedirect(set.DNS.DoHURL, int(cfg.Queue.Mark), query)
+		resp, err = w.resolveDoHRedirect(set.DNS.DoHURL, int(cfg.MainInjectedMark()), query)
 		if err != nil {
 			log.Tracef("DNS redirect: DoH %s failed: %v, answering SERVFAIL (fail-closed)", set.DNS.DoHURL, err)
 			logDNSEvent(set, queryDomain, clientIP, originalDst, clientPort, w.getMacByIp(clientIP.String()), dnsActionServfail)
@@ -294,7 +294,7 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 			Fragment:     set.DNS.FragmentQuery,
 			Seg2Delay:    delay,
 			ReverseOrder: set.Fragmentation.ReverseOrder,
-			Mark:         int(cfg.Queue.Mark),
+			Mark:         int(cfg.MainInjectedMark()),
 		})
 		if err != nil {
 			log.Tracef("DNS redirect: upstream %s failed: %v, answering SERVFAIL (fail-closed)", set.DNS.TargetDNS, err)
