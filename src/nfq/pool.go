@@ -80,6 +80,7 @@ func NewPool(cfg *config.Config) *Pool {
 
 	pool := &Pool{Workers: ws, Dhcp: dhcpMgr, stopCleanup: make(chan struct{}), state: state}
 	pool.startDNSTCP()
+	pool.publishDNSTCPReady()
 
 	dhcpMgr.OnUpdate(func(ipToMAC map[string]string) {
 		for _, w := range pool.Workers {
@@ -133,24 +134,38 @@ func (p *Pool) Start() error {
 	return nil
 }
 
+var DNSTCPReadyFunc func(v4, v6 bool)
+
+func (p *Pool) publishDNSTCPReady() {
+	if DNSTCPReadyFunc == nil {
+		return
+	}
+	v4, v6 := p.DNSTCPReady()
+	DNSTCPReadyFunc(v4, v6)
+}
+
 func (p *Pool) startDNSTCP() {
 	if len(p.Workers) == 0 {
 		return
 	}
 	cfg := p.Workers[0].getConfig()
-	if cfg.Queue.IsDiscovery || !cfg.HasDNSRedirect() {
+	if cfg.Queue.IsDiscovery || !cfg.DNSTCPInterceptEnabled() {
 		return
 	}
-	srv := newDNSTCPServer(p.Workers[0], config.DNSTCPPort)
+	port := cfg.DNSTCPListenPort()
+	srv := newDNSTCPServer(p.Workers[0], port)
 	if err := srv.Start(); err != nil {
-		log.Warnf("DNS: TCP listener could not bind port %d, DNS over TCP is left with the upstream resolver and no redirect rules are installed: %v", config.DNSTCPPort, err)
+		log.Warnf("DNS: TCP listener could not bind port %d, DNS over TCP is left with the upstream resolver and no redirect rules are installed: %v", port, err)
 		return
 	}
 	p.dnsTCP = srv
 }
 
-func (p *Pool) DNSTCPReady() bool {
-	return p.dnsTCP != nil
+func (p *Pool) DNSTCPReady() (v4 bool, v6 bool) {
+	if p.dnsTCP == nil {
+		return false, false
+	}
+	return p.dnsTCP.ReadyV4(), p.dnsTCP.ReadyV6()
 }
 
 func (p *Pool) Stop() {
@@ -260,7 +275,29 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 		p.Dhcp.SetManualDevices(newCfg.Queue.Devices.ManualEntries())
 	}
 
+	p.reconcileDNSTCP(newCfg)
+
 	return nil
+}
+
+func (p *Pool) reconcileDNSTCP(newCfg *config.Config) {
+	wanted := !newCfg.Queue.IsDiscovery && newCfg.DNSTCPInterceptEnabled()
+
+	if p.dnsTCP != nil {
+		samePort := p.dnsTCP.port == newCfg.DNSTCPListenPort()
+		sameFamilies := p.dnsTCP.ReadyV4() == newCfg.Queue.IPv4Enabled &&
+			p.dnsTCP.ReadyV6() == newCfg.Queue.IPv6Enabled
+		if wanted && samePort && sameFamilies {
+			return
+		}
+		p.dnsTCP.Stop()
+		p.dnsTCP = nil
+	}
+
+	if wanted {
+		p.startDNSTCP()
+	}
+	p.publishDNSTCPReady()
 }
 
 func (p *Pool) GetIPBlockCache() IPBlockCache {

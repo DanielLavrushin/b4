@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/log"
@@ -238,7 +239,40 @@ func (c *Config) GetSetById(id string) *SetConfig {
 	return nil
 }
 
-const DNSTCPPort = 5453
+func dnsSecondsOrDefault(v, def int) time.Duration {
+	if v <= 0 {
+		return time.Duration(def) * time.Second
+	}
+	return time.Duration(v) * time.Second
+}
+
+func (c *Config) DNSTCPListenPort() int {
+	p := c.System.DNS.TCPPort
+	if p < 1 || p > 65535 {
+		return DefaultDNSTCPPort
+	}
+	return p
+}
+
+func (c *Config) DNSQueryTimeout() time.Duration {
+	return dnsSecondsOrDefault(c.System.DNS.QueryTimeoutSec, DefaultDNSQueryTimeoutSec)
+}
+
+func (c *Config) DNSTCPIdleTimeout() time.Duration {
+	return dnsSecondsOrDefault(c.System.DNS.TCPIdleSec, DefaultDNSTCPIdleSec)
+}
+
+func (c *Config) DNSTCPIOTimeout() time.Duration {
+	return dnsSecondsOrDefault(c.System.DNS.TCPIOSec, DefaultDNSTCPIOSec)
+}
+
+func (c *Config) DNSTCPDialTimeout() time.Duration {
+	return dnsSecondsOrDefault(c.System.DNS.TCPDialSec, DefaultDNSTCPDialSec)
+}
+
+func (c *Config) DNSTCPInterceptEnabled() bool {
+	return !c.System.DNS.TCPDisabled && c.HasDNSRedirect()
+}
 
 func (c *Config) HasDNSRedirect() bool {
 	for _, set := range c.Sets {

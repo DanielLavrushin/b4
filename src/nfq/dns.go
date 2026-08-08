@@ -16,23 +16,23 @@ import (
 	"github.com/daniellavrushin/b4/sock"
 )
 
-const dohRedirectTimeout = 5 * time.Second
-
 var (
-	dohClientMu   sync.Mutex
-	dohClientMark int
-	dohClient     *http.Client
+	dohClientMu      sync.Mutex
+	dohClientMark    int
+	dohClientTimeout time.Duration
+	dohClient        *http.Client
 )
 
-func getDoHClient(mark int) *http.Client {
+func getDoHClient(mark int, timeout time.Duration) *http.Client {
 	dohClientMu.Lock()
 	defer dohClientMu.Unlock()
-	if dohClient == nil || dohClientMark != mark {
+	if dohClient == nil || dohClientMark != mark || dohClientTimeout != timeout {
 		if dohClient != nil {
 			dohClient.CloseIdleConnections()
 		}
-		dohClient = dns.MarkedDoHClient(mark, dohRedirectTimeout)
+		dohClient = dns.MarkedDoHClient(mark, timeout)
 		dohClientMark = mark
+		dohClientTimeout = timeout
 	}
 	return dohClient
 }
@@ -336,7 +336,8 @@ func (w *Worker) sendDNSResponseToClient(ipVersion byte, originalDst, clientIP n
 }
 
 func (w *Worker) resolveDoHRedirect(serverURL string, mark int, query []byte) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(w.ctx, dohRedirectTimeout)
+	timeout := w.getConfig().DNSQueryTimeout()
+	ctx, cancel := context.WithTimeout(w.ctx, timeout)
 	defer cancel()
-	return dns.ResolveDoH(ctx, getDoHClient(mark), serverURL, query)
+	return dns.ResolveDoH(ctx, getDoHClient(mark, timeout), serverURL, query)
 }

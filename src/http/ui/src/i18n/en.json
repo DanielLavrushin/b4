@@ -368,6 +368,25 @@
       "mssSizeHelp": "Lower values = more fragmentation. 88 is commonly used for YouTube bypass.",
       "info": "Reduces the TCP Maximum Segment Size on SYN/SYN-ACK packets for all TCP port 443 traffic, forcing data fragmentation. Most DPI systems cannot reassemble fragmented ClientHello. For per-device MSS clamping, use the Device Filtering settings."
     },
+    "Dns": {
+      "title": "DNS",
+      "description": "How b4 resolves DNS for matched sets, and how it handles DNS over TCP",
+      "info": "A set with its own DNS server answers matched domains through that server. Queries over UDP are handled by the packet queue; queries over TCP are redirected into b4 on the port below. Domains that match no set, and sets with no DNS server, are always passed to the resolver the client chose.",
+      "tcpGroup": "DNS over TCP",
+      "tcpEnable": "Intercept DNS over TCP",
+      "tcpEnableDesc": "Without this, a client that falls back to TCP reaches the upstream resolver and the set's DNS server is skipped",
+      "tcpPort": "Listener port",
+      "tcpPortHelp": "Local port b4 redirects TCP port 53 to. Change it only if something else already uses this port.",
+      "timeoutGroup": "Timeouts (seconds)",
+      "queryTimeout": "Query timeout",
+      "queryTimeoutHelp": "How long to wait for the set's DNS server before answering SERVFAIL. Applies to UDP and TCP alike.",
+      "tcpIdle": "Idle timeout",
+      "tcpIdleHelp": "How long an idle DNS-over-TCP connection is held open for further queries",
+      "tcpIo": "Read/write timeout",
+      "tcpIoHelp": "Deadline for a single query or answer on an established connection",
+      "tcpDial": "Forward timeout",
+      "tcpDialHelp": "How long to wait when forwarding an unmatched TCP query to the resolver the client chose"
+    },
     "Devices": {
       "title": "Device Filtering",
       "description": "Filter traffic by source device MAC address",

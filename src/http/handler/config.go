@@ -494,6 +494,15 @@ func (a *API) PerformSoftRestart(newCfg *config.Config, oldCfg *config.Config) b
 		shouldUpdate = true
 	}
 
+	if oldCfg.System.DNS.TCPDisabled != newCfg.System.DNS.TCPDisabled ||
+		oldCfg.DNSTCPListenPort() != newCfg.DNSTCPListenPort() {
+		shouldUpdate = true
+	}
+
+	if oldCfg.DNSTCPInterceptEnabled() != newCfg.DNSTCPInterceptEnabled() {
+		shouldUpdate = true
+	}
+
 	if oldCfg.Queue.Mark != newCfg.Queue.Mark {
 		shouldUpdate = true
 	}

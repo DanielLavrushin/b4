@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/dns"
@@ -20,9 +21,6 @@ import (
 )
 
 const (
-	dnsTCPIdleTimeout  = 30 * time.Second
-	dnsTCPIOTimeout    = 10 * time.Second
-	dnsTCPDialTimeout  = 5 * time.Second
 	dnsTCPMaxMessage   = 65535
 	dnsTCPMinQueryLen  = 12
 	dnsTCPActionPrefix = "tcp/"
@@ -33,7 +31,8 @@ type dnsTCPServer struct {
 	worker *Worker
 	ctx    context.Context
 	cancel context.CancelFunc
-	ln     net.Listener
+	lnV4   net.Listener
+	lnV6   net.Listener
 	wg     sync.WaitGroup
 }
 
@@ -46,34 +45,67 @@ func (s *dnsTCPServer) Start() error {
 	if s.port < 1 || s.port > 65535 {
 		return fmt.Errorf("invalid dns tcp port: %d", s.port)
 	}
-	lc := net.ListenConfig{}
-	ln, err := lc.Listen(s.ctx, "tcp4", net.JoinHostPort("0.0.0.0", fmt.Sprintf("%d", s.port)))
-	if err != nil {
+	cfg := s.worker.getConfig()
+	if !cfg.Queue.IPv4Enabled && !cfg.Queue.IPv6Enabled {
 		s.cancel()
-		return fmt.Errorf("dns tcp listen: %w", err)
+		return errors.New("dns tcp listen: both IPv4 and IPv6 are disabled")
 	}
-	s.ln = ln
-	go s.acceptLoop()
-	log.Infof("DNS: TCP listener on 0.0.0.0:%d (matched queries resolved through the set's DNS, others forwarded)", s.port)
+
+	lc := net.ListenConfig{}
+	var err4, err6 error
+
+	if cfg.Queue.IPv4Enabled {
+		var lnV4 net.Listener
+		if lnV4, err4 = lc.Listen(s.ctx, "tcp4", net.JoinHostPort("0.0.0.0", fmt.Sprintf("%d", s.port))); err4 == nil {
+			s.lnV4 = lnV4
+			go s.acceptLoop(lnV4, "v4")
+			log.Infof("DNS: TCP listener on 0.0.0.0:%d (matched queries resolved through the set's DNS, others forwarded)", s.port)
+		} else {
+			log.Tracef("DNS TCP: v4 listener unavailable: %v", err4)
+		}
+	}
+
+	if cfg.Queue.IPv6Enabled {
+		var lnV6 net.Listener
+		if lnV6, err6 = lc.Listen(s.ctx, "tcp6", net.JoinHostPort("::", fmt.Sprintf("%d", s.port))); err6 == nil {
+			s.lnV6 = lnV6
+			go s.acceptLoop(lnV6, "v6")
+			log.Infof("DNS: TCP listener on [::]:%d", s.port)
+		} else {
+			log.Tracef("DNS TCP: v6 listener unavailable: %v", err6)
+		}
+	}
+
+	if s.lnV4 == nil && s.lnV6 == nil {
+		s.cancel()
+		return fmt.Errorf("dns tcp listen: v4: %v, v6: %v", err4, err6)
+	}
 	return nil
 }
 
+func (s *dnsTCPServer) ReadyV4() bool { return s.lnV4 != nil }
+
+func (s *dnsTCPServer) ReadyV6() bool { return s.lnV6 != nil }
+
 func (s *dnsTCPServer) Stop() {
 	s.cancel()
-	if s.ln != nil {
-		_ = s.ln.Close()
+	if s.lnV4 != nil {
+		_ = s.lnV4.Close()
+	}
+	if s.lnV6 != nil {
+		_ = s.lnV6.Close()
 	}
 	s.wg.Wait()
 }
 
-func (s *dnsTCPServer) acceptLoop() {
+func (s *dnsTCPServer) acceptLoop(ln net.Listener, family string) {
 	for {
-		conn, err := s.ln.Accept()
+		conn, err := ln.Accept()
 		if err != nil {
 			if s.ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
 				return
 			}
-			log.Tracef("DNS TCP: accept error: %v", err)
+			log.Tracef("DNS TCP: accept error (%s): %v", family, err)
 			time.Sleep(50 * time.Millisecond)
 			continue
 		}
@@ -90,23 +122,45 @@ func originalDst(c net.Conn) (net.IP, int, error) {
 	if !ok {
 		return nil, 0, errors.New("not a tcp connection")
 	}
+	la, ok := tc.LocalAddr().(*net.TCPAddr)
+	if !ok {
+		return nil, 0, errors.New("no tcp local address")
+	}
 	raw, err := tc.SyscallConn()
 	if err != nil {
 		return nil, 0, err
 	}
-	var mreq *unix.IPv6Mreq
+
+	if la.IP.To4() != nil {
+		var mreq *unix.IPv6Mreq
+		var inner error
+		if err := raw.Control(func(fd uintptr) {
+			mreq, inner = unix.GetsockoptIPv6Mreq(int(fd), unix.IPPROTO_IP, unix.SO_ORIGINAL_DST)
+		}); err != nil {
+			return nil, 0, err
+		}
+		if inner != nil {
+			return nil, 0, inner
+		}
+		ip := net.IPv4(mreq.Multiaddr[4], mreq.Multiaddr[5], mreq.Multiaddr[6], mreq.Multiaddr[7])
+		port := int(mreq.Multiaddr[2])<<8 | int(mreq.Multiaddr[3])
+		return ip, port, nil
+	}
+
+	var info *unix.IPv6MTUInfo
 	var inner error
-	err = raw.Control(func(fd uintptr) {
-		mreq, inner = unix.GetsockoptIPv6Mreq(int(fd), unix.IPPROTO_IP, unix.SO_ORIGINAL_DST)
-	})
-	if err != nil {
+	if err := raw.Control(func(fd uintptr) {
+		info, inner = unix.GetsockoptIPv6MTUInfo(int(fd), unix.IPPROTO_IPV6, unix.SO_ORIGINAL_DST)
+	}); err != nil {
 		return nil, 0, err
 	}
 	if inner != nil {
 		return nil, 0, inner
 	}
-	ip := net.IPv4(mreq.Multiaddr[4], mreq.Multiaddr[5], mreq.Multiaddr[6], mreq.Multiaddr[7])
-	port := int(mreq.Multiaddr[2])<<8 | int(mreq.Multiaddr[3])
+	p := (*[2]byte)(unsafe.Pointer(&info.Addr.Port))
+	port := int(p[0])<<8 | int(p[1])
+	ip := make(net.IP, net.IPv6len)
+	copy(ip, info.Addr.Addr[:])
 	return ip, port, nil
 }
 
@@ -126,14 +180,16 @@ func readDNSTCPMessage(r io.Reader) ([]byte, error) {
 	return buf, nil
 }
 
-func writeDNSTCPMessage(w net.Conn, msg []byte) error {
+func writeDNSTCPMessage(w net.Conn, msg []byte, timeout time.Duration) error {
 	if len(msg) == 0 || len(msg) > dnsTCPMaxMessage {
 		return fmt.Errorf("bad dns tcp response length %d", len(msg))
 	}
 	out := make([]byte, 2+len(msg))
 	binary.BigEndian.PutUint16(out[0:2], uint16(len(msg)))
 	copy(out[2:], msg)
-	_ = w.SetWriteDeadline(time.Now().Add(dnsTCPIOTimeout))
+	if timeout > 0 {
+		_ = w.SetWriteDeadline(time.Now().Add(timeout))
+	}
 	_, err := w.Write(out)
 	return err
 }
@@ -158,7 +214,10 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 	}
 
 	for {
-		_ = client.SetReadDeadline(time.Now().Add(dnsTCPIdleTimeout))
+		cfg := s.worker.getConfig()
+		ioTimeout := cfg.DNSTCPIOTimeout()
+
+		_ = client.SetReadDeadline(time.Now().Add(cfg.DNSTCPIdleTimeout()))
 		query, err := readDNSTCPMessage(client)
 		if err != nil {
 			return
@@ -181,13 +240,11 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			return
 		}
 
-		cfg := s.worker.getConfig()
-
 		if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) && !cfg.Queue.IsDiscovery {
 			if resp := dns.BuildBlockResponse(query); resp != nil {
 				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionSinkhole)
 				metrics.GetMetricsCollector().RecordBlock(domain, srcMac)
-				if writeDNSTCPMessage(client, resp) != nil {
+				if writeDNSTCPMessage(client, resp, ioTimeout) != nil {
 					return
 				}
 				continue
@@ -231,7 +288,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			}
 		}
 
-		if writeDNSTCPMessage(client, resp) != nil {
+		if writeDNSTCPMessage(client, resp, ioTimeout) != nil {
 			return
 		}
 	}
@@ -259,7 +316,7 @@ func (s *dnsTCPServer) passthrough(client net.Conn, origIP net.IP, origPort int,
 		return
 	}
 	cfg := s.worker.getConfig()
-	d := net.Dialer{Timeout: dnsTCPDialTimeout}
+	d := net.Dialer{Timeout: cfg.DNSTCPDialTimeout()}
 	socks5.ApplyBypassMark(&d, uint32(cfg.MainInjectedMark()))
 
 	upstream, err := d.DialContext(s.ctx, "tcp", net.JoinHostPort(origIP.String(), fmt.Sprintf("%d", origPort)))
@@ -269,7 +326,7 @@ func (s *dnsTCPServer) passthrough(client net.Conn, origIP net.IP, origPort int,
 	}
 	defer upstream.Close()
 
-	if writeDNSTCPMessage(upstream, firstQuery) != nil {
+	if writeDNSTCPMessage(upstream, firstQuery, cfg.DNSTCPIOTimeout()) != nil {
 		return
 	}
 
