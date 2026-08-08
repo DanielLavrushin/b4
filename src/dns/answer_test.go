@@ -2,6 +2,7 @@ package dns
 
 import (
 	"encoding/binary"
+	"fmt"
 	"net"
 	"testing"
 )
@@ -78,7 +79,7 @@ func TestFilterAnswerIPsDropsOneAddress(t *testing.T) {
 		aRecord("185.199.111.133"),
 	}, false, false)
 
-	out, verdict := FilterAnswerIPs(resp, 60, dropList("185.199.110.133"))
+	out, verdict := FilterAnswerIPs(resp, 60, 0, dropList("185.199.110.133"))
 	if verdict != FilterRewritten {
 		t.Fatalf("verdict = %d, want FilterRewritten", verdict)
 	}
@@ -106,7 +107,7 @@ func TestFilterAnswerIPsClampsTTL(t *testing.T) {
 		aRecord("2.2.2.2"),
 	}, false, false)
 
-	out, verdict := FilterAnswerIPs(resp, 60, dropList("2.2.2.2"))
+	out, verdict := FilterAnswerIPs(resp, 60, 0, dropList("2.2.2.2"))
 	if verdict != FilterRewritten {
 		t.Fatalf("verdict = %d, want FilterRewritten", verdict)
 	}
@@ -130,7 +131,7 @@ func TestFilterAnswerIPsAllDropped(t *testing.T) {
 		aRecord("2.2.2.2"),
 	}, false, false)
 
-	out, verdict := FilterAnswerIPs(resp, 60, dropList("1.1.1.1", "2.2.2.2"))
+	out, verdict := FilterAnswerIPs(resp, 60, 0, dropList("1.1.1.1", "2.2.2.2"))
 	if verdict != FilterAllDropped {
 		t.Fatalf("verdict = %d, want FilterAllDropped", verdict)
 	}
@@ -142,7 +143,7 @@ func TestFilterAnswerIPsAllDropped(t *testing.T) {
 func TestFilterAnswerIPsNothingToDrop(t *testing.T) {
 	resp := buildResponse("example.com", rrTypeA, []testRR{aRecord("1.1.1.1")}, false, false)
 
-	out, verdict := FilterAnswerIPs(resp, 60, dropList("9.9.9.9"))
+	out, verdict := FilterAnswerIPs(resp, 60, 0, dropList("9.9.9.9"))
 	if verdict != FilterUnchanged || out != nil {
 		t.Fatalf("verdict = %d out=%v, want FilterUnchanged and no rewrite", verdict, out)
 	}
@@ -155,7 +156,7 @@ func TestFilterAnswerIPsKeepsCNAMEChain(t *testing.T) {
 		{name: "cdn.example.net", typ: rrTypeA, ttl: 300, rdata: net.ParseIP("2.2.2.2").To4()},
 	}, false, false)
 
-	out, verdict := FilterAnswerIPs(resp, 60, dropList("2.2.2.2"))
+	out, verdict := FilterAnswerIPs(resp, 60, 0, dropList("2.2.2.2"))
 	if verdict != FilterRewritten {
 		t.Fatalf("verdict = %d, want FilterRewritten", verdict)
 	}
@@ -201,7 +202,7 @@ func TestFilterAnswerIPsPreservesOPT(t *testing.T) {
 		aRecord("2.2.2.2"),
 	}, true, false)
 
-	out, verdict := FilterAnswerIPs(resp, 60, dropList("2.2.2.2"))
+	out, verdict := FilterAnswerIPs(resp, 60, 0, dropList("2.2.2.2"))
 	if verdict != FilterRewritten {
 		t.Fatalf("verdict = %d, want FilterRewritten", verdict)
 	}
@@ -219,7 +220,7 @@ func TestFilterAnswerIPsBailsOnDNSSEC(t *testing.T) {
 		aRecord("2.2.2.2"),
 	}, true, true)
 
-	if _, verdict := FilterAnswerIPs(resp, 60, dropList("2.2.2.2")); verdict != FilterUnchanged {
+	if _, verdict := FilterAnswerIPs(resp, 60, 0, dropList("2.2.2.2")); verdict != FilterUnchanged {
 		t.Errorf("verdict = %d, want FilterUnchanged when the client asked for DNSSEC", verdict)
 	}
 }
@@ -236,36 +237,36 @@ func TestFilterAnswerIPsBailsOnUnsafeInput(t *testing.T) {
 		"truncated": append([]byte(nil), base[:len(base)-3]...),
 	}
 	for name, msg := range cases {
-		if _, verdict := FilterAnswerIPs(msg, 60, dropList("2.2.2.2")); verdict != FilterUnchanged {
+		if _, verdict := FilterAnswerIPs(msg, 60, 0, dropList("2.2.2.2")); verdict != FilterUnchanged {
 			t.Errorf("%s: verdict = %d, want FilterUnchanged", name, verdict)
 		}
 	}
 
 	query := append([]byte(nil), base...)
 	query[2] &^= 0x80
-	if _, verdict := FilterAnswerIPs(query, 60, dropList("2.2.2.2")); verdict != FilterUnchanged {
+	if _, verdict := FilterAnswerIPs(query, 60, 0, dropList("2.2.2.2")); verdict != FilterUnchanged {
 		t.Errorf("query: verdict = %d, want FilterUnchanged", verdict)
 	}
 
 	truncatedFlag := append([]byte(nil), base...)
 	truncatedFlag[2] |= 0x02
-	if _, verdict := FilterAnswerIPs(truncatedFlag, 60, dropList("2.2.2.2")); verdict != FilterUnchanged {
+	if _, verdict := FilterAnswerIPs(truncatedFlag, 60, 0, dropList("2.2.2.2")); verdict != FilterUnchanged {
 		t.Errorf("TC set: verdict = %d, want FilterUnchanged", verdict)
 	}
 
 	nxdomain := append([]byte(nil), base...)
 	nxdomain[3] |= 0x03
-	if _, verdict := FilterAnswerIPs(nxdomain, 60, dropList("2.2.2.2")); verdict != FilterUnchanged {
+	if _, verdict := FilterAnswerIPs(nxdomain, 60, 0, dropList("2.2.2.2")); verdict != FilterUnchanged {
 		t.Errorf("NXDOMAIN: verdict = %d, want FilterUnchanged", verdict)
 	}
 
 	withAuthority := append([]byte(nil), base...)
 	binary.BigEndian.PutUint16(withAuthority[8:10], 1)
-	if _, verdict := FilterAnswerIPs(withAuthority, 60, dropList("2.2.2.2")); verdict != FilterUnchanged {
+	if _, verdict := FilterAnswerIPs(withAuthority, 60, 0, dropList("2.2.2.2")); verdict != FilterUnchanged {
 		t.Errorf("authority section: verdict = %d, want FilterUnchanged", verdict)
 	}
 
-	if _, verdict := FilterAnswerIPs(base, 60, nil); verdict != FilterUnchanged {
+	if _, verdict := FilterAnswerIPs(base, 60, 0, nil); verdict != FilterUnchanged {
 		t.Errorf("nil predicate: verdict = %d, want FilterUnchanged", verdict)
 	}
 }
@@ -305,5 +306,89 @@ func TestQuestionType(t *testing.T) {
 	qtype, ok := QuestionType(resp)
 	if !ok || qtype != rrTypeAAAA {
 		t.Errorf("QuestionType = %d ok=%v, want AAAA", qtype, ok)
+	}
+}
+
+func buildCompressedChain(qname, cname string, opt bool, addrs int) []byte {
+	msg := make([]byte, 12)
+	binary.BigEndian.PutUint16(msg[0:2], 0x1234)
+	binary.BigEndian.PutUint16(msg[2:4], 0x8180)
+	binary.BigEndian.PutUint16(msg[4:6], 1)
+	binary.BigEndian.PutUint16(msg[6:8], uint16(addrs+1))
+
+	msg = append(msg, encodeName(qname)...)
+	var q [4]byte
+	binary.BigEndian.PutUint16(q[0:2], rrTypeAAAA)
+	binary.BigEndian.PutUint16(q[2:4], 1)
+	msg = append(msg, q[:]...)
+
+	cnameRD := encodeName(cname)
+	msg = append(msg, 0xC0, 0x0C)
+	var cfixed [10]byte
+	binary.BigEndian.PutUint16(cfixed[0:2], rrTypeCNAME)
+	binary.BigEndian.PutUint16(cfixed[2:4], 1)
+	binary.BigEndian.PutUint32(cfixed[4:8], 300)
+	binary.BigEndian.PutUint16(cfixed[8:10], uint16(len(cnameRD)))
+	msg = append(msg, cfixed[:]...)
+	cnameAt := len(msg)
+	msg = append(msg, cnameRD...)
+
+	for i := 0; i < addrs; i++ {
+		msg = append(msg, byte(0xC0|cnameAt>>8), byte(cnameAt))
+		var fixed [10]byte
+		binary.BigEndian.PutUint16(fixed[0:2], rrTypeAAAA)
+		binary.BigEndian.PutUint16(fixed[2:4], 1)
+		binary.BigEndian.PutUint32(fixed[4:8], 300)
+		binary.BigEndian.PutUint16(fixed[8:10], 16)
+		msg = append(msg, fixed[:]...)
+		msg = append(msg, net.ParseIP(fmt.Sprintf("2001:db8::%d", i+1)).To16()...)
+	}
+
+	if opt {
+		binary.BigEndian.PutUint16(msg[10:12], 1)
+		optRR := make([]byte, 11)
+		binary.BigEndian.PutUint16(optRR[1:3], rrTypeOPT)
+		binary.BigEndian.PutUint16(optRR[3:5], 4096)
+		msg = append(msg, optRR...)
+	}
+	return msg
+}
+
+func TestFilterAnswerIPsDoesNotGrowACompressedChain(t *testing.T) {
+	const cname = "a-rather-long-edge-hostname.global.cdn-provider.example.net"
+	resp := buildCompressedChain("www.example.com", cname, false, 12)
+
+	out, verdict := FilterAnswerIPs(resp, 60, 0, dropList("2001:db8::1"))
+	if verdict != FilterRewritten {
+		t.Fatalf("verdict = %d, want FilterRewritten", verdict)
+	}
+	if len(out) > len(resp) {
+		t.Errorf("rewrite grew from %d to %d bytes; repeated names must stay compressed or a plain UDP answer can be pushed past 512", len(resp), len(out))
+	}
+	if got := len(ParseResponseIPs(out)); got != 11 {
+		t.Fatalf("kept %d addresses, want 11", got)
+	}
+
+	end, _ := skipDNSName(out, 12)
+	cnameStart, _ := skipDNSName(out, end+4)
+	rdLen := int(binary.BigEndian.Uint16(out[cnameStart+8 : cnameStart+10]))
+	name, _, ok := readName(out, cnameStart+10+rdLen)
+	if !ok || name != cname {
+		t.Errorf("first address record name = %q ok=%v, want %q: the compression pointer must resolve", name, ok, cname)
+	}
+}
+
+func TestResponseSizeLimit(t *testing.T) {
+	cases := []struct{ maxSize, edns, want int }{
+		{MaxTCPMessageSize, 0, MaxTCPMessageSize},
+		{MaxTCPMessageSize, 4096, MaxTCPMessageSize},
+		{0, 4096, 4096},
+		{0, 0, minUDPResponse},
+		{0, 200, minUDPResponse},
+	}
+	for _, c := range cases {
+		if got := responseSizeLimit(c.maxSize, c.edns); got != c.want {
+			t.Errorf("responseSizeLimit(%d, %d) = %d, want %d", c.maxSize, c.edns, got, c.want)
+		}
 	}
 }

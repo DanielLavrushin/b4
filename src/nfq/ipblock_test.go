@@ -104,7 +104,7 @@ func TestHealDNSResponseStripsUnreachableAddress(t *testing.T) {
 	resp := buildTestAResponse("raw.githubusercontent.com",
 		"185.199.108.133", "185.199.109.133", "185.199.110.133", "185.199.111.133")
 
-	healed := w.healDNSResponse(&config.Config{}, set, "raw.githubusercontent.com", resp)
+	healed := w.healDNSResponse(&config.Config{}, set, "raw.githubusercontent.com", resp, false)
 	if healed == nil {
 		t.Fatal("expected a curated answer")
 	}
@@ -124,7 +124,7 @@ func TestHealDNSResponseIgnoredWhenHealingOff(t *testing.T) {
 	resp := buildTestAResponse("example.com", "1.1.1.1", "2.2.2.2")
 
 	w := healWorker(t, "2.2.2.2")
-	if healed := w.healDNSResponse(&config.Config{}, healSetWith(false), "example.com", resp); healed != nil {
+	if healed := w.healDNSResponse(&config.Config{}, healSetWith(false), "example.com", resp, false); healed != nil {
 		t.Errorf("DNS answers must be left alone while heal_dns is off")
 	}
 }
@@ -135,7 +135,7 @@ func TestHealDNSResponseSkippedWhenDetectionOff(t *testing.T) {
 	set.TCP.IPBlockDetect.Enabled = false
 	resp := buildTestAResponse("example.com", "1.1.1.1", "2.2.2.2")
 
-	if healed := w.healDNSResponse(&config.Config{}, set, "example.com", resp); healed != nil {
+	if healed := w.healDNSResponse(&config.Config{}, set, "example.com", resp, false); healed != nil {
 		t.Errorf("expected no rewrite while IP block detection is off")
 	}
 }
@@ -146,7 +146,7 @@ func TestHealDNSResponseSkippedInDiscovery(t *testing.T) {
 	cfg.Queue.IsDiscovery = true
 	resp := buildTestAResponse("example.com", "1.1.1.1", "2.2.2.2")
 
-	if healed := w.healDNSResponse(cfg, healSetWith(true), "example.com", resp); healed != nil {
+	if healed := w.healDNSResponse(cfg, healSetWith(true), "example.com", resp, false); healed != nil {
 		t.Errorf("a discovery run must not rewrite DNS answers")
 	}
 }
@@ -156,7 +156,7 @@ func TestHealDNSResponseFallsBackToRememberedAddress(t *testing.T) {
 	w.goodIPs.Remember("example.com", net.ParseIP("3.3.3.3"))
 	resp := buildTestAResponse("example.com", "1.1.1.1", "2.2.2.2")
 
-	healed := w.healDNSResponse(&config.Config{}, healSetWith(true), "example.com", resp)
+	healed := w.healDNSResponse(&config.Config{}, healSetWith(true), "example.com", resp, false)
 	if healed == nil {
 		t.Fatal("expected an answer built from the remembered address")
 	}
@@ -170,7 +170,7 @@ func TestHealDNSResponsePassesThroughWhenNothingRemembered(t *testing.T) {
 	w := healWorker(t, "1.1.1.1", "2.2.2.2")
 	resp := buildTestAResponse("example.com", "1.1.1.1", "2.2.2.2")
 
-	if healed := w.healDNSResponse(&config.Config{}, healSetWith(true), "example.com", resp); healed != nil {
+	if healed := w.healDNSResponse(&config.Config{}, healSetWith(true), "example.com", resp, false); healed != nil {
 		t.Errorf("expected the original answer to pass through rather than an empty one")
 	}
 }

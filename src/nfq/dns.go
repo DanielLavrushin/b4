@@ -275,7 +275,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, ipVersion byte, sport uint16, 
 				}
 			}
 
-			if healed := w.healDNSResponse(w.getConfig(), healSet, domain, payload); healed != nil {
+			if healed := w.healDNSResponse(w.getConfig(), healSet, domain, payload, false); healed != nil {
 				if !vc.drop() {
 					return 0
 				}
@@ -326,7 +326,7 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		}
 	}
 
-	if healed := w.healDNSResponse(cfg, set, queryDomain, resp); healed != nil {
+	if healed := w.healDNSResponse(cfg, set, queryDomain, resp, false); healed != nil {
 		logDNSEvent("UDP", set, queryDomain, clientIP, originalDst, clientPort, w.getMacByIp(clientIP.String()), dnsActionHeal)
 		resp = healed
 	}
