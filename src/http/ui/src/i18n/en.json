@@ -368,6 +368,14 @@
       "mssSizeHelp": "Lower values = more fragmentation. 88 is commonly used for YouTube bypass.",
       "info": "Reduces the TCP Maximum Segment Size on SYN/SYN-ACK packets for all TCP port 443 traffic, forcing data fragmentation. Most DPI systems cannot reassemble fragmented ClientHello. For per-device MSS clamping, use the Device Filtering settings."
     },
+    "IPHealth": {
+      "title": "IP Health",
+      "description": "How long a destination stays marked unreachable",
+      "info": "IP block detection is configured per set, but whether an address answers is a property of the address and the path to it, not of the set that matched it. The verdict is therefore shared across sets, and so is how long it lasts.",
+      "group": "Retesting",
+      "retestInterval": "Retest interval (seconds)",
+      "retestIntervalHelper": "How long a destination stays marked unreachable before the router tests it again. Blocks get lifted and addresses get reassigned, so a verdict that never expires would strand devices on a stale one. This is also how long recovery takes, since a condemned address is reset before it can complete a handshake."
+    },
     "Dns": {
       "title": "DNS",
       "description": "How b4 resolves DNS for matched sets, and how it handles DNS over TCP",
@@ -974,8 +982,6 @@
         "ibdThresholdWarn": "A low threshold may cause false positives - a single dropped packet or slow server could be mistaken for an IP block.",
         "ibdTimeout": "Detection Timeout",
         "ibdTimeoutHelper": "Alternative trigger: time since first attempt with no response",
-        "ibdBlockedTtl": "Retest Interval",
-        "ibdBlockedTtlHelper": "How long a destination stays marked blocked before it is tested again. Blocks get lifted and addresses get reassigned, so a verdict that never expires would strand devices on a stale one.",
         "ibdHealTtl": "Healed Answer TTL",
         "ibdHealTtlHelper": "TTL written into curated DNS answers. Keep it short so a device picks up a recovered address quickly instead of caching the curated answer for hours.",
         "ibdCache": "Cache Blocked IPs",

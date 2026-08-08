@@ -31,7 +31,6 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
     syn_detect: true,
     syn_threshold: 3,
     heal_dns: false,
-    blocked_ttl_sec: 300,
     heal_ttl_sec: 60,
     ...config.tcp.ip_block_detect,
   };
@@ -239,22 +238,6 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
                 step={500}
                 valueSuffix=" ms"
                 helperText={t("sets.tcp.general.ibdTimeoutHelper")}
-              />
-            </Grid>
-
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4Slider
-                label={t("sets.tcp.general.ibdBlockedTtl")}
-                value={ibd.blocked_ttl_sec}
-                onChange={(value: number) =>
-                  onChange("tcp.ip_block_detect.blocked_ttl_sec", value)
-                }
-                min={60}
-                max={3600}
-                step={60}
-                valueSuffix=" s"
-                helperText={t("sets.tcp.general.ibdBlockedTtlHelper")}
-                aiTopic="tcp.ip_block_detect.blocked_ttl_sec"
               />
             </Grid>
 

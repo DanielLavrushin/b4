@@ -352,6 +352,7 @@ export interface SystemConfig {
   api: ApiConfig;
   ai: AIConfig;
   dns: DnsSystemConfig;
+  ip_health?: IPHealthConfig;
   timezone: string;
   memory_limit?: string;
 }
@@ -458,6 +459,10 @@ export interface DuplicateConfig {
   count: number;
 }
 
+export interface IPHealthConfig {
+  retest_interval_sec: number;
+}
+
 export interface IPBlockDetectConfig {
   enabled: boolean;
   retransmit_threshold: number;
@@ -466,7 +471,6 @@ export interface IPBlockDetectConfig {
   syn_detect: boolean;
   syn_threshold: number;
   heal_dns: boolean;
-  blocked_ttl_sec: number;
   heal_ttl_sec: number;
 }
 
