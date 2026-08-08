@@ -19,6 +19,8 @@ pidfile="/run/b4.pid"
 output_log="/dev/null"
 error_log="/dev/null"
 
+export PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 depend() {
     need net
 }

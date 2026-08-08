@@ -658,6 +658,8 @@
       "flowOffloadHw": "hardware (bypasses b4)",
       "flowOffloadSwGuarded": "software, after {{packets}} packets",
       "flowOffloadHwGuarded": "hardware, after {{packets}} packets",
+      "flowOffloadSwGuardedUnsafe": "software, after {{packets}} packets (bypasses b4)",
+      "flowOffloadHwGuardedUnsafe": "hardware, after {{packets}} packets (bypasses b4)",
       "network": "Network",
       "engine": "Engine",
       "engineMode": "Mode",

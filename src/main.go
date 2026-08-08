@@ -102,6 +102,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	}
 
 	initTimezone()
+	config.ApplyPATH()
 
 	needsSave, _ := cfg.LoadWithMigration(cfg.ConfigPath)
 	if needsSave {
