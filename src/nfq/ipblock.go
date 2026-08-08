@@ -110,13 +110,19 @@ func (w *Worker) healDNSResponse(cfg *config.Config, set *config.SetConfig, doma
 		if !ok {
 			return nil
 		}
-		if good := w.goodIPs.Lookup(domain, qtype == dnsTypeAAAA); len(good) > 0 {
-			if built := dns.BuildAnswerFromIPs(resp, ttlCap, good); built != nil {
-				log.Warnf("DNS heal: every address for %s is unreachable, answering with %s which last worked (set: %s)", domain, good[0], set.Name)
+		live := make([]net.IP, 0, 4)
+		for _, ip := range w.goodIPs.Lookup(domain, qtype == dnsTypeAAAA) {
+			if !w.ipHealth.IsDead(ip.String()) {
+				live = append(live, ip)
+			}
+		}
+		if len(live) > 0 {
+			if built := dns.BuildAnswerFromIPs(resp, ttlCap, live); built != nil {
+				log.Warnf("DNS heal: every address the answer for %s carries is unreachable, answering with %s instead (set: %s)", domain, live[0], set.Name)
 				return built
 			}
 		}
-		log.Warnf("DNS heal: every address for %s is unreachable and none is known to have worked, passing the answer through unchanged (set: %s)", domain, set.Name)
+		log.Warnf("DNS heal: every address for %s is unreachable and no reachable one has been seen for it, passing the answer through unchanged (set: %s)", domain, set.Name)
 	}
 	return nil
 }

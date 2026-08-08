@@ -835,14 +835,15 @@ func collectTools() DiagTools {
 	}
 
 	result := DiagTools{
-		Firewall: make([]DiagTool, 0, len(firewallTools)),
-		Required: make([]DiagTool, 0, len(required)),
-		Optional: make([]DiagTool, 0, len(optional)),
+		Firewall:   make([]DiagTool, 0, len(firewallTools)),
+		Required:   make([]DiagTool, 0, len(required)),
+		Optional:   make([]DiagTool, 0, len(optional)),
+		SearchPath: os.Getenv("PATH"),
 	}
 
 	for _, name := range firewallTools {
 		dt := DiagTool{Name: name}
-		if path, err := exec.LookPath(name); err == nil {
+		if path, ok := config.LookupTool(name); ok {
 			dt.Found = true
 			dt.Detail = path
 		}
@@ -851,7 +852,7 @@ func collectTools() DiagTools {
 
 	for _, t := range required {
 		dt := DiagTool{Name: t.name}
-		if path, err := exec.LookPath(t.name); err == nil {
+		if path, ok := config.LookupTool(t.name); ok {
 			dt.Found = true
 			dt.Detail = path
 		} else {
@@ -862,7 +863,7 @@ func collectTools() DiagTools {
 
 	for _, t := range optional {
 		dt := DiagTool{Name: t.name}
-		if path, err := exec.LookPath(t.name); err == nil {
+		if path, ok := config.LookupTool(t.name); ok {
 			dt.Found = true
 			dt.Detail = path
 		} else {

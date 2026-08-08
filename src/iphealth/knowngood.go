@@ -10,13 +10,14 @@ import (
 
 const (
 	maxKnownGoodHosts   = 2048
-	maxKnownGoodPerHost = 4
+	maxKnownGoodPerHost = 8
 	knownGoodTTL        = 24 * time.Hour
 )
 
 type knownGoodIP struct {
-	ip   net.IP
-	seen time.Time
+	ip       net.IP
+	seen     time.Time
+	verified bool
 }
 
 type KnownGood struct {
@@ -29,6 +30,14 @@ func NewKnownGood() *KnownGood {
 }
 
 func (k *KnownGood) Remember(host string, ip net.IP) {
+	k.record(host, ip, true)
+}
+
+func (k *KnownGood) Observe(host string, ip net.IP) {
+	k.record(host, ip, false)
+}
+
+func (k *KnownGood) record(host string, ip net.IP, verified bool) {
 	if k == nil || host == "" || ip == nil {
 		return
 	}
@@ -49,17 +58,31 @@ func (k *KnownGood) Remember(host string, ip net.IP) {
 	for i := range entries {
 		if entries[i].ip.Equal(ip) {
 			entries[i].seen = now
+			entries[i].verified = entries[i].verified || verified
 			k.hosts[host] = entries
 			return
 		}
 	}
 
-	entries = append(pruneKnownGood(entries, now), knownGoodIP{ip: append(net.IP(nil), ip...), seen: now})
+	entries = append(pruneKnownGood(entries, now), knownGoodIP{
+		ip:       append(net.IP(nil), ip...),
+		seen:     now,
+		verified: verified,
+	})
 	if len(entries) > maxKnownGoodPerHost {
-		sort.Slice(entries, func(i, j int) bool { return entries[i].seen.After(entries[j].seen) })
+		sort.Slice(entries, betterKnownGood(entries))
 		entries = entries[:maxKnownGoodPerHost]
 	}
 	k.hosts[host] = entries
+}
+
+func betterKnownGood(entries []knownGoodIP) func(i, j int) bool {
+	return func(i, j int) bool {
+		if entries[i].verified != entries[j].verified {
+			return entries[i].verified
+		}
+		return entries[i].seen.After(entries[j].seen)
+	}
 }
 
 func (k *KnownGood) Lookup(host string, want6 bool) []net.IP {
@@ -87,7 +110,7 @@ func (k *KnownGood) Lookup(host string, want6 bool) []net.IP {
 		}
 		candidates = append(candidates, e)
 	}
-	sort.Slice(candidates, func(i, j int) bool { return candidates[i].seen.After(candidates[j].seen) })
+	sort.Slice(candidates, betterKnownGood(candidates))
 
 	out := make([]net.IP, 0, len(candidates))
 	for _, c := range candidates {

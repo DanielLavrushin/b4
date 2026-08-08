@@ -162,9 +162,10 @@ type DiagCapability struct {
 }
 
 type DiagTools struct {
-	Firewall []DiagTool `json:"firewall"`
-	Required []DiagTool `json:"required"`
-	Optional []DiagTool `json:"optional"`
+	Firewall   []DiagTool `json:"firewall"`
+	Required   []DiagTool `json:"required"`
+	Optional   []DiagTool `json:"optional"`
+	SearchPath string     `json:"search_path,omitempty"`
 }
 
 type DiagTool struct {

@@ -1,5 +1,11 @@
 # B4 - Bye Bye Big Bro
 
+## [1.75.1] - 2026-08-09
+
+- FIXED: **System diagnostics reported jq and other tools as missing when they were installed on a USB drive** - the check never looked outside the router's own folders.
+- FIXED: **A curated DNS answer could name the very address b4 was about to reset** - when every address in an answer was unreachable, the replacement was taken from the addresses remembered for that name without checking whether any of them had since been marked unreachable as well, so a device could be handed one and have the connection reset on its first packet.
+- CHANGED: **Every address seen in a DNS answer is remembered, not only the ones that completed a handshake** - a name whose answers carry a single address, as the Meta CDN does, left nothing to fall back to once that address was dropped, because an address could only be remembered by connecting to it and the block is what stops the connection.
+
 ## [1.75.0] - 2026-08-08
 
 - FIXED: **A domain was handled by a different strategy than the one Discovery found for it** - every result was published with all the domains of the run, so two applied results claimed the same domains and set order picked the winner.

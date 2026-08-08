@@ -211,3 +211,48 @@ func TestRecordDestAliveSurvivesNilCaches(t *testing.T) {
 	var nilWorker *Worker
 	nilWorker.recordDestAlive("1.2.3.4", "5.6.7.8", true)
 }
+
+func TestHealDNSResponseSubstitutesAnObservedAddress(t *testing.T) {
+	w := healWorker(t, "157.240.205.174")
+	w.goodIPs.Observe("www.instagram.com", net.ParseIP("157.240.205.174"))
+	w.goodIPs.Observe("www.instagram.com", net.ParseIP("157.240.0.174"))
+
+	resp := buildTestAResponse("www.instagram.com", "157.240.205.174")
+
+	healed := w.healDNSResponse(&config.Config{}, healSetWith(true), "www.instagram.com", resp, false)
+	if healed == nil {
+		t.Fatal("expected the single dead address to be replaced by one seen earlier for the same name")
+	}
+	ips := dns.ParseResponseIPs(healed)
+	if len(ips) != 1 || ips[0].String() != "157.240.0.174" {
+		t.Errorf("addresses = %v, want [157.240.0.174]", ips)
+	}
+}
+
+func TestHealDNSResponseNeverSubstitutesADeadAddress(t *testing.T) {
+	w := healWorker(t, "1.1.1.1", "2.2.2.2")
+	w.goodIPs.Observe("example.com", net.ParseIP("1.1.1.1"))
+	w.goodIPs.Observe("example.com", net.ParseIP("2.2.2.2"))
+
+	resp := buildTestAResponse("example.com", "1.1.1.1", "2.2.2.2")
+
+	if healed := w.healDNSResponse(&config.Config{}, healSetWith(true), "example.com", resp, false); healed != nil {
+		t.Errorf("every remembered address is unreachable, so the original must pass through rather than a dead substitute")
+	}
+}
+
+func TestStoreHostHintsObservesOnlyForHealingSets(t *testing.T) {
+	ips := []net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("2.2.2.2")}
+
+	healing := healWorker(t)
+	healing.storeHostHints(net.ParseIP("192.168.1.10"), healSetWith(true), "example.com", ips)
+	if got := healing.goodIPs.Lookup("example.com", false); len(got) != 2 {
+		t.Errorf("healing set recorded %d observed addresses, want 2", len(got))
+	}
+
+	plain := healWorker(t)
+	plain.storeHostHints(net.ParseIP("192.168.1.10"), healSetWith(false), "example.com", ips)
+	if got := plain.goodIPs.Lookup("example.com", false); len(got) != 0 {
+		t.Errorf("a set without DNS healing recorded %v, want nothing kept", got)
+	}
+}
