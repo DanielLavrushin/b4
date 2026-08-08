@@ -1,13 +1,20 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Box, Grid } from "@mui/material";
 import { DomainIcon } from "@b4.icons";
-import { B4Hint, B4Select, B4Switch } from "@b4.elements";
+import { B4Alert, B4Hint, B4Select, B4Switch } from "@b4.elements";
 import { B4SetConfig, GeoConfig } from "@models/config";
 import { useTranslation } from "react-i18next";
 import { SetStats } from "../Manager";
 import { ManualEntryPanel } from "./ManualEntryPanel";
 import { GeoCategoryPanel } from "./GeoCategoryPanel";
 import { CategoryPreviewDialog } from "./CategoryPreviewDialog";
+import {
+  DOMAIN_CATCH_ALL,
+  domainEntryNotice,
+  isDomainCatchAll,
+  normalizeDomainEntry,
+  setDomainCatchAll,
+} from "./catchall";
 
 interface SetDomainMatch {
   domain: string;
@@ -50,7 +57,10 @@ export const DomainsTab = ({
   const { t } = useTranslation();
   const showIpVersionFilter = (!!ipv4 && !!ipv6) || !!config.targets.ip_version;
   const [duplicateWarning, setDuplicateWarning] = useState("");
+  const [entryNotice, setEntryNotice] = useState("");
   const [previewCategory, setPreviewCategory] = useState<string | null>(null);
+  const domains = config.targets.sni_domains ?? [];
+  const catchAll = domains.some(isDomainCatchAll);
   const checkTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -94,8 +104,26 @@ export const DomainsTab = ({
     [config.id, describeMatch],
   );
 
+  const describeNotice = useCallback(
+    (input: string) => {
+      const notice = domainEntryNotice(input);
+      if (!notice) return "";
+      if (notice.kind === "catchAll") {
+        return t("sets.targets.catchAllDomainNotice", {
+          value: notice.values[0],
+        });
+      }
+      return t("sets.targets.wildcardStrippedNotice", {
+        from: notice.from,
+        to: notice.to,
+      });
+    },
+    [t],
+  );
+
   const checkDuplicates = (input: string) => {
     clearTimeout(checkTimer.current);
+    setEntryNotice(describeNotice(input));
     if (!input.trim()) {
       checkSeq.current++;
       setDuplicateWarning("");
@@ -111,6 +139,21 @@ export const DomainsTab = ({
       <B4Hint>{t("sets.targets.domainAlert")}</B4Hint>
 
       <Box sx={{ my: 3, display: "flex", gap: 2, flexWrap: "wrap" }}>
+        <Box sx={{ maxWidth: 360, flex: 1, minWidth: 260 }}>
+          <B4Switch
+            label={t("sets.targets.catchAllDomains")}
+            description={t("sets.targets.catchAllDomainsDesc", {
+              value: DOMAIN_CATCH_ALL,
+            })}
+            checked={catchAll}
+            onChange={(checked: boolean) =>
+              onChange(
+                "targets.sni_domains",
+                setDomainCatchAll(domains, checked),
+              )
+            }
+          />
+        </Box>
         <Box sx={{ maxWidth: 360, flex: 1, minWidth: 260 }}>
           <B4Switch
             label={t("sets.targets.domainOnly")}
@@ -154,6 +197,14 @@ export const DomainsTab = ({
         )}
       </Box>
 
+      {catchAll && (
+        <Grid container sx={{ mb: 2 }}>
+          <B4Alert severity="warning">
+            {t("sets.targets.catchAllDomainsActive")}
+          </B4Alert>
+        </Grid>
+      )}
+
       <Grid container spacing={2}>
         <Grid size={{ sm: 12, md: 6 }}>
           <ManualEntryPanel
@@ -167,6 +218,14 @@ export const DomainsTab = ({
             emptyMessage={t("sets.targets.noDomainsAdded")}
             items={config.targets.sni_domains}
             warning={duplicateWarning}
+            notice={entryNotice}
+            normalize={normalizeDomainEntry}
+            highlight={isDomainCatchAll}
+            getItemLabel={(item) =>
+              isDomainCatchAll(item)
+                ? t("sets.targets.catchAllChipDomain")
+                : item
+            }
             onItemsChange={(items) => onChange("targets.sni_domains", items)}
             onInputChange={checkDuplicates}
           />

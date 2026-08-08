@@ -2,6 +2,8 @@
 
 ## [1.75.0] - 2026-08-08
 
+- ADDED: **A switch for matching every domain, and one for matching every address** - a set meant to catch everything had to be written by hand as `regexp:.*` or `0.0.0.0/0`, and neither form appears anywhere in the interface. The IPv6 half, `::/0`, was easy to leave out, so a catch-all set passed IPv6 traffic through untouched without saying so. Typing `*`, `any` or `all` into either field adds the same entries, and `*.example.com` is stored as `example.com`, which was taken as written and matched nothing.
+- FIXED: **`0.0.0.0/0` among a set's IP targets was dropped on the way to the firewall** - `ipset` cannot store a network with a zero prefix size, so on routers using iptables the routing set lost that entry, while per-set MSS clamping and duplication lost every entry alongside it, since those are loaded in one batch that fails whole. The matching engine had accepted the same entry all along, so a set matched traffic while its firewall side stood empty. Both catch-alls are written to the firewall as their two halves.
 - FIXED: **DNS sent over TCP skipped the set's DNS server** - only requests over UDP were intercepted, so a device that switched to TCP reached the router's usual resolver instead.
 - ADDED: **A DNS section in Settings** - the port used for DNS over TCP, how long to wait for an answer, an off switch, and a check against ports other services already use.
 - ADDED: **DNS request outcomes in the trace** - a trace named the domain but never whether the request reached the set's DNS server or slipped past it.

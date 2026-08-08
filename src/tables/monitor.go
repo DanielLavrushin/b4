@@ -229,11 +229,8 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 		}
 
 		if dnsTCPEnabledFamily(cfg, ipt == ipt6) && hasNATRedirectSupport(ipt, cfg.DNSTCPListenPort()) {
-			preOut, preErr := run(ipt, "-w", "-t", "nat", "-S", "PREROUTING")
-			chainOut, chainErr := run(ipt, "-w", "-t", "nat", "-S", dnsTCPChainName)
-			if preErr == nil && chainErr == nil &&
-				(!strings.Contains(preOut, dnsTCPChainName) || !strings.Contains(chainOut, "REDIRECT")) {
-				log.Tracef("Monitor: DNS-over-TCP redirect rules missing (PREROUTING jump or %s chain)", dnsTCPChainName)
+			if !dnsTCPRulesPresent(ipt, cfg.DNSTCPListenPort()) {
+				log.Tracef("Monitor[%s]: DNS-over-TCP redirect rules missing (PREROUTING/OUTPUT jump or %s chain)", ipt, dnsTCPChainName)
 				return false
 			}
 		}

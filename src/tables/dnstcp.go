@@ -71,25 +71,37 @@ func (manager *IPTablesManager) dnsTCPMarkAccept() string {
 	return fmt.Sprintf("0x%x/0x%x", mark, mark)
 }
 
+func dnsTCPJumpSpec() []string {
+	return []string{"-p", "tcp", "--dport", "53", "-j", dnsTCPChainName}
+}
+
+func dnsTCPRedirectSpec(port int) []string {
+	return []string{"-p", "tcp", "--dport", "53", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", port)}
+}
+
+func dnsTCPRulesPresent(ipt string, port int) bool {
+	im := &IPTablesManager{}
+	return im.existsRule(ipt, "nat", "PREROUTING", dnsTCPJumpSpec()) &&
+		im.existsRule(ipt, "nat", "OUTPUT", dnsTCPJumpSpec()) &&
+		im.existsRule(ipt, "nat", dnsTCPChainName, dnsTCPRedirectSpec(port))
+}
+
 func (manager *IPTablesManager) buildDNSTCPManifest(ipt string) ([]Chain, []Rule) {
-	port := fmt.Sprintf("%d", manager.cfg.DNSTCPListenPort())
 	chains := []Chain{{manager: manager, IPT: ipt, Table: "nat", Name: dnsTCPChainName}}
 	rules := []Rule{
 		{manager: manager, IPT: ipt, Table: "nat", Chain: dnsTCPChainName, Action: "A",
 			Spec: []string{"-m", "mark", "--mark", manager.dnsTCPMarkAccept(), "-j", "RETURN"}},
 		{manager: manager, IPT: ipt, Table: "nat", Chain: dnsTCPChainName, Action: "A",
-			Spec: []string{"-p", "tcp", "--dport", "53", "-j", "REDIRECT", "--to-ports", port}},
-		{manager: manager, IPT: ipt, Table: "nat", Chain: "PREROUTING", Action: "I",
-			Spec: []string{"-p", "tcp", "--dport", "53", "-j", dnsTCPChainName}},
-		{manager: manager, IPT: ipt, Table: "nat", Chain: "OUTPUT", Action: "I",
-			Spec: []string{"-p", "tcp", "--dport", "53", "-j", dnsTCPChainName}},
+			Spec: dnsTCPRedirectSpec(manager.cfg.DNSTCPListenPort())},
+		{manager: manager, IPT: ipt, Table: "nat", Chain: "PREROUTING", Action: "I", Spec: dnsTCPJumpSpec()},
+		{manager: manager, IPT: ipt, Table: "nat", Chain: "OUTPUT", Action: "I", Spec: dnsTCPJumpSpec()},
 	}
 	return chains, rules
 }
 
 func (im *IPTablesManager) teardownDNSTCPChain(ipt string) {
-	im.delAll(ipt, "nat", "PREROUTING", []string{"-p", "tcp", "--dport", "53", "-j", dnsTCPChainName})
-	im.delAll(ipt, "nat", "OUTPUT", []string{"-p", "tcp", "--dport", "53", "-j", dnsTCPChainName})
+	im.delAll(ipt, "nat", "PREROUTING", dnsTCPJumpSpec())
+	im.delAll(ipt, "nat", "OUTPUT", dnsTCPJumpSpec())
 	if im.existsChain(ipt, "nat", dnsTCPChainName) {
 		_, _ = run(ipt, "-w", "-t", "nat", "-F", dnsTCPChainName)
 		_, _ = run(ipt, "-w", "-t", "nat", "-X", dnsTCPChainName)
