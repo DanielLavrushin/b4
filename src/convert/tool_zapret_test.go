@@ -512,3 +512,54 @@ func TestZapret_UDPOnlySetWarnsAboutProtocolScope(t *testing.T) {
 		t.Fatal("a UDP-only set that could steal domains from a TCP set must say so")
 	}
 }
+
+func TestConvert_UnrecognizedDesyncIsNotApplicable(t *testing.T) {
+	nfqws2 := "--filter-udp=443 --filter-l7=quic --payload=quic_initial " +
+		"--lua-desync=fake:blob=quic_initial:repeats=11 --new " +
+		"--filter-tcp=443 --filter-l7=tls --hostlist-domains=youtube.com --payload=tls_client_hello " +
+		"--lua-desync=multidisorder:pos=1,sniext+1,host+1,midsld"
+
+	res := analyze(t, nfqws2)
+
+	if res.Applicable {
+		t.Fatal("no option that performs a bypass was recognized, the result must not be applicable")
+	}
+	for i, s := range res.Sets {
+		if s.Enabled {
+			t.Fatalf("set %d carries no strategy and must not be created enabled", i)
+		}
+	}
+	var warned bool
+	for _, w := range res.Warnings {
+		if w.Code == "nothingRecognized" {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Fatal("expected a nothingRecognized warning")
+	}
+	var flagged int
+	for _, n := range res.Notes {
+		if n.Reason == "profileNotUnderstood" {
+			flagged++
+		}
+	}
+	if flagged != len(res.Sets) {
+		t.Fatalf("every unusable profile must be flagged, got %d of %d", flagged, len(res.Sets))
+	}
+}
+
+func TestConvert_PartiallyRecognizedStaysApplicable(t *testing.T) {
+	res := analyze(t, "--filter-tcp=443 --dpi-desync=fake,multidisorder --hostlist-domains=a.com --new "+
+		"--filter-tcp=80 --lua-desync=multisplit:pos=1")
+
+	if !res.Applicable {
+		t.Fatal("one profile converted fine, the result should stay applicable")
+	}
+	if !res.Sets[0].Enabled {
+		t.Fatal("the profile that converted must stay enabled")
+	}
+	if res.Sets[1].Enabled {
+		t.Fatal("the profile that was not understood must be disabled")
+	}
+}

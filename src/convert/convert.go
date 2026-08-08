@@ -69,6 +69,39 @@ type Result struct {
 	Unresolved      []Unresolved       `json:"unresolved"`
 	Fidelity        Fidelity           `json:"fidelity"`
 	Plan            []SetPlan          `json:"plan"`
+	Applicable      bool               `json:"applicable"`
+}
+
+func anyProfileCarriesStrategy(prog *Program) bool {
+	for _, p := range prog.Profiles {
+		if p.carriesStrategy() {
+			return true
+		}
+	}
+	return false
+}
+
+func flagUnrecognisedProfiles(prog *Program, sets []config.SetConfig, notes *noteSet) {
+	lost := map[int]int{}
+	for _, n := range notes.list() {
+		if n.Status == StatusUnknown || n.Status == StatusInvalid {
+			lost[n.Profile]++
+		}
+	}
+	for i := range sets {
+		if i >= len(prog.Profiles) || lost[i] == 0 || prog.Profiles[i].carriesStrategy() {
+			continue
+		}
+		sets[i].Enabled = false
+		notes.extra = append(notes.extra, Note{
+			Token:   sets[i].Name,
+			Profile: i,
+			Status:  StatusInvalid,
+			Reason:  "profileNotUnderstood",
+			Fields:  []string{"enabled=false"},
+			Params:  map[string]any{"count": lost[i]},
+		})
+	}
 }
 
 func Analyze(input string, opts Options) (*Result, error) {
@@ -134,6 +167,9 @@ func Analyze(input string, opts Options) (*Result, error) {
 		Notes:           notes.list(),
 		Unresolved:      collectUnresolved(prog),
 	}
+	flagUnrecognisedProfiles(prog, sets, notes)
+	res.Notes = notes.list()
+	res.Applicable = anyProfileCarriesStrategy(prog)
 	res.Plan = buildPlan(prog, sets)
 	res.Warnings = buildWarnings(spec, argv, prog, sets, inferred)
 	res.Fidelity = score(res.Notes)
@@ -205,6 +241,9 @@ func buildWarnings(spec *Spec, argv []string, prog *Program, sets []config.SetCo
 	}
 	if enabled == 0 {
 		out = append(out, Warning{Code: "needsTargets", Params: map[string]any{"sets": len(sets)}})
+	}
+	if !anyProfileCarriesStrategy(prog) {
+		out = append(out, Warning{Code: "nothingRecognized", Params: map[string]any{"tool": spec.Label}})
 	}
 	if shadowed := countShadowed(sets); shadowed > 0 {
 		out = append(out, Warning{Code: "shadowedSets", Params: map[string]any{"count": shadowed}})

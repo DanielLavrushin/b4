@@ -183,7 +183,7 @@ export function ImportToolDialog({
             onClick={() => {
               handleApply().catch(() => {});
             }}
-            disabled={!result || result.sets.length === 0 || applying}
+            disabled={!result || !result.applicable || applying}
             variant="contained"
             startIcon={applying ? <CircularProgress size={16} /> : undefined}
           >

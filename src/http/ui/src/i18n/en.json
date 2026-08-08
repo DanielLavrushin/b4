@@ -1567,7 +1567,8 @@
         "needsTargets": "None of the {{sets}} converted sets has domains or IPs. byedpi applies its profiles to everything routed through its proxy, while a b4 set only acts on the targets you give it. The sets are created disabled - add domains on the Targets tab, then enable them.",
         "udpDisabledUpstream": "UDP was disabled in the source configuration. The UDP settings of the converted sets are left at their defaults.",
         "profilesAsSets": "The source configuration has {{count}} profiles. Each one became a separate set, in the same order.",
-        "shadowedSets": "{{count}} set(s) claim domains that an earlier set already claims. zapret picks a profile per packet using its port and protocol filters, while b4 picks one set per destination by domain and does not fall through to the next. Profiles that share a host list but differ only by port cannot all apply. The later ones are created disabled - give each the domains it should handle, or delete the ones you do not need."
+        "shadowedSets": "{{count}} set(s) claim domains that an earlier set already claims. zapret picks a profile per packet using its port and protocol filters, while b4 picks one set per destination by domain and does not fall through to the next. Profiles that share a host list but differ only by port cannot all apply. The later ones are created disabled - give each the domains it should handle, or delete the ones you do not need.",
+        "nothingRecognized": "None of the options that actually do the bypass were recognized, so no set would carry a strategy. This looks like a {{tool}} variant with a different option syntax. Send the configuration to the b4 issue tracker so support can be added."
       },
       "reason": {
         "proxyRuntime": "Configures the byedpi proxy process itself. b4 works on packets in the firewall, so there is nothing to carry over.",
@@ -1679,7 +1680,8 @@
         "ipv6OnlyKnob": "Sets the hop limit for IPv6 desync packets separately. b4 uses one TTL for both address families.",
         "fakeTLSModPartial": "Kept what b4 has an equivalent for. Dropped: {{dropped}}.",
         "templatePlaceholder": "A placeholder from the zapret config template. It is substituted before nfqws runs, so there is nothing to convert.",
-        "udpOnlySetNotProtocolScoped": "This profile only filters UDP, but a b4 set is not limited to one protocol. If you give it domains it will also claim them for TCP, taking them away from the TCP sets. Leave it without targets unless it is the only set for those domains."
+        "udpOnlySetNotProtocolScoped": "This profile only filters UDP, but a b4 set is not limited to one protocol. If you give it domains it will also claim them for TCP, taking them away from the TCP sets. Leave it without targets unless it is the only set for those domains.",
+        "profileNotUnderstood": "{{count}} option(s) in this profile were not recognized, and nothing else in it produced a strategy. The set is created disabled so it cannot claim domains while doing nothing."
       },
       "sharedDomainsLabel": "Domains for all entry sets",
       "usingShared": "Using the shared domains above",
