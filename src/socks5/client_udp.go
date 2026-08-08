@@ -8,6 +8,8 @@ import (
 	"net"
 	"strconv"
 	"time"
+
+	"github.com/daniellavrushin/b4/log"
 )
 
 type UDPUpstream struct {
@@ -52,9 +54,7 @@ func DialUpstreamUDP(ctx context.Context, cfg ClientConfig, dstIP net.IP, dstPor
 	}
 	_ = ctrl.SetDeadline(time.Time{})
 
-	if ip := net.ParseIP(relayHost); ip == nil || ip.IsUnspecified() {
-		relayHost = cfg.Host
-	}
+	relayHost = pinRelayHost(ctrl, cfg.Host, relayHost)
 
 	ud := net.Dialer{Timeout: timeout}
 	ApplyBypassMark(&ud, cfg.BypassMark)
@@ -124,6 +124,23 @@ func (u *UDPUpstream) Close() error {
 		return u.relay.Close()
 	}
 	return nil
+}
+
+func pinRelayHost(ctrl net.Conn, cfgHost, advertised string) string {
+	pinned := cfgHost
+	if ta, ok := ctrl.RemoteAddr().(*net.TCPAddr); ok && ta.IP != nil {
+		pinned = ta.IP.String()
+	}
+	if pinned == "" {
+		return advertised
+	}
+	if ip := net.ParseIP(advertised); ip != nil && !ip.IsUnspecified() && ip.Equal(net.ParseIP(pinned)) {
+		return advertised
+	}
+	if advertised != "" {
+		log.Debugf("SOCKS5 upstream advertised UDP relay %q; using %s so datagrams leave from the address the control connection came from", advertised, pinned)
+	}
+	return pinned
 }
 
 func clientUDPAssociate(conn net.Conn) (host string, port int, err error) {
