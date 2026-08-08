@@ -17,7 +17,8 @@ import (
 
 type ipRange struct {
 	ipNet *net.IPNet
-	set   *config.SetConfig
+	sets  []*config.SetConfig
+	order int
 }
 
 type portRange struct {
@@ -105,8 +106,9 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 	}
 
 	seenRegexes := make(map[string]bool)
+	ipEntries := make(map[string]*ipRange)
 
-	for _, set := range sets {
+	for setOrder, set := range sets {
 		if !set.Enabled {
 			continue
 		}
@@ -160,8 +162,20 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 			}
 
 			if err == nil && ipNet != nil {
-				entry := &ipRange{ipNet: ipNet, set: set}
-				_ = s.ipRanger.Insert(entry)
+				key := ipNet.String()
+				if existing, ok := ipEntries[key]; ok {
+					if existing.sets[len(existing.sets)-1] != set {
+						existing.sets = append(existing.sets, set)
+					}
+				} else {
+					entry := &ipRange{
+						ipNet: ipNet,
+						sets:  []*config.SetConfig{set},
+						order: setOrder,
+					}
+					ipEntries[key] = entry
+					_ = s.ipRanger.Insert(entry)
+				}
 			}
 		}
 
@@ -304,9 +318,10 @@ func (s *SuffixSet) MatchIP(ip net.IP) (bool, *config.SetConfig) {
 	}
 
 	matchedEntry := entries[0].(*ipRange)
-	s.cacheIPResult(ipStr, true, matchedEntry.set)
+	matchedSet := matchedEntry.sets[0]
+	s.cacheIPResult(ipStr, true, matchedSet)
 
-	return true, matchedEntry.set
+	return true, matchedSet
 }
 
 func (s *SuffixSet) cacheIPResult(ipStr string, matched bool, set *config.SetConfig) {
@@ -682,7 +697,7 @@ func (s *SuffixSet) MatchIPWithSource(ip net.IP, srcMAC string) (bool, *config.S
 
 	var candidates []*config.SetConfig
 	for _, e := range entries {
-		candidates = append(candidates, e.(*ipRange).set)
+		candidates = append(candidates, e.(*ipRange).sets...)
 	}
 
 	return selectSetBySource(candidates, srcMAC, ipVersionOf(ip))
@@ -701,12 +716,20 @@ func ipVersionOf(ip net.IP) uint8 {
 // sortEntriesBySpecificity sorts CIDR entries by prefix length descending,
 // so more specific matches (e.g., /32) come before broader ones (e.g., /16).
 func sortEntriesBySpecificity(entries []cidranger.RangerEntry) {
-	sort.Slice(entries, func(i, j int) bool {
+	sort.SliceStable(entries, func(i, j int) bool {
 		ni := entries[i].Network()
 		nj := entries[j].Network()
 		onesI, _ := ni.Mask.Size()
 		onesJ, _ := nj.Mask.Size()
-		return onesI > onesJ
+		if onesI != onesJ {
+			return onesI > onesJ
+		}
+		ri, oki := entries[i].(*ipRange)
+		rj, okj := entries[j].(*ipRange)
+		if !oki || !okj {
+			return false
+		}
+		return ri.order < rj.order
 	})
 }
 

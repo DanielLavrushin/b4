@@ -1314,6 +1314,11 @@ func routeNormalizedSources(sources []string) []string {
 	return out
 }
 
+const (
+	routeMaxChainNameLen = 28
+	routeMaxIPSetNameLen = 31
+)
+
 func routeBuildSetNames(setID string) (string, string) {
 	s := routeSanitizeSetID(setID)
 	return "b4r_" + s + "_v4", "b4r_" + s + "_v6"
@@ -1325,7 +1330,7 @@ func routeBuildChainNames(setID string) (string, string, string) {
 }
 
 func routeBuildQUICChainName(setID string) string {
-	return "b4r_" + routeSanitizeSetID(setID) + "_quic"
+	return "b4r_" + routeSanitizeSetID(setID) + "_q"
 }
 
 func routeSanitizeSetID(setID string) string {

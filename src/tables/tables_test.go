@@ -2,6 +2,7 @@ package tables
 
 import (
 	"net"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -534,6 +535,35 @@ func TestRouteBuildChainNames(t *testing.T) {
 	}
 	if nat[len(nat)-4:] != "_nat" {
 		t.Errorf("nat chain should end with '_nat', got %q", nat)
+	}
+}
+
+func TestRouteBuildNamesFitKernelLimits(t *testing.T) {
+	setIDs := []string{
+		"d642060b-ff59-4ae1-9f3b-8c1d0e7a4b22",
+		"11111111-1111-1111-1111-111111111111",
+		"abcdefghijklmnopqrstuvwxyz0123456789",
+		strings.Repeat("z", 200),
+		"tmdb",
+		"",
+	}
+	for _, id := range setIDs {
+		pre, out, nat := routeBuildChainNames(id)
+		quic := routeBuildQUICChainName(id)
+		for _, name := range []string{pre, out, nat, quic} {
+			if len(name) > routeMaxChainNameLen {
+				t.Errorf("chain name %q for set %q is %d chars, iptables rejects anything over %d",
+					name, id, len(name), routeMaxChainNameLen)
+			}
+		}
+
+		v4, v6 := routeBuildSetNames(id)
+		for _, name := range []string{v4, v6} {
+			if len(name) > routeMaxIPSetNameLen {
+				t.Errorf("ipset name %q for set %q is %d chars, ipset rejects anything over %d",
+					name, id, len(name), routeMaxIPSetNameLen)
+			}
+		}
 	}
 }
 
