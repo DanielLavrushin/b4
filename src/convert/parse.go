@@ -193,6 +193,18 @@ func applyTarget(prog *Program, prof *Profile, tok Token, v Value, notes *noteSe
 		} else {
 			prof.Filters.IPs = append(prof.Filters.IPs, v.List...)
 		}
+	case "filters.hosts_ref":
+		prof.Filters.HostsRef = v.Str
+	case "filters.hosts_list":
+		prof.Filters.Hosts = append(prof.Filters.Hosts, v.List...)
+	case "filters.hosts_exclude":
+		prof.Filters.Excluded = append(prof.Filters.Excluded, v.List...)
+	case "filters.hosts_exclude_ref":
+		prof.Filters.Excluded = append(prof.Filters.Excluded, v.Str)
+	case "filters.ips_ref":
+		prof.Filters.IPsRef = v.Str
+	case "filters.ips_list":
+		prof.Filters.IPs = append(prof.Filters.IPs, v.List...)
 	case "filters.ports":
 		prof.Filters.PortMin, _ = strconv.Atoi(v.List[0])
 		prof.Filters.PortMax, _ = strconv.Atoi(v.List[1])
@@ -239,6 +251,72 @@ func applyTarget(prog *Program, prof *Profile, tok Token, v Value, notes *noteSe
 			prof.Fake.TLSMod = append(prof.Fake.TLSMod, m)
 		}
 
+	case "desync.modes":
+		prof.DesyncModes = append(prof.DesyncModes, v.List...)
+		prof.DesyncToken = tok.Index
+	case "splits.positions":
+		prof.SplitPositions = append(prof.SplitPositions, v.Positions...)
+		prof.SplitPosToken = tok.Index
+	case "fake.fooling":
+		prof.Fake.Fooling = append(prof.Fake.Fooling, v.List...)
+	case "fake.repeats":
+		prof.Fake.Repeats = v.Int
+	case "fake.seq_increment":
+		prof.Fake.SeqIncrement = v.Int
+	case "fake.ts_increment":
+		prof.Fake.TSIncrement = v.Int
+	case "fake.quic":
+		prof.Fake.QUICRef = orDefault(v.Ref, v.Str)
+	case "fake.blob":
+		if v.Ref != "" {
+			prof.Fake.DataRef = v.Ref
+		} else if v.Str != "" && v.Str != "builtin" {
+			prof.Fake.DataInline = v.Str
+		}
+	case "fake.tls_sni":
+		for _, m := range v.List {
+			if host, ok := strings.CutPrefix(m, "sni="); ok {
+				prof.Fake.SNIs = append(prof.Fake.SNIs, host)
+				continue
+			}
+			prof.Fake.TLSMod = append(prof.Fake.TLSMod, m)
+		}
+	case "profile.desync_mode":
+		prof.Desync.Mode = v.Str
+	case "profile.duplicate":
+		prof.Duplicate = v.Int
+	case "profile.win_size":
+		prof.WinSize = v.Int
+	case "profile.skip":
+		prof.Skip = true
+	case "profile.seqovl_len":
+		prof.SeqOvl.Length = v.Int
+	case "profile.seqovl_pattern":
+		prof.SeqOvl.Pattern = orDefault(v.Ref, v.Str)
+	case "filters.l7":
+		prof.Filters.Protos = append(prof.Filters.Protos, v.List...)
+	case "filters.tcp_ports":
+		if v.Bool {
+			notes.set(tok, StatusUnsupported, "negatedPortFilter")
+			return
+		}
+		prof.Filters.TCPPorts = append(prof.Filters.TCPPorts, v.List...)
+	case "filters.udp_ports":
+		if v.Bool {
+			notes.set(tok, StatusUnsupported, "negatedPortFilter")
+			return
+		}
+		prof.Filters.UDPPorts = append(prof.Filters.UDPPorts, v.List...)
+	case "filters.l3":
+		for _, l3 := range v.List {
+			switch l3 {
+			case "ipv4":
+				prof.Filters.IPVersion = "4"
+			case "ipv6":
+				prof.Filters.IPVersion = "6"
+			}
+		}
+
 	case "profile.oob_byte":
 		prof.OOBByte = v.Byte
 		prof.OOBSet = true
@@ -271,17 +349,17 @@ func foldUDPProfiles(prog *Program, tokens []Token) []Token {
 		return tokens
 	}
 
+	dst := carriers[0]
 	folded := map[int]bool{}
 	for _, src := range prog.Profiles {
 		if !src.UDPOnly() || src.hasOwnTargets() {
 			continue
 		}
-		for _, dst := range carriers {
-			if dst.UDP.FakeCount == 0 {
-				dst.UDP = src.UDP
-			}
-			dst.FoldedProtoTokens = append(dst.FoldedProtoTokens, src.ProtoTokens...)
+		if dst.UDP.Empty() {
+			dst.UDP = src.UDP
 		}
+		dst.FoldedProtoTokens = append(dst.FoldedProtoTokens, src.ProtoTokens...)
+		dst.FoldedTokens = append(dst.FoldedTokens, src.Tokens...)
 		folded[src.Index] = true
 	}
 	if len(folded) == 0 {
@@ -309,11 +387,20 @@ func foldUDPProfiles(prog *Program, tokens []Token) []Token {
 		}
 	}
 	for _, p := range prog.Profiles {
+		moved := map[int]bool{}
+		for _, idx := range p.FoldedTokens {
+			moved[idx] = true
+		}
 		for _, idx := range p.FoldedProtoTokens {
-			for i := range tokens {
-				if tokens[i].Index == idx {
-					tokens[i].Profile = p.Index
-				}
+			moved[idx] = true
+		}
+		for i := range tokens {
+			if !moved[tokens[i].Index] {
+				continue
+			}
+			tokens[i].Profile = p.Index
+			if tokens[i].Key != "" {
+				tokens[i].Key = udpFoldPrefix + tokens[i].Key
 			}
 		}
 	}

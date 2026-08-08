@@ -79,6 +79,8 @@ type Spec struct {
 	Detect       DetectSpec    `json:"detect"`
 	Versions     []VersionSpec `json:"versions"`
 	Ambiguous    []string      `json:"ambiguous"`
+	Normalize    string        `json:"normalize"`
+	ProfileModel string        `json:"profile_model"`
 	ProfileBreak []string      `json:"profile_break"`
 	Options      []OptionSpec  `json:"options"`
 }

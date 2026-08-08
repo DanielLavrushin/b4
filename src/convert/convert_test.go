@@ -399,9 +399,31 @@ func TestAnalyze_Rejects(t *testing.T) {
 	if _, err := Analyze("-s1", Options{Tool: "nosuchtool"}); err == nil {
 		t.Fatal("expected an error for an unknown tool")
 	}
-	zapret := "--filter-tcp=443 --dpi-desync=fake,multidisorder --dpi-desync-split-pos=1,midsld --new"
-	if _, err := Analyze(zapret, Options{}); !errors.Is(err, ErrUnsupportedTool) {
-		t.Fatalf("got %v, want ErrUnsupportedTool for a zapret command line", err)
+	mixed := "--dpi-desync=fake --tlsrec=1 --mod-http=h"
+	if _, err := Analyze(mixed, Options{}); !errors.Is(err, ErrUnsupportedTool) {
+		t.Fatalf("got %v, want ErrUnsupportedTool for a line no tool owns", err)
+	}
+}
+
+func TestAnalyze_ToolDetection(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want string
+	}{
+		{"byedpiShort", "-Ku -a1 -An -s1+s", "byedpi"},
+		{"byedpiLong", "--proto=t --split=1+s", "byedpi"},
+		{"zapret", "--filter-tcp=443 --dpi-desync=fake,multidisorder --new", "zapret"},
+		{"zapretEnvVar", `NFQWS_OPT="--dpi-desync=fake --dpi-desync-repeats=6"`, "zapret"},
+		{"zapretBinary", "nfqws --qnum=200 --dpi-desync=fake", "zapret"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := analyze(t, tt.line)
+			if res.Tool != tt.want {
+				t.Fatalf("tool: got %q, want %q", res.Tool, tt.want)
+			}
+		})
 	}
 }
 
