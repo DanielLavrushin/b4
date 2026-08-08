@@ -76,7 +76,7 @@ var DefaultSetConfig = SetConfig{
 			CacheBlockedIPs:     true,
 			SynDetect:           true,
 			SynThreshold:        DefaultIPBlockSynThreshold,
-			Action:              IPBlockActionRST,
+			HealDNS:             false,
 			BlockedTTLSec:       DefaultIPBlockBlockedTTLSec,
 			HealTTLSec:          DefaultIPBlockHealTTLSec,
 		},

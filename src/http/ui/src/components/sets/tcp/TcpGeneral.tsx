@@ -7,7 +7,6 @@ import {
   B4Alert,
   B4FormHeader,
   B4Hint,
-  B4Select,
 } from "@b4.elements";
 import { B4Switch } from "@common/B4Switch";
 import { useTranslation } from "react-i18next";
@@ -31,35 +30,11 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
     cache_blocked_ips: true,
     syn_detect: true,
     syn_threshold: 3,
-    action: "rst",
+    heal_dns: false,
     blocked_ttl_sec: 300,
     heal_ttl_sec: 60,
     ...config.tcp.ip_block_detect,
   };
-  const IBD_ACTIONS = [
-    {
-      value: "rst",
-      label: t("sets.tcp.general.ibdActionRst"),
-      description: t("sets.tcp.general.ibdActionRstDesc"),
-    },
-    {
-      value: "heal",
-      label: t("sets.tcp.general.ibdActionHeal"),
-      description: t("sets.tcp.general.ibdActionHealDesc"),
-    },
-    {
-      value: "proxy",
-      label: t("sets.tcp.general.ibdActionProxy"),
-      description: t("sets.tcp.general.ibdActionProxyDesc"),
-    },
-  ];
-  const proxyActionUnavailable =
-    ibd.action === "proxy" &&
-    !(
-      config.routing?.enabled &&
-      (config.routing?.mode === "proxy" ||
-        config.routing?.mode === "mtproto-ws")
-    );
   const rstProt = {
     enabled: false,
     ttl_tolerance: 3,
@@ -192,23 +167,15 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
         {ibd.enabled && (
           <>
             <Grid size={{ xs: 12, md: 6 }}>
-              <B4Select
-                label={t("sets.tcp.general.ibdAction")}
-                value={ibd.action}
-                options={IBD_ACTIONS}
-                onChange={(e) =>
-                  onChange("tcp.ip_block_detect.action", e.target.value)
+              <B4Switch
+                label={t("sets.tcp.general.ibdHealDns")}
+                description={t("sets.tcp.general.ibdHealDnsDesc")}
+                checked={ibd.heal_dns}
+                onChange={(checked) =>
+                  onChange("tcp.ip_block_detect.heal_dns", checked)
                 }
-                helperText={
-                  IBD_ACTIONS.find((o) => o.value === ibd.action)?.description
-                }
-                aiTopic="tcp.ip_block_detect.action"
+                aiTopic="tcp.ip_block_detect.heal_dns"
               />
-              {proxyActionUnavailable && (
-                <B4Alert severity="warning">
-                  {t("sets.tcp.general.ibdProxyWarn")}
-                </B4Alert>
-              )}
             </Grid>
 
             <Grid size={{ xs: 12, md: 6 }}>
@@ -291,7 +258,7 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
               />
             </Grid>
 
-            {ibd.action === "heal" && (
+            {ibd.heal_dns && (
               <Grid size={{ xs: 12, md: 6 }}>
                 <B4Slider
                   label={t("sets.tcp.general.ibdHealTtl")}

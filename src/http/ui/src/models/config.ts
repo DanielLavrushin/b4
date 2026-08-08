@@ -465,7 +465,7 @@ export interface IPBlockDetectConfig {
   cache_blocked_ips: boolean;
   syn_detect: boolean;
   syn_threshold: number;
-  action: string;
+  heal_dns: boolean;
   blocked_ttl_sec: number;
   heal_ttl_sec: number;
 }
