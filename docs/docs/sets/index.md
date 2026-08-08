@@ -19,6 +19,7 @@ The **Sets** page shows every set you have created. For each set you see:
 Available actions:
 
 - **Create set** - a new bundle of settings
+- **Import** - build sets from a byedpi or zapret command line, see [Import from another tool](./import)
 - **Edit** - click the card
 - **Duplicate** - create a copy of an existing set
 - **Compare** - side-by-side comparison of two sets
@@ -34,7 +35,7 @@ The editor has 6 tabs:
 - [UDP](./udp) - UDP traffic handling, QUIC, STUN
 - [Routing](./routing) - DNS redirect and traffic routing through interfaces
 - [Escalation](./escalation) - automatic fallback to a backup set when this one keeps failing
-- **Import/Export** - JSON representation of the set configuration for moving between devices
+- **Import/Export** - JSON representation of the set configuration for moving between devices. To bring in a configuration from byedpi or zapret instead, see [Import from another tool](./import)
 
 ![20260418234644](../../static/img/index/20260418234644.png)
 
