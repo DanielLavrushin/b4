@@ -110,7 +110,8 @@ func Analyze(input string, opts Options) (*Result, error) {
 	notes := newNoteSet()
 	prog, resolved := buildProgram(spec, version, tokens, notes)
 	runNormalizer(spec.Normalize, prog, resolved, notes)
-	resolved = foldUDPProfiles(prog, resolved)
+	resolved = dropTrailing(prog, resolved, spec.ProfileModel)
+	resolved = foldUDPProfiles(prog, resolved, notes)
 	sets := emit(prog, resolved, notes, emitOpts{
 		NamePrefix:     opts.NamePrefix,
 		Domains:        opts.Domains,

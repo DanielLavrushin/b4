@@ -1553,7 +1553,6 @@
       "columnOption": "Option",
       "columnStatus": "Result",
       "columnEffect": "What b4 does",
-      "unresolvedFiles": "This configuration reads external files that are not available here: {{files}}. Paste their contents into the Domains field, or add the entries on the Targets tab after import.",
       "status": {
         "mapped": "Mapped",
         "approximated": "Approximated",
@@ -1677,9 +1676,11 @@
         "ssidFilter": "Applies the profile only on certain Wi-Fi networks. b4 has no equivalent.",
         "windowsOnly": "Only applies to the Windows build of zapret.",
         "shadowedByEarlierSet": "{{other}} already claims {{domain}}. b4 picks one set per destination and does not fall back to the next, so this set would never run. It is created disabled - give it its own domains to use it.",
-        "ipv6OnlyKnob": "Sets the hop limit for IPv6 desync packets separately. b4 uses one TTL for both address families."
+        "ipv6OnlyKnob": "Sets the hop limit for IPv6 desync packets separately. b4 uses one TTL for both address families.",
+        "fakeTLSModPartial": "Kept what b4 has an equivalent for. Dropped: {{dropped}}.",
+        "templatePlaceholder": "A placeholder from the zapret config template. It is substituted before nfqws runs, so there is nothing to convert.",
+        "udpOnlySetNotProtocolScoped": "This profile only filters UDP, but a b4 set is not limited to one protocol. If you give it domains it will also claim them for TCP, taking them away from the TCP sets. Leave it without targets unless it is the only set for those domains."
       },
-      "planTitle": "Sets that will be created",
       "sharedDomainsLabel": "Domains for all entry sets",
       "usingShared": "Using the shared domains above",
       "willBeDisabled": "created disabled",
@@ -1687,7 +1688,9 @@
       "role": {
         "entry": "Entry",
         "fallback": "Fallback for #{{index}}"
-      }
+      },
+      "editInput": "Edit",
+      "unresolvedForProfile": "This profile reads {{files}}, which is not available here. Open that file on the machine running zapret and paste the domains from it into this field - the converter cannot read it for you."
     }
   },
   "discovery": {

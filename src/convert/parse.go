@@ -68,7 +68,11 @@ func buildProgram(spec *Spec, version string, tokens []Token, notes *noteSet) (*
 			tok.Profile = len(prog.Profiles) - 1
 			switch tok.Err {
 			case "operand":
-				notes.set(tok, StatusUnknown, "strayArgument")
+				if isTemplatePlaceholder(tok.Raw) {
+					notes.set(tok, StatusNotApplicable, "templatePlaceholder")
+				} else {
+					notes.set(tok, StatusUnknown, "strayArgument")
+				}
 			case "unknown":
 				notes.set(tok, StatusUnknown, "unknownOption")
 			case "ambiguous":
@@ -338,33 +342,43 @@ func applyTarget(prog *Program, prof *Profile, tok Token, v Value, notes *noteSe
 	}
 }
 
-func foldUDPProfiles(prog *Program, tokens []Token) []Token {
-	var carriers []*Profile
+func dropTrailing(prog *Program, tokens []Token, model string) []Token {
+	if model != "alternative" || len(prog.Profiles) < 2 {
+		return tokens
+	}
+	last := prog.Profiles[len(prog.Profiles)-1]
+	if !last.carriesNothing() || !last.Filters.Empty() {
+		return tokens
+	}
+	prog.Profiles = prog.Profiles[:len(prog.Profiles)-1]
+	prev := prog.Profiles[len(prog.Profiles)-1].Index
+	for i := range tokens {
+		if tokens[i].Profile == last.Index {
+			tokens[i].Profile = prev
+		}
+	}
+	return tokens
+}
+
+func foldUDPProfiles(prog *Program, tokens []Token, notes *noteSet) []Token {
+	var carriers, foldable []*Profile
 	for _, p := range prog.Profiles {
-		if p.IsEntry() && !p.UDPOnly() {
+		switch {
+		case p.UDPOnly() && !p.hasOwnTargets():
+			foldable = append(foldable, p)
+		case p.IsEntry() && !p.UDPOnly():
 			carriers = append(carriers, p)
 		}
 	}
-	if len(carriers) == 0 {
+	if len(carriers) != 1 || len(foldable) != 1 {
 		return tokens
 	}
 
-	dst := carriers[0]
-	folded := map[int]bool{}
-	for _, src := range prog.Profiles {
-		if !src.UDPOnly() || src.hasOwnTargets() {
-			continue
-		}
-		if dst.UDP.Empty() {
-			dst.UDP = src.UDP
-		}
-		dst.FoldedProtoTokens = append(dst.FoldedProtoTokens, src.ProtoTokens...)
-		dst.FoldedTokens = append(dst.FoldedTokens, src.Tokens...)
-		folded[src.Index] = true
-	}
-	if len(folded) == 0 {
-		return tokens
-	}
+	dst, src := carriers[0], foldable[0]
+	dst.UDP = src.UDP
+	dst.FoldedProtoTokens = append(dst.FoldedProtoTokens, src.ProtoTokens...)
+	dst.FoldedTokens = append(dst.FoldedTokens, src.Tokens...)
+	folded := map[int]bool{src.Index: true}
 
 	remap := make(map[int]int, len(prog.Profiles))
 	kept := make([]*Profile, 0, len(prog.Profiles))
@@ -386,6 +400,11 @@ func foldUDPProfiles(prog *Program, tokens []Token) []Token {
 			tokens[i].Profile = to
 		}
 	}
+	for _, note := range notes.byToken {
+		if to, ok := remap[note.Profile]; ok {
+			note.Profile = to
+		}
+	}
 	for _, p := range prog.Profiles {
 		moved := map[int]bool{}
 		for _, idx := range p.FoldedTokens {
@@ -405,6 +424,20 @@ func foldUDPProfiles(prog *Program, tokens []Token) []Token {
 		}
 	}
 	return tokens
+}
+
+func isTemplatePlaceholder(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if len(raw) < 3 {
+		return false
+	}
+	pairs := [][2]string{{"<", ">"}, {"˂", "˃"}, {"${", "}"}, {"{{", "}}"}, {"%", "%"}}
+	for _, p := range pairs {
+		if strings.HasPrefix(raw, p[0]) && strings.HasSuffix(raw, p[1]) {
+			return true
+		}
+	}
+	return false
 }
 
 func noteUnaccounted(tokens []Token, notes *noteSet) {

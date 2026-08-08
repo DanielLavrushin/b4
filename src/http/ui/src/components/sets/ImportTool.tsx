@@ -29,6 +29,7 @@ import {
   ConvertSetPlan,
   ConvertStatus,
   ConvertToolInfo,
+  ConvertUnresolved,
   convertApi,
 } from "@api/convert";
 
@@ -70,6 +71,7 @@ export function ImportToolDialog({
   const [analyzing, setAnalyzing] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState("");
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -88,6 +90,7 @@ export function ImportToolDialog({
       setVersion(AUTO);
       setResult(null);
       setError("");
+      setCollapsed(false);
     }
   }, [open]);
 
@@ -115,6 +118,7 @@ export function ImportToolDialog({
     setError("");
     try {
       setResult(await convertApi.analyze(request()));
+      setCollapsed(true);
     } catch (e) {
       setResult(null);
       setError(e instanceof Error ? e.message : String(e));
@@ -193,56 +197,89 @@ export function ImportToolDialog({
           {t("sets.convert.disclaimer")}
         </B4Alert>
 
-        <B4TextField
-          label={t("sets.convert.inputLabel")}
-          helperText={t("sets.convert.inputHelper")}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          multiline
-          minRows={4}
-          slotProps={{
-            input: { sx: { fontFamily: "monospace", fontSize: 13 } },
-          }}
-        />
-
-        <Stack direction={{ xs: "column", sm: "row" }} gap={2}>
-          <B4TextField
-            select
-            label={t("sets.convert.tool")}
-            value={tool}
-            onChange={(e) => {
-              setTool(e.target.value);
-              setVersion(AUTO);
+        {collapsed ? (
+          <Stack
+            direction="row"
+            gap={1.5}
+            alignItems="center"
+            sx={{
+              border: `1px solid ${colors.border.default}`,
+              borderRadius: 1,
+              px: 1.5,
+              py: 1,
             }}
           >
-            <MenuItem value={AUTO}>{t("sets.convert.autoDetect")}</MenuItem>
-            {tools.map((x) => (
-              <MenuItem key={x.tool} value={x.tool}>
-                {x.label}
-              </MenuItem>
-            ))}
-          </B4TextField>
-          <B4TextField
-            select
-            label={t("sets.convert.version")}
-            value={version}
-            onChange={(e) => setVersion(e.target.value)}
-            disabled={versions.length === 0}
-          >
-            <MenuItem value={AUTO}>{t("sets.convert.autoDetect")}</MenuItem>
-            {versions.map((v) => (
-              <MenuItem key={v} value={v}>
-                {v}
-              </MenuItem>
-            ))}
-          </B4TextField>
-          <B4TextField
-            label={t("sets.convert.sharedDomainsLabel")}
-            helperText={t("sets.convert.domainsHelper")}
-            value={domains}
-            onChange={(e) => setDomains(e.target.value)}
-          />
-        </Stack>
+            <Typography
+              variant="caption"
+              sx={{
+                flex: 1,
+                fontFamily: "monospace",
+                color: colors.text.secondary,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {text.replace(/\s+/g, " ").trim()}
+            </Typography>
+            <Button size="small" onClick={() => setCollapsed(false)}>
+              {t("sets.convert.editInput")}
+            </Button>
+          </Stack>
+        ) : (
+          <>
+            <B4TextField
+              label={t("sets.convert.inputLabel")}
+              helperText={t("sets.convert.inputHelper")}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              multiline
+              minRows={4}
+              slotProps={{
+                input: { sx: { fontFamily: "monospace", fontSize: 13 } },
+              }}
+            />
+
+            <Stack direction={{ xs: "column", sm: "row" }} gap={2}>
+              <B4TextField
+                select
+                label={t("sets.convert.tool")}
+                value={tool}
+                onChange={(e) => {
+                  setTool(e.target.value);
+                  setVersion(AUTO);
+                }}
+              >
+                <MenuItem value={AUTO}>{t("sets.convert.autoDetect")}</MenuItem>
+                {tools.map((x) => (
+                  <MenuItem key={x.tool} value={x.tool}>
+                    {x.label}
+                  </MenuItem>
+                ))}
+              </B4TextField>
+              <B4TextField
+                select
+                label={t("sets.convert.version")}
+                value={version}
+                onChange={(e) => setVersion(e.target.value)}
+                disabled={versions.length === 0}
+              >
+                <MenuItem value={AUTO}>{t("sets.convert.autoDetect")}</MenuItem>
+                {versions.map((v) => (
+                  <MenuItem key={v} value={v}>
+                    {v}
+                  </MenuItem>
+                ))}
+              </B4TextField>
+              <B4TextField
+                label={t("sets.convert.sharedDomainsLabel")}
+                helperText={t("sets.convert.domainsHelper")}
+                value={domains}
+                onChange={(e) => setDomains(e.target.value)}
+              />
+            </Stack>
+          </>
+        )}
 
         {error && (
           <B4Alert severity="error" noWrapper>
@@ -255,15 +292,6 @@ export function ImportToolDialog({
             <Divider />
             <Summary result={result} />
 
-            <PlanEditor
-              plan={result.plan}
-              values={profileDomains}
-              shared={domains}
-              onChange={(profile, value) =>
-                setProfileDomains((prev) => ({ ...prev, [profile]: value }))
-              }
-            />
-
             {result.warnings.map((wrn) => (
               <B4Alert key={wrn.code} severity="warning" noWrapper>
                 {t(`sets.convert.warning.${wrn.code}`, {
@@ -273,25 +301,24 @@ export function ImportToolDialog({
               </B4Alert>
             ))}
 
-            {result.unresolved.length > 0 && (
-              <B4Alert severity="warning" noWrapper>
-                {t("sets.convert.unresolvedFiles", {
-                  files: result.unresolved.map((u) => u.path).join(", "),
-                })}
-              </B4Alert>
-            )}
-
             {grouped.map(({ profile, name, notes }) => (
               <Box key={profile}>
-                <Typography
-                  variant="subtitle2"
-                  sx={{ color: colors.text.secondary, mb: 0.5 }}
-                >
-                  {t("sets.convert.profileHeading", {
-                    index: profile + 1,
-                    name,
-                  })}
-                </Typography>
+                <ProfileHeader
+                  plan={result.plan[profile]}
+                  index={profile}
+                  name={name}
+                  unresolved={result.unresolved.filter(
+                    (u) => u.profile === profile,
+                  )}
+                  value={
+                    profileDomains[String(profile)] ??
+                    (result.plan[profile]?.role === "entry" ? domains : "")
+                  }
+                  usingShared={profileDomains[String(profile)] === undefined}
+                  onChange={(v) =>
+                    setProfileDomains((prev) => ({ ...prev, [profile]: v }))
+                  }
+                />
                 <Table size="small">
                   <TableHead>
                     <TableRow>
@@ -364,100 +391,87 @@ function splitDomains(value: string): string[] {
     .filter(Boolean);
 }
 
-interface PlanEditorProps {
-  plan: ConvertSetPlan[];
-  values: Record<string, string>;
-  shared: string;
-  onChange: (profile: number, value: string) => void;
+interface ProfileHeaderProps {
+  plan?: ConvertSetPlan;
+  index: number;
+  name: string;
+  unresolved: ConvertUnresolved[];
+  value: string;
+  usingShared: boolean;
+  onChange: (value: string) => void;
 }
 
-function PlanEditor({
+function ProfileHeader({
   plan,
-  values,
-  shared,
+  index,
+  name,
+  unresolved,
+  value,
+  usingShared,
   onChange,
-}: Readonly<PlanEditorProps>) {
+}: Readonly<ProfileHeaderProps>) {
   const { t } = useTranslation();
-  if (plan.length === 0) return null;
+  const entry = plan?.role !== "fallback";
 
   return (
-    <Stack gap={1.5}>
-      <Typography variant="subtitle2">{t("sets.convert.planTitle")}</Typography>
-      {plan.map((p) => {
-        const key = String(p.profile);
-        const value = values[key] ?? (p.role === "entry" ? shared : "");
-        return (
-          <Stack
-            key={key}
-            direction={{ xs: "column", md: "row" }}
-            gap={1.5}
-            alignItems={{ md: "flex-start" }}
+    <Stack gap={1} sx={{ mb: 1 }}>
+      <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
+        <Typography variant="subtitle2">
+          {t("sets.convert.profileHeading", { index: index + 1, name })}
+        </Typography>
+        {plan && (
+          <Chip
+            size="small"
+            label={t(`sets.convert.role.${plan.role}`, {
+              index: plan.fallback_for + 1,
+            })}
             sx={{
-              border: `1px solid ${colors.border.default}`,
-              borderRadius: 1,
-              p: 1.5,
+              height: 20,
+              fontSize: 11,
+              bgcolor: "transparent",
+              border: `1px solid ${
+                entry ? colors.state.success : colors.text.secondary
+              }`,
+              color: entry ? colors.state.success : colors.text.secondary,
             }}
-          >
-            <Stack gap={0.5} sx={{ minWidth: 220 }}>
-              <Stack direction="row" gap={0.75} alignItems="center">
-                <Typography variant="body2">
-                  <strong>{p.name}</strong>
-                </Typography>
-                <Chip
-                  size="small"
-                  label={t(`sets.convert.role.${p.role}`, {
-                    index: p.fallback_for + 1,
-                  })}
-                  sx={{
-                    height: 20,
-                    fontSize: 11,
-                    bgcolor: "transparent",
-                    border: `1px solid ${
-                      p.role === "entry"
-                        ? colors.state.success
-                        : colors.text.secondary
-                    }`,
-                    color:
-                      p.role === "entry"
-                        ? colors.state.success
-                        : colors.text.secondary,
-                  }}
-                />
-              </Stack>
-              <Typography
-                variant="caption"
-                sx={{ color: colors.text.secondary }}
-              >
-                {p.strategy}
-                {p.faking ? " + fake" : ""}
-                {p.enabled ? "" : ` - ${t("sets.convert.willBeDisabled")}`}
-              </Typography>
-            </Stack>
+          />
+        )}
+        {plan && (
+          <Typography variant="caption" sx={{ color: colors.text.secondary }}>
+            {plan.strategy}
+            {plan.faking ? " + fake" : ""}
+            {plan.enabled ? "" : ` - ${t("sets.convert.willBeDisabled")}`}
+          </Typography>
+        )}
+      </Stack>
 
-            {p.accepts_targets ? (
-              <B4TextField
-                label={t("sets.convert.domainsLabel")}
-                value={value}
-                onChange={(e) => onChange(p.profile, e.target.value)}
-                helperText={
-                  values[key] === undefined && shared
-                    ? t("sets.convert.usingShared")
-                    : undefined
-                }
-              />
-            ) : (
-              <Typography
-                variant="caption"
-                sx={{ color: colors.text.secondary, pt: 1 }}
-              >
-                {t("sets.convert.fallbackNoTargets", {
-                  index: p.fallback_for + 1,
-                })}
-              </Typography>
-            )}
-          </Stack>
-        );
-      })}
+      {entry ? (
+        <B4TextField
+          label={t("sets.convert.domainsLabel")}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          helperText={
+            unresolved.length > 0
+              ? t("sets.convert.unresolvedForProfile", {
+                  files: unresolved.map((u) => u.path).join(", "),
+                })
+              : usingShared && value
+                ? t("sets.convert.usingShared")
+                : undefined
+          }
+          slotProps={
+            unresolved.length > 0
+              ? { formHelperText: { sx: { color: colors.state.warning } } }
+              : undefined
+          }
+        />
+      ) : (
+        <Typography variant="caption" sx={{ color: colors.text.secondary }}>
+          {t("sets.convert.fallbackNoTargets", {
+            index: (plan?.fallback_for ?? 0) + 1,
+          })}
+        </Typography>
+      )}
     </Stack>
   );
 }
