@@ -71,7 +71,7 @@ func NewDiscoverySuite(inputs []string, pool *nfq.Pool, skipDNS bool, skipCache 
 		domainResults:   domainResults,
 		dnsResults:      make(map[string]*DNSDiscoveryResult),
 		workingPayloads: []PayloadTestResult{},
-		bestPayload:     config.FakePayloadDefault1,
+		bestPayload:     config.FakePayloadSTUN,
 		skipDNS:         skipDNS,
 		skipCache:       skipCache,
 		validationTries: validationTries,

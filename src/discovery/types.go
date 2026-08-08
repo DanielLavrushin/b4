@@ -128,12 +128,13 @@ type DomainDiscoveryResult struct {
 }
 
 type ConfigPreset struct {
-	Name        string           `json:"name"`
-	Description string           `json:"description"`
-	Family      StrategyFamily   `json:"family"`
-	Phase       DiscoveryPhase   `json:"phase"`
-	Config      config.SetConfig `json:"config"`
-	Priority    int              `json:"priority"`
+	Name         string           `json:"name"`
+	Description  string           `json:"description"`
+	Family       StrategyFamily   `json:"family"`
+	Phase        DiscoveryPhase   `json:"phase"`
+	Config       config.SetConfig `json:"config"`
+	Priority     int              `json:"priority"`
+	FixedPayload bool             `json:"-"`
 }
 
 type DNSProbeResult struct {
