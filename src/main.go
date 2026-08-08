@@ -194,6 +194,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		tables.RoutingSyncConfig(c)
 	})
 	handler.SetDiscoveryRuntime(discoveryRT)
+	nfq.DNSTCPReadyFunc = tables.SetDNSTCPListenerReady
 	nfq.RoutingHandleDNSFunc = tables.RoutingHandleDNS
 	nfq.RoutingLearnIPFunc = tables.RoutingLearnIP
 	nfq.RoutingLearnHostFunc = tables.RoutingLearnHost
@@ -246,7 +247,6 @@ func runB4(cmd *cobra.Command, args []string) error {
 	isTUN := cfg.Queue.Mode == "tun"
 
 	pool := nfq.NewPool(&cfg)
-	tables.SetDNSTCPListenerReady(pool.DNSTCPReady())
 
 	var tunEngine *b4tun.Engine
 	var tablesMonitor *tables.Monitor

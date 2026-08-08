@@ -54,7 +54,7 @@ func TestWriteDNSTCPMessageFraming(t *testing.T) {
 
 	payload := []byte{0xDE, 0xAD, 0xBE, 0xEF}
 	go func() {
-		_ = writeDNSTCPMessage(server, payload)
+		_ = writeDNSTCPMessage(server, payload, 5*time.Second)
 	}()
 
 	_ = client.SetReadDeadline(time.Now().Add(2 * time.Second))
@@ -72,7 +72,7 @@ func TestWriteDNSTCPMessageRejectsEmpty(t *testing.T) {
 	defer server.Close()
 	defer client.Close()
 
-	if err := writeDNSTCPMessage(server, nil); err == nil {
+	if err := writeDNSTCPMessage(server, nil, 5*time.Second); err == nil {
 		t.Fatal("expected error for empty message")
 	}
 }

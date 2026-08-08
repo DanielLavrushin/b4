@@ -33,6 +33,7 @@ import {
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useAiStatus } from "@context/AiStatusProvider";
 import { ApiSettings } from "./Api";
+import { DnsSettings } from "./Dns";
 import { CaptureSettings } from "./Capture";
 import { DevicesSettings } from "./Devices";
 import { CheckerSettings } from "./Discovery";
@@ -493,6 +494,12 @@ export function SettingsPage() {
             <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex" }}>
               <Box sx={{ width: "100%" }}>
                 <DevicesSettings config={config} onChange={handleChange} />
+              </Box>
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex" }}>
+              <Box sx={{ width: "100%" }}>
+                <DnsSettings config={config} onChange={handleChange} />
               </Box>
             </Grid>
           </Grid>

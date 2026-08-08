@@ -354,6 +354,13 @@ func (c *Config) checkPortCollisions(v *validator) {
 			refs = append(refs, portRef{"system.socks5.port", c.System.Socks5.Port})
 		}
 	}
+	if !c.System.DNS.TCPDisabled {
+		if p := c.System.DNS.TCPPort; p != 0 && (p < 1 || p > 65535) {
+			v.add("system.dns.tcp_port", "out_of_range", "port must be between 1 and 65535", portRangeParams)
+		} else {
+			refs = append(refs, portRef{"system.dns.tcp_port", c.DNSTCPListenPort()})
+		}
+	}
 	if c.System.MTProto.Enabled {
 		if c.System.MTProto.Port < 1 || c.System.MTProto.Port > 65535 {
 			v.add("system.mtproto.port", "out_of_range", "port must be between 1 and 65535", portRangeParams)

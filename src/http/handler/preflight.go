@@ -42,6 +42,16 @@ func preflightConfig(newCfg, oldCfg *config.Config) []FieldError {
 		}
 	}
 
+	if newCfg.DNSTCPInterceptEnabled() {
+		oldPort := oldCfg.DNSTCPListenPort()
+		newPort := newCfg.DNSTCPListenPort()
+		if !oldCfg.DNSTCPInterceptEnabled() || oldPort != newPort {
+			if f := probePort("system.dns.tcp_port", "0.0.0.0", newPort); f != nil {
+				fields = append(fields, *f)
+			}
+		}
+	}
+
 	return fields
 }
 

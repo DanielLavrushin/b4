@@ -640,8 +640,12 @@ func (manager *IPTablesManager) buildManifest() (Manifest, error) {
 		}
 	}
 
-	if dnsTCPEnabled(cfg) {
+	if dnsTCPWanted(cfg) {
 		for _, ipt := range ipts {
+			isV6 := ipt == manager.ip6tablesBin()
+			if !dnsTCPEnabledFamily(cfg, isV6) || !hasNATRedirectSupport(ipt, cfg.DNSTCPListenPort()) {
+				continue
+			}
 			dc, dr := manager.buildDNSTCPManifest(ipt)
 			chains = append(chains, dc...)
 			rules = append(rules, dr...)

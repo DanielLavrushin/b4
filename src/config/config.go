@@ -289,6 +289,14 @@ var DefaultConfig = Config{
 			TimeoutSec:  120,
 		},
 
+		DNS: DNSSystemConfig{
+			TCPPort:         DefaultDNSTCPPort,
+			QueryTimeoutSec: DefaultDNSQueryTimeoutSec,
+			TCPIdleSec:      DefaultDNSTCPIdleSec,
+			TCPIOSec:        DefaultDNSTCPIOSec,
+			TCPDialSec:      DefaultDNSTCPDialSec,
+		},
+
 		Timezone:    "",
 		MemoryLimit: "",
 	},

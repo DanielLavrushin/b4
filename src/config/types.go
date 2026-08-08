@@ -38,6 +38,14 @@ const (
 	BlockActionReject = "reject"
 )
 
+const (
+	DefaultDNSTCPPort         = 5453
+	DefaultDNSQueryTimeoutSec = 5
+	DefaultDNSTCPIdleSec      = 30
+	DefaultDNSTCPIOSec        = 10
+	DefaultDNSTCPDialSec      = 5
+)
+
 func RoutingUsesTProxy(mode string) bool {
 	return mode == RoutingModeProxy || mode == RoutingModeMTProtoWS
 }
@@ -260,6 +268,7 @@ type SystemConfig struct {
 	Geo         geodat.GeoDatConfig `json:"geo"`
 	API         ApiConfig           `json:"api"`
 	AI          AIConfig            `json:"ai"`
+	DNS         DNSSystemConfig     `json:"dns"`
 	Timezone    string              `json:"timezone"`
 	MemoryLimit string              `json:"memory_limit,omitempty"`
 	Pprof       bool                `json:"pprof,omitempty"`
@@ -459,6 +468,15 @@ type DNSConfig struct {
 	TargetDNS     string `json:"target_dns"`
 	DoHURL        string `json:"doh_url"`
 	FragmentQuery bool   `json:"fragment_query"`
+}
+
+type DNSSystemConfig struct {
+	TCPDisabled     bool `json:"tcp_disabled"`
+	TCPPort         int  `json:"tcp_port"`
+	QueryTimeoutSec int  `json:"query_timeout_sec"`
+	TCPIdleSec      int  `json:"tcp_idle_sec"`
+	TCPIOSec        int  `json:"tcp_io_sec"`
+	TCPDialSec      int  `json:"tcp_dial_sec"`
 }
 
 type DuplicateConfig struct {

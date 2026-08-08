@@ -341,7 +341,6 @@ export interface MTProtoConfig {
   dc_fallback_url: string;
 }
 
-
 export interface SystemConfig {
   logging: LoggingConfig;
   web_server: WebServerConfig;
@@ -352,8 +351,18 @@ export interface SystemConfig {
   geo: GeoConfig;
   api: ApiConfig;
   ai: AIConfig;
+  dns: DnsSystemConfig;
   timezone: string;
   memory_limit?: string;
+}
+
+export interface DnsSystemConfig {
+  tcp_disabled: boolean;
+  tcp_port: number;
+  query_timeout_sec: number;
+  tcp_idle_sec: number;
+  tcp_io_sec: number;
+  tcp_dial_sec: number;
 }
 
 export interface B4Config {

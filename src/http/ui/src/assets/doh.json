@@ -45,8 +45,38 @@
     "desc": "EU public resolver, blocks malware and phishing"
   },
   {
+    "url": "https://v0dka.ru/dns-query",
+    "name": "v0dka.ru",
+    "desc": "Russia, no logging, no filtering, Unbound recursive resolver"
+  },
+  {
     "url": "https://common.dot.dns.yandex.net/dns-query",
     "name": "Yandex",
     "desc": "Russian resolver, fast in RU/CIS"
+  },
+  {
+    "url": "https://wikimedia-dns.org/dns-query",
+    "name": "Wikimedia",
+    "desc": "Public resolver by Wikimedia Foundation"
+  },
+  {
+    "url": "https://dns.anon.no/dns-query",
+    "name": "Anonymized.no",
+    "desc": "Block ads, use AdGuard browsing security web service"
+  },
+  {
+    "url": "https://dns.aquilenet.fr/dns-query",
+    "name": "Aquilenet",
+    "desc": "French public resolver with privacy and security features"
+  },
+  {
+    "url": "https://ibuki.cgnat.net/dns-query",
+    "name": "@null31",
+    "desc": "Based in Brazil / doh-server (nginx - unbound) / dot-server (unbound) / DNSSEC / QNAME minimization / Uncensored / no logging, no ECS, hosted on Oracle Cloud VPS by null31"
+  },
+  {
+    "url": "https://dnspub.restena.lu/dns-query",
+    "name": "Restena",
+    "desc": "DNSSEC validation"
   }
 ]
