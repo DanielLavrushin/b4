@@ -199,6 +199,10 @@ Limits TCP Maximum Segment Size on SYN/SYN-ACK packets for port 443 traffic. A s
 Global MSS Clamping applies to **all** port 443 traffic. To limit MSS only for specific devices (for example, a TV running YouTube), configure MSS in the **MSS** column of the [device table](#device-filtering) below. Per-device MSS works independently of the global setting.
 :::
 
+## DNS
+
+Holds what applies to DNS across every set: whether DNS over TCP is intercepted, the port it is redirected to, and the timeouts. The resolver itself is picked per set. See [DNS](../dns.md).
+
 ## Device filtering
 
 Limits b4 to traffic from specific devices on the network (by MAC address). Useful when bypass is not needed for every device.

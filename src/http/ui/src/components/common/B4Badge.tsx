@@ -2,7 +2,14 @@ import { forwardRef } from "react";
 import { Chip, ChipProps } from "@mui/material";
 
 interface B4BadgeProps extends Omit<ChipProps, "color" | "variant"> {
-  color?: "default" | "primary" | "secondary" | "info" | "error";
+  color?:
+    | "default"
+    | "primary"
+    | "secondary"
+    | "info"
+    | "success"
+    | "warning"
+    | "error";
   variant?: "filled" | "outlined";
 }
 

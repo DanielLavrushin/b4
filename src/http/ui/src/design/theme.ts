@@ -160,6 +160,28 @@ export const theme = createTheme({
             color: colors.state.info,
           },
         },
+        colorSuccess: {
+          "&.MuiChip-filled": {
+            backgroundColor: colors.state.success,
+            color: colors.text.tertiary,
+          },
+          "&.MuiChip-outlined": {
+            borderColor: colors.state.success,
+            backgroundColor: colors.accent.secondaryHover,
+            color: colors.state.success,
+          },
+        },
+        colorWarning: {
+          "&.MuiChip-filled": {
+            backgroundColor: colors.state.warning,
+            color: colors.text.tertiary,
+          },
+          "&.MuiChip-outlined": {
+            borderColor: colors.state.warning,
+            backgroundColor: colors.accent.secondaryHover,
+            color: colors.state.warning,
+          },
+        },
         colorError: {
           "&.MuiChip-filled": {
             backgroundColor: colors.state.error,
