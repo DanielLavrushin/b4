@@ -148,7 +148,11 @@ func (n *NFTablesManager) applyDNSTCPFamily(v6 bool) error {
 		return fmt.Errorf("failed to create nftables dns nat table (%s): %w", family, err)
 	}
 
-	for chain, hook := range map[string]string{"dnstcp_pre": "prerouting", "dnstcp_out": "output"} {
+	for _, c := range []struct{ chain, hook string }{
+		{"dnstcp_pre", "prerouting"},
+		{"dnstcp_out", "output"},
+	} {
+		chain, hook := c.chain, c.hook
 		if _, err := n.runNft("add", "chain", family, table, chain,
 			fmt.Sprintf("{ type nat hook %s priority %d ; policy accept ; }", hook, nftDstnatPriority)); err != nil {
 			return fmt.Errorf("failed to create nat %s chain (%s): %w", hook, family, err)
