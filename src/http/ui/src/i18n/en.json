@@ -1153,9 +1153,6 @@
       "fakeSni": {
         "title": "Fake SNI Packets",
         "enable": "Enable Fake SNI",
-        "pins": "Pinned addresses",
-        "pinsHelper": "One per line: a domain, then the addresses to answer with. Applies to the domain and its subdomains, and takes precedence over the resolver above.",
-        "pinsAlert": "When a CDN keeps answering with an address the firewall drops, no bypass strategy can help, because nothing ever reaches the server. Pinning an address that does answer replaces what DNS hands out for that name, without editing a hosts file on every device.",
         "enableDesc": "Send fake SNI packets before real ClientHello",
         "payloadSection": "Fake payload",
         "rejectionSection": "How the server rejects it",
@@ -1400,6 +1397,13 @@
       "alert": "Some ISPs intercept DNS queries (especially to 8.8.8.8) and return fake IPs for blocked domains. DNS redirect transparently rewrites your DNS queries to use an unpoisoned resolver.",
       "enable": "Enable DNS Redirect",
       "enableDesc": "Redirect DNS queries for domains in this set to specified DNS server",
+      "pinsHeader": "Pinned addresses",
+      "pins": "Domain and addresses",
+      "pinsPlaceholder": "130.255.77.28 ntc.party",
+      "pinsNotTargeted": "This set does not match {{domains}}, so the pin will never be used. A pin only applies to names the set already targets.",
+      "pinsAddToTargets": "Add to this set's domains",
+      "pinsHelper": "Hosts file order, one line per address: the address first, then the names it should answer for. Covers each name and its subdomains, and wins over the resolver below.",
+      "pinsAlert": "When a CDN keeps answering with an address the firewall drops, no bypass strategy reaches the server, because nothing gets there at all. Pinning an address that does answer replaces what DNS hands out for that name, with no hosts file to edit on every device.",
       "modeLabel": "Resolver type",
       "modeUdp": "Plain DNS (UDP)",
       "modeDoH": "DNS-over-HTTPS",
@@ -2094,6 +2098,26 @@
       "coordinates": "Coordinates",
       "timezone": "Timezone",
       "postalCode": "Postal Code"
+    },
+    "flags": {
+      "mtproto": "MTProto Proxy",
+      "mtprotoNamed": "MTProto Proxy - {{name}}",
+      "blackhole": "Blocked (blackhole)",
+      "socks5": "SOCKS5 Proxy",
+      "duplicate": "Duplicated packet",
+      "ipBlocked": "Blocked by IP",
+      "dns": {
+        "doh": "DNS resolved over DoH through {{target}}",
+        "forward": "DNS resolved by b4 against {{target}}",
+        "pin": "DNS answered from a pinned address",
+        "heal": "DNS answer had unreachable addresses replaced by IP block detection",
+        "passthrough": "Matched a set with no resolver configured, DNS query forwarded unchanged",
+        "ipv6-disabled": "IPv6 DNS query matched a set while IPv6 is off, forwarded unchanged",
+        "sinkhole": "DNS answered with NXDOMAIN by a blocking set",
+        "block": "DNS query dropped by a blocking set",
+        "servfail": "The set's resolver did not answer in time",
+        "bad-target": "The set's DNS server field does not hold a valid IP address, query forwarded unchanged"
+      }
     }
   },
   "logs": {

@@ -17,4 +17,18 @@ export const setsApi = {
   setEnabledForSets: (ids: string[], enabled: boolean) =>
     apiPost<void>("/api/sets/batch-set-enabled", { ids, enabled }),
   getTargetedDomains: () => apiFetch<string[]>("/api/sets/targeted-domains"),
+  checkDomain: (domain: string) =>
+    apiFetch<SetDomainMatch[]>(
+      `/api/sets/check-domain?domain=${encodeURIComponent(domain)}`,
+    ),
 };
+
+export interface SetDomainMatch {
+  domain: string;
+  set_id: string;
+  set_name: string;
+  entry: string;
+  relation: string;
+  via: string;
+  enabled: boolean;
+}

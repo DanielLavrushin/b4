@@ -223,6 +223,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	if matched && !set.MatchesTCPDPort(dport) {
 		matched = false
 		set = nil
+		st = nil
 	}
 
 	matchedHint := false
@@ -361,6 +362,14 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		ipTarget = set.Name
 	}
 
+	clearMatch := func() {
+		matched = false
+		set = nil
+		st = nil
+		matchedIP = false
+		ipTarget = ""
+	}
+
 	if cfg.IsTCPPort(dport) && len(payload) > 0 {
 		log.Tracef("TCP payload to %s: len=%d, first5=%x", pkt.dstStr, len(payload), payload[:min(5, len(payload))])
 		if len(payload) >= 5 && payload[0] == 0x16 {
@@ -408,21 +417,18 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 
 		if matched && !matchedSNI && set != nil && !set.MatchesTLSVersion(tlsVersion) {
-			matched = false
-			set = nil
+			clearMatch()
 		}
 
 		if matchedLearned && !matchedSNI && !(len(payload) >= 1 && payload[0] == 0x16) {
 			if set != nil && set.Fragmentation.Strategy == config.ConfigNone && len(set.Fragmentation.StrategyPool) == 0 && set.TCP.Desync.Mode == config.ConfigOff {
-				matched = false
-				set = nil
+				clearMatch()
 			}
 		}
 
 		if matchedHint && !matchedSNI && isClientHello && host != "" {
 			log.Tracef("host hint for %s dropped: %s carries a clear SNI that matches no set", pkt.dstStr, host)
-			matched = false
-			set = nil
+			clearMatch()
 			matchedHint = false
 			hintHost = ""
 		}

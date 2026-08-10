@@ -11,6 +11,10 @@ Redirects DNS queries for domains in the set to a specified DNS server.
 
 Some providers intercept DNS responses and substitute IP addresses (DNS poisoning). The connection ends up going to the wrong address even if the domain itself is not blocked directly. DNS redirect sends the query to an alternative server, bypassing the interception.
 
+:::info
+This section covers the plain DNS server. For encrypted DNS (DoH), pinned addresses, DNS over TCP and the global DNS settings, see [DNS](../dns.md).
+:::
+
 ```mermaid
 flowchart LR
     A["Application"] -->|"DNS query<br/>instagram.com"| B["b4"]

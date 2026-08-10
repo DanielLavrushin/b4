@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Box,
+  Button,
   Grid,
   List,
   ListItemButton,
@@ -11,11 +12,19 @@ import {
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
-import { B4Alert, B4Badge, B4Hint, B4Switch, B4TextField } from "@b4.elements";
+import {
+  B4Alert,
+  B4Badge,
+  B4FormHeader,
+  B4Hint,
+  B4Switch,
+  B4TextField,
+} from "@b4.elements";
 import { DnsIcon, CheckIcon, BlockIcon } from "@b4.icons";
 import { B4SetConfig } from "@models/config";
 import { colors } from "@design";
 import { useTranslation } from "react-i18next";
+import { setsApi } from "@api/sets";
 import dns from "@assets/dns.json";
 import doh from "@assets/doh.json";
 
@@ -39,6 +48,41 @@ const POPULAR_DNS = (dns as DnsEntry[]).sort((a, b) =>
 );
 
 const POPULAR_DOH = doh as DohEntry[];
+
+const isAddress = (token: string) =>
+  /^\d{1,3}(\.\d{1,3}){3}$/.test(token) ||
+  /^[0-9a-f:]+:[0-9a-f:]*$/i.test(token);
+
+const pinsToText = (pins?: Record<string, string[]>) => {
+  const byAddress = new Map<string, string[]>();
+  for (const [domain, addresses] of Object.entries(pins ?? {})) {
+    for (const address of addresses) {
+      byAddress.set(address, [...(byAddress.get(address) ?? []), domain]);
+    }
+  }
+  return [...byAddress]
+    .map(([address, domains]) => `${address} ${domains.join(" ")}`)
+    .join("\n");
+};
+
+const parsePins = (text: string) => {
+  const parsed: Record<string, string[]> = {};
+  for (const line of text.split("\n")) {
+    const tokens = line
+      .trim()
+      .split(/[\s,=]+/)
+      .filter(Boolean);
+    const addresses = tokens.filter(isAddress);
+    const domains = tokens
+      .filter((token) => !isAddress(token))
+      .map((token) => token.toLowerCase().replace(/^\*\./, ""));
+    if (addresses.length === 0 || domains.length === 0) continue;
+    for (const domain of domains) {
+      parsed[domain] = [...new Set([...(parsed[domain] ?? []), ...addresses])];
+    }
+  }
+  return parsed;
+};
 
 type ResolverMode = "udp" | "doh";
 
@@ -82,28 +126,56 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
     }
   };
 
-  const pinsToText = (pins?: Record<string, string[]>) =>
-    Object.entries(pins ?? {})
-      .map(([domain, ips]) => `${domain} ${ips.join(", ")}`)
-      .join("\n");
-
   const [pinsText, setPinsText] = useState(() => pinsToText(dnsConfig.pins));
+  const [uncovered, setUncovered] = useState<string[]>([]);
 
   const handlePinsChange = (text: string) => {
     setPinsText(text);
-    const parsed: Record<string, string[]> = {};
-    for (const line of text.split("\n")) {
-      const parts = line.trim().split(/[\s,=]+/).filter(Boolean);
-      if (parts.length < 2) continue;
-      const [domain, ...ips] = parts;
-      parsed[domain.toLowerCase()] = ips;
-    }
-    onChange("dns.pins", parsed);
+    onChange("dns.pins", parsePins(text));
   };
+
+  const addUncoveredToTargets = () => {
+    const existing = config.targets?.sni_domains ?? [];
+    onChange("targets.sni_domains", [
+      ...existing,
+      ...uncovered.filter((d) => !existing.includes(d)),
+    ]);
+    setUncovered([]);
+  };
+
+  useEffect(() => {
+    const domains = Object.keys(parsePins(pinsText));
+    if (domains.length === 0 || !config.id) {
+      setUncovered([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void (async () => {
+        const missing: string[] = [];
+        for (const domain of domains) {
+          try {
+            const matches = await setsApi.checkDomain(domain);
+            if (!matches.some((m) => m.set_id === config.id)) {
+              missing.push(domain);
+            }
+          } catch {
+            return;
+          }
+        }
+        if (!cancelled) setUncovered(missing);
+      })();
+    }, 700);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [pinsText, config.id]);
 
   const selectedServer = POPULAR_DNS.find((d) => d.ip === dnsConfig.target_dns);
   const selectedDoH = POPULAR_DOH.find((d) => d.url === dnsConfig.doh_url);
-  const activeResolver = mode === "doh" ? dnsConfig.doh_url : dnsConfig.target_dns;
+  const activeResolver =
+    mode === "doh" ? dnsConfig.doh_url : dnsConfig.target_dns;
 
   return (
     <Grid container spacing={3}>
@@ -116,21 +188,6 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
           onChange={(checked: boolean) => onChange("dns.enabled", checked)}
           description={t("sets.dns.enableDesc")}
         />
-      </Grid>
-
-      <Grid size={{ lg: 12 }}>
-        <B4TextField
-          label={t("sets.dns.pins")}
-          value={pinsText}
-          onChange={(e) => handlePinsChange(e.target.value)}
-          placeholder={"www.instagram.com 157.240.0.174"}
-          multiline
-          minRows={2}
-          maxRows={8}
-          helperText={t("sets.dns.pinsHelper")}
-          aiTopic="dns.pins"
-        />
-        <B4Hint sx={{ mt: 1 }}>{t("sets.dns.pinsAlert")}</B4Hint>
       </Grid>
 
       {dnsConfig.enabled && (
@@ -259,7 +316,10 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
                             }
                             return (
                               <DnsIcon
-                                sx={{ color: colors.text.secondary, fontSize: 20 }}
+                                sx={{
+                                  color: colors.text.secondary,
+                                  fontSize: 20,
+                                }}
                               />
                             );
                           })()}
@@ -282,7 +342,10 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
                               >
                                 {server.name}
                               </Typography>
-                              <Typography variant="body2" color="text.secondary">
+                              <Typography
+                                variant="body2"
+                                color="text.secondary"
+                              >
                                 {server.ip}
                               </Typography>
                             </Stack>
@@ -292,7 +355,9 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
                             secondary: {
                               variant: "caption",
                               sx: {
-                                color: server.warn ? colors.secondary : undefined,
+                                color: server.warn
+                                  ? colors.secondary
+                                  : undefined,
                               },
                             },
                           }}
@@ -376,7 +441,10 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
                             />
                           ) : (
                             <DnsIcon
-                              sx={{ color: colors.text.secondary, fontSize: 20 }}
+                              sx={{
+                                color: colors.text.secondary,
+                                fontSize: 20,
+                              }}
                             />
                           )}
                         </ListItemIcon>
@@ -501,6 +569,42 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
           )}
         </>
       )}
+
+      <B4FormHeader label={t("sets.dns.pinsHeader")} />
+
+      <Grid size={{ lg: 12 }}>
+        <B4Hint sx={{ mb: 2 }}>{t("sets.dns.pinsAlert")}</B4Hint>
+        <B4TextField
+          label={t("sets.dns.pins")}
+          value={pinsText}
+          onChange={(e) => handlePinsChange(e.target.value)}
+          placeholder={t("sets.dns.pinsPlaceholder")}
+          multiline
+          minRows={3}
+          maxRows={10}
+          helperText={t("sets.dns.pinsHelper")}
+          aiTopic="dns.pins"
+        />
+
+        {uncovered.length > 0 && (
+          <B4Alert severity="warning" sx={{ mt: 2 }}>
+            <Stack spacing={1} alignItems="flex-start">
+              <span>
+                {t("sets.dns.pinsNotTargeted", {
+                  domains: uncovered.join(", "),
+                })}
+              </span>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={addUncoveredToTargets}
+              >
+                {t("sets.dns.pinsAddToTargets")}
+              </Button>
+            </Stack>
+          </B4Alert>
+        )}
+      </Grid>
     </Grid>
   );
 };
