@@ -54,8 +54,8 @@ func (w *Worker) applyPinnedAnswer(cfg *config.Config, set *config.SetConfig, cl
 		return
 	}
 	w.storeHostHints(clientIP, set, domain, ips)
-	if cfg != nil && set.Routing.Enabled && !set.Targets.DomainOnly && !cfg.Queue.IsDiscovery && RoutingHandleDNSFunc != nil {
-		RoutingHandleDNSFunc(cfg, set, ips)
+	if cfg != nil && set.Routing.Enabled && !set.Targets.DomainOnly && !cfg.Queue.IsDiscovery && routingHandleDNSAvailable() {
+		routingHandleDNSAsync(cfg, set, ips)
 	}
 	log.Infof("DNS pin: answering %s with %s (set: %s)", domain, ips[0], set.Name)
 }

@@ -261,8 +261,8 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, ipVersion byte, sport uint16, 
 					w.storeHostHints(clientIP, set, domain, ips)
 					if set.Routing.Enabled && !set.Targets.DomainOnly && len(ips) > 0 {
 						cfg := w.getConfig()
-						if RoutingHandleDNSFunc != nil && !cfg.Queue.IsDiscovery {
-							RoutingHandleDNSFunc(cfg, set, ips)
+						if routingHandleDNSAvailable() && !cfg.Queue.IsDiscovery {
+							routingHandleDNSAsync(cfg, set, ips)
 							routed = true
 						}
 					}
@@ -279,8 +279,8 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, ipVersion byte, sport uint16, 
 							healSet = set
 						}
 						w.storeHostHints(clientIP, set, domain, ips)
-						if !set.Targets.DomainOnly && RoutingHandleDNSFunc != nil && !cfg.Queue.IsDiscovery {
-							RoutingHandleDNSFunc(cfg, set, ips)
+						if !set.Targets.DomainOnly && routingHandleDNSAvailable() && !cfg.Queue.IsDiscovery {
+							routingHandleDNSAsync(cfg, set, ips)
 						}
 					}
 				}

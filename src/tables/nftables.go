@@ -347,15 +347,14 @@ func (n *NFTablesManager) apply() error {
 		return err
 	}
 
-	if err := n.addQueueRule(nftChainName, "udp", "dport", "53", "counter"); err != nil {
-		return err
-	}
-
 	if err := n.addQueueRule("prerouting", "udp", "dport", "53", "counter"); err != nil {
 		return err
 	}
 
 	if err := n.addQueueRule("prerouting", "udp", "sport", "53", "counter"); err != nil {
+		return err
+	}
+	if err := n.addQueueRule("output", "udp", "dport", "53", "counter"); err != nil {
 		return err
 	}
 	if err := n.addQueueRule("output", "udp", "sport", "53", "counter"); err != nil {

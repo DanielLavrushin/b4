@@ -86,6 +86,10 @@ func (w *Worker) Start() error {
 	}
 	w.q = q
 
+	if err := q.Con.SetReadBuffer(nfqReadBufferBytes); err != nil {
+		log.Tracef("nfqueue %d: could not raise the netlink read buffer to %d bytes: %v", w.qnum, nfqReadBufferBytes, err)
+	}
+
 	if cfg.Queue.IPv4Enabled {
 		if err := pfBind(q.Con, syscall.AF_INET); err != nil {
 			log.Warnf("nfqueue PF_BIND AF_INET: %v", err)
