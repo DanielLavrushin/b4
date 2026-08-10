@@ -168,6 +168,11 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 		log.Debugf("%s bridge unresolved DC for %s:%d (handshake dc=%d proto=0x%08x) -> fail open", tag, origIP, origPort, res.DC, res.ProtoTag)
 		return false, &prefixConn{Conn: client, prefix: append([]byte(nil), init...)}
 	}
+	if signed, ok := applyHandshakeMedia(dc, res.DC); ok {
+		log.Debugf("%s bridge DC%d is the media cluster per handshake -> using DC%d (src=%s+handshake-media)", tag, dc, signed, dcSrc)
+		dc = signed
+		dcSrc += "+handshake-media"
+	}
 	if rng, ok := dcForIPRange(origIP); ok && validTransparentDC(res.DC) && rng != res.DC {
 		log.Debugf("%s bridge DC ambiguity for %s: ip-range=DC%d handshake=DC%d -> using DC%d (src=%s)", tag, origIP, rng, res.DC, dc, dcSrc)
 	}
@@ -234,6 +239,16 @@ func validTransparentDC(dc int) bool {
 		a = -a
 	}
 	return (a >= 1 && a <= 5) || a == 203
+}
+
+func applyHandshakeMedia(resolved, handshake int) (int, bool) {
+	if resolved <= 0 || handshake >= 0 || !validTransparentDC(handshake) {
+		return resolved, false
+	}
+	if -handshake != resolved {
+		return resolved, false
+	}
+	return handshake, true
 }
 
 func reservedFirst4(b []byte) bool {

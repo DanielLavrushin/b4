@@ -13,6 +13,8 @@ import (
 
 const dnsTCPChainName = "B4_DNSTCP"
 
+const nftDstnatPriority = -100
+
 var (
 	dnsTCPListenerReadyV4 atomic.Bool
 	dnsTCPListenerReadyV6 atomic.Bool
@@ -148,7 +150,7 @@ func (n *NFTablesManager) applyDNSTCPFamily(v6 bool) error {
 
 	for chain, hook := range map[string]string{"dnstcp_pre": "prerouting", "dnstcp_out": "output"} {
 		if _, err := n.runNft("add", "chain", family, table, chain,
-			fmt.Sprintf("{ type nat hook %s priority dstnat ; policy accept ; }", hook)); err != nil {
+			fmt.Sprintf("{ type nat hook %s priority %d ; policy accept ; }", hook, nftDstnatPriority)); err != nil {
 			return fmt.Errorf("failed to create nat %s chain (%s): %w", hook, family, err)
 		}
 		if _, err := n.runNft("flush", "chain", family, table, chain); err != nil {

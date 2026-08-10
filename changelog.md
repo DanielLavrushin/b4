@@ -1,6 +1,6 @@
 # B4 - Bye Bye Big Bro
 
-## [1.75.1] - 2026-08-09
+## [1.75.1] - 2026-08-10
 
 - FIXED: **Every name lookup took five seconds once a set was routed through a proxy or an interface** - each answer for such a set was written into the firewall from the same thread that reads packets from the kernel, one `ipset` process per address, so nothing was read for as long as those processes took. Packets arriving meanwhile were dropped by the kernel without a word, and a lookup for a name b4 has no interest in crosses that queue several times, so it was the one most likely to lose a packet and wait out the resolver's five-second retry.
 - CHANGED: **The addresses from a DNS answer are written to the firewall in the background, in one batch** - the same addresses were re-added on every answer for the name, at one process per address, which on a router is most of a second of work repeated for traffic that changed nothing.
@@ -10,6 +10,9 @@
 - ADDED: **Pinned addresses for a domain** - when a CDN keeps answering with an address the firewall drops, no bypass strategy reaches the server at all, and the only remedies were a hosts file on every device or a `dnsmasq` alias on the router, both redone by hand each time the CDN changed its addresses. `Sets > DNS`.
 - FIXED: **A curated DNS answer could name the very address b4 was about to reset** - when every address in an answer was unreachable, the replacement was taken from the addresses remembered for that name without checking whether any of them had since been marked unreachable as well, so a device could be handed one and have the connection reset on its first packet.
 - CHANGED: **Every address seen in a DNS answer is remembered, not only the ones that completed a handshake** - a name whose answers carry a single address, as the Meta CDN does, left nothing to fall back to once that address was dropped, because an address could only be remembered by connecting to it and the block is what stops the connection.
+- FIXED: **Telegram messages arrived while photos, videos and stickers did not, in the WebSocket bridge routing mode** - a client marks a connection as a media one by the sign of the data center number it sends in its opening handshake, and b4 took that number from the address the client had dialled instead, which carries no such mark. Every media session was therefore announced to Telegram as an ordinary one and answered by the wrong half of the data center. The address now settles which data center it is, the client's handshake whether it is the media one.
+- FIXED: **Data center 203, the one Telegram serves media from, had no WebSocket route other than a Cloudflare Worker of your own** - the shared Cloudflare pool and a custom WebSocket domain were both addressed as `kws203`, a name that exists nowhere; Telegram carries that data center under `kws2`. What remained was a direct connection to it, which is exactly what a censored network drops, so media stopped at the network rather than at any strategy.
+- FIXED: **Every firewall rule was torn down and rebuilt every few seconds on some systems** - the chain that catches DNS over TCP from the router itself was created with a priority named after a place it cannot sit, so the whole DNS table was rolled back; the rule monitor then found that table missing and restored all of b4's rules from scratch on its next pass, over and over. Each rebuild leaves a moment in which nothing is intercepted at all.
 
 ## [1.75.0] - 2026-08-08
 

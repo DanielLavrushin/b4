@@ -37,6 +37,13 @@ func wsEdgeServesDC(absDC int) bool {
 	return wsEdgeServedDCs[absDC]
 }
 
+func kwsEdgeDC(absDC int) int {
+	if absDC == 203 {
+		return 2
+	}
+	return absDC
+}
+
 func wsNativeDialHost(override string) string {
 	if h := strings.TrimSpace(override); h != "" {
 		return h
@@ -283,11 +290,12 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 				})
 			}
 		}
+		kwsDC := kwsEdgeDC(absDC)
 		if d := strings.TrimSpace(cfg.WSCustomDomain); d != "" {
 			plans = append(plans, transportPlan{
 				kind:   transportWS,
 				dc:     dc,
-				sni:    fmt.Sprintf("kws%d.%s", absDC, d),
+				sni:    fmt.Sprintf("kws%d.%s", kwsDC, d),
 				cfBase: d,
 			})
 		}
@@ -296,7 +304,7 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 				plans = append(plans, transportPlan{
 					kind:   transportWS,
 					dc:     dc,
-					sni:    fmt.Sprintf("kws%d.%s", absDC, base),
+					sni:    fmt.Sprintf("kws%d.%s", kwsDC, base),
 					cfBase: base,
 				})
 			}
