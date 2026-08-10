@@ -30,10 +30,19 @@ func routeAsyncStart() {
 		routeAsyncCh = make(chan func(), routeAsyncQueueSize)
 		go func() {
 			for job := range routeAsyncCh {
-				job()
+				routeAsyncRun(job)
 			}
 		}()
 	})
+}
+
+func routeAsyncRun(job func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorf("Routing: async firewall update panicked: %v", r)
+		}
+	}()
+	job()
 }
 
 func routeAsyncSubmit(job func(), onDrop func()) {
