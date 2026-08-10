@@ -308,10 +308,13 @@ func pathAssignment(line string) (string, bool) {
 	}
 	s = strings.TrimPrefix(s, "PATH=")
 
-	if i := strings.IndexAny(s, " \t;"); i >= 0 {
-		if !strings.HasPrefix(s, "\"") && !strings.HasPrefix(s, "'") {
-			s = s[:i]
+	s = strings.TrimSpace(s)
+	if quote := strings.IndexAny(s, "\"'"); quote == 0 {
+		if end := strings.IndexByte(s[1:], s[0]); end >= 0 {
+			s = s[:end+2]
 		}
+	} else if i := strings.IndexAny(s, " \t;"); i >= 0 {
+		s = s[:i]
 	}
 	s = strings.TrimSpace(s)
 	if len(s) >= 2 {
