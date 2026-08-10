@@ -262,3 +262,41 @@ func TestHandleUnresolvedDCFailsOpenWithFullFrame(t *testing.T) {
 		t.Errorf("failover replayed %d bytes, want full %d-byte frame intact", len(got), obfuscatedFrameLen)
 	}
 }
+
+func TestApplyHandshakeMedia(t *testing.T) {
+	cases := []struct {
+		name      string
+		resolved  int
+		handshake int
+		wantDC    int
+		wantOK    bool
+	}{
+		{"media dc203 from ip table", 203, -203, -203, true},
+		{"media dc2 from ip table", 2, -2, -2, true},
+		{"main dc stays main", 2, 2, 2, false},
+		{"garbage handshake ignored", 2, -606, 2, false},
+		{"mismatched magnitude ignored", 2, -4, 2, false},
+		{"already signed resolved untouched", -2, -2, -2, false},
+		{"zero handshake ignored", 203, 0, 203, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, ok := applyHandshakeMedia(c.resolved, c.handshake)
+			if got != c.wantDC || ok != c.wantOK {
+				t.Fatalf("applyHandshakeMedia(%d, %d) = (%d, %v), want (%d, %v)",
+					c.resolved, c.handshake, got, ok, c.wantDC, c.wantOK)
+			}
+		})
+	}
+}
+
+func TestKwsEdgeDCMapsMediaDC203ToDC2(t *testing.T) {
+	if got := kwsEdgeDC(203); got != 2 {
+		t.Fatalf("kwsEdgeDC(203) = %d, want 2 (kws203.* does not exist)", got)
+	}
+	for _, dc := range []int{1, 2, 3, 4, 5} {
+		if got := kwsEdgeDC(dc); got != dc {
+			t.Fatalf("kwsEdgeDC(%d) = %d, want %d", dc, got, dc)
+		}
+	}
+}

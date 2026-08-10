@@ -387,7 +387,7 @@ func wsPlansForDC(dc int, cfg *MTProtoUpstream) []transportPlan {
 		plans = append(plans, transportPlan{
 			kind: transportWS,
 			dc:   dc,
-			sni:  kwsCustom(absDC, cfg.WSCustomDomain),
+			sni:  kwsCustom(kwsEdgeDC(absDC), cfg.WSCustomDomain),
 		})
 	}
 	return plans
