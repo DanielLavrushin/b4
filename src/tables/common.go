@@ -262,9 +262,28 @@ func nftWorking() bool {
 	return true
 }
 
+var hasBinaryCache sync.Map
+
 func hasBinary(name string) bool {
+	if v, ok := hasBinaryCache.Load(name); ok {
+		return v.(bool)
+	}
 	_, err := exec.LookPath(name)
-	return err == nil
+	found := err == nil
+	hasBinaryCache.Store(name, found)
+	return found
+}
+
+func runStdin(stdin string, args ...string) error {
+	var out bytes.Buffer
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Stdin = strings.NewReader(stdin)
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("command [%s] failed: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(out.String()))
+	}
+	return nil
 }
 
 func runLogged(op string, args ...string) {

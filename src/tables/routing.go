@@ -678,6 +678,8 @@ func RoutingSyncConfig(cfg *config.Config) {
 		return
 	}
 
+	routeAsyncForgetAll()
+
 	routeMu.Lock()
 	defer routeMu.Unlock()
 

@@ -2,6 +2,10 @@
 
 ## [1.75.1] - 2026-08-09
 
+- FIXED: **Every name lookup took five seconds once a set was routed through a proxy or an interface** - each answer for such a set was written into the firewall from the same thread that reads packets from the kernel, one `ipset` process per address, so nothing was read for as long as those processes took. Packets arriving meanwhile were dropped by the kernel without a word, and a lookup for a name b4 has no interest in crosses that queue several times, so it was the one most likely to lose a packet and wait out the resolver's five-second retry.
+- CHANGED: **The addresses from a DNS answer are written to the firewall in the background, in one batch** - the same addresses were re-added on every answer for the name, at one process per address, which on a router is most of a second of work repeated for traffic that changed nothing.
+- FIXED: **A DNS request sent by the router itself was handed to b4 twice** - the rule that captures it sat in a chain reached from two places, so every such request paid the round trip to b4 and back a second time for no purpose.
+- CHANGED: **A burst of packets no longer overruns b4 while it is busy** - the kernel's hand-off buffer was left at the system default, a few hundred kilobytes shared by every packet in flight.
 - FIXED: **System diagnostics reported jq and other tools as missing when they were installed on a USB drive** - the check never looked outside the router's own folders.
 - ADDED: **Pinned addresses for a domain** - when a CDN keeps answering with an address the firewall drops, no bypass strategy reaches the server at all, and the only remedies were a hosts file on every device or a `dnsmasq` alias on the router, both redone by hand each time the CDN changed its addresses. `Sets > DNS`.
 - FIXED: **A curated DNS answer could name the very address b4 was about to reset** - when every address in an answer was unreachable, the replacement was taken from the addresses remembered for that name without checking whether any of them had since been marked unreachable as well, so a device could be handed one and have the connection reset on its first packet.

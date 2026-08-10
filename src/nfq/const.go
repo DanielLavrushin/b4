@@ -11,5 +11,7 @@ const (
 	TLSClientHello   = 0x01
 	HTTPSPort        = 443
 
+	nfqReadBufferBytes = 4 << 20
+
 	connKeyFormat = "%s:%d->%s:%d"
 )

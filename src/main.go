@@ -199,6 +199,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 	nfq.RoutingHandleDNSFunc = tables.RoutingHandleDNS
 	nfq.RoutingLearnIPFunc = tables.RoutingLearnIP
 	nfq.RoutingLearnHostFunc = tables.RoutingLearnHost
+	nfq.RoutingHandleDNSAsyncFunc = tables.RoutingHandleDNSAsync
+	nfq.RoutingLearnIPAsyncFunc = tables.RoutingLearnIPAsync
+	nfq.RoutingLearnHostAsyncFunc = tables.RoutingLearnHostAsync
 
 	if err := initLogging(&cfg); err != nil {
 		return fmt.Errorf("logging initialization failed: %w", err)

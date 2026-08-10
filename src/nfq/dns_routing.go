@@ -16,15 +16,35 @@ var RoutingLearnIPFunc func(cfg *config.Config, set *config.SetConfig, ip net.IP
 
 var RoutingLearnHostFunc func(cfg *config.Config, set *config.SetConfig, host string)
 
+var RoutingHandleDNSAsyncFunc func(cfg *config.Config, set *config.SetConfig, ips []net.IP)
+
+var RoutingLearnIPAsyncFunc func(cfg *config.Config, set *config.SetConfig, ip net.IP)
+
+var RoutingLearnHostAsyncFunc func(cfg *config.Config, set *config.SetConfig, host string)
+
+func routingHandleDNSAsync(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
+	if RoutingHandleDNSAsyncFunc != nil {
+		RoutingHandleDNSAsyncFunc(cfg, set, ips)
+		return
+	}
+	if RoutingHandleDNSFunc != nil {
+		RoutingHandleDNSFunc(cfg, set, ips)
+	}
+}
+
+func routingHandleDNSAvailable() bool {
+	return RoutingHandleDNSAsyncFunc != nil || RoutingHandleDNSFunc != nil
+}
+
 func registerEscalatedRoute(cfg *config.Config, escSet *config.SetConfig, dst net.IP) {
-	if cfg == nil || escSet == nil || dst == nil || !escSet.Routing.Enabled || RoutingHandleDNSFunc == nil {
+	if cfg == nil || escSet == nil || dst == nil || !escSet.Routing.Enabled || !routingHandleDNSAvailable() {
 		return
 	}
 	if cfg.Queue.IsDiscovery {
 		return
 	}
 	log.Tracef("registerEscalatedRoute: adding %s to %s ipset (mode=%s)", dst, escSet.Name, escSet.Routing.Mode)
-	RoutingHandleDNSFunc(cfg, escSet, []net.IP{dst})
+	routingHandleDNSAsync(cfg, escSet, []net.IP{dst})
 }
 
 func registerLearnedRoute(cfg *config.Config, set *config.SetConfig, dst net.IP, host string) {
@@ -37,11 +57,17 @@ func registerLearnedRoute(cfg *config.Config, set *config.SetConfig, dst net.IP,
 	if cfg.Queue.IsDiscovery {
 		return
 	}
-	if RoutingLearnIPFunc != nil {
+	if RoutingLearnIPAsyncFunc != nil {
+		RoutingLearnIPAsyncFunc(cfg, set, dst)
+	} else if RoutingLearnIPFunc != nil {
 		RoutingLearnIPFunc(cfg, set, dst)
 	}
-	if host != "" && RoutingLearnHostFunc != nil {
-		RoutingLearnHostFunc(cfg, set, host)
+	if host != "" {
+		if RoutingLearnHostAsyncFunc != nil {
+			RoutingLearnHostAsyncFunc(cfg, set, host)
+		} else if RoutingLearnHostFunc != nil {
+			RoutingLearnHostFunc(cfg, set, host)
+		}
 	}
 }
 

@@ -67,14 +67,24 @@ func (b *routeIptBackend) addElements(setName string, ips []string, ttlSec int) 
 	if len(ips) == 0 {
 		return
 	}
-	for _, ip := range expandZeroPrefix(ips) {
-		if ttlSec > 0 {
-			runLogged("routing: ipset add "+ip,
-				"ipset", "add", setName, ip, "timeout", fmt.Sprintf("%d", ttlSec), "-exist")
-		} else {
-			runLogged("routing: ipset add "+ip,
-				"ipset", "add", setName, ip, "timeout", "0", "-exist")
-		}
+	entries := expandZeroPrefix(ips)
+	if ttlSec < 0 {
+		ttlSec = 0
+	}
+
+	var sb strings.Builder
+	sb.Grow(len(entries) * (len(setName) + 32))
+	for _, ip := range entries {
+		fmt.Fprintf(&sb, "add %s %s timeout %d\n", setName, ip, ttlSec)
+	}
+
+	if err := runStdin(sb.String(), "ipset", "restore", "-exist"); err == nil {
+		return
+	}
+
+	for _, ip := range entries {
+		runLogged("routing: ipset add "+ip,
+			"ipset", "add", setName, ip, "timeout", fmt.Sprintf("%d", ttlSec), "-exist")
 	}
 }
 

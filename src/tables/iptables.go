@@ -540,10 +540,6 @@ func (manager *IPTablesManager) buildManifest() (Manifest, error) {
 			}
 		}
 
-		rules = append(rules,
-			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: dnsSpec},
-		)
-
 		udpPorts := cfg.CollectUDPPorts()
 		for i, p := range udpPorts {
 			udpPorts[i] = strings.ReplaceAll(p, "-", ":")
@@ -616,6 +612,7 @@ func (manager *IPTablesManager) buildManifest() (Manifest, error) {
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "PREROUTING", Action: "I",
 				Spec: []string{"-j", preChainName}},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I", Spec: dnsResponseSpec},
+			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I", Spec: dnsSpec},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I",
 				Spec: []string{"-m", "mark", "--mark", markAccept, "-j", "ACCEPT"}},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "A",
@@ -962,7 +959,7 @@ func (ipt *IPTablesManager) clearB4JumpRules() {
 			lines := strings.Split(out, "\n")
 			removed := false
 			for _, line := range lines {
-				if strings.Contains(line, "spt:53") && strings.Contains(line, "NFQUEUE") {
+				if (strings.Contains(line, "spt:53") || strings.Contains(line, "dpt:53")) && strings.Contains(line, "NFQUEUE") {
 					parts := strings.Fields(line)
 					if len(parts) > 0 {
 						if _, err := run(iptBin, "-w", "-t", "mangle", "-D", "OUTPUT", parts[0]); err == nil {
