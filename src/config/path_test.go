@@ -50,13 +50,15 @@ func TestParseProfilePaths(t *testing.T) {
 		"export PATH='/data/bin'\n" +
 		"PATH=$HOME/bin\n" +
 		"XPATH=/should/not/match\n" +
-		"export PATH=/with/trailing ; echo done\n"
+		"export PATH=/with/trailing ; echo done\n" +
+		"export PATH=\"/quoted/then/semicolon:$PATH\"; echo done\n" +
+		"export PATH='/single/then/semicolon'; export OTHER=1\n"
 	if err := os.WriteFile(profile, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	got := parseProfilePaths(profile)
-	want := []string{"/opt/bin", optBin, "/usr/bin", "/data/bin", "/with/trailing"}
+	want := []string{"/opt/bin", optBin, "/usr/bin", "/data/bin", "/with/trailing", "/quoted/then/semicolon", "/single/then/semicolon"}
 	for _, w := range want {
 		if !containsPath(got, w) {
 			t.Fatalf("expected %q in %v", w, got)
