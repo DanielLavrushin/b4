@@ -122,3 +122,22 @@ func TestWorkerStallCooldownExpires(t *testing.T) {
 		t.Error("a lapsed entry must be dropped rather than accumulate")
 	}
 }
+
+// The proxy reaches a Worker for every data center Telegram's own edge does not
+// front - 1, 3 and 5, which is the media path for foreign channels - so it meets
+// the same silent Worker the bridge does and must react the same way.
+func TestStallReporter_CoversProxyAndBridgeAlike(t *testing.T) {
+	worker := dialInfo{transport: "wsworker://w.example.workers.dev", isWorker: true, worker: "w.example.workers.dev"}
+	if stallReporter(worker) == nil {
+		t.Error("a Worker relay must report stalls whichever feature opened it")
+	}
+	for _, d := range []dialInfo{
+		{transport: "ws://kws4.web.telegram.org"},
+		{transport: "ws-pool"},
+		{transport: "tcp://149.154.167.91:443"},
+	} {
+		if stallReporter(d) != nil {
+			t.Errorf("%s fails by closing and must not be cut or cooled down on a stall", d.transport)
+		}
+	}
+}

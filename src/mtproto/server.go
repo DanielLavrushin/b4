@@ -680,13 +680,13 @@ func (s *Server) handleConn(raw net.Conn) {
 	defer st.active.Add(-1)
 
 	splitter := newSplitterFor(dcConn, dial, result.ProtoTag)
-	up, down := s.relay(result.Conn, dcConn, splitter, &info.lastActive, fmt.Sprintf("%s [%s] %s<->DC%d via %s", tag, user, clientAddr, result.DC, dial.transport))
+	up, down := s.relay(result.Conn, dcConn, splitter, &info.lastActive, dial, fmt.Sprintf("%s [%s] %s<->DC%d via %s", tag, user, clientAddr, result.DC, dial.transport))
 	st.up.Add(up)
 	st.down.Add(down)
 }
 
-func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, lastActive *atomic.Int64, label string) (up, down int64) {
-	return relayConns(client, dc, splitter, label, &s.bufPool, mtprotoIdleTimeout(s.cfg.Load()), lastActive, nil)
+func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, lastActive *atomic.Int64, dial dialInfo, label string) (up, down int64) {
+	return relayConns(client, dc, splitter, label, &s.bufPool, mtprotoIdleTimeout(s.cfg.Load()), lastActive, stallReporter(dial))
 }
 
 // A relay whose upstream has gone mute while the client is still asking is not
