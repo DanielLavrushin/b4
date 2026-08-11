@@ -563,53 +563,99 @@ func RoutingRulesPresent(cfg *config.Config) bool {
 
 	switch eng := be.(type) {
 	case *routeNftBackend:
-		return routeNftRulesPresent()
+		return routeNftRulesPresent(cfg)
 	case *routeIptBackend:
 		return routeIptRulesPresent(eng, cfg)
 	}
 	return true
 }
 
-func routeNftRulesPresent() bool {
+// parseNftRouteChains scans `nft list table inet b4_route` into the set of
+// chains that exist and, per chain, the marks it returns on. Kept separate from
+// the command so the brace handling can be tested against real output: a set's
+// element list closes with a brace too, and mistaking that for the end of a
+// chain would lose the rules that follow.
+func parseNftRouteChains(out string) (present map[string]bool, bypass map[string]map[uint32]bool) {
+	present = make(map[string]bool)
+	bypass = make(map[string]map[uint32]bool)
+	chain := ""
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "chain "):
+			chain = strings.TrimSpace(strings.TrimSuffix(line[len("chain "):], "{"))
+			present[chain] = true
+			continue
+		case line == "}":
+			chain = ""
+			continue
+		case chain == "":
+			continue
+		}
+		if m, verb, ok := nftParseMarkRule(line); ok && verb == "return" {
+			if bypass[chain] == nil {
+				bypass[chain] = make(map[uint32]bool)
+			}
+			bypass[chain][m] = true
+		}
+	}
+	return present, bypass
+}
+
+func routeNftRulesPresent(cfg *config.Config) bool {
 	out, err := run("nft", "list", "table", "inet", routeNftTable)
 	if err != nil || strings.TrimSpace(out) == "" {
 		return false
 	}
 
-	present := make(map[string]bool)
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "chain ") {
-			name := strings.TrimSpace(strings.TrimSuffix(line[len("chain "):], "{"))
-			present[name] = true
-		}
-	}
+	present, bypass := parseNftRouteChains(out)
 
 	for _, st := range routeRuleCache {
 		for _, c := range routeStateChains(st) {
 			if !present[c.chain] {
 				return false
 			}
+			if !c.wantBypass {
+				continue
+			}
+			for _, m := range routeBypassMarks(cfg) {
+				if !bypass[c.chain][m] {
+					log.Tracef("Routing: chain %s lost its bypass on mark 0x%x", c.chain, m)
+					return false
+				}
+			}
 		}
 	}
 	return true
 }
 
-type routeChainRef struct{ chain, table string }
+type routeChainRef struct {
+	chain, table string
+	wantBypass   bool
+}
 
 func routeStateChains(st routeState) []routeChainRef {
 	switch {
 	case config.RoutingIsBlock(st.mode):
-		return []routeChainRef{{st.chainPre, "filter"}}
+		return []routeChainRef{{st.chainPre, "filter", false}}
 	case config.RoutingUsesTProxy(st.mode):
-		refs := []routeChainRef{{st.chainPre, "mangle"}}
+		refs := []routeChainRef{{st.chainPre, "mangle", true}}
 		if st.quicReject && st.chainQUIC != "" {
-			refs = append(refs, routeChainRef{st.chainQUIC, "filter"})
+			refs = append(refs, routeChainRef{st.chainQUIC, "filter", true})
 		}
 		return refs
 	default:
-		return []routeChainRef{{st.chainPre, "mangle"}, {st.chainOut, "mangle"}, {st.chainSNAT, "nat"}}
+		return []routeChainRef{
+			{st.chainPre, "mangle", true},
+			{st.chainOut, "mangle", true},
+			{st.chainSNAT, "nat", false},
+		}
 	}
+}
+
+// routeBypassMarks lists the marks a diverting chain must return on.
+func routeBypassMarks(cfg *config.Config) []uint32 {
+	return []uint32{routeQueueBypassMark(cfg), SelfDialMark}
 }
 
 func routeIptRulesPresent(be *routeIptBackend, cfg *config.Config) bool {
@@ -619,7 +665,7 @@ func routeIptRulesPresent(be *routeIptBackend, cfg *config.Config) bool {
 			if needed[c.table] == nil {
 				needed[c.table] = make(map[string]bool)
 			}
-			needed[c.table][c.chain] = true
+			needed[c.table][c.chain] = needed[c.table][c.chain] || c.wantBypass
 		}
 	}
 	if len(needed) == 0 {
@@ -651,9 +697,22 @@ func routeIptRulesPresent(be *routeIptBackend, cfg *config.Config) bool {
 					}
 				}
 			}
-			for chain := range wantChains {
+			for chain, wantBypass := range wantChains {
 				if !present[chain] {
 					return false
+				}
+				if !wantBypass {
+					continue
+				}
+				spec, serr := run(cmd, "-w", "-t", table, "-S", chain)
+				if serr != nil {
+					continue
+				}
+				for _, m := range routeBypassMarks(cfg) {
+					if !strings.Contains(spec, fmt.Sprintf("--mark 0x%x/0x%x", m, m)) {
+						log.Tracef("Routing: chain %s lost its bypass on mark 0x%x", chain, m)
+						return false
+					}
 				}
 			}
 		}
