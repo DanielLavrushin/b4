@@ -3,15 +3,18 @@ package main
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/mtproto"
+	"golang.org/x/sys/unix"
 )
 
 const protoAbridged = 0xefefefef
@@ -64,7 +67,6 @@ func main() {
 	dc := flag.Int("dc", 4, "DC number")
 	rounds := flag.Int("rounds", 15, "how many req_pq rounds")
 	interval := flag.Duration("interval", 2*time.Second, "delay between rounds")
-	mark := flag.Uint("mark", 0, "bypass fwmark for upstream dials")
 	verbose := flag.Bool("v", false, "debug logging")
 	flag.Parse()
 
@@ -82,17 +84,23 @@ func main() {
 	mt.DCRelay = ""
 	mt.BridgeSkipNativeEdge = *skipEdge
 	qc := cfg.Queue
-	qc.Mark = uint(*mark)
 	qc.IPv6Enabled = false
 
 	start := time.Now()
 	conn, transport, err := mtproto.DialObfuscatedDC(&mt, qc, *dc, protoAbridged)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "dial DC%d failed: %v\n", *dc, err)
+		if errors.Is(err, unix.EPERM) || strings.Contains(err.Error(), "operation not permitted") {
+			fmt.Fprintf(os.Stderr, "setting SO_MARK 0x%x needs CAP_NET_ADMIN; run this as root\n", config.SelfDialMark)
+		}
 		os.Exit(1)
 	}
 	defer conn.Close()
-	fmt.Printf("dialed DC%d via %s in %v\n", *dc, transport, time.Since(start).Round(time.Millisecond))
+	// The mark is not selectable: every upstream dial b4 makes carries
+	// config.SelfDialMark. Print it so a run of this tool says which mark the
+	// measurement was taken under - varying it needs a plain dialer, not this.
+	fmt.Printf("dialed DC%d via %s in %v (SO_MARK 0x%x)\n",
+		*dc, transport, time.Since(start).Round(time.Millisecond), config.SelfDialMark)
 
 	ok, fail := 0, 0
 	for i := 1; i <= *rounds; i++ {
