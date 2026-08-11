@@ -382,7 +382,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	addProxyInputAccept(be, st.mark)
 
 	if st.quicReject {
-		if err := routeEnsureQUICReject(be, cfg, st, gate, sources, queueMark); err != nil {
+		if err := routeEnsureQUICReject(be, cfg, st, gate, sources); err != nil {
 			return err
 		}
 		log.Infof("Routing [%s]: set '%s' refuses QUIC (UDP/%d) to matched addresses so clients fall back to TCP through the upstream; enable 'Route UDP through upstream' if the proxy supports UDP ASSOCIATE",
@@ -395,7 +395,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 
 const quicRejectPort = 443
 
-func routeEnsureQUICReject(be routeBackend, cfg *config.Config, st routeState, gate routeDeviceGate, sources []string, queueMark uint32) error {
+func routeEnsureQUICReject(be routeBackend, cfg *config.Config, st routeState, gate routeDeviceGate, sources []string) error {
 	switch be.name() {
 	case backendNFTables:
 		if err := ensureBlockBaseNft(); err != nil {
@@ -419,7 +419,9 @@ func routeEnsureQUICReject(be routeBackend, cfg *config.Config, st routeState, g
 		if err := ensureBlockChainIpt(st.chainQUIC, legacy); err != nil {
 			return err
 		}
-		addQUICBypassRuleIpt(st.chainQUIC, queueMark, legacy)
+		for _, m := range quicBypassMarks(cfg) {
+			addQUICBypassRuleIpt(st.chainQUIC, m, legacy)
+		}
 		if cfg.Queue.IPv4Enabled {
 			addQUICRejectRuleIpt(false, st.chainQUIC, st.setV4, sources, legacy)
 		}
@@ -475,6 +477,13 @@ func addQUICRejectRuleNft(chain string, v6 bool, setName string, sources []strin
 			emit(sn, src)
 		}
 	}
+}
+
+// quicBypassMarks must stay equal to routeBypassMarks: the QUIC chain sits in
+// the filter table and so has its own emitter, and the monitor checks it against
+// the same list every other diverting chain is checked against.
+func quicBypassMarks(cfg *config.Config) []uint32 {
+	return routeBypassMarks(cfg)
 }
 
 func addQUICBypassRuleIpt(chain string, mark uint32, legacy bool) {

@@ -174,3 +174,38 @@ func TestRouteBypassMarks_Distinct(t *testing.T) {
 		t.Errorf("both bypass marks are 0x%x", marks[0])
 	}
 }
+
+// The QUIC-reject chain lives in the filter table, so it has its own emitter
+// instead of the shared addBypassRule. That made it the one chain where the two
+// backends could drift apart: the checker requires every mark in
+// routeBypassMarks, and emitting only one of them turns the monitor into a
+// permanent resync loop on any proxy set with UDP routing off.
+func TestQUICChainBypassCoversEveryCheckedMark(t *testing.T) {
+	cfg := &config.Config{}
+	st := routeState{mode: config.RoutingModeProxy, chainPre: "pre", chainQUIC: "quic", quicReject: true}
+
+	var quic *routeChainRef
+	for _, c := range routeStateChains(st) {
+		if c.chain == "quic" {
+			ref := c
+			quic = &ref
+		}
+	}
+	if quic == nil {
+		t.Fatal("the QUIC chain must be among the chains the monitor checks")
+	}
+	if !quic.wantBypass {
+		t.Fatal("the QUIC chain is checked for bypass rules, so both backends must emit them")
+	}
+
+	emitted := quicBypassMarks(cfg)
+	checked := routeBypassMarks(cfg)
+	if len(emitted) != len(checked) {
+		t.Fatalf("QUIC chain emits %d bypass marks, the monitor requires %d", len(emitted), len(checked))
+	}
+	for i := range checked {
+		if emitted[i] != checked[i] {
+			t.Errorf("mark %d: emitted 0x%x, checked 0x%x", i, emitted[i], checked[i])
+		}
+	}
+}
