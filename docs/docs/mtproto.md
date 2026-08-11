@@ -48,7 +48,98 @@ Setup, in short:
 
 Make sure `cloudflare.com`, `cloudflare.dev`, and `workers.dev` are reachable (not blocked) on your network.
 
-The worker script and the full step-by-step are maintained by tg-ws-proxy: [CfWorker.md](https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfWorker.md). B4 dials the worker at `/apiws`, matching that script.
+The full step-by-step, with screenshots, is maintained by tg-ws-proxy: [CfWorker.md](https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfWorker.md). Use the script below rather than the one on that page: it is the same relay with one addition, the `port` parameter. Telegram clients reach a data center on port 80 as well as 443, and a script that opens 443 whatever it was asked for hands those sessions to an endpoint that does not speak their transport, which reads as a connection that establishes and then answers nothing.
+
+```javascript
+import { connect } from "cloudflare:sockets";
+
+function toBytes(data) {
+  if (data instanceof ArrayBuffer) {
+    return new Uint8Array(data);
+  }
+  if (typeof data === "string") {
+    return new TextEncoder().encode(data);
+  }
+  if (data && typeof data.arrayBuffer === "function") {
+    return data.arrayBuffer().then((ab) => new Uint8Array(ab));
+  }
+  return new Uint8Array();
+}
+
+export default {
+  async fetch(request) {
+    if ((request.headers.get("Upgrade") || "").toLowerCase() !== "websocket") {
+      return new Response("Expected websocket", { status: 426 });
+    }
+
+    const url = new URL(request.url);
+    if (url.pathname !== "/apiws") {
+      return new Response("Not found", { status: 404 });
+    }
+
+    const dst = url.searchParams.get("dst");
+    const port = Number(url.searchParams.get("port")) || 443;
+    const pair = new WebSocketPair();
+    const client = pair[0];
+    const server = pair[1];
+    server.accept();
+
+    const socket = connect({ hostname: dst, port });
+    const tcpReader = socket.readable.getReader();
+    const tcpWriter = socket.writable.getWriter();
+
+    server.addEventListener("message", async (event) => {
+      try {
+        await tcpWriter.write(await toBytes(event.data));
+      } catch {
+        try {
+          server.close(1011, "tcp write failed");
+        } catch {}
+      }
+    });
+
+    server.addEventListener("close", async () => {
+      try {
+        await tcpWriter.close();
+      } catch {}
+      try {
+        socket.close();
+      } catch {}
+    });
+
+    (async () => {
+      try {
+        while (true) {
+          const { value, done } = await tcpReader.read();
+          if (done) {
+            break;
+          }
+          if (value) {
+            server.send(value);
+          }
+        }
+      } catch {
+      } finally {
+        try {
+          server.close();
+        } catch {}
+        try {
+          tcpReader.releaseLock();
+        } catch {}
+        try {
+          socket.close();
+        } catch {}
+      }
+    })();
+
+    return new Response(null, { status: 101, webSocket: client });
+  },
+};
+```
+
+:::warning
+A Worker is a fallback, not the main road. Measured against a free-tier Worker from a censored network, a single WebSocket carried some 13 to 17 KB before it stopped forwarding and held the connection open in silence, while Telegram's own WebSocket edge carried a megabyte over the same link. B4 notices a Worker that goes quiet mid-session and ranks it below the other routes for ten minutes, but a data center with no native edge (1, 3 and 5) has nowhere else to go, which is why the direct route matters there.
+:::
 
 ### CF proxy fallback
 

@@ -48,7 +48,98 @@ Settings → **MTProto Proxy** → **Telegram upstream**. Определяет, 
 
 Убедитесь, что `cloudflare.com`, `cloudflare.dev` и `workers.dev` доступны (не заблокированы) в вашей сети.
 
-Скрипт воркера и подробная пошаговая инструкция поддерживаются проектом tg-ws-proxy: [CfWorker.md](https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfWorker.md). B4 обращается к воркеру по пути `/apiws`, как и этот скрипт.
+Подробная пошаговая инструкция со скриншотами поддерживается проектом tg-ws-proxy: [CfWorker.md](https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfWorker.md). Берите скрипт ниже, а не тот, что на этой странице: это тот же релей с одним дополнением - параметром `port`. Клиенты Telegram ходят в дата-центр не только на 443, но и на 80, а скрипт, который в любом случае открывает 443, отдаёт такие сессии узлу, не понимающему их транспорт, и выглядит это как соединение, которое устанавливается и ни на что не отвечает.
+
+```javascript
+import { connect } from "cloudflare:sockets";
+
+function toBytes(data) {
+  if (data instanceof ArrayBuffer) {
+    return new Uint8Array(data);
+  }
+  if (typeof data === "string") {
+    return new TextEncoder().encode(data);
+  }
+  if (data && typeof data.arrayBuffer === "function") {
+    return data.arrayBuffer().then((ab) => new Uint8Array(ab));
+  }
+  return new Uint8Array();
+}
+
+export default {
+  async fetch(request) {
+    if ((request.headers.get("Upgrade") || "").toLowerCase() !== "websocket") {
+      return new Response("Expected websocket", { status: 426 });
+    }
+
+    const url = new URL(request.url);
+    if (url.pathname !== "/apiws") {
+      return new Response("Not found", { status: 404 });
+    }
+
+    const dst = url.searchParams.get("dst");
+    const port = Number(url.searchParams.get("port")) || 443;
+    const pair = new WebSocketPair();
+    const client = pair[0];
+    const server = pair[1];
+    server.accept();
+
+    const socket = connect({ hostname: dst, port });
+    const tcpReader = socket.readable.getReader();
+    const tcpWriter = socket.writable.getWriter();
+
+    server.addEventListener("message", async (event) => {
+      try {
+        await tcpWriter.write(await toBytes(event.data));
+      } catch {
+        try {
+          server.close(1011, "tcp write failed");
+        } catch {}
+      }
+    });
+
+    server.addEventListener("close", async () => {
+      try {
+        await tcpWriter.close();
+      } catch {}
+      try {
+        socket.close();
+      } catch {}
+    });
+
+    (async () => {
+      try {
+        while (true) {
+          const { value, done } = await tcpReader.read();
+          if (done) {
+            break;
+          }
+          if (value) {
+            server.send(value);
+          }
+        }
+      } catch {
+      } finally {
+        try {
+          server.close();
+        } catch {}
+        try {
+          tcpReader.releaseLock();
+        } catch {}
+        try {
+          socket.close();
+        } catch {}
+      }
+    })();
+
+    return new Response(null, { status: 101, webSocket: client });
+  },
+};
+```
+
+:::warning
+Worker - это резерв, а не основная дорога. Замерено на бесплатном Worker из цензурируемой сети: один WebSocket переносил порядка 13-17 КБ, после чего переставал передавать данные и держал соединение открытым в тишине, тогда как родной WebSocket-узел Telegram по тому же каналу переносил мегабайт. B4 замечает замолчавший посреди сессии Worker и на десять минут ставит его ниже остальных маршрутов, но дата-центру без родного узла (1, 3 и 5) деваться некуда - поэтому там и важен прямой маршрут.
+:::
 
 ### Резерв через CF-прокси
 

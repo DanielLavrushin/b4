@@ -87,9 +87,7 @@ func (b *TransparentBridge) UpdateConfig(newCfg *config.Config) {
 	oldPool.close()
 }
 
-// getPool returns the Worker pool, or nil when no Worker is configured. The
-// bridge forces BridgeSkipNativeEdge, so Telegram's own WS edge is never dialled
-// here and the native wsPool would have nothing to serve.
+// getPool returns the Worker pool, or nil when no Worker is configured.
 func (b *TransparentBridge) getPool() *cfWorkerPool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -97,7 +95,7 @@ func (b *TransparentBridge) getPool() *cfWorkerPool {
 		cfg := b.cfg.Load()
 		mt := cfg.System.MTProto
 		if len(workerDomains(&mt)) > 0 {
-			b.pool = newCFWorkerPool(cfg.Queue.Mark)
+			b.pool = newCFWorkerPool(selfDialMark())
 		}
 		b.poolInit = true
 	}
@@ -181,9 +179,9 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 	mtCfg := cfg.System.MTProto
 	mtCfg.UpstreamMode = "auto"
 	mtCfg.DCRelay = ""
-	mtCfg.BridgeSkipNativeEdge = true
 
-	dcConn, info, err := dialObfuscatedDC(&mtCfg, cfg.Queue, dc, res.ProtoTag, &dialPools{worker: b.getPool()}, id)
+	target := dialTarget{ip: origIP.String(), port: origPort}
+	dcConn, info, err := dialObfuscatedDC(&mtCfg, cfg.Queue, dc, res.ProtoTag, &dialPools{worker: b.getPool()}, id, target)
 	if err != nil {
 		if shouldLogDialError(dc) {
 			log.Errorf("%s bridge dial DC %d failed: %v", tag, dc, err)
@@ -198,8 +196,19 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 	log.Infof("%s bridge relay %s:%d -> DC%d via %s [dc-from=%s]", tag, origIP, origPort, dc, info.transport, dcSrc)
 
 	splitter := newSplitterFor(dcConn, info, res.ProtoTag)
-	relayConns(res.Conn, dcConn, splitter, label, &b.bufPool, mtprotoIdleTimeout(cfg), nil)
+	relayConns(res.Conn, dcConn, splitter, label, &b.bufPool, mtprotoIdleTimeout(cfg), nil, stallReporter(info))
 	return true, nil
+}
+
+// stallReporter marks the Worker that carried a relay as unhealthy when that
+// relay ends with the upstream mute. Only a Worker is tracked: Telegram's own
+// edge and a direct connection both fail by closing, which the relay already
+// sees, and a Worker is the one route that goes quiet without closing.
+func stallReporter(info dialInfo) func() {
+	if !info.isWorker || info.worker == "" {
+		return nil
+	}
+	return func() { workerRecordStall(info.worker) }
 }
 
 func (b *TransparentBridge) FailOpenViaWorker(client net.Conn, origIP net.IP, origPort int) bool {
@@ -219,15 +228,19 @@ func (b *TransparentBridge) FailOpenViaWorker(client net.Conn, origIP net.IP, or
 		dc = m
 	}
 	for _, wd := range domains {
+		if workerInCooldown(wd) && len(domains) > 1 {
+			continue
+		}
 		path := fmt.Sprintf("/apiws?dst=%s&dc=%d&port=%d", dst, dc, origPort)
-		wc, derr := dialWS(wd, wd, path, wsDialTimeout, cfg.Queue.Mark)
+		wc, derr := dialWS(wd, wd, path, wsDialTimeout, selfDialMark())
 		if derr != nil {
 			log.Debugf("%s failopen worker dial %s for %s:%d failed: %v", tag, wd, dst, origPort, derr)
 			continue
 		}
 		log.Infof("%s failopen relay %s:%d via wsworker://%s", tag, dst, origPort, wd)
 		label := fmt.Sprintf("%s %s<->%s:%d(failopen)", tag, client.RemoteAddr(), dst, origPort)
-		relayConns(client, wc, nil, label, &b.bufPool, mtprotoIdleTimeout(cfg), nil)
+		relayConns(client, wc, nil, label, &b.bufPool, mtprotoIdleTimeout(cfg), nil,
+			stallReporter(dialInfo{isWorker: true, worker: wd}))
 		return true
 	}
 	return false

@@ -164,7 +164,7 @@ func TestWorkerProbe(t *testing.T) {
 
 		for i := 0; i < 3; i++ {
 			start := time.Now()
-			conn, info, err := dialObfuscatedDC(cfg, config.QueueConfig{}, 2, connectionTagAbridged, pools, "probe")
+			conn, info, err := dialObfuscatedDC(cfg, config.QueueConfig{}, 2, connectionTagAbridged, pools, "probe", dialTarget{})
 			if err != nil {
 				t.Fatalf("dial %d: %v", i, err)
 			}

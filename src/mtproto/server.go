@@ -432,11 +432,11 @@ func (s *Server) startLocked() error {
 		pool := newWSPool(MTProtoUpstream{
 			WSEndpointHost: mtCfg.WSEndpointHost,
 			WSCustomDomain: mtCfg.WSCustomDomain,
-		}, cfg.Queue.Mark, wsPoolDefaultSize)
+		}, selfDialMark(), wsPoolDefaultSize)
 		pool.warmup([]int{2, 4})
 		s.wsPool.Store(pool)
 		if len(workerDomains(mtCfg)) > 0 {
-			s.workerPool.Store(newCFWorkerPool(cfg.Queue.Mark))
+			s.workerPool.Store(newCFWorkerPool(selfDialMark()))
 		} else {
 			s.workerPool.Store(nil)
 		}
@@ -632,7 +632,7 @@ func (s *Server) handleConn(raw net.Conn) {
 		log.Debugf("%s proxy fake-TLS failed from %s: %v", tag, clientAddr, err)
 		var vErr *FakeTLSVerifyError
 		if errors.As(err, &vErr) && cfg.System.MTProto.FakeSNI != "" {
-			proxyToMaskingDomain(raw, vErr.Initial, cfg.System.MTProto.FakeSNI, cfg.Queue.Mark)
+			proxyToMaskingDomain(raw, vErr.Initial, cfg.System.MTProto.FakeSNI, selfDialMark())
 		}
 		return
 	}
@@ -654,7 +654,7 @@ func (s *Server) handleConn(raw net.Conn) {
 	log.Debugf("%s proxy client [%s] from %s wants DC %d proto=0x%08x", tag, user, clientAddr, result.DC, result.ProtoTag)
 	_ = raw.SetDeadline(time.Time{})
 
-	dcConn, dial, err := dialObfuscatedDC(&cfg.System.MTProto, cfg.Queue, result.DC, result.ProtoTag, &dialPools{ws: s.wsPool.Load(), worker: s.workerPool.Load()}, id)
+	dcConn, dial, err := dialObfuscatedDC(&cfg.System.MTProto, cfg.Queue, result.DC, result.ProtoTag, &dialPools{ws: s.wsPool.Load(), worker: s.workerPool.Load()}, id, dialTarget{})
 	if err != nil {
 		if shouldLogDialError(result.DC) {
 			log.Errorf("%s proxy dial DC %d failed: %v", tag, result.DC, err)
@@ -686,10 +686,20 @@ func (s *Server) handleConn(raw net.Conn) {
 }
 
 func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, lastActive *atomic.Int64, label string) (up, down int64) {
-	return relayConns(client, dc, splitter, label, &s.bufPool, mtprotoIdleTimeout(s.cfg.Load()), lastActive)
+	return relayConns(client, dc, splitter, label, &s.bufPool, mtprotoIdleTimeout(s.cfg.Load()), lastActive, nil)
 }
 
-func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string, bufPool *sync.Pool, idle time.Duration, lastActive *atomic.Int64) (int64, int64) {
+// A relay whose upstream has gone mute while the client is still asking is not
+// idle - it is dead, and nothing in the connection says so: the WebSocket stays
+// open, so the reader blocks and the client is left to wait out its own receive
+// timeout. Report it so the caller can rank that route down, and cut the relay
+// rather than hold it for the full idle timeout.
+const (
+	relayStallSilence = 3 * time.Second
+	relayStallClose   = 8 * time.Second
+)
+
+func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string, bufPool *sync.Pool, idle time.Duration, lastActive *atomic.Int64, onStall func()) (int64, int64) {
 	type relayEnd struct {
 		dir string
 		err error
@@ -697,6 +707,15 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 	endCh := make(chan relayEnd, 2)
 	start := time.Now()
 	var upBytes, downBytes atomic.Int64
+	var lastDown atomic.Int64
+	var upSinceDown atomic.Int64
+	var stallReported atomic.Bool
+	lastDown.Store(start.UnixNano())
+	reportStall := func() {
+		if onStall != nil && !stallReported.Swap(true) {
+			onStall()
+		}
+	}
 	if lastActive == nil {
 		lastActive = new(atomic.Int64)
 	}
@@ -708,11 +727,18 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 		buf := *bufPtr
 		var total int64
 		var err error
+		up := dir == "client->DC"
 		for {
 			var n int
 			n, err = src.Read(buf)
 			if n > 0 {
 				lastActive.Store(time.Now().UnixNano())
+				if up {
+					upSinceDown.Add(int64(n))
+				} else {
+					lastDown.Store(time.Now().UnixNano())
+					upSinceDown.Store(0)
+				}
 				if _, werr := dst.Write(buf[:n]); werr != nil {
 					err = werr
 				} else {
@@ -739,6 +765,7 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 			n, err = src.Read(buf)
 			if n > 0 {
 				lastActive.Store(time.Now().UnixNano())
+				upSinceDown.Add(int64(n))
 				for _, pkt := range splitter.split(buf[:n]) {
 					if _, werr := dst.Write(pkt); werr != nil {
 						err = werr
@@ -767,6 +794,31 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 	go cp(client, dc, "DC->client", &downBytes)
 
 	done := make(chan struct{})
+	if onStall != nil {
+		go func() {
+			t := time.NewTicker(time.Second)
+			defer t.Stop()
+			for {
+				select {
+				case <-done:
+					return
+				case <-t.C:
+					if upSinceDown.Load() == 0 {
+						continue
+					}
+					silent := time.Since(time.Unix(0, lastDown.Load()))
+					if silent >= relayStallClose {
+						log.Infof("%s upstream silent for %s with %d B awaiting an answer, cutting the relay",
+							label, silent.Round(time.Second), upSinceDown.Load())
+						reportStall()
+						_ = client.Close()
+						_ = dc.Close()
+						return
+					}
+				}
+			}
+		}()
+	}
 	if idle > 0 {
 		go func() {
 			interval := idle / 4
@@ -801,6 +853,9 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 	close(done)
 
 	up, down := upBytes.Load(), downBytes.Load()
+	if upSinceDown.Load() > 0 && time.Since(time.Unix(0, lastDown.Load())) >= relayStallSilence {
+		reportStall()
+	}
 	stale := ""
 	if first.dir == "DC->client" && down == 0 {
 		stale = " stale-upstream?"

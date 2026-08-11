@@ -163,12 +163,14 @@ func effectiveMark(set *config.SetConfig) uint32 {
 }
 
 // proxyBypassMark returns the SO_MARK value the listener uses on its outbound
-// SOCKS5 dial so that those packets bypass b4's proxy-mode OUTPUT mark rule and
-// don't loop back into TPROXY. It mirrors routeQueueBypassMark in the tables
-// package, kept in sync via the cfg.Queue.Mark setting.
+// SOCKS5 dial and on a fail-open direct dial, so those packets bypass b4's
+// proxy-mode OUTPUT mark rule and don't loop back into TPROXY. It mirrors
+// tables.SelfDialMark, which the routing chains return on and nothing else does
+// - the queue mark would have carried them past b4's own DPI bypass as well,
+// which is the one place a fail-open dial needs it most.
 func proxyBypassMark(cfg *config.Config) uint32 {
-	if cfg == nil || cfg.Queue.Mark == 0 {
-		return 0x8000
+	if cfg == nil {
+		return 0x40000
 	}
-	return uint32(cfg.Queue.Mark)
+	return cfg.SelfDialMark()
 }

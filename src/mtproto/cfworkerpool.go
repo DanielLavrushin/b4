@@ -26,6 +26,7 @@ const (
 type cfWorkerKey struct {
 	domain string
 	dc     int
+	path   string
 }
 
 type cfWorkerEntry struct {
@@ -50,15 +51,17 @@ func newCFWorkerPool(mark uint) *cfWorkerPool {
 	}
 }
 
-// planWorkerKey keys on the absolute DC because the Worker URL carries the
-// destination IP and DC number, and media (negative) DCs resolve to the same
-// pair - a conn warmed for DC 2 serves DC -2 unchanged.
+// planWorkerKey keys on the Worker URL as well as the domain. The URL carries
+// the destination address the Worker will open its TCP session to, and the
+// bridge takes that from the address the client was dialling, so two clients on
+// the same DC can be headed for different addresses - handing either of them a
+// conn warmed for the other lands the session on the wrong endpoint.
 func planWorkerKey(p transportPlan) cfWorkerKey {
 	absDC := p.dc
 	if absDC < 0 {
 		absDC = -absDC
 	}
-	return cfWorkerKey{domain: p.sni, dc: absDC}
+	return cfWorkerKey{domain: p.sni, dc: absDC, path: p.wsPath}
 }
 
 func (p *cfWorkerPool) get(pl transportPlan) *wsConn {

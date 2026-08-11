@@ -16,6 +16,10 @@ import (
 
 const hostRouteCTMark = uint32(0x40000000)
 
+// SelfDialMark is carried by connections b4 opens on its own behalf - the
+// MTProto upstream, an upstream SOCKS5, a fail-open direct dial.
+const SelfDialMark = config.SelfDialMark
+
 type routeState struct {
 	mode        string
 	mark        uint32
@@ -923,10 +927,9 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 		}
 	}
 
-	queueMark := routeQueueBypassMark(cfg)
 	gate := routeSetDeviceGate(cfg, set)
-	be.addBypassRule(st.chainPre, queueMark)
-	be.addBypassRule(st.chainOut, queueMark)
+	routeSelfDialBypass(be, cfg, st.chainPre)
+	routeSelfDialBypass(be, cfg, st.chainOut)
 	be.addBypassRule(st.chainPre, st.mark)
 	be.addBypassRule(st.chainOut, st.mark)
 
@@ -1228,6 +1231,7 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 	usedTables := map[int]struct{}{}
 	if cfg != nil {
 		usedMarks[routeQueueBypassMark(cfg)] = struct{}{}
+		usedMarks[SelfDialMark] = struct{}{}
 	}
 	for _, st := range routeRuleCache {
 		if st.mark > 0 {
@@ -1362,4 +1366,21 @@ func routeQueueBypassMark(cfg *config.Config) uint32 {
 		return 0x8000
 	}
 	return uint32(cfg.Queue.Mark)
+}
+
+// routeSelfDialBypass emits the two RETURNs a routing chain needs on b4's own
+// traffic: the queue mark, and the self-dial mark.
+//
+// They cannot be one value. The queue mark is also what the packet engine puts
+// on everything it reinjects, so the mangle chains accept it to keep reinjected
+// packets from being queued again - which means a connection b4 opens itself,
+// marked to keep it out of its own TPROXY, skips b4's own DPI bypass as well and
+// leaves the machine naked at a censored destination. Proven against a Telegram
+// data center from a censored network: mark 0x0 connected in 114 ms, mark 0x8000
+// timed out. The self-dial mark is returned by the routing chains and by nothing
+// else, so those connections stay out of the TPROXY loop and still get
+// fragmentation, fake packets and desync applied.
+func routeSelfDialBypass(be routeBackend, cfg *config.Config, chain string) {
+	be.addBypassRule(chain, routeQueueBypassMark(cfg))
+	be.addBypassRule(chain, SelfDialMark)
 }
