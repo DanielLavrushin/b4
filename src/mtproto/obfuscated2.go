@@ -11,6 +11,7 @@ import (
 	"io"
 	mrand "math/rand"
 	"net"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -210,6 +211,22 @@ type transportPlan struct {
 	native   bool
 }
 
+// selfDialMark is what b4 puts on every connection it opens to Telegram. It is
+// deliberately not the queue mark: the mangle chains accept that one to keep the
+// engine's own reinjected packets from being queued again, so an upstream dial
+// carrying it went out with none of b4's DPI bypass applied - measured against a
+// data center from a censored network, 114 ms unmarked against a timeout marked.
+func selfDialMark() uint {
+	return uint(config.SelfDialMark)
+}
+
+func workerNameOf(p transportPlan) string {
+	if p.isWorker {
+		return p.sni
+	}
+	return ""
+}
+
 func (p transportPlan) describe() string {
 	switch p.kind {
 	case transportWS:
@@ -225,7 +242,30 @@ func (p transportPlan) describe() string {
 	}
 }
 
-func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc int) ([]transportPlan, error) {
+// dialTarget is the address a transparently-intercepted client was actually
+// dialling. The proxy has no such address and leaves it zero; the bridge does,
+// and it beats every guess derived from the DC number - the canonical table has
+// one address per DC while Telegram hands clients many, and a media address
+// resolves to a DC whose canonical address is not the media one.
+type dialTarget struct {
+	ip   string
+	port int
+}
+
+func (t dialTarget) valid() bool {
+	return t.ip != "" && t.port > 0 && t.port <= 65535
+}
+
+func (t dialTarget) addr() string {
+	return net.JoinHostPort(t.ip, strconv.Itoa(t.port))
+}
+
+func (t dialTarget) isV4() bool {
+	ip := net.ParseIP(t.ip)
+	return ip != nil && ip.To4() != nil
+}
+
+func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc int, target dialTarget) ([]transportPlan, error) {
 	absDC := dc
 	if absDC < 0 {
 		absDC = -absDC
@@ -240,11 +280,20 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 	relayFirst := mode == "auto" && hasRelay
 
 	var plans []transportPlan
+	var deferred []transportPlan
 
 	appendTCP := func(ignoreCooldown bool) {
-		addrs, err := ResolveDCAll(dc, queueCfg.IPv6Enabled, strings.TrimSpace(cfg.DCRelay))
-		if err != nil {
-			return
+		var addrs []string
+		if target.valid() && !hasRelay {
+			addrs = append(addrs, target.addr())
+		}
+		resolved, err := ResolveDCAll(dc, queueCfg.IPv6Enabled, strings.TrimSpace(cfg.DCRelay))
+		if err == nil {
+			for _, a := range resolved {
+				if a != target.addr() {
+					addrs = append(addrs, a)
+				}
+			}
 		}
 		for _, a := range addrs {
 			if !ignoreCooldown && tcpAddrInCooldown(a) {
@@ -278,16 +327,25 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 				}
 			}
 		}
-		if dst := workerDstIP(absDC); dst != "" {
+		dst, port := workerDstIP(absDC), 443
+		if target.valid() && target.isV4() {
+			dst, port = target.ip, target.port
+		}
+		if dst != "" {
 			for _, wd := range shuffledWorkerDomains(cfg) {
-				plans = append(plans, transportPlan{
+				p := transportPlan{
 					kind:     transportWS,
 					dc:       dc,
 					sni:      wd,
 					dialHost: wd,
-					wsPath:   fmt.Sprintf("/apiws?dst=%s&dc=%d", dst, absDC),
+					wsPath:   fmt.Sprintf("/apiws?dst=%s&dc=%d&port=%d", dst, absDC, port),
 					isWorker: true,
-				})
+				}
+				if workerInCooldown(wd) {
+					deferred = append(deferred, p)
+					continue
+				}
+				plans = append(plans, p)
 			}
 		}
 		kwsDC := kwsEdgeDC(absDC)
@@ -320,9 +378,14 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 	// instant reconnect, so one cooling DC address turns into a dial storm that
 	// never lets the cooldown lapse. Re-dialling the cooling address is slower
 	// but bounded.
-	if len(plans) == 0 && mode != "ws" {
+	if len(plans) == 0 && len(deferred) == 0 && mode != "ws" {
 		appendTCP(true)
 	}
+
+	// A Worker that stopped relaying mid-session is still a route, just the worst
+	// one, so it goes behind everything else rather than out of the list - for a
+	// DC with no native edge it can be the only route there is.
+	plans = append(plans, deferred...)
 
 	if len(plans) == 0 {
 		return nil, fmt.Errorf("no transports available for DC %d (mode=%s)", absDC, mode)
@@ -336,6 +399,7 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 type dialInfo struct {
 	transport string
 	isWorker  bool
+	worker    string
 }
 
 // dialPools bundles the warm-connection pools a dial may draw from. Both the
@@ -360,11 +424,11 @@ func (p *dialPools) workerPool() *cfWorkerPool {
 }
 
 func DialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc int, protoTag uint32) (*ObfuscatedConn, string, error) {
-	conn, info, err := dialObfuscatedDC(cfg, queueCfg, dc, protoTag, nil, "")
+	conn, info, err := dialObfuscatedDC(cfg, queueCfg, dc, protoTag, nil, "", dialTarget{})
 	return conn, info.transport, err
 }
 
-func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc int, protoTag uint32, pools *dialPools, logID string) (*ObfuscatedConn, dialInfo, error) {
+func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc int, protoTag uint32, pools *dialPools, logID string, target dialTarget) (*ObfuscatedConn, dialInfo, error) {
 	tag := tg(logID)
 	if pool := pools.wsPool(); pool != nil && !wsIsBlacklisted(dc) {
 		if raw := pool.get(dc); raw != nil {
@@ -383,7 +447,7 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 		}
 	}
 
-	plans, err := planTransports(cfg, queueCfg, dc)
+	plans, err := planTransports(cfg, queueCfg, dc, target)
 	if err != nil {
 		return nil, dialInfo{}, err
 	}
@@ -401,7 +465,7 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 				if oerr == nil && raw.liveNow() {
 					log.Infof("%s DC %d connected via %s (pooled)", tag, dc, p.describe())
 					workerPool.warm(p)
-					return obf, dialInfo{transport: p.describe(), isWorker: true}, nil
+					return obf, dialInfo{transport: p.describe(), isWorker: true, worker: p.sni}, nil
 				}
 				if oerr != nil {
 					log.Debugf("%s DC %d worker pool conn obf init failed: %v", tag, dc, oerr)
@@ -424,9 +488,9 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 			if p.native && nativeCooling {
 				timeout = wsDialTimeoutCooldown
 			}
-			conn, derr = dialOneWS(p, queueCfg.Mark, timeout)
+			conn, derr = dialOneWS(p, selfDialMark(), timeout)
 		} else {
-			conn, derr = dialOne(p, queueCfg.Mark)
+			conn, derr = dialOne(p, selfDialMark())
 		}
 		if derr != nil {
 			attempts = append(attempts, fmt.Sprintf("%s: %s", p.describe(), shortErr(derr)))
@@ -469,7 +533,7 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 			tcpRecordSuccess(p.addr)
 		}
 		log.Infof("%s DC %d connected via %s in %dms", tag, dc, p.describe(), time.Since(start).Milliseconds())
-		return obfConn, dialInfo{transport: p.describe(), isWorker: p.isWorker}, nil
+		return obfConn, dialInfo{transport: p.describe(), isWorker: p.isWorker, worker: workerNameOf(p)}, nil
 	}
 
 	if nativeTried > 0 {
@@ -536,13 +600,13 @@ type TransportProbeResult struct {
 const probeHoldDuration = 2 * time.Second
 
 func ProbeTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc int) ([]TransportProbeResult, error) {
-	plans, err := planTransports(cfg, queueCfg, dc)
+	plans, err := planTransports(cfg, queueCfg, dc, dialTarget{})
 	if err != nil {
 		return nil, err
 	}
 	out := make([]TransportProbeResult, len(plans))
 	for i, p := range plans {
-		out[i] = probeOne(p, queueCfg.Mark, dc)
+		out[i] = probeOne(p, selfDialMark(), dc)
 	}
 	return out, nil
 }

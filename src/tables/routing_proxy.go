@@ -327,7 +327,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 
 	queueMark := routeQueueBypassMark(cfg)
 	gate := routeSetDeviceGate(cfg, set)
-	be.addBypassRule(st.chainPre, queueMark)
+	routeSelfDialBypass(be, cfg, st.chainPre)
 	routeAddBlacklistGate(be, "mangle", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
 
 	port, _ := portFromState(st)
@@ -358,7 +358,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 			return err
 		}
 		be.flushChain(st.chainOut, true)
-		be.addBypassRule(st.chainOut, queueMark)
+		routeSelfDialBypass(be, cfg, st.chainOut)
 		if cfg.Queue.IPv4Enabled {
 			addProxyDivertRuleIpt(false, st.chainPre, st.setV4, st.mark, legacy)
 			addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "tcp")
@@ -405,7 +405,7 @@ func routeEnsureQUICReject(be routeBackend, cfg *config.Config, st routeState, g
 			return err
 		}
 		be.flushChain(st.chainQUIC, true)
-		be.addBypassRule(st.chainQUIC, queueMark)
+		routeSelfDialBypass(be, cfg, st.chainQUIC)
 		if cfg.Queue.IPv4Enabled {
 			addQUICRejectRuleNft(st.chainQUIC, false, st.setV4, sources)
 		}
@@ -647,19 +647,25 @@ func insertProxyOutputJump(be routeBackend, chain string) {
 
 func ensureProxyOutputBaseRulesNft(cfg *config.Config, st routeState, queueMark uint32) {
 	out, err := run("nft", "list", "chain", "inet", routeNftTable, routeNftOutput)
-	hasBypass := false
+	present := map[uint32]bool{}
 	if err == nil {
 		for _, line := range strings.Split(out, "\n") {
-			if m, verb, ok := nftParseMarkRule(line); ok && verb == "return" && m == queueMark {
-				hasBypass = true
-				break
+			if m, verb, ok := nftParseMarkRule(line); ok && verb == "return" {
+				present[m] = true
 			}
 		}
-	}
-	if err == nil && !hasBypass {
-		runLogged("routing: insert output bypass (proxy)",
-			"nft", "insert", "rule", "inet", routeNftTable, routeNftOutput,
-			"meta", "mark", "&", fmt.Sprintf("0x%x", queueMark), "==", fmt.Sprintf("0x%x", queueMark), "return")
+		// This chain is what marks locally-originated traffic for diversion, so
+		// it needs the same pair of RETURNs the per-set chain gets: without the
+		// self-dial one, a connection b4 opens to an address inside the set is
+		// marked and looped straight back into b4's own TPROXY listener.
+		for _, m := range []uint32{queueMark, SelfDialMark} {
+			if present[m] {
+				continue
+			}
+			runLogged("routing: insert output bypass (proxy)",
+				"nft", "insert", "rule", "inet", routeNftTable, routeNftOutput,
+				"meta", "mark", "&", fmt.Sprintf("0x%x", m), "==", fmt.Sprintf("0x%x", m), "return")
+		}
 	}
 
 	deleteNftRulesContaining(routeNftOutput, "@"+st.setV4)

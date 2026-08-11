@@ -25,7 +25,7 @@ func TestPlanTransports_BlacklistSuppressesOnlyNativeEdge(t *testing.T) {
 		CFProxyEnabled: false,
 		WSCustomDomain: "example.com",
 	}
-	plans, err := planTransports(cfg, config.QueueConfig{}, 2)
+	plans, err := planTransports(cfg, config.QueueConfig{}, 2, dialTarget{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestPlanTransports_EverythingCoolingStillYieldsAPlan(t *testing.T) {
 	tcpRecordFailure(dcAddressesV4[2])
 
 	cfg := &config.MTProtoConfig{UpstreamMode: "auto"}
-	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2)
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2, dialTarget{})
 	if err != nil {
 		t.Fatalf("a fully cooling DC must still yield a retryable plan, got %v", err)
 	}
@@ -81,7 +81,7 @@ func TestPlanTransports_WorkerDialTimeoutNotShortenedByNativeCooldown(t *testing
 	}
 
 	cfg := &config.MTProtoConfig{UpstreamMode: "ws", CFWorkerDomain: "w.user.workers.dev"}
-	plans, err := planTransports(cfg, config.QueueConfig{}, 2)
+	plans, err := planTransports(cfg, config.QueueConfig{}, 2, dialTarget{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

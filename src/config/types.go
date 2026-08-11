@@ -86,6 +86,11 @@ type ApiConfig struct {
 	IPInfoToken string `json:"ipinfo_token"`
 }
 
+// SelfDialMark is the SO_MARK on every connection b4 opens itself. Bit 18 is
+// clear of the per-set marks (bits 0-14 and 17), of the queue mark's bit 15, of
+// the 0x10000 XrayUI uses and of the engine's bits 28-30.
+const SelfDialMark = uint32(0x40000)
+
 type QueueConfig struct {
 	Mode              string         `json:"mode"`
 	StartNum          int            `json:"start_num"`

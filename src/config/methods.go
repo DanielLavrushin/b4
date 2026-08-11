@@ -115,6 +115,15 @@ func (cfg *Config) ApplyLogLevel(level string) {
 	}
 }
 
+// SelfDialMark is the SO_MARK b4 puts on connections it opens itself. It is not
+// the queue mark: that one also means "already handled by the engine", so a
+// self-dial carrying it skipped b4's own DPI bypass and went out unprotected.
+// Kept in sync with tables.SelfDialMark, which is the only thing that returns on
+// it.
+func (c *Config) SelfDialMark() uint32 {
+	return SelfDialMark
+}
+
 func (c *Config) MainInjectedMark() uint {
 	if c.Queue.Mark == 0 {
 		return DefaultConfig.Queue.Mark

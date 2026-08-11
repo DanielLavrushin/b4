@@ -1277,6 +1277,7 @@ func TestDiscoveryConstants(t *testing.T) {
 
 type mockRouteBackend struct {
 	addElementsFn func(setName string, ips []string, ttlSec int)
+	bypass        map[string][]uint32
 }
 
 func (m *mockRouteBackend) name() string                                  { return "mock" }
@@ -1286,7 +1287,12 @@ func (m *mockRouteBackend) ensureIPSet(name string, v6 bool) error        { retu
 func (m *mockRouteBackend) ensureChain(chain string, isMangle bool) error { return nil }
 func (m *mockRouteBackend) flushChain(chain string, isMangle bool)        {}
 func (m *mockRouteBackend) deleteChain(chain string, isMangle bool)       {}
-func (m *mockRouteBackend) addBypassRule(chain string, mark uint32)       {}
+func (m *mockRouteBackend) addBypassRule(chain string, mark uint32) {
+	if m.bypass == nil {
+		m.bypass = map[string][]uint32{}
+	}
+	m.bypass[chain] = append(m.bypass[chain], mark)
+}
 func (m *mockRouteBackend) addMarkRule(chain string, v6 bool, setName string, mark uint32, sourceIface string, tagHostConntrack bool) {
 }
 func (m *mockRouteBackend) ensureJumpRule(baseChain, targetChain string, isMangle bool)  {}

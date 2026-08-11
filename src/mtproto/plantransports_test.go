@@ -28,7 +28,7 @@ func hasTCP(plans []transportPlan) bool {
 
 func TestPlanTransports_WSOnly_DC2(t *testing.T) {
 	cfg := &config.MTProtoConfig{UpstreamMode: "ws"}
-	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2)
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2, dialTarget{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestPlanTransports_WSOnly_DC2(t *testing.T) {
 
 func TestPlanTransports_MediaDC_ReversesOrdering(t *testing.T) {
 	cfg := &config.MTProtoConfig{UpstreamMode: "ws"}
-	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, -4)
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, -4, dialTarget{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestPlanTransports_MediaDC_ReversesOrdering(t *testing.T) {
 
 func TestPlanTransports_DC203_NoNativeEdge(t *testing.T) {
 	cfg := &config.MTProtoConfig{UpstreamMode: "auto"}
-	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 203)
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 203, dialTarget{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestPlanTransports_DC203_NoNativeEdge(t *testing.T) {
 func TestPlanTransports_DefaultConfig_DC2DialsSharedEdge(t *testing.T) {
 	cfg := config.DefaultConfig.System.MTProto
 	cfg.UpstreamMode = "ws"
-	plans, err := planTransports(&cfg, config.QueueConfig{IPv4Enabled: true}, 2)
+	plans, err := planTransports(&cfg, config.QueueConfig{IPv4Enabled: true}, 2, dialTarget{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestPlanTransports_DefaultConfig_DC2DialsSharedEdge(t *testing.T) {
 func TestPlanTransports_MediaDCs_NoNativeEdge(t *testing.T) {
 	for _, dc := range []int{1, 3, 5} {
 		cfg := &config.MTProtoConfig{UpstreamMode: "auto"}
-		plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, dc)
+		plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, dc, dialTarget{})
 		if err != nil {
 			t.Fatalf("DC %d: unexpected error: %v", dc, err)
 		}
@@ -110,7 +110,7 @@ func TestPlanTransports_MediaDCs_NoNativeEdge(t *testing.T) {
 
 func TestPlanTransports_UnknownDC_NoKwsPlans(t *testing.T) {
 	cfg := &config.MTProtoConfig{UpstreamMode: "ws"}
-	plans, _ := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 99)
+	plans, _ := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 99, dialTarget{})
 	if len(wsSNIs(plans)) != 0 {
 		t.Fatalf("unknown DC must not generate kws{N}.web.telegram.org plans (cert-spam risk)")
 	}
@@ -118,7 +118,7 @@ func TestPlanTransports_UnknownDC_NoKwsPlans(t *testing.T) {
 
 func TestPlanTransports_AutoMode_AlwaysIncludesTCPFallback(t *testing.T) {
 	cfg := &config.MTProtoConfig{UpstreamMode: "auto"}
-	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2)
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2, dialTarget{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestPlanTransports_AutoMode_AlwaysIncludesTCPFallback(t *testing.T) {
 
 func TestPlanTransports_TCPOnly(t *testing.T) {
 	cfg := &config.MTProtoConfig{UpstreamMode: "tcp"}
-	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2)
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2, dialTarget{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestPlanTransports_CustomDomain_PrependsKwsPrefix(t *testing.T) {
 		UpstreamMode:   "ws",
 		WSCustomDomain: "example.com",
 	}
-	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 4)
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 4, dialTarget{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestPlanTransports_CustomDomain_HighDCStillWorks(t *testing.T) {
 		UpstreamMode:   "ws",
 		WSCustomDomain: "example.com",
 	}
-	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 99)
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 99, dialTarget{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestPlanTransports_DCRelay_TCPMode_TargetsRelay(t *testing.T) {
 		UpstreamMode: "tcp",
 		DCRelay:      "127.0.0.1:4443",
 	}
-	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2)
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2, dialTarget{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestPlanTransports_DCRelay_AutoMode_WSPlansPlusRelayTCP(t *testing.T) {
 		UpstreamMode: "auto",
 		DCRelay:      "127.0.0.1:4443",
 	}
-	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2)
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2, dialTarget{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestPlanTransports_DCRelay_AutoMode_RelayBeforeWS(t *testing.T) {
 		UpstreamMode: "auto",
 		DCRelay:      "127.0.0.1:4443",
 	}
-	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2)
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2, dialTarget{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -248,7 +248,7 @@ func TestPlanTransports_DCRelay_DC203_CollapsesToDC2Port(t *testing.T) {
 		UpstreamMode: "tcp",
 		DCRelay:      "127.0.0.1:4443",
 	}
-	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 203)
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 203, dialTarget{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -262,7 +262,7 @@ func TestPlanTransports_DCRelay_DC203_CollapsesToDC2Port(t *testing.T) {
 
 func TestPlanTransports_DC203_DirectTCP_HasDefaultIP(t *testing.T) {
 	cfg := &config.MTProtoConfig{UpstreamMode: "tcp"}
-	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 203)
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 203, dialTarget{})
 	if err != nil {
 		t.Fatalf("DC 203 must have a default TCP address: %v", err)
 	}
@@ -276,7 +276,7 @@ func TestPlanTransports_DCRelay_IgnoredInWSMode(t *testing.T) {
 		UpstreamMode: "ws",
 		DCRelay:      "127.0.0.1:4443",
 	}
-	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2)
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 2, dialTarget{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -294,7 +294,7 @@ func TestPlanTransports_WorkerForDC2BeforeCFPool(t *testing.T) {
 		CFWorkerDomain: "my-worker-123.user.workers.dev",
 		CFProxyEnabled: true,
 	}
-	plans, err := planTransports(cfg, config.QueueConfig{}, 2)
+	plans, err := planTransports(cfg, config.QueueConfig{}, 2, dialTarget{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestPlanTransports_WorkerForDC2BeforeCFPool(t *testing.T) {
 		t.Errorf("worker (%d) should come before shared CF pool (%d)", workerIdx, cfIdx)
 	}
 	wp := plans[workerIdx]
-	if wp.wsPath != "/apiws?dst=149.154.167.51&dc=2" {
+	if wp.wsPath != "/apiws?dst=149.154.167.51&dc=2&port=443" {
 		t.Errorf("unexpected worker path %q", wp.wsPath)
 	}
 	if wp.sni != "my-worker-123.user.workers.dev" || wp.dialHost != wp.sni {
@@ -332,7 +332,7 @@ func TestPlanTransports_WorkerForDC1NoNativeEdge(t *testing.T) {
 		UpstreamMode:   "ws",
 		CFWorkerDomain: "w.user.workers.dev",
 	}
-	plans, err := planTransports(cfg, config.QueueConfig{}, 1)
+	plans, err := planTransports(cfg, config.QueueConfig{}, 1, dialTarget{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestPlanTransports_WorkerForDC1NoNativeEdge(t *testing.T) {
 	for _, p := range plans {
 		if p.isWorker {
 			foundWorker = true
-			if p.wsPath != "/apiws?dst=149.154.175.50&dc=1" {
+			if p.wsPath != "/apiws?dst=149.154.175.50&dc=1&port=443" {
 				t.Errorf("unexpected DC1 worker path %q", p.wsPath)
 			}
 		}
@@ -358,7 +358,7 @@ func TestPlanTransports_MultipleWorkerDomains(t *testing.T) {
 		UpstreamMode:   "ws",
 		CFWorkerDomain: " a.workers.dev , b.workers.dev ",
 	}
-	plans, err := planTransports(cfg, config.QueueConfig{}, 2)
+	plans, err := planTransports(cfg, config.QueueConfig{}, 2, dialTarget{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -375,7 +375,7 @@ func TestPlanTransports_MultipleWorkerDomains(t *testing.T) {
 
 func TestPlanTransports_NoWorkerWhenUnset(t *testing.T) {
 	cfg := &config.MTProtoConfig{UpstreamMode: "ws"}
-	plans, err := planTransports(cfg, config.QueueConfig{}, 2)
+	plans, err := planTransports(cfg, config.QueueConfig{}, 2, dialTarget{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -383,5 +383,105 @@ func TestPlanTransports_NoWorkerWhenUnset(t *testing.T) {
 		if p.isWorker {
 			t.Error("did not expect worker plans when CFWorkerDomain is empty")
 		}
+	}
+}
+
+func TestPlanTransports_BridgeTargetBeatsCanonicalAddress(t *testing.T) {
+	cfg := &config.MTProtoConfig{
+		UpstreamMode:   "auto",
+		CFWorkerDomain: "w.user.workers.dev",
+	}
+	target := dialTarget{ip: "149.154.167.92", port: 80}
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 4, target)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var worker, firstTCP *transportPlan
+	for i := range plans {
+		if plans[i].isWorker && worker == nil {
+			worker = &plans[i]
+		}
+		if plans[i].kind == transportTCP && firstTCP == nil {
+			firstTCP = &plans[i]
+		}
+	}
+	if worker == nil {
+		t.Fatal("no worker plan")
+	}
+	if want := "/apiws?dst=149.154.167.92&dc=4&port=80"; worker.wsPath != want {
+		t.Errorf("worker must carry the address the client dialled: got %q want %q", worker.wsPath, want)
+	}
+	if firstTCP == nil {
+		t.Fatal("no TCP plan")
+	}
+	if firstTCP.addr != "149.154.167.92:80" {
+		t.Errorf("first TCP plan must be the address the client dialled, got %q", firstTCP.addr)
+	}
+}
+
+func TestPlanTransports_ProxyKeepsCanonicalAddress(t *testing.T) {
+	cfg := &config.MTProtoConfig{
+		UpstreamMode:   "ws",
+		CFWorkerDomain: "w.user.workers.dev",
+	}
+	plans, err := planTransports(cfg, config.QueueConfig{}, 4, dialTarget{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, p := range plans {
+		if p.isWorker && !strings.Contains(p.wsPath, "dst=149.154.167.91") {
+			t.Errorf("proxy has no client destination and must use the canonical address, got %q", p.wsPath)
+		}
+	}
+}
+
+func TestPlanTransports_StalledWorkerRanksLast(t *testing.T) {
+	workerResetStall()
+	t.Cleanup(workerResetStall)
+
+	cfg := &config.MTProtoConfig{
+		UpstreamMode:   "auto",
+		CFWorkerDomain: "stalled.user.workers.dev",
+	}
+	before, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 1, dialTarget{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !before[0].isWorker {
+		t.Fatalf("a healthy worker should lead, got %q", before[0].describe())
+	}
+
+	workerRecordStall("stalled.user.workers.dev")
+	after, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 1, dialTarget{})
+	if err != nil {
+		t.Fatalf("unexpected error after stall: %v", err)
+	}
+	if len(after) < 2 {
+		t.Fatalf("a stalled worker must be ranked down, not dropped: %d plans", len(after))
+	}
+	if after[0].isWorker {
+		t.Errorf("stalled worker still leads: %q", after[0].describe())
+	}
+	if last := after[len(after)-1]; !last.isWorker {
+		t.Errorf("stalled worker must remain available as a last resort, last plan is %q", last.describe())
+	}
+}
+
+func TestPlanTransports_StalledWorkerStillOnlyRouteWhenAlone(t *testing.T) {
+	workerResetStall()
+	t.Cleanup(workerResetStall)
+
+	cfg := &config.MTProtoConfig{
+		UpstreamMode:   "ws",
+		CFWorkerDomain: "stalled.user.workers.dev",
+	}
+	workerRecordStall("stalled.user.workers.dev")
+	plans, err := planTransports(cfg, config.QueueConfig{}, 1, dialTarget{})
+	if err != nil {
+		t.Fatalf("a stalled worker must still be offered when it is the only route: %v", err)
+	}
+	if len(plans) != 1 || !plans[0].isWorker {
+		t.Fatalf("expected the stalled worker as the sole plan, got %d plans", len(plans))
 	}
 }
