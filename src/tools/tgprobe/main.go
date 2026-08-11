@@ -26,8 +26,14 @@ func reqPQ() []byte {
 
 	msg := make([]byte, 0, 40)
 	msg = append(msg, make([]byte, 8)...)
+	// message_id is the unix time in the high half and the fraction of the
+	// second scaled to 2^32 in the low half, low two bits clear for a client
+	// query. Read the clock once: taken twice, the two halves can land either
+	// side of a second boundary.
+	now := time.Now()
+	frac := (uint64(now.Nanosecond()) << 32) / uint64(time.Second/time.Nanosecond)
 	msgID := make([]byte, 8)
-	binary.LittleEndian.PutUint64(msgID, (uint64(time.Now().Unix())<<32)|uint64(time.Now().Nanosecond()/1000)&0xfffffffc)
+	binary.LittleEndian.PutUint64(msgID, (uint64(now.Unix())<<32)|(frac&0xfffffffc))
 	msg = append(msg, msgID...)
 	l := make([]byte, 4)
 	binary.LittleEndian.PutUint32(l, uint32(len(body)))
