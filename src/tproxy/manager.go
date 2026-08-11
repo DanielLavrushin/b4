@@ -170,7 +170,7 @@ func effectiveMark(set *config.SetConfig) uint32 {
 // which is the one place a fail-open dial needs it most.
 func proxyBypassMark(cfg *config.Config) uint32 {
 	if cfg == nil {
-		return 0x40000
+		return config.SelfDialMark
 	}
 	return cfg.SelfDialMark()
 }
