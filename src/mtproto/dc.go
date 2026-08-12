@@ -50,12 +50,31 @@ func mustParseDCNets(pairs [][2]interface{}) []dcNet {
 	return out
 }
 
+// dcExtraV4 are addresses a range would otherwise label wrongly. 149.154.167.0/24
+// is DC2's block but Telegram also answers on .43 and .92 there as DC4, and
+// neither appears in getProxyConfig, so without these the range hands a DC4
+// session the kws2 hostname and Cloudflare relays it to DC2.
+var dcExtraV4 = map[string]int{
+	"149.154.167.43": 4,
+	"149.154.167.92": 4,
+}
+
+// A range is a guess where an address is a fact, so a range that covers two data
+// centers is worse than no range at all: the CF-proxy route builds kws<dc>.<domain>
+// from it, and Cloudflare then relays the session to whichever data center that
+// name points at. 149.154.175.0/24 is deliberately absent for exactly this reason -
+// DC1 (.50 .53 .55 .58) and DC3 (.100) share it, and only the .48/28 sub-block is
+// separable. 91.108.4.0/22 is narrowed to /24 because 91.108.5-7 answer nothing.
 var dcRangesV4 = mustParseDCNets([][2]interface{}{
-	{"149.154.167.0/24", 2},
+	{"91.108.4.0/24", 4},
+	{"91.108.56.0/24", 5},
 	{"149.154.161.0/24", 2},
 	{"149.154.165.0/24", 4},
 	{"149.154.166.0/24", 4},
-	{"91.108.4.0/22", 4},
+	{"149.154.167.0/24", 2},
+	{"149.154.170.0/24", 5},
+	{"149.154.171.0/24", 5},
+	{"149.154.175.48/28", 1},
 })
 
 var dcRangesV6 = mustParseDCNets([][2]interface{}{
@@ -151,6 +170,10 @@ func dcForIP(ip net.IP) (int, bool) {
 		}
 	}
 	dcRuntimeMu.RUnlock()
+
+	if dc, ok := dcExtraV4[target]; ok {
+		return dc, true
+	}
 
 	for dc, a := range dcAddressesV4 {
 		if host, _, err := net.SplitHostPort(a); err == nil && host == target {
