@@ -28,6 +28,7 @@ const (
 	connectionTagPadded   = 0xdddddddd
 
 	telegramWSEdgeIP = "149.154.167.220"
+	dcDefaultPort    = 443
 	wsDialTimeout    = 8 * time.Second
 	tcpDialTimeout   = 8 * time.Second
 )
@@ -36,13 +37,6 @@ var wsEdgeServedDCs = map[int]bool{2: true, 4: true}
 
 func wsEdgeServesDC(absDC int) bool {
 	return wsEdgeServedDCs[absDC]
-}
-
-func kwsEdgeDC(absDC int) int {
-	if absDC == 203 {
-		return 2
-	}
-	return absDC
 }
 
 func wsNativeDialHost(override string) string {
@@ -256,8 +250,8 @@ func (t dialTarget) valid() bool {
 	return t.ip != "" && t.port > 0 && t.port <= 65535
 }
 
-func (t dialTarget) addr() string {
-	return net.JoinHostPort(t.ip, strconv.Itoa(t.port))
+func (t dialTarget) dcAddr() string {
+	return net.JoinHostPort(t.ip, strconv.Itoa(dcDefaultPort))
 }
 
 func (t dialTarget) isV4() bool {
@@ -284,13 +278,15 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 
 	appendTCP := func(ignoreCooldown bool) {
 		var addrs []string
+		var primary string
 		if target.valid() && !hasRelay {
-			addrs = append(addrs, target.addr())
+			primary = target.dcAddr()
+			addrs = append(addrs, primary)
 		}
 		resolved, err := ResolveDCAll(dc, queueCfg.IPv6Enabled, strings.TrimSpace(cfg.DCRelay))
 		if err == nil {
 			for _, a := range resolved {
-				if a != target.addr() {
+				if a != primary {
 					addrs = append(addrs, a)
 				}
 			}
@@ -327,9 +323,9 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 				}
 			}
 		}
-		dst, port := workerDstIP(absDC), 443
+		dst := workerDstIP(absDC)
 		if target.valid() && target.isV4() {
-			dst, port = target.ip, target.port
+			dst = target.ip
 		}
 		if dst != "" {
 			for _, wd := range shuffledWorkerDomains(cfg) {
@@ -338,7 +334,7 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 					dc:       dc,
 					sni:      wd,
 					dialHost: wd,
-					wsPath:   fmt.Sprintf("/apiws?dst=%s&dc=%d&port=%d", dst, absDC, port),
+					wsPath:   fmt.Sprintf("/apiws?dst=%s&dc=%d", dst, absDC),
 					isWorker: true,
 				}
 				if workerInCooldown(wd) {
@@ -348,12 +344,11 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 				plans = append(plans, p)
 			}
 		}
-		kwsDC := kwsEdgeDC(absDC)
 		if d := strings.TrimSpace(cfg.WSCustomDomain); d != "" {
 			plans = append(plans, transportPlan{
 				kind:   transportWS,
 				dc:     dc,
-				sni:    fmt.Sprintf("kws%d.%s", kwsDC, d),
+				sni:    fmt.Sprintf("kws%d.%s", absDC, d),
 				cfBase: d,
 			})
 		}
@@ -362,7 +357,7 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 				plans = append(plans, transportPlan{
 					kind:   transportWS,
 					dc:     dc,
-					sni:    fmt.Sprintf("kws%d.%s", kwsDC, base),
+					sni:    fmt.Sprintf("kws%d.%s", absDC, base),
 					cfBase: base,
 				})
 			}

@@ -48,7 +48,7 @@ Settings → **MTProto Proxy** → **Telegram upstream**. Определяет, 
 
 Убедитесь, что `cloudflare.com`, `cloudflare.dev` и `workers.dev` доступны (не заблокированы) в вашей сети.
 
-Подробная пошаговая инструкция со скриншотами поддерживается проектом tg-ws-proxy: [CfWorker.md](https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfWorker.md). Берите скрипт ниже, а не тот, что на этой странице: это тот же релей с одним дополнением - параметром `port`. Клиенты Telegram ходят в дата-центр не только на 443, но и на 80, а скрипт, который в любом случае открывает 443, отдаёт такие сессии узлу, не понимающему их транспорт, и выглядит это как соединение, которое устанавливается и ни на что не отвечает.
+Подробная пошаговая инструкция со скриншотами поддерживается проектом tg-ws-proxy: [CfWorker.md](https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfWorker.md). Скрипт ниже - тот же самый, без изменений, так что уже развёрнутый для tg-ws-proxy воркер работает с B4 как есть. B4 просит у воркера только адрес дата-центра, никогда порт: Telegram отдаёт один и тот же узел на 80, 443 и 5222, слушают везде именно `443`, а DC 203 на 5222 не отвечает вовсе.
 
 ```javascript
 import { connect } from "cloudflare:sockets";
@@ -78,13 +78,12 @@ export default {
     }
 
     const dst = url.searchParams.get("dst");
-    const port = Number(url.searchParams.get("port")) || 443;
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
     server.accept();
 
-    const socket = connect({ hostname: dst, port });
+    const socket = connect({ hostname: dst, port: 443 });
     const tcpReader = socket.readable.getReader();
     const tcpWriter = socket.writable.getWriter();
 

@@ -289,14 +289,3 @@ func TestApplyHandshakeMedia(t *testing.T) {
 		})
 	}
 }
-
-func TestKwsEdgeDCMapsMediaDC203ToDC2(t *testing.T) {
-	if got := kwsEdgeDC(203); got != 2 {
-		t.Fatalf("kwsEdgeDC(203) = %d, want 2 (kws203.* does not exist)", got)
-	}
-	for _, dc := range []int{1, 2, 3, 4, 5} {
-		if got := kwsEdgeDC(dc); got != dc {
-			t.Fatalf("kwsEdgeDC(%d) = %d, want %d", dc, got, dc)
-		}
-	}
-}
