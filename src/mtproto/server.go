@@ -696,12 +696,15 @@ func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, las
 // rather than hold it for the full idle timeout.
 //
 // The other shape of the same failure is a route that carries the request and
-// answers nothing at all. A Cloudflare Worker reclaimed mid-session ends that
-// way in well under a second, so nothing goes quiet long enough to be noticed,
-// and the client usually gives up first - the route drops the session and is
-// handed the next one. A dial that succeeds and then delivers zero bytes is the
-// only evidence there is, because the transport list only guards dial failures:
-// the Worker accepts the WebSocket, so nothing behind it is ever tried.
+// answers nothing at all, which matters because the transport list only guards
+// dial failures: the Worker accepts the WebSocket, so nothing behind it is ever
+// tried. Zero bytes back is evidence only when the upstream itself ended the
+// relay. When the client ended it, the wait has to have been long enough for an
+// answer to be due, and that is already what the in-flight watchdog and the
+// went-quiet check below measure. Scoring every relay the client closed first
+// blamed the route for an ordinary request and response: on the fail-open path,
+// the relays that did answer took 269-361 ms, while ten closed by the client at
+// 69-103 ms were each recorded as a stall and kept the Worker in cooldown.
 const relayStallClose = 8 * time.Second
 
 func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string, bufPool *sync.Pool, idle time.Duration, lastActive *atomic.Int64, onStall func()) (int64, int64) {
@@ -858,13 +861,13 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 	close(done)
 
 	up, down := upBytes.Load(), downBytes.Load()
-	neverAnswered := up > 0 && down == 0
+	staleUpstream := first.dir == "DC->client" && down == 0
+	neverAnswered := staleUpstream && up > 0
 	wentQuiet := upSinceDown.Load() > 0 &&
 		time.Since(time.Unix(0, lastDown.Load())) >= relayStallClose
 	if neverAnswered || wentQuiet {
 		reportStall()
 	}
-	staleUpstream := first.dir == "DC->client" && down == 0
 	stale := ""
 	if staleUpstream {
 		stale = " stale-upstream?"

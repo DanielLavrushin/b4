@@ -25,7 +25,8 @@ func TestRelayConns_ReportsMuteUpstream(t *testing.T) {
 
 	go func() {
 		_, _ = clientA.Write([]byte("a request nobody answers"))
-		time.Sleep(relayStallClose + 500*time.Millisecond)
+		buf := make([]byte, 1)
+		_, _ = clientA.Read(buf)
 		_ = clientA.Close()
 	}()
 	go func() {
@@ -72,7 +73,12 @@ func TestRelayConns_ReportsUpstreamThatClosesWithoutAnswering(t *testing.T) {
 	}
 }
 
-func TestRelayConns_ReportsRouteThatAnsweredNothing(t *testing.T) {
+// The shape the fail-open path leaves behind on every plain-HTTP request it
+// relays: the client sends, closes its side long before an answer could be due,
+// and the route is left holding a request nobody is waiting for any more. On a
+// real Worker the relays that did answer took 269-361 ms, so a client that quit
+// at 69-103 ms says nothing about the route and must not cool it down.
+func TestRelayConns_ClientClosingBeforeAnAnswerIsDueIsNotReported(t *testing.T) {
 	clientA, clientB := net.Pipe()
 	dcA, dcB := net.Pipe()
 	defer dcA.Close()
@@ -80,8 +86,6 @@ func TestRelayConns_ReportsRouteThatAnsweredNothing(t *testing.T) {
 	stalled := make(chan struct{}, 1)
 	onStall := func() { stalled <- struct{}{} }
 
-	// The shape a reclaimed Cloudflare Worker leaves behind: the request goes up,
-	// nothing comes back, and the client gives up first.
 	go func() {
 		_, _ = clientA.Write([]byte("a request"))
 		time.Sleep(50 * time.Millisecond)
@@ -100,8 +104,8 @@ func TestRelayConns_ReportsRouteThatAnsweredNothing(t *testing.T) {
 
 	select {
 	case <-stalled:
+		t.Fatal("a client that closed before an answer was due must not be scored against the route")
 	default:
-		t.Fatal("a route that carried a request and answered nothing must be reported")
 	}
 }
 
