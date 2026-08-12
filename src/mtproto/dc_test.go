@@ -19,8 +19,14 @@ func TestDCForIPRange(t *testing.T) {
 		{"91.108.4.140", 4, true},
 		{"2001:67c:4e8:f002::a", 2, true},
 		{"2001:67c:4e8:f004::a", 4, true},
+		{"91.108.56.192", 5, true},
+		{"149.154.171.255", 5, true},
+		{"149.154.170.96", 5, true},
+		{"149.154.175.53", 1, true},
 		{"149.154.162.123", 0, false},
-		{"149.154.175.50", 0, false},
+		{"149.154.175.100", 0, false},
+		{"149.154.175.211", 0, false},
+		{"91.108.5.1", 0, false},
 		{"91.105.192.100", 0, false},
 		{"8.8.8.8", 0, false},
 	}
@@ -66,15 +72,43 @@ func TestDirectAddressesV6(t *testing.T) {
 	}
 }
 
-func TestDCForIPRangeOnlyWSServedDCs(t *testing.T) {
+func TestDCForIPRangeAssertsRealDCs(t *testing.T) {
 	for _, e := range dcRangesV4 {
-		if !wsEdgeServesDC(e.dc) {
-			t.Errorf("dcRangesV4 entry %s maps to DC%d which is not WS-served; range resolution should only assert WS-served DCs", e.net, e.dc)
+		if !validTransparentDC(e.dc) {
+			t.Errorf("dcRangesV4 entry %s maps to DC%d, which is not a data center b4 can route", e.net, e.dc)
 		}
 	}
 	for _, e := range dcRangesV6 {
-		if !wsEdgeServesDC(e.dc) {
-			t.Errorf("dcRangesV6 entry %s maps to DC%d which is not WS-served", e.net, e.dc)
+		if !validTransparentDC(e.dc) {
+			t.Errorf("dcRangesV6 entry %s maps to DC%d, which is not a data center b4 can route", e.net, e.dc)
+		}
+	}
+}
+
+// A range that covers two data centers sends half its sessions to the wrong one
+// through kws<dc>.<domain>, so no range may contain a known address of another DC.
+func TestDCRangesDoNotSwallowAnotherDCsAddress(t *testing.T) {
+	known := map[string]int{}
+	for dc, addr := range dcAddressesV4 {
+		host, _, err := net.SplitHostPort(addr)
+		if err != nil {
+			t.Fatalf("dcAddressesV4[%d] = %q does not split: %v", dc, addr, err)
+		}
+		known[host] = dc
+	}
+	for host, dc := range dcExtraV4 {
+		known[host] = dc
+	}
+	for _, e := range dcRangesV4 {
+		for host, dc := range known {
+			ip := net.ParseIP(host)
+			if ip == nil || !e.net.Contains(ip) || dc == e.dc {
+				continue
+			}
+			if got, ok := dcForIP(ip); !ok || got != dc {
+				t.Errorf("range %s claims DC%d but contains %s which is DC%d, and dcForIP does not rescue it (got %d, ok=%v)",
+					e.net, e.dc, host, dc, got, ok)
+			}
 		}
 	}
 }
