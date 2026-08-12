@@ -37,7 +37,7 @@ Settings → **MTProto Proxy** → **Telegram upstream**. Определяет, 
 
 ### Домен Cloudflare Worker (рекомендуемый резерв)
 
-Если не загружаются медиа, реакции или стикеры, укажите **домен Cloudflare Worker**. Это бесплатный персональный WebSocket-релей, который вы разворачиваете на собственном аккаунте Cloudflare (`*.workers.dev`). Через него B4 достаёт любой дата-центр, поэтому он выручает DC без родного WebSocket-узла (1, 3, 5) и соединения, упёршиеся в лимиты общего пула CF. Воркер пробуется после родного узла Telegram (чтобы для DC 2/4 побеждал быстрый родной путь) и перед общим пулом CF.
+**Домен Cloudflare Worker** - это бесплатный персональный WebSocket-релей, который вы разворачиваете на собственном аккаунте Cloudflare (`*.workers.dev`). Через него B4 достаёт любой дата-центр, поэтому он выручает те DC, до которых из вашей сети не дотягивается общий пул. Пробуется он **последним** среди WebSocket-маршрутов - после родного узла Telegram и после общего пула CF, - потому что Cloudflare забирает stateless-воркер посреди сессии: замерено из цензурируемой сети до DC 1, воркер ответил на 8 раундов рукопожатия и замолчал на 8.7 секунде, а домен из пула ответил на 100 раундов за две минуты на той же машине. Этого хватает, чтобы пройти проверку соединения, и совершенно не хватает на видео, так что впереди пула он выигрывал бы дозвон и уносил сессию с собой.
 
 Коротко о настройке:
 
@@ -48,7 +48,16 @@ Settings → **MTProto Proxy** → **Telegram upstream**. Определяет, 
 
 Убедитесь, что `cloudflare.com`, `cloudflare.dev` и `workers.dev` доступны (не заблокированы) в вашей сети.
 
-Подробная пошаговая инструкция со скриншотами поддерживается проектом tg-ws-proxy: [CfWorker.md](https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfWorker.md). Скрипт ниже - тот же самый, без изменений, так что уже развёрнутый для tg-ws-proxy воркер работает с B4 как есть. B4 просит у воркера только адрес дата-центра, никогда порт: Telegram отдаёт один и тот же узел на 80, 443 и 5222, слушают везде именно `443`, а DC 203 на 5222 не отвечает вовсе.
+Подробная пошаговая инструкция со скриншотами поддерживается проектом tg-ws-proxy: [CfWorker.md](https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfWorker.md). B4 просит у воркера только адрес дата-центра, никогда порт: Telegram отдаёт один и тот же узел на 80, 443 и 5222, слушают везде именно `443`, а DC 203 на 5222 не отвечает вовсе. Развёрнутый по той странице воркер работает и так, но скрипт ниже ретранслирует дольше, прежде чем Cloudflare его заберёт - об этом ниже.
+
+Поставьте воркеру **compatibility date `2026-04-07` или новее**. С этой даты рантайм сам отвечает на закрывающий кадр, а это [задокументированная причина](https://developers.cloudflare.com/workers/observability/errors/) ошибки `The Workers runtime canceled this request because it detected that your Worker's code had hung`.
+
+От скрипта tg-ws-proxy отличий два, и оба про то, сколько Cloudflare позволяет релею прожить:
+
+- Цикл, который несёт данные от Telegram обратно в браузер, передаётся в `ctx.waitUntil()`. Промис, который не ждут, не возвращают и не отдают в `waitUntil`, - *висячий*, и рантайм вправе отменить его в тот же момент, когда обработчик вернул ответ, а этот воркер возвращает его сразу после принятия WebSocket. Замерено на живом воркере под нагрузкой: 47 сессий из 58 отменены, половина - быстрее 400 мс, и Telegram оставался с половиной фотографии.
+- У `socket.closed` и у `closed` читателя и писателя появляется пустой `catch`. Их никто не ждёт, поэтому когда Cloudflare забирает сокет, каждый всплывает необработанным отказом - три на сессию в логе воркера, и за ними не видно ничего настоящего.
+
+Хорошим местом для долгой сессии stateless-воркер от этого не становится. `waitUntil` по документации продлевает выполнение примерно на 30 секунд, а сессия Telegram живёт минутами, так что большая загрузка всё ещё может оборваться. Ответ Cloudflare для соединения, которое должно пережить запрос, - Durable Object с гибернацией WebSocket. Считайте воркер одним маршрутом из нескольких, а не единственным: B4 держит за ним родной узел Telegram и общий пул Cloudflare как раз поэтому.
 
 ```javascript
 import { connect } from "cloudflare:sockets";
@@ -66,8 +75,10 @@ function toBytes(data) {
   return new Uint8Array();
 }
 
+const ignore = () => {};
+
 export default {
-  async fetch(request) {
+  async fetch(request, env, ctx) {
     if ((request.headers.get("Upgrade") || "").toLowerCase() !== "websocket") {
       return new Response("Expected websocket", { status: 426 });
     }
@@ -86,6 +97,10 @@ export default {
     const socket = connect({ hostname: dst, port: 443 });
     const tcpReader = socket.readable.getReader();
     const tcpWriter = socket.writable.getWriter();
+
+    socket.closed.catch(ignore);
+    tcpReader.closed.catch(ignore);
+    tcpWriter.closed.catch(ignore);
 
     server.addEventListener("message", async (event) => {
       try {
@@ -106,7 +121,7 @@ export default {
       } catch {}
     });
 
-    (async () => {
+    const pump = (async () => {
       try {
         while (true) {
           const { value, done } = await tcpReader.read();
@@ -130,6 +145,8 @@ export default {
         } catch {}
       }
     })();
+
+    ctx.waitUntil(pump);
 
     return new Response(null, { status: 101, webSocket: client });
   },

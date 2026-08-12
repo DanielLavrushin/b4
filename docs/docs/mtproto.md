@@ -37,7 +37,7 @@ The transport-mode dropdown applies to the **proxy server** only. The **WebSocke
 
 ### Cloudflare Worker domain (recommended fallback)
 
-If media, reactions, or stickers fail to load, set a **Cloudflare Worker domain**. It is a free per-user WebSocket relay you host on your own Cloudflare account (`*.workers.dev`). B4 can reach any data center through it, so it rescues DCs with no native WebSocket edge (1, 3, 5) and connections throttled on the shared CF pool. The worker is tried after Telegram's own edge (so the fast native path still wins for DC 2/4) and before the shared CF pool.
+A **Cloudflare Worker domain** is a free per-user WebSocket relay you host on your own Cloudflare account (`*.workers.dev`). B4 can reach any data center through it, so it rescues DCs the shared pool cannot reach from your network. It is tried **last** of the WebSocket routes — after Telegram's own edge and after the shared CF pool — because Cloudflare reclaims a stateless worker mid-session: measured from a censored network against DC 1, a worker answered 8 handshake rounds and went mute at 8.7 seconds, while a pooled domain answered 100 rounds over two minutes on the same machine. That is long enough to pass a connection test and far too short for a video, so ahead of the pool it would win the dial and take the session down with it.
 
 Setup, in short:
 
@@ -48,7 +48,16 @@ Setup, in short:
 
 Make sure `cloudflare.com`, `cloudflare.dev`, and `workers.dev` are reachable (not blocked) on your network.
 
-The full step-by-step, with screenshots, is maintained by tg-ws-proxy: [CfWorker.md](https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfWorker.md). The script below is the same one, unchanged, so a worker already deployed for tg-ws-proxy works for B4 as it stands. B4 asks the worker for a data center address only, never a port: Telegram serves the same endpoint on 80, 443 and 5222, `443` is the one every data center listens on, and DC 203 does not answer on 5222 at all.
+The full step-by-step, with screenshots, is maintained by tg-ws-proxy: [CfWorker.md](https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfWorker.md). B4 asks the worker for a data center address only, never a port: Telegram serves the same endpoint on 80, 443 and 5222, `443` is the one every data center listens on, and DC 203 does not answer on 5222 at all. A worker deployed from that page still works, but the script below relays for longer before Cloudflare reclaims it — see below.
+
+Set the worker's **compatibility date to `2026-04-07` or later**. From that date the runtime answers a close frame by itself, which is [the documented cause](https://developers.cloudflare.com/workers/observability/errors/) of `The Workers runtime canceled this request because it detected that your Worker's code had hung`.
+
+Two differences from the tg-ws-proxy script, both about how long Cloudflare lets the relay live:
+
+- The loop that carries data from Telegram back to the browser is handed to `ctx.waitUntil()`. A promise that is neither awaited nor returned nor passed to `waitUntil` is a *floating* promise, and the runtime may cancel it the moment the handler returns — which for this worker is immediately, since it returns as soon as the WebSocket is accepted. Measured against a real worker under load: 47 of 58 sessions were cancelled, half of them inside 400 ms, and Telegram was left with half a photo.
+- `socket.closed` and the reader's and writer's `closed` promises get a no-op `catch`. Nothing awaits them, so when Cloudflare reclaims the socket each one surfaces as an unhandled rejection — three per session in the worker log, which buries anything real.
+
+Neither makes a stateless worker a good place for a long session. `waitUntil` is documented to extend execution by about 30 seconds, and a Telegram session lasts minutes, so a large download can still be cut. Cloudflare's answer for a connection that must outlive a request is a Durable Object with WebSocket hibernation. Treat the worker as one route among several rather than the only one: B4 keeps Telegram's own edge and the shared Cloudflare pool behind it for exactly this reason.
 
 ```javascript
 import { connect } from "cloudflare:sockets";
@@ -66,8 +75,10 @@ function toBytes(data) {
   return new Uint8Array();
 }
 
+const ignore = () => {};
+
 export default {
-  async fetch(request) {
+  async fetch(request, env, ctx) {
     if ((request.headers.get("Upgrade") || "").toLowerCase() !== "websocket") {
       return new Response("Expected websocket", { status: 426 });
     }
@@ -86,6 +97,10 @@ export default {
     const socket = connect({ hostname: dst, port: 443 });
     const tcpReader = socket.readable.getReader();
     const tcpWriter = socket.writable.getWriter();
+
+    socket.closed.catch(ignore);
+    tcpReader.closed.catch(ignore);
+    tcpWriter.closed.catch(ignore);
 
     server.addEventListener("message", async (event) => {
       try {
@@ -106,7 +121,7 @@ export default {
       } catch {}
     });
 
-    (async () => {
+    const pump = (async () => {
       try {
         while (true) {
           const { value, done } = await tcpReader.read();
@@ -130,6 +145,8 @@ export default {
         } catch {}
       }
     })();
+
+    ctx.waitUntil(pump);
 
     return new Response(null, { status: 101, webSocket: client });
   },

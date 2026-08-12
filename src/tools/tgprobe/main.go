@@ -82,8 +82,7 @@ func main() {
 		log.SetLevel(log.LevelError)
 	}
 
-	cfg := &config.Config{}
-	config.ApplyConfigDefaults(cfg)
+	cfg := config.NewConfig()
 	mt := cfg.System.MTProto
 	mt.UpstreamMode = *mode
 	mt.CFWorkerDomain = *worker
