@@ -71,6 +71,34 @@ func TestPlanTransports_DC203_NoNativeEdge(t *testing.T) {
 	}
 }
 
+func TestPlanTransports_DC203KeepsKws203OnCFDomains(t *testing.T) {
+	cfg := &config.MTProtoConfig{
+		UpstreamMode:   "auto",
+		CFProxyEnabled: true,
+		WSCustomDomain: "example.com",
+	}
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 203,
+		dialTarget{ip: "91.105.192.100", port: 443})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	custom := false
+	for _, p := range plans {
+		if p.kind != transportWS || p.cfBase == "" {
+			continue
+		}
+		if !strings.HasPrefix(p.sni, "kws203.") {
+			t.Fatalf("DC 203 planned via %q; kws2.* is DC 2's Cloudflare origin (149.154.167.51), DC 203 is 91.105.192.100", p.sni)
+		}
+		if p.sni == "kws203.example.com" {
+			custom = true
+		}
+	}
+	if !custom {
+		t.Fatalf("DC 203 must plan the custom WS domain as kws203.example.com, got %+v", wsSNIs(plans))
+	}
+}
+
 func TestPlanTransports_DefaultConfig_DC2DialsSharedEdge(t *testing.T) {
 	cfg := config.DefaultConfig.System.MTProto
 	cfg.UpstreamMode = "ws"
@@ -319,7 +347,7 @@ func TestPlanTransports_WorkerForDC2BeforeCFPool(t *testing.T) {
 		t.Errorf("worker (%d) should come before shared CF pool (%d)", workerIdx, cfIdx)
 	}
 	wp := plans[workerIdx]
-	if wp.wsPath != "/apiws?dst=149.154.167.51&dc=2&port=443" {
+	if wp.wsPath != "/apiws?dst=149.154.167.51&dc=2" {
 		t.Errorf("unexpected worker path %q", wp.wsPath)
 	}
 	if wp.sni != "my-worker-123.user.workers.dev" || wp.dialHost != wp.sni {
@@ -340,7 +368,7 @@ func TestPlanTransports_WorkerForDC1NoNativeEdge(t *testing.T) {
 	for _, p := range plans {
 		if p.isWorker {
 			foundWorker = true
-			if p.wsPath != "/apiws?dst=149.154.175.50&dc=1&port=443" {
+			if p.wsPath != "/apiws?dst=149.154.175.50&dc=1" {
 				t.Errorf("unexpected DC1 worker path %q", p.wsPath)
 			}
 		}
@@ -409,14 +437,31 @@ func TestPlanTransports_BridgeTargetBeatsCanonicalAddress(t *testing.T) {
 	if worker == nil {
 		t.Fatal("no worker plan")
 	}
-	if want := "/apiws?dst=149.154.167.92&dc=4&port=80"; worker.wsPath != want {
+	if want := "/apiws?dst=149.154.167.92&dc=4"; worker.wsPath != want {
 		t.Errorf("worker must carry the address the client dialled: got %q want %q", worker.wsPath, want)
 	}
 	if firstTCP == nil {
 		t.Fatal("no TCP plan")
 	}
-	if firstTCP.addr != "149.154.167.92:80" {
-		t.Errorf("first TCP plan must be the address the client dialled, got %q", firstTCP.addr)
+	if firstTCP.addr != "149.154.167.92:443" {
+		t.Errorf("first TCP plan must be the address the client dialled, on the DC port rather than the client's, got %q", firstTCP.addr)
+	}
+}
+
+func TestPlanTransports_BridgeTargetDropsClientPort(t *testing.T) {
+	cfg := &config.MTProtoConfig{UpstreamMode: "auto", CFWorkerDomain: "w.user.workers.dev"}
+	target := dialTarget{ip: "91.105.192.100", port: 5222}
+	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 203, target)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, p := range plans {
+		if p.kind == transportTCP && strings.HasSuffix(p.addr, ":5222") {
+			t.Fatalf("DC 203 does not answer on 5222, got a TCP plan for %q", p.addr)
+		}
+		if p.isWorker && strings.Contains(p.wsPath, "port=") {
+			t.Fatalf("worker path must not carry the client's port, got %q", p.wsPath)
+		}
 	}
 }
 

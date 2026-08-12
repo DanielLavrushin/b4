@@ -231,7 +231,7 @@ func (b *TransparentBridge) FailOpenViaWorker(client net.Conn, origIP net.IP, or
 		if workerInCooldown(wd) && len(domains) > 1 {
 			continue
 		}
-		path := fmt.Sprintf("/apiws?dst=%s&dc=%d&port=%d", dst, dc, origPort)
+		path := fmt.Sprintf("/apiws?dst=%s&dc=%d", dst, dc)
 		wc, derr := dialWS(wd, wd, path, wsDialTimeout, selfDialMark())
 		if derr != nil {
 			log.Debugf("%s failopen worker dial %s for %s:%d failed: %v", tag, wd, dst, origPort, derr)

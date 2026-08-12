@@ -48,7 +48,7 @@ Setup, in short:
 
 Make sure `cloudflare.com`, `cloudflare.dev`, and `workers.dev` are reachable (not blocked) on your network.
 
-The full step-by-step, with screenshots, is maintained by tg-ws-proxy: [CfWorker.md](https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfWorker.md). Use the script below rather than the one on that page: it is the same relay with one addition, the `port` parameter. Telegram clients reach a data center on port 80 as well as 443, and a script that opens 443 whatever it was asked for hands those sessions to an endpoint that does not speak their transport, which reads as a connection that establishes and then answers nothing.
+The full step-by-step, with screenshots, is maintained by tg-ws-proxy: [CfWorker.md](https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfWorker.md). The script below is the same one, unchanged, so a worker already deployed for tg-ws-proxy works for B4 as it stands. B4 asks the worker for a data center address only, never a port: Telegram serves the same endpoint on 80, 443 and 5222, `443` is the one every data center listens on, and DC 203 does not answer on 5222 at all.
 
 ```javascript
 import { connect } from "cloudflare:sockets";
@@ -78,13 +78,12 @@ export default {
     }
 
     const dst = url.searchParams.get("dst");
-    const port = Number(url.searchParams.get("port")) || 443;
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
     server.accept();
 
-    const socket = connect({ hostname: dst, port });
+    const socket = connect({ hostname: dst, port: 443 });
     const tcpReader = socket.readable.getReader();
     const tcpWriter = socket.writable.getWriter();
 
