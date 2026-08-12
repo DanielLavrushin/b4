@@ -25,7 +25,7 @@ func TestRelayConns_ReportsMuteUpstream(t *testing.T) {
 
 	go func() {
 		_, _ = clientA.Write([]byte("a request nobody answers"))
-		time.Sleep(relayStallSilence + 500*time.Millisecond)
+		time.Sleep(relayStallClose + 500*time.Millisecond)
 		_ = clientA.Close()
 	}()
 	go func() {
@@ -43,6 +43,84 @@ func TestRelayConns_ReportsMuteUpstream(t *testing.T) {
 	case <-stalled:
 	default:
 		t.Fatal("a relay whose upstream never answered must be reported as stalled")
+	}
+}
+
+func TestRelayConns_ReportsUpstreamThatClosesWithoutAnswering(t *testing.T) {
+	clientA, clientB := net.Pipe()
+	dcA, dcB := net.Pipe()
+	defer clientA.Close()
+
+	stalled := make(chan struct{}, 1)
+	onStall := func() { stalled <- struct{}{} }
+
+	go func() {
+		_, _ = clientA.Write([]byte("a request nobody answers"))
+	}()
+	go func() {
+		buf := make([]byte, 512)
+		_, _ = dcA.Read(buf)
+		_ = dcA.Close()
+	}()
+
+	relayConns(clientB, dcB, nil, "test", relayPool(), 0, nil, onStall)
+
+	select {
+	case <-stalled:
+	default:
+		t.Fatal("an upstream that closed without ever answering must be reported as stalled")
+	}
+}
+
+func TestRelayConns_ReportsRouteThatAnsweredNothing(t *testing.T) {
+	clientA, clientB := net.Pipe()
+	dcA, dcB := net.Pipe()
+	defer dcA.Close()
+
+	stalled := make(chan struct{}, 1)
+	onStall := func() { stalled <- struct{}{} }
+
+	// The shape a reclaimed Cloudflare Worker leaves behind: the request goes up,
+	// nothing comes back, and the client gives up first.
+	go func() {
+		_, _ = clientA.Write([]byte("a request"))
+		time.Sleep(50 * time.Millisecond)
+		_ = clientA.Close()
+	}()
+	go func() {
+		buf := make([]byte, 512)
+		for {
+			if _, err := dcA.Read(buf); err != nil {
+				return
+			}
+		}
+	}()
+
+	relayConns(clientB, dcB, nil, "test", relayPool(), 0, nil, onStall)
+
+	select {
+	case <-stalled:
+	default:
+		t.Fatal("a route that carried a request and answered nothing must be reported")
+	}
+}
+
+func TestRelayConns_ClientThatAskedNothingIsNotReported(t *testing.T) {
+	clientA, clientB := net.Pipe()
+	dcA, dcB := net.Pipe()
+	defer dcA.Close()
+
+	stalled := make(chan struct{}, 1)
+	onStall := func() { stalled <- struct{}{} }
+
+	go func() { _ = clientA.Close() }()
+
+	relayConns(clientB, dcB, nil, "test", relayPool(), 0, nil, onStall)
+
+	select {
+	case <-stalled:
+		t.Fatal("a client that closed without asking for anything says nothing about the route")
+	default:
 	}
 }
 

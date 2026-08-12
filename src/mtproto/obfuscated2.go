@@ -323,6 +323,31 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 				}
 			}
 		}
+		if d := strings.TrimSpace(cfg.WSCustomDomain); d != "" {
+			plans = append(plans, transportPlan{
+				kind:   transportWS,
+				dc:     dc,
+				sni:    fmt.Sprintf("kws%d.%s", absDC, d),
+				cfBase: d,
+			})
+		}
+		if cfg.CFProxyEnabled {
+			for _, base := range cfBalancerInst.domainsForDC(dc) {
+				plans = append(plans, transportPlan{
+					kind:   transportWS,
+					dc:     dc,
+					sni:    fmt.Sprintf("kws%d.%s", absDC, base),
+					cfBase: base,
+				})
+			}
+		}
+		// A Worker goes behind the Cloudflare-proxied domains, not ahead of them. It
+		// dials in 190 ms and answers a handshake, so every health check passes it,
+		// and then Cloudflare reclaims the request: measured from a censored network
+		// against DC 1, a Worker carried 8 rounds and went mute at 8.7 s while a
+		// pooled domain carried 100 rounds over two minutes on the same box. Ahead of
+		// the pool it wins the dial and takes the session down with it, because the
+		// list only guards dial failures.
 		dst := workerDstIP(absDC)
 		if target.valid() && target.isV4() {
 			dst = target.ip
@@ -342,24 +367,6 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 					continue
 				}
 				plans = append(plans, p)
-			}
-		}
-		if d := strings.TrimSpace(cfg.WSCustomDomain); d != "" {
-			plans = append(plans, transportPlan{
-				kind:   transportWS,
-				dc:     dc,
-				sni:    fmt.Sprintf("kws%d.%s", absDC, d),
-				cfBase: d,
-			})
-		}
-		if cfg.CFProxyEnabled {
-			for _, base := range cfBalancerInst.domainsForDC(dc) {
-				plans = append(plans, transportPlan{
-					kind:   transportWS,
-					dc:     dc,
-					sni:    fmt.Sprintf("kws%d.%s", absDC, base),
-					cfBase: base,
-				})
 			}
 		}
 	}

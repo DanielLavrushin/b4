@@ -694,10 +694,15 @@ func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, las
 // open, so the reader blocks and the client is left to wait out its own receive
 // timeout. Report it so the caller can rank that route down, and cut the relay
 // rather than hold it for the full idle timeout.
-const (
-	relayStallSilence = 3 * time.Second
-	relayStallClose   = 8 * time.Second
-)
+//
+// The other shape of the same failure is a route that carries the request and
+// answers nothing at all. A Cloudflare Worker reclaimed mid-session ends that
+// way in well under a second, so nothing goes quiet long enough to be noticed,
+// and the client usually gives up first - the route drops the session and is
+// handed the next one. A dial that succeeds and then delivers zero bytes is the
+// only evidence there is, because the transport list only guards dial failures:
+// the Worker accepts the WebSocket, so nothing behind it is ever tried.
+const relayStallClose = 8 * time.Second
 
 func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string, bufPool *sync.Pool, idle time.Duration, lastActive *atomic.Int64, onStall func()) (int64, int64) {
 	type relayEnd struct {
@@ -853,11 +858,15 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 	close(done)
 
 	up, down := upBytes.Load(), downBytes.Load()
-	if upSinceDown.Load() > 0 && time.Since(time.Unix(0, lastDown.Load())) >= relayStallSilence {
+	neverAnswered := up > 0 && down == 0
+	wentQuiet := upSinceDown.Load() > 0 &&
+		time.Since(time.Unix(0, lastDown.Load())) >= relayStallClose
+	if neverAnswered || wentQuiet {
 		reportStall()
 	}
+	staleUpstream := first.dir == "DC->client" && down == 0
 	stale := ""
-	if first.dir == "DC->client" && down == 0 {
+	if staleUpstream {
 		stale = " stale-upstream?"
 	}
 	log.Infof("%s closed: first=%s err=%v up=%d down=%d in %dms%s", label, first.dir, first.err, up, down, time.Since(start).Milliseconds(), stale)

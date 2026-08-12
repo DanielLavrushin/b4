@@ -316,7 +316,7 @@ func TestPlanTransports_DCRelay_IgnoredInWSMode(t *testing.T) {
 	}
 }
 
-func TestPlanTransports_WorkerForDC2BeforeCFPool(t *testing.T) {
+func TestPlanTransports_WorkerForDC2AfterCFPool(t *testing.T) {
 	cfg := &config.MTProtoConfig{
 		UpstreamMode:   "ws",
 		CFWorkerDomain: "my-worker-123.user.workers.dev",
@@ -343,8 +343,10 @@ func TestPlanTransports_WorkerForDC2BeforeCFPool(t *testing.T) {
 	if edgeIdx == -1 || workerIdx < edgeIdx {
 		t.Errorf("worker (%d) should come after native edge (%d)", workerIdx, edgeIdx)
 	}
-	if cfIdx != -1 && workerIdx > cfIdx {
-		t.Errorf("worker (%d) should come before shared CF pool (%d)", workerIdx, cfIdx)
+	// A Worker answers a handshake and dies minutes later, so it must not win the
+	// dial ahead of a pooled domain that carries the whole session.
+	if cfIdx == -1 || workerIdx < cfIdx {
+		t.Errorf("worker (%d) should come after shared CF pool (%d)", workerIdx, cfIdx)
 	}
 	wp := plans[workerIdx]
 	if wp.wsPath != "/apiws?dst=149.154.167.51&dc=2" {
