@@ -349,39 +349,8 @@ func (s *Server) handleConnect(conn net.Conn, dest string) error {
 	return s.relay(conn, remote)
 }
 
-// relay copies data bidirectionally until one side closes.
 func (s *Server) relay(a, b net.Conn) error {
-	errCh := make(chan error, 2)
-
-	cp := func(dst, src net.Conn) {
-		bufPtr := s.bufferPool.Get().(*[]byte)
-		buf := *bufPtr
-		defer s.bufferPool.Put(bufPtr)
-
-		_, err := io.CopyBuffer(dst, src, buf)
-
-		// Signal the other direction to stop by closing the write half
-		if tc, ok := dst.(*net.TCPConn); ok {
-			tc.CloseWrite()
-		}
-		errCh <- err
-	}
-
-	go cp(b, a)
-	go cp(a, b)
-
-	// Wait for both directions
-	err1 := <-errCh
-	err2 := <-errCh
-
-	// Return first non-EOF error
-	if err1 != nil && !errors.Is(err1, io.EOF) {
-		return err1
-	}
-	if err2 != nil && !errors.Is(err2, io.EOF) {
-		return err2
-	}
-	return nil
+	return Relay(a, b)
 }
 
 // --- Set matching ---
