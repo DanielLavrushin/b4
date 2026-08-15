@@ -329,13 +329,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					ipv6Disabled := ipVersion == IPv6 && !cfg.Queue.IPv6Enabled
 					if !ipv6Disabled {
 						if resp := dns.BuildBlockResponse(payload); resp != nil {
-							if ipVersion == IPv4 {
-								if pkt := sock.BuildUDPPacketV4(originalDst, clientIP, 53, sport, resp); pkt != nil {
-									_ = w.clientSender().SendIPv4(pkt, clientIP)
-								}
-							} else if pkt := sock.BuildUDPPacketV6(originalDst, clientIP, 53, sport, resp); pkt != nil {
-								_ = w.clientSender().SendIPv6(pkt, clientIP)
-							}
+							w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, sport, resp)
 							log.Tracef("DNS sinkhole: %s -> NXDOMAIN for %s (set: %s)", domain, clientIP, set.Name)
 							logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionSinkhole)
 							metrics.GetMetricsCollector().RecordBlock(domain, srcMac)
