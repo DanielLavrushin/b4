@@ -2,6 +2,9 @@
 
 ## [1.77.0] - 2026-08-15
 
+- ADDED: **The enabled sets in the trace header, with domain lists counted rather than listed and proxy credentials left out** - a trace carried the system side of a report and nothing about what b4 was told to match, so a set that misbehaves had to be read without its targets, strategy or routing at hand.
+- FIXED: **A set routed through a proxy leaked two sockets and two pipes for every connection whose far side died without closing** - the count reached the router's open-file limit within about an hour, and b4 stopped working until it was restarted.
+- CHANGED: **A proxied connection carrying no data in either direction is dropped after an hour, and after five minutes once one side has finished sending** - a relay had no time limit at all once the proxy handshake was done.
 - CHANGED: **A set that cannot reach its proxy reports it in the log and in the diagnostics bundle** - the failed connection was recorded at trace level only, so a proxy refusing every attempt left nothing behind at the default log level. Traffic the set matched was accepted, held for the length of the connection timeout and then dropped, with nothing on record to say why.
 - FIXED: **A set whose MSS limit is scoped to IPv4 addresses no longer caps the IPv6 traffic of the devices it names** - the limit was written once per address family, and the family the set holds no addresses for fell back to matching the device alone, so every IPv6 HTTPS connection from that device was capped at the set's value regardless of where it was headed.
 - FIXED: **A site switched to a backup set still had its name looked up by the set that was failing** - the backup's pinned addresses, DoH server and forwarding target were never consulted for it, so a domain that only the backup could resolve stayed unresolvable however the escalation was set up.

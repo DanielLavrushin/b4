@@ -21,14 +21,29 @@ body:
     id: steps
     attributes:
       label: Steps to reproduce
-      description: How can we trigger this bug?
+      description: |
+        What did you configure, what did you do, and what did you see instead?
+
+        If it is about traffic, name the set and how it is routed, and say where you were watching from - a LAN device, the router itself, a browser, an app.
+        Say how often it happens too: every time, only on some sites, or only after b4 has been running for a while.
       placeholder: |
-        1. Install b4 on OpenWrt 23.05
-        2. Configure with default settings
-        3. Start the service
-        4. Try to access a blocked website
+        1. Set "Meta": targets geosite:meta, combo fragmentation, routed through a SOCKS5 upstream
+        2. From a LAN device, open instagram.com in a browser
+        3. The page hangs and never loads; it works again right after b4 is restarted
+
+        Happens every time, about an hour after b4 starts. Other sets on the same router are fine.
     validations:
       required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: b4 version
+      description: |
+        Shown at the bottom of the web UI sidebar, or run `b4 --version` on the box.
+      placeholder: "1.77.0"
+    validations:
+      required: true
 
   - type: dropdown
     id: platform
@@ -60,40 +75,40 @@ body:
       required: true
 
   - type: textarea
-    id: sysinfo
+    id: diagnostics
     attributes:
-      label: System diagnostics (--sysinfo output)
+      label: System diagnostics (JSON)
       description: |
-        Run the following command and paste the full output here:
+        In the b4 web UI go to **Settings -> Core -> Core Controls -> System Info**, press **Copy JSON** and paste it here.
+
+        It carries the b4 version, platform, firewall backend and rules, kernel modules, engine mode and interfaces. Passwords are not part of it.
+
+        If the web UI is unreachable (b4 does not start at all), paste the output of this instead:
         ```
         curl -fsSL https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh | sh -s -- --sysinfo
         ```
-        If curl is not available, try:
-        ```
-        wget -qO- https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh | sh -s -- --sysinfo
-        ```
-      render: text
+        If curl is not available, swap it for `wget -qO- <url>`.
+      render: json
     validations:
       required: true
 
   - type: textarea
-    id: config
-    attributes:
-      label: b4 configuration (b4.json)
-      description: |
-        Paste your b4.json config. Remove any sensitive data if needed.
-        Usually located at `/etc/b4/b4.json` or `/opt/etc/b4/b4.json`.
-      render: json
-    validations:
-      required: false
-
-  - type: textarea
     id: logs
     attributes:
-      label: Logs
+      label: Debug log trace
       description: |
-        Paste the output of `cat /var/log/b4/errors.log`
-      render: text
+        A debug trace shows what b4 did with your traffic, which is usually what decides the issue. To record one:
+
+        1. Set **Settings -> Core -> Service -> Log Level** to **Debug** and press **Save Changes**.
+        2. Open the **Logs** page and press **Start trace**.
+        3. Reproduce the problem: open the site or app that fails. If it only breaks after a while, leave the trace running - it stops on its own after 15 minutes.
+        4. Press **Stop & save**. b4 hands you a `b4-trace-*.log` file - drag it into this field.
+
+        Put the log level back to Info afterwards, debug logging is verbose.
+
+        The trace begins with a diagnostics snapshot and a summary of your enabled sets (names, target counts and a few sample domains, strategy and routing settings). Proxy credentials are stripped, but look the header over before posting if your domain lists are private to you.
+      placeholder: |
+        Drag & drop the b4-trace-*.log file here, or paste the relevant log lines.
     validations:
       required: false
 
@@ -101,6 +116,6 @@ body:
     id: additional
     attributes:
       label: Additional context
-      description: Anything else that might help — screenshots, network topology, ISP, etc.
+      description: Anything else that might help - screenshots, network topology, ISP, etc.
     validations:
       required: false

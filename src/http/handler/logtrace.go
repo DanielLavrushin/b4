@@ -131,6 +131,7 @@ func (api *API) handleTraceStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	diag := api.buildDiagnostics()
+	sets := collectTraceSets(api.getCfg())
 
 	if lastTracePath != "" {
 		_ = os.Remove(lastTracePath)
@@ -154,6 +155,11 @@ func (api *API) handleTraceStart(w http.ResponseWriter, r *http.Request) {
 	}
 	if data, err := json.MarshalIndent(diag, "", "  "); err == nil {
 		fmt.Fprintf(f, "--- system diagnostics ---\n")
+		_, _ = f.Write(data)
+		fmt.Fprintf(f, "\n")
+	}
+	if data, err := json.MarshalIndent(sets, "", "  "); err == nil {
+		fmt.Fprintf(f, "--- enabled sets (%d) ---\n", len(sets))
 		_, _ = f.Write(data)
 		fmt.Fprintf(f, "\n")
 	}

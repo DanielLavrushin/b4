@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -340,6 +339,9 @@ func (l *Listener) handle(client net.Conn) {
 	}
 	defer upstream.Close()
 
+	setTCPUserTimeout(client, failOpenUserTimeout)
+	setTCPUserTimeout(upstream, failOpenUserTimeout)
+
 	pipe(client, upstream)
 }
 
@@ -359,21 +361,5 @@ func (l *Listener) failOpenDirect(client net.Conn, origIP net.IP, origPort int) 
 }
 
 func pipe(a, b net.Conn) {
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		_, _ = io.Copy(a, b)
-		if c, ok := a.(interface{ CloseWrite() error }); ok {
-			_ = c.CloseWrite()
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		_, _ = io.Copy(b, a)
-		if c, ok := b.(interface{ CloseWrite() error }); ok {
-			_ = c.CloseWrite()
-		}
-	}()
-	wg.Wait()
+	_ = socks5.Relay(a, b)
 }
