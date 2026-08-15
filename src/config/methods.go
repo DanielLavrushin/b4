@@ -972,9 +972,7 @@ func (c *Config) sanitizeEscalation() {
 			continue
 		}
 		if !target.Enabled {
-			log.Warnf("Set %q (id=%s): escalate.to %q (id=%s) is disabled, clearing", s.Name, s.Id, target.Name, target.Id)
-			s.Escalate.To = ""
-			continue
+			log.Tracef("Set %q (id=%s): escalate.to %q (id=%s) is disabled, the link is kept but stays idle until it is enabled again", s.Name, s.Id, target.Name, target.Id)
 		}
 	}
 

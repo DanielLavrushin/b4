@@ -36,15 +36,18 @@ func routingHandleDNSAvailable() bool {
 	return RoutingHandleDNSAsyncFunc != nil || RoutingHandleDNSFunc != nil
 }
 
-func registerEscalatedRoute(cfg *config.Config, escSet *config.SetConfig, dst net.IP) {
-	if cfg == nil || escSet == nil || dst == nil || !escSet.Routing.Enabled || !routingHandleDNSAvailable() {
+func registerEscalatedRoute(cfg *config.Config, escSet *config.SetConfig, ips []net.IP) {
+	if cfg == nil || escSet == nil || len(ips) == 0 || !escSet.Routing.Enabled || !routingHandleDNSAvailable() {
+		return
+	}
+	if escSet.Targets.DomainOnly {
 		return
 	}
 	if cfg.Queue.IsDiscovery {
 		return
 	}
-	log.Tracef("registerEscalatedRoute: adding %s to %s ipset (mode=%s)", dst, escSet.Name, escSet.Routing.Mode)
-	routingHandleDNSAsync(cfg, escSet, []net.IP{dst})
+	log.Tracef("registerEscalatedRoute: adding %d address(es) to %s ipset (mode=%s)", len(ips), escSet.Name, escSet.Routing.Mode)
+	routingHandleDNSAsync(cfg, escSet, ips)
 }
 
 func registerLearnedRoute(cfg *config.Config, set *config.SetConfig, dst net.IP, host string) {

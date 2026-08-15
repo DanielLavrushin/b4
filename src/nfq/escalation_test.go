@@ -10,7 +10,8 @@ func newDestState() *destStateTracker {
 		conns:       make(map[string]*ipBlockEntry),
 		blocked:     make(map[string]time.Time),
 		escalations: make(map[string]*escalationEntry),
-		rstKills:    make(map[string]*rstKillEntry),
+		rstKills:    make(map[string]*failEntry),
+		dnsFails:    make(map[string]*failEntry),
 	}
 }
 
@@ -23,7 +24,7 @@ func TestEscalation_GetMissReturnsFalse(t *testing.T) {
 
 func TestEscalation_SetThenGet(t *testing.T) {
 	b := newDestState()
-	if !b.SetEscalation("youtube.com", "set-b", 0) {
+	if !b.SetEscalation("youtube.com", "set-b", "test", 0) {
 		t.Fatal("SetEscalation should succeed on first hop")
 	}
 	id, hops, ok := b.GetEscalation("youtube.com")
@@ -34,8 +35,8 @@ func TestEscalation_SetThenGet(t *testing.T) {
 
 func TestEscalation_ChainIncrementsHops(t *testing.T) {
 	b := newDestState()
-	b.SetEscalation("youtube.com", "set-b", 0)
-	b.SetEscalation("youtube.com", "set-c", 0)
+	b.SetEscalation("youtube.com", "set-b", "test", 0)
+	b.SetEscalation("youtube.com", "set-c", "test", 0)
 	id, hops, ok := b.GetEscalation("youtube.com")
 	if !ok || id != "set-c" || hops != 2 {
 		t.Fatalf("expected set-c hop=2, got id=%q hops=%d ok=%v", id, hops, ok)
@@ -45,18 +46,18 @@ func TestEscalation_ChainIncrementsHops(t *testing.T) {
 func TestEscalation_StopsAtMaxHops(t *testing.T) {
 	b := newDestState()
 	for i := 0; i < MaxEscalationHops; i++ {
-		if !b.SetEscalation("youtube.com", "set-x", 0) {
+		if !b.SetEscalation("youtube.com", "set-x", "test", 0) {
 			t.Fatalf("hop %d should still be allowed", i)
 		}
 	}
-	if b.SetEscalation("youtube.com", "set-y", 0) {
+	if b.SetEscalation("youtube.com", "set-y", "test", 0) {
 		t.Fatal("escalation past MaxEscalationHops must be rejected")
 	}
 }
 
 func TestEscalation_Clear(t *testing.T) {
 	b := newDestState()
-	b.SetEscalation("youtube.com", "set-b", 0)
+	b.SetEscalation("youtube.com", "set-b", "test", 0)
 	b.ClearEscalation("youtube.com")
 	if _, _, ok := b.GetEscalation("youtube.com"); ok {
 		t.Fatal("ClearEscalation should drop the entry")
@@ -65,8 +66,8 @@ func TestEscalation_Clear(t *testing.T) {
 
 func TestEscalation_Reset(t *testing.T) {
 	b := newDestState()
-	b.SetEscalation("youtube.com", "set-b", 0)
-	b.SetEscalation("discord.com", "set-c", 0)
+	b.SetEscalation("youtube.com", "set-b", "test", 0)
+	b.SetEscalation("discord.com", "set-c", "test", 0)
 	b.ResetEscalations()
 	if _, _, ok := b.GetEscalation("youtube.com"); ok {
 		t.Fatal("ResetEscalations should drop all entries")
@@ -78,14 +79,14 @@ func TestEscalation_Reset(t *testing.T) {
 
 func TestEscalation_SetAfterExpiryRestartsChain(t *testing.T) {
 	b := newDestState()
-	b.SetEscalation("youtube.com", "set-b", 0)
-	b.SetEscalation("youtube.com", "set-c", 0)
+	b.SetEscalation("youtube.com", "set-b", "test", 0)
+	b.SetEscalation("youtube.com", "set-c", "test", 0)
 	// chain is at hops=2; backdate it past the default TTL
 	b.mu.Lock()
 	b.escalations["youtube.com"].setAt = time.Now().Add(-EscalationTTL - time.Minute)
 	b.mu.Unlock()
 
-	if !b.SetEscalation("youtube.com", "set-d", 0) {
+	if !b.SetEscalation("youtube.com", "set-d", "test", 0) {
 		t.Fatal("SetEscalation must succeed when prev entry is past its TTL")
 	}
 	id, hops, ok := b.GetEscalation("youtube.com")
@@ -96,7 +97,7 @@ func TestEscalation_SetAfterExpiryRestartsChain(t *testing.T) {
 
 func TestEscalation_ExpiresAfterTTL(t *testing.T) {
 	b := newDestState()
-	b.SetEscalation("youtube.com", "set-b", 0)
+	b.SetEscalation("youtube.com", "set-b", "test", 0)
 	// Manually backdate the entry past the TTL.
 	b.mu.Lock()
 	b.escalations["youtube.com"].setAt = time.Now().Add(-EscalationTTL - time.Minute)
@@ -109,8 +110,8 @@ func TestEscalation_ExpiresAfterTTL(t *testing.T) {
 
 func TestEscalation_CleanupRemovesExpired(t *testing.T) {
 	b := newDestState()
-	b.SetEscalation("a:1", "x", 0)
-	b.SetEscalation("b:2", "y", 0)
+	b.SetEscalation("a:1", "x", "test", 0)
+	b.SetEscalation("b:2", "y", "test", 0)
 	b.mu.Lock()
 	b.escalations["a:1"].setAt = time.Now().Add(-EscalationTTL - time.Minute)
 	b.mu.Unlock()
@@ -132,7 +133,7 @@ func TestEscalation_CleanupRemovesExpired(t *testing.T) {
 func TestEscalation_DoesNotInterfereWithBlockedCache(t *testing.T) {
 	b := newDestState()
 	b.AddBlocked("9.9.9.9:443")
-	b.SetEscalation("youtube.com", "set-b", 0)
+	b.SetEscalation("youtube.com", "set-b", "test", 0)
 
 	if !b.IsBlocked("9.9.9.9:443") {
 		t.Fatal("blocked IP should still be reported as blocked")

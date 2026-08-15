@@ -247,13 +247,15 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	matchedLearned := false
+	learnedHost := ""
 	if !matchedHint {
-		if mLearned, learnedSet, _ := matcher.MatchLearnedIPWithSource(pkt.dst, pkt.srcMac); mLearned {
+		if mLearned, learnedSet, learnedDomain := matcher.MatchLearnedIPWithSource(pkt.dst, pkt.srcMac); mLearned {
 			if learnedSet.MatchesTCPDPort(dport) {
 				matched = true
 				set = learnedSet
 				st = learnedSet
 				matchedLearned = true
+				learnedHost = learnedDomain
 			}
 		}
 	}
@@ -262,6 +264,20 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		if portMatched, portSet := matcher.MatchTCPPort(dport); portMatched {
 			matched = true
 			set = portSet
+		}
+	}
+
+	earlyHost := hintHost
+	if earlyHost == "" {
+		earlyHost = learnedHost
+	}
+	if matched && earlyHost != "" && cfg.IsTCPPort(dport) {
+		if escSet := w.escalatedSetFor(cfg, earlyHost, pkt.srcMac); escSet != nil && escSet != set {
+			log.Tracef("escalation hit for %s before the ClientHello: %s -> %s", earlyHost, set.Name, escSet.Name)
+			set = escSet
+			if st != nil {
+				st = escSet
+			}
 		}
 	}
 
@@ -347,7 +363,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			_ = w.sock.SendIPv6(pkt.raw, pkt.dst)
 		}
 
-		if set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.To != "" {
+		if set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.Active() {
 			connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 			w.connTracker.RegisterOutgoing(connKey, set)
 		}
@@ -466,20 +482,19 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		ipTarget = st.Name
 	}
 
-	if matched && isClientHello && host != "" && cfg.IsTCPPort(dport) {
-		if escId, _, ok := w.destState.GetEscalation(host); ok {
-			if escSet := cfg.GetSetById(escId); escSet != nil && escSet.Enabled {
+	if matched && host != "" && cfg.IsTCPPort(dport) {
+		if escSet := w.escalatedSetFor(cfg, host, pkt.srcMac); escSet != nil {
+			if escSet != set {
 				log.Tracef("escalation hit for %s: %s -> %s", host, set.Name, escSet.Name)
 				set = escSet
-				if sniTarget != "" {
-					sniTarget = set.Name
-				}
-				if ipTarget != "" {
-					ipTarget = set.Name
-				}
-			} else {
-				w.destState.ClearEscalation(host)
 			}
+			if sniTarget != "" {
+				sniTarget = set.Name
+			}
+			if ipTarget != "" {
+				ipTarget = set.Name
+			}
+			w.refreshEscalatedRoute(cfg, escSet, host, pkt.dst)
 		}
 	}
 
@@ -521,6 +536,26 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		m.RecordPacket(uint64(len(pkt.raw)))
 	}
 
+	stallCount := 0
+	stallFirstSeen := time.Time{}
+	stallTracked := false
+	if matched && isClientHello && host != "" && cfg.IsTCPPort(dport) &&
+		(set.TCP.IPBlockDetect.Enabled || set.Escalate.Active()) {
+		stallKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
+		stallCount, stallFirstSeen = w.destState.RecordClientHello(stallKey, host)
+		stallTracked = true
+	}
+
+	if stallTracked && escalateOnStall(&set.Escalate, stallCount, stallFirstSeen) {
+		if next := w.tryEscalate(cfg, set, host, pkt.srcMac, pkt.dst, escalateReasonStall); next != nil {
+			if !cfg.Queue.IsDiscovery {
+				log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), "escalate->"+next.Name)
+			}
+			vc.drop()
+			return 0
+		}
+	}
+
 	if matched && set != nil && set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) {
 		if matchedSNI || (matchedIP && !matchedLearned) {
 			if config.NormalizeBlockAction(set.Routing.BlockAction) != config.BlockActionDrop {
@@ -550,14 +585,11 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if matched {
-		ibdOn := set.TCP.IPBlockDetect.Enabled
-		canEscalate := set.Escalate.To != ""
-		if isClientHello && !routeTProxy && (ibdOn || canEscalate) && host != "" && cfg.IsTCPPort(dport) {
+		if stallTracked && set.TCP.IPBlockDetect.Enabled && !routeTProxy {
 			ibd := &set.TCP.IPBlockDetect
 			dstIPPort := fmt.Sprintf("%s:%d", pkt.dstStr, dport)
 			ibConnKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 
-			count, firstSeen := w.destState.RecordClientHello(ibConnKey, host)
 			threshold := ibd.RetransmitThreshold
 			if threshold <= 0 {
 				threshold = 3
@@ -567,46 +599,29 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				timeout = 3000 * time.Millisecond
 			}
 
-			if count >= threshold || (count > 1 && time.Since(firstSeen) > timeout) {
-				if canEscalate {
-					if next := cfg.GetSetById(set.Escalate.To); next != nil && next.Enabled {
-						ttl := time.Duration(set.Escalate.TtlSec) * time.Second
-						if w.destState.SetEscalation(host, next.Id, ttl) {
-							metrics.GetMetricsCollector().RecordEscalation()
-							registerEscalatedRoute(cfg, next, pkt.dst)
-							if !cfg.Queue.IsDiscovery {
-								log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), "ipblock-escalate->"+next.Name)
-							}
-							vc.drop()
-							return 0
-						}
-						log.Warnf("escalation hop cap reached for %s (chain stopped at %s)", host, set.Name)
+			if stallCount >= threshold || (stallCount > 1 && time.Since(stallFirstSeen) > timeout) {
+				if !w.destState.HasRSTSent(ibConnKey) {
+					w.destState.MarkRSTSent(ibConnKey)
+					if pkt.ver == IPv4 {
+						w.sendRSTToClientV4(pkt.raw, pkt.ihl, pkt.src, pkt.dst)
+					} else {
+						w.sendRSTToClientV6(pkt.raw, pkt.src, pkt.dst)
 					}
-				}
-				if ibdOn {
-					if !w.destState.HasRSTSent(ibConnKey) {
-						w.destState.MarkRSTSent(ibConnKey)
-						if pkt.ver == IPv4 {
-							w.sendRSTToClientV4(pkt.raw, pkt.ihl, pkt.src, pkt.dst)
-						} else {
-							w.sendRSTToClientV6(pkt.raw, pkt.src, pkt.dst)
-						}
-						if ibd.CacheBlockedIPs {
-							w.destState.AddBlocked(dstIPPort)
-						}
-						if !cfg.Queue.IsDiscovery {
-							log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), "ipblock")
-						}
-						m := metrics.GetMetricsCollector()
-						m.RecordConnection("TCP", host, pkt.srcStr, pkt.dstStr, true, pkt.srcMac, set.Name, config.TLSVersionString(tlsVersion))
+					if ibd.CacheBlockedIPs {
+						w.destState.AddBlocked(dstIPPort)
 					}
-					vc.drop()
-					return 0
+					if !cfg.Queue.IsDiscovery {
+						log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), "ipblock")
+					}
+					m := metrics.GetMetricsCollector()
+					m.RecordConnection("TCP", host, pkt.srcStr, pkt.dstStr, true, pkt.srcMac, set.Name, config.TLSVersionString(tlsVersion))
 				}
+				vc.drop()
+				return 0
 			}
 		}
 
-		if set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.To != "" {
+		if set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.Active() {
 			connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 			w.connTracker.RegisterOutgoing(connKey, set)
 		}
@@ -758,19 +773,18 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if shouldHandle && set != nil && host != "" {
-		if escId, _, ok := w.destState.GetEscalation(host); ok {
-			if escSet := cfg.GetSetById(escId); escSet != nil && escSet.Enabled {
+		if escSet := w.escalatedSetFor(cfg, host, pkt.srcMac); escSet != nil {
+			if escSet != set {
 				log.Tracef("UDP escalation hit for %s: %s -> %s", host, set.Name, escSet.Name)
 				set = escSet
-				if sniTarget != "" {
-					sniTarget = set.Name
-				}
-				if ipTarget != "" {
-					ipTarget = set.Name
-				}
-			} else {
-				w.destState.ClearEscalation(host)
 			}
+			if sniTarget != "" {
+				sniTarget = set.Name
+			}
+			if ipTarget != "" {
+				ipTarget = set.Name
+			}
+			w.refreshEscalatedRoute(cfg, escSet, host, pkt.dst)
 		}
 	}
 

@@ -453,10 +453,68 @@ type SetConfig struct {
 }
 
 type EscalateConfig struct {
-	To           string `json:"to"`             // ID of next set to use after this set is detected as blocked for a destination
-	RstThreshold int    `json:"rst_threshold"`  // 0 -> 3
-	RstWindowSec int    `json:"rst_window_sec"` // 0 -> 30
-	TtlSec       int    `json:"ttl_sec"`        // 0 -> 3600
+	To             string `json:"to"`               // ID of next set to use after this set is detected as blocked for a destination
+	RstThreshold   int    `json:"rst_threshold"`    // 0 -> 3
+	RstWindowSec   int    `json:"rst_window_sec"`   // 0 -> 30
+	TtlSec         int    `json:"ttl_sec"`          // 0 -> 3600
+	StallThreshold int    `json:"stall_threshold"`  // 0 -> 3
+	StallTimeoutMs int    `json:"stall_timeout_ms"` // 0 -> 3000
+	DNSThreshold   int    `json:"dns_threshold"`    // 0 -> 2
+}
+
+const (
+	DefaultEscalateRstThreshold   = 3
+	DefaultEscalateRstWindowSec   = 30
+	DefaultEscalateTTLSec         = 3600
+	DefaultEscalateStallThreshold = 3
+	DefaultEscalateStallTimeoutMs = 3000
+	DefaultEscalateDNSThreshold   = 2
+)
+
+func (c *EscalateConfig) Active() bool {
+	return c != nil && c.To != ""
+}
+
+func (c *EscalateConfig) ResolvedRstThreshold() int {
+	if c == nil || c.RstThreshold <= 0 {
+		return DefaultEscalateRstThreshold
+	}
+	return c.RstThreshold
+}
+
+func (c *EscalateConfig) ResolvedRstWindow() time.Duration {
+	if c == nil || c.RstWindowSec <= 0 {
+		return DefaultEscalateRstWindowSec * time.Second
+	}
+	return time.Duration(c.RstWindowSec) * time.Second
+}
+
+func (c *EscalateConfig) ResolvedTTL() time.Duration {
+	if c == nil || c.TtlSec <= 0 {
+		return DefaultEscalateTTLSec * time.Second
+	}
+	return time.Duration(c.TtlSec) * time.Second
+}
+
+func (c *EscalateConfig) ResolvedStallThreshold() int {
+	if c == nil || c.StallThreshold <= 0 {
+		return DefaultEscalateStallThreshold
+	}
+	return c.StallThreshold
+}
+
+func (c *EscalateConfig) ResolvedStallTimeout() time.Duration {
+	if c == nil || c.StallTimeoutMs <= 0 {
+		return DefaultEscalateStallTimeoutMs * time.Millisecond
+	}
+	return time.Duration(c.StallTimeoutMs) * time.Millisecond
+}
+
+func (c *EscalateConfig) ResolvedDNSThreshold() int {
+	if c == nil || c.DNSThreshold <= 0 {
+		return DefaultEscalateDNSThreshold
+	}
+	return c.DNSThreshold
 }
 
 type ComboFragConfig struct {

@@ -299,7 +299,10 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 	}
 
 	if !reuse && p.state != nil && p.state.destState != nil {
-		p.state.destState.ResetEscalations()
+		p.state.destState.PruneEscalations(func(setId string) bool {
+			target := newCfg.GetSetById(setId)
+			return target != nil && target.Enabled
+		})
 	}
 
 	if p.Dhcp != nil {

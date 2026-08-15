@@ -64,8 +64,15 @@ func synDetectEnabled(set *config.SetConfig) bool {
 	return set != nil && set.TCP.IPBlockDetect.Enabled && set.TCP.IPBlockDetect.SynDetect
 }
 
+func synTrackingEnabled(set *config.SetConfig) bool {
+	if set == nil {
+		return false
+	}
+	return synDetectEnabled(set) || set.Escalate.Active()
+}
+
 func (w *Worker) handleSynHealth(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, set *config.SetConfig, sport, dport uint16) bool {
-	if w == nil || w.ipHealth == nil || cfg == nil || cfg.Queue.IsDiscovery || !synDetectEnabled(set) {
+	if w == nil || w.ipHealth == nil || cfg == nil || cfg.Queue.IsDiscovery || !synTrackingEnabled(set) {
 		return false
 	}
 
@@ -81,6 +88,17 @@ func (w *Worker) handleSynHealth(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	host := w.hostForDest(cfg, pkt.srcStr, pkt.dstStr, pkt.srcMac)
+
+	if set.Escalate.Active() && host != "" {
+		if next := w.tryEscalate(cfg, set, host, pkt.srcMac, pkt.dst, escalateReasonDeadIP); next != nil {
+			log.LogConnection("TCP", set.Name, host, pkt.srcStr, sport, "", pkt.dstStr, dport, pkt.srcMac, "", "escalate->"+next.Name)
+		}
+	}
+
+	if !synDetectEnabled(set) {
+		return false
+	}
+
 	log.LogConnection("TCP", set.Name, host, pkt.srcStr, sport, "", pkt.dstStr, dport, pkt.srcMac, "", "ipblock-syn")
 
 	m := metrics.GetMetricsCollector()

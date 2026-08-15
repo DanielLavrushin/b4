@@ -75,10 +75,14 @@ export const EscalationSettings = ({
                     (s) =>
                       s.id &&
                       s.id !== config.id &&
-                      s.enabled &&
                       !wouldCreateEscalationCycle(s, config.id, allSets),
                   )
-                  .map((s) => ({ label: s.name || s.id, value: s.id })),
+                  .map((s) => ({
+                    label: s.enabled
+                      ? s.name || s.id
+                      : `${s.name || s.id} (${t("sets.escalation.targetDisabled")})`,
+                    value: s.id,
+                  })),
               ]}
               onChange={(e) => onChange("escalate.to", e.target.value)}
             />
@@ -98,8 +102,36 @@ export const EscalationSettings = ({
 
         {escalateOn && (
           <>
-            <B4FormHeader label={t("sets.escalation.tuning")} />
+            <B4FormHeader label={t("sets.escalation.triggers")} />
+            <B4Hint sx={{ mb: 1 }}>{t("sets.escalation.triggersHelper")}</B4Hint>
             <Grid container spacing={3}>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <B4Slider
+                  label={t("sets.escalation.stallThreshold")}
+                  value={config.escalate?.stall_threshold || 3}
+                  onChange={(value: number) =>
+                    onChange("escalate.stall_threshold", value)
+                  }
+                  min={1}
+                  max={20}
+                  step={1}
+                  helperText={t("sets.escalation.stallThresholdHelper")}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <B4Slider
+                  label={t("sets.escalation.stallTimeoutMs")}
+                  value={config.escalate?.stall_timeout_ms || 3000}
+                  onChange={(value: number) =>
+                    onChange("escalate.stall_timeout_ms", value)
+                  }
+                  min={500}
+                  max={15000}
+                  step={500}
+                  valueSuffix=" ms"
+                  helperText={t("sets.escalation.stallTimeoutHelper")}
+                />
+              </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
                 <B4Slider
                   label={t("sets.escalation.rstThreshold")}
@@ -127,6 +159,23 @@ export const EscalationSettings = ({
                   helperText={t("sets.escalation.rstWindowHelper")}
                 />
               </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <B4Slider
+                  label={t("sets.escalation.dnsThreshold")}
+                  value={config.escalate?.dns_threshold || 2}
+                  onChange={(value: number) =>
+                    onChange("escalate.dns_threshold", value)
+                  }
+                  min={1}
+                  max={10}
+                  step={1}
+                  helperText={t("sets.escalation.dnsThresholdHelper")}
+                />
+              </Grid>
+            </Grid>
+
+            <B4FormHeader label={t("sets.escalation.tuning")} />
+            <Grid container spacing={3}>
               <Grid size={{ xs: 12, md: 6 }}>
                 <B4Slider
                   label={t("sets.escalation.ttlMin")}

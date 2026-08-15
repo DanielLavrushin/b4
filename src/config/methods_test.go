@@ -979,7 +979,7 @@ func TestEscalateTo_SanitizeSelfReference(t *testing.T) {
 	}
 }
 
-func TestEscalateTo_SanitizeDisabledTarget(t *testing.T) {
+func TestEscalateTo_SanitizeKeepsDisabledTarget(t *testing.T) {
 	cfg := NewConfig()
 	a := NewSetConfig()
 	a.Id = "a"
@@ -994,8 +994,8 @@ func TestEscalateTo_SanitizeDisabledTarget(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
-	if cfg.Sets[0].Escalate.To != "" {
-		t.Fatal("escalate.to to a disabled set should be cleared")
+	if cfg.Sets[0].Escalate.To != "b" {
+		t.Fatal("escalate.to must survive the target being disabled, the runtime skips it instead")
 	}
 }
 
