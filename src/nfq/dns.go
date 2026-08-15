@@ -88,15 +88,21 @@ const (
 	dnsActionServfail      = "dns-servfail"
 	dnsActionHeal          = "dns-heal"
 	dnsActionPin           = "dns-pin"
+	dnsActionNoClient      = "dns-no-client"
+	dnsActionOverload      = "dns-overload"
 	dnsActionDoHPrefix     = "dns-doh->"
 	dnsActionForwardPrefix = "dns-forward->"
 )
 
-func dnsEndpoints(ipVersion byte, raw []byte) (net.IP, net.IP) {
-	if ipVersion == IPv4 {
-		return append(net.IP(nil), raw[12:16]...), append(net.IP(nil), raw[16:20]...)
+const maxDNSResolveInflight = 64
+
+var dnsResolveInflight = make(chan struct{}, maxDNSResolveInflight)
+
+func (w *Worker) dnsClientAddressable(pkt *pktInfo, sport, dport uint16) bool {
+	if w.srcResolver == nil || pkt.ver != IPv4 {
+		return true
 	}
-	return append(net.IP(nil), raw[8:24]...), append(net.IP(nil), raw[24:40]...)
+	return w.srcResolver.addressable(pkt.proto, pkt.src, sport, pkt.dst, dport)
 }
 
 func dnsUpstreamLabel(rawURL string) string {
@@ -127,7 +133,9 @@ func logDNSEvent(proto string, set *config.SetConfig, domain string, clientIP, s
 	log.LogConnection(proto, setName, domain, clientIP.String(), clientPort, "", serverIP.String(), 53, srcMac, "", action)
 }
 
-func (w *Worker) processDnsPacket(vc *verdictCtx, ipVersion byte, sport uint16, dport uint16, payload []byte, raw []byte, srcMac string) int {
+func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dport uint16, payload []byte) int {
+	ipVersion := pkt.ver
+	srcMac := pkt.srcMac
 
 	if dport == 53 {
 		domain, ok := dns.ParseQueryDomain(payload)
@@ -139,15 +147,23 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, ipVersion byte, sport uint16, 
 				cfg := w.getConfig()
 				log.Tracef("DNS query: %s matched set %s (src %s)", domain, set.Name, srcMac)
 
-				clientIP, originalDst := dnsEndpoints(ipVersion, raw)
+				clientIP := append(net.IP(nil), pkt.src...)
+				originalDst := append(net.IP(nil), pkt.dst...)
+
+				if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) && !cfg.Queue.IsDiscovery &&
+					config.NormalizeBlockAction(set.Routing.BlockAction) == config.BlockActionDrop {
+					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionBlock)
+					metrics.GetMetricsCollector().RecordBlock(domain, srcMac)
+					vc.drop()
+					return 0
+				}
+
+				if !w.dnsClientAddressable(pkt, sport, dport) {
+					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionNoClient)
+					return vc.accept()
+				}
 
 				if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) && !cfg.Queue.IsDiscovery {
-					if config.NormalizeBlockAction(set.Routing.BlockAction) == config.BlockActionDrop {
-						logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionBlock)
-						metrics.GetMetricsCollector().RecordBlock(domain, srcMac)
-						vc.drop()
-						return 0
-					}
 					ipv6Disabled := ipVersion == IPv6 && !cfg.Queue.IPv6Enabled
 					if !ipv6Disabled {
 						if resp := dns.BuildBlockResponse(payload); resp != nil {
@@ -218,11 +234,21 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, ipVersion byte, sport uint16, 
 				log.Tracef("DNS redirect: intercepting %s -> %s (set %s)", domain, target, set.Name)
 				logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsRedirectAction(set))
 
+				select {
+				case dnsResolveInflight <- struct{}{}:
+				default:
+					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionOverload)
+					return vc.accept()
+				}
+
 				vc.drop()
 
 				w.wg.Add(1)
 				go func(s *config.SetConfig, c *config.Config) {
-					defer w.wg.Done()
+					defer func() {
+						<-dnsResolveInflight
+						w.wg.Done()
+					}()
 					w.resolveDNSRedirect(ver, s, c, query, clientIP, clientPort, originalDst, targetIP, delay)
 				}(set, cfg)
 				return 0
@@ -241,15 +267,8 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, ipVersion byte, sport uint16, 
 				}
 			}
 			domain = strings.ToLower(domain)
-			var clientIP net.IP
-			var dnsServerIP net.IP
-			if ipVersion == IPv4 {
-				clientIP = net.IP(raw[16:20])
-				dnsServerIP = net.IP(raw[12:16])
-			} else {
-				clientIP = net.IP(raw[24:40])
-				dnsServerIP = net.IP(raw[8:24])
-			}
+			clientIP := pkt.dst
+			dnsServerIP := pkt.src
 
 			routed := false
 			var healSet *config.SetConfig
@@ -355,13 +374,17 @@ func (w *Worker) sendDNSResponseToClient(ipVersion byte, originalDst, clientIP n
 	if len(resp) == 0 {
 		return
 	}
+	sender := w.clientSender()
+	if sender == nil {
+		return
+	}
 	if ipVersion == IPv4 {
 		if pkt := sock.BuildUDPPacketV4(originalDst, clientIP, 53, clientPort, resp); pkt != nil {
-			_ = w.clientSender().SendIPv4(pkt, clientIP)
+			_ = sender.SendIPv4(pkt, clientIP)
 		}
 	} else {
 		if pkt := sock.BuildUDPPacketV6(originalDst, clientIP, 53, clientPort, resp); pkt != nil {
-			_ = w.clientSender().SendIPv6(pkt, clientIP)
+			_ = sender.SendIPv6(pkt, clientIP)
 		}
 	}
 }

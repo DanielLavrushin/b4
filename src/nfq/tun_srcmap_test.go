@@ -63,6 +63,37 @@ func TestTunSrcResolveNoWAN(t *testing.T) {
 	}
 }
 
+func TestTunSrcAddressableSeparatesLocalFromUnknown(t *testing.T) {
+	const wan = "94.189.76.227"
+	lines := "" +
+		"ipv4 2 udp 17 29 src=192.168.1.100 dst=8.8.8.8 sport=45001 dport=53 src=8.8.8.8 dst=" + wan + " sport=53 dport=45001 use=1\n" +
+		"ipv4 2 udp 17 29 src=" + wan + " dst=1.1.1.1 sport=45002 dport=53 src=1.1.1.1 dst=" + wan + " sport=53 dport=45002 use=1\n"
+	r := newResolverWith(t, wan, lines)
+
+	got, ok := r.resolve(17, net.ParseIP(wan), 45001, net.ParseIP("8.8.8.8"), 53)
+	if !ok || got.String() != "192.168.1.100" {
+		t.Fatalf("forwarded LAN flow: want 192.168.1.100, got %v ok=%v", got, ok)
+	}
+	if !r.addressable(17, net.ParseIP(wan), 45001, net.ParseIP("8.8.8.8"), 53) {
+		t.Fatal("a de-SNAT'able flow must be addressable")
+	}
+
+	if _, ok := r.resolve(17, net.ParseIP(wan), 45002, net.ParseIP("1.1.1.1"), 53); ok {
+		t.Fatal("a router-local flow must not be reported as a LAN client")
+	}
+	if !r.addressable(17, net.ParseIP(wan), 45002, net.ParseIP("1.1.1.1"), 53) {
+		t.Fatal("a router-local flow is addressable at the WAN address and must not fail open")
+	}
+
+	if r.addressable(17, net.ParseIP(wan), 45003, net.ParseIP("9.9.9.9"), 53) {
+		t.Fatal("a flow absent from conntrack must not be addressable")
+	}
+
+	if !r.addressable(17, net.ParseIP("192.168.1.100"), 45001, net.ParseIP("8.8.8.8"), 53) {
+		t.Fatal("a source that is not the WAN address needs no lookup")
+	}
+}
+
 func TestTunSrcSetWANClearsCache(t *testing.T) {
 	line := "tcp 6 100 ESTABLISHED src=192.168.1.100 dst=104.18.8.37 sport=49874 dport=443 src=104.18.8.37 dst=94.189.76.227 sport=443 dport=49874 use=1\n"
 	r := newResolverWith(t, "94.189.76.227", line)
