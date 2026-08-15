@@ -298,7 +298,7 @@ func replyCaptureNeeded(cfg *config.Config) bool {
 		if set == nil || !set.Enabled {
 			continue
 		}
-		if set.TCP.RSTProtection.Enabled || set.Escalate.To != "" {
+		if set.TCP.RSTProtection.Enabled || set.Escalate.Active() {
 			return true
 		}
 	}

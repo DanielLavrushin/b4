@@ -110,17 +110,21 @@ type destStateTracker struct {
 	conns       map[string]*ipBlockEntry
 	blocked     map[string]time.Time
 	escalations map[string]*escalationEntry
-	rstKills    map[string]*rstKillEntry
+	rstKills    map[string]*failEntry
+	dnsFails    map[string]*failEntry
 }
 
 type escalationEntry struct {
-	setId string
-	setAt time.Time
-	hops  int
-	ttl   time.Duration
+	setId    string
+	setAt    time.Time
+	hops     int
+	ttl      time.Duration
+	reason   string
+	routedAt time.Time
+	capLogAt time.Time
 }
 
-type rstKillEntry struct {
+type failEntry struct {
 	count   int
 	firstAt time.Time
 	window  time.Duration
@@ -131,12 +135,17 @@ const maxIPBlockCacheEntries = 5000
 const maxEscalationCacheEntries = 5000
 const maxRSTKillEntries = 5000
 
-const RSTKillThreshold = 3
-const RSTKillWindow = 30 * time.Second
+const RSTKillThreshold = config.DefaultEscalateRstThreshold
+const RSTKillWindow = config.DefaultEscalateRstWindowSec * time.Second
 
-const EscalationTTL = time.Hour
+const DNSFailThreshold = config.DefaultEscalateDNSThreshold
+const DNSFailWindow = 120 * time.Second
+
+const EscalationTTL = config.DefaultEscalateTTLSec * time.Second
 
 const MaxEscalationHops = 8
+
+const escalationCapLogInterval = time.Minute
 
 func (t *destStateTracker) RecordClientHello(connKey, host string) (int, time.Time) {
 	t.mu.Lock()
@@ -227,6 +236,11 @@ func (t *destStateTracker) Cleanup(cacheTTL time.Duration) {
 			delete(t.rstKills, k)
 		}
 	}
+	for k, v := range t.dnsFails {
+		if now.Sub(v.firstAt) > v.window {
+			delete(t.dnsFails, k)
+		}
+	}
 }
 
 func (t *destStateTracker) GetEscalation(host string) (setId string, hops int, ok bool) {
@@ -242,7 +256,17 @@ func (t *destStateTracker) GetEscalation(host string) (setId string, hops int, o
 	return e.setId, e.hops, true
 }
 
-func (t *destStateTracker) SetEscalation(host, setId string, ttl time.Duration) bool {
+func (t *destStateTracker) GetEscalationReason(host string) string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	e, exists := t.escalations[host]
+	if !exists || time.Since(e.setAt) > e.ttl {
+		return ""
+	}
+	return e.reason
+}
+
+func (t *destStateTracker) SetEscalation(host, setId, reason string, ttl time.Duration) bool {
 	if ttl <= 0 {
 		ttl = EscalationTTL
 	}
@@ -276,13 +300,65 @@ func (t *destStateTracker) SetEscalation(host, setId string, ttl time.Duration) 
 	if hops > MaxEscalationHops {
 		return false
 	}
+	capLogAt := time.Time{}
+	if prev != nil {
+		capLogAt = prev.capLogAt
+	}
 	t.escalations[host] = &escalationEntry{
-		setId: setId,
-		setAt: time.Now(),
-		hops:  hops,
-		ttl:   ttl,
+		setId:    setId,
+		setAt:    time.Now(),
+		hops:     hops,
+		ttl:      ttl,
+		reason:   reason,
+		capLogAt: capLogAt,
 	}
 	return true
+}
+
+func (t *destStateTracker) ShouldLogHopCap(host string) bool {
+	now := time.Now()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	e := t.escalations[host]
+	if e == nil {
+		return true
+	}
+	if !e.capLogAt.IsZero() && now.Sub(e.capLogAt) < escalationCapLogInterval {
+		return false
+	}
+	e.capLogAt = now
+	return true
+}
+
+func (t *destStateTracker) ShouldRefreshRoute(host string, interval time.Duration) bool {
+	if interval <= 0 {
+		return false
+	}
+	now := time.Now()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	e := t.escalations[host]
+	if e == nil || now.Sub(e.setAt) > e.ttl {
+		return false
+	}
+	if !e.routedAt.IsZero() && now.Sub(e.routedAt) < interval {
+		return false
+	}
+	e.routedAt = now
+	return true
+}
+
+func (t *destStateTracker) PruneEscalations(valid func(setId string) bool) {
+	if valid == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for host, e := range t.escalations {
+		if !valid(e.setId) {
+			delete(t.escalations, host)
+		}
+	}
 }
 
 type EscalationSnapshot struct {
@@ -323,7 +399,8 @@ func (t *destStateTracker) ResetEscalations() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.escalations = make(map[string]*escalationEntry)
-	t.rstKills = make(map[string]*rstKillEntry)
+	t.rstKills = make(map[string]*failEntry)
+	t.dnsFails = make(map[string]*failEntry)
 }
 
 func (t *destStateTracker) RecordRSTKill(host string, threshold int, window time.Duration) bool {
@@ -335,33 +412,60 @@ func (t *destStateTracker) RecordRSTKill(host string, threshold int, window time
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.rstKills == nil {
+		t.rstKills = make(map[string]*failEntry)
+	}
+	return recordFailureLocked(t.rstKills, host, threshold, window)
+}
 
-	if len(t.rstKills) >= maxRSTKillEntries {
-		now := time.Now()
+func (t *destStateTracker) RecordDNSFailure(host string, threshold int, window time.Duration) bool {
+	if threshold <= 0 {
+		threshold = DNSFailThreshold
+	}
+	if window <= 0 {
+		window = DNSFailWindow
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.dnsFails == nil {
+		t.dnsFails = make(map[string]*failEntry)
+	}
+	return recordFailureLocked(t.dnsFails, host, threshold, window)
+}
+
+func (t *destStateTracker) ClearDNSFailures(host string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.dnsFails, host)
+}
+
+func recordFailureLocked(entries map[string]*failEntry, host string, threshold int, window time.Duration) bool {
+	now := time.Now()
+
+	if len(entries) >= maxRSTKillEntries {
 		var oldestKey string
 		var oldestTime time.Time
-		for k, v := range t.rstKills {
+		for k, v := range entries {
 			if now.Sub(v.firstAt) > v.window {
-				delete(t.rstKills, k)
+				delete(entries, k)
 			} else if oldestTime.IsZero() || v.firstAt.Before(oldestTime) {
 				oldestKey = k
 				oldestTime = v.firstAt
 			}
 		}
-		if len(t.rstKills) >= maxRSTKillEntries && oldestKey != "" {
-			delete(t.rstKills, oldestKey)
+		if len(entries) >= maxRSTKillEntries && oldestKey != "" {
+			delete(entries, oldestKey)
 		}
 	}
 
-	now := time.Now()
-	entry, exists := t.rstKills[host]
+	entry, exists := entries[host]
 	if !exists || now.Sub(entry.firstAt) > entry.window {
-		t.rstKills[host] = &rstKillEntry{count: 1, firstAt: now, window: window}
-		return false
+		entries[host] = &failEntry{count: 1, firstAt: now, window: window}
+		return threshold <= 1
 	}
 	entry.count++
 	if entry.count >= threshold {
-		delete(t.rstKills, host)
+		delete(entries, host)
 		return true
 	}
 	return false
@@ -393,7 +497,8 @@ func newRuntimeState() *runtimeState {
 			conns:       make(map[string]*ipBlockEntry),
 			blocked:     make(map[string]time.Time),
 			escalations: make(map[string]*escalationEntry),
-			rstKills:    make(map[string]*rstKillEntry),
+			rstKills:    make(map[string]*failEntry),
+			dnsFails:    make(map[string]*failEntry),
 		},
 	}
 }

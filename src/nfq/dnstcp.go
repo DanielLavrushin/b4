@@ -247,6 +247,11 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			return
 		}
 
+		if escSet := s.worker.escalatedSetFor(cfg, domain, srcMac); escSet != nil && escSet != set {
+			log.Tracef("DNS TCP escalation hit for %s: %s -> %s", domain, set.Name, escSet.Name)
+			set = escSet
+		}
+
 		if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) && !cfg.Queue.IsDiscovery {
 			if resp := dns.BuildBlockResponse(query); resp != nil {
 				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionSinkhole)
@@ -297,6 +302,24 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			}
 		}
 
+		if dnsAnswerFailed(resp) {
+			if next := s.worker.noteDNSOutcome(cfg, set, domain, srcMac, nil); next != nil {
+				if alt, aerr := s.answerVia(next, cfg, query, domain, clientIP); aerr == nil && len(alt) > 0 {
+					s.logEvent(next, domain, clientIP, origIP, clientPort, srcMac, dnsActionEscalatePrefix+next.Name)
+					if ips := dns.ParseResponseIPs(alt); len(ips) > 0 && clientIP != nil {
+						s.worker.storeHostHints(clientIP, next, domain, ips)
+						if next.Routing.Enabled && !next.Targets.DomainOnly && !cfg.Queue.IsDiscovery && RoutingHandleDNSFunc != nil {
+							RoutingHandleDNSFunc(cfg, next, ips)
+						}
+					}
+					if writeDNSTCPMessage(client, alt, ioTimeout) != nil {
+						return
+					}
+					continue
+				}
+			}
+		}
+
 		if ips := dns.ParseResponseIPs(resp); len(ips) > 0 && clientIP != nil {
 			s.worker.storeHostHints(clientIP, set, domain, ips)
 			if set.Routing.Enabled && !set.Targets.DomainOnly && !cfg.Queue.IsDiscovery && RoutingHandleDNSFunc != nil {
@@ -326,6 +349,27 @@ func (s *dnsTCPServer) resolve(set *config.SetConfig, cfg *config.Config, query 
 		ReverseOrder: set.Fragmentation.ReverseOrder,
 		Mark:         int(cfg.MainInjectedMark()),
 	})
+}
+
+func (s *dnsTCPServer) answerVia(set *config.SetConfig, cfg *config.Config, query []byte, domain string, clientIP net.IP) ([]byte, error) {
+	if pinned := s.worker.pinnedAnswer(set, query, domain); pinned != nil {
+		s.worker.applyPinnedAnswer(cfg, set, clientIP, domain, pinned)
+		return pinned, nil
+	}
+
+	useDoH := set.DNS.DoHURL != ""
+	if !(set.DNS.Enabled && (set.DNS.TargetDNS != "" || useDoH)) {
+		return nil, errNoDNSTarget
+	}
+
+	var targetIP net.IP
+	if !useDoH {
+		targetIP = net.ParseIP(set.DNS.TargetDNS)
+		if targetIP == nil {
+			return nil, errNoDNSTarget
+		}
+	}
+	return s.resolve(set, cfg, query, targetIP)
 }
 
 func (s *dnsTCPServer) logEvent(set *config.SetConfig, domain string, clientIP, serverIP net.IP, clientPort int, srcMac, action string) {

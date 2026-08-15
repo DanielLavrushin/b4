@@ -2,6 +2,7 @@ package nfq
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/url"
@@ -80,23 +81,117 @@ func parseDNSName(msg []byte, offset int) (string, bool) {
 }
 
 const (
-	dnsActionBlock         = "dns-block"
-	dnsActionSinkhole      = "dns-sinkhole"
-	dnsActionPassthrough   = "dns-passthrough"
-	dnsActionBadTarget     = "dns-bad-target"
-	dnsActionIPv6Disabled  = "dns-ipv6-disabled"
-	dnsActionServfail      = "dns-servfail"
-	dnsActionHeal          = "dns-heal"
-	dnsActionPin           = "dns-pin"
-	dnsActionNoClient      = "dns-no-client"
-	dnsActionOverload      = "dns-overload"
-	dnsActionDoHPrefix     = "dns-doh->"
-	dnsActionForwardPrefix = "dns-forward->"
+	dnsActionBlock          = "dns-block"
+	dnsActionSinkhole       = "dns-sinkhole"
+	dnsActionPassthrough    = "dns-passthrough"
+	dnsActionBadTarget      = "dns-bad-target"
+	dnsActionIPv6Disabled   = "dns-ipv6-disabled"
+	dnsActionServfail       = "dns-servfail"
+	dnsActionHeal           = "dns-heal"
+	dnsActionPin            = "dns-pin"
+	dnsActionNoClient       = "dns-no-client"
+	dnsActionOverload       = "dns-overload"
+	dnsActionDoHPrefix      = "dns-doh->"
+	dnsActionForwardPrefix  = "dns-forward->"
+	dnsActionEscalatePrefix = "dns-escalate->"
 )
 
 const maxDNSResolveInflight = 64
 
 var dnsResolveInflight = make(chan struct{}, maxDNSResolveInflight)
+
+var errNoDNSTarget = errors.New("set carries no usable DNS answer source")
+
+func dnsAnswerFailed(resp []byte) bool {
+	if len(resp) == 0 {
+		return true
+	}
+	qtype, ok := dns.QuestionType(resp)
+	if !ok || (qtype != dnsTypeA && qtype != dnsTypeAAAA) {
+		return false
+	}
+	rcode, ok := dns.ResponseRcode(resp)
+	if !ok {
+		return false
+	}
+	switch rcode {
+	case dns.RcodeNXDomain, dns.RcodeServFail, dns.RcodeRefused:
+		return true
+	case dns.RcodeNoError:
+		return qtype == dnsTypeA && len(dns.ParseResponseIPs(resp)) == 0
+	default:
+		return true
+	}
+}
+
+func (w *Worker) noteDNSOutcome(cfg *config.Config, set *config.SetConfig, domain, srcMac string, resp []byte) *config.SetConfig {
+	if w == nil || w.destState == nil || cfg == nil || set == nil || domain == "" || !set.Escalate.Active() {
+		return nil
+	}
+	if !dnsAnswerFailed(resp) {
+		w.destState.ClearDNSFailures(domain)
+		return nil
+	}
+	if !w.destState.RecordDNSFailure(domain, set.Escalate.ResolvedDNSThreshold(), DNSFailWindow) {
+		return nil
+	}
+	return w.tryEscalate(cfg, set, domain, srcMac, nil, escalateReasonDNS)
+}
+
+func (w *Worker) escalateAfterDNSFailure(ipVersion byte, cfg *config.Config, set *config.SetConfig, domain string, query []byte, clientIP net.IP, clientPort uint16, originalDst net.IP) bool {
+	srcMac := w.getMacByIp(clientIP.String())
+	next := w.noteDNSOutcome(cfg, set, domain, srcMac, nil)
+	if next == nil {
+		return false
+	}
+	if !w.answerViaSet(ipVersion, cfg, next, domain, query, clientIP, clientPort, originalDst) {
+		return false
+	}
+	logDNSEvent("UDP", next, domain, clientIP, originalDst, clientPort, w.getMacByIp(clientIP.String()), dnsActionEscalatePrefix+next.Name)
+	return true
+}
+
+func (w *Worker) answerViaSet(ipVersion byte, cfg *config.Config, set *config.SetConfig, domain string, query []byte, clientIP net.IP, clientPort uint16, originalDst net.IP) bool {
+	if w == nil || cfg == nil || set == nil || len(query) == 0 {
+		return false
+	}
+
+	if pinned := w.pinnedAnswer(set, query, domain); pinned != nil {
+		w.applyPinnedAnswer(cfg, set, clientIP, domain, pinned)
+		w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, pinned)
+		return true
+	}
+
+	useDoH := set.DNS.DoHURL != ""
+	if !(set.DNS.Enabled && (set.DNS.TargetDNS != "" || useDoH)) {
+		return false
+	}
+
+	var targetIP net.IP
+	if !useDoH {
+		targetIP = net.ParseIP(set.DNS.TargetDNS)
+		if targetIP == nil {
+			return false
+		}
+	}
+
+	select {
+	case dnsResolveInflight <- struct{}{}:
+	default:
+		return false
+	}
+
+	delay := config.ResolveSeg2Delay(set.UDP.Seg2Delay, set.UDP.Seg2DelayMax)
+	w.wg.Add(1)
+	go func() {
+		defer func() {
+			<-dnsResolveInflight
+			w.wg.Done()
+		}()
+		w.resolveDNSRedirect(ipVersion, set, cfg, query, clientIP, clientPort, originalDst, targetIP, delay)
+	}()
+	return true
+}
 
 func (w *Worker) dnsClientAddressable(pkt *pktInfo, sport, dport uint16) bool {
 	if w.srcResolver == nil || pkt.ver != IPv4 {
@@ -146,6 +241,11 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 			if matchedSet, set := matcher.MatchSNIWithSource(domain, srcMac); matchedSet {
 				cfg := w.getConfig()
 				log.Tracef("DNS query: %s matched set %s (src %s)", domain, set.Name, srcMac)
+
+				if escSet := w.escalatedSetFor(cfg, domain, srcMac); escSet != nil && escSet != set {
+					log.Tracef("DNS escalation hit for %s: %s -> %s", domain, set.Name, escSet.Name)
+					set = escSet
+				}
 
 				clientIP := append(net.IP(nil), pkt.src...)
 				originalDst := append(net.IP(nil), pkt.dst...)
@@ -272,10 +372,15 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 
 			routed := false
 			var healSet *config.SetConfig
+			var failedSet *config.SetConfig
+			clientMac := w.getMacByIp(clientIP.String())
 			if domain != "" {
-				clientMac := w.getMacByIp(clientIP.String())
 				if matched, set := w.getMatcher().MatchSNIWithSource(domain, clientMac); matched && set.Enabled {
 					healSet = set
+					failedSet = set
+					if escSet := w.escalatedSetFor(w.getConfig(), domain, clientMac); escSet != nil {
+						failedSet = escSet
+					}
 					ips := dns.ParseResponseIPs(payload)
 					w.storeHostHints(clientIP, set, domain, ips)
 					if set.Routing.Enabled && !set.Targets.DomainOnly && len(ips) > 0 {
@@ -313,6 +418,23 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 				w.sendDNSResponseToClient(ipVersion, dnsServerIP, clientIP, dport, healed)
 				return 0
 			}
+
+			if next := w.noteDNSOutcome(w.getConfig(), failedSet, domain, clientMac, payload); next != nil {
+				cfg := w.getConfig()
+				qtype, hasType := dns.QuestionType(payload)
+				if hasType {
+					query := dns.BuildQuery(domain, txid, qtype)
+					client := append(net.IP(nil), clientIP...)
+					server := append(net.IP(nil), dnsServerIP...)
+					if w.answerViaSet(ipVersion, cfg, next, domain, query, client, dport, server) {
+						if !vc.drop() {
+							return 0
+						}
+						logDNSEvent("UDP", next, domain, client, server, dport, w.getMacByIp(client.String()), dnsActionEscalatePrefix+next.Name)
+						return 0
+					}
+				}
+			}
 		}
 	}
 
@@ -329,6 +451,9 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		resp, err = w.resolveDoHRedirect(set.DNS.DoHURL, int(cfg.MainInjectedMark()), query)
 		if err != nil {
 			log.Tracef("DNS redirect: DoH %s failed: %v, answering SERVFAIL (fail-closed)", set.DNS.DoHURL, err)
+			if w.escalateAfterDNSFailure(ipVersion, cfg, set, queryDomain, query, clientIP, clientPort, originalDst) {
+				return
+			}
 			logDNSEvent("UDP", set, queryDomain, clientIP, originalDst, clientPort, w.getMacByIp(clientIP.String()), dnsActionServfail)
 			w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, dns.BuildServfailResponse(query))
 			return
@@ -343,10 +468,17 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		})
 		if err != nil {
 			log.Tracef("DNS redirect: upstream %s failed: %v, answering SERVFAIL (fail-closed)", set.DNS.TargetDNS, err)
+			if w.escalateAfterDNSFailure(ipVersion, cfg, set, queryDomain, query, clientIP, clientPort, originalDst) {
+				return
+			}
 			logDNSEvent("UDP", set, queryDomain, clientIP, originalDst, clientPort, w.getMacByIp(clientIP.String()), dnsActionServfail)
 			w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, dns.BuildServfailResponse(query))
 			return
 		}
+	}
+
+	if dnsAnswerFailed(resp) && w.escalateAfterDNSFailure(ipVersion, cfg, set, queryDomain, query, clientIP, clientPort, originalDst) {
+		return
 	}
 
 	if ips := dns.ParseResponseIPs(resp); len(ips) > 0 {

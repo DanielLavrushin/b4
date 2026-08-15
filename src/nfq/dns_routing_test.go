@@ -49,7 +49,7 @@ func TestRegisterEscalatedRoutePrefersAsyncHook(t *testing.T) {
 	set.Enabled = true
 	set.Routing.Enabled = true
 
-	registerEscalatedRoute(&config.Config{}, &set, net.ParseIP("1.2.3.4"))
+	registerEscalatedRoute(&config.Config{}, &set, []net.IP{net.ParseIP("1.2.3.4")})
 
 	if async != 1 || sync != 0 {
 		t.Fatalf("escalated route must use the async hook: async=%d sync=%d", async, sync)

@@ -198,7 +198,7 @@ func TestBlockedCacheExpiresWhileTrafficKeepsTouchingIt(t *testing.T) {
 		conns:       make(map[string]*ipBlockEntry),
 		blocked:     make(map[string]time.Time),
 		escalations: make(map[string]*escalationEntry),
-		rstKills:    make(map[string]*rstKillEntry),
+		rstKills:    make(map[string]*failEntry),
 	}
 
 	tracker.AddBlocked("185.199.110.133:443")

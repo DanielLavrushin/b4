@@ -41,6 +41,20 @@ func ParseTransactionID(payload []byte) (uint16, bool) {
 	return binary.BigEndian.Uint16(payload[:2]), true
 }
 
+const (
+	RcodeNoError  uint8 = 0
+	RcodeServFail uint8 = 2
+	RcodeNXDomain uint8 = 3
+	RcodeRefused  uint8 = 5
+)
+
+func ResponseRcode(payload []byte) (uint8, bool) {
+	if len(payload) < 12 {
+		return 0, false
+	}
+	return payload[3] & 0x0F, true
+}
+
 func BuildBlockResponse(query []byte) []byte {
 	if len(query) < 12 {
 		return nil

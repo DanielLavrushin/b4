@@ -394,6 +394,9 @@ export interface EscalateConfig {
   rst_threshold?: number;
   rst_window_sec?: number;
   ttl_sec?: number;
+  stall_threshold?: number;
+  stall_timeout_ms?: number;
+  dns_threshold?: number;
 }
 
 export type ComboShuffleMode = "middle" | "full" | "reverse";

@@ -1,5 +1,19 @@
 # B4 - Bye Bye Big Bro
 
+## [1.77.0] - 2026-08-15
+
+- FIXED: **A site switched to a backup set still had its name looked up by the set that was failing** - the backup's pinned addresses, DoH server and forwarding target were never consulted for it, so a domain that only the backup could resolve stayed unresolvable however the escalation was set up.
+- ADDED: **An unusable name lookup switches the site to the backup set** - NXDOMAIN, SERVFAIL and answers that carry no address count towards the switch, and the backup set answers the lookup that tripped it. Escalation only ever reacted to something that happens after a connection is already open, which a site with no address on record never reaches.
+- ADDED: **A destination that answers no connection attempt switches the site to the backup set** - b4 already spotted the address going unanswered and confirmed it by probing from the router itself, but that finding went nowhere except into cutting the device's attempt short. The most common way a site fails, its address dropped outright, had no path to the backup set.
+- FIXED: **The backup set only took over once a TLS handshake had been read out of the traffic** - a connection that never gets that far, and the opening packet of a connection to a site already switched over, were both handled by the set that was failing, so the backup set's SYN-stage settings never ran.
+- FIXED: **How readily a site switches over was read from IP block detection, a separate feature that is off by default** - unanswered TLS handshakes, forged resets and unusable name lookups each got a control of their own on the Escalation tab. The single one on offer before governed forged resets only, so moving it changed nothing about the trigger that fires most.
+- FIXED: **Turning a backup set off destroyed the link to it** - the link was erased on the next save and the set could not be picked again until it was enabled, so a set switched off for a minute had to be wired back by hand.
+- FIXED: **A set routed through a proxy could not escalate any further** - the chain stopped at the first proxy hop, though it is built to run up to eight.
+- FIXED: **Only the single address a connection was headed for was handed to the backup set's routing** - a site behind several addresses had to fail once per address, and the entry aged out of the firewall while the switch was still in force, which put the traffic back on the failing path without a word.
+- FIXED: **A switch-over ignored which devices the backup set targets** - one device's failure moved every device on the network onto the backup set.
+- CHANGED: **Editing a set drops only the switch-overs that the edit invalidates** - every switch-over in force was discarded on each save, including those for sites the edit did not touch.
+- FIXED: **The chain-length warning repeated for every packet** - once a site had been through all eight hops, each retransmission logged it again.
+
 ## [1.76.3] - 2026-08-14
 
 - FIXED: **Name lookups from devices on the network went unanswered in TUN capture mode** - the answer b4 built was addressed to the router's own uplink instead of to the device that asked, because b4 read the sender out of the packet after the router had already replaced it on the way out. The device was left waiting on a lookup b4 had taken out of the network and answered somewhere nothing was listening.

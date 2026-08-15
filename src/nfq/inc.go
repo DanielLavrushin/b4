@@ -45,7 +45,7 @@ func (w *Worker) HandleIncoming(vc *verdictCtx, v byte, raw []byte, ihl int, src
 		}
 
 		rstProtOn := incomingSet.TCP.RSTProtection.Enabled
-		canEscalate := incomingSet.Escalate.To != ""
+		canEscalate := incomingSet.Escalate.Active()
 		if isRst && (rstProtOn || canEscalate) {
 			tolerance := incomingSet.TCP.RSTProtection.TTLTolerance
 			if tolerance <= 0 {
@@ -56,19 +56,9 @@ func (w *Worker) HandleIncoming(vc *verdictCtx, v byte, raw []byte, ihl int, src
 				if canEscalate && w.destState != nil {
 					outKey := fmt.Sprintf(connKeyFormat, dstStr, dport, srcStr, sport)
 					host, _, _ := w.tlsCache.Lookup(outKey)
-					window := time.Duration(incomingSet.Escalate.RstWindowSec) * time.Second
-					ttl := time.Duration(incomingSet.Escalate.TtlSec) * time.Second
-					if host != "" && w.destState.RecordRSTKill(host, incomingSet.Escalate.RstThreshold, window) {
-						cfg := w.getConfig()
-						if next := cfg.GetSetById(incomingSet.Escalate.To); next != nil && next.Enabled {
-							if w.destState.SetEscalation(host, next.Id, ttl) {
-								metrics.GetMetricsCollector().RecordEscalation()
-								log.Warnf("RST-kill escalation for %s: %s -> %s (%s)", host, incomingSet.Name, next.Name, reason)
-								registerEscalatedRoute(cfg, next, src)
-							} else {
-								log.Warnf("escalation hop cap reached for %s (chain stopped at %s)", host, incomingSet.Name)
-							}
-						}
+					esc := &incomingSet.Escalate
+					if host != "" && w.destState.RecordRSTKill(host, esc.ResolvedRstThreshold(), esc.ResolvedRstWindow()) {
+						w.tryEscalate(w.getConfig(), incomingSet, host, w.getMacByIp(dstStr), src, escalateReasonRST+" ("+reason+")")
 					}
 				}
 				if rstProtOn {

@@ -174,10 +174,13 @@ var DefaultSetConfig = SetConfig{
 	},
 
 	Escalate: EscalateConfig{
-		To:           "",
-		RstThreshold: 3,
-		RstWindowSec: 30,
-		TtlSec:       3600,
+		To:             "",
+		RstThreshold:   DefaultEscalateRstThreshold,
+		RstWindowSec:   DefaultEscalateRstWindowSec,
+		TtlSec:         DefaultEscalateTTLSec,
+		StallThreshold: DefaultEscalateStallThreshold,
+		StallTimeoutMs: DefaultEscalateStallTimeoutMs,
+		DNSThreshold:   DefaultEscalateDNSThreshold,
 	},
 }
 
