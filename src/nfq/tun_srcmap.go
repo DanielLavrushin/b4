@@ -76,7 +76,7 @@ func (r *tunSrcResolver) resolve(proto uint8, src net.IP, sport uint16, dst net.
 	r.mu.Lock()
 	if e, ok := r.cache[key]; ok && now.Before(e.expires) {
 		r.mu.Unlock()
-		if e.ip == "" {
+		if e.ip == "" || e.ip == wan {
 			return nil, false
 		}
 		if ip := net.ParseIP(e.ip); ip != nil {
@@ -96,13 +96,28 @@ func (r *tunSrcResolver) resolve(proto uint8, src net.IP, sport uint16, dst net.
 	}
 	r.mu.Unlock()
 
-	if lan == "" {
+	if lan == "" || lan == wan {
 		return nil, false
 	}
 	if ip := net.ParseIP(lan); ip != nil {
 		return ip, true
 	}
 	return nil, false
+}
+
+func (r *tunSrcResolver) addressable(proto uint8, src net.IP, sport uint16, dst net.IP, dport uint16) bool {
+	wan, _ := r.wanIP.Load().(string)
+	if wan == "" || src.String() != wan {
+		return true
+	}
+
+	key := cacheKey(proto, sport, dport, dst.String())
+
+	r.mu.Lock()
+	e, ok := r.cache[key]
+	r.mu.Unlock()
+
+	return ok && time.Now().Before(e.expires) && e.ip != ""
 }
 
 func protoName(proto uint8) string {
@@ -183,7 +198,7 @@ func matchConntrackLine(line, wan, sport, dst, dport string) string {
 	if replyDst != wan || replyDport != sport {
 		return ""
 	}
-	if origSrc == "" || origSrc == wan {
+	if origSrc == "" {
 		return ""
 	}
 	return origSrc

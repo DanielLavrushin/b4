@@ -1,5 +1,15 @@
 # B4 - Bye Bye Big Bro
 
+## [1.76.3] - 2026-08-14
+
+- FIXED: **Name lookups from devices on the network went unanswered in TUN capture mode** - the answer b4 built was addressed to the router's own uplink instead of to the device that asked, because b4 read the sender out of the packet after the router had already replaced it on the way out. The device was left waiting on a lookup b4 had taken out of the network and answered somewhere nothing was listening.
+- FIXED: **A name lookup b4 could not trace back to a device was destroyed rather than left alone** - the sender was gone from the packet and nothing checked whether it had been recovered before the query was taken out of the network, so the device retried into the same hole for as long as the set stayed enabled.
+- FIXED: **A blocked name, a pinned address and a curated answer never reached the device they were meant for, in TUN capture mode** - all three are delivered as a packet b4 builds itself, and all three carried the router's address as the destination.
+- FIXED: **Every name lookup was recorded against the router rather than against the device that made it** - the source column on the Traffic page read as the uplink address for all of them, and a set narrowed to particular devices had nothing to match a lookup on.
+- CHANGED: **The number of name lookups b4 resolves at once is capped, and the rest go to the device's own resolver untouched** - each intercepted lookup started a five-second resolver of its own with nothing limiting how many could exist at the same time, so one slow or unreachable DoH server turned an ordinary browsing session into thousands of waiting lookups. A set that matches a large geosite category and also redirects DNS put every name on the network through that path.
+- CHANGED: **A lookup the router itself made is remembered for five minutes instead of two seconds** - it was recorded as a failed lookup and re-read from the kernel's connection table, in full, every two seconds for as long as the flow lived.
+- FIXED: **The addresses b4 read out of a packet pointed into the memory the next packet is read into, in TUN capture mode** - a set routed through a proxy or an interface writes those addresses to the firewall from a background thread, and by the time it ran the packet they came from could already have been replaced by an unrelated one.
+
 ## [1.76.2] - 2026-08-12
 
 - FIXED: **Photos, videos and stickers stopped loading in 1.76.0 and 1.76.1** - the data center Telegram serves media from was addressed under another one's name, so every media session was carried somewhere that could not serve it.

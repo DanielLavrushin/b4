@@ -28,6 +28,7 @@ type pktInfo struct {
 	raw    []byte
 	ver    uint8
 	proto  uint8
+	addr   [32]byte
 	src    net.IP
 	dst    net.IP
 	srcStr string
@@ -152,8 +153,10 @@ func (w *Worker) parseIPHeaders(raw []byte) (*pktInfo, bool) {
 		}
 
 		p.proto = raw[9]
-		p.src = net.IP(raw[12:16])
-		p.dst = net.IP(raw[16:20])
+		copy(p.addr[0:4], raw[12:16])
+		copy(p.addr[16:20], raw[16:20])
+		p.src = net.IP(p.addr[0:4])
+		p.dst = net.IP(p.addr[16:20])
 		p.ihl = ihl
 	} else {
 		if len(raw) < IPv6HeaderLen {
@@ -180,8 +183,10 @@ func (w *Worker) parseIPHeaders(raw []byte) (*pktInfo, bool) {
 	done:
 		p.proto = nextHeader
 		p.ihl = offset
-		p.src = net.IP(raw[8:24])
-		p.dst = net.IP(raw[24:40])
+		copy(p.addr[0:16], raw[8:24])
+		copy(p.addr[16:32], raw[24:40])
+		p.src = net.IP(p.addr[0:16])
+		p.dst = net.IP(p.addr[16:32])
 	}
 
 	if p.src.IsLoopback() || p.dst.IsLoopback() {
@@ -192,7 +197,9 @@ func (w *Worker) parseIPHeaders(raw []byte) (*pktInfo, bool) {
 		sport := uint16(raw[p.ihl])<<8 | uint16(raw[p.ihl+1])
 		dport := uint16(raw[p.ihl+2])<<8 | uint16(raw[p.ihl+3])
 		if lan, ok := w.srcResolver.resolve(p.proto, p.src, sport, p.dst, dport); ok {
-			p.src = lan
+			if v4 := lan.To4(); v4 != nil {
+				copy(p.addr[0:4], v4)
+			}
 		}
 	}
 
@@ -659,7 +666,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 
 	if sport == 53 || dport == 53 {
-		return w.processDnsPacket(vc, pkt.ver, sport, dport, payload, pkt.raw, pkt.srcMac)
+		return w.processDnsPacket(vc, pkt, sport, dport, payload)
 	}
 
 	if utils.IsPrivateIP(pkt.dst) {
