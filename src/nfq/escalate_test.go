@@ -1,6 +1,7 @@
 package nfq
 
 import (
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -440,6 +441,46 @@ func TestNoteDNSOutcome_UpstreamErrorKeepsFamiliesApart(t *testing.T) {
 	w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeA, nil)
 	if next := w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeAAAA, nil); next != nil {
 		t.Fatal("one failed A and one failed AAAA are one failure each, not two of either")
+	}
+}
+
+func TestNoteDNSOutcome_ChainTerminatesAtTheHopCap(t *testing.T) {
+	w := newEscalateWorker()
+	cfg := config.NewConfig()
+
+	// a long chain with a threshold of 1 makes every level trip in one pass,
+	// which is the shape that drives the inline resolve into recursion
+	const links = MaxEscalationHops + 5
+	sets := make([]*config.SetConfig, links)
+	for i := range sets {
+		s := config.NewSetConfig()
+		s.Id = fmt.Sprintf("set-%d", i)
+		s.Name = s.Id
+		s.Enabled = true
+		s.Escalate.DNSThreshold = 1
+		if i+1 < links {
+			s.Escalate.To = fmt.Sprintf("set-%d", i+1)
+		}
+		sets[i] = &s
+		cfg.Sets = append(cfg.Sets, &s)
+	}
+
+	hops := 0
+	set := sets[0]
+	for i := 0; i < links*2; i++ {
+		next := w.noteDNSOutcome(&cfg, set, "ntc.party", "", dnsTypeA, nil)
+		if next == nil {
+			break
+		}
+		hops++
+		set = next
+	}
+
+	if hops == 0 {
+		t.Fatal("the chain should have escalated at least once")
+	}
+	if hops > MaxEscalationHops {
+		t.Fatalf("the chain ran %d hops, past the cap of %d; an inline resolve would recurse that deep", hops, MaxEscalationHops)
 	}
 }
 
