@@ -163,15 +163,41 @@ func (b *routeIptBackend) addMarkRule(chain string, v6 bool, setName string, mar
 	}
 }
 
-func (b *routeIptBackend) ensureJumpRule(baseChain, targetChain string, isMangle bool) {
+func routeIptInjectedMarkArgs(chain, setName string, mark, queueMark uint32) []string {
+	return []string{
+		"-w", "-t", "mangle", "-A", chain,
+		"-m", "mark", "--mark", fmt.Sprintf("0x%x/0x%x", queueMark, queueMark),
+		"-m", "set", "--match-set", setName, "dst",
+		"-j", "MARK", "--set-mark", fmt.Sprintf("0x%x/0x%x", mark, mark),
+	}
+}
+
+func (b *routeIptBackend) addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32) {
+	cmd := b.iptFor(v6)
+	if !hasBinary(cmd) {
+		return
+	}
+	runLogged("routing: add injected mark rule "+chain,
+		append([]string{cmd}, routeIptInjectedMarkArgs(chain, setName, mark, queueMark)...)...)
+}
+
+func routeIptJumpArgs(table, baseChain, targetChain string, atTop bool) []string {
+	if atTop {
+		return []string{"-w", "-t", table, "-I", baseChain, "1", "-j", targetChain}
+	}
+	return []string{"-w", "-t", table, "-A", baseChain, "-j", targetChain}
+}
+
+func (b *routeIptBackend) ensureJumpRule(baseChain, targetChain string, isMangle bool, atTop bool) {
 	table := iptTable(isMangle)
 	b.deleteJumpRules(baseChain, targetChain, isMangle)
+	args := routeIptJumpArgs(table, baseChain, targetChain, atTop)
 	for _, cmd := range b.iptBoth() {
 		if !hasBinary(cmd) {
 			continue
 		}
 		runLogged("routing: add jump "+baseChain+"->"+targetChain,
-			cmd, "-w", "-t", table, "-A", baseChain, "-j", targetChain)
+			append([]string{cmd}, args...)...)
 	}
 }
 

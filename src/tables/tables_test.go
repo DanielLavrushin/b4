@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"fmt"
 	"net"
 	"strings"
 	"sync/atomic"
@@ -1275,9 +1276,30 @@ func TestDiscoveryConstants(t *testing.T) {
 	}
 }
 
+type mockRouteJump struct {
+	baseChain, targetChain string
+	isMangle, atTop        bool
+}
+
+type mockInjectedMarkRule struct {
+	chain, setName  string
+	v6              bool
+	mark, queueMark uint32
+}
+
 type mockRouteBackend struct {
 	addElementsFn func(setName string, ips []string, ttlSec int)
 	bypass        map[string][]uint32
+	chainOps      map[string][]string
+	jumps         []mockRouteJump
+	injected      []mockInjectedMarkRule
+}
+
+func (m *mockRouteBackend) recordOp(chain, op string) {
+	if m.chainOps == nil {
+		m.chainOps = map[string][]string{}
+	}
+	m.chainOps[chain] = append(m.chainOps[chain], op)
 }
 
 func (m *mockRouteBackend) name() string                                  { return "mock" }
@@ -1292,10 +1314,18 @@ func (m *mockRouteBackend) addBypassRule(chain string, mark uint32) {
 		m.bypass = map[string][]uint32{}
 	}
 	m.bypass[chain] = append(m.bypass[chain], mark)
+	m.recordOp(chain, fmt.Sprintf("bypass 0x%x", mark))
 }
 func (m *mockRouteBackend) addMarkRule(chain string, v6 bool, setName string, mark uint32, sourceIface string, tagHostConntrack bool) {
+	m.recordOp(chain, fmt.Sprintf("mark 0x%x", mark))
 }
-func (m *mockRouteBackend) ensureJumpRule(baseChain, targetChain string, isMangle bool)  {}
+func (m *mockRouteBackend) addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32) {
+	m.injected = append(m.injected, mockInjectedMarkRule{chain: chain, setName: setName, v6: v6, mark: mark, queueMark: queueMark})
+	m.recordOp(chain, fmt.Sprintf("injected 0x%x", mark))
+}
+func (m *mockRouteBackend) ensureJumpRule(baseChain, targetChain string, isMangle bool, atTop bool) {
+	m.jumps = append(m.jumps, mockRouteJump{baseChain: baseChain, targetChain: targetChain, isMangle: isMangle, atTop: atTop})
+}
 func (m *mockRouteBackend) deleteJumpRules(baseChain, targetChain string, isMangle bool) {}
 func (m *mockRouteBackend) addMasqueradeRule(chain string, mark uint32, iface string, v6 bool) {
 }

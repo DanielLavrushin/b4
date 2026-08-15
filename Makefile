@@ -137,6 +137,13 @@ arm: linux-armv7
 run: build
 	sudo $(OUT_DIR)/$(BINARY_NAME)
 
+.PHONY: test-netns
+test-netns:
+	@echo "Building the tables test binary..."
+	@go -C $(SRC_DIR) test -c -o ../$(OUT_DIR)/tables.test ./tables/
+	@echo "Running the routing tests in a private network namespace..."
+	@unshare -Urn env B4_NETNS_TEST=1 $(OUT_DIR)/tables.test -test.run TestNetns -test.v
+
 .PHONY: install
 install: build
 	sudo cp $(OUT_DIR)/$(BINARY_NAME) /usr/local/bin/
@@ -243,6 +250,7 @@ help:
 	@printf "  %-25s %s\n" "make arm" "Build for Linux armv7"
 	@printf "  %-25s %s\n" "make android" "Build for all Android architectures (requires ANDROID_NDK_HOME)"
 	@printf "  %-25s %s\n" "make run" "Build and run with sudo"
+	@printf "  %-25s %s\n" "make test-netns" "Run the routing egress tests in a network namespace"
 	@printf "  %-25s %s\n" "make install" "Install to /usr/local/bin"
 	@printf "  %-25s %s\n" "make clean" "Remove build artifacts"
 	@printf "  %-25s %s\n" "make build-installer" "Build the installer script"

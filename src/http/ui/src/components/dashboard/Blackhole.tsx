@@ -75,8 +75,11 @@ export const Blackhole = ({
       <Box
         sx={{
           display: "flex",
-          flexDirection: { xs: "column", sm: "row" },
-          alignItems: { sm: "flex-start" },
+          flexDirection: "column",
+          "@container (min-width: 520px)": {
+            flexDirection: "row",
+            alignItems: "flex-start",
+          },
         }}
       >
         <Box sx={{ flex: 1, minWidth: 0, width: "100%" }}>
@@ -95,8 +98,12 @@ export const Blackhole = ({
             flexShrink: 0,
             alignSelf: "stretch",
             bgcolor: colors.border.light,
-            width: { xs: "100%", sm: "1px" },
-            height: { xs: "1px", sm: "auto" },
+            width: "100%",
+            height: "1px",
+            "@container (min-width: 520px)": {
+              width: "1px",
+              height: "auto",
+            },
           }}
         />
         <Box sx={{ flex: 1, minWidth: 0, width: "100%" }}>

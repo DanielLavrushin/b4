@@ -321,8 +321,7 @@ func (c *Config) Validate() error {
 		return v.result()
 	}
 
-	const perSetReachableBits uint32 = 0x27FFF
-	if c.Queue.Mark != 0 && uint32(c.Queue.Mark)&^perSetReachableBits == 0 {
+	if c.Queue.Mark != 0 && uint32(c.Queue.Mark)&^PerSetRouteMarkBits == 0 {
 		v.addf("queue.mark", "mark_conflict", map[string]any{"mark": fmt.Sprintf("0x%x", c.Queue.Mark)}, "mark value 0x%x conflicts with per-set mark bits {0-14, 17}; bypass rule would catch TPROXY-redirected traffic. Use a value with at least one bit in {15-16, 18-31} (default 0x8000 has bit 15)", c.Queue.Mark)
 		return v.result()
 	}

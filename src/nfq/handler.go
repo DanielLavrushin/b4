@@ -37,6 +37,24 @@ type pktInfo struct {
 	ihl    int
 }
 
+func selfInjectedMark(m, queueMark uint32, cfg *config.Config) bool {
+	if queueMark == 0 {
+		return false
+	}
+	if m == queueMark {
+		return true
+	}
+	if cfg != nil {
+		if m == uint32(cfg.DiscoveryFlowMark()) || m == uint32(cfg.DiscoveryInjectedMark()) {
+			return false
+		}
+	}
+	if m&queueMark != queueMark {
+		return false
+	}
+	return m&^(queueMark|config.PerSetRouteMarkBits) == 0
+}
+
 func (w *Worker) handlePacket(q *nfqueue.Nfqueue, a nfqueue.Attribute, mark uint) int {
 	if a.PacketID == nil || a.Payload == nil || len(*a.Payload) == 0 {
 		if a.PacketID != nil && q != nil {
@@ -49,7 +67,7 @@ func (w *Worker) handlePacket(q *nfqueue.Nfqueue, a nfqueue.Attribute, mark uint
 
 	vc := &verdictCtx{id: *a.PacketID, q: q}
 
-	if a.Mark != nil && *a.Mark == uint32(mark) {
+	if a.Mark != nil && selfInjectedMark(*a.Mark, uint32(mark), w.getConfig()) {
 		return vc.accept()
 	}
 

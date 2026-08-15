@@ -788,6 +788,16 @@
       "viaSet": "switched to",
       "hops": "escalation hops",
       "expiresIn": "time until retry"
+    },
+    "customize": {
+      "action": "Customize",
+      "done": "Done",
+      "reset": "Reset layout",
+      "hint": "Drag a panel by its handle to reorder it, drag its right edge to set how many columns wide it is, or hide it with the eye. Widths apply on wide screens.",
+      "hidden": "Hidden",
+      "hide": "Hide panel",
+      "unavailable": "no data",
+      "columns": "{{span}} / {{total}} cols"
     }
   },
   "sets": {

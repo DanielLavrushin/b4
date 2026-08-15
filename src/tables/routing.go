@@ -50,7 +50,8 @@ type routeBackend interface {
 	deleteChain(chain string, isMangle bool)
 	addBypassRule(chain string, mark uint32)
 	addMarkRule(chain string, v6 bool, setName string, mark uint32, sourceIface string, tagHostConntrack bool)
-	ensureJumpRule(baseChain, targetChain string, isMangle bool)
+	addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32)
+	ensureJumpRule(baseChain, targetChain string, isMangle bool, atTop bool)
 	deleteJumpRules(baseChain, targetChain string, isMangle bool)
 	addMasqueradeRule(chain string, mark uint32, iface string, v6 bool)
 	flushIPSet(name string)
@@ -709,7 +710,7 @@ func routeIptRulesPresent(be *routeIptBackend, cfg *config.Config) bool {
 					continue
 				}
 				for _, m := range routeBypassMarks(cfg) {
-					if !strings.Contains(spec, fmt.Sprintf("--mark 0x%x/0x%x", m, m)) {
+					if !strings.Contains(spec, fmt.Sprintf("--mark 0x%x/0x%x -j RETURN", m, m)) {
 						log.Tracef("Routing: chain %s lost its bypass on mark 0x%x", chain, m)
 						return false
 					}
@@ -988,24 +989,19 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 
 	gate := routeSetDeviceGate(cfg, set)
 	routeSelfDialBypass(be, cfg, st.chainPre)
-	routeSelfDialBypass(be, cfg, st.chainOut)
 	be.addBypassRule(st.chainPre, st.mark)
-	be.addBypassRule(st.chainOut, st.mark)
 
 	routeAddBlacklistGate(be, "mangle", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
 
 	if cfg.Queue.IPv4Enabled {
 		routeAddMarkRules(be, st.chainPre, false, st.setV4, st.mark, sources, true)
-		routeAddMarkRules(be, st.chainOut, false, st.setV4, st.mark, nil, true)
 	}
 	if cfg.Queue.IPv6Enabled {
 		routeAddMarkRules(be, st.chainPre, true, st.setV6, st.mark, sources, true)
-		routeAddMarkRules(be, st.chainOut, true, st.setV6, st.mark, nil, true)
 	}
 
-	routeEnsureGatedPreJump(be, st.chainPre, gate)
-	be.ensureJumpRule("OUTPUT", st.chainOut, true)
-	be.ensureJumpRule("POSTROUTING", st.chainSNAT, false)
+	routeAddOutChainRules(be, cfg, st)
+	routeEnsureChainJumps(be, st, gate)
 
 	routeAddMasqueradeRules(be, set.Routing.EgressInterface, st.chainSNAT, st.mark, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	routeEnsurePolicyRouting(set.Routing.EgressInterface, st.mark, st.table, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
@@ -1020,6 +1016,32 @@ func routeAddMarkRules(be routeBackend, chain string, v6 bool, setName string, m
 	for _, src := range sources {
 		be.addMarkRule(chain, v6, setName, mark, src, tagHostCT)
 	}
+}
+
+func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState) {
+	queueMark := routeQueueBypassMark(cfg)
+	if cfg.Queue.IPv4Enabled {
+		be.addInjectedMarkRule(st.chainOut, false, st.setV4, st.mark, queueMark)
+	}
+	if cfg.Queue.IPv6Enabled {
+		be.addInjectedMarkRule(st.chainOut, true, st.setV6, st.mark, queueMark)
+	}
+
+	routeSelfDialBypass(be, cfg, st.chainOut)
+	be.addBypassRule(st.chainOut, st.mark)
+
+	if cfg.Queue.IPv4Enabled {
+		routeAddMarkRules(be, st.chainOut, false, st.setV4, st.mark, nil, true)
+	}
+	if cfg.Queue.IPv6Enabled {
+		routeAddMarkRules(be, st.chainOut, true, st.setV6, st.mark, nil, true)
+	}
+}
+
+func routeEnsureChainJumps(be routeBackend, st routeState, gate routeDeviceGate) {
+	routeEnsureGatedPreJump(be, st.chainPre, gate)
+	be.ensureJumpRule("OUTPUT", st.chainOut, true, true)
+	be.ensureJumpRule("POSTROUTING", st.chainSNAT, false, false)
 }
 
 func routeAddMasqueradeRules(be routeBackend, iface, chain string, mark uint32, ipv4, ipv6 bool) {
@@ -1280,7 +1302,12 @@ func routeGetIfaceAddr(iface string, wantV6 bool) string {
 
 func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 	if set.Routing.FWMark > 0 && set.Routing.Table > 0 {
-		return set.Routing.FWMark, set.Routing.Table
+		if q := routeQueueBypassMark(cfg); set.Routing.FWMark&q == q {
+			log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which carries every bit of the queue mark 0x%x; b4 cannot tell such a packet from one it injected itself, so a mark is assigned instead",
+				set.Name, set.Routing.FWMark, q)
+		} else {
+			return set.Routing.FWMark, set.Routing.Table
+		}
 	}
 	if st, ok := routeIfaceAuto[set.Routing.EgressInterface]; ok && st.mark > 0 && st.table > 0 {
 		return st.mark, st.table

@@ -163,6 +163,28 @@ func (b *routeNftBackend) addMarkRule(chain string, v6 bool, setName string, mar
 	emit(routeNftDynSet(setName))
 }
 
+func routeNftInjectedMarkArgs(chain string, v6 bool, setName string, mark, queueMark uint32) []string {
+	markHex := fmt.Sprintf("0x%x", mark)
+	queueHex := fmt.Sprintf("0x%x", queueMark)
+	family := "ip"
+	if v6 {
+		family = "ip6"
+	}
+	return []string{
+		"add", "rule", "inet", routeNftTable, chain,
+		"meta", "mark", "&", queueHex, "==", queueHex,
+		family, "daddr", "@" + setName,
+		"meta", "mark", "set", "meta", "mark", "or", markHex,
+	}
+}
+
+func (b *routeNftBackend) addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32) {
+	for _, sn := range []string{setName, routeNftDynSet(setName)} {
+		runLogged("routing: add injected mark rule "+chain,
+			append([]string{"nft"}, routeNftInjectedMarkArgs(chain, v6, sn, mark, queueMark)...)...)
+	}
+}
+
 func nftRouteBaseChain(generic string) string {
 	switch generic {
 	case "PREROUTING":
@@ -176,7 +198,7 @@ func nftRouteBaseChain(generic string) string {
 	}
 }
 
-func (b *routeNftBackend) ensureJumpRule(baseChain, targetChain string, _ bool) {
+func (b *routeNftBackend) ensureJumpRule(baseChain, targetChain string, _ bool, _ bool) {
 	base := nftRouteBaseChain(baseChain)
 	b.deleteJumpRules(baseChain, targetChain, true)
 	runLogged("routing: add jump "+base+"->"+targetChain,
