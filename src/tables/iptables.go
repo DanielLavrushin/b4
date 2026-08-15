@@ -701,6 +701,10 @@ func (manager *IPTablesManager) buildMSSManifest(preChain string) (mssIPSets []I
 				setFamily = "inet"
 			}
 			hasIPs := len(ips) > 0
+			macOnly := len(e.IPv4) == 0 && len(e.IPv6) == 0
+			if !hasIPs && !macOnly {
+				continue
+			}
 			if hasIPs && !hasBinary("ipset") {
 				log.Warnf("ipset binary not found; skipping per-set MSS for set %q (install ipset via your system package manager)", e.SetID)
 				continue

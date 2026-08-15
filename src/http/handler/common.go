@@ -43,6 +43,7 @@ var (
 	tablesRefreshFunc    func() error
 	routingSyncFunc      func(*config.Config)
 	mtprotoCFRefreshFunc func(*config.Config)
+	upstreamHealthFunc   func() []DiagUpstream
 	discoveryRuntime     *discovery.Runtime
 	globalWatchdog       *watchdog.Watchdog
 	globalAIManager      *ai.Manager
@@ -209,6 +210,10 @@ func SetRoutingSyncFunc(fn func(*config.Config)) {
 
 func SetMTProtoCFRefreshFunc(fn func(*config.Config)) {
 	mtprotoCFRefreshFunc = fn
+}
+
+func SetUpstreamHealthFunc(fn func() []DiagUpstream) {
+	upstreamHealthFunc = fn
 }
 
 func SetDiscoveryRuntime(rt *discovery.Runtime) {
