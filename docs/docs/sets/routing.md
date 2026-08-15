@@ -42,14 +42,6 @@ If you do not know which DNS to pick, start with any server from the list other 
 
 ### Server list
 
-The interface shows a list of DNS servers with icons:
-
-| Icon | Meaning |
-| --- | --- |
-| ⚡ | Fast - focused on low latency |
-| 🛑 | AdBlock - blocks advertising domains |
-| 🔒 | DNSSEC - cryptographic validation of responses |
-
 Picking a server fills the IP into the field automatically. You can also enter any other IP manually.
 
 :::warning
@@ -299,6 +291,33 @@ TCP 192.168.1.37:20854 → 34.117.59.81:443 sni-set=ipinfo.io [proxy]
 ```
 
 If there is no `[proxy]` line, the connection was never diverted. The usual cause is that the address it connected to is not in the set.
+
+### When the upstream itself is down
+
+A `[proxy]` line only says the connection reached b4, not that the proxy answered. If the upstream is refusing or silently dropping connections, every diverted connection is accepted, held for the length of the dial timeout and then closed, which from a browser looks like the site hanging and failing.
+
+b4 reports it in the log:
+
+```text
+tproxy: set "TMDB" cannot reach its upstream 10.8.0.1:1080 (1 consecutive failures),
+traffic matched by this set is not getting through: dial upstream: dial tcp 10.8.0.1:1080: i/o timeout
+```
+
+The message repeats at most once a minute while the upstream stays down, and a matching line is logged once it answers again. The same state is carried in **Settings -> Diagnostics** under `upstreams`, so a diagnostics bundle shows whether the proxy was reachable at the time it was taken:
+
+```json
+{
+  "set_name": "TMDB",
+  "upstream": "10.8.0.1:1080",
+  "reachable": false,
+  "consecutive_failures": 12,
+  "last_error": "dial upstream: dial tcp 10.8.0.1:1080: i/o timeout"
+}
+```
+
+:::warning
+Note that this affects **every** address in the set, on every TCP port - including addresses learned from a shared CDN that other sites also resolve to. A dead upstream can therefore break sites that were never the point of the set.
+:::
 
 :::warning
 If a client resolves through DNS-over-HTTPS or DNS-over-TLS, b4 never sees its DNS queries, and the set fills only from pre-resolution and from domains observed in TLS handshakes. Turn encrypted DNS off on the client, or add the domains to the set so they are pre-resolved.
