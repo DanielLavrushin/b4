@@ -45,25 +45,26 @@ export const RuntimeHealth = ({ metrics }: RuntimeHealthProps) => {
       <Box
         sx={{
           display: "flex",
-          flexDirection: { xs: "column", lg: "row" },
+          flexDirection: "column",
           alignItems: "stretch",
+          "@container (min-width: 960px)": { flexDirection: "row" },
         }}
       >
         <Box
           sx={{
-            width: { lg: 720 },
             flexShrink: 0,
             overflow: "hidden",
             display: "flex",
+            "@container (min-width: 960px)": { width: 720 },
           }}
         >
           <Box
             sx={{
               flex: 1,
               display: "grid",
-              gridTemplateColumns: {
-                xs: "repeat(2, 1fr)",
-                sm: "repeat(4, 1fr)",
+              gridTemplateColumns: "repeat(2, 1fr)",
+              "@container (min-width: 520px)": {
+                gridTemplateColumns: "repeat(4, 1fr)",
               },
               gridAutoRows: "1fr",
               mr: "-1px",
@@ -108,10 +109,13 @@ export const RuntimeHealth = ({ metrics }: RuntimeHealthProps) => {
             display: "flex",
             flexDirection: "column",
             justifyContent: "center",
-            pt: { xs: 1.5, lg: "6px" },
-            pb: { lg: "6px" },
-            pl: { lg: 1.5 },
-            borderLeft: { lg: `1px solid ${colors.border.light}` },
+            pt: 1.5,
+            "@container (min-width: 960px)": {
+              pt: "6px",
+              pb: "6px",
+              pl: 1.5,
+              borderLeft: `1px solid ${colors.border.light}`,
+            },
           }}
         >
           {hasTrend ? (

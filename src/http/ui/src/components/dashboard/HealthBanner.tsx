@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Box, Button, Stack, Typography } from "@mui/material";
 import { DeleteForever as ClearIcon } from "@mui/icons-material";
+import { CustomizeIcon } from "@b4.icons";
 import { colors, fonts, radiusPx } from "@design";
 import { B4Dialog } from "@common/B4Dialog";
 import { useTranslation } from "react-i18next";
@@ -9,6 +10,8 @@ import type { Metrics } from "./Page";
 interface HealthBannerProps {
   metrics: Metrics;
   connected: boolean;
+  editing: boolean;
+  onToggleEditing: () => void;
 }
 
 type HealthLevel = "healthy" | "degraded" | "critical";
@@ -116,9 +119,27 @@ const Mono = ({ children }: { children: React.ReactNode }) => (
   </Box>
 );
 
+const actionCell = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "6px",
+  px: "14px",
+  border: 0,
+  borderLeft: `1px solid ${colors.border.default}`,
+  cursor: "pointer",
+  fontSize: 11,
+  fontWeight: 600,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase" as const,
+  fontFamily: "inherit",
+  transition: "background 150ms ease",
+};
+
 export const HealthBanner = ({
   metrics,
   connected,
+  editing,
+  onToggleEditing,
 }: HealthBannerProps) => {
   const { t } = useTranslation();
   const [resetOpen, setResetOpen] = useState(false);
@@ -235,24 +256,39 @@ export const HealthBanner = ({
         <Box
           component="button"
           type="button"
+          onClick={onToggleEditing}
+          sx={{
+            ...actionCell,
+            bgcolor: editing ? "rgba(245, 173, 24, 0.16)" : "transparent",
+            color: editing ? colors.secondary : colors.text.primary,
+            "&:hover": {
+              bgcolor: "rgba(245, 173, 24, 0.22)",
+              color: colors.secondary,
+            },
+          }}
+        >
+          <CustomizeIcon
+            sx={{
+              fontSize: 13,
+              color: editing ? colors.secondary : colors.text.primary,
+              flexShrink: 0,
+            }}
+          />
+          {editing
+            ? t("dashboard.customize.done")
+            : t("dashboard.customize.action")}
+        </Box>
+
+        <Box
+          component="button"
+          type="button"
           onClick={() => setResetOpen(true)}
           disabled={resetting}
           sx={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "6px",
-            px: "14px",
+            ...actionCell,
             color: colors.text.primary,
             bgcolor: "transparent",
-            border: 0,
-            borderLeft: `1px solid ${colors.border.default}`,
             cursor: resetting ? "not-allowed" : "pointer",
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            fontFamily: "inherit",
-            transition: "background 150ms ease",
             "&:hover": {
               bgcolor: "rgba(158, 28, 96, 0.18)",
               color: "#fff",

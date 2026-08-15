@@ -269,7 +269,7 @@ func routeAddBlacklistGate(be routeBackend, table, chain string, ipv4, ipv6 bool
 
 func routeEnsureGatedPreJump(be routeBackend, chain string, gate routeDeviceGate) {
 	if !gate.enabled {
-		be.ensureJumpRule("PREROUTING", chain, true)
+		be.ensureJumpRule("PREROUTING", chain, true, false)
 		return
 	}
 	if be.name() == backendNFTables {
@@ -287,5 +287,5 @@ func routeEnsureGatedPreJump(be routeBackend, chain string, gate routeDeviceGate
 		}
 		return
 	}
-	be.ensureJumpRule("PREROUTING", chain, true)
+	be.ensureJumpRule("PREROUTING", chain, true, false)
 }

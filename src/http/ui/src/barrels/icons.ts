@@ -80,4 +80,6 @@ export {
   CallMade as EscalateOutIcon,
   CallReceived as EscalateInIcon,
   Telegram as TelegramIcon,
+  DashboardCustomize as CustomizeIcon,
+  VisibilityOff as HideIcon,
 } from "@mui/icons-material";

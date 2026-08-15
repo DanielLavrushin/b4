@@ -91,6 +91,8 @@ type ApiConfig struct {
 // the 0x10000 XrayUI uses and of the engine's bits 28-30.
 const SelfDialMark = uint32(0x40000)
 
+const PerSetRouteMarkBits = uint32(0x27FFF)
+
 type QueueConfig struct {
 	Mode              string         `json:"mode"`
 	StartNum          int            `json:"start_num"`
