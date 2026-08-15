@@ -323,10 +323,10 @@ func TestNoteDNSOutcome_EscalatesAfterThreshold(t *testing.T) {
 
 	nx := dns.BuildBlockResponse(dns.BuildQuery("ntc.party", 1, 1))
 
-	if next := w.noteDNSOutcome(cfg, primary, "ntc.party", "", nx); next != nil {
+	if next := w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeA, nx); next != nil {
 		t.Fatal("the first NXDOMAIN must not escalate at a threshold of 2")
 	}
-	next := w.noteDNSOutcome(cfg, primary, "ntc.party", "", nx)
+	next := w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeA, nx)
 	if next == nil || next.Id != backup.Id {
 		t.Fatalf("the second NXDOMAIN must escalate to the backup, got %v", next)
 	}
@@ -341,10 +341,145 @@ func TestNoteDNSOutcome_GoodAnswerResetsTheCounter(t *testing.T) {
 	nx := dns.BuildBlockResponse(query)
 	good := dns.BuildAnswerFromIPs(query, 60, []net.IP{net.ParseIP("1.2.3.4")})
 
-	w.noteDNSOutcome(cfg, primary, "ntc.party", "", nx)
-	w.noteDNSOutcome(cfg, primary, "ntc.party", "", good)
-	if next := w.noteDNSOutcome(cfg, primary, "ntc.party", "", nx); next != nil {
+	w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeA, nx)
+	w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeA, good)
+	if next := w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeA, nx); next != nil {
 		t.Fatal("a good answer in between must reset the failure run")
+	}
+}
+
+func TestNoteDNSOutcome_GoodAAAADoesNotClearAFailures(t *testing.T) {
+	w := newEscalateWorker()
+	cfg, primary, backup := escalatePair(t)
+	primary.Escalate.DNSThreshold = 2
+
+	emptyA := dns.BuildBlockResponse(dns.BuildQuery("ntc.party", 1, dnsTypeA))
+	emptyA[3] &= 0xF0
+	goodAAAA := dns.BuildAnswerFromIPs(dns.BuildQuery("ntc.party", 1, dnsTypeAAAA), 60,
+		[]net.IP{net.ParseIP("2a02:e00:ffec:4b8::1")})
+
+	w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeA, emptyA)
+	w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeAAAA, goodAAAA)
+	next := w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeA, emptyA)
+
+	if next == nil || next.Id != backup.Id {
+		t.Fatal("an IPv6-only host answers AAAA fine; that must not wipe the A-record failure run a dual-stack client produces")
+	}
+}
+
+func TestNoteDNSOutcome_OtherQuestionTypesAreNeutral(t *testing.T) {
+	w := newEscalateWorker()
+	cfg, primary, backup := escalatePair(t)
+	primary.Escalate.DNSThreshold = 2
+
+	emptyA := dns.BuildBlockResponse(dns.BuildQuery("ntc.party", 1, dnsTypeA))
+	emptyA[3] &= 0xF0
+	https := dns.BuildBlockResponse(dns.BuildQuery("ntc.party", 1, 65))
+	https[3] &= 0xF0
+
+	w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeA, emptyA)
+	if next := w.noteDNSOutcome(cfg, primary, "ntc.party", "", 65, https); next != nil {
+		t.Fatal("an HTTPS/SVCB answer must not count as a failure of its own")
+	}
+	if next := w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeA, emptyA); next == nil || next.Id != backup.Id {
+		t.Fatal("an HTTPS/SVCB answer in between must not clear the A-record failure run either")
+	}
+}
+
+func TestNoteDNSOutcome_GoodAnswerClearsItsOwnFamily(t *testing.T) {
+	w := newEscalateWorker()
+	cfg, primary, _ := escalatePair(t)
+	primary.Escalate.DNSThreshold = 2
+
+	query := dns.BuildQuery("ntc.party", 1, dnsTypeA)
+	nx := dns.BuildBlockResponse(query)
+	good := dns.BuildAnswerFromIPs(query, 60, []net.IP{net.ParseIP("1.2.3.4")})
+
+	w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeA, nx)
+	w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeA, good)
+	if next := w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeA, nx); next != nil {
+		t.Fatal("a good A answer must reset the A-record failure run")
+	}
+}
+
+func TestNoteDNSOutcome_UpstreamErrorOnANonAddressQueryIsIgnored(t *testing.T) {
+	w := newEscalateWorker()
+	cfg, primary, _ := escalatePair(t)
+	primary.Escalate.DNSThreshold = 2
+
+	// an upstream outage fails every query type; only address lookups may count
+	for i := 0; i < 6; i++ {
+		if next := w.noteDNSOutcome(cfg, primary, "ntc.party", "", 65, nil); next != nil {
+			t.Fatal("a failed HTTPS/SVCB lookup must never escalate on its own")
+		}
+	}
+	if next := w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeA, nil); next != nil {
+		t.Fatal("failed HTTPS/SVCB lookups must not have been counted into the A-record run")
+	}
+}
+
+func TestNoteDNSOutcome_UpstreamErrorOnAnAddressQueryCounts(t *testing.T) {
+	w := newEscalateWorker()
+	cfg, primary, backup := escalatePair(t)
+	primary.Escalate.DNSThreshold = 2
+
+	if next := w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeA, nil); next != nil {
+		t.Fatal("the first upstream error must not trip a threshold of 2")
+	}
+	next := w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeA, nil)
+	if next == nil || next.Id != backup.Id {
+		t.Fatalf("a second failed A lookup must escalate, got %v", next)
+	}
+}
+
+func TestNoteDNSOutcome_UpstreamErrorKeepsFamiliesApart(t *testing.T) {
+	w := newEscalateWorker()
+	cfg, primary, _ := escalatePair(t)
+	primary.Escalate.DNSThreshold = 2
+
+	w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeA, nil)
+	if next := w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeAAAA, nil); next != nil {
+		t.Fatal("one failed A and one failed AAAA are one failure each, not two of either")
+	}
+}
+
+func TestDNSQueryType_FallsBackToTheResponse(t *testing.T) {
+	resp := dns.BuildBlockResponse(dns.BuildQuery("ntc.party", 1, dnsTypeAAAA))
+	if got := dnsQueryType(nil, resp); got != dnsTypeAAAA {
+		t.Fatalf("expected the question type to be read off the response, got %d", got)
+	}
+	query := dns.BuildQuery("ntc.party", 1, dnsTypeA)
+	if got := dnsQueryType(query, resp); got != dnsTypeA {
+		t.Fatalf("the query must win when it is readable, got %d", got)
+	}
+	if got := dnsQueryType(nil, nil); got != 0 {
+		t.Fatalf("expected 0 when nothing is readable, got %d", got)
+	}
+}
+
+func TestClassifyDNSAnswer(t *testing.T) {
+	aQuery := dns.BuildQuery("ntc.party", 1, dnsTypeA)
+	emptyAAAA := dns.BuildBlockResponse(dns.BuildQuery("ntc.party", 1, dnsTypeAAAA))
+	emptyAAAA[3] &= 0xF0
+
+	cases := []struct {
+		name string
+		resp []byte
+		want dnsVerdict
+	}{
+		{"no response at all", nil, dnsVerdictFailed},
+		{"nxdomain", dns.BuildBlockResponse(aQuery), dnsVerdictFailed},
+		{"servfail", dns.BuildServfailResponse(aQuery), dnsVerdictFailed},
+		{"answered A", dns.BuildAnswerFromIPs(aQuery, 60, []net.IP{net.ParseIP("1.2.3.4")}), dnsVerdictGood},
+		{"empty AAAA", emptyAAAA, dnsVerdictGood},
+		{"HTTPS question", dns.BuildBlockResponse(dns.BuildQuery("ntc.party", 1, 65)), dnsVerdictIgnore},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := classifyDNSAnswer(tc.resp); got != tc.want {
+				t.Fatalf("classifyDNSAnswer = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -355,7 +490,7 @@ func TestNoteDNSOutcome_IgnoresSetsWithoutATarget(t *testing.T) {
 
 	nx := dns.BuildBlockResponse(dns.BuildQuery("ntc.party", 1, 1))
 	for i := 0; i < 5; i++ {
-		if next := w.noteDNSOutcome(cfg, primary, "ntc.party", "", nx); next != nil {
+		if next := w.noteDNSOutcome(cfg, primary, "ntc.party", "", dnsTypeA, nx); next != nil {
 			t.Fatal("a set with no escalate target must never escalate")
 		}
 	}

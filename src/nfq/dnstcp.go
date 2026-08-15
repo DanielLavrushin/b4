@@ -302,21 +302,20 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			}
 		}
 
-		if dnsAnswerFailed(resp) {
-			if next := s.worker.noteDNSOutcome(cfg, set, domain, srcMac, nil); next != nil {
-				if alt, aerr := s.answerVia(next, cfg, query, domain, clientIP); aerr == nil && len(alt) > 0 {
-					s.logEvent(next, domain, clientIP, origIP, clientPort, srcMac, dnsActionEscalatePrefix+next.Name)
-					if ips := dns.ParseResponseIPs(alt); len(ips) > 0 && clientIP != nil {
-						s.worker.storeHostHints(clientIP, next, domain, ips)
-						if next.Routing.Enabled && !next.Targets.DomainOnly && !cfg.Queue.IsDiscovery && RoutingHandleDNSFunc != nil {
-							RoutingHandleDNSFunc(cfg, next, ips)
-						}
+		qtype, _ := dns.QuestionType(query)
+		if next := s.worker.noteDNSOutcome(cfg, set, domain, srcMac, qtype, resp); next != nil {
+			if alt, aerr := s.answerVia(next, cfg, query, domain, clientIP); aerr == nil && len(alt) > 0 {
+				s.logEvent(next, domain, clientIP, origIP, clientPort, srcMac, dnsActionEscalatePrefix+next.Name)
+				if ips := dns.ParseResponseIPs(alt); len(ips) > 0 && clientIP != nil {
+					s.worker.storeHostHints(clientIP, next, domain, ips)
+					if next.Routing.Enabled && !next.Targets.DomainOnly && !cfg.Queue.IsDiscovery && RoutingHandleDNSFunc != nil {
+						RoutingHandleDNSFunc(cfg, next, ips)
 					}
-					if writeDNSTCPMessage(client, alt, ioTimeout) != nil {
-						return
-					}
-					continue
 				}
+				if writeDNSTCPMessage(client, alt, ioTimeout) != nil {
+					return
+				}
+				continue
 			}
 		}
 

@@ -195,8 +195,12 @@ Limits TCP Maximum Segment Size on SYN/SYN-ACK packets for port 443 traffic. A s
 | Enable | Turn on global MSS Clamping | - | Off |
 | MSS size | MSS size in bytes. Lower = more fragmentation | 10-1460 | `88` |
 
-:::info Global vs per-device MSS
-Global MSS Clamping applies to **all** port 443 traffic. To limit MSS only for specific devices (for example, a TV running YouTube), configure MSS in the **MSS** column of the [device table](#device-filtering) below. Per-device MSS works independently of the global setting.
+:::info Where MSS can be set
+There are three places, from broadest to narrowest:
+
+- **Global**, here - applies to **all** port 443 traffic.
+- **Per-device**, in the **MSS** column of the [device table](#device-filtering) below - for example a TV running YouTube. Works independently of the global setting.
+- **Per-set**, on a set's [TCP -> General](../sets/tcp/general#mss-clamping) tab - for the addresses or devices that set targets. It takes precedence over both settings above for the connections it covers.
 :::
 
 ## DNS
