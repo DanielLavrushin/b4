@@ -145,6 +145,29 @@ func runB4(cmd *cobra.Command, args []string) error {
 	mtprotoBridge := mtproto.NewTransparentBridge(&cfg)
 	tproxyMgr.SetMTProtoBridge(mtprotoBridge)
 	handler.SetMTProtoBridge(mtprotoBridge)
+	handler.SetUpstreamHealthFunc(func() []handler.DiagUpstream {
+		health := tproxyMgr.UpstreamHealth()
+		out := make([]handler.DiagUpstream, 0, len(health))
+		for _, h := range health {
+			d := handler.DiagUpstream{
+				SetID:               h.SetID,
+				SetName:             h.SetName,
+				Upstream:            h.Upstream,
+				FailOpen:            h.FailOpen,
+				Reachable:           h.ConsecutiveFailures == 0,
+				ConsecutiveFailures: h.ConsecutiveFailures,
+				LastError:           h.LastError,
+			}
+			if !h.LastFailure.IsZero() {
+				d.LastFailure = h.LastFailure.UTC().Format(time.RFC3339)
+			}
+			if !h.LastSuccess.IsZero() {
+				d.LastSuccess = h.LastSuccess.UTC().Format(time.RFC3339)
+			}
+			out = append(out, d)
+		}
+		return out
+	})
 	go func() {
 		_ = mtproto.RefreshDCs(cfg.System.MTProto.DCFallbackEnabled, cfg.System.MTProto.DCFallbackURL)
 	}()

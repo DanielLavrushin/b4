@@ -38,16 +38,29 @@ type DiagnosticsResponse struct {
 }
 
 type Diagnostics struct {
-	System     DiagSystem      `json:"system"`
-	B4         DiagB4          `json:"b4"`
-	Kernel     DiagKernel      `json:"kernel"`
-	Tools      DiagTools       `json:"tools"`
-	Network    DiagNetwork     `json:"network"`
-	Engine     DiagEngine      `json:"engine"`
-	Firewall   DiagFirewall    `json:"firewall"`
-	Geodata    DiagGeodata     `json:"geodata"`
-	Storage    []DiagMount     `json:"storage"`
-	Paths      DiagPaths       `json:"paths"`
+	System    DiagSystem     `json:"system"`
+	B4        DiagB4         `json:"b4"`
+	Kernel    DiagKernel     `json:"kernel"`
+	Tools     DiagTools      `json:"tools"`
+	Network   DiagNetwork    `json:"network"`
+	Engine    DiagEngine     `json:"engine"`
+	Firewall  DiagFirewall   `json:"firewall"`
+	Geodata   DiagGeodata    `json:"geodata"`
+	Upstreams []DiagUpstream `json:"upstreams,omitempty"`
+	Storage   []DiagMount    `json:"storage"`
+	Paths     DiagPaths      `json:"paths"`
+}
+
+type DiagUpstream struct {
+	SetID               string `json:"set_id"`
+	SetName             string `json:"set_name"`
+	Upstream            string `json:"upstream"`
+	FailOpen            bool   `json:"fail_open"`
+	Reachable           bool   `json:"reachable"`
+	ConsecutiveFailures int64  `json:"consecutive_failures,omitempty"`
+	LastError           string `json:"last_error,omitempty"`
+	LastFailure         string `json:"last_failure,omitempty"`
+	LastSuccess         string `json:"last_success,omitempty"`
 }
 
 type DiagSystem struct {

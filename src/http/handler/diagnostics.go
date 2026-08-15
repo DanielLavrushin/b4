@@ -39,17 +39,25 @@ func (api *API) buildDiagnostics() Diagnostics {
 	serviceManager := api.getServiceManager()
 
 	return Diagnostics{
-		System:   collectSystemInfo(),
-		B4:       collectB4Info(cfg.ConfigPath, serviceManager),
-		Kernel:   collectKernelModules(cfg),
-		Tools:    collectTools(),
-		Network:  collectNetworkInterfaces(),
-		Engine:   collectEngineInfo(cfg),
-		Firewall: collectFirewallInfo(cfg),
-		Geodata:  api.collectGeodataInfo(),
-		Storage:  collectStorage(),
-		Paths:    collectPaths(cfg.ConfigPath, cfg.System.Logging.ErrorFilePath(), cfg.System.Geo.GeoSitePath, cfg.System.Geo.GeoIpPath),
+		System:    collectSystemInfo(),
+		B4:        collectB4Info(cfg.ConfigPath, serviceManager),
+		Kernel:    collectKernelModules(cfg),
+		Tools:     collectTools(),
+		Network:   collectNetworkInterfaces(),
+		Engine:    collectEngineInfo(cfg),
+		Firewall:  collectFirewallInfo(cfg),
+		Geodata:   api.collectGeodataInfo(),
+		Upstreams: collectUpstreamHealth(),
+		Storage:   collectStorage(),
+		Paths:     collectPaths(cfg.ConfigPath, cfg.System.Logging.ErrorFilePath(), cfg.System.Geo.GeoSitePath, cfg.System.Geo.GeoIpPath),
 	}
+}
+
+func collectUpstreamHealth() []DiagUpstream {
+	if upstreamHealthFunc == nil {
+		return nil
+	}
+	return upstreamHealthFunc()
 }
 
 func collectSystemInfo() DiagSystem {

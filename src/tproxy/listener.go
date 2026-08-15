@@ -77,6 +77,73 @@ type Listener struct {
 	udpFailWarn sync.Once
 
 	activeConns atomic.Int64
+
+	upstreamFails    atomic.Int64
+	upstreamLastWarn atomic.Int64
+	upstreamLastFail atomic.Int64
+	upstreamLastOK   atomic.Int64
+	upstreamLastErr  atomic.Pointer[string]
+}
+
+const upstreamWarnInterval = 60 * time.Second
+
+type UpstreamHealth struct {
+	SetID               string    `json:"set_id"`
+	SetName             string    `json:"set_name"`
+	Upstream            string    `json:"upstream"`
+	FailOpen            bool      `json:"fail_open"`
+	ConsecutiveFailures int64     `json:"consecutive_failures"`
+	LastError           string    `json:"last_error,omitempty"`
+	LastFailure         time.Time `json:"last_failure,omitempty"`
+	LastSuccess         time.Time `json:"last_success,omitempty"`
+}
+
+func (l *Listener) upstreamAddr() string {
+	return net.JoinHostPort(l.Upstream.Host, fmt.Sprintf("%d", l.Upstream.Port))
+}
+
+func (l *Listener) noteUpstreamFailure(target string, port int, err error) {
+	msg := err.Error()
+	l.upstreamLastErr.Store(&msg)
+	now := time.Now()
+	l.upstreamLastFail.Store(now.UnixNano())
+	fails := l.upstreamFails.Add(1)
+
+	last := l.upstreamLastWarn.Load()
+	quiet := fails > 1 && now.UnixNano()-last < int64(upstreamWarnInterval)
+	if quiet || !l.upstreamLastWarn.CompareAndSwap(last, now.UnixNano()) {
+		log.Tracef("tproxy: upstream dial failed for %s:%d on set %q: %v", target, port, l.SetName, err)
+		return
+	}
+	log.Warnf("tproxy: set %q cannot reach its upstream %s (%d consecutive failures), traffic matched by this set is not getting through: %v",
+		l.SetName, l.upstreamAddr(), fails, err)
+}
+
+func (l *Listener) noteUpstreamSuccess() {
+	l.upstreamLastOK.Store(time.Now().UnixNano())
+	if fails := l.upstreamFails.Swap(0); fails > 0 {
+		log.Infof("tproxy: set %q reached its upstream %s again after %d failed attempts", l.SetName, l.upstreamAddr(), fails)
+	}
+}
+
+func (l *Listener) Health() UpstreamHealth {
+	h := UpstreamHealth{
+		SetID:               l.SetID,
+		SetName:             l.SetName,
+		Upstream:            l.upstreamAddr(),
+		FailOpen:            l.FailOpen,
+		ConsecutiveFailures: l.upstreamFails.Load(),
+	}
+	if msg := l.upstreamLastErr.Load(); msg != nil {
+		h.LastError = *msg
+	}
+	if ns := l.upstreamLastFail.Load(); ns > 0 {
+		h.LastFailure = time.Unix(0, ns)
+	}
+	if ns := l.upstreamLastOK.Load(); ns > 0 {
+		h.LastSuccess = time.Unix(0, ns)
+	}
+	return h
 }
 
 func (l *Listener) Start(parent context.Context) error {
@@ -251,8 +318,10 @@ func (l *Listener) handle(client net.Conn) {
 	dialCtx, cancel := context.WithTimeout(l.ctx, 15*time.Second)
 	upstream, err := socks5.DialUpstream(dialCtx, l.Upstream, targetHost, origPort)
 	cancel()
-	if err != nil {
-		log.Tracef("tproxy: upstream dial failed for %s:%d on set %q: %v", targetHost, origPort, l.SetName, err)
+	if err == nil {
+		l.noteUpstreamSuccess()
+	} else {
+		l.noteUpstreamFailure(targetHost, origPort, err)
 		if !l.FailOpen {
 			return
 		}

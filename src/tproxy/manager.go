@@ -2,6 +2,7 @@ package tproxy
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 
@@ -110,9 +111,9 @@ func (m *Manager) SyncConfig(cfg *config.Config) {
 			host = "127.0.0.1"
 		}
 		l := &Listener{
-			SetID:    set.Id,
-			SetName:  set.Name,
-			Port:     port,
+			SetID:   set.Id,
+			SetName: set.Name,
+			Port:    port,
 			Upstream: socks5.ClientConfig{
 				Host:       host,
 				Port:       set.Routing.Upstream.Port,
@@ -146,6 +147,20 @@ func (m *Manager) Stop() {
 	if m.cancel != nil {
 		m.cancel()
 	}
+}
+
+func (m *Manager) UpstreamHealth() []UpstreamHealth {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]UpstreamHealth, 0, len(m.listeners))
+	for _, l := range m.listeners {
+		if l.MTProtoWS {
+			continue
+		}
+		out = append(out, l.Health())
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].SetName < out[j].SetName })
+	return out
 }
 
 func (m *Manager) PortForSet(set *config.SetConfig) int {
