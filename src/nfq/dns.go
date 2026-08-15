@@ -181,10 +181,43 @@ func (w *Worker) escalateAfterDNS(ipVersion byte, cfg *config.Config, set *confi
 	if next == nil {
 		return false
 	}
-	if !w.answerViaSet(ipVersion, cfg, next, domain, query, clientIP, clientPort, originalDst) {
+	if !w.answerViaSetInline(ipVersion, cfg, next, domain, query, clientIP, clientPort, originalDst) {
 		return false
 	}
 	logDNSEvent("UDP", next, domain, clientIP, originalDst, clientPort, w.getMacByIp(clientIP.String()), dnsActionEscalatePrefix+next.Name)
+	return true
+}
+
+func (w *Worker) dnsAnswerSource(set *config.SetConfig) (net.IP, bool) {
+	useDoH := set.DNS.DoHURL != ""
+	if !(set.DNS.Enabled && (set.DNS.TargetDNS != "" || useDoH)) {
+		return nil, false
+	}
+	if useDoH {
+		return nil, true
+	}
+	targetIP := net.ParseIP(set.DNS.TargetDNS)
+	return targetIP, targetIP != nil
+}
+
+func (w *Worker) answerViaSetInline(ipVersion byte, cfg *config.Config, set *config.SetConfig, domain string, query []byte, clientIP net.IP, clientPort uint16, originalDst net.IP) bool {
+	if w == nil || cfg == nil || set == nil || len(query) == 0 {
+		return false
+	}
+
+	if pinned := w.pinnedAnswer(set, query, domain); pinned != nil {
+		w.applyPinnedAnswer(cfg, set, clientIP, domain, pinned)
+		w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, pinned)
+		return true
+	}
+
+	targetIP, ok := w.dnsAnswerSource(set)
+	if !ok {
+		return false
+	}
+
+	delay := config.ResolveSeg2Delay(set.UDP.Seg2Delay, set.UDP.Seg2DelayMax)
+	w.resolveDNSRedirect(ipVersion, set, cfg, query, clientIP, clientPort, originalDst, targetIP, delay)
 	return true
 }
 
@@ -199,17 +232,9 @@ func (w *Worker) answerViaSet(ipVersion byte, cfg *config.Config, set *config.Se
 		return true
 	}
 
-	useDoH := set.DNS.DoHURL != ""
-	if !(set.DNS.Enabled && (set.DNS.TargetDNS != "" || useDoH)) {
+	targetIP, ok := w.dnsAnswerSource(set)
+	if !ok {
 		return false
-	}
-
-	var targetIP net.IP
-	if !useDoH {
-		targetIP = net.ParseIP(set.DNS.TargetDNS)
-		if targetIP == nil {
-			return false
-		}
 	}
 
 	select {
