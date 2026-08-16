@@ -3231,6 +3231,31 @@
                 }
             }
         },
+        "/ui/dashboard": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Panel order, hidden panels and column widths for the dashboard.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "UI"
+                ],
+                "summary": "Get the dashboard layout",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/config.DashboardLayout"
+                        }
+                    }
+                }
+            }
+        },
         "/version": {
             "get": {
                 "produces": [
@@ -3675,6 +3700,9 @@
                 "system": {
                     "$ref": "#/definitions/config.SystemConfig"
                 },
+                "ui": {
+                    "$ref": "#/definitions/config.UIConfig"
+                },
                 "version": {
                     "type": "integer"
                 }
@@ -3726,6 +3754,29 @@
                 },
                 "tcp_port": {
                     "type": "integer"
+                }
+            }
+        },
+        "config.DashboardLayout": {
+            "type": "object",
+            "properties": {
+                "hidden": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "order": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "spans": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
                 }
             }
         },
@@ -4621,6 +4672,14 @@
                 }
             }
         },
+        "config.UIConfig": {
+            "type": "object",
+            "properties": {
+                "dashboard": {
+                    "$ref": "#/definitions/config.DashboardLayout"
+                }
+            }
+        },
         "config.UpstreamProxyConfig": {
             "type": "object",
             "properties": {
@@ -5105,6 +5164,9 @@
                 },
                 "system": {
                     "$ref": "#/definitions/config.SystemConfig"
+                },
+                "ui": {
+                    "$ref": "#/definitions/config.UIConfig"
                 },
                 "version": {
                     "type": "integer"
