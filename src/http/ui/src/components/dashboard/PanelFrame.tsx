@@ -6,10 +6,15 @@ import { useTranslation } from "react-i18next";
 import { colors, radiusPx } from "@design";
 import { DragIcon, HideIcon } from "@b4.icons";
 import { B4TooltipButton } from "@common/B4TooltipButton";
-import { GRID_COLUMNS } from "./registry";
+import { GRID_COLUMNS, MIN_SPAN } from "./registry";
 
 const GRID_GAP = 12;
 export const ROW_UNIT = 4;
+
+const clampSpan = (value: number): number =>
+  Math.min(GRID_COLUMNS, Math.max(MIN_SPAN, Math.round(value)));
+
+
 
 interface PanelFrameProps {
   id: string;
@@ -18,6 +23,7 @@ interface PanelFrameProps {
   editing: boolean;
   dropTarget: boolean;
   onSpanChange: (span: number) => void;
+  onResizeActive: (active: boolean) => void;
   onHide: () => void;
   children: ReactNode;
 }
@@ -29,6 +35,7 @@ export const PanelFrame = ({
   editing,
   dropTarget,
   onSpanChange,
+  onResizeActive,
   onHide,
   children,
 }: PanelFrameProps) => {
@@ -36,7 +43,9 @@ export const PanelFrame = ({
   const frameRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [resizing, setResizing] = useState(false);
+  const [previewSpan, setPreviewSpan] = useState<number | null>(null);
   const [rowSpan, setRowSpan] = useState(1);
+  const shownSpan = previewSpan ?? span;
 
   useEffect(() => {
     const el = contentRef.current;
@@ -74,9 +83,12 @@ export const PanelFrame = ({
       /* pointer already released */
     }
     setResizing(true);
+    onResizeActive(true);
 
+    let latest = startSpan;
     const onMove = (moveEvent: PointerEvent) => {
-      onSpanChange(startSpan + (moveEvent.clientX - startX) / step);
+      latest = clampSpan(startSpan + (moveEvent.clientX - startX) / step);
+      setPreviewSpan(latest);
     };
     const onEnd = () => {
       try {
@@ -88,6 +100,9 @@ export const PanelFrame = ({
       grip.removeEventListener("pointerup", onEnd);
       grip.removeEventListener("pointercancel", onEnd);
       setResizing(false);
+      onResizeActive(false);
+      setPreviewSpan(null);
+      if (latest !== startSpan) onSpanChange(latest);
     };
 
     grip.addEventListener("pointermove", onMove);
@@ -99,7 +114,7 @@ export const PanelFrame = ({
     <Box
       ref={setNodeRef}
       sx={{
-        gridColumn: { xs: "span 12", xl: `span ${span}` },
+        gridColumn: { xs: "span 12", xl: `span ${shownSpan}` },
         gridRow: `span ${rowSpan}`,
         minWidth: 0,
         containerType: "inline-size",
@@ -177,7 +192,7 @@ export const PanelFrame = ({
               }}
             >
               {t("dashboard.customize.columns", {
-                span,
+                span: shownSpan,
                 total: GRID_COLUMNS,
               })}
             </Typography>
@@ -225,6 +240,32 @@ export const PanelFrame = ({
     </Box>
   );
 };
+
+export const ColumnGuides = () => (
+  <Box
+    aria-hidden
+    sx={{
+      display: { xs: "none", xl: "grid" },
+      position: "absolute",
+      inset: 0,
+      gridTemplateColumns: `repeat(${GRID_COLUMNS}, minmax(0, 1fr))`,
+      columnGap: `${GRID_GAP}px`,
+      pointerEvents: "none",
+      zIndex: 2,
+    }}
+  >
+    {Array.from({ length: GRID_COLUMNS }, (_, i) => (
+      <Box
+        key={i}
+        sx={{
+          bgcolor: "rgba(245, 173, 24, 0.07)",
+          border: "1px solid rgba(245, 173, 24, 0.16)",
+          borderRadius: "2px",
+        }}
+      />
+    ))}
+  </Box>
+);
 
 export const PanelGhost = ({ title }: { title: string }) => (
   <Box

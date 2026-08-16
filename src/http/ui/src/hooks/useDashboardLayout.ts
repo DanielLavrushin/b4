@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { apiGet, apiPut } from "@api/apiClient";
 import {
   DASHBOARD_PANELS,
   GRID_COLUMNS,
@@ -8,6 +9,14 @@ import {
 
 const STORAGE_KEY = "b4_dashboard_layout";
 const LAYOUT_VERSION = 2;
+const LAYOUT_ENDPOINT = "/api/ui/dashboard";
+const SAVE_DEBOUNCE_MS = 800;
+
+interface StoredDashboard {
+  order?: string[];
+  hidden?: string[];
+  spans?: Record<string, number>;
+}
 
 interface StoredLayout {
   v: number;
@@ -45,33 +54,63 @@ const emptyLayout = (): StoredLayout => ({
   spans: {},
 });
 
+const normalize = (raw: StoredDashboard): StoredLayout => {
+  const spans: Record<string, number> = {};
+  for (const [id, span] of Object.entries(raw.spans ?? {})) {
+    if (PANELS_BY_ID.has(id) && Number.isFinite(span)) {
+      spans[id] = clampSpan(span);
+    }
+  }
+  return {
+    v: LAYOUT_VERSION,
+    order: mergeOrder(Array.isArray(raw.order) ? raw.order : []),
+    hidden: (Array.isArray(raw.hidden) ? raw.hidden : []).filter((id) =>
+      PANELS_BY_ID.has(id),
+    ),
+    spans,
+  };
+};
+
 const loadLayout = (): StoredLayout => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return emptyLayout();
     const parsed = JSON.parse(raw) as Partial<StoredLayout>;
     if (parsed?.v !== LAYOUT_VERSION) return emptyLayout();
-    const spans: Record<string, number> = {};
-    for (const [id, span] of Object.entries(parsed.spans ?? {})) {
-      if (PANELS_BY_ID.has(id) && Number.isFinite(span)) {
-        spans[id] = clampSpan(span);
-      }
-    }
-    return {
-      v: LAYOUT_VERSION,
-      order: mergeOrder(Array.isArray(parsed.order) ? parsed.order : []),
-      hidden: (Array.isArray(parsed.hidden) ? parsed.hidden : []).filter((id) =>
-        PANELS_BY_ID.has(id),
-      ),
-      spans,
-    };
+    return normalize(parsed);
   } catch {
     return emptyLayout();
   }
 };
 
+const isCustomized = (layout: StoredLayout): boolean =>
+  layout.hidden.length > 0 ||
+  Object.keys(layout.spans).length > 0 ||
+  layout.order.join() !== defaultOrder().join();
+
 export function useDashboardLayout() {
   const [layout, setLayout] = useState<StoredLayout>(loadLayout);
+  const hydrated = useRef(false);
+  const dirty = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<StoredDashboard>(LAYOUT_ENDPOINT)
+      .then((remote) => {
+        if (cancelled || dirty.current) return;
+        const next = normalize(remote ?? {});
+        if (isCustomized(next)) setLayout(next);
+      })
+      .catch(() => {
+        /* keep the local layout while b4 is unreachable */
+      })
+      .finally(() => {
+        if (!cancelled) hydrated.current = true;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -79,46 +118,69 @@ export function useDashboardLayout() {
     } catch {
       /* storage unavailable */
     }
+
+    if (!hydrated.current || !dirty.current) return;
+    const timer = setTimeout(() => {
+      void apiPut<StoredDashboard>(LAYOUT_ENDPOINT, {
+        order: layout.order,
+        hidden: layout.hidden,
+        spans: layout.spans,
+      }).catch(() => {
+        /* layout stays in localStorage until the next change */
+      });
+    }, SAVE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
   }, [layout]);
+
+  const mutate = useCallback(
+    (updater: (prev: StoredLayout) => StoredLayout) => {
+      dirty.current = true;
+      setLayout(updater);
+    },
+    [],
+  );
 
   const hidden = useMemo(() => new Set(layout.hidden), [layout.hidden]);
 
-  const move = useCallback((activeId: string, overId: string) => {
-    setLayout((prev) => {
-      const from = prev.order.indexOf(activeId);
-      const to = prev.order.indexOf(overId);
-      if (from < 0 || to < 0 || from === to) return prev;
-      const order = [...prev.order];
-      order.splice(to, 0, order.splice(from, 1)[0]);
-      return { ...prev, order };
-    });
-  }, []);
-
-  const setSpan = useCallback((id: string, span: number) => {
-    setLayout((prev) => {
-      const next = clampSpan(span);
-      if (prev.spans[id] === next) return prev;
-      return { ...prev, spans: { ...prev.spans, [id]: next } };
-    });
-  }, []);
-
-  const setHidden = useCallback((id: string, value: boolean) => {
-    setLayout((prev) => {
-      const next = prev.hidden.filter((entry) => entry !== id);
-      if (value) next.push(id);
-      return { ...prev, hidden: next };
-    });
-  }, []);
-
-  const reset = useCallback(() => setLayout(emptyLayout()), []);
-
-  const customized = useMemo(
-    () =>
-      layout.hidden.length > 0 ||
-      Object.keys(layout.spans).length > 0 ||
-      layout.order.join() !== defaultOrder().join(),
-    [layout],
+  const move = useCallback(
+    (activeId: string, overId: string) => {
+      mutate((prev) => {
+        const from = prev.order.indexOf(activeId);
+        const to = prev.order.indexOf(overId);
+        if (from < 0 || to < 0 || from === to) return prev;
+        const order = [...prev.order];
+        order.splice(to, 0, order.splice(from, 1)[0]);
+        return { ...prev, order };
+      });
+    },
+    [mutate],
   );
+
+  const setSpan = useCallback(
+    (id: string, span: number) => {
+      mutate((prev) => {
+        const next = clampSpan(span);
+        if (prev.spans[id] === next) return prev;
+        return { ...prev, spans: { ...prev.spans, [id]: next } };
+      });
+    },
+    [mutate],
+  );
+
+  const setHidden = useCallback(
+    (id: string, value: boolean) => {
+      mutate((prev) => {
+        const next = prev.hidden.filter((entry) => entry !== id);
+        if (value) next.push(id);
+        return { ...prev, hidden: next };
+      });
+    },
+    [mutate],
+  );
+
+  const reset = useCallback(() => mutate(emptyLayout), [mutate]);
+
+  const customized = useMemo(() => isCustomized(layout), [layout]);
 
   return {
     order: layout.order,

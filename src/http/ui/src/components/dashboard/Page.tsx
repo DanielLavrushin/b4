@@ -18,7 +18,7 @@ import { SortableContext } from "@dnd-kit/sortable";
 import { useTranslation } from "react-i18next";
 import { HealthBanner } from "./HealthBanner";
 import { CustomizeBar, HiddenPanelEntry } from "./CustomizeBar";
-import { PanelFrame, PanelGhost, ROW_UNIT } from "./PanelFrame";
+import { ColumnGuides, PanelFrame, PanelGhost, ROW_UNIT } from "./PanelFrame";
 import { PANELS_BY_ID, PanelContext } from "./registry";
 import { normalizeMetrics } from "./normalize";
 import { useDashboardSets } from "@hooks/useDashboardSets";
@@ -40,6 +40,7 @@ export function DashboardPage() {
   const [editing, setEditing] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  const [resizingPanel, setResizingPanel] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const { sets, targetedDomains, refresh: refreshSets } = useDashboardSets();
   const { order, hidden, spans, move, setSpan, setHidden, reset, customized } =
@@ -186,6 +187,7 @@ export function DashboardPage() {
         >
           <Box
             sx={{
+              position: "relative",
               display: "grid",
               gridTemplateColumns: "repeat(12, minmax(0, 1fr))",
               gridAutoRows: `${ROW_UNIT}px`,
@@ -195,6 +197,7 @@ export function DashboardPage() {
               rowGap: 0,
             }}
           >
+            {resizingPanel && <ColumnGuides />}
             {visiblePanels.map((panel) => (
               <PanelFrame
                 key={panel.id}
@@ -204,6 +207,7 @@ export function DashboardPage() {
                 editing={editing}
                 dropTarget={overId === panel.id && activeId !== panel.id}
                 onSpanChange={(value) => setSpan(panel.id, value)}
+                onResizeActive={setResizingPanel}
                 onHide={() => setHidden(panel.id, true)}
               >
                 {panel.render(panelContext)}

@@ -169,6 +169,7 @@ func (api *API) RegisterEndpoints(mux *http.ServeMux, cfgPtr *atomic.Pointer[con
 	api.geodataManager.UpdatePaths(cfg.System.Geo.GeoSitePath, cfg.System.Geo.GeoIpPath)
 
 	api.RegisterConfigApi()
+	api.RegisterUIApi()
 	api.RegisterMetricsApi()
 	api.RegisterGeositeApi()
 	api.RegisterGeoipApi()

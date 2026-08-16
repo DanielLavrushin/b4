@@ -12,6 +12,7 @@ type Config struct {
 	Queue  QueueConfig  `json:"queue"`
 	System SystemConfig `json:"system"`
 	Sets   []*SetConfig `json:"sets"`
+	UI     UIConfig     `json:"ui"`
 
 	tcpPortMap map[uint16]bool // pre-computed TCP port set for fast lookup in packet handler
 }
