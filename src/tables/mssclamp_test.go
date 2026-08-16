@@ -19,8 +19,24 @@ func mssClampSet(id string, size int, ips, macs []string) *config.SetConfig {
 	return &set
 }
 
+func stubBinaries(t *testing.T, names ...string) {
+	t.Helper()
+	for _, name := range names {
+		prev, had := hasBinaryCache.Load(name)
+		t.Cleanup(func() {
+			if had {
+				hasBinaryCache.Store(name, prev)
+			} else {
+				hasBinaryCache.Delete(name)
+			}
+		})
+		hasBinaryCache.Store(name, true)
+	}
+}
+
 func mssSpecs(t *testing.T, cfg *config.Config, ipt string) []string {
 	t.Helper()
+	stubBinaries(t, backendIPTables, backendIP6Tables, "ipset")
 	manager := NewIPTablesManager(cfg, false)
 	_, rules := manager.buildMSSManifest("PREROUTING")
 	var out []string
