@@ -1,11 +1,14 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -21,6 +24,9 @@ const (
 	mcpServerName   = "b4"
 	mcpTopicScheme  = "b4://topics/"
 	mcpMaxSetsInOut = 200
+	mcpDefaultLines = 100
+	mcpMaxLines     = 500
+	mcpTailReadCap  = 512 << 10
 )
 
 var mcpUnauthWarnOnce sync.Once
@@ -47,6 +53,25 @@ var mcpReadOnly = &mcp.ToolAnnotations{
 	OpenWorldHint:   boolPtr(false),
 }
 
+// @Summary Model Context Protocol endpoint
+// @Description JSON-RPC 2.0 endpoint implementing the Model Context Protocol (Streamable HTTP, stateless).
+// @Description This is not a REST resource: there is one endpoint and the operation is named in the body's "method"
+// @Description field ("tools/list", "tools/call", "resources/list", "resources/read", "prompts/list", "prompts/get").
+// @Description Tool names go in params.name — there are no per-tool URLs. Call tools/list for the authoritative,
+// @Description self-describing tool catalogue and its JSON schemas.
+// @Description The Accept header MUST list both application/json and text/event-stream; responses are Server-Sent Events.
+// @Description Disabled unless system.web_server.mcp.enabled is true. Authentication follows the web server:
+// @Description when a username and password are configured, the usual Bearer token is required.
+// @Tags MCP
+// @Accept json
+// @Produce text/event-stream
+// @Param body body object true "JSON-RPC 2.0 request, e.g. {\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}"
+// @Success 200 {string} string "JSON-RPC response as an SSE stream"
+// @Failure 400 {string} string "Accept header missing application/json or text/event-stream"
+// @Failure 403 {object} map[string]string "Origin not allowed (DNS-rebinding protection)"
+// @Failure 404 {object} map[string]string "MCP server is disabled"
+// @Security BearerAuth
+// @Router /mcp [post]
 func (api *API) RegisterMCPApi() {
 	srv := api.newMCPServer()
 	streamable := mcp.NewStreamableHTTPHandler(
@@ -170,6 +195,31 @@ type mcpSetsOut struct {
 	Truncated bool            `json:"truncated"`
 }
 
+type mcpGetSetIn struct {
+	Set string `json:"set" jsonschema:"Set id or name, as reported by b4_list_sets."`
+}
+
+type mcpRecentConnIn struct {
+	Limit    int    `json:"limit,omitempty" jsonschema:"Maximum lines to return, newest last. Default 100, maximum 500."`
+	Contains string `json:"contains,omitempty" jsonschema:"Optional case-insensitive substring filter, e.g. a domain or set name."`
+}
+
+type mcpRecentConnOut struct {
+	Connections []string `json:"connections"`
+	Truncated   bool     `json:"truncated"`
+}
+
+type mcpLogsIn struct {
+	Limit    int    `json:"limit,omitempty" jsonschema:"Maximum lines to return, newest last. Default 100, maximum 500."`
+	Contains string `json:"contains,omitempty" jsonschema:"Optional case-insensitive substring filter."`
+}
+
+type mcpLogsOut struct {
+	Path  string   `json:"path,omitempty"`
+	Lines []string `json:"lines,omitempty"`
+	Note  string   `json:"note,omitempty"`
+}
+
 func (api *API) addMCPTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_status",
@@ -288,6 +338,82 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	})
 
 	addTool(srv, &mcp.Tool{
+		Name:        "b4_get_set",
+		Title:       "Read one strategy set",
+		Description: "Return the full configuration of a single strategy set by id or name: targets, fragmentation, faking, TCP/UDP options, DNS and routing. Use this instead of b4_get_config when reasoning about one set.",
+		Annotations: mcpReadOnly,
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpGetSetIn) (*mcp.CallToolResult, mcpRawOut, error) {
+		want := strings.TrimSpace(in.Set)
+		if want == "" {
+			return nil, mcpRawOut{}, fmt.Errorf("set (id or name) is required")
+		}
+		for _, s := range api.getCfg().Sets {
+			if !strings.EqualFold(s.Id, want) && !strings.EqualFold(s.Name, want) {
+				continue
+			}
+			raw, err := json.Marshal(s)
+			if err != nil {
+				return nil, mcpRawOut{}, err
+			}
+			return nil, mcpRawOut{JSON: string(raw)}, nil
+		}
+		return nil, mcpRawOut{}, fmt.Errorf("no set with id or name %q", want)
+	})
+
+	addTool(srv, &mcp.Tool{
+		Name:        "b4_recent_connections",
+		Title:       "Recent connections",
+		Description: "Recent connections b4 actually processed, newest last: protocol, matched set, domain, source, destination and TLS version. This is how you confirm traffic is really reaching a set — a domain can be configured yet never match. Empty means no traffic has been seen since b4 started.",
+		Annotations: mcpReadOnly,
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpRecentConnIn) (*mcp.CallToolResult, mcpRecentConnOut, error) {
+		lines := log.GetConnectionHub().Snapshot()
+
+		if filter := strings.ToLower(strings.TrimSpace(in.Contains)); filter != "" {
+			kept := lines[:0:0]
+			for _, l := range lines {
+				if strings.Contains(strings.ToLower(l), filter) {
+					kept = append(kept, l)
+				}
+			}
+			lines = kept
+		}
+
+		limit := in.Limit
+		if limit <= 0 || limit > mcpMaxLines {
+			limit = mcpDefaultLines
+		}
+		truncated := false
+		if len(lines) > limit {
+			lines = lines[len(lines)-limit:]
+			truncated = true
+		}
+		return nil, mcpRecentConnOut{Connections: lines, Truncated: truncated}, nil
+	})
+
+	addTool(srv, &mcp.Tool{
+		Name:        "b4_logs_tail",
+		Title:       "Tail the b4 log",
+		Description: "Most recent lines from b4's error log, newest last. Use after b4_status and b4_diagnostics when something is configured correctly but still not working. Returns an empty result with a reason when file logging is disabled (system.logging.directory unset).",
+		Annotations: mcpReadOnly,
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpLogsIn) (*mcp.CallToolResult, mcpLogsOut, error) {
+		path := api.getCfg().System.Logging.ErrorFilePath()
+		if path == "" {
+			return nil, mcpLogsOut{Note: "file logging is disabled (system.logging.directory is empty)"}, nil
+		}
+
+		limit := in.Limit
+		if limit <= 0 || limit > mcpMaxLines {
+			limit = mcpDefaultLines
+		}
+
+		lines, err := tailLines(path, limit, strings.TrimSpace(in.Contains))
+		if err != nil {
+			return nil, mcpLogsOut{}, fmt.Errorf("read %s: %w", path, err)
+		}
+		return nil, mcpLogsOut{Path: path, Lines: lines}, nil
+	})
+
+	addTool(srv, &mcp.Tool{
 		Name:        "b4_diagnostics",
 		Title:       "System diagnostics",
 		Description: "Full environment report: OS and kernel, memory, b4 build and paths, detected firewall backend and the live nftables/iptables rule groups b4 installed, network interfaces, engine and TUN state. Use when the bypass appears not to be applied at all.",
@@ -386,6 +512,9 @@ func redactConfigForMCP(cfg *config.Config) *config.Config {
 
 	for i := range clone.System.MTProto.Secrets {
 		clone.System.MTProto.Secrets[i].Secret = redactedMarker
+		if clone.System.MTProto.Secrets[i].Name != "" {
+			clone.System.MTProto.Secrets[i].Name = redactedMarker
+		}
 	}
 
 	if clone.System.API.IPInfoToken != "" {
@@ -398,6 +527,58 @@ func redactConfigForMCP(cfg *config.Config) *config.Config {
 }
 
 const redactedMarker = "[redacted]"
+
+func tailLines(path string, limit int, contains string) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	size := info.Size()
+	offset := int64(0)
+	if size > mcpTailReadCap {
+		offset = size - mcpTailReadCap
+	}
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		return nil, err
+	}
+
+	raw, err := io.ReadAll(io.LimitReader(f, mcpTailReadCap))
+	if err != nil {
+		return nil, err
+	}
+	if offset > 0 {
+		if i := bytes.IndexByte(raw, '\n'); i >= 0 {
+			raw = raw[i+1:]
+		}
+	}
+
+	filter := strings.ToLower(contains)
+	out := make([]string, 0, limit)
+	for _, l := range strings.Split(string(raw), "\n") {
+		l = strings.TrimRight(l, "\r")
+		if l == "" {
+			continue
+		}
+		if filter != "" && !strings.Contains(strings.ToLower(l), filter) {
+			continue
+		}
+		out = append(out, l)
+	}
+	if len(out) > limit {
+		out = out[len(out)-limit:]
+	}
+	return out, nil
+}
 
 func extractJSONPath(raw []byte, path string) ([]byte, error) {
 	var cur any

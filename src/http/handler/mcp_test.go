@@ -3,14 +3,17 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/geodat"
+	"github.com/daniellavrushin/b4/log"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -22,6 +25,10 @@ func mcpTestCfg() *config.Config {
 	cfg.System.Socks5.Password = "socks-pw"
 	cfg.System.Socks5.Username = "socks-user"
 	cfg.System.API.IPInfoToken = "ipinfo-token"
+	cfg.System.MTProto.Secrets = []config.MTProtoSecret{
+		{ID: "s1", Name: "daniel", Secret: "deadbeef", Enabled: true},
+		{ID: "s2", Name: "max", Secret: "cafebabe", Enabled: false},
+	}
 	cfg.Sets = []*config.SetConfig{
 		{
 			Id:      "set-1",
@@ -144,13 +151,47 @@ func TestMCPGetConfigRedactsSecrets(t *testing.T) {
 	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	for _, leak := range []string{"socks-pw", "socks-user", "ipinfo-token", "hashed-secret", "admin"} {
+	for _, leak := range []string{
+		"socks-pw", "socks-user", "ipinfo-token", "hashed-secret", "deadbeef", "cafebabe",
+	} {
 		if strings.Contains(out.JSON, leak) {
 			t.Fatalf("config output leaked %q", leak)
 		}
 	}
 	if !strings.Contains(out.JSON, redactedMarker) {
 		t.Error("expected redaction markers in output")
+	}
+
+	var full struct {
+		System struct {
+			WebServer struct {
+				Username string `json:"username"`
+				Password string `json:"password"`
+			} `json:"web_server"`
+			MTProto struct {
+				Secrets []config.MTProtoSecret `json:"secrets"`
+			} `json:"mtproto"`
+		} `json:"system"`
+	}
+	if err := json.Unmarshal([]byte(out.JSON), &full); err != nil {
+		t.Fatalf("decode redacted config: %v", err)
+	}
+	if full.System.WebServer.Username != "" || full.System.WebServer.Password != "" {
+		t.Errorf("web server credentials survived redaction: %+v", full.System.WebServer)
+	}
+	if len(full.System.MTProto.Secrets) != 2 {
+		t.Fatalf("expected 2 secrets, got %d", len(full.System.MTProto.Secrets))
+	}
+	for _, s := range full.System.MTProto.Secrets {
+		if s.Secret != redactedMarker {
+			t.Errorf("secret %q value not redacted: %q", s.ID, s.Secret)
+		}
+		if s.Name != redactedMarker {
+			t.Errorf("secret %q name not redacted: %q", s.ID, s.Name)
+		}
+		if s.ID == "" {
+			t.Error("secret id should survive redaction so the model can still reason about it")
+		}
 	}
 }
 
@@ -301,6 +342,203 @@ func TestMCPToolPanicDoesNotCrashServer(t *testing.T) {
 
 	if _, err := session.ListTools(ctx, nil); err != nil {
 		t.Fatalf("server must survive a tool panic: %v", err)
+	}
+}
+
+func TestMCPGetSet(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	for _, key := range []string{"set-1", "video", "VIDEO"} {
+		res, err := session.CallTool(ctx, &mcp.CallToolParams{
+			Name:      "b4_get_set",
+			Arguments: map[string]any{"set": key},
+		})
+		if err != nil {
+			t.Fatalf("call with %q: %v", key, err)
+		}
+		if res.IsError {
+			t.Fatalf("lookup by %q failed: %+v", key, res.Content)
+		}
+		var out mcpRawOut
+		if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		var set map[string]any
+		if err := json.Unmarshal([]byte(out.JSON), &set); err != nil {
+			t.Fatalf("set not an object: %v", err)
+		}
+		if set["name"] != "video" {
+			t.Fatalf("got set %v for key %q", set["name"], key)
+		}
+	}
+
+	missing, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "b4_get_set",
+		Arguments: map[string]any{"set": "does-not-exist"},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if !missing.IsError {
+		t.Error("unknown set should be a tool error")
+	}
+}
+
+func TestMCPRecentConnections(t *testing.T) {
+	hub := log.GetConnectionHub()
+	hub.Broadcast("tcp,video,youtube.com,10.0.0.2:5111,,142.250.1.1:443,,TLS1.3")
+	hub.Broadcast("tcp,,example.org,10.0.0.2:5112,,93.184.1.1:443,,TLS1.2")
+
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_recent_connections"})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var out mcpRecentConnOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(out.Connections) < 2 {
+		t.Fatalf("expected buffered connections, got %+v", out.Connections)
+	}
+
+	filtered, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "b4_recent_connections",
+		Arguments: map[string]any{"contains": "YOUTUBE"},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var fout mcpRecentConnOut
+	if err := json.Unmarshal(mustStructured(t, filtered), &fout); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(fout.Connections) == 0 {
+		t.Fatal("case-insensitive filter returned nothing")
+	}
+	for _, l := range fout.Connections {
+		if !strings.Contains(strings.ToLower(l), "youtube") {
+			t.Fatalf("filter leaked non-matching line: %q", l)
+		}
+	}
+}
+
+func TestMCPLogsTail(t *testing.T) {
+	dir := t.TempDir()
+	cfg := mcpTestCfg()
+	cfg.System.Logging.Directory = dir
+
+	var sb strings.Builder
+	for i := 0; i < 300; i++ {
+		fmt.Fprintf(&sb, "line-%03d ordinary message\n", i)
+	}
+	sb.WriteString("line-300 nftables rule failed\n")
+	if err := os.WriteFile(cfg.System.Logging.ErrorFilePath(), []byte(sb.String()), 0o644); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "b4_logs_tail",
+		Arguments: map[string]any{"limit": 10},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var out mcpLogsOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(out.Lines) != 10 {
+		t.Fatalf("want 10 lines, got %d", len(out.Lines))
+	}
+	if !strings.Contains(out.Lines[len(out.Lines)-1], "line-300") {
+		t.Fatalf("newest line should be last, got %q", out.Lines[len(out.Lines)-1])
+	}
+
+	filtered, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "b4_logs_tail",
+		Arguments: map[string]any{"contains": "nftables"},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var fout mcpLogsOut
+	if err := json.Unmarshal(mustStructured(t, filtered), &fout); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(fout.Lines) != 1 || !strings.Contains(fout.Lines[0], "nftables") {
+		t.Fatalf("filter = %+v", fout.Lines)
+	}
+}
+
+func TestMCPLogsTailDisabledAndMissing(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.Logging.Directory = ""
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_logs_tail"})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("disabled logging should not be a tool error: %+v", res.Content)
+	}
+	var out mcpLogsOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Note == "" {
+		t.Error("expected an explanatory note when file logging is off")
+	}
+
+	cfg2 := mcpTestCfg()
+	cfg2.System.Logging.Directory = t.TempDir()
+	srv2 := newMCPTestServer(t, cfg2)
+	session2, ctx2 := connectMCP(t, srv2)
+
+	res2, err := session2.CallTool(ctx2, &mcp.CallToolParams{Name: "b4_logs_tail"})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if res2.IsError {
+		t.Fatalf("absent log file should not be a tool error: %+v", res2.Content)
+	}
+}
+
+func TestMCPTailLinesReadsOnlyFileTail(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/big.log"
+
+	var sb strings.Builder
+	for i := 0; sb.Len() < mcpTailReadCap*2; i++ {
+		fmt.Fprintf(&sb, "line-%06d %s\n", i, strings.Repeat("x", 200))
+	}
+	sb.WriteString("FINAL-LINE\n")
+	if err := os.WriteFile(path, []byte(sb.String()), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	lines, err := tailLines(path, 5, "")
+	if err != nil {
+		t.Fatalf("tailLines: %v", err)
+	}
+	if len(lines) != 5 {
+		t.Fatalf("want 5 lines, got %d", len(lines))
+	}
+	if lines[len(lines)-1] != "FINAL-LINE" {
+		t.Fatalf("last line = %q", lines[len(lines)-1])
+	}
+	for _, l := range lines {
+		if strings.Contains(l, "line-000000") {
+			t.Fatal("should not have read from the start of a large file")
+		}
 	}
 }
 
