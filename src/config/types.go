@@ -321,6 +321,7 @@ type SystemConfig struct {
 type MCPConfig struct {
 	Enabled        bool     `json:"enabled"`
 	AllowWrites    bool     `json:"allow_writes"`
+	Token          string   `json:"token,omitempty"`
 	AllowedOrigins []string `json:"allowed_origins,omitempty"`
 }
 

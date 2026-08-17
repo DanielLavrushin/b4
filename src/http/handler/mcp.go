@@ -3,6 +3,9 @@ package handler
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -79,6 +82,57 @@ func (api *API) RegisterMCPApi() {
 		&mcp.StreamableHTTPOptions{Stateless: true},
 	)
 	api.mux.Handle(mcpEndpoint, api.mcpGate(streamable))
+	api.mux.HandleFunc("/api/mcp/generate-token", api.handleMCPGenerateToken)
+}
+
+// @Summary Generate an MCP access token
+// @Description Returns a fresh random token for MCP clients. It is not saved — store it via the config API to activate it.
+// @Tags MCP
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /mcp/generate-token [post]
+func (api *API) handleMCPGenerateToken(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	token, err := GenerateMCPToken()
+	if err != nil {
+		writeJsonError(w, http.StatusInternalServerError, "failed to generate token")
+		return
+	}
+	sendResponse(w, map[string]interface{}{"success": true, "token": token})
+}
+
+func GenerateMCPToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// MCPEndpoint is the MCP route, exported so the auth middleware can recognise
+// requests that carry an MCP token instead of a web session token.
+const MCPEndpoint = mcpEndpoint
+
+// MCPTokenAccepts reports whether the presented bearer token is the configured
+// MCP token. It is constant-time and false when no MCP token is configured.
+func MCPTokenAccepts(cfg *config.Config, token string) bool {
+	want := cfg.System.WebServer.MCP.Token
+	if want == "" || token == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(want), []byte(token)) == 1
+}
+
+func mcpBearerToken(r *http.Request) string {
+	auth := r.Header.Get("Authorization")
+	if !strings.HasPrefix(auth, "Bearer ") {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 }
 
 func (api *API) mcpGate(next http.Handler) http.Handler {
@@ -90,9 +144,14 @@ func (api *API) mcpGate(next http.Handler) http.Handler {
 			return
 		}
 
-		if !mcpAuthConfigured(cfg) {
+		if cfg.System.WebServer.MCP.Token != "" {
+			if !MCPTokenAccepts(cfg, mcpBearerToken(r)) {
+				writeJsonError(w, http.StatusUnauthorized, "invalid or missing MCP token")
+				return
+			}
+		} else if !mcpAuthConfigured(cfg) {
 			mcpUnauthWarnOnce.Do(func() {
-				log.Warnf("mcp: serving without authentication — web_server.username/password are not set, so anyone who can reach %s can read b4 status, configuration and diagnostics", mcpEndpoint)
+				log.Warnf("mcp: serving without authentication — no MCP token is set and web_server.username/password are empty, so anyone who can reach %s can read b4 status, configuration and diagnostics", mcpEndpoint)
 			})
 		}
 
@@ -216,9 +275,17 @@ type mcpLogsIn struct {
 }
 
 type mcpLogsOut struct {
-	Path  string   `json:"path,omitempty"`
-	Lines []string `json:"lines,omitempty"`
-	Note  string   `json:"note,omitempty"`
+	Path    string   `json:"path,omitempty"`
+	Lines   []string `json:"lines"`
+	Matched int      `json:"matched"`
+	Scanned int      `json:"scanned"`
+	Note    string   `json:"note"`
+}
+
+type tailResult struct {
+	Lines   []string
+	Scanned int
+	Exists  bool
 }
 
 func (api *API) addMCPTools(srv *mcp.Server) {
@@ -364,7 +431,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_recent_connections",
 		Title:       "Recent connections",
-		Description: "Recent connections b4 actually processed, newest last: protocol, matched set, domain, source, destination and TLS version. This is how you confirm traffic is really reaching a set — a domain can be configured yet never match. Empty means no traffic has been seen since b4 started.",
+		Description: "Recent connections b4 actually processed, newest last: protocol, matched set, domain, source, destination and TLS version. This is the right tool for any question about a specific domain or site — it shows whether traffic reached b4 and which set matched it, which the error log does not record. Pass the domain in 'contains' to filter. Empty means no matching traffic has been seen since b4 started.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpRecentConnIn) (*mcp.CallToolResult, mcpRecentConnOut, error) {
 		lines := log.GetConnectionHub().Snapshot()
@@ -394,12 +461,15 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_logs_tail",
 		Title:       "Tail the b4 log",
-		Description: "Most recent lines from b4's error log, newest last. Use after b4_status and b4_diagnostics when something is configured correctly but still not working. Returns an empty result with a reason when file logging is disabled (system.logging.directory unset).",
+		Description: "Most recent lines from b4's error and system log, newest last. Use after b4_status and b4_diagnostics when something is configured correctly but still not working. This log holds b4's own errors and warnings — it does NOT record per-domain traffic, so do not filter it by a domain name; use b4_recent_connections to find out whether a domain is being matched. The 'note' field always explains the result, including why it is empty.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpLogsIn) (*mcp.CallToolResult, mcpLogsOut, error) {
 		path := api.getCfg().System.Logging.ErrorFilePath()
 		if path == "" {
-			return nil, mcpLogsOut{Note: "file logging is disabled (system.logging.directory is empty)"}, nil
+			return nil, mcpLogsOut{
+				Lines: []string{},
+				Note:  "file logging is disabled (system.logging.directory is empty), so there is no log to read",
+			}, nil
 		}
 
 		limit := in.Limit
@@ -407,11 +477,33 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 			limit = mcpDefaultLines
 		}
 
-		lines, err := tailLines(path, limit, strings.TrimSpace(in.Contains))
+		filter := strings.TrimSpace(in.Contains)
+		res, err := tailLines(path, limit, filter)
 		if err != nil {
 			return nil, mcpLogsOut{}, fmt.Errorf("read %s: %w", path, err)
 		}
-		return nil, mcpLogsOut{Path: path, Lines: lines}, nil
+
+		out := mcpLogsOut{
+			Path:    path,
+			Lines:   res.Lines,
+			Matched: len(res.Lines),
+			Scanned: res.Scanned,
+		}
+		switch {
+		case !res.Exists:
+			out.Note = "the log file does not exist yet — b4 has not written anything to it"
+		case res.Scanned == 0:
+			out.Note = "the log file exists but is empty"
+		case filter != "" && len(res.Lines) == 0:
+			out.Note = fmt.Sprintf(
+				"no lines matched %q among the %d most recent lines. This log contains b4's own errors, not per-domain traffic — to check whether a domain is being matched, call b4_recent_connections instead.",
+				filter, res.Scanned)
+		case filter != "":
+			out.Note = fmt.Sprintf("%d of the %d most recent lines matched %q", len(res.Lines), res.Scanned, filter)
+		default:
+			out.Note = fmt.Sprintf("%d most recent lines", len(res.Lines))
+		}
+		return nil, out, nil
 	})
 
 	addTool(srv, &mcp.Tool{
@@ -529,19 +621,19 @@ func redactConfigForMCP(cfg *config.Config) *config.Config {
 
 const redactedMarker = "[redacted]"
 
-func tailLines(path string, limit int, contains string) ([]string, error) {
+func tailLines(path string, limit int, contains string) (tailResult, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return tailResult{Lines: []string{}}, nil
 		}
-		return nil, err
+		return tailResult{}, err
 	}
 	defer f.Close()
 
 	info, err := f.Stat()
 	if err != nil {
-		return nil, err
+		return tailResult{}, err
 	}
 
 	size := info.Size()
@@ -550,12 +642,12 @@ func tailLines(path string, limit int, contains string) ([]string, error) {
 		offset = size - mcpTailReadCap
 	}
 	if _, err := f.Seek(offset, io.SeekStart); err != nil {
-		return nil, err
+		return tailResult{}, err
 	}
 
 	raw, err := io.ReadAll(io.LimitReader(f, mcpTailReadCap))
 	if err != nil {
-		return nil, err
+		return tailResult{}, err
 	}
 	if offset > 0 {
 		if i := bytes.IndexByte(raw, '\n'); i >= 0 {
@@ -565,11 +657,13 @@ func tailLines(path string, limit int, contains string) ([]string, error) {
 
 	filter := strings.ToLower(contains)
 	out := make([]string, 0, limit)
+	scanned := 0
 	for _, l := range strings.Split(string(raw), "\n") {
 		l = strings.TrimRight(l, "\r")
 		if l == "" {
 			continue
 		}
+		scanned++
 		if filter != "" && !strings.Contains(strings.ToLower(l), filter) {
 			continue
 		}
@@ -578,7 +672,7 @@ func tailLines(path string, limit int, contains string) ([]string, error) {
 	if len(out) > limit {
 		out = out[len(out)-limit:]
 	}
-	return out, nil
+	return tailResult{Lines: out, Scanned: scanned, Exists: true}, nil
 }
 
 func extractJSONPath(raw []byte, path string) ([]byte, error) {

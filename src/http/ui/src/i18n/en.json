@@ -498,8 +498,14 @@
       "allowWritesHelp": "Lets the AI change a short allow-list of settings (MTProto and SOCKS5 on/off, a set's enabled state and fragmentation strategy). Credentials and everything else stay read-only.",
       "allowWritesWarning": "The AI can now change settings, not just read them. Your AI app should ask you to approve each change — do not approve one you do not understand.",
       "noAuthWarning": "Web authentication is off, so anyone who can reach this port can read b4's status, configuration and diagnostics through MCP. Fine on a trusted home network; set a username and password under Web Server if the port is reachable from elsewhere.",
+      "token": "MCP token",
+      "tokenPlaceholder": "none — endpoint is unauthenticated",
+      "tokenHelp": "Long-lived credential for AI apps. Survives restarts, unlike a web login token. Leave empty to fall back to web authentication.",
+      "tokenGenerate": "Generate",
+      "tokenGenerated": "Token generated — remember to save the configuration",
+      "tokenGenerateError": "Failed to generate token",
       "endpointTitle": "Endpoint",
-      "endpointHelp": "Add this URL to your AI app's MCP settings. If web authentication is enabled, include an Authorization: Bearer <token> header."
+      "endpointHelp": "Add this URL to your AI app's MCP settings, with the MCP token in a headers block: \"headers\": { \"Authorization\": \"Bearer <token>\" }"
     },
     "Checker": {
       "title": "Testing Configuration",

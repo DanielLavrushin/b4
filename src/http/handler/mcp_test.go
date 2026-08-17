@@ -512,6 +512,83 @@ func TestMCPLogsTailDisabledAndMissing(t *testing.T) {
 	}
 }
 
+func TestMCPLogsTailAlwaysExplainsEmptyResult(t *testing.T) {
+	newSession := func(t *testing.T, mutate func(*config.Config)) (*mcp.ClientSession, context.Context) {
+		t.Helper()
+		cfg := mcpTestCfg()
+		mutate(cfg)
+		return connectMCP(t, newMCPTestServer(t, cfg))
+	}
+
+	call := func(t *testing.T, session *mcp.ClientSession, ctx context.Context, args map[string]any) mcpLogsOut {
+		t.Helper()
+		res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_logs_tail", Arguments: args})
+		if err != nil {
+			t.Fatalf("call: %v", err)
+		}
+		if res.IsError {
+			t.Fatalf("unexpected tool error: %+v", res.Content)
+		}
+		var out mcpLogsOut
+		if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if out.Note == "" {
+			t.Fatal("note must never be empty — an unexplained empty result is what confused the model")
+		}
+		if out.Lines == nil {
+			t.Error("lines must always be present, even when empty")
+		}
+		return out
+	}
+
+	t.Run("logging disabled", func(t *testing.T) {
+		s, ctx := newSession(t, func(c *config.Config) { c.System.Logging.Directory = "" })
+		out := call(t, s, ctx, nil)
+		if !strings.Contains(out.Note, "disabled") {
+			t.Errorf("note = %q", out.Note)
+		}
+	})
+
+	t.Run("file missing", func(t *testing.T) {
+		s, ctx := newSession(t, func(c *config.Config) { c.System.Logging.Directory = t.TempDir() })
+		out := call(t, s, ctx, nil)
+		if !strings.Contains(out.Note, "does not exist") {
+			t.Errorf("note = %q", out.Note)
+		}
+	})
+
+	t.Run("file empty", func(t *testing.T) {
+		dir := t.TempDir()
+		s, ctx := newSession(t, func(c *config.Config) { c.System.Logging.Directory = dir })
+		if err := os.WriteFile(dir+"/errors.log", nil, 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		out := call(t, s, ctx, nil)
+		if !strings.Contains(out.Note, "empty") {
+			t.Errorf("note = %q", out.Note)
+		}
+	})
+
+	t.Run("filter matches nothing points at connections tool", func(t *testing.T) {
+		dir := t.TempDir()
+		s, ctx := newSession(t, func(c *config.Config) { c.System.Logging.Directory = dir })
+		if err := os.WriteFile(dir+"/errors.log", []byte("some unrelated error\nanother line\n"), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		out := call(t, s, ctx, map[string]any{"contains": "zona.media"})
+		if out.Matched != 0 {
+			t.Fatalf("matched = %d, want 0", out.Matched)
+		}
+		if out.Scanned != 2 {
+			t.Errorf("scanned = %d, want 2", out.Scanned)
+		}
+		if !strings.Contains(out.Note, "b4_recent_connections") {
+			t.Errorf("an unmatched domain filter should redirect to the connections tool, note = %q", out.Note)
+		}
+	})
+}
+
 func TestMCPTailLinesReadsOnlyFileTail(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/big.log"
@@ -525,20 +602,133 @@ func TestMCPTailLinesReadsOnlyFileTail(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	lines, err := tailLines(path, 5, "")
+	res, err := tailLines(path, 5, "")
 	if err != nil {
 		t.Fatalf("tailLines: %v", err)
 	}
-	if len(lines) != 5 {
-		t.Fatalf("want 5 lines, got %d", len(lines))
+	if !res.Exists {
+		t.Fatal("Exists should be true for a present file")
 	}
-	if lines[len(lines)-1] != "FINAL-LINE" {
-		t.Fatalf("last line = %q", lines[len(lines)-1])
+	if len(res.Lines) != 5 {
+		t.Fatalf("want 5 lines, got %d", len(res.Lines))
 	}
-	for _, l := range lines {
+	if res.Scanned <= 5 {
+		t.Fatalf("Scanned should count every line read, got %d", res.Scanned)
+	}
+	if res.Lines[len(res.Lines)-1] != "FINAL-LINE" {
+		t.Fatalf("last line = %q", res.Lines[len(res.Lines)-1])
+	}
+	for _, l := range res.Lines {
 		if strings.Contains(l, "line-000000") {
 			t.Fatal("should not have read from the start of a large file")
 		}
+	}
+}
+
+func TestMCPTokenEnforcement(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.Token = "tok-secret"
+	cfg.System.WebServer.Username = ""
+	cfg.System.WebServer.Password = ""
+	srv := newMCPTestServer(t, cfg)
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`
+	post := func(auth string) int {
+		req, err := http.NewRequest(http.MethodPost, srv.URL+mcpEndpoint, strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("post: %v", err)
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	if got := post(""); got != http.StatusUnauthorized {
+		t.Errorf("missing token = %d, want 401", got)
+	}
+	if got := post("Bearer wrong"); got != http.StatusUnauthorized {
+		t.Errorf("wrong token = %d, want 401", got)
+	}
+	if got := post("Bearer tok-secret"); got != http.StatusOK {
+		t.Errorf("correct token = %d, want 200", got)
+	}
+}
+
+func TestMCPTokenClientSession(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.Token = "tok-secret"
+	srv := newMCPTestServer(t, cfg)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	t.Cleanup(cancel)
+	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil)
+	transport := &mcp.StreamableClientTransport{
+		Endpoint:   srv.URL + mcpEndpoint,
+		HTTPClient: &http.Client{Transport: bearerTransport{token: "tok-secret"}},
+	}
+	session, err := client.Connect(ctx, transport, nil)
+	if err != nil {
+		t.Fatalf("connect with MCP token: %v", err)
+	}
+	defer session.Close()
+
+	if _, err := session.ListTools(ctx, nil); err != nil {
+		t.Fatalf("list tools with MCP token: %v", err)
+	}
+}
+
+type bearerTransport struct{ token string }
+
+func (b bearerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	clone := r.Clone(r.Context())
+	clone.Header.Set("Authorization", "Bearer "+b.token)
+	return http.DefaultTransport.RoundTrip(clone)
+}
+
+func TestMCPTokenAcceptsIsStrict(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.Token = "abc"
+
+	if MCPTokenAccepts(cfg, "abc") != true {
+		t.Error("exact token should match")
+	}
+	for _, bad := range []string{"", "ab", "abcd", "ABC", " abc"} {
+		if MCPTokenAccepts(cfg, bad) {
+			t.Errorf("token %q must not be accepted", bad)
+		}
+	}
+
+	cfg.System.WebServer.MCP.Token = ""
+	if MCPTokenAccepts(cfg, "anything") {
+		t.Error("no configured token must accept nothing")
+	}
+	if MCPTokenAccepts(cfg, "") {
+		t.Error("empty presented token must never be accepted")
+	}
+}
+
+func TestMCPGenerateTokenIsRandomAndUsable(t *testing.T) {
+	seen := map[string]bool{}
+	for i := 0; i < 20; i++ {
+		tok, err := GenerateMCPToken()
+		if err != nil {
+			t.Fatalf("generate: %v", err)
+		}
+		if len(tok) != 64 {
+			t.Fatalf("token length = %d, want 64 hex chars", len(tok))
+		}
+		if seen[tok] {
+			t.Fatal("generated a duplicate token")
+		}
+		seen[tok] = true
 	}
 }
 

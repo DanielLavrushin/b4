@@ -25,7 +25,7 @@ import {
   B4Switch,
   B4TextField,
 } from "@b4.elements";
-import { aiApi, AIModel } from "@api/ai";
+import { aiApi, mcpApi, AIModel } from "@api/ai";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useAiStatus } from "@context/AiStatusProvider";
 import { colors } from "@design";
@@ -110,8 +110,23 @@ export const ApiSettings = ({ config, onChange }: ApiSettingsProps) => {
 
 const MCPSection = ({ config, onChange }: ApiSettingsProps) => {
   const { t } = useTranslation();
+  const { showError, showSuccess } = useSnackbar();
 
   const mcp = config.system.web_server.mcp;
+  const [generating, setGenerating] = useState(false);
+
+  const generateToken = async () => {
+    try {
+      setGenerating(true);
+      const data = await mcpApi.generateToken();
+      onChange("system.web_server.mcp.token", data.token);
+      showSuccess(t("settings.Mcp.tokenGenerated"));
+    } catch {
+      showError(t("settings.Mcp.tokenGenerateError"));
+    } finally {
+      setGenerating(false);
+    }
+  };
   const authConfigured = Boolean(
     config.system.web_server.username &&
       (config.system.web_server.password ||
@@ -153,7 +168,33 @@ const MCPSection = ({ config, onChange }: ApiSettingsProps) => {
           </B4Alert>
         )}
 
-        {mcp?.enabled && !authConfigured && (
+        {mcp?.enabled && (
+          <Stack direction="row" spacing={1} alignItems="flex-start">
+            <B4TextField
+              label={t("settings.Mcp.token")}
+              value={mcp?.token ?? ""}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                onChange("system.web_server.mcp.token", e.target.value)
+              }
+              placeholder={t("settings.Mcp.tokenPlaceholder")}
+              helperText={t("settings.Mcp.tokenHelp")}
+              sx={{ flex: 1 }}
+            />
+            <Button
+              size="small"
+              variant="outlined"
+              sx={{ mt: 1 }}
+              disabled={generating}
+              onClick={() => {
+                void generateToken();
+              }}
+            >
+              {t("settings.Mcp.tokenGenerate")}
+            </Button>
+          </Stack>
+        )}
+
+        {mcp?.enabled && !mcp?.token && !authConfigured && (
           <B4Alert severity="warning">{t("settings.Mcp.noAuthWarning")}</B4Alert>
         )}
 
