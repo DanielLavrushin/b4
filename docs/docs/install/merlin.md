@@ -13,10 +13,10 @@ title: ASUS Merlin
 
 Entware is required. If it is not installed yet:
 
-1. Plug a USB drive into the router
-2. Connect over SSH: `ssh admin@192.168.1.1`
-3. Run `amtm`
-4. Choose `ep` to install Entware
+1. A USB drive is attached to the router
+2. SSH session to the router: `ssh admin@192.168.1.1`
+3. `amtm` is started
+4. Item `ep` in `amtm` installs Entware
 
 More details: https://diversion.ch/amtm.html
 

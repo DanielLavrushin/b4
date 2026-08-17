@@ -63,7 +63,7 @@ rc-update add b4 default   # autostart on boot
 
 ## Kernel modules
 
-b4 uses NFQUEUE to intercept packets. The required kernel modules are usually loaded automatically when the service starts. If you run into issues, load them manually:
+b4 uses NFQUEUE to intercept packets. The required kernel modules are usually loaded automatically when the service starts. If problems occur, they can be loaded manually:
 
 ```bash
 modprobe nfnetlink_queue
@@ -78,7 +78,7 @@ lsmod | grep nfqueue
 ```
 
 :::info LXC containers
-In LXC containers, kernel modules must be loaded on the host. Add to the container config:
+In LXC containers, kernel modules must be loaded on the host. The container config needs:
 
 ```yaml
 lxc.cgroup2.devices.allow: c 10:200 rwm

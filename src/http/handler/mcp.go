@@ -326,7 +326,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_status",
 		Title:       "B4 status",
-		Description: "High-level health of the running b4 daemon: version, packet capture engine (nfqueue or tun), firewall backend, how many strategy sets exist and are enabled, which subsystems are on, uptime and how many connections b4 has processed. Call this first when diagnosing. 'connections_seen' is a running total since b4 started, not a live concurrency figure.",
+		Description: "High-level health of the running b4 daemon: version, packet capture engine (nfqueue or tun), firewall backend, how many strategy sets exist and are enabled, which subsystems are on, uptime and how many connections b4 has processed. Call this first when diagnosing. 'connections_seen' is a running total since b4 started or since the counters were last reset, not a live concurrency figure: b4 does not record when a connection ends.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpStatusOut, error) {
 		cfg := api.getCfg()
@@ -345,7 +345,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 			Socks5Enabled:   cfg.System.Socks5.Enabled,
 			MTProtoOn:       cfg.System.MTProto.Enabled,
 			Uptime:          snap.Uptime,
-			ConnectionsSeen: int64(snap.ActiveFlows),
+			ConnectionsSeen: int64(snap.TotalConnections),
 		}
 		for _, s := range cfg.Sets {
 			if s.Enabled {
@@ -459,19 +459,18 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_metrics",
 		Title:       "Traffic metrics",
-		Description: "Live counters from the packet engine: connections/packets per second, dropped RSTs, blocked totals, uptime and memory use. 'total_connections' and 'connections_seen' are running totals since b4 started or since the counters were last reset; b4 does not track when a connection ends, so neither is a count of connections open right now.",
+		Description: "Live counters from the packet engine: connections/packets per second, dropped RSTs, blocked totals, uptime and memory use. 'connections_seen' is a running total since b4 started or since the counters were last reset; b4 does not record when a connection ends, so there is no count of connections open right now and none is reported.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpRawOut, error) {
 		m := GetMetricsCollector().GetSnapshot()
 		summary := map[string]any{
-			"total_connections": m.TotalConnections,
-			"connections_seen":  m.ActiveFlows,
-			"current_cps":       m.CurrentCPS,
-			"current_pps":       m.CurrentPPS,
-			"rst_dropped":       m.RSTDropped,
-			"blocked_total":     m.BlockedTotal,
-			"uptime":            m.Uptime,
-			"memory_percent":    m.MemoryUsage.Percent,
+			"connections_seen": m.TotalConnections,
+			"current_cps":      m.CurrentCPS,
+			"current_pps":      m.CurrentPPS,
+			"rst_dropped":      m.RSTDropped,
+			"blocked_total":    m.BlockedTotal,
+			"uptime":           m.Uptime,
+			"memory_percent":   m.MemoryUsage.Percent,
 		}
 		raw, err := json.Marshal(summary)
 		if err != nil {

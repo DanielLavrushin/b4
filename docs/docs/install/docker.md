@@ -7,7 +7,7 @@ Image: [lavrushin/b4](https://hub.docker.com/r/lavrushin/b4) on Docker Hub.
 
 ## docker-compose
 
-Create a `docker-compose.yml` file:
+A `docker-compose.yml` file:
 
 ```yaml
 services:

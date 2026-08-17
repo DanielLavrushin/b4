@@ -9,14 +9,14 @@ title: OpenWRT
 - External storage (USB or extroot) is recommended, since the internal router memory may not have enough space
 
 :::warning Disk space
-On OpenWRT routers, internal memory is limited (overlay). If less than 2 MB is available, the installer will warn you. Using extroot or a USB drive is recommended.
+On OpenWRT routers, internal memory is limited (overlay). If less than 2 MB is available, the installer prints a warning. Extroot or a USB drive is recommended.
 
 Extroot setup guide: https://openwrt.org/docs/guide-user/additional-software/extroot_configuration
 :::
 
 ## Install
 
-Connect to the router over SSH and run:
+Over an SSH connection to the router:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh | sh
@@ -35,7 +35,7 @@ wget -qO- https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh |
 ```
 
 :::info wget on OpenWRT
-The default `wget` in OpenWRT (BusyBox) does not support HTTPS. Install the full version:
+The default `wget` in OpenWRT (BusyBox) does not support HTTPS. The full version is installed with:
 
 ```bash
 opkg update && opkg install wget-ssl ca-certificates
@@ -45,7 +45,7 @@ opkg update && opkg install wget-ssl ca-certificates
 
 ## Kernel modules
 
-The installer will try to load the required modules automatically. If on startup you see the warning `[WARN] No netfilter queue module available` or errors related to nftables, install the modules manually.
+The installer tries to load the required modules automatically. If startup reports the warning `[WARN] No netfilter queue module available` or errors related to nftables, the modules have to be installed manually.
 
 ### OpenWRT 24.x+ (apk)
 
@@ -68,7 +68,7 @@ opkg install kmod-nfnetlink-queue kmod-ipt-nfqueue iptables-mod-nfqueue iptables
 
 ### Loading modules
 
-After installing the modules you may need to load them manually:
+After the modules are installed, they may still need to be loaded manually:
 
 ```bash
 modprobe nft_queue
@@ -76,7 +76,7 @@ modprobe nft_ct
 modprobe xt_connbytes
 ```
 
-If the command runs with no output, the module loaded successfully.
+A command that runs with no output means the module loaded successfully.
 
 ## Service control
 
@@ -88,7 +88,7 @@ If the command runs with no output, the module loaded successfully.
 ```
 
 :::tip Working over SSH
-The b4 service runs as a system daemon - it keeps running after the SSH session is closed (PuTTY, terminal, etc.). You do not need to use `screen` or `nohup` manually.
+The b4 service runs as a system daemon - it keeps running after the SSH session is closed (PuTTY, terminal, etc.). Manual `screen` or `nohup` is not needed.
 :::
 
 ## Paths
@@ -109,7 +109,7 @@ Without external storage (fallback):
 
 ## Web interface
 
-After startup, b4 is reachable at `http://<router IP>:7000`. For example, if the router IP is `192.168.1.1`, open in the browser:
+After startup, b4 is reachable at `http://<router IP>:7000`. For a router IP of `192.168.1.1`, the browser address is:
 
 ```text
 http://192.168.1.1:7000
@@ -123,18 +123,18 @@ There is a third-party package [luci-app-b4](https://github.com/BugOldfag/luci-a
 
 ### Service crashed / service will not start
 
-1. Make sure the kernel modules are installed and loaded (see "Kernel modules" above)
+1. Check that the kernel modules are installed and loaded (see "Kernel modules" above)
 2. Check the logs: `logread | grep b4`
 
 ### Error: Could not process rule
 
-If b4 fails with an error while adding rules to a chain, there may be leftover "broken" tables from a previous failed run. Clear them:
+If b4 fails with an error while adding rules to a chain, there may be leftover "broken" tables from a previous failed run. Clearing them:
 
 ```bash
 nft delete table inet b4_mangle 2>/dev/null
 ```
 
-Then start b4 again:
+Then b4 is started again:
 
 ```bash
 /etc/init.d/b4 restart
@@ -142,25 +142,25 @@ Then start b4 again:
 
 ### Slow speed / video stuttering
 
-Check the **Software flow offloading** setting under Network -> Firewall. Try turning it on or off - on some devices this affects b4 performance.
+The **Software flow offloading** setting under Network -> Firewall is worth checking, both on and off - on some devices it affects b4 performance.
 
 ### Keeping flow offloading and b4 together
 
 Flow offloading moves an established connection to a fast path that skips the netfilter hooks b4 works from, so with it enabled b4 runs but never sees the traffic. On weaker hardware turning it off costs a lot of throughput.
 
-b4 only inspects the first packets of a connection (19 for TCP, 8 for UDP by default, see `queue.tcp_conn_bytes_limit` and `queue.udp_conn_bytes_limit`), so offloading can be delayed until b4 is done. Edit `/usr/share/firewall4/templates/ruleset.uc` and find:
+b4 only inspects the first packets of a connection (19 for TCP, 8 for UDP by default, see `queue.tcp_conn_bytes_limit` and `queue.udp_conn_bytes_limit`), so offloading can be delayed until b4 is done. In `/usr/share/firewall4/templates/ruleset.uc` the line to find is:
 
 ```text
 meta l4proto { tcp, udp } flow offload @ft;
 ```
 
-Replace it with:
+It is replaced with:
 
 ```text
 meta l4proto { tcp, udp } ct original packets ge 40 flow offload @ft;
 ```
 
-Then reload the firewall:
+Then the firewall is reloaded:
 
 ```bash
 fw4 restart

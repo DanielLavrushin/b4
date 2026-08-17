@@ -1104,3 +1104,63 @@ func TestMCPStatusReportsCaptureEngineNotFirewallBackend(t *testing.T) {
 		t.Errorf("got engine=%q backend=%q, want tun/nftables", out2.Engine, out2.FirewallBackend)
 	}
 }
+
+// connections_seen is documented as a running total, so it must come from the
+// counter that only ever grows. ActiveFlows happens to grow today only because
+// CloseConnection has no callers; sourcing a documented total from it would
+// turn into a silent lie the moment anyone wires that up.
+func TestMCPConnectionsSeenIsNotAnInFlightGauge(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	readSeen := func() int64 {
+		t.Helper()
+		res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_status"})
+		if err != nil {
+			t.Fatalf("call: %v", err)
+		}
+		var out mcpStatusOut
+		if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return out.ConnectionsSeen
+	}
+
+	m := GetMetricsCollector()
+	m.RecordConnection("TCP", "example.com", "10.0.0.2", "1.2.3.4:443", true, "", "video", "1.3")
+	before := readSeen()
+
+	// Simulate the close accounting being wired up later.
+	m.CloseConnection()
+
+	if after := readSeen(); after < before {
+		t.Errorf("connections_seen fell from %d to %d when a connection closed; it is a running total, not a gauge", before, after)
+	}
+}
+
+func TestMCPMetricsReportsNoConcurrencyFigure(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_metrics"})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var out mcpRawOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	var summary map[string]any
+	if err := json.Unmarshal([]byte(out.JSON), &summary); err != nil {
+		t.Fatalf("decode summary: %v", err)
+	}
+	if _, ok := summary["connections_seen"]; !ok {
+		t.Error("connections_seen should be reported")
+	}
+	// b4 cannot count connections open right now, so it must not appear to.
+	for _, unwanted := range []string{"active_flows", "total_connections"} {
+		if _, ok := summary[unwanted]; ok {
+			t.Errorf("%q must not be reported: it duplicates connections_seen or implies a concurrency figure b4 does not have", unwanted)
+		}
+	}
+}

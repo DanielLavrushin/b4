@@ -30,7 +30,7 @@ b4 запускается как контейнер на MikroTik RouterOS 7.x.
 
 ## Параметры примера
 
-В руководстве используются следующие значения. Замените на свои:
+В руководстве используются следующие значения, их нужно заменить на соответствующие локальной сети:
 
 | Параметр | Значение |
 | --- | --- |
@@ -47,7 +47,7 @@ b4 запускается как контейнер на MikroTik RouterOS 7.x.
 
 ## Шаг 1: Мост
 
-Создайте мост для Docker-сети:
+Мост для Docker-сети:
 
 ```routeros
 /interface/bridge add name=bridge-docker port-cost-mode=short
@@ -56,7 +56,7 @@ b4 запускается как контейнер на MikroTik RouterOS 7.x.
 
 ## Шаг 2: Интерфейс
 
-Создайте виртуальный Ethernet-интерфейс и подключите к мосту:
+Виртуальный Ethernet-интерфейс, подключённый к мосту:
 
 ```routeros
 /interface/veth add address=192.168.210.10/24 gateway=192.168.210.1 name=B4
@@ -65,7 +65,7 @@ b4 запускается как контейнер на MikroTik RouterOS 7.x.
 
 ## Шаг 3: Маршрутизация
 
-Создайте таблицу маршрутизации и маршрут через контейнер:
+Таблица маршрутизации и маршрут через контейнер:
 
 ```routeros
 /routing table add disabled=no fib name=to_b4
@@ -74,7 +74,7 @@ b4 запускается как контейнер на MikroTik RouterOS 7.x.
 
 ## Шаг 4: Маркировка трафика
 
-Перенаправьте трафик клиентов из списка `b4users` через контейнер:
+Трафик клиентов из списка `b4users` перенаправляется через контейнер:
 
 ```routeros
 /ip firewall mangle add chain=prerouting action=mark-connection \
@@ -88,7 +88,7 @@ b4 запускается как контейнер на MikroTik RouterOS 7.x.
 ```
 
 :::caution FastTrack
-FastTrack обходит правила mangle. Ограничьте его немаркированными соединениями:
+FastTrack обходит правила mangle. Его нужно ограничить немаркированными соединениями:
 
 ```routeros
 /ip firewall filter set [find action=fasttrack-connection] connection-mark=no-mark
@@ -101,17 +101,17 @@ FastTrack обходит правила mangle. Ограничьте его не
 /container/mounts add name=b4_etc src=/usb1/docker/b4-mounts/etc dst=/opt/etc/b4
 ```
 
-Убедитесь, что директория `/usb1/docker/b4-mounts/etc` существует на диске.
+Директория `/usb1/docker/b4-mounts/etc` должна существовать на диске.
 
 ## Шаг 6: Запуск контейнера
 
-Настройте реестр:
+Настройка реестра:
 
 ```routeros
 /container/config set registry-url=https://registry-1.docker.io tmpdir=/usb1/docker/pull
 ```
 
-Создайте и запустите контейнер:
+Создание контейнера:
 
 ```routeros
 /container add remote-image=lavrushin/b4:latest interface=B4 \
@@ -127,18 +127,18 @@ FastTrack обходит правила mangle. Ограничьте его не
 ```
 
 :::info Перехват DNS
-Если провайдер перехватывает DNS (редирект 53 порта), публичные резолверы внутри контейнера не помогут. Настройте DoH на MikroTik и укажите в контейнере шлюз моста вместо публичного DNS:
+Если провайдер перехватывает DNS (редирект 53 порта), публичные резолверы внутри контейнера не помогут. Выход - DoH на MikroTik, а в контейнере вместо публичного DNS указывается шлюз моста:
 
 ```routeros
 /ip dns set use-doh-server=https://cloudflare-dns.com/dns-query verify-doh-cert=yes
 ```
 
-Затем измените DNS контейнера на `dns=192.168.210.1` (шлюз моста).
+DNS контейнера при этом становится `dns=192.168.210.1` (шлюз моста).
 :::
 
 ## Шаг 7: Добавление клиентов
 
-Добавьте устройства в адресный список `b4users`:
+Устройства добавляются в адресный список `b4users`:
 
 ```routeros
 /ip firewall address-list add list=b4users address=192.168.100.50
@@ -150,7 +150,7 @@ FastTrack обходит правила mangle. Ограничьте его не
 После запуска контейнера: `http://192.168.210.10:7000`
 
 :::tip Снижение износа диска
-USB-флешки и SD-карты имеют ограниченное число циклов записи. Перенесите логи b4 в RAM через веб-интерфейс:
+USB-флешки и SD-карты имеют ограниченное число циклов записи. Логи b4 можно перенести в RAM через веб-интерфейс:
 
 **Settings -> Logging Configuration -> Log file path:** `/tmp/log/b4/errors.log`
 
@@ -173,15 +173,15 @@ USB-флешки и SD-карты имеют ограниченное число
 ## Решение проблем
 
 **Контейнер не запускается:**
-1. Проверьте статус: `/container print`
-2. Смотрите логи: `/log print where topics~"container"`
-3. Убедитесь, что диск отформатирован в Ext4
+1. Статус: `/container print`
+2. Логи: `/log print where topics~"container"`
+3. Диск должен быть отформатирован в Ext4
 
 **Нет доступа к веб-интерфейсу:**
-1. Проверьте, что контейнер запущен: `/container print`
-2. Проверьте связность: `/ping 192.168.210.10`
+1. Контейнер должен быть запущен: `/container print`
+2. Связность: `/ping 192.168.210.10`
 
 **Трафик не перенаправляется:**
-1. Проверьте список: `/ip firewall address-list print where list=b4users`
-2. Проверьте mangle: `/ip firewall mangle print`
-3. Проверьте маршрут: `/ip route print where routing-table=to_b4`
+1. Список: `/ip firewall address-list print where list=b4users`
+2. Mangle: `/ip firewall mangle print`
+3. Маршрут: `/ip route print where routing-table=to_b4`

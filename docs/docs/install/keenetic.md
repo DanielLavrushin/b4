@@ -12,27 +12,27 @@ title: Keenetic
 
 ### Newer models (with built-in storage)
 
-1. Open the router web interface
-2. Go to **System settings**
-3. Enable the **OPKG package manager** component
+1. The router web interface is opened
+2. Section **System settings**
+3. The **OPKG package manager** component is enabled
 
 ### Older models (USB drive required)
 
-1. Plug a USB drive into the router
-2. Install Entware through the package manager
+1. A USB drive is attached to the router
+2. Entware is installed through the package manager
 
 More details: [help.keenetic.com](https://help.keenetic.com/hc/en-us/articles/360021214160)
 
-## Enable Netfilter components
+## Netfilter components {#netfilter-components}
 
-Keenetic NDMS does not ship all the netfilter kernel modules b4 needs out of the box. Before installing b4, enable the required components:
+Keenetic NDMS does not ship all the netfilter kernel modules b4 needs out of the box. The required components have to be enabled before b4 is installed:
 
-1. In the router web interface, go to **System settings** → **Component options**
-2. Enable **Netfilter** — the base netfilter component
-3. Once Netfilter is enabled, a new option appears: enable **Xtables-addons for Netfilter** (provides `xt_connbytes` and other extensions b4 relies on)
-4. Apply the changes and wait for the router to reboot or reload components
+1. In the router web interface: **System settings** → **Component options**
+2. **Netfilter** - the base netfilter component - is enabled
+3. Once Netfilter is enabled, a new option appears: **Xtables-addons for Netfilter** (provides `xt_connbytes` and other extensions b4 relies on)
+4. The changes are applied, followed by a router reboot or a component reload
 
-Then, over SSH, install the iptables userspace:
+Then, over SSH, the iptables userspace is installed:
 
 ```bash
 opkg install iptables
@@ -40,7 +40,7 @@ opkg install iptables
 
 ## Install b4
 
-Connect over SSH and run:
+Over an SSH connection to the router:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh | sh
@@ -75,12 +75,12 @@ Without Entware, b4 is placed in `/tmp`, which is cleared on every reboot. For p
 
 ## Troubleshooting
 
-After starting the service, check the log:
+After the service starts, the log is worth checking:
 
 ```bash
 cat /var/log/b4/errors.log
 ```
 
-If you see `xt_connbytes kernel module is not available`, the Netfilter components weren't enabled correctly — return to [Enable Netfilter components](#enable-netfilter-components) above and make sure both **Netfilter** and **Xtables-addons for Netfilter** are active.
+The line `xt_connbytes kernel module is not available` means the Netfilter components were not enabled correctly - see [Netfilter components](#netfilter-components) above, where both **Netfilter** and **Xtables-addons for Netfilter** have to be active.
 
 If the log is empty (or has no errors), the b4 web interface should be reachable on the router's LAN IP.
