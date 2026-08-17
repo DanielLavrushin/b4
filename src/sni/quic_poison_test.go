@@ -69,8 +69,14 @@ func qBuildClientHello(serverName []byte) []byte {
 
 func qBuildInitial(t *testing.T, dcid, crypto []byte) []byte {
 	t.Helper()
+	return qBuildInitialAt(t, dcid, 0, crypto)
+}
 
-	payload := append([]byte{0x06, 0x00}, qvarint(len(crypto))...)
+func qBuildInitialAt(t *testing.T, dcid []byte, cryptoOff int, crypto []byte) []byte {
+	t.Helper()
+
+	payload := append([]byte{0x06}, qvarint(cryptoOff)...)
+	payload = append(payload, qvarint(len(crypto))...)
 	payload = append(payload, crypto...)
 	if len(payload) < 1000 {
 		payload = append(payload, make([]byte, 1000-len(payload))...)
@@ -173,5 +179,37 @@ func TestParseQUICClientHelloSNIRejectsHostileName(t *testing.T) {
 				t.Errorf("accepted hostile SNI %q (%d bytes)", got, len(got))
 			}
 		})
+	}
+}
+
+func TestParseQUICClientHelloSNIAssemblesFragmentedHello(t *testing.T) {
+	host := "fragmented.example.com"
+	crypto := qBuildClientHello([]byte(host))
+	split := len(crypto) / 2
+	dcid := []byte{0xE0, 1, 2, 3, 4, 5, 6, 7}
+
+	if got, ok := ParseQUICClientHelloSNI(qBuildInitialAt(t, dcid, 0, crypto[:split])); ok {
+		t.Fatalf("first fragment alone should not yield an SNI, got %q", got)
+	}
+
+	got, ok := ParseQUICClientHelloSNI(qBuildInitialAt(t, dcid, split, crypto[split:]))
+	if !ok || got != host {
+		t.Fatalf("second fragment should complete the hello: got (%q,%v), want (%q,true)", got, ok, host)
+	}
+}
+
+func TestParseQUICClientHelloSNIAssemblesOutOfOrderFragments(t *testing.T) {
+	host := "outoforder.example.com"
+	crypto := qBuildClientHello([]byte(host))
+	split := len(crypto) / 3
+	dcid := []byte{0xE1, 1, 2, 3, 4, 5, 6, 7}
+
+	if _, ok := ParseQUICClientHelloSNI(qBuildInitialAt(t, dcid, split, crypto[split:])); ok {
+		t.Fatal("trailing fragment alone should not yield an SNI")
+	}
+
+	got, ok := ParseQUICClientHelloSNI(qBuildInitialAt(t, dcid, 0, crypto[:split]))
+	if !ok || got != host {
+		t.Fatalf("late head fragment should complete the hello: got (%q,%v), want (%q,true)", got, ok, host)
 	}
 }

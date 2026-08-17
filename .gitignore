@@ -44,3 +44,4 @@ vendor/
 .github/instructions/codacy.instructions.md
 tspu-docs/
 .claude/
+.vscode/mcp.json
