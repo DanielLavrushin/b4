@@ -24,12 +24,13 @@ func ParseQUICClientHelloSNI(payload []byte) (string, bool) {
 	if err != nil || len(host) == 0 {
 		return "", false
 	}
+	quic.ClearDCID(dcid)
+
 	name := string(host)
 	if !validateSNI(name) {
 		log.Tracef("QUIC: invalid SNI extracted: %q", name)
 		return "", false
 	}
-	quic.ClearDCID(dcid)
 	return name, true
 }
 
@@ -91,7 +92,7 @@ func extractSNIFromQUIC(crypto []byte) ([]byte, error) {
 				if !sniList.ReadUint16LengthPrefixed(&host) {
 					return nil, errNotHello
 				}
-				if len(host) == 0 {
+				if len(host) == 0 || len(host) > MaxSNINameLen {
 					return nil, errNotHello
 				}
 				hcopy := append([]byte(nil), host...)

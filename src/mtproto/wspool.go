@@ -43,6 +43,8 @@ const (
 	// TLS handshake on a healthy path would be cut off mid-flight and the
 	// address blamed for it.
 	wsDialMinAttempt = 700 * time.Millisecond
+	// wsResolveMaxWait caps how much of a dial's budget a name lookup may take.
+	wsResolveMaxWait = time.Second
 
 	// wsPoolDialTimeout is what a spare is given to connect. It is deliberately
 	// far longer than the client-facing dial: nothing is waiting on a refill, and
@@ -137,20 +139,24 @@ func wsKeyFromDC(dc int) wsKey {
 	return wsKey{dc: abs, isMedia: dc < 0}
 }
 
+// Every writer of this state logs after releasing the lock, never under it. With
+// immediate flushing on - the default - a log call is a blocking write to
+// whatever the log file sits on, which on a router is a USB stick, and holding a
+// lock every dial path takes across it puts that write in front of them all.
 func wsIsBlacklisted(dc int) bool {
 	k := wsKeyFromDC(dc)
 	wsStateMu.Lock()
-	defer wsStateMu.Unlock()
 	t, ok := wsBlacklist[k]
-	if !ok {
-		return false
-	}
-	if time.Now().After(t) {
+	expired := ok && time.Now().After(t)
+	if expired {
 		delete(wsBlacklist, k)
+	}
+	wsStateMu.Unlock()
+	if expired {
 		log.Debugf("%s WS %s blacklist expired, WS re-enabled", tg(""), k)
 		return false
 	}
-	return true
+	return ok
 }
 
 func wsCooldownActive(dc int) bool {
@@ -171,23 +177,25 @@ func wsCooldownActive(dc int) bool {
 func wsRecordFailure(dc int, allRedirect bool) {
 	k := wsKeyFromDC(dc)
 	wsStateMu.Lock()
-	defer wsStateMu.Unlock()
 	if allRedirect {
 		wsBlacklist[k] = time.Now().Add(wsBlacklistTTL)
-		log.Warnf("%s WS %s blacklisted (all redirects), retry in %v", tg(""), k, wsBlacklistTTL)
 	}
 	wsCooldownTo[k] = time.Now().Add(wsDCFailCooldown)
+	wsStateMu.Unlock()
+	if allRedirect {
+		log.Warnf("%s WS %s blacklisted (all redirects), retry in %v", tg(""), k, wsBlacklistTTL)
+	}
 	log.Debugf("%s WS %s dial failure, cooldown %v (allRedirect=%v)", tg(""), k, wsDCFailCooldown, allRedirect)
 }
 
 func wsRecordSuccess(dc int) {
 	k := wsKeyFromDC(dc)
 	wsStateMu.Lock()
-	defer wsStateMu.Unlock()
 	_, wasCooled := wsCooldownTo[k]
 	_, wasBlacklisted := wsBlacklist[k]
 	delete(wsCooldownTo, k)
 	delete(wsBlacklist, k)
+	wsStateMu.Unlock()
 	if wasCooled || wasBlacklisted {
 		log.Debugf("%s WS %s recovered (cleared cooldown/blacklist)", tg(""), k)
 	}
@@ -202,12 +210,15 @@ func wsEndpointKey(ip, sni string) string { return ip + "|" + sni }
 func wsEndpointFailed(ip, sni string) {
 	k := wsEndpointKey(ip, sni)
 	wsStateMu.Lock()
-	defer wsStateMu.Unlock()
-	if t, ok := wsEndpointTo[k]; ok && time.Now().Before(t) {
-		return
+	t, ok := wsEndpointTo[k]
+	recorded := !ok || !time.Now().Before(t)
+	if recorded {
+		wsEndpointTo[k] = time.Now().Add(wsEndpointFailTTL)
 	}
-	wsEndpointTo[k] = time.Now().Add(wsEndpointFailTTL)
-	log.Debugf("%s WS endpoint %s timed out, deprioritised for %v", tg(""), k, wsEndpointFailTTL)
+	wsStateMu.Unlock()
+	if recorded {
+		log.Debugf("%s WS endpoint %s timed out, deprioritised for %v", tg(""), k, wsEndpointFailTTL)
+	}
 }
 
 func wsEndpointCooling(ip, sni string) bool {
@@ -228,19 +239,20 @@ func wsEndpointCooling(ip, sni string) bool {
 func wsEndpointRecovered(ip, sni string) {
 	k := wsEndpointKey(ip, sni)
 	wsStateMu.Lock()
-	defer wsStateMu.Unlock()
-	if _, ok := wsEndpointTo[k]; ok {
-		delete(wsEndpointTo, k)
+	_, cleared := wsEndpointTo[k]
+	delete(wsEndpointTo, k)
+	wsStateMu.Unlock()
+	if cleared {
 		log.Debugf("%s WS endpoint %s answered again, cooldown cleared", tg(""), k)
 	}
 }
 
 func wsResetState() {
 	wsStateMu.Lock()
-	defer wsStateMu.Unlock()
 	wsBlacklist = map[wsKey]time.Time{}
 	wsCooldownTo = map[wsKey]time.Time{}
 	wsEndpointTo = map[string]time.Time{}
+	wsStateMu.Unlock()
 	log.Debugf("%s WS cooldown/blacklist state reset", tg(""))
 }
 
