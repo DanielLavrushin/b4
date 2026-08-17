@@ -149,6 +149,32 @@ func TestCooledEdgeIsSteppedOverWhenAnotherRouteExists(t *testing.T) {
 	}
 }
 
+func TestAnAddressIsOnlyBlamedWhenItHadTimeToAnswer(t *testing.T) {
+	wsResetState()
+	t.Cleanup(wsResetState)
+	withWSDialPort(t, blackholeListener(t))
+
+	const sni = "kws2.web.telegram.org"
+
+	// Too short to break an address on. Resolution is paid out of the same
+	// budget, so a slow lookup can leave exactly this much behind - and cooling
+	// the address off for five minutes on it would retire a healthy route.
+	if _, err := dialWS("127.0.0.1", sni, "", wsDialMinAttempt/2, 0); err == nil {
+		t.Fatal("dial against a blackhole succeeded")
+	}
+	if wsEndpointCooling("127.0.0.1", sni) {
+		t.Fatal("address cooled off after a slot too short to judge it by")
+	}
+
+	// A fair trial, and the same silence, is evidence.
+	if _, err := dialWS("127.0.0.1", sni, "", wsDialMinAttempt+300*time.Millisecond, 0); err == nil {
+		t.Fatal("dial against a blackhole succeeded")
+	}
+	if !wsEndpointCooling("127.0.0.1", sni) {
+		t.Fatal("address that went silent on a full slot was not cooled off")
+	}
+}
+
 func TestSkipNativeWhenCoolingAndAnotherRouteExists(t *testing.T) {
 	wsResetState()
 	t.Cleanup(wsResetState)

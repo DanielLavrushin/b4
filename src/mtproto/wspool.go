@@ -43,6 +43,8 @@ const (
 	// TLS handshake on a healthy path would be cut off mid-flight and the
 	// address blamed for it.
 	wsDialMinAttempt = 700 * time.Millisecond
+	// wsResolveMaxWait caps how much of a dial's budget a name lookup may take.
+	wsResolveMaxWait = time.Second
 
 	// wsPoolDialTimeout is what a spare is given to connect. It is deliberately
 	// far longer than the client-facing dial: nothing is waiting on a refill, and

@@ -342,7 +342,16 @@ func dialWS(host, sni, path string, timeout time.Duration, mark uint) (net.Conn,
 	}
 	deadline := time.Now().Add(timeout)
 
-	rctx, rcancel := context.WithDeadline(context.Background(), deadline)
+	// Resolution is paid out of the same budget as the dial, so it gets a bounded
+	// slice of it. Given the whole budget, a slow lookup leaves the handshake to
+	// be cut off half-finished and the address blamed for a fault that was the
+	// resolver's. On the way out of that window the name is left unresolved and
+	// the dialler resolves it again, which is the old behaviour and no worse.
+	resolveWindow := timeout / 3
+	if resolveWindow > wsResolveMaxWait {
+		resolveWindow = wsResolveMaxWait
+	}
+	rctx, rcancel := context.WithTimeout(context.Background(), resolveWindow)
 	eps := wsDialEndpoints(rctx, host, sni)
 	rcancel()
 
@@ -354,16 +363,19 @@ func dialWS(host, sni, path string, timeout time.Duration, mark uint) (net.Conn,
 	var lastErr error
 	for i := 0; i < attempts; i++ {
 		remaining := time.Until(deadline)
-		// The first address is always tried: the caller already decided this dial
-		// was worth starting, and refusing it here would report a route as failed
-		// without having touched it.
-		if i > 0 && remaining < wsDialMinAttempt {
+		// The first address is tried on whatever is left, because the caller
+		// already decided this dial was worth starting. A later one is not: the
+		// first has had that time, and a sliver is not a trial.
+		if remaining <= 0 || (i > 0 && remaining < wsDialMinAttempt) {
 			break
 		}
 		slot := remaining
 		if left := attempts - i; left > 1 {
 			if slot = remaining / time.Duration(left); slot < wsDialMinAttempt {
 				slot = wsDialMinAttempt
+			}
+			if slot > remaining {
+				slot = remaining
 			}
 		}
 		conn, err := dialWSEndpoint(eps[i], sni, path, slot, mark)
@@ -372,12 +384,15 @@ func dialWS(host, sni, path string, timeout time.Duration, mark uint) (net.Conn,
 			return conn, nil
 		}
 		lastErr = err
-		if isDialTimeout(err) {
+		// Silence is only evidence against an address that was given long enough
+		// to break it. Cooling one off for five minutes on the strength of a
+		// handshake cut short by the budget would retire a healthy route.
+		if isDialTimeout(err) && slot >= wsDialMinAttempt {
 			wsEndpointFailed(eps[i], sni)
 		}
 	}
 	if lastErr == nil {
-		lastErr = fmt.Errorf("tcp dial %s: no address", host)
+		lastErr = fmt.Errorf("tcp dial %s: no time left after resolving the name", host)
 	}
 	return nil, lastErr
 }

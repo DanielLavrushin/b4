@@ -20,6 +20,7 @@ func ParseQueryDomain(payload []byte) (string, bool) {
 	}
 
 	pos := 12
+	encoded := 1
 	var domain []byte
 
 	for pos < len(payload) {
@@ -33,11 +34,8 @@ func ParseQueryDomain(payload []byte) (string, bool) {
 		if length > MaxLabelLen || pos+1+length > len(payload) {
 			return "", false
 		}
-		need := length
-		if len(domain) > 0 {
-			need++
-		}
-		if len(domain)+need > MaxNameLen {
+		encoded += 1 + length
+		if encoded > MaxNameLen {
 			return "", false
 		}
 		if len(domain) > 0 {

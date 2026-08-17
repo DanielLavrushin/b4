@@ -287,12 +287,21 @@ func walkExact(total int, labelLens ...int) []byte {
 	return msg
 }
 
+func labelsOf(lens ...int) string {
+	parts := make([]string, 0, len(lens))
+	for _, n := range lens {
+		parts = append(parts, strings.Repeat("a", n))
+	}
+	return strings.Join(parts, ".")
+}
+
 func TestParseQueryDomainAcceptsWellFormed(t *testing.T) {
 	cases := []string{
 		"a.co",
 		"stun.cloudflare.com",
 		"_acme-challenge.example.org",
 		strings.Repeat("a", 63) + ".example.com",
+		labelsOf(63, 63, 63, 61),
 	}
 	for _, name := range cases {
 		got, ok := ParseQueryDomain(buildDNSQuery(0x1111, name, 1))
@@ -327,6 +336,18 @@ func TestParseQueryDomainRejectsNonDNS(t *testing.T) {
 			name: "name longer than 255",
 			payload: append(append(dnsHeader(1),
 				encodeDNSName(strings.TrimSuffix(strings.Repeat(strings.Repeat("a", 63)+".", 5), "."))...),
+				0x00, 0x01, 0x00, 0x01),
+		},
+		{
+			name: "four maximum labels exceed the encoded limit",
+			payload: append(append(dnsHeader(1),
+				encodeDNSName(labelsOf(63, 63, 63, 63))...),
+				0x00, 0x01, 0x00, 0x01),
+		},
+		{
+			name: "encoded length 256 is one over",
+			payload: append(append(dnsHeader(1),
+				encodeDNSName(labelsOf(63, 63, 63, 62))...),
 				0x00, 0x01, 0x00, 0x01),
 		},
 		{
