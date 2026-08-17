@@ -4,9 +4,11 @@ import (
 	"context"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -17,6 +19,38 @@ const (
 	wsBlacklistTTL        = 5 * time.Minute
 	wsDialTimeoutCooldown = 2 * time.Second
 	tcpFailCooldown       = 30 * time.Second
+
+	// The Cloudflare-proxied domains are a pool shared by every b4 install, so a
+	// data center reached only through them is held at fewer spares than one on
+	// Telegram's own edge. One warm conn already takes the dial off the client's
+	// path, which is the whole point.
+	wsPoolCFTarget = 2
+	// A refill walks the transport list in the background, where nothing is
+	// waiting on it, but a data center with no edge has ten Cloudflare domains
+	// behind it and walking all of them at the dial timeout is minutes of work
+	// against shared infrastructure for one spare.
+	wsPoolMaxPlanAttempts = 3
+
+	// wsEndpointFailTTL is how long an address that timed out is stepped over.
+	// A timeout is the only failure worth remembering: it costs the client most
+	// of the patience it has before Telegram calls the proxy broken, while an
+	// HTTP status comes back in one round trip and costs nothing.
+	wsEndpointFailTTL = 5 * time.Minute
+	// wsDialMaxEndpoints bounds how many of a name's addresses one dial walks,
+	// so a name behind a large address set cannot spend the whole budget.
+	wsDialMaxEndpoints = 2
+	// wsDialMinAttempt is the least time worth giving an address. Below this a
+	// TLS handshake on a healthy path would be cut off mid-flight and the
+	// address blamed for it.
+	wsDialMinAttempt = 700 * time.Millisecond
+
+	// wsPoolDialTimeout is what a spare is given to connect. It is deliberately
+	// far longer than the client-facing dial: nothing is waiting on a refill, and
+	// a slow route that does eventually answer is worth holding, because the
+	// client that gets handed it pays none of that wait. Cutting refills at the
+	// client-facing timeout would starve the pool on exactly the slow networks
+	// that need it most.
+	wsPoolDialTimeout = 8 * time.Second
 )
 
 type wsKey struct {
@@ -36,6 +70,7 @@ var (
 	wsStateMu    sync.Mutex
 	wsBlacklist  = map[wsKey]time.Time{}
 	wsCooldownTo = map[wsKey]time.Time{}
+	wsEndpointTo = map[string]time.Time{} // "ip|sni" -> until
 
 	tcpStateMu    sync.Mutex
 	tcpCooldownTo = map[string]time.Time{} // keyed by host:port
@@ -158,11 +193,54 @@ func wsRecordSuccess(dc int) {
 	}
 }
 
+func wsEndpointKey(ip, sni string) string { return ip + "|" + sni }
+
+// wsEndpointFailed records that a name's address swallowed the handshake. The
+// key carries the server name as well as the address because that is what a
+// censor filters on: one Cloudflare address fronts many names, and blaming the
+// address for all of them would retire routes that still work.
+func wsEndpointFailed(ip, sni string) {
+	k := wsEndpointKey(ip, sni)
+	wsStateMu.Lock()
+	defer wsStateMu.Unlock()
+	if t, ok := wsEndpointTo[k]; ok && time.Now().Before(t) {
+		return
+	}
+	wsEndpointTo[k] = time.Now().Add(wsEndpointFailTTL)
+	log.Debugf("%s WS endpoint %s timed out, deprioritised for %v", tg(""), k, wsEndpointFailTTL)
+}
+
+func wsEndpointCooling(ip, sni string) bool {
+	k := wsEndpointKey(ip, sni)
+	wsStateMu.Lock()
+	defer wsStateMu.Unlock()
+	t, ok := wsEndpointTo[k]
+	if !ok {
+		return false
+	}
+	if time.Now().After(t) {
+		delete(wsEndpointTo, k)
+		return false
+	}
+	return true
+}
+
+func wsEndpointRecovered(ip, sni string) {
+	k := wsEndpointKey(ip, sni)
+	wsStateMu.Lock()
+	defer wsStateMu.Unlock()
+	if _, ok := wsEndpointTo[k]; ok {
+		delete(wsEndpointTo, k)
+		log.Debugf("%s WS endpoint %s answered again, cooldown cleared", tg(""), k)
+	}
+}
+
 func wsResetState() {
 	wsStateMu.Lock()
 	defer wsStateMu.Unlock()
 	wsBlacklist = map[wsKey]time.Time{}
 	wsCooldownTo = map[wsKey]time.Time{}
+	wsEndpointTo = map[string]time.Time{}
 	log.Debugf("%s WS cooldown/blacklist state reset", tg(""))
 }
 
@@ -189,6 +267,7 @@ type wsPool struct {
 type MTProtoUpstream struct {
 	WSEndpointHost string
 	WSCustomDomain string
+	CFProxyEnabled bool
 }
 
 func newWSPool(cfg MTProtoUpstream, mark uint, target int) *wsPool {
@@ -229,7 +308,7 @@ func (p *wsPool) get(dc int) *wsConn {
 		return nil
 	}
 	k := wsKeyFromDC(dc)
-	if !wsEdgeServesDC(k.dc) || wsIsBlacklisted(dc) {
+	if wsIsBlacklisted(dc) {
 		return nil
 	}
 
@@ -288,9 +367,14 @@ func (p *wsPool) refill(dc int) {
 	if wsIsBlacklisted(dc) {
 		return
 	}
+	// A data center with no route configured would otherwise start a refill
+	// goroutine on every pool miss and dial nothing.
+	if len(wsPlansForDC(dc, p.cfg)) == 0 {
+		return
+	}
 
 	p.mu.Lock()
-	need := p.target - len(p.idle[k])
+	need := p.targetFor(k) - len(p.idle[k])
 	p.mu.Unlock()
 	if need <= 0 {
 		return
@@ -332,7 +416,7 @@ func (p *wsPool) refill(dc int) {
 		added++
 	}
 	if added > 0 {
-		log.Debugf("%s WS pool %s refilled +%d (target=%d)", tg(""), k, added, p.target)
+		log.Debugf("%s WS pool %s refilled +%d (target=%d)", tg(""), k, added, p.targetFor(k))
 	}
 }
 
@@ -341,18 +425,28 @@ func (p *wsPool) refill(dc int) {
 // Returns the first one to succeed, or the last error.
 func (p *wsPool) dialFresh(dc int) (*wsConn, error) {
 	plans := wsPlansForDC(dc, p.cfg)
+	if len(plans) > wsPoolMaxPlanAttempts {
+		plans = plans[:wsPoolMaxPlanAttempts]
+	}
 	var lastErr error
 	for _, pl := range plans {
 		host := pl.dialHost
 		if host == "" {
 			host = pl.sni
 		}
-		conn, err := dialWS(host, pl.sni, pl.wsPath, wsDialTimeout, p.mark)
+		conn, err := dialWS(host, pl.sni, pl.wsPath, wsPoolDialTimeout, p.mark)
 		if err != nil {
 			lastErr = err
 			continue
 		}
 		if wsc, ok := conn.(*wsConn); ok {
+			// The refill runs with nothing waiting on it, which makes it the
+			// cheapest place to notice that a cooled-down edge is answering
+			// again: without this the cooldown only ever lapses on a timer,
+			// and a client pays the shortened-timeout path in the meantime.
+			if pl.native {
+				wsRecordSuccess(dc)
+			}
 			return wsc, nil
 		}
 		_ = conn.Close()
@@ -370,13 +464,15 @@ func wsPlansForDC(dc int, cfg *MTProtoUpstream) []transportPlan {
 	}
 	var plans []transportPlan
 	override := ""
+	cfProxy := false
 	if cfg != nil {
 		override = cfg.WSEndpointHost
+		cfProxy = cfg.CFProxyEnabled
 	}
 	if wsEdgeServesDC(absDC) {
 		dh := wsNativeDialHost(override)
-		primary := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(absDC, ""), dialHost: dh}
-		media := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(absDC, "-1"), dialHost: dh}
+		primary := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(absDC, ""), dialHost: dh, native: true}
+		media := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(absDC, "-1"), dialHost: dh, native: true}
 		if dc < 0 {
 			plans = append(plans, media, primary)
 		} else {
@@ -385,12 +481,40 @@ func wsPlansForDC(dc int, cfg *MTProtoUpstream) []transportPlan {
 	}
 	if cfg != nil && cfg.WSCustomDomain != "" {
 		plans = append(plans, transportPlan{
-			kind: transportWS,
-			dc:   dc,
-			sni:  kwsCustom(absDC, cfg.WSCustomDomain),
+			kind:   transportWS,
+			dc:     dc,
+			sni:    kwsCustom(absDC, cfg.WSCustomDomain),
+			cfBase: cfg.WSCustomDomain,
 		})
 	}
+	// kws2 and kws4 are the only names Telegram's own WebSocket edge answers, so
+	// every other data center had nothing here and could never be pooled. DC 203
+	// is where Russian accounts live: it went through the Cloudflare-proxied
+	// domains on a cold dial, at the full dial timeout, on every session, and a
+	// single blocked domain there is longer than Telegram waits before calling
+	// the proxy misconfigured.
+	if !wsEdgeServesDC(absDC) && cfProxy {
+		for _, base := range cfBalancerInst.domainsForDC(dc) {
+			plans = append(plans, transportPlan{
+				kind:   transportWS,
+				dc:     dc,
+				sni:    kwsCustom(absDC, base),
+				cfBase: base,
+			})
+		}
+	}
 	return plans
+}
+
+// targetFor is how many spares a key is held at. Keys served by Telegram's own
+// edge get the configured size; keys that exist only behind the shared
+// Cloudflare domains get fewer, because those are the same handful of names
+// every b4 install dials.
+func (p *wsPool) targetFor(k wsKey) int {
+	if wsEdgeServesDC(k.dc) || p.target < wsPoolCFTarget {
+		return p.target
+	}
+	return wsPoolCFTarget
 }
 
 func kwsHost(dc int, suffix string) string {
@@ -399,6 +523,21 @@ func kwsHost(dc int, suffix string) string {
 
 func kwsCustom(dc int, domain string) string {
 	return "kws" + strconv.Itoa(dc) + "." + domain
+}
+
+// wsWarmupDCs are the data centers worth holding connections open for before a
+// client has asked for one. 2 and 4 are the pair Telegram's own edge serves;
+// 203 is added whenever a route to it exists, because that is where Russian
+// accounts live and it has no edge of its own, so without a spare every session
+// there begins with a cold dial. Any other data center is warmed on demand: the
+// first session misses the pool and schedules a refill, and the ones after it
+// hit.
+func wsWarmupDCs(cfg *config.MTProtoConfig) []int {
+	dcs := []int{2, 4}
+	if cfg.CFProxyEnabled || strings.TrimSpace(cfg.WSCustomDomain) != "" {
+		dcs = append(dcs, 203)
+	}
+	return dcs
 }
 
 func (p *wsPool) warmup(dcs []int) {
