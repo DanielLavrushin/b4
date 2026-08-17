@@ -147,6 +147,7 @@ func (api *API) newMCPServer() *mcp.Server {
 	})
 
 	api.addMCPTools(srv)
+	api.addMCPWriteTools(srv)
 	api.addMCPResources(srv)
 	api.addMCPPrompts(srv)
 	return srv

@@ -135,6 +135,24 @@ const MCPSection = ({ config, onChange }: ApiSettingsProps) => {
           aiTopic="system.web_server.mcp.enabled"
         />
 
+        {mcp?.enabled && (
+          <B4Switch
+            label={t("settings.Mcp.allowWrites")}
+            checked={Boolean(mcp?.allow_writes)}
+            onChange={(checked) =>
+              onChange("system.web_server.mcp.allow_writes", checked)
+            }
+            description={t("settings.Mcp.allowWritesHelp")}
+            aiTopic="system.web_server.mcp.allow_writes"
+          />
+        )}
+
+        {mcp?.enabled && mcp?.allow_writes && (
+          <B4Alert severity="warning">
+            {t("settings.Mcp.allowWritesWarning")}
+          </B4Alert>
+        )}
+
         {mcp?.enabled && !authConfigured && (
           <B4Alert severity="warning">{t("settings.Mcp.noAuthWarning")}</B4Alert>
         )}
