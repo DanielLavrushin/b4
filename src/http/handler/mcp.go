@@ -146,6 +146,7 @@ func (api *API) mcpGate(next http.Handler) http.Handler {
 
 		if cfg.System.WebServer.MCP.Token != "" {
 			if !MCPTokenAccepts(cfg, mcpBearerToken(r)) {
+				w.Header().Set("WWW-Authenticate", `Bearer realm="b4 MCP"`)
 				writeJsonError(w, http.StatusUnauthorized, "invalid or missing MCP token")
 				return
 			}
@@ -170,7 +171,8 @@ func mcpAuthConfigured(cfg *config.Config) bool {
 
 func mcpOriginAllowed(origin, host string, allowed []string) bool {
 	for _, a := range allowed {
-		if a == "*" || strings.EqualFold(strings.TrimSpace(a), origin) {
+		a = strings.TrimSpace(a)
+		if a == "*" || strings.EqualFold(a, origin) {
 			return true
 		}
 	}
@@ -181,14 +183,23 @@ func mcpOriginAllowed(origin, host string, allowed []string) bool {
 	if strings.EqualFold(u.Host, host) {
 		return true
 	}
-	return strings.EqualFold(hostOnly(u.Host), hostOnly(host))
+
+	oHost, oPort := splitHostPort(u.Host)
+	hHost, hPort := splitHostPort(host)
+	if !strings.EqualFold(oHost, hHost) {
+		return false
+	}
+	// The names agree. Accept only when one side left the port implicit; two
+	// different explicit ports are two different origins, and a page served
+	// from another port on this same machine is not this server.
+	return oPort == "" || hPort == ""
 }
 
-func hostOnly(hostport string) string {
+func splitHostPort(hostport string) (host, port string) {
 	if i := strings.LastIndex(hostport, ":"); i > 0 && !strings.Contains(hostport[i:], "]") {
-		return hostport[:i]
+		return hostport[:i], hostport[i+1:]
 	}
-	return hostport
+	return hostport, ""
 }
 
 func (api *API) newMCPServer() *mcp.Server {
@@ -215,14 +226,15 @@ func (api *API) newMCPServer() *mcp.Server {
 type mcpEmpty struct{}
 
 type mcpStatusOut struct {
-	Version       string `json:"version"`
-	Engine        string `json:"engine"`
-	SetsTotal     int    `json:"sets_total"`
-	SetsEnabled   int    `json:"sets_enabled"`
-	Socks5Enabled bool   `json:"socks5_enabled"`
-	MTProtoOn     bool   `json:"mtproto_enabled"`
-	Uptime        string `json:"uptime"`
-	ActiveFlows   int64  `json:"active_flows"`
+	Version         string `json:"version"`
+	Engine          string `json:"engine"`
+	FirewallBackend string `json:"firewall_backend"`
+	SetsTotal       int    `json:"sets_total"`
+	SetsEnabled     int    `json:"sets_enabled"`
+	Socks5Enabled   bool   `json:"socks5_enabled"`
+	MTProtoOn       bool   `json:"mtproto_enabled"`
+	Uptime          string `json:"uptime"`
+	ConnectionsSeen int64  `json:"connections_seen"`
 }
 
 type mcpConfigIn struct {
@@ -238,16 +250,21 @@ type mcpCheckDomainIn struct {
 }
 
 type mcpCheckDomainOut struct {
-	Matches []SetDomainMatch `json:"matches"`
-	Covered bool             `json:"covered"`
+	Matches        []SetDomainMatch `json:"matches"`
+	Checked        []string         `json:"checked"`
+	Covered        bool             `json:"covered"`
+	CoveredByDomain map[string]bool `json:"covered_by_domain"`
+	Truncated       bool            `json:"truncated"`
+	Note            string          `json:"note,omitempty"`
 }
 
 type mcpSetSummary struct {
-	Id       string `json:"id"`
-	Name     string `json:"name"`
-	Enabled  bool   `json:"enabled"`
-	Domains  int    `json:"domain_count"`
-	Strategy string `json:"strategy,omitempty"`
+	Id            string `json:"id"`
+	Name          string `json:"name"`
+	Enabled       bool   `json:"enabled"`
+	Domains       int    `json:"domain_count"`
+	ManualDomains int    `json:"manual_domain_count"`
+	Strategy      string `json:"strategy,omitempty"`
 }
 
 type mcpSetsOut struct {
@@ -275,37 +292,60 @@ type mcpLogsIn struct {
 }
 
 type mcpLogsOut struct {
-	Path    string   `json:"path,omitempty"`
-	Lines   []string `json:"lines"`
-	Matched int      `json:"matched"`
-	Scanned int      `json:"scanned"`
-	Note    string   `json:"note"`
+	Path      string   `json:"path,omitempty"`
+	Lines     []string `json:"lines"`
+	Matched   int      `json:"matched"`
+	Scanned   int      `json:"scanned"`
+	Truncated bool     `json:"truncated"`
+	Note      string   `json:"note"`
 }
 
 type tailResult struct {
-	Lines   []string
-	Scanned int
-	Exists  bool
+	Lines     []string
+	Matched   int
+	Scanned   int
+	Truncated bool
+	Exists    bool
+}
+
+// mcpClampLimit keeps a caller-supplied line limit inside the documented
+// range. An oversized request is clamped to the maximum rather than dropped
+// back to the default, which would silently return fewer lines than asked for.
+func mcpClampLimit(v int) int {
+	switch {
+	case v <= 0:
+		return mcpDefaultLines
+	case v > mcpMaxLines:
+		return mcpMaxLines
+	default:
+		return v
+	}
 }
 
 func (api *API) addMCPTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_status",
 		Title:       "B4 status",
-		Description: "High-level health of the running b4 daemon: version, packet engine, how many strategy sets exist and are enabled, which subsystems are on, uptime and live flow count. Call this first when diagnosing.",
+		Description: "High-level health of the running b4 daemon: version, packet capture engine (nfqueue or tun), firewall backend, how many strategy sets exist and are enabled, which subsystems are on, uptime and how many connections b4 has processed. Call this first when diagnosing. 'connections_seen' is a running total since b4 started, not a live concurrency figure.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpStatusOut, error) {
 		cfg := api.getCfg()
 		snap := GetMetricsCollector().GetSnapshot()
 
+		backend := cfg.System.Tables.Engine
+		if backend == "" {
+			backend = "auto"
+		}
+
 		out := mcpStatusOut{
-			Version:       Version,
-			Engine:        cfg.System.Tables.Engine,
-			SetsTotal:     len(cfg.Sets),
-			Socks5Enabled: cfg.System.Socks5.Enabled,
-			MTProtoOn:     cfg.System.MTProto.Enabled,
-			Uptime:        snap.Uptime,
-			ActiveFlows:   int64(snap.ActiveFlows),
+			Version:         Version,
+			Engine:          collectEngineInfo(cfg).Mode,
+			FirewallBackend: backend,
+			SetsTotal:       len(cfg.Sets),
+			Socks5Enabled:   cfg.System.Socks5.Enabled,
+			MTProtoOn:       cfg.System.MTProto.Enabled,
+			Uptime:          snap.Uptime,
+			ConnectionsSeen: int64(snap.ActiveFlows),
 		}
 		for _, s := range cfg.Sets {
 			if s.Enabled {
@@ -342,25 +382,55 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		Description: "Report which strategy sets already target a domain, how the match was made (exact/wildcard/suffix), whether it came from a manual entry or a geosite category, and whether that set is enabled. Use before adding a domain to avoid duplicates.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpCheckDomainIn) (*mcp.CallToolResult, mcpCheckDomainOut, error) {
-		domains := parseCheckDomains(in.Domain)
+		domains, truncated := parseCheckDomains(in.Domain)
 		if len(domains) == 0 {
 			return nil, mcpCheckDomainOut{}, fmt.Errorf("domain is required")
 		}
 		matches := api.matchDomainsToSets(domains, "")
-		covered := false
+
+		byDomain := make(map[string]bool, len(domains))
+		for _, d := range domains {
+			byDomain[d] = false
+		}
 		for _, m := range matches {
 			if m.Enabled {
-				covered = true
-				break
+				byDomain[m.Domain] = true
 			}
 		}
-		return nil, mcpCheckDomainOut{Matches: matches, Covered: covered}, nil
+
+		covered := true
+		uncovered := make([]string, 0, len(domains))
+		for _, d := range domains {
+			if !byDomain[d] {
+				covered = false
+				uncovered = append(uncovered, d)
+			}
+		}
+
+		out := mcpCheckDomainOut{
+			Matches:         matches,
+			Checked:         domains,
+			Covered:         covered,
+			CoveredByDomain: byDomain,
+			Truncated:       truncated,
+		}
+		switch {
+		case truncated:
+			out.Note = fmt.Sprintf(
+				"only the first %d domains were checked; call again with the rest. Not covered so far: %s",
+				maxCheckDomains, strings.Join(uncovered, ", "))
+		case covered:
+			out.Note = "every domain checked is matched by at least one enabled set"
+		default:
+			out.Note = "not matched by any enabled set: " + strings.Join(uncovered, ", ")
+		}
+		return nil, out, nil
 	})
 
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_list_sets",
 		Title:       "List strategy sets",
-		Description: "Summarise the configured DPI-bypass strategy sets in priority order: id, name, whether enabled, how many domains each targets, and the primary strategy.",
+		Description: "Summarise the configured DPI-bypass strategy sets in priority order: id, name, whether enabled, how many domains each targets, and the primary strategy. 'domain_count' is every domain the set matches, including those expanded from geosite categories; 'manual_domain_count' is only the ones listed by hand.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpSetsOut, error) {
 		cfg := api.getCfg()
@@ -370,12 +440,19 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 				out.Truncated = true
 				break
 			}
+			// DomainsToMatch is the expanded list and already contains
+			// SNIDomains; it is empty until the set's targets are loaded.
+			total := len(s.Targets.DomainsToMatch)
+			if total < len(s.Targets.SNIDomains) {
+				total = len(s.Targets.SNIDomains)
+			}
 			out.Sets = append(out.Sets, mcpSetSummary{
-				Id:       s.Id,
-				Name:     s.Name,
-				Enabled:  s.Enabled,
-				Domains:  len(s.Targets.SNIDomains) + len(s.Targets.DomainsToMatch),
-				Strategy: s.Fragmentation.Strategy,
+				Id:            s.Id,
+				Name:          s.Name,
+				Enabled:       s.Enabled,
+				Domains:       total,
+				ManualDomains: len(s.Targets.SNIDomains),
+				Strategy:      s.Fragmentation.Strategy,
 			})
 		}
 		return nil, out, nil
@@ -384,13 +461,13 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_metrics",
 		Title:       "Traffic metrics",
-		Description: "Live counters from the packet engine: total and active connections, connections/packets per second, dropped RSTs, blocked totals, uptime and memory use.",
+		Description: "Live counters from the packet engine: connections/packets per second, dropped RSTs, blocked totals, uptime and memory use. 'total_connections' and 'connections_seen' are running totals since b4 started or since the counters were last reset; b4 does not track when a connection ends, so neither is a count of connections open right now.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpRawOut, error) {
 		m := GetMetricsCollector().GetSnapshot()
 		summary := map[string]any{
 			"total_connections": m.TotalConnections,
-			"active_flows":      m.ActiveFlows,
+			"connections_seen":  m.ActiveFlows,
 			"current_cps":       m.CurrentCPS,
 			"current_pps":       m.CurrentPPS,
 			"rst_dropped":       m.RSTDropped,
@@ -408,7 +485,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_get_set",
 		Title:       "Read one strategy set",
-		Description: "Return the full configuration of a single strategy set by id or name: targets, fragmentation, faking, TCP/UDP options, DNS and routing. Use this instead of b4_get_config when reasoning about one set.",
+		Description: "Return the full configuration of a single strategy set by id or name, with upstream proxy credentials redacted: targets, fragmentation, faking, TCP/UDP options, DNS and routing. Use this instead of b4_get_config when reasoning about one set.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpGetSetIn) (*mcp.CallToolResult, mcpRawOut, error) {
 		want := strings.TrimSpace(in.Set)
@@ -419,7 +496,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 			if !strings.EqualFold(s.Id, want) && !strings.EqualFold(s.Name, want) {
 				continue
 			}
-			raw, err := json.Marshal(s)
+			raw, err := marshalSetForMCP(s)
 			if err != nil {
 				return nil, mcpRawOut{}, err
 			}
@@ -446,10 +523,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 			lines = kept
 		}
 
-		limit := in.Limit
-		if limit <= 0 || limit > mcpMaxLines {
-			limit = mcpDefaultLines
-		}
+		limit := mcpClampLimit(in.Limit)
 		truncated := false
 		if len(lines) > limit {
 			lines = lines[len(lines)-limit:]
@@ -472,10 +546,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 			}, nil
 		}
 
-		limit := in.Limit
-		if limit <= 0 || limit > mcpMaxLines {
-			limit = mcpDefaultLines
-		}
+		limit := mcpClampLimit(in.Limit)
 
 		filter := strings.TrimSpace(in.Contains)
 		res, err := tailLines(path, limit, filter)
@@ -484,22 +555,27 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		}
 
 		out := mcpLogsOut{
-			Path:    path,
-			Lines:   res.Lines,
-			Matched: len(res.Lines),
-			Scanned: res.Scanned,
+			Path:      path,
+			Lines:     res.Lines,
+			Matched:   res.Matched,
+			Scanned:   res.Scanned,
+			Truncated: res.Truncated,
 		}
 		switch {
 		case !res.Exists:
 			out.Note = "the log file does not exist yet — b4 has not written anything to it"
 		case res.Scanned == 0:
 			out.Note = "the log file exists but is empty"
-		case filter != "" && len(res.Lines) == 0:
+		case filter != "" && res.Matched == 0:
 			out.Note = fmt.Sprintf(
 				"no lines matched %q among the %d most recent lines. This log contains b4's own errors, not per-domain traffic — to check whether a domain is being matched, call b4_recent_connections instead.",
 				filter, res.Scanned)
+		case filter != "" && res.Truncated:
+			out.Note = fmt.Sprintf("%d of the %d most recent lines matched %q; the newest %d are returned", res.Matched, res.Scanned, filter, len(res.Lines))
 		case filter != "":
-			out.Note = fmt.Sprintf("%d of the %d most recent lines matched %q", len(res.Lines), res.Scanned, filter)
+			out.Note = fmt.Sprintf("%d of the %d most recent lines matched %q", res.Matched, res.Scanned, filter)
+		case res.Truncated:
+			out.Note = fmt.Sprintf("the newest %d of %d available lines", len(res.Lines), res.Matched)
 		default:
 			out.Note = fmt.Sprintf("%d most recent lines", len(res.Lines))
 		}
@@ -509,7 +585,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_diagnostics",
 		Title:       "System diagnostics",
-		Description: "Full environment report: OS and kernel, memory, b4 build and paths, detected firewall backend and the live nftables/iptables rule groups b4 installed, network interfaces, engine and TUN state. Use when the bypass appears not to be applied at all.",
+		Description: "Full environment report: OS and kernel, memory, b4 build and paths, detected firewall backend and the live nftables/iptables rule groups b4 installed, network interfaces, engine and TUN state. Use when the bypass appears not to be applied at all. This report includes the hostname, every interface address and the firewall ruleset, so treat the output as identifying information about the network it came from.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpRawOut, error) {
 		raw, err := json.Marshal(api.buildDiagnostics())
@@ -596,6 +672,10 @@ func redactConfigForMCP(cfg *config.Config) *config.Config {
 	clone.System.WebServer.Username = ""
 	clone.System.WebServer.TLSKey = ""
 
+	if clone.System.WebServer.MCP.Token != "" {
+		clone.System.WebServer.MCP.Token = redactedMarker
+	}
+
 	if clone.System.Socks5.Password != "" {
 		clone.System.Socks5.Password = redactedMarker
 	}
@@ -616,7 +696,41 @@ func redactConfigForMCP(cfg *config.Config) *config.Config {
 
 	clone.System.AI.APIKeyRef = ""
 
+	for _, s := range clone.Sets {
+		redactSetSecrets(s)
+	}
+
 	return clone
+}
+
+// redactSetSecrets strips the credentials a set carries for its upstream proxy.
+// Sets are reachable through b4_get_config and b4_get_set alike, so every path
+// that returns one has to go through here.
+func redactSetSecrets(set *config.SetConfig) {
+	if set == nil {
+		return
+	}
+	if set.Routing.Upstream.Username != "" {
+		set.Routing.Upstream.Username = redactedMarker
+	}
+	if set.Routing.Upstream.Password != "" {
+		set.Routing.Upstream.Password = redactedMarker
+	}
+}
+
+// marshalSetForMCP renders one set as JSON with its credentials stripped,
+// without disturbing the live config.
+func marshalSetForMCP(set *config.SetConfig) ([]byte, error) {
+	raw, err := json.Marshal(set)
+	if err != nil {
+		return nil, err
+	}
+	var clone config.SetConfig
+	if err := json.Unmarshal(raw, &clone); err != nil {
+		return nil, err
+	}
+	redactSetSecrets(&clone)
+	return json.Marshal(&clone)
 }
 
 const redactedMarker = "[redacted]"
@@ -658,6 +772,7 @@ func tailLines(path string, limit int, contains string) (tailResult, error) {
 	filter := strings.ToLower(contains)
 	out := make([]string, 0, limit)
 	scanned := 0
+	matched := 0
 	for _, l := range strings.Split(string(raw), "\n") {
 		l = strings.TrimRight(l, "\r")
 		if l == "" {
@@ -667,12 +782,15 @@ func tailLines(path string, limit int, contains string) (tailResult, error) {
 		if filter != "" && !strings.Contains(strings.ToLower(l), filter) {
 			continue
 		}
+		matched++
 		out = append(out, l)
 	}
+	truncated := false
 	if len(out) > limit {
 		out = out[len(out)-limit:]
+		truncated = true
 	}
-	return tailResult{Lines: out, Scanned: scanned, Exists: true}, nil
+	return tailResult{Lines: out, Matched: matched, Scanned: scanned, Truncated: truncated, Exists: true}, nil
 }
 
 func extractJSONPath(raw []byte, path string) ([]byte, error) {

@@ -1,10 +1,18 @@
 {
+  "inputs": [
+    {
+      "id": "b4-mcp-token",
+      "type": "promptString",
+      "description": "b4 MCP token (Settings -> API -> MCP server -> Generate)",
+      "password": true
+    }
+  ],
   "servers": {
     "b4-asuswrt": {
       "type": "http",
       "url": "http://localhost:7000/api/mcp",
       "headers": {
-        "Authorization": "Bearer xxxxxxxxxxxxxxxxxxxxxxxxxx"
+        "Authorization": "Bearer ${input:b4-mcp-token}"
       }
     }
   }

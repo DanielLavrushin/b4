@@ -32,6 +32,9 @@ type mcpWritableField struct {
 	PerSet bool
 	Get    func(*config.Config, *config.SetConfig) string
 	Set    func(*config.Config, *config.SetConfig, string) error
+	// Check runs against the candidate config after Set and before anything is
+	// saved, for preconditions that config.Validate does not cover.
+	Check func(*config.Config, *config.SetConfig) error
 }
 
 var mcpWritableFields = map[string]mcpWritableField{
@@ -46,6 +49,14 @@ var mcpWritableFields = map[string]mcpWritableField{
 				return err
 			}
 			c.System.MTProto.Enabled = b
+			return nil
+		},
+		Check: func(c *config.Config, _ *config.SetConfig) error {
+			mt := c.System.MTProto
+			if mt.Enabled && len(mt.EffectiveSecrets()) == 0 && mt.FakeSNI == "" {
+				return fmt.Errorf(
+					"MTProto needs at least one secret or a fake SNI domain before it can be enabled; add one under Settings first")
+			}
 			return nil
 		},
 	},
@@ -214,7 +225,8 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		mcpWriteMu.Lock()
 		defer mcpWriteMu.Unlock()
 
-		newCfg := api.getCfg().Clone()
+		oldCfg := api.getCfg()
+		newCfg := oldCfg.Clone()
 
 		var target *config.SetConfig
 		if field.PerSet {
@@ -235,15 +247,33 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 			return nil, mcpSetValueOut{}, err
 		}
 
+		if field.Check != nil {
+			if err := field.Check(newCfg, target); err != nil {
+				return nil, mcpSetValueOut{}, fmt.Errorf("rejected: %w", err)
+			}
+		}
+
 		if err := api.saveAndPushConfig(newCfg); err != nil {
 			return nil, mcpSetValueOut{}, fmt.Errorf("rejected: %w", err)
 		}
 
+		// Saving pushes the new config to the running subsystems, but the
+		// firewall rules are derived from it separately: enabling a set can
+		// change the ports b4 has to intercept or its MSS clamping, and none of
+		// that reaches nftables/iptables without this call. Every REST write
+		// path does the same thing.
+		refreshed := api.PerformSoftRestart(newCfg, oldCfg)
+
 		log.Infof("mcp: %s changed from %s to %s", in.Path, previous, value)
+
+		note := "applied live; no restart required"
+		if refreshed {
+			note = "applied live; firewall rules were refreshed to match"
+		}
 
 		return nil, mcpSetValueOut{
 			Path: in.Path, Previous: previous, Current: value, Changed: true,
-			Note: "applied live; no restart required",
+			Note: note,
 		}, nil
 	})
 }

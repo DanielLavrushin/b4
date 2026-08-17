@@ -199,3 +199,86 @@ func TestMCPWriteAllowlistHasNoCredentialPaths(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPWriteRefreshesFirewallWhenSetPortsChange(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	// A set whose ports only b4 knows about: enabling it changes the port list
+	// the firewall has to intercept.
+	cfg.Sets[1].TCP.DPortFilter = "8443"
+
+	refreshed := 0
+	old := tablesRefreshFunc
+	tablesRefreshFunc = func() error { refreshed++; return nil }
+	t.Cleanup(func() { tablesRefreshFunc = old })
+
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[disabled-set].enabled", "true"))
+	if !out.Changed {
+		t.Fatalf("write did not take: %+v", out)
+	}
+	if refreshed != 1 {
+		t.Fatalf("firewall refreshed %d times, want 1: enabling a set with its own ports must reach the firewall", refreshed)
+	}
+	if !strings.Contains(out.Note, "firewall") {
+		t.Errorf("note should say the firewall was refreshed, got %q", out.Note)
+	}
+}
+
+func TestMCPWriteSkipsFirewallRefreshWhenNothingRelevantChanged(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+
+	refreshed := 0
+	old := tablesRefreshFunc
+	tablesRefreshFunc = func() error { refreshed++; return nil }
+	t.Cleanup(func() { tablesRefreshFunc = old })
+
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[video].fragmentation.strategy", "tcp"))
+	if !out.Changed {
+		t.Fatalf("write did not take: %+v", out)
+	}
+	if refreshed != 0 {
+		t.Errorf("firewall refreshed %d times, want 0: a strategy change does not alter the rules", refreshed)
+	}
+}
+
+func TestMCPWriteRejectsEnablingMTProtoWithoutSecretOrFakeSNI(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.System.MTProto.Enabled = false
+	cfg.System.MTProto.Secrets = nil
+	cfg.System.MTProto.FakeSNI = ""
+
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	res := callSetValue(t, session, ctx, "system.mtproto.enabled", "true")
+	if !res.IsError {
+		t.Fatal("enabling MTProto with no secret and no fake SNI must be refused, as the REST API does")
+	}
+	if cfg.System.MTProto.Enabled {
+		t.Error("config must be untouched when the precondition fails")
+	}
+}
+
+func TestMCPWriteAllowsEnablingMTProtoWithFakeSNI(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.System.MTProto.Enabled = false
+	cfg.System.MTProto.Secrets = nil
+	cfg.System.MTProto.FakeSNI = "www.google.com"
+
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	res := callSetValue(t, session, ctx, "system.mtproto.enabled", "true")
+	if res.IsError {
+		t.Fatalf("a fake SNI satisfies the precondition: %+v", res.Content)
+	}
+}

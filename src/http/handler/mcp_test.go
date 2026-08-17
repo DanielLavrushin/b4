@@ -789,6 +789,9 @@ func TestMCPOriginAllowedRules(t *testing.T) {
 	}{
 		{"http://192.168.1.1:7000", "192.168.1.1:7000", nil, true},
 		{"http://192.168.1.1", "192.168.1.1:7000", nil, true},
+		{"http://192.168.1.1:9999", "192.168.1.1:7000", nil, false},
+		{"http://192.168.1.1:9999", "192.168.1.1:9999", nil, true},
+		{"http://192.168.1.1:9999", "192.168.1.1:7000", []string{"http://192.168.1.1:9999"}, true},
 		{"http://evil.example", "192.168.1.1:7000", nil, false},
 		{"http://evil.example", "192.168.1.1:7000", []string{"http://evil.example"}, true},
 		{"http://anything", "192.168.1.1:7000", []string{"*"}, true},
@@ -830,4 +833,253 @@ func mustStructured(t *testing.T, res *mcp.CallToolResult) []byte {
 		t.Fatalf("marshal structured: %v", err)
 	}
 	return raw
+}
+
+func mcpSecretsCfg() *config.Config {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.Token = ""
+	cfg.Sets[0].Routing.Enabled = true
+	cfg.Sets[0].Routing.Mode = "proxy"
+	cfg.Sets[0].Routing.Upstream = config.UpstreamProxyConfig{
+		Host: "10.0.0.9", Port: 1080,
+		Username: "upstream-user", Password: "upstream-pw",
+	}
+	return cfg
+}
+
+func TestMCPGetConfigRedactsSetUpstreamCredentials(t *testing.T) {
+	srv := newMCPTestServer(t, mcpSecretsCfg())
+	session, ctx := connectMCP(t, srv)
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_get_config"})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var out mcpRawOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, leak := range []string{"upstream-user", "upstream-pw"} {
+		if strings.Contains(out.JSON, leak) {
+			t.Errorf("config output leaked set upstream credential %q", leak)
+		}
+	}
+	if !strings.Contains(out.JSON, "10.0.0.9") {
+		t.Error("the upstream host should survive: it is not a secret and the model needs it")
+	}
+}
+
+func TestMCPGetSetRedactsUpstreamCredentials(t *testing.T) {
+	cfg := mcpSecretsCfg()
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "b4_get_set",
+		Arguments: map[string]any{"set": "video"},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var out mcpRawOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, leak := range []string{"upstream-user", "upstream-pw"} {
+		if strings.Contains(out.JSON, leak) {
+			t.Errorf("b4_get_set leaked upstream credential %q", leak)
+		}
+	}
+
+	// Redacting the copy must not disturb the live config.
+	if got := cfg.Sets[0].Routing.Upstream.Password; got != "upstream-pw" {
+		t.Errorf("live config was mutated by redaction: password = %q", got)
+	}
+}
+
+func TestMCPGetConfigRedactsMCPToken(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.Token = "mcp-token-value"
+	raw, err := json.Marshal(redactConfigForMCP(cfg))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(raw), "mcp-token-value") {
+		t.Error("the MCP bearer token must not be returned to the model")
+	}
+	if cfg.System.WebServer.MCP.Token != "mcp-token-value" {
+		t.Error("live config was mutated by redaction")
+	}
+}
+
+func TestMCPListSetsCountsDomainsOnce(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.Sets[0].Targets.SNIDomains = []string{"youtube.com", "ytimg.com"}
+	// The expanded list already contains the manual entries.
+	cfg.Sets[0].Targets.DomainsToMatch = []string{"geo-a.com", "geo-b.com", "youtube.com", "ytimg.com"}
+
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_list_sets"})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var out mcpSetsOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Sets[0].Domains != 4 {
+		t.Errorf("domain_count = %d, want 4", out.Sets[0].Domains)
+	}
+	if out.Sets[0].ManualDomains != 2 {
+		t.Errorf("manual_domain_count = %d, want 2", out.Sets[0].ManualDomains)
+	}
+
+	// A set whose targets have not been expanded yet still reports its manual entries.
+	if out.Sets[1].Domains != 1 {
+		t.Errorf("unexpanded set domain_count = %d, want 1", out.Sets[1].Domains)
+	}
+}
+
+func TestMCPClampLimit(t *testing.T) {
+	cases := []struct{ in, want int }{
+		{0, mcpDefaultLines},
+		{-5, mcpDefaultLines},
+		{50, 50},
+		{mcpMaxLines, mcpMaxLines},
+		{mcpMaxLines + 1, mcpMaxLines},
+		{100000, mcpMaxLines},
+	}
+	for _, tc := range cases {
+		if got := mcpClampLimit(tc.in); got != tc.want {
+			t.Errorf("mcpClampLimit(%d) = %d, want %d", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestMCPRecentConnectionsClampsOversizedLimit(t *testing.T) {
+	hub := log.GetConnectionHub()
+	for i := 0; i < mcpMaxLines+50; i++ {
+		hub.Broadcast(fmt.Sprintf("conn line %d", i))
+	}
+
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "b4_recent_connections",
+		Arguments: map[string]any{"limit": mcpMaxLines + 1},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var out mcpRecentConnOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(out.Connections) != mcpMaxLines {
+		t.Errorf("over-max limit returned %d lines, want the maximum %d", len(out.Connections), mcpMaxLines)
+	}
+}
+
+func TestMCPCheckDomainReportsPerDomainCoverage(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "b4_check_domain",
+		Arguments: map[string]any{"domain": "youtube.com, nowhere.example"},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var out mcpCheckDomainOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Covered {
+		t.Error("covered must be false when one of the domains is not covered")
+	}
+	if !out.CoveredByDomain["youtube.com"] {
+		t.Error("youtube.com is in an enabled set and should read as covered")
+	}
+	if out.CoveredByDomain["nowhere.example"] {
+		t.Error("nowhere.example is in no set and should not read as covered")
+	}
+	if !strings.Contains(out.Note, "nowhere.example") {
+		t.Errorf("note should name the uncovered domain, got %q", out.Note)
+	}
+}
+
+func TestMCPCheckDomainReportsTruncation(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	many := make([]string, 0, maxCheckDomains+3)
+	for i := 0; i < maxCheckDomains+3; i++ {
+		many = append(many, fmt.Sprintf("d%d.example", i))
+	}
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "b4_check_domain",
+		Arguments: map[string]any{"domain": strings.Join(many, ",")},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var out mcpCheckDomainOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !out.Truncated {
+		t.Fatal("dropping domains past the cap must be reported")
+	}
+	if len(out.Checked) != maxCheckDomains {
+		t.Errorf("checked %d domains, want %d", len(out.Checked), maxCheckDomains)
+	}
+	if !strings.Contains(out.Note, "call again") {
+		t.Errorf("note should tell the model to call again, got %q", out.Note)
+	}
+}
+
+func TestMCPStatusReportsCaptureEngineNotFirewallBackend(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.Tables.Engine = ""
+	cfg.Queue.Mode = ""
+
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_status"})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var out mcpStatusOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Engine != "nfqueue" {
+		t.Errorf("engine = %q, want the resolved capture engine %q", out.Engine, "nfqueue")
+	}
+	if out.FirewallBackend != "auto" {
+		t.Errorf("firewall_backend = %q, want %q when it is left to auto-detection", out.FirewallBackend, "auto")
+	}
+
+	cfg2 := mcpTestCfg()
+	cfg2.Queue.Mode = "tun"
+	cfg2.System.Tables.Engine = "nftables"
+	srv2 := newMCPTestServer(t, cfg2)
+	session2, ctx2 := connectMCP(t, srv2)
+
+	res2, err := session2.CallTool(ctx2, &mcp.CallToolParams{Name: "b4_status"})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var out2 mcpStatusOut
+	if err := json.Unmarshal(mustStructured(t, res2), &out2); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out2.Engine != "tun" || out2.FirewallBackend != "nftables" {
+		t.Errorf("got engine=%q backend=%q, want tun/nftables", out2.Engine, out2.FirewallBackend)
+	}
 }

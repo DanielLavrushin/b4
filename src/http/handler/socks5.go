@@ -79,6 +79,6 @@ func (api *API) updateSocks5Config(w http.ResponseWriter, r *http.Request) {
 
 	sendResponse(w, map[string]interface{}{
 		"success": true,
-		"message": "SOCKS5 configuration updated. Restart required for changes to take effect.",
+		"message": "SOCKS5 configuration updated and applied.",
 	})
 }

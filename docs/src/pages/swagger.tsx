@@ -29,41 +29,59 @@ function buildSwaggerHtml(specUrl: string, server: string): string {
     let tokenCache = { key: "", token: "" };
 
     async function ensureBearer(req) {
-      const auth = req.headers && req.headers.Authorization;
-      if (!auth) return req;
-      if (/^Bearer\\s/i.test(auth)) return req;
-      if (/^Basic\\s/i.test(auth)) {
-        const b64 = auth.replace(/^Basic\\s+/i, "");
-        let decoded = "";
-        try { decoded = atob(b64); } catch (e) { return req; }
-        const idx = decoded.indexOf(":");
-        const username = idx >= 0 ? decoded.slice(0, idx) : decoded;
-        const password = idx >= 0 ? decoded.slice(idx + 1) : "";
-        if (tokenCache.key === b64 && tokenCache.token) {
-          req.headers.Authorization = "Bearer " + tokenCache.token;
-          return req;
-        }
-        if (!API_BASE) { delete req.headers.Authorization; return req; }
-        try {
-          const resp = await fetch(API_BASE.replace(/\\/$/, "") + "/api/auth/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username, password }),
-          });
-          const data = await resp.json().catch(() => ({}));
-          if (resp.ok && data && data.token) {
-            tokenCache = { key: b64, token: data.token };
-            req.headers.Authorization = "Bearer " + data.token;
-          } else {
-            delete req.headers.Authorization;
-          }
-        } catch (e) {
-          delete req.headers.Authorization;
-        }
+      const headers = req.headers;
+      if (!headers) return req;
+
+      const keys = Object.keys(headers).filter(function (k) {
+        return k.toLowerCase() === "authorization";
+      });
+      if (!keys.length) return req;
+
+      let bearer = "", basic = "", plain = "";
+      keys.forEach(function (k) {
+        const v = headers[k] || "";
+        if (/^Bearer\\s/i.test(v)) bearer = v;
+        else if (/^Basic\\s/i.test(v)) basic = v;
+        else if (v) plain = v;
+        delete headers[k];
+      });
+
+      if (bearer) { headers.Authorization = bearer; return req; }
+      if (!basic) {
+        if (plain) headers.Authorization = "Bearer " + plain;
         return req;
       }
-      req.headers.Authorization = "Bearer " + auth;
+
+      const b64 = basic.replace(/^Basic\\s+/i, "");
+      if (tokenCache.key === b64 && tokenCache.token) {
+        headers.Authorization = "Bearer " + tokenCache.token;
+        return req;
+      }
+      if (!API_BASE) return req;
+
+      let decoded = "";
+      try { decoded = atob(b64); } catch (e) { return req; }
+      const idx = decoded.indexOf(":");
+      const username = idx >= 0 ? decoded.slice(0, idx) : decoded;
+      const password = idx >= 0 ? decoded.slice(idx + 1) : "";
+      try {
+        const resp = await fetch(API_BASE.replace(/\\/$/, "") + "/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (resp.ok && data && data.token) {
+          tokenCache = { key: b64, token: data.token };
+          headers.Authorization = "Bearer " + data.token;
+        }
+      } catch (e) {}
       return req;
+    }
+
+    function dropStaleToken(res) {
+      if (res && res.status === 401) tokenCache = { key: "", token: "" };
+      return res;
     }
 
     fetch(${JSON.stringify(specUrl)})
@@ -93,6 +111,7 @@ function buildSwaggerHtml(specUrl: string, server: string): string {
           spec,
           dom_id: "#swagger-ui",
           requestInterceptor: ensureBearer,
+          responseInterceptor: dropStaleToken,
         });
       });
   </script>

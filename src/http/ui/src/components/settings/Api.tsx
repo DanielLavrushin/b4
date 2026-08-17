@@ -198,6 +198,10 @@ const MCPSection = ({ config, onChange }: ApiSettingsProps) => {
           <B4Alert severity="warning">{t("settings.Mcp.noAuthWarning")}</B4Alert>
         )}
 
+        {mcp?.enabled && !mcp?.token && authConfigured && (
+          <B4Alert severity="info">{t("settings.Mcp.noTokenWarning")}</B4Alert>
+        )}
+
         {mcp?.enabled && (
           <Box
             sx={{
