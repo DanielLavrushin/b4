@@ -183,6 +183,10 @@ The model has the previous value in the tool's reply, so "that made it worse, pu
 
 ## Browser origins
 
-Requests carrying an `Origin` header are rejected unless the origin matches the address the request was sent to. This stops a visited web page from reaching b4 through the browser. AI applications send no `Origin` header and are unaffected.
+Requests carrying an `Origin` header are accepted only when that origin is b4's own address written as an IP address or `localhost`. This stops a visited web page from reaching b4 through the browser. AI applications send no `Origin` header and are unaffected.
 
-Additional origins are accepted through `allowed_origins`, which has no field in the web interface and is edited in the configuration file. A single `*` accepts any origin and disables the check.
+:::info Why a hostname is not enough
+Matching the origin against the address the request was sent to would not help. Under DNS rebinding the attacker owns the name: a page loaded from `evil.example` keeps working while the attacker re-answers that name with b4's address, so the browser sends `Origin: http://evil.example` alongside `Host: evil.example` and the two agree. What the attacker cannot do is serve a page whose origin is an address they do not control, which is why only literal addresses are accepted automatically.
+:::
+
+Reaching b4 from a browser by hostname therefore needs that hostname listed in `allowed_origins`, which has no field in the web interface and is edited in the configuration file. A single `*` accepts any origin and disables the check.

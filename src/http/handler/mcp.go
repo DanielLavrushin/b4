@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -113,12 +114,8 @@ func GenerateMCPToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// MCPEndpoint is the MCP route, exported so the auth middleware can recognise
-// requests that carry an MCP token instead of a web session token.
 const MCPEndpoint = mcpEndpoint
 
-// MCPTokenAccepts reports whether the presented bearer token is the configured
-// MCP token. It is constant-time and false when no MCP token is configured.
 func MCPTokenAccepts(cfg *config.Config, token string) bool {
 	want := cfg.System.WebServer.MCP.Token
 	if want == "" || token == "" {
@@ -157,7 +154,7 @@ func (api *API) mcpGate(next http.Handler) http.Handler {
 		}
 
 		if origin := r.Header.Get("Origin"); origin != "" && !mcpOriginAllowed(origin, r.Host, cfg.System.WebServer.MCP.AllowedOrigins) {
-			writeJsonError(w, http.StatusForbidden, "origin not allowed")
+			writeJsonError(w, http.StatusForbidden, "origin not allowed: add it to system.web_server.mcp.allowed_origins to permit it")
 			return
 		}
 
@@ -180,19 +177,25 @@ func mcpOriginAllowed(origin, host string, allowed []string) bool {
 	if err != nil || u.Host == "" {
 		return false
 	}
-	if strings.EqualFold(u.Host, host) {
-		return true
-	}
 
 	oHost, oPort := splitHostPort(u.Host)
 	hHost, hPort := splitHostPort(host)
 	if !strings.EqualFold(oHost, hHost) {
 		return false
 	}
-	// The names agree. Accept only when one side left the port implicit; two
-	// different explicit ports are two different origins, and a page served
-	// from another port on this same machine is not this server.
-	return oPort == "" || hPort == ""
+	if oPort != "" && hPort != "" && !strings.EqualFold(oPort, hPort) {
+		return false
+	}
+
+	return mcpLiteralHost(oHost)
+}
+
+func mcpLiteralHost(h string) bool {
+	h = strings.Trim(h, "[]")
+	if strings.EqualFold(h, "localhost") {
+		return true
+	}
+	return net.ParseIP(h) != nil
 }
 
 func splitHostPort(hostport string) (host, port string) {
@@ -308,9 +311,6 @@ type tailResult struct {
 	Exists    bool
 }
 
-// mcpClampLimit keeps a caller-supplied line limit inside the documented
-// range. An oversized request is clamped to the maximum rather than dropped
-// back to the default, which would silently return fewer lines than asked for.
 func mcpClampLimit(v int) int {
 	switch {
 	case v <= 0:
@@ -440,8 +440,6 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 				out.Truncated = true
 				break
 			}
-			// DomainsToMatch is the expanded list and already contains
-			// SNIDomains; it is empty until the set's targets are loaded.
 			total := len(s.Targets.DomainsToMatch)
 			if total < len(s.Targets.SNIDomains) {
 				total = len(s.Targets.SNIDomains)
@@ -703,9 +701,6 @@ func redactConfigForMCP(cfg *config.Config) *config.Config {
 	return clone
 }
 
-// redactSetSecrets strips the credentials a set carries for its upstream proxy.
-// Sets are reachable through b4_get_config and b4_get_set alike, so every path
-// that returns one has to go through here.
 func redactSetSecrets(set *config.SetConfig) {
 	if set == nil {
 		return
@@ -718,8 +713,6 @@ func redactSetSecrets(set *config.SetConfig) {
 	}
 }
 
-// marshalSetForMCP renders one set as JSON with its credentials stripped,
-// without disturbing the live config.
 func marshalSetForMCP(set *config.SetConfig) ([]byte, error) {
 	raw, err := json.Marshal(set)
 	if err != nil {

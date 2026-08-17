@@ -801,7 +801,19 @@ func TestMCPOriginAllowedRules(t *testing.T) {
 		{"http://192.168.1.1:9999", "192.168.1.1:7000", nil, false},
 		{"http://192.168.1.1:9999", "192.168.1.1:9999", nil, true},
 		{"http://192.168.1.1:9999", "192.168.1.1:7000", []string{"http://192.168.1.1:9999"}, true},
+		{"http://localhost:7000", "localhost:7000", nil, true},
+		{"http://[::1]:7000", "[::1]:7000", nil, true},
+		{"https://[2001:db8::1]", "[2001:db8::1]:443", nil, true},
 		{"http://evil.example", "192.168.1.1:7000", nil, false},
+
+		// DNS rebinding: the attacker owns the name, so it appears in both the
+		// page's Origin and the request's Host and any comparison of the two
+		// succeeds. A hostname is therefore never accepted on a Host match
+		// alone, only through allowed_origins.
+		{"http://evil.example", "evil.example:7000", nil, false},
+		{"http://evil.example:7000", "evil.example:7000", nil, false},
+		{"http://b4.lan:7000", "b4.lan:7000", nil, false},
+		{"http://b4.lan:7000", "b4.lan:7000", []string{"http://b4.lan:7000"}, true},
 		{"http://evil.example", "192.168.1.1:7000", []string{"http://evil.example"}, true},
 		{"http://anything", "192.168.1.1:7000", []string{"*"}, true},
 		{"not a url", "192.168.1.1:7000", nil, false},
