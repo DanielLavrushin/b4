@@ -74,8 +74,14 @@ func TestAIStatusUninitialized(t *testing.T) {
 	if resp.NotReadyReason == "" {
 		t.Fatal("expected reason")
 	}
-	if len(resp.AvailableProviders) != 3 {
+	want := []string{ai.ProviderOpenAI, ai.ProviderAnthropic, ai.ProviderOllama, ai.ProviderOpenAICompatible}
+	if len(resp.AvailableProviders) != len(want) {
 		t.Fatalf("providers = %v", resp.AvailableProviders)
+	}
+	for i, p := range want {
+		if resp.AvailableProviders[i] != p {
+			t.Fatalf("providers[%d] = %q, want %q", i, resp.AvailableProviders[i], p)
+		}
 	}
 }
 

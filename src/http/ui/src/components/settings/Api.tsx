@@ -40,12 +40,24 @@ const PROVIDERS: { value: AIProvider; label: string }[] = [
   { value: "openai", label: "OpenAI" },
   { value: "anthropic", label: "Anthropic" },
   { value: "ollama", label: "Ollama (local)" },
+  {
+    value: "openai-compatible",
+    label: "OpenAI-compatible (LM Studio, vLLM, …)",
+  },
 ];
 
 const DEFAULT_ENDPOINTS: Record<string, string> = {
   openai: "https://api.openai.com/v1",
   anthropic: "https://api.anthropic.com/v1",
   ollama: "http://127.0.0.1:11434",
+  "openai-compatible": "http://127.0.0.1:1234/v1",
+};
+
+const MODEL_PLACEHOLDERS: Record<string, string> = {
+  openai: "gpt-4o-mini",
+  anthropic: "claude-haiku-4-5",
+  ollama: "llama3",
+  "openai-compatible": "qwen3-8b-instruct",
 };
 
 export const ApiSettings = ({ config, onChange }: ApiSettingsProps) => {
@@ -87,8 +99,78 @@ export const ApiSettings = ({ config, onChange }: ApiSettingsProps) => {
         <Grid size={{ xs: 12, md: 6 }}>
           <AISection config={config} onChange={onChange} />
         </Grid>
+
+        <Grid size={{ xs: 12, md: 6 }}>
+          <MCPSection config={config} onChange={onChange} />
+        </Grid>
       </Grid>
     </Stack>
+  );
+};
+
+const MCPSection = ({ config, onChange }: ApiSettingsProps) => {
+  const { t } = useTranslation();
+
+  const mcp = config.system.web_server.mcp;
+  const authConfigured = Boolean(
+    config.system.web_server.username &&
+      (config.system.web_server.password ||
+        config.system.web_server.password_set),
+  );
+
+  const endpointUrl = `${window.location.origin}/api/mcp`;
+
+  return (
+    <B4Section
+      title={t("settings.Mcp.title")}
+      description={t("settings.Mcp.description")}
+      icon={<ApiIcon />}
+    >
+      <Stack spacing={1.5}>
+        <B4Switch
+          label={t("settings.Mcp.enabled")}
+          checked={Boolean(mcp?.enabled)}
+          onChange={(checked) => onChange("system.web_server.mcp.enabled", checked)}
+          description={t("settings.Mcp.enabledHelp")}
+          aiTopic="system.web_server.mcp.enabled"
+        />
+
+        {mcp?.enabled && !authConfigured && (
+          <B4Alert severity="warning">{t("settings.Mcp.noAuthWarning")}</B4Alert>
+        )}
+
+        {mcp?.enabled && (
+          <Box
+            sx={{
+              border: `1px solid ${colors.border.default}`,
+              borderRadius: 1,
+              p: 1.5,
+            }}
+          >
+            <Stack spacing={0.5}>
+              <Typography
+                variant="body2"
+                sx={{ color: colors.text.primary, fontWeight: 600 }}
+              >
+                {t("settings.Mcp.endpointTitle")}
+              </Typography>
+              <Typography
+                variant="caption"
+                sx={{ color: colors.text.secondary, wordBreak: "break-all" }}
+              >
+                {endpointUrl}
+              </Typography>
+              <Typography
+                variant="caption"
+                sx={{ color: colors.text.secondary }}
+              >
+                {t("settings.Mcp.endpointHelp")}
+              </Typography>
+            </Stack>
+          </Box>
+        )}
+      </Stack>
+    </B4Section>
   );
 };
 
@@ -128,6 +210,7 @@ const AISection = ({ config, onChange }: ApiSettingsProps) => {
   }, [refreshSecretRefs]);
 
   const requiresKey = provider === "openai" || provider === "anthropic";
+  const supportsKey = requiresKey || provider === "openai-compatible";
   const hasKey = Boolean(keyRef) && secretRefs.includes(keyRef);
 
   const isDirty = useMemo(() => {
@@ -357,15 +440,7 @@ const AISection = ({ config, onChange }: ApiSettingsProps) => {
               <B4TextField
                 {...params}
                 label={t("settings.Ai.model")}
-                placeholder={
-                  provider === "openai"
-                    ? "gpt-4o-mini"
-                    : provider === "anthropic"
-                      ? "claude-haiku-4-5"
-                      : provider === "ollama"
-                        ? "llama3"
-                        : ""
-                }
+                placeholder={MODEL_PLACEHOLDERS[provider] ?? ""}
                 size="small"
                 helperText={modelsError || t("settings.Ai.modelHelp")}
                 error={Boolean(modelsError)}
@@ -408,7 +483,7 @@ const AISection = ({ config, onChange }: ApiSettingsProps) => {
           />
         </B4FormGroup>
 
-        {requiresKey && (
+        {supportsKey && (
           <Box
             sx={{
               border: `1px solid ${colors.border.default}`,
@@ -439,8 +514,12 @@ const AISection = ({ config, onChange }: ApiSettingsProps) => {
                   ) : (
                     <Chip
                       size="small"
-                      color="warning"
-                      label={t("settings.Ai.keyMissing")}
+                      color={requiresKey ? "warning" : "default"}
+                      label={
+                        requiresKey
+                          ? t("settings.Ai.keyMissing")
+                          : t("settings.Ai.keyOptional")
+                      }
                     />
                   )}
                   {keyRef && (

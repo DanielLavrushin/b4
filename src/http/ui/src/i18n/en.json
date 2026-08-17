@@ -470,6 +470,7 @@
       "keyTitle": "API key",
       "keyConfigured": "Key configured",
       "keyMissing": "Key required",
+      "keyOptional": "Key optional",
       "keyRefLabel": "Stored as: {{ref}}",
       "keySet": "Set key",
       "keyReplace": "Replace key",
@@ -487,6 +488,15 @@
       "statusNotReady": "Not ready",
       "statusUnsaved": "Unsaved changes",
       "refreshStatus": "Refresh"
+    },
+    "Mcp": {
+      "title": "MCP server",
+      "description": "Let an external AI app (Claude Desktop, LM Studio, Cursor) read b4's state and help you diagnose problems. Served by the web server — configured at system.web_server.mcp",
+      "enabled": "Enable MCP server",
+      "enabledHelp": "Exposes read-only b4 tools over the Model Context Protocol at /api/mcp",
+      "noAuthWarning": "Web authentication is off, so anyone who can reach this port can read b4's status, configuration and diagnostics through MCP. Fine on a trusted home network; set a username and password under Web Server if the port is reachable from elsewhere.",
+      "endpointTitle": "Endpoint",
+      "endpointHelp": "Add this URL to your AI app's MCP settings. If web authentication is enabled, include an Authorization: Bearer <token> header."
     },
     "Checker": {
       "title": "Testing Configuration",

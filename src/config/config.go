@@ -234,6 +234,7 @@ var DefaultConfig = Config{
 			Port:        7000,
 			BindAddress: "0.0.0.0",
 			Language:    "en",
+			MCP:         MCPConfig{Enabled: false},
 			IsEnabled:   true,
 		},
 

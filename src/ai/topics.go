@@ -3,6 +3,7 @@ package ai
 import (
 	_ "embed"
 	"encoding/json"
+	"sort"
 )
 
 //go:embed topics.json
@@ -21,4 +22,15 @@ var topicFacts = func() map[string]string {
 // explanations so the model paraphrases known facts instead of inventing them.
 func TopicFacts(topic string) string {
 	return topicFacts[topic]
+}
+
+// TopicKeys returns every documented topic key, sorted, so callers can
+// enumerate the grounding corpus without reaching into topics.json.
+func TopicKeys() []string {
+	keys := make([]string, 0, len(topicFacts))
+	for k := range topicFacts {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

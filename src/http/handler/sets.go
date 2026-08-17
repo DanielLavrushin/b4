@@ -163,6 +163,11 @@ func (api *API) handleCheckDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setJsonHeader(w)
+	json.NewEncoder(w).Encode(api.matchDomainsToSets(domains, excludeId))
+}
+
+func (api *API) matchDomainsToSets(domains []string, excludeId string) []SetDomainMatch {
 	byDomain := make(map[string][]SetDomainMatch, len(domains))
 	exactRank := sni.RelationExact.Priority()
 
@@ -224,9 +229,7 @@ func (api *API) handleCheckDomain(w http.ResponseWriter, r *http.Request) {
 	for _, domain := range domains {
 		matches = append(matches, byDomain[domain]...)
 	}
-
-	setJsonHeader(w)
-	json.NewEncoder(w).Encode(matches)
+	return matches
 }
 
 // @Summary Add domain to a set

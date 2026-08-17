@@ -260,6 +260,7 @@ export interface WebServerConfig {
   password: string;
   password_set?: boolean;
   language: string;
+  mcp: MCPConfig;
 }
 export interface MasqueradeConfig {
   enabled: boolean;
@@ -290,7 +291,12 @@ export interface ApiConfig {
   ipinfo_token: string;
 }
 
-export type AIProvider = "" | "openai" | "anthropic" | "ollama";
+export type AIProvider =
+  | ""
+  | "openai"
+  | "anthropic"
+  | "ollama"
+  | "openai-compatible";
 
 export interface AIConfig {
   enabled: boolean;
@@ -301,6 +307,11 @@ export interface AIConfig {
   max_tokens: number;
   temperature: number;
   timeout_sec: number;
+}
+
+export interface MCPConfig {
+  enabled: boolean;
+  allowed_origins?: string[];
 }
 
 export interface Socks5Config {

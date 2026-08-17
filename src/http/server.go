@@ -38,6 +38,9 @@ func StartServer(cfgPtr *atomic.Pointer[config.Config], pool *nfq.Pool) (*stdhtt
 	cfg := cfgPtr.Load()
 	if cfg.System.WebServer.Port == 0 {
 		log.Infof("Web server disabled (port 0)")
+		if cfg.System.WebServer.MCP.Enabled {
+			log.Warnf("MCP server is enabled but unreachable: it is served by the web server, which is disabled (port 0)")
+		}
 		return nil, nil, nil
 	}
 
@@ -57,6 +60,8 @@ func StartServer(cfgPtr *atomic.Pointer[config.Config], pool *nfq.Pool) (*stdhtt
 
 	if authEnabled(cfg) {
 		log.Infof("Web server authentication enabled")
+	} else if cfg.System.WebServer.MCP.Enabled {
+		log.Warnf("MCP server is reachable without authentication (no web_server username/password set)")
 	}
 
 	bindAddr := cfg.System.WebServer.BindAddress

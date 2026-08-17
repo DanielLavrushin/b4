@@ -318,6 +318,11 @@ type SystemConfig struct {
 	Pprof       bool                `json:"pprof,omitempty"`
 }
 
+type MCPConfig struct {
+	Enabled        bool     `json:"enabled"`
+	AllowedOrigins []string `json:"allowed_origins,omitempty"`
+}
+
 type AIConfig struct {
 	Enabled     bool    `json:"enabled"`
 	Provider    string  `json:"provider"`
@@ -376,15 +381,16 @@ type MasqueradeConfig struct {
 }
 
 type WebServerConfig struct {
-	Port        int    `json:"port"`
-	BindAddress string `json:"bind_address"`
-	TLSCert     string `json:"tls_cert"`
-	TLSKey      string `json:"tls_key"`
-	Username    string `json:"username"`
-	Password    string `json:"password"`
-	PasswordSet bool   `json:"password_set,omitempty"`
-	Language    string `json:"language"`
-	IsEnabled   bool   `json:"-"`
+	Port        int       `json:"port"`
+	BindAddress string    `json:"bind_address"`
+	TLSCert     string    `json:"tls_cert"`
+	TLSKey      string    `json:"tls_key"`
+	Username    string    `json:"username"`
+	Password    string    `json:"password"`
+	PasswordSet bool      `json:"password_set,omitempty"`
+	Language    string    `json:"language"`
+	MCP         MCPConfig `json:"mcp"`
+	IsEnabled   bool      `json:"-"`
 }
 
 type DiscoveryConfig struct {

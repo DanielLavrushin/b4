@@ -14,14 +14,27 @@ import (
 )
 
 type openAIProvider struct {
-	endpoint string
-	apiKey   string
-	model    string
-	httpc    *http.Client
-	req      config.AIConfig
+	name           string
+	endpoint       string
+	apiKey         string
+	model          string
+	httpc          *http.Client
+	req            config.AIConfig
+	allowAllModels bool
 }
 
-func (p *openAIProvider) Name() string { return ProviderOpenAI }
+func (p *openAIProvider) Name() string {
+	if p.name != "" {
+		return p.name
+	}
+	return ProviderOpenAI
+}
+
+func (p *openAIProvider) setAuth(req *http.Request) {
+	if p.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
+}
 
 type openAIModelList struct {
 	Data []struct {
@@ -36,7 +49,7 @@ func (p *openAIProvider) ListModels(ctx context.Context) ([]Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+	p.setAuth(httpReq)
 	httpReq.Header.Set("Accept", "application/json")
 
 	resp, err := p.httpc.Do(httpReq)
@@ -45,15 +58,18 @@ func (p *openAIProvider) ListModels(ctx context.Context) ([]Model, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return nil, readErrorBody(resp, "openai")
+		return nil, readErrorBody(resp, p.Name())
 	}
 	var list openAIModelList
 	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
-		return nil, fmt.Errorf("openai: decode models: %w", err)
+		return nil, fmt.Errorf("%s: decode models: %w", p.Name(), err)
 	}
 	out := make([]Model, 0, len(list.Data))
 	for _, m := range list.Data {
-		if !isOpenAIChatModel(m.ID) {
+		if m.ID == "" {
+			continue
+		}
+		if !p.allowAllModels && !isOpenAIChatModel(m.ID) {
 			continue
 		}
 		out = append(out, Model{ID: m.ID, Created: m.Created})
@@ -137,11 +153,11 @@ func (p *openAIProvider) Stream(ctx context.Context, req Request) (<-chan Chunk,
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
 		httpReq.Header.Set("Accept", "text/event-stream")
-		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+		p.setAuth(httpReq)
 		return httpReq, nil
 	}
 
-	resp, err := postWithTemperatureRetry(ctx, p.httpc, makeReq, "openai")
+	resp, err := postWithTemperatureRetry(ctx, p.httpc, makeReq, p.Name())
 	if err != nil {
 		return nil, err
 	}
