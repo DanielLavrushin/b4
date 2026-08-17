@@ -318,6 +318,13 @@ type SystemConfig struct {
 	Pprof       bool                `json:"pprof,omitempty"`
 }
 
+type MCPConfig struct {
+	Enabled        bool     `json:"enabled"`
+	AllowWrites    bool     `json:"allow_writes"`
+	Token          string   `json:"token,omitempty"`
+	AllowedOrigins []string `json:"allowed_origins,omitempty"`
+}
+
 type AIConfig struct {
 	Enabled     bool    `json:"enabled"`
 	Provider    string  `json:"provider"`
@@ -337,7 +344,7 @@ type MTProtoConfig struct {
 	TCPUserTimeoutSec int             `json:"tcp_user_timeout_sec"`
 	IdleTimeoutSec    int             `json:"idle_timeout_sec"`
 	BridgeWaitSec     int             `json:"bridge_wait_sec"`
-	Secrets           []MTProtoSecret `json:"secrets,omitempty"`
+	Secrets           []MTProtoSecret `json:"secrets,omitempty" mcp:"deny"`
 	FakeSNI           string          `json:"fake_sni"`
 	DCRelay           string          `json:"dc_relay"`
 	UpstreamMode      string          `json:"upstream_mode"`
@@ -357,8 +364,8 @@ type Socks5Config struct {
 	Enabled        bool   `json:"enabled"`
 	Port           int    `json:"port"`
 	BindAddress    string `json:"bind_address"`
-	Username       string `json:"username"`
-	Password       string `json:"password"`
+	Username       string `json:"username" mcp:"deny"`
+	Password       string `json:"password" mcp:"deny"`
 	UDPTimeout     int    `json:"udp_timeout"`
 	UDPReadTimeout int    `json:"udp_read_timeout"`
 }
@@ -376,15 +383,16 @@ type MasqueradeConfig struct {
 }
 
 type WebServerConfig struct {
-	Port        int    `json:"port"`
-	BindAddress string `json:"bind_address"`
-	TLSCert     string `json:"tls_cert"`
-	TLSKey      string `json:"tls_key"`
-	Username    string `json:"username"`
-	Password    string `json:"password"`
-	PasswordSet bool   `json:"password_set,omitempty"`
-	Language    string `json:"language"`
-	IsEnabled   bool   `json:"-"`
+	Port        int       `json:"port"`
+	BindAddress string    `json:"bind_address"`
+	TLSCert     string    `json:"tls_cert"`
+	TLSKey      string    `json:"tls_key"`
+	Username    string    `json:"username"`
+	Password    string    `json:"password"`
+	PasswordSet bool      `json:"password_set,omitempty"`
+	Language    string    `json:"language"`
+	MCP         MCPConfig `json:"mcp"`
+	IsEnabled   bool      `json:"-"`
 }
 
 type DiscoveryConfig struct {
@@ -416,7 +424,7 @@ type Logging struct {
 	Syslog     bool      `json:"syslog"`
 	// Directory is the base folder for all b4 log files (errors.log, update.log, ...).
 	// Empty disables file logging entirely.
-	Directory string `json:"directory"`
+	Directory string `json:"directory" mcp:"deny"`
 }
 
 // ErrorFilePath returns the path to the runtime error log, or "" when file
@@ -438,7 +446,7 @@ func (l Logging) UpdateLogPath() string {
 }
 
 type SetConfig struct {
-	Id            string              `json:"id"`
+	Id            string              `json:"id" mcp:"deny"`
 	Name          string              `json:"name"`
 	TCP           TCPConfig           `json:"tcp"`
 	UDP           UDPConfig           `json:"udp"`
@@ -597,8 +605,8 @@ type RoutingConfig struct {
 	Mode             string              `json:"mode"`
 	EgressInterface  string              `json:"egress_interface"`
 	Upstream         UpstreamProxyConfig `json:"upstream"`
-	FWMark           uint32              `json:"fwmark"`
-	Table            int                 `json:"table"`
+	FWMark           uint32              `json:"fwmark" mcp:"deny"`
+	Table            int                 `json:"table" mcp:"deny"`
 	SourceInterfaces []string            `json:"source_interfaces"`
 	IPTTLSeconds     int                 `json:"ip_ttl_seconds"`
 	BlockAction      string              `json:"block_action"`
@@ -607,8 +615,8 @@ type RoutingConfig struct {
 type UpstreamProxyConfig struct {
 	Host      string `json:"host"`
 	Port      int    `json:"port"`
-	Username  string `json:"username,omitempty"`
-	Password  string `json:"password,omitempty"`
+	Username  string `json:"username,omitempty" mcp:"deny"`
+	Password  string `json:"password,omitempty" mcp:"deny"`
 	FailOpen  bool   `json:"fail_open"`
 	UseDomain bool   `json:"use_domain"`
 	UDP       bool   `json:"udp"`

@@ -224,7 +224,7 @@ func (s *Server) udpReadFromTarget(bindLn *net.UDPConn, target net.Conn, srcAddr
 		conns.Delete(connKey)
 	}()
 
-	readTimeout := time.Duration(s.cfg.System.Socks5.UDPReadTimeout) * time.Second
+	readTimeout := time.Duration(s.getCfg().System.Socks5.UDPReadTimeout) * time.Second
 	if readTimeout <= 0 {
 		readTimeout = 30 * time.Second
 	}

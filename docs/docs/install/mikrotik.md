@@ -15,9 +15,20 @@ On MikroTik RouterOS 7.x, b4 runs as a container.
 Containers on MikroTik require external storage - the router's internal memory is not enough.
 :::
 
+## Community image
+
+Besides the official `lavrushin/b4` image, there is a community image built specifically for RouterOS: [wiktorbgu/b4-mikrotik](https://hub.docker.com/r/wiktorbgu/b4-mikrotik), maintained by wiktorbgu. It follows b4 releases with matching version tags and packages the service for RouterOS containers:
+
+- b4 runs as an OpenRC service inside the container, so it can be restarted without stopping the container
+- the entrypoint selects the firewall backend at startup - nftables, or iptables-legacy with ipset - depending on which kernel modules RouterOS exposes to the container
+- it normalizes the priorities of the `main` and `default` routing rules, which RouterOS 7.22 passes into the container in a form that breaks policy routing
+- a companion container, [wiktorbgu/dnsproxy-mikrotik](https://hub.docker.com/r/wiktorbgu/dnsproxy-mikrotik), forwards DNS queries over DoH so they are not intercepted
+
+Setup instructions are on the image page. The image is maintained by the community, not built by the b4 project, and its build sources are not published, so its contents cannot be checked against this repository. The guide below uses the official image.
+
 ## Example parameters
 
-The guide uses the following values. Replace with your own:
+The guide uses the following values, which have to be replaced with the ones matching the local network:
 
 | Parameter | Value |
 | --- | --- |
@@ -34,7 +45,7 @@ The guide uses the following values. Replace with your own:
 
 ## Step 1: Bridge
 
-Create a bridge for the Docker network:
+A bridge for the Docker network:
 
 ```routeros
 /interface/bridge add name=bridge-docker port-cost-mode=short
@@ -43,7 +54,7 @@ Create a bridge for the Docker network:
 
 ## Step 2: Interface
 
-Create a virtual Ethernet interface and attach it to the bridge:
+A virtual Ethernet interface attached to the bridge:
 
 ```routeros
 /interface/veth add address=192.168.210.10/24 gateway=192.168.210.1 name=B4
@@ -52,7 +63,7 @@ Create a virtual Ethernet interface and attach it to the bridge:
 
 ## Step 3: Routing
 
-Create a routing table and a route through the container:
+A routing table and a route through the container:
 
 ```routeros
 /routing table add disabled=no fib name=to_b4
@@ -61,7 +72,7 @@ Create a routing table and a route through the container:
 
 ## Step 4: Traffic marking
 
-Redirect traffic from clients in the `b4users` list through the container:
+Traffic from clients in the `b4users` list is redirected through the container:
 
 ```routeros
 /ip firewall mangle add chain=prerouting action=mark-connection \
@@ -75,7 +86,7 @@ Redirect traffic from clients in the `b4users` list through the container:
 ```
 
 :::caution FastTrack
-FastTrack bypasses mangle rules. Restrict it to unmarked connections:
+FastTrack bypasses mangle rules. It has to be restricted to unmarked connections:
 
 ```routeros
 /ip firewall filter set [find action=fasttrack-connection] connection-mark=no-mark
@@ -89,17 +100,17 @@ FastTrack bypasses mangle rules. Restrict it to unmarked connections:
 /container/mounts add name=b4_etc src=/usb1/docker/b4-mounts/etc dst=/opt/etc/b4
 ```
 
-Make sure the `/usb1/docker/b4-mounts/etc` directory exists on the disk.
+The `/usb1/docker/b4-mounts/etc` directory has to exist on the disk.
 
 ## Step 6: Run the container
 
-Configure the registry:
+Registry configuration:
 
 ```routeros
 /container/config set registry-url=https://registry-1.docker.io tmpdir=/usb1/docker/pull
 ```
 
-Create and start the container:
+Creating the container:
 
 ```routeros
 /container add remote-image=lavrushin/b4:latest interface=B4 \
@@ -115,18 +126,18 @@ After the image has been pulled:
 ```
 
 :::info DNS hijacking
-If your ISP intercepts DNS (port 53 redirection), public resolvers inside the container will not help. Set up DoH on MikroTik and point the container at the bridge gateway instead of public DNS:
+Where the ISP intercepts DNS (port 53 redirection), public resolvers inside the container do not help. The way around it is DoH on MikroTik, with the container pointed at the bridge gateway instead of public DNS:
 
 ```routeros
 /ip dns set use-doh-server=https://cloudflare-dns.com/dns-query verify-doh-cert=yes
 ```
 
-Then change the container DNS to `dns=192.168.210.1` (the bridge gateway).
+The container DNS then becomes `dns=192.168.210.1` (the bridge gateway).
 :::
 
 ## Step 7: Add clients
 
-Add devices to the `b4users` address list:
+Devices are added to the `b4users` address list:
 
 ```routeros
 /ip firewall address-list add list=b4users address=192.168.100.50
@@ -138,7 +149,7 @@ Add devices to the `b4users` address list:
 After the container starts: `http://192.168.210.10:7000`
 
 :::tip Reduce disk wear
-USB flash and SD cards have a limited number of write cycles. Move b4 logs to RAM in the web interface:
+USB flash and SD cards have a limited number of write cycles. b4 logs can be moved to RAM in the web interface:
 
 **Settings -> Logging Configuration -> Log file path:** `/tmp/log/b4/errors.log`
 
@@ -162,17 +173,17 @@ The configuration is stored on the mount point and is preserved when the contain
 
 **Container will not start:**
 
-1. Check status: `/container print`
-2. See logs: `/log print where topics~"container"`
-3. Make sure the disk is formatted as Ext4
+1. Status: `/container print`
+2. Logs: `/log print where topics~"container"`
+3. The disk has to be formatted as Ext4
 
 **No access to the web interface:**
 
-1. Check that the container is running: `/container print`
-2. Check connectivity: `/ping 192.168.210.10`
+1. The container has to be running: `/container print`
+2. Connectivity: `/ping 192.168.210.10`
 
 **Traffic is not redirected:**
 
-1. Check the list: `/ip firewall address-list print where list=b4users`
-2. Check mangle: `/ip firewall mangle print`
-3. Check the route: `/ip route print where routing-table=to_b4`
+1. The list: `/ip firewall address-list print where list=b4users`
+2. Mangle: `/ip firewall mangle print`
+3. The route: `/ip route print where routing-table=to_b4`

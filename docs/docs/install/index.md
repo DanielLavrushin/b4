@@ -3,7 +3,7 @@ sidebar_position: 2
 title: Installation
 ---
 
-b4 installs on Linux devices: servers, computers, and routers. Pick the method that matches your system:
+b4 installs on Linux devices: servers, computers, and routers. The available methods:
 
 - [Linux](./linux) - universal installation on any Linux distribution
 - [OpenWRT](./openwrt) - routers running OpenWRT firmware
@@ -40,7 +40,7 @@ On removal:
 
 1. The service is stopped and removed from autostart
 2. The binary is deleted
-3. The configuration is kept or removed based on your choice (the installer asks whether to delete `/etc/b4` or `/opt/etc/b4`)
+3. The configuration is kept or removed depending on the answer to the installer's prompt about deleting `/etc/b4` or `/opt/etc/b4`
 
 ### Diagnostics
 

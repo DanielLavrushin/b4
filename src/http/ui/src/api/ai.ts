@@ -27,6 +27,13 @@ export interface AIModelList {
   models: AIModel[];
 }
 
+export const mcpApi = {
+  generateToken: () =>
+    apiFetch<{ success: boolean; token: string }>("/api/mcp/generate-token", {
+      method: "POST",
+    }),
+};
+
 export const aiApi = {
   status: () => apiGet<AIStatus>("/api/ai/status"),
   listSecrets: () => apiGet<AISecretsList>("/api/ai/secrets"),

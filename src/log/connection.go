@@ -38,17 +38,27 @@ func (h *ConnectionHub) Subscribe() (chan string, []string) {
 	defer h.mu.Unlock()
 	ch := make(chan string, 256)
 	h.listeners = append(h.listeners, ch)
+	return ch, h.snapshotLocked()
+}
 
-	var snap []string
+// Snapshot returns the buffered connection lines without registering a
+// listener, for callers that want a one-shot read rather than a live stream.
+func (h *ConnectionHub) Snapshot() []string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.snapshotLocked()
+}
+
+func (h *ConnectionHub) snapshotLocked() []string {
 	if h.ringFull {
-		snap = make([]string, 0, connectionRingSize)
+		snap := make([]string, 0, connectionRingSize)
 		snap = append(snap, h.ring[h.ringHead:]...)
 		snap = append(snap, h.ring[:h.ringHead]...)
-	} else {
-		snap = make([]string, h.ringHead)
-		copy(snap, h.ring[:h.ringHead])
+		return snap
 	}
-	return ch, snap
+	snap := make([]string, h.ringHead)
+	copy(snap, h.ring[:h.ringHead])
+	return snap
 }
 
 func (h *ConnectionHub) Unsubscribe(ch chan string) {

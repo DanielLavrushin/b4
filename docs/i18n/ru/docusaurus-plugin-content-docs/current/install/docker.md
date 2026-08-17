@@ -9,7 +9,7 @@ title: Docker
 
 ## docker-compose
 
-Создайте файл `docker-compose.yml`:
+Файл `docker-compose.yml`:
 
 ```yaml
 services:

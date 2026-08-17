@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/http/handler"
 )
 
 const (
@@ -278,6 +279,13 @@ func authMiddleware(cfgPtr *atomic.Pointer[config.Config], next http.Handler) ht
 		}
 
 		token := extractBearerToken(r)
+
+		// MCP clients authenticate with the long-lived MCP token instead of a
+		// web session token; the MCP gate itself verifies it.
+		if r.URL.Path == handler.MCPEndpoint && handler.MCPTokenAccepts(cfgPtr.Load(), token) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if token == "" {
 			writeAuthJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return

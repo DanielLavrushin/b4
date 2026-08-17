@@ -470,6 +470,7 @@
       "keyTitle": "API key",
       "keyConfigured": "Key configured",
       "keyMissing": "Key required",
+      "keyOptional": "Key optional",
       "keyRefLabel": "Stored as: {{ref}}",
       "keySet": "Set key",
       "keyReplace": "Replace key",
@@ -487,6 +488,25 @@
       "statusNotReady": "Not ready",
       "statusUnsaved": "Unsaved changes",
       "refreshStatus": "Refresh"
+    },
+    "Mcp": {
+      "title": "MCP server",
+      "description": "Let an external AI app (Claude Desktop, LM Studio, Cursor) read b4's state and help you diagnose problems. Served by the web server — configured at system.web_server.mcp",
+      "enabled": "Enable MCP server",
+      "enabledHelp": "Exposes b4's diagnostic tools over the Model Context Protocol at /api/mcp. Read-only unless you also allow configuration changes below.",
+      "allowWrites": "Allow configuration changes",
+      "allowWritesHelp": "Lets the AI change any setting inside a strategy set, plus the MTProto and SOCKS5 subsystems. Credentials, the web server, the capture engine and the firewall backend stay read-only. Any change can be undone by asking the AI to revert it.",
+      "allowWritesWarning": "The AI can change settings, not just read them. The AI app should ask for approval before each change; do not approve one that is not understood. A change that turns out to be wrong can be undone by asking the AI to revert it.",
+      "noAuthWarning": "Web authentication is off, so anyone who can reach this port can read b4's status, configuration and diagnostics through MCP. Fine on a trusted home network; set a username and password under Web Server if the port is reachable from elsewhere.",
+      "noTokenWarning": "No MCP token is set, so clients have to use a web login token instead. Those expire after a day and are discarded when b4 restarts, which leaves the AI app unable to connect until you paste a new one. Generate an MCP token to avoid that.",
+      "token": "MCP token",
+      "tokenPlaceholder": "none — endpoint is unauthenticated",
+      "tokenHelp": "Long-lived credential for AI apps. Survives restarts, unlike a web login token, so this is the credential to use. When set, it is the only one accepted at /api/mcp, and it grants access to nothing else.",
+      "tokenGenerate": "Generate",
+      "tokenGenerated": "Token generated — remember to save the configuration",
+      "tokenGenerateError": "Failed to generate token",
+      "endpointTitle": "Endpoint",
+      "endpointHelp": "Add this URL to your AI app's MCP settings, with the MCP token in a headers block: \"headers\": { \"Authorization\": \"Bearer <token>\" }"
     },
     "Checker": {
       "title": "Testing Configuration",

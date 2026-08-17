@@ -59,7 +59,8 @@ type IPBlockCache interface {
 
 // Server is a SOCKS5 proxy server.
 type Server struct {
-	cfg      *config.Config
+	cfg      atomic.Pointer[config.Config]
+	mu       sync.Mutex
 	listener net.Listener
 
 	ctx    context.Context
@@ -78,10 +79,13 @@ func (s *Server) SetIPBlockCache(cache IPBlockCache) {
 	s.ipBlockCache = cache
 }
 
+func (s *Server) getCfg() *config.Config {
+	return s.cfg.Load()
+}
+
 // NewServer creates a new SOCKS5 server.
 func NewServer(cfg *config.Config) *Server {
-	return &Server{
-		cfg:     cfg,
+	s := &Server{
 		connSem: make(chan struct{}, maxConnections),
 		bufferPool: sync.Pool{
 			New: func() interface{} {
@@ -90,25 +94,35 @@ func NewServer(cfg *config.Config) *Server {
 			},
 		},
 	}
+	s.cfg.Store(cfg)
+	return s
 }
 
 // Start begins listening for SOCKS5 connections. Returns nil immediately if disabled.
 func (s *Server) Start() error {
-	if !s.cfg.System.Socks5.Enabled {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.startLocked()
+}
+
+func (s *Server) startLocked() error {
+	cfg := s.getCfg()
+	if !cfg.System.Socks5.Enabled {
 		log.Infof("SOCKS5 server disabled")
 		return nil
 	}
 
-	addr := net.JoinHostPort(s.cfg.System.Socks5.BindAddress, strconv.Itoa(s.cfg.System.Socks5.Port))
+	addr := net.JoinHostPort(cfg.System.Socks5.BindAddress, strconv.Itoa(cfg.System.Socks5.Port))
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 
 	// Build initial matcher from current config
-	if m := buildMatcher(s.cfg); m != nil {
+	if m := buildMatcher(cfg); m != nil {
 		s.matcher.Store(m)
 	}
 
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
+		s.cancel()
 		return fmt.Errorf("SOCKS5 TCP listen: %w", err)
 	}
 	s.listener = ln
@@ -116,13 +130,19 @@ func (s *Server) Start() error {
 
 	log.Infof("SOCKS5 server listening on %s", addr)
 
-	go s.acceptLoop()
+	go s.acceptLoop(ln)
 
 	return nil
 }
 
 // Stop gracefully shuts down the SOCKS5 server.
 func (s *Server) Stop() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stopLocked()
+}
+
+func (s *Server) stopLocked() error {
 	s.running.Store(false)
 
 	if s.cancel != nil {
@@ -130,7 +150,9 @@ func (s *Server) Stop() error {
 	}
 
 	if s.listener != nil {
-		return s.listener.Close()
+		ln := s.listener
+		s.listener = nil
+		return ln.Close()
 	}
 
 	return nil
@@ -138,9 +160,9 @@ func (s *Server) Stop() error {
 
 // --- TCP accept loop ---
 
-func (s *Server) acceptLoop() {
+func (s *Server) acceptLoop(ln net.Listener) {
 	for {
-		conn, err := s.listener.Accept()
+		conn, err := ln.Accept()
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
 				return
@@ -209,7 +231,7 @@ func (s *Server) authenticate(conn net.Conn) error {
 
 	log.Debugf("SOCKS5 auth from %s: methods=%v", conn.RemoteAddr(), methods)
 
-	socksCfg := &s.cfg.System.Socks5
+	socksCfg := &s.getCfg().System.Socks5
 	needAuth := socksCfg.Username != "" && socksCfg.Password != ""
 	var chosen byte = authNoAccept
 
@@ -268,7 +290,7 @@ func (s *Server) subnegotiateUserPass(conn net.Conn) error {
 		return fmt.Errorf("read password: %w", err)
 	}
 
-	socksCfg := &s.cfg.System.Socks5
+	socksCfg := &s.getCfg().System.Socks5
 	// Constant-time comparison to prevent timing attacks
 	userOK := subtle.ConstantTimeCompare(uname, []byte(socksCfg.Username)) == 1
 	passOK := subtle.ConstantTimeCompare(passwd, []byte(socksCfg.Password)) == 1
@@ -369,20 +391,51 @@ func buildMatcher(cfg *config.Config) *sni.SuffixSet {
 	return nil
 }
 
+// socks5NeedsRestart reports whether the listener has to be torn down and
+// rebuilt, as opposed to picking the change up in place.
+func socks5NeedsRestart(old, new *config.Socks5Config) bool {
+	return old.Enabled != new.Enabled ||
+		old.Port != new.Port ||
+		old.BindAddress != new.BindAddress
+}
+
 func (s *Server) UpdateConfig(newCfg *config.Config) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	old := s.getCfg()
+	s.cfg.Store(newCfg)
+
+	if old != nil && socks5NeedsRestart(&old.System.Socks5, &newCfg.System.Socks5) {
+		wasEnabled := old.System.Socks5.Enabled
+		if s.running.Load() {
+			_ = s.stopLocked()
+		}
+		if newCfg.System.Socks5.Enabled {
+			if err := s.startLocked(); err != nil {
+				log.Errorf("SOCKS5 reload failed: %v (proxy stopped; fix in Settings)", err)
+			} else {
+				log.Infof("SOCKS5 reloaded with updated configuration")
+			}
+		} else if wasEnabled {
+			log.Infof("SOCKS5 server stopped (disabled in configuration)")
+		}
+		return
+	}
+
 	if !s.running.Load() {
 		return
 	}
 
 	newMatcher := buildMatcher(newCfg)
-	old := s.getMatcher()
+	oldMatcher := s.getMatcher()
 
 	if newMatcher != nil {
-		if old != nil {
-			newMatcher.TransferLearnedIPs(old)
+		if oldMatcher != nil {
+			newMatcher.TransferLearnedIPs(oldMatcher)
 		}
 		s.matcher.Store(newMatcher)
-	} else if old != nil {
+	} else if oldMatcher != nil {
 		s.matcher.Store((*sni.SuffixSet)(nil))
 	}
 	log.Tracef("SOCKS5 matcher refreshed from config update")

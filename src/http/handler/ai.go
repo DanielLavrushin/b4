@@ -109,7 +109,7 @@ func (api *API) handleAIStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	mgr := globalAIManager
 	resp := aiStatusResponse{
-		AvailableProviders: []string{ai.ProviderOpenAI, ai.ProviderAnthropic, ai.ProviderOllama},
+		AvailableProviders: []string{ai.ProviderOpenAI, ai.ProviderAnthropic, ai.ProviderOllama, ai.ProviderOpenAICompatible},
 	}
 	if mgr == nil {
 		resp.NotReadyReason = "manager not initialized"

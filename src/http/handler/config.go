@@ -531,7 +531,9 @@ func (a *API) PerformSoftRestart(newCfg *config.Config, oldCfg *config.Config) b
 		if oldTCPPorts != newTCPPorts {
 			log.Infof("TCP ports changed (%s -> %s), refreshing firewall rules", oldTCPPorts, newTCPPorts)
 		}
-		if err := tablesRefreshFunc(); err != nil {
+		if tablesRefreshFunc == nil {
+			log.Errorf("Core settings changed but no firewall refresh is wired up; rules are now stale")
+		} else if err := tablesRefreshFunc(); err != nil {
 			log.Errorf("Failed to refresh tables: %v", err)
 		}
 	}

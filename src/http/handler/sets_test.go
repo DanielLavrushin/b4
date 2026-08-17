@@ -2,8 +2,10 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
@@ -159,7 +161,7 @@ func TestHandleCheckDomain(t *testing.T) {
 }
 
 func TestParseCheckDomains(t *testing.T) {
-	got := parseCheckDomains(" A.com, b.com | c.com;\td.com. a.com ")
+	got, truncated := parseCheckDomains(" A.com, b.com | c.com;\td.com. a.com ")
 	want := []string{"a.com", "b.com", "c.com", "d.com"}
 
 	if len(got) != len(want) {
@@ -170,8 +172,34 @@ func TestParseCheckDomains(t *testing.T) {
 			t.Fatalf("got %v, want %v", got, want)
 		}
 	}
+	if truncated {
+		t.Error("four domains must not report truncation")
+	}
 
-	if len(parseCheckDomains("   ")) != 0 {
+	if blank, _ := parseCheckDomains("   "); len(blank) != 0 {
 		t.Error("expected no domains for blank input")
+	}
+}
+
+func TestParseCheckDomainsReportsTruncation(t *testing.T) {
+	raw := make([]string, 0, maxCheckDomains+5)
+	for i := 0; i < maxCheckDomains+5; i++ {
+		raw = append(raw, fmt.Sprintf("d%d.example", i))
+	}
+
+	got, truncated := parseCheckDomains(strings.Join(raw, ","))
+	if len(got) != maxCheckDomains {
+		t.Fatalf("got %d domains, want %d", len(got), maxCheckDomains)
+	}
+	if !truncated {
+		t.Error("dropping domains past the cap must be reported")
+	}
+
+	exact, truncated := parseCheckDomains(strings.Join(raw[:maxCheckDomains], ","))
+	if len(exact) != maxCheckDomains {
+		t.Fatalf("got %d domains, want %d", len(exact), maxCheckDomains)
+	}
+	if truncated {
+		t.Error("a list that exactly fills the cap must not report truncation")
 	}
 }

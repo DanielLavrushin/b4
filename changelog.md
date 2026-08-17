@@ -2,12 +2,15 @@
 
 ## [1.78.0] - 2026-08-17
 
+- ADDED: **An MCP server at /api/mcp** - b4 spoke no protocol an external AI app could connect to. Read-only tools report status, configuration, strategy sets, domain coverage, recent connections, the log tail, metrics and diagnostics, and a resource per documented setting describes what that setting does. The model runs in the client app; b4 reaches no AI provider and needs no API key. Off by default, and authenticated by its own token, because a web login token is discarded on every restart. A second switch, also off by default, permits writes to any setting inside a set, to the MTProto and SOCKS5 subsystems and to the log level; credentials, the web server, the capture engine, the firewall backend and the packet marks are refused, and the last change can be reverted. [MCP server](https://daniellavrushin.github.io/b4/docs/settings/mcp).
 - FIXED: **Traffic that merely used port 53 was read as a name lookup** - a VPN or proxy tunnel hidden on that port had its encrypted contents taken for a domain name and matched against sets.
 - FIXED: **The server name read out of a QUIC connection was accepted whatever it contained** - any bytes of any length passed for a hostname, unlike the same name read from an ordinary HTTPS connection, which was checked.
 - FIXED: **Telegram reported the MTProto proxy as incorrectly configured and switched it off** - a session was accepted before b4 had reached a data center, and one blocked route was given longer than the client was willing to wait.
 - FIXED: **Data center 203 had no connection ready in advance** - spare connections were kept for two data centers only, so every session on the others started by opening one from scratch.
 - FIXED: **A route that answered nothing was set aside only when it replied with a rate limit** - a route that went silent cost every session after it the same full wait.
 - FIXED: **A name with several addresses was abandoned after the first one went unanswered** - the attempt stalled on that address while another address of the same name answered in under a second.
+- FIXED: **The API reference on the documentation site rejected the b4 username and password** - the credentials were sent to the service unchanged instead of being exchanged for a login token, so the Authorize window accepted a pasted token alone.
+- FIXED: **Turning the SOCKS5 proxy on or off, or moving it to another port, changed nothing until b4 was restarted** - the setting was saved and the save was reported as successful, but the listener was only ever started once at boot, so a proxy switched off in the interface kept accepting connections and one switched on never opened its port.
 
 ## [1.77.0] - 2026-08-15
 

@@ -9,6 +9,7 @@ b4 settings are split across several tabs:
 - [Geo data](./geodata) - GeoSite and GeoIP databases
 - [Security](./security) - authentication, HTTPS
 - [Payloads](./payloads) - generation and management of TLS payloads for faking
+- [MCP server](./mcp) - letting an external AI application read b4's state
 - [Discovery](./discovery) - timeouts, DNS servers, reference domain
 - [Backup](./backup) - backup and restore
 

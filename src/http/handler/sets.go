@@ -119,26 +119,32 @@ func (api *API) releaseDomainsFromOtherSets(sets []*config.SetConfig, keepSetId 
 
 const maxCheckDomains = 32
 
-func parseCheckDomains(raw string) []string {
+// parseCheckDomains normalises and de-duplicates the requested domains, capped
+// at maxCheckDomains. The second return value reports whether the cap dropped
+// anything, so callers can say so instead of answering for a shorter list than
+// they were given.
+func parseCheckDomains(raw string) ([]string, bool) {
 	fields := strings.FieldsFunc(raw, func(r rune) bool {
 		return r == ',' || r == '|' || r == ';' || unicode.IsSpace(r)
 	})
 
 	seen := make(map[string]bool, len(fields))
 	domains := make([]string, 0, len(fields))
+	truncated := false
 	for _, field := range fields {
 		domain := sni.NormalizeDomain(field)
 		if domain == "" || seen[domain] {
 			continue
 		}
 		seen[domain] = true
-		domains = append(domains, domain)
 		if len(domains) >= maxCheckDomains {
+			truncated = true
 			break
 		}
+		domains = append(domains, domain)
 	}
 
-	return domains
+	return domains, truncated
 }
 
 // @Summary Check which sets match a domain
@@ -155,7 +161,7 @@ func (api *API) handleCheckDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	domains := parseCheckDomains(r.URL.Query().Get("domain"))
+	domains, _ := parseCheckDomains(r.URL.Query().Get("domain"))
 	excludeId := r.URL.Query().Get("exclude")
 
 	if len(domains) == 0 {
@@ -163,6 +169,11 @@ func (api *API) handleCheckDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setJsonHeader(w)
+	json.NewEncoder(w).Encode(api.matchDomainsToSets(domains, excludeId))
+}
+
+func (api *API) matchDomainsToSets(domains []string, excludeId string) []SetDomainMatch {
 	byDomain := make(map[string][]SetDomainMatch, len(domains))
 	exactRank := sni.RelationExact.Priority()
 
@@ -224,9 +235,7 @@ func (api *API) handleCheckDomain(w http.ResponseWriter, r *http.Request) {
 	for _, domain := range domains {
 		matches = append(matches, byDomain[domain]...)
 	}
-
-	setJsonHeader(w)
-	json.NewEncoder(w).Encode(matches)
+	return matches
 }
 
 // @Summary Add domain to a set

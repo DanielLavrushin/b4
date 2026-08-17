@@ -60,9 +60,10 @@ type Provider interface {
 }
 
 const (
-	ProviderOpenAI    = "openai"
-	ProviderAnthropic = "anthropic"
-	ProviderOllama    = "ollama"
+	ProviderOpenAI           = "openai"
+	ProviderAnthropic        = "anthropic"
+	ProviderOllama           = "ollama"
+	ProviderOpenAICompatible = "openai-compatible"
 )
 
 var (
@@ -70,6 +71,7 @@ var (
 	ErrNoProvider      = errors.New("ai: no provider configured")
 	ErrNoModel         = errors.New("ai: no model configured")
 	ErrMissingAPIKey   = errors.New("ai: missing API key for provider")
+	ErrMissingEndpoint = errors.New("ai: endpoint is required for provider")
 	ErrUnknownProvider = errors.New("ai: unknown provider")
 )
 
@@ -174,6 +176,19 @@ func (m *Manager) buildProvider(provider, endpoint, apiKeyRef, model string) (Pr
 			model:    model,
 			httpc:    httpc,
 			req:      cfg,
+		}, nil
+	case ProviderOpenAICompatible:
+		if endpoint == "" {
+			return nil, fmt.Errorf("%w: %s", ErrMissingEndpoint, provider)
+		}
+		return &openAIProvider{
+			name:           ProviderOpenAICompatible,
+			endpoint:       endpoint,
+			apiKey:         apiKey,
+			model:          model,
+			httpc:          httpc,
+			req:            cfg,
+			allowAllModels: true,
 		}, nil
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnknownProvider, provider)
