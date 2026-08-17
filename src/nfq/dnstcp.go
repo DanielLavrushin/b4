@@ -242,13 +242,13 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 
 		matched, set := s.worker.getMatcher().MatchSNIWithSource(domain, srcMac)
 		if !matched {
-			log.Tracef("DNS TCP: %s matched no set (src %s), forwarding unchanged", domain, srcMac)
+			log.Tracef("DNS TCP: %s matched no set (src %s), forwarding unchanged", dns.SafeName(domain), srcMac)
 			s.passthrough(client, origIP, origPort, origErr, query)
 			return
 		}
 
 		if escSet := s.worker.escalatedSetFor(cfg, domain, srcMac); escSet != nil && escSet != set {
-			log.Tracef("DNS TCP escalation hit for %s: %s -> %s", domain, set.Name, escSet.Name)
+			log.Tracef("DNS TCP escalation hit for %s: %s -> %s", dns.SafeName(domain), set.Name, escSet.Name)
 			set = escSet
 		}
 

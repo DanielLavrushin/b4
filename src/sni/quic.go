@@ -1,6 +1,7 @@
 package sni
 
 import (
+	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/quic"
 	"golang.org/x/crypto/cryptobyte"
 )
@@ -20,11 +21,16 @@ func ParseQUICClientHelloSNI(payload []byte) (string, bool) {
 		return "", false
 	}
 	host, err := extractSNIFromQUIC(crypto)
-	if err != nil || host == nil || len(host) == 0 {
+	if err != nil || len(host) == 0 {
+		return "", false
+	}
+	name := string(host)
+	if !validateSNI(name) {
+		log.Tracef("QUIC: invalid SNI extracted: %q", name)
 		return "", false
 	}
 	quic.ClearDCID(dcid)
-	return string(host), true
+	return name, true
 }
 
 func assembleSafe(dcid, plain []byte) ([]byte, bool) {

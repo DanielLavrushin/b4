@@ -1,5 +1,10 @@
 # B4 - Bye Bye Big Bro
 
+## [1.78.0] - 2026-08-17
+
+- FIXED: **Traffic that merely used port 53 was read as a name lookup** - a VPN or proxy tunnel hidden on that port had its encrypted contents taken for a domain name and matched against sets.
+- FIXED: **The server name read out of a QUIC connection was accepted whatever it contained** - any bytes of any length passed for a hostname, unlike the same name read from an ordinary HTTPS connection, which was checked.
+
 ## [1.77.0] - 2026-08-15
 
 - ADDED: **A Customize control on the dashboard: panels are reordered by dragging, widened or narrowed by dragging the right edge across a twelve column grid, and hidden with the eye, remembered per browser** - the order and the widths were fixed in the code, so a panel worth keeping an eye on, such as the MTProto proxy and the devices using it, sat below a domain list hundreds of rows long, there was no way to move it up, give it more room or drop a panel that never gets read, and a short panel beside a tall one left everything after it waiting below the taller one.
