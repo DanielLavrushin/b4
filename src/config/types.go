@@ -424,7 +424,7 @@ type Logging struct {
 	Syslog     bool      `json:"syslog"`
 	// Directory is the base folder for all b4 log files (errors.log, update.log, ...).
 	// Empty disables file logging entirely.
-	Directory string `json:"directory"`
+	Directory string `json:"directory" mcp:"deny"`
 }
 
 // ErrorFilePath returns the path to the runtime error log, or "" when file

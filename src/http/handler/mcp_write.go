@@ -44,6 +44,7 @@ var mcpWritableRoots = []string{
 	mcpSetPathPrefix,
 	"system.mtproto",
 	"system.socks5",
+	"system.logging",
 }
 
 // mcpEnums lists the accepted values for string fields whose set of options is
@@ -68,6 +69,48 @@ var mcpEnums = map[string][]string{
 	"system.mtproto.upstream_mode":           {"tcp", "ws", "auto"},
 }
 
+// mcpAlias gives a numeric setting a name a model can write. Order is the
+// order the options are reported in.
+type mcpAlias struct{ Name, Value string }
+
+// mcpValueAliases maps readable names onto the numbers b4 stores. The log
+// level is an integer in the config file, and its order is not the usual one:
+// trace is 2 and debug is 3, so debug is the most verbose of the four.
+var mcpValueAliases = map[string][]mcpAlias{
+	"system.logging.level": {
+		{"error", "0"}, {"info", "1"}, {"trace", "2"}, {"debug", "3"},
+	},
+}
+
+func mcpAliasNames(canonical string) []string {
+	aliases, ok := mcpValueAliases[canonical]
+	if !ok {
+		return nil
+	}
+	names := make([]string, 0, len(aliases))
+	for _, a := range aliases {
+		names = append(names, a.Name)
+	}
+	return names
+}
+
+// mcpApplyAlias turns a name into the stored value, and reports whether the
+// path has aliases at all so an unknown name can be refused rather than parsed
+// as a number.
+func mcpApplyAlias(canonical, raw string) (string, bool, error) {
+	aliases, ok := mcpValueAliases[canonical]
+	if !ok {
+		return raw, false, nil
+	}
+	for _, a := range aliases {
+		if strings.EqualFold(a.Name, raw) || a.Value == raw {
+			return a.Value, true, nil
+		}
+	}
+	return "", true, fmt.Errorf("value %q is not allowed for %s: expected one of %s",
+		raw, canonical, strings.Join(mcpAliasNames(canonical), ", "))
+}
+
 // mcpDeniedPathHint explains why a path outside the writable roots is refused,
 // so the model reports something useful instead of retrying.
 func mcpDeniedPathHint(path string) string {
@@ -82,12 +125,12 @@ func mcpDeniedPathHint(path string) string {
 		return "the packet capture engine is not writable: switching it underneath a live network can cut the machine off"
 	case strings.HasPrefix(path, "queue."):
 		return "the queue settings carry b4's own packet marks and are not writable"
-	case strings.HasPrefix(path, "system.logging") || strings.HasPrefix(path, "system.geo"):
-		return "log and geo data paths are not writable"
+	case strings.HasPrefix(path, "system.geo"):
+		return "the geo data file locations are not writable: pointing them at a missing file empties every geosite category at once"
 	case strings.HasPrefix(path, "system.ai") || strings.HasPrefix(path, "system.api"):
 		return "provider settings and API credentials are not writable"
 	default:
-		return "only strategy sets and the MTProto and SOCKS5 subsystems are writable"
+		return "only strategy sets, the MTProto and SOCKS5 subsystems and the logging settings are writable"
 	}
 }
 
@@ -261,6 +304,18 @@ func mcpDescribeKind(t reflect.Type) (string, bool) {
 	return "", false
 }
 
+// mcpFormatCurrent reports a value the way a caller would write it, so an
+// aliased setting reads back as its name rather than the stored number.
+func mcpFormatCurrent(canonical string, v reflect.Value) string {
+	raw := mcpFormatValue(v)
+	for _, a := range mcpValueAliases[canonical] {
+		if a.Value == raw {
+			return a.Name
+		}
+	}
+	return raw
+}
+
 func mcpFormatValue(v reflect.Value) string {
 	switch v.Kind() {
 	case reflect.Bool:
@@ -286,6 +341,14 @@ func mcpFormatValue(v reflect.Value) string {
 // mcpAssignValue parses raw according to the field's type and assigns it.
 func mcpAssignValue(v reflect.Value, canonical, raw string) error {
 	val := strings.TrimSpace(raw)
+
+	aliased, hasAliases, err := mcpApplyAlias(canonical, val)
+	if err != nil {
+		return err
+	}
+	if hasAliases {
+		val = aliased
+	}
 
 	if opts, ok := mcpEnums[canonical]; ok {
 		matched := false
@@ -401,7 +464,7 @@ func mcpWritablePaths(cfg *config.Config, sample *config.SetConfig) []mcpPathInf
 		out = append(out, mcpCollectPaths(reflect.ValueOf(sample).Elem(), mcpSetPathPrefix)...)
 	}
 	sys := reflect.ValueOf(cfg).Elem()
-	for _, root := range []string{"system.mtproto", "system.socks5"} {
+	for _, root := range []string{"system.mtproto", "system.socks5", "system.logging"} {
 		parts := strings.Split(root, ".")
 		cur := sys
 		ok := true
@@ -447,11 +510,15 @@ func mcpCollectPaths(v reflect.Value, prefix string) []mcpPathInfo {
 		if !ok {
 			continue
 		}
+		options := mcpEnums[path]
+		if names := mcpAliasNames(path); names != nil {
+			options = names
+		}
 		out = append(out, mcpPathInfo{
 			Path:    path,
 			Type:    kind,
-			Current: mcpFormatValue(fv),
-			Options: mcpEnums[path],
+			Current: mcpFormatCurrent(path, fv),
+			Options: options,
 		})
 	}
 	return out
@@ -499,8 +566,9 @@ type mcpRevertOut struct {
 func mcpWriteToolDescription() string {
 	var sb strings.Builder
 	sb.WriteString("Change one b4 setting and apply it live (no restart). ")
-	sb.WriteString("Writable: every setting inside a strategy set (targets, fragmentation, faking, TCP/UDP, DNS, escalation, routing) ")
-	sb.WriteString("and the MTProto and SOCKS5 subsystems. Address a per-set setting as sets[<id or name>].<path>, ")
+	sb.WriteString("Writable: every setting inside a strategy set (targets, fragmentation, faking, TCP/UDP, DNS, escalation, routing), ")
+	sb.WriteString("the MTProto and SOCKS5 subsystems, and the logging settings - system.logging.level takes ")
+	sb.WriteString("error, info, trace or debug, and debug is the most verbose. Address a per-set setting as sets[<id or name>].<path>, ")
 	sb.WriteString("for example sets[video].fragmentation.strategy or sets[video].tcp.seg2delay.\n")
 	sb.WriteString("Refused, always: every credential, the web server, the MCP settings themselves, the packet capture engine, ")
 	sb.WriteString("the firewall backend and the packet marks — a wrong value there can leave the machine unreachable.\n")
@@ -584,11 +652,11 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 			return nil, mcpSetValueOut{}, fmt.Errorf("path %q cannot be written", in.Path)
 		}
 
-		previous := mcpFormatValue(field)
+		previous := mcpFormatCurrent(canonical, field)
 		if err := mcpAssignValue(field, canonical, in.Value); err != nil {
 			return nil, mcpSetValueOut{}, err
 		}
-		current := mcpFormatValue(field)
+		current := mcpFormatCurrent(canonical, field)
 
 		if previous == current {
 			return nil, mcpSetValueOut{
@@ -607,10 +675,13 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 			return nil, mcpSetValueOut{}, fmt.Errorf("rejected: %w", err)
 		}
 
-		// Saving pushes the new config to the running subsystems, but the
-		// firewall rules are derived from it separately: enabling a set or
-		// changing its ports or MSS clamping reaches nftables/iptables only
-		// through here. Every REST write path does the same thing.
+		// Saving pushes the new config to the running subsystems, but two
+		// things sit outside that: settings applied to the process itself
+		// (log level, timezone, geodata paths), and the firewall rules, which
+		// are derived from the config separately and only reach
+		// nftables/iptables through PerformSoftRestart. Every REST write path
+		// does both.
+		api.applyRuntimeChanges(newCfg, oldCfg)
 		refreshed := api.PerformSoftRestart(newCfg, oldCfg)
 
 		mcpRecordChange(mcpChange{
@@ -660,6 +731,7 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 			mcpRecordChange(last)
 			return nil, mcpRevertOut{}, fmt.Errorf("could not restore the previous configuration: %w", err)
 		}
+		api.applyRuntimeChanges(last.Snapshot, oldCfg)
 		api.PerformSoftRestart(last.Snapshot, oldCfg)
 
 		log.Infof("mcp: reverted %s back to %s", last.Path, last.Previous)

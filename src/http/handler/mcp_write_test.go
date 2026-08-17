@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/log"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -270,6 +271,10 @@ func TestMCPDenyTagsArePresent(t *testing.T) {
 		{"system.socks5.username", ""},
 		{"system.socks5.password", ""},
 		{"system.mtproto.secrets", ""},
+		// Inside a writable root, but the directory is a filesystem location:
+		// pointing it elsewhere silently stops file logging, which is also what
+		// b4_logs_tail reads.
+		{"system.logging.directory", ""},
 	}
 	for _, d := range denied {
 		if _, err := mcpResolvePath(cfg, d.canonical, d.setRef); err == nil {
@@ -284,7 +289,6 @@ func TestMCPWritableRootsAreFailClosed(t *testing.T) {
 		"system.web_server.mcp.enabled",
 		"system.tables.skip_setup",
 		"system.ai.endpoint",
-		"system.logging.directory",
 		"system.checker.reference_domain",
 		"queue.mode",
 		"queue.threads",
@@ -301,6 +305,7 @@ func TestMCPWritableRootsAreFailClosed(t *testing.T) {
 		"sets[].targets.sni_domains",
 		"system.mtproto.port",
 		"system.socks5.udp_timeout",
+		"system.logging.level",
 	}
 	for _, path := range inside {
 		if !mcpPathAllowed(path) {
@@ -594,4 +599,64 @@ func TestMCPListWritablePaths(t *testing.T) {
 	if got := byPath["sets[].targets.sni_domains"]; got.Type != "list" {
 		t.Errorf("sni_domains type = %q, want list", got.Type)
 	}
+}
+
+func TestMCPWriteLogLevelByName(t *testing.T) {
+	srv, api := newMCPTestServerAPI(t, writableCfg(t))
+	session, ctx := connectMCP(t, srv)
+
+	out := decodeSetValue(t, callSetValue(t, session, ctx, "system.logging.level", "debug"))
+	if out.Current != "debug" {
+		t.Errorf("current = %q, want the name back rather than the stored number", out.Current)
+	}
+	if got := api.getCfg().System.Logging.Level; got != log.LevelDebug {
+		t.Errorf("stored level = %v, want %v", got, log.LevelDebug)
+	}
+	// The level is applied to the running process, not just saved.
+	if got := log.Level(log.CurLevel.Load()); got != log.LevelDebug {
+		t.Errorf("running log level = %v, want %v: applyRuntimeChanges was not called", got, log.LevelDebug)
+	}
+
+	if res := callSetValue(t, session, ctx, "system.logging.level", "verbose"); !res.IsError {
+		t.Error("a name outside the four levels must be rejected, not parsed as a number")
+	}
+
+	// Undo restores the level on the running process too.
+	rev := decodeRevert(t, session, ctx)
+	if rev.RestoredTo != "info" {
+		t.Errorf("undo restored %q, want info", rev.RestoredTo)
+	}
+	if got := log.Level(log.CurLevel.Load()); got != log.LevelInfo {
+		t.Errorf("running log level after undo = %v, want %v", got, log.LevelInfo)
+	}
+}
+
+func TestMCPListWritablePathsShowsLogLevelNames(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "b4_list_writable_paths",
+		Arguments: map[string]any{"prefix": "system.logging"},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var out mcpListPathsOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, p := range out.Paths {
+		if p.Path == "system.logging.directory" {
+			t.Error("the log directory must not be listed as writable")
+		}
+		if p.Path != "system.logging.level" {
+			continue
+		}
+		if strings.Join(p.Options, ",") != "error,info,trace,debug" {
+			t.Errorf("options = %v, want the four level names in verbosity order", p.Options)
+		}
+		return
+	}
+	t.Fatal("system.logging.level should be listed as writable")
 }

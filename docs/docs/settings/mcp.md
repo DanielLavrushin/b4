@@ -109,7 +109,7 @@ Only `POST` is served. `GET` and `DELETE` return 405, which is normal for this t
 | `b4_get_set` | One set in full | "Show the full configuration of the set named video." |
 | `b4_get_config` | The configuration, or one section of it | "Show the DNS section of the configuration." |
 | `b4_recent_connections` | Connections b4 processed, with the set that matched each | "Has any traffic for youtube.com reached b4?" |
-| `b4_logs_tail` | The tail of b4's error and system log | "Show the last 50 log lines mentioning nftables." |
+| `b4_logs_tail` | The tail of b4's error and system log | "Turn the log level up to debug, then show me the last 50 lines." |
 | `b4_metrics` | Packet-engine counters | "What is the current connection rate and memory use?" |
 | `b4_diagnostics` | OS, kernel, interfaces, firewall backend and the rule groups b4 installed | "Are b4's firewall rules actually installed?" |
 | `b4_list_writable_paths` | Which settings can be changed, with types and accepted values | "What can you change about the video set?" |
@@ -138,6 +138,7 @@ With **Allow configuration changes** off, nothing the AI does can alter b4. With
 
 - every setting inside a strategy set: targets, fragmentation, faking, TCP and UDP, DNS, escalation and routing
 - the MTProto and SOCKS5 subsystems
+- the logging settings, so the AI can raise the log level, reproduce a problem and read the result back
 
 `b4_list_writable_paths` reports the exact paths with their types, current values and accepted values, so a model does not have to guess one.
 
@@ -152,7 +153,11 @@ Refused whatever this setting is on:
 | Firewall backend | A wrong value leaves the machine with no rules at all |
 | Packet marks, routing tables | Load-bearing for b4's own traffic |
 | A set's id | Escalation targets refer to it |
-| Log and geo paths | |
+| The log directory and the geo file locations | Filesystem locations, not contents: a wrong log directory silently stops file logging, and a wrong geo path empties every geosite category at once |
+
+:::info Refusing a path is not the same as refusing access
+Only the *locations* are refused, never the contents. `b4_logs_tail` reads the log whatever the directory is set to, and `system.logging.level` is writable, so a model can turn the level up, reproduce the problem and read the log back without being able to move the file somewhere it cannot find.
+:::
 
 :::info The dividing line is recoverability, not sensitivity
 A wrong value inside a set breaks some sites, which is visible and reversible. A wrong web server port or capture engine can leave the machine unreachable with no way back in. Anything in the second group stays refused however useful it looks.
