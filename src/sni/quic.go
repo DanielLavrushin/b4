@@ -92,7 +92,7 @@ func extractSNIFromQUIC(crypto []byte) ([]byte, error) {
 				if !sniList.ReadUint16LengthPrefixed(&host) {
 					return nil, errNotHello
 				}
-				if len(host) == 0 {
+				if len(host) == 0 || len(host) > MaxSNINameLen {
 					return nil, errNotHello
 				}
 				hcopy := append([]byte(nil), host...)
