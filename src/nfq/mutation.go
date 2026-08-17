@@ -8,13 +8,14 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4/sock"
 	"github.com/daniellavrushin/b4/utils"
 )
 
 const (
 	MaxTCPPacketSize = 1460 // Standard MTU minus headers
-	MaxSNILength     = 255  // Max SNI length per spec
+	MaxSNILength     = sni.MaxSNINameLen
 )
 
 // GREASE values (RFC 8701)

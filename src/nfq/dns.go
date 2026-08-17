@@ -287,7 +287,7 @@ func logDNSEvent(proto string, set *config.SetConfig, domain string, clientIP, s
 	if set != nil {
 		setName = set.Name
 	}
-	log.LogConnection(proto, setName, domain, clientIP.String(), clientPort, "", serverIP.String(), 53, srcMac, "", action)
+	log.LogConnection(proto, setName, dns.SafeName(domain), clientIP.String(), clientPort, "", serverIP.String(), 53, srcMac, "", action)
 }
 
 func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dport uint16, payload []byte) int {
@@ -302,10 +302,10 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 			matcher := w.getMatcher()
 			if matchedSet, set := matcher.MatchSNIWithSource(domain, srcMac); matchedSet {
 				cfg := w.getConfig()
-				log.Tracef("DNS query: %s matched set %s (src %s)", domain, set.Name, srcMac)
+				log.Tracef("DNS query: %s matched set %s (src %s)", dns.SafeName(domain), set.Name, srcMac)
 
 				if escSet := w.escalatedSetFor(cfg, domain, srcMac); escSet != nil && escSet != set {
-					log.Tracef("DNS escalation hit for %s: %s -> %s", domain, set.Name, escSet.Name)
+					log.Tracef("DNS escalation hit for %s: %s -> %s", dns.SafeName(domain), set.Name, escSet.Name)
 					set = escSet
 				}
 
@@ -330,7 +330,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					if !ipv6Disabled {
 						if resp := dns.BuildBlockResponse(payload); resp != nil {
 							w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, sport, resp)
-							log.Tracef("DNS sinkhole: %s -> NXDOMAIN for %s (set: %s)", domain, clientIP, set.Name)
+							log.Tracef("DNS sinkhole: %s -> NXDOMAIN for %s (set: %s)", dns.SafeName(domain), clientIP, set.Name)
 							logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionSinkhole)
 							metrics.GetMetricsCollector().RecordBlock(domain, srcMac)
 							vc.drop()
@@ -359,7 +359,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 				useDoH := set.DNS.DoHURL != ""
 
 				if !(set.DNS.Enabled && (set.DNS.TargetDNS != "" || useDoH)) {
-					log.Tracef("DNS redirect: %s matched set %s but no redirect target configured, passing through", domain, set.Name)
+					log.Tracef("DNS redirect: %s matched set %s but no redirect target configured, passing through", dns.SafeName(domain), set.Name)
 					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionPassthrough)
 					return vc.accept()
 				}
@@ -387,7 +387,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 				if useDoH {
 					target = set.DNS.DoHURL
 				}
-				log.Tracef("DNS redirect: intercepting %s -> %s (set %s)", domain, target, set.Name)
+				log.Tracef("DNS redirect: intercepting %s -> %s (set %s)", dns.SafeName(domain), target, set.Name)
 				logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsRedirectAction(set))
 
 				select {
@@ -409,7 +409,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 				}(set, cfg)
 				return 0
 			} else {
-				log.Tracef("DNS query: %s matched no set (src %s), forwarding unchanged", domain, srcMac)
+				log.Tracef("DNS query: %s matched no set (src %s), forwarding unchanged", dns.SafeName(domain), srcMac)
 			}
 		}
 	}

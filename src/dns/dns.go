@@ -3,10 +3,19 @@ package dns
 import (
 	"encoding/binary"
 	"net"
+	"strings"
+)
+
+const (
+	MaxLabelLen = 63
+	MaxNameLen  = 255
 )
 
 func ParseQueryDomain(payload []byte) (string, bool) {
 	if len(payload) < 12 {
+		return "", false
+	}
+	if binary.BigEndian.Uint16(payload[4:6]) == 0 {
 		return "", false
 	}
 
@@ -16,9 +25,19 @@ func ParseQueryDomain(payload []byte) (string, bool) {
 	for pos < len(payload) {
 		length := int(payload[pos])
 		if length == 0 {
-			break
+			if len(domain) == 0 || pos+5 > len(payload) {
+				return "", false
+			}
+			return string(domain), true
 		}
-		if pos+1+length > len(payload) {
+		if length > MaxLabelLen || pos+1+length > len(payload) {
+			return "", false
+		}
+		need := length
+		if len(domain) > 0 {
+			need++
+		}
+		if len(domain)+need > MaxNameLen {
 			return "", false
 		}
 		if len(domain) > 0 {
@@ -28,10 +47,41 @@ func ParseQueryDomain(payload []byte) (string, bool) {
 		pos += 1 + length
 	}
 
-	if len(domain) == 0 {
-		return "", false
+	return "", false
+}
+
+const hexDigits = "0123456789abcdef"
+
+func nameByteUnsafe(c byte) bool {
+	return c < 0x20 || c == 0x7f
+}
+
+func SafeName(name string) string {
+	unsafeAt := -1
+	for i := 0; i < len(name); i++ {
+		if nameByteUnsafe(name[i]) {
+			unsafeAt = i
+			break
+		}
 	}
-	return string(domain), true
+	if unsafeAt < 0 {
+		return name
+	}
+
+	var b strings.Builder
+	b.Grow(len(name) + 16)
+	b.WriteString(name[:unsafeAt])
+	for i := unsafeAt; i < len(name); i++ {
+		c := name[i]
+		if nameByteUnsafe(c) {
+			b.WriteString(`\x`)
+			b.WriteByte(hexDigits[c>>4])
+			b.WriteByte(hexDigits[c&0x0f])
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
 }
 
 func ParseTransactionID(payload []byte) (uint16, bool) {

@@ -1,8 +1,11 @@
 package dns
 
 import (
+	"bytes"
 	"encoding/binary"
+	"math/rand"
 	"net"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -262,4 +265,131 @@ func TestParseResponseIPs(t *testing.T) {
 			t.Fatalf("expected no IPs for malformed payload, got %d", len(ips))
 		}
 	})
+}
+
+func dnsHeader(qdCount uint16) []byte {
+	h := make([]byte, 12)
+	binary.BigEndian.PutUint16(h[0:2], 0xBEEF)
+	binary.BigEndian.PutUint16(h[2:4], 0x0100)
+	binary.BigEndian.PutUint16(h[4:6], qdCount)
+	return h
+}
+
+func walkExact(total int, labelLens ...int) []byte {
+	msg := dnsHeader(1)
+	for _, n := range labelLens {
+		msg = append(msg, byte(n))
+		msg = append(msg, bytes.Repeat([]byte{0x41}, n)...)
+	}
+	if len(msg) != total {
+		panic("walkExact: built " + strconv.Itoa(len(msg)) + " want " + strconv.Itoa(total))
+	}
+	return msg
+}
+
+func TestParseQueryDomainAcceptsWellFormed(t *testing.T) {
+	cases := []string{
+		"a.co",
+		"stun.cloudflare.com",
+		"_acme-challenge.example.org",
+		strings.Repeat("a", 63) + ".example.com",
+	}
+	for _, name := range cases {
+		got, ok := ParseQueryDomain(buildDNSQuery(0x1111, name, 1))
+		if !ok || got != name {
+			t.Errorf("ParseQueryDomain(%q) = %q, %v; want %q, true", name, got, ok, name)
+		}
+	}
+}
+
+func TestParseQueryDomainRejectsNonDNS(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload []byte
+	}{
+		{
+			name:    "qdcount zero",
+			payload: append(dnsHeader(0), encodeDNSName("example.com")...),
+		},
+		{
+			name:    "label length above 63",
+			payload: walkExact(1280, 200, 200, 200, 200, 200, 200, 61),
+		},
+		{
+			name:    "walk ends on buffer edge with no root label",
+			payload: walkExact(21, 3, 4),
+		},
+		{
+			name:    "compression pointer in question",
+			payload: append(dnsHeader(1), 0xC0, 0x0C, 0x00, 0x01, 0x00, 0x01),
+		},
+		{
+			name: "name longer than 255",
+			payload: append(append(dnsHeader(1),
+				encodeDNSName(strings.TrimSuffix(strings.Repeat(strings.Repeat("a", 63)+".", 5), "."))...),
+				0x00, 0x01, 0x00, 0x01),
+		},
+		{
+			name:    "root label present but qtype truncated",
+			payload: append(dnsHeader(1), 0x03, 0x61, 0x62, 0x63, 0x00, 0x00, 0x01),
+		},
+		{
+			name:    "root label at first position",
+			payload: append(dnsHeader(1), 0x00, 0x00, 0x01, 0x00, 0x01),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, ok := ParseQueryDomain(tc.payload); ok {
+				t.Errorf("accepted non-DNS payload as %q (%d bytes)", got, len(got))
+			}
+		})
+	}
+}
+
+func TestParseQueryDomainBoundsTunnelPayloads(t *testing.T) {
+	rng := rand.New(rand.NewSource(0x5EED))
+	accepted := 0
+	const iterations = 20000
+
+	for i := 0; i < iterations; i++ {
+		payload := make([]byte, 1280)
+		rng.Read(payload)
+		name, ok := ParseQueryDomain(payload)
+		if !ok {
+			continue
+		}
+		accepted++
+		if len(name) > MaxNameLen {
+			t.Fatalf("accepted name of %d bytes, cap is %d", len(name), MaxNameLen)
+		}
+		if strings.ContainsAny(SafeName(name), "\x00\n\r") {
+			t.Fatalf("SafeName left a log-breaking byte in %q", SafeName(name))
+		}
+	}
+
+	if rate := float64(accepted) / iterations; rate > 0.01 {
+		t.Errorf("accepted %.3f%% of random 1280-byte payloads, want <= 1%%", rate*100)
+	}
+	t.Logf("accepted %d/%d random payloads", accepted, iterations)
+}
+
+func TestSafeName(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"stun.cloudflare.com", "stun.cloudflare.com"},
+		{"a\nb", `a\x0ab`},
+		{"a\x00b", `a\x00b`},
+		{"tail\x7f", `tail\x7f`},
+		{"\x01\x02", `\x01\x02`},
+		{"", ""},
+	}
+	for _, tc := range tests {
+		if got := SafeName(tc.in); got != tc.want {
+			t.Errorf("SafeName(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
 }
