@@ -25,6 +25,12 @@ const (
 	// this, every dial re-hammers all 11 and DC1/3/5 (which have no Telegram WS
 	// edge) stall entirely. Matches the observed recovery window in the field.
 	cfProxyDomainCooldown = 60 * time.Second
+	// cfProxyTimeoutCooldown is the same idea for a domain that answers nothing
+	// at all. It is longer than the 429 cooldown because the cost is different:
+	// a rate limit comes back in one round trip, while a filtered handshake is
+	// paid at the full dial timeout by every session that picks the domain, and
+	// the pinned domain is picked by all of them at once.
+	cfProxyTimeoutCooldown = 90 * time.Second
 )
 
 // defaultCFProxyEncoded mirrors tg-ws-proxy/proxy/config.py:_CFPROXY_ENC.

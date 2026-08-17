@@ -2,6 +2,7 @@ package mtproto
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/base64"
@@ -298,10 +299,90 @@ func (c *wsConn) tryWriteControl(op byte, payload []byte) {
 	}
 }
 
+// wsDialPort is the port every WebSocket route is reached on. It is a variable
+// only so a test can point a plan at a local listener.
+var wsDialPort = "443"
+
+// wsDialEndpoints resolves host to the addresses a dial may use, with any
+// address currently cooling moved to the back rather than dropped - a cooling
+// address is still a route, and dropping the last one leaves none.
+func wsDialEndpoints(ctx context.Context, host, sni string) []string {
+	if ip := net.ParseIP(host); ip != nil {
+		return []string{host}
+	}
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil || len(addrs) == 0 {
+		return []string{host}
+	}
+	fresh := make([]string, 0, len(addrs))
+	cooling := make([]string, 0, len(addrs))
+	for _, a := range addrs {
+		s := a.IP.String()
+		if wsEndpointCooling(s, sni) {
+			cooling = append(cooling, s)
+			continue
+		}
+		fresh = append(fresh, s)
+	}
+	return append(fresh, cooling...)
+}
+
+// dialWS opens a WebSocket to host, presenting sni. timeout bounds the whole
+// call, not one address.
+//
+// Go's dialer stops walking a name's addresses as soon as one of them completes
+// the TCP handshake, so an address that connects and then swallows the
+// ClientHello - the shape an SNI filter leaves behind - is never retried against
+// a sibling that would have answered in 100 ms. Measured on a censored network:
+// kws203.sorokodin.co.uk at 172.67.197.117 timed out after 8067 ms while the
+// same name at 104.21.84.223 connected in 227 ms one second later.
 func dialWS(host, sni, path string, timeout time.Duration, mark uint) (net.Conn, error) {
 	if path == "" {
 		path = "/apiws"
 	}
+	deadline := time.Now().Add(timeout)
+
+	rctx, rcancel := context.WithDeadline(context.Background(), deadline)
+	eps := wsDialEndpoints(rctx, host, sni)
+	rcancel()
+
+	attempts := len(eps)
+	if attempts > wsDialMaxEndpoints {
+		attempts = wsDialMaxEndpoints
+	}
+
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		remaining := time.Until(deadline)
+		// The first address is always tried: the caller already decided this dial
+		// was worth starting, and refusing it here would report a route as failed
+		// without having touched it.
+		if i > 0 && remaining < wsDialMinAttempt {
+			break
+		}
+		slot := remaining
+		if left := attempts - i; left > 1 {
+			if slot = remaining / time.Duration(left); slot < wsDialMinAttempt {
+				slot = wsDialMinAttempt
+			}
+		}
+		conn, err := dialWSEndpoint(eps[i], sni, path, slot, mark)
+		if err == nil {
+			wsEndpointRecovered(eps[i], sni)
+			return conn, nil
+		}
+		lastErr = err
+		if isDialTimeout(err) {
+			wsEndpointFailed(eps[i], sni)
+		}
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("tcp dial %s: no address", host)
+	}
+	return nil, lastErr
+}
+
+func dialWSEndpoint(host, sni, path string, timeout time.Duration, mark uint) (net.Conn, error) {
 	dialer := &net.Dialer{Timeout: timeout}
 	if mark > 0 {
 		dialer.Control = func(network, address string, c syscall.RawConn) error {
@@ -314,7 +395,7 @@ func dialWS(host, sni, path string, timeout time.Duration, mark uint) (net.Conn,
 			return sErr
 		}
 	}
-	raw, err := dialer.Dial("tcp", net.JoinHostPort(host, "443"))
+	raw, err := dialer.Dial("tcp", net.JoinHostPort(host, wsDialPort))
 	if err != nil {
 		return nil, fmt.Errorf("tcp dial %s: %w", host, err)
 	}

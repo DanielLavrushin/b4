@@ -432,8 +432,9 @@ func (s *Server) startLocked() error {
 		pool := newWSPool(MTProtoUpstream{
 			WSEndpointHost: mtCfg.WSEndpointHost,
 			WSCustomDomain: mtCfg.WSCustomDomain,
+			CFProxyEnabled: mtCfg.CFProxyEnabled,
 		}, selfDialMark(), wsPoolDefaultSize)
-		pool.warmup([]int{2, 4})
+		pool.warmup(wsWarmupDCs(mtCfg))
 		s.wsPool.Store(pool)
 		if len(workerDomains(mtCfg)) > 0 {
 			s.workerPool.Store(newCFWorkerPool(selfDialMark()))
