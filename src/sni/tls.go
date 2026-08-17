@@ -12,6 +12,8 @@ const (
 	tlsExtServerName uint16 = 0
 )
 
+const MaxSNINameLen = 255
+
 type parseErr string
 
 func (e parseErr) Error() string { return string(e) }
@@ -32,7 +34,7 @@ func isValidSNIChar(b byte) bool {
 }
 
 func validateSNI(sni string) bool {
-	if len(sni) == 0 {
+	if len(sni) == 0 || len(sni) > MaxSNINameLen {
 		return false
 	}
 	for i := 0; i < len(sni); i++ {
