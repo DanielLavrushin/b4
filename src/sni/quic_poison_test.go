@@ -213,3 +213,39 @@ func TestParseQUICClientHelloSNIAssemblesOutOfOrderFragments(t *testing.T) {
 		t.Fatalf("late head fragment should complete the hello: got (%q,%v), want (%q,true)", got, ok, host)
 	}
 }
+
+func TestSNIExtractorsCapNameBeforeCopying(t *testing.T) {
+	oversized := strings.Repeat("a", MaxSNINameLen-3) + ".com"
+	atLimit := strings.Repeat("a", MaxSNINameLen-4) + ".com"
+
+	if len(oversized) <= MaxSNINameLen || len(atLimit) != MaxSNINameLen {
+		t.Fatalf("fixture lengths wrong: oversized=%d atLimit=%d", len(oversized), len(atLimit))
+	}
+
+	if got, err := extractSNIFromQUIC(qBuildClientHello([]byte(oversized))); err == nil || got != nil {
+		t.Errorf("QUIC extractor returned %d bytes for an oversized name, want a rejection", len(got))
+	}
+	if got, err := extractSNIFromQUIC(qBuildClientHello([]byte(atLimit))); err != nil || string(got) != atLimit {
+		t.Errorf("QUIC extractor rejected a name at the limit: err=%v len=%d", err, len(got))
+	}
+
+	if got := extractSNIFromExtension(sniExtensionData(oversized)); got != "" {
+		t.Errorf("TLS extractor returned %d bytes for an oversized name, want empty", len(got))
+	}
+	if got := extractSNIFromExtension(sniExtensionData(atLimit)); got != atLimit {
+		t.Errorf("TLS extractor rejected a name at the limit: got %d bytes", len(got))
+	}
+}
+
+func sniExtensionData(host string) []byte {
+	entry := append([]byte{0x00}, qu16(len(host))...)
+	entry = append(entry, host...)
+	return append(qu16(len(entry)), entry...)
+}
+
+func TestParseTLSClientHelloSNIRejectsOversizedName(t *testing.T) {
+	oversized := strings.Repeat("a", MaxSNINameLen-3) + ".com"
+	if got, _, ok := ParseTLSClientHelloSNI(tlsRecordWithSNI(oversized)); ok {
+		t.Errorf("accepted oversized TLS SNI of %d bytes", len(got))
+	}
+}

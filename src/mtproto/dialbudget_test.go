@@ -149,6 +149,24 @@ func TestCooledEdgeIsSteppedOverWhenAnotherRouteExists(t *testing.T) {
 	}
 }
 
+func TestOneAttemptCannotOutlastItsTimeout(t *testing.T) {
+	wsResetState()
+	t.Cleanup(wsResetState)
+	withWSDialPort(t, blackholeListener(t))
+
+	// Connect, TLS and upgrade share one deadline. Given a timeout each, an
+	// attempt could run to twice what it was handed, and the budget it came out
+	// of is spent by then.
+	const timeout = 1200 * time.Millisecond
+	start := time.Now()
+	if _, err := dialWS("127.0.0.1", "kws2.web.telegram.org", "", timeout, 0); err == nil {
+		t.Fatal("dial against a blackhole succeeded")
+	}
+	if elapsed := time.Since(start); elapsed > timeout+400*time.Millisecond {
+		t.Fatalf("one attempt took %v on a %v timeout", elapsed, timeout)
+	}
+}
+
 func TestAnAddressIsOnlyBlamedWhenItHadTimeToAnswer(t *testing.T) {
 	wsResetState()
 	t.Cleanup(wsResetState)

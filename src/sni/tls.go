@@ -313,7 +313,7 @@ func extractSNIFromExtension(ed []byte) string {
 		nameLen := int(ed[r])<<8 | int(ed[r+1])
 		r += 2
 
-		if nameLen <= 0 || r+nameLen > listEnd || r+nameLen > len(ed) {
+		if nameLen <= 0 || nameLen > MaxSNINameLen || r+nameLen > listEnd || r+nameLen > len(ed) {
 			break
 		}
 

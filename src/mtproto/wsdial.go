@@ -397,8 +397,16 @@ func dialWS(host, sni, path string, timeout time.Duration, mark uint) (net.Conn,
 	return nil, lastErr
 }
 
+// dialWSEndpoint opens one WebSocket to one address. timeout bounds the attempt
+// end to end - connect, TLS and upgrade share a single deadline. A timeout per
+// stage instead of a deadline over all of them let a connect that nearly ran out
+// hand a full second helping to the handshake behind it, which is the shape a
+// censored path has: the SYN arrives after retransmits and the ClientHello is
+// then swallowed. Twice the intended wait lands on the client, and the dial
+// budget it was drawn from is already spent.
 func dialWSEndpoint(host, sni, path string, timeout time.Duration, mark uint) (net.Conn, error) {
-	dialer := &net.Dialer{Timeout: timeout}
+	deadline := time.Now().Add(timeout)
+	dialer := &net.Dialer{Deadline: deadline}
 	if mark > 0 {
 		dialer.Control = func(network, address string, c syscall.RawConn) error {
 			var sErr error
@@ -431,7 +439,7 @@ func dialWSEndpoint(host, sni, path string, timeout time.Duration, mark uint) (n
 		MinVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: true,
 	})
-	_ = tlsConn.SetDeadline(time.Now().Add(timeout))
+	_ = tlsConn.SetDeadline(deadline)
 	if err := tlsConn.Handshake(); err != nil {
 		raw.Close()
 		return nil, fmt.Errorf("tls handshake %s: %w", sni, err)
