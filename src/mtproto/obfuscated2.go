@@ -29,8 +29,23 @@ const (
 
 	telegramWSEdgeIP = "149.154.167.220"
 	dcDefaultPort    = 443
-	wsDialTimeout    = 8 * time.Second
-	tcpDialTimeout   = 8 * time.Second
+
+	// A client is already committed by the time the dial starts: the fake-TLS and
+	// obfuscated handshakes are answered locally, in under a millisecond, so
+	// Telegram counts the session as accepted and then waits for a data center
+	// that b4 has not reached yet. It does not wait long, and it holds the proxy
+	// responsible for the silence - the dialog that says the proxy is
+	// misconfigured and will be disabled. In a capture from a censored network
+	// every session whose dial ran past five seconds was found already closed
+	// when the relay finally started, up=N down=0 in 0ms, while every session
+	// that started relaying inside 300 ms carried traffic normally. So the whole
+	// dial, across every transport it tries, has to fit inside that window with
+	// room to spare, and one dead candidate must not be able to spend it.
+	dialBudget    = 4500 * time.Millisecond
+	wsDialTimeout = 3 * time.Second
+	// tcpDialTimeout is the direct-to-DC fallback, reached only after the
+	// WebSocket routes, and it is bounded by the remaining budget in any case.
+	tcpDialTimeout = 3 * time.Second
 )
 
 var wsEdgeServedDCs = map[int]bool{2: true, 4: true}
@@ -210,7 +225,10 @@ type transportPlan struct {
 // engine's own reinjected packets from being queued again, so an upstream dial
 // carrying it went out with none of b4's DPI bypass applied - measured against a
 // data center from a censored network, 114 ms unmarked against a timeout marked.
-func selfDialMark() uint {
+// It is a variable so a test can drop the mark: setting SO_MARK needs
+// CAP_NET_ADMIN, and without it every dial fails on the setsockopt instead of
+// on the route under test.
+var selfDialMark = func() uint {
 	return uint(config.SelfDialMark)
 }
 
@@ -457,10 +475,33 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 	nativeCooling := wsCooldownActive(dc)
 	workerPool := pools.workerPool()
 
+	// A cooling edge is one that just went unanswered, and both native plans
+	// resolve to the same address, so trying them is two timeouts spent to learn
+	// what the cooldown already recorded. Step over them while another transport
+	// exists; the pool keeps probing the edge in the background and clears the
+	// cooldown the moment it answers again.
+	haveFallback := hasNonNativePlan(plans)
+	skipNative := nativeCooling && haveFallback
+
+	deadline := time.Now().Add(dialBudget)
 	var attempts []string
 	nativeTried := 0
 	nativeRedirects := 0
+	untried := 0
 	for _, p := range plans {
+		// The per-address record outlives the per-DC one, which any success
+		// clears. Without it a flapping edge was retried from scratch on every
+		// session and spent the whole budget before a Cloudflare domain was
+		// reached even once.
+		if p.native && haveFallback && (skipNative || wsEndpointCooling(p.dialHost, p.sni)) {
+			untried++
+			continue
+		}
+		remaining := time.Until(deadline)
+		if remaining < wsDialMinAttempt {
+			untried++
+			continue
+		}
 		if p.isWorker {
 			if raw := workerPool.get(p); raw != nil {
 				obf, oerr := completeObfuscation(raw, dc, protoTag)
@@ -490,23 +531,54 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 			if p.native && nativeCooling {
 				timeout = wsDialTimeoutCooldown
 			}
+			if timeout > remaining {
+				timeout = remaining
+			}
 			conn, derr = dialOneWS(p, selfDialMark(), timeout)
 		} else {
-			conn, derr = dialOne(p, selfDialMark())
+			timeout := tcpDialTimeout
+			if timeout > remaining {
+				timeout = remaining
+			}
+			conn, derr = dialOneTCP(p, selfDialMark(), timeout)
 		}
 		if derr != nil {
 			attempts = append(attempts, fmt.Sprintf("%s: %s", p.describe(), shortErr(derr)))
+			timedOut := isDialTimeout(derr)
 			if p.kind == transportWS {
 				if p.native {
 					nativeTried++
 					if isWSRedirect(derr) {
 						nativeRedirects++
+					} else if timedOut {
+						// Cool the edge down here rather than after the loop. The
+						// loop only reaches its end when every transport failed, so
+						// an edge that timed out and was then rescued by a later
+						// route was recorded as healthy, and stayed first in line
+						// at full price for the next session as well. Measured on a
+						// censored network, the same 8 s timeout to
+						// 149.154.167.220 recurred at 18:29, 18:32 and 18:33.
+						wsRecordFailure(dc, false)
+						nativeCooling = true
+						// The sibling name resolves to the same address, so it is
+						// the same timeout again. Spend what is left of the budget
+						// on a route that might differ.
+						skipNative = haveFallback
 					}
 				}
-				if p.cfBase != "" && wsRateLimited(derr) {
-					cfBalancerInst.penalize(p.cfBase, cfProxyDomainCooldown)
+				if p.cfBase != "" {
+					switch {
+					case wsRateLimited(derr):
+						cfBalancerInst.penalize(p.cfBase, cfProxyDomainCooldown)
+					case timedOut:
+						// A domain that goes unanswered costs far more than one
+						// that answers 429, and nothing used to record it, so
+						// every session in flight paid the same timeout on the
+						// same pinned domain.
+						cfBalancerInst.penalize(p.cfBase, cfProxyTimeoutCooldown)
+					}
 				}
-			} else if isDialTimeout(derr) {
+			} else if timedOut {
 				tcpRecordFailure(p.addr)
 			}
 			log.Debugf("%s DC %d %s failed after %dms: %v", tag, dc, p.describe(), time.Since(start).Milliseconds(), derr)
@@ -540,6 +612,12 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 
 	if nativeTried > 0 {
 		wsRecordFailure(dc, nativeRedirects == nativeTried)
+	}
+	if untried > 0 {
+		// Say so rather than letting the list look exhausted. Walking the rest is
+		// not the alternative: past this point the client has stopped waiting, so
+		// a connection made now is made for nobody.
+		log.Debugf("%s DC %d gave up with %d transport(s) untried (dial budget %v spent)", tag, dc, untried, dialBudget)
 	}
 	if len(attempts) == 0 {
 		return nil, dialInfo{}, fmt.Errorf("no transport available (all in cooldown or blacklisted)")
@@ -650,6 +728,15 @@ func probeOne(p transportPlan, mark uint, dc int) TransportProbeResult {
 	return res
 }
 
+func hasNonNativePlan(plans []transportPlan) bool {
+	for _, p := range plans {
+		if !p.native {
+			return true
+		}
+	}
+	return false
+}
+
 func dialOne(p transportPlan, mark uint) (net.Conn, error) {
 	switch p.kind {
 	case transportWS:
@@ -659,28 +746,32 @@ func dialOne(p transportPlan, mark uint) (net.Conn, error) {
 		}
 		return dialWS(host, p.sni, p.wsPath, wsDialTimeout, mark)
 	default:
-		dialer := net.Dialer{Timeout: tcpDialTimeout}
-		if mark > 0 {
-			dialer.Control = func(network, address string, c syscall.RawConn) error {
-				var sErr error
-				if err := c.Control(func(fd uintptr) {
-					sErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, unix.SO_MARK, int(mark))
-				}); err != nil {
-					return err
-				}
-				return sErr
-			}
-		}
-		conn, err := dialer.Dial("tcp", p.addr)
-		if err != nil {
-			return nil, err
-		}
-		if tc, ok := conn.(*net.TCPConn); ok {
-			_ = tc.SetNoDelay(true)
-			setTCPUserTimeout(tc, defaultUserTimeout)
-		}
-		return conn, nil
+		return dialOneTCP(p, mark, tcpDialTimeout)
 	}
+}
+
+func dialOneTCP(p transportPlan, mark uint, timeout time.Duration) (net.Conn, error) {
+	dialer := net.Dialer{Timeout: timeout}
+	if mark > 0 {
+		dialer.Control = func(network, address string, c syscall.RawConn) error {
+			var sErr error
+			if err := c.Control(func(fd uintptr) {
+				sErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, unix.SO_MARK, int(mark))
+			}); err != nil {
+				return err
+			}
+			return sErr
+		}
+	}
+	conn, err := dialer.Dial("tcp", p.addr)
+	if err != nil {
+		return nil, err
+	}
+	if tc, ok := conn.(*net.TCPConn); ok {
+		_ = tc.SetNoDelay(true)
+		setTCPUserTimeout(tc, defaultUserTimeout)
+	}
+	return conn, nil
 }
 
 func completeObfuscation(conn net.Conn, dc int, protoTag uint32) (*ObfuscatedConn, error) {
