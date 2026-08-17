@@ -446,7 +446,7 @@ func (l Logging) UpdateLogPath() string {
 }
 
 type SetConfig struct {
-	Id            string              `json:"id"`
+	Id            string              `json:"id" mcp:"deny"`
 	Name          string              `json:"name"`
 	TCP           TCPConfig           `json:"tcp"`
 	UDP           UDPConfig           `json:"udp"`

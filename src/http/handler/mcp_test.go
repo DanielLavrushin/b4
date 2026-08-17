@@ -49,13 +49,22 @@ func mcpTestCfg() *config.Config {
 
 func newMCPTestServer(t *testing.T, cfg *config.Config) *httptest.Server {
 	t.Helper()
+	srv, _ := newMCPTestServerAPI(t, cfg)
+	return srv
+}
+
+// newMCPTestServerAPI also hands back the API, so a test can read the
+// configuration as it stands after a write rather than the value it passed in:
+// saving stores a new pointer instead of mutating the original.
+func newMCPTestServerAPI(t *testing.T, cfg *config.Config) (*httptest.Server, *API) {
+	t.Helper()
 	api := &API{cfgPtr: testCfgPtr(cfg), geodataManager: geodat.NewGeodataManager("", "")}
 	mux := http.NewServeMux()
 	api.mux = mux
 	api.RegisterMCPApi()
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	return srv
+	return srv, api
 }
 
 func connectMCP(t *testing.T, srv *httptest.Server) (*mcp.ClientSession, context.Context) {

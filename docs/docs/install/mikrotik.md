@@ -15,6 +15,17 @@ On MikroTik RouterOS 7.x, b4 runs as a container.
 Containers on MikroTik require external storage - the router's internal memory is not enough.
 :::
 
+## Community image
+
+Besides the official `lavrushin/b4` image, there is a community image built specifically for RouterOS: [wiktorbgu/b4-mikrotik](https://hub.docker.com/r/wiktorbgu/b4-mikrotik), maintained by wiktorbgu. It follows b4 releases with matching version tags and packages the service for RouterOS containers:
+
+- b4 runs as an OpenRC service inside the container, so it can be restarted without stopping the container
+- the entrypoint selects the firewall backend at startup - nftables, or iptables-legacy with ipset - depending on which kernel modules RouterOS exposes to the container
+- it normalizes the priorities of the `main` and `default` routing rules, which RouterOS 7.22 passes into the container in a form that breaks policy routing
+- a companion container, [wiktorbgu/dnsproxy-mikrotik](https://hub.docker.com/r/wiktorbgu/dnsproxy-mikrotik), forwards DNS queries over DoH so they are not intercepted
+
+Setup instructions are on the image page. The image is maintained by the community, not built by the b4 project, and its build sources are not published, so its contents cannot be checked against this repository. The guide below uses the official image.
+
 ## Example parameters
 
 The guide uses the following values. Replace with your own:

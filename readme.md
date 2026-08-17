@@ -339,6 +339,13 @@ A few English pages (Discovery, DPI Detector, Connections, Logs and the Advanced
 
 Contributions are accepted through GitHub pull requests.
 
+## Community projects
+
+Maintained outside this repository:
+
+- [luci-app-b4](https://github.com/BugOldfag/luci-app-b4) by BugOldfag - adds b4 management to the LuCI interface on OpenWrt
+- [b4-mikrotik](https://hub.docker.com/r/wiktorbgu/b4-mikrotik) by wiktorbgu - container image packaged for MikroTik RouterOS, with an OpenRC-supervised service, startup selection of the firewall backend and a fix for the routing rule priorities RouterOS 7.22 passes into containers
+
 ## Credits
 
 Based on research from:

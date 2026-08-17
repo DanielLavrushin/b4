@@ -16,7 +16,7 @@ Configured in **Settings -> API -> MCP server**.
 | Field | Description |
 | --- | --- |
 | **Enable MCP server** | Serves the endpoint at `/api/mcp`. Off by default. |
-| **Allow configuration changes** | Lets the AI change a fixed list of settings. Off by default. See [Changing settings](#changing-settings). |
+| **Allow configuration changes** | Lets the AI change settings as well as read them. Off by default. See [Changing settings](#changing-settings). |
 | **MCP token** | The credential AI applications present. **Generate** creates one. |
 | **Endpoint** | The address to paste into the AI application. |
 
@@ -112,7 +112,9 @@ Only `POST` is served. `GET` and `DELETE` return 405, which is normal for this t
 | `b4_logs_tail` | The tail of b4's error and system log | "Show the last 50 log lines mentioning nftables." |
 | `b4_metrics` | Packet-engine counters | "What is the current connection rate and memory use?" |
 | `b4_diagnostics` | OS, kernel, interfaces, firewall backend and the rule groups b4 installed | "Are b4's firewall rules actually installed?" |
-| `b4_set_config_value` | Changes one allow-listed setting | "Switch the video set to the extsplit strategy." |
+| `b4_list_writable_paths` | Which settings can be changed, with types and accepted values | "What can you change about the video set?" |
+| `b4_set_config_value` | Changes one setting and applies it live | "Switch the video set to the extsplit strategy." |
+| `b4_revert_last_change` | Restores the configuration from before the last change | "That made it worse, put it back." |
 
 A ready-made prompt named `diagnose_domain` is published alongside the tools. Applications that support prompts list it separately. It takes a domain and walks the model through status, coverage, configuration and firewall checks in order.
 
@@ -132,21 +134,46 @@ Tool output may be forwarded to a third-party model, so credentials are removed 
 
 ## Changing settings
 
-With **Allow configuration changes** off, nothing the AI does can alter b4. With it on, exactly four things can be changed and nothing else:
+With **Allow configuration changes** off, nothing the AI does can alter b4. With it on, two areas become writable:
 
-| Change | Values |
+- every setting inside a strategy set: targets, fragmentation, faking, TCP and UDP, DNS, escalation and routing
+- the MTProto and SOCKS5 subsystems
+
+`b4_list_writable_paths` reports the exact paths with their types, current values and accepted values, so a model does not have to guess one.
+
+Refused whatever this setting is on:
+
+| Refused | Reason |
 | --- | --- |
-| MTProto proxy | on, off |
-| SOCKS5 proxy | on, off |
-| A set's enabled state | on, off |
-| A set's fragmentation strategy | `combo`, `hybrid`, `tcp`, `ip`, `tls`, `oob`, `disorder`, `extsplit`, `firstbyte`, `none` |
+| All credentials | Web, SOCKS5, MTProto, a set's upstream proxy |
+| Web server settings | Moving or locking the interface removes the way to undo the change |
+| The MCP settings themselves | The AI cannot widen its own permissions |
+| Packet capture engine and TUN | Switching it underneath a live network can cut the machine off |
+| Firewall backend | A wrong value leaves the machine with no rules at all |
+| Packet marks, routing tables | Load-bearing for b4's own traffic |
+| A set's id | Escalation targets refer to it |
+| Log and geo paths | |
 
-The list is fixed in the binary rather than matched by pattern, so anything outside it is rejected. That includes every credential, the log and geo paths, and the MCP settings themselves, which is why the AI cannot widen its own permissions.
+:::info The dividing line is recoverability, not sensitivity
+A wrong value inside a set breaks some sites, which is visible and reversible. A wrong web server port or capture engine can leave the machine unreachable with no way back in. Anything in the second group stays refused however useful it looks.
+:::
+
+The writable areas are named as whole subtrees in the binary and the exclusions inside them are marked on the fields themselves, so a setting added to b4 later is unwritable until someone opts it in.
 
 A change goes through the same validation and live-apply path as the web interface. An invalid result is rejected and nothing is saved. An accepted change takes effect at once, including the firewall rules when enabling a set alters which ports b4 intercepts. The tool reports the previous and the new value.
 
-:::warning Approve each change
-The tool is marked destructive in the protocol, so applications that support approval prompts ask before every call. Approving a change that is not understood is the same as making it by hand in the web interface.
+:::warning List settings are replaced, not appended to
+Writing a set's domains replaces the whole list. A model should read the current value and send it back in full, and the previous value is reported so the change can be undone.
+:::
+
+## Undoing a change
+
+`b4_revert_last_change` restores the configuration as it stood before the most recent change and applies it live. Repeating it walks further back, one change at a time.
+
+The history is held in memory and covers only changes made through MCP since b4 last started. Edits made in the web interface are not part of it, and a restart clears it.
+
+:::tip Ask for the undo in the same conversation
+The model has the previous value in the tool's reply, so "that made it worse, put it back" is enough.
 :::
 
 ## Browser origins

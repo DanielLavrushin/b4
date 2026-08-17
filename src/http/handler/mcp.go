@@ -250,12 +250,12 @@ type mcpCheckDomainIn struct {
 }
 
 type mcpCheckDomainOut struct {
-	Matches        []SetDomainMatch `json:"matches"`
-	Checked        []string         `json:"checked"`
-	Covered        bool             `json:"covered"`
-	CoveredByDomain map[string]bool `json:"covered_by_domain"`
-	Truncated       bool            `json:"truncated"`
-	Note            string          `json:"note,omitempty"`
+	Matches         []SetDomainMatch `json:"matches"`
+	Checked         []string         `json:"checked"`
+	Covered         bool             `json:"covered"`
+	CoveredByDomain map[string]bool  `json:"covered_by_domain"`
+	Truncated       bool             `json:"truncated"`
+	Note            string           `json:"note,omitempty"`
 }
 
 type mcpSetSummary struct {
