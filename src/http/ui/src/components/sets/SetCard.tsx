@@ -234,7 +234,9 @@ const buildRouteChips = (set: B4SetConfig, t: TFn): FacetChip[] => {
   } else {
     chips.push({
       key: "route",
-      label: `→ ${routing.egress_interface || "?"}`,
+      label: routing.egress_ip
+        ? `→ ${routing.egress_interface || "?"} (${routing.egress_ip})`
+        : `→ ${routing.egress_interface || "?"}`,
       icon: <NetworkIcon sx={{ fontSize: 12 }} />,
       tooltip: t("sets.card.routeInterface"),
       variant: "outlined",

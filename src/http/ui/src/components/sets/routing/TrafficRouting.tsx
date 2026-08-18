@@ -93,8 +93,14 @@ export const TrafficRouting = ({
   } else if (isBlock) {
     flowDestination = t("sets.routing.flowBlocked");
   } else {
-    flowDestination =
-      routing.egress_interface || t("sets.routing.flowNoOutput");
+    flowDestination = !routing.egress_interface
+      ? t("sets.routing.flowNoOutput")
+      : routing.egress_ip
+        ? t("sets.routing.flowIfaceWithSource", {
+            iface: routing.egress_interface,
+            ip: routing.egress_ip,
+          })
+        : routing.egress_interface;
   }
 
   return (
@@ -367,6 +373,35 @@ export const TrafficRouting = ({
                   </MenuItem>
                 ))}
               </B4TextField>
+            </Grid>
+          )}
+
+          {isInterface && (
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4TextField
+                label={t("sets.routing.egressIp")}
+                value={routing.egress_ip ?? ""}
+                onChange={(e) => onChange("routing.egress_ip", e.target.value)}
+                disabled={!routing.egress_interface}
+                helperText={
+                  routing.egress_interface
+                    ? t("sets.routing.egressIpHelper")
+                    : t("sets.routing.egressIpNeedsInterface")
+                }
+                placeholder="192.168.1.51"
+                selectOnFocus
+              />
+            </Grid>
+          )}
+
+          {isInterface && routing.egress_ip && (
+            <Grid size={{ xs: 12 }}>
+              <B4Alert severity="info">
+                {t("sets.routing.egressIpNote", {
+                  ip: routing.egress_ip,
+                  iface: routing.egress_interface,
+                })}
+              </B4Alert>
             </Grid>
           )}
 

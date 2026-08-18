@@ -25,6 +25,7 @@ type routeState struct {
 	mark        uint32
 	table       int
 	iface       string
+	egressIP    string
 	tproxyPort  int
 	upstreamKey string
 	sourcesKey  string
@@ -54,6 +55,7 @@ type routeBackend interface {
 	ensureJumpRule(baseChain, targetChain string, isMangle bool, atTop bool)
 	deleteJumpRules(baseChain, targetChain string, isMangle bool)
 	addMasqueradeRule(chain string, mark uint32, iface string, v6 bool)
+	addSNATRule(chain, setName, iface, srcIP string, v6 bool)
 	flushIPSet(name string)
 	destroyIPSet(name string)
 	clearAll()
@@ -369,6 +371,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		st.mark = mark
 		st.table = table
 		st.iface = set.Routing.EgressInterface
+		st.egressIP = set.Routing.EgressIP
 	}
 	return st
 }
@@ -378,6 +381,7 @@ func routeStateEqual(a, b routeState) bool {
 		a.mark == b.mark &&
 		a.table == b.table &&
 		a.iface == b.iface &&
+		a.egressIP == b.egressIP &&
 		a.tproxyPort == b.tproxyPort &&
 		a.upstreamKey == b.upstreamKey &&
 		a.blockAction == b.blockAction &&
@@ -1003,8 +1007,8 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 	routeAddOutChainRules(be, cfg, st)
 	routeEnsureChainJumps(be, st, gate)
 
-	routeAddMasqueradeRules(be, set.Routing.EgressInterface, st.chainSNAT, st.mark, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
-	routeEnsurePolicyRouting(set.Routing.EgressInterface, st.mark, st.table, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	routeAddEgressRules(be, st, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	routeEnsurePolicyRouting(st, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	return nil
 }
 
@@ -1041,7 +1045,73 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState) {
 func routeEnsureChainJumps(be routeBackend, st routeState, gate routeDeviceGate) {
 	routeEnsureGatedPreJump(be, st.chainPre, gate)
 	be.ensureJumpRule("OUTPUT", st.chainOut, true, true)
-	be.ensureJumpRule("POSTROUTING", st.chainSNAT, false, false)
+	be.ensureJumpRule("POSTROUTING", st.chainSNAT, false, st.egressIP != "")
+}
+
+func routeEgressIPForFamily(egressIP string, v6 bool) string {
+	if egressIP == "" {
+		return ""
+	}
+	parsed := net.ParseIP(egressIP)
+	if parsed == nil {
+		return ""
+	}
+	if (parsed.To4() != nil) == v6 {
+		return ""
+	}
+	return parsed.String()
+}
+
+func routeEgressIPOnIface(iface, egressIP string) bool {
+	want := net.ParseIP(egressIP)
+	if iface == "" || want == nil {
+		return false
+	}
+	ifaceObj, err := net.InterfaceByName(iface)
+	if err != nil {
+		return false
+	}
+	addrs, err := ifaceObj.Addrs()
+	if err != nil {
+		return false
+	}
+	for _, a := range addrs {
+		ipNet, ok := a.(*net.IPNet)
+		if ok && ipNet.IP != nil && ipNet.IP.Equal(want) {
+			return true
+		}
+	}
+	return false
+}
+
+func routeUsableEgressIP(st routeState, iface string, v6 bool) string {
+	src := routeEgressIPForFamily(st.egressIP, v6)
+	if src == "" || !routeEgressIPOnIface(iface, src) {
+		return ""
+	}
+	return src
+}
+
+func routeAddEgressRules(be routeBackend, st routeState, ipv4, ipv6 bool) {
+	emit := func(v6 bool, setName string) {
+		src := routeEgressIPForFamily(st.egressIP, v6)
+		if src == "" {
+			be.addMasqueradeRule(st.chainSNAT, st.mark, st.iface, v6)
+			return
+		}
+		if !routeEgressIPOnIface(st.iface, src) {
+			log.Warnf("Routing: egress IP %s is not on %s, so nothing would answer for the rewritten source and every reply would be lost; masquerading this set instead", src, st.iface)
+			be.addMasqueradeRule(st.chainSNAT, st.mark, st.iface, v6)
+			return
+		}
+		be.addSNATRule(st.chainSNAT, setName, st.iface, src, v6)
+	}
+	if ipv4 {
+		emit(false, st.setV4)
+	}
+	if ipv6 {
+		emit(true, st.setV6)
+	}
 }
 
 func routeAddMasqueradeRules(be routeBackend, iface, chain string, mark uint32, ipv4, ipv6 bool) {
@@ -1096,7 +1166,8 @@ func routeCleanupRule(be routeBackend, st routeState) {
 	be.destroyIPSet(st.setV6)
 }
 
-func routeEnsurePolicyRouting(iface string, mark uint32, table int, ipv4, ipv6 bool) {
+func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
+	iface, mark, table := st.iface, st.mark, st.table
 	prio := 10000 + table
 	markStr := fmt.Sprintf("0x%x", mark)
 	markStrMask := fmt.Sprintf("0x%x/0x%x", mark, mark)
@@ -1121,6 +1192,12 @@ func routeEnsurePolicyRouting(iface string, mark uint32, table int, ipv4, ipv6 b
 
 	ifaceV4 := routeGetIfaceAddr(iface, false)
 	ifaceV6 := routeGetIfaceAddr(iface, true)
+	if src := routeUsableEgressIP(st, iface, false); src != "" {
+		ifaceV4 = src
+	}
+	if src := routeUsableEgressIP(st, iface, true); src != "" {
+		ifaceV6 = src
+	}
 	if ipv4 {
 		routeReplaceDefaultRoute(iface, ifaceV4, tableStr, false)
 	}
@@ -1147,7 +1224,7 @@ func RoutingReinstallForInterface(cfg *config.Config, iface string) {
 		if config.RoutingUsesTProxy(st.mode) || st.iface != iface {
 			continue
 		}
-		routeEnsurePolicyRouting(st.iface, st.mark, st.table, ipv4, ipv6)
+		routeEnsurePolicyRouting(st, ipv4, ipv6)
 		count++
 	}
 	if count > 0 {

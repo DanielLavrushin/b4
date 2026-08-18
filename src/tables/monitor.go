@@ -22,6 +22,7 @@ type Monitor struct {
 
 	ifaceStateMu sync.Mutex
 	ifaceState   map[string]ifaceSnapshot
+	egressIPHere map[string]bool
 
 	linkWatcher *linkWatcher
 }
@@ -44,12 +45,13 @@ func NewMonitor(cfgPtr *atomic.Pointer[config.Config]) *Monitor {
 	}
 
 	return &Monitor{
-		cfgPtr:      cfgPtr,
-		stop:        make(chan struct{}),
-		interval:    interval,
-		backend:     detectFirewallBackend(cfg),
-		ifaceState:  make(map[string]ifaceSnapshot),
-		linkWatcher: newLinkWatcher(cfgPtr),
+		cfgPtr:       cfgPtr,
+		stop:         make(chan struct{}),
+		interval:     interval,
+		backend:      detectFirewallBackend(cfg),
+		ifaceState:   make(map[string]ifaceSnapshot),
+		egressIPHere: make(map[string]bool),
+		linkWatcher:  newLinkWatcher(cfgPtr),
 	}
 }
 
@@ -378,11 +380,16 @@ func (m *Monitor) snapshotRoutingIfaces(cfg *config.Config) {
 
 func (m *Monitor) snapshotRoutingIfacesLocked(cfg *config.Config) {
 	m.ifaceState = make(map[string]ifaceSnapshot)
+	m.egressIPHere = make(map[string]bool)
 	for _, set := range cfg.Sets {
 		if set == nil || !set.Enabled || !set.Routing.Enabled || set.Routing.EgressInterface == "" {
 			continue
 		}
 		iface := set.Routing.EgressInterface
+		if set.Routing.EgressIP != "" {
+			key := egressIPKey(iface, set.Routing.EgressIP)
+			m.egressIPHere[key] = routeEgressIPOnIface(iface, set.Routing.EgressIP)
+		}
 		if _, ok := m.ifaceState[iface]; ok {
 			continue
 		}
@@ -392,6 +399,8 @@ func (m *Monitor) snapshotRoutingIfacesLocked(cfg *config.Config) {
 		}
 	}
 }
+
+func egressIPKey(iface, ip string) string { return iface + "|" + ip }
 
 func (m *Monitor) routingIfacesChanged(cfg *config.Config) bool {
 	m.ifaceStateMu.Lock()
@@ -411,6 +420,24 @@ func (m *Monitor) routingIfacesChanged(cfg *config.Config) bool {
 				iface, old.v4, curV4, old.v6, curV6)
 			return true
 		}
+	}
+	for _, set := range cfg.Sets {
+		if set == nil || !set.Enabled || !set.Routing.Enabled || set.Routing.EgressIP == "" {
+			continue
+		}
+		iface := set.Routing.EgressInterface
+		key := egressIPKey(iface, set.Routing.EgressIP)
+		was, tracked := m.egressIPHere[key]
+		now := routeEgressIPOnIface(iface, set.Routing.EgressIP)
+		if !tracked || was == now {
+			continue
+		}
+		if now {
+			log.Infof("Monitor: egress IP %s is back on %s; restoring the source rewrite for set '%s'", set.Routing.EgressIP, iface, set.Name)
+		} else {
+			log.Warnf("Monitor: egress IP %s is gone from %s, so set '%s' would SNAT to an address nothing answers for; rebuilding its rules", set.Routing.EgressIP, iface, set.Name)
+		}
+		return true
 	}
 	return false
 }

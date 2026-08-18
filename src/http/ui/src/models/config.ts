@@ -463,6 +463,7 @@ export interface RoutingConfig {
   enabled: boolean;
   mode: RoutingMode;
   egress_interface: string;
+  egress_ip: string;
   upstream: UpstreamProxyConfig;
   fwmark: number;
   table: number;

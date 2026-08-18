@@ -604,6 +604,7 @@ type RoutingConfig struct {
 	Enabled          bool                `json:"enabled"`
 	Mode             string              `json:"mode"`
 	EgressInterface  string              `json:"egress_interface"`
+	EgressIP         string              `json:"egress_ip"`
 	Upstream         UpstreamProxyConfig `json:"upstream"`
 	FWMark           uint32              `json:"fwmark" mcp:"deny"`
 	Table            int                 `json:"table" mcp:"deny"`

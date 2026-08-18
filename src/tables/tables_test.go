@@ -1293,6 +1293,17 @@ type mockRouteBackend struct {
 	chainOps      map[string][]string
 	jumps         []mockRouteJump
 	injected      []mockInjectedMarkRule
+	masq          []mockNATRule
+	snat          []mockNATRule
+}
+
+type mockNATRule struct {
+	chain   string
+	setName string
+	mark    uint32
+	iface   string
+	srcIP   string
+	v6      bool
 }
 
 func (m *mockRouteBackend) recordOp(chain, op string) {
@@ -1328,6 +1339,10 @@ func (m *mockRouteBackend) ensureJumpRule(baseChain, targetChain string, isMangl
 }
 func (m *mockRouteBackend) deleteJumpRules(baseChain, targetChain string, isMangle bool) {}
 func (m *mockRouteBackend) addMasqueradeRule(chain string, mark uint32, iface string, v6 bool) {
+	m.masq = append(m.masq, mockNATRule{chain: chain, mark: mark, iface: iface, v6: v6})
+}
+func (m *mockRouteBackend) addSNATRule(chain, setName, iface, srcIP string, v6 bool) {
+	m.snat = append(m.snat, mockNATRule{chain: chain, setName: setName, iface: iface, srcIP: srcIP, v6: v6})
 }
 func (m *mockRouteBackend) flushIPSet(name string)   {}
 func (m *mockRouteBackend) destroyIPSet(name string) {}

@@ -12,6 +12,8 @@ const (
 	routeNftPrerouting = "prerouting"
 	routeNftOutput     = "output"
 	routeNftPostroute  = "postrouting"
+
+	routeNftPostrouteEarly = "postrouting_early"
 )
 
 type routeNftBackend struct{}
@@ -198,8 +200,20 @@ func nftRouteBaseChain(generic string) string {
 	}
 }
 
-func (b *routeNftBackend) ensureJumpRule(baseChain, targetChain string, _ bool, _ bool) {
+func (b *routeNftBackend) ensureEarlyPostrouteChain() bool {
+	if err := runEnsure("nft", "add", "chain", "inet", routeNftTable, routeNftPostrouteEarly,
+		"{", "type", "nat", "hook", "postrouting", "priority", "90", ";", "policy", "accept", ";", "}"); err != nil {
+		log.Warnf("Routing: cannot create an early srcnat chain (%v); the set's source rewrite stays at the same priority as any other masquerade on this box and may lose to it", err)
+		return false
+	}
+	return true
+}
+
+func (b *routeNftBackend) ensureJumpRule(baseChain, targetChain string, _ bool, atTop bool) {
 	base := nftRouteBaseChain(baseChain)
+	if atTop && base == routeNftPostroute && b.ensureEarlyPostrouteChain() {
+		base = routeNftPostrouteEarly
+	}
 	b.deleteJumpRules(baseChain, targetChain, true)
 	runLogged("routing: add jump "+base+"->"+targetChain,
 		"nft", "add", "rule", "inet", routeNftTable, base, "jump", targetChain)
@@ -207,6 +221,13 @@ func (b *routeNftBackend) ensureJumpRule(baseChain, targetChain string, _ bool, 
 
 func (b *routeNftBackend) deleteJumpRules(baseChain, targetChain string, _ bool) {
 	base := nftRouteBaseChain(baseChain)
+	b.deleteJumpRulesFrom(base, targetChain)
+	if base == routeNftPostroute {
+		b.deleteJumpRulesFrom(routeNftPostrouteEarly, targetChain)
+	}
+}
+
+func (b *routeNftBackend) deleteJumpRulesFrom(base, targetChain string) {
 	out, err := run("nft", "-a", "list", "chain", "inet", routeNftTable, base)
 	if err != nil {
 		return
@@ -244,6 +265,26 @@ func (b *routeNftBackend) addMasqueradeRule(chain string, mark uint32, iface str
 		"oifname", fmt.Sprintf("%q", iface),
 		"masquerade",
 	)
+}
+
+func (b *routeNftBackend) addSNATRule(chain, setName, iface, srcIP string, v6 bool) {
+	hostCTMask := fmt.Sprintf("0x%x", hostRouteCTMark)
+	nfproto := "ipv4"
+	family := "ip"
+	if v6 {
+		nfproto = "ipv6"
+		family = "ip6"
+	}
+	for _, sn := range []string{setName, routeNftDynSet(setName)} {
+		runLogged("routing: add snat rule",
+			"nft", "add", "rule", "inet", routeNftTable, chain,
+			"meta", "nfproto", nfproto,
+			family, "daddr", "@"+sn,
+			"ct", "mark", "&", hostCTMask, "==", hostCTMask,
+			"oifname", fmt.Sprintf("%q", iface),
+			"snat", family, "to", srcIP,
+		)
+	}
 }
 
 func (b *routeNftBackend) flushIPSet(name string) {

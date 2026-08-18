@@ -157,6 +157,24 @@ func (c *Config) Validate() error {
 			set.Routing.SourceInterfaces[i] = sanitizeIfaceName(src)
 		}
 
+		set.Routing.EgressIP = strings.TrimSpace(set.Routing.EgressIP)
+		if set.Routing.EgressIP != "" {
+			ip := net.ParseIP(set.Routing.EgressIP)
+			switch {
+			case ip == nil, ip.IsUnspecified(), ip.IsLoopback(), ip.IsMulticast():
+				v.addf(fmt.Sprintf("sets[%d].routing.egress_ip", setIdx), "invalid_egress_ip", map[string]any{"set": set.Name, "ip": set.Routing.EgressIP}, "set %q: routing.egress_ip %q is not a usable source address", set.Name, set.Routing.EgressIP)
+				return v.result()
+			case set.Routing.Mode != RoutingModeInterface:
+				log.Warnf("Set '%s': routing mode %q terminates the connection instead of forwarding it, so there is no packet whose source routing.egress_ip could rewrite; dropping it", set.Name, set.Routing.Mode)
+				set.Routing.EgressIP = ""
+			case set.Routing.EgressInterface == "":
+				log.Warnf("Set '%s': routing.egress_ip is pinned to an output interface so a multi-WAN failover cannot carry the source onto another uplink, and no routing.egress_interface is set; dropping it", set.Name)
+				set.Routing.EgressIP = ""
+			default:
+				set.Routing.EgressIP = ip.String()
+			}
+		}
+
 		if set.Routing.Enabled && set.Routing.Mode == RoutingModeProxy {
 			if set.Routing.Upstream.Port < 1 || set.Routing.Upstream.Port > 65535 {
 				v.addf(fmt.Sprintf("sets[%d].routing.upstream.port", setIdx), "out_of_range", map[string]any{"set": set.Name, "min": 1, "max": 65535}, "set %q: upstream proxy port must be 1-65535", set.Name)

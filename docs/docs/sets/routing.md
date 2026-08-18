@@ -153,6 +153,30 @@ The network interface that marked traffic is sent through:
 If the chosen output interface becomes unavailable, a warning appears. Routing will not work until the interface is back.
 :::
 
+### Egress IP
+
+Optional. Rewrites the source address of this set's traffic on the way out, instead of leaving the output interface's own address in place. In firewall terms it swaps the set's `MASQUERADE` rule for `SNAT --to-source`.
+
+The point of this is to delegate the routing decision to a device b4 does not control. If the tunnels live on an upstream router, that router can already pick a path by source address; b4 only has to stamp the right source. No tunnel interface and no extra routing table are needed on b4's own host, and unlike an upstream SOCKS5 proxy the rewrite happens in the kernel, so it costs no per-packet CPU.
+
+An egress IP requires an output interface: the rule is pinned to that interface so a multi-WAN failover cannot send packets out a second uplink still carrying the first one's source address.
+
+For this to work end to end:
+
+- The address must already be configured on the output interface, for example `ip addr add 192.168.1.51/32 dev br0`. b4 does not add it and does not persist it across reboots. If the address is missing, b4 logs a warning and falls back to masquerading rather than sending traffic that can never be answered.
+- The upstream device must route that source into the path you want, for example `ip rule add from 192.168.1.51 lookup 100` on Linux, or a `mangle` rule with `src-address` plus `action=mark-routing` on RouterOS.
+- The upstream must not drop the packets on reverse-path checks. A router with strict `rp_filter` and no route back to b4's box for that address discards them before any policy rule is consulted. This is the most common reason a correct-looking setup moves no traffic.
+
+The address family has to match. An IPv4 egress IP rewrites IPv4 only; the set's IPv6 traffic keeps masquerading and still leaves with the interface's own IPv6 address.
+
+:::warning
+An egress IP that nothing answers for is a silent failure: packets leave, replies never come back, and the set's rules still look correct. Check the address exists on the interface before blaming the set.
+:::
+
+:::note
+Not available in TUN engine mode with whole-default capture. There b4 reinjects packets on a path that bypasses this rule, so the setting has no effect.
+:::
+
 ### IP TTL (entry lifetime)
 
 How long, in seconds, an IP obtained from a DNS response is kept in the routing IP set. When the TTL expires, the entry is removed automatically.

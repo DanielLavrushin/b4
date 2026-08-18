@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.79.0] - 2026-08-18
+
+- ADDED: **An egress IP for a set, which rewrites the source address of its traffic instead of leaving the output interface's own address in place** - a set could only be steered somewhere by naming an interface or an upstream SOCKS5 proxy. Where the tunnels are terminated by a router above b4, neither was free: the tunnel had to be brought onto b4's own host as an interface with a routing table behind it, once per destination, or every packet had to be relayed through a proxy that costs CPU the kernel does not. A router that already picks a path by source address needed nothing from b4 except the right source, and there was no way to set one. The address must already exist on the output interface; b4 warns and keeps masquerading rather than sending traffic that nothing can answer.
+
 ## [1.78.0] - 2026-08-17
 
 - ADDED: **An MCP server at /api/mcp** - b4 spoke no protocol an external AI app could connect to. Read-only tools report status, configuration, strategy sets, domain coverage, recent connections, the log tail, metrics and diagnostics, and a resource per documented setting describes what that setting does. The model runs in the client app; b4 reaches no AI provider and needs no API key. Off by default, and authenticated by its own token, because a web login token is discarded on every restart. A second switch, also off by default, permits writes to any setting inside a set, to the MTProto and SOCKS5 subsystems and to the log level; credentials, the web server, the capture engine, the firewall backend and the packet marks are refused, and the last change can be reverted. [MCP server](https://daniellavrushin.github.io/b4/docs/settings/mcp).

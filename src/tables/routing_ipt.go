@@ -228,6 +228,22 @@ func (b *routeIptBackend) addMasqueradeRule(chain string, mark uint32, iface str
 	)
 }
 
+func (b *routeIptBackend) addSNATRule(chain, setName, iface, srcIP string, v6 bool) {
+	cmd := b.iptFor(v6)
+	if !hasBinary(cmd) {
+		return
+	}
+	ctMask := fmt.Sprintf("0x%x/0x%x", hostRouteCTMark, hostRouteCTMark)
+
+	runLogged("routing: add snat rule",
+		cmd, "-w", "-t", "nat", "-A", chain,
+		"-m", "set", "--match-set", setName, "dst",
+		"-m", "connmark", "--mark", ctMask,
+		"-o", iface,
+		"-j", "SNAT", "--to-source", srcIP,
+	)
+}
+
 func (b *routeIptBackend) flushIPSet(name string) {
 	if !hasBinary("ipset") {
 		return
