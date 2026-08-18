@@ -390,3 +390,86 @@ func TestNetnsOutputChainSitsAboveTheQueueAccept(t *testing.T) {
 		t.Errorf("the set's chain is below the queue-mark ACCEPT, which ends the mangle table, so injected packets never reach it:\n%s", out)
 	}
 }
+
+func netnsAddrPresent(t *testing.T, iface, ip string) bool {
+	t.Helper()
+	out, err := run("ip", "-o", "addr", "show", "dev", iface)
+	if err != nil {
+		t.Fatalf("ip addr show %s: %v", iface, err)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		for _, f := range strings.Fields(line) {
+			if f == ip || strings.HasPrefix(f, ip+"/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func TestNetnsEgressIPIsPutOnTheInterfaceAndTakenBack(t *testing.T) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+
+	const egressIP = "10.201.2.77"
+
+	routeEngine = nil
+	defer func() { routeEngine = nil }()
+
+	cfg := netnsConfig(backendIPTables)
+	cfg.Sets[0].Routing.EgressIP = egressIP
+
+	if netnsAddrPresent(t, netnsSecondary, egressIP) {
+		t.Fatalf("%s already sits on %s before the test runs", egressIP, netnsSecondary)
+	}
+
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	defer func() { _ = ClearRules(cfg) }()
+
+	RoutingSyncConfig(cfg)
+
+	if !netnsAddrPresent(t, netnsSecondary, egressIP) {
+		t.Fatalf("b4 did not put %s on %s, so the address has to be added by hand and does not survive a reboot", egressIP, netnsSecondary)
+	}
+
+	out := netnsRun(t, "iptables", "-w", "-t", "nat", "-S")
+	if !strings.Contains(out, "--to-source "+egressIP) {
+		t.Errorf("the set fell back to masquerade instead of rewriting the source to %s:\n%s", egressIP, out)
+	}
+
+	RoutingClearAll()
+
+	if netnsAddrPresent(t, netnsSecondary, egressIP) {
+		t.Errorf("b4 left %s behind on %s after the set stopped using it", egressIP, netnsSecondary)
+	}
+}
+
+func TestNetnsEgressIPAddedByHandIsNotTakenAway(t *testing.T) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+
+	const egressIP = "10.201.2.78"
+
+	routeEngine = nil
+	defer func() { routeEngine = nil }()
+
+	netnsRun(t, "ip", "addr", "add", egressIP+"/32", "dev", netnsSecondary)
+	defer func() { _, _ = run("ip", "addr", "del", egressIP+"/32", "dev", netnsSecondary) }()
+
+	cfg := netnsConfig(backendIPTables)
+	cfg.Sets[0].Routing.EgressIP = egressIP
+
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	defer func() { _ = ClearRules(cfg) }()
+
+	RoutingSyncConfig(cfg)
+	RoutingClearAll()
+
+	if !netnsAddrPresent(t, netnsSecondary, egressIP) {
+		t.Errorf("b4 removed %s from %s, but it was configured by hand and b4 must only take back what it added itself", egressIP, netnsSecondary)
+	}
+}

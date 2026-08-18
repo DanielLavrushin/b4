@@ -435,7 +435,7 @@ func (m *Monitor) routingIfacesChanged(cfg *config.Config) bool {
 		if now {
 			log.Infof("Monitor: egress IP %s is back on %s; restoring the source rewrite for set '%s'", set.Routing.EgressIP, iface, set.Name)
 		} else {
-			log.Warnf("Monitor: egress IP %s is gone from %s, so set '%s' would SNAT to an address nothing answers for; rebuilding its rules", set.Routing.EgressIP, iface, set.Name)
+			log.Warnf("Monitor: egress IP %s left %s, taking set '%s' with it; putting the address back and rebuilding its rules", set.Routing.EgressIP, iface, set.Name)
 		}
 		return true
 	}

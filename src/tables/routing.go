@@ -72,6 +72,7 @@ var (
 	routeLearnLast      = make(map[string]time.Time)
 	routeLearnedHosts   = make(map[string]map[string]time.Time)
 	routeHostResolvedAt = make(map[string]time.Time)
+	routeOwnedAddrs     = make(map[string]bool)
 )
 
 func getRouteBackend(cfg *config.Config) routeBackend {
@@ -519,6 +520,7 @@ func RoutingClearAll() {
 	routeLearnLast = make(map[string]time.Time)
 	routeLearnedHosts = make(map[string]map[string]time.Time)
 	routeHostResolvedAt = make(map[string]time.Time)
+	routeOwnedAddrs = make(map[string]bool)
 }
 
 func RoutingActiveIPSetNames(ipv4, ipv6 bool) []string {
@@ -1007,6 +1009,7 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 	routeAddOutChainRules(be, cfg, st)
 	routeEnsureChainJumps(be, st, gate)
 
+	routeEnsureEgressAddress(st.iface, st.egressIP)
 	routeAddEgressRules(be, st, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	routeEnsurePolicyRouting(st, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	return nil
@@ -1084,6 +1087,61 @@ func routeEgressIPOnIface(iface, egressIP string) bool {
 	return false
 }
 
+func routeEgressAddrKey(iface, ip string) string { return iface + "|" + ip }
+
+func routeEgressAddrPrefix(ip net.IP) string {
+	if ip.To4() != nil {
+		return "/32"
+	}
+	return "/128"
+}
+
+func routeAddressAnsweredElsewhere(iface, ip string) bool {
+	if !hasBinary("arping") {
+		log.Warnf("Routing: arping is missing, so b4 cannot tell whether %s already belongs to another host before claiming it on %s", ip, iface)
+		return false
+	}
+	_, err := run("arping", "-D", "-c", "2", "-w", "2", "-I", iface, ip)
+	return err != nil
+}
+
+func routeEnsureEgressAddress(iface, egressIP string) bool {
+	if iface == "" || egressIP == "" {
+		return false
+	}
+	if routeEgressIPOnIface(iface, egressIP) {
+		return true
+	}
+	parsed := net.ParseIP(egressIP)
+	if parsed == nil || !hasBinary("ip") {
+		return false
+	}
+	if parsed.To4() != nil && routeAddressAnsweredElsewhere(iface, egressIP) {
+		log.Warnf("Routing: another host on %s already answers for %s, so claiming it would break that host; masquerading this set instead", iface, egressIP)
+		return false
+	}
+	if _, err := run("ip", "addr", "add", egressIP+routeEgressAddrPrefix(parsed), "dev", iface); err != nil {
+		log.Warnf("Routing: could not put egress IP %s on %s (%v); masquerading this set instead", egressIP, iface, err)
+		return false
+	}
+	routeOwnedAddrs[routeEgressAddrKey(iface, egressIP)] = true
+	log.Infof("Routing: egress IP %s added to %s; b4 keeps it there while a set uses it and removes it afterwards", egressIP, iface)
+	return true
+}
+
+func routeReleaseEgressAddress(iface, egressIP string) {
+	key := routeEgressAddrKey(iface, egressIP)
+	if !routeOwnedAddrs[key] {
+		return
+	}
+	delete(routeOwnedAddrs, key)
+	parsed := net.ParseIP(egressIP)
+	if parsed == nil || !hasBinary("ip") {
+		return
+	}
+	runLogged("routing: remove egress IP "+egressIP, "ip", "addr", "del", egressIP+routeEgressAddrPrefix(parsed), "dev", iface)
+}
+
 func routeUsableEgressIP(st routeState, iface string, v6 bool) string {
 	src := routeEgressIPForFamily(st.egressIP, v6)
 	if src == "" || !routeEgressIPOnIface(iface, src) {
@@ -1137,6 +1195,7 @@ func interfaceShareCount(mark uint32, table int) int {
 }
 
 func routeCleanupRule(be routeBackend, st routeState) {
+	routeReleaseEgressAddress(st.iface, st.egressIP)
 	markStr := fmt.Sprintf("0x%x", st.mark)
 	markStrMask := fmt.Sprintf("0x%x/0x%x", st.mark, st.mark)
 	tableStr := fmt.Sprintf("%d", st.table)

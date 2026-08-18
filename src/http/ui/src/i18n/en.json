@@ -1490,7 +1490,7 @@
       "egressIp": "Egress IP (optional)",
       "egressIpHelper": "Rewrite the source address of this set's traffic. Leave empty to keep the interface's own address.",
       "egressIpNeedsInterface": "Pick an output interface first",
-      "egressIpNote": "This set leaves through {{iface}} with source {{ip}}. That address must already be configured on {{iface}}, and the device upstream must route it into the path you want - B4 only stamps the source.",
+      "egressIpNote": "This set leaves through {{iface}} with source {{ip}}. B4 puts that address on {{iface}} for you and takes it back afterwards. The device upstream still has to route that source into the path you want - B4 only stamps it.",
       "flowIfaceWithSource": "{{iface}} as {{ip}}",
       "upstreamHost": "Upstream SOCKS5 host",
       "upstreamHostHelper": "Hostname or IP of the SOCKS5 proxy. Use 127.0.0.1 if Xray/sing-box runs on the same router.",

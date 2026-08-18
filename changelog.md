@@ -2,7 +2,7 @@
 
 ## [1.79.0] - 2026-08-18
 
-- ADDED: **An egress IP for a set, which rewrites the source address of its traffic instead of leaving the output interface's own address in place** - a set could only be steered somewhere by naming an interface or an upstream SOCKS5 proxy. Where the tunnels are terminated by a router above b4, neither was free: the tunnel had to be brought onto b4's own host as an interface with a routing table behind it, once per destination, or every packet had to be relayed through a proxy that costs CPU the kernel does not. A router that already picks a path by source address needed nothing from b4 except the right source, and there was no way to set one. The address must already exist on the output interface; b4 warns and keeps masquerading rather than sending traffic that nothing can answer.
+- ADDED: **An egress IP for a set, which rewrites the source address of its traffic instead of leaving the output interface's own address in place** - a set could only be steered somewhere by naming an interface or an upstream SOCKS5 proxy. Where the tunnels are terminated by a router above b4, neither was free: the tunnel had to be brought onto b4's own host as an interface with a routing table behind it, once per destination, or every packet had to be relayed through a proxy that costs CPU the kernel does not. A router that already picks a path by source address needed nothing from b4 except the right source, and there was no way to set one. b4 puts the address on the interface itself and takes it back when the set stops using it, so there is nothing to add by hand and nothing that a reboot forgets; it ARP-probes first and keeps masquerading, rather than claiming an address another host already answers for.
 
 ## [1.78.0] - 2026-08-17
 

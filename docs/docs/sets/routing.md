@@ -163,7 +163,7 @@ An egress IP requires an output interface: the rule is pinned to that interface 
 
 For this to work end to end:
 
-- The address must already be configured on the output interface, for example `ip addr add 192.168.1.51/32 dev br0`. b4 does not add it and does not persist it across reboots. If the address is missing, b4 logs a warning and falls back to masquerading rather than sending traffic that can never be answered.
+- b4 puts the address on the output interface itself and takes it back when the set stops using it, so there is nothing to add by hand and nothing to persist across reboots. If the interface loses the address, for example on a DHCP renewal or a link flap, b4 notices and puts it back. Before claiming an address b4 sends an ARP probe; if another host on the segment answers for it, or the address cannot be added, b4 logs a warning and falls back to masquerading rather than breaking that host or sending traffic that can never be answered. An address you configured yourself is used as it stands, and b4 removes only addresses it added.
 - The upstream device must route that source into the path you want, for example `ip rule add from 192.168.1.51 lookup 100` on Linux, or a `mangle` rule with `src-address` plus `action=mark-routing` on RouterOS.
 - The upstream must not drop the packets on reverse-path checks. A router with strict `rp_filter` and no route back to b4's box for that address discards them before any policy rule is consulted. This is the most common reason a correct-looking setup moves no traffic.
 
