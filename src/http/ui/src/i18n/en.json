@@ -94,7 +94,8 @@
       "deviceName": "Name",
       "ip": "IP",
       "manual": "manual",
-      "offline": "offline"
+      "offline": "offline",
+      "byIp": "matched by IP"
     }
   },
   "settings": {
@@ -971,7 +972,9 @@
       "previewSubtitle": "Category Preview",
       "previewTotal": "Total domains in category: {{count}}",
       "previewShowing": "showing first {{count}}",
-      "previewFailed": "Failed to load category preview"
+      "previewFailed": "Failed to load category preview",
+      "manualDeviceInfo": "Manually added devices have no MAC address on the network, so they are matched by the IP address you entered. Give such a device a fixed or reserved address, and note that it cannot be matched at all when an intermediate router replaces the source address of its traffic.",
+      "manualDeviceNoIp": "These manually added devices have no IP address, so they cannot be matched: {{names}}. If they are the only devices selected, the set matches nothing; with \"all devices except selected\" enabled, it applies to every device instead."
     },
     "tcp": {
       "sectionTitle": "TCP Configuration",

@@ -1392,7 +1392,7 @@ func gateCfg(enabled, wisb bool, devices ...config.Device) *config.Config {
 
 func TestRouteDeviceGateFor(t *testing.T) {
 	wl := config.Device{MAC: "aa:bb:cc:dd:ee:ff", Selected: true}
-	manual := config.Device{MAC: "02:b4:ac:10:0c:03", Selected: true, IsManual: true}
+	manual := config.Device{MAC: "02:b4:ac:10:0c:03", IP: "172.16.12.3", Selected: true, IsManual: true}
 
 	t.Run("disabled is inactive", func(t *testing.T) {
 		g := routeDeviceGateFor(gateCfg(false, false, wl))
@@ -1413,8 +1413,8 @@ func TestRouteDeviceGateFor(t *testing.T) {
 		if !g.isWhitelist() || g.isBlacklist() {
 			t.Fatalf("expected whitelist gate, got %+v", g)
 		}
-		if len(g.macs) != 1 || g.macs[0] != "AA:BB:CC:DD:EE:FF" {
-			t.Errorf("expected normalized MAC, got %v", g.macs)
+		if len(g.matches) != 1 || g.matches[0].MAC != "AA:BB:CC:DD:EE:FF" {
+			t.Errorf("expected normalized MAC, got %v", g.matches)
 		}
 	})
 
@@ -1425,10 +1425,23 @@ func TestRouteDeviceGateFor(t *testing.T) {
 		}
 	})
 
-	t.Run("manual devices excluded", func(t *testing.T) {
+	t.Run("manual device with an IP matches by address", func(t *testing.T) {
 		g := routeDeviceGateFor(gateCfg(true, false, manual))
+		if !g.isWhitelist() {
+			t.Fatalf("expected whitelist gate for a selected manual device, got %+v", g)
+		}
+		if len(g.matches) != 1 || !g.matches[0].IsIP() || g.matches[0].IP != "172.16.12.3" {
+			t.Errorf("expected a single ip matcher for 172.16.12.3, got %+v", g.matches)
+		}
+		if g.matches[0].MAC != "" {
+			t.Errorf("manual device must never produce a mac matcher, got %q", g.matches[0].MAC)
+		}
+	})
+
+	t.Run("manual device without an IP is unusable", func(t *testing.T) {
+		g := routeDeviceGateFor(gateCfg(true, false, config.Device{MAC: "02:b4:ac:10:0c:04", Selected: true, IsManual: true}))
 		if g.enabled {
-			t.Errorf("manual-only selection must not activate routing gate, got %+v", g)
+			t.Errorf("manual device without an IP must not activate the routing gate, got %+v", g)
 		}
 	})
 }
@@ -1453,9 +1466,21 @@ func TestRouteDeviceGateKey(t *testing.T) {
 }
 
 func macSet(g routeDeviceGate) map[string]bool {
-	out := make(map[string]bool, len(g.macs))
-	for _, m := range g.macs {
-		out[m] = true
+	out := make(map[string]bool, len(g.matches))
+	for _, m := range g.matches {
+		if m.MAC != "" {
+			out[m.MAC] = true
+		}
+	}
+	return out
+}
+
+func ipSet(g routeDeviceGate) map[string]bool {
+	out := make(map[string]bool, len(g.matches))
+	for _, m := range g.matches {
+		if m.IsIP() {
+			out[m.IP] = true
+		}
 	}
 	return out
 }
@@ -1471,14 +1496,14 @@ func TestRouteSetDeviceGate(t *testing.T) {
 
 	t.Run("no per-set falls back to global", func(t *testing.T) {
 		g := routeSetDeviceGate(gateCfg(true, false, config.Device{MAC: a, Selected: true}), setWith())
-		if !g.isWhitelist() || !macSet(g)[a] || len(g.macs) != 1 {
+		if !g.isWhitelist() || !macSet(g)[a] || len(g.matches) != 1 {
 			t.Errorf("expected global whitelist {a}, got %+v", g)
 		}
 	})
 
 	t.Run("per-set only when global disabled", func(t *testing.T) {
 		g := routeSetDeviceGate(gateCfg(false, false), setWith(a, b))
-		if !g.isWhitelist() || !macSet(g)[a] || !macSet(g)[b] || len(g.macs) != 2 {
+		if !g.isWhitelist() || !macSet(g)[a] || !macSet(g)[b] || len(g.matches) != 2 {
 			t.Errorf("expected per-set whitelist {a,b}, got %+v", g)
 		}
 	})
@@ -1486,7 +1511,7 @@ func TestRouteSetDeviceGate(t *testing.T) {
 	t.Run("global whitelist intersects per-set", func(t *testing.T) {
 		cfg := gateCfg(true, false, config.Device{MAC: a, Selected: true}, config.Device{MAC: b, Selected: true})
 		g := routeSetDeviceGate(cfg, setWith(b, c))
-		if !g.isWhitelist() || len(g.macs) != 1 || !macSet(g)[b] {
+		if !g.isWhitelist() || len(g.matches) != 1 || !macSet(g)[b] {
 			t.Errorf("expected intersection {b}, got %+v", g)
 		}
 	})
@@ -1494,7 +1519,7 @@ func TestRouteSetDeviceGate(t *testing.T) {
 	t.Run("global blacklist subtracts from per-set", func(t *testing.T) {
 		cfg := gateCfg(true, true, config.Device{MAC: a, Selected: true})
 		g := routeSetDeviceGate(cfg, setWith(a, b))
-		if !g.isWhitelist() || len(g.macs) != 1 || !macSet(g)[b] {
+		if !g.isWhitelist() || len(g.matches) != 1 || !macSet(g)[b] {
 			t.Errorf("expected per-set minus blacklist {b}, got %+v", g)
 		}
 	})
@@ -1502,7 +1527,7 @@ func TestRouteSetDeviceGate(t *testing.T) {
 	t.Run("empty intersection denies all but stays active", func(t *testing.T) {
 		cfg := gateCfg(true, false, config.Device{MAC: a, Selected: true})
 		g := routeSetDeviceGate(cfg, setWith(b))
-		if !g.enabled || len(g.macs) != 0 {
+		if !g.enabled || len(g.matches) != 0 {
 			t.Errorf("expected active deny-all gate, got %+v", g)
 		}
 		if g.key() == "" {
@@ -1518,7 +1543,7 @@ func TestRouteSetDeviceGate(t *testing.T) {
 
 	t.Run("exclude becomes blacklist when global disabled", func(t *testing.T) {
 		g := routeSetDeviceGate(gateCfg(false, false), setExcluding(a, b))
-		if !g.isBlacklist() || !macSet(g)[a] || !macSet(g)[b] || len(g.macs) != 2 {
+		if !g.isBlacklist() || !macSet(g)[a] || !macSet(g)[b] || len(g.matches) != 2 {
 			t.Errorf("expected per-set blacklist {a,b}, got %+v", g)
 		}
 	})
@@ -1526,7 +1551,7 @@ func TestRouteSetDeviceGate(t *testing.T) {
 	t.Run("exclude subtracts from global whitelist", func(t *testing.T) {
 		cfg := gateCfg(true, false, config.Device{MAC: a, Selected: true}, config.Device{MAC: b, Selected: true})
 		g := routeSetDeviceGate(cfg, setExcluding(b))
-		if !g.isWhitelist() || len(g.macs) != 1 || !macSet(g)[a] {
+		if !g.isWhitelist() || len(g.matches) != 1 || !macSet(g)[a] {
 			t.Errorf("expected whitelist {a}, got %+v", g)
 		}
 	})
@@ -1534,7 +1559,7 @@ func TestRouteSetDeviceGate(t *testing.T) {
 	t.Run("exclude unions with global blacklist", func(t *testing.T) {
 		cfg := gateCfg(true, true, config.Device{MAC: a, Selected: true})
 		g := routeSetDeviceGate(cfg, setExcluding(b))
-		if !g.isBlacklist() || len(g.macs) != 2 || !macSet(g)[a] || !macSet(g)[b] {
+		if !g.isBlacklist() || len(g.matches) != 2 || !macSet(g)[a] || !macSet(g)[b] {
 			t.Errorf("expected blacklist {a,b}, got %+v", g)
 		}
 	})

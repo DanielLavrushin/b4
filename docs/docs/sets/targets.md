@@ -47,14 +47,19 @@ The GeoIP equivalent for IP ranges. Categories are keyed to countries and ASNs.
 
 ## Source devices
 
-Limits the set to traffic from specific devices on the network (by MAC address).
+Limits the set to traffic from specific devices on the network.
+
+Devices discovered from the ARP table are matched by their MAC address. Devices you added manually have no MAC address
+on the network, so they are matched by the IP address you entered for them. Give a manually added device a fixed or
+reserved address, and note that it cannot be matched at all when an intermediate router replaces the source address of
+its traffic before it reaches b4.
 
 The table shows available devices:
 
 | Column | Description |
 | --- | --- |
 | Select | Checkbox to include the device |
-| MAC | Device MAC address |
+| MAC | Device MAC address, or `matched by IP` for a manually added device |
 | IP | Current IP address |
 | Name | Device alias or vendor |
 

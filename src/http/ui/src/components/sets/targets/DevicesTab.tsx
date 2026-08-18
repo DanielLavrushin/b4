@@ -46,9 +46,34 @@ export const DevicesTab = ({
 
   const hasMssHints = devices.some((d) => d.mss_clamp);
 
+  const selectedManual = devices.filter(
+    (d) => d.is_manual && isSelected(d.mac),
+  );
+  const manualWithoutIp = selectedManual.filter((d) => !d.ip.trim());
+
   return (
     <>
       <B4Hint>{t("sets.targets.deviceAlert")}</B4Hint>
+
+      {selectedManual.length > 0 && (
+        <Box sx={{ mt: 2 }}>
+          <B4Alert severity="info">
+            {t("sets.targets.manualDeviceInfo")}
+          </B4Alert>
+        </Box>
+      )}
+
+      {manualWithoutIp.length > 0 && (
+        <Box sx={{ mt: 2 }}>
+          <B4Alert severity="warning">
+            {t("sets.targets.manualDeviceNoIp", {
+              names: manualWithoutIp
+                .map((d) => d.alias?.trim() || d.hostname?.trim() || d.mac)
+                .join(", "),
+            })}
+          </B4Alert>
+        </Box>
+      )}
 
       {available ? (
         <Grid container spacing={2}>

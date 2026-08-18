@@ -994,6 +994,7 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 	}
 
 	gate := routeSetDeviceGate(cfg, set)
+	routeWarnDeviceGate(set.Name, gate)
 	routeSelfDialBypass(be, cfg, st.chainPre)
 	be.addBypassRule(st.chainPre, st.mark)
 

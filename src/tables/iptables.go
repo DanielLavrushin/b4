@@ -705,6 +705,9 @@ func (manager *IPTablesManager) buildMSSManifest(preChain string) (mssIPSets []I
 			if !hasIPs && !macOnly {
 				continue
 			}
+			if !setHasSourceForFamily(e.Sources, isV6) {
+				continue
+			}
 			if hasIPs && !hasBinary("ipset") {
 				log.Warnf("ipset binary not found; skipping per-set MSS for set %q (install ipset via your system package manager)", e.SetID)
 				continue
@@ -713,15 +716,31 @@ func (manager *IPTablesManager) buildMSSManifest(preChain string) (mssIPSets []I
 				mssIPSets = append(mssIPSets, IPSet{Name: setName, Family: setFamily, Entries: ips})
 			}
 			tcpMSSSpec := fmt.Sprintf("%d", e.Size)
-			if len(e.MACs) > 0 {
-				for _, mac := range e.MACs {
-					spec := []string{"-m", "mac", "--mac-source", mac, "-p", "tcp", "--dport", "443"}
+			if len(e.Sources) > 0 {
+				for _, src := range e.Sources {
+					out, ok := iptSourceMatchArgs(src, isV6)
+					if !ok {
+						continue
+					}
+					spec := append(out, "-p", "tcp", "--dport", "443")
 					if hasIPs {
 						spec = append(spec, "-m", "set", "--match-set", setName, "dst")
 					}
 					spec = append(spec, "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--set-mss", tcpMSSSpec)
 					mssRules = append(mssRules,
 						Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "I", Spec: spec},
+					)
+					back, backOK := iptReplyMatchArgs(src, isV6)
+					if !backOK {
+						continue
+					}
+					reply := append(back, "-p", "tcp", "--sport", "443")
+					if hasIPs {
+						reply = append(reply, "-m", "set", "--match-set", setName, "src")
+					}
+					reply = append(reply, "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--set-mss", tcpMSSSpec)
+					mssRules = append(mssRules,
+						Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "I", Spec: reply},
 					)
 				}
 			} else if hasIPs {
@@ -740,32 +759,52 @@ func (manager *IPTablesManager) buildMSSManifest(preChain string) (mssIPSets []I
 							"--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--set-mss", tcpMSSSpec}},
 				)
 			}
-			log.Infof("IPTABLES[%s]: per-set MSS clamp for set %q (size: %d, ips=%d macs=%d)",
-				ipt, e.SetID, e.Size, len(ips), len(e.MACs))
+			log.Infof("IPTABLES[%s]: per-set MSS clamp for set %q (size: %d, ips=%d sources=%d)",
+				ipt, e.SetID, e.Size, len(ips), len(e.Sources))
 		}
 
 		if len(deviceClamps) > 0 {
-			minSize := 1460
-			for size, macs := range deviceClamps {
-				if size < minSize {
-					minSize = size
-				}
+			replyMinSize := 1460
+			needsUnscopedReply := false
+			for size, matches := range deviceClamps {
 				tcpMSSSpec := fmt.Sprintf("%d", size)
-				for _, mac := range macs {
+				sized := 0
+				for _, m := range matches {
+					out, ok := iptSourceMatchArgs(m, isV6)
+					if !ok {
+						continue
+					}
+					spec := append(out, "-p", "tcp", "--dport", "443",
+						"--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--set-mss", tcpMSSSpec)
 					mssRules = append(mssRules,
-						Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "I",
-							Spec: []string{"-m", "mac", "--mac-source", mac, "-p", "tcp", "--dport", "443",
-								"--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--set-mss", tcpMSSSpec}},
+						Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "I", Spec: spec},
+					)
+					sized++
+					back, backOK := iptReplyMatchArgs(m, isV6)
+					if !backOK {
+						needsUnscopedReply = true
+						if size < replyMinSize {
+							replyMinSize = size
+						}
+						continue
+					}
+					reply := append(back, "-p", "tcp", "--sport", "443",
+						"--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--set-mss", tcpMSSSpec)
+					mssRules = append(mssRules,
+						Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "I", Spec: reply},
 					)
 				}
-				log.Infof("IPTABLES[%s]: per-device MSS clamp for %d devices (size: %d)", ipt, len(macs), size)
+				if sized == 0 {
+					continue
+				}
+				log.Infof("IPTABLES[%s]: per-device MSS clamp for %d devices (size: %d)", ipt, sized, size)
 			}
 
-			if !global {
+			if !global && needsUnscopedReply {
 				mssRules = append(mssRules,
 					Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "I",
 						Spec: []string{"-p", "tcp", "--sport", "443",
-							"--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--set-mss", fmt.Sprintf("%d", minSize)}},
+							"--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--set-mss", fmt.Sprintf("%d", replyMinSize)}},
 				)
 			}
 		}

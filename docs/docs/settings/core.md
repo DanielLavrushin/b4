@@ -209,7 +209,15 @@ Holds what applies to DNS across every set: whether DNS over TCP is intercepted,
 
 ## Device filtering
 
-Limits b4 to traffic from specific devices on the network (by MAC address). Useful when bypass is not needed for every device.
+Limits b4 to traffic from specific devices on the network. Useful when bypass is not needed for every device.
+
+Devices discovered from the ARP table are matched by their MAC address. Devices you add by hand have no MAC address on the
+network, so they are matched by the IP address you enter for them, both when a set is limited to source devices and for a
+per-device MSS clamp. Give such a device a fixed or reserved address; it cannot be matched at all when an intermediate
+router replaces the source address of its traffic before it reaches b4.
+
+The allow and deny list below selects traffic for DPI bypass by MAC address only, so a list containing nothing but
+manually added devices leaves DPI bypass applying to every device.
 
 ![20260418230312](../../static/img/core/20260418230312.png)
 
@@ -233,7 +241,7 @@ When filtering is enabled, a table of discovered devices appears:
 | Column | Description |
 | --- | --- |
 | Select | Checkbox to include/exclude the device |
-| MAC | MAC address |
+| MAC | MAC address, or `matched by IP` for a device added by hand |
 | IP | Current IP address |
 | Name | Device alias (editable through the edit icon) or vendor |
 | MSS | Per-device MSS Clamping (10-1460, empty = off) |

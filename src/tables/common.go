@@ -286,7 +286,9 @@ func runStdin(stdin string, args ...string) error {
 	return nil
 }
 
-func runLogged(op string, args ...string) {
+var runLogged = runLoggedExec
+
+func runLoggedExec(op string, args ...string) {
 	out, err := run(args...)
 	if err != nil {
 		msg := strings.TrimSpace(out)

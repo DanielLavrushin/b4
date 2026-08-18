@@ -593,14 +593,27 @@ func (cfg *Config) IsTCPPort(port uint16) bool {
 	return cfg.tcpPortMap[port]
 }
 
-func (cfg *Config) CollectDeviceMSSClamps() map[int][]string {
-	result := make(map[int][]string)
-	for _, d := range cfg.Queue.Devices.Devices {
-		mac := strings.ToUpper(strings.TrimSpace(d.MAC))
-		if mac == "" || d.MSSClamp <= 0 {
+func (cfg *Config) CollectDeviceMSSClamps() map[int][]DeviceMatch {
+	result := make(map[int][]DeviceMatch)
+	seen := make(map[int]map[string]struct{})
+	for i := range cfg.Queue.Devices.Devices {
+		d := &cfg.Queue.Devices.Devices[i]
+		if d.MSSClamp <= 0 {
 			continue
 		}
-		result[d.MSSClamp] = append(result[d.MSSClamp], mac)
+		m, ok := d.Match()
+		if !ok {
+			continue
+		}
+		if seen[d.MSSClamp] == nil {
+			seen[d.MSSClamp] = make(map[string]struct{})
+		}
+		result[d.MSSClamp] = AppendDeviceMatch(result[d.MSSClamp], seen[d.MSSClamp], m)
+	}
+	for size, matches := range result {
+		if len(matches) == 0 {
+			delete(result, size)
+		}
 	}
 	return result
 }
@@ -632,19 +645,16 @@ func (cfg *Config) CollectSetMSSClamps() []SetMSSClampEntry {
 			}
 		}
 		if !set.Targets.SourceDevicesExclude {
-			seenMAC := make(map[string]struct{})
-			for _, m := range set.Targets.SourceDevices {
-				m = strings.ToUpper(strings.TrimSpace(m))
-				if m == "" {
+			seenSource := make(map[string]struct{})
+			for _, raw := range set.Targets.SourceDevices {
+				m, ok := cfg.Queue.Devices.MatchForMAC(raw)
+				if !ok {
 					continue
 				}
-				if _, ok := seenMAC[m]; !ok {
-					seenMAC[m] = struct{}{}
-					entry.MACs = append(entry.MACs, m)
-				}
+				entry.Sources = AppendDeviceMatch(entry.Sources, seenSource, m)
 			}
 		}
-		if len(entry.IPv4) == 0 && len(entry.IPv6) == 0 && len(entry.MACs) == 0 {
+		if len(entry.IPv4) == 0 && len(entry.IPv6) == 0 && len(entry.Sources) == 0 {
 			continue
 		}
 		entries = append(entries, entry)
@@ -708,23 +718,20 @@ func (cfg *Config) MSSClampFingerprint() string {
 	}
 
 	deviceClamps := cfg.CollectDeviceMSSClamps()
-	for size, macs := range deviceClamps {
-		sort.Strings(macs)
-		parts = append(parts, fmt.Sprintf("dev:%d:%s", size, strings.Join(macs, ",")))
+	for size, matches := range deviceClamps {
+		parts = append(parts, fmt.Sprintf("dev:%d:%s", size, deviceMatchKeys(matches)))
 	}
 
 	for _, e := range cfg.CollectSetMSSClamps() {
 		ipv4 := append([]string(nil), e.IPv4...)
 		ipv6 := append([]string(nil), e.IPv6...)
-		macs := append([]string(nil), e.MACs...)
 		sort.Strings(ipv4)
 		sort.Strings(ipv6)
-		sort.Strings(macs)
-		parts = append(parts, fmt.Sprintf("set:%s:%d:v4=%s:v6=%s:mac=%s",
+		parts = append(parts, fmt.Sprintf("set:%s:%d:v4=%s:v6=%s:src=%s",
 			e.SetID, e.Size,
 			strings.Join(ipv4, ","),
 			strings.Join(ipv6, ","),
-			strings.Join(macs, ",")))
+			deviceMatchKeys(e.Sources)))
 	}
 
 	sort.Strings(parts)

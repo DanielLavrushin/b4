@@ -26,6 +26,7 @@ func routeEnsureBlockRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	}
 
 	gate := routeSetDeviceGate(cfg, set)
+	routeWarnDeviceGate(set.Name, gate)
 	switch be.name() {
 	case backendNFTables:
 		if err := ensureBlockBaseNft(); err != nil {
