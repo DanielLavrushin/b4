@@ -41,6 +41,8 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
   const tunOutInterface = config.queue.tun?.out_interface;
   const tunFollowsDefault = !tunOutInterface || tunOutInterface === "auto";
 
+  const skipTables = config.system.tables.skip_setup;
+
   const masqueradeSwitch = (
     <B4Switch
       label={t("settings.Feature.natMasquerade")}
@@ -48,7 +50,12 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
       onChange={(checked: boolean) =>
         onChange("system.tables.masquerade.enabled", checked)
       }
-      description={t("settings.Feature.natMasqueradeDesc")}
+      disabled={skipTables}
+      description={t(
+        skipTables
+          ? "settings.Feature.natMasqueradeSkipped"
+          : "settings.Feature.natMasqueradeDesc",
+      )}
     />
   );
 
@@ -149,7 +156,7 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
         <B4FormGroup label={t("settings.Feature.firewallFeatures")} columns={2}>
           <B4Switch
             label={t("settings.Feature.skipIptables")}
-            checked={config.system.tables.skip_setup}
+            checked={skipTables}
             onChange={(checked: boolean) =>
               onChange("system.tables.skip_setup", checked)
             }
@@ -164,8 +171,14 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
             min={0}
             max={120}
             step={5}
-            helperText={t("settings.Feature.firewallMonitorHelp")}
+            disabled={skipTables}
+            helperText={t(
+              skipTables
+                ? "settings.Feature.firewallMonitorSkipped"
+                : "settings.Feature.firewallMonitorHelp",
+            )}
             alert={
+              !skipTables &&
               config.system.tables.monitor_interval <= 0 && (
                 <B4Alert severity="warning">
                   {t("settings.Feature.firewallMonitorWarning")}
