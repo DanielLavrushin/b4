@@ -2,6 +2,7 @@ package tables
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -137,13 +138,11 @@ func (b *discoveryNftBackend) deleteDiscoveryRulesFromChain(chain string, flowMa
 	if err != nil {
 		return
 	}
-	flowToken := "mark " + fmt.Sprintf("0x%x", flowMark)
-	injectedToken := "mark " + fmt.Sprintf("0x%x", injectedMark)
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
 		isDiscovery := strings.Contains(line, "jump "+discoveryChainNFT) ||
-			(strings.Contains(line, flowToken) && strings.Contains(line, "accept")) ||
-			(strings.Contains(line, injectedToken) && strings.Contains(line, "accept"))
+			(strings.Contains(line, "accept") && nftLineHasMark(line, flowMark)) ||
+			(strings.Contains(line, "accept") && nftLineHasMark(line, injectedMark))
 		if !isDiscovery {
 			continue
 		}
@@ -157,4 +156,35 @@ func (b *discoveryNftBackend) deleteDiscoveryRulesFromChain(chain string, flowMa
 		}
 		_, _ = run("nft", "delete", "rule", "inet", nftTableName, chain, "handle", handle)
 	}
+}
+
+func nftLineHasMark(line string, mark uint) bool {
+	rest := line
+	for {
+		idx := strings.Index(rest, "mark ")
+		if idx < 0 {
+			return false
+		}
+		rest = rest[idx+len("mark "):]
+		field := rest
+		if cut := strings.IndexAny(field, " \t"); cut >= 0 {
+			field = field[:cut]
+		}
+		if parseNftNumber(field) == uint64(mark) {
+			return true
+		}
+	}
+}
+
+func parseNftNumber(field string) uint64 {
+	base := 10
+	if lower := strings.ToLower(field); strings.HasPrefix(lower, "0x") {
+		field = field[2:]
+		base = 16
+	}
+	v, err := strconv.ParseUint(field, base, 64)
+	if err != nil {
+		return ^uint64(0)
+	}
+	return v
 }
