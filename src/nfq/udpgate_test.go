@@ -35,20 +35,31 @@ func newDomainUDPSet(filterQUIC string) config.SetConfig {
 	return set
 }
 
-func TestUDPHandledForTargetedSetRegardlessOfQUICFilter(t *testing.T) {
-	for _, filterQUIC := range []string{"disabled", "parse", "all"} {
-		t.Run(filterQUIC, func(t *testing.T) {
-			set := newDomainUDPSet(filterQUIC)
-			cfg := newUDPGateConfig(t, &set)
-			w := newTestWorker(t, &cfg)
+func TestSNIMatchedQUICReachesSetUDPModeRegardlessOfQUICMatching(t *testing.T) {
+	modes := []struct {
+		mode string
+		want engine.PacketVerdict
+	}{
+		{mode: "drop", want: engine.VerdictDrop},
+		{mode: config.ConfigOff, want: engine.VerdictAccept},
+	}
 
-			initial := buildQUICInitialWithSNI(t, []byte{6, 6, 6, 6, 9, 9, 9, 9}, "rr1.googlevideo.com")
-			pkt := makeV4UDPPacket(initial, net.ParseIP("10.0.0.1"), net.ParseIP("1.2.3.4"), 51000, 443)
+	for _, filterQUIC := range []string{config.QUICFilterSNI, config.QUICFilterAll} {
+		for _, m := range modes {
+			t.Run(filterQUIC+"/"+m.mode, func(t *testing.T) {
+				set := newDomainUDPSet(filterQUIC)
+				set.UDP.Mode = m.mode
+				cfg := newUDPGateConfig(t, &set)
+				w := newTestWorker(t, &cfg)
 
-			if v := w.ProcessPacket(pkt); v != engine.VerdictDrop {
-				t.Errorf("a QUIC ClientHello matching the set by SNI must reach the set's udp mode, got verdict %v", v)
-			}
-		})
+				initial := buildQUICInitialWithSNI(t, []byte{6, 6, 6, 6, 9, 9, 9, 9}, "rr1.googlevideo.com")
+				pkt := makeV4UDPPacket(initial, net.ParseIP("10.0.0.1"), net.ParseIP("1.2.3.4"), 51000, 443)
+
+				if v := w.ProcessPacket(pkt); v != m.want {
+					t.Errorf("a QUIC ClientHello matching the set by SNI must reach udp.mode=%s, want verdict %v, got %v", m.mode, m.want, v)
+				}
+			})
+		}
 	}
 }
 
@@ -87,9 +98,8 @@ func TestNonQUICUDPIsHandledForIPTargetedSet(t *testing.T) {
 
 func TestQUICFilterAllGatesBlockingForPortOnlySet(t *testing.T) {
 	cases := map[string]engine.PacketVerdict{
-		"disabled": engine.VerdictAccept,
-		"parse":    engine.VerdictAccept,
-		"all":      engine.VerdictDrop,
+		config.QUICFilterSNI: engine.VerdictAccept,
+		config.QUICFilterAll: engine.VerdictDrop,
 	}
 
 	for filterQUIC, want := range cases {

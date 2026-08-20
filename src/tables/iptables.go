@@ -359,20 +359,82 @@ func (m Manifest) RevertSysctls() {
 	}
 }
 
-func (manager *IPTablesManager) buildManifest() (Manifest, error) {
+func iptFamilyLabel(ipt string) string {
+	if strings.HasPrefix(ipt, "ip6") {
+		return "IPv6"
+	}
+	return "IPv4"
+}
+
+func (manager *IPTablesManager) applyBinaries() []string {
 	cfg := manager.cfg
 	var ipts []string
-	iptBin := manager.iptablesBin()
-	ip6tBin := manager.ip6tablesBin()
-	if cfg.Queue.IPv4Enabled && hasBinary(iptBin) {
-		ipts = append(ipts, iptBin)
+	if cfg.Queue.IPv4Enabled && hasBinary(manager.iptablesBin()) {
+		ipts = append(ipts, manager.iptablesBin())
 	}
-	if cfg.Queue.IPv6Enabled && hasBinary(ip6tBin) {
-		ipts = append(ipts, ip6tBin)
+	if cfg.Queue.IPv6Enabled && hasBinary(manager.ip6tablesBin()) {
+		ipts = append(ipts, manager.ip6tablesBin())
 	}
+	return ipts
+}
+
+func (manager *IPTablesManager) teardownBinaries() []string {
+	var ipts []string
+	for _, bin := range []string{manager.iptablesBin(), manager.ip6tablesBin()} {
+		if hasBinary(bin) {
+			ipts = append(ipts, bin)
+		}
+	}
+	return ipts
+}
+
+func (manager *IPTablesManager) usableApplyBinaries() ([]string, error) {
+	ipts := manager.applyBinaries()
+	if len(ipts) == 0 {
+		return nil, errors.New("no valid iptables binaries found")
+	}
+	var usable []string
+	var lastErr error
+	for _, ipt := range ipts {
+		if err := manager.checkNFQueueSupport(ipt); err != nil {
+			log.Warnf("IPTABLES[%s]: %s rules skipped, %v", ipt, iptFamilyLabel(ipt), err)
+			lastErr = err
+			continue
+		}
+		if err := manager.checkConnbytesSupport(ipt); err != nil {
+			log.Warnf("IPTABLES[%s]: %s rules skipped, %v", ipt, iptFamilyLabel(ipt), err)
+			lastErr = err
+			continue
+		}
+		usable = append(usable, ipt)
+	}
+	if len(usable) == 0 {
+		if lastErr == nil {
+			lastErr = errors.New("no valid iptables binaries found")
+		}
+		return nil, lastErr
+	}
+	return usable, nil
+}
+
+func (manager *IPTablesManager) buildManifest() (Manifest, error) {
+	ipts, err := manager.usableApplyBinaries()
+	if err != nil {
+		return Manifest{}, err
+	}
+	return manager.buildManifestFor(ipts), nil
+}
+
+func (manager *IPTablesManager) buildTeardownManifest() (Manifest, error) {
+	ipts := manager.teardownBinaries()
 	if len(ipts) == 0 {
 		return Manifest{}, errors.New("no valid iptables binaries found")
 	}
+	return manager.buildManifestFor(ipts), nil
+}
+
+func (manager *IPTablesManager) buildManifestFor(ipts []string) Manifest {
+	cfg := manager.cfg
 	queueNum := cfg.Queue.StartNum
 	threads := cfg.Queue.Threads
 	chainName := "B4"
@@ -409,14 +471,6 @@ func (manager *IPTablesManager) buildManifest() (Manifest, error) {
 		tcpPorts := cfg.CollectTCPPorts()
 		for i, p := range tcpPorts {
 			tcpPorts[i] = strings.ReplaceAll(p, "-", ":")
-		}
-
-		if err := manager.checkNFQueueSupport(ipt); err != nil {
-			return Manifest{}, err
-		}
-
-		if err := manager.checkConnbytesSupport(ipt); err != nil {
-			return Manifest{}, err
 		}
 
 		// TCP response and SYN-ACK rules (PREROUTING)
@@ -651,26 +705,22 @@ func (manager *IPTablesManager) buildManifest() (Manifest, error) {
 		}
 	}
 
-	mssIPSets, mssRules := manager.buildMSSManifest(preChainName)
+	mssIPSets, mssRules := manager.buildMSSManifestFor(ipts, preChainName)
 	ipsets = append(ipsets, mssIPSets...)
 	rules = append(rules, mssRules...)
 
-	return Manifest{IPSets: ipsets, Chains: chains, Rules: rules, Sysctls: b4SysctlSettings()}, nil
+	return Manifest{IPSets: ipsets, Chains: chains, Rules: rules, Sysctls: b4SysctlSettings()}
 }
 
 func (manager *IPTablesManager) mssClampBinaries() []string {
-	cfg := manager.cfg
-	var ipts []string
-	if cfg.Queue.IPv4Enabled && hasBinary(manager.iptablesBin()) {
-		ipts = append(ipts, manager.iptablesBin())
-	}
-	if cfg.Queue.IPv6Enabled && hasBinary(manager.ip6tablesBin()) {
-		ipts = append(ipts, manager.ip6tablesBin())
-	}
-	return ipts
+	return manager.applyBinaries()
 }
 
 func (manager *IPTablesManager) buildMSSManifest(preChain string) (mssIPSets []IPSet, mssRules []Rule) {
+	return manager.buildMSSManifestFor(manager.mssClampBinaries(), preChain)
+}
+
+func (manager *IPTablesManager) buildMSSManifestFor(ipts []string, preChain string) (mssIPSets []IPSet, mssRules []Rule) {
 	cfg := manager.cfg
 	global, globalSize := cfg.HasGlobalMSSClamp()
 	deviceClamps := cfg.CollectDeviceMSSClamps()
@@ -680,7 +730,7 @@ func (manager *IPTablesManager) buildMSSManifest(preChain string) (mssIPSets []I
 	}
 	log.Infof("IPTABLES: adding MSS clamp rules")
 
-	for _, ipt := range manager.mssClampBinaries() {
+	for _, ipt := range ipts {
 		// Emit order matters: rules use `-I` (insert at top), so the LAST
 		// rule emitted ends up FIRST in chain. TCPMSS does not terminate,
 		// so the LAST matching rule wins. To get the precedence
@@ -834,7 +884,7 @@ func (manager *IPTablesManager) ApplyMSSClamp() error {
 }
 
 func (manager *IPTablesManager) ClearMSSClamp() {
-	sets, rules := manager.buildMSSManifest("PREROUTING")
+	sets, rules := manager.buildMSSManifestFor(manager.teardownBinaries(), "PREROUTING")
 	m := Manifest{IPSets: sets, Rules: rules}
 	m.RemoveRules()
 	m.DestroyIPSets()
@@ -857,7 +907,7 @@ func (ipt *IPTablesManager) Apply() error {
 }
 
 func (ipt *IPTablesManager) Clear() error {
-	m, err := ipt.buildManifest()
+	m, err := ipt.buildTeardownManifest()
 	if err != nil {
 		return err
 	}
@@ -867,7 +917,7 @@ func (ipt *IPTablesManager) Clear() error {
 	m.RemoveRules()
 	time.Sleep(30 * time.Millisecond)
 	m.RemoveChains()
-	for _, bin := range ipt.masqueradeBinaries() {
+	for _, bin := range ipt.teardownBinaries() {
 		ipt.teardownMasqueradeChain(bin)
 		ipt.teardownDNSTCPChain(bin)
 	}
@@ -931,17 +981,7 @@ func iptListLineTarget(line string) string {
 }
 
 func (ipt *IPTablesManager) clearB4JumpRules() {
-	ipts := []string{}
-	iptBin := ipt.iptablesBin()
-	ip6tBin := ipt.ip6tablesBin()
-	if ipt.cfg.Queue.IPv4Enabled && hasBinary(iptBin) {
-		ipts = append(ipts, iptBin)
-	}
-	if ipt.cfg.Queue.IPv6Enabled && hasBinary(ip6tBin) {
-		ipts = append(ipts, ip6tBin)
-	}
-
-	for _, iptBin := range ipts {
+	for _, iptBin := range ipt.teardownBinaries() {
 		// Clean POSTROUTING
 		for {
 			_, err := run(iptBin, "-w", "-t", "mangle", "-D", "POSTROUTING", "-j", "B4")

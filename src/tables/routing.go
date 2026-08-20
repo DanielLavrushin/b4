@@ -33,6 +33,8 @@ type routeState struct {
 	blockAction string
 	quicReject  bool
 	srcScoped   bool
+	ipv4        bool
+	ipv6        bool
 	setV4       string
 	setV6       string
 	chainPre    string
@@ -175,7 +177,7 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 		ttl = 3600
 	}
 
-	routeAddIPsToSets(be, cur, ttl, ips, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	routeAddIPsToSets(be, cur, ttl, ips, cur.ipv4, cur.ipv6)
 }
 
 func RoutingLearnIP(cfg *config.Config, set *config.SetConfig, ip net.IP) {
@@ -314,7 +316,7 @@ func routeAddResolvedIPs(cfg *config.Config, set *config.SetConfig, ips []net.IP
 	if ttl <= 0 {
 		ttl = 3600
 	}
-	routeAddIPsToSets(be, st, ttl, ips, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	routeAddIPsToSets(be, st, ttl, ips, st.ipv4, st.ipv6)
 }
 
 func routeResolveHost(cfg *config.Config, host string) []net.IP {
@@ -355,6 +357,8 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		sourcesKey: sourcesKey,
 		deviceKey:  routeSetDeviceGate(cfg, set).key(),
 		srcScoped:  routeSetIsSourceScoped(set),
+		ipv4:       cfg.Queue.IPv4Enabled,
+		ipv6:       cfg.Queue.IPv6Enabled,
 		setV4:      setV4, setV6: setV6,
 		chainPre: chainPre, chainOut: chainOut, chainSNAT: chainSNAT,
 		chainQUIC: routeBuildQUICChainName(set.Id),
@@ -390,7 +394,10 @@ func routeStateEqual(a, b routeState) bool {
 		a.blockAction == b.blockAction &&
 		a.quicReject == b.quicReject &&
 		a.sourcesKey == b.sourcesKey &&
-		a.deviceKey == b.deviceKey
+		a.deviceKey == b.deviceKey &&
+		a.srcScoped == b.srcScoped &&
+		a.ipv4 == b.ipv4 &&
+		a.ipv6 == b.ipv6
 }
 
 func routeCleanupAny(be routeBackend, st routeState) {
@@ -846,10 +853,10 @@ func RoutingSyncConfig(cfg *config.Config) {
 		}
 
 		staticV4, staticV6 := routeCollectEntries(set)
-		if cfg.Queue.IPv4Enabled && len(staticV4) > 0 {
+		if cur.ipv4 && len(staticV4) > 0 {
 			be.addElements(cur.setV4, staticV4, 0)
 		}
-		if cfg.Queue.IPv6Enabled && len(staticV6) > 0 {
+		if cur.ipv6 && len(staticV6) > 0 {
 			be.addElements(cur.setV6, staticV6, 0)
 		}
 	}
@@ -1245,14 +1252,15 @@ func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 	tableStr := fmt.Sprintf("%d", table)
 	prioStr := fmt.Sprintf("%d", prio)
 
+	routeDelRuleLoop(false, markStr, tableStr)
+	routeDelRuleLoop(false, markStrMask, tableStr)
+	routeDelRuleLoop(true, markStr, tableStr)
+	routeDelRuleLoop(true, markStrMask, tableStr)
+
 	if ipv4 {
-		routeDelRuleLoop(false, markStr, tableStr)
-		routeDelRuleLoop(false, markStrMask, tableStr)
 		runLogged("routing: add ip rule v4", "ip", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
 	}
 	if ipv6 {
-		routeDelRuleLoop(true, markStr, tableStr)
-		routeDelRuleLoop(true, markStrMask, tableStr)
 		runLogged("routing: add ip rule v6", "ip", "-6", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
 	}
 
@@ -1519,7 +1527,9 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 	return mark, table
 }
 
-func routeDelRuleLoop(ipv6 bool, mark, table string) {
+var routeDelRuleLoop = routeDelRuleLoopExec
+
+func routeDelRuleLoopExec(ipv6 bool, mark, table string) {
 	for i := 0; i < 100; i++ {
 		var err error
 		if ipv6 {

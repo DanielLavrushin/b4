@@ -233,6 +233,8 @@ func (c *Config) Validate() error {
 		if set.UDP.ConnBytesLimit > c.Queue.UDPConnBytesLimit {
 			set.UDP.ConnBytesLimit = c.Queue.UDPConnBytesLimit
 		}
+		set.UDP.FilterQUIC = NormalizeQUICFilter(set.UDP.FilterQUIC)
+		set.UDP.Mode = NormalizeUDPMode(set.UDP.Mode)
 
 		if len(set.Targets.GeoSiteCategories) > 0 && c.System.Geo.GeoSitePath == "" {
 			v.add(fmt.Sprintf("sets[%d].targets.geosite_categories", setIdx), "geosite_path_missing", "geosite path must be configured to use geosite categories", nil)

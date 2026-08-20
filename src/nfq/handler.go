@@ -177,28 +177,10 @@ func (w *Worker) parseIPHeaders(raw []byte) (*pktInfo, bool) {
 		p.dst = net.IP(p.addr[16:20])
 		p.ihl = ihl
 	} else {
-		if len(raw) < IPv6HeaderLen {
+		offset, nextHeader, ok := upperLayerOffsetV6(raw)
+		if !ok {
 			return nil, false
 		}
-		nextHeader := raw[6]
-		offset := 40
-
-		for {
-			switch nextHeader {
-			case 0, 43, 60:
-				if len(raw) < offset+2 {
-					return nil, false
-				}
-				nextHeader = raw[offset]
-				hdrLen := int(raw[offset+1])*8 + 8
-				offset += hdrLen
-			case 44:
-				return nil, false
-			default:
-				goto done
-			}
-		}
-	done:
 		p.proto = nextHeader
 		p.ihl = offset
 		copy(p.addr[0:16], raw[8:24])
@@ -857,6 +839,9 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	switch set.UDP.Mode {
+	case config.ConfigOff:
+		return vc.accept()
+
 	case "drop":
 		vc.drop()
 		return 0

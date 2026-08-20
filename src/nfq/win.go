@@ -215,6 +215,11 @@ func (w *Worker) ManipulateWindowIPv6(cfg *config.SetConfig, packet []byte, dst 
 		return
 	}
 
+	if !hasPlainIPv6Header(packet, ipProtoTCP) {
+		log.Tracef("Window v6: skipping %s, the TCP header is not at the fixed IPv6 offset", dst.String())
+		return
+	}
+
 	wm := NewWindowManipulator(&cfg.TCP)
 
 	switch wm.mode {

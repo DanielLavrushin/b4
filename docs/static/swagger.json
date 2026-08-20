@@ -4,7 +4,7 @@
         "description": "B4 network packet processor REST API",
         "title": "B4 API",
         "contact": {},
-        "version": "1.78.0"
+        "version": "1.79.0"
     },
     "basePath": "/api",
     "paths": {
@@ -3240,7 +3240,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.SystemInfo"
+                            "$ref": "#/definitions/handler.SystemInfoResponse"
                         }
                     }
                 }
@@ -3826,6 +3826,9 @@
         "config.DNSSystemConfig": {
             "type": "object",
             "properties": {
+                "keep_ipv6_answers": {
+                    "type": "boolean"
+                },
                 "query_timeout_sec": {
                     "type": "integer"
                 },
@@ -4437,6 +4440,9 @@
                     "type": "string"
                 },
                 "egress_interface": {
+                    "type": "string"
+                },
+                "egress_ip": {
                     "type": "string"
                 },
                 "enabled": {
@@ -6142,13 +6148,19 @@
                 }
             }
         },
-        "handler.SystemInfo": {
+        "handler.SystemInfoResponse": {
             "type": "object",
             "properties": {
                 "arch": {
                     "type": "string"
                 },
                 "can_restart": {
+                    "type": "boolean"
+                },
+                "host_has_global_ipv6": {
+                    "type": "boolean"
+                },
+                "ipv6_bypasses_sets": {
                     "type": "boolean"
                 },
                 "is_docker": {

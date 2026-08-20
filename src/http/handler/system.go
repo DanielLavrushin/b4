@@ -106,10 +106,16 @@ func writeUpdateLog(path, format string, args ...interface{}) {
 	fmt.Fprintf(f, "%s [HANDLER] %s\n", ts, fmt.Sprintf(format, args...))
 }
 
+type SystemInfoResponse struct {
+	SystemInfo
+	HostHasGlobalIPv6 bool `json:"host_has_global_ipv6"`
+	IPv6BypassesSets  bool `json:"ipv6_bypasses_sets"`
+}
+
 // @Summary Get system information
 // @Tags System
 // @Produce json
-// @Success 200 {object} SystemInfo
+// @Success 200 {object} SystemInfoResponse
 // @Security BearerAuth
 // @Router /system/info [get]
 func (api *API) handleSystemInfo(w http.ResponseWriter, r *http.Request) {
@@ -122,12 +128,19 @@ func (api *API) handleSystemInfo(w http.ResponseWriter, r *http.Request) {
 	isDocker := serviceManager == "docker"
 	canRestart := serviceManager != "standalone" && !isDocker
 
-	info := SystemInfo{
-		ServiceManager: serviceManager,
-		OS:             runtime.GOOS,
-		Arch:           runtime.GOARCH,
-		CanRestart:     canRestart,
-		IsDocker:       isDocker,
+	cfg := api.getCfg()
+	hostIPv6 := config.HostHasGlobalIPv6()
+
+	info := SystemInfoResponse{
+		SystemInfo: SystemInfo{
+			ServiceManager: serviceManager,
+			OS:             runtime.GOOS,
+			Arch:           runtime.GOARCH,
+			CanRestart:     canRestart,
+			IsDocker:       isDocker,
+		},
+		HostHasGlobalIPv6: hostIPv6,
+		IPv6BypassesSets:  hostIPv6 && cfg != nil && !cfg.Queue.IPv6Enabled,
 	}
 
 	setJsonHeader(w)

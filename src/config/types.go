@@ -40,6 +40,17 @@ const (
 )
 
 const (
+	QUICFilterSNI = "sni"
+	QUICFilterAll = "all"
+)
+
+const (
+	UDPModeFake   = "fake"
+	UDPModeDrop   = "drop"
+	UDPModeReject = "reject"
+)
+
+const (
 	DefaultIPBlockSynThreshold = 3
 	DefaultIPBlockHealTTLSec   = 60
 	DefaultIPHealthRetestSec   = 300
@@ -68,6 +79,21 @@ func NormalizeBlockAction(action string) string {
 	// Default (and any legacy value such as "reject-tcp-reset") -> fast reject:
 	// TCP RST, ICMP unreachable for UDP/QUIC.
 	return BlockActionReject
+}
+
+func NormalizeQUICFilter(filter string) string {
+	if filter == QUICFilterAll {
+		return QUICFilterAll
+	}
+	return QUICFilterSNI
+}
+
+func NormalizeUDPMode(mode string) string {
+	switch mode {
+	case ConfigOff, UDPModeFake, UDPModeDrop, UDPModeReject:
+		return mode
+	}
+	return DefaultSetConfig.UDP.Mode
 }
 
 const (
@@ -588,6 +614,7 @@ type DNSSystemConfig struct {
 	TCPIdleSec      int  `json:"tcp_idle_sec"`
 	TCPIOSec        int  `json:"tcp_io_sec"`
 	TCPDialSec      int  `json:"tcp_dial_sec"`
+	KeepIPv6Answers bool `json:"keep_ipv6_answers"`
 }
 
 type DuplicateConfig struct {

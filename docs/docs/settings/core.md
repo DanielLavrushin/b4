@@ -44,6 +44,18 @@ These limits are a global ceiling. Each set can define its own limit, but not ab
 | IPv4 support | Process IPv4 traffic | On |
 | IPv6 support | Process IPv6 traffic | Off |
 
+These switches say which address families **b4** looks at. They do not turn IPv6 on or off on the router, and they do not stop the network from using it.
+
+:::warning What IPv6 support being off means
+With it off, b4 creates no IPv6 firewall rules and reads no IPv6 packets. A site that a set targets and that also answers over IPv6 is reached over IPv6 by the client, which means it bypasses the set entirely: no bypass strategies, no routing, no blocking. That is why b4 writes a warning to the log when the host has a working global IPv6 address while this setting is off.
+
+Two things soften it. b4 strips IPv6 addresses out of DNS answers for domains a set matched, so clients that resolve through the router stay on the IPv4 path b4 protects, and a set can be pointed at IPv6 explicitly. See [DNS -> The IPv4 fallback](../dns#the-ipv4-fallback).
+:::
+
+:::note Restart to apply
+Turning IPv6 support on or off changes which rules exist in the firewall for every set. Sets are rebuilt on the next configuration sync, but the packet queue itself binds its address families at startup, so the change takes full effect only after the service restarts.
+:::
+
 ### Firewall
 
 ![20260418230000](../../static/img/core/20260418230000.png)
@@ -205,7 +217,9 @@ There are three places, from broadest to narrowest:
 
 ## DNS
 
-Holds what applies to DNS across every set: whether DNS over TCP is intercepted, the port it is redirected to, and the timeouts. The resolver itself is picked per set. See [DNS](../dns.md).
+Holds what applies to DNS across every set: whether DNS over TCP is intercepted, the port it is redirected to, the timeouts, and the IPv4 fallback. The resolver itself is picked per set. See [DNS](../dns.md).
+
+**Force IPv4 for matched domains** is in this group. While IPv6 support is off, it strips IPv6 addresses out of DNS answers for domains a set matched, so those clients stay on the IPv4 path b4 protects, and it leaves every other name alone. It is on by default and greyed out while IPv6 support is on. See [The IPv4 fallback](../dns#the-ipv4-fallback).
 
 ## Device filtering
 

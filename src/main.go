@@ -214,6 +214,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		return nil
 	})
 	handler.SetRoutingSyncFunc(func(c *config.Config) {
+		config.WarnIPv6Bypass(c)
 		tproxyMgr.SyncConfig(c)
 		tables.RoutingSyncConfig(c)
 	})
@@ -251,6 +252,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 	}
 
 	printConfigDefaults(cmd)
+
+	config.WarnIPv6Bypass(&cfg)
 
 	// Initialize metrics collector early
 	metrics := handler.GetMetricsCollector()

@@ -590,6 +590,7 @@ func routeCleanupProxyRule(be routeBackend, st routeState) {
 }
 
 func routeEnsureLocalDelivery(mark uint32, table int, ipv4, ipv6 bool) {
+	markStr := fmt.Sprintf("0x%x", mark)
 	markStrMask := fmt.Sprintf("0x%x/0x%x", mark, mark)
 	tableStr := fmt.Sprintf("%d", table)
 	prioStr := fmt.Sprintf("%d", proxyRulePriority)
@@ -597,21 +598,28 @@ func routeEnsureLocalDelivery(mark uint32, table int, ipv4, ipv6 bool) {
 	writeSysctl("/proc/sys/net/ipv4/conf/lo/rp_filter", "0")
 	writeSysctl("/proc/sys/net/ipv4/conf/all/rp_filter", "2")
 
+	routeDelRuleLoop(false, markStr, tableStr)
+	routeDelRuleLoop(false, markStrMask, tableStr)
+	routeDelRuleLoop(true, markStr, tableStr)
+	routeDelRuleLoop(true, markStrMask, tableStr)
+
 	if ipv4 {
-		routeDelRuleLoop(false, fmt.Sprintf("0x%x", mark), tableStr)
-		routeDelRuleLoop(false, markStrMask, tableStr)
 		runLogged("routing: add ip rule v4 (proxy)", "ip", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
 		runLogged("routing: add local route v4 (proxy)", "ip", "route", "replace", "local", "0.0.0.0/0", "dev", "lo", "table", tableStr)
+	} else {
+		runLogged("routing: delete local route v4 (proxy)", "ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", tableStr)
 	}
 	if ipv6 {
-		routeDelRuleLoop(true, fmt.Sprintf("0x%x", mark), tableStr)
-		routeDelRuleLoop(true, markStrMask, tableStr)
 		runLogged("routing: add ip rule v6 (proxy)", "ip", "-6", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
 		runLogged("routing: add local route v6 (proxy)", "ip", "-6", "route", "replace", "local", "::/0", "dev", "lo", "table", tableStr)
+	} else {
+		runLogged("routing: delete local route v6 (proxy)", "ip", "-6", "route", "del", "local", "::/0", "dev", "lo", "table", tableStr)
 	}
 }
 
-func writeSysctl(path, value string) {
+var writeSysctl = writeSysctlExec
+
+func writeSysctlExec(path, value string) {
 	cur, err := os.ReadFile(path)
 	if err == nil && strings.TrimSpace(string(cur)) == value {
 		return

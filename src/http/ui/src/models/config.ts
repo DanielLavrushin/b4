@@ -127,8 +127,8 @@ export interface CategoryPreviewConfig {
   preview: string[];
 }
 
-export type UdpMode = "drop" | "reject" | "fake";
-export type UdpFilterQuicMode = "disabled" | "all" | "parse";
+export type UdpMode = "off" | "fake" | "drop" | "reject";
+export type UdpFilterQuicMode = "sni" | "all";
 export type UdpFakingStrategy = "none" | "ttl" | "checksum";
 
 export const UDP_FAKE_PAYLOAD_AUTO_QUIC = "@quic_initial";
@@ -196,6 +196,8 @@ export interface WatchdogConfig {
   cooldown_sec: number;
   timeout_sec: number;
   max_retries: number;
+  heal_validation_tries?: number;
+  verify_tries?: number;
 }
 
 export interface DiscoveryConfig {
@@ -204,6 +206,8 @@ export interface DiscoveryConfig {
   reference_domain: string;
   reference_dns: string[];
   validation_tries: number;
+  discovery_flow_mark?: number;
+  discovery_injected_mark?: number;
   watchdog: WatchdogConfig;
 }
 
@@ -368,6 +372,7 @@ export interface SystemConfig {
   ip_health?: IPHealthConfig;
   timezone: string;
   memory_limit?: string;
+  pprof?: boolean;
 }
 
 export interface DnsSystemConfig {
@@ -377,6 +382,7 @@ export interface DnsSystemConfig {
   tcp_idle_sec: number;
   tcp_io_sec: number;
   tcp_dial_sec: number;
+  keep_ipv6_answers: boolean;
 }
 
 export interface B4Config {

@@ -74,6 +74,10 @@ func StripSACKFromTCP(packet []byte) []byte {
 
 func StripSACKFromTCPv6(packet []byte) []byte {
 	ipv6HdrLen := 40
+	if len(packet) < ipv6HdrLen+20 || packet[0]>>4 != 6 || packet[6] != 6 {
+		return packet
+	}
+
 	tcpHdrLen := int((packet[ipv6HdrLen+12] >> 4) * 4)
 
 	if tcpHdrLen <= 20 {

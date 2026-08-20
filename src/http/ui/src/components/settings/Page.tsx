@@ -213,6 +213,8 @@ export function SettingsPage() {
           JSON.stringify(originalConfig.system.socks5) ||
         JSON.stringify(config.system.tables) !==
           JSON.stringify(originalConfig.system.tables) ||
+        JSON.stringify(config.system.dns) !==
+          JSON.stringify(originalConfig.system.dns) ||
         JSON.stringify(config.queue.devices) !==
           JSON.stringify(originalConfig.queue.devices),
 

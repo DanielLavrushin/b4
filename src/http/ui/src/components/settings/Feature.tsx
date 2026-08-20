@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ToggleOnIcon } from "@b4.icons";
 import { B4Config } from "@models/config";
+import { systemApi } from "@api/settings";
 import {
   B4Slider,
   B4FormGroup,
@@ -19,8 +21,29 @@ interface FeatureSettingsProps {
   onChange: (field: string, value: SettingsPropHandlerType) => void;
 }
 
+const IPV6_BYPASS_DISMISS_KEY = "b4_ipv6_bypass_dismissed";
+
 export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
   const { t } = useTranslation();
+  const [ipv6BypassesSets, setIpv6BypassesSets] = useState(false);
+  const [ipv6BypassDismissed, setIpv6BypassDismissed] = useState(
+    () => localStorage.getItem(IPV6_BYPASS_DISMISS_KEY) === "true",
+  );
+
+  useEffect(() => {
+    systemApi
+      .info()
+      .then((info) => setIpv6BypassesSets(!!info?.ipv6_bypasses_sets))
+      .catch(() => setIpv6BypassesSets(false));
+  }, []);
+
+  const dismissIpv6Bypass = () => {
+    localStorage.setItem(IPV6_BYPASS_DISMISS_KEY, "true");
+    setIpv6BypassDismissed(true);
+  };
+
+  const showIpv6Bypass =
+    ipv6BypassesSets && !config.queue.ipv6 && !ipv6BypassDismissed;
 
   const handleInterfaceToggle = (iface: string) => {
     const current = config.queue.interfaces || [];
@@ -79,6 +102,16 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
           description={t("settings.Feature.enableIPv6Desc")}
         />
       </B4FormGroup>
+      {showIpv6Bypass && (
+        <B4Alert
+          severity="warning"
+          noWrapper
+          onClose={dismissIpv6Bypass}
+          sx={{ mt: 1 }}
+        >
+          {t("settings.Feature.ipv6BypassWarning")}
+        </B4Alert>
+      )}
       <B4FormGroup label={t("settings.Feature.engineMode")} columns={1}>
         <B4Select
           label={t("settings.Feature.engineModeLabel")}
