@@ -14,7 +14,14 @@ import { OtherSetsTargets } from "./targets/overlap";
 
 export type { OtherSetsTargets };
 
+const TARGET_SUB_INDEX: Record<string, number> = {
+  domains: 0,
+  ips: 1,
+  devices: 2,
+};
+
 interface TargetSettingsProps {
+  initialSub?: string;
   config: B4SetConfig;
   geo: GeoConfig;
   stats?: SetStats;
@@ -31,6 +38,7 @@ enum TARGET_TABS {
 }
 
 export const TargetSettings = ({
+  initialSub,
   config,
   onChange,
   geo,
@@ -40,7 +48,14 @@ export const TargetSettings = ({
   ipv6,
 }: TargetSettingsProps) => {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<TARGET_TABS>(TARGET_TABS.DOMAINS);
+  const [activeTab, setActiveTab] = useState<TARGET_TABS>(
+    (TARGET_SUB_INDEX[initialSub ?? ""] ?? TARGET_TABS.DOMAINS),
+  );
+
+  useEffect(() => {
+    const index = TARGET_SUB_INDEX[initialSub ?? ""];
+    if (index !== undefined) setActiveTab(index);
+  }, [initialSub]);
   const {
     devices,
     loading: devicesLoading,

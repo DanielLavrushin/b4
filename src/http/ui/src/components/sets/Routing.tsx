@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { B4Section, B4Tab, B4TabPanel, B4Tabs } from "@b4.elements";
 import { DnsIcon } from "@b4.icons";
 import { B4SetConfig } from "@models/config";
@@ -12,7 +12,13 @@ enum ROUTING_TABS {
   ROUTING,
 }
 
+const ROUTING_SUB_INDEX: Record<string, number> = {
+  dns: 0,
+  traffic: 1,
+};
+
 interface RoutingSettingsProps {
+  initialSub?: string;
   set: B4SetConfig;
   ipv6: boolean;
   availableIfaces: string[];
@@ -31,13 +37,21 @@ interface RoutingSettingsProps {
 }
 
 export const RoutingSettings = ({
+  initialSub,
   set,
   ipv6,
   availableIfaces,
   onChange,
 }: RoutingSettingsProps) => {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<ROUTING_TABS>(ROUTING_TABS.DNS);
+  const [activeTab, setActiveTab] = useState<ROUTING_TABS>(
+    (ROUTING_SUB_INDEX[initialSub ?? ""] ?? ROUTING_TABS.DNS),
+  );
+
+  useEffect(() => {
+    const index = ROUTING_SUB_INDEX[initialSub ?? ""];
+    if (index !== undefined) setActiveTab(index);
+  }, [initialSub]);
 
   return (
     <B4Section
