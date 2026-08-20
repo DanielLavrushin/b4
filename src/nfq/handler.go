@@ -279,7 +279,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if !matched && cfg.IsTCPPort(dport) {
-		if portMatched, portSet := matcher.MatchTCPPort(dport); portMatched {
+		if portMatched, portSet := matcher.MatchTCPPort(dport, pkt.srcMac); portMatched {
 			matched = true
 			set = portSet
 		}
@@ -299,7 +299,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
-	routeTProxy := matched && set != nil && set.Routing.Enabled && config.RoutingUsesTProxy(set.Routing.Mode)
+	routeTProxy := matched && set != nil && set.RoutingDivertsPackets() && config.RoutingUsesTProxy(set.Routing.Mode)
 
 	if matched && !routeTProxy && cfg.IsTCPPort(dport) && set.TCP.Duplicate.Enabled && set.TCP.Duplicate.Count > 0 {
 		log.Tracef("TCP duplicate to %s:%d (%d copies, set: %s)", pkt.dstStr, dport, set.TCP.Duplicate.Count, set.Name)
@@ -598,7 +598,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		return vc.accept()
 	}
 
-	if matched && set != nil && set.Routing.Enabled && config.RoutingUsesTProxy(set.Routing.Mode) {
+	if matched && set != nil && set.RoutingDivertsPackets() && config.RoutingUsesTProxy(set.Routing.Mode) {
 		return vc.accept()
 	}
 
@@ -740,7 +740,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	matchedPort := false
 	if !matched {
-		if portMatched, portSet := matcher.MatchUDPPort(dport); portMatched {
+		if portMatched, portSet := matcher.MatchUDPPort(dport, pkt.srcMac); portMatched {
 			matchedPort = true
 			matched = true
 			set = portSet

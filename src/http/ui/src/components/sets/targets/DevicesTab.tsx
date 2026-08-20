@@ -16,6 +16,8 @@ import { useTranslation } from "react-i18next";
 interface DevicesTabProps {
   selected: string[];
   exclude: boolean;
+  routingEnabled: boolean;
+  hasDestination: boolean;
   devices: DeviceInfo[];
   loading: boolean;
   available: boolean;
@@ -27,6 +29,8 @@ interface DevicesTabProps {
 export const DevicesTab = ({
   selected,
   exclude,
+  routingEnabled,
+  hasDestination,
   devices,
   loading,
   available,
@@ -50,10 +54,20 @@ export const DevicesTab = ({
     (d) => d.is_manual && isSelected(d.mac),
   );
   const manualWithoutIp = selectedManual.filter((d) => !d.ip.trim());
+  const showNoDestination =
+    routingEnabled && !hasDestination && selected.length > 0 && !exclude;
 
   return (
     <>
       <B4Hint>{t("sets.targets.deviceAlert")}</B4Hint>
+
+      {showNoDestination && (
+        <Box sx={{ mt: 2 }}>
+          <B4Alert severity="warning">
+            {t("sets.targets.deviceNoDestination")}
+          </B4Alert>
+        </Box>
+      )}
 
       {selectedManual.length > 0 && (
         <Box sx={{ mt: 2 }}>

@@ -516,6 +516,10 @@ func (set *SetConfig) HasIPOrDomainTargets() bool {
 	return len(set.Targets.IpsToMatch) > 0 || len(set.Targets.DomainsToMatch) > 0
 }
 
+func (set *SetConfig) RoutingDivertsPackets() bool {
+	return set.Routing.Enabled && set.HasIPOrDomainTargets()
+}
+
 func (set *SetConfig) MatchesTCPDPort(port uint16) bool {
 	if len(set.TCPPortRanges) == 0 {
 		return true

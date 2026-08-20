@@ -1292,6 +1292,7 @@ type mockRouteBackend struct {
 	bypass        map[string][]uint32
 	chainOps      map[string][]string
 	jumps         []mockRouteJump
+	deletedJumps  []mockRouteJump
 	injected      []mockInjectedMarkRule
 	masq          []mockNATRule
 	snat          []mockNATRule
@@ -1337,7 +1338,27 @@ func (m *mockRouteBackend) addInjectedMarkRule(chain string, v6 bool, setName st
 func (m *mockRouteBackend) ensureJumpRule(baseChain, targetChain string, isMangle bool, atTop bool) {
 	m.jumps = append(m.jumps, mockRouteJump{baseChain: baseChain, targetChain: targetChain, isMangle: isMangle, atTop: atTop})
 }
-func (m *mockRouteBackend) deleteJumpRules(baseChain, targetChain string, isMangle bool) {}
+func (m *mockRouteBackend) deleteJumpRules(baseChain, targetChain string, isMangle bool) {
+	m.deletedJumps = append(m.deletedJumps, mockRouteJump{baseChain: baseChain, targetChain: targetChain, isMangle: isMangle})
+}
+
+func (m *mockRouteBackend) hasJump(baseChain, targetChain string) bool {
+	for _, j := range m.jumps {
+		if j.baseChain == baseChain && j.targetChain == targetChain {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *mockRouteBackend) hasDeletedJump(baseChain, targetChain string) bool {
+	for _, j := range m.deletedJumps {
+		if j.baseChain == baseChain && j.targetChain == targetChain {
+			return true
+		}
+	}
+	return false
+}
 func (m *mockRouteBackend) addMasqueradeRule(chain string, mark uint32, iface string, v6 bool) {
 	m.masq = append(m.masq, mockNATRule{chain: chain, mark: mark, iface: iface, v6: v6})
 }

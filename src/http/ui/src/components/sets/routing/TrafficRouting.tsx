@@ -11,6 +11,7 @@ import { B4SetConfig, RoutingMode } from "@models/config";
 import { colors } from "@design";
 import { useTranslation } from "react-i18next";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
+import { hasTargets } from "../facets";
 
 interface TrafficRoutingProps {
   config: B4SetConfig;
@@ -56,6 +57,10 @@ export const TrafficRouting = ({
     (config.targets.geosite_categories?.length ?? 0) > 0;
   const showDomainOnlyRoutingWarning =
     routing.enabled && domainOnly && hasDomains;
+
+  const hasDestination = hasTargets(config);
+  const sourceDeviceCount = config.targets.source_devices?.length ?? 0;
+  const showNoDestinationWarning = routing.enabled && !hasDestination;
 
   const selectedIfaceAvailable = availableIfaces.includes(
     routing.egress_interface,
@@ -119,6 +124,15 @@ export const TrafficRouting = ({
 
       {routing.enabled && (
         <>
+          {showNoDestinationWarning && (
+            <Grid size={{ xs: 12 }}>
+              <B4Alert severity="warning">
+                {sourceDeviceCount > 0
+                  ? t("sets.routing.noDestinationWithDevices")
+                  : t("sets.routing.noDestination")}
+              </B4Alert>
+            </Grid>
+          )}
           {showDomainOnlyRoutingWarning && (
             <Grid size={{ xs: 12 }}>
               <B4Alert severity="warning">

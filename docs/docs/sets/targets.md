@@ -66,3 +66,11 @@ The table shows available devices:
 ![20260418234934](../../static/img/targets/20260418234934.png)
 
 If no device is selected, the set applies to all traffic. When devices are selected, only their traffic is matched. Device-bound sets take priority over generic ones.
+
+:::warning Source devices do not select traffic on their own
+Every routing rule matches a destination address. Source devices decide whose traffic is offered to that rule, not
+which traffic is steered, so a set whose only target is a source device routes nothing and b4 installs no rule for it.
+
+To send everything from a device, keep the device selected and turn on **Match any IP address** on the IP addresses
+tab. Traffic the router itself originates is left alone for such a set, because it can never come from a source device.
+:::

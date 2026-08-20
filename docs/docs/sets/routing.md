@@ -64,6 +64,14 @@ Fragmentation only affects DNS queries for domains in the current set. Other DNS
 
 Routes traffic matched by the set through a specific network interface - for example, a VPN, WireGuard, or another tunnel.
 
+Routing always steers by **destination**: every rule b4 installs matches the addresses the set has collected, from its
+IP targets and from the addresses its domains resolve to. Source devices and source interfaces narrow *whose* traffic is
+offered to that rule; they do not select traffic on their own. A set with routing enabled and no domain or IP target
+therefore steers nothing, and b4 installs no rule for it and says so in the log.
+
+To route everything from a device, keep the device selected under [Source devices](./targets.md#source-devices) and turn
+on **Match any IP address** on the Targets, IP addresses tab.
+
 **Routing mode** selects what happens to matched traffic:
 
 | Mode | Description |
@@ -135,6 +143,8 @@ Define which network interfaces traffic is intercepted from for routing. Shown a
 
 :::info
 If no source interface is selected, routing applies to all traffic, including traffic originated by the router itself.
+Selecting a source interface, or a source device, restricts the set to traffic arriving from it and leaves the router's
+own traffic on the normal route, since that traffic arrives from no interface and from no device.
 :::
 
 If a previously chosen interface has disappeared from the system (for example, the VPN connection dropped), it is shown in red with a "stale" marker.

@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
@@ -377,4 +378,40 @@ func routeEnsureGatedPreJump(be routeBackend, chain string, gate routeDeviceGate
 		return
 	}
 	be.ensureJumpRule("PREROUTING", chain, true, false)
+}
+
+func routeSetIsSourceScoped(set *config.SetConfig) bool {
+	if set == nil {
+		return false
+	}
+	if len(routeNormalizedSources(set.Routing.SourceInterfaces)) > 0 {
+		return true
+	}
+	if set.Targets.SourceDevicesExclude {
+		return false
+	}
+	for _, m := range set.Targets.SourceDevices {
+		if strings.TrimSpace(m) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+var routeNoDestinationWarned sync.Map
+
+func routeWarnNoDestination(set *config.SetConfig) {
+	scope := "no domain or IP target"
+	if routeSetIsSourceScoped(set) {
+		scope = "source devices selected but no domain or IP target"
+	}
+	if prev, ok := routeNoDestinationWarned.Load(set.Id); ok && prev == scope {
+		return
+	}
+	routeNoDestinationWarned.Store(set.Id, scope)
+	log.Warnf("Routing: set '%s' has %s, so there is no destination to steer and no rule is installed; add a destination, or turn on 'Match any IP address' under Targets to send everything from those devices", set.Name, scope)
+}
+
+func routeForgetNoDestinationWarning(setID string) {
+	routeNoDestinationWarned.Delete(setID)
 }

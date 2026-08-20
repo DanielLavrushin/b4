@@ -973,13 +973,13 @@
       "domainOnlyDesc": "Do not learn or route IPs from these domains. Use this for shared CDN IPs where another domain on the same IP needs a different strategy.",
       "catchAllDomains": "Match any domain",
       "catchAllDomainsDesc": "Adds the {{value}} entry, which matches every domain.",
-      "catchAllDomainsActive": "This set matches every domain. A domain listed literally in any other set is handled there first, whatever position either set holds in the list, so this set picks up only what nothing else claims.",
+      "catchAllDomainsActive": "This set matches every domain. A domain listed literally in any other set is handled there first, whatever position either set holds in the list, so this set picks up only what nothing else claims. That applies to DPI matching; for routing it steers only the addresses this set has actually resolved, so it is not a substitute for matching every IP address.",
       "catchAllChipDomain": "Any domain",
       "catchAllDomainNotice": "Matches every domain. \"{{value}}\" will be added.",
       "wildcardStrippedNotice": "b4 already matches subdomains, so \"{{from}}\" will be added as \"{{to}}\".",
       "catchAllIps": "Match any IP address",
       "catchAllIpsDesc": "Adds {{value}}, which matches every address.",
-      "catchAllIpsActive": "This set matches every IP address. A narrower range in any other set is handled there first, whatever position either set holds in the list, so this set picks up only what nothing else claims.",
+      "catchAllIpsActive": "This set matches every IP address. For DPI matching, a narrower range in any other set is handled there first, whatever position either set holds in the list, so this set picks up only what nothing else claims. Routing is decided by firewall rules instead, where an overlapping set can win regardless of that order, so avoid pairing this with another routing set covering the same addresses.",
       "catchAllChipV4": "Any IPv4",
       "catchAllChipV6": "Any IPv6",
       "catchAllIpNotice": "Matches every IP address. \"{{value}}\" will be added.",
@@ -1042,7 +1042,8 @@
       "previewShowing": "showing first {{count}}",
       "previewFailed": "Failed to load category preview",
       "manualDeviceInfo": "Manually added devices have no MAC address on the network, so they are matched by the IP address you entered. Give such a device a fixed or reserved address, and note that it cannot be matched at all when an intermediate router replaces the source address of its traffic.",
-      "manualDeviceNoIp": "These manually added devices have no IP address, so they cannot be matched: {{names}}. If they are the only devices selected, the set matches nothing; with \"all devices except selected\" enabled, it applies to every device instead."
+      "manualDeviceNoIp": "These manually added devices have no IP address, so they cannot be matched: {{names}}. If they are the only devices selected, the set matches nothing; with \"all devices except selected\" enabled, it applies to every device instead.",
+      "deviceNoDestination": "Source devices narrow who this set applies to; they do not select traffic on their own. With routing on and no domain or IP target, this set steers nothing. To send everything from these devices, turn on \"Match any IP address\" on the IP addresses tab."
     },
     "tcp": {
       "sectionTitle": "TCP Configuration",
@@ -1598,7 +1599,9 @@
       "howItWorks": "When a device on your network visits a matched domain, B4 intercepts the DNS response, learns the destination IP, and adds a routing rule so that traffic to that IP goes through the output interface you choose - for example, a VPN or a different WAN link.",
       "sourceInterfacesDesc": "Choose which network interfaces B4 should watch for traffic. For example, select your LAN or Wi-Fi bridge to only route traffic from devices on that network. Leave empty to route traffic from all interfaces.",
       "ipTtlDesc": "After B4 learns an IP address from a DNS response, it keeps the routing rule for this many seconds. If the domain's IP changes (e.g. CDN rotation), the old rule expires and B4 picks up the new IP on the next DNS query.",
-      "domainOnlyConflict": "Domain-only matching is enabled for this set, so the IP addresses behind its domains are not routed here - only IP addresses you list explicitly are. Turn off Domain-only matching to route these domains."
+      "domainOnlyConflict": "Domain-only matching is enabled for this set, so the IP addresses behind its domains are not routed here - only IP addresses you list explicitly are. Turn off Domain-only matching to route these domains.",
+      "noDestination": "This set has no domain or IP target, so there is nothing for the firewall to steer and no rule is installed. Routing rules always match a destination address.",
+      "noDestinationWithDevices": "This set selects source devices but has no domain or IP target. Source devices decide whose traffic is offered to the routing rule, not which traffic is steered, so nothing is routed and no rule is installed. To send everything from those devices, turn on \"Match any IP address\" under Targets, IP addresses."
     },
     "importExport": {
       "sectionTitle": "Import/Export Set configuration",

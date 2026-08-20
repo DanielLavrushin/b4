@@ -328,6 +328,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	queueMark := routeQueueBypassMark(cfg)
 	gate := routeSetDeviceGate(cfg, set)
 	routeWarnDeviceGate(set.Name, gate)
+	sourceScoped := routeSetIsSourceScoped(set)
 	routeSelfDialBypass(be, cfg, st.chainPre)
 	routeAddBlacklistGate(be, "mangle", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
 
@@ -352,7 +353,9 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 				addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "udp")
 			}
 		}
-		ensureProxyOutputBaseRulesNft(cfg, st, queueMark)
+		if !sourceScoped {
+			ensureProxyOutputBaseRulesNft(cfg, st, queueMark)
+		}
 	default:
 		proxyIptPreflight(legacy)
 		if err := be.ensureChain(st.chainOut, true); err != nil {
@@ -366,7 +369,9 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 			if udp {
 				addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "udp")
 			}
-			addProxyOutputMarkRuleIpt(false, st.chainOut, st.setV4, st.mark, legacy)
+			if !sourceScoped {
+				addProxyOutputMarkRuleIpt(false, st.chainOut, st.setV4, st.mark, legacy)
+			}
 		}
 		if cfg.Queue.IPv6Enabled {
 			addProxyDivertRuleIpt(true, st.chainPre, st.setV6, st.mark, legacy)
@@ -374,16 +379,26 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 			if udp {
 				addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "udp")
 			}
-			addProxyOutputMarkRuleIpt(true, st.chainOut, st.setV6, st.mark, legacy)
+			if !sourceScoped {
+				addProxyOutputMarkRuleIpt(true, st.chainOut, st.setV6, st.mark, legacy)
+			}
 		}
-		insertProxyOutputJump(be, st.chainOut)
+		if sourceScoped {
+			deleteProxyOutputJump(be, st.chainOut)
+		} else {
+			insertProxyOutputJump(be, st.chainOut)
+		}
 	}
 
 	insertProxyJumpAtTop(be, st.chainPre, gate)
 	addProxyInputAccept(be, st.mark)
 
+	if sourceScoped {
+		log.Infof("Routing [%s]: set '%s' is limited to source devices or interfaces, so traffic the router itself originates keeps using the normal route", be.name(), set.Name)
+	}
+
 	if st.quicReject {
-		if err := routeEnsureQUICReject(be, cfg, st, gate, sources); err != nil {
+		if err := routeEnsureQUICReject(be, cfg, st, gate, sourceScoped, sources); err != nil {
 			return err
 		}
 		log.Infof("Routing [%s]: set '%s' refuses QUIC (UDP/%d) to matched addresses so clients fall back to TCP through the upstream; enable 'Route UDP through upstream' if the proxy supports UDP ASSOCIATE",
@@ -396,7 +411,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 
 const quicRejectPort = 443
 
-func routeEnsureQUICReject(be routeBackend, cfg *config.Config, st routeState, gate routeDeviceGate, sources []string) error {
+func routeEnsureQUICReject(be routeBackend, cfg *config.Config, st routeState, gate routeDeviceGate, sourceScoped bool, sources []string) error {
 	switch be.name() {
 	case backendNFTables:
 		if err := ensureBlockBaseNft(); err != nil {
@@ -414,7 +429,11 @@ func routeEnsureQUICReject(be routeBackend, cfg *config.Config, st routeState, g
 			addQUICRejectRuleNft(st.chainQUIC, true, st.setV6, sources)
 		}
 		ensureBlockJumpNft(routeNftBlockFwd, st.chainQUIC, gate)
-		ensureBlockJumpNft(routeNftBlockOut, st.chainQUIC, routeDeviceGate{})
+		if sourceScoped {
+			deleteNftJumpRules(routeNftTable, routeNftBlockOut, st.chainQUIC)
+		} else {
+			ensureBlockJumpNft(routeNftBlockOut, st.chainQUIC, routeDeviceGate{})
+		}
 	default:
 		legacy := isLegacyIptBackend(be)
 		if err := ensureBlockChainIpt(st.chainQUIC, legacy); err != nil {
@@ -430,7 +449,11 @@ func routeEnsureQUICReject(be routeBackend, cfg *config.Config, st routeState, g
 			addQUICRejectRuleIpt(true, st.chainQUIC, st.setV6, sources, legacy)
 		}
 		ensureBlockJumpIpt("FORWARD", st.chainQUIC, legacy, gate)
-		ensureBlockJumpIpt("OUTPUT", st.chainQUIC, legacy, routeDeviceGate{})
+		if sourceScoped {
+			deleteBlockJumpIpt("OUTPUT", st.chainQUIC, legacy)
+		} else {
+			ensureBlockJumpIpt("OUTPUT", st.chainQUIC, legacy, routeDeviceGate{})
+		}
 	}
 	return nil
 }
@@ -637,7 +660,7 @@ func insertProxyJumpAtTop(be routeBackend, chain string, gate routeDeviceGate) {
 	}
 }
 
-func insertProxyOutputJump(be routeBackend, chain string) {
+func deleteProxyOutputJump(be routeBackend, chain string) {
 	if be.name() == backendNFTables {
 		return
 	}
@@ -649,6 +672,18 @@ func insertProxyOutputJump(be routeBackend, chain string) {
 			if _, err := run(fam, "-w", "-t", "mangle", "-D", "OUTPUT", "-j", chain); err != nil {
 				break
 			}
+		}
+	}
+}
+
+func insertProxyOutputJump(be routeBackend, chain string) {
+	if be.name() == backendNFTables {
+		return
+	}
+	deleteProxyOutputJump(be, chain)
+	for _, fam := range []string{backendIPTables, backendIP6Tables, backendIPTablesLegacy, backendIP6TablesLegacy} {
+		if !hasBinary(fam) {
+			continue
 		}
 		runLogged("routing: insert output jump (proxy) "+fam,
 			fam, "-w", "-t", "mangle", "-I", "OUTPUT", "1", "-j", chain)

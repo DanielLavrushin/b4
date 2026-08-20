@@ -125,7 +125,7 @@ func TestRouteChainJumps_OutputJumpGoesFirst(t *testing.T) {
 	be := &mockRouteBackend{}
 	st := injectedTestState()
 
-	routeEnsureChainJumps(be, st, routeDeviceGate{})
+	routeEnsureChainJumps(be, st, routeDeviceGate{}, false)
 
 	var out *mockRouteJump
 	for i := range be.jumps {

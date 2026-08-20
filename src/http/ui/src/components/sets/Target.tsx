@@ -6,6 +6,7 @@ import { B4SetConfig, GeoConfig } from "@models/config";
 import { useDevices } from "@b4.devices";
 import { useGeoCategories } from "@hooks/useGeoCategories";
 import { useTranslation } from "react-i18next";
+import { hasTargets } from "./facets";
 import { SetStats } from "./Manager";
 import { DomainsTab } from "./targets/DomainsTab";
 import { IpsTab } from "./targets/IpsTab";
@@ -49,7 +50,7 @@ export const TargetSettings = ({
 }: TargetSettingsProps) => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TARGET_TABS>(
-    (TARGET_SUB_INDEX[initialSub ?? ""] ?? TARGET_TABS.DOMAINS),
+    TARGET_SUB_INDEX[initialSub ?? ""] ?? TARGET_TABS.DOMAINS,
   );
 
   useEffect(() => {
@@ -90,7 +91,11 @@ export const TargetSettings = ({
               label={t("sets.targets.tabs.domains")}
               inline
             />
-            <B4Tab icon={<IpIcon />} label={t("sets.targets.tabs.ips")} inline />
+            <B4Tab
+              icon={<IpIcon />}
+              label={t("sets.targets.tabs.ips")}
+              inline
+            />
             <B4Tab
               icon={<DeviceIcon />}
               label={
@@ -145,6 +150,8 @@ export const TargetSettings = ({
           <DevicesTab
             selected={selectedSourceDevices}
             exclude={config.targets.source_devices_exclude ?? false}
+            routingEnabled={!!config.routing?.enabled}
+            hasDestination={hasTargets(config)}
             devices={devices}
             loading={devicesLoading}
             available={devicesAvailable}

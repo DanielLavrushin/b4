@@ -788,9 +788,11 @@ func RoutingSyncConfig(cfg *config.Config) {
 		if mode == config.RoutingModeProxy && set.Routing.Upstream.Port < 1 {
 			continue
 		}
-		if config.RoutingIsBlock(mode) && len(set.Targets.IpsToMatch) == 0 && len(set.Targets.DomainsToMatch) == 0 {
+		if len(set.Targets.IpsToMatch) == 0 && len(set.Targets.DomainsToMatch) == 0 {
+			routeWarnNoDestination(set)
 			continue
 		}
+		routeForgetNoDestinationWarning(set.Id)
 		desired[set.Id] = set
 	}
 
@@ -1007,8 +1009,11 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 		routeAddMarkRules(be, st.chainPre, true, st.setV6, st.mark, sources, true)
 	}
 
-	routeAddOutChainRules(be, cfg, st)
-	routeEnsureChainJumps(be, st, gate)
+	sourceScoped := routeSetIsSourceScoped(set)
+	if !sourceScoped {
+		routeAddOutChainRules(be, cfg, st)
+	}
+	routeEnsureChainJumps(be, st, gate, sourceScoped)
 
 	routeEnsureEgressAddress(st.iface, st.egressIP)
 	routeAddEgressRules(be, st, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
@@ -1046,9 +1051,13 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState) {
 	}
 }
 
-func routeEnsureChainJumps(be routeBackend, st routeState, gate routeDeviceGate) {
+func routeEnsureChainJumps(be routeBackend, st routeState, gate routeDeviceGate, sourceScoped bool) {
 	routeEnsureGatedPreJump(be, st.chainPre, gate)
-	be.ensureJumpRule("OUTPUT", st.chainOut, true, true)
+	if sourceScoped {
+		be.deleteJumpRules("OUTPUT", st.chainOut, true)
+	} else {
+		be.ensureJumpRule("OUTPUT", st.chainOut, true, true)
+	}
 	be.ensureJumpRule("POSTROUTING", st.chainSNAT, false, st.egressIP != "")
 }
 
