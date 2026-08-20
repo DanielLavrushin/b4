@@ -171,6 +171,12 @@ func (ds *DiscoverySuite) RunDiscovery() {
 		return
 	}
 
+	probeFamily := ds.dialNetwork()
+	if probeFamily == "" {
+		probeFamily = "dual-stack"
+	}
+	log.DiscoveryLogf("Probe address family: %s (queue IPv4=%v, IPv6=%v)", probeFamily, ds.cfg.Queue.IPv4Enabled, ds.cfg.Queue.IPv6Enabled)
+
 	ds.discoveryCache = LoadDiscoveryCache(ds.cfg.ConfigPath)
 	defer ds.saveResultsToCache()
 
@@ -1139,16 +1145,51 @@ func (ds *DiscoverySuite) ipFilterVersion() string {
 	}
 }
 
-// dialNetwork forces the probe address family ("tcp4"/"tcp6") for an explicit
-// IP version run, or "" to leave family selection to the resolver/OS.
+// dialNetwork forces the probe address family ("tcp4"/"tcp6") so validation
+// runs over the same family b4 actually queues. An explicit IP version wins;
+// otherwise it mirrors DNSProber.ipNetwork and follows the enabled queue
+// families, leaving the choice to the resolver/OS only when both are processed.
 func (ds *DiscoverySuite) dialNetwork() string {
 	switch ds.ipVersion {
 	case "ipv4":
 		return "tcp4"
 	case "ipv6":
 		return "tcp6"
-	default:
+	}
+	if ds.cfg == nil {
 		return ""
+	}
+	switch {
+	case ds.cfg.Queue.IPv4Enabled && ds.cfg.Queue.IPv6Enabled:
+		return ""
+	case ds.cfg.Queue.IPv4Enabled:
+		return "tcp4"
+	case ds.cfg.Queue.IPv6Enabled:
+		return "tcp6"
+	}
+	return ""
+}
+
+// dialContext builds the probe dialer: it forces the address family from
+// dialNetwork and pins pinnedIP when DNS discovery already resolved one.
+func (ds *DiscoverySuite) dialContext(timeout time.Duration, pinnedIP string) func(context.Context, string, string) (net.Conn, error) {
+	baseDialer := netprobe.Dialer(int(ds.flowMark), timeout/2, timeout)
+	forcedNet := ds.dialNetwork()
+
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if forcedNet != "" {
+			network = forcedNet
+		}
+		if pinnedIP != "" {
+			_, port, _ := net.SplitHostPort(addr)
+			if port == "" {
+				port = "443"
+			}
+			directAddr := net.JoinHostPort(pinnedIP, port)
+			log.Tracef("DNS bypass: connecting to %s instead of %s", directAddr, addr)
+			return baseDialer.DialContext(ctx, network, directAddr)
+		}
+		return baseDialer.DialContext(ctx, network, addr)
 	}
 }
 
@@ -1181,24 +1222,7 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 		IdleConnTimeout:       timeout,
 	}
 
-	baseDialer := netprobe.Dialer(int(ds.flowMark), timeout/2, timeout)
-	forcedNet := ds.dialNetwork()
-
-	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-		if forcedNet != "" {
-			network = forcedNet
-		}
-		if ip != "" {
-			_, port, _ := net.SplitHostPort(addr)
-			if port == "" {
-				port = "443"
-			}
-			directAddr := net.JoinHostPort(ip, port)
-			log.Tracef("DNS bypass: connecting to %s instead of %s", directAddr, addr)
-			return baseDialer.DialContext(ctx, network, directAddr)
-		}
-		return baseDialer.DialContext(ctx, network, addr)
-	}
+	transport.DialContext = ds.dialContext(timeout, ip)
 
 	client := &http.Client{
 		Timeout:   timeout,
@@ -2098,7 +2122,7 @@ func (ds *DiscoverySuite) measureNetworkBaseline() float64 {
 		Timeout: timeout,
 		Transport: &http.Transport{
 			TLSClientConfig: ds.tlsConfig(),
-			DialContext:     netprobe.Dialer(int(ds.flowMark), timeout/2, timeout).DialContext,
+			DialContext:     ds.dialContext(timeout, ""),
 		},
 	}
 
