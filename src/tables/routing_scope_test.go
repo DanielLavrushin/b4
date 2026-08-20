@@ -62,3 +62,53 @@ func TestRouteEnsureChainJumpsOutputScoping(t *testing.T) {
 		}
 	})
 }
+
+func TestRouteStateChainsSkipOutForScopedSets(t *testing.T) {
+	base := routeState{
+		mode:      config.RoutingModeInterface,
+		chainPre:  "b4r_x_pre",
+		chainOut:  "b4r_x_out",
+		chainSNAT: "b4r_x_snat",
+	}
+
+	chainsOf := func(st routeState) map[string]bool {
+		out := map[string]bool{}
+		for _, c := range routeStateChains(st) {
+			out[c.chain] = true
+		}
+		return out
+	}
+
+	t.Run("an unscoped interface set still verifies its out chain", func(t *testing.T) {
+		got := chainsOf(base)
+		if !got["b4r_x_out"] || !got["b4r_x_pre"] || !got["b4r_x_snat"] {
+			t.Errorf("expected all three chains, got %v", got)
+		}
+	})
+
+	t.Run("a source-scoped interface set must not verify a chain it never fills", func(t *testing.T) {
+		st := base
+		st.srcScoped = true
+		got := chainsOf(st)
+		if got["b4r_x_out"] {
+			t.Error("the out chain is left empty for a scoped set, so demanding its bypass rules loops the monitor forever")
+		}
+		if !got["b4r_x_pre"] || !got["b4r_x_snat"] {
+			t.Errorf("the other chains must still be verified, got %v", got)
+		}
+	})
+
+	t.Run("buildRouteState records the scope", func(t *testing.T) {
+		cfg := config.NewConfig()
+		set := config.NewSetConfig()
+		set.Id, set.Name = "s1", "S1"
+		set.Routing.Mode = config.RoutingModeInterface
+		if buildRouteState(&cfg, &set).srcScoped {
+			t.Error("a set with no source scope must not be marked scoped")
+		}
+		set.Targets.SourceDevices = []string{"AA:BB:CC:DD:EE:FF"}
+		if !buildRouteState(&cfg, &set).srcScoped {
+			t.Error("a set bound to a source device must be marked scoped")
+		}
+	})
+}

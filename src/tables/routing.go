@@ -32,6 +32,7 @@ type routeState struct {
 	deviceKey   string
 	blockAction string
 	quicReject  bool
+	srcScoped   bool
 	setV4       string
 	setV6       string
 	chainPre    string
@@ -353,6 +354,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		mode:       mode,
 		sourcesKey: sourcesKey,
 		deviceKey:  routeSetDeviceGate(cfg, set).key(),
+		srcScoped:  routeSetIsSourceScoped(set),
 		setV4:      setV4, setV6: setV6,
 		chainPre: chainPre, chainOut: chainOut, chainSNAT: chainSNAT,
 		chainQUIC: routeBuildQUICChainName(set.Id),
@@ -652,11 +654,11 @@ func routeStateChains(st routeState) []routeChainRef {
 		}
 		return refs
 	default:
-		return []routeChainRef{
-			{st.chainPre, "mangle", true},
-			{st.chainOut, "mangle", true},
-			{st.chainSNAT, "nat", false},
+		refs := []routeChainRef{{st.chainPre, "mangle", true}}
+		if !st.srcScoped {
+			refs = append(refs, routeChainRef{st.chainOut, "mangle", true})
 		}
+		return append(refs, routeChainRef{st.chainSNAT, "nat", false})
 	}
 }
 
