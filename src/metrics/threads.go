@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"runtime/pprof"
-	"sync"
 	"sync/atomic"
 
 	"github.com/daniellavrushin/b4/log"
@@ -18,7 +17,7 @@ const (
 
 var (
 	threadDumpDir  atomic.Value
-	threadDumpOnce sync.Once
+	threadDumpDone atomic.Bool
 )
 
 func ApplyThreadLimit() int {
@@ -38,7 +37,10 @@ func checkThreadPressure(n int) {
 	if n < threadDumpTrigger {
 		return
 	}
-	threadDumpOnce.Do(func() {
+	if !threadDumpDone.CompareAndSwap(false, true) {
+		return
+	}
+	func() {
 		log.Errorf("b4 holds %d OS threads against a limit of %d; the Go runtime stops the service when the limit is reached", n, maxOSThreads)
 		dir, _ := threadDumpDir.Load().(string)
 		if dir == "" {
@@ -57,5 +59,5 @@ func checkThreadPressure(n int) {
 			return
 		}
 		log.Errorf("Goroutine dump written to %s", path)
-	})
+	}()
 }
