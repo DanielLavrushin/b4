@@ -7,7 +7,7 @@ An external AI application reads b4's state over the [Model Context Protocol](ht
 
 The model runs inside that application. b4 contacts no AI provider and needs no API key.
 
-Configured in **Settings -> API -> MCP server**.
+Configured in **Settings -> Integrations -> MCP server**.
 
 ## Fields
 
@@ -15,10 +15,10 @@ Configured in **Settings -> API -> MCP server**.
 
 | Field | Description |
 | --- | --- |
-| **Enable MCP server** | Serves the endpoint at `/api/mcp`. Off by default. |
+| **Enable MCP server** | The switch in the card header. Serves the endpoint at `/api/mcp`. Off by default. |
 | **Allow configuration changes** | Lets the AI change settings as well as read them. Off by default. See [Changing settings](#changing-settings). |
-| **MCP token** | The credential AI applications present. **Generate** creates one. |
-| **Endpoint** | The address to paste into the AI application. |
+| **Access token** | The credential AI applications present. **Generate** creates one, **Regenerate** replaces it. |
+| **Client configuration** | The endpoint URL and header block to paste into the AI application. **Copy** puts the whole block, with the full token, on the clipboard. |
 
 :::info Served by the web server
 The endpoint uses the web server's port, TLS certificate and bind address. With the web server disabled (port 0) it is unreachable, and b4 logs a warning at startup.

@@ -84,4 +84,8 @@ export {
   Telegram as TelegramIcon,
   DashboardCustomize as CustomizeIcon,
   VisibilityOff as HideIcon,
+  Visibility as EyeIcon,
+  VisibilityOff as EyeOffIcon,
+  Public as IpInfoIcon,
+  Extension as McpIcon,
 } from "@mui/icons-material";

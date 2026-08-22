@@ -238,7 +238,9 @@ export function SettingsPage() {
         JSON.stringify(config.system.api) !==
           JSON.stringify(originalConfig.system.api) ||
         JSON.stringify(config.system.ai) !==
-          JSON.stringify(originalConfig.system.ai),
+          JSON.stringify(originalConfig.system.ai) ||
+        JSON.stringify(config.system.web_server.mcp) !==
+          JSON.stringify(originalConfig.system.web_server.mcp),
 
       // PAYLOADS
       [TABS.PAYLOADS]: false,

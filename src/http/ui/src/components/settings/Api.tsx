@@ -5,24 +5,26 @@ import {
   Autocomplete,
   Box,
   Button,
+  ButtonBase,
   Chip,
   CircularProgress,
   DialogContent,
   Grid,
   IconButton,
   Stack,
+  Switch,
   Tooltip,
   Typography,
 } from "@mui/material";
-import { RefreshIcon, ApiIcon } from "@b4.icons";
+import { RefreshIcon, AiIcon, IpInfoIcon, McpIcon } from "@b4.icons";
 import {
+  B4Accordion,
   B4Alert,
+  B4ConnectDetails,
   B4Dialog,
-  B4FormGroup,
+  B4IntegrationCard,
   B4NumberField,
-  B4Section,
-  B4Select,
-  B4Switch,
+  B4SecretField,
   B4TextField,
 } from "@b4.elements";
 import { aiApi, mcpApi, AIModel } from "@api/ai";
@@ -35,14 +37,37 @@ export interface ApiSettingsProps {
   onChange: (field: string, value: boolean | string | number) => void;
 }
 
-const PROVIDERS: { value: AIProvider; label: string }[] = [
-  { value: "", label: "—" },
-  { value: "openai", label: "OpenAI" },
-  { value: "anthropic", label: "Anthropic" },
-  { value: "ollama", label: "Ollama (local)" },
+interface ProviderOption {
+  value: AIProvider;
+  label: string;
+  hint: string;
+  cloud: boolean;
+}
+
+const PROVIDERS: ProviderOption[] = [
+  {
+    value: "openai",
+    label: "OpenAI",
+    hint: "settings.Ai.providerCloud",
+    cloud: true,
+  },
+  {
+    value: "anthropic",
+    label: "Anthropic",
+    hint: "settings.Ai.providerCloud",
+    cloud: true,
+  },
+  {
+    value: "ollama",
+    label: "Ollama",
+    hint: "settings.Ai.providerLocal",
+    cloud: false,
+  },
   {
     value: "openai-compatible",
-    label: "OpenAI-compatible (LM Studio, vLLM, …)",
+    label: "OpenAI-compatible",
+    hint: "settings.Ai.providerCompatible",
+    cloud: false,
   },
 ];
 
@@ -60,184 +85,109 @@ const MODEL_PLACEHOLDERS: Record<string, string> = {
   "openai-compatible": "qwen3-8b-instruct",
 };
 
-export const ApiSettings = ({ config, onChange }: ApiSettingsProps) => {
+export const ApiSettings = ({ config, onChange }: ApiSettingsProps) => (
+  <Stack spacing={2}>
+    <IPInfoCard config={config} onChange={onChange} />
+    <AICard config={config} onChange={onChange} />
+    <MCPCard config={config} onChange={onChange} />
+  </Stack>
+);
+
+const IPInfoCard = ({ config, onChange }: ApiSettingsProps) => {
   const { t } = useTranslation();
+  const token = config.system.api.ipinfo_token ?? "";
 
   return (
-    <Stack spacing={3}>
-      <B4Alert icon={<ApiIcon />}>{t("settings.Api.alert")}</B4Alert>
-      <Grid container spacing={2}>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Section
-            title={t("settings.Api.ipinfoTitle")}
-            description={t("settings.Api.ipinfoDescription")}
-            icon={<ApiIcon />}
-          >
-            <B4TextField
-              label={t("settings.Api.token")}
-              value={config.system.api.ipinfo_token}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                onChange("system.api.ipinfo_token", e.target.value)
-              }
-              helperText={
-                <>
-                  {t("settings.Api.tokenHelp")}{" "}
-                  <a
-                    href="https://ipinfo.io/dashboard/token"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {t("settings.Api.tokenHelpLink")}
-                  </a>
-                </>
-              }
-              placeholder={t("settings.Api.tokenPlaceholder")}
-            />
-          </B4Section>
-        </Grid>
-
-        <Grid size={{ xs: 12, md: 6 }}>
-          <AISection config={config} onChange={onChange} />
-        </Grid>
-
-        <Grid size={{ xs: 12, md: 6 }}>
-          <MCPSection config={config} onChange={onChange} />
-        </Grid>
-      </Grid>
-    </Stack>
+    <B4IntegrationCard
+      icon={<IpInfoIcon />}
+      title={t("settings.Api.ipinfoTitle")}
+      description={t("settings.Api.ipinfoDescription")}
+    >
+      <Box sx={{ maxWidth: 560 }}>
+        <B4SecretField
+          label={t("settings.Api.token")}
+          value={token}
+          onChange={(value) => onChange("system.api.ipinfo_token", value)}
+          placeholder={t("settings.Api.tokenPlaceholder")}
+          helperText={
+            <>
+              {t("settings.Api.tokenHelp")}{" "}
+              <a
+                href="https://ipinfo.io/dashboard/token"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {t("settings.Api.tokenHelpLink")}
+              </a>
+            </>
+          }
+        />
+      </Box>
+    </B4IntegrationCard>
   );
 };
 
-const MCPSection = ({ config, onChange }: ApiSettingsProps) => {
+const ProviderPicker = ({
+  value,
+  onSelect,
+}: {
+  value: string;
+  onSelect: (value: AIProvider) => void;
+}) => {
   const { t } = useTranslation();
-  const { showError, showSuccess } = useSnackbar();
-
-  const mcp = config.system.web_server.mcp;
-  const [generating, setGenerating] = useState(false);
-
-  const generateToken = async () => {
-    try {
-      setGenerating(true);
-      const data = await mcpApi.generateToken();
-      onChange("system.web_server.mcp.token", data.token);
-      showSuccess(t("settings.Mcp.tokenGenerated"));
-    } catch {
-      showError(t("settings.Mcp.tokenGenerateError"));
-    } finally {
-      setGenerating(false);
-    }
-  };
-  const authConfigured = Boolean(
-    config.system.web_server.username &&
-      (config.system.web_server.password ||
-        config.system.web_server.password_set),
-  );
-
-  const endpointUrl = `${window.location.origin}/api/mcp`;
 
   return (
-    <B4Section
-      title={t("settings.Mcp.title")}
-      description={t("settings.Mcp.description")}
-      icon={<ApiIcon />}
-    >
-      <Stack spacing={1.5}>
-        <B4Switch
-          label={t("settings.Mcp.enabled")}
-          checked={Boolean(mcp?.enabled)}
-          onChange={(checked) => onChange("system.web_server.mcp.enabled", checked)}
-          description={t("settings.Mcp.enabledHelp")}
-          aiTopic="system.web_server.mcp.enabled"
-        />
-
-        {mcp?.enabled && (
-          <B4Switch
-            label={t("settings.Mcp.allowWrites")}
-            checked={Boolean(mcp?.allow_writes)}
-            onChange={(checked) =>
-              onChange("system.web_server.mcp.allow_writes", checked)
-            }
-            description={t("settings.Mcp.allowWritesHelp")}
-            aiTopic="system.web_server.mcp.allow_writes"
-          />
-        )}
-
-        {mcp?.enabled && mcp?.allow_writes && (
-          <B4Alert severity="warning">
-            {t("settings.Mcp.allowWritesWarning")}
-          </B4Alert>
-        )}
-
-        {mcp?.enabled && (
-          <Stack direction="row" spacing={1} alignItems="flex-start">
-            <B4TextField
-              label={t("settings.Mcp.token")}
-              value={mcp?.token ?? ""}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                onChange("system.web_server.mcp.token", e.target.value)
-              }
-              placeholder={t("settings.Mcp.tokenPlaceholder")}
-              helperText={t("settings.Mcp.tokenHelp")}
-              sx={{ flex: 1 }}
-            />
-            <Button
-              size="small"
-              variant="outlined"
-              sx={{ mt: 1 }}
-              disabled={generating}
-              onClick={() => {
-                void generateToken();
+    <Grid container spacing={1}>
+      {PROVIDERS.map((p) => {
+        const selected = value === p.value;
+        return (
+          <Grid size={{ xs: 6, md: 3 }} key={p.value}>
+            <ButtonBase
+              onClick={() => onSelect(p.value)}
+              sx={{
+                width: "100%",
+                height: "100%",
+                p: "11px 12px",
+                borderRadius: "8px",
+                border: `1px solid ${selected ? colors.secondary : colors.border.default}`,
+                bgcolor: selected
+                  ? colors.accent.secondaryHover
+                  : colors.background.dark,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "flex-start",
+                gap: "2px",
+                "&:hover": { borderColor: colors.border.strong },
               }}
             >
-              {t("settings.Mcp.tokenGenerate")}
-            </Button>
-          </Stack>
-        )}
-
-        {mcp?.enabled && !mcp?.token && !authConfigured && (
-          <B4Alert severity="warning">{t("settings.Mcp.noAuthWarning")}</B4Alert>
-        )}
-
-        {mcp?.enabled && !mcp?.token && authConfigured && (
-          <B4Alert severity="info">{t("settings.Mcp.noTokenWarning")}</B4Alert>
-        )}
-
-        {mcp?.enabled && (
-          <Box
-            sx={{
-              border: `1px solid ${colors.border.default}`,
-              borderRadius: 1,
-              p: 1.5,
-            }}
-          >
-            <Stack spacing={0.5}>
               <Typography
-                variant="body2"
-                sx={{ color: colors.text.primary, fontWeight: 600 }}
+                sx={{
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  color: colors.text.primary,
+                  lineHeight: 1.2,
+                }}
               >
-                {t("settings.Mcp.endpointTitle")}
+                {p.label}
               </Typography>
               <Typography
                 variant="caption"
-                sx={{ color: colors.text.secondary, wordBreak: "break-all" }}
+                sx={{
+                  color: selected ? colors.secondary : colors.text.disabled,
+                  lineHeight: 1.2,
+                }}
               >
-                {endpointUrl}
+                {t(p.hint)}
               </Typography>
-              <Typography
-                variant="caption"
-                sx={{ color: colors.text.secondary }}
-              >
-                {t("settings.Mcp.endpointHelp")}
-              </Typography>
-            </Stack>
-          </Box>
-        )}
-      </Stack>
-    </B4Section>
+            </ButtonBase>
+          </Grid>
+        );
+      })}
+    </Grid>
   );
 };
 
-const AISection = ({ config, onChange }: ApiSettingsProps) => {
+const AICard = ({ config, onChange }: ApiSettingsProps) => {
   const { t } = useTranslation();
   const { showError, showSuccess } = useSnackbar();
 
@@ -275,6 +225,7 @@ const AISection = ({ config, onChange }: ApiSettingsProps) => {
   const requiresKey = provider === "openai" || provider === "anthropic";
   const supportsKey = requiresKey || provider === "openai-compatible";
   const hasKey = Boolean(keyRef) && secretRefs.includes(keyRef);
+  const selected = PROVIDERS.find((p) => p.value === provider);
 
   const isDirty = useMemo(() => {
     if (!status) return false;
@@ -287,51 +238,24 @@ const AISection = ({ config, onChange }: ApiSettingsProps) => {
     );
   }, [ai, status]);
 
-  const readyChip = useMemo(() => {
-    if (!ai?.enabled) {
-      return (
-        <Chip
-          size="small"
-          label={t("settings.Ai.statusDisabled")}
-          variant="outlined"
-        />
-      );
-    }
-    if (statusLoading) {
-      return (
-        <Chip
-          size="small"
-          label={t("settings.Ai.statusChecking")}
-          variant="outlined"
-        />
-      );
-    }
-    if (isDirty) {
-      return (
-        <Chip
-          size="small"
-          label={t("settings.Ai.statusUnsaved")}
-          variant="outlined"
-        />
-      );
-    }
-    if (status?.ready) {
-      return (
-        <Chip
-          size="small"
-          color="success"
-          label={t("settings.Ai.statusReady")}
-        />
-      );
+  const notReady = useMemo(() => {
+    if (!ai?.enabled || statusLoading || isDirty || !status || status.ready) {
+      return null;
     }
     return (
-      <Chip
-        size="small"
-        color="warning"
-        label={status?.not_ready_reason || t("settings.Ai.statusNotReady")}
-      />
+      <Tooltip title={t("settings.Ai.refreshStatus")}>
+        <Chip
+          size="small"
+          color="warning"
+          label={status.not_ready_reason ?? t("settings.Ai.statusNotReady")}
+          onClick={() => {
+            void refreshStatus();
+          }}
+          sx={{ maxWidth: 280 }}
+        />
+      </Tooltip>
     );
-  }, [ai?.enabled, status, statusLoading, isDirty, t]);
+  }, [ai?.enabled, status, statusLoading, isDirty, refreshStatus, t]);
 
   const handleProviderChange = (value: string) => {
     onChange("system.ai.provider", value);
@@ -423,34 +347,36 @@ const AISection = ({ config, onChange }: ApiSettingsProps) => {
   };
 
   return (
-    <B4Section
+    <B4IntegrationCard
+      icon={<AiIcon />}
       title={t("settings.Ai.title")}
       description={t("settings.Ai.description")}
-      icon={<ApiIcon />}
+      status={notReady}
+      enabled={ai?.enabled ?? false}
+      onToggle={(checked) => onChange("system.ai.enabled", checked)}
+      toggleLabel={t("settings.Ai.enable")}
     >
-      <Stack spacing={2}>
-        <B4Alert severity="info">{t("settings.Ai.privacyAlert")}</B4Alert>
+      <Stack spacing={1}>
+        <Typography
+          variant="caption"
+          sx={{ color: colors.text.secondary, fontWeight: 600 }}
+        >
+          {t("settings.Ai.provider")}
+        </Typography>
+        <ProviderPicker value={provider} onSelect={handleProviderChange} />
+        {selected?.cloud && (
+          <B4Alert severity="info">
+            {t("settings.Ai.privacyCloud", { provider: selected.label })}
+          </B4Alert>
+        )}
+      </Stack>
 
-        <B4FormGroup label={t("settings.Ai.providerSettings")} columns={2}>
-          <B4Switch
-            label={t("settings.Ai.enable")}
-            checked={ai?.enabled ?? false}
-            onChange={(checked: boolean) =>
-              onChange("system.ai.enabled", checked)
-            }
-            description={t("settings.Ai.enableDesc")}
-          />
-          <B4Select
-            label={t("settings.Ai.provider")}
-            value={provider}
-            options={PROVIDERS}
-            onChange={(e) => handleProviderChange(String(e.target.value))}
-            helperText={t("settings.Ai.providerHelp")}
-          />
+      <Grid container spacing={2}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <Autocomplete<AIModel | string, false, boolean, true>
             freeSolo
             disableClearable={!ai?.model}
-            disabled={!ai?.enabled || !provider}
+            disabled={!provider}
             options={models}
             value={ai?.model ?? ""}
             loading={modelsLoading}
@@ -536,139 +462,80 @@ const AISection = ({ config, onChange }: ApiSettingsProps) => {
               />
             )}
           />
-          <B4TextField
-            label={t("settings.Ai.endpoint")}
-            value={ai?.endpoint ?? ""}
-            onChange={(e) => onChange("system.ai.endpoint", e.target.value)}
-            placeholder={DEFAULT_ENDPOINTS[provider] ?? ""}
-            disabled={!ai?.enabled || !provider}
-            helperText={t("settings.Ai.endpointHelp")}
-          />
-        </B4FormGroup>
+        </Grid>
 
         {supportsKey && (
-          <Box
-            sx={{
-              border: `1px solid ${colors.border.default}`,
-              borderRadius: 1,
-              p: 1.5,
-            }}
-          >
-            <Stack
-              direction={{ xs: "column", sm: "row" }}
-              spacing={1.5}
-              alignItems={{ xs: "stretch", sm: "center" }}
-              justifyContent="space-between"
-            >
-              <Stack spacing={0.5}>
-                <Typography
-                  variant="body2"
-                  sx={{ color: colors.text.primary, fontWeight: 600 }}
-                >
-                  {t("settings.Ai.keyTitle")}
-                </Typography>
-                <Stack direction="row" spacing={1} alignItems="center">
-                  {hasKey ? (
-                    <Chip
-                      size="small"
-                      color="success"
-                      label={t("settings.Ai.keyConfigured")}
-                    />
-                  ) : (
-                    <Chip
-                      size="small"
-                      color={requiresKey ? "warning" : "default"}
-                      label={
-                        requiresKey
-                          ? t("settings.Ai.keyMissing")
-                          : t("settings.Ai.keyOptional")
-                      }
-                    />
-                  )}
-                  {keyRef && (
-                    <Typography
-                      variant="caption"
-                      sx={{ color: colors.text.secondary }}
-                    >
-                      {t("settings.Ai.keyRefLabel", { ref: keyRef })}
-                    </Typography>
-                  )}
-                </Stack>
-              </Stack>
-              <Stack direction="row" spacing={1}>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  onClick={openKeyDialog}
-                  disabled={!keyRef}
-                >
-                  {hasKey
-                    ? t("settings.Ai.keyReplace")
-                    : t("settings.Ai.keySet")}
-                </Button>
-                <Button
-                  size="small"
-                  variant="text"
-                  color="error"
-                  onClick={() => {
-                    void removeKey();
-                  }}
-                  disabled={!hasKey}
-                >
-                  {t("settings.Ai.keyRemove")}
-                </Button>
-              </Stack>
-            </Stack>
-          </Box>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <B4SecretField
+              label={t("settings.Ai.keyTitle")}
+              managed
+              configured={hasKey}
+              disabled={!keyRef}
+              placeholder={
+                requiresKey
+                  ? t("settings.Ai.keyMissing")
+                  : t("settings.Ai.keyOptional")
+              }
+              helperText={t("settings.Ai.keyStoredHelp")}
+              caption={
+                keyRef ? t("settings.Ai.keyRefLabel", { ref: keyRef }) : null
+              }
+              onSet={openKeyDialog}
+              setLabel={
+                hasKey ? t("settings.Ai.keyReplace") : t("settings.Ai.keySet")
+              }
+              onRemove={() => {
+                void removeKey();
+              }}
+              removeLabel={t("settings.Ai.keyRemove")}
+            />
+          </Grid>
         )}
+      </Grid>
 
-        <B4FormGroup label={t("settings.Ai.advanced")} columns={2}>
-          <B4NumberField
-            label={t("settings.Ai.maxTokens")}
-            value={ai?.max_tokens ?? 1024}
-            onChange={(n) => onChange("system.ai.max_tokens", n)}
-            min={1}
-            disabled={!ai?.enabled}
-            helperText={t("settings.Ai.maxTokensHelp")}
-          />
-          <B4NumberField
-            label={t("settings.Ai.temperature")}
-            value={ai?.temperature ?? 0.2}
-            onChange={(n) => onChange("system.ai.temperature", n)}
-            allowDecimal
-            min={0}
-            max={2}
-            disabled={!ai?.enabled}
-            helperText={t("settings.Ai.temperatureHelp")}
-          />
-          <B4NumberField
-            label={t("settings.Ai.timeout")}
-            value={ai?.timeout_sec ?? 120}
-            onChange={(n) => onChange("system.ai.timeout_sec", n)}
-            min={1}
-            disabled={!ai?.enabled}
-            helperText={t("settings.Ai.timeoutHelp")}
-          />
-        </B4FormGroup>
-
-        <Stack direction="row" alignItems="center" spacing={1}>
-          <Typography variant="caption" sx={{ color: colors.text.secondary }}>
-            {t("settings.Ai.statusLabel")}
-          </Typography>
-          {readyChip}
-          <Box sx={{ flex: 1 }} />
-          <Button
-            size="small"
-            variant="text"
-            onClick={() => {
-              void refreshStatus();
-            }}
-            disabled={statusLoading}
-          >
-            {t("settings.Ai.refreshStatus")}
-          </Button>
-        </Stack>
-      </Stack>
+      <B4Accordion title={t("settings.Ai.advanced")}>
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 12 }}>
+            <B4TextField
+              label={t("settings.Ai.endpoint")}
+              value={ai?.endpoint ?? ""}
+              onChange={(e) => onChange("system.ai.endpoint", e.target.value)}
+              placeholder={DEFAULT_ENDPOINTS[provider] ?? ""}
+              disabled={!provider}
+              helperText={t("settings.Ai.endpointHelp")}
+            />
+          </Grid>
+          <Grid size={{ xs: 12, md: 4 }}>
+            <B4NumberField
+              label={t("settings.Ai.maxTokens")}
+              value={ai?.max_tokens ?? 1024}
+              onChange={(n) => onChange("system.ai.max_tokens", n)}
+              min={1}
+              helperText={t("settings.Ai.maxTokensHelp")}
+            />
+          </Grid>
+          <Grid size={{ xs: 12, md: 4 }}>
+            <B4NumberField
+              label={t("settings.Ai.temperature")}
+              value={ai?.temperature ?? 0.2}
+              onChange={(n) => onChange("system.ai.temperature", n)}
+              allowDecimal
+              min={0}
+              max={2}
+              helperText={t("settings.Ai.temperatureHelp")}
+            />
+          </Grid>
+          <Grid size={{ xs: 12, md: 4 }}>
+            <B4NumberField
+              label={t("settings.Ai.timeout")}
+              value={ai?.timeout_sec ?? 120}
+              onChange={(n) => onChange("system.ai.timeout_sec", n)}
+              min={1}
+              helperText={t("settings.Ai.timeoutHelp")}
+            />
+          </Grid>
+        </Grid>
+      </B4Accordion>
 
       <B4Dialog
         title={hasKey ? t("settings.Ai.keyReplace") : t("settings.Ai.keySet")}
@@ -715,6 +582,135 @@ const AISection = ({ config, onChange }: ApiSettingsProps) => {
           </Stack>
         </DialogContent>
       </B4Dialog>
-    </B4Section>
+    </B4IntegrationCard>
+  );
+};
+
+const shortenToken = (token: string) =>
+  token.length > 24 ? `${token.slice(0, 8)}…${token.slice(-6)}` : token;
+
+const clientSnippet = (url: string, token: string) =>
+  [
+    `"b4": {`,
+    `  "url": "${url}",`,
+    `  "headers": { "Authorization": "Bearer ${token}" }`,
+    `}`,
+  ].join("\n");
+
+const MCPCard = ({ config, onChange }: ApiSettingsProps) => {
+  const { t } = useTranslation();
+  const { showError, showSuccess } = useSnackbar();
+
+  const mcp = config.system.web_server.mcp;
+  const enabled = Boolean(mcp?.enabled);
+  const allowWrites = Boolean(mcp?.allow_writes);
+  const token = mcp?.token ?? "";
+  const [generating, setGenerating] = useState(false);
+
+  const generateToken = async () => {
+    try {
+      setGenerating(true);
+      const data = await mcpApi.generateToken();
+      onChange("system.web_server.mcp.token", data.token);
+      showSuccess(t("settings.Mcp.tokenGenerated"));
+    } catch {
+      showError(t("settings.Mcp.tokenGenerateError"));
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const authConfigured = Boolean(
+    config.system.web_server.username &&
+      (config.system.web_server.password ||
+        config.system.web_server.password_set),
+  );
+
+  const endpointUrl = `${window.location.origin}/api/mcp`;
+  const placeholderToken = t("settings.Mcp.tokenSnippetPlaceholder");
+
+  const notice = (() => {
+    if (token) return null;
+    if (!authConfigured) {
+      return (
+        <B4Alert severity="warning">{t("settings.Mcp.noAuthWarning")}</B4Alert>
+      );
+    }
+    return <B4Alert severity="info">{t("settings.Mcp.noTokenWarning")}</B4Alert>;
+  })();
+
+  return (
+    <B4IntegrationCard
+      icon={<McpIcon />}
+      title={t("settings.Mcp.title")}
+      description={t("settings.Mcp.description")}
+      enabled={enabled}
+      onToggle={(checked) => onChange("system.web_server.mcp.enabled", checked)}
+      toggleLabel={t("settings.Mcp.enabled")}
+    >
+      <Box sx={{ maxWidth: 620 }}>
+        <B4SecretField
+          label={t("settings.Mcp.token")}
+          value={token}
+          onChange={(value) => onChange("system.web_server.mcp.token", value)}
+          placeholder={t("settings.Mcp.tokenPlaceholder")}
+          helperText={t("settings.Mcp.tokenHelp")}
+          onGenerate={() => {
+            void generateToken();
+          }}
+          generateLabel={
+            token ? t("settings.Mcp.tokenRegenerate") : t("core.generate")
+          }
+          generating={generating}
+        />
+      </Box>
+
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          gap: 2,
+          p: "13px 15px",
+          borderRadius: "6px",
+          border: `1px solid ${allowWrites ? "rgba(255, 167, 38, 0.32)" : colors.border.light}`,
+          borderLeft: `3px solid ${allowWrites ? colors.state.warning : colors.border.medium}`,
+          bgcolor: allowWrites
+            ? "rgba(255, 167, 38, 0.06)"
+            : colors.background.hover,
+        }}
+      >
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography sx={{ color: colors.text.primary, fontWeight: 500 }}>
+            {t("settings.Mcp.allowWrites")}
+          </Typography>
+          <Typography
+            variant="caption"
+            sx={{ display: "block", color: colors.text.secondary, mt: "2px" }}
+          >
+            {allowWrites
+              ? t("settings.Mcp.allowWritesWarning")
+              : t("settings.Mcp.allowWritesHelp")}
+          </Typography>
+        </Box>
+        <Switch
+          checked={allowWrites}
+          onChange={(e) =>
+            onChange("system.web_server.mcp.allow_writes", e.target.checked)
+          }
+          slotProps={{ input: { "aria-label": t("settings.Mcp.allowWrites") } }}
+        />
+      </Box>
+
+      <B4ConnectDetails
+        label={t("settings.Mcp.clientConfig")}
+        snippet={clientSnippet(
+          endpointUrl,
+          token ? shortenToken(token) : placeholderToken,
+        )}
+        copyValue={clientSnippet(endpointUrl, token || placeholderToken)}
+        copiedMessage={t("settings.Mcp.clientConfigCopied")}
+        footer={notice}
+      />
+    </B4IntegrationCard>
   );
 };
