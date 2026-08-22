@@ -126,3 +126,24 @@ func TestDNSSourceBreakerLetsOneProbeThroughAfterTheCooldown(t *testing.T) {
 		t.Fatal("the probe was let through, the breaker must close again until the next cooldown")
 	}
 }
+
+func TestAnEmptiedAnswerIsNotCacheable(t *testing.T) {
+	t.Cleanup(resetDNSAnswerCache)
+	resetDNSAnswerCache()
+
+	query := dns.BuildQuery("stripped.test", 11, dnsTypeA)
+	full := dns.BuildAnswerFromIPs(query, 300, []net.IP{net.ParseIP("1.2.3.4")})
+
+	emptied := dns.BuildEmptyAnswer(full)
+	if emptied == nil {
+		t.Fatal("BuildEmptyAnswer returned nothing")
+	}
+	if got := classifyDNSAnswer(emptied); got != dnsVerdictFailed {
+		t.Fatalf("classifyDNSAnswer(emptied) = %v, want dnsVerdictFailed so the cache gate rejects it", got)
+	}
+
+	rememberDNSAnswer("stripped.test", query, emptied)
+	if got := recallDNSAnswer("stripped.test", query); got != nil {
+		t.Fatal("an answer left with no addresses must not become the last good answer")
+	}
+}

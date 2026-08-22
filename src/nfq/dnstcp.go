@@ -312,7 +312,6 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		switch {
 		case rerr == nil:
 			noteDNSSourceSuccess(source)
-			rememberDNSAnswer(domain, query, resp)
 		case set.DNS.Strict:
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionServfail)
 			resp = dns.BuildServfailResponse(query)
@@ -361,6 +360,10 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		if filtered, action := s.worker.filterDNSAnswer(cfg, set, domain, resp, true); filtered != nil {
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, action)
 			resp = filtered
+		}
+
+		if rerr == nil && classifyDNSAnswer(resp) == dnsVerdictGood {
+			rememberDNSAnswer(domain, query, resp)
 		}
 
 		if writeDNSTCPMessage(client, resp, ioTimeout) != nil {

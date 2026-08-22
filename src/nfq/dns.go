@@ -553,7 +553,6 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		resp = fallback
 	} else {
 		noteDNSSourceSuccess(source)
-		rememberDNSAnswer(queryDomain, query, resp)
 	}
 
 	if w.escalateAfterDNS(ipVersion, cfg, set, queryDomain, query, escalateResp, clientIP, clientPort, originalDst) {
@@ -570,6 +569,10 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 	if filtered, action := w.filterDNSAnswer(cfg, set, queryDomain, resp, false); filtered != nil {
 		logDNSEvent("UDP", set, queryDomain, clientIP, originalDst, clientPort, w.getMacByIp(clientIP.String()), action)
 		resp = filtered
+	}
+
+	if err == nil && classifyDNSAnswer(resp) == dnsVerdictGood {
+		rememberDNSAnswer(queryDomain, query, resp)
 	}
 
 	w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, resp)

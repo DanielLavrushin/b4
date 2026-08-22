@@ -861,6 +861,16 @@ func (ds *DiscoverySuite) optimizeWithPresets(family StrategyFamily) ConfigPrese
 
 // testPresetInternal tests a single preset against the primary domain.
 // Used during Phase 2 optimization (via withSingleDomain helper).
+func nonOKStatusNote(result CheckResult) string {
+	if result.StatusCode >= 200 && result.StatusCode < 300 {
+		return ""
+	}
+	if result.StatusCode == 0 {
+		return ""
+	}
+	return fmt.Sprintf(", HTTP %d", result.StatusCode)
+}
+
 func (ds *DiscoverySuite) testPresetInternal(preset ConfigPreset) CheckResult {
 	log.DiscoveryLogf("  Testing '%s'...", preset.Name)
 
@@ -903,10 +913,10 @@ func (ds *DiscoverySuite) testPresetInternal(preset ConfigPreset) CheckResult {
 
 	if successCount == ds.validationTries {
 		if ds.validationTries > 1 {
-			log.DiscoveryLogf("    → OK (%.2f KB/s, %d bytes) - %d/%d tries succeeded",
-				lastResult.Speed/1024, lastResult.BytesRead, successCount, ds.validationTries)
+			log.DiscoveryLogf("    → OK (%.2f KB/s, %d bytes%s) - %d/%d tries succeeded",
+				lastResult.Speed/1024, lastResult.BytesRead, nonOKStatusNote(lastResult), successCount, ds.validationTries)
 		} else {
-			log.DiscoveryLogf("    → OK (%.2f KB/s, %d bytes)", lastResult.Speed/1024, lastResult.BytesRead)
+			log.DiscoveryLogf("    → OK (%.2f KB/s, %d bytes%s)", lastResult.Speed/1024, lastResult.BytesRead, nonOKStatusNote(lastResult))
 		}
 		return lastResult
 	}
@@ -1001,7 +1011,7 @@ spawn:
 			}
 
 			if successCount == ds.validationTries {
-				log.DiscoveryLogf("    [%s] → OK (%.2f KB/s, %d bytes)", di.Domain, lastResult.Speed/1024, lastResult.BytesRead)
+				log.DiscoveryLogf("    [%s] → OK (%.2f KB/s, %d bytes%s)", di.Domain, lastResult.Speed/1024, lastResult.BytesRead, nonOKStatusNote(lastResult))
 				mu.Lock()
 				results[di.Domain] = lastResult
 				mu.Unlock()
