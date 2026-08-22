@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Fab, Tooltip } from "@mui/material";
+import { Box, Fab, Tooltip, useMediaQuery } from "@mui/material";
 import { StartIcon, StopIcon } from "@b4.icons";
-import { colors } from "@design";
+import { colors, theme } from "@design";
 import { useConnectionGroups, type EnrichedGroup } from "@hooks/useConnectionGroups";
 import {
   AGG_SORT_STORAGE_KEY,
@@ -102,7 +102,11 @@ export const AggregatedView = ({
   const [unmatchedOnly, setUnmatchedOnly] = useState(false);
   const [selectedMac, setSelectedMac] = useState<string | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const isCompact = useMediaQuery(theme.breakpoints.down("md"));
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (globalThis.matchMedia("(max-width: 899.95px)").matches) {
+      return true;
+    }
     return localStorage.getItem("b4_connections_sidebar_collapsed") === "1";
   });
   const [sortColumn, setSortColumn] = useState<AggSortColumn | null>(
@@ -113,8 +117,17 @@ export const AggregatedView = ({
   );
 
   useEffect(() => {
+    if (isCompact) {
+      setSidebarCollapsed(true);
+    }
+  }, [isCompact]);
+
+  useEffect(() => {
+    if (isCompact) {
+      return;
+    }
     localStorage.setItem("b4_connections_sidebar_collapsed", sidebarCollapsed ? "1" : "0");
-  }, [sidebarCollapsed]);
+  }, [sidebarCollapsed, isCompact]);
 
   useEffect(() => {
     saveSortState(sortColumn, sortDirection, AGG_SORT_STORAGE_KEY);

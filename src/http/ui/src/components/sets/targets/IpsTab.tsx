@@ -116,7 +116,7 @@ export const IpsTab = ({
       )}
 
       <Grid container spacing={2}>
-        <Grid size={{ sm: 12, md: 6 }}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <ManualEntryPanel
             icon={<IpIcon />}
             title={t("sets.targets.manualIps")}
@@ -138,7 +138,7 @@ export const IpsTab = ({
         </Grid>
 
         {geo.ipdat_path && geoipCategories.length > 0 && (
-          <Grid size={{ sm: 12, md: 6 }}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <GeoCategoryPanel
               title={t("sets.targets.geoipCategories")}
               tooltip={t("sets.targets.geoipCatTooltip")}

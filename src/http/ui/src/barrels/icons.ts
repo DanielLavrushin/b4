@@ -72,7 +72,7 @@ export {
   OpenInFull as FullscreenIcon,
   VpnKey as SniIcon,
   History as HistoryIcon,
-  Delete as DeleteIcon,
+  DeleteForever as DeleteIcon,
   Logout as LogoutIcon,
   Inventory2 as BackupIcon,
   Power as ProxyIcon,

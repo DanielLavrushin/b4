@@ -38,7 +38,13 @@ export const DomainsControlBar = ({
         bgcolor: colors.background.control,
       }}
     >
-      <Stack direction="row" spacing={2} alignItems="center">
+      <Stack
+        direction="row"
+        spacing={2}
+        alignItems="center"
+        flexWrap="wrap"
+        useFlexGap
+      >
         <TextField
           size="small"
           placeholder={t("connections.controlBar.filterPlaceholder")}

@@ -500,7 +500,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
             flexWrap="wrap"
             useFlexGap
           >
-            <Stack direction="row" spacing={4}>
+            <Stack direction="row" spacing={4} flexWrap="wrap" useFlexGap>
               <StatItem
                 value={summaryStats.total}
                 label={t("sets.manager.totalSets")}
@@ -520,7 +520,13 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
               />
             </Stack>
 
-            <Stack direction="row" spacing={2} alignItems="center">
+            <Stack
+              direction="row"
+              spacing={2}
+              alignItems="center"
+              flexWrap="wrap"
+              useFlexGap
+            >
               {sets.length > 0 && !selectionMode && (
                 <Tooltip title={t("sets.manager.toggleAllTooltip")}>
                   <FormControlLabel
@@ -566,7 +572,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                   },
                 }}
                 sx={{
-                  width: 200,
+                  width: { xs: "100%", sm: 200 },
                   "& .MuiOutlinedInput-root": {
                     bgcolor: colors.background.paper,
                   },

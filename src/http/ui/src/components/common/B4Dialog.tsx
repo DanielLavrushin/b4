@@ -35,6 +35,10 @@ export const B4Dialog = ({
     slotProps={{
       paper: {
         sx: {
+          m: { xs: 1.5, sm: 4 },
+          width: { xs: "calc(100% - 24px)", sm: "auto" },
+          maxWidth: { xs: "calc(100% - 24px)", sm: undefined },
+          maxHeight: { xs: "calc(100% - 24px)", sm: "calc(100% - 64px)" },
           bgcolor: colors.background.default,
           border: `2px solid ${colors.border.default}`,
           borderRadius: radius.md,

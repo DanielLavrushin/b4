@@ -78,6 +78,8 @@ const MetricCell = ({
       justifyContent: "center",
       px: "18px",
       minWidth: 0,
+      flexShrink: 0,
+      whiteSpace: "nowrap",
       borderRight: `1px solid ${HAIRLINE}`,
     }}
   >
@@ -124,6 +126,8 @@ const actionCell = {
   alignItems: "center",
   gap: "6px",
   px: "14px",
+  flexShrink: 0,
+  whiteSpace: "nowrap" as const,
   border: 0,
   borderLeft: `1px solid ${colors.border.default}`,
   cursor: "pointer",
@@ -174,11 +178,15 @@ export const HealthBanner = ({
           display: "flex",
           alignItems: "stretch",
           height: 46,
+          flexShrink: 0,
           mb: 1.5,
           bgcolor: colors.background.paper,
           border: `1px solid ${colors.border.default}`,
           borderRadius: `${radiusPx.md}px`,
-          overflow: "hidden",
+          overflowX: "auto",
+          overflowY: "hidden",
+          scrollbarWidth: "none",
+          "&::-webkit-scrollbar": { display: "none" },
         }}
       >
         <Box
@@ -188,6 +196,8 @@ export const HealthBanner = ({
             gap: "8px",
             pl: "12px",
             pr: "14px",
+            flexShrink: 0,
+            whiteSpace: "nowrap",
             bgcolor: style.bg,
             borderRight: `1px solid ${colors.border.default}`,
           }}
@@ -251,7 +261,7 @@ export const HealthBanner = ({
           <Mono>{metrics.uptime}</Mono>
         </MetricCell>
 
-        <Box sx={{ flex: 1, borderRight: `1px solid ${HAIRLINE}` }} />
+        <Box sx={{ flex: "1 1 0", minWidth: 0, borderRight: `1px solid ${HAIRLINE}` }} />
 
         <Box
           component="button"

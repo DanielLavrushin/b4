@@ -30,6 +30,7 @@ export const B4IntegrationCard = ({
       sx={{
         bgcolor: colors.background.paper,
         border: `1px solid ${colors.border.default}`,
+        overflow: "hidden",
         opacity: open ? 1 : 0.75,
         transition: "opacity 120ms",
       }}

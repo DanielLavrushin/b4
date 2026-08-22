@@ -110,7 +110,7 @@ export const TrafficRouting = ({
 
   return (
     <Grid container spacing={3}>
-      <Grid size={{ lg: 12 }}>
+      <Grid size={{ xs: 12 }}>
         <B4Switch
           label={t("sets.routing.enable")}
           checked={routing.enabled}

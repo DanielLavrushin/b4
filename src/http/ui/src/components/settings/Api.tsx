@@ -5,7 +5,6 @@ import {
   Autocomplete,
   Box,
   Button,
-  ButtonBase,
   Chip,
   CircularProgress,
   DialogContent,
@@ -25,6 +24,8 @@ import {
   B4IntegrationCard,
   B4NumberField,
   B4SecretField,
+  B4Tab,
+  B4Tabs,
   B4TextField,
 } from "@b4.elements";
 import { aiApi, mcpApi, AIModel } from "@api/ai";
@@ -40,35 +41,14 @@ export interface ApiSettingsProps {
 interface ProviderOption {
   value: AIProvider;
   label: string;
-  hint: string;
   cloud: boolean;
 }
 
 const PROVIDERS: ProviderOption[] = [
-  {
-    value: "openai",
-    label: "OpenAI",
-    hint: "settings.Ai.providerCloud",
-    cloud: true,
-  },
-  {
-    value: "anthropic",
-    label: "Anthropic",
-    hint: "settings.Ai.providerCloud",
-    cloud: true,
-  },
-  {
-    value: "ollama",
-    label: "Ollama",
-    hint: "settings.Ai.providerLocal",
-    cloud: false,
-  },
-  {
-    value: "openai-compatible",
-    label: "OpenAI-compatible",
-    hint: "settings.Ai.providerCompatible",
-    cloud: false,
-  },
+  { value: "openai", label: "OpenAI", cloud: true },
+  { value: "anthropic", label: "Anthropic", cloud: true },
+  { value: "ollama", label: "Ollama", cloud: false },
+  { value: "openai-compatible", label: "OpenAI-compatible", cloud: false },
 ];
 
 const DEFAULT_ENDPOINTS: Record<string, string> = {
@@ -127,66 +107,6 @@ const IPInfoCard = ({ config, onChange }: ApiSettingsProps) => {
   );
 };
 
-const ProviderPicker = ({
-  value,
-  onSelect,
-}: {
-  value: string;
-  onSelect: (value: AIProvider) => void;
-}) => {
-  const { t } = useTranslation();
-
-  return (
-    <Grid container spacing={1}>
-      {PROVIDERS.map((p) => {
-        const selected = value === p.value;
-        return (
-          <Grid size={{ xs: 6, md: 3 }} key={p.value}>
-            <ButtonBase
-              onClick={() => onSelect(p.value)}
-              sx={{
-                width: "100%",
-                height: "100%",
-                p: "11px 12px",
-                borderRadius: "8px",
-                border: `1px solid ${selected ? colors.secondary : colors.border.default}`,
-                bgcolor: selected
-                  ? colors.accent.secondaryHover
-                  : colors.background.dark,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "flex-start",
-                gap: "2px",
-                "&:hover": { borderColor: colors.border.strong },
-              }}
-            >
-              <Typography
-                sx={{
-                  fontSize: 13.5,
-                  fontWeight: 600,
-                  color: colors.text.primary,
-                  lineHeight: 1.2,
-                }}
-              >
-                {p.label}
-              </Typography>
-              <Typography
-                variant="caption"
-                sx={{
-                  color: selected ? colors.secondary : colors.text.disabled,
-                  lineHeight: 1.2,
-                }}
-              >
-                {t(p.hint)}
-              </Typography>
-            </ButtonBase>
-          </Grid>
-        );
-      })}
-    </Grid>
-  );
-};
-
 const AICard = ({ config, onChange }: ApiSettingsProps) => {
   const { t } = useTranslation();
   const { showError, showSuccess } = useSnackbar();
@@ -226,6 +146,7 @@ const AICard = ({ config, onChange }: ApiSettingsProps) => {
   const supportsKey = requiresKey || provider === "openai-compatible";
   const hasKey = Boolean(keyRef) && secretRefs.includes(keyRef);
   const selected = PROVIDERS.find((p) => p.value === provider);
+  const providerIndex = PROVIDERS.findIndex((p) => p.value === provider);
 
   const isDirty = useMemo(() => {
     if (!status) return false;
@@ -356,14 +277,17 @@ const AICard = ({ config, onChange }: ApiSettingsProps) => {
       onToggle={(checked) => onChange("system.ai.enabled", checked)}
       toggleLabel={t("settings.Ai.enable")}
     >
-      <Stack spacing={1}>
-        <Typography
-          variant="caption"
-          sx={{ color: colors.text.secondary, fontWeight: 600 }}
+      <Stack spacing={2}>
+        <B4Tabs
+          value={providerIndex >= 0 ? providerIndex : false}
+          onChange={(_, index: number) =>
+            handleProviderChange(PROVIDERS[index].value)
+          }
         >
-          {t("settings.Ai.provider")}
-        </Typography>
-        <ProviderPicker value={provider} onSelect={handleProviderChange} />
+          {PROVIDERS.map((p) => (
+            <B4Tab key={p.value} label={p.label} />
+          ))}
+        </B4Tabs>
         {selected?.cloud && (
           <B4Alert severity="info">
             {t("settings.Ai.privacyCloud", { provider: selected.label })}
@@ -648,69 +572,86 @@ const MCPCard = ({ config, onChange }: ApiSettingsProps) => {
       onToggle={(checked) => onChange("system.web_server.mcp.enabled", checked)}
       toggleLabel={t("settings.Mcp.enabled")}
     >
-      <Box sx={{ maxWidth: 620 }}>
-        <B4SecretField
-          label={t("settings.Mcp.token")}
-          value={token}
-          onChange={(value) => onChange("system.web_server.mcp.token", value)}
-          placeholder={t("settings.Mcp.tokenPlaceholder")}
-          helperText={t("settings.Mcp.tokenHelp")}
-          onGenerate={() => {
-            void generateToken();
-          }}
-          generateLabel={
-            token ? t("settings.Mcp.tokenRegenerate") : t("core.generate")
-          }
-          generating={generating}
-        />
-      </Box>
+      <Grid container spacing={2}>
+        <Grid size={{ xs: 12, lg: 6 }}>
+          <Stack spacing={2}>
+            <B4SecretField
+              label={t("settings.Mcp.token")}
+              value={token}
+              onChange={(value) =>
+                onChange("system.web_server.mcp.token", value)
+              }
+              placeholder={t("settings.Mcp.tokenPlaceholder")}
+              helperText={t("settings.Mcp.tokenHelp")}
+              onGenerate={() => {
+                void generateToken();
+              }}
+              generateLabel={
+                token ? t("settings.Mcp.tokenRegenerate") : t("core.generate")
+              }
+              generating={generating}
+            />
 
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          gap: 2,
-          p: "13px 15px",
-          borderRadius: "6px",
-          border: `1px solid ${allowWrites ? "rgba(255, 167, 38, 0.32)" : colors.border.light}`,
-          borderLeft: `3px solid ${allowWrites ? colors.state.warning : colors.border.medium}`,
-          bgcolor: allowWrites
-            ? "rgba(255, 167, 38, 0.06)"
-            : colors.background.hover,
-        }}
-      >
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography sx={{ color: colors.text.primary, fontWeight: 500 }}>
-            {t("settings.Mcp.allowWrites")}
-          </Typography>
-          <Typography
-            variant="caption"
-            sx={{ display: "block", color: colors.text.secondary, mt: "2px" }}
-          >
-            {allowWrites
-              ? t("settings.Mcp.allowWritesWarning")
-              : t("settings.Mcp.allowWritesHelp")}
-          </Typography>
-        </Box>
-        <Switch
-          checked={allowWrites}
-          onChange={(e) =>
-            onChange("system.web_server.mcp.allow_writes", e.target.checked)
-          }
-          slotProps={{ input: { "aria-label": t("settings.Mcp.allowWrites") } }}
-        />
-      </Box>
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: 2,
+                p: "13px 15px",
+                borderRadius: "6px",
+                border: `1px solid ${allowWrites ? "rgba(255, 167, 38, 0.32)" : colors.border.light}`,
+                borderLeft: `3px solid ${allowWrites ? colors.state.warning : colors.border.medium}`,
+                bgcolor: allowWrites
+                  ? "rgba(255, 167, 38, 0.06)"
+                  : colors.background.hover,
+              }}
+            >
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography sx={{ color: colors.text.primary, fontWeight: 500 }}>
+                  {t("settings.Mcp.allowWrites")}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    display: "block",
+                    color: colors.text.secondary,
+                    mt: "2px",
+                  }}
+                >
+                  {allowWrites
+                    ? t("settings.Mcp.allowWritesWarning")
+                    : t("settings.Mcp.allowWritesHelp")}
+                </Typography>
+              </Box>
+              <Switch
+                checked={allowWrites}
+                onChange={(e) =>
+                  onChange(
+                    "system.web_server.mcp.allow_writes",
+                    e.target.checked,
+                  )
+                }
+                slotProps={{
+                  input: { "aria-label": t("settings.Mcp.allowWrites") },
+                }}
+              />
+            </Box>
+          </Stack>
+        </Grid>
 
-      <B4ConnectDetails
-        label={t("settings.Mcp.clientConfig")}
-        snippet={clientSnippet(
-          endpointUrl,
-          token ? shortenToken(token) : placeholderToken,
-        )}
-        copyValue={clientSnippet(endpointUrl, token || placeholderToken)}
-        copiedMessage={t("settings.Mcp.clientConfigCopied")}
-        footer={notice}
-      />
+        <Grid size={{ xs: 12, lg: 6 }}>
+          <B4ConnectDetails
+            label={t("settings.Mcp.clientConfig")}
+            snippet={clientSnippet(
+              endpointUrl,
+              token ? shortenToken(token) : placeholderToken,
+            )}
+            copyValue={clientSnippet(endpointUrl, token || placeholderToken)}
+            copiedMessage={t("settings.Mcp.clientConfigCopied")}
+            footer={notice}
+          />
+        </Grid>
+      </Grid>
     </B4IntegrationCard>
   );
 };

@@ -56,6 +56,7 @@ export const DetailPane = memo<Props>(
       <Box
         sx={{
           width,
+          maxWidth: "100vw",
           flexShrink: 0,
           borderLeft: `1px solid ${colors.border.light}`,
           bgcolor: colors.background.paper,

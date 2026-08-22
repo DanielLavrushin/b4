@@ -375,6 +375,9 @@ export function SettingsPage() {
             direction="row"
             justifyContent="space-between"
             alignItems="center"
+            flexWrap="wrap"
+            useFlexGap
+            spacing={1}
             sx={{ mb: 2 }}
           >
             <Stack direction="row" spacing={2} alignItems="center">
@@ -399,7 +402,7 @@ export function SettingsPage() {
               )}
             </Stack>
 
-            <Stack direction="row" spacing={1}>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
               {categoryHasChanges[TABS.GENERAL] && (
                 <B4Alert severity="warning" sx={{ py: 0, px: spacing.sm }}>
                   <Trans

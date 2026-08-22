@@ -164,7 +164,13 @@ export function LogsPage() {
             bgcolor: colors.background.control,
           }}
         >
-          <Stack direction="row" spacing={2} alignItems="center">
+          <Stack
+            direction="row"
+            spacing={2}
+            alignItems="center"
+            flexWrap="wrap"
+            useFlexGap
+          >
             <B4TextField
               size="small"
               placeholder={t("logs.filterPlaceholder")}

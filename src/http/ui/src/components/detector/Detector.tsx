@@ -529,6 +529,8 @@ export const DetectorRunner = () => {
                               direction="row"
                               alignItems="center"
                               spacing={1}
+                              flexWrap="wrap"
+                              useFlexGap
                             >
                               <B4Badge
                                 label={getStatusLabel(entry.status)}

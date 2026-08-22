@@ -9,7 +9,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import { CopyIcon, EyeIcon, EyeOffIcon } from "@b4.icons";
+import { CopyIcon, DeleteIcon, EyeIcon, EyeOffIcon } from "@b4.icons";
 import { colors } from "@design";
 import { copyText } from "@utils";
 import { useSnackbar } from "@context/SnackbarProvider";
@@ -35,6 +35,7 @@ export interface B4SecretFieldProps {
   setLabel?: string;
   onRemove?: () => void;
   removeLabel?: string;
+  actions?: React.ReactNode;
   aiTopic?: string;
 }
 
@@ -56,6 +57,7 @@ export const B4SecretField = ({
   setLabel,
   onRemove,
   removeLabel,
+  actions,
   aiTopic,
 }: B4SecretFieldProps) => {
   const { t } = useTranslation();
@@ -75,7 +77,7 @@ export const B4SecretField = ({
   };
 
   const adornment =
-    canReveal || canCopy ? (
+    canReveal || canCopy || actions ? (
       <InputAdornment position="end">
         {canReveal && (
           <Tooltip title={shown ? t("core.hide") : t("core.reveal")}>
@@ -100,6 +102,7 @@ export const B4SecretField = ({
             </IconButton>
           </Tooltip>
         )}
+        {actions}
       </InputAdornment>
     ) : undefined;
 
@@ -150,16 +153,20 @@ export const B4SecretField = ({
           </Button>
         )}
         {onRemove && (
-          <Button
-            size="small"
-            variant="text"
-            color="error"
-            sx={{ height: 40 }}
-            disabled={disabled || (managed ? !configured : !value)}
-            onClick={onRemove}
-          >
-            {removeLabel}
-          </Button>
+          <Tooltip title={removeLabel ?? t("core.delete")}>
+            <span>
+              <IconButton
+                size="small"
+                color="error"
+                sx={{ height: 40, width: 40 }}
+                disabled={disabled || (managed ? !configured : !value)}
+                onClick={onRemove}
+                aria-label={removeLabel ?? t("core.delete")}
+              >
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
         )}
       </Stack>
       {caption && (

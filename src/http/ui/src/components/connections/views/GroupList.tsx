@@ -34,6 +34,7 @@ interface Props {
 
 const OVERSCAN = 6;
 const HEADER_HEIGHT = 32;
+const MIN_ROW_WIDTH = 860;
 
 const SortHeader = ({
   column,
@@ -120,10 +121,20 @@ export const GroupList = ({
   }, []);
 
   return (
-    <Box sx={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+    <Box
+      sx={{
+        flex: 1,
+        minWidth: 0,
+        display: "flex",
+        flexDirection: "column",
+        overflowX: "auto",
+        overflowY: "hidden",
+      }}
+    >
       <Box
         sx={{
           height: HEADER_HEIGHT,
+          minWidth: MIN_ROW_WIDTH,
           display: "flex",
           alignItems: "center",
           gap: 1.5,
@@ -212,7 +223,13 @@ export const GroupList = ({
       <Box
         ref={containerRef}
         onScroll={handleScroll}
-        sx={{ flex: 1, overflow: "auto", bgcolor: colors.background.dark }}
+        sx={{
+          flex: 1,
+          minWidth: MIN_ROW_WIDTH,
+          overflowY: "auto",
+          overflowX: "hidden",
+          bgcolor: colors.background.dark,
+        }}
       >
         {groups.length === 0 ? (
           <Stack sx={{ py: 6, alignItems: "center", color: colors.text.disabled }}>

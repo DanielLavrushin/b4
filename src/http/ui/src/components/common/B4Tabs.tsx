@@ -7,6 +7,7 @@ export const B4Tabs = ({ sx, ...props }: TabsProps) => (
   <Tabs
     variant="scrollable"
     scrollButtons="auto"
+    allowScrollButtonsMobile
     sx={{
       borderBottom: `1px solid ${colors.border.light}`,
       minHeight: 38,

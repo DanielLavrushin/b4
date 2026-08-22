@@ -13,6 +13,7 @@ import {
   ThemeProvider,
   Toolbar,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import { useState } from "react";
 import {
@@ -56,6 +57,7 @@ import { WatchdogPage } from "@b4.watchdog";
 import { SnackbarProvider } from "@context/SnackbarProvider";
 
 const DRAWER_WIDTH = 240;
+const HEADER_HEIGHT = 64;
 
 interface NavItem {
   path: string;
@@ -75,12 +77,23 @@ const navItems: NavItem[] = [
 ];
 
 export default function App() {
-  const [drawerOpen, setDrawerOpen] = useState<boolean>(true);
+  const [desktopDrawerOpen, setDesktopDrawerOpen] = useState<boolean>(true);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState<boolean>(false);
+  const isCompact = useMediaQuery(theme.breakpoints.down("md"));
   const navigate = useNavigate();
   const location = useLocation();
   const { unseenDomainsCount, resetDomainsBadge } = useWebSocket();
   const { isAuthenticated, isLoading, authRequired, logout } = useAuth();
   const { t } = useTranslation();
+
+  const drawerOpen = isCompact ? mobileDrawerOpen : desktopDrawerOpen;
+  const toggleDrawer = () => {
+    if (isCompact) {
+      setMobileDrawerOpen((open) => !open);
+    } else {
+      setDesktopDrawerOpen((open) => !open);
+    }
+  };
 
   if (isLoading) {
     return null;
@@ -121,18 +134,27 @@ export default function App() {
         <CssBaseline />
         <Box sx={{ display: "flex", height: "100vh" }}>
           <Drawer
-            variant="persistent"
+            variant={isCompact ? "temporary" : "persistent"}
             open={drawerOpen}
+            onClose={() => setMobileDrawerOpen(false)}
+            ModalProps={{ keepMounted: true }}
             sx={{
-              width: DRAWER_WIDTH,
-              flexShrink: 0,
+              ...(isCompact ? {} : { width: DRAWER_WIDTH, flexShrink: 0 }),
               "& .MuiDrawer-paper": {
                 width: DRAWER_WIDTH,
                 boxSizing: "border-box",
               },
             }}
           >
-            <Box sx={{ p: "12px 16px" }}>
+            <Box
+              sx={{
+                height: HEADER_HEIGHT,
+                boxSizing: "border-box",
+                display: "flex",
+                alignItems: "center",
+                px: "16px",
+              }}
+            >
               <Logo />
             </Box>
             <Divider sx={{ borderColor: colors.border.default }} />
@@ -152,6 +174,9 @@ export default function App() {
                       onClick={() => {
                         if (item.path === "/traffic") {
                           resetDomainsBadge();
+                        }
+                        if (isCompact) {
+                          setMobileDrawerOpen(false);
                         }
                         navigate(item.path)?.catch(() => {});
                       }}
@@ -209,10 +234,11 @@ export default function App() {
             component="main"
             sx={{
               flexGrow: 1,
+              minWidth: 0,
               display: "flex",
               flexDirection: "column",
               height: "100vh",
-              ml: drawerOpen ? 0 : `-${DRAWER_WIDTH}px`,
+              ml: isCompact || drawerOpen ? 0 : `-${DRAWER_WIDTH}px`,
               transition: theme.transitions.create("margin", {
                 easing: theme.transitions.easing.sharp,
                 duration: theme.transitions.duration.leavingScreen,
@@ -224,10 +250,10 @@ export default function App() {
               elevation={0}
               sx={{ boxShadow: "0 2px 0 rgba(0, 0, 0, 0.2)" }}
             >
-              <Toolbar sx={{ minHeight: { xs: 64 }, px: "16px" }}>
+              <Toolbar sx={{ minHeight: { xs: HEADER_HEIGHT }, px: "16px" }}>
                 <IconButton
                   color="inherit"
-                  onClick={() => setDrawerOpen(!drawerOpen)}
+                  onClick={toggleDrawer}
                   edge="start"
                 >
                   <MenuIcon />
