@@ -402,7 +402,13 @@ export function SettingsPage() {
               )}
             </Stack>
 
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              justifyContent="flex-end"
+              sx={{ flex: { xs: "1 1 100%", sm: "0 1 auto" } }}
+            >
               {categoryHasChanges[TABS.GENERAL] && (
                 <B4Alert severity="warning" sx={{ py: 0, px: spacing.sm }}>
                   <Trans
@@ -427,6 +433,7 @@ export function SettingsPage() {
                   loadConfig().catch(() => {});
                 }}
                 disabled={saving}
+                sx={{ display: { xs: "none", sm: "inline-flex" } }}
               >
                 {t("core.reload")}
               </Button>

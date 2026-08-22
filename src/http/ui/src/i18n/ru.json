@@ -921,6 +921,8 @@
         "collapseAll": "Свернуть всё",
         "expandAll": "Развернуть всё",
         "defaultRoute": "Маршрут по умолчанию",
+        "dnsPin": "DNS-пин",
+        "routePinned": "Адрес назначения из DNS-пинов",
         "on": "вкл",
         "off": "выкл",
         "geosite": "Geosite",

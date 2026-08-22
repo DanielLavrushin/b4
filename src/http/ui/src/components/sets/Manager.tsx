@@ -35,7 +35,8 @@ import {
   DragEndEvent,
   DragOverlay,
   DragStartEvent,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   closestCenter,
   useSensor,
   useSensors,
@@ -206,8 +207,11 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
   const facetSelection = useSetFacetSelection(sets.map((s) => s.id));
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
+    useSensor(MouseSensor, {
       activationConstraint: { distance: 8 },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 200, tolerance: 8 },
     }),
   );
 
@@ -500,7 +504,13 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
             flexWrap="wrap"
             useFlexGap
           >
-            <Stack direction="row" spacing={4} flexWrap="wrap" useFlexGap>
+            <Stack
+              direction="row"
+              spacing={4}
+              flexWrap="wrap"
+              useFlexGap
+              sx={{ rowGap: 1.5 }}
+            >
               <StatItem
                 value={summaryStats.total}
                 label={t("sets.manager.totalSets")}
