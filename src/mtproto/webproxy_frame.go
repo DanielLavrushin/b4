@@ -86,6 +86,8 @@ type webFrame struct {
 
 var errWebFrameProtocol = errors.New("web proxy frame protocol error")
 
+var errWebStreamRefused = errors.New("web proxy stream refused")
+
 func appendWebFrame(dst []byte, typ webFrameType, stream uint32, payload []byte) []byte {
 	var hdr [webFrameHeaderSize]byte
 	hdr[0] = byte(typ)

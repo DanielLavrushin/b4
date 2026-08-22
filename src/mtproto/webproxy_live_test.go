@@ -140,10 +140,14 @@ func TestWebProxyLiveCarrierReachesTelegram(t *testing.T) {
 		TLSClientConfig:  &tls.Config{InsecureSkipVerify: l.insecure},
 		HandshakeTimeout: 15 * time.Second,
 	}
+	_, page := l.get(t, "/?bridge="+l.cap)
+	ticket := webTicketFromPage(t, page)
+
+	dialer.Subprotocols = []string{webSubprotoPrefix + ticket}
 	hdr := http.Header{}
 	hdr.Set("Origin", "https://"+l.host)
 
-	url := "wss://" + l.host + webCarrierPath + "?b=" + l.cap
+	url := "wss://" + l.host + webCarrierPath
 	conn, res, err := dialer.Dial(url, hdr)
 	if err != nil {
 		status := 0
@@ -225,6 +229,21 @@ func TestWebProxyLiveCarrierReachesTelegram(t *testing.T) {
 		t.Fatal("resPQ echoed a different nonce")
 	}
 	t.Logf("Telegram DC%d answered resPQ through the WEB carrier (%d bytes downstream)", l.dc, len(down))
+}
+
+func webTicketFromPage(t *testing.T, page string) string {
+	t.Helper()
+	const marker = "'" + webSubprotoPrefix
+	i := strings.Index(page, marker)
+	if i < 0 {
+		t.Fatal("bridge page carried no carrier ticket")
+	}
+	rest := page[i+len(marker):]
+	j := strings.IndexByte(rest, '\'')
+	if j <= 0 {
+		t.Fatal("bridge page ticket is not terminated")
+	}
+	return rest[:j]
 }
 
 type liveCarrier struct {

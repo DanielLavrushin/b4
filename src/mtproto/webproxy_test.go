@@ -590,3 +590,92 @@ func mustHex(t *testing.T, s string) []byte {
 }
 
 var _ net.Conn = (*webStream)(nil)
+
+func TestWebTicketIsSingleUseAndExpires(t *testing.T) {
+	secret := &Secret{Name: "web"}
+	var store webTicketStore
+
+	token, err := store.issue(secret)
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	if got := store.redeem(token); got != secret {
+		t.Fatal("a fresh ticket did not redeem to its secret")
+	}
+	if got := store.redeem(token); got != nil {
+		t.Fatal("a consumed ticket redeemed a second time")
+	}
+	if got := store.redeem("notaticket"); got != nil {
+		t.Fatal("an unknown ticket redeemed")
+	}
+
+	expired, err := store.issue(secret)
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	store.mu.Lock()
+	entry := store.entries[expired]
+	entry.expires = time.Now().Add(-time.Second)
+	store.entries[expired] = entry
+	store.mu.Unlock()
+	if got := store.redeem(expired); got != nil {
+		t.Fatal("an expired ticket redeemed")
+	}
+}
+
+func TestWebRequestedSubprotocol(t *testing.T) {
+	cases := []struct{ header, want string }{
+		{"tproxy-v1.abc", "tproxy-v1.abc"},
+		{"chat, tproxy-v1.abc", "tproxy-v1.abc"},
+		{"tproxy-v1.", ""},
+		{"other", ""},
+		{"", ""},
+	}
+	for _, c := range cases {
+		r := httptest.NewRequest(http.MethodGet, "http://relay.example.org/api/v1/ws", nil)
+		if c.header != "" {
+			r.Header.Set("Sec-Websocket-Protocol", c.header)
+		}
+		if got := webRequestedSubprotocol(r); got != c.want {
+			t.Errorf("subprotocol(%q) = %q, want %q", c.header, got, c.want)
+		}
+	}
+}
+
+func TestCarrierRefusesExtraStreamsWithoutKillingSession(t *testing.T) {
+	h := newCarrierHarness(t)
+	h.send(t, helloFrame())
+	h.recv(t)
+
+	live := 0
+	for i := 1; i <= webMaxStreamsPerCarrier; i++ {
+		h.send(t, openFrame(uint32(i)))
+		select {
+		case <-h.streams:
+			live++
+		case <-time.After(3 * time.Second):
+			t.Fatalf("stream %d never opened (%d live)", i, live)
+		}
+	}
+
+	over := uint32(webMaxStreamsPerCarrier + 1)
+	h.send(t, openFrame(over))
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, f := range h.recv(t) {
+			if f.typ == webFrameClose && f.stream == over {
+				h.send(t, webFrameBytes(webFramePing, 0, []byte("x")))
+				for time.Now().Before(deadline) {
+					for _, g := range h.recv(t) {
+						if g.typ == webFramePong {
+							return
+						}
+					}
+				}
+				t.Fatal("carrier stopped answering after refusing a stream")
+			}
+		}
+	}
+	t.Fatalf("relay never refused stream %d with CLOSE", over)
+}

@@ -1,10 +1,14 @@
 package mtproto
 
 import (
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/base64"
+	"errors"
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -13,9 +17,13 @@ import (
 )
 
 const (
-	webCarrierPath    = "/api/v1/session"
+	webCarrierPath    = "/api/v1/ws"
+	webSessionPath    = "/api/v1/session"
 	webMaxCarriers    = 256
 	webHandshakeGrace = 30 * time.Second
+	webTicketTTL      = 2 * time.Minute
+	webMaxTickets     = 1024
+	webSubprotoPrefix = "tproxy-v1."
 )
 
 var webCarriers atomic.Int64
@@ -26,6 +34,58 @@ var webUpgrader = websocket.Upgrader{
 	WriteBufferSize:   32 << 10,
 	EnableCompression: false,
 	CheckOrigin:       func(*http.Request) bool { return true },
+}
+
+type webTicket struct {
+	secret  *Secret
+	expires time.Time
+}
+
+type webTicketStore struct {
+	mu      sync.Mutex
+	entries map[string]webTicket
+}
+
+func (t *webTicketStore) issue(secret *Secret) (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	token := base64.RawURLEncoding.EncodeToString(raw)
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.entries == nil {
+		t.entries = make(map[string]webTicket)
+	}
+	now := time.Now()
+	for k, v := range t.entries {
+		if now.After(v.expires) {
+			delete(t.entries, k)
+		}
+	}
+	if len(t.entries) >= webMaxTickets {
+		return "", errors.New("web proxy ticket store full")
+	}
+	t.entries[token] = webTicket{secret: secret, expires: now.Add(webTicketTTL)}
+	return token, nil
+}
+
+func (t *webTicketStore) redeem(token string) *Secret {
+	if token == "" {
+		return nil
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	entry, ok := t.entries[token]
+	if !ok {
+		return nil
+	}
+	delete(t.entries, token)
+	if time.Now().After(entry.expires) {
+		return nil
+	}
+	return entry.secret
 }
 
 func (s *Server) WebProxyHost() string {
@@ -94,6 +154,8 @@ func (s *Server) ServeWebProxy(w http.ResponseWriter, r *http.Request) bool {
 	switch {
 	case r.URL.Path == webCarrierPath:
 		s.serveWebCarrier(w, r, host)
+	case r.URL.Path == webSessionPath && r.Method == http.MethodDelete:
+		webWriteSite(w, r, http.StatusNotFound)
 	case r.URL.Path == "/" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
 		s.serveWebRoot(w, r, host)
 	default:
@@ -104,7 +166,13 @@ func (s *Server) ServeWebProxy(w http.ResponseWriter, r *http.Request) bool {
 
 func (s *Server) serveWebRoot(w http.ResponseWriter, r *http.Request, host string) {
 	capability := r.URL.Query().Get("bridge")
-	if capability == "" || s.webSecretFor(host, capability) == nil {
+	secret := s.webSecretFor(host, capability)
+	if capability == "" || secret == nil {
+		webWriteSite(w, r, http.StatusOK)
+		return
+	}
+	token, err := s.webTickets.issue(secret)
+	if err != nil {
 		webWriteSite(w, r, http.StatusOK)
 		return
 	}
@@ -114,7 +182,7 @@ func (s *Server) serveWebRoot(w http.ResponseWriter, r *http.Request, host strin
 	if r.Method == http.MethodHead {
 		return
 	}
-	_, _ = w.Write(webBridgePage())
+	_, _ = w.Write(webBridgePage(token))
 }
 
 func (s *Server) webSecretFor(host, capability string) *Secret {
@@ -147,12 +215,9 @@ func (s *Server) serveWebCarrier(w http.ResponseWriter, r *http.Request, host st
 		webWriteSite(w, r, http.StatusNotFound)
 		return
 	}
-	if origin := r.Header.Get("Origin"); origin != "https://"+host {
-		webWriteSite(w, r, http.StatusNotFound)
-		return
-	}
-	secret := s.webSecretFor(host, r.URL.Query().Get("b"))
-	if secret == nil {
+	subproto := webRequestedSubprotocol(r)
+	secret := s.webTickets.redeem(strings.TrimPrefix(subproto, webSubprotoPrefix))
+	if subproto == "" || secret == nil {
 		webWriteSite(w, r, http.StatusNotFound)
 		return
 	}
@@ -161,7 +226,9 @@ func (s *Server) serveWebCarrier(w http.ResponseWriter, r *http.Request, host st
 		return
 	}
 
-	conn, err := webUpgrader.Upgrade(w, r, nil)
+	conn, err := webUpgrader.Upgrade(w, r, http.Header{
+		"Sec-Websocket-Protocol": []string{subproto},
+	})
 	if err != nil {
 		return
 	}
@@ -178,6 +245,18 @@ func (s *Server) serveWebCarrier(w http.ResponseWriter, r *http.Request, host st
 		sess.run()
 		log.Infof("%s web carrier down from %s: %v", tag, remote, sess.closeErr)
 	}()
+}
+
+func webRequestedSubprotocol(r *http.Request) string {
+	for _, header := range r.Header.Values("Sec-Websocket-Protocol") {
+		for _, candidate := range strings.Split(header, ",") {
+			candidate = strings.TrimSpace(candidate)
+			if strings.HasPrefix(candidate, webSubprotoPrefix) && len(candidate) > len(webSubprotoPrefix) {
+				return candidate
+			}
+		}
+	}
+	return ""
 }
 
 func webClientAddr(r *http.Request) string {

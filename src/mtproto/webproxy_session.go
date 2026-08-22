@@ -144,7 +144,15 @@ func (s *webSession) dispatch(f webFrame) error {
 		return s.sendControl(webFrameBytes(webFrameWelcome, 0, nil))
 
 	case webFrameOpen:
-		return s.openStream(f.stream)
+		if err := s.openStream(f.stream); err != nil {
+			if errors.Is(err, errWebStreamRefused) {
+				log.Debugf("%s web carrier refused stream %d: %v", s.tag, f.stream, err)
+				s.rememberClosed(f.stream)
+				return s.sendControl(webFrameBytes(webFrameClose, f.stream, nil))
+			}
+			return err
+		}
+		return nil
 
 	case webFrameData:
 		return s.streamData(f.stream, f.payload)
@@ -193,6 +201,12 @@ func (s *webSession) lookup(id uint32) *webStream {
 	return s.streams[id]
 }
 
+func (s *webSession) rememberClosed(id uint32) {
+	s.mu.Lock()
+	s.rememberClosedLocked(id)
+	s.mu.Unlock()
+}
+
 func (s *webSession) recentlyClosed(id uint32) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -212,7 +226,7 @@ func (s *webSession) openStream(id uint32) error {
 	}
 	if len(s.streams) >= webMaxStreamsPerCarrier {
 		s.mu.Unlock()
-		return fmt.Errorf("%w: over %d concurrent streams", errWebFrameProtocol, webMaxStreamsPerCarrier)
+		return fmt.Errorf("%w: over %d concurrent streams", errWebStreamRefused, webMaxStreamsPerCarrier)
 	}
 	st := newWebStream(s, id, s.remote)
 	s.streams[id] = st

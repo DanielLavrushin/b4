@@ -47,8 +47,9 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85em}
 </main></body></html>
 `
 
-func webBridgePage() []byte {
-	return []byte(strings.Replace(webBridgeTemplate, "__CARRIER__", webCarrierPath, 1))
+func webBridgePage(ticket string) []byte {
+	page := strings.Replace(webBridgeTemplate, "__CARRIER__", webCarrierPath, 1)
+	return []byte(strings.Replace(page, "__TICKET__", ticket, 1))
 }
 
 const webBridgeTemplate = `<!doctype html>
@@ -61,8 +62,6 @@ const webBridgeTemplate = `<!doctype html>
 <body><main><h1 style="font-size:1.25rem;margin:0 0 .5rem">Service status</h1><p id="s" style="color:#5c6670">Connecting…</p></main>
 <script>
 (function(){
-var params=new URLSearchParams(location.search);
-var cap=params.get('bridge')||'';
 var nonce='';
 if(location.hash.indexOf('#android=')===0)nonce=location.hash.slice(9);
 try{history.replaceState(null,'','/')}catch(e){}
@@ -94,7 +93,7 @@ function shutdown(){
 }
 function connect(){
  var scheme=location.protocol==='https:'?'wss://':'ws://';
- try{ws=new WebSocket(scheme+location.host+'__CARRIER__?b='+encodeURIComponent(cap))}catch(e){shutdown();return}
+ try{ws=new WebSocket(scheme+location.host+'__CARRIER__','tproxy-v1.__TICKET__')}catch(e){shutdown();return}
  ws.binaryType='arraybuffer';
  ws.onopen=function(){wsOpen=true;setStatus('connected');flushWs()};
  ws.onmessage=function(e){if(e.data instanceof ArrayBuffer){downBytes+=e.data.byteLength;toClient.push(e.data);flushClient()}};

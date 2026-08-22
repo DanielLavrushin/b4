@@ -67,6 +67,8 @@ type Server struct {
 	connsMu sync.Mutex
 	conns   map[string]*secretConnSet
 
+	webTickets webTicketStore
+
 	mu       sync.Mutex
 	running  bool
 	listener net.Listener
