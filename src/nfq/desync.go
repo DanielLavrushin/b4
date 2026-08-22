@@ -312,11 +312,6 @@ func (w *Worker) ExecuteDesyncIPv6(cfg *config.SetConfig, packet []byte, dst net
 		return
 	}
 
-	if !hasPlainIPv6Header(packet, ipProtoTCP) {
-		log.Tracef("Desync v6: skipping %s, the TCP header is not at the fixed IPv6 offset", dst.String())
-		return
-	}
-
 	da := NewDesyncAttacker(&cfg.TCP)
 
 	switch da.mode {

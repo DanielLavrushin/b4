@@ -150,77 +150,7 @@ func (w *Worker) healingSet(cfg *config.Config, set *config.SetConfig) bool {
 	return ibd.Enabled && ibd.HealDNS
 }
 
-func (w *Worker) filterDNSAnswer(cfg *config.Config, set *config.SetConfig, domain string, resp []byte, overTCP bool) ([]byte, string) {
-	if w == nil || len(resp) == 0 {
-		return nil, ""
-	}
-
-	out := resp
-	healed := false
-	stripped := false
-	if curated := w.healDeadAddresses(cfg, set, domain, out, overTCP); curated != nil {
-		out = curated
-		healed = true
-	}
-	if ipv4Only := w.stripIPv6Addresses(cfg, set, domain, out, overTCP); ipv4Only != nil {
-		out = ipv4Only
-		stripped = true
-	}
-
-	switch {
-	case healed && stripped:
-		return out, dnsActionHealStripped
-	case healed:
-		return out, dnsActionHeal
-	case stripped:
-		return out, dnsActionIPv6Stripped
-	}
-	return nil, ""
-}
-
-func ipv6AnswersKept(cfg *config.Config, set *config.SetConfig) bool {
-	if cfg == nil || set == nil {
-		return true
-	}
-	if cfg.Queue.IPv6Enabled || cfg.Queue.IsDiscovery || cfg.System.DNS.KeepIPv6Answers {
-		return true
-	}
-	return set.Targets.IPVersion == "6"
-}
-
-func (w *Worker) stripIPv6Addresses(cfg *config.Config, set *config.SetConfig, domain string, resp []byte, overTCP bool) []byte {
-	if len(resp) == 0 || ipv6AnswersKept(cfg, set) {
-		return nil
-	}
-
-	maxSize := 0
-	if overTCP {
-		maxSize = dns.MaxTCPMessageSize
-	}
-
-	out, verdict := dns.FilterAnswerIPs(resp, 0, maxSize, func(ip net.IP) bool {
-		return ip.To4() == nil
-	})
-
-	switch verdict {
-	case dns.FilterRewritten:
-		log.Tracef("DNS IPv4 fallback: dropped the IPv6 addresses from the answer for %s, b4 only routes the IPv4 ones (set: %s)", domain, set.Name)
-		return out
-	case dns.FilterAllDropped:
-		empty := dns.BuildEmptyAnswer(resp)
-		if empty == nil {
-			log.Warnf("DNS IPv4 fallback: could not rebuild the answer for %s without its IPv6 addresses, passing the original through (set: %s)", domain, set.Name)
-			return nil
-		}
-		log.Tracef("DNS IPv4 fallback: the answer for %s carries IPv6 addresses only, answering empty so the client asks for IPv4 (set: %s)", domain, set.Name)
-		return empty
-	case dns.FilterTooLarge:
-		log.Warnf("DNS IPv4 fallback: the IPv4-only answer for %s would not fit the response size the client allows, passing the original through (set: %s)", domain, set.Name)
-	}
-	return nil
-}
-
-func (w *Worker) healDeadAddresses(cfg *config.Config, set *config.SetConfig, domain string, resp []byte, overTCP bool) []byte {
+func (w *Worker) healDNSResponse(cfg *config.Config, set *config.SetConfig, domain string, resp []byte, overTCP bool) []byte {
 	if w == nil || w.ipHealth == nil || len(resp) == 0 || !w.healingSet(cfg, set) {
 		return nil
 	}

@@ -52,9 +52,6 @@ Limits the TCP Maximum Segment Size for connections this set covers. A smaller M
 The MSS is written into the TCP `SYN`, which is the very first packet of a connection - long before the TLS handshake reveals which site is being visited. So this clamp can only be scoped by things the kernel already knows at `SYN` time: **IP targets, GeoIP categories and source devices**. `SNI domains`, `GeoSite categories` and the TLS version filter play no part in it.
 
 The switch stays disabled until the set has an IP, GeoIP or source device target.
-
-A source device discovered from the ARP table is matched by its MAC address; one you added by hand is matched by the IP
-address you entered for it, so such a device needs a fixed address to be usable as a clamp scope.
 :::
 
 The consequence is worth spelling out, because it surprises people:

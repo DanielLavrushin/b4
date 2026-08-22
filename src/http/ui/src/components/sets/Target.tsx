@@ -6,7 +6,6 @@ import { B4SetConfig, GeoConfig } from "@models/config";
 import { useDevices } from "@b4.devices";
 import { useGeoCategories } from "@hooks/useGeoCategories";
 import { useTranslation } from "react-i18next";
-import { hasTargets } from "./facets";
 import { SetStats } from "./Manager";
 import { DomainsTab } from "./targets/DomainsTab";
 import { IpsTab } from "./targets/IpsTab";
@@ -15,14 +14,7 @@ import { OtherSetsTargets } from "./targets/overlap";
 
 export type { OtherSetsTargets };
 
-const TARGET_SUB_INDEX: Record<string, number> = {
-  domains: 0,
-  ips: 1,
-  devices: 2,
-};
-
 interface TargetSettingsProps {
-  initialSub?: string;
   config: B4SetConfig;
   geo: GeoConfig;
   stats?: SetStats;
@@ -39,7 +31,6 @@ enum TARGET_TABS {
 }
 
 export const TargetSettings = ({
-  initialSub,
   config,
   onChange,
   geo,
@@ -49,14 +40,7 @@ export const TargetSettings = ({
   ipv6,
 }: TargetSettingsProps) => {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<TARGET_TABS>(
-    TARGET_SUB_INDEX[initialSub ?? ""] ?? TARGET_TABS.DOMAINS,
-  );
-
-  useEffect(() => {
-    const index = TARGET_SUB_INDEX[initialSub ?? ""];
-    if (index !== undefined) setActiveTab(index);
-  }, [initialSub]);
+  const [activeTab, setActiveTab] = useState<TARGET_TABS>(TARGET_TABS.DOMAINS);
   const {
     devices,
     loading: devicesLoading,
@@ -91,11 +75,7 @@ export const TargetSettings = ({
               label={t("sets.targets.tabs.domains")}
               inline
             />
-            <B4Tab
-              icon={<IpIcon />}
-              label={t("sets.targets.tabs.ips")}
-              inline
-            />
+            <B4Tab icon={<IpIcon />} label={t("sets.targets.tabs.ips")} inline />
             <B4Tab
               icon={<DeviceIcon />}
               label={
@@ -150,8 +130,6 @@ export const TargetSettings = ({
           <DevicesTab
             selected={selectedSourceDevices}
             exclude={config.targets.source_devices_exclude ?? false}
-            routingEnabled={!!config.routing?.enabled}
-            hasDestination={hasTargets(config)}
             devices={devices}
             loading={devicesLoading}
             available={devicesAvailable}

@@ -9,8 +9,6 @@ import { ManualEntryPanel } from "./ManualEntryPanel";
 import { GeoCategoryPanel } from "./GeoCategoryPanel";
 import { OtherSetsTargets, findSetOverlaps } from "./overlap";
 import {
-  IPV4_CATCH_ALL,
-  IPV6_CATCH_ALL,
   ipCatchAllEntries,
   ipCatchAllVersion,
   ipEntryNotice,
@@ -30,9 +28,6 @@ interface IpsTabProps {
   onChange: (field: string, value: string | string[] | boolean) => void;
 }
 
-const catchAllEntryFor = (entry: string): string =>
-  ipCatchAllVersion(entry) === 6 ? IPV6_CATCH_ALL : IPV4_CATCH_ALL;
-
 export const IpsTab = ({
   config,
   geo,
@@ -47,13 +42,7 @@ export const IpsTab = ({
   const [duplicateWarning, setDuplicateWarning] = useState("");
   const [entryNotice, setEntryNotice] = useState("");
   const ips = config.targets.ip ?? [];
-  const catchAllEntries = ipCatchAllEntries(!!ipv6);
-  const presentCatchAll = ips.filter(isIpCatchAll).map(catchAllEntryFor);
-  const missingCatchAll = catchAllEntries.filter(
-    (entry) => !presentCatchAll.includes(entry),
-  );
-  const catchAll = missingCatchAll.length === 0;
-  const partialCatchAll = presentCatchAll.length > 0 && !catchAll;
+  const catchAll = ips.some(isIpCatchAll);
 
   const checkDuplicates = (input: string) => {
     const notice = ipEntryNotice(input, !!ipv6);
@@ -87,7 +76,7 @@ export const IpsTab = ({
         <B4Switch
           label={t("sets.targets.catchAllIps")}
           description={t("sets.targets.catchAllIpsDesc", {
-            value: catchAllEntries.join(", "),
+            value: ipCatchAllEntries(!!ipv6).join(", "),
           })}
           checked={catchAll}
           onChange={(checked: boolean) =>
@@ -96,18 +85,7 @@ export const IpsTab = ({
         />
       </Box>
 
-      {partialCatchAll && (
-        <Grid container sx={{ mb: 2 }}>
-          <B4Alert severity="info">
-            {t("sets.targets.catchAllIpsPartial", {
-              present: presentCatchAll.join(", "),
-              missing: missingCatchAll.join(", "),
-            })}
-          </B4Alert>
-        </Grid>
-      )}
-
-      {(catchAll || partialCatchAll) && (
+      {catchAll && (
         <Grid container sx={{ mb: 2 }}>
           <B4Alert severity="warning">
             {t("sets.targets.catchAllIpsActive")}

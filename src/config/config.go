@@ -1,10 +1,6 @@
 package config
 
 import (
-	"net"
-	"sync"
-	"time"
-
 	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/log"
 )
@@ -32,7 +28,7 @@ var DefaultSetConfig = SetConfig{
 		FakeLen:        64,
 		FakingStrategy: "none",
 		DPortFilter:    "",
-		FilterQUIC:     QUICFilterSNI,
+		FilterQUIC:     "disabled",
 		FilterSTUN:     true,
 		ConnBytesLimit: 8,
 		Seg2Delay:      0,
@@ -343,98 +339,4 @@ func NewConfig() Config {
 	cfg.Sets = []*SetConfig{}
 
 	return cfg
-}
-
-const (
-	hostIPv6ProbeTTL       = 30 * time.Second
-	ipv6BypassWarnCooldown = time.Minute
-)
-
-var (
-	ipv6Now       = time.Now
-	hostIPv6Probe = probeGlobalIPv6
-
-	hostIPv6Mu      sync.Mutex
-	hostIPv6Known   bool
-	hostIPv6Present bool
-	hostIPv6At      time.Time
-
-	ipv6BypassMu     sync.Mutex
-	ipv6BypassWarned bool
-	ipv6BypassAt     time.Time
-)
-
-func isGlobalRoutableIPv6(ip net.IP) bool {
-	if ip == nil || ip.To4() != nil || !ip.IsGlobalUnicast() {
-		return false
-	}
-	v6 := ip.To16()
-	return v6 != nil && v6[0]&0xfe != 0xfc
-}
-
-func probeGlobalIPv6() bool {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return false
-	}
-	for _, iface := range ifaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
-		}
-		for _, addr := range addrs {
-			ipNet, ok := addr.(*net.IPNet)
-			if !ok || ipNet.IP == nil {
-				continue
-			}
-			if !isGlobalRoutableIPv6(ipNet.IP) {
-				continue
-			}
-			return true
-		}
-	}
-	return false
-}
-
-func HostHasGlobalIPv6() bool {
-	hostIPv6Mu.Lock()
-	defer hostIPv6Mu.Unlock()
-
-	now := ipv6Now()
-	if hostIPv6Known && now.Sub(hostIPv6At) < hostIPv6ProbeTTL {
-		return hostIPv6Present
-	}
-	hostIPv6Present = hostIPv6Probe()
-	hostIPv6Known = true
-	hostIPv6At = now
-	return hostIPv6Present
-}
-
-func IPv6BypassesSets(c *Config) bool {
-	return c != nil && !c.Queue.IPv6Enabled && HostHasGlobalIPv6()
-}
-
-func WarnIPv6Bypass(c *Config) bool {
-	if !IPv6BypassesSets(c) {
-		ipv6BypassMu.Lock()
-		ipv6BypassWarned = false
-		ipv6BypassMu.Unlock()
-		return false
-	}
-
-	ipv6BypassMu.Lock()
-	now := ipv6Now()
-	if ipv6BypassWarned && now.Sub(ipv6BypassAt) < ipv6BypassWarnCooldown {
-		ipv6BypassMu.Unlock()
-		return false
-	}
-	ipv6BypassWarned = true
-	ipv6BypassAt = now
-	ipv6BypassMu.Unlock()
-
-	log.Warnf("This host has a working global IPv6 address but b4 is processing IPv4 only, so every site your sets match stays reachable over IPv6 and bypasses the set entirely. Enable IPv6 support in Settings and restart the service.")
-	return true
 }

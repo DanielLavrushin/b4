@@ -40,17 +40,6 @@ const (
 )
 
 const (
-	QUICFilterSNI = "sni"
-	QUICFilterAll = "all"
-)
-
-const (
-	UDPModeFake   = "fake"
-	UDPModeDrop   = "drop"
-	UDPModeReject = "reject"
-)
-
-const (
 	DefaultIPBlockSynThreshold = 3
 	DefaultIPBlockHealTTLSec   = 60
 	DefaultIPHealthRetestSec   = 300
@@ -79,21 +68,6 @@ func NormalizeBlockAction(action string) string {
 	// Default (and any legacy value such as "reject-tcp-reset") -> fast reject:
 	// TCP RST, ICMP unreachable for UDP/QUIC.
 	return BlockActionReject
-}
-
-func NormalizeQUICFilter(filter string) string {
-	if filter == QUICFilterAll {
-		return QUICFilterAll
-	}
-	return QUICFilterSNI
-}
-
-func NormalizeUDPMode(mode string) string {
-	switch mode {
-	case ConfigOff, UDPModeFake, UDPModeDrop, UDPModeReject:
-		return mode
-	}
-	return DefaultSetConfig.UDP.Mode
 }
 
 const (
@@ -387,14 +361,13 @@ type MTProtoConfig struct {
 }
 
 type Socks5Config struct {
-	Enabled        bool     `json:"enabled"`
-	Port           int      `json:"port"`
-	BindAddress    string   `json:"bind_address"`
-	Username       string   `json:"username" mcp:"deny"`
-	Password       string   `json:"password" mcp:"deny"`
-	AllowedSources []string `json:"allowed_sources,omitempty" mcp:"deny"`
-	UDPTimeout     int      `json:"udp_timeout"`
-	UDPReadTimeout int      `json:"udp_read_timeout"`
+	Enabled        bool   `json:"enabled"`
+	Port           int    `json:"port"`
+	BindAddress    string `json:"bind_address"`
+	Username       string `json:"username" mcp:"deny"`
+	Password       string `json:"password" mcp:"deny"`
+	UDPTimeout     int    `json:"udp_timeout"`
+	UDPReadTimeout int    `json:"udp_read_timeout"`
 }
 
 type TablesConfig struct {
@@ -615,7 +588,6 @@ type DNSSystemConfig struct {
 	TCPIdleSec      int  `json:"tcp_idle_sec"`
 	TCPIOSec        int  `json:"tcp_io_sec"`
 	TCPDialSec      int  `json:"tcp_dial_sec"`
-	KeepIPv6Answers bool `json:"keep_ipv6_answers"`
 }
 
 type DuplicateConfig struct {
@@ -632,7 +604,6 @@ type RoutingConfig struct {
 	Enabled          bool                `json:"enabled"`
 	Mode             string              `json:"mode"`
 	EgressInterface  string              `json:"egress_interface"`
-	EgressIP         string              `json:"egress_ip"`
 	Upstream         UpstreamProxyConfig `json:"upstream"`
 	FWMark           uint32              `json:"fwmark" mcp:"deny"`
 	Table            int                 `json:"table" mcp:"deny"`
@@ -652,10 +623,10 @@ type UpstreamProxyConfig struct {
 }
 
 type SetMSSClampEntry struct {
-	SetID   string
-	SetIdx  int
-	Size    int
-	IPv4    []string
-	IPv6    []string
-	Sources []DeviceMatch
+	SetID  string
+	SetIdx int
+	Size   int
+	IPv4   []string
+	IPv6   []string
+	MACs   []string
 }

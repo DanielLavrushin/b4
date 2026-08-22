@@ -21,11 +21,6 @@ func (w *Worker) MutateClientHelloV6(cfg *config.SetConfig, packet []byte, dst n
 		return packet
 	}
 
-	if !hasPlainIPv6Header(packet, ipProtoTCP) {
-		log.Tracef("SNI mutation v6: skipping %s, the TCP header is not at the fixed IPv6 offset", dst.String())
-		return packet
-	}
-
 	tcpHdrLen := int((packet[ipv6HdrLen+12] >> 4) * 4)
 	payloadStart := ipv6HdrLen + tcpHdrLen
 

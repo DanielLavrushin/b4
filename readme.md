@@ -4,7 +4,7 @@
 ![GitHub Downloads](https://img.shields.io/github/downloads/daniellavrushin/b4/total)
 ![Docker Pulls](https://img.shields.io/docker/pulls/lavrushin/b4)
 
-[[Documentation](https://docs.b4core.app/)] [[Документация (RU)](https://docs.b4core.app/ru/)] [[Telegram](https://t.me/byebyebigbro)]
+[[Documentation](https://daniellavrushin.github.io/b4/)] [[Документация (RU)](https://daniellavrushin.github.io/b4/ru/)] [[Telegram](https://t.me/byebyebigbro)]
 
 B4 (Bye Bye Big Bro) is a Linux service that bypasses DPI-based blocking. It runs on routers, servers and desktops and rewrites packets so DPI equipment cannot classify the connection, while the destination server still gets valid data. Installed on a router, it covers every device on the network with nothing configured on the clients.
 
@@ -19,12 +19,12 @@ If you don't know which technique your provider needs, Discovery tests strategie
 - Ten fragmentation strategies: `combo`, `hybrid`, `tcp`, `ip`, `tls`, `oob`, `disorder`, `extsplit`, `firstbyte`, `none`, plus a random strategy pool
 - Fake packet injection: decoy ClientHellos, TCP desync bursts, window manipulation, fake SYN, SACK stripping, ClientHello mutation
 - RST protection - detects forged resets by TTL/flag/option fingerprint and drops them
-- [DNS](https://docs.b4core.app/docs/dns): per-set redirect to a plain resolver or DoH, hosts-style pins, fragmented queries, DNS-over-TCP interception, healing of answers pointing at dead addresses
-- [Routing](https://docs.b4core.app/docs/sets/routing): send a set's traffic out a chosen interface (VPN, WireGuard, second WAN), through an upstream SOCKS5 proxy, or block it
-- [Block mode](https://docs.b4core.app/docs/sets/blocking) for network-wide ad and tracker blocking
-- Telegram: [built-in MTProto proxy](https://docs.b4core.app/docs/mtproto), plus a transparent Telegram-over-WebSocket bridge for stock clients
-- [Discovery](https://docs.b4core.app/ru/docs/discovery) finds a working strategy, [Watchdog](https://docs.b4core.app/docs/watchdog) re-heals broken domains, [DPI Detector](https://docs.b4core.app/ru/docs/detector) reports what the provider is doing
-- [Escalation chains](https://docs.b4core.app/docs/sets/escalation): when a set stops working for a host, that host moves to a heavier backup set
+- [DNS](https://daniellavrushin.github.io/b4/docs/dns): per-set redirect to a plain resolver or DoH, hosts-style pins, fragmented queries, DNS-over-TCP interception, healing of answers pointing at dead addresses
+- [Routing](https://daniellavrushin.github.io/b4/docs/sets/routing): send a set's traffic out a chosen interface (VPN, WireGuard, second WAN), through an upstream SOCKS5 proxy, or block it
+- [Block mode](https://daniellavrushin.github.io/b4/docs/sets/blocking) for network-wide ad and tracker blocking
+- Telegram: [built-in MTProto proxy](https://daniellavrushin.github.io/b4/docs/mtproto), plus a transparent Telegram-over-WebSocket bridge for stock clients
+- [Discovery](https://daniellavrushin.github.io/b4/ru/docs/discovery) finds a working strategy, [Watchdog](https://daniellavrushin.github.io/b4/docs/watchdog) re-heals broken domains, [DPI Detector](https://daniellavrushin.github.io/b4/ru/docs/detector) reports what the provider is doing
+- [Escalation chains](https://daniellavrushin.github.io/b4/docs/sets/escalation): when a set stops working for a host, that host moves to a heavier backup set
 - Per-device rules by MAC
 - Works on both iptables and nftables, picking the backend automatically, and handles IPv4 and IPv6
 - Web UI in English and Russian
@@ -80,7 +80,7 @@ Then open `http://<device-ip>:7000`.
 2. On a successful result click **Use this configuration**, then **Create a new set**.
 3. Open the site. On the **Traffic** page, connections to that domain now show the set name.
 
-Docs: [Quickstart](https://docs.b4core.app/docs/quickstart)
+Docs: [Quickstart](https://daniellavrushin.github.io/b4/docs/quickstart)
 
 ## Supported platforms
 
@@ -95,7 +95,7 @@ Docs: [Quickstart](https://docs.b4core.app/docs/quickstart)
 
 Architectures: `amd64`, `386`, `arm64`, `armv5`, `armv6`, `armv7`, `mips`, `mipsle`, `mips_softfloat`, `mipsle_softfloat`, `mips64`, `mips64le`, `loong64`, `ppc64`, `ppc64le`, `riscv64`, `s390x`.
 
-Docs: [Linux](https://docs.b4core.app/docs/install/linux) · [OpenWrt](https://docs.b4core.app/docs/install/openwrt) · [Merlin](https://docs.b4core.app/docs/install/merlin) · [Keenetic](https://docs.b4core.app/docs/install/keenetic) · [MikroTik](https://docs.b4core.app/docs/install/mikrotik) · [Docker](https://docs.b4core.app/docs/install/docker)
+Docs: [Linux](https://daniellavrushin.github.io/b4/docs/install/linux) · [OpenWrt](https://daniellavrushin.github.io/b4/docs/install/openwrt) · [Merlin](https://daniellavrushin.github.io/b4/docs/install/merlin) · [Keenetic](https://daniellavrushin.github.io/b4/docs/install/keenetic) · [MikroTik](https://daniellavrushin.github.io/b4/docs/install/mikrotik) · [Docker](https://daniellavrushin.github.io/b4/docs/install/docker)
 
 ## Docker
 
@@ -131,7 +131,7 @@ A set is a list of targets plus what to do with traffic matching them. A set can
 
 Sets are evaluated top-down and the first match wins, so specific sets go above general ones. Two sets listing the same domain is a silent conflict - only the first applies.
 
-Docs: [Sets](https://docs.b4core.app/docs/sets/) · [Targets](https://docs.b4core.app/docs/sets/targets)
+Docs: [Sets](https://daniellavrushin.github.io/b4/docs/sets/) · [Targets](https://daniellavrushin.github.io/b4/docs/sets/targets)
 
 ## GeoSite / GeoIP
 
@@ -139,7 +139,7 @@ Rather than listing domains by hand, a set can target whole categories - `youtub
 
 Download the databases from **Settings → Geodat Settings** (Loyalsoldier, RUNET Freedom, b4geoip, or your own URL), or let the installer fetch them during setup, then add categories under **Sets → Targets**. They can be refreshed on a schedule.
 
-Docs: [Geo data](https://docs.b4core.app/docs/settings/geodata)
+Docs: [Geo data](https://daniellavrushin.github.io/b4/docs/settings/geodata)
 
 ## Bypass techniques
 
@@ -160,7 +160,7 @@ On top of the split: fake ClientHello injection, TCP desync, window manipulation
 
 Matched UDP and QUIC is either fragmented and faked like TCP, dropped, or rejected with an ICMP unreachable so the browser falls back to TCP straight away. QUIC Initial packets are decrypted to read the SNI. STUN and Discord voice packets are left alone by default.
 
-Docs: [Splitting](https://docs.b4core.app/docs/sets/tcp/splitting) · [Faking](https://docs.b4core.app/docs/sets/tcp/faking) · [RST Protection](https://docs.b4core.app/docs/sets/tcp/rst-protection) · [UDP](https://docs.b4core.app/docs/sets/udp)
+Docs: [Splitting](https://daniellavrushin.github.io/b4/docs/sets/tcp/splitting) · [Faking](https://daniellavrushin.github.io/b4/docs/sets/tcp/faking) · [RST Protection](https://daniellavrushin.github.io/b4/docs/sets/tcp/rst-protection) · [UDP](https://daniellavrushin.github.io/b4/docs/sets/udp)
 
 ## DNS
 
@@ -168,7 +168,7 @@ B4 intercepts plain DNS on port 53 and answers matched domains itself. Per set: 
 
 A device running its own DoH/DoT (Chrome Secure DNS, Android Private DNS) bypasses all of it - turn that off on the client or block it.
 
-Docs: [DNS](https://docs.b4core.app/docs/dns)
+Docs: [DNS](https://daniellavrushin.github.io/b4/docs/dns)
 
 ## Routing and blocking
 
@@ -185,7 +185,7 @@ Destination IPs are learned from DNS answers and live traffic, so CDNs that rota
 
 The two proxy modes need TPROXY support in the kernel.
 
-Docs: [Routing](https://docs.b4core.app/docs/sets/routing) · [Blocking](https://docs.b4core.app/docs/sets/blocking)
+Docs: [Routing](https://daniellavrushin.github.io/b4/docs/sets/routing) · [Blocking](https://daniellavrushin.github.io/b4/docs/sets/blocking)
 
 ## Telegram
 
@@ -195,7 +195,7 @@ Two independent features, under **Settings → MTProto Proxy**.
 
 **Telegram over WebSocket** - a routing mode you pick on a set, working as a transparent bridge. Clients keep using stock Telegram with no proxy configured, and B4 carries their traffic over WebSocket, Cloudflare-proxied domains, or your own Cloudflare Worker when direct TCP is blocked. It runs on its own; the proxy above does not need to be enabled.
 
-Docs: [MTProto / Telegram](https://docs.b4core.app/docs/mtproto)
+Docs: [MTProto / Telegram](https://daniellavrushin.github.io/b4/docs/mtproto)
 
 ## Discovery, Watchdog, DPI Detector
 
@@ -227,9 +227,9 @@ Most changes apply immediately. Core settings need a restart, and the UI says so
 
 HTTPS is enabled by pointing the same screen at a certificate and key. The installer detects router certificates on OpenWrt and Asus Merlin and offers to turn it on.
 
-The API reference is on the docs site: <https://docs.b4core.app/swagger>
+The API reference is on the docs site: <https://daniellavrushin.github.io/b4/swagger>
 
-Docs: [Security](https://docs.b4core.app/docs/settings/security) · [Dashboard](https://docs.b4core.app/docs/dashboard) · [Connections (RU)](https://docs.b4core.app/ru/docs/connections) · [Logs (RU)](https://docs.b4core.app/ru/docs/logs)
+Docs: [Security](https://daniellavrushin.github.io/b4/docs/settings/security) · [Dashboard](https://daniellavrushin.github.io/b4/docs/dashboard) · [Connections (RU)](https://daniellavrushin.github.io/b4/ru/docs/connections) · [Logs (RU)](https://daniellavrushin.github.io/b4/ru/docs/logs)
 
 ## SOCKS5 proxy
 
@@ -245,7 +245,7 @@ Leaving the username and password empty means no authentication, and it binds al
 
 Paste an existing `nfqws` or `ciadpi` command line into **Sets → Import** and B4 translates it into equivalent sets, with a per-option report of what was mapped exactly, approximated or lost. Only zapret and byedpi are supported.
 
-Docs: [Import from another tool](https://docs.b4core.app/docs/sets/import)
+Docs: [Import from another tool](https://daniellavrushin.github.io/b4/docs/sets/import)
 
 ## Configuration file
 
@@ -254,7 +254,7 @@ Everything lives in one JSON file, created on first run and migrated automatical
 > [!IMPORTANT]
 > B4 does not watch the config file. Editing it by hand while the service runs has no effect and gets overwritten. Edit while stopped, or use the web UI.
 
-Docs: [Configuration file (RU)](https://docs.b4core.app/ru/docs/advanced/config) · [Core settings](https://docs.b4core.app/docs/settings/core)
+Docs: [Configuration file (RU)](https://daniellavrushin.github.io/b4/ru/docs/advanced/config) · [Core settings](https://daniellavrushin.github.io/b4/docs/settings/core)
 
 ## TUN mode
 
@@ -278,7 +278,7 @@ b4 --clear-tables            # remove b4's firewall rules and exit
 
 Also accepted: `--queue-num`, `--threads`, `--mark`, `--ipv4`, `--ipv6`, `--tables-monitor-interval`, `--log-dir`, `--syslog`, `-i/--instaflush`.
 
-Docs: [CLI parameters (RU)](https://docs.b4core.app/ru/docs/advanced/cli)
+Docs: [CLI parameters (RU)](https://daniellavrushin.github.io/b4/ru/docs/advanced/cli)
 
 ## Updating and uninstalling
 
@@ -331,7 +331,7 @@ make help           # all targets
 
 ## Documentation
 
-<https://docs.b4core.app/> · [Русская версия](https://docs.b4core.app/ru/)
+<https://daniellavrushin.github.io/b4/> · [Русская версия](https://daniellavrushin.github.io/b4/ru/)
 
 A few English pages (Discovery, DPI Detector, Connections, Logs and the Advanced section) are still being translated. Use the language switcher for the Russian originals.
 

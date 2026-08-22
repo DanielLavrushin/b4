@@ -94,6 +94,17 @@ function resetDisabledFeatures(cfg: Obj, defaults: Obj): void {
       setObjPath(cfg, rule.path, { ...def, [rule.toggle]: rule.offValue });
     }
   }
+
+  const udp = resolveObjPath(cfg, ["udp"]);
+  const udpDef = resolveObjPath(defaults, ["udp"]);
+  if (
+    udp &&
+    udpDef &&
+    udp.filter_quic === "disabled" &&
+    (typeof udp.dport_filter !== "string" || udp.dport_filter.trim() === "")
+  ) {
+    cfg.udp = { ...udpDef };
+  }
 }
 
 function mergeObjectWithDefaults(partial: Obj, defaults: Obj): Obj {
@@ -266,11 +277,6 @@ export const ImportExportSettings = ({
       if (!faking.payload_file) {
         faking.payload_file = "";
       }
-    }
-
-    const udp = set.udp as Record<string, unknown> | undefined;
-    if (udp && (udp.filter_quic === "disabled" || udp.filter_quic === "parse")) {
-      udp.filter_quic = "sni";
     }
 
     set.routing = {

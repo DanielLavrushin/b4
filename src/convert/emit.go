@@ -177,12 +177,12 @@ func emitFilters(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *not
 		}
 	}
 	if f.HasProto("quic") {
-		set.UDP.FilterQUIC = "sni"
+		set.UDP.FilterQUIC = "parse"
 		set.UDP.Mode = "fake"
 	}
 	if tok, ok := ti.first(prof.Index, "filter_l7"); ok {
 		if f.HasProto("quic") {
-			notes.set(tok, StatusApproximated, "l7QUICMapped", "udp.filter_quic=sni")
+			notes.set(tok, StatusApproximated, "l7QUICMapped", "udp.filter_quic=parse")
 		} else {
 			notes.set(tok, StatusApproximated, "l7FilterApproximated")
 		}

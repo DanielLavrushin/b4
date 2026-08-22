@@ -100,9 +100,6 @@ func buildSynRSTV6(raw []byte, srcIP, dstIP net.IP) []byte {
 	if len(raw) < ipv6HdrLen+20 {
 		return nil
 	}
-	if !hasPlainIPv6Header(raw, ipProtoTCP) {
-		return nil
-	}
 	tcp := raw[ipv6HdrLen:]
 
 	clientPort := binary.BigEndian.Uint16(tcp[0:2])
@@ -131,11 +128,6 @@ func buildSynRSTV6(raw []byte, srcIP, dstIP net.IP) []byte {
 
 func (w *Worker) sendRSTToClientV6(raw []byte, srcIP, dstIP net.IP) {
 	ipv6HdrLen := 40
-	if !hasPlainIPv6Header(raw, ipProtoTCP) {
-		log.Tracef("ip-block: no RST to client %s, the TCP header is not at the fixed IPv6 offset", srcIP)
-		return
-	}
-
 	tcp := raw[ipv6HdrLen:]
 	if len(tcp) < 20 {
 		return

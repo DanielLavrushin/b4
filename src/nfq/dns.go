@@ -86,8 +86,6 @@ const (
 	dnsActionPassthrough    = "dns-passthrough"
 	dnsActionBadTarget      = "dns-bad-target"
 	dnsActionIPv6Disabled   = "dns-ipv6-disabled"
-	dnsActionIPv6Stripped   = "dns-ipv6-stripped"
-	dnsActionHealStripped   = "dns-heal+ipv6-stripped"
 	dnsActionServfail       = "dns-servfail"
 	dnsActionHeal           = "dns-heal"
 	dnsActionPin            = "dns-pin"
@@ -468,6 +466,15 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 				}
 			}
 
+			if healed := w.healDNSResponse(w.getConfig(), healSet, domain, payload, false); healed != nil {
+				if !vc.drop() {
+					return 0
+				}
+				logDNSEvent("UDP", healSet, domain, clientIP, dnsServerIP, dport, w.getMacByIp(clientIP.String()), dnsActionHeal)
+				w.sendDNSResponseToClient(ipVersion, dnsServerIP, clientIP, dport, healed)
+				return 0
+			}
+
 			qtype, hasType := dns.QuestionType(payload)
 			if next := w.noteDNSOutcome(w.getConfig(), failedSet, domain, clientMac, qtype, payload); next != nil {
 				cfg := w.getConfig()
@@ -483,15 +490,6 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 						return 0
 					}
 				}
-			}
-
-			if filtered, action := w.filterDNSAnswer(w.getConfig(), healSet, domain, payload, false); filtered != nil {
-				if !vc.drop() {
-					return 0
-				}
-				logDNSEvent("UDP", healSet, domain, clientIP, dnsServerIP, dport, clientMac, action)
-				w.sendDNSResponseToClient(ipVersion, dnsServerIP, clientIP, dport, filtered)
-				return 0
 			}
 		}
 	}
@@ -546,9 +544,9 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		}
 	}
 
-	if filtered, action := w.filterDNSAnswer(cfg, set, queryDomain, resp, false); filtered != nil {
-		logDNSEvent("UDP", set, queryDomain, clientIP, originalDst, clientPort, w.getMacByIp(clientIP.String()), action)
-		resp = filtered
+	if healed := w.healDNSResponse(cfg, set, queryDomain, resp, false); healed != nil {
+		logDNSEvent("UDP", set, queryDomain, clientIP, originalDst, clientPort, w.getMacByIp(clientIP.String()), dnsActionHeal)
+		resp = healed
 	}
 
 	w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, resp)

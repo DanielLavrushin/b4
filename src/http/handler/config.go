@@ -393,14 +393,6 @@ func (a *API) saveAndPushConfig(newCfg *config.Config) error {
 		return ErrInternal("Invalid configuration: " + err.Error())
 	}
 
-	if s5 := newCfg.System.Socks5; (s5.Username == "") != (s5.Password == "") {
-		return ErrValidation("SOCKS5 credentials are incomplete", FieldError{
-			Path:    "system.socks5.password",
-			Code:    "socks5_incomplete_credentials",
-			Message: "username and password must both be set or both be empty",
-		})
-	}
-
 	if fields := preflightConfig(newCfg, a.getCfg()); len(fields) > 0 {
 		return ErrValidation("Some ports are unavailable", fields...)
 	}

@@ -333,29 +333,3 @@ func BuildAnswerFromIPs(payload []byte, ttl uint32, ips []net.IP) []byte {
 	binary.BigEndian.PutUint16(out[6:8], uint16(count))
 	return out
 }
-
-func BuildEmptyAnswer(msg []byte) []byte {
-	if len(msg) < 12 {
-		return nil
-	}
-	if binary.BigEndian.Uint16(msg[4:6]) != 1 {
-		return nil
-	}
-	end, ok := skipDNSName(msg, 12)
-	if !ok || end+4 > len(msg) {
-		return nil
-	}
-	questionEnd := end + 4
-
-	out := make([]byte, questionEnd)
-	copy(out, msg[:questionEnd])
-	out[2] = 0x80 | (msg[2] & 0x79)
-	out[3] = 0x80
-
-	binary.BigEndian.PutUint16(out[4:6], 1)
-	binary.BigEndian.PutUint16(out[6:8], 0)
-	binary.BigEndian.PutUint16(out[8:10], 0)
-	binary.BigEndian.PutUint16(out[10:12], 0)
-
-	return out
-}

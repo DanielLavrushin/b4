@@ -47,30 +47,17 @@ The GeoIP equivalent for IP ranges. Categories are keyed to countries and ASNs.
 
 ## Source devices
 
-Limits the set to traffic from specific devices on the network.
-
-Devices discovered from the ARP table are matched by their MAC address. Devices you added manually have no MAC address
-on the network, so they are matched by the IP address you entered for them. Give a manually added device a fixed or
-reserved address, and note that it cannot be matched at all when an intermediate router replaces the source address of
-its traffic before it reaches b4.
+Limits the set to traffic from specific devices on the network (by MAC address).
 
 The table shows available devices:
 
 | Column | Description |
 | --- | --- |
 | Select | Checkbox to include the device |
-| MAC | Device MAC address, or `matched by IP` for a manually added device |
+| MAC | Device MAC address |
 | IP | Current IP address |
 | Name | Device alias or vendor |
 
 ![20260418234934](../../static/img/targets/20260418234934.png)
 
 If no device is selected, the set applies to all traffic. When devices are selected, only their traffic is matched. Device-bound sets take priority over generic ones.
-
-:::warning Source devices do not select traffic on their own
-Every routing rule matches a destination address. Source devices decide whose traffic is offered to that rule, not
-which traffic is steered, so a set whose only target is a source device routes nothing and b4 installs no rule for it.
-
-To send everything from a device, keep the device selected and turn on **Match any IP address** on the IP addresses
-tab. Traffic the router itself originates is left alone for such a set, because it can never come from a source device.
-:::

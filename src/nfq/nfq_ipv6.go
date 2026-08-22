@@ -6,19 +6,12 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
-	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/quic"
 	"github.com/daniellavrushin/b4/sock"
 )
 
 // dropAndInjectQUIV6 handles QUIC (UDP) packet manipulation for IPv6
 func (w *Worker) dropAndInjectQUICV6(cfg *config.SetConfig, raw []byte, dst net.IP) {
-	if !hasPlainIPv6Header(raw, ipProtoUDP) {
-		log.Tracef("QUIC v6: passing %s through untouched, the UDP header is not at the fixed IPv6 offset", dst.String())
-		_ = w.sock.SendIPv6(raw, dst)
-		return
-	}
-
 	seg2d := config.ResolveSeg2Delay(cfg.UDP.Seg2Delay, cfg.UDP.Seg2DelayMax)
 	if cfg.UDP.Mode != "fake" {
 		return
@@ -73,12 +66,6 @@ func (w *Worker) dropAndInjectQUICV6(cfg *config.SetConfig, raw []byte, dst net.
 
 // dropAndInjectTCPv6 handles TCP packet manipulation for IPv6
 func (w *Worker) dropAndInjectTCPv6(cfg *config.SetConfig, raw []byte, dst net.IP) {
-	if !hasPlainIPv6Header(raw, ipProtoTCP) {
-		log.Tracef("TCP v6: passing %s through untouched, the TCP header is not at the fixed IPv6 offset", dst.String())
-		_ = w.sock.SendIPv6(raw, dst)
-		return
-	}
-
 	if len(raw) < 60 { // IPv6 header (40) + TCP header (20 min)
 		_ = w.sock.SendIPv6(raw, dst)
 		return
@@ -343,11 +330,6 @@ func (w *Worker) sendIPFragmentsv6(cfg *config.SetConfig, packet []byte, dst net
 func (w *Worker) sendFakeSNISequencev6(cfg *config.SetConfig, original []byte, dst net.IP) {
 	faking := cfg.Faking
 	if !faking.SNI || faking.SNISeqLength <= 0 {
-		return
-	}
-
-	if !hasPlainIPv6Header(original, ipProtoTCP) {
-		log.Tracef("Fake SNI v6: skipping %s, the TCP header is not at the fixed IPv6 offset", dst.String())
 		return
 	}
 

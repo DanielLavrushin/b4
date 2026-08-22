@@ -11,16 +11,6 @@ export function localizeFieldError(f: FieldError): string {
   return f.message;
 }
 
-export function describeApiError(error: unknown): string {
-  if (error instanceof ApiError && error.fields && error.fields.length > 0) {
-    return error.fields.map(localizeFieldError).join("; ");
-  }
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return String(error);
-}
-
 export function reportSaveError(
   error: unknown,
   showError: (message: string) => void,

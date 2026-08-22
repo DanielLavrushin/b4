@@ -324,17 +324,17 @@ func TestMatchUDPPort_GlobalOnly(t *testing.T) {
 	s.UDP.DPortFilter = "53,1000-2000"
 	ss := NewSuffixSet([]*config.SetConfig{s})
 
-	matched, set := ss.MatchUDPPort(53, "")
+	matched, set := ss.MatchUDPPort(53)
 	if !matched || set.Name != "udp-global" {
 		t.Error("expected match on port 53")
 	}
 
-	matched, set = ss.MatchUDPPort(1500, "")
+	matched, set = ss.MatchUDPPort(1500)
 	if !matched || set.Name != "udp-global" {
 		t.Error("expected match on port 1500 in range")
 	}
 
-	matched, _ = ss.MatchUDPPort(80, "")
+	matched, _ = ss.MatchUDPPort(80)
 	if matched {
 		t.Error("should not match port 80")
 	}
@@ -346,7 +346,7 @@ func TestMatchUDPPort_SkipsSetsWithTargets(t *testing.T) {
 	s.Targets.DomainsToMatch = []string{"example.com"}
 	ss := NewSuffixSet([]*config.SetConfig{s})
 
-	matched, _ := ss.MatchUDPPort(53, "")
+	matched, _ := ss.MatchUDPPort(53)
 	if matched {
 		t.Error("should skip sets that have IP/domain targets")
 	}
@@ -357,12 +357,12 @@ func TestMatchTCPPort_GlobalOnly(t *testing.T) {
 	s.TCP.DPortFilter = "80,443"
 	ss := NewSuffixSet([]*config.SetConfig{s})
 
-	matched, set := ss.MatchTCPPort(443, "")
+	matched, set := ss.MatchTCPPort(443)
 	if !matched || set.Name != "tcp-global" {
 		t.Error("expected match on port 443")
 	}
 
-	matched, _ = ss.MatchTCPPort(8080, "")
+	matched, _ = ss.MatchTCPPort(8080)
 	if matched {
 		t.Error("should not match port 8080")
 	}
@@ -370,7 +370,7 @@ func TestMatchTCPPort_GlobalOnly(t *testing.T) {
 
 func TestMatchTCPPort_NilSuffixSet(t *testing.T) {
 	var ss *SuffixSet
-	matched, _ := ss.MatchTCPPort(443, "")
+	matched, _ := ss.MatchTCPPort(443)
 	if matched {
 		t.Error("nil SuffixSet should not match")
 	}

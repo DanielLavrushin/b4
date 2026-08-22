@@ -241,15 +241,6 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if len(set.Targets.GeoSiteCategories) > 0 && !api.geodataManager.IsGeositeConfigured() {
-		log.Warnf("Set '%s': dropping geosite categories %v, no geosite database is installed", set.Name, set.Targets.GeoSiteCategories)
-		set.Targets.GeoSiteCategories = []string{}
-	}
-	if len(set.Targets.GeoIpCategories) > 0 && !api.geodataManager.IsGeoipConfigured() {
-		log.Warnf("Set '%s': dropping geoip categories %v, no geoip database is installed", set.Name, set.Targets.GeoIpCategories)
-		set.Targets.GeoIpCategories = []string{}
-	}
-
 	set.Targets.IPs = nil
 
 	api.loadTargetsForSetCached(&set)
@@ -265,7 +256,7 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 	// Save configuration
 	if err := api.saveAndPushConfig(newCfg); err != nil {
 		log.Errorf("Failed to save config: %v", err)
-		writeAPIError(w, err)
+		http.Error(w, "Failed to save configuration", http.StatusInternalServerError)
 		return
 	}
 

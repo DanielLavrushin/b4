@@ -110,7 +110,7 @@ func DecryptInitial(dcid, packet []byte) ([]byte, bool) {
 	off += n + int(tlen)
 
 	// Length (varint) -> PN offset
-	length, m := readVar(packet[off:])
+	_, m := readVar(packet[off:])
 	if m == 0 {
 		return nil, false
 	}
@@ -158,11 +158,7 @@ func DecryptInitial(dcid, packet []byte) ([]byte, bool) {
 	}
 
 	// Ciphertext (incl. tag) follows PN
-	ctEnd := len(packet)
-	if length > uint64(pnLen) && length <= uint64(len(packet)-pnOff) {
-		ctEnd = pnOff + int(length)
-	}
-	ct := packet[pnOff+pnLen : ctEnd]
+	ct := packet[pnOff+pnLen:]
 	plain, err := aead.Open(nil, nonce, ct, aad)
 	if err != nil {
 		return nil, false

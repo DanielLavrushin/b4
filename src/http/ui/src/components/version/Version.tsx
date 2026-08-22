@@ -1,51 +1,16 @@
 import { useState } from "react";
 import { Box, Link } from "@mui/material";
 import { colors, fonts, radiusPx } from "@design";
-import { DescriptionIcon, GitHubIcon } from "@b4.icons";
+import { GitHubIcon } from "@b4.icons";
 import { UpdateModal } from "./UpdateDialog";
 import { useGitHubRelease, dismissVersion } from "@hooks/useGitHubRelease";
 import { useTranslation } from "react-i18next";
 
 const REPO = "DanielLavrushin/b4";
 const REPO_URL = "https://github.com/daniellavrushin/b4";
-const DOCS_URL = "https://docs.b4core.app";
-
-const sideLinkSx = {
-  display: "flex",
-  alignItems: "center",
-  gap: "8px",
-  p: "6px 8px",
-  borderRadius: `${radiusPx.sm}px`,
-  color: colors.text.primary,
-  textDecoration: "none",
-  fontSize: 12,
-  transition: "background-color 150ms ease",
-  "&:hover": {
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
-    color: colors.text.primary,
-    textDecoration: "none",
-  },
-};
-
-const sideLinkLabelSx = {
-  fontWeight: 500,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-  flex: 1,
-  minWidth: 0,
-};
-
-const sideLinkArrowSx = {
-  ml: "auto",
-  color: colors.text.secondary,
-  opacity: 0.5,
-  fontSize: 11,
-  flexShrink: 0,
-};
 
 export default function Version() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const {
     releases,
@@ -55,10 +20,6 @@ export default function Version() {
     includePrerelease,
     setIncludePrerelease,
   } = useGitHubRelease();
-
-  const docsUrl = i18n.language.startsWith("ru")
-    ? `${DOCS_URL}/ru/`
-    : `${DOCS_URL}/`;
 
   const versionStr = currentVersion.replace(/^v/, "");
   const fromTag = currentVersion.startsWith("v")
@@ -83,35 +44,52 @@ export default function Version() {
         }}
       >
         <Link
-          href={docsUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          sx={sideLinkSx}
-        >
-          <DescriptionIcon
-            sx={{ fontSize: 16, color: colors.text.secondary, flexShrink: 0 }}
-          />
-          <Box component="span" sx={sideLinkLabelSx}>
-            {t("core.nav.documentation")}
-          </Box>
-          <Box component="span" sx={sideLinkArrowSx}>
-            ↗
-          </Box>
-        </Link>
-
-        <Link
           href={REPO_URL}
           target="_blank"
           rel="noopener noreferrer"
-          sx={sideLinkSx}
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            p: "6px 8px",
+            borderRadius: `${radiusPx.sm}px`,
+            color: colors.text.primary,
+            textDecoration: "none",
+            fontSize: 12,
+            transition: "background-color 150ms ease",
+            "&:hover": {
+              backgroundColor: "rgba(255, 255, 255, 0.04)",
+              color: colors.text.primary,
+              textDecoration: "none",
+            },
+          }}
         >
           <GitHubIcon
             sx={{ fontSize: 16, color: colors.text.secondary, flexShrink: 0 }}
           />
-          <Box component="span" sx={sideLinkLabelSx}>
+          <Box
+            component="span"
+            sx={{
+              fontWeight: 500,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              flex: 1,
+              minWidth: 0,
+            }}
+          >
             {REPO}
           </Box>
-          <Box component="span" sx={sideLinkArrowSx}>
+          <Box
+            component="span"
+            sx={{
+              ml: "auto",
+              color: colors.text.secondary,
+              opacity: 0.5,
+              fontSize: 11,
+              flexShrink: 0,
+            }}
+          >
             ↗
           </Box>
         </Link>

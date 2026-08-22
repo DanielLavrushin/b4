@@ -9,7 +9,7 @@ import (
 
 // BuildFakeSNIPacketV6 creates a fake SNI packet for IPv6
 func BuildFakeSNIPacketV6(original []byte, cfg *config.SetConfig) []byte {
-	if len(original) < 60 || original[0]>>4 != 6 || original[6] != 6 {
+	if len(original) < 60 || original[0]>>4 != 6 {
 		return nil
 	}
 

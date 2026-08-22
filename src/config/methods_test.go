@@ -601,8 +601,8 @@ func TestCollectSetMSSClamps_ExcludeSkipsMACs(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
 	}
-	if len(entries[0].Sources) != 0 {
-		t.Errorf("excluded source devices must not become a source scope, got %v", entries[0].Sources)
+	if len(entries[0].MACs) != 0 {
+		t.Errorf("excluded source devices must not become MAC scope, got %v", entries[0].MACs)
 	}
 	if len(entries[0].IPv4) != 1 {
 		t.Errorf("expected IPv4 scope to remain, got %v", entries[0].IPv4)
@@ -668,7 +668,7 @@ func TestMSSClampFingerprint(t *testing.T) {
 		cfg.Validate()
 
 		fp := cfg.MSSClampFingerprint()
-		if !contains(fp, "dev:88:mac=AA:BB:CC:DD:EE:FF") {
+		if !contains(fp, "dev:88:AA:BB:CC:DD:EE:FF") {
 			t.Errorf("fingerprint should contain device entry, got %q", fp)
 		}
 	})

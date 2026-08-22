@@ -42,7 +42,6 @@ const parseIPv4 = (ip: string): number[] | null => {
   const octets: number[] = [];
   for (const p of parts) {
     if (!/^\d+$/.test(p)) return null;
-    if (p.length > 1 && p.startsWith("0")) return null;
     const n = Number(p);
     if (n < 0 || n > 255) return null;
     octets.push(n);

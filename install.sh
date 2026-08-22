@@ -2670,7 +2670,7 @@ Environment=PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/us
 ExecStart=${B4_BIN_DIR}/${BINARY_NAME} --config ${B4_CONFIG_FILE}
 Restart=on-failure
 RestartSec=5
-TimeoutStopSec=30
+TimeoutStopSec=10
 
 [Install]
 WantedBy=multi-user.target
@@ -2690,7 +2690,6 @@ service_systemd_remove() {
 }
 
 service_systemd_start() {
-    systemctl reset-failed "${B4_SERVICE_NAME}" 2>/dev/null || true
     if systemctl restart "${B4_SERVICE_NAME}" 2>/dev/null; then
         _elapsed=0
         while [ "$_elapsed" -lt 10 ]; do
@@ -3167,9 +3166,7 @@ LEGACY_SERVICE_LOGS="/var/log/b4.log /opt/var/log/b4.log /tmp/log/b4.log"
 
 installed_service_type() {
     _svc="$1"
-    if grep -qF "[Service]" "$_svc" 2>/dev/null || grep -qF "ExecStart=" "$_svc" 2>/dev/null; then
-        echo "systemd"
-    elif grep -q "USE_PROCD\|procd_open_instance" "$_svc" 2>/dev/null; then
+    if grep -q "USE_PROCD\|procd_open_instance" "$_svc" 2>/dev/null; then
         echo "procd"
     elif grep -q "openrc-run" "$_svc" 2>/dev/null; then
         echo "openrc"
@@ -3189,12 +3186,6 @@ refresh_legacy_service_script() {
     grep -q "b4\.log" "$_svc" 2>/dev/null || return 0
 
     _svc_type=$(installed_service_type "$_svc")
-    if [ "$_svc_type" = "systemd" ]; then
-        log_warn "Systemd unit ${_svc} sends b4 output to a legacy log file"
-        log_info "Leaving the unit as it is, b4 did not write it"
-        return 0
-    fi
-
     log_warn "Init script logs b4 output to a legacy file that is never rotated"
     log_info "Refreshing ${_svc_type} service script: ${_svc}"
 
@@ -3389,33 +3380,21 @@ action_update() {
     if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
         log_info "Restarting service (${B4_SERVICE_TYPE})..."
         service_call start 2>/dev/null || true
-        _wait=0
-        while [ "$_wait" -lt 10 ]; do
-            is_b4_running && break
-            sleep 1
-            _wait=$((_wait + 1))
-        done
+        sleep 1
     fi
 
     if is_b4_running; then
         log_ok "b4 is running"
-    elif [ "$B4_SERVICE_TYPE" = "systemd" ] || [ "$B4_SERVICE_TYPE" = "procd" ]; then
-        log_err "b4 did not come back up under ${B4_SERVICE_TYPE}"
-        log_info "Not starting it by hand: ${B4_SERVICE_TYPE} keeps its own restart schedule, and a second"
-        log_info "b4 outside the service manager would lose the single-instance lock race with it"
-        if [ "$B4_SERVICE_TYPE" = "systemd" ]; then
-            log_info "  check: journalctl -u ${B4_SERVICE_NAME:-b4} --no-pager -n 20"
-        fi
     elif [ -n "$saved_cmdline" ]; then
-        log_info "Service manager did not restart b4, relaunching directly"
+        log_info "Service manager did not restart b4 — relaunching directly"
         if relaunch_b4 "$saved_cmdline"; then
             log_ok "b4 relaunched"
         else
-            log_warn "Failed to relaunch b4, start it manually:"
+            log_warn "Failed to relaunch b4 — start it manually:"
             log_warn "  ${saved_cmdline}"
         fi
     else
-        log_warn "b4 is not running after update, start it manually:"
+        log_warn "b4 is not running after update — start it manually:"
         log_warn "  ${existing_bin} --config ${B4_CONFIG_FILE}"
     fi
 

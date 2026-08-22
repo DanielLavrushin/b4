@@ -9,7 +9,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useNavigate } from "react-router";
 
 import {
   DomainIcon,
@@ -35,15 +35,6 @@ import { TargetSettings } from "./Target";
 import { TcpTabContainer } from "./tcp/TcpTabContainer";
 import { UdpSettings } from "./Udp";
 import { useTranslation } from "react-i18next";
-
-const EDITOR_TAB_INDEX: Record<string, number> = {
-  targets: 0,
-  tcp: 1,
-  udp: 2,
-  routing: 3,
-  escalation: 4,
-  importExport: 5,
-};
 
 export interface SetEditorPageProps {
   settings: SystemConfig;
@@ -77,12 +68,7 @@ export const SetEditorPage = ({
 
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const requestedTab = searchParams.get("tab");
-  const requestedSub = searchParams.get("sub") ?? undefined;
-  const [activeTab, setActiveTab] = useState<TABS>(
-    (EDITOR_TAB_INDEX[requestedTab ?? ""] ?? TABS.TARGETS),
-  );
+  const [activeTab, setActiveTab] = useState<TABS>(TABS.TARGETS);
   const [editedSet, setEditedSet] = useState<B4SetConfig | null>(initialSet);
 
   const prevSetId = useRef(initialSet.id);
@@ -93,12 +79,6 @@ export const SetEditorPage = ({
       prevSetId.current = initialSet.id;
     }
   }, [initialSet]);
-
-  useEffect(() => {
-    if (!requestedTab) return;
-    const index = EDITOR_TAB_INDEX[requestedTab];
-    if (index !== undefined) setActiveTab(index);
-  }, [requestedTab]);
 
   const handleChange = (
     field: string,
@@ -296,7 +276,6 @@ export const SetEditorPage = ({
       <Box sx={{ flex: 1, overflow: "auto", pb: 2 }}>
         <B4TabPanel value={activeTab} index={TABS.TARGETS} idPrefix="set-tab" sx={{ pt: 3 }}>
           <TargetSettings
-            initialSub={requestedSub}
             geo={settings.geo}
             config={editedSet}
             stats={stats}
@@ -309,7 +288,6 @@ export const SetEditorPage = ({
 
         <B4TabPanel value={activeTab} index={TABS.TCP} idPrefix="set-tab" sx={{ pt: 3 }}>
           <TcpTabContainer
-            initialSub={requestedSub}
             config={editedSet}
             queue={config.queue}
             onChange={handleChange}
@@ -326,7 +304,6 @@ export const SetEditorPage = ({
 
         <B4TabPanel value={activeTab} index={TABS.ROUTING} idPrefix="set-tab" sx={{ pt: 3 }}>
           <RoutingSettings
-            initialSub={requestedSub}
             set={editedSet}
             ipv6={config.queue.ipv6}
             availableIfaces={config.available_ifaces ?? []}

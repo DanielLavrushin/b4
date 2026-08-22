@@ -327,8 +327,6 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 
 	queueMark := routeQueueBypassMark(cfg)
 	gate := routeSetDeviceGate(cfg, set)
-	routeWarnDeviceGate(set.Name, gate)
-	sourceScoped := routeSetIsSourceScoped(set)
 	routeSelfDialBypass(be, cfg, st.chainPre)
 	routeAddBlacklistGate(be, "mangle", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
 
@@ -353,9 +351,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 				addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "udp")
 			}
 		}
-		if !sourceScoped {
-			ensureProxyOutputBaseRulesNft(cfg, st, queueMark)
-		}
+		ensureProxyOutputBaseRulesNft(cfg, st, queueMark)
 	default:
 		proxyIptPreflight(legacy)
 		if err := be.ensureChain(st.chainOut, true); err != nil {
@@ -369,9 +365,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 			if udp {
 				addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "udp")
 			}
-			if !sourceScoped {
-				addProxyOutputMarkRuleIpt(false, st.chainOut, st.setV4, st.mark, legacy)
-			}
+			addProxyOutputMarkRuleIpt(false, st.chainOut, st.setV4, st.mark, legacy)
 		}
 		if cfg.Queue.IPv6Enabled {
 			addProxyDivertRuleIpt(true, st.chainPre, st.setV6, st.mark, legacy)
@@ -379,26 +373,16 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 			if udp {
 				addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "udp")
 			}
-			if !sourceScoped {
-				addProxyOutputMarkRuleIpt(true, st.chainOut, st.setV6, st.mark, legacy)
-			}
+			addProxyOutputMarkRuleIpt(true, st.chainOut, st.setV6, st.mark, legacy)
 		}
-		if sourceScoped {
-			deleteProxyOutputJump(be, st.chainOut)
-		} else {
-			insertProxyOutputJump(be, st.chainOut)
-		}
+		insertProxyOutputJump(be, st.chainOut)
 	}
 
 	insertProxyJumpAtTop(be, st.chainPre, gate)
 	addProxyInputAccept(be, st.mark)
 
-	if sourceScoped {
-		log.Infof("Routing [%s]: set '%s' is limited to source devices or interfaces, so traffic the router itself originates keeps using the normal route", be.name(), set.Name)
-	}
-
 	if st.quicReject {
-		if err := routeEnsureQUICReject(be, cfg, st, gate, sourceScoped, sources); err != nil {
+		if err := routeEnsureQUICReject(be, cfg, st, gate, sources); err != nil {
 			return err
 		}
 		log.Infof("Routing [%s]: set '%s' refuses QUIC (UDP/%d) to matched addresses so clients fall back to TCP through the upstream; enable 'Route UDP through upstream' if the proxy supports UDP ASSOCIATE",
@@ -411,7 +395,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 
 const quicRejectPort = 443
 
-func routeEnsureQUICReject(be routeBackend, cfg *config.Config, st routeState, gate routeDeviceGate, sourceScoped bool, sources []string) error {
+func routeEnsureQUICReject(be routeBackend, cfg *config.Config, st routeState, gate routeDeviceGate, sources []string) error {
 	switch be.name() {
 	case backendNFTables:
 		if err := ensureBlockBaseNft(); err != nil {
@@ -429,11 +413,7 @@ func routeEnsureQUICReject(be routeBackend, cfg *config.Config, st routeState, g
 			addQUICRejectRuleNft(st.chainQUIC, true, st.setV6, sources)
 		}
 		ensureBlockJumpNft(routeNftBlockFwd, st.chainQUIC, gate)
-		if sourceScoped {
-			deleteNftJumpRules(routeNftTable, routeNftBlockOut, st.chainQUIC)
-		} else {
-			ensureBlockJumpNft(routeNftBlockOut, st.chainQUIC, routeDeviceGate{})
-		}
+		ensureBlockJumpNft(routeNftBlockOut, st.chainQUIC, routeDeviceGate{})
 	default:
 		legacy := isLegacyIptBackend(be)
 		if err := ensureBlockChainIpt(st.chainQUIC, legacy); err != nil {
@@ -449,11 +429,7 @@ func routeEnsureQUICReject(be routeBackend, cfg *config.Config, st routeState, g
 			addQUICRejectRuleIpt(true, st.chainQUIC, st.setV6, sources, legacy)
 		}
 		ensureBlockJumpIpt("FORWARD", st.chainQUIC, legacy, gate)
-		if sourceScoped {
-			deleteBlockJumpIpt("OUTPUT", st.chainQUIC, legacy)
-		} else {
-			ensureBlockJumpIpt("OUTPUT", st.chainQUIC, legacy, routeDeviceGate{})
-		}
+		ensureBlockJumpIpt("OUTPUT", st.chainQUIC, legacy, routeDeviceGate{})
 	}
 	return nil
 }
@@ -553,10 +529,15 @@ func addQUICRejectRuleIpt(v6 bool, chain, setName string, sources []string, lega
 }
 
 func routeCleanupProxyRule(be routeBackend, st routeState) {
+	markStr := fmt.Sprintf("0x%x", st.mark)
+	markStrMask := fmt.Sprintf("0x%x/0x%x", st.mark, st.mark)
 	tableStr := fmt.Sprintf("%d", st.table)
 
 	if hasBinary("ip") {
-		routeDelRuleAllForms(st.mark, tableStr)
+		routeDelRuleLoop(false, markStr, tableStr)
+		routeDelRuleLoop(false, markStrMask, tableStr)
+		routeDelRuleLoop(true, markStr, tableStr)
+		routeDelRuleLoop(true, markStrMask, tableStr)
 		if proxyActiveCount() <= 1 {
 			runLogged("routing: delete proxy local route v4", "ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", tableStr)
 			runLogged("routing: delete proxy local route v6", "ip", "-6", "route", "del", "local", "::/0", "dev", "lo", "table", tableStr)
@@ -585,32 +566,28 @@ func routeCleanupProxyRule(be routeBackend, st routeState) {
 }
 
 func routeEnsureLocalDelivery(mark uint32, table int, ipv4, ipv6 bool) {
-	markStrMask := routeSetMarkRule(mark)
+	markStrMask := fmt.Sprintf("0x%x/0x%x", mark, mark)
 	tableStr := fmt.Sprintf("%d", table)
 	prioStr := fmt.Sprintf("%d", proxyRulePriority)
 
 	writeSysctl("/proc/sys/net/ipv4/conf/lo/rp_filter", "0")
 	writeSysctl("/proc/sys/net/ipv4/conf/all/rp_filter", "2")
 
-	routeDelRuleAllForms(mark, tableStr)
-
 	if ipv4 {
+		routeDelRuleLoop(false, fmt.Sprintf("0x%x", mark), tableStr)
+		routeDelRuleLoop(false, markStrMask, tableStr)
 		runLogged("routing: add ip rule v4 (proxy)", "ip", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
 		runLogged("routing: add local route v4 (proxy)", "ip", "route", "replace", "local", "0.0.0.0/0", "dev", "lo", "table", tableStr)
-	} else {
-		runLogged("routing: delete local route v4 (proxy)", "ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", tableStr)
 	}
 	if ipv6 {
+		routeDelRuleLoop(true, fmt.Sprintf("0x%x", mark), tableStr)
+		routeDelRuleLoop(true, markStrMask, tableStr)
 		runLogged("routing: add ip rule v6 (proxy)", "ip", "-6", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
 		runLogged("routing: add local route v6 (proxy)", "ip", "-6", "route", "replace", "local", "::/0", "dev", "lo", "table", tableStr)
-	} else {
-		runLogged("routing: delete local route v6 (proxy)", "ip", "-6", "route", "del", "local", "::/0", "dev", "lo", "table", tableStr)
 	}
 }
 
-var writeSysctl = writeSysctlExec
-
-func writeSysctlExec(path, value string) {
+func writeSysctl(path, value string) {
 	cur, err := os.ReadFile(path)
 	if err == nil && strings.TrimSpace(string(cur)) == value {
 		return
@@ -659,7 +636,7 @@ func insertProxyJumpAtTop(be routeBackend, chain string, gate routeDeviceGate) {
 	}
 }
 
-func deleteProxyOutputJump(be routeBackend, chain string) {
+func insertProxyOutputJump(be routeBackend, chain string) {
 	if be.name() == backendNFTables {
 		return
 	}
@@ -671,18 +648,6 @@ func deleteProxyOutputJump(be routeBackend, chain string) {
 			if _, err := run(fam, "-w", "-t", "mangle", "-D", "OUTPUT", "-j", chain); err != nil {
 				break
 			}
-		}
-	}
-}
-
-func insertProxyOutputJump(be routeBackend, chain string) {
-	if be.name() == backendNFTables {
-		return
-	}
-	deleteProxyOutputJump(be, chain)
-	for _, fam := range []string{backendIPTables, backendIP6Tables, backendIPTablesLegacy, backendIP6TablesLegacy} {
-		if !hasBinary(fam) {
-			continue
 		}
 		runLogged("routing: insert output jump (proxy) "+fam,
 			fam, "-w", "-t", "mangle", "-I", "OUTPUT", "1", "-j", chain)

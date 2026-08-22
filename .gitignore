@@ -43,8 +43,5 @@ vendor/
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
 tspu-docs/
+.claude/
 .vscode/mcp.json
-.mcp.json
-!.claude/skills/
-.claude/*
-CLAUDE.md

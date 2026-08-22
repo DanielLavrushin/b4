@@ -60,7 +60,7 @@ func (m *Manager) SyncConfig(cfg *config.Config) {
 
 	desired := make(map[string]*config.SetConfig, len(cfg.Sets))
 	for _, set := range cfg.Sets {
-		if set == nil || !set.Enabled || !set.RoutingDivertsPackets() {
+		if set == nil || !set.Enabled || !set.Routing.Enabled {
 			continue
 		}
 		if !config.RoutingUsesTProxy(set.Routing.Mode) {

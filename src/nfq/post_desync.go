@@ -67,11 +67,6 @@ func (w *Worker) sendPostDesyncRSTv6(cfg *config.SetConfig, raw []byte, dst net.
 		return
 	}
 
-	if !hasPlainIPv6Header(raw, ipProtoTCP) {
-		log.Tracef("Post-desync v6: skipping %s, the TCP header is not at the fixed IPv6 offset", dst.String())
-		return
-	}
-
 	tcpHdrLen := int((raw[ipv6HdrLen+12] >> 4) * 4)
 	if tcpHdrLen < 20 || ipv6HdrLen+tcpHdrLen > len(raw) {
 		return

@@ -40,16 +40,6 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
 
   const UDP_MODES = [
     {
-      value: "off",
-      label: t("sets.udp.modeOff"),
-      description: t("sets.udp.modeOffDesc"),
-    },
-    {
-      value: "fake",
-      label: t("sets.udp.modeFake"),
-      description: t("sets.udp.modeFakeDesc"),
-    },
-    {
       value: "drop",
       label: t("sets.udp.modeDrop"),
       description: t("sets.udp.modeDropDesc"),
@@ -59,18 +49,28 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
       label: t("sets.udp.modeReject"),
       description: t("sets.udp.modeRejectDesc"),
     },
+    {
+      value: "fake",
+      label: t("sets.udp.modeFake"),
+      description: t("sets.udp.modeFakeDesc"),
+    },
   ];
 
   const UDP_QUIC_FILTERS = [
     {
-      value: "sni",
-      label: t("sets.udp.quicSni"),
-      description: t("sets.udp.quicSniDesc"),
+      value: "disabled",
+      label: t("sets.udp.quicDisabled"),
+      description: t("sets.udp.quicDisabledDesc"),
     },
     {
       value: "all",
       label: t("sets.udp.quicAll"),
       description: t("sets.udp.quicAllDesc"),
+    },
+    {
+      value: "parse",
+      label: t("sets.udp.quicParse"),
+      description: t("sets.udp.quicParseDesc"),
     },
   ];
 
@@ -92,30 +92,19 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
     },
   ];
 
+  const isQuicEnabled = config.udp.filter_quic !== "disabled";
+  const hasPortFilter =
+    config.udp.dport_filter && config.udp.dport_filter.trim() !== "";
   const hasDomainsConfigured =
     config.targets?.sni_domains?.length > 0 ||
     config.targets?.geosite_categories?.length > 0;
 
-  const hasNonDomainTargets =
-    (config.targets?.ip?.length ?? 0) > 0 ||
-    (config.targets?.geoip_categories?.length ?? 0) > 0 ||
-    (config.udp.dport_filter ?? "").trim() !== "";
+  const willProcessUdp = isQuicEnabled || hasPortFilter;
 
-  const isPassthrough = config.udp.mode === "off";
-  const blockQuic =
-    config.udp.filter_quic === "all" && config.udp.mode === "reject";
+  const showActionSettings = willProcessUdp;
 
-  const toggleBlockQuic = (checked: boolean) => {
-    if (checked) {
-      onChange("udp.filter_quic", "all");
-      onChange("udp.mode", "reject");
-      return;
-    }
-    onChange("udp.filter_quic", "sni");
-    onChange("udp.mode", "fake");
-  };
-
-  const showFakeSettings = config.udp.mode === "fake";
+  const isFakeMode = config.udp.mode === "fake";
+  const showFakeSettings = showActionSettings && isFakeMode;
   const isAutoQuic =
     config.udp.fake_payload_file === UDP_FAKE_PAYLOAD_AUTO_QUIC;
 
@@ -133,11 +122,9 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
     (a, b) => captureProtocolRank(a.protocol) - captureProtocolRank(b.protocol),
   );
 
-  const showSniWarning =
-    !isPassthrough &&
-    config.udp.filter_quic === "sni" &&
-    !hasDomainsConfigured &&
-    !hasNonDomainTargets;
+  const showParseWarning =
+    config.udp.filter_quic === "parse" && !hasDomainsConfigured;
+  const showNoProcessingWarning = !willProcessUdp;
 
   return (
     <B4Section
@@ -146,23 +133,6 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
       icon={<DnsIcon />}
     >
       <Grid container spacing={3}>
-        <B4FormHeader label={t("sets.udp.blockHeader")} />
-
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Switch
-            label={t("sets.udp.blockQuic")}
-            checked={blockQuic}
-            onChange={toggleBlockQuic}
-            description={t("sets.udp.blockQuicDesc")}
-          />
-        </Grid>
-
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Hint>
-            <Trans i18nKey="sets.udp.blockQuicInfo" />
-          </B4Hint>
-        </Grid>
-
         <B4FormHeader label={t("sets.udp.trafficHeader")} />
 
         <Grid size={{ xs: 12, md: 6 }}>
@@ -187,6 +157,8 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
             helperText={t("sets.udp.portFilterHelper")}
           />
         </Grid>
+
+        {/* STUN Filter */}
         <Grid size={{ xs: 12, md: 6 }}>
           <B4Switch
             label={t("sets.udp.filterStun")}
@@ -196,61 +168,75 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
           />
         </Grid>
 
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Slider
-            label={t("sets.udp.connPacketsLimit")}
-            value={config.udp.conn_bytes_limit}
-            onChange={(value) => onChange("udp.conn_bytes_limit", value)}
-            min={1}
-            max={queue.udp_conn_bytes_limit}
-            step={1}
-            helperText={t("sets.udp.connPacketsMax", {
-              max: queue.udp_conn_bytes_limit,
-            })}
-          />
-        </Grid>
+        {willProcessUdp && (
+          <Grid size={{ xs: 12, md: 6 }}>
+            <B4Slider
+              label={t("sets.udp.connPacketsLimit")}
+              value={config.udp.conn_bytes_limit}
+              onChange={(value) => onChange("udp.conn_bytes_limit", value)}
+              min={1}
+              max={queue.udp_conn_bytes_limit}
+              step={1}
+              helperText={t("sets.udp.connPacketsMax", {
+                max: queue.udp_conn_bytes_limit,
+              })}
+            />
+          </Grid>
+        )}
 
-        {showSniWarning && (
+        {/* Parse mode warning */}
+        {showParseWarning && (
           <B4Alert severity="warning" icon={<WarningIcon />}>
-            <Trans i18nKey="sets.udp.sniWarning" />
+            <Trans i18nKey="sets.udp.parseWarning" />
           </B4Alert>
         )}
 
-        <B4FormHeader label={t("sets.udp.actionHeader")} />
-
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Select
-            label={t("sets.udp.actionMode")}
-            value={config.udp.mode}
-            options={UDP_MODES}
-            onChange={(e) => onChange("udp.mode", e.target.value)}
-            helperText={
-              UDP_MODES.find((o) => o.value === config.udp.mode)?.description
-            }
-          />
-        </Grid>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Hint>
-            {(() => {
-              const infoKeys: Record<UdpMode, string> = {
-                off: "sets.udp.offModeInfo",
-                fake: "sets.udp.fakeModeInfo",
-                reject: "sets.udp.rejectModeInfo",
-                drop: "sets.udp.dropModeInfo",
-              };
-              return (
-                <Trans i18nKey={infoKeys[config.udp.mode] || infoKeys.fake} />
-              );
-            })()}
-          </B4Hint>
-        </Grid>
-
-        {isPassthrough && (
+        {/* No processing warning */}
+        {showNoProcessingWarning && (
           <B4Alert>
             <Trans i18nKey="sets.udp.noProcessingWarning" />
           </B4Alert>
         )}
 
+        {/* Section 2: Action Settings (only if traffic will be processed) */}
+        {showActionSettings && (
+          <>
+            <B4FormHeader label={t("sets.udp.actionHeader")} />
+
+            {/* UDP Mode */}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Select
+                label={t("sets.udp.actionMode")}
+                value={config.udp.mode}
+                options={UDP_MODES}
+                onChange={(e) => onChange("udp.mode", e.target.value)}
+                helperText={
+                  UDP_MODES.find((o) => o.value === config.udp.mode)
+                    ?.description
+                }
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              {/* Info about current mode */}
+              <B4Hint>
+                {(() => {
+                  const infoKeys: Record<UdpMode, string> = {
+                    fake: "sets.udp.fakeModeInfo",
+                    reject: "sets.udp.rejectModeInfo",
+                    drop: "sets.udp.dropModeInfo",
+                  };
+                  return (
+                    <Trans
+                      i18nKey={infoKeys[config.udp.mode] || infoKeys.drop}
+                    />
+                  );
+                })()}
+              </B4Hint>
+            </Grid>
+          </>
+        )}
+
+        {/* Section 3: Fake Mode Settings (only if fake mode is enabled) */}
         {showFakeSettings && (
           <>
             <B4FormHeader label={t("sets.udp.fakeHeader")} />

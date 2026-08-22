@@ -6,8 +6,8 @@ const config: Config = {
   title: "B4 - Bye Bye Big Bro",
   tagline: "Advanced censorship bypass system",
   favicon: "img/favicon.ico",
-  url: "https://docs.b4core.app",
-  baseUrl: "/",
+  url: "https://daniellavrushin.github.io/",
+  baseUrl: "/b4",
 
   onBrokenLinks: "warn",
 

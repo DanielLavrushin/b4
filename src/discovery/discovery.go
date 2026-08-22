@@ -171,12 +171,6 @@ func (ds *DiscoverySuite) RunDiscovery() {
 		return
 	}
 
-	probeFamily := ds.dialNetwork()
-	if probeFamily == "" {
-		probeFamily = "dual-stack"
-	}
-	log.DiscoveryLogf("Probe address family: %s (queue IPv4=%v, IPv6=%v)", probeFamily, ds.cfg.Queue.IPv4Enabled, ds.cfg.Queue.IPv6Enabled)
-
 	ds.discoveryCache = LoadDiscoveryCache(ds.cfg.ConfigPath)
 	defer ds.saveResultsToCache()
 
@@ -1145,51 +1139,16 @@ func (ds *DiscoverySuite) ipFilterVersion() string {
 	}
 }
 
-// dialNetwork forces the probe address family ("tcp4"/"tcp6") so validation
-// runs over the same family b4 actually queues. An explicit IP version wins;
-// otherwise it mirrors DNSProber.ipNetwork and follows the enabled queue
-// families, leaving the choice to the resolver/OS only when both are processed.
+// dialNetwork forces the probe address family ("tcp4"/"tcp6") for an explicit
+// IP version run, or "" to leave family selection to the resolver/OS.
 func (ds *DiscoverySuite) dialNetwork() string {
 	switch ds.ipVersion {
 	case "ipv4":
 		return "tcp4"
 	case "ipv6":
 		return "tcp6"
-	}
-	if ds.cfg == nil {
+	default:
 		return ""
-	}
-	switch {
-	case ds.cfg.Queue.IPv4Enabled && ds.cfg.Queue.IPv6Enabled:
-		return ""
-	case ds.cfg.Queue.IPv4Enabled:
-		return "tcp4"
-	case ds.cfg.Queue.IPv6Enabled:
-		return "tcp6"
-	}
-	return ""
-}
-
-// dialContext builds the probe dialer: it forces the address family from
-// dialNetwork and pins pinnedIP when DNS discovery already resolved one.
-func (ds *DiscoverySuite) dialContext(timeout time.Duration, pinnedIP string) func(context.Context, string, string) (net.Conn, error) {
-	baseDialer := netprobe.Dialer(int(ds.flowMark), timeout/2, timeout)
-	forcedNet := ds.dialNetwork()
-
-	return func(ctx context.Context, network, addr string) (net.Conn, error) {
-		if forcedNet != "" {
-			network = forcedNet
-		}
-		if pinnedIP != "" {
-			_, port, _ := net.SplitHostPort(addr)
-			if port == "" {
-				port = "443"
-			}
-			directAddr := net.JoinHostPort(pinnedIP, port)
-			log.Tracef("DNS bypass: connecting to %s instead of %s", directAddr, addr)
-			return baseDialer.DialContext(ctx, network, directAddr)
-		}
-		return baseDialer.DialContext(ctx, network, addr)
 	}
 }
 
@@ -1222,7 +1181,24 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 		IdleConnTimeout:       timeout,
 	}
 
-	transport.DialContext = ds.dialContext(timeout, ip)
+	baseDialer := netprobe.Dialer(int(ds.flowMark), timeout/2, timeout)
+	forcedNet := ds.dialNetwork()
+
+	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if forcedNet != "" {
+			network = forcedNet
+		}
+		if ip != "" {
+			_, port, _ := net.SplitHostPort(addr)
+			if port == "" {
+				port = "443"
+			}
+			directAddr := net.JoinHostPort(ip, port)
+			log.Tracef("DNS bypass: connecting to %s instead of %s", directAddr, addr)
+			return baseDialer.DialContext(ctx, network, directAddr)
+		}
+		return baseDialer.DialContext(ctx, network, addr)
+	}
 
 	client := &http.Client{
 		Timeout:   timeout,
@@ -1541,7 +1517,6 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 
 		geoip, geosite := GetCDNCategories(ds.Domain)
 		if len(geoip) > 0 || len(geosite) > 0 {
-			geoip, geosite = ds.installedGeoCategories(geoip, geosite)
 			if len(geoip) > 0 {
 				testSet.Targets.GeoIpCategories = geoip
 			}
@@ -1552,14 +1527,12 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 			if !ds.skipDNS {
 				testSet.DNS = ds.cdnDNSConfig()
 			}
-			if len(geoip) > 0 || len(geosite) > 0 {
-				tempCfg := &config.Config{System: ds.cfg.System}
-				domains, ips, err := tempCfg.GetTargetsForSet(&testSet)
-				if err != nil {
-					log.DiscoveryLogf("Discovery: failed to load CDN categories: %v", err)
-				} else {
-					log.Tracef("Discovery: CDN %s - loaded %d domains, %d IPs", ds.Domain, len(domains), len(ips))
-				}
+			tempCfg := &config.Config{System: ds.cfg.System}
+			domains, ips, err := tempCfg.GetTargetsForSet(&testSet)
+			if err != nil {
+				log.DiscoveryLogf("Discovery: failed to load CDN categories: %v", err)
+			} else {
+				log.Tracef("Discovery: CDN %s - loaded %d domains, %d IPs", ds.Domain, len(domains), len(ips))
 			}
 		} else {
 			var ipsToAdd []string
@@ -1650,7 +1623,6 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 			geoip, geosite := GetCDNCategories(di.Domain)
 			if len(geoip) > 0 || len(geosite) > 0 {
 				hasCDN = true
-				geoip, geosite = ds.installedGeoCategories(geoip, geosite)
 				testSet.Targets.GeoIpCategories = appendUnique(testSet.Targets.GeoIpCategories, geoip...)
 				testSet.Targets.GeoSiteCategories = appendUnique(testSet.Targets.GeoSiteCategories, geosite...)
 			}
@@ -2126,7 +2098,7 @@ func (ds *DiscoverySuite) measureNetworkBaseline() float64 {
 		Timeout: timeout,
 		Transport: &http.Transport{
 			TLSClientConfig: ds.tlsConfig(),
-			DialContext:     ds.dialContext(timeout, ""),
+			DialContext:     netprobe.Dialer(int(ds.flowMark), timeout/2, timeout).DialContext,
 		},
 	}
 

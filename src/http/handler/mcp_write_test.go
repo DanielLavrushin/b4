@@ -270,7 +270,6 @@ func TestMCPDenyTagsArePresent(t *testing.T) {
 		{"sets[].routing.table", "video"},
 		{"system.socks5.username", ""},
 		{"system.socks5.password", ""},
-		{"system.socks5.allowed_sources", ""},
 		{"system.mtproto.secrets", ""},
 		// Inside a writable root, but the directory is a filesystem location:
 		// pointing it elsewhere silently stops file logging, which is also what

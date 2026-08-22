@@ -53,8 +53,6 @@ import { reportSaveError } from "@utils";
 
 import { SetCompare } from "./Compare";
 import { SetCard } from "./SetCard";
-import { EditorSection, FacetKey } from "./facets";
-import { FacetCompareBar } from "./SignalRail";
 
 import { colors, radius } from "@design";
 import { useSets } from "@hooks/useSets";
@@ -160,10 +158,6 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
 
   const [filterText, setFilterText] = useState("");
   const [selectionMode, setSelectionMode] = useState(false);
-  const [facetBroadcast, setFacetBroadcast] = useState<{
-    facet: FacetKey | null;
-    token: number;
-  }>({ facet: null, token: 0 });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleteDialog, setDeleteDialog] = useState<{
     open: boolean;
@@ -330,12 +324,8 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
     navigate("/sets/new")?.catch(() => {});
   };
 
-  const handleEditSet = (set: B4SetConfig, section?: EditorSection) => {
-    const params = new URLSearchParams();
-    if (section?.tab) params.set("tab", section.tab);
-    if (section?.sub) params.set("sub", section.sub);
-    const query = params.toString();
-    navigate(`/sets/${set.id}${query ? `?${query}` : ""}`)?.catch(() => {});
+  const handleEditSet = (set: B4SetConfig) => {
+    navigate(`/sets/${set.id}`)?.catch(() => {});
   };
 
   const handleDeleteSet = () => {
@@ -647,15 +637,6 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
           </Grid>
         )}
 
-        {filteredSets.length > 0 && (
-          <FacetCompareBar
-            active={facetBroadcast.facet}
-            onPick={(facet) => {
-              setFacetBroadcast((prev) => ({ facet, token: prev.token + 1 }));
-            }}
-          />
-        )}
-
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -684,9 +665,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                           set={set}
                           stats={stats}
                           index={index}
-                          onEdit={(section?: EditorSection) =>
-                            handleEditSet(set, section)
-                          }
+                          onEdit={() => handleEditSet(set)}
                           onDuplicate={() => handleDuplicateSet(set)}
                           onCompare={() =>
                             setCompareDialog({
@@ -711,8 +690,6 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                           highlighted={highlightedSetId === set.id}
                           onEscalationHover={handleEscalationHover}
                           onEscalationClick={handleEscalationClick}
-                          broadcastFacet={facetBroadcast.facet}
-                          broadcastToken={facetBroadcast.token}
                         />
                       )}
                     </SortableCardWrapper>

@@ -125,7 +125,7 @@ func TestRouteChainJumps_OutputJumpGoesFirst(t *testing.T) {
 	be := &mockRouteBackend{}
 	st := injectedTestState()
 
-	routeEnsureChainJumps(be, st, routeDeviceGate{}, false)
+	routeEnsureChainJumps(be, st, routeDeviceGate{})
 
 	var out *mockRouteJump
 	for i := range be.jumps {
@@ -206,18 +206,18 @@ func TestRouteIptJumpArgs(t *testing.T) {
 
 func TestRouteIptInjectedMarkArgs_KeepsTheQueueMarkOnThePacket(t *testing.T) {
 	got := strings.Join(routeIptInjectedMarkArgs("b4r_test_out", "b4r_test_v4", 0x2bd8, 0x8000), " ")
-	want := "-w -t mangle -A b4r_test_out -m mark --mark 0x8000/0x8000 -m set --match-set b4r_test_v4 dst -j MARK --set-xmark 0x2bd8/0x27fff"
+	want := "-w -t mangle -A b4r_test_out -m mark --mark 0x8000/0x8000 -m set --match-set b4r_test_v4 dst -j MARK --set-mark 0x2bd8/0x2bd8"
 	if got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
 	}
-	if !strings.Contains(got, "--set-xmark 0x2bd8/0x27fff") {
+	if !strings.Contains(got, "--set-mark 0x2bd8/0x2bd8") {
 		t.Error("the mark must be applied through a mask; setting it whole would clear the queue mark and the packet would be queued again")
 	}
 }
 
 func TestRouteNftInjectedMarkArgs_KeepsTheQueueMarkOnThePacket(t *testing.T) {
 	got := strings.Join(routeNftInjectedMarkArgs("b4r_test_out", false, "b4r_test_v4", 0x2bd8, 0x8000), " ")
-	want := "add rule inet b4_route b4r_test_out meta mark & 0x8000 == 0x8000 ip daddr @b4r_test_v4 meta mark set meta mark & 0xfffd8000 or 0x2bd8"
+	want := "add rule inet b4_route b4r_test_out meta mark & 0x8000 == 0x8000 ip daddr @b4r_test_v4 meta mark set meta mark or 0x2bd8"
 	if got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
 	}

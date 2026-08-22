@@ -177,10 +177,28 @@ func (w *Worker) parseIPHeaders(raw []byte) (*pktInfo, bool) {
 		p.dst = net.IP(p.addr[16:20])
 		p.ihl = ihl
 	} else {
-		offset, nextHeader, ok := upperLayerOffsetV6(raw)
-		if !ok {
+		if len(raw) < IPv6HeaderLen {
 			return nil, false
 		}
+		nextHeader := raw[6]
+		offset := 40
+
+		for {
+			switch nextHeader {
+			case 0, 43, 60:
+				if len(raw) < offset+2 {
+					return nil, false
+				}
+				nextHeader = raw[offset]
+				hdrLen := int(raw[offset+1])*8 + 8
+				offset += hdrLen
+			case 44:
+				return nil, false
+			default:
+				goto done
+			}
+		}
+	done:
 		p.proto = nextHeader
 		p.ihl = offset
 		copy(p.addr[0:16], raw[8:24])
@@ -261,7 +279,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if !matched && cfg.IsTCPPort(dport) {
-		if portMatched, portSet := matcher.MatchTCPPort(dport, pkt.srcMac); portMatched {
+		if portMatched, portSet := matcher.MatchTCPPort(dport); portMatched {
 			matched = true
 			set = portSet
 		}
@@ -281,7 +299,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
-	routeTProxy := matched && set != nil && set.RoutingDivertsPackets() && config.RoutingUsesTProxy(set.Routing.Mode)
+	routeTProxy := matched && set != nil && set.Routing.Enabled && config.RoutingUsesTProxy(set.Routing.Mode)
 
 	if matched && !routeTProxy && cfg.IsTCPPort(dport) && set.TCP.Duplicate.Enabled && set.TCP.Duplicate.Count > 0 {
 		log.Tracef("TCP duplicate to %s:%d (%d copies, set: %s)", pkt.dstStr, dport, set.TCP.Duplicate.Count, set.Name)
@@ -580,7 +598,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		return vc.accept()
 	}
 
-	if matched && set != nil && set.RoutingDivertsPackets() && config.RoutingUsesTProxy(set.Routing.Mode) {
+	if matched && set != nil && set.Routing.Enabled && config.RoutingUsesTProxy(set.Routing.Mode) {
 		return vc.accept()
 	}
 
@@ -722,7 +740,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	matchedPort := false
 	if !matched {
-		if portMatched, portSet := matcher.MatchUDPPort(dport, pkt.srcMac); portMatched {
+		if portMatched, portSet := matcher.MatchUDPPort(dport); portMatched {
 			matchedPort = true
 			matched = true
 			set = portSet
@@ -839,9 +857,6 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	switch set.UDP.Mode {
-	case config.ConfigOff:
-		return vc.accept()
-
 	case "drop":
 		vc.drop()
 		return 0

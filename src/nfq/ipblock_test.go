@@ -11,11 +11,6 @@ import (
 	"github.com/daniellavrushin/b4/iphealth"
 )
 
-func (w *Worker) healDNSResponse(cfg *config.Config, set *config.SetConfig, domain string, resp []byte, overTCP bool) []byte {
-	out, _ := w.filterDNSAnswer(cfg, set, domain, resp, overTCP)
-	return out
-}
-
 func encodeTestName(name string) []byte {
 	buf := make([]byte, 0, len(name)+2)
 	for _, label := range splitLabels(name) {

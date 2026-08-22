@@ -18,26 +18,26 @@ import (
 func (s *Server) handleUDPAssociate(conn net.Conn, clientDest string) error {
 	log.Infof("SOCKS5 UDP ASSOCIATE from %s, client dest: %s", conn.RemoteAddr(), clientDest)
 
-	tcpRemote, ok := conn.RemoteAddr().(*net.TCPAddr)
-	if !ok {
-		sendReply(conn, repServerFailure, nil)
-		return fmt.Errorf("UDP associate on a non-TCP control connection")
-	}
+	// Parse client destination for validation (RFC 1928)
+	// Default to TCP connection's remote IP for security - even if client sends
+	// 0.0.0.0:0, restrict UDP packets to the same IP as the TCP control connection.
+	tcpRemote := conn.RemoteAddr().(*net.TCPAddr)
 	clientIP := tcpRemote.IP
 	var clientPort int
 	if clientDest != "" {
-		if _, portStr, err := net.SplitHostPort(clientDest); err == nil {
+		host, portStr, err := net.SplitHostPort(clientDest)
+		if err == nil {
+			if ip := net.ParseIP(host); ip != nil && !ip.IsUnspecified() {
+				clientIP = ip
+			}
 			if p, err := strconv.Atoi(portStr); err == nil {
 				clientPort = p
 			}
 		}
 	}
 
-	localAddr, ok := conn.LocalAddr().(*net.TCPAddr)
-	if !ok {
-		sendReply(conn, repServerFailure, nil)
-		return fmt.Errorf("UDP associate on a non-TCP control connection")
-	}
+	// Create UDP listener on same IP as TCP connection
+	localAddr := conn.LocalAddr().(*net.TCPAddr)
 	udpAddr := &net.UDPAddr{
 		IP:   localAddr.IP,
 		Port: 0, // Let OS assign port

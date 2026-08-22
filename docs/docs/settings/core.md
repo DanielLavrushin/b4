@@ -3,7 +3,7 @@ sidebar_position: 1
 title: Core
 ---
 
-Most changes on this tab require a service restart. The exceptions are the interface language and the [SOCKS5 proxy](#socks5-proxy) settings, which apply on save.
+All changes on this tab require a service restart (except the interface language).
 
 ## Controls
 
@@ -43,18 +43,6 @@ These limits are a global ceiling. Each set can define its own limit, but not ab
 | --- | --- | --- |
 | IPv4 support | Process IPv4 traffic | On |
 | IPv6 support | Process IPv6 traffic | Off |
-
-These switches say which address families **b4** looks at. They do not turn IPv6 on or off on the router, and they do not stop the network from using it.
-
-:::warning What IPv6 support being off means
-With it off, b4 creates no IPv6 firewall rules and reads no IPv6 packets. A site that a set targets and that also answers over IPv6 is reached over IPv6 by the client, which means it bypasses the set entirely: no bypass strategies, no routing, no blocking. That is why b4 writes a warning to the log when the host has a working global IPv6 address while this setting is off.
-
-Two things soften it. b4 strips IPv6 addresses out of DNS answers for domains a set matched, so clients that resolve through the router stay on the IPv4 path b4 protects, and a set can be pointed at IPv6 explicitly. See [DNS -> The IPv4 fallback](../dns#the-ipv4-fallback).
-:::
-
-:::note Restart to apply
-Turning IPv6 support on or off changes which rules exist in the firewall for every set. Sets are rebuilt on the next configuration sync, but the packet queue itself binds its address families at startup, so the change takes full effect only after the service restarts.
-:::
 
 ### Firewall
 
@@ -164,45 +152,12 @@ A built-in SOCKS5 proxy. Applications can route traffic through it - it is proce
 | Port | Proxy port | `1080` |
 | Username | Login for SOCKS5 authentication (empty = no authentication) | - |
 | Password | Password for SOCKS5 authentication (empty = no authentication) | - |
-| Allowed sources | IP addresses and CIDR ranges permitted to open a connection (empty = no restriction) | - |
 
 Every field except "Enable" becomes available only after the proxy is enabled.
 
-:::warning Partial credentials
-Username and password work as a pair. If exactly one of the two is filled, the proxy refuses every client rather than running unauthenticated. Both empty means no authentication; both filled means authentication is required. A configuration with only one of them is rejected when it is saved.
-:::
-
 :::info
-No SOCKS5 field needs a service restart. Credentials and the source list are applied to the running proxy, and changing **Enable**, **Bind address** or **Port** rebinds the listener on save.
+Changes to SOCKS5 settings require a service restart.
 :::
-
-### Allowed sources
-
-`system.socks5.allowed_sources` lists the client addresses that may open a connection to the proxy. An empty list means no restriction, which is the default and the behaviour of earlier versions. With a non-empty list, a peer whose address falls outside every entry has its TCP connection closed at accept time, before any SOCKS5 byte is exchanged and before it occupies a connection slot.
-
-An entry is either a bare IP address, v4 or v6, read as `/32` and `/128`, or a CIDR range. Host bits are masked off, so `192.168.1.7/24` is stored as `192.168.1.0/24`.
-
-A list holding `192.168.1.0/24` and `127.0.0.1/32` accepts clients from that LAN subnet and from the router itself, and closes the connection for every other source.
-
-:::warning A network gate, not an authentication factor
-A source list is the same kind of control as a firewall rule: it decides which addresses reach the proxy and nothing more. It establishes no identity. A source address can be spoofed, a DHCP lease moves from one device to another, and an entry for a host that is itself a router stands for every host behind that router. Credentials are the control that identifies a client.
-:::
-
-:::info Chrome and Chromium
-Chrome and Chromium do not implement SOCKS5 username/password authentication ([crbug 40323993](https://issues.chromium.org/issues/40323993)), so they cannot use an authenticated proxy at all. A source list is how the proxy serves those browsers without credentials while still refusing arbitrary clients.
-:::
-
-Credentials and the source list are independent controls that stack. The list never changes which authentication method the proxy offers; it only decides whether a connection reaches the authentication step. With both configured, a client has to come from a listed address **and** present valid credentials.
-
-Loopback is not implicitly allowed. A client running on the router itself needs `127.0.0.1/32`, or `::1/128` over IPv6, listed explicitly, otherwise it is refused like any other unlisted source.
-
-Editing the list takes effect on save, with no service restart. Live sessions whose source no longer matches are disconnected, and a source added to the list can connect immediately.
-
-:::warning The port stays reachable
-Refusing a connection is not the same as not listening. The listener accepts and then closes, so the port still answers a port scan, and b4 adds no firewall rule for it. With the default bind address `0.0.0.0` the proxy is exposed on the WAN whatever the source list contains. Binding to the LAN address is still the way to keep the proxy off the WAN.
-:::
-
-`0.0.0.0/0` and `::/0` are refused when the configuration is saved, because an entry that matches every address switches the restriction off while leaving it looking enabled. An entry that is neither an IP address nor a CIDR range is refused the same way.
 
 ## MTProto proxy
 
@@ -250,21 +205,11 @@ There are three places, from broadest to narrowest:
 
 ## DNS
 
-Holds what applies to DNS across every set: whether DNS over TCP is intercepted, the port it is redirected to, the timeouts, and the IPv4 fallback. The resolver itself is picked per set. See [DNS](../dns.md).
-
-**Force IPv4 for matched domains** is in this group. While IPv6 support is off, it strips IPv6 addresses out of DNS answers for domains a set matched, so those clients stay on the IPv4 path b4 protects, and it leaves every other name alone. It is on by default and greyed out while IPv6 support is on. See [The IPv4 fallback](../dns#the-ipv4-fallback).
+Holds what applies to DNS across every set: whether DNS over TCP is intercepted, the port it is redirected to, and the timeouts. The resolver itself is picked per set. See [DNS](../dns.md).
 
 ## Device filtering
 
-Limits b4 to traffic from specific devices on the network. Useful when bypass is not needed for every device.
-
-Devices discovered from the ARP table are matched by their MAC address. Devices you add by hand have no MAC address on the
-network, so they are matched by the IP address you enter for them, both when a set is limited to source devices and for a
-per-device MSS clamp. Give such a device a fixed or reserved address; it cannot be matched at all when an intermediate
-router replaces the source address of its traffic before it reaches b4.
-
-The allow and deny list below selects traffic for DPI bypass by MAC address only, so a list containing nothing but
-manually added devices leaves DPI bypass applying to every device.
+Limits b4 to traffic from specific devices on the network (by MAC address). Useful when bypass is not needed for every device.
 
 ![20260418230312](../../static/img/core/20260418230312.png)
 
@@ -288,7 +233,7 @@ When filtering is enabled, a table of discovered devices appears:
 | Column | Description |
 | --- | --- |
 | Select | Checkbox to include/exclude the device |
-| MAC | MAC address, or `matched by IP` for a device added by hand |
+| MAC | MAC address |
 | IP | Current IP address |
 | Name | Device alias (editable through the edit icon) or vendor |
 | MSS | Per-device MSS Clamping (10-1460, empty = off) |

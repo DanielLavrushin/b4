@@ -125,7 +125,7 @@ export const B4DeviceTable = ({
                 >
                   {device.is_manual ? (
                     <Typography variant="caption" color="text.secondary">
-                      {t("core.devices.byIp")}
+                      —
                     </Typography>
                   ) : (
                     device.mac
@@ -134,7 +134,9 @@ export const B4DeviceTable = ({
                 <TableCell
                   sx={{ fontFamily: "monospace", fontSize: "0.85rem" }}
                 >
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                  <Box
+                    sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
+                  >
                     {device.ip}
                     {device.is_manual && (
                       <Chip

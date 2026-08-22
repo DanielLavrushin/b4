@@ -11,7 +11,6 @@ import { B4SetConfig, RoutingMode } from "@models/config";
 import { colors } from "@design";
 import { useTranslation } from "react-i18next";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
-import { hasTargets } from "../facets";
 
 interface TrafficRoutingProps {
   config: B4SetConfig;
@@ -58,10 +57,6 @@ export const TrafficRouting = ({
   const showDomainOnlyRoutingWarning =
     routing.enabled && domainOnly && hasDomains;
 
-  const hasDestination = hasTargets(config);
-  const sourceDeviceCount = config.targets.source_devices?.length ?? 0;
-  const showNoDestinationWarning = routing.enabled && !hasDestination;
-
   const selectedIfaceAvailable = availableIfaces.includes(
     routing.egress_interface,
   );
@@ -98,14 +93,8 @@ export const TrafficRouting = ({
   } else if (isBlock) {
     flowDestination = t("sets.routing.flowBlocked");
   } else {
-    flowDestination = !routing.egress_interface
-      ? t("sets.routing.flowNoOutput")
-      : routing.egress_ip
-        ? t("sets.routing.flowIfaceWithSource", {
-            iface: routing.egress_interface,
-            ip: routing.egress_ip,
-          })
-        : routing.egress_interface;
+    flowDestination =
+      routing.egress_interface || t("sets.routing.flowNoOutput");
   }
 
   return (
@@ -124,15 +113,6 @@ export const TrafficRouting = ({
 
       {routing.enabled && (
         <>
-          {showNoDestinationWarning && (
-            <Grid size={{ xs: 12 }}>
-              <B4Alert severity="warning">
-                {sourceDeviceCount > 0
-                  ? t("sets.routing.noDestinationWithDevices")
-                  : t("sets.routing.noDestination")}
-              </B4Alert>
-            </Grid>
-          )}
           {showDomainOnlyRoutingWarning && (
             <Grid size={{ xs: 12 }}>
               <B4Alert severity="warning">
@@ -387,35 +367,6 @@ export const TrafficRouting = ({
                   </MenuItem>
                 ))}
               </B4TextField>
-            </Grid>
-          )}
-
-          {isInterface && (
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4TextField
-                label={t("sets.routing.egressIp")}
-                value={routing.egress_ip ?? ""}
-                onChange={(e) => onChange("routing.egress_ip", e.target.value)}
-                disabled={!routing.egress_interface}
-                helperText={
-                  routing.egress_interface
-                    ? t("sets.routing.egressIpHelper")
-                    : t("sets.routing.egressIpNeedsInterface")
-                }
-                placeholder="192.168.1.51"
-                selectOnFocus
-              />
-            </Grid>
-          )}
-
-          {isInterface && routing.egress_ip && (
-            <Grid size={{ xs: 12 }}>
-              <B4Alert severity="info">
-                {t("sets.routing.egressIpNote", {
-                  ip: routing.egress_ip,
-                  iface: routing.egress_interface,
-                })}
-              </B4Alert>
             </Grid>
           )}
 

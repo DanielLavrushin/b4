@@ -4,7 +4,7 @@
         "description": "B4 network packet processor REST API",
         "title": "B4 API",
         "contact": {},
-        "version": "1.79.0"
+        "version": "1.78.0"
     },
     "basePath": "/api",
     "paths": {
@@ -3240,7 +3240,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.SystemInfoResponse"
+                            "$ref": "#/definitions/handler.SystemInfo"
                         }
                     }
                 }
@@ -3826,9 +3826,6 @@
         "config.DNSSystemConfig": {
             "type": "object",
             "properties": {
-                "keep_ipv6_answers": {
-                    "type": "boolean"
-                },
                 "query_timeout_sec": {
                     "type": "integer"
                 },
@@ -4442,9 +4439,6 @@
                 "egress_interface": {
                     "type": "string"
                 },
-                "egress_ip": {
-                    "type": "string"
-                },
                 "enabled": {
                     "type": "boolean"
                 },
@@ -4540,12 +4534,6 @@
         "config.Socks5Config": {
             "type": "object",
             "properties": {
-                "allowed_sources": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
                 "bind_address": {
                     "type": "string"
                 },
@@ -6154,19 +6142,13 @@
                 }
             }
         },
-        "handler.SystemInfoResponse": {
+        "handler.SystemInfo": {
             "type": "object",
             "properties": {
                 "arch": {
                     "type": "string"
                 },
                 "can_restart": {
-                    "type": "boolean"
-                },
-                "host_has_global_ipv6": {
-                    "type": "boolean"
-                },
-                "ipv6_bypasses_sets": {
                     "type": "boolean"
                 },
                 "is_docker": {

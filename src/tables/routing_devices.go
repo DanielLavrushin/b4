@@ -4,155 +4,115 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/daniellavrushin/b4/config"
-	"github.com/daniellavrushin/b4/log"
-)
-
-const (
-	gateDegradedManualIP = "a manually added device has no usable IP address"
-	gateDegradedCombined = "no device is left after combining the set filter with the global device filter"
 )
 
 type routeDeviceGate struct {
 	enabled   bool
 	blacklist bool
-	matches   []config.DeviceMatch
-	degraded  string
+	macs      []string
 }
 
 func routeDeviceGateFor(cfg *config.Config) routeDeviceGate {
-	var matches []config.DeviceMatch
-	seen := make(map[string]struct{})
-	unresolved := 0
-	for i := range cfg.Queue.Devices.Devices {
-		d := &cfg.Queue.Devices.Devices[i]
-		if !d.Selected {
-			continue
+	var macs []string
+	for _, m := range cfg.Queue.Devices.SelectedMACs() {
+		if m = strings.ToUpper(strings.TrimSpace(m)); m != "" {
+			macs = append(macs, m)
 		}
-		m, ok := d.Match()
-		if !ok {
-			if d.IsManual {
-				unresolved++
-			}
-			continue
-		}
-		matches = config.AppendDeviceMatch(matches, seen, m)
 	}
-	if !cfg.Queue.Devices.Enabled {
-		return routeDeviceGate{}
-	}
-	if len(matches) == 0 {
-		if unresolved > 0 {
-			return routeDeviceGate{degraded: gateDegradedManualIP}
-		}
+	if !cfg.Queue.Devices.Enabled || len(macs) == 0 {
 		return routeDeviceGate{}
 	}
 	return routeDeviceGate{
 		enabled:   true,
 		blacklist: cfg.Queue.Devices.WhiteIsBlack,
-		matches:   matches,
-	}.withDegraded(unresolved)
+		macs:      macs,
+	}
 }
 
-func setSourceDeviceMatches(cfg *config.Config, set *config.SetConfig) ([]config.DeviceMatch, int) {
+func setSourceDeviceMACs(set *config.SetConfig) []string {
 	if set == nil {
-		return nil, 0
+		return nil
 	}
-	var matches []config.DeviceMatch
+	var macs []string
 	seen := make(map[string]struct{})
-	unresolved := 0
-	for _, raw := range set.Targets.SourceDevices {
-		if strings.TrimSpace(raw) == "" {
-			continue
+	for _, m := range set.Targets.SourceDevices {
+		if m = strings.ToUpper(strings.TrimSpace(m)); m != "" {
+			if _, ok := seen[m]; !ok {
+				seen[m] = struct{}{}
+				macs = append(macs, m)
+			}
 		}
-		m, ok := cfg.Queue.Devices.MatchForMAC(raw)
-		if !ok {
-			unresolved++
-			continue
-		}
-		matches = config.AppendDeviceMatch(matches, seen, m)
 	}
-	return matches, unresolved
-}
-
-func (g routeDeviceGate) withDegraded(unresolved int) routeDeviceGate {
-	switch {
-	case unresolved > 0:
-		g.degraded = gateDegradedManualIP
-	case g.isWhitelist() && len(g.matches) == 0:
-		g.degraded = gateDegradedCombined
-	}
-	return g
+	return macs
 }
 
 func routeSetDeviceGate(cfg *config.Config, set *config.SetConfig) routeDeviceGate {
 	global := routeDeviceGateFor(cfg)
-	perSet, unresolved := setSourceDeviceMatches(cfg, set)
+	perSet := setSourceDeviceMACs(set)
 	if len(perSet) == 0 {
-		if unresolved == 0 {
-			return global
-		}
-		if set.Targets.SourceDevicesExclude {
-			global.degraded = gateDegradedManualIP
-			return global
-		}
-		return routeDeviceGate{enabled: true, degraded: gateDegradedManualIP}
+		return global
 	}
 	if set.Targets.SourceDevicesExclude {
 		switch {
 		case global.isWhitelist():
-			return routeDeviceGate{enabled: true, blacklist: false, matches: subtractMatches(global.matches, perSet)}.withDegraded(unresolved)
+			return routeDeviceGate{enabled: true, blacklist: false, macs: subtractMACs(global.macs, perSet)}
 		case global.isBlacklist():
-			return routeDeviceGate{enabled: true, blacklist: true, matches: unionMatches(global.matches, perSet)}.withDegraded(unresolved)
+			return routeDeviceGate{enabled: true, blacklist: true, macs: unionMACs(global.macs, perSet)}
 		}
-		return routeDeviceGate{enabled: true, blacklist: true, matches: perSet}.withDegraded(unresolved)
+		return routeDeviceGate{enabled: true, blacklist: true, macs: perSet}
 	}
-	matches := perSet
+	macs := perSet
 	switch {
 	case global.isWhitelist():
-		matches = intersectMatches(global.matches, perSet)
+		macs = intersectMACs(global.macs, perSet)
 	case global.isBlacklist():
-		matches = subtractMatches(perSet, global.matches)
+		macs = subtractMACs(perSet, global.macs)
 	}
-	return routeDeviceGate{enabled: true, blacklist: false, matches: matches}.withDegraded(unresolved)
+	return routeDeviceGate{enabled: true, blacklist: false, macs: macs}
 }
 
-func intersectMatches(a, b []config.DeviceMatch) []config.DeviceMatch {
+func intersectMACs(a, b []string) []string {
 	in := make(map[string]struct{}, len(a))
 	for _, m := range a {
-		in[m.Key()] = struct{}{}
+		in[m] = struct{}{}
 	}
-	out := make([]config.DeviceMatch, 0, len(b))
+	out := make([]string, 0, len(b))
 	for _, m := range b {
-		if _, ok := in[m.Key()]; ok {
+		if _, ok := in[m]; ok {
 			out = append(out, m)
 		}
 	}
 	return out
 }
 
-func unionMatches(a, b []config.DeviceMatch) []config.DeviceMatch {
+func unionMACs(a, b []string) []string {
 	seen := make(map[string]struct{}, len(a)+len(b))
-	out := make([]config.DeviceMatch, 0, len(a)+len(b))
+	out := make([]string, 0, len(a)+len(b))
 	for _, m := range a {
-		out = config.AppendDeviceMatch(out, seen, m)
+		if _, ok := seen[m]; !ok {
+			seen[m] = struct{}{}
+			out = append(out, m)
+		}
 	}
 	for _, m := range b {
-		out = config.AppendDeviceMatch(out, seen, m)
+		if _, ok := seen[m]; !ok {
+			seen[m] = struct{}{}
+			out = append(out, m)
+		}
 	}
 	return out
 }
 
-func subtractMatches(a, deny []config.DeviceMatch) []config.DeviceMatch {
+func subtractMACs(a, deny []string) []string {
 	blocked := make(map[string]struct{}, len(deny))
 	for _, m := range deny {
-		blocked[m.Key()] = struct{}{}
+		blocked[m] = struct{}{}
 	}
-	out := make([]config.DeviceMatch, 0, len(a))
+	out := make([]string, 0, len(a))
 	for _, m := range a {
-		if _, ok := blocked[m.Key()]; !ok {
+		if _, ok := blocked[m]; !ok {
 			out = append(out, m)
 		}
 	}
@@ -170,43 +130,9 @@ func (g routeDeviceGate) key() string {
 	if g.blacklist {
 		mode = "b"
 	}
-	keys := make([]string, 0, len(g.matches))
-	for _, m := range g.matches {
-		keys = append(keys, m.Key())
-	}
-	sort.Strings(keys)
-	return mode + ":" + strings.Join(keys, ",")
-}
-
-func routeWarnDeviceGate(setName string, gate routeDeviceGate) {
-	if gate.degraded == "" {
-		return
-	}
-	if gate.isWhitelist() && len(gate.matches) == 0 {
-		log.Warnf("Routing: set '%s' is limited to source devices but %s, so the set matches no device and its traffic keeps using the normal route", setName, gate.degraded)
-		return
-	}
-	log.Warnf("Routing: set '%s' skips part of its source device filter because %s", setName, gate.degraded)
-}
-
-func nftMatchArgs(m config.DeviceMatch) []string {
-	if m.IsIP() {
-		if m.V6 {
-			return []string{"ip6", "saddr", m.IP}
-		}
-		return []string{"ip", "saddr", m.IP}
-	}
-	return []string{"ether", "saddr", strings.ToLower(m.MAC)}
-}
-
-func iptMatchArgs(m config.DeviceMatch, v6 bool) ([]string, bool) {
-	if m.IsIP() {
-		if m.V6 != v6 {
-			return nil, false
-		}
-		return []string{"-s", m.IP}, true
-	}
-	return []string{"-m", "mac", "--mac-source", m.MAC}, true
+	macs := append([]string{}, g.macs...)
+	sort.Strings(macs)
+	return mode + ":" + strings.Join(macs, ",")
 }
 
 func iptCmdFor(v6, legacy bool) string {
@@ -220,10 +146,6 @@ func iptCmdFor(v6, legacy bool) string {
 	default:
 		return backendIPTables
 	}
-}
-
-func iptCmdIsV6(cmd string) bool {
-	return cmd == backendIP6Tables || cmd == backendIP6TablesLegacy
 }
 
 func iptBuiltinParents(table string) []string {
@@ -277,20 +199,15 @@ func iptEmitGatedJump(cmd, table, parent, target string, insertTop bool, gate ro
 		op = "-I"
 		pos = []string{"1"}
 	}
-	emit := func(deviceMatch ...string) {
+	emit := func(macMatch ...string) {
 		args := append([]string{cmd, "-w", "-t", table, op, parent}, pos...)
-		args = append(args, deviceMatch...)
+		args = append(args, macMatch...)
 		args = append(args, "-j", target)
 		runLogged("routing: add jump "+parent+"->"+target, args...)
 	}
 	if gate.isWhitelist() {
-		v6 := iptCmdIsV6(cmd)
-		for _, m := range gate.matches {
-			args, ok := iptMatchArgs(m, v6)
-			if !ok {
-				continue
-			}
-			emit(args...)
+		for _, mac := range gate.macs {
+			emit("-m", "mac", "--mac-source", mac)
 		}
 		return
 	}
@@ -302,15 +219,15 @@ func nftEmitGatedJump(parent, target string, insertTop bool, gate routeDeviceGat
 	if insertTop {
 		op = "insert"
 	}
-	emit := func(deviceMatch ...string) {
+	emit := func(macMatch ...string) {
 		args := []string{"nft", op, "rule", "inet", routeNftTable, parent}
-		args = append(args, deviceMatch...)
+		args = append(args, macMatch...)
 		args = append(args, "jump", target)
 		runLogged("routing: add jump "+parent+"->"+target, args...)
 	}
 	if gate.isWhitelist() {
-		for _, m := range gate.matches {
-			emit(nftMatchArgs(m)...)
+		for _, mac := range gate.macs {
+			emit("ether", "saddr", strings.ToLower(mac))
 		}
 		return
 	}
@@ -322,13 +239,10 @@ func routeAddBlacklistGate(be routeBackend, table, chain string, ipv4, ipv6 bool
 		return
 	}
 	if be.name() == backendNFTables {
-		for _, m := range gate.matches {
-			if m.IsIP() && ((m.V6 && !ipv6) || (!m.V6 && !ipv4)) {
-				continue
-			}
-			args := append([]string{"nft", "add", "rule", "inet", routeNftTable, chain}, nftMatchArgs(m)...)
-			args = append(args, "return")
-			runLogged("routing: device blacklist skip "+chain, args...)
+		for _, mac := range gate.macs {
+			runLogged("routing: device blacklist skip "+chain,
+				"nft", "add", "rule", "inet", routeNftTable, chain,
+				"ether", "saddr", strings.ToLower(mac), "return")
 		}
 		return
 	}
@@ -345,14 +259,10 @@ func routeAddBlacklistGate(be routeBackend, table, chain string, ipv4, ipv6 bool
 		if !hasBinary(cmd) {
 			continue
 		}
-		for _, m := range gate.matches {
-			args, ok := iptMatchArgs(m, v6)
-			if !ok {
-				continue
-			}
-			full := append([]string{cmd, "-w", "-t", table, "-A", chain}, args...)
-			full = append(full, "-j", "RETURN")
-			runLogged("routing: device blacklist skip "+chain, full...)
+		for _, mac := range gate.macs {
+			runLogged("routing: device blacklist skip "+chain,
+				cmd, "-w", "-t", table, "-A", chain,
+				"-m", "mac", "--mac-source", mac, "-j", "RETURN")
 		}
 	}
 }
@@ -378,40 +288,4 @@ func routeEnsureGatedPreJump(be routeBackend, chain string, gate routeDeviceGate
 		return
 	}
 	be.ensureJumpRule("PREROUTING", chain, true, false)
-}
-
-func routeSetIsSourceScoped(set *config.SetConfig) bool {
-	if set == nil {
-		return false
-	}
-	if len(routeNormalizedSources(set.Routing.SourceInterfaces)) > 0 {
-		return true
-	}
-	if set.Targets.SourceDevicesExclude {
-		return false
-	}
-	for _, m := range set.Targets.SourceDevices {
-		if strings.TrimSpace(m) != "" {
-			return true
-		}
-	}
-	return false
-}
-
-var routeNoDestinationWarned sync.Map
-
-func routeWarnNoDestination(set *config.SetConfig) {
-	scope := "no domain or IP target"
-	if routeSetIsSourceScoped(set) {
-		scope = "source devices selected but no domain or IP target"
-	}
-	if prev, ok := routeNoDestinationWarned.Load(set.Id); ok && prev == scope {
-		return
-	}
-	routeNoDestinationWarned.Store(set.Id, scope)
-	log.Warnf("Routing: set '%s' has %s, so there is no destination to steer and no rule is installed; add a destination, or turn on 'Match any IP address' under Targets to send everything from those devices", set.Name, scope)
-}
-
-func routeForgetNoDestinationWarning(setID string) {
-	routeNoDestinationWarned.Delete(setID)
 }

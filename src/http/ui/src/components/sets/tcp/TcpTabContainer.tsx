@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { B4SetConfig, QueueConfig } from "@models/config";
 import { B4Tabs, B4Tab, B4TabPanel, B4Section } from "@b4.elements";
 import { TcpIcon, FragIcon, FakingIcon, CoreIcon } from "@b4.icons";
@@ -7,14 +7,7 @@ import { TcpSplitting } from "./TcpSplitting";
 import { TcpFaking } from "./TcpFaking";
 import { useTranslation } from "react-i18next";
 
-const TCP_SUB_INDEX: Record<string, number> = {
-  general: 0,
-  splitting: 1,
-  faking: 2,
-};
-
 interface TcpTabContainerProps {
-  initialSub?: string;
   config: B4SetConfig;
   queue: QueueConfig;
   onChange: (
@@ -30,20 +23,12 @@ enum TCP_TABS {
 }
 
 export const TcpTabContainer = ({
-  initialSub,
   config,
   queue,
   onChange,
 }: TcpTabContainerProps) => {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<TCP_TABS>(
-    (TCP_SUB_INDEX[initialSub ?? ""] ?? TCP_TABS.GENERAL),
-  );
-
-  useEffect(() => {
-    const index = TCP_SUB_INDEX[initialSub ?? ""];
-    if (index !== undefined) setActiveTab(index);
-  }, [initialSub]);
+  const [activeTab, setActiveTab] = useState<TCP_TABS>(TCP_TABS.GENERAL);
 
   return (
     <B4Section

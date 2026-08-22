@@ -68,8 +68,6 @@ export const changelogNotesForTag = (
   sections: Record<string, string>,
   tag: string,
 ): string | null => {
-  const version = tag
-    .replace(/^v/, "")
-    .replace(/-?(alpha|beta|rc|dev).*$/i, "");
+  const version = tag.replace(/^v/, "");
   return sections[version] ?? null;
 };

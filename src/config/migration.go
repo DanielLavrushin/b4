@@ -15,7 +15,7 @@ import (
 type MigrationFunc func(*Config, map[string]interface{}) error
 
 const (
-	CurrentConfigVersion = 52
+	CurrentConfigVersion = 51
 	MinSupportedVersion  = 0
 )
 
@@ -27,21 +27,6 @@ var migrationRegistry = map[int]MigrationFunc{
 	46: migrateV46to47,
 	48: migrateV48to49,
 	49: migrateV49to50,
-	51: migrateV51to52,
-}
-
-func migrateV51to52(c *Config, _ map[string]interface{}) error {
-	log.Tracef("Migration v51->v52: Renaming udp.filter_quic values 'disabled' and 'parse' to 'sni'")
-	for _, set := range c.Sets {
-		if set == nil {
-			continue
-		}
-		switch set.UDP.FilterQUIC {
-		case "disabled", "parse":
-			set.UDP.FilterQUIC = QUICFilterSNI
-		}
-	}
-	return nil
 }
 
 func migrateV49to50(c *Config, raw map[string]interface{}) error {

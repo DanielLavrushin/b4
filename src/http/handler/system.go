@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -75,15 +74,6 @@ func isDockerEnvironment() bool {
 	return false
 }
 
-func stoppedWithService(err error) bool {
-	var ee *exec.ExitError
-	if !errors.As(err, &ee) {
-		return false
-	}
-	ws, ok := ee.Sys().(syscall.WaitStatus)
-	return ok && ws.Signaled() && ws.Signal() == syscall.SIGTERM
-}
-
 func (api *API) updateLogPath() string {
 	if cfg := api.getCfg(); cfg != nil {
 		return cfg.System.Logging.UpdateLogPath()
@@ -116,16 +106,10 @@ func writeUpdateLog(path, format string, args ...interface{}) {
 	fmt.Fprintf(f, "%s [HANDLER] %s\n", ts, fmt.Sprintf(format, args...))
 }
 
-type SystemInfoResponse struct {
-	SystemInfo
-	HostHasGlobalIPv6 bool `json:"host_has_global_ipv6"`
-	IPv6BypassesSets  bool `json:"ipv6_bypasses_sets"`
-}
-
 // @Summary Get system information
 // @Tags System
 // @Produce json
-// @Success 200 {object} SystemInfoResponse
+// @Success 200 {object} SystemInfo
 // @Security BearerAuth
 // @Router /system/info [get]
 func (api *API) handleSystemInfo(w http.ResponseWriter, r *http.Request) {
@@ -138,19 +122,12 @@ func (api *API) handleSystemInfo(w http.ResponseWriter, r *http.Request) {
 	isDocker := serviceManager == "docker"
 	canRestart := serviceManager != "standalone" && !isDocker
 
-	cfg := api.getCfg()
-	hostIPv6 := config.HostHasGlobalIPv6()
-
-	info := SystemInfoResponse{
-		SystemInfo: SystemInfo{
-			ServiceManager: serviceManager,
-			OS:             runtime.GOOS,
-			Arch:           runtime.GOARCH,
-			CanRestart:     canRestart,
-			IsDocker:       isDocker,
-		},
-		HostHasGlobalIPv6: hostIPv6,
-		IPv6BypassesSets:  hostIPv6 && cfg != nil && !cfg.Queue.IPv6Enabled,
+	info := SystemInfo{
+		ServiceManager: serviceManager,
+		OS:             runtime.GOOS,
+		Arch:           runtime.GOARCH,
+		CanRestart:     canRestart,
+		IsDocker:       isDocker,
 	}
 
 	setJsonHeader(w)
@@ -223,7 +200,7 @@ func (api *API) handleRestart(w http.ResponseWriter, r *http.Request) {
 		var cmd *exec.Cmd
 		switch serviceManager {
 		case "systemd":
-			cmd = exec.Command("systemctl", "restart", "--no-block", "b4")
+			cmd = exec.Command("systemctl", "restart", "b4")
 		case "entware", "init":
 			cmd = exec.Command("sh", "-c", response.RestartCommand+" > /dev/null 2>&1 &")
 			cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -234,13 +211,10 @@ func (api *API) handleRestart(w http.ResponseWriter, r *http.Request) {
 		if cmd != nil {
 			if serviceManager == "systemd" {
 				output, err := cmd.CombinedOutput()
-				switch {
-				case err == nil:
-					log.Infof("Restart job queued with systemd")
-				case stoppedWithService(err):
-					log.Infof("Restart job queued with systemd, which stopped systemctl along with the service")
-				default:
+				if err != nil {
 					log.Errorf("Restart command failed: %v\nOutput: %s", err, string(output))
+				} else {
+					log.Infof("Restart command executed successfully")
 				}
 			} else {
 				if err := cmd.Start(); err != nil {
