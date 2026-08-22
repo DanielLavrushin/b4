@@ -1148,9 +1148,22 @@ func routeEnsureEgressAddress(iface, egressIP string) bool {
 	return true
 }
 
+func egressAddrShareCount(iface, egressIP string) int {
+	n := 0
+	for _, st := range routeRuleCache {
+		if st.iface == iface && st.egressIP == egressIP {
+			n++
+		}
+	}
+	return n
+}
+
 func routeReleaseEgressAddress(iface, egressIP string) {
 	key := routeEgressAddrKey(iface, egressIP)
 	if !routeOwnedAddrs[key] {
+		return
+	}
+	if egressAddrShareCount(iface, egressIP) > 1 {
 		return
 	}
 	delete(routeOwnedAddrs, key)

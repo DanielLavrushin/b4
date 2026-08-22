@@ -308,7 +308,7 @@
       "dcRelayHelpFamilyV4": "IPv4",
       "dcRelayHelpFamilyV6": "IPv6",
       "dcRelayHelpV6Note": "The IPv6 data-center addresses are built into B4 and are not affected by Refresh, because Telegram's proxy config lists IPv4 only. Media DC 203 has no IPv6 address and shares the DC 2 relay port, so media is carried by the DC 2 command; if media stops loading, switch that one command back to IPv4.",
-      "relaySetup": "DC Relay requires a VPS setup. <a href=\"https://daniellavrushin.github.io/b4/docs/mtproto\" target=\"_blank\">Read the setup guide</a>",
+      "relaySetup": "DC Relay requires a VPS setup. <a href=\"https://docs.b4core.app/docs/mtproto\" target=\"_blank\">Read the setup guide</a>",
       "secret": "Secret",
       "secretHelp": "Paste this into Telegram MTProto proxy settings",
       "secretsTitle": "Secrets",
