@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -258,4 +259,84 @@ func TestDisablingProxyClosesLiveSessions(t *testing.T) {
 	if _, err := c.Read(buf); err == nil {
 		t.Fatal("disabling the proxy must close its live sessions")
 	}
+}
+
+func TestTrackConnRefusedAfterDrain(t *testing.T) {
+	s := NewServer(&config.Config{})
+	s.openLive()
+
+	a, b := connPair(t)
+	defer a.Close()
+	defer b.Close()
+
+	if !s.trackConn(a) {
+		t.Fatal("an open registry must accept a connection")
+	}
+	s.untrackConn(a)
+
+	s.closeLiveLocked()
+
+	if s.trackConn(a) {
+		t.Fatal("a drained registry must refuse to adopt a connection, otherwise a connection accepted during shutdown outlives it")
+	}
+}
+
+func TestStopLeavesNoSessionBehindUnderLoad(t *testing.T) {
+	s, addr := startTestServer(t, config.Socks5Config{})
+
+	var mu sync.Mutex
+	var dialed []net.Conn
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				c, err := net.DialTimeout("tcp", addr, time.Second)
+				if err != nil {
+					return
+				}
+				_, _ = c.Write([]byte{socks5Version, 1, authNone})
+				mu.Lock()
+				dialed = append(dialed, c)
+				mu.Unlock()
+			}
+		}()
+	}
+
+	time.Sleep(150 * time.Millisecond)
+	if err := s.Stop(); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	close(stop)
+	wg.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(dialed) == 0 {
+		t.Fatal("the load generator opened no connections, the test proves nothing")
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for _, c := range dialed {
+		defer c.Close()
+		_ = c.SetReadDeadline(deadline)
+		buf := make([]byte, 8)
+		for {
+			_, err := c.Read(buf)
+			if err != nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("a session accepted while the proxy was stopping survived it (%s)", c.RemoteAddr())
+			}
+		}
+	}
+	t.Logf("%d connections opened during shutdown, all closed", len(dialed))
 }

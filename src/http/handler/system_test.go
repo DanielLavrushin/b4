@@ -317,20 +317,28 @@ func TestFormatBytes(t *testing.T) {
 	}
 }
 
-func TestKilledBySignal(t *testing.T) {
+func TestStoppedWithService(t *testing.T) {
 	err := exec.Command("sh", "-c", "kill -TERM $$").Run()
 	if err == nil {
 		t.Fatal("expected the shell to be killed by SIGTERM")
 	}
-	if !killedBySignal(err) {
-		t.Errorf("signal death not recognised: %v", err)
+	if !stoppedWithService(err) {
+		t.Errorf("SIGTERM death not recognised: %v", err)
+	}
+
+	err = exec.Command("sh", "-c", "kill -KILL $$").Run()
+	if err == nil {
+		t.Fatal("expected the shell to be killed by SIGKILL")
+	}
+	if stoppedWithService(err) {
+		t.Errorf("SIGKILL death read as a stop alongside the service: %v", err)
 	}
 
 	err = exec.Command("sh", "-c", "exit 3").Run()
 	if err == nil {
 		t.Fatal("expected exit status 3")
 	}
-	if killedBySignal(err) {
-		t.Errorf("plain exit status read as a signal death: %v", err)
+	if stoppedWithService(err) {
+		t.Errorf("plain exit status read as a stop alongside the service: %v", err)
 	}
 }

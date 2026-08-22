@@ -75,8 +75,9 @@ type Server struct {
 	acl          atomic.Pointer[sourceACL]
 	ipBlockCache IPBlockCache
 
-	liveMu sync.Mutex
-	live   map[net.Conn]struct{}
+	liveMu     sync.Mutex
+	live       map[net.Conn]struct{}
+	liveClosed bool
 }
 
 func (s *Server) SetIPBlockCache(cache IPBlockCache) {
@@ -121,6 +122,7 @@ func (s *Server) startLocked() error {
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 
 	s.refreshACL(cfg)
+	s.openLive()
 	warnIncompleteCredentials(cfg)
 
 	// Build initial matcher from current config
@@ -157,15 +159,16 @@ func (s *Server) stopLocked() error {
 		s.cancel()
 	}
 
-	s.closeLiveLocked()
-
+	var err error
 	if s.listener != nil {
 		ln := s.listener
 		s.listener = nil
-		return ln.Close()
+		err = ln.Close()
 	}
 
-	return nil
+	s.closeLiveLocked()
+
+	return err
 }
 
 // --- TCP accept loop ---
@@ -196,7 +199,20 @@ func (s *Server) acceptLoop(ln net.Listener) {
 			continue
 		}
 
-		s.trackConn(conn)
+		if !s.trackConn(conn) {
+			conn.Close()
+			<-s.connSem
+			continue
+		}
+
+		if acl := s.acl.Load(); !acl.allows(conn.RemoteAddr()) {
+			log.Debugf("SOCKS5 refusing %s, source is not in system.socks5.allowed_sources", conn.RemoteAddr())
+			s.untrackConn(conn)
+			conn.Close()
+			<-s.connSem
+			continue
+		}
+
 		s.activeConns.Add(1)
 		go func() {
 			defer func() {

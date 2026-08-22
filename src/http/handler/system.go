@@ -75,13 +75,13 @@ func isDockerEnvironment() bool {
 	return false
 }
 
-func killedBySignal(err error) bool {
+func stoppedWithService(err error) bool {
 	var ee *exec.ExitError
 	if !errors.As(err, &ee) {
 		return false
 	}
 	ws, ok := ee.Sys().(syscall.WaitStatus)
-	return ok && ws.Signaled()
+	return ok && ws.Signaled() && ws.Signal() == syscall.SIGTERM
 }
 
 func (api *API) updateLogPath() string {
@@ -237,7 +237,7 @@ func (api *API) handleRestart(w http.ResponseWriter, r *http.Request) {
 				switch {
 				case err == nil:
 					log.Infof("Restart job queued with systemd")
-				case killedBySignal(err):
+				case stoppedWithService(err):
 					log.Infof("Restart job queued with systemd, which stopped systemctl along with the service")
 				default:
 					log.Errorf("Restart command failed: %v\nOutput: %s", err, string(output))

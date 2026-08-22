@@ -137,13 +137,26 @@ func (s *Server) refreshACL(cfg *config.Config) bool {
 	return true
 }
 
-func (s *Server) trackConn(conn net.Conn) {
+func (s *Server) openLive() {
 	s.liveMu.Lock()
 	if s.live == nil {
 		s.live = make(map[net.Conn]struct{})
 	}
-	s.live[conn] = struct{}{}
+	s.liveClosed = false
 	s.liveMu.Unlock()
+}
+
+func (s *Server) trackConn(conn net.Conn) bool {
+	s.liveMu.Lock()
+	defer s.liveMu.Unlock()
+	if s.liveClosed {
+		return false
+	}
+	if s.live == nil {
+		s.live = make(map[net.Conn]struct{})
+	}
+	s.live[conn] = struct{}{}
+	return true
 }
 
 func (s *Server) untrackConn(conn net.Conn) {
@@ -173,6 +186,7 @@ func (s *Server) evictDeniedLocked() {
 
 func (s *Server) closeLiveLocked() {
 	s.liveMu.Lock()
+	s.liveClosed = true
 	doomed := make([]net.Conn, 0, len(s.live))
 	for conn := range s.live {
 		doomed = append(doomed, conn)
