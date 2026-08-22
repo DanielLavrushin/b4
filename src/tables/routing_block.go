@@ -26,6 +26,8 @@ func routeEnsureBlockRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	}
 
 	gate := routeSetDeviceGate(cfg, set)
+	routeWarnDeviceGate(set.Name, gate)
+	sourceScoped := routeSetIsSourceScoped(set)
 	switch be.name() {
 	case backendNFTables:
 		if err := ensureBlockBaseNft(); err != nil {
@@ -43,7 +45,11 @@ func routeEnsureBlockRule(be routeBackend, cfg *config.Config, set *config.SetCo
 			addBlockRuleNft(st.chainPre, true, st.setV6, st.blockAction, sources)
 		}
 		ensureBlockJumpNft(routeNftBlockFwd, st.chainPre, gate)
-		ensureBlockJumpNft(routeNftBlockOut, st.chainPre, routeDeviceGate{})
+		if sourceScoped {
+			deleteNftJumpRules(routeNftTable, routeNftBlockOut, st.chainPre)
+		} else {
+			ensureBlockJumpNft(routeNftBlockOut, st.chainPre, routeDeviceGate{})
+		}
 	default:
 		legacy := isLegacyIptBackend(be)
 		if err := ensureBlockChainIpt(st.chainPre, legacy); err != nil {
@@ -57,7 +63,11 @@ func routeEnsureBlockRule(be routeBackend, cfg *config.Config, set *config.SetCo
 			addBlockRuleIpt(true, st.chainPre, st.setV6, st.blockAction, sources, legacy)
 		}
 		ensureBlockJumpIpt("FORWARD", st.chainPre, legacy, gate)
-		ensureBlockJumpIpt("OUTPUT", st.chainPre, legacy, routeDeviceGate{})
+		if sourceScoped {
+			deleteBlockJumpIpt("OUTPUT", st.chainPre, legacy)
+		} else {
+			ensureBlockJumpIpt("OUTPUT", st.chainPre, legacy, routeDeviceGate{})
+		}
 	}
 	return nil
 }

@@ -17,7 +17,7 @@ Environment=PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/us
 ExecStart=${B4_BIN_DIR}/${BINARY_NAME} --config ${B4_CONFIG_FILE}
 Restart=on-failure
 RestartSec=5
-TimeoutStopSec=10
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target
@@ -37,6 +37,7 @@ service_systemd_remove() {
 }
 
 service_systemd_start() {
+    systemctl reset-failed "${B4_SERVICE_NAME}" 2>/dev/null || true
     if systemctl restart "${B4_SERVICE_NAME}" 2>/dev/null; then
         # Poll for up to 10s — RestartSec=5 means a single check after 2s can false-negative
         _elapsed=0

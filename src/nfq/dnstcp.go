@@ -326,9 +326,9 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			}
 		}
 
-		if healed := s.worker.healDNSResponse(cfg, set, domain, resp, true); healed != nil {
-			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionHeal)
-			resp = healed
+		if filtered, action := s.worker.filterDNSAnswer(cfg, set, domain, resp, true); filtered != nil {
+			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, action)
+			resp = filtered
 		}
 
 		if writeDNSTCPMessage(client, resp, ioTimeout) != nil {

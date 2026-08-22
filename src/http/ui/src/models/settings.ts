@@ -49,6 +49,8 @@ export interface SystemInfo {
   arch: string;
   can_restart: boolean;
   is_docker: boolean;
+  host_has_global_ipv6?: boolean;
+  ipv6_bypasses_sets?: boolean;
 }
 
 export interface RestartResponse {

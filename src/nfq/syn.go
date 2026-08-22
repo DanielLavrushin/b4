@@ -5,6 +5,7 @@ import (
 	"net"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sock"
 )
 
@@ -70,6 +71,11 @@ func (w *Worker) sendFakeSyn(set *config.SetConfig, raw []byte, ipHdrLen, tcpHdr
 }
 
 func (w *Worker) sendFakeSynV6(set *config.SetConfig, raw []byte, ipHdrLen, tcpHdrLen int) {
+	if !hasPlainIPv6Header(raw, ipProtoTCP) {
+		log.Tracef("Fake SYN v6: skipping set %s, the TCP header is not at the fixed IPv6 offset", set.Name)
+		return
+	}
+
 	fakePayload := sock.GetPayload(&set.Faking)
 
 	fakePayloadLen := 0
@@ -151,6 +157,11 @@ func (w *Worker) sendFakeSynWithMD5(set *config.SetConfig, raw []byte, ihl int, 
 
 func (w *Worker) sendFakeSynWithMD5V6(set *config.SetConfig, raw []byte, dst net.IP) {
 	const ipv6HdrLen = 40
+
+	if !hasPlainIPv6Header(raw, ipProtoTCP) {
+		log.Tracef("Fake MD5 SYN v6: skipping %s, the TCP header is not at the fixed IPv6 offset", dst.String())
+		return
+	}
 
 	fakeSyn := make([]byte, len(raw))
 	copy(fakeSyn, raw)

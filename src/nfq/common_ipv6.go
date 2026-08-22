@@ -9,36 +9,53 @@ import (
 	"github.com/daniellavrushin/b4/sock"
 )
 
-func ExtractPacketInfoV6(packet []byte) (PacketInfo, bool) {
-	if len(packet) < 60 {
-		return PacketInfo{}, false
+const (
+	ipProtoTCP = 6
+	ipProtoUDP = 17
+)
+
+func upperLayerOffsetV6(packet []byte) (int, byte, bool) {
+	if len(packet) < IPv6HeaderLen || packet[0]>>4 != IPv6 {
+		return 0, 0, false
 	}
 
 	nextHeader := packet[6]
-	offset := 40
+	offset := IPv6HeaderLen
 
 	for {
 		switch nextHeader {
 		case 0, 43, 60:
 			if len(packet) < offset+2 {
-				return PacketInfo{}, false
+				return 0, 0, false
 			}
 			nextHeader = packet[offset]
-			hdrLen := int(packet[offset+1])*8 + 8
-			offset += hdrLen
+			offset += int(packet[offset+1])*8 + 8
 		case 44:
-			if len(packet) < offset+8 {
-				return PacketInfo{}, false
-			}
-			nextHeader = packet[offset]
-			offset += 8
-		case 6:
-			goto done
+			return 0, 0, false
 		default:
-			return PacketInfo{}, false // Not TCP
+			if offset > len(packet) {
+				return 0, 0, false
+			}
+			return offset, nextHeader, true
 		}
 	}
-done:
+}
+
+func hasPlainIPv6Header(packet []byte, proto byte) bool {
+	offset, upper, ok := upperLayerOffsetV6(packet)
+	return ok && offset == IPv6HeaderLen && upper == proto
+}
+
+func ExtractPacketInfoV6(packet []byte) (PacketInfo, bool) {
+	if len(packet) < 60 {
+		return PacketInfo{}, false
+	}
+
+	offset, proto, ok := upperLayerOffsetV6(packet)
+	if !ok || proto != ipProtoTCP {
+		return PacketInfo{}, false
+	}
+
 	if len(packet) < offset+20 {
 		return PacketInfo{}, false
 	}

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "b4": {
+      "type": "http",
+      "url": "https://<host>:<port>/api/mcp",
+      "headers": {
+        "Authorization": "Bearer ${B4_MCP_TOKEN}"
+      }
+    }
+  }
+}

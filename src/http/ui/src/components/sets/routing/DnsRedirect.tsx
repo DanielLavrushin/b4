@@ -280,8 +280,8 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
                   }}
                 >
                   <List dense disablePadding>
-                    {POPULAR_DNS.filter((server) =>
-                      ipv6 ? server.ipv6 : !server.ipv6,
+                    {POPULAR_DNS.filter(
+                      (server) => ipv6 || !server.ipv6,
                     ).map((server) => (
                       <ListItemButton
                         key={server.ip}

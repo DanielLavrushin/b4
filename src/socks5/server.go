@@ -72,7 +72,12 @@ type Server struct {
 
 	bufferPool   sync.Pool
 	matcher      atomic.Value // stores *sni.SuffixSet
+	acl          atomic.Pointer[sourceACL]
 	ipBlockCache IPBlockCache
+
+	liveMu     sync.Mutex
+	live       map[net.Conn]struct{}
+	liveClosed bool
 }
 
 func (s *Server) SetIPBlockCache(cache IPBlockCache) {
@@ -87,6 +92,7 @@ func (s *Server) getCfg() *config.Config {
 func NewServer(cfg *config.Config) *Server {
 	s := &Server{
 		connSem: make(chan struct{}, maxConnections),
+		live:    make(map[net.Conn]struct{}),
 		bufferPool: sync.Pool{
 			New: func() interface{} {
 				buf := make([]byte, bufferSize)
@@ -114,6 +120,10 @@ func (s *Server) startLocked() error {
 
 	addr := net.JoinHostPort(cfg.System.Socks5.BindAddress, strconv.Itoa(cfg.System.Socks5.Port))
 	s.ctx, s.cancel = context.WithCancel(context.Background())
+
+	s.refreshACL(cfg)
+	s.openLive()
+	warnIncompleteCredentials(cfg)
 
 	// Build initial matcher from current config
 	if m := buildMatcher(cfg); m != nil {
@@ -149,13 +159,16 @@ func (s *Server) stopLocked() error {
 		s.cancel()
 	}
 
+	var err error
 	if s.listener != nil {
 		ln := s.listener
 		s.listener = nil
-		return ln.Close()
+		err = ln.Close()
 	}
 
-	return nil
+	s.closeLiveLocked()
+
+	return err
 }
 
 // --- TCP accept loop ---
@@ -171,18 +184,39 @@ func (s *Server) acceptLoop(ln net.Listener) {
 			continue
 		}
 
+		if acl := s.acl.Load(); !acl.allows(conn.RemoteAddr()) {
+			log.Debugf("SOCKS5 refusing %s, source is not in system.socks5.allowed_sources", conn.RemoteAddr())
+			conn.Close()
+			continue
+		}
+
 		// Enforce connection limit via semaphore
 		select {
 		case s.connSem <- struct{}{}:
 		default:
-			log.Tracef("SOCKS5 connection limit reached, rejecting %s", conn.RemoteAddr())
+			log.Warnf("SOCKS5 connection limit of %d reached, rejecting %s", maxConnections, conn.RemoteAddr())
 			conn.Close()
+			continue
+		}
+
+		if !s.trackConn(conn) {
+			conn.Close()
+			<-s.connSem
+			continue
+		}
+
+		if acl := s.acl.Load(); !acl.allows(conn.RemoteAddr()) {
+			log.Debugf("SOCKS5 refusing %s, source is not in system.socks5.allowed_sources", conn.RemoteAddr())
+			s.untrackConn(conn)
+			conn.Close()
+			<-s.connSem
 			continue
 		}
 
 		s.activeConns.Add(1)
 		go func() {
 			defer func() {
+				s.untrackConn(conn)
 				conn.Close()
 				<-s.connSem
 				s.activeConns.Add(-1)
@@ -232,7 +266,11 @@ func (s *Server) authenticate(conn net.Conn) error {
 	log.Debugf("SOCKS5 auth from %s: methods=%v", conn.RemoteAddr(), methods)
 
 	socksCfg := &s.getCfg().System.Socks5
-	needAuth := socksCfg.Username != "" && socksCfg.Password != ""
+	if credentialsIncomplete(socksCfg) {
+		_, _ = conn.Write([]byte{socks5Version, authNoAccept})
+		return fmt.Errorf("incomplete credentials, username and password must both be set or both be empty")
+	}
+	needAuth := socksCfg.Username != ""
 	var chosen byte = authNoAccept
 
 	if needAuth {
@@ -425,6 +463,14 @@ func (s *Server) UpdateConfig(newCfg *config.Config) {
 
 	if !s.running.Load() {
 		return
+	}
+
+	if s.refreshACL(newCfg) {
+		s.evictDeniedLocked()
+	}
+	if old == nil || old.System.Socks5.Username != newCfg.System.Socks5.Username ||
+		old.System.Socks5.Password != newCfg.System.Socks5.Password {
+		warnIncompleteCredentials(newCfg)
 	}
 
 	newMatcher := buildMatcher(newCfg)

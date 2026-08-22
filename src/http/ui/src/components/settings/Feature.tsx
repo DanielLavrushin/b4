@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ToggleOnIcon } from "@b4.icons";
 import { B4Config } from "@models/config";
+import { systemApi } from "@api/settings";
 import {
   B4Slider,
   B4FormGroup,
@@ -19,8 +21,37 @@ interface FeatureSettingsProps {
   onChange: (field: string, value: SettingsPropHandlerType) => void;
 }
 
+const IPV6_BYPASS_DISMISS_KEY = "b4_ipv6_bypass_dismissed";
+
 export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
   const { t } = useTranslation();
+  const [ipv6BypassesSets, setIpv6BypassesSets] = useState(false);
+  const [ipv6BypassDismissed, setIpv6BypassDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(IPV6_BYPASS_DISMISS_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    systemApi
+      .info()
+      .then((info) => setIpv6BypassesSets(!!info?.ipv6_bypasses_sets))
+      .catch(() => setIpv6BypassesSets(false));
+  }, []);
+
+  const dismissIpv6Bypass = () => {
+    try {
+      localStorage.setItem(IPV6_BYPASS_DISMISS_KEY, "true");
+    } catch (e) {
+      console.error("Failed to save the IPv6 bypass notice dismissal:", e);
+    }
+    setIpv6BypassDismissed(true);
+  };
+
+  const showIpv6Bypass =
+    ipv6BypassesSets && !config.queue.ipv6 && !ipv6BypassDismissed;
 
   const handleInterfaceToggle = (iface: string) => {
     const current = config.queue.interfaces || [];
@@ -41,6 +72,8 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
   const tunOutInterface = config.queue.tun?.out_interface;
   const tunFollowsDefault = !tunOutInterface || tunOutInterface === "auto";
 
+  const skipTables = config.system.tables.skip_setup;
+
   const masqueradeSwitch = (
     <B4Switch
       label={t("settings.Feature.natMasquerade")}
@@ -48,7 +81,12 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
       onChange={(checked: boolean) =>
         onChange("system.tables.masquerade.enabled", checked)
       }
-      description={t("settings.Feature.natMasqueradeDesc")}
+      disabled={skipTables}
+      description={t(
+        skipTables
+          ? "settings.Feature.natMasqueradeSkipped"
+          : "settings.Feature.natMasqueradeDesc",
+      )}
     />
   );
 
@@ -72,6 +110,16 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
           description={t("settings.Feature.enableIPv6Desc")}
         />
       </B4FormGroup>
+      {showIpv6Bypass && (
+        <B4Alert
+          severity="warning"
+          noWrapper
+          onClose={dismissIpv6Bypass}
+          sx={{ mt: 1 }}
+        >
+          {t("settings.Feature.ipv6BypassWarning")}
+        </B4Alert>
+      )}
       <B4FormGroup label={t("settings.Feature.engineMode")} columns={1}>
         <B4Select
           label={t("settings.Feature.engineModeLabel")}
@@ -149,7 +197,7 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
         <B4FormGroup label={t("settings.Feature.firewallFeatures")} columns={2}>
           <B4Switch
             label={t("settings.Feature.skipIptables")}
-            checked={config.system.tables.skip_setup}
+            checked={skipTables}
             onChange={(checked: boolean) =>
               onChange("system.tables.skip_setup", checked)
             }
@@ -164,8 +212,14 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
             min={0}
             max={120}
             step={5}
-            helperText={t("settings.Feature.firewallMonitorHelp")}
+            disabled={skipTables}
+            helperText={t(
+              skipTables
+                ? "settings.Feature.firewallMonitorSkipped"
+                : "settings.Feature.firewallMonitorHelp",
+            )}
             alert={
+              !skipTables &&
               config.system.tables.monitor_interval <= 0 && (
                 <B4Alert severity="warning">
                   {t("settings.Feature.firewallMonitorWarning")}

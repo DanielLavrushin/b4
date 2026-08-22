@@ -79,3 +79,26 @@ func TestNftTableIsEmpty(t *testing.T) {
 		}
 	})
 }
+
+func TestNftLineHasMark(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+		mark uint
+		want bool
+	}{
+		{"padded accept matches", "meta mark 0x00008001 accept # handle 12", 0x8001, true},
+		{"padded injected matches", "meta mark 0x00008002 accept # handle 13", 0x8002, true},
+		{"unpadded accept matches", "meta mark 0x8001 accept # handle 12", 0x8001, true},
+		{"different mark ignored", "meta mark 0x00008000 accept # handle 9", 0x8001, false},
+		{"masked main engine rule ignored", "meta mark & 0x00008000 == 0x00008000 return # handle 4", 0x8001, false},
+		{"no mark at all", "jump b4_chain # handle 7", 0x8001, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := nftLineHasMark(tc.line, tc.mark); got != tc.want {
+				t.Errorf("nftLineHasMark(%q, 0x%x) = %v, want %v", tc.line, tc.mark, got, tc.want)
+			}
+		})
+	}
+}

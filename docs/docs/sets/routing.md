@@ -64,6 +64,14 @@ Fragmentation only affects DNS queries for domains in the current set. Other DNS
 
 Routes traffic matched by the set through a specific network interface - for example, a VPN, WireGuard, or another tunnel.
 
+Routing always steers by **destination**: every rule b4 installs matches the addresses the set has collected, from its
+IP targets and from the addresses its domains resolve to. Source devices and source interfaces narrow *whose* traffic is
+offered to that rule; they do not select traffic on their own. A set with routing enabled and no domain or IP target
+therefore steers nothing, and b4 installs no rule for it and says so in the log.
+
+To route everything from a device, keep the device selected under [Source devices](./targets.md#source-devices) and turn
+on **Match any IP address** on the Targets, IP addresses tab.
+
 **Routing mode** selects what happens to matched traffic:
 
 | Mode | Description |
@@ -135,6 +143,8 @@ Define which network interfaces traffic is intercepted from for routing. Shown a
 
 :::info
 If no source interface is selected, routing applies to all traffic, including traffic originated by the router itself.
+Selecting a source interface, or a source device, restricts the set to traffic arriving from it and leaves the router's
+own traffic on the normal route, since that traffic arrives from no interface and from no device.
 :::
 
 If a previously chosen interface has disappeared from the system (for example, the VPN connection dropped), it is shown in red with a "stale" marker.
@@ -151,6 +161,33 @@ The network interface that marked traffic is sent through:
 
 :::warning
 If the chosen output interface becomes unavailable, a warning appears. Routing will not work until the interface is back.
+:::
+
+### Egress IP
+
+Optional. Rewrites the source address of this set's traffic on the way out, instead of leaving the output interface's own address in place. In firewall terms it swaps the set's `MASQUERADE` rule for `SNAT --to-source`.
+
+The point of this is to delegate the routing decision to a device b4 does not control. If the tunnels live on an upstream router, that router can already pick a path by source address; b4 only has to stamp the right source. No tunnel interface and no extra routing table are needed on b4's own host, and unlike an upstream SOCKS5 proxy the rewrite happens in the kernel, so it costs no per-packet CPU.
+
+An egress IP requires an output interface: the rule is pinned to that interface so a multi-WAN failover cannot send packets out a second uplink still carrying the first one's source address.
+
+For this to work end to end:
+
+- b4 puts the address on the output interface itself and takes it back when the set stops using it, so there is nothing to add by hand and nothing to persist across reboots. If the interface loses the address, for example on a DHCP renewal or a link flap, b4 notices and puts it back. Before claiming an address b4 sends an ARP probe; if another host on the segment answers for it, or the address cannot be added, b4 logs a warning and falls back to masquerading rather than breaking that host or sending traffic that can never be answered. An address you configured yourself is used as it stands, and b4 removes only addresses it added.
+- The upstream device must route that source into the path you want, for example `ip rule add from 192.168.1.51 lookup 100` on Linux, or a `mangle` rule with `src-address` plus `action=mark-routing` on RouterOS.
+- The upstream must not drop the packets on reverse-path checks. A router with strict `rp_filter` and no route back to b4's box for that address discards them before any policy rule is consulted. This is the most common reason a correct-looking setup moves no traffic.
+
+The address family has to match. An IPv4 egress IP rewrites IPv4 only. What happens to the set's IPv6 traffic then depends on **IPv6 support** in [Settings -> Core](../settings/core#protocols):
+
+- **IPv6 support on.** The set's IPv6 traffic is still diverted to the output interface, keeps masquerading, and leaves with the interface's own IPv6 address. A set carries one egress IP, so an IPv6 address entered in its place moves the rewrite to IPv6 and returns IPv4 to masquerading.
+- **IPv6 support off.** The set has no IPv6 rules at all. Its IPv6 traffic is not marked, not diverted and not masqueraded: it follows the router's normal route, which for a dual-stack destination means the set is bypassed rather than routed with the wrong source address.
+
+:::warning
+An egress IP that nothing answers for is a silent failure: packets leave, replies never come back, and the set's rules still look correct. Check the address exists on the interface before blaming the set.
+:::
+
+:::note
+Not available in TUN engine mode with whole-default capture. There b4 reinjects packets on a path that bypasses this rule, so the setting has no effect.
 :::
 
 ### IP TTL (entry lifetime)
@@ -271,6 +308,8 @@ On an iptables system the equivalents are `kmod-ipt-tproxy` and `kmod-ipt-socket
 Most SOCKS5 proxies carry TCP only. Xray and sing-box need UDP enabled explicitly on the inbound.
 
 With **Route UDP through upstream** off, b4 refuses matched UDP on port 443 with an ICMP port-unreachable. Browsers read that as a signal to fall back to TCP, which the proxy carries. Without it, any site advertising HTTP/3 through the `alt-svc` header would be reached over QUIC directly, bypassing the proxy entirely, and a browser remembers that preference for as long as the header's lifetime says.
+
+That refusal is written per address family. The IPv6 half of it exists only while **IPv6 support** is on in [Settings -> Core](../settings/core#protocols). With IPv6 support off, only the IPv4 rule is created, so a destination the set matches that also answers over IPv6 is still reachable over QUIC there, and the connection does not go through the proxy.
 
 With the option on, matched UDP goes to the proxy through UDP ASSOCIATE. Turn it on only if the upstream implements it. If it does not, matched UDP is dropped and b4 logs a warning naming the set and the upstream.
 

@@ -5,7 +5,6 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -42,7 +41,7 @@ func (api *API) handleSocks5Config(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Router /socks5/config [post]
 func (api *API) updateSocks5Config(w http.ResponseWriter, r *http.Request) {
-	var req config.Socks5Config
+	req := api.getCfg().System.Socks5
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJsonError(w, http.StatusBadRequest, "Invalid request body")
 		return

@@ -96,6 +96,7 @@ type traceSetDNS struct {
 type traceSetRouting struct {
 	Mode              string   `json:"mode"`
 	EgressInterface   string   `json:"egress_interface,omitempty"`
+	EgressIP          string   `json:"egress_ip,omitempty"`
 	Upstream          string   `json:"upstream,omitempty"`
 	UpstreamAuth      bool     `json:"upstream_auth,omitempty"`
 	UpstreamUDP       bool     `json:"upstream_udp,omitempty"`
@@ -252,6 +253,7 @@ func traceRouting(c config.RoutingConfig) *traceSetRouting {
 	ts := &traceSetRouting{
 		Mode:             c.Mode,
 		EgressInterface:  c.EgressInterface,
+		EgressIP:         c.EgressIP,
 		SourceInterfaces: c.SourceInterfaces,
 		IPTTLSeconds:     c.IPTTLSeconds,
 		Table:            c.Table,

@@ -71,6 +71,22 @@ func GetCDNCategories(domain string) (geoip, geosite []string) {
 	return nil, nil
 }
 
+func (ds *DiscoverySuite) installedGeoCategories(geoip, geosite []string) ([]string, []string) {
+	if ds.cfg == nil || ds.cfg.System.Geo.GeoIpPath == "" {
+		if len(geoip) > 0 {
+			log.DiscoveryLogf("  Geo: dropping geoip categories %v, no geoip database is installed", geoip)
+		}
+		geoip = nil
+	}
+	if ds.cfg == nil || ds.cfg.System.Geo.GeoSitePath == "" {
+		if len(geosite) > 0 {
+			log.DiscoveryLogf("  Geo: dropping geosite categories %v, no geosite database is installed", geosite)
+		}
+		geosite = nil
+	}
+	return geoip, geosite
+}
+
 func (ds *DiscoverySuite) runDNSDiscoveryForDomain(domain string) *DNSDiscoveryResult {
 	log.DiscoveryLogf("  DNS: Checking DNS poisoning for %s", domain)
 

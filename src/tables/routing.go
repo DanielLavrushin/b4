@@ -16,6 +16,8 @@ import (
 
 const hostRouteCTMark = uint32(0x40000000)
 
+const routeSetMarkMask = uint32(0x27FFF)
+
 // SelfDialMark is carried by connections b4 opens on its own behalf - the
 // MTProto upstream, an upstream SOCKS5, a fail-open direct dial.
 const SelfDialMark = config.SelfDialMark
@@ -25,12 +27,16 @@ type routeState struct {
 	mark        uint32
 	table       int
 	iface       string
+	egressIP    string
 	tproxyPort  int
 	upstreamKey string
 	sourcesKey  string
 	deviceKey   string
 	blockAction string
 	quicReject  bool
+	srcScoped   bool
+	ipv4        bool
+	ipv6        bool
 	setV4       string
 	setV6       string
 	chainPre    string
@@ -49,11 +55,14 @@ type routeBackend interface {
 	flushChain(chain string, isMangle bool)
 	deleteChain(chain string, isMangle bool)
 	addBypassRule(chain string, mark uint32)
+	addClaimedBypassRule(chain string)
 	addMarkRule(chain string, v6 bool, setName string, mark uint32, sourceIface string, tagHostConntrack bool)
 	addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32)
 	ensureJumpRule(baseChain, targetChain string, isMangle bool, atTop bool)
+	jumpPrepends(atTop bool) bool
 	deleteJumpRules(baseChain, targetChain string, isMangle bool)
 	addMasqueradeRule(chain string, mark uint32, iface string, v6 bool)
+	addSNATRule(chain, setName, iface, srcIP string, mark uint32, v6 bool)
 	flushIPSet(name string)
 	destroyIPSet(name string)
 	clearAll()
@@ -70,6 +79,8 @@ var (
 	routeLearnLast      = make(map[string]time.Time)
 	routeLearnedHosts   = make(map[string]map[string]time.Time)
 	routeHostResolvedAt = make(map[string]time.Time)
+	routeOwnedAddrs     = make(map[string]bool)
+	routeJumpOrderKey   string
 )
 
 func getRouteBackend(cfg *config.Config) routeBackend {
@@ -171,7 +182,7 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 		ttl = 3600
 	}
 
-	routeAddIPsToSets(be, cur, ttl, ips, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	routeAddIPsToSets(be, cur, ttl, ips, cur.ipv4, cur.ipv6)
 }
 
 func RoutingLearnIP(cfg *config.Config, set *config.SetConfig, ip net.IP) {
@@ -310,7 +321,7 @@ func routeAddResolvedIPs(cfg *config.Config, set *config.SetConfig, ips []net.IP
 	if ttl <= 0 {
 		ttl = 3600
 	}
-	routeAddIPsToSets(be, st, ttl, ips, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	routeAddIPsToSets(be, st, ttl, ips, st.ipv4, st.ipv6)
 }
 
 func routeResolveHost(cfg *config.Config, host string) []net.IP {
@@ -350,6 +361,9 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		mode:       mode,
 		sourcesKey: sourcesKey,
 		deviceKey:  routeSetDeviceGate(cfg, set).key(),
+		srcScoped:  routeSetIsSourceScoped(set),
+		ipv4:       cfg.Queue.IPv4Enabled,
+		ipv6:       cfg.Queue.IPv6Enabled,
 		setV4:      setV4, setV6: setV6,
 		chainPre: chainPre, chainOut: chainOut, chainSNAT: chainSNAT,
 		chainQUIC: routeBuildQUICChainName(set.Id),
@@ -369,6 +383,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		st.mark = mark
 		st.table = table
 		st.iface = set.Routing.EgressInterface
+		st.egressIP = set.Routing.EgressIP
 	}
 	return st
 }
@@ -378,12 +393,16 @@ func routeStateEqual(a, b routeState) bool {
 		a.mark == b.mark &&
 		a.table == b.table &&
 		a.iface == b.iface &&
+		a.egressIP == b.egressIP &&
 		a.tproxyPort == b.tproxyPort &&
 		a.upstreamKey == b.upstreamKey &&
 		a.blockAction == b.blockAction &&
 		a.quicReject == b.quicReject &&
 		a.sourcesKey == b.sourcesKey &&
-		a.deviceKey == b.deviceKey
+		a.deviceKey == b.deviceKey &&
+		a.srcScoped == b.srcScoped &&
+		a.ipv4 == b.ipv4 &&
+		a.ipv6 == b.ipv6
 }
 
 func routeCleanupAny(be routeBackend, st routeState) {
@@ -515,6 +534,7 @@ func RoutingClearAll() {
 	routeLearnLast = make(map[string]time.Time)
 	routeLearnedHosts = make(map[string]map[string]time.Time)
 	routeHostResolvedAt = make(map[string]time.Time)
+	routeOwnedAddrs = make(map[string]bool)
 }
 
 func RoutingActiveIPSetNames(ipv4, ipv6 bool) []string {
@@ -646,11 +666,11 @@ func routeStateChains(st routeState) []routeChainRef {
 		}
 		return refs
 	default:
-		return []routeChainRef{
-			{st.chainPre, "mangle", true},
-			{st.chainOut, "mangle", true},
-			{st.chainSNAT, "nat", false},
+		refs := []routeChainRef{{st.chainPre, "mangle", true}}
+		if !st.srcScoped {
+			refs = append(refs, routeChainRef{st.chainOut, "mangle", true})
 		}
+		return append(refs, routeChainRef{st.chainSNAT, "nat", false})
 	}
 }
 
@@ -782,9 +802,11 @@ func RoutingSyncConfig(cfg *config.Config) {
 		if mode == config.RoutingModeProxy && set.Routing.Upstream.Port < 1 {
 			continue
 		}
-		if config.RoutingIsBlock(mode) && len(set.Targets.IpsToMatch) == 0 && len(set.Targets.DomainsToMatch) == 0 {
+		if len(set.Targets.IpsToMatch) == 0 && len(set.Targets.DomainsToMatch) == 0 {
+			routeWarnNoDestination(set)
 			continue
 		}
+		routeForgetNoDestinationWarning(set.Id)
 		desired[set.Id] = set
 	}
 
@@ -836,10 +858,10 @@ func RoutingSyncConfig(cfg *config.Config) {
 		}
 
 		staticV4, staticV6 := routeCollectEntries(set)
-		if cfg.Queue.IPv4Enabled && len(staticV4) > 0 {
+		if cur.ipv4 && len(staticV4) > 0 {
 			be.addElements(cur.setV4, staticV4, 0)
 		}
-		if cfg.Queue.IPv6Enabled && len(staticV6) > 0 {
+		if cur.ipv6 && len(staticV6) > 0 {
 			be.addElements(cur.setV6, staticV6, 0)
 		}
 	}
@@ -849,10 +871,13 @@ func RoutingSyncConfig(cfg *config.Config) {
 		if config.RoutingUsesTProxy(st.mode) || st.iface == "" {
 			continue
 		}
-		if _, ok := routeIfaceAuto[st.iface]; !ok {
-			routeIfaceAuto[st.iface] = routeState{mark: st.mark, table: st.table}
+		key := routeIfaceAutoKey(st.iface, st.egressIP)
+		if _, ok := routeIfaceAuto[key]; !ok {
+			routeIfaceAuto[key] = routeState{mark: st.mark, table: st.table}
 		}
 	}
+
+	routeReestablishJumpOrder(be, cfg, len(newRoutingSets) > 0)
 
 	if len(newRoutingSets) > 0 {
 		cfgSnapshot := *cfg
@@ -988,8 +1013,9 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 	}
 
 	gate := routeSetDeviceGate(cfg, set)
+	routeWarnDeviceGate(set.Name, gate)
 	routeSelfDialBypass(be, cfg, st.chainPre)
-	be.addBypassRule(st.chainPre, st.mark)
+	be.addClaimedBypassRule(st.chainPre)
 
 	routeAddBlacklistGate(be, "mangle", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
 
@@ -1000,11 +1026,15 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 		routeAddMarkRules(be, st.chainPre, true, st.setV6, st.mark, sources, true)
 	}
 
-	routeAddOutChainRules(be, cfg, st)
-	routeEnsureChainJumps(be, st, gate)
+	sourceScoped := routeSetIsSourceScoped(set)
+	if !sourceScoped {
+		routeAddOutChainRules(be, cfg, st)
+	}
+	routeEnsureChainJumps(be, st, gate, sourceScoped)
 
-	routeAddMasqueradeRules(be, set.Routing.EgressInterface, st.chainSNAT, st.mark, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
-	routeEnsurePolicyRouting(set.Routing.EgressInterface, st.mark, st.table, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	routeEnsureEgressAddress(st.iface, st.egressIP)
+	routeAddEgressRules(be, st, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	routeEnsurePolicyRouting(st, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	return nil
 }
 
@@ -1028,7 +1058,7 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState) {
 	}
 
 	routeSelfDialBypass(be, cfg, st.chainOut)
-	be.addBypassRule(st.chainOut, st.mark)
+	be.addClaimedBypassRule(st.chainOut)
 
 	if cfg.Queue.IPv4Enabled {
 		routeAddMarkRules(be, st.chainOut, false, st.setV4, st.mark, nil, true)
@@ -1038,10 +1068,241 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState) {
 	}
 }
 
-func routeEnsureChainJumps(be routeBackend, st routeState, gate routeDeviceGate) {
+func routeSetScopeRank(cfg *config.Config, set *config.SetConfig) int {
+	gate := routeSetDeviceGate(cfg, set)
+	switch {
+	case gate.isWhitelist():
+		return 0
+	case len(routeNormalizedSources(set.Routing.SourceInterfaces)) > 0:
+		return 1
+	case gate.isBlacklist():
+		return 2
+	default:
+		return 3
+	}
+}
+
+func routeOrderedRoutingSets(cfg *config.Config) []*config.SetConfig {
+	var ordered []*config.SetConfig
+	for _, set := range cfg.Sets {
+		if set == nil {
+			continue
+		}
+		st, ok := routeRuleCache[set.Id]
+		if !ok || config.RoutingUsesTProxy(st.mode) || config.RoutingIsBlock(st.mode) {
+			continue
+		}
+		ordered = append(ordered, set)
+	}
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return routeSetScopeRank(cfg, ordered[i]) < routeSetScopeRank(cfg, ordered[j])
+	})
+	return ordered
+}
+
+func routeReestablishJumpOrder(be routeBackend, cfg *config.Config, rebuilt bool) {
+	ordered := routeOrderedRoutingSets(cfg)
+	if len(ordered) < 2 {
+		routeJumpOrderKey = ""
+		return
+	}
+
+	key := make([]string, 0, len(ordered))
+	for _, set := range ordered {
+		key = append(key, set.Id)
+	}
+	orderKey := strings.Join(key, "|")
+	if !rebuilt && orderKey == routeJumpOrderKey {
+		return
+	}
+	routeJumpOrderKey = orderKey
+
+	for _, set := range ordered {
+		st := routeRuleCache[set.Id]
+		routeEnsureGatedPreJump(be, st.chainPre, routeSetDeviceGate(cfg, set))
+	}
+
+	out := ordered
+	if be.jumpPrepends(true) {
+		out = make([]*config.SetConfig, len(ordered))
+		for i, set := range ordered {
+			out[len(ordered)-1-i] = set
+		}
+	}
+	for _, set := range out {
+		st := routeRuleCache[set.Id]
+		if routeSetIsSourceScoped(set) {
+			continue
+		}
+		be.ensureJumpRule("OUTPUT", st.chainOut, true, true)
+	}
+}
+
+func routeEnsureChainJumps(be routeBackend, st routeState, gate routeDeviceGate, sourceScoped bool) {
 	routeEnsureGatedPreJump(be, st.chainPre, gate)
-	be.ensureJumpRule("OUTPUT", st.chainOut, true, true)
-	be.ensureJumpRule("POSTROUTING", st.chainSNAT, false, false)
+	if sourceScoped {
+		be.deleteJumpRules("OUTPUT", st.chainOut, true)
+	} else {
+		be.ensureJumpRule("OUTPUT", st.chainOut, true, true)
+	}
+	be.ensureJumpRule("POSTROUTING", st.chainSNAT, false, st.egressIP != "")
+}
+
+func routeEgressIPForFamily(egressIP string, v6 bool) string {
+	if egressIP == "" {
+		return ""
+	}
+	parsed := net.ParseIP(egressIP)
+	if parsed == nil {
+		return ""
+	}
+	if (parsed.To4() != nil) == v6 {
+		return ""
+	}
+	return parsed.String()
+}
+
+var routeEgressIPOnIface = routeEgressIPOnIfaceReal
+
+func routeEgressIPOnIfaceReal(iface, egressIP string) bool {
+	want := net.ParseIP(egressIP)
+	if iface == "" || want == nil {
+		return false
+	}
+	ifaceObj, err := net.InterfaceByName(iface)
+	if err != nil {
+		return false
+	}
+	addrs, err := ifaceObj.Addrs()
+	if err != nil {
+		return false
+	}
+	for _, a := range addrs {
+		ipNet, ok := a.(*net.IPNet)
+		if ok && ipNet.IP != nil && ipNet.IP.Equal(want) {
+			return true
+		}
+	}
+	return false
+}
+
+func routeSetMarkRule(mark uint32) string {
+	return fmt.Sprintf("0x%x/0x%x", mark, routeSetMarkMask)
+}
+
+func routeStaleMarkRules(mark uint32) []string {
+	return []string{
+		fmt.Sprintf("0x%x", mark),
+		fmt.Sprintf("0x%x/0x%x", mark, mark),
+		routeSetMarkRule(mark),
+	}
+}
+
+func routeDelRuleAllForms(mark uint32, table string) {
+	for _, m := range routeStaleMarkRules(mark) {
+		routeDelRuleLoop(false, m, table)
+		routeDelRuleLoop(true, m, table)
+	}
+}
+
+func routeEgressAddrKey(iface, ip string) string { return iface + "|" + ip }
+
+func routeIfaceAutoKey(iface, egressIP string) string { return iface + "|" + egressIP }
+
+func routeEgressAddrPrefix(ip net.IP) string {
+	if ip.To4() != nil {
+		return "/32"
+	}
+	return "/128"
+}
+
+func routeAddressAnsweredElsewhere(iface, ip string) bool {
+	if !hasBinary("arping") {
+		log.Warnf("Routing: arping is missing, so b4 cannot tell whether %s already belongs to another host before claiming it on %s", ip, iface)
+		return false
+	}
+	_, err := run("arping", "-D", "-c", "2", "-w", "2", "-I", iface, ip)
+	return err != nil
+}
+
+func routeEnsureEgressAddress(iface, egressIP string) bool {
+	if iface == "" || egressIP == "" {
+		return false
+	}
+	if routeEgressIPOnIface(iface, egressIP) {
+		return true
+	}
+	parsed := net.ParseIP(egressIP)
+	if parsed == nil || !hasBinary("ip") {
+		return false
+	}
+	if parsed.To4() != nil && routeAddressAnsweredElsewhere(iface, egressIP) {
+		log.Warnf("Routing: another host on %s already answers for %s, so claiming it would break that host; masquerading this set instead", iface, egressIP)
+		return false
+	}
+	if _, err := run("ip", "addr", "add", egressIP+routeEgressAddrPrefix(parsed), "dev", iface); err != nil {
+		log.Warnf("Routing: could not put egress IP %s on %s (%v); masquerading this set instead", egressIP, iface, err)
+		return false
+	}
+	routeOwnedAddrs[routeEgressAddrKey(iface, egressIP)] = true
+	log.Infof("Routing: egress IP %s added to %s; b4 keeps it there while a set uses it and removes it afterwards", egressIP, iface)
+	return true
+}
+
+func egressAddrShareCount(iface, egressIP string) int {
+	n := 0
+	for _, st := range routeRuleCache {
+		if st.iface == iface && st.egressIP == egressIP {
+			n++
+		}
+	}
+	return n
+}
+
+func routeReleaseEgressAddress(iface, egressIP string) {
+	key := routeEgressAddrKey(iface, egressIP)
+	if !routeOwnedAddrs[key] {
+		return
+	}
+	if egressAddrShareCount(iface, egressIP) > 1 {
+		return
+	}
+	delete(routeOwnedAddrs, key)
+	parsed := net.ParseIP(egressIP)
+	if parsed == nil || !hasBinary("ip") {
+		return
+	}
+	runLogged("routing: remove egress IP "+egressIP, "ip", "addr", "del", egressIP+routeEgressAddrPrefix(parsed), "dev", iface)
+}
+
+func routeUsableEgressIP(st routeState, iface string, v6 bool) string {
+	src := routeEgressIPForFamily(st.egressIP, v6)
+	if src == "" || !routeEgressIPOnIface(iface, src) {
+		return ""
+	}
+	return src
+}
+
+func routeAddEgressRules(be routeBackend, st routeState, ipv4, ipv6 bool) {
+	emit := func(v6 bool, setName string) {
+		src := routeEgressIPForFamily(st.egressIP, v6)
+		if src == "" {
+			be.addMasqueradeRule(st.chainSNAT, st.mark, st.iface, v6)
+			return
+		}
+		if !routeEgressIPOnIface(st.iface, src) {
+			log.Warnf("Routing: egress IP %s is not on %s, so nothing would answer for the rewritten source and every reply would be lost; masquerading this set instead", src, st.iface)
+			be.addMasqueradeRule(st.chainSNAT, st.mark, st.iface, v6)
+			return
+		}
+		be.addSNATRule(st.chainSNAT, setName, st.iface, src, st.mark, v6)
+	}
+	if ipv4 {
+		emit(false, st.setV4)
+	}
+	if ipv6 {
+		emit(true, st.setV6)
+	}
 }
 
 func routeAddMasqueradeRules(be routeBackend, iface, chain string, mark uint32, ipv4, ipv6 bool) {
@@ -1067,14 +1328,10 @@ func interfaceShareCount(mark uint32, table int) int {
 }
 
 func routeCleanupRule(be routeBackend, st routeState) {
-	markStr := fmt.Sprintf("0x%x", st.mark)
-	markStrMask := fmt.Sprintf("0x%x/0x%x", st.mark, st.mark)
+	routeReleaseEgressAddress(st.iface, st.egressIP)
 	tableStr := fmt.Sprintf("%d", st.table)
 	if hasBinary("ip") && interfaceShareCount(st.mark, st.table) <= 1 {
-		routeDelRuleLoop(false, markStr, tableStr)
-		routeDelRuleLoop(false, markStrMask, tableStr)
-		routeDelRuleLoop(true, markStr, tableStr)
-		routeDelRuleLoop(true, markStrMask, tableStr)
+		routeDelRuleAllForms(st.mark, tableStr)
 		runLogged("routing: flush route table v4", "ip", "route", "flush", "table", tableStr)
 		runLogged("routing: flush route table v6", "ip", "-6", "route", "flush", "table", tableStr)
 	}
@@ -1096,21 +1353,19 @@ func routeCleanupRule(be routeBackend, st routeState) {
 	be.destroyIPSet(st.setV6)
 }
 
-func routeEnsurePolicyRouting(iface string, mark uint32, table int, ipv4, ipv6 bool) {
+func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
+	iface, mark, table := st.iface, st.mark, st.table
 	prio := 10000 + table
-	markStr := fmt.Sprintf("0x%x", mark)
-	markStrMask := fmt.Sprintf("0x%x/0x%x", mark, mark)
+	markStrMask := routeSetMarkRule(mark)
 	tableStr := fmt.Sprintf("%d", table)
 	prioStr := fmt.Sprintf("%d", prio)
 
+	routeDelRuleAllForms(mark, tableStr)
+
 	if ipv4 {
-		routeDelRuleLoop(false, markStr, tableStr)
-		routeDelRuleLoop(false, markStrMask, tableStr)
 		runLogged("routing: add ip rule v4", "ip", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
 	}
 	if ipv6 {
-		routeDelRuleLoop(true, markStr, tableStr)
-		routeDelRuleLoop(true, markStrMask, tableStr)
 		runLogged("routing: add ip rule v6", "ip", "-6", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
 	}
 
@@ -1121,6 +1376,12 @@ func routeEnsurePolicyRouting(iface string, mark uint32, table int, ipv4, ipv6 b
 
 	ifaceV4 := routeGetIfaceAddr(iface, false)
 	ifaceV6 := routeGetIfaceAddr(iface, true)
+	if src := routeUsableEgressIP(st, iface, false); src != "" {
+		ifaceV4 = src
+	}
+	if src := routeUsableEgressIP(st, iface, true); src != "" {
+		ifaceV6 = src
+	}
 	if ipv4 {
 		routeReplaceDefaultRoute(iface, ifaceV4, tableStr, false)
 	}
@@ -1147,7 +1408,7 @@ func RoutingReinstallForInterface(cfg *config.Config, iface string) {
 		if config.RoutingUsesTProxy(st.mode) || st.iface != iface {
 			continue
 		}
-		routeEnsurePolicyRouting(st.iface, st.mark, st.table, ipv4, ipv6)
+		routeEnsurePolicyRouting(st, ipv4, ipv6)
 		count++
 	}
 	if count > 0 {
@@ -1300,16 +1561,31 @@ func routeGetIfaceAddr(iface string, wantV6 bool) string {
 	return best
 }
 
+func markOverlaps(mark uint32, used map[uint32]struct{}) bool {
+	for u := range used {
+		if mark&u == u || u&mark == mark {
+			return true
+		}
+	}
+	return false
+}
+
 func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 	if set.Routing.FWMark > 0 && set.Routing.Table > 0 {
-		if q := routeQueueBypassMark(cfg); set.Routing.FWMark&q == q {
+		q := routeQueueBypassMark(cfg)
+		switch {
+		case set.Routing.FWMark&q == q:
 			log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which carries every bit of the queue mark 0x%x; b4 cannot tell such a packet from one it injected itself, so a mark is assigned instead",
 				set.Name, set.Routing.FWMark, q)
-		} else {
+		case set.Routing.FWMark&^routeSetMarkMask != 0:
+			log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which has bits outside the routing mark mask 0x%x that b4 cannot carry through its firewall rules, so a mark is assigned instead",
+				set.Name, set.Routing.FWMark, routeSetMarkMask)
+		default:
 			return set.Routing.FWMark, set.Routing.Table
 		}
 	}
-	if st, ok := routeIfaceAuto[set.Routing.EgressInterface]; ok && st.mark > 0 && st.table > 0 {
+	autoKey := routeIfaceAutoKey(set.Routing.EgressInterface, set.Routing.EgressIP)
+	if st, ok := routeIfaceAuto[autoKey]; ok && st.mark > 0 && st.table > 0 {
 		return st.mark, st.table
 	}
 
@@ -1337,28 +1613,27 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 	}
 
 	h := fnv.New32a()
-	_, _ = h.Write([]byte(set.Routing.EgressInterface))
+	_, _ = h.Write([]byte(autoKey))
 	base := h.Sum32()
 
 	for attempt := uint32(0); attempt < 4096; attempt++ {
 		table := 100 + int((base+attempt)%150)
 		mark := uint32(0x100 + (base+attempt)%0x7E00)
-		if _, ok := usedMarks[mark]; ok {
+		if markOverlaps(mark, usedMarks) {
 			continue
 		}
 		if _, ok := usedTables[table]; ok {
 			continue
 		}
-		routeIfaceAuto[set.Routing.EgressInterface] = routeState{mark: mark, table: table}
+		routeIfaceAuto[autoKey] = routeState{mark: mark, table: table}
 		return mark, table
 	}
 
 	mark := uint32(0x66)
 	table := 100
 	for i := 0; i < 4096; i++ {
-		_, markUsed := usedMarks[mark]
 		_, tableUsed := usedTables[table]
-		if !markUsed && !tableUsed {
+		if !markOverlaps(mark, usedMarks) && !tableUsed {
 			break
 		}
 		mark++
@@ -1367,11 +1642,13 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 			table = 100
 		}
 	}
-	routeIfaceAuto[set.Routing.EgressInterface] = routeState{mark: mark, table: table}
+	routeIfaceAuto[autoKey] = routeState{mark: mark, table: table}
 	return mark, table
 }
 
-func routeDelRuleLoop(ipv6 bool, mark, table string) {
+var routeDelRuleLoop = routeDelRuleLoopExec
+
+func routeDelRuleLoopExec(ipv6 bool, mark, table string) {
 	for i := 0; i < 100; i++ {
 		var err error
 		if ipv6 {

@@ -13,4 +13,4 @@ b4 settings are split across several tabs:
 - [Discovery](./discovery) - timeouts, DNS servers, reference domain
 - [Backup](./backup) - backup and restore
 
-Changes are applied after clicking the save button. Some parameters (SOCKS5, MTProto, queue) require a service restart.
+Changes are applied after clicking the save button. Some parameters (MTProto, queue) require a service restart. The [SOCKS5 proxy](./core#socks5-proxy) does not: it rebinds its own listener and applies credentials and the [allowed sources](./core#allowed-sources) list on save.

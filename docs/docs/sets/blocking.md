@@ -7,6 +7,10 @@ Block mode stops the traffic a set matches instead of routing it anywhere. Point
 
 It is selected in the [Routing](./routing.md) tab as the **Block** mode.
 
+:::caution IPv6
+Everything below describes what happens over the address families b4 is processing. IPv6 processing is off by default, and a block set then writes no IPv6 rules at all, so a blocked destination that also answers over IPv6 stays reachable over IPv6. See [IPv6](#ipv6) below.
+:::
+
 ## How it works
 
 Whatever way a device tries to reach a blocked site, b4 stops it - and only that site, so the rest of the page keeps working.
@@ -79,9 +83,23 @@ To start blocking without adding domains by hand, import a ready-made set. On th
 
 The `category-ads-all` part needs the GeoSite database loaded - see [Targets](./targets.md).
 
+## IPv6
+
+Block rules are written per address family, and b4 only writes rules for the families it is processing. **IPv6 support** is off by default in [Settings -> Core](../settings/core#protocols), and with it off a block set creates no IPv6 rules at all.
+
+What that costs, layer by layer:
+
+- **DNS sinkhole.** Still does most of the work. NXDOMAIN hides the name from the client whatever record it asked for, A and AAAA alike, so a device that resolves through the router gets no address of either family. The exception is a query that reaches the router over IPv6 itself: while IPv6 support is off, such a query is forwarded unchanged instead of being sinkholed, and the log records it as `dns-ipv6-disabled`. Devices that were handed an IPv6 resolver address by router advertisements do exactly this.
+- **Connection block by name.** Not applied. b4 reads no IPv6 packets, so the SNI in an IPv6 TLS or QUIC handshake is never inspected.
+- **Address block.** IPv4 only. IPs, CIDR ranges and GeoIP categories are enforced in the firewall for IPv4, and the IPv6 members of the set are not installed anywhere.
+
+The practical result is that a device holding an IPv6 address for a blocked host, from encrypted DNS the router cannot see or from its own cache, reaches that host over IPv6 with nothing in the way.
+
+To make blocking cover both families, turn **IPv6 support** on in [Settings -> Core](../settings/core#protocols) and restart the service. Blocking IPv6 at the router this way is a different thing from turning IPv6 off for the network, which is a router setting outside b4.
+
 ## Scope
 
-Block mode applies network-wide: it stops matched destinations for every device on the network and for the router itself. It needs no output interface, routing table, or proxy, so it works on any setup that the other routing modes support.
+Block mode applies network-wide for the address families b4 is processing: it stops matched destinations for every device on the network and for the router itself. It needs no output interface, routing table, or proxy, so it works on any setup that the other routing modes support.
 
 :::tip
 A quick network-wide ad blocker: create a set, add the `category-ads-all` GeoSite category to its [Targets](./targets.md), set the Routing mode to **Block**, and leave the action on **Reject**.

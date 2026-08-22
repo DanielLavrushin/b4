@@ -139,20 +139,34 @@ func (b *routeIptBackend) addBypassRule(chain string, mark uint32) {
 	}
 }
 
+func (b *routeIptBackend) addClaimedBypassRule(chain string) {
+	maskHex := fmt.Sprintf("0x0/0x%x", routeSetMarkMask)
+	for _, cmd := range b.iptBoth() {
+		if !hasBinary(cmd) {
+			continue
+		}
+		runLogged("routing: add claimed bypass rule "+chain,
+			cmd, "-w", "-t", "mangle", "-A", chain,
+			"-m", "mark", "!", "--mark", maskHex, "-j", "RETURN")
+	}
+}
+
+func routeIptSetMarkArgs(mark uint32) []string {
+	return []string{"-j", "MARK", "--set-xmark", fmt.Sprintf("0x%x/0x%x", mark, routeSetMarkMask)}
+}
+
 func (b *routeIptBackend) addMarkRule(chain string, v6 bool, setName string, mark uint32, sourceIface string, tagHostConntrack bool) {
 	cmd := b.iptFor(v6)
 	if !hasBinary(cmd) {
 		return
 	}
-	markHex := fmt.Sprintf("0x%x/0x%x", mark, mark)
-
 	args := []string{"-w", "-t", "mangle", "-A", chain}
 	if sourceIface != "" {
 		args = append(args, "-i", sourceIface)
 	}
 	args = append(args, "-m", "set", "--match-set", setName, "dst")
 
-	markArgs := append(append([]string{}, args...), "-j", "MARK", "--set-mark", markHex)
+	markArgs := append(append([]string{}, args...), routeIptSetMarkArgs(mark)...)
 	runLogged("routing: add mark rule "+chain, append([]string{cmd}, markArgs...)...)
 
 	if tagHostConntrack {
@@ -164,12 +178,11 @@ func (b *routeIptBackend) addMarkRule(chain string, v6 bool, setName string, mar
 }
 
 func routeIptInjectedMarkArgs(chain, setName string, mark, queueMark uint32) []string {
-	return []string{
+	return append([]string{
 		"-w", "-t", "mangle", "-A", chain,
 		"-m", "mark", "--mark", fmt.Sprintf("0x%x/0x%x", queueMark, queueMark),
 		"-m", "set", "--match-set", setName, "dst",
-		"-j", "MARK", "--set-mark", fmt.Sprintf("0x%x/0x%x", mark, mark),
-	}
+	}, routeIptSetMarkArgs(mark)...)
 }
 
 func (b *routeIptBackend) addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32) {
@@ -201,6 +214,8 @@ func (b *routeIptBackend) ensureJumpRule(baseChain, targetChain string, isMangle
 	}
 }
 
+func (b *routeIptBackend) jumpPrepends(atTop bool) bool { return atTop }
+
 func (b *routeIptBackend) deleteJumpRules(baseChain, targetChain string, isMangle bool) {
 	table := iptTable(isMangle)
 	for _, cmd := range b.iptBoth() {
@@ -216,7 +231,7 @@ func (b *routeIptBackend) addMasqueradeRule(chain string, mark uint32, iface str
 	if !hasBinary(cmd) {
 		return
 	}
-	markHex := fmt.Sprintf("0x%x/0x%x", mark, mark)
+	markHex := fmt.Sprintf("0x%x/0x%x", mark, routeSetMarkMask)
 	ctMask := fmt.Sprintf("0x%x/0x%x", hostRouteCTMark, hostRouteCTMark)
 
 	runLogged("routing: add masquerade rule",
@@ -225,6 +240,24 @@ func (b *routeIptBackend) addMasqueradeRule(chain string, mark uint32, iface str
 		"-m", "connmark", "--mark", ctMask,
 		"-o", iface,
 		"-j", "MASQUERADE",
+	)
+}
+
+func (b *routeIptBackend) addSNATRule(chain, setName, iface, srcIP string, mark uint32, v6 bool) {
+	cmd := b.iptFor(v6)
+	if !hasBinary(cmd) {
+		return
+	}
+	ctMask := fmt.Sprintf("0x%x/0x%x", hostRouteCTMark, hostRouteCTMark)
+	markHex := fmt.Sprintf("0x%x/0x%x", mark, routeSetMarkMask)
+
+	runLogged("routing: add snat rule",
+		cmd, "-w", "-t", "nat", "-A", chain,
+		"-m", "mark", "--mark", markHex,
+		"-m", "set", "--match-set", setName, "dst",
+		"-m", "connmark", "--mark", ctMask,
+		"-o", iface,
+		"-j", "SNAT", "--to-source", srcIP,
 	)
 }
 

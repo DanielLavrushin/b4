@@ -1,5 +1,6 @@
 export const colors = {
   primary: "#9E1C60",
+  primaryLight: "#C9539A",
   secondary: "#F5AD18",
   tertiary: "#811844",
   quaternary: "#561530",
@@ -40,6 +41,16 @@ export const colors = {
     trackOff: "rgba(255, 255, 255, 0.18)",
     thumbOff: "#bdbdbd",
   },
+} as const;
+
+export const facets = {
+  target: colors.secondary,
+  split: colors.primary,
+  fake: colors.primaryLight,
+  route: colors.state.info,
+  dns: colors.state.success,
+  escalate: colors.state.warning,
+  block: colors.state.error,
 } as const;
 
 export const gradients = {

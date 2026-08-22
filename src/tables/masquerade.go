@@ -103,19 +103,6 @@ func (manager *IPTablesManager) buildMasqueradeManifest(ipt string) ([]Chain, []
 	return chains, rules
 }
 
-func (im *IPTablesManager) masqueradeBinaries() []string {
-	var bins []string
-	iptBin := im.iptablesBin()
-	ip6tBin := im.ip6tablesBin()
-	if im.cfg.Queue.IPv4Enabled && hasBinary(iptBin) {
-		bins = append(bins, iptBin)
-	}
-	if im.cfg.Queue.IPv6Enabled && hasBinary(ip6tBin) {
-		bins = append(bins, ip6tBin)
-	}
-	return bins
-}
-
 func (im *IPTablesManager) teardownMasqueradeChain(ipt string) {
 	im.delAll(ipt, "nat", "POSTROUTING", []string{"-j", masqChainName})
 	if im.existsChain(ipt, "nat", masqChainName) {
@@ -125,15 +112,15 @@ func (im *IPTablesManager) teardownMasqueradeChain(ipt string) {
 }
 
 func (im *IPTablesManager) ClearMasquerade() {
-	iptBin := im.iptablesBin()
-	im.teardownMasqueradeChain(iptBin)
-
 	specs := append(masqueradeSpecs(im.cfg), []string{"-j", "MASQUERADE"})
-	for _, spec := range specs {
-		im.delAll(iptBin, "nat", "POSTROUTING", spec)
-	}
-	for _, mk := range []string{im.masqClientMark(), im.masqMarkAccept()} {
-		im.delAll(iptBin, "nat", "POSTROUTING", []string{"-m", "mark", "--mark", mk, "-j", "RETURN"})
+	for _, iptBin := range im.teardownBinaries() {
+		im.teardownMasqueradeChain(iptBin)
+		for _, spec := range specs {
+			im.delAll(iptBin, "nat", "POSTROUTING", spec)
+		}
+		for _, mk := range []string{im.masqClientMark(), im.masqMarkAccept()} {
+			im.delAll(iptBin, "nat", "POSTROUTING", []string{"-m", "mark", "--mark", mk, "-j", "RETURN"})
+		}
 	}
 }
 

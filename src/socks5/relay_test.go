@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -179,13 +180,16 @@ func TestRelayReleasesDescriptors(t *testing.T) {
 	hold := make([]net.Conn, 0, n)
 	s0, p0 := kinds()
 
+	var wg sync.WaitGroup
 	for i := 0; i < n; i++ {
 		a, aPeer := connPair(t)
 		b, bPeer := connPair(t)
-		go func() { _ = Relay(a, b) }()
+		wg.Add(1)
+		go func() { defer wg.Done(); _ = Relay(a, b) }()
 		reset(t, bPeer)
 		hold = append(hold, aPeer)
 	}
+	t.Cleanup(wg.Wait)
 
 	time.Sleep(2 * time.Second)
 	s1, p1 := kinds()
@@ -200,5 +204,51 @@ func TestRelayReleasesDescriptors(t *testing.T) {
 
 	for _, c := range hold {
 		c.Close()
+	}
+}
+
+func TestRelayCarriesBulkTransferIntact(t *testing.T) {
+	withTimeouts(t, 10*time.Second, 10*time.Second)
+
+	a, aPeer := connPair(t)
+	b, bPeer := connPair(t)
+
+	done := make(chan struct{})
+	go func() {
+		_ = Relay(a, b)
+		close(done)
+	}()
+
+	const size = 4 << 20
+	payload := make([]byte, size)
+	for i := range payload {
+		payload[i] = byte(i)
+	}
+
+	go func() {
+		_, _ = bPeer.Write(payload)
+		_ = bPeer.(*net.TCPConn).CloseWrite()
+	}()
+
+	got := make([]byte, 0, size)
+	buf := make([]byte, 64*1024)
+	_ = aPeer.SetReadDeadline(time.Now().Add(30 * time.Second))
+	for len(got) < size {
+		n, err := aPeer.Read(buf)
+		got = append(got, buf[:n]...)
+		if err != nil {
+			break
+		}
+	}
+
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("bulk transfer corrupted or truncated: relayed %d of %d bytes", len(got), size)
+	}
+
+	aPeer.Close()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Relay did not finish")
 	}
 }

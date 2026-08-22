@@ -245,6 +245,11 @@ func (w *Worker) InjectFakeIncomingV6(cfg *config.SetConfig, raw []byte, serverI
 		return
 	}
 
+	if !hasPlainIPv6Header(raw, ipProtoTCP) {
+		log.Tracef("Incoming V6: no fake ACKs for %s, the TCP header is not at the fixed IPv6 offset", serverIP)
+		return
+	}
+
 	tcp := raw[ipv6HdrLen:]
 	sport := binary.BigEndian.Uint16(tcp[0:2]) // server port (443)
 	dport := binary.BigEndian.Uint16(tcp[2:4]) // client port
@@ -316,6 +321,12 @@ func (w *Worker) InjectResetIncoming(cfg *config.SetConfig, raw []byte, ihl int,
 func (w *Worker) InjectResetIncomingV6(cfg *config.SetConfig, raw []byte, serverIP net.IP) {
 	inc := &cfg.TCP.Incoming
 	ipv6HdrLen := 40
+
+	if len(raw) < ipv6HdrLen+20 || !hasPlainIPv6Header(raw, ipProtoTCP) {
+		log.Tracef("Incoming V6: no RST packets for %s, the TCP header is not at the fixed IPv6 offset", serverIP)
+		return
+	}
+
 	tcp := raw[ipv6HdrLen:]
 
 	sport := binary.BigEndian.Uint16(tcp[0:2])
@@ -383,6 +394,12 @@ func (w *Worker) InjectFinIncoming(cfg *config.SetConfig, raw []byte, ihl int, s
 func (w *Worker) InjectFinIncomingV6(cfg *config.SetConfig, raw []byte, serverIP net.IP) {
 	inc := &cfg.TCP.Incoming
 	ipv6HdrLen := 40
+
+	if len(raw) < ipv6HdrLen+20 || !hasPlainIPv6Header(raw, ipProtoTCP) {
+		log.Tracef("Incoming V6: no FIN packets for %s, the TCP header is not at the fixed IPv6 offset", serverIP)
+		return
+	}
+
 	tcp := raw[ipv6HdrLen:]
 
 	sport := binary.BigEndian.Uint16(tcp[0:2])
@@ -454,6 +471,12 @@ func (w *Worker) InjectDesyncIncoming(cfg *config.SetConfig, raw []byte, ihl int
 func (w *Worker) InjectDesyncIncomingV6(cfg *config.SetConfig, raw []byte, serverIP net.IP) {
 	inc := &cfg.TCP.Incoming
 	ipv6HdrLen := 40
+
+	if len(raw) < ipv6HdrLen+20 || !hasPlainIPv6Header(raw, ipProtoTCP) {
+		log.Tracef("Incoming V6: no desync packets for %s, the TCP header is not at the fixed IPv6 offset", serverIP)
+		return
+	}
+
 	tcp := raw[ipv6HdrLen:]
 
 	sport := binary.BigEndian.Uint16(tcp[0:2])

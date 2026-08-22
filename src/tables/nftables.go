@@ -576,23 +576,30 @@ func (n *NFTablesManager) ApplyMSSClamp() error {
 
 	// Per-device MSS clamp rules (FORWARD chain with MAC matching)
 	if len(deviceClamps) > 0 {
-		for size, macs := range deviceClamps {
-			for _, mac := range macs {
-				// Outgoing SYN from device (ether saddr MAC, dport 443)
-				args := append([]string{"ether", "saddr", mac, "tcp", "dport", "443"}, synMatch...)
+		for size, matches := range deviceClamps {
+			emitted := 0
+			for _, m := range matches {
+				if !deviceMatchFamilyEnabled(m, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled) {
+					continue
+				}
+				args := append(nftSourceMatchArgs(m), "tcp", "dport", "443")
+				args = append(args, synMatch...)
 				args = append(args, mssSet(size)...)
 				if err := n.addFilteredRule("forward", args...); err != nil {
-					return fmt.Errorf("failed to add per-device MSS clamp forward outgoing rule for %s: %w", mac, err)
+					return fmt.Errorf("failed to add per-device MSS clamp forward outgoing rule for %s: %w", m.Key(), err)
 				}
 
-				// Incoming SYN-ACK to device (ether daddr MAC, sport 443)
-				args = append([]string{"ether", "daddr", mac, "tcp", "sport", "443"}, synMatch...)
+				args = append(nftReplyMatchArgs(m), "tcp", "sport", "443")
+				args = append(args, synMatch...)
 				args = append(args, mssSet(size)...)
 				if err := n.addFilteredRule("forward", args...); err != nil {
-					return fmt.Errorf("failed to add per-device MSS clamp forward incoming rule for %s: %w", mac, err)
+					return fmt.Errorf("failed to add per-device MSS clamp forward incoming rule for %s: %w", m.Key(), err)
 				}
+				emitted++
 			}
-			log.Infof("NFTABLES: per-device MSS clamp for %d devices (size: %d)", len(macs), size)
+			if emitted > 0 {
+				log.Infof("NFTABLES: per-device MSS clamp for %d devices (size: %d)", emitted, size)
+			}
 		}
 	}
 
@@ -601,8 +608,10 @@ func (n *NFTablesManager) ApplyMSSClamp() error {
 		setName6 := fmt.Sprintf("b4_mss_%d_v6", e.SetIdx)
 		hasV4 := len(e.IPv4) > 0 && cfg.Queue.IPv4Enabled
 		hasV6 := len(e.IPv6) > 0 && cfg.Queue.IPv6Enabled
+		emitV4 := hasV4 && setHasSourceForFamily(e.Sources, false)
+		emitV6 := hasV6 && setHasSourceForFamily(e.Sources, true)
 
-		if hasV4 {
+		if emitV4 {
 			if err := n.createSet(setName4, "ipv4_addr", "flags interval ; auto-merge ;"); err != nil {
 				return fmt.Errorf("failed to create set MSS ipv4 set: %w", err)
 			}
@@ -610,7 +619,7 @@ func (n *NFTablesManager) ApplyMSSClamp() error {
 				return fmt.Errorf("failed to populate set MSS ipv4 set: %w", err)
 			}
 		}
-		if hasV6 {
+		if emitV6 {
 			if err := n.createSet(setName6, "ipv6_addr", "flags interval ; auto-merge ;"); err != nil {
 				return fmt.Errorf("failed to create set MSS ipv6 set: %w", err)
 			}
@@ -619,10 +628,10 @@ func (n *NFTablesManager) ApplyMSSClamp() error {
 			}
 		}
 
-		emitOut := func(chain, family, addrFamily, setName, macSaddr string) error {
+		emitOut := func(chain, family, addrFamily, setName string, src *config.DeviceMatch) error {
 			args := []string{"meta", "nfproto", family}
-			if macSaddr != "" {
-				args = append(args, "ether", "saddr", macSaddr)
+			if src != nil {
+				args = append(args, nftSourceMatchArgs(*src)...)
 			}
 			if setName != "" {
 				args = append(args, addrFamily, "daddr", "@"+setName)
@@ -635,10 +644,10 @@ func (n *NFTablesManager) ApplyMSSClamp() error {
 			}
 			return nil
 		}
-		emitIn := func(chain, family, addrFamily, setName, macDaddr string) error {
+		emitIn := func(chain, family, addrFamily, setName string, src *config.DeviceMatch) error {
 			args := []string{"meta", "nfproto", family}
-			if macDaddr != "" {
-				args = append(args, "ether", "daddr", macDaddr)
+			if src != nil {
+				args = append(args, nftReplyMatchArgs(*src)...)
 			}
 			if setName != "" {
 				args = append(args, addrFamily, "saddr", "@"+setName)
@@ -656,40 +665,44 @@ func (n *NFTablesManager) ApplyMSSClamp() error {
 			if !enabled && setName != "" {
 				return nil
 			}
-			if len(e.MACs) > 0 {
-				for _, mac := range e.MACs {
-					if err := emitOut("forward", family, addrFamily, setName, mac); err != nil {
+			if len(e.Sources) > 0 {
+				for i := range e.Sources {
+					src := e.Sources[i]
+					if src.IsIP() && ((src.V6 && family != "ipv6") || (!src.V6 && family != "ipv4")) {
+						continue
+					}
+					if err := emitOut("forward", family, addrFamily, setName, &src); err != nil {
 						return err
 					}
-					if err := emitIn("forward", family, addrFamily, setName, mac); err != nil {
+					if err := emitIn("forward", family, addrFamily, setName, &src); err != nil {
 						return err
 					}
 				}
 			} else {
-				if err := emitOut("output", family, addrFamily, setName, ""); err != nil {
+				if err := emitOut("output", family, addrFamily, setName, nil); err != nil {
 					return err
 				}
-				if err := emitOut("forward", family, addrFamily, setName, ""); err != nil {
+				if err := emitOut("forward", family, addrFamily, setName, nil); err != nil {
 					return err
 				}
-				if err := emitIn("prerouting", family, addrFamily, setName, ""); err != nil {
+				if err := emitIn("prerouting", family, addrFamily, setName, nil); err != nil {
 					return err
 				}
 			}
 			return nil
 		}
 
-		if hasV4 {
+		if emitV4 {
 			if err := applyFamily("ipv4", "ip", setName4, true); err != nil {
 				return err
 			}
 		}
-		if hasV6 {
+		if emitV6 {
 			if err := applyFamily("ipv6", "ip6", setName6, true); err != nil {
 				return err
 			}
 		}
-		if !hasV4 && !hasV6 && len(e.MACs) > 0 {
+		if !hasV4 && !hasV6 && len(e.Sources) > 0 {
 			if cfg.Queue.IPv4Enabled {
 				if err := applyFamily("ipv4", "", "", false); err != nil {
 					return err
@@ -701,8 +714,8 @@ func (n *NFTablesManager) ApplyMSSClamp() error {
 				}
 			}
 		}
-		log.Infof("NFTABLES: per-set MSS clamp for set %q (size: %d, v4=%d v6=%d macs=%d)",
-			e.SetID, e.Size, len(e.IPv4), len(e.IPv6), len(e.MACs))
+		log.Infof("NFTABLES: per-set MSS clamp for set %q (size: %d, v4=%d v6=%d sources=%d)",
+			e.SetID, e.Size, len(e.IPv4), len(e.IPv6), len(e.Sources))
 	}
 
 	return nil

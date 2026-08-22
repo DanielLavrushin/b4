@@ -60,6 +60,18 @@ const DNS_VERDICT_STYLES: Record<string, DnsVerdictStyle> = {
     variant: "outlined",
     icon: "dns",
   },
+  "ipv6-stripped": {
+    label: "ipv4 only",
+    color: "warning",
+    variant: "outlined",
+    icon: "dns",
+  },
+  "heal+ipv6-stripped": {
+    label: "heal + ipv4 only",
+    color: "warning",
+    variant: "outlined",
+    icon: "dns",
+  },
   sinkhole: {
     label: "sinkhole",
     color: "error",
