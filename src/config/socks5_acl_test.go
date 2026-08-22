@@ -28,7 +28,7 @@ func TestParseSourcePrefix(t *testing.T) {
 }
 
 func TestParseSourcePrefixRejects(t *testing.T) {
-	for _, in := range []string{"", "   ", "not-an-ip", "192.168.1.0/33", "192.168.1.256", "fe80::1%eth0", "192.168.1.0/-1"} {
+	for _, in := range []string{"", "   ", "not-an-ip", "192.168.1.0/33", "192.168.1.256", "fe80::1%eth0", "fe80::%eth0/64", "fe80::/64%eth0", "192.168.1.0/-1"} {
 		if p, err := ParseSourcePrefix(in); err == nil {
 			t.Errorf("%q should be rejected, got %s", in, p)
 		}
@@ -70,6 +70,30 @@ func TestValidate_Socks5AllowedSources(t *testing.T) {
 			ve := mustValidationErr(t, cfg.Validate())
 			if findField(ve, "system.socks5.allowed_sources", "socks5_source_all") == nil {
 				t.Errorf("%s: expected socks5_source_all, got %v", entry, ve.Fields)
+			}
+		}
+	})
+
+	t.Run("unspecified address matches no client", func(t *testing.T) {
+		for _, entry := range []string{"0.0.0.0", "::", "::ffff:0.0.0.0", "0.0.0.0/8", "::/64"} {
+			cfg := NewConfig()
+			cfg.System.Socks5.Enabled = true
+			cfg.System.Socks5.AllowedSources = []string{entry}
+			ve := mustValidationErr(t, cfg.Validate())
+			if findField(ve, "system.socks5.allowed_sources", "socks5_source_unspecified") == nil {
+				t.Errorf("%s: expected socks5_source_unspecified, got %v", entry, ve.Fields)
+			}
+		}
+	})
+
+	t.Run("a catch-all keeps its own advice", func(t *testing.T) {
+		for _, entry := range []string{"0.0.0.0/0", "::/0"} {
+			cfg := NewConfig()
+			cfg.System.Socks5.Enabled = true
+			cfg.System.Socks5.AllowedSources = []string{entry}
+			ve := mustValidationErr(t, cfg.Validate())
+			if findField(ve, "system.socks5.allowed_sources", "socks5_source_unspecified") != nil {
+				t.Errorf("%s: a catch-all must report socks5_source_all, not the unspecified-address code, got %v", entry, ve.Fields)
 			}
 		}
 	})

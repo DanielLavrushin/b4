@@ -398,6 +398,12 @@ func (c *Config) checkSocks5Sources(v *validator) {
 			v.addf("system.socks5.allowed_sources", "socks5_source_all",
 				map[string]any{"value": strings.TrimSpace(entry)},
 				"%q allows every source and disables the restriction; remove the entry instead", strings.TrimSpace(entry))
+			continue
+		}
+		if p.Addr().IsUnspecified() {
+			v.addf("system.socks5.allowed_sources", "socks5_source_unspecified",
+				map[string]any{"value": strings.TrimSpace(entry)},
+				"%q covers only the unspecified address, which no client connects from, so this entry allows nobody", strings.TrimSpace(entry))
 		}
 	}
 }

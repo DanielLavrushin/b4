@@ -2371,6 +2371,7 @@
     "socks5_loop": "Set \"{{set}}\": upstream proxy points to b4's own SOCKS5 server (loop)",
     "socks5_invalid_source": "\"{{value}}\" is not an IP address or CIDR range",
     "socks5_source_all": "\"{{value}}\" allows every source and switches the restriction off; remove the entry instead",
+    "socks5_source_unspecified": "\"{{value}}\" covers only the unspecified address, which no client connects from, so this entry allows nobody",
     "socks5_incomplete_credentials": "SOCKS5 username and password must both be set or both be empty",
     "doh_url_must_be_https": "Set \"{{set}}\": DNS-over-HTTPS URL must start with https://",
     "mark_conflict": "Mark value {{mark}} conflicts with reserved bits"
