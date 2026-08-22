@@ -90,7 +90,7 @@ export const RuntimeHealth = ({ metrics }: RuntimeHealthProps) => {
             <StatCard
               label={t("dashboard.runtime.goroutines")}
               value={formatNumber(mem.goroutines)}
-              sub={t("dashboard.runtime.goroutinesHint")}
+              sub={`${formatNumber(mem.threads)} ${t("dashboard.runtime.threads")}`}
               tone="secondary"
             />
             <StatCard

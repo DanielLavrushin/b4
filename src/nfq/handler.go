@@ -115,6 +115,45 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 	return vc.accept()
 }
 
+const maxInjectInflight = 512
+
+var (
+	injectInflight   = make(chan struct{}, maxInjectInflight)
+	injectOverloaded atomic.Uint64
+	injectLastLog    atomic.Int64
+)
+
+func injectAcquire() bool {
+	select {
+	case injectInflight <- struct{}{}:
+		return true
+	default:
+	}
+	n := injectOverloaded.Add(1)
+	now := time.Now().Unix()
+	last := injectLastLog.Load()
+	if now-last >= 10 && injectLastLog.CompareAndSwap(last, now) {
+		log.Warnf("Packet injection backlog is full (%d in flight), %d packets have gone through unmodified so far", maxInjectInflight, n)
+	}
+	return false
+}
+
+func injectRelease() {
+	<-injectInflight
+}
+
+func InjectInflight() int {
+	return len(injectInflight)
+}
+
+func InjectOverloaded() uint64 {
+	return injectOverloaded.Load()
+}
+
+func ResetInjectOverloaded() {
+	injectOverloaded.Store(0)
+}
+
 func needsTCPInjection(set *config.SetConfig) bool {
 	if set == nil {
 		return false
@@ -634,6 +673,10 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			return vc.accept()
 		}
 
+		if !injectAcquire() {
+			return vc.accept()
+		}
+
 		packetCopy := make([]byte, len(pkt.raw))
 		copy(packetCopy, pkt.raw)
 
@@ -650,13 +693,17 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		setCopy := set
 
 		if !vc.drop() {
+			injectRelease()
 			return 0
 		}
 
 		v := pkt.ver
 		w.wg.Add(1)
 		go func(s *config.SetConfig, pktData []byte, d net.IP) {
-			defer w.wg.Done()
+			defer func() {
+				injectRelease()
+				w.wg.Done()
+			}()
 			if v == 4 {
 				w.dropAndInjectTCP(s, pktData, d)
 			} else {
@@ -862,6 +909,10 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		return 0
 
 	case "fake":
+		if !injectAcquire() {
+			return vc.accept()
+		}
+
 		packetCopy := make([]byte, len(pkt.raw))
 		copy(packetCopy, pkt.raw)
 		dstCopy := make(net.IP, len(pkt.dst))
@@ -869,13 +920,17 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		setCopy := set
 
 		if !vc.drop() {
+			injectRelease()
 			return 0
 		}
 
 		v := pkt.ver
 		w.wg.Add(1)
 		go func(s *config.SetConfig, p []byte, d net.IP) {
-			defer w.wg.Done()
+			defer func() {
+				injectRelease()
+				w.wg.Done()
+			}()
 			if v == IPv4 {
 				w.dropAndInjectQUIC(s, p, d)
 			} else {

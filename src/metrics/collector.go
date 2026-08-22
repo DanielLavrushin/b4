@@ -23,6 +23,8 @@ type MetricsCollector struct {
 	UDPConnections      uint64            `json:"udp_connections"`
 	TargetedConnections uint64            `json:"targeted_connections"`
 	RSTDropped          uint64            `json:"rst_dropped"`
+	InjectDropped       uint64            `json:"inject_dropped"`
+	RawSendDropped      uint64            `json:"raw_send_dropped"`
 	BlockedTotal        uint64            `json:"blocked_total"`
 	CurrentCPS          float64           `json:"current_cps"`
 	CurrentPPS          float64           `json:"current_pps"`
@@ -69,6 +71,7 @@ type MemoryStats struct {
 	RSS            uint64  `json:"rss"`
 	NumGC          uint32  `json:"num_gc"`
 	Goroutines     int     `json:"goroutines"`
+	Threads        int     `json:"threads"`
 	OpenFDs        int     `json:"open_fds"`
 }
 
@@ -173,7 +176,14 @@ func (m *MetricsCollector) updateLoop() {
 	for range ticker.C {
 		m.updateRates()
 		m.updateSystemStats()
+		checkThreadPressure(m.Threads())
 	}
+}
+
+func (m *MetricsCollector) Threads() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.MemoryUsage.Threads
 }
 
 func (m *MetricsCollector) updateRates() {
@@ -236,6 +246,7 @@ func (m *MetricsCollector) updateSystemStats() {
 	defer m.mu.Unlock()
 
 	rss, fds := procStats()
+	threads := osThreads()
 
 	m.MemoryUsage = MemoryStats{
 		Allocated:      memStats.Alloc,
@@ -247,6 +258,7 @@ func (m *MetricsCollector) updateSystemStats() {
 		HeapSys:        memStats.HeapSys,
 		RSS:            rss,
 		Goroutines:     runtime.NumGoroutine(),
+		Threads:        threads,
 		OpenFDs:        fds,
 		Percent:        float64(memStats.Alloc) / float64(memStats.Sys) * 100,
 	}
@@ -384,6 +396,13 @@ func (m *MetricsCollector) RecordEscalation() {
 	m.TotalEscalations++
 }
 
+func (m *MetricsCollector) UpdateInjectStats(injectDropped, rawSendDropped uint64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.InjectDropped = injectDropped
+	m.RawSendDropped = rawSendDropped
+}
+
 func (m *MetricsCollector) UpdateEscalations(entries []EscalationEntry) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -449,6 +468,8 @@ func (m *MetricsCollector) ResetStats() {
 	m.UDPConnections = 0
 	m.TargetedConnections = 0
 	m.RSTDropped = 0
+	m.InjectDropped = 0
+	m.RawSendDropped = 0
 	m.BlockedTotal = 0
 	m.TotalEscalations = 0
 	m.CurrentCPS = 0
@@ -500,6 +521,8 @@ func (m *MetricsCollector) GetSnapshot() *MetricsCollector {
 		UDPConnections:      m.UDPConnections,
 		TargetedConnections: m.TargetedConnections,
 		RSTDropped:          m.RSTDropped,
+		InjectDropped:       m.InjectDropped,
+		RawSendDropped:      m.RawSendDropped,
 		BlockedTotal:        m.BlockedTotal,
 		TotalEscalations:    m.TotalEscalations,
 		StartTime:           m.StartTime,

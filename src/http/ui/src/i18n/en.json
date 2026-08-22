@@ -785,7 +785,7 @@
       "heap": "Go heap",
       "reserved": "reserved",
       "goroutines": "Goroutines",
-      "goroutinesHint": "flat line is healthy",
+      "threads": "OS threads",
       "openFds": "Open FDs",
       "gc": "GC cycles"
     },

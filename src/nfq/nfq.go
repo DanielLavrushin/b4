@@ -18,6 +18,8 @@ import (
 	"github.com/mdlayher/netlink"
 )
 
+const workerStopGrace = 2 * time.Second
+
 // Support kernels < 3.8 by performing NFQUEUE PF_UNBIND/PF_BIND for the given family.
 func pfBind(con *netlink.Conn, family uint8) error {
 	const (
@@ -480,7 +482,9 @@ func (w *Worker) Stop() {
 	go func() { w.wg.Wait(); close(done) }()
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(workerStopGrace):
+		log.Errorf("NFQ queue %d did not finish in %s with %d injection(s) still in flight, leaving its raw sockets open so their descriptors are not handed to another socket", w.qnum, workerStopGrace, InjectInflight())
+		return
 	}
 	if w.clientSock != nil && w.clientSock != w.sock {
 		w.clientSock.Close()

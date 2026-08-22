@@ -787,7 +787,7 @@
       "heap": "Куча Go",
       "reserved": "зарезервировано",
       "goroutines": "Горутины",
-      "goroutinesHint": "ровная линия = норма",
+      "threads": "потоков ОС",
       "openFds": "Открытые FD",
       "gc": "циклы GC"
     },

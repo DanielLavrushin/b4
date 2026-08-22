@@ -578,7 +578,8 @@ func (s *Server) acceptLoop(ln net.Listener) {
 			if errors.Is(err, net.ErrClosed) {
 				return
 			}
-			log.Errorf("MTProto accept: %v", err)
+			log.Tracef("MTProto accept: %v", err)
+			time.Sleep(50 * time.Millisecond)
 			continue
 		}
 
