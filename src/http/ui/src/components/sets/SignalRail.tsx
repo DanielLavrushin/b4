@@ -110,7 +110,6 @@ export const SignalRail = ({
         "&:hover": expandedRail,
         "&:focus-within": expandedRail,
         ...(open ? expandedRail : {}),
-        "@media (hover: none) and (any-hover: none)": expandedRail,
         "@media (prefers-reduced-motion: reduce)": {
           "& .facet-tab, & .facet-tab svg, &": { transition: "none" },
         },
@@ -126,7 +125,7 @@ export const SignalRail = ({
             title={
               facet.active
                 ? facet.label
-                : `${facet.label} · ${t("sets.card.f.notConfigured")}`
+                : `${facet.label} · ${facet.note ?? t("sets.card.f.notConfigured")}`
             }
           >
             <Box
@@ -279,7 +278,7 @@ export const FacetDrawer = ({ facet, onEdit }: FacetDrawerProps) => {
           useFlexGap
         >
           <Typography sx={{ ...valueStyle, color: colors.text.disabled }}>
-            {t("sets.card.f.notConfigured")}
+            {facet.note ?? t("sets.card.f.notConfigured")}
           </Typography>
           <Button
             size="small"
@@ -342,7 +341,13 @@ export const FacetCompareBar = ({
         bgcolor: colors.background.paper,
       }}
     >
-      <Typography sx={{ ...labelStyle, mr: spacing.xs }}>
+      <Typography
+        sx={{
+          ...labelStyle,
+          mr: spacing.xs,
+          flexBasis: { xs: "100%", sm: "auto" },
+        }}
+      >
         {t("sets.card.f.compare")}
       </Typography>
 
@@ -360,7 +365,9 @@ export const FacetCompareBar = ({
               ...valueStyle,
               display: "inline-flex",
               alignItems: "center",
+              justifyContent: "center",
               gap: spacing.xs,
+              flex: { xs: "1 1 88px", sm: "0 0 auto" },
               cursor: "pointer",
               px: spacing.sm,
               py: spacing.xs / 2,

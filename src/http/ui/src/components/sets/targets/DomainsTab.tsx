@@ -197,7 +197,7 @@ export const DomainsTab = ({
       )}
 
       <Grid container spacing={2}>
-        <Grid size={{ sm: 12, md: 6 }}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <ManualEntryPanel
             icon={<DomainIcon />}
             title={t("sets.targets.manualDomains")}
@@ -223,7 +223,7 @@ export const DomainsTab = ({
         </Grid>
 
         {geo.sitedat_path && geositeCategories.length > 0 && (
-          <Grid size={{ sm: 12, md: 6 }}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <GeoCategoryPanel
               title={t("sets.targets.geositeCategories")}
               tooltip={t("sets.targets.geositeCatTooltip")}

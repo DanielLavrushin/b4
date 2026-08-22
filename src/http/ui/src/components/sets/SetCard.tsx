@@ -204,8 +204,14 @@ export const SetCard = ({
             {...dragHandleProps}
             sx={{
               cursor: "grab",
+              touchAction: "none",
               color: colors.text.secondary,
               display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              minWidth: 32,
+              minHeight: 32,
+              ml: "-6px",
               "&:hover": { color: colors.secondary },
             }}
           >

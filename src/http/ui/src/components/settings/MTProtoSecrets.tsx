@@ -3,21 +3,15 @@ import { useTranslation } from "react-i18next";
 import {
   Box,
   Button,
-  Chip,
   CircularProgress,
   IconButton,
-  InputAdornment,
   Paper,
   Switch,
   Tooltip,
 } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
-import AutorenewIcon from "@mui/icons-material/Autorenew";
-import ContentCopyIcon from "@mui/icons-material/ContentCopy";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import IosShareIcon from "@mui/icons-material/IosShare";
-import { B4TextField } from "@b4.elements";
-import { copyText } from "@utils";
+import { AddIcon, DeleteIcon } from "@b4.icons";
+import { B4SecretField, B4TextField } from "@b4.elements";
 import { B4Config, MTProtoSecret } from "@models/config";
 import { SettingsPropHandlerType } from "@models/settings";
 
@@ -45,7 +39,6 @@ export const MTProtoSecrets = ({
   const secrets = currentSecrets(config);
   const [generatingIdx, setGeneratingIdx] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
-  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
   const commit = (next: MTProtoSecret[]) => {
     onChange("system.mtproto.secrets", next);
@@ -91,14 +84,6 @@ export const MTProtoSecrets = ({
       if (secret) update(idx, { secret });
     } finally {
       setGeneratingIdx(null);
-    }
-  };
-
-  const copy = async (idx: number, value: string) => {
-    if (!value) return;
-    if (await copyText(value)) {
-      setCopiedIdx(idx);
-      setTimeout(() => setCopiedIdx((c) => (c === idx ? null : c)), 1500);
     }
   };
 
@@ -148,82 +133,34 @@ export const MTProtoSecrets = ({
                   disabled={!enabled}
                   onClick={() => remove(idx)}
                 >
-                  <DeleteOutlineIcon fontSize="small" />
+                  <DeleteIcon fontSize="small" />
                 </IconButton>
               </span>
             </Tooltip>
           </Box>
-          <B4TextField
+          <B4SecretField
             label={t("settings.MTProto.secret")}
             value={s.secret}
-            onChange={(e) => update(idx, { secret: e.target.value })}
+            onChange={(value) => update(idx, { secret: value })}
             placeholder={t("settings.MTProto.secretValuePlaceholder")}
             disabled={!enabled}
-            autoComplete="off"
             helperText={t("settings.MTProto.secretHelp")}
-            slotProps={{
-              input: {
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                      <Tooltip
-                        title={
-                          copiedIdx === idx
-                            ? t("core.copied")
-                            : t("settings.MTProto.copySecret")
-                        }
-                      >
-                        <span>
-                          <IconButton
-                            size="small"
-                            disabled={!enabled || !s.secret}
-                            onClick={() => void copy(idx, s.secret)}
-                          >
-                            <ContentCopyIcon fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                      <Tooltip title={t("settings.MTProto.shareLink")}>
-                        <span>
-                          <IconButton
-                            size="small"
-                            disabled={!enabled || !s.secret}
-                            onClick={() => onShare(s.secret)}
-                          >
-                            <IosShareIcon fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                      <Chip
-                        size="small"
-                        icon={
-                          <AutorenewIcon
-                            sx={{
-                              animation:
-                                generatingIdx === idx
-                                  ? "spin 1s linear infinite"
-                                  : "none",
-                              "@keyframes spin": {
-                                from: { transform: "rotate(0deg)" },
-                                to: { transform: "rotate(360deg)" },
-                              },
-                            }}
-                          />
-                        }
-                        label={
-                          generatingIdx === idx
-                            ? t("settings.MTProto.generating")
-                            : t("settings.MTProto.generateSecret")
-                        }
-                        onClick={() => void generate(idx)}
-                        disabled={!enabled || generatingIdx !== null}
-                        sx={{ cursor: "pointer" }}
-                      />
-                    </Box>
-                  </InputAdornment>
-                ),
-              },
-            }}
+            onGenerate={() => void generate(idx)}
+            generateLabel={t("settings.MTProto.generateSecret")}
+            generating={generatingIdx === idx}
+            actions={
+              <Tooltip title={t("settings.MTProto.shareLink")}>
+                <span>
+                  <IconButton
+                    size="small"
+                    disabled={!enabled || !s.secret}
+                    onClick={() => onShare(s.secret)}
+                  >
+                    <IosShareIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            }
           />
         </Paper>
       ))}

@@ -69,6 +69,7 @@ export interface SetFacet {
   active: boolean;
   rows: FacetRow[];
   section: EditorSection;
+  note?: string;
 }
 
 export const STRATEGY_LABELS: Record<string, string> = {
@@ -390,6 +391,8 @@ export const buildSetFacets = (
 ): SetFacet[] => {
   const routeMode = resolveRoutingMode(set.routing?.mode);
   const isBlock = !!set.routing?.enabled && routeMode === "block";
+  const pinnedWithoutRouting =
+    !set.routing?.enabled && dnsPinnedDomains(set).length > 0;
 
   return [
     {
@@ -427,6 +430,7 @@ export const buildSetFacets = (
       active: !!set.routing?.enabled,
       rows: routeRows(set, t),
       section: FACET_SECTIONS.route,
+      note: pinnedWithoutRouting ? t(F("routePinned")) : undefined,
     },
     {
       key: "dns",
@@ -488,8 +492,11 @@ export const buildRouteSummary = (
 ): RouteSummary => {
   const routing = set.routing;
   if (!routing?.enabled) {
+    const pinned = dnsPinnedDomains(set).length > 0;
     return {
-      text: t(F("defaultRoute")),
+      text: pinned
+        ? `${t(F("defaultRoute"))} · ${t(F("dnsPin"))}`
+        : t(F("defaultRoute")),
       color: colors.text.disabled,
       icon: <RoutingIcon />,
     };

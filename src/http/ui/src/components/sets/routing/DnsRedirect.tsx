@@ -182,7 +182,7 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
     <Grid container spacing={3}>
       <B4Hint>{t("sets.dns.alert")}</B4Hint>
 
-      <Grid size={{ lg: 12 }}>
+      <Grid size={{ xs: 12 }}>
         <B4Switch
           label={t("sets.dns.enable")}
           checked={dnsConfig.enabled}
@@ -582,7 +582,7 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
 
       <B4FormHeader label={t("sets.dns.pinsHeader")} />
 
-      <Grid size={{ lg: 12 }}>
+      <Grid size={{ xs: 12 }}>
         <B4Hint sx={{ mb: 2 }}>{t("sets.dns.pinsAlert")}</B4Hint>
         <B4TextField
           label={t("sets.dns.pins")}

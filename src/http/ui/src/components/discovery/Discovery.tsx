@@ -415,7 +415,15 @@ export const DiscoveryRunner = () => {
           <Trans i18nKey="discovery.alert" />
         </B4Alert>
 
-        <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
+        <Box
+          sx={{
+            display: "flex",
+            gap: 1,
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+            "& > .MuiFormControl-root": { flex: "1 1 220px", minWidth: 0 },
+          }}
+        >
           <B4TextField
             label={t("discovery.addDomainLabel")}
             value={urlInput}

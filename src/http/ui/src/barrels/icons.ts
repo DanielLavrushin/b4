@@ -72,7 +72,7 @@ export {
   OpenInFull as FullscreenIcon,
   VpnKey as SniIcon,
   History as HistoryIcon,
-  Delete as DeleteIcon,
+  DeleteForever as DeleteIcon,
   Logout as LogoutIcon,
   Inventory2 as BackupIcon,
   Power as ProxyIcon,
@@ -84,4 +84,8 @@ export {
   Telegram as TelegramIcon,
   DashboardCustomize as CustomizeIcon,
   VisibilityOff as HideIcon,
+  Visibility as EyeIcon,
+  VisibilityOff as EyeOffIcon,
+  Public as IpInfoIcon,
+  Extension as McpIcon,
 } from "@mui/icons-material";

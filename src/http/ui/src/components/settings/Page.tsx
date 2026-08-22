@@ -238,7 +238,9 @@ export function SettingsPage() {
         JSON.stringify(config.system.api) !==
           JSON.stringify(originalConfig.system.api) ||
         JSON.stringify(config.system.ai) !==
-          JSON.stringify(originalConfig.system.ai),
+          JSON.stringify(originalConfig.system.ai) ||
+        JSON.stringify(config.system.web_server.mcp) !==
+          JSON.stringify(originalConfig.system.web_server.mcp),
 
       // PAYLOADS
       [TABS.PAYLOADS]: false,
@@ -373,6 +375,9 @@ export function SettingsPage() {
             direction="row"
             justifyContent="space-between"
             alignItems="center"
+            flexWrap="wrap"
+            useFlexGap
+            spacing={1}
             sx={{ mb: 2 }}
           >
             <Stack direction="row" spacing={2} alignItems="center">
@@ -397,7 +402,13 @@ export function SettingsPage() {
               )}
             </Stack>
 
-            <Stack direction="row" spacing={1}>
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              justifyContent="flex-end"
+              sx={{ flex: { xs: "1 1 100%", sm: "0 1 auto" } }}
+            >
               {categoryHasChanges[TABS.GENERAL] && (
                 <B4Alert severity="warning" sx={{ py: 0, px: spacing.sm }}>
                   <Trans
@@ -422,6 +433,7 @@ export function SettingsPage() {
                   loadConfig().catch(() => {});
                 }}
                 disabled={saving}
+                sx={{ display: { xs: "none", sm: "inline-flex" } }}
               >
                 {t("core.reload")}
               </Button>

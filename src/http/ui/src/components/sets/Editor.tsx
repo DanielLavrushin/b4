@@ -172,9 +172,19 @@ export const SetEditorPage = ({
             direction="row"
             justifyContent="space-between"
             alignItems="center"
+            flexWrap="wrap"
+            useFlexGap
+            spacing={1}
             sx={{ mb: 2 }}
           >
-            <Stack direction="row" spacing={2} alignItems="center">
+            <Stack
+              direction="row"
+              spacing={2}
+              alignItems="center"
+              flexWrap="wrap"
+              useFlexGap
+              sx={{ flex: 1, minWidth: 0 }}
+            >
               <Button
                 startIcon={<ArrowBackIcon />}
                 onClick={handleBack}
@@ -191,7 +201,8 @@ export const SetEditorPage = ({
                 required
                 size="small"
                 sx={{
-                  minWidth: 250,
+                  flex: 1,
+                  minWidth: { xs: 160, sm: 250 },
                   "& .MuiInputBase-input": {
                     fontSize: "1.1rem",
                     fontWeight: 600,
@@ -213,7 +224,7 @@ export const SetEditorPage = ({
               )}
             </Stack>
 
-            <Stack direction="row" spacing={1}>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
               <Button
                 size="small"
                 variant="outlined"
