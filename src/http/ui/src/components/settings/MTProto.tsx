@@ -94,6 +94,7 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
   const [shareSecret, setShareSecret] = useState("");
   const [copied, setCopied] = useState(false);
   const [relayHelpOpen, setRelayHelpOpen] = useState(false);
+  const [copiedWebLink, setCopiedWebLink] = useState<string | null>(null);
   const [wsTesting, setWsTesting] = useState<null | "configured" | "direct">(
     null,
   );
@@ -131,6 +132,30 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
     setShareSecret(secretValue);
     setCopied(false);
     setShareOpen(true);
+  };
+
+  const webProxy = config.system.mtproto?.web_proxy;
+  const webProxyHost = (webProxy?.hostname || "").trim().toLowerCase();
+  const webProxyLinks = useMemo(() => {
+    if (!webProxyHost) return [];
+    return (config.system.mtproto?.secrets || [])
+      .filter((s) => s.enabled && (s.secret || "").trim().length >= 34)
+      .map((s) => {
+        const secret = "dd" + s.secret.trim().slice(2, 34).toLowerCase();
+        return {
+          id: s.id,
+          name: s.name || s.id,
+          secret,
+          link: `https://t.me/webproxy?server=${webProxyHost}&secret=${secret}`,
+        };
+      });
+  }, [config.system.mtproto?.secrets, webProxyHost]);
+
+  const handleCopyWebLink = async (id: string, link: string) => {
+    if (await copyText(link)) {
+      setCopiedWebLink(id);
+      globalThis.setTimeout(() => setCopiedWebLink(null), 1500);
+    }
   };
 
   const handleCopy = async () => {
@@ -322,6 +347,81 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
           onChange={onChange}
           onShare={openShare}
         />
+      </B4FormGroup>
+      <B4FormGroup
+        label={t("settings.MTProto.webProxyTitle")}
+        description={t("settings.MTProto.webProxyDesc")}
+        columns={1}
+      >
+        <B4Switch
+          label={t("settings.MTProto.webProxyEnable")}
+          checked={webProxy?.enabled ?? false}
+          onChange={(checked: boolean) =>
+            onChange("system.mtproto.web_proxy.enabled", checked)
+          }
+          disabled={!config.system.mtproto?.enabled}
+          description={t("settings.MTProto.webProxyEnableDesc")}
+        />
+        {webProxy?.enabled && (
+          <>
+            <B4TextField
+              label={t("settings.MTProto.webProxyHostname")}
+              value={webProxy?.hostname || ""}
+              onChange={(e) =>
+                onChange("system.mtproto.web_proxy.hostname", e.target.value)
+              }
+              placeholder="relay.example.org"
+              helperText={t("settings.MTProto.webProxyHostnameHelp")}
+              selectOnFocus
+            />
+            <B4Alert severity="info">
+              {t("settings.MTProto.webProxyRequirements")}
+            </B4Alert>
+            {webProxyLinks.length > 0 && (
+              <Stack spacing={1}>
+                <Typography variant="caption" color="text.secondary">
+                  {t("settings.MTProto.webProxyLinksHelp")}
+                </Typography>
+                {webProxyLinks.map((entry) => (
+                  <B4TextField
+                    key={entry.id}
+                    label={entry.name}
+                    value={entry.link}
+                    slotProps={{
+                      input: {
+                        readOnly: true,
+                        endAdornment: (
+                          <InputAdornment position="end">
+                            <Tooltip
+                              title={
+                                copiedWebLink === entry.id
+                                  ? t("core.copied")
+                                  : t("core.copy")
+                              }
+                            >
+                              <IconButton
+                                size="small"
+                                onClick={() =>
+                                  void handleCopyWebLink(entry.id, entry.link)
+                                }
+                              >
+                                {copiedWebLink === entry.id ? (
+                                  <CheckIcon fontSize="small" color="success" />
+                                ) : (
+                                  <ContentCopyIcon fontSize="small" />
+                                )}
+                              </IconButton>
+                            </Tooltip>
+                          </InputAdornment>
+                        ),
+                      },
+                    }}
+                  />
+                ))}
+              </Stack>
+            )}
+          </>
+        )}
       </B4FormGroup>
       {(() => {
         const mode = config.system.mtproto?.upstream_mode || "auto";

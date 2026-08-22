@@ -23,6 +23,39 @@ func (api *API) RegisterMTProtoApi() {
 	api.mux.HandleFunc("/api/mtproto/test-ws", api.handleMTProtoTestWS)
 	api.mux.HandleFunc("/api/mtproto/sessions", api.handleMTProtoSessions)
 	api.mux.HandleFunc("/api/mtproto/active-clients", api.handleMTProtoActiveClients)
+	api.mux.HandleFunc("/api/mtproto/web-proxy", api.handleMTProtoWebProxy)
+}
+
+// @Summary Telegram Desktop WEB proxy status
+// @Description Relay hostname and one importable t.me/webproxy link per active secret.
+// @Tags MTProto
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /mtproto/web-proxy [get]
+func (api *API) handleMTProtoWebProxy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	cfg := api.getCfg().System.MTProto
+	links := []mtproto.WebProxyLinkInfo{}
+	host := ""
+	if p, ok := globalMTProtoServer.(interface {
+		WebProxyHost() string
+		WebProxyLinks() []mtproto.WebProxyLinkInfo
+	}); ok {
+		host = p.WebProxyHost()
+		if l := p.WebProxyLinks(); l != nil {
+			links = l
+		}
+	}
+	sendResponse(w, map[string]interface{}{
+		"success": true,
+		"enabled": cfg.Enabled && cfg.WebProxy.Enabled,
+		"host":    host,
+		"links":   links,
+	})
 }
 
 func mtprotoSessions() []mtproto.SessionInfo {
@@ -385,6 +418,19 @@ func (api *API) updateMTProtoConfig(w http.ResponseWriter, r *http.Request) {
 	case "", "tcp", "ws", "auto":
 	default:
 		writeJsonError(w, http.StatusBadRequest, "upstream_mode must be tcp, ws or auto")
+		return
+	}
+
+	req.WebProxy.Hostname = strings.TrimSpace(req.WebProxy.Hostname)
+	if req.WebProxy.Hostname != "" {
+		host, err := mtproto.ValidateWebProxyHost(req.WebProxy.Hostname)
+		if err != nil {
+			writeJsonError(w, http.StatusBadRequest, "Invalid WEB proxy hostname: "+err.Error())
+			return
+		}
+		req.WebProxy.Hostname = host
+	} else if req.WebProxy.Enabled {
+		writeJsonError(w, http.StatusBadRequest, "A relay hostname is required when the WEB proxy is enabled")
 		return
 	}
 
