@@ -382,7 +382,19 @@
       "testStage_dial": "соединение не установлено",
       "testStage_handshake": "сбой рукопожатия",
       "testStage_hold": "соединение сброшено после рукопожатия",
-      "upstreamAutoRelayDesc": "DC Relay настроен: сначала пробуется реле по TCP, WebSocket - как резерв."
+      "upstreamAutoRelayDesc": "DC Relay настроен: сначала пробуется реле по TCP, WebSocket - как резерв.",
+      "advanced": "Дополнительно",
+      "statusRunning_one": "Работает · {{count}} клиент",
+      "statusRunning_few": "Работает · {{count}} клиента",
+      "statusRunning_many": "Работает · {{count}} клиентов",
+      "statusRunning_other": "Работает · {{count}} клиентов",
+      "statusStopped": "Не запущен",
+      "webProxyNoHost": "Хост не задан",
+      "upstreamFallbacks": "Резервные источники",
+      "shareDialogTitleNamed": "Поделиться «{{name}}»",
+      "shareDirectLabel": "MTProto · напрямую",
+      "shareWebLabel": "WEB · Telegram Desktop 7.1.1+",
+      "shareWebFooter": "Содержит padded-форму секрета, которую Telegram Desktop принимает для WEB-записей."
     },
     "MSSClamping": {
       "title": "Глобальный MSS Clamping",

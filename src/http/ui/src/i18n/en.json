@@ -382,7 +382,17 @@
       "testStage_dial": "connect failed",
       "testStage_handshake": "handshake failed",
       "testStage_hold": "dropped after handshake",
-      "upstreamAutoRelayDesc": "DC Relay is configured: relay TCP is tried first, WebSocket as fallback."
+      "upstreamAutoRelayDesc": "DC Relay is configured: relay TCP is tried first, WebSocket as fallback.",
+      "advanced": "Advanced",
+      "statusRunning_one": "Running · {{count}} client",
+      "statusRunning_other": "Running · {{count}} clients",
+      "statusStopped": "Not running",
+      "webProxyNoHost": "No hostname set",
+      "upstreamFallbacks": "Fallback sources",
+      "shareDialogTitleNamed": "Share “{{name}}”",
+      "shareDirectLabel": "MTProto · direct",
+      "shareWebLabel": "WEB · Telegram Desktop 7.1.1+",
+      "shareWebFooter": "Carries the padded secret form Telegram Desktop accepts for WEB entries."
     },
     "MSSClamping": {
       "title": "Global MSS Clamping",
