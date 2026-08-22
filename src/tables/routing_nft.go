@@ -267,8 +267,9 @@ func (b *routeNftBackend) addMasqueradeRule(chain string, mark uint32, iface str
 	)
 }
 
-func (b *routeNftBackend) addSNATRule(chain, setName, iface, srcIP string, v6 bool) {
+func (b *routeNftBackend) addSNATRule(chain, setName, iface, srcIP string, mark uint32, v6 bool) {
 	hostCTMask := fmt.Sprintf("0x%x", hostRouteCTMark)
+	markHex := fmt.Sprintf("0x%x", mark)
 	nfproto := "ipv4"
 	family := "ip"
 	if v6 {
@@ -279,6 +280,7 @@ func (b *routeNftBackend) addSNATRule(chain, setName, iface, srcIP string, v6 bo
 		runLogged("routing: add snat rule",
 			"nft", "add", "rule", "inet", routeNftTable, chain,
 			"meta", "nfproto", nfproto,
+			"meta", "mark", "&", markHex, "==", markHex,
 			family, "daddr", "@"+sn,
 			"ct", "mark", "&", hostCTMask, "==", hostCTMask,
 			"oifname", fmt.Sprintf("%q", iface),

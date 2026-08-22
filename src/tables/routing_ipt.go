@@ -228,15 +228,17 @@ func (b *routeIptBackend) addMasqueradeRule(chain string, mark uint32, iface str
 	)
 }
 
-func (b *routeIptBackend) addSNATRule(chain, setName, iface, srcIP string, v6 bool) {
+func (b *routeIptBackend) addSNATRule(chain, setName, iface, srcIP string, mark uint32, v6 bool) {
 	cmd := b.iptFor(v6)
 	if !hasBinary(cmd) {
 		return
 	}
 	ctMask := fmt.Sprintf("0x%x/0x%x", hostRouteCTMark, hostRouteCTMark)
+	markHex := fmt.Sprintf("0x%x/0x%x", mark, mark)
 
 	runLogged("routing: add snat rule",
 		cmd, "-w", "-t", "nat", "-A", chain,
+		"-m", "mark", "--mark", markHex,
 		"-m", "set", "--match-set", setName, "dst",
 		"-m", "connmark", "--mark", ctMask,
 		"-o", iface,

@@ -1027,7 +1027,7 @@ func TestRouteResolveIDs(t *testing.T) {
 	t.Run("reuses cached iface auto", func(t *testing.T) {
 		routeRuleCache = make(map[string]routeState)
 		routeIfaceAuto = map[string]routeState{
-			"tun0": {mark: 0x555, table: 150},
+			routeIfaceAutoKey("tun0", ""): {mark: 0x555, table: 150},
 		}
 
 		cfg := config.NewConfig()
@@ -1362,8 +1362,8 @@ func (m *mockRouteBackend) hasDeletedJump(baseChain, targetChain string) bool {
 func (m *mockRouteBackend) addMasqueradeRule(chain string, mark uint32, iface string, v6 bool) {
 	m.masq = append(m.masq, mockNATRule{chain: chain, mark: mark, iface: iface, v6: v6})
 }
-func (m *mockRouteBackend) addSNATRule(chain, setName, iface, srcIP string, v6 bool) {
-	m.snat = append(m.snat, mockNATRule{chain: chain, setName: setName, iface: iface, srcIP: srcIP, v6: v6})
+func (m *mockRouteBackend) addSNATRule(chain, setName, iface, srcIP string, mark uint32, v6 bool) {
+	m.snat = append(m.snat, mockNATRule{chain: chain, setName: setName, mark: mark, iface: iface, srcIP: srcIP, v6: v6})
 }
 func (m *mockRouteBackend) flushIPSet(name string)   {}
 func (m *mockRouteBackend) destroyIPSet(name string) {}

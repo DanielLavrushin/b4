@@ -58,7 +58,7 @@ type routeBackend interface {
 	ensureJumpRule(baseChain, targetChain string, isMangle bool, atTop bool)
 	deleteJumpRules(baseChain, targetChain string, isMangle bool)
 	addMasqueradeRule(chain string, mark uint32, iface string, v6 bool)
-	addSNATRule(chain, setName, iface, srcIP string, v6 bool)
+	addSNATRule(chain, setName, iface, srcIP string, mark uint32, v6 bool)
 	flushIPSet(name string)
 	destroyIPSet(name string)
 	clearAll()
@@ -866,8 +866,9 @@ func RoutingSyncConfig(cfg *config.Config) {
 		if config.RoutingUsesTProxy(st.mode) || st.iface == "" {
 			continue
 		}
-		if _, ok := routeIfaceAuto[st.iface]; !ok {
-			routeIfaceAuto[st.iface] = routeState{mark: st.mark, table: st.table}
+		key := routeIfaceAutoKey(st.iface, st.egressIP)
+		if _, ok := routeIfaceAuto[key]; !ok {
+			routeIfaceAuto[key] = routeState{mark: st.mark, table: st.table}
 		}
 	}
 
@@ -1084,7 +1085,9 @@ func routeEgressIPForFamily(egressIP string, v6 bool) string {
 	return parsed.String()
 }
 
-func routeEgressIPOnIface(iface, egressIP string) bool {
+var routeEgressIPOnIface = routeEgressIPOnIfaceReal
+
+func routeEgressIPOnIfaceReal(iface, egressIP string) bool {
 	want := net.ParseIP(egressIP)
 	if iface == "" || want == nil {
 		return false
@@ -1107,6 +1110,8 @@ func routeEgressIPOnIface(iface, egressIP string) bool {
 }
 
 func routeEgressAddrKey(iface, ip string) string { return iface + "|" + ip }
+
+func routeIfaceAutoKey(iface, egressIP string) string { return iface + "|" + egressIP }
 
 func routeEgressAddrPrefix(ip net.IP) string {
 	if ip.To4() != nil {
@@ -1194,7 +1199,7 @@ func routeAddEgressRules(be routeBackend, st routeState, ipv4, ipv6 bool) {
 			be.addMasqueradeRule(st.chainSNAT, st.mark, st.iface, v6)
 			return
 		}
-		be.addSNATRule(st.chainSNAT, setName, st.iface, src, v6)
+		be.addSNATRule(st.chainSNAT, setName, st.iface, src, st.mark, v6)
 	}
 	if ipv4 {
 		emit(false, st.setV4)
@@ -1469,6 +1474,15 @@ func routeGetIfaceAddr(iface string, wantV6 bool) string {
 	return best
 }
 
+func markOverlaps(mark uint32, used map[uint32]struct{}) bool {
+	for u := range used {
+		if mark&u == u || u&mark == mark {
+			return true
+		}
+	}
+	return false
+}
+
 func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 	if set.Routing.FWMark > 0 && set.Routing.Table > 0 {
 		if q := routeQueueBypassMark(cfg); set.Routing.FWMark&q == q {
@@ -1478,7 +1492,8 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 			return set.Routing.FWMark, set.Routing.Table
 		}
 	}
-	if st, ok := routeIfaceAuto[set.Routing.EgressInterface]; ok && st.mark > 0 && st.table > 0 {
+	autoKey := routeIfaceAutoKey(set.Routing.EgressInterface, set.Routing.EgressIP)
+	if st, ok := routeIfaceAuto[autoKey]; ok && st.mark > 0 && st.table > 0 {
 		return st.mark, st.table
 	}
 
@@ -1506,28 +1521,27 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 	}
 
 	h := fnv.New32a()
-	_, _ = h.Write([]byte(set.Routing.EgressInterface))
+	_, _ = h.Write([]byte(autoKey))
 	base := h.Sum32()
 
 	for attempt := uint32(0); attempt < 4096; attempt++ {
 		table := 100 + int((base+attempt)%150)
 		mark := uint32(0x100 + (base+attempt)%0x7E00)
-		if _, ok := usedMarks[mark]; ok {
+		if markOverlaps(mark, usedMarks) {
 			continue
 		}
 		if _, ok := usedTables[table]; ok {
 			continue
 		}
-		routeIfaceAuto[set.Routing.EgressInterface] = routeState{mark: mark, table: table}
+		routeIfaceAuto[autoKey] = routeState{mark: mark, table: table}
 		return mark, table
 	}
 
 	mark := uint32(0x66)
 	table := 100
 	for i := 0; i < 4096; i++ {
-		_, markUsed := usedMarks[mark]
 		_, tableUsed := usedTables[table]
-		if !markUsed && !tableUsed {
+		if !markOverlaps(mark, usedMarks) && !tableUsed {
 			break
 		}
 		mark++
@@ -1536,7 +1550,7 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 			table = 100
 		}
 	}
-	routeIfaceAuto[set.Routing.EgressInterface] = routeState{mark: mark, table: table}
+	routeIfaceAuto[autoKey] = routeState{mark: mark, table: table}
 	return mark, table
 }
 
