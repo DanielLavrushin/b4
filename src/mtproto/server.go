@@ -67,6 +67,8 @@ type Server struct {
 	connsMu sync.Mutex
 	conns   map[string]*secretConnSet
 
+	webTickets webTicketStore
+
 	mu       sync.Mutex
 	running  bool
 	listener net.Listener
@@ -576,7 +578,8 @@ func (s *Server) acceptLoop(ln net.Listener) {
 			if errors.Is(err, net.ErrClosed) {
 				return
 			}
-			log.Errorf("MTProto accept: %v", err)
+			log.Tracef("MTProto accept: %v", err)
+			time.Sleep(50 * time.Millisecond)
 			continue
 		}
 
@@ -637,8 +640,14 @@ func (s *Server) handleConn(raw net.Conn) {
 		}
 		return
 	}
+	log.Debugf("%s proxy fake-TLS handshake OK from %s (secret=%s)", tag, clientAddr, secret.Label())
+
+	s.serveClient(raw, tlsConn, secret, clientAddr, id, tag, "TCP", secret.Host)
+}
+
+func (s *Server) serveClient(raw net.Conn, plain net.Conn, secret *Secret, clientAddr, id, tag, proto, sni string) {
+	cfg := s.cfg.Load()
 	user := secret.Label()
-	log.Debugf("%s proxy fake-TLS handshake OK from %s (secret=%s)", tag, clientAddr, user)
 
 	info, untrack := s.trackConn(secret, raw)
 	defer untrack()
@@ -647,7 +656,7 @@ func (s *Server) handleConn(raw net.Conn) {
 		return
 	}
 
-	result, err := AcceptObfuscated(tlsConn, secret)
+	result, err := AcceptObfuscated(plain, secret)
 	if err != nil {
 		log.Tracef("%s proxy obfuscated2 failed from %s: %v", tag, clientAddr, err)
 		return
@@ -673,7 +682,7 @@ func (s *Server) handleConn(raw net.Conn) {
 		dcAddr = ra.String()
 	}
 	info.dest.Store(&dcAddr)
-	log.LogConnectionStr("TCP", "", secret.Host, clientAddr, "", dcAddr, "", "", mtprotoConnMeta(user))
+	log.LogConnectionStr(proto, "", sni, clientAddr, "", dcAddr, "", "", mtprotoConnMeta(user))
 
 	st := s.secretStat(secret)
 	st.active.Add(1)

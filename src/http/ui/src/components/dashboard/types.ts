@@ -29,6 +29,7 @@ export interface Metrics {
     heap_sys: number;
     rss: number;
     goroutines: number;
+    threads: number;
     open_fds: number;
     percent: number;
   };

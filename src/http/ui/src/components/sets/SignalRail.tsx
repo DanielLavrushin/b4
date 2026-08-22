@@ -125,7 +125,7 @@ export const SignalRail = ({
             title={
               facet.active
                 ? facet.label
-                : `${facet.label} · ${facet.note ?? t("sets.card.f.notConfigured")}`
+                : `${facet.label} · ${t("sets.card.f.notConfigured")}`
             }
           >
             <Box
@@ -278,7 +278,7 @@ export const FacetDrawer = ({ facet, onEdit }: FacetDrawerProps) => {
           useFlexGap
         >
           <Typography sx={{ ...valueStyle, color: colors.text.disabled }}>
-            {facet.note ?? t("sets.card.f.notConfigured")}
+            {t("sets.card.f.notConfigured")}
           </Typography>
           <Button
             size="small"

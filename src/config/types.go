@@ -383,7 +383,14 @@ type MTProtoConfig struct {
 	DCFallbackEnabled bool   `json:"dc_fallback_enabled"` // fetch the DC IP list from DCFallbackURL when Telegram's official endpoint is blocked
 	DCFallbackURL     string `json:"dc_fallback_url"`     // fallback source for the Telegram DC list; empty = built-in default
 
+	WebProxy MTProtoWebProxyConfig `json:"web_proxy"`
+
 	BridgeSkipNativeEdge bool `json:"-"`
+}
+
+type MTProtoWebProxyConfig struct {
+	Enabled  bool   `json:"enabled"`
+	Hostname string `json:"hostname"`
 }
 
 type Socks5Config struct {

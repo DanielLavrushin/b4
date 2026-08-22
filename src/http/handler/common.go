@@ -294,3 +294,15 @@ func downloadFile(url, destPath string) (int64, error) {
 
 	return size, nil
 }
+
+type MTProtoWebProxy interface {
+	ServeWebProxy(w http.ResponseWriter, r *http.Request) bool
+	WebProxyHost() string
+}
+
+func MTProtoWebProxyServer() MTProtoWebProxy {
+	if p, ok := globalMTProtoServer.(MTProtoWebProxy); ok {
+		return p
+	}
+	return nil
+}

@@ -24,6 +24,7 @@ import (
 	b4http "github.com/daniellavrushin/b4/http"
 	"github.com/daniellavrushin/b4/http/handler"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/mtproto"
 	"github.com/daniellavrushin/b4/nfq"
 	"github.com/daniellavrushin/b4/quic"
@@ -119,6 +120,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 	} else if limit > 0 {
 		fmt.Fprintf(os.Stderr, "[INIT] Memory limit set to %d MB\n", limit/(1024*1024))
 	}
+
+	fmt.Fprintf(os.Stderr, "[INIT] OS thread limit set to %d\n", metrics.ApplyThreadLimit())
 
 	if cmd.Flags().Changed("verbose") {
 		cfg.ApplyLogLevel(verboseFlag)
@@ -756,6 +759,8 @@ func initLogging(cfg *config.Config) error {
 			log.Infof("Syslog enabled")
 		}
 	}
+
+	metrics.SetThreadDumpDir(cfg.System.Logging.Directory)
 
 	if errFilePath := cfg.System.Logging.ErrorFilePath(); errFilePath != "" {
 		if err := log.InitErrorFile(errFilePath); err != nil {

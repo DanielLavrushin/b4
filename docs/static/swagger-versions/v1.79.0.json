@@ -2679,6 +2679,32 @@
                 }
             }
         },
+        "/mtproto/web-proxy": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Relay hostname and one importable t.me/webproxy link per active secret.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "MTProto"
+                ],
+                "summary": "Telegram Desktop WEB proxy status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/sets": {
             "get": {
                 "security": [
@@ -4341,6 +4367,9 @@
                 "upstream_mode": {
                     "type": "string"
                 },
+                "web_proxy": {
+                    "$ref": "#/definitions/config.MTProtoWebProxyConfig"
+                },
                 "ws_custom_domain": {
                     "type": "string"
                 },
@@ -4362,6 +4391,17 @@
                     "type": "string"
                 },
                 "secret": {
+                    "type": "string"
+                }
+            }
+        },
+        "config.MTProtoWebProxyConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "hostname": {
                     "type": "string"
                 }
             }
