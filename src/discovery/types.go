@@ -96,17 +96,19 @@ type CheckSuite struct {
 }
 
 type DomainPresetResult struct {
-	PresetName string            `json:"preset_name"`
-	Family     StrategyFamily    `json:"family,omitempty"`
-	Phase      DiscoveryPhase    `json:"phase,omitempty"`
-	Priority   int               `json:"priority,omitempty"`
-	Status     CheckStatus       `json:"status"`
-	Duration   time.Duration     `json:"duration"`
-	Speed      float64           `json:"speed"`
-	BytesRead  int64             `json:"bytes_read"`
-	Error      string            `json:"error,omitempty"`
-	StatusCode int               `json:"status_code"`
-	Set        *config.SetConfig `json:"set"`
+	PresetName   string            `json:"preset_name"`
+	Family       StrategyFamily    `json:"family,omitempty"`
+	Phase        DiscoveryPhase    `json:"phase,omitempty"`
+	Priority     int               `json:"priority,omitempty"`
+	Status       CheckStatus       `json:"status"`
+	Duration     time.Duration     `json:"duration"`
+	Speed        float64           `json:"speed"`
+	BytesRead    int64             `json:"bytes_read"`
+	Error        string            `json:"error,omitempty"`
+	StatusCode   int               `json:"status_code"`
+	Confirmed    int               `json:"confirmed,omitempty"`
+	ConfirmTries int               `json:"confirm_tries,omitempty"`
+	Set          *config.SetConfig `json:"set"`
 }
 
 type StrategyGroup struct {

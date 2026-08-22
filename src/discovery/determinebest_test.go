@@ -157,3 +157,60 @@ func TestBuildStrategyGroupsSkipsDomainsThatNeedNoBypass(t *testing.T) {
 		t.Fatalf("group domains = %v, want [blocked.example]", got)
 	}
 }
+
+func TestWinnersToConfirmCoversBothTheDomainBestAndTheGroupWinner(t *testing.T) {
+	ds := suiteWithResults(map[string]map[string]*DomainPresetResult{
+		"a.example": {
+			presetNoBypass: presetResult(CheckStatusFailed, 0),
+			"broad":        presetResult(CheckStatusComplete, 3000),
+			"fast":         presetResult(CheckStatusComplete, 9000),
+		},
+		"b.example": {
+			presetNoBypass: presetResult(CheckStatusFailed, 0),
+			"broad":        presetResult(CheckStatusComplete, 2500),
+		},
+	})
+
+	ds.determineBest()
+	ds.buildStrategyGroups()
+
+	if got := ds.domainResults["a.example"].BestPreset; got != "fast" {
+		t.Fatalf("a.example BestPreset = %q, want fast", got)
+	}
+	if len(ds.StrategyGroups) != 1 || ds.StrategyGroups[0].WinnerPreset != "broad" {
+		t.Fatalf("groups = %+v, want one group won by broad", ds.StrategyGroups)
+	}
+
+	pending := ds.winnersToConfirm()
+	if got := pending["fast"]; len(got) != 1 || got[0] != "a.example" {
+		t.Fatalf("pending[fast] = %v, want [a.example]", got)
+	}
+	if got := pending["broad"]; len(got) != 2 {
+		t.Fatalf("pending[broad] = %v, want both domains", got)
+	}
+}
+
+func TestWinnersToConfirmSkipsAlreadyConfirmedPresets(t *testing.T) {
+	ds := suiteWithResults(map[string]map[string]*DomainPresetResult{
+		"a.example": {
+			presetNoBypass: presetResult(CheckStatusFailed, 0),
+			"fast":         presetResult(CheckStatusComplete, 9000),
+		},
+	})
+
+	ds.determineBest()
+	ds.buildStrategyGroups()
+
+	if len(ds.winnersToConfirm()) == 0 {
+		t.Fatal("the winner must start out unconfirmed")
+	}
+
+	ds.recordConfirmation("a.example", "fast", confirmTries)
+
+	if got := ds.winnersToConfirm(); len(got) != 0 {
+		t.Fatalf("a confirmed winner must not be queued again, got %v", got)
+	}
+	if dr := ds.domainResults["a.example"]; dr.Confirmed != confirmTries || dr.ConfirmTries != confirmTries {
+		t.Fatalf("the domain mirror was not updated: %d/%d", dr.Confirmed, dr.ConfirmTries)
+	}
+}

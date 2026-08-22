@@ -39,6 +39,8 @@ export interface DomainPresetResult {
   bytes_read: number;
   error?: string;
   status_code: number;
+  confirmed?: number;
+  confirm_tries?: number;
   set?: B4SetConfig;
 }
 

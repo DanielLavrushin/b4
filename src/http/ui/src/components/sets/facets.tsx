@@ -2,12 +2,10 @@ import {
   BlockIcon,
   DnsIcon,
   DomainIcon,
-  EscalateOutIcon,
+  EscalateIcon,
   FakingIcon,
   FragIcon,
-  NetworkIcon,
-  ProxyIcon,
-  SwapIcon,
+  RoutingIcon,
 } from "@b4.icons";
 import { colors, facets } from "@design";
 import {
@@ -314,20 +312,33 @@ const routeRows = (set: B4SetConfig, t: TFn): FacetRow[] => {
   return rows;
 };
 
+export const dnsPinnedDomains = (set: B4SetConfig): string[] =>
+  Object.keys(set.dns?.pins ?? {});
+
+export const hasDnsFacet = (set: B4SetConfig) =>
+  !!set.dns?.enabled || dnsPinnedDomains(set).length > 0;
+
 const dnsRows = (set: B4SetConfig, t: TFn): FacetRow[] => {
   const dns = set.dns;
   const isDoh = !!dns.doh_url;
-  const rows: FacetRow[] = [
-    { label: t(F("mode")), value: isDoh ? "DoH" : t(F("redirect")) },
-    {
+  const rows: FacetRow[] = [];
+
+  if (dns.enabled) {
+    rows.push({ label: t(F("mode")), value: isDoh ? "DoH" : t(F("redirect")) });
+    rows.push({
       label: t(F("dnsTarget")),
       value: isDoh ? dns.doh_url : dns.target_dns || "—",
-    },
-    { label: t(F("fragment")), value: onOff(t, dns.fragment_query) },
-  ];
-  const pins = dns.pins ? Object.keys(dns.pins).length : 0;
-  if (pins > 0) {
-    rows.push({ label: t(F("pins")), value: String(pins) });
+    });
+    rows.push({ label: t(F("fragment")), value: onOff(t, dns.fragment_query) });
+  }
+
+  const pinned = dnsPinnedDomains(set);
+  if (pinned.length > 0) {
+    if (!dns.enabled) {
+      rows.push({ label: t(F("mode")), value: t(F("pinsOnly")) });
+    }
+    rows.push({ label: t(F("pins")), value: String(pinned.length) });
+    rows.push({ label: t("core.domains"), value: pinned.join(", ") });
   }
   return rows;
 };
@@ -363,13 +374,6 @@ const escalateRows = (
     rows.push({ label: t(F("ttlSec")), value: `${esc.ttl_sec}s` });
   }
   return rows;
-};
-
-const ROUTE_ICONS: Record<RoutingMode, React.ReactElement> = {
-  interface: <NetworkIcon />,
-  proxy: <ProxyIcon />,
-  "mtproto-ws": <SwapIcon />,
-  block: <BlockIcon />,
 };
 
 export const hasTargets = (set: B4SetConfig) =>
@@ -419,7 +423,7 @@ export const buildSetFacets = (
       key: "route",
       label: isBlock ? t(F("block")) : t(F("route")),
       color: isBlock ? facets.block : FACET_COLORS.route,
-      icon: ROUTE_ICONS[routeMode],
+      icon: isBlock ? <BlockIcon /> : <RoutingIcon />,
       active: !!set.routing?.enabled,
       rows: routeRows(set, t),
       section: FACET_SECTIONS.route,
@@ -429,7 +433,7 @@ export const buildSetFacets = (
       label: t(F("dns")),
       color: FACET_COLORS.dns,
       icon: <DnsIcon />,
-      active: !!set.dns?.enabled,
+      active: hasDnsFacet(set),
       rows: dnsRows(set, t),
       section: FACET_SECTIONS.dns,
     },
@@ -437,7 +441,7 @@ export const buildSetFacets = (
       key: "escalate",
       label: t(F("escalate")),
       color: FACET_COLORS.escalate,
-      icon: <EscalateOutIcon />,
+      icon: <EscalateIcon />,
       active: !!set.escalate?.to,
       rows: escalateRows(set, t, escalatesToName),
       section: FACET_SECTIONS.escalate,
@@ -487,7 +491,7 @@ export const buildRouteSummary = (
     return {
       text: t(F("defaultRoute")),
       color: colors.text.disabled,
-      icon: <NetworkIcon />,
+      icon: <RoutingIcon />,
     };
   }
 
@@ -504,14 +508,14 @@ export const buildRouteSummary = (
     return {
       text: up?.host ? `socks5 ${up.host}:${up.port}` : "socks5",
       color: facets.route,
-      icon: <ProxyIcon />,
+      icon: <RoutingIcon />,
     };
   }
   if (mode === "mtproto-ws") {
     return {
       text: "mtproto-ws",
       color: facets.route,
-      icon: <SwapIcon />,
+      icon: <RoutingIcon />,
     };
   }
   return {
@@ -519,6 +523,6 @@ export const buildRouteSummary = (
       ? `iface ${routing.egress_interface}`
       : t(F("defaultRoute")),
     color: facets.route,
-    icon: <NetworkIcon />,
+    icon: <RoutingIcon />,
   };
 };

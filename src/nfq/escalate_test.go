@@ -569,3 +569,32 @@ func TestRouteRefreshInterval_HalvesTheIPSetTTL(t *testing.T) {
 		t.Fatalf("a short TTL must still be floored at 30s, got %s", got)
 	}
 }
+
+func TestFallbackAnswerLeavesTheDNSFailureCountAlone(t *testing.T) {
+	w := newEscalateWorker()
+	cfg, primary, backup := escalatePair(t)
+	primary.Escalate.DNSThreshold = 2
+
+	srv := &dnsTCPServer{worker: w}
+
+	query := dns.BuildQuery("ntc.party", 1, 1)
+	nx := dns.BuildBlockResponse(query)
+	good := dns.BuildAnswerFromIPs(query, 60, []net.IP{net.ParseIP("1.2.3.4")})
+
+	if next := srv.escalationTarget(cfg, primary, "ntc.party", "", dnsTypeA, good, true); next != nil {
+		t.Fatal("an answer served from the fallback must not be judged at all")
+	}
+
+	if next := srv.escalationTarget(cfg, primary, "ntc.party", "", dnsTypeA, nx, false); next != nil {
+		t.Fatal("the first NXDOMAIN must not escalate at a threshold of 2")
+	}
+
+	if next := srv.escalationTarget(cfg, primary, "ntc.party", "", dnsTypeA, good, true); next != nil {
+		t.Fatal("a fallback answer must not escalate")
+	}
+
+	next := srv.escalationTarget(cfg, primary, "ntc.party", "", dnsTypeA, nx, false)
+	if next == nil || next.Id != backup.Id {
+		t.Fatalf("a fallback answer must not clear the count either, the second NXDOMAIN must still escalate, got %v", next)
+	}
+}

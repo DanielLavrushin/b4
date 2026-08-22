@@ -53,11 +53,12 @@ import { reportSaveError } from "@utils";
 
 import { SetCompare } from "./Compare";
 import { SetCard } from "./SetCard";
-import { EditorSection, FacetKey } from "./facets";
+import { EditorSection } from "./facets";
 import { FacetCompareBar } from "./SignalRail";
 
 import { colors, radius } from "@design";
 import { useSets } from "@hooks/useSets";
+import { useSetFacetSelection } from "@hooks/useSetFacetSelection";
 import { B4Config, B4SetConfig } from "@models/config";
 import { useTranslation } from "react-i18next";
 
@@ -160,10 +161,6 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
 
   const [filterText, setFilterText] = useState("");
   const [selectionMode, setSelectionMode] = useState(false);
-  const [facetBroadcast, setFacetBroadcast] = useState<{
-    facet: FacetKey | null;
-    token: number;
-  }>({ facet: null, token: 0 });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleteDialog, setDeleteDialog] = useState<{
     open: boolean;
@@ -206,6 +203,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
 
   const sets = setsData.map((s) => ("set" in s ? s.set : s)) as B4SetConfig[];
   const setsStats = setsData.map((s) => ("stats" in s ? s.stats : null));
+  const facetSelection = useSetFacetSelection(sets.map((s) => s.id));
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -649,10 +647,15 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
 
         {filteredSets.length > 0 && (
           <FacetCompareBar
-            active={facetBroadcast.facet}
+            active={facetSelection.compare}
             onPick={(facet) => {
-              setFacetBroadcast((prev) => ({ facet, token: prev.token + 1 }));
+              facetSelection.pickCompare(
+                facet,
+                filteredSets.map((s) => s.id),
+              );
             }}
+            toggle={facetSelection.toggle}
+            onToggle={facetSelection.toggleAll}
           />
         )}
 
@@ -711,8 +714,10 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                           highlighted={highlightedSetId === set.id}
                           onEscalationHover={handleEscalationHover}
                           onEscalationClick={handleEscalationClick}
-                          broadcastFacet={facetBroadcast.facet}
-                          broadcastToken={facetBroadcast.token}
+                          activeFacet={facetSelection.open[set.id] ?? null}
+                          onFacetSelect={(key) => {
+                            facetSelection.selectFacet(set.id, key);
+                          }}
                         />
                       )}
                     </SortableCardWrapper>

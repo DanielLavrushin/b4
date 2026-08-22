@@ -530,9 +530,8 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		})
 	}
 
-	escalateResp := resp
+	servedFallback := false
 	if err != nil {
-		escalateResp = nil
 		if !errors.Is(err, errDNSSourceCoolingDown) {
 			noteDNSSourceFailure(source)
 		}
@@ -551,11 +550,12 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 			dnsUpstreamLabel(source), dns.SafeName(queryDomain), err, action, set.Name)
 		logDNSEvent("UDP", set, queryDomain, clientIP, originalDst, clientPort, w.getMacByIp(clientIP.String()), action)
 		resp = fallback
+		servedFallback = true
 	} else {
 		noteDNSSourceSuccess(source)
 	}
 
-	if w.escalateAfterDNS(ipVersion, cfg, set, queryDomain, query, escalateResp, clientIP, clientPort, originalDst) {
+	if !servedFallback && w.escalateAfterDNS(ipVersion, cfg, set, queryDomain, query, resp, clientIP, clientPort, originalDst) {
 		return
 	}
 

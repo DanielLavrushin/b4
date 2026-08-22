@@ -211,8 +211,5 @@ func (w *Worker) dnsRedirectFallback(cfg *config.Config, set *config.SetConfig, 
 	if err != nil || len(resp) == 0 {
 		return nil, ""
 	}
-	if rcode, ok := dns.ResponseRcode(resp); ok && rcode != dns.RcodeNoError {
-		return nil, ""
-	}
 	return resp, dnsActionFallbackUpstream
 }

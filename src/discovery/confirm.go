@@ -21,6 +21,8 @@ func (ds *DiscoverySuite) confirmWinners() {
 			return
 		}
 
+		ds.buildStrategyGroups()
+
 		pending := ds.winnersToConfirm()
 		if len(pending) == 0 {
 			return
@@ -61,6 +63,11 @@ func (ds *DiscoverySuite) confirmWinners() {
 		}
 		ds.determineBest()
 	}
+
+	ds.buildStrategyGroups()
+	if left := ds.winnersToConfirm(); len(left) > 0 {
+		log.Warnf("Discovery gave up confirming after %d rounds, these are reported without a confirmation: %v", confirmRounds, left)
+	}
 }
 
 func (ds *DiscoverySuite) winnersToConfirm() map[string][]string {
@@ -68,14 +75,32 @@ func (ds *DiscoverySuite) winnersToConfirm() map[string][]string {
 	defer ds.CheckSuite.mu.RUnlock()
 
 	pending := map[string][]string{}
+	add := func(preset, domain string) {
+		dr := ds.domainResults[domain]
+		if dr == nil || !dr.BestSuccess || dr.BaselineWorks || preset == "" || preset == presetNoBypass {
+			return
+		}
+		r := dr.Results[preset]
+		if r == nil || r.Status != CheckStatusComplete || r.ConfirmTries > 0 {
+			return
+		}
+		for _, existing := range pending[preset] {
+			if existing == domain {
+				return
+			}
+		}
+		pending[preset] = append(pending[preset], domain)
+	}
+
 	for domain, dr := range ds.domainResults {
-		if dr == nil || !dr.BestSuccess || dr.BaselineWorks || dr.BestPreset == "" {
-			continue
+		if dr != nil {
+			add(dr.BestPreset, domain)
 		}
-		if dr.ConfirmTries > 0 {
-			continue
+	}
+	for _, group := range ds.StrategyGroups {
+		for _, domain := range group.Domains {
+			add(group.WinnerPreset, domain)
 		}
-		pending[dr.BestPreset] = append(pending[dr.BestPreset], domain)
 	}
 	return pending
 }
@@ -97,10 +122,13 @@ func (ds *DiscoverySuite) storedSetFor(presetName string, domains []string) *con
 }
 
 func (ds *DiscoverySuite) confirmConfig(stored *config.SetConfig, domains []string) *config.Config {
-	set := *stored
+	scoped := ds.scopeSetToDomains(stored, domains)
+	if scoped == nil {
+		return nil
+	}
+
+	set := *scoped
 	set.Enabled = true
-	set.Targets.SNIDomains = append([]string(nil), domains...)
-	set.Targets.DomainsToMatch = append([]string(nil), domains...)
 	set.Targets.IPs = nil
 	set.Targets.IpsToMatch = nil
 
@@ -125,7 +153,12 @@ func (ds *DiscoverySuite) confirmPreset(presetName string, stored *config.SetCon
 		passes[domain] = 0
 	}
 
-	if err := ds.pool.UpdateConfig(ds.confirmConfig(stored, domains)); err != nil {
+	confirmCfg := ds.confirmConfig(stored, domains)
+	if confirmCfg == nil {
+		log.DiscoveryLogf("Confirmation: could not rebuild '%s' as it would be deployed", presetName)
+		return passes, true
+	}
+	if err := ds.pool.UpdateConfig(confirmCfg); err != nil {
 		log.DiscoveryLogf("Confirmation: could not apply '%s': %v", presetName, err)
 		return passes, true
 	}
@@ -160,7 +193,7 @@ func (ds *DiscoverySuite) confirmPreset(presetName string, stored *config.SetCon
 	}
 
 	for _, di := range inputs {
-		ds.recordConfirmation(di.Domain, passes[di.Domain])
+		ds.recordConfirmation(di.Domain, presetName, passes[di.Domain])
 		if passes[di.Domain] == confirmTries {
 			log.DiscoveryLogf("  [%s] '%s' confirmed %d/%d", di.Domain, presetName, passes[di.Domain], confirmTries)
 		} else {
@@ -184,11 +217,19 @@ func (ds *DiscoverySuite) inputsFor(domains []string) []DomainInput {
 	return inputs
 }
 
-func (ds *DiscoverySuite) recordConfirmation(domain string, passes int) {
+func (ds *DiscoverySuite) recordConfirmation(domain, presetName string, passes int) {
 	ds.CheckSuite.mu.Lock()
 	defer ds.CheckSuite.mu.Unlock()
 
-	if dr := ds.domainResults[domain]; dr != nil {
+	dr := ds.domainResults[domain]
+	if dr == nil {
+		return
+	}
+	if r := dr.Results[presetName]; r != nil {
+		r.Confirmed = passes
+		r.ConfirmTries = confirmTries
+	}
+	if dr.BestPreset == presetName {
 		dr.Confirmed = passes
 		dr.ConfirmTries = confirmTries
 	}
@@ -207,8 +248,12 @@ func (ds *DiscoverySuite) demoteWinner(presetName string, domains []string, reas
 			r.Status = CheckStatusFailed
 			r.Speed = 0
 			r.Error = fmt.Sprintf("not reproducible: %s", reason)
+			r.Confirmed = 0
+			r.ConfirmTries = 0
 		}
-		dr.Confirmed = 0
-		dr.ConfirmTries = 0
+		if dr.BestPreset == presetName {
+			dr.Confirmed = 0
+			dr.ConfirmTries = 0
+		}
 	}
 }

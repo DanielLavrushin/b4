@@ -66,8 +66,8 @@ interface SetCardProps {
   highlighted?: boolean;
   onEscalationHover?: (setId: string | null) => void;
   onEscalationClick?: (setId: string) => void;
-  broadcastFacet?: FacetKey | null;
-  broadcastToken?: number;
+  activeFacet?: FacetKey | null;
+  onFacetSelect?: (key: FacetKey) => void;
 }
 
 export const SetCard = ({
@@ -89,12 +89,11 @@ export const SetCard = ({
   highlighted,
   onEscalationHover,
   onEscalationClick,
-  broadcastFacet,
-  broadcastToken,
+  activeFacet = null,
+  onFacetSelect,
 }: SetCardProps) => {
   const { t } = useTranslation();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
-  const [activeFacet, setActiveFacet] = useState<FacetKey | null>(null);
   const [railExpanded, setRailExpanded] = useState(false);
   const railTimer = useRef<number | null>(null);
 
@@ -120,11 +119,6 @@ export const SetCard = ({
 
   useEffect(() => cancelRailRelease, []);
 
-  useEffect(() => {
-    if (broadcastToken === undefined) return;
-    setActiveFacet(broadcastFacet ?? null);
-  }, [broadcastToken, broadcastFacet]);
-
   const isSelected = !!(selectionMode && selected);
   const borderColor =
     highlighted || isSelected ? colors.secondary : colors.border.default;
@@ -144,10 +138,6 @@ export const SetCard = ({
   const handleAction = (action: () => void) => {
     handleMenuClose();
     action();
-  };
-
-  const handleFacetSelect = (key: FacetKey) => {
-    setActiveFacet((prev) => (prev === key ? null : key));
   };
 
   return (
@@ -178,7 +168,7 @@ export const SetCard = ({
       <SignalRail
         facets={facets}
         activeKey={activeFacet}
-        onSelect={handleFacetSelect}
+        onSelect={(key) => onFacetSelect?.(key)}
         onPointerEnter={holdRail}
         expanded={railExpanded}
         syncing={syncing}

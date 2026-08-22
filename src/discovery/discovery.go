@@ -1245,7 +1245,7 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= maxProbeRedirects {
-				return http.ErrUseLastResponse
+				return fmt.Errorf("stopped after %d redirects", len(via))
 			}
 			result.FinalHost = req.URL.Hostname()
 			return nil
@@ -1615,17 +1615,7 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 				}
 			}
 
-			if len(ipsToAdd) > 0 {
-				cidrIPs := make([]string, len(ipsToAdd))
-				for i, ip := range ipsToAdd {
-					if strings.Contains(ip, "/") {
-						cidrIPs[i] = ip
-					} else if strings.Contains(ip, ":") {
-						cidrIPs[i] = ip + "/128"
-					} else {
-						cidrIPs[i] = ip + "/32"
-					}
-				}
+			if cidrIPs := asCIDRs(ipsToAdd); len(cidrIPs) > 0 {
 				testSet.Targets.IPs = cidrIPs
 				testSet.Targets.IpsToMatch = cidrIPs
 				log.Tracef("Discovery: added %d IPs to test config: %v", len(cidrIPs), cidrIPs)
@@ -1704,17 +1694,7 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 		testSet.Targets.TLSVersion = ds.tlsFilterVersion()
 		testSet.Targets.IPVersion = ds.ipFilterVersion()
 
-		if len(allIPs) > 0 {
-			cidrIPs := make([]string, 0, len(allIPs))
-			for _, ip := range allIPs {
-				if strings.Contains(ip, "/") {
-					cidrIPs = append(cidrIPs, ip)
-				} else if strings.Contains(ip, ":") {
-					cidrIPs = append(cidrIPs, ip+"/128")
-				} else {
-					cidrIPs = append(cidrIPs, ip+"/32")
-				}
-			}
+		if cidrIPs := asCIDRs(allIPs); len(cidrIPs) > 0 {
 			testSet.Targets.IPs = cidrIPs
 			testSet.Targets.IpsToMatch = cidrIPs
 		}
@@ -1811,11 +1791,62 @@ func (ds *DiscoverySuite) scopeSetToDomains(set *config.SetConfig, domains []str
 	scoped := *set
 	scoped.Targets.SNIDomains = append([]string(nil), domains...)
 	scoped.Targets.DomainsToMatch = append([]string(nil), domains...)
+	scoped.Targets.GeoIpCategories, scoped.Targets.GeoSiteCategories = ds.geoCategoriesFor(domains)
+	scoped.Targets.IPs = ds.targetIPsFor(domains)
+	scoped.Targets.IpsToMatch = scoped.Targets.IPs
 	if scoped.DNS.Enabled && !ds.anyDNSPoisoned(domains) {
-		log.DiscoveryLogf("  DNS resolves cleanly for %v, leaving the DNS redirect out of the set", domains)
 		scoped.DNS = config.DNSConfig{}
 	}
 	return &scoped
+}
+
+func (ds *DiscoverySuite) geoCategoriesFor(domains []string) ([]string, []string) {
+	var geoips, geosites []string
+	for _, domain := range domains {
+		geoip, geosite := GetCDNCategories(domain)
+		if len(geoip) == 0 && len(geosite) == 0 {
+			continue
+		}
+		geoip, geosite = ds.installedGeoCategories(geoip, geosite)
+		geoips = appendUnique(geoips, geoip...)
+		geosites = appendUnique(geosites, geosite...)
+	}
+	return geoips, geosites
+}
+
+func (ds *DiscoverySuite) targetIPsFor(domains []string) []string {
+	var ips []string
+	for _, domain := range domains {
+		result := ds.dnsResults[domain]
+		if result == nil {
+			continue
+		}
+		ips = appendUnique(ips, result.ExpectedIPs...)
+		for _, probe := range result.ProbeResults {
+			if probe.ResolvedIP != "" {
+				ips = appendUnique(ips, probe.ResolvedIP)
+			}
+		}
+	}
+	return asCIDRs(ips)
+}
+
+func asCIDRs(ips []string) []string {
+	if len(ips) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		switch {
+		case strings.Contains(ip, "/"):
+			out = append(out, ip)
+		case strings.Contains(ip, ":"):
+			out = append(out, ip+"/128")
+		default:
+			out = append(out, ip+"/32")
+		}
+	}
+	return out
 }
 
 func (ds *DiscoverySuite) anyDNSPoisoned(domains []string) bool {
@@ -1947,11 +1978,16 @@ func (ds *DiscoverySuite) buildStrategyGroups() {
 			}
 		}
 
+		scoped := ds.scopeSetToDomains(info.set, groupDomains)
+		if info.set != nil && info.set.DNS.Enabled && scoped != nil && !scoped.DNS.Enabled {
+			log.DiscoveryLogf("  DNS resolves cleanly for %v, leaving the DNS redirect out of the set", groupDomains)
+		}
+
 		groups = append(groups, StrategyGroup{
 			WinnerPreset: winner,
 			Family:       info.family,
 			Domains:      groupDomains,
-			Set:          ds.scopeSetToDomains(info.set, groupDomains),
+			Set:          scoped,
 			MedianSpeed:  median,
 		})
 	}

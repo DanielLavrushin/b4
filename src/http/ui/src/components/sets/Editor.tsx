@@ -13,14 +13,14 @@ import { useNavigate, useSearchParams } from "react-router";
 
 import {
   DomainIcon,
+  EscalateIcon,
   ImportExportIcon,
+  RoutingIcon,
   SaveIcon,
   TcpIcon,
   UdpIcon,
 } from "@b4.icons";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
-import AltRouteIcon from "@mui/icons-material/AltRoute";
-import KeyboardDoubleArrowUpIcon from "@mui/icons-material/KeyboardDoubleArrowUp";
 
 import { B4Tab, B4TabPanel, B4Tabs, B4TextField } from "@b4.elements";
 
@@ -268,14 +268,14 @@ export const SetEditorPage = ({
               idPrefix="set-tab"
             />
             <B4Tab
-              icon={<AltRouteIcon />}
+              icon={<RoutingIcon />}
               label={t("sets.editor.tabs.routing")}
               inline
               index={TABS.ROUTING}
               idPrefix="set-tab"
             />
             <B4Tab
-              icon={<KeyboardDoubleArrowUpIcon />}
+              icon={<EscalateIcon />}
               label={t("sets.editor.tabs.escalation")}
               inline
               index={TABS.ESCALATION}

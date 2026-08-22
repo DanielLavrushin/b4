@@ -1,5 +1,5 @@
 import { Box, Grid, Stack } from "@mui/material";
-import KeyboardDoubleArrowUpIcon from "@mui/icons-material/KeyboardDoubleArrowUp";
+import { EscalateIcon } from "@b4.icons";
 import {
   B4Alert,
   B4FormHeader,
@@ -60,7 +60,7 @@ export const EscalationSettings = ({
       <B4Section
         title={t("sets.escalation.sectionTitle")}
         description={t("sets.escalation.sectionDescription")}
-        icon={<KeyboardDoubleArrowUpIcon />}
+        icon={<EscalateIcon />}
       >
         <B4FormHeader label={t("sets.escalation.target")} />
         <Grid container spacing={3}>
