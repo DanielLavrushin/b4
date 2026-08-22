@@ -145,6 +145,18 @@ func (b *routeNftBackend) addBypassRule(chain string, mark uint32) {
 		"meta", "mark", "&", markHex, "==", markHex, "return")
 }
 
+func (b *routeNftBackend) addClaimedBypassRule(chain string) {
+	maskHex := fmt.Sprintf("0x%x", routeSetMarkMask)
+	runLogged("routing: add claimed bypass rule "+chain,
+		"nft", "add", "rule", "inet", routeNftTable, chain,
+		"meta", "mark", "&", maskHex, "!=", "0x0", "return")
+}
+
+func routeNftSetMarkArgs(mark uint32) []string {
+	return []string{"meta", "mark", "set", "meta", "mark", "&",
+		fmt.Sprintf("0x%x", ^routeSetMarkMask), "or", fmt.Sprintf("0x%x", mark)}
+}
+
 func (b *routeNftBackend) addMarkRule(chain string, v6 bool, setName string, mark uint32, sourceIface string, tagHostConntrack bool) {
 	emit := func(sn string) {
 		args := []string{"add", "rule", "inet", routeNftTable, chain}
@@ -152,9 +164,11 @@ func (b *routeNftBackend) addMarkRule(chain string, v6 bool, setName string, mar
 			args = append(args, "iifname", fmt.Sprintf("%q", sourceIface))
 		}
 		if v6 {
-			args = append(args, "ip6", "daddr", "@"+sn, "meta", "mark", "set", fmt.Sprintf("0x%x", mark))
+			args = append(args, "ip6", "daddr", "@"+sn)
+			args = append(args, routeNftSetMarkArgs(mark)...)
 		} else {
-			args = append(args, "ip", "daddr", "@"+sn, "meta", "mark", "set", fmt.Sprintf("0x%x", mark))
+			args = append(args, "ip", "daddr", "@"+sn)
+			args = append(args, routeNftSetMarkArgs(mark)...)
 		}
 		if tagHostConntrack {
 			args = append(args, "ct", "mark", "set", "ct", "mark", "or", fmt.Sprintf("0x%x", hostRouteCTMark))
@@ -166,18 +180,17 @@ func (b *routeNftBackend) addMarkRule(chain string, v6 bool, setName string, mar
 }
 
 func routeNftInjectedMarkArgs(chain string, v6 bool, setName string, mark, queueMark uint32) []string {
-	markHex := fmt.Sprintf("0x%x", mark)
 	queueHex := fmt.Sprintf("0x%x", queueMark)
 	family := "ip"
 	if v6 {
 		family = "ip6"
 	}
-	return []string{
+	args := []string{
 		"add", "rule", "inet", routeNftTable, chain,
 		"meta", "mark", "&", queueHex, "==", queueHex,
 		family, "daddr", "@" + setName,
-		"meta", "mark", "set", "meta", "mark", "or", markHex,
 	}
+	return append(args, routeNftSetMarkArgs(mark)...)
 }
 
 func (b *routeNftBackend) addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32) {
@@ -252,6 +265,7 @@ func (b *routeNftBackend) deleteJumpRulesFrom(base, targetChain string) {
 
 func (b *routeNftBackend) addMasqueradeRule(chain string, mark uint32, iface string, v6 bool) {
 	markHex := fmt.Sprintf("0x%x", mark)
+	maskHex := fmt.Sprintf("0x%x", routeSetMarkMask)
 	hostCTMask := fmt.Sprintf("0x%x", hostRouteCTMark)
 	nfproto := "ipv4"
 	if v6 {
@@ -260,7 +274,7 @@ func (b *routeNftBackend) addMasqueradeRule(chain string, mark uint32, iface str
 	runLogged("routing: add masquerade rule",
 		"nft", "add", "rule", "inet", routeNftTable, chain,
 		"meta", "nfproto", nfproto,
-		"meta", "mark", "&", markHex, "==", markHex,
+		"meta", "mark", "&", maskHex, "==", markHex,
 		"ct", "mark", "&", hostCTMask, "==", hostCTMask,
 		"oifname", fmt.Sprintf("%q", iface),
 		"masquerade",
@@ -270,6 +284,7 @@ func (b *routeNftBackend) addMasqueradeRule(chain string, mark uint32, iface str
 func (b *routeNftBackend) addSNATRule(chain, setName, iface, srcIP string, mark uint32, v6 bool) {
 	hostCTMask := fmt.Sprintf("0x%x", hostRouteCTMark)
 	markHex := fmt.Sprintf("0x%x", mark)
+	maskHex := fmt.Sprintf("0x%x", routeSetMarkMask)
 	nfproto := "ipv4"
 	family := "ip"
 	if v6 {
@@ -280,7 +295,7 @@ func (b *routeNftBackend) addSNATRule(chain, setName, iface, srcIP string, mark 
 		runLogged("routing: add snat rule",
 			"nft", "add", "rule", "inet", routeNftTable, chain,
 			"meta", "nfproto", nfproto,
-			"meta", "mark", "&", markHex, "==", markHex,
+			"meta", "mark", "&", maskHex, "==", markHex,
 			family, "daddr", "@"+sn,
 			"ct", "mark", "&", hostCTMask, "==", hostCTMask,
 			"oifname", fmt.Sprintf("%q", iface),

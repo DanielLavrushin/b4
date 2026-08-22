@@ -16,6 +16,8 @@ import (
 
 const hostRouteCTMark = uint32(0x40000000)
 
+const routeSetMarkMask = uint32(0x27FFF)
+
 // SelfDialMark is carried by connections b4 opens on its own behalf - the
 // MTProto upstream, an upstream SOCKS5, a fail-open direct dial.
 const SelfDialMark = config.SelfDialMark
@@ -53,6 +55,7 @@ type routeBackend interface {
 	flushChain(chain string, isMangle bool)
 	deleteChain(chain string, isMangle bool)
 	addBypassRule(chain string, mark uint32)
+	addClaimedBypassRule(chain string)
 	addMarkRule(chain string, v6 bool, setName string, mark uint32, sourceIface string, tagHostConntrack bool)
 	addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32)
 	ensureJumpRule(baseChain, targetChain string, isMangle bool, atTop bool)
@@ -1008,7 +1011,7 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 	gate := routeSetDeviceGate(cfg, set)
 	routeWarnDeviceGate(set.Name, gate)
 	routeSelfDialBypass(be, cfg, st.chainPre)
-	be.addBypassRule(st.chainPre, st.mark)
+	be.addClaimedBypassRule(st.chainPre)
 
 	routeAddBlacklistGate(be, "mangle", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
 
@@ -1051,7 +1054,7 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState) {
 	}
 
 	routeSelfDialBypass(be, cfg, st.chainOut)
-	be.addBypassRule(st.chainOut, st.mark)
+	be.addClaimedBypassRule(st.chainOut)
 
 	if cfg.Queue.IPv4Enabled {
 		routeAddMarkRules(be, st.chainOut, false, st.setV4, st.mark, nil, true)
@@ -1107,6 +1110,25 @@ func routeEgressIPOnIfaceReal(iface, egressIP string) bool {
 		}
 	}
 	return false
+}
+
+func routeSetMarkRule(mark uint32) string {
+	return fmt.Sprintf("0x%x/0x%x", mark, routeSetMarkMask)
+}
+
+func routeStaleMarkRules(mark uint32) []string {
+	return []string{
+		fmt.Sprintf("0x%x", mark),
+		fmt.Sprintf("0x%x/0x%x", mark, mark),
+		routeSetMarkRule(mark),
+	}
+}
+
+func routeDelRuleAllForms(mark uint32, table string) {
+	for _, m := range routeStaleMarkRules(mark) {
+		routeDelRuleLoop(false, m, table)
+		routeDelRuleLoop(true, m, table)
+	}
 }
 
 func routeEgressAddrKey(iface, ip string) string { return iface + "|" + ip }
@@ -1233,14 +1255,9 @@ func interfaceShareCount(mark uint32, table int) int {
 
 func routeCleanupRule(be routeBackend, st routeState) {
 	routeReleaseEgressAddress(st.iface, st.egressIP)
-	markStr := fmt.Sprintf("0x%x", st.mark)
-	markStrMask := fmt.Sprintf("0x%x/0x%x", st.mark, st.mark)
 	tableStr := fmt.Sprintf("%d", st.table)
 	if hasBinary("ip") && interfaceShareCount(st.mark, st.table) <= 1 {
-		routeDelRuleLoop(false, markStr, tableStr)
-		routeDelRuleLoop(false, markStrMask, tableStr)
-		routeDelRuleLoop(true, markStr, tableStr)
-		routeDelRuleLoop(true, markStrMask, tableStr)
+		routeDelRuleAllForms(st.mark, tableStr)
 		runLogged("routing: flush route table v4", "ip", "route", "flush", "table", tableStr)
 		runLogged("routing: flush route table v6", "ip", "-6", "route", "flush", "table", tableStr)
 	}
@@ -1265,15 +1282,11 @@ func routeCleanupRule(be routeBackend, st routeState) {
 func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 	iface, mark, table := st.iface, st.mark, st.table
 	prio := 10000 + table
-	markStr := fmt.Sprintf("0x%x", mark)
-	markStrMask := fmt.Sprintf("0x%x/0x%x", mark, mark)
+	markStrMask := routeSetMarkRule(mark)
 	tableStr := fmt.Sprintf("%d", table)
 	prioStr := fmt.Sprintf("%d", prio)
 
-	routeDelRuleLoop(false, markStr, tableStr)
-	routeDelRuleLoop(false, markStrMask, tableStr)
-	routeDelRuleLoop(true, markStr, tableStr)
-	routeDelRuleLoop(true, markStrMask, tableStr)
+	routeDelRuleAllForms(mark, tableStr)
 
 	if ipv4 {
 		runLogged("routing: add ip rule v4", "ip", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
@@ -1485,10 +1498,15 @@ func markOverlaps(mark uint32, used map[uint32]struct{}) bool {
 
 func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 	if set.Routing.FWMark > 0 && set.Routing.Table > 0 {
-		if q := routeQueueBypassMark(cfg); set.Routing.FWMark&q == q {
+		q := routeQueueBypassMark(cfg)
+		switch {
+		case set.Routing.FWMark&q == q:
 			log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which carries every bit of the queue mark 0x%x; b4 cannot tell such a packet from one it injected itself, so a mark is assigned instead",
 				set.Name, set.Routing.FWMark, q)
-		} else {
+		case set.Routing.FWMark&^routeSetMarkMask != 0:
+			log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which has bits outside the routing mark mask 0x%x that b4 cannot carry through its firewall rules, so a mark is assigned instead",
+				set.Name, set.Routing.FWMark, routeSetMarkMask)
+		default:
 			return set.Routing.FWMark, set.Routing.Table
 		}
 	}

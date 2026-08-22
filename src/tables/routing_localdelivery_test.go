@@ -71,11 +71,11 @@ func TestRouteEnsureLocalDelivery_ClearsBothFamiliesWhicheverIsEnabled(t *testin
 				name string
 			}{{false, "v4"}, {true, "v6"}} {
 				marks := localDeliveryDeletedFamily(dels, fam.ipv6)
-				if len(marks) != 2 {
-					t.Fatalf("%s stale rules were cleared %d time(s), want the bare and the masked mark; a rule left behind keeps sending traffic to table %s after the family is turned off", fam.name, len(marks), tableStr)
+				if len(marks) != 3 {
+					t.Fatalf("%s stale rules were cleared %d time(s), want the bare, the legacy self-masked and the shared-mask form; a rule left behind keeps sending traffic to table %s after the family is turned off", fam.name, len(marks), tableStr)
 				}
-				if marks[0] != "0x20fa" || marks[1] != "0x20fa/0x20fa" {
-					t.Errorf("%s stale rule deletion used marks %v, want the bare then the masked form", fam.name, marks)
+				if marks[0] != "0x20fa" || marks[1] != "0x20fa/0x20fa" || marks[2] != "0x20fa/0x27fff" {
+					t.Errorf("%s stale rule deletion used marks %v, want the bare, the legacy self-masked and the shared-mask form", fam.name, marks)
 				}
 			}
 			for _, d := range dels {
@@ -89,8 +89,8 @@ func TestRouteEnsureLocalDelivery_ClearsBothFamiliesWhicheverIsEnabled(t *testin
 
 func TestRouteEnsureLocalDelivery_AddsOnlyForEnabledFamilies(t *testing.T) {
 	const (
-		addRuleV4  = "ip rule add fwmark 0x20fa/0x20fa lookup 252 priority 3"
-		addRuleV6  = "ip -6 rule add fwmark 0x20fa/0x20fa lookup 252 priority 3"
+		addRuleV4  = "ip rule add fwmark 0x20fa/0x27fff lookup 252 priority 3"
+		addRuleV6  = "ip -6 rule add fwmark 0x20fa/0x27fff lookup 252 priority 3"
 		addRouteV4 = "ip route replace local 0.0.0.0/0 dev lo table 252"
 		addRouteV6 = "ip -6 route replace local ::/0 dev lo table 252"
 		delRouteV4 = "ip route del local 0.0.0.0/0 dev lo table 252"

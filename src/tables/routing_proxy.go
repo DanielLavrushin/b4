@@ -553,15 +553,10 @@ func addQUICRejectRuleIpt(v6 bool, chain, setName string, sources []string, lega
 }
 
 func routeCleanupProxyRule(be routeBackend, st routeState) {
-	markStr := fmt.Sprintf("0x%x", st.mark)
-	markStrMask := fmt.Sprintf("0x%x/0x%x", st.mark, st.mark)
 	tableStr := fmt.Sprintf("%d", st.table)
 
 	if hasBinary("ip") {
-		routeDelRuleLoop(false, markStr, tableStr)
-		routeDelRuleLoop(false, markStrMask, tableStr)
-		routeDelRuleLoop(true, markStr, tableStr)
-		routeDelRuleLoop(true, markStrMask, tableStr)
+		routeDelRuleAllForms(st.mark, tableStr)
 		if proxyActiveCount() <= 1 {
 			runLogged("routing: delete proxy local route v4", "ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", tableStr)
 			runLogged("routing: delete proxy local route v6", "ip", "-6", "route", "del", "local", "::/0", "dev", "lo", "table", tableStr)
@@ -590,18 +585,14 @@ func routeCleanupProxyRule(be routeBackend, st routeState) {
 }
 
 func routeEnsureLocalDelivery(mark uint32, table int, ipv4, ipv6 bool) {
-	markStr := fmt.Sprintf("0x%x", mark)
-	markStrMask := fmt.Sprintf("0x%x/0x%x", mark, mark)
+	markStrMask := routeSetMarkRule(mark)
 	tableStr := fmt.Sprintf("%d", table)
 	prioStr := fmt.Sprintf("%d", proxyRulePriority)
 
 	writeSysctl("/proc/sys/net/ipv4/conf/lo/rp_filter", "0")
 	writeSysctl("/proc/sys/net/ipv4/conf/all/rp_filter", "2")
 
-	routeDelRuleLoop(false, markStr, tableStr)
-	routeDelRuleLoop(false, markStrMask, tableStr)
-	routeDelRuleLoop(true, markStr, tableStr)
-	routeDelRuleLoop(true, markStrMask, tableStr)
+	routeDelRuleAllForms(mark, tableStr)
 
 	if ipv4 {
 		runLogged("routing: add ip rule v4 (proxy)", "ip", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
