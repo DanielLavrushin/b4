@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -313,5 +314,23 @@ func TestFormatBytes(t *testing.T) {
 		if result != tc.expected {
 			t.Errorf("formatBytes(%d) = %q, want %q", tc.input, result, tc.expected)
 		}
+	}
+}
+
+func TestKilledBySignal(t *testing.T) {
+	err := exec.Command("sh", "-c", "kill -TERM $$").Run()
+	if err == nil {
+		t.Fatal("expected the shell to be killed by SIGTERM")
+	}
+	if !killedBySignal(err) {
+		t.Errorf("signal death not recognised: %v", err)
+	}
+
+	err = exec.Command("sh", "-c", "exit 3").Run()
+	if err == nil {
+		t.Fatal("expected exit status 3")
+	}
+	if killedBySignal(err) {
+		t.Errorf("plain exit status read as a signal death: %v", err)
 	}
 }

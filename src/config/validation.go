@@ -86,6 +86,11 @@ func (c *Config) Validate() error {
 		return v.result()
 	}
 
+	c.checkSocks5Sources(v)
+	if v.hasErrors() {
+		return v.result()
+	}
+
 	if _, err := ParseMemoryLimit(c.System.MemoryLimit); err != nil {
 		v.addf("system.memory_limit", "invalid_value", map[string]any{"value": c.System.MemoryLimit}, "%v", err)
 		return v.result()
@@ -375,6 +380,26 @@ func (c *Config) Validate() error {
 	c.BuildSetPortRanges()
 
 	return v.result()
+}
+
+func (c *Config) checkSocks5Sources(v *validator) {
+	for _, entry := range c.System.Socks5.AllowedSources {
+		if strings.TrimSpace(entry) == "" {
+			continue
+		}
+		p, err := ParseSourcePrefix(entry)
+		if err != nil {
+			v.addf("system.socks5.allowed_sources", "socks5_invalid_source",
+				map[string]any{"value": strings.TrimSpace(entry)},
+				"%q is not an IP address or CIDR range", strings.TrimSpace(entry))
+			continue
+		}
+		if p.Bits() == 0 {
+			v.addf("system.socks5.allowed_sources", "socks5_source_all",
+				map[string]any{"value": strings.TrimSpace(entry)},
+				"%q allows every source and disables the restriction; remove the entry instead", strings.TrimSpace(entry))
+		}
+	}
 }
 
 func (c *Config) checkPortCollisions(v *validator) {

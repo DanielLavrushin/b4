@@ -387,13 +387,14 @@ type MTProtoConfig struct {
 }
 
 type Socks5Config struct {
-	Enabled        bool   `json:"enabled"`
-	Port           int    `json:"port"`
-	BindAddress    string `json:"bind_address"`
-	Username       string `json:"username" mcp:"deny"`
-	Password       string `json:"password" mcp:"deny"`
-	UDPTimeout     int    `json:"udp_timeout"`
-	UDPReadTimeout int    `json:"udp_read_timeout"`
+	Enabled        bool     `json:"enabled"`
+	Port           int      `json:"port"`
+	BindAddress    string   `json:"bind_address"`
+	Username       string   `json:"username" mcp:"deny"`
+	Password       string   `json:"password" mcp:"deny"`
+	AllowedSources []string `json:"allowed_sources,omitempty" mcp:"deny"`
+	UDPTimeout     int      `json:"udp_timeout"`
+	UDPReadTimeout int      `json:"udp_read_timeout"`
 }
 
 type TablesConfig struct {

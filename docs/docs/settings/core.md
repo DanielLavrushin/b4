@@ -3,7 +3,7 @@ sidebar_position: 1
 title: Core
 ---
 
-All changes on this tab require a service restart (except the interface language).
+Most changes on this tab require a service restart. The exceptions are the interface language and the [SOCKS5 proxy](#socks5-proxy) settings, which apply on save.
 
 ## Controls
 
@@ -164,12 +164,45 @@ A built-in SOCKS5 proxy. Applications can route traffic through it - it is proce
 | Port | Proxy port | `1080` |
 | Username | Login for SOCKS5 authentication (empty = no authentication) | - |
 | Password | Password for SOCKS5 authentication (empty = no authentication) | - |
+| Allowed sources | IP addresses and CIDR ranges permitted to open a connection (empty = no restriction) | - |
 
 Every field except "Enable" becomes available only after the proxy is enabled.
 
-:::info
-Changes to SOCKS5 settings require a service restart.
+:::warning Partial credentials
+Username and password work as a pair. If exactly one of the two is filled, the proxy refuses every client rather than running unauthenticated. Both empty means no authentication; both filled means authentication is required. A configuration with only one of them is rejected when it is saved.
 :::
+
+:::info
+No SOCKS5 field needs a service restart. Credentials and the source list are applied to the running proxy, and changing **Enable**, **Bind address** or **Port** rebinds the listener on save.
+:::
+
+### Allowed sources
+
+`system.socks5.allowed_sources` lists the client addresses that may open a connection to the proxy. An empty list means no restriction, which is the default and the behaviour of earlier versions. With a non-empty list, a peer whose address falls outside every entry has its TCP connection closed at accept time, before any SOCKS5 byte is exchanged and before it occupies a connection slot.
+
+An entry is either a bare IP address, v4 or v6, read as `/32` and `/128`, or a CIDR range. Host bits are masked off, so `192.168.1.7/24` is stored as `192.168.1.0/24`.
+
+A list holding `192.168.1.0/24` and `127.0.0.1/32` accepts clients from that LAN subnet and from the router itself, and closes the connection for every other source.
+
+:::warning A network gate, not an authentication factor
+A source list is the same kind of control as a firewall rule: it decides which addresses reach the proxy and nothing more. It establishes no identity. A source address can be spoofed, a DHCP lease moves from one device to another, and an entry for a host that is itself a router stands for every host behind that router. Credentials are the control that identifies a client.
+:::
+
+:::info Chrome and Chromium
+Chrome and Chromium do not implement SOCKS5 username/password authentication ([crbug 40323993](https://issues.chromium.org/issues/40323993)), so they cannot use an authenticated proxy at all. A source list is how the proxy serves those browsers without credentials while still refusing arbitrary clients.
+:::
+
+Credentials and the source list are independent controls that stack. The list never changes which authentication method the proxy offers; it only decides whether a connection reaches the authentication step. With both configured, a client has to come from a listed address **and** present valid credentials.
+
+Loopback is not implicitly allowed. A client running on the router itself needs `127.0.0.1/32`, or `::1/128` over IPv6, listed explicitly, otherwise it is refused like any other unlisted source.
+
+Editing the list takes effect on save, with no service restart. Live sessions whose source no longer matches are disconnected, and a source added to the list can connect immediately.
+
+:::warning The port stays reachable
+Refusing a connection is not the same as not listening. The listener accepts and then closes, so the port still answers a port scan, and b4 adds no firewall rule for it. With the default bind address `0.0.0.0` the proxy is exposed on the WAN whatever the source list contains. Binding to the LAN address is still the way to keep the proxy off the WAN.
+:::
+
+`0.0.0.0/0` and `::/0` are refused when the configuration is saved, because an entry that matches every address switches the restriction off while leaving it looking enabled. An entry that is neither an IP address nor a CIDR range is refused the same way.
 
 ## MTProto proxy
 

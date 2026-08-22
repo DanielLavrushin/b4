@@ -435,6 +435,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to save config: %v", err)
 		}
 		cfgPtr.Store(c)
+		socks5Server.UpdateConfig(c)
 		mtprotoServer.UpdateConfig(c)
 		mtprotoBridge.UpdateConfig(c)
 		startCFRefresh(c)
@@ -496,9 +497,14 @@ func runB4(cmd *cobra.Command, args []string) error {
 	return gracefulShutdown(cfgPtr.Load(), pool, tunEngine, httpServer, socks5Server, mtprotoServer, metrics, discoveryRT)
 }
 
+const (
+	shutdownGrace     = 9 * time.Second
+	httpShutdownGrace = 3 * time.Second
+)
+
 func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engine, httpServer *http.Server, socks5Server *socks5.Server, mtprotoServer *mtproto.Server, metrics *handler.MetricsCollector, discoveryRT *discovery.Runtime) error {
 	// Create shutdown context with timeout
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
 
 	// Create wait group for parallel shutdown
@@ -511,9 +517,11 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 		go func() {
 			defer wg.Done()
 			log.Infof("Shutting down HTTP server...")
-			if err := httpServer.Shutdown(shutdownCtx); err != nil {
-				log.Errorf("HTTP server shutdown error: %v", err)
-				shutdownErrors <- fmt.Errorf("HTTP shutdown: %w", err)
+			httpCtx, httpCancel := context.WithTimeout(shutdownCtx, httpShutdownGrace)
+			defer httpCancel()
+			if err := httpServer.Shutdown(httpCtx); err != nil {
+				log.Warnf("HTTP server did not drain in %s, closing its connections: %v", httpShutdownGrace, err)
+				_ = httpServer.Close()
 			} else {
 				log.Infof("HTTP server stopped")
 			}

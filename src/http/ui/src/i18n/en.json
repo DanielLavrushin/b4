@@ -251,7 +251,19 @@
       "usernameHelp": "Leave empty for no authentication",
       "password": "Password",
       "passwordHelp": "Leave empty for no authentication",
-      "restartNote": "Restart B4 after changing SOCKS5 settings for changes to take effect."
+      "sources": "Allowed Sources",
+      "sourcesDesc": "Restricts which client addresses may open a SOCKS5 connection. An empty list accepts every source. Chrome and Chromium do not support SOCKS5 username and password authentication, so for those clients a source list is the only way to limit access.",
+      "addSource": "Add IP or CIDR",
+      "addSourcePlaceholder": "192.168.1.0/24",
+      "addSourceHelp": "A single IP or a CIDR range, IPv4 or IPv6. Loopback is not implied: add 127.0.0.1/32 for a client running on the router itself. Applies on save, no restart needed.",
+      "activeSources": "Active sources",
+      "sourcesEmpty": "No source restriction: every client that reaches the port may connect.",
+      "fromDevice": "From device",
+      "noDevices": "No devices with an IPv4 address",
+      "sourceInvalid": "Enter an IP address or a CIDR range, for example 192.168.1.50 or 192.168.1.0/24",
+      "sourceAll": "A /0 range covers every address and switches the restriction off. Leave the list empty instead.",
+      "sourcesNote": "A source list is a network gate, the same kind of control as a firewall rule, not an authentication factor: addresses can be spoofed, a DHCP lease can move to another device, and a host that is itself a router stands for everything behind it. b4 adds no firewall rule for the SOCKS5 port, so bind the proxy to the LAN address to keep it off the WAN.",
+      "openRelayWarning": "The proxy has no credentials and no source list. Any client that can reach the listening address and port can relay traffic through it."
     },
     "MTProto": {
       "title": "MTProto Proxy",
@@ -2357,6 +2369,9 @@
     "geoip_path_missing": "Geoip path must be configured to use geoip categories",
     "invalid_routing_mode": "Set \"{{set}}\": unknown routing mode \"{{mode}}\"",
     "socks5_loop": "Set \"{{set}}\": upstream proxy points to b4's own SOCKS5 server (loop)",
+    "socks5_invalid_source": "\"{{value}}\" is not an IP address or CIDR range",
+    "socks5_source_all": "\"{{value}}\" allows every source and switches the restriction off; remove the entry instead",
+    "socks5_incomplete_credentials": "SOCKS5 username and password must both be set or both be empty",
     "doh_url_must_be_https": "Set \"{{set}}\": DNS-over-HTTPS URL must start with https://",
     "mark_conflict": "Mark value {{mark}} conflicts with reserved bits"
   }

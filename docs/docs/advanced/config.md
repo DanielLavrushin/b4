@@ -70,7 +70,12 @@ The same applies through the API and the web interface: what you read back is wh
       "query_timeout_sec": 5,
       "keep_ipv6_answers": false
     },
-    "socks5": { "enabled": false, "port": 1080, "bind_address": "0.0.0.0" },
+    "socks5": {
+      "enabled": false,
+      "port": 1080,
+      "bind_address": "0.0.0.0",
+      "allowed_sources": ["192.168.1.0/24", "127.0.0.1/32"]
+    },
     "mtproto": { "enabled": false, "port": 3128, "bind_address": "0.0.0.0" },
     "checker": {
       "discovery_timeout": 5,
@@ -86,6 +91,8 @@ The same applies through the API and the web interface: what you read back is wh
 ```
 
 The sample is trimmed to the sections worth recognising. Every section holds more keys than are shown, and none of them appear in a real file until they differ from the default.
+
+`socks5.allowed_sources` is one of those keys: it is absent while the list is empty, which is the default and means the proxy accepts a connection from any source. Each entry is an IP address or a CIDR range, and `0.0.0.0/0`, `::/0` and malformed entries are refused when the file is loaded or saved. It gates which addresses reach the proxy, the way a firewall rule does, and is not a substitute for the username and password. See [Allowed sources](../settings/core#allowed-sources).
 
 ## The `queue` section
 

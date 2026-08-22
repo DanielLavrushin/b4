@@ -1541,6 +1541,7 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 
 		geoip, geosite := GetCDNCategories(ds.Domain)
 		if len(geoip) > 0 || len(geosite) > 0 {
+			geoip, geosite = ds.installedGeoCategories(geoip, geosite)
 			if len(geoip) > 0 {
 				testSet.Targets.GeoIpCategories = geoip
 			}
@@ -1551,12 +1552,14 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 			if !ds.skipDNS {
 				testSet.DNS = ds.cdnDNSConfig()
 			}
-			tempCfg := &config.Config{System: ds.cfg.System}
-			domains, ips, err := tempCfg.GetTargetsForSet(&testSet)
-			if err != nil {
-				log.DiscoveryLogf("Discovery: failed to load CDN categories: %v", err)
-			} else {
-				log.Tracef("Discovery: CDN %s - loaded %d domains, %d IPs", ds.Domain, len(domains), len(ips))
+			if len(geoip) > 0 || len(geosite) > 0 {
+				tempCfg := &config.Config{System: ds.cfg.System}
+				domains, ips, err := tempCfg.GetTargetsForSet(&testSet)
+				if err != nil {
+					log.DiscoveryLogf("Discovery: failed to load CDN categories: %v", err)
+				} else {
+					log.Tracef("Discovery: CDN %s - loaded %d domains, %d IPs", ds.Domain, len(domains), len(ips))
+				}
 			}
 		} else {
 			var ipsToAdd []string
@@ -1647,6 +1650,7 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 			geoip, geosite := GetCDNCategories(di.Domain)
 			if len(geoip) > 0 || len(geosite) > 0 {
 				hasCDN = true
+				geoip, geosite = ds.installedGeoCategories(geoip, geosite)
 				testSet.Targets.GeoIpCategories = appendUnique(testSet.Targets.GeoIpCategories, geoip...)
 				testSet.Targets.GeoSiteCategories = appendUnique(testSet.Targets.GeoSiteCategories, geosite...)
 			}

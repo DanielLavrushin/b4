@@ -3,7 +3,7 @@ import { ApiError, ApiResponse } from "@api/apiClient";
 import { discoveryApi, DiscoverySuite, HistoryEntry } from "@b4.discovery";
 import { B4SetConfig } from "@b4.sets";
 import { DomainReassignment } from "@models/sets";
-import { wsUrl } from "@utils";
+import { wsUrl, describeApiError } from "@utils";
 
 export function useDiscovery() {
   const [discoveryRunning, setDiscoveryRunning] = useState(false);
@@ -168,10 +168,7 @@ export function useDiscovery() {
         const res = await discoveryApi.addPresetAsSet(config);
         return { success: true, data: res?.moved ?? [] };
       } catch (e) {
-        if (e instanceof ApiError) {
-          return { success: false, error: JSON.stringify(e.body ?? e.message) };
-        }
-        return { success: false, error: String(e) };
+        return { success: false, error: describeApiError(e) };
       }
     },
     [],

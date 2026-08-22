@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -72,6 +73,15 @@ func isDockerEnvironment() bool {
 		}
 	}
 	return false
+}
+
+func killedBySignal(err error) bool {
+	var ee *exec.ExitError
+	if !errors.As(err, &ee) {
+		return false
+	}
+	ws, ok := ee.Sys().(syscall.WaitStatus)
+	return ok && ws.Signaled()
 }
 
 func (api *API) updateLogPath() string {
@@ -213,7 +223,7 @@ func (api *API) handleRestart(w http.ResponseWriter, r *http.Request) {
 		var cmd *exec.Cmd
 		switch serviceManager {
 		case "systemd":
-			cmd = exec.Command("systemctl", "restart", "b4")
+			cmd = exec.Command("systemctl", "restart", "--no-block", "b4")
 		case "entware", "init":
 			cmd = exec.Command("sh", "-c", response.RestartCommand+" > /dev/null 2>&1 &")
 			cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -224,10 +234,13 @@ func (api *API) handleRestart(w http.ResponseWriter, r *http.Request) {
 		if cmd != nil {
 			if serviceManager == "systemd" {
 				output, err := cmd.CombinedOutput()
-				if err != nil {
+				switch {
+				case err == nil:
+					log.Infof("Restart job queued with systemd")
+				case killedBySignal(err):
+					log.Infof("Restart job queued with systemd, which stopped systemctl along with the service")
+				default:
 					log.Errorf("Restart command failed: %v\nOutput: %s", err, string(output))
-				} else {
-					log.Infof("Restart command executed successfully")
 				}
 			} else {
 				if err := cmd.Start(); err != nil {

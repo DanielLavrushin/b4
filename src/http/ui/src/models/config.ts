@@ -326,6 +326,7 @@ export interface Socks5Config {
   bind_address: string;
   username: string;
   password: string;
+  allowed_sources?: string[];
   udp_timeout: number;
   udp_read_timeout: number;
 }

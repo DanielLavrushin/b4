@@ -332,7 +332,9 @@ export const DiscoveryRunner = () => {
         setConfig: null,
       });
     } else {
-      showError(t("discovery.createSetFailed"));
+      showError(
+        [t("discovery.createSetFailed"), res.error].filter(Boolean).join(" "),
+      );
     }
     setAddingPreset(false);
   };

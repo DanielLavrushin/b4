@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -179,13 +180,16 @@ func TestRelayReleasesDescriptors(t *testing.T) {
 	hold := make([]net.Conn, 0, n)
 	s0, p0 := kinds()
 
+	var wg sync.WaitGroup
 	for i := 0; i < n; i++ {
 		a, aPeer := connPair(t)
 		b, bPeer := connPair(t)
-		go func() { _ = Relay(a, b) }()
+		wg.Add(1)
+		go func() { defer wg.Done(); _ = Relay(a, b) }()
 		reset(t, bPeer)
 		hold = append(hold, aPeer)
 	}
+	t.Cleanup(wg.Wait)
 
 	time.Sleep(2 * time.Second)
 	s1, p1 := kinds()
