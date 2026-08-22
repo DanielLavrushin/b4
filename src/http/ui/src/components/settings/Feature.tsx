@@ -26,9 +26,13 @@ const IPV6_BYPASS_DISMISS_KEY = "b4_ipv6_bypass_dismissed";
 export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
   const { t } = useTranslation();
   const [ipv6BypassesSets, setIpv6BypassesSets] = useState(false);
-  const [ipv6BypassDismissed, setIpv6BypassDismissed] = useState(
-    () => localStorage.getItem(IPV6_BYPASS_DISMISS_KEY) === "true",
-  );
+  const [ipv6BypassDismissed, setIpv6BypassDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(IPV6_BYPASS_DISMISS_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
 
   useEffect(() => {
     systemApi
@@ -38,7 +42,11 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
   }, []);
 
   const dismissIpv6Bypass = () => {
-    localStorage.setItem(IPV6_BYPASS_DISMISS_KEY, "true");
+    try {
+      localStorage.setItem(IPV6_BYPASS_DISMISS_KEY, "true");
+    } catch (e) {
+      console.error("Failed to save the IPv6 bypass notice dismissal:", e);
+    }
     setIpv6BypassDismissed(true);
   };
 
