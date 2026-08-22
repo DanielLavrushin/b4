@@ -232,6 +232,8 @@ func (b *routeNftBackend) ensureJumpRule(baseChain, targetChain string, _ bool, 
 		"nft", "add", "rule", "inet", routeNftTable, base, "jump", targetChain)
 }
 
+func (b *routeNftBackend) jumpPrepends(bool) bool { return false }
+
 func (b *routeNftBackend) deleteJumpRules(baseChain, targetChain string, _ bool) {
 	base := nftRouteBaseChain(baseChain)
 	b.deleteJumpRulesFrom(base, targetChain)

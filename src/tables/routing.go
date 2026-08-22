@@ -59,6 +59,7 @@ type routeBackend interface {
 	addMarkRule(chain string, v6 bool, setName string, mark uint32, sourceIface string, tagHostConntrack bool)
 	addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32)
 	ensureJumpRule(baseChain, targetChain string, isMangle bool, atTop bool)
+	jumpPrepends(atTop bool) bool
 	deleteJumpRules(baseChain, targetChain string, isMangle bool)
 	addMasqueradeRule(chain string, mark uint32, iface string, v6 bool)
 	addSNATRule(chain, setName, iface, srcIP string, mark uint32, v6 bool)
@@ -79,6 +80,7 @@ var (
 	routeLearnedHosts   = make(map[string]map[string]time.Time)
 	routeHostResolvedAt = make(map[string]time.Time)
 	routeOwnedAddrs     = make(map[string]bool)
+	routeJumpOrderKey   string
 )
 
 func getRouteBackend(cfg *config.Config) routeBackend {
@@ -875,6 +877,8 @@ func RoutingSyncConfig(cfg *config.Config) {
 		}
 	}
 
+	routeReestablishJumpOrder(be, cfg, len(newRoutingSets) > 0)
+
 	if len(newRoutingSets) > 0 {
 		cfgSnapshot := *cfg
 		go routePreResolveDomains(&cfgSnapshot, newRoutingSets)
@@ -1061,6 +1065,76 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState) {
 	}
 	if cfg.Queue.IPv6Enabled {
 		routeAddMarkRules(be, st.chainOut, true, st.setV6, st.mark, nil, true)
+	}
+}
+
+func routeSetScopeRank(cfg *config.Config, set *config.SetConfig) int {
+	gate := routeSetDeviceGate(cfg, set)
+	switch {
+	case gate.isWhitelist():
+		return 0
+	case len(routeNormalizedSources(set.Routing.SourceInterfaces)) > 0:
+		return 1
+	case gate.isBlacklist():
+		return 2
+	default:
+		return 3
+	}
+}
+
+func routeOrderedRoutingSets(cfg *config.Config) []*config.SetConfig {
+	var ordered []*config.SetConfig
+	for _, set := range cfg.Sets {
+		if set == nil {
+			continue
+		}
+		st, ok := routeRuleCache[set.Id]
+		if !ok || config.RoutingUsesTProxy(st.mode) || config.RoutingIsBlock(st.mode) {
+			continue
+		}
+		ordered = append(ordered, set)
+	}
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return routeSetScopeRank(cfg, ordered[i]) < routeSetScopeRank(cfg, ordered[j])
+	})
+	return ordered
+}
+
+func routeReestablishJumpOrder(be routeBackend, cfg *config.Config, rebuilt bool) {
+	ordered := routeOrderedRoutingSets(cfg)
+	if len(ordered) < 2 {
+		routeJumpOrderKey = ""
+		return
+	}
+
+	key := make([]string, 0, len(ordered))
+	for _, set := range ordered {
+		key = append(key, set.Id)
+	}
+	orderKey := strings.Join(key, "|")
+	if !rebuilt && orderKey == routeJumpOrderKey {
+		return
+	}
+	routeJumpOrderKey = orderKey
+
+	for _, set := range ordered {
+		st := routeRuleCache[set.Id]
+		routeEnsureGatedPreJump(be, st.chainPre, routeSetDeviceGate(cfg, set))
+	}
+
+	out := ordered
+	if be.jumpPrepends(true) {
+		out = make([]*config.SetConfig, len(ordered))
+		for i, set := range ordered {
+			out[len(ordered)-1-i] = set
+		}
+	}
+	for _, set := range out {
+		st := routeRuleCache[set.Id]
+		if routeSetIsSourceScoped(set) {
+			continue
+		}
+		be.ensureJumpRule("OUTPUT", st.chainOut, true, true)
 	}
 }
 

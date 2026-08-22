@@ -1359,6 +1359,7 @@ func (m *mockRouteBackend) hasDeletedJump(baseChain, targetChain string) bool {
 	}
 	return false
 }
+func (m *mockRouteBackend) jumpPrepends(bool) bool { return false }
 func (m *mockRouteBackend) addClaimedBypassRule(chain string) {
 	m.recordOp(chain, "claimed-bypass")
 }

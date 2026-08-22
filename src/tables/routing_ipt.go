@@ -214,6 +214,8 @@ func (b *routeIptBackend) ensureJumpRule(baseChain, targetChain string, isMangle
 	}
 }
 
+func (b *routeIptBackend) jumpPrepends(atTop bool) bool { return atTop }
+
 func (b *routeIptBackend) deleteJumpRules(baseChain, targetChain string, isMangle bool) {
 	table := iptTable(isMangle)
 	for _, cmd := range b.iptBoth() {
