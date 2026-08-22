@@ -149,6 +149,7 @@ func TestDNSRedirectReleasesInflightSlot(t *testing.T) {
 	set := newTunDNSSet()
 	set.DNS.Enabled = true
 	set.DNS.TargetDNS = "127.0.0.1"
+	set.DNS.Strict = true
 
 	cfg := config.NewConfig()
 	cfg.Sets = []*config.SetConfig{&set}

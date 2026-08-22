@@ -449,6 +449,7 @@ export interface DNSConfig {
   target_dns: string;
   doh_url: string;
   fragment_query: boolean;
+  strict: boolean;
   pins?: Record<string, string[]>;
 }
 

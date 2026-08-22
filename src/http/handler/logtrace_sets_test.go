@@ -41,6 +41,28 @@ func routedTestSet() config.SetConfig {
 	return set
 }
 
+func TestCollectTraceSetsReportsPinsWithoutRedirect(t *testing.T) {
+	cfg := config.NewConfig()
+	set := config.DefaultSetConfig
+	set.Id = "cccc3333"
+	set.Name = "Pinned"
+	set.Enabled = true
+	set.DNS = config.DNSConfig{Pins: map[string][]string{"ntc.party": {"130.255.77.28"}}}
+	cfg.Sets = []*config.SetConfig{&set}
+
+	sets := collectTraceSets(&cfg)
+	if len(sets) != 1 {
+		t.Fatalf("expected one set, got %d", len(sets))
+	}
+	got := sets[0].DNS
+	if got == nil {
+		t.Fatal("pins were configured but the trace has no dns section")
+	}
+	if got.Enabled || got.Pins != 1 {
+		t.Errorf("unexpected dns section: %+v", got)
+	}
+}
+
 func TestCollectTraceSets(t *testing.T) {
 	cfg := config.NewConfig()
 	routed := routedTestSet()
@@ -68,7 +90,7 @@ func TestCollectTraceSets(t *testing.T) {
 	if got.Targets.IPs != 1 || got.Targets.ResolvedIPs != 1 {
 		t.Errorf("expected 1 ip target, got %d / %d", got.Targets.IPs, got.Targets.ResolvedIPs)
 	}
-	if got.DNS == nil || got.DNS.TargetDNS != "1.1.1.1" || got.DNS.Pins != 1 {
+	if got.DNS == nil || !got.DNS.Enabled || got.DNS.TargetDNS != "1.1.1.1" || got.DNS.Pins != 1 {
 		t.Errorf("unexpected dns section: %+v", got.DNS)
 	}
 	if got.Routing == nil {

@@ -52,6 +52,16 @@ export const RunningDomainCard = ({
   ).length;
 
   const getDomainStatusBadge = () => {
+    if (domainResult.baseline_works) {
+      return (
+        <B4Badge
+          label={t("discovery.noBypass.badge")}
+          size="small"
+          variant="filled"
+          color="success"
+        />
+      );
+    }
     if (domainResult.best_success) {
       return (
         <B4Badge
@@ -129,7 +139,7 @@ export const RunningDomainCard = ({
           </Typography>
         )}
       </Box>
-      {domainResult.best_success && (
+      {domainResult.best_success && !domainResult.baseline_works && (
         <Box
           sx={{
             p: 2,
@@ -185,7 +195,11 @@ export const RunningDomainCard = ({
                 domainResult.results[domainResult.best_preset],
               );
             }}
-            disabled={addingPreset || !domainResult.results[domainResult.best_preset]?.set}
+            disabled={
+              addingPreset ||
+              domainResult.baseline_works ||
+              !domainResult.results[domainResult.best_preset]?.set
+            }
             sx={{
               bgcolor: colors.secondary,
               color: colors.background.default,

@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { B4Section, B4Tab, B4TabPanel, B4Tabs } from "@b4.elements";
-import { DnsIcon } from "@b4.icons";
+import { DnsIcon, RoutingIcon } from "@b4.icons";
 import { B4SetConfig } from "@models/config";
-import AltRouteIcon from "@mui/icons-material/AltRoute";
 import { useTranslation } from "react-i18next";
 import { DnsRedirect } from "./routing/DnsRedirect";
 import { TrafficRouting } from "./routing/TrafficRouting";
@@ -57,7 +56,7 @@ export const RoutingSettings = ({
     <B4Section
       title={t("sets.routing.sectionTitle")}
       description={t("sets.routing.sectionDescription")}
-      icon={<AltRouteIcon />}
+      icon={<RoutingIcon />}
     >
       <B4Tabs
         value={activeTab}
@@ -67,7 +66,7 @@ export const RoutingSettings = ({
       >
         <B4Tab icon={<DnsIcon />} label={t("sets.dns.sectionTitle")} inline />
         <B4Tab
-          icon={<AltRouteIcon />}
+          icon={<RoutingIcon />}
           label={t("sets.routing.trafficRouting")}
           inline
         />

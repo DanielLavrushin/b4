@@ -87,6 +87,7 @@ type traceSetFaking struct {
 }
 
 type traceSetDNS struct {
+	Enabled       bool   `json:"enabled,omitempty"`
 	TargetDNS     string `json:"target_dns,omitempty"`
 	DoHURL        string `json:"doh_url,omitempty"`
 	FragmentQuery bool   `json:"fragment_query,omitempty"`
@@ -135,8 +136,9 @@ func collectTraceSets(cfg *config.Config) []traceSet {
 			Faking:  traceFaking(set.Faking),
 		}
 
-		if set.DNS.Enabled {
+		if set.DNS.Enabled || len(set.DNS.Pins) > 0 {
 			ts.DNS = &traceSetDNS{
+				Enabled:       set.DNS.Enabled,
 				TargetDNS:     set.DNS.TargetDNS,
 				DoHURL:        set.DNS.DoHURL,
 				FragmentQuery: set.DNS.FragmentQuery,

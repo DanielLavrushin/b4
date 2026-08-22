@@ -25,7 +25,8 @@ export type DiscoveryPhase =
   | "strategy_detection"
   | "optimization"
   | "dns_detection"
-  | "combination";
+  | "combination"
+  | "confirmation";
 
 export interface DomainPresetResult {
   preset_name: string;
@@ -38,6 +39,8 @@ export interface DomainPresetResult {
   bytes_read: number;
   error?: string;
   status_code: number;
+  confirmed?: number;
+  confirm_tries?: number;
   set?: B4SetConfig;
 }
 
@@ -64,7 +67,10 @@ export interface DiscoveryResult {
   best_success: boolean;
   results: Record<string, DomainPresetResult>;
   baseline_speed?: number;
-  improvement?: number;
+  baseline_works?: boolean;
+  confirmed?: number;
+  confirm_tries?: number;
+  final_host?: string;
   dns_result?: DNSDiscoveryResult;
 }
 
@@ -104,5 +110,8 @@ export interface HistoryEntry {
   results?: Record<string, DomainPresetResult>;
   dns_result?: DNSDiscoveryResult;
   baseline_speed?: number;
-  improvement?: number;
+  baseline_works?: boolean;
+  confirmed?: number;
+  confirm_tries?: number;
+  final_host?: string;
 }

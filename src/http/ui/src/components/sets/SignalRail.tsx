@@ -110,7 +110,7 @@ export const SignalRail = ({
         "&:hover": expandedRail,
         "&:focus-within": expandedRail,
         ...(open ? expandedRail : {}),
-        "@media (hover: none)": expandedRail,
+        "@media (hover: none) and (any-hover: none)": expandedRail,
         "@media (prefers-reduced-motion: reduce)": {
           "& .facet-tab, & .facet-tab svg, &": { transition: "none" },
         },
@@ -126,7 +126,7 @@ export const SignalRail = ({
             title={
               facet.active
                 ? facet.label
-                : `${facet.label} — ${t("sets.card.f.notConfigured")}`
+                : `${facet.label} · ${t("sets.card.f.notConfigured")}`
             }
           >
             <Box
@@ -310,12 +310,21 @@ export const FacetDrawer = ({ facet, onEdit }: FacetDrawerProps) => {
   );
 };
 
+export type FacetToggleMode = "collapse" | "expand";
+
 interface FacetCompareBarProps {
   active: FacetKey | null;
   onPick: (key: FacetKey | null) => void;
+  toggle: FacetToggleMode | null;
+  onToggle: () => void;
 }
 
-export const FacetCompareBar = ({ active, onPick }: FacetCompareBarProps) => {
+export const FacetCompareBar = ({
+  active,
+  onPick,
+  toggle,
+  onToggle,
+}: FacetCompareBarProps) => {
   const { t } = useTranslation();
 
   return (
@@ -379,24 +388,30 @@ export const FacetCompareBar = ({ active, onPick }: FacetCompareBarProps) => {
         );
       })}
 
-      <Box
-        component="button"
-        type="button"
-        onClick={() => onPick(null)}
-        sx={{
-          ...valueStyle,
-          cursor: "pointer",
-          px: spacing.sm,
-          py: spacing.xs / 2,
-          borderRadius: `${radiusPx.sm}px`,
-          bgcolor: "transparent",
-          border: `1px solid ${colors.border.light}`,
-          color: colors.text.disabled,
-          "&:hover": { color: colors.text.primary },
-        }}
-      >
-        {t("sets.card.f.collapseAll")}
-      </Box>
+      {toggle && (
+        <Box
+          component="button"
+          type="button"
+          onClick={onToggle}
+          sx={{
+            ...valueStyle,
+            cursor: "pointer",
+            px: spacing.sm,
+            py: spacing.xs / 2,
+            borderRadius: `${radiusPx.sm}px`,
+            bgcolor: "transparent",
+            border: `1px solid ${colors.border.light}`,
+            color: colors.text.disabled,
+            "&:hover": { color: colors.text.primary },
+          }}
+        >
+          {t(
+            toggle === "collapse"
+              ? "sets.card.f.collapseAll"
+              : "sets.card.f.expandAll",
+          )}
+        </Box>
+      )}
     </Stack>
   );
 };

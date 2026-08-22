@@ -18,19 +18,22 @@ const (
 
 // HistoryEntry represents a completed discovery result for a single domain.
 type HistoryEntry struct {
-	Domain      string                `json:"domain"`
-	Url         string                `json:"url"`
-	BestPreset  string                `json:"best_preset"`
-	BestSpeed   float64               `json:"best_speed"`
-	BestSuccess bool                  `json:"best_success"`
-	BestFamily  StrategyFamily        `json:"best_family,omitempty"`
-	Status      CheckStatus           `json:"status"`
-	StartTime   time.Time             `json:"start_time"`
-	EndTime     time.Time             `json:"end_time"`
-	Results     map[string]*DomainPresetResult `json:"results,omitempty"`
-	DNSResult   *DNSDiscoveryResult   `json:"dns_result,omitempty"`
-	BaselineSpeed float64             `json:"baseline_speed,omitempty"`
-	Improvement   float64             `json:"improvement,omitempty"`
+	Domain        string                         `json:"domain"`
+	Url           string                         `json:"url"`
+	BestPreset    string                         `json:"best_preset"`
+	BestSpeed     float64                        `json:"best_speed"`
+	BestSuccess   bool                           `json:"best_success"`
+	BestFamily    StrategyFamily                 `json:"best_family,omitempty"`
+	Status        CheckStatus                    `json:"status"`
+	StartTime     time.Time                      `json:"start_time"`
+	EndTime       time.Time                      `json:"end_time"`
+	Results       map[string]*DomainPresetResult `json:"results,omitempty"`
+	DNSResult     *DNSDiscoveryResult            `json:"dns_result,omitempty"`
+	BaselineSpeed float64                        `json:"baseline_speed,omitempty"`
+	BaselineWorks bool                           `json:"baseline_works,omitempty"`
+	Confirmed     int                            `json:"confirmed,omitempty"`
+	ConfirmTries  int                            `json:"confirm_tries,omitempty"`
+	FinalHost     string                         `json:"final_host,omitempty"`
 }
 
 // DiscoveryHistory manages persistent discovery results.
@@ -121,7 +124,10 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 			Results:       domainResult.Results,
 			DNSResult:     domainResult.DNSResult,
 			BaselineSpeed: domainResult.BaselineSpeed,
-			Improvement:   domainResult.Improvement,
+			BaselineWorks: domainResult.BaselineWorks,
+			Confirmed:     domainResult.Confirmed,
+			ConfirmTries:  domainResult.ConfirmTries,
+			FinalHost:     domainResult.FinalHost,
 		}
 
 		// Replace existing entry for the same domain, or append

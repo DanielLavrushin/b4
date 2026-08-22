@@ -53,6 +53,7 @@ const FEATURE_OFF_RULES: Array<{
   path: string[];
   toggle: string;
   offValue: unknown;
+  keep?: string[];
 }> = [
   { path: ["faking"], toggle: "sni", offValue: false },
   { path: ["tcp", "duplicate"], toggle: "enabled", offValue: false },
@@ -62,7 +63,7 @@ const FEATURE_OFF_RULES: Array<{
   { path: ["tcp", "win"], toggle: "mode", offValue: "off" },
   { path: ["tcp", "incoming"], toggle: "mode", offValue: "off" },
   { path: ["fragmentation"], toggle: "strategy", offValue: "none" },
-  { path: ["dns"], toggle: "enabled", offValue: false },
+  { path: ["dns"], toggle: "enabled", offValue: false, keep: ["pins"] },
   { path: ["routing"], toggle: "enabled", offValue: false },
 ];
 
@@ -90,9 +91,12 @@ function resetDisabledFeatures(cfg: Obj, defaults: Obj): void {
   for (const rule of FEATURE_OFF_RULES) {
     const node = resolveObjPath(cfg, rule.path);
     const def = resolveObjPath(defaults, rule.path);
-    if (node && def && node[rule.toggle] === rule.offValue) {
-      setObjPath(cfg, rule.path, { ...def, [rule.toggle]: rule.offValue });
+    if (!node || !def || node[rule.toggle] !== rule.offValue) continue;
+    const reset: Obj = { ...def, [rule.toggle]: rule.offValue };
+    for (const key of rule.keep ?? []) {
+      if (node[key] !== undefined) reset[key] = node[key];
     }
+    setObjPath(cfg, rule.path, reset);
   }
 }
 

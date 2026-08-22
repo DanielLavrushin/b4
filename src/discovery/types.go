@@ -28,6 +28,7 @@ const (
 	PhaseCombination DiscoveryPhase = "combination"
 	PhaseDNS         DiscoveryPhase = "dns_detection"
 	PhaseCached      DiscoveryPhase = "cached"
+	PhaseConfirm     DiscoveryPhase = "confirmation"
 )
 
 type StrategyFamily string
@@ -65,6 +66,7 @@ type CheckResult struct {
 	Error       string            `json:"error,omitempty"`
 	Timestamp   time.Time         `json:"timestamp"`
 	StatusCode  int               `json:"status_code"`
+	FinalHost   string            `json:"final_host,omitempty"`
 	Set         *config.SetConfig `json:"set"`
 }
 
@@ -94,17 +96,19 @@ type CheckSuite struct {
 }
 
 type DomainPresetResult struct {
-	PresetName string            `json:"preset_name"`
-	Family     StrategyFamily    `json:"family,omitempty"`
-	Phase      DiscoveryPhase    `json:"phase,omitempty"`
-	Priority   int               `json:"priority,omitempty"`
-	Status     CheckStatus       `json:"status"`
-	Duration   time.Duration     `json:"duration"`
-	Speed      float64           `json:"speed"`
-	BytesRead  int64             `json:"bytes_read"`
-	Error      string            `json:"error,omitempty"`
-	StatusCode int               `json:"status_code"`
-	Set        *config.SetConfig `json:"set"`
+	PresetName   string            `json:"preset_name"`
+	Family       StrategyFamily    `json:"family,omitempty"`
+	Phase        DiscoveryPhase    `json:"phase,omitempty"`
+	Priority     int               `json:"priority,omitempty"`
+	Status       CheckStatus       `json:"status"`
+	Duration     time.Duration     `json:"duration"`
+	Speed        float64           `json:"speed"`
+	BytesRead    int64             `json:"bytes_read"`
+	Error        string            `json:"error,omitempty"`
+	StatusCode   int               `json:"status_code"`
+	Confirmed    int               `json:"confirmed,omitempty"`
+	ConfirmTries int               `json:"confirm_tries,omitempty"`
+	Set          *config.SetConfig `json:"set"`
 }
 
 type StrategyGroup struct {
@@ -123,7 +127,10 @@ type DomainDiscoveryResult struct {
 	BestSuccess   bool                           `json:"best_success"`
 	Results       map[string]*DomainPresetResult `json:"results"`
 	BaselineSpeed float64                        `json:"baseline_speed,omitempty"`
-	Improvement   float64                        `json:"improvement,omitempty"`
+	BaselineWorks bool                           `json:"baseline_works,omitempty"`
+	Confirmed     int                            `json:"confirmed,omitempty"`
+	ConfirmTries  int                            `json:"confirm_tries,omitempty"`
+	FinalHost     string                         `json:"final_host,omitempty"`
 	DNSResult     *DNSDiscoveryResult            `json:"dns_result,omitempty"`
 }
 

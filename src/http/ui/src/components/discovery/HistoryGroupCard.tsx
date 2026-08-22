@@ -15,7 +15,6 @@ import {
   RefreshIcon,
   ExpandIcon,
   CollapseIcon,
-  ImprovementIcon,
   DeleteIcon,
 } from "@b4.icons";
 import { colors } from "@design";
@@ -228,14 +227,6 @@ export const HistoryGroupCard = ({
                         gap: 1,
                       }}
                     >
-                      {entry.improvement && entry.improvement > 0 && (
-                        <B4Badge
-                          icon={<ImprovementIcon />}
-                          label={`+${entry.improvement.toFixed(0)}%`}
-                          size="small"
-                          color="primary"
-                        />
-                      )}
                       <Tooltip title={t("core.history.removeFromHistory")}>
                         <IconButton
                           size="small"

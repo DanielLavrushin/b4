@@ -293,17 +293,63 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 
 		s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsRedirectAction(set))
 
-		resp, rerr := s.resolve(set, cfg, query, targetIP)
-		if rerr != nil {
+		source := set.DNS.TargetDNS
+		if set.DNS.DoHURL != "" {
+			source = set.DNS.DoHURL
+		}
+
+		var resp []byte
+		var rerr error
+		if !set.DNS.Strict && dnsSourceUnreachable(source) {
+			rerr = errDNSSourceCoolingDown
+		} else {
+			resp, rerr = s.resolve(set, cfg, query, targetIP)
+			if rerr != nil {
+				noteDNSSourceFailure(source)
+			}
+		}
+
+		servedFallback := false
+
+		switch {
+		case rerr == nil:
+			noteDNSSourceSuccess(source)
+		case set.DNS.Strict:
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionServfail)
 			resp = dns.BuildServfailResponse(query)
 			if len(resp) == 0 {
 				return
 			}
+		default:
+			if cached := recallDNSAnswer(domain, query); cached != nil {
+				log.Warnf("DNS TCP: the redirect could not answer %s (%v), replaying the last good answer (set: %s)",
+					dns.SafeName(domain), rerr, set.Name)
+				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionFallbackCache)
+				resp = cached
+				servedFallback = true
+				break
+			}
+
+			forwarded := s.forwardOneQuery(origIP, origPort, origErr, query)
+			if forwarded == nil {
+				log.Warnf("DNS TCP: the redirect could not answer %s (%v) and neither could %s, the client gets SERVFAIL (set: %s)",
+					dns.SafeName(domain), rerr, origIP, set.Name)
+				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionServfail)
+				resp = dns.BuildServfailResponse(query)
+				if len(resp) == 0 {
+					return
+				}
+				break
+			}
+			log.Warnf("DNS TCP: the redirect could not answer %s (%v), asking %s for this query (set: %s)",
+				dns.SafeName(domain), rerr, origIP, set.Name)
+			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionFallbackUpstream)
+			resp = forwarded
+			servedFallback = true
 		}
 
 		qtype, _ := dns.QuestionType(query)
-		if next := s.worker.noteDNSOutcome(cfg, set, domain, srcMac, qtype, resp); next != nil {
+		if next := s.escalationTarget(cfg, set, domain, srcMac, qtype, resp, servedFallback); next != nil {
 			if alt, aerr := s.answerVia(next, cfg, query, domain, clientIP); aerr == nil && len(alt) > 0 {
 				s.logEvent(next, domain, clientIP, origIP, clientPort, srcMac, dnsActionEscalatePrefix+next.Name)
 				if ips := dns.ParseResponseIPs(alt); len(ips) > 0 && clientIP != nil {
@@ -331,10 +377,21 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			resp = filtered
 		}
 
+		if rerr == nil && classifyDNSAnswer(resp) == dnsVerdictGood {
+			rememberDNSAnswer(domain, query, resp)
+		}
+
 		if writeDNSTCPMessage(client, resp, ioTimeout) != nil {
 			return
 		}
 	}
+}
+
+func (s *dnsTCPServer) escalationTarget(cfg *config.Config, set *config.SetConfig, domain, srcMac string, qtype uint16, resp []byte, servedFallback bool) *config.SetConfig {
+	if servedFallback {
+		return nil
+	}
+	return s.worker.noteDNSOutcome(cfg, set, domain, srcMac, qtype, resp)
 }
 
 func (s *dnsTCPServer) resolve(set *config.SetConfig, cfg *config.Config, query []byte, targetIP net.IP) ([]byte, error) {
@@ -373,6 +430,36 @@ func (s *dnsTCPServer) answerVia(set *config.SetConfig, cfg *config.Config, quer
 
 func (s *dnsTCPServer) logEvent(set *config.SetConfig, domain string, clientIP, serverIP net.IP, clientPort int, srcMac, action string) {
 	logDNSEvent("TCP", set, domain, clientIP, serverIP, uint16(clientPort), srcMac, action)
+}
+
+func (s *dnsTCPServer) forwardOneQuery(origIP net.IP, origPort int, origErr error, query []byte) []byte {
+	if origErr != nil || origIP == nil || origPort == 0 || origPort == s.port {
+		return nil
+	}
+	cfg := s.worker.getConfig()
+	d := net.Dialer{Timeout: cfg.DNSTCPDialTimeout()}
+	socks5.ApplyBypassMark(&d, uint32(cfg.MainInjectedMark()))
+
+	upstream, err := d.DialContext(s.ctx, "tcp", net.JoinHostPort(origIP.String(), fmt.Sprintf("%d", origPort)))
+	if err != nil {
+		log.Tracef("DNS TCP: fallback dial %s:%d failed: %v", origIP, origPort, err)
+		return nil
+	}
+	defer upstream.Close()
+
+	ioTimeout := cfg.DNSTCPIOTimeout()
+	if writeDNSTCPMessage(upstream, query, ioTimeout) != nil {
+		return nil
+	}
+	if err := upstream.SetReadDeadline(time.Now().Add(ioTimeout)); err != nil {
+		return nil
+	}
+	resp, err := readDNSTCPMessage(upstream)
+	if err != nil {
+		log.Tracef("DNS TCP: fallback read from %s:%d failed: %v", origIP, origPort, err)
+		return nil
+	}
+	return resp
 }
 
 func (s *dnsTCPServer) passthrough(client net.Conn, origIP net.IP, origPort int, origErr error, firstQuery []byte) {

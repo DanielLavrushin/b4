@@ -31,6 +31,13 @@ const (
 	validationRetryDelay = 100 * time.Millisecond
 
 	minSuccessBytes = 1024
+
+	presetNoBypass = "no-bypass"
+
+	confirmTries = 3
+	confirmDelay = 2 * time.Second
+
+	maxProbeRedirects = 5
 )
 
 func NewDiscoverySuite(inputs []string, pool *nfq.Pool, skipDNS bool, skipCache bool, payloadFiles []string, validationTries int, tlsVersion string, ipVersion string, flowMark uint) *DiscoverySuite {
@@ -253,23 +260,13 @@ func (ds *DiscoverySuite) RunDiscovery() {
 
 	// Phase 1: Strategy detection across all domains
 	ds.setPhase(PhaseStrategy)
-	workingFamilies, baselineSpeed, allBaselineWorks := ds.runPhase1Multi(phase1Presets)
-	ds.determineBest(baselineSpeed)
+	workingFamilies, _, allBaselineWorks := ds.runPhase1Multi(phase1Presets)
+	ds.determineBest()
 
 	if allBaselineWorks {
 		dnsNeeded := anyDNSPoisoned
 
 		if !dnsNeeded {
-			ds.CheckSuite.mu.Lock()
-			for _, domainResult := range ds.domainResults {
-				domainResult.BestPreset = "no-bypass"
-				domainResult.BestSpeed = baselineSpeed
-				domainResult.BestSuccess = true
-				domainResult.BaselineSpeed = baselineSpeed
-				domainResult.Improvement = 0
-			}
-			ds.CheckSuite.mu.Unlock()
-
 			log.DiscoveryLogf("Verified: no DPI bypass needed for any domain")
 			ds.finalize()
 			ds.logDiscoverySummary()
@@ -308,7 +305,7 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	// Phase 2: Optimization using representative domain per family
 	ds.setPhase(PhaseOptimize)
 	bestParams := ds.runPhase2WithRepresentative(workingFamilies)
-	ds.determineBest(baselineSpeed)
+	ds.determineBest()
 
 	// Phase 3: Combinations across all domains
 	if len(workingFamilies) >= 2 {
@@ -316,7 +313,8 @@ func (ds *DiscoverySuite) RunDiscovery() {
 		ds.runPhase3Multi(workingFamilies, bestParams)
 	}
 
-	ds.determineBest(baselineSpeed)
+	ds.determineBest()
+	ds.confirmWinners()
 	ds.finalize()
 	ds.logDiscoverySummary()
 }
@@ -863,6 +861,16 @@ func (ds *DiscoverySuite) optimizeWithPresets(family StrategyFamily) ConfigPrese
 
 // testPresetInternal tests a single preset against the primary domain.
 // Used during Phase 2 optimization (via withSingleDomain helper).
+func nonOKStatusNote(result CheckResult) string {
+	if result.StatusCode >= 200 && result.StatusCode < 300 {
+		return ""
+	}
+	if result.StatusCode == 0 {
+		return ""
+	}
+	return fmt.Sprintf(", HTTP %d", result.StatusCode)
+}
+
 func (ds *DiscoverySuite) testPresetInternal(preset ConfigPreset) CheckResult {
 	log.DiscoveryLogf("  Testing '%s'...", preset.Name)
 
@@ -905,10 +913,10 @@ func (ds *DiscoverySuite) testPresetInternal(preset ConfigPreset) CheckResult {
 
 	if successCount == ds.validationTries {
 		if ds.validationTries > 1 {
-			log.DiscoveryLogf("    → OK (%.2f KB/s, %d bytes) - %d/%d tries succeeded",
-				lastResult.Speed/1024, lastResult.BytesRead, successCount, ds.validationTries)
+			log.DiscoveryLogf("    → OK (%.2f KB/s, %d bytes%s) - %d/%d tries succeeded",
+				lastResult.Speed/1024, lastResult.BytesRead, nonOKStatusNote(lastResult), successCount, ds.validationTries)
 		} else {
-			log.DiscoveryLogf("    → OK (%.2f KB/s, %d bytes)", lastResult.Speed/1024, lastResult.BytesRead)
+			log.DiscoveryLogf("    → OK (%.2f KB/s, %d bytes%s)", lastResult.Speed/1024, lastResult.BytesRead, nonOKStatusNote(lastResult))
 		}
 		return lastResult
 	}
@@ -1003,7 +1011,7 @@ spawn:
 			}
 
 			if successCount == ds.validationTries {
-				log.DiscoveryLogf("    [%s] → OK (%.2f KB/s, %d bytes)", di.Domain, lastResult.Speed/1024, lastResult.BytesRead)
+				log.DiscoveryLogf("    [%s] → OK (%.2f KB/s, %d bytes%s)", di.Domain, lastResult.Speed/1024, lastResult.BytesRead, nonOKStatusNote(lastResult))
 				mu.Lock()
 				results[di.Domain] = lastResult
 				mu.Unlock()
@@ -1172,19 +1180,23 @@ func (ds *DiscoverySuite) dialNetwork() string {
 
 // dialContext builds the probe dialer: it forces the address family from
 // dialNetwork and pins pinnedIP when DNS discovery already resolved one.
-func (ds *DiscoverySuite) dialContext(timeout time.Duration, pinnedIP string) func(context.Context, string, string) (net.Conn, error) {
+func (ds *DiscoverySuite) dialContext(timeout time.Duration, pinnedHost, pinnedIP string) func(context.Context, string, string) (net.Conn, error) {
 	baseDialer := netprobe.Dialer(int(ds.flowMark), timeout/2, timeout)
+	baseDialer.Resolver = netprobe.MarkedResolver(int(ds.flowMark), timeout/2, "")
 	forcedNet := ds.dialNetwork()
 
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
 		if forcedNet != "" {
 			network = forcedNet
 		}
-		if pinnedIP != "" {
-			_, port, _ := net.SplitHostPort(addr)
-			if port == "" {
-				port = "443"
-			}
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			host, port = addr, "443"
+		}
+		if port == "" {
+			port = "443"
+		}
+		if pinnedIP != "" && strings.EqualFold(host, pinnedHost) {
 			directAddr := net.JoinHostPort(pinnedIP, port)
 			log.Tracef("DNS bypass: connecting to %s instead of %s", directAddr, addr)
 			return baseDialer.DialContext(ctx, network, directAddr)
@@ -1194,7 +1206,10 @@ func (ds *DiscoverySuite) dialContext(timeout time.Duration, pinnedIP string) fu
 }
 
 func (ds *DiscoverySuite) tlsConfig() *tls.Config {
-	cfg := &tls.Config{InsecureSkipVerify: true}
+	cfg := &tls.Config{
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"h2", "http/1.1"},
+	}
 	switch ds.tlsVersion {
 	case "tls12":
 		cfg.MinVersion = tls.VersionTLS12
@@ -1220,13 +1235,21 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 		TLSClientConfig:       ds.tlsConfig(),
 		ResponseHeaderTimeout: timeout,
 		IdleConnTimeout:       timeout,
+		ForceAttemptHTTP2:     true,
 	}
 
-	transport.DialContext = ds.dialContext(timeout, ip)
+	transport.DialContext = ds.dialContext(timeout, di.Domain, ip)
 
 	client := &http.Client{
 		Timeout:   timeout,
 		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= maxProbeRedirects {
+				return fmt.Errorf("stopped after %d redirects", len(via))
+			}
+			result.FinalHost = req.URL.Hostname()
+			return nil
+		},
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", di.CheckURL, nil)
@@ -1256,6 +1279,12 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 	if resp.StatusCode == 451 {
 		result.Status = CheckStatusFailed
 		result.Error = "ISP block page (HTTP 451)"
+		result.Duration = time.Since(start)
+		return result
+	}
+	if resp.StatusCode >= 500 {
+		result.Status = CheckStatusFailed
+		result.Error = fmt.Sprintf("server answered HTTP %d", resp.StatusCode)
 		result.Duration = time.Since(start)
 		return result
 	}
@@ -1398,7 +1427,11 @@ func (ds *DiscoverySuite) storeResult(preset ConfigPreset, result CheckResult) {
 		Set:        result.Set,
 	}
 
-	if result.Status == CheckStatusComplete && preset.Name != "no-bypass" {
+	if result.Status == CheckStatusComplete && result.FinalHost != "" {
+		domainResult.FinalHost = result.FinalHost
+	}
+
+	if result.Status == CheckStatusComplete && preset.Name != presetNoBypass {
 		if result.Speed > domainResult.BestSpeed {
 			oldBest := domainResult.BestSpeed
 			domainResult.BestPreset = preset.Name
@@ -1445,7 +1478,11 @@ func (ds *DiscoverySuite) storeResultsMulti(preset ConfigPreset, results map[str
 			Set:        result.Set,
 		}
 
-		if result.Status == CheckStatusComplete && preset.Name != "no-bypass" {
+		if result.Status == CheckStatusComplete && result.FinalHost != "" {
+			domainResult.FinalHost = result.FinalHost
+		}
+
+		if result.Status == CheckStatusComplete && preset.Name != presetNoBypass {
 			if result.Speed > domainResult.BestSpeed {
 				oldBest := domainResult.BestSpeed
 				domainResult.BestPreset = preset.Name
@@ -1464,44 +1501,43 @@ func (ds *DiscoverySuite) storeResultsMulti(preset ConfigPreset, results map[str
 	ds.DomainDiscoveryResults = ds.domainResults
 }
 
-func (ds *DiscoverySuite) determineBest(baselineSpeed float64) {
+func (ds *DiscoverySuite) determineBest() {
 	ds.CheckSuite.mu.Lock()
 	defer ds.CheckSuite.mu.Unlock()
 
 	for _, domainResult := range ds.domainResults {
+		domainBaseline := 0.0
+		if r := domainResult.Results[presetNoBypass]; r != nil && r.Status == CheckStatusComplete {
+			domainBaseline = r.Speed
+		}
+
+		domainResult.BaselineSpeed = domainBaseline
+
+		if domainBaseline > 0 {
+			domainResult.BaselineWorks = true
+			domainResult.BestPreset = presetNoBypass
+			domainResult.BestSpeed = domainBaseline
+			domainResult.BestSuccess = true
+			continue
+		}
+
 		var bestPreset string
 		var bestSpeed float64
-
 		for presetName, result := range domainResult.Results {
-			if result.Status == CheckStatusComplete && result.Speed > bestSpeed {
-				if presetName == "no-bypass" {
-					continue
-				}
+			if presetName == presetNoBypass || result == nil || result.Status != CheckStatusComplete {
+				continue
+			}
+			if result.Speed > bestSpeed {
 				bestPreset = presetName
 				bestSpeed = result.Speed
 			}
 		}
 
+		domainResult.BaselineWorks = false
 		domainResult.BestPreset = bestPreset
 		domainResult.BestSpeed = bestSpeed
 		domainResult.BestSuccess = bestSpeed > 0
-		domainResult.BaselineSpeed = baselineSpeed
-
-		if baselineSpeed > 0 && bestSpeed > 0 {
-			domainResult.Improvement = ((bestSpeed - baselineSpeed) / baselineSpeed) * 100
-		}
 	}
-}
-
-func (ds *DiscoverySuite) cdnDNSConfig() config.DNSConfig {
-	if ds.discoveredDNS.Enabled {
-		return ds.discoveredDNS
-	}
-	doh := "https://1.1.1.1/dns-query"
-	if len(netprobe.WireDoHServers) > 0 {
-		doh = netprobe.WireDoHServers[0]
-	}
-	return config.DNSConfig{Enabled: true, DoHURL: doh}
 }
 
 func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
@@ -1549,9 +1585,6 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 				testSet.Targets.GeoSiteCategories = geosite
 			}
 
-			if !ds.skipDNS {
-				testSet.DNS = ds.cdnDNSConfig()
-			}
 			if len(geoip) > 0 || len(geosite) > 0 {
 				tempCfg := &config.Config{System: ds.cfg.System}
 				domains, ips, err := tempCfg.GetTargetsForSet(&testSet)
@@ -1582,17 +1615,7 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 				}
 			}
 
-			if len(ipsToAdd) > 0 {
-				cidrIPs := make([]string, len(ipsToAdd))
-				for i, ip := range ipsToAdd {
-					if strings.Contains(ip, "/") {
-						cidrIPs[i] = ip
-					} else if strings.Contains(ip, ":") {
-						cidrIPs[i] = ip + "/128"
-					} else {
-						cidrIPs[i] = ip + "/32"
-					}
-				}
+			if cidrIPs := asCIDRs(ipsToAdd); len(cidrIPs) > 0 {
 				testSet.Targets.IPs = cidrIPs
 				testSet.Targets.IpsToMatch = cidrIPs
 				log.Tracef("Discovery: added %d IPs to test config: %v", len(cidrIPs), cidrIPs)
@@ -1642,14 +1665,12 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 
 		var allDomains []string
 		var allIPs []string
-		hasCDN := false
 
 		for _, di := range ds.Domains {
 			allDomains = append(allDomains, di.Domain)
 
 			geoip, geosite := GetCDNCategories(di.Domain)
 			if len(geoip) > 0 || len(geosite) > 0 {
-				hasCDN = true
 				geoip, geosite = ds.installedGeoCategories(geoip, geosite)
 				testSet.Targets.GeoIpCategories = appendUnique(testSet.Targets.GeoIpCategories, geoip...)
 				testSet.Targets.GeoSiteCategories = appendUnique(testSet.Targets.GeoSiteCategories, geosite...)
@@ -1673,23 +1694,9 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 		testSet.Targets.TLSVersion = ds.tlsFilterVersion()
 		testSet.Targets.IPVersion = ds.ipFilterVersion()
 
-		if len(allIPs) > 0 {
-			cidrIPs := make([]string, 0, len(allIPs))
-			for _, ip := range allIPs {
-				if strings.Contains(ip, "/") {
-					cidrIPs = append(cidrIPs, ip)
-				} else if strings.Contains(ip, ":") {
-					cidrIPs = append(cidrIPs, ip+"/128")
-				} else {
-					cidrIPs = append(cidrIPs, ip+"/32")
-				}
-			}
+		if cidrIPs := asCIDRs(allIPs); len(cidrIPs) > 0 {
 			testSet.Targets.IPs = cidrIPs
 			testSet.Targets.IpsToMatch = cidrIPs
-		}
-
-		if hasCDN && !ds.skipDNS {
-			testSet.DNS = ds.cdnDNSConfig()
 		}
 
 		if len(testSet.Targets.GeoIpCategories) > 0 || len(testSet.Targets.GeoSiteCategories) > 0 {
@@ -1777,14 +1784,78 @@ func (ds *DiscoverySuite) finalize() {
 	}()
 }
 
-func scopeSetToDomains(set *config.SetConfig, domains []string) *config.SetConfig {
+func (ds *DiscoverySuite) scopeSetToDomains(set *config.SetConfig, domains []string) *config.SetConfig {
 	if set == nil || len(domains) == 0 {
 		return set
 	}
 	scoped := *set
 	scoped.Targets.SNIDomains = append([]string(nil), domains...)
 	scoped.Targets.DomainsToMatch = append([]string(nil), domains...)
+	scoped.Targets.GeoIpCategories, scoped.Targets.GeoSiteCategories = ds.geoCategoriesFor(domains)
+	scoped.Targets.IPs = ds.targetIPsFor(domains)
+	scoped.Targets.IpsToMatch = scoped.Targets.IPs
+	if scoped.DNS.Enabled && !ds.anyDNSPoisoned(domains) {
+		scoped.DNS = config.DNSConfig{}
+	}
 	return &scoped
+}
+
+func (ds *DiscoverySuite) geoCategoriesFor(domains []string) ([]string, []string) {
+	var geoips, geosites []string
+	for _, domain := range domains {
+		geoip, geosite := GetCDNCategories(domain)
+		if len(geoip) == 0 && len(geosite) == 0 {
+			continue
+		}
+		geoip, geosite = ds.installedGeoCategories(geoip, geosite)
+		geoips = appendUnique(geoips, geoip...)
+		geosites = appendUnique(geosites, geosite...)
+	}
+	return geoips, geosites
+}
+
+func (ds *DiscoverySuite) targetIPsFor(domains []string) []string {
+	var ips []string
+	for _, domain := range domains {
+		result := ds.dnsResults[domain]
+		if result == nil {
+			continue
+		}
+		ips = appendUnique(ips, result.ExpectedIPs...)
+		for _, probe := range result.ProbeResults {
+			if probe.ResolvedIP != "" {
+				ips = appendUnique(ips, probe.ResolvedIP)
+			}
+		}
+	}
+	return asCIDRs(ips)
+}
+
+func asCIDRs(ips []string) []string {
+	if len(ips) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		switch {
+		case strings.Contains(ip, "/"):
+			out = append(out, ip)
+		case strings.Contains(ip, ":"):
+			out = append(out, ip+"/128")
+		default:
+			out = append(out, ip+"/32")
+		}
+	}
+	return out
+}
+
+func (ds *DiscoverySuite) anyDNSPoisoned(domains []string) bool {
+	for _, domain := range domains {
+		if r := ds.dnsResults[domain]; r != nil && r.IsPoisoned {
+			return true
+		}
+	}
+	return false
 }
 
 func (ds *DiscoverySuite) buildStrategyGroups() {
@@ -1808,12 +1879,12 @@ func (ds *DiscoverySuite) buildStrategyGroups() {
 	remaining := map[string]bool{}
 
 	for domain, dr := range ds.domainResults {
-		if dr == nil || !dr.BestSuccess {
+		if dr == nil || !dr.BestSuccess || dr.BaselineWorks {
 			continue
 		}
 		remaining[domain] = true
 		for name, r := range dr.Results {
-			if r == nil || r.Status != CheckStatusComplete || name == "no-bypass" {
+			if r == nil || r.Status != CheckStatusComplete || name == presetNoBypass {
 				continue
 			}
 			info := presets[name]
@@ -1907,11 +1978,16 @@ func (ds *DiscoverySuite) buildStrategyGroups() {
 			}
 		}
 
+		scoped := ds.scopeSetToDomains(info.set, groupDomains)
+		if info.set != nil && info.set.DNS.Enabled && scoped != nil && !scoped.DNS.Enabled {
+			log.DiscoveryLogf("  DNS resolves cleanly for %v, leaving the DNS redirect out of the set", groupDomains)
+		}
+
 		groups = append(groups, StrategyGroup{
 			WinnerPreset: winner,
 			Family:       info.family,
 			Domains:      groupDomains,
-			Set:          scopeSetToDomains(info.set, groupDomains),
+			Set:          scoped,
 			MedianSpeed:  median,
 		})
 	}
@@ -1948,11 +2024,7 @@ func (ds *DiscoverySuite) logDiscoverySummary() {
 		}
 
 		if domainResult.BestSuccess {
-			improvement := ""
-			if domainResult.Improvement > 0 {
-				improvement = fmt.Sprintf(" (+%.0f%% vs baseline)", domainResult.Improvement)
-			}
-			log.DiscoveryLogf("  ✓ [%s] Best: %s (%.2f KB/s%s)", di.Domain, domainResult.BestPreset, domainResult.BestSpeed/1024, improvement)
+			log.DiscoveryLogf("  ✓ [%s] Best: %s (%.2f KB/s)", di.Domain, domainResult.BestPreset, domainResult.BestSpeed/1024)
 		} else {
 			log.DiscoveryLogf("  ✗ [%s] No working DPI bypass found", di.Domain)
 		}
@@ -2125,8 +2197,9 @@ func (ds *DiscoverySuite) measureNetworkBaseline() float64 {
 	client := &http.Client{
 		Timeout: timeout,
 		Transport: &http.Transport{
-			TLSClientConfig: ds.tlsConfig(),
-			DialContext:     ds.dialContext(timeout, ""),
+			TLSClientConfig:   ds.tlsConfig(),
+			DialContext:       ds.dialContext(timeout, "", ""),
+			ForceAttemptHTTP2: true,
 		},
 	}
 

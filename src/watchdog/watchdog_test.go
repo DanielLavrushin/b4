@@ -35,7 +35,7 @@ func TestExtractDomain(t *testing.T) {
 func TestSyncDomainStates(t *testing.T) {
 	w := &Watchdog{
 		domainStates: map[string]*DomainStatus{
-			"old.com": {Domain: "old.com", Status: StatusHealthy},
+			"old.com":  {Domain: "old.com", Status: StatusHealthy},
 			"keep.com": {Domain: "keep.com", Status: StatusDegraded, ConsecutiveFailures: 2},
 		},
 	}

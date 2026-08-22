@@ -10,7 +10,7 @@ import {
   Divider,
   Paper,
 } from "@mui/material";
-import { AddIcon, ExpandIcon, CollapseIcon, ImprovementIcon } from "@b4.icons";
+import { AddIcon, ExpandIcon, CollapseIcon } from "@b4.icons";
 import { colors } from "@design";
 import { B4Badge } from "@b4.elements";
 import {
@@ -160,6 +160,7 @@ export const StrategyGroupCard = ({
               .sort((a, b) => b.speed - a.speed)
               .map((d) => {
                 const dr = domainResults?.[d.domain];
+                const winnerResult = dr?.results?.[group.winnerPreset];
                 const successResults = dr
                   ? Object.values(dr.results)
                       .filter((r) => r.status === "complete")
@@ -230,12 +231,19 @@ export const StrategyGroupCard = ({
                           </Tooltip>
                         )}
                       </Box>
-                      {!!d.improvement && d.improvement > 0 && (
+                      {!!winnerResult?.confirm_tries && (
                         <B4Badge
-                          icon={<ImprovementIcon />}
-                          label={`+${d.improvement.toFixed(0)}%`}
+                          label={t("discovery.confirmed", {
+                            passed: winnerResult.confirmed ?? 0,
+                            tries: winnerResult.confirm_tries,
+                          })}
                           size="small"
-                          color="primary"
+                          color={
+                            (winnerResult.confirmed ?? 0) ===
+                            winnerResult.confirm_tries
+                              ? "success"
+                              : "warning"
+                          }
                         />
                       )}
                     </Box>
