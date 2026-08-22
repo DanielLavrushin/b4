@@ -11,7 +11,6 @@ export interface StrategyGroup {
   domains: {
     domain: string;
     speed: number;
-    improvement?: number;
     presetName: string;
   }[];
   minSpeed: number;
@@ -22,8 +21,13 @@ export interface StrategyGroup {
 export function groupByStrategy(
   results: Record<string, DiscoveryResult>,
   backendGroups?: BackendStrategyGroup[],
-): { success: StrategyGroup[]; failed: DiscoveryResult[] } {
+): {
+  success: StrategyGroup[];
+  failed: DiscoveryResult[];
+  notBlocked: DiscoveryResult[];
+} {
   const failed: DiscoveryResult[] = [];
+  const notBlocked: DiscoveryResult[] = [];
   const grouped = new Set<string>();
   const success: StrategyGroup[] = [];
 
@@ -37,7 +41,6 @@ export function groupByStrategy(
         return {
           domain: d,
           speed,
-          improvement: dr?.improvement,
           presetName: dr?.best_preset || bg.winner_preset,
         };
       });
@@ -58,6 +61,10 @@ export function groupByStrategy(
   // shows up as a success with an applicable set.
   const fallback: Record<string, StrategyGroup> = {};
   Object.values(results).forEach((dr) => {
+    if (dr.baseline_works) {
+      notBlocked.push(dr);
+      return;
+    }
     if (!dr.best_success || !dr.best_preset) {
       failed.push(dr);
       return;
@@ -83,7 +90,6 @@ export function groupByStrategy(
     fallback[key].domains.push({
       domain: dr.domain,
       speed: dr.best_speed,
-      improvement: dr.improvement,
       presetName: dr.best_preset,
     });
     fallback[key].maxSpeed = Math.max(fallback[key].maxSpeed, dr.best_speed);
@@ -91,7 +97,7 @@ export function groupByStrategy(
   });
   Object.values(fallback).forEach((g) => success.push(g));
 
-  return { success, failed };
+  return { success, failed, notBlocked };
 }
 
 export function formatTimeAgo(

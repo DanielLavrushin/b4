@@ -10,7 +10,7 @@ import {
   Divider,
   Paper,
 } from "@mui/material";
-import { AddIcon, ExpandIcon, CollapseIcon, ImprovementIcon } from "@b4.icons";
+import { AddIcon, ExpandIcon, CollapseIcon } from "@b4.icons";
 import { colors } from "@design";
 import { B4Badge } from "@b4.elements";
 import {
@@ -230,12 +230,18 @@ export const StrategyGroupCard = ({
                           </Tooltip>
                         )}
                       </Box>
-                      {!!d.improvement && d.improvement > 0 && (
+                      {!!dr?.confirm_tries && (
                         <B4Badge
-                          icon={<ImprovementIcon />}
-                          label={`+${d.improvement.toFixed(0)}%`}
+                          label={t("discovery.confirmed", {
+                            passed: dr.confirmed ?? 0,
+                            tries: dr.confirm_tries,
+                          })}
                           size="small"
-                          color="primary"
+                          color={
+                            (dr.confirmed ?? 0) === dr.confirm_tries
+                              ? "success"
+                              : "warning"
+                          }
                         />
                       )}
                     </Box>

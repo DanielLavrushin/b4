@@ -1537,6 +1537,8 @@
       "noDohWarning": "Select or enter a DoH URL to enable redirect.",
       "fragmentQuery": "Fragment DNS Queries",
       "fragmentQueryDesc": "Split DNS packets using IP fragmentation to bypass DPI that pattern-matches domain names in queries",
+      "strict": "Fail closed when the resolver is unreachable",
+      "strictDesc": "Leave this off and b4 answers from the last good reply, or from the resolver the client was already using, whenever the redirect target cannot be reached. Turn it on and the query returns SERVFAIL instead, so nothing in this set resolves while the redirect target is down.",
       "serverIp": "DNS Server IP",
       "serverIpPlaceholder": "e.g., 9.9.9.9",
       "serverIpHelper": "Select below or enter custom IP",
@@ -1870,6 +1872,10 @@
     "useThisConfig": "Use this configuration",
     "configs": "{{success}}/{{total}} configs",
     "noWorkingConfig": "No working config",
+    "noBypass": {
+      "badge": "No bypass needed",
+      "body": "This domain loads without any DPI bypass, so b4 has nothing to fix here. Adding a strategy would only put the traffic through packet surgery it does not need."
+    },
     "failedCount": "{{count}} failed",
     "tested": "{{count}} tested...",
     "moreConfigsToTest": "{{count}} more configurations to test...",
@@ -1917,7 +1923,8 @@
       "strategy_detection": "Strategy Detection",
       "optimization": "Optimization",
       "combination": "Combination Test",
-      "dns_detection": "DNS Detection"
+      "dns_detection": "DNS Detection",
+      "confirmation": "Confirming the winner"
     },
     "grouped": {
       "domainCount_one": "{{count}} domain",
@@ -1976,7 +1983,8 @@
       "testing": "Testing...",
       "blocked": "Blocked"
     },
-    "movedDomains": "Moved {{domains}} out of: {{sets}}, so only this set targets them."
+    "movedDomains": "Moved {{domains}} out of: {{sets}}, so only this set targets them.",
+    "confirmed": "confirmed {{passed}}/{{tries}}"
   },
   "detector": {
     "title": "TSPU / DPI Detector",

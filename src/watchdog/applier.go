@@ -1,6 +1,7 @@
 package watchdog
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,8 @@ import (
 	"github.com/daniellavrushin/b4/log"
 	"github.com/google/uuid"
 )
+
+var ErrBaselineWorks = errors.New("the domain loads without a bypass")
 
 type domainWithSet struct {
 	domain string
@@ -24,6 +27,10 @@ func applyBatchResults(cfg *config.Config, domains []string, suite *discovery.Ch
 		dr, ok := suite.DomainDiscoveryResults[domainKey]
 		if !ok || !dr.BestSuccess {
 			results[input] = fmt.Errorf("no working config found")
+			continue
+		}
+		if dr.BaselineWorks {
+			results[input] = ErrBaselineWorks
 			continue
 		}
 		best, ok := dr.Results[dr.BestPreset]

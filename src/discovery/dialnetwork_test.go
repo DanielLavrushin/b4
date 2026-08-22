@@ -73,7 +73,7 @@ func TestDialContextOverridesRequestedFamily(t *testing.T) {
 	}
 
 	ds := suiteWithQueue("auto", true, false)
-	dial := ds.dialContext(2*time.Second, "127.0.0.1")
+	dial := ds.dialContext(2*time.Second, "blocked.example", "127.0.0.1")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

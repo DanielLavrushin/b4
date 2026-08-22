@@ -47,6 +47,7 @@ import {
 } from "../../utils/discovery";
 import { RunningDomainCard } from "./RunningDomainCard";
 import { StrategyGroupCard } from "./StrategyGroupCard";
+import { NoBypassCard } from "./NoBypassCard";
 import { FailedDomainCard } from "./FailedDomainCard";
 import { HistoryGroupCard } from "./HistoryGroupCard";
 import { configApi } from "@b4.settings";
@@ -84,6 +85,7 @@ export const DiscoveryRunner = () => {
     optimization: t("discovery.phaseNames.optimization"),
     combination: t("discovery.phaseNames.combination"),
     dns_detection: t("discovery.phaseNames.dns_detection"),
+    confirmation: t("discovery.phaseNames.confirmation"),
   };
 
   const {
@@ -616,11 +618,14 @@ export const DiscoveryRunner = () => {
         suite?.domain_discovery_results &&
         Object.keys(suite.domain_discovery_results).length > 0 &&
         (() => {
-          const { success: strategyGroups, failed: failedDomains } =
-            groupByStrategy(
-              suite.domain_discovery_results,
-              suite.strategy_groups,
-            );
+          const {
+            success: strategyGroups,
+            failed: failedDomains,
+            notBlocked: openDomains,
+          } = groupByStrategy(
+            suite.domain_discovery_results,
+            suite.strategy_groups,
+          );
           return (
             <Box
               sx={{
@@ -649,6 +654,14 @@ export const DiscoveryRunner = () => {
                   />
                 );
               })}
+
+              {openDomains.map((dr) => (
+                <NoBypassCard
+                  key={dr.domain}
+                  domain={dr.domain}
+                  speed={dr.best_speed}
+                />
+              ))}
 
               {failedDomains.map((dr) => (
                 <FailedDomainCard
@@ -698,7 +711,12 @@ export const DiscoveryRunner = () => {
             );
             const familyGroups: Record<string, HistoryEntry[]> = {};
             const failedEntries: HistoryEntry[] = [];
+            const openEntries: HistoryEntry[] = [];
             sorted.forEach((entry) => {
+              if (entry.baseline_works) {
+                openEntries.push(entry);
+                return;
+              }
               if (!entry.best_success) {
                 failedEntries.push(entry);
                 return;
@@ -756,6 +774,14 @@ export const DiscoveryRunner = () => {
                     />
                   );
                 })}
+
+                {openEntries.map((entry) => (
+                  <NoBypassCard
+                    key={entry.domain}
+                    domain={entry.domain}
+                    speed={entry.best_speed}
+                  />
+                ))}
 
                 {failedEntries.map((entry) => (
                   <FailedDomainCard

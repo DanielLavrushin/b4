@@ -99,7 +99,13 @@ In the configuration file the same data is stored the other way round, as `dns.p
 
 ### When the resolver fails
 
-A resolver that times out or errors produces SERVFAIL for that query. b4 does not fall back to plain DNS and does not let the original query continue to its destination. A name that b4 took over either resolves through the configured resolver or does not resolve at all.
+A resolver that times out or errors does not end the lookup. b4 answers from the last good reply it holds for that name, and when it holds none, it puts the query to the resolver the client was already addressing and answers with what comes back. Three failures in a row take the configured resolver out of the path for 30 seconds, so a resolver that has gone away costs one timeout rather than one per query.
+
+A set can ask for the opposite with **Fail closed when the resolver is unreachable** (`dns.strict`). With it on, a resolver that does not answer produces SERVFAIL, b4 does not fall back to plain DNS, and a name b4 took over either resolves through the configured resolver or does not resolve at all.
+
+:::warning
+Fail closed and an unreachable resolver together mean nothing in the set resolves. On a censored connection the DoH server itself is a target, so a resolver that answered when the set was built can stop answering later, and every domain the set covers goes down with it while the bypass strategy underneath is still working.
+:::
 
 ## The IPv4 fallback
 
@@ -134,7 +140,7 @@ Those queries are ordinary DNS, and without interception they reach the resolver
 | --- | --- | --- | --- |
 | Intercept DNS over TCP | `system.dns.tcp_disabled` | on (`false`) | With this off, a client that falls back to TCP reaches the upstream resolver and the set's DNS server is skipped |
 | Listener port | `system.dns.tcp_port` | `5453` | b4 listens for DNS over TCP on this local port, and a firewall rule sends connections aimed at port 53 to it. Nothing outside the router uses this port, clients keep addressing port 53 as before. Change it only if another program already holds 5453 |
-| Query timeout | `system.dns.query_timeout_sec` | `5` | How long to wait for the set's resolver before answering SERVFAIL. Applies to UDP and TCP alike |
+| Query timeout | `system.dns.query_timeout_sec` | `5` | How long to wait for the set's resolver before falling back, or before answering SERVFAIL when the set is set to fail closed. Applies to UDP and TCP alike |
 | Idle timeout | `system.dns.tcp_idle_sec` | `30` | How long an idle DNS-over-TCP connection is held open for further queries |
 | Read/write timeout | `system.dns.tcp_io_sec` | `10` | Deadline for a single query or answer on an established connection |
 | Forward timeout | `system.dns.tcp_dial_sec` | `5` | How long to wait when forwarding an unmatched TCP query to the resolver the client chose |
@@ -180,7 +186,7 @@ What they do not do is switch DNS handling on. Port 53 is dispatched before any 
 ### What to expect
 
 - **Local names stop resolving.** Router hostnames, `.lan` names and anything else the router's own resolver serves are answered by the public resolver instead, which does not know them. Pin the few names that matter, or target the catch-all at a narrower expression.
-- **One resolver becomes a single point of failure.** Resolution fails closed, so while the DoH server is unreachable, name lookups fail across the network. A resolver reachable from your connection matters more than its feature list.
+- **One resolver carries the whole catch-all.** While the DoH server is unreachable, every name the set covers is answered from cache or by the client's own resolver instead, which is not what the set was built to do. Set to fail closed, the same outage stops those names resolving at all. A resolver reachable from your connection matters more than its feature list.
 - **DNS over TCP follows along.** As soon as this set exists, TCP port 53 is redirected into b4 too, so a client that retries over TCP gets the same answer rather than slipping past.
 
 ## Reading the result
@@ -196,7 +202,9 @@ Every decision b4 makes about a query is recorded on the [Traffic](./connections
 | `dns-heal` | An answer had unreachable addresses replaced, by the set's IP block detection |
 | `dns-sinkhole` | Answered with NXDOMAIN by a blocking set |
 | `dns-block` | Dropped by a blocking set |
-| `dns-servfail` | The set's resolver did not answer in time |
+| `dns-servfail` | The set's resolver did not answer and nothing else could either, or the set is set to fail closed |
+| `dns-fallback-cache` | The set's resolver did not answer, so the last good addresses for that name were replayed |
+| `dns-fallback-upstream` | The set's resolver did not answer and nothing was cached, so the query went to the resolver the client was addressing |
 | `dns-bad-target` | The set's DNS server field does not hold a valid IP address, so the query was forwarded unchanged |
 | `dns-ipv6-disabled` | A query that arrived over IPv6 matched a set while IPv6 support is off, so it was forwarded unchanged instead of being handled by the set |
 | `dns-ipv6-stripped` | The IPv6 addresses were removed from the answer, leaving the client the IPv4 path b4 protects. See [The IPv4 fallback](#the-ipv4-fallback) |

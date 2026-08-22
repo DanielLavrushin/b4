@@ -293,13 +293,45 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 
 		s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsRedirectAction(set))
 
-		resp, rerr := s.resolve(set, cfg, query, targetIP)
-		if rerr != nil {
+		source := set.DNS.TargetDNS
+		if set.DNS.DoHURL != "" {
+			source = set.DNS.DoHURL
+		}
+
+		var resp []byte
+		var rerr error
+		if !set.DNS.Strict && dnsSourceUnreachable(source) {
+			rerr = errDNSSourceCoolingDown
+		} else {
+			resp, rerr = s.resolve(set, cfg, query, targetIP)
+			if rerr != nil {
+				noteDNSSourceFailure(source)
+			}
+		}
+
+		switch {
+		case rerr == nil:
+			noteDNSSourceSuccess(source)
+			rememberDNSAnswer(domain, query, resp)
+		case set.DNS.Strict:
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionServfail)
 			resp = dns.BuildServfailResponse(query)
 			if len(resp) == 0 {
 				return
 			}
+		default:
+			cached := recallDNSAnswer(domain, query)
+			if cached == nil {
+				log.Warnf("DNS TCP: the redirect could not answer %s (%v), handing the connection back to %s (set: %s)",
+					dns.SafeName(domain), rerr, origIP, set.Name)
+				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionFallbackUpstream)
+				s.passthrough(client, origIP, origPort, origErr, query)
+				return
+			}
+			log.Warnf("DNS TCP: the redirect could not answer %s (%v), replaying the last good answer (set: %s)",
+				dns.SafeName(domain), rerr, set.Name)
+			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionFallbackCache)
+			resp = cached
 		}
 
 		qtype, _ := dns.QuestionType(query)

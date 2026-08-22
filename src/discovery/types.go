@@ -28,6 +28,7 @@ const (
 	PhaseCombination DiscoveryPhase = "combination"
 	PhaseDNS         DiscoveryPhase = "dns_detection"
 	PhaseCached      DiscoveryPhase = "cached"
+	PhaseConfirm     DiscoveryPhase = "confirmation"
 )
 
 type StrategyFamily string
@@ -65,6 +66,7 @@ type CheckResult struct {
 	Error       string            `json:"error,omitempty"`
 	Timestamp   time.Time         `json:"timestamp"`
 	StatusCode  int               `json:"status_code"`
+	FinalHost   string            `json:"final_host,omitempty"`
 	Set         *config.SetConfig `json:"set"`
 }
 
@@ -123,7 +125,10 @@ type DomainDiscoveryResult struct {
 	BestSuccess   bool                           `json:"best_success"`
 	Results       map[string]*DomainPresetResult `json:"results"`
 	BaselineSpeed float64                        `json:"baseline_speed,omitempty"`
-	Improvement   float64                        `json:"improvement,omitempty"`
+	BaselineWorks bool                           `json:"baseline_works,omitempty"`
+	Confirmed     int                            `json:"confirmed,omitempty"`
+	ConfirmTries  int                            `json:"confirm_tries,omitempty"`
+	FinalHost     string                         `json:"final_host,omitempty"`
 	DNSResult     *DNSDiscoveryResult            `json:"dns_result,omitempty"`
 }
 

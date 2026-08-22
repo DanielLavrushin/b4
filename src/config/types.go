@@ -605,6 +605,7 @@ type DNSConfig struct {
 	TargetDNS     string              `json:"target_dns"`
 	DoHURL        string              `json:"doh_url"`
 	FragmentQuery bool                `json:"fragment_query"`
+	Strict        bool                `json:"strict"`
 	Pins          map[string][]string `json:"pins,omitempty"`
 }
 

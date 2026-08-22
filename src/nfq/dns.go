@@ -81,21 +81,23 @@ func parseDNSName(msg []byte, offset int) (string, bool) {
 }
 
 const (
-	dnsActionBlock          = "dns-block"
-	dnsActionSinkhole       = "dns-sinkhole"
-	dnsActionPassthrough    = "dns-passthrough"
-	dnsActionBadTarget      = "dns-bad-target"
-	dnsActionIPv6Disabled   = "dns-ipv6-disabled"
-	dnsActionIPv6Stripped   = "dns-ipv6-stripped"
-	dnsActionHealStripped   = "dns-heal+ipv6-stripped"
-	dnsActionServfail       = "dns-servfail"
-	dnsActionHeal           = "dns-heal"
-	dnsActionPin            = "dns-pin"
-	dnsActionNoClient       = "dns-no-client"
-	dnsActionOverload       = "dns-overload"
-	dnsActionDoHPrefix      = "dns-doh->"
-	dnsActionForwardPrefix  = "dns-forward->"
-	dnsActionEscalatePrefix = "dns-escalate->"
+	dnsActionBlock            = "dns-block"
+	dnsActionSinkhole         = "dns-sinkhole"
+	dnsActionPassthrough      = "dns-passthrough"
+	dnsActionBadTarget        = "dns-bad-target"
+	dnsActionIPv6Disabled     = "dns-ipv6-disabled"
+	dnsActionIPv6Stripped     = "dns-ipv6-stripped"
+	dnsActionHealStripped     = "dns-heal+ipv6-stripped"
+	dnsActionServfail         = "dns-servfail"
+	dnsActionFallbackCache    = "dns-fallback-cache"
+	dnsActionFallbackUpstream = "dns-fallback-upstream"
+	dnsActionHeal             = "dns-heal"
+	dnsActionPin              = "dns-pin"
+	dnsActionNoClient         = "dns-no-client"
+	dnsActionOverload         = "dns-overload"
+	dnsActionDoHPrefix        = "dns-doh->"
+	dnsActionForwardPrefix    = "dns-forward->"
+	dnsActionEscalatePrefix   = "dns-escalate->"
 )
 
 const maxDNSResolveInflight = 64
@@ -103,6 +105,8 @@ const maxDNSResolveInflight = 64
 var dnsResolveInflight = make(chan struct{}, maxDNSResolveInflight)
 
 var errNoDNSTarget = errors.New("set carries no usable DNS answer source")
+
+var errDNSSourceCoolingDown = errors.New("the redirect target is still unreachable")
 
 type dnsVerdict int
 
@@ -505,27 +509,37 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 
 	var resp []byte
 	var err error
+	source := set.DNS.TargetDNS
 	if set.DNS.DoHURL != "" {
+		source = set.DNS.DoHURL
+	}
+
+	switch {
+	case !set.DNS.Strict && dnsSourceUnreachable(source):
+		err = errDNSSourceCoolingDown
+	case set.DNS.DoHURL != "":
 		resp, err = w.resolveDoHRedirect(set.DNS.DoHURL, int(cfg.MainInjectedMark()), query)
-		if err != nil {
-			log.Tracef("DNS redirect: DoH %s failed: %v, answering SERVFAIL (fail-closed)", set.DNS.DoHURL, err)
-			if w.escalateAfterDNS(ipVersion, cfg, set, queryDomain, query, nil, clientIP, clientPort, originalDst) {
-				return
-			}
-			logDNSEvent("UDP", set, queryDomain, clientIP, originalDst, clientPort, w.getMacByIp(clientIP.String()), dnsActionServfail)
-			w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, dns.BuildServfailResponse(query))
-			return
-		}
-	} else {
+	default:
 		resp, err = dns.ResolveUpstream(query, targetIP, dns.ForwardOptions{
 			Sender:       w.sock,
 			Fragment:     set.DNS.FragmentQuery,
 			Seg2Delay:    delay,
 			ReverseOrder: set.Fragmentation.ReverseOrder,
 			Mark:         int(cfg.MainInjectedMark()),
+			Timeout:      cfg.DNSQueryTimeout(),
 		})
-		if err != nil {
-			log.Tracef("DNS redirect: upstream %s failed: %v, answering SERVFAIL (fail-closed)", set.DNS.TargetDNS, err)
+	}
+
+	escalateResp := resp
+	if err != nil {
+		escalateResp = nil
+		if !errors.Is(err, errDNSSourceCoolingDown) {
+			noteDNSSourceFailure(source)
+		}
+		fallback, action := w.dnsRedirectFallback(cfg, set, queryDomain, query, originalDst, targetIP, delay)
+		if fallback == nil {
+			log.Warnf("DNS redirect: %s could not answer %s (%v) and nothing else could either, the client gets SERVFAIL (set: %s)",
+				dnsUpstreamLabel(source), dns.SafeName(queryDomain), err, set.Name)
 			if w.escalateAfterDNS(ipVersion, cfg, set, queryDomain, query, nil, clientIP, clientPort, originalDst) {
 				return
 			}
@@ -533,9 +547,16 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 			w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, dns.BuildServfailResponse(query))
 			return
 		}
+		log.Warnf("DNS redirect: %s could not answer %s (%v), falling back to %s (set: %s)",
+			dnsUpstreamLabel(source), dns.SafeName(queryDomain), err, action, set.Name)
+		logDNSEvent("UDP", set, queryDomain, clientIP, originalDst, clientPort, w.getMacByIp(clientIP.String()), action)
+		resp = fallback
+	} else {
+		noteDNSSourceSuccess(source)
+		rememberDNSAnswer(queryDomain, query, resp)
 	}
 
-	if w.escalateAfterDNS(ipVersion, cfg, set, queryDomain, query, resp, clientIP, clientPort, originalDst) {
+	if w.escalateAfterDNS(ipVersion, cfg, set, queryDomain, query, escalateResp, clientIP, clientPort, originalDst) {
 		return
 	}
 

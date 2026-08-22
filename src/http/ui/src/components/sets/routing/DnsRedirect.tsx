@@ -110,6 +110,7 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
     target_dns: "",
     doh_url: "",
     fragment_query: false,
+    strict: false,
   };
 
   const [mode, setMode] = useState<ResolverMode>(
@@ -218,6 +219,15 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
               <ToggleButton value="udp">{t("sets.dns.modeUdp")}</ToggleButton>
               <ToggleButton value="doh">{t("sets.dns.modeDoH")}</ToggleButton>
             </ToggleButtonGroup>
+          </Grid>
+
+          <Grid size={{ xs: 12 }}>
+            <B4Switch
+              label={t("sets.dns.strict")}
+              checked={dnsConfig.strict || false}
+              onChange={(checked: boolean) => onChange("dns.strict", checked)}
+              description={t("sets.dns.strictDesc")}
+            />
           </Grid>
 
           {mode === "udp" && (

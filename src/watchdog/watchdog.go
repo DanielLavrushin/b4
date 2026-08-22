@@ -1,6 +1,7 @@
 package watchdog
 
 import (
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -346,6 +347,15 @@ func (w *Watchdog) healBatch(domains []string) {
 			continue
 		}
 		if err, failed := applyErrors[domain]; failed && err != nil {
+			if errors.Is(err, ErrBaselineWorks) {
+				log.Infof("[WATCHDOG] %s: reachable without a bypass, the set is left as it is", domain)
+				st.Status = StatusHealthy
+				st.ConsecutiveFailures = 0
+				st.Interval = wdCfg.IntervalSec
+				st.LastError = ""
+				st.CooldownUntil = time.Now().Add(time.Duration(wdCfg.Cooldown) * time.Second)
+				continue
+			}
 			log.Warnf("[WATCHDOG] %s: %v, cooldown %ds", domain, err, wdCfg.Cooldown)
 			st.Status = StatusDegraded
 			st.ConsecutiveFailures = 0
