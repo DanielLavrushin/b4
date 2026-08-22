@@ -4,16 +4,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 )
 
 func resetThreadDumpState() {
-	threadDumpOnce = sync.Once{}
-	threadDumpDir = *new(atomicValue)
+	threadDumpDone.Store(false)
 }
-
-type atomicValue = atomicValueAlias
 
 func TestOSThreadsMatchesRuntime(t *testing.T) {
 	if n := osThreads(); n < 1 {
@@ -45,8 +41,8 @@ func TestCheckThreadPressureWritesDumpOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("no dump written at the trigger: %v", err)
 	}
-	if !strings.Contains(string(data), "goroutine profile") {
-		t.Fatalf("dump does not look like a goroutine profile: %.80q", data)
+	if !strings.Contains(string(data), "goroutine ") || !strings.Contains(string(data), "runtime/pprof") {
+		t.Fatalf("dump does not look like a goroutine stack dump: %.80q", data)
 	}
 
 	if err := os.Remove(path); err != nil {

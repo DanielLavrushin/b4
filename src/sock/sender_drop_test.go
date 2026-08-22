@@ -62,22 +62,32 @@ func TestSendIPv4ReturnsNilOnBackpressure(t *testing.T) {
 	ResetSendDropped()
 	t.Cleanup(ResetSendDropped)
 
+	target := net.IPv4(127, 0, 0, 1)
+	if v := os.Getenv("B4_TEST_SEND_TARGET"); v != "" {
+		ip := net.ParseIP(v)
+		if ip == nil || ip.To4() == nil {
+			t.Fatalf("B4_TEST_SEND_TARGET=%q is not an IPv4 address", v)
+		}
+		target = ip
+	}
+
 	packet := make([]byte, 1400)
 	packet[0] = 0x45
 	packet[8] = 64
 	packet[9] = syscall.IPPROTO_TCP
 	copy(packet[12:16], net.IPv4(127, 0, 0, 1).To4())
-	copy(packet[16:20], net.IPv4(127, 0, 0, 1).To4())
+	copy(packet[16:20], target.To4())
 
-	for i := 0; i < 20000; i++ {
-		if err := s.SendIPv4(packet, net.IPv4(127, 0, 0, 1)); err != nil {
+	for i := 0; i < 50000; i++ {
+		if err := s.SendIPv4(packet, target); err != nil {
 			t.Fatalf("SendIPv4 returned an error instead of dropping: %v", err)
 		}
 		if SendDropped() > 0 {
+			t.Logf("backpressure reached after %d sends, %d dropped", i+1, SendDropped())
 			return
 		}
 	}
-	t.Skip("the loopback send buffer never filled, backpressure path not exercised")
+	t.Skipf("the send buffer to %s never filled, backpressure path not exercised", target)
 }
 
 func TestSendTimeoutIsApplied(t *testing.T) {
