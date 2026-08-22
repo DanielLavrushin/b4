@@ -70,8 +70,14 @@ try{history.replaceState(null,'','/')}catch(e){}
 var ws=null,wsOpen=false,closed=false;
 var toWs=[],toClient=[],client=null,status=null,port=null;
 var label=document.getElementById('s');
+var upBytes=0,downBytes=0,trafficTimer=0;
 
-function flushWs(){while(wsOpen&&toWs.length){try{ws.send(toWs.shift())}catch(e){shutdown();return}}}
+function reportTraffic(){
+ if(!port||(!upBytes&&!downBytes))return;
+ var up=upBytes,down=downBytes;upBytes=0;downBytes=0;
+ try{port.postMessage({t:'traffic',up:up,down:down})}catch(e){}
+}
+function flushWs(){while(wsOpen&&toWs.length){var buf=toWs.shift(),n=buf.byteLength;try{ws.send(buf)}catch(e){shutdown();return}upBytes+=n}}
 function flushClient(){while(client&&toClient.length){try{client(toClient.shift())}catch(e){shutdown();return}}}
 function setStatus(state){
  if(label)label.textContent=state==='connected'?'Operational.':state==='failed'?'Temporarily unavailable.':'Connecting…';
@@ -80,6 +86,8 @@ function setStatus(state){
 function shutdown(){
  if(closed)return;
  closed=true;
+ reportTraffic();
+ if(trafficTimer){clearInterval(trafficTimer);trafficTimer=0}
  setStatus('failed');
  if(port)try{port.postMessage({t:'close'})}catch(e){}
  if(ws)try{ws.close()}catch(e){}
@@ -89,7 +97,7 @@ function connect(){
  try{ws=new WebSocket(scheme+location.host+'__CARRIER__?b='+encodeURIComponent(cap))}catch(e){shutdown();return}
  ws.binaryType='arraybuffer';
  ws.onopen=function(){wsOpen=true;setStatus('connected');flushWs()};
- ws.onmessage=function(e){if(e.data instanceof ArrayBuffer){toClient.push(e.data);flushClient()}};
+ ws.onmessage=function(e){if(e.data instanceof ArrayBuffer){downBytes+=e.data.byteLength;toClient.push(e.data);flushClient()}};
  ws.onerror=function(){setStatus('failed')};
  ws.onclose=function(){wsOpen=false;shutdown()};
 }
@@ -125,6 +133,7 @@ if(bridge){
   port.start();
   flushClient();
   setStatus(wsOpen?'connected':'connecting');
+  trafficTimer=setInterval(reportTraffic,1000);
  });
  connect();
 }
