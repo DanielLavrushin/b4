@@ -921,7 +921,6 @@
         "expandAll": "Expand all",
         "defaultRoute": "Default route",
         "dnsPin": "dns pin",
-        "routePinned": "Destination from DNS pins",
         "on": "on",
         "off": "off",
         "geosite": "Geosite",
