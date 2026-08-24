@@ -1,6 +1,7 @@
 package geodat
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -262,7 +263,7 @@ func TestCountsMatchLoad(t *testing.T) {
 func TestPreviewLimitsWithoutLosingTotal(t *testing.T) {
 	path := sampleGeoSite(t)
 
-	preview, total, err := PreviewDomainsInCategory(path, "google", 2)
+	preview, total, err := PreviewDomainsInCategory(context.Background(), path, "google", 2)
 	if err != nil {
 		t.Fatalf("PreviewDomainsInCategory: %v", err)
 	}
@@ -278,7 +279,7 @@ func TestPreviewDoesNotPopulateCache(t *testing.T) {
 	path := sampleGeoSite(t)
 	gm := NewGeodataManager(path, "")
 
-	if _, _, err := gm.PreviewGeositeCategory("google", 2); err != nil {
+	if _, _, err := gm.PreviewGeositeCategory(context.Background(), "google", 2); err != nil {
 		t.Fatalf("PreviewGeositeCategory: %v", err)
 	}
 

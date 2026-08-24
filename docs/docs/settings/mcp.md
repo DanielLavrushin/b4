@@ -17,6 +17,7 @@ Configured in **Settings -> Integrations -> MCP server**.
 | --- | --- |
 | **Enable MCP server** | The switch in the card header. Serves the endpoint at `/api/mcp`. Off by default. |
 | **Allow configuration changes** | Lets the AI change settings as well as read them. Off by default. See [Changing settings](#changing-settings). |
+| **Allow active probes** | Lets the AI fetch a domain from the router to see whether it loads. Off by default, and separate from configuration changes: emitting traffic is a different permission from writing settings. |
 | **Access token** | The credential AI applications present. **Generate** creates one, **Regenerate** replaces it. |
 | **Client configuration** | The endpoint URL and header block to paste into the AI application. **Copy** puts the whole block, with the full token, on the clipboard. |
 
@@ -105,6 +106,10 @@ Only `POST` is served. `GET` and `DELETE` return 405, which is normal for this t
 | --- | --- | --- |
 | `b4_status` | Version, capture engine, firewall backend, how many sets exist and are enabled, uptime | "Is b4 running, and which capture engine is active?" |
 | `b4_get_topic` | What a setting does, its unit, its real default, and what a zero or empty value means | "What does the strict switch on a set's DNS actually do?" |
+| `b4_geo_lookup` | Which geosite or geoip categories exist, what one holds, and which of them cover a domain or an address | "Which geosite category covers rutracker.org?" |
+| `b4_edit_set_targets` | Adds or removes domains, addresses, geo categories or source devices on one set | "Add rutracker.org to the video set." |
+| `b4_test_domain_now` | Fetches a domain through b4 and again with b4 bypassed, and says which of the two works | "Is rutracker.org actually loading right now?" |
+| `b4_watchdog` | The last verdict for every watched domain, and add/remove/enable/check | "Which of the sites you are watching are failing?" |
 | `b4_check_domain` | Which sets target a domain, how the match was made, whether that set is enabled | "Is rutracker.org covered by any set?" |
 | `b4_list_sets` | Every set in priority order, with domain counts and primary strategy | "List the sets and how many domains each targets." |
 | `b4_get_set` | One set in full | "Show the full configuration of the set named video." |
@@ -118,6 +123,18 @@ Only `POST` is served. `GET` and `DELETE` return 405, which is normal for this t
 | `b4_revert_last_change` | Restores the configuration from before the last change | "That made it worse, put it back." |
 
 A ready-made prompt named `diagnose_domain` is published alongside the tools. Applications that support prompts list it separately. It takes a domain and walks the model through status, coverage, configuration and firewall checks in order.
+
+## What is served depends on what is permitted
+
+The tool list is built from the two permission switches and rebuilt whenever they change, with no restart. With both off, the AI is offered the read-only tools alone; the write and probe tools are not advertised at all, so a model cannot attempt something it has not been permitted to do, and their descriptions cost nothing.
+
+| Permitted | Tools served |
+| --- | --- |
+| Nothing (default) | 12 |
+| Allow configuration changes | 16 |
+| Both | 17 |
+
+The server also tells the AI which of the two it has, so it says "here is what I would change" rather than offering to change it. That message names the setting to turn on, which is how a model can answer "why can't you?".
 
 ## Grounding
 

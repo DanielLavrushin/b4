@@ -81,9 +81,21 @@ var mcpReadOnly = &mcp.ToolAnnotations{
 // @Security BearerAuth
 // @Router /mcp [post]
 func (api *API) RegisterMCPApi() {
-	srv := api.newMCPServer()
+	var mu sync.Mutex
+	cache := map[mcpCapabilities]*mcp.Server{}
+	pick := func(*http.Request) *mcp.Server {
+		caps := mcpCapabilitiesFor(api.getCfg())
+		mu.Lock()
+		defer mu.Unlock()
+		if srv, ok := cache[caps]; ok {
+			return srv
+		}
+		srv := api.newMCPServer(caps)
+		cache[caps] = srv
+		return srv
+	}
 	streamable := mcp.NewStreamableHTTPHandler(
-		func(*http.Request) *mcp.Server { return srv },
+		pick,
 		&mcp.StreamableHTTPOptions{Stateless: true},
 	)
 	api.mux.Handle(mcpEndpoint, api.mcpGate(streamable))
@@ -209,7 +221,22 @@ func splitHostPort(hostport string) (host, port string) {
 	return hostport, ""
 }
 
-func (api *API) newMCPServer() *mcp.Server {
+// mcpCapabilities is the set of permissions the tool list is built for. A tool
+// the operator has not permitted is not advertised at all, so the model never
+// picks it and its schema never costs context.
+type mcpCapabilities struct {
+	Writes bool
+	Probes bool
+}
+
+func mcpCapabilitiesFor(cfg *config.Config) mcpCapabilities {
+	return mcpCapabilities{
+		Writes: cfg.System.WebServer.MCP.AllowWrites,
+		Probes: cfg.System.WebServer.MCP.AllowActiveProbes,
+	}
+}
+
+func (api *API) newMCPServer(caps mcpCapabilities) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{
 		Name:    mcpServerName,
 		Title:   "B4 DPI-bypass control plane",
@@ -220,12 +247,20 @@ func (api *API) newMCPServer() *mcp.Server {
 			"Call b4_get_topic before explaining or tuning any setting: it returns authoritative facts for that setting and is the same corpus as the b4://topics/<key> resources, which most clients never show you.",
 			"Never infer a setting's unit, default or meaning from its name; several are deliberately misleading, and a zero often means 'use the fixed value' rather than 'off'.",
 			"Prefer b4_check_domain before changing sets: it tells you whether a domain is already covered and by which set. It reads configuration only — it cannot tell you whether a site loads.",
-			"A write reports the value read back after saving, so a 'changed: false' result means b4 did not accept the value.",
+			mcpCapabilityInstruction(caps),
 		}, " "),
 	})
 
 	api.addMCPTools(srv)
-	api.addMCPWriteTools(srv)
+	api.addMCPGeoTools(srv)
+	api.addMCPWatchdogTools(srv)
+	if caps.Writes {
+		api.addMCPWriteTools(srv)
+		api.addMCPTargetTools(srv)
+	}
+	if caps.Probes {
+		api.addMCPProbeTools(srv)
+	}
 	api.addMCPResources(srv)
 	api.addMCPPrompts(srv)
 	return srv
@@ -747,6 +782,19 @@ func mcpRelatedTopics(keys []string, want string) []string {
 		}
 	}
 	return nil
+}
+
+func mcpCapabilityInstruction(caps mcpCapabilities) string {
+	switch {
+	case caps.Writes && caps.Probes:
+		return "A write reports the value read back after saving, so a 'changed: false' result means b4 did not accept the value."
+	case caps.Writes:
+		return "A write reports the value read back after saving, so a 'changed: false' result means b4 did not accept the value. b4 cannot fetch a domain to check it: 'Allow active probes' is off, so report what the configuration says and say you could not test it."
+	case caps.Probes:
+		return "This server is read-only apart from probing: 'Allow configuration changes' is off, so report what should change rather than offering to change it."
+	default:
+		return "This server is read-only: 'Allow configuration changes' and 'Allow active probes' are both off, so report what should change rather than offering to change it, and say you could not test a domain."
+	}
 }
 
 func (api *API) addMCPResources(srv *mcp.Server) {

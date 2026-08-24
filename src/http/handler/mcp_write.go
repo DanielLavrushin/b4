@@ -211,6 +211,15 @@ func mcpPathTouchesTargets(canonical string) bool {
 	return strings.HasPrefix(canonical, mcpSetPathPrefix+".targets")
 }
 
+func mcpPathIsTargetList(canonical string) bool {
+	for _, kind := range mcpTargetKinds {
+		if canonical == mcpSetPathPrefix+".targets."+kind {
+			return true
+		}
+	}
+	return false
+}
+
 func mcpExpansionNote(e *mcpTargetExpansion) string {
 	if e == nil {
 		return ""
@@ -523,6 +532,15 @@ func mcpWritablePaths(cfg *config.Config, sample *config.SetConfig) []mcpPathInf
 		}
 	}
 
+	kept := out[:0]
+	for _, p := range out {
+		if mcpPathIsTargetList(p.Path) {
+			continue
+		}
+		kept = append(kept, p)
+	}
+	out = kept
+
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
 	return out
 }
@@ -624,6 +642,7 @@ func mcpWriteToolDescription() string {
 	sb.WriteString("the firewall backend and the packet marks — a wrong value there can leave the machine unreachable.\n")
 	sb.WriteString("Call b4_list_writable_paths for the exact paths, types and accepted values rather than guessing a path. ")
 	sb.WriteString("A list setting is replaced wholesale, so read its current value first and send the full list back. ")
+	sb.WriteString("The exception is a set's target lists (domains, IPs, geo categories, source devices): those are refused here and belong to b4_edit_set_targets. ")
 	sb.WriteString("Requires the 'Allow configuration changes' setting to be enabled. ")
 	sb.WriteString("Confirm with the user before calling, report the returned previous/current values, ")
 	sb.WriteString("and use b4_revert_last_change if the result is not what was intended.")
@@ -686,6 +705,10 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		if !mcpPathAllowed(canonical) {
 			return nil, mcpSetValueOut{}, fmt.Errorf(
 				"path %q is not writable: %s", in.Path, mcpDeniedPathHint(canonical))
+		}
+		if mcpPathIsTargetList(canonical) {
+			return nil, mcpSetValueOut{}, fmt.Errorf(
+				"%s is edited with b4_edit_set_targets, not here: this tool replaces a list wholesale, and it would skip the entry validation and the cross-set domain handover that tool performs", in.Path)
 		}
 
 		mcpWriteMu.Lock()
@@ -817,6 +840,9 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		}
 
 		oldCfg := api.getCfg()
+		for _, set := range last.Snapshot.Sets {
+			api.loadTargetsForSetCached(set)
+		}
 		if err := api.saveAndPushConfig(last.Snapshot); err != nil {
 			mcpRecordChange(last)
 			return nil, mcpRevertOut{}, fmt.Errorf("could not restore the previous configuration: %w", err)

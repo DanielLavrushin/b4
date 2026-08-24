@@ -1315,10 +1315,14 @@ func TestWritablePathsGrounding(t *testing.T) {
 	// A ratchet, not a target: b4_get_topic tells the model to say it is unsure
 	// when a setting has no entry, so partial coverage is safe. Losing coverage
 	// silently is not.
-	const groundedFloor = 89
+	const groundedFloor = 84
 	if grounded < groundedFloor {
 		t.Errorf("grounding regressed: %d of %d writable settings documented, floor is %d; still missing %v",
 			grounded, len(paths), groundedFloor, missingByFamily)
+	}
+
+	if corpus := len(ai.TopicKeys()); corpus < 96 {
+		t.Errorf("the topics corpus shrank to %d entries; it should only ever grow", corpus)
 	}
 
 	// These families were backfilled completely. A new writable field in one of
@@ -1327,5 +1331,139 @@ func TestWritablePathsGrounding(t *testing.T) {
 		if missing := missingByFamily[family]; len(missing) > 0 {
 			t.Errorf("%s.* is fully documented and must stay that way; %v has no b4://topics entry", family, missing)
 		}
+	}
+}
+
+func TestToolsListStaysWithinContextBudget(t *testing.T) {
+	// Measure the widest surface b4 can serve, not the default one.
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.System.WebServer.MCP.AllowActiveProbes = true
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+
+	total := 0
+	widest, widestName := 0, ""
+	for _, tool := range tools.Tools {
+		raw, err := json.Marshal(tool)
+		if err != nil {
+			t.Fatalf("marshal %s: %v", tool.Name, err)
+		}
+		total += len(raw)
+		if len(raw) > widest {
+			widest, widestName = len(raw), tool.Name
+		}
+		if tool.Description == "" {
+			t.Errorf("tool %q has no description", tool.Name)
+		}
+	}
+
+	// tools/list is preamble on every request, before the user has said
+	// anything. LM Studio commonly runs 14B-class models at 4k-16k context.
+	const budget = 25000
+	if total > budget {
+		t.Errorf("tools/list is %d bytes across %d tools, over the %d budget (widest: %s at %d). "+
+			"Trim a description, or register a tool family only when its subsystem is configured.",
+			total, len(tools.Tools), budget, widestName, widest)
+	}
+	t.Logf("tools/list: %d tools, %d bytes, %d%% of budget", len(tools.Tools), total, total*100/budget)
+}
+
+func toolNames(t *testing.T, session *mcp.ClientSession, ctx context.Context) map[string]bool {
+	t.Helper()
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	out := map[string]bool{}
+	for _, tool := range tools.Tools {
+		out[tool.Name] = true
+	}
+	return out
+}
+
+func TestToolsAreRegisteredByPermission(t *testing.T) {
+	writeTools := []string{"b4_set_config_value", "b4_revert_last_change", "b4_edit_set_targets"}
+	probeTools := []string{"b4_test_domain_now"}
+	always := []string{"b4_status", "b4_get_topic", "b4_geo_lookup", "b4_watchdog"}
+
+	cfg := mcpTestCfg()
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	got := toolNames(t, session, ctx)
+	for _, name := range always {
+		if !got[name] {
+			t.Errorf("%s should always be served", name)
+		}
+	}
+	for _, name := range append(append([]string{}, writeTools...), probeTools...) {
+		if got[name] {
+			t.Errorf("%s must not be advertised while its permission is off: a tool the model cannot use is pure context cost", name)
+		}
+	}
+
+	full := mcpTestCfg()
+	full.System.WebServer.MCP.AllowWrites = true
+	full.System.WebServer.MCP.AllowActiveProbes = true
+	fullSrv := newMCPTestServer(t, full)
+	fullSession, fullCtx := connectMCP(t, fullSrv)
+
+	got = toolNames(t, fullSession, fullCtx)
+	for _, name := range append(append([]string{}, writeTools...), probeTools...) {
+		if !got[name] {
+			t.Errorf("%s should be served once its permission is on", name)
+		}
+	}
+}
+
+func TestToolRegistrationFollowsConfigWithoutRestart(t *testing.T) {
+	cfg := mcpTestCfg()
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	if toolNames(t, session, ctx)["b4_edit_set_targets"] {
+		t.Fatal("precondition: writes are off")
+	}
+
+	// b4's whole design is to apply changes live; the served tool list has to
+	// follow the permission flags without restarting the daemon.
+	next := api.getCfg().Clone()
+	next.System.WebServer.MCP.AllowWrites = true
+	api.cfgPtr.Store(next)
+
+	if !toolNames(t, session, ctx)["b4_edit_set_targets"] {
+		t.Error("turning writes on must expose the write tools without a restart")
+	}
+
+	back := api.getCfg().Clone()
+	back.System.WebServer.MCP.AllowWrites = false
+	api.cfgPtr.Store(back)
+
+	if toolNames(t, session, ctx)["b4_edit_set_targets"] {
+		t.Error("turning writes off again must withdraw them")
+	}
+}
+
+func TestInstructionsDescribeTheServedSurface(t *testing.T) {
+	cfg := mcpTestCfg()
+	srv := newMCPTestServer(t, cfg)
+	session, _ := connectMCP(t, srv)
+	if got := session.InitializeResult().Instructions; !strings.Contains(got, "read-only") {
+		t.Errorf("a read-only server should say so, so the model does not offer to change things: %q", got)
+	}
+
+	full := mcpTestCfg()
+	full.System.WebServer.MCP.AllowWrites = true
+	full.System.WebServer.MCP.AllowActiveProbes = true
+	fullSrv := newMCPTestServer(t, full)
+	fullSession, _ := connectMCP(t, fullSrv)
+	if got := fullSession.InitializeResult().Instructions; strings.Contains(got, "read-only") {
+		t.Errorf("a writable server must not claim to be read-only: %q", got)
 	}
 }

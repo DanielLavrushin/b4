@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -49,7 +48,7 @@ func decodeSetValue(t *testing.T, res *mcp.CallToolResult) mcpSetValueOut {
 	return out
 }
 
-func TestMCPWriteDisabledByDefault(t *testing.T) {
+func TestMCPWriteToolsAreNotOfferedWhenWritesDisabled(t *testing.T) {
 	cfg := mcpTestCfg()
 	cfg.System.MTProto.Enabled = true
 	if cfg.System.WebServer.MCP.AllowWrites {
@@ -58,17 +57,28 @@ func TestMCPWriteDisabledByDefault(t *testing.T) {
 	srv := newMCPTestServer(t, cfg)
 	session, ctx := connectMCP(t, srv)
 
-	res := callSetValue(t, session, ctx, "system.mtproto.enabled", "false")
-	if !res.IsError {
-		t.Fatal("write must be refused when allow_writes is false")
+	got := toolNames(t, session, ctx)
+	for _, name := range []string{
+		"b4_set_config_value", "b4_revert_last_change",
+		"b4_list_writable_paths", "b4_edit_set_targets",
+	} {
+		if got[name] {
+			t.Errorf("%s must not be offered while configuration writes are disabled", name)
+		}
 	}
-	if !cfg.System.MTProto.Enabled {
-		t.Fatal("config must be untouched when writes are disabled")
+
+	// The model still has to be able to tell the user why, so the server's
+	// instructions name the setting rather than leaving it to a tool error.
+	if instr := session.InitializeResult().Instructions; !strings.Contains(instr, "Allow configuration changes") {
+		t.Errorf("instructions must name the setting that unlocks writing: %q", instr)
+	}
+	if cfg.System.MTProto.Enabled != true {
+		t.Error("config must be untouched")
 	}
 }
 
 func TestMCPWriteToolIsAnnotatedDestructive(t *testing.T) {
-	srv := newMCPTestServer(t, mcpTestCfg())
+	srv := newMCPTestServer(t, writableCfg(t))
 	session, ctx := connectMCP(t, srv)
 
 	tools, err := session.ListTools(ctx, nil)
@@ -104,7 +114,7 @@ func TestMCPWriteToolIsAnnotatedDestructive(t *testing.T) {
 }
 
 func TestMCPRevertToolIsRegisteredAndDestructive(t *testing.T) {
-	srv := newMCPTestServer(t, mcpTestCfg())
+	srv := newMCPTestServer(t, writableCfg(t))
 	session, ctx := connectMCP(t, srv)
 
 	tools, err := session.ListTools(ctx, nil)
@@ -418,7 +428,7 @@ func TestMCPWriteCoercesEveryScalarKind(t *testing.T) {
 		{"sets[video].faking.timestamp_decrease", "1200", "1200"},          // uint32
 		{"sets[video].tcp.drop_sack", "true", "true"},                      // bool
 		{"sets[video].tcp.dport_filter", "80,443,8443", "80,443,8443"},     // string
-		{"sets[video].targets.sni_domains", "a.com, b.com", "a.com,b.com"}, // []string
+		{"sets[video].fragmentation.strategy_pool", "tcp, oob", "tcp,oob"}, // []string
 		{"system.mtproto.port", "1443", "1443"},
 		{"system.socks5.udp_timeout", "45", "45"},
 	}
@@ -435,8 +445,8 @@ func TestMCPWriteCoercesEveryScalarKind(t *testing.T) {
 
 	// Read through the API: saving stores a new config pointer rather than
 	// mutating the one the test handed in.
-	if got := api.getCfg().Sets[0].Targets.SNIDomains; len(got) != 2 || got[0] != "a.com" || got[1] != "b.com" {
-		t.Errorf("live set domains = %v, want [a.com b.com]", got)
+	if got := api.getCfg().Sets[0].Fragmentation.StrategyPool; len(got) != 2 || got[0] != "tcp" || got[1] != "oob" {
+		t.Errorf("live strategy pool = %v, want [tcp oob]", got)
 	}
 }
 
@@ -528,17 +538,23 @@ func TestMCPRevertWalksBackOneChangeAtATime(t *testing.T) {
 	}
 }
 
-func TestMCPRevertRefusedWhenWritesDisabled(t *testing.T) {
+func TestMCPRevertWithdrawnWhenWritesDisabledMidSession(t *testing.T) {
 	mcpResetHistory()
-	srv := newMCPTestServer(t, mcpTestCfg())
+	srv, api := newMCPTestServerAPI(t, writableCfg(t))
 	session, ctx := connectMCP(t, srv)
 
-	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_revert_last_change"})
-	if err != nil {
-		t.Fatalf("call: %v", err)
+	if !toolNames(t, session, ctx)["b4_revert_last_change"] {
+		t.Fatal("precondition: undo is offered while writes are on")
 	}
-	if !res.IsError {
-		t.Error("undo must be refused while configuration writes are disabled")
+
+	revoked := api.getCfg().Clone()
+	revoked.System.WebServer.MCP.AllowWrites = false
+	api.cfgPtr.Store(revoked)
+
+	// The served tool list is rebuilt from the live config on every request, so
+	// revoking the permission withdraws the tool immediately.
+	if toolNames(t, session, ctx)["b4_revert_last_change"] {
+		t.Error("undo must be withdrawn as soon as writes are disabled")
 	}
 }
 
@@ -559,7 +575,7 @@ func TestMCPPreconditionOnlyBlocksWritesThatBreakIt(t *testing.T) {
 }
 
 func TestMCPListWritablePaths(t *testing.T) {
-	srv := newMCPTestServer(t, mcpTestCfg())
+	srv := newMCPTestServer(t, writableCfg(t))
 	session, ctx := connectMCP(t, srv)
 
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_list_writable_paths"})
@@ -576,7 +592,7 @@ func TestMCPListWritablePaths(t *testing.T) {
 		byPath[p.Path] = p
 	}
 	for _, want := range []string{
-		"sets[].enabled", "sets[].tcp.seg2delay", "sets[].targets.sni_domains",
+		"sets[].enabled", "sets[].tcp.seg2delay", "sets[].targets.domain_only",
 		"sets[].fragmentation.strategy", "system.mtproto.port", "system.socks5.udp_timeout",
 	} {
 		if _, ok := byPath[want]; !ok {
@@ -586,6 +602,7 @@ func TestMCPListWritablePaths(t *testing.T) {
 	for _, unwanted := range []string{
 		"sets[].id", "sets[].routing.upstream.password", "sets[].routing.fwmark",
 		"system.socks5.password", "system.web_server.port", "queue.mode",
+		"sets[].targets.sni_domains", "sets[].targets.ip",
 	} {
 		if _, ok := byPath[unwanted]; ok {
 			t.Errorf("%q must not be listed as writable", unwanted)
@@ -598,8 +615,8 @@ func TestMCPListWritablePaths(t *testing.T) {
 	if got := byPath["sets[].tcp.seg2delay"]; got.Type != "number" {
 		t.Errorf("seg2delay type = %q, want number", got.Type)
 	}
-	if got := byPath["sets[].targets.sni_domains"]; got.Type != "list" {
-		t.Errorf("sni_domains type = %q, want list", got.Type)
+	if got := byPath["sets[].fragmentation.strategy_pool"]; got.Type != "list" {
+		t.Errorf("strategy_pool type = %q, want list", got.Type)
 	}
 }
 
@@ -634,7 +651,7 @@ func TestMCPWriteLogLevelByName(t *testing.T) {
 }
 
 func TestMCPListWritablePathsShowsLogLevelNames(t *testing.T) {
-	srv := newMCPTestServer(t, mcpTestCfg())
+	srv := newMCPTestServer(t, writableCfg(t))
 	session, ctx := connectMCP(t, srv)
 
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{
@@ -663,51 +680,49 @@ func TestMCPListWritablePathsShowsLogLevelNames(t *testing.T) {
 	t.Fatal("system.logging.level should be listed as writable")
 }
 
-func TestMCPWriteTargetsReExpandsMatchList(t *testing.T) {
-	cfg := mcpTestCfg()
-	cfg.System.WebServer.MCP.AllowWrites = true
-	cfg.Sets[0].Targets.DomainsToMatch = []string{"youtube.com"}
+func TestMCPWriteRefusesTargetLists(t *testing.T) {
+	cfg := writableCfg(t)
 	srv, api := newMCPTestServerAPI(t, cfg)
 	session, ctx := connectMCP(t, srv)
 
-	out := decodeSetValue(t, callSetValue(t, session, ctx,
-		"sets[video].targets.sni_domains", "youtube.com,rutracker.org"))
-	if !out.Changed {
-		t.Fatalf("selector write should report a change: %+v", out)
+	for _, path := range []string{
+		"sets[video].targets.sni_domains",
+		"sets[video].targets.ip",
+		"sets[video].targets.geosite_categories",
+		"sets[video].targets.geoip_categories",
+		"sets[video].targets.source_devices",
+	} {
+		res := callSetValue(t, session, ctx, path, "something")
+		if !res.IsError {
+			t.Errorf("%s must be refused here: this tool replaces a list wholesale and skips validation and the cross-set handover", path)
+			continue
+		}
+		if !strings.Contains(mcpErrorText(res), "b4_edit_set_targets") {
+			t.Errorf("the refusal for %s must name the tool that does the job: %q", path, mcpErrorText(res))
+		}
+	}
+	if got := api.getCfg().Sets[0].Targets.SNIDomains; len(got) != 1 || got[0] != "youtube.com" {
+		t.Errorf("targets must be untouched: %v", got)
 	}
 
-	live := api.getCfg().Sets[0].Targets
-	if got := strings.Join(live.SNIDomains, ","); got != "youtube.com,rutracker.org" {
-		t.Fatalf("selector was not saved: %q", got)
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "b4_list_writable_paths",
+		Arguments: map[string]any{"prefix": "sets[].targets"},
+	})
+	if err != nil {
+		t.Fatalf("list writable paths: %v", err)
 	}
-	if got := strings.Join(live.DomainsToMatch, ","); got != "youtube.com,rutracker.org" {
-		t.Fatalf("match list was not re-expanded, so the write matches nothing until restart: %q", got)
+	var out mcpListPathsOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
 	}
-	if out.Expansion == nil || out.Expansion.Domains != 2 {
-		t.Fatalf("a targets write must report what it expanded to, got %+v", out.Expansion)
+	for _, p := range out.Paths {
+		if mcpPathIsTargetList(p.Path) {
+			t.Errorf("%s must not be advertised as writable here", p.Path)
+		}
 	}
-}
-
-func TestMCPWriteReportsGeositeCategoryMatchingNothing(t *testing.T) {
-	cfg := mcpTestCfg()
-	cfg.System.WebServer.MCP.AllowWrites = true
-	cfg.System.Geo.GeoSitePath = filepath.Join(t.TempDir(), "geosite.dat")
-	srv, _ := newMCPTestServerAPI(t, cfg)
-	session, ctx := connectMCP(t, srv)
-
-	res := callSetValue(t, session, ctx, "sets[video].targets.geosite_categories", "not-a-real-category")
-	if res.IsError {
-		t.Fatalf("write failed: %+v", res.Content)
-	}
-	out := decodeSetValue(t, res)
-	if out.Expansion == nil {
-		t.Fatal("a targets write must report what the selectors expanded to")
-	}
-	if len(out.Expansion.EmptyGeoSite) != 1 || out.Expansion.EmptyGeoSite[0] != "not-a-real-category" {
-		t.Fatalf("an unknown category is skipped silently at expansion time and must be reported, got %+v", out.Expansion)
-	}
-	if !strings.Contains(out.Note, "matched no domains") {
-		t.Errorf("note should say the category matched nothing: %q", out.Note)
+	if len(out.Paths) == 0 {
+		t.Error("the scalar targets settings should still be listed")
 	}
 }
 

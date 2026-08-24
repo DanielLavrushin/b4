@@ -345,10 +345,11 @@ type SystemConfig struct {
 }
 
 type MCPConfig struct {
-	Enabled        bool     `json:"enabled"`
-	AllowWrites    bool     `json:"allow_writes"`
-	Token          string   `json:"token,omitempty"`
-	AllowedOrigins []string `json:"allowed_origins,omitempty"`
+	Enabled           bool     `json:"enabled"`
+	AllowWrites       bool     `json:"allow_writes"`
+	AllowActiveProbes bool     `json:"allow_active_probes"`
+	Token             string   `json:"token,omitempty"`
+	AllowedOrigins    []string `json:"allowed_origins,omitempty"`
 }
 
 type AIConfig struct {
