@@ -315,3 +315,28 @@ func TestMCPDiscoveryApplyRefusesWorksWithoutB4(t *testing.T) {
 		t.Error("no set should have been created")
 	}
 }
+
+func TestMCPDiscoveryStatusDropsStalePhaseWhenFinished(t *testing.T) {
+	cfg := probeCfg(t)
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	suite := &discovery.CheckSuite{
+		Id:           "phase-run",
+		Status:       discovery.CheckStatusComplete,
+		CurrentPhase: discovery.DiscoveryPhase("strategy_detection"),
+		DomainDiscoveryResults: map[string]*discovery.DomainDiscoveryResult{
+			"youtube.com": {Domain: "youtube.com", BestPreset: "no-bypass", BestSuccess: true, BaselineWorks: true},
+		},
+	}
+	discovery.RegisterSuite(suite)
+
+	out := decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{"action": "status", "id": "phase-run"}))
+	if out.Phase != "" {
+		t.Errorf("a finished run must not report the phase it stopped in: %q alongside status %q reads as still working", out.Phase, out.Status)
+	}
+	if len(out.Domains) != 1 || !strings.Contains(out.Domains[0].Verdict, "do not create a set") {
+		t.Fatalf("baseline verdict missing: %+v", out.Domains)
+	}
+}

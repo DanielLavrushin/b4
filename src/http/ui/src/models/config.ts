@@ -316,6 +316,7 @@ export interface AIConfig {
 export interface MCPConfig {
   enabled: boolean;
   allow_writes: boolean;
+  allow_active_probes: boolean;
   token?: string;
   allowed_origins?: string[];
 }

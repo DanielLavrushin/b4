@@ -17,7 +17,7 @@ Configured in **Settings -> Integrations -> MCP server**.
 | --- | --- |
 | **Enable MCP server** | The switch in the card header. Serves the endpoint at `/api/mcp`. Off by default. |
 | **Allow configuration changes** | Lets the AI change settings as well as read them. Off by default. See [Changing settings](#changing-settings). |
-| **Allow active probes** | Lets the AI fetch a domain from the router to see whether it loads. Off by default, and separate from configuration changes: emitting traffic is a different permission from writing settings. |
+| **Allow active probes** | Lets the AI fetch a domain from the router to see whether it loads, and run a discovery search for a working bypass strategy. Off by default, and separate from configuration changes: emitting traffic is a different permission from writing settings. |
 | **Access token** | The credential AI applications present. **Generate** creates one, **Regenerate** replaces it. |
 | **Client configuration** | The endpoint URL and header block to paste into the AI application. **Copy** puts the whole block, with the full token, on the clipboard. |
 

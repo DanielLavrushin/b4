@@ -1591,3 +1591,38 @@ func TestGetTopicFindsDiscovery(t *testing.T) {
 		}
 	}
 }
+
+func TestStatusReportsGatedCapabilitiesAsData(t *testing.T) {
+	for _, c := range []struct {
+		name           string
+		writes, probes bool
+		wants          []string
+	}{
+		{"nothing permitted", false, false, []string{"Allow configuration changes", "Allow active probes", "discovery", "does not exist"}},
+		{"writes only", true, false, []string{"Allow active probes", "discovery"}},
+		{"everything", true, true, []string{"supports everything"}},
+	} {
+		cfg := mcpTestCfg()
+		cfg.System.WebServer.MCP.AllowWrites = c.writes
+		cfg.System.WebServer.MCP.AllowActiveProbes = c.probes
+		srv := newMCPTestServer(t, cfg)
+		session, ctx := connectMCP(t, srv)
+
+		res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_status"})
+		if err != nil {
+			t.Fatalf("%s: call: %v", c.name, err)
+		}
+		var out mcpStatusOut
+		if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+			t.Fatalf("%s: decode: %v", c.name, err)
+		}
+		if out.CanChangeConfig != c.writes || out.CanProbe != c.probes {
+			t.Errorf("%s: capabilities = writes:%v probes:%v", c.name, out.CanChangeConfig, out.CanProbe)
+		}
+		for _, want := range c.wants {
+			if !strings.Contains(out.Note, want) {
+				t.Errorf("%s: status note should mention %q, got %q", c.name, want, out.Note)
+			}
+		}
+	}
+}

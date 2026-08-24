@@ -247,10 +247,11 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		Id:     suite.Id,
 		Status: string(suite.Status),
 		Note: fmt.Sprintf(
-			"started for %s. This runs for minutes, not seconds: about %d strategies per domain, each preceded by a config-propagation pause. "+
+			"started for %s. This runs for minutes, not seconds: it opens with %d strategies per domain and then explores the family that looked best, "+
+				"which can be another hundred or more, each preceded by a config-propagation pause. It stops early for a domain that turns out to work without b4. "+
 				"Do NOT poll in a loop — tell the user it is running and call action=status once when they ask. "+
 				"While it runs, the watchdog cannot heal and a firewall refresh will block.",
-			strings.Join(urls, ", "), len(discovery.GetPhase1Presets())+15),
+			strings.Join(urls, ", "), len(discovery.GetPhase1Presets())),
 	}
 	return nil, out, nil
 }
@@ -302,9 +303,12 @@ func (api *API) mcpDiscoverySuiteStatus(suite *discovery.CheckSuite) (*mcp.CallT
 	out := mcpDiscoveryOut{
 		Id:      snap.Id,
 		Status:  snap.Status,
-		Phase:   snap.CurrentPhase,
 		Source:  "run",
 		Domains: api.mcpDiscoverySuiteRows(snap),
+	}
+	switch discovery.CheckStatus(snap.Status) {
+	case discovery.CheckStatusRunning, discovery.CheckStatusPending:
+		out.Phase = snap.CurrentPhase
 	}
 	if snap.TotalChecks > 0 {
 		out.Progress = fmt.Sprintf("%d/%d checks", snap.CompletedChecks, snap.TotalChecks)

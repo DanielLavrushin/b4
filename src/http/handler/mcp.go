@@ -280,6 +280,9 @@ type mcpStatusOut struct {
 	MTProtoOn       bool   `json:"mtproto_enabled"`
 	Uptime          string `json:"uptime"`
 	ConnectionsSeen int64  `json:"connections_seen"`
+	CanChangeConfig bool   `json:"you_can_change_settings"`
+	CanProbe        bool   `json:"you_can_test_and_discover"`
+	Note            string `json:"note"`
 }
 
 type mcpConfigIn struct {
@@ -408,7 +411,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_status",
 		Title:       "B4 status",
-		Description: "High-level health of the running b4 daemon: version, packet capture engine (nfqueue or tun), firewall backend, how many strategy sets exist and are enabled, which subsystems are on, uptime and how many connections b4 has processed. Call this first when diagnosing. 'connections_seen' is a running total since b4 started or since the counters were last reset, not a live concurrency figure: b4 does not record when a connection ends.",
+		Description: "High-level health of the running b4 daemon: version, packet capture engine (nfqueue or tun), firewall backend, how many strategy sets exist and are enabled, which subsystems are on, uptime and how many connections b4 has processed. Call this first when diagnosing, and whenever you are unsure whether b4 can do something: it reports which capabilities are switched on for you, so an ability you have no tool for reads as gated rather than missing. 'connections_seen' is a running total since b4 started or since the counters were last reset, not a live concurrency figure: b4 does not record when a connection ends.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpStatusOut, error) {
 		cfg := api.getCfg()
@@ -434,6 +437,9 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 				out.SetsEnabled++
 			}
 		}
+		out.CanChangeConfig = cfg.System.WebServer.MCP.AllowWrites
+		out.CanProbe = cfg.System.WebServer.MCP.AllowActiveProbes
+		out.Note = mcpCapabilityNote(out.CanChangeConfig, out.CanProbe)
 		return nil, out, nil
 	})
 
@@ -792,6 +798,21 @@ func mcpRelatedTopics(keys []string, want string) []string {
 const mcpProbesOffInstruction = "'Allow active probes' is off, so two things b4 CAN do are not available to you here: " +
 	"fetching a domain to see whether it actually loads, and running a discovery search that brute-forces bypass strategies until one works. " +
 	"If the user asks for either, say b4 supports it and that enabling 'Allow active probes' under Settings -> Integrations -> MCP server would let you do it — do not conclude the feature does not exist."
+
+func mcpCapabilityNote(writes, probes bool) string {
+	var off []string
+	if !writes {
+		off = append(off, "changing any setting ('Allow configuration changes')")
+	}
+	if !probes {
+		off = append(off, "testing whether a domain loads, and running a discovery search for a working bypass strategy ('Allow active probes')")
+	}
+	if len(off) == 0 {
+		return "b4 supports everything this server exposes: reading, changing settings, testing a domain and running discovery"
+	}
+	return "b4 SUPPORTS these, but they are switched off for this connection so no tool for them is offered: " +
+		strings.Join(off, "; ") + ". If the user asks for one, say b4 can do it and name the setting under Settings -> Integrations -> MCP server — do not tell them the feature does not exist."
+}
 
 func mcpCapabilityInstruction(caps mcpCapabilities) string {
 	switch {
