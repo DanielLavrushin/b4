@@ -1554,3 +1554,40 @@ func TestToolSchemasAreObjectsNotBooleans(t *testing.T) {
 		}
 	}
 }
+
+func TestInstructionsNameTheGatedCapabilities(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	if toolNames(t, session, ctx)["b4_find_bypass_strategy"] {
+		t.Fatal("precondition: probes are off, so discovery is not served")
+	}
+
+	instr := session.InitializeResult().Instructions
+	for _, want := range []string{"discovery", "Allow active probes", "do not conclude the feature does not exist"} {
+		if !strings.Contains(instr, want) {
+			t.Errorf("instructions must mention %q so an unavailable capability is reported as gated, not absent: %q", want, instr)
+		}
+	}
+}
+
+func TestGetTopicFindsDiscovery(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	hits := callTopic(t, session, ctx, map[string]any{"query": "discovery"})
+	if !hits.Found {
+		t.Fatal("a search for 'discovery' must find something: it is a real b4 feature")
+	}
+	exact := callTopic(t, session, ctx, map[string]any{"topic": "discovery.pipeline"})
+	if !exact.Found {
+		t.Fatal("discovery.pipeline should be documented")
+	}
+	for _, want := range []string{"baseline_works", "transport_blocked", "b4_find_bypass_strategy"} {
+		if !strings.Contains(exact.Topics[0].Facts, want) {
+			t.Errorf("the discovery topic should cover %q", want)
+		}
+	}
+}
