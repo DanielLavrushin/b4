@@ -265,8 +265,7 @@ func (api *API) addMCPTargetTools(srv *mcp.Server) {
 		Description: "Add or remove entries in one of a set's selectors, without rewriting the whole list. " +
 			"Use this rather than b4_set_config_value, which replaces a target list wholesale. " +
 			"Entries are validated first: an unparseable address or an unknown geo category is refused here, because nothing else in b4 rejects them. " +
-			"Adding a domain REMOVES it from every other enabled set; the result lists what moved. " +
-			"Requires 'Allow configuration changes'.",
+			"Adding a domain REMOVES it from every other enabled set; the result lists what moved.",
 		Annotations: mcpDestructive,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpEditTargetsIn) (*mcp.CallToolResult, mcpEditTargetsOut, error) {
 		if !api.getCfg().System.WebServer.MCP.AllowWrites {

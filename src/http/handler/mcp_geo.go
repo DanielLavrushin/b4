@@ -103,8 +103,8 @@ func (api *API) addMCPGeoTools(srv *mcp.Server) {
 		Description: "Read the installed geosite (domain) and geoip (address) databases. " +
 			"status: what is installed. list: category names, filtered by 'contains'. preview: what one category holds. " +
 			"find_domain: which categories cover a domain. lookup_ip: the same for an address. " +
-			"Check a category here before adding it to a set — an unknown name is accepted elsewhere and silently matches nothing. " +
-			"find_domain and lookup_ip read the whole database (tens of megabytes) and stop at 25 matches.",
+			"Check a category here before using it: an unknown name matches nothing, silently. " +
+			"find_domain and lookup_ip read the whole database and stop at 25 matches.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpGeoIn) (*mcp.CallToolResult, mcpGeoOut, error) {
 		action := strings.ToLower(strings.TrimSpace(in.Action))

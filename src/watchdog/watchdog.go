@@ -131,7 +131,7 @@ func (w *Watchdog) tick() {
 	}
 
 	now := time.Now()
-	mark := cfg.Queue.Mark
+	mark := markThroughEngine
 	timeout := time.Duration(wdCfg.TimeoutSec) * time.Second
 
 	w.mu.Lock()
@@ -406,8 +406,7 @@ func (w *Watchdog) verifyApplied(domains []string, wdCfg config.WatchdogConfig) 
 	if tries < 1 {
 		tries = 1
 	}
-	cfg := w.cfgPtr.Load()
-	mark := cfg.Queue.Mark
+	mark := markThroughEngine
 	timeout := time.Duration(wdCfg.TimeoutSec) * time.Second
 
 	pending := append([]string(nil), domains...)

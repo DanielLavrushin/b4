@@ -633,19 +633,10 @@ type mcpRevertOut struct {
 
 func mcpWriteToolDescription() string {
 	var sb strings.Builder
-	sb.WriteString("Change one b4 setting and apply it live (no restart). ")
-	sb.WriteString("Writable: every setting inside a strategy set (targets, fragmentation, faking, TCP/UDP, DNS, escalation, routing), ")
-	sb.WriteString("the MTProto and SOCKS5 subsystems, and the logging settings - system.logging.level takes ")
-	sb.WriteString("error, info, trace or debug, and debug is the most verbose. Address a per-set setting as sets[<id or name>].<path>, ")
-	sb.WriteString("for example sets[video].fragmentation.strategy or sets[video].tcp.seg2delay.\n")
-	sb.WriteString("Refused, always: every credential, the web server, the MCP settings themselves, the packet capture engine, ")
-	sb.WriteString("the firewall backend and the packet marks — a wrong value there can leave the machine unreachable.\n")
-	sb.WriteString("Call b4_list_writable_paths for the exact paths, types and accepted values rather than guessing a path. ")
-	sb.WriteString("A list setting is replaced wholesale, so read its current value first and send the full list back. ")
-	sb.WriteString("The exception is a set's target lists (domains, IPs, geo categories, source devices): those are refused here and belong to b4_edit_set_targets. ")
-	sb.WriteString("Requires the 'Allow configuration changes' setting to be enabled. ")
-	sb.WriteString("Confirm with the user before calling, report the returned previous/current values, ")
-	sb.WriteString("and use b4_revert_last_change if the result is not what was intended.")
+	sb.WriteString("Change one b4 setting and apply it live. Address a per-set setting as sets[<id or name>].<path>, e.g. sets[video].tcp.seg2delay.\n")
+	sb.WriteString("Call b4_list_writable_paths for the exact paths, types and accepted values rather than guessing, and b4_get_topic for what a setting means before changing it.\n")
+	sb.WriteString("Refused here: every credential, the web server, the capture engine, the firewall backend and the packet marks. A set's target lists belong to b4_edit_set_targets; its lifecycle to b4_manage_set.\n")
+	sb.WriteString("A list setting is replaced wholesale. The result reports the value read back after saving, so changed:false means b4 did not keep it. Undo with b4_revert_last_change.")
 	return sb.String()
 }
 

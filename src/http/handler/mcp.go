@@ -257,9 +257,11 @@ func (api *API) newMCPServer(caps mcpCapabilities) *mcp.Server {
 	if caps.Writes {
 		api.addMCPWriteTools(srv)
 		api.addMCPTargetTools(srv)
+		api.addMCPSetTools(srv)
 	}
 	if caps.Probes {
 		api.addMCPProbeTools(srv)
+		api.addMCPDiscoveryTools(srv)
 	}
 	api.addMCPResources(srv)
 	api.addMCPPrompts(srv)
@@ -440,23 +442,23 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		Title:       "Read b4 configuration",
 		Description: "Return the b4 configuration as JSON, with all credentials redacted. Pass 'section' to narrow it (e.g. 'system.dns', 'system.mtproto', 'sets') — the full config is large, so prefer a section.",
 		Annotations: mcpReadOnly,
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpConfigIn) (*mcp.CallToolResult, mcpConfigOut, error) {
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpConfigIn) (*mcp.CallToolResult, any, error) {
 		redacted := redactConfigForMCP(api.getCfg())
 		raw, err := json.Marshal(redacted)
 		if err != nil {
-			return nil, mcpConfigOut{}, fmt.Errorf("marshal config: %w", err)
+			return nil, nil, fmt.Errorf("marshal config: %w", err)
 		}
 		section := strings.TrimSpace(in.Section)
 		if section != "" {
 			sub, err := extractJSONPath(raw, section)
 			if err != nil {
-				return nil, mcpConfigOut{}, err
+				return nil, nil, err
 			}
 			raw = sub
 		}
 		var value any
 		if err := json.Unmarshal(raw, &value); err != nil {
-			return nil, mcpConfigOut{}, fmt.Errorf("decode config: %w", err)
+			return nil, nil, fmt.Errorf("decode config: %w", err)
 		}
 		return nil, mcpConfigOut{Section: section, Config: value}, nil
 	})
@@ -624,10 +626,10 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		Title:       "Read one strategy set",
 		Description: "Return the full configuration of a single strategy set by id or name, with upstream proxy credentials redacted: targets, fragmentation, faking, TCP/UDP options, DNS and routing. Use this instead of b4_get_config when reasoning about one set.",
 		Annotations: mcpReadOnly,
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpGetSetIn) (*mcp.CallToolResult, mcpGetSetOut, error) {
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpGetSetIn) (*mcp.CallToolResult, any, error) {
 		want := strings.TrimSpace(in.Set)
 		if want == "" {
-			return nil, mcpGetSetOut{}, fmt.Errorf("set (id or name) is required")
+			return nil, nil, fmt.Errorf("set (id or name) is required")
 		}
 		for _, s := range api.getCfg().Sets {
 			if !strings.EqualFold(s.Id, want) && !strings.EqualFold(s.Name, want) {
@@ -635,11 +637,11 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 			}
 			redacted, err := redactedSetForMCP(s)
 			if err != nil {
-				return nil, mcpGetSetOut{}, err
+				return nil, nil, err
 			}
 			return nil, mcpGetSetOut{Set: redacted}, nil
 		}
-		return nil, mcpGetSetOut{}, fmt.Errorf("no set with id or name %q", want)
+		return nil, nil, fmt.Errorf("no set with id or name %q", want)
 	})
 
 	addTool(srv, &mcp.Tool{
@@ -724,7 +726,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		Title:       "System diagnostics",
 		Description: "Full environment report: OS and kernel, memory, b4 build and paths, detected firewall backend and the live nftables/iptables rule groups b4 installed, network interfaces, engine and TUN state. Use when the bypass appears not to be applied at all. This report includes the hostname, every interface address and the firewall ruleset, so treat the output as identifying information about the network it came from.",
 		Annotations: mcpReadOnly,
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpDiagnosticsOut, error) {
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, any, error) {
 		return nil, mcpDiagnosticsOut{Diagnostics: api.buildDiagnostics()}, nil
 	})
 }
@@ -784,16 +786,23 @@ func mcpRelatedTopics(keys []string, want string) []string {
 	return nil
 }
 
+// mcpProbesOffInstruction names the two capabilities that vanish with the probe
+// permission. Without it a model sees no tool for them and concludes b4 cannot
+// do it at all, rather than telling the user which switch to turn on.
+const mcpProbesOffInstruction = "'Allow active probes' is off, so two things b4 CAN do are not available to you here: " +
+	"fetching a domain to see whether it actually loads, and running a discovery search that brute-forces bypass strategies until one works. " +
+	"If the user asks for either, say b4 supports it and that enabling 'Allow active probes' under Settings -> Integrations -> MCP server would let you do it — do not conclude the feature does not exist."
+
 func mcpCapabilityInstruction(caps mcpCapabilities) string {
 	switch {
 	case caps.Writes && caps.Probes:
 		return "A write reports the value read back after saving, so a 'changed: false' result means b4 did not accept the value."
 	case caps.Writes:
-		return "A write reports the value read back after saving, so a 'changed: false' result means b4 did not accept the value. b4 cannot fetch a domain to check it: 'Allow active probes' is off, so report what the configuration says and say you could not test it."
+		return "A write reports the value read back after saving, so a 'changed: false' result means b4 did not accept the value. " + mcpProbesOffInstruction
 	case caps.Probes:
 		return "This server is read-only apart from probing: 'Allow configuration changes' is off, so report what should change rather than offering to change it."
 	default:
-		return "This server is read-only: 'Allow configuration changes' and 'Allow active probes' are both off, so report what should change rather than offering to change it, and say you could not test a domain."
+		return "This server is read-only: 'Allow configuration changes' is off, so report what should change rather than offering to change it. " + mcpProbesOffInstruction
 	}
 }
 

@@ -1335,43 +1335,51 @@ func TestWritablePathsGrounding(t *testing.T) {
 }
 
 func TestToolsListStaysWithinContextBudget(t *testing.T) {
-	// Measure the widest surface b4 can serve, not the default one.
-	cfg := mcpTestCfg()
-	cfg.System.WebServer.MCP.AllowWrites = true
-	cfg.System.WebServer.MCP.AllowActiveProbes = true
-	srv := newMCPTestServer(t, cfg)
-	session, ctx := connectMCP(t, srv)
+	// Two budgets, because they protect different things. The default surface is
+	// what a constrained client actually pays for on every request; the widest
+	// one is a runaway guard for an operator who has opted into everything.
+	for _, c := range []struct {
+		name           string
+		writes, probes bool
+		budget         int
+	}{
+		{"default", false, false, 16000},
+		{"writes and probes", true, true, 30000},
+	} {
+		cfg := mcpTestCfg()
+		cfg.System.WebServer.MCP.AllowWrites = c.writes
+		cfg.System.WebServer.MCP.AllowActiveProbes = c.probes
+		srv := newMCPTestServer(t, cfg)
+		session, ctx := connectMCP(t, srv)
 
-	tools, err := session.ListTools(ctx, nil)
-	if err != nil {
-		t.Fatalf("list tools: %v", err)
-	}
-
-	total := 0
-	widest, widestName := 0, ""
-	for _, tool := range tools.Tools {
-		raw, err := json.Marshal(tool)
+		tools, err := session.ListTools(ctx, nil)
 		if err != nil {
-			t.Fatalf("marshal %s: %v", tool.Name, err)
+			t.Fatalf("%s: list tools: %v", c.name, err)
 		}
-		total += len(raw)
-		if len(raw) > widest {
-			widest, widestName = len(raw), tool.Name
-		}
-		if tool.Description == "" {
-			t.Errorf("tool %q has no description", tool.Name)
-		}
-	}
 
-	// tools/list is preamble on every request, before the user has said
-	// anything. LM Studio commonly runs 14B-class models at 4k-16k context.
-	const budget = 25000
-	if total > budget {
-		t.Errorf("tools/list is %d bytes across %d tools, over the %d budget (widest: %s at %d). "+
-			"Trim a description, or register a tool family only when its subsystem is configured.",
-			total, len(tools.Tools), budget, widestName, widest)
+		total := 0
+		widest, widestName := 0, ""
+		for _, tool := range tools.Tools {
+			raw, err := json.Marshal(tool)
+			if err != nil {
+				t.Fatalf("marshal %s: %v", tool.Name, err)
+			}
+			total += len(raw)
+			if len(raw) > widest {
+				widest, widestName = len(raw), tool.Name
+			}
+			if tool.Description == "" {
+				t.Errorf("tool %q has no description", tool.Name)
+			}
+		}
+
+		if total > c.budget {
+			t.Errorf("%s surface is %d bytes across %d tools, over the %d budget (widest: %s at %d). "+
+				"Trim a description, or register a tool family only when its subsystem is configured.",
+				c.name, total, len(tools.Tools), c.budget, widestName, widest)
+		}
+		t.Logf("%s: %d tools, %d bytes, %d%% of budget", c.name, len(tools.Tools), total, total*100/c.budget)
 	}
-	t.Logf("tools/list: %d tools, %d bytes, %d%% of budget", len(tools.Tools), total, total*100/budget)
 }
 
 func toolNames(t *testing.T, session *mcp.ClientSession, ctx context.Context) map[string]bool {
@@ -1465,5 +1473,84 @@ func TestInstructionsDescribeTheServedSurface(t *testing.T) {
 	fullSession, _ := connectMCP(t, fullSrv)
 	if got := fullSession.InitializeResult().Instructions; strings.Contains(got, "read-only") {
 		t.Errorf("a writable server must not claim to be read-only: %q", got)
+	}
+}
+
+// mcpFindBoolSchema reports a path where a NAMED property or item schema is the
+// boolean form. additionalProperties:false is idiomatic and accepted, but a
+// boolean where a client expects a property schema is not: LM Studio rejects the
+// whole tool list over one, and jsonschema-go emits exactly that for interface{}.
+func mcpFindBoolSchema(node any, path string) string {
+	switch v := node.(type) {
+	case bool:
+		return path
+	case map[string]any:
+		for _, key := range []string{"properties", "$defs", "definitions", "patternProperties"} {
+			sub, ok := v[key].(map[string]any)
+			if !ok {
+				continue
+			}
+			for name, child := range sub {
+				if found := mcpFindBoolSchema(child, path+"."+key+"."+name); found != "" {
+					return found
+				}
+			}
+		}
+		for _, key := range []string{"items", "not", "if", "then", "else"} {
+			if child, ok := v[key]; ok {
+				if found := mcpFindBoolSchema(child, path+"."+key); found != "" {
+					return found
+				}
+			}
+		}
+		for _, key := range []string{"anyOf", "allOf", "oneOf", "prefixItems"} {
+			list, ok := v[key].([]any)
+			if !ok {
+				continue
+			}
+			for i, child := range list {
+				if found := mcpFindBoolSchema(child, fmt.Sprintf("%s.%s[%d]", path, key, i)); found != "" {
+					return found
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func TestToolSchemasAreObjectsNotBooleans(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.System.WebServer.MCP.AllowActiveProbes = true
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+
+	for _, tool := range tools.Tools {
+		for label, schema := range map[string]any{
+			"inputSchema":  tool.InputSchema,
+			"outputSchema": tool.OutputSchema,
+		} {
+			if schema == nil {
+				continue
+			}
+			raw, err := json.Marshal(schema)
+			if err != nil {
+				t.Fatalf("%s %s: marshal: %v", tool.Name, label, err)
+			}
+			var decoded any
+			if err := json.Unmarshal(raw, &decoded); err != nil {
+				t.Fatalf("%s %s: decode: %v", tool.Name, label, err)
+			}
+			if at := mcpFindBoolSchema(decoded, label); at != "" {
+				t.Errorf("%s publishes a boolean sub-schema at %s. An `any`-typed field produces one, "+
+					"and a strict client rejects the entire tool list over it — give the field a concrete type, "+
+					"or drop the schema by typing the handler's Out as `any`.", tool.Name, at)
+			}
+		}
 	}
 }

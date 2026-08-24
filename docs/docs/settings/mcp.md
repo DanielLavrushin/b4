@@ -110,6 +110,8 @@ Only `POST` is served. `GET` and `DELETE` return 405, which is normal for this t
 | `b4_edit_set_targets` | Adds or removes domains, addresses, geo categories or source devices on one set | "Add rutracker.org to the video set." |
 | `b4_test_domain_now` | Fetches a domain through b4 and again with b4 bypassed, and says which of the two works | "Is rutracker.org actually loading right now?" |
 | `b4_watchdog` | The last verdict for every watched domain, and add/remove/enable/check | "Which of the sites you are watching are failing?" |
+| `b4_manage_set` | Creates, duplicates, moves, enables, deletes or resets a strategy set | "Make a new set for rutracker.org and put it last." |
+| `b4_find_bypass_strategy` | Runs discovery against a domain and turns the winning strategy into a set | "Find something that makes rutracker.org load." |
 | `b4_check_domain` | Which sets target a domain, how the match was made, whether that set is enabled | "Is rutracker.org covered by any set?" |
 | `b4_list_sets` | Every set in priority order, with domain counts and primary strategy | "List the sets and how many domains each targets." |
 | `b4_get_set` | One set in full | "Show the full configuration of the set named video." |
@@ -131,8 +133,8 @@ The tool list is built from the two permission switches and rebuilt whenever the
 | Permitted | Tools served |
 | --- | --- |
 | Nothing (default) | 12 |
-| Allow configuration changes | 16 |
-| Both | 17 |
+| Allow configuration changes | 17 |
+| Both | 19 |
 
 The server also tells the AI which of the two it has, so it says "here is what I would change" rather than offering to change it. That message names the setting to turn on, which is how a model can answer "why can't you?".
 

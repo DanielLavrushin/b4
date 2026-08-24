@@ -6,6 +6,8 @@ import (
 	"net/netip"
 	"testing"
 	"time"
+
+	"github.com/daniellavrushin/b4/config"
 )
 
 func TestIsReservedAddrCoversTheWholeLocalSpace(t *testing.T) {
@@ -75,5 +77,18 @@ func TestProbeHostHonoursCancelledContext(t *testing.T) {
 	}
 	if res.OK {
 		t.Error("a cancelled probe must not report success")
+	}
+}
+
+func TestChecksAreNotExemptedFromTheEngine(t *testing.T) {
+	cfg := config.NewConfig()
+
+	if injected := cfg.MainInjectedMark(); markThroughEngine&injected != 0 {
+		t.Fatalf("a check marked 0x%x is accepted before b4's queue (injected mark 0x%x), so it would report the unbypassed path",
+			markThroughEngine, injected)
+	}
+
+	if flow := cfg.DiscoveryFlowMark(); markThroughEngine == flow {
+		t.Fatalf("the discovery flow mark 0x%x only reaches a queue while a discovery run has installed its steering rules", flow)
 	}
 }

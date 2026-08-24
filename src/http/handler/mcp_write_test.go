@@ -101,7 +101,7 @@ func TestMCPWriteToolIsAnnotatedDestructive(t *testing.T) {
 		for _, want := range []string{
 			"b4_list_writable_paths",
 			"b4_revert_last_change",
-			"Allow configuration changes",
+			"b4_edit_set_targets",
 			"sets[<id or name>]",
 		} {
 			if !strings.Contains(tool.Description, want) {
