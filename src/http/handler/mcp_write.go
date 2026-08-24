@@ -198,6 +198,41 @@ func parseMCPWritePath(path string) (canonical, setRef string, err error) {
 	return path[:open+1] + "]" + path[closing+1:], setRef, nil
 }
 
+func mcpHasSourceEntries(entries []string) bool {
+	for _, e := range entries {
+		if strings.TrimSpace(e) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func mcpPathTouchesTargets(canonical string) bool {
+	return strings.HasPrefix(canonical, mcpSetPathPrefix+".targets")
+}
+
+func mcpExpansionNote(e *mcpTargetExpansion) string {
+	if e == nil {
+		return ""
+	}
+	var parts []string
+	if len(e.EmptyGeoSite) > 0 {
+		parts = append(parts, fmt.Sprintf(
+			"geosite %s matched no domains — an unknown category name is skipped silently, so check the spelling or whether a geosite database is installed",
+			strings.Join(e.EmptyGeoSite, ", ")))
+	}
+	if len(e.EmptyGeoIP) > 0 {
+		parts = append(parts, fmt.Sprintf(
+			"geoip %s matched no addresses — an unknown category name is skipped silently, so check the spelling or whether a geoip database is installed",
+			strings.Join(e.EmptyGeoIP, ", ")))
+	}
+	if len(parts) == 0 {
+		return fmt.Sprintf("the set now matches %d domains and %d addresses.", e.Domains, e.IPs)
+	}
+	return fmt.Sprintf("The set now matches %d domains and %d addresses, but %s.",
+		e.Domains, e.IPs, strings.Join(parts, "; "))
+}
+
 func mcpPathAllowed(canonical string) bool {
 	for _, root := range mcpWritableRoots {
 		if canonical == root || strings.HasPrefix(canonical, root+".") {
@@ -447,6 +482,13 @@ func mcpValidateCandidate(oldCfg, newCfg *config.Config) error {
 			},
 			err: "the SOCKS5 username and password must both be set or both be empty",
 		},
+		{
+			ok: func(c *config.Config) bool {
+				s5 := c.System.Socks5
+				return !s5.Enabled || s5.Username != "" || mcpHasSourceEntries(s5.AllowedSources)
+			},
+			err: "the SOCKS5 server would accept every client without a password: set a username and password, or an allowed_sources list, in the web interface before enabling it. Both are refused over MCP, so they cannot be set from here",
+		},
 	} {
 		if !rule.ok(newCfg) && rule.ok(oldCfg) {
 			return fmt.Errorf("%s", rule.err)
@@ -546,12 +588,20 @@ type mcpSetValueIn struct {
 	Value string `json:"value" jsonschema:"New value as a string: 'true'/'false' for booleans, digits for numbers, a comma-separated list for list settings."`
 }
 
+type mcpTargetExpansion struct {
+	Domains      int      `json:"domain_count"`
+	IPs          int      `json:"ip_count"`
+	EmptyGeoSite []string `json:"geosite_categories_matching_nothing,omitempty"`
+	EmptyGeoIP   []string `json:"geoip_categories_matching_nothing,omitempty"`
+}
+
 type mcpSetValueOut struct {
-	Path     string `json:"path"`
-	Previous string `json:"previous"`
-	Current  string `json:"current"`
-	Changed  bool   `json:"changed"`
-	Note     string `json:"note,omitempty"`
+	Path      string              `json:"path"`
+	Previous  string              `json:"previous"`
+	Current   string              `json:"current"`
+	Changed   bool                `json:"changed"`
+	Expansion *mcpTargetExpansion `json:"expansion,omitempty"`
+	Note      string              `json:"note,omitempty"`
 }
 
 type mcpRevertOut struct {
@@ -652,13 +702,18 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 			return nil, mcpSetValueOut{}, fmt.Errorf("path %q cannot be written", in.Path)
 		}
 
+		readRef := setRef
+		if set := findSetIn(newCfg, setRef); set != nil && set.Id != "" {
+			readRef = set.Id
+		}
+
 		previous := mcpFormatCurrent(canonical, field)
 		if err := mcpAssignValue(field, canonical, in.Value); err != nil {
 			return nil, mcpSetValueOut{}, err
 		}
-		current := mcpFormatCurrent(canonical, field)
+		requested := mcpFormatCurrent(canonical, field)
 
-		if previous == current {
+		if previous == requested {
 			return nil, mcpSetValueOut{
 				Path: in.Path, Previous: previous, Current: previous, Changed: false,
 				Note: "already set to this value; nothing was written",
@@ -667,6 +722,19 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 
 		if err := mcpValidateCandidate(oldCfg, newCfg); err != nil {
 			return nil, mcpSetValueOut{}, fmt.Errorf("rejected: %w", err)
+		}
+
+		var expansion *mcpTargetExpansion
+		if mcpPathTouchesTargets(canonical) {
+			if set := findSetIn(newCfg, readRef); set != nil {
+				report := api.loadTargetsForSetCached(set)
+				expansion = &mcpTargetExpansion{
+					Domains:      report.Domains,
+					IPs:          report.IPs,
+					EmptyGeoSite: report.EmptyGeoSite,
+					EmptyGeoIP:   report.EmptyGeoIP,
+				}
+			}
 		}
 
 		snapshot := oldCfg.Clone()
@@ -684,6 +752,25 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		api.applyRuntimeChanges(newCfg, oldCfg)
 		refreshed := api.PerformSoftRestart(newCfg, oldCfg)
 
+		current := requested
+		if liveField, err := mcpResolvePath(api.getCfg(), canonical, readRef); err == nil {
+			current = mcpFormatCurrent(canonical, liveField)
+		}
+
+		out := mcpSetValueOut{
+			Path: in.Path, Previous: previous, Current: current,
+			Changed: current != previous, Expansion: expansion,
+		}
+
+		if current == previous {
+			out.Note = fmt.Sprintf(
+				"not applied: b4 reset %s back to %q while validating the saved configuration, so nothing changed and nothing was recorded for undo. "+
+					"Call b4_list_writable_paths for the accepted form of this setting and read its b4://topics resource before retrying.",
+				in.Path, previous)
+			log.Infof("mcp: %s rejected on save, still %s", in.Path, previous)
+			return nil, out, nil
+		}
+
 		mcpRecordChange(mcpChange{
 			Path: in.Path, Previous: previous, Current: current,
 			When: time.Now(), Snapshot: snapshot,
@@ -691,15 +778,18 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 
 		log.Infof("mcp: %s changed from %s to %s", in.Path, previous, current)
 
-		note := "applied live; no restart required. Undo with b4_revert_last_change"
+		out.Note = "applied live; no restart required. Undo with b4_revert_last_change"
 		if refreshed {
-			note = "applied live; firewall rules were refreshed to match. Undo with b4_revert_last_change"
+			out.Note = "applied live; firewall rules were refreshed to match. Undo with b4_revert_last_change"
+		}
+		if current != requested {
+			out.Note = fmt.Sprintf("b4 normalised the value on save: %s is now %q, not the requested %q. ", in.Path, current, requested) + out.Note
+		}
+		if hint := mcpExpansionNote(expansion); hint != "" {
+			out.Note = out.Note + " " + hint
 		}
 
-		return nil, mcpSetValueOut{
-			Path: in.Path, Previous: previous, Current: current, Changed: true,
-			Note: note,
-		}, nil
+		return nil, out, nil
 	})
 
 	addTool(srv, &mcp.Tool{

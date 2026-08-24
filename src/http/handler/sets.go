@@ -601,25 +601,43 @@ func (api *API) retainGeoCaches(sets []*config.SetConfig) {
 	api.geodataManager.RetainCategories(geosite, geoip)
 }
 
-func (api *API) loadTargetsForSetCached(set *config.SetConfig) {
+type targetExpansion struct {
+	Domains      int
+	IPs          int
+	EmptyGeoSite []string
+	EmptyGeoIP   []string
+}
+
+func (api *API) loadTargetsForSetCached(set *config.SetConfig) targetExpansion {
 	domains := []string{}
 	ips := []string{}
+	var report targetExpansion
 
 	for _, cat := range set.Targets.GeoSiteCategories {
-		if cached, err := api.geodataManager.LoadGeositeCategory(cat); err == nil {
-			domains = append(domains, cached...)
+		cached, err := api.geodataManager.LoadGeositeCategory(cat)
+		if err != nil || len(cached) == 0 {
+			report.EmptyGeoSite = append(report.EmptyGeoSite, cat)
+			continue
 		}
+		domains = append(domains, cached...)
 	}
 	domains = append(domains, set.Targets.SNIDomains...)
 	set.Targets.DomainsToMatch = domains
 
 	for _, cat := range set.Targets.GeoIpCategories {
-		if cached, err := api.geodataManager.LoadGeoipCategory(cat); err == nil {
-			ips = append(ips, cached...)
+		cached, err := api.geodataManager.LoadGeoipCategory(cat)
+		if err != nil || len(cached) == 0 {
+			report.EmptyGeoIP = append(report.EmptyGeoIP, cat)
+			continue
 		}
+		ips = append(ips, cached...)
 	}
 	ips = append(ips, set.Targets.IPs...)
 	set.Targets.IpsToMatch = ips
+
+	report.Domains = len(domains)
+	report.IPs = len(ips)
+	return report
 }
 
 // @Summary Batch delete sets

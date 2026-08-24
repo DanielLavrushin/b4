@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/daniellavrushin/b4/ai"
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/log"
@@ -58,7 +59,10 @@ func newMCPTestServer(t *testing.T, cfg *config.Config) *httptest.Server {
 // saving stores a new pointer instead of mutating the original.
 func newMCPTestServerAPI(t *testing.T, cfg *config.Config) (*httptest.Server, *API) {
 	t.Helper()
-	api := &API{cfgPtr: testCfgPtr(cfg), geodataManager: geodat.NewGeodataManager("", "")}
+	api := &API{
+		cfgPtr:         testCfgPtr(cfg),
+		geodataManager: geodat.NewGeodataManager(cfg.System.Geo.GeoSitePath, cfg.System.Geo.GeoIpPath),
+	}
 	mux := http.NewServeMux()
 	api.mux = mux
 	api.RegisterMCPApi()
@@ -156,42 +160,41 @@ func TestMCPGetConfigRedactsSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
-	var out mcpRawOut
-	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
+	raw := mustStructured(t, res)
 	for _, leak := range []string{
 		"socks-pw", "socks-user", "ipinfo-token", "hashed-secret", "deadbeef", "cafebabe",
 	} {
-		if strings.Contains(out.JSON, leak) {
+		if strings.Contains(string(raw), leak) {
 			t.Fatalf("config output leaked %q", leak)
 		}
 	}
-	if !strings.Contains(out.JSON, redactedMarker) {
+	if !strings.Contains(string(raw), redactedMarker) {
 		t.Error("expected redaction markers in output")
 	}
 
 	var full struct {
-		System struct {
-			WebServer struct {
-				Username string `json:"username"`
-				Password string `json:"password"`
-			} `json:"web_server"`
-			MTProto struct {
-				Secrets []config.MTProtoSecret `json:"secrets"`
-			} `json:"mtproto"`
-		} `json:"system"`
+		Config struct {
+			System struct {
+				WebServer struct {
+					Username string `json:"username"`
+					Password string `json:"password"`
+				} `json:"web_server"`
+				MTProto struct {
+					Secrets []config.MTProtoSecret `json:"secrets"`
+				} `json:"mtproto"`
+			} `json:"system"`
+		} `json:"config"`
 	}
-	if err := json.Unmarshal([]byte(out.JSON), &full); err != nil {
+	if err := json.Unmarshal(raw, &full); err != nil {
 		t.Fatalf("decode redacted config: %v", err)
 	}
-	if full.System.WebServer.Username != "" || full.System.WebServer.Password != "" {
-		t.Errorf("web server credentials survived redaction: %+v", full.System.WebServer)
+	if full.Config.System.WebServer.Username != "" || full.Config.System.WebServer.Password != "" {
+		t.Errorf("web server credentials survived redaction: %+v", full.Config.System.WebServer)
 	}
-	if len(full.System.MTProto.Secrets) != 2 {
-		t.Fatalf("expected 2 secrets, got %d", len(full.System.MTProto.Secrets))
+	if len(full.Config.System.MTProto.Secrets) != 2 {
+		t.Fatalf("expected 2 secrets, got %d", len(full.Config.System.MTProto.Secrets))
 	}
-	for _, s := range full.System.MTProto.Secrets {
+	for _, s := range full.Config.System.MTProto.Secrets {
 		if s.Secret != redactedMarker {
 			t.Errorf("secret %q value not redacted: %q", s.ID, s.Secret)
 		}
@@ -215,16 +218,18 @@ func TestMCPGetConfigSection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
-	var out mcpRawOut
+	var out struct {
+		Section string         `json:"section"`
+		Config  map[string]any `json:"config"`
+	}
 	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	var section map[string]any
-	if err := json.Unmarshal([]byte(out.JSON), &section); err != nil {
-		t.Fatalf("section not an object: %v (%s)", err, out.JSON)
+	if out.Section != "system.socks5" {
+		t.Errorf("result should echo the requested section, got %q", out.Section)
 	}
-	if _, ok := section["port"]; !ok {
-		t.Fatalf("expected socks5 section, got %s", out.JSON)
+	if _, ok := out.Config["port"]; !ok {
+		t.Fatalf("expected socks5 section, got %v", out.Config)
 	}
 
 	bad, err := session.CallTool(ctx, &mcp.CallToolParams{
@@ -303,15 +308,13 @@ func TestMCPDiagnosticsTool(t *testing.T) {
 	if res.IsError {
 		t.Fatalf("b4_diagnostics returned error: %+v", res.Content)
 	}
-	var out mcpRawOut
+	var out struct {
+		Diagnostics map[string]any `json:"diagnostics"`
+	}
 	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	var diag map[string]any
-	if err := json.Unmarshal([]byte(out.JSON), &diag); err != nil {
-		t.Fatalf("diagnostics not an object: %v", err)
-	}
-	if len(diag) == 0 {
+	if len(out.Diagnostics) == 0 {
 		t.Fatal("diagnostics payload is empty")
 	}
 }
@@ -369,16 +372,14 @@ func TestMCPGetSet(t *testing.T) {
 		if res.IsError {
 			t.Fatalf("lookup by %q failed: %+v", key, res.Content)
 		}
-		var out mcpRawOut
+		var out struct {
+			Set map[string]any `json:"set"`
+		}
 		if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
-		var set map[string]any
-		if err := json.Unmarshal([]byte(out.JSON), &set); err != nil {
-			t.Fatalf("set not an object: %v", err)
-		}
-		if set["name"] != "video" {
-			t.Fatalf("got set %v for key %q", set["name"], key)
+		if out.Set["name"] != "video" {
+			t.Fatalf("got set %v for key %q", out.Set["name"], key)
 		}
 	}
 
@@ -876,16 +877,13 @@ func TestMCPGetConfigRedactsSetUpstreamCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
-	var out mcpRawOut
-	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
+	raw := string(mustStructured(t, res))
 	for _, leak := range []string{"upstream-user", "upstream-pw"} {
-		if strings.Contains(out.JSON, leak) {
+		if strings.Contains(raw, leak) {
 			t.Errorf("config output leaked set upstream credential %q", leak)
 		}
 	}
-	if !strings.Contains(out.JSON, "10.0.0.9") {
+	if !strings.Contains(raw, "10.0.0.9") {
 		t.Error("the upstream host should survive: it is not a secret and the model needs it")
 	}
 }
@@ -902,12 +900,9 @@ func TestMCPGetSetRedactsUpstreamCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
-	var out mcpRawOut
-	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
+	raw := string(mustStructured(t, res))
 	for _, leak := range []string{"upstream-user", "upstream-pw"} {
-		if strings.Contains(out.JSON, leak) {
+		if strings.Contains(raw, leak) {
 			t.Errorf("b4_get_set leaked upstream credential %q", leak)
 		}
 	}
@@ -1146,12 +1141,8 @@ func TestMCPMetricsReportsNoConcurrencyFigure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
-	var out mcpRawOut
-	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
 	var summary map[string]any
-	if err := json.Unmarshal([]byte(out.JSON), &summary); err != nil {
+	if err := json.Unmarshal(mustStructured(t, res), &summary); err != nil {
 		t.Fatalf("decode summary: %v", err)
 	}
 	if _, ok := summary["connections_seen"]; !ok {
@@ -1161,6 +1152,180 @@ func TestMCPMetricsReportsNoConcurrencyFigure(t *testing.T) {
 	for _, unwanted := range []string{"active_flows", "total_connections"} {
 		if _, ok := summary[unwanted]; ok {
 			t.Errorf("%q must not be reported: it duplicates connections_seen or implies a concurrency figure b4 does not have", unwanted)
+		}
+	}
+}
+
+func decodeTopic(t *testing.T, res *mcp.CallToolResult) mcpTopicOut {
+	t.Helper()
+	if res.IsError {
+		t.Fatalf("b4_get_topic returned an error: %+v", res.Content)
+	}
+	var out mcpTopicOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode topic: %v", err)
+	}
+	return out
+}
+
+func callTopic(t *testing.T, session *mcp.ClientSession, ctx context.Context, args map[string]any) mcpTopicOut {
+	t.Helper()
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_get_topic", Arguments: args})
+	if err != nil {
+		t.Fatalf("call b4_get_topic %v: %v", args, err)
+	}
+	return decodeTopic(t, res)
+}
+
+func TestMCPGetTopicLookup(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	out := callTopic(t, session, ctx, map[string]any{"topic": "faking.tcp_md5"})
+	if !out.Found || len(out.Topics) != 1 {
+		t.Fatalf("exact lookup failed: %+v", out)
+	}
+	if out.Topics[0].Facts != ai.TopicFacts("faking.tcp_md5") {
+		t.Error("a direct lookup must return the full body, not an excerpt")
+	}
+	if out.Documented != len(ai.TopicKeys()) {
+		t.Errorf("documented_total = %d, want %d", out.Documented, len(ai.TopicKeys()))
+	}
+}
+
+func TestMCPGetTopicAcceptsWritePath(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	for _, path := range []string{
+		"sets[video].faking.tcp_md5",
+		"sets[].faking.tcp_md5",
+		"faking.tcp_md5",
+		"FAKING.TCP_MD5",
+	} {
+		out := callTopic(t, session, ctx, map[string]any{"path": path})
+		if !out.Found || len(out.Topics) != 1 || out.Topics[0].Topic != "faking.tcp_md5" {
+			t.Errorf("path %q should resolve to faking.tcp_md5, got %+v", path, out)
+		}
+	}
+}
+
+func TestMCPGetTopicMissIsInstructive(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	out := callTopic(t, session, ctx, map[string]any{"path": "sets[video].tcp.win.values"})
+	if out.Found {
+		t.Fatal("tcp.win.values has no topic and must not report found")
+	}
+	// The miss is exactly where a model invents a unit, so it has to carry the instruction.
+	for _, want := range []string{"Do NOT infer", "unsure"} {
+		if !strings.Contains(out.Note, want) {
+			t.Errorf("miss note must warn against guessing, got %q", out.Note)
+		}
+	}
+	if len(out.Related) == 0 {
+		t.Error("a miss should offer the documented settings nearby")
+	}
+	for _, r := range out.Related {
+		if !strings.HasPrefix(r, "tcp.win.") {
+			t.Errorf("related topic %q is not from the same section", r)
+		}
+	}
+}
+
+func TestMCPGetTopicListAndSearch(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	list := callTopic(t, session, ctx, map[string]any{})
+	if len(list.Topics) != len(ai.TopicKeys()) {
+		t.Fatalf("listing returned %d keys, want %d", len(list.Topics), len(ai.TopicKeys()))
+	}
+	for _, e := range list.Topics {
+		if e.Facts != "" {
+			t.Fatal("the listing must return keys only: bodies would blow up the result")
+		}
+	}
+
+	hits := callTopic(t, session, ctx, map[string]any{"query": "ttl"})
+	if len(hits.Topics) == 0 {
+		t.Fatal("search for 'ttl' found nothing")
+	}
+	if len(hits.Topics) > mcpMaxTopicHits {
+		t.Errorf("search returned %d hits, cap is %d", len(hits.Topics), mcpMaxTopicHits)
+	}
+	for _, e := range hits.Topics {
+		if len(e.Facts) > mcpTopicExcerptLen+4 {
+			t.Errorf("search body for %q was not shortened: %d chars", e.Topic, len(e.Facts))
+		}
+	}
+
+	none := callTopic(t, session, ctx, map[string]any{"query": "zzzz-no-such-thing"})
+	if none.Found || len(none.Topics) != 0 {
+		t.Errorf("empty search should report nothing found: %+v", none)
+	}
+}
+
+func TestMCPInstructionsPointAtTheTopicTool(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	got := session.InitializeResult().Instructions
+	if !strings.Contains(got, "b4_get_topic") {
+		t.Errorf("instructions must name the tool, since most clients hide resources: %q", got)
+	}
+
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	for _, tool := range tools.Tools {
+		if tool.Name != "b4_get_topic" {
+			continue
+		}
+		if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
+			t.Error("b4_get_topic must be annotated read-only")
+		}
+		return
+	}
+	t.Fatal("b4_get_topic not registered")
+}
+
+func TestWritablePathsGrounding(t *testing.T) {
+	cfg := mcpTestCfg()
+	documented := map[string]bool{}
+	for _, k := range ai.TopicKeys() {
+		documented[k] = true
+	}
+
+	grounded := 0
+	missingByFamily := map[string][]string{}
+	paths := mcpWritablePaths(cfg, cfg.Sets[0])
+	for _, p := range paths {
+		key := strings.TrimPrefix(p.Path, mcpSetPathPrefix+".")
+		if documented[key] {
+			grounded++
+			continue
+		}
+		family := strings.SplitN(key, ".", 2)[0]
+		missingByFamily[family] = append(missingByFamily[family], key)
+	}
+
+	// A ratchet, not a target: b4_get_topic tells the model to say it is unsure
+	// when a setting has no entry, so partial coverage is safe. Losing coverage
+	// silently is not.
+	const groundedFloor = 89
+	if grounded < groundedFloor {
+		t.Errorf("grounding regressed: %d of %d writable settings documented, floor is %d; still missing %v",
+			grounded, len(paths), groundedFloor, missingByFamily)
+	}
+
+	// These families were backfilled completely. A new writable field in one of
+	// them needs an entry in the same change.
+	for _, family := range []string{"routing", "escalate", "dns", "targets", "udp", "mss_clamp"} {
+		if missing := missingByFamily[family]; len(missing) > 0 {
+			t.Errorf("%s.* is fully documented and must stay that way; %v has no b4://topics entry", family, missing)
 		}
 	}
 }

@@ -31,6 +31,10 @@ const (
 	mcpDefaultLines = 100
 	mcpMaxLines     = 500
 	mcpTailReadCap  = 512 << 10
+
+	mcpMaxTopicHits    = 5
+	mcpTopicExcerptLen = 400
+	mcpMaxRelated      = 6
 )
 
 var mcpUnauthWarnOnce sync.Once
@@ -213,9 +217,10 @@ func (api *API) newMCPServer() *mcp.Server {
 	}, &mcp.ServerOptions{
 		Instructions: strings.Join([]string{
 			"B4 is a Linux DPI-bypass daemon controlled through this server.",
-			"Prefer b4_check_domain before changing sets: it tells you whether a domain is already covered and by which set.",
-			"Read the b4://topics/<key> resources before explaining or tuning a setting — they are authoritative.",
-			"Never infer a setting's unit or default from its name; several are deliberately misleading.",
+			"Call b4_get_topic before explaining or tuning any setting: it returns authoritative facts for that setting and is the same corpus as the b4://topics/<key> resources, which most clients never show you.",
+			"Never infer a setting's unit, default or meaning from its name; several are deliberately misleading, and a zero often means 'use the fixed value' rather than 'off'.",
+			"Prefer b4_check_domain before changing sets: it tells you whether a domain is already covered and by which set. It reads configuration only — it cannot tell you whether a site loads.",
+			"A write reports the value read back after saving, so a 'changed: false' result means b4 did not accept the value.",
 		}, " "),
 	})
 
@@ -244,8 +249,48 @@ type mcpConfigIn struct {
 	Section string `json:"section,omitempty" jsonschema:"Optional dotted path to return instead of the whole config, e.g. 'system.dns' or 'sets'."`
 }
 
-type mcpRawOut struct {
-	JSON string `json:"json"`
+type mcpConfigOut struct {
+	Section string `json:"section,omitempty"`
+	Config  any    `json:"config"`
+}
+
+type mcpGetSetOut struct {
+	Set any `json:"set"`
+}
+
+type mcpTopicIn struct {
+	Topic string `json:"topic,omitempty" jsonschema:"Exact key, e.g. 'faking.tcp_md5'."`
+	Path  string `json:"path,omitempty" jsonschema:"A b4_set_config_value path, e.g. 'sets[video].tcp.win.mode'. The set reference is ignored."`
+	Query string `json:"query,omitempty" jsonschema:"Substring to search for in keys and bodies. At most 5 matches, bodies shortened."`
+}
+
+type mcpTopicEntry struct {
+	Topic     string `json:"topic"`
+	Facts     string `json:"facts,omitempty"`
+	Truncated bool   `json:"truncated,omitempty"`
+}
+
+type mcpTopicOut struct {
+	Found      bool            `json:"found"`
+	Topics     []mcpTopicEntry `json:"topics,omitempty"`
+	Related    []string        `json:"related,omitempty"`
+	Documented int             `json:"documented_total"`
+	Truncated  bool            `json:"truncated,omitempty"`
+	Note       string          `json:"note"`
+}
+
+type mcpDiagnosticsOut struct {
+	Diagnostics any `json:"diagnostics"`
+}
+
+type mcpMetricsOut struct {
+	ConnectionsSeen uint64  `json:"connections_seen"`
+	CurrentCPS      float64 `json:"current_cps"`
+	CurrentPPS      float64 `json:"current_pps"`
+	RSTDropped      uint64  `json:"rst_dropped"`
+	BlockedTotal    uint64  `json:"blocked_total"`
+	Uptime          string  `json:"uptime"`
+	MemoryPercent   float64 `json:"memory_percent"`
 }
 
 type mcpCheckDomainIn struct {
@@ -360,20 +405,85 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		Title:       "Read b4 configuration",
 		Description: "Return the b4 configuration as JSON, with all credentials redacted. Pass 'section' to narrow it (e.g. 'system.dns', 'system.mtproto', 'sets') — the full config is large, so prefer a section.",
 		Annotations: mcpReadOnly,
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpConfigIn) (*mcp.CallToolResult, mcpRawOut, error) {
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpConfigIn) (*mcp.CallToolResult, mcpConfigOut, error) {
 		redacted := redactConfigForMCP(api.getCfg())
 		raw, err := json.Marshal(redacted)
 		if err != nil {
-			return nil, mcpRawOut{}, fmt.Errorf("marshal config: %w", err)
+			return nil, mcpConfigOut{}, fmt.Errorf("marshal config: %w", err)
 		}
-		if section := strings.TrimSpace(in.Section); section != "" {
+		section := strings.TrimSpace(in.Section)
+		if section != "" {
 			sub, err := extractJSONPath(raw, section)
 			if err != nil {
-				return nil, mcpRawOut{}, err
+				return nil, mcpConfigOut{}, err
 			}
 			raw = sub
 		}
-		return nil, mcpRawOut{JSON: string(raw)}, nil
+		var value any
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return nil, mcpConfigOut{}, fmt.Errorf("decode config: %w", err)
+		}
+		return nil, mcpConfigOut{Section: section, Config: value}, nil
+	})
+
+	addTool(srv, &mcp.Tool{
+		Name:  "b4_get_topic",
+		Title: "Read authoritative facts about a setting",
+		Description: "Authoritative b4-specific facts for one setting: what it does, its unit, its real default, what a zero or empty value means, and what it interacts with. " +
+			"Call this before explaining or changing ANY setting — b4 field names are often misleading and a zero usually means 'use the fixed value', not 'off'. " +
+			"Give exactly one of topic, path or query; no argument lists every documented key.",
+		Annotations: mcpReadOnly,
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpTopicIn) (*mcp.CallToolResult, mcpTopicOut, error) {
+		keys := ai.TopicKeys()
+		out := mcpTopicOut{Documented: len(keys)}
+
+		if q := strings.TrimSpace(in.Query); q != "" {
+			hits, more := mcpSearchTopics(keys, q)
+			out.Topics = hits
+			out.Found = len(hits) > 0
+			out.Truncated = more
+			switch {
+			case len(hits) == 0:
+				out.Note = fmt.Sprintf("nothing matches %q. Call with no arguments to see every documented key.", q)
+			case more:
+				out.Note = fmt.Sprintf("the first %d of more matches for %q, bodies shortened. Call again with topic=<key> for the full text.", len(hits), q)
+			default:
+				out.Note = fmt.Sprintf("%d match(es) for %q, bodies shortened. Call again with topic=<key> for the full text.", len(hits), q)
+			}
+			return nil, out, nil
+		}
+
+		want := strings.ToLower(strings.TrimSpace(in.Topic))
+		if want == "" {
+			want = mcpTopicKeyFromPath(in.Path)
+		} else {
+			want = mcpTopicKeyFromPath(want)
+		}
+
+		if want == "" {
+			for _, k := range keys {
+				out.Topics = append(out.Topics, mcpTopicEntry{Topic: k})
+			}
+			out.Found = len(keys) > 0
+			out.Note = fmt.Sprintf("%d documented settings, keys only. Call again with topic=<key> for the facts, or query=<text> to search.", len(keys))
+			return nil, out, nil
+		}
+
+		if facts := ai.TopicFacts(want); facts != "" {
+			out.Found = true
+			out.Topics = []mcpTopicEntry{{Topic: want, Facts: facts}}
+			out.Note = "authoritative for this setting: prefer it over anything inferred from the field name"
+			return nil, out, nil
+		}
+
+		out.Related = mcpRelatedTopics(keys, want)
+		out.Note = fmt.Sprintf(
+			"no authoritative facts for %q. Do NOT infer this setting's unit, default or meaning from its name — in b4 several names are misleading and a zero often means 'use the fixed value' rather than 'off'. "+
+				"Say plainly that you are unsure, and call b4_list_writable_paths for the accepted values.", want)
+		if len(out.Related) > 0 {
+			out.Note += " Documented settings nearby are listed in 'related'."
+		}
+		return nil, out, nil
 	})
 
 	addTool(srv, &mcp.Tool{
@@ -461,22 +571,17 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		Title:       "Traffic metrics",
 		Description: "Live counters from the packet engine: connections/packets per second, dropped RSTs, blocked totals, uptime and memory use. 'connections_seen' is a running total since b4 started or since the counters were last reset; b4 does not record when a connection ends, so there is no count of connections open right now and none is reported.",
 		Annotations: mcpReadOnly,
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpRawOut, error) {
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpMetricsOut, error) {
 		m := GetMetricsCollector().GetSnapshot()
-		summary := map[string]any{
-			"connections_seen": m.TotalConnections,
-			"current_cps":      m.CurrentCPS,
-			"current_pps":      m.CurrentPPS,
-			"rst_dropped":      m.RSTDropped,
-			"blocked_total":    m.BlockedTotal,
-			"uptime":           m.Uptime,
-			"memory_percent":   m.MemoryUsage.Percent,
-		}
-		raw, err := json.Marshal(summary)
-		if err != nil {
-			return nil, mcpRawOut{}, err
-		}
-		return nil, mcpRawOut{JSON: string(raw)}, nil
+		return nil, mcpMetricsOut{
+			ConnectionsSeen: m.TotalConnections,
+			CurrentCPS:      m.CurrentCPS,
+			CurrentPPS:      m.CurrentPPS,
+			RSTDropped:      m.RSTDropped,
+			BlockedTotal:    m.BlockedTotal,
+			Uptime:          m.Uptime,
+			MemoryPercent:   m.MemoryUsage.Percent,
+		}, nil
 	})
 
 	addTool(srv, &mcp.Tool{
@@ -484,22 +589,22 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		Title:       "Read one strategy set",
 		Description: "Return the full configuration of a single strategy set by id or name, with upstream proxy credentials redacted: targets, fragmentation, faking, TCP/UDP options, DNS and routing. Use this instead of b4_get_config when reasoning about one set.",
 		Annotations: mcpReadOnly,
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpGetSetIn) (*mcp.CallToolResult, mcpRawOut, error) {
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpGetSetIn) (*mcp.CallToolResult, mcpGetSetOut, error) {
 		want := strings.TrimSpace(in.Set)
 		if want == "" {
-			return nil, mcpRawOut{}, fmt.Errorf("set (id or name) is required")
+			return nil, mcpGetSetOut{}, fmt.Errorf("set (id or name) is required")
 		}
 		for _, s := range api.getCfg().Sets {
 			if !strings.EqualFold(s.Id, want) && !strings.EqualFold(s.Name, want) {
 				continue
 			}
-			raw, err := marshalSetForMCP(s)
+			redacted, err := redactedSetForMCP(s)
 			if err != nil {
-				return nil, mcpRawOut{}, err
+				return nil, mcpGetSetOut{}, err
 			}
-			return nil, mcpRawOut{JSON: string(raw)}, nil
+			return nil, mcpGetSetOut{Set: redacted}, nil
 		}
-		return nil, mcpRawOut{}, fmt.Errorf("no set with id or name %q", want)
+		return nil, mcpGetSetOut{}, fmt.Errorf("no set with id or name %q", want)
 	})
 
 	addTool(srv, &mcp.Tool{
@@ -584,13 +689,64 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		Title:       "System diagnostics",
 		Description: "Full environment report: OS and kernel, memory, b4 build and paths, detected firewall backend and the live nftables/iptables rule groups b4 installed, network interfaces, engine and TUN state. Use when the bypass appears not to be applied at all. This report includes the hostname, every interface address and the firewall ruleset, so treat the output as identifying information about the network it came from.",
 		Annotations: mcpReadOnly,
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpRawOut, error) {
-		raw, err := json.Marshal(api.buildDiagnostics())
-		if err != nil {
-			return nil, mcpRawOut{}, err
-		}
-		return nil, mcpRawOut{JSON: string(raw)}, nil
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpDiagnosticsOut, error) {
+		return nil, mcpDiagnosticsOut{Diagnostics: api.buildDiagnostics()}, nil
 	})
+}
+
+func mcpTopicKeyFromPath(path string) string {
+	p := strings.TrimSpace(path)
+	if open := strings.Index(p, "["); open >= 0 {
+		if closing := strings.Index(p, "]"); closing > open {
+			p = p[:open] + p[closing+1:]
+		}
+	}
+	p = strings.TrimPrefix(p, "sets")
+	p = strings.TrimPrefix(p, ".")
+	return strings.ToLower(strings.TrimSpace(p))
+}
+
+func mcpSearchTopics(keys []string, query string) ([]mcpTopicEntry, bool) {
+	q := strings.ToLower(query)
+	var hits []mcpTopicEntry
+	more := false
+	for _, k := range keys {
+		facts := ai.TopicFacts(k)
+		if !strings.Contains(k, q) && !strings.Contains(strings.ToLower(facts), q) {
+			continue
+		}
+		if len(hits) == mcpMaxTopicHits {
+			more = true
+			break
+		}
+		entry := mcpTopicEntry{Topic: k, Facts: facts}
+		if len(facts) > mcpTopicExcerptLen {
+			entry.Facts = facts[:mcpTopicExcerptLen] + "…"
+			entry.Truncated = true
+		}
+		hits = append(hits, entry)
+	}
+	return hits, more
+}
+
+func mcpRelatedTopics(keys []string, want string) []string {
+	parts := strings.Split(want, ".")
+	for n := len(parts) - 1; n >= 1; n-- {
+		prefix := strings.Join(parts[:n], ".") + "."
+		var out []string
+		for _, k := range keys {
+			if strings.HasPrefix(k, prefix) {
+				out = append(out, k)
+				if len(out) == mcpMaxRelated {
+					break
+				}
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	return nil
 }
 
 func (api *API) addMCPResources(srv *mcp.Server) {
@@ -712,7 +868,7 @@ func redactSetSecrets(set *config.SetConfig) {
 	}
 }
 
-func marshalSetForMCP(set *config.SetConfig) ([]byte, error) {
+func redactedSetForMCP(set *config.SetConfig) (*config.SetConfig, error) {
 	raw, err := json.Marshal(set)
 	if err != nil {
 		return nil, err
@@ -722,7 +878,7 @@ func marshalSetForMCP(set *config.SetConfig) ([]byte, error) {
 		return nil, err
 	}
 	redactSetSecrets(&clone)
-	return json.Marshal(&clone)
+	return &clone, nil
 }
 
 const redactedMarker = "[redacted]"

@@ -650,8 +650,8 @@ type RoutingConfig struct {
 }
 
 type UpstreamProxyConfig struct {
-	Host      string `json:"host"`
-	Port      int    `json:"port"`
+	Host      string `json:"host" mcp:"deny"`
+	Port      int    `json:"port" mcp:"deny"`
 	Username  string `json:"username,omitempty" mcp:"deny"`
 	Password  string `json:"password,omitempty" mcp:"deny"`
 	FailOpen  bool   `json:"fail_open"`

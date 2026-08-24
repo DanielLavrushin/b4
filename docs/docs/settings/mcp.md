@@ -104,6 +104,7 @@ Only `POST` is served. `GET` and `DELETE` return 405, which is normal for this t
 | Tool | Answers | Example prompt |
 | --- | --- | --- |
 | `b4_status` | Version, capture engine, firewall backend, how many sets exist and are enabled, uptime | "Is b4 running, and which capture engine is active?" |
+| `b4_get_topic` | What a setting does, its unit, its real default, and what a zero or empty value means | "What does the strict switch on a set's DNS actually do?" |
 | `b4_check_domain` | Which sets target a domain, how the match was made, whether that set is enabled | "Is rutracker.org covered by any set?" |
 | `b4_list_sets` | Every set in priority order, with domain counts and primary strategy | "List the sets and how many domains each targets." |
 | `b4_get_set` | One set in full | "Show the full configuration of the set named video." |
@@ -117,6 +118,16 @@ Only `POST` is served. `GET` and `DELETE` return 405, which is normal for this t
 | `b4_revert_last_change` | Restores the configuration from before the last change | "That made it worse, put it back." |
 
 A ready-made prompt named `diagnose_domain` is published alongside the tools. Applications that support prompts list it separately. It takes a domain and walks the model through status, coverage, configuration and firewall checks in order.
+
+## Grounding
+
+Several b4 settings have names that read as something other than what they do, and a zero usually means "use the fixed value" rather than "off". b4 ships a written description of each one, and the model is told to read it before explaining or changing anything.
+
+The same descriptions are published twice. `b4_get_topic` is a tool: pass `topic` for an exact key, `path` for a setting a `b4_set_config_value` path names — `sets[video].tcp.win.mode` works, the set is ignored — or `query` to search. Calling it with no arguments lists every documented key. The `b4://topics/<key>` resources hold the identical text.
+
+The duplication is deliberate. Resources are the tidier fit, but most applications never show them to the model — LM Studio and the OpenAI-compatible bridges list resources for the user, not the assistant. A description reachable only as a resource is a description the model never reads, so it is a tool as well.
+
+Asking about a setting that has no description yet returns a note saying so, along with the documented settings nearby. That answer is deliberate too: it tells the model to say it is unsure rather than guess a unit from the field name.
 
 :::info Two different questions about a domain
 `b4_check_domain` answers whether a domain is *configured* in a set. `b4_recent_connections` answers whether traffic for it *arrived* and which set matched. A domain can be configured and still see no traffic, which is what separates a targeting mistake from a routing one.

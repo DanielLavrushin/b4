@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -660,4 +661,188 @@ func TestMCPListWritablePathsShowsLogLevelNames(t *testing.T) {
 		return
 	}
 	t.Fatal("system.logging.level should be listed as writable")
+}
+
+func TestMCPWriteTargetsReExpandsMatchList(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.Sets[0].Targets.DomainsToMatch = []string{"youtube.com"}
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	out := decodeSetValue(t, callSetValue(t, session, ctx,
+		"sets[video].targets.sni_domains", "youtube.com,rutracker.org"))
+	if !out.Changed {
+		t.Fatalf("selector write should report a change: %+v", out)
+	}
+
+	live := api.getCfg().Sets[0].Targets
+	if got := strings.Join(live.SNIDomains, ","); got != "youtube.com,rutracker.org" {
+		t.Fatalf("selector was not saved: %q", got)
+	}
+	if got := strings.Join(live.DomainsToMatch, ","); got != "youtube.com,rutracker.org" {
+		t.Fatalf("match list was not re-expanded, so the write matches nothing until restart: %q", got)
+	}
+	if out.Expansion == nil || out.Expansion.Domains != 2 {
+		t.Fatalf("a targets write must report what it expanded to, got %+v", out.Expansion)
+	}
+}
+
+func TestMCPWriteReportsGeositeCategoryMatchingNothing(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.System.Geo.GeoSitePath = filepath.Join(t.TempDir(), "geosite.dat")
+	srv, _ := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	res := callSetValue(t, session, ctx, "sets[video].targets.geosite_categories", "not-a-real-category")
+	if res.IsError {
+		t.Fatalf("write failed: %+v", res.Content)
+	}
+	out := decodeSetValue(t, res)
+	if out.Expansion == nil {
+		t.Fatal("a targets write must report what the selectors expanded to")
+	}
+	if len(out.Expansion.EmptyGeoSite) != 1 || out.Expansion.EmptyGeoSite[0] != "not-a-real-category" {
+		t.Fatalf("an unknown category is skipped silently at expansion time and must be reported, got %+v", out.Expansion)
+	}
+	if !strings.Contains(out.Note, "matched no domains") {
+		t.Errorf("note should say the category matched nothing: %q", out.Note)
+	}
+}
+
+func TestMCPWriteReportsValueRejectedByValidate(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	mcpResetHistory()
+	t.Cleanup(mcpResetHistory)
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	res := callSetValue(t, session, ctx, "sets[video].escalate.to", "disabled-set")
+	if res.IsError {
+		t.Fatalf("write failed: %+v", res.Content)
+	}
+	out := decodeSetValue(t, res)
+	if out.Changed {
+		t.Errorf("write did not survive Validate and must not report a change: %+v", out)
+	}
+	if out.Current != "" || out.Current != out.Previous {
+		t.Errorf("current must be the value read back after saving, got %+v", out)
+	}
+	if !strings.Contains(out.Note, "not applied") {
+		t.Errorf("note must say the value was not kept: %q", out.Note)
+	}
+	if got := api.getCfg().Sets[0].Escalate.To; got != "" {
+		t.Fatalf("escalate.to should have been cleared, got %q", got)
+	}
+	if len(mcpHistory) != 0 {
+		t.Errorf("a write that changed nothing must not spend an undo slot, history = %d", len(mcpHistory))
+	}
+}
+
+func TestMCPWriteAcceptedValueIsReadBack(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	mcpResetHistory()
+	t.Cleanup(mcpResetHistory)
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[video].escalate.to", "set-2"))
+	if !out.Changed || out.Current != "set-2" {
+		t.Fatalf("a valid set id must be kept: %+v", out)
+	}
+	if got := api.getCfg().Sets[0].Escalate.To; got != "set-2" {
+		t.Fatalf("escalate.to = %q, want set-2", got)
+	}
+	if len(mcpHistory) != 1 {
+		t.Errorf("a real change must be undoable, history = %d", len(mcpHistory))
+	}
+}
+
+func TestMCPValidateCandidateRefusesOpenSocks5(t *testing.T) {
+	base := mcpTestCfg()
+	base.System.Socks5.Enabled = false
+	base.System.Socks5.Username = ""
+	base.System.Socks5.Password = ""
+
+	open := base.Clone()
+	open.System.Socks5.Enabled = true
+	if err := mcpValidateCandidate(base, open); err == nil {
+		t.Fatal("enabling SOCKS5 with no password and no source ACL publishes an open proxy and must be refused")
+	}
+
+	withACL := base.Clone()
+	withACL.System.Socks5.Enabled = true
+	withACL.System.Socks5.AllowedSources = []string{"192.168.1.0/24"}
+	if err := mcpValidateCandidate(base, withACL); err != nil {
+		t.Errorf("a source ACL is enough to enable it: %v", err)
+	}
+
+	withCreds := base.Clone()
+	withCreds.System.Socks5.Enabled = true
+	withCreds.System.Socks5.Username = "u"
+	withCreds.System.Socks5.Password = "p"
+	if err := mcpValidateCandidate(base, withCreds); err != nil {
+		t.Errorf("credentials are enough to enable it: %v", err)
+	}
+
+	alreadyOpen := open.Clone()
+	unrelated := alreadyOpen.Clone()
+	unrelated.System.Logging.Level = 3
+	if err := mcpValidateCandidate(alreadyOpen, unrelated); err != nil {
+		t.Errorf("a configuration that is already open must not block unrelated writes: %v", err)
+	}
+}
+
+func TestMCPWriteRefusesUpstreamEndpoint(t *testing.T) {
+	cfg := mcpSecretsCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	for _, path := range []string{
+		"sets[video].routing.upstream.host",
+		"sets[video].routing.upstream.port",
+	} {
+		if res := callSetValue(t, session, ctx, path, "10.0.0.10"); !res.IsError {
+			t.Errorf("%s must be refused: repointing the endpoint makes b4 offer the stored proxy credentials to it", path)
+		}
+	}
+	if got := api.getCfg().Sets[0].Routing.Upstream.Host; got != "10.0.0.9" {
+		t.Fatalf("upstream host was changed to %q", got)
+	}
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "b4_list_writable_paths",
+		Arguments: map[string]any{"prefix": "sets[].routing.upstream"},
+	})
+	if err != nil {
+		t.Fatalf("list writable paths: %v", err)
+	}
+	var out mcpListPathsOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, p := range out.Paths {
+		if strings.HasSuffix(p.Path, ".upstream.host") || strings.HasSuffix(p.Path, ".upstream.port") {
+			t.Errorf("%s must not be advertised as writable", p.Path)
+		}
+	}
+}
+
+func TestMCPWriteRenameReadsBackByID(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[video].name", "clips"))
+	if !out.Changed || out.Previous != "video" || out.Current != "clips" {
+		t.Fatalf("renaming a set must be reported accurately: %+v", out)
+	}
+	if got := api.getCfg().Sets[0].Name; got != "clips" {
+		t.Fatalf("name = %q, want clips", got)
+	}
 }
