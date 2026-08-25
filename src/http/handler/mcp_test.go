@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1719,5 +1721,145 @@ func TestMCPLogsTailReadsAcrossARollover(t *testing.T) {
 	}
 	if !strings.Contains(out.Note, "rolled over") {
 		t.Errorf("the note must say the older file was read too: %q", out.Note)
+	}
+}
+
+type syncBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+func captureLog(t *testing.T) *syncBuffer {
+	t.Helper()
+	buf := &syncBuffer{}
+	previous := log.Level(log.CurLevel.Load())
+	log.Init(io.Discard, log.LevelDebug, true)
+	log.StartCapture(buf)
+	t.Cleanup(func() {
+		log.StopCapture(buf)
+		log.Init(os.Stderr, previous, true)
+	})
+	return buf
+}
+
+func TestMCPLogsEveryToolCallWithTheCaller(t *testing.T) {
+	buf := captureLog(t)
+
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	if _, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_status"}); err != nil {
+		t.Fatalf("call: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "mcp: b4_status from ") {
+		t.Fatalf("a tool call must leave a line naming the tool and the caller, got:\n%s", got)
+	}
+	if !strings.Contains(got, "127.0.0.1") {
+		t.Errorf("the caller's address must survive the stateless HTTP path into the tool handler, got:\n%s", got)
+	}
+}
+
+func TestMCPLogsARefusedToolCall(t *testing.T) {
+	buf := captureLog(t)
+
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "b4_set_config_value", Arguments: map[string]any{"path": "system.web_server.port", "value": "1"},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("precondition: the web server port is never writable over MCP")
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "[WARN]") || !strings.Contains(got, "mcp: b4_set_config_value from ") {
+		t.Errorf("a refused call is what an operator most wants to see, so it must be logged at warning level, got:\n%s", got)
+	}
+}
+
+func resetRefusalThrottle(t *testing.T) {
+	t.Helper()
+	clear := func() {
+		mcpRefusals.Lock()
+		mcpRefusals.last = time.Time{}
+		mcpRefusals.suppressed = 0
+		mcpRefusals.Unlock()
+	}
+	clear()
+	t.Cleanup(clear)
+}
+
+func TestMCPLogsARejectedToken(t *testing.T) {
+	buf := captureLog(t)
+	resetRefusalThrottle(t)
+
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.Token = "the-real-token"
+	srv, _ := newMCPTestServerAPI(t, cfg)
+
+	req, err := http.NewRequest(http.MethodPost, srv.URL+mcpEndpoint, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer wrong-token")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", res.StatusCode)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "the MCP token presented is wrong") {
+		t.Fatalf("a rejected token is the one event an operator must be able to see, got:\n%s", got)
+	}
+	if strings.Contains(got, "wrong-token") || strings.Contains(got, "the-real-token") {
+		t.Error("a refusal must never print either the presented or the configured token")
+	}
+}
+
+func TestMCPRefusalLoggingIsThrottled(t *testing.T) {
+	buf := captureLog(t)
+	resetRefusalThrottle(t)
+
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.Token = "the-real-token"
+	srv, _ := newMCPTestServerAPI(t, cfg)
+
+	for i := 0; i < 50; i++ {
+		req, _ := http.NewRequest(http.MethodPost, srv.URL+mcpEndpoint, strings.NewReader(`{}`))
+		req.Header.Set("Authorization", "Bearer guess")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+	}
+
+	if n := strings.Count(buf.String(), "mcp: refused a request"); n != 1 {
+		t.Errorf("50 guesses must not write 50 lines, or a brute-force pushes everything else out of the log; got %d", n)
 	}
 }

@@ -141,6 +141,14 @@ The tool list is built from the two permission switches and rebuilt whenever the
 
 The server also tells the AI which of the two it has, so it says "here is what I would change" rather than offering to change it. That message names the setting to turn on, which is how a model can answer "why can't you?".
 
+## What b4 records about MCP
+
+Every tool call writes one line to b4's log, visible under **Logs** in the web interface: the tool, the caller's address and how long it took. A call that is refused is logged at warning level instead, so a model reaching for something it has not been permitted to do stands out from ordinary use.
+
+A request turned away at the endpoint is also logged: the server being off, a wrong or missing token, or a browser page whose origin is not allowed. The token itself is never written, presented or configured. Repeated refusals are collapsed into one line every 30 seconds with a count, so a client guessing at the token cannot push everything else out of the log.
+
+These lines go to the log stream the interface shows and to the console. They are not written to `errors.log`, which holds errors only.
+
 ## Grounding
 
 Several b4 settings have names that read as something other than what they do, and a zero usually means "use the fixed value" rather than "off". b4 ships a written description of each one, and the model is told to read it before explaining or changing anything.

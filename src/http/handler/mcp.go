@@ -17,6 +17,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/daniellavrushin/b4/ai"
@@ -45,15 +46,53 @@ func boolPtr(b bool) *bool { return &b }
 
 func addTool[In, Out any](srv *mcp.Server, t *mcp.Tool, h mcp.ToolHandlerFor[In, Out]) {
 	mcp.AddTool(srv, t, func(ctx context.Context, req *mcp.CallToolRequest, in In) (res *mcp.CallToolResult, out Out, err error) {
+		started := time.Now()
 		defer func() {
 			if r := recover(); r != nil {
 				log.Errorf("mcp: tool %q panicked: %v\n%s", t.Name, r, debug.Stack())
 				var zero Out
 				res, out, err = nil, zero, fmt.Errorf("internal error in tool %s", t.Name)
 			}
+			mcpLogCall(ctx, t.Name, started, err)
 		}()
 		return h(ctx, req, in)
 	})
+}
+
+type mcpCallerKey struct{}
+
+func mcpWithCaller(ctx context.Context, r *http.Request) context.Context {
+	return context.WithValue(ctx, mcpCallerKey{}, mcpCallerOf(r))
+}
+
+func mcpCallerOf(r *http.Request) string {
+	host, _ := splitHostPort(r.RemoteAddr)
+	if host == "" {
+		host = "unknown"
+	}
+	if fwd := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); fwd != "" {
+		if i := strings.IndexByte(fwd, ','); i >= 0 {
+			fwd = strings.TrimSpace(fwd[:i])
+		}
+		return fmt.Sprintf("%s (forwarded-for %s)", host, fwd)
+	}
+	return host
+}
+
+func mcpCaller(ctx context.Context) string {
+	if s, ok := ctx.Value(mcpCallerKey{}).(string); ok && s != "" {
+		return s
+	}
+	return "unknown"
+}
+
+func mcpLogCall(ctx context.Context, tool string, started time.Time, err error) {
+	took := time.Since(started).Round(time.Millisecond)
+	if err != nil {
+		log.Warnf("mcp: %s from %s refused after %s: %v", tool, mcpCaller(ctx), took, err)
+		return
+	}
+	log.Infof("mcp: %s from %s (%s)", tool, mcpCaller(ctx), took)
 }
 
 var mcpReadOnly = &mcp.ToolAnnotations{
@@ -155,12 +194,18 @@ func (api *API) mcpGate(next http.Handler) http.Handler {
 		cfg := api.getCfg()
 
 		if !cfg.System.WebServer.MCP.Enabled {
+			mcpLogRefusal(r, "the MCP server is switched off")
 			writeJsonError(w, http.StatusNotFound, "mcp server is disabled")
 			return
 		}
 
 		if cfg.System.WebServer.MCP.Token != "" {
 			if !MCPTokenAccepts(cfg, mcpBearerToken(r)) {
+				reason := "no MCP token was presented"
+				if mcpBearerToken(r) != "" {
+					reason = "the MCP token presented is wrong"
+				}
+				mcpLogRefusal(r, reason)
 				w.Header().Set("WWW-Authenticate", `Bearer realm="b4 MCP"`)
 				writeJsonError(w, http.StatusUnauthorized, "invalid or missing MCP token")
 				return
@@ -172,11 +217,12 @@ func (api *API) mcpGate(next http.Handler) http.Handler {
 		}
 
 		if origin := r.Header.Get("Origin"); origin != "" && !mcpOriginAllowed(origin, r.Host, cfg.System.WebServer.MCP.AllowedOrigins) {
+			mcpLogRefusal(r, fmt.Sprintf("a browser page at %s tried to reach it", origin))
 			writeJsonError(w, http.StatusForbidden, "origin not allowed: add it to system.web_server.mcp.allowed_origins to permit it")
 			return
 		}
 
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(mcpWithCaller(r.Context(), r)))
 	})
 }
 
@@ -1095,4 +1141,35 @@ func tailWithRotation(path string, limit int, contains string) (tailResult, bool
 	res.Truncated = res.Truncated || older.Truncated
 	res.Exists = res.Exists || older.Exists
 	return res, true, nil
+}
+
+const mcpRefusalWindow = 30 * time.Second
+
+var mcpRefusals struct {
+	sync.Mutex
+	last       time.Time
+	suppressed int
+}
+
+func mcpLogRefusal(r *http.Request, reason string) {
+	caller := mcpCallerOf(r)
+
+	mcpRefusals.Lock()
+	defer mcpRefusals.Unlock()
+
+	if !mcpRefusals.last.IsZero() && time.Since(mcpRefusals.last) < mcpRefusalWindow {
+		mcpRefusals.suppressed++
+		return
+	}
+
+	suppressed := mcpRefusals.suppressed
+	mcpRefusals.suppressed = 0
+	mcpRefusals.last = time.Now()
+
+	if suppressed > 0 {
+		log.Warnf("mcp: refused a request from %s: %s (%d further refusals in the last %s are not listed)",
+			caller, reason, suppressed, mcpRefusalWindow)
+		return
+	}
+	log.Warnf("mcp: refused a request from %s: %s", caller, reason)
 }
