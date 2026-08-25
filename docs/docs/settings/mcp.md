@@ -128,13 +128,16 @@ A ready-made prompt named `diagnose_domain` is published alongside the tools. Ap
 
 ## What is served depends on what is permitted
 
-The tool list is built from the two permission switches and rebuilt whenever they change, with no restart. With both off, the AI is offered the read-only tools alone; the write and probe tools are not advertised at all, so a model cannot attempt something it has not been permitted to do, and their descriptions cost nothing.
+The tool list is built from the two permission switches and rebuilt whenever they change, with no restart. With both off, the AI is offered the reading tools alone; the tools that write settings or run a search are not advertised at all, so a model cannot attempt something it has not been permitted to do, and their descriptions cost nothing.
 
 | Permitted | Tools served |
 | --- | --- |
-| Nothing (default) | 12 |
+| Nothing (default) | 13 |
 | Allow configuration changes | 17 |
+| Allow active probes | 15 |
 | Both | 19 |
+
+`b4_watchdog` is the one tool served at every level, because reading the watchdog's verdicts emits no traffic and changes nothing. Its actions are permitted separately: `status` always works, `remove` and `disable` need **Allow configuration changes**, and `add`, `enable` and `check` need **Allow active probes** as well, because each of them makes the router fetch a site.
 
 The server also tells the AI which of the two it has, so it says "here is what I would change" rather than offering to change it. That message names the setting to turn on, which is how a model can answer "why can't you?".
 
@@ -142,9 +145,9 @@ The server also tells the AI which of the two it has, so it says "here is what I
 
 Several b4 settings have names that read as something other than what they do, and a zero usually means "use the fixed value" rather than "off". b4 ships a written description of each one, and the model is told to read it before explaining or changing anything.
 
-The same descriptions are published twice. `b4_get_topic` is a tool: pass `topic` for an exact key, `path` for a setting a `b4_set_config_value` path names — `sets[video].tcp.win.mode` works, the set is ignored — or `query` to search. Calling it with no arguments lists every documented key. The `b4://topics/<key>` resources hold the identical text.
+The same descriptions are published twice. `b4_get_topic` is a tool: pass `topic` for an exact key, `path` for a setting a `b4_set_config_value` path names - `sets[video].tcp.win.mode` works, the set is ignored - or `query` to search. Calling it with no arguments lists every documented key. The `b4://topics/<key>` resources hold the identical text.
 
-The duplication is deliberate. Resources are the tidier fit, but most applications never show them to the model — LM Studio and the OpenAI-compatible bridges list resources for the user, not the assistant. A description reachable only as a resource is a description the model never reads, so it is a tool as well.
+The duplication is deliberate. Resources are the tidier fit, but most applications never show them to the model - LM Studio and the OpenAI-compatible bridges list resources for the user, not the assistant. A description reachable only as a resource is a description the model never reads, so it is a tool as well.
 
 Asking about a setting that has no description yet returns a note saying so, along with the documented settings nearby. That answer is deliberate too: it tells the model to say it is unsure rather than guess a unit from the field name.
 

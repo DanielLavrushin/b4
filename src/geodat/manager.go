@@ -267,7 +267,7 @@ func (gm *GeodataManager) ListCategories(filePath string) ([]string, error) {
 		cachedStamp := gm.categoryListStamp[filePath]
 		gm.mu.RUnlock()
 		if hit && cachedStamp == stamp {
-			return cached, nil
+			return append([]string(nil), cached...), nil
 		}
 	}
 

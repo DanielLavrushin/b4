@@ -20,10 +20,8 @@ func fileStamp(path string) (string, bool) {
 	return fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano()), true
 }
 
-// ErrStopScan ends a scan early from inside a callback. The scan returns nil.
 var ErrStopScan = errStopScan
 
-// ScanGeositeEntries walks every entry of every category, in the form a set's match list uses.
 func (gm *GeodataManager) ScanGeositeEntries(fn func(tag, entry string) error) error {
 	path := gm.GetGeositePath()
 	if !geositeReadable(path) {
@@ -38,7 +36,6 @@ func (gm *GeodataManager) ScanGeositeEntries(fn func(tag, entry string) error) e
 	})
 }
 
-// ScanGeoipPrefixes walks every prefix of every category.
 func (gm *GeodataManager) ScanGeoipPrefixes(fn func(tag string, prefix netip.Prefix) error) error {
 	path := gm.GetGeoipPath()
 	if !geoipReadable(path) {
@@ -47,7 +44,6 @@ func (gm *GeodataManager) ScanGeoipPrefixes(fn func(tag string, prefix netip.Pre
 	return streamAllGeoIP(path, fn)
 }
 
-// PreviewGeoipCategory mirrors PreviewGeositeCategory for the address database.
 func (gm *GeodataManager) PreviewGeoipCategory(ctx context.Context, category string, limit int) ([]string, int, error) {
 	gm.mu.RLock()
 	ips, cached := gm.categoryIps[category]

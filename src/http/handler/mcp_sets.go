@@ -158,7 +158,7 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpManageSetIn) (*mcp.CallToolResult, mcpManageSetOut, error) {
 		if !api.getCfg().System.WebServer.MCP.AllowWrites {
 			return nil, mcpManageSetOut{}, fmt.Errorf(
-				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> API -> MCP server to permit them")
+				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
 		}
 
 		action := strings.ToLower(strings.TrimSpace(in.Action))
@@ -217,6 +217,10 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 				if name == "" {
 					name = fmt.Sprintf("Set %d", len(newCfg.Sets)+1)
 				}
+			}
+			if strings.Contains(name, ",") {
+				return nil, mcpManageSetOut{}, fmt.Errorf(
+					"a set name cannot contain a comma: set_enabled takes a comma-separated list, so %q would be split into fragments matching no set", name)
 			}
 			if mcpNameTaken(newCfg, name) {
 				return nil, mcpManageSetOut{}, fmt.Errorf(
@@ -357,7 +361,7 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 			out.Note += " (firewall rules were refreshed to match)"
 		}
 		if out.Set != nil {
-			out.Note += fmt.Sprintf(". %q is at position %d of %d — earlier sets match first",
+			out.Note += fmt.Sprintf(". %q is at position %d of %d - earlier sets match first",
 				out.Set.Name, out.Set.Position, out.TotalSets)
 			switch action {
 			case "create":

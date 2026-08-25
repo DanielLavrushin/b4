@@ -14,6 +14,7 @@ import (
 	"github.com/daniellavrushin/b4/discovery"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sni"
+	"github.com/daniellavrushin/b4/watchdog"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -24,20 +25,30 @@ const (
 )
 
 var (
-	mcpLastSuiteMu sync.Mutex
-	mcpLastSuiteID string
+	mcpLastSuiteMu   sync.Mutex
+	mcpLastSuiteID   string
+	mcpAppliedGroups = map[string]string{}
 )
 
 func mcpRememberSuite(id string) {
 	mcpLastSuiteMu.Lock()
 	mcpLastSuiteID = id
+	mcpAppliedGroups = map[string]string{}
 	mcpLastSuiteMu.Unlock()
 }
 
-// mcpResolveSuiteID prefers an explicit id, then the run in progress, then the
-// last run this server started. GetCurrentSuite only reports running or pending
-// suites, but a FINISHED suite is the one that can be applied, and it stays in
-// memory for another 30 seconds.
+func mcpMarkGroupApplied(suiteID, preset, setID string) {
+	mcpLastSuiteMu.Lock()
+	mcpAppliedGroups[suiteID+"|"+preset] = setID
+	mcpLastSuiteMu.Unlock()
+}
+
+func mcpGroupAppliedAs(suiteID, preset string) string {
+	mcpLastSuiteMu.Lock()
+	defer mcpLastSuiteMu.Unlock()
+	return mcpAppliedGroups[suiteID+"|"+preset]
+}
+
 func mcpResolveSuiteID(explicit string) string {
 	if id := strings.TrimSpace(explicit); id != "" {
 		return id
@@ -127,7 +138,7 @@ type mcpDiscoveryOut struct {
 func mcpDiscoveryVerdict(d mcpDiscoveryDomain) string {
 	switch {
 	case d.BaselineWorks:
-		return "works without b4 — do not create a set for it"
+		return "works without b4 - do not create a set for it"
 	case d.Blocked:
 		return "the address itself is unreachable, so no packet strategy can help; only a proxy or VPN route would"
 	case d.Found:
@@ -177,8 +188,8 @@ func (api *API) addMCPDiscoveryTools(srv *mcp.Server) {
 		Title: "Search for a working bypass strategy",
 		Description: "Brute-forces b4's strategies against a domain until one makes it load, then turns the winner into a set. " +
 			"action=start begins a run and returns immediately; status polls it; cancel stops it; apply creates the set. " +
-			"A run takes MINUTES, emits heavy traffic from the router, holds firewall rules, and only one can be in flight — do not poll in a loop, tell the user it is running and check once when they ask. " +
-			"Results leave memory 30 seconds after a run ends, and the applicable set is lost with them, so apply promptly.",
+			"A run takes MINUTES, emits heavy traffic from the router, holds firewall rules, and only one can be in flight - do not poll in a loop, tell the user it is running and check once when they ask. " +
+			"A finished run is written to b4's discovery history, so status and apply keep working for it afterwards, across restarts, addressed by suite_id or just by domain.",
 		Annotations: mcpProbe,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDiscoveryOut, error) {
 		action := strings.ToLower(strings.TrimSpace(in.Action))
@@ -226,6 +237,12 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		return nil, mcpDiscoveryOut{}, fmt.Errorf(
 			"at most %d domains per run; each one multiplies the traffic and the time", mcpDiscoveryMaxDomains)
 	}
+	for _, host := range urls {
+		if watchdog.IsReservedHost(host) {
+			return nil, mcpDiscoveryOut{}, fmt.Errorf(
+				"%s is a private or local address: discovery fires hundreds of fetches from the router, and aiming them at the network b4 runs on tells you nothing about censorship", host)
+		}
+	}
 
 	opts := discovery.StartSuiteOptions{ValidationTries: 1}
 	if strings.EqualFold(strings.TrimSpace(in.SkipDNS), "true") {
@@ -236,7 +253,7 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 	if err != nil {
 		if errors.Is(err, discovery.ErrDiscoveryAlreadyRunning) {
 			return nil, mcpDiscoveryOut{}, fmt.Errorf(
-				"a discovery run is already in progress — only one can run at a time, and the watchdog's self-healing shares the same runtime. Poll it with action=status, or stop it with action=cancel")
+				"a discovery run is already in progress - only one can run at a time, and the watchdog's self-healing shares the same runtime. Poll it with action=status, or stop it with action=cancel")
 		}
 		return nil, mcpDiscoveryOut{}, fmt.Errorf("could not start discovery: %w", err)
 	}
@@ -249,7 +266,7 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		Note: fmt.Sprintf(
 			"started for %s. This runs for minutes, not seconds: it opens with %d strategies per domain and then explores the family that looked best, "+
 				"which can be another hundred or more, each preceded by a config-propagation pause. It stops early for a domain that turns out to work without b4. "+
-				"Do NOT poll in a loop — tell the user it is running and call action=status once when they ask. "+
+				"Do NOT poll in a loop - tell the user it is running and call action=status once when they ask. "+
 				"While it runs, the watchdog cannot heal and a firewall refresh will block.",
 			strings.Join(urls, ", "), len(discovery.GetPhase1Presets())),
 	}
@@ -268,8 +285,16 @@ func (api *API) mcpDiscoveryStatus(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpD
 	if hist == nil {
 		return nil, mcpDiscoveryOut{}, fmt.Errorf("no run with id %q is in memory and no history is available", id)
 	}
-	out := mcpDiscoveryOut{Source: "history", Status: "complete"}
-	for _, e := range hist.Entries {
+	entries := hist.Entries
+	if id != "" {
+		if matched := mcpHistoryForSuite(hist, id); len(matched) > 0 {
+			entries = matched
+		}
+	}
+
+	out := mcpDiscoveryOut{Id: id, Source: "history", Status: "complete"}
+	applicable := 0
+	for _, e := range entries {
 		row := mcpDiscoveryDomain{
 			Domain:        e.Domain,
 			BestPreset:    e.BestPreset,
@@ -280,19 +305,44 @@ func (api *API) mcpDiscoveryStatus(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpD
 			Confirmed:     e.Confirmed,
 		}
 		row.Verdict = mcpDiscoveryVerdict(row)
+		if row.Found && e.ApplicableSet() != nil {
+			applicable++
+		}
 		out.Domains = append(out.Domains, row)
 	}
 	sort.Slice(out.Domains, func(i, j int) bool { return out.Domains[i].Domain < out.Domains[j].Domain })
 	if len(out.Domains) > mcpDiscoveryMaxGroups {
 		out.Domains = out.Domains[:mcpDiscoveryMaxGroups]
 	}
-	out.Note = "that run is no longer in memory, so this is the saved history — one entry per domain, newest result kept. " +
-		"The set a run builds is NOT saved with it, so action=apply is only possible within 30 seconds of a run finishing; " +
-		"re-run discovery for that domain to get an applicable strategy back."
-	if len(out.Domains) == 0 {
+	out.Note = "this is the saved history rather than a run still in memory: one entry per domain, the newest result kept, and it survives a restart."
+	switch {
+	case len(out.Domains) == 0:
 		out.Note = "no run is in progress and nothing has been discovered yet"
+	case applicable > 0:
+		out.Note += fmt.Sprintf(" %d of them still hold a strategy you can install with action=apply and the domain; there is no time limit on that.", applicable)
+	default:
+		out.Note += " None of them holds a strategy worth installing, so run discovery again for the domain you care about."
 	}
 	return nil, out, nil
+}
+
+func mcpHistoryForSuite(hist *discovery.DiscoveryHistory, id string) []discovery.HistoryEntry {
+	var out []discovery.HistoryEntry
+	for _, e := range hist.Entries {
+		if e.SuiteId == id {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func mcpHistoryEntryFor(hist *discovery.DiscoveryHistory, domain string) (discovery.HistoryEntry, bool) {
+	for _, e := range hist.Entries {
+		if sni.NormalizeDomain(e.Domain) == domain {
+			return e, true
+		}
+	}
+	return discovery.HistoryEntry{}, false
 }
 
 func (api *API) mcpDiscoverySuiteStatus(suite *discovery.CheckSuite) (*mcp.CallToolResult, mcpDiscoveryOut, error) {
@@ -334,12 +384,12 @@ func (api *API) mcpDiscoverySuiteStatus(suite *discovery.CheckSuite) (*mcp.CallT
 		if api.discoveryRT != nil && api.discoveryRT.IsActive() {
 			out.Status = "finishing"
 			out.Note = fmt.Sprintf("the search is done (%d of %d domain(s) have a strategy) but the run is still tearing down its firewall rules. "+
-				"apply is refused until that finishes — call status once more in a few seconds.",
+				"apply is refused until that finishes - call status once more in a few seconds.",
 				applicable, len(out.Domains))
 			break
 		}
-		out.Note = fmt.Sprintf("finished. %d of %d domain(s) have a strategy worth applying. "+
-			"Apply within 30 seconds with action=apply, the domain and this suite_id — after that the set is gone and only the summary survives.",
+		out.Note = fmt.Sprintf("finished. %d of %d domain(s) have a strategy worth applying, with action=apply and the domain. "+
+			"The result is saved, so there is no hurry: this suite_id and the domain still work later, and after a restart.",
 			applicable, len(out.Domains))
 	}
 	return nil, out, nil
@@ -365,7 +415,7 @@ func (api *API) mcpDiscoveryCancel(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpD
 func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDiscoveryOut, error) {
 	if !api.getCfg().System.WebServer.MCP.AllowWrites {
 		return nil, mcpDiscoveryOut{}, fmt.Errorf(
-			"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> API -> MCP server to permit them")
+			"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
 	}
 	domain := sni.NormalizeDomain(in.Domain)
 	if domain == "" {
@@ -377,37 +427,91 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 	}
 
 	id := mcpResolveSuiteID(in.Id)
-	suite, ok := discovery.GetCheckSuite(id)
-	if !ok || suite == nil {
-		return nil, mcpDiscoveryOut{}, fmt.Errorf(
-			"no discovery run with id %q is still in memory. The set a run builds is not saved to history, so it cannot be applied later — run discovery for %s again", id, domain)
-	}
-
-	snap, err := mcpSuiteProjection(suite)
-	if err != nil {
-		return nil, mcpDiscoveryOut{}, err
-	}
 	var chosen *config.SetConfig
 	var preset string
-	for _, g := range snap.StrategyGroups {
-		for _, d := range g.Domains {
-			if sni.NormalizeDomain(d) == domain && g.Set != nil {
-				chosen, preset = g.Set, g.WinnerPreset
+	var groupDomains []string
+	suiteID := id
+	source := "run"
+
+	if suite, ok := discovery.GetCheckSuite(id); ok && suite != nil {
+		snap, err := mcpSuiteProjection(suite)
+		if err != nil {
+			return nil, mcpDiscoveryOut{}, err
+		}
+		if status := strings.ToLower(snap.Status); status != string(discovery.CheckStatusComplete) {
+			return nil, mcpDiscoveryOut{}, fmt.Errorf(
+				"that run is %s, and a run that did not finish leaves a strategy it never confirmed: applying it would write an untested set. Run discovery for %s again",
+				status, domain)
+		}
+		suiteID = snap.Id
+		for _, g := range snap.StrategyGroups {
+			for _, d := range g.Domains {
+				if sni.NormalizeDomain(d) == domain && g.Set != nil {
+					chosen, preset, groupDomains = g.Set, g.WinnerPreset, g.Domains
+				}
 			}
+		}
+		if chosen == nil {
+			if r, ok := snap.DomainResults[domain]; ok {
+				if r.BaselineWorks {
+					return nil, mcpDiscoveryOut{}, fmt.Errorf(
+						"%s works without b4, so the run deliberately produced no strategy for it. Creating a set would be wrong", domain)
+				}
+				if !r.BestSuccess {
+					return nil, mcpDiscoveryOut{}, fmt.Errorf(
+						"the run found no working strategy for %s, so there is nothing to apply", domain)
+				}
+			}
+			return nil, mcpDiscoveryOut{}, fmt.Errorf("that run holds no applicable strategy for %s", domain)
+		}
+	} else {
+		source = "history"
+		hist := discovery.GetHistory(api.getCfg().ConfigPath)
+		if hist == nil {
+			return nil, mcpDiscoveryOut{}, fmt.Errorf("no run is in memory and no saved history is available for %s", domain)
+		}
+		entry, found := mcpHistoryEntryFor(hist, domain)
+		if !found {
+			return nil, mcpDiscoveryOut{}, fmt.Errorf(
+				"no run in memory and nothing saved for %s. Call action=status to see which domains have a saved result", domain)
+		}
+		if entry.BaselineWorks {
+			return nil, mcpDiscoveryOut{}, fmt.Errorf(
+				"%s works without b4, so the run deliberately produced no strategy for it. Creating a set would be wrong", domain)
+		}
+		if !entry.BestSuccess {
+			return nil, mcpDiscoveryOut{}, fmt.Errorf(
+				"the saved run found no working strategy for %s, so there is nothing to apply. Run discovery for it again", domain)
+		}
+		chosen = entry.ApplicableSet()
+		if chosen == nil {
+			return nil, mcpDiscoveryOut{}, fmt.Errorf(
+				"the saved result for %s predates b4 recording the set it built, so only the summary survives. Run discovery for it again", domain)
+		}
+		preset = entry.BestPreset
+		groupDomains = chosen.Targets.SNIDomains
+		if len(groupDomains) == 0 {
+			groupDomains = []string{domain}
+		}
+		if entry.SuiteId != "" {
+			suiteID = entry.SuiteId
 		}
 	}
-	if chosen == nil {
-		if r, ok := snap.DomainResults[domain]; ok {
-			if r.BaselineWorks {
-				return nil, mcpDiscoveryOut{}, fmt.Errorf(
-					"%s works without b4, so the run deliberately produced no strategy for it. Creating a set would be wrong", domain)
+
+	if prior := mcpGroupAppliedAs(suiteID, preset); prior != "" {
+		if existing := findSetIn(api.getCfg(), prior); existing != nil {
+			out := mcpDiscoveryOut{Id: suiteID, Source: source}
+			for i, s := range api.getCfg().Sets {
+				if s.Id == prior {
+					out.Applied = &mcpSetRow{Position: i + 1, Id: s.Id, Name: s.Name, Enabled: s.Enabled}
+					break
+				}
 			}
-			if !r.BestSuccess {
-				return nil, mcpDiscoveryOut{}, fmt.Errorf(
-					"the run found no working strategy for %s, so there is nothing to apply", domain)
-			}
+			out.Note = fmt.Sprintf(
+				"%s is already covered by set %q. The run grouped %s under one winning strategy, so a single apply created a set for all of them: applying again per domain would only duplicate it",
+				domain, existing.Name, mcpSummarizeList(groupDomains))
+			return nil, out, nil
 		}
-		return nil, mcpDiscoveryOut{}, fmt.Errorf("that run holds no applicable strategy for %s", domain)
 	}
 
 	mcpWriteMu.Lock()
@@ -416,20 +520,38 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 	oldCfg := api.getCfg()
 	newCfg := oldCfg.Clone()
 
-	set := *chosen
+	if len(newCfg.Sets) >= mcpMaxSets {
+		return nil, mcpDiscoveryOut{}, fmt.Errorf("there are already %d sets; b4 will not add more from here", len(newCfg.Sets))
+	}
+
+	copied, err := redactedSetForMCP(chosen)
+	if err != nil {
+		return nil, mcpDiscoveryOut{}, err
+	}
+	set := *copied
 	set.Id = uuid.New().String()
 	set.Enabled = true
 	if name := strings.TrimSpace(in.Name); name != "" {
+		if mcpNameTaken(newCfg, name) {
+			return nil, mcpDiscoveryOut{}, fmt.Errorf(
+				"a set named %q already exists; pass a different name. Two sets sharing a name make every later reference to it ambiguous", name)
+		}
 		set.Name = name
-	} else if set.Name == "" {
-		set.Name = domain
+	} else {
+		if set.Name == "" {
+			set.Name = domain
+		}
+		base := set.Name
+		for i := 2; mcpNameTaken(newCfg, set.Name); i++ {
+			set.Name = fmt.Sprintf("%s %d", base, i)
+		}
 	}
 	set.Routing.Upstream.Username = ""
 	set.Routing.Upstream.Password = ""
 	api.initializeSetDefaults(&set)
 
 	moved := api.releaseDomainsFromOtherSets(newCfg.Sets, set.Id, set.Targets.SNIDomains)
-	newCfg.Sets = append(newCfg.Sets, &set)
+	newCfg.Sets = append([]*config.SetConfig{&set}, newCfg.Sets...)
 	api.loadTargetsForSetCached(&set)
 
 	if err := mcpValidateCandidate(oldCfg, newCfg); err != nil {
@@ -443,7 +565,7 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 	api.PerformSoftRestart(newCfg, oldCfg)
 
 	live := api.getCfg()
-	out := mcpDiscoveryOut{Id: snap.Id, Changed: true, MovedFrom: moved}
+	out := mcpDiscoveryOut{Id: suiteID, Source: source, Changed: true, MovedFrom: moved}
 	for i, s := range live.Sets {
 		if s.Id == set.Id {
 			out.Applied = &mcpSetRow{Position: i + 1, Id: s.Id, Name: s.Name, Enabled: s.Enabled}
@@ -460,10 +582,18 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		Current:  fmt.Sprintf("%d sets", len(live.Sets)),
 		When:     time.Now(), Snapshot: snapshot,
 	})
+	mcpMarkGroupApplied(suiteID, preset, set.Id)
 	log.Infof("mcp: applied discovery strategy %q for %s as set %q", preset, domain, set.Name)
 
-	out.Note = fmt.Sprintf("created set %q from the %s strategy, at position %d of %d — earlier sets match first. Undo with b4_revert_last_change",
+	out.Note = fmt.Sprintf("created set %q from the %s strategy, at position %d of %d, so it matches before the sets already there. Undo with b4_revert_last_change",
 		set.Name, preset, out.Applied.Position, len(live.Sets))
+	if source == "history" {
+		out.Note += ". This came from the saved history rather than a run still in memory, so it carries the strategy that won but not any geo categories or addresses a live apply would have added"
+	}
+	if len(groupDomains) > 1 {
+		out.Note += fmt.Sprintf(". That one strategy won for %s, so the set targets all of them and there is nothing left to apply for the others",
+			mcpSummarizeList(groupDomains))
+	}
 	if len(moved) > 0 {
 		names := make([]string, 0, len(moved))
 		for _, m := range moved {

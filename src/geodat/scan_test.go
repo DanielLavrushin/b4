@@ -30,8 +30,6 @@ func TestScanGeositeEntriesWalksEveryCategory(t *testing.T) {
 		t.Error("a category with no domains should emit nothing")
 	}
 
-	// Regex entries must arrive in the form a set's match list uses, so the
-	// caller can apply b4's own matcher instead of reimplementing it.
 	found := false
 	for _, e := range byTag["google"] {
 		if e == `regexp:^ad[0-9]+\.google\.com$` {

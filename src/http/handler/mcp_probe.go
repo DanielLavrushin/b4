@@ -11,6 +11,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/netprobe"
 	"github.com/daniellavrushin/b4/watchdog"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -59,8 +60,6 @@ func mcpProbeTimeout(v int) time.Duration {
 	}
 }
 
-// mcpProbeVerdictNote turns the through-b4/baseline pair into the sentence the
-// model should act on, so it does not have to derive it from two booleans.
 func mcpProbeVerdictNote(domain string, through, baseline *mcpProbeResult) string {
 	switch {
 	case through == nil && baseline == nil:
@@ -80,9 +79,9 @@ func mcpProbeVerdictNote(domain string, through, baseline *mcpProbeResult) strin
 	case through.OK && baseline.OK:
 		return fmt.Sprintf("%s loads either way, so nothing here is being blocked and no set is needed for it", domain)
 	case !through.OK && baseline.OK:
-		return fmt.Sprintf("%s loads with b4 bypassed but FAILS through b4 (%s) — a b4 setting is breaking it, not the censor", domain, through.Verdict)
+		return fmt.Sprintf("%s loads with b4 bypassed but FAILS through b4 (%s) - a b4 setting is breaking it, not the censor", domain, through.Verdict)
 	default:
-		return fmt.Sprintf("%s fails both ways (%s through b4, %s bypassed), so this is not something a packet strategy fixes — the address itself may be blocked, or the site may be down", domain, through.Verdict, baseline.Verdict)
+		return fmt.Sprintf("%s fails both ways (%s through b4, %s bypassed), so this is not something a packet strategy fixes - the address itself may be blocked, or the site may be down", domain, through.Verdict, baseline.Verdict)
 	}
 }
 
@@ -118,6 +117,12 @@ func (api *API) addMCPProbeTools(srv *mcp.Server) {
 			return nil, mcpProbeOut{}, fmt.Errorf(
 				"at most %d domains per call; each one is a real fetch", mcpProbeMaxDomains)
 		}
+		for _, host := range domains {
+			if watchdog.IsReservedHost(host) {
+				return nil, mcpProbeOut{}, fmt.Errorf(
+					"%s is a private or local address: b4 probes the internet from the router, and fetching a LAN address would tell you about the network b4 runs on, not about censorship", host)
+			}
+		}
 
 		var modes []string
 		switch strings.ToLower(strings.TrimSpace(in.Mode)) {
@@ -136,7 +141,6 @@ func (api *API) addMCPProbeTools(srv *mcp.Server) {
 
 		var mu sync.Mutex
 		var wg sync.WaitGroup
-		var refused error
 
 		for _, domain := range domains {
 			for _, mode := range modes {
@@ -154,7 +158,12 @@ func (api *API) addMCPProbeTools(srv *mcp.Server) {
 					defer mu.Unlock()
 					var priv *watchdog.ErrPrivateDestination
 					if errors.As(err, &priv) {
-						refused = err
+						out.Results = append(out.Results, mcpProbeResult{
+							Domain: domain, Mode: mode,
+							Verdict: string(netprobe.DomainDNSFake),
+							Error: fmt.Sprintf("every address %s resolves to is private or local (%s), so the name is sinkholed: "+
+								"the answer is being forged, and no packet strategy fixes that", domain, priv.Addr),
+						})
 						return
 					}
 					if err != nil {
@@ -177,9 +186,6 @@ func (api *API) addMCPProbeTools(srv *mcp.Server) {
 		}
 		wg.Wait()
 
-		if refused != nil {
-			return nil, mcpProbeOut{}, refused
-		}
 		if ctx.Err() != nil {
 			return nil, mcpProbeOut{}, fmt.Errorf("the probe was cut short, so this is not a complete answer: %w", ctx.Err())
 		}
@@ -242,8 +248,8 @@ func (api *API) addMCPWatchdogTools(srv *mcp.Server) {
 		Name:  "b4_watchdog",
 		Title: "Read and edit the watchdog list",
 		Description: "The watchdog fetches the domains it is given on a schedule and records whether each one worked. " +
-			"action=status is the fastest answer to 'is my bypass working' — it returns the last verdict, the error and the throughput per domain, without emitting any traffic. " +
-			"add, remove, enable and disable change the configuration; check schedules an immediate re-test of one domain. " +
+			"action=status is the fastest answer to 'is my bypass working': it returns the last verdict, the error and the throughput per domain, without emitting any traffic, and needs no permission. " +
+			"remove and disable need 'Allow configuration changes'. add, enable and check make the router fetch a site, so they need 'Allow active probes' as well. " +
 			"Enabling the watchdog lets b4 REWRITE strategy sets on its own when a domain keeps failing.",
 		Annotations: mcpDestructive,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpWatchdogIn) (*mcp.CallToolResult, mcpWatchdogOut, error) {
@@ -255,9 +261,18 @@ func (api *API) addMCPWatchdogTools(srv *mcp.Server) {
 			return api.mcpWatchdogStatus()
 		}
 
-		if !api.getCfg().System.WebServer.MCP.AllowWrites {
+		mcpCfg := api.getCfg().System.WebServer.MCP
+		if mcpWatchdogEmitsTraffic(action) && !mcpCfg.AllowActiveProbes {
 			return nil, mcpWatchdogOut{}, fmt.Errorf(
-				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> API -> MCP server to permit them")
+				"active probes are disabled: %s makes the router fetch a site, so it needs 'Allow active probes' under Settings -> Integrations -> MCP server. "+
+					"action=status reports the verdicts already recorded and needs no permission", action)
+		}
+		if action == "check" {
+			return api.mcpWatchdogCheck(in.Domain)
+		}
+		if !mcpCfg.AllowWrites {
+			return nil, mcpWatchdogOut{}, fmt.Errorf(
+				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
 		}
 
 		mcpWriteMu.Lock()
@@ -279,9 +294,13 @@ func (api *API) addMCPWatchdogTools(srv *mcp.Server) {
 			wd.Enabled = want
 
 		case "add", "remove":
-			domain := watchdog.ExtractDomain(strings.TrimSpace(in.Domain))
+			domain := strings.ToLower(watchdog.ExtractDomain(strings.TrimSpace(in.Domain)))
 			if domain == "" {
 				return nil, mcpWatchdogOut{}, fmt.Errorf("domain is required for action=%s", action)
+			}
+			if action == "add" && watchdog.IsReservedHost(domain) {
+				return nil, mcpWatchdogOut{}, fmt.Errorf(
+					"%s is a private or local address: the watchdog would fetch it from the router on a timer, which reports on the network b4 runs on rather than on censorship", domain)
 			}
 			idx := -1
 			for i, d := range wd.Domains {
@@ -305,19 +324,6 @@ func (api *API) addMCPWatchdogTools(srv *mcp.Server) {
 				}
 				wd.Domains = append(wd.Domains[:idx], wd.Domains[idx+1:]...)
 			}
-
-		case "check":
-			domain := watchdog.ExtractDomain(strings.TrimSpace(in.Domain))
-			if domain == "" {
-				return nil, mcpWatchdogOut{}, fmt.Errorf("domain is required for action=check")
-			}
-			if globalWatchdog == nil {
-				return nil, mcpWatchdogOut{}, fmt.Errorf("the watchdog is not running, so there is nothing to re-check")
-			}
-			globalWatchdog.ForceCheck(domain)
-			_, res, _ := api.mcpWatchdogStatus()
-			res.Note = fmt.Sprintf("scheduled an out-of-band check of %s; call action=status again in a few seconds for the result", domain)
-			return nil, res, nil
 
 		default:
 			return nil, mcpWatchdogOut{}, fmt.Errorf("unknown action %q: expected status, add, remove, enable, disable or check", action)
@@ -348,6 +354,43 @@ func (api *API) addMCPWatchdogTools(srv *mcp.Server) {
 		}
 		return nil, out, nil
 	})
+}
+
+func mcpWatchdogEmitsTraffic(action string) bool {
+	switch action {
+	case "add", "enable", "check":
+		return true
+	}
+	return false
+}
+
+func (api *API) mcpWatchdogCheck(raw string) (*mcp.CallToolResult, mcpWatchdogOut, error) {
+	want := strings.ToLower(watchdog.ExtractDomain(strings.TrimSpace(raw)))
+	if want == "" {
+		return nil, mcpWatchdogOut{}, fmt.Errorf("domain is required for action=check")
+	}
+	watched := api.getCfg().System.Checker.Watchdog.Domains
+	stored := ""
+	for _, d := range watched {
+		if strings.EqualFold(d, want) || strings.EqualFold(watchdog.ExtractDomain(d), want) {
+			stored = d
+			break
+		}
+	}
+	if stored == "" {
+		return nil, mcpWatchdogOut{}, fmt.Errorf(
+			"%s is not watched, and check only re-tests a domain that already is: %s. Add it with action=add, or fetch it once with b4_test_domain_now",
+			want, mcpSummarizeList(watched))
+	}
+
+	if globalWatchdog == nil {
+		return nil, mcpWatchdogOut{}, fmt.Errorf("the watchdog is not running, so there is nothing to re-check")
+	}
+
+	globalWatchdog.ForceCheck(stored)
+	_, res, _ := api.mcpWatchdogStatus()
+	res.Note = fmt.Sprintf("scheduled an out-of-band check of %s; call action=status again in a few seconds for the result", stored)
+	return nil, res, nil
 }
 
 func mcpWatchdogSummary(cfg *config.Config) string {

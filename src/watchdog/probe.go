@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -16,17 +17,12 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// ErrPrivateDestination is returned when a probe resolves to an address inside
-// the network b4 itself runs on.
 type ErrPrivateDestination struct{ Addr string }
 
 func (e *ErrPrivateDestination) Error() string {
 	return fmt.Sprintf("%s is a private or local address; probing it would reach the network b4 runs on, not the internet", e.Addr)
 }
 
-// ProbeOptions configures ProbeHost. Mark is the SO_MARK the probe's packets
-// carry: zero lets b4 process the connection like any client's, and
-// Config.MainInjectedMark() makes b4's own rules accept it untouched.
 type ProbeOptions struct {
 	Mark    uint
 	Timeout time.Duration
@@ -47,11 +43,9 @@ func isReservedAddr(addr netip.Addr) bool {
 	}
 	if addr.Is4() {
 		b := addr.As4()
-		// 100.64.0.0/10 carrier-grade NAT, 169.254/16 already covered above.
 		if b[0] == 100 && b[1] >= 64 && b[1] <= 127 {
 			return true
 		}
-		// 0.0.0.0/8 and 240.0.0.0/4.
 		if b[0] == 0 || b[0] >= 240 {
 			return true
 		}
@@ -59,11 +53,16 @@ func isReservedAddr(addr netip.Addr) bool {
 	return false
 }
 
-// ProbeHost fetches https://<host>/ once and classifies the outcome the same
-// way the watchdog does. host must be a bare hostname: the URL is rebuilt here
-// so a caller cannot choose the scheme, the port or the path, and every address
-// the client actually dials is checked, so a redirect or a second DNS answer
-// cannot reach a private address either.
+func IsReservedHost(host string) bool {
+	host = strings.TrimSpace(host)
+	for _, candidate := range []string{host, strings.Trim(host, "[]"), ExtractDomain(host)} {
+		if addr, err := netip.ParseAddr(candidate); err == nil {
+			return isReservedAddr(addr)
+		}
+	}
+	return false
+}
+
 func ProbeHost(ctx context.Context, host string, opt ProbeOptions) (CheckResult, error) {
 	host = ExtractDomain(host)
 	if host == "" {
@@ -83,7 +82,12 @@ func ProbeHost(ctx context.Context, host string, opt ProbeOptions) (CheckResult,
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	var blocked *ErrPrivateDestination
+	var attempts struct {
+		sync.Mutex
+		refused *ErrPrivateDestination
+		usable  bool
+	}
+
 	dialer := &net.Dialer{
 		Timeout:   timeout / 2,
 		KeepAlive: timeout,
@@ -97,9 +101,17 @@ func ProbeHost(ctx context.Context, host string, opt ProbeOptions) (CheckResult,
 				return err
 			}
 			if isReservedAddr(addr) {
-				blocked = &ErrPrivateDestination{Addr: addr.String()}
-				return blocked
+				refusal := &ErrPrivateDestination{Addr: addr.String()}
+				attempts.Lock()
+				if attempts.refused == nil {
+					attempts.refused = refusal
+				}
+				attempts.Unlock()
+				return refusal
 			}
+			attempts.Lock()
+			attempts.usable = true
+			attempts.Unlock()
 			if opt.Mark == 0 {
 				return nil
 			}
@@ -113,14 +125,20 @@ func ProbeHost(ctx context.Context, host string, opt ProbeOptions) (CheckResult,
 		},
 	}
 
-	client := &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			TLSClientConfig:       &tls.Config{InsecureSkipVerify: false},
-			ResponseHeaderTimeout: timeout,
-			IdleConnTimeout:       timeout,
-			DialContext:           dialer.DialContext,
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: false,
 		},
+		ResponseHeaderTimeout: timeout,
+		IdleConnTimeout:       timeout,
+		DialContext:           dialer.DialContext,
+	}
+	defer transport.CloseIdleConnections()
+
+	client := &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if netprobe.IsBlockPageRedirect(req.URL.String()) {
 				return fmt.Errorf("ISP block page (redirect to %s)", req.URL.String())
@@ -144,8 +162,11 @@ func ProbeHost(ctx context.Context, host string, opt ProbeOptions) (CheckResult,
 	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
-		if blocked != nil {
-			return CheckResult{}, blocked
+		attempts.Lock()
+		refused, usable := attempts.refused, attempts.usable
+		attempts.Unlock()
+		if refused != nil && !usable {
+			return CheckResult{}, refused
 		}
 		status, detail := netprobe.ClassifyTLSError(err)
 		return CheckResult{Error: detail, Verdict: status}, nil

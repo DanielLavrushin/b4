@@ -292,6 +292,7 @@
       "fakeSNIHelp": "Домен для имитации в TLS (например storage.googleapis.com)",
       "cfWorkerDomain": "Домен Cloudflare Worker",
       "cfWorkerDomainHelp": "Бесплатный персональный WebSocket-релей (workers.dev). Рекомендуется, когда не загружаются медиа, реакции или стикеры. Достаёт все дата-центры и обходит лимиты общих доменов. Несколько воркеров указывайте через запятую. Нажмите на иконку для инструкции.",
+      "cfWorkerDomainGuide": "Инструкция по настройке Worker",
       "cfWorkerSetup": "Как настроить Cloudflare Worker",
       "dcRelay": "DC Relay",
       "dcRelayHelp": "Адрес внешнего релея (host:port) для доступа к Telegram DC при блокировке по IP",

@@ -221,7 +221,8 @@ func (s *Server) serveWebCarrier(w http.ResponseWriter, r *http.Request, host st
 		webWriteSite(w, r, http.StatusNotFound)
 		return
 	}
-	if webCarriers.Load() >= webMaxCarriers {
+	if webCarriers.Add(1) > webMaxCarriers {
+		webCarriers.Add(-1)
 		webWriteSite(w, r, http.StatusNotFound)
 		return
 	}
@@ -230,9 +231,9 @@ func (s *Server) serveWebCarrier(w http.ResponseWriter, r *http.Request, host st
 		"Sec-Websocket-Protocol": []string{subproto},
 	})
 	if err != nil {
+		webCarriers.Add(-1)
 		return
 	}
-	webCarriers.Add(1)
 
 	id := nextConnID()
 	tag := tg(id)

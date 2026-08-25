@@ -207,7 +207,7 @@ func (api *API) mcpGeoList(out mcpGeoOut, in mcpGeoIn) (*mcp.CallToolResult, mcp
 	case out.Total == 0 && strings.TrimSpace(in.Contains) != "":
 		out.Note = fmt.Sprintf("no %s category name contains %q", mcpGeoKindName(geoip), in.Contains)
 	case out.Total == 0:
-		out.Note = fmt.Sprintf("the %s database holds no categories, or is not installed — call action=status", mcpGeoKindName(geoip))
+		out.Note = fmt.Sprintf("the %s database holds no categories, or is not installed - call action=status", mcpGeoKindName(geoip))
 	case out.Truncated:
 		out.Note = fmt.Sprintf("%d %s categories match; the first %d are listed. Narrow it with 'contains'.",
 			out.Total, mcpGeoKindName(geoip), len(tags))
@@ -239,6 +239,10 @@ func (api *API) mcpGeoPreview(ctx context.Context, out mcpGeoOut, in mcpGeoIn) (
 	if err != nil {
 		return nil, out, fmt.Errorf("preview %s category %q: %w", mcpGeoKindName(geoip), category, err)
 	}
+	if ctx.Err() != nil {
+		return nil, out, fmt.Errorf("the %s preview was cut short after %d entries, so this is not a complete answer: %w",
+			mcpGeoKindName(geoip), total, ctx.Err())
+	}
 
 	out.Entries = entries
 	out.Total = total
@@ -246,7 +250,7 @@ func (api *API) mcpGeoPreview(ctx context.Context, out mcpGeoOut, in mcpGeoIn) (
 	switch {
 	case total == 0:
 		out.Note = fmt.Sprintf(
-			"%q holds nothing. Either no such %s category exists — b4 accepts an unknown name and silently matches nothing — or the database is not installed. Call action=list with 'contains' to find the real name.",
+			"%q holds nothing. Either no such %s category exists - b4 accepts an unknown name and silently matches nothing - or the database is not installed. Call action=list with 'contains' to find the real name.",
 			category, mcpGeoKindName(geoip))
 	case out.Truncated:
 		out.Note = fmt.Sprintf("%q holds %d entries; the first %d are shown", category, total, len(entries))
@@ -323,7 +327,7 @@ func (api *API) mcpGeoFindDomain(ctx context.Context, out mcpGeoOut, in mcpGeoIn
 		out.Note = fmt.Sprintf("stopped at %d categories covering %s; there are more", out.Total, domain)
 	case out.Total == 0:
 		out.Note = fmt.Sprintf(
-			"no geosite category covers %s. Add it to a set as a plain domain in targets.sni_domains instead — b4 matches subdomains of it automatically.", domain)
+			"no geosite category covers %s. Add it to a set as a plain domain in targets.sni_domains instead - b4 matches subdomains of it automatically.", domain)
 	default:
 		out.Note = fmt.Sprintf("%d categor%s cover %s", out.Total, plural(out.Total, "y", "ies"), domain)
 	}

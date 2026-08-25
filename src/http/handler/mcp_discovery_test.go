@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discovery"
@@ -124,8 +125,11 @@ func TestMCPDiscoveryStatusFallsBackToHistory(t *testing.T) {
 		t.Errorf("a run that found nothing must not read as found: %+v", got)
 	}
 
-	if !strings.Contains(out.Note, "30 seconds") {
-		t.Errorf("the note must explain why history cannot be applied: %q", out.Note)
+	if !strings.Contains(out.Note, "saved history") {
+		t.Errorf("the note must say the rows come from saved history: %q", out.Note)
+	}
+	if strings.Contains(out.Note, "30 seconds") {
+		t.Errorf("history has no expiry, so the note must not claim one: %q", out.Note)
 	}
 }
 
@@ -182,11 +186,11 @@ func TestMCPDiscoveryApplyWithoutALiveRun(t *testing.T) {
 		"action": "apply", "domain": "rutracker.org", "id": "not-in-memory",
 	})
 	if !res.IsError {
-		t.Fatal("applying a run that has left memory must be refused")
+		t.Fatal("with nothing in memory and nothing saved, apply must be refused")
 	}
 	msg := mcpErrorText(res)
-	if !strings.Contains(msg, "not saved to history") {
-		t.Errorf("the refusal must explain why, so the model re-runs instead of retrying: %q", msg)
+	if !strings.Contains(msg, "nothing saved") {
+		t.Errorf("the refusal must say the domain has no saved result either: %q", msg)
 	}
 	if len(api.getCfg().Sets) != 2 {
 		t.Error("no set should have been created")
@@ -278,8 +282,9 @@ func TestMCPDiscoveryResolvesAFinishedRun(t *testing.T) {
 	if !applied.Changed || applied.Applied == nil {
 		t.Fatalf("apply with no id must reach the finished run: %+v", applied)
 	}
-	if applied.Applied.Position != len(api.getCfg().Sets) {
-		t.Errorf("a discovered set should land last, at %d of %d", applied.Applied.Position, len(api.getCfg().Sets))
+	if applied.Applied.Position != 1 {
+		t.Errorf("a discovered set must land first so it is not shadowed by a set already matching the domain, got %d of %d",
+			applied.Applied.Position, len(api.getCfg().Sets))
 	}
 	if !strings.Contains(applied.Note, "b4_test_domain_now") {
 		t.Errorf("the note should send the model to verify it: %q", applied.Note)
@@ -338,5 +343,218 @@ func TestMCPDiscoveryStatusDropsStalePhaseWhenFinished(t *testing.T) {
 	}
 	if len(out.Domains) != 1 || !strings.Contains(out.Domains[0].Verdict, "do not create a set") {
 		t.Fatalf("baseline verdict missing: %+v", out.Domains)
+	}
+}
+
+func TestMCPDiscoveryApplyCoversAGroupOnce(t *testing.T) {
+	cfg := probeCfg(t)
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	set := config.NewSetConfig()
+	set.Name = "found"
+	set.Targets.SNIDomains = []string{"rutracker.org", "nnmclub.to"}
+	suite := &discovery.CheckSuite{
+		Id:     "group-run",
+		Status: discovery.CheckStatusComplete,
+		DomainDiscoveryResults: map[string]*discovery.DomainDiscoveryResult{
+			"rutracker.org": {Domain: "rutracker.org", BestPreset: "combo", BestSuccess: true},
+			"nnmclub.to":    {Domain: "nnmclub.to", BestPreset: "combo", BestSuccess: true},
+		},
+		StrategyGroups: []discovery.StrategyGroup{
+			{WinnerPreset: "combo", Family: "combo", Domains: []string{"nnmclub.to", "rutracker.org"}, Set: &set},
+		},
+	}
+	discovery.RegisterSuite(suite)
+	mcpRememberSuite(suite.Id)
+	t.Cleanup(func() { mcpRememberSuite("") })
+
+	before := len(api.getCfg().Sets)
+	first := decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{
+		"action": "apply", "domain": "rutracker.org",
+	}))
+	if !first.Changed || first.Applied == nil {
+		t.Fatalf("the first apply should create the set: %+v", first)
+	}
+	if !strings.Contains(first.Note, "nnmclub.to") {
+		t.Errorf("one strategy won for both domains, so the note must say the set already covers them: %q", first.Note)
+	}
+
+	second := decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{
+		"action": "apply", "domain": "nnmclub.to",
+	}))
+	if second.Changed {
+		t.Errorf("the second domain of the same group is already covered; applying again only duplicates the set: %+v", second)
+	}
+	if got := len(api.getCfg().Sets); got != before+1 {
+		t.Fatalf("applying one group twice must not create two sets, got %d sets from %d", got, before)
+	}
+
+	live := api.getCfg().Sets
+	var created *config.SetConfig
+	for _, s := range live {
+		if s.Id == first.Applied.Id {
+			created = s
+		}
+	}
+	if created == nil {
+		t.Fatal("the created set disappeared")
+	}
+	if len(created.Targets.SNIDomains) != 2 {
+		t.Errorf("the second apply must not strip the first set's domains, got %v", created.Targets.SNIDomains)
+	}
+}
+
+func TestMCPDiscoveryStartRefusesPrivateHosts(t *testing.T) {
+	cfg := probeCfg(t)
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	for _, domains := range []string{"192.168.1.50", "169.254.169.254", "rutracker.org,127.0.0.1"} {
+		res := callDiscovery(t, session, ctx, map[string]any{"action": "start", "domains": domains})
+		if !res.IsError {
+			t.Errorf("%q aims hundreds of fetches at the network b4 runs on and must be refused", domains)
+		}
+	}
+}
+
+func TestMCPDiscoveryApplyRefusesAnUnfinishedRun(t *testing.T) {
+	cfg := probeCfg(t)
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	set := config.NewSetConfig()
+	set.Name = "partial"
+	set.Targets.SNIDomains = []string{"rutracker.org"}
+	suite := &discovery.CheckSuite{
+		Id:     "cancelled-run",
+		Status: discovery.CheckStatusCanceled,
+		DomainDiscoveryResults: map[string]*discovery.DomainDiscoveryResult{
+			"rutracker.org": {Domain: "rutracker.org", BestPreset: "combo", BestSuccess: true},
+		},
+		StrategyGroups: []discovery.StrategyGroup{
+			{WinnerPreset: "combo", Family: "combo", Domains: []string{"rutracker.org"}, Set: &set},
+		},
+	}
+	discovery.RegisterSuite(suite)
+	mcpRememberSuite(suite.Id)
+	t.Cleanup(func() { mcpRememberSuite("") })
+
+	before := len(api.getCfg().Sets)
+	res := callDiscovery(t, session, ctx, map[string]any{"action": "apply", "domain": "rutracker.org"})
+	if !res.IsError {
+		t.Fatal("a cancelled run never confirmed its winner, so applying it would write an untested set")
+	}
+	if got := len(api.getCfg().Sets); got != before {
+		t.Errorf("a refused apply must not add a set, got %d from %d", got, before)
+	}
+}
+
+func TestMCPDiscoveryAppliesAfterTheRunLeavesMemory(t *testing.T) {
+	cfg := probeCfg(t)
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	set := config.NewSetConfig()
+	set.Name = "meduza"
+	set.Targets.SNIDomains = []string{"meduza.io"}
+	suite := &discovery.CheckSuite{
+		Id:      "009ec414-504e-4cdf-ba01-3b835c660dc7",
+		Status:  discovery.CheckStatusComplete,
+		EndTime: time.Now(),
+		DomainDiscoveryResults: map[string]*discovery.DomainDiscoveryResult{
+			"meduza.io": {
+				Domain: "meduza.io", BestPreset: "cached-11-fake_sni",
+				BestSuccess: true, BestSpeed: 1320266, Confirmed: 3,
+				Results: map[string]*discovery.DomainPresetResult{
+					"cached-11-fake_sni": {PresetName: "cached-11-fake_sni", Family: "desync", Set: &set},
+				},
+			},
+		},
+		StrategyGroups: []discovery.StrategyGroup{
+			{WinnerPreset: "cached-11-fake_sni", Family: "desync", Domains: []string{"meduza.io"}, Set: &set},
+		},
+	}
+	discovery.SaveToHistory(suite, cfg.ConfigPath)
+
+	mcpRememberSuite(suite.Id)
+	t.Cleanup(func() { mcpRememberSuite("") })
+
+	status := decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{
+		"action": "status", "id": suite.Id,
+	}))
+	if status.Source != "history" {
+		t.Fatalf("precondition: the suite is not registered, so status must read history: %+v", status)
+	}
+	if len(status.Domains) != 1 || status.Domains[0].Domain != "meduza.io" {
+		t.Fatalf("the suite_id should narrow history to that run: %+v", status.Domains)
+	}
+	if !status.Domains[0].Found {
+		t.Fatalf("the saved run found a strategy: %+v", status.Domains[0])
+	}
+
+	before := len(api.getCfg().Sets)
+	applied := decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{
+		"action": "apply", "domain": "meduza.io", "id": suite.Id,
+	}))
+	if !applied.Changed || applied.Applied == nil {
+		t.Fatalf("a saved run holds the set it built, so apply must work after the run leaves memory: %+v", applied)
+	}
+	if applied.Source != "history" {
+		t.Errorf("the result should say where the strategy came from, got %q", applied.Source)
+	}
+	if got := len(api.getCfg().Sets); got != before+1 {
+		t.Fatalf("expected one new set, got %d from %d", got, before)
+	}
+
+	var created *config.SetConfig
+	for _, s := range api.getCfg().Sets {
+		if s.Id == applied.Applied.Id {
+			created = s
+		}
+	}
+	if created == nil || len(created.Targets.SNIDomains) != 1 || created.Targets.SNIDomains[0] != "meduza.io" {
+		t.Errorf("the applied set must target the domain it was discovered for: %+v", created)
+	}
+}
+
+func TestMCPDiscoveryAppliesFromHistoryByDomainAlone(t *testing.T) {
+	cfg := probeCfg(t)
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	set := config.NewSetConfig()
+	set.Name = "meduza"
+	set.Targets.SNIDomains = []string{"meduza.io"}
+	discovery.SaveToHistory(&discovery.CheckSuite{
+		Id: "older-run", Status: discovery.CheckStatusComplete, EndTime: time.Now(),
+		DomainDiscoveryResults: map[string]*discovery.DomainDiscoveryResult{
+			"meduza.io": {Domain: "meduza.io", BestPreset: "combo", BestSuccess: true},
+		},
+		StrategyGroups: []discovery.StrategyGroup{
+			{WinnerPreset: "combo", Domains: []string{"meduza.io"}, Set: &set},
+		},
+	}, cfg.ConfigPath)
+
+	mcpRememberSuite("")
+	t.Cleanup(func() { mcpRememberSuite("") })
+
+	before := len(api.getCfg().Sets)
+	applied := decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{
+		"action": "apply", "domain": "meduza.io",
+	}))
+	if !applied.Changed {
+		t.Fatalf("the domain alone must be enough to apply a saved result: %+v", applied)
+	}
+	if got := len(api.getCfg().Sets); got != before+1 {
+		t.Errorf("expected one new set, got %d from %d", got, before)
 	}
 }

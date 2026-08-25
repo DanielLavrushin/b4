@@ -227,12 +227,12 @@ func mcpExpansionNote(e *mcpTargetExpansion) string {
 	var parts []string
 	if len(e.EmptyGeoSite) > 0 {
 		parts = append(parts, fmt.Sprintf(
-			"geosite %s matched no domains — an unknown category name is skipped silently, so check the spelling or whether a geosite database is installed",
+			"geosite %s matched no domains - an unknown category name is skipped silently, so check the spelling or whether a geosite database is installed",
 			strings.Join(e.EmptyGeoSite, ", ")))
 	}
 	if len(e.EmptyGeoIP) > 0 {
 		parts = append(parts, fmt.Sprintf(
-			"geoip %s matched no addresses — an unknown category name is skipped silently, so check the spelling or whether a geoip database is installed",
+			"geoip %s matched no addresses - an unknown category name is skipped silently, so check the spelling or whether a geoip database is installed",
 			strings.Join(e.EmptyGeoIP, ", ")))
 	}
 	if len(parts) == 0 {
@@ -640,11 +640,11 @@ func mcpWriteToolDescription() string {
 	return sb.String()
 }
 
-func (api *API) addMCPWriteTools(srv *mcp.Server) {
+func (api *API) addMCPPathTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_list_writable_paths",
 		Title:       "List writable settings",
-		Description: "Every setting b4_set_config_value can change, with its type, current value and accepted values. Call this before writing rather than guessing a path. Read-only.",
+		Description: "Every setting b4_set_config_value can change, with its type, current value and accepted values. Call this before writing rather than guessing a path, and to say precisely what would have to change when configuration writes are switched off. Read-only.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpListPathsIn) (*mcp.CallToolResult, mcpListPathsOut, error) {
 		cfg := api.getCfg()
@@ -677,7 +677,9 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		}
 		return nil, mcpListPathsOut{Paths: paths, Note: note}, nil
 	})
+}
 
+func (api *API) addMCPWriteTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_set_config_value",
 		Title:       "Change a b4 setting",
@@ -686,7 +688,7 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpSetValueIn) (*mcp.CallToolResult, mcpSetValueOut, error) {
 		if !api.getCfg().System.WebServer.MCP.AllowWrites {
 			return nil, mcpSetValueOut{}, fmt.Errorf(
-				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> API -> MCP server to permit them")
+				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
 		}
 
 		canonical, setRef, err := parseMCPWritePath(in.Path)
@@ -816,7 +818,7 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpRevertOut, error) {
 		if !api.getCfg().System.WebServer.MCP.AllowWrites {
 			return nil, mcpRevertOut{}, fmt.Errorf(
-				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> API -> MCP server to permit them")
+				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
 		}
 
 		mcpWriteMu.Lock()

@@ -456,3 +456,19 @@ func TestMCPManageSetDuplicateDropsRoutingAndSaysSo(t *testing.T) {
 		t.Errorf("a duplicate carries its source's targets and the note must not claim it matches nothing: %q", out.Note)
 	}
 }
+
+func TestMCPManageSetRefusesACommaInAName(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	before := len(api.getCfg().Sets)
+	res := callManageSet(t, session, ctx, map[string]any{"action": "create", "name": "video, audio"})
+	if !res.IsError {
+		t.Fatal("set_enabled splits its argument on commas, so such a set could never be addressed again")
+	}
+	if got := len(api.getCfg().Sets); got != before {
+		t.Errorf("a refused create must not add a set, got %d from %d", got, before)
+	}
+}

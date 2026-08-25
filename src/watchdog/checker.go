@@ -41,6 +41,7 @@ func checkDomain(input string, mark uint, timeout time.Duration) CheckResult {
 
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
+			MinVersion:         tls.VersionTLS12,
 			InsecureSkipVerify: false,
 		},
 		ResponseHeaderTimeout: timeout,

@@ -187,7 +187,7 @@ func (w *Watchdog) tick() {
 
 		if result.Verdict == netprobe.DomainMTLS {
 			st.CooldownUntil = now.Add(time.Duration(wdCfg.Cooldown) * time.Second)
-			log.Warnf("[WATCHDOG] %s: server requires client certificate (mTLS), no DPI bypass applies — skipping heal, cooldown %ds", domain, wdCfg.Cooldown)
+			log.Warnf("[WATCHDOG] %s: server requires client certificate (mTLS), no DPI bypass applies - skipping heal, cooldown %ds", domain, wdCfg.Cooldown)
 			continue
 		}
 
@@ -216,7 +216,7 @@ func (w *Watchdog) healBatch(domains []string) {
 	wdCfg := cfg.System.Checker.Watchdog
 
 	if w.discoveryRT.IsActive() {
-		log.Infof("[WATCHDOG] deferring healing — user discovery active")
+		log.Infof("[WATCHDOG] deferring healing - user discovery active")
 		return
 	}
 

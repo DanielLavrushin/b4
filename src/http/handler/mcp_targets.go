@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -101,7 +102,7 @@ func mcpSummarizeList(items []string) string {
 	if len(joined) <= mcpTargetSummaryLimit {
 		return joined
 	}
-	return fmt.Sprintf("%s… (%d entries)", joined[:mcpTargetSummaryLimit], len(items))
+	return fmt.Sprintf("%s… (%d entries)", mcpTruncate(joined, mcpTargetSummaryLimit), len(items))
 }
 
 func (api *API) mcpCanonicalTarget(kind, raw string) (canonical, rewritten string, err error) {
@@ -161,7 +162,7 @@ func (api *API) mcpCanonicalTarget(kind, raw string) (canonical, rewritten strin
 		hw, herr := net.ParseMAC(value)
 		if herr != nil {
 			return "", "", fmt.Errorf(
-				"%q is not a MAC address. b4 scopes a set by the client's MAC, not its IP — a device configured by address carries a generated MAC, which is what belongs here", raw)
+				"%q is not a MAC address. b4 scopes a set by the client's MAC, not its IP - a device configured by address carries a generated MAC, which is what belongs here", raw)
 		}
 		upper := strings.ToUpper(hw.String())
 		if upper != value {
@@ -270,7 +271,7 @@ func (api *API) addMCPTargetTools(srv *mcp.Server) {
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpEditTargetsIn) (*mcp.CallToolResult, mcpEditTargetsOut, error) {
 		if !api.getCfg().System.WebServer.MCP.AllowWrites {
 			return nil, mcpEditTargetsOut{}, fmt.Errorf(
-				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> API -> MCP server to permit them")
+				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
 		}
 
 		kind := strings.ToLower(strings.TrimSpace(in.Kind))
@@ -363,7 +364,8 @@ func (api *API) addMCPTargetTools(srv *mcp.Server) {
 		}
 
 		current := mcpTargetList(&set.Targets, kind)
-		previousSummary := mcpSummarizeList(current)
+		previous := append([]string(nil), current...)
+		previousSummary := mcpSummarizeList(previous)
 
 		present := make(map[string]bool, len(current))
 		for _, e := range current {
@@ -445,7 +447,7 @@ func (api *API) addMCPTargetTools(srv *mcp.Server) {
 		stored := mcpTargetList(&live.Targets, kind)
 		currentSummary := mcpSummarizeList(stored)
 		out.EntryCount = len(stored)
-		out.Changed = currentSummary != previousSummary || len(out.MovedFrom) > 0
+		out.Changed = !slices.Equal(stored, previous) || len(out.MovedFrom) > 0
 
 		if !out.Changed {
 			out.Note = fmt.Sprintf(
@@ -481,7 +483,7 @@ func (api *API) addMCPTargetTools(srv *mcp.Server) {
 		if catch := mcpCatchAllAdded(kind, out.Added); len(catch) > 0 {
 			out.Note += fmt.Sprintf(". %s is a catch-all that matches everything", strings.Join(catch, ", "))
 			if live.Routing.Enabled {
-				out.Note += fmt.Sprintf(", and routing is enabled on this set in %q mode — every matched packet now takes that path", live.Routing.Mode)
+				out.Note += fmt.Sprintf(", and routing is enabled on this set in %q mode - every matched packet now takes that path", live.Routing.Mode)
 			}
 		}
 		if hint := mcpExpansionNote(out.Expansion); hint != "" {

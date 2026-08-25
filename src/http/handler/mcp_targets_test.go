@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -307,7 +308,6 @@ func TestMCPEditTargetsRefusesContradictoryAddRemove(t *testing.T) {
 	if !res.IsError {
 		t.Fatal("the same entry in add and remove is contradictory and must be refused")
 	}
-	// Otherwise the domain is stripped from the donor set and added nowhere.
 	if got := api.getCfg().Sets[1].Targets.SNIDomains; len(got) != 1 || got[0] != "example.org" {
 		t.Fatalf("the other set must keep its domain: %v", got)
 	}
@@ -407,7 +407,6 @@ func TestMCPEditTargetsWarnsWhenDevicesEmptied(t *testing.T) {
 	out := decodeEditTargets(t, callEditTargets(t, session, ctx, map[string]any{
 		"set": "video", "kind": "source_devices", "remove": "AA:BB:CC:DD:EE:FF",
 	}))
-	// An empty source_devices list matches every device, so this widens the set.
 	if !strings.Contains(out.Note, "EVERY device") {
 		t.Errorf("emptying the device list widens the set and must say so: %q", out.Note)
 	}
@@ -441,5 +440,46 @@ func TestMCPEditTargetsRefusesDeviceIP(t *testing.T) {
 	}
 	if !strings.Contains(mcpErrorText(res), "MAC") {
 		t.Errorf("the refusal should say what is expected: %q", mcpErrorText(res))
+	}
+}
+
+func TestMCPEditTargetsDetectsAChangePastTheSummaryCutoff(t *testing.T) {
+	long := []string{
+		"aaaaaaaaaaaaaaaaaaaa.com", "bbbbbbbbbbbbbbbbbbbb.com",
+		"cccccccccccccccccccc.com", "dddddddddddddddddddd.com",
+		"eeeeeeeeeeeeeeeeeeee.com", "ffffffffffffffffffff.com",
+	}
+	cfg := geoTestCfg(t)
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.Sets[0].Targets.SNIDomains = append([]string(nil), long...)
+	mcpResetHistory()
+	t.Cleanup(mcpResetHistory)
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	before := append([]string(nil), long...)
+	if mcpSummarizeList(before) != mcpSummarizeList(append(before[:5:5], "gggggggggggggggggggg.com")) {
+		t.Fatal("precondition: this fixture is meant to collide under the display summary")
+	}
+
+	out := decodeEditTargets(t, callEditTargets(t, session, ctx, map[string]any{
+		"set": "video", "kind": "sni_domains",
+		"add": "gggggggggggggggggggg.com", "remove": "ffffffffffffffffffff.com",
+	}))
+
+	live := api.getCfg().Sets[0].Targets.SNIDomains
+	if slices.Contains(live, "ffffffffffffffffffff.com") || !slices.Contains(live, "gggggggggggggggggggg.com") {
+		t.Fatalf("precondition: the swap should have been saved, got %v", live)
+	}
+	if !out.Changed {
+		t.Errorf("the swap was saved and applied, so reporting changed=false tells the model the opposite of what happened: %+v", out)
+	}
+
+	rev := decodeRevert(t, session, ctx)
+	if !rev.Reverted {
+		t.Fatalf("a saved target edit must be recorded for undo: %+v", rev)
+	}
+	if got := api.getCfg().Sets[0].Targets.SNIDomains; !slices.Equal(got, long) {
+		t.Errorf("undo should restore the list the edit replaced, got %v", got)
 	}
 }

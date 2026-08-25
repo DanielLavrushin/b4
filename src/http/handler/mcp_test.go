@@ -544,7 +544,7 @@ func TestMCPLogsTailAlwaysExplainsEmptyResult(t *testing.T) {
 			t.Fatalf("decode: %v", err)
 		}
 		if out.Note == "" {
-			t.Fatal("note must never be empty — an unexplained empty result is what confused the model")
+			t.Fatal("note must never be empty - an unexplained empty result is what confused the model")
 		}
 		if out.Lines == nil {
 			t.Error("lines must always be present, even when empty")
@@ -1218,7 +1218,6 @@ func TestMCPGetTopicMissIsInstructive(t *testing.T) {
 	if out.Found {
 		t.Fatal("tcp.win.values has no topic and must not report found")
 	}
-	// The miss is exactly where a model invents a unit, so it has to carry the instruction.
 	for _, want := range []string{"Do NOT infer", "unsure"} {
 		if !strings.Contains(out.Note, want) {
 			t.Errorf("miss note must warn against guessing, got %q", out.Note)
@@ -1312,9 +1311,6 @@ func TestWritablePathsGrounding(t *testing.T) {
 		missingByFamily[family] = append(missingByFamily[family], key)
 	}
 
-	// A ratchet, not a target: b4_get_topic tells the model to say it is unsure
-	// when a setting has no entry, so partial coverage is safe. Losing coverage
-	// silently is not.
 	const groundedFloor = 84
 	if grounded < groundedFloor {
 		t.Errorf("grounding regressed: %d of %d writable settings documented, floor is %d; still missing %v",
@@ -1325,8 +1321,6 @@ func TestWritablePathsGrounding(t *testing.T) {
 		t.Errorf("the topics corpus shrank to %d entries; it should only ever grow", corpus)
 	}
 
-	// These families were backfilled completely. A new writable field in one of
-	// them needs an entry in the same change.
 	for _, family := range []string{"routing", "escalate", "dns", "targets", "udp", "mss_clamp"} {
 		if missing := missingByFamily[family]; len(missing) > 0 {
 			t.Errorf("%s.* is fully documented and must stay that way; %v has no b4://topics entry", family, missing)
@@ -1335,9 +1329,6 @@ func TestWritablePathsGrounding(t *testing.T) {
 }
 
 func TestToolsListStaysWithinContextBudget(t *testing.T) {
-	// Two budgets, because they protect different things. The default surface is
-	// what a constrained client actually pays for on every request; the widest
-	// one is a runaway guard for an operator who has opted into everything.
 	for _, c := range []struct {
 		name           string
 		writes, probes bool
@@ -1439,8 +1430,6 @@ func TestToolRegistrationFollowsConfigWithoutRestart(t *testing.T) {
 		t.Fatal("precondition: writes are off")
 	}
 
-	// b4's whole design is to apply changes live; the served tool list has to
-	// follow the permission flags without restarting the daemon.
 	next := api.getCfg().Clone()
 	next.System.WebServer.MCP.AllowWrites = true
 	api.cfgPtr.Store(next)
@@ -1476,10 +1465,6 @@ func TestInstructionsDescribeTheServedSurface(t *testing.T) {
 	}
 }
 
-// mcpFindBoolSchema reports a path where a NAMED property or item schema is the
-// boolean form. additionalProperties:false is idiomatic and accepted, but a
-// boolean where a client expects a property schema is not: LM Studio rejects the
-// whole tool list over one, and jsonschema-go emits exactly that for interface{}.
 func mcpFindBoolSchema(node any, path string) string {
 	switch v := node.(type) {
 	case bool:
@@ -1548,7 +1533,7 @@ func TestToolSchemasAreObjectsNotBooleans(t *testing.T) {
 			}
 			if at := mcpFindBoolSchema(decoded, label); at != "" {
 				t.Errorf("%s publishes a boolean sub-schema at %s. An `any`-typed field produces one, "+
-					"and a strict client rejects the entire tool list over it — give the field a concrete type, "+
+					"and a strict client rejects the entire tool list over it - give the field a concrete type, "+
 					"or drop the schema by typing the handler's Out as `any`.", tool.Name, at)
 			}
 		}

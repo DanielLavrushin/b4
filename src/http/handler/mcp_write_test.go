@@ -60,15 +60,16 @@ func TestMCPWriteToolsAreNotOfferedWhenWritesDisabled(t *testing.T) {
 	got := toolNames(t, session, ctx)
 	for _, name := range []string{
 		"b4_set_config_value", "b4_revert_last_change",
-		"b4_list_writable_paths", "b4_edit_set_targets",
+		"b4_edit_set_targets", "b4_manage_set",
 	} {
 		if got[name] {
 			t.Errorf("%s must not be offered while configuration writes are disabled", name)
 		}
 	}
+	if !got["b4_list_writable_paths"] {
+		t.Error("b4_list_writable_paths reads and never writes, so a read-only session still needs it to say what would have to change")
+	}
 
-	// The model still has to be able to tell the user why, so the server's
-	// instructions name the setting rather than leaving it to a tool error.
 	if instr := session.InitializeResult().Instructions; !strings.Contains(instr, "Allow configuration changes") {
 		t.Errorf("instructions must name the setting that unlocks writing: %q", instr)
 	}
@@ -551,8 +552,6 @@ func TestMCPRevertWithdrawnWhenWritesDisabledMidSession(t *testing.T) {
 	revoked.System.WebServer.MCP.AllowWrites = false
 	api.cfgPtr.Store(revoked)
 
-	// The served tool list is rebuilt from the live config on every request, so
-	// revoking the permission withdraws the tool immediately.
 	if toolNames(t, session, ctx)["b4_revert_last_change"] {
 		t.Error("undo must be withdrawn as soon as writes are disabled")
 	}

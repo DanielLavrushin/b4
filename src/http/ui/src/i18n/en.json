@@ -292,6 +292,7 @@
       "fakeSNIHelp": "Domain to impersonate in TLS handshake (e.g. storage.googleapis.com)",
       "cfWorkerDomain": "Cloudflare Worker domain",
       "cfWorkerDomainHelp": "Free per-user WebSocket relay (workers.dev). Recommended when media, reactions, or stickers fail to load. Reaches all data centers and avoids the shared-domain rate limits. Comma-separate multiple workers. Click the icon for setup.",
+      "cfWorkerDomainGuide": "Worker setup guide",
       "cfWorkerSetup": "How to set up a Cloudflare Worker",
       "dcRelay": "DC Relay",
       "dcRelayHelp": "External relay address (host:port) to reach Telegram DCs when blocked by IP",

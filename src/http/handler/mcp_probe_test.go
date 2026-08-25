@@ -39,8 +39,6 @@ func TestMCPProbeRequiresItsOwnGate(t *testing.T) {
 	srv := newMCPTestServer(t, cfg)
 	session, ctx := connectMCP(t, srv)
 
-	// allow_writes is on here: probing is a separate permission, because
-	// emitting traffic from the router is a different act from writing config.
 	if toolNames(t, session, ctx)["b4_test_domain_now"] {
 		t.Fatal("probing must not be offered until 'Allow active probes' is on")
 	}
@@ -192,6 +190,7 @@ func TestMCPWatchdogEditsRequireWriteGate(t *testing.T) {
 func TestMCPWatchdogAddRemoveAndToggle(t *testing.T) {
 	cfg := mcpTestCfg()
 	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.System.WebServer.MCP.AllowActiveProbes = true
 	mcpResetHistory()
 	t.Cleanup(mcpResetHistory)
 	srv, api := newMCPTestServerAPI(t, cfg)
@@ -203,7 +202,6 @@ func TestMCPWatchdogAddRemoveAndToggle(t *testing.T) {
 	if !add.Changed {
 		t.Fatalf("add should change the config: %+v", add)
 	}
-	// A URL is reduced to its host, so the stored list stays comparable.
 	if got := api.getCfg().System.Checker.Watchdog.Domains; len(got) != 1 || got[0] != "rutracker.org" {
 		t.Fatalf("stored domains = %v", got)
 	}
@@ -248,6 +246,7 @@ func TestMCPWatchdogAddRemoveAndToggle(t *testing.T) {
 func TestMCPWatchdogRevertRestoresList(t *testing.T) {
 	cfg := mcpTestCfg()
 	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.System.WebServer.MCP.AllowActiveProbes = true
 	mcpResetHistory()
 	t.Cleanup(mcpResetHistory)
 	srv, api := newMCPTestServerAPI(t, cfg)
@@ -283,5 +282,92 @@ func TestMCPWatchdogRejectsBadInput(t *testing.T) {
 		if res := callWatchdog(t, session, ctx, args); !res.IsError {
 			t.Errorf("%s should be refused", name)
 		}
+	}
+}
+
+func TestMCPWatchdogTrafficActionsRequireTheProbeGate(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.System.Checker.Watchdog.Domains = []string{"rutracker.org"}
+	if cfg.System.WebServer.MCP.AllowActiveProbes {
+		t.Fatal("precondition: active probes are off")
+	}
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	for name, args := range map[string]map[string]any{
+		"add makes the router fetch a new host on a timer": {"action": "add", "domain": "example.com"},
+		"enable starts fetching every watched host":        {"action": "enable"},
+		"check fetches one host immediately":               {"action": "check", "domain": "rutracker.org"},
+	} {
+		res := callWatchdog(t, session, ctx, args)
+		if !res.IsError {
+			t.Errorf("%s, so it must need 'Allow active probes' and not the write gate alone", name)
+			continue
+		}
+		if !strings.Contains(mcpErrorText(res), "Allow active probes") {
+			t.Errorf("%s: the refusal must name the setting that unlocks it: %q", name, mcpErrorText(res))
+		}
+	}
+
+	live := api.getCfg().System.Checker.Watchdog
+	if live.Enabled || len(live.Domains) != 1 {
+		t.Errorf("a refused action must not touch the config: %+v", live)
+	}
+}
+
+func TestMCPWatchdogQuietActionsNeedOnlyTheWriteGate(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.System.Checker.Watchdog.Enabled = true
+	cfg.System.Checker.Watchdog.Domains = []string{"rutracker.org"}
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	if res := callWatchdog(t, session, ctx, map[string]any{"action": "disable"}); res.IsError {
+		t.Errorf("disabling the watchdog stops traffic and must not need the probe gate: %s", mcpErrorText(res))
+	}
+	if res := callWatchdog(t, session, ctx, map[string]any{"action": "remove", "domain": "rutracker.org"}); res.IsError {
+		t.Errorf("removing a domain stops traffic and must not need the probe gate: %s", mcpErrorText(res))
+	}
+	live := api.getCfg().System.Checker.Watchdog
+	if live.Enabled || len(live.Domains) != 0 {
+		t.Errorf("both actions should have applied: %+v", live)
+	}
+}
+
+func TestMCPWatchdogAddRefusesPrivateHostsAndNormalisesCase(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.System.WebServer.MCP.AllowActiveProbes = true
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	for _, host := range []string{"192.168.1.50", "127.0.0.1", "https://10.0.0.1/status"} {
+		if res := callWatchdog(t, session, ctx, map[string]any{"action": "add", "domain": host}); !res.IsError {
+			t.Errorf("%q would put the router on a timer against its own network and must be refused", host)
+		}
+	}
+
+	decodeWatchdog(t, callWatchdog(t, session, ctx, map[string]any{"action": "add", "domain": "RuTracker.ORG"}))
+	got := api.getCfg().System.Checker.Watchdog.Domains
+	if len(got) != 1 || got[0] != "rutracker.org" {
+		t.Fatalf("the stored entry must be lower case, or the web UI can never delete it: %v", got)
+	}
+}
+
+func TestMCPWatchdogCheckRefusesAnUnwatchedDomain(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowActiveProbes = true
+	cfg.System.Checker.Watchdog.Domains = []string{"rutracker.org"}
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	res := callWatchdog(t, session, ctx, map[string]any{"action": "check", "domain": "youtube.com"})
+	if !res.IsError {
+		t.Fatal("check only re-tests a watched domain; anything else schedules nothing and must say so rather than report success")
+	}
+	if !strings.Contains(mcpErrorText(res), "not watched") {
+		t.Errorf("the refusal should say why: %q", mcpErrorText(res))
 	}
 }

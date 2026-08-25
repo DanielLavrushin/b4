@@ -16,6 +16,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/daniellavrushin/b4/ai"
 	"github.com/daniellavrushin/b4/config"
@@ -65,7 +66,7 @@ var mcpReadOnly = &mcp.ToolAnnotations{
 // @Description JSON-RPC 2.0 endpoint implementing the Model Context Protocol (Streamable HTTP, stateless).
 // @Description This is not a REST resource: there is one endpoint and the operation is named in the body's "method"
 // @Description field ("tools/list", "tools/call", "resources/list", "resources/read", "prompts/list", "prompts/get").
-// @Description Tool names go in params.name — there are no per-tool URLs. Call tools/list for the authoritative,
+// @Description Tool names go in params.name - there are no per-tool URLs. Call tools/list for the authoritative,
 // @Description self-describing tool catalogue and its JSON schemas.
 // @Description The Accept header MUST list both application/json and text/event-stream; responses are Server-Sent Events.
 // @Description Disabled unless system.web_server.mcp.enabled is true. Authentication follows the web server:
@@ -103,7 +104,7 @@ func (api *API) RegisterMCPApi() {
 }
 
 // @Summary Generate an MCP access token
-// @Description Returns a fresh random token for MCP clients. It is not saved — store it via the config API to activate it.
+// @Description Returns a fresh random token for MCP clients. It is not saved - store it via the config API to activate it.
 // @Tags MCP
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -165,7 +166,7 @@ func (api *API) mcpGate(next http.Handler) http.Handler {
 			}
 		} else if !mcpAuthConfigured(cfg) {
 			mcpUnauthWarnOnce.Do(func() {
-				log.Warnf("mcp: serving without authentication — no MCP token is set and web_server.username/password are empty, so anyone who can reach %s can read b4 status, configuration and diagnostics", mcpEndpoint)
+				log.Warnf("mcp: serving without authentication - no MCP token is set and web_server.username/password are empty, so anyone who can reach %s can read b4 status, configuration and diagnostics", mcpEndpoint)
 			})
 		}
 
@@ -221,9 +222,6 @@ func splitHostPort(hostport string) (host, port string) {
 	return hostport, ""
 }
 
-// mcpCapabilities is the set of permissions the tool list is built for. A tool
-// the operator has not permitted is not advertised at all, so the model never
-// picks it and its schema never costs context.
 type mcpCapabilities struct {
 	Writes bool
 	Probes bool
@@ -246,12 +244,13 @@ func (api *API) newMCPServer(caps mcpCapabilities) *mcp.Server {
 			"B4 is a Linux DPI-bypass daemon controlled through this server.",
 			"Call b4_get_topic before explaining or tuning any setting: it returns authoritative facts for that setting and is the same corpus as the b4://topics/<key> resources, which most clients never show you.",
 			"Never infer a setting's unit, default or meaning from its name; several are deliberately misleading, and a zero often means 'use the fixed value' rather than 'off'.",
-			"Prefer b4_check_domain before changing sets: it tells you whether a domain is already covered and by which set. It reads configuration only — it cannot tell you whether a site loads.",
+			"Prefer b4_check_domain before changing sets: it tells you whether a domain is already covered and by which set. It reads configuration only - it cannot tell you whether a site loads.",
 			mcpCapabilityInstruction(caps),
 		}, " "),
 	})
 
 	api.addMCPTools(srv)
+	api.addMCPPathTools(srv)
 	api.addMCPGeoTools(srv)
 	api.addMCPWatchdogTools(srv)
 	if caps.Writes {
@@ -446,7 +445,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_get_config",
 		Title:       "Read b4 configuration",
-		Description: "Return the b4 configuration as JSON, with all credentials redacted. Pass 'section' to narrow it (e.g. 'system.dns', 'system.mtproto', 'sets') — the full config is large, so prefer a section.",
+		Description: "Return the b4 configuration as JSON, with all credentials redacted. Pass 'section' to narrow it (e.g. 'system.dns', 'system.mtproto', 'sets') - the full config is large, so prefer a section.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpConfigIn) (*mcp.CallToolResult, any, error) {
 		redacted := redactConfigForMCP(api.getCfg())
@@ -473,8 +472,8 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		Name:  "b4_get_topic",
 		Title: "Read authoritative facts about a setting",
 		Description: "Authoritative b4-specific facts for one setting: what it does, its unit, its real default, what a zero or empty value means, and what it interacts with. " +
-			"Call this before explaining or changing ANY setting — b4 field names are often misleading and a zero usually means 'use the fixed value', not 'off'. " +
-			"Give exactly one of topic, path or query; no argument lists every documented key.",
+			"Call this before explaining or changing ANY setting - b4 field names are often misleading and a zero usually means 'use the fixed value', not 'off'. " +
+			"Give at most one of topic, path or query; calling it with no argument lists every documented key.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpTopicIn) (*mcp.CallToolResult, mcpTopicOut, error) {
 		keys := ai.TopicKeys()
@@ -521,7 +520,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 
 		out.Related = mcpRelatedTopics(keys, want)
 		out.Note = fmt.Sprintf(
-			"no authoritative facts for %q. Do NOT infer this setting's unit, default or meaning from its name — in b4 several names are misleading and a zero often means 'use the fixed value' rather than 'off'. "+
+			"no authoritative facts for %q. Do NOT infer this setting's unit, default or meaning from its name - in b4 several names are misleading and a zero often means 'use the fixed value' rather than 'off'. "+
 				"Say plainly that you are unsure, and call b4_list_writable_paths for the accepted values.", want)
 		if len(out.Related) > 0 {
 			out.Note += " Documented settings nearby are listed in 'related'."
@@ -653,7 +652,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_recent_connections",
 		Title:       "Recent connections",
-		Description: "Recent connections b4 actually processed, newest last: protocol, matched set, domain, source, destination and TLS version. This is the right tool for any question about a specific domain or site — it shows whether traffic reached b4 and which set matched it, which the error log does not record. Pass the domain in 'contains' to filter. Empty means no matching traffic has been seen since b4 started.",
+		Description: "Recent connections b4 actually processed, newest last: protocol, matched set, domain, source, destination and TLS version. This is the right tool for any question about a specific domain or site - it shows whether traffic reached b4 and which set matched it, which the error log does not record. Pass the domain in 'contains' to filter. Empty means no matching traffic has been seen since b4 started.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpRecentConnIn) (*mcp.CallToolResult, mcpRecentConnOut, error) {
 		lines := log.GetConnectionHub().Snapshot()
@@ -680,7 +679,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_logs_tail",
 		Title:       "Tail the b4 log",
-		Description: "Most recent lines from b4's error and system log, newest last. Use after b4_status and b4_diagnostics when something is configured correctly but still not working. This log holds b4's own errors and warnings — it does NOT record per-domain traffic, so do not filter it by a domain name; use b4_recent_connections to find out whether a domain is being matched. The 'note' field always explains the result, including why it is empty.",
+		Description: "Most recent lines from b4's error and system log, newest last. Use after b4_status and b4_diagnostics when something is configured correctly but still not working. This log holds b4's own errors and warnings - it does NOT record per-domain traffic, so do not filter it by a domain name; use b4_recent_connections to find out whether a domain is being matched. The 'note' field always explains the result, including why it is empty.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpLogsIn) (*mcp.CallToolResult, mcpLogsOut, error) {
 		path := api.getCfg().System.Logging.ErrorFilePath()
@@ -708,12 +707,12 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		}
 		switch {
 		case !res.Exists:
-			out.Note = "the log file does not exist yet — b4 has not written anything to it"
+			out.Note = "the log file does not exist yet - b4 has not written anything to it"
 		case res.Scanned == 0:
 			out.Note = "the log file exists but is empty"
 		case filter != "" && res.Matched == 0:
 			out.Note = fmt.Sprintf(
-				"no lines matched %q among the %d most recent lines. This log contains b4's own errors, not per-domain traffic — to check whether a domain is being matched, call b4_recent_connections instead.",
+				"no lines matched %q among the %d most recent lines. This log contains b4's own errors, not per-domain traffic - to check whether a domain is being matched, call b4_recent_connections instead.",
 				filter, res.Scanned)
 		case filter != "" && res.Truncated:
 			out.Note = fmt.Sprintf("%d of the %d most recent lines matched %q; the newest %d are returned", res.Matched, res.Scanned, filter, len(res.Lines))
@@ -735,6 +734,16 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, any, error) {
 		return nil, mcpDiagnosticsOut{Diagnostics: api.buildDiagnostics()}, nil
 	})
+}
+
+func mcpTruncate(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	for limit > 0 && !utf8.RuneStart(s[limit]) {
+		limit--
+	}
+	return s[:limit]
 }
 
 func mcpTopicKeyFromPath(path string) string {
@@ -764,7 +773,7 @@ func mcpSearchTopics(keys []string, query string) ([]mcpTopicEntry, bool) {
 		}
 		entry := mcpTopicEntry{Topic: k, Facts: facts}
 		if len(facts) > mcpTopicExcerptLen {
-			entry.Facts = facts[:mcpTopicExcerptLen] + "…"
+			entry.Facts = mcpTruncate(facts, mcpTopicExcerptLen) + "…"
 			entry.Truncated = true
 		}
 		hits = append(hits, entry)
@@ -792,12 +801,9 @@ func mcpRelatedTopics(keys []string, want string) []string {
 	return nil
 }
 
-// mcpProbesOffInstruction names the two capabilities that vanish with the probe
-// permission. Without it a model sees no tool for them and concludes b4 cannot
-// do it at all, rather than telling the user which switch to turn on.
 const mcpProbesOffInstruction = "'Allow active probes' is off, so two things b4 CAN do are not available to you here: " +
 	"fetching a domain to see whether it actually loads, and running a discovery search that brute-forces bypass strategies until one works. " +
-	"If the user asks for either, say b4 supports it and that enabling 'Allow active probes' under Settings -> Integrations -> MCP server would let you do it — do not conclude the feature does not exist."
+	"If the user asks for either, say b4 supports it and that enabling 'Allow active probes' under Settings -> Integrations -> MCP server would let you do it - do not conclude the feature does not exist."
 
 func mcpCapabilityNote(writes, probes bool) string {
 	var off []string
@@ -811,7 +817,7 @@ func mcpCapabilityNote(writes, probes bool) string {
 		return "b4 supports everything this server exposes: reading, changing settings, testing a domain and running discovery"
 	}
 	return "b4 SUPPORTS these, but they are switched off for this connection so no tool for them is offered: " +
-		strings.Join(off, "; ") + ". If the user asks for one, say b4 can do it and name the setting under Settings -> Integrations -> MCP server — do not tell them the feature does not exist."
+		strings.Join(off, "; ") + ". If the user asks for one, say b4 can do it and name the setting under Settings -> Integrations -> MCP server - do not tell them the feature does not exist."
 }
 
 func mcpCapabilityInstruction(caps mcpCapabilities) string {
@@ -880,7 +886,7 @@ func (api *API) addMCPPrompts(srv *mcp.Server) {
 			"4. If a set does cover it, call b4_get_config for that set and read the relevant b4://topics/ resources before commenting on any setting.",
 			"5. If the bypass looks configured but ineffective, call b4_diagnostics and check the firewall rule groups are actually installed.",
 			"",
-			"Do not guess a setting's unit or default from its name — read the matching b4://topics/ resource.",
+			"Do not guess a setting's unit or default from its name - read the matching b4://topics/ resource.",
 			"State clearly which changes you are recommending and why; do not claim to have applied anything.",
 		}, "\n")
 		return &mcp.GetPromptResult{
