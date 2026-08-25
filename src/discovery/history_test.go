@@ -66,3 +66,16 @@ func TestHistoryKeepsOnlyTheWinningPresetsSet(t *testing.T) {
 		t.Errorf("the run id must be recorded so a caller can address it later, got %q", e.SuiteId)
 	}
 }
+
+func TestCancelSuiteWithoutAChannelDoesNotPanic(t *testing.T) {
+	suite := &CheckSuite{Id: "hand-built", Status: CheckStatusRunning}
+	RegisterSuite(suite)
+	t.Cleanup(func() { suite.Status = CheckStatusComplete })
+
+	if err := CancelCheckSuite(suite.Id); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	if suite.Status != CheckStatusCanceled {
+		t.Errorf("a suite built without NewCheckSuite must still cancel, got %q", suite.Status)
+	}
+}

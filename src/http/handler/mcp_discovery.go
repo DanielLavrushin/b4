@@ -119,6 +119,7 @@ type mcpDiscoveryDomain struct {
 	DNSPoisoned   bool    `json:"dns_poisoned,omitempty"`
 	Blocked       bool    `json:"transport_blocked,omitempty"`
 	Confirmed     int     `json:"confirmed,omitempty"`
+	Provisional   bool    `json:"provisional,omitempty"`
 	Verdict       string  `json:"verdict"`
 }
 
@@ -135,12 +136,14 @@ type mcpDiscoveryOut struct {
 	Note      string               `json:"note"`
 }
 
-func mcpDiscoveryVerdict(d mcpDiscoveryDomain) string {
+func mcpDiscoveryVerdict(d mcpDiscoveryDomain, running bool) string {
 	switch {
 	case d.BaselineWorks:
 		return "works without b4 - do not create a set for it"
 	case d.Blocked:
 		return "the address itself is unreachable, so no packet strategy can help; only a proxy or VPN route would"
+	case d.Found && running:
+		return fmt.Sprintf("%s is the best so far, but the run is still testing and this is PROVISIONAL: it has not been confirmed, a better one may still win, and nothing can be applied until the run finishes or is cancelled", d.BestPreset)
 	case d.Found:
 		return fmt.Sprintf("a working strategy was found (%s)", d.BestPreset)
 	default:
@@ -148,7 +151,7 @@ func mcpDiscoveryVerdict(d mcpDiscoveryDomain) string {
 	}
 }
 
-func (api *API) mcpDiscoverySuiteRows(snap *mcpSuiteSnapshot) []mcpDiscoveryDomain {
+func (api *API) mcpDiscoverySuiteRows(snap *mcpSuiteSnapshot, running bool) []mcpDiscoveryDomain {
 	family := map[string]string{}
 	for _, g := range snap.StrategyGroups {
 		for _, d := range g.Domains {
@@ -175,7 +178,8 @@ func (api *API) mcpDiscoverySuiteRows(snap *mcpSuiteSnapshot) []mcpDiscoveryDoma
 			row.DNSPoisoned = r.DNSResult.IsPoisoned
 			row.Blocked = r.DNSResult.TransportBlocked
 		}
-		row.Verdict = mcpDiscoveryVerdict(row)
+		row.Provisional = running && row.Found
+		row.Verdict = mcpDiscoveryVerdict(row, running)
 		rows = append(rows, row)
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Domain < rows[j].Domain })
@@ -304,7 +308,7 @@ func (api *API) mcpDiscoveryStatus(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpD
 			BaselineWorks: e.BaselineWorks,
 			Confirmed:     e.Confirmed,
 		}
-		row.Verdict = mcpDiscoveryVerdict(row)
+		row.Verdict = mcpDiscoveryVerdict(row, false)
 		if row.Found && e.ApplicableSet() != nil {
 			applicable++
 		}
@@ -350,11 +354,16 @@ func (api *API) mcpDiscoverySuiteStatus(suite *discovery.CheckSuite) (*mcp.CallT
 	if err != nil {
 		return nil, mcpDiscoveryOut{}, err
 	}
+	running := false
+	switch discovery.CheckStatus(snap.Status) {
+	case discovery.CheckStatusRunning, discovery.CheckStatusPending:
+		running = true
+	}
 	out := mcpDiscoveryOut{
 		Id:      snap.Id,
 		Status:  snap.Status,
 		Source:  "run",
-		Domains: api.mcpDiscoverySuiteRows(snap),
+		Domains: api.mcpDiscoverySuiteRows(snap, running),
 	}
 	switch discovery.CheckStatus(snap.Status) {
 	case discovery.CheckStatusRunning, discovery.CheckStatusPending:
@@ -366,7 +375,8 @@ func (api *API) mcpDiscoverySuiteStatus(suite *discovery.CheckSuite) (*mcp.CallT
 
 	switch discovery.CheckStatus(snap.Status) {
 	case discovery.CheckStatusRunning, discovery.CheckStatusPending:
-		out.Note = fmt.Sprintf("still running (%s, %s). Do not poll in a loop: check again only when the user asks.",
+		out.Note = fmt.Sprintf("still running (%s, %s). Any strategy listed is the BEST SO FAR, not a result: it is unconfirmed, a better one may still win, and action=apply is refused until the run ends. "+
+			"If the user wants to stop and keep what has been found, action=cancel ends the run and saves it. Do not poll in a loop: check again only when the user asks.",
 			out.Phase, out.Progress)
 		if snap.CurrentDomain != "" {
 			out.Note = fmt.Sprintf("still running on %s (%s, %s). Do not poll in a loop: check again only when the user asks.",
@@ -422,8 +432,13 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		return nil, mcpDiscoveryOut{}, fmt.Errorf("domain is required for action=apply")
 	}
 	if api.discoveryRT != nil && api.discoveryRT.IsActive() {
+		if cur, ok := discovery.GetCurrentSuite(); ok && cur != nil {
+			return nil, mcpDiscoveryOut{}, fmt.Errorf(
+				"a discovery run is still going, so there is nothing settled to apply: whatever it has found is the best so far, unconfirmed, and may still be beaten. " +
+					"Call action=status to see how far it has got, or action=cancel to stop it and keep what it has found, which can then be applied")
+		}
 		return nil, mcpDiscoveryOut{}, fmt.Errorf(
-			"a discovery run is still tearing down: applying now would block on a firewall refresh for up to five minutes. Call action=status until it reports finished, then apply")
+			"a discovery run is still tearing down its firewall rules: applying now would block on a firewall refresh for up to five minutes. Call action=status until it reports finished, then apply")
 	}
 
 	id := mcpResolveSuiteID(in.Id)
@@ -432,16 +447,21 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 	var groupDomains []string
 	suiteID := id
 	source := "run"
+	unconfirmed := false
 
 	if suite, ok := discovery.GetCheckSuite(id); ok && suite != nil {
 		snap, err := mcpSuiteProjection(suite)
 		if err != nil {
 			return nil, mcpDiscoveryOut{}, err
 		}
-		if status := strings.ToLower(snap.Status); status != string(discovery.CheckStatusComplete) {
+		status := discovery.CheckStatus(strings.ToLower(snap.Status))
+		switch status {
+		case discovery.CheckStatusComplete:
+		case discovery.CheckStatusCanceled:
+			unconfirmed = true
+		default:
 			return nil, mcpDiscoveryOut{}, fmt.Errorf(
-				"that run is %s, and a run that did not finish leaves a strategy it never confirmed: applying it would write an untested set. Run discovery for %s again",
-				status, domain)
+				"that run is %s, so it holds nothing settled to apply. Call action=status, and action=cancel if you want to stop it and keep what it has found", status)
 		}
 		suiteID = snap.Id
 		for _, g := range snap.StrategyGroups {
@@ -483,6 +503,7 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 			return nil, mcpDiscoveryOut{}, fmt.Errorf(
 				"the saved run found no working strategy for %s, so there is nothing to apply. Run discovery for it again", domain)
 		}
+		unconfirmed = entry.Status == discovery.CheckStatusCanceled || entry.Confirmed == 0
 		chosen = entry.ApplicableSet()
 		if chosen == nil {
 			return nil, mcpDiscoveryOut{}, fmt.Errorf(
@@ -589,6 +610,9 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		set.Name, preset, out.Applied.Position, len(live.Sets))
 	if source == "history" {
 		out.Note += ". This came from the saved history rather than a run still in memory, so it carries the strategy that won but not any geo categories or addresses a live apply would have added"
+	}
+	if unconfirmed {
+		out.Note += ". The run it came from was stopped before it finished, so this strategy never went through the confirmation pass: it worked at least once, which is not the same as reliably. Check it with b4_test_domain_now and re-run discovery if it disappoints"
 	}
 	if len(groupDomains) > 1 {
 		out.Note += fmt.Sprintf(". That one strategy won for %s, so the set targets all of them and there is nothing left to apply for the others",

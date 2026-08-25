@@ -199,23 +199,30 @@ func TestMCPDiscoveryApplyWithoutALiveRun(t *testing.T) {
 
 func TestMCPDiscoveryVerdicts(t *testing.T) {
 	cases := []struct {
-		name string
-		row  mcpDiscoveryDomain
-		want string
+		name    string
+		row     mcpDiscoveryDomain
+		running bool
+		want    string
 	}{
-		{"baseline works", mcpDiscoveryDomain{BaselineWorks: true}, "do not create a set"},
-		{"transport blocked", mcpDiscoveryDomain{Blocked: true}, "no packet strategy can help"},
-		{"found", mcpDiscoveryDomain{Found: true, BestPreset: "combo"}, "working strategy was found"},
-		{"nothing worked", mcpDiscoveryDomain{}, "no strategy tried made it work"},
+		{"baseline works", mcpDiscoveryDomain{BaselineWorks: true}, false, "do not create a set"},
+		{"transport blocked", mcpDiscoveryDomain{Blocked: true}, false, "no packet strategy can help"},
+		{"found", mcpDiscoveryDomain{Found: true, BestPreset: "combo"}, false, "working strategy was found"},
+		{"nothing worked", mcpDiscoveryDomain{}, false, "no strategy tried made it work"},
+		{"found mid-run", mcpDiscoveryDomain{Found: true, BestPreset: "combo"}, true, "PROVISIONAL"},
 	}
 	for _, tc := range cases {
-		if got := mcpDiscoveryVerdict(tc.row); !strings.Contains(got, tc.want) {
+		if got := mcpDiscoveryVerdict(tc.row, tc.running); !strings.Contains(got, tc.want) {
 			t.Errorf("%s: verdict %q should mention %q", tc.name, got, tc.want)
 		}
 	}
 
+	midRun := mcpDiscoveryVerdict(mcpDiscoveryDomain{Found: true, BestPreset: "combo"}, true)
+	if strings.Contains(midRun, "was found") {
+		t.Errorf("a result that is still being tested must not read as settled, or a user asks for it to be applied: %q", midRun)
+	}
+
 	both := mcpDiscoveryDomain{BaselineWorks: true, Found: true, Blocked: true}
-	if !strings.Contains(mcpDiscoveryVerdict(both), "do not create a set") {
+	if !strings.Contains(mcpDiscoveryVerdict(both, false), "do not create a set") {
 		t.Error("works-without-b4 must win over every other verdict")
 	}
 }
@@ -420,7 +427,7 @@ func TestMCPDiscoveryStartRefusesPrivateHosts(t *testing.T) {
 	}
 }
 
-func TestMCPDiscoveryApplyRefusesAnUnfinishedRun(t *testing.T) {
+func TestMCPDiscoveryApplyKeepsWhatACancelledRunFound(t *testing.T) {
 	cfg := probeCfg(t)
 	cfg.System.WebServer.MCP.AllowWrites = true
 	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
@@ -445,12 +452,56 @@ func TestMCPDiscoveryApplyRefusesAnUnfinishedRun(t *testing.T) {
 	t.Cleanup(func() { mcpRememberSuite("") })
 
 	before := len(api.getCfg().Sets)
+	applied := decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{
+		"action": "apply", "domain": "rutracker.org",
+	}))
+	if !applied.Changed {
+		t.Fatalf("stopping a run that had already found something is a normal way to use it, so the result must still be applicable: %+v", applied)
+	}
+	if got := len(api.getCfg().Sets); got != before+1 {
+		t.Fatalf("expected one new set, got %d from %d", got, before)
+	}
+	if !strings.Contains(applied.Note, "stopped before it finished") {
+		t.Errorf("the strategy skipped the confirmation pass, and the result must say so rather than presenting it as settled: %q", applied.Note)
+	}
+}
+
+func TestMCPDiscoveryApplyRefusesARunThatIsStillGoing(t *testing.T) {
+	cfg := probeCfg(t)
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	set := config.NewSetConfig()
+	set.Targets.SNIDomains = []string{"rutracker.org"}
+	suite := &discovery.CheckSuite{
+		Id:     "running-run",
+		Status: discovery.CheckStatusRunning,
+		DomainDiscoveryResults: map[string]*discovery.DomainDiscoveryResult{
+			"rutracker.org": {Domain: "rutracker.org", BestPreset: "combo", BestSuccess: true},
+		},
+		StrategyGroups: []discovery.StrategyGroup{
+			{WinnerPreset: "combo", Domains: []string{"rutracker.org"}, Set: &set},
+		},
+	}
+	discovery.RegisterSuite(suite)
+	mcpRememberSuite(suite.Id)
+	t.Cleanup(func() {
+		mcpRememberSuite("")
+		_ = discovery.CancelCheckSuite(suite.Id)
+	})
+
+	before := len(api.getCfg().Sets)
 	res := callDiscovery(t, session, ctx, map[string]any{"action": "apply", "domain": "rutracker.org"})
 	if !res.IsError {
-		t.Fatal("a cancelled run never confirmed its winner, so applying it would write an untested set")
+		t.Fatal("a run still testing has nothing settled to apply")
+	}
+	if !strings.Contains(mcpErrorText(res), "cancel") {
+		t.Errorf("the refusal must offer the way forward the user actually wants, which is to stop the run and keep what it found: %q", mcpErrorText(res))
 	}
 	if got := len(api.getCfg().Sets); got != before {
-		t.Errorf("a refused apply must not add a set, got %d from %d", got, before)
+		t.Errorf("nothing should have been created, got %d from %d", got, before)
 	}
 }
 
@@ -548,9 +599,11 @@ func TestMCPDiscoveryAppliesFromHistoryByDomainAlone(t *testing.T) {
 	t.Cleanup(func() { mcpRememberSuite("") })
 
 	before := len(api.getCfg().Sets)
-	applied := decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{
-		"action": "apply", "domain": "meduza.io",
-	}))
+	res := callDiscovery(t, session, ctx, map[string]any{"action": "apply", "domain": "meduza.io"})
+	if res.IsError {
+		t.Fatalf("apply from history: %s", mcpErrorText(res))
+	}
+	applied := decodeDiscovery(t, res)
 	if !applied.Changed {
 		t.Fatalf("the domain alone must be enough to apply a saved result: %+v", applied)
 	}
