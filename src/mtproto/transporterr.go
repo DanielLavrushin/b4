@@ -32,6 +32,12 @@ const (
 	tgErrFlood           = -429
 	tgErrInvalidDC       = -444
 
+	// transportErrMinPayload is the smallest payload that can be an error code,
+	// and the code reads four bytes out of the frame, so anything shorter is not
+	// a short frame but a length that cannot be right at all. Intermediate and
+	// padded take their length straight off the wire, so one to three bytes is
+	// reachable from a desynced or hostile upstream.
+	transportErrMinPayload = 4
 	// transportErrMaxPayload is the largest payload still read as an error code.
 	// Padded intermediate appends up to three bytes, and Telegram Desktop applies
 	// the same rule: a frame carrying fewer than three int32s is an error.
@@ -135,7 +141,7 @@ func (s *dcFrameScanner) feed(chunk []byte) (out, rest []byte, code int32, found
 			if !ready {
 				continue
 			}
-			if n <= 0 {
+			if n < transportErrMinPayload {
 				s.disabled = true
 				out = append(out, s.hdr...)
 				s.hdr = s.hdr[:0]
@@ -156,8 +162,8 @@ func (s *dcFrameScanner) feed(chunk []byte) (out, rest []byte, code int32, found
 }
 
 // headerLen reports the payload length of the frame whose header bytes have been
-// collected so far. ready is false while the header is still incomplete, and the
-// length is non-positive when the header cannot be a frame at all.
+// collected so far. ready is false while the header is still incomplete, and a
+// length below transportErrMinPayload means the header cannot be a frame at all.
 func (s *dcFrameScanner) headerLen() (int, bool) {
 	switch s.proto {
 	case connectionTagAbridged:

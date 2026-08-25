@@ -314,3 +314,61 @@ func TestRelayKeepsTrafficBehindAPassedThroughError(t *testing.T) {
 		t.Fatalf("rest is %d bytes, want the %d that followed the error frame", len(rest), len(after))
 	}
 }
+
+// Intermediate and padded take the frame length straight off the wire, so a
+// desynced or hostile upstream can declare one, two or three bytes. Reading a
+// four-byte code out of a payload that short reaches past the bytes actually
+// written, which is stale heap memory and, once the holding buffer's capacity
+// stops covering it, a panic in a relay goroutine that nothing recovers.
+func TestDCFrameScannerRejectsUndersizedFrames(t *testing.T) {
+	for _, proto := range []uint32{connectionTagInter, connectionTagPadded} {
+		for n := uint32(0); n < transportErrMinPayload; n++ {
+			hdr := make([]byte, 4)
+			binary.LittleEndian.PutUint32(hdr, n)
+			stream := append(hdr, make([]byte, n)...)
+			stream = append(stream, []byte("traffic that must survive")...)
+
+			s := newDCFrameScanner(proto)
+			out, rest, code, found := s.feed(append([]byte(nil), stream...))
+			if found {
+				t.Errorf("proto %08x length %d: reported as transport error %d", proto, n, code)
+			}
+			if len(rest) != 0 {
+				t.Errorf("proto %08x length %d: %d bytes left in rest", proto, n, len(rest))
+			}
+			if !bytes.Equal(out, stream) {
+				t.Errorf("proto %08x length %d: forwarded %d bytes, want the whole %d", proto, n, len(out), len(stream))
+			}
+			if !s.disabled {
+				t.Errorf("proto %08x length %d: scanner must switch itself off", proto, n)
+			}
+		}
+	}
+}
+
+// The read that motivated the guard above: every frame the scanner holds back
+// has at least four payload bytes, so the code is read out of bytes that were
+// actually written.
+func TestDCFrameScannerHeldFramesAreLongEnoughToRead(t *testing.T) {
+	for _, proto := range []uint32{connectionTagAbridged, connectionTagInter, connectionTagPadded} {
+		for n := 0; n <= 64; n++ {
+			s := newDCFrameScanner(proto)
+			s.hdr = make([]byte, 0, 4)
+			switch proto {
+			case connectionTagAbridged:
+				s.hdr = append(s.hdr, byte(n))
+			default:
+				b := make([]byte, 4)
+				binary.LittleEndian.PutUint32(b, uint32(n))
+				s.hdr = append(s.hdr, b...)
+			}
+			got, ready := s.headerLen()
+			if !ready {
+				continue
+			}
+			if got >= transportErrMinPayload && got <= transportErrMaxPayload && got < 4 {
+				t.Fatalf("proto %08x header %d: payload %d would be held and read as an int32", proto, n, got)
+			}
+		}
+	}
+}
