@@ -239,3 +239,13 @@ func TestClassifyProbeBodyStillSucceedsOnACleanRead(t *testing.T) {
 		t.Errorf("a complete read must still read as success: %+v", res)
 	}
 }
+
+func TestCheckerSkipsTheMarkSyscallWhenThereIsNoMarkToSet(t *testing.T) {
+	if netprobe.Dialer(int(markThroughEngine), time.Second, time.Second).Control != nil {
+		t.Errorf("a check through the engine sets no mark, so it must not make the privileged SO_MARK call at all: " +
+			"setting it to 0 changes nothing and can only fail with EPERM, which would fail every check and trigger healing")
+	}
+	if netprobe.Dialer(0x8000, time.Second, time.Second).Control == nil {
+		t.Error("a real mark must still be applied")
+	}
+}

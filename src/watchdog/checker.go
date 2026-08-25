@@ -5,15 +5,12 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/netprobe"
-	"golang.org/x/sys/unix"
 )
 
 func checkDomain(input string, mark uint, timeout time.Duration) CheckResult {
@@ -25,19 +22,7 @@ func checkDomain(input string, mark uint, timeout time.Duration) CheckResult {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	dialer := &net.Dialer{
-		Timeout:   timeout / 2,
-		KeepAlive: timeout,
-		Control: func(_, _ string, c syscall.RawConn) error {
-			var ctrlErr error
-			if err := c.Control(func(fd uintptr) {
-				ctrlErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_MARK, int(mark))
-			}); err != nil {
-				return err
-			}
-			return ctrlErr
-		},
-	}
+	dialer := netprobe.Dialer(int(mark), timeout/2, timeout)
 
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
