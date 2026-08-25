@@ -33,14 +33,18 @@ const (
 	// A client is already committed by the time the dial starts: the fake-TLS and
 	// obfuscated handshakes are answered locally, in under a millisecond, so
 	// Telegram counts the session as accepted and then waits for a data center
-	// that b4 has not reached yet. It does not wait long, and it holds the proxy
-	// responsible for the silence - the dialog that says the proxy is
-	// misconfigured and will be disabled. In a capture from a censored network
-	// every session whose dial ran past five seconds was found already closed
-	// when the relay finally started, up=N down=0 in 0ms, while every session
-	// that started relaying inside 300 ms carried traffic normally. So the whole
-	// dial, across every transport it tries, has to fit inside that window with
-	// room to spare, and one dead candidate must not be able to spend it.
+	// that b4 has not reached yet. It does not wait long. In a capture from a
+	// censored network every session whose dial ran past five seconds was found
+	// already closed when the relay finally started, up=N down=0 in 0ms, while
+	// every session that started relaying inside 300 ms carried traffic normally.
+	// So the whole dial, across every transport it tries, has to fit inside that
+	// window with room to spare, and one dead candidate must not be able to spend
+	// it.
+	//
+	// This budget does not touch the dialog that says the proxy is misconfigured,
+	// whatever it once looked like: that dialog has one trigger in both clients, a
+	// four-byte -444 arriving from the data center, and silence delivers no such
+	// value. See transportErrHandler.
 	dialBudget    = 4500 * time.Millisecond
 	wsDialTimeout = 3 * time.Second
 	// tcpDialTimeout is the direct-to-DC fallback, reached only after the
@@ -239,6 +243,15 @@ func workerNameOf(p transportPlan) string {
 	return ""
 }
 
+// routeName is describe() for a plan that may be the zero value, which a dialInfo
+// carries whenever the route was not recorded.
+func (p transportPlan) routeName() string {
+	if p.sni == "" && p.addr == "" {
+		return ""
+	}
+	return p.describe()
+}
+
 func (p transportPlan) describe() string {
 	switch p.kind {
 	case transportWS:
@@ -332,13 +345,7 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 				log.Debugf("%s DC %d native WS edge skipped (blacklisted)", tg(""), dc)
 			} else {
 				dh := wsNativeDialHost(cfg.WSEndpointHost)
-				primary := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d.web.telegram.org", absDC), dialHost: dh, native: true}
-				media := transportPlan{kind: transportWS, dc: dc, sni: fmt.Sprintf("kws%d-1.web.telegram.org", absDC), dialHost: dh, native: true}
-				if dc < 0 {
-					plans = append(plans, media, primary)
-				} else {
-					plans = append(plans, primary, media)
-				}
+				plans = append(plans, nativeEdgePlans(dc, absDC, dh)...)
 			}
 		}
 		if d := strings.TrimSpace(cfg.WSCustomDomain); d != "" {
@@ -410,6 +417,13 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 	if len(plans) == 0 {
 		return nil, fmt.Errorf("no transports available for DC %d (mode=%s)", absDC, mode)
 	}
+	if log.Level(log.CurLevel.Load()) >= log.LevelTrace {
+		names := make([]string, 0, len(plans))
+		for _, p := range plans {
+			names = append(names, p.describe())
+		}
+		log.Tracef("%s DC %d transport list (mode=%s): %s", tg(""), dc, mode, strings.Join(names, " -> "))
+	}
 	return plans, nil
 }
 
@@ -420,6 +434,11 @@ type dialInfo struct {
 	transport string
 	isWorker  bool
 	worker    string
+	// plan is the route the session actually rides. A pooled session used to be
+	// logged as "ws-pool" and nothing else, so an upstream that rejected the
+	// session could not be told apart from one that carried it, and nothing could
+	// rank that route down afterwards.
+	plan transportPlan
 }
 
 // dialPools bundles the warm-connection pools a dial may draw from. Both the
@@ -452,18 +471,18 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 	tag := tg(logID)
 	if pool := pools.wsPool(); pool != nil && !wsIsBlacklisted(dc) {
 		if raw := pool.get(dc); raw != nil {
-			obf, err := completeObfuscation(raw, dc, protoTag)
-			if err == nil && raw.liveNow() {
-				log.Infof("%s DC %d connected via ws-pool", tag, dc)
+			obf, err := completeObfuscation(raw.conn, dc, protoTag)
+			if err == nil && raw.conn.liveNow() {
+				log.Infof("%s DC %d connected via ws-pool %s", tag, dc, raw.plan.describe())
 				wsRecordSuccess(dc)
-				return obf, dialInfo{transport: "ws-pool"}, nil
+				return obf, dialInfo{transport: "ws-pool", plan: raw.plan}, nil
 			}
 			if err != nil {
-				log.Debugf("%s DC %d pool conn obf init failed: %v", tag, dc, err)
+				log.Debugf("%s DC %d pool conn on %s obf init failed: %v", tag, dc, raw.plan.describe(), err)
 			} else {
-				log.Debugf("%s DC %d pool conn died before relay; re-dialing fresh", tag, dc)
+				log.Debugf("%s DC %d pool conn on %s died before relay; re-dialing fresh", tag, dc, raw.plan.describe())
 			}
-			_ = raw.Close()
+			_ = raw.conn.Close()
 		}
 	}
 
@@ -508,7 +527,7 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 				if oerr == nil && raw.liveNow() {
 					log.Infof("%s DC %d connected via %s (pooled)", tag, dc, p.describe())
 					workerPool.warm(p)
-					return obf, dialInfo{transport: p.describe(), isWorker: true, worker: p.sni}, nil
+					return obf, dialInfo{transport: p.describe(), isWorker: true, worker: p.sni, plan: p}, nil
 				}
 				if oerr != nil {
 					log.Debugf("%s DC %d worker pool conn obf init failed: %v", tag, dc, oerr)
@@ -607,7 +626,7 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 			tcpRecordSuccess(p.addr)
 		}
 		log.Infof("%s DC %d connected via %s in %dms", tag, dc, p.describe(), time.Since(start).Milliseconds())
-		return obfConn, dialInfo{transport: p.describe(), isWorker: p.isWorker, worker: workerNameOf(p)}, nil
+		return obfConn, dialInfo{transport: p.describe(), isWorker: p.isWorker, worker: workerNameOf(p), plan: p}, nil
 	}
 
 	if nativeTried > 0 {

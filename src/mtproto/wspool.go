@@ -2,7 +2,9 @@ package mtproto
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -259,6 +261,16 @@ func wsResetState() {
 type wsPoolEntry struct {
 	conn    *wsConn
 	created time.Time
+	plan    transportPlan
+}
+
+// wsPoolConn is a spare handed to a caller together with the route it was dialled
+// on. Without the route a pooled session is logged as "ws-pool" and nothing says
+// which name carried it, so an upstream that rejects the session cannot be told
+// apart from one that carried it.
+type wsPoolConn struct {
+	conn *wsConn
+	plan transportPlan
 }
 
 type wsPool struct {
@@ -312,10 +324,11 @@ func (p *wsPool) close() {
 }
 
 // get returns a pre-warmed *wsConn for the given signed DC (negative = media),
-// or nil if the pool is empty. On hit and miss it schedules an async refill so
-// the next caller can also hit. The returned conn has had no obfuscated init
-// sent yet - caller must run completeObfuscation on it.
-func (p *wsPool) get(dc int) *wsConn {
+// or nil if the pool is empty, together with the route it was dialled on. On hit
+// and miss it schedules an async refill so the next caller can also hit. The
+// returned conn has had no obfuscated init sent yet - caller must run
+// completeObfuscation on it.
+func (p *wsPool) get(dc int) *wsPoolConn {
 	if p == nil {
 		return nil
 	}
@@ -327,7 +340,9 @@ func (p *wsPool) get(dc int) *wsConn {
 	p.mu.Lock()
 	bucket := p.idle[k]
 	now := time.Now()
-	var picked *wsConn
+	var picked *wsPoolConn
+	var age time.Duration
+	dropped := 0
 	for len(bucket) > 0 {
 		e := bucket[0]
 		bucket = bucket[1:]
@@ -337,13 +352,23 @@ func (p *wsPool) get(dc int) *wsConn {
 		// and makes foreign-channel media downloads hang.
 		if e.conn.closed.Load() || now.Sub(e.created) > p.maxAge || !e.conn.alive() {
 			go func(c *wsConn) { _ = c.Close() }(e.conn)
+			dropped++
 			continue
 		}
-		picked = e.conn
+		picked = &wsPoolConn{conn: e.conn, plan: e.plan}
+		age = now.Sub(e.created)
 		break
 	}
+	remaining := len(bucket)
 	p.idle[k] = bucket
 	p.mu.Unlock()
+
+	if picked != nil {
+		log.Tracef("%s WS pool %s hit on %s, age %dms, %d spare(s) left, %d stale discarded",
+			tg(""), k, picked.plan.describe(), age.Milliseconds(), remaining, dropped)
+	} else {
+		log.Tracef("%s WS pool %s miss, %d stale discarded", tg(""), k, dropped)
+	}
 
 	p.scheduleRefill(dc)
 	return picked
@@ -395,7 +420,7 @@ func (p *wsPool) refill(dc int) {
 	// parallel dials so the pool fills in ~one RTT instead of need*RTT;
 	// individual failures don't abort siblings, matching tg-ws-proxy
 	type result struct {
-		conn *wsConn
+		conn *wsPoolConn
 		err  error
 	}
 	results := make(chan result, need)
@@ -410,6 +435,7 @@ func (p *wsPool) refill(dc int) {
 		}()
 	}
 	added := 0
+	routes := map[string]int{}
 	for i := 0; i < need; i++ {
 		r := <-results
 		if r.err != nil || r.conn == nil {
@@ -419,23 +445,28 @@ func (p *wsPool) refill(dc int) {
 			continue
 		}
 		if p.ctx.Err() != nil {
-			_ = r.conn.Close()
+			_ = r.conn.conn.Close()
 			continue
 		}
 		p.mu.Lock()
-		p.idle[k] = append(p.idle[k], wsPoolEntry{conn: r.conn, created: time.Now()})
+		p.idle[k] = append(p.idle[k], wsPoolEntry{conn: r.conn.conn, created: time.Now(), plan: r.conn.plan})
 		p.mu.Unlock()
+		routes[r.conn.plan.describe()]++
 		added++
 	}
 	if added > 0 {
-		log.Debugf("%s WS pool %s refilled +%d (target=%d)", tg(""), k, added, p.targetFor(k))
+		names := make([]string, 0, len(routes))
+		for r, n := range routes {
+			names = append(names, fmt.Sprintf("%s x%d", r, n))
+		}
+		sort.Strings(names)
+		log.Debugf("%s WS pool %s refilled +%d (target=%d) on %s", tg(""), k, added, p.targetFor(k), strings.Join(names, ", "))
 	}
 }
 
 // dialFresh opens a raw WS connection (TLS + Upgrade) to a TG edge for `dc`.
-// Tries both kwsN[-1] domains in the order matching media-vs-primary preference.
-// Returns the first one to succeed, or the last error.
-func (p *wsPool) dialFresh(dc int) (*wsConn, error) {
+// Returns the first plan to succeed together with that plan, or the last error.
+func (p *wsPool) dialFresh(dc int) (*wsPoolConn, error) {
 	plans := wsPlansForDC(dc, p.cfg)
 	if len(plans) > wsPoolMaxPlanAttempts {
 		plans = plans[:wsPoolMaxPlanAttempts]
@@ -459,7 +490,7 @@ func (p *wsPool) dialFresh(dc int) (*wsConn, error) {
 			if pl.native {
 				wsRecordSuccess(dc)
 			}
-			return wsc, nil
+			return &wsPoolConn{conn: wsc, plan: pl}, nil
 		}
 		_ = conn.Close()
 	}
@@ -483,13 +514,7 @@ func wsPlansForDC(dc int, cfg *MTProtoUpstream) []transportPlan {
 	}
 	if wsEdgeServesDC(absDC) {
 		dh := wsNativeDialHost(override)
-		primary := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(absDC, ""), dialHost: dh, native: true}
-		media := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(absDC, "-1"), dialHost: dh, native: true}
-		if dc < 0 {
-			plans = append(plans, media, primary)
-		} else {
-			plans = append(plans, primary, media)
-		}
+		plans = append(plans, nativeEdgePlans(dc, absDC, dh)...)
 	}
 	if cfg != nil && cfg.WSCustomDomain != "" {
 		plans = append(plans, transportPlan{
@@ -531,6 +556,30 @@ func (p *wsPool) targetFor(k wsKey) int {
 
 func kwsHost(dc int, suffix string) string {
 	return "kws" + strconv.Itoa(dc) + suffix + ".web.telegram.org"
+}
+
+// nativeEdgePlans builds Telegram's own WebSocket edge plans for a signed DC.
+//
+// kwsN-1 is the media cluster and kwsN the primary one, and the two clusters do
+// not accept each other's sessions symmetrically. Measured against 149.154.167.220
+// with a complete req_pq_multi and req_DH_params exchange: the primary cluster
+// answers server_DH_params_ok to a media session, while the media cluster answers
+// a primary session with the four-byte transport error -444, on both DC 2 and DC 4,
+// every time. The dc the cluster checks is the one inside the client's
+// RSA-encrypted p_q_inner_data, which the proxy cannot read or correct, so a
+// primary session that lands on kwsN-1 is rejected and the client is told the
+// proxy is misconfigured and switches it off.
+//
+// Both names resolve to the same address, so kwsN-1 was never a route around a
+// blocked kwsN - only a way to fail the session. A media session still falls back
+// to the primary name, because that direction is accepted.
+func nativeEdgePlans(dc, absDC int, dialHost string) []transportPlan {
+	primary := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(absDC, ""), dialHost: dialHost, native: true}
+	if dc >= 0 {
+		return []transportPlan{primary}
+	}
+	media := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(absDC, "-1"), dialHost: dialHost, native: true}
+	return []transportPlan{media, primary}
 }
 
 func kwsCustom(dc int, domain string) string {
