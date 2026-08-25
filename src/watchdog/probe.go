@@ -3,6 +3,7 @@ package watchdog
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -206,8 +207,24 @@ func ProbeHost(ctx context.Context, host string, opt ProbeOptions) (CheckResult,
 	if d := time.Since(start).Seconds(); d > 0 {
 		speed = float64(read) / d
 	}
+	return classifyProbeBody(ctx.Err(), head, read, speed)
+}
+
+func classifyProbeBody(ctxErr error, head []byte, read int64, speed float64) (CheckResult, error) {
 	if blockErr := netprobe.DetectBlockPageBody(head); blockErr != "" {
 		return CheckResult{Error: blockErr, Verdict: netprobe.DomainISPPage}, nil
+	}
+	if ctxErr != nil {
+		if errors.Is(ctxErr, context.Canceled) {
+			return CheckResult{}, fmt.Errorf("the probe was cut short after %d bytes: %w", read, ctxErr)
+		}
+		status, detail := netprobe.ClassifyTLSErrorStaged(ctxErr, netprobe.StageRead, int(read))
+		return CheckResult{
+			Error:     fmt.Sprintf("%s after %d bytes", detail, read),
+			Verdict:   status,
+			BytesRead: read,
+			Speed:     speed,
+		}, nil
 	}
 	if read < 1024 {
 		return CheckResult{Error: fmt.Sprintf("insufficient data: %d bytes", read), Verdict: netprobe.DomainError}, nil

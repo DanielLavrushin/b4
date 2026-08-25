@@ -5,10 +5,12 @@ import (
 	"errors"
 	"net"
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/netprobe"
 )
 
 func TestIsReservedAddrCoversTheWholeLocalSpace(t *testing.T) {
@@ -172,5 +174,68 @@ func TestChecksGoThroughTheEngine(t *testing.T) {
 	}
 	if markThroughEngine == uint(config.SelfDialMark) {
 		t.Fatalf("the self-dial mark 0x%x is b4 exempting its own traffic, which is what a check must not do", config.SelfDialMark)
+	}
+}
+
+func TestClassifyProbeBodyDoesNotCallAStallASuccess(t *testing.T) {
+	res, err := classifyProbeBody(context.DeadlineExceeded, nil, 13*1024, 1300)
+	if err != nil {
+		t.Fatalf("a stalled read is a verdict, not a caller error: %v", err)
+	}
+	if res.OK {
+		t.Fatal("the read ran out of time, so the fetch did not succeed and must not be reported as working")
+	}
+	if res.Verdict != netprobe.DomainTCP16 {
+		t.Errorf("a stall at %d bytes is inside b4's own 12-69KB fat-flow window and must be named as that signature, got %q", 13*1024, res.Verdict)
+	}
+	if res.BytesRead != 13*1024 || res.Speed == 0 {
+		t.Errorf("how far it got before stalling is the useful part of the answer: %+v", res)
+	}
+}
+
+func TestClassifyProbeBodyKeepsATimeoutOutOfInsufficientData(t *testing.T) {
+	res, err := classifyProbeBody(context.DeadlineExceeded, nil, 200, 20)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Verdict != netprobe.DomainTimeout {
+		t.Errorf("200 bytes and then a deadline is a timeout, not merely a short body, got %q", res.Verdict)
+	}
+	if strings.Contains(res.Error, "insufficient data") {
+		t.Errorf("reporting the symptom hides the cause: %q", res.Error)
+	}
+}
+
+func TestClassifyProbeBodyKeepsABlockPageOverATimeout(t *testing.T) {
+	page := []byte("<html><body>Доступ к информационному ресурсу ограничен</body></html>")
+	if netprobe.DetectBlockPageBody(page) == "" {
+		t.Skip("this fixture is not recognised as a block page")
+	}
+	res, err := classifyProbeBody(context.DeadlineExceeded, page, 2000, 200)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Verdict != netprobe.DomainISPPage {
+		t.Errorf("the body proves what happened, so it must win over the timeout that followed it, got %q", res.Verdict)
+	}
+}
+
+func TestClassifyProbeBodyReportsCancellationAsCallerError(t *testing.T) {
+	_, err := classifyProbeBody(context.Canceled, nil, 5000, 500)
+	if err == nil {
+		t.Fatal("the caller went away; inventing a censorship verdict from that would be a false positive")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("the reason must survive: %v", err)
+	}
+}
+
+func TestClassifyProbeBodyStillSucceedsOnACleanRead(t *testing.T) {
+	res, err := classifyProbeBody(nil, nil, 4096, 4096)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !res.OK || res.BytesRead != 4096 {
+		t.Errorf("a complete read must still read as success: %+v", res)
 	}
 }
