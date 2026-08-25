@@ -1334,7 +1334,7 @@ func TestToolsListStaysWithinContextBudget(t *testing.T) {
 		writes, probes bool
 		budget         int
 	}{
-		{"default", false, false, 16000},
+		{"default", false, false, 17000},
 		{"writes and probes", true, true, 30000},
 	} {
 		cfg := mcpTestCfg()
@@ -1609,5 +1609,115 @@ func TestStatusReportsGatedCapabilitiesAsData(t *testing.T) {
 				t.Errorf("%s: status note should mention %q, got %q", c.name, want, out.Note)
 			}
 		}
+	}
+}
+
+func callLogs(t *testing.T, session *mcp.ClientSession, ctx context.Context, args map[string]any) mcpLogsOut {
+	t.Helper()
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_logs_tail", Arguments: args})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("b4_logs_tail returned an error: %s", mcpErrorText(res))
+	}
+	var out mcpLogsOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	return out
+}
+
+func TestMCPLogsTailReadsTheUpdateTranscript(t *testing.T) {
+	dir := t.TempDir()
+	cfg := mcpTestCfg()
+	cfg.System.Logging.Directory = dir
+
+	if err := os.WriteFile(cfg.System.Logging.ErrorFilePath(), []byte("2026-08-25 [ERROR] nftables rule failed\n"), 0o644); err != nil {
+		t.Fatalf("write error log: %v", err)
+	}
+	if err := os.WriteFile(cfg.System.Logging.UpdateLogPath(),
+		[]byte("2026-08-25 [HANDLER] Update process started (PID: 4242)\ninstaller: downloading b4 1.80.0\ninstaller: FAILED to restart service\n"), 0o644); err != nil {
+		t.Fatalf("write update log: %v", err)
+	}
+
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	upd := callLogs(t, session, ctx, map[string]any{"file": "update"})
+	if upd.File != "update" {
+		t.Errorf("the result must say which log it read, got %q", upd.File)
+	}
+	if upd.Path != cfg.System.Logging.UpdateLogPath() {
+		t.Errorf("path = %q, want the update log", upd.Path)
+	}
+	if len(upd.Lines) != 3 || !strings.Contains(upd.Lines[2], "FAILED to restart") {
+		t.Fatalf("the installer transcript must come back verbatim: %v", upd.Lines)
+	}
+
+	errs := callLogs(t, session, ctx, nil)
+	if errs.File != "errors" {
+		t.Errorf("errors is the default, got %q", errs.File)
+	}
+	if len(errs.Lines) != 1 || !strings.Contains(errs.Lines[0], "nftables") {
+		t.Errorf("no argument must still read the error log: %v", errs.Lines)
+	}
+
+	if res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "b4_logs_tail", Arguments: map[string]any{"file": "syslog"},
+	}); err != nil {
+		t.Fatalf("call: %v", err)
+	} else if !res.IsError {
+		t.Error("an unknown log name must be refused rather than silently reading the error log")
+	}
+}
+
+func TestMCPLogsTailExplainsAnAbsentUpdateLog(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.Logging.Directory = t.TempDir()
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	out := callLogs(t, session, ctx, map[string]any{"file": "update"})
+	if len(out.Lines) != 0 {
+		t.Fatalf("nothing has been written: %v", out.Lines)
+	}
+	if !strings.Contains(out.Note, "no update has been started") {
+		t.Errorf("an empty update log means no update was run from the web interface, and the note must say so: %q", out.Note)
+	}
+}
+
+func TestMCPLogsTailReadsAcrossARollover(t *testing.T) {
+	dir := t.TempDir()
+	cfg := mcpTestCfg()
+	cfg.System.Logging.Directory = dir
+	path := cfg.System.Logging.ErrorFilePath()
+
+	var older strings.Builder
+	for i := 0; i < 20; i++ {
+		fmt.Fprintf(&older, "old-%02d the crash that mattered\n", i)
+	}
+	if err := os.WriteFile(path+".1", []byte(older.String()), 0o644); err != nil {
+		t.Fatalf("write rotated log: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("new-00 started\nnew-01 started\n"), 0o644); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	out := callLogs(t, session, ctx, map[string]any{"limit": 10})
+	if len(out.Lines) != 10 {
+		t.Fatalf("the rotated file should have filled the request, got %d lines: %v", len(out.Lines), out.Lines)
+	}
+	if !strings.Contains(out.Lines[0], "old-") {
+		t.Errorf("a rollover must not hide the lines before it: %v", out.Lines)
+	}
+	if !strings.Contains(out.Lines[len(out.Lines)-1], "new-01") {
+		t.Errorf("newest line must still be last: %v", out.Lines)
+	}
+	if !strings.Contains(out.Note, "rolled over") {
+		t.Errorf("the note must say the older file was read too: %q", out.Note)
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -374,11 +375,13 @@ type mcpRecentConnOut struct {
 }
 
 type mcpLogsIn struct {
+	File     string `json:"file,omitempty" jsonschema:"'errors' (default) or 'update'."`
 	Limit    int    `json:"limit,omitempty" jsonschema:"Maximum lines to return, newest last. Default 100, maximum 500."`
 	Contains string `json:"contains,omitempty" jsonschema:"Optional case-insensitive substring filter."`
 }
 
 type mcpLogsOut struct {
+	File      string   `json:"file,omitempty"`
 	Path      string   `json:"path,omitempty"`
 	Lines     []string `json:"lines"`
 	Matched   int      `json:"matched"`
@@ -677,14 +680,21 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	})
 
 	addTool(srv, &mcp.Tool{
-		Name:        "b4_logs_tail",
-		Title:       "Tail the b4 log",
-		Description: "Most recent lines from b4's error and system log, newest last. Use after b4_status and b4_diagnostics when something is configured correctly but still not working. This log holds b4's own errors and warnings - it does NOT record per-domain traffic, so do not filter it by a domain name; use b4_recent_connections to find out whether a domain is being matched. The 'note' field always explains the result, including why it is empty.",
+		Name:  "b4_logs_tail",
+		Title: "Tail the b4 log",
+		Description: "Most recent lines from one of b4's logs, newest last. Use after b4_status and b4_diagnostics when something is configured correctly but still not working. " +
+			"file=errors is b4's error log, ERROR level ONLY: empty means no errors were recorded, not that nothing happened. " +
+			"file=update is the installer transcript of the last update started in the web interface, and the only place that output exists: read it when an update left b4 broken. " +
+			"Neither records per-domain traffic, so never filter by a domain name; use b4_recent_connections for that. The 'note' field explains every result, including an empty one.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpLogsIn) (*mcp.CallToolResult, mcpLogsOut, error) {
-		path := api.getCfg().System.Logging.ErrorFilePath()
+		which, path, err := mcpLogChoice(api.getCfg(), in.File)
+		if err != nil {
+			return nil, mcpLogsOut{}, err
+		}
 		if path == "" {
 			return nil, mcpLogsOut{
+				File:  which,
 				Lines: []string{},
 				Note:  "file logging is disabled (system.logging.directory is empty), so there is no log to read",
 			}, nil
@@ -693,12 +703,13 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		limit := mcpClampLimit(in.Limit)
 
 		filter := strings.TrimSpace(in.Contains)
-		res, err := tailLines(path, limit, filter)
+		res, rolled, err := tailWithRotation(path, limit, filter)
 		if err != nil {
 			return nil, mcpLogsOut{}, fmt.Errorf("read %s: %w", path, err)
 		}
 
 		out := mcpLogsOut{
+			File:      which,
 			Path:      path,
 			Lines:     res.Lines,
 			Matched:   res.Matched,
@@ -706,13 +717,17 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 			Truncated: res.Truncated,
 		}
 		switch {
+		case !res.Exists && which == "update":
+			out.Note = "no update has been started from the web interface on this machine, so there is no transcript. An update run over SSH writes nothing here"
 		case !res.Exists:
 			out.Note = "the log file does not exist yet - b4 has not written anything to it"
+		case res.Scanned == 0 && which == "errors":
+			out.Note = "the error log exists but is empty, which means b4 has recorded no errors. It does not mean nothing happened: warnings and ordinary activity are never written here"
 		case res.Scanned == 0:
 			out.Note = "the log file exists but is empty"
 		case filter != "" && res.Matched == 0:
 			out.Note = fmt.Sprintf(
-				"no lines matched %q among the %d most recent lines. This log contains b4's own errors, not per-domain traffic - to check whether a domain is being matched, call b4_recent_connections instead.",
+				"no lines matched %q among the %d most recent lines. This log contains b4's own output, not per-domain traffic - to check whether a domain is being matched, call b4_recent_connections instead.",
 				filter, res.Scanned)
 		case filter != "" && res.Truncated:
 			out.Note = fmt.Sprintf("%d of the %d most recent lines matched %q; the newest %d are returned", res.Matched, res.Scanned, filter, len(res.Lines))
@@ -722,6 +737,12 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 			out.Note = fmt.Sprintf("the newest %d of %d available lines", len(res.Lines), res.Matched)
 		default:
 			out.Note = fmt.Sprintf("%d most recent lines", len(res.Lines))
+		}
+		if rolled {
+			out.Note += fmt.Sprintf(". %s had rolled over, so the older %s.1 was read as well", filepath.Base(path), filepath.Base(path))
+		}
+		if which == "errors" && res.Exists && res.Scanned > 0 {
+			out.Note += ". Every line here is an ERROR; b4 never writes warnings or ordinary activity to this file"
 		}
 		return nil, out, nil
 	})
@@ -1042,4 +1063,36 @@ func extractJSONPath(raw []byte, path string) ([]byte, error) {
 		cur = next
 	}
 	return json.Marshal(cur)
+}
+
+func mcpLogChoice(cfg *config.Config, want string) (name, path string, err error) {
+	switch strings.ToLower(strings.TrimSpace(want)) {
+	case "", "errors", "error", "errors.log":
+		return "errors", cfg.System.Logging.ErrorFilePath(), nil
+	case "update", "updates", "update.log":
+		return "update", cfg.System.Logging.UpdateLogPath(), nil
+	}
+	return "", "", fmt.Errorf("unknown log %q: expected errors or update", want)
+}
+
+func tailWithRotation(path string, limit int, contains string) (tailResult, bool, error) {
+	res, err := tailLines(path, limit, contains)
+	if err != nil {
+		return tailResult{}, false, err
+	}
+	if len(res.Lines) >= limit {
+		return res, false, nil
+	}
+
+	older, err := tailLines(path+".1", limit-len(res.Lines), contains)
+	if err != nil || !older.Exists {
+		return res, false, nil
+	}
+
+	res.Lines = append(older.Lines, res.Lines...)
+	res.Matched += older.Matched
+	res.Scanned += older.Scanned
+	res.Truncated = res.Truncated || older.Truncated
+	res.Exists = res.Exists || older.Exists
+	return res, true, nil
 }

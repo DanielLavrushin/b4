@@ -117,7 +117,7 @@ Only `POST` is served. `GET` and `DELETE` return 405, which is normal for this t
 | `b4_get_set` | One set in full | "Show the full configuration of the set named video." |
 | `b4_get_config` | The configuration, or one section of it | "Show the DNS section of the configuration." |
 | `b4_recent_connections` | Connections b4 processed, with the set that matched each | "Has any traffic for youtube.com reached b4?" |
-| `b4_logs_tail` | The tail of b4's error and system log | "Turn the log level up to debug, then show me the last 50 lines." |
+| `b4_logs_tail` | The tail of `errors.log`, or of `update.log` with `file=update` | "Did b4 write anything to the error log?" / "The update broke it - what did the installer say?" |
 | `b4_metrics` | Packet-engine counters | "What is the current connection rate and memory use?" |
 | `b4_diagnostics` | OS, kernel, interfaces, firewall backend and the rule groups b4 installed | "Are b4's firewall rules actually installed?" |
 | `b4_list_writable_paths` | Which settings can be changed, with types and accepted values | "What can you change about the video set?" |
@@ -189,7 +189,7 @@ Refused whatever this setting is on:
 | The log directory and the geo file locations | Filesystem locations, not contents: a wrong log directory silently stops file logging, and a wrong geo path empties every geosite category at once |
 
 :::info Refusing a path is not the same as refusing access
-Only the *locations* are refused, never the contents. `b4_logs_tail` reads the log whatever the directory is set to, and `system.logging.level` is writable, so a model can turn the level up, reproduce the problem and read the log back without being able to move the file somewhere it cannot find.
+Only the *locations* are refused, never the contents. `b4_logs_tail` reads both log files whatever the directory is set to, without being able to move either somewhere it cannot find. Note that `system.logging.level` does not change what reaches `errors.log`: only errors are ever written there, at any level. Raising the level adds detail to the console and the web interface's live log view, which MCP does not read.
 :::
 
 :::info The dividing line is recoverability, not sensitivity
