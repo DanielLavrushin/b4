@@ -17,6 +17,7 @@ Configured in **Settings -> Integrations -> MCP server**.
 | --- | --- |
 | **Enable MCP server** | The switch in the card header. Serves the endpoint at `/api/mcp`. Off by default. |
 | **Allow configuration changes** | Lets the AI change settings as well as read them. Off by default. See [Changing settings](#changing-settings). |
+| **Allow active probes** | Lets the AI fetch a domain from the router to see whether it loads, and run a discovery search for a working bypass strategy. Off by default, and separate from configuration changes: emitting traffic is a different permission from writing settings. |
 | **Access token** | The credential AI applications present. **Generate** creates one, **Regenerate** replaces it. |
 | **Client configuration** | The endpoint URL and header block to paste into the AI application. **Copy** puts the whole block, with the full token, on the clipboard. |
 
@@ -104,12 +105,19 @@ Only `POST` is served. `GET` and `DELETE` return 405, which is normal for this t
 | Tool | Answers | Example prompt |
 | --- | --- | --- |
 | `b4_status` | Version, capture engine, firewall backend, how many sets exist and are enabled, uptime | "Is b4 running, and which capture engine is active?" |
+| `b4_get_topic` | What a setting does, its unit, its real default, and what a zero or empty value means | "What does the strict switch on a set's DNS actually do?" |
+| `b4_geo_lookup` | Which geosite or geoip categories exist, what one holds, and which of them cover a domain or an address | "Which geosite category covers rutracker.org?" |
+| `b4_edit_set_targets` | Adds or removes domains, addresses, geo categories or source devices on one set | "Add rutracker.org to the video set." |
+| `b4_test_domain_now` | Fetches a domain through b4 and again with b4 bypassed, and says which of the two works | "Is rutracker.org actually loading right now?" |
+| `b4_watchdog` | The last verdict for every watched domain, and add/remove/enable/check | "Which of the sites you are watching are failing?" |
+| `b4_manage_set` | Creates, duplicates, moves, enables, deletes or resets a strategy set | "Make a new set for rutracker.org and put it last." |
+| `b4_find_bypass_strategy` | Runs discovery against a domain and turns the winning strategy into a set | "Find something that makes rutracker.org load." |
 | `b4_check_domain` | Which sets target a domain, how the match was made, whether that set is enabled | "Is rutracker.org covered by any set?" |
 | `b4_list_sets` | Every set in priority order, with domain counts and primary strategy | "List the sets and how many domains each targets." |
 | `b4_get_set` | One set in full | "Show the full configuration of the set named video." |
 | `b4_get_config` | The configuration, or one section of it | "Show the DNS section of the configuration." |
 | `b4_recent_connections` | Connections b4 processed, with the set that matched each | "Has any traffic for youtube.com reached b4?" |
-| `b4_logs_tail` | The tail of b4's error and system log | "Turn the log level up to debug, then show me the last 50 lines." |
+| `b4_logs_tail` | The tail of `errors.log`, or of `update.log` with `file=update` | "Did b4 write anything to the error log?" / "The update broke it - what did the installer say?" |
 | `b4_metrics` | Packet-engine counters | "What is the current connection rate and memory use?" |
 | `b4_diagnostics` | OS, kernel, interfaces, firewall backend and the rule groups b4 installed | "Are b4's firewall rules actually installed?" |
 | `b4_list_writable_paths` | Which settings can be changed, with types and accepted values | "What can you change about the video set?" |
@@ -117,6 +125,39 @@ Only `POST` is served. `GET` and `DELETE` return 405, which is normal for this t
 | `b4_revert_last_change` | Restores the configuration from before the last change | "That made it worse, put it back." |
 
 A ready-made prompt named `diagnose_domain` is published alongside the tools. Applications that support prompts list it separately. It takes a domain and walks the model through status, coverage, configuration and firewall checks in order.
+
+## What is served depends on what is permitted
+
+The tool list is built from the two permission switches and rebuilt whenever they change, with no restart. With both off, the AI is offered the reading tools alone; the tools that write settings or run a search are not advertised at all, so a model cannot attempt something it has not been permitted to do, and their descriptions cost nothing.
+
+| Permitted | Tools served |
+| --- | --- |
+| Nothing (default) | 13 |
+| Allow configuration changes | 17 |
+| Allow active probes | 15 |
+| Both | 19 |
+
+`b4_watchdog` is the one tool served at every level, because reading the watchdog's verdicts emits no traffic and changes nothing. Its actions are permitted separately: `status` always works, `remove` and `disable` need **Allow configuration changes**, and `add`, `enable` and `check` need **Allow active probes** as well, because each of them makes the router fetch a site.
+
+The server also tells the AI which of the two it has, so it says "here is what I would change" rather than offering to change it. That message names the setting to turn on, which is how a model can answer "why can't you?".
+
+## What b4 records about MCP
+
+Every tool call writes one line to b4's log, visible under **Logs** in the web interface: the tool, the caller's address and how long it took. A call that is refused is logged at warning level instead, so a model reaching for something it has not been permitted to do stands out from ordinary use.
+
+A request turned away at the endpoint is also logged: the server being off, a wrong or missing token, or a browser page whose origin is not allowed. The token itself is never written, presented or configured. Repeated refusals are collapsed into one line every 30 seconds with a count, so a client guessing at the token cannot push everything else out of the log.
+
+These lines go to the log stream the interface shows and to the console. They are not written to `errors.log`, which holds errors only.
+
+## Grounding
+
+Several b4 settings have names that read as something other than what they do, and a zero usually means "use the fixed value" rather than "off". b4 ships a written description of each one, and the model is told to read it before explaining or changing anything.
+
+The same descriptions are published twice. `b4_get_topic` is a tool: pass `topic` for an exact key, `path` for a setting a `b4_set_config_value` path names - `sets[video].tcp.win.mode` works, the set is ignored - or `query` to search. Calling it with no arguments lists every documented key. The `b4://topics/<key>` resources hold the identical text.
+
+The duplication is deliberate. Resources are the tidier fit, but most applications never show them to the model - LM Studio and the OpenAI-compatible bridges list resources for the user, not the assistant. A description reachable only as a resource is a description the model never reads, so it is a tool as well.
+
+Asking about a setting that has no description yet returns a note saying so, along with the documented settings nearby. That answer is deliberate too: it tells the model to say it is unsure rather than guess a unit from the field name.
 
 :::info Two different questions about a domain
 `b4_check_domain` answers whether a domain is *configured* in a set. `b4_recent_connections` answers whether traffic for it *arrived* and which set matched. A domain can be configured and still see no traffic, which is what separates a targeting mistake from a routing one.
@@ -156,7 +197,7 @@ Refused whatever this setting is on:
 | The log directory and the geo file locations | Filesystem locations, not contents: a wrong log directory silently stops file logging, and a wrong geo path empties every geosite category at once |
 
 :::info Refusing a path is not the same as refusing access
-Only the *locations* are refused, never the contents. `b4_logs_tail` reads the log whatever the directory is set to, and `system.logging.level` is writable, so a model can turn the level up, reproduce the problem and read the log back without being able to move the file somewhere it cannot find.
+Only the *locations* are refused, never the contents. `b4_logs_tail` reads both log files whatever the directory is set to, without being able to move either somewhere it cannot find. Note that `system.logging.level` does not change what reaches `errors.log`: only errors are ever written there, at any level. Raising the level adds detail to the console and the web interface's live log view, which MCP does not read.
 :::
 
 :::info The dividing line is recoverability, not sensitivity

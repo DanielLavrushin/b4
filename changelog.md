@@ -1,5 +1,13 @@
 # B4 - Bye Bye Big Bro
 
+## [1.80.0] - 2026-08-25
+
+- ADDED: **An MCP server that can act on b4 rather than only describe it** - the AI could read status and change one setting at a time, so anything a user asked for came back as instructions to carry out by hand. It gains per-setting facts, geosite and geoip search, target and set editing, the last update's transcript, and behind a separate **Allow active probes** permission, testing whether a domain loads and running Discovery. `Settings > Integrations`.
+- ADDED: **A log line for every MCP tool call and every request the endpoint turns away** - a server able to rewrite strategy sets and make the router fetch a site left no trace, and a client guessing at the access token was refused silently.
+- FIXED: **A Discovery run's result became unreachable the moment the run ended** - only the copy held in memory was consulted, and that is dropped 30 seconds after a run finishes, though the web interface had always applied the same result from saved history. A strategy named while a run was still testing also read as settled, and stopping a run early threw away what it had found.
+- FIXED: **The Discovery history file grew by roughly half a megabyte per domain tested** - every strategy a run tried was saved with a full copy of the set b4 built to test it, so the hundred entries the file keeps could reach 60 MB on a router whose flash holds far less.
+- FIXED: **The watchdog judged every watched domain on a fetch that skipped b4's own bypass** - its checks carried the mark b4 puts on traffic it has already handled, so the verdict described the unprotected path rather than the set meant to be protecting that domain.
+
 ## [1.79.0] - 2026-08-18
 
 - ADDED: **A WEB carrier for the MTProto proxy, which Telegram Desktop 7.1.1 reaches over ordinary HTTPS** - a client on a network that blocks MTProxy and fake-TLS outright had no way in, because every transport b4 offered still opened a recognisable MTProto socket from the client. b4 answers a relay hostname with a bridge page the client loads in a hidden WebView, multiplexes the MTProxy stream through a same-origin WebSocket, and hands each logical stream to the same secrets, DC pool and upstream routing as a plain connection; requests without a valid bridge token get an ordinary page. `Settings > MTProto Proxy`.

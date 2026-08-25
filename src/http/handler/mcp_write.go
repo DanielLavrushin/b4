@@ -198,6 +198,50 @@ func parseMCPWritePath(path string) (canonical, setRef string, err error) {
 	return path[:open+1] + "]" + path[closing+1:], setRef, nil
 }
 
+func mcpHasSourceEntries(entries []string) bool {
+	for _, e := range entries {
+		if strings.TrimSpace(e) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func mcpPathTouchesTargets(canonical string) bool {
+	return strings.HasPrefix(canonical, mcpSetPathPrefix+".targets")
+}
+
+func mcpPathIsTargetList(canonical string) bool {
+	for _, kind := range mcpTargetKinds {
+		if canonical == mcpSetPathPrefix+".targets."+kind {
+			return true
+		}
+	}
+	return false
+}
+
+func mcpExpansionNote(e *mcpTargetExpansion) string {
+	if e == nil {
+		return ""
+	}
+	var parts []string
+	if len(e.EmptyGeoSite) > 0 {
+		parts = append(parts, fmt.Sprintf(
+			"geosite %s matched no domains - an unknown category name is skipped silently, so check the spelling or whether a geosite database is installed",
+			strings.Join(e.EmptyGeoSite, ", ")))
+	}
+	if len(e.EmptyGeoIP) > 0 {
+		parts = append(parts, fmt.Sprintf(
+			"geoip %s matched no addresses - an unknown category name is skipped silently, so check the spelling or whether a geoip database is installed",
+			strings.Join(e.EmptyGeoIP, ", ")))
+	}
+	if len(parts) == 0 {
+		return fmt.Sprintf("the set now matches %d domains and %d addresses.", e.Domains, e.IPs)
+	}
+	return fmt.Sprintf("The set now matches %d domains and %d addresses, but %s.",
+		e.Domains, e.IPs, strings.Join(parts, "; "))
+}
+
 func mcpPathAllowed(canonical string) bool {
 	for _, root := range mcpWritableRoots {
 		if canonical == root || strings.HasPrefix(canonical, root+".") {
@@ -447,6 +491,13 @@ func mcpValidateCandidate(oldCfg, newCfg *config.Config) error {
 			},
 			err: "the SOCKS5 username and password must both be set or both be empty",
 		},
+		{
+			ok: func(c *config.Config) bool {
+				s5 := c.System.Socks5
+				return !s5.Enabled || s5.Username != "" || mcpHasSourceEntries(s5.AllowedSources)
+			},
+			err: "the SOCKS5 server would accept every client without a password: set a username and password, or an allowed_sources list, in the web interface before enabling it. Both are refused over MCP, so they cannot be set from here",
+		},
 	} {
 		if !rule.ok(newCfg) && rule.ok(oldCfg) {
 			return fmt.Errorf("%s", rule.err)
@@ -480,6 +531,15 @@ func mcpWritablePaths(cfg *config.Config, sample *config.SetConfig) []mcpPathInf
 			out = append(out, mcpCollectPaths(cur, root)...)
 		}
 	}
+
+	kept := out[:0]
+	for _, p := range out {
+		if mcpPathIsTargetList(p.Path) {
+			continue
+		}
+		kept = append(kept, p)
+	}
+	out = kept
 
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
 	return out
@@ -546,12 +606,20 @@ type mcpSetValueIn struct {
 	Value string `json:"value" jsonschema:"New value as a string: 'true'/'false' for booleans, digits for numbers, a comma-separated list for list settings."`
 }
 
+type mcpTargetExpansion struct {
+	Domains      int      `json:"domain_count"`
+	IPs          int      `json:"ip_count"`
+	EmptyGeoSite []string `json:"geosite_categories_matching_nothing,omitempty"`
+	EmptyGeoIP   []string `json:"geoip_categories_matching_nothing,omitempty"`
+}
+
 type mcpSetValueOut struct {
-	Path     string `json:"path"`
-	Previous string `json:"previous"`
-	Current  string `json:"current"`
-	Changed  bool   `json:"changed"`
-	Note     string `json:"note,omitempty"`
+	Path      string              `json:"path"`
+	Previous  string              `json:"previous"`
+	Current   string              `json:"current"`
+	Changed   bool                `json:"changed"`
+	Expansion *mcpTargetExpansion `json:"expansion,omitempty"`
+	Note      string              `json:"note,omitempty"`
 }
 
 type mcpRevertOut struct {
@@ -565,26 +633,18 @@ type mcpRevertOut struct {
 
 func mcpWriteToolDescription() string {
 	var sb strings.Builder
-	sb.WriteString("Change one b4 setting and apply it live (no restart). ")
-	sb.WriteString("Writable: every setting inside a strategy set (targets, fragmentation, faking, TCP/UDP, DNS, escalation, routing), ")
-	sb.WriteString("the MTProto and SOCKS5 subsystems, and the logging settings - system.logging.level takes ")
-	sb.WriteString("error, info, trace or debug, and debug is the most verbose. Address a per-set setting as sets[<id or name>].<path>, ")
-	sb.WriteString("for example sets[video].fragmentation.strategy or sets[video].tcp.seg2delay.\n")
-	sb.WriteString("Refused, always: every credential, the web server, the MCP settings themselves, the packet capture engine, ")
-	sb.WriteString("the firewall backend and the packet marks — a wrong value there can leave the machine unreachable.\n")
-	sb.WriteString("Call b4_list_writable_paths for the exact paths, types and accepted values rather than guessing a path. ")
-	sb.WriteString("A list setting is replaced wholesale, so read its current value first and send the full list back. ")
-	sb.WriteString("Requires the 'Allow configuration changes' setting to be enabled. ")
-	sb.WriteString("Confirm with the user before calling, report the returned previous/current values, ")
-	sb.WriteString("and use b4_revert_last_change if the result is not what was intended.")
+	sb.WriteString("Change one b4 setting and apply it live. Address a per-set setting as sets[<id or name>].<path>, e.g. sets[video].tcp.seg2delay.\n")
+	sb.WriteString("Call b4_list_writable_paths for the exact paths, types and accepted values rather than guessing, and b4_get_topic for what a setting means before changing it.\n")
+	sb.WriteString("Refused here: every credential, the web server, the capture engine, the firewall backend and the packet marks. A set's target lists belong to b4_edit_set_targets; its lifecycle to b4_manage_set.\n")
+	sb.WriteString("A list setting is replaced wholesale. The result reports the value read back after saving, so changed:false means b4 did not keep it. Undo with b4_revert_last_change.")
 	return sb.String()
 }
 
-func (api *API) addMCPWriteTools(srv *mcp.Server) {
+func (api *API) addMCPPathTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_list_writable_paths",
 		Title:       "List writable settings",
-		Description: "Every setting b4_set_config_value can change, with its type, current value and accepted values. Call this before writing rather than guessing a path. Read-only.",
+		Description: "Every setting b4_set_config_value can change, with its type, current value and accepted values. Call this before writing rather than guessing a path, and to say precisely what would have to change when configuration writes are switched off. Read-only.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpListPathsIn) (*mcp.CallToolResult, mcpListPathsOut, error) {
 		cfg := api.getCfg()
@@ -617,7 +677,9 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		}
 		return nil, mcpListPathsOut{Paths: paths, Note: note}, nil
 	})
+}
 
+func (api *API) addMCPWriteTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_set_config_value",
 		Title:       "Change a b4 setting",
@@ -626,7 +688,7 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpSetValueIn) (*mcp.CallToolResult, mcpSetValueOut, error) {
 		if !api.getCfg().System.WebServer.MCP.AllowWrites {
 			return nil, mcpSetValueOut{}, fmt.Errorf(
-				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> API -> MCP server to permit them")
+				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
 		}
 
 		canonical, setRef, err := parseMCPWritePath(in.Path)
@@ -636,6 +698,10 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		if !mcpPathAllowed(canonical) {
 			return nil, mcpSetValueOut{}, fmt.Errorf(
 				"path %q is not writable: %s", in.Path, mcpDeniedPathHint(canonical))
+		}
+		if mcpPathIsTargetList(canonical) {
+			return nil, mcpSetValueOut{}, fmt.Errorf(
+				"%s is edited with b4_edit_set_targets, not here: this tool replaces a list wholesale, and it would skip the entry validation and the cross-set domain handover that tool performs", in.Path)
 		}
 
 		mcpWriteMu.Lock()
@@ -652,13 +718,18 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 			return nil, mcpSetValueOut{}, fmt.Errorf("path %q cannot be written", in.Path)
 		}
 
+		readRef := setRef
+		if set := findSetIn(newCfg, setRef); set != nil && set.Id != "" {
+			readRef = set.Id
+		}
+
 		previous := mcpFormatCurrent(canonical, field)
 		if err := mcpAssignValue(field, canonical, in.Value); err != nil {
 			return nil, mcpSetValueOut{}, err
 		}
-		current := mcpFormatCurrent(canonical, field)
+		requested := mcpFormatCurrent(canonical, field)
 
-		if previous == current {
+		if previous == requested {
 			return nil, mcpSetValueOut{
 				Path: in.Path, Previous: previous, Current: previous, Changed: false,
 				Note: "already set to this value; nothing was written",
@@ -667,6 +738,19 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 
 		if err := mcpValidateCandidate(oldCfg, newCfg); err != nil {
 			return nil, mcpSetValueOut{}, fmt.Errorf("rejected: %w", err)
+		}
+
+		var expansion *mcpTargetExpansion
+		if mcpPathTouchesTargets(canonical) {
+			if set := findSetIn(newCfg, readRef); set != nil {
+				report := api.loadTargetsForSetCached(set)
+				expansion = &mcpTargetExpansion{
+					Domains:      report.Domains,
+					IPs:          report.IPs,
+					EmptyGeoSite: report.EmptyGeoSite,
+					EmptyGeoIP:   report.EmptyGeoIP,
+				}
+			}
 		}
 
 		snapshot := oldCfg.Clone()
@@ -684,6 +768,25 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		api.applyRuntimeChanges(newCfg, oldCfg)
 		refreshed := api.PerformSoftRestart(newCfg, oldCfg)
 
+		current := requested
+		if liveField, err := mcpResolvePath(api.getCfg(), canonical, readRef); err == nil {
+			current = mcpFormatCurrent(canonical, liveField)
+		}
+
+		out := mcpSetValueOut{
+			Path: in.Path, Previous: previous, Current: current,
+			Changed: current != previous, Expansion: expansion,
+		}
+
+		if current == previous {
+			out.Note = fmt.Sprintf(
+				"not applied: b4 reset %s back to %q while validating the saved configuration, so nothing changed and nothing was recorded for undo. "+
+					"Call b4_list_writable_paths for the accepted form of this setting and read its b4://topics resource before retrying.",
+				in.Path, previous)
+			log.Infof("mcp: %s rejected on save, still %s", in.Path, previous)
+			return nil, out, nil
+		}
+
 		mcpRecordChange(mcpChange{
 			Path: in.Path, Previous: previous, Current: current,
 			When: time.Now(), Snapshot: snapshot,
@@ -691,15 +794,18 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 
 		log.Infof("mcp: %s changed from %s to %s", in.Path, previous, current)
 
-		note := "applied live; no restart required. Undo with b4_revert_last_change"
+		out.Note = "applied live; no restart required. Undo with b4_revert_last_change"
 		if refreshed {
-			note = "applied live; firewall rules were refreshed to match. Undo with b4_revert_last_change"
+			out.Note = "applied live; firewall rules were refreshed to match. Undo with b4_revert_last_change"
+		}
+		if current != requested {
+			out.Note = fmt.Sprintf("b4 normalised the value on save: %s is now %q, not the requested %q. ", in.Path, current, requested) + out.Note
+		}
+		if hint := mcpExpansionNote(expansion); hint != "" {
+			out.Note = out.Note + " " + hint
 		}
 
-		return nil, mcpSetValueOut{
-			Path: in.Path, Previous: previous, Current: current, Changed: true,
-			Note: note,
-		}, nil
+		return nil, out, nil
 	})
 
 	addTool(srv, &mcp.Tool{
@@ -712,7 +818,7 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpRevertOut, error) {
 		if !api.getCfg().System.WebServer.MCP.AllowWrites {
 			return nil, mcpRevertOut{}, fmt.Errorf(
-				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> API -> MCP server to permit them")
+				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
 		}
 
 		mcpWriteMu.Lock()
@@ -727,6 +833,9 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		}
 
 		oldCfg := api.getCfg()
+		for _, set := range last.Snapshot.Sets {
+			api.loadTargetsForSetCached(set)
+		}
 		if err := api.saveAndPushConfig(last.Snapshot); err != nil {
 			mcpRecordChange(last)
 			return nil, mcpRevertOut{}, fmt.Errorf("could not restore the previous configuration: %w", err)

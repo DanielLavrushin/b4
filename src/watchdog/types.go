@@ -50,6 +50,8 @@ func ExtractDomain(input string) string {
 	return input
 }
 
+const markThroughEngine uint = 0
+
 const (
 	StatusHealthy    = "healthy"
 	StatusDegraded   = "degraded"

@@ -1,6 +1,7 @@
 package geodat
 
 import (
+	"context"
 	"net/netip"
 	"os"
 	"strings"
@@ -113,7 +114,7 @@ func CountIpsInCategories(geodataPath string, categories []string) (map[string]i
 	return counts, nil
 }
 
-func PreviewDomainsInCategory(geodataPath, category string, limit int) ([]string, int, error) {
+func PreviewDomainsInCategory(ctx context.Context, geodataPath, category string, limit int) ([]string, int, error) {
 	preview := []string{}
 	total := 0
 	if category == "" || !geositeReadable(geodataPath) {
@@ -121,6 +122,9 @@ func PreviewDomainsInCategory(geodataPath, category string, limit int) ([]string
 	}
 
 	err := streamGeoSite(geodataPath, []string{category}, func(_ string, kind uint64, value string) error {
+		if ctx.Err() != nil {
+			return errStopScan
+		}
 		domain := formatDomainEntry(kind, value)
 		if domain == "" {
 			return nil

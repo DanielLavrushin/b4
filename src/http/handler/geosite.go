@@ -165,7 +165,7 @@ func (a *API) previewGeoCategory(w http.ResponseWriter, r *http.Request) {
 
 	const previewLimit = 100
 
-	preview, total, err := a.geodataManager.PreviewGeositeCategory(category, previewLimit)
+	preview, total, err := a.geodataManager.PreviewGeositeCategory(r.Context(), category, previewLimit)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to load category: %v", err), http.StatusInternalServerError)
 		return

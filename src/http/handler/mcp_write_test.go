@@ -48,7 +48,7 @@ func decodeSetValue(t *testing.T, res *mcp.CallToolResult) mcpSetValueOut {
 	return out
 }
 
-func TestMCPWriteDisabledByDefault(t *testing.T) {
+func TestMCPWriteToolsAreNotOfferedWhenWritesDisabled(t *testing.T) {
 	cfg := mcpTestCfg()
 	cfg.System.MTProto.Enabled = true
 	if cfg.System.WebServer.MCP.AllowWrites {
@@ -57,17 +57,29 @@ func TestMCPWriteDisabledByDefault(t *testing.T) {
 	srv := newMCPTestServer(t, cfg)
 	session, ctx := connectMCP(t, srv)
 
-	res := callSetValue(t, session, ctx, "system.mtproto.enabled", "false")
-	if !res.IsError {
-		t.Fatal("write must be refused when allow_writes is false")
+	got := toolNames(t, session, ctx)
+	for _, name := range []string{
+		"b4_set_config_value", "b4_revert_last_change",
+		"b4_edit_set_targets", "b4_manage_set",
+	} {
+		if got[name] {
+			t.Errorf("%s must not be offered while configuration writes are disabled", name)
+		}
 	}
-	if !cfg.System.MTProto.Enabled {
-		t.Fatal("config must be untouched when writes are disabled")
+	if !got["b4_list_writable_paths"] {
+		t.Error("b4_list_writable_paths reads and never writes, so a read-only session still needs it to say what would have to change")
+	}
+
+	if instr := session.InitializeResult().Instructions; !strings.Contains(instr, "Allow configuration changes") {
+		t.Errorf("instructions must name the setting that unlocks writing: %q", instr)
+	}
+	if cfg.System.MTProto.Enabled != true {
+		t.Error("config must be untouched")
 	}
 }
 
 func TestMCPWriteToolIsAnnotatedDestructive(t *testing.T) {
-	srv := newMCPTestServer(t, mcpTestCfg())
+	srv := newMCPTestServer(t, writableCfg(t))
 	session, ctx := connectMCP(t, srv)
 
 	tools, err := session.ListTools(ctx, nil)
@@ -90,7 +102,7 @@ func TestMCPWriteToolIsAnnotatedDestructive(t *testing.T) {
 		for _, want := range []string{
 			"b4_list_writable_paths",
 			"b4_revert_last_change",
-			"Allow configuration changes",
+			"b4_edit_set_targets",
 			"sets[<id or name>]",
 		} {
 			if !strings.Contains(tool.Description, want) {
@@ -103,7 +115,7 @@ func TestMCPWriteToolIsAnnotatedDestructive(t *testing.T) {
 }
 
 func TestMCPRevertToolIsRegisteredAndDestructive(t *testing.T) {
-	srv := newMCPTestServer(t, mcpTestCfg())
+	srv := newMCPTestServer(t, writableCfg(t))
 	session, ctx := connectMCP(t, srv)
 
 	tools, err := session.ListTools(ctx, nil)
@@ -417,7 +429,7 @@ func TestMCPWriteCoercesEveryScalarKind(t *testing.T) {
 		{"sets[video].faking.timestamp_decrease", "1200", "1200"},          // uint32
 		{"sets[video].tcp.drop_sack", "true", "true"},                      // bool
 		{"sets[video].tcp.dport_filter", "80,443,8443", "80,443,8443"},     // string
-		{"sets[video].targets.sni_domains", "a.com, b.com", "a.com,b.com"}, // []string
+		{"sets[video].fragmentation.strategy_pool", "tcp, oob", "tcp,oob"}, // []string
 		{"system.mtproto.port", "1443", "1443"},
 		{"system.socks5.udp_timeout", "45", "45"},
 	}
@@ -434,8 +446,8 @@ func TestMCPWriteCoercesEveryScalarKind(t *testing.T) {
 
 	// Read through the API: saving stores a new config pointer rather than
 	// mutating the one the test handed in.
-	if got := api.getCfg().Sets[0].Targets.SNIDomains; len(got) != 2 || got[0] != "a.com" || got[1] != "b.com" {
-		t.Errorf("live set domains = %v, want [a.com b.com]", got)
+	if got := api.getCfg().Sets[0].Fragmentation.StrategyPool; len(got) != 2 || got[0] != "tcp" || got[1] != "oob" {
+		t.Errorf("live strategy pool = %v, want [tcp oob]", got)
 	}
 }
 
@@ -527,17 +539,21 @@ func TestMCPRevertWalksBackOneChangeAtATime(t *testing.T) {
 	}
 }
 
-func TestMCPRevertRefusedWhenWritesDisabled(t *testing.T) {
+func TestMCPRevertWithdrawnWhenWritesDisabledMidSession(t *testing.T) {
 	mcpResetHistory()
-	srv := newMCPTestServer(t, mcpTestCfg())
+	srv, api := newMCPTestServerAPI(t, writableCfg(t))
 	session, ctx := connectMCP(t, srv)
 
-	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_revert_last_change"})
-	if err != nil {
-		t.Fatalf("call: %v", err)
+	if !toolNames(t, session, ctx)["b4_revert_last_change"] {
+		t.Fatal("precondition: undo is offered while writes are on")
 	}
-	if !res.IsError {
-		t.Error("undo must be refused while configuration writes are disabled")
+
+	revoked := api.getCfg().Clone()
+	revoked.System.WebServer.MCP.AllowWrites = false
+	api.cfgPtr.Store(revoked)
+
+	if toolNames(t, session, ctx)["b4_revert_last_change"] {
+		t.Error("undo must be withdrawn as soon as writes are disabled")
 	}
 }
 
@@ -558,7 +574,7 @@ func TestMCPPreconditionOnlyBlocksWritesThatBreakIt(t *testing.T) {
 }
 
 func TestMCPListWritablePaths(t *testing.T) {
-	srv := newMCPTestServer(t, mcpTestCfg())
+	srv := newMCPTestServer(t, writableCfg(t))
 	session, ctx := connectMCP(t, srv)
 
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_list_writable_paths"})
@@ -575,7 +591,7 @@ func TestMCPListWritablePaths(t *testing.T) {
 		byPath[p.Path] = p
 	}
 	for _, want := range []string{
-		"sets[].enabled", "sets[].tcp.seg2delay", "sets[].targets.sni_domains",
+		"sets[].enabled", "sets[].tcp.seg2delay", "sets[].targets.domain_only",
 		"sets[].fragmentation.strategy", "system.mtproto.port", "system.socks5.udp_timeout",
 	} {
 		if _, ok := byPath[want]; !ok {
@@ -585,6 +601,7 @@ func TestMCPListWritablePaths(t *testing.T) {
 	for _, unwanted := range []string{
 		"sets[].id", "sets[].routing.upstream.password", "sets[].routing.fwmark",
 		"system.socks5.password", "system.web_server.port", "queue.mode",
+		"sets[].targets.sni_domains", "sets[].targets.ip",
 	} {
 		if _, ok := byPath[unwanted]; ok {
 			t.Errorf("%q must not be listed as writable", unwanted)
@@ -597,8 +614,8 @@ func TestMCPListWritablePaths(t *testing.T) {
 	if got := byPath["sets[].tcp.seg2delay"]; got.Type != "number" {
 		t.Errorf("seg2delay type = %q, want number", got.Type)
 	}
-	if got := byPath["sets[].targets.sni_domains"]; got.Type != "list" {
-		t.Errorf("sni_domains type = %q, want list", got.Type)
+	if got := byPath["sets[].fragmentation.strategy_pool"]; got.Type != "list" {
+		t.Errorf("strategy_pool type = %q, want list", got.Type)
 	}
 }
 
@@ -633,7 +650,7 @@ func TestMCPWriteLogLevelByName(t *testing.T) {
 }
 
 func TestMCPListWritablePathsShowsLogLevelNames(t *testing.T) {
-	srv := newMCPTestServer(t, mcpTestCfg())
+	srv := newMCPTestServer(t, writableCfg(t))
 	session, ctx := connectMCP(t, srv)
 
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{
@@ -660,4 +677,186 @@ func TestMCPListWritablePathsShowsLogLevelNames(t *testing.T) {
 		return
 	}
 	t.Fatal("system.logging.level should be listed as writable")
+}
+
+func TestMCPWriteRefusesTargetLists(t *testing.T) {
+	cfg := writableCfg(t)
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	for _, path := range []string{
+		"sets[video].targets.sni_domains",
+		"sets[video].targets.ip",
+		"sets[video].targets.geosite_categories",
+		"sets[video].targets.geoip_categories",
+		"sets[video].targets.source_devices",
+	} {
+		res := callSetValue(t, session, ctx, path, "something")
+		if !res.IsError {
+			t.Errorf("%s must be refused here: this tool replaces a list wholesale and skips validation and the cross-set handover", path)
+			continue
+		}
+		if !strings.Contains(mcpErrorText(res), "b4_edit_set_targets") {
+			t.Errorf("the refusal for %s must name the tool that does the job: %q", path, mcpErrorText(res))
+		}
+	}
+	if got := api.getCfg().Sets[0].Targets.SNIDomains; len(got) != 1 || got[0] != "youtube.com" {
+		t.Errorf("targets must be untouched: %v", got)
+	}
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "b4_list_writable_paths",
+		Arguments: map[string]any{"prefix": "sets[].targets"},
+	})
+	if err != nil {
+		t.Fatalf("list writable paths: %v", err)
+	}
+	var out mcpListPathsOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, p := range out.Paths {
+		if mcpPathIsTargetList(p.Path) {
+			t.Errorf("%s must not be advertised as writable here", p.Path)
+		}
+	}
+	if len(out.Paths) == 0 {
+		t.Error("the scalar targets settings should still be listed")
+	}
+}
+
+func TestMCPWriteReportsValueRejectedByValidate(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	mcpResetHistory()
+	t.Cleanup(mcpResetHistory)
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	res := callSetValue(t, session, ctx, "sets[video].escalate.to", "disabled-set")
+	if res.IsError {
+		t.Fatalf("write failed: %+v", res.Content)
+	}
+	out := decodeSetValue(t, res)
+	if out.Changed {
+		t.Errorf("write did not survive Validate and must not report a change: %+v", out)
+	}
+	if out.Current != "" || out.Current != out.Previous {
+		t.Errorf("current must be the value read back after saving, got %+v", out)
+	}
+	if !strings.Contains(out.Note, "not applied") {
+		t.Errorf("note must say the value was not kept: %q", out.Note)
+	}
+	if got := api.getCfg().Sets[0].Escalate.To; got != "" {
+		t.Fatalf("escalate.to should have been cleared, got %q", got)
+	}
+	if len(mcpHistory) != 0 {
+		t.Errorf("a write that changed nothing must not spend an undo slot, history = %d", len(mcpHistory))
+	}
+}
+
+func TestMCPWriteAcceptedValueIsReadBack(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	mcpResetHistory()
+	t.Cleanup(mcpResetHistory)
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[video].escalate.to", "set-2"))
+	if !out.Changed || out.Current != "set-2" {
+		t.Fatalf("a valid set id must be kept: %+v", out)
+	}
+	if got := api.getCfg().Sets[0].Escalate.To; got != "set-2" {
+		t.Fatalf("escalate.to = %q, want set-2", got)
+	}
+	if len(mcpHistory) != 1 {
+		t.Errorf("a real change must be undoable, history = %d", len(mcpHistory))
+	}
+}
+
+func TestMCPValidateCandidateRefusesOpenSocks5(t *testing.T) {
+	base := mcpTestCfg()
+	base.System.Socks5.Enabled = false
+	base.System.Socks5.Username = ""
+	base.System.Socks5.Password = ""
+
+	open := base.Clone()
+	open.System.Socks5.Enabled = true
+	if err := mcpValidateCandidate(base, open); err == nil {
+		t.Fatal("enabling SOCKS5 with no password and no source ACL publishes an open proxy and must be refused")
+	}
+
+	withACL := base.Clone()
+	withACL.System.Socks5.Enabled = true
+	withACL.System.Socks5.AllowedSources = []string{"192.168.1.0/24"}
+	if err := mcpValidateCandidate(base, withACL); err != nil {
+		t.Errorf("a source ACL is enough to enable it: %v", err)
+	}
+
+	withCreds := base.Clone()
+	withCreds.System.Socks5.Enabled = true
+	withCreds.System.Socks5.Username = "u"
+	withCreds.System.Socks5.Password = "p"
+	if err := mcpValidateCandidate(base, withCreds); err != nil {
+		t.Errorf("credentials are enough to enable it: %v", err)
+	}
+
+	alreadyOpen := open.Clone()
+	unrelated := alreadyOpen.Clone()
+	unrelated.System.Logging.Level = 3
+	if err := mcpValidateCandidate(alreadyOpen, unrelated); err != nil {
+		t.Errorf("a configuration that is already open must not block unrelated writes: %v", err)
+	}
+}
+
+func TestMCPWriteRefusesUpstreamEndpoint(t *testing.T) {
+	cfg := mcpSecretsCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	for _, path := range []string{
+		"sets[video].routing.upstream.host",
+		"sets[video].routing.upstream.port",
+	} {
+		if res := callSetValue(t, session, ctx, path, "10.0.0.10"); !res.IsError {
+			t.Errorf("%s must be refused: repointing the endpoint makes b4 offer the stored proxy credentials to it", path)
+		}
+	}
+	if got := api.getCfg().Sets[0].Routing.Upstream.Host; got != "10.0.0.9" {
+		t.Fatalf("upstream host was changed to %q", got)
+	}
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "b4_list_writable_paths",
+		Arguments: map[string]any{"prefix": "sets[].routing.upstream"},
+	})
+	if err != nil {
+		t.Fatalf("list writable paths: %v", err)
+	}
+	var out mcpListPathsOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, p := range out.Paths {
+		if strings.HasSuffix(p.Path, ".upstream.host") || strings.HasSuffix(p.Path, ".upstream.port") {
+			t.Errorf("%s must not be advertised as writable", p.Path)
+		}
+	}
+}
+
+func TestMCPWriteRenameReadsBackByID(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[video].name", "clips"))
+	if !out.Changed || out.Previous != "video" || out.Current != "clips" {
+		t.Fatalf("renaming a set must be reported accurately: %+v", out)
+	}
+	if got := api.getCfg().Sets[0].Name; got != "clips" {
+		t.Fatalf("name = %q, want clips", got)
+	}
 }

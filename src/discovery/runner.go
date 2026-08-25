@@ -93,11 +93,12 @@ func CancelCheckSuite(id string) error {
 	defer suite.mu.Unlock()
 
 	if suite.Status == CheckStatusPending || suite.Status == CheckStatusRunning {
-		select {
-		case <-suite.cancel:
-			// already canceled
-		default:
-			close(suite.cancel)
+		if suite.cancel != nil {
+			select {
+			case <-suite.cancel:
+			default:
+				close(suite.cancel)
+			}
 		}
 		suite.Status = CheckStatusCanceled
 	}

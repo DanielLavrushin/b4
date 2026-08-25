@@ -314,9 +314,9 @@ func TestAIExplainLanguageInstruction(t *testing.T) {
 	api := newAITestAPI(t, mgr)
 
 	cases := []struct {
-		lang     string
-		want     string
-		notWant  string
+		lang    string
+		want    string
+		notWant string
 	}{
 		{lang: "ru", want: "Reply in Russian"},
 		{lang: "ru-RU", want: "Reply in Russian"},

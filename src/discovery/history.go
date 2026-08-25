@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -34,6 +35,24 @@ type HistoryEntry struct {
 	Confirmed     int                            `json:"confirmed,omitempty"`
 	ConfirmTries  int                            `json:"confirm_tries,omitempty"`
 	FinalHost     string                         `json:"final_host,omitempty"`
+	SuiteId       string                         `json:"suite_id,omitempty"`
+	Set           *config.SetConfig              `json:"set,omitempty"`
+}
+
+// ApplicableSet returns the set a caller can install for this entry: the
+// group-scoped winner the run built, or the winning preset's own set for an
+// entry written before that was recorded.
+func (e HistoryEntry) ApplicableSet() *config.SetConfig {
+	if e.Set != nil {
+		return e.Set
+	}
+	if e.BestPreset == "" || e.Results == nil {
+		return nil
+	}
+	if r, ok := e.Results[e.BestPreset]; ok && r != nil {
+		return r.Set
+	}
+	return nil
 }
 
 // DiscoveryHistory manages persistent discovery results.
@@ -112,6 +131,8 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 		}
 
 		entry := HistoryEntry{
+			SuiteId:       suite.Id,
+			Set:           suite.scopedSetFor(domainResult.Domain),
 			Domain:        domainResult.Domain,
 			Url:           domainResult.Url,
 			BestPreset:    domainResult.BestPreset,
@@ -121,7 +142,7 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 			Status:        suite.Status,
 			StartTime:     suite.StartTime,
 			EndTime:       suite.EndTime,
-			Results:       domainResult.Results,
+			Results:       trimPresetSets(domainResult.Results, domainResult.BestPreset),
 			DNSResult:     domainResult.DNSResult,
 			BaselineSpeed: domainResult.BaselineSpeed,
 			BaselineWorks: domainResult.BaselineWorks,
@@ -171,4 +192,41 @@ func (dh *DiscoveryHistory) RemoveDomain(domain string) {
 			return
 		}
 	}
+}
+
+func (ts *CheckSuite) scopedSetFor(domain string) *config.SetConfig {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+
+	for _, g := range ts.StrategyGroups {
+		if g.Set == nil {
+			continue
+		}
+		for _, d := range g.Domains {
+			if d == domain {
+				return g.Set
+			}
+		}
+	}
+	return nil
+}
+
+func trimPresetSets(results map[string]*DomainPresetResult, best string) map[string]*DomainPresetResult {
+	if len(results) == 0 {
+		return results
+	}
+	out := make(map[string]*DomainPresetResult, len(results))
+	for name, r := range results {
+		if r == nil {
+			continue
+		}
+		if name == best || r.Set == nil {
+			out[name] = r
+			continue
+		}
+		trimmed := *r
+		trimmed.Set = nil
+		out[name] = &trimmed
+	}
+	return out
 }

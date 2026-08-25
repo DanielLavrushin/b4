@@ -1,6 +1,7 @@
 package geodat
 
 import (
+	"context"
 	"sort"
 	"sync"
 
@@ -25,6 +26,9 @@ type GeodataManager struct {
 
 	categoryIps       map[string][]string // category -> IPs (cached)
 	categoryIpsCounts map[string]int      // category -> IP count (fast lookup)
+
+	categoryList      map[string][]string // file path -> category names (cached)
+	categoryListStamp map[string]string   // file path -> size:modtime the listing came from
 }
 
 // NewGeodataManager creates a new geodata manager instance
@@ -36,6 +40,8 @@ func NewGeodataManager(geositePath, geoipPath string) *GeodataManager {
 		categoryDomainsCounts: make(map[string]int),
 		categoryIps:           make(map[string][]string),
 		categoryIpsCounts:     make(map[string]int),
+		categoryList:          make(map[string][]string),
+		categoryListStamp:     make(map[string]string),
 	}
 }
 
@@ -54,6 +60,8 @@ func (gm *GeodataManager) UpdatePaths(geositePath, geoipPath string) {
 		gm.categoryDomainsCounts = make(map[string]int)
 		gm.categoryIps = make(map[string][]string)
 		gm.categoryIpsCounts = make(map[string]int)
+		gm.categoryList = make(map[string][]string)
+		gm.categoryListStamp = make(map[string]string)
 		log.Infof("Geodata paths updated, cache cleared")
 	}
 }
@@ -201,7 +209,7 @@ func (gm *GeodataManager) GetGeoipCategoryCounts(categories []string) (map[strin
 	return counts, nil
 }
 
-func (gm *GeodataManager) PreviewGeositeCategory(category string, limit int) ([]string, int, error) {
+func (gm *GeodataManager) PreviewGeositeCategory(ctx context.Context, category string, limit int) ([]string, int, error) {
 	gm.mu.RLock()
 	domains, cached := gm.categoryDomains[category]
 	path := gm.geositePath
@@ -219,7 +227,7 @@ func (gm *GeodataManager) PreviewGeositeCategory(category string, limit int) ([]
 		return nil, 0, log.Errorf("geosite path not configured")
 	}
 
-	return PreviewDomainsInCategory(path, category, limit)
+	return PreviewDomainsInCategory(ctx, path, category, limit)
 }
 
 func (gm *GeodataManager) RetainCategories(geositeCategories, geoipCategories []string) {
@@ -252,6 +260,17 @@ func (gm *GeodataManager) RetainCategories(geositeCategories, geoipCategories []
 }
 
 func (gm *GeodataManager) ListCategories(filePath string) ([]string, error) {
+	stamp, ok := fileStamp(filePath)
+	if ok {
+		gm.mu.RLock()
+		cached, hit := gm.categoryList[filePath]
+		cachedStamp := gm.categoryListStamp[filePath]
+		gm.mu.RUnlock()
+		if hit && cachedStamp == stamp {
+			return append([]string(nil), cached...), nil
+		}
+	}
+
 	log.Tracef("Listing geo dat tags from %s", filePath)
 
 	set := map[string]struct{}{}
@@ -268,6 +287,13 @@ func (gm *GeodataManager) ListCategories(filePath string) ([]string, error) {
 		tags = append(tags, t)
 	}
 	sort.Strings(tags)
+
+	if ok {
+		gm.mu.Lock()
+		gm.categoryList[filePath] = tags
+		gm.categoryListStamp[filePath] = stamp
+		gm.mu.Unlock()
+	}
 
 	return tags, nil
 }
@@ -314,6 +340,8 @@ func (gm *GeodataManager) ClearCache() {
 	gm.categoryDomainsCounts = make(map[string]int)
 	gm.categoryIps = make(map[string][]string)
 	gm.categoryIpsCounts = make(map[string]int)
+	gm.categoryList = make(map[string][]string)
+	gm.categoryListStamp = make(map[string]string)
 	log.Infof("Geodata cache cleared")
 }
 

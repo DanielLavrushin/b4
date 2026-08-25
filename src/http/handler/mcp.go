@@ -13,9 +13,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"sync"
+	"time"
+	"unicode/utf8"
 
 	"github.com/daniellavrushin/b4/ai"
 	"github.com/daniellavrushin/b4/config"
@@ -31,6 +34,10 @@ const (
 	mcpDefaultLines = 100
 	mcpMaxLines     = 500
 	mcpTailReadCap  = 512 << 10
+
+	mcpMaxTopicHits    = 5
+	mcpTopicExcerptLen = 400
+	mcpMaxRelated      = 6
 )
 
 var mcpUnauthWarnOnce sync.Once
@@ -39,15 +46,53 @@ func boolPtr(b bool) *bool { return &b }
 
 func addTool[In, Out any](srv *mcp.Server, t *mcp.Tool, h mcp.ToolHandlerFor[In, Out]) {
 	mcp.AddTool(srv, t, func(ctx context.Context, req *mcp.CallToolRequest, in In) (res *mcp.CallToolResult, out Out, err error) {
+		started := time.Now()
 		defer func() {
 			if r := recover(); r != nil {
 				log.Errorf("mcp: tool %q panicked: %v\n%s", t.Name, r, debug.Stack())
 				var zero Out
 				res, out, err = nil, zero, fmt.Errorf("internal error in tool %s", t.Name)
 			}
+			mcpLogCall(ctx, t.Name, started, err)
 		}()
 		return h(ctx, req, in)
 	})
+}
+
+type mcpCallerKey struct{}
+
+func mcpWithCaller(ctx context.Context, r *http.Request) context.Context {
+	return context.WithValue(ctx, mcpCallerKey{}, mcpCallerOf(r))
+}
+
+func mcpCallerOf(r *http.Request) string {
+	host, _ := splitHostPort(r.RemoteAddr)
+	if host == "" {
+		host = "unknown"
+	}
+	if fwd := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); fwd != "" {
+		if i := strings.IndexByte(fwd, ','); i >= 0 {
+			fwd = strings.TrimSpace(fwd[:i])
+		}
+		return fmt.Sprintf("%s (forwarded-for %s)", host, fwd)
+	}
+	return host
+}
+
+func mcpCaller(ctx context.Context) string {
+	if s, ok := ctx.Value(mcpCallerKey{}).(string); ok && s != "" {
+		return s
+	}
+	return "unknown"
+}
+
+func mcpLogCall(ctx context.Context, tool string, started time.Time, err error) {
+	took := time.Since(started).Round(time.Millisecond)
+	if err != nil {
+		log.Warnf("mcp: %s from %s refused after %s: %v", tool, mcpCaller(ctx), took, err)
+		return
+	}
+	log.Infof("mcp: %s from %s (%s)", tool, mcpCaller(ctx), took)
 }
 
 var mcpReadOnly = &mcp.ToolAnnotations{
@@ -61,7 +106,7 @@ var mcpReadOnly = &mcp.ToolAnnotations{
 // @Description JSON-RPC 2.0 endpoint implementing the Model Context Protocol (Streamable HTTP, stateless).
 // @Description This is not a REST resource: there is one endpoint and the operation is named in the body's "method"
 // @Description field ("tools/list", "tools/call", "resources/list", "resources/read", "prompts/list", "prompts/get").
-// @Description Tool names go in params.name — there are no per-tool URLs. Call tools/list for the authoritative,
+// @Description Tool names go in params.name - there are no per-tool URLs. Call tools/list for the authoritative,
 // @Description self-describing tool catalogue and its JSON schemas.
 // @Description The Accept header MUST list both application/json and text/event-stream; responses are Server-Sent Events.
 // @Description Disabled unless system.web_server.mcp.enabled is true. Authentication follows the web server:
@@ -77,9 +122,21 @@ var mcpReadOnly = &mcp.ToolAnnotations{
 // @Security BearerAuth
 // @Router /mcp [post]
 func (api *API) RegisterMCPApi() {
-	srv := api.newMCPServer()
+	var mu sync.Mutex
+	cache := map[mcpCapabilities]*mcp.Server{}
+	pick := func(*http.Request) *mcp.Server {
+		caps := mcpCapabilitiesFor(api.getCfg())
+		mu.Lock()
+		defer mu.Unlock()
+		if srv, ok := cache[caps]; ok {
+			return srv
+		}
+		srv := api.newMCPServer(caps)
+		cache[caps] = srv
+		return srv
+	}
 	streamable := mcp.NewStreamableHTTPHandler(
-		func(*http.Request) *mcp.Server { return srv },
+		pick,
 		&mcp.StreamableHTTPOptions{Stateless: true},
 	)
 	api.mux.Handle(mcpEndpoint, api.mcpGate(streamable))
@@ -87,7 +144,7 @@ func (api *API) RegisterMCPApi() {
 }
 
 // @Summary Generate an MCP access token
-// @Description Returns a fresh random token for MCP clients. It is not saved — store it via the config API to activate it.
+// @Description Returns a fresh random token for MCP clients. It is not saved - store it via the config API to activate it.
 // @Tags MCP
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -137,28 +194,35 @@ func (api *API) mcpGate(next http.Handler) http.Handler {
 		cfg := api.getCfg()
 
 		if !cfg.System.WebServer.MCP.Enabled {
+			mcpLogRefusal(r, "the MCP server is switched off")
 			writeJsonError(w, http.StatusNotFound, "mcp server is disabled")
 			return
 		}
 
 		if cfg.System.WebServer.MCP.Token != "" {
 			if !MCPTokenAccepts(cfg, mcpBearerToken(r)) {
+				reason := "no MCP token was presented"
+				if mcpBearerToken(r) != "" {
+					reason = "the MCP token presented is wrong"
+				}
+				mcpLogRefusal(r, reason)
 				w.Header().Set("WWW-Authenticate", `Bearer realm="b4 MCP"`)
 				writeJsonError(w, http.StatusUnauthorized, "invalid or missing MCP token")
 				return
 			}
 		} else if !mcpAuthConfigured(cfg) {
 			mcpUnauthWarnOnce.Do(func() {
-				log.Warnf("mcp: serving without authentication — no MCP token is set and web_server.username/password are empty, so anyone who can reach %s can read b4 status, configuration and diagnostics", mcpEndpoint)
+				log.Warnf("mcp: serving without authentication - no MCP token is set and web_server.username/password are empty, so anyone who can reach %s can read b4 status, configuration and diagnostics", mcpEndpoint)
 			})
 		}
 
 		if origin := r.Header.Get("Origin"); origin != "" && !mcpOriginAllowed(origin, r.Host, cfg.System.WebServer.MCP.AllowedOrigins) {
+			mcpLogRefusal(r, fmt.Sprintf("a browser page at %s tried to reach it", origin))
 			writeJsonError(w, http.StatusForbidden, "origin not allowed: add it to system.web_server.mcp.allowed_origins to permit it")
 			return
 		}
 
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(mcpWithCaller(r.Context(), r)))
 	})
 }
 
@@ -205,7 +269,19 @@ func splitHostPort(hostport string) (host, port string) {
 	return hostport, ""
 }
 
-func (api *API) newMCPServer() *mcp.Server {
+type mcpCapabilities struct {
+	Writes bool
+	Probes bool
+}
+
+func mcpCapabilitiesFor(cfg *config.Config) mcpCapabilities {
+	return mcpCapabilities{
+		Writes: cfg.System.WebServer.MCP.AllowWrites,
+		Probes: cfg.System.WebServer.MCP.AllowActiveProbes,
+	}
+}
+
+func (api *API) newMCPServer(caps mcpCapabilities) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{
 		Name:    mcpServerName,
 		Title:   "B4 DPI-bypass control plane",
@@ -213,14 +289,26 @@ func (api *API) newMCPServer() *mcp.Server {
 	}, &mcp.ServerOptions{
 		Instructions: strings.Join([]string{
 			"B4 is a Linux DPI-bypass daemon controlled through this server.",
-			"Prefer b4_check_domain before changing sets: it tells you whether a domain is already covered and by which set.",
-			"Read the b4://topics/<key> resources before explaining or tuning a setting — they are authoritative.",
-			"Never infer a setting's unit or default from its name; several are deliberately misleading.",
+			"Call b4_get_topic before explaining or tuning any setting: it returns authoritative facts for that setting and is the same corpus as the b4://topics/<key> resources, which most clients never show you.",
+			"Never infer a setting's unit, default or meaning from its name; several are deliberately misleading, and a zero often means 'use the fixed value' rather than 'off'.",
+			"Prefer b4_check_domain before changing sets: it tells you whether a domain is already covered and by which set. It reads configuration only - it cannot tell you whether a site loads.",
+			mcpCapabilityInstruction(caps),
 		}, " "),
 	})
 
 	api.addMCPTools(srv)
-	api.addMCPWriteTools(srv)
+	api.addMCPPathTools(srv)
+	api.addMCPGeoTools(srv)
+	api.addMCPWatchdogTools(srv)
+	if caps.Writes {
+		api.addMCPWriteTools(srv)
+		api.addMCPTargetTools(srv)
+		api.addMCPSetTools(srv)
+	}
+	if caps.Probes {
+		api.addMCPProbeTools(srv)
+		api.addMCPDiscoveryTools(srv)
+	}
 	api.addMCPResources(srv)
 	api.addMCPPrompts(srv)
 	return srv
@@ -238,14 +326,57 @@ type mcpStatusOut struct {
 	MTProtoOn       bool   `json:"mtproto_enabled"`
 	Uptime          string `json:"uptime"`
 	ConnectionsSeen int64  `json:"connections_seen"`
+	CanChangeConfig bool   `json:"you_can_change_settings"`
+	CanProbe        bool   `json:"you_can_test_and_discover"`
+	Note            string `json:"note"`
 }
 
 type mcpConfigIn struct {
 	Section string `json:"section,omitempty" jsonschema:"Optional dotted path to return instead of the whole config, e.g. 'system.dns' or 'sets'."`
 }
 
-type mcpRawOut struct {
-	JSON string `json:"json"`
+type mcpConfigOut struct {
+	Section string `json:"section,omitempty"`
+	Config  any    `json:"config"`
+}
+
+type mcpGetSetOut struct {
+	Set any `json:"set"`
+}
+
+type mcpTopicIn struct {
+	Topic string `json:"topic,omitempty" jsonschema:"Exact key, e.g. 'faking.tcp_md5'."`
+	Path  string `json:"path,omitempty" jsonschema:"A b4_set_config_value path, e.g. 'sets[video].tcp.win.mode'. The set reference is ignored."`
+	Query string `json:"query,omitempty" jsonschema:"Substring to search for in keys and bodies. At most 5 matches, bodies shortened."`
+}
+
+type mcpTopicEntry struct {
+	Topic     string `json:"topic"`
+	Facts     string `json:"facts,omitempty"`
+	Truncated bool   `json:"truncated,omitempty"`
+}
+
+type mcpTopicOut struct {
+	Found      bool            `json:"found"`
+	Topics     []mcpTopicEntry `json:"topics,omitempty"`
+	Related    []string        `json:"related,omitempty"`
+	Documented int             `json:"documented_total"`
+	Truncated  bool            `json:"truncated,omitempty"`
+	Note       string          `json:"note"`
+}
+
+type mcpDiagnosticsOut struct {
+	Diagnostics any `json:"diagnostics"`
+}
+
+type mcpMetricsOut struct {
+	ConnectionsSeen uint64  `json:"connections_seen"`
+	CurrentCPS      float64 `json:"current_cps"`
+	CurrentPPS      float64 `json:"current_pps"`
+	RSTDropped      uint64  `json:"rst_dropped"`
+	BlockedTotal    uint64  `json:"blocked_total"`
+	Uptime          string  `json:"uptime"`
+	MemoryPercent   float64 `json:"memory_percent"`
 }
 
 type mcpCheckDomainIn struct {
@@ -290,11 +421,13 @@ type mcpRecentConnOut struct {
 }
 
 type mcpLogsIn struct {
+	File     string `json:"file,omitempty" jsonschema:"'errors' (default) or 'update'."`
 	Limit    int    `json:"limit,omitempty" jsonschema:"Maximum lines to return, newest last. Default 100, maximum 500."`
 	Contains string `json:"contains,omitempty" jsonschema:"Optional case-insensitive substring filter."`
 }
 
 type mcpLogsOut struct {
+	File      string   `json:"file,omitempty"`
 	Path      string   `json:"path,omitempty"`
 	Lines     []string `json:"lines"`
 	Matched   int      `json:"matched"`
@@ -326,7 +459,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_status",
 		Title:       "B4 status",
-		Description: "High-level health of the running b4 daemon: version, packet capture engine (nfqueue or tun), firewall backend, how many strategy sets exist and are enabled, which subsystems are on, uptime and how many connections b4 has processed. Call this first when diagnosing. 'connections_seen' is a running total since b4 started or since the counters were last reset, not a live concurrency figure: b4 does not record when a connection ends.",
+		Description: "High-level health of the running b4 daemon: version, packet capture engine (nfqueue or tun), firewall backend, how many strategy sets exist and are enabled, which subsystems are on, uptime and how many connections b4 has processed. Call this first when diagnosing, and whenever you are unsure whether b4 can do something: it reports which capabilities are switched on for you, so an ability you have no tool for reads as gated rather than missing. 'connections_seen' is a running total since b4 started or since the counters were last reset, not a live concurrency figure: b4 does not record when a connection ends.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpStatusOut, error) {
 		cfg := api.getCfg()
@@ -352,28 +485,96 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 				out.SetsEnabled++
 			}
 		}
+		out.CanChangeConfig = cfg.System.WebServer.MCP.AllowWrites
+		out.CanProbe = cfg.System.WebServer.MCP.AllowActiveProbes
+		out.Note = mcpCapabilityNote(out.CanChangeConfig, out.CanProbe)
 		return nil, out, nil
 	})
 
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_get_config",
 		Title:       "Read b4 configuration",
-		Description: "Return the b4 configuration as JSON, with all credentials redacted. Pass 'section' to narrow it (e.g. 'system.dns', 'system.mtproto', 'sets') — the full config is large, so prefer a section.",
+		Description: "Return the b4 configuration as JSON, with all credentials redacted. Pass 'section' to narrow it (e.g. 'system.dns', 'system.mtproto', 'sets') - the full config is large, so prefer a section.",
 		Annotations: mcpReadOnly,
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpConfigIn) (*mcp.CallToolResult, mcpRawOut, error) {
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpConfigIn) (*mcp.CallToolResult, any, error) {
 		redacted := redactConfigForMCP(api.getCfg())
 		raw, err := json.Marshal(redacted)
 		if err != nil {
-			return nil, mcpRawOut{}, fmt.Errorf("marshal config: %w", err)
+			return nil, nil, fmt.Errorf("marshal config: %w", err)
 		}
-		if section := strings.TrimSpace(in.Section); section != "" {
+		section := strings.TrimSpace(in.Section)
+		if section != "" {
 			sub, err := extractJSONPath(raw, section)
 			if err != nil {
-				return nil, mcpRawOut{}, err
+				return nil, nil, err
 			}
 			raw = sub
 		}
-		return nil, mcpRawOut{JSON: string(raw)}, nil
+		var value any
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return nil, nil, fmt.Errorf("decode config: %w", err)
+		}
+		return nil, mcpConfigOut{Section: section, Config: value}, nil
+	})
+
+	addTool(srv, &mcp.Tool{
+		Name:  "b4_get_topic",
+		Title: "Read authoritative facts about a setting",
+		Description: "Authoritative b4-specific facts for one setting: what it does, its unit, its real default, what a zero or empty value means, and what it interacts with. " +
+			"Call this before explaining or changing ANY setting - b4 field names are often misleading and a zero usually means 'use the fixed value', not 'off'. " +
+			"Give at most one of topic, path or query; calling it with no argument lists every documented key.",
+		Annotations: mcpReadOnly,
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpTopicIn) (*mcp.CallToolResult, mcpTopicOut, error) {
+		keys := ai.TopicKeys()
+		out := mcpTopicOut{Documented: len(keys)}
+
+		if q := strings.TrimSpace(in.Query); q != "" {
+			hits, more := mcpSearchTopics(keys, q)
+			out.Topics = hits
+			out.Found = len(hits) > 0
+			out.Truncated = more
+			switch {
+			case len(hits) == 0:
+				out.Note = fmt.Sprintf("nothing matches %q. Call with no arguments to see every documented key.", q)
+			case more:
+				out.Note = fmt.Sprintf("the first %d of more matches for %q, bodies shortened. Call again with topic=<key> for the full text.", len(hits), q)
+			default:
+				out.Note = fmt.Sprintf("%d match(es) for %q, bodies shortened. Call again with topic=<key> for the full text.", len(hits), q)
+			}
+			return nil, out, nil
+		}
+
+		want := strings.ToLower(strings.TrimSpace(in.Topic))
+		if want == "" {
+			want = mcpTopicKeyFromPath(in.Path)
+		} else {
+			want = mcpTopicKeyFromPath(want)
+		}
+
+		if want == "" {
+			for _, k := range keys {
+				out.Topics = append(out.Topics, mcpTopicEntry{Topic: k})
+			}
+			out.Found = len(keys) > 0
+			out.Note = fmt.Sprintf("%d documented settings, keys only. Call again with topic=<key> for the facts, or query=<text> to search.", len(keys))
+			return nil, out, nil
+		}
+
+		if facts := ai.TopicFacts(want); facts != "" {
+			out.Found = true
+			out.Topics = []mcpTopicEntry{{Topic: want, Facts: facts}}
+			out.Note = "authoritative for this setting: prefer it over anything inferred from the field name"
+			return nil, out, nil
+		}
+
+		out.Related = mcpRelatedTopics(keys, want)
+		out.Note = fmt.Sprintf(
+			"no authoritative facts for %q. Do NOT infer this setting's unit, default or meaning from its name - in b4 several names are misleading and a zero often means 'use the fixed value' rather than 'off'. "+
+				"Say plainly that you are unsure, and call b4_list_writable_paths for the accepted values.", want)
+		if len(out.Related) > 0 {
+			out.Note += " Documented settings nearby are listed in 'related'."
+		}
+		return nil, out, nil
 	})
 
 	addTool(srv, &mcp.Tool{
@@ -461,22 +662,17 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		Title:       "Traffic metrics",
 		Description: "Live counters from the packet engine: connections/packets per second, dropped RSTs, blocked totals, uptime and memory use. 'connections_seen' is a running total since b4 started or since the counters were last reset; b4 does not record when a connection ends, so there is no count of connections open right now and none is reported.",
 		Annotations: mcpReadOnly,
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpRawOut, error) {
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpMetricsOut, error) {
 		m := GetMetricsCollector().GetSnapshot()
-		summary := map[string]any{
-			"connections_seen": m.TotalConnections,
-			"current_cps":      m.CurrentCPS,
-			"current_pps":      m.CurrentPPS,
-			"rst_dropped":      m.RSTDropped,
-			"blocked_total":    m.BlockedTotal,
-			"uptime":           m.Uptime,
-			"memory_percent":   m.MemoryUsage.Percent,
-		}
-		raw, err := json.Marshal(summary)
-		if err != nil {
-			return nil, mcpRawOut{}, err
-		}
-		return nil, mcpRawOut{JSON: string(raw)}, nil
+		return nil, mcpMetricsOut{
+			ConnectionsSeen: m.TotalConnections,
+			CurrentCPS:      m.CurrentCPS,
+			CurrentPPS:      m.CurrentPPS,
+			RSTDropped:      m.RSTDropped,
+			BlockedTotal:    m.BlockedTotal,
+			Uptime:          m.Uptime,
+			MemoryPercent:   m.MemoryUsage.Percent,
+		}, nil
 	})
 
 	addTool(srv, &mcp.Tool{
@@ -484,28 +680,28 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		Title:       "Read one strategy set",
 		Description: "Return the full configuration of a single strategy set by id or name, with upstream proxy credentials redacted: targets, fragmentation, faking, TCP/UDP options, DNS and routing. Use this instead of b4_get_config when reasoning about one set.",
 		Annotations: mcpReadOnly,
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpGetSetIn) (*mcp.CallToolResult, mcpRawOut, error) {
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpGetSetIn) (*mcp.CallToolResult, any, error) {
 		want := strings.TrimSpace(in.Set)
 		if want == "" {
-			return nil, mcpRawOut{}, fmt.Errorf("set (id or name) is required")
+			return nil, nil, fmt.Errorf("set (id or name) is required")
 		}
 		for _, s := range api.getCfg().Sets {
 			if !strings.EqualFold(s.Id, want) && !strings.EqualFold(s.Name, want) {
 				continue
 			}
-			raw, err := marshalSetForMCP(s)
+			redacted, err := redactedSetForMCP(s)
 			if err != nil {
-				return nil, mcpRawOut{}, err
+				return nil, nil, err
 			}
-			return nil, mcpRawOut{JSON: string(raw)}, nil
+			return nil, mcpGetSetOut{Set: redacted}, nil
 		}
-		return nil, mcpRawOut{}, fmt.Errorf("no set with id or name %q", want)
+		return nil, nil, fmt.Errorf("no set with id or name %q", want)
 	})
 
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_recent_connections",
 		Title:       "Recent connections",
-		Description: "Recent connections b4 actually processed, newest last: protocol, matched set, domain, source, destination and TLS version. This is the right tool for any question about a specific domain or site — it shows whether traffic reached b4 and which set matched it, which the error log does not record. Pass the domain in 'contains' to filter. Empty means no matching traffic has been seen since b4 started.",
+		Description: "Recent connections b4 actually processed, newest last: protocol, matched set, domain, source, destination and TLS version. This is the right tool for any question about a specific domain or site - it shows whether traffic reached b4 and which set matched it, which the error log does not record. Pass the domain in 'contains' to filter. Empty means no matching traffic has been seen since b4 started.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpRecentConnIn) (*mcp.CallToolResult, mcpRecentConnOut, error) {
 		lines := log.GetConnectionHub().Snapshot()
@@ -530,14 +726,21 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	})
 
 	addTool(srv, &mcp.Tool{
-		Name:        "b4_logs_tail",
-		Title:       "Tail the b4 log",
-		Description: "Most recent lines from b4's error and system log, newest last. Use after b4_status and b4_diagnostics when something is configured correctly but still not working. This log holds b4's own errors and warnings — it does NOT record per-domain traffic, so do not filter it by a domain name; use b4_recent_connections to find out whether a domain is being matched. The 'note' field always explains the result, including why it is empty.",
+		Name:  "b4_logs_tail",
+		Title: "Tail the b4 log",
+		Description: "Most recent lines from one of b4's logs, newest last. Use after b4_status and b4_diagnostics when something is configured correctly but still not working. " +
+			"file=errors is b4's error log, ERROR level ONLY: empty means no errors were recorded, not that nothing happened. " +
+			"file=update is the installer transcript of the last update started in the web interface, and the only place that output exists: read it when an update left b4 broken. " +
+			"Neither records per-domain traffic, so never filter by a domain name; use b4_recent_connections for that. The 'note' field explains every result, including an empty one.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpLogsIn) (*mcp.CallToolResult, mcpLogsOut, error) {
-		path := api.getCfg().System.Logging.ErrorFilePath()
+		which, path, err := mcpLogChoice(api.getCfg(), in.File)
+		if err != nil {
+			return nil, mcpLogsOut{}, err
+		}
 		if path == "" {
 			return nil, mcpLogsOut{
+				File:  which,
 				Lines: []string{},
 				Note:  "file logging is disabled (system.logging.directory is empty), so there is no log to read",
 			}, nil
@@ -546,12 +749,13 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		limit := mcpClampLimit(in.Limit)
 
 		filter := strings.TrimSpace(in.Contains)
-		res, err := tailLines(path, limit, filter)
+		res, rolled, err := tailWithRotation(path, limit, filter)
 		if err != nil {
 			return nil, mcpLogsOut{}, fmt.Errorf("read %s: %w", path, err)
 		}
 
 		out := mcpLogsOut{
+			File:      which,
 			Path:      path,
 			Lines:     res.Lines,
 			Matched:   res.Matched,
@@ -559,13 +763,17 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 			Truncated: res.Truncated,
 		}
 		switch {
+		case !res.Exists && which == "update":
+			out.Note = "no update has been started from the web interface on this machine, so there is no transcript. An update run over SSH writes nothing here"
 		case !res.Exists:
-			out.Note = "the log file does not exist yet — b4 has not written anything to it"
+			out.Note = "the log file does not exist yet - b4 has not written anything to it"
+		case res.Scanned == 0 && which == "errors":
+			out.Note = "the error log exists but is empty, which means b4 has recorded no errors. It does not mean nothing happened: warnings and ordinary activity are never written here"
 		case res.Scanned == 0:
 			out.Note = "the log file exists but is empty"
 		case filter != "" && res.Matched == 0:
 			out.Note = fmt.Sprintf(
-				"no lines matched %q among the %d most recent lines. This log contains b4's own errors, not per-domain traffic — to check whether a domain is being matched, call b4_recent_connections instead.",
+				"no lines matched %q among the %d most recent lines. This log contains b4's own output, not per-domain traffic - to check whether a domain is being matched, call b4_recent_connections instead.",
 				filter, res.Scanned)
 		case filter != "" && res.Truncated:
 			out.Note = fmt.Sprintf("%d of the %d most recent lines matched %q; the newest %d are returned", res.Matched, res.Scanned, filter, len(res.Lines))
@@ -576,6 +784,12 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		default:
 			out.Note = fmt.Sprintf("%d most recent lines", len(res.Lines))
 		}
+		if rolled {
+			out.Note += fmt.Sprintf(". %s had rolled over, so the older %s.1 was read as well", filepath.Base(path), filepath.Base(path))
+		}
+		if which == "errors" && res.Exists && res.Scanned > 0 {
+			out.Note += ". Every line here is an ERROR; b4 never writes warnings or ordinary activity to this file"
+		}
 		return nil, out, nil
 	})
 
@@ -584,13 +798,106 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		Title:       "System diagnostics",
 		Description: "Full environment report: OS and kernel, memory, b4 build and paths, detected firewall backend and the live nftables/iptables rule groups b4 installed, network interfaces, engine and TUN state. Use when the bypass appears not to be applied at all. This report includes the hostname, every interface address and the firewall ruleset, so treat the output as identifying information about the network it came from.",
 		Annotations: mcpReadOnly,
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpRawOut, error) {
-		raw, err := json.Marshal(api.buildDiagnostics())
-		if err != nil {
-			return nil, mcpRawOut{}, err
-		}
-		return nil, mcpRawOut{JSON: string(raw)}, nil
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, any, error) {
+		return nil, mcpDiagnosticsOut{Diagnostics: api.buildDiagnostics()}, nil
 	})
+}
+
+func mcpTruncate(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	for limit > 0 && !utf8.RuneStart(s[limit]) {
+		limit--
+	}
+	return s[:limit]
+}
+
+func mcpTopicKeyFromPath(path string) string {
+	p := strings.TrimSpace(path)
+	if open := strings.Index(p, "["); open >= 0 {
+		if closing := strings.Index(p, "]"); closing > open {
+			p = p[:open] + p[closing+1:]
+		}
+	}
+	p = strings.TrimPrefix(p, "sets")
+	p = strings.TrimPrefix(p, ".")
+	return strings.ToLower(strings.TrimSpace(p))
+}
+
+func mcpSearchTopics(keys []string, query string) ([]mcpTopicEntry, bool) {
+	q := strings.ToLower(query)
+	var hits []mcpTopicEntry
+	more := false
+	for _, k := range keys {
+		facts := ai.TopicFacts(k)
+		if !strings.Contains(k, q) && !strings.Contains(strings.ToLower(facts), q) {
+			continue
+		}
+		if len(hits) == mcpMaxTopicHits {
+			more = true
+			break
+		}
+		entry := mcpTopicEntry{Topic: k, Facts: facts}
+		if len(facts) > mcpTopicExcerptLen {
+			entry.Facts = mcpTruncate(facts, mcpTopicExcerptLen) + "…"
+			entry.Truncated = true
+		}
+		hits = append(hits, entry)
+	}
+	return hits, more
+}
+
+func mcpRelatedTopics(keys []string, want string) []string {
+	parts := strings.Split(want, ".")
+	for n := len(parts) - 1; n >= 1; n-- {
+		prefix := strings.Join(parts[:n], ".") + "."
+		var out []string
+		for _, k := range keys {
+			if strings.HasPrefix(k, prefix) {
+				out = append(out, k)
+				if len(out) == mcpMaxRelated {
+					break
+				}
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	return nil
+}
+
+const mcpProbesOffInstruction = "'Allow active probes' is off, so two things b4 CAN do are not available to you here: " +
+	"fetching a domain to see whether it actually loads, and running a discovery search that brute-forces bypass strategies until one works. " +
+	"If the user asks for either, say b4 supports it and that enabling 'Allow active probes' under Settings -> Integrations -> MCP server would let you do it - do not conclude the feature does not exist."
+
+func mcpCapabilityNote(writes, probes bool) string {
+	var off []string
+	if !writes {
+		off = append(off, "changing any setting ('Allow configuration changes')")
+	}
+	if !probes {
+		off = append(off, "testing whether a domain loads, and running a discovery search for a working bypass strategy ('Allow active probes')")
+	}
+	if len(off) == 0 {
+		return "b4 supports everything this server exposes: reading, changing settings, testing a domain and running discovery"
+	}
+	return "b4 SUPPORTS these, but they are switched off for this connection so no tool for them is offered: " +
+		strings.Join(off, "; ") + ". If the user asks for one, say b4 can do it and name the setting under Settings -> Integrations -> MCP server - do not tell them the feature does not exist."
+}
+
+func mcpCapabilityInstruction(caps mcpCapabilities) string {
+	switch {
+	case caps.Writes && caps.Probes:
+		return "A write reports the value read back after saving, so a 'changed: false' result means b4 did not accept the value."
+	case caps.Writes:
+		return "A write reports the value read back after saving, so a 'changed: false' result means b4 did not accept the value. " + mcpProbesOffInstruction
+	case caps.Probes:
+		return "This server is read-only apart from probing: 'Allow configuration changes' is off, so report what should change rather than offering to change it."
+	default:
+		return "This server is read-only: 'Allow configuration changes' is off, so report what should change rather than offering to change it. " + mcpProbesOffInstruction
+	}
 }
 
 func (api *API) addMCPResources(srv *mcp.Server) {
@@ -646,7 +953,7 @@ func (api *API) addMCPPrompts(srv *mcp.Server) {
 			"4. If a set does cover it, call b4_get_config for that set and read the relevant b4://topics/ resources before commenting on any setting.",
 			"5. If the bypass looks configured but ineffective, call b4_diagnostics and check the firewall rule groups are actually installed.",
 			"",
-			"Do not guess a setting's unit or default from its name — read the matching b4://topics/ resource.",
+			"Do not guess a setting's unit or default from its name - read the matching b4://topics/ resource.",
 			"State clearly which changes you are recommending and why; do not claim to have applied anything.",
 		}, "\n")
 		return &mcp.GetPromptResult{
@@ -712,7 +1019,7 @@ func redactSetSecrets(set *config.SetConfig) {
 	}
 }
 
-func marshalSetForMCP(set *config.SetConfig) ([]byte, error) {
+func redactedSetForMCP(set *config.SetConfig) (*config.SetConfig, error) {
 	raw, err := json.Marshal(set)
 	if err != nil {
 		return nil, err
@@ -722,7 +1029,7 @@ func marshalSetForMCP(set *config.SetConfig) ([]byte, error) {
 		return nil, err
 	}
 	redactSetSecrets(&clone)
-	return json.Marshal(&clone)
+	return &clone, nil
 }
 
 const redactedMarker = "[redacted]"
@@ -802,4 +1109,67 @@ func extractJSONPath(raw []byte, path string) ([]byte, error) {
 		cur = next
 	}
 	return json.Marshal(cur)
+}
+
+func mcpLogChoice(cfg *config.Config, want string) (name, path string, err error) {
+	switch strings.ToLower(strings.TrimSpace(want)) {
+	case "", "errors", "error", "errors.log":
+		return "errors", cfg.System.Logging.ErrorFilePath(), nil
+	case "update", "updates", "update.log":
+		return "update", cfg.System.Logging.UpdateLogPath(), nil
+	}
+	return "", "", fmt.Errorf("unknown log %q: expected errors or update", want)
+}
+
+func tailWithRotation(path string, limit int, contains string) (tailResult, bool, error) {
+	res, err := tailLines(path, limit, contains)
+	if err != nil {
+		return tailResult{}, false, err
+	}
+	if len(res.Lines) >= limit {
+		return res, false, nil
+	}
+
+	older, err := tailLines(path+".1", limit-len(res.Lines), contains)
+	if err != nil || !older.Exists {
+		return res, false, nil
+	}
+
+	res.Lines = append(older.Lines, res.Lines...)
+	res.Matched += older.Matched
+	res.Scanned += older.Scanned
+	res.Truncated = res.Truncated || older.Truncated
+	res.Exists = res.Exists || older.Exists
+	return res, true, nil
+}
+
+const mcpRefusalWindow = 30 * time.Second
+
+var mcpRefusals struct {
+	sync.Mutex
+	last       time.Time
+	suppressed int
+}
+
+func mcpLogRefusal(r *http.Request, reason string) {
+	caller := mcpCallerOf(r)
+
+	mcpRefusals.Lock()
+	defer mcpRefusals.Unlock()
+
+	if !mcpRefusals.last.IsZero() && time.Since(mcpRefusals.last) < mcpRefusalWindow {
+		mcpRefusals.suppressed++
+		return
+	}
+
+	suppressed := mcpRefusals.suppressed
+	mcpRefusals.suppressed = 0
+	mcpRefusals.last = time.Now()
+
+	if suppressed > 0 {
+		log.Warnf("mcp: refused a request from %s: %s (%d further refusals in the last %s are not listed)",
+			caller, reason, suppressed, mcpRefusalWindow)
+		return
+	}
+	log.Warnf("mcp: refused a request from %s: %s", caller, reason)
 }

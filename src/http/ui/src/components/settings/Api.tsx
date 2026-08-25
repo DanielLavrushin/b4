@@ -528,6 +528,7 @@ const MCPCard = ({ config, onChange }: ApiSettingsProps) => {
   const mcp = config.system.web_server.mcp;
   const enabled = Boolean(mcp?.enabled);
   const allowWrites = Boolean(mcp?.allow_writes);
+  const allowProbes = Boolean(mcp?.allow_active_probes);
   const token = mcp?.token ?? "";
   const [generating, setGenerating] = useState(false);
 
@@ -633,6 +634,51 @@ const MCPCard = ({ config, onChange }: ApiSettingsProps) => {
                 }
                 slotProps={{
                   input: { "aria-label": t("settings.Mcp.allowWrites") },
+                }}
+              />
+            </Box>
+
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: 2,
+                p: "13px 15px",
+                borderRadius: "6px",
+                border: `1px solid ${allowProbes ? "rgba(255, 167, 38, 0.32)" : colors.border.light}`,
+                borderLeft: `3px solid ${allowProbes ? colors.state.warning : colors.border.medium}`,
+                bgcolor: allowProbes
+                  ? "rgba(255, 167, 38, 0.06)"
+                  : colors.background.hover,
+              }}
+            >
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography sx={{ color: colors.text.primary, fontWeight: 500 }}>
+                  {t("settings.Mcp.allowProbes")}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    display: "block",
+                    color: colors.text.secondary,
+                    mt: "2px",
+                  }}
+                >
+                  {allowProbes
+                    ? t("settings.Mcp.allowProbesWarning")
+                    : t("settings.Mcp.allowProbesHelp")}
+                </Typography>
+              </Box>
+              <Switch
+                checked={allowProbes}
+                onChange={(e) =>
+                  onChange(
+                    "system.web_server.mcp.allow_active_probes",
+                    e.target.checked,
+                  )
+                }
+                slotProps={{
+                  input: { "aria-label": t("settings.Mcp.allowProbes") },
                 }}
               />
             </Box>
