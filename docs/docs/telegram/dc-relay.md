@@ -31,6 +31,8 @@ Set **DC Relay** in Settings, MTProto Proxy to the VPS address with the base por
 
 Then open the **?** button beside the field. The **DC Relay socat setup** dialog lists the data centres and a ready-to-run `socat` command for each, with **Copy all** at the bottom.
 
+![The DC Relay socat setup dialog](/img/telegram/20260826233006.png)
+
 :::info What the commands do
 Each `socat` forwards one relay port to the public data-centre address b4 dials directly: `base port + DC - 1` to that data centre's `:443` endpoint. The media data centre `203` reuses DC 2's relay port, so it needs no command of its own.
 :::

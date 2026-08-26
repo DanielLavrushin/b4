@@ -11,7 +11,7 @@ The mode runs on its own. The MTProto proxy under Settings, MTProto does not hav
 
 ## Requirements
 
-The bridge rides the TPROXY path, which needs the `tproxy` and `socket` kernel modules. Without them b4 logs that transparent redirect is unavailable and the mode silently steers nothing. On OpenWrt the packages are `kmod-nft-tproxy` and `kmod-nft-socket`; the same requirement is described under [Routing](../sets/routing.md).
+The bridge rides the TPROXY path, which needs the `tproxy` and `socket` kernel modules. Without them b4 logs that transparent redirect is unavailable and the mode silently steers nothing. **Settings -> Diagnostics** reports whether TPROXY is usable and names the packages that provide what is missing; on OpenWrt they are `kmod-nft-tproxy` and `kmod-nft-socket`, and the full list is under [Routing, requirements](../sets/routing.md#requirements).
 
 Matching Telegram by geo category also needs the GeoSite and GeoIP databases to be configured. A set that names a category while the corresponding database path is empty is rejected when the configuration is saved.
 

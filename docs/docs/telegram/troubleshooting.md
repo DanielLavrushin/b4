@@ -73,7 +73,7 @@ The route accepted the data and stopped answering. This is the failure mode a Cl
 
 ## The WebSocket bridge steers nothing
 
-The mode needs the `tproxy` and `socket` kernel modules; without them b4 logs that transparent redirect is unavailable and installs no rule. Diagnostics reports the same capability.
+The mode needs the `tproxy` and `socket` kernel modules; without them b4 logs that transparent redirect is unavailable and installs no rule. **Settings -> Diagnostics** reports whether TPROXY is usable and names the modules that are missing and the packages carrying them, and the same list is under [Routing, requirements](../sets/routing.md#requirements).
 
 Matching also has to happen: the set needs the `telegram` GeoIP category and the GeoIP database configured, and a set whose category is named while the database path is empty is rejected at save time rather than running without it.
 

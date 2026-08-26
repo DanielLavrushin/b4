@@ -7,6 +7,8 @@ title: Telegram upstream
 
 Settings, MTProto Proxy, **Telegram upstream (shared)**. These settings decide how b4 itself reaches Telegram's data centres. They are used by the [proxy server](./mtproto-proxy.md) and by the [WebSocket bridge](./websocket-bridge.md), so they apply even when the proxy server is off.
 
+![The Telegram upstream card](/img/telegram/20260826233003.png)
+
 ## Transport mode
 
 | Mode | What it does |

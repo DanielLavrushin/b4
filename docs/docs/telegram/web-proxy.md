@@ -32,7 +32,11 @@ When the configured certificate and key do not load, b4 logs a warning and falls
 4. **Enable the WEB carrier** and enter the relay hostname, under Settings, MTProto Proxy, **Telegram Desktop WEB proxy**. Both fields take effect on the next request; nothing restarts.
 5. **Copy the link** from the secret's **Share connection link** dialog, the row labelled *WEB · Telegram Desktop 7.1.1+*, and add it in Telegram Desktop.
 
+![The WEB proxy card](/img/telegram/20260826233004.png)
+
 The link has the form `https://t.me/webproxy?server=<hostname>&secret=dd<32 hex characters>`.
+
+![The share dialog, with the direct and WEB links side by side](/img/telegram/20260826233005.png)
 
 :::info The link is not the secret shown in the list
 Telegram Desktop refuses fake-TLS (`ee`) secrets for WEB entries, so the link carries the padded (`dd`) form of the same key, without the domain the `ee` secret ends in. A link assembled by hand from the visible secret does not work; the dialog is the only correct source.

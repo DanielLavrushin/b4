@@ -21,6 +21,8 @@ Settings, **MTProto Proxy**. The card's fields stay hidden until its switch is o
 
 Port `443` is a common choice because the traffic is already shaped like TLS and that port normally carries it.
 
+![The MTProto proxy card](/img/telegram/20260826233001.png)
+
 :::warning The port is not opened automatically
 b4 installs no firewall rule for its own listen port. On a host with a default-deny input policy, nothing reaches the proxy until a rule is added by hand, and the symptom is a client that sits at "Connecting" forever. Reaching the proxy from outside the LAN also needs a port forward on the router in front of it.
 :::
@@ -39,6 +41,8 @@ b4 accepts nothing else. A padded (`dd`) secret, a bare 32-character key or a ba
 
 A configuration with secrets present but all of them disabled starts normally, logs `secrets: 0`, and closes every client connection immediately after accepting it.
 
+![The secrets list](/img/telegram/20260826233002.png)
+
 ## Adding the proxy in Telegram
 
 **Share connection link** opens a dialog with the server address, a `tg://proxy` link, a QR code, and, when the [WEB proxy](./web-proxy.md) is configured, a second link for Telegram Desktop.
@@ -49,7 +53,7 @@ Entered by hand, in **Settings** -> **Data and Storage** -> **Proxy** -> **Add p
 - **Port** - the listen port from above.
 - **Secret** - the value copied from the secrets list.
 
-![Telegram proxy details](/img/mtproto/20260322135130.png)
+![Telegram proxy details](/img/telegram/20260322135130.png)
 
 ## What an unrecognised connection sees
 
