@@ -131,6 +131,15 @@ function evictIfNeeded(): void {
   }
 }
 
+function addDestIp(g: ConnectionGroup, dip: string): boolean {
+  if (!dip || g.destIps.includes(dip)) return false;
+  g.destIps.push(dip);
+  if (g.destIps.length > MAX_DEST_IPS) {
+    g.destIps.splice(0, g.destIps.length - MAX_DEST_IPS);
+  }
+  return true;
+}
+
 function mergeSeries(
   target: { buckets: number[]; packets: number; lastSeen: number },
   source: { buckets: number[]; packets: number; lastSeen: number },
@@ -163,8 +172,7 @@ function reassignIpToMac(ip: string, mac: string, now: number): void {
     if (tgt) {
       mergeSeries(tgt, g, now);
       if (g.firstSeen < tgt.firstSeen) tgt.firstSeen = g.firstSeen;
-      for (const dip of g.destIps)
-        if (!tgt.destIps.includes(dip)) tgt.destIps.push(dip);
+      for (const dip of g.destIps) addDestIp(tgt, dip);
       if (!tgt.tls && g.tls) tgt.tls = g.tls;
       if (!tgt.hostSet && g.hostSet) tgt.hostSet = g.hostSet;
       if (!tgt.ipSet && g.ipSet) tgt.ipSet = g.ipSet;
@@ -231,9 +239,7 @@ function ingest(lines: string[]): void {
     rotateBuckets(g, now);
     g.lastSeen = Math.max(g.lastSeen, p.timestamp);
     g.packets += 1;
-    if (p.destination && !g.destIps.includes(p.destination)) {
-      if (g.destIps.length >= MAX_DEST_IPS) g.destIps.shift();
-      g.destIps.push(p.destination);
+    if (addDestIp(g, p.destination)) {
       g.destIp = p.destination;
     }
     if (p.tls && p.tls !== g.tls) g.tls = p.tls;

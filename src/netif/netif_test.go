@@ -145,3 +145,26 @@ func TestVanishedInterfaceKeepsItsKind(t *testing.T) {
 		t.Errorf("ForgetIface drops what b4 remembered, so the next read comes from disk, got %v", got)
 	}
 }
+
+func TestMarkDownKeepsTheKindAndDropsTheCarrier(t *testing.T) {
+	root := fakeSysfs(t)
+	mkIface(t, root, "tun5", map[string]string{"tun_flags": "0x1001\n", "flags": "0x1003\n"})
+
+	if !EncapsulatedAndUp("tun5") {
+		t.Fatal("a live tunnel wraps the packet")
+	}
+
+	MarkDown("tun5")
+
+	if Of("tun5") != KindUserspaceTunnel {
+		t.Error("a link-down event does not change what kind of device it is")
+	}
+	if IsUp("tun5") || EncapsulatedAndUp("tun5") {
+		t.Error("the link watcher sees the device go before the cache would expire, and until then b4 would hand off packets to a tunnel that carries nothing")
+	}
+
+	MarkDown("never-seen")
+	if Of("never-seen") != KindMissing {
+		t.Error("marking an interface b4 never classified must not invent a cache entry")
+	}
+}

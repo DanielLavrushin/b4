@@ -210,7 +210,8 @@ func netnsChainBody(listing, suffix string) string {
 func netnsReadTunSYNs(t *testing.T, fd int, redial bool, until time.Duration) int {
 	t.Helper()
 	if err := unix.SetNonblock(fd, true); err != nil {
-		t.Fatalf("set tun non-blocking: %v", err)
+		t.Errorf("set tun non-blocking: %v", err)
+		return 0
 	}
 
 	buf := make([]byte, 2048)

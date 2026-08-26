@@ -842,6 +842,7 @@ func RoutingSyncConfig(cfg *config.Config) {
 		if _, ok := desired[setID]; !ok {
 			routeCleanupAny(be, st)
 			delete(routeRuleCache, setID)
+			routeForgetSetLearnState(setID)
 			routeForgetEgressLoopWarning(setID)
 			for host := range routeLearnedHosts[setID] {
 				delete(routeHostResolvedAt, setID+"|"+host)
@@ -866,6 +867,7 @@ func RoutingSyncConfig(cfg *config.Config) {
 			if !routeStateEqual(old, cur) {
 				routeCleanupAny(be, old)
 				delete(routeRuleCache, set.Id)
+				routeForgetSetLearnState(set.Id)
 			}
 		}
 
@@ -1411,13 +1413,26 @@ func routeAddMasqueradeRules(be routeBackend, iface, chain string, mark uint32, 
 	}
 }
 
-func interfaceShareCount(mark uint32, table int) int {
+func routeMarkShareCount(mark uint32) int {
 	n := 0
 	for _, st := range routeRuleCache {
 		if config.RoutingUsesTProxy(st.mode) {
 			continue
 		}
-		if st.mark == mark && st.table == table {
+		if st.mark == mark {
+			n++
+		}
+	}
+	return n
+}
+
+func routeTableShareCount(table int) int {
+	n := 0
+	for _, st := range routeRuleCache {
+		if config.RoutingUsesTProxy(st.mode) {
+			continue
+		}
+		if st.table == table {
 			n++
 		}
 	}
@@ -1427,10 +1442,14 @@ func interfaceShareCount(mark uint32, table int) int {
 func routeCleanupRule(be routeBackend, st routeState) {
 	routeReleaseEgressAddress(st.iface, st.egressIP)
 	tableStr := fmt.Sprintf("%d", st.table)
-	if hasBinary("ip") && interfaceShareCount(st.mark, st.table) <= 1 {
-		routeDelRuleAllForms(st.mark, tableStr)
-		runLogged("routing: flush route table v4", "ip", "route", "flush", "table", tableStr)
-		runLogged("routing: flush route table v6", "ip", "-6", "route", "flush", "table", tableStr)
+	if hasBinary("ip") {
+		if routeMarkShareCount(st.mark) <= 1 {
+			routeDelRuleAllForms(st.mark, tableStr)
+		}
+		if routeTableShareCount(st.table) <= 1 {
+			runLogged("routing: flush route table v4", "ip", "route", "flush", "table", tableStr)
+			runLogged("routing: flush route table v6", "ip", "-6", "route", "flush", "table", tableStr)
+		}
 	}
 
 	be.deleteJumpRules("PREROUTING", st.chainPre, true)

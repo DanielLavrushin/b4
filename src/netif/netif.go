@@ -153,6 +153,22 @@ func Forget() {
 	mu.Unlock()
 }
 
+func MarkDown(name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	e, ok := cache[name]
+	if !ok {
+		return
+	}
+	e.up = false
+	e.at = time.Now()
+	cache[name] = e
+}
+
 func ForgetIface(name string) {
 	name = strings.TrimSpace(name)
 	if name == "" {

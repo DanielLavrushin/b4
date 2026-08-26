@@ -306,3 +306,24 @@ func TestRouteLineBelongsToIfaceOnlyClaimsItsOwnBlackhole(t *testing.T) {
 		}
 	}
 }
+
+func TestCleanupFlushesATableOnlyWhenNobodyElseUsesIt(t *testing.T) {
+	origCache := routeRuleCache
+	t.Cleanup(func() { routeRuleCache = origCache })
+
+	leaving := routeState{mode: config.RoutingModeInterface, mark: 0x1111, table: 120, iface: "wg0"}
+	pinned := routeState{mode: config.RoutingModeInterface, mark: 0x2222, table: 120, iface: "wg0"}
+
+	routeRuleCache = map[string]routeState{"a": leaving, "b": pinned}
+	if routeMarkShareCount(leaving.mark) != 1 {
+		t.Error("the ip rule is keyed on the mark, so only a set with the same mark keeps it alive")
+	}
+	if routeTableShareCount(leaving.table) != 2 {
+		t.Error("two sets pinned to one table both live in it, whatever marks they carry")
+	}
+
+	routeRuleCache = map[string]routeState{"a": leaving}
+	if routeTableShareCount(leaving.table) != 1 {
+		t.Error("with the last user gone the table can be flushed")
+	}
+}
