@@ -327,3 +327,26 @@ func TestCleanupFlushesATableOnlyWhenNobodyElseUsesIt(t *testing.T) {
 		t.Error("with the last user gone the table can be flushed")
 	}
 }
+
+func TestCleanupTakesBackOnlyTheRoutesB4Added(t *testing.T) {
+	var cmds []string
+	prev := runLogged
+	runLogged = func(op string, args ...string) { cmds = append(cmds, strings.Join(args, " ")) }
+	t.Cleanup(func() { runLogged = prev })
+
+	routeDeleteOwnRoutes("wg0", "137")
+
+	joined := strings.Join(cmds, "\n")
+	if strings.Contains(joined, "route flush table") {
+		t.Errorf("flushing takes every route in the table, including one another service put there: %s", joined)
+	}
+	for _, want := range []string{
+		"ip route del default dev wg0 table 137",
+		"ip -6 route del default dev wg0 table 137",
+		"ip route del blackhole default metric 4096 table 137",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("missing %q, so b4 leaves its own route behind: %s", want, joined)
+		}
+	}
+}

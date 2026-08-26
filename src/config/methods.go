@@ -41,7 +41,7 @@ func (c *Config) SaveToFile(path string) error {
 	}
 	defer file.Close()
 
-	restrictFileMode(path)
+	warnRestrictFailure(path, restrictFileMode(path))
 
 	_, err = file.Write(data)
 	if err != nil {

@@ -144,3 +144,68 @@ func TestLoadWithMigrationTightensSiblingBackups(t *testing.T) {
 func itoa(v int) string {
 	return strconv.Itoa(v)
 }
+
+func TestRestrictConfigFilesIgnoresSymlinkedSiblings(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "b4")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	victim := filepath.Join(root, "victim")
+	writeMode(t, victim, "secret", 0644)
+
+	path := filepath.Join(dir, "b4.json")
+	writeMode(t, path, `{"version":`+itoa(CurrentConfigVersion)+`}`, 0666)
+	if err := os.Symlink(victim, filepath.Join(dir, "b4.json.evil")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	cfg := NewConfig()
+	if _, err := cfg.LoadWithMigration(path); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	info, err := os.Stat(victim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0644 {
+		t.Errorf("symlink target was chmodded to %#o, want 0644", info.Mode().Perm())
+	}
+
+	info, err = os.Lstat(filepath.Join(dir, "b4.json.evil"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Error("symlink entry was replaced")
+	}
+}
+
+func TestRestrictConfigFilesTightensDirectory(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "b4")
+	if err := os.MkdirAll(dir, 0777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0777); err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(dir, "b4.json")
+	writeMode(t, path, `{"version":`+itoa(CurrentConfigVersion)+`}`, 0666)
+
+	cfg := NewConfig()
+	if _, err := cfg.LoadWithMigration(path); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0755 {
+		t.Errorf("config dir mode = %#o, want 0755", info.Mode().Perm())
+	}
+}

@@ -157,10 +157,7 @@ func (b *routeIptBackend) addRouterTrafficGuard(chain string, v6 bool, setName s
 	if !hasBinary(cmd) {
 		return false
 	}
-	name := fmt.Sprintf("b4rl%x", mark)
-	if v6 {
-		name = fmt.Sprintf("b4rl6%x", mark)
-	}
+	name := routeHashlimitName(chain, v6)
 	args := []string{cmd, "-w", "-t", "mangle", "-A", chain,
 		"-m", "set", "--match-set", setName, "dst",
 		"-m", "conntrack", "--ctstate", "NEW",

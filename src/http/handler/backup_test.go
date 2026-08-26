@@ -253,8 +253,7 @@ func TestRestoreRejectsPathTraversal(t *testing.T) {
 	}
 }
 
-func TestSafeRestorePath(t *testing.T) {
-	dir := "/opt/etc/b4"
+func TestRestoreEntryParts(t *testing.T) {
 	cases := []struct {
 		name string
 		ok   bool
@@ -269,9 +268,104 @@ func TestSafeRestorePath(t *testing.T) {
 		{"/etc/passwd", false},
 	}
 	for _, c := range cases {
-		if _, ok := safeRestorePath(dir, c.name); ok != c.ok {
-			t.Errorf("safeRestorePath(%q) = %v, want %v", c.name, ok, c.ok)
+		if _, ok := restoreEntryParts(c.name); ok != c.ok {
+			t.Errorf("restoreEntryParts(%q) = %v, want %v", c.name, ok, c.ok)
 		}
+	}
+}
+
+func TestRestoreRefusesSymlinkedDirectory(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "b4")
+	outside := filepath.Join(root, "outside")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(outside, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(configDir, "captures")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+	body := []byte("pwned")
+	tw.WriteHeader(&tar.Header{Name: "captures/escaped", Typeflag: tar.TypeReg, Mode: 0644, Size: int64(len(body))})
+	tw.Write(body)
+	tw.WriteHeader(&tar.Header{Name: "b4.json", Typeflag: tar.TypeReg, Mode: 0644, Size: int64(len(body))})
+	tw.Write(body)
+	tw.Close()
+	gw.Close()
+
+	rec := httptest.NewRecorder()
+	newBackupAPI(t, configDir).ServeHTTP(rec, uploadRequest(t, buf.Bytes()))
+
+	if _, err := os.Stat(filepath.Join(outside, "escaped")); err == nil {
+		t.Error("restore wrote through a symlink and escaped the config directory")
+	}
+	if _, err := os.Stat(filepath.Join(configDir, "b4.json")); err != nil {
+		t.Errorf("legitimate entry was not restored: %v", err)
+	}
+}
+
+func TestRestoreRefusesSymlinkedFile(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "b4")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(root, "victim")
+	if err := os.WriteFile(victim, []byte("original"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, filepath.Join(configDir, "b4.json")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+	body := []byte("pwned")
+	tw.WriteHeader(&tar.Header{Name: "b4.json", Typeflag: tar.TypeReg, Mode: 0644, Size: int64(len(body))})
+	tw.Write(body)
+	tw.Close()
+	gw.Close()
+
+	rec := httptest.NewRecorder()
+	newBackupAPI(t, configDir).ServeHTTP(rec, uploadRequest(t, buf.Bytes()))
+
+	got, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "original" {
+		t.Errorf("restore followed a symlink and overwrote %s", victim)
+	}
+}
+
+func TestRestoreDoesNotCreateWorldWritableFiles(t *testing.T) {
+	configDir := t.TempDir()
+
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+	body := []byte("{}")
+	tw.WriteHeader(&tar.Header{Name: "b4.json", Typeflag: tar.TypeReg, Mode: 0777, Size: int64(len(body))})
+	tw.Write(body)
+	tw.Close()
+	gw.Close()
+
+	rec := httptest.NewRecorder()
+	newBackupAPI(t, configDir).ServeHTTP(rec, uploadRequest(t, buf.Bytes()))
+
+	info, err := os.Stat(filepath.Join(configDir, "b4.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm()&0022 != 0 {
+		t.Errorf("restored file mode = %#o, want no group or other write", info.Mode().Perm())
 	}
 }
 

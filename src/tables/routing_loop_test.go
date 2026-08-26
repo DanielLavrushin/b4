@@ -135,21 +135,66 @@ func indexOfPrefix(ops []string, prefix string) int {
 }
 
 func TestRouteLineBelongsToIface(t *testing.T) {
-	for _, c := range []struct {
-		line, iface string
-		ours        bool
-	}{
-		{"default dev xray0 scope link", "xray0", true},
-		{"default via 10.8.0.1 dev xray0 src 10.8.0.2", "xray0", true},
-		{"blackhole default metric 4096", "xray0", true},
-		{"default via 192.168.2.1 dev tun13", "tun0", false},
-		{"192.168.1.0/24 dev br0 scope link", "tun0", false},
-		{"unreachable default metric 1", "tun0", false},
-		{"default", "tun0", false},
-	} {
-		if got := routeLineBelongsToIface(c.line, c.iface); got != c.ours {
-			t.Errorf("routeLineBelongsToIface(%q, %q) = %v, want %v", c.line, c.iface, got, c.ours)
+	prev := routeIPSupportsProto
+	t.Cleanup(func() { routeIPSupportsProto = prev })
+
+	t.Run("without a route protocol, the interface is all there is to go on", func(t *testing.T) {
+		routeIPSupportsProto = func() bool { return false }
+		for _, c := range []struct {
+			line, iface string
+			ours        bool
+		}{
+			{"default dev xray0 scope link", "xray0", true},
+			{"default via 10.8.0.1 dev xray0 src 10.8.0.2", "xray0", true},
+			{"blackhole default metric 4096", "xray0", true},
+			{"default via 192.168.2.1 dev tun13", "tun0", false},
+			{"192.168.1.0/24 dev br0 scope link", "tun0", false},
+			{"unreachable default metric 1", "tun0", false},
+			{"default", "tun0", false},
+		} {
+			if got := routeLineBelongsToIface(c.line, c.iface); got != c.ours {
+				t.Errorf("routeLineBelongsToIface(%q, %q) = %v, want %v", c.line, c.iface, got, c.ours)
+			}
 		}
+	})
+
+	t.Run("with a route protocol, only b4's own mark counts", func(t *testing.T) {
+		routeIPSupportsProto = func() bool { return true }
+		for _, c := range []struct {
+			line, iface string
+			ours        bool
+		}{
+			{"default dev xray0 proto " + routeProtoID + " scope link", "xray0", true},
+			{"blackhole default metric 4096 proto " + routeProtoID, "xray0", true},
+			{"default via 94.189.76.193 dev eth0", "eth0", false},
+			{"default via 94.189.76.193 dev eth0 proto static", "eth0", false},
+			{"default dev tun0 scope link", "tun0", false},
+		} {
+			if got := routeLineBelongsToIface(c.line, c.iface); got != c.ours {
+				t.Errorf("routeLineBelongsToIface(%q, %q) = %v, want %v; b4 takes over a table it decides is its own, and a WAN table looks exactly like one of its own routes", c.line, c.iface, got, c.ours)
+			}
+		}
+	})
+}
+
+func TestHashlimitNameIsPerSetAndFitsTheKernelLimit(t *testing.T) {
+	a := routeHashlimitName("b4r_eb29a846c6d24fc_f026_out", false)
+	b := routeHashlimitName("b4r_db38c65b77ac426_f57a_out", false)
+	a6 := routeHashlimitName("b4r_eb29a846c6d24fc_f026_out", true)
+
+	if a == b {
+		t.Error("two sets sharing an output interface share a mark, so a name built from the mark gives them one bucket and each can spend the other's budget")
+	}
+	if a == a6 {
+		t.Error("v4 and v6 keep separate buckets")
+	}
+	for _, n := range []string{a, b, a6} {
+		if len(n) > 15 {
+			t.Errorf("hashlimit name %q is %d chars; the kernel keeps 15 and silently drops the rest", n, len(n))
+		}
+	}
+	if a != routeHashlimitName("b4r_eb29a846c6d24fc_f026_out", false) {
+		t.Error("the name has to survive a restart, or the guard starts from an empty bucket every time")
 	}
 }
 

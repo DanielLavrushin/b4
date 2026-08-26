@@ -1413,6 +1413,27 @@ func routeAddMasqueradeRules(be routeBackend, iface, chain string, mark uint32, 
 	}
 }
 
+func routeHashlimitName(chain string, v6 bool) string {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(chain))
+	if v6 {
+		return fmt.Sprintf("b4rl6%08x", h.Sum32())
+	}
+	return fmt.Sprintf("b4rl%08x", h.Sum32())
+}
+
+func routeDeleteOwnRoutes(iface, table string) {
+	for _, fam := range routeFamilyArgs(true, true) {
+		base := append([]string{"ip"}, fam.flag...)
+		if iface != "" {
+			args := append(append([]string{}, base...), "route", "del", "default", "dev", iface, "table", table)
+			runLogged("routing: remove route "+fam.name, args...)
+		}
+		args := append(append([]string{}, base...), "route", "del", "blackhole", "default", "metric", routeKillSwitchMetric, "table", table)
+		runLogged("routing: remove kill switch "+fam.name, args...)
+	}
+}
+
 func routeMarkShareCount(mark uint32) int {
 	n := 0
 	for _, st := range routeRuleCache {
@@ -1447,8 +1468,7 @@ func routeCleanupRule(be routeBackend, st routeState) {
 			routeDelRuleAllForms(st.mark, tableStr)
 		}
 		if routeTableShareCount(st.table) <= 1 {
-			runLogged("routing: flush route table v4", "ip", "route", "flush", "table", tableStr)
-			runLogged("routing: flush route table v6", "ip", "-6", "route", "flush", "table", tableStr)
+			routeDeleteOwnRoutes(st.iface, tableStr)
 		}
 	}
 
@@ -1510,6 +1530,36 @@ func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 
 const routeKillSwitchMetric = "4096"
 
+const routeProtoID = "155"
+
+var (
+	routeProtoOnce sync.Once
+	routeProtoOK   bool
+)
+
+var routeIPSupportsProto = routeIPSupportsProtoExec
+
+func routeIPSupportsProtoExec() bool {
+	routeProtoOnce.Do(func() {
+		if !hasBinary("ip") {
+			return
+		}
+		if _, err := run("ip", "route", "show", "table", "12345", "proto", routeProtoID); err == nil {
+			routeProtoOK = true
+			return
+		}
+		log.Infof("Routing: this iproute2 does not understand route protocols, so b4 cannot mark the routes it owns; a routing table another service already uses is recognised by its interface alone")
+	})
+	return routeProtoOK
+}
+
+func routeProtoArgs() []string {
+	if !routeIPSupportsProto() {
+		return nil
+	}
+	return []string{"proto", routeProtoID}
+}
+
 func routeTableWantsKillSwitch(st routeState) bool {
 	if st.killSwitch {
 		return true
@@ -1548,7 +1598,9 @@ func routeApplyKillSwitch(st routeState, want bool, ipv4, ipv6 bool) {
 	for _, fam := range routeFamilyArgs(ipv4, ipv6) {
 		args := append([]string{"ip"}, fam.flag...)
 		if want {
-			args = append(args, "route", "replace", "blackhole", "default", "metric", routeKillSwitchMetric, "table", tableStr)
+			args = append(args, "route", "replace", "blackhole", "default", "metric", routeKillSwitchMetric)
+			args = append(args, routeProtoArgs()...)
+			args = append(args, "table", tableStr)
 			runLogged("routing: add kill switch "+fam.name, args...)
 			continue
 		}
@@ -1629,6 +1681,7 @@ func routeReplaceDefaultRoute(iface, src, table string, ipv6 bool) {
 		if src != "" {
 			args = append(args, "src", src)
 		}
+		args = append(args, routeProtoArgs()...)
 		args = append(args, "table", table)
 		runLogged("routing: add ip route "+family+" (via gw)", args...)
 		return
@@ -1639,6 +1692,7 @@ func routeReplaceDefaultRoute(iface, src, table string, ipv6 bool) {
 	if src != "" {
 		args = append(args, "src", src)
 	}
+	args = append(args, routeProtoArgs()...)
 	args = append(args, "table", table)
 	runLogged("routing: add ip route "+family+" (direct)", args...)
 }
@@ -1886,6 +1940,14 @@ func routeLineBelongsToIface(line, iface string) bool {
 	fields := strings.Fields(line)
 	if len(fields) == 0 {
 		return true
+	}
+	if routeIPSupportsProto() {
+		for i := 0; i+1 < len(fields); i++ {
+			if fields[i] == "proto" {
+				return fields[i+1] == routeProtoID
+			}
+		}
+		return false
 	}
 	switch fields[0] {
 	case "blackhole":

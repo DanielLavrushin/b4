@@ -406,7 +406,7 @@ func backupConfigBeforeMigration(path string, data []byte, fromVersion int) {
 		log.Warnf("Failed to back up config to %s before migration: %v", backupPath, err)
 		return
 	}
-	restrictFileMode(backupPath)
+	warnRestrictFailure(backupPath, restrictFileMode(backupPath))
 	log.Infof("Backed up pre-migration config to %s", backupPath)
 }
 

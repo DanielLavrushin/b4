@@ -3,6 +3,7 @@ package handler
 import (
 	"archive/tar"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/log"
+	"golang.org/x/sys/unix"
 )
 
 func (api *API) RegisterBackupApi() {
@@ -229,6 +231,13 @@ func (api *API) handleRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	defer gr.Close()
 
+	rootFd, err := unix.Open(configDir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		writeJsonError(w, http.StatusInternalServerError, "Failed to open config directory: "+err.Error())
+		return
+	}
+	defer unix.Close(rootFd)
+
 	tr := tar.NewReader(gr)
 	restored := 0
 	skipped := 0
@@ -243,7 +252,7 @@ func (api *API) handleRestore(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		targetPath, ok := safeRestorePath(configDir, header.Name)
+		parts, ok := restoreEntryParts(header.Name)
 		if !ok {
 			if header.Typeflag == tar.TypeReg {
 				io.Copy(io.Discard, tr)
@@ -253,18 +262,13 @@ func (api *API) handleRestore(w http.ResponseWriter, r *http.Request) {
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(targetPath, 0755); err != nil {
-				writeJsonError(w, http.StatusInternalServerError, "Failed to create directory: "+err.Error())
-				return
+			if err := makeDirBeneath(rootFd, parts); err != nil {
+				log.Warnf("Skipping directory during restore: %s: %v", header.Name, err)
+				skipped++
 			}
 
 		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
-				writeJsonError(w, http.StatusInternalServerError, "Failed to create directory: "+err.Error())
-				return
-			}
-
-			outFile, err := os.OpenFile(targetPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, header.FileInfo().Mode())
+			outFile, err := createFileBeneath(rootFd, parts, header.FileInfo().Mode())
 			if err != nil {
 				log.Warnf("Skipping file during restore (cannot write): %s: %v", header.Name, err)
 				io.Copy(io.Discard, tr)
@@ -298,21 +302,68 @@ func (api *API) handleRestore(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func safeRestorePath(configDir, name string) (string, bool) {
+func restoreEntryParts(name string) ([]string, bool) {
 	cleanName := filepath.Clean(filepath.FromSlash(name))
 	if cleanName == "." || cleanName == ".." || filepath.IsAbs(cleanName) {
-		return "", false
-	}
-	if strings.HasPrefix(cleanName, ".."+string(filepath.Separator)) {
-		return "", false
+		return nil, false
 	}
 
-	targetPath := filepath.Join(configDir, cleanName)
-	prefix := strings.TrimSuffix(configDir, string(filepath.Separator)) + string(filepath.Separator)
-	if !strings.HasPrefix(targetPath, prefix) {
-		return "", false
+	parts := strings.Split(cleanName, string(filepath.Separator))
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return nil, false
+		}
 	}
-	return targetPath, true
+	return parts, true
+}
+
+func openDirBeneath(rootFd int, parts []string) (int, error) {
+	fd, err := unix.Dup(rootFd)
+	if err != nil {
+		return -1, err
+	}
+
+	for _, part := range parts {
+		next, err := unix.Openat(fd, part, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		if errors.Is(err, unix.ENOENT) {
+			if mkErr := unix.Mkdirat(fd, part, 0755); mkErr != nil && !errors.Is(mkErr, unix.EEXIST) {
+				unix.Close(fd)
+				return -1, mkErr
+			}
+			next, err = unix.Openat(fd, part, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		}
+		if err != nil {
+			unix.Close(fd)
+			return -1, fmt.Errorf("%s: %w", part, err)
+		}
+		unix.Close(fd)
+		fd = next
+	}
+	return fd, nil
+}
+
+func makeDirBeneath(rootFd int, parts []string) error {
+	fd, err := openDirBeneath(rootFd, parts)
+	if err != nil {
+		return err
+	}
+	return unix.Close(fd)
+}
+
+func createFileBeneath(rootFd int, parts []string, mode os.FileMode) (*os.File, error) {
+	dirFd, err := openDirBeneath(rootFd, parts[:len(parts)-1])
+	if err != nil {
+		return nil, err
+	}
+	defer unix.Close(dirFd)
+
+	name := parts[len(parts)-1]
+	perm := mode.Perm() &^ 0022
+	fd, err := unix.Openat(dirFd, name, unix.O_WRONLY|unix.O_CREAT|unix.O_TRUNC|unix.O_NOFOLLOW|unix.O_CLOEXEC, uint32(perm))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+	return os.NewFile(uintptr(fd), name), nil
 }
 
 func shouldExcludeFromBackup(info os.FileInfo) bool {
