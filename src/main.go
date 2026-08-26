@@ -182,6 +182,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 	startCFRefresh(&cfg)
 	handler.SetMTProtoCFRefreshFunc(startCFRefresh)
 
+	var tunEngine *b4tun.Engine
+
 	handler.SetTablesRefreshFunc(func() error {
 		c := cfgPtr.Load()
 		if c.System.Tables.SkipSetup {
@@ -203,7 +205,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 			if err := tables.ApplyDNSTCPOnly(c); err != nil {
 				log.Errorf("Failed to re-apply the DNS-over-TCP redirect in TUN mode: %v", err)
 			}
-			handler.ApplyTUNEngineConfig(c)
+			tunEngine.ApplyConfig(c)
 			return nil
 		}
 		if discoveryRT.IsActive() {
@@ -296,7 +298,6 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	pool := nfq.NewPool(&cfg)
 
-	var tunEngine *b4tun.Engine
 	var tablesMonitor *tables.Monitor
 
 	if isTUN {

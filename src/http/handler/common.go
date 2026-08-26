@@ -50,13 +50,6 @@ var (
 	globalTUNEngine      *b4tun.Engine
 )
 
-func ApplyTUNEngineConfig(cfg *config.Config) {
-	if globalTUNEngine == nil {
-		return
-	}
-	globalTUNEngine.ApplyConfig(cfg)
-}
-
 func SetTUNEngine(e *b4tun.Engine) {
 	globalTUNEngine = e
 }
