@@ -886,8 +886,10 @@ func TestBuildRouteStateTracksUpstreamUDP(t *testing.T) {
 	if !found {
 		t.Errorf("the quic reject chain must be watched by the monitor, got %+v", refs)
 	}
-	if len(routeStateChains(withUDP)) != 1 {
-		t.Error("no quic chain should be watched when UDP is tunnelled")
+	for _, r := range routeStateChains(withUDP) {
+		if r.table == "filter" {
+			t.Errorf("no quic chain should be watched when UDP is tunnelled, got %s", r.chain)
+		}
 	}
 }
 

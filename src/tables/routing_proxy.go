@@ -313,7 +313,11 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	if err := be.ensureChain(st.chainPre, true); err != nil {
 		return err
 	}
+	if err := be.ensureChain(st.chainOut, true); err != nil {
+		return err
+	}
 	be.flushChain(st.chainPre, true)
+	be.flushChain(st.chainOut, true)
 	if cfg.Queue.IPv4Enabled {
 		if err := be.ensureIPSet(st.setV4, false); err != nil {
 			return err
@@ -330,7 +334,12 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	routeWarnDeviceGate(set.Name, gate)
 	sourceScoped := routeSetIsSourceScoped(set)
 	routeSelfDialBypass(be, cfg, st.chainPre)
+	be.addClaimedBypassRule(st.chainPre)
 	routeAddBlacklistGate(be, "mangle", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
+	if !sourceScoped {
+		routeSelfDialBypass(be, cfg, st.chainOut)
+		be.addClaimedBypassRule(st.chainOut)
+	}
 
 	port, _ := portFromState(st)
 	legacy := isLegacyIptBackend(be)
@@ -354,15 +363,11 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 			}
 		}
 		if !sourceScoped {
-			ensureProxyOutputBaseRulesNft(cfg, st, queueMark)
+			ensureProxyOutputBypassNft(queueMark)
+			addProxyOutputMarkRulesNft(cfg, st)
 		}
 	default:
 		proxyIptPreflight(legacy)
-		if err := be.ensureChain(st.chainOut, true); err != nil {
-			return err
-		}
-		be.flushChain(st.chainOut, true)
-		routeSelfDialBypass(be, cfg, st.chainOut)
 		if cfg.Queue.IPv4Enabled {
 			addProxyDivertRuleIpt(false, st.chainPre, st.setV4, st.mark, legacy)
 			addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "tcp")
@@ -383,14 +388,14 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 				addProxyOutputMarkRuleIpt(true, st.chainOut, st.setV6, st.mark, legacy)
 			}
 		}
-		if sourceScoped {
-			deleteProxyOutputJump(be, st.chainOut)
-		} else {
-			insertProxyOutputJump(be, st.chainOut)
-		}
 	}
 
-	insertProxyJumpAtTop(be, st.chainPre, gate)
+	if sourceScoped {
+		be.deleteJumpRules("OUTPUT", st.chainOut, true)
+	} else {
+		be.ensureJumpRule("OUTPUT", st.chainOut, true, true)
+	}
+	routeEnsureGatedPreJump(be, st.chainPre, gate)
 	addProxyInputAccept(be, st.mark)
 
 	if sourceScoped {
@@ -572,11 +577,10 @@ func routeCleanupProxyRule(be routeBackend, st routeState) {
 	if be.name() == backendNFTables {
 		deleteNftRulesContaining(routeNftOutput, "@"+st.setV4)
 		deleteNftRulesContaining(routeNftOutput, "@"+st.setV6)
-	} else {
-		be.deleteJumpRules("OUTPUT", st.chainOut, true)
-		be.flushChain(st.chainOut, true)
-		be.deleteChain(st.chainOut, true)
 	}
+	be.deleteJumpRules("OUTPUT", st.chainOut, true)
+	be.flushChain(st.chainOut, true)
+	be.deleteChain(st.chainOut, true)
 
 	be.flushIPSet(st.setV4)
 	be.destroyIPSet(st.setV4)
@@ -644,82 +648,37 @@ func deleteNftJumpRules(table, parentChain, targetChain string) {
 	}
 }
 
-func insertProxyJumpAtTop(be routeBackend, chain string, gate routeDeviceGate) {
-	if be.name() == backendNFTables {
-		deleteNftJumpRules(routeNftTable, routeNftPrerouting, chain)
-		nftEmitGatedJump(routeNftPrerouting, chain, true, gate)
-		return
-	}
-	for _, fam := range []string{backendIPTables, backendIP6Tables, backendIPTablesLegacy, backendIP6TablesLegacy} {
-		if !hasBinary(fam) {
-			continue
-		}
-		iptDeleteJumpsTo(fam, "mangle", "PREROUTING", chain)
-		iptEmitGatedJump(fam, "mangle", "PREROUTING", chain, true, gate)
-	}
-}
-
-func deleteProxyOutputJump(be routeBackend, chain string) {
-	if be.name() == backendNFTables {
-		return
-	}
-	for _, fam := range []string{backendIPTables, backendIP6Tables, backendIPTablesLegacy, backendIP6TablesLegacy} {
-		if !hasBinary(fam) {
-			continue
-		}
-		for i := 0; i < 100; i++ {
-			if _, err := run(fam, "-w", "-t", "mangle", "-D", "OUTPUT", "-j", chain); err != nil {
-				break
-			}
-		}
-	}
-}
-
-func insertProxyOutputJump(be routeBackend, chain string) {
-	if be.name() == backendNFTables {
-		return
-	}
-	deleteProxyOutputJump(be, chain)
-	for _, fam := range []string{backendIPTables, backendIP6Tables, backendIPTablesLegacy, backendIP6TablesLegacy} {
-		if !hasBinary(fam) {
-			continue
-		}
-		runLogged("routing: insert output jump (proxy) "+fam,
-			fam, "-w", "-t", "mangle", "-I", "OUTPUT", "1", "-j", chain)
-	}
-}
-
-func ensureProxyOutputBaseRulesNft(cfg *config.Config, st routeState, queueMark uint32) {
+func ensureProxyOutputBypassNft(queueMark uint32) {
 	out, err := run("nft", "list", "chain", "inet", routeNftTable, routeNftOutput)
+	if err != nil {
+		return
+	}
 	present := map[uint32]bool{}
-	if err == nil {
-		for _, line := range strings.Split(out, "\n") {
-			if m, verb, ok := nftParseMarkRule(line); ok && verb == "return" {
-				present[m] = true
-			}
-		}
-		// This chain is what marks locally-originated traffic for diversion, so
-		// it needs the same pair of RETURNs the per-set chain gets: without the
-		// self-dial one, a connection b4 opens to an address inside the set is
-		// marked and looped straight back into b4's own TPROXY listener.
-		for _, m := range []uint32{queueMark, SelfDialMark} {
-			if present[m] {
-				continue
-			}
-			runLogged("routing: insert output bypass (proxy)",
-				"nft", "insert", "rule", "inet", routeNftTable, routeNftOutput,
-				"meta", "mark", "&", fmt.Sprintf("0x%x", m), "==", fmt.Sprintf("0x%x", m), "return")
+	for _, line := range strings.Split(out, "\n") {
+		if m, verb, ok := nftParseMarkRule(line); ok && verb == "return" {
+			present[m] = true
 		}
 	}
+	// The base output chain is what marks locally-originated traffic for
+	// diversion, so it needs the same pair of RETURNs the per-set chain gets:
+	// without the self-dial one, a connection b4 opens to an address inside the
+	// set is marked and looped straight back into b4's own TPROXY listener.
+	for _, m := range []uint32{queueMark, SelfDialMark} {
+		if present[m] {
+			continue
+		}
+		runLogged("routing: insert output bypass (proxy)",
+			"nft", "insert", "rule", "inet", routeNftTable, routeNftOutput,
+			"meta", "mark", "&", fmt.Sprintf("0x%x", m), "==", fmt.Sprintf("0x%x", m), "return")
+	}
+}
 
-	deleteNftRulesContaining(routeNftOutput, "@"+st.setV4)
-	deleteNftRulesContaining(routeNftOutput, "@"+st.setV6)
-
+func addProxyOutputMarkRulesNft(cfg *config.Config, st routeState) {
 	markHex := fmt.Sprintf("0x%x", st.mark)
 	if cfg.Queue.IPv4Enabled {
 		for _, sn := range []string{st.setV4, routeNftDynSet(st.setV4)} {
-			runLogged("routing: add output mark rule (base)",
-				"nft", "add", "rule", "inet", routeNftTable, routeNftOutput,
+			runLogged("routing: add output mark rule (proxy)",
+				"nft", "add", "rule", "inet", routeNftTable, st.chainOut,
 				"ip", "protocol", "tcp",
 				"ip", "daddr", "@"+sn,
 				"meta", "mark", "set", markHex)
@@ -727,8 +686,8 @@ func ensureProxyOutputBaseRulesNft(cfg *config.Config, st routeState, queueMark 
 	}
 	if cfg.Queue.IPv6Enabled {
 		for _, sn := range []string{st.setV6, routeNftDynSet(st.setV6)} {
-			runLogged("routing: add output mark rule (base)",
-				"nft", "add", "rule", "inet", routeNftTable, routeNftOutput,
+			runLogged("routing: add output mark rule (proxy)",
+				"nft", "add", "rule", "inet", routeNftTable, st.chainOut,
 				"meta", "l4proto", "tcp",
 				"ip6", "daddr", "@"+sn,
 				"meta", "mark", "set", markHex)

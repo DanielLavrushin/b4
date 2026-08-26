@@ -3,6 +3,7 @@
 ## [1.80.0] - 2026-08-25
 
 - FIXED: **Telegram kept reporting the MTProto proxy as incorrectly configured and switching it off, and the 1.78.0 fix was aimed at the wrong cause** - the dialog comes from a single four-byte -444 relayed back from a data center, not from a slow dial, and b4 could send an ordinary session to a data center's media edge `kwsN-1`, which answers a non-media session with exactly that. Both names lead to the same address, so that fallback routed around nothing, and a -444 ends the connection instead of reaching the client.
+- FIXED: **Sets routed through a proxy took effect in the reverse of the order they are listed in** - each one placed its firewall jump ahead of the set before it, so with four proxy sets configured the last in the list claimed every address two of them targeted, and the pass that arranges the other routing modes by priority skipped proxy sets altogether. Editing a single set moved it to the front on its own, and traffic the router itself originates followed the same reversed order. [#324](https://github.com/DanielLavrushin/b4/issues/324)
 - ADDED: **An MCP server that can act on b4 rather than only describe it** - the AI could read status and change one setting at a time, so anything a user asked for came back as instructions to carry out by hand. It gains per-setting facts, geosite and geoip search, target and set editing, the last update's transcript, and behind a separate **Allow active probes** permission, testing whether a domain loads and running Discovery. `Settings > Integrations`.
 - ADDED: **A log line for every MCP tool call and every request the endpoint turns away** - a server able to rewrite strategy sets and make the router fetch a site left no trace, and a client guessing at the access token was refused silently.
 - FIXED: **A Discovery run's result became unreachable the moment the run ended** - only the copy held in memory was consulted, and that is dropped 30 seconds after a run finishes, though the web interface had always applied the same result from saved history. A strategy named while a run was still testing also read as settled, and stopping a run early threw away what it had found.
@@ -270,7 +271,7 @@
 - FIXED: **Leftover "zombie" update processes piling up** - each update attempt left a finished helper process behind; these are now cleaned up.
 - ADDED: **Update log** - every Web UI update now writes a step-by-step trace to `update.log` in the log folder (default `/var/log/b4`, reset each attempt), making failed updates much easier to diagnose.
 - ADDED: **Localized changelog** - the Web UI now shows the changelog in the selected language.
-- CHANGED: **Logging setting is now a folder, not a single file** - Settings → Service now asks for a log *directory* (default `/var/log/b4`) instead of a path to `errors.log`, so all of b4's log files (errors, updates, and any added later) live together and can be moved in one place. Existing configs are migrated automatically (your old folder is kept); leave the field empty to turn file logging off.
+- CHANGED: **Logging setting is now a folder, not a single file** - Settings → Service now asks for a log _directory_ (default `/var/log/b4`) instead of a path to `errors.log`, so all of b4's log files (errors, updates, and any added later) live together and can be moved in one place. Existing configs are migrated automatically (your old folder is kept); leave the field empty to turn file logging off.
 
 ## [1.67.1] - 2026-06-10
 
@@ -966,7 +967,7 @@
 
 ## [1.10.1] - 2025-11-03
 
-- IMPROVED: Intermittent connection failures where blocked sites would randomly fail to load in certain browsers (`Safari`, `Firefox`, `Chrome`). Connections *should* now be more stable and reliable across all browsers by optimizing packet fragmentation strategy.
+- IMPROVED: Intermittent connection failures where blocked sites would randomly fail to load in certain browsers (`Safari`, `Firefox`, `Chrome`). Connections _should_ now be more stable and reliable across all browsers by optimizing packet fragmentation strategy.
 
 ## [1.10.0] - 2025-11-02
 

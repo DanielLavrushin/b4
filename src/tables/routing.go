@@ -175,6 +175,7 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 		default:
 			log.Infof("Routing [%s]: enabled set '%s' -> iface=%s mark=0x%x table=%d", be.name(), set.Name, set.Routing.EgressInterface, cur.mark, cur.table)
 		}
+		routeReestablishJumpOrder(be, cfg, true)
 	}
 
 	ttl := set.Routing.IPTTLSeconds
@@ -661,6 +662,9 @@ func routeStateChains(st routeState) []routeChainRef {
 		return []routeChainRef{{st.chainPre, "filter", false}}
 	case config.RoutingUsesTProxy(st.mode):
 		refs := []routeChainRef{{st.chainPre, "mangle", true}}
+		if !st.srcScoped {
+			refs = append(refs, routeChainRef{st.chainOut, "mangle", true})
+		}
 		if st.quicReject && st.chainQUIC != "" {
 			refs = append(refs, routeChainRef{st.chainQUIC, "filter", true})
 		}
@@ -1089,7 +1093,7 @@ func routeOrderedRoutingSets(cfg *config.Config) []*config.SetConfig {
 			continue
 		}
 		st, ok := routeRuleCache[set.Id]
-		if !ok || config.RoutingUsesTProxy(st.mode) || config.RoutingIsBlock(st.mode) {
+		if !ok || config.RoutingIsBlock(st.mode) {
 			continue
 		}
 		ordered = append(ordered, set)
