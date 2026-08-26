@@ -221,8 +221,8 @@ choice still applies there.
 :::
 
 :::warning
-If you route a set into a proxy's TUN and the proxy is configured to reach some of those destinations **directly**
-(a `freedom`/`direct` outbound, a bypass rule, its own DNS), that is exactly the loop above. Leave this on **Automatic**.
+A set routed into a proxy's TUN, where the proxy reaches some of those destinations **directly** (a `freedom`/`direct`
+outbound, a bypass rule, its own DNS), is the loop above. **Automatic** is the setting for that case.
 :::
 
 ### Kill switch
