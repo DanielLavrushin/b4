@@ -45,6 +45,7 @@ type Diagnostics struct {
 	Network   DiagNetwork    `json:"network"`
 	Engine    DiagEngine     `json:"engine"`
 	Firewall  DiagFirewall   `json:"firewall"`
+	Routing   DiagRouting    `json:"routing"`
 	Geodata   DiagGeodata    `json:"geodata"`
 	Upstreams []DiagUpstream `json:"upstreams,omitempty"`
 	Storage   []DiagMount    `json:"storage"`
@@ -112,8 +113,9 @@ type DiagInterface struct {
 }
 
 type DiagEngine struct {
-	Mode string   `json:"mode"`
-	TUN  *DiagTUN `json:"tun,omitempty"`
+	Mode        string   `json:"mode"`
+	TUN         *DiagTUN `json:"tun,omitempty"`
+	Limitations []string `json:"limitations,omitempty"`
 }
 
 type DiagTUN struct {
@@ -129,6 +131,11 @@ type DiagTUN struct {
 	Capture          string `json:"capture,omitempty"`
 	RouteTable       int    `json:"route_table,omitempty"`
 	ReplyCapture     bool   `json:"reply_capture"`
+	SkipTables       bool   `json:"skip_tables"`
+	Mark             uint   `json:"mark,omitempty"`
+	SteerRuleOK      bool   `json:"steer_rule_ok"`
+	CaptureRules     int    `json:"capture_rules"`
+	Healthy          bool   `json:"healthy"`
 	PacketsForwarded uint64 `json:"packets_forwarded"`
 	ForwardErrors    uint64 `json:"forward_errors"`
 	IPv6Dropped      uint64 `json:"ipv6_dropped"`
@@ -141,6 +148,14 @@ type DiagFirewall struct {
 	FlowOffloadGuard int             `json:"flow_offload_guard,omitempty"`
 	FlowOffloadSafe  bool            `json:"flow_offload_safe"`
 	RuleGroups       []DiagRuleGroup `json:"rule_groups,omitempty"`
+}
+
+type DiagRouting struct {
+	Rules     []string        `json:"rules,omitempty"`
+	RulesV6   []string        `json:"rules_v6,omitempty"`
+	Tables    []DiagRuleGroup `json:"tables,omitempty"`
+	Default   []string        `json:"default,omitempty"`
+	Available bool            `json:"available"`
 }
 
 type DiagRuleGroup struct {

@@ -154,6 +154,15 @@ func (t TUNConfig) FollowsDefaultRoute() bool {
 	return t.OutInterface == "" || t.OutInterface == "auto"
 }
 
+const DefaultTUNDeviceName = "b4tun0"
+
+func (t TUNConfig) Device() string {
+	if t.DeviceName == "" {
+		return DefaultTUNDeviceName
+	}
+	return t.DeviceName
+}
+
 type DevicesConfig struct {
 	Enabled      bool     `json:"enabled"`
 	VendorLookup bool     `json:"vendor_lookup"`

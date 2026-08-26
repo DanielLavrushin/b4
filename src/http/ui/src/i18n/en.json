@@ -215,7 +215,18 @@
       "networkInterfacesDesc": "Only inspect packets whose interface is one of these. For forwarded traffic that is the interface the packet leaves by, which a tunnel or a VPN client can change without touching this list. Empty = every interface, which is what almost every setup wants.",
       "listenAllInterfaces": "B4 will listen on all available interfaces if none are selected.",
       "interfaceFilterSeesNothing": "Nothing B4 has seen has left by {{selected}}. Traffic is going out {{seen}}, none of it is being inspected, and no set is being applied to it. Clear the selection to watch every interface.",
-      "interfaceFilterSeesLittle": "B4 is not inspecting traffic leaving by {{seen}}, which is about {{percent}}% of what it has seen. No set applies to it. Clear the selection to watch every interface, or add {{seen}}."
+      "interfaceFilterSeesLittle": "B4 is not inspecting traffic leaving by {{seen}}, which is about {{percent}}% of what it has seen. No set applies to it. Clear the selection to watch every interface, or add {{seen}}.",
+      "ipv6TunWarning": "The TUN capture engine forwards IPv4 only. IPv6 support stays off for captured traffic no matter how this switch is set, and anything reaching a target over IPv6 goes out with no set applied.",
+      "skipIptablesTunDesc": "Skip automatic IPTables/NFTables rules configuration. In TUN mode this also drops the capture rules, masquerade, MSS clamp and the DNS-over-TCP redirect.",
+      "tunReconcileInterval": "TUN Reconcile Interval in seconds (default 10s)",
+      "tunReconcileHelp": "How often the TUN engine re-checks its capture route and rules. Values below 10 seconds are raised to 10, and 0 does not disable it.",
+      "firewallEngineTunHelp": "Firewall backend used for masquerade, MSS clamp and per-set routing rules in TUN mode (auto-detect recommended).",
+      "engineModeConfirmTitle": "Change the packet engine",
+      "engineModeConfirmSubtitle": "This changes how b4 receives every packet",
+      "engineModeConfirmApply": "Change engine",
+      "engineModeConfirmRestart": "The new engine takes effect only after the b4 service is restarted. Save the configuration, then restart the service.",
+      "engineModeConfirmTun": "On TUN: Discovery cannot run, IPv6 traffic is not forwarded, DNS-over-TCP queries the router answers itself are not intercepted, watchdog healing is unavailable, and per-set egress IP is not preserved.",
+      "engineModeConfirmNfqueue": "NFQUEUE needs the nfnetlink_queue kernel module and the matching iptables/nftables rules. Check System Diagnostics if you are unsure the kernel provides them."
     },
     "WebServer": {
       "title": "Web Server",
@@ -422,7 +433,8 @@
       "ipv6Group": "IPv4 fallback",
       "ipv4Fallback": "Force IPv4 for matched domains",
       "ipv4FallbackDesc": "While b4 processes IPv4 only, strip AAAA records from answers for domains a set matched, so the client connects over IPv4 where the set's strategies apply. Turn this off to keep the AAAA records and let those domains go out over IPv6 unprocessed.",
-      "ipv4FallbackIdle": "Not used while IPv6 support is on - b4 processes IPv6 itself, so AAAA answers are kept."
+      "ipv4FallbackIdle": "Not used while IPv6 support is on - b4 processes IPv6 itself, so AAAA answers are kept.",
+      "tcpTunWarning": "The TUN capture engine does not intercept DNS-over-TCP queries the router answers itself. Only queries forwarded from clients reach the DNS server of a set; the router's own lookups go straight to the upstream resolver."
     },
     "Devices": {
       "title": "Device Filtering",
@@ -744,7 +756,29 @@
       "copied": "Diagnostics copied to clipboard",
       "copyFailed": "Failed to copy to clipboard",
       "loadFailed": "Failed to load diagnostics",
-      "connectFailed": "Failed to connect"
+      "connectFailed": "Failed to connect",
+      "engineLimitations": "Limitations",
+      "routing": "Routing",
+      "routingSource": "ip rule / ip route",
+      "routingUnavailable": "the ip utility was not found",
+      "routingEmpty": "no rules or tables reported",
+      "tunHealth": "TUN Health",
+      "tunHealthy": "healthy",
+      "tunDegraded": "degraded",
+      "tunSteerRule": "Steer Rule",
+      "tunSteerRulePresent": "present",
+      "tunSteerRuleMissing": "missing",
+      "tunCaptureRules": "Capture Rules",
+      "tunSkipTables": "Firewall Rules",
+      "tunTablesManaged": "managed",
+      "tunTablesSkipped": "skipped",
+      "limitation": {
+        "ipv6": "IPv6 is not forwarded",
+        "dns_tcp_router_queries": "DNS-over-TCP: the router's own queries are not intercepted",
+        "watchdog_heal": "watchdog cannot heal a set",
+        "discovery": "Discovery cannot run",
+        "egress_ip": "per-set egress IP is not preserved"
+      }
     }
   },
   "dashboard": {
@@ -812,7 +846,9 @@
       "resetting": "Resetting...",
       "resetTitle": "Reset Statistics",
       "resetConfirm": "Reset all statistics? This will clear all connection counters, device activity, and domain statistics. The service will continue running.",
-      "reset": "Reset"
+      "reset": "Reset",
+      "engine": "Engine",
+      "engineTun": "TUN"
     },
     "activeSets": {
       "title": "Active Sets",
@@ -1644,7 +1680,8 @@
       "routerTrafficHeldBack": "{{iface}} is a tunnel a program on this router reads, so B4 leaves the router's own traffic on the normal route. Routing it into {{iface}} would come back out as a new connection to the same address and loop.",
       "killSwitch": "Kill switch",
       "killSwitchDesc": "If the output interface goes away, drop this set's traffic instead of letting it fall back to the normal uplink.",
-      "tunnelManipulationNote": "{{iface}} wraps the packet before anything on the network sees it, so B4 leaves this set's packets alone: no faking, fragmentation or desync, and no SYN health check, dead-IP escalation, IP block detection or TCP duplication. The settings on the Strategy tabs have no effect while the set routes there. Such connections are tagged routed->{{iface}} in the connection log."
+      "tunnelManipulationNote": "{{iface}} wraps the packet before anything on the network sees it, so B4 leaves this set's packets alone: no faking, fragmentation or desync, and no SYN health check, dead-IP escalation, IP block detection or TCP duplication. The settings on the Strategy tabs have no effect while the set routes there. Such connections are tagged routed->{{iface}} in the connection log.",
+      "egressIpTunWarning": "The TUN capture engine does not preserve this source address for the traffic it captures. Packets leave with the address of the uplink the TUN engine sends them out of."
     },
     "importExport": {
       "sectionTitle": "Import/Export Set configuration",
@@ -2001,7 +2038,8 @@
       "blocked": "Blocked"
     },
     "movedDomains": "Moved {{domains}} out of: {{sets}}, so only this set targets them.",
-    "confirmed": "confirmed {{passed}}/{{tries}}"
+    "confirmed": "confirmed {{passed}}/{{tries}}",
+    "tunUnavailable": "Discovery needs the NFQUEUE capture engine: it runs its probes through a second netfilter queue, which the TUN engine has no equivalent for. Switch Settings -> Feature Flags -> Packet Engine to NFQUEUE and restart the service, or configure the set's strategy by hand."
   },
   "detector": {
     "title": "TSPU / DPI Detector",

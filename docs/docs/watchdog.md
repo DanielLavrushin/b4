@@ -9,6 +9,10 @@ The watchdog periodically checks that the domains you list are reachable, and wh
 
 You can find its settings in **Settings → Discovery → Watchdog section**.
 
+:::info
+Self-healing needs discovery, and discovery needs the NFQUEUE capture engine. On the TUN engine the watchdog keeps checking the domains and reports the failing ones, but marks them unhealable instead of repairing them. See [Capture engine](./settings/engine#strategy-discovery-is-unavailable).
+:::
+
 ![](/img/watchdog/20260404234138.png)
 
 ## How it works

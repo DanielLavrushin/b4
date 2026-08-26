@@ -12,6 +12,7 @@ import (
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/nfq"
 	"github.com/daniellavrushin/b4/sock"
+	"github.com/daniellavrushin/b4/tables"
 )
 
 const (
@@ -19,6 +20,13 @@ const (
 	defaultDeviceName = "b4tun0"
 	defaultAddress    = "10.255.0.1/30"
 	defaultRouteTable = 9999
+	keeperDebounce    = 5 * time.Second
+
+	defaultTCPConnBytes = 19
+	defaultUDPConnBytes = 8
+
+	hbCheckEvery = 6
+	hbLogEvery   = 30
 )
 
 type Engine struct {
@@ -30,6 +38,8 @@ type Engine struct {
 	sender        *sock.Sender
 	clientSender  *sock.Sender
 	trigger       chan struct{}
+	keeper        *tables.RoutingKeeper
+	lastKeeper    time.Time
 	egressW       *egressWatcher
 	wg            sync.WaitGroup
 	quit          chan struct{}
@@ -38,6 +48,9 @@ type Engine struct {
 	fwdErrCount   uint64
 	v6DropCount   uint64
 	lastFwdErrLog int64
+	hbCount       uint64
+	lastStatus    string
+	statusFn      atomic.Pointer[func(string)]
 }
 
 func NewEngine(cfg *config.Config, pool *nfq.Pool) *Engine {
@@ -55,6 +68,62 @@ func (e *Engine) config() *config.Config {
 
 func (e *Engine) UpdateConfig(cfg *config.Config) {
 	e.cfg.Store(cfg)
+}
+
+func (e *Engine) ApplyConfig(cfg *config.Config) {
+	if e == nil || cfg == nil {
+		return
+	}
+	e.cfg.Store(cfg)
+	if e.routes == nil {
+		return
+	}
+
+	tcpLimit := cfg.Queue.TCPConnBytesLimit
+	if tcpLimit <= 0 {
+		tcpLimit = defaultTCPConnBytes
+	}
+	udpLimit := cfg.Queue.UDPConnBytesLimit
+	if udpLimit <= 0 {
+		udpLimit = defaultUDPConnBytes
+	}
+	dupV4, _ := cfg.CollectDuplicateIPs()
+
+	next := captureInputs{
+		tcpPorts:       normalizePorts(cfg.CollectTCPPorts()),
+		udpPorts:       normalizePorts(cfg.CollectUDPPorts()),
+		tcpLimit:       tcpLimit,
+		udpLimit:       udpLimit,
+		dupIPs:         dupV4,
+		replyCapture:   replyCaptureNeeded(cfg),
+		devicesEnabled: cfg.Queue.Devices.Enabled,
+		whiteIsBlack:   cfg.Queue.Devices.WhiteIsBlack,
+		selectedMACs:   cfg.Queue.Devices.SelectedMACs(),
+	}
+
+	if e.routes.applyCaptureInputs(next) {
+		e.warnRestartOnly(cfg)
+	}
+	e.triggerReconcile()
+}
+
+func (e *Engine) warnRestartOnly(cfg *config.Config) {
+	r := e.routes
+	tunCfg := cfg.Queue.TUN
+	deviceName := tunCfg.DeviceName
+	if deviceName == "" {
+		deviceName = defaultDeviceName
+	}
+	routeTable := tunCfg.RouteTable
+	if routeTable == 0 {
+		routeTable = defaultRouteTable
+	}
+	if deviceName != r.tunName || routeTable != r.routeTable || tunCfg.Address != "" && tunCfg.Address != r.tunAddr {
+		log.Warnf("TUN: device name, addresses and route tables are only read at start-up; restart b4 for those to take effect")
+	}
+	if replyCaptureNeeded(cfg) && e.clientSender == nil {
+		log.Warnf("TUN: reply-direction capture was switched on but its sender is only created at start-up; restart b4 for RST protection / escalation to take effect")
+	}
 }
 
 func (e *Engine) Start() error {
@@ -126,31 +195,31 @@ func (e *Engine) Start() error {
 
 	tcpLimit := cfg.Queue.TCPConnBytesLimit
 	if tcpLimit <= 0 {
-		tcpLimit = 19
+		tcpLimit = defaultTCPConnBytes
 	}
 	udpLimit := cfg.Queue.UDPConnBytesLimit
 	if udpLimit <= 0 {
-		udpLimit = 8
+		udpLimit = defaultUDPConnBytes
 	}
 
 	dupV4, _ := cfg.CollectDuplicateIPs()
 
 	e.routes = &routeManager{
-		tunName:       name,
-		tunAddr:       address,
-		tunAddrV6:     tunCfg.AddressV6,
-		outIface:      tunCfg.OutInterface,
-		outGateway:    tunCfg.OutGateway,
-		mark:          cfg.Queue.Mark,
-		routeTable:    routeTable,
-		skipTables:    cfg.System.Tables.SkipSetup,
-		captureTable:  captureTable,
-		tcpPorts:      normalizePorts(cfg.CollectTCPPorts()),
-		udpPorts:      normalizePorts(cfg.CollectUDPPorts()),
-		tcpLimit:      tcpLimit,
-		udpLimit:      udpLimit,
-		dupIPs:        dupV4,
-		replyCapture:  replyCapture,
+		tunName:      name,
+		tunAddr:      address,
+		tunAddrV6:    tunCfg.AddressV6,
+		outIface:     tunCfg.OutInterface,
+		outGateway:   tunCfg.OutGateway,
+		mark:         cfg.Queue.Mark,
+		routeTable:   routeTable,
+		skipTables:   cfg.System.Tables.SkipSetup,
+		captureTable: captureTable,
+		tcpPorts:     normalizePorts(cfg.CollectTCPPorts()),
+		udpPorts:     normalizePorts(cfg.CollectUDPPorts()),
+		tcpLimit:     tcpLimit,
+		udpLimit:     udpLimit,
+		dupIPs:       dupV4,
+		replyCapture: replyCapture,
 
 		devicesEnabled: cfg.Queue.Devices.Enabled,
 		whiteIsBlack:   cfg.Queue.Devices.WhiteIsBlack,
@@ -166,6 +235,7 @@ func (e *Engine) Start() error {
 	}
 
 	if !cfg.System.Tables.SkipSetup {
+		e.pool.MarkTUNSNAT()
 		e.pool.EnableTUNSourceResolver(e.routes.currentSrcIP())
 	}
 
@@ -179,6 +249,10 @@ func (e *Engine) Start() error {
 	}
 
 	log.Infof("TUN: started %d reader threads", threads)
+
+	if !cfg.System.Tables.SkipSetup {
+		e.keeper = tables.NewRoutingKeeper()
+	}
 
 	e.trigger = make(chan struct{}, 1)
 	e.wg.Add(1)
@@ -208,16 +282,37 @@ func (e *Engine) reconcileLoop() {
 		case <-e.quit:
 			return
 		case <-e.trigger:
-			if e.routes != nil {
-				e.routes.reconcile()
-				e.pool.UpdateTUNSourceWAN(e.routes.currentSrcIP())
-			}
+			e.reconcileOnce(keeperDebounce)
 		case <-ticker.C:
-			if e.routes != nil {
-				e.routes.reconcile()
-				e.pool.UpdateTUNSourceWAN(e.routes.currentSrcIP())
-			}
+			e.reconcileOnce(0)
+			e.heartbeat()
 		}
+	}
+}
+
+func (e *Engine) reconcileOnce(minGap time.Duration) {
+	if e.routes != nil {
+		e.routes.reconcile()
+		e.pool.UpdateTUNSourceWAN(e.routes.currentSrcIP())
+	}
+	if e.keeper == nil {
+		return
+	}
+	now := time.Now()
+	if minGap > 0 && now.Sub(e.lastKeeper) < minGap {
+		return
+	}
+	e.lastKeeper = now
+	e.keeper.Reconcile(e.config())
+}
+
+func (e *Engine) SetStatusFunc(f func(string)) {
+	e.statusFn.Store(&f)
+}
+
+func (e *Engine) reportStatus(s string) {
+	if f := e.statusFn.Load(); f != nil {
+		(*f)(s)
 	}
 }
 
@@ -270,7 +365,10 @@ func (e *Engine) forwardPacket(raw []byte) {
 			return
 		}
 	case 6:
-		atomic.AddUint64(&e.v6DropCount, 1)
+		n := atomic.AddUint64(&e.v6DropCount, 1)
+		if n == 1 {
+			log.Warnf("TUN: IPv6 packets reached %s but the TUN engine forwards IPv4 only; they are dropped. Disable IPv6 on the WAN or switch Settings -> Core -> Packet Engine -> Ingestion mode to NFQUEUE", e.tunName)
+		}
 		return
 	default:
 		return
@@ -305,11 +403,27 @@ func replyCaptureNeeded(cfg *config.Config) bool {
 	return false
 }
 
+func (e *Engine) TriggerReconcile() {
+	e.triggerReconcile()
+}
+
 func (e *Engine) triggerReconcile() {
 	select {
 	case e.trigger <- struct{}{}:
 	default:
 	}
+}
+
+func (e *Engine) egressLabel() string {
+	if e.routes == nil {
+		return e.config().Queue.TUN.OutInterface
+	}
+	e.routes.mu.Lock()
+	defer e.routes.mu.Unlock()
+	if e.routes.outIface == "" {
+		return "(unresolved)"
+	}
+	return e.routes.outIface
 }
 
 func (e *Engine) logForwardError(err error, src, dst string) {
@@ -318,8 +432,34 @@ func (e *Engine) logForwardError(err error, src, dst string) {
 	last := atomic.LoadInt64(&e.lastFwdErrLog)
 	if now-last >= 5 && atomic.CompareAndSwapInt64(&e.lastFwdErrLog, last, now) {
 		log.Warnf("TUN: failed to forward packet out %s (%d errors, %d ok): %v [last fail %s -> %s]",
-			e.config().Queue.TUN.OutInterface, n, atomic.LoadUint64(&e.fwdCount), err, src, dst)
+			e.egressLabel(), n, atomic.LoadUint64(&e.fwdCount), err, src, dst)
 	}
+}
+
+func (e *Engine) heartbeat() {
+	e.hbCount++
+	if e.hbCount%hbCheckEvery != 1 {
+		return
+	}
+
+	di := e.DiagInfo()
+	status := "active (tun)"
+	if !di.SteerRuleOK {
+		status = "degraded (tun: capture route missing)"
+	} else if di.Capture != "default" && di.CaptureRules == 0 && !di.SkipTables {
+		status = "degraded (tun: capture chain empty)"
+	}
+	if status != e.lastStatus {
+		e.lastStatus = status
+		e.reportStatus(status)
+	}
+
+	if e.hbCount%hbLogEvery != 1 {
+		return
+	}
+	log.Infof("TUN: %s via %s (%s capture, %d chain rules, steer %v) - %d forwarded, %d errors, %d ipv6 not handled",
+		di.DeviceName, e.egressLabel(), di.Capture, di.CaptureRules, di.SteerRuleOK,
+		di.PacketsForwarded, di.ForwardErrors, di.IPv6Dropped)
 }
 
 func (e *Engine) Stop() {

@@ -579,6 +579,34 @@ func RoutingActiveIPSetNames(ipv4, ipv6 bool) []string {
 	return names
 }
 
+func RoutingBlockIPSetNames(ipv4, ipv6 bool) []string {
+	routeMu.Lock()
+	defer routeMu.Unlock()
+
+	seen := make(map[string]bool)
+	var names []string
+	add := func(n string) {
+		if n == "" || seen[n] {
+			return
+		}
+		seen[n] = true
+		names = append(names, n)
+	}
+	for _, st := range routeRuleCache {
+		if !config.RoutingIsBlock(st.mode) {
+			continue
+		}
+		if ipv4 {
+			add(st.setV4)
+		}
+		if ipv6 {
+			add(st.setV6)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
 func RoutingRulesPresent(cfg *config.Config) bool {
 	if cfg == nil {
 		return true
@@ -793,14 +821,14 @@ func RoutingSyncConfig(cfg *config.Config) {
 
 	be := getRouteBackend(cfg)
 	if be == nil {
-		log.Tracef("Routing: no firewall backend available, skipping sync")
+		log.Warnf("Routing: no firewall backend available, so no routing set is applied at all")
 		routeRuleCache = make(map[string]routeState)
 		routeIfaceAuto = make(map[string]routeState)
 		return
 	}
 
 	if !hasBinary("ip") {
-		log.Tracef("Routing: ip binary is missing, skipping sync")
+		log.Warnf("Routing: the 'ip' binary is missing, so no routing set is applied at all; install full iproute2")
 		routeRuleCache = make(map[string]routeState)
 		routeIfaceAuto = make(map[string]routeState)
 		return
@@ -1277,6 +1305,12 @@ func routeEgressIPOnIfaceReal(iface, egressIP string) bool {
 		}
 	}
 	return false
+}
+
+func RouteClaimedMarkMask() uint32 { return routeSetMarkMask }
+
+func RouteClaimedMarkMatch() string {
+	return fmt.Sprintf("0x0/0x%x", routeSetMarkMask)
 }
 
 func routeSetMarkRule(mark uint32) string {

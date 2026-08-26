@@ -106,6 +106,16 @@ export class ApiError extends Error {
   }
 }
 
+async function readErrorBody(r: Response): Promise<unknown> {
+  const raw = await r.text().catch(() => "");
+  if (raw.trim().length === 0) return undefined;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return raw;
+  }
+}
+
 export async function apiFetch<T>(
   url: string,
   options?: RequestInit & { expect?: ContentType },
@@ -115,13 +125,7 @@ export async function apiFetch<T>(
   const r = await fetch(url, fetchOptions);
 
   if (!r.ok) {
-    let body: unknown;
-    try {
-      body = await r.json();
-    } catch {
-      body = await r.text().catch(() => undefined);
-    }
-    throw new ApiError(url, r.status, r.statusText, body);
+    throw new ApiError(url, r.status, r.statusText, await readErrorBody(r));
   }
 
   if (expect === "json") {
@@ -187,13 +191,7 @@ export async function apiUpload<T>(
   });
 
   if (!r.ok) {
-    let body: unknown;
-    try {
-      body = await r.json();
-    } catch {
-      body = await r.text().catch(() => undefined);
-    }
-    throw new ApiError(url, r.status, r.statusText, body);
+    throw new ApiError(url, r.status, r.statusText, await readErrorBody(r));
   }
 
   return r.json() as Promise<T>;

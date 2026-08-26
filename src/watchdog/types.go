@@ -57,4 +57,5 @@ const (
 	StatusDegraded   = "degraded"
 	StatusEscalating = "escalating"
 	StatusQueued     = "queued"
+	StatusUnhealable = "unhealable"
 )

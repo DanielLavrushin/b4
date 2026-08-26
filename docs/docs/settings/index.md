@@ -6,6 +6,7 @@ title: Settings
 b4 settings are split across several tabs:
 
 - [Core](./core) - network, queue, features, logging, proxies, devices
+- [Capture engine](./engine) - the NFQUEUE and TUN ingestion modes, what TUN needs and what it cannot do
 - [MTProto](./mtproto) - the Telegram proxy, its secrets, the shared Telegram upstream and the WEB proxy
 - [Geo data](./geodata) - GeoSite and GeoIP databases
 - [Security](./security) - authentication, HTTPS

@@ -18,6 +18,7 @@ interface TrafficRoutingProps {
   availableIfaces: string[];
   tunnelIfaces?: string[];
   encapsulatedIfaces?: string[];
+  engineMode?: string;
   onChange: (
     field: string,
     value:
@@ -37,6 +38,7 @@ export const TrafficRouting = ({
   availableIfaces,
   tunnelIfaces = [],
   encapsulatedIfaces = [],
+  engineMode,
   onChange,
 }: TrafficRoutingProps) => {
   const { t } = useTranslation();
@@ -438,6 +440,14 @@ export const TrafficRouting = ({
                   ip: routing.egress_ip,
                   iface: routing.egress_interface,
                 })}
+              </B4Alert>
+            </Grid>
+          )}
+
+          {isInterface && routing.egress_ip && engineMode === "tun" && (
+            <Grid size={{ xs: 12 }}>
+              <B4Alert severity="warning">
+                {t("sets.routing.egressIpTunWarning")}
               </B4Alert>
             </Grid>
           )}

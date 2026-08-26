@@ -158,10 +158,14 @@ export const DiscoveryRunner = () => {
   }, [options.ipVersion]);
 
   const [ipVersionEnabled, setIpVersionEnabled] = useState(true);
+  const [tunEngine, setTunEngine] = useState(false);
   useEffect(() => {
     void configApi
       .get()
-      .then((c) => setIpVersionEnabled(!!c.queue?.ipv4 && !!c.queue?.ipv6))
+      .then((c) => {
+        setIpVersionEnabled(!!c.queue?.ipv4 && !!c.queue?.ipv6);
+        setTunEngine(c.queue?.mode === "tun");
+      })
       .catch(() => {});
   }, []);
 
@@ -415,6 +419,10 @@ export const DiscoveryRunner = () => {
           <Trans i18nKey="discovery.alert" />
         </B4Alert>
 
+        {tunEngine && (
+          <B4Alert severity="info">{t("discovery.tunUnavailable")}</B4Alert>
+        )}
+
         <Box
           sx={{
             display: "flex",
@@ -455,7 +463,7 @@ export const DiscoveryRunner = () => {
                     effectiveIpVersion,
                   );
                 }}
-                disabled={checkUrls.length === 0}
+                disabled={checkUrls.length === 0 || tunEngine}
                 sx={{
                   whiteSpace: "nowrap",
                 }}

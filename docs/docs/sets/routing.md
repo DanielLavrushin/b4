@@ -267,7 +267,7 @@ An egress IP that nothing answers for is a silent failure: packets leave, replie
 :::
 
 :::note
-Not available in TUN engine mode with whole-default capture. There b4 reinjects packets on a path that bypasses this rule, so the setting has no effect.
+Not available in TUN engine mode with whole-default capture. There b4 reinjects packets on a path that bypasses this rule, so the setting has no effect. See [Capture engine](../settings/engine#a-sets-egress-ip-is-not-preserved-for-captured-traffic).
 :::
 
 ### IP TTL (entry lifetime)

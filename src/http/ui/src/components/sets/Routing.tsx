@@ -23,6 +23,7 @@ interface RoutingSettingsProps {
   availableIfaces: string[];
   tunnelIfaces?: string[];
   encapsulatedIfaces?: string[];
+  engineMode?: string;
   onChange: (
     field: string,
     value:
@@ -44,6 +45,7 @@ export const RoutingSettings = ({
   availableIfaces,
   tunnelIfaces,
   encapsulatedIfaces,
+  engineMode,
   onChange,
 }: RoutingSettingsProps) => {
   const { t } = useTranslation();
@@ -86,6 +88,7 @@ export const RoutingSettings = ({
           availableIfaces={availableIfaces}
           tunnelIfaces={tunnelIfaces}
           encapsulatedIfaces={encapsulatedIfaces}
+          engineMode={engineMode}
           onChange={onChange}
         />
       </B4TabPanel>

@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { DnsIcon } from "@b4.icons";
 import {
+  B4Alert,
   B4FormGroup,
   B4Hint,
   B4NumberField,
@@ -60,6 +61,11 @@ export const DnsSettings = ({ config, onChange }: DnsSettingsProps) => {
           />
         )}
       </B4FormGroup>
+      {tcpOn && config.queue.mode === "tun" && (
+        <B4Alert severity="warning" noWrapper sx={{ mt: 1 }}>
+          {t("settings.Dns.tcpTunWarning")}
+        </B4Alert>
+      )}
 
       <B4FormGroup label={t("settings.Dns.timeoutGroup")} columns={2}>
         <B4NumberField

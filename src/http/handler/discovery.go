@@ -150,9 +150,12 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 		IPVersion:       req.IPVersion,
 	})
 	if err != nil {
-		if errors.Is(err, discovery.ErrDiscoveryAlreadyRunning) {
+		switch {
+		case errors.Is(err, discovery.ErrDiscoveryAlreadyRunning),
+			errors.Is(err, discovery.ErrDiscoveryNeedsNFQueue),
+			errors.Is(err, discovery.ErrDiscoverySkipTables):
 			http.Error(w, err.Error(), http.StatusConflict)
-		} else {
+		default:
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		return

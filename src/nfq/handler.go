@@ -1,6 +1,7 @@
 package nfq
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -872,7 +873,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		if matchedQUIC || (matchedIP && !matchedLearned) {
 			if config.NormalizeBlockAction(set.Routing.BlockAction) != config.BlockActionDrop {
 				if pkt.ver == IPv4 {
-					if icmp := sock.BuildICMPv4Reject(pkt.raw, pkt.src.To4(), pkt.dst.To4()); icmp != nil {
+					if icmp := sock.BuildICMPv4Reject(w.rejectQuote(pkt), pkt.src.To4(), pkt.dst.To4()); icmp != nil {
 						_ = w.clientSender().SendIPv4(icmp, pkt.src)
 					}
 				} else {
@@ -908,7 +909,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			return 0
 		}
 		if pkt.ver == IPv4 {
-			if icmp := sock.BuildICMPv4Reject(pkt.raw, pkt.src.To4(), pkt.dst.To4()); icmp != nil {
+			if icmp := sock.BuildICMPv4Reject(w.rejectQuote(pkt), pkt.src.To4(), pkt.dst.To4()); icmp != nil {
 				_ = w.clientSender().SendIPv4(icmp, pkt.src)
 			}
 		} else {
@@ -984,4 +985,22 @@ func (w *Worker) handleNfqError(e error) int {
 	}
 	log.Errorf("nfq: %v", e)
 	return 0
+}
+
+func (w *Worker) rejectQuote(pkt *pktInfo) []byte {
+	if pkt == nil || pkt.ver != IPv4 || len(pkt.raw) < 20 {
+		return nil
+	}
+	v4 := pkt.src.To4()
+	if v4 == nil || bytes.Equal(pkt.raw[12:16], v4) {
+		return pkt.raw
+	}
+	if !w.tunSNAT {
+		return pkt.raw
+	}
+	quoted := make([]byte, len(pkt.raw))
+	copy(quoted, pkt.raw)
+	copy(quoted[12:16], v4)
+	sock.FixIPv4Checksum(quoted)
+	return quoted
 }

@@ -56,6 +56,14 @@ Two things soften it. b4 strips IPv6 addresses out of DNS answers for domains a 
 Turning IPv6 support on or off changes which rules exist in the firewall for every set. Sets are rebuilt on the next configuration sync, but the packet queue itself binds its address families at startup, so the change takes full effect only after the service restarts.
 :::
 
+### Packet engine
+
+**Ingestion mode** picks how b4 gets packets out of the kernel: NFQUEUE, the default, or TUN. The choice is read at startup and needs a service restart. Selecting TUN reveals the TUN settings group and hides the firewall and interface controls below, because they do not apply in that mode.
+
+:::info
+TUN exists for kernels without the NFQUEUE modules, and it processes less than NFQUEUE does. [Capture engine](./engine) covers what it requires, the two capture modes it picks between, and the features that are unavailable while it runs.
+:::
+
 ### Firewall
 
 ![20260418230000](../../static/img/core/20260418230000.png)

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/tables"
@@ -15,6 +16,10 @@ import (
 
 func reinjectMarkMatch() string {
 	return fmt.Sprintf("0x%x/0x%x", engine.ReinjectMarkBit, engine.ReinjectMarkBit)
+}
+
+func reinjectPlainMarkMatch() string {
+	return fmt.Sprintf("0x%x/0x%x", engine.ReinjectMarkBit, uint32(engine.ReinjectMarkBit)|tables.RouteClaimedMarkMask())
 }
 
 func clientMarkMatch() string {
@@ -34,18 +39,21 @@ func interfaceMTU(iface string) int {
 }
 
 type routeManager struct {
-	tunName       string
-	tunAddr       string
-	tunAddrV6     string
-	outIface      string
-	outGateway    string
-	mark          uint
-	routeTable    int
-	skipTables    bool
-	savedDefault  string
-	savedRPFilter string
+	tunName            string
+	tunAddr            string
+	tunAddrV6          string
+	outIface           string
+	outGateway         string
+	mark               uint
+	routeTable         int
+	skipTables         bool
+	savedDefault       string
+	savedRPFilter      string
 	fwdRulesAdded      bool
+	fwdChain           bool
+	fwdExcl            []string
 	snatAdded          bool
+	snatChain          bool
 	notrackAdded       bool
 	clientNotrackAdded bool
 
@@ -69,6 +77,7 @@ type routeManager struct {
 	multiport         bool
 	captureRulesAdded bool
 	captureExcl       []string
+	warnedExcl        map[string]bool
 }
 
 func resolveDefaultEgress(skipDev string) (iface, gw, src string, ok bool) {
@@ -100,26 +109,72 @@ func (r *routeManager) currentSrcIP() string {
 	return r.srcIP
 }
 
-func (r *routeManager) setupNAT() {
-	markStr := reinjectMarkMatch()
+func (r *routeManager) snatJumpSpec() []string {
+	return []string{"-o", r.tunName, "-j", tunSNATChain}
+}
 
-	if r.srcIP != "" {
-		snat := []string{"-o", r.tunName, "-j", "SNAT", "--to-source", r.srcIP}
-		if _, err := run(append([]string{"iptables", "-t", "nat", "-C", "POSTROUTING"}, snat...)...); err != nil {
-			if _, err := run(append([]string{"iptables", "-t", "nat", "-A", "POSTROUTING"}, snat...)...); err != nil {
-				log.Warnf("TUN: failed to add SNAT %s -> %s: %v", r.tunName, r.srcIP, err)
-			} else {
-				r.snatAdded = true
-				log.Infof("TUN: SNAT installed (traffic into %s -> source %s)", r.tunName, r.srcIP)
-			}
-		} else {
-			r.snatAdded = true
+func (r *routeManager) snatFlatSpec() []string {
+	return []string{"-o", r.tunName, "-j", "SNAT", "--to-source", r.srcIP}
+}
+
+func (r *routeManager) buildSNATChain() bool {
+	if _, err := run("iptables", "-t", "nat", "-S", tunSNATChain); err != nil {
+		if _, err := run("iptables", "-t", "nat", "-N", tunSNATChain); err != nil {
+			return false
 		}
-	} else {
+	}
+	run("iptables", "-t", "nat", "-F", tunSNATChain)
+	if _, err := run("iptables", "-t", "nat", "-A", tunSNATChain,
+		"-m", "mark", "!", "--mark", tables.RouteClaimedMarkMatch(), "-j", "RETURN"); err != nil {
+		run("iptables", "-t", "nat", "-F", tunSNATChain)
+		run("iptables", "-t", "nat", "-X", tunSNATChain)
+		return false
+	}
+	if _, err := run("iptables", "-t", "nat", "-A", tunSNATChain, "-j", "SNAT", "--to-source", r.srcIP); err != nil {
+		run("iptables", "-t", "nat", "-F", tunSNATChain)
+		run("iptables", "-t", "nat", "-X", tunSNATChain)
+		return false
+	}
+	return true
+}
+
+func (r *routeManager) applySNAT() {
+	if r.srcIP == "" {
 		log.Warnf("TUN: no source IP derived for %s; forwarded LAN traffic will not be NAT'd and replies will not return", r.outIface)
+		return
 	}
 
-	r.notrackAdded = r.installNotrack(markStr, "re-injected packets")
+	if r.buildSNATChain() {
+		r.snatChain = true
+		if _, err := run(append([]string{"iptables", "-t", "nat", "-C", "POSTROUTING"}, r.snatJumpSpec()...)...); err == nil {
+			r.snatAdded = true
+			return
+		}
+		if _, err := run(append([]string{"iptables", "-t", "nat", "-A", "POSTROUTING"}, r.snatJumpSpec()...)...); err != nil {
+			log.Warnf("TUN: failed to add SNAT jump %s -> %s: %v", r.tunName, tunSNATChain, err)
+			return
+		}
+		r.snatAdded = true
+		log.Infof("TUN: SNAT installed (traffic into %s -> source %s, routed traffic exempt)", r.tunName, r.srcIP)
+		return
+	}
+
+	r.snatChain = false
+	if _, err := run(append([]string{"iptables", "-t", "nat", "-C", "POSTROUTING"}, r.snatFlatSpec()...)...); err == nil {
+		r.snatAdded = true
+		return
+	}
+	if _, err := run(append([]string{"iptables", "-t", "nat", "-A", "POSTROUTING"}, r.snatFlatSpec()...)...); err != nil {
+		log.Warnf("TUN: failed to add SNAT %s -> %s: %v", r.tunName, r.srcIP, err)
+		return
+	}
+	r.snatAdded = true
+	log.Infof("TUN: SNAT installed (traffic into %s -> source %s)", r.tunName, r.srcIP)
+}
+
+func (r *routeManager) setupNAT() {
+	r.applySNAT()
+	r.notrackAdded = r.installNotrack(reinjectPlainMarkMatch(), "re-injected packets")
 	r.clientNotrackAdded = r.installNotrack(clientMarkMatch(), "client-direction re-injects")
 }
 
@@ -145,20 +200,31 @@ func (r *routeManager) removeNotrack(markStr string) {
 }
 
 func (r *routeManager) removeSNAT() {
-	if !r.snatAdded || r.srcIP == "" {
+	if !r.snatAdded {
 		return
 	}
 	for {
-		if _, err := run("iptables", "-t", "nat", "-D", "POSTROUTING", "-o", r.tunName, "-j", "SNAT", "--to-source", r.srcIP); err != nil {
+		if _, err := run(append([]string{"iptables", "-t", "nat", "-D", "POSTROUTING"}, r.snatJumpSpec()...)...); err != nil {
 			break
 		}
 	}
+	if r.srcIP != "" {
+		for {
+			if _, err := run(append([]string{"iptables", "-t", "nat", "-D", "POSTROUTING"}, r.snatFlatSpec()...)...); err != nil {
+				break
+			}
+		}
+	}
+	run("iptables", "-t", "nat", "-F", tunSNATChain)
+	run("iptables", "-t", "nat", "-X", tunSNATChain)
 	r.snatAdded = false
+	r.snatChain = false
 }
 
 func (r *routeManager) teardownNAT() {
 	r.removeSNAT()
 	if r.notrackAdded {
+		r.removeNotrack(reinjectPlainMarkMatch())
 		r.removeNotrack(reinjectMarkMatch())
 		r.notrackAdded = false
 	}
@@ -168,13 +234,67 @@ func (r *routeManager) teardownNAT() {
 	}
 }
 
-func (r *routeManager) applyForwarding() int {
-	added := 0
-	for _, dir := range []string{"-i", "-o"} {
-		if _, err := run("iptables", "-C", "FORWARD", dir, r.tunName, "-j", "ACCEPT"); err == nil {
+func (r *routeManager) desiredForwardExclusions() []string {
+	if r.skipTables {
+		return nil
+	}
+	return tables.RoutingBlockIPSetNames(true, false)
+}
+
+func (r *routeManager) rebuildForwardChain() {
+	if _, err := run("iptables", "-t", "filter", "-S", tunForwardChain); err != nil {
+		if _, err := run("iptables", "-t", "filter", "-N", tunForwardChain); err != nil {
+			r.fwdChain = false
+			return
+		}
+	}
+	run("iptables", "-t", "filter", "-F", tunForwardChain)
+
+	if _, err := run("iptables", "-t", "filter", "-A", tunForwardChain,
+		"-m", "mark", "!", "--mark", tables.RouteClaimedMarkMatch(), "-j", "RETURN"); err != nil {
+		run("iptables", "-t", "filter", "-F", tunForwardChain)
+		run("iptables", "-t", "filter", "-X", tunForwardChain)
+		r.fwdChain = false
+		return
+	}
+
+	excl := r.desiredForwardExclusions()
+	installed := make([]string, 0, len(excl))
+	for _, set := range excl {
+		if _, err := run("iptables", "-t", "filter", "-A", tunForwardChain, "-m", "set", "--match-set", set, "dst", "-j", "RETURN"); err != nil {
+			log.Tracef("TUN: forward exclusion for block set %s not added: %v", set, err)
 			continue
 		}
-		if _, err := run("iptables", "-I", "FORWARD", dir, r.tunName, "-j", "ACCEPT"); err != nil {
+		installed = append(installed, set)
+	}
+
+	if _, err := run("iptables", "-t", "filter", "-A", tunForwardChain, "-j", "ACCEPT"); err != nil {
+		run("iptables", "-t", "filter", "-F", tunForwardChain)
+		run("iptables", "-t", "filter", "-X", tunForwardChain)
+		r.fwdChain = false
+		return
+	}
+	r.fwdChain = true
+	r.fwdExcl = installed
+}
+
+func (r *routeManager) forwardTarget() string {
+	if r.fwdChain {
+		return tunForwardChain
+	}
+	return "ACCEPT"
+}
+
+func (r *routeManager) applyForwarding() int {
+	r.rebuildForwardChain()
+	target := r.forwardTarget()
+
+	added := 0
+	for _, dir := range []string{"-i", "-o"} {
+		if _, err := run("iptables", "-C", "FORWARD", dir, r.tunName, "-j", target); err == nil {
+			continue
+		}
+		if _, err := run("iptables", "-I", "FORWARD", dir, r.tunName, "-j", target); err != nil {
 			log.Warnf("TUN: failed to add FORWARD accept (%s %s): %v", dir, r.tunName, err)
 		} else {
 			added++
@@ -195,12 +315,17 @@ func (r *routeManager) teardownForwarding() {
 		return
 	}
 	for _, dir := range []string{"-i", "-o"} {
-		for {
-			if _, err := run("iptables", "-D", "FORWARD", dir, r.tunName, "-j", "ACCEPT"); err != nil {
-				break
+		for _, target := range []string{tunForwardChain, "ACCEPT"} {
+			for {
+				if _, err := run("iptables", "-D", "FORWARD", dir, r.tunName, "-j", target); err != nil {
+					break
+				}
 			}
 		}
 	}
+	run("iptables", "-t", "filter", "-F", tunForwardChain)
+	run("iptables", "-t", "filter", "-X", tunForwardChain)
+	r.fwdChain = false
 }
 
 func (r *routeManager) setup() error {
@@ -328,7 +453,7 @@ func (r *routeManager) restoreRPFilter() {
 
 func (r *routeManager) setupBypassTable() error {
 	tableStr := fmt.Sprintf("%d", r.routeTable)
-	markStr := reinjectMarkMatch()
+	markStr := reinjectPlainMarkMatch()
 
 	if existing, err := run("ip", "route", "show", "table", tableStr); err == nil && strings.TrimSpace(existing) != "" {
 		if !r.ownsBypassTable(markStr, tableStr) {
@@ -379,7 +504,7 @@ func (r *routeManager) ownsBypassTable(markStr, tableStr string) bool {
 func (r *routeManager) delFwmarkRule(markStr, tableStr string) {
 	bare := strings.SplitN(markStr, "/", 2)[0]
 	legacy := fmt.Sprintf("0x%x", r.mark)
-	for _, m := range []string{markStr, bare, legacy, legacy + "/" + legacy} {
+	for _, m := range []string{markStr, reinjectMarkMatch(), bare, legacy, legacy + "/" + legacy} {
 		for {
 			if _, err := run("ip", "rule", "del", "fwmark", m, "lookup", tableStr); err != nil {
 				break
@@ -406,16 +531,50 @@ func (r *routeManager) replaceDefaultIntoTun() error {
 	return nil
 }
 
+func (r *routeManager) selfDialMarkMatches() []string {
+	return []string{
+		fmt.Sprintf("0x%x/0x%x", config.SelfDialMark, config.SelfDialMark),
+		clientMarkMatch(),
+	}
+}
+
+func (r *routeManager) ensureSelfDialBypass() {
+	tableStr := fmt.Sprintf("%d", r.routeTable)
+	for _, mk := range r.selfDialMarkMatches() {
+		if r.steerRulePresent(mk, tableStr) {
+			continue
+		}
+		if _, err := run("ip", "rule", "add", "fwmark", mk, "lookup", tableStr, "priority", strconv.Itoa(selfDialRulePrio)); err != nil {
+			log.Tracef("TUN: could not add the self-dial bypass rule for mark %s: %v", mk, err)
+		}
+	}
+}
+
+func (r *routeManager) removeSelfDialBypass() {
+	tableStr := fmt.Sprintf("%d", r.routeTable)
+	for _, mk := range r.selfDialMarkMatches() {
+		for {
+			if _, err := run("ip", "rule", "del", "fwmark", mk, "lookup", tableStr); err != nil {
+				break
+			}
+		}
+	}
+}
+
 func (r *routeManager) setupDefaultCapture(srcIP string) error {
 	if err := r.setupBypassTable(); err != nil {
 		return err
 	}
 
+	r.ensureSelfDialBypass()
+
 	if err := r.replaceDefaultIntoTun(); err != nil {
 		return fmt.Errorf("ip route replace default: %w", err)
 	}
 
-	log.Infof("TUN: default-capture routing configured (tun=%s, out=%s gw=%q src=%q mark=0x%x table=%d)",
+	log.Infof("TUN: default-capture routing configured (tun=%s, out=%s gw=%q src=%q mark=0x%x table=%d). "+
+		"Note this mode has no capture chain: device filtering, reply capture and the routing-set shortcuts do not apply, "+
+		"and there is no first-N packet cap",
 		r.tunName, r.outIface, r.outGateway, r.srcIP, r.mark, r.routeTable)
 
 	return nil
@@ -505,6 +664,10 @@ func (r *routeManager) reconcile() {
 	}
 
 	if !r.skipTables {
+		if desired := r.desiredForwardExclusions(); !equalStringSet(desired, r.fwdExcl) {
+			log.Infof("TUN: reconcile refreshing forward exclusions (%d block set(s))", len(desired))
+			r.rebuildForwardChain()
+		}
 		if n := r.applyForwarding(); n > 0 {
 			log.Infof("TUN: reconcile restored %d FORWARD accept rule(s) for %s", n, r.tunName)
 		}
@@ -519,18 +682,23 @@ func (r *routeManager) reconcile() {
 }
 
 func (r *routeManager) ensureNAT() {
-	if r.srcIP != "" {
-		snat := []string{"-o", r.tunName, "-j", "SNAT", "--to-source", r.srcIP}
-		if _, err := run(append([]string{"iptables", "-t", "nat", "-C", "POSTROUTING"}, snat...)...); err != nil {
-			if _, err := run(append([]string{"iptables", "-t", "nat", "-A", "POSTROUTING"}, snat...)...); err == nil {
-				r.snatAdded = true
+	if r.srcIP != "" && !r.snatAdded {
+		r.applySNAT()
+	} else if r.srcIP != "" {
+		spec := r.snatFlatSpec()
+		if r.snatChain {
+			spec = r.snatJumpSpec()
+			if out, err := run("iptables", "-t", "nat", "-S", tunSNATChain); err != nil || !strings.Contains(out, r.srcIP) {
+				r.buildSNATChain()
+			}
+		}
+		if _, err := run(append([]string{"iptables", "-t", "nat", "-C", "POSTROUTING"}, spec...)...); err != nil {
+			if _, err := run(append([]string{"iptables", "-t", "nat", "-A", "POSTROUTING"}, spec...)...); err == nil {
 				log.Infof("TUN: reconcile restored SNAT (%s -> %s)", r.tunName, r.srcIP)
 			}
-		} else {
-			r.snatAdded = true
 		}
 	}
-	r.ensureNotrack(&r.notrackAdded, reinjectMarkMatch())
+	r.ensureNotrack(&r.notrackAdded, reinjectPlainMarkMatch())
 	r.ensureNotrack(&r.clientNotrackAdded, clientMarkMatch())
 }
 
@@ -547,7 +715,7 @@ func (r *routeManager) ensureNotrack(added *bool, markStr string) {
 }
 
 func (r *routeManager) ensureBypass() {
-	markStr := reinjectMarkMatch()
+	markStr := reinjectPlainMarkMatch()
 	tableStr := fmt.Sprintf("%d", r.routeTable)
 	if !r.ownsBypassTable(markStr, tableStr) {
 		if _, err := run("ip", "rule", "add", "fwmark", markStr, "lookup", tableStr, "priority", "100"); err != nil {
@@ -566,6 +734,7 @@ func (r *routeManager) ensureBypass() {
 }
 
 func (r *routeManager) ensureDefaultCapture() {
+	r.ensureSelfDialBypass()
 	out, _ := run("ip", "-4", "route", "show", "default")
 	if strings.Contains(out, "dev "+r.tunName) {
 		return
@@ -603,7 +772,7 @@ func (r *routeManager) addBypassDefault(tableStr string) error {
 }
 
 func (r *routeManager) teardown() {
-	markStr := reinjectMarkMatch()
+	markStr := reinjectPlainMarkMatch()
 	tableStr := fmt.Sprintf("%d", r.routeTable)
 
 	if r.resolvedCapture == "ports" {
@@ -619,6 +788,7 @@ func (r *routeManager) teardown() {
 		}
 	}
 
+	r.removeSelfDialBypass()
 	r.delFwmarkRule(markStr, tableStr)
 	if _, err := run("ip", "route", "flush", "table", tableStr); err != nil {
 		log.Warnf("TUN: failed to flush route table %s: %v", tableStr, err)

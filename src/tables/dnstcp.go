@@ -172,6 +172,58 @@ func (n *NFTablesManager) applyDNSTCPFamily(v6 bool) error {
 	return nil
 }
 
+func ApplyDNSTCPOnly(cfg *config.Config) error {
+	if !dnsTCPWanted(cfg) {
+		return nil
+	}
+	loadKernelModules()
+	backend := detectFirewallBackend(cfg)
+	if backend == backendNFTables {
+		nft := NewNFTablesManager(cfg)
+		if err := nft.createTable(); err != nil {
+			return err
+		}
+		return nft.ApplyDNSTCP()
+	}
+	return NewIPTablesManager(cfg, backend == backendIPTablesLegacy).applyDNSTCPStandalone()
+}
+
+func ClearDNSTCPOnly(cfg *config.Config) {
+	backend := detectFirewallBackend(cfg)
+	if backend == backendNFTables {
+		NewNFTablesManager(cfg).ClearDNSTCP()
+		return
+	}
+	im := NewIPTablesManager(cfg, backend == backendIPTablesLegacy)
+	for _, ipt := range im.teardownBinaries() {
+		im.teardownDNSTCPChain(ipt)
+	}
+}
+
+func (im *IPTablesManager) applyDNSTCPStandalone() error {
+	for _, ipt := range im.applyBinaries() {
+		if !dnsTCPEnabledFamily(im.cfg, ipt == backendIP6Tables || ipt == backendIP6TablesLegacy) {
+			continue
+		}
+		if !hasNATRedirectSupport(ipt, im.cfg.DNSTCPListenPort()) {
+			continue
+		}
+		im.teardownDNSTCPChain(ipt)
+		chains, rules := im.buildDNSTCPManifest(ipt)
+		for _, c := range chains {
+			c.Ensure()
+		}
+		for _, r := range rules {
+			if err := r.Apply(); err != nil {
+				im.teardownDNSTCPChain(ipt)
+				return fmt.Errorf("DNS-over-TCP redirect (%s): %w", ipt, err)
+			}
+		}
+		log.Infof("IPTABLES[%s]: DNS-over-TCP redirect to port %d installed", ipt, im.cfg.DNSTCPListenPort())
+	}
+	return nil
+}
+
 func (n *NFTablesManager) ApplyDNSTCP() error {
 	if !dnsTCPWanted(n.cfg) {
 		return nil

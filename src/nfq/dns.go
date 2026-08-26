@@ -12,6 +12,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/dns"
+	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/sock"
@@ -262,7 +263,10 @@ func (w *Worker) answerViaSet(ipVersion byte, cfg *config.Config, set *config.Se
 }
 
 func (w *Worker) dnsClientAddressable(pkt *pktInfo, sport, dport uint16) bool {
-	if w.srcResolver == nil || pkt.ver != IPv4 {
+	if w.srcResolver == nil {
+		return !w.tunSNAT || pkt.ver != IPv4
+	}
+	if pkt.ver != IPv4 {
 		return true
 	}
 	return w.srcResolver.addressable(pkt.proto, pkt.src, sport, pkt.dst, dport)
@@ -605,6 +609,9 @@ func (w *Worker) sendDNSResponseToClient(ipVersion byte, originalDst, clientIP n
 
 func (w *Worker) resolveDoHRedirect(serverURL string, mark int, query []byte) ([]byte, error) {
 	timeout := w.getConfig().DNSQueryTimeout()
+	if w.tunSNAT {
+		mark |= engine.ReinjectMarkBit
+	}
 	ctx, cancel := context.WithTimeout(w.ctx, timeout)
 	defer cancel()
 	return dns.ResolveDoH(ctx, getDoHClient(mark, timeout), serverURL, query)

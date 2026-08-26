@@ -190,6 +190,20 @@ func runB4(cmd *cobra.Command, args []string) error {
 		if c.Queue.Mode == "tun" {
 			tproxyMgr.SyncConfig(c)
 			tables.RoutingSyncConfig(c)
+			tables.ClearMSSClampOnly(c)
+			if err := tables.ApplyMSSClampOnly(c); err != nil {
+				log.Errorf("Failed to re-apply MSS clamp in TUN mode: %v", err)
+			}
+			tables.ClearMasqueradeOnly(c)
+			if err := tables.ApplyMasqueradeOnly(c); err != nil {
+				log.Errorf("Failed to re-apply masquerade in TUN mode: %v", err)
+			}
+			tables.ApplyConntrackSysctls()
+			tables.ClearDNSTCPOnly(c)
+			if err := tables.ApplyDNSTCPOnly(c); err != nil {
+				log.Errorf("Failed to re-apply the DNS-over-TCP redirect in TUN mode: %v", err)
+			}
+			handler.ApplyTUNEngineConfig(c)
 			return nil
 		}
 		if discoveryRT.IsActive() {
@@ -302,15 +316,20 @@ func runB4(cmd *cobra.Command, args []string) error {
 			if err := tables.ApplyMSSClampOnly(&cfg); err != nil {
 				log.Errorf("Failed to apply MSS clamp in TUN mode: %v", err)
 			}
+			if err := tables.ApplyDNSTCPOnly(&cfg); err != nil {
+				log.Errorf("Failed to apply the DNS-over-TCP redirect in TUN mode: %v", err)
+			}
 		} else {
 			log.Infof("Skipping masquerade and conntrack sysctls (--skip-tables); the TUN engine also skips its own firewall/sysctl rules and only sets up routing")
 		}
 
 		tunEngine = b4tun.NewEngine(&cfg, pool)
+		tunEngine.SetStatusFunc(metrics.SetNFQueueStatus)
 		if err := tunEngine.Start(); err != nil {
 			if !cfg.System.Tables.SkipSetup {
 				tables.ClearMasqueradeOnly(&cfg)
 				tables.ClearMSSClampOnly(&cfg)
+				tables.ClearDNSTCPOnly(&cfg)
 				tables.RevertConntrackSysctls()
 			}
 			pool.Stop()
@@ -330,6 +349,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		if !cfg.System.Tables.SkipSetup {
 			tproxyMgr.SyncConfig(&cfg)
 			tables.RoutingSyncConfig(&cfg)
+			tunEngine.TriggerReconcile()
 		}
 	} else {
 		// Setup iptables/nftables rules
@@ -387,6 +407,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 			if !c.System.Tables.SkipSetup {
 				tables.ClearMasqueradeOnly(c)
 				tables.ClearMSSClampOnly(c)
+				tables.ClearDNSTCPOnly(c)
 				tables.RevertConntrackSysctls()
 			}
 		} else if !c.System.Tables.SkipSetup {
@@ -433,7 +454,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 			}
 		}
 		if tunEngine != nil {
-			tunEngine.UpdateConfig(c)
+			tunEngine.ApplyConfig(c)
 		}
 		if err := c.SaveToFile(c.ConfigPath); err != nil {
 			return fmt.Errorf("failed to save config: %v", err)

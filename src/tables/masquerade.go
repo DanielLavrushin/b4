@@ -31,10 +31,13 @@ func masqueradeInterfaces(cfg *config.Config) []string {
 
 func masqueradeSpecs(cfg *config.Config) [][]string {
 	ifaces := masqueradeInterfaces(cfg)
-	if len(ifaces) == 0 {
-		return [][]string{{"-j", "MASQUERADE"}}
+	var specs [][]string
+	if cfg != nil && cfg.Queue.Mode == "tun" {
+		specs = append(specs, []string{"-o", cfg.Queue.TUN.Device(), "-j", "RETURN"})
 	}
-	specs := make([][]string, 0, len(ifaces))
+	if len(ifaces) == 0 {
+		return append(specs, []string{"-j", "MASQUERADE"})
+	}
 	for _, iface := range ifaces {
 		specs = append(specs, []string{"-o", iface, "-j", "MASQUERADE"})
 	}

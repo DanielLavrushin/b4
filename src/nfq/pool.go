@@ -30,10 +30,16 @@ func NewWorkerWithQueue(cfg *config.Config, qnum uint16) *Worker {
 	return w
 }
 
+func (p *Pool) MarkTUNSNAT() {
+	for _, w := range p.Workers {
+		w.tunSNAT = true
+	}
+}
+
 func (p *Pool) EnableTUNSourceResolver(wanIP string) {
 	if p.tunSrc == nil {
 		if f, err := os.Open(conntrackPath); err != nil {
-			log.Warnf("TUN: per-device source attribution unavailable (%s not readable: %v); device logging/filtering will show the uplink address in TUN mode", conntrackPath, err)
+			log.Warnf("TUN: per-device source attribution unavailable (%s not readable: %v); device logging/filtering will show the uplink address in TUN mode, DNS redirects for forwarded clients are switched off, and blackhole 'reject' degrades to a silent drop", conntrackPath, err)
 			return
 		} else {
 			f.Close()

@@ -82,14 +82,35 @@ interface DiagTUN {
   capture?: string;
   route_table?: number;
   reply_capture: boolean;
+  skip_tables: boolean;
+  mark?: number;
+  steer_rule_ok: boolean;
+  capture_rules: number;
+  healthy: boolean;
   packets_forwarded: number;
   forward_errors: number;
   ipv6_dropped: number;
 }
 
+export type DiagLimitation =
+  | "ipv6"
+  | "dns_tcp_router_queries"
+  | "watchdog_heal"
+  | "discovery"
+  | "egress_ip";
+
 interface DiagEngine {
   mode: string;
   tun?: DiagTUN;
+  limitations?: DiagLimitation[];
+}
+
+interface DiagRouting {
+  available: boolean;
+  rules?: string[];
+  rules_v6?: string[];
+  default?: string[];
+  tables?: DiagRuleGroup[];
 }
 
 interface DiagGeodata {
@@ -125,6 +146,7 @@ export interface Diagnostics {
   network: { interfaces: DiagInterface[] };
   engine: DiagEngine;
   firewall: DiagFirewall;
+  routing: DiagRouting;
   geodata: DiagGeodata;
   storage: DiagMount[];
   paths: DiagPaths;

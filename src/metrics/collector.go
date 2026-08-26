@@ -508,6 +508,12 @@ func (m *MetricsCollector) CloseConnection() {
 	}
 }
 
+func (m *MetricsCollector) SetNFQueueStatus(status string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.NFQueueStatus = status
+}
+
 func (m *MetricsCollector) GetSnapshot() *MetricsCollector {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

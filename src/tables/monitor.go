@@ -20,9 +20,7 @@ type Monitor struct {
 
 	started bool
 
-	ifaceStateMu sync.Mutex
-	ifaceState   map[string]ifaceSnapshot
-	egressIPHere map[string]bool
+	keeper *RoutingKeeper
 
 	linkWatcher *linkWatcher
 }
@@ -45,13 +43,12 @@ func NewMonitor(cfgPtr *atomic.Pointer[config.Config]) *Monitor {
 	}
 
 	return &Monitor{
-		cfgPtr:       cfgPtr,
-		stop:         make(chan struct{}),
-		interval:     interval,
-		backend:      detectFirewallBackend(cfg),
-		ifaceState:   make(map[string]ifaceSnapshot),
-		egressIPHere: make(map[string]bool),
-		linkWatcher:  newLinkWatcher(cfgPtr),
+		cfgPtr:      cfgPtr,
+		stop:        make(chan struct{}),
+		interval:    interval,
+		backend:     detectFirewallBackend(cfg),
+		keeper:      NewRoutingKeeper(),
+		linkWatcher: newLinkWatcher(cfgPtr),
 	}
 }
 
@@ -105,7 +102,7 @@ func (m *Monitor) monitorLoop() {
 	ticker := time.NewTicker(m.interval)
 	defer ticker.Stop()
 
-	m.snapshotRoutingIfaces(m.cfgPtr.Load())
+	m.keeper.Resnapshot(m.cfgPtr.Load())
 
 	for {
 		select {
@@ -120,22 +117,10 @@ func (m *Monitor) monitorLoop() {
 				} else {
 					log.Infof("Tables rules restored successfully")
 				}
-				m.snapshotRoutingIfaces(cfg)
+				m.keeper.Resnapshot(cfg)
 			}
 
-			if m.routingIfacesChanged(cfg) {
-				log.Warnf("Routing interface change detected, resyncing routing rules...")
-				RoutingForceResync(cfg)
-				m.snapshotRoutingIfaces(cfg)
-				log.Tracef("Routing rules resynced after interface change")
-			} else if !RoutingRulesPresent(cfg) {
-				log.Warnf("Routing rules missing, restoring...")
-				RoutingForceResync(cfg)
-				m.snapshotRoutingIfaces(cfg)
-				log.Infof("Routing rules restored successfully")
-			} else {
-				RoutingPeriodicReResolve(cfg)
-			}
+			m.keeper.Reconcile(cfg)
 		}
 	}
 }
@@ -370,74 +355,4 @@ func (m *Monitor) restoreRules(cfg *config.Config) error {
 func (m *Monitor) ForceRestore() error {
 	log.Infof("Manual rule restoration triggered")
 	return m.restoreRules(m.cfgPtr.Load())
-}
-
-func (m *Monitor) snapshotRoutingIfaces(cfg *config.Config) {
-	m.ifaceStateMu.Lock()
-	defer m.ifaceStateMu.Unlock()
-	m.snapshotRoutingIfacesLocked(cfg)
-}
-
-func (m *Monitor) snapshotRoutingIfacesLocked(cfg *config.Config) {
-	m.ifaceState = make(map[string]ifaceSnapshot)
-	m.egressIPHere = make(map[string]bool)
-	for _, set := range cfg.Sets {
-		if set == nil || !set.Enabled || !set.Routing.Enabled || set.Routing.EgressInterface == "" {
-			continue
-		}
-		iface := set.Routing.EgressInterface
-		if set.Routing.EgressIP != "" {
-			key := egressIPKey(iface, set.Routing.EgressIP)
-			m.egressIPHere[key] = routeEgressIPOnIface(iface, set.Routing.EgressIP)
-		}
-		if _, ok := m.ifaceState[iface]; ok {
-			continue
-		}
-		m.ifaceState[iface] = ifaceSnapshot{
-			v4: routeGetIfaceAddr(iface, false),
-			v6: routeGetIfaceAddr(iface, true),
-		}
-	}
-}
-
-func egressIPKey(iface, ip string) string { return iface + "|" + ip }
-
-func (m *Monitor) routingIfacesChanged(cfg *config.Config) bool {
-	m.ifaceStateMu.Lock()
-	defer m.ifaceStateMu.Unlock()
-
-	if len(m.ifaceState) == 0 {
-		m.snapshotRoutingIfacesLocked(cfg)
-		return false
-	}
-
-	for iface, old := range m.ifaceState {
-		curV4 := routeGetIfaceAddr(iface, false)
-		curV6 := routeGetIfaceAddr(iface, true)
-
-		if curV4 != old.v4 || curV6 != old.v6 {
-			log.Tracef("Monitor: interface %s changed (v4: %q->%q, v6: %q->%q)",
-				iface, old.v4, curV4, old.v6, curV6)
-			return true
-		}
-	}
-	for _, set := range cfg.Sets {
-		if set == nil || !set.Enabled || !set.Routing.Enabled || set.Routing.EgressIP == "" {
-			continue
-		}
-		iface := set.Routing.EgressInterface
-		key := egressIPKey(iface, set.Routing.EgressIP)
-		was, tracked := m.egressIPHere[key]
-		now := routeEgressIPOnIface(iface, set.Routing.EgressIP)
-		if !tracked || was == now {
-			continue
-		}
-		if now {
-			log.Infof("Monitor: egress IP %s is back on %s; restoring the source rewrite for set '%s'", set.Routing.EgressIP, iface, set.Name)
-		} else {
-			log.Warnf("Monitor: egress IP %s left %s, taking set '%s' with it; putting the address back and rebuilding its rules", set.Routing.EgressIP, iface, set.Name)
-		}
-		return true
-	}
-	return false
 }

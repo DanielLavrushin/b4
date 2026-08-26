@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/tables"
@@ -14,10 +15,67 @@ const (
 	tunCaptureChain   = "B4_TUN"
 	tunGateChain      = "B4_TUN_GATE"
 	tunProbeChain     = "B4_TUN_PROBE"
+	tunSNATChain      = "B4_TUN_SNAT"
+	tunForwardChain   = "B4_TUN_FWD"
 	defaultSteerMark  = engine.TunSteerMark
 	defaultClientMark = engine.ClientMark
 	captureRulePrio   = 90
+	selfDialRulePrio  = 89
 )
+
+type captureInputs struct {
+	tcpPorts       []string
+	udpPorts       []string
+	tcpLimit       int
+	udpLimit       int
+	dupIPs         []string
+	replyCapture   bool
+	devicesEnabled bool
+	whiteIsBlack   bool
+	selectedMACs   []string
+}
+
+func (r *routeManager) captureInputsEqual(in captureInputs) bool {
+	return equalStringSet(r.tcpPorts, in.tcpPorts) &&
+		equalStringSet(r.udpPorts, in.udpPorts) &&
+		equalStringSet(r.dupIPs, in.dupIPs) &&
+		equalStringSet(r.selectedMACs, in.selectedMACs) &&
+		r.tcpLimit == in.tcpLimit &&
+		r.udpLimit == in.udpLimit &&
+		r.replyCapture == in.replyCapture &&
+		r.devicesEnabled == in.devicesEnabled &&
+		r.whiteIsBlack == in.whiteIsBlack
+}
+
+func (r *routeManager) applyCaptureInputs(in captureInputs) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.captureInputsEqual(in) {
+		return false
+	}
+
+	r.tcpPorts = in.tcpPorts
+	r.udpPorts = in.udpPorts
+	r.tcpLimit = in.tcpLimit
+	r.udpLimit = in.udpLimit
+	r.dupIPs = in.dupIPs
+	r.replyCapture = in.replyCapture
+	r.devicesEnabled = in.devicesEnabled
+	r.whiteIsBlack = in.whiteIsBlack
+	r.selectedMACs = in.selectedMACs
+
+	if r.resolvedCapture != "ports" || !r.captureRulesAdded {
+		log.Infof("TUN: capture settings changed; whole-default capture has no port chain to rebuild")
+		return true
+	}
+
+	log.Infof("TUN: capture settings changed; rebuilding %s (tcp %s, udp %s, first %d/%d packets)",
+		tunCaptureChain, strings.Join(r.tcpPorts, ","), strings.Join(r.udpPorts, ","), r.tcpLimit, r.udpLimit)
+	r.rebuildCaptureChain()
+	r.ensureCaptureJumps()
+	return true
+}
 
 func (r *routeManager) steerMarkStr() string {
 	return fmt.Sprintf("0x%x/0x%x", defaultSteerMark, defaultSteerMark)
@@ -101,11 +159,76 @@ func (r *routeManager) deviceFilterActive() bool {
 	return r.devicesEnabled && len(r.selectedMACs) > 0
 }
 
+func jumpPosition(dump, target string) int {
+	pos := 0
+	for _, line := range strings.Split(dump, "\n") {
+		if !strings.HasPrefix(line, "-A ") {
+			continue
+		}
+		pos++
+		if strings.HasSuffix(line, "-j "+target) {
+			return pos
+		}
+	}
+	return 0
+}
+
+func routingJumpFloor(dump string) int {
+	pos, last := 0, 0
+	for _, line := range strings.Split(dump, "\n") {
+		if !strings.HasPrefix(line, "-A ") {
+			continue
+		}
+		pos++
+		if strings.Contains(line, "-j b4r_") {
+			last = pos
+		}
+	}
+	if last == 0 {
+		return 1
+	}
+	return last + 1
+}
+
+func jumpSitsAboveRouting(dump, target string) bool {
+	pos := jumpPosition(dump, target)
+	return pos > 0 && pos < routingJumpFloor(dump)
+}
+
+func (r *routeManager) insertJumpAt(base string, pos int, spec ...string) error {
+	args := append([]string{"iptables", "-t", "mangle", "-I", base, strconv.Itoa(pos)}, spec...)
+	_, err := run(args...)
+	return err
+}
+
 func (r *routeManager) ensureJump(base string, spec ...string) {
-	if _, err := run(append([]string{"iptables", "-t", "mangle", "-C", base}, spec...)...); err != nil {
+	target := spec[len(spec)-1]
+	dump, err := run("iptables", "-t", "mangle", "-S", base)
+	if err != nil {
 		if _, err := run(append([]string{"iptables", "-t", "mangle", "-I", base}, spec...)...); err != nil {
 			log.Warnf("TUN: failed to add capture jump from %s: %v", base, err)
 		}
+		return
+	}
+
+	if pos := jumpPosition(dump, target); pos > 0 {
+		if pos >= routingJumpFloor(dump) {
+			return
+		}
+		r.removeJump(base, spec...)
+		if dump, err = run("iptables", "-t", "mangle", "-S", base); err != nil {
+			return
+		}
+		if err := r.insertJumpAt(base, routingJumpFloor(dump), spec...); err != nil {
+			log.Warnf("TUN: failed to move the %s jump in %s below the routing chains: %v", target, base, err)
+			return
+		}
+		log.Infof("TUN: moved the %s jump in %s below the routing chains so routed traffic keeps its per-set route", target, base)
+		return
+	}
+
+	if err := r.insertJumpAt(base, routingJumpFloor(dump), spec...); err != nil {
+		log.Warnf("TUN: failed to add capture jump from %s: %v", base, err)
 	}
 }
 
@@ -208,10 +331,21 @@ func (r *routeManager) rebuildCaptureChain() {
 	run("iptables", "-t", "mangle", "-A", tunCaptureChain, "-m", "mark", "--mark", guard, "-j", "RETURN")
 	clientGuard := fmt.Sprintf("0x%x/0x%x", defaultClientMark, defaultClientMark)
 	run("iptables", "-t", "mangle", "-A", tunCaptureChain, "-m", "mark", "--mark", clientGuard, "-j", "RETURN")
+	selfDial := fmt.Sprintf("0x%x/0x%x", config.SelfDialMark, config.SelfDialMark)
+	run("iptables", "-t", "mangle", "-A", tunCaptureChain, "-m", "mark", "--mark", selfDial, "-j", "RETURN")
+	if !r.skipTables {
+		run("iptables", "-t", "mangle", "-A", tunCaptureChain, "-m", "mark", "!", "--mark", tables.RouteClaimedMarkMatch(), "-j", "RETURN")
+	}
 
 	for _, set := range excl {
 		if _, err := run("iptables", "-t", "mangle", "-A", tunCaptureChain, "-m", "set", "--match-set", set, "dst", "-j", "RETURN"); err != nil {
-			log.Tracef("TUN: capture exclusion for ipset %s not added (set may be absent): %v", set, err)
+			if r.warnedExcl == nil {
+				r.warnedExcl = make(map[string]bool)
+			}
+			if !r.warnedExcl[set] {
+				r.warnedExcl[set] = true
+				log.Warnf("TUN: could not shortcut routing set %s out of capture (%v); the routing-mark guard still keeps its traffic out of %s, this only costs a few extra rule evaluations", set, err, r.tunName)
+			}
 		}
 	}
 

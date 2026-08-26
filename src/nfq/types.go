@@ -58,4 +58,5 @@ type Worker struct {
 	ipHealth         *iphealth.Tracker
 	goodIPs          *iphealth.KnownGood
 	srcResolver      *tunSrcResolver
+	tunSNAT          bool
 }

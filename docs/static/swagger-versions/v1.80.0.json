@@ -600,6 +600,13 @@
                         "schema": {
                             "type": "file"
                         }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 }
             }
@@ -633,6 +640,13 @@
                 "responses": {
                     "200": {
                         "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5521,6 +5535,12 @@
         "handler.DiagEngine": {
             "type": "object",
             "properties": {
+                "limitations": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "mode": {
                     "type": "string"
                 },
@@ -5692,6 +5712,38 @@
                 }
             }
         },
+        "handler.DiagRouting": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean"
+                },
+                "default": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "rules_v6": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tables": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.DiagRuleGroup"
+                    }
+                }
+            }
+        },
         "handler.DiagRuleGroup": {
             "type": "object",
             "properties": {
@@ -5750,6 +5802,9 @@
                 "capture": {
                     "type": "string"
                 },
+                "capture_rules": {
+                    "type": "integer"
+                },
                 "device_name": {
                     "type": "string"
                 },
@@ -5759,7 +5814,13 @@
                 "forward_errors": {
                     "type": "integer"
                 },
+                "healthy": {
+                    "type": "boolean"
+                },
                 "ipv6_dropped": {
+                    "type": "integer"
+                },
+                "mark": {
                     "type": "integer"
                 },
                 "mtu": {
@@ -5784,6 +5845,12 @@
                     "type": "integer"
                 },
                 "running": {
+                    "type": "boolean"
+                },
+                "skip_tables": {
+                    "type": "boolean"
+                },
+                "steer_rule_ok": {
                     "type": "boolean"
                 }
             }
@@ -5883,6 +5950,9 @@
                 },
                 "paths": {
                     "$ref": "#/definitions/handler.DiagPaths"
+                },
+                "routing": {
+                    "$ref": "#/definitions/handler.DiagRouting"
                 },
                 "storage": {
                     "type": "array",

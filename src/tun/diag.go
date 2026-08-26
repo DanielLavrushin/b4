@@ -1,6 +1,10 @@
 package tun
 
-import "sync/atomic"
+import (
+	"strconv"
+	"strings"
+	"sync/atomic"
+)
 
 type DiagInfo struct {
 	DeviceName       string
@@ -17,6 +21,8 @@ type DiagInfo struct {
 	PacketsForwarded uint64
 	ForwardErrors    uint64
 	IPv6Dropped      uint64
+	SteerRuleOK      bool
+	CaptureRules     int
 }
 
 func (e *Engine) DiagInfo() DiagInfo {
@@ -40,7 +46,36 @@ func (e *Engine) DiagInfo() DiagInfo {
 		di.ReplyCapture = r.replyCapture
 		di.SkipTables = r.skipTables
 		r.mu.Unlock()
+
+		di.SteerRuleOK = r.captureHealthy()
+		di.CaptureRules = r.captureRuleCount()
 	}
 
 	return di
+}
+
+func (r *routeManager) captureHealthy() bool {
+	if r.resolvedCapture == "default" {
+		out, err := run("ip", "-4", "route", "show", "default")
+		return err == nil && strings.Contains(out, "dev "+r.tunName)
+	}
+	if !r.steerRulePresent(r.steerMarkStr(), strconv.Itoa(r.captureTable)) {
+		return false
+	}
+	out, err := run("ip", "route", "show", "table", strconv.Itoa(r.captureTable))
+	return err == nil && strings.Contains(out, "dev "+r.tunName)
+}
+
+func (r *routeManager) captureRuleCount() int {
+	out, err := run("iptables", "-t", "mangle", "-S", tunCaptureChain)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "-A "+tunCaptureChain) {
+			n++
+		}
+	}
+	return n
 }

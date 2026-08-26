@@ -24,6 +24,26 @@ type Watchdog struct {
 	saveFunc     func(*config.Config) error
 	healing      atomic.Bool
 	healWG       sync.WaitGroup
+	warnedNoHeal atomic.Bool
+}
+
+func (w *Watchdog) markUnhealable(domains []string, wdCfg config.WatchdogConfig) {
+	if w.warnedNoHeal.CompareAndSwap(false, true) {
+		log.Warnf("[WATCHDOG] %d domain(s) need a new strategy but self-healing is unavailable on the TUN capture engine, because it reruns strategy discovery and discovery needs NFQUEUE. Health checks keep running; pick a strategy by hand, or switch Settings -> Core -> Packet Engine -> Ingestion mode to NFQUEUE", len(domains))
+	}
+
+	cooldown := time.Duration(wdCfg.Cooldown) * time.Second
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, domain := range domains {
+		st, ok := w.domainStates[domain]
+		if !ok {
+			continue
+		}
+		st.Status = StatusUnhealable
+		st.ConsecutiveFailures = 0
+		st.CooldownUntil = time.Now().Add(cooldown)
+	}
 }
 
 func New(cfgPtr *atomic.Pointer[config.Config], discoveryRT *discovery.Runtime, saveFunc func(*config.Config) error) *Watchdog {
@@ -217,6 +237,11 @@ func (w *Watchdog) healBatch(domains []string) {
 
 	if w.discoveryRT.IsActive() {
 		log.Infof("[WATCHDOG] deferring healing - user discovery active")
+		return
+	}
+
+	if cfg.Queue.Mode == "tun" {
+		w.markUnhealable(domains, wdCfg)
 		return
 	}
 

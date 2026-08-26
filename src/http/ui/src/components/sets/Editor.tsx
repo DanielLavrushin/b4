@@ -343,6 +343,7 @@ export const SetEditorPage = ({
             availableIfaces={config.available_ifaces ?? []}
             tunnelIfaces={config.tunnel_ifaces ?? []}
             encapsulatedIfaces={config.encapsulated_ifaces ?? []}
+            engineMode={config.queue.mode}
             onChange={handleChange}
           />
         </B4TabPanel>

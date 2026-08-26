@@ -174,6 +174,86 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
     </Typography>
   );
 
+  const routingBlocks = (routing: Diagnostics["routing"] | undefined) => {
+    const groups: { title: string; rules: string[] }[] = [];
+    if (!routing) return groups;
+    if (routing.rules?.length)
+      groups.push({ title: "ip rule show", rules: routing.rules });
+    if (routing.rules_v6?.length)
+      groups.push({ title: "ip -6 rule show", rules: routing.rules_v6 });
+    if (routing.default?.length)
+      groups.push({ title: "ip route show default", rules: routing.default });
+    for (const table of routing.tables ?? []) {
+      groups.push({ title: `ip route show ${table.title}`, rules: table.rules });
+    }
+    return groups;
+  };
+
+  const ruleBlock = (groups: { title: string; rules: string[] }[]) => (
+    <Box
+      sx={{
+        mt: 0.5,
+        px: 1,
+        py: 0.5,
+        bgcolor: `${colors.background.dark}88`,
+        borderRadius: 1,
+        maxHeight: 240,
+        overflow: "auto",
+      }}
+    >
+      {groups.map((group) => (
+        <Box key={group.title} sx={{ mb: 0.5 }}>
+          <Typography
+            variant="caption"
+            sx={{
+              color: colors.secondary,
+              fontFamily: "monospace",
+              fontSize: "0.65rem",
+              fontWeight: 600,
+              display: "block",
+              lineHeight: 1.8,
+            }}
+          >
+            {group.title}
+          </Typography>
+          {group.rules.map((rule, i) => (
+            <Typography
+              key={`${group.title}-${i}`}
+              variant="caption"
+              sx={{
+                color: colors.text.secondary,
+                fontFamily: "monospace",
+                fontSize: "0.65rem",
+                display: "block",
+                lineHeight: 1.5,
+                whiteSpace: "pre",
+              }}
+            >
+              {rule}
+            </Typography>
+          ))}
+        </Box>
+      ))}
+    </Box>
+  );
+
+  const renderRouting = (routing: Diagnostics["routing"] | undefined) => {
+    if (!routing?.available) {
+      return row(
+        t("settings.SystemInfo.routingSource"),
+        t("settings.SystemInfo.routingUnavailable"),
+      );
+    }
+    const groups = routingBlocks(routing);
+    if (groups.length === 0) {
+      return row(
+        t("settings.SystemInfo.routingSource"),
+        t("settings.SystemInfo.routingEmpty"),
+      );
+    }
+    return ruleBlock(groups);
+  };
+
   const listRow = (name: string, right: React.ReactNode) => (
     <Stack
       direction="row"
@@ -319,8 +399,32 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
             />,
           )}
 
+          {!!data.engine.limitations?.length &&
+            row(
+              t("settings.SystemInfo.engineLimitations"),
+              <Stack spacing={0.3} alignItems="flex-end">
+                {data.engine.limitations.map((limit) => (
+                  <Typography
+                    key={limit}
+                    variant="caption"
+                    sx={{ color: colors.quaternary, textAlign: "right" }}
+                  >
+                    {t(`settings.SystemInfo.limitation.${limit}`)}
+                  </Typography>
+                ))}
+              </Stack>,
+            )}
+
           {data.engine.mode === "tun" && data.engine.tun && (
             <>
+              {row(
+                t("settings.SystemInfo.tunHealth"),
+                boolChip(
+                  data.engine.tun.healthy,
+                  t("settings.SystemInfo.tunHealthy"),
+                  t("settings.SystemInfo.tunDegraded"),
+                ),
+              )}
               {row(
                 t("settings.SystemInfo.tunDevice"),
                 <Stack
@@ -377,6 +481,26 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
                   t("settings.SystemInfo.tunRouteTable"),
                   data.engine.tun.route_table,
                 )}
+              {row(
+                t("settings.SystemInfo.tunSteerRule"),
+                boolChip(
+                  data.engine.tun.steer_rule_ok,
+                  t("settings.SystemInfo.tunSteerRulePresent"),
+                  t("settings.SystemInfo.tunSteerRuleMissing"),
+                ),
+              )}
+              {row(
+                t("settings.SystemInfo.tunCaptureRules"),
+                data.engine.tun.capture_rules,
+              )}
+              {row(
+                t("settings.SystemInfo.tunSkipTables"),
+                boolChip(
+                  !data.engine.tun.skip_tables,
+                  t("settings.SystemInfo.tunTablesManaged"),
+                  t("settings.SystemInfo.tunTablesSkipped"),
+                ),
+              )}
               {data.engine.tun.running && (
                 <>
                   {row(
@@ -414,53 +538,11 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
             ),
           )}
           {data.firewall.rule_groups &&
-            data.firewall.rule_groups.length > 0 && (
-              <Box
-                sx={{
-                  mt: 0.5,
-                  px: 1,
-                  py: 0.5,
-                  bgcolor: `${colors.background.dark}88`,
-                  borderRadius: 1,
-                  maxHeight: 240,
-                  overflow: "auto",
-                }}
-              >
-                {data.firewall.rule_groups.map((group) => (
-                  <Box key={group.title} sx={{ mb: 0.5 }}>
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        color: colors.secondary,
-                        fontFamily: "monospace",
-                        fontSize: "0.65rem",
-                        fontWeight: 600,
-                        display: "block",
-                        lineHeight: 1.8,
-                      }}
-                    >
-                      {group.title}
-                    </Typography>
-                    {group.rules.map((rule, i) => (
-                      <Typography
-                        key={`${group.title}-${i}`}
-                        variant="caption"
-                        sx={{
-                          color: colors.text.secondary,
-                          fontFamily: "monospace",
-                          fontSize: "0.65rem",
-                          display: "block",
-                          lineHeight: 1.5,
-                          whiteSpace: "pre",
-                        }}
-                      >
-                        {rule}
-                      </Typography>
-                    ))}
-                  </Box>
-                ))}
-              </Box>
-            )}
+            data.firewall.rule_groups.length > 0 &&
+            ruleBlock(data.firewall.rule_groups)}
+
+          {sectionTitle(t("settings.SystemInfo.routing"))}
+          {renderRouting(data.routing)}
 
           {sectionTitle(t("settings.SystemInfo.network"))}
           {data.network.interfaces?.map((iface) => (

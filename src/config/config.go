@@ -416,7 +416,10 @@ func HostHasGlobalIPv6() bool {
 }
 
 func IPv6BypassesSets(c *Config) bool {
-	return c != nil && !c.Queue.IPv6Enabled && HostHasGlobalIPv6()
+	if c == nil {
+		return false
+	}
+	return (!c.Queue.IPv6Enabled || c.Queue.Mode == "tun") && HostHasGlobalIPv6()
 }
 
 func WarnIPv6Bypass(c *Config) bool {
@@ -436,6 +439,11 @@ func WarnIPv6Bypass(c *Config) bool {
 	ipv6BypassWarned = true
 	ipv6BypassAt = now
 	ipv6BypassMu.Unlock()
+
+	if c.Queue.Mode == "tun" {
+		log.Warnf("This host has a working global IPv6 address but the TUN capture engine handles IPv4 only, so every site your sets match stays reachable over IPv6 and bypasses the set entirely. Turning on IPv6 support does not change this in TUN mode. Disable IPv6 on the WAN, or switch Settings -> Core -> Packet Engine -> Ingestion mode to NFQUEUE.")
+		return true
+	}
 
 	log.Warnf("This host has a working global IPv6 address but b4 is processing IPv4 only, so every site your sets match stays reachable over IPv6 and bypasses the set entirely. Enable IPv6 support in Settings and restart the service.")
 	return true

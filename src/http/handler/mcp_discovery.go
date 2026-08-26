@@ -259,6 +259,9 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 			return nil, mcpDiscoveryOut{}, fmt.Errorf(
 				"a discovery run is already in progress - only one can run at a time, and the watchdog's self-healing shares the same runtime. Poll it with action=status, or stop it with action=cancel")
 		}
+		if errors.Is(err, discovery.ErrDiscoveryNeedsNFQueue) || errors.Is(err, discovery.ErrDiscoverySkipTables) {
+			return nil, mcpDiscoveryOut{}, err
+		}
 		return nil, mcpDiscoveryOut{}, fmt.Errorf("could not start discovery: %w", err)
 	}
 

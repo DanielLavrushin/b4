@@ -39,21 +39,27 @@ func ClearStaleArtifacts(cfg *config.Config) {
 	run("iptables", "-t", "mangle", "-F", tunCaptureChain)
 	run("iptables", "-t", "mangle", "-X", tunCaptureChain)
 
-	for {
-		if _, err := run("iptables", "-t", "raw", "-D", "OUTPUT", "-m", "mark", "--mark", reinjectMarkMatch(), "-j", "CT", "--notrack"); err != nil {
-			break
-		}
-		cleared = true
-	}
-
-	for _, dir := range []string{"-i", "-o"} {
+	for _, mk := range []string{reinjectPlainMarkMatch(), reinjectMarkMatch(), clientMarkMatch()} {
 		for {
-			if _, err := run("iptables", "-D", "FORWARD", dir, device, "-j", "ACCEPT"); err != nil {
+			if _, err := run("iptables", "-t", "raw", "-D", "OUTPUT", "-m", "mark", "--mark", mk, "-j", "CT", "--notrack"); err != nil {
 				break
 			}
 			cleared = true
 		}
 	}
+
+	for _, dir := range []string{"-i", "-o"} {
+		for _, target := range []string{tunForwardChain, "ACCEPT"} {
+			for {
+				if _, err := run("iptables", "-D", "FORWARD", dir, device, "-j", target); err != nil {
+					break
+				}
+				cleared = true
+			}
+		}
+	}
+	run("iptables", "-t", "filter", "-F", tunForwardChain)
+	run("iptables", "-t", "filter", "-X", tunForwardChain)
 
 	if clearTunSNAT(device) {
 		cleared = true
@@ -87,7 +93,8 @@ func clearTunSNAT(device string) bool {
 		if !strings.HasPrefix(line, "-A POSTROUTING") {
 			continue
 		}
-		if ruleFieldValue(line, "-o") != device || ruleFieldValue(line, "-j") != "SNAT" {
+		target := ruleFieldValue(line, "-j")
+		if ruleFieldValue(line, "-o") != device || (target != "SNAT" && target != tunSNATChain) {
 			continue
 		}
 		spec := strings.Fields(strings.TrimPrefix(line, "-A POSTROUTING"))
@@ -95,6 +102,8 @@ func clearTunSNAT(device string) bool {
 			cleared = true
 		}
 	}
+	run("iptables", "-t", "nat", "-F", tunSNATChain)
+	run("iptables", "-t", "nat", "-X", tunSNATChain)
 	return cleared
 }
 

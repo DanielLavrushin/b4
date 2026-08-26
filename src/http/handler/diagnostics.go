@@ -47,6 +47,7 @@ func (api *API) buildDiagnostics() Diagnostics {
 		Network:   collectNetworkInterfaces(cfg),
 		Engine:    collectEngineInfo(cfg),
 		Firewall:  collectFirewallInfo(cfg),
+		Routing:   collectRoutingInfo(cfg),
 		Geodata:   api.collectGeodataInfo(),
 		Upstreams: collectUpstreamHealth(),
 		Storage:   collectStorage(),
@@ -305,9 +306,11 @@ func collectFirewallInfo(cfg *config.Config) DiagFirewall {
 
 func detectFirewallBackend() string {
 	if _, err := exec.LookPath("nft"); err == nil {
-		out, err := exec.Command("nft", "list", "table", "inet", "b4_mangle").CombinedOutput()
-		if err == nil && len(out) > 0 {
-			return "nftables"
+		for _, table := range []string{"b4_mangle", "b4_route"} {
+			out, err := exec.Command("nft", "list", "table", "inet", table).CombinedOutput()
+			if err == nil && len(out) > 0 {
+				return "nftables"
+			}
 		}
 	}
 
@@ -315,8 +318,11 @@ func detectFirewallBackend() string {
 		if _, err := exec.LookPath(bin); err != nil {
 			continue
 		}
-		out, err := exec.Command(bin, append(tables.WaitArgs(bin), "-t", "mangle", "-S", "B4")...).CombinedOutput()
-		if err == nil && len(out) > 0 {
+		for _, chain := range []string{"B4", "B4_TUN"} {
+			out, err := exec.Command(bin, append(tables.WaitArgs(bin), "-t", "mangle", "-S", chain)...).CombinedOutput()
+			if err != nil || len(out) == 0 {
+				continue
+			}
 			if bin == "iptables-legacy" {
 				return "iptables-legacy"
 			}
@@ -375,7 +381,7 @@ func collectIptablesRuleGroups(backend string) []DiagRuleGroup {
 
 	var groups []DiagRuleGroup
 
-	for _, chain := range []string{"B4", "B4_PREROUTING"} {
+	for _, chain := range []string{"B4", "B4_PREROUTING", "B4_TUN", "B4_TUN_GATE"} {
 		out, err := exec.Command(bin, append(append([]string{}, wait...), "-t", "mangle", "-S", chain)...).CombinedOutput()
 		if err != nil {
 			continue
@@ -412,13 +418,20 @@ func collectIptablesRuleGroups(backend string) []DiagRuleGroup {
 	return groups
 }
 
+var diagDumpedChains = []string{"B4", "B4_PREROUTING", "B4_TUN", "B4_TUN_GATE"}
+
 func isB4IptablesRule(l string) bool {
-	if strings.HasPrefix(l, "-N B4") || strings.HasPrefix(l, "-A B4") {
-		return false
+	for _, chain := range diagDumpedChains {
+		if l == "-N "+chain || strings.HasPrefix(l, "-A "+chain+" ") {
+			return false
+		}
 	}
 	clientMark := fmt.Sprintf("0x%x/0x%x", engine.ClientMark, engine.ClientMark)
 	return strings.Contains(l, "b4_") ||
+		strings.Contains(l, "b4r_") ||
 		strings.Contains(l, "b4tun") ||
+		strings.Contains(l, "B4_TUN") ||
+		strings.Contains(l, "B4_MASQ") ||
 		strings.Contains(l, "NFQUEUE") ||
 		strings.Contains(l, "-j B4") ||
 		strings.Contains(l, clientMark)
@@ -441,12 +454,25 @@ func collectEngineInfo(cfg *config.Config) DiagEngine {
 		mode = "nfqueue"
 	}
 
-	de := DiagEngine{Mode: mode}
+	de := DiagEngine{Mode: mode, Limitations: config.TUNLimitations(cfg)}
 	if mode == "tun" {
 		de.TUN = collectTUNInfo(cfg)
+		if de.TUN != nil && de.TUN.Capture == "ports" {
+			de.Limitations = dropLimitation(de.Limitations, "egress_ip")
+		}
 	}
 
 	return de
+}
+
+func dropLimitation(list []string, drop string) []string {
+	out := list[:0]
+	for _, l := range list {
+		if l != drop {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 func collectTUNInfo(cfg *config.Config) *DiagTUN {
@@ -487,16 +513,86 @@ func collectTUNInfo(cfg *config.Config) *DiagTUN {
 		t.PacketsForwarded = di.PacketsForwarded
 		t.ForwardErrors = di.ForwardErrors
 		t.IPv6Dropped = di.IPv6Dropped
+		t.SkipTables = di.SkipTables
+		t.Mark = di.Mark
+		t.SteerRuleOK = di.SteerRuleOK
+		t.CaptureRules = di.CaptureRules
 	}
 
-	if t.DeviceName != "" {
-		if iface, err := net.InterfaceByName(t.DeviceName); err == nil {
-			t.DeviceUp = iface.Flags&net.FlagUp != 0
-			t.MTU = iface.MTU
-		}
+	if t.DeviceName == "" {
+		t.DeviceName = cfg.Queue.TUN.Device()
 	}
+	if iface, err := net.InterfaceByName(t.DeviceName); err == nil {
+		t.DeviceUp = iface.Flags&net.FlagUp != 0
+		t.MTU = iface.MTU
+	}
+
+	t.Healthy = t.Running && t.DeviceUp && t.SteerRuleOK &&
+		(t.SkipTables || t.Capture == "default" || t.CaptureRules > 0)
 
 	return t
+}
+
+func collectRoutingInfo(cfg *config.Config) DiagRouting {
+	dr := DiagRouting{}
+	if _, err := exec.LookPath("ip"); err != nil {
+		return dr
+	}
+	dr.Available = true
+
+	if out, err := exec.Command("ip", "rule", "show").CombinedOutput(); err == nil {
+		dr.Rules = nonEmptyLines(string(out))
+	}
+	if cfg.Queue.IPv6Enabled {
+		if out, err := exec.Command("ip", "-6", "rule", "show").CombinedOutput(); err == nil {
+			dr.RulesV6 = nonEmptyLines(string(out))
+		}
+	}
+	if out, err := exec.Command("ip", "route", "show", "default").CombinedOutput(); err == nil {
+		dr.Default = nonEmptyLines(string(out))
+	}
+
+	seen := make(map[int]bool)
+	addTable := func(table int, label string) {
+		if table <= 0 || seen[table] {
+			return
+		}
+		seen[table] = true
+		out, err := exec.Command("ip", "route", "show", "table", strconv.Itoa(table)).CombinedOutput()
+		if err != nil {
+			return
+		}
+		rules := nonEmptyLines(string(out))
+		if len(rules) == 0 {
+			return
+		}
+		dr.Tables = append(dr.Tables, DiagRuleGroup{
+			Title: fmt.Sprintf("table %d (%s)", table, label),
+			Rules: rules,
+		})
+	}
+
+	if cfg.Queue.Mode == "tun" {
+		routeTable := cfg.Queue.TUN.RouteTable
+		if routeTable == 0 {
+			routeTable = 9999
+		}
+		captureTable := routeTable - 1
+		if captureTable <= 0 {
+			captureTable = routeTable + 1
+		}
+		addTable(routeTable, "tun bypass")
+		addTable(captureTable, "tun capture")
+	}
+
+	for _, set := range cfg.Sets {
+		if set == nil || !set.Enabled || !set.Routing.Enabled || set.Routing.Table == 0 {
+			continue
+		}
+		addTable(set.Routing.Table, "set "+set.Name)
+	}
+
+	return dr
 }
 
 // detectFlowOffload reports whether netfilter flow offloading is active on the

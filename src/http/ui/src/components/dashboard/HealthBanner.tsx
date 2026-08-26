@@ -16,6 +16,21 @@ interface HealthBannerProps {
 
 type HealthLevel = "healthy" | "degraded" | "critical";
 
+const TUN_DETAIL_PREFIX = "(tun: ";
+
+function isTunEngine(metrics: Metrics): boolean {
+  return (
+    metrics.nfqueue_status.includes("(tun") ||
+    metrics.tables_status.startsWith("tun")
+  );
+}
+
+function tunEngineDetail(status: string): string {
+  const start = status.indexOf(TUN_DETAIL_PREFIX);
+  if (start < 0) return "";
+  return status.slice(start + TUN_DETAIL_PREFIX.length).replace(/\)$/, "");
+}
+
 function deriveHealth(metrics: Metrics, connected: boolean): HealthLevel {
   if (!connected) return "critical";
   if (
@@ -23,6 +38,11 @@ function deriveHealth(metrics: Metrics, connected: boolean): HealthLevel {
     metrics.tables_status === "unknown"
   )
     return "degraded";
+  if (isTunEngine(metrics)) {
+    if (metrics.nfqueue_status.startsWith("error")) return "critical";
+    if (metrics.nfqueue_status.startsWith("degraded")) return "degraded";
+    return "healthy";
+  }
   const activeWorkers = metrics.worker_status.filter(
     (w) => w.status === "active",
   ).length;
@@ -158,6 +178,8 @@ export const HealthBanner = ({
     (w) => w.status === "active",
   ).length;
   const totalWorkers = metrics.worker_status.length;
+  const tunEngine = isTunEngine(metrics);
+  const tunDetail = tunEngine ? tunEngineDetail(metrics.nfqueue_status) : "";
 
   const handleReset = async () => {
     setResetOpen(false);
@@ -241,8 +263,27 @@ export const HealthBanner = ({
           </Box>
         </Box>
 
-        <MetricCell label={t("dashboard.health.nfqueue")}>
-          {metrics.nfqueue_status}
+        <MetricCell
+          label={t(
+            tunEngine ? "dashboard.health.engine" : "dashboard.health.nfqueue",
+          )}
+        >
+          {tunEngine ? (
+            <>
+              {t("dashboard.health.engineTun")}
+              {tunDetail && (
+                <Box
+                  component="span"
+                  sx={{ color: colors.text.secondary, fontWeight: 500 }}
+                >
+                  {" "}
+                  {tunDetail}
+                </Box>
+              )}
+            </>
+          ) : (
+            metrics.nfqueue_status
+          )}
         </MetricCell>
         <MetricCell label={t("dashboard.health.firewall")}>
           <Mono>{metrics.tables_status}</Mono>

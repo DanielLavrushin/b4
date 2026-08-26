@@ -13,6 +13,14 @@ import (
 
 var ErrDiscoveryAlreadyRunning = errors.New("discovery is already running")
 
+var ErrDiscoveryNeedsNFQueue = errors.New(
+	"strategy discovery needs the NFQUEUE capture engine: it runs its probes through a second netfilter queue, " +
+		"which the TUN engine has no equivalent for. Switch Settings -> Core -> Packet Engine -> Ingestion mode to NFQUEUE and restart b4 to use discovery, " +
+		"or configure the set's strategy by hand")
+
+var ErrDiscoverySkipTables = errors.New(
+	"strategy discovery needs to install its own netfilter rules, and b4 was started with --skip-tables")
+
 type poolStopper interface {
 	Stop()
 }
@@ -66,6 +74,14 @@ func (m *Runtime) Start(cfg *config.Config) (*StartResult, error) {
 		return nil, ErrDiscoveryAlreadyRunning
 	}
 
+	if cfg.Queue.Mode == "tun" {
+		return nil, ErrDiscoveryNeedsNFQueue
+	}
+
+	if cfg.System.Tables.SkipSetup {
+		return nil, ErrDiscoverySkipTables
+	}
+
 	mainStart := cfg.Queue.StartNum
 	mainThreads := cfg.Queue.Threads
 	discoveryThreads := 1
@@ -82,6 +98,7 @@ func (m *Runtime) Start(cfg *config.Config) (*StartResult, error) {
 	log.Infof("Discovery marks: main_injected=0x%x discovery_flow=0x%x discovery_injected=0x%x", cfg.MainInjectedMark(), flowMark, injectedMark)
 
 	if err := tables.ApplyDiscoverySteeringRules(cfg, flowMark, injectedMark, discoveryStart, discoveryThreads); err != nil {
+		tables.ClearDiscoverySteeringRules(cfg, flowMark, injectedMark)
 		return nil, fmt.Errorf("failed to apply discovery steering rules: %w", err)
 	}
 

@@ -211,5 +211,5 @@ Every decision b4 makes about a query is recorded on the [Traffic](./connections
 | `dns-heal+ipv6-stripped` | Both of the above happened to the same answer: unreachable addresses were replaced and the IPv6 addresses were removed |
 
 :::note
-In TUN mode, requests to port 53 are captured, but replies are only seen when b4 carries the whole default route. Redirects and pins work either way, since b4 produces those answers itself.
+In TUN mode, requests to port 53 are captured, but replies are only seen when b4 carries the whole default route, and a query addressed to the router's own resolver is answered there before b4 sees it. Redirects and pins work either way, since b4 produces those answers itself. See [Capture engine](./settings/engine#dns-to-the-routers-own-resolver-is-not-intercepted).
 :::

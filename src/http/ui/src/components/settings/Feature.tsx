@@ -11,9 +11,11 @@ import {
   B4Select,
   B4Alert,
   B4Badge,
+  B4Dialog,
   B4TextField,
 } from "@b4.elements";
-import { Box, Typography } from "@mui/material";
+import { Box, Button, Typography } from "@mui/material";
+import { colors } from "@design";
 import { SettingsPropHandlerType } from "@models/settings";
 
 interface FeatureSettingsProps {
@@ -25,6 +27,7 @@ const IPV6_BYPASS_DISMISS_KEY = "b4_ipv6_bypass_dismissed";
 
 export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
   const { t } = useTranslation();
+  const [pendingMode, setPendingMode] = useState<string | null>(null);
   const [ipv6BypassesSets, setIpv6BypassesSets] = useState(false);
   const [ipv6BypassDismissed, setIpv6BypassDismissed] = useState(() => {
     try {
@@ -95,6 +98,20 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
   const tunFollowsDefault = !tunOutInterface || tunOutInterface === "auto";
 
   const skipTables = config.system.tables.skip_setup;
+  const engineMode = config.queue.mode || "nfqueue";
+  const tunEngine = engineMode === "tun";
+
+  const monitorIntervalHelpKey = () => {
+    if (tunEngine) return "settings.Feature.tunReconcileHelp";
+    if (skipTables) return "settings.Feature.firewallMonitorSkipped";
+    return "settings.Feature.firewallMonitorHelp";
+  };
+
+  const applyPendingMode = () => {
+    if (pendingMode === null) return;
+    onChange("queue.mode", pendingMode === "nfqueue" ? "" : pendingMode);
+    setPendingMode(null);
+  };
 
   const masqueradeSwitch = (
     <B4Switch
@@ -113,109 +130,113 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
   );
 
   return (
-    <B4Section
-      title={t("settings.Feature.title")}
-      description={t("settings.Feature.description")}
-      icon={<ToggleOnIcon />}
-    >
-      <B4FormGroup label={t("settings.Feature.protoFeatures")} columns={2}>
-        <B4Switch
-          label={t("settings.Feature.enableIPv4")}
-          checked={config.queue.ipv4}
-          onChange={(checked: boolean) => onChange("queue.ipv4", checked)}
-          description={t("settings.Feature.enableIPv4Desc")}
-        />
-        <B4Switch
-          label={t("settings.Feature.enableIPv6")}
-          checked={config.queue.ipv6}
-          onChange={(checked: boolean) => onChange("queue.ipv6", checked)}
-          description={t("settings.Feature.enableIPv6Desc")}
-        />
-      </B4FormGroup>
-      {showIpv6Bypass && (
-        <B4Alert
-          severity="warning"
-          noWrapper
-          onClose={dismissIpv6Bypass}
-          sx={{ mt: 1 }}
-        >
-          {t("settings.Feature.ipv6BypassWarning")}
-        </B4Alert>
-      )}
-      <B4FormGroup label={t("settings.Feature.engineMode")} columns={1}>
-        <B4Select
-          label={t("settings.Feature.engineModeLabel")}
-          value={config.queue.mode || "nfqueue"}
-          onChange={(e) =>
-            onChange(
-              "queue.mode",
-              e.target.value === "nfqueue" ? "" : e.target.value,
-            )
-          }
-          options={[
-            {
-              value: "nfqueue",
-              label: t("settings.Feature.engineModeNfqueue"),
-            },
-            { value: "tun", label: t("settings.Feature.engineModeTun") },
-          ]}
-          helperText={t("settings.Feature.engineModeHelp")}
-        />
-      </B4FormGroup>
-      {config.queue.mode === "tun" && (
-        <B4FormGroup label={t("settings.Feature.tunSettings")} columns={2}>
-          <B4Select
-            label={t("settings.Feature.tunOutInterface")}
-            value={tunFollowsDefault ? "" : tunOutInterface ?? ""}
-            onChange={(e) =>
-              onChange("queue.tun.out_interface", e.target.value)
-            }
-            options={[
-              { value: "", label: t("settings.Feature.tunOutInterfaceAuto") },
-              ...(config.available_ifaces ?? [])
-                .filter((i) => i !== (config.queue.tun?.device_name || "b4tun0"))
-                .map((i) => ({
-                  value: i,
-                  label: i,
-                })),
-            ]}
-            helperText={t("settings.Feature.tunOutInterfaceDesc")}
+    <>
+      <B4Section
+        title={t("settings.Feature.title")}
+        description={t("settings.Feature.description")}
+        icon={<ToggleOnIcon />}
+      >
+        <B4FormGroup label={t("settings.Feature.protoFeatures")} columns={2}>
+          <B4Switch
+            label={t("settings.Feature.enableIPv4")}
+            checked={config.queue.ipv4}
+            onChange={(checked: boolean) => onChange("queue.ipv4", checked)}
+            description={t("settings.Feature.enableIPv4Desc")}
           />
-          <B4TextField
-            label={t("settings.Feature.tunOutGateway")}
-            value={config.queue.tun?.out_gateway || ""}
-            onChange={(e) => onChange("queue.tun.out_gateway", e.target.value)}
-            placeholder={t("settings.Feature.tunOutGatewayPlaceholder")}
-            disabled={tunFollowsDefault}
-            helperText={t(
-              tunFollowsDefault
-                ? "settings.Feature.tunOutGatewayAuto"
-                : "settings.Feature.tunOutGatewayHelp"
-            )}
-            selectOnFocus
+          <B4Switch
+            label={t("settings.Feature.enableIPv6")}
+            checked={config.queue.ipv6}
+            onChange={(checked: boolean) => onChange("queue.ipv6", checked)}
+            description={t("settings.Feature.enableIPv6Desc")}
           />
-          <B4TextField
-            label={t("settings.Feature.tunAddress")}
-            value={config.queue.tun?.address || "10.255.0.1/30"}
-            onChange={(e) => onChange("queue.tun.address", e.target.value)}
-            helperText={t("settings.Feature.tunAddressHelp")}
-            selectOnFocus
-          />
-          <B4TextField
-            label={t("settings.Feature.tunDeviceName")}
-            value={config.queue.tun?.device_name || "b4tun0"}
-            onChange={(e) => onChange("queue.tun.device_name", e.target.value)}
-            helperText={t("settings.Feature.tunDeviceNameHelp")}
-            selectOnFocus
-          />
-          {tunFollowsDefault && (
-            <B4Alert severity="info">
-              {t("settings.Feature.tunOutInterfaceAutoHint")}
-            </B4Alert>
-          )}
         </B4FormGroup>
-      )}
-      {config.queue.mode !== "tun" && (
+        {tunEngine && config.queue.ipv6 && (
+          <B4Alert severity="warning" noWrapper sx={{ mt: 1 }}>
+            {t("settings.Feature.ipv6TunWarning")}
+          </B4Alert>
+        )}
+        {showIpv6Bypass && (
+          <B4Alert
+            severity="warning"
+            noWrapper
+            onClose={dismissIpv6Bypass}
+            sx={{ mt: 1 }}
+          >
+            {t("settings.Feature.ipv6BypassWarning")}
+          </B4Alert>
+        )}
+        <B4FormGroup label={t("settings.Feature.engineMode")} columns={1}>
+          <B4Select
+            label={t("settings.Feature.engineModeLabel")}
+            value={engineMode}
+            onChange={(e) => {
+              const next = String(e.target.value);
+              if (next === engineMode) return;
+              setPendingMode(next);
+            }}
+            options={[
+              {
+                value: "nfqueue",
+                label: t("settings.Feature.engineModeNfqueue"),
+              },
+              { value: "tun", label: t("settings.Feature.engineModeTun") },
+            ]}
+            helperText={t("settings.Feature.engineModeHelp")}
+          />
+        </B4FormGroup>
+        {config.queue.mode === "tun" && (
+          <B4FormGroup label={t("settings.Feature.tunSettings")} columns={2}>
+            <B4Select
+              label={t("settings.Feature.tunOutInterface")}
+              value={tunFollowsDefault ? "" : tunOutInterface ?? ""}
+              onChange={(e) =>
+                onChange("queue.tun.out_interface", e.target.value)
+              }
+              options={[
+                { value: "", label: t("settings.Feature.tunOutInterfaceAuto") },
+                ...(config.available_ifaces ?? [])
+                  .filter((i) => i !== (config.queue.tun?.device_name || "b4tun0"))
+                  .map((i) => ({
+                    value: i,
+                    label: i,
+                  })),
+              ]}
+              helperText={t("settings.Feature.tunOutInterfaceDesc")}
+            />
+            <B4TextField
+              label={t("settings.Feature.tunOutGateway")}
+              value={config.queue.tun?.out_gateway || ""}
+              onChange={(e) => onChange("queue.tun.out_gateway", e.target.value)}
+              placeholder={t("settings.Feature.tunOutGatewayPlaceholder")}
+              disabled={tunFollowsDefault}
+              helperText={t(
+                tunFollowsDefault
+                  ? "settings.Feature.tunOutGatewayAuto"
+                  : "settings.Feature.tunOutGatewayHelp"
+              )}
+              selectOnFocus
+            />
+            <B4TextField
+              label={t("settings.Feature.tunAddress")}
+              value={config.queue.tun?.address || "10.255.0.1/30"}
+              onChange={(e) => onChange("queue.tun.address", e.target.value)}
+              helperText={t("settings.Feature.tunAddressHelp")}
+              selectOnFocus
+            />
+            <B4TextField
+              label={t("settings.Feature.tunDeviceName")}
+              value={config.queue.tun?.device_name || "b4tun0"}
+              onChange={(e) => onChange("queue.tun.device_name", e.target.value)}
+              helperText={t("settings.Feature.tunDeviceNameHelp")}
+              selectOnFocus
+            />
+            {tunFollowsDefault && (
+              <B4Alert severity="info">
+                {t("settings.Feature.tunOutInterfaceAutoHint")}
+              </B4Alert>
+            )}
+          </B4FormGroup>
+        )}
         <B4FormGroup label={t("settings.Feature.firewallFeatures")} columns={2}>
           <B4Switch
             label={t("settings.Feature.skipIptables")}
@@ -223,10 +244,18 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
             onChange={(checked: boolean) =>
               onChange("system.tables.skip_setup", checked)
             }
-            description={t("settings.Feature.skipIptablesDesc")}
+            description={t(
+              tunEngine
+                ? "settings.Feature.skipIptablesTunDesc"
+                : "settings.Feature.skipIptablesDesc",
+            )}
           />
           <B4Slider
-            label={t("settings.Feature.firewallMonitorInterval")}
+            label={t(
+              tunEngine
+                ? "settings.Feature.tunReconcileInterval"
+                : "settings.Feature.firewallMonitorInterval",
+            )}
             value={config.system.tables.monitor_interval}
             onChange={(value: number) =>
               onChange("system.tables.monitor_interval", value)
@@ -234,13 +263,10 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
             min={0}
             max={120}
             step={5}
-            disabled={skipTables}
-            helperText={t(
-              skipTables
-                ? "settings.Feature.firewallMonitorSkipped"
-                : "settings.Feature.firewallMonitorHelp",
-            )}
+            disabled={!tunEngine && skipTables}
+            helperText={t(monitorIntervalHelpKey())}
             alert={
+              !tunEngine &&
               !skipTables &&
               config.system.tables.monitor_interval <= 0 && (
                 <B4Alert severity="warning">
@@ -264,108 +290,140 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
               { value: "iptables", label: "iptables" },
               { value: "iptables-legacy", label: "iptables-legacy" },
             ]}
-            helperText={t("settings.Feature.firewallEngineHelp")}
+            helperText={t(
+              tunEngine
+                ? "settings.Feature.firewallEngineTunHelp"
+                : "settings.Feature.firewallEngineHelp",
+            )}
           />
           {masqueradeSwitch}
         </B4FormGroup>
-      )}
-      {config.queue.mode === "tun" && (
-        <B4FormGroup label={t("settings.Feature.firewallFeatures")} columns={2}>
-          {masqueradeSwitch}
-        </B4FormGroup>
-      )}
-      {config.system.tables.masquerade.enabled && (
-        <B4FormGroup
-          label={t("settings.Feature.masqueradeInterface")}
-          columns={1}
-        >
-          <Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              {t("settings.Feature.masqueradeInterfaceDesc")}
-            </Typography>
-            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-              {(config.available_ifaces ?? []).map((iface) => {
-                const isSelected = (
-                  config.system.tables.masquerade.interfaces || []
-                ).includes(iface);
-                return (
-                  <B4Badge
-                    key={iface}
-                    label={iface}
-                    onClick={() => handleMasqueradeToggle(iface)}
-                    variant={isSelected ? "filled" : "outlined"}
-                    color={"primary"}
-                  />
-                );
-              })}
-            </Box>
-            {(config.available_ifaces ?? []).length === 0 && (
-              <B4Alert severity="warning" sx={{ mt: 1 }}>
-                {t("settings.Feature.noInterfacesDetected")}
-              </B4Alert>
-            )}
-            {(config.system.tables.masquerade.interfaces || []).length === 0 && (
-              <B4Alert severity="info" sx={{ mt: 2 }}>
-                {t("settings.Feature.masqueradeAllInterfaces")}
-              </B4Alert>
-            )}
-          </Box>
-        </B4FormGroup>
-      )}
-      {config.queue.mode !== "tun" && (
-        <B4FormGroup
-          label={t("settings.Feature.networkInterfaces")}
-          columns={1}
-        >
-          <Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              {t("settings.Feature.networkInterfacesDesc")}
-            </Typography>
-            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-              {(config.available_ifaces ?? []).map((iface) => {
-                const isSelected = (config.queue.interfaces || []).includes(
-                  iface,
-                );
-                return (
-                  <B4Badge
-                    key={iface}
-                    label={iface}
-                    onClick={() => handleInterfaceToggle(iface)}
-                    variant={isSelected ? "filled" : "outlined"}
-                    color={"primary"}
-                  />
-                );
-              })}
-            </Box>
-            {(config.available_ifaces ?? []).length === 0 && (
-              <B4Alert severity="warning" sx={{ mt: 1 }}>
-                {t("settings.Feature.noInterfacesDetected")}
-              </B4Alert>
-            )}
-            {config.queue.interfaces?.length === 0 && (
-              <B4Alert severity="info" sx={{ mt: 2 }}>
-                {t("settings.Feature.listenAllInterfaces")}
-              </B4Alert>
-            )}
-            {ifaceFilterSeesNothing && (
-              <B4Alert severity="warning" sx={{ mt: 2 }}>
-                {t("settings.Feature.interfaceFilterSeesNothing", {
-                  selected: selectedIfaces.join(", "),
-                  seen: uncovered.join(", "),
+        {config.system.tables.masquerade.enabled && (
+          <B4FormGroup
+            label={t("settings.Feature.masqueradeInterface")}
+            columns={1}
+          >
+            <Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                {t("settings.Feature.masqueradeInterfaceDesc")}
+              </Typography>
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                {(config.available_ifaces ?? []).map((iface) => {
+                  const isSelected = (
+                    config.system.tables.masquerade.interfaces || []
+                  ).includes(iface);
+                  return (
+                    <B4Badge
+                      key={iface}
+                      label={iface}
+                      onClick={() => handleMasqueradeToggle(iface)}
+                      variant={isSelected ? "filled" : "outlined"}
+                      color={"primary"}
+                    />
+                  );
                 })}
-              </B4Alert>
-            )}
-            {ifaceFilterSeesLittle && (
-              <B4Alert severity="info" sx={{ mt: 2 }}>
-                {t("settings.Feature.interfaceFilterSeesLittle", {
-                  percent: Math.max(1, uncoveredShare),
-                  seen: uncovered.join(", "),
+              </Box>
+              {(config.available_ifaces ?? []).length === 0 && (
+                <B4Alert severity="warning" sx={{ mt: 1 }}>
+                  {t("settings.Feature.noInterfacesDetected")}
+                </B4Alert>
+              )}
+              {(config.system.tables.masquerade.interfaces || []).length === 0 && (
+                <B4Alert severity="info" sx={{ mt: 2 }}>
+                  {t("settings.Feature.masqueradeAllInterfaces")}
+                </B4Alert>
+              )}
+            </Box>
+          </B4FormGroup>
+        )}
+        {config.queue.mode !== "tun" && (
+          <B4FormGroup
+            label={t("settings.Feature.networkInterfaces")}
+            columns={1}
+          >
+            <Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                {t("settings.Feature.networkInterfacesDesc")}
+              </Typography>
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                {(config.available_ifaces ?? []).map((iface) => {
+                  const isSelected = (config.queue.interfaces || []).includes(
+                    iface,
+                  );
+                  return (
+                    <B4Badge
+                      key={iface}
+                      label={iface}
+                      onClick={() => handleInterfaceToggle(iface)}
+                      variant={isSelected ? "filled" : "outlined"}
+                      color={"primary"}
+                    />
+                  );
                 })}
-              </B4Alert>
+              </Box>
+              {(config.available_ifaces ?? []).length === 0 && (
+                <B4Alert severity="warning" sx={{ mt: 1 }}>
+                  {t("settings.Feature.noInterfacesDetected")}
+                </B4Alert>
+              )}
+              {config.queue.interfaces?.length === 0 && (
+                <B4Alert severity="info" sx={{ mt: 2 }}>
+                  {t("settings.Feature.listenAllInterfaces")}
+                </B4Alert>
+              )}
+              {ifaceFilterSeesNothing && (
+                <B4Alert severity="warning" sx={{ mt: 2 }}>
+                  {t("settings.Feature.interfaceFilterSeesNothing", {
+                    selected: selectedIfaces.join(", "),
+                    seen: uncovered.join(", "),
+                  })}
+                </B4Alert>
+              )}
+              {ifaceFilterSeesLittle && (
+                <B4Alert severity="info" sx={{ mt: 2 }}>
+                  {t("settings.Feature.interfaceFilterSeesLittle", {
+                    percent: Math.max(1, uncoveredShare),
+                    seen: uncovered.join(", "),
+                  })}
+                </B4Alert>
+              )}
+            </Box>
+          </B4FormGroup>
+        )}
+      </B4Section>
+      <B4Dialog
+        open={pendingMode !== null}
+        onClose={() => setPendingMode(null)}
+        title={t("settings.Feature.engineModeConfirmTitle")}
+        subtitle={t("settings.Feature.engineModeConfirmSubtitle")}
+        icon={<ToggleOnIcon />}
+        maxWidth="sm"
+        fullWidth
+        actions={
+          <>
+            <Button onClick={() => setPendingMode(null)}>
+              {t("core.cancel")}
+            </Button>
+            <Box sx={{ flex: 1 }} />
+            <Button variant="contained" onClick={applyPendingMode}>
+              {t("settings.Feature.engineModeConfirmApply")}
+            </Button>
+          </>
+        }
+      >
+        <B4Alert severity="warning">
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            {t("settings.Feature.engineModeConfirmRestart")}
+          </Typography>
+          <Typography variant="caption" sx={{ color: colors.text.secondary }}>
+            {t(
+              pendingMode === "tun"
+                ? "settings.Feature.engineModeConfirmTun"
+                : "settings.Feature.engineModeConfirmNfqueue",
             )}
-          </Box>
-        </B4FormGroup>
-      )}
-    </B4Section>
+          </Typography>
+        </B4Alert>
+      </B4Dialog>
+    </>
   );
 };
