@@ -92,6 +92,8 @@ The same applies through the API and the web interface: what you read back is wh
 
 The sample is trimmed to the sections worth recognising. Every section holds more keys than are shown, and none of them appear in a real file until they differ from the default.
 
+`mtproto` holds more than the three keys above. `secrets` is an array of named entries, each with `id`, `name`, `secret` and `enabled`; a file written before configuration version 50 carried a single `mtproto.secret` string, which the migration moves into that array as an entry named `default`. `web_proxy` is an object with `enabled` and `hostname`, and both of its fields are zero-valued by default, so a working relay is the only reason they appear in a file at all. See [Settings, MTProto](../settings/mtproto.md).
+
 `socks5.allowed_sources` is one of those keys: it is absent while the list is empty, which is the default and means the proxy accepts a connection from any source. Each entry is an IP address or a CIDR range, and `0.0.0.0/0`, `::/0` and malformed entries are refused when the file is loaded or saved. It gates which addresses reach the proxy, the way a firewall rule does, and is not a substitute for the username and password. See [Allowed sources](../settings/core#allowed-sources).
 
 ## The `queue` section

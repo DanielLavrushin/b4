@@ -78,6 +78,7 @@ on **Match any IP address** on the Targets, IP addresses tab.
 | --- | --- |
 | Output interface | Sends matched traffic out a network interface. Described below. |
 | Upstream SOCKS5 proxy | Hands matched traffic to a SOCKS5 proxy. See [Upstream SOCKS5 proxy](#upstream-socks5-proxy). |
+| Telegram over WebSocket (built-in) | Intercepts matched Telegram traffic and relays it over Telegram's WebSocket edge. See [Telegram over WebSocket](../telegram/websocket-bridge.md). |
 | Block | Drops or rejects matched traffic. See [Blocking](./blocking.md). |
 
 ### General diagram

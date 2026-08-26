@@ -35,11 +35,13 @@ func (c *Config) SaveToFile(path string) error {
 		}
 	}
 
-	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, ConfigFileMode)
 	if err != nil {
 		return log.Errorf("failed to create config file: %v", err)
 	}
 	defer file.Close()
+
+	restrictFileMode(path)
 
 	_, err = file.Write(data)
 	if err != nil {
@@ -62,6 +64,8 @@ func (c *Config) LoadFromFile(path string) error {
 	if info.IsDir() {
 		return log.Errorf("config path is a directory, not a file: %s", path)
 	}
+
+	restrictConfigFiles(path)
 
 	data, err := os.ReadFile(path)
 	if err != nil {

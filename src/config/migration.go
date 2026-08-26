@@ -337,6 +337,8 @@ func (c *Config) LoadWithMigration(path string) (bool, error) {
 		return false, log.Errorf("config path is a directory, not a file: %s", path)
 	}
 
+	restrictConfigFiles(path)
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return false, log.Errorf("failed to read config file: %v", err)
@@ -400,10 +402,11 @@ func (c *Config) LoadWithMigration(path string) (bool, error) {
 
 func backupConfigBeforeMigration(path string, data []byte, fromVersion int) {
 	backupPath := fmt.Sprintf("%s.v%d.bak", path, fromVersion)
-	if err := os.WriteFile(backupPath, data, 0644); err != nil {
+	if err := os.WriteFile(backupPath, data, ConfigFileMode); err != nil {
 		log.Warnf("Failed to back up config to %s before migration: %v", backupPath, err)
 		return
 	}
+	restrictFileMode(backupPath)
 	log.Infof("Backed up pre-migration config to %s", backupPath)
 }
 
