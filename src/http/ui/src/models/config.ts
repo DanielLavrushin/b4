@@ -398,6 +398,7 @@ export interface B4Config {
   system: SystemConfig;
   sets: B4SetConfig[];
   available_ifaces: string[];
+  tunnel_ifaces?: string[];
 }
 
 export interface B4SetConfig {
@@ -464,6 +465,8 @@ export type RoutingMode = "interface" | "proxy" | "mtproto-ws" | "block";
 
 export type BlockAction = "drop" | "reject";
 
+export type RouterTraffic = "auto" | "include" | "exclude";
+
 export interface UpstreamProxyConfig {
   host: string;
   port: number;
@@ -485,6 +488,8 @@ export interface RoutingConfig {
   source_interfaces: string[];
   ip_ttl_seconds: number;
   block_action: BlockAction;
+  router_traffic: RouterTraffic;
+  kill_switch: boolean;
 }
 
 export interface DuplicateConfig {

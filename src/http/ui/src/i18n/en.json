@@ -1631,7 +1631,17 @@
       "ipTtlDesc": "After B4 learns an IP address from a DNS response, it keeps the routing rule for this many seconds. If the domain's IP changes (e.g. CDN rotation), the old rule expires and B4 picks up the new IP on the next DNS query.",
       "domainOnlyConflict": "Domain-only matching is enabled for this set, so the IP addresses behind its domains are not routed here - only IP addresses you list explicitly are. Turn off Domain-only matching to route these domains.",
       "noDestination": "This set has no domain or IP target, so there is nothing for the firewall to steer and no rule is installed. Routing rules always match a destination address.",
-      "noDestinationWithDevices": "This set selects source devices but has no domain or IP target. Source devices decide whose traffic is offered to the routing rule, not which traffic is steered, so nothing is routed and no rule is installed. To send everything from those devices, turn on \"Match any IP address\" under Targets, IP addresses."
+      "noDestinationWithDevices": "This set selects source devices but has no domain or IP target. Source devices decide whose traffic is offered to the routing rule, not which traffic is steered, so nothing is routed and no rule is installed. To send everything from those devices, turn on \"Match any IP address\" under Targets, IP addresses.",
+      "routerTraffic": "Router's own traffic",
+      "routerTrafficHelper": "Whether connections the router itself opens to this set's destinations also go out the output interface.",
+      "routerTrafficScoped": "This set is already limited to a source interface or device, and the router's own traffic comes from neither, so it always stays on the normal route.",
+      "routerTrafficAuto": "Automatic",
+      "routerTrafficInclude": "Route it too",
+      "routerTrafficExclude": "Leave it alone",
+      "routerTrafficLoopWarning": "{{iface}} is a tunnel a program on this router reads. If that program answers a routed connection by opening its own to the same address, B4 sends it straight back into {{iface}} and the loop will eat all the memory on the device. Switch back to Automatic, or pick a source interface or device for this set.",
+      "routerTrafficHeldBack": "{{iface}} is a tunnel a program on this router reads, so B4 leaves the router's own traffic on the normal route. Routing it into {{iface}} would come back out as a new connection to the same address and loop.",
+      "killSwitch": "Kill switch",
+      "killSwitchDesc": "If the output interface goes away, drop this set's traffic instead of letting it fall back to the normal uplink."
     },
     "importExport": {
       "sectionTitle": "Import/Export Set configuration",

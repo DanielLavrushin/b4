@@ -162,6 +162,21 @@ func (c *Config) Validate() error {
 			set.Routing.SourceInterfaces[i] = sanitizeIfaceName(src)
 		}
 
+		switch strings.ToLower(strings.TrimSpace(set.Routing.RouterTraffic)) {
+		case "":
+			set.Routing.RouterTraffic = RouterTrafficAuto
+		case RouterTrafficAuto, RouterTrafficInclude, RouterTrafficExclude:
+			set.Routing.RouterTraffic = strings.ToLower(strings.TrimSpace(set.Routing.RouterTraffic))
+		default:
+			v.addf(fmt.Sprintf("sets[%d].routing.router_traffic", setIdx), "invalid_router_traffic", map[string]any{"set": set.Name, "value": set.Routing.RouterTraffic}, "set %q: routing.router_traffic must be %q, %q or %q", set.Name, RouterTrafficAuto, RouterTrafficInclude, RouterTrafficExclude)
+			return v.result()
+		}
+
+		if set.Routing.KillSwitch && set.Routing.Mode != RoutingModeInterface {
+			log.Warnf("Set '%s': routing.kill_switch only applies to output-interface routing, where it holds the set's traffic when the interface goes away; routing mode %q has no interface to lose, so it is ignored", set.Name, set.Routing.Mode)
+			set.Routing.KillSwitch = false
+		}
+
 		set.Routing.EgressIP = strings.TrimSpace(set.Routing.EgressIP)
 		if set.Routing.EgressIP != "" {
 			ip := net.ParseIP(set.Routing.EgressIP)

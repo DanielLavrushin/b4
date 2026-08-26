@@ -55,20 +55,24 @@ func TestScopedSetKeepsInjectedRulesButNotRouterOriginatedOnes(t *testing.T) {
 	cfg := config.NewConfig()
 	st := routeState{mark: 0x1b1d, chainOut: "b4r_x_out", setV4: "b4r_x_v4", setV6: "b4r_x_v6"}
 
+	scopedState := st
+	scopedState.srcScoped = true
 	scoped := &mockRouteBackend{}
-	routeAddOutChainRules(scoped, &cfg, st, true)
+	routeAddOutChainRules(scoped, &cfg, scopedState)
 
 	if len(scoped.injected) == 0 {
 		t.Error("a source-scoped set must still re-mark the packets b4 injects for it, or its fakes leave by the router's normal uplink")
 	}
-	for _, op := range scoped.chainOps[st.chainOut] {
+	for _, op := range scoped.chainOps[scopedState.chainOut] {
 		if strings.HasPrefix(op, "mark ") {
 			t.Errorf("a source-scoped set must not divert traffic the router itself originates, got %q", op)
 		}
 	}
 
+	openState := st
+	openState.routerOut = true
 	open := &mockRouteBackend{}
-	routeAddOutChainRules(open, &cfg, st, false)
+	routeAddOutChainRules(open, &cfg, openState)
 
 	found := false
 	for _, op := range open.chainOps[st.chainOut] {

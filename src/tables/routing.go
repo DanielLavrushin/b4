@@ -12,9 +12,12 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/netif"
 )
 
 const hostRouteCTMark = uint32(0x40000000)
+
+const routeRouterTrafficRate = 200
 
 const routeSetMarkMask = uint32(0x27FFF)
 
@@ -35,6 +38,8 @@ type routeState struct {
 	blockAction string
 	quicReject  bool
 	srcScoped   bool
+	routerOut   bool
+	killSwitch  bool
 	ipv4        bool
 	ipv6        bool
 	setV4       string
@@ -56,6 +61,7 @@ type routeBackend interface {
 	deleteChain(chain string, isMangle bool)
 	addBypassRule(chain string, mark uint32)
 	addClaimedBypassRule(chain string)
+	addRouterTrafficGuard(chain string, mark uint32) bool
 	addMarkRule(chain string, v6 bool, setName string, mark uint32, sourceIface string, tagHostConntrack bool)
 	addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32)
 	ensureJumpRule(baseChain, targetChain string, isMangle bool, atTop bool)
@@ -385,6 +391,8 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		st.table = table
 		st.iface = set.Routing.EgressInterface
 		st.egressIP = set.Routing.EgressIP
+		st.routerOut = set.RoutingIncludesRouterTraffic()
+		st.killSwitch = set.Routing.KillSwitch
 	}
 	return st
 }
@@ -402,6 +410,8 @@ func routeStateEqual(a, b routeState) bool {
 		a.sourcesKey == b.sourcesKey &&
 		a.deviceKey == b.deviceKey &&
 		a.srcScoped == b.srcScoped &&
+		a.routerOut == b.routerOut &&
+		a.killSwitch == b.killSwitch &&
 		a.ipv4 == b.ipv4 &&
 		a.ipv6 == b.ipv6
 }
@@ -536,6 +546,7 @@ func RoutingClearAll() {
 	routeLearnedHosts = make(map[string]map[string]time.Time)
 	routeHostResolvedAt = make(map[string]time.Time)
 	routeOwnedAddrs = make(map[string]bool)
+	routeEgressLoopWarned = sync.Map{}
 }
 
 func RoutingActiveIPSetNames(ipv4, ipv6 bool) []string {
@@ -830,6 +841,7 @@ func RoutingSyncConfig(cfg *config.Config) {
 		if _, ok := desired[setID]; !ok {
 			routeCleanupAny(be, st)
 			delete(routeRuleCache, setID)
+			routeForgetEgressLoopWarning(setID)
 			for host := range routeLearnedHosts[setID] {
 				delete(routeHostResolvedAt, setID+"|"+host)
 			}
@@ -1042,13 +1054,51 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 		routeAddMarkRules(be, st.chainPre, true, st.setV6, st.mark, sources, true)
 	}
 
-	routeAddOutChainRules(be, cfg, st, routeSetIsSourceScoped(set))
+	routeAddOutChainRules(be, cfg, st)
 	routeEnsureChainJumps(be, st, gate)
 
+	routeWarnEgressLoopRisk(set, st)
 	routeEnsureEgressAddress(st.iface, st.egressIP)
 	routeAddEgressRules(be, st, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	routeEnsurePolicyRouting(st, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	return nil
+}
+
+var routeEgressLoopWarned sync.Map
+
+func routeWarnEgressLoopRisk(set *config.SetConfig, st routeState) {
+	if st.iface == "" {
+		return
+	}
+
+	state := "off"
+	if st.routerOut {
+		state = "on"
+	}
+	key := st.iface + "|" + state
+	if prev, ok := routeEgressLoopWarned.Load(set.Id); ok && prev == key {
+		return
+	}
+	routeEgressLoopWarned.Store(set.Id, key)
+
+	if !netif.IsUserspaceTunnel(st.iface) {
+		return
+	}
+
+	if st.routerOut {
+		log.Warnf("Routing: set '%s' sends the router's own traffic into %s, which is %s. If that program answers a connection by opening its own to the same address, b4 marks it and routes it straight back in, and the loop will exhaust the box's memory. Set routing.router_traffic to %q, or pick a source interface or source device for this set.",
+			set.Name, st.iface, netif.Describe(st.iface), config.RouterTrafficExclude)
+		return
+	}
+	if st.srcScoped {
+		return
+	}
+	log.Infof("Routing: set '%s' leaves the router's own traffic on the normal route because %s is %s and routing it back in would loop; set routing.router_traffic to %q to override",
+		set.Name, st.iface, netif.Describe(st.iface), config.RouterTrafficInclude)
+}
+
+func routeForgetEgressLoopWarning(setID string) {
+	routeEgressLoopWarned.Delete(setID)
 }
 
 func routeAddMarkRules(be routeBackend, chain string, v6 bool, setName string, mark uint32, sources []string, tagHostCT bool) {
@@ -1061,7 +1111,7 @@ func routeAddMarkRules(be routeBackend, chain string, v6 bool, setName string, m
 	}
 }
 
-func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState, sourceScoped bool) {
+func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState) {
 	queueMark := routeQueueBypassMark(cfg)
 	if cfg.Queue.IPv4Enabled {
 		be.addInjectedMarkRule(st.chainOut, false, st.setV4, st.mark, queueMark)
@@ -1073,8 +1123,12 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState, s
 	routeSelfDialBypass(be, cfg, st.chainOut)
 	be.addClaimedBypassRule(st.chainOut)
 
-	if sourceScoped {
+	if st.srcScoped || !st.routerOut {
 		return
+	}
+
+	if !be.addRouterTrafficGuard(st.chainOut, st.mark) && netif.IsUserspaceTunnel(st.iface) {
+		log.Warnf("Routing: %s took no rate guard on the router's own traffic, so a routing loop through %s would grow unchecked; on nftables this needs a kernel with rule limits, on iptables the xt_hashlimit module", st.chainOut, st.iface)
 	}
 
 	if cfg.Queue.IPv4Enabled {
@@ -1382,6 +1436,8 @@ func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 		runLogged("routing: add ip rule v6", "ip", "-6", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
 	}
 
+	routeApplyKillSwitch(st, ipv4, ipv6)
+
 	if _, err := net.InterfaceByName(iface); err != nil {
 		log.Infof("Routing: interface %s not present (%v); default route deferred until it appears", iface, err)
 		return
@@ -1403,6 +1459,38 @@ func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 	}
 }
 
+const routeKillSwitchMetric = "4096"
+
+func routeApplyKillSwitch(st routeState, ipv4, ipv6 bool) {
+	tableStr := fmt.Sprintf("%d", st.table)
+	for _, fam := range routeFamilyArgs(ipv4, ipv6) {
+		args := append([]string{"ip"}, fam.flag...)
+		if st.killSwitch {
+			args = append(args, "route", "replace", "blackhole", "default", "metric", routeKillSwitchMetric, "table", tableStr)
+			runLogged("routing: add kill switch "+fam.name, args...)
+			continue
+		}
+		args = append(args, "route", "del", "blackhole", "default", "metric", routeKillSwitchMetric, "table", tableStr)
+		runLogged("routing: remove kill switch "+fam.name, args...)
+	}
+}
+
+type routeFamily struct {
+	name string
+	flag []string
+}
+
+func routeFamilyArgs(ipv4, ipv6 bool) []routeFamily {
+	var out []routeFamily
+	if ipv4 {
+		out = append(out, routeFamily{name: "v4"})
+	}
+	if ipv6 {
+		out = append(out, routeFamily{name: "v6", flag: []string{"-6"}})
+	}
+	return out
+}
+
 func RoutingReinstallForInterface(cfg *config.Config, iface string) {
 	if cfg == nil || iface == "" || !hasBinary("ip") {
 		return
@@ -1411,21 +1499,36 @@ func RoutingReinstallForInterface(cfg *config.Config, iface string) {
 		log.Tracef("Routing: interface %s no longer present; skipping reinstall", iface)
 		return
 	}
-	routeMu.Lock()
-	defer routeMu.Unlock()
+	netif.ForgetIface(iface)
 
+	routeMu.Lock()
 	ipv4 := cfg.Queue.IPv4Enabled
 	ipv6 := cfg.Queue.IPv6Enabled
 	count := 0
-	for _, st := range routeRuleCache {
-		if config.RoutingUsesTProxy(st.mode) || st.iface != iface {
+	rebuild := false
+	for _, set := range cfg.Sets {
+		if set == nil {
+			continue
+		}
+		st, ok := routeRuleCache[set.Id]
+		if !ok || config.RoutingUsesTProxy(st.mode) || st.iface != iface {
+			continue
+		}
+		if st.routerOut != set.RoutingIncludesRouterTraffic() {
+			rebuild = true
 			continue
 		}
 		routeEnsurePolicyRouting(st, ipv4, ipv6)
 		count++
 	}
+	routeMu.Unlock()
+
 	if count > 0 {
 		log.Infof("Routing: reinstalled policy routes for interface %s (%d set(s))", iface, count)
+	}
+	if rebuild {
+		log.Infof("Routing: %s came back as %s, which changes whether the router's own traffic follows the sets on it; rebuilding their rules", iface, netif.Describe(iface))
+		RoutingSyncConfig(cfg)
 	}
 }
 
@@ -1629,6 +1732,7 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 	_, _ = h.Write([]byte(autoKey))
 	base := h.Sum32()
 
+	var firstTaken int
 	for attempt := uint32(0); attempt < 4096; attempt++ {
 		table := 100 + int((base+attempt)%150)
 		mark := uint32(0x100 + (base+attempt)%0x7E00)
@@ -1638,6 +1742,16 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 		if _, ok := usedTables[table]; ok {
 			continue
 		}
+		if routeTableTakenByOthers(table, set.Routing.EgressInterface) {
+			usedTables[table] = struct{}{}
+			if firstTaken == 0 {
+				firstTaken = table
+			}
+			continue
+		}
+		if firstTaken != 0 {
+			log.Infof("Routing: routing table %d already holds routes b4 did not add (see /etc/iproute2/rt_tables), so %s uses table %d instead", firstTaken, autoKey, table)
+		}
 		routeIfaceAuto[autoKey] = routeState{mark: mark, table: table}
 		return mark, table
 	}
@@ -1646,7 +1760,7 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 	table := 100
 	for i := 0; i < 4096; i++ {
 		_, tableUsed := usedTables[table]
-		if !markOverlaps(mark, usedMarks) && !tableUsed {
+		if !markOverlaps(mark, usedMarks) && !tableUsed && !routeTableTakenByOthers(table, set.Routing.EgressInterface) {
 			break
 		}
 		mark++
@@ -1657,6 +1771,59 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 	}
 	routeIfaceAuto[autoKey] = routeState{mark: mark, table: table}
 	return mark, table
+}
+
+var routeTableForeignRoutes = routeTableForeignRoutesExec
+
+func routeTableForeignRoutesExec(table int, iface string) bool {
+	for _, v6 := range []bool{false, true} {
+		args := []string{"ip"}
+		if v6 {
+			args = append(args, "-6")
+		}
+		args = append(args, "route", "show", "table", fmt.Sprintf("%d", table))
+		out, err := run(args...)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(out, "\n") {
+			if line = strings.TrimSpace(line); line == "" {
+				continue
+			}
+			if !routeLineBelongsToIface(line, iface) {
+				log.Tracef("Routing: table %d holds a route b4 did not add: %s", table, line)
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func routeLineBelongsToIface(line, iface string) bool {
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return true
+	}
+	switch fields[0] {
+	case "blackhole":
+		return len(fields) > 1 && fields[1] == "default"
+	case "default":
+	default:
+		return false
+	}
+	for i := 0; i+1 < len(fields); i++ {
+		if fields[i] == "dev" {
+			return fields[i+1] == iface
+		}
+	}
+	return false
+}
+
+func routeTableTakenByOthers(table int, iface string) bool {
+	if iface == "" || !hasBinary("ip") {
+		return false
+	}
+	return routeTableForeignRoutes(table, iface)
 }
 
 var routeDelRuleLoop = routeDelRuleLoopExec

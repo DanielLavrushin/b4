@@ -16,6 +16,7 @@ import (
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/mtproto"
+	"github.com/daniellavrushin/b4/netif"
 )
 
 func (api *API) RegisterConfigApi() {
@@ -197,10 +198,18 @@ func (a *API) getConfig(w http.ResponseWriter) {
 	}
 	sort.Strings(ifaces)
 
+	tunnels := []string{}
+	for _, iface := range ifaces {
+		if netif.IsUserspaceTunnel(iface) {
+			tunnels = append(tunnels, iface)
+		}
+	}
+
 	response := ConfigResponse{
 		Config:              redactWebServerSecrets(cfg),
 		Sets:                setsWithStats,
 		AvailableInterfaces: ifaces,
+		TunnelInterfaces:    tunnels,
 		Success:             true,
 		Message:             "Configuration retrieved successfully",
 	}

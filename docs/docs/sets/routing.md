@@ -113,7 +113,7 @@ Routing uses policy-based routing - routing decisions based on packet marks:
 
 2. **Marking packets.** b4 creates firewall chains for each set:
    - **PREROUTING** (mangle) - marks forwarded traffic (from devices on the network) when the destination IP is in the set. If source interfaces are set, only traffic from those interfaces is marked.
-   - **OUTPUT** (mangle) - marks traffic originating from the router itself.
+   - **OUTPUT** (mangle) - re-marks the packets b4 injects itself, which are locally generated and would otherwise leave by the router's normal uplink. It also marks other traffic the router originates, unless [Router's own traffic](#routers-own-traffic) says not to.
 
 3. **Policy routing.** For marked packets an `ip rule` is created: packets with a specific `fwmark` are sent to a separate routing table where the default route points at the output interface.
 
@@ -142,7 +142,8 @@ The diagram updates as settings change.
 Define which network interfaces traffic is intercepted from for routing. Shown as clickable badges - click to toggle.
 
 :::info
-If no source interface is selected, routing applies to all traffic, including traffic originated by the router itself.
+If no source interface is selected, routing applies to all traffic arriving from anywhere, and - subject to
+[Router's own traffic](#routers-own-traffic) - to traffic the router originates itself.
 Selecting a source interface, or a source device, restricts the set to traffic arriving from it and leaves the router's
 own traffic on the normal route, since that traffic arrives from no interface and from no device.
 :::
@@ -161,7 +162,68 @@ The network interface that marked traffic is sent through:
 
 :::warning
 If the chosen output interface becomes unavailable, a warning appears. Routing will not work until the interface is back.
+See [Kill switch](#kill-switch) for what happens to the set's traffic in the meantime.
 :::
+
+:::info
+When the output interface is a tunnel - a TUN/TAP device or WireGuard - b4 turns off packet manipulation (faking,
+fragmentation, desync) for that set's traffic, the same way it does in proxy mode. The segment it would mangle is the
+inner one, which is wrapped or terminated before it ever reaches the network, so the work buys nothing and costs CPU on
+every connection. The connection still appears in the connection log, tagged `routed-><iface>`. A set routed to a plain
+interface, such as a second uplink, keeps its bypass strategy.
+:::
+
+### Router's own traffic
+
+Whether connections the router opens itself - a package update, a health check, the DNS resolver, another program running
+on the box - also go out the output interface when they are addressed to something in the set. Traffic forwarded from the
+network is unaffected by this setting.
+
+| Value | What happens |
+| --- | --- |
+| Automatic (default) | Routes the router's own traffic, except when the output interface is a TUN/TAP device a userspace program reads. There it is left on the normal route. |
+| Route it too | Always routes it. |
+| Leave it alone | Never routes it. |
+
+The exception exists because of a loop. A proxy with a TUN inbound - Xray, sing-box, a `tun2socks`-style client - does not
+forward packets; it terminates the connection and opens **its own** to the destination, from this same router. That new
+connection is addressed to something in the set, so b4 marks it and routes it back into the very TUN the proxy is reading.
+The proxy answers it the same way, and so on. Every turn is a fresh source port, so nothing in the kernel recognises it as
+a repeat, and each turn costs the proxy another session and another socket. In practice the box runs out of memory in
+minutes.
+
+b4 recognises such an interface by `/sys/class/net/<iface>/tun_flags`, which the kernel creates for every device opened
+through `/dev/net/tun`. WireGuard, PPP, VLANs and physical interfaces are not affected: they cannot re-dial a connection,
+so the router's own traffic keeps following the set on **Automatic**.
+
+Choosing **Route it too** on a TUN interface is allowed - a TUN whose reader never dials the destination directly is
+harmless - but b4 logs a warning and installs a rate limit ahead of the marking, so a loop that does start is capped at
+200 new router-originated connections per second instead of growing without bound.
+
+:::tip
+A set that already has a source interface or a source device selected never routes the router's own traffic, whatever this
+is set to, so the setting is shown greyed out.
+:::
+
+:::warning
+If you route a set into a proxy's TUN and the proxy is configured to reach some of those destinations **directly**
+(a `freedom`/`direct` outbound, a bypass rule, its own DNS), that is exactly the loop above. Leave this on **Automatic**.
+:::
+
+### Kill switch
+
+Off by default. When the output interface disappears - the tunnel drops, the VPN client restarts - the kernel removes the
+default route b4 put in the set's routing table. The mark rule then finds an empty table, the lookup falls through to the
+main table, and the set's traffic quietly leaves through the normal uplink with the router's real address. Nothing in the
+rules looks wrong, which is what makes it easy to miss.
+
+With the kill switch on, b4 also puts a `blackhole default` route in the set's table at a worse metric than the real one.
+While the interface is up the real route wins and nothing changes. When it goes away the blackhole is all that is left and
+the set's traffic is dropped instead of leaking. Only this set's traffic is affected; everything else keeps using the main
+table as usual.
+
+b4 puts the real route back as soon as the interface returns, so the kill switch does not need to be turned off and on
+again after a reconnect.
 
 ### Egress IP
 
@@ -220,9 +282,13 @@ The backend is chosen automatically. Systems with nftables use nftables, older s
 Each output interface gets assigned automatically:
 
 - **fwmark** - packet mark (range `0x100` to `0x7EFF`)
-- **routing table** - routing table number (range `100` to `2099`)
+- **routing table** - routing table number (range `100` to `249`)
 
 Values are computed from the interface name and stay stable across reboots. When several sets use the same output interface, they share the `fwmark` and table.
+
+Before claiming a table b4 checks whether it already holds routes it did not put there - the tables Asuswrt-Merlin uses for
+its VPN clients live in the same range, and b4 flushes the table it owns on cleanup. If the table is taken, b4 moves to the
+next candidate and says so in the log.
 
 :::info
 Manual `fwmark` and `table` values can be set in the configuration file. In that case automatic assignment is not used.

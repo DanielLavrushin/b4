@@ -1365,6 +1365,10 @@ func (m *mockRouteBackend) jumpPrepends(bool) bool { return false }
 func (m *mockRouteBackend) addClaimedBypassRule(chain string) {
 	m.recordOp(chain, "claimed-bypass")
 }
+func (m *mockRouteBackend) addRouterTrafficGuard(chain string, mark uint32) bool {
+	m.recordOp(chain, "router-traffic-guard")
+	return true
+}
 func (m *mockRouteBackend) addMasqueradeRule(chain string, mark uint32, iface string, v6 bool) {
 	m.masq = append(m.masq, mockNATRule{chain: chain, mark: mark, iface: iface, v6: v6})
 }

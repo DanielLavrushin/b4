@@ -151,6 +151,28 @@ func (b *routeIptBackend) addClaimedBypassRule(chain string) {
 	}
 }
 
+func (b *routeIptBackend) addRouterTrafficGuard(chain string, mark uint32) bool {
+	name := fmt.Sprintf("b4rl%x", mark)
+	added := false
+	for _, cmd := range b.iptBoth() {
+		if !hasBinary(cmd) {
+			continue
+		}
+		if _, err := run(cmd, "-w", "-t", "mangle", "-A", chain,
+			"-m", "conntrack", "--ctstate", "NEW",
+			"-m", "hashlimit",
+			"--hashlimit-above", fmt.Sprintf("%d/sec", routeRouterTrafficRate),
+			"--hashlimit-burst", fmt.Sprintf("%d", routeRouterTrafficRate*2),
+			"--hashlimit-name", name,
+			"-j", "RETURN"); err != nil {
+			log.Tracef("routing: %s takes no router-traffic rate guard on %s (%v); a routing loop through this set would not be capped", chain, cmd, err)
+			continue
+		}
+		added = true
+	}
+	return added
+}
+
 func routeIptSetMarkArgs(mark uint32) []string {
 	return []string{"-j", "MARK", "--set-xmark", fmt.Sprintf("0x%x/0x%x", mark, routeSetMarkMask)}
 }

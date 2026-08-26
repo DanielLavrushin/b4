@@ -12,6 +12,7 @@ import (
 
 	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/netif"
 	"github.com/daniellavrushin/b4/tlsgen"
 )
 
@@ -518,6 +519,59 @@ func (set *SetConfig) HasIPOrDomainTargets() bool {
 
 func (set *SetConfig) RoutingDivertsPackets() bool {
 	return set.Routing.Enabled && set.HasIPOrDomainTargets()
+}
+
+func (set *SetConfig) RoutingModeOrDefault() string {
+	if set.Routing.Mode == "" {
+		return RoutingModeInterface
+	}
+	return set.Routing.Mode
+}
+
+func (set *SetConfig) RoutesToInterface() bool {
+	return set.Routing.Enabled &&
+		set.RoutingModeOrDefault() == RoutingModeInterface &&
+		set.Routing.EgressInterface != ""
+}
+
+func (set *SetConfig) RoutingHandsOffPackets() bool {
+	if !set.RoutingDivertsPackets() {
+		return false
+	}
+	if RoutingUsesTProxy(set.RoutingModeOrDefault()) {
+		return true
+	}
+	return set.RoutesToInterface() && netif.IsEncapsulated(set.Routing.EgressInterface)
+}
+
+func (set *SetConfig) RoutingIncludesRouterTraffic() bool {
+	if set.RoutingSourceScoped() {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(set.Routing.RouterTraffic)) {
+	case RouterTrafficExclude:
+		return false
+	case RouterTrafficInclude:
+		return true
+	}
+	return !netif.IsUserspaceTunnel(set.Routing.EgressInterface)
+}
+
+func (set *SetConfig) RoutingSourceScoped() bool {
+	for _, s := range set.Routing.SourceInterfaces {
+		if strings.TrimSpace(s) != "" {
+			return true
+		}
+	}
+	if set.Targets.SourceDevicesExclude {
+		return false
+	}
+	for _, m := range set.Targets.SourceDevices {
+		if strings.TrimSpace(m) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (set *SetConfig) MatchesTCPDPort(port uint16) bool {

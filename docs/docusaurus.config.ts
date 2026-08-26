@@ -31,8 +31,7 @@ const config: Config = {
       {
         docs: {
           sidebarPath: "./sidebars.ts",
-          editUrl:
-            "https://github.com/DanielLavrushin/b4/tree/main/docs/",
+          editUrl: "https://github.com/DanielLavrushin/b4/tree/main/docs/",
         },
         theme: {
           customCss: "./src/css/custom.css",
@@ -58,6 +57,11 @@ const config: Config = {
         {
           to: "/swagger",
           label: "API",
+          position: "left",
+        },
+        {
+          to: "/docs/changelog",
+          label: "Changelog",
           position: "left",
         },
         {

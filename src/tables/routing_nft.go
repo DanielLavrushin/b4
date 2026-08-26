@@ -152,6 +152,17 @@ func (b *routeNftBackend) addClaimedBypassRule(chain string) {
 		"meta", "mark", "&", maskHex, "!=", "0x0", "return")
 }
 
+func (b *routeNftBackend) addRouterTrafficGuard(chain string, mark uint32) bool {
+	if _, err := run("nft", "add", "rule", "inet", routeNftTable, chain,
+		"ct", "state", "new",
+		"limit", "rate", "over", fmt.Sprintf("%d/second", routeRouterTrafficRate),
+		"counter", "return"); err != nil {
+		log.Tracef("routing: %s takes no router-traffic rate guard (%v); a routing loop through this set would not be capped", chain, err)
+		return false
+	}
+	return true
+}
+
 func routeNftSetMarkArgs(mark uint32) []string {
 	return []string{"meta", "mark", "set", "meta", "mark", "&",
 		fmt.Sprintf("0x%x", ^routeSetMarkMask), "or", fmt.Sprintf("0x%x", mark)}

@@ -40,6 +40,12 @@ const (
 )
 
 const (
+	RouterTrafficAuto    = "auto"
+	RouterTrafficInclude = "include"
+	RouterTrafficExclude = "exclude"
+)
+
+const (
 	QUICFilterSNI = "sni"
 	QUICFilterAll = "all"
 )
@@ -648,6 +654,8 @@ type RoutingConfig struct {
 	SourceInterfaces []string            `json:"source_interfaces"`
 	IPTTLSeconds     int                 `json:"ip_ttl_seconds"`
 	BlockAction      string              `json:"block_action"`
+	RouterTraffic    string              `json:"router_traffic"`
+	KillSwitch       bool                `json:"kill_switch"`
 }
 
 type UpstreamProxyConfig struct {

@@ -341,6 +341,7 @@ export const SetEditorPage = ({
             set={editedSet}
             ipv6={config.queue.ipv6}
             availableIfaces={config.available_ifaces ?? []}
+            tunnelIfaces={config.tunnel_ifaces ?? []}
             onChange={handleChange}
           />
         </B4TabPanel>

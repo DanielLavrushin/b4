@@ -384,18 +384,7 @@ func routeSetIsSourceScoped(set *config.SetConfig) bool {
 	if set == nil {
 		return false
 	}
-	if len(routeNormalizedSources(set.Routing.SourceInterfaces)) > 0 {
-		return true
-	}
-	if set.Targets.SourceDevicesExclude {
-		return false
-	}
-	for _, m := range set.Targets.SourceDevices {
-		if strings.TrimSpace(m) != "" {
-			return true
-		}
-	}
-	return false
+	return set.RoutingSourceScoped()
 }
 
 var routeNoDestinationWarned sync.Map

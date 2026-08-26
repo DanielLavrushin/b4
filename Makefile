@@ -142,7 +142,7 @@ test-netns:
 	@echo "Building the tables test binary..."
 	@go -C $(SRC_DIR) test -c -o ../$(OUT_DIR)/tables.test ./tables/
 	@echo "Running the routing tests in a private network namespace..."
-	@unshare -Urn env B4_NETNS_TEST=1 $(OUT_DIR)/tables.test -test.run TestNetns -test.v
+	@unshare -Urnm sh -c 'mount -t sysfs sysfs /sys 2>/dev/null || echo "warning: could not remount /sys; interface-kind tests will skip" >&2; B4_NETNS_TEST=1 exec $(OUT_DIR)/tables.test -test.run TestNetns -test.v'
 
 .PHONY: install
 install: build

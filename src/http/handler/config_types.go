@@ -13,4 +13,5 @@ type ConfigResponse struct {
 	Sets                []SetWithStats `json:"sets"`
 	Warnings            []string       `json:"warnings,omitempty"`
 	AvailableInterfaces []string       `json:"available_ifaces"`
+	TunnelInterfaces    []string       `json:"tunnel_ifaces"`
 }
