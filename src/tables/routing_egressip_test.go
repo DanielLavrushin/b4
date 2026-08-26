@@ -99,7 +99,7 @@ func TestEgressIP_OnlyRewritesItsOwnFamily(t *testing.T) {
 func TestEgressIP_MovesTheNATJumpAheadOfWhateverElseMasquerades(t *testing.T) {
 	postJump := func(st routeState) mockRouteJump {
 		be := &mockRouteBackend{}
-		routeEnsureChainJumps(be, st, routeDeviceGate{}, false)
+		routeEnsureChainJumps(be, st, routeDeviceGate{})
 		for _, j := range be.jumps {
 			if j.baseChain == "POSTROUTING" {
 				return j

@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
@@ -40,30 +41,47 @@ func TestRouteSetIsSourceScoped(t *testing.T) {
 	}
 }
 
-func TestRouteEnsureChainJumpsOutputScoping(t *testing.T) {
+func TestRouteEnsureChainJumpsAlwaysKeepsTheOutputJump(t *testing.T) {
 	st := routeState{chainPre: "b4r_x_pre", chainOut: "b4r_x_out", chainSNAT: "b4r_x_snat"}
 
-	t.Run("an unscoped set keeps the output jump", func(t *testing.T) {
-		be := &mockRouteBackend{}
-		routeEnsureChainJumps(be, st, routeDeviceGate{}, false)
-		if !be.hasJump("OUTPUT", st.chainOut) {
-			t.Errorf("expected an OUTPUT jump, got %+v", be.jumps)
-		}
-	})
-
-	t.Run("a source-scoped set removes the output jump", func(t *testing.T) {
-		be := &mockRouteBackend{}
-		routeEnsureChainJumps(be, st, routeDeviceGate{}, true)
-		if be.hasJump("OUTPUT", st.chainOut) {
-			t.Errorf("traffic the router originates can never come from a source device, got %+v", be.jumps)
-		}
-		if !be.hasDeletedJump("OUTPUT", st.chainOut) {
-			t.Errorf("a previously installed OUTPUT jump must be removed, got %+v", be.deletedJumps)
-		}
-	})
+	be := &mockRouteBackend{}
+	routeEnsureChainJumps(be, st, routeDeviceGate{})
+	if !be.hasJump("OUTPUT", st.chainOut) {
+		t.Errorf("the packets b4 injects are locally generated, so without an OUTPUT jump they never regain the set's routing mark: %+v", be.jumps)
+	}
 }
 
-func TestRouteStateChainsSkipOutForScopedSets(t *testing.T) {
+func TestScopedSetKeepsInjectedRulesButNotRouterOriginatedOnes(t *testing.T) {
+	cfg := config.NewConfig()
+	st := routeState{mark: 0x1b1d, chainOut: "b4r_x_out", setV4: "b4r_x_v4", setV6: "b4r_x_v6"}
+
+	scoped := &mockRouteBackend{}
+	routeAddOutChainRules(scoped, &cfg, st, true)
+
+	if len(scoped.injected) == 0 {
+		t.Error("a source-scoped set must still re-mark the packets b4 injects for it, or its fakes leave by the router's normal uplink")
+	}
+	for _, op := range scoped.chainOps[st.chainOut] {
+		if strings.HasPrefix(op, "mark ") {
+			t.Errorf("a source-scoped set must not divert traffic the router itself originates, got %q", op)
+		}
+	}
+
+	open := &mockRouteBackend{}
+	routeAddOutChainRules(open, &cfg, st, false)
+
+	found := false
+	for _, op := range open.chainOps[st.chainOut] {
+		if strings.HasPrefix(op, "mark ") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("an unscoped set still routes the traffic the router originates to its own destinations")
+	}
+}
+
+func TestRouteStateChainsCoverEverySetsChains(t *testing.T) {
 	base := routeState{
 		mode:      config.RoutingModeInterface,
 		chainPre:  "b4r_x_pre",
@@ -86,12 +104,12 @@ func TestRouteStateChainsSkipOutForScopedSets(t *testing.T) {
 		}
 	})
 
-	t.Run("a source-scoped interface set must not verify a chain it never fills", func(t *testing.T) {
+	t.Run("a source-scoped interface set verifies its out chain too", func(t *testing.T) {
 		st := base
 		st.srcScoped = true
 		got := chainsOf(st)
-		if got["b4r_x_out"] {
-			t.Error("the out chain is left empty for a scoped set, so demanding its bypass rules loops the monitor forever")
+		if !got["b4r_x_out"] {
+			t.Error("a scoped set's out chain carries the rules that re-mark the packets b4 injects, so a flushed chain must be noticed")
 		}
 		if !got["b4r_x_pre"] || !got["b4r_x_snat"] {
 			t.Errorf("the other chains must still be verified, got %v", got)
@@ -111,4 +129,52 @@ func TestRouteStateChainsSkipOutForScopedSets(t *testing.T) {
 			t.Error("a set bound to a source device must be marked scoped")
 		}
 	})
+}
+
+func TestRouteWantsOutputJumpSplitsByMode(t *testing.T) {
+	cases := []struct {
+		name string
+		st   routeState
+		want bool
+		why  string
+	}{
+		{
+			name: "an unscoped interface set",
+			st:   routeState{mode: config.RoutingModeInterface},
+			want: true,
+			why:  "it routes the traffic the router originates to its own destinations",
+		},
+		{
+			name: "a source-scoped interface set",
+			st:   routeState{mode: config.RoutingModeInterface, srcScoped: true},
+			want: true,
+			why:  "b4 injects its fakes from the router itself, and only the OUTPUT hook can give them the set's mark",
+		},
+		{
+			name: "an unscoped proxy set",
+			st:   routeState{mode: config.RoutingModeProxy},
+			want: true,
+			why:  "the router's own connections to the set's addresses still have to reach the tproxy listener",
+		},
+		{
+			name: "a source-scoped proxy set",
+			st:   routeState{mode: config.RoutingModeProxy, srcScoped: true},
+			want: false,
+			why:  "b4's listener handles its traffic, so the out chain stays empty and jumping to it would only flap against the next apply",
+		},
+		{
+			name: "a source-scoped mtproto-ws set",
+			st:   routeState{mode: config.RoutingModeMTProtoWS, srcScoped: true},
+			want: false,
+			why:  "it diverts through the same listener as a proxy set",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := routeWantsOutputJump(c.st); got != c.want {
+				t.Errorf("routeWantsOutputJump = %v, want %v: %s", got, c.want, c.why)
+			}
+		})
+	}
 }

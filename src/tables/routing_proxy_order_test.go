@@ -42,6 +42,7 @@ func withOrderedCache(t *testing.T, sets ...*config.SetConfig) *config.Config {
 		mode := set.Routing.Mode
 		routeRuleCache[set.Id] = routeState{
 			mode:      mode,
+			srcScoped: routeSetIsSourceScoped(set),
 			iface:     set.Routing.EgressInterface,
 			chainPre:  "b4r_" + set.Id + "_pre",
 			chainOut:  "b4r_" + set.Id + "_out",

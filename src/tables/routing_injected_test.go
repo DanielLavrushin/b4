@@ -33,7 +33,7 @@ func TestRouteOutChain_MarksInjectedPacketsBeforeTheQueueBypass(t *testing.T) {
 	cfg := injectedTestConfig()
 	st := injectedTestState()
 
-	routeAddOutChainRules(be, cfg, st)
+	routeAddOutChainRules(be, cfg, st, false)
 
 	ops := be.chainOps[st.chainOut]
 	queueBypass := -1
@@ -65,7 +65,7 @@ func TestRouteOutChain_InjectedRuleCoversBothFamilies(t *testing.T) {
 
 	t.Run("both families", func(t *testing.T) {
 		be := &mockRouteBackend{}
-		routeAddOutChainRules(be, cfg, st)
+		routeAddOutChainRules(be, cfg, st, false)
 		if len(be.injected) != 2 {
 			t.Fatalf("expected an IPv4 and an IPv6 rule, got %d", len(be.injected))
 		}
@@ -97,7 +97,7 @@ func TestRouteOutChain_InjectedRuleCoversBothFamilies(t *testing.T) {
 		be := &mockRouteBackend{}
 		v4 := injectedTestConfig()
 		v4.Queue.IPv6Enabled = false
-		routeAddOutChainRules(be, v4, st)
+		routeAddOutChainRules(be, v4, st, false)
 		if len(be.injected) != 1 || be.injected[0].v6 {
 			t.Fatalf("expected a single IPv4 rule, got %+v", be.injected)
 		}
@@ -110,7 +110,7 @@ func TestRouteOutChain_InjectedRuleFollowsACustomQueueMark(t *testing.T) {
 	cfg.Queue.Mark = 0x1234
 	st := injectedTestState()
 
-	routeAddOutChainRules(be, cfg, st)
+	routeAddOutChainRules(be, cfg, st, false)
 	if len(be.injected) == 0 {
 		t.Fatal("no injected-packet rule emitted")
 	}
@@ -125,7 +125,7 @@ func TestRouteChainJumps_OutputJumpGoesFirst(t *testing.T) {
 	be := &mockRouteBackend{}
 	st := injectedTestState()
 
-	routeEnsureChainJumps(be, st, routeDeviceGate{}, false)
+	routeEnsureChainJumps(be, st, routeDeviceGate{})
 
 	var out *mockRouteJump
 	for i := range be.jumps {

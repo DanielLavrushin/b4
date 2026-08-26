@@ -656,13 +656,25 @@ type routeChainRef struct {
 	wantBypass   bool
 }
 
+// routeWantsOutputJump reports whether a set fills an out chain worth jumping
+// to. An interface set always does: the packets b4 injects for it are locally
+// generated, so the OUTPUT hook is the only place they can regain the set's
+// routing mark, and a source filter can never match them. A tproxy set that is
+// source-scoped fills nothing, because b4's listener handles its traffic.
+func routeWantsOutputJump(st routeState) bool {
+	if config.RoutingUsesTProxy(st.mode) {
+		return !st.srcScoped
+	}
+	return true
+}
+
 func routeStateChains(st routeState) []routeChainRef {
 	switch {
 	case config.RoutingIsBlock(st.mode):
 		return []routeChainRef{{st.chainPre, "filter", false}}
 	case config.RoutingUsesTProxy(st.mode):
 		refs := []routeChainRef{{st.chainPre, "mangle", true}}
-		if !st.srcScoped {
+		if routeWantsOutputJump(st) {
 			refs = append(refs, routeChainRef{st.chainOut, "mangle", true})
 		}
 		if st.quicReject && st.chainQUIC != "" {
@@ -670,9 +682,9 @@ func routeStateChains(st routeState) []routeChainRef {
 		}
 		return refs
 	default:
-		refs := []routeChainRef{{st.chainPre, "mangle", true}}
-		if !st.srcScoped {
-			refs = append(refs, routeChainRef{st.chainOut, "mangle", true})
+		refs := []routeChainRef{
+			{st.chainPre, "mangle", true},
+			{st.chainOut, "mangle", true},
 		}
 		return append(refs, routeChainRef{st.chainSNAT, "nat", false})
 	}
@@ -1030,11 +1042,8 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 		routeAddMarkRules(be, st.chainPre, true, st.setV6, st.mark, sources, true)
 	}
 
-	sourceScoped := routeSetIsSourceScoped(set)
-	if !sourceScoped {
-		routeAddOutChainRules(be, cfg, st)
-	}
-	routeEnsureChainJumps(be, st, gate, sourceScoped)
+	routeAddOutChainRules(be, cfg, st, routeSetIsSourceScoped(set))
+	routeEnsureChainJumps(be, st, gate)
 
 	routeEnsureEgressAddress(st.iface, st.egressIP)
 	routeAddEgressRules(be, st, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
@@ -1052,7 +1061,7 @@ func routeAddMarkRules(be routeBackend, chain string, v6 bool, setName string, m
 	}
 }
 
-func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState) {
+func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState, sourceScoped bool) {
 	queueMark := routeQueueBypassMark(cfg)
 	if cfg.Queue.IPv4Enabled {
 		be.addInjectedMarkRule(st.chainOut, false, st.setV4, st.mark, queueMark)
@@ -1063,6 +1072,10 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState) {
 
 	routeSelfDialBypass(be, cfg, st.chainOut)
 	be.addClaimedBypassRule(st.chainOut)
+
+	if sourceScoped {
+		return
+	}
 
 	if cfg.Queue.IPv4Enabled {
 		routeAddMarkRules(be, st.chainOut, false, st.setV4, st.mark, nil, true)
@@ -1135,20 +1148,16 @@ func routeReestablishJumpOrder(be routeBackend, cfg *config.Config, rebuilt bool
 	}
 	for _, set := range out {
 		st := routeRuleCache[set.Id]
-		if routeSetIsSourceScoped(set) {
+		if !routeWantsOutputJump(st) {
 			continue
 		}
 		be.ensureJumpRule("OUTPUT", st.chainOut, true, true)
 	}
 }
 
-func routeEnsureChainJumps(be routeBackend, st routeState, gate routeDeviceGate, sourceScoped bool) {
+func routeEnsureChainJumps(be routeBackend, st routeState, gate routeDeviceGate) {
 	routeEnsureGatedPreJump(be, st.chainPre, gate)
-	if sourceScoped {
-		be.deleteJumpRules("OUTPUT", st.chainOut, true)
-	} else {
-		be.ensureJumpRule("OUTPUT", st.chainOut, true, true)
-	}
+	be.ensureJumpRule("OUTPUT", st.chainOut, true, true)
 	be.ensureJumpRule("POSTROUTING", st.chainSNAT, false, st.egressIP != "")
 }
 

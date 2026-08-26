@@ -390,10 +390,10 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		}
 	}
 
-	if sourceScoped {
-		be.deleteJumpRules("OUTPUT", st.chainOut, true)
-	} else {
+	if routeWantsOutputJump(st) {
 		be.ensureJumpRule("OUTPUT", st.chainOut, true, true)
+	} else {
+		be.deleteJumpRules("OUTPUT", st.chainOut, true)
 	}
 	routeEnsureGatedPreJump(be, st.chainPre, gate)
 	addProxyInputAccept(be, st.mark)
