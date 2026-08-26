@@ -473,3 +473,131 @@ func TestNetnsEgressIPAddedByHandIsNotTakenAway(t *testing.T) {
 		t.Errorf("b4 removed %s from %s, but it was configured by hand and b4 must only take back what it added itself", egressIP, netnsSecondary)
 	}
 }
+
+const netnsProxyTarget = "198.51.100.9"
+
+func netnsProxyMixConfig() *config.Config {
+	cfg := netnsConfig(backendNFTables)
+
+	proxy := config.NewSetConfig()
+	proxy.Id = "netns-proxy-set"
+	proxy.Name = "netnsproxy"
+	proxy.Enabled = true
+	proxy.Routing.Enabled = true
+	proxy.Routing.Mode = config.RoutingModeProxy
+	proxy.Routing.Upstream.Host = "127.0.0.1"
+	proxy.Routing.Upstream.Port = 1080
+	proxy.Targets.IPs = []string{netnsProxyTarget}
+	proxy.Targets.IpsToMatch = []string{netnsProxyTarget}
+
+	cfg.Sets = append(cfg.Sets, &proxy)
+	return cfg
+}
+
+func TestNetnsProxySetDoesNotSwallowTheInjectedPacket(t *testing.T) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+
+	routeEngine = nil
+	defer func() { routeEngine = nil }()
+
+	cfg := netnsProxyMixConfig()
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	defer func() { _ = ClearRules(cfg) }()
+
+	RoutingSyncConfig(cfg)
+	defer RoutingClearAll()
+
+	st, ok := routeRuleCache["netns-egress-set"]
+	if !ok {
+		t.Fatal("the interface set built no rules")
+	}
+	netnsRun(t, "nft", "add", "element", "inet", routeNftTable, st.setV4, "{", netnsTarget, "}")
+	netnsAddCounters(t)
+
+	stopQueue := netnsStartQueueListener(t, uint16(cfg.Queue.StartNum))
+	defer stopQueue()
+
+	out := netnsRun(t, "nft", "-a", "list", "chain", "inet", routeNftTable, routeNftOutput)
+	t.Logf("base output chain with a proxy set present:\n%s", out)
+
+	firstReturn, jump := -1, -1
+	for i, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case firstReturn < 0 && strings.Contains(line, "meta mark") && strings.HasSuffix(strings.Split(line, "#")[0], "return "):
+			firstReturn = i
+		case jump < 0 && strings.Contains(line, "jump "+st.chainOut):
+			jump = i
+		}
+	}
+	if jump < 0 {
+		t.Fatalf("the interface set's out chain is not hung off the base output chain:\n%s", out)
+	}
+	if firstReturn >= 0 && firstReturn < jump {
+		t.Errorf("a return sits at line %d, above the jump to %s at line %d; the base chain is a hook, so returning there ends it for every set below:\n%s",
+			firstReturn, st.chainOut, jump, out)
+	}
+
+	proxySt, ok := routeRuleCache["netns-proxy-set"]
+	if !ok {
+		t.Fatal("the proxy set built no rules")
+	}
+	proxyChain := netnsRun(t, "nft", "list", "chain", "inet", routeNftTable, proxySt.chainOut)
+	for _, want := range []string{
+		fmt.Sprintf("0x%08x", cfg.Queue.Mark),
+		fmt.Sprintf("0x%08x", SelfDialMark),
+	} {
+		if !strings.Contains(proxyChain, want) {
+			t.Errorf("the proxy set's own chain lost its %s return, so a connection b4 opens to a proxied address loops into b4's listener:\n%s", want, proxyChain)
+		}
+	}
+
+	netnsZeroCounters(t)
+	netnsSendMarked(t, uint32(cfg.Queue.Mark), 40001, 443)
+	counts := netnsEgressCounts(t)
+	if counts[netnsSecondary] == 0 {
+		t.Errorf("a packet b4 injected for the interface set left by %v, not by %s; with a proxy set configured the injected-packet rule is never reached",
+			counts, netnsSecondary)
+	}
+}
+
+func TestNetnsLegacyBaseOutputBypassIsSweptOnSync(t *testing.T) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+
+	routeEngine = nil
+	defer func() { routeEngine = nil }()
+
+	cfg := netnsProxyMixConfig()
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	defer func() { _ = ClearRules(cfg) }()
+
+	RoutingSyncConfig(cfg)
+	defer RoutingClearAll()
+
+	for _, m := range []uint32{uint32(cfg.Queue.Mark), SelfDialMark} {
+		hex := fmt.Sprintf("0x%x", m)
+		netnsRun(t, "nft", "insert", "rule", "inet", routeNftTable, routeNftOutput,
+			"meta", "mark", "&", hex, "==", hex, "return")
+	}
+
+	before := netnsRun(t, "nft", "list", "chain", "inet", routeNftTable, routeNftOutput)
+	if !strings.Contains(before, "return") {
+		t.Fatalf("the legacy rules were not planted:\n%s", before)
+	}
+
+	RoutingSyncConfig(cfg)
+
+	after := netnsRun(t, "nft", "list", "chain", "inet", routeNftTable, routeNftOutput)
+	if strings.Contains(after, "return") {
+		t.Errorf("an upgrade leaves these behind, and they end the output hook before any set's chain runs:\n%s", after)
+	}
+	if !strings.Contains(after, "jump b4r_") {
+		t.Errorf("the sweep took the jumps with it:\n%s", after)
+	}
+}

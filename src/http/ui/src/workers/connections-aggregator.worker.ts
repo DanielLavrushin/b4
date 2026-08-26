@@ -7,6 +7,9 @@ import {
   DeviceSummary,
   BUCKET_SIZE_MS,
   DEFAULT_BUCKETS,
+  EVICT_SLACK,
+  MAX_DEST_IPS,
+  MAX_DEVICES,
   MAX_GROUPS,
 } from "./connections-types";
 
@@ -106,13 +109,35 @@ function rotateBuckets(
   for (let i = bucketCount - shift; i < bucketCount; i++) g.buckets[i] = 0;
 }
 
-function evictIfNeeded(): void {
-  if (groups.size <= MAX_GROUPS) return;
-  const entries = Array.from(groups.entries()).sort(
+function evictOldest<T extends { lastSeen: number }>(
+  map: Map<string, T>,
+  max: number,
+): void {
+  if (map.size <= max) return;
+  const entries = Array.from(map.entries()).sort(
     (a, b) => a[1].lastSeen - b[1].lastSeen,
   );
-  const toRemove = groups.size - MAX_GROUPS;
-  for (let i = 0; i < toRemove; i++) groups.delete(entries[i][0]);
+  const target = Math.floor(max * EVICT_SLACK);
+  const toRemove = map.size - target;
+  for (let i = 0; i < toRemove; i++) map.delete(entries[i][0]);
+}
+
+function evictIfNeeded(): void {
+  evictOldest(groups, MAX_GROUPS);
+  if (devices.size > MAX_DEVICES) {
+    evictOldest(devices, MAX_DEVICES);
+    for (const [ip, mac] of learnedIpToMac)
+      if (!devices.has(mac)) learnedIpToMac.delete(ip);
+  }
+}
+
+function addDestIp(g: ConnectionGroup, dip: string): boolean {
+  if (!dip || g.destIps.includes(dip)) return false;
+  g.destIps.push(dip);
+  if (g.destIps.length > MAX_DEST_IPS) {
+    g.destIps.splice(0, g.destIps.length - MAX_DEST_IPS);
+  }
+  return true;
 }
 
 function mergeSeries(
@@ -147,8 +172,7 @@ function reassignIpToMac(ip: string, mac: string, now: number): void {
     if (tgt) {
       mergeSeries(tgt, g, now);
       if (g.firstSeen < tgt.firstSeen) tgt.firstSeen = g.firstSeen;
-      for (const dip of g.destIps)
-        if (!tgt.destIps.includes(dip)) tgt.destIps.push(dip);
+      for (const dip of g.destIps) addDestIp(tgt, dip);
       if (!tgt.tls && g.tls) tgt.tls = g.tls;
       if (!tgt.hostSet && g.hostSet) tgt.hostSet = g.hostSet;
       if (!tgt.ipSet && g.ipSet) tgt.ipSet = g.ipSet;
@@ -215,8 +239,7 @@ function ingest(lines: string[]): void {
     rotateBuckets(g, now);
     g.lastSeen = Math.max(g.lastSeen, p.timestamp);
     g.packets += 1;
-    if (p.destination && !g.destIps.includes(p.destination)) {
-      g.destIps.push(p.destination);
+    if (addDestIp(g, p.destination)) {
       g.destIp = p.destination;
     }
     if (p.tls && p.tls !== g.tls) g.tls = p.tls;

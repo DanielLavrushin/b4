@@ -49,7 +49,7 @@ b4 consists of several parts, each described in detail in its own documentation 
 - **Per-device filtering** - different rules for different devices on the network
 - **Routing** - direct traffic through a specific interface (VPN, WireGuard, etc.)
 - **SOCKS5 proxy** - for applications that support proxies
-- **MTProto proxy** - a proxy for Telegram
+- **[Telegram](./telegram/index.md)** - an MTProto proxy, a transparent WebSocket bridge for every device behind b4, and a WEB proxy for Telegram Desktop
 
 ## System requirements
 

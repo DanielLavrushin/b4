@@ -7,7 +7,7 @@ import {
   B4Switch,
   B4TextField,
 } from "@b4.elements";
-import { B4SetConfig, RoutingMode } from "@models/config";
+import { B4SetConfig, RouterTraffic, RoutingMode } from "@models/config";
 import { colors } from "@design";
 import { useTranslation } from "react-i18next";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
@@ -16,6 +16,8 @@ import { hasTargets } from "../facets";
 interface TrafficRoutingProps {
   config: B4SetConfig;
   availableIfaces: string[];
+  tunnelIfaces?: string[];
+  encapsulatedIfaces?: string[];
   onChange: (
     field: string,
     value:
@@ -33,6 +35,8 @@ interface TrafficRoutingProps {
 export const TrafficRouting = ({
   config,
   availableIfaces,
+  tunnelIfaces = [],
+  encapsulatedIfaces = [],
   onChange,
 }: TrafficRoutingProps) => {
   const { t } = useTranslation();
@@ -68,6 +72,25 @@ export const TrafficRouting = ({
   const shouldShowUnavailableSelected = Boolean(
     isInterface && routing.egress_interface && !selectedIfaceAvailable,
   );
+
+  const routerTraffic: RouterTraffic = routing.router_traffic ?? "auto";
+  const egressIsTunnel = tunnelIfaces.includes(routing.egress_interface);
+  const sourceScoped =
+    (routing.source_interfaces?.length ?? 0) > 0 ||
+    (!config.targets.source_devices_exclude && sourceDeviceCount > 0);
+  const routerTrafficLoops =
+    isInterface && egressIsTunnel && routerTraffic === "include" && !sourceScoped;
+  const routerTrafficHeldBack =
+    isInterface && egressIsTunnel && routerTraffic === "auto" && !sourceScoped;
+  const egressIsEncapsulated = encapsulatedIfaces.includes(
+    routing.egress_interface,
+  );
+  const routesAnyIP =
+    !config.targets.domain_only ||
+    (config.targets.ip?.length ?? 0) > 0 ||
+    (config.targets.geoip_categories?.length ?? 0) > 0;
+  const strategyHandedOff =
+    isInterface && egressIsEncapsulated && routesAnyIP;
 
   const toggleSourceIface = (iface: string) => {
     const current = routing.source_interfaces || [];
@@ -416,6 +439,79 @@ export const TrafficRouting = ({
                   iface: routing.egress_interface,
                 })}
               </B4Alert>
+            </Grid>
+          )}
+
+          {isInterface && (
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4TextField
+                label={t("sets.routing.routerTraffic")}
+                select
+                value={routerTraffic}
+                onChange={(e) =>
+                  onChange("routing.router_traffic", e.target.value)
+                }
+                disabled={sourceScoped}
+                helperText={
+                  sourceScoped
+                    ? t("sets.routing.routerTrafficScoped")
+                    : t("sets.routing.routerTrafficHelper")
+                }
+              >
+                <MenuItem value="auto">
+                  {t("sets.routing.routerTrafficAuto")}
+                </MenuItem>
+                <MenuItem value="include">
+                  {t("sets.routing.routerTrafficInclude")}
+                </MenuItem>
+                <MenuItem value="exclude">
+                  {t("sets.routing.routerTrafficExclude")}
+                </MenuItem>
+              </B4TextField>
+            </Grid>
+          )}
+
+          {isInterface && (
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Switch
+                label={t("sets.routing.killSwitch")}
+                checked={routing.kill_switch ?? false}
+                onChange={(checked: boolean) =>
+                  onChange("routing.kill_switch", checked)
+                }
+                description={t("sets.routing.killSwitchDesc")}
+                disabled={!routing.egress_interface}
+              />
+            </Grid>
+          )}
+
+          {routerTrafficLoops && (
+            <Grid size={{ xs: 12 }}>
+              <B4Alert severity="warning">
+                {t("sets.routing.routerTrafficLoopWarning", {
+                  iface: routing.egress_interface,
+                })}
+              </B4Alert>
+            </Grid>
+          )}
+
+          {routerTrafficHeldBack && (
+            <Grid size={{ xs: 12 }}>
+              <B4Alert severity="info">
+                {t("sets.routing.routerTrafficHeldBack", {
+                  iface: routing.egress_interface,
+                })}
+              </B4Alert>
+            </Grid>
+          )}
+
+          {strategyHandedOff && (
+            <Grid size={{ xs: 12 }}>
+              <B4Hint>
+                {t("sets.routing.tunnelManipulationNote", {
+                  iface: routing.egress_interface,
+                })}
+              </B4Hint>
             </Grid>
           )}
 

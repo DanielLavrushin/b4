@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -152,6 +153,45 @@ func (b *routeNftBackend) addClaimedBypassRule(chain string) {
 		"meta", "mark", "&", maskHex, "!=", "0x0", "return")
 }
 
+func (b *routeNftBackend) addRouterTrafficGuard(chain string, v6 bool, setName string, mark uint32) bool {
+	family := "ip"
+	if v6 {
+		family = "ip6"
+	}
+	added := true
+	for _, sn := range []string{setName, routeNftDynSet(setName)} {
+		if _, err := run("nft", "add", "rule", "inet", routeNftTable, chain,
+			"ct", "state", "new",
+			family, "daddr", "@"+sn,
+			"limit", "rate", "over", fmt.Sprintf("%d/second", routeRouterTrafficRate),
+			"burst", fmt.Sprintf("%d", routeRouterTrafficRate*2), "packets",
+			"counter", "return"); err != nil {
+			log.Tracef("routing: %s takes no router-traffic rate guard on @%s (%v); a routing loop through this set would not be capped", chain, sn, err)
+			added = false
+		}
+	}
+	return added
+}
+
+func routeNftSweepBaseOutputBypasses() {
+	out, err := run("nft", "-a", "list", "chain", "inet", routeNftTable, routeNftOutput)
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(out, "\n") {
+		m, verb, ok := nftParseMarkRule(line)
+		if !ok || verb != "return" {
+			continue
+		}
+		handle := nftHandleFromLine(line)
+		if handle == "" {
+			continue
+		}
+		runLogged(fmt.Sprintf("routing: drop base output bypass on 0x%x", m),
+			"nft", "delete", "rule", "inet", routeNftTable, routeNftOutput, "handle", handle)
+	}
+}
+
 func routeNftSetMarkArgs(mark uint32) []string {
 	return []string{"meta", "mark", "set", "meta", "mark", "&",
 		fmt.Sprintf("0x%x", ^routeSetMarkMask), "or", fmt.Sprintf("0x%x", mark)}
@@ -179,7 +219,7 @@ func (b *routeNftBackend) addMarkRule(chain string, v6 bool, setName string, mar
 	emit(routeNftDynSet(setName))
 }
 
-func routeNftInjectedMarkArgs(chain string, v6 bool, setName string, mark, queueMark uint32) []string {
+func routeNftInjectedMarkArgs(chain string, v6 bool, setName string, mark, queueMark uint32, source []string) []string {
 	queueHex := fmt.Sprintf("0x%x", queueMark)
 	family := "ip"
 	if v6 {
@@ -188,15 +228,24 @@ func routeNftInjectedMarkArgs(chain string, v6 bool, setName string, mark, queue
 	args := []string{
 		"add", "rule", "inet", routeNftTable, chain,
 		"meta", "mark", "&", queueHex, "==", queueHex,
-		family, "daddr", "@" + setName,
 	}
+	args = append(args, source...)
+	args = append(args, family, "daddr", "@"+setName)
 	return append(args, routeNftSetMarkArgs(mark)...)
 }
 
-func (b *routeNftBackend) addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32) {
+func (b *routeNftBackend) addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32, sources []config.DeviceMatch) {
+	usable := routeInjectedSourcesForFamily(sources, v6)
 	for _, sn := range []string{setName, routeNftDynSet(setName)} {
-		runLogged("routing: add injected mark rule "+chain,
-			append([]string{"nft"}, routeNftInjectedMarkArgs(chain, v6, sn, mark, queueMark)...)...)
+		if len(usable) == 0 {
+			runLogged("routing: add injected mark rule "+chain,
+				append([]string{"nft"}, routeNftInjectedMarkArgs(chain, v6, sn, mark, queueMark, nil)...)...)
+			continue
+		}
+		for _, m := range usable {
+			runLogged("routing: add injected mark rule "+chain,
+				append([]string{"nft"}, routeNftInjectedMarkArgs(chain, v6, sn, mark, queueMark, nftMatchArgs(m))...)...)
+		}
 	}
 }
 

@@ -321,8 +321,10 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	routeTProxy := matched && set != nil && set.RoutingDivertsPackets() && config.RoutingUsesTProxy(set.Routing.Mode)
+	routeIfaceHandoff := matched && set != nil && !routeTProxy && set.RoutingHandsOffPackets()
+	routeHandsOff := routeTProxy || routeIfaceHandoff
 
-	if matched && !routeTProxy && cfg.IsTCPPort(dport) && set.TCP.Duplicate.Enabled && set.TCP.Duplicate.Count > 0 {
+	if matched && !routeHandsOff && cfg.IsTCPPort(dport) && set.TCP.Duplicate.Enabled && set.TCP.Duplicate.Count > 0 {
 		log.Tracef("TCP duplicate to %s:%d (%d copies, set: %s)", pkt.dstStr, dport, set.TCP.Duplicate.Count, set.Name)
 
 		dupConnKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
@@ -372,13 +374,13 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		w.connTracker.MarkEstablished(connKey)
 	}
 
-	if isSyn && !isAck && !routeTProxy && cfg.IsTCPPort(dport) && matched {
+	if isSyn && !isAck && !routeHandsOff && cfg.IsTCPPort(dport) && matched {
 		if w.handleSynHealth(vc, pkt, cfg, set, sport, dport) {
 			return 0
 		}
 	}
 
-	if isSyn && !isAck && !routeTProxy && cfg.IsTCPPort(dport) && matched && !set.TCP.Duplicate.Enabled && needsTCPSynInjection(set) {
+	if isSyn && !isAck && !routeHandsOff && cfg.IsTCPPort(dport) && matched && !set.TCP.Duplicate.Enabled && needsTCPSynInjection(set) {
 		log.Tracef("TCP SYN to %s:%d (set: %s)", pkt.dstStr, dport, set.Name)
 
 		m := metrics.GetMetricsCollector()
@@ -537,7 +539,15 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
-	if matched && isClientHello && !routeTProxy && set.TCP.IPBlockDetect.Enabled && host != "" && cfg.IsTCPPort(dport) {
+	routeTProxy = matched && set != nil && set.RoutingDivertsPackets() && config.RoutingUsesTProxy(set.Routing.Mode)
+	routeIfaceHandoff = matched && set != nil && !routeTProxy && set.RoutingHandsOffPackets()
+	routeHandsOff = routeTProxy || routeIfaceHandoff
+
+	if routeIfaceHandoff && classifyReason == "" {
+		classifyReason = "routed->" + set.Routing.EgressInterface
+	}
+
+	if matched && isClientHello && !routeHandsOff && set.TCP.IPBlockDetect.Enabled && host != "" && cfg.IsTCPPort(dport) {
 		ibd := &set.TCP.IPBlockDetect
 		dstIPPort := fmt.Sprintf("%s:%d", pkt.dstStr, dport)
 
@@ -624,7 +634,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if matched {
-		if stallTracked && set.TCP.IPBlockDetect.Enabled && !routeTProxy {
+		if stallTracked && set.TCP.IPBlockDetect.Enabled && !routeHandsOff {
 			ibd := &set.TCP.IPBlockDetect
 			dstIPPort := fmt.Sprintf("%s:%d", pkt.dstStr, dport)
 			ibConnKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
@@ -665,7 +675,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			w.connTracker.RegisterOutgoing(connKey, set)
 		}
 
-		if routeTProxy || !needsTCPInjection(set) {
+		if routeHandsOff || !needsTCPInjection(set) {
 			return vc.accept()
 		}
 
@@ -909,6 +919,10 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		return 0
 
 	case "fake":
+		if !config.RoutingUsesTProxy(set.RoutingModeOrDefault()) && set.RoutingHandsOffPackets() {
+			return vc.accept()
+		}
+
 		if !injectAcquire() {
 			return vc.accept()
 		}

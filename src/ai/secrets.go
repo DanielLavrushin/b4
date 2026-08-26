@@ -71,6 +71,9 @@ func (s *SecretStore) persist(data map[string]string) error {
 	if err := os.WriteFile(tmp, raw, 0600); err != nil {
 		return err
 	}
+	if err := os.Chmod(tmp, 0600); err != nil {
+		log.Debugf("ai: failed to restrict permissions on %s: %v", tmp, err)
+	}
 	return os.Rename(tmp, s.path)
 }
 

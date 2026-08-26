@@ -8,6 +8,10 @@ import { RestartDialog } from "./RestartDialog";
 import { colors } from "@design";
 import { getAuthToken } from "@context/AuthProvider";
 
+interface ApiError {
+  error?: string;
+}
+
 export const BackupSettings = () => {
   const { t } = useTranslation();
   const { showError, showSuccess } = useSnackbar();
@@ -28,7 +32,10 @@ export const BackupSettings = () => {
 
       const response = await fetch("/api/backup", { headers });
       if (!response.ok) {
-        throw new Error(`Download failed: ${response.statusText}`);
+        const data = (await response.json().catch(() => ({}))) as ApiError;
+        throw new Error(
+          data.error ?? `Download failed: ${response.statusText}`,
+        );
       }
 
       const blob = await response.blob();
@@ -77,11 +84,8 @@ export const BackupSettings = () => {
       });
 
       if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(
-          (data as { error?: string }).error ||
-            `Restore failed: ${response.statusText}`,
-        );
+        const data = (await response.json().catch(() => ({}))) as ApiError;
+        throw new Error(data.error ?? `Restore failed: ${response.statusText}`);
       }
 
       showSuccess(t("settings.Backup.restoreSuccess"));

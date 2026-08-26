@@ -7,6 +7,10 @@ import type {
   ConnectionGroup,
   DeviceSummary,
 } from "../workers/connections-types";
+import {
+  HIDDEN_SNAPSHOT_INTERVAL_MS,
+  SNAPSHOT_INTERVAL_MS,
+} from "../workers/connections-types";
 
 export interface EnrichedGroup extends ConnectionGroup {
   asnId: string | null;
@@ -60,6 +64,25 @@ export function useConnectionGroups(
     return () => {
       w.terminate();
       workerRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const applyInterval = () => {
+      const w = workerRef.current;
+      if (!w) return;
+      const msg: AggregatorInput = {
+        type: "setSnapshotInterval",
+        ms: document.hidden
+          ? HIDDEN_SNAPSHOT_INTERVAL_MS
+          : SNAPSHOT_INTERVAL_MS,
+      };
+      w.postMessage(msg);
+    };
+    applyInterval();
+    document.addEventListener("visibilitychange", applyInterval);
+    return () => {
+      document.removeEventListener("visibilitychange", applyInterval);
     };
   }, []);
 

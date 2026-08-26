@@ -83,10 +83,31 @@ Firewall engine options:
 
 ### Network interfaces
 
-Pick interfaces to monitor. Interfaces are shown as clickable tags - click to enable/disable.
+Which packets the engine inspects at all. Interfaces are shown as clickable tags - click to
+enable/disable. Empty means every interface, and that is what almost every setup wants.
+
+This is a filter, not a list of interfaces b4 attaches to, and it does not select a
+direction by name. b4's capture rules sit in the `postrouting` and `output` hooks, where
+the kernel has already decided where the packet is going, so for forwarded traffic the
+interface compared here is **the one the packet leaves by**. Only the reply direction and
+DNS, captured in `prerouting`, are matched on the arriving interface.
+
+Because the interface a packet leaves by comes from the routing table, another service can
+change it without touching this list. A VPN client or a transparent proxy that moves the
+default route puts every packet on a different interface, and a selection made before that
+stops matching.
+
+:::warning
+While the selection matches nothing, b4 inspects nothing: packets are still queued to it,
+so the cost is still paid, and every one is accepted unchanged. No set applies and no
+strategy runs. The web interface warns whenever an interface it is not watching is carrying
+outgoing traffic, and names it. The per-interface counts behind that warning are in the
+diagnostics report as `packets_leaving` and `packets_arriving`.
+:::
 
 :::info
-If no interface is selected, b4 listens on every available one.
+b4 has three settings that take an interface name and they mean three different things.
+[Which interface is which](/docs/guides/interfaces) puts them side by side.
 :::
 
 ## Logging
@@ -206,28 +227,9 @@ Refusing a connection is not the same as not listening. The listener accepts and
 
 ## MTProto proxy
 
-A built-in Telegram MTProto proxy with fake-TLS obfuscation. Telegram traffic is wrapped in a TLS connection, masquerading as regular HTTPS. Detailed setup in the [MTProto Proxy](../mtproto) section.
+A built-in Telegram MTProto proxy with fake-TLS obfuscation. Telegram traffic is wrapped in a TLS connection, so what crosses the network looks like ordinary HTTPS.
 
-![20260418230138](../../static/img/core/20260418230138.png)
-
-| Parameter | Description | Default |
-| --- | --- | --- |
-| Enable | Start the MTProto server | Off |
-| Bind address | IP to listen on | `0.0.0.0` |
-| Port | Proxy port | `3128` |
-| Fake SNI domain | The domain visible in the TLS handshake. The DPI sees this domain instead of Telegram | `storage.googleapis.com` |
-| DC Relay | External relay address (host:port) for reaching Telegram DCs when they are IP-blocked | - |
-| Secret | Secret for the Telegram client to connect. Paste it into the Telegram proxy settings | - |
-
-The **Generate Secret** button creates a secret based on the current Fake SNI domain.
-
-:::info DC Relay
-DC Relay is needed when b4 is installed on a router inside a country with blocking, and Telegram server IPs are blocked. A VPS outside the blocking area is used as the relay.
-:::
-
-:::info
-Changes to MTProto settings require a service restart.
-:::
+The proxy has a tab of its own. Its fields are listed under [Settings, MTProto](./mtproto.md), and the guides for the three Telegram modes are under [Telegram](../telegram/index.md).
 
 ## Global MSS Clamping
 

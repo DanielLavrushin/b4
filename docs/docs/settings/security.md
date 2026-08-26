@@ -1,5 +1,5 @@
 ---
-sidebar_position: 3
+sidebar_position: 4
 title: Security
 ---
 
@@ -40,3 +40,11 @@ openssl req -x509 -newkey rsa:2048 -keyout server.key -out server.crt -days 365 
 Copy the files to the configuration directory (for example, `/etc/b4/`) and point the settings at them.
 
 After HTTPS is enabled, the web interface is available over `https://`.
+
+:::warning An unusable pair falls back to HTTP
+When the certificate and key do not load, b4 logs a warning and starts the web server over plain HTTP anyway. The service comes up either way, so the log line is the only sign.
+:::
+
+:::info The Telegram WEB proxy needs more than this
+The [Telegram Desktop WEB proxy](../telegram/web-proxy.md) is served by this same web server, on a hostname of its own and ahead of the authentication above. Telegram Desktop requires a publicly trusted certificate on port 443 for that hostname, so a self-signed pair is not enough there, and requests to it never see the web interface's credentials.
+:::

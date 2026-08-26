@@ -12,6 +12,7 @@ import (
 
 	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/netif"
 	"github.com/daniellavrushin/b4/tlsgen"
 )
 
@@ -34,11 +35,13 @@ func (c *Config) SaveToFile(path string) error {
 		}
 	}
 
-	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, ConfigFileMode)
 	if err != nil {
 		return log.Errorf("failed to create config file: %v", err)
 	}
 	defer file.Close()
+
+	warnRestrictFailure(path, restrictFileMode(path))
 
 	_, err = file.Write(data)
 	if err != nil {
@@ -61,6 +64,8 @@ func (c *Config) LoadFromFile(path string) error {
 	if info.IsDir() {
 		return log.Errorf("config path is a directory, not a file: %s", path)
 	}
+
+	restrictConfigFiles(path)
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -518,6 +523,65 @@ func (set *SetConfig) HasIPOrDomainTargets() bool {
 
 func (set *SetConfig) RoutingDivertsPackets() bool {
 	return set.Routing.Enabled && set.HasIPOrDomainTargets()
+}
+
+func (set *SetConfig) RoutingModeOrDefault() string {
+	if set.Routing.Mode == "" {
+		return RoutingModeInterface
+	}
+	return set.Routing.Mode
+}
+
+func (set *SetConfig) RoutesToInterface() bool {
+	return set.Routing.Enabled &&
+		set.RoutingModeOrDefault() == RoutingModeInterface &&
+		set.Routing.EgressInterface != ""
+}
+
+func (set *SetConfig) RoutingHandsOffPackets() bool {
+	if !set.RoutingDivertsPackets() {
+		return false
+	}
+	if RoutingUsesTProxy(set.RoutingModeOrDefault()) {
+		return true
+	}
+	if !set.RoutesToInterface() {
+		return false
+	}
+	if set.Targets.DomainOnly && len(set.Targets.IpsToMatch) == 0 {
+		return false
+	}
+	return netif.EncapsulatedAndUp(set.Routing.EgressInterface)
+}
+
+func (set *SetConfig) RoutingIncludesRouterTraffic() bool {
+	if set.RoutingSourceScoped() {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(set.Routing.RouterTraffic)) {
+	case RouterTrafficExclude:
+		return false
+	case RouterTrafficInclude:
+		return true
+	}
+	return !netif.IsUserspaceTunnel(set.Routing.EgressInterface)
+}
+
+func (set *SetConfig) RoutingSourceScoped() bool {
+	for _, s := range set.Routing.SourceInterfaces {
+		if strings.TrimSpace(s) != "" {
+			return true
+		}
+	}
+	if set.Targets.SourceDevicesExclude {
+		return false
+	}
+	for _, m := range set.Targets.SourceDevices {
+		if strings.TrimSpace(m) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (set *SetConfig) MatchesTCPDPort(port uint16) bool {

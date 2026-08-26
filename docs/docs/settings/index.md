@@ -6,6 +6,7 @@ title: Settings
 b4 settings are split across several tabs:
 
 - [Core](./core) - network, queue, features, logging, proxies, devices
+- [MTProto](./mtproto) - the Telegram proxy, its secrets, the shared Telegram upstream and the WEB proxy
 - [Geo data](./geodata) - GeoSite and GeoIP databases
 - [Security](./security) - authentication, HTTPS
 - [Payloads](./payloads) - generation and management of TLS payloads for faking
@@ -13,4 +14,4 @@ b4 settings are split across several tabs:
 - [Discovery](./discovery) - timeouts, DNS servers, reference domain
 - [Backup](./backup) - backup and restore
 
-Changes are applied after clicking the save button. Some parameters (MTProto, queue) require a service restart. The [SOCKS5 proxy](./core#socks5-proxy) does not: it rebinds its own listener and applies credentials and the [allowed sources](./core#allowed-sources) list on save.
+Changes are applied after clicking the save button. Core settings, the queue among them, require a service restart. MTProto does not: b4 restarts the proxy itself when a field that needs it changes. Neither does the [SOCKS5 proxy](./core#socks5-proxy), which rebinds its own listener and applies credentials and the [allowed sources](./core#allowed-sources) list on save.

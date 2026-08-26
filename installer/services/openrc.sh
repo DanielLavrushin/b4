@@ -27,7 +27,7 @@ depend() {
 
 start_pre() {
     # Load kernel modules
-    for mod in nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq nft_tproxy nft_socket; do
+    for mod in $B4_KERNEL_MODULES; do
         modprobe "\$mod" >/dev/null 2>&1 || true
     done
 }

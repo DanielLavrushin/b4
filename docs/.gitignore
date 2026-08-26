@@ -18,3 +18,7 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Synced from the repo root by scripts/sync-changelog.mjs
+/docs/changelog.md
+/i18n/ru/docusaurus-plugin-content-docs/current/changelog.md

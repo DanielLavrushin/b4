@@ -316,6 +316,14 @@ func runEnsure(args ...string) error {
 	return fmt.Errorf("%v: %s", err, msg)
 }
 
+var hashlimitModuleOnce sync.Once
+
+func loadHashlimitModule() {
+	hashlimitModuleOnce.Do(func() {
+		_, _ = run("sh", "-c", "modprobe -q xt_hashlimit 2>/dev/null || true")
+	})
+}
+
 func loadKernelModules() {
 	modulesLoaded.Do(func() {
 		_, _ = run("sh", "-c", "modprobe -q nfnetlink 2>/dev/null || true")
@@ -334,5 +342,7 @@ func loadKernelModules() {
 		_, _ = run("sh", "-c", "modprobe -q nft_socket 2>/dev/null || true")
 		_, _ = run("sh", "-c", "modprobe -q xt_MASQUERADE 2>/dev/null || true")
 		_, _ = run("sh", "-c", "modprobe -q xt_set 2>/dev/null || true")
+		_, _ = run("sh", "-c", "modprobe -q nft_limit 2>/dev/null || true")
+		loadHashlimitModule()
 	})
 }

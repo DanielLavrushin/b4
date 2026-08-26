@@ -34,6 +34,28 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
     }
   });
 
+  const ifaceTraffic = config.iface_traffic ?? {};
+  const selectedIfaces = config.queue.interfaces ?? [];
+  const leaving = (iface: string) => ifaceTraffic[iface]?.leaving ?? 0;
+  const trafficTotal = Object.values(ifaceTraffic).reduce(
+    (a, c) => a + c.leaving,
+    0,
+  );
+  const trafficSelected = selectedIfaces.reduce(
+    (a, iface) => a + leaving(iface),
+    0,
+  );
+  const uncovered = Object.keys(ifaceTraffic)
+    .filter((iface) => !selectedIfaces.includes(iface) && leaving(iface) >= 50)
+    .sort((a, b) => leaving(b) - leaving(a));
+  const uncoveredShare = Math.round(
+    ((trafficTotal - trafficSelected) / Math.max(trafficTotal, 1)) * 100,
+  );
+  const ifaceFilterSeesNothing =
+    selectedIfaces.length > 0 && uncovered.length > 0 && trafficSelected === 0;
+  const ifaceFilterSeesLittle =
+    selectedIfaces.length > 0 && uncovered.length > 0 && trafficSelected > 0;
+
   useEffect(() => {
     systemApi
       .info()
@@ -323,6 +345,22 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
             {config.queue.interfaces?.length === 0 && (
               <B4Alert severity="info" sx={{ mt: 2 }}>
                 {t("settings.Feature.listenAllInterfaces")}
+              </B4Alert>
+            )}
+            {ifaceFilterSeesNothing && (
+              <B4Alert severity="warning" sx={{ mt: 2 }}>
+                {t("settings.Feature.interfaceFilterSeesNothing", {
+                  selected: selectedIfaces.join(", "),
+                  seen: uncovered.join(", "),
+                })}
+              </B4Alert>
+            )}
+            {ifaceFilterSeesLittle && (
+              <B4Alert severity="info" sx={{ mt: 2 }}>
+                {t("settings.Feature.interfaceFilterSeesLittle", {
+                  percent: Math.max(1, uncoveredShare),
+                  seen: uncovered.join(", "),
+                })}
               </B4Alert>
             )}
           </Box>

@@ -108,6 +108,8 @@ var DefaultSetConfig = SetConfig{
 		SourceInterfaces: []string{},
 		IPTTLSeconds:     3600,
 		BlockAction:      BlockActionReject,
+		RouterTraffic:    RouterTrafficAuto,
+		KillSwitch:       false,
 	},
 
 	Fragmentation: FragmentationConfig{

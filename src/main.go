@@ -211,6 +211,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		if err := tables.AddRules(c); err != nil {
 			return err
 		}
+		nfq.ResetIfaceTraffic()
 		tproxyMgr.SyncConfig(c)
 		tables.RoutingSyncConfig(c)
 		handler.GetMetricsCollector().TablesStatus = tables.DetectBackend(c)

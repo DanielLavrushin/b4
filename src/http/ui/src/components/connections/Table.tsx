@@ -401,11 +401,8 @@ export const DomainsTable = ({
                 <TableRow>
                   <TableCell
                     colSpan={6}
-                    sx={{
-                      height: startIndex * ROW_HEIGHT,
-                      p: 0,
-                      border: "none",
-                    }}
+                    style={{ height: startIndex * ROW_HEIGHT }}
+                    sx={{ p: 0, border: "none" }}
                   />
                 </TableRow>
               )}
@@ -427,11 +424,8 @@ export const DomainsTable = ({
                 <TableRow>
                   <TableCell
                     colSpan={6}
-                    sx={{
-                      height: (data.length - endIndex) * ROW_HEIGHT,
-                      p: 0,
-                      border: "none",
-                    }}
+                    style={{ height: (data.length - endIndex) * ROW_HEIGHT }}
+                    sx={{ p: 0, border: "none" }}
                   />
                 </TableRow>
               )}

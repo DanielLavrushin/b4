@@ -8,6 +8,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/netif"
 	"github.com/josharian/native"
 	"github.com/mdlayher/netlink"
 	"golang.org/x/sys/unix"
@@ -139,6 +140,7 @@ func (w *linkWatcher) handleEvent(ifname string, isNew bool, up bool) {
 		w.scheduleReinstall(ifname)
 		return
 	}
+	netif.MarkDown(ifname)
 	if !isNew {
 		log.Infof("Link watcher: interface %s went away; routing will be reinstalled when it returns", ifname)
 	}
