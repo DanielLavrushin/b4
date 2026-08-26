@@ -690,13 +690,69 @@ func (s *Server) serveClient(raw net.Conn, plain net.Conn, secret *Secret, clien
 	defer st.active.Add(-1)
 
 	splitter := newSplitterFor(dcConn, dial, result.ProtoTag)
-	up, down := s.relay(result.Conn, dcConn, splitter, &info.lastActive, dial, fmt.Sprintf("%s [%s] %s<->DC%d via %s", tag, user, clientAddr, result.DC, dial.transport))
+	route := dial.transport
+	if r := dial.plan.routeName(); r != "" && r != route {
+		route += " " + r
+	}
+	up, down := s.relay(result, dcConn, splitter, &info.lastActive, dial,
+		fmt.Sprintf("%s [%s] %s<->DC%d via %s", tag, user, clientAddr, result.DC, route))
 	st.up.Add(up)
 	st.down.Add(down)
 }
 
-func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, lastActive *atomic.Int64, dial dialInfo, label string) (up, down int64) {
-	return relayConns(client, dc, splitter, label, &s.bufPool, mtprotoIdleTimeout(s.cfg.Load()), lastActive, stallReporter(dial))
+func (s *Server) relay(result *ClientHandshakeResult, dc io.ReadWriteCloser, splitter *msgSplitter, lastActive *atomic.Int64, dial dialInfo, label string) (up, down int64) {
+	return relayConns(result.Conn, dc, relayOpts{
+		splitter:       splitter,
+		label:          label,
+		bufPool:        &s.bufPool,
+		idle:           mtprotoIdleTimeout(s.cfg.Load()),
+		lastActive:     lastActive,
+		onStall:        stallReporter(dial),
+		scan:           newDCFrameScanner(result.ProtoTag),
+		onTransportErr: transportErrHandler(dial, result.DC, label),
+	})
+}
+
+// transportErrHandler decides what to do with a transport error coming back from
+// the data center, and says so in the log either way.
+//
+// -444 means the session reached a data center that is not the one the client
+// asked for. The client repeats its DC inside the RSA-encrypted p_q_inner_data,
+// which b4 can neither read nor correct, so the mismatch is always b4's choice of
+// route and never the user's configuration - and both Telegram clients answer a
+// single -444 by telling the user the proxy is misconfigured and switching it
+// off. Swallow it, rank the route down, and let the client redial onto another
+// one. Every other code is between the client and Telegram, so it is passed on.
+func transportErrHandler(dial dialInfo, clientDC int, label string) func(int32) bool {
+	return func(code int32) bool {
+		if code != tgErrInvalidDC {
+			log.Warnf("%s upstream transport error %d (%s), relayed to the client", label, code, transportErrName(code))
+			return false
+		}
+		log.Warnf("%s upstream answered -444 (invalid DC) for a DC %d session: the route does not end at the data center the client asked for, cutting it and ranking the route down",
+			label, clientDC)
+		demoteRejectedRoute(dial, clientDC)
+		return true
+	}
+}
+
+// demoteRejectedRoute records that a route landed a session on the wrong data
+// center, so the next dial for that DC prefers something else. Nothing used to
+// score a route on what happened after the dial unless it was a Worker, so a
+// route that rejected every session kept its place at the front of the list.
+func demoteRejectedRoute(dial dialInfo, clientDC int) {
+	p := dial.plan
+	switch {
+	case p.isWorker && p.sni != "":
+		workerRecordStall(p.sni)
+	case p.cfBase != "":
+		cfBalancerInst.penalize(p.cfBase, cfProxyTimeoutCooldown)
+	case p.native && p.dialHost != "" && p.sni != "":
+		wsEndpointFailed(p.dialHost, p.sni)
+		wsRecordFailure(clientDC, false)
+	case p.kind == transportTCP && p.addr != "":
+		tcpRecordFailure(p.addr)
+	}
 }
 
 // A relay whose upstream has gone mute while the client is still asking is not
@@ -717,7 +773,27 @@ func (s *Server) relay(client, dc io.ReadWriteCloser, splitter *msgSplitter, las
 // 69-103 ms were each recorded as a stall and kept the Worker in cooldown.
 const relayStallClose = 8 * time.Second
 
-func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label string, bufPool *sync.Pool, idle time.Duration, lastActive *atomic.Int64, onStall func()) (int64, int64) {
+// relayOpts is everything the relay needs beyond the two ends it joins.
+type relayOpts struct {
+	splitter   *msgSplitter
+	label      string
+	bufPool    *sync.Pool
+	idle       time.Duration
+	lastActive *atomic.Int64
+	onStall    func()
+	// scan reads the transport framing coming back from the data center. Without
+	// it a four-byte transport error was relayed to the client untouched, and the
+	// client answered -444 by telling the user the proxy is misconfigured and
+	// switching it off.
+	scan *dcFrameScanner
+	// onTransportErr is called with the code of every transport error seen on the
+	// way back. It returns true when the error is b4's own fault and must not
+	// reach the client, in which case the relay is cut instead.
+	onTransportErr func(int32) bool
+}
+
+func relayConns(client, dc io.ReadWriteCloser, o relayOpts) (int64, int64) {
+	splitter, label, bufPool, idle, lastActive, onStall := o.splitter, o.label, o.bufPool, o.idle, o.lastActive, o.onStall
 	type relayEnd struct {
 		dir string
 		err error
@@ -757,10 +833,33 @@ func relayConns(client, dc io.ReadWriteCloser, splitter *msgSplitter, label stri
 					lastDown.Store(time.Now().UnixNano())
 					upSinceDown.Store(0)
 				}
-				if _, werr := dst.Write(buf[:n]); werr != nil {
-					err = werr
-				} else {
-					total += int64(n)
+				out := buf[:n]
+				var rest []byte
+				var code int32
+				var rejected bool
+				if !up && o.scan != nil {
+					out, rest, code, rejected = o.scan.feed(out)
+				}
+				if rejected && o.onTransportErr != nil && o.onTransportErr(code) {
+					// b4 chose the route that produced this, so the client must not
+					// see it: forward what came before and end the session there.
+					rest = nil
+				} else if rejected {
+					// Between the client and Telegram: put the frame back where it
+					// was and carry on.
+					out = append(append(append([]byte(nil), out...), transportErrFrame(o.scan.proto, code)...), rest...)
+					rest = nil
+					rejected = false
+				}
+				if len(out) > 0 {
+					if _, werr := dst.Write(out); werr != nil {
+						err = werr
+					} else {
+						total += int64(len(out))
+					}
+				}
+				if rejected && err == nil {
+					err = errUpstreamRejected
 				}
 			}
 			if err != nil {

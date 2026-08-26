@@ -1,6 +1,7 @@
 package mtproto
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -33,12 +34,34 @@ func TestPlanTransports_WSOnly_DC2(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	got := wsSNIs(plans)
-	want := []string{"kws2.web.telegram.org", "kws2-1.web.telegram.org"}
-	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
-		t.Fatalf("non-media DC 2 order: got %v want %v", got, want)
+	want := []string{"kws2.web.telegram.org"}
+	if len(got) != 1 || got[0] != want[0] {
+		t.Fatalf("non-media DC 2 plans: got %v want %v", got, want)
 	}
 	if hasTCP(plans) {
 		t.Fatalf("ws-only mode should not include TCP for normal DC")
+	}
+}
+
+// kwsN-1 is the media cluster, and it answers a primary session with the
+// four-byte transport error -444, which both Telegram clients answer by telling
+// the user the proxy is misconfigured and switching it off. Measured against
+// 149.154.167.220 with a full req_pq_multi and req_DH_params exchange on DC 2
+// and DC 4. Both names resolve to the same address, so kwsN-1 was never a route
+// around a blocked kwsN - only a way to fail the session.
+func TestPlanTransports_PrimaryDCNeverFallsBackToMediaEdge(t *testing.T) {
+	cfg := &config.MTProtoConfig{UpstreamMode: "auto", CFProxyEnabled: true}
+	for _, dc := range []int{2, 4} {
+		plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, dc, dialTarget{})
+		if err != nil {
+			t.Fatalf("DC %d: unexpected error: %v", dc, err)
+		}
+		media := fmt.Sprintf("kws%d-1.web.telegram.org", dc)
+		for _, sni := range wsSNIs(plans) {
+			if sni == media {
+				t.Errorf("DC %d offers %s, which rejects a primary session with -444", dc, media)
+			}
+		}
 	}
 }
 
@@ -150,8 +173,8 @@ func TestPlanTransports_AutoMode_AlwaysIncludesTCPFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(wsSNIs(plans)) != 2 {
-		t.Fatalf("auto mode for DC 2 should include both kws plans")
+	if len(wsSNIs(plans)) == 0 {
+		t.Fatalf("auto mode for DC 2 should include the kws2 plan")
 	}
 	if !hasTCP(plans) {
 		t.Fatalf("auto mode must always include TCP fallback")

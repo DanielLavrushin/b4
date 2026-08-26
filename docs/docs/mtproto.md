@@ -161,6 +161,18 @@ A Worker is a fallback, not the main road. Measured against a free-tier Worker f
 
 A rotating pool of Cloudflare-proxied domains used as a fallback when Telegram's native edge cannot reach a data center (notably DC 1, needed for media in foreign channels). The pool refreshes hourly.
 
+### Custom WebSocket domain
+
+An extra domain that proxies WebSocket traffic to Telegram, for a self-hosted relay rather than the shared pool. B4 prepends `kws1.`, `kws2.` and so on per data center, so one domain covers all of them and the name has to resolve for every data center in use. It is tried after Telegram's own edge and ahead of the shared CF pool, and it is independent of the CF proxy fallback: either works without the other.
+
+### Telegram WS edge IP
+
+Every dial that carries a native `kws*.web.telegram.org` server name goes to a single address, `149.154.167.220`, and the data center is chosen by the server name rather than by the address. This setting replaces that address, for a network on which the default one goes unanswered. It takes a host or an IP with no port, and an empty value keeps the default. The custom WebSocket domain resolves its own name and is unaffected.
+
+:::warning
+Changing either of these restarts the MTProto proxy and drops the sessions it is carrying. Telegram reconnects by itself.
+:::
+
 ### Testing
 
 - **Test connection** probes DC 2 over the configured transport(s) and reports latency.

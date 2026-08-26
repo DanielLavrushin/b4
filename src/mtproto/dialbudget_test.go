@@ -287,15 +287,16 @@ func TestWSPlansCoverDataCentersWithNoTelegramEdge(t *testing.T) {
 		t.Fatalf("DC 203 built %d plan(s) with every route disabled", len(plans))
 	}
 
-	// DC 2 keeps Telegram's own edge, and those plans have to be marked native
-	// or the cooldown and the shortened timeout never apply to them.
+	// DC 2 keeps Telegram's own edge, and that plan has to be marked native or
+	// the cooldown and the shortened timeout never apply to it. Only kws2: the
+	// media name kws2-1 rejects a primary session with -444.
 	edge := wsPlansForDC(2, cfg)
-	if len(edge) < 2 {
-		t.Fatalf("DC 2 built %d plan(s), want both kws2 names", len(edge))
+	if len(edge) == 0 || !edge[0].native || edge[0].sni != "kws2.web.telegram.org" {
+		t.Fatalf("DC 2 pool plans %v, want kws2.web.telegram.org first and marked native", edge)
 	}
-	for _, p := range edge[:2] {
-		if !p.native {
-			t.Errorf("DC 2 edge plan %s is not marked native", p.describe())
+	for _, p := range edge {
+		if p.sni == "kws2-1.web.telegram.org" {
+			t.Errorf("DC 2 pool offers the media name %s, which rejects a primary session with -444", p.sni)
 		}
 	}
 }

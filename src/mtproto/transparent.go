@@ -196,7 +196,15 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 	log.Infof("%s bridge relay %s:%d -> DC%d via %s [dc-from=%s]", tag, origIP, origPort, dc, info.transport, dcSrc)
 
 	splitter := newSplitterFor(dcConn, info, res.ProtoTag)
-	relayConns(res.Conn, dcConn, splitter, label, &b.bufPool, mtprotoIdleTimeout(cfg), nil, stallReporter(info))
+	relayConns(res.Conn, dcConn, relayOpts{
+		splitter:       splitter,
+		label:          label,
+		bufPool:        &b.bufPool,
+		idle:           mtprotoIdleTimeout(cfg),
+		onStall:        stallReporter(info),
+		scan:           newDCFrameScanner(res.ProtoTag),
+		onTransportErr: transportErrHandler(info, dc, label),
+	})
 	return true, nil
 }
 
@@ -239,8 +247,14 @@ func (b *TransparentBridge) FailOpenViaWorker(client net.Conn, origIP net.IP, or
 		}
 		log.Infof("%s failopen relay %s:%d via wsworker://%s", tag, dst, origPort, wd)
 		label := fmt.Sprintf("%s %s<->%s:%d(failopen)", tag, client.RemoteAddr(), dst, origPort)
-		relayConns(client, wc, nil, label, &b.bufPool, mtprotoIdleTimeout(cfg), nil,
-			stallReporter(dialInfo{isWorker: true, worker: wd}))
+		// No scanner here: the fail-open relay carries the client's obfuscated
+		// stream untouched, so the transport framing is still encrypted.
+		relayConns(client, wc, relayOpts{
+			label:   label,
+			bufPool: &b.bufPool,
+			idle:    mtprotoIdleTimeout(cfg),
+			onStall: stallReporter(dialInfo{isWorker: true, worker: wd}),
+		})
 		return true
 	}
 	return false

@@ -61,18 +61,15 @@ const upstreamDescSuffix = (mode: string) => {
   return "Auto";
 };
 
-const normalizeWorkerDomains = (raw: string) =>
+const normalizeHost = (raw: string) =>
   raw
-    .split(",")
-    .map((d) =>
-      d
-        .trim()
-        .replace(/^[a-z][a-z0-9+.-]*:\/\//i, "")
-        .replace(/[/?#].*$/, "")
-        .trim(),
-    )
-    .filter(Boolean)
-    .join(", ");
+    .trim()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//i, "")
+    .replace(/[/?#].*$/, "")
+    .trim();
+
+const normalizeWorkerDomains = (raw: string) =>
+  raw.split(",").map(normalizeHost).filter(Boolean).join(", ");
 
 interface MTProtoUpstreamCardProps {
   config: B4Config;
@@ -301,6 +298,42 @@ export const MTProtoUpstreamCard = ({
                 ),
               },
             }}
+          />
+        </Grid>
+        <Grid size={{ xs: 12, md: 6 }}>
+          <B4TextField
+            label={t("settings.MTProto.wsCustomDomain")}
+            value={mtproto?.ws_custom_domain || ""}
+            onChange={(e) =>
+              onChange("system.mtproto.ws_custom_domain", e.target.value)
+            }
+            onBlur={(e) => {
+              const cleaned = normalizeHost(e.target.value);
+              if (cleaned !== e.target.value) {
+                onChange("system.mtproto.ws_custom_domain", cleaned);
+              }
+            }}
+            placeholder="your-domain.com"
+            helperText={t("settings.MTProto.wsCustomDomainHelp")}
+            selectOnFocus
+          />
+        </Grid>
+        <Grid size={{ xs: 12, md: 6 }}>
+          <B4TextField
+            label={t("settings.MTProto.wsEndpointHost")}
+            value={mtproto?.ws_endpoint_host || ""}
+            onChange={(e) =>
+              onChange("system.mtproto.ws_endpoint_host", e.target.value)
+            }
+            onBlur={(e) => {
+              const cleaned = normalizeHost(e.target.value);
+              if (cleaned !== e.target.value) {
+                onChange("system.mtproto.ws_endpoint_host", cleaned);
+              }
+            }}
+            placeholder="149.154.167.220"
+            helperText={t("settings.MTProto.wsEndpointHostHelp")}
+            selectOnFocus
           />
         </Grid>
       </Grid>
