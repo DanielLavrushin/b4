@@ -16,6 +16,7 @@
 - FIXED: **A Discovery run's result became unreachable the moment the run ended** - only the copy held in memory was consulted, and that is dropped 30 seconds after a run finishes, though the web interface had always applied the same result from saved history. A strategy named while a run was still testing also read as settled, and stopping a run early threw away what it had found.
 - FIXED: **The Discovery history file grew by roughly half a megabyte per domain tested** - every strategy a run tried was saved with a full copy of the set b4 built to test it, so the hundred entries the file keeps could reach 60 MB on a router whose flash holds far less.
 - FIXED: **The watchdog judged every watched domain on a fetch that skipped b4's own bypass** - its checks carried the mark b4 puts on traffic it has already handled, so the verdict described the unprotected path rather than the set meant to be protecting that domain.
+- FIXED: **A downloaded backup could contain nothing but an empty folder** - b4 skipped every file the drive reported as a program, and a USB drive formatted for Windows reports all of them that way, so on those routers the backup carried none of the settings it was meant to save while the download still reported success. A backup that would hold no files is refused with the reason.
 
 ## [1.79.0] - 2026-08-18
 
