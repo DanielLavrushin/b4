@@ -209,10 +209,10 @@ so the router's own traffic keeps following the set on **Automatic**.
 Choosing **Route it too** on a TUN interface is allowed - a TUN whose reader never dials the destination directly is
 harmless - but b4 logs a warning and installs a rate limit ahead of the marking, so a loop that does start is capped at
 200 new router-originated connections per second per destination list instead of growing without bound. The limit counts
-only connections to addresses the set matches, so ordinary router traffic cannot use up its budget, and it is installed
-on every set that routes the router's own traffic - a plain interface cannot re-dial, but the interface may not exist yet
-when b4 builds the rules, so the guard does not wait to find out. On iptables it needs the `xt_hashlimit` module; b4
-loads it itself, and warns if the kernel does not have it.
+only connections to addresses the set matches, so ordinary router traffic cannot use up its budget. It goes in wherever
+the egress could re-dial: a TUN or TAP device, or an interface b4 cannot classify yet because it does not exist when the
+rules are built. A plain interface and a WireGuard tunnel never get one. On iptables it needs the `xt_hashlimit` module;
+b4 loads it itself, and warns if the kernel does not have it.
 
 :::tip
 A set that already has a source interface, or an *included* source-device list, never routes the router's own traffic,

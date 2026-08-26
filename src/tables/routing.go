@@ -811,6 +811,10 @@ func RoutingSyncConfig(cfg *config.Config) {
 		return
 	}
 
+	if be.name() == backendNFTables {
+		routeNftSweepBaseOutputBypasses()
+	}
+
 	desired := make(map[string]*config.SetConfig, len(cfg.Sets))
 	for _, set := range cfg.Sets {
 		if set == nil || !set.Enabled || !set.Routing.Enabled {
@@ -1116,6 +1120,7 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState, g
 	if !st.routerOut {
 		injectSources = routeInjectedSourceMatches(gate)
 	}
+	be.addClaimedBypassRule(st.chainOut)
 	if cfg.Queue.IPv4Enabled {
 		be.addInjectedMarkRule(st.chainOut, false, st.setV4, st.mark, queueMark, injectSources)
 	}
@@ -1124,21 +1129,22 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState, g
 	}
 
 	routeSelfDialBypass(be, cfg, st.chainOut)
-	be.addClaimedBypassRule(st.chainOut)
 
 	if st.srcScoped || !st.routerOut {
 		return
 	}
 
-	guarded := true
-	if cfg.Queue.IPv4Enabled && !be.addRouterTrafficGuard(st.chainOut, false, st.setV4, st.mark) {
-		guarded = false
-	}
-	if cfg.Queue.IPv6Enabled && !be.addRouterTrafficGuard(st.chainOut, true, st.setV6, st.mark) {
-		guarded = false
-	}
-	if !guarded && netif.IsUserspaceTunnel(st.iface) {
-		log.Warnf("Routing: %s took no rate guard on the router's own traffic, so a routing loop through %s would grow unchecked; on nftables this needs a kernel with rule limits, on iptables the xt_hashlimit module", st.chainOut, st.iface)
+	if routeEgressCanRedial(st.iface) {
+		guarded := true
+		if cfg.Queue.IPv4Enabled && !be.addRouterTrafficGuard(st.chainOut, false, st.setV4, st.mark) {
+			guarded = false
+		}
+		if cfg.Queue.IPv6Enabled && !be.addRouterTrafficGuard(st.chainOut, true, st.setV6, st.mark) {
+			guarded = false
+		}
+		if !guarded {
+			log.Warnf("Routing: %s took no rate guard on the router's own traffic, so a routing loop through %s would grow unchecked; on nftables this needs a kernel with rule limits, on iptables the xt_hashlimit module", st.chainOut, st.iface)
+		}
 	}
 
 	if cfg.Queue.IPv4Enabled {
@@ -1147,6 +1153,14 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState, g
 	if cfg.Queue.IPv6Enabled {
 		routeAddMarkRules(be, st.chainOut, true, st.setV6, st.mark, nil, true)
 	}
+}
+
+func routeEgressCanRedial(iface string) bool {
+	switch netif.Of(iface) {
+	case netif.KindOther, netif.KindWireGuard:
+		return false
+	}
+	return true
 }
 
 func routeSetScopeRank(cfg *config.Config, set *config.SetConfig) int {
@@ -1856,7 +1870,15 @@ func routeLineBelongsToIface(line, iface string) bool {
 	}
 	switch fields[0] {
 	case "blackhole":
-		return len(fields) > 1 && fields[1] == "default"
+		if len(fields) < 2 || fields[1] != "default" {
+			return false
+		}
+		for i := 0; i+1 < len(fields); i++ {
+			if fields[i] == "metric" {
+				return fields[i+1] == routeKillSwitchMetric
+			}
+		}
+		return false
 	case "default":
 	default:
 		return false

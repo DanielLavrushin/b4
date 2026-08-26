@@ -8,7 +8,7 @@ front of the kernel's normal one. Run together they interact in three places, an
 interface shows only one of them. This page describes the whole path.
 
 The same applies to any service that terminates connections behind a TUN device: sing-box,
-a `tun2socks` client, or Xray driven by hand rather than by XrayUI.
+a `tun2socks` client, or Xray driven by hand rather than by [XrayUI](https://daniellavrushin.github.io/asuswrt-merlin-xrayui/en/install).
 
 ## What each service does
 
@@ -27,7 +27,7 @@ outbound side.
 ```
 
 The device on its own carries nothing. Traffic reaches it through an `ip rule` and a routing
-table. XrayUI installs its own; b4 in output interface mode installs its own. Rule priority
+table. [XrayUI](https://daniellavrushin.github.io/asuswrt-merlin-xrayui/en/install) installs its own; b4 in output interface mode installs its own. Rule priority
 decides which applies, not the order the services were configured in.
 
 ## The three layers
@@ -106,7 +106,7 @@ interface setting is for.
 - `Routing > Router's own traffic`: **Automatic**, for the reason below.
 
 Xray still needs a route to its own server that does not go back through the tunnel. That is
-the `/32` exception XrayUI writes into its table, and it has to survive either arrangement.
+the `/32` exception [XrayUI](https://daniellavrushin.github.io/asuswrt-merlin-xrayui/en/install) writes into its table, and it has to survive either arrangement.
 
 ## Why the router's own traffic is held back
 

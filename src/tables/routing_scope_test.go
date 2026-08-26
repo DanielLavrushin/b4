@@ -272,3 +272,37 @@ func TestInjectedRuleFallsBackWhenNoSourceMatchesTheFamily(t *testing.T) {
 		t.Errorf("each family takes only its own addresses, got %v", got)
 	}
 }
+
+func TestOutChainRefusesAPacketAnotherSetAlreadyClaimed(t *testing.T) {
+	cfg := config.NewConfig()
+	st := routeState{mark: 0x1b1d, chainOut: "b4r_x_out", setV4: "b4r_x_v4", setV6: "b4r_x_v6", routerOut: true}
+
+	be := &mockRouteBackend{}
+	routeAddOutChainRules(be, &cfg, st, routeDeviceGate{})
+
+	ops := be.chainOps[st.chainOut]
+	claimed := indexOfOp(ops, "claimed-bypass")
+	injected := indexOfPrefix(ops, "injected ")
+	if claimed < 0 || injected < 0 {
+		t.Fatalf("chain is missing a rule it needs: %v", ops)
+	}
+	if claimed > injected {
+		t.Errorf("setting a routing mark leaves the queue mark on the packet, so a second set's chain would re-mark an injection the first set already claimed and send its fakes out the wrong interface: %v", ops)
+	}
+}
+
+func TestRouteLineBelongsToIfaceOnlyClaimsItsOwnBlackhole(t *testing.T) {
+	for _, c := range []struct {
+		line string
+		ours bool
+	}{
+		{"blackhole default metric " + routeKillSwitchMetric, true},
+		{"blackhole default metric 1", false},
+		{"blackhole default", false},
+		{"blackhole 10.0.0.0/8 metric " + routeKillSwitchMetric, false},
+	} {
+		if got := routeLineBelongsToIface(c.line, "tun0"); got != c.ours {
+			t.Errorf("routeLineBelongsToIface(%q) = %v, want %v; b4 flushes a table it decides is its own, and another client's kill switch lives in one of these", c.line, got, c.ours)
+		}
+	}
+}

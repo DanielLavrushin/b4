@@ -329,7 +329,6 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		}
 	}
 
-	queueMark := routeQueueBypassMark(cfg)
 	gate := routeSetDeviceGate(cfg, set)
 	routeWarnDeviceGate(set.Name, gate)
 	sourceScoped := routeSetIsSourceScoped(set)
@@ -363,7 +362,6 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 			}
 		}
 		if !sourceScoped {
-			ensureProxyOutputBypassNft(queueMark)
 			addProxyOutputMarkRulesNft(cfg, st)
 		}
 	default:
@@ -645,31 +643,6 @@ func deleteNftJumpRules(table, parentChain, targetChain string) {
 		}
 		runLogged("routing: delete leftover prerouting jump (proxy)",
 			"nft", "delete", "rule", "inet", table, parentChain, "handle", handle)
-	}
-}
-
-func ensureProxyOutputBypassNft(queueMark uint32) {
-	out, err := run("nft", "list", "chain", "inet", routeNftTable, routeNftOutput)
-	if err != nil {
-		return
-	}
-	present := map[uint32]bool{}
-	for _, line := range strings.Split(out, "\n") {
-		if m, verb, ok := nftParseMarkRule(line); ok && verb == "return" {
-			present[m] = true
-		}
-	}
-	// The base output chain is what marks locally-originated traffic for
-	// diversion, so it needs the same pair of RETURNs the per-set chain gets:
-	// without the self-dial one, a connection b4 opens to an address inside the
-	// set is marked and looped straight back into b4's own TPROXY listener.
-	for _, m := range []uint32{queueMark, SelfDialMark} {
-		if present[m] {
-			continue
-		}
-		runLogged("routing: insert output bypass (proxy)",
-			"nft", "insert", "rule", "inet", routeNftTable, routeNftOutput,
-			"meta", "mark", "&", fmt.Sprintf("0x%x", m), "==", fmt.Sprintf("0x%x", m), "return")
 	}
 }
 

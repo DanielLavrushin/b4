@@ -173,6 +173,25 @@ func (b *routeNftBackend) addRouterTrafficGuard(chain string, v6 bool, setName s
 	return added
 }
 
+func routeNftSweepBaseOutputBypasses() {
+	out, err := run("nft", "-a", "list", "chain", "inet", routeNftTable, routeNftOutput)
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(out, "\n") {
+		m, verb, ok := nftParseMarkRule(line)
+		if !ok || verb != "return" {
+			continue
+		}
+		handle := nftHandleFromLine(line)
+		if handle == "" {
+			continue
+		}
+		runLogged(fmt.Sprintf("routing: drop base output bypass on 0x%x", m),
+			"nft", "delete", "rule", "inet", routeNftTable, routeNftOutput, "handle", handle)
+	}
+}
+
 func routeNftSetMarkArgs(mark uint32) []string {
 	return []string{"meta", "mark", "set", "meta", "mark", "&",
 		fmt.Sprintf("0x%x", ^routeSetMarkMask), "or", fmt.Sprintf("0x%x", mark)}

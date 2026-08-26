@@ -87,11 +87,17 @@ func TestRouterTrafficGuardIsScopedToTheSetAndToTunnels(t *testing.T) {
 
 	plain := &mockRouteBackend{}
 	routeAddOutChainRules(plain, &cfg, loopTestState("eth1", true), routeDeviceGate{})
-	if indexOfOp(plain.chainOps["b4r_x_out"], "router-traffic-guard") < 0 {
-		t.Error("the guard has to go in even when the egress is missing or plain, or a tunnel that appears after b4 started marks router traffic with nothing capping it")
+	if indexOfOp(plain.chainOps["b4r_x_out"], "router-traffic-guard") >= 0 {
+		t.Error("a kernel interface cannot answer a connection by opening its own, so a cap there only drops the router's connections onto the wrong route")
 	}
 	if indexOfPrefix(plain.chainOps["b4r_x_out"], "mark ") < 0 {
 		t.Error("a plain egress still routes the router's own traffic")
+	}
+
+	absent := &mockRouteBackend{}
+	routeAddOutChainRules(absent, &cfg, loopTestState("notyet0", true), routeDeviceGate{})
+	if indexOfOp(absent.chainOps["b4r_x_out"], "router-traffic-guard") < 0 {
+		t.Error("an interface b4 has never seen may come back as a tunnel, and the rules are not rebuilt for that, so the cap has to go in while the kind is unknown")
 	}
 
 	tunnel := &mockRouteBackend{}
