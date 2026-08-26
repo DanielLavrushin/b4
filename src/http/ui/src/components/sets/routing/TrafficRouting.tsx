@@ -17,6 +17,7 @@ interface TrafficRoutingProps {
   config: B4SetConfig;
   availableIfaces: string[];
   tunnelIfaces?: string[];
+  encapsulatedIfaces?: string[];
   onChange: (
     field: string,
     value:
@@ -35,6 +36,7 @@ export const TrafficRouting = ({
   config,
   availableIfaces,
   tunnelIfaces = [],
+  encapsulatedIfaces = [],
   onChange,
 }: TrafficRoutingProps) => {
   const { t } = useTranslation();
@@ -80,6 +82,15 @@ export const TrafficRouting = ({
     isInterface && egressIsTunnel && routerTraffic === "include" && !sourceScoped;
   const routerTrafficHeldBack =
     isInterface && egressIsTunnel && routerTraffic === "auto" && !sourceScoped;
+  const egressIsEncapsulated = encapsulatedIfaces.includes(
+    routing.egress_interface,
+  );
+  const routesAnyIP =
+    !config.targets.domain_only ||
+    (config.targets.ip?.length ?? 0) > 0 ||
+    (config.targets.geoip_categories?.length ?? 0) > 0;
+  const strategyHandedOff =
+    isInterface && egressIsEncapsulated && routesAnyIP;
 
   const toggleSourceIface = (iface: string) => {
     const current = routing.source_interfaces || [];
@@ -491,6 +502,16 @@ export const TrafficRouting = ({
                   iface: routing.egress_interface,
                 })}
               </B4Alert>
+            </Grid>
+          )}
+
+          {strategyHandedOff && (
+            <Grid size={{ xs: 12 }}>
+              <B4Hint>
+                {t("sets.routing.tunnelManipulationNote", {
+                  iface: routing.egress_interface,
+                })}
+              </B4Hint>
             </Grid>
           )}
 

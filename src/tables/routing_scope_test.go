@@ -58,7 +58,7 @@ func TestScopedSetKeepsInjectedRulesButNotRouterOriginatedOnes(t *testing.T) {
 	scopedState := st
 	scopedState.srcScoped = true
 	scoped := &mockRouteBackend{}
-	routeAddOutChainRules(scoped, &cfg, scopedState)
+	routeAddOutChainRules(scoped, &cfg, scopedState, routeDeviceGate{})
 
 	if len(scoped.injected) == 0 {
 		t.Error("a source-scoped set must still re-mark the packets b4 injects for it, or its fakes leave by the router's normal uplink")
@@ -72,7 +72,7 @@ func TestScopedSetKeepsInjectedRulesButNotRouterOriginatedOnes(t *testing.T) {
 	openState := st
 	openState.routerOut = true
 	open := &mockRouteBackend{}
-	routeAddOutChainRules(open, &cfg, openState)
+	routeAddOutChainRules(open, &cfg, openState, routeDeviceGate{})
 
 	found := false
 	for _, op := range open.chainOps[st.chainOut] {
@@ -180,5 +180,95 @@ func TestRouteWantsOutputJumpSplitsByMode(t *testing.T) {
 				t.Errorf("routeWantsOutputJump = %v, want %v: %s", got, c.want, c.why)
 			}
 		})
+	}
+}
+
+func TestKillSwitchSetsDoNotShareATableWithSetsThatWantNone(t *testing.T) {
+	origAuto := routeIfaceAuto
+	origCache := routeRuleCache
+	t.Cleanup(func() { routeIfaceAuto = origAuto; routeRuleCache = origCache })
+	routeIfaceAuto = make(map[string]routeState)
+	routeRuleCache = make(map[string]routeState)
+
+	prev := routeTableForeignRoutes
+	routeTableForeignRoutes = func(int, string) bool { return false }
+	t.Cleanup(func() { routeTableForeignRoutes = prev })
+
+	cfg := config.NewConfig()
+
+	held := &config.SetConfig{Id: "a", Name: "held"}
+	held.Routing.Enabled = true
+	held.Routing.Mode = config.RoutingModeInterface
+	held.Routing.EgressInterface = "wg0"
+	held.Routing.KillSwitch = true
+
+	leaky := &config.SetConfig{Id: "b", Name: "leaky"}
+	leaky.Routing.Enabled = true
+	leaky.Routing.Mode = config.RoutingModeInterface
+	leaky.Routing.EgressInterface = "wg0"
+
+	heldMark, heldTable := routeResolveIDs(&cfg, held)
+	leakyMark, leakyTable := routeResolveIDs(&cfg, leaky)
+
+	if heldTable == leakyTable || heldMark == leakyMark {
+		t.Errorf("both sets landed on mark 0x%x table %d; the blackhole lives in the table, so the last set applied would decide the kill switch for both", heldMark, heldTable)
+	}
+}
+
+func TestRouteTableWantsKillSwitchCoversEverySetOnTheTable(t *testing.T) {
+	origCache := routeRuleCache
+	t.Cleanup(func() { routeRuleCache = origCache })
+
+	shared := routeState{mode: config.RoutingModeInterface, mark: 0x1234, table: 120, iface: "wg0"}
+	holder := shared
+	holder.killSwitch = true
+
+	routeRuleCache = map[string]routeState{"holder": holder}
+	if !routeTableWantsKillSwitch(shared) {
+		t.Error("a set pinned onto a table another set holds shut must not reopen it")
+	}
+
+	routeRuleCache = map[string]routeState{"other": shared}
+	if routeTableWantsKillSwitch(shared) {
+		t.Error("with nobody asking for it the blackhole has to come out, or the table keeps dropping traffic after the flag is off")
+	}
+}
+
+func TestInjectedRuleCarriesAnIPSourceWhenEveryDeviceHasOne(t *testing.T) {
+	ipGate := routeDeviceGate{
+		enabled: true,
+		matches: []config.DeviceMatch{{IP: "192.168.1.50"}, {IP: "192.168.1.51"}},
+	}
+	got := routeInjectedSourceMatches(ipGate)
+	if len(got) != 2 {
+		t.Errorf("an IP-matched device can be named on the reinjected packet, which keeps an out-of-scope client's fakes off this set's route: %v", got)
+	}
+
+	mixed := routeDeviceGate{
+		enabled: true,
+		matches: []config.DeviceMatch{{IP: "192.168.1.50"}, {MAC: "aa:bb:cc:dd:ee:ff"}},
+	}
+	if routeInjectedSourceMatches(mixed) != nil {
+		t.Error("a reinjected packet carries no MAC, so narrowing the rule to the IP half would drop the other clients' fakes onto the normal uplink")
+	}
+
+	if routeInjectedSourceMatches(routeDeviceGate{enabled: true, blacklist: true, matches: ipGate.matches}) != nil {
+		t.Error("a blacklist names who is excluded, not who to match")
+	}
+}
+
+func TestInjectedRuleFallsBackWhenNoSourceMatchesTheFamily(t *testing.T) {
+	v4Only := []config.DeviceMatch{{IP: "192.168.1.50"}, {IP: "192.168.1.51"}}
+
+	if got := routeInjectedSourcesForFamily(v4Only, false); len(got) != 2 {
+		t.Errorf("an IPv4 device belongs on the IPv4 rule, got %v", got)
+	}
+	if got := routeInjectedSourcesForFamily(v4Only, true); len(got) != 0 {
+		t.Errorf("an IPv4 address cannot be written into an IPv6 rule, got %v", got)
+	}
+
+	mixed := []config.DeviceMatch{{IP: "192.168.1.50"}, {IP: "2001:db8::1", V6: true}}
+	if got := routeInjectedSourcesForFamily(mixed, true); len(got) != 1 || got[0].IP != "2001:db8::1" {
+		t.Errorf("each family takes only its own addresses, got %v", got)
 	}
 }

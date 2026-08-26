@@ -34,7 +34,7 @@ func TestRouteOutChain_MarksInjectedPacketsBeforeTheQueueBypass(t *testing.T) {
 	cfg := injectedTestConfig()
 	st := injectedTestState()
 
-	routeAddOutChainRules(be, cfg, st)
+	routeAddOutChainRules(be, cfg, st, routeDeviceGate{})
 
 	ops := be.chainOps[st.chainOut]
 	queueBypass := -1
@@ -66,7 +66,7 @@ func TestRouteOutChain_InjectedRuleCoversBothFamilies(t *testing.T) {
 
 	t.Run("both families", func(t *testing.T) {
 		be := &mockRouteBackend{}
-		routeAddOutChainRules(be, cfg, st)
+		routeAddOutChainRules(be, cfg, st, routeDeviceGate{})
 		if len(be.injected) != 2 {
 			t.Fatalf("expected an IPv4 and an IPv6 rule, got %d", len(be.injected))
 		}
@@ -98,7 +98,7 @@ func TestRouteOutChain_InjectedRuleCoversBothFamilies(t *testing.T) {
 		be := &mockRouteBackend{}
 		v4 := injectedTestConfig()
 		v4.Queue.IPv6Enabled = false
-		routeAddOutChainRules(be, v4, st)
+		routeAddOutChainRules(be, v4, st, routeDeviceGate{})
 		if len(be.injected) != 1 || be.injected[0].v6 {
 			t.Fatalf("expected a single IPv4 rule, got %+v", be.injected)
 		}
@@ -111,7 +111,7 @@ func TestRouteOutChain_InjectedRuleFollowsACustomQueueMark(t *testing.T) {
 	cfg.Queue.Mark = 0x1234
 	st := injectedTestState()
 
-	routeAddOutChainRules(be, cfg, st)
+	routeAddOutChainRules(be, cfg, st, routeDeviceGate{})
 	if len(be.injected) == 0 {
 		t.Fatal("no injected-packet rule emitted")
 	}
@@ -206,7 +206,7 @@ func TestRouteIptJumpArgs(t *testing.T) {
 }
 
 func TestRouteIptInjectedMarkArgs_KeepsTheQueueMarkOnThePacket(t *testing.T) {
-	got := strings.Join(routeIptInjectedMarkArgs("b4r_test_out", "b4r_test_v4", 0x2bd8, 0x8000), " ")
+	got := strings.Join(routeIptInjectedMarkArgs("b4r_test_out", "b4r_test_v4", 0x2bd8, 0x8000, nil), " ")
 	want := "-w -t mangle -A b4r_test_out -m mark --mark 0x8000/0x8000 -m set --match-set b4r_test_v4 dst -j MARK --set-xmark 0x2bd8/0x27fff"
 	if got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
@@ -217,20 +217,20 @@ func TestRouteIptInjectedMarkArgs_KeepsTheQueueMarkOnThePacket(t *testing.T) {
 }
 
 func TestRouteNftInjectedMarkArgs_KeepsTheQueueMarkOnThePacket(t *testing.T) {
-	got := strings.Join(routeNftInjectedMarkArgs("b4r_test_out", false, "b4r_test_v4", 0x2bd8, 0x8000), " ")
+	got := strings.Join(routeNftInjectedMarkArgs("b4r_test_out", false, "b4r_test_v4", 0x2bd8, 0x8000, nil), " ")
 	want := "add rule inet b4_route b4r_test_out meta mark & 0x8000 == 0x8000 ip daddr @b4r_test_v4 meta mark set meta mark & 0xfffd8000 or 0x2bd8"
 	if got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
 	}
 
-	v6 := strings.Join(routeNftInjectedMarkArgs("b4r_test_out", true, "b4r_test_v6", 0x2bd8, 0x8000), " ")
+	v6 := strings.Join(routeNftInjectedMarkArgs("b4r_test_out", true, "b4r_test_v6", 0x2bd8, 0x8000, nil), " ")
 	if !strings.Contains(v6, "ip6 daddr @b4r_test_v6") {
 		t.Errorf("IPv6 rule = %q", v6)
 	}
 }
 
 func TestRouteNftInjectedMarkRule_IsNotReadAsABypass(t *testing.T) {
-	line := strings.Join(routeNftInjectedMarkArgs("b4r_test_out", false, "b4r_test_v4", 0x2bd8, 0x8000)[5:], " ")
+	line := strings.Join(routeNftInjectedMarkArgs("b4r_test_out", false, "b4r_test_v4", 0x2bd8, 0x8000, nil)[5:], " ")
 	if _, _, ok := nftParseMarkRule(line); ok {
 		t.Errorf("the monitor reads %q as a bypass rule, so a chain that lost its RETURN would look healthy", line)
 	}

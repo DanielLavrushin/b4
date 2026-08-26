@@ -239,7 +239,7 @@ export const GroupList = ({
           </Stack>
         ) : (
           <>
-            <Box sx={{ height: startIndex * ROW_HEIGHT }} />
+            <Box style={{ height: startIndex * ROW_HEIGHT }} />
             {visible.map((g) => (
               <GroupRow
                 key={g.key}
@@ -253,7 +253,9 @@ export const GroupList = ({
                 enrichingIps={enrichingIps}
               />
             ))}
-            <Box sx={{ height: Math.max(0, (groups.length - endIndex) * ROW_HEIGHT) }} />
+            <Box
+              style={{ height: Math.max(0, (groups.length - endIndex) * ROW_HEIGHT) }}
+            />
           </>
         )}
       </Box>

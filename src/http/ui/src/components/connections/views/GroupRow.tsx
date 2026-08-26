@@ -15,6 +15,13 @@ import { useTranslation } from "react-i18next";
 
 export const ROW_HEIGHT = 48;
 
+const sameBuckets = (a: number[], b: number[]): boolean => {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+};
+
 interface Props {
   group: EnrichedGroup;
   now: number;
@@ -269,13 +276,21 @@ export const GroupRow = memo<Props>(
   (prev, next) =>
     prev.selected === next.selected &&
     prev.enrichingIps === next.enrichingIps &&
+    prev.now === next.now &&
     prev.group.packets === next.group.packets &&
     prev.group.lastSeen === next.group.lastSeen &&
     prev.group.asnName === next.group.asnName &&
     prev.group.destIp === next.group.destIp &&
+    prev.group.destIps.length === next.group.destIps.length &&
     prev.group.hostSet === next.group.hostSet &&
     prev.group.ipSet === next.group.ipSet &&
-    prev.group.buckets === next.group.buckets,
+    prev.group.domain === next.group.domain &&
+    prev.group.deviceName === next.group.deviceName &&
+    prev.group.mac === next.group.mac &&
+    prev.group.protocol === next.group.protocol &&
+    prev.group.tls === next.group.tls &&
+    prev.group.flags === next.group.flags &&
+    sameBuckets(prev.group.buckets, next.group.buckets),
 );
 
 GroupRow.displayName = "GroupRow";

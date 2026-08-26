@@ -64,6 +64,9 @@ var mcpEnums = map[string][]string{
 	mcpSetPathPrefix + ".routing.mode": {
 		config.RoutingModeInterface, config.RoutingModeProxy, config.RoutingModeMTProtoWS, config.RoutingModeBlock,
 	},
+	mcpSetPathPrefix + ".routing.router_traffic": {
+		config.RouterTrafficAuto, config.RouterTrafficInclude, config.RouterTrafficExclude,
+	},
 	mcpSetPathPrefix + ".targets.tls":        {"", "1.2", "1.3"},
 	mcpSetPathPrefix + ".targets.ip_version": {"", "4", "6"},
 	"system.mtproto.upstream_mode":           {"tcp", "ws", "auto"},

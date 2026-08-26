@@ -2,6 +2,7 @@ package tables
 
 import (
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -98,6 +99,20 @@ func routeAsyncClaim(set *config.SetConfig, ips []net.IP) []net.IP {
 		fresh = append(fresh, ip)
 	}
 	return fresh
+}
+
+func routeAsyncForgetSet(setID string) {
+	if setID == "" {
+		return
+	}
+	prefix := setID + "|"
+	routeAsyncSeenMu.Lock()
+	for k := range routeAsyncSeen {
+		if strings.HasPrefix(k, prefix) {
+			delete(routeAsyncSeen, k)
+		}
+	}
+	routeAsyncSeenMu.Unlock()
 }
 
 func routeAsyncForgetAll() {

@@ -15,6 +15,7 @@ const BATCH_INTERVAL_MS = 150; // Batch updates every 150ms
 
 interface WebSocketContextType {
   logs: string[];
+  logsBase: number;
   domains: string[];
   parsedDomains: ParsedLog[];
   pauseLogs: boolean;
@@ -35,6 +36,7 @@ const WebSocketContext = createContext<WebSocketContextType | null>(null);
 class RingBuffer {
   private buffer: string[] = [];
   private readonly maxSize: number;
+  private dropped = 0;
 
   constructor(maxSize: number) {
     this.maxSize = maxSize;
@@ -43,8 +45,13 @@ class RingBuffer {
   push(items: string[]): void {
     this.buffer.push(...items);
     if (this.buffer.length > this.maxSize) {
+      this.dropped += this.buffer.length - this.maxSize;
       this.buffer = this.buffer.slice(-this.maxSize);
     }
+  }
+
+  get base(): number {
+    return this.dropped;
   }
 
   getAll(): string[] {
@@ -53,6 +60,7 @@ class RingBuffer {
 
   clear(): void {
     this.buffer = [];
+    this.dropped = 0;
   }
 
   get length(): number {
@@ -103,6 +111,7 @@ export const WebSocketProvider = ({
   children: React.ReactNode;
 }) => {
   const [logs, setLogs] = useState<string[]>([]);
+  const [logsBase, setLogsBase] = useState(0);
   const [domains, setDomains] = useState<string[]>([]);
   const [parsedDomains, setParsedDomains] = useState<ParsedLog[]>([]);
   const [pauseLogs, setPauseLogs] = useState(false);
@@ -150,6 +159,7 @@ export const WebSocketProvider = ({
     if (pendingLogs.length > 0 && !pauseLogsRef.current) {
       logsBufferRef.current.push(pendingLogs);
       setLogs(logsBufferRef.current.getAll());
+      setLogsBase(logsBufferRef.current.base);
     }
 
     if (pendingConns.length > 0 && !pauseDomainsRef.current) {
@@ -240,6 +250,7 @@ export const WebSocketProvider = ({
   const clearLogs = useCallback(() => {
     logsBufferRef.current.clear();
     setLogs([]);
+    setLogsBase(0);
   }, []);
 
   const clearDomains = useCallback(() => {
@@ -259,6 +270,7 @@ export const WebSocketProvider = ({
   const contextValue = useMemo(
     () => ({
       logs,
+      logsBase,
       domains,
       parsedDomains,
       pauseLogs,
@@ -274,6 +286,7 @@ export const WebSocketProvider = ({
     }),
     [
       logs,
+      logsBase,
       domains,
       parsedDomains,
       pauseLogs,

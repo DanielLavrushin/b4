@@ -142,6 +142,12 @@ The diagram updates as settings change.
 Define which network interfaces traffic is intercepted from for routing. Shown as clickable badges - click to toggle.
 
 :::info
+This is an ingress filter, and it is not the same setting as `Settings > Core > Network
+interfaces`, which filters what the engine inspects and compares the interface a packet
+leaves by. [Which interface is which](/docs/guides/interfaces) puts the three side by side.
+:::
+
+:::info
 If no source interface is selected, routing applies to all traffic arriving from anywhere, and - subject to
 [Router's own traffic](#routers-own-traffic) - to traffic the router originates itself.
 Selecting a source interface, or a source device, restricts the set to traffic arriving from it and leaves the router's
@@ -166,11 +172,15 @@ See [Kill switch](#kill-switch) for what happens to the set's traffic in the mea
 :::
 
 :::info
-When the output interface is a tunnel - a TUN/TAP device or WireGuard - b4 turns off packet manipulation (faking,
-fragmentation, desync) for that set's traffic, the same way it does in proxy mode. The segment it would mangle is the
-inner one, which is wrapped or terminated before it ever reaches the network, so the work buys nothing and costs CPU on
-every connection. The connection still appears in the connection log, tagged `routed-><iface>`. A set routed to a plain
-interface, such as a second uplink, keeps its bypass strategy.
+When the output interface is a tunnel that is up - a TUN/TAP device or WireGuard - b4 leaves that set's packets alone,
+the same way it does in proxy mode: no faking, fragmentation or desync, and no SYN health check, dead-IP escalation, IP
+block detection or TCP duplication. The segment it would mangle is the inner one, which is wrapped or terminated before
+it ever reaches the network, so the work buys nothing and costs CPU on every connection. The connection still appears in
+the connection log, tagged `routed-><iface>`. Three cases keep their bypass strategy: a set routed to a plain interface
+such as a second uplink, a set whose output interface exists but is down and so cannot carry the traffic at all, and a
+domain-only set with no IP targets, which never routes anything either. A set limited to a source interface or a source
+device hands off like any other, because b4's engine matches on the destination alone and cannot tell an in-scope client
+from one the routing rules never touch.
 :::
 
 ### Router's own traffic
@@ -198,11 +208,16 @@ so the router's own traffic keeps following the set on **Automatic**.
 
 Choosing **Route it too** on a TUN interface is allowed - a TUN whose reader never dials the destination directly is
 harmless - but b4 logs a warning and installs a rate limit ahead of the marking, so a loop that does start is capped at
-200 new router-originated connections per second instead of growing without bound.
+200 new router-originated connections per second per destination list instead of growing without bound. The limit counts
+only connections to addresses the set matches, so ordinary router traffic cannot use up its budget, and it is installed
+on every set that routes the router's own traffic - a plain interface cannot re-dial, but the interface may not exist yet
+when b4 builds the rules, so the guard does not wait to find out. On iptables it needs the `xt_hashlimit` module; b4
+loads it itself, and warns if the kernel does not have it.
 
 :::tip
-A set that already has a source interface or a source device selected never routes the router's own traffic, whatever this
-is set to, so the setting is shown greyed out.
+A set that already has a source interface, or an *included* source-device list, never routes the router's own traffic,
+whatever this is set to, so the setting is shown greyed out. An exclude list does not scope the set that way, so the
+choice still applies there.
 :::
 
 :::warning
@@ -220,7 +235,9 @@ rules looks wrong, which is what makes it easy to miss.
 With the kill switch on, b4 also puts a `blackhole default` route in the set's table at a worse metric than the real one.
 While the interface is up the real route wins and nothing changes. When it goes away the blackhole is all that is left and
 the set's traffic is dropped instead of leaking. Only this set's traffic is affected; everything else keeps using the main
-table as usual.
+table as usual. Sets that share an output interface normally share one routing table, so a set with the kill switch on is
+given a table of its own rather than blackholing its neighbours. That applies to the tables b4 assigns itself; two sets
+pinned by hand to the same `routing.table` still share it, and then the switch is on for both if it is on for either.
 
 b4 puts the real route back as soon as the interface returns, so the kill switch does not need to be turned off and on
 again after a reconnect.
@@ -284,7 +301,7 @@ Each output interface gets assigned automatically:
 - **fwmark** - packet mark (range `0x100` to `0x7EFF`)
 - **routing table** - routing table number (range `100` to `249`)
 
-Values are computed from the interface name and stay stable across reboots. When several sets use the same output interface, they share the `fwmark` and table.
+Values are computed from the interface name, the egress IP and the kill-switch setting, and stay stable across reboots. Sets that agree on all three share a `fwmark` and a table; a set that differs in any of them, including one with the kill switch on beside one without, gets its own.
 
 Before claiming a table b4 checks whether it already holds routes it did not put there - the tables Asuswrt-Merlin uses for
 its VPN clients live in the same range, and b4 flushes the table it owns on cleanup. If the table is taken, b4 moves to the

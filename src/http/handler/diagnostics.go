@@ -15,6 +15,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/engine"
+	"github.com/daniellavrushin/b4/nfq"
 	"github.com/daniellavrushin/b4/tables"
 	"golang.org/x/sys/unix"
 )
@@ -43,7 +44,7 @@ func (api *API) buildDiagnostics() Diagnostics {
 		B4:        collectB4Info(cfg.ConfigPath, serviceManager),
 		Kernel:    collectKernelModules(cfg),
 		Tools:     collectTools(),
-		Network:   collectNetworkInterfaces(),
+		Network:   collectNetworkInterfaces(cfg),
 		Engine:    collectEngineInfo(cfg),
 		Firewall:  collectFirewallInfo(cfg),
 		Geodata:   api.collectGeodataInfo(),
@@ -242,10 +243,20 @@ func collectPaths(configPath, errorLog, geositePath, geoipPath string) DiagPaths
 	return paths
 }
 
-func collectNetworkInterfaces() DiagNetwork {
+func collectNetworkInterfaces(cfg *config.Config) DiagNetwork {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return DiagNetwork{}
+	}
+
+	seen := nfq.IfaceTraffic()
+	monitored := map[string]bool{}
+	filtered := false
+	if cfg != nil && len(cfg.Queue.Interfaces) > 0 {
+		filtered = true
+		for _, name := range cfg.Queue.Interfaces {
+			monitored[name] = true
+		}
 	}
 
 	var result []DiagInterface
@@ -255,9 +266,12 @@ func collectNetworkInterfaces() DiagNetwork {
 		}
 
 		di := DiagInterface{
-			Name: iface.Name,
-			Up:   iface.Flags&net.FlagUp != 0,
-			MTU:  iface.MTU,
+			Name:      iface.Name,
+			Up:        iface.Flags&net.FlagUp != 0,
+			MTU:       iface.MTU,
+			Monitored: !filtered || monitored[iface.Name],
+			Leaving:   seen[iface.Name].Leaving,
+			Arriving:  seen[iface.Name].Arriving,
 		}
 
 		if len(iface.HardwareAddr) > 0 {

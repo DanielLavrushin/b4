@@ -1,18 +1,21 @@
 package tables
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/netif"
 )
 
-func loopTestState(routerOut bool) routeState {
+func loopTestState(iface string, routerOut bool) routeState {
 	return routeState{
 		mode:      config.RoutingModeInterface,
 		mark:      0x4d05,
 		table:     169,
-		iface:     "xray0",
+		iface:     iface,
 		chainOut:  "b4r_x_out",
 		setV4:     "b4r_x_v4",
 		setV6:     "b4r_x_v6",
@@ -20,11 +23,39 @@ func loopTestState(routerOut bool) routeState {
 	}
 }
 
+func loopTestSysfs(t *testing.T) {
+	t.Helper()
+	root := t.TempDir() + string(os.PathSeparator)
+	prev := netif.Root
+	netif.Root = root
+	netif.Forget()
+	t.Cleanup(func() {
+		netif.Root = prev
+		netif.Forget()
+	})
+
+	for name, files := range map[string]map[string]string{
+		"xray0": {"tun_flags": "0x1001\n", "flags": "0x1003\n"},
+		"eth1":  {"flags": "0x1003\n"},
+	} {
+		dir := filepath.Join(root, name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for f, body := range files {
+			if err := os.WriteFile(filepath.Join(dir, f), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
 func TestRouterTrafficGuardOnlyGuardsWhatItMarks(t *testing.T) {
+	loopTestSysfs(t)
 	cfg := config.NewConfig()
 
 	open := &mockRouteBackend{}
-	routeAddOutChainRules(open, &cfg, loopTestState(true))
+	routeAddOutChainRules(open, &cfg, loopTestState("xray0", true), routeDeviceGate{})
 	ops := strings.Join(open.chainOps["b4r_x_out"], "|")
 	if !strings.Contains(ops, "router-traffic-guard") {
 		t.Errorf("a set that marks the router's own traffic must cap the rate, or a loop through it is unbounded: %s", ops)
@@ -36,7 +67,7 @@ func TestRouterTrafficGuardOnlyGuardsWhatItMarks(t *testing.T) {
 	}
 
 	quiet := &mockRouteBackend{}
-	routeAddOutChainRules(quiet, &cfg, loopTestState(false))
+	routeAddOutChainRules(quiet, &cfg, loopTestState("xray0", false), routeDeviceGate{})
 	for _, op := range quiet.chainOps["b4r_x_out"] {
 		if op == "router-traffic-guard" {
 			t.Error("with no marking of router traffic there is nothing to rate-limit and no rule to spend")
@@ -47,6 +78,35 @@ func TestRouterTrafficGuardOnlyGuardsWhatItMarks(t *testing.T) {
 	}
 	if len(quiet.injected) == 0 {
 		t.Error("excluding router traffic must still leave the rule that re-marks the packets b4 injects itself")
+	}
+}
+
+func TestRouterTrafficGuardIsScopedToTheSetAndToTunnels(t *testing.T) {
+	loopTestSysfs(t)
+	cfg := config.NewConfig()
+
+	plain := &mockRouteBackend{}
+	routeAddOutChainRules(plain, &cfg, loopTestState("eth1", true), routeDeviceGate{})
+	if indexOfOp(plain.chainOps["b4r_x_out"], "router-traffic-guard") < 0 {
+		t.Error("the guard has to go in even when the egress is missing or plain, or a tunnel that appears after b4 started marks router traffic with nothing capping it")
+	}
+	if indexOfPrefix(plain.chainOps["b4r_x_out"], "mark ") < 0 {
+		t.Error("a plain egress still routes the router's own traffic")
+	}
+
+	tunnel := &mockRouteBackend{}
+	routeAddOutChainRules(tunnel, &cfg, loopTestState("xray0", true), routeDeviceGate{})
+	if len(tunnel.guards) == 0 {
+		t.Fatal("no guard emitted for a userspace tunnel")
+	}
+	for _, g := range tunnel.guards {
+		want := "b4r_x_v4"
+		if g.v6 {
+			want = "b4r_x_v6"
+		}
+		if g.setName != want {
+			t.Errorf("guard matches %q, want %q: without the set's own destinations in the match, unrelated router traffic spends the budget and the set's real connections go out unmarked", g.setName, want)
+		}
 	}
 }
 
@@ -123,9 +183,9 @@ func TestKillSwitchHoldsTheTableShut(t *testing.T) {
 	runLogged = func(op string, args ...string) { cmds = append(cmds, strings.Join(args, " ")) }
 	t.Cleanup(func() { runLogged = prev })
 
-	st := loopTestState(true)
+	st := loopTestState("xray0", true)
 	st.killSwitch = true
-	routeApplyKillSwitch(st, true, true)
+	routeApplyKillSwitch(st, true, true, true)
 
 	joined := strings.Join(cmds, "\n")
 	for _, want := range []string{
@@ -139,7 +199,7 @@ func TestKillSwitchHoldsTheTableShut(t *testing.T) {
 
 	cmds = nil
 	st.killSwitch = false
-	routeApplyKillSwitch(st, true, false)
+	routeApplyKillSwitch(st, false, true, false)
 	joined = strings.Join(cmds, "\n")
 	if !strings.Contains(joined, "ip route del blackhole default metric 4096 table 169") {
 		t.Errorf("turning the kill switch off has to take the blackhole back out, got:\n%s", joined)

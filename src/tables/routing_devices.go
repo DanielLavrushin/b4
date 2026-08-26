@@ -189,6 +189,30 @@ func routeWarnDeviceGate(setName string, gate routeDeviceGate) {
 	log.Warnf("Routing: set '%s' skips part of its source device filter because %s", setName, gate.degraded)
 }
 
+func routeInjectedSourceMatches(gate routeDeviceGate) []config.DeviceMatch {
+	if !gate.isWhitelist() || len(gate.matches) == 0 {
+		return nil
+	}
+	out := make([]config.DeviceMatch, 0, len(gate.matches))
+	for _, m := range gate.matches {
+		if !m.IsIP() {
+			return nil
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+func routeInjectedSourcesForFamily(sources []config.DeviceMatch, v6 bool) []config.DeviceMatch {
+	out := make([]config.DeviceMatch, 0, len(sources))
+	for _, m := range sources {
+		if m.IsIP() && m.V6 == v6 {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
 func nftMatchArgs(m config.DeviceMatch) []string {
 	if m.IsIP() {
 		if m.V6 {

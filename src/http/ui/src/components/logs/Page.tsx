@@ -11,6 +11,7 @@ import { useTraceSession } from "@hooks/useTraceSession";
 import {
   LogLevel,
   LOG_LEVELS,
+  ParsedLogLine,
   loadEnabledLevels,
   parseLogLine,
   saveEnabledLevels,
@@ -28,10 +29,27 @@ export function LogsPage() {
   const [autoScroll, setAutoScroll] = useState(true);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const logRef = useRef<HTMLDivElement | null>(null);
-  const { logs, pauseLogs, setPauseLogs, clearLogs } = useWebSocket();
+  const { logs, logsBase, pauseLogs, setPauseLogs, clearLogs } = useWebSocket();
   const trace = useTraceSession();
 
-  const parsed = useMemo(() => logs.map(parseLogLine), [logs]);
+  const parsedCache = useRef(new Map<number, ParsedLogLine>());
+
+  const parsed = useMemo(() => {
+    const cache = parsedCache.current;
+    const out = logs.map((raw, i) => {
+      const id = logsBase + i;
+      let line = cache.get(id);
+      if (line?.raw !== raw) {
+        line = parseLogLine(raw, id);
+        cache.set(id, line);
+      }
+      return line;
+    });
+    for (const id of cache.keys()) {
+      if (id < logsBase) cache.delete(id);
+    }
+    return out;
+  }, [logs, logsBase]);
 
   const levelCounts = useMemo(() => {
     const counts: Record<LogLevel, number> = {

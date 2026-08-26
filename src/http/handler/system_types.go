@@ -101,11 +101,14 @@ type DiagNetwork struct {
 }
 
 type DiagInterface struct {
-	Name  string   `json:"name"`
-	MAC   string   `json:"mac,omitempty"`
-	Addrs []string `json:"addrs,omitempty"`
-	Up    bool     `json:"up"`
-	MTU   int      `json:"mtu"`
+	Name      string   `json:"name"`
+	MAC       string   `json:"mac,omitempty"`
+	Addrs     []string `json:"addrs,omitempty"`
+	Up        bool     `json:"up"`
+	MTU       int      `json:"mtu"`
+	Monitored bool     `json:"monitored"`
+	Leaving   uint64   `json:"packets_leaving"`
+	Arriving  uint64   `json:"packets_arriving"`
 }
 
 type DiagEngine struct {

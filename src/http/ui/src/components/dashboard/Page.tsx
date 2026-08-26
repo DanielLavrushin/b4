@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Box, Container, Typography, LinearProgress } from "@mui/material";
 import {
   CollisionDetection,
@@ -41,7 +41,6 @@ export function DashboardPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [resizingPanel, setResizingPanel] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
   const { sets, targetedDomains, refresh: refreshSets } = useDashboardSets();
   const { order, hidden, spans, move, setSpan, setHidden, reset, customized } =
     useDashboardLayout();
@@ -51,8 +50,13 @@ export function DashboardPage() {
   );
 
   useEffect(() => {
+    let ws: WebSocket | null = null;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let isCleaningUp = false;
+
     const connectWebSocket = () => {
-      const ws = new WebSocket(wsUrl("/api/ws/metrics"));
+      if (isCleaningUp) return;
+      ws = new WebSocket(wsUrl("/api/ws/metrics"));
 
       ws.onopen = () => {
         setConnected(true);
@@ -76,17 +80,23 @@ export function DashboardPage() {
 
       ws.onclose = () => {
         setConnected(false);
-        setTimeout(connectWebSocket, 3000);
+        if (!isCleaningUp) {
+          reconnectTimeout = setTimeout(connectWebSocket, 3000);
+        }
       };
-
-      wsRef.current = ws;
     };
 
     connectWebSocket();
 
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
+      isCleaningUp = true;
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (ws) {
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        ws.close();
       }
     };
   }, []);

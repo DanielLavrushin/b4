@@ -203,18 +203,19 @@ export const AggregatedView = ({
       return arr.sort((a, b) => b.lastSeen - a.lastSeen || b.packets - a.packets);
     }
     const dir = sortDirection === "asc" ? 1 : -1;
-    return arr.sort((a, b) => {
-      let primary: number;
-      if (sortColumn === "packets") {
-        primary = a.packets - b.packets;
-      } else if (sortColumn === "seen") {
-        primary = a.lastSeen - b.lastSeen;
-      } else {
-        const field = sortColumn === "source" ? "device" : sortColumn;
-        primary = getGroupFieldValue(a, field).localeCompare(getGroupFieldValue(b, field));
-      }
-      return primary * dir || b.lastSeen - a.lastSeen;
-    });
+    if (sortColumn === "packets" || sortColumn === "seen") {
+      const pick = (g: EnrichedGroup) =>
+        sortColumn === "packets" ? g.packets : g.lastSeen;
+      return arr.sort(
+        (a, b) => (pick(a) - pick(b)) * dir || b.lastSeen - a.lastSeen,
+      );
+    }
+    const field = sortColumn === "source" ? "device" : sortColumn;
+    const keyed = arr.map((g) => ({ g, k: getGroupFieldValue(g, field) }));
+    keyed.sort(
+      (a, b) => a.k.localeCompare(b.k) * dir || b.g.lastSeen - a.g.lastSeen,
+    );
+    return keyed.map((e) => e.g);
   }, [filteredGroups, sortColumn, sortDirection]);
 
   const selectedGroup = useMemo(

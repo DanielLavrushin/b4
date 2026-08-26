@@ -9,6 +9,7 @@ export const LOG_LEVELS: LogLevel[] = [
 ];
 
 export interface ParsedLogLine {
+  id: number;
   raw: string;
   level: LogLevel | null;
   date: string | null;
@@ -27,12 +28,13 @@ const TAG_TO_LEVEL: Record<string, LogLevel> = {
   DEBUG: "debug",
 };
 
-export function parseLogLine(raw: string): ParsedLogLine {
+export function parseLogLine(raw: string, id: number): ParsedLogLine {
   const m = LINE_RE.exec(raw);
   if (!m) {
-    return { raw, level: null, date: null, time: null, message: raw };
+    return { id, raw, level: null, date: null, time: null, message: raw };
   }
   return {
+    id,
     raw,
     level: TAG_TO_LEVEL[m[3]],
     date: m[1],

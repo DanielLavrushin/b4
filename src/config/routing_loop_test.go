@@ -195,3 +195,50 @@ func TestValidateRouterTraffic(t *testing.T) {
 		}
 	})
 }
+
+func TestRoutingHandsOffPacketsOnlyWhenTheTunnelActuallyCarriesThem(t *testing.T) {
+	fakeIfaces(t, map[string]string{"xray0": "tun", "wg0": "wireguard", "eth1": "plain"})
+
+	t.Run("a live tunnel takes the packets", func(t *testing.T) {
+		for _, iface := range []string{"xray0", "wg0"} {
+			if !routedSet(iface).RoutingHandsOffPackets() {
+				t.Errorf("%s wraps the packet before the network sees it, so mangling the inner one buys nothing", iface)
+			}
+		}
+	})
+
+	t.Run("a plain uplink keeps its bypass", func(t *testing.T) {
+		if routedSet("eth1").RoutingHandsOffPackets() {
+			t.Error("a second uplink puts the packet on the wire as it stands, so the strategy still has to run")
+		}
+	})
+
+	t.Run("a source-filtered set still hands off", func(t *testing.T) {
+		scoped := routedSet("xray0")
+		scoped.Routing.SourceInterfaces = []string{"br1"}
+		if !scoped.RoutingHandsOffPackets() {
+			t.Error("the engine cannot tell an in-scope client from an out-of-scope one, and mangling the in-scope traffic the set does route is the worse of the two mistakes")
+		}
+	})
+
+	t.Run("a domain-only set with no IP targets keeps its bypass", func(t *testing.T) {
+		domainOnly := routedSet("xray0")
+		domainOnly.Targets.DomainOnly = true
+		domainOnly.Targets.IpsToMatch = nil
+		domainOnly.Targets.DomainsToMatch = []string{"example.com"}
+		if domainOnly.RoutingHandsOffPackets() {
+			t.Error("every routing writer bails on domain-only, so nothing is ever routed and the strategy is all the set has")
+		}
+	})
+
+	t.Run("an interface that is down carries nothing", func(t *testing.T) {
+		root := netif.Root
+		if err := os.WriteFile(filepath.Join(root, "xray0", "flags"), []byte("0x1002\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		netif.Forget()
+		if routedSet("xray0").RoutingHandsOffPackets() {
+			t.Error("the kernel refuses a default route through a device that is not up, so the set leaks out the WAN and still needs its bypass")
+		}
+	})
+}

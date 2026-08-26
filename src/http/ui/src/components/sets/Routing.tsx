@@ -22,6 +22,7 @@ interface RoutingSettingsProps {
   ipv6: boolean;
   availableIfaces: string[];
   tunnelIfaces?: string[];
+  encapsulatedIfaces?: string[];
   onChange: (
     field: string,
     value:
@@ -42,6 +43,7 @@ export const RoutingSettings = ({
   ipv6,
   availableIfaces,
   tunnelIfaces,
+  encapsulatedIfaces,
   onChange,
 }: RoutingSettingsProps) => {
   const { t } = useTranslation();
@@ -83,6 +85,7 @@ export const RoutingSettings = ({
           config={set}
           availableIfaces={availableIfaces}
           tunnelIfaces={tunnelIfaces}
+          encapsulatedIfaces={encapsulatedIfaces}
           onChange={onChange}
         />
       </B4TabPanel>

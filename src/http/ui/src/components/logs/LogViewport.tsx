@@ -71,9 +71,7 @@ export function LogViewport({
             </Typography>
           );
         } else {
-          return filtered.map((line, i) => (
-            <LogRow key={line.raw + "_" + i} line={line} />
-          ));
+          return filtered.map((line) => <LogRow key={line.id} line={line} />);
         }
       })()}
 

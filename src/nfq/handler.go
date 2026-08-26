@@ -517,10 +517,6 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		classifyReason = "dns-hint"
 	}
 
-	if routeIfaceHandoff && set != nil && classifyReason == "" {
-		classifyReason = "routed->" + set.Routing.EgressInterface
-	}
-
 	if matchedSNI {
 		sniTarget = set.Name
 	} else if matchedIP {
@@ -541,6 +537,14 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			}
 			w.refreshEscalatedRoute(cfg, escSet, host, pkt.dst)
 		}
+	}
+
+	routeTProxy = matched && set != nil && set.RoutingDivertsPackets() && config.RoutingUsesTProxy(set.Routing.Mode)
+	routeIfaceHandoff = matched && set != nil && !routeTProxy && set.RoutingHandsOffPackets()
+	routeHandsOff = routeTProxy || routeIfaceHandoff
+
+	if routeIfaceHandoff && classifyReason == "" {
+		classifyReason = "routed->" + set.Routing.EgressInterface
 	}
 
 	if matched && isClientHello && !routeHandsOff && set.TCP.IPBlockDetect.Enabled && host != "" && cfg.IsTCPPort(dport) {
@@ -915,7 +919,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		return 0
 
 	case "fake":
-		if set.RoutingHandsOffPackets() && !config.RoutingUsesTProxy(set.RoutingModeOrDefault()) {
+		if !config.RoutingUsesTProxy(set.RoutingModeOrDefault()) && set.RoutingHandsOffPackets() {
 			return vc.accept()
 		}
 

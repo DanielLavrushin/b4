@@ -1029,7 +1029,7 @@ func TestRouteResolveIDs(t *testing.T) {
 	t.Run("reuses cached iface auto", func(t *testing.T) {
 		routeRuleCache = make(map[string]routeState)
 		routeIfaceAuto = map[string]routeState{
-			routeIfaceAutoKey("tun0", ""): {mark: 0x555, table: 150},
+			routeIfaceAutoKey("tun0", "", false): {mark: 0x555, table: 150},
 		}
 
 		cfg := config.NewConfig()
@@ -1287,9 +1287,18 @@ type mockInjectedMarkRule struct {
 	chain, setName  string
 	v6              bool
 	mark, queueMark uint32
+	sources         []config.DeviceMatch
+}
+
+type mockRouterGuard struct {
+	chain, setName string
+	v6             bool
+	mark           uint32
 }
 
 type mockRouteBackend struct {
+	guards        []mockRouterGuard
+	guardOK       *bool
 	addElementsFn func(setName string, ips []string, ttlSec int)
 	bypass        map[string][]uint32
 	chainOps      map[string][]string
@@ -1333,8 +1342,8 @@ func (m *mockRouteBackend) addBypassRule(chain string, mark uint32) {
 func (m *mockRouteBackend) addMarkRule(chain string, v6 bool, setName string, mark uint32, sourceIface string, tagHostConntrack bool) {
 	m.recordOp(chain, fmt.Sprintf("mark 0x%x", mark))
 }
-func (m *mockRouteBackend) addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32) {
-	m.injected = append(m.injected, mockInjectedMarkRule{chain: chain, setName: setName, v6: v6, mark: mark, queueMark: queueMark})
+func (m *mockRouteBackend) addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32, sources []config.DeviceMatch) {
+	m.injected = append(m.injected, mockInjectedMarkRule{chain: chain, setName: setName, v6: v6, mark: mark, queueMark: queueMark, sources: sources})
 	m.recordOp(chain, fmt.Sprintf("injected 0x%x", mark))
 }
 func (m *mockRouteBackend) ensureJumpRule(baseChain, targetChain string, isMangle bool, atTop bool) {
@@ -1365,9 +1374,10 @@ func (m *mockRouteBackend) jumpPrepends(bool) bool { return false }
 func (m *mockRouteBackend) addClaimedBypassRule(chain string) {
 	m.recordOp(chain, "claimed-bypass")
 }
-func (m *mockRouteBackend) addRouterTrafficGuard(chain string, mark uint32) bool {
+func (m *mockRouteBackend) addRouterTrafficGuard(chain string, v6 bool, setName string, mark uint32) bool {
+	m.guards = append(m.guards, mockRouterGuard{chain: chain, v6: v6, setName: setName, mark: mark})
 	m.recordOp(chain, "router-traffic-guard")
-	return true
+	return m.guardOK == nil || *m.guardOK
 }
 func (m *mockRouteBackend) addMasqueradeRule(chain string, mark uint32, iface string, v6 bool) {
 	m.masq = append(m.masq, mockNATRule{chain: chain, mark: mark, iface: iface, v6: v6})

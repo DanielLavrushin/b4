@@ -75,7 +75,7 @@ func TestOfCachesAndForgetClears(t *testing.T) {
 		t.Fatalf("Of = %v", got)
 	}
 
-	if err := os.RemoveAll(filepath.Join(root, "tun9")); err != nil {
+	if err := os.Remove(filepath.Join(root, "tun9", "tun_flags")); err != nil {
 		t.Fatal(err)
 	}
 	if got := Of("tun9"); got != KindUserspaceTunnel {
@@ -83,7 +83,65 @@ func TestOfCachesAndForgetClears(t *testing.T) {
 	}
 
 	Forget()
-	if got := Of("tun9"); got != KindMissing {
+	if got := Of("tun9"); got != KindOther {
 		t.Errorf("after Forget the interface is read from disk again, got %v", got)
+	}
+}
+
+func TestUpIsReadFromFlags(t *testing.T) {
+	root := fakeSysfs(t)
+	mkIface(t, root, "up0", map[string]string{"tun_flags": "0x1001\n", "flags": "0x1003\n"})
+	mkIface(t, root, "down0", map[string]string{"tun_flags": "0x1001\n", "flags": "0x1002\n"})
+	mkIface(t, root, "noflags0", map[string]string{"tun_flags": "0x1001\n"})
+
+	if !IsUp("up0") {
+		t.Error("IFF_UP is set, so the device can carry the set's default route")
+	}
+	if IsUp("down0") {
+		t.Error("without IFF_UP the kernel refuses the default route, so the set leaks and must keep its bypass")
+	}
+	if !IsUp("noflags0") {
+		t.Error("a kernel that does not publish flags must not be read as down")
+	}
+
+	if !EncapsulatedAndUp("up0") {
+		t.Error("a live tunnel wraps the packet, so b4 hands it off")
+	}
+	if EncapsulatedAndUp("down0") {
+		t.Error("a down tunnel carries nothing, so the packet still needs its bypass")
+	}
+	if Of("down0") != KindUserspaceTunnel {
+		t.Error("bringing a device down does not change what kind of device it is")
+	}
+}
+
+func TestVanishedInterfaceKeepsItsKind(t *testing.T) {
+	root := fakeSysfs(t)
+	mkIface(t, root, "tun7", map[string]string{"tun_flags": "0x1001\n"})
+
+	if got := Of("tun7"); got != KindUserspaceTunnel {
+		t.Fatalf("Of = %v", got)
+	}
+
+	if err := os.RemoveAll(filepath.Join(root, "tun7")); err != nil {
+		t.Fatal(err)
+	}
+
+	mu.Lock()
+	e := cache["tun7"]
+	e.at = e.at.Add(-2 * cacheTTL)
+	cache["tun7"] = e
+	mu.Unlock()
+
+	if got := Of("tun7"); got != KindUserspaceTunnel {
+		t.Errorf("a tunnel that dropped out is still a tunnel, got %v; letting it read as missing flips routing decisions and tears the set down", got)
+	}
+	if IsUp("tun7") {
+		t.Error("a device that is gone cannot be up")
+	}
+
+	ForgetIface("tun7")
+	if got := Of("tun7"); got != KindMissing {
+		t.Errorf("ForgetIface drops what b4 remembered, so the next read comes from disk, got %v", got)
 	}
 }

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Box } from "@mui/material";
 import { colors } from "@design";
 import { LogLevel, ParsedLogLine } from "./parse";
@@ -43,7 +44,7 @@ function trimTime(time: string): string {
   return time.replace(/(\.\d{3})\d*$/, "$1");
 }
 
-export function LogRow({ line }: { line: ParsedLogLine }) {
+export const LogRow = memo(({ line }: { line: ParsedLogLine }) => {
   const theme = line.level ? rowTheme[line.level] : unparsedTheme;
   return (
     <Box
@@ -51,6 +52,8 @@ export function LogRow({ line }: { line: ParsedLogLine }) {
         display: "flex",
         gap: 1.5,
         pl: 1.25,
+        contentVisibility: "auto",
+        containIntrinsicSize: "auto 21px",
         borderLeft: `2px solid ${theme.border}`,
         bgcolor: theme.tint,
         color: theme.text,
@@ -75,4 +78,6 @@ export function LogRow({ line }: { line: ParsedLogLine }) {
       </Box>
     </Box>
   );
-}
+});
+
+LogRow.displayName = "LogRow";

@@ -92,10 +92,6 @@ func netnsSeedSet(t *testing.T, engine string) {
 	netnsRun(t, "ipset", "add", setName, netnsTarget, "-exist")
 }
 
-// TestNetnsUserspaceTunnelDoesNotSwallowRouterTraffic drives the failure a user
-// hit with an Xray TUN inbound: b4 marked the router's own connections to a set
-// destination and routed them into the TUN the proxy reads, the proxy answered
-// by dialling the same address, and that dial came straight back in.
 func TestNetnsUserspaceTunnelDoesNotSwallowRouterTraffic(t *testing.T) {
 	netnsRequire(t)
 	netnsSetupLinks(t)
@@ -255,10 +251,6 @@ func netnsReadTunSYNs(t *testing.T, fd int, redial bool, until time.Duration) in
 	return seen
 }
 
-// TestNetnsUserspaceTunnelSurvivesARedialingProxy stands a proxy up on the far
-// side of the TUN that answers every connection by opening its own to the same
-// address, which is what an Xray TUN inbound with a direct outbound does. Before
-// the guard, one seed connection multiplied without bound.
 func TestNetnsUserspaceTunnelSurvivesARedialingProxy(t *testing.T) {
 	netnsRequire(t)
 	netnsSetupLinks(t)

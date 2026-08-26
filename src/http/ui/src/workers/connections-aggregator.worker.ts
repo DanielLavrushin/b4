@@ -7,6 +7,9 @@ import {
   DeviceSummary,
   BUCKET_SIZE_MS,
   DEFAULT_BUCKETS,
+  EVICT_SLACK,
+  MAX_DEST_IPS,
+  MAX_DEVICES,
   MAX_GROUPS,
 } from "./connections-types";
 
@@ -106,13 +109,26 @@ function rotateBuckets(
   for (let i = bucketCount - shift; i < bucketCount; i++) g.buckets[i] = 0;
 }
 
-function evictIfNeeded(): void {
-  if (groups.size <= MAX_GROUPS) return;
-  const entries = Array.from(groups.entries()).sort(
+function evictOldest<T extends { lastSeen: number }>(
+  map: Map<string, T>,
+  max: number,
+): void {
+  if (map.size <= max) return;
+  const entries = Array.from(map.entries()).sort(
     (a, b) => a[1].lastSeen - b[1].lastSeen,
   );
-  const toRemove = groups.size - MAX_GROUPS;
-  for (let i = 0; i < toRemove; i++) groups.delete(entries[i][0]);
+  const target = Math.floor(max * EVICT_SLACK);
+  const toRemove = map.size - target;
+  for (let i = 0; i < toRemove; i++) map.delete(entries[i][0]);
+}
+
+function evictIfNeeded(): void {
+  evictOldest(groups, MAX_GROUPS);
+  if (devices.size > MAX_DEVICES) {
+    evictOldest(devices, MAX_DEVICES);
+    for (const [ip, mac] of learnedIpToMac)
+      if (!devices.has(mac)) learnedIpToMac.delete(ip);
+  }
 }
 
 function mergeSeries(
@@ -216,6 +232,7 @@ function ingest(lines: string[]): void {
     g.lastSeen = Math.max(g.lastSeen, p.timestamp);
     g.packets += 1;
     if (p.destination && !g.destIps.includes(p.destination)) {
+      if (g.destIps.length >= MAX_DEST_IPS) g.destIps.shift();
       g.destIps.push(p.destination);
       g.destIp = p.destination;
     }

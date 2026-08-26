@@ -17,6 +17,7 @@ import (
 	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/mtproto"
 	"github.com/daniellavrushin/b4/netif"
+	"github.com/daniellavrushin/b4/nfq"
 )
 
 func (api *API) RegisterConfigApi() {
@@ -199,9 +200,13 @@ func (a *API) getConfig(w http.ResponseWriter) {
 	sort.Strings(ifaces)
 
 	tunnels := []string{}
+	encapsulated := []string{}
 	for _, iface := range ifaces {
 		if netif.IsUserspaceTunnel(iface) {
 			tunnels = append(tunnels, iface)
+		}
+		if netif.IsEncapsulated(iface) {
+			encapsulated = append(encapsulated, iface)
 		}
 	}
 
@@ -210,6 +215,8 @@ func (a *API) getConfig(w http.ResponseWriter) {
 		Sets:                setsWithStats,
 		AvailableInterfaces: ifaces,
 		TunnelInterfaces:    tunnels,
+		EncapsulatedIfaces:  encapsulated,
+		IfaceTraffic:        nfq.IfaceTraffic(),
 		Success:             true,
 		Message:             "Configuration retrieved successfully",
 	}

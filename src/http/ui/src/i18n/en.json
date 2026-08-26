@@ -212,8 +212,10 @@
       "noInterfacesDetected": "No interfaces detected",
       "masqueradeAllInterfaces": "Masquerade will apply to all output interfaces if none is selected.",
       "networkInterfaces": "Network Interfaces",
-      "networkInterfacesDesc": "Select interfaces to monitor (empty = all interfaces)",
-      "listenAllInterfaces": "B4 will listen on all available interfaces if none are selected."
+      "networkInterfacesDesc": "Only inspect packets whose interface is one of these. For forwarded traffic that is the interface the packet leaves by, which a tunnel or a VPN client can change without touching this list. Empty = every interface, which is what almost every setup wants.",
+      "listenAllInterfaces": "B4 will listen on all available interfaces if none are selected.",
+      "interfaceFilterSeesNothing": "Nothing B4 has seen has left by {{selected}}. Traffic is going out {{seen}}, none of it is being inspected, and no set is being applied to it. Clear the selection to watch every interface.",
+      "interfaceFilterSeesLittle": "B4 is not inspecting traffic leaving by {{seen}}, which is about {{percent}}% of what it has seen. No set applies to it. Clear the selection to watch every interface, or add {{seen}}."
     },
     "WebServer": {
       "title": "Web Server",
@@ -1608,7 +1610,7 @@
       "failOpenWarning": "Fail-open exposes the destination to your ISP if the upstream goes down. Disable for whitelist-mode regions where direct connections do not work and you want failures to be visible.",
       "udp": "Route UDP through upstream",
       "udpDesc": "Also tunnel matched UDP traffic through the upstream SOCKS5 proxy (via UDP ASSOCIATE), not just TCP. Applies to forwarded traffic from LAN clients. Most SOCKS5 proxies are TCP-only, and Xray/sing-box need UDP enabled on the inbound. Leave off for TCP-only routing: B4 then refuses QUIC (UDP/443) to matched addresses so clients fall back to TCP and stay on the proxy.",
-      "proxyManipulationNote": "In proxy mode, packet manipulation (faking, fragmentation, desync) is disabled for matched traffic. The upstream proxy handles obfuscation.",
+      "proxyManipulationNote": "In proxy mode B4 leaves the packets of matched traffic alone: no faking, fragmentation or desync, and no SYN health check, dead-IP escalation, IP block detection or TCP duplication. The upstream proxy handles obfuscation.",
       "flowNoUpstream": "upstream not configured",
       "flowProxyCaption": "Matched traffic is handed off to the upstream SOCKS5 proxy. The proxy is responsible for reaching the destination.",
       "howItWorksProxy": "When a device on your network visits a matched domain, B4 intercepts the connection and forwards it through the upstream SOCKS5 proxy you configure. Use this to chain B4 into Xray/sing-box running locally on the router or on another host. Useful in regions with whitelist-based blocking where direct connections to non-whitelisted IPs are dropped.",
@@ -1641,7 +1643,8 @@
       "routerTrafficLoopWarning": "{{iface}} is a tunnel a program on this router reads. If that program answers a routed connection by opening its own to the same address, B4 sends it straight back into {{iface}} and the loop will eat all the memory on the device. Switch back to Automatic, or pick a source interface or device for this set.",
       "routerTrafficHeldBack": "{{iface}} is a tunnel a program on this router reads, so B4 leaves the router's own traffic on the normal route. Routing it into {{iface}} would come back out as a new connection to the same address and loop.",
       "killSwitch": "Kill switch",
-      "killSwitchDesc": "If the output interface goes away, drop this set's traffic instead of letting it fall back to the normal uplink."
+      "killSwitchDesc": "If the output interface goes away, drop this set's traffic instead of letting it fall back to the normal uplink.",
+      "tunnelManipulationNote": "{{iface}} wraps the packet before anything on the network sees it, so B4 leaves this set's packets alone: no faking, fragmentation or desync, and no SYN health check, dead-IP escalation, IP block detection or TCP duplication. The settings on the Strategy tabs have no effect while the set routes there. Such connections are tagged routed->{{iface}} in the connection log."
     },
     "importExport": {
       "sectionTitle": "Import/Export Set configuration",

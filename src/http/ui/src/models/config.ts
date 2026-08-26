@@ -399,6 +399,13 @@ export interface B4Config {
   sets: B4SetConfig[];
   available_ifaces: string[];
   tunnel_ifaces?: string[];
+  encapsulated_ifaces?: string[];
+  iface_traffic?: Record<string, IfaceCounts>;
+}
+
+export interface IfaceCounts {
+  leaving: number;
+  arriving: number;
 }
 
 export interface B4SetConfig {

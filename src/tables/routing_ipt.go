@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -151,26 +152,35 @@ func (b *routeIptBackend) addClaimedBypassRule(chain string) {
 	}
 }
 
-func (b *routeIptBackend) addRouterTrafficGuard(chain string, mark uint32) bool {
-	name := fmt.Sprintf("b4rl%x", mark)
-	added := false
-	for _, cmd := range b.iptBoth() {
-		if !hasBinary(cmd) {
-			continue
-		}
-		if _, err := run(cmd, "-w", "-t", "mangle", "-A", chain,
-			"-m", "conntrack", "--ctstate", "NEW",
-			"-m", "hashlimit",
-			"--hashlimit-above", fmt.Sprintf("%d/sec", routeRouterTrafficRate),
-			"--hashlimit-burst", fmt.Sprintf("%d", routeRouterTrafficRate*2),
-			"--hashlimit-name", name,
-			"-j", "RETURN"); err != nil {
-			log.Tracef("routing: %s takes no router-traffic rate guard on %s (%v); a routing loop through this set would not be capped", chain, cmd, err)
-			continue
-		}
-		added = true
+func (b *routeIptBackend) addRouterTrafficGuard(chain string, v6 bool, setName string, mark uint32) bool {
+	cmd := b.iptFor(v6)
+	if !hasBinary(cmd) {
+		return false
 	}
-	return added
+	name := fmt.Sprintf("b4rl%x", mark)
+	if v6 {
+		name = fmt.Sprintf("b4rl6%x", mark)
+	}
+	args := []string{cmd, "-w", "-t", "mangle", "-A", chain,
+		"-m", "set", "--match-set", setName, "dst",
+		"-m", "conntrack", "--ctstate", "NEW",
+		"-m", "hashlimit",
+		"--hashlimit-above", fmt.Sprintf("%d/sec", routeRouterTrafficRate),
+		"--hashlimit-burst", fmt.Sprintf("%d", routeRouterTrafficRate*2),
+		"--hashlimit-name", name,
+		"-j", "RETURN"}
+
+	if _, err := run(args...); err == nil {
+		return true
+	}
+
+	loadHashlimitModule()
+
+	if _, err := run(args...); err != nil {
+		log.Tracef("routing: %s takes no router-traffic rate guard on %s (%v); a routing loop through this set would not be capped", chain, cmd, err)
+		return false
+	}
+	return true
 }
 
 func routeIptSetMarkArgs(mark uint32) []string {
@@ -199,21 +209,35 @@ func (b *routeIptBackend) addMarkRule(chain string, v6 bool, setName string, mar
 	}
 }
 
-func routeIptInjectedMarkArgs(chain, setName string, mark, queueMark uint32) []string {
-	return append([]string{
+func routeIptInjectedMarkArgs(chain, setName string, mark, queueMark uint32, source []string) []string {
+	args := []string{
 		"-w", "-t", "mangle", "-A", chain,
 		"-m", "mark", "--mark", fmt.Sprintf("0x%x/0x%x", queueMark, queueMark),
-		"-m", "set", "--match-set", setName, "dst",
-	}, routeIptSetMarkArgs(mark)...)
+	}
+	args = append(args, source...)
+	args = append(args, "-m", "set", "--match-set", setName, "dst")
+	return append(args, routeIptSetMarkArgs(mark)...)
 }
 
-func (b *routeIptBackend) addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32) {
+func (b *routeIptBackend) addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32, sources []config.DeviceMatch) {
 	cmd := b.iptFor(v6)
 	if !hasBinary(cmd) {
 		return
 	}
-	runLogged("routing: add injected mark rule "+chain,
-		append([]string{cmd}, routeIptInjectedMarkArgs(chain, setName, mark, queueMark)...)...)
+	usable := routeInjectedSourcesForFamily(sources, v6)
+	if len(usable) == 0 {
+		runLogged("routing: add injected mark rule "+chain,
+			append([]string{cmd}, routeIptInjectedMarkArgs(chain, setName, mark, queueMark, nil)...)...)
+		return
+	}
+	for _, m := range usable {
+		args, ok := iptMatchArgs(m, v6)
+		if !ok {
+			continue
+		}
+		runLogged("routing: add injected mark rule "+chain,
+			append([]string{cmd}, routeIptInjectedMarkArgs(chain, setName, mark, queueMark, args)...)...)
+	}
 }
 
 func routeIptJumpArgs(table, baseChain, targetChain string, atTop bool) []string {
