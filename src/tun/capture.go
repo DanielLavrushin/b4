@@ -205,8 +205,45 @@ func (r *routeManager) desiredCaptureExclusions() []string {
 	return tables.RoutingActiveIPSetNames(true, false)
 }
 
+type captureRule struct {
+	spec  []string
+	local string
+	soft  bool
+}
+
+func (r *routeManager) captureChainRules(excl, local []string) []captureRule {
+	rules := []captureRule{
+		{spec: []string{"-m", "mark", "--mark", fmt.Sprintf("0x%x/0x%x", r.mark, r.mark), "-j", "RETURN"}},
+		{spec: []string{"-m", "mark", "--mark", fmt.Sprintf("0x%x/0x%x", defaultClientMark, defaultClientMark), "-j", "RETURN"}},
+	}
+	for _, set := range excl {
+		rules = append(rules, captureRule{spec: []string{"-m", "set", "--match-set", set, "dst", "-j", "RETURN"}, soft: true})
+	}
+
+	var replies []captureRule
+	for _, spec := range append(r.dnsSteerSpecs(), r.replySteerSpecs()...) {
+		replies = append(replies, captureRule{spec: spec})
+	}
+	var locals []captureRule
+	for _, cidr := range local {
+		locals = append(locals, captureRule{spec: []string{"-d", cidr, "-j", "RETURN"}, local: cidr})
+	}
+
+	if r.reinjectLocalAdded {
+		rules = append(rules, replies...)
+		rules = append(rules, locals...)
+	} else {
+		rules = append(rules, locals...)
+		rules = append(rules, replies...)
+	}
+
+	for _, spec := range r.steerSpecs() {
+		rules = append(rules, captureRule{spec: spec})
+	}
+	return rules
+}
+
 func (r *routeManager) rebuildCaptureChain() {
-	guard := fmt.Sprintf("0x%x/0x%x", r.mark, r.mark)
 	excl := r.desiredCaptureExclusions()
 	local, localOK := r.desiredLocalNets()
 	if !localOK {
@@ -215,49 +252,24 @@ func (r *routeManager) rebuildCaptureChain() {
 
 	run("iptables", "-t", "mangle", "-F", tunCaptureChain)
 
-	run("iptables", "-t", "mangle", "-A", tunCaptureChain, "-m", "mark", "--mark", guard, "-j", "RETURN")
-	clientGuard := fmt.Sprintf("0x%x/0x%x", defaultClientMark, defaultClientMark)
-	run("iptables", "-t", "mangle", "-A", tunCaptureChain, "-m", "mark", "--mark", clientGuard, "-j", "RETURN")
-
-	for _, set := range excl {
-		if _, err := run("iptables", "-t", "mangle", "-A", tunCaptureChain, "-m", "set", "--match-set", set, "dst", "-j", "RETURN"); err != nil {
-			log.Tracef("TUN: capture exclusion for ipset %s not added (set may be absent): %v", set, err)
-		}
-	}
-
-	steerReplies := func() {
-		for _, spec := range append(r.dnsSteerSpecs(), r.replySteerSpecs()...) {
-			if _, err := run(append([]string{"iptables", "-t", "mangle", "-A", tunCaptureChain}, spec...)...); err != nil {
-				log.Warnf("TUN: failed to add DNS or reply-direction capture rule %v: %v", spec, err)
-			}
-		}
-	}
 	applied := make([]string, 0, len(local))
-	exemptLocal := func() {
-		for _, cidr := range local {
-			if _, err := run("iptables", "-t", "mangle", "-A", tunCaptureChain, "-d", cidr, "-j", "RETURN"); err != nil {
-				log.Warnf("TUN: could not exempt local network %s from capture (%v); traffic between your own subnets on a captured port will be sent out %s instead of staying local", cidr, err, r.outIface)
-				continue
+	for _, rule := range r.captureChainRules(excl, local) {
+		_, err := run(append([]string{"iptables", "-t", "mangle", "-A", tunCaptureChain}, rule.spec...)...)
+		switch {
+		case err == nil:
+			if rule.local != "" {
+				applied = append(applied, rule.local)
 			}
-			applied = append(applied, cidr)
-		}
-		if len(applied) > 0 {
-			log.Tracef("TUN: %d directly connected network(s) exempted from capture: %s", len(applied), strings.Join(applied, ", "))
+		case rule.soft:
+			log.Tracef("TUN: capture rule %v not added: %v", rule.spec, err)
+		case rule.local != "":
+			log.Warnf("TUN: could not exempt local network %s from capture (%v); traffic between your own subnets on a captured port will be sent out %s instead of staying local", rule.local, err, r.outIface)
+		default:
+			log.Warnf("TUN: failed to add capture rule %v: %v", rule.spec, err)
 		}
 	}
-
-	if r.reinjectLocalAdded {
-		steerReplies()
-		exemptLocal()
-	} else {
-		exemptLocal()
-		steerReplies()
-	}
-
-	for _, spec := range r.steerSpecs() {
-		if _, err := run(append([]string{"iptables", "-t", "mangle", "-A", tunCaptureChain}, spec...)...); err != nil {
-			log.Warnf("TUN: failed to add capture rule %v: %v", spec, err)
-		}
+	if len(applied) > 0 {
+		log.Tracef("TUN: %d directly connected network(s) exempted from capture: %s", len(applied), strings.Join(applied, ", "))
 	}
 
 	r.captureExcl = excl

@@ -172,17 +172,83 @@ func TestCaptureChainOrderIsExclusionsThenDNSThenLocalThenForward(t *testing.T) 
 	}
 }
 
-func TestRebuildOrderPutsLocalNetsFirstWithoutTheReinjectRule(t *testing.T) {
-	withRule := &routeManager{reinjectLocalAdded: true}
-	withoutRule := &routeManager{reinjectLocalAdded: false}
+func captureRuleIndex(rules []captureRule, match func(string) bool) int {
+	for i, rule := range rules {
+		if match(strings.Join(rule.spec, " ")) {
+			return i
+		}
+	}
+	return -1
+}
 
-	if !withRule.reinjectLocalAdded {
-		t.Fatal("fixture")
+func orderedCaptureManager(reinjectLocal bool) *routeManager {
+	return &routeManager{
+		mark:               0x8000,
+		outIface:           "l2tp-vpn",
+		tcpPorts:           []string{"443"},
+		udpPorts:           []string{"443"},
+		tcpLimit:           19,
+		udpLimit:           8,
+		replyCapture:       true,
+		reinjectLocalAdded: reinjectLocal,
 	}
-	if withoutRule.reinjectLocalAdded {
-		t.Fatal("fixture")
+}
+
+func TestCaptureChainOrderWithTheReinjectRuleKeepsLANResolversIntercepted(t *testing.T) {
+	r := orderedCaptureManager(true)
+	rules := r.captureChainRules([]string{"b4r_abc_v4"}, []string{"192.168.31.0/24"})
+
+	guard := captureRuleIndex(rules, func(s string) bool { return strings.Contains(s, "0x8000/0x8000") })
+	excl := captureRuleIndex(rules, func(s string) bool { return strings.Contains(s, "--match-set b4r_abc_v4") })
+	dns := captureRuleIndex(rules, func(s string) bool { return strings.Contains(s, "--dport 53") })
+	local := captureRuleIndex(rules, func(s string) bool { return strings.Contains(s, "-d 192.168.31.0/24") })
+	forward := captureRuleIndex(rules, func(s string) bool { return strings.Contains(s, "connbytes") })
+
+	for name, idx := range map[string]int{"guard": guard, "exclusion": excl, "dns": dns, "local": local, "forward": forward} {
+		if idx < 0 {
+			t.Fatalf("%s rule missing from the chain: %v", name, rules)
+		}
 	}
-	if len(withRule.dnsSteerSpecs()) != 2 || len(withoutRule.dnsSteerSpecs()) != 2 {
-		t.Fatalf("the DNS rules exist either way, only their position changes")
+	if !(guard < excl && excl < dns && dns < local && local < forward) {
+		t.Fatalf("want guard < exclusion < dns < local < forward, got %d %d %d %d %d", guard, excl, dns, local, forward)
+	}
+}
+
+func TestCaptureChainOrderWithoutTheReinjectRuleKeepsLANTrafficLocal(t *testing.T) {
+	r := orderedCaptureManager(false)
+	rules := r.captureChainRules(nil, []string{"192.168.31.0/24"})
+
+	dns := captureRuleIndex(rules, func(s string) bool { return strings.Contains(s, "--dport 53") })
+	rst := captureRuleIndex(rules, func(s string) bool { return strings.Contains(s, "--tcp-flags RST RST") })
+	local := captureRuleIndex(rules, func(s string) bool { return strings.Contains(s, "-d 192.168.31.0/24") })
+
+	if local < 0 || dns < 0 || rst < 0 {
+		t.Fatalf("chain is missing a rule: %v", rules)
+	}
+	if local > dns || local > rst {
+		t.Fatalf("without the re-inject rule a local destination must be exempted before anything steers it, got local=%d dns=%d rst=%d", local, dns, rst)
+	}
+}
+
+func TestCaptureChainMarksExclusionsAsSoftFailures(t *testing.T) {
+	r := orderedCaptureManager(true)
+	rules := r.captureChainRules([]string{"b4r_abc_v4"}, []string{"192.168.31.0/24"})
+
+	for _, rule := range rules {
+		joined := strings.Join(rule.spec, " ")
+		switch {
+		case strings.Contains(joined, "--match-set"):
+			if !rule.soft {
+				t.Fatalf("a missing ipset is expected and must not warn: %q", joined)
+			}
+		case strings.Contains(joined, "-d 192.168.31.0/24"):
+			if rule.local != "192.168.31.0/24" {
+				t.Fatalf("a local exemption must carry its network so a failure is not recorded as applied: %q", joined)
+			}
+		default:
+			if rule.soft || rule.local != "" {
+				t.Fatalf("unexpected classification on %q", joined)
+			}
+		}
 	}
 }
