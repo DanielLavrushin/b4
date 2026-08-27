@@ -300,8 +300,10 @@ func proxyTable() int {
 	proxyTableMu.Lock()
 	defer proxyTableMu.Unlock()
 	if !proxyTableResolved {
-		proxyTableChosen = routePickProxyTable()
-		proxyTableResolved = true
+		if picked := routePickProxyTable(); picked > 0 {
+			proxyTableChosen = picked
+			proxyTableResolved = true
+		}
 	}
 	return proxyTableChosen
 }

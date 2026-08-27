@@ -74,7 +74,9 @@ type routeManager struct {
 	reinjectLocalAdded bool
 	localNets          []string
 	localNetsWanted    []string
-	localRetryPending  bool
+	localRetries       int
+	capturePrio        int
+	conflicts          []steerConflict
 	captureExcl        []string
 }
 
@@ -466,10 +468,12 @@ func (r *routeManager) refreshEgress() bool {
 	}
 	r.saveState()
 
-	tableStr := strconv.Itoa(r.routeTable)
-	run("ip", "route", "flush", "table", tableStr)
-	if err := r.addBypassDefault(tableStr); err != nil {
-		log.Warnf("TUN: reconcile failed to rebuild bypass route for new uplink: %v", err)
+	if r.resolvedCapture != "ports" {
+		tableStr := strconv.Itoa(r.routeTable)
+		run("ip", "route", "flush", "table", tableStr)
+		if err := r.addBypassDefault(tableStr); err != nil {
+			log.Warnf("TUN: reconcile failed to rebuild bypass route for new uplink: %v", err)
+		}
 	}
 
 	if mtu := interfaceMTU(iface); mtu > 0 {
@@ -520,10 +524,10 @@ func (r *routeManager) reconcile() {
 		}
 		r.ensureNAT()
 	}
-	r.ensureBypass()
 	if r.resolvedCapture == "ports" {
 		r.ensurePortCapture()
 	} else {
+		r.ensureBypass()
 		r.ensureDefaultCapture()
 	}
 }
@@ -756,9 +760,11 @@ func (r *routeManager) teardown() {
 	if r.reinjectLocalAdded {
 		r.removeReinjectLocalRule()
 	}
-	r.delFwmarkRule(markStr, tableStr)
-	if _, err := run("ip", "route", "flush", "table", tableStr); err != nil {
-		log.Warnf("TUN: failed to flush route table %s: %v", tableStr, err)
+	if r.resolvedCapture != "ports" {
+		r.delFwmarkRule(markStr, tableStr)
+		if _, err := run("ip", "route", "flush", "table", tableStr); err != nil {
+			log.Tracef("TUN: route table %s not flushed: %v", tableStr, err)
+		}
 	}
 	if interfaceExists(r.tunName) {
 		if _, err := run("ip", "link", "del", r.tunName); err != nil {
@@ -813,4 +819,11 @@ func run(args ...string) (string, error) {
 
 func (r *routeManager) clientDirectionRoutable() bool {
 	return r.clientBypassOK.Load()
+}
+
+func (r *routeManager) reinjectReachesLocal() bool {
+	if r.resolvedCapture == "ports" {
+		return true
+	}
+	return r.reinjectLocalAdded
 }

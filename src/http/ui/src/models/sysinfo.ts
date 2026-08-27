@@ -85,6 +85,7 @@ interface DiagTUN {
   packets_forwarded: number;
   forward_errors: number;
   ipv6_dropped: number;
+  steer_conflicts?: string[];
 }
 
 interface DiagEngine {

@@ -492,6 +492,7 @@ func collectTUNInfo(cfg *config.Config) *DiagTUN {
 	if globalTUNEngine != nil {
 		di := globalTUNEngine.DiagInfo()
 		t.Running = true
+		t.SteerConflicts = di.SteerConflicts
 		if di.DeviceName != "" {
 			t.DeviceName = di.DeviceName
 		}

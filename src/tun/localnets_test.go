@@ -3,6 +3,8 @@ package tun
 import (
 	"strings"
 	"testing"
+
+	"github.com/daniellavrushin/b4/tables"
 )
 
 const addrShowSample = `2: eth1    inet 172.20.119.223/24 brd 172.20.119.255 scope global eth1\       valid_lft forever preferred_lft forever
@@ -102,8 +104,8 @@ func TestClientMarkRuleArgsTargetTheClientMark(t *testing.T) {
 	if clientLocalPrio >= clientBypassPrio {
 		t.Fatalf("the local-first rule must be consulted before the bypass rule (%d, %d)", clientLocalPrio, clientBypassPrio)
 	}
-	if clientBypassPrio >= captureRulePrio {
-		t.Fatalf("both client rules must be consulted before the capture steer (%d, %d)", clientBypassPrio, captureRulePrio)
+	if clientBypassPrio >= reinjectLocalPrio {
+		t.Fatalf("the client rules must be consulted before the re-inject rules (%d, %d)", clientBypassPrio, reinjectLocalPrio)
 	}
 }
 
@@ -250,5 +252,107 @@ func TestCaptureChainMarksExclusionsAsSoftFailures(t *testing.T) {
 				t.Fatalf("unexpected classification on %q", joined)
 			}
 		}
+	}
+}
+
+func TestCapturePriorityStaysBelowTheProxyDivertAndAboveMain(t *testing.T) {
+	if capturePrioFloor <= tables.ProxyRulePriority() {
+		t.Fatalf("a proxy set must divert to b4's listener before capture steals the packet (floor %d, tproxy %d)", capturePrioFloor, tables.ProxyRulePriority())
+	}
+	if defaultCapturePrio >= 32766 {
+		t.Fatalf("capture must be consulted before the main table (%d)", defaultCapturePrio)
+	}
+	if defaultCapturePrio <= capturePrioFloor {
+		t.Fatalf("the default must leave room to move down (default %d, floor %d)", defaultCapturePrio, capturePrioFloor)
+	}
+}
+
+func TestRulePriorityParsesTheLeadingField(t *testing.T) {
+	cases := map[string]int{
+		"0:\tfrom all lookup local":                     0,
+		"51:\tfrom 192.168.1.0/24 lookup 250":           51,
+		"32766:\tfrom all lookup main":                  32766,
+		"4:\tfrom all fwmark 0x10000/0x10000 lookup 77": 4,
+	}
+	for line, want := range cases {
+		got, ok := rulePriority(line)
+		if !ok || got != want {
+			t.Fatalf("rulePriority(%q) = %d,%v; want %d", line, got, ok, want)
+		}
+	}
+	if _, ok := rulePriority(""); ok {
+		t.Fatalf("an empty line has no priority")
+	}
+	if _, ok := rulePriority("from all lookup main"); ok {
+		t.Fatalf("a line with no leading priority must be skipped")
+	}
+}
+
+func TestParseSteerProbe(t *testing.T) {
+	toTun := "1.1.1.1 from 192.168.1.100 dev b4tun0 table 9998 mark 0x40000000 \n    cache iif br0"
+	if dev, reached := parseSteerProbe(toTun, "b4tun0"); !reached || dev != "b4tun0 table 9998" {
+		t.Fatalf("got %q,%v; want the tun and reached", dev, reached)
+	}
+	stolen := "1.1.1.1 from 192.168.1.100 dev xray0 table 250 mark 0x40000000 \n    cache iif br0"
+	if dev, reached := parseSteerProbe(stolen, "b4tun0"); reached || dev != "xray0 table 250" {
+		t.Fatalf("got %q,%v; want xray0 and not reached", dev, reached)
+	}
+	main := "1.1.1.1 via 10.0.0.1 dev eth0 src 10.0.0.2 mark 0x40000000"
+	if dev, reached := parseSteerProbe(main, "b4tun0"); reached || dev != "eth0" {
+		t.Fatalf("got %q,%v; want eth0 and not reached", dev, reached)
+	}
+	if dev, reached := parseSteerProbe("", "b4tun0"); reached || dev != "" {
+		t.Fatalf("got %q,%v; empty output means no answer", dev, reached)
+	}
+}
+
+func TestProbeSourceForPicksAHostInsideTheNetwork(t *testing.T) {
+	cases := map[string]string{
+		"192.168.1.1/24":   "192.168.1.2",
+		"172.17.0.1/16":    "172.17.0.2",
+		"10.8.0.1/24":      "10.8.0.2",
+		"94.189.76.227/32": "94.189.76.227",
+		"nonsense":         "",
+	}
+	for in, want := range cases {
+		if got := probeSourceFor(in); got != want {
+			t.Fatalf("probeSourceFor(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestSteerProbeMarkHasNoMaskBecauseIpRouteGetRejectsOne(t *testing.T) {
+	if strings.Contains(steerProbeMark(), "/") {
+		t.Fatalf("ip route get refuses a masked mark with 'invalid mark value', got %q", steerProbeMark())
+	}
+	if steerProbeMark() != "0x40000000" {
+		t.Fatalf("the probe must carry the steer mark, got %q", steerProbeMark())
+	}
+	r := &routeManager{}
+	if !strings.Contains(r.steerMarkStr(), "/") {
+		t.Fatalf("the iptables form still needs its mask, got %q", r.steerMarkStr())
+	}
+}
+
+func TestSteerConflictReadsAsAnExplanation(t *testing.T) {
+	c := steerConflict{Iface: "br0", Source: "192.168.1.2", Went: "xray0 table 250"}
+	got := c.String()
+	for _, want := range []string{"br0", "192.168.1.2", "xray0 table 250"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("%q should name %q so the log points at the conflicting rule", got, want)
+		}
+	}
+}
+
+func TestConflictsEqual(t *testing.T) {
+	a := []steerConflict{{Iface: "br0", Source: "192.168.1.2", Went: "xray0 table 250"}}
+	if !conflictsEqual(a, []steerConflict{{Iface: "br0", Source: "192.168.1.2", Went: "xray0 table 250"}}) {
+		t.Fatalf("the same conflict must not be re-logged on every reconcile")
+	}
+	if conflictsEqual(a, nil) {
+		t.Fatalf("a conflict clearing must be noticed")
+	}
+	if conflictsEqual(a, []steerConflict{{Iface: "br0", Source: "192.168.1.2", Went: "eth0"}}) {
+		t.Fatalf("a conflict that changed target must be re-logged")
 	}
 }
