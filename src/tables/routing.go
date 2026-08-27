@@ -19,6 +19,8 @@ const hostRouteCTMark = uint32(0x40000000)
 
 const routeRouterTrafficRate = 200
 
+const routePolicyRuleBase = 10000
+
 const routeSetMarkMask = uint32(0x27FFF)
 
 // SelfDialMark is carried by connections b4 opens on its own behalf - the
@@ -543,6 +545,8 @@ func RoutingClearAll() {
 	routeRuleCache = make(map[string]routeState)
 	routeIfaceAuto = make(map[string]routeState)
 	routeEngine = nil
+	proxyTableForget()
+	routeForgetRtTableNames()
 	routeLastReResolve = make(map[string]time.Time)
 	routeLearnLast = make(map[string]time.Time)
 	routeLearnedHosts = make(map[string]map[string]time.Time)
@@ -825,9 +829,11 @@ func RoutingSyncConfig(cfg *config.Config) {
 			mode = config.RoutingModeInterface
 		}
 		if mode == config.RoutingModeInterface && set.Routing.EgressInterface == "" {
+			routeWarnIncomplete(set, "routing mode is 'interface' but no output interface is chosen")
 			continue
 		}
 		if mode == config.RoutingModeProxy && set.Routing.Upstream.Port < 1 {
+			routeWarnIncomplete(set, "routing mode is 'proxy' but the upstream port is not set")
 			continue
 		}
 		if len(set.Targets.IpsToMatch) == 0 && len(set.Targets.DomainsToMatch) == 0 {
@@ -835,6 +841,7 @@ func RoutingSyncConfig(cfg *config.Config) {
 			continue
 		}
 		routeForgetNoDestinationWarning(set.Id)
+		routeForgetIncompleteWarning(set.Id)
 		desired[set.Id] = set
 	}
 
@@ -1491,7 +1498,7 @@ func routeCleanupRule(be routeBackend, st routeState) {
 
 func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 	iface, mark, table := st.iface, st.mark, st.table
-	prio := 10000 + table
+	prio := routePolicyRuleBase + table
 	markStrMask := routeSetMarkRule(mark)
 	tableStr := fmt.Sprintf("%d", table)
 	prioStr := fmt.Sprintf("%d", prio)
@@ -1973,7 +1980,14 @@ func routeLineBelongsToIface(line, iface string) bool {
 }
 
 func routeTableTakenByOthers(table int, iface string) bool {
-	if iface == "" || !hasBinary("ip") {
+	if !hasBinary("ip") {
+		return false
+	}
+	if name, named := routeTableName(table); named {
+		log.Tracef("Routing: table %d is named %q in %s, treating it as taken", table, name, rtTablesFile)
+		return true
+	}
+	if iface == "" {
 		return false
 	}
 	return routeTableForeignRoutes(table, iface)

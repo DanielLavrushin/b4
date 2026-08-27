@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
@@ -34,16 +35,16 @@ func interfaceMTU(iface string) int {
 }
 
 type routeManager struct {
-	tunName       string
-	tunAddr       string
-	tunAddrV6     string
-	outIface      string
-	outGateway    string
-	mark          uint
-	routeTable    int
-	skipTables    bool
-	savedDefault  string
-	savedRPFilter string
+	tunName            string
+	tunAddr            string
+	tunAddrV6          string
+	outIface           string
+	outGateway         string
+	mark               uint
+	routeTable         int
+	skipTables         bool
+	savedDefault       string
+	savedRPFilter      string
 	fwdRulesAdded      bool
 	snatAdded          bool
 	notrackAdded       bool
@@ -63,12 +64,17 @@ type routeManager struct {
 
 	followDefault bool
 
-	mu                sync.Mutex
-	srcIP             string
-	resolvedCapture   string
-	multiport         bool
-	captureRulesAdded bool
-	captureExcl       []string
+	mu                 sync.Mutex
+	srcIP              string
+	resolvedCapture    string
+	multiport          bool
+	captureRulesAdded  bool
+	clientBypassOK     atomic.Bool
+	clientBypassAdded  bool
+	reinjectLocalAdded bool
+	localNets          []string
+	localNetsWanted    []string
+	captureExcl        []string
 }
 
 func resolveDefaultEgress(skipDev string) (iface, gw, src string, ok bool) {
@@ -343,6 +349,7 @@ func (r *routeManager) setupBypassTable() error {
 	if _, err := run("ip", "rule", "add", "fwmark", markStr, "lookup", tableStr, "priority", "100"); err != nil {
 		return fmt.Errorf("ip rule add (whole-default capture needs policy routing; a busybox 'ip' may reject custom tables - install full iproute2, e.g. 'apk add iproute2', or set queue.tun.route_table <= 255): %w", err)
 	}
+	r.ensureReinjectLocalRule()
 	return r.addBypassDefault(tableStr)
 }
 
@@ -362,7 +369,7 @@ func (r *routeManager) ownsBypassTable(markStr, tableStr string) bool {
 		return false
 	}
 	for _, line := range strings.Split(out, "\n") {
-		if ruleFieldValue(line, "lookup") != tableStr {
+		if !lookupMatchesTable(ruleFieldValue(line, "lookup"), tableStr) {
 			continue
 		}
 		fw := ruleFieldValue(line, "fwmark")
@@ -410,6 +417,8 @@ func (r *routeManager) setupDefaultCapture(srcIP string) error {
 	if err := r.setupBypassTable(); err != nil {
 		return err
 	}
+
+	r.ensureClientBypass()
 
 	if err := r.replaceDefaultIntoTun(); err != nil {
 		return fmt.Errorf("ip route replace default: %w", err)
@@ -546,7 +555,49 @@ func (r *routeManager) ensureNotrack(added *bool, markStr string) {
 	}
 }
 
+func (r *routeManager) reinjectLocalPresent() bool {
+	out, err := run("ip", "rule", "show")
+	if err != nil {
+		return false
+	}
+	bare := strings.SplitN(reinjectMarkMatch(), "/", 2)[0]
+	for _, line := range strings.Split(out, "\n") {
+		if ruleFieldValue(line, "lookup") != "main" || !strings.Contains(line, "suppress_prefixlength 0") {
+			continue
+		}
+		fw := ruleFieldValue(line, "fwmark")
+		if fw == reinjectMarkMatch() || fw == bare || strings.HasPrefix(fw, bare+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *routeManager) ensureReinjectLocalRule() {
+	if r.reinjectLocalPresent() {
+		r.reinjectLocalAdded = true
+		return
+	}
+	args := []string{"ip", "rule", "add", "fwmark", reinjectMarkMatch(), "lookup", "main", "suppress_prefixlength", "0", "priority", strconv.Itoa(reinjectLocalPrio)}
+	if _, err := run(args...); err != nil {
+		log.Warnf("TUN: this iproute2 rejected the rule that lets re-injected packets reach your own networks (%v), so an intercepted request to a device on the LAN leaves by %s instead; install full iproute2 for suppress_prefixlength support", err, r.outIface)
+		return
+	}
+	r.reinjectLocalAdded = true
+	log.Infof("TUN: re-injected packets resolve local destinations before the uplink (ip rule priority %d)", reinjectLocalPrio)
+}
+
+func (r *routeManager) removeReinjectLocalRule() {
+	for {
+		if _, err := run("ip", "rule", "del", "fwmark", reinjectMarkMatch(), "lookup", "main", "suppress_prefixlength", "0"); err != nil {
+			break
+		}
+	}
+	r.reinjectLocalAdded = false
+}
+
 func (r *routeManager) ensureBypass() {
+	r.ensureReinjectLocalRule()
 	markStr := reinjectMarkMatch()
 	tableStr := fmt.Sprintf("%d", r.routeTable)
 	if !r.ownsBypassTable(markStr, tableStr) {
@@ -565,7 +616,85 @@ func (r *routeManager) ensureBypass() {
 	}
 }
 
+func (r *routeManager) clientMarkRuleArgs(action, table string) []string {
+	return []string{"ip", "rule", action, "fwmark", clientMarkMatch(), "lookup", table}
+}
+
+func lookupMatchesTable(lookup, table string) bool {
+	if lookup == table {
+		return true
+	}
+	n, err := strconv.Atoi(table)
+	if err != nil {
+		return false
+	}
+	name, named := tables.RouteTableName(n)
+	return named && lookup == name
+}
+
+func (r *routeManager) clientBypassPresent(table string) bool {
+	out, err := run("ip", "rule", "show")
+	if err != nil {
+		return false
+	}
+	bare := strings.SplitN(clientMarkMatch(), "/", 2)[0]
+	for _, line := range strings.Split(out, "\n") {
+		if !lookupMatchesTable(ruleFieldValue(line, "lookup"), table) {
+			continue
+		}
+		if table == "main" && !strings.Contains(line, "suppress_prefixlength 0") {
+			continue
+		}
+		fw := ruleFieldValue(line, "fwmark")
+		if fw == clientMarkMatch() || fw == bare || strings.HasPrefix(fw, bare+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *routeManager) ensureClientBypass() {
+	tableStr := strconv.Itoa(r.routeTable)
+	announce := !r.clientBypassAdded
+
+	if !r.clientBypassPresent("main") {
+		args := append(r.clientMarkRuleArgs("add", "main"), "suppress_prefixlength", "0", "priority", strconv.Itoa(clientLocalPrio))
+		if _, err := run(args...); err != nil {
+			r.clientBypassOK.Store(false)
+			log.Warnf("TUN: this iproute2 rejected the rule that keeps b4's client-direction packets out of the tunnel (%v), so reply-direction capture stays off in whole-default mode; install full iproute2 for suppress_prefixlength support", err)
+			return
+		}
+	}
+	if !r.clientBypassPresent(tableStr) {
+		if _, err := run(append(r.clientMarkRuleArgs("add", tableStr), "priority", strconv.Itoa(clientBypassPrio))...); err != nil {
+			log.Warnf("TUN: failed to add the client-direction bypass route rule (%v)", err)
+			r.removeClientBypass()
+			r.clientBypassOK.Store(false)
+			return
+		}
+	}
+
+	r.clientBypassOK.Store(true)
+	r.clientBypassAdded = true
+	if announce {
+		log.Infof("TUN: client-direction packets resolve local destinations first and leave by %s otherwise (ip rule priority %d and %d)", r.outIface, clientLocalPrio, clientBypassPrio)
+	}
+}
+
+func (r *routeManager) removeClientBypass() {
+	tableStr := strconv.Itoa(r.routeTable)
+	for _, table := range []string{"main", tableStr} {
+		for {
+			if _, err := run(r.clientMarkRuleArgs("del", table)...); err != nil {
+				break
+			}
+		}
+	}
+	r.clientBypassAdded = false
+}
+
 func (r *routeManager) ensureDefaultCapture() {
+	r.ensureClientBypass()
 	out, _ := run("ip", "-4", "route", "show", "default")
 	if strings.Contains(out, "dev "+r.tunName) {
 		return
@@ -619,6 +748,12 @@ func (r *routeManager) teardown() {
 		}
 	}
 
+	if r.clientBypassAdded {
+		r.removeClientBypass()
+	}
+	if r.reinjectLocalAdded {
+		r.removeReinjectLocalRule()
+	}
 	r.delFwmarkRule(markStr, tableStr)
 	if _, err := run("ip", "route", "flush", "table", tableStr); err != nil {
 		log.Warnf("TUN: failed to flush route table %s: %v", tableStr, err)
@@ -672,4 +807,8 @@ func run(args ...string) (string, error) {
 		return string(out), fmt.Errorf("%s: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return string(out), nil
+}
+
+func (r *routeManager) clientDirectionRoutable() bool {
+	return r.clientBypassOK.Load()
 }

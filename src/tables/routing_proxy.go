@@ -290,8 +290,24 @@ func proxyMarkAndPort(set *config.SetConfig) (uint32, int) {
 	return mark, port
 }
 
+var (
+	proxyTableMu     sync.Mutex
+	proxyTableChosen int
+)
+
 func proxyTable() int {
-	return proxyLocalDeliveryTable
+	proxyTableMu.Lock()
+	defer proxyTableMu.Unlock()
+	if proxyTableChosen == 0 {
+		proxyTableChosen = routePickProxyTable()
+	}
+	return proxyTableChosen
+}
+
+func proxyTableForget() {
+	proxyTableMu.Lock()
+	proxyTableChosen = 0
+	proxyTableMu.Unlock()
 }
 
 func proxyActiveCount() int {

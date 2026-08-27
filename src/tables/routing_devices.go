@@ -428,3 +428,17 @@ func routeWarnNoDestination(set *config.SetConfig) {
 func routeForgetNoDestinationWarning(setID string) {
 	routeNoDestinationWarned.Delete(setID)
 }
+
+var routeIncompleteWarned sync.Map
+
+func routeWarnIncomplete(set *config.SetConfig, reason string) {
+	if prev, ok := routeIncompleteWarned.Load(set.Id); ok && prev == reason {
+		return
+	}
+	routeIncompleteWarned.Store(set.Id, reason)
+	log.Warnf("Routing: set '%s' has routing turned on but %s, so no routing rule is installed and the set routes nothing", set.Name, reason)
+}
+
+func routeForgetIncompleteWarning(setID string) {
+	routeIncompleteWarned.Delete(setID)
+}

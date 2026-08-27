@@ -107,17 +107,6 @@ func (e *Engine) Start() error {
 	e.sender = sender
 
 	replyCapture := replyCaptureNeeded(cfg)
-	if replyCapture {
-		clientSender, err := sock.NewSenderWithMark(defaultClientMark)
-		if err != nil {
-			sender.Close()
-			e.tunFile.Close()
-			run("ip", "link", "del", name)
-			return err
-		}
-		e.clientSender = clientSender
-		log.Infof("TUN: reply-direction RST capture enabled (experimental; RST protection / escalation). Validate on a real device")
-	}
 
 	captureTable := routeTable - 1
 	if captureTable <= 0 {
@@ -136,21 +125,21 @@ func (e *Engine) Start() error {
 	dupV4, _ := cfg.CollectDuplicateIPs()
 
 	e.routes = &routeManager{
-		tunName:       name,
-		tunAddr:       address,
-		tunAddrV6:     tunCfg.AddressV6,
-		outIface:      tunCfg.OutInterface,
-		outGateway:    tunCfg.OutGateway,
-		mark:          cfg.Queue.Mark,
-		routeTable:    routeTable,
-		skipTables:    cfg.System.Tables.SkipSetup,
-		captureTable:  captureTable,
-		tcpPorts:      normalizePorts(cfg.CollectTCPPorts()),
-		udpPorts:      normalizePorts(cfg.CollectUDPPorts()),
-		tcpLimit:      tcpLimit,
-		udpLimit:      udpLimit,
-		dupIPs:        dupV4,
-		replyCapture:  replyCapture,
+		tunName:      name,
+		tunAddr:      address,
+		tunAddrV6:    tunCfg.AddressV6,
+		outIface:     tunCfg.OutInterface,
+		outGateway:   tunCfg.OutGateway,
+		mark:         cfg.Queue.Mark,
+		routeTable:   routeTable,
+		skipTables:   cfg.System.Tables.SkipSetup,
+		captureTable: captureTable,
+		tcpPorts:     normalizePorts(cfg.CollectTCPPorts()),
+		udpPorts:     normalizePorts(cfg.CollectUDPPorts()),
+		tcpLimit:     tcpLimit,
+		udpLimit:     udpLimit,
+		dupIPs:       dupV4,
+		replyCapture: replyCapture,
 
 		devicesEnabled: cfg.Queue.Devices.Enabled,
 		whiteIsBlack:   cfg.Queue.Devices.WhiteIsBlack,
@@ -163,6 +152,21 @@ func (e *Engine) Start() error {
 		sender.Close()
 		e.tunFile.Close()
 		return err
+	}
+
+	clientSender, err := sock.NewSenderWithMark(defaultClientMark)
+	if err != nil {
+		e.routes.teardown()
+		sender.Close()
+		e.tunFile.Close()
+		return err
+	}
+	e.clientSender = clientSender
+	if !e.routes.clientBypassOK.Load() {
+		log.Warnf("TUN: client-direction re-injection is held back because there is no policy rule to keep those packets out of %s; DNS answers and reply-direction RSTs leave by the uplink until the rule installs", name)
+	}
+	if replyCapture {
+		log.Infof("TUN: reply-direction RST capture enabled (experimental; RST protection / escalation). Validate on a real device")
 	}
 
 	if !cfg.System.Tables.SkipSetup {
@@ -279,18 +283,37 @@ func (e *Engine) forwardPacket(raw []byte) {
 }
 
 func (e *Engine) senderFor(raw []byte) *sock.Sender {
-	if e.clientSender == nil || e.routes == nil {
+	if e.clientSender == nil || e.routes == nil || !e.routes.clientDirectionRoutable() {
 		return e.sender
 	}
 	ihl := int(raw[0]&0x0f) * 4
-	if ihl < 20 || raw[9] != 6 || len(raw) < ihl+2 {
+	proto := raw[9]
+	if ihl < 20 || len(raw) < ihl+2 || (proto != 6 && proto != 17) {
+		return e.sender
+	}
+	if (uint16(raw[6])<<8|uint16(raw[7]))&0x1fff != 0 {
 		return e.sender
 	}
 	sport := uint16(raw[ihl])<<8 | uint16(raw[ihl+1])
+	if proto == 17 {
+		if sport == 53 && isDNSResponse(raw, ihl) {
+			return e.clientSender
+		}
+		return e.sender
+	}
 	if portMatches(sport, e.routes.tcpPorts) {
 		return e.clientSender
 	}
 	return e.sender
+}
+
+func isDNSResponse(raw []byte, ihl int) bool {
+	const udpHeaderLen = 8
+	off := ihl + udpHeaderLen + 2
+	if off >= len(raw) {
+		return false
+	}
+	return raw[off]&0x80 != 0
 }
 
 func replyCaptureNeeded(cfg *config.Config) bool {
