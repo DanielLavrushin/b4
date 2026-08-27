@@ -6,7 +6,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 )
 
-var dialIPv6Probe = config.HostHasGlobalIPv6
+var dialIPv6Probe = config.HostCanReachIPv6
 
 func dialIPv6Usable() bool {
 	return dialIPv6Probe()

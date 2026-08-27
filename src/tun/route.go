@@ -74,6 +74,7 @@ type routeManager struct {
 	reinjectLocalAdded bool
 	localNets          []string
 	localNetsWanted    []string
+	localRetryPending  bool
 	captureExcl        []string
 }
 
@@ -580,6 +581,7 @@ func (r *routeManager) ensureReinjectLocalRule() {
 	}
 	args := []string{"ip", "rule", "add", "fwmark", reinjectMarkMatch(), "lookup", "main", "suppress_prefixlength", "0", "priority", strconv.Itoa(reinjectLocalPrio)}
 	if _, err := run(args...); err != nil {
+		r.reinjectLocalAdded = false
 		log.Warnf("TUN: this iproute2 rejected the rule that lets re-injected packets reach your own networks (%v), so an intercepted request to a device on the LAN leaves by %s instead; install full iproute2 for suppress_prefixlength support", err, r.outIface)
 		return
 	}

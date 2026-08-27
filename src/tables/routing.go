@@ -1876,6 +1876,8 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 	_, _ = h.Write([]byte(autoKey))
 	base := h.Sum32()
 
+	refs := routeRuleLookupTargets()
+
 	var firstTaken int
 	for attempt := uint32(0); attempt < 4096; attempt++ {
 		table := 100 + int((base+attempt)%150)
@@ -1886,7 +1888,7 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 		if _, ok := usedTables[table]; ok {
 			continue
 		}
-		if routeTableTakenByOthers(table, set.Routing.EgressInterface) {
+		if routeTableTakenByOthers(table, set.Routing.EgressInterface, refs) {
 			usedTables[table] = struct{}{}
 			if firstTaken == 0 {
 				firstTaken = table
@@ -1904,7 +1906,7 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 	table := 100
 	for i := 0; i < 4096; i++ {
 		_, tableUsed := usedTables[table]
-		if !markOverlaps(mark, usedMarks) && !tableUsed && !routeTableTakenByOthers(table, set.Routing.EgressInterface) {
+		if !markOverlaps(mark, usedMarks) && !tableUsed && !routeTableTakenByOthers(table, set.Routing.EgressInterface, refs) {
 			break
 		}
 		mark++
@@ -1979,12 +1981,16 @@ func routeLineBelongsToIface(line, iface string) bool {
 	return false
 }
 
-func routeTableTakenByOthers(table int, iface string) bool {
+func routeTableTakenByOthers(table int, iface string, refs map[string][]string) bool {
 	if !hasBinary("ip") {
 		return false
 	}
 	if name, named := routeTableName(table); named {
 		log.Tracef("Routing: table %d is named %q in %s, treating it as taken", table, name, rtTablesFile)
+		return true
+	}
+	if foreign := routeRuleRefsIn(refs, table); len(foreign) > 0 {
+		log.Tracef("Routing: table %d is the target of a routing rule b4 did not add (%s), treating it as taken", table, foreign[0])
 		return true
 	}
 	if iface == "" {

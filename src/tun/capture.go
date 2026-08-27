@@ -273,6 +273,7 @@ func (r *routeManager) rebuildCaptureChain() {
 	}
 
 	r.captureExcl = excl
+	r.localRetryPending = !r.localRetryPending && len(applied) != len(local)
 	r.localNets = applied
 	r.localNetsWanted = local
 }
@@ -430,6 +431,9 @@ func (r *routeManager) ensurePortCapture() {
 		r.rebuildCaptureChain()
 	case !equalStringSet(localNow, r.localNetsWanted):
 		log.Infof("TUN: reconcile refreshing local-network exemptions (%d connected network(s))", len(localNow))
+		r.rebuildCaptureChain()
+	case r.localRetryPending:
+		log.Infof("TUN: reconcile retrying %d local-network exemption(s) that did not install", len(r.localNetsWanted)-len(r.localNets))
 		r.rebuildCaptureChain()
 	}
 }

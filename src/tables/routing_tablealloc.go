@@ -149,14 +149,27 @@ func routeRulePriority(line string) (int, bool) {
 }
 
 func routeRuleIsOwn(line string) bool {
-	if routeRuleField(line, "fwmark") == "" {
+	fw := routeRuleField(line, "fwmark")
+	slash := strings.IndexByte(fw, '/')
+	if slash < 0 {
+		return false
+	}
+	mask, err := strconv.ParseUint(strings.TrimPrefix(fw[slash+1:], "0x"), 16, 32)
+	if err != nil || uint32(mask) != routeSetMarkMask {
 		return false
 	}
 	prio, ok := routeRulePriority(line)
 	if !ok {
 		return false
 	}
-	return prio == proxyRulePriority || prio >= routePolicyRuleBase
+	if prio == proxyRulePriority {
+		return true
+	}
+	table, err := strconv.Atoi(routeRuleField(line, "lookup"))
+	if err != nil {
+		return false
+	}
+	return prio == routePolicyRuleBase+table
 }
 
 func routeIPFamilyArgs() [][]string {
@@ -217,10 +230,15 @@ func routeTableHeldIn(held map[string]bool, table int) bool {
 	return false
 }
 
+const (
+	proxyTableSpareFirst = 300
+	proxyTableSpareLast  = 399
+)
+
 func routeProxyTableCandidates() []int {
-	out := make([]int, 0, 3+100)
-	out = append(out, proxyLocalDeliveryTable, 251, 250)
-	for t := 300; t < 400; t++ {
+	out := make([]int, 0, 3+(proxyTableSpareLast-proxyTableSpareFirst+1))
+	out = append(out, proxyLocalDeliveryTable, proxyLocalDeliveryTable-1, proxyLocalDeliveryTable-2)
+	for t := proxyTableSpareFirst; t <= proxyTableSpareLast; t++ {
 		out = append(out, t)
 	}
 	return out
@@ -236,29 +254,38 @@ func routePickProxyTableExec() int {
 	held := routeTablesHoldingRoutes()
 
 	for _, table := range routeProxyTableCandidates() {
+		preferred := table == proxyLocalDeliveryTable
+		note := func(format string, args ...any) {
+			if preferred {
+				log.Warnf(format, args...)
+				return
+			}
+			log.Tracef(format, args...)
+		}
+
 		if name, named := routeTableName(table); named {
-			log.Warnf("Routing: routing table %d is named %q in %s, so b4 will not claim it for transparent proxying; the local-delivery route it installs there would swallow every rule that already looks up %q",
+			note("Routing: routing table %d is named %q in %s, so b4 will not claim it for transparent proxying; the local-delivery route it installs there would swallow every rule that already looks up %q",
 				table, name, rtTablesFile, name)
 			continue
 		}
 		if refs := routeRuleRefsIn(targets, table); len(refs) > 0 {
-			log.Warnf("Routing: routing table %d is already the target of %d routing rule(s) b4 did not add (%s), so it is not free for transparent proxying",
+			note("Routing: routing table %d is already the target of %d routing rule(s) b4 did not add (%s), so it is not free for transparent proxying",
 				table, len(refs), strings.Join(refs, "; "))
 			continue
 		}
 		if routeTableHeldIn(held, table) {
-			log.Warnf("Routing: routing table %d already holds routes b4 did not add, so it is not free for transparent proxying", table)
+			note("Routing: routing table %d already holds routes b4 did not add, so it is not free for transparent proxying", table)
 			continue
 		}
-		if table != proxyLocalDeliveryTable {
+		if !preferred {
 			log.Infof("Routing: transparent proxying uses routing table %d because %d is in use", table, proxyLocalDeliveryTable)
 		}
 		return table
 	}
 
-	log.Errorf("Routing: no free routing table for transparent proxying, falling back to %d; a set using an upstream proxy may break whatever already uses that table (see %s and 'ip rule show')",
-		proxyLocalDeliveryTable, rtTablesFile)
-	return proxyLocalDeliveryTable
+	log.Errorf("Routing: every routing table b4 could use for transparent proxying is already taken, so sets with an upstream proxy install no rules; free one of %d-%d or %d-%d (see %s and 'ip rule show')",
+		proxyLocalDeliveryTable-2, proxyLocalDeliveryTable, proxyTableSpareFirst, proxyTableSpareLast, rtTablesFile)
+	return 0
 }
 
 func RouteTableName(table int) (string, bool) {

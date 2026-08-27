@@ -76,10 +76,10 @@ func TestRouteTableTakenByOthersRejectsANamedTable(t *testing.T) {
 	if !hasBinary("ip") {
 		t.Skip("ip binary not present")
 	}
-	if !routeTableTakenByOthers(proxyLocalDeliveryTable, "eth0") {
+	if !routeTableTakenByOthers(proxyLocalDeliveryTable, "eth0", nil) {
 		t.Fatalf("table %d is named 'vpn' in rt_tables and must read as taken", proxyLocalDeliveryTable)
 	}
-	if routeTableTakenByOthers(137, "eth0") {
+	if routeTableTakenByOthers(137, "eth0", nil) {
 		t.Fatalf("table 137 is unnamed and holds no foreign routes, it must read as free")
 	}
 }
@@ -246,10 +246,9 @@ func TestRouteRuleIsOwn(t *testing.T) {
 	}
 }
 
-func TestRouteRuleIsOwnCoversEveryMarkB4Installs(t *testing.T) {
+func TestRouteRuleIsOwnDemandsB4sExactSignature(t *testing.T) {
 	own := []string{
 		"3:\tfrom all fwmark 0x237a0/0x27fff lookup 252",
-		"3:\tfrom all fwmark 0xdead/0x27fff lookup 252",
 		"10137:\tfrom all fwmark 0x1f4/0x27fff lookup 137",
 	}
 	for _, l := range own {
@@ -258,14 +257,37 @@ func TestRouteRuleIsOwnCoversEveryMarkB4Installs(t *testing.T) {
 		}
 	}
 	foreign := []string{
+		"32765:\tfrom all fwmark 0x1/0x1 lookup 300",
+		"32765:\tfrom all fwmark 0x237a0/0x27fff lookup 300",
+		"10137:\tfrom all fwmark 0x1f4/0x3f00 lookup 137",
+		"10200:\tfrom all fwmark 0x1f4/0x27fff lookup 137",
 		"1000:\tfrom all fwmark 0x100/0x3f00 lookup 1",
 		"32764:\tfrom all to 1.0.0.1 lookup vpn",
-		"100:\tfrom all fwmark 0x10000000/0x10000000 lookup 9999",
-		"from all lookup main",
 	}
 	for _, l := range foreign {
 		if routeRuleIsOwn(l) {
-			t.Errorf("this rule is not one of b4's routing rules: %q", l)
+			t.Errorf("this rule does not carry b4's signature: %q", l)
 		}
+	}
+}
+
+func TestRoutePickProxyTableReportsExhaustionInsteadOfClaiming252(t *testing.T) {
+	oldNames := routeRtTableNames
+	named := map[int]string{}
+	for _, c := range routeProxyTableCandidates() {
+		named[c] = "taken"
+	}
+	routeRtTableNames = func() map[int]string { return named }
+	routeForgetRtTableNames()
+	t.Cleanup(func() {
+		routeRtTableNames = oldNames
+		routeForgetRtTableNames()
+	})
+
+	if !hasBinary("ip") {
+		t.Skip("ip binary not present")
+	}
+	if got := routePickProxyTableExec(); got != 0 {
+		t.Fatalf("every candidate is taken, so the picker must report exhaustion, got table %d", got)
 	}
 }

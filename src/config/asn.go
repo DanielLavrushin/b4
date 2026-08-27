@@ -18,9 +18,9 @@ type AsnInfo struct {
 }
 
 type AsnStore struct {
-	path  string
-	data  map[string]*AsnInfo
-	mu    sync.RWMutex
+	path string
+	data map[string]*AsnInfo
+	mu   sync.RWMutex
 }
 
 func NewAsnStore(configPath string) *AsnStore {

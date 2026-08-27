@@ -55,7 +55,7 @@ var pseudoFilesystems = map[string]struct{}{
 	"fuse.gvfsd-fuse": {}, "fusectl": {}, "hugetlbfs": {}, "mqueue": {}, "nsfs": {},
 	"proc": {}, "pstore": {}, "rpc_pipefs": {}, "securityfs": {}, "sysfs": {},
 	"tracefs": {},
-	"erofs": {}, "iso9660": {}, "overlay": {}, "squashfs": {}, "udf": {},
+	"erofs":   {}, "iso9660": {}, "overlay": {}, "squashfs": {}, "udf": {},
 }
 
 var skippedMountPrefixes = []string{
