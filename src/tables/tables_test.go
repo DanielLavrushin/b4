@@ -1346,6 +1346,9 @@ func (m *mockRouteBackend) addEgressLoopGuard(chain, iface string) bool {
 	m.recordOp(chain, "loop-guard "+iface)
 	return true
 }
+func (m *mockRouteBackend) addMarkFallbackRule(chain string, v6 bool, setName string, mark uint32, sourceIface string) {
+	m.recordOp(chain, "fallback")
+}
 func (m *mockRouteBackend) addMarkRestoreRule(chain string, v6 bool, sourceIface string, mark uint32) {
 	m.recordOp(chain, "restore")
 }

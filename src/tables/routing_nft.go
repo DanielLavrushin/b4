@@ -172,6 +172,22 @@ func (b *routeNftBackend) addMarkRestoreRule(chain string, v6 bool, sourceIface 
 	runLogged("routing: add mark restore rule "+chain, append([]string{"nft"}, args...)...)
 }
 
+func (b *routeNftBackend) addMarkFallbackRule(chain string, v6 bool, setName string, mark uint32, sourceIface string) {
+	sn := setName
+	args := []string{"add", "rule", "inet", routeNftTable, chain}
+	if sourceIface != "" {
+		args = append(args, "iifname", fmt.Sprintf("%q", sourceIface))
+	}
+	args = append(args, "meta", "mark", "&", fmt.Sprintf("0x%x", routeSetMarkMask), "==", "0x0")
+	if v6 {
+		args = append(args, "ip6", "daddr", "@"+sn)
+	} else {
+		args = append(args, "ip", "daddr", "@"+sn)
+	}
+	args = append(args, routeNftSetMarkArgs(mark)...)
+	runLogged("routing: add mark fallback rule "+chain, append([]string{"nft"}, args...)...)
+}
+
 func (b *routeNftBackend) addClaimedBypassRule(chain string) {
 	maskHex := fmt.Sprintf("0x%x", routeSetMarkMask)
 	runLogged("routing: add claimed bypass rule "+chain,

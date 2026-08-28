@@ -210,6 +210,22 @@ func (b *routeIptBackend) addMarkRule(chain string, v6 bool, setName string, mar
 	runLogged("routing: add mark save rule "+chain, append([]string{cmd}, saveArgs...)...)
 }
 
+func (b *routeIptBackend) addMarkFallbackRule(chain string, v6 bool, setName string, mark uint32, sourceIface string) {
+	cmd := b.iptFor(v6)
+	if !hasBinary(cmd) {
+		return
+	}
+	args := []string{"-w", "-t", "mangle", "-A", chain}
+	if sourceIface != "" {
+		args = append(args, "-i", sourceIface)
+	}
+	args = append(args,
+		"-m", "mark", "--mark", fmt.Sprintf("0x0/0x%x", routeSetMarkMask),
+		"-m", "set", "--match-set", setName, "dst")
+	args = append(args, routeIptSetMarkArgs(mark)...)
+	runLogged("routing: add mark fallback rule "+chain, append([]string{cmd}, args...)...)
+}
+
 func routeIptSaveMarkArgs() []string {
 	m := fmt.Sprintf("0x%x", routeSetMarkMask)
 	return []string{"-j", "CONNMARK", "--save-mark", "--nfmask", m, "--ctmask", m}
@@ -321,15 +337,12 @@ func (b *routeIptBackend) addMasqueradeRule(chain string, mark uint32, iface str
 		return
 	}
 	markHex := fmt.Sprintf("0x%x/0x%x", mark, routeSetMarkMask)
-	ctMask := fmt.Sprintf("0x%x/0x%x", hostRouteCTMark, hostRouteCTMark)
-
-	runLogged("routing: add masquerade rule",
-		cmd, "-w", "-t", "nat", "-A", chain,
-		"-m", "mark", "--mark", markHex,
-		"-m", "connmark", "--mark", ctMask,
-		"-o", iface,
-		"-j", "MASQUERADE",
-	)
+	args := []string{cmd, "-w", "-t", "nat", "-A", chain, "-m", "mark", "--mark", markHex}
+	if routeCTMarkIsHeld() {
+		args = append(args, "-m", "connmark", "--mark", fmt.Sprintf("0x%x/0x%x", hostRouteCTMark, hostRouteCTMark))
+	}
+	args = append(args, "-o", iface, "-j", "MASQUERADE")
+	runLogged("routing: add masquerade rule", args...)
 }
 
 func (b *routeIptBackend) addSNATRule(chain, setName, iface, srcIP string, mark uint32, v6 bool) {
@@ -337,17 +350,15 @@ func (b *routeIptBackend) addSNATRule(chain, setName, iface, srcIP string, mark 
 	if !hasBinary(cmd) {
 		return
 	}
-	ctMask := fmt.Sprintf("0x%x/0x%x", hostRouteCTMark, hostRouteCTMark)
 	markHex := fmt.Sprintf("0x%x/0x%x", mark, routeSetMarkMask)
-
-	runLogged("routing: add snat rule",
-		cmd, "-w", "-t", "nat", "-A", chain,
+	args := []string{cmd, "-w", "-t", "nat", "-A", chain,
 		"-m", "mark", "--mark", markHex,
-		"-m", "set", "--match-set", setName, "dst",
-		"-m", "connmark", "--mark", ctMask,
-		"-o", iface,
-		"-j", "SNAT", "--to-source", srcIP,
-	)
+		"-m", "set", "--match-set", setName, "dst"}
+	if routeCTMarkIsHeld() {
+		args = append(args, "-m", "connmark", "--mark", fmt.Sprintf("0x%x/0x%x", hostRouteCTMark, hostRouteCTMark))
+	}
+	args = append(args, "-o", iface, "-j", "SNAT", "--to-source", srcIP)
+	runLogged("routing: add snat rule", args...)
 }
 
 func (b *routeIptBackend) flushIPSet(name string) {

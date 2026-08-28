@@ -67,6 +67,7 @@ type routeBackend interface {
 	addRouterTrafficGuard(chain string, v6 bool, setName string, mark uint32) bool
 	addMarkRule(chain string, v6 bool, setName string, mark uint32, sourceIface string, tagHostConntrack bool)
 	addMarkRestoreRule(chain string, v6 bool, sourceIface string, mark uint32)
+	addMarkFallbackRule(chain string, v6 bool, setName string, mark uint32, sourceIface string)
 	addEgressLoopGuard(chain, iface string) bool
 	addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32, sources []config.DeviceMatch)
 	ensureJumpRule(baseChain, targetChain string, isMangle bool, atTop bool)
@@ -553,6 +554,7 @@ func RoutingClearAll() {
 	routeForgetRtTableNames()
 	routeForgetRPFilterState()
 	routeIfaceSeen = make(map[string]bool)
+	routeForgetCTMarkVerdict()
 	routeLastReResolve = make(map[string]time.Time)
 	routeLearnLast = make(map[string]time.Time)
 	routeLearnedHosts = make(map[string]map[string]time.Time)
@@ -610,7 +612,17 @@ func RoutingRulesPresent(cfg *config.Config) bool {
 	case *routeNftBackend:
 		return routeNftRulesPresent(cfg)
 	case *routeIptBackend:
-		return routeIptRulesPresent(eng, cfg)
+		if !routeIptRulesPresent(eng, cfg) {
+			return false
+		}
+		held := routeCTMarkIsHeld()
+		for _, st := range routeRuleCache {
+			if config.RoutingIsBlock(st.mode) || config.RoutingUsesTProxy(st.mode) {
+				continue
+			}
+			routeCheckCTMarkHolds(eng, st.chainPre)
+		}
+		return held == routeCTMarkIsHeld()
 	}
 	return true
 }
@@ -825,6 +837,7 @@ func RoutingSyncConfig(cfg *config.Config) {
 	defer routeMu.Unlock()
 
 	IPTablesLockBudgetReset()
+	routeLoadCTMarkVerdict(cfg)
 
 	be := getRouteBackend(cfg)
 	if be == nil {
@@ -1095,10 +1108,12 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 	if cfg.Queue.IPv4Enabled {
 		routeAddMarkRestoreRules(be, st.chainPre, false, sources, st.mark)
 		routeAddMarkRules(be, st.chainPre, false, st.setV4, st.mark, sources, true)
+		routeAddMarkFallbackRules(be, st.chainPre, false, st.setV4, st.mark, sources)
 	}
 	if cfg.Queue.IPv6Enabled {
 		routeAddMarkRestoreRules(be, st.chainPre, true, sources, st.mark)
 		routeAddMarkRules(be, st.chainPre, true, st.setV6, st.mark, sources, true)
+		routeAddMarkFallbackRules(be, st.chainPre, true, st.setV6, st.mark, sources)
 	}
 
 	routeAddOutChainRules(be, cfg, st, gate)
@@ -1147,6 +1162,19 @@ func routeWarnEgressLoopRisk(set *config.SetConfig, st routeState) {
 
 func routeForgetEgressLoopWarning(setID string) {
 	routeEgressLoopWarned.Delete(setID)
+}
+
+func routeAddMarkFallbackRules(be routeBackend, chain string, v6 bool, setName string, mark uint32, sources []string) {
+	if routeCTMarkIsHeld() {
+		return
+	}
+	if len(sources) == 0 {
+		be.addMarkFallbackRule(chain, v6, setName, mark, "")
+		return
+	}
+	for _, src := range sources {
+		be.addMarkFallbackRule(chain, v6, setName, mark, src)
+	}
 }
 
 func routeAddMarkRestoreRules(be routeBackend, chain string, v6 bool, sources []string, mark uint32) {
