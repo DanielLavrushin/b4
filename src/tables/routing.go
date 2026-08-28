@@ -677,6 +677,7 @@ func routeNftRulesPresent(cfg *config.Config) bool {
 type routeChainRef struct {
 	chain, table string
 	wantBypass   bool
+	parent       string
 }
 
 func routeWantsOutputJump(st routeState) bool {
@@ -689,22 +690,22 @@ func routeWantsOutputJump(st routeState) bool {
 func routeStateChains(st routeState) []routeChainRef {
 	switch {
 	case config.RoutingIsBlock(st.mode):
-		return []routeChainRef{{st.chainPre, "filter", false}}
+		return []routeChainRef{{st.chainPre, "filter", false, "FORWARD"}}
 	case config.RoutingUsesTProxy(st.mode):
-		refs := []routeChainRef{{st.chainPre, "mangle", true}}
+		refs := []routeChainRef{{st.chainPre, "mangle", true, "PREROUTING"}}
 		if routeWantsOutputJump(st) {
-			refs = append(refs, routeChainRef{st.chainOut, "mangle", true})
+			refs = append(refs, routeChainRef{st.chainOut, "mangle", true, "OUTPUT"})
 		}
 		if st.quicReject && st.chainQUIC != "" {
-			refs = append(refs, routeChainRef{st.chainQUIC, "filter", true})
+			refs = append(refs, routeChainRef{st.chainQUIC, "filter", true, "FORWARD"})
 		}
 		return refs
 	default:
 		refs := []routeChainRef{
-			{st.chainPre, "mangle", true},
-			{st.chainOut, "mangle", true},
+			{st.chainPre, "mangle", true, "PREROUTING"},
+			{st.chainOut, "mangle", true, "OUTPUT"},
 		}
-		return append(refs, routeChainRef{st.chainSNAT, "nat", false})
+		return append(refs, routeChainRef{st.chainSNAT, "nat", false, "POSTROUTING"})
 	}
 }
 
@@ -713,14 +714,32 @@ func routeBypassMarks(cfg *config.Config) []uint32 {
 	return []uint32{routeQueueBypassMark(cfg), SelfDialMark}
 }
 
+func routeIptJumpPresent(cmd, table, parent, target string) bool {
+	out, err := run(cmd, "-w", "-t", table, "-L", parent, "-n")
+	if err != nil {
+		return true
+	}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == target {
+			return true
+		}
+	}
+	return false
+}
+
 func routeIptRulesPresent(be *routeIptBackend, cfg *config.Config) bool {
 	needed := make(map[string]map[string]bool)
+	jumps := make(map[string]string)
 	for _, st := range routeRuleCache {
 		for _, c := range routeStateChains(st) {
 			if needed[c.table] == nil {
 				needed[c.table] = make(map[string]bool)
 			}
 			needed[c.table][c.chain] = needed[c.table][c.chain] || c.wantBypass
+			if c.parent != "" {
+				jumps[c.table+"|"+c.chain] = c.parent
+			}
 		}
 	}
 	if len(needed) == 0 {
@@ -754,6 +773,10 @@ func routeIptRulesPresent(be *routeIptBackend, cfg *config.Config) bool {
 			}
 			for chain, wantBypass := range wantChains {
 				if !present[chain] {
+					return false
+				}
+				if parent := jumps[table+"|"+chain]; parent != "" && !routeIptJumpPresent(cmd, table, parent, chain) {
+					log.Infof("Routing: %s still exists but nothing in %s %s jumps to it any more, so no packet reaches it; the router's own firewall was rebuilt under b4 and its rules are being put back", chain, table, parent)
 					return false
 				}
 				if !wantBypass {
@@ -800,6 +823,8 @@ func RoutingSyncConfig(cfg *config.Config) {
 
 	routeMu.Lock()
 	defer routeMu.Unlock()
+
+	IPTablesLockBudgetReset()
 
 	be := getRouteBackend(cfg)
 	if be == nil {
@@ -1150,6 +1175,7 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState, g
 	if !st.routerOut {
 		injectSources = routeInjectedSourceMatches(gate)
 	}
+	be.addBypassRule(st.chainOut, SelfDialMark)
 	be.addClaimedBypassRule(st.chainOut)
 	if cfg.Queue.IPv4Enabled {
 		be.addInjectedMarkRule(st.chainOut, false, st.setV4, st.mark, queueMark, injectSources)

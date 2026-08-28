@@ -99,3 +99,35 @@ func TestAStaleRuleNumberIsNeverRetried(t *testing.T) {
 		}
 	}
 }
+
+func TestOnePassCannotWaitForever(t *testing.T) {
+	IPTablesLockBudgetReset()
+	if iptLockBudgetLeft() != iptLockBudget {
+		t.Fatalf("a fresh pass must start with the whole budget, got %v", iptLockBudgetLeft())
+	}
+
+	iptLockSpent.Add(int64(iptLockBudget) / 2)
+	if left := iptLockBudgetLeft(); left <= 0 || left > iptLockBudget/2 {
+		t.Fatalf("half a spent budget must leave about half, got %v", left)
+	}
+
+	iptLockSpent.Add(int64(iptLockBudget))
+	if iptLockBudgetLeft() != 0 {
+		t.Fatalf("a spent budget must read as zero rather than go negative, got %v", iptLockBudgetLeft())
+	}
+
+	perCommand := time.Duration(0)
+	for i := 0; i < iptLockRetries; i++ {
+		perCommand += iptLockBackoff(i)
+	}
+	if iptLockBudget <= perCommand {
+		t.Fatalf("the pass budget %v is no larger than one command's own retries %v, so a single contended "+
+			"command would use it all and every rule after it would be installed without waiting at all",
+			iptLockBudget, perCommand)
+	}
+	if iptLockBudget > time.Minute {
+		t.Fatalf("the pass budget is %v; the routing lock is held for the whole pass, so the web interface, "+
+			"the monitor and every config save wait behind it", iptLockBudget)
+	}
+	IPTablesLockBudgetReset()
+}

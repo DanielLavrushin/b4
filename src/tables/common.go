@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
@@ -30,6 +31,8 @@ func AddRules(cfg *config.Config) error {
 		return nil
 	}
 
+	IPTablesLockBudgetReset()
+
 	backend := detectFirewallBackend(cfg)
 	log.Tracef("Detected firewall backend: %s", backend)
 
@@ -47,6 +50,8 @@ func ClearRules(cfg *config.Config) error {
 	if cfg.System.Tables.SkipSetup {
 		return nil
 	}
+
+	IPTablesLockBudgetReset()
 
 	backend := detectFirewallBackend(cfg)
 
@@ -190,6 +195,25 @@ var iptLockBackoff = func(attempt int) time.Duration {
 	return time.Duration(25<<uint(attempt)) * time.Millisecond
 }
 
+var iptLockBudget = 15 * time.Second
+
+var iptLockSpent atomic.Int64
+
+// IPTablesLockBudgetReset starts a fresh waiting budget for one pass over the
+// rules. Every command may retry, so without a shared ceiling a pass over a
+// contended firewall waits per command and holds its lock for minutes.
+func IPTablesLockBudgetReset() {
+	iptLockSpent.Store(0)
+}
+
+func iptLockBudgetLeft() time.Duration {
+	left := int64(iptLockBudget) - iptLockSpent.Load()
+	if left <= 0 {
+		return 0
+	}
+	return time.Duration(left)
+}
+
 func isXtablesLockBusy(output string, err error) bool {
 	if err == nil {
 		return false
@@ -245,7 +269,16 @@ func run(args ...string) (string, error) {
 	}
 
 	for attempt := 0; attempt < iptLockRetries && isXtablesLockBusy(out, err); attempt++ {
-		time.Sleep(iptLockBackoff(attempt))
+		wait := iptLockBackoff(attempt)
+		if left := iptLockBudgetLeft(); left < wait {
+			if left <= 0 {
+				log.Warnf("IPTABLES[%s]: another program has held this pass up for %v already, so b4 stopped waiting and this rule was not installed: %s", args[0], iptLockBudget, strings.Join(args[1:], " "))
+				break
+			}
+			wait = left
+		}
+		time.Sleep(wait)
+		iptLockSpent.Add(int64(wait))
 		out, err = runOnce(args)
 		if err == nil {
 			log.Warnf("IPTABLES[%s]: another program was rewriting the same table; the command went through after %d retries. The '-w' flag only serialises b4 against programs that take the same lock, and the firmware's own scripts do not", args[0], attempt+1)
