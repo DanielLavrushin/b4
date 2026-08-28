@@ -25,8 +25,9 @@ func captureRules(t *testing.T, fn func()) [][]string {
 	t.Helper()
 	var captured [][]string
 	orig := runLogged
-	runLogged = func(op string, args ...string) {
+	runLogged = func(op string, args ...string) bool {
 		captured = append(captured, append([]string{}, args...))
+		return true
 	}
 	defer func() { runLogged = orig }()
 	fn()

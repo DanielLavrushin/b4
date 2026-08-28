@@ -242,3 +242,27 @@ func TestRoutingHandsOffPacketsOnlyWhenTheTunnelActuallyCarriesThem(t *testing.T
 		}
 	})
 }
+
+func TestAnAbsentEgressInterfaceNeverClaimsTheRouterOwnTraffic(t *testing.T) {
+	fakeIfaces(t, map[string]string{"eth1": "plain"})
+
+	if routedSet("xray0").RoutingIncludesRouterTraffic() {
+		t.Fatal("an egress interface that does not exist cannot be classified, so the router's own traffic must " +
+			"stay on the normal route. Claiming it sends every connection b4 opens into a table that holds nothing " +
+			"but the kill-switch blackhole, so b4's own dials fail instantly and retry in a hot loop that takes the box down")
+	}
+
+	if !routedSet("eth1").RoutingIncludesRouterTraffic() {
+		t.Fatal("a plain interface that exists still carries the router's own traffic")
+	}
+}
+
+func TestAnAbsentInterfaceIsStillOverridableByHand(t *testing.T) {
+	fakeIfaces(t, map[string]string{"eth1": "plain"})
+
+	set := routedSet("xray0")
+	set.Routing.RouterTraffic = RouterTrafficInclude
+	if !set.RoutingIncludesRouterTraffic() {
+		t.Fatal("an explicit include must still win; the missing-interface rule only changes the automatic choice")
+	}
+}

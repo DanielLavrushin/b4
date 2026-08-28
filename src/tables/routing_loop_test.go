@@ -231,7 +231,7 @@ func TestRouteResolveIDsSkipsATableSomebodyElseOwns(t *testing.T) {
 func TestKillSwitchHoldsTheTableShut(t *testing.T) {
 	var cmds []string
 	prev := runLogged
-	runLogged = func(op string, args ...string) { cmds = append(cmds, strings.Join(args, " ")) }
+	runLogged = func(op string, args ...string) bool { cmds = append(cmds, strings.Join(args, " ")); return true }
 	t.Cleanup(func() { runLogged = prev })
 
 	st := loopTestState("xray0", true)

@@ -1342,6 +1342,13 @@ func (m *mockRouteBackend) addBypassRule(chain string, mark uint32) {
 func (m *mockRouteBackend) addMarkRule(chain string, v6 bool, setName string, mark uint32, sourceIface string, tagHostConntrack bool) {
 	m.recordOp(chain, fmt.Sprintf("mark 0x%x", mark))
 }
+func (m *mockRouteBackend) addEgressLoopGuard(chain, iface string) bool {
+	m.recordOp(chain, "loop-guard "+iface)
+	return true
+}
+func (m *mockRouteBackend) addMarkRestoreRule(chain string, v6 bool, sourceIface string, mark uint32) {
+	m.recordOp(chain, "restore")
+}
 func (m *mockRouteBackend) addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32, sources []config.DeviceMatch) {
 	m.injected = append(m.injected, mockInjectedMarkRule{chain: chain, setName: setName, v6: v6, mark: mark, queueMark: queueMark, sources: sources})
 	m.recordOp(chain, fmt.Sprintf("injected 0x%x", mark))

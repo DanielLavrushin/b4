@@ -26,8 +26,9 @@ func localDeliveryEnsure(t *testing.T, ipv4, ipv6 bool) ([]localDeliveryRuleDel,
 	routeDelRuleLoop = func(v6 bool, mark, table string) {
 		dels = append(dels, localDeliveryRuleDel{ipv6: v6, mark: mark, table: table})
 	}
-	runLogged = func(op string, args ...string) {
+	runLogged = func(op string, args ...string) bool {
 		cmds = append(cmds, strings.Join(args, " "))
+		return true
 	}
 
 	routeEnsureLocalDelivery(0x20fa, proxyLocalDeliveryTable, ipv4, ipv6)

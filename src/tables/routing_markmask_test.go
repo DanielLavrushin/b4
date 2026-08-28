@@ -14,8 +14,9 @@ func captureEmitted(t *testing.T, fn func()) []string {
 	t.Cleanup(func() { runLogged = orig })
 
 	var out []string
-	runLogged = func(op string, args ...string) {
+	runLogged = func(op string, args ...string) bool {
 		out = append(out, strings.Join(args, " "))
+		return true
 	}
 	fn()
 	return out

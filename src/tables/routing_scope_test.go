@@ -331,7 +331,7 @@ func TestCleanupFlushesATableOnlyWhenNobodyElseUsesIt(t *testing.T) {
 func TestCleanupTakesBackOnlyTheRoutesB4Added(t *testing.T) {
 	var cmds []string
 	prev := runLogged
-	runLogged = func(op string, args ...string) { cmds = append(cmds, strings.Join(args, " ")) }
+	runLogged = func(op string, args ...string) bool { cmds = append(cmds, strings.Join(args, " ")); return true }
 	t.Cleanup(func() { runLogged = prev })
 
 	routeDeleteOwnRoutes("wg0", "137")

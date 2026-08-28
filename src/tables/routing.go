@@ -28,6 +28,7 @@ const routeSetMarkMask = uint32(0x27FFF)
 const SelfDialMark = config.SelfDialMark
 
 type routeState struct {
+	setID       string
 	mode        string
 	mark        uint32
 	table       int
@@ -65,6 +66,8 @@ type routeBackend interface {
 	addClaimedBypassRule(chain string)
 	addRouterTrafficGuard(chain string, v6 bool, setName string, mark uint32) bool
 	addMarkRule(chain string, v6 bool, setName string, mark uint32, sourceIface string, tagHostConntrack bool)
+	addMarkRestoreRule(chain string, v6 bool, sourceIface string, mark uint32)
+	addEgressLoopGuard(chain, iface string) bool
 	addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32, sources []config.DeviceMatch)
 	ensureJumpRule(baseChain, targetChain string, isMangle bool, atTop bool)
 	jumpPrepends(atTop bool) bool
@@ -369,6 +372,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 	chainPre, chainOut, chainSNAT := routeBuildChainNames(set.Id)
 
 	st := routeState{
+		setID:      set.Id,
 		mode:       mode,
 		sourcesKey: sourcesKey,
 		deviceKey:  routeSetDeviceGate(cfg, set).key(),
@@ -547,6 +551,8 @@ func RoutingClearAll() {
 	routeEngine = nil
 	proxyTableForget()
 	routeForgetRtTableNames()
+	routeForgetRPFilterState()
+	routeIfaceSeen = make(map[string]bool)
 	routeLastReResolve = make(map[string]time.Time)
 	routeLearnLast = make(map[string]time.Time)
 	routeLearnedHosts = make(map[string]map[string]time.Time)
@@ -1057,11 +1063,16 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 	be.addClaimedBypassRule(st.chainPre)
 
 	routeAddBlacklistGate(be, "mangle", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
+	if !be.addEgressLoopGuard(st.chainPre, st.iface) && len(sources) == 0 {
+		return fmt.Errorf("the guard on traffic arriving from %s did not install, and without it every packet %s hands back for a destination in this set is marked again and sent straight back to it", st.iface, st.iface)
+	}
 
 	if cfg.Queue.IPv4Enabled {
+		routeAddMarkRestoreRules(be, st.chainPre, false, sources, st.mark)
 		routeAddMarkRules(be, st.chainPre, false, st.setV4, st.mark, sources, true)
 	}
 	if cfg.Queue.IPv6Enabled {
+		routeAddMarkRestoreRules(be, st.chainPre, true, sources, st.mark)
 		routeAddMarkRules(be, st.chainPre, true, st.setV6, st.mark, sources, true)
 	}
 
@@ -1113,6 +1124,16 @@ func routeForgetEgressLoopWarning(setID string) {
 	routeEgressLoopWarned.Delete(setID)
 }
 
+func routeAddMarkRestoreRules(be routeBackend, chain string, v6 bool, sources []string, mark uint32) {
+	if len(sources) == 0 {
+		be.addMarkRestoreRule(chain, v6, "", mark)
+		return
+	}
+	for _, src := range sources {
+		be.addMarkRestoreRule(chain, v6, src, mark)
+	}
+}
+
 func routeAddMarkRules(be routeBackend, chain string, v6 bool, setName string, mark uint32, sources []string, tagHostCT bool) {
 	if len(sources) == 0 {
 		be.addMarkRule(chain, v6, setName, mark, "", tagHostCT)
@@ -1157,9 +1178,11 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState, g
 	}
 
 	if cfg.Queue.IPv4Enabled {
+		routeAddMarkRestoreRules(be, st.chainOut, false, nil, st.mark)
 		routeAddMarkRules(be, st.chainOut, false, st.setV4, st.mark, nil, true)
 	}
 	if cfg.Queue.IPv6Enabled {
+		routeAddMarkRestoreRules(be, st.chainOut, true, nil, st.mark)
 		routeAddMarkRules(be, st.chainOut, true, st.setV6, st.mark, nil, true)
 	}
 }
@@ -1469,6 +1492,7 @@ func routeTableShareCount(table int) int {
 
 func routeCleanupRule(be routeBackend, st routeState) {
 	routeReleaseEgressAddress(st.iface, st.egressIP)
+	routeReleaseRPFilter(st.iface, st.setID)
 	tableStr := fmt.Sprintf("%d", st.table)
 	if hasBinary("ip") {
 		if routeMarkShareCount(st.mark) <= 1 {
@@ -1505,19 +1529,29 @@ func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 
 	routeDelRuleAllForms(mark, tableStr)
 
-	if ipv4 {
-		runLogged("routing: add ip rule v4", "ip", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
+	addRules := func() {
+		if ipv4 {
+			runLogged("routing: add ip rule v4", "ip", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
+		}
+		if ipv6 {
+			runLogged("routing: add ip rule v6", "ip", "-6", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
+		}
 	}
-	if ipv6 {
-		runLogged("routing: add ip rule v6", "ip", "-6", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
-	}
-
-	routeApplyKillSwitch(st, routeTableWantsKillSwitch(st), ipv4, ipv6)
 
 	if _, err := net.InterfaceByName(iface); err != nil {
-		log.Infof("Routing: interface %s not present (%v); default route deferred until it appears", iface, err)
+		if !routeIfaceWasSeen(iface) {
+			routeApplyKillSwitch(st, false, ipv4, ipv6)
+			log.Warnf("Routing: set '%s' routes to %s, which has never appeared on this router (%v), so b4 installs no rule for it. A blackhole ends a route lookup instead of falling through, and arming one for an interface that was never there would drop every address the set matches", st.setID, iface, err)
+			return
+		}
+		addRules()
+		routeApplyKillSwitch(st, routeTableWantsKillSwitch(st), ipv4, ipv6)
+		log.Warnf("Routing: set '%s' routes to %s, which has gone away (%v); the set keeps its rule so it stops rather than leaves by the ordinary uplink, and starts again when the interface returns", st.setID, iface, err)
 		return
 	}
+
+	routeIfaceMarkSeen(iface)
+	routeLoosenRPFilter(iface, st.setID)
 
 	ifaceV4 := routeGetIfaceAddr(iface, false)
 	ifaceV6 := routeGetIfaceAddr(iface, true)
@@ -1533,6 +1567,29 @@ func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 	if ipv6 {
 		routeReplaceDefaultRoute(iface, ifaceV6, tableStr, true)
 	}
+
+	addRules()
+	routeApplyKillSwitch(st, routeTableWantsKillSwitch(st), ipv4, ipv6)
+}
+
+var routeIfaceSeen = make(map[string]bool)
+
+func routeIfaceMarkSeen(iface string) {
+	if iface != "" {
+		routeIfaceSeen[iface] = true
+	}
+}
+
+func routeIfaceWasSeen(iface string) bool {
+	if routeIfaceSeen[iface] {
+		return true
+	}
+	switch netif.Of(iface) {
+	case netif.KindMissing, netif.KindUnknown:
+		return false
+	}
+	routeIfaceSeen[iface] = true
+	return true
 }
 
 const routeKillSwitchMetric = "4096"
@@ -1596,6 +1653,10 @@ func routeReconcileKillSwitches(ipv4, ipv6 bool) {
 			continue
 		}
 		seen[key] = struct{}{}
+		if _, err := net.InterfaceByName(st.iface); err != nil {
+			routeApplyKillSwitch(st, routeIfaceWasSeen(st.iface) && routeTableWantsKillSwitch(st), ipv4, ipv6)
+			continue
+		}
 		routeApplyKillSwitch(st, routeTableWantsKillSwitch(st), ipv4, ipv6)
 	}
 }

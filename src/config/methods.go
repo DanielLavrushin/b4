@@ -564,6 +564,9 @@ func (set *SetConfig) RoutingIncludesRouterTraffic() bool {
 	case RouterTrafficInclude:
 		return true
 	}
+	if netif.Of(set.Routing.EgressInterface) == netif.KindMissing {
+		return false
+	}
 	return !netif.IsUserspaceTunnel(set.Routing.EgressInterface)
 }
 

@@ -193,6 +193,7 @@ func (b *routeIptBackend) addMarkRule(chain string, v6 bool, setName string, mar
 	if sourceIface != "" {
 		args = append(args, "-i", sourceIface)
 	}
+	args = append(args, "-m", "conntrack", "--ctstate", "NEW")
 	args = append(args, "-m", "set", "--match-set", setName, "dst")
 
 	markArgs := append(append([]string{}, args...), routeIptSetMarkArgs(mark)...)
@@ -204,6 +205,51 @@ func (b *routeIptBackend) addMarkRule(chain string, v6 bool, setName string, mar
 			fmt.Sprintf("0x%x/0x%x", hostRouteCTMark, hostRouteCTMark))
 		runLogged("routing: add ct mark rule "+chain, append([]string{cmd}, ctArgs...)...)
 	}
+
+	saveArgs := append(append([]string{}, args...), routeIptSaveMarkArgs()...)
+	runLogged("routing: add mark save rule "+chain, append([]string{cmd}, saveArgs...)...)
+}
+
+func routeIptSaveMarkArgs() []string {
+	m := fmt.Sprintf("0x%x", routeSetMarkMask)
+	return []string{"-j", "CONNMARK", "--save-mark", "--nfmask", m, "--ctmask", m}
+}
+
+func (b *routeIptBackend) addEgressLoopGuard(chain, iface string) bool {
+	if iface == "" {
+		return true
+	}
+	ok := true
+	for _, cmd := range b.iptBoth() {
+		if !hasBinary(cmd) {
+			continue
+		}
+		if !runLogged("routing: add egress loop guard "+chain,
+			cmd, "-w", "-t", "mangle", "-A", chain, "-i", iface, "-j", "RETURN") && cmd == b.ipt4() {
+			ok = false
+		}
+	}
+	return ok
+}
+
+func (b *routeIptBackend) addMarkRestoreRule(chain string, v6 bool, sourceIface string, mark uint32) {
+	cmd := b.iptFor(v6)
+	if !hasBinary(cmd) {
+		return
+	}
+	m := fmt.Sprintf("0x%x", routeSetMarkMask)
+	args := []string{"-w", "-t", "mangle", "-A", chain}
+	if sourceIface != "" {
+		args = append(args, "-i", sourceIface)
+	}
+	args = append(args,
+		"-m", "connmark", "--mark", fmt.Sprintf("0x%x/0x%x", hostRouteCTMark, hostRouteCTMark),
+		"-m", "connmark", "--mark", fmt.Sprintf("0x%x/0x%x", mark, routeSetMarkMask),
+		"-m", "conntrack", "--ctdir", "ORIGINAL",
+		"-m", "conntrack", "!", "--ctstate", "NEW",
+		"-j", "CONNMARK", "--restore-mark", "--nfmask", m, "--ctmask", m,
+	)
+	runLogged("routing: add mark restore rule "+chain, append([]string{cmd}, args...)...)
 }
 
 func routeIptInjectedMarkArgs(chain, setName string, mark, queueMark uint32, source []string) []string {
@@ -325,10 +371,9 @@ func (b *routeIptBackend) clearAll() {
 				continue
 			}
 			for _, parent := range iptBuiltinParents(table) {
-				nums := iptJumpLineNumbers(cmd, table, parent, func(t string) bool {
+				iptDeleteMatchingJumps(cmd, table, parent, "routing: cleanup leftover rule", func(t string) bool {
 					return strings.HasPrefix(t, "b4r_")
 				})
-				iptDeleteJumpLines(cmd, table, parent, "routing: cleanup leftover rule", nums)
 			}
 			out2, _ := run(cmd, "-w", "-t", table, "-L", "-n")
 			for _, line := range strings.Split(out2, "\n") {

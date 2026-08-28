@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
@@ -183,10 +184,23 @@ func WaitArgs(bin string) []string {
 	return nil
 }
 
-func run(args ...string) (string, error) {
-	if len(args) > 1 && isIPTablesBinary(args[0]) && !iptablesSupportsWait(args[0]) {
-		args = dropWaitFlag(args)
+var iptLockRetries = 8
+
+var iptLockBackoff = func(attempt int) time.Duration {
+	return time.Duration(25<<uint(attempt)) * time.Millisecond
+}
+
+func isXtablesLockBusy(output string, err error) bool {
+	if err == nil {
+		return false
 	}
+	o := strings.ToLower(output)
+	return strings.Contains(o, "resource temporarily unavailable") ||
+		strings.Contains(o, "xtables lock") ||
+		strings.Contains(o, "another app is currently holding the xtables lock")
+}
+
+func runOnce(args []string) (string, error) {
 	var out bytes.Buffer
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Stdout = &out
@@ -201,6 +215,47 @@ func run(args ...string) (string, error) {
 		return output, fmt.Errorf("command [%s] failed: %w", cmdStr, err)
 	}
 	return out.String(), nil
+}
+
+func iptDeletesByPosition(args []string) bool {
+	for i := 0; i+2 < len(args); i++ {
+		if args[i] != "-D" {
+			continue
+		}
+		if _, err := strconv.Atoi(args[i+2]); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func run(args ...string) (string, error) {
+	if len(args) > 1 && isIPTablesBinary(args[0]) && !iptablesSupportsWait(args[0]) {
+		args = dropWaitFlag(args)
+	}
+
+	out, err := runOnce(args)
+	if err == nil || len(args) == 0 || !isIPTablesBinary(args[0]) {
+		return out, err
+	}
+
+	if isXtablesLockBusy(out, err) && iptDeletesByPosition(args) {
+		log.Warnf("IPTABLES[%s]: the table changed while b4 was reading it, so the rule numbers it had are stale and %s was not retried; retrying it would delete whatever rule now sits at that position, which on this router belongs to the firmware", args[0], strings.Join(args[1:], " "))
+		return out, err
+	}
+
+	for attempt := 0; attempt < iptLockRetries && isXtablesLockBusy(out, err); attempt++ {
+		time.Sleep(iptLockBackoff(attempt))
+		out, err = runOnce(args)
+		if err == nil {
+			log.Warnf("IPTABLES[%s]: another program was rewriting the same table; the command went through after %d retries. The '-w' flag only serialises b4 against programs that take the same lock, and the firmware's own scripts do not", args[0], attempt+1)
+			return out, nil
+		}
+	}
+	if isXtablesLockBusy(out, err) {
+		log.Errorf("IPTABLES[%s]: another program held the firewall lock for the whole retry budget, so this rule was never installed and b4's rule set is incomplete: %v", args[0], err)
+	}
+	return out, err
 }
 
 func setSysctlOrProc(name, val string) {
@@ -288,20 +343,22 @@ func runStdin(stdin string, args ...string) error {
 
 var runLogged = runLoggedExec
 
-func runLoggedExec(op string, args ...string) {
+func runLoggedExec(op string, args ...string) bool {
 	out, err := run(args...)
 	if err != nil {
 		msg := strings.TrimSpace(out)
 		if strings.Contains(msg, "File exists") || strings.Contains(msg, "already exists") {
-			return
+			return true
 		}
 		if strings.Contains(msg, "No such file or directory") || strings.Contains(msg, "FIB table does not exist") ||
 			strings.Contains(msg, "The set with the given name does not exist") || strings.Contains(msg, "No such process") {
 			log.Tracef("%s: %s | cmd=%s", op, msg, strings.Join(args, " "))
-			return
+			return false
 		}
 		log.Warnf("%s failed: %v | cmd=%s | out=%s", op, err, strings.Join(args, " "), strings.TrimSpace(out))
+		return false
 	}
+	return true
 }
 
 func runEnsure(args ...string) error {

@@ -283,15 +283,33 @@ func iptJumpLineNumbers(cmd, table, parent string, match func(target string) boo
 	return nums
 }
 
-func iptDeleteJumpLines(cmd, table, parent, logMsg string, nums []int) {
-	for i := len(nums) - 1; i >= 0; i-- {
-		runLogged(logMsg, cmd, "-w", "-t", table, "-D", parent, strconv.Itoa(nums[i]))
+const iptDeleteRounds = 64
+
+func iptDeleteMatchingJumps(cmd, table, parent, logMsg string, match func(target string) bool) {
+	for round := 0; round < iptDeleteRounds; round++ {
+		nums := iptJumpLineNumbers(cmd, table, parent, match)
+		if len(nums) == 0 {
+			return
+		}
+		last := nums[len(nums)-1]
+		if _, err := run(cmd, "-w", "-t", table, "-D", parent, strconv.Itoa(last)); err != nil {
+			log.Warnf("%s: %s -t %s -D %s %d failed, so b4 stopped deleting by position rather than remove a rule it never read: %v",
+				logMsg, cmd, table, parent, last, err)
+			return
+		}
 	}
+	log.Warnf("%s: %s -t %s %s still lists rules b4 wants gone after %d deletions, so it stopped rather than keep cutting",
+		logMsg, cmd, table, parent, iptDeleteRounds)
 }
 
 func iptDeleteJumpsTo(cmd, table, parent, target string) {
-	nums := iptJumpLineNumbers(cmd, table, parent, func(t string) bool { return t == target })
-	iptDeleteJumpLines(cmd, table, parent, "routing: delete jump "+parent+"->"+target, nums)
+	for i := 0; i < iptDeleteRounds; i++ {
+		if _, err := run(cmd, "-w", "-t", table, "-D", parent, "-j", target); err != nil {
+			break
+		}
+	}
+	iptDeleteMatchingJumps(cmd, table, parent, "routing: delete jump "+parent+"->"+target,
+		func(t string) bool { return t == target })
 }
 
 func iptEmitGatedJump(cmd, table, parent, target string, insertTop bool, gate routeDeviceGate) {
