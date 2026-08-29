@@ -3238,6 +3238,47 @@
                 }
             }
         },
+        "/system/changelog": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "text/markdown"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Fetch the localized changelog",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Language code, ru for the Russian changelog",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/system/diagnostics": {
             "get": {
                 "security": [
@@ -3281,6 +3322,43 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handler.SystemInfoResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/system/releases": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Release list fetched by the service rather than the browser, so it works\nfrom a LAN client whose own uplink cannot reach GitHub. The answer is cached\nand concurrent callers share a single refresh, so a burst of open tabs costs\none upstream request rather than one each.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "List b4 releases",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -3342,6 +3420,55 @@
                         "schema": {
                             "$ref": "#/definitions/handler.UpdateRequest"
                         }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/system/update/upload": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Installs b4 from a b4-linux-\u003carch\u003e.tar.gz uploaded by the reader, for a\nnetwork where no download source can be reached. The archive is checked for\na b4 entry built for this machine before anything is replaced.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Update from an uploaded release archive",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "b4-linux-\u003carch\u003e.tar.gz release archive",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Expected SHA256 of the archive",
+                        "name": "sha256",
+                        "in": "formData"
                     }
                 ],
                 "responses": {
@@ -4404,6 +4531,9 @@
                 "id": {
                     "type": "string"
                 },
+                "max_networks": {
+                    "type": "integer"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -4677,6 +4807,9 @@
                 "timezone": {
                     "type": "string"
                 },
+                "update": {
+                    "$ref": "#/definitions/config.UpdateConfig"
+                },
                 "web_server": {
                     "$ref": "#/definitions/config.WebServerConfig"
                 }
@@ -4864,6 +4997,17 @@
             "properties": {
                 "dashboard": {
                     "$ref": "#/definitions/config.DashboardLayout"
+                }
+            }
+        },
+        "config.UpdateConfig": {
+            "type": "object",
+            "properties": {
+                "mirrors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

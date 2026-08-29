@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -260,13 +261,28 @@ func webRequestedSubprotocol(r *http.Request) string {
 	return ""
 }
 
+func webPeerCanSetForwardedFor(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		return false
+	}
+	addr = addr.WithZone("").Unmap()
+	return addr.IsLoopback() || addr.IsLinkLocalUnicast() || addr.IsPrivate()
+}
+
 func webClientAddr(r *http.Request) string {
-	if v := r.Header.Get("X-Forwarded-For"); v != "" {
+	if v := r.Header.Get("X-Forwarded-For"); v != "" && webPeerCanSetForwardedFor(r.RemoteAddr) {
 		if i := strings.IndexByte(v, ','); i >= 0 {
 			v = v[:i]
 		}
 		if v = strings.TrimSpace(v); v != "" {
-			return net.JoinHostPort(v, "0")
+			if addr, err := netip.ParseAddr(v); err == nil {
+				return net.JoinHostPort(addr.WithZone("").Unmap().String(), "0")
+			}
 		}
 	}
 	return r.RemoteAddr

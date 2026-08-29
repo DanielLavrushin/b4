@@ -165,7 +165,10 @@
       "timezoneHelp": "Timezone for log timestamps (default: system)",
       "memoryLimit": "Memory Limit",
       "memoryLimitPlaceholder": "auto",
-      "memoryLimitHelp": "Soft cap on b4 memory use. Accepts e.g. 128MiB, 256m, 1g. Leave empty or 'auto' for half of system RAM. Use 'off' to disable."
+      "memoryLimitHelp": "Soft cap on b4 memory use. Accepts e.g. 128MiB, 256m, 1g. Leave empty or 'auto' for half of system RAM. Use 'off' to disable.",
+      "updateMirrors": "Update mirrors",
+      "updateMirrorsPlaceholder": "https://name.account.workers.dev",
+      "updateMirrorsHelp": "Mirrors tried when GitHub cannot be reached, before the built-in ones. Comma-separated, https only. A personal Cloudflare Worker belongs here."
     },
     "Feature": {
       "title": "Feature Flags",
@@ -321,6 +324,8 @@
       "webProxyHostnameHelp": "A bare public hostname, no scheme, port or path. Punycode (xn--) form for international names.",
       "webProxyRequirements": "The hostname must resolve to this instance and serve valid TLS on port 443, with the site root reaching b4. A hostname of its own is required: b4 answers every path on it, so the b4 interface is not reachable there. The connection link is in the share dialog of a secret.",
       "secretName": "Name / comment",
+      "secretMaxNetworks": "Max networks",
+      "secretMaxNetworksHelp": "Refuse new connections to this secret once it is in use from this many client networks at once. Devices sharing one internet connection count as one network, so a person moving between home, mobile data and work needs a few. Lowering the value never drops connections that are already running. 0 means no limit.",
       "secretNamePlaceholder": "e.g. Maxim",
       "secretValuePlaceholder": "Paste or generate a secret",
       "addSecret": "Add secret",
@@ -786,12 +791,15 @@
     },
     "mtproto": {
       "title": "MTProto Proxy",
-      "active": "active",
-      "activeShort": "active",
       "port": "port",
-      "sessions": "sessions",
-      "sessionsShort": "total",
-      "perUser": "Per user",
+      "perUser": "Per secret",
+      "now": "now",
+      "connLabel": "conn.",
+      "networksLabel_one": "network",
+      "networksLabel_other": "networks",
+      "networksTooltip": "Distinct client networks using this secret right now. Devices sharing one internet connection count as one network.",
+      "networksNone": "No client is using this secret right now",
+      "networksMore": "+{{n}} more",
       "unnamed": "unnamed",
       "none": "no secrets configured"
     },
@@ -2372,7 +2380,17 @@
     "clickToView": "Click to view update",
     "available": "Update available",
     "install": "Install",
-    "upToDate": "up to date"
+    "upToDate": "up to date",
+    "installFromFile": "Install from a file instead",
+    "installFromFileHelp": "For a network where no download source can be reached. Download b4-linux-<arch>.tar.gz from the release page on another machine and upload it here. The archive is checked against this router's architecture before anything is replaced.",
+    "chooseArchive": "Choose archive",
+    "uploadInitiating": "Uploading the archive...",
+    "expectedSha256": "Expected SHA256 (optional)",
+    "expectedSha256Placeholder": "paste from the release page",
+    "expectedSha256Help": "Compared against the upload before it is installed.",
+    "backToReleaseNotes": "Back to release notes",
+    "sourceforgeMirror": "SourceForge mirror",
+    "tryAgain": "Try again"
   },
   "watchdog": {
     "title": "Watchdog Monitor",

@@ -78,7 +78,12 @@ REPO_NAME="b4"
 BINARY_NAME="b4"
 TEMP_DIR="/tmp/b4_install_$$"
 WGET_INSECURE=""
-PROXY_BASE_URL="https://proxy.lavrush.in/github"
+B4_MIRRORS="${B4_MIRRORS:-https://proxy.b4core.app https://proxy2.b4core.app}"
+B4_SF_BASE="${B4_SF_BASE:-https://downloads.sourceforge.net/project/b4core}"
+B4_CONNECT_TIMEOUT="${B4_CONNECT_TIMEOUT:-8}"
+B4_STALL_TIMEOUT="${B4_STALL_TIMEOUT:-30}"
+B4_MAX_TIME="${B4_MAX_TIME:-600}"
+B4_PROBE_TIMEOUT="${B4_PROBE_TIMEOUT:-6}"
 
 B4_BIN_DIR=""
 B4_DATA_DIR=""
@@ -419,15 +424,33 @@ ensure_https_support() {
     return 1
 }
 
-convert_to_proxy_url() {
-    url="$1"
-    case "$url" in
-    https://raw.githubusercontent.com/${REPO_OWNER}/* | \
-        https://github.com/${REPO_OWNER}/* | \
-        https://api.github.com/repos/${REPO_OWNER}/*)
-        echo "${PROXY_BASE_URL}/${url}"
+MIRROR_OWNERS="DanielLavrushin Loyalsoldier runetfreedom XTLS Flowseal"
+
+mirror_url() {
+    _mu_base="$1"
+    _mu_url="$2"
+
+    for _mu_owner in $MIRROR_OWNERS; do
+        case "$_mu_url" in
+        https://raw.githubusercontent.com/${_mu_owner}/* | \
+            https://github.com/${_mu_owner}/* | \
+            https://api.github.com/repos/${_mu_owner}/*)
+            echo "${_mu_base}/github/${_mu_url}"
+            return 0
+            ;;
+        esac
+    done
+
+    echo ""
+}
+
+sf_url() {
+    _su_prefix="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/"
+    case "$1" in
+    "${_su_prefix}"*)
+        echo "${B4_SF_BASE}/${1#"$_su_prefix"}"
         ;;
-    *) echo "$url" ;;
+    *) echo "" ;;
     esac
 }
 
@@ -435,23 +458,96 @@ _wget_supports() {
     wget --help 2>&1 | grep -q "$1"
 }
 
+mirror_alive() {
+    _ma_base="$1"
+
+    if command_exists curl; then
+        _ma_insecure=""
+        [ -n "$WGET_INSECURE" ] && _ma_insecure="-k"
+        curl -sf $_ma_insecure --connect-timeout "$B4_CONNECT_TIMEOUT" \
+            --max-time "$B4_PROBE_TIMEOUT" -o /dev/null \
+            "${_ma_base}/b4/health" 2>/dev/null && return 0
+        return 1
+    fi
+
+    if command_exists wget; then
+        _ma_args="-q $WGET_INSECURE -O /dev/null"
+        _wget_supports "--timeout" && _ma_args="$_ma_args --timeout=$B4_PROBE_TIMEOUT"
+        wget $_ma_args "${_ma_base}/b4/health" 2>/dev/null && return 0
+    fi
+
+    return 1
+}
+
+_wget_guarded() {
+    _wg_out="$1"
+    _wg_quiet="$2"
+    shift 2
+
+    if [ "$_wg_quiet" = "1" ]; then
+        wget "$@" 2>/dev/null &
+    else
+        wget "$@" &
+    fi
+    _wg_pid=$!
+
+    _wg_prev=0
+    _wg_stall=0
+    _wg_elapsed=0
+    _wg_tick=5
+    _wg_floor=$((1024 * 5))
+
+    while kill -0 "$_wg_pid" 2>/dev/null; do
+        sleep "$_wg_tick"
+        _wg_elapsed=$((_wg_elapsed + _wg_tick))
+
+        _wg_now=$(wc -c <"$_wg_out" 2>/dev/null | awk '{print $1}')
+        if [ -z "$_wg_now" ]; then
+            _wg_now=0
+        fi
+
+        if [ $((_wg_now - _wg_prev)) -lt "$_wg_floor" ]; then
+            _wg_stall=$((_wg_stall + _wg_tick))
+        else
+            _wg_stall=0
+        fi
+        _wg_prev=$_wg_now
+
+        if [ "$_wg_stall" -ge "$B4_STALL_TIMEOUT" ] || [ "$_wg_elapsed" -ge "$B4_MAX_TIME" ]; then
+            kill "$_wg_pid" 2>/dev/null || true
+            wait "$_wg_pid" 2>/dev/null || true
+            return 1
+        fi
+    done
+
+    wait "$_wg_pid"
+}
+
 _do_fetch() {
     _fetch_url="$1"
     _fetch_out="$2"
     if [ -t 2 ] && [ "$QUIET_MODE" -ne 1 ]; then
-        if command_exists curl && curl -fL --progress-bar --max-time 120 -o "$_fetch_out" "$_fetch_url" 2>&1; then return 0; fi
+        if command_exists curl && curl -fL --progress-bar \
+            --connect-timeout "$B4_CONNECT_TIMEOUT" \
+            --speed-limit 1024 --speed-time "$B4_STALL_TIMEOUT" \
+            --max-time "$B4_MAX_TIME" -o "$_fetch_out" "$_fetch_url" 2>&1; then return 0; fi
         if command_exists wget; then
             _wget_args="$WGET_INSECURE"
             _wget_supports "--show-progress" && _wget_args="$_wget_args --show-progress -q"
-            _wget_supports "--timeout" && _wget_args="$_wget_args --timeout=120"
-            wget $_wget_args -O "$_fetch_out" "$_fetch_url" 2>&1 && return 0
+            _wget_supports "--connect-timeout" && _wget_args="$_wget_args --connect-timeout=$B4_CONNECT_TIMEOUT"
+            _wget_supports "--timeout" && _wget_args="$_wget_args --timeout=$B4_STALL_TIMEOUT"
+            _wget_guarded "$_fetch_out" 0 $_wget_args -O "$_fetch_out" "$_fetch_url" && return 0
         fi
     else
-        if command_exists curl && curl -sfL --max-time 120 -o "$_fetch_out" "$_fetch_url" 2>/dev/null; then return 0; fi
+        if command_exists curl && curl -sfL \
+            --connect-timeout "$B4_CONNECT_TIMEOUT" \
+            --speed-limit 1024 --speed-time "$B4_STALL_TIMEOUT" \
+            --max-time "$B4_MAX_TIME" -o "$_fetch_out" "$_fetch_url" 2>/dev/null; then return 0; fi
         if command_exists wget; then
             _wget_args="-q $WGET_INSECURE"
-            _wget_supports "--timeout" && _wget_args="$_wget_args --timeout=120"
-            wget $_wget_args -O "$_fetch_out" "$_fetch_url" 2>/dev/null && return 0
+            _wget_supports "--connect-timeout" && _wget_args="$_wget_args --connect-timeout=$B4_CONNECT_TIMEOUT"
+            _wget_supports "--timeout" && _wget_args="$_wget_args --timeout=$B4_STALL_TIMEOUT"
+            _wget_guarded "$_fetch_out" 1 $_wget_args -O "$_fetch_out" "$_fetch_url" && return 0
         fi
     fi
     return 1
@@ -468,47 +564,108 @@ fetch_file() {
 
     if _do_fetch "$url" "$output"; then return 0; fi
 
-    proxy_url=$(convert_to_proxy_url "$url")
-    if [ "$proxy_url" != "$url" ]; then
-        log_warn "Direct download failed, trying proxy..."
-        if _do_fetch "$proxy_url" "$output"; then return 0; fi
+    _ff_announced=0
+    for _ff_base in $B4_MIRRORS; do
+        _ff_url=$(mirror_url "$_ff_base" "$url")
+        [ -z "$_ff_url" ] && continue
+        mirror_alive "$_ff_base" || continue
+        if [ "$_ff_announced" -eq 0 ]; then
+            log_warn "Direct download failed, trying mirrors..."
+            _ff_announced=1
+        fi
+        log_info "Mirror: ${_ff_base}"
+        if _do_fetch "$_ff_url" "$output"; then return 0; fi
+    done
+
+    _ff_sf=$(sf_url "$url")
+    if [ -n "$_ff_sf" ]; then
+        if [ "$_ff_announced" -eq 0 ]; then
+            log_warn "Direct download failed, trying mirrors..."
+            _ff_announced=1
+        fi
+        log_info "Mirror: SourceForge"
+        if _do_fetch "$_ff_sf" "$output"; then return 0; fi
     fi
 
     log_err "Failed to download: $url"
     return 1
 }
 
+_do_fetch_stdout() {
+    _dfs_url="$1"
+
+    if command_exists curl; then
+        curl -sfL --connect-timeout "$B4_CONNECT_TIMEOUT" --max-time 25 "$_dfs_url" 2>/dev/null && return 0
+    fi
+    if command_exists wget; then
+        _dfs_args="-qO- $WGET_INSECURE"
+        _wget_supports "--connect-timeout" && _dfs_args="$_dfs_args --connect-timeout=$B4_CONNECT_TIMEOUT"
+        _wget_supports "--timeout" && _dfs_args="$_dfs_args --timeout=25"
+        wget $_dfs_args "$_dfs_url" 2>/dev/null && return 0
+    fi
+    return 1
+}
+
 fetch_stdout() {
     url="$1"
 
-    if command_exists curl; then
-        result=$(curl -sfL --max-time 15 "$url" 2>/dev/null) && [ -n "$result" ] && echo "$result" && return 0
-    fi
-    if command_exists wget; then
-        result=$(wget -qO- $WGET_INSECURE --timeout=15 "$url" 2>/dev/null) && [ -n "$result" ] && echo "$result" && return 0
-    fi
+    result=$(_do_fetch_stdout "$url") && [ -n "$result" ] && echo "$result" && return 0
 
-    proxy_url=$(convert_to_proxy_url "$url")
-    if [ "$proxy_url" != "$url" ]; then
-        if command_exists curl; then
-            result=$(curl -sfL --max-time 15 "$proxy_url" 2>/dev/null) && [ -n "$result" ] && echo "$result" && return 0
-        fi
-        if command_exists wget; then
-            result=$(wget -qO- $WGET_INSECURE --timeout=15 "$proxy_url" 2>/dev/null) && [ -n "$result" ] && echo "$result" && return 0
-        fi
-    fi
+    for _fs_base in $B4_MIRRORS; do
+        _fs_url=$(mirror_url "$_fs_base" "$url")
+        [ -z "$_fs_url" ] && continue
+        mirror_alive "$_fs_base" || continue
+        result=$(_do_fetch_stdout "$_fs_url") && [ -n "$result" ] && echo "$result" && return 0
+    done
 
     return 1
 }
 
+_extract_tag_name() {
+    grep -o '"tag_name": *"[^"]*"' | head -1 | cut -d'"' -f4
+}
+
 get_latest_version() {
     api_url="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest"
-    version=$(fetch_stdout "$api_url" | grep -o '"tag_name": *"[^"]*"' | head -1 | cut -d'"' -f4)
+    version=$(fetch_stdout "$api_url" | _extract_tag_name)
+
+    if [ -z "$version" ]; then
+        for _glv_base in $B4_MIRRORS; do
+            mirror_alive "$_glv_base" || continue
+            version=$(_do_fetch_stdout "${_glv_base}/b4/api/releases/latest" | _extract_tag_name)
+            [ -n "$version" ] && break
+        done
+    fi
+
     if [ -z "$version" ]; then
         log_err "Failed to fetch latest version"
         exit 1
     fi
     echo "$version"
+}
+
+sha256_of() {
+    _sh_file="$1"
+
+    _sh_out=$(sha256sum "$_sh_file" 2>/dev/null | awk '{print $1}')
+    if [ -n "$_sh_out" ]; then
+        echo "$_sh_out"
+        return 0
+    fi
+
+    _sh_out=$(busybox sha256sum "$_sh_file" 2>/dev/null | awk '{print $1}')
+    if [ -n "$_sh_out" ]; then
+        echo "$_sh_out"
+        return 0
+    fi
+
+    _sh_out=$(openssl dgst -sha256 "$_sh_file" 2>/dev/null | awk '{print $NF}')
+    if [ -n "$_sh_out" ]; then
+        echo "$_sh_out"
+        return 0
+    fi
+
+    return 1
 }
 
 verify_checksum() {
@@ -518,26 +675,29 @@ verify_checksum() {
 
     if ! fetch_file "$checksum_url" "$checksum_file"; then
         rm -f "$checksum_file"
+        log_warn "Could not fetch the published SHA256 for this archive"
         return 1
     fi
 
     expected=$(awk '{print $1}' "$checksum_file")
     rm -f "$checksum_file"
-    [ -z "$expected" ] && return 1
-
-    if ! command_exists sha256sum; then
-        log_warn "sha256sum not found, skipping verification"
+    if [ -z "$expected" ]; then
+        log_warn "The published SHA256 for this archive is empty"
         return 1
     fi
 
-    actual=$(sha256sum "$file" | awk '{print $1}')
+    actual=$(sha256_of "$file") || {
+        log_warn "No working sha256 tool found (tried sha256sum, busybox sha256sum, openssl)"
+        return 3
+    }
+
     if [ "$expected" = "$actual" ]; then
         log_ok "SHA256 verified: $actual"
         return 0
-    else
-        log_err "SHA256 mismatch! Expected: $expected Got: $actual"
-        return 2
     fi
+
+    log_err "SHA256 mismatch! Expected: $expected Got: $actual"
+    return 2
 }
 
 is_lxc_container() {
@@ -2903,9 +3063,17 @@ action_install() {
     sha_url="${download_url}.sha256"
     _cs_ret=0
     verify_checksum "$archive_path" "$sha_url" || _cs_ret=$?
-    if [ "$_cs_ret" -eq 2 ]; then
-        log_warn "Checksum mismatch — download may be corrupted"
-        if ! confirm "Continue anyway?"; then
+    if [ "$_cs_ret" -ne 0 ]; then
+        if [ "$_cs_ret" -eq 2 ]; then
+            log_err "SHA256 mismatch: the archive is not the published release"
+        else
+            log_err "The archive could not be checked against its published SHA256"
+        fi
+        if [ "$QUIET_MODE" -eq 1 ]; then
+            log_err "Refusing to install an unverified binary unattended"
+            exit 1
+        fi
+        if ! confirm "Install it anyway?" "n"; then
             exit 1
         fi
     fi
@@ -3277,7 +3445,10 @@ action_update() {
         B4_ARCH=$(detect_architecture)
     fi
 
-    if [ -n "$target_ver" ]; then
+    if [ -n "$B4_LOCAL_ARCHIVE" ]; then
+        latest_ver=""
+        log_info "Source: ${B4_LOCAL_ARCHIVE}"
+    elif [ -n "$target_ver" ]; then
         latest_ver="$target_ver"
         log_info "Target: ${latest_ver}"
     else
@@ -3286,13 +3457,20 @@ action_update() {
         log_info "Latest: ${latest_ver}"
     fi
 
-    if [ "$current_ver" = "$latest_ver" ] || echo "$current_ver" | grep -Fq "$latest_ver"; then
-        log_ok "Already up to date"
-        return 0
+    if [ -z "$B4_LOCAL_ARCHIVE" ]; then
+        if [ "$current_ver" = "$latest_ver" ] || echo "$current_ver" | grep -Fq "$latest_ver"; then
+            log_ok "Already up to date"
+            return 0
+        fi
     fi
 
     if [ "$QUIET_MODE" -eq 0 ]; then
-        if ! confirm "Update to ${latest_ver}?"; then
+        if [ -n "$B4_LOCAL_ARCHIVE" ]; then
+            _confirm_msg="Install the supplied archive?"
+        else
+            _confirm_msg="Update to ${latest_ver}?"
+        fi
+        if ! confirm "$_confirm_msg"; then
             log_info "Update cancelled"
             return 0
         fi
@@ -3301,22 +3479,47 @@ action_update() {
     setup_temp
 
     file_name="${BINARY_NAME}-linux-${B4_ARCH}.tar.gz"
-    download_url="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${latest_ver}/${file_name}"
-    archive_path="${TEMP_DIR}/${file_name}"
 
-    log_info "Downloading ${latest_ver}..."
-    fetch_file "$download_url" "$archive_path" || {
-        log_err "Download failed"
-        exit 1
-    }
-
-    sha_url="${download_url}.sha256"
-    _cs_ret=0
-    verify_checksum "$archive_path" "$sha_url" || _cs_ret=$?
-    if [ "$_cs_ret" -eq 2 ]; then
-        log_warn "Checksum mismatch — download may be corrupted"
-        if ! confirm "Continue anyway?"; then
+    if [ -n "$B4_LOCAL_ARCHIVE" ]; then
+        case "$B4_LOCAL_ARCHIVE" in
+        /*) ;;
+        *)
+            log_err "Archive path must be absolute: ${B4_LOCAL_ARCHIVE}"
             exit 1
+            ;;
+        esac
+        if [ ! -f "$B4_LOCAL_ARCHIVE" ]; then
+            log_err "Archive not found: ${B4_LOCAL_ARCHIVE}"
+            exit 1
+        fi
+        archive_path="$B4_LOCAL_ARCHIVE"
+        log_info "Installing from a supplied archive, no download"
+    else
+        download_url="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${latest_ver}/${file_name}"
+        archive_path="${TEMP_DIR}/${file_name}"
+
+        log_info "Downloading ${latest_ver}..."
+        fetch_file "$download_url" "$archive_path" || {
+            log_err "Download failed"
+            exit 1
+        }
+
+        sha_url="${download_url}.sha256"
+        _cs_ret=0
+        verify_checksum "$archive_path" "$sha_url" || _cs_ret=$?
+        if [ "$_cs_ret" -ne 0 ]; then
+            if [ "$_cs_ret" -eq 2 ]; then
+                log_err "SHA256 mismatch: the archive is not the published release"
+            else
+                log_err "The archive could not be checked against its published SHA256"
+            fi
+            if [ "$QUIET_MODE" -eq 1 ]; then
+                log_err "Refusing to install an unverified binary unattended"
+                exit 1
+            fi
+            if ! confirm "Install it anyway?" "n"; then
+                exit 1
+            fi
         fi
     fi
 
@@ -3329,6 +3532,10 @@ action_update() {
     if [ ! -f "${TEMP_DIR}/${BINARY_NAME}" ]; then
         log_err "Binary not found in archive"
         exit 1
+    fi
+
+    if [ -n "$B4_LOCAL_ARCHIVE" ] && [ "$B4_LOCAL_ARCHIVE_OWNED" = "1" ]; then
+        rm -f "$B4_LOCAL_ARCHIVE" 2>/dev/null || true
     fi
 
     bin_dir=$(dirname "$existing_bin")

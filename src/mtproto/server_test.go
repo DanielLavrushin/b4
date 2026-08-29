@@ -214,7 +214,7 @@ func TestUntrackRemovesConn(t *testing.T) {
 	srv, _, secA, _ := revocationTestServer(t)
 
 	connA := &closeRecordConn{}
-	_, untrack := srv.trackConn(secA, connA)
+	_, untrack, _ := srv.trackConn(secA, connA)
 	untrack()
 
 	srv.closeRevokedConns(nil)
@@ -234,9 +234,9 @@ func TestSessionsReportsTrackedConns(t *testing.T) {
 	connA2 := &closeRecordConn{remoteAddr: &net.TCPAddr{IP: net.ParseIP("178.130.140.98"), Port: 55120}}
 	connB := &closeRecordConn{remoteAddr: &net.TCPAddr{IP: net.ParseIP("10.0.0.1"), Port: 5000}}
 
-	infoA1, _ := srv.trackConn(secA, connA1)
+	infoA1, _, _ := srv.trackConn(secA, connA1)
 	srv.trackConn(secA, connA2)
-	_, untrackB := srv.trackConn(secB, connB)
+	_, untrackB, _ := srv.trackConn(secB, connB)
 
 	dest := "149.154.167.220:443"
 	infoA1.dest.Store(&dest)
@@ -293,7 +293,7 @@ func TestSessionsLastSeenFollowsActivity(t *testing.T) {
 	srv, _, secA, _ := revocationTestServer(t)
 
 	connA := &closeRecordConn{}
-	infoA, _ := srv.trackConn(secA, connA)
+	infoA, _, _ := srv.trackConn(secA, connA)
 
 	before := srv.Sessions()[0].LastSeen
 	advanced := infoA.connectedAt.Add(30 * time.Second)

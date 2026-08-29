@@ -472,6 +472,13 @@ func (c *Config) checkPortCollisions(v *validator) {
 				map[string]any{"value": mc, "min": 0, "max": 100000},
 				"max_connections must be between 0 (default) and 100000 (got %d)", mc)
 		}
+		for i, sec := range c.System.MTProto.Secrets {
+			if mn := sec.MaxNetworks; mn < 0 || mn > 1000 {
+				v.addf(fmt.Sprintf("system.mtproto.secrets[%d].max_networks", i), "out_of_range",
+					map[string]any{"value": mn, "min": 0, "max": 1000},
+					"max_networks must be between 0 (unlimited) and 1000 (got %d)", mn)
+			}
+		}
 		if ut := c.System.MTProto.TCPUserTimeoutSec; ut < -1 || ut > 86400 {
 			v.addf("system.mtproto.tcp_user_timeout_sec", "out_of_range",
 				map[string]any{"value": ut, "min": -1, "max": 86400},

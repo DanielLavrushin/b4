@@ -87,9 +87,17 @@ action_install() {
     _cs_ret=0
     verify_checksum "$archive_path" "$sha_url" || _cs_ret=$?
     # exit code 2 = actual SHA256 mismatch (corrupted/tampered download)
-    if [ "$_cs_ret" -eq 2 ]; then
-        log_warn "Checksum mismatch — download may be corrupted"
-        if ! confirm "Continue anyway?"; then
+    if [ "$_cs_ret" -ne 0 ]; then
+        if [ "$_cs_ret" -eq 2 ]; then
+            log_err "SHA256 mismatch: the archive is not the published release"
+        else
+            log_err "The archive could not be checked against its published SHA256"
+        fi
+        if [ "$QUIET_MODE" -eq 1 ]; then
+            log_err "Refusing to install an unverified binary unattended"
+            exit 1
+        fi
+        if ! confirm "Install it anyway?" "n"; then
             exit 1
         fi
     fi

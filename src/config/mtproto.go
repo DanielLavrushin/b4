@@ -3,10 +3,11 @@ package config
 import "strings"
 
 type MTProtoSecret struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Secret  string `json:"secret"`
-	Enabled bool   `json:"enabled"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Secret      string `json:"secret"`
+	Enabled     bool   `json:"enabled"`
+	MaxNetworks int    `json:"max_networks,omitempty"`
 }
 
 func (m *MTProtoConfig) EffectiveSecrets() []MTProtoSecret {

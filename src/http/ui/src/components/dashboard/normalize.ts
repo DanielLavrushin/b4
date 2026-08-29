@@ -23,6 +23,7 @@ const normalizeMTProto = (raw: unknown): MTProtoStats | undefined => {
   return {
     enabled: Boolean(m.enabled),
     port: safeNumber(m.port),
+    networks: safeNumber(m.networks),
     active_connections: safeNumber(m.active_connections),
     total_connections: safeNumber(m.total_connections),
     bytes_up: safeNumber(m.bytes_up),
@@ -34,6 +35,10 @@ const normalizeMTProto = (raw: unknown): MTProtoStats | undefined => {
           total: safeNumber(s?.total),
           bytes_up: safeNumber(s?.bytes_up),
           bytes_down: safeNumber(s?.bytes_down),
+          networks: safeNumber(s?.networks),
+          network_addrs: Array.isArray(s?.network_addrs)
+            ? s.network_addrs.map((a) => String(a))
+            : [],
         }))
       : [],
   };

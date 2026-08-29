@@ -109,7 +109,7 @@ var (
 
 const (
 	officialProxyConfigURL = "https://core.telegram.org/getProxyConfig"
-	DefaultDCFallbackURL   = "https://proxy.lavrush.in/telegram/getProxyConfig"
+	DefaultDCFallbackURL   = "https://proxy.b4core.app/telegram/getProxyConfig"
 )
 
 func DirectAddresses() map[int]string {

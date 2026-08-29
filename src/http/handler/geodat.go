@@ -172,7 +172,7 @@ func (api *API) RefreshGeodat(destPath, geositeURL, geoipURL string) (int64, int
 
 	if geositeURL != "" {
 		geositePath := filepath.Join(destPath, "geosite.dat")
-		size, err := downloadFile(geositeURL, geositePath)
+		size, err := downloadFileMirrored(geositeURL, geositePath, api.updateMirrors())
 		if err != nil {
 			return 0, 0, nil, fmt.Errorf("failed to download geosite.dat: %v", err)
 		}
@@ -182,7 +182,7 @@ func (api *API) RefreshGeodat(destPath, geositeURL, geoipURL string) (int64, int
 
 	if geoipURL != "" {
 		geoipPath := filepath.Join(destPath, "geoip.dat")
-		size, err := downloadFile(geoipURL, geoipPath)
+		size, err := downloadFileMirrored(geoipURL, geoipPath, api.updateMirrors())
 		if err != nil {
 			return geositeSize, 0, nil, fmt.Errorf("failed to download geoip.dat: %v", err)
 		}
