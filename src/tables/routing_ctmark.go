@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -17,10 +18,11 @@ const (
 )
 
 var (
-	routeCTMarkHeld   atomic.Bool
-	routeCTMarkSilent atomic.Int32
-	routeCTMarkLoaded atomic.Bool
-	routeCTMarkFile   atomic.Value
+	routeCTMarkHeld    atomic.Bool
+	routeCTMarkSilent  atomic.Int32
+	routeCTMarkLoaded  atomic.Bool
+	routeCTMarkSettled atomic.Bool
+	routeCTMarkFile    atomic.Value
 )
 
 const routeCTMarkStateName = ".conntrack-mark"
@@ -38,10 +40,6 @@ func routeCTMarkStatePath(cfg *config.Config) string {
 	return filepath.Join(filepath.Dir(cfg.ConfigPath), routeCTMarkStateName)
 }
 
-// routeLoadCTMarkVerdict reads back what an earlier run found out about this
-// router. Whether the box keeps a connection mark is a property of its firmware,
-// not of one b4 process, and re-learning it costs every connection a set matches
-// until the check has enough to go on.
 func routeLoadCTMarkVerdict(cfg *config.Config) {
 	path := routeCTMarkStatePath(cfg)
 	if path == "" {
@@ -75,6 +73,7 @@ func routeForgetCTMarkVerdict() {
 	routeCTMarkHeld.Store(true)
 	routeCTMarkSilent.Store(0)
 	routeCTMarkLoaded.Store(false)
+	routeCTMarkSettled.Store(false)
 }
 
 func routeCountChainHits(out string, want func(line string) bool) (uint64, bool) {
@@ -98,8 +97,6 @@ func routeCountChainHits(out string, want func(line string) bool) (uint64, bool)
 	return total, seen
 }
 
-// routeCheckCTMarkFromDump reads the verdict out of the table listing the routing
-// check already fetched, rather than going back to the kernel for one chain.
 func routeCheckCTMarkFromDump(chains map[string]iptChainInfo) {
 	if !routeCTMarkHeld.Load() {
 		return
@@ -113,7 +110,7 @@ func routeCheckCTMarkFromDump(chains map[string]iptChainInfo) {
 }
 
 func routeCheckCTMarkIn(out string) {
-	if !routeCTMarkHeld.Load() {
+	if !routeCTMarkHeld.Load() || routeCTMarkSettled.Load() {
 		return
 	}
 
@@ -127,10 +124,19 @@ func routeCheckCTMarkIn(out string) {
 		return
 	}
 	if restored > 0 {
-		routeCTMarkSilent.Store(0)
+		routeCTMarkConfirm()
 		return
 	}
 	if claimed < routeCTMarkMinSamples {
+		return
+	}
+
+	tagged, readable := conntrackCarriesRouteTag()
+	if !readable {
+		return
+	}
+	if tagged {
+		routeCTMarkConfirm()
 		return
 	}
 	if routeCTMarkSilent.Add(1) < routeCTMarkConfirmations {
@@ -139,6 +145,47 @@ func routeCheckCTMarkIn(out string) {
 
 	if routeCTMarkHeld.CompareAndSwap(true, false) {
 		routeSaveCTMarkVerdict()
-		log.Warnf("Routing: this router does not keep the connection mark b4 writes. %d connections were claimed for a set and not one packet after the first came back carrying that claim, which means something else on the box owns the connection mark and overwrites it. A connection would leave by the set's interface and finish by the ordinary uplink, so b4 marks every packet the set matches instead of only the first", claimed)
+		log.Warnf("Routing: this router does not keep the connection mark b4 writes. b4 claimed %d connections for a set and the connection table carries that claim on none of them, which means something else on the box owns the connection mark and overwrites it. A connection would leave by the set's interface and finish by the ordinary uplink, so b4 marks every packet the set matches instead of only the first", claimed)
 	}
+}
+
+func routeCTMarkConfirm() {
+	routeCTMarkSilent.Store(0)
+	routeCTMarkSettled.Store(true)
+}
+
+var conntrackPath = "/proc/net/nf_conntrack"
+
+func conntrackCarriesRouteTag() (tagged bool, readable bool) {
+	f, err := os.Open(conntrackPath)
+	if err != nil {
+		return false, false
+	}
+	defer f.Close()
+
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		if m, ok := conntrackMarkOf(sc.Text()); ok && m&uint64(hostRouteCTMark) != 0 {
+			return true, true
+		}
+	}
+	if sc.Err() != nil {
+		return false, false
+	}
+	return false, true
+}
+
+func conntrackMarkOf(line string) (uint64, bool) {
+	for _, f := range strings.Fields(line) {
+		if !strings.HasPrefix(f, "mark=") {
+			continue
+		}
+		n, err := strconv.ParseUint(strings.TrimPrefix(f, "mark="), 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		return n, true
+	}
+	return 0, false
 }

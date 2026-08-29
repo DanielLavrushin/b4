@@ -2,6 +2,7 @@ package tables
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -171,5 +172,77 @@ func TestTheFallbackReachesTheRoutersOwnTrafficToo(t *testing.T) {
 			"uplink while the connection was made through the set's interface, and the far end drops it. That "+
 			"is the same split path the fallback exists to close on the forwarding side: %v",
 			be.chainOps[st.chainOut])
+	}
+}
+
+const conntrackWithTag = `ipv4     2 tcp      6 299 ESTABLISHED src=192.168.1.100 dst=1.2.3.4 sport=1 dport=443 packets=9 bytes=1 src=1.2.3.4 dst=192.168.1.100 sport=443 dport=1 packets=1 bytes=1 [ASSURED] mark=1073762169 use=2
+ipv4     2 udp      17 27 src=192.168.1.100 dst=8.8.8.8 sport=2 dport=53 packets=1 bytes=1 mark=0 use=2
+`
+
+const conntrackWithoutTag = `ipv4     2 tcp      6 299 ESTABLISHED src=192.168.1.100 dst=1.2.3.4 sport=1 dport=443 packets=9 bytes=1 src=1.2.3.4 dst=192.168.1.100 sport=443 dport=1 packets=1 bytes=1 [ASSURED] mark=7545 use=2
+ipv4     2 udp      17 27 src=192.168.1.100 dst=8.8.8.8 sport=2 dport=53 packets=1 bytes=1 mark=6248 use=2
+`
+
+func writeConntrack(t *testing.T, body string) {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "nf_conntrack")
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prev := conntrackPath
+	conntrackPath = p
+	t.Cleanup(func() { conntrackPath = prev })
+}
+
+func TestAQuietRestoreRuleAloneIsNotEvidence(t *testing.T) {
+	routeForgetCTMarkVerdict()
+	t.Cleanup(routeForgetCTMarkVerdict)
+	writeConntrack(t, conntrackWithTag)
+
+	quiet := ctmarkDump(0, 80)
+	routeCheckCTMarkIn(quiet)
+	routeCheckCTMarkIn(quiet)
+	routeCheckCTMarkIn(quiet)
+
+	if !routeCTMarkIsHeld() {
+		t.Fatal("a set whose destinations never answer, or that only carries one-packet flows like DNS, claims " +
+			"connection after connection without a single later packet in the original direction. The restore " +
+			"rule is quiet for a reason that has nothing to do with the router keeping the mark, and the " +
+			"connection table still shows b4's claim, so switching to fallback here would put every " +
+			"established flow back at risk of being re-evaluated mid-connection")
+	}
+}
+
+func TestTheVerdictFlipsWhenTheClaimIsNotOnTheConnection(t *testing.T) {
+	routeForgetCTMarkVerdict()
+	t.Cleanup(routeForgetCTMarkVerdict)
+	writeConntrack(t, conntrackWithoutTag)
+
+	quiet := ctmarkDump(0, 80)
+	routeCheckCTMarkIn(quiet)
+	if !routeCTMarkIsHeld() {
+		t.Fatal("one look is not enough")
+	}
+	routeCheckCTMarkIn(quiet)
+	if routeCTMarkIsHeld() {
+		t.Fatal("b4 claimed 80 connections and the connection table carries its tag on none of them, which is " +
+			"positive evidence that something else owns the mark rather than an inference from silence")
+	}
+}
+
+func TestAnUnreadableConnectionTableDecidesNothing(t *testing.T) {
+	routeForgetCTMarkVerdict()
+	t.Cleanup(routeForgetCTMarkVerdict)
+	prev := conntrackPath
+	conntrackPath = filepath.Join(t.TempDir(), "absent")
+	t.Cleanup(func() { conntrackPath = prev })
+
+	quiet := ctmarkDump(0, 80)
+	for i := 0; i < 5; i++ {
+		routeCheckCTMarkIn(quiet)
+	}
+	if !routeCTMarkIsHeld() {
+		t.Fatal("without the connection table b4 cannot tell the two cases apart, and guessing wrong costs " +
+			"every established flow, so it must leave the verdict alone")
 	}
 }
