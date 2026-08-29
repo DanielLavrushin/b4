@@ -9,9 +9,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { DomainIcon, SniIcon, TelegramIcon } from "@b4.icons";
 import {
   B4Accordion,
-  B4Badge,
   B4ConnectDetails,
-  B4CountPill,
   B4Dialog,
   B4Hint,
   B4IntegrationCard,
@@ -20,7 +18,6 @@ import {
 } from "@b4.elements";
 import { B4Config } from "@models/config";
 import { SettingsPropHandlerType } from "@models/settings";
-import { MTProtoStats } from "@components/dashboard/types";
 
 interface MTProtoSettingsProps {
   config: B4Config;
@@ -32,38 +29,6 @@ interface ShareTarget {
   secret: string;
 }
 
-const STATS_INTERVAL_MS = 10000;
-
-const useMTProtoStats = (enabled: boolean) => {
-  const [stats, setStats] = useState<MTProtoStats | null>(null);
-
-  useEffect(() => {
-    if (!enabled) {
-      setStats(null);
-      return;
-    }
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const res = await fetch("/api/metrics");
-        if (!res.ok) return;
-        const data = (await res.json()) as { mtproto?: MTProtoStats };
-        if (!cancelled) setStats(data.mtproto ?? null);
-      } catch {
-        if (!cancelled) setStats(null);
-      }
-    };
-    void load();
-    const timer = globalThis.setInterval(() => void load(), STATS_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      globalThis.clearInterval(timer);
-    };
-  }, [enabled]);
-
-  return stats;
-};
-
 const webSecretForm = (secret: string) =>
   "dd" + secret.trim().slice(2, 34).toLowerCase();
 
@@ -71,7 +36,6 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
   const [share, setShare] = useState<ShareTarget | null>(null);
 
   const enabled = config.system.mtproto?.enabled ?? false;
-  const stats = useMTProtoStats(enabled);
 
   const openShare = (secretValue: string) => {
     const secrets = config.system.mtproto?.secrets ?? [];
@@ -82,26 +46,32 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
   return (
     <>
       <Stack spacing={2}>
-        <ProxyCard config={config} onChange={onChange} stats={stats} />
-        <AccessCard config={config} onChange={onChange} onShare={openShare} />
+        <ProxyCard config={config} onChange={onChange} />
+        {enabled && (
+          <>
+            <AccessCard
+              config={config}
+              onChange={onChange}
+              onShare={openShare}
+            />
+            <WebCarrierCard config={config} onChange={onChange} />
+          </>
+        )}
         <MTProtoUpstreamCard config={config} onChange={onChange} />
-        <WebCarrierCard config={config} onChange={onChange} />
         <CreditLine />
       </Stack>
-      <ShareDialog
-        config={config}
-        target={share}
-        onClose={() => setShare(null)}
-      />
+      {enabled && (
+        <ShareDialog
+          config={config}
+          target={share}
+          onClose={() => setShare(null)}
+        />
+      )}
     </>
   );
 };
 
-const ProxyCard = ({
-  config,
-  onChange,
-  stats,
-}: MTProtoSettingsProps & { stats: MTProtoStats | null }) => {
+const ProxyCard = ({ config, onChange }: MTProtoSettingsProps) => {
   const { t } = useTranslation();
   const mtproto = config.system.mtproto;
   const enabled = mtproto?.enabled ?? false;
@@ -114,21 +84,6 @@ const ProxyCard = ({
       enabled={enabled}
       onToggle={(checked) => onChange("system.mtproto.enabled", checked)}
       toggleLabel={t("settings.MTProto.enable")}
-      status={
-        enabled && stats ? (
-          <B4Badge
-            variant="outlined"
-            color={stats.enabled ? "success" : "warning"}
-            label={
-              stats.enabled
-                ? t("settings.MTProto.statusRunning", {
-                    count: stats.active_connections,
-                  })
-                : t("settings.MTProto.statusStopped")
-            }
-          />
-        ) : undefined
-      }
     >
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, md: 6 }}>
@@ -150,7 +105,6 @@ const ProxyCard = ({
             onChange={(n) => onChange("system.mtproto.port", n)}
             min={1}
             max={65535}
-            helperText={t("settings.MTProto.portHelp")}
           />
         </Grid>
         <Grid size={{ xs: 12 }}>
@@ -209,16 +163,12 @@ const AccessCard = ({
   onShare,
 }: MTProtoSettingsProps & { onShare: (secret: string) => void }) => {
   const { t } = useTranslation();
-  const active = (config.system.mtproto?.secrets ?? []).filter(
-    (s) => s.enabled,
-  ).length;
 
   return (
     <B4IntegrationCard
       icon={<SniIcon />}
       title={t("settings.MTProto.secretsTitle")}
       description={t("settings.MTProto.secretsDesc")}
-      status={active > 0 ? <B4CountPill value={active} /> : undefined}
     >
       <MTProtoSecrets config={config} onChange={onChange} onShare={onShare} />
     </B4IntegrationCard>
@@ -241,15 +191,6 @@ const WebCarrierCard = ({ config, onChange }: MTProtoSettingsProps) => {
         onChange("system.mtproto.web_proxy.enabled", checked)
       }
       toggleLabel={t("settings.MTProto.webProxyEnable")}
-      status={
-        enabled ? (
-          <B4Badge
-            variant="outlined"
-            color={hostname ? "info" : "warning"}
-            label={hostname || t("settings.MTProto.webProxyNoHost")}
-          />
-        ) : undefined
-      }
     >
       <B4TextField
         label={t("settings.MTProto.webProxyHostname")}
@@ -258,7 +199,12 @@ const WebCarrierCard = ({ config, onChange }: MTProtoSettingsProps) => {
           onChange("system.mtproto.web_proxy.hostname", e.target.value)
         }
         placeholder="relay.example.org"
-        helperText={t("settings.MTProto.webProxyHostnameHelp")}
+        error={!hostname}
+        helperText={
+          hostname
+            ? t("settings.MTProto.webProxyHostnameHelp")
+            : t("settings.MTProto.webProxyNoHost")
+        }
         selectOnFocus
       />
       <Grid container>
@@ -389,30 +335,25 @@ const ShareDialog = ({
       {directLink && (
         <Box
           sx={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 1,
+            px: 1,
+            pt: 1,
+            bgcolor: "#fff",
+            borderRadius: 2,
             alignSelf: "center",
           }}
         >
-          <Box sx={{ px: 1, pt: 1, bgcolor: "#fff", borderRadius: 2 }}>
-            <QRCodeSVG
-              value={directLink}
-              size={220}
-              level="H"
-              marginSize={0}
-              imageSettings={{
-                src: "/favicon.svg",
-                height: 32,
-                width: 32,
-                excavate: true,
-              }}
-            />
-          </Box>
-          <Typography variant="caption" color="text.secondary">
-            {t("settings.MTProto.shareQrHelp")}
-          </Typography>
+          <QRCodeSVG
+            value={directLink}
+            size={220}
+            level="H"
+            marginSize={0}
+            imageSettings={{
+              src: "/favicon.svg",
+              height: 32,
+              width: 32,
+              excavate: true,
+            }}
+          />
         </Box>
       )}
     </B4Dialog>

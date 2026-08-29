@@ -2,6 +2,7 @@ package convert
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -46,6 +47,25 @@ func (u usage) has(marker string) bool {
 	return false
 }
 
+func containsWord(haystack, word string) bool {
+	for i := 0; ; {
+		j := strings.Index(haystack[i:], word)
+		if j < 0 {
+			return false
+		}
+		j += i
+		if (j == 0 || !isWordByte(haystack[j-1])) &&
+			(j+len(word) == len(haystack) || !isWordByte(haystack[j+len(word)])) {
+			return true
+		}
+		i = j + 1
+	}
+}
+
+func isWordByte(c byte) bool {
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
 func specKnows(s *Spec, marker string) bool {
 	for _, o := range s.Options {
 		if strings.HasPrefix(marker, "--") {
@@ -64,9 +84,16 @@ func specKnows(s *Spec, marker string) bool {
 func detectTool(input string, argv []string, all map[string]*Spec) (*Spec, float64) {
 	u := scanUsage(argv)
 	lower := strings.ToLower(input)
+	names := make([]string, 0, len(all))
+	for name := range all {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
 	var best *Spec
 	bestScore := -1.0
-	for _, s := range all {
+	for _, name := range names {
+		s := all[name]
 		rejected := false
 		for _, m := range s.Detect.Reject {
 			if u.has(m) {
@@ -93,7 +120,7 @@ func detectTool(input string, argv []string, all map[string]*Spec) (*Spec, float
 			}
 		}
 		for _, m := range s.Detect.Markers {
-			if strings.Contains(lower, strings.ToLower(m)) {
+			if containsWord(lower, strings.ToLower(m)) {
 				score += 0.25
 			}
 		}

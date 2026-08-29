@@ -114,3 +114,40 @@ func TestAnalyze_ToolDetection(t *testing.T) {
 		})
 	}
 }
+
+func TestDetect_MarkersRespectIdentifierBoundaries(t *testing.T) {
+	tests := []struct {
+		haystack string
+		word     string
+		want     bool
+	}{
+		{"nfqws_opt=\"--dpi-desync=fake\"", "nfqws", true},
+		{"nfqws2_opt=\"--lua-desync=fake\"", "nfqws2", true},
+		{"nfqws2_opt=x", "nfqws", false},
+		{"winws2_opt=x", "winws", false},
+		{"goodbyedpi.exe -5 -e1", "byedpi", false},
+		{"/opt/zapret/config", "zapret", true},
+		{"/opt/zapret2/list.txt", "zapret", false},
+	}
+	for _, tt := range tests {
+		if got := containsWord(tt.haystack, tt.word); got != tt.want {
+			t.Errorf("containsWord(%q, %q) = %v, want %v", tt.haystack, tt.word, got, tt.want)
+		}
+	}
+}
+
+func TestDetect_IsDeterministic(t *testing.T) {
+	all, err := loadSpecs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := "--filter-tcp=443 --hostlist=/opt/list.txt --new --filter-udp=443"
+	argv := extractArgv(line)
+	first, _ := detectTool(line, argv, all)
+	for i := 0; i < 50; i++ {
+		got, _ := detectTool(line, argv, all)
+		if got != first {
+			t.Fatalf("detection changed between runs: %q then %q", first.Tool, got.Tool)
+		}
+	}
+}

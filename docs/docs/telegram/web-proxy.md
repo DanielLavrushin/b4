@@ -13,12 +13,16 @@ Because the hostname needs a publicly trusted certificate on port 443, this is a
 
 ## What has to be true first
 
-Four conditions, none of which the interface checks:
+Four conditions. Only the first is enforced by the interface, which hides the WEB proxy card while the proxy server is off.
 
-- **The MTProto proxy is enabled and its listener binds.** The relay resolves to nothing while Settings, MTProto Proxy is off, and secrets are loaded only when that listener starts. If its port is already in use, start-up fails, no secrets load, and the relay answers every request with the placeholder page.
+- **The MTProto proxy is enabled and its listener binds.** Secrets are loaded only when that listener starts. If its port is already in use, start-up fails, no secrets load, and the relay answers every request with the placeholder page.
 - **The web server is running.** The relay is a virtual host on b4's own web server, so a web server port of `0` means the relay does not exist. Telegram fixes the scheme and the port, so the hostname has to answer `https://<host>/` on 443, either from b4 directly or through a reverse proxy.
 - **The hostname is not shared with the interface.** Once the `Host` header matches, b4 claims every path on that name. The interface, the API and the login endpoints all return the placeholder page there.
 - **TLS is publicly trusted.** A self-signed certificate is enough for the b4 interface and is not enough here.
+
+:::warning A configured relay with the proxy server off serves the b4 interface
+The relay virtual host matches only while both switches are on. With a hostname set, the WEB carrier on and the proxy server off, requests to that name fall through to b4's own web server, so a public DNS name answers with the b4 interface and its login page rather than with the placeholder site. The WEB proxy card is hidden while the proxy server is off, so this state is reachable only by editing the configuration file.
+:::
 
 :::warning An unusable certificate does not stop b4
 When the configured certificate and key do not load, b4 logs a warning and falls back to plain HTTP. The web server comes up, the relay comes up with it, and nothing answers on 443.
@@ -65,4 +69,3 @@ followed by the ordinary relay line for the data centre the stream reached. Conn
 - The relay is served ahead of b4's web authentication. The token is the only gate: there is no source allowlist and no rate limit, so the hostname plus a secret is enough for anyone holding both.
 - Every Telegram connection from one client rides a single carrier. When the carrier drops, on a 90 second idle timeout, a protocol violation, or the client closing, all of its streams end at once.
 - `Max connections` and the TCP timeouts do not apply here. The WEB path is bounded separately at 256 concurrent carriers and 512 streams per carrier, and nothing is reported when either limit is reached.
-- The share dialog renders the WEB link whenever the carrier is enabled and a hostname is set, including while the MTProto proxy itself is off. A link can therefore exist for a relay that is not running.

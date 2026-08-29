@@ -113,7 +113,7 @@ func (api *API) handleConvertAnalyze(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Param body body convertRequest true "Command line to convert"
-// @Success 201 {object} convert.Result
+// @Success 201 {object} handler.ConvertApplyResult
 // @Security BearerAuth
 // @Router /convert/apply [post]
 func (api *API) handleConvertApply(w http.ResponseWriter, r *http.Request) {
@@ -143,16 +143,17 @@ func (api *API) handleConvertApply(w http.ResponseWriter, r *http.Request) {
 	oldCfg := api.getCfg()
 	newCfg := oldCfg.Clone()
 
-	var domains []string
 	for _, set := range created {
 		config.ApplySetDefaults(set)
 		api.initializeSetDefaults(set)
 		api.loadTargetsForSetCached(set)
-		domains = append(domains, set.Targets.SNIDomains...)
 	}
+	uniqueSetNames(created, newCfg.Sets)
 
+	domains := releasableDomains(created)
+	var moved []DomainReassignment
 	if len(domains) > 0 {
-		api.releaseDomainsFromOtherSets(newCfg.Sets, "", domains)
+		moved = api.releaseDomainsFromOtherSets(newCfg.Sets, "", domains)
 	}
 	newCfg.Sets = append(created, newCfg.Sets...)
 
@@ -169,12 +170,51 @@ func (api *API) handleConvertApply(w http.ResponseWriter, r *http.Request) {
 	res.Sets = derefSets(created)
 	setJsonHeader(w)
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(res)
+	json.NewEncoder(w).Encode(ConvertApplyResult{Result: res, MovedFrom: moved})
+}
+
+type ConvertApplyResult struct {
+	*convert.Result
+	MovedFrom []DomainReassignment `json:"moved_from,omitempty"`
+}
+
+func releasableDomains(created []*config.SetConfig) []string {
+	var out []string
+	for _, set := range created {
+		if set == nil || !set.Enabled {
+			continue
+		}
+		out = append(out, set.Targets.SNIDomains...)
+	}
+	return out
+}
+
+func uniqueSetNames(created []*config.SetConfig, existing []*config.SetConfig) {
+	taken := make(map[string]bool, len(existing))
+	for _, s := range existing {
+		if s != nil {
+			taken[strings.ToLower(s.Name)] = true
+		}
+	}
+	for _, s := range created {
+		name := s.Name
+		for n := 2; taken[strings.ToLower(name)]; n++ {
+			name = s.Name + " " + strconv.Itoa(n)
+		}
+		s.Name = name
+		taken[strings.ToLower(name)] = true
+	}
 }
 
 func (api *API) runConvert(req convertRequest) (*convert.Result, error) {
 	res, err := convert.Analyze(req.Text, req.options())
 	if err != nil {
+		var notConvertible *convert.NotConvertibleError
+		if errors.As(err, &notConvertible) {
+			return nil, ErrBadRequest("These options are " + notConvertible.Label +
+				", which b4 cannot convert yet: it keeps its bypass strategies in Lua scripts rather than in options. Supported: " +
+				supportedToolList())
+		}
 		switch {
 		case errors.Is(err, convert.ErrNothingToParse):
 			return nil, ErrBadRequest("No recognizable options were found in the supplied text")

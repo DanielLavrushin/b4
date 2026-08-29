@@ -57,7 +57,7 @@ export function ImportToolDialog({
   onImported,
 }: Readonly<ImportToolDialogProps>) {
   const { t } = useTranslation();
-  const { showSuccess, showError } = useSnackbar();
+  const { showSuccess, showError, showSnackbar } = useSnackbar();
 
   const [tools, setTools] = useState<ConvertToolInfo[]>([]);
   const [text, setText] = useState("");
@@ -146,6 +146,19 @@ export function ImportToolDialog({
           tool: applied.tool_label,
         }),
       );
+      const moved = applied.moved_from ?? [];
+      if (moved.length > 0) {
+        const domains = [...new Set(moved.map((m) => m.domain))];
+        const shown = domains.slice(0, 5).join(", ");
+        showSnackbar(
+          t("sets.convert.movedFrom", {
+            count: domains.length,
+            domains: domains.length > 5 ? `${shown}, ...` : shown,
+            sets: [...new Set(moved.map((m) => m.set_name))].join(", "),
+          }),
+          "warning",
+        );
+      }
       onImported();
       onClose();
     } catch (e) {
@@ -153,7 +166,7 @@ export function ImportToolDialog({
     } finally {
       setApplying(false);
     }
-  }, [request, showSuccess, showError, onImported, onClose, t]);
+  }, [request, showSuccess, showError, showSnackbar, onImported, onClose, t]);
 
   const grouped = useMemo(() => groupNotes(result), [result]);
 
@@ -312,69 +325,79 @@ export function ImportToolDialog({
                   )}
                   value={
                     profileDomains[String(profile)] ??
-                    (result.plan[profile]?.role === "entry" ? domains : "")
+                    (result.plan[profile]?.domains ?? []).join(", ")
                   }
-                  usingShared={profileDomains[String(profile)] === undefined}
+                  usingShared={
+                    profileDomains[String(profile)] === undefined &&
+                    sameDomains(result.plan[profile]?.domains, splitDomains(domains))
+                  }
                   onChange={(v) =>
                     setProfileDomains((prev) => ({ ...prev, [profile]: v }))
                   }
                 />
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell width="24%">
-                        {t("sets.convert.columnOption")}
-                      </TableCell>
-                      <TableCell width="16%">
-                        {t("sets.convert.columnStatus")}
-                      </TableCell>
-                      <TableCell>{t("sets.convert.columnEffect")}</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {notes.map((n, i) => (
-                      <TableRow key={`${n.token}-${i}`}>
-                        <TableCell
-                          sx={{ fontFamily: "monospace", fontSize: 12.5 }}
-                        >
-                          {n.token}
+                <Box sx={{ overflowX: "auto" }}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell width="24%">
+                          {t("sets.convert.columnOption")}
                         </TableCell>
-                        <TableCell>
-                          <Chip
-                            size="small"
-                            label={t(`sets.convert.status.${n.status}`)}
-                            sx={{
-                              bgcolor: "transparent",
-                              border: `1px solid ${statusColor[n.status]}`,
-                              color: statusColor[n.status],
-                              height: 20,
-                              fontSize: 11,
-                            }}
-                          />
+                        <TableCell width="16%">
+                          {t("sets.convert.columnStatus")}
                         </TableCell>
-                        <TableCell>
-                          <Typography variant="body2">
-                            {t(`sets.convert.reason.${n.reason}`, {
-                              ...n.params,
-                              defaultValue: n.reason,
-                            })}
-                          </Typography>
-                          {n.fields && n.fields.length > 0 && (
-                            <Typography
-                              variant="caption"
-                              sx={{
-                                color: colors.text.secondary,
-                                fontFamily: "monospace",
-                              }}
-                            >
-                              {n.fields.join("  ")}
-                            </Typography>
-                          )}
-                        </TableCell>
+                        <TableCell>{t("sets.convert.columnEffect")}</TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHead>
+                    <TableBody>
+                      {notes.map((n, i) => (
+                        <TableRow key={`${n.token}-${i}`}>
+                          <TableCell
+                            sx={{
+                              fontFamily: "monospace",
+                              fontSize: 12.5,
+                              wordBreak: "break-all",
+                              verticalAlign: "top",
+                            }}
+                          >
+                            {n.token}
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              size="small"
+                              label={t(`sets.convert.status.${n.status}`)}
+                              sx={{
+                                bgcolor: "transparent",
+                                border: `1px solid ${statusColor[n.status]}`,
+                                color: statusColor[n.status],
+                                height: 20,
+                                fontSize: 11,
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">
+                              {t(`sets.convert.reason.${n.reason}`, {
+                                ...n.params,
+                                defaultValue: n.reason,
+                              })}
+                            </Typography>
+                            {n.fields && n.fields.length > 0 && (
+                              <Typography
+                                variant="caption"
+                                sx={{
+                                  color: colors.text.secondary,
+                                  fontFamily: "monospace",
+                                }}
+                              >
+                                {n.fields.join("  ")}
+                              </Typography>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </Box>
               </Box>
             ))}
           </>
@@ -382,6 +405,11 @@ export function ImportToolDialog({
       </Stack>
     </B4Dialog>
   );
+}
+
+function sameDomains(a: string[] | undefined, b: string[]): boolean {
+  if (!a || a.length === 0 || a.length !== b.length) return false;
+  return a.every((d, i) => d === b[i]);
 }
 
 function splitDomains(value: string): string[] {

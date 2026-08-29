@@ -1,0 +1,31 @@
+# this file is included from init scripts
+FWTYPE=iptables
+DISABLE_IPV6=1
+INIT_APPLY_FW=1
+
+TPPORT=988
+# tpws socks listens on this port on localhost and LAN interfaces
+TPPORT_SOCKS=987
+# use <HOSTLIST> and <HOSTLIST_NOAUTO> placeholders to engage standard hostlists
+TPWS_OPT="
+--filter-tcp=80 --methodeol <HOSTLIST> --new
+--filter-tcp=443 --split-pos=1,midsld --disorder <HOSTLIST>
+"
+
+NFQWS_ENABLE=1
+NFQWS_PORTS_TCP=80,443
+NFQWS_PORTS_UDP=443
+# PKT_OUT means connbytes dir original
+# normally it's needed only for stateless DPI that matches every packet
+NFQWS_TCP_PKT_OUT=$((6+$AUTOHOSTLIST_RETRANS_THRESHOLD))
+NFQWS_TCP_PKT_IN=3
+#NFQWS_PORTS_TCP_KEEPALIVE=80
+NFQWS_OPT="
+--filter-tcp=80 --dpi-desync=fake,multisplit --dpi-desync-split-pos=method+2 --dpi-desync-fooling=md5sig <HOSTLIST> --new
+--filter-tcp=443 --dpi-desync=fake,multidisorder --dpi-desync-split-pos=1,midsld --dpi-desync-fooling=badseq,md5sig <HOSTLIST> --new
+--filter-udp=443 --dpi-desync=fake --dpi-desync-repeats=6 <HOSTLIST_NOAUTO>
+"
+
+# none,ipset,hostlist,autohostlist
+MODE_FILTER=none
+IPSET_OPT="--prefix-length=22-30 --v4-threshold=3/4"

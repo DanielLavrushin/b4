@@ -1,6 +1,7 @@
 package convert
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -417,24 +418,29 @@ func TestZapret_SharedGroupConfig(t *testing.T) {
 	})
 
 	t.Run("repeatedFakeTLSBothReported", func(t *testing.T) {
-		var hex, builtin bool
+		var zero, builtin bool
 		for _, n := range res.Notes {
 			switch n.Token {
 			case "--dpi-desync-fake-tls=0x00000000":
-				hex = n.Reason == "fakeHexPayload"
+				zero = n.Reason == "fakeZeroPayload" || n.Reason == "fakeZeroPayloadOverridden"
 			case "--dpi-desync-fake-tls=!":
 				builtin = n.Reason == "fakeBuiltinPayload"
 			}
 		}
-		if !hex || !builtin {
-			t.Fatalf("both --dpi-desync-fake-tls options must be reported (hex=%v builtin=%v)", hex, builtin)
+		if !zero || !builtin {
+			t.Fatalf("both --dpi-desync-fake-tls options must be reported (zero=%v builtin=%v)", zero, builtin)
 		}
 	})
 
-	t.Run("templatePlaceholderIsNotAnError", func(t *testing.T) {
-		n := noteFor(t, res, "<HOSTLIST_NOAUTO>")
-		if n.Status != StatusNotApplicable || n.Reason != "templatePlaceholder" {
+	t.Run("hostlistPlaceholderBecomesAnUnresolvedList", func(t *testing.T) {
+		n := noteFor(t, res, "--hostlist=zapret-hosts-user.txt")
+		if n.Status != StatusApproximated || n.Reason != "hostsFileUnresolved" {
 			t.Fatalf("got %+v", n)
+		}
+		for _, n := range res.Notes {
+			if strings.HasPrefix(n.Token, "<HOSTLIST") {
+				t.Fatalf("placeholder %q reached the report unexpanded", n.Token)
+			}
 		}
 	})
 
@@ -513,45 +519,37 @@ func TestZapret_UDPOnlySetWarnsAboutProtocolScope(t *testing.T) {
 	}
 }
 
-func TestConvert_UnrecognizedDesyncIsNotApplicable(t *testing.T) {
+func TestConvert_Zapret2IsNamedAndRefused(t *testing.T) {
 	nfqws2 := "--filter-udp=443 --filter-l7=quic --payload=quic_initial " +
 		"--lua-desync=fake:blob=quic_initial:repeats=11 --new " +
 		"--filter-tcp=443 --filter-l7=tls --hostlist-domains=youtube.com --payload=tls_client_hello " +
 		"--lua-desync=multidisorder:pos=1,sniext+1,host+1,midsld"
 
-	res := analyze(t, nfqws2)
+	_, err := Analyze(nfqws2, Options{})
+	var notConvertible *NotConvertibleError
+	if !errors.As(err, &notConvertible) {
+		t.Fatalf("a zapret2 command line must be named and refused, got %v", err)
+	}
+	if !strings.Contains(notConvertible.Label, "zapret2") {
+		t.Fatalf("the refusal must name zapret2, got %q", notConvertible.Label)
+	}
+}
 
-	if res.Applicable {
-		t.Fatal("no option that performs a bypass was recognized, the result must not be applicable")
+func TestConvert_Zapret2IsNotOfferedAsATool(t *testing.T) {
+	tools, err := Tools()
+	if err != nil {
+		t.Fatal(err)
 	}
-	for i, s := range res.Sets {
-		if s.Enabled {
-			t.Fatalf("set %d carries no strategy and must not be created enabled", i)
+	for _, x := range tools {
+		if x.Tool == "zapret2" {
+			t.Fatal("zapret2 cannot be converted and must not appear in the tool picker")
 		}
-	}
-	var warned bool
-	for _, w := range res.Warnings {
-		if w.Code == "nothingRecognized" {
-			warned = true
-		}
-	}
-	if !warned {
-		t.Fatal("expected a nothingRecognized warning")
-	}
-	var flagged int
-	for _, n := range res.Notes {
-		if n.Reason == "profileNotUnderstood" {
-			flagged++
-		}
-	}
-	if flagged != len(res.Sets) {
-		t.Fatalf("every unusable profile must be flagged, got %d of %d", flagged, len(res.Sets))
 	}
 }
 
 func TestConvert_PartiallyRecognizedStaysApplicable(t *testing.T) {
 	res := analyze(t, "--filter-tcp=443 --dpi-desync=fake,multidisorder --hostlist-domains=a.com --new "+
-		"--filter-tcp=80 --lua-desync=multisplit:pos=1")
+		"--filter-tcp=80 --dpi-desync-imaginary=1")
 
 	if !res.Applicable {
 		t.Fatal("one profile converted fine, the result should stay applicable")
@@ -561,5 +559,103 @@ func TestConvert_PartiallyRecognizedStaysApplicable(t *testing.T) {
 	}
 	if res.Sets[1].Enabled {
 		t.Fatal("the profile that was not understood must be disabled")
+	}
+}
+
+func TestZapret_AllZeroFakePayloadIsAPayloadB4Has(t *testing.T) {
+	res := analyze(t, "--dpi-desync=fake --dpi-desync-fake-tls=0x00000000")
+	if got := res.Sets[0].Faking.SNIType; got != config.FakePayloadZero {
+		t.Fatalf("sni_type: got %d, want %d (zero)", got, config.FakePayloadZero)
+	}
+	if got := res.Sets[0].Faking.CustomPayload; got != "" {
+		t.Fatalf("the hex literal must not become a custom payload, got %q", got)
+	}
+	n := noteFor(t, res, "--dpi-desync-fake-tls=0x00000000")
+	if n.Status != StatusMapped || n.Reason != "fakeZeroPayload" {
+		t.Fatalf("got %+v", n)
+	}
+}
+
+func TestZapret_ANonZeroHexPayloadHasNoEquivalent(t *testing.T) {
+	res := analyze(t, "--dpi-desync=fake --dpi-desync-fake-tls=0x0F0F0F0F")
+	n := noteFor(t, res, "--dpi-desync-fake-tls=0x0F0F0F0F")
+	if n.Status != StatusUnsupported || n.Reason != "fakeHexPayload" {
+		t.Fatalf("got %+v", n)
+	}
+	if res.Sets[0].Faking.SNIType == config.FakePayloadZero {
+		t.Fatal("a non-zero pattern is not the all-zero payload")
+	}
+}
+
+func TestZapret_AnotherOptionCanSupplyThePayloadInstead(t *testing.T) {
+	res := analyze(t, "--dpi-desync=fake --dpi-desync-fake-tls=0x00000000 "+
+		"--dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com")
+	if got := res.Sets[0].Faking.SNIType; got != config.FakePayloadDomain {
+		t.Fatalf("sni_type: got %d, want %d (domain)", got, config.FakePayloadDomain)
+	}
+	n := noteFor(t, res, "--dpi-desync-fake-tls=0x00000000")
+	if n.Status != StatusApproximated || n.Reason != "fakeZeroPayloadOverridden" {
+		t.Fatalf("got %+v", n)
+	}
+}
+
+func TestZapret_UDPFakeOptionsThatB4Has(t *testing.T) {
+	res := analyze(t, "--filter-udp=1400,32000-32005 --dpi-desync=fake --dpi-desync-repeats=2 "+
+		"--dpi-desync-any-protocol=1 --dpi-desync-fake-unknown-udp=/opt/etc/nfqws/quic_initial.bin "+
+		"--dpi-desync-ttl=0")
+	set := res.Sets[0]
+
+	if set.UDP.FilterQUIC != "all" {
+		t.Errorf("--dpi-desync-any-protocol means every UDP protocol, got filter_quic=%q", set.UDP.FilterQUIC)
+	}
+	if set.UDP.FakePayloadFile != config.FakePayloadAutoQUIC {
+		t.Errorf("the unknown-UDP fake payload was lost, got %q", set.UDP.FakePayloadFile)
+	}
+	if set.UDP.FakingStrategy == "ttl" {
+		t.Error("a TTL of 0 keeps the original TTL, so no TTL faking strategy applies")
+	}
+	for _, tok := range []string{"--dpi-desync-any-protocol=1", "--dpi-desync-ttl=0"} {
+		if n := noteFor(t, res, tok); n.Status == StatusUnsupported || n.Status == StatusUnknown {
+			t.Errorf("%s has an equivalent and must not read as unsupported: %+v", tok, n)
+		}
+	}
+}
+
+func TestZapret_ADetachedOptionalValueIsExplained(t *testing.T) {
+	res := analyze(t, "--dpi-desync=fake,multidisorder --dpi-desync-split-pos=1,midsld --dpi-desync-autottl 2:2-12")
+	n := noteFor(t, res, "2:2-12")
+	if n.Status != StatusDegenerate || n.Reason != "detachedOptionValue" {
+		t.Fatalf("got %+v", n)
+	}
+	if n.Params["option"] != "--dpi-desync-autottl" {
+		t.Fatalf("the note must name the option the value belongs to, got %v", n.Params)
+	}
+}
+
+func TestZapret_AngleReferenceResolvesAgainstTheWholeFile(t *testing.T) {
+	res := analyze(t, "NFQWS_ARGS_QUIC=\"--filter-udp=443 --dpi-desync=fake <MODE_LIST>\"\n"+
+		"NFQWS_ARGS=\"--dpi-desync=fake,multisplit --dpi-desync-split-pos=1,midsld\"\n"+
+		"MODE_LIST=\"--hostlist=/opt/etc/nfqws/user.list\"\n")
+	for _, n := range res.Notes {
+		if strings.Contains(n.Token, "<MODE_LIST>") {
+			t.Fatalf("a placeholder naming a variable the file defines must resolve: %+v", n)
+		}
+	}
+	if len(res.Unresolved) == 0 {
+		t.Fatal("the resolved host list must reach the report as an unresolved file")
+	}
+}
+
+func TestZapret_AnUnbalancedQuoteStillYieldsTheOptions(t *testing.T) {
+	res := analyze(t, `NFQWS_ARGS="$NFQWS_ARGS --filter-tcp=443 --dpi-desync=multisplit `+
+		`--dpi-desync-split-pos=1 --dpi-desync-split-seqovl=681 `+
+		`--dpi-desync-split-seqovl-pattern="/opt/etc/nfqws/tls_clienthello.bin" --new`)
+
+	if !res.Applicable {
+		t.Fatal("a config fragment with one quote too few must still convert")
+	}
+	n := noteFor(t, res, "--dpi-desync-split-seqovl-pattern=/opt/etc/nfqws/tls_clienthello.bin")
+	if n.Status == StatusUnknown {
+		t.Fatalf("the pattern path must survive the quote repair: %+v", n)
 	}
 }

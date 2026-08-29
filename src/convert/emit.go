@@ -3,6 +3,7 @@ package convert
 import (
 	"fmt"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -35,13 +36,17 @@ func noteBreakTokens(prof *Profile, ti tokenIndex, notes *noteSet, keys []string
 	}
 }
 
-func (o emitOpts) domainsFor(prof *Profile) []string {
+func (o emitOpts) domainsFor(prof *Profile, sharedGiven *bool) []string {
 	if !prof.IsEntry() {
 		return nil
 	}
 	if custom, ok := o.ProfileDomains[prof.Index]; ok {
 		return custom
 	}
+	if prof.hasOwnTargets() || *sharedGiven || len(o.Domains) == 0 {
+		return nil
+	}
+	*sharedGiven = true
 	return o.Domains
 }
 
@@ -50,7 +55,7 @@ type tokenIndex map[int]map[string][]Token
 func indexTokens(tokens []Token) tokenIndex {
 	idx := tokenIndex{}
 	for _, t := range tokens {
-		if t.Key == "" {
+		if t.Key == "" || t.Err != "" {
 			continue
 		}
 		if idx[t.Profile] == nil {
@@ -83,6 +88,7 @@ func emit(prog *Program, tokens []Token, notes *noteSet, opts emitOpts) []config
 		prefix = prog.Tool
 	}
 
+	sharedGiven := false
 	sets := make([]config.SetConfig, 0, len(prog.Profiles))
 	for _, prof := range prog.Profiles {
 		set := config.NewSetConfig()
@@ -103,17 +109,18 @@ func emit(prog *Program, tokens []Token, notes *noteSet, opts emitOpts) []config
 		}
 		if udpOnly && len(prog.Profiles) > 1 {
 			notes.extra = append(notes.extra, Note{
-				Token:   set.Name,
-				Profile: prof.Index,
-				Status:  StatusApproximated,
-				Reason:  "udpOnlySetNotProtocolScoped",
+				Token:     set.Name,
+				Profile:   prof.Index,
+				Status:    StatusApproximated,
+				Reason:    "udpOnlySetNotProtocolScoped",
+				Synthetic: true,
 			})
 		}
 		emitMisc(&set, prog, prof, ti, notes)
 		runToolEmitter(prog.Tool, &set, prof, ti, notes)
 		noteBreakTokens(prof, ti, notes, opts.BreakKeys, opts.ProfileModel)
 
-		set.Targets.SNIDomains = append(set.Targets.SNIDomains, opts.domainsFor(prof)...)
+		set.Targets.SNIDomains = append(set.Targets.SNIDomains, opts.domainsFor(prof, &sharedGiven)...)
 		for _, idx := range prof.FoldedProtoTokens {
 			notes.set(tokenByIndex(ti, prof.Index, idx), StatusApproximated, "udpFoldedIntoSet",
 				"udp.mode="+set.UDP.Mode, "udp.filter_quic="+set.UDP.FilterQUIC)
@@ -122,6 +129,7 @@ func emit(prog *Program, tokens []Token, notes *noteSet, opts emitOpts) []config
 	}
 
 	chainEscalation(sets, prog, ti, notes, opts.ProfileModel)
+	dropIdenticalEscalations(sets, notes)
 	for _, prof := range prog.Profiles {
 		noteEmptyProfile(prof, notes)
 	}
@@ -207,11 +215,16 @@ func emitFilters(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *not
 	}
 
 	if portFilter != "" {
-		if udpOnly {
-			set.UDP.DPortFilter = portFilter
-		} else {
-			set.TCP.DPortFilter = portFilter
-			if f.HasProto("udp") {
+		switch {
+		case udpOnly:
+			if len(f.UDPPorts) == 0 {
+				set.UDP.DPortFilter = portFilter
+			}
+		default:
+			if len(f.TCPPorts) == 0 {
+				set.TCP.DPortFilter = portFilter
+			}
+			if f.HasProto("udp") && len(f.UDPPorts) == 0 {
 				set.UDP.DPortFilter = portFilter
 			}
 		}
@@ -266,11 +279,35 @@ func emitUDP(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet
 			notes.set(tok, StatusApproximated, "fakeQUICApproximated",
 				"udp.fake_payload_file="+config.FakePayloadAutoQUIC)
 		}
+		if tok, ok := ti.first(prof.Index, "fake_unk_udp", udpFoldPrefix+"fake_unk_udp"); ok {
+			notes.set(tok, StatusApproximated, "fakeUnknownUDPApproximated",
+				"udp.fake_payload_file="+config.FakePayloadAutoQUIC)
+		}
+	}
+	if prof.UDP.ZeroRef {
+		set.UDP.FakePayloadFile = ""
+		for _, key := range []string{"fake_quic", "fake_unk_udp", udpFoldPrefix + "fake_quic", udpFoldPrefix + "fake_unk_udp"} {
+			ti.each(prof.Index, key, func(tok Token) {
+				notes.set(tok, StatusMapped, "fakeZeroPayload", "udp.fake_payload_file=")
+			})
+		}
+	}
+	if prof.AnyProtocol {
+		set.UDP.FilterQUIC = "all"
+		if tok, ok := ti.first(prof.Index, "any_protocol", udpFoldPrefix+"any_protocol"); ok {
+			notes.set(tok, StatusApproximated, "anyProtocolUDP", "udp.filter_quic=all")
+		}
 	}
 	if prof.UDP.TTLSet {
-		set.UDP.FakingStrategy = "ttl"
+		if prof.UDP.TTL > 0 {
+			set.UDP.FakingStrategy = "ttl"
+		}
 		if tok, ok := ti.first(prof.Index, "desync_ttl", "ttl", udpFoldPrefix+"desync_ttl"); ok {
-			notes.set(tok, StatusMapped, "udpFakeTTLMapped", "udp.faking_strategy=ttl")
+			if prof.UDP.TTL > 0 {
+				notes.set(tok, StatusMapped, "udpFakeTTLMapped", "udp.faking_strategy=ttl")
+			} else {
+				notes.set(tok, StatusMapped, "fakeTTLOriginal", "udp.faking_strategy=none")
+			}
 		}
 	}
 	noteFoldedTokens(prof, ti, notes, set)
@@ -346,12 +383,31 @@ func emitSplits(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *note
 	switch {
 	case segmenting == 0 && len(tlsrec) > 0:
 		set.Fragmentation.Strategy = "tls"
+		tok := tokenAt(tokens(ti, prof.Index, "tlsrec"), 0)
+		if tlsrec[0].Pos.Anchor != AnchorAbs {
+			set.Fragmentation.MiddleSNI = true
+			set.Fragmentation.TLSRecordPosition = 0
+			noteSplit(notes, tok, StatusApproximated, "tlsRecAnchorApproximated",
+				"fragmentation.strategy=tls", "fragmentation.middle_sni=true")
+			break
+		}
 		pos := clamp(absOffset(tlsrec[0].Pos, 1), 1, maxTLSRecPosition)
+		set.Fragmentation.MiddleSNI = false
 		set.Fragmentation.TLSRecordPosition = pos
-		noteSplit(notes, tokenAt(tokens(ti, prof.Index, "tlsrec"), 0), StatusMapped, "tlsRecMapped",
+		noteSplit(notes, tok, StatusMapped, "tlsRecMapped",
 			"fragmentation.strategy=tls", "fragmentation.tlsrec_pos="+strconv.Itoa(pos))
 	case segmenting == 0:
 		set.Fragmentation.Strategy = config.ConfigNone
+		if len(prof.Splits) > 0 {
+			notes.extra = append(notes.extra, Note{
+				Token:     splitTokenList(prof.Splits, ti, prof.Index),
+				Synthetic: true,
+				Profile:   prof.Index,
+				Status:    StatusApproximated,
+				Reason:    "fakeSplitBoundaryLost",
+				Fields:    []string{"fragmentation.strategy=none"},
+			})
+		}
 	case len(disoob) > 0:
 		set.Fragmentation.Strategy = "disorder"
 		applySplitPositions(set, append(append(plain, disorder...), disoob...), notes, ti, prof)
@@ -360,14 +416,31 @@ func emitSplits(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *note
 		})
 	case len(oob) > 0 && len(plain) == 0 && len(disorder) == 0:
 		set.Fragmentation.Strategy = "oob"
-		pos := clamp(absOffset(oob[0].Pos, 1), 1, maxOOBPosition)
-		set.Fragmentation.OOBPosition = pos
 		if opts.Defaults.OOBByte > 0 {
 			set.Fragmentation.OOBChar = byte(opts.Defaults.OOBByte)
 		}
+		anchored := oob[0].Pos.Anchor != AnchorAbs
+		raw := absOffset(oob[0].Pos, 1)
+		pos := clamp(raw, 1, maxOOBPosition)
+		set.Fragmentation.MiddleSNI = anchored
+		if anchored {
+			set.Fragmentation.OOBPosition = 0
+		} else {
+			set.Fragmentation.OOBPosition = pos
+		}
 		ti.each(prof.Index, "oob", func(t Token) {
-			notes.set(t, StatusMapped, "oobMapped",
-				"fragmentation.strategy=oob", "fragmentation.oob_position="+strconv.Itoa(pos))
+			switch {
+			case anchored:
+				notes.set(t, StatusApproximated, "oobAnchorApproximated",
+					"fragmentation.strategy=oob", "fragmentation.middle_sni=true")
+			case raw > maxOOBPosition:
+				n := notes.set(t, StatusApproximated, "positionClamped",
+					"fragmentation.strategy=oob", "fragmentation.oob_position="+strconv.Itoa(pos))
+				n.Params = map[string]any{"position": describePos(oob[0].Pos)}
+			default:
+				notes.set(t, StatusMapped, "oobMapped",
+					"fragmentation.strategy=oob", "fragmentation.oob_position="+strconv.Itoa(pos))
+			}
 		})
 	case len(plain) > 0 && len(disorder) > 0:
 		set.Fragmentation.Strategy = "combo"
@@ -391,9 +464,16 @@ func emitSplits(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *note
 		})
 	}
 	if prof.OOBSet {
-		set.Fragmentation.OOBChar = prof.OOBByte
-		if tok, ok := ti.first(prof.Index, "oob_data"); ok {
-			notes.set(tok, StatusMapped, "oobByteMapped", "fragmentation.oob_char")
+		tok, hasTok := ti.first(prof.Index, "oob_data")
+		if set.Fragmentation.Strategy != "oob" {
+			if hasTok {
+				notes.set(tok, StatusDegenerate, "requiresOOB")
+			}
+		} else {
+			set.Fragmentation.OOBChar = prof.OOBByte
+			if hasTok {
+				notes.set(tok, StatusMapped, "oobByteMapped", "fragmentation.oob_char")
+			}
 		}
 	}
 }
@@ -404,7 +484,7 @@ func applySplitPositions(set *config.SetConfig, ops []SplitOp, notes *noteSet, t
 
 	middle := false
 	firstByte := false
-	fixed := 0
+	fixed, fixedMax := 0, 0
 
 	for _, op := range ops {
 		switch op.Pos.Anchor {
@@ -413,8 +493,13 @@ func applySplitPositions(set *config.SetConfig, ops []SplitOp, notes *noteSet, t
 		default:
 			if op.Pos.Offset == 1 {
 				firstByte = true
-			} else if op.Pos.Offset > 1 && fixed == 0 {
-				fixed = op.Pos.Offset
+			} else if op.Pos.Offset > 1 {
+				if fixed == 0 || op.Pos.Offset < fixed {
+					fixed = op.Pos.Offset
+				}
+				if op.Pos.Offset > fixedMax {
+					fixedMax = op.Pos.Offset
+				}
 			} else if op.Pos.Offset < 0 {
 				middle = true
 			}
@@ -425,12 +510,15 @@ func applySplitPositions(set *config.SetConfig, ops []SplitOp, notes *noteSet, t
 	}
 
 	set.Fragmentation.MiddleSNI = middle
+	set.Fragmentation.SNIPosition = 0
+	set.Fragmentation.SNIPositionMax = 0
 	if honoursFixed && fixed > 0 {
 		set.Fragmentation.SNIPosition = clamp(fixed, 1, maxSNIPosition)
+		if hi := clamp(fixedMax, 1, maxSNIPosition); hi > set.Fragmentation.SNIPosition {
+			set.Fragmentation.SNIPositionMax = hi
+		}
 	} else if honoursFixed && firstByte {
 		set.Fragmentation.SNIPosition = 1
-	} else {
-		set.Fragmentation.SNIPosition = 0
 	}
 	if strategy == "combo" {
 		set.Fragmentation.Combo.FirstByteSplit = firstByte
@@ -440,22 +528,31 @@ func applySplitPositions(set *config.SetConfig, ops []SplitOp, notes *noteSet, t
 			set.Fragmentation.MiddleSNI = true
 		}
 	}
+	comboPoint := strategy == "combo" &&
+		(set.Fragmentation.Combo.FirstByteSplit || set.Fragmentation.Combo.ExtensionSplit)
+	if !set.Fragmentation.MiddleSNI && set.Fragmentation.SNIPosition == 0 && !comboPoint {
+		set.Fragmentation.MiddleSNI = true
+	}
 
 	if len(ops) > 3 {
 		notes.extra = append(notes.extra, Note{
-			Token:   fmt.Sprintf("%d x -s/-d/-o", len(ops)),
-			Profile: prof.Index,
-			Status:  StatusApproximated,
-			Reason:  "splitPointsCollapsed",
-			Fields:  []string{"fragmentation.strategy=" + strategy},
-			Params:  map[string]any{"count": len(ops)},
+			Token:     splitTokenList(ops, ti, prof.Index),
+			Synthetic: true,
+			Profile:   prof.Index,
+			Status:    StatusApproximated,
+			Reason:    "splitPointsCollapsed",
+			Fields:    []string{"fragmentation.strategy=" + strategy},
+			Params:    map[string]any{"count": len(ops)},
 		})
 	}
 
-	for _, op := range ops {
+	collapsed := len(ops) > 3
+	for i, op := range ops {
 		tok := tokenByIndex(ti, prof.Index, op.Token)
 		st, reason, fields := describeSplitMapping(op, strategy, honoursFixed, set)
+		fields = resolveSplitFields(fields, set)
 		n := notes.set(tok, st, reason, fields...)
+		n.Synthetic = collapsed && i > 0
 		n.Params = map[string]any{"position": describePos(op.Pos)}
 
 		if op.Pos.Repeats > 1 {
@@ -471,6 +568,23 @@ func applySplitPositions(set *config.SetConfig, ops []SplitOp, notes *noteSet, t
 			}
 		}
 	}
+}
+
+func resolveSplitFields(fields []string, set *config.SetConfig) []string {
+	out := fields[:0:0]
+	for _, f := range fields {
+		if f != "fragmentation.middle_sni=true" {
+			out = append(out, f)
+			continue
+		}
+		if set.Fragmentation.MiddleSNI {
+			out = append(out, f)
+		}
+	}
+	if set.Fragmentation.SNIPositionMax > set.Fragmentation.SNIPosition {
+		out = append(out, "fragmentation.sni_position_max="+strconv.Itoa(set.Fragmentation.SNIPositionMax))
+	}
+	return out
 }
 
 func describeSplitMapping(op SplitOp, strategy string, honoursFixed bool, set *config.SetConfig) (Status, string, []string) {
@@ -509,6 +623,11 @@ func describeSplitMapping(op SplitOp, strategy string, honoursFixed bool, set *c
 		return StatusApproximated, "fixedPositionIgnored", fields
 	}
 	if set.Fragmentation.SNIPosition != op.Pos.Offset {
+		if set.Fragmentation.SNIPositionMax > set.Fragmentation.SNIPosition &&
+			op.Pos.Offset >= set.Fragmentation.SNIPosition && op.Pos.Offset <= set.Fragmentation.SNIPositionMax {
+			fields = append(fields, "fragmentation.sni_position="+strconv.Itoa(set.Fragmentation.SNIPosition))
+			return StatusApproximated, "positionInRange", fields
+		}
 		if op.Pos.Offset > maxSNIPosition && set.Fragmentation.SNIPosition == maxSNIPosition {
 			fields = append(fields, "fragmentation.sni_position="+strconv.Itoa(maxSNIPosition))
 			return StatusApproximated, "positionClamped", fields
@@ -544,8 +663,14 @@ func emitFake(set *config.SetConfig, prog *Program, prof *Profile, ti tokenIndex
 			"faking.sni=true", "faking.strategy=ttl", "faking.ttl="+strconv.Itoa(int(set.Faking.TTL)))
 		n.Params = map[string]any{"position": describePos(op.Pos)}
 	}
-	if tok, ok := ti.first(prof.Index, "ttl"); ok {
-		notes.set(tok, StatusMapped, "fakeTTLMapped", "faking.ttl", "faking.apply_ttl=true")
+	if tok, ok := ti.first(prof.Index, "ttl", "desync_ttl"); ok {
+		if prof.Fake.TTLSet && prof.Fake.TTL == 0 {
+			notes.set(tok, StatusMapped, "fakeTTLOriginal", "faking.apply_ttl=false")
+		} else {
+			notes.set(tok, StatusMapped, "fakeTTLMapped",
+				"faking.ttl="+strconv.Itoa(int(set.Faking.TTL)),
+				"faking.apply_ttl="+strconv.FormatBool(set.Faking.ApplyTTL))
+		}
 	}
 
 	if prof.Fake.MD5Sig {
@@ -568,9 +693,11 @@ func emitFake(set *config.SetConfig, prog *Program, prof *Profile, ti tokenIndex
 		if tok, ok := ti.first(prof.Index, "fake_data"); ok {
 			notes.set(tok, StatusMapped, "fakeDataMapped", "faking.sni_type=custom", "faking.custom_payload")
 		}
+	case prof.Fake.ZeroPayload && sni == "":
+		set.Faking.SNIType = config.FakePayloadZero
 	case sni != "":
 		host := sanitizeHost(sni)
-		tok, hasTok := ti.first(prof.Index, "fake_sni")
+		tok, hasTok := ti.first(prof.Index, "fake_sni", "tls_sni")
 		if host == "" {
 			if hasTok {
 				notes.set(tok, StatusInvalid, "fakeSNINotAHost")
@@ -598,7 +725,14 @@ func emitFake(set *config.SetConfig, prog *Program, prof *Profile, ti tokenIndex
 	ti.each(prof.Index, "fake_tls", func(tok Token) {
 		v := strings.TrimSpace(tok.Value)
 		switch {
-		case strings.HasPrefix(v, "0x") || strings.HasPrefix(v, "0X"):
+		case isZeroHexLiteral(v):
+			if set.Faking.SNIType == config.FakePayloadZero {
+				notes.set(tok, StatusMapped, "fakeZeroPayload", "faking.sni_type=zero")
+			} else {
+				notes.set(tok, StatusApproximated, "fakeZeroPayloadOverridden",
+					"faking.sni_type="+strconv.Itoa(set.Faking.SNIType))
+			}
+		case isHexLiteral(v):
 			notes.set(tok, StatusUnsupported, "fakeHexPayload")
 		case v == "" || strings.HasPrefix(v, "!"):
 			notes.set(tok, StatusMapped, "fakeBuiltinPayload", "faking.sni_type=preset")
@@ -721,6 +855,37 @@ func chainEscalation(sets []config.SetConfig, prog *Program, ti tokenIndex, note
 	}
 }
 
+func dropIdenticalEscalations(sets []config.SetConfig, notes *noteSet) {
+	byID := map[string]int{}
+	for i := range sets {
+		byID[sets[i].Id] = i
+	}
+	for i := range sets {
+		to := sets[i].Escalate.To
+		if to == "" {
+			continue
+		}
+		j, ok := byID[to]
+		if !ok {
+			continue
+		}
+		if !reflect.DeepEqual(sets[i].Fragmentation, sets[j].Fragmentation) ||
+			!reflect.DeepEqual(sets[i].Faking, sets[j].Faking) {
+			continue
+		}
+		sets[i].Escalate.To = ""
+		notes.extra = append(notes.extra, Note{
+			Token:     sets[i].Name,
+			Synthetic: true,
+			Profile:   i,
+			Status:    StatusDegenerate,
+			Reason:    "escalationTargetIdentical",
+			Fields:    []string{"escalate.to="},
+			Params:    map[string]any{"other": sets[j].Name},
+		})
+	}
+}
+
 func finalize(sets []config.SetConfig, prog *Program, notes *noteSet) {
 	escalationTarget := map[string]bool{}
 	for _, s := range sets {
@@ -731,13 +896,24 @@ func finalize(sets []config.SetConfig, prog *Program, notes *noteSet) {
 	for i := range sets {
 		s := &sets[i]
 		hasTargets := len(s.Targets.SNIDomains) > 0 || len(s.Targets.IPs) > 0
+		carries := prog.Profiles[i].carriesStrategy()
 		if escalationTarget[s.Id] && !hasTargets {
+			if s.TCP.DPortFilter != "" || s.UDP.DPortFilter != "" {
+				notes.extra = append(notes.extra, Note{
+					Token:     s.Name,
+					Synthetic: true,
+					Profile:   i,
+					Status:    StatusUnsupported,
+					Reason:    "portFilterDroppedOnFallback",
+					Fields:    []string{"tcp.dport_filter=", "udp.dport_filter="},
+				})
+			}
 			s.TCP.DPortFilter = ""
 			s.UDP.DPortFilter = ""
 			s.Enabled = true
 			continue
 		}
-		s.Enabled = hasTargets && !prog.Profiles[i].Skip
+		s.Enabled = hasTargets && carries && !prog.Profiles[i].Skip
 	}
 	disableShadowedSets(sets, notes)
 }
@@ -765,11 +941,12 @@ func disableShadowedSets(sets []config.SetConfig, notes *noteSet) {
 		}
 		s.Enabled = false
 		notes.extra = append(notes.extra, Note{
-			Token:   s.Name,
-			Profile: i,
-			Status:  StatusUnsupported,
-			Reason:  "shadowedByEarlierSet",
-			Fields:  []string{"enabled=false"},
+			Token:     s.Name,
+			Profile:   i,
+			Status:    StatusUnsupported,
+			Reason:    "shadowedByEarlierSet",
+			Synthetic: true,
+			Fields:    []string{"enabled=false"},
 			Params: map[string]any{
 				"domain": stolen,
 				"other":  sets[stolenBy].Name,
@@ -786,9 +963,11 @@ var foolingToStrategy = map[string]string{
 
 func applyFooling(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet, defaults SpecDefaults) {
 	switch {
-	case prof.Fake.TTLSet:
+	case prof.Fake.TTLSet && prof.Fake.TTL > 0:
 		set.Faking.TTL = uint8(clamp(prof.Fake.TTL, 1, 255))
 		set.Faking.ApplyTTL = true
+	case prof.Fake.TTLSet:
+		set.Faking.ApplyTTL = false
 	case defaults.FakeTTL > 0:
 		set.Faking.TTL = uint8(clamp(defaults.FakeTTL, 1, 255))
 		set.Faking.ApplyTTL = defaults.FakeTTLForced
@@ -843,7 +1022,7 @@ func abs(v int) int {
 }
 
 var fakeOnlyKeys = []string{
-	"ttl", "md5sig", "fake_data", "fake_sni", "fake_tls_mod",
+	"ttl", "md5sig", "fake_data", "fake_sni", "tls_sni", "fake_tls_mod",
 	"fake_offset", "fake_offset_pos", "ip_opt",
 	"fooling", "desync_ttl", "repeats", "fake_tls", "badseq_inc", "ts_inc",
 }
@@ -862,11 +1041,12 @@ func noteEmptyProfile(prof *Profile, notes *noteSet) {
 		return
 	}
 	notes.extra = append(notes.extra, Note{
-		Token:   fmt.Sprintf("profile %d", prof.Index+1),
-		Profile: prof.Index,
-		Status:  StatusApproximated,
-		Reason:  "profileWithoutDesync",
-		Fields:  []string{"fragmentation.strategy=none", "faking.sni=false"},
+		Token:     fmt.Sprintf("profile %d", prof.Index+1),
+		Profile:   prof.Index,
+		Status:    StatusApproximated,
+		Reason:    "profileWithoutDesync",
+		Synthetic: true,
+		Fields:    []string{"fragmentation.strategy=none", "faking.sni=false"},
 	})
 }
 
@@ -946,4 +1126,18 @@ func noteSplit(notes *noteSet, tok Token, st Status, reason string, fields ...st
 		return
 	}
 	notes.set(tok, st, reason, fields...)
+}
+
+func splitTokenList(ops []SplitOp, ti tokenIndex, profile int) string {
+	seen := map[string]bool{}
+	var out []string
+	for _, op := range ops {
+		raw := tokenByIndex(ti, profile, op.Token).Raw
+		if raw == "" || seen[raw] {
+			continue
+		}
+		seen[raw] = true
+		out = append(out, raw)
+	}
+	return strings.Join(out, " ")
 }

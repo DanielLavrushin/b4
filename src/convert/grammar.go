@@ -197,6 +197,22 @@ func parseCForm(s string) ([]byte, error) {
 	return out, nil
 }
 
+func isHexLiteral(s string) bool {
+	return len(s) > 2 && (s[:2] == "0x" || s[:2] == "0X")
+}
+
+func isZeroHexLiteral(s string) bool {
+	if !isHexLiteral(s) {
+		return false
+	}
+	for i := 2; i < len(s); i++ {
+		if s[i] != '0' {
+			return false
+		}
+	}
+	return true
+}
+
 func isHex(c byte) bool {
 	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
 }

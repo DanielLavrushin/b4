@@ -682,15 +682,17 @@ func TestAnalyze_ProfileWithoutDesyncIsReported(t *testing.T) {
 
 func TestAnalyze_CompetingFixedPositions(t *testing.T) {
 	res := analyze(t, "-s5 -s7")
-	if got := res.Sets[0].Fragmentation.SNIPosition; got != 5 {
-		t.Fatalf("sni_position: got %d, want 5", got)
+	frag := res.Sets[0].Fragmentation
+	if frag.SNIPosition != 5 || frag.SNIPositionMax != 7 {
+		t.Fatalf("several fixed positions become the range b4 splits across, got %d/%d",
+			frag.SNIPosition, frag.SNIPositionMax)
 	}
 	if n := noteFor(t, res, "-s5"); n.Status != StatusMapped {
 		t.Fatalf("-s5: got %+v", n)
 	}
 	n := noteFor(t, res, "-s7")
-	if n.Status != StatusApproximated || n.Reason != "fixedPositionIgnored" {
-		t.Fatalf("a second fixed position cannot be kept, got %+v", n)
+	if n.Status != StatusApproximated || n.Reason != "positionInRange" {
+		t.Fatalf("a position inside the emitted range is covered, got %+v", n)
 	}
 }
 
@@ -734,5 +736,111 @@ func TestByedpi_DefaultsComeFromTheRuleFile(t *testing.T) {
 	d := all["byedpi"].Defaults
 	if d.FakeTTL != 8 || !d.FakeTTLForced || d.OOBByte != 'a' {
 		t.Fatalf("byedpi defaults: got %+v", d)
+	}
+}
+
+func TestByedpi_ADisorderLadderNeverLosesItsPosition(t *testing.T) {
+	for _, line := range []string{"-s1 -q1 -Y", "-d1 -d3 -d10 -d20", "-s1 -d5"} {
+		t.Run(line, func(t *testing.T) {
+			frag := analyze(t, line).Sets[0].Fragmentation
+			if !frag.MiddleSNI && frag.SNIPosition == 0 &&
+				!(frag.Strategy == "combo" && (frag.Combo.FirstByteSplit || frag.Combo.ExtensionSplit)) {
+				t.Fatalf("the set carries no split position at all: %+v", frag)
+			}
+		})
+	}
+}
+
+func TestByedpi_AnAbsoluteLadderBecomesTheRangeB4SplitsAcross(t *testing.T) {
+	res := analyze(t, "-s3 -s6 -s9 -s12")
+	frag := res.Sets[0].Fragmentation
+	if frag.Strategy != "tcp" || frag.SNIPosition != 3 || frag.SNIPositionMax != 12 {
+		t.Fatalf("got strategy=%q %d/%d", frag.Strategy, frag.SNIPosition, frag.SNIPositionMax)
+	}
+	for _, tok := range []string{"-s6", "-s9", "-s12"} {
+		if n := noteFor(t, res, tok); n.Reason != "positionInRange" {
+			t.Errorf("%s falls inside the emitted range: %+v", tok, n)
+		}
+	}
+}
+
+func TestByedpi_TheSNIMiddleNeverSilentlyOverridesAMappedPosition(t *testing.T) {
+	oob := analyze(t, "-o1").Sets[0].Fragmentation
+	if oob.OOBPosition != 1 || oob.MiddleSNI {
+		t.Errorf("an absolute OOB position is overridden by the SNI middle at runtime: %+v", oob)
+	}
+	tls := analyze(t, "-f-1 -r1").Sets[0].Fragmentation
+	if tls.TLSRecordPosition != 1 || tls.MiddleSNI {
+		t.Errorf("an absolute TLS record position is overridden by the SNI middle: %+v", tls)
+	}
+}
+
+func TestByedpi_AnAnchoredPositionSaysSoInsteadOfClaimingAnOffset(t *testing.T) {
+	res := analyze(t, "-f-1 -r1+s")
+	if n := noteFor(t, res, "-r1+s"); n.Reason != "tlsRecAnchorApproximated" {
+		t.Fatalf("got %+v", n)
+	}
+	if got := res.Sets[0].Fragmentation.TLSRecordPosition; got != 0 {
+		t.Fatalf("an SNI-anchored position must not become a byte offset, got %d", got)
+	}
+}
+
+func TestByedpi_AClampedOOBPositionIsReported(t *testing.T) {
+	res := analyze(t, "-o25000")
+	n := noteFor(t, res, "-o25000")
+	if n.Status != StatusApproximated || n.Reason != "positionClamped" {
+		t.Fatalf("got %+v", n)
+	}
+}
+
+func TestByedpi_OptionsThatNeedAStrategyTheSetDoesNotHave(t *testing.T) {
+	res := analyze(t, "-f2 -e1")
+	if n := noteFor(t, res, "-e1"); n.Status != StatusDegenerate || n.Reason != "requiresOOB" {
+		t.Fatalf("an OOB byte on a set that does no OOB split: %+v", n)
+	}
+	var lost bool
+	for _, n := range res.Notes {
+		if n.Reason == "fakeSplitBoundaryLost" {
+			lost = true
+		}
+	}
+	if !lost {
+		t.Fatal("the fake position also splits the request upstream, and that loss must be reported")
+	}
+}
+
+func TestByedpi_A013FakeSNIIsOnlyMappedWhenTheSetSendsFakes(t *testing.T) {
+	res, err := Analyze("-n vk.com -d1 -d3+s", Options{Tool: "byedpi", Version: "0.13"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Sets[0].Faking.PayloadDomain; got != "" {
+		t.Fatalf("no profile sends a fake, so no payload domain can be set, got %q", got)
+	}
+	if n := noteFor(t, res, "-n vk.com"); n.Status == StatusMapped {
+		t.Fatalf("the note must not claim a mapping the set does not carry: %+v", n)
+	}
+}
+
+func TestByedpi_AnEscalationToAnIdenticalSetIsRemoved(t *testing.T) {
+	res := analyze(t, "-d1 -d3+s -r1+s -S -As -d1 -d3+s -S")
+	if res.Sets[0].Escalate.To != "" {
+		t.Fatal("both profiles convert to the same set, so the escalation link buys nothing")
+	}
+	var told bool
+	for _, n := range res.Notes {
+		if n.Reason == "escalationTargetIdentical" {
+			told = true
+		}
+	}
+	if !told {
+		t.Fatal("removing the escalation link must be reported")
+	}
+}
+
+func TestByedpi_AProfileWithNoHostListIsNamedAsTheCatchAll(t *testing.T) {
+	res := analyze(t, `-H:"a.com" -s1 -An -d1 -d3+s -r1+s`)
+	if !hasWarning(res, "catchAllProfile") {
+		t.Fatalf("the group with no -H handled everything upstream and matches nothing here: %+v", res.Warnings)
 	}
 }

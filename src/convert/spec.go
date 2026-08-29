@@ -71,6 +71,26 @@ type DetectSpec struct {
 	EnvVars   []string `json:"env_vars"`
 }
 
+type SourceGroup struct {
+	Vars    []string `json:"vars"`
+	Require []string `json:"require"`
+	Append  []string `json:"append"`
+}
+
+type SourceLayout struct {
+	ID      string        `json:"id"`
+	Require []string      `json:"require"`
+	Groups  []SourceGroup `json:"groups"`
+}
+
+type SpecSources struct {
+	Vars         []string          `json:"vars"`
+	Foreign      []string          `json:"foreign"`
+	ForeignNote  string            `json:"foreign_note"`
+	Placeholders map[string]string `json:"placeholders"`
+	Layouts      []SourceLayout    `json:"layouts"`
+}
+
 type SpecDefaults struct {
 	FakeTTL       int  `json:"fake_ttl"`
 	FakeTTLForced bool `json:"fake_ttl_forced"`
@@ -81,15 +101,21 @@ type Spec struct {
 	Tool         string        `json:"tool"`
 	Label        string        `json:"label"`
 	Style        string        `json:"style"`
+	Convertible  *bool         `json:"convertible"`
 	Homepage     string        `json:"homepage"`
 	Defaults     SpecDefaults  `json:"defaults"`
 	Detect       DetectSpec    `json:"detect"`
+	Sources      SpecSources   `json:"sources"`
 	Versions     []VersionSpec `json:"versions"`
 	Ambiguous    []string      `json:"ambiguous"`
 	Normalize    string        `json:"normalize"`
 	ProfileModel string        `json:"profile_model"`
 	ProfileBreak []string      `json:"profile_break"`
 	Options      []OptionSpec  `json:"options"`
+}
+
+func (s *Spec) convertible() bool {
+	return s.Convertible == nil || *s.Convertible
 }
 
 func (s *Spec) defaultVersion() string {
@@ -233,6 +259,9 @@ func Tools() ([]ToolInfo, error) {
 	}
 	out := make([]ToolInfo, 0, len(all))
 	for _, s := range all {
+		if !s.convertible() {
+			continue
+		}
 		vs := make([]string, 0, len(s.Versions))
 		for _, v := range s.Versions {
 			vs = append(vs, v.ID)
