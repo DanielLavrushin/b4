@@ -155,10 +155,9 @@ func (b *routeNftBackend) addEgressLoopGuard(chain, iface string) bool {
 		"iifname", fmt.Sprintf("%q", iface), "return")
 }
 
+func (b *routeNftBackend) sharesFamilies() bool { return true }
+
 func (b *routeNftBackend) addMarkRestoreRule(chain string, v6 bool, sourceIface string, mark uint32) {
-	if v6 {
-		return
-	}
 	args := []string{"add", "rule", "inet", routeNftTable, chain}
 	if sourceIface != "" {
 		args = append(args, "iifname", fmt.Sprintf("%q", sourceIface))

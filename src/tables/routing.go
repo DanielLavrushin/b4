@@ -68,6 +68,7 @@ type routeBackend interface {
 	addRouterTrafficGuard(chain string, v6 bool, setName string, mark uint32) bool
 	addMarkRule(chain string, v6 bool, setName string, mark uint32, sourceIface string, tagHostConntrack bool)
 	addMarkRestoreRule(chain string, v6 bool, sourceIface string, mark uint32)
+	sharesFamilies() bool
 	addMarkFallbackRule(chain string, v6 bool, setName string, mark uint32, sourceIface string)
 	addEgressLoopGuard(chain, iface string) bool
 	addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32, sources []config.DeviceMatch)
@@ -915,6 +916,10 @@ func RoutingSyncConfig(cfg *config.Config) {
 		}
 
 		cur := buildRouteState(cfg, set)
+		if !config.RoutingIsBlock(cur.mode) && (cur.mark == 0 || cur.table <= 0) {
+			routeWarnIncomplete(set, "b4 could not take a routing table of its own for it")
+			continue
+		}
 		sources := routeNormalizedSources(set.Routing.SourceInterfaces)
 
 		if old, ok := routeRuleCache[set.Id]; ok {
@@ -1108,13 +1113,12 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 		return fmt.Errorf("the guard on traffic arriving from %s did not install, and without it every packet %s hands back for a destination in this set is marked again and sent straight back to it", st.iface, st.iface)
 	}
 
+	routeAddMarkRestoreRules(be, st.chainPre, sources, st.mark, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	if cfg.Queue.IPv4Enabled {
-		routeAddMarkRestoreRules(be, st.chainPre, false, sources, st.mark)
 		routeAddMarkRules(be, st.chainPre, false, st.setV4, st.mark, sources, true)
 		routeAddMarkFallbackRules(be, st.chainPre, false, st.setV4, st.mark, sources)
 	}
 	if cfg.Queue.IPv6Enabled {
-		routeAddMarkRestoreRules(be, st.chainPre, true, sources, st.mark)
 		routeAddMarkRules(be, st.chainPre, true, st.setV6, st.mark, sources, true)
 		routeAddMarkFallbackRules(be, st.chainPre, true, st.setV6, st.mark, sources)
 	}
@@ -1180,13 +1184,30 @@ func routeAddMarkFallbackRules(be routeBackend, chain string, v6 bool, setName s
 	}
 }
 
-func routeAddMarkRestoreRules(be routeBackend, chain string, v6 bool, sources []string, mark uint32) {
-	if len(sources) == 0 {
-		be.addMarkRestoreRule(chain, v6, "", mark)
-		return
+// routeAddMarkRestoreRules emits the restore once per family the backend needs it
+// for. The rule carries no address match, so a backend with one table for both
+// families needs a single copy; asking for it per family would duplicate it, and
+// asking for it only on IPv4 would leave an IPv6-only router without one at all.
+func routeAddMarkRestoreRules(be routeBackend, chain string, sources []string, mark uint32, ipv4, ipv6 bool) {
+	var families []bool
+	if be.sharesFamilies() {
+		families = []bool{false}
+	} else {
+		if ipv4 {
+			families = append(families, false)
+		}
+		if ipv6 {
+			families = append(families, true)
+		}
 	}
-	for _, src := range sources {
-		be.addMarkRestoreRule(chain, v6, src, mark)
+	for _, v6 := range families {
+		if len(sources) == 0 {
+			be.addMarkRestoreRule(chain, v6, "", mark)
+			continue
+		}
+		for _, src := range sources {
+			be.addMarkRestoreRule(chain, v6, src, mark)
+		}
 	}
 }
 
@@ -1234,12 +1255,11 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState, g
 		}
 	}
 
+	routeAddMarkRestoreRules(be, st.chainOut, nil, st.mark, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	if cfg.Queue.IPv4Enabled {
-		routeAddMarkRestoreRules(be, st.chainOut, false, nil, st.mark)
 		routeAddMarkRules(be, st.chainOut, false, st.setV4, st.mark, nil, true)
 	}
 	if cfg.Queue.IPv6Enabled {
-		routeAddMarkRestoreRules(be, st.chainOut, true, nil, st.mark)
 		routeAddMarkRules(be, st.chainOut, true, st.setV6, st.mark, nil, true)
 	}
 }
@@ -2025,7 +2045,8 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 	for i := 0; i < 4096; i++ {
 		_, tableUsed := usedTables[table]
 		if !markOverlaps(mark, usedMarks) && !tableUsed && !routeTableTakenByOthers(table, set.Routing.EgressInterface, refs) {
-			break
+			routeIfaceAuto[autoKey] = routeState{mark: mark, table: table}
+			return mark, table
 		}
 		mark++
 		table++
@@ -2033,8 +2054,9 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 			table = 100
 		}
 	}
-	routeIfaceAuto[autoKey] = routeState{mark: mark, table: table}
-	return mark, table
+
+	log.Errorf("Routing: every routing table between 100 and 249 already carries routes or rules b4 did not add, so there is none left for %s. Taking one anyway would put b4's routes in a table another program is steering traffic with", autoKey)
+	return 0, 0
 }
 
 var routeTableForeignRoutes = routeTableForeignRoutesExec

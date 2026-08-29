@@ -209,6 +209,44 @@ func TestRestoreOnlyTouchesConnectionsB4Tagged(t *testing.T) {
 	}
 }
 
+func TestAnIPv6OnlyRouterStillGetsARestoreRule(t *testing.T) {
+	prev := runLogged
+	var cmds []string
+	runLogged = func(op string, args ...string) bool { cmds = append(cmds, strings.Join(args, " ")); return true }
+	t.Cleanup(func() { runLogged = prev })
+
+	routeAddMarkRestoreRules(&routeNftBackend{}, "b4r_test_pre", []string{"br0"}, 0x5179, false, true)
+	if len(cmds) != 1 {
+		t.Fatalf("with IPv4 turned off the only call carries v6, and one nft table serves both families, so "+
+			"skipping it leaves the set saving a routing decision on every new connection and restoring it on "+
+			"none: every packet after the first takes the main table. Got %v", cmds)
+	}
+
+	cmds = nil
+	routeAddMarkRestoreRules(&routeNftBackend{}, "b4r_test_pre", []string{"br0"}, 0x5179, true, true)
+	if len(cmds) != 1 {
+		t.Fatalf("one nft table serves both families, so a dual-stack router must not get the rule twice: %v", cmds)
+	}
+}
+
+func TestIptablesStillGetsARestorePerFamily(t *testing.T) {
+	cmds := stickyIptRules(t, func(be *routeIptBackend) {
+		routeAddMarkRestoreRules(be, "b4r_test_pre", []string{"br0"}, 0x5179, true, true)
+	})
+	v4, v6 := 0, 0
+	for _, c := range cmds {
+		if strings.HasPrefix(c, "iptables ") {
+			v4++
+		}
+		if strings.HasPrefix(c, "ip6tables ") {
+			v6++
+		}
+	}
+	if v4 != 1 || v6 != 1 {
+		t.Fatalf("iptables and ip6tables are separate rule sets, so each needs its own restore: got v4=%d v6=%d in %v", v4, v6, cmds)
+	}
+}
+
 func TestRestoreIsScopedToEverySourceOfTheSet(t *testing.T) {
 	be := &mockRouteBackend{}
 	cfg := familyTestConfig(true, false)

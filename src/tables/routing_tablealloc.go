@@ -150,14 +150,13 @@ func routeRulePriority(line string) (int, bool) {
 
 func routeRuleIsOwn(line string) bool {
 	fw := routeRuleField(line, "fwmark")
-	if fw == "" {
+	slash := strings.IndexByte(fw, '/')
+	if slash < 0 {
 		return false
 	}
-	if slash := strings.IndexByte(fw, '/'); slash >= 0 {
-		mask, err := strconv.ParseUint(strings.TrimPrefix(fw[slash+1:], "0x"), 16, 32)
-		if err != nil || uint32(mask) != routeSetMarkMask {
-			return false
-		}
+	mask, err := strconv.ParseUint(strings.TrimPrefix(fw[slash+1:], "0x"), 16, 32)
+	if err != nil || uint32(mask) != routeSetMarkMask {
+		return false
 	}
 	prio, ok := routeRulePriority(line)
 	if !ok {

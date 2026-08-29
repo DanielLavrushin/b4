@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"github.com/daniellavrushin/b4/config"
 	"os"
 	"path/filepath"
 	"testing"
@@ -263,10 +264,26 @@ func TestRouteRuleIsOwnDemandsB4sExactSignature(t *testing.T) {
 		"10200:\tfrom all fwmark 0x1f4/0x27fff lookup 137",
 		"1000:\tfrom all fwmark 0x100/0x3f00 lookup 1",
 		"32764:\tfrom all to 1.0.0.1 lookup vpn",
+		"10137:\tfrom all fwmark 0x1f4 lookup 137",
+		"3:\tfrom all fwmark 0x237a0 lookup 252",
 	}
 	for _, l := range foreign {
 		if routeRuleIsOwn(l) {
 			t.Errorf("this rule does not carry b4's signature: %q", l)
+		}
+	}
+}
+
+func TestAnUnmaskedRuleIsNeverReadAsB4s(t *testing.T) {
+	for _, line := range []string{
+		"10229:\tfrom all fwmark 0x5179 lookup 229",
+		"3:\tfrom all fwmark 0x20000 lookup 252",
+	} {
+		if routeRuleIsOwn(line) {
+			t.Fatalf("every rule b4 installs carries the 0x27fff mask, for a routed set and for a proxy set "+
+				"alike, so a rule without one belongs to another program. Reading it as b4's own drops it from "+
+				"the list of foreign references to that table, and b4 then takes a table something else is "+
+				"already using: %q", line)
 		}
 	}
 }
@@ -289,5 +306,34 @@ func TestRoutePickProxyTableReportsExhaustionInsteadOfClaiming252(t *testing.T) 
 	}
 	if got := routePickProxyTableExec(); got != 0 {
 		t.Fatalf("every candidate is taken, so the picker must report exhaustion, got table %d", got)
+	}
+}
+
+func TestAllocationRefusesWhenEveryTableIsTaken(t *testing.T) {
+	prevTaken := routeTableForeignRoutes
+	prevNames := routeRtTableNames
+	routeTableForeignRoutes = func(int, string) bool { return true }
+	routeRtTableNames = func() map[int]string { return map[int]string{} }
+	t.Cleanup(func() {
+		routeTableForeignRoutes = prevTaken
+		routeRtTableNames = prevNames
+		routeForgetRtTableNames()
+		routeIfaceAuto = make(map[string]routeState)
+	})
+	routeForgetRtTableNames()
+	routeIfaceAuto = make(map[string]routeState)
+
+	cfg := config.NewConfig()
+	set := config.NewSetConfig()
+	set.Id = "exhausted"
+	set.Routing.Enabled = true
+	set.Routing.EgressInterface = "wg0"
+
+	mark, table := routeResolveIDs(&cfg, &set)
+	if mark != 0 || table != 0 {
+		t.Fatalf("with every table between 100 and 249 already carrying another program's routes there is "+
+			"nothing left to take. Handing back an occupied one puts b4's default route into a table something "+
+			"else steers traffic with, and a zero mark makes the policy rule 'fwmark 0x0/0x27fff', which matches "+
+			"nearly every packet on the box: got mark 0x%x table %d", mark, table)
 	}
 }
