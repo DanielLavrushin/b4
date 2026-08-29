@@ -291,7 +291,7 @@ func (e *Engine) senderFor(raw []byte) *sock.Sender {
 	if ihl < 20 || len(raw) < ihl+2 || (proto != 6 && proto != 17) {
 		return e.sender
 	}
-	if (uint16(raw[6])<<8|uint16(raw[7]))&0x1fff != 0 {
+	if (uint16(raw[6])<<8|uint16(raw[7]))&0x3fff != 0 {
 		return e.sender
 	}
 	sport := uint16(raw[ihl])<<8 | uint16(raw[ihl+1])

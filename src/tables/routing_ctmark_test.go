@@ -246,3 +246,27 @@ func TestAnUnreadableConnectionTableDecidesNothing(t *testing.T) {
 			"every established flow, so it must leave the verdict alone")
 	}
 }
+
+func TestTwoQuietSetsAreOneObservationNotTwo(t *testing.T) {
+	routeForgetCTMarkVerdict()
+	t.Cleanup(routeForgetCTMarkVerdict)
+	writeConntrack(t, conntrackWithoutTag)
+
+	quiet := parseIptDump(ctmarkDump(0, 80))
+	two := map[string]iptChainInfo{
+		"b4r_a_pre": quiet["b4r_test_pre"],
+		"b4r_b_pre": quiet["b4r_test_pre"],
+	}
+
+	routeCheckCTMarkFromDump(two)
+	if !routeCTMarkIsHeld() {
+		t.Fatal("two routed sets read in the same monitor pass are one look at the router, not two. Counting " +
+			"them separately lets a second set stand in for the second tick and settles the question inside a " +
+			"single pass, right after a restart when every claimed connection is still in its handshake")
+	}
+
+	routeCheckCTMarkFromDump(two)
+	if routeCTMarkIsHeld() {
+		t.Fatal("a second pass is a genuine second look and must be allowed to settle it")
+	}
+}

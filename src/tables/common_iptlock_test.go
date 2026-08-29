@@ -131,3 +131,25 @@ func TestOnePassCannotWaitForever(t *testing.T) {
 	}
 	IPTablesLockBudgetReset()
 }
+
+func TestASingleCommandCannotBlockThePassForever(t *testing.T) {
+	if !hasBinary("sh") {
+		t.Skip("needs a shell")
+	}
+	prev := iptCommandTimeout
+	iptCommandTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { iptCommandTimeout = prev })
+
+	start := time.Now()
+	_, err := runOnce([]string{"sh", "-c", "sleep 30"})
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("a command that never returns must be reported as a failure, not waited on")
+	}
+	if elapsed > 3*time.Second {
+		t.Fatalf("the call blocked for %v. `iptables -w` waits for the lock indefinitely inside this call, so "+
+			"it never reaches the backoff where the pass budget is enforced, and one program holding the "+
+			"xtables lock stalls the whole routing pass and the lock b4 holds around it", elapsed)
+	}
+}

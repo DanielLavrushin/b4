@@ -98,17 +98,26 @@ func routeCountChainHits(out string, want func(line string) bool) (uint64, bool)
 }
 
 func routeCheckCTMarkFromDump(chains map[string]iptChainInfo) {
-	if !routeCTMarkHeld.Load() {
+	if !routeCTMarkHeld.Load() || routeCTMarkSettled.Load() {
 		return
 	}
+	var all []string
 	for name, info := range chains {
 		if !strings.HasPrefix(name, "b4r_") || !strings.HasSuffix(name, "_pre") {
 			continue
 		}
-		routeCheckCTMarkIn(strings.Join(info.rules, "\n"))
+		all = append(all, info.rules...)
 	}
+	if len(all) == 0 {
+		return
+	}
+	routeCheckCTMarkIn(strings.Join(all, "\n"))
 }
 
+// routeCheckCTMarkIn takes one observation of every routed chain at once. Counting
+// each chain on its own would let two quiet sets stand in for two quiet ticks and
+// settle the question inside a single pass, which is the very thing the second
+// confirmation exists to prevent.
 func routeCheckCTMarkIn(out string) {
 	if !routeCTMarkHeld.Load() || routeCTMarkSettled.Load() {
 		return

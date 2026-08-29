@@ -2,6 +2,7 @@ package tables
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -224,12 +225,28 @@ func isXtablesLockBusy(output string, err error) bool {
 		strings.Contains(o, "another app is currently holding the xtables lock")
 }
 
+// iptCommandTimeout bounds a single external command. Without it `iptables -w`
+// waits for the xtables lock forever, inside the call, so it never reaches the
+// backoff the pass budget is enforced in: one held lock stops the routing pass and
+// everything queued behind its own mutex for as long as the other program likes.
+var iptCommandTimeout = 15 * time.Second
+
 func runOnce(args []string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), iptCommandTimeout)
+	defer cancel()
+
 	var out bytes.Buffer
-	cmd := exec.Command(args[0], args[1:]...)
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Stdout = &out
 	cmd.Stderr = &out
+	// Killing the command is not enough on its own: a child that inherited the
+	// output pipe keeps it open, and Wait blocks on the pipe rather than on the
+	// process. WaitDelay closes it and lets the call return.
+	cmd.WaitDelay = time.Second
 	err := cmd.Run()
+	if ctx.Err() != nil {
+		return out.String(), fmt.Errorf("command [%s] gave up after %v: %w", strings.Join(args, " "), iptCommandTimeout, ctx.Err())
+	}
 	if err != nil {
 		output := strings.TrimSpace(out.String())
 		cmdStr := strings.Join(args, " ")
