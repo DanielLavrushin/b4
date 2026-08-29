@@ -182,10 +182,14 @@ action_update() {
         sha_url="${download_url}.sha256"
         _cs_ret=0
         verify_checksum "$archive_path" "$sha_url" || _cs_ret=$?
-        if [ "$_cs_ret" -eq 2 ]; then
-            log_err "SHA256 mismatch: the archive is not the published release"
+        if [ "$_cs_ret" -ne 0 ]; then
+            if [ "$_cs_ret" -eq 2 ]; then
+                log_err "SHA256 mismatch: the archive is not the published release"
+            else
+                log_err "The archive could not be checked against its published SHA256"
+            fi
             if [ "$QUIET_MODE" -eq 1 ]; then
-                log_err "Refusing to install it unattended"
+                log_err "Refusing to install an unverified binary unattended"
                 exit 1
             fi
             if ! confirm "Install it anyway?" "n"; then

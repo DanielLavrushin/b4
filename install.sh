@@ -644,6 +644,30 @@ get_latest_version() {
     echo "$version"
 }
 
+sha256_of() {
+    _sh_file="$1"
+
+    _sh_out=$(sha256sum "$_sh_file" 2>/dev/null | awk '{print $1}')
+    if [ -n "$_sh_out" ]; then
+        echo "$_sh_out"
+        return 0
+    fi
+
+    _sh_out=$(busybox sha256sum "$_sh_file" 2>/dev/null | awk '{print $1}')
+    if [ -n "$_sh_out" ]; then
+        echo "$_sh_out"
+        return 0
+    fi
+
+    _sh_out=$(openssl dgst -sha256 "$_sh_file" 2>/dev/null | awk '{print $NF}')
+    if [ -n "$_sh_out" ]; then
+        echo "$_sh_out"
+        return 0
+    fi
+
+    return 1
+}
+
 verify_checksum() {
     file="$1"
     checksum_url="$2"
@@ -651,26 +675,29 @@ verify_checksum() {
 
     if ! fetch_file "$checksum_url" "$checksum_file"; then
         rm -f "$checksum_file"
+        log_warn "Could not fetch the published SHA256 for this archive"
         return 1
     fi
 
     expected=$(awk '{print $1}' "$checksum_file")
     rm -f "$checksum_file"
-    [ -z "$expected" ] && return 1
-
-    if ! command_exists sha256sum; then
-        log_warn "sha256sum not found, skipping verification"
+    if [ -z "$expected" ]; then
+        log_warn "The published SHA256 for this archive is empty"
         return 1
     fi
 
-    actual=$(sha256sum "$file" | awk '{print $1}')
+    actual=$(sha256_of "$file") || {
+        log_warn "No working sha256 tool found (tried sha256sum, busybox sha256sum, openssl)"
+        return 3
+    }
+
     if [ "$expected" = "$actual" ]; then
         log_ok "SHA256 verified: $actual"
         return 0
-    else
-        log_err "SHA256 mismatch! Expected: $expected Got: $actual"
-        return 2
     fi
+
+    log_err "SHA256 mismatch! Expected: $expected Got: $actual"
+    return 2
 }
 
 is_lxc_container() {
@@ -3036,10 +3063,14 @@ action_install() {
     sha_url="${download_url}.sha256"
     _cs_ret=0
     verify_checksum "$archive_path" "$sha_url" || _cs_ret=$?
-    if [ "$_cs_ret" -eq 2 ]; then
-        log_err "SHA256 mismatch: the archive is not the published release"
+    if [ "$_cs_ret" -ne 0 ]; then
+        if [ "$_cs_ret" -eq 2 ]; then
+            log_err "SHA256 mismatch: the archive is not the published release"
+        else
+            log_err "The archive could not be checked against its published SHA256"
+        fi
         if [ "$QUIET_MODE" -eq 1 ]; then
-            log_err "Refusing to install it unattended"
+            log_err "Refusing to install an unverified binary unattended"
             exit 1
         fi
         if ! confirm "Install it anyway?" "n"; then
@@ -3476,10 +3507,14 @@ action_update() {
         sha_url="${download_url}.sha256"
         _cs_ret=0
         verify_checksum "$archive_path" "$sha_url" || _cs_ret=$?
-        if [ "$_cs_ret" -eq 2 ]; then
-            log_err "SHA256 mismatch: the archive is not the published release"
+        if [ "$_cs_ret" -ne 0 ]; then
+            if [ "$_cs_ret" -eq 2 ]; then
+                log_err "SHA256 mismatch: the archive is not the published release"
+            else
+                log_err "The archive could not be checked against its published SHA256"
+            fi
             if [ "$QUIET_MODE" -eq 1 ]; then
-                log_err "Refusing to install it unattended"
+                log_err "Refusing to install an unverified binary unattended"
                 exit 1
             fi
             if ! confirm "Install it anyway?" "n"; then
