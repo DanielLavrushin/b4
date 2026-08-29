@@ -10,6 +10,7 @@ var (
 	percentRefRe = regexp.MustCompile(`%[A-Za-z_][A-Za-z0-9_]*%`)
 	setPrefixRe  = regexp.MustCompile(`^(?i:set)\s+`)
 	envPrefixRe  = regexp.MustCompile(`^(?i:Environment)=`)
+	angleRefRe   = regexp.MustCompile(`<[A-Za-z_][A-Za-z0-9_]*>`)
 	batCommentRe = regexp.MustCompile(`^(?:@?(?i:rem)\s|::)`)
 	caretContRe  = regexp.MustCompile(`[ \t]*\^[ \t]*\n`)
 	slashContRe  = regexp.MustCompile(`[ \t]+\\[ \t]*\n`)
@@ -184,8 +185,14 @@ func unwrapValue(raw string) string {
 }
 
 func splitValue(raw string) []string {
-	return shellSplit(unwrapValue(raw))
+	tokens := shellSplit(unwrapValue(raw))
+	if carriesOptions(tokens) || scanQuote(raw, 0) == 0 {
+		return tokens
+	}
+	return strings.Fields(quoteStripper.Replace(raw))
 }
+
+var quoteStripper = strings.NewReplacer("\"", "", "'", "")
 
 func (s *Source) addFree(tokens []string) {
 	if !carriesOptions(tokens) {
@@ -207,6 +214,23 @@ func unwrapSetAssignment(stmt string) string {
 
 func (s *Source) expand(raw string) string {
 	return s.expandPercent(s.expandDollar(raw))
+}
+
+func (s *Source) expandAngleTokens(argv []string) []string {
+	out := make([]string, 0, len(argv))
+	for _, a := range argv {
+		if !angleRefRe.MatchString(a) || len(a) < 3 || a[0] != '<' || a[len(a)-1] != '>' {
+			out = append(out, a)
+			continue
+		}
+		val, ok := s.Vars[a[1:len(a)-1]]
+		if !ok {
+			out = append(out, a)
+			continue
+		}
+		out = append(out, splitValue(val)...)
+	}
+	return out
 }
 
 func (s *Source) expandPercent(raw string) string {
@@ -369,7 +393,7 @@ func (s *Source) assemble(spec *Spec) ([]string, sourceReport) {
 	for len(argv) > 0 && argv[len(argv)-1] == "--new" {
 		argv = argv[:len(argv)-1]
 	}
-	return spec.Sources.substitute(stripLauncher(argv)), rep
+	return spec.Sources.substitute(s.expandAngleTokens(stripLauncher(argv))), rep
 }
 
 func (s *Source) skippedVars(spec *Spec, used []string) []string {

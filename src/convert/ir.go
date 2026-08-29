@@ -119,6 +119,7 @@ type FakeOp struct {
 	MD5Sig       bool     `json:"md5sig"`
 	IPOpt        bool     `json:"ip_opt"`
 	DataInline   string   `json:"data_inline"`
+	ZeroPayload  bool     `json:"zero_payload"`
 	DataRef      string   `json:"data_ref"`
 	SNIs         []string `json:"snis"`
 	TLSMod       []string `json:"tls_mod"`
@@ -133,6 +134,7 @@ type UDPOp struct {
 	Present   bool     `json:"present"`
 	Repeats   int      `json:"repeats"`
 	QUICRef   string   `json:"quic_ref"`
+	ZeroRef   bool     `json:"zero_ref"`
 	TTL       int      `json:"ttl"`
 	TTLSet    bool     `json:"ttl_set"`
 	Ports     []string `json:"ports"`
@@ -206,12 +208,13 @@ type Profile struct {
 	TLSMinor int       `json:"tls_minor"`
 	Tokens   []int     `json:"tokens"`
 
-	Desync    DesyncOp  `json:"desync"`
-	SynFake   SynFakeOp `json:"syn_fake"`
-	SeqOvl    SeqOvlOp  `json:"seq_ovl"`
-	Duplicate int       `json:"duplicate"`
-	WinSize   int       `json:"win_size"`
-	Skip      bool      `json:"skip"`
+	Desync      DesyncOp  `json:"desync"`
+	SynFake     SynFakeOp `json:"syn_fake"`
+	SeqOvl      SeqOvlOp  `json:"seq_ovl"`
+	Duplicate   int       `json:"duplicate"`
+	AnyProtocol bool      `json:"any_protocol"`
+	WinSize     int       `json:"win_size"`
+	Skip        bool      `json:"skip"`
 
 	DesyncModes    []string `json:"desync_modes"`
 	SplitPositions []Pos    `json:"split_positions"`

@@ -1836,7 +1836,7 @@
         "l7FilterApproximated": "b4 selects traffic by port and by domain rather than by an L7 protocol filter.",
         "fakeQUICApproximated": "b4 generates a fresh QUIC Initial per packet instead of replaying a captured one. Upload the file under Settings, Payloads to use the original.",
         "fakeBuiltinPayload": "Uses the built-in fake ClientHello.",
-        "fakeHexPayload": "The fake payload is given as raw hex. b4 takes a generated ClientHello, a preset, or an uploaded capture instead.",
+        "fakeHexPayload": "The fake payload is a raw hex pattern. b4 carries a generated ClientHello, a preset, an all-zero payload or an uploaded capture, so an arbitrary pattern has no counterpart. Upload it under Settings, Payloads to use it.",
         "tcpOnlyFakeOption": "Only affects TCP fakes, and this profile handles UDP.",
         "negatedPortFilter": "b4 port filters list the ports to act on and cannot express a negation.",
         "excludeListUnsupported": "b4 has no exclusion list. Remove the entries from the set targets instead.",
@@ -1863,7 +1863,13 @@
         "supersededByLater": "Given again later as {{winner}}, and that is the value that applies. This one has no effect.",
         "extraSplitPositionDropped": "A set splits at one point for the strategy it uses, and another option already supplied it. This position was dropped.",
         "everyPortMatched": "Acts on every port, which is what a b4 set does when its port filter is empty.",
-        "seqOvlLengthUnsupported": "b4 overlaps a fixed number of bytes counted from the start of the payload, so a relative or non-positive length has no counterpart."
+        "seqOvlLengthUnsupported": "b4 overlaps a fixed number of bytes counted from the start of the payload, so a relative or non-positive length has no counterpart.",
+        "fakeZeroPayload": "Became b4's all-zero fake payload.",
+        "fakeZeroPayloadOverridden": "b4 has an all-zero fake payload, but another option in this profile supplies the payload instead, so that one was used.",
+        "fakeUnknownUDPApproximated": "Became the UDP fake payload. b4 carries one payload per set and generates a fresh QUIC Initial per packet instead of replaying a captured one.",
+        "anyProtocolUDP": "Became UDP faking for every protocol rather than QUIC alone. b4 has no counterpart on the TCP side, where it acts on TLS.",
+        "detachedOptionValue": "{{option}} takes its value written with =, so this word is not read as its value. nfqws ignores it in the same way.",
+        "zapret2Lua": "zapret2 keeps its bypass strategies in Lua scripts rather than in options, and b4 cannot read them."
       },
       "sharedDomainsLabel": "Domains for all entry sets",
       "usingShared": "Using the shared domains above",

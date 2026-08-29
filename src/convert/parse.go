@@ -65,14 +65,24 @@ func buildProgram(spec *Spec, version string, tokens []Token, notes *noteSet) (*
 	prog.current()
 
 	resolved := make([]Token, 0, len(tokens))
+	detached := ""
 	for _, tok := range tokens {
+		wasDetached := detached
+		detached = ""
+		if tok.Err == "" && tok.Spec.Arg == ArgOptional && !tok.HasValue {
+			detached = tok.Raw
+		}
 		if tok.Err != "" {
 			tok.Profile = len(prog.Profiles) - 1
 			switch tok.Err {
 			case "operand":
-				if isTemplatePlaceholder(tok.Raw) {
+				switch {
+				case isTemplatePlaceholder(tok.Raw):
 					notes.set(tok, StatusNotApplicable, "templatePlaceholder")
-				} else {
+				case wasDetached != "":
+					n := notes.set(tok, StatusDegenerate, "detachedOptionValue")
+					n.Params = map[string]any{"option": wasDetached}
+				default:
 					notes.set(tok, StatusUnknown, "strayArgument")
 				}
 			case "unknown":
@@ -286,12 +296,19 @@ func applyTargetValue(prog *Program, prof *Profile, tok Token, v Value, notes *n
 	case "fake.ts_increment":
 		prof.Fake.TSIncrement = v.Int
 	case "fake.quic":
+		if isHexLiteral(v.Str) {
+			prof.Fake.QUICRef = ""
+			prof.UDP.ZeroRef = isZeroHexLiteral(v.Str)
+			return
+		}
 		prof.Fake.QUICRef = orDefault(v.Ref, v.Str)
 	case "fake.blob":
 		switch {
 		case v.Ref != "":
 			prof.Fake.DataRef = v.Ref
-		case strings.HasPrefix(v.Str, "0x"), strings.HasPrefix(v.Str, "0X"):
+		case isZeroHexLiteral(v.Str):
+			prof.Fake.ZeroPayload = true
+		case isHexLiteral(v.Str):
 		case v.Str != "" && v.Str != "builtin":
 			prof.Fake.DataInline = v.Str
 		}
@@ -305,6 +322,8 @@ func applyTargetValue(prog *Program, prof *Profile, tok Token, v Value, notes *n
 		}
 	case "profile.desync_mode":
 		prof.Desync.Mode = v.Str
+	case "profile.any_protocol":
+		prof.AnyProtocol = v.Bool
 	case "profile.duplicate":
 		prof.Duplicate = v.Int
 	case "profile.win_size":

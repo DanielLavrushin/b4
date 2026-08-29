@@ -13,6 +13,15 @@ var (
 	ErrUnsupportedTool = errors.New("the options look like a tool b4 cannot convert yet")
 )
 
+type NotConvertibleError struct {
+	Tool  string
+	Label string
+}
+
+func (e *NotConvertibleError) Error() string {
+	return e.Label + " is recognized, but b4 cannot convert it yet"
+}
+
 type Options struct {
 	Tool           string           `json:"tool"`
 	Version        string           `json:"version"`
@@ -135,6 +144,9 @@ func Analyze(input string, opts Options) (*Result, error) {
 	}
 	if spec == nil {
 		return nil, ErrUnsupportedTool
+	}
+	if !spec.convertible() {
+		return nil, &NotConvertibleError{Tool: spec.Tool, Label: spec.Label}
 	}
 
 	argv, srcRep := src.assemble(spec)

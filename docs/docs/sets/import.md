@@ -34,7 +34,7 @@ Three things in the same file are reported rather than converted:
 - **Host list placeholders.** `<HOSTLIST>` and `<HOSTLIST_NOAUTO>` are substituted by the zapret scripts before nfqws starts. They become a host list the import cannot read, and the set asks for its domains.
 
 :::info An unknown tool is refused, not guessed
-Only byedpi and zapret are understood. A command line for a different tool, such as GoodbyeDPI, is rejected with a message saying b4 cannot convert it yet, rather than being read against whichever option table happens to match best.
+Only byedpi and zapret are understood. A command line for a different tool is rejected with a message naming it, rather than being read against whichever option table happens to match best. zapret2 is recognised and refused by name: it keeps its bypass strategies in Lua scripts (`--lua-desync`, `--payload`) rather than in options, so there is nothing in the command line to translate.
 :::
 
 Supported tools:
@@ -82,6 +82,8 @@ Two rules explain what the report shows:
 `--hostlist=/opt/zapret/ipset/zapret-hosts-user.txt` and `-H /etc/byedpi/hosts.txt` point at files on the machine running that tool. The import cannot read them. The set whose profile referenced the file shows the path next to its domain field. Open that file on the other machine and paste its contents in.
 
 The same applies to a fake payload loaded from a file (`--dpi-desync-fake-tls=/opt/.../tls_clienthello.bin`). A built-in payload is used instead. To use the original, upload it under [Settings -> Payloads](../settings/payloads).
+
+A payload written as a hex pattern is read where b4 has the same thing: `--dpi-desync-fake-tls=0x00000000` becomes b4's all-zero fake payload, and an all-zero `--dpi-desync-fake-quic` becomes the zero fill a set uses when no UDP payload is set. Any other pattern has no counterpart, since b4 carries a generated ClientHello, a preset, an all-zero payload or an uploaded capture.
 
 ## The report
 

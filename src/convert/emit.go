@@ -277,11 +277,35 @@ func emitUDP(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet
 			notes.set(tok, StatusApproximated, "fakeQUICApproximated",
 				"udp.fake_payload_file="+config.FakePayloadAutoQUIC)
 		}
+		if tok, ok := ti.first(prof.Index, "fake_unk_udp", udpFoldPrefix+"fake_unk_udp"); ok {
+			notes.set(tok, StatusApproximated, "fakeUnknownUDPApproximated",
+				"udp.fake_payload_file="+config.FakePayloadAutoQUIC)
+		}
+	}
+	if prof.UDP.ZeroRef {
+		set.UDP.FakePayloadFile = ""
+		for _, key := range []string{"fake_quic", "fake_unk_udp", udpFoldPrefix + "fake_quic", udpFoldPrefix + "fake_unk_udp"} {
+			ti.each(prof.Index, key, func(tok Token) {
+				notes.set(tok, StatusMapped, "fakeZeroPayload", "udp.fake_payload_file=")
+			})
+		}
+	}
+	if prof.AnyProtocol {
+		set.UDP.FilterQUIC = "all"
+		if tok, ok := ti.first(prof.Index, "any_protocol", udpFoldPrefix+"any_protocol"); ok {
+			notes.set(tok, StatusApproximated, "anyProtocolUDP", "udp.filter_quic=all")
+		}
 	}
 	if prof.UDP.TTLSet {
-		set.UDP.FakingStrategy = "ttl"
+		if prof.UDP.TTL > 0 {
+			set.UDP.FakingStrategy = "ttl"
+		}
 		if tok, ok := ti.first(prof.Index, "desync_ttl", "ttl", udpFoldPrefix+"desync_ttl"); ok {
-			notes.set(tok, StatusMapped, "udpFakeTTLMapped", "udp.faking_strategy=ttl")
+			if prof.UDP.TTL > 0 {
+				notes.set(tok, StatusMapped, "udpFakeTTLMapped", "udp.faking_strategy=ttl")
+			} else {
+				notes.set(tok, StatusMapped, "fakeTTLOriginal", "udp.faking_strategy=none")
+			}
 		}
 	}
 	noteFoldedTokens(prof, ti, notes, set)
@@ -586,6 +610,8 @@ func emitFake(set *config.SetConfig, prog *Program, prof *Profile, ti tokenIndex
 		if tok, ok := ti.first(prof.Index, "fake_data"); ok {
 			notes.set(tok, StatusMapped, "fakeDataMapped", "faking.sni_type=custom", "faking.custom_payload")
 		}
+	case prof.Fake.ZeroPayload && sni == "":
+		set.Faking.SNIType = config.FakePayloadZero
 	case sni != "":
 		host := sanitizeHost(sni)
 		tok, hasTok := ti.first(prof.Index, "fake_sni")
@@ -616,7 +642,14 @@ func emitFake(set *config.SetConfig, prog *Program, prof *Profile, ti tokenIndex
 	ti.each(prof.Index, "fake_tls", func(tok Token) {
 		v := strings.TrimSpace(tok.Value)
 		switch {
-		case strings.HasPrefix(v, "0x") || strings.HasPrefix(v, "0X"):
+		case isZeroHexLiteral(v):
+			if set.Faking.SNIType == config.FakePayloadZero {
+				notes.set(tok, StatusMapped, "fakeZeroPayload", "faking.sni_type=zero")
+			} else {
+				notes.set(tok, StatusApproximated, "fakeZeroPayloadOverridden",
+					"faking.sni_type="+strconv.Itoa(set.Faking.SNIType))
+			}
+		case isHexLiteral(v):
 			notes.set(tok, StatusUnsupported, "fakeHexPayload")
 		case v == "" || strings.HasPrefix(v, "!"):
 			notes.set(tok, StatusMapped, "fakeBuiltinPayload", "faking.sni_type=preset")

@@ -26,11 +26,15 @@
       "--dpi-desync-split-pos"
     ],
     "reject": [
+      "--blob",
       "--disoob",
-      "--tlsrec",
-      "--oob-data",
       "--fake-sni",
-      "--mod-http"
+      "--lua-desync",
+      "--lua-init",
+      "--mod-http",
+      "--oob-data",
+      "--payload",
+      "--tlsrec"
     ]
   },
   "sources": {
@@ -302,8 +306,7 @@
       "arg": "required",
       "scope": "profile",
       "grammar": "zapret.blob",
-      "target": "profile.unsupported",
-      "note": "noEquivalent"
+      "target": "fake.quic"
     },
     {
       "key": "autottl",
@@ -455,8 +458,7 @@
       "arg": "optional",
       "scope": "profile",
       "grammar": "bool01",
-      "target": "profile.unsupported",
-      "note": "anyProtocol"
+      "target": "profile.any_protocol"
     },
     {
       "key": "skip_nosni",

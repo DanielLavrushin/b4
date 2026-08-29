@@ -209,6 +209,12 @@ func uniqueSetNames(created []*config.SetConfig, existing []*config.SetConfig) {
 func (api *API) runConvert(req convertRequest) (*convert.Result, error) {
 	res, err := convert.Analyze(req.Text, req.options())
 	if err != nil {
+		var notConvertible *convert.NotConvertibleError
+		if errors.As(err, &notConvertible) {
+			return nil, ErrBadRequest("These options are " + notConvertible.Label +
+				", which b4 cannot convert yet: it keeps its bypass strategies in Lua scripts rather than in options. Supported: " +
+				supportedToolList())
+		}
 		switch {
 		case errors.Is(err, convert.ErrNothingToParse):
 			return nil, ErrBadRequest("No recognizable options were found in the supplied text")

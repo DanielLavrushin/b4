@@ -101,6 +101,7 @@ type Spec struct {
 	Tool         string        `json:"tool"`
 	Label        string        `json:"label"`
 	Style        string        `json:"style"`
+	Convertible  *bool         `json:"convertible"`
 	Homepage     string        `json:"homepage"`
 	Defaults     SpecDefaults  `json:"defaults"`
 	Detect       DetectSpec    `json:"detect"`
@@ -111,6 +112,10 @@ type Spec struct {
 	ProfileModel string        `json:"profile_model"`
 	ProfileBreak []string      `json:"profile_break"`
 	Options      []OptionSpec  `json:"options"`
+}
+
+func (s *Spec) convertible() bool {
+	return s.Convertible == nil || *s.Convertible
 }
 
 func (s *Spec) defaultVersion() string {
@@ -254,6 +259,9 @@ func Tools() ([]ToolInfo, error) {
 	}
 	out := make([]ToolInfo, 0, len(all))
 	for _, s := range all {
+		if !s.convertible() {
+			continue
+		}
 		vs := make([]string, 0, len(s.Versions))
 		for _, v := range s.Versions {
 			vs = append(vs, v.ID)
