@@ -395,15 +395,6 @@ export const UpdateModal = ({
               helperText={t("update.expectedSha256Help")}
               disabled={isUpdating}
             />
-            <Button
-              variant="contained"
-              color="warning"
-              startIcon={<UploadIcon />}
-              onClick={() => void handleUploadInstall()}
-              disabled={isUpdating || !uploadFile}
-            >
-              {t("update.installUploaded")}
-            </Button>
           </Stack>
         </Box>
       )}
@@ -514,15 +505,25 @@ export const UpdateModal = ({
           <Button onClick={onClose} variant="outlined" disabled={isUpdating}>
             {t("core.close")}
           </Button>
-          {!isDocker && !showUpload && (
+          {!isDocker && (
             <Button
-              onClick={() => void handleUpdate()}
+              onClick={() =>
+                void (showUpload ? handleUploadInstall() : handleUpdate())
+              }
               variant="contained"
-              startIcon={<CloudDownloadIcon />}
-              disabled={isUpdating || isCurrent}
-              color={isDowngrade ? "warning" : "primary"}
+              startIcon={
+                showUpload ? <UploadIcon /> : <CloudDownloadIcon />
+              }
+              disabled={
+                isUpdating || (showUpload ? !uploadFile : isCurrent)
+              }
+              color={showUpload || isDowngrade ? "warning" : "primary"}
             >
-              {isDowngrade ? t("update.downgrade") : t("update.upgrade")}
+              {showUpload
+                ? t("update.install")
+                : isDowngrade
+                  ? t("update.downgrade")
+                  : t("update.upgrade")}
             </Button>
           )}
         </>

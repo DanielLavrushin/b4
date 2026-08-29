@@ -2384,7 +2384,6 @@
     "installFromFile": "Install from a file instead",
     "installFromFileHelp": "For a network where no download source can be reached. Download b4-linux-<arch>.tar.gz from the release page on another machine and upload it here. The archive is checked against this router's architecture before anything is replaced.",
     "chooseArchive": "Choose archive",
-    "installUploaded": "Install uploaded archive",
     "uploadInitiating": "Uploading the archive...",
     "expectedSha256": "Expected SHA256 (optional)",
     "expectedSha256Placeholder": "paste from the release page",
