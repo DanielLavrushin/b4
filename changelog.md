@@ -1,6 +1,6 @@
 # B4 - Bye Bye Big Bro
 
-## [1.80.0] - 2026-08-29
+## [1.80.1] - 2026-08-29
 
 - FIXED: **A set routed to a tunnel or an upstream proxy could take the router down within seconds of the service starting** - the rules pick a packet by its destination alone, so a packet the proxy handed back for that same address was picked again and sent straight back to it, thirty-one turns before its hop count ran out. Where such a set carried the router's own traffic as well, the proxy answered each turn by opening a connection of its own from the same box, on a fresh source port every time, until the memory was gone.
 - FIXED: **A routed set could carry nothing at all, with nothing in the interface saying otherwise** - the kernel's reverse-path check dropped every reply arriving on the set's interface, a set left on interface mode with no interface chosen or on proxy mode with no upstream port was dropped from the pass without a line in the log, turning domain-only matching off never rebuilt the set so its address list stayed empty, the firmware rebuilding its own firewall took b4's jump with it, and on a Broadcom router the firmware hands out the connection mark itself and overwrote the routing decision b4 keeps there.
