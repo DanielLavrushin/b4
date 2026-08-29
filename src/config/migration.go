@@ -296,26 +296,32 @@ func migrateV14to15(c *Config, raw map[string]interface{}) error {
 	return nil
 }
 
+var configDiscoveryFiles = []string{
+	"/etc/b4/b4.json",
+	"/etc/b4/config.json",
+	"/opt/etc/b4/b4.json",
+	"/opt/etc/b4/config.json",
+}
+
+var configDiscoveryDirs = []string{"/etc/b4", "/opt/etc/b4"}
+
 // discoverConfigPath checks well-known locations for a config file.
 func discoverConfigPath() string {
-	candidates := []string{
-		"/etc/b4/b4.json",
-		"/etc/b4/config.json",
-		"/opt/etc/b4/b4.json",
-		"/opt/etc/b4/config.json",
-	}
+	candidates := configDiscoveryFiles
 	for _, p := range candidates {
 		if info, err := os.Stat(p); err == nil && !info.IsDir() {
 			return p
 		}
 	}
-	if info, err := os.Stat("/etc/b4"); err == nil && info.IsDir() {
-		return "/etc/b4/b4.json"
+	for _, d := range configDiscoveryDirs {
+		if info, err := os.Stat(d); err == nil && info.IsDir() {
+			return filepath.Join(d, "b4.json")
+		}
 	}
-	if info, err := os.Stat("/opt/etc/b4"); err == nil && info.IsDir() {
-		return "/opt/etc/b4/b4.json"
+	if len(configDiscoveryFiles) > 0 {
+		return configDiscoveryFiles[0]
 	}
-	return "/etc/b4/b4.json"
+	return ""
 }
 
 func (c *Config) LoadWithMigration(path string) (bool, error) {

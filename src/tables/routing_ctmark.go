@@ -98,16 +98,22 @@ func routeCountChainHits(out string, want func(line string) bool) (uint64, bool)
 	return total, seen
 }
 
-func routeCheckCTMarkHolds(be *routeIptBackend, chain string) {
+// routeCheckCTMarkFromDump reads the verdict out of the table listing the routing
+// check already fetched, rather than going back to the kernel for one chain.
+func routeCheckCTMarkFromDump(chains map[string]iptChainInfo) {
 	if !routeCTMarkHeld.Load() {
 		return
 	}
-	cmd := be.ipt4()
-	if !hasBinary(cmd) {
-		return
+	for name, info := range chains {
+		if !strings.HasPrefix(name, "b4r_") || !strings.HasSuffix(name, "_pre") {
+			continue
+		}
+		routeCheckCTMarkIn(strings.Join(info.rules, "\n"))
 	}
-	out, err := run(cmd, "-w", "-t", "mangle", "-L", chain, "-n", "-v", "-x")
-	if err != nil {
+}
+
+func routeCheckCTMarkIn(out string) {
+	if !routeCTMarkHeld.Load() {
 		return
 	}
 

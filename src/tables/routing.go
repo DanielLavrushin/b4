@@ -617,15 +617,9 @@ func RoutingRulesPresent(cfg *config.Config) bool {
 	case *routeNftBackend:
 		return routeNftRulesPresent(cfg)
 	case *routeIptBackend:
+		held := routeCTMarkIsHeld()
 		if !routeIptRulesPresent(eng, cfg) {
 			return false
-		}
-		held := routeCTMarkIsHeld()
-		for _, st := range routeRuleCache {
-			if config.RoutingIsBlock(st.mode) || config.RoutingUsesTProxy(st.mode) {
-				continue
-			}
-			routeCheckCTMarkHolds(eng, st.chainPre)
 		}
 		return held == routeCTMarkIsHeld()
 	}
@@ -752,20 +746,6 @@ func routeBypassMarks(cfg *config.Config) []uint32 {
 	return []uint32{routeQueueBypassMark(cfg), SelfDialMark}
 }
 
-func routeIptJumpPresent(cmd, table, parent, target string) bool {
-	out, err := run(cmd, "-w", "-t", table, "-L", parent, "-n")
-	if err != nil {
-		return true
-	}
-	for _, line := range strings.Split(out, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) > 0 && fields[0] == target {
-			return true
-		}
-	}
-	return false
-}
-
 func routeIptRulesPresent(be *routeIptBackend, cfg *config.Config) bool {
 	needed := make(map[string]map[string]bool)
 	jumps := make(map[string]string)
@@ -796,36 +776,27 @@ func routeIptRulesPresent(be *routeIptBackend, cfg *config.Config) bool {
 			continue
 		}
 		for table, wantChains := range needed {
-			out, err := run(cmd, "-w", "-t", table, "-L", "-n")
+			out, err := run(cmd, "-w", "-t", table, "-L", "-n", "-v", "-x")
 			if err != nil {
 				return false
 			}
-			present := make(map[string]bool)
-			for _, line := range strings.Split(out, "\n") {
-				if strings.HasPrefix(line, "Chain ") {
-					fields := strings.Fields(line[len("Chain "):])
-					if len(fields) > 0 {
-						present[fields[0]] = true
-					}
-				}
+			chains := parseIptDump(out)
+			if !v6 && table == "mangle" {
+				routeCheckCTMarkFromDump(chains)
 			}
 			for chain, wantBypass := range wantChains {
-				if !present[chain] {
+				if _, ok := chains[chain]; !ok {
 					return false
 				}
-				if parent := jumps[table+"|"+chain]; parent != "" && !routeIptJumpPresent(cmd, table, parent, chain) {
+				if parent := jumps[table+"|"+chain]; parent != "" && !iptDumpJumpsTo(chains, parent, chain) {
 					log.Infof("Routing: %s still exists but nothing in %s %s jumps to it any more, so no packet reaches it; the router's own firewall was rebuilt under b4 and its rules are being put back", chain, table, parent)
 					return false
 				}
 				if !wantBypass {
 					continue
 				}
-				spec, serr := run(cmd, "-w", "-t", table, "-S", chain)
-				if serr != nil {
-					continue
-				}
 				for _, m := range routeBypassMarks(cfg) {
-					if !strings.Contains(spec, fmt.Sprintf("--mark 0x%x/0x%x -j RETURN", m, m)) {
+					if !iptDumpReturnsOn(chains, chain, m) {
 						log.Tracef("Routing: chain %s lost its bypass on mark 0x%x", chain, m)
 						return false
 					}

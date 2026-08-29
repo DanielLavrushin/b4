@@ -45,6 +45,12 @@ func TestLoadWithMigration(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	t.Run("empty path with no default config returns nil", func(t *testing.T) {
+		prevFiles, prevDirs := configDiscoveryFiles, configDiscoveryDirs
+		empty := t.TempDir()
+		configDiscoveryFiles = []string{filepath.Join(empty, "b4.json")}
+		configDiscoveryDirs = nil
+		t.Cleanup(func() { configDiscoveryFiles, configDiscoveryDirs = prevFiles, prevDirs })
+
 		cfg := NewConfig()
 		if _, err := cfg.LoadWithMigration(""); err != nil {
 			t.Errorf("expected nil for empty path with no discoverable config: %v", err)
