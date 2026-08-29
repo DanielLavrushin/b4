@@ -9,6 +9,10 @@ A Cloudflare Worker is a free per-user WebSocket relay, hosted on the reader's o
 
 It is tried last of the WebSocket routes, after Telegram's own edge and after the shared CF proxy pool.
 
+:::info A different Worker mirrors b4's own downloads
+[Update mirrors](../advanced/update-mirrors) covers a separate Worker that stands in for GitHub when a release download is blocked. It uses a different script, and the session-length limit below does not apply to it.
+:::
+
 :::warning A Worker is a fallback, not the main road
 Cloudflare reclaims a stateless Worker mid-session. Measured from a censored network, a single Worker WebSocket carried some 13 to 17 KB before it stopped forwarding and held the connection open in silence, while Telegram's own edge carried a megabyte over the same link. That is long enough to pass a connection test and far too short for a video, which is why a Worker placed ahead of the pool would win the dial and take the session down with it. b4 demotes a Worker that goes quiet mid-session for ten minutes.
 :::

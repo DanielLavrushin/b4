@@ -3238,6 +3238,47 @@
                 }
             }
         },
+        "/system/changelog": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "text/plain"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Fetch the localized changelog",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Language code, ru for the Russian changelog",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/system/diagnostics": {
             "get": {
                 "security": [
@@ -3281,6 +3322,43 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handler.SystemInfoResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/system/releases": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Release list fetched by the service rather than the browser, so it works\nfrom a LAN client whose own uplink cannot reach GitHub, and so the whole\nfleet shares one upstream request instead of spending a per-IP rate limit.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "List b4 releases",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -4403,6 +4481,9 @@
                 },
                 "id": {
                     "type": "string"
+                },
+                "max_networks": {
+                    "type": "integer"
                 },
                 "name": {
                     "type": "string"

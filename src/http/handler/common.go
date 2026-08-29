@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync/atomic"
-	"time"
 
 	"github.com/daniellavrushin/b4/ai"
 	"github.com/daniellavrushin/b4/config"
@@ -244,8 +243,7 @@ func checkDiskSpace(dir string, needed int64) error {
 }
 
 func downloadFile(url, destPath string) (int64, error) {
-	client := &http.Client{Timeout: 2 * time.Minute}
-	resp, err := client.Get(url)
+	resp, err := mirrorClient.Get(url)
 	if err != nil {
 		return 0, fmt.Errorf("failed to fetch %s: %v", url, err)
 	}

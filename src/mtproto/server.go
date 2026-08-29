@@ -66,8 +66,9 @@ type Server struct {
 	statsMu sync.Mutex
 	stats   map[string]*secretStat
 
-	connsMu sync.Mutex
-	conns   map[string]*secretConnSet
+	connsMu  sync.Mutex
+	conns    map[string]*secretConnSet
+	refusals map[string]*refusalState
 
 	webTickets webTicketStore
 
@@ -129,14 +130,52 @@ type connInfo struct {
 	secretName  string
 	clientIP    string
 	clientPort  int
+	network     string
 	connectedAt time.Time
 	dest        atomic.Pointer[string]
 	lastActive  atomic.Int64
 }
 
 type secretConnSet struct {
-	label string
-	conns map[net.Conn]*connInfo
+	label    string
+	conns    map[net.Conn]*connInfo
+	networks map[string]int
+}
+
+type refusalState struct {
+	total int64
+	last  time.Time
+}
+
+type secretPolicy struct {
+	active      bool
+	maxNetworks int
+}
+
+type denyInfo struct {
+	limit int
+	total int64
+	log   bool
+}
+
+const refusalLogInterval = 60 * time.Second
+
+func (s *Server) refuseLocked(id string, now time.Time, limit int) denyInfo {
+	if s.refusals == nil {
+		s.refusals = make(map[string]*refusalState)
+	}
+	r := s.refusals[id]
+	if r == nil {
+		r = &refusalState{}
+		s.refusals[id] = r
+	}
+	r.total++
+	d := denyInfo{limit: limit, total: r.total}
+	if now.Sub(r.last) >= refusalLogInterval {
+		r.last = now
+		d.log = true
+	}
+	return d
 }
 
 type SessionInfo struct {
@@ -157,7 +196,7 @@ func secretIdentity(sec *Secret) string {
 	return key + "|" + sec.Hex()
 }
 
-func (s *Server) trackConn(sec *Secret, c net.Conn) (*connInfo, func()) {
+func (s *Server) trackConn(sec *Secret, c net.Conn) (*connInfo, func(), denyInfo) {
 	id := secretIdentity(sec)
 	info := &connInfo{
 		secretID:    sec.ID,
@@ -170,29 +209,50 @@ func (s *Server) trackConn(sec *Secret, c net.Conn) (*connInfo, func()) {
 			info.clientPort = p
 		}
 	}
+	info.network = networkKeyOf(info.clientIP)
 	info.lastActive.Store(info.connectedAt.UnixNano())
 
 	s.connsMu.Lock()
+	limit := s.secretPolicyOf(sec).maxNetworks
 	if s.conns == nil {
 		s.conns = make(map[string]*secretConnSet)
 	}
 	set := s.conns[id]
 	if set == nil {
-		set = &secretConnSet{label: sec.Label(), conns: make(map[net.Conn]*connInfo)}
+		set = &secretConnSet{
+			label:    sec.Label(),
+			conns:    make(map[net.Conn]*connInfo),
+			networks: make(map[string]int),
+		}
 		s.conns[id] = set
+	} else if info.network != "" && limit > 0 &&
+		set.networks[info.network] == 0 && len(set.networks) >= limit {
+		d := s.refuseLocked(id, info.connectedAt, limit)
+		s.connsMu.Unlock()
+		return nil, func() {}, d
 	}
 	set.conns[c] = info
+	if info.network != "" {
+		set.networks[info.network]++
+	}
 	s.connsMu.Unlock()
 	return info, func() {
 		s.connsMu.Lock()
 		if set := s.conns[id]; set != nil {
-			delete(set.conns, c)
+			if _, tracked := set.conns[c]; tracked {
+				delete(set.conns, c)
+				if n := set.networks[info.network]; n > 1 {
+					set.networks[info.network] = n - 1
+				} else if n == 1 {
+					delete(set.networks, info.network)
+				}
+			}
 			if len(set.conns) == 0 {
 				delete(s.conns, id)
 			}
 		}
 		s.connsMu.Unlock()
-	}
+	}, denyInfo{}
 }
 
 func (s *Server) Sessions() []SessionInfo {
@@ -237,17 +297,8 @@ func (s *Server) networkSnapshot() map[string][]string {
 	defer s.connsMu.Unlock()
 	out := make(map[string][]string, len(s.conns))
 	for id, set := range s.conns {
-		seen := make(map[string]struct{}, len(set.conns))
-		keys := make([]string, 0, len(set.conns))
-		for _, info := range set.conns {
-			if info.clientIP == "" {
-				continue
-			}
-			key := networkKeyOf(info.clientIP)
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
+		keys := make([]string, 0, len(set.networks))
+		for key := range set.networks {
 			keys = append(keys, key)
 		}
 		slices.Sort(keys)
@@ -256,18 +307,22 @@ func (s *Server) networkSnapshot() map[string][]string {
 	return out
 }
 
-func (s *Server) secretActive(sec *Secret) bool {
+func (s *Server) secretPolicyOf(sec *Secret) secretPolicy {
 	ptr := s.secrets.Load()
 	if ptr == nil {
-		return false
+		return secretPolicy{}
 	}
 	id := secretIdentity(sec)
 	for _, cur := range *ptr {
 		if secretIdentity(cur) == id {
-			return true
+			return secretPolicy{active: true, maxNetworks: cur.MaxNetworks}
 		}
 	}
-	return false
+	return secretPolicy{}
+}
+
+func (s *Server) secretActive(sec *Secret) bool {
+	return s.secretPolicyOf(sec).active
 }
 
 func (s *Server) closeRevokedConns(active []*Secret) {
@@ -299,6 +354,91 @@ func (s *Server) closeRevokedConns(active []*Secret) {
 			_ = c.Close()
 		}
 		log.Infof("MTProto: closed %d active connection(s) for revoked secret %q", len(v.conns), v.label)
+	}
+}
+
+func (s *Server) pruneRefusals(active []*Secret) {
+	allowed := make(map[string]struct{}, len(active))
+	for _, sec := range active {
+		allowed[secretIdentity(sec)] = struct{}{}
+	}
+	s.connsMu.Lock()
+	for id := range s.refusals {
+		if _, ok := allowed[id]; !ok {
+			delete(s.refusals, id)
+		}
+	}
+	s.connsMu.Unlock()
+}
+
+func (s *Server) enforceSecretLimits(active []*Secret) {
+	limits := make(map[string]int, len(active))
+	for _, sec := range active {
+		if sec.MaxNetworks > 0 {
+			limits[secretIdentity(sec)] = sec.MaxNetworks
+		}
+	}
+	if len(limits) == 0 {
+		return
+	}
+
+	type victim struct {
+		label string
+		limit int
+		conns []net.Conn
+	}
+	var victims []victim
+
+	s.connsMu.Lock()
+	for id, set := range s.conns {
+		limit, ok := limits[id]
+		if !ok || len(set.networks) <= limit {
+			continue
+		}
+		since := make(map[string]time.Time, len(set.networks))
+		for _, info := range set.conns {
+			if info.network == "" {
+				continue
+			}
+			if t, seen := since[info.network]; !seen || info.connectedAt.Before(t) {
+				since[info.network] = info.connectedAt
+			}
+		}
+		keys := make([]string, 0, len(since))
+		for k := range since {
+			keys = append(keys, k)
+		}
+		slices.SortFunc(keys, func(a, b string) int {
+			if since[a].Equal(since[b]) {
+				return strings.Compare(a, b)
+			}
+			if since[a].After(since[b]) {
+				return -1
+			}
+			return 1
+		})
+		drop := make(map[string]struct{}, len(keys)-limit)
+		for _, k := range keys[:len(keys)-limit] {
+			drop[k] = struct{}{}
+		}
+		v := victim{label: set.label, limit: limit}
+		for c, info := range set.conns {
+			if _, ok := drop[info.network]; ok {
+				v.conns = append(v.conns, c)
+			}
+		}
+		if len(v.conns) > 0 {
+			victims = append(victims, v)
+		}
+	}
+	s.connsMu.Unlock()
+
+	for _, v := range victims {
+		for _, c := range v.conns {
+			_ = c.Close()
+		}
+		log.Infof("MTProto: secret %q is over its limit of %d network(s), closed %d connection(s)",
+			v.label, v.limit, len(v.conns))
 	}
 }
 
@@ -421,6 +561,7 @@ func buildSecrets(cfg *config.Config) ([]*Secret, error) {
 		}
 		sec.ID = entry.ID
 		sec.Name = entry.Name
+		sec.MaxNetworks = entry.MaxNetworks
 		secrets = append(secrets, sec)
 	}
 	if len(secrets) > 0 {
@@ -480,6 +621,8 @@ func (s *Server) startLocked() error {
 	s.listener = ln
 	s.secrets.Store(&secrets)
 	s.closeRevokedConns(secrets)
+	s.enforceSecretLimits(secrets)
+	s.pruneRefusals(secrets)
 	s.pruneStats(secrets)
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 
@@ -542,6 +685,8 @@ func (s *Server) reloadSecretsLocked(cfg *config.Config) {
 	}
 	s.secrets.Store(&secrets)
 	s.closeRevokedConns(secrets)
+	s.enforceSecretLimits(secrets)
+	s.pruneRefusals(secrets)
 	s.pruneStats(secrets)
 	log.Infof("MTProto secrets reloaded live (%d active) without restart", len(secrets))
 }
@@ -706,7 +851,14 @@ func (s *Server) serveClient(raw net.Conn, plain net.Conn, secret *Secret, clien
 	cfg := s.cfg.Load()
 	user := secret.Label()
 
-	info, untrack := s.trackConn(secret, raw)
+	info, untrack, deny := s.trackConn(secret, raw)
+	if deny.limit > 0 {
+		if deny.log {
+			log.Infof("%s proxy secret %q is at its limit of %d network(s), refusing %s (%d refused so far)",
+				tag, user, deny.limit, clientAddr, deny.total)
+		}
+		return
+	}
 	defer untrack()
 	if !s.secretActive(secret) {
 		log.Infof("%s proxy secret %q revoked, dropping connection from %s", tag, user, clientAddr)

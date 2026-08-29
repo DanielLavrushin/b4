@@ -10,11 +10,12 @@ import (
 const secretTagFakeTLS = 0xee
 
 type Secret struct {
-	Key      [16]byte
-	Host     string
-	RawBytes []byte
-	ID       string
-	Name     string
+	Key         [16]byte
+	Host        string
+	RawBytes    []byte
+	ID          string
+	Name        string
+	MaxNetworks int
 }
 
 func (s *Secret) Label() string {

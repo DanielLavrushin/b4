@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 
-const GITHUB_REPO = "DanielLavrushin/b4";
-
 const changelogUrl = (file: string) =>
-  `https://raw.githubusercontent.com/${GITHUB_REPO}/main/${file}`;
+  file === "changelog_ru.md"
+    ? "/api/system/changelog?lang=ru"
+    : "/api/system/changelog";
 
 const parseChangelog = (markdown: string): Record<string, string> => {
   const sections: Record<string, string> = {};

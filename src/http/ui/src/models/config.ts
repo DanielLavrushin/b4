@@ -337,6 +337,7 @@ export interface MTProtoSecret {
   name: string;
   secret: string;
   enabled: boolean;
+  max_networks?: number;
 }
 
 export interface MTProtoConfig {
@@ -378,9 +379,14 @@ export interface SystemConfig {
   ai: AIConfig;
   dns: DnsSystemConfig;
   ip_health?: IPHealthConfig;
+  update?: UpdateConfig;
   timezone: string;
   memory_limit?: string;
   pprof?: boolean;
+}
+
+export interface UpdateConfig {
+  mirrors?: string[];
 }
 
 export interface DnsSystemConfig {

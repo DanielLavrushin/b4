@@ -165,6 +165,21 @@ export const LoggingSettings = ({ config, onChange }: LoggingSettingsProps) => {
               placeholder={t("settings.Logging.memoryLimitPlaceholder")}
               helperText={t("settings.Logging.memoryLimitHelp")}
             />
+            <B4TextField
+              label={t("settings.Logging.updateMirrors")}
+              value={(config.system.update?.mirrors ?? []).join(", ")}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                onChange(
+                  "system.update.mirrors",
+                  e.target.value
+                    .split(/[\s,]+/)
+                    .map((m) => m.trim())
+                    .filter(Boolean),
+                )
+              }
+              placeholder={t("settings.Logging.updateMirrorsPlaceholder")}
+              helperText={t("settings.Logging.updateMirrorsHelp")}
+            />
           </Stack>
         </Grid>
         <Grid size={{ xs: 12, md: 6 }}>

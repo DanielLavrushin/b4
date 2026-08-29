@@ -20,8 +20,7 @@ interface UseGitHubReleaseResult {
   setIncludePrerelease: (include: boolean) => void;
 }
 
-const GITHUB_REPO = "DanielLavrushin/b4";
-const GITHUB_API_URL = `https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=25`;
+const RELEASES_URL = "/api/system/releases";
 const DISMISSED_VERSIONS_KEY = "b4_dismissed_versions";
 const INCLUDE_PRERELEASE_KEY = "b4_include_prerelease";
 
@@ -109,18 +108,16 @@ export const useGitHubRelease = (): UseGitHubReleaseResult => {
         setIsLoading(true);
         setError(null);
 
-        const response = await fetch(GITHUB_API_URL, {
-          headers: { Accept: "application/vnd.github.v3+json" },
-        });
+        const response = await fetch(RELEASES_URL);
 
         if (!response.ok) {
-          throw new Error(`GitHub API returned ${response.status}`);
+          throw new Error(`Release list unavailable (${response.status})`);
         }
 
         const data = (await response.json()) as GitHubRelease[];
         setAllReleases(data);
       } catch (err) {
-        console.error("Failed to fetch GitHub releases:", err);
+        console.error("Failed to fetch releases:", err);
         setError(err instanceof Error ? err.message : "Unknown error");
       } finally {
         setIsLoading(false);

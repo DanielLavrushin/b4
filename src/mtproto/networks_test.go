@@ -82,7 +82,7 @@ func TestStatsNetworksReleasedOnUntrack(t *testing.T) {
 
 	c1 := &closeRecordConn{remoteAddr: &net.TCPAddr{IP: net.ParseIP("85.233.150.240"), Port: 1}}
 	c2 := &closeRecordConn{remoteAddr: &net.TCPAddr{IP: net.ParseIP("178.130.140.98"), Port: 2}}
-	_, untrack1 := srv.trackConn(secA, c1)
+	_, untrack1, _ := srv.trackConn(secA, c1)
 	srv.trackConn(secA, c2)
 
 	if got := statForSecret(t, srv, "Max").Networks; got != 2 {

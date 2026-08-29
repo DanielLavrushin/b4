@@ -11,7 +11,7 @@ import {
 } from "@mui/material";
 import IosShareIcon from "@mui/icons-material/IosShare";
 import { AddIcon, DeleteIcon } from "@b4.icons";
-import { B4SecretField, B4TextField } from "@b4.elements";
+import { B4NumberField, B4SecretField, B4TextField } from "@b4.elements";
 import { B4Config, MTProtoSecret } from "@models/config";
 import { SettingsPropHandlerType } from "@models/settings";
 
@@ -100,7 +100,14 @@ export const MTProtoSecrets = ({
             opacity: s.enabled ? 1 : 0.6,
           }}
         >
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 1,
+            }}
+          >
             <Tooltip
               title={
                 s.enabled
@@ -120,8 +127,19 @@ export const MTProtoSecrets = ({
               onChange={(e) => update(idx, { name: e.target.value })}
               placeholder={t("settings.MTProto.secretNamePlaceholder")}
               size="small"
-              sx={{ flex: 1 }}
+              sx={{ flex: "1 1 160px" }}
             />
+            <Tooltip title={t("settings.MTProto.secretMaxNetworksHelp")}>
+              <B4NumberField
+                label={t("settings.MTProto.secretMaxNetworks")}
+                value={s.max_networks ?? 0}
+                onChange={(n) => update(idx, { max_networks: n })}
+                min={0}
+                max={1000}
+                size="small"
+                sx={{ width: 120, flexShrink: 0 }}
+              />
+            </Tooltip>
             <Tooltip title={t("settings.MTProto.removeSecret")}>
               <span>
                 <IconButton

@@ -371,7 +371,7 @@ export const MTProtoUpstreamCard = ({
                 onChange={(e) =>
                   onChange("system.mtproto.dc_fallback_url", e.target.value)
                 }
-                placeholder="https://proxy.lavrush.in/telegram/getProxyConfig"
+                placeholder="https://proxy.b4core.app/telegram/getProxyConfig"
                 helperText={t("settings.MTProto.dcFallbackURLHelp")}
                 selectOnFocus
               />
@@ -435,7 +435,9 @@ export const MTProtoUpstreamCard = ({
               if (r.ok) {
                 const parts = [`${r.latency_ms} ms`];
                 if (r.hold_ms != null) {
-                  parts.push(t("settings.MTProto.testHeldMs", { ms: r.hold_ms }));
+                  parts.push(
+                    t("settings.MTProto.testHeldMs", { ms: r.hold_ms }),
+                  );
                 }
                 label = `${r.transport} · ${parts.join(", ")}`;
               } else {

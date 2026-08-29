@@ -19,7 +19,7 @@ const (
 )
 
 const (
-	TGDCFallbackURL  = "https://proxy.lavrush.in/telegram/getProxyConfig"
+	TGDCFallbackURL  = "https://proxy.b4core.app/telegram/getProxyConfig"
 	TGCFProxyURL     = "https://raw.githubusercontent.com/Flowseal/tg-ws-proxy/main/.github/cfproxy-domains.txt"
 	TGFakeSNI        = "storage.googleapis.com"
 	TGWSEndpointHost = "149.154.167.220"
@@ -345,9 +345,14 @@ type SystemConfig struct {
 	AI          AIConfig            `json:"ai"`
 	DNS         DNSSystemConfig     `json:"dns"`
 	IPHealth    IPHealthConfig      `json:"ip_health"`
+	Update      UpdateConfig        `json:"update"`
 	Timezone    string              `json:"timezone"`
 	MemoryLimit string              `json:"memory_limit,omitempty"`
 	Pprof       bool                `json:"pprof,omitempty"`
+}
+
+type UpdateConfig struct {
+	Mirrors []string `json:"mirrors,omitempty"`
 }
 
 type MCPConfig struct {

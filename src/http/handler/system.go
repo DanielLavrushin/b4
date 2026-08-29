@@ -22,6 +22,8 @@ func (api *API) RegisterSystemApi() {
 	api.mux.HandleFunc("/api/system/info", api.handleSystemInfo)
 	api.mux.HandleFunc("/api/version", api.handleVersion)
 	api.mux.HandleFunc("/api/system/update", api.handleUpdate)
+	api.mux.HandleFunc("/api/system/releases", api.handleReleases)
+	api.mux.HandleFunc("/api/system/changelog", api.handleChangelog)
 	api.mux.HandleFunc("/api/system/cache", api.handleCacheStats)
 	api.mux.HandleFunc("/api/system/diagnostics", api.handleDiagnostics)
 }
@@ -364,19 +366,21 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 
 	sendResponse(w, response)
 
+	mirrors := api.updateMirrors()
+
 	go func() {
 		time.Sleep(500 * time.Millisecond)
 		log.Infof("Initiating update process...")
 
 		installerPath := "/tmp/b4install_update.sh"
-		installerURL := "https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh"
+		installerURL := "https://raw.githubusercontent.com/" + repoOwner + "/" + repoName + "/main/install.sh"
 
 		fullPath := config.ExtendedPATH(os.Getenv("PATH"))
 
 		writeUpdateLog(logPath, "Downloading installer from %s", installerURL)
-		if _, err := downloadFile(installerURL, installerPath); err != nil {
+		if _, err := downloadFileMirrored(installerURL, installerPath, mirrors); err != nil {
 			log.Errorf("Failed to download installer: %v", err)
-			writeUpdateLog(logPath, "ERROR: failed to download installer: %v", err)
+			writeUpdateLog(logPath, "ERROR: failed to download installer from GitHub or any b4 mirror: %v", err)
 			return
 		}
 
@@ -416,6 +420,7 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 				args = append(args, "--setenv=B4_EXISTING_BIN="+existingBin)
 			}
 			args = append(args, "--setenv=B4_UPDATE_LOG="+logPath)
+			args = append(args, "--setenv=B4_MIRRORS="+strings.Join(mirrors, " "))
 			args = append(args, installerPath, "--update", "--quiet")
 			if req.Version != "" {
 				args = append(args, req.Version)
@@ -433,6 +438,7 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 
 		cmd.Env = append(os.Environ(), fmt.Sprintf("PATH=%s", fullPath))
+		cmd.Env = append(cmd.Env, "B4_MIRRORS="+strings.Join(mirrors, " "))
 		if existingBin != "" {
 			cmd.Env = append(cmd.Env, "B4_EXISTING_BIN="+existingBin)
 		}
