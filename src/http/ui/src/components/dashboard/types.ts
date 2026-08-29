@@ -71,11 +71,14 @@ export interface MTProtoSecretStat {
   total: number;
   bytes_up: number;
   bytes_down: number;
+  networks: number;
+  network_addrs: string[];
 }
 
 export interface MTProtoStats {
   enabled: boolean;
   port: number;
+  networks: number;
   active_connections: number;
   total_connections: number;
   bytes_up: number;

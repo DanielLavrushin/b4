@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -266,7 +267,9 @@ func webClientAddr(r *http.Request) string {
 			v = v[:i]
 		}
 		if v = strings.TrimSpace(v); v != "" {
-			return net.JoinHostPort(v, "0")
+			if addr, err := netip.ParseAddr(v); err == nil {
+				return net.JoinHostPort(addr.WithZone("").Unmap().String(), "0")
+			}
 		}
 	}
 	return r.RemoteAddr

@@ -109,6 +109,7 @@ type EscalationEntry struct {
 type MTProtoStats struct {
 	Enabled           bool                `json:"enabled"`
 	Port              int                 `json:"port"`
+	Networks          int                 `json:"networks"`
 	ActiveConnections int64               `json:"active_connections"`
 	TotalConnections  int64               `json:"total_connections"`
 	BytesUp           int64               `json:"bytes_up"`
@@ -117,11 +118,13 @@ type MTProtoStats struct {
 }
 
 type MTProtoSecretStat struct {
-	Name      string `json:"name"`
-	Active    int64  `json:"active"`
-	Total     int64  `json:"total"`
-	BytesUp   int64  `json:"bytes_up"`
-	BytesDown int64  `json:"bytes_down"`
+	Name         string   `json:"name"`
+	Active       int64    `json:"active"`
+	Total        int64    `json:"total"`
+	BytesUp      int64    `json:"bytes_up"`
+	BytesDown    int64    `json:"bytes_down"`
+	Networks     int      `json:"networks"`
+	NetworkAddrs []string `json:"network_addrs,omitempty"`
 }
 
 var mtprotoStatsProvider atomic.Pointer[func() *MTProtoStats]

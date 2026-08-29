@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -84,16 +86,19 @@ type secretStat struct {
 }
 
 type SecretStat struct {
-	Name      string
-	Active    int64
-	Total     int64
-	BytesUp   int64
-	BytesDown int64
+	Name         string
+	Active       int64
+	Total        int64
+	BytesUp      int64
+	BytesDown    int64
+	Networks     int
+	NetworkAddrs []string
 }
 
 type Stats struct {
 	Enabled           bool
 	Port              int
+	Networks          int
 	ActiveConnections int64
 	TotalConnections  int64
 	BytesUp           int64
@@ -213,6 +218,44 @@ func (s *Server) Sessions() []SessionInfo {
 	return out
 }
 
+const maxNetworkAddrsPerSecret = 32
+
+func networkKeyOf(ip string) string {
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	addr = addr.WithZone("").Unmap()
+	if addr.Is4() {
+		return addr.String()
+	}
+	return netip.PrefixFrom(addr, 64).Masked().String()
+}
+
+func (s *Server) networkSnapshot() map[string][]string {
+	s.connsMu.Lock()
+	defer s.connsMu.Unlock()
+	out := make(map[string][]string, len(s.conns))
+	for id, set := range s.conns {
+		seen := make(map[string]struct{}, len(set.conns))
+		keys := make([]string, 0, len(set.conns))
+		for _, info := range set.conns {
+			if info.clientIP == "" {
+				continue
+			}
+			key := networkKeyOf(info.clientIP)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			keys = append(keys, key)
+		}
+		slices.Sort(keys)
+		out[id] = keys
+	}
+	return out
+}
+
 func (s *Server) secretActive(sec *Secret) bool {
 	ptr := s.secrets.Load()
 	if ptr == nil {
@@ -308,6 +351,9 @@ func (s *Server) Stats() Stats {
 		return out
 	}
 
+	networks := s.networkSnapshot()
+	allNetworks := make(map[string]struct{})
+
 	s.statsMu.Lock()
 	defer s.statsMu.Unlock()
 	for _, sec := range *secsPtr {
@@ -316,6 +362,16 @@ func (s *Server) Stats() Stats {
 			key = sec.Label()
 		}
 		ss := SecretStat{Name: sec.Label()}
+		if keys, ok := networks[secretIdentity(sec)]; ok {
+			ss.Networks = len(keys)
+			for _, k := range keys {
+				allNetworks[k] = struct{}{}
+			}
+			if len(keys) > maxNetworkAddrsPerSecret {
+				keys = keys[:maxNetworkAddrsPerSecret]
+			}
+			ss.NetworkAddrs = keys
+		}
 		if st := s.stats[key]; st != nil {
 			ss.Active = st.active.Load()
 			ss.Total = st.total.Load()
@@ -328,6 +384,7 @@ func (s *Server) Stats() Stats {
 		out.BytesUp += ss.BytesUp
 		out.BytesDown += ss.BytesDown
 	}
+	out.Networks = len(allNetworks)
 	return out
 }
 
