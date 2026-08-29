@@ -123,6 +123,7 @@ func parseMemInfoKB(line string) uint64 {
 
 func collectB4Info(configPath, serviceManager string) DiagB4 {
 	info := DiagB4{
+		BinaryReplaced: binaryReplaced(),
 		Version:        Version,
 		Commit:         Commit,
 		BuildDate:      Date,
@@ -220,8 +221,10 @@ func getClkTck() uint64 {
 }
 
 func collectPaths(configPath, errorLog, geositePath, geoipPath string) DiagPaths {
-	binary, _ := os.Executable()
-	if resolved, err := filepath.EvalSymlinks(binary); err == nil {
+	binary, err := os.Executable()
+	if err != nil {
+		binary = "unknown"
+	} else if resolved, rerr := filepath.EvalSymlinks(binary); rerr == nil {
 		binary = resolved
 	}
 
