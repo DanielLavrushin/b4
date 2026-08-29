@@ -17,9 +17,25 @@ The import accepts the command line in the forms it is usually shared in:
 
 - a bare option list: `-Ku -a1 -An -s1+s`
 - with the program name: `ciadpi -s1+s` or `nfqws --dpi-desync=fake`
-- a systemd line: `ExecStart=/opt/zapret/nfqws --qnum=200 ...`
+- a systemd unit: its `ExecStart=` and `Environment=` lines
 - a shell variable from a config file: `NFQWS_OPT="--dpi-desync=fake ..."`
-- several lines, with `#` comments and `\` line continuations
+- a whole configuration file, pasted unedited: `/opt/zapret/config`, `/opt/etc/nfqws/nfqws.conf`, or the Windows `.bat` that starts `winws`
+
+A configuration file is read the way its launcher reads it. Values that span several lines, `$VAR` and `%VAR%` references, `\` and `^` line continuations, and `#`, `rem` and `::` comments are all resolved before anything is parsed. Variables that carry no options, such as `USER`, `TCP_PORTS` or `CONFIG_VERSION`, are left alone rather than read as arguments.
+
+### How a configuration file becomes profiles
+
+A zapret configuration rarely holds a single command line. nfqws-keenetic keeps the TCP, QUIC, UDP, ipset and custom strategies in separate variables and joins them in a fixed order with `--new` between them. The import reproduces that order, so the sets match the profiles the source machine actually runs. The report names the layout that was recognised and the variables it used.
+
+Three things in the same file are reported rather than converted:
+
+- **Commented-out alternatives.** A configuration usually keeps several `#NFQWS_ARGS=` lines above the active one. The report counts them. Uncommenting the wanted one and analysing again imports it instead.
+- **Variables belonging to another daemon.** `TPWS_OPT` and `TPWS_SOCKS_OPT` configure tpws, which has its own option syntax. They are excluded from the nfqws conversion and named in the report.
+- **Host list placeholders.** `<HOSTLIST>` and `<HOSTLIST_NOAUTO>` are substituted by the zapret scripts before nfqws starts. They become a host list the import cannot read, and the set asks for its domains.
+
+:::info An unknown tool is refused, not guessed
+Only byedpi and zapret are understood. A command line for a different tool, such as GoodbyeDPI, is rejected with a message saying b4 cannot convert it yet, rather than being read against whichever option table happens to match best.
+:::
 
 Supported tools:
 
@@ -36,6 +52,10 @@ The tool and version are detected from the options used. byedpi changed the mean
 2. Read the report. Each profile from the source becomes one set, listed with every option it contained.
 3. Fill in the domains for each set (see below).
 4. Press **Create sets**.
+
+:::warning Importing moves domains away from existing sets
+A domain resolves in one set only. When an imported set claims a domain that an existing enabled set already targets, the domain is removed from that set, and the message after the import names the sets that lost domains. Imported sets are also placed ahead of the existing ones in the set order.
+:::
 
 ## Profiles become sets
 
@@ -73,7 +93,7 @@ Every option gets one row saying what became of it.
 | **Approximated** | The closest b4 behaviour was used. The row says how it differs |
 | **No equivalent** | b4 cannot express this |
 | **Not applicable** | The option configures the other tool's own process (listening port, buffer sizes, daemon mode) and means nothing for b4 |
-| **No effect** | The option was parsed, but does nothing in the source tool either. For example `--md5sig` in a byedpi profile that sends no fake packet |
+| **No effect** | The option was parsed, but changes nothing. Either it does nothing in the source tool either, such as `--md5sig` in a byedpi profile that sends no fake packet, or the same option appears again later and only the last value applies |
 | **Not recognized** | Not a known option for this tool and version |
 | **Invalid** | The value could not be read |
 
@@ -83,7 +103,7 @@ The percentage above the report weighs mapped options fully and approximated one
 
 The larger gaps, in both directions:
 
-- **Automatic TTL** (`--dpi-desync-autottl`, byedpi's hop count probing). b4 uses a fixed TTL for fake packets. Set it by hand or let [Discovery](../discovery) find it.
+- **Automatic TTL** (`--dpi-desync-autottl`, byedpi's hop count probing). b4 uses a fixed TTL for fake packets, taken from `--dpi-desync-ttl` when the source sets one and left untouched when it does not. Set it by hand or let [Discovery](../discovery) find it.
 - **Plaintext HTTP tampering** (`--hostcase`, `--domcase`, byedpi's `--mod-http`). b4 does not modify plaintext HTTP.
 - **Exclusion lists** (`--hostlist-exclude`, `--ipset-exclude`). Leave those entries out of the set targets instead.
 - **Packet ranges** (`--dpi-desync-start`, `--dpi-desync-cutoff`, byedpi's `--round`). b4 uses a per-connection packet limit on the [TCP](./tcp/general) tab.

@@ -431,10 +431,15 @@ func TestZapret_SharedGroupConfig(t *testing.T) {
 		}
 	})
 
-	t.Run("templatePlaceholderIsNotAnError", func(t *testing.T) {
-		n := noteFor(t, res, "<HOSTLIST_NOAUTO>")
-		if n.Status != StatusNotApplicable || n.Reason != "templatePlaceholder" {
+	t.Run("hostlistPlaceholderBecomesAnUnresolvedList", func(t *testing.T) {
+		n := noteFor(t, res, "--hostlist=zapret-hosts-user.txt")
+		if n.Status != StatusApproximated || n.Reason != "hostsFileUnresolved" {
 			t.Fatalf("got %+v", n)
+		}
+		for _, n := range res.Notes {
+			if strings.HasPrefix(n.Token, "<HOSTLIST") {
+				t.Fatalf("placeholder %q reached the report unexpanded", n.Token)
+			}
 		}
 	})
 

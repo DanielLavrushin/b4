@@ -600,6 +600,13 @@
                         "schema": {
                             "type": "file"
                         }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 }
             }
@@ -633,6 +640,13 @@
                 "responses": {
                     "200": {
                         "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1057,7 +1071,7 @@
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/convert.Result"
+                            "$ref": "#/definitions/handler.ConvertApplyResult"
                         }
                     }
                 }
@@ -5016,6 +5030,9 @@
                 "status": {
                     "$ref": "#/definitions/convert.Status"
                 },
+                "synthetic": {
+                    "type": "boolean"
+                },
                 "token": {
                     "type": "string"
                 }
@@ -5369,6 +5386,77 @@
                     "type": "array",
                     "items": {
                         "type": "string"
+                    }
+                }
+            }
+        },
+        "handler.ConvertApplyResult": {
+            "type": "object",
+            "properties": {
+                "applicable": {
+                    "type": "boolean"
+                },
+                "argv": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "confidence": {
+                    "type": "number"
+                },
+                "fidelity": {
+                    "$ref": "#/definitions/convert.Fidelity"
+                },
+                "moved_from": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.DomainReassignment"
+                    }
+                },
+                "notes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/convert.Note"
+                    }
+                },
+                "plan": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/convert.SetPlan"
+                    }
+                },
+                "sets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/config.SetConfig"
+                    }
+                },
+                "tool": {
+                    "type": "string"
+                },
+                "tool_label": {
+                    "type": "string"
+                },
+                "unresolved": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/convert.Unresolved"
+                    }
+                },
+                "version": {
+                    "type": "string"
+                },
+                "version_inferred": {
+                    "type": "boolean"
+                },
+                "version_label": {
+                    "type": "string"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/convert.Warning"
                     }
                 }
             }
@@ -5785,6 +5873,12 @@
                 },
                 "running": {
                     "type": "boolean"
+                },
+                "steer_conflicts": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -5974,6 +6068,20 @@
                     "type": "string"
                 },
                 "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.DomainReassignment": {
+            "type": "object",
+            "properties": {
+                "domain": {
+                    "type": "string"
+                },
+                "set_id": {
+                    "type": "string"
+                },
+                "set_name": {
                     "type": "string"
                 }
             }

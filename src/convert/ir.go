@@ -33,6 +33,7 @@ const (
 
 type Pos struct {
 	Raw     string `json:"raw"`
+	Token   int    `json:"-"`
 	Offset  int    `json:"offset"`
 	Repeats int    `json:"repeats"`
 	Skip    int    `json:"skip"`

@@ -6,66 +6,43 @@ import (
 )
 
 var (
-	assignRe    = regexp.MustCompile(`^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*(.*)$`)
-	execStartRe = regexp.MustCompile(`^\s*ExecStart\s*=\s*(.*)$`)
-	launcherRe  = regexp.MustCompile(`^(sudo|exec|nohup|env|setsid|start-stop-daemon)$`)
-	binaryRe    = regexp.MustCompile(`(?i)(^|/)(ciadpi|byedpi|nfqws|winws|tpws)(\.exe)?$`)
+	assignRe    = regexp.MustCompile(`(?s)^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t]*=(.*)$`)
+	execStartRe = regexp.MustCompile(`(?s)^[ \t]*ExecStart[ \t]*=(.*)$`)
+	launcherRe  = regexp.MustCompile(`^(sudo|exec|nohup|env|setsid|start|start-stop-daemon|cmd)$`)
+	batNoiseRe  = regexp.MustCompile(`^(?i:/(min|max|b|wait|d|realtime|high|low))$`)
+	binaryRe    = regexp.MustCompile(`(?i)(^|[/\\])(ciadpi|byedpi|nfqws2?|winws2?|dvtws2?|tpws|goodbyedpi)(\.exe)?$`)
 )
 
 func extractArgv(input string) []string {
-	text := strings.ReplaceAll(input, "\r\n", "\n")
-	text = strings.ReplaceAll(text, "\r", "\n")
-	text = strings.ReplaceAll(text, "\\\n", " ")
-
-	var payloads []string
-	for _, line := range strings.Split(text, "\n") {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		if m := execStartRe.FindStringSubmatch(line); m != nil {
-			payloads = append(payloads, stripOuterQuotes(m[1]))
-			continue
-		}
-		if m := assignRe.FindStringSubmatch(line); m != nil {
-			payloads = append(payloads, stripOuterQuotes(m[1]))
-			continue
-		}
-		payloads = append(payloads, line)
-	}
-
-	argv := shellSplit(strings.Join(payloads, "\n"))
-	for len(argv) > 0 {
-		head := argv[0]
-		if strings.HasPrefix(head, "-") {
-			break
-		}
-		base := head
-		if i := strings.LastIndex(base, "/"); i >= 0 {
-			base = base[i+1:]
-		}
-		if launcherRe.MatchString(base) || binaryRe.MatchString(head) {
-			argv = argv[1:]
-			continue
-		}
-		break
-	}
-	return argv
+	return scanSource(input).probeArgv()
 }
 
-func stripOuterQuotes(s string) string {
-	s = strings.TrimSpace(s)
-	if len(s) < 2 {
-		return s
+func stripLauncher(argv []string) []string {
+	lead := 0
+	for lead < len(argv) && !strings.HasPrefix(argv[lead], "-") {
+		lead++
 	}
-	q := s[0]
-	if (q != '"' && q != '\'') || s[len(s)-1] != q {
-		return s
+	cut := -1
+	for i := 0; i < lead; i++ {
+		if binaryRe.MatchString(argv[i]) {
+			cut = i
+		}
 	}
-	inner := s[1 : len(s)-1]
-	if strings.IndexByte(inner, q) >= 0 {
-		return s
+	if cut >= 0 {
+		return argv[cut+1:]
 	}
-	return inner
+	i := 0
+	for i < lead {
+		base := argv[i]
+		if j := strings.LastIndexAny(base, `/\`); j >= 0 {
+			base = base[j+1:]
+		}
+		if !launcherRe.MatchString(strings.ToLower(base)) && !batNoiseRe.MatchString(base) {
+			break
+		}
+		i++
+	}
+	return argv[i:]
 }
 
 func shellSplit(s string) []string {
@@ -115,7 +92,7 @@ func shellSplit(s string) []string {
 			if i < len(s) {
 				i++
 			}
-		case c == '\\' && i+1 < len(s):
+		case c == '\\' && i+1 < len(s) && isShellEscapable(s[i+1]):
 			inWord = true
 			cur.WriteByte(s[i+1])
 			i += 2
@@ -127,4 +104,12 @@ func shellSplit(s string) []string {
 	}
 	flush()
 	return out
+}
+
+func isShellEscapable(c byte) bool {
+	switch c {
+	case ' ', '\t', '\n', '"', '\'', '\\', '$', '`', '#':
+		return true
+	}
+	return false
 }

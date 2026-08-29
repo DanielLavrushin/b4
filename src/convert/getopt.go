@@ -11,6 +11,25 @@ type Token struct {
 	Profile  int    `json:"profile"`
 	Spec     OptionSpec
 	Err      string `json:"err"`
+
+	Accumulated bool `json:"-"`
+}
+
+func looksLikeOption(a string, t *optionTable, longOnly bool) bool {
+	if len(a) < 2 || a[0] != '-' {
+		return false
+	}
+	if strings.HasPrefix(a, "--") || longOnly {
+		name, _, _ := strings.Cut(strings.TrimLeft(a, "-"), "=")
+		if _, ok, ambiguous := t.longMatch(name); ok || ambiguous {
+			return true
+		}
+	}
+	if longOnly {
+		return false
+	}
+	_, ok := t.short[a[1:2]]
+	return ok
 }
 
 func getoptLong(argv []string, t *optionTable, longOnly bool) []Token {
@@ -28,8 +47,8 @@ func getoptLong(argv []string, t *optionTable, longOnly bool) []Token {
 				add(Token{Raw: rest, Err: "operand"})
 			}
 			return out
-		case strings.HasPrefix(a, "--"):
-			name, value, hasEq := strings.Cut(a[2:], "=")
+		case strings.HasPrefix(a, "--"), longOnly && len(a) > 1 && a[0] == '-':
+			name, value, hasEq := strings.Cut(strings.TrimLeft(a, "-"), "=")
 			spec, ok, ambiguous := t.longMatch(name)
 			if ambiguous {
 				add(Token{Raw: a, Err: "ambiguous"})
@@ -45,7 +64,7 @@ func getoptLong(argv []string, t *optionTable, longOnly bool) []Token {
 			case ArgRequired:
 				if hasEq {
 					add(Token{Raw: a, Key: spec.Key, Value: value, HasValue: true, Spec: spec})
-				} else if i+1 < len(argv) {
+				} else if i+1 < len(argv) && !looksLikeOption(argv[i+1], t, longOnly) {
 					add(Token{Raw: a + " " + argv[i+1], Key: spec.Key, Value: argv[i+1], HasValue: true, Spec: spec})
 					i++
 				} else {
@@ -76,7 +95,7 @@ func getoptLong(argv []string, t *optionTable, longOnly bool) []Token {
 					rest := a[j+1:]
 					if rest != "" {
 						add(Token{Raw: "-" + c + rest, Key: spec.Key, Value: rest, HasValue: true, Spec: spec})
-					} else if i+1 < len(argv) {
+					} else if i+1 < len(argv) && !looksLikeOption(argv[i+1], t, longOnly) {
 						add(Token{Raw: "-" + c + " " + argv[i+1], Key: spec.Key, Value: argv[i+1], HasValue: true, Spec: spec})
 						i++
 					} else {

@@ -185,3 +185,47 @@ func TestNormalizeDomains(t *testing.T) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 }
+
+func TestReleasableDomains_OnlyEnabledSetsClaimDomains(t *testing.T) {
+	created := []*config.SetConfig{
+		{Name: "off", Enabled: false, Targets: config.TargetsConfig{SNIDomains: []string{"youtube.com"}}},
+		{Name: "on", Enabled: true, Targets: config.TargetsConfig{SNIDomains: []string{"vk.com"}}},
+	}
+	got := releasableDomains(created)
+	if strings.Join(got, ",") != "vk.com" {
+		t.Fatalf("a set created disabled must not evict a domain from a working set, got %v", got)
+	}
+}
+
+func TestUniqueSetNames_DedupesRegardlessOfCase(t *testing.T) {
+	existing := []*config.SetConfig{{Name: "Zapret #1"}, {Name: "zapret #1 2"}}
+	created := []*config.SetConfig{{Name: "zapret #1"}, {Name: "zapret #2"}}
+	uniqueSetNames(created, existing)
+
+	if created[0].Name != "zapret #1 3" {
+		t.Fatalf("expected the case-insensitive collision to be resolved, got %q", created[0].Name)
+	}
+	if created[1].Name != "zapret #2" {
+		t.Fatalf("a free name must be left alone, got %q", created[1].Name)
+	}
+}
+
+func TestConvertApplyResult_CarriesResultFieldsInline(t *testing.T) {
+	res := &convert.Result{Tool: "zapret", ToolLabel: "zapret (nfqws)", Applicable: true}
+	raw, err := json.Marshal(ConvertApplyResult{
+		Result:    res,
+		MovedFrom: []DomainReassignment{{Domain: "youtube.com", SetName: "old", SetId: "x"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"tool", "tool_label", "applicable", "moved_from"} {
+		if _, ok := out[key]; !ok {
+			t.Errorf("the apply response lost %q: %s", key, raw)
+		}
+	}
+}

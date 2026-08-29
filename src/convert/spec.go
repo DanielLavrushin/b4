@@ -71,6 +71,26 @@ type DetectSpec struct {
 	EnvVars   []string `json:"env_vars"`
 }
 
+type SourceGroup struct {
+	Vars    []string `json:"vars"`
+	Require []string `json:"require"`
+	Append  []string `json:"append"`
+}
+
+type SourceLayout struct {
+	ID      string        `json:"id"`
+	Require []string      `json:"require"`
+	Groups  []SourceGroup `json:"groups"`
+}
+
+type SpecSources struct {
+	Vars         []string          `json:"vars"`
+	Foreign      []string          `json:"foreign"`
+	ForeignNote  string            `json:"foreign_note"`
+	Placeholders map[string]string `json:"placeholders"`
+	Layouts      []SourceLayout    `json:"layouts"`
+}
+
 type SpecDefaults struct {
 	FakeTTL       int  `json:"fake_ttl"`
 	FakeTTLForced bool `json:"fake_ttl_forced"`
@@ -84,6 +104,7 @@ type Spec struct {
 	Homepage     string        `json:"homepage"`
 	Defaults     SpecDefaults  `json:"defaults"`
 	Detect       DetectSpec    `json:"detect"`
+	Sources      SpecSources   `json:"sources"`
 	Versions     []VersionSpec `json:"versions"`
 	Ambiguous    []string      `json:"ambiguous"`
 	Normalize    string        `json:"normalize"`

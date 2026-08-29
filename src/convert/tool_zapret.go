@@ -57,6 +57,7 @@ func init() {
 	grammars["zapret.desync"] = gZapretDesync
 	grammars["zapret.fooling"] = gZapretFooling
 	grammars["zapret.splitpos"] = gZapretSplitPos
+	grammars["zapret.legacysplit"] = gZapretLegacySplit
 	grammars["zapret.pos"] = gZapretSinglePos
 	grammars["zapret.blob"] = gZapretBlob
 	grammars["zapret.ports"] = gZapretPorts
@@ -178,6 +179,24 @@ func gZapretSplitPos(raw string, _ grammarCtx) (Value, error) {
 		return Value{}, errors.New("expected at least one split position")
 	}
 	return Value{Positions: out, Str: raw}, nil
+}
+
+var zapretLegacySplit = map[string]Pos{
+	"method": {Anchor: AnchorHost, Rel: RelStart, Offset: 2},
+	"host":   {Anchor: AnchorSNI, Rel: RelStart, Offset: 1},
+	"sni":    {Anchor: AnchorSNI, Rel: RelStart, Offset: 1},
+	"sniext": {Anchor: AnchorSNIExt, Rel: RelStart, Offset: 1},
+	"snisld": {Anchor: AnchorSNI, Rel: RelMid, Offset: 0},
+}
+
+func gZapretLegacySplit(raw string, _ grammarCtx) (Value, error) {
+	name := strings.TrimSpace(raw)
+	p, ok := zapretLegacySplit[name]
+	if !ok {
+		return Value{}, errors.New("unknown split marker " + name)
+	}
+	p.Raw = name
+	return Value{Positions: []Pos{p}, Str: raw}, nil
 }
 
 func gZapretSinglePos(raw string, _ grammarCtx) (Value, error) {
@@ -385,6 +404,26 @@ func plainOrDisorder(plain, disorder []SplitOp) SplitOp {
 func emitZapret(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet) {
 	emitZapretExtras(set, prof, ti, notes)
 	noteDesyncModes(set, prof, ti, notes)
+	noteDroppedSplitPositions(prof, ti, notes)
+}
+
+func noteDroppedSplitPositions(prof *Profile, ti tokenIndex, notes *noteSet) {
+	used := map[int]bool{}
+	for _, op := range prof.Splits {
+		used[op.Token] = true
+	}
+	for _, key := range []string{"split_pos", "split_http_req", "split_tls"} {
+		ti.each(prof.Index, key, func(t Token) {
+			if used[t.Index] {
+				return
+			}
+			if _, done := notes.byToken[t.Index]; done {
+				return
+			}
+			notes.set(t, StatusApproximated, "extraSplitPositionDropped",
+				"fragmentation.strategy="+prof.Desync.Mode)
+		})
+	}
 }
 
 func normalizeZapret(prog *Program, _ []Token, notes *noteSet) {
@@ -443,6 +482,10 @@ func normalizeZapretProfile(prof *Profile, _ *noteSet) {
 
 func appendSplits(prof *Profile, kind SplitKind, positions []Pos, token int) {
 	for _, p := range positions {
-		prof.Splits = append(prof.Splits, SplitOp{Kind: kind, Pos: p, Token: token})
+		at := token
+		if p.Token != 0 {
+			at = p.Token
+		}
+		prof.Splits = append(prof.Splits, SplitOp{Kind: kind, Pos: p, Token: at})
 	}
 }

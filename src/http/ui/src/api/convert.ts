@@ -79,6 +79,16 @@ export interface ConvertResult {
   applicable: boolean;
 }
 
+export interface ConvertDomainMove {
+  domain: string;
+  set_name: string;
+  set_id: string;
+}
+
+export interface ConvertApplyResult extends ConvertResult {
+  moved_from?: ConvertDomainMove[];
+}
+
 export interface ConvertRequest {
   text: string;
   tool?: string;
@@ -93,7 +103,7 @@ export const convertApi = {
   analyze: (req: ConvertRequest) =>
     apiPost<ConvertResult>("/api/convert/analyze", req),
   apply: (req: ConvertRequest) =>
-    apiPost<ConvertResult>("/api/convert/apply", req),
+    apiPost<ConvertApplyResult>("/api/convert/apply", req),
 };
 
 export const CONVERT_STATUS_ORDER: ConvertStatus[] = [

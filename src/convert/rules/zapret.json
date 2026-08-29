@@ -5,7 +5,7 @@
   "homepage": "https://github.com/bol-van/zapret",
   "defaults": {
     "fake_ttl": 7,
-    "fake_ttl_forced": true
+    "fake_ttl_forced": false
   },
   "normalize": "zapret",
   "profile_model": "alternative",
@@ -31,6 +31,85 @@
       "--oob-data",
       "--fake-sni",
       "--mod-http"
+    ]
+  },
+  "sources": {
+    "vars": [
+      "NFQWS_OPT",
+      "NFQWS2_OPT",
+      "NFQWS_ARGS",
+      "NFQWS_ARGS_QUIC",
+      "NFQWS_ARGS_UDP",
+      "NFQWS_EXTRA_ARGS",
+      "NFQWS_ARGS_IPSET",
+      "NFQWS_ARGS_CUSTOM",
+      "WINWS_OPT",
+      "DVTWS_OPT",
+      "NFQWS_OPT_DESYNC",
+      "ARGS"
+    ],
+    "foreign": [
+      "TPWS_OPT",
+      "TPWS_SOCKS_OPT",
+      "TPWS_ARGS",
+      "TPWS_OPT_BASE",
+      "TPWS_OPT_SOCKS"
+    ],
+    "placeholders": {
+      "<HOSTLIST>": "--hostlist=zapret-hosts-user.txt",
+      "<HOSTLIST_NOAUTO>": "--hostlist=zapret-hosts-user.txt",
+      "^": ""
+    },
+    "layouts": [
+      {
+        "id": "nfqws-keenetic",
+        "require": [
+          "NFQWS_ARGS"
+        ],
+        "groups": [
+          {
+            "vars": [
+              "NFQWS_ARGS_CUSTOM"
+            ]
+          },
+          {
+            "vars": [
+              "NFQWS_ARGS_UDP"
+            ]
+          },
+          {
+            "vars": [
+              "NFQWS_ARGS_QUIC",
+              "NFQWS_ARGS_IPSET"
+            ],
+            "require": [
+              "NFQWS_ARGS_QUIC",
+              "NFQWS_ARGS_IPSET"
+            ]
+          },
+          {
+            "vars": [
+              "NFQWS_ARGS_QUIC",
+              "NFQWS_EXTRA_ARGS"
+            ]
+          },
+          {
+            "vars": [
+              "NFQWS_ARGS",
+              "NFQWS_ARGS_IPSET"
+            ],
+            "require": [
+              "NFQWS_ARGS_IPSET"
+            ]
+          },
+          {
+            "vars": [
+              "NFQWS_ARGS",
+              "NFQWS_EXTRA_ARGS"
+            ]
+          }
+        ]
+      }
     ]
   },
   "versions": [
@@ -229,7 +308,7 @@
     {
       "key": "autottl",
       "long": "dpi-desync-autottl",
-      "arg": "required",
+      "arg": "optional",
       "scope": "profile",
       "grammar": "zapret.autottl",
       "target": "profile.unsupported",
@@ -238,7 +317,7 @@
     {
       "key": "autottl6",
       "long": "dpi-desync-autottl6",
-      "arg": "required",
+      "arg": "optional",
       "scope": "profile",
       "grammar": "zapret.autottl",
       "target": "profile.unsupported",
@@ -274,7 +353,7 @@
     {
       "key": "flags_set",
       "long": "dpi-desync-tcp-flags-set",
-      "arg": "required",
+      "arg": "optional",
       "scope": "profile",
       "grammar": "csv",
       "target": "profile.unsupported",
@@ -283,7 +362,7 @@
     {
       "key": "flags_unset",
       "long": "dpi-desync-tcp-flags-unset",
-      "arg": "required",
+      "arg": "optional",
       "scope": "profile",
       "grammar": "csv",
       "target": "profile.unsupported",
@@ -444,7 +523,7 @@
     {
       "key": "dup_autottl",
       "long": "dup-autottl",
-      "arg": "required",
+      "arg": "optional",
       "scope": "profile",
       "grammar": "zapret.autottl",
       "target": "profile.unsupported",
@@ -453,7 +532,7 @@
     {
       "key": "dup_autottl6",
       "long": "dup-autottl6",
-      "arg": "required",
+      "arg": "optional",
       "scope": "profile",
       "grammar": "zapret.autottl",
       "target": "profile.unsupported",
@@ -525,7 +604,7 @@
     {
       "key": "dup_flags_set",
       "long": "dup-tcp-flags-set",
-      "arg": "required",
+      "arg": "optional",
       "scope": "profile",
       "grammar": "csv",
       "target": "profile.unsupported",
@@ -534,7 +613,7 @@
     {
       "key": "dup_flags_unset",
       "long": "dup-tcp-flags-unset",
-      "arg": "required",
+      "arg": "optional",
       "scope": "profile",
       "grammar": "csv",
       "target": "profile.unsupported",
@@ -569,7 +648,7 @@
     {
       "key": "wssize_forced",
       "long": "wssize-forced-cutoff",
-      "arg": "optional",
+      "arg": "required",
       "scope": "profile",
       "grammar": "bool01",
       "target": "_.na",
@@ -596,7 +675,7 @@
     {
       "key": "orig_autottl",
       "long": "orig-autottl",
-      "arg": "required",
+      "arg": "optional",
       "scope": "profile",
       "grammar": "zapret.autottl",
       "target": "profile.unsupported",
@@ -605,7 +684,7 @@
     {
       "key": "orig_autottl6",
       "long": "orig-autottl6",
-      "arg": "required",
+      "arg": "optional",
       "scope": "profile",
       "grammar": "zapret.autottl",
       "target": "profile.unsupported",
@@ -614,7 +693,7 @@
     {
       "key": "orig_flags_set",
       "long": "orig-tcp-flags-set",
-      "arg": "required",
+      "arg": "optional",
       "scope": "profile",
       "grammar": "csv",
       "target": "profile.unsupported",
@@ -623,7 +702,7 @@
     {
       "key": "orig_flags_unset",
       "long": "orig-tcp-flags-unset",
-      "arg": "required",
+      "arg": "optional",
       "scope": "profile",
       "grammar": "csv",
       "target": "profile.unsupported",
@@ -650,7 +729,7 @@
     {
       "key": "synack_split",
       "long": "synack-split",
-      "arg": "required",
+      "arg": "optional",
       "scope": "profile",
       "grammar": "str",
       "target": "profile.unsupported",
@@ -1042,7 +1121,7 @@
     {
       "key": "wf_filter_lan",
       "long": "wf-filter-lan",
-      "arg": "optional",
+      "arg": "required",
       "scope": "global",
       "grammar": "bool01",
       "target": "_.na",
@@ -1083,6 +1162,40 @@
       "grammar": "str",
       "target": "_.na",
       "note": "windowsOnly"
+    },
+    {
+      "key": "split_http_req",
+      "long": "dpi-desync-split-http-req",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.legacysplit",
+      "target": "splits.positions"
+    },
+    {
+      "key": "split_tls",
+      "long": "dpi-desync-split-tls",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "zapret.legacysplit",
+      "target": "splits.positions"
+    },
+    {
+      "key": "badack_inc",
+      "long": "dpi-desync-badack-increment",
+      "arg": "required",
+      "scope": "profile",
+      "grammar": "int",
+      "target": "profile.unsupported",
+      "note": "noEquivalent"
+    },
+    {
+      "key": "port",
+      "long": "port",
+      "arg": "required",
+      "scope": "global",
+      "grammar": "int",
+      "target": "_.na",
+      "note": "engineDetail"
     }
   ]
 }

@@ -3,12 +3,16 @@ package convert
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"regexp"
+	"slices"
+	"strings"
 	"testing"
 )
 
 var (
 	reasonCallRe  = regexp.MustCompile(`(?:StatusMapped|StatusApproximated|StatusUnsupported|StatusNotApplicable|StatusDegenerate|StatusUnknown|StatusInvalid),\s*"([a-zA-Z][a-zA-Z0-9]*)"`)
+	reasonVarRe   = regexp.MustCompile(`notes\.set\([^\n]*?,\s*(?:src\.Status|st|status),\s*"([a-zA-Z][a-zA-Z0-9]*)"`)
 	reasonFieldRe = regexp.MustCompile(`Reason:\s*"([a-zA-Z][a-zA-Z0-9]*)"`)
 	warnCodeRe    = regexp.MustCompile(`Warning\{Code:\s*"([a-zA-Z][a-zA-Z0-9]*)"`)
 	noteFieldRe   = regexp.MustCompile(`"note":\s*"([a-zA-Z][a-zA-Z0-9]*)"`)
@@ -42,7 +46,7 @@ func collect(t *testing.T, files []string, res ...*regexp.Regexp) map[string]boo
 		}
 		for _, re := range res {
 			for _, m := range re.FindAllStringSubmatch(string(raw), -1) {
-				out[m[1]] = true
+				out[m[len(m)-1]] = true
 			}
 		}
 	}
@@ -50,10 +54,14 @@ func collect(t *testing.T, files []string, res ...*regexp.Regexp) map[string]boo
 }
 
 func TestI18n_EveryReasonAndWarningIsTranslated(t *testing.T) {
-	goFiles := []string{"emit.go", "parse.go", "convert.go"}
+	goFiles, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	goFiles = slices.DeleteFunc(goFiles, func(f string) bool { return strings.HasSuffix(f, "_test.go") })
 	ruleFiles := []string{"rules/byedpi.json", "rules/zapret.json"}
 
-	reasons := collect(t, goFiles, reasonCallRe, reasonFieldRe)
+	reasons := collect(t, goFiles, reasonCallRe, reasonVarRe, reasonFieldRe)
 	for k := range collect(t, ruleFiles, noteFieldRe) {
 		reasons[k] = true
 	}

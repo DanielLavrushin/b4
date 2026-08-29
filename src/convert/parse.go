@@ -14,6 +14,8 @@ type Note struct {
 	Reason  string         `json:"reason"`
 	Fields  []string       `json:"fields,omitempty"`
 	Params  map[string]any `json:"params,omitempty"`
+
+	Synthetic bool `json:"synthetic,omitempty"`
 }
 
 type noteSet struct {
@@ -91,6 +93,7 @@ func buildProgram(spec *Spec, version string, tokens []Token, notes *noteSet) (*
 			parsed, err := runGrammar(tok.Spec.Grammar, tok.Value, grammarCtx{Version: version, Opt: tok.Spec})
 			if err != nil {
 				tok.Profile = len(prog.Profiles) - 1
+				tok.Err = "bad_value"
 				n := notes.set(tok, StatusInvalid, "badValue")
 				n.Params = map[string]any{"detail": err.Error()}
 				resolved = append(resolved, tok)
@@ -106,7 +109,7 @@ func buildProgram(spec *Spec, version string, tokens []Token, notes *noteSet) (*
 		}
 		prof := prog.current()
 		tok.Profile = prof.Index
-		applyTarget(prog, prof, tok, v, notes)
+		tok.Accumulated = applyTarget(prog, prof, tok, v, notes)
 		if tok.Spec.Scope == ScopeGlobal {
 			prog.Globals.Tokens = append(prog.Globals.Tokens, tok.Index)
 		} else {
@@ -137,7 +140,17 @@ func triggerFrom(chars []string) Trigger {
 
 var protoNames = map[string]string{"t": "tls", "h": "http", "u": "udp", "i": "ipv4"}
 
-func applyTarget(prog *Program, prof *Profile, tok Token, v Value, notes *noteSet) {
+func applyTarget(prog *Program, prof *Profile, tok Token, v Value, notes *noteSet) bool {
+	switch tok.Spec.Target {
+	case "filters.hosts", "filters.ips":
+		applyTargetValue(prog, prof, tok, v, notes)
+		return v.Ref == ""
+	}
+	applyTargetValue(prog, prof, tok, v, notes)
+	return accumulatingTargets[tok.Spec.Target]
+}
+
+func applyTargetValue(prog *Program, prof *Profile, tok Token, v Value, notes *noteSet) {
 	target := tok.Spec.Target
 	switch target {
 	case "", "_.ignore":
@@ -259,7 +272,10 @@ func applyTarget(prog *Program, prof *Profile, tok Token, v Value, notes *noteSe
 		prof.DesyncModes = append(prof.DesyncModes, v.List...)
 		prof.DesyncToken = tok.Index
 	case "splits.positions":
-		prof.SplitPositions = append(prof.SplitPositions, v.Positions...)
+		for _, pos := range v.Positions {
+			pos.Token = tok.Index
+			prof.SplitPositions = append(prof.SplitPositions, pos)
+		}
 		prof.SplitPosToken = tok.Index
 	case "fake.fooling":
 		prof.Fake.Fooling = append(prof.Fake.Fooling, v.List...)
@@ -272,9 +288,11 @@ func applyTarget(prog *Program, prof *Profile, tok Token, v Value, notes *noteSe
 	case "fake.quic":
 		prof.Fake.QUICRef = orDefault(v.Ref, v.Str)
 	case "fake.blob":
-		if v.Ref != "" {
+		switch {
+		case v.Ref != "":
 			prof.Fake.DataRef = v.Ref
-		} else if v.Str != "" && v.Str != "builtin" {
+		case strings.HasPrefix(v.Str, "0x"), strings.HasPrefix(v.Str, "0X"):
+		case v.Str != "" && v.Str != "builtin":
 			prof.Fake.DataInline = v.Str
 		}
 	case "fake.tls_sni":
@@ -294,6 +312,10 @@ func applyTarget(prog *Program, prof *Profile, tok Token, v Value, notes *noteSe
 	case "profile.skip":
 		prof.Skip = true
 	case "profile.seqovl_len":
+		if v.Int <= 0 {
+			notes.set(tok, StatusUnsupported, "seqOvlLengthUnsupported")
+			return
+		}
 		prof.SeqOvl.Length = v.Int
 	case "profile.seqovl_pattern":
 		prof.SeqOvl.Pattern = orDefault(v.Ref, v.Str)
@@ -304,10 +326,18 @@ func applyTarget(prog *Program, prof *Profile, tok Token, v Value, notes *noteSe
 			notes.set(tok, StatusUnsupported, "negatedPortFilter")
 			return
 		}
+		if len(v.List) == 0 {
+			notes.set(tok, StatusMapped, "everyPortMatched", "tcp.dport_filter=")
+			return
+		}
 		prof.Filters.TCPPorts = append(prof.Filters.TCPPorts, v.List...)
 	case "filters.udp_ports":
 		if v.Bool {
 			notes.set(tok, StatusUnsupported, "negatedPortFilter")
+			return
+		}
+		if len(v.List) == 0 {
+			notes.set(tok, StatusMapped, "everyPortMatched", "udp.dport_filter=")
 			return
 		}
 		prof.Filters.UDPPorts = append(prof.Filters.UDPPorts, v.List...)
@@ -438,6 +468,102 @@ func isTemplatePlaceholder(raw string) bool {
 		}
 	}
 	return false
+}
+
+var accumulatingTargets = map[string]bool{
+	"filters.hosts_list": true, "filters.hosts_exclude": true,
+	"filters.ips_list": true, "filters.tcp_ports": true,
+	"filters.udp_ports": true, "filters.l7": true, "filters.proto": true,
+	"filters.hosts_exclude_ref": true,
+	"splits.positions":          true, "splits[]": true, "desync.modes": true, "fake.fooling": true,
+	"fake.sni[]": true, "fake.tls_mod": true, "fake.tls_sni": true, "profile.http_mod": true,
+}
+
+type tokenGroup struct {
+	profile int
+	key     string
+}
+
+func reconcileRepeats(tokens []Token, notes *noteSet) {
+	groups := map[tokenGroup][]Token{}
+	var order []tokenGroup
+	for _, t := range tokens {
+		if t.Key == "" || t.Err != "" {
+			continue
+		}
+		g := tokenGroup{t.Profile, t.Key}
+		if _, seen := groups[g]; !seen {
+			order = append(order, g)
+		}
+		groups[g] = append(groups[g], t)
+	}
+
+	for _, g := range order {
+		list := groups[g]
+		if len(list) < 2 {
+			continue
+		}
+		noted := -1
+		for i, t := range list {
+			if _, ok := notes.byToken[t.Index]; ok {
+				noted = i
+			}
+		}
+		if noted < 0 {
+			continue
+		}
+		src := *notes.byToken[list[noted].Index]
+
+		if list[noted].Accumulated {
+			for _, t := range list {
+				if _, ok := notes.byToken[t.Index]; ok {
+					continue
+				}
+				n := notes.set(t, src.Status, "repeatedOptionCombined", src.Fields...)
+				n.Params = map[string]any{"count": len(list)}
+			}
+			continue
+		}
+
+		last := list[len(list)-1]
+		if last.Index != list[noted].Index {
+			winner := notes.set(last, src.Status, src.Reason, src.Fields...)
+			winner.Params = src.Params
+			delete(notes.byToken, list[noted].Index)
+			notes.order = dropIndex(notes.order, list[noted].Index)
+		}
+		if list[noted].Spec.Arg == ArgNone {
+			continue
+		}
+		for _, t := range list {
+			if t.Index == last.Index {
+				continue
+			}
+			if n, ok := notes.byToken[t.Index]; ok && keepsOwnNote(*n, src) {
+				continue
+			}
+			n := notes.set(t, StatusDegenerate, "supersededByLater")
+			n.Params = map[string]any{"winner": last.Raw}
+		}
+	}
+}
+
+func keepsOwnNote(n, src Note) bool {
+	switch n.Status {
+	case StatusUnsupported, StatusInvalid, StatusNotApplicable:
+		return true
+	}
+	return n.Reason != src.Reason
+}
+
+func dropIndex(order []int, idx int) []int {
+	out := order[:0]
+	for _, v := range order {
+		if v != idx {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 func noteUnaccounted(tokens []Token, notes *noteSet) {

@@ -1706,12 +1706,12 @@
       "subtitle": "Translate a byedpi or zapret command line into b4 sets",
       "disclaimer": "b4 is an independent implementation, not a fork of byedpi or zapret, so this is a best-effort translation rather than an exact copy. Every option is reported below with what it became. Run Discovery afterwards to verify and tune the result.",
       "inputLabel": "Command line",
-      "inputHelper": "Paste the command line, a systemd ExecStart= line, or a shell variable such as NFQWS_OPT=\"...\".",
+      "inputHelper": "Paste a command line, a systemd ExecStart= line, or a whole configuration file such as /opt/zapret/config or nfqws.conf.",
       "tool": "Source tool",
       "version": "Version",
       "autoDetect": "Detect automatically",
       "domainsLabel": "Domains (optional)",
-      "domainsHelper": "Comma separated. A byedpi command line usually carries no host list, and a b4 set without targets matches nothing.",
+      "domainsHelper": "Comma separated. Applied to every profile that carries no host list of its own, and a b4 set without targets matches nothing.",
       "analyze": "Analyze",
       "createSets_one": "Create {{count}} set",
       "createSets_other": "Create {{count}} sets",
@@ -1735,18 +1735,23 @@
       },
       "warning": {
         "ambiguousVersion": "The version could not be determined from the options used, and {{flags}} mean different things across byedpi versions. Pick the version explicitly if the result looks wrong.",
-        "needsTargets": "None of the {{sets}} converted sets has domains or IPs. byedpi applies its profiles to everything routed through its proxy, while a b4 set only acts on the targets you give it. The sets are created disabled - add domains on the Targets tab, then enable them.",
+        "needsTargets": "None of the {{sets}} converted sets has domains or IPs. {{tool}} applies its profiles to everything it sees, while a b4 set only acts on the targets you give it. The sets are created disabled - add domains on the Targets tab, then enable them.",
         "udpDisabledUpstream": "UDP was disabled in the source configuration. The UDP settings of the converted sets are left at their defaults.",
         "profilesAsSets": "The source configuration has {{count}} profiles. Each one became a separate set, in the same order.",
-        "shadowedSets": "{{count}} set(s) claim domains that an earlier set already claims. zapret picks a profile per packet using its port and protocol filters, while b4 picks one set per destination by domain and does not fall through to the next. Profiles that share a host list but differ only by port cannot all apply. The later ones are created disabled - give each the domains it should handle, or delete the ones you do not need.",
-        "nothingRecognized": "None of the options that actually do the bypass were recognized, so no set would carry a strategy. This looks like a {{tool}} variant with a different option syntax. Send the configuration to the b4 issue tracker so support can be added."
+        "shadowedSets": "{{count}} set(s) claim domains that an earlier set already claims. {{tool}} picks a profile per packet using its port and protocol filters, while b4 picks one set per destination by domain and does not fall through to the next. Profiles that share a host list but differ only by port cannot all apply. The later ones are created disabled - give each the domains it should handle, or delete the ones you do not need.",
+        "nothingRecognized": "None of the options that actually do the bypass were recognized, so no set would carry a strategy. This looks like a {{tool}} variant with a different option syntax. Send the configuration to the b4 issue tracker so support can be added.",
+        "sourceLayout": "The text was read as a {{layout}} configuration file. The command line was rebuilt from {{vars}} in the order that launcher uses, so the profiles match what the source tool actually runs.",
+        "foreignDaemonVars": "{{vars}} configure a different daemon than {{tool}} and were left out of the conversion. Convert them separately if you need them.",
+        "alternativeStrategies": "The source file has {{count}} commented-out alternative strategies for {{vars}}. They were not converted - uncomment the one you want and analyze again to import it instead.",
+        "setsWithoutStrategy": "{{count}} set(s) carry no bypass options at all and were created disabled, so they cannot take traffic away from a set that works.",
+        "unusedVars": "{{vars}} carry options but are not variables {{tool}} reads, so they were left out of the conversion. Rename them or paste their contents on their own if they should be converted."
       },
       "reason": {
         "proxyRuntime": "Configures the byedpi proxy process itself. b4 works on packets in the firewall, so there is nothing to carry over.",
         "resolverBehaviour": "Controls how the byedpi proxy handles hostnames in incoming requests. It has no counterpart in b4.",
         "autoRetryTiming": "Tunes byedpi's own retry timing. b4 escalation uses its own RST threshold and time window instead.",
         "globalTTL": "Sets the TTL of every outgoing connection. b4 only changes the TTL of fake packets.",
-        "processControl": "Process management for the byedpi daemon.",
+        "processControl": "Process management for the source daemon.",
         "noEquivalent": "b4 has no equivalent for this option.",
         "profileCopy": "Replays another profile's options. Expand it in the source command line and convert again.",
         "unmappedTarget": "Recognized, but the converter has no rule for it yet.",
@@ -1804,8 +1809,8 @@
         "escalateTriggersPartial": "Became an escalation link between the two sets. b4 escalates on repeated RSTs; the HTTP redirect and TLS error triggers have no counterpart.",
         "autoNoneAsSeparateSet": "Starts a profile that runs when the previous one does not match. It became a separate set rather than an escalation step.",
         "firstByteMapped": "Became a split after the first byte.",
-        "splitPointsCollapsed": "byedpi splits at {{count}} positions here. A b4 set has a fixed set of split points and cannot reproduce an arbitrary ladder, so the closest available ones were selected.",
-        "profileWithoutDesync": "This profile carries no bypass options, so it passes traffic through unchanged - the same thing byedpi does when it falls back to this group.",
+        "splitPointsCollapsed": "The source configuration splits at {{count}} positions here. A b4 set has a fixed set of split points and cannot reproduce an arbitrary ladder, so the closest available ones were selected.",
+        "profileWithoutDesync": "This profile carries no bypass options, so it passes traffic through unchanged - the same thing the source tool does when it falls back to this group.",
         "unaccountedOption": "Recognized, but nothing in the converted set came out of it. Report the command line so a rule can be added.",
         "udpFoldedIntoSet": "The UDP-only profile carries no targets of its own, so its UDP handling was folded into this set. Kept as a separate set it would have matched the same TCP traffic first and passed it through untouched.",
         "autoNoneEntrySet": "Starts the profile that handles everything the previous one did not. It is the entry set here.",
@@ -1850,9 +1855,15 @@
         "shadowedByEarlierSet": "{{other}} already claims {{domain}}. b4 picks one set per destination and does not fall back to the next, so this set would never run. It is created disabled - give it its own domains to use it.",
         "ipv6OnlyKnob": "Sets the hop limit for IPv6 desync packets separately. b4 uses one TTL for both address families.",
         "fakeTLSModPartial": "Kept what b4 has an equivalent for. Dropped: {{dropped}}.",
-        "templatePlaceholder": "A placeholder from the zapret config template. It is substituted before nfqws runs, so there is nothing to convert.",
+        "templatePlaceholder": "A placeholder from the configuration template. It is substituted before the daemon runs, so there is nothing to convert.",
         "udpOnlySetNotProtocolScoped": "This profile only filters UDP, but a b4 set is not limited to one protocol. If you give it domains it will also claim them for TCP, taking them away from the TCP sets. Leave it without targets unless it is the only set for those domains.",
-        "profileNotUnderstood": "{{count}} option(s) in this profile were not recognized, and nothing else in it produced a strategy. The set is created disabled so it cannot claim domains while doing nothing."
+        "profileNotUnderstood": "{{count}} option(s) in this profile were not recognized, and nothing else in it produced a strategy. The set is created disabled so it cannot claim domains while doing nothing.",
+        "fakeTTLOriginal": "A TTL of 0 means the fake keeps the TTL of the real packet, so b4 leaves it alone too.",
+        "repeatedOptionCombined": "The option appears {{count}} times in this profile and every value applies; they were combined into one setting.",
+        "supersededByLater": "Given again later as {{winner}}, and that is the value that applies. This one has no effect.",
+        "extraSplitPositionDropped": "A set splits at one point for the strategy it uses, and another option already supplied it. This position was dropped.",
+        "everyPortMatched": "Acts on every port, which is what a b4 set does when its port filter is empty.",
+        "seqOvlLengthUnsupported": "b4 overlaps a fixed number of bytes counted from the start of the payload, so a relative or non-positive length has no counterpart."
       },
       "sharedDomainsLabel": "Domains for all entry sets",
       "usingShared": "Using the shared domains above",
@@ -1863,7 +1874,8 @@
         "fallback": "Fallback for #{{index}}"
       },
       "editInput": "Edit",
-      "unresolvedForProfile": "This profile reads {{files}}, which is not available here. Open that file on the machine running zapret and paste the domains from it into this field - the converter cannot read it for you."
+      "unresolvedForProfile": "This profile reads {{files}}, which is not available here. Open that file on the machine running zapret and paste the domains from it into this field - the converter cannot read it for you.",
+      "movedFrom": "{{count}} domain(s) moved to the imported sets from: {{sets}}. A domain resolves in one set only, so {{domains}} no longer applies there."
     }
   },
   "discovery": {
