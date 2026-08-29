@@ -45,7 +45,7 @@ func warnIfStrictConntrackBites(previous string) {
 		return
 	}
 	conntrackStrictBites = true
-	log.Warnf("TABLES: this router tracks TCP windows strictly (%s is 0) and its own firewall drops what that marks invalid, which stalls a large download partway through with no reset and no error. b4 relaxes it, and will leave it relaxed when it stops rather than hand the network back broken. Set it to 1 on the router itself to take b4 out of that decision", conntrackLiberalSysctl)
+	log.Warnf("TABLES: this router tracks TCP windows strictly (%s is 0) and its own firewall drops what that marks invalid, which stalls a large download partway through with no reset and no error. b4 relaxes it while it runs, and keeps it relaxed when it stops rather than hand the network back in a state that cannot finish a download", conntrackLiberalSysctl)
 }
 
 func forgetConntrackStrictWarning() {

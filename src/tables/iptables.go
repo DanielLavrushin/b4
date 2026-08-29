@@ -256,7 +256,7 @@ func (s SysctlSetting) Apply() {
 
 func (s SysctlSetting) RevertBack() {
 	if s.Name == conntrackLiberalSysctl && conntrackStrictWouldBite() {
-		log.Warnf("TABLES: b4 is leaving %s at 1 rather than putting this router's 0 back, because this firewall drops what strict TCP window tracking marks invalid and a large download would stall partway. Set it on the router itself to own that setting again", conntrackLiberalSysctl)
+		log.Warnf("TABLES: b4 is leaving %s at 1 rather than putting this router's 0 back: this firewall drops what strict TCP window tracking marks invalid, so restoring it would stop a large download finishing. A reboot resets it and b4 sets it again on the way up", conntrackLiberalSysctl)
 		return
 	}
 	snap := loadSysctlSnapshot()
