@@ -6,8 +6,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/daniellavrushin/b4/log"
 )
@@ -38,9 +40,18 @@ func normalizeMirror(raw string) string {
 	if !strings.HasPrefix(m, mirrorScheme) {
 		return ""
 	}
-	if strings.ContainsAny(m, "?# \t") {
+
+	for _, r := range m {
+		if r < 0x20 || r == 0x7f || unicode.IsSpace(r) {
+			return ""
+		}
+	}
+
+	u, err := url.Parse(m)
+	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return ""
 	}
+
 	return m
 }
 

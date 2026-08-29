@@ -99,7 +99,7 @@ func (api *API) handleReleases(w http.ResponseWriter, r *http.Request) {
 
 // @Summary Fetch the localized changelog
 // @Tags System
-// @Produce plain
+// @Produce text/markdown
 // @Param lang query string false "Language code, ru for the Russian changelog"
 // @Success 200 {string} string
 // @Failure 502 {object} map[string]string

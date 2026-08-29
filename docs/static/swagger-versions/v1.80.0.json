@@ -3246,7 +3246,7 @@
                     }
                 ],
                 "produces": [
-                    "text/plain"
+                    "text/markdown"
                 ],
                 "tags": [
                     "System"
@@ -4758,6 +4758,9 @@
                 "timezone": {
                     "type": "string"
                 },
+                "update": {
+                    "$ref": "#/definitions/config.UpdateConfig"
+                },
                 "web_server": {
                     "$ref": "#/definitions/config.WebServerConfig"
                 }
@@ -4945,6 +4948,17 @@
             "properties": {
                 "dashboard": {
                     "$ref": "#/definitions/config.DashboardLayout"
+                }
+            }
+        },
+        "config.UpdateConfig": {
+            "type": "object",
+            "properties": {
+                "mirrors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
