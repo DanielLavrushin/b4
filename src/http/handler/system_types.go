@@ -85,6 +85,7 @@ type DiagB4 struct {
 	PID            int    `json:"pid,omitempty"`
 	MemoryMB       string `json:"memory_mb,omitempty"`
 	Uptime         string `json:"uptime,omitempty"`
+	BinaryReplaced bool   `json:"binary_replaced,omitempty"`
 }
 
 type DiagPaths struct {
