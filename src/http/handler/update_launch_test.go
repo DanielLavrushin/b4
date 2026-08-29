@@ -200,3 +200,33 @@ func TestStagedInstallerIsNotAtAPredictablePath(t *testing.T) {
 		}
 	}
 }
+
+func TestEnvWithoutUpdateKeysDropsWhatTheInstallerLeftBehind(t *testing.T) {
+	// Exactly what was found in a live b4 that had been restarted by the installer.
+	t.Setenv("B4_LOCAL_ARCHIVE", "/tmp/b4-upload-1336015582.tar.gz")
+	t.Setenv("B4_LOCAL_ARCHIVE_OWNED", "1")
+	t.Setenv("B4_EXISTING_BIN", "/opt/sbin/b4")
+	t.Setenv("B4_UPDATE_LOG", "/var/log/b4/update.log")
+	t.Setenv("B4_MIRRORS", "https://proxy.b4core.app")
+	t.Setenv("B4_KEEP_ME", "yes")
+
+	got := envWithoutUpdateKeys()
+
+	for _, kv := range got {
+		for _, key := range updateEnvKeys {
+			if strings.HasPrefix(kv, key+"=") {
+				t.Errorf("%s must not be forwarded from b4's own environment", key)
+			}
+		}
+	}
+
+	found := false
+	for _, kv := range got {
+		if kv == "B4_KEEP_ME=yes" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("unrelated environment variables must still be passed through")
+	}
+}

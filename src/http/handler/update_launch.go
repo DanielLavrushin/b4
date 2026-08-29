@@ -121,9 +121,34 @@ func (r installerRun) obtainInstaller(path string) error {
 	return err
 }
 
-// sweepStaleUpdateFiles clears what an interrupted update left in the temp directory.
-// The installer stops b4 before it finishes, so the goroutine that would clean up dies
-// with the process, and on a router /tmp is usually RAM.
+var updateEnvKeys = []string{
+	"B4_LOCAL_ARCHIVE",
+	"B4_LOCAL_ARCHIVE_OWNED",
+	"B4_EXISTING_BIN",
+	"B4_UPDATE_LOG",
+	"B4_MIRRORS",
+}
+
+func envWithoutUpdateKeys() []string {
+	current := os.Environ()
+	out := make([]string, 0, len(current))
+
+	for _, kv := range current {
+		inherited := false
+		for _, key := range updateEnvKeys {
+			if strings.HasPrefix(kv, key+"=") {
+				inherited = true
+				break
+			}
+		}
+		if !inherited {
+			out = append(out, kv)
+		}
+	}
+
+	return out
+}
+
 func sweepStaleUpdateFiles() {
 	dir := os.TempDir()
 	entries, err := os.ReadDir(dir)
@@ -239,7 +264,7 @@ func (api *API) launchInstaller(run installerRun) error {
 			cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 		}
 
-		cmd.Env = append(os.Environ(), fmt.Sprintf("PATH=%s", fullPath))
+		cmd.Env = append(envWithoutUpdateKeys(), fmt.Sprintf("PATH=%s", fullPath))
 		cmd.Env = append(cmd.Env, env...)
 
 		devNull, _ := os.Open("/dev/null")
