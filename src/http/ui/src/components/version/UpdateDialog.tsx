@@ -49,6 +49,8 @@ interface UpdateModalProps {
   onTogglePrerelease: (include: boolean) => void;
 }
 
+const SOURCEFORGE_FILES = "https://sourceforge.net/projects/b4core/files";
+
 const H2Typography = forwardRef<
   HTMLHeadingElement,
   React.ComponentProps<typeof Typography>
@@ -305,7 +307,7 @@ export const UpdateModal = ({
         </Box>
       )}
 
-      {selectedRelease && (
+      {selectedRelease && !showUpload && (
         <Box
           sx={{
             maxHeight: 400,
@@ -348,6 +350,61 @@ export const UpdateModal = ({
               {releaseNotes}
             </ReactMarkdown>
           </Box>
+        </Box>
+      )}
+
+      {updateStatus === "idle" && !isDocker && showUpload && (
+        <Box
+          sx={{
+            p: 2,
+            bgcolor: colors.background.default,
+            borderRadius: 1,
+            border: `1px solid ${colors.border.default}`,
+          }}
+        >
+          <Typography
+            variant="subtitle1"
+            sx={{
+              color: colors.secondary,
+              mb: 2,
+              fontWeight: 600,
+              textTransform: "uppercase",
+            }}
+          >
+            {t("update.installFromFile")}
+          </Typography>
+          <Stack spacing={1.5}>
+            <Typography variant="body2" sx={{ color: colors.text.secondary }}>
+              {t("update.installFromFileHelp")}
+            </Typography>
+            <Button variant="outlined" component="label" disabled={isUpdating}>
+              {uploadFile ? uploadFile.name : t("update.chooseArchive")}
+              <input
+                type="file"
+                hidden
+                accept=".gz,.tgz,application/gzip"
+                onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+              />
+            </Button>
+            <TextField
+              size="small"
+              label={t("update.expectedSha256")}
+              value={uploadSha}
+              onChange={(e) => setUploadSha(e.target.value)}
+              placeholder={t("update.expectedSha256Placeholder")}
+              helperText={t("update.expectedSha256Help")}
+              disabled={isUpdating}
+            />
+            <Button
+              variant="contained"
+              color="warning"
+              startIcon={<UploadIcon />}
+              onClick={() => void handleUploadInstall()}
+              disabled={isUpdating || !uploadFile}
+            >
+              {t("update.installUploaded")}
+            </Button>
+          </Stack>
         </Box>
       )}
 
@@ -412,6 +469,19 @@ export const UpdateModal = ({
             {t("update.viewOnGitHub")}
           </Button>
         )}
+        <Button
+          variant="outlined"
+          startIcon={<OpenInNewIcon />}
+          href={
+            selectedRelease
+              ? `${SOURCEFORGE_FILES}/${selectedRelease.tag_name}/`
+              : `${SOURCEFORGE_FILES}/`
+          }
+          target="_blank"
+          disabled={isUpdating}
+        >
+          {t("update.sourceforgeMirror")}
+        </Button>
         {updateStatus === "idle" && !isDocker && (
           <Button
             variant={showUpload ? "contained" : "outlined"}
@@ -419,54 +489,13 @@ export const UpdateModal = ({
             onClick={() => setShowUpload((v) => !v)}
             disabled={isUpdating}
           >
-            {t("update.installFromFile")}
+            {showUpload
+              ? t("update.backToReleaseNotes")
+              : t("update.installFromFile")}
           </Button>
         )}
       </Stack>
 
-      {updateStatus === "idle" && !isDocker && showUpload && (
-        <Box
-          sx={{
-            mt: 2,
-            p: 2,
-            border: `1px solid ${colors.border.default}`,
-            borderRadius: 1,
-          }}
-        >
-          <Stack spacing={1.5}>
-            <Typography variant="body2" sx={{ color: colors.text.secondary }}>
-              {t("update.installFromFileHelp")}
-            </Typography>
-            <Button variant="outlined" component="label" disabled={isUpdating}>
-              {uploadFile ? uploadFile.name : t("update.chooseArchive")}
-              <input
-                type="file"
-                hidden
-                accept=".gz,.tgz,application/gzip"
-                onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
-              />
-            </Button>
-            <TextField
-              size="small"
-              label={t("update.expectedSha256")}
-              value={uploadSha}
-              onChange={(e) => setUploadSha(e.target.value)}
-              placeholder={t("update.expectedSha256Placeholder")}
-              helperText={t("update.expectedSha256Help")}
-              disabled={isUpdating}
-            />
-            <Button
-              variant="contained"
-              color="warning"
-              startIcon={<UploadIcon />}
-              onClick={() => void handleUploadInstall()}
-              disabled={isUpdating || !uploadFile}
-            >
-              {t("update.installUploaded")}
-            </Button>
-          </Stack>
-        </Box>
-      )}
     </>
   );
 
@@ -485,7 +514,7 @@ export const UpdateModal = ({
           <Button onClick={onClose} variant="outlined" disabled={isUpdating}>
             {t("core.close")}
           </Button>
-          {!isDocker && (
+          {!isDocker && !showUpload && (
             <Button
               onClick={() => void handleUpdate()}
               variant="contained"

@@ -2388,7 +2388,9 @@
     "uploadInitiating": "Uploading the archive...",
     "expectedSha256": "Expected SHA256 (optional)",
     "expectedSha256Placeholder": "paste from the release page",
-    "expectedSha256Help": "Compared against the upload before it is installed."
+    "expectedSha256Help": "Compared against the upload before it is installed.",
+    "backToReleaseNotes": "Back to release notes",
+    "sourceforgeMirror": "SourceForge mirror"
   },
   "watchdog": {
     "title": "Watchdog Monitor",

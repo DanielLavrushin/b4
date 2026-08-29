@@ -2394,7 +2394,9 @@
     "uploadInitiating": "Загрузка архива...",
     "expectedSha256": "Ожидаемая SHA256 (необязательно)",
     "expectedSha256Placeholder": "скопировать со страницы релиза",
-    "expectedSha256Help": "Сверяется с загруженным файлом перед установкой."
+    "expectedSha256Help": "Сверяется с загруженным файлом перед установкой.",
+    "backToReleaseNotes": "Назад к описанию релиза",
+    "sourceforgeMirror": "Зеркало SourceForge"
   },
   "watchdog": {
     "title": "Мониторинг доменов",

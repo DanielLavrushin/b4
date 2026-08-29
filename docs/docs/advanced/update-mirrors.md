@@ -289,6 +289,11 @@ When no source can be reached at all, the archive can be carried in by hand. In 
 window, **Install from a file instead** takes a `b4-linux-<arch>.tar.gz` downloaded on
 another machine.
 
+The window links to both release pages, because the machine running the browser may not
+reach GitHub either. **SourceForge mirror** opens that version's folder at
+`sourceforge.net/projects/b4core/files/<tag>/`, which carries the same archives and the same
+`.sha256` files as the GitHub release.
+
 Before anything is replaced, the service checks that the upload is a gzip archive holding a
 file named `b4`, that the file is a Linux executable, and that it was built for this
 machine. An archive for the wrong architecture is refused with both architectures named,
