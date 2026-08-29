@@ -35,7 +35,6 @@ export const MTProtoSecrets = ({
   onShare,
 }: MTProtoSecretsProps) => {
   const { t } = useTranslation();
-  const enabled = config.system.mtproto?.enabled ?? false;
   const secrets = currentSecrets(config);
   const [generatingIdx, setGeneratingIdx] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
@@ -98,7 +97,7 @@ export const MTProtoSecrets = ({
             display: "flex",
             flexDirection: "column",
             gap: 1,
-            opacity: !enabled || s.enabled ? 1 : 0.6,
+            opacity: s.enabled ? 1 : 0.6,
           }}
         >
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -112,7 +111,6 @@ export const MTProtoSecrets = ({
               <Switch
                 size="small"
                 checked={s.enabled}
-                disabled={!enabled}
                 onChange={(e) => update(idx, { enabled: e.target.checked })}
               />
             </Tooltip>
@@ -121,7 +119,6 @@ export const MTProtoSecrets = ({
               value={s.name}
               onChange={(e) => update(idx, { name: e.target.value })}
               placeholder={t("settings.MTProto.secretNamePlaceholder")}
-              disabled={!enabled}
               size="small"
               sx={{ flex: 1 }}
             />
@@ -130,7 +127,6 @@ export const MTProtoSecrets = ({
                 <IconButton
                   size="small"
                   color="error"
-                  disabled={!enabled}
                   onClick={() => remove(idx)}
                 >
                   <DeleteIcon fontSize="small" />
@@ -143,8 +139,6 @@ export const MTProtoSecrets = ({
             value={s.secret}
             onChange={(value) => update(idx, { secret: value })}
             placeholder={t("settings.MTProto.secretValuePlaceholder")}
-            disabled={!enabled}
-            helperText={t("settings.MTProto.secretHelp")}
             onGenerate={() => void generate(idx)}
             generateLabel={t("settings.MTProto.generateSecret")}
             generating={generatingIdx === idx}
@@ -153,7 +147,7 @@ export const MTProtoSecrets = ({
                 <span>
                   <IconButton
                     size="small"
-                    disabled={!enabled || !s.secret}
+                    disabled={!s.secret}
                     onClick={() => onShare(s.secret)}
                   >
                     <IosShareIcon fontSize="small" />
@@ -172,7 +166,7 @@ export const MTProtoSecrets = ({
           adding ? <CircularProgress size={14} /> : <AddIcon />
         }
         onClick={() => void add()}
-        disabled={!enabled || adding}
+        disabled={adding}
         sx={{ alignSelf: "flex-start" }}
       >
         {t("settings.MTProto.addSecret")}

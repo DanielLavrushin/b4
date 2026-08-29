@@ -310,3 +310,40 @@ func TestAnalyze_WildcardPortFilterIsAResult(t *testing.T) {
 		t.Fatalf("every port means no port filter, got %q", res.Sets[0].TCP.DPortFilter)
 	}
 }
+
+func TestSource_BackslashContinuationVsWindowsPath(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{
+			"continuationWithNoSpaceBeforeTheBackslash",
+			"-s1\\\n-f-1",
+			[]string{"-s1", "-f-1"},
+		},
+		{
+			"continuationWithASpaceBeforeTheBackslash",
+			"-s1 \\\n-f-1",
+			[]string{"-s1", "-f-1"},
+		},
+		{
+			"aWindowsPathEndingInABackslashIsNotAContinuation",
+			"set BIN=C:\\zapret\\bin\\\n%BIN%winws.exe --dpi-desync=fake",
+			[]string{"--dpi-desync=fake"},
+		},
+		{
+			"aValueEndingInAWindowsPathIsNotAContinuation",
+			"NFQWS_OPT=\"--dpi-desync-fake-tls=C:\\zapret\\files\\\"\nNFQWS_ARGS_QUIC=\"--filter-udp=443 --dpi-desync=fake\"",
+			[]string{"--dpi-desync-fake-tls=C:\\zapret\\files\\", "--filter-udp=443", "--dpi-desync=fake"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractArgv(tt.in)
+			if strings.Join(got, "|") != strings.Join(tt.want, "|") {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

@@ -875,13 +875,13 @@ func dropIdenticalEscalations(sets []config.SetConfig, notes *noteSet) {
 		}
 		sets[i].Escalate.To = ""
 		notes.extra = append(notes.extra, Note{
-			Token:     sets[j].Name,
+			Token:     sets[i].Name,
 			Synthetic: true,
-			Profile:   j,
+			Profile:   i,
 			Status:    StatusDegenerate,
 			Reason:    "escalationTargetIdentical",
 			Fields:    []string{"escalate.to="},
-			Params:    map[string]any{"other": sets[i].Name},
+			Params:    map[string]any{"other": sets[j].Name},
 		})
 	}
 }

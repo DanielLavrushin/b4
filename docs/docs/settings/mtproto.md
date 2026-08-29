@@ -5,7 +5,7 @@ title: MTProto
 
 # MTProto
 
-Settings, **MTProto Proxy**. Four cards: the proxy server, its secrets, the shared Telegram upstream, and the Telegram Desktop WEB proxy. The proxy card and the WEB proxy card each hide their own fields until their switch is on.
+Settings, **MTProto Proxy**. The proxy server and the shared Telegram upstream are always present. The secrets card and the Telegram Desktop WEB proxy card appear only while the proxy server is on, because neither does anything without it. The proxy card and the WEB proxy card each hide their own fields until their switch is on.
 
 Task-shaped guides for the three Telegram modes are under [Telegram](../telegram/index.md). This page is the field reference.
 
@@ -13,7 +13,7 @@ Task-shaped guides for the three Telegram modes are under [Telegram](../telegram
 
 | Parameter | Description | Default |
 | --- | --- | --- |
-| Enable MTProto Proxy | Starts the listener. Also required by the WEB proxy, which reuses it. | Off |
+| Enable MTProto Proxy | Starts the listener. The secrets and the WEB proxy depend on it: both reuse this listener's secrets, and their cards are hidden while it is off. | Off |
 | Bind Address | Address to listen on. `0.0.0.0` accepts from every interface, `127.0.0.1` from the host only. | `0.0.0.0` |
 | Port | Listen port. | `3128` |
 | Fake SNI Domain | The domain the fake-TLS handshake presents, and the site an unverified connection is spliced through to on port 443. Also seeds a generated secret. | `storage.googleapis.com` |
@@ -47,7 +47,7 @@ Shared by the proxy server and by the `Telegram over WebSocket` routing mode, so
 
 | Parameter | Description | Default |
 | --- | --- | --- |
-| Enable the WEB carrier | Serves the MTProto stream over HTTPS on the relay hostname. Does nothing while the proxy server is off. | Off |
+| Enable the WEB carrier | Serves the MTProto stream over HTTPS on the relay hostname. | Off |
 | Relay hostname | A bare public DNS name, no scheme, port or path, punycode for international names. Needs its own hostname with publicly trusted TLS on 443. | empty |
 
 Both fields take effect on the next request. The full set of preconditions is on [Telegram Desktop WEB proxy](../telegram/web-proxy.md).

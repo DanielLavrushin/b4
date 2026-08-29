@@ -13,7 +13,7 @@ var (
 	angleRefRe   = regexp.MustCompile(`<[A-Za-z_][A-Za-z0-9_]*>`)
 	batCommentRe = regexp.MustCompile(`^(?:@?(?i:rem)\s|::)`)
 	caretContRe  = regexp.MustCompile(`[ \t]*\^[ \t]*\n`)
-	slashContRe  = regexp.MustCompile(`[ \t]+\\[ \t]*\n`)
+	slashContRe  = regexp.MustCompile(`(?m)(^|[ \t])([^ \t\\\n]*)\\[ \t]*\n`)
 )
 
 type Assignment struct {
@@ -34,7 +34,7 @@ func scanSource(input string) *Source {
 	text := strings.ReplaceAll(input, "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")
 	text = caretContRe.ReplaceAllString(text, " ")
-	text = slashContRe.ReplaceAllString(text, " ")
+	text = slashContRe.ReplaceAllString(text, "$1$2 ")
 
 	src := &Source{Vars: map[string]string{}, referenced: map[string]bool{}}
 	for _, stmt := range splitStatements(text) {

@@ -325,9 +325,12 @@ export function ImportToolDialog({
                   )}
                   value={
                     profileDomains[String(profile)] ??
-                    (result.plan[profile]?.role === "entry" ? domains : "")
+                    (result.plan[profile]?.domains ?? []).join(", ")
                   }
-                  usingShared={profileDomains[String(profile)] === undefined}
+                  usingShared={
+                    profileDomains[String(profile)] === undefined &&
+                    sameDomains(result.plan[profile]?.domains, splitDomains(domains))
+                  }
                   onChange={(v) =>
                     setProfileDomains((prev) => ({ ...prev, [profile]: v }))
                   }
@@ -402,6 +405,11 @@ export function ImportToolDialog({
       </Stack>
     </B4Dialog>
   );
+}
+
+function sameDomains(a: string[] | undefined, b: string[]): boolean {
+  if (!a || a.length === 0 || a.length !== b.length) return false;
+  return a.every((d, i) => d === b[i]);
 }
 
 function splitDomains(value: string): string[] {

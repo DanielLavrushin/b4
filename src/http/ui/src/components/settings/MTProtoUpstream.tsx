@@ -20,7 +20,6 @@ import { RoutingIcon } from "@b4.icons";
 import {
   B4Accordion,
   B4Alert,
-  B4Badge,
   B4IntegrationCard,
   B4NumberField,
   B4Select,
@@ -200,12 +199,6 @@ export const MTProtoUpstreamCard = ({
       icon={<RoutingIcon />}
       title={t("settings.MTProto.upstreamTitle")}
       description={t("settings.MTProto.upstreamDesc")}
-      status={
-        <B4Badge
-          variant="outlined"
-          label={t(`settings.MTProto.upstream${upstreamDescSuffix(mode)}`)}
-        />
-      }
     >
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, md: showDcRelay ? 6 : 12 }}>
@@ -220,11 +213,11 @@ export const MTProtoUpstreamCard = ({
               { value: "auto", label: t("settings.MTProto.upstreamAuto") },
               { value: "ws", label: t("settings.MTProto.upstreamWs") },
             ]}
-            helperText={`${
+            helperText={
               mode === "auto" && dcRelay
                 ? t("settings.MTProto.upstreamAutoRelayDesc")
                 : t(`settings.MTProto.upstream${upstreamDescSuffix(mode)}Desc`)
-            } ${t("settings.MTProto.upstreamBridgeNote")}`}
+            }
           />
         </Grid>
         {showDcRelay && (
@@ -444,7 +437,7 @@ export const MTProtoUpstreamCard = ({
                 if (r.hold_ms != null) {
                   parts.push(t("settings.MTProto.testHeldMs", { ms: r.hold_ms }));
                 }
-                label = `${r.transport} — ${parts.join(", ")}`;
+                label = `${r.transport} · ${parts.join(", ")}`;
               } else {
                 const stageLabel = r.stage
                   ? t(`settings.MTProto.testStage_${r.stage}`, {
@@ -452,8 +445,8 @@ export const MTProtoUpstreamCard = ({
                     })
                   : "";
                 label = stageLabel
-                  ? `${r.transport} — [${stageLabel}] ${r.error}`
-                  : `${r.transport} — ${r.error}`;
+                  ? `${r.transport} · [${stageLabel}] ${r.error}`
+                  : `${r.transport} · ${r.error}`;
               }
               return (
                 <Chip
