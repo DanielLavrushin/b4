@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -27,7 +29,54 @@ var (
 	releasesCache  upstreamCache
 	changelogCache = map[string]*upstreamCache{}
 	changelogMu    sync.Mutex
+	upstreamGroup  singleflight.Group
 )
+
+// fetchCached serves the cached copy while it is fresh, and otherwise refreshes it.
+// Concurrent callers that arrive on an expired entry share a single refresh rather than
+// each opening their own, which keeps a burst of browser tabs from allocating the response
+// several times over on a router and from spending the upstream rate limit N times.
+func fetchCached(
+	c *upstreamCache,
+	key string,
+	ttl time.Duration,
+	fetch func(context.Context) ([]byte, error),
+) ([]byte, string, error) {
+	if body, fresh := c.get(ttl); fresh {
+		return body, "HIT", nil
+	}
+
+	v, err, shared := upstreamGroup.Do(key, func() (interface{}, error) {
+		if body, fresh := c.get(ttl); fresh {
+			return body, nil
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), upstreamFetchTTL)
+		defer cancel()
+
+		body, err := fetch(ctx)
+		if err != nil {
+			return nil, err
+		}
+		c.put(body)
+		return body, nil
+	})
+
+	if err == nil {
+		status := "MISS"
+		if shared {
+			status = "SHARED"
+		}
+		return v.([]byte), status, nil
+	}
+
+	if stale, _ := c.get(0); stale != nil {
+		log.Warnf("Refresh of %s failed, serving the cached copy: %v", key, err)
+		return stale, "STALE", nil
+	}
+
+	return nil, "", err
+}
 
 func (c *upstreamCache) get(ttl time.Duration) ([]byte, bool) {
 	c.mu.Lock()
@@ -58,8 +107,9 @@ func changelogCacheFor(file string) *upstreamCache {
 
 // @Summary List b4 releases
 // @Description Release list fetched by the service rather than the browser, so it works
-// @Description from a LAN client whose own uplink cannot reach GitHub, and so the whole
-// @Description fleet shares one upstream request instead of spending a per-IP rate limit.
+// @Description from a LAN client whose own uplink cannot reach GitHub. The answer is cached
+// @Description and concurrent callers share a single refresh, so a burst of open tabs costs
+// @Description one upstream request rather than one each.
 // @Tags System
 // @Produce json
 // @Success 200 {array} object
@@ -72,29 +122,20 @@ func (api *API) handleReleases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if body, fresh := releasesCache.get(releasesTTL); fresh {
-		writeCachedJSON(w, body, "HIT")
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), upstreamFetchTTL)
-	defer cancel()
-
 	url := githubAPIBase + "/repos/" + repoOwner + "/" + repoName + "/releases?per_page=25"
-	body, err := fetchBytesMirrored(ctx, url, releasesLimit, []string{"/b4/api/releases"}, api.updateMirrors())
+	mirrors := api.updateMirrors()
+
+	body, status, err := fetchCached(&releasesCache, "releases", releasesTTL,
+		func(ctx context.Context) ([]byte, error) {
+			return fetchBytesMirrored(ctx, url, releasesLimit, []string{"/b4/api/releases"}, mirrors)
+		})
 	if err != nil {
-		if stale, _ := releasesCache.get(0); stale != nil {
-			log.Warnf("Release list refresh failed, serving cached copy: %v", err)
-			writeCachedJSON(w, stale, "STALE")
-			return
-		}
 		log.Warnf("Failed to fetch release list: %v", err)
 		writeJsonError(w, http.StatusBadGateway, "Could not reach GitHub or any b4 mirror")
 		return
 	}
 
-	releasesCache.put(body)
-	writeCachedJSON(w, body, "MISS")
+	writeCachedJSON(w, body, status)
 }
 
 // @Summary Fetch the localized changelog
@@ -116,29 +157,20 @@ func (api *API) handleChangelog(w http.ResponseWriter, r *http.Request) {
 		file = "changelog_ru.md"
 	}
 
-	cache := changelogCacheFor(file)
-	if body, fresh := cache.get(changelogTTL); fresh {
-		writeCachedText(w, body, "HIT")
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), upstreamFetchTTL)
-	defer cancel()
-
 	url := githubRawBase + "/" + repoOwner + "/" + repoName + "/main/" + file
-	body, err := fetchBytesMirrored(ctx, url, changelogLimit, []string{"/b4/raw/main/" + file}, api.updateMirrors())
+	mirrors := api.updateMirrors()
+
+	body, status, err := fetchCached(changelogCacheFor(file), "changelog:"+file, changelogTTL,
+		func(ctx context.Context) ([]byte, error) {
+			return fetchBytesMirrored(ctx, url, changelogLimit, []string{"/b4/raw/main/" + file}, mirrors)
+		})
 	if err != nil {
-		if stale, _ := cache.get(0); stale != nil {
-			writeCachedText(w, stale, "STALE")
-			return
-		}
 		log.Warnf("Failed to fetch %s: %v", file, err)
 		writeJsonError(w, http.StatusBadGateway, "Could not reach GitHub or any b4 mirror")
 		return
 	}
 
-	cache.put(body)
-	writeCachedText(w, body, "MISS")
+	writeCachedText(w, body, status)
 }
 
 func writeCachedJSON(w http.ResponseWriter, body []byte, status string) {

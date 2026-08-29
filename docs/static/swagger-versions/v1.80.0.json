@@ -3334,7 +3334,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Release list fetched by the service rather than the browser, so it works\nfrom a LAN client whose own uplink cannot reach GitHub, and so the whole\nfleet shares one upstream request instead of spending a per-IP rate limit.",
+                "description": "Release list fetched by the service rather than the browser, so it works\nfrom a LAN client whose own uplink cannot reach GitHub. The answer is cached\nand concurrent callers share a single refresh, so a burst of open tabs costs\none upstream request rather than one each.",
                 "produces": [
                     "application/json"
                 ],

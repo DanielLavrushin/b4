@@ -1,10 +1,15 @@
 package handler
 
 import (
+	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
@@ -407,5 +412,153 @@ func TestReleasesEndpointPrefersAConfiguredMirror(t *testing.T) {
 	}
 	if builtinHits != 0 {
 		t.Fatalf("built-in mirror was contacted %d times, want 0 once the personal one answered", builtinHits)
+	}
+}
+
+func TestFetchBytesRejectsAnOversizedResponseInsteadOfTruncating(t *testing.T) {
+	const limit = 1024
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(bytes.Repeat([]byte("x"), limit+1))
+	}))
+	defer srv.Close()
+
+	if _, err := fetchBytes(context.Background(), srv.URL, limit); err == nil {
+		t.Fatal("an oversized body must be refused, not silently truncated")
+	}
+
+	exact := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(bytes.Repeat([]byte("x"), limit))
+	}))
+	defer exact.Close()
+
+	body, err := fetchBytes(context.Background(), exact.URL, limit)
+	if err != nil {
+		t.Fatalf("a body exactly at the limit must be accepted, got %v", err)
+	}
+	if int64(len(body)) != limit {
+		t.Fatalf("len = %d, want %d", len(body), limit)
+	}
+}
+
+func TestOversizedUpstreamFallsBackToAMirrorAndDoesNotPoisonTheCache(t *testing.T) {
+	const good = `[{"tag_name":"v1.79.0"}]`
+
+	oversized := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(bytes.Repeat([]byte("x"), releasesLimit+1))
+	}))
+	defer oversized.Close()
+
+	mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/b4/health":
+			w.WriteHeader(http.StatusOK)
+		case "/b4/api/releases":
+			w.Write([]byte(good))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer mirror.Close()
+
+	swapBases(t, oversized.URL, oversized.URL, oversized.URL)
+	swapMirrors(t, []string{mirror.URL})
+	api := newMirrorTestAPI(t)
+
+	rec := httptest.NewRecorder()
+	api.mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/system/releases", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200 from the mirror", rec.Code)
+	}
+	if rec.Body.String() != good {
+		t.Fatalf("body = %.60q, want the mirror's answer, not a truncated upstream", rec.Body.String())
+	}
+
+	cached, _ := releasesCache.get(releasesTTL)
+	if string(cached) != good {
+		t.Fatalf("cache holds %.60q, want the mirror's answer", string(cached))
+	}
+}
+
+func TestConcurrentRefreshesShareOneUpstreamCall(t *testing.T) {
+	const body = `[{"tag_name":"v1.79.0"}]`
+	const callers = 24
+
+	var hits int64
+	release := make(chan struct{})
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(&hits, 1)
+		<-release
+		w.Write([]byte(body))
+	}))
+	defer upstream.Close()
+
+	swapBases(t, upstream.URL, upstream.URL, upstream.URL)
+	swapMirrors(t, nil)
+	api := newMirrorTestAPI(t)
+
+	var wg sync.WaitGroup
+	codes := make([]int, callers)
+	bodies := make([]string, callers)
+
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			rec := httptest.NewRecorder()
+			api.mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/system/releases", nil))
+			codes[i] = rec.Code
+			bodies[i] = rec.Body.String()
+		}(i)
+	}
+
+	for atomic.LoadInt64(&hits) == 0 {
+		runtime.Gosched()
+	}
+	close(release)
+	wg.Wait()
+
+	if got := atomic.LoadInt64(&hits); got != 1 {
+		t.Fatalf("upstream calls = %d, want 1 for %d concurrent callers", got, callers)
+	}
+	for i := range codes {
+		if codes[i] != http.StatusOK || bodies[i] != body {
+			t.Fatalf("caller %d got code=%d body=%q, want every caller to share the result", i, codes[i], bodies[i])
+		}
+	}
+}
+
+func TestAFailedRefreshDoesNotStickToLaterCallers(t *testing.T) {
+	const body = `[{"tag_name":"v1.79.0"}]`
+
+	var fail atomic.Bool
+	fail.Store(true)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if fail.Load() {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Write([]byte(body))
+	}))
+	defer upstream.Close()
+
+	swapBases(t, upstream.URL, upstream.URL, upstream.URL)
+	swapMirrors(t, nil)
+	api := newMirrorTestAPI(t)
+
+	rec := httptest.NewRecorder()
+	api.mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/system/releases", nil))
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("first call code = %d, want 502", rec.Code)
+	}
+
+	fail.Store(false)
+	rec = httptest.NewRecorder()
+	api.mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/system/releases", nil))
+	if rec.Code != http.StatusOK || rec.Body.String() != body {
+		t.Fatalf("retry after recovery got code=%d body=%q, want the fresh answer", rec.Code, rec.Body.String())
 	}
 }

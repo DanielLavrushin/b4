@@ -261,8 +261,21 @@ func webRequestedSubprotocol(r *http.Request) string {
 	return ""
 }
 
+func webPeerCanSetForwardedFor(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		return false
+	}
+	addr = addr.WithZone("").Unmap()
+	return addr.IsLoopback() || addr.IsLinkLocalUnicast() || addr.IsPrivate()
+}
+
 func webClientAddr(r *http.Request) string {
-	if v := r.Header.Get("X-Forwarded-For"); v != "" {
+	if v := r.Header.Get("X-Forwarded-For"); v != "" && webPeerCanSetForwardedFor(r.RemoteAddr) {
 		if i := strings.IndexByte(v, ','); i >= 0 {
 			v = v[:i]
 		}

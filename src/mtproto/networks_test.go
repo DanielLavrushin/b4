@@ -127,25 +127,29 @@ func TestStatsNetworksZeroWithoutConns(t *testing.T) {
 	}
 }
 
-func TestWebClientAddrRejectsNonAddressForwardedFor(t *testing.T) {
+func TestWebClientAddrFromLocalReverseProxy(t *testing.T) {
 	cases := []struct {
 		name   string
+		peer   string
 		header string
 		want   string
 	}{
-		{"absent", "", "203.0.113.7:5555"},
-		{"valid ipv4", "198.51.100.4", "198.51.100.4:0"},
-		{"valid ipv4 with proxy chain", "198.51.100.4, 10.0.0.9", "198.51.100.4:0"},
-		{"valid ipv6", "2a00:1370:8190:1234::1", "[2a00:1370:8190:1234::1]:0"},
-		{"ipv4 mapped ipv6", "::ffff:198.51.100.4", "198.51.100.4:0"},
-		{"not an address", "pwned<b>", "203.0.113.7:5555"},
-		{"empty token", " , 10.0.0.9", "203.0.113.7:5555"},
-		{"host name", "client.example.com", "203.0.113.7:5555"},
+		{"absent", "127.0.0.1:8080", "", "127.0.0.1:8080"},
+		{"valid ipv4", "127.0.0.1:8080", "198.51.100.4", "198.51.100.4:0"},
+		{"valid ipv4 with proxy chain", "127.0.0.1:8080", "198.51.100.4, 10.0.0.9", "198.51.100.4:0"},
+		{"valid ipv6", "127.0.0.1:8080", "2a00:1370:8190:1234::1", "[2a00:1370:8190:1234::1]:0"},
+		{"ipv4 mapped ipv6", "127.0.0.1:8080", "::ffff:198.51.100.4", "198.51.100.4:0"},
+		{"not an address", "127.0.0.1:8080", "pwned<b>", "127.0.0.1:8080"},
+		{"empty token", "127.0.0.1:8080", " , 10.0.0.9", "127.0.0.1:8080"},
+		{"host name", "127.0.0.1:8080", "client.example.com", "127.0.0.1:8080"},
+		{"lan proxy", "192.168.1.2:8080", "198.51.100.4", "198.51.100.4:0"},
+		{"ipv6 loopback proxy", "[::1]:8080", "198.51.100.4", "198.51.100.4:0"},
+		{"unique local proxy", "[fd00::2]:8080", "198.51.100.4", "198.51.100.4:0"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, "/", nil)
-			r.RemoteAddr = "203.0.113.7:5555"
+			r.RemoteAddr = tc.peer
 			if tc.header != "" {
 				r.Header.Set("X-Forwarded-For", tc.header)
 			}
@@ -153,6 +157,47 @@ func TestWebClientAddrRejectsNonAddressForwardedFor(t *testing.T) {
 				t.Fatalf("webClientAddr(%q) = %q, want %q", tc.header, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestWebClientAddrIgnoresForwardedForFromTheInternet(t *testing.T) {
+	spoofs := []string{
+		"10.0.0.1",
+		"198.51.100.4",
+		"2a00:1370:8190:1234::1",
+		"127.0.0.1",
+		"pwned<b>",
+	}
+	for _, spoof := range spoofs {
+		t.Run(spoof, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r.RemoteAddr = "203.0.113.7:5555"
+			r.Header.Set("X-Forwarded-For", spoof)
+			if got := webClientAddr(r); got != "203.0.113.7:5555" {
+				t.Fatalf("a direct internet client set its own identity to %q via X-Forwarded-For", got)
+			}
+		})
+	}
+}
+
+func TestSpoofedForwardedForCannotEvadeTheNetworkLimit(t *testing.T) {
+	srv, _, secA, _ := limitTestServer(t, 1)
+
+	pin := func(peer, spoof string) *closeRecordConn {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.RemoteAddr = peer
+		r.Header.Set("X-Forwarded-For", spoof)
+		return &closeRecordConn{remoteAddr: webAddr{network: "tcp", value: webClientAddr(r)}}
+	}
+
+	if _, _, deny := srv.trackConn(secA, pin("198.51.100.10:1000", "10.0.0.1")); deny.limit != 0 {
+		t.Fatal("the first network must be admitted")
+	}
+	if _, _, deny := srv.trackConn(secA, pin("203.0.113.7:1001", "10.0.0.1")); deny.limit != 1 {
+		t.Fatal("a second peer claiming the first peer's address must not share its slot")
+	}
+	if got := statForSecret(t, srv, "Max").Networks; got != 1 {
+		t.Fatalf("Networks = %d, want 1", got)
 	}
 }
 

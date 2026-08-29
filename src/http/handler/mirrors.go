@@ -184,9 +184,12 @@ func fetchBytes(ctx context.Context, url string, limit int64) ([]byte, error) {
 		return nil, fmt.Errorf("%s returned %s", url, resp.Status)
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, limit))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		return nil, err
+	}
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("%s returned more than the %d byte limit", url, limit)
 	}
 	if len(body) == 0 {
 		return nil, fmt.Errorf("%s returned an empty body", url)

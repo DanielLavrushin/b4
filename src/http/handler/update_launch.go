@@ -98,10 +98,6 @@ func (r installerRun) obtainInstaller(path string) error {
 		return nil
 	}
 
-	if looksLikeShellScript(path) {
-		cacheInstaller(path, r.cachePath)
-	}
-
 	if r.cachePath != "" && r.usable(r.cachePath) {
 		log.Warnf("Using the cached installer at %s (%v)", r.cachePath, err)
 		writeUpdateLog(r.logPath, "Falling back to the cached installer %s (%v)", r.cachePath, err)
@@ -131,23 +127,37 @@ func (api *API) launchInstaller(run installerRun) error {
 		return nil
 	}
 
-	installerPath := "/tmp/b4install_update.sh"
-
-	if err := run.obtainInstaller(installerPath); err != nil {
-		log.Errorf("Failed to obtain installer: %v", err)
-		writeUpdateLog(run.logPath, "ERROR: failed to obtain a usable installer: %v", err)
+	// A private 0700 directory: b4 runs as root and execs what it writes here, and a
+	// fixed name under a world-writable /tmp can be pre-created as a symlink by anyone.
+	stageDir, err := os.MkdirTemp("", "b4update-")
+	if err != nil {
+		log.Errorf("Failed to create a staging directory: %v", err)
+		writeUpdateLog(run.logPath, "ERROR: failed to create a staging directory: %v", err)
 		if run.localArchive != "" {
 			os.Remove(run.localArchive)
 		}
 		return err
 	}
+	installerPath := filepath.Join(stageDir, "install.sh")
 
-	if err := os.Chmod(installerPath, 0755); err != nil {
-		log.Errorf("Failed to make installer executable: %v", err)
-		writeUpdateLog(run.logPath, "ERROR: failed to chmod installer: %v", err)
+	cleanup := func() {
+		os.RemoveAll(stageDir)
 		if run.localArchive != "" {
 			os.Remove(run.localArchive)
 		}
+	}
+
+	if err := run.obtainInstaller(installerPath); err != nil {
+		log.Errorf("Failed to obtain installer: %v", err)
+		writeUpdateLog(run.logPath, "ERROR: failed to obtain a usable installer: %v", err)
+		cleanup()
+		return err
+	}
+
+	if err := os.Chmod(installerPath, 0700); err != nil {
+		log.Errorf("Failed to make installer executable: %v", err)
+		writeUpdateLog(run.logPath, "ERROR: failed to chmod installer: %v", err)
+		cleanup()
 		return err
 	}
 
@@ -227,9 +237,7 @@ func (api *API) launchInstaller(run installerRun) error {
 			if logFile != nil {
 				logFile.Close()
 			}
-			if run.localArchive != "" {
-				os.Remove(run.localArchive)
-			}
+			cleanup()
 			return
 		}
 
@@ -244,9 +252,7 @@ func (api *API) launchInstaller(run installerRun) error {
 			if logFile != nil {
 				logFile.Close()
 			}
-			if run.localArchive != "" {
-				os.Remove(run.localArchive)
-			}
+			cleanup()
 		}()
 	}()
 
