@@ -146,7 +146,7 @@ func (b *routeNftBackend) addBypassRule(chain string, mark uint32) {
 		"meta", "mark", "&", markHex, "==", markHex, "return")
 }
 
-func (b *routeNftBackend) addEgressLoopGuard(chain, iface string) bool {
+func (b *routeNftBackend) addEgressLoopGuard(chain, iface string, ipv4, ipv6 bool) bool {
 	if iface == "" {
 		return true
 	}

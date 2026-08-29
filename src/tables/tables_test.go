@@ -1342,7 +1342,7 @@ func (m *mockRouteBackend) addBypassRule(chain string, mark uint32) {
 func (m *mockRouteBackend) addMarkRule(chain string, v6 bool, setName string, mark uint32, sourceIface string, tagHostConntrack bool) {
 	m.recordOp(chain, fmt.Sprintf("mark 0x%x", mark))
 }
-func (m *mockRouteBackend) addEgressLoopGuard(chain, iface string) bool {
+func (m *mockRouteBackend) addEgressLoopGuard(chain, iface string, ipv4, ipv6 bool) bool {
 	m.recordOp(chain, "loop-guard "+iface)
 	return true
 }

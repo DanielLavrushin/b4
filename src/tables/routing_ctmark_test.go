@@ -140,3 +140,36 @@ func TestNoConfigPathMeansNoStateFile(t *testing.T) {
 		t.Fatal("a missing config path must leave the verdict alone rather than assume the worst")
 	}
 }
+
+func TestTheFallbackReachesTheRoutersOwnTrafficToo(t *testing.T) {
+	routeForgetCTMarkVerdict()
+	t.Cleanup(routeForgetCTMarkVerdict)
+	routeCTMarkHeld.Store(false)
+
+	be := &mockRouteBackend{}
+	cfg := familyTestConfig(true, false)
+	set := familyTestSet()
+	set.Routing.SourceInterfaces = nil
+	set.Routing.RouterTraffic = config.RouterTrafficInclude
+
+	st := buildRouteState(cfg, set)
+	if !st.routerOut || st.srcScoped {
+		t.Fatalf("this set must carry the router's own traffic for the case to exist: routerOut=%v srcScoped=%v",
+			st.routerOut, st.srcScoped)
+	}
+	routeAddOutChainRules(be, cfg, st, routeSetDeviceGate(cfg, set))
+
+	fallbacks := 0
+	for _, op := range be.chainOps[st.chainOut] {
+		if op == "fallback" {
+			fallbacks++
+		}
+	}
+	if fallbacks == 0 {
+		t.Fatalf("on a router that does not keep the connection mark, the set marks the first packet the "+
+			"router sends and restores nothing after it, so every packet but the first leaves by the ordinary "+
+			"uplink while the connection was made through the set's interface, and the far end drops it. That "+
+			"is the same split path the fallback exists to close on the forwarding side: %v",
+			be.chainOps[st.chainOut])
+	}
+}

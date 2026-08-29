@@ -231,17 +231,20 @@ func routeIptSaveMarkArgs() []string {
 	return []string{"-j", "CONNMARK", "--save-mark", "--nfmask", m, "--ctmask", m}
 }
 
-func (b *routeIptBackend) addEgressLoopGuard(chain, iface string) bool {
+func (b *routeIptBackend) addEgressLoopGuard(chain, iface string, ipv4, ipv6 bool) bool {
 	if iface == "" {
 		return true
 	}
 	ok := true
-	for _, cmd := range b.iptBoth() {
-		if !hasBinary(cmd) {
+	for _, fam := range []struct {
+		cmd     string
+		enabled bool
+	}{{b.ipt4(), ipv4}, {b.ipt6(), ipv6}} {
+		if !fam.enabled || !hasBinary(fam.cmd) {
 			continue
 		}
 		if !runLogged("routing: add egress loop guard "+chain,
-			cmd, "-w", "-t", "mangle", "-A", chain, "-i", iface, "-j", "RETURN") && cmd == b.ipt4() {
+			fam.cmd, "-w", "-t", "mangle", "-A", chain, "-i", iface, "-j", "RETURN") {
 			ok = false
 		}
 	}

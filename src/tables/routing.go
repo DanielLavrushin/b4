@@ -71,7 +71,7 @@ type routeBackend interface {
 	addMarkRestoreRule(chain string, v6 bool, sourceIface string, mark uint32)
 	sharesFamilies() bool
 	addMarkFallbackRule(chain string, v6 bool, setName string, mark uint32, sourceIface string)
-	addEgressLoopGuard(chain, iface string) bool
+	addEgressLoopGuard(chain, iface string, ipv4, ipv6 bool) bool
 	addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32, sources []config.DeviceMatch)
 	ensureJumpRule(baseChain, targetChain string, isMangle bool, atTop bool)
 	jumpPrepends(atTop bool) bool
@@ -1102,7 +1102,7 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 	be.addClaimedBypassRule(st.chainPre)
 
 	routeAddBlacklistGate(be, "mangle", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
-	if !be.addEgressLoopGuard(st.chainPre, st.iface) && len(sources) == 0 {
+	if !be.addEgressLoopGuard(st.chainPre, st.iface, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled) && len(sources) == 0 {
 		return fmt.Errorf("the guard on traffic arriving from %s did not install, and without it every packet %s hands back for a destination in this set is marked again and sent straight back to it", st.iface, st.iface)
 	}
 
@@ -1251,9 +1251,11 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState, g
 	routeAddMarkRestoreRules(be, st.chainOut, nil, st.mark, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	if cfg.Queue.IPv4Enabled {
 		routeAddMarkRules(be, st.chainOut, false, st.setV4, st.mark, nil, true)
+		routeAddMarkFallbackRules(be, st.chainOut, false, st.setV4, st.mark, nil)
 	}
 	if cfg.Queue.IPv6Enabled {
 		routeAddMarkRules(be, st.chainOut, true, st.setV6, st.mark, nil, true)
+		routeAddMarkFallbackRules(be, st.chainOut, true, st.setV6, st.mark, nil)
 	}
 }
 

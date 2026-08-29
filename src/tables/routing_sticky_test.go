@@ -290,3 +290,29 @@ func TestTurningDomainOnlyOffRebuildsTheSet(t *testing.T) {
 		t.Fatal("the route state must carry the flag it is compared on")
 	}
 }
+
+func TestAFailedGuardOnAnEnabledFamilyIsNotSwallowed(t *testing.T) {
+	prev := runLogged
+	t.Cleanup(func() { runLogged = prev })
+
+	failFor := func(bin string) {
+		runLogged = func(op string, args ...string) bool { return len(args) == 0 || args[0] != bin }
+	}
+	be := &routeIptBackend{}
+
+	failFor(be.ipt6())
+	if be.addEgressLoopGuard("b4r_test_pre", "xray0", true, true) {
+		t.Fatal("the guard failed on ip6tables while IPv6 is enabled, so the IPv6 half of the set marks and " +
+			"routes but nothing stops a packet coming back out of the egress being marked again and sent " +
+			"straight back to it. Reporting success there installs the loop the guard exists to prevent")
+	}
+	if !be.addEgressLoopGuard("b4r_test_pre", "xray0", true, false) {
+		t.Fatal("with IPv6 turned off the set installs no IPv6 rule, so an ip6tables that cannot take the " +
+			"guard costs nothing and must not fail the whole set on a router with no working IPv6")
+	}
+
+	failFor(be.ipt4())
+	if be.addEgressLoopGuard("b4r_test_pre", "xray0", true, false) {
+		t.Fatal("a failure on the enabled IPv4 family must still be reported")
+	}
+}
