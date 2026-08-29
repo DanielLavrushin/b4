@@ -3446,6 +3446,16 @@ action_update() {
     fi
 
     if [ -n "$B4_LOCAL_ARCHIVE" ]; then
+        if [ -n "$target_ver" ]; then
+            log_warn "Ignoring a supplied archive: ${target_ver} was asked for by name"
+            B4_LOCAL_ARCHIVE=""
+        elif [ ! -f "$B4_LOCAL_ARCHIVE" ]; then
+            log_warn "Ignoring a stale archive path left by an earlier run: ${B4_LOCAL_ARCHIVE}"
+            B4_LOCAL_ARCHIVE=""
+        fi
+    fi
+
+    if [ -n "$B4_LOCAL_ARCHIVE" ]; then
         latest_ver=""
         log_info "Source: ${B4_LOCAL_ARCHIVE}"
     elif [ -n "$target_ver" ]; then
