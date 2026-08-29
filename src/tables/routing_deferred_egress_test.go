@@ -92,3 +92,50 @@ func TestTheTableIsPopulatedBeforeTrafficIsPointedAtIt(t *testing.T) {
 			"the route install fails it stays that way:\n%s", emitted)
 	}
 }
+
+func TestTheLivePolicyRuleIsNeverDeletedBeforeItIsReAdded(t *testing.T) {
+	prev := routeDelRuleLoop
+	var deleted []string
+	routeDelRuleLoop = func(ipv6 bool, mark, table string) { deleted = append(deleted, mark) }
+	t.Cleanup(func() { routeDelRuleLoop = prev })
+
+	const mark = uint32(0x4d05)
+	routeDelStaleRuleForms(mark, "169")
+
+	live := routeSetMarkRule(mark)
+	for _, m := range deleted {
+		if m == live {
+			t.Fatalf("b4 asked to delete %q, the very rule it is about to add back. Between the two the packet "+
+				"carries the set's mark and nothing points it at the set's table, so it takes the main table "+
+				"and leaves by the ordinary uplink with the router's own address", live)
+		}
+	}
+}
+
+func TestStaleRuleShapesAreStillCleanedUp(t *testing.T) {
+	prev := routeDelRuleLoop
+	var deleted []string
+	routeDelRuleLoop = func(ipv6 bool, mark, table string) {
+		if !ipv6 {
+			deleted = append(deleted, mark)
+		}
+	}
+	t.Cleanup(func() { routeDelRuleLoop = prev })
+
+	const mark = uint32(0x4d05)
+	routeDelStaleRuleForms(mark, "169")
+
+	want := []string{"0x4d05", "0x4d05/0x4d05"}
+	for _, w := range want {
+		found := false
+		for _, d := range deleted {
+			if d == w {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("an older b4 wrote the rule as %q, and a leftover copy still steers traffic into the "+
+				"set's table, so it has to go even though the shape in use stays: deleted %v", w, deleted)
+		}
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
@@ -663,8 +664,29 @@ func parseNftRouteChains(out string) (present map[string]bool, bypass map[string
 	return present, bypass
 }
 
+// routeNftTerse tracks whether this nft understands the terse listing. A full dump
+// prints every address a set has learned, so on a router doing its job it grows
+// without limit and is re-read on every monitor tick, while nothing the checks below
+// read comes from those elements.
+var routeNftTerse atomic.Bool
+
+func init() {
+	routeNftTerse.Store(true)
+}
+
+func routeNftListRouteTable() (string, error) {
+	if routeNftTerse.Load() {
+		out, err := run("nft", "-t", "list", "table", "inet", routeNftTable)
+		if err == nil {
+			return out, nil
+		}
+		routeNftTerse.Store(false)
+	}
+	return run("nft", "list", "table", "inet", routeNftTable)
+}
+
 func routeNftRulesPresent(cfg *config.Config) bool {
-	out, err := run("nft", "list", "table", "inet", routeNftTable)
+	out, err := routeNftListRouteTable()
 	if err != nil || strings.TrimSpace(out) == "" {
 		return false
 	}
@@ -1398,6 +1420,21 @@ func routeStaleMarkRules(mark uint32) []string {
 	}
 }
 
+// routeDelStaleRuleForms removes the rule shapes older versions of b4 used for
+// this mark and leaves the one in use alone. Deleting that one first and adding it
+// back, which is what a rebuild used to do, leaves a window with the packet marked
+// and nothing pointing it at the set's table, so it takes the main table and leaves
+// by the ordinary uplink.
+func routeDelStaleRuleForms(mark uint32, table string) {
+	for _, m := range routeStaleMarkRules(mark) {
+		if m == routeSetMarkRule(mark) {
+			continue
+		}
+		routeDelRuleLoop(false, m, table)
+		routeDelRuleLoop(true, m, table)
+	}
+}
+
 func routeDelRuleAllForms(mark uint32, table string) {
 	for _, m := range routeStaleMarkRules(mark) {
 		routeDelRuleLoop(false, m, table)
@@ -1604,8 +1641,6 @@ func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 	tableStr := fmt.Sprintf("%d", table)
 	prioStr := fmt.Sprintf("%d", prio)
 
-	routeDelRuleAllForms(mark, tableStr)
-
 	addRules := func() {
 		if ipv4 {
 			runLogged("routing: add ip rule v4", "ip", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
@@ -1613,10 +1648,12 @@ func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 		if ipv6 {
 			runLogged("routing: add ip rule v6", "ip", "-6", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
 		}
+		routeDelStaleRuleForms(mark, tableStr)
 	}
 
 	if _, err := net.InterfaceByName(iface); err != nil {
 		if !routeIfaceWasSeen(iface) {
+			routeDelRuleAllForms(mark, tableStr)
 			routeApplyKillSwitch(st, false, ipv4, ipv6)
 			log.Warnf("Routing: set '%s' routes to %s, which has never appeared on this router (%v), so b4 installs no rule for it. A blackhole ends a route lookup instead of falling through, and arming one for an interface that was never there would drop every address the set matches", st.setID, iface, err)
 			return
