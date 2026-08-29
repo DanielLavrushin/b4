@@ -117,21 +117,22 @@ type DiagEngine struct {
 }
 
 type DiagTUN struct {
-	Running          bool   `json:"running"`
-	DeviceName       string `json:"device_name"`
-	DeviceUp         bool   `json:"device_up"`
-	MTU              int    `json:"mtu,omitempty"`
-	Address          string `json:"address,omitempty"`
-	AddressV6        string `json:"address_v6,omitempty"`
-	OutInterface     string `json:"out_interface,omitempty"`
-	OutGateway       string `json:"out_gateway,omitempty"`
-	ResolvedSrc      string `json:"resolved_src,omitempty"`
-	Capture          string `json:"capture,omitempty"`
-	RouteTable       int    `json:"route_table,omitempty"`
-	ReplyCapture     bool   `json:"reply_capture"`
-	PacketsForwarded uint64 `json:"packets_forwarded"`
-	ForwardErrors    uint64 `json:"forward_errors"`
-	IPv6Dropped      uint64 `json:"ipv6_dropped"`
+	Running          bool     `json:"running"`
+	DeviceName       string   `json:"device_name"`
+	DeviceUp         bool     `json:"device_up"`
+	MTU              int      `json:"mtu,omitempty"`
+	Address          string   `json:"address,omitempty"`
+	AddressV6        string   `json:"address_v6,omitempty"`
+	OutInterface     string   `json:"out_interface,omitempty"`
+	OutGateway       string   `json:"out_gateway,omitempty"`
+	ResolvedSrc      string   `json:"resolved_src,omitempty"`
+	Capture          string   `json:"capture,omitempty"`
+	RouteTable       int      `json:"route_table,omitempty"`
+	ReplyCapture     bool     `json:"reply_capture"`
+	PacketsForwarded uint64   `json:"packets_forwarded"`
+	ForwardErrors    uint64   `json:"forward_errors"`
+	SteerConflicts   []string `json:"steer_conflicts,omitempty"`
+	IPv6Dropped      uint64   `json:"ipv6_dropped"`
 }
 
 type DiagFirewall struct {

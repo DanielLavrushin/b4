@@ -9,6 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/daniellavrushin/b4/log"
 )
 
 const (
@@ -86,7 +88,12 @@ func (r *tunSrcResolver) resolve(proto uint8, src net.IP, sport uint16, dst net.
 	}
 	r.mu.Unlock()
 
-	lan := r.lookupConntrack(proto, wan, sport, dst.String(), dport)
+	dstStr := dst.String()
+	lan := r.lookupConntrack(proto, wan, sport, dstStr, dport)
+	if lan == dstStr {
+		log.Tracef("TUN source: conntrack named the destination %s as the source of %s:%d, ignoring it", dstStr, dstStr, dport)
+		lan = ""
+	}
 
 	r.mu.Lock()
 	if lan == "" {

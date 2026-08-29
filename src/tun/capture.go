@@ -2,6 +2,8 @@ package tun
 
 import (
 	"fmt"
+	"net"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -11,12 +13,17 @@ import (
 )
 
 const (
-	tunCaptureChain   = "B4_TUN"
-	tunGateChain      = "B4_TUN_GATE"
-	tunProbeChain     = "B4_TUN_PROBE"
-	defaultSteerMark  = engine.TunSteerMark
-	defaultClientMark = engine.ClientMark
-	captureRulePrio   = 90
+	tunCaptureChain    = "B4_TUN"
+	tunGateChain       = "B4_TUN_GATE"
+	tunProbeChain      = "B4_TUN_PROBE"
+	defaultSteerMark   = engine.TunSteerMark
+	defaultClientMark  = engine.ClientMark
+	defaultCapturePrio = 10
+	capturePrioFloor   = 4
+	clientLocalPrio    = 88
+	clientBypassPrio   = 89
+	reinjectLocalPrio  = 99
+	localRetryLimit    = 1
 )
 
 func (r *routeManager) steerMarkStr() string {
@@ -49,31 +56,34 @@ func iptablesMatchSupported(spec []string) bool {
 }
 
 func (r *routeManager) setupPortCapture(srcIP string) error {
-	if err := r.setupBypassTable(); err != nil {
-		return err
-	}
 	if err := r.setupCaptureTable(); err != nil {
 		return err
 	}
+	r.clientBypassOK.Store(true)
+	r.conflicts = r.warnOnSteerConflicts()
 	r.multiport = iptablesMatchSupported([]string{"-p", "tcp", "-m", "multiport", "--dports", "80,443", "-j", "ACCEPT"})
 	r.ensureCaptureChain()
 	r.rebuildCaptureChain()
 	r.ensureCaptureJumps()
 	r.captureRulesAdded = true
-	log.Infof("TUN: port-capture mode - first %d tcp / %d udp packets on ports %s + DNS routed into %s (steer mark %s, table %d; default route untouched)",
-		r.tcpLimit, r.udpLimit, strings.Join(r.tcpPorts, ","), r.tunName, r.steerMarkStr(), r.captureTable)
+	log.Infof("TUN: port-capture mode - first %d tcp / %d udp packets on ports %s + DNS routed into %s (steer mark %s, ip rule priority %d, table %d; everything b4 re-injects follows this router's own routing)",
+		r.tcpLimit, r.udpLimit, strings.Join(r.tcpPorts, ","), r.tunName, r.steerMarkStr(), r.capturePrio, r.captureTable)
 	return nil
 }
 
 func (r *routeManager) setupCaptureTable() error {
 	tableStr := strconv.Itoa(r.captureTable)
 	steer := r.steerMarkStr()
+	r.capturePrio = r.pickCapturePriority()
+	if r.capturePrio != defaultCapturePrio {
+		log.Infof("TUN: capture moved to ip rule priority %d to sit ahead of policy routing this router already had", r.capturePrio)
+	}
 	for {
 		if _, err := run("ip", "rule", "del", "fwmark", steer, "lookup", tableStr); err != nil {
 			break
 		}
 	}
-	if _, err := run("ip", "rule", "add", "fwmark", steer, "lookup", tableStr, "priority", strconv.Itoa(captureRulePrio)); err != nil {
+	if _, err := run("ip", "rule", "add", "fwmark", steer, "lookup", tableStr, "priority", strconv.Itoa(r.capturePrio)); err != nil {
 		return fmt.Errorf("ip rule add (capture steer; needs policy routing - install full iproute2): %w", err)
 	}
 	return r.replaceCaptureDefault(tableStr)
@@ -199,29 +209,158 @@ func (r *routeManager) desiredCaptureExclusions() []string {
 	return tables.RoutingActiveIPSetNames(true, false)
 }
 
-func (r *routeManager) rebuildCaptureChain() {
-	guard := fmt.Sprintf("0x%x/0x%x", r.mark, r.mark)
-	excl := r.desiredCaptureExclusions()
+type captureRule struct {
+	spec  []string
+	local string
+	soft  bool
+}
 
-	run("iptables", "-t", "mangle", "-F", tunCaptureChain)
-
-	run("iptables", "-t", "mangle", "-A", tunCaptureChain, "-m", "mark", "--mark", guard, "-j", "RETURN")
-	clientGuard := fmt.Sprintf("0x%x/0x%x", defaultClientMark, defaultClientMark)
-	run("iptables", "-t", "mangle", "-A", tunCaptureChain, "-m", "mark", "--mark", clientGuard, "-j", "RETURN")
-
+func (r *routeManager) captureChainRules(excl, local []string) []captureRule {
+	rules := []captureRule{
+		{spec: []string{"-m", "mark", "--mark", fmt.Sprintf("0x%x/0x%x", r.mark, r.mark), "-j", "RETURN"}},
+		{spec: []string{"-m", "mark", "--mark", fmt.Sprintf("0x%x/0x%x", defaultClientMark, defaultClientMark), "-j", "RETURN"}},
+	}
 	for _, set := range excl {
-		if _, err := run("iptables", "-t", "mangle", "-A", tunCaptureChain, "-m", "set", "--match-set", set, "dst", "-j", "RETURN"); err != nil {
-			log.Tracef("TUN: capture exclusion for ipset %s not added (set may be absent): %v", set, err)
-		}
+		rules = append(rules, captureRule{spec: []string{"-m", "set", "--match-set", set, "dst", "-j", "RETURN"}, soft: true})
+	}
+
+	var replies []captureRule
+	for _, spec := range append(r.dnsSteerSpecs(), r.replySteerSpecs()...) {
+		replies = append(replies, captureRule{spec: spec})
+	}
+	var locals []captureRule
+	for _, cidr := range local {
+		locals = append(locals, captureRule{spec: []string{"-d", cidr, "-j", "RETURN"}, local: cidr})
+	}
+
+	if r.reinjectReachesLocal() {
+		rules = append(rules, replies...)
+		rules = append(rules, locals...)
+	} else {
+		rules = append(rules, locals...)
+		rules = append(rules, replies...)
 	}
 
 	for _, spec := range r.steerSpecs() {
-		if _, err := run(append([]string{"iptables", "-t", "mangle", "-A", tunCaptureChain}, spec...)...); err != nil {
-			log.Warnf("TUN: failed to add capture rule %v: %v", spec, err)
-		}
+		rules = append(rules, captureRule{spec: spec})
+	}
+	return rules
+}
+
+func (r *routeManager) rebuildCaptureChain() {
+	excl := r.desiredCaptureExclusions()
+	local, localOK := r.desiredLocalNets()
+	if !localOK {
+		local = r.localNetsWanted
 	}
 
+	run("iptables", "-t", "mangle", "-F", tunCaptureChain)
+
+	applied := make([]string, 0, len(local))
+	for _, rule := range r.captureChainRules(excl, local) {
+		_, err := run(append([]string{"iptables", "-t", "mangle", "-A", tunCaptureChain}, rule.spec...)...)
+		switch {
+		case err == nil:
+			if rule.local != "" {
+				applied = append(applied, rule.local)
+			}
+		case rule.soft:
+			log.Tracef("TUN: capture rule %v not added: %v", rule.spec, err)
+		case rule.local != "":
+			log.Warnf("TUN: could not exempt local network %s from capture (%v); traffic between your own subnets on a captured port will be sent out %s instead of staying local", rule.local, err, r.outIface)
+		default:
+			log.Warnf("TUN: failed to add capture rule %v: %v", rule.spec, err)
+		}
+	}
+	if len(applied) > 0 {
+		log.Tracef("TUN: %d directly connected network(s) exempted from capture: %s", len(applied), strings.Join(applied, ", "))
+	}
+
+	if !equalStringSet(local, r.localNetsWanted) {
+		r.localRetries = 0
+	}
 	r.captureExcl = excl
+	r.localNets = applied
+	r.localNetsWanted = local
+}
+
+func (r *routeManager) desiredLocalNets() ([]string, bool) {
+	out, err := run("ip", "-4", "-o", "addr", "show", "scope", "global")
+	if err != nil {
+		log.Warnf("TUN: could not list this router's own networks (%v), keeping the exemptions already in place", err)
+		return nil, false
+	}
+	return parseLocalNets(out, r.tunName), true
+}
+
+func parseLocalNets(out, skipIface string) []string {
+	seen := make(map[string]bool)
+	var nets []string
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		iface := ""
+		cidr := ""
+		for i, f := range fields {
+			switch f {
+			case "inet":
+				if i+1 < len(fields) {
+					cidr = fields[i+1]
+				}
+			case "dev":
+				if i+1 < len(fields) {
+					iface = fields[i+1]
+				}
+			}
+		}
+		if iface == "" && len(fields) > 1 {
+			iface = fields[1]
+		}
+		if cidr == "" || iface == skipIface {
+			continue
+		}
+		network := cidrNetwork(cidr)
+		if network == "" || seen[network] {
+			continue
+		}
+		seen[network] = true
+		nets = append(nets, network)
+	}
+	sort.Strings(nets)
+	return nets
+}
+
+func cidrNetwork(cidr string) string {
+	_, ipnet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return ""
+	}
+	return ipnet.String()
+}
+
+func (r *routeManager) dnsSteerSpecs() [][]string {
+	mark := []string{"-j", "MARK", "--set-xmark", r.steerMarkStr()}
+	return [][]string{
+		append([]string{"-p", "udp", "--dport", "53"}, mark...),
+		append([]string{"-p", "udp", "--sport", "53"}, mark...),
+	}
+}
+
+func (r *routeManager) replySteerSpecs() [][]string {
+	mark := []string{"-j", "MARK", "--set-xmark", r.steerMarkStr()}
+	var specs [][]string
+	if !r.replyCapture {
+		return specs
+	}
+	if r.multiport {
+		for _, chunk := range chunkPorts(r.tcpPorts, 15) {
+			specs = append(specs, append([]string{"-p", "tcp", "-m", "multiport", "--sports", strings.Join(chunk, ","), "--tcp-flags", "RST", "RST"}, mark...))
+		}
+		return specs
+	}
+	for _, p := range r.tcpPorts {
+		specs = append(specs, append([]string{"-p", "tcp", "--sport", p, "--tcp-flags", "RST", "RST"}, mark...))
+	}
+	return specs
 }
 
 func (r *routeManager) steerSpecs() [][]string {
@@ -267,19 +406,6 @@ func (r *routeManager) steerSpecs() [][]string {
 		}
 	}
 
-	specs = append(specs, append([]string{"-p", "udp", "--dport", "53"}, mark...))
-
-	if r.replyCapture {
-		if r.multiport {
-			for _, chunk := range chunkPorts(r.tcpPorts, 15) {
-				specs = append(specs, append([]string{"-p", "tcp", "-m", "multiport", "--sports", strings.Join(chunk, ","), "--tcp-flags", "RST", "RST"}, mark...))
-			}
-		} else {
-			for _, p := range r.tcpPorts {
-				specs = append(specs, append([]string{"-p", "tcp", "--sport", p, "--tcp-flags", "RST", "RST"}, mark...))
-			}
-		}
-	}
 	return specs
 }
 
@@ -288,7 +414,7 @@ func (r *routeManager) ensurePortCapture() {
 	steer := r.steerMarkStr()
 
 	if !r.steerRulePresent(steer, tableStr) {
-		if _, err := run("ip", "rule", "add", "fwmark", steer, "lookup", tableStr, "priority", strconv.Itoa(captureRulePrio)); err == nil {
+		if _, err := run("ip", "rule", "add", "fwmark", steer, "lookup", tableStr, "priority", strconv.Itoa(r.capturePrio)); err == nil {
 			log.Infof("TUN: reconcile restored capture steer rule (mark %s -> table %s)", steer, tableStr)
 		}
 	}
@@ -300,8 +426,22 @@ func (r *routeManager) ensurePortCapture() {
 
 	r.ensureCaptureChain()
 	r.ensureCaptureJumps()
-	if desired := r.desiredCaptureExclusions(); !equalStringSet(desired, r.captureExcl) {
+	r.refreshSteerConflicts()
+	desired := r.desiredCaptureExclusions()
+	localNow, localOK := r.desiredLocalNets()
+	if !localOK {
+		localNow = r.localNetsWanted
+	}
+	switch {
+	case !equalStringSet(desired, r.captureExcl):
 		log.Infof("TUN: reconcile refreshing capture exclusions (%d routing set(s))", len(desired))
+		r.rebuildCaptureChain()
+	case !equalStringSet(localNow, r.localNetsWanted):
+		log.Infof("TUN: reconcile refreshing local-network exemptions (%d connected network(s))", len(localNow))
+		r.rebuildCaptureChain()
+	case len(r.localNets) != len(r.localNetsWanted) && r.localRetries < localRetryLimit:
+		r.localRetries++
+		log.Infof("TUN: reconcile retrying %d local-network exemption(s) that did not install", len(r.localNetsWanted)-len(r.localNets))
 		r.rebuildCaptureChain()
 	}
 }

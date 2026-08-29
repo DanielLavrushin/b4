@@ -146,6 +146,47 @@ func (b *routeNftBackend) addBypassRule(chain string, mark uint32) {
 		"meta", "mark", "&", markHex, "==", markHex, "return")
 }
 
+func (b *routeNftBackend) addEgressLoopGuard(chain, iface string, ipv4, ipv6 bool) bool {
+	if iface == "" {
+		return true
+	}
+	return runLogged("routing: add egress loop guard "+chain,
+		"nft", "add", "rule", "inet", routeNftTable, chain,
+		"iifname", fmt.Sprintf("%q", iface), "return")
+}
+
+func (b *routeNftBackend) sharesFamilies() bool { return true }
+
+func (b *routeNftBackend) addMarkRestoreRule(chain string, v6 bool, sourceIface string, mark uint32) {
+	args := []string{"add", "rule", "inet", routeNftTable, chain}
+	if sourceIface != "" {
+		args = append(args, "iifname", fmt.Sprintf("%q", sourceIface))
+	}
+	args = append(args,
+		"ct", "mark", "&", fmt.Sprintf("0x%x", hostRouteCTMark), "==", fmt.Sprintf("0x%x", hostRouteCTMark),
+		"ct", "mark", "&", fmt.Sprintf("0x%x", routeSetMarkMask), "==", fmt.Sprintf("0x%x", mark),
+		"ct", "direction", "original",
+		"ct", "state", "!=", "new")
+	args = append(args, routeNftSetMarkArgs(mark)...)
+	runLogged("routing: add mark restore rule "+chain, append([]string{"nft"}, args...)...)
+}
+
+func (b *routeNftBackend) addMarkFallbackRule(chain string, v6 bool, setName string, mark uint32, sourceIface string) {
+	sn := setName
+	args := []string{"add", "rule", "inet", routeNftTable, chain}
+	if sourceIface != "" {
+		args = append(args, "iifname", fmt.Sprintf("%q", sourceIface))
+	}
+	args = append(args, "meta", "mark", "&", fmt.Sprintf("0x%x", routeSetMarkMask), "==", "0x0")
+	if v6 {
+		args = append(args, "ip6", "daddr", "@"+sn)
+	} else {
+		args = append(args, "ip", "daddr", "@"+sn)
+	}
+	args = append(args, routeNftSetMarkArgs(mark)...)
+	runLogged("routing: add mark fallback rule "+chain, append([]string{"nft"}, args...)...)
+}
+
 func (b *routeNftBackend) addClaimedBypassRule(chain string) {
 	maskHex := fmt.Sprintf("0x%x", routeSetMarkMask)
 	runLogged("routing: add claimed bypass rule "+chain,
@@ -203,6 +244,7 @@ func (b *routeNftBackend) addMarkRule(chain string, v6 bool, setName string, mar
 		if sourceIface != "" {
 			args = append(args, "iifname", fmt.Sprintf("%q", sourceIface))
 		}
+		args = append(args, "ct", "state", "new")
 		if v6 {
 			args = append(args, "ip6", "daddr", "@"+sn)
 			args = append(args, routeNftSetMarkArgs(mark)...)
@@ -213,6 +255,8 @@ func (b *routeNftBackend) addMarkRule(chain string, v6 bool, setName string, mar
 		if tagHostConntrack {
 			args = append(args, "ct", "mark", "set", "ct", "mark", "or", fmt.Sprintf("0x%x", hostRouteCTMark))
 		}
+		args = append(args, "ct", "mark", "set", "ct", "mark", "&", fmt.Sprintf("0x%x", ^routeSetMarkMask),
+			"or", fmt.Sprintf("0x%x", mark))
 		runLogged("routing: add mark rule "+chain, append([]string{"nft"}, args...)...)
 	}
 	emit(setName)

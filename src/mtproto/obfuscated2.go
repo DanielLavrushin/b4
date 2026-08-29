@@ -782,7 +782,7 @@ func dialOneTCP(p transportPlan, mark uint, timeout time.Duration) (net.Conn, er
 			return sErr
 		}
 	}
-	conn, err := dialer.Dial("tcp", p.addr)
+	conn, err := dialer.Dial(dialNetwork(), p.addr)
 	if err != nil {
 		return nil, err
 	}

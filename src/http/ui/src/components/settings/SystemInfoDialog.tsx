@@ -69,7 +69,8 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
   };
 
   const flowOffloadText = (fw: Diagnostics["firewall"]) => {
-    if (fw.flow_offload === "off") return t("settings.SystemInfo.flowOffloadOff");
+    if (fw.flow_offload === "off")
+      return t("settings.SystemInfo.flowOffloadOff");
     const mode = fw.flow_offload === "hardware" ? "Hw" : "Sw";
     const guard = fw.flow_offload_guard ?? 0;
     if (guard <= 0) return t(`settings.SystemInfo.flowOffload${mode}`);
@@ -395,6 +396,23 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
                     row(
                       t("settings.SystemInfo.tunIpv6Dropped"),
                       data.engine.tun.ipv6_dropped.toLocaleString(),
+                    )}
+                  {data.engine.tun.capture === "ports" &&
+                    row(
+                      t("settings.SystemInfo.tunSteerConflicts"),
+                      data.engine.tun.steer_conflicts?.length
+                        ? boolChip(
+                            false,
+                            "",
+                            t("settings.SystemInfo.tunSteerConflictsValue", {
+                              list: data.engine.tun.steer_conflicts.join("; "),
+                            }),
+                          )
+                        : boolChip(
+                            true,
+                            t("settings.SystemInfo.tunSteerOk"),
+                            "",
+                          ),
                     )}
                 </>
               )}

@@ -81,10 +81,16 @@ func (w *Worker) Start() error {
 		MaxPacketLen: 0xffff,
 		MaxQueueLen:  4096,
 		Copymode:     nfqueue.NfQnlCopyPacket,
+		Flags:        nfqueue.NfQaCfgFlagFailOpen,
 	}
 	q, err := nfqueue.Open(&c)
 	if err != nil {
-		return err
+		c.Flags = 0
+		q, err = nfqueue.Open(&c)
+		if err != nil {
+			return err
+		}
+		log.Warnf("nfqueue %d: this kernel does not take the fail-open flag, so a backlog of more than %d packets is dropped rather than let through while b4 catches up", w.qnum, c.MaxQueueLen)
 	}
 	w.q = q
 

@@ -193,6 +193,7 @@ func (b *routeIptBackend) addMarkRule(chain string, v6 bool, setName string, mar
 	if sourceIface != "" {
 		args = append(args, "-i", sourceIface)
 	}
+	args = append(args, "-m", "conntrack", "--ctstate", "NEW")
 	args = append(args, "-m", "set", "--match-set", setName, "dst")
 
 	markArgs := append(append([]string{}, args...), routeIptSetMarkArgs(mark)...)
@@ -204,6 +205,72 @@ func (b *routeIptBackend) addMarkRule(chain string, v6 bool, setName string, mar
 			fmt.Sprintf("0x%x/0x%x", hostRouteCTMark, hostRouteCTMark))
 		runLogged("routing: add ct mark rule "+chain, append([]string{cmd}, ctArgs...)...)
 	}
+
+	saveArgs := append(append([]string{}, args...), routeIptSaveMarkArgs()...)
+	runLogged("routing: add mark save rule "+chain, append([]string{cmd}, saveArgs...)...)
+}
+
+func (b *routeIptBackend) addMarkFallbackRule(chain string, v6 bool, setName string, mark uint32, sourceIface string) {
+	cmd := b.iptFor(v6)
+	if !hasBinary(cmd) {
+		return
+	}
+	args := []string{"-w", "-t", "mangle", "-A", chain}
+	if sourceIface != "" {
+		args = append(args, "-i", sourceIface)
+	}
+	args = append(args,
+		"-m", "mark", "--mark", fmt.Sprintf("0x0/0x%x", routeSetMarkMask),
+		"-m", "set", "--match-set", setName, "dst")
+	args = append(args, routeIptSetMarkArgs(mark)...)
+	runLogged("routing: add mark fallback rule "+chain, append([]string{cmd}, args...)...)
+}
+
+func routeIptSaveMarkArgs() []string {
+	m := fmt.Sprintf("0x%x", routeSetMarkMask)
+	return []string{"-j", "CONNMARK", "--save-mark", "--nfmask", m, "--ctmask", m}
+}
+
+func (b *routeIptBackend) addEgressLoopGuard(chain, iface string, ipv4, ipv6 bool) bool {
+	if iface == "" {
+		return true
+	}
+	ok := true
+	for _, fam := range []struct {
+		cmd     string
+		enabled bool
+	}{{b.ipt4(), ipv4}, {b.ipt6(), ipv6}} {
+		if !fam.enabled || !hasBinary(fam.cmd) {
+			continue
+		}
+		if !runLogged("routing: add egress loop guard "+chain,
+			fam.cmd, "-w", "-t", "mangle", "-A", chain, "-i", iface, "-j", "RETURN") {
+			ok = false
+		}
+	}
+	return ok
+}
+
+func (b *routeIptBackend) sharesFamilies() bool { return false }
+
+func (b *routeIptBackend) addMarkRestoreRule(chain string, v6 bool, sourceIface string, mark uint32) {
+	cmd := b.iptFor(v6)
+	if !hasBinary(cmd) {
+		return
+	}
+	m := fmt.Sprintf("0x%x", routeSetMarkMask)
+	args := []string{"-w", "-t", "mangle", "-A", chain}
+	if sourceIface != "" {
+		args = append(args, "-i", sourceIface)
+	}
+	args = append(args,
+		"-m", "connmark", "--mark", fmt.Sprintf("0x%x/0x%x", hostRouteCTMark, hostRouteCTMark),
+		"-m", "connmark", "--mark", fmt.Sprintf("0x%x/0x%x", mark, routeSetMarkMask),
+		"-m", "conntrack", "--ctdir", "ORIGINAL",
+		"-m", "conntrack", "!", "--ctstate", "NEW",
+		"-j", "CONNMARK", "--restore-mark", "--nfmask", m, "--ctmask", m,
+	)
+	runLogged("routing: add mark restore rule "+chain, append([]string{cmd}, args...)...)
 }
 
 func routeIptInjectedMarkArgs(chain, setName string, mark, queueMark uint32, source []string) []string {
@@ -275,15 +342,12 @@ func (b *routeIptBackend) addMasqueradeRule(chain string, mark uint32, iface str
 		return
 	}
 	markHex := fmt.Sprintf("0x%x/0x%x", mark, routeSetMarkMask)
-	ctMask := fmt.Sprintf("0x%x/0x%x", hostRouteCTMark, hostRouteCTMark)
-
-	runLogged("routing: add masquerade rule",
-		cmd, "-w", "-t", "nat", "-A", chain,
-		"-m", "mark", "--mark", markHex,
-		"-m", "connmark", "--mark", ctMask,
-		"-o", iface,
-		"-j", "MASQUERADE",
-	)
+	args := []string{cmd, "-w", "-t", "nat", "-A", chain, "-m", "mark", "--mark", markHex}
+	if routeCTMarkIsHeld() {
+		args = append(args, "-m", "connmark", "--mark", fmt.Sprintf("0x%x/0x%x", hostRouteCTMark, hostRouteCTMark))
+	}
+	args = append(args, "-o", iface, "-j", "MASQUERADE")
+	runLogged("routing: add masquerade rule", args...)
 }
 
 func (b *routeIptBackend) addSNATRule(chain, setName, iface, srcIP string, mark uint32, v6 bool) {
@@ -291,17 +355,15 @@ func (b *routeIptBackend) addSNATRule(chain, setName, iface, srcIP string, mark 
 	if !hasBinary(cmd) {
 		return
 	}
-	ctMask := fmt.Sprintf("0x%x/0x%x", hostRouteCTMark, hostRouteCTMark)
 	markHex := fmt.Sprintf("0x%x/0x%x", mark, routeSetMarkMask)
-
-	runLogged("routing: add snat rule",
-		cmd, "-w", "-t", "nat", "-A", chain,
+	args := []string{cmd, "-w", "-t", "nat", "-A", chain,
 		"-m", "mark", "--mark", markHex,
-		"-m", "set", "--match-set", setName, "dst",
-		"-m", "connmark", "--mark", ctMask,
-		"-o", iface,
-		"-j", "SNAT", "--to-source", srcIP,
-	)
+		"-m", "set", "--match-set", setName, "dst"}
+	if routeCTMarkIsHeld() {
+		args = append(args, "-m", "connmark", "--mark", fmt.Sprintf("0x%x/0x%x", hostRouteCTMark, hostRouteCTMark))
+	}
+	args = append(args, "-o", iface, "-j", "SNAT", "--to-source", srcIP)
+	runLogged("routing: add snat rule", args...)
 }
 
 func (b *routeIptBackend) flushIPSet(name string) {
@@ -325,10 +387,9 @@ func (b *routeIptBackend) clearAll() {
 				continue
 			}
 			for _, parent := range iptBuiltinParents(table) {
-				nums := iptJumpLineNumbers(cmd, table, parent, func(t string) bool {
+				iptDeleteMatchingJumps(cmd, table, parent, "routing: cleanup leftover rule", func(t string) bool {
 					return strings.HasPrefix(t, "b4r_")
 				})
-				iptDeleteJumpLines(cmd, table, parent, "routing: cleanup leftover rule", nums)
 			}
 			out2, _ := run(cmd, "-w", "-t", table, "-L", "-n")
 			for _, line := range strings.Split(out2, "\n") {

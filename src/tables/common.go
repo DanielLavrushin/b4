@@ -2,6 +2,7 @@ package tables
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
@@ -29,6 +32,8 @@ func AddRules(cfg *config.Config) error {
 		return nil
 	}
 
+	IPTablesLockBudgetReset()
+
 	backend := detectFirewallBackend(cfg)
 	log.Tracef("Detected firewall backend: %s", backend)
 
@@ -46,6 +51,8 @@ func ClearRules(cfg *config.Config) error {
 	if cfg.System.Tables.SkipSetup {
 		return nil
 	}
+
+	IPTablesLockBudgetReset()
 
 	backend := detectFirewallBackend(cfg)
 
@@ -183,15 +190,63 @@ func WaitArgs(bin string) []string {
 	return nil
 }
 
-func run(args ...string) (string, error) {
-	if len(args) > 1 && isIPTablesBinary(args[0]) && !iptablesSupportsWait(args[0]) {
-		args = dropWaitFlag(args)
+var iptLockRetries = 8
+
+var iptLockBackoff = func(attempt int) time.Duration {
+	return time.Duration(25<<uint(attempt)) * time.Millisecond
+}
+
+var iptLockBudget = 15 * time.Second
+
+var iptLockSpent atomic.Int64
+
+// IPTablesLockBudgetReset starts a fresh waiting budget for one pass over the
+// rules. Every command may retry, so without a shared ceiling a pass over a
+// contended firewall waits per command and holds its lock for minutes.
+func IPTablesLockBudgetReset() {
+	iptLockSpent.Store(0)
+}
+
+func iptLockBudgetLeft() time.Duration {
+	left := int64(iptLockBudget) - iptLockSpent.Load()
+	if left <= 0 {
+		return 0
 	}
+	return time.Duration(left)
+}
+
+func isXtablesLockBusy(output string, err error) bool {
+	if err == nil {
+		return false
+	}
+	o := strings.ToLower(output)
+	return strings.Contains(o, "resource temporarily unavailable") ||
+		strings.Contains(o, "xtables lock") ||
+		strings.Contains(o, "another app is currently holding the xtables lock")
+}
+
+// iptCommandTimeout bounds a single external command. Without it `iptables -w`
+// waits for the xtables lock forever, inside the call, so it never reaches the
+// backoff the pass budget is enforced in: one held lock stops the routing pass and
+// everything queued behind its own mutex for as long as the other program likes.
+var iptCommandTimeout = 15 * time.Second
+
+func runOnce(args []string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), iptCommandTimeout)
+	defer cancel()
+
 	var out bytes.Buffer
-	cmd := exec.Command(args[0], args[1:]...)
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Stdout = &out
 	cmd.Stderr = &out
+	// Killing the command is not enough on its own: a child that inherited the
+	// output pipe keeps it open, and Wait blocks on the pipe rather than on the
+	// process. WaitDelay closes it and lets the call return.
+	cmd.WaitDelay = time.Second
 	err := cmd.Run()
+	if ctx.Err() != nil {
+		return out.String(), fmt.Errorf("command [%s] gave up after %v: %w", strings.Join(args, " "), iptCommandTimeout, ctx.Err())
+	}
 	if err != nil {
 		output := strings.TrimSpace(out.String())
 		cmdStr := strings.Join(args, " ")
@@ -202,6 +257,58 @@ func run(args ...string) (string, error) {
 	}
 	return out.String(), nil
 }
+
+func iptDeletesByPosition(args []string) bool {
+	for i := 0; i+2 < len(args); i++ {
+		if args[i] != "-D" {
+			continue
+		}
+		if _, err := strconv.Atoi(args[i+2]); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func run(args ...string) (string, error) {
+	if len(args) > 1 && isIPTablesBinary(args[0]) && !iptablesSupportsWait(args[0]) {
+		args = dropWaitFlag(args)
+	}
+
+	out, err := runOnce(args)
+	if err == nil || len(args) == 0 || !isIPTablesBinary(args[0]) {
+		return out, err
+	}
+
+	if isXtablesLockBusy(out, err) && iptDeletesByPosition(args) {
+		log.Warnf("IPTABLES[%s]: the table changed while b4 was reading it, so the rule numbers it had are stale and %s was not retried; retrying it would delete whatever rule now sits at that position, which on this router belongs to the firmware", args[0], strings.Join(args[1:], " "))
+		return out, err
+	}
+
+	for attempt := 0; attempt < iptLockRetries && isXtablesLockBusy(out, err); attempt++ {
+		wait := iptLockBackoff(attempt)
+		if left := iptLockBudgetLeft(); left < wait {
+			if left <= 0 {
+				log.Warnf("IPTABLES[%s]: another program has held this pass up for %v already, so b4 stopped waiting and this rule was not installed: %s", args[0], iptLockBudget, strings.Join(args[1:], " "))
+				break
+			}
+			wait = left
+		}
+		time.Sleep(wait)
+		iptLockSpent.Add(int64(wait))
+		out, err = runOnce(args)
+		if err == nil {
+			log.Warnf("IPTABLES[%s]: another program was rewriting the same table; the command went through after %d retries. The '-w' flag only serialises b4 against programs that take the same lock, and the firmware's own scripts do not", args[0], attempt+1)
+			return out, nil
+		}
+	}
+	if isXtablesLockBusy(out, err) {
+		log.Errorf("IPTABLES[%s]: another program held the firewall lock for the whole retry budget, so this rule was never installed and b4's rule set is incomplete: %v", args[0], err)
+	}
+	return out, err
+}
+
+var setSysctl = setSysctlOrProc
 
 func setSysctlOrProc(name, val string) {
 	_, _ = run("sh", "-c", "sysctl -w "+name+"="+val+" || echo "+val+" > /proc/sys/"+strings.ReplaceAll(name, ".", "/"))
@@ -288,20 +395,22 @@ func runStdin(stdin string, args ...string) error {
 
 var runLogged = runLoggedExec
 
-func runLoggedExec(op string, args ...string) {
+func runLoggedExec(op string, args ...string) bool {
 	out, err := run(args...)
 	if err != nil {
 		msg := strings.TrimSpace(out)
 		if strings.Contains(msg, "File exists") || strings.Contains(msg, "already exists") {
-			return
+			return true
 		}
 		if strings.Contains(msg, "No such file or directory") || strings.Contains(msg, "FIB table does not exist") ||
 			strings.Contains(msg, "The set with the given name does not exist") || strings.Contains(msg, "No such process") {
 			log.Tracef("%s: %s | cmd=%s", op, msg, strings.Join(args, " "))
-			return
+			return false
 		}
 		log.Warnf("%s failed: %v | cmd=%s | out=%s", op, err, strings.Join(args, " "), strings.TrimSpace(out))
+		return false
 	}
+	return true
 }
 
 func runEnsure(args ...string) error {

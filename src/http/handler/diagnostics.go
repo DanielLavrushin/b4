@@ -375,14 +375,14 @@ func collectIptablesRuleGroups(backend string) []DiagRuleGroup {
 
 	var groups []DiagRuleGroup
 
-	for _, chain := range []string{"B4", "B4_PREROUTING"} {
-		out, err := exec.Command(bin, append(append([]string{}, wait...), "-t", "mangle", "-S", chain)...).CombinedOutput()
+	for _, c := range diagB4Chains {
+		out, err := exec.Command(bin, append(append([]string{}, wait...), "-t", c.table, "-S", c.chain)...).CombinedOutput()
 		if err != nil {
 			continue
 		}
 		if rules := nonEmptyLines(string(out)); len(rules) > 0 {
 			groups = append(groups, DiagRuleGroup{
-				Title: fmt.Sprintf("iptables mangle %s", chain),
+				Title: fmt.Sprintf("iptables %s %s", c.table, c.chain),
 				Rules: rules,
 			})
 		}
@@ -412,16 +412,45 @@ func collectIptablesRuleGroups(backend string) []DiagRuleGroup {
 	return groups
 }
 
+type diagChainRef struct {
+	table string
+	chain string
+}
+
+var diagB4Chains = []diagChainRef{
+	{"mangle", "B4"},
+	{"mangle", "B4_PREROUTING"},
+	{"mangle", "B4_TUN"},
+	{"mangle", "B4_TUN_GATE"},
+	{"mangle", "B4_DISCOVERY"},
+	{"nat", "B4_MASQ"},
+}
+
+func diagChainAlreadyDumped(l string) bool {
+	for _, c := range diagB4Chains {
+		if strings.HasPrefix(l, "-N "+c.chain+" ") || l == "-N "+c.chain ||
+			strings.HasPrefix(l, "-A "+c.chain+" ") {
+			return true
+		}
+	}
+	return false
+}
+
 func isB4IptablesRule(l string) bool {
-	if strings.HasPrefix(l, "-N B4") || strings.HasPrefix(l, "-A B4") {
+	if diagChainAlreadyDumped(l) {
 		return false
 	}
 	clientMark := fmt.Sprintf("0x%x/0x%x", engine.ClientMark, engine.ClientMark)
+	reinjectMark := fmt.Sprintf("0x%x/0x%x", engine.ReinjectMarkBit, engine.ReinjectMarkBit)
+	steerMark := fmt.Sprintf("0x%x/0x%x", engine.TunSteerMark, engine.TunSteerMark)
 	return strings.Contains(l, "b4_") ||
+		strings.Contains(l, "b4r_") ||
 		strings.Contains(l, "b4tun") ||
 		strings.Contains(l, "NFQUEUE") ||
 		strings.Contains(l, "-j B4") ||
-		strings.Contains(l, clientMark)
+		strings.Contains(l, clientMark) ||
+		strings.Contains(l, reinjectMark) ||
+		strings.Contains(l, steerMark)
 }
 
 func nonEmptyLines(s string) []string {
@@ -463,6 +492,7 @@ func collectTUNInfo(cfg *config.Config) *DiagTUN {
 	if globalTUNEngine != nil {
 		di := globalTUNEngine.DiagInfo()
 		t.Running = true
+		t.SteerConflicts = di.SteerConflicts
 		if di.DeviceName != "" {
 			t.DeviceName = di.DeviceName
 		}

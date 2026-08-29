@@ -290,8 +290,29 @@ func proxyMarkAndPort(set *config.SetConfig) (uint32, int) {
 	return mark, port
 }
 
+var (
+	proxyTableMu       sync.Mutex
+	proxyTableChosen   int
+	proxyTableResolved bool
+)
+
 func proxyTable() int {
-	return proxyLocalDeliveryTable
+	proxyTableMu.Lock()
+	defer proxyTableMu.Unlock()
+	if !proxyTableResolved {
+		if picked := routePickProxyTable(); picked > 0 {
+			proxyTableChosen = picked
+			proxyTableResolved = true
+		}
+	}
+	return proxyTableChosen
+}
+
+func proxyTableForget() {
+	proxyTableMu.Lock()
+	proxyTableChosen = 0
+	proxyTableResolved = false
+	proxyTableMu.Unlock()
 }
 
 func proxyActiveCount() int {
@@ -305,6 +326,9 @@ func proxyActiveCount() int {
 }
 
 func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState, sources []string) error {
+	if st.table <= 0 {
+		return fmt.Errorf("no free routing table for transparent proxying")
+	}
 	if be.name() == backendNFTables {
 		proxyNftPreflight()
 		deleteNftRulesContaining(routeNftOutput, "@"+st.setV4)
@@ -558,11 +582,12 @@ func addQUICRejectRuleIpt(v6 bool, chain, setName string, sources []string, lega
 func routeCleanupProxyRule(be routeBackend, st routeState) {
 	tableStr := fmt.Sprintf("%d", st.table)
 
-	if hasBinary("ip") {
+	if hasBinary("ip") && st.table > 0 {
 		routeDelRuleAllForms(st.mark, tableStr)
 		if proxyActiveCount() <= 1 {
 			runLogged("routing: delete proxy local route v4", "ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", tableStr)
 			runLogged("routing: delete proxy local route v6", "ip", "-6", "route", "del", "local", "::/0", "dev", "lo", "table", tableStr)
+			proxyTableForget()
 		}
 	}
 

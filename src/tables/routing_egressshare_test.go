@@ -18,8 +18,9 @@ func captureEgressRelease(t *testing.T, cache map[string]routeState, owned map[s
 	})
 
 	var ran []string
-	runLogged = func(op string, args ...string) {
+	runLogged = func(op string, args ...string) bool {
 		ran = append(ran, strings.Join(args, " "))
+		return true
 	}
 
 	routeRuleCache = cache

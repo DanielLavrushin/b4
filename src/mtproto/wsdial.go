@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/daniellavrushin/b4/log"
 )
 
 const (
@@ -308,6 +310,9 @@ var wsDialPort = "443"
 // address is still a route, and dropping the last one leaves none.
 func wsDialEndpoints(ctx context.Context, host, sni string) []string {
 	if ip := net.ParseIP(host); ip != nil {
+		if !dialFamilyAllows(ip) {
+			return nil
+		}
 		return []string{host}
 	}
 	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
@@ -316,13 +321,22 @@ func wsDialEndpoints(ctx context.Context, host, sni string) []string {
 	}
 	fresh := make([]string, 0, len(addrs))
 	cooling := make([]string, 0, len(addrs))
+	skippedV6 := 0
 	for _, a := range addrs {
+		if !dialFamilyAllows(a.IP) {
+			skippedV6++
+			continue
+		}
 		s := a.IP.String()
 		if wsEndpointCooling(s, sni) {
 			cooling = append(cooling, s)
 			continue
 		}
 		fresh = append(fresh, s)
+	}
+	if len(fresh) == 0 && len(cooling) == 0 {
+		log.Tracef("[tg-ws] %s resolves to %d IPv6 address(es) and this router has no IPv6 route, so there is nothing to dial", host, skippedV6)
+		return nil
 	}
 	return append(fresh, cooling...)
 }
@@ -355,6 +369,9 @@ func dialWS(host, sni, path string, timeout time.Duration, mark uint) (net.Conn,
 	eps := wsDialEndpoints(rctx, host, sni)
 	rcancel()
 
+	if len(eps) == 0 {
+		return nil, fmt.Errorf("tcp dial %s: no usable address (IPv6 is off and the name has no IPv4 address)", host)
+	}
 	attempts := len(eps)
 	if attempts > wsDialMaxEndpoints {
 		attempts = wsDialMaxEndpoints
@@ -418,7 +435,7 @@ func dialWSEndpoint(host, sni, path string, timeout time.Duration, mark uint) (n
 			return sErr
 		}
 	}
-	raw, err := dialer.Dial("tcp", net.JoinHostPort(host, wsDialPort))
+	raw, err := dialer.Dial(dialNetwork(), net.JoinHostPort(host, wsDialPort))
 	if err != nil {
 		return nil, fmt.Errorf("tcp dial %s: %w", host, err)
 	}

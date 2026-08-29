@@ -69,8 +69,12 @@ func TestSteerSpecsMultiport(t *testing.T) {
 	if !strings.Contains(all, "-p udp -m multiport --dports 443") || !strings.Contains(all, "--connbytes 0:8") {
 		t.Errorf("missing udp multiport/connbytes:\n%s", all)
 	}
-	if !strings.Contains(all, "-p udp --dport 53 -j MARK --set-xmark 0x40000000/0x40000000") {
-		t.Errorf("missing DNS steer rule:\n%s", all)
+	dns := make([]string, 0, 2)
+	for _, spec := range r.dnsSteerSpecs() {
+		dns = append(dns, strings.Join(spec, " "))
+	}
+	if !strings.Contains(strings.Join(dns, "\n"), "-p udp --dport 53 -j MARK --set-xmark 0x40000000/0x40000000") {
+		t.Errorf("missing DNS steer rule:\n%s", strings.Join(dns, "\n"))
 	}
 	for _, s := range joined {
 		if !strings.HasSuffix(s, "-j MARK --set-xmark 0x40000000/0x40000000") {

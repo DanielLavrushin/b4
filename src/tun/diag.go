@@ -17,6 +17,7 @@ type DiagInfo struct {
 	PacketsForwarded uint64
 	ForwardErrors    uint64
 	IPv6Dropped      uint64
+	SteerConflicts   []string
 }
 
 func (e *Engine) DiagInfo() DiagInfo {
@@ -39,6 +40,9 @@ func (e *Engine) DiagInfo() DiagInfo {
 		di.Mark = r.mark
 		di.ReplyCapture = r.replyCapture
 		di.SkipTables = r.skipTables
+		for _, c := range r.conflicts {
+			di.SteerConflicts = append(di.SteerConflicts, c.String())
+		}
 		r.mu.Unlock()
 	}
 

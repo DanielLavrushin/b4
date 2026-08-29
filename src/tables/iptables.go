@@ -248,18 +248,25 @@ func (s SysctlSetting) Apply() {
 		snap[s.Name] = getSysctlOrProc(s.Name)
 		saveSysctlSnapshot(snap)
 	}
-	setSysctlOrProc(s.Name, s.Desired)
+	setSysctl(s.Name, s.Desired)
+	if s.Name == conntrackLiberalSysctl {
+		warnIfStrictConntrackBites(snap[s.Name])
+	}
 }
 
 func (s SysctlSetting) RevertBack() {
+	if s.Name == conntrackLiberalSysctl && conntrackStrictWouldBite() {
+		log.Warnf("TABLES: b4 is leaving %s at 1 rather than putting this router's 0 back: this firewall drops what strict TCP window tracking marks invalid, so restoring it would stop a large download finishing. A reboot resets it and b4 sets it again on the way up", conntrackLiberalSysctl)
+		return
+	}
 	snap := loadSysctlSnapshot()
 	if v, ok := snap[s.Name]; ok && v != "" {
-		setSysctlOrProc(s.Name, v)
+		setSysctl(s.Name, v)
 		delete(snap, s.Name)
 		saveSysctlSnapshot(snap)
 		return
 	}
-	setSysctlOrProc(s.Name, s.Revert)
+	setSysctl(s.Name, s.Revert)
 }
 
 type IPSet struct {

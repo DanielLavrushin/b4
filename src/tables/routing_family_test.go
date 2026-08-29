@@ -41,7 +41,7 @@ func familyResetGlobals(t *testing.T) {
 	routeEngine = nil
 	routeRuleCache = make(map[string]routeState)
 	routeIfaceAuto = make(map[string]routeState)
-	runLogged = func(op string, args ...string) {}
+	runLogged = func(op string, args ...string) bool { return true }
 	routeDelRuleLoop = func(ipv6 bool, mark, table string) {}
 }
 
