@@ -231,3 +231,24 @@ func TestRestoreIsScopedToEverySourceOfTheSet(t *testing.T) {
 			restores, be.chainOps[st.chainPre])
 	}
 }
+
+func TestTurningDomainOnlyOffRebuildsTheSet(t *testing.T) {
+	cfg := familyTestConfig(true, false)
+	set := familyTestSet()
+
+	set.Targets.DomainOnly = true
+	on := buildRouteState(cfg, set)
+
+	set.Targets.DomainOnly = false
+	off := buildRouteState(cfg, set)
+
+	if routeStateEqual(on, off) {
+		t.Fatal("domain-only matching decides whether b4 puts a domain's addresses into the set's ipset. " +
+			"If toggling it reads as no change, the set keeps its cached state, its rules are never rebuilt " +
+			"and the pass that resolves the set's domains never runs, so the ipset stays empty and nothing is " +
+			"routed until the service is restarted or a client's DNS cache happens to expire")
+	}
+	if on.domainOnly == off.domainOnly {
+		t.Fatal("the route state must carry the flag it is compared on")
+	}
+}

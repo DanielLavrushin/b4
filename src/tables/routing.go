@@ -29,6 +29,7 @@ const SelfDialMark = config.SelfDialMark
 
 type routeState struct {
 	setID       string
+	domainOnly  bool
 	mode        string
 	mark        uint32
 	table       int
@@ -374,6 +375,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 
 	st := routeState{
 		setID:      set.Id,
+		domainOnly: set.Targets.DomainOnly,
 		mode:       mode,
 		sourcesKey: sourcesKey,
 		deviceKey:  routeSetDeviceGate(cfg, set).key(),
@@ -408,6 +410,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 
 func routeStateEqual(a, b routeState) bool {
 	return a.mode == b.mode &&
+		a.domainOnly == b.domainOnly &&
 		a.mark == b.mark &&
 		a.table == b.table &&
 		a.iface == b.iface &&
