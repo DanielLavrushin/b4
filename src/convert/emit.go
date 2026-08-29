@@ -3,6 +3,7 @@ package convert
 import (
 	"fmt"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -128,6 +129,7 @@ func emit(prog *Program, tokens []Token, notes *noteSet, opts emitOpts) []config
 	}
 
 	chainEscalation(sets, prog, ti, notes, opts.ProfileModel)
+	dropIdenticalEscalations(sets, notes)
 	for _, prof := range prog.Profiles {
 		noteEmptyProfile(prof, notes)
 	}
@@ -381,12 +383,31 @@ func emitSplits(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *note
 	switch {
 	case segmenting == 0 && len(tlsrec) > 0:
 		set.Fragmentation.Strategy = "tls"
+		tok := tokenAt(tokens(ti, prof.Index, "tlsrec"), 0)
+		if tlsrec[0].Pos.Anchor != AnchorAbs {
+			set.Fragmentation.MiddleSNI = true
+			set.Fragmentation.TLSRecordPosition = 0
+			noteSplit(notes, tok, StatusApproximated, "tlsRecAnchorApproximated",
+				"fragmentation.strategy=tls", "fragmentation.middle_sni=true")
+			break
+		}
 		pos := clamp(absOffset(tlsrec[0].Pos, 1), 1, maxTLSRecPosition)
+		set.Fragmentation.MiddleSNI = false
 		set.Fragmentation.TLSRecordPosition = pos
-		noteSplit(notes, tokenAt(tokens(ti, prof.Index, "tlsrec"), 0), StatusMapped, "tlsRecMapped",
+		noteSplit(notes, tok, StatusMapped, "tlsRecMapped",
 			"fragmentation.strategy=tls", "fragmentation.tlsrec_pos="+strconv.Itoa(pos))
 	case segmenting == 0:
 		set.Fragmentation.Strategy = config.ConfigNone
+		if len(prof.Splits) > 0 {
+			notes.extra = append(notes.extra, Note{
+				Token:     splitTokenList(prof.Splits, ti, prof.Index),
+				Synthetic: true,
+				Profile:   prof.Index,
+				Status:    StatusApproximated,
+				Reason:    "fakeSplitBoundaryLost",
+				Fields:    []string{"fragmentation.strategy=none"},
+			})
+		}
 	case len(disoob) > 0:
 		set.Fragmentation.Strategy = "disorder"
 		applySplitPositions(set, append(append(plain, disorder...), disoob...), notes, ti, prof)
@@ -395,14 +416,31 @@ func emitSplits(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *note
 		})
 	case len(oob) > 0 && len(plain) == 0 && len(disorder) == 0:
 		set.Fragmentation.Strategy = "oob"
-		pos := clamp(absOffset(oob[0].Pos, 1), 1, maxOOBPosition)
-		set.Fragmentation.OOBPosition = pos
 		if opts.Defaults.OOBByte > 0 {
 			set.Fragmentation.OOBChar = byte(opts.Defaults.OOBByte)
 		}
+		anchored := oob[0].Pos.Anchor != AnchorAbs
+		raw := absOffset(oob[0].Pos, 1)
+		pos := clamp(raw, 1, maxOOBPosition)
+		set.Fragmentation.MiddleSNI = anchored
+		if anchored {
+			set.Fragmentation.OOBPosition = 0
+		} else {
+			set.Fragmentation.OOBPosition = pos
+		}
 		ti.each(prof.Index, "oob", func(t Token) {
-			notes.set(t, StatusMapped, "oobMapped",
-				"fragmentation.strategy=oob", "fragmentation.oob_position="+strconv.Itoa(pos))
+			switch {
+			case anchored:
+				notes.set(t, StatusApproximated, "oobAnchorApproximated",
+					"fragmentation.strategy=oob", "fragmentation.middle_sni=true")
+			case raw > maxOOBPosition:
+				n := notes.set(t, StatusApproximated, "positionClamped",
+					"fragmentation.strategy=oob", "fragmentation.oob_position="+strconv.Itoa(pos))
+				n.Params = map[string]any{"position": describePos(oob[0].Pos)}
+			default:
+				notes.set(t, StatusMapped, "oobMapped",
+					"fragmentation.strategy=oob", "fragmentation.oob_position="+strconv.Itoa(pos))
+			}
 		})
 	case len(plain) > 0 && len(disorder) > 0:
 		set.Fragmentation.Strategy = "combo"
@@ -426,9 +464,16 @@ func emitSplits(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *note
 		})
 	}
 	if prof.OOBSet {
-		set.Fragmentation.OOBChar = prof.OOBByte
-		if tok, ok := ti.first(prof.Index, "oob_data"); ok {
-			notes.set(tok, StatusMapped, "oobByteMapped", "fragmentation.oob_char")
+		tok, hasTok := ti.first(prof.Index, "oob_data")
+		if set.Fragmentation.Strategy != "oob" {
+			if hasTok {
+				notes.set(tok, StatusDegenerate, "requiresOOB")
+			}
+		} else {
+			set.Fragmentation.OOBChar = prof.OOBByte
+			if hasTok {
+				notes.set(tok, StatusMapped, "oobByteMapped", "fragmentation.oob_char")
+			}
 		}
 	}
 }
@@ -439,7 +484,7 @@ func applySplitPositions(set *config.SetConfig, ops []SplitOp, notes *noteSet, t
 
 	middle := false
 	firstByte := false
-	fixed := 0
+	fixed, fixedMax := 0, 0
 
 	for _, op := range ops {
 		switch op.Pos.Anchor {
@@ -448,8 +493,13 @@ func applySplitPositions(set *config.SetConfig, ops []SplitOp, notes *noteSet, t
 		default:
 			if op.Pos.Offset == 1 {
 				firstByte = true
-			} else if op.Pos.Offset > 1 && fixed == 0 {
-				fixed = op.Pos.Offset
+			} else if op.Pos.Offset > 1 {
+				if fixed == 0 || op.Pos.Offset < fixed {
+					fixed = op.Pos.Offset
+				}
+				if op.Pos.Offset > fixedMax {
+					fixedMax = op.Pos.Offset
+				}
 			} else if op.Pos.Offset < 0 {
 				middle = true
 			}
@@ -460,12 +510,15 @@ func applySplitPositions(set *config.SetConfig, ops []SplitOp, notes *noteSet, t
 	}
 
 	set.Fragmentation.MiddleSNI = middle
+	set.Fragmentation.SNIPosition = 0
+	set.Fragmentation.SNIPositionMax = 0
 	if honoursFixed && fixed > 0 {
 		set.Fragmentation.SNIPosition = clamp(fixed, 1, maxSNIPosition)
+		if hi := clamp(fixedMax, 1, maxSNIPosition); hi > set.Fragmentation.SNIPosition {
+			set.Fragmentation.SNIPositionMax = hi
+		}
 	} else if honoursFixed && firstByte {
 		set.Fragmentation.SNIPosition = 1
-	} else {
-		set.Fragmentation.SNIPosition = 0
 	}
 	if strategy == "combo" {
 		set.Fragmentation.Combo.FirstByteSplit = firstByte
@@ -474,6 +527,11 @@ func applySplitPositions(set *config.SetConfig, ops []SplitOp, notes *noteSet, t
 		if !set.Fragmentation.Combo.FirstByteSplit && !set.Fragmentation.Combo.ExtensionSplit && !middle {
 			set.Fragmentation.MiddleSNI = true
 		}
+	}
+	comboPoint := strategy == "combo" &&
+		(set.Fragmentation.Combo.FirstByteSplit || set.Fragmentation.Combo.ExtensionSplit)
+	if !set.Fragmentation.MiddleSNI && set.Fragmentation.SNIPosition == 0 && !comboPoint {
+		set.Fragmentation.MiddleSNI = true
 	}
 
 	if len(ops) > 3 {
@@ -488,10 +546,13 @@ func applySplitPositions(set *config.SetConfig, ops []SplitOp, notes *noteSet, t
 		})
 	}
 
-	for _, op := range ops {
+	collapsed := len(ops) > 3
+	for i, op := range ops {
 		tok := tokenByIndex(ti, prof.Index, op.Token)
 		st, reason, fields := describeSplitMapping(op, strategy, honoursFixed, set)
+		fields = resolveSplitFields(fields, set)
 		n := notes.set(tok, st, reason, fields...)
+		n.Synthetic = collapsed && i > 0
 		n.Params = map[string]any{"position": describePos(op.Pos)}
 
 		if op.Pos.Repeats > 1 {
@@ -507,6 +568,23 @@ func applySplitPositions(set *config.SetConfig, ops []SplitOp, notes *noteSet, t
 			}
 		}
 	}
+}
+
+func resolveSplitFields(fields []string, set *config.SetConfig) []string {
+	out := fields[:0:0]
+	for _, f := range fields {
+		if f != "fragmentation.middle_sni=true" {
+			out = append(out, f)
+			continue
+		}
+		if set.Fragmentation.MiddleSNI {
+			out = append(out, f)
+		}
+	}
+	if set.Fragmentation.SNIPositionMax > set.Fragmentation.SNIPosition {
+		out = append(out, "fragmentation.sni_position_max="+strconv.Itoa(set.Fragmentation.SNIPositionMax))
+	}
+	return out
 }
 
 func describeSplitMapping(op SplitOp, strategy string, honoursFixed bool, set *config.SetConfig) (Status, string, []string) {
@@ -545,6 +623,11 @@ func describeSplitMapping(op SplitOp, strategy string, honoursFixed bool, set *c
 		return StatusApproximated, "fixedPositionIgnored", fields
 	}
 	if set.Fragmentation.SNIPosition != op.Pos.Offset {
+		if set.Fragmentation.SNIPositionMax > set.Fragmentation.SNIPosition &&
+			op.Pos.Offset >= set.Fragmentation.SNIPosition && op.Pos.Offset <= set.Fragmentation.SNIPositionMax {
+			fields = append(fields, "fragmentation.sni_position="+strconv.Itoa(set.Fragmentation.SNIPosition))
+			return StatusApproximated, "positionInRange", fields
+		}
 		if op.Pos.Offset > maxSNIPosition && set.Fragmentation.SNIPosition == maxSNIPosition {
 			fields = append(fields, "fragmentation.sni_position="+strconv.Itoa(maxSNIPosition))
 			return StatusApproximated, "positionClamped", fields
@@ -614,7 +697,7 @@ func emitFake(set *config.SetConfig, prog *Program, prof *Profile, ti tokenIndex
 		set.Faking.SNIType = config.FakePayloadZero
 	case sni != "":
 		host := sanitizeHost(sni)
-		tok, hasTok := ti.first(prof.Index, "fake_sni")
+		tok, hasTok := ti.first(prof.Index, "fake_sni", "tls_sni")
 		if host == "" {
 			if hasTok {
 				notes.set(tok, StatusInvalid, "fakeSNINotAHost")
@@ -772,6 +855,37 @@ func chainEscalation(sets []config.SetConfig, prog *Program, ti tokenIndex, note
 	}
 }
 
+func dropIdenticalEscalations(sets []config.SetConfig, notes *noteSet) {
+	byID := map[string]int{}
+	for i := range sets {
+		byID[sets[i].Id] = i
+	}
+	for i := range sets {
+		to := sets[i].Escalate.To
+		if to == "" {
+			continue
+		}
+		j, ok := byID[to]
+		if !ok {
+			continue
+		}
+		if !reflect.DeepEqual(sets[i].Fragmentation, sets[j].Fragmentation) ||
+			!reflect.DeepEqual(sets[i].Faking, sets[j].Faking) {
+			continue
+		}
+		sets[i].Escalate.To = ""
+		notes.extra = append(notes.extra, Note{
+			Token:     sets[j].Name,
+			Synthetic: true,
+			Profile:   j,
+			Status:    StatusDegenerate,
+			Reason:    "escalationTargetIdentical",
+			Fields:    []string{"escalate.to="},
+			Params:    map[string]any{"other": sets[i].Name},
+		})
+	}
+}
+
 func finalize(sets []config.SetConfig, prog *Program, notes *noteSet) {
 	escalationTarget := map[string]bool{}
 	for _, s := range sets {
@@ -784,6 +898,16 @@ func finalize(sets []config.SetConfig, prog *Program, notes *noteSet) {
 		hasTargets := len(s.Targets.SNIDomains) > 0 || len(s.Targets.IPs) > 0
 		carries := prog.Profiles[i].carriesStrategy()
 		if escalationTarget[s.Id] && !hasTargets {
+			if s.TCP.DPortFilter != "" || s.UDP.DPortFilter != "" {
+				notes.extra = append(notes.extra, Note{
+					Token:     s.Name,
+					Synthetic: true,
+					Profile:   i,
+					Status:    StatusUnsupported,
+					Reason:    "portFilterDroppedOnFallback",
+					Fields:    []string{"tcp.dport_filter=", "udp.dport_filter="},
+				})
+			}
 			s.TCP.DPortFilter = ""
 			s.UDP.DPortFilter = ""
 			s.Enabled = true
@@ -898,7 +1022,7 @@ func abs(v int) int {
 }
 
 var fakeOnlyKeys = []string{
-	"ttl", "md5sig", "fake_data", "fake_sni", "fake_tls_mod",
+	"ttl", "md5sig", "fake_data", "fake_sni", "tls_sni", "fake_tls_mod",
 	"fake_offset", "fake_offset_pos", "ip_opt",
 	"fooling", "desync_ttl", "repeats", "fake_tls", "badseq_inc", "ts_inc",
 }

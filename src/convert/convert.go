@@ -303,6 +303,11 @@ func buildWarnings(spec *Spec, argv []string, prog *Program, sets []config.SetCo
 			"count": shadowed, "tool": spec.Label,
 		}})
 	}
+	if catchAll := countCatchAll(prog, sets); catchAll > 0 && enabled > 0 {
+		out = append(out, Warning{Code: "catchAllProfile", Params: map[string]any{
+			"count": catchAll, "tool": spec.Label,
+		}})
+	}
 	if strategyless := countStrategyless(prog, sets); strategyless > 0 {
 		out = append(out, Warning{Code: "setsWithoutStrategy", Params: map[string]any{"count": strategyless}})
 	}
@@ -313,6 +318,23 @@ func buildWarnings(spec *Spec, argv []string, prog *Program, sets []config.SetCo
 		out = append(out, Warning{Code: "profilesAsSets", Params: map[string]any{"count": len(prog.Profiles)}})
 	}
 	return out
+}
+
+func countCatchAll(prog *Program, sets []config.SetConfig) int {
+	n := 0
+	for i := range sets {
+		if i >= len(prog.Profiles) {
+			break
+		}
+		p := prog.Profiles[i]
+		if !p.IsEntry() || p.hasOwnTargets() {
+			continue
+		}
+		if len(sets[i].Targets.SNIDomains) == 0 && len(sets[i].Targets.IPs) == 0 {
+			n++
+		}
+	}
+	return n
 }
 
 func countStrategyless(prog *Program, sets []config.SetConfig) int {

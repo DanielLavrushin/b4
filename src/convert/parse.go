@@ -188,16 +188,7 @@ func applyTargetValue(prog *Program, prof *Profile, tok Token, v Value, notes *n
 		prog.Globals.DelayMs = v.Int
 		notes.set(tok, StatusApproximated, "delayMapped", "tcp.seg2delay")
 	case "global.fake_sni":
-		host := sanitizeHost(v.Str)
-		prog.Globals.FakeSNI = host
-		if host == "" {
-			notes.set(tok, StatusInvalid, "fakeSNINotAHost")
-		} else if host != v.Str {
-			n := notes.set(tok, StatusApproximated, "fakeSNINormalised", "faking.payload_domain="+host)
-			n.Params = map[string]any{"from": v.Str, "to": host}
-		} else {
-			notes.set(tok, StatusMapped, "fakeSNIMapped", "faking.sni_type=domain", "faking.payload_domain="+host)
-		}
+		prog.Globals.FakeSNI = sanitizeHost(v.Str)
 	case "global.auto_mode":
 		prog.Globals.AutoMode = strings.Join(v.List, ",")
 
