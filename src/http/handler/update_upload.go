@@ -202,42 +202,23 @@ func (api *API) handleUpdateUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxUpdateUploadSize)
-	if err := r.ParseMultipartForm(8 << 20); err != nil {
-		writeUploadRefusal(w, serviceManager, "Failed to read the upload: "+err.Error())
-		return
-	}
 
-	file, header, err := r.FormFile("file")
+	// Streamed part by part rather than through ParseMultipartForm: that spills a part
+	// over its memory budget into a temp file of its own, and copying from there would
+	// hold two copies of the archive at once on the RAM-backed /tmp a router usually has.
+	archivePath, filename, size, sum, want, err := stageUploadedArchive(r)
 	if err != nil {
-		writeUploadRefusal(w, serviceManager, "No file provided")
-		return
-	}
-	defer file.Close()
-
-	tmp, err := os.CreateTemp("/tmp", "b4-upload-*.tar.gz")
-	if err != nil {
-		writeUploadRefusal(w, serviceManager, "Cannot stage the upload: "+err.Error())
-		return
-	}
-	archivePath := tmp.Name()
-
-	digest := sha256.New()
-	size, err := io.Copy(io.MultiWriter(tmp, digest), file)
-	tmp.Close()
-	if err != nil {
-		os.Remove(archivePath)
-		writeUploadRefusal(w, serviceManager, "Failed to write the upload to disk: "+err.Error())
-		return
-	}
-
-	sum := hex.EncodeToString(digest.Sum(nil))
-
-	if want := strings.TrimSpace(strings.ToLower(r.FormValue("sha256"))); want != "" {
-		if want != sum {
+		if archivePath != "" {
 			os.Remove(archivePath)
-			writeUploadRefusal(w, serviceManager, fmt.Sprintf("Checksum does not match: the upload is %s, expected %s", sum, want))
-			return
 		}
+		writeUploadRefusal(w, serviceManager, err.Error())
+		return
+	}
+
+	if want != "" && want != sum {
+		os.Remove(archivePath)
+		writeUploadRefusal(w, serviceManager, fmt.Sprintf("Checksum does not match: the upload is %s, expected %s", sum, want))
+		return
 	}
 
 	uploaded, err := inspectUpdateArchive(archivePath)
@@ -257,7 +238,7 @@ func (api *API) handleUpdateUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Infof("Update requested from an uploaded archive (%s, %d bytes, sha256 %s)", header.Filename, size, sum)
+	log.Infof("Update requested from an uploaded archive (%s, %d bytes, sha256 %s)", filename, size, sum)
 
 	logPath := api.updateLogPath()
 	if logPath != "" {
@@ -269,7 +250,7 @@ func (api *API) handleUpdateUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	writeUpdateLog(logPath, "=== Update session started (uploaded archive) ===")
 	writeUpdateLog(logPath, "Service manager: %s | file: %q | %d bytes | sha256 %s | arch %s",
-		serviceManager, header.Filename, size, sum, uploaded)
+		serviceManager, filename, size, sum, uploaded)
 
 	api.backupConfig(logPath)
 
@@ -289,6 +270,67 @@ func (api *API) handleUpdateUpload(w http.ResponseWriter, r *http.Request) {
 		Message:        "Archive accepted. The service will restart automatically.",
 		ServiceManager: serviceManager,
 	})
+}
+
+// stageUploadedArchive streams the multipart body straight to disk, hashing as it goes.
+// It returns the staged path even on failure so the caller can remove a partial file.
+func stageUploadedArchive(r *http.Request) (path, filename string, size int64, sum, want string, err error) {
+	mr, err := r.MultipartReader()
+	if err != nil {
+		return "", "", 0, "", "", fmt.Errorf("failed to read the upload: %v", err)
+	}
+
+	digest := sha256.New()
+
+	for {
+		part, perr := mr.NextPart()
+		if perr == io.EOF {
+			break
+		}
+		if perr != nil {
+			return path, "", 0, "", "", fmt.Errorf("failed to read the upload: %v", perr)
+		}
+
+		switch part.FormName() {
+		case "sha256":
+			raw, rerr := io.ReadAll(io.LimitReader(part, 256))
+			part.Close()
+			if rerr != nil {
+				return path, "", 0, "", "", fmt.Errorf("failed to read the checksum field: %v", rerr)
+			}
+			want = strings.TrimSpace(strings.ToLower(string(raw)))
+
+		case "file":
+			if path != "" {
+				part.Close()
+				return path, "", 0, "", "", fmt.Errorf("the upload carries more than one file")
+			}
+
+			tmp, terr := os.CreateTemp("", "b4-upload-*.tar.gz")
+			if terr != nil {
+				part.Close()
+				return "", "", 0, "", "", fmt.Errorf("cannot stage the upload: %v", terr)
+			}
+			path = tmp.Name()
+			filename = part.FileName()
+
+			size, err = io.Copy(io.MultiWriter(tmp, digest), part)
+			tmp.Close()
+			part.Close()
+			if err != nil {
+				return path, "", 0, "", "", fmt.Errorf("failed to write the upload to disk: %v", err)
+			}
+
+		default:
+			part.Close()
+		}
+	}
+
+	if path == "" {
+		return "", "", 0, "", "", fmt.Errorf("no file provided")
+	}
+
+	return path, filename, size, hex.EncodeToString(digest.Sum(nil)), want, nil
 }
 
 func writeUploadRefusal(w http.ResponseWriter, serviceManager, message string) {

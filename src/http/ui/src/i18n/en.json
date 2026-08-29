@@ -325,7 +325,7 @@
       "webProxyRequirements": "The hostname must resolve to this instance and serve valid TLS on port 443, with the site root reaching b4. A hostname of its own is required: b4 answers every path on it, so the b4 interface is not reachable there. The connection link is in the share dialog of a secret.",
       "secretName": "Name / comment",
       "secretMaxNetworks": "Max networks",
-      "secretMaxNetworksHelp": "Refuse this secret once it is in use from more than this many client networks at once. Devices sharing one internet connection count as one network, so a person moving between home, mobile data and work needs a few. 0 means no limit.",
+      "secretMaxNetworksHelp": "Refuse new connections to this secret once it is in use from this many client networks at once. Devices sharing one internet connection count as one network, so a person moving between home, mobile data and work needs a few. Lowering the value never drops connections that are already running. 0 means no limit.",
       "secretNamePlaceholder": "e.g. Maxim",
       "secretValuePlaceholder": "Paste or generate a secret",
       "addSecret": "Add secret",

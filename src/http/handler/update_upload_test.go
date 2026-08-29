@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"crypto/rand"
 	"crypto/sha256"
 	"debug/elf"
 	"encoding/hex"
@@ -154,10 +155,27 @@ func TestParseELFIdentityHandlesBigEndian(t *testing.T) {
 }
 
 func updateUploadRequest(t *testing.T, archivePath, sha string) *http.Request {
+	return updateUploadRequestOrdered(t, archivePath, sha, false)
+}
+
+func updateUploadRequestOrdered(t *testing.T, archivePath, sha string, shaFirst bool) *http.Request {
 	t.Helper()
 
 	body := &bytes.Buffer{}
 	mw := multipart.NewWriter(body)
+
+	writeSha := func() {
+		if sha == "" {
+			return
+		}
+		if err := mw.WriteField("sha256", sha); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if shaFirst {
+		writeSha()
+	}
 
 	part, err := mw.CreateFormFile("file", filepath.Base(archivePath))
 	if err != nil {
@@ -170,10 +188,9 @@ func updateUploadRequest(t *testing.T, archivePath, sha string) *http.Request {
 	if _, err := part.Write(data); err != nil {
 		t.Fatal(err)
 	}
-	if sha != "" {
-		if err := mw.WriteField("sha256", sha); err != nil {
-			t.Fatal(err)
-		}
+
+	if !shaFirst {
+		writeSha()
 	}
 	mw.Close()
 
@@ -426,5 +443,98 @@ func TestUploadRefusedWhenTheWebServerHasNoCredentials(t *testing.T) {
 		if len(*launched) != 0 {
 			t.Fatalf("user=%q pass=%q: the installer must not be reached", creds.user, creds.pass)
 		}
+	}
+}
+
+func bigIncompressibleArchive(t *testing.T, id elfIdentity) string {
+	t.Helper()
+
+	body := make([]byte, 12<<20)
+	if _, err := rand.Read(body); err != nil {
+		t.Fatal(err)
+	}
+	copy(body, fakeELF(t, elf.Machine(id.machine), id.class, id.data))
+	return writeOrderedArchive(t, []tarEntry{{"b4", body}})
+}
+
+func TestUploadHandlesAnArchiveLargerThanTheMemoryBudget(t *testing.T) {
+	running, err := runningELFIdentity()
+	if err != nil {
+		t.Skipf("cannot read the test binary's ELF header: %v", err)
+	}
+
+	archive := bigIncompressibleArchive(t, running)
+	raw, err := os.ReadFile(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) < 8<<20 {
+		t.Fatalf("fixture is %d bytes, it must exceed the old in-memory budget to be meaningful", len(raw))
+	}
+	sum := sha256.Sum256(raw)
+
+	// Either ordering must work: streaming reads parts in order, so a checksum that
+	// arrives after the file has to be compared once the whole body has been read.
+	for _, shaFirst := range []bool{false, true} {
+		api, launched := newUploadTestAPI(t, "systemd")
+		rec := httptest.NewRecorder()
+		api.mux.ServeHTTP(rec, updateUploadRequestOrdered(t, archive, hex.EncodeToString(sum[:]), shaFirst))
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("shaFirst=%v: code = %d body = %s", shaFirst, rec.Code, rec.Body.String())
+		}
+		if len(*launched) != 1 {
+			t.Fatalf("shaFirst=%v: installer launches = %d, want 1", shaFirst, len(*launched))
+		}
+
+		staged, err := os.ReadFile((*launched)[0].localArchive)
+		if err != nil {
+			t.Fatalf("shaFirst=%v: %v", shaFirst, err)
+		}
+		if !bytes.Equal(staged, raw) {
+			t.Fatalf("shaFirst=%v: the staged archive does not match what was uploaded", shaFirst)
+		}
+		os.Remove((*launched)[0].localArchive)
+	}
+}
+
+func TestUploadRefusesASecondFilePart(t *testing.T) {
+	running, err := runningELFIdentity()
+	if err != nil {
+		t.Skipf("cannot read the test binary's ELF header: %v", err)
+	}
+	archive := writeOrderedArchive(t, []tarEntry{
+		{"b4", fakeELF(t, elf.Machine(running.machine), running.class, running.data)},
+	})
+	data, err := os.ReadFile(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	body := &bytes.Buffer{}
+	mw := multipart.NewWriter(body)
+	for i := 0; i < 2; i++ {
+		part, err := mw.CreateFormFile("file", "b4.tar.gz")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := part.Write(data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mw.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/system/update/upload", body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	api, launched := newUploadTestAPI(t, "systemd")
+	rec := httptest.NewRecorder()
+	api.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("code = %d, want 400 for two file parts", rec.Code)
+	}
+	if len(*launched) != 0 {
+		t.Fatal("the installer must not be reached")
 	}
 }

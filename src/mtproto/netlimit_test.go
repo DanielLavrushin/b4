@@ -3,6 +3,7 @@ package mtproto
 import (
 	"fmt"
 	"net"
+	"sync"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
@@ -123,13 +124,15 @@ func TestZeroLimitIsUnlimited(t *testing.T) {
 	}
 }
 
-func TestLoweringLimitTrimsNewestNetworks(t *testing.T) {
+func TestLoweringLimitLeavesRunningConnsAlone(t *testing.T) {
 	srv, mkCfg, secA, _ := limitTestServer(t, 0)
 
-	oldest := conn("85.233.150.240", 7000)
-	middle := conn("178.130.140.98", 7001)
-	newest := conn("203.0.113.9", 7002)
-	for _, c := range []*closeRecordConn{oldest, middle, newest} {
+	live := []*closeRecordConn{
+		conn("85.233.150.240", 7000),
+		conn("178.130.140.98", 7001),
+		conn("203.0.113.9", 7002),
+	}
+	for _, c := range live {
 		srv.trackConn(secA, c)
 	}
 
@@ -137,12 +140,42 @@ func TestLoweringLimitTrimsNewestNetworks(t *testing.T) {
 		m.Secrets[0].MaxNetworks = 1
 	}))
 
-	if oldest.closed.Load() {
-		t.Fatal("the longest-established network must survive a lowered limit")
+	for i, c := range live {
+		if c.closed.Load() {
+			t.Fatalf("lowering the limit closed conn %d; running connections must never be dropped", i)
+		}
 	}
-	if !middle.closed.Load() || !newest.closed.Load() {
-		t.Fatalf("newer networks must be dropped: middle=%v newest=%v",
-			middle.closed.Load(), newest.closed.Load())
+	if got := statForSecret(t, srv, "Max").Networks; got != 3 {
+		t.Fatalf("Networks = %d, want the 3 established networks kept", got)
+	}
+	if _, _, deny := srv.trackConn(secA, conn("192.0.2.77", 7003)); deny.limit != 1 {
+		t.Fatalf("the lowered limit must still refuse a new network, got %+v", deny)
+	}
+}
+
+func TestLoweredLimitAppliesOnceNetworksDrain(t *testing.T) {
+	srv, mkCfg, secA, _ := limitTestServer(t, 0)
+
+	a := conn("85.233.150.240", 7100)
+	b := conn("178.130.140.98", 7101)
+	_, releaseA, _ := srv.trackConn(secA, a)
+	_, releaseB, _ := srv.trackConn(secA, b)
+
+	srv.UpdateConfig(mkCfg(func(m *config.MTProtoConfig) {
+		m.Secrets[0].MaxNetworks = 1
+	}))
+
+	releaseA()
+	if _, _, deny := srv.trackConn(secA, conn("85.233.150.240", 7102)); deny.limit != 1 {
+		t.Fatalf("with one network still live the secret is at its limit, got %+v", deny)
+	}
+
+	releaseB()
+	if _, _, deny := srv.trackConn(secA, conn("85.233.150.240", 7103)); deny.limit != 0 {
+		t.Fatalf("once the secret drained it must accept a network again, got %+v", deny)
+	}
+	if got := statForSecret(t, srv, "Max").Networks; got != 1 {
+		t.Fatalf("Networks = %d, want 1", got)
 	}
 }
 
@@ -236,26 +269,85 @@ func TestRefusalStateDroppedWithTheSecret(t *testing.T) {
 	}
 }
 
-func TestTrimmedNetworkCannotReclaimItsSlot(t *testing.T) {
-	srv, mkCfg, secA, _ := limitTestServer(t, 0)
+func assertRefcountExact(t *testing.T, srv *Server) {
+	t.Helper()
+	srv.connsMu.Lock()
+	defer srv.connsMu.Unlock()
+	for id, set := range srv.conns {
+		want := make(map[string]int, len(set.networks))
+		for _, info := range set.conns {
+			if info.network != "" {
+				want[info.network]++
+			}
+		}
+		if len(want) != len(set.networks) {
+			t.Fatalf("secret %s: networks=%v but live conns imply %v", id, set.networks, want)
+		}
+		for k, n := range want {
+			if set.networks[k] != n {
+				t.Fatalf("secret %s: networks[%q]=%d, live conns imply %d", id, k, set.networks[k], n)
+			}
+		}
+		if len(set.conns) == 0 {
+			t.Fatalf("secret %s: empty conn set was left behind", id)
+		}
+	}
+}
 
-	oldest := conn("85.233.150.240", 13000)
-	doomed := conn("178.130.140.98", 13001)
-	srv.trackConn(secA, oldest)
-	srv.trackConn(secA, doomed)
+func TestRefcountInvariantUnderConcurrentChurn(t *testing.T) {
+	srv, mkCfg, secA, secB := limitTestServer(t, 3)
 
-	srv.UpdateConfig(mkCfg(func(m *config.MTProtoConfig) {
-		m.Secrets[0].MaxNetworks = 1
-	}))
-	if !doomed.closed.Load() {
-		t.Fatal("the newer network must have been closed by the trim")
+	const workers = 24
+	const rounds = 40
+
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			sec := secA
+			if w%2 == 1 {
+				sec = secB
+			}
+			for i := 0; i < rounds; i++ {
+				ip := fmt.Sprintf("10.%d.%d.1", w%7, i%5)
+				info, release, deny := srv.trackConn(sec, conn(ip, 20000+w*100+i))
+				if deny.limit == 0 && info == nil {
+					t.Errorf("admitted conn returned nil info")
+					return
+				}
+				release()
+			}
+		}(w)
 	}
 
-	_, _, deny := srv.trackConn(secA, conn("178.130.140.98", 13002))
-	if deny.limit != 1 {
-		t.Fatalf("a trimmed network reconnecting before its old conns untrack must be refused, got %+v", deny)
-	}
-	if got := statForSecret(t, srv, "Max").Networks; got != 1 {
-		t.Fatalf("the secret must not be left above its limit: Networks = %d, want 1", got)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < rounds; i++ {
+			limit := 1 + i%4
+			srv.UpdateConfig(mkCfg(func(m *config.MTProtoConfig) {
+				m.Secrets[0].MaxNetworks = limit
+			}))
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < rounds*4; i++ {
+			_ = srv.Stats()
+			_ = srv.Sessions()
+		}
+	}()
+
+	wg.Wait()
+	assertRefcountExact(t, srv)
+
+	srv.connsMu.Lock()
+	leftovers := len(srv.conns)
+	srv.connsMu.Unlock()
+	if leftovers != 0 {
+		t.Fatalf("every conn was released, so no secret should remain tracked, got %d", leftovers)
 	}
 }

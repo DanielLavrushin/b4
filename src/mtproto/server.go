@@ -371,81 +371,6 @@ func (s *Server) pruneRefusals(active []*Secret) {
 	s.connsMu.Unlock()
 }
 
-func (s *Server) enforceSecretLimits(active []*Secret) {
-	limits := make(map[string]int, len(active))
-	for _, sec := range active {
-		if sec.MaxNetworks > 0 {
-			limits[secretIdentity(sec)] = sec.MaxNetworks
-		}
-	}
-	if len(limits) == 0 {
-		return
-	}
-
-	type victim struct {
-		label string
-		limit int
-		conns []net.Conn
-	}
-	var victims []victim
-
-	s.connsMu.Lock()
-	for id, set := range s.conns {
-		limit, ok := limits[id]
-		if !ok || len(set.networks) <= limit {
-			continue
-		}
-		since := make(map[string]time.Time, len(set.networks))
-		for _, info := range set.conns {
-			if _, live := set.networks[info.network]; !live {
-				continue
-			}
-			if t, seen := since[info.network]; !seen || info.connectedAt.Before(t) {
-				since[info.network] = info.connectedAt
-			}
-		}
-		keys := make([]string, 0, len(since))
-		for k := range since {
-			keys = append(keys, k)
-		}
-		if len(keys) <= limit {
-			continue
-		}
-		slices.SortFunc(keys, func(a, b string) int {
-			if since[a].Equal(since[b]) {
-				return strings.Compare(a, b)
-			}
-			if since[a].After(since[b]) {
-				return -1
-			}
-			return 1
-		})
-		drop := make(map[string]struct{}, len(keys)-limit)
-		for _, k := range keys[:len(keys)-limit] {
-			drop[k] = struct{}{}
-			delete(set.networks, k)
-		}
-		v := victim{label: set.label, limit: limit}
-		for c, info := range set.conns {
-			if _, ok := drop[info.network]; ok {
-				v.conns = append(v.conns, c)
-			}
-		}
-		if len(v.conns) > 0 {
-			victims = append(victims, v)
-		}
-	}
-	s.connsMu.Unlock()
-
-	for _, v := range victims {
-		for _, c := range v.conns {
-			_ = c.Close()
-		}
-		log.Infof("MTProto: secret %q is over its limit of %d network(s), closed %d connection(s)",
-			v.label, v.limit, len(v.conns))
-	}
-}
-
 func (s *Server) pruneStats(active []*Secret) {
 	keep := make(map[string]struct{}, len(active))
 	for _, sec := range active {
@@ -625,7 +550,6 @@ func (s *Server) startLocked() error {
 	s.listener = ln
 	s.secrets.Store(&secrets)
 	s.closeRevokedConns(secrets)
-	s.enforceSecretLimits(secrets)
 	s.pruneRefusals(secrets)
 	s.pruneStats(secrets)
 	s.ctx, s.cancel = context.WithCancel(context.Background())
@@ -689,7 +613,6 @@ func (s *Server) reloadSecretsLocked(cfg *config.Config) {
 	}
 	s.secrets.Store(&secrets)
 	s.closeRevokedConns(secrets)
-	s.enforceSecretLimits(secrets)
 	s.pruneRefusals(secrets)
 	s.pruneStats(secrets)
 	log.Infof("MTProto secrets reloaded live (%d active) without restart", len(secrets))
