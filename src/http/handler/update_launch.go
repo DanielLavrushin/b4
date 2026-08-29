@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 )
+
+var errInstallerNoLocalArchive = errors.New("the installer published in the b4 repository cannot install from a file")
 
 type installerRun struct {
 	serviceManager string
@@ -89,7 +92,7 @@ func (r installerRun) obtainInstaller(path string) error {
 	case !looksLikeShellScript(path):
 		err = fmt.Errorf("downloaded installer is not a shell script")
 	case !r.usable(path):
-		err = fmt.Errorf("the published installer does not support installing from a supplied archive")
+		err = errInstallerNoLocalArchive
 	default:
 		cacheInstaller(path, r.cachePath)
 		return nil
@@ -113,7 +116,10 @@ func (r installerRun) obtainInstaller(path string) error {
 	}
 
 	if r.localArchive != "" {
-		return fmt.Errorf("%v; b4 refuses to hand over to an installer that would ignore the uploaded archive and download a different version instead", err)
+		if errors.Is(err, errInstallerNoLocalArchive) {
+			return fmt.Errorf("%w, so it would ignore the file and install a different version. Nothing was changed, and this is not about the version you picked: it needs a newer install.sh published in the repository, or a copy of one saved at %s", err, r.cachePath)
+		}
+		return fmt.Errorf("could not fetch an installer able to install from a file: %v", err)
 	}
 
 	return err

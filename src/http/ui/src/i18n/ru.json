@@ -2396,7 +2396,8 @@
     "expectedSha256Placeholder": "скопировать со страницы релиза",
     "expectedSha256Help": "Сверяется с загруженным файлом перед установкой.",
     "backToReleaseNotes": "Назад к описанию релиза",
-    "sourceforgeMirror": "Зеркало SourceForge"
+    "sourceforgeMirror": "Зеркало SourceForge",
+    "tryAgain": "Попробовать снова"
   },
   "watchdog": {
     "title": "Мониторинг доменов",

@@ -2390,7 +2390,8 @@
     "expectedSha256Placeholder": "paste from the release page",
     "expectedSha256Help": "Compared against the upload before it is installed.",
     "backToReleaseNotes": "Back to release notes",
-    "sourceforgeMirror": "SourceForge mirror"
+    "sourceforgeMirror": "SourceForge mirror",
+    "tryAgain": "Try again"
   },
   "watchdog": {
     "title": "Watchdog Monitor",

@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,9 +61,12 @@ func TestObtainInstallerFallsBackToACachedCopyThatSupportsUploads(t *testing.T) 
 	}
 }
 
-func TestObtainInstallerRefusesWhenNothingSupportsUploads(t *testing.T) {
-	dead := deadServerURL(t)
-	swapBases(t, dead, dead, dead)
+func TestObtainInstallerRefusesWhenTheServedInstallerIsTooOld(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(oldInstaller))
+	}))
+	defer srv.Close()
+	swapBases(t, srv.URL, srv.URL, srv.URL)
 	swapMirrors(t, nil)
 
 	run := installerRun{localArchive: "/tmp/x.tar.gz", cachePath: writeScript(t, oldInstaller)}
@@ -68,7 +74,28 @@ func TestObtainInstallerRefusesWhenNothingSupportsUploads(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a refusal rather than a silent fall back to a normal update")
 	}
-	if !strings.Contains(err.Error(), "ignore the uploaded archive") {
-		t.Fatalf("error = %q, want it to explain the refusal", err)
+	if !errors.Is(err, errInstallerNoLocalArchive) {
+		t.Fatalf("error = %q, want it to wrap errInstallerNoLocalArchive", err)
+	}
+	if !strings.Contains(err.Error(), "not about the version you picked") {
+		t.Fatalf("error = %q, want it to head off the downgrade misreading", err)
+	}
+}
+
+func TestObtainInstallerReportsAFetchFailureAsItself(t *testing.T) {
+	dead := deadServerURL(t)
+	swapBases(t, dead, dead, dead)
+	swapMirrors(t, nil)
+
+	run := installerRun{localArchive: "/tmp/x.tar.gz"}
+	err := run.obtainInstaller(filepath.Join(t.TempDir(), "staged.sh"))
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if errors.Is(err, errInstallerNoLocalArchive) {
+		t.Fatalf("a network failure must not be reported as an unsupported installer: %q", err)
+	}
+	if !strings.Contains(err.Error(), "could not fetch") {
+		t.Fatalf("error = %q, want it to name the fetch failure", err)
 	}
 }

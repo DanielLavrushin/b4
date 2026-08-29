@@ -527,6 +527,22 @@ export const UpdateModal = ({
           )}
         </>
       )}
+      {updateStatus === "error" && (
+        <>
+          <Button onClick={onClose} variant="outlined">
+            {t("core.close")}
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              setUpdateStatus("idle");
+              setUpdateMessage("");
+            }}
+          >
+            {t("update.tryAgain")}
+          </Button>
+        </>
+      )}
       {updateStatus === "success" && (
         <Button
           variant="contained"
