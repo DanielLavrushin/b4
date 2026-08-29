@@ -16,7 +16,8 @@ type API struct {
 	discoveryRT    *discovery.Runtime
 	asnStore       *config.AsnStore
 
-	overrideServiceManager func() string
+	overrideServiceManager  func() string
+	overrideLaunchInstaller func(installerRun)
 }
 
 func (a *API) getCfg() *config.Config {

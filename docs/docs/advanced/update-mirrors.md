@@ -283,6 +283,51 @@ curl -sL -o /dev/null -w '%{http_code} %{size_download}\n' \
 The second command downloads a release archive through the Worker and prints its status and
 size.
 
+## Installing from a file
+
+When no source can be reached at all, the archive can be carried in by hand. In the update
+window, **Install from a file instead** takes a `b4-linux-<arch>.tar.gz` downloaded on
+another machine.
+
+Before anything is replaced, the service checks that the upload is a gzip archive holding a
+file named `b4`, that the file is a Linux executable, and that it was built for this
+machine. An archive for the wrong architecture is refused with both architectures named,
+rather than being installed and rolled back afterwards.
+
+The **Expected SHA256** field is optional and compared against the upload before it is
+installed. The checksum on the release page is read in a browser, on a machine that reached
+GitHub, which makes it an independent check: the automatic path takes the archive and its
+`.sha256` from the same host, so a host serving both can serve a matching pair.
+
+Installation itself is the same code path as an ordinary update. The previous binary is set
+aside, the new one is put in place and run once to confirm it works, and a binary that fails
+that check is rolled back.
+
+:::note MIPS float ABI is not covered by the check
+Hard-float and soft-float MIPS builds carry the same architecture in the executable header,
+so a mismatch between them is not caught by the upload check. It is still caught after the
+swap, by the same check that rolls back any binary that will not run.
+:::
+
+:::warning The installer on GitHub has to support it
+b4 fetches `install.sh` from the repository at update time, so the published installer has
+to be a version that understands a supplied archive. b4 checks for that and refuses the
+upload if it is not, rather than handing over to an installer that would ignore the file and
+download a different version instead. A router whose cached installer supports it can use
+that copy instead.
+:::
+
+:::info The service still needs the installer script
+The upload replaces the download of the release archive, not the download of `install.sh`.
+b4 keeps a copy of the installer next to its configuration after each successful update and
+falls back to it when it cannot be fetched, so a router that has updated once before can
+install from a file with no network at all. On a router that has never updated through the
+service, `install.sh` still has to be reachable.
+:::
+
+Docker is refused, because an image is replaced by pulling a new one, and so is a b4 that is
+not running under a service manager.
+
 ## The installer
 
 The installer applies the same order on its own, and reads `B4_MIRRORS` from the

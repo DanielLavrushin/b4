@@ -72,6 +72,43 @@ export const useSystemUpdate = () => {
     [],
   );
 
+  const uploadUpdate = useCallback(
+    async (file: File, sha256?: string): Promise<UpdateResponse | null> => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const form = new FormData();
+        form.append("file", file);
+        if (sha256) form.append("sha256", sha256);
+
+        const response = await fetch("/api/system/update/upload", {
+          method: "POST",
+          body: form,
+        });
+
+        const raw: unknown = await response.json();
+        const data = raw as UpdateResponse;
+
+        if (!response.ok || !data?.success) {
+          const message = data?.message || "Failed to install the uploaded archive";
+          setError(message);
+          setLoading(false);
+          return data ?? null;
+        }
+
+        return data;
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Unknown error during upload";
+        setError(message);
+        setLoading(false);
+        return null;
+      }
+    },
+    [],
+  );
+
   const waitForReconnection = useCallback(
     async (maxAttempts: number = 60): Promise<boolean> => {
       let attempts = 0;
@@ -104,6 +141,7 @@ export const useSystemUpdate = () => {
 
   return {
     performUpdate,
+    uploadUpdate,
     waitForReconnection,
     loading,
     error,

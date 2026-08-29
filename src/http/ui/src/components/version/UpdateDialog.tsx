@@ -11,6 +11,7 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
+  TextField,
 } from "@mui/material";
 
 import {
@@ -20,6 +21,7 @@ import {
   CheckCircleIcon,
   CloseIcon,
   CloudDownloadIcon,
+  UploadIcon,
   InfoIcon,
   WarningIcon,
 } from "@b4.icons";
@@ -75,10 +77,13 @@ export const UpdateModal = ({
   const isLocalized = i18n.language === "ru";
   const changelogFile = isLocalized ? "changelog_ru.md" : "changelog.md";
   const localizedNotes = useLocalizedChangelog(changelogFile, isLocalized && open);
-  const { performUpdate, waitForReconnection } = useSystemUpdate();
+  const { performUpdate, uploadUpdate, waitForReconnection } = useSystemUpdate();
   const [updateStatus, setUpdateStatus] = useState<
     "idle" | "updating" | "reconnecting" | "success" | "error"
   >("idle");
+  const [showUpload, setShowUpload] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadSha, setUploadSha] = useState("");
   const [updateMessage, setUpdateMessage] = useState("");
   const [selectedVersion, setSelectedVersion] = useState<string>("");
   const [isDocker, setIsDocker] = useState(false);
@@ -102,6 +107,9 @@ export const UpdateModal = ({
     if (!open) {
       setUpdateStatus("idle");
       setUpdateMessage("");
+      setShowUpload(false);
+      setUploadFile(null);
+      setUploadSha("");
     }
   }, [open]);
 
@@ -133,6 +141,34 @@ export const UpdateModal = ({
     setUpdateMessage(t("update.initiating"));
 
     const result = await performUpdate(selectedVersion);
+    if (!result?.success) {
+      setUpdateStatus("error");
+      setUpdateMessage(result?.message || t("update.failedInitiate"));
+      return;
+    }
+
+    setUpdateMessage(t("update.inProgress"));
+    setUpdateStatus("reconnecting");
+
+    const reconnected = await waitForReconnection();
+
+    if (reconnected) {
+      setUpdateStatus("success");
+      setUpdateMessage(t("update.completed"));
+      setTimeout(() => globalThis.window.location.reload(), 5000);
+    } else {
+      setUpdateStatus("error");
+      setUpdateMessage(t("update.manualCheck"));
+    }
+  };
+
+  const handleUploadInstall = async () => {
+    if (!uploadFile) return;
+
+    setUpdateStatus("updating");
+    setUpdateMessage(t("update.uploadInitiating"));
+
+    const result = await uploadUpdate(uploadFile, uploadSha.trim() || undefined);
     if (!result?.success) {
       setUpdateStatus("error");
       setUpdateMessage(result?.message || t("update.failedInitiate"));
@@ -349,7 +385,13 @@ export const UpdateModal = ({
 
       <Divider sx={{ my: 2, borderColor: colors.border.default }} />
 
-      <Stack direction="row" spacing={2} justifyContent="center">
+      <Stack
+        direction="row"
+        spacing={2}
+        justifyContent="center"
+        flexWrap="wrap"
+        useFlexGap
+      >
         <Button
           variant="outlined"
           startIcon={<DescriptionIcon />}
@@ -370,7 +412,61 @@ export const UpdateModal = ({
             {t("update.viewOnGitHub")}
           </Button>
         )}
+        {updateStatus === "idle" && !isDocker && (
+          <Button
+            variant={showUpload ? "contained" : "outlined"}
+            startIcon={<UploadIcon />}
+            onClick={() => setShowUpload((v) => !v)}
+            disabled={isUpdating}
+          >
+            {t("update.installFromFile")}
+          </Button>
+        )}
       </Stack>
+
+      {updateStatus === "idle" && !isDocker && showUpload && (
+        <Box
+          sx={{
+            mt: 2,
+            p: 2,
+            border: `1px solid ${colors.border.default}`,
+            borderRadius: 1,
+          }}
+        >
+          <Stack spacing={1.5}>
+            <Typography variant="body2" sx={{ color: colors.text.secondary }}>
+              {t("update.installFromFileHelp")}
+            </Typography>
+            <Button variant="outlined" component="label" disabled={isUpdating}>
+              {uploadFile ? uploadFile.name : t("update.chooseArchive")}
+              <input
+                type="file"
+                hidden
+                accept=".gz,.tgz,application/gzip"
+                onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+              />
+            </Button>
+            <TextField
+              size="small"
+              label={t("update.expectedSha256")}
+              value={uploadSha}
+              onChange={(e) => setUploadSha(e.target.value)}
+              placeholder={t("update.expectedSha256Placeholder")}
+              helperText={t("update.expectedSha256Help")}
+              disabled={isUpdating}
+            />
+            <Button
+              variant="contained"
+              color="warning"
+              startIcon={<UploadIcon />}
+              onClick={() => void handleUploadInstall()}
+              disabled={isUpdating || !uploadFile}
+            >
+              {t("update.installUploaded")}
+            </Button>
+          </Stack>
+        </Box>
+      )}
     </>
   );
 

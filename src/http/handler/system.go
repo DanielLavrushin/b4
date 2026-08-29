@@ -22,10 +22,39 @@ func (api *API) RegisterSystemApi() {
 	api.mux.HandleFunc("/api/system/info", api.handleSystemInfo)
 	api.mux.HandleFunc("/api/version", api.handleVersion)
 	api.mux.HandleFunc("/api/system/update", api.handleUpdate)
+	api.mux.HandleFunc("/api/system/update/upload", api.handleUpdateUpload)
 	api.mux.HandleFunc("/api/system/releases", api.handleReleases)
 	api.mux.HandleFunc("/api/system/changelog", api.handleChangelog)
 	api.mux.HandleFunc("/api/system/cache", api.handleCacheStats)
 	api.mux.HandleFunc("/api/system/diagnostics", api.handleDiagnostics)
+}
+
+func (api *API) backupConfig(logPath string) {
+	configPath := api.getCfg().ConfigPath
+	if configPath == "" {
+		return
+	}
+
+	bakPath := configPath + ".bak.v" + Version
+	fi, err := os.Stat(configPath)
+	if err != nil {
+		return
+	}
+
+	src, err := os.ReadFile(configPath)
+	if err != nil {
+		log.Warnf("Failed to read config for backup: %v", err)
+		return
+	}
+
+	if err := os.WriteFile(bakPath, src, fi.Mode().Perm()); err != nil {
+		log.Warnf("Failed to create config backup at %s: %v", bakPath, err)
+		writeUpdateLog(logPath, "WARN: failed to back up config to %s: %v", bakPath, err)
+		return
+	}
+
+	log.Infof("Config backed up to %s", bakPath)
+	writeUpdateLog(logPath, "Config backed up to %s", bakPath)
 }
 
 func (api *API) getServiceManager() string {
@@ -340,23 +369,7 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	configPath := api.getCfg().ConfigPath
-	if configPath != "" {
-		bakPath := configPath + ".bak.v" + Version
-		if fi, err := os.Stat(configPath); err == nil {
-			if src, err := os.ReadFile(configPath); err == nil {
-				if err := os.WriteFile(bakPath, src, fi.Mode().Perm()); err != nil {
-					log.Warnf("Failed to create config backup at %s: %v", bakPath, err)
-					writeUpdateLog(logPath, "WARN: failed to back up config to %s: %v", bakPath, err)
-				} else {
-					log.Infof("Config backed up to %s", bakPath)
-					writeUpdateLog(logPath, "Config backed up to %s", bakPath)
-				}
-			} else {
-				log.Warnf("Failed to read config for backup: %v", err)
-			}
-		}
-	}
+	api.backupConfig(logPath)
 
 	response := UpdateResponse{
 		Success:        true,
@@ -364,126 +377,24 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		ServiceManager: serviceManager,
 	}
 
+	if err := api.launchInstaller(installerRun{
+		serviceManager: serviceManager,
+		logPath:        logPath,
+		version:        req.Version,
+		mirrors:        api.updateMirrors(),
+		cachePath:      api.installerCachePath(),
+	}); err != nil {
+		setJsonHeader(w)
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(UpdateResponse{
+			Success:        false,
+			Message:        "Could not fetch the installer: " + err.Error(),
+			ServiceManager: serviceManager,
+		})
+		return
+	}
+
 	sendResponse(w, response)
-
-	mirrors := api.updateMirrors()
-
-	go func() {
-		time.Sleep(500 * time.Millisecond)
-		log.Infof("Initiating update process...")
-
-		installerPath := "/tmp/b4install_update.sh"
-		installerURL := "https://raw.githubusercontent.com/" + repoOwner + "/" + repoName + "/main/install.sh"
-
-		fullPath := config.ExtendedPATH(os.Getenv("PATH"))
-
-		writeUpdateLog(logPath, "Downloading installer from %s", installerURL)
-		if _, err := downloadFileMirrored(installerURL, installerPath, mirrors); err != nil {
-			log.Errorf("Failed to download installer: %v", err)
-			writeUpdateLog(logPath, "ERROR: failed to download installer from GitHub or any b4 mirror: %v", err)
-			return
-		}
-
-		if err := os.Chmod(installerPath, 0755); err != nil {
-			log.Errorf("Failed to make installer executable: %v", err)
-			writeUpdateLog(logPath, "ERROR: failed to chmod installer: %v", err)
-			return
-		}
-
-		header := make([]byte, 4)
-		if f, err := os.Open(installerPath); err == nil {
-			f.Read(header)
-			f.Close()
-		}
-		if !strings.HasPrefix(string(header), "#!/") {
-			log.Errorf("Downloaded installer is not a valid shell script (got: %q)", string(header))
-			writeUpdateLog(logPath, "ERROR: downloaded installer is not a valid shell script (got: %q)", string(header))
-			return
-		}
-
-		log.Infof("Installer downloaded, starting update process...")
-		log.Infof("Service will stop now - this is expected")
-		writeUpdateLog(logPath, "Installer downloaded and validated; handing off to %s", installerPath)
-
-		existingBin := ""
-		if exe, err := os.Executable(); err == nil {
-			if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-				exe = resolved
-			}
-			existingBin = exe
-		}
-
-		var cmd *exec.Cmd
-		if serviceManager == "systemd" {
-			args := []string{"--scope", "--unit=b4-update"}
-			if existingBin != "" {
-				args = append(args, "--setenv=B4_EXISTING_BIN="+existingBin)
-			}
-			args = append(args, "--setenv=B4_UPDATE_LOG="+logPath)
-			args = append(args, "--setenv=B4_MIRRORS="+strings.Join(mirrors, " "))
-			args = append(args, installerPath, "--update", "--quiet")
-			if req.Version != "" {
-				args = append(args, req.Version)
-			}
-			cmd = exec.Command("systemd-run", args...)
-		} else {
-			args := []string{"--update", "--quiet"}
-			if req.Version != "" {
-				args = append(args, req.Version)
-			}
-			cmd = exec.Command(installerPath, args...)
-			cmd.SysProcAttr = &syscall.SysProcAttr{
-				Setsid: true,
-			}
-		}
-
-		cmd.Env = append(os.Environ(), fmt.Sprintf("PATH=%s", fullPath))
-		cmd.Env = append(cmd.Env, "B4_MIRRORS="+strings.Join(mirrors, " "))
-		if existingBin != "" {
-			cmd.Env = append(cmd.Env, "B4_EXISTING_BIN="+existingBin)
-		}
-		cmd.Env = append(cmd.Env, "B4_UPDATE_LOG="+logPath)
-
-		devNull, _ := os.Open("/dev/null")
-		cmd.Stdin = devNull
-
-		// Capture installer output into the update log. When file logging is
-		// disabled (empty path) fall back to /dev/null so the child still runs.
-		var logFile *os.File
-		if logPath != "" {
-			logFile, _ = openUpdateLog(logPath)
-		}
-		if logFile != nil {
-			cmd.Stdout = logFile
-			cmd.Stderr = logFile
-		} else {
-			cmd.Stdout = devNull
-			cmd.Stderr = devNull
-		}
-
-		if err := cmd.Start(); err != nil {
-			log.Errorf("Update command failed to start: %v", err)
-			writeUpdateLog(logPath, "ERROR: update command failed to start: %v", err)
-			if devNull != nil {
-				devNull.Close()
-			}
-			if logFile != nil {
-				logFile.Close()
-			}
-		} else {
-			log.Infof("Update process started (PID: %d)", cmd.Process.Pid)
-			writeUpdateLog(logPath, "Update process started (PID: %d, service manager: %s)", cmd.Process.Pid, serviceManager)
-			go func() {
-				_ = cmd.Wait()
-				if devNull != nil {
-					devNull.Close()
-				}
-				if logFile != nil {
-					logFile.Close()
-				}
-			}()
-		}
-	}()
 }
 
 // @Summary Get cache statistics

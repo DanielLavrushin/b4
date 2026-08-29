@@ -3438,6 +3438,55 @@
                 }
             }
         },
+        "/system/update/upload": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Installs b4 from a b4-linux-\u003carch\u003e.tar.gz uploaded by the reader, for a\nnetwork where no download source can be reached. The archive is checked for\na b4 entry built for this machine before anything is replaced.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Update from an uploaded release archive",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "b4-linux-\u003carch\u003e.tar.gz release archive",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Expected SHA256 of the archive",
+                        "name": "sha256",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/ui/dashboard": {
             "get": {
                 "security": [

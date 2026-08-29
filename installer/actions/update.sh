@@ -118,7 +118,10 @@ action_update() {
     fi
 
     # Get target version
-    if [ -n "$target_ver" ]; then
+    if [ -n "$B4_LOCAL_ARCHIVE" ]; then
+        latest_ver=""
+        log_info "Source: ${B4_LOCAL_ARCHIVE}"
+    elif [ -n "$target_ver" ]; then
         latest_ver="$target_ver"
         log_info "Target: ${latest_ver}"
     else
@@ -127,13 +130,20 @@ action_update() {
         log_info "Latest: ${latest_ver}"
     fi
 
-    if [ "$current_ver" = "$latest_ver" ] || echo "$current_ver" | grep -Fq "$latest_ver"; then
-        log_ok "Already up to date"
-        return 0
+    if [ -z "$B4_LOCAL_ARCHIVE" ]; then
+        if [ "$current_ver" = "$latest_ver" ] || echo "$current_ver" | grep -Fq "$latest_ver"; then
+            log_ok "Already up to date"
+            return 0
+        fi
     fi
 
     if [ "$QUIET_MODE" -eq 0 ]; then
-        if ! confirm "Update to ${latest_ver}?"; then
+        if [ -n "$B4_LOCAL_ARCHIVE" ]; then
+            _confirm_msg="Install the supplied archive?"
+        else
+            _confirm_msg="Update to ${latest_ver}?"
+        fi
+        if ! confirm "$_confirm_msg"; then
             log_info "Update cancelled"
             return 0
         fi
@@ -143,23 +153,40 @@ action_update() {
     setup_temp
 
     file_name="${BINARY_NAME}-linux-${B4_ARCH}.tar.gz"
-    download_url="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${latest_ver}/${file_name}"
-    archive_path="${TEMP_DIR}/${file_name}"
 
-    log_info "Downloading ${latest_ver}..."
-    fetch_file "$download_url" "$archive_path" || {
-        log_err "Download failed"
-        exit 1
-    }
-
-    # Verify
-    sha_url="${download_url}.sha256"
-    _cs_ret=0
-    verify_checksum "$archive_path" "$sha_url" || _cs_ret=$?
-    if [ "$_cs_ret" -eq 2 ]; then
-        log_warn "Checksum mismatch — download may be corrupted"
-        if ! confirm "Continue anyway?"; then
+    if [ -n "$B4_LOCAL_ARCHIVE" ]; then
+        case "$B4_LOCAL_ARCHIVE" in
+        /*) ;;
+        *)
+            log_err "Archive path must be absolute: ${B4_LOCAL_ARCHIVE}"
             exit 1
+            ;;
+        esac
+        if [ ! -f "$B4_LOCAL_ARCHIVE" ]; then
+            log_err "Archive not found: ${B4_LOCAL_ARCHIVE}"
+            exit 1
+        fi
+        archive_path="$B4_LOCAL_ARCHIVE"
+        log_info "Installing from a supplied archive, no download"
+    else
+        download_url="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${latest_ver}/${file_name}"
+        archive_path="${TEMP_DIR}/${file_name}"
+
+        log_info "Downloading ${latest_ver}..."
+        fetch_file "$download_url" "$archive_path" || {
+            log_err "Download failed"
+            exit 1
+        }
+
+        # Verify
+        sha_url="${download_url}.sha256"
+        _cs_ret=0
+        verify_checksum "$archive_path" "$sha_url" || _cs_ret=$?
+        if [ "$_cs_ret" -eq 2 ]; then
+            log_warn "Checksum mismatch, download may be corrupted"
+            if ! confirm "Continue anyway?"; then
+                exit 1
+            fi
         fi
     fi
 
