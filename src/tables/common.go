@@ -291,6 +291,8 @@ func run(args ...string) (string, error) {
 	return out, err
 }
 
+var setSysctl = setSysctlOrProc
+
 func setSysctlOrProc(name, val string) {
 	_, _ = run("sh", "-c", "sysctl -w "+name+"="+val+" || echo "+val+" > /proc/sys/"+strings.ReplaceAll(name, ".", "/"))
 }
