@@ -2,6 +2,7 @@ package convert
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -62,7 +63,7 @@ func containsWord(haystack, word string) bool {
 }
 
 func isWordByte(c byte) bool {
-	return c == '_' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 
 func specKnows(s *Spec, marker string) bool {
@@ -83,9 +84,16 @@ func specKnows(s *Spec, marker string) bool {
 func detectTool(input string, argv []string, all map[string]*Spec) (*Spec, float64) {
 	u := scanUsage(argv)
 	lower := strings.ToLower(input)
+	names := make([]string, 0, len(all))
+	for name := range all {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
 	var best *Spec
 	bestScore := -1.0
-	for _, s := range all {
+	for _, name := range names {
+		s := all[name]
 		rejected := false
 		for _, m := range s.Detect.Reject {
 			if u.has(m) {
