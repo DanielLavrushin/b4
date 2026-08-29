@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	gopath "path"
 	"path/filepath"
 	"strings"
 
@@ -20,6 +21,7 @@ import (
 const (
 	maxUpdateUploadSize = 64 << 20
 	elfHeaderLen        = 20
+	minBinarySize       = 64 << 10
 )
 
 type elfIdentity struct {
@@ -92,10 +94,15 @@ func runningELFIdentity() (elfIdentity, error) {
 	return parseELFIdentity(header)
 }
 
-func inspectUpdateArchive(path string) (elfIdentity, error) {
+// inspectUpdateArchive reports the architecture of the b4 the installer would put in
+// place. The installer extracts the archive and installs whatever ends up at the root as
+// "b4", so only the root entry is examined: a nested decoy/b4 is not what gets installed,
+// and a second root entry would overwrite the first during extraction, which is why more
+// than one is refused rather than picked between.
+func inspectUpdateArchive(archivePath string) (elfIdentity, error) {
 	var id elfIdentity
 
-	f, err := os.Open(path)
+	f, err := os.Open(archivePath)
 	if err != nil {
 		return id, err
 	}
@@ -107,7 +114,9 @@ func inspectUpdateArchive(path string) (elfIdentity, error) {
 	}
 	defer gr.Close()
 
+	found := false
 	tr := tar.NewReader(gr)
+
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -116,18 +125,43 @@ func inspectUpdateArchive(path string) (elfIdentity, error) {
 		if err != nil {
 			return id, fmt.Errorf("not a readable tar archive: %v", err)
 		}
-		if filepath.Base(hdr.Name) != "b4" || hdr.Typeflag != tar.TypeReg {
+		if gopath.Clean(hdr.Name) != "b4" {
 			continue
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			return id, fmt.Errorf("the b4 entry in the archive is not a regular file")
+		}
+		if found {
+			return id, fmt.Errorf("the archive contains more than one b4 entry")
+		}
+		if hdr.Size < minBinarySize {
+			return id, fmt.Errorf("the b4 entry in the archive is only %d bytes, too small to be the service", hdr.Size)
 		}
 
 		header := make([]byte, elfHeaderLen)
 		if _, err := io.ReadFull(tr, header); err != nil {
 			return id, fmt.Errorf("the b4 entry in the archive is truncated")
 		}
-		return parseELFIdentity(header)
+		if id, err = parseELFIdentity(header); err != nil {
+			return id, err
+		}
+		found = true
 	}
 
-	return id, fmt.Errorf("the archive does not contain a file named b4")
+	if !found {
+		return id, fmt.Errorf("the archive does not contain a file named b4 at its root")
+	}
+
+	return id, nil
+}
+
+// webAuthConfigured mirrors the web server's own rule: authentication is only in force
+// once a username and a password are both set. The middleware waves everything through
+// when they are not, and the default bind address is 0.0.0.0, so a route that installs and
+// runs a binary as root has to insist on credentials for itself.
+func (api *API) webAuthConfigured() bool {
+	ws := api.getCfg().System.WebServer
+	return ws.Username != "" && ws.Password != ""
 }
 
 // @Summary Update from an uploaded release archive
@@ -150,6 +184,13 @@ func (api *API) handleUpdateUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	serviceManager := api.getServiceManager()
+
+	if !api.webAuthConfigured() {
+		log.Warnf("Refused an archive upload: the web server has no username and password set")
+		writeUploadRefusal(w, serviceManager,
+			"Installing from a file needs a web server username and password to be set. Without them b4 accepts every request on this port, and this route replaces the binary that runs as root. Set credentials under Settings, Web Server.")
+		return
+	}
 
 	if serviceManager == "docker" {
 		writeUploadRefusal(w, serviceManager, "Cannot update: B4 is running inside Docker. Pull the latest image and recreate your container to update.")

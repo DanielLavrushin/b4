@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -560,5 +561,21 @@ func TestAFailedRefreshDoesNotStickToLaterCallers(t *testing.T) {
 	api.mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/system/releases", nil))
 	if rec.Code != http.StatusOK || rec.Body.String() != body {
 		t.Fatalf("retry after recovery got code=%d body=%q, want the fresh answer", rec.Code, rec.Body.String())
+	}
+}
+
+func TestMirrorClientHonoursProxyEnvironment(t *testing.T) {
+	tr, ok := mirrorClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("mirrorClient.Transport = %T, want *http.Transport", mirrorClient.Transport)
+	}
+
+	if tr.Proxy == nil {
+		t.Fatal("mirrorClient must honour HTTP_PROXY/HTTPS_PROXY: a custom Transport with a nil Proxy silently ignores them, unlike http.DefaultTransport")
+	}
+
+	want := reflect.ValueOf(http.ProxyFromEnvironment).Pointer()
+	if got := reflect.ValueOf(tr.Proxy).Pointer(); got != want {
+		t.Fatal("mirrorClient.Transport.Proxy should be http.ProxyFromEnvironment")
 	}
 }

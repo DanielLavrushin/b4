@@ -479,6 +479,50 @@ mirror_alive() {
     return 1
 }
 
+_wget_guarded() {
+    _wg_out="$1"
+    _wg_quiet="$2"
+    shift 2
+
+    if [ "$_wg_quiet" = "1" ]; then
+        wget "$@" 2>/dev/null &
+    else
+        wget "$@" &
+    fi
+    _wg_pid=$!
+
+    _wg_prev=0
+    _wg_stall=0
+    _wg_elapsed=0
+    _wg_tick=5
+    _wg_floor=$((1024 * 5))
+
+    while kill -0 "$_wg_pid" 2>/dev/null; do
+        sleep "$_wg_tick"
+        _wg_elapsed=$((_wg_elapsed + _wg_tick))
+
+        _wg_now=$(wc -c <"$_wg_out" 2>/dev/null | awk '{print $1}')
+        if [ -z "$_wg_now" ]; then
+            _wg_now=0
+        fi
+
+        if [ $((_wg_now - _wg_prev)) -lt "$_wg_floor" ]; then
+            _wg_stall=$((_wg_stall + _wg_tick))
+        else
+            _wg_stall=0
+        fi
+        _wg_prev=$_wg_now
+
+        if [ "$_wg_stall" -ge "$B4_STALL_TIMEOUT" ] || [ "$_wg_elapsed" -ge "$B4_MAX_TIME" ]; then
+            kill "$_wg_pid" 2>/dev/null || true
+            wait "$_wg_pid" 2>/dev/null || true
+            return 1
+        fi
+    done
+
+    wait "$_wg_pid"
+}
+
 _do_fetch() {
     _fetch_url="$1"
     _fetch_out="$2"
@@ -492,7 +536,7 @@ _do_fetch() {
             _wget_supports "--show-progress" && _wget_args="$_wget_args --show-progress -q"
             _wget_supports "--connect-timeout" && _wget_args="$_wget_args --connect-timeout=$B4_CONNECT_TIMEOUT"
             _wget_supports "--timeout" && _wget_args="$_wget_args --timeout=$B4_STALL_TIMEOUT"
-            wget $_wget_args -O "$_fetch_out" "$_fetch_url" 2>&1 && return 0
+            _wget_guarded "$_fetch_out" 0 $_wget_args -O "$_fetch_out" "$_fetch_url" && return 0
         fi
     else
         if command_exists curl && curl -sfL \
@@ -503,7 +547,7 @@ _do_fetch() {
             _wget_args="-q $WGET_INSECURE"
             _wget_supports "--connect-timeout" && _wget_args="$_wget_args --connect-timeout=$B4_CONNECT_TIMEOUT"
             _wget_supports "--timeout" && _wget_args="$_wget_args --timeout=$B4_STALL_TIMEOUT"
-            wget $_wget_args -O "$_fetch_out" "$_fetch_url" 2>/dev/null && return 0
+            _wget_guarded "$_fetch_out" 1 $_wget_args -O "$_fetch_out" "$_fetch_url" && return 0
         fi
     fi
     return 1
@@ -2993,8 +3037,12 @@ action_install() {
     _cs_ret=0
     verify_checksum "$archive_path" "$sha_url" || _cs_ret=$?
     if [ "$_cs_ret" -eq 2 ]; then
-        log_warn "Checksum mismatch — download may be corrupted"
-        if ! confirm "Continue anyway?"; then
+        log_err "SHA256 mismatch: the archive is not the published release"
+        if [ "$QUIET_MODE" -eq 1 ]; then
+            log_err "Refusing to install it unattended"
+            exit 1
+        fi
+        if ! confirm "Install it anyway?" "n"; then
             exit 1
         fi
     fi
@@ -3429,8 +3477,12 @@ action_update() {
         _cs_ret=0
         verify_checksum "$archive_path" "$sha_url" || _cs_ret=$?
         if [ "$_cs_ret" -eq 2 ]; then
-            log_warn "Checksum mismatch, download may be corrupted"
-            if ! confirm "Continue anyway?"; then
+            log_err "SHA256 mismatch: the archive is not the published release"
+            if [ "$QUIET_MODE" -eq 1 ]; then
+                log_err "Refusing to install it unattended"
+                exit 1
+            fi
+            if ! confirm "Install it anyway?" "n"; then
                 exit 1
             fi
         fi
@@ -3445,6 +3497,10 @@ action_update() {
     if [ ! -f "${TEMP_DIR}/${BINARY_NAME}" ]; then
         log_err "Binary not found in archive"
         exit 1
+    fi
+
+    if [ -n "$B4_LOCAL_ARCHIVE" ] && [ "$B4_LOCAL_ARCHIVE_OWNED" = "1" ]; then
+        rm -f "$B4_LOCAL_ARCHIVE" 2>/dev/null || true
     fi
 
     bin_dir=$(dirname "$existing_bin")

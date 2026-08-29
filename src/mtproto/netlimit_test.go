@@ -235,3 +235,27 @@ func TestRefusalStateDroppedWithTheSecret(t *testing.T) {
 		t.Fatalf("a removed secret must not leave refusal state behind, got %d entries", left)
 	}
 }
+
+func TestTrimmedNetworkCannotReclaimItsSlot(t *testing.T) {
+	srv, mkCfg, secA, _ := limitTestServer(t, 0)
+
+	oldest := conn("85.233.150.240", 13000)
+	doomed := conn("178.130.140.98", 13001)
+	srv.trackConn(secA, oldest)
+	srv.trackConn(secA, doomed)
+
+	srv.UpdateConfig(mkCfg(func(m *config.MTProtoConfig) {
+		m.Secrets[0].MaxNetworks = 1
+	}))
+	if !doomed.closed.Load() {
+		t.Fatal("the newer network must have been closed by the trim")
+	}
+
+	_, _, deny := srv.trackConn(secA, conn("178.130.140.98", 13002))
+	if deny.limit != 1 {
+		t.Fatalf("a trimmed network reconnecting before its old conns untrack must be refused, got %+v", deny)
+	}
+	if got := statForSecret(t, srv, "Max").Networks; got != 1 {
+		t.Fatalf("the secret must not be left above its limit: Networks = %d, want 1", got)
+	}
+}

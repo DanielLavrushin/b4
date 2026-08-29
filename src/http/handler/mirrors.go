@@ -92,6 +92,7 @@ var mirrorOwners = []string{
 var mirrorClient = &http.Client{
 	Timeout: 10 * time.Minute,
 	Transport: &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
 			Timeout:   10 * time.Second,
 			KeepAlive: 30 * time.Second,

@@ -294,9 +294,10 @@ reach GitHub either. **SourceForge mirror** opens that version's folder at
 `sourceforge.net/projects/b4core/files/<tag>/`, which carries the same archives and the same
 `.sha256` files as the GitHub release.
 
-Before anything is replaced, the service checks that the upload is a gzip archive holding a
-file named `b4`, that the file is a Linux executable, and that it was built for this
-machine. An archive for the wrong architecture is refused with both architectures named,
+Before anything is replaced, the service checks the entry the installer would actually put
+in place: exactly one file named `b4` at the root of the archive, large enough to be the
+service, holding a Linux executable built for this machine. An archive carrying a second
+`b4` deeper in the tree is not what gets installed and does not satisfy the check. An archive for the wrong architecture is refused with both architectures named,
 rather than being installed and rolled back afterwards.
 
 The **Expected SHA256** field is optional and compared against the upload before it is
@@ -332,6 +333,13 @@ service, `install.sh` still has to be reachable.
 
 Docker is refused, because an image is replaced by pulling a new one, and so is a b4 that is
 not running under a service manager.
+
+:::warning A username and a password have to be set
+The web server only enforces authentication once both are configured, and it listens on
+every interface by default. Uploading a file replaces the binary that runs as root, so the
+route refuses to work at all while the web server would accept any request that reaches the
+port. Credentials are set under **Settings** -> **Web Server**.
+:::
 
 ## The installer
 

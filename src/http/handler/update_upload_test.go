@@ -21,7 +21,9 @@ import (
 func fakeELF(t *testing.T, machine elf.Machine, class, data byte) []byte {
 	t.Helper()
 
-	b := make([]byte, 64)
+	// Sized like a real binary: inspectUpdateArchive refuses an entry too small to be
+	// the service, which is what rules out a header-only decoy.
+	b := make([]byte, minBinarySize+4096)
 	copy(b, []byte{0x7f, 'E', 'L', 'F'})
 	b[4] = class
 	b[5] = data
@@ -34,6 +36,37 @@ func fakeELF(t *testing.T, machine elf.Machine, class, data byte) []byte {
 		b[19] = byte(uint16(machine) >> 8)
 	}
 	return b
+}
+
+type tarEntry struct {
+	name string
+	body []byte
+}
+
+func writeOrderedArchive(t *testing.T, entries []tarEntry) string {
+	t.Helper()
+
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+	for _, e := range entries {
+		if err := tw.WriteHeader(&tar.Header{
+			Name: e.name, Mode: 0755, Size: int64(len(e.body)), Typeflag: tar.TypeReg,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write(e.body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tw.Close()
+	gw.Close()
+
+	p := filepath.Join(t.TempDir(), "archive.tar.gz")
+	if err := os.WriteFile(p, buf.Bytes(), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return p
 }
 
 func writeArchive(t *testing.T, entries map[string][]byte) string {
@@ -154,6 +187,8 @@ func newUploadTestAPI(t *testing.T, serviceManager string) (*API, *[]installerRu
 
 	cfg := &config.Config{}
 	cfg.ConfigPath = filepath.Join(t.TempDir(), "b4.json")
+	cfg.System.WebServer.Username = "admin"
+	cfg.System.WebServer.Password = "secret"
 
 	launched := &[]installerRun{}
 
@@ -298,5 +333,98 @@ func TestUploadRejectsNonPost(t *testing.T) {
 
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("code = %d, want 405", rec.Code)
+	}
+}
+
+func TestInspectUpdateArchiveIgnoresANestedDecoy(t *testing.T) {
+	running, err := runningELFIdentity()
+	if err != nil {
+		t.Skipf("cannot read the test binary's ELF header: %v", err)
+	}
+
+	// decoy/b4 is a valid header for this machine; the root b4, which is what the
+	// installer actually puts in place, is not an executable at all.
+	path := writeOrderedArchive(t, []tarEntry{
+		{"decoy/b4", fakeELF(t, elf.Machine(running.machine), running.class, running.data)},
+		{"b4", []byte("#!/bin/sh\necho pwned\n")},
+	})
+
+	if _, err := inspectUpdateArchive(path); err == nil {
+		t.Fatal("a nested decoy must not satisfy the check for the root b4 that gets installed")
+	}
+}
+
+func TestInspectUpdateArchiveRejectsDuplicateRootEntries(t *testing.T) {
+	running, err := runningELFIdentity()
+	if err != nil {
+		t.Skipf("cannot read the test binary's ELF header: %v", err)
+	}
+
+	other := elf.EM_AARCH64
+	if running.machine == uint16(elf.EM_AARCH64) {
+		other = elf.EM_X86_64
+	}
+
+	// tar extraction lets the later entry win, so validating the first is meaningless.
+	path := writeOrderedArchive(t, []tarEntry{
+		{"b4", fakeELF(t, elf.Machine(running.machine), running.class, running.data)},
+		{"b4", fakeELF(t, other, running.class, running.data)},
+	})
+
+	if _, err := inspectUpdateArchive(path); err == nil {
+		t.Fatal("two b4 entries must be refused: the one validated is not the one installed")
+	}
+}
+
+func TestInspectUpdateArchiveAcceptsARealReleaseLayout(t *testing.T) {
+	running, err := runningELFIdentity()
+	if err != nil {
+		t.Skipf("cannot read the test binary's ELF header: %v", err)
+	}
+	body := fakeELF(t, elf.Machine(running.machine), running.class, running.data)
+
+	for _, name := range []string{"b4", "./b4"} {
+		path := writeOrderedArchive(t, []tarEntry{{name, body}})
+		id, err := inspectUpdateArchive(path)
+		if err != nil {
+			t.Fatalf("entry %q: a real release layout must be accepted, got %v", name, err)
+		}
+		if id != running {
+			t.Fatalf("entry %q: identity = %v, want the running one", name, id)
+		}
+	}
+}
+
+func TestUploadRefusedWhenTheWebServerHasNoCredentials(t *testing.T) {
+	running, err := runningELFIdentity()
+	if err != nil {
+		t.Skipf("cannot read the test binary's ELF header: %v", err)
+	}
+	archive := writeOrderedArchive(t, []tarEntry{
+		{"b4", fakeELF(t, elf.Machine(running.machine), running.class, running.data)},
+	})
+
+	for _, creds := range []struct{ user, pass string }{
+		{"", ""},
+		{"admin", ""},
+		{"", "secret"},
+	} {
+		api, launched := newUploadTestAPI(t, "systemd")
+		cfg := api.getCfg()
+		cfg.System.WebServer.Username = creds.user
+		cfg.System.WebServer.Password = creds.pass
+
+		rec := httptest.NewRecorder()
+		api.mux.ServeHTTP(rec, updateUploadRequest(t, archive, ""))
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("user=%q pass=%q: code = %d, want 400", creds.user, creds.pass, rec.Code)
+		}
+		if res := decodeUploadResponse(t, rec); res.Success {
+			t.Fatalf("user=%q pass=%q: an unauthenticated instance must not install an uploaded binary", creds.user, creds.pass)
+		}
+		if len(*launched) != 0 {
+			t.Fatalf("user=%q pass=%q: the installer must not be reached", creds.user, creds.pass)
+		}
 	}
 }

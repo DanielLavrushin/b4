@@ -397,7 +397,7 @@ func (s *Server) enforceSecretLimits(active []*Secret) {
 		}
 		since := make(map[string]time.Time, len(set.networks))
 		for _, info := range set.conns {
-			if info.network == "" {
+			if _, live := set.networks[info.network]; !live {
 				continue
 			}
 			if t, seen := since[info.network]; !seen || info.connectedAt.Before(t) {
@@ -407,6 +407,9 @@ func (s *Server) enforceSecretLimits(active []*Secret) {
 		keys := make([]string, 0, len(since))
 		for k := range since {
 			keys = append(keys, k)
+		}
+		if len(keys) <= limit {
+			continue
 		}
 		slices.SortFunc(keys, func(a, b string) int {
 			if since[a].Equal(since[b]) {
@@ -420,6 +423,7 @@ func (s *Server) enforceSecretLimits(active []*Secret) {
 		drop := make(map[string]struct{}, len(keys)-limit)
 		for _, k := range keys[:len(keys)-limit] {
 			drop[k] = struct{}{}
+			delete(set.networks, k)
 		}
 		v := victim{label: set.label, limit: limit}
 		for c, info := range set.conns {

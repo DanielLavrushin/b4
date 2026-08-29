@@ -121,11 +121,39 @@ func (r installerRun) obtainInstaller(path string) error {
 	return err
 }
 
+// sweepStaleUpdateFiles clears what an interrupted update left in the temp directory.
+// The installer stops b4 before it finishes, so the goroutine that would clean up dies
+// with the process, and on a router /tmp is usually RAM.
+func sweepStaleUpdateFiles() {
+	dir := os.TempDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+
+	cutoff := time.Now().Add(-time.Hour)
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasPrefix(name, "b4update-") && !strings.HasPrefix(name, "b4-upload-") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || info.ModTime().After(cutoff) {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(dir, name)); err == nil {
+			log.Infof("Removed a leftover update file: %s", name)
+		}
+	}
+}
+
 func (api *API) launchInstaller(run installerRun) error {
 	if api.overrideLaunchInstaller != nil {
 		api.overrideLaunchInstaller(run)
 		return nil
 	}
+
+	sweepStaleUpdateFiles()
 
 	// A private 0700 directory: b4 runs as root and execs what it writes here, and a
 	// fixed name under a world-writable /tmp can be pre-created as a symlink by anyone.
@@ -188,6 +216,7 @@ func (api *API) launchInstaller(run installerRun) error {
 		}
 		if run.localArchive != "" {
 			env = append(env, "B4_LOCAL_ARCHIVE="+run.localArchive)
+			env = append(env, "B4_LOCAL_ARCHIVE_OWNED=1")
 		}
 
 		var cmd *exec.Cmd

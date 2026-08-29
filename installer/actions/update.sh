@@ -183,8 +183,12 @@ action_update() {
         _cs_ret=0
         verify_checksum "$archive_path" "$sha_url" || _cs_ret=$?
         if [ "$_cs_ret" -eq 2 ]; then
-            log_warn "Checksum mismatch, download may be corrupted"
-            if ! confirm "Continue anyway?"; then
+            log_err "SHA256 mismatch: the archive is not the published release"
+            if [ "$QUIET_MODE" -eq 1 ]; then
+                log_err "Refusing to install it unattended"
+                exit 1
+            fi
+            if ! confirm "Install it anyway?" "n"; then
                 exit 1
             fi
         fi
@@ -200,6 +204,10 @@ action_update() {
     if [ ! -f "${TEMP_DIR}/${BINARY_NAME}" ]; then
         log_err "Binary not found in archive"
         exit 1
+    fi
+
+    if [ -n "$B4_LOCAL_ARCHIVE" ] && [ "$B4_LOCAL_ARCHIVE_OWNED" = "1" ]; then
+        rm -f "$B4_LOCAL_ARCHIVE" 2>/dev/null || true
     fi
 
     bin_dir=$(dirname "$existing_bin")
