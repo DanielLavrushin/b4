@@ -129,19 +129,18 @@ func TestStatsNetworksZeroWithoutConns(t *testing.T) {
 
 func TestWebClientAddrRejectsNonAddressForwardedFor(t *testing.T) {
 	cases := []struct {
-		name    string
-		header  string
-		want    string
-		wantErr bool
+		name   string
+		header string
+		want   string
 	}{
-		{"absent", "", "203.0.113.7:5555", false},
-		{"valid ipv4", "198.51.100.4", "198.51.100.4:0", false},
-		{"valid ipv4 with proxy chain", "198.51.100.4, 10.0.0.9", "198.51.100.4:0", false},
-		{"valid ipv6", "2a00:1370:8190:1234::1", "[2a00:1370:8190:1234::1]:0", false},
-		{"ipv4 mapped ipv6", "::ffff:198.51.100.4", "198.51.100.4:0", false},
-		{"not an address", "pwned<b>", "203.0.113.7:5555", false},
-		{"empty token", " , 10.0.0.9", "203.0.113.7:5555", false},
-		{"host name", "client.example.com", "203.0.113.7:5555", false},
+		{"absent", "", "203.0.113.7:5555"},
+		{"valid ipv4", "198.51.100.4", "198.51.100.4:0"},
+		{"valid ipv4 with proxy chain", "198.51.100.4, 10.0.0.9", "198.51.100.4:0"},
+		{"valid ipv6", "2a00:1370:8190:1234::1", "[2a00:1370:8190:1234::1]:0"},
+		{"ipv4 mapped ipv6", "::ffff:198.51.100.4", "198.51.100.4:0"},
+		{"not an address", "pwned<b>", "203.0.113.7:5555"},
+		{"empty token", " , 10.0.0.9", "203.0.113.7:5555"},
+		{"host name", "client.example.com", "203.0.113.7:5555"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
