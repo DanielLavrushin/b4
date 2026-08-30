@@ -1,6 +1,6 @@
 # B4 - Bye Bye Big Bro
 
-## [1.80.1] - 2026-08-29
+## [1.80.2] - 2026-08-29
 
 - FIXED: **The interface reported an older version than the binary on disk, with nothing to say why** - the version is stamped in at build time, so a service whose file is replaced without a restart keeps answering with the version it was compiled as while the command line reports the new one, and where the running process cannot read its own path, as in a container without `/proc`, the diagnostics named that path `.` instead of saying it did not know.
 
