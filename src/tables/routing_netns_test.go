@@ -683,3 +683,111 @@ func TestNetnsProxySetTProxiesTheRoutersOwnDial(t *testing.T) {
 		t.Errorf("the pre chain guard carries no exemption for the set's own mark 0x%x, so the dial above succeeded for some other reason:\n%s", st.mark, chain)
 	}
 }
+
+func netnsRuleLines(t *testing.T) string {
+	t.Helper()
+	return netnsRun(t, "ip", "rule", "show")
+}
+
+func TestNetnsTheStaleSweepLeavesTheLiveRuleStanding(t *testing.T) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+
+	routeEngine = nil
+	defer func() { routeEngine = nil }()
+
+	cfg := netnsConfig(backendIPTables)
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	defer func() { _ = ClearRules(cfg) }()
+
+	RoutingSyncConfig(cfg)
+
+	routeMu.Lock()
+	st, ok := routeRuleCache[cfg.Sets[0].Id]
+	routeMu.Unlock()
+	if !ok {
+		t.Fatal("the set built no routing state")
+	}
+
+	want := routeSetMarkRule(st.mark)
+	table := strconv.Itoa(st.table)
+	prio := strconv.Itoa(routePolicyRuleBase + st.table)
+
+	legacy := []string{fmt.Sprintf("0x%x", st.mark), fmt.Sprintf("0x%x/0x%x", st.mark, st.mark)}
+	for _, m := range legacy {
+		netnsRun(t, "ip", "rule", "add", "fwmark", m, "lookup", table, "priority", prio)
+	}
+	defer func() {
+		for _, m := range legacy {
+			_, _ = run("ip", "rule", "del", "fwmark", m, "lookup", table)
+		}
+	}()
+
+	routeDelStaleRuleForms(st.mark, table)
+
+	lines := netnsRuleLines(t)
+	live := 0
+	for _, line := range strings.Split(lines, "\n") {
+		if routeRuleField(line, "fwmark") == want && routeRuleField(line, "lookup") == table {
+			live++
+		}
+	}
+	if live != 1 {
+		t.Fatalf("the kernel holds %d rule(s) sending %s to table %s after the stale sweep, want exactly one. A "+
+			"shape asked for without a mask reaches the kernel with no FRA_FWMASK, and before 4.18 the delete "+
+			"matched on the mark alone and took the live rule with it, leaving the set marked with nothing "+
+			"pointing at its table:\n%s", live, want, table, lines)
+	}
+
+	for _, m := range legacy {
+		for _, line := range strings.Split(lines, "\n") {
+			if routeRuleField(line, "fwmark") == m && routeRuleField(line, "lookup") == table {
+				t.Errorf("the rule an older b4 wrote as %q is still in the kernel and still steers traffic into "+
+					"table %s:\n%s", m, table, lines)
+			}
+		}
+	}
+}
+
+func TestNetnsAPolicyRuleTakenAwayIsPutBack(t *testing.T) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+
+	routeEngine = nil
+	defer func() { routeEngine = nil }()
+
+	cfg := netnsConfig(backendIPTables)
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	defer func() { _ = ClearRules(cfg) }()
+
+	RoutingSyncConfig(cfg)
+
+	routeMu.Lock()
+	st, ok := routeRuleCache[cfg.Sets[0].Id]
+	routeMu.Unlock()
+	if !ok {
+		t.Fatal("the set built no routing state")
+	}
+
+	want := routeSetMarkRule(st.mark)
+	table := strconv.Itoa(st.table)
+	netnsRun(t, "ip", "rule", "del", "fwmark", want, "lookup", table)
+
+	RoutingReconcilePolicyRules(cfg)
+
+	lines := netnsRuleLines(t)
+	found := false
+	for _, line := range strings.Split(lines, "\n") {
+		if routeRuleField(line, "fwmark") == want && routeRuleField(line, "lookup") == table {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the firmware rebuilding its own rules takes b4's policy rule with it, and nothing read it back, "+
+			"so the set kept marking traffic that then left by the ordinary uplink:\n%s", lines)
+	}
+}

@@ -134,6 +134,7 @@ func (m *Monitor) monitorLoop() {
 				m.snapshotRoutingIfaces(cfg)
 				log.Infof("Routing rules restored successfully")
 			} else {
+				RoutingReconcilePolicyRules(cfg)
 				RoutingPeriodicReResolve(cfg)
 			}
 		}

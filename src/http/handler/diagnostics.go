@@ -298,12 +298,21 @@ func collectFirewallInfo(cfg *config.Config) DiagFirewall {
 
 	info.RuleGroups = append(info.RuleGroups, collectNftRuleGroups()...)
 	info.RuleGroups = append(info.RuleGroups, collectIptablesRuleGroups(info.Backend)...)
+	info.RuleGroups = append(info.RuleGroups, collectPolicyRuleGroup()...)
 
 	info.NFQueueWorks = testNFQueue(info.Backend)
 	info.FlowOffload, info.FlowOffloadGuard = detectFlowOffload()
 	info.FlowOffloadSafe = flowOffloadSafe(info.FlowOffload, info.FlowOffloadGuard, cfg)
 
 	return info
+}
+
+func collectPolicyRuleGroup() []DiagRuleGroup {
+	rules := tables.RoutingPolicyRuleLines()
+	if len(rules) == 0 {
+		return nil
+	}
+	return []DiagRuleGroup{{Title: "ip rule (policy routing)", Rules: rules}}
 }
 
 func detectFirewallBackend() string {

@@ -124,13 +124,15 @@ func TestPolicyRuleMatchesUnderTheSharedMask(t *testing.T) {
 
 func TestStaleRuleCleanupCoversTheLegacyForms(t *testing.T) {
 	forms := routeStaleMarkRules(0x1b1d)
-	want := []string{"0x1b1d", "0x1b1d/0x1b1d", "0x1b1d/0x27fff"}
+	want := []string{"0x1b1d/0xffffffff", "0x1b1d/0x1b1d", "0x1b1d/0x27fff"}
 	if len(forms) != len(want) {
-		t.Fatalf("got %v, want the bare, legacy self-masked and shared-mask forms %v", forms, want)
+		t.Fatalf("got %v, want the legacy bare, legacy self-masked and shared-mask forms %v", forms, want)
 	}
 	for i := range want {
 		if forms[i] != want[i] {
-			t.Errorf("form %d is %q, want %q; an upgrade leaves the old rule behind otherwise", i, forms[i], want[i])
+			t.Errorf("form %d is %q, want %q; an upgrade leaves the old rule behind otherwise, and a form written "+
+				"without a mask reaches the kernel with no FRA_FWMASK and takes the shape in use with it on "+
+				"anything before Linux 4.18", i, forms[i], want[i])
 		}
 	}
 }

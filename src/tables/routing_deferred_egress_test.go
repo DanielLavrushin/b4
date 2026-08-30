@@ -125,7 +125,7 @@ func TestStaleRuleShapesAreStillCleanedUp(t *testing.T) {
 	const mark = uint32(0x4d05)
 	routeDelStaleRuleForms(mark, "169")
 
-	want := []string{"0x4d05", "0x4d05/0x4d05"}
+	want := []string{"0x4d05/0xffffffff", "0x4d05/0x4d05"}
 	for _, w := range want {
 		found := false
 		for _, d := range deleted {

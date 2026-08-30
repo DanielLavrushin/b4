@@ -961,6 +961,7 @@ func RoutingSyncConfig(cfg *config.Config) {
 	}
 
 	routeReconcileKillSwitches(cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	routeReconcilePolicyRules(cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	routeReestablishJumpOrder(be, cfg, len(newRoutingSets) > 0)
 
 	if len(newRoutingSets) > 0 {
@@ -1387,7 +1388,7 @@ func routeSetMarkRule(mark uint32) string {
 
 func routeStaleMarkRules(mark uint32) []string {
 	return []string{
-		fmt.Sprintf("0x%x", mark),
+		fmt.Sprintf("0x%x/0x%x", mark, routeLegacyMarkMask),
 		fmt.Sprintf("0x%x/0x%x", mark, mark),
 		routeSetMarkRule(mark),
 	}
@@ -1683,6 +1684,8 @@ const routeKillSwitchMetric = "4096"
 
 const routeProtoID = "155"
 
+const routeLegacyMarkMask = uint32(0xffffffff)
+
 var (
 	routeProtoOnce sync.Once
 	routeProtoOK   bool
@@ -1776,6 +1779,135 @@ func routeFamilyArgs(ipv4, ipv6 bool) []routeFamily {
 	}
 	if ipv6 {
 		out = append(out, routeFamily{name: "v6", flag: []string{"-6"}})
+	}
+	return out
+}
+
+var routeRuleLines = routeRuleLinesExec
+
+func routeRuleLinesExec(fam routeFamily) ([]string, bool) {
+	args := append([]string{"ip"}, fam.flag...)
+	args = append(args, "rule", "show")
+	out, err := run(args...)
+	if err != nil {
+		return nil, false
+	}
+	return strings.Split(out, "\n"), true
+}
+
+func routePolicyRuleInstalled(lines []string, mark uint32, table int) bool {
+	want := routeSetMarkRule(mark)
+	tableStr := fmt.Sprintf("%d", table)
+	for _, line := range lines {
+		if routeRuleField(line, "fwmark") != want || routeRuleField(line, "lookup") != tableStr {
+			continue
+		}
+		if prio, ok := routeRulePriority(line); ok && prio == routePolicyRuleBase+table {
+			return true
+		}
+	}
+	return false
+}
+
+type routePolicyRuleKey struct {
+	mark  uint32
+	table int
+}
+
+var routePolicyRuleGone = make(map[string]bool)
+
+func routePolicyRulesWanted() map[routePolicyRuleKey]struct{} {
+	wanted := make(map[routePolicyRuleKey]struct{})
+	for _, st := range routeRuleCache {
+		if config.RoutingUsesTProxy(st.mode) || st.iface == "" || st.table <= 0 {
+			continue
+		}
+		if !routeIfaceWasSeen(st.iface) {
+			continue
+		}
+		wanted[routePolicyRuleKey{mark: st.mark, table: st.table}] = struct{}{}
+	}
+	return wanted
+}
+
+func routeReconcilePolicyRules(ipv4, ipv6 bool) {
+	if !hasBinary("ip") {
+		return
+	}
+	wanted := routePolicyRulesWanted()
+	if len(wanted) == 0 {
+		routePolicyRuleGone = make(map[string]bool)
+		return
+	}
+	live := make(map[string]bool, len(wanted))
+	for _, fam := range routeFamilyArgs(ipv4, ipv6) {
+		lines, ok := routeRuleLines(fam)
+		for key := range wanted {
+			tableStr := fmt.Sprintf("%d", key.table)
+			markStrMask := routeSetMarkRule(key.mark)
+			seen := fam.name + "|" + markStrMask + "|" + tableStr
+			live[seen] = true
+			if !ok {
+				continue
+			}
+			if routePolicyRuleInstalled(lines, key.mark, key.table) {
+				if routePolicyRuleGone[seen] {
+					delete(routePolicyRuleGone, seen)
+					log.Infof("Routing: the %s rule sending mark %s to table %s is back", fam.name, markStrMask, tableStr)
+				}
+				continue
+			}
+			first := !routePolicyRuleGone[seen]
+			if first {
+				routePolicyRuleGone[seen] = true
+				log.Warnf("Routing: no %s rule sends mark %s to table %s, so every address the sets on that table match is marked, finds nothing pointing at their table and leaves by the ordinary uplink; putting the rule back", fam.name, markStrMask, tableStr)
+			}
+			args := append([]string{"ip"}, fam.flag...)
+			args = append(args, "rule", "add", "fwmark", markStrMask, "lookup", tableStr,
+				"priority", fmt.Sprintf("%d", routePolicyRuleBase+key.table))
+			if first {
+				runLogged("routing: restore ip rule "+fam.name, args...)
+				continue
+			}
+			_, _ = run(args...)
+		}
+	}
+	for seen := range routePolicyRuleGone {
+		if !live[seen] {
+			delete(routePolicyRuleGone, seen)
+		}
+	}
+}
+
+func RoutingReconcilePolicyRules(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+	routeMu.Lock()
+	defer routeMu.Unlock()
+	if len(routeRuleCache) == 0 {
+		return
+	}
+	routeReconcilePolicyRules(cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+}
+
+func RoutingPolicyRuleLines() []string {
+	if !hasBinary("ip") {
+		return nil
+	}
+	var out []string
+	for _, fam := range routeFamilyArgs(true, true) {
+		lines, ok := routeRuleLines(fam)
+		if !ok {
+			continue
+		}
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			out = append(out, fam.name+" "+line)
+		}
 	}
 	return out
 }
