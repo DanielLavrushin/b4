@@ -357,11 +357,11 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	routeWarnDeviceGate(set.Name, gate)
 	sourceScoped := routeSetIsSourceScoped(set)
 	routeSelfDialBypass(be, cfg, st.chainPre)
-	be.addClaimedBypassRule(st.chainPre)
+	be.addClaimedBypassRule(st.chainPre, st.mark)
 	routeAddBlacklistGate(be, "mangle", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
 	if !sourceScoped {
 		routeSelfDialBypass(be, cfg, st.chainOut)
-		be.addClaimedBypassRule(st.chainOut)
+		be.addClaimedBypassRule(st.chainOut, 0)
 	}
 
 	port, _ := portFromState(st)

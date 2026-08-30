@@ -65,7 +65,7 @@ type routeBackend interface {
 	flushChain(chain string, isMangle bool)
 	deleteChain(chain string, isMangle bool)
 	addBypassRule(chain string, mark uint32)
-	addClaimedBypassRule(chain string)
+	addClaimedBypassRule(chain string, own uint32)
 	addRouterTrafficGuard(chain string, v6 bool, setName string, mark uint32) bool
 	addMarkRule(chain string, v6 bool, setName string, mark uint32, sourceIface string, tagHostConntrack bool)
 	addMarkRestoreRule(chain string, v6 bool, sourceIface string, mark uint32)
@@ -1099,7 +1099,7 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 	gate := routeSetDeviceGate(cfg, set)
 	routeWarnDeviceGate(set.Name, gate)
 	routeSelfDialBypass(be, cfg, st.chainPre)
-	be.addClaimedBypassRule(st.chainPre)
+	be.addClaimedBypassRule(st.chainPre, 0)
 
 	routeAddBlacklistGate(be, "mangle", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
 	if !be.addEgressLoopGuard(st.chainPre, st.iface, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled) && len(sources) == 0 {
@@ -1221,7 +1221,7 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState, g
 		injectSources = routeInjectedSourceMatches(gate)
 	}
 	be.addBypassRule(st.chainOut, SelfDialMark)
-	be.addClaimedBypassRule(st.chainOut)
+	be.addClaimedBypassRule(st.chainOut, 0)
 	if cfg.Queue.IPv4Enabled {
 		be.addInjectedMarkRule(st.chainOut, false, st.setV4, st.mark, queueMark, injectSources)
 	}

@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.80.3] - 2026-08-30
+
+- FIXED: **A domain in a proxy-mode set failed when reached through b4's built-in SOCKS5 server, while the same domain worked for a client passing through** - traffic the router originates is marked by the set's own output chain and comes back through prerouting over the local route, where the guard added in 1.80.0 returns any packet that already carries a routing mark, including the set's own.
+
 ## [1.80.2] - 2026-08-29
 
 - FIXED: **The interface reported an older version than the binary on disk, with nothing to say why** - the version is stamped in at build time, so a service whose file is replaced without a restart keeps answering with the version it was compiled as while the command line reports the new one, and where the running process cannot read its own path, as in a container without `/proc`, the diagnostics named that path `.` instead of saying it did not know.

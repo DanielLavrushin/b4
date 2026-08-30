@@ -140,15 +140,20 @@ func (b *routeIptBackend) addBypassRule(chain string, mark uint32) {
 	}
 }
 
-func (b *routeIptBackend) addClaimedBypassRule(chain string) {
+func (b *routeIptBackend) addClaimedBypassRule(chain string, own uint32) {
 	maskHex := fmt.Sprintf("0x0/0x%x", routeSetMarkMask)
 	for _, cmd := range b.iptBoth() {
 		if !hasBinary(cmd) {
 			continue
 		}
-		runLogged("routing: add claimed bypass rule "+chain,
-			cmd, "-w", "-t", "mangle", "-A", chain,
-			"-m", "mark", "!", "--mark", maskHex, "-j", "RETURN")
+		args := []string{cmd, "-w", "-t", "mangle", "-A", chain,
+			"-m", "mark", "!", "--mark", maskHex}
+		if mine := own & routeSetMarkMask; mine != 0 {
+			args = append(args, "-m", "mark", "!", "--mark",
+				fmt.Sprintf("0x%x/0x%x", mine, routeSetMarkMask))
+		}
+		args = append(args, "-j", "RETURN")
+		runLogged("routing: add claimed bypass rule "+chain, args...)
 	}
 }
 

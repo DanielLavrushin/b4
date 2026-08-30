@@ -270,7 +270,9 @@ func iptDeletesByPosition(args []string) bool {
 	return false
 }
 
-func run(args ...string) (string, error) {
+var run = runExec
+
+func runExec(args ...string) (string, error) {
 	if len(args) > 1 && isIPTablesBinary(args[0]) && !iptablesSupportsWait(args[0]) {
 		args = dropWaitFlag(args)
 	}

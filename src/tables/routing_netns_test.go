@@ -8,12 +8,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/sock"
 	"github.com/florianl/go-nfqueue"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -599,5 +601,85 @@ func TestNetnsLegacyBaseOutputBypassIsSweptOnSync(t *testing.T) {
 	}
 	if !strings.Contains(after, "jump b4r_") {
 		t.Errorf("the sweep took the jumps with it:\n%s", after)
+	}
+}
+
+func netnsTransparentListener(t *testing.T, port int) net.Listener {
+	t.Helper()
+	lc := net.ListenConfig{
+		Control: func(network, address string, c syscall.RawConn) error {
+			var ctlErr error
+			if err := c.Control(func(fd uintptr) {
+				if e := unix.SetsockoptInt(int(fd), unix.SOL_IP, unix.IP_TRANSPARENT, 1); e != nil {
+					ctlErr = e
+				}
+			}); err != nil {
+				return err
+			}
+			return ctlErr
+		},
+	}
+	ln, err := lc.Listen(context.Background(), "tcp4", fmt.Sprintf("0.0.0.0:%d", port))
+	if err != nil {
+		t.Fatalf("transparent listen on %d: %v", port, err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	return ln
+}
+
+func TestNetnsProxySetTProxiesTheRoutersOwnDial(t *testing.T) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+
+	routeEngine = nil
+	defer func() { routeEngine = nil }()
+
+	cfg := netnsProxyMixConfig()
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	defer func() { _ = ClearRules(cfg) }()
+
+	RoutingSyncConfig(cfg)
+	defer RoutingClearAll()
+
+	st, ok := routeRuleCache["netns-proxy-set"]
+	if !ok {
+		t.Fatal("the proxy set built no rules")
+	}
+	_, _ = run("nft", "add", "element", "inet", routeNftTable, st.setV4, "{", netnsProxyTarget, "}")
+
+	port, _ := portFromState(st)
+	ln := netnsTransparentListener(t, port)
+
+	accepted := make(chan string, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		accepted <- conn.LocalAddr().String()
+		_ = conn.Close()
+	}()
+
+	conn, err := net.DialTimeout("tcp", netnsProxyTarget+":443", 3*time.Second)
+	if err != nil {
+		chain := netnsRun(t, "nft", "list", "chain", "inet", routeNftTable, st.chainPre)
+		t.Fatalf("the router's own dial to a proxied address never completed (%v); this is the path b4's built-in SOCKS5 server takes, and the chain guard returns it above the tproxy rule unless the guard exempts the set's own mark 0x%x:\n%s", err, st.mark, chain)
+	}
+	defer conn.Close()
+
+	select {
+	case local := <-accepted:
+		if !strings.HasPrefix(local, netnsProxyTarget+":") {
+			t.Errorf("the tproxy listener accepted %s, not the original destination %s; the connection was not transparently diverted", local, netnsProxyTarget)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the dial connected but the transparent listener never accepted it")
+	}
+
+	chain := netnsRun(t, "nft", "list", "chain", "inet", routeNftTable, st.chainPre)
+	if !strings.Contains(chain, fmt.Sprintf("!= 0x%08x", st.mark)) && !strings.Contains(chain, fmt.Sprintf("!= 0x%x", st.mark)) {
+		t.Errorf("the pre chain guard carries no exemption for the set's own mark 0x%x, so the dial above succeeded for some other reason:\n%s", st.mark, chain)
 	}
 }

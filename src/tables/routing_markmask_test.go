@@ -61,12 +61,14 @@ func TestMarkIsReplacedNotAccumulated(t *testing.T) {
 }
 
 func TestChainGuardStopsAnySetMarkNotJustItsOwn(t *testing.T) {
-	nft := captureEmitted(t, func() { (&routeNftBackend{}).addClaimedBypassRule("b4r_x_pre") })
+	stubBinaries(t, backendIPTables, backendIP6Tables)
+
+	nft := captureEmitted(t, func() { (&routeNftBackend{}).addClaimedBypassRule("b4r_x_pre", 0) })
 	if len(nft) != 1 || !strings.Contains(nft[0], "meta mark & 0x27fff != 0x0 return") {
 		t.Errorf("the nft chain guard must return for a packet any routing set already claimed, got %v", nft)
 	}
 
-	ipt := captureEmitted(t, func() { (&routeIptBackend{}).addClaimedBypassRule("b4r_x_pre") })
+	ipt := captureEmitted(t, func() { (&routeIptBackend{}).addClaimedBypassRule("b4r_x_pre", 0) })
 	found := false
 	for _, c := range ipt {
 		if strings.Contains(c, "-m mark ! --mark 0x0/0x27fff -j RETURN") {
@@ -75,6 +77,42 @@ func TestChainGuardStopsAnySetMarkNotJustItsOwn(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("the iptables chain guard must return for a packet any routing set already claimed, got %v", ipt)
+	}
+}
+
+func TestChainGuardLetsTheChainsOwnMarkBackIn(t *testing.T) {
+	stubBinaries(t, backendIPTables, backendIP6Tables)
+
+	nft := captureEmitted(t, func() { (&routeNftBackend{}).addClaimedBypassRule("b4r_x_pre", 0x239c9) })
+	if len(nft) != 1 || !strings.Contains(nft[0], "meta mark & 0x27fff != 0x0 meta mark & 0x27fff != 0x239c9 return") {
+		t.Errorf("a proxy set marks the router's own connection in OUTPUT and the local route sends it back through prerouting, so the guard has to let that one mark past or the set's tproxy rule is never reached: %v", nft)
+	}
+
+	ipt := captureEmitted(t, func() { (&routeIptBackend{}).addClaimedBypassRule("b4r_x_pre", 0x239c9) })
+	found := false
+	for _, c := range ipt {
+		if strings.Contains(c, "-m mark ! --mark 0x0/0x27fff -m mark ! --mark 0x239c9/0x27fff -j RETURN") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the iptables guard needs the same exemption for the chain's own mark, got %v", ipt)
+	}
+}
+
+func TestChainGuardIgnoresAnOwnMarkOutsideTheMask(t *testing.T) {
+	stubBinaries(t, backendIPTables, backendIP6Tables)
+
+	nft := captureEmitted(t, func() { (&routeNftBackend{}).addClaimedBypassRule("b4r_x_pre", 0x100000) })
+	if len(nft) != 1 || !strings.Contains(nft[0], "meta mark & 0x27fff != 0x0 return") {
+		t.Errorf("a mark with bits outside the mask can never equal the masked field, so the second clause would always hold and the guard would stop returning at all: %v", nft)
+	}
+
+	ipt := captureEmitted(t, func() { (&routeIptBackend{}).addClaimedBypassRule("b4r_x_pre", 0x100000) })
+	for _, c := range ipt {
+		if strings.Contains(c, "0x100000") {
+			t.Errorf("the exemption must be masked before it is emitted, got %v", ipt)
+		}
 	}
 }
 

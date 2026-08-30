@@ -1382,8 +1382,8 @@ func (m *mockRouteBackend) hasDeletedJump(baseChain, targetChain string) bool {
 	return false
 }
 func (m *mockRouteBackend) jumpPrepends(bool) bool { return false }
-func (m *mockRouteBackend) addClaimedBypassRule(chain string) {
-	m.recordOp(chain, "claimed-bypass")
+func (m *mockRouteBackend) addClaimedBypassRule(chain string, own uint32) {
+	m.recordOp(chain, fmt.Sprintf("claimed-bypass 0x%x", own))
 }
 func (m *mockRouteBackend) addRouterTrafficGuard(chain string, v6 bool, setName string, mark uint32) bool {
 	m.guards = append(m.guards, mockRouterGuard{chain: chain, v6: v6, setName: setName, mark: mark})

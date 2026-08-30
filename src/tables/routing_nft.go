@@ -187,11 +187,15 @@ func (b *routeNftBackend) addMarkFallbackRule(chain string, v6 bool, setName str
 	runLogged("routing: add mark fallback rule "+chain, append([]string{"nft"}, args...)...)
 }
 
-func (b *routeNftBackend) addClaimedBypassRule(chain string) {
+func (b *routeNftBackend) addClaimedBypassRule(chain string, own uint32) {
 	maskHex := fmt.Sprintf("0x%x", routeSetMarkMask)
-	runLogged("routing: add claimed bypass rule "+chain,
-		"nft", "add", "rule", "inet", routeNftTable, chain,
-		"meta", "mark", "&", maskHex, "!=", "0x0", "return")
+	args := []string{"add", "rule", "inet", routeNftTable, chain,
+		"meta", "mark", "&", maskHex, "!=", "0x0"}
+	if mine := own & routeSetMarkMask; mine != 0 {
+		args = append(args, "meta", "mark", "&", maskHex, "!=", fmt.Sprintf("0x%x", mine))
+	}
+	args = append(args, "return")
+	runLogged("routing: add claimed bypass rule "+chain, append([]string{"nft"}, args...)...)
 }
 
 func (b *routeNftBackend) addRouterTrafficGuard(chain string, v6 bool, setName string, mark uint32) bool {
