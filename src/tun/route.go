@@ -372,7 +372,7 @@ func (r *routeManager) ownsBypassTable(markStr, tableStr string) bool {
 		return false
 	}
 	for _, line := range strings.Split(out, "\n") {
-		if !lookupMatchesTable(ruleFieldValue(line, "lookup"), tableStr) {
+		if !tables.RouteLookupMatchesTable(ruleFieldValue(line, "lookup"), tableStr) {
 			continue
 		}
 		fw := ruleFieldValue(line, "fwmark")
@@ -626,18 +626,6 @@ func (r *routeManager) clientMarkRuleArgs(action, table string) []string {
 	return []string{"ip", "rule", action, "fwmark", clientMarkMatch(), "lookup", table}
 }
 
-func lookupMatchesTable(lookup, table string) bool {
-	if lookup == table {
-		return true
-	}
-	n, err := strconv.Atoi(table)
-	if err != nil {
-		return false
-	}
-	name, named := tables.RouteTableName(n)
-	return named && lookup == name
-}
-
 func (r *routeManager) clientBypassPresent(table string) bool {
 	out, err := run("ip", "rule", "show")
 	if err != nil {
@@ -645,7 +633,7 @@ func (r *routeManager) clientBypassPresent(table string) bool {
 	}
 	bare := strings.SplitN(clientMarkMatch(), "/", 2)[0]
 	for _, line := range strings.Split(out, "\n") {
-		if !lookupMatchesTable(ruleFieldValue(line, "lookup"), table) {
+		if !tables.RouteLookupMatchesTable(ruleFieldValue(line, "lookup"), table) {
 			continue
 		}
 		if table == "main" && !strings.Contains(line, "suppress_prefixlength 0") {

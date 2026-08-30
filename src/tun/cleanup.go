@@ -6,6 +6,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/tables"
 )
 
 func ClearStaleArtifacts(cfg *config.Config) {
@@ -106,7 +107,7 @@ func clearOwnedRoutingTable(table int) bool {
 	}
 	marks := make(map[string]struct{})
 	for _, line := range strings.Split(out, "\n") {
-		if ruleFieldValue(line, "lookup") != tableStr {
+		if !tables.RouteLookupMatchesTable(ruleFieldValue(line, "lookup"), tableStr) {
 			continue
 		}
 		if fw := ruleFieldValue(line, "fwmark"); fw != "" {

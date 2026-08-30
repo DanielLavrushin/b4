@@ -73,10 +73,10 @@ func TestRouteEnsureLocalDelivery_ClearsBothFamiliesWhicheverIsEnabled(t *testin
 			}{{false, "v4"}, {true, "v6"}} {
 				marks := localDeliveryDeletedFamily(dels, fam.ipv6)
 				if len(marks) != 3 {
-					t.Fatalf("%s stale rules were cleared %d time(s), want the bare, the legacy self-masked and the shared-mask form; a rule left behind keeps sending traffic to table %s after the family is turned off", fam.name, len(marks), tableStr)
+					t.Fatalf("%s stale rules were cleared %d time(s), want the legacy bare, the legacy self-masked and the shared-mask form; a rule left behind keeps sending traffic to table %s after the family is turned off", fam.name, len(marks), tableStr)
 				}
-				if marks[0] != "0x20fa" || marks[1] != "0x20fa/0x20fa" || marks[2] != "0x20fa/0x27fff" {
-					t.Errorf("%s stale rule deletion used marks %v, want the bare, the legacy self-masked and the shared-mask form", fam.name, marks)
+				if marks[0] != "0x20fa/0xffffffff" || marks[1] != "0x20fa/0x20fa" || marks[2] != "0x20fa/0x27fff" {
+					t.Errorf("%s stale rule deletion used marks %v, want the legacy bare, the legacy self-masked and the shared-mask form", fam.name, marks)
 				}
 			}
 			for _, d := range dels {

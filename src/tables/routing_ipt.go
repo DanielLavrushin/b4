@@ -2,6 +2,7 @@ package tables
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/daniellavrushin/b4/config"
@@ -140,15 +141,20 @@ func (b *routeIptBackend) addBypassRule(chain string, mark uint32) {
 	}
 }
 
-func (b *routeIptBackend) addClaimedBypassRule(chain string) {
+func (b *routeIptBackend) addClaimedBypassRule(chain string, own uint32) {
 	maskHex := fmt.Sprintf("0x0/0x%x", routeSetMarkMask)
 	for _, cmd := range b.iptBoth() {
 		if !hasBinary(cmd) {
 			continue
 		}
-		runLogged("routing: add claimed bypass rule "+chain,
-			cmd, "-w", "-t", "mangle", "-A", chain,
-			"-m", "mark", "!", "--mark", maskHex, "-j", "RETURN")
+		args := []string{cmd, "-w", "-t", "mangle", "-A", chain,
+			"-m", "mark", "!", "--mark", maskHex}
+		if mine := own & routeSetMarkMask; mine != 0 {
+			args = append(args, "-m", "mark", "!", "--mark",
+				fmt.Sprintf("0x%x/0x%x", mine, routeSetMarkMask))
+		}
+		args = append(args, "-j", "RETURN")
+		runLogged("routing: add claimed bypass rule "+chain, args...)
 	}
 }
 
@@ -302,6 +308,55 @@ func (b *routeIptBackend) addInjectedMarkRule(chain string, v6 bool, setName str
 		runLogged("routing: add injected mark rule "+chain,
 			append([]string{cmd}, routeIptInjectedMarkArgs(chain, setName, mark, queueMark, args)...)...)
 	}
+}
+
+func iptCaptureJumpIndex(cmd string) (int, bool) {
+	out, err := run(cmd, "-w", "-t", "mangle", "-L", "PREROUTING", "--line-numbers", "-n")
+	if err != nil {
+		return 0, false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 || f[1] != captureChainPre {
+			continue
+		}
+		n, err := strconv.Atoi(f[0])
+		if err != nil || n <= 0 {
+			continue
+		}
+		return n, true
+	}
+	return 0, true
+}
+
+func iptPreJumpsBelowCapture(cmd string) bool {
+	out, err := run(cmd, "-w", "-t", "mangle", "-L", "PREROUTING", "--line-numbers", "-n")
+	if err != nil {
+		return false
+	}
+	capture := 0
+	var below bool
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 {
+			continue
+		}
+		n, err := strconv.Atoi(f[0])
+		if err != nil || n <= 0 {
+			continue
+		}
+		switch {
+		case f[1] == captureChainPre:
+			capture = n
+		case routeIsPreChainName(f[1]) && capture > 0 && n > capture:
+			below = true
+		}
+	}
+	return below
+}
+
+func routeIsPreChainName(target string) bool {
+	return strings.HasPrefix(target, routeChainPrefix) && strings.HasSuffix(target, "_pre")
 }
 
 func routeIptJumpArgs(table, baseChain, targetChain string, atTop bool) []string {

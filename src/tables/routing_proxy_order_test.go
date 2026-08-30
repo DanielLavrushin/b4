@@ -175,3 +175,134 @@ func TestProxyOutputChainIsWatchedByTheMonitor(t *testing.T) {
 		}
 	}
 }
+
+func stubProxyRuleSideEffects(t *testing.T) *[]string {
+	t.Helper()
+
+	origRun := run
+	origLogged := runLogged
+	origSysctl := writeSysctl
+	origDelRule := routeDelRuleLoop
+	t.Cleanup(func() {
+		run = origRun
+		runLogged = origLogged
+		writeSysctl = origSysctl
+		routeDelRuleLoop = origDelRule
+	})
+
+	emitted := []string{}
+	run = func(args ...string) (string, error) { return "", nil }
+	runLogged = func(op string, args ...string) bool {
+		emitted = append(emitted, strings.Join(args, " "))
+		return true
+	}
+	writeSysctl = func(path, value string) {}
+	routeDelRuleLoop = func(ipv6 bool, mark, table string) {}
+
+	return &emitted
+}
+
+func proxyGuardState(mark uint32) routeState {
+	return routeState{
+		setID:      "guard",
+		mode:       config.RoutingModeProxy,
+		mark:       mark,
+		table:      252,
+		tproxyPort: 58865,
+		ipv4:       true,
+		setV4:      "b4r_guard_v4",
+		setV6:      "b4r_guard_v6",
+		chainPre:   "b4r_guard_pre",
+		chainOut:   "b4r_guard_out",
+	}
+}
+
+func TestProxyPreChainGuardExemptsItsOwnMark(t *testing.T) {
+	stubProxyRuleSideEffects(t)
+
+	cfg := config.NewConfig()
+	cfg.Queue.IPv4Enabled = true
+	cfg.Queue.IPv6Enabled = false
+	set := orderTestSet("guard", config.RoutingModeProxy, nil)
+	st := proxyGuardState(0x239c9)
+
+	be := &mockRouteBackend{}
+	if err := routeEnsureProxyRule(be, &cfg, set, st, nil); err != nil {
+		t.Fatalf("routeEnsureProxyRule: %v", err)
+	}
+
+	if got := indexOfOp(be.chainOps[st.chainPre], "claimed-bypass 0x239c9"); got < 0 {
+		t.Errorf("the pre chain guard has to exempt the set's own mark, or the connection this set marked in its own out chain comes back over the local route and is returned above the tproxy rule: %v", be.chainOps[st.chainPre])
+	}
+	if got := indexOfOp(be.chainOps[st.chainOut], "claimed-bypass 0x0"); got < 0 {
+		t.Errorf("the out chain never sees its own mark, so exempting it there would only let a second pass re-mark the packet: %v", be.chainOps[st.chainOut])
+	}
+}
+
+func TestProxyPreChainGuardComesBeforeTheTProxyRule(t *testing.T) {
+	emitted := stubProxyRuleSideEffects(t)
+	stubBinaries(t, backendIPTables)
+
+	cfg := config.NewConfig()
+	cfg.Queue.IPv4Enabled = true
+	cfg.Queue.IPv6Enabled = false
+	set := orderTestSet("guard", config.RoutingModeProxy, nil)
+	st := proxyGuardState(0x239c9)
+
+	be := &routeIptBackend{}
+	if err := routeEnsureProxyRule(be, &cfg, set, st, nil); err != nil {
+		t.Fatalf("routeEnsureProxyRule: %v", err)
+	}
+
+	tproxy := -1
+	for i, line := range *emitted {
+		if strings.Contains(line, "-A "+st.chainPre) && strings.Contains(line, "TPROXY") {
+			tproxy = i
+			break
+		}
+	}
+	if tproxy < 0 {
+		t.Fatalf("the pre chain emitted no tproxy rule: %v", *emitted)
+	}
+	for _, line := range (*emitted)[:tproxy] {
+		if strings.Contains(line, "-A "+st.chainPre) && strings.Contains(line, "! --mark 0x0/0x27fff") {
+			if !strings.Contains(line, "! --mark 0x239c9/0x27fff") {
+				t.Errorf("the guard sits above the tproxy rule, so without the own-mark exemption a locally originated connection to this set never reaches it: %q", line)
+			}
+			return
+		}
+	}
+	t.Errorf("no claimed-bypass guard was emitted above the tproxy rule: %v", (*emitted)[:tproxy])
+}
+
+func TestInterfaceModePreChainGuardKeepsNoExemption(t *testing.T) {
+	stubProxyRuleSideEffects(t)
+
+	cfg := config.NewConfig()
+	cfg.Queue.IPv4Enabled = true
+	cfg.Queue.IPv6Enabled = false
+	set := orderTestSet("iface", config.RoutingModeInterface, nil)
+	st := routeState{
+		setID:    "iface",
+		mode:     config.RoutingModeInterface,
+		mark:     0x1b1d,
+		table:    100,
+		iface:    "wg0",
+		ipv4:     true,
+		setV4:    "b4r_iface_v4",
+		setV6:    "b4r_iface_v6",
+		chainPre: "b4r_iface_pre",
+		chainOut: "b4r_iface_out",
+	}
+
+	be := &mockRouteBackend{}
+	if err := routeEnsureRule(be, &cfg, set, st, nil); err != nil {
+		t.Fatalf("routeEnsureRule: %v", err)
+	}
+
+	for _, chain := range []string{st.chainPre, st.chainOut} {
+		if got := indexOfOp(be.chainOps[chain], "claimed-bypass 0x0"); got < 0 {
+			t.Errorf("interface mode routes out a real device instead of back through the local route, so its guard must keep stopping every set mark including its own: %s %v", chain, be.chainOps[chain])
+		}
+	}
+}

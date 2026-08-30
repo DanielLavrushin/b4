@@ -281,7 +281,7 @@ func TestOutChainRefusesAPacketAnotherSetAlreadyClaimed(t *testing.T) {
 	routeAddOutChainRules(be, &cfg, st, routeDeviceGate{})
 
 	ops := be.chainOps[st.chainOut]
-	claimed := indexOfOp(ops, "claimed-bypass")
+	claimed := indexOfPrefix(ops, "claimed-bypass ")
 	injected := indexOfPrefix(ops, "injected ")
 	if claimed < 0 || injected < 0 {
 		t.Fatalf("chain is missing a rule it needs: %v", ops)

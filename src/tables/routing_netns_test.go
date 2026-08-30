@@ -8,12 +8,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/sock"
 	"github.com/florianl/go-nfqueue"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -599,5 +601,193 @@ func TestNetnsLegacyBaseOutputBypassIsSweptOnSync(t *testing.T) {
 	}
 	if !strings.Contains(after, "jump b4r_") {
 		t.Errorf("the sweep took the jumps with it:\n%s", after)
+	}
+}
+
+func netnsTransparentListener(t *testing.T, port int) net.Listener {
+	t.Helper()
+	lc := net.ListenConfig{
+		Control: func(network, address string, c syscall.RawConn) error {
+			var ctlErr error
+			if err := c.Control(func(fd uintptr) {
+				if e := unix.SetsockoptInt(int(fd), unix.SOL_IP, unix.IP_TRANSPARENT, 1); e != nil {
+					ctlErr = e
+				}
+			}); err != nil {
+				return err
+			}
+			return ctlErr
+		},
+	}
+	ln, err := lc.Listen(context.Background(), "tcp4", fmt.Sprintf("0.0.0.0:%d", port))
+	if err != nil {
+		t.Fatalf("transparent listen on %d: %v", port, err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	return ln
+}
+
+func TestNetnsProxySetTProxiesTheRoutersOwnDial(t *testing.T) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+
+	routeEngine = nil
+	defer func() { routeEngine = nil }()
+
+	cfg := netnsProxyMixConfig()
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	defer func() { _ = ClearRules(cfg) }()
+
+	RoutingSyncConfig(cfg)
+	defer RoutingClearAll()
+
+	st, ok := routeRuleCache["netns-proxy-set"]
+	if !ok {
+		t.Fatal("the proxy set built no rules")
+	}
+	_, _ = run("nft", "add", "element", "inet", routeNftTable, st.setV4, "{", netnsProxyTarget, "}")
+
+	port, _ := portFromState(st)
+	ln := netnsTransparentListener(t, port)
+
+	accepted := make(chan string, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		accepted <- conn.LocalAddr().String()
+		_ = conn.Close()
+	}()
+
+	conn, err := net.DialTimeout("tcp", netnsProxyTarget+":443", 3*time.Second)
+	if err != nil {
+		chain := netnsRun(t, "nft", "list", "chain", "inet", routeNftTable, st.chainPre)
+		t.Fatalf("the router's own dial to a proxied address never completed (%v); this is the path b4's built-in SOCKS5 server takes, and the chain guard returns it above the tproxy rule unless the guard exempts the set's own mark 0x%x:\n%s", err, st.mark, chain)
+	}
+	defer conn.Close()
+
+	select {
+	case local := <-accepted:
+		if !strings.HasPrefix(local, netnsProxyTarget+":") {
+			t.Errorf("the tproxy listener accepted %s, not the original destination %s; the connection was not transparently diverted", local, netnsProxyTarget)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the dial connected but the transparent listener never accepted it")
+	}
+
+	chain := netnsRun(t, "nft", "list", "chain", "inet", routeNftTable, st.chainPre)
+	if !strings.Contains(chain, fmt.Sprintf("!= 0x%08x", st.mark)) && !strings.Contains(chain, fmt.Sprintf("!= 0x%x", st.mark)) {
+		t.Errorf("the pre chain guard carries no exemption for the set's own mark 0x%x, so the dial above succeeded for some other reason:\n%s", st.mark, chain)
+	}
+}
+
+func netnsRuleLines(t *testing.T) string {
+	t.Helper()
+	return netnsRun(t, "ip", "rule", "show")
+}
+
+func TestNetnsTheStaleSweepLeavesTheLiveRuleStanding(t *testing.T) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+
+	routeEngine = nil
+	defer func() { routeEngine = nil }()
+
+	cfg := netnsConfig(backendIPTables)
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	defer func() { _ = ClearRules(cfg) }()
+
+	RoutingSyncConfig(cfg)
+
+	routeMu.Lock()
+	st, ok := routeRuleCache[cfg.Sets[0].Id]
+	routeMu.Unlock()
+	if !ok {
+		t.Fatal("the set built no routing state")
+	}
+
+	want := routeSetMarkRule(st.mark)
+	table := strconv.Itoa(st.table)
+	prio := strconv.Itoa(routePolicyRuleBase + st.table)
+
+	legacy := []string{fmt.Sprintf("0x%x", st.mark), fmt.Sprintf("0x%x/0x%x", st.mark, st.mark)}
+	for _, m := range legacy {
+		netnsRun(t, "ip", "rule", "add", "fwmark", m, "lookup", table, "priority", prio)
+	}
+	defer func() {
+		for _, m := range legacy {
+			_, _ = run("ip", "rule", "del", "fwmark", m, "lookup", table)
+		}
+	}()
+
+	routeDelStaleRuleForms(st.mark, table)
+
+	lines := netnsRuleLines(t)
+	live := 0
+	for _, line := range strings.Split(lines, "\n") {
+		if routeRuleField(line, "fwmark") == want && routeRuleField(line, "lookup") == table {
+			live++
+		}
+	}
+	if live != 1 {
+		t.Fatalf("the kernel holds %d rule(s) sending %s to table %s after the stale sweep, want exactly one. A "+
+			"shape asked for without a mask reaches the kernel with no FRA_FWMASK, and before 4.18 the delete "+
+			"matched on the mark alone and took the live rule with it, leaving the set marked with nothing "+
+			"pointing at its table:\n%s", live, want, table, lines)
+	}
+
+	for _, m := range legacy {
+		for _, line := range strings.Split(lines, "\n") {
+			if routeRuleField(line, "fwmark") == m && routeRuleField(line, "lookup") == table {
+				t.Errorf("the rule an older b4 wrote as %q is still in the kernel and still steers traffic into "+
+					"table %s:\n%s", m, table, lines)
+			}
+		}
+	}
+}
+
+func TestNetnsAPolicyRuleTakenAwayIsPutBack(t *testing.T) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+
+	routeEngine = nil
+	defer func() { routeEngine = nil }()
+
+	cfg := netnsConfig(backendIPTables)
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	defer func() { _ = ClearRules(cfg) }()
+
+	RoutingSyncConfig(cfg)
+
+	routeMu.Lock()
+	st, ok := routeRuleCache[cfg.Sets[0].Id]
+	routeMu.Unlock()
+	if !ok {
+		t.Fatal("the set built no routing state")
+	}
+
+	want := routeSetMarkRule(st.mark)
+	table := strconv.Itoa(st.table)
+	netnsRun(t, "ip", "rule", "del", "fwmark", want, "lookup", table)
+
+	RoutingReconcilePolicyRules(cfg)
+
+	lines := netnsRuleLines(t)
+	found := false
+	for _, line := range strings.Split(lines, "\n") {
+		if routeRuleField(line, "fwmark") == want && routeRuleField(line, "lookup") == table {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the firmware rebuilding its own rules takes b4's policy rule with it, and nothing read it back, "+
+			"so the set kept marking traffic that then left by the ordinary uplink:\n%s", lines)
 	}
 }
