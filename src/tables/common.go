@@ -44,7 +44,9 @@ func AddRules(cfg *config.Config) error {
 
 	ipt := NewIPTablesManager(cfg, backend == backendIPTablesLegacy)
 
-	return ipt.Apply()
+	err := ipt.Apply()
+	RoutingEnsureJumpPrecedence(cfg)
+	return err
 }
 
 func ClearRules(cfg *config.Config) error {

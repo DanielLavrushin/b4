@@ -6,6 +6,7 @@ import (
 	"hash/fnv"
 	"net"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -23,6 +24,14 @@ const routeRouterTrafficRate = 200
 const routePolicyRuleBase = 10000
 
 const routeSetMarkMask = config.PerSetRouteMarkBits
+
+const routeChainPrefix = "b4r_"
+
+const captureChainPre = "B4_PREROUTING"
+
+const routeNftBasePriority = nftBaseChainPriority - 1
+
+var routeNftBasePriorityStr = strconv.Itoa(routeNftBasePriority)
 
 // SelfDialMark is carried by connections b4 opens on its own behalf - the
 // MTProto upstream, an upstream SOCKS5, a fail-open direct dial.
@@ -963,11 +972,28 @@ func RoutingSyncConfig(cfg *config.Config) {
 	routeReconcileKillSwitches(cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	routeReconcilePolicyRules(cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	routeReestablishJumpOrder(be, cfg, len(newRoutingSets) > 0)
+	routeEnsurePreJumpPrecedence(be, cfg)
 
 	if len(newRoutingSets) > 0 {
 		cfgSnapshot := *cfg
 		go routePreResolveDomains(&cfgSnapshot, newRoutingSets)
 	}
+}
+
+func RoutingEnsureJumpPrecedence(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+	routeMu.Lock()
+	defer routeMu.Unlock()
+	if len(routeRuleCache) == 0 {
+		return
+	}
+	be := getRouteBackend(cfg)
+	if be == nil {
+		return
+	}
+	routeEnsurePreJumpPrecedence(be, cfg)
 }
 
 func RoutingPeriodicReResolve(cfg *config.Config) {

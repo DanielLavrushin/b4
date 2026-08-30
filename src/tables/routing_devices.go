@@ -313,11 +313,19 @@ func iptDeleteJumpsTo(cmd, table, parent, target string) {
 }
 
 func iptEmitGatedJump(cmd, table, parent, target string, insertTop bool, gate routeDeviceGate) {
+	at := 0
+	if insertTop {
+		at = 1
+	}
+	iptEmitGatedJumpAt(cmd, table, parent, target, at, gate)
+}
+
+func iptEmitGatedJumpAt(cmd, table, parent, target string, at int, gate routeDeviceGate) {
 	op := "-A"
 	var pos []string
-	if insertTop {
+	if at > 0 {
 		op = "-I"
-		pos = []string{"1"}
+		pos = []string{strconv.Itoa(at)}
 	}
 	emit := func(deviceMatch ...string) {
 		args := append([]string{cmd, "-w", "-t", table, op, parent}, pos...)
@@ -400,26 +408,52 @@ func routeAddBlacklistGate(be routeBackend, table, chain string, ipv4, ipv6 bool
 }
 
 func routeEnsureGatedPreJump(be routeBackend, chain string, gate routeDeviceGate) {
-	if !gate.enabled {
-		be.ensureJumpRule("PREROUTING", chain, true, false)
-		return
-	}
 	if be.name() == backendNFTables {
+		if !gate.enabled {
+			be.ensureJumpRule("PREROUTING", chain, true, false)
+			return
+		}
 		deleteNftJumpRules(routeNftTable, routeNftPrerouting, chain)
 		nftEmitGatedJump(routeNftPrerouting, chain, false, gate)
 		return
 	}
-	if ib, ok := be.(*routeIptBackend); ok {
-		for _, cmd := range ib.iptBoth() {
-			if !hasBinary(cmd) {
-				continue
-			}
-			iptDeleteJumpsTo(cmd, "mangle", "PREROUTING", chain)
-			iptEmitGatedJump(cmd, "mangle", "PREROUTING", chain, false, gate)
-		}
+	ib, ok := be.(*routeIptBackend)
+	if !ok {
+		be.ensureJumpRule("PREROUTING", chain, true, false)
 		return
 	}
-	be.ensureJumpRule("PREROUTING", chain, true, false)
+	for _, cmd := range ib.iptBoth() {
+		if !hasBinary(cmd) {
+			continue
+		}
+		iptDeleteJumpsTo(cmd, "mangle", "PREROUTING", chain)
+		iptEmitGatedJumpAt(cmd, "mangle", "PREROUTING", chain, iptCaptureJumpIndex(cmd), gate)
+	}
+}
+
+func routeEnsurePreJumpPrecedence(be routeBackend, cfg *config.Config) {
+	ib, ok := be.(*routeIptBackend)
+	if !ok || cfg == nil {
+		return
+	}
+	wrong := false
+	for _, cmd := range ib.iptBoth() {
+		if hasBinary(cmd) && iptPreJumpsBelowCapture(cmd) {
+			wrong = true
+			break
+		}
+	}
+	if !wrong {
+		return
+	}
+	log.Warnf("Routing: a set's prerouting jump sits below %s, so the capture engine takes the reply packets of a diverted connection before the set can hand them to its listener; lifting the routing jumps back above it", captureChainPre)
+	for _, set := range routeOrderedRoutingSets(cfg) {
+		st, ok := routeRuleCache[set.Id]
+		if !ok || st.chainPre == "" {
+			continue
+		}
+		routeEnsureGatedPreJump(be, st.chainPre, routeSetDeviceGate(cfg, set))
+	}
 }
 
 func routeSetIsSourceScoped(set *config.SetConfig) bool {

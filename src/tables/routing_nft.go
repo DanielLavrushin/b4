@@ -27,11 +27,11 @@ func (b *routeNftBackend) ensureBase() error {
 		return fmt.Errorf("ensure table: %w", err)
 	}
 	if err := runEnsure("nft", "add", "chain", "inet", routeNftTable, routeNftPrerouting,
-		"{", "type", "filter", "hook", "prerouting", "priority", "-151", ";", "policy", "accept", ";", "}"); err != nil {
+		"{", "type", "filter", "hook", "prerouting", "priority", routeNftBasePriorityStr, ";", "policy", "accept", ";", "}"); err != nil {
 		return fmt.Errorf("ensure prerouting chain: %w", err)
 	}
 	if err := runEnsure("nft", "add", "chain", "inet", routeNftTable, routeNftOutput,
-		"{", "type", "route", "hook", "output", "priority", "-151", ";", "policy", "accept", ";", "}"); err != nil {
+		"{", "type", "route", "hook", "output", "priority", routeNftBasePriorityStr, ";", "policy", "accept", ";", "}"); err != nil {
 		return fmt.Errorf("ensure output chain: %w", err)
 	}
 	if err := runEnsure("nft", "add", "chain", "inet", routeNftTable, routeNftPostroute,

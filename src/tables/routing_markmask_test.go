@@ -201,3 +201,10 @@ func TestTheRulesAndTheTProxyListenerAgreeOnAPinnedMark(t *testing.T) {
 		}
 	}
 }
+
+func TestTheRoutingChainsRunBeforeTheCaptureChainOnNft(t *testing.T) {
+	if routeNftBasePriority >= nftBaseChainPriority {
+		t.Errorf("the routing prerouting chain is at priority %d and the capture chain at %d; the diversion has to run first, or the capture engine takes the reply packets of a diverted connection before the set can hand them to its listener",
+			routeNftBasePriority, nftBaseChainPriority)
+	}
+}

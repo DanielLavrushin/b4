@@ -135,6 +135,7 @@ func (m *Monitor) monitorLoop() {
 				log.Infof("Routing rules restored successfully")
 			} else {
 				RoutingReconcilePolicyRules(cfg)
+				RoutingEnsureJumpPrecedence(cfg)
 				RoutingPeriodicReResolve(cfg)
 			}
 		}
