@@ -1,6 +1,10 @@
 package tproxy
 
-import "hash/fnv"
+import (
+	"hash/fnv"
+
+	"github.com/daniellavrushin/b4/config"
+)
 
 const (
 	DefaultPortBase = 13000
@@ -10,7 +14,7 @@ const (
 )
 
 func MarkForSet(setID string, pinned uint32) uint32 {
-	if pinned > 0 {
+	if MarkIsUsable(pinned) {
 		return pinned
 	}
 	h := fnv.New32a()
@@ -25,7 +29,10 @@ func PortFor(mark uint32) int {
 	return DefaultPortBase + int(mark%PortRange)
 }
 
+func MarkIsUsable(mark uint32) bool {
+	return mark > 0 && mark&^config.PerSetRouteMarkBits == 0
+}
+
 func InMarkRange(mark uint32) bool {
 	return mark >= MarkBase && mark < MarkBase+MarkRange
 }
-

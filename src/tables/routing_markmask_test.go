@@ -157,3 +157,45 @@ func TestPinnedMarkOutsideTheMaskIsRefused(t *testing.T) {
 		t.Errorf("the assigned mark 0x%x still has bits outside the mask 0x%x", mark, routeSetMarkMask)
 	}
 }
+
+func TestTheRoutingMaskIsTheOneTheRestOfB4Uses(t *testing.T) {
+	if routeSetMarkMask != config.PerSetRouteMarkBits {
+		t.Errorf("the routing chains mask marks with 0x%x while the rest of b4 validates against 0x%x; a set mark accepted by one and dropped by the other routes nowhere", routeSetMarkMask, config.PerSetRouteMarkBits)
+	}
+}
+
+func TestAProxySetNeverTakesAPinnedMarkTheRulesCannotCarry(t *testing.T) {
+	for _, pinned := range []uint32{0x8000, 0x10000, 0x40000, 0x100000, 0xDEADBEEF} {
+		set := config.NewSetConfig()
+		set.Id = "pinned-set"
+		set.Name = "pinned"
+		set.Routing.Mode = config.RoutingModeProxy
+		set.Routing.FWMark = pinned
+
+		mark, _ := proxyMarkAndPort(&set)
+		if mark == pinned {
+			t.Errorf("set pinned fwmark 0x%x and kept it; the policy rule is written as %q, and the kernel compares the masked packet mark against the masked rule mark, so it claims every packet carrying no routing mark and sends the whole router into the proxy's local table", pinned, routeSetMarkRule(pinned))
+		}
+		if mark&^routeSetMarkMask != 0 {
+			t.Errorf("the mark handed to the rules is 0x%x, which still has bits outside 0x%x", mark, routeSetMarkMask)
+		}
+	}
+}
+
+func TestTheRulesAndTheTProxyListenerAgreeOnAPinnedMark(t *testing.T) {
+	for _, pinned := range []uint32{0, 0x1b1d, 0x100000} {
+		set := config.NewSetConfig()
+		set.Id = "agree-set"
+		set.Name = "agree"
+		set.Routing.Mode = config.RoutingModeProxy
+		set.Routing.FWMark = pinned
+
+		mark, port := proxyMarkAndPort(&set)
+		if want := tproxy.MarkForSet(set.Id, set.Routing.FWMark); mark != want {
+			t.Errorf("the firewall rules use mark 0x%x for pinned 0x%x while the listener uses 0x%x, so the TPROXY rule diverts to a port nothing is bound to", mark, pinned, want)
+		}
+		if want := tproxy.PortFor(mark); port != want {
+			t.Errorf("port %d does not follow from mark 0x%x, want %d", port, mark, want)
+		}
+	}
+}

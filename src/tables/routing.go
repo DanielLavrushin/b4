@@ -22,7 +22,7 @@ const routeRouterTrafficRate = 200
 
 const routePolicyRuleBase = 10000
 
-const routeSetMarkMask = uint32(0x27FFF)
+const routeSetMarkMask = config.PerSetRouteMarkBits
 
 // SelfDialMark is carried by connections b4 opens on its own behalf - the
 // MTProto upstream, an upstream SOCKS5, a fail-open direct dial.

@@ -286,6 +286,10 @@ func proxyInputChain() (table, chain string, ok bool) {
 
 func proxyMarkAndPort(set *config.SetConfig) (uint32, int) {
 	mark := tproxy.MarkForSet(set.Id, set.Routing.FWMark)
+	if set.Routing.FWMark > 0 && mark != set.Routing.FWMark {
+		log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which has bits outside the routing mark mask 0x%x that b4 cannot carry through its firewall rules, so a mark is assigned instead",
+			set.Name, set.Routing.FWMark, routeSetMarkMask)
+	}
 	port := tproxy.PortFor(mark)
 	return mark, port
 }
