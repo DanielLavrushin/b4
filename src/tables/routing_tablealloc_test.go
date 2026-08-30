@@ -337,3 +337,80 @@ func TestAllocationRefusesWhenEveryTableIsTaken(t *testing.T) {
 			"nearly every packet on the box: got mark 0x%x table %d", mark, table)
 	}
 }
+
+func TestRouteLookupMatchesTableTakesTheNumberOrTheName(t *testing.T) {
+	oldNames := routeRtTableNames
+	routeRtTableNames = func() map[int]string { return map[int]string{100: "wan0", 200: "wan1"} }
+	routeForgetRtTableNames()
+	t.Cleanup(func() {
+		routeRtTableNames = oldNames
+		routeForgetRtTableNames()
+	})
+
+	if !RouteLookupMatchesTable("100", "100") {
+		t.Error("an unnamed table is printed as its number and must still match")
+	}
+	if !RouteLookupMatchesTable("wan0", "100") {
+		t.Error("ip renders a table named in /etc/iproute2/rt_tables by that name, so a rule on table 100 of an " +
+			"ASUS router reads as 'lookup wan0' and comparing against the number alone reads it as absent")
+	}
+	if RouteLookupMatchesTable("wan1", "100") {
+		t.Error("another table's name must not match")
+	}
+	if RouteLookupMatchesTable("wan0", "199") {
+		t.Error("a table with no name of its own must not borrow another's")
+	}
+}
+
+func rtTablesAt(t *testing.T, dir string, contents string) string {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), dir)
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "rt_tables"), []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func TestRouteTableNameReadsTheDirectoriesIpFallsBackTo(t *testing.T) {
+	fallback := rtTablesAt(t, "share", "190 wgclient\n")
+
+	oldFile, oldDir, oldFallback := rtTablesFile, rtTablesDir, rtTablesFallbackDirs
+	rtTablesFile = filepath.Join(t.TempDir(), "absent")
+	rtTablesDir = filepath.Join(t.TempDir(), "absent.d")
+	rtTablesFallbackDirs = []string{fallback}
+	routeForgetRtTableNames()
+	t.Cleanup(func() {
+		rtTablesFile, rtTablesDir, rtTablesFallbackDirs = oldFile, oldDir, oldFallback
+		routeForgetRtTableNames()
+	})
+
+	if name, ok := routeTableName(190); !ok || name != "wgclient" {
+		t.Fatalf("190 = %q,%v; want wgclient,true. ip reads /etc/iproute2/rt_tables and falls back to the copy "+
+			"shipped with the package, and on entware it reads neither, so a name b4 cannot see is still printed "+
+			"in 'ip rule show' and every table comparison b4 makes against a number reads a live rule as missing",
+			name, ok)
+	}
+}
+
+func TestTheSystemRtTablesFileWinsOverTheFallback(t *testing.T) {
+	fallback := rtTablesAt(t, "share", "190 fromthepackage\n")
+	primary := rtTablesAt(t, "etc", "190 fromtheadmin\n")
+
+	oldFile, oldDir, oldFallback := rtTablesFile, rtTablesDir, rtTablesFallbackDirs
+	rtTablesFile = filepath.Join(primary, "rt_tables")
+	rtTablesDir = filepath.Join(primary, "rt_tables.d")
+	rtTablesFallbackDirs = []string{fallback}
+	routeForgetRtTableNames()
+	t.Cleanup(func() {
+		rtTablesFile, rtTablesDir, rtTablesFallbackDirs = oldFile, oldDir, oldFallback
+		routeForgetRtTableNames()
+	})
+
+	if name, _ := routeTableName(190); name != "fromtheadmin" {
+		t.Fatalf("190 = %q, want fromtheadmin; the file an administrator edits has to beat the one the package "+
+			"ships, or b4 compares against a name nothing prints", name)
+	}
+}

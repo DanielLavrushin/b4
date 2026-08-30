@@ -15,6 +15,12 @@ var (
 	rtTablesDir  = "/etc/iproute2/rt_tables.d"
 )
 
+var rtTablesFallbackDirs = []string{
+	"/opt/etc/iproute2",
+	"/usr/share/iproute2",
+	"/usr/lib/iproute2",
+}
+
 var routeRtTableNames = routeRtTableNamesExec
 
 var (
@@ -42,13 +48,22 @@ func routeForgetRtTableNames() {
 
 func routeRtTableNamesExec() map[int]string {
 	names := make(map[int]string)
-	files := []string{rtTablesFile}
-	if entries, err := os.ReadDir(rtTablesDir); err == nil {
+	for i := len(rtTablesFallbackDirs) - 1; i >= 0; i-- {
+		dir := rtTablesFallbackDirs[i]
+		routeReadRtTables(filepath.Join(dir, "rt_tables"), filepath.Join(dir, "rt_tables.d"), names)
+	}
+	routeReadRtTables(rtTablesFile, rtTablesDir, names)
+	return names
+}
+
+func routeReadRtTables(file, dir string, into map[int]string) {
+	files := []string{file}
+	if entries, err := os.ReadDir(dir); err == nil {
 		for _, e := range entries {
 			if e.IsDir() || !strings.HasSuffix(e.Name(), ".conf") {
 				continue
 			}
-			files = append(files, filepath.Join(rtTablesDir, e.Name()))
+			files = append(files, filepath.Join(dir, e.Name()))
 		}
 	}
 	for _, f := range files {
@@ -56,9 +71,8 @@ func routeRtTableNamesExec() map[int]string {
 		if err != nil {
 			continue
 		}
-		routeParseRtTables(string(data), names)
+		routeParseRtTables(string(data), into)
 	}
-	return names
 }
 
 func routeParseRtTables(data string, into map[int]string) {
@@ -290,6 +304,18 @@ func routePickProxyTableExec() int {
 
 func RouteTableName(table int) (string, bool) {
 	return routeTableName(table)
+}
+
+func RouteLookupMatchesTable(lookup, table string) bool {
+	if lookup == table {
+		return true
+	}
+	n, err := strconv.Atoi(table)
+	if err != nil {
+		return false
+	}
+	name, named := routeTableName(n)
+	return named && lookup == name
 }
 
 func ProxyRulePriority() int { return proxyRulePriority }

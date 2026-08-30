@@ -1825,7 +1825,10 @@ func routePolicyRuleInstalled(lines []string, mark uint32, table int) bool {
 	want := routeSetMarkRule(mark)
 	tableStr := fmt.Sprintf("%d", table)
 	for _, line := range lines {
-		if routeRuleField(line, "fwmark") != want || routeRuleField(line, "lookup") != tableStr {
+		if routeRuleField(line, "fwmark") != want {
+			continue
+		}
+		if !RouteLookupMatchesTable(routeRuleField(line, "lookup"), tableStr) {
 			continue
 		}
 		if prio, ok := routeRulePriority(line); ok && prio == routePolicyRuleBase+table {

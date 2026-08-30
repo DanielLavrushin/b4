@@ -172,3 +172,41 @@ func TestAProxySetIsNotGivenAnInterfacePolicyRule(t *testing.T) {
 			"use: %v", cmds)
 	}
 }
+
+func stubRtTableNames(t *testing.T, names map[int]string) {
+	t.Helper()
+	prev := routeRtTableNames
+	routeRtTableNames = func() map[int]string { return names }
+	routeForgetRtTableNames()
+	t.Cleanup(func() {
+		routeRtTableNames = prev
+		routeForgetRtTableNames()
+	})
+}
+
+func TestPolicyRuleIsFoundWhenTheTableHasAName(t *testing.T) {
+	stubRtTableNames(t, map[int]string{252: "b4proxy"})
+
+	line := "10252:\tfrom all fwmark 0x239c9/0x27fff lookup b4proxy"
+	if !routePolicyRuleInstalled([]string{line}, 0x239c9, 252) {
+		t.Errorf("ip rule show prints the name from /etc/iproute2/rt_tables, not the number, so comparing only against %d reads a live rule as missing and b4 keeps trying to put back a rule that is already there: %q", 252, line)
+	}
+}
+
+func TestPolicyRuleStillMatchesANumericLookup(t *testing.T) {
+	stubRtTableNames(t, map[int]string{252: "b4proxy"})
+
+	line := "10252:\tfrom all fwmark 0x239c9/0x27fff lookup 252"
+	if !routePolicyRuleInstalled([]string{line}, 0x239c9, 252) {
+		t.Errorf("an unnamed table is still printed as a number: %q", line)
+	}
+}
+
+func TestPolicyRuleDoesNotMatchAnotherTablesName(t *testing.T) {
+	stubRtTableNames(t, map[int]string{252: "b4proxy", 199: "other"})
+
+	line := "10252:\tfrom all fwmark 0x239c9/0x27fff lookup other"
+	if routePolicyRuleInstalled([]string{line}, 0x239c9, 252) {
+		t.Errorf("a rule pointing at a different table must not count as this table's rule: %q", line)
+	}
+}

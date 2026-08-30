@@ -453,7 +453,7 @@ func (r *routeManager) steerRulePresent(steer, tableStr string) bool {
 	}
 	bare := strings.SplitN(steer, "/", 2)[0]
 	for _, line := range strings.Split(out, "\n") {
-		if ruleFieldValue(line, "lookup") != tableStr {
+		if !tables.RouteLookupMatchesTable(ruleFieldValue(line, "lookup"), tableStr) {
 			continue
 		}
 		fw := ruleFieldValue(line, "fwmark")
