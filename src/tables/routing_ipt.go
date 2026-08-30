@@ -310,10 +310,10 @@ func (b *routeIptBackend) addInjectedMarkRule(chain string, v6 bool, setName str
 	}
 }
 
-func iptCaptureJumpIndex(cmd string) int {
+func iptCaptureJumpIndex(cmd string) (int, bool) {
 	out, err := run(cmd, "-w", "-t", "mangle", "-L", "PREROUTING", "--line-numbers", "-n")
 	if err != nil {
-		return 0
+		return 0, false
 	}
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Fields(line)
@@ -324,9 +324,9 @@ func iptCaptureJumpIndex(cmd string) int {
 		if err != nil || n <= 0 {
 			continue
 		}
-		return n
+		return n, true
 	}
-	return 0
+	return 0, true
 }
 
 func iptPreJumpsBelowCapture(cmd string) bool {

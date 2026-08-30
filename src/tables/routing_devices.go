@@ -427,7 +427,13 @@ func routeEnsureGatedPreJump(be routeBackend, chain string, gate routeDeviceGate
 			continue
 		}
 		iptDeleteJumpsTo(cmd, "mangle", "PREROUTING", chain)
-		iptEmitGatedJumpAt(cmd, "mangle", "PREROUTING", chain, iptCaptureJumpIndex(cmd), gate)
+		at, readable := iptCaptureJumpIndex(cmd)
+		if !readable {
+			at = 1
+			log.Tracef("routing: %s could not read mangle PREROUTING, so %s goes in at the top; that keeps it above %s, and a later pass puts the sets back in the configured order",
+				cmd, chain, captureChainPre)
+		}
+		iptEmitGatedJumpAt(cmd, "mangle", "PREROUTING", chain, at, gate)
 	}
 }
 

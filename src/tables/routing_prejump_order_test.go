@@ -174,3 +174,44 @@ func TestPreJumpOrderSurvivesSeveralSets(t *testing.T) {
 		}
 	}
 }
+
+func TestPreJumpGoesToTheTopWhenTheChainCannotBeRead(t *testing.T) {
+	origRun := run
+	origLogged := runLogged
+	t.Cleanup(func() {
+		run = origRun
+		runLogged = origLogged
+	})
+	stubBinaries(t, backendIPTables)
+
+	emitted := []string{}
+	run = func(args ...string) (string, error) {
+		for i, a := range args {
+			if a == "-L" && i+1 < len(args) && args[i+1] == "PREROUTING" {
+				return "", fmt.Errorf("another program holds the xtables lock")
+			}
+		}
+		return "", nil
+	}
+	runLogged = func(op string, args ...string) bool {
+		emitted = append(emitted, strings.Join(args, " "))
+		return true
+	}
+
+	routeEnsureGatedPreJump(&routeIptBackend{}, "b4r_x_pre", routeDeviceGate{})
+
+	for _, e := range emitted {
+		if !strings.Contains(e, "b4r_x_pre") {
+			continue
+		}
+		if strings.Contains(e, "-A PREROUTING") {
+			t.Errorf("the listing failed, so b4 cannot know whether %s is already hooked; appending drops the jump below it and takes port 443 out of the set again: %q", captureChainPre, e)
+		}
+		if !strings.Contains(e, "-I PREROUTING 1") {
+			t.Errorf("an unreadable chain has to fall back to the top, which is above %s whatever the chain holds: %q", captureChainPre, e)
+		}
+	}
+	if len(emitted) == 0 {
+		t.Errorf("no jump was emitted at all; a set with no jump routes nothing")
+	}
+}
