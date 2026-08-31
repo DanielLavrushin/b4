@@ -73,6 +73,8 @@ type routeBackend interface {
 	ensureChain(chain string, isMangle bool) error
 	flushChain(chain string, isMangle bool)
 	deleteChain(chain string, isMangle bool)
+	snapshotChainRules(chain string, isMangle bool) routeChainSnapshot
+	dropChainRules(snap routeChainSnapshot)
 	addBypassRule(chain string, mark uint32)
 	addClaimedBypassRule(chain string, own uint32)
 	addRouterTrafficGuard(chain string, v6 bool, setName string, mark uint32) bool
@@ -90,6 +92,13 @@ type routeBackend interface {
 	flushIPSet(name string)
 	destroyIPSet(name string)
 	clearAll()
+}
+
+type routeChainSnapshot struct {
+	chain    string
+	isMangle bool
+	counts   map[string]int
+	handles  []string
 }
 
 const routeMaxLearnedHosts = 256
@@ -168,9 +177,10 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 	cur := buildRouteState(cfg, set)
 	sources := routeNormalizedSources(set.Routing.SourceInterfaces)
 
+	retireOld := func() {}
 	if old, ok := routeRuleCache[set.Id]; ok {
 		if !routeStateEqual(old, cur) {
-			routeCleanupAny(be, old)
+			retireOld = routeCleanupForRebuild(be, old, cur)
 			delete(routeRuleCache, set.Id)
 			routeForgetSetLearnState(set.Id)
 		}
@@ -186,10 +196,12 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 			err = routeEnsureRule(be, cfg, set, cur, sources)
 		}
 		if err != nil {
+			retireOld()
 			log.Errorf("Routing: failed to ensure rule for set '%s': %v", set.Name, err)
 			return
 		}
 		routeRuleCache[set.Id] = cur
+		retireOld()
 		routeRestoreStaticEntries(be, set, cur)
 		switch cur.mode {
 		case config.RoutingModeMTProtoWS:
@@ -440,15 +452,77 @@ func routeStateEqual(a, b routeState) bool {
 }
 
 func routeCleanupAny(be routeBackend, st routeState) {
+	routeCleanupAnyKeeping(be, st, false)
+}
+
+func routeCleanupAnyKeeping(be routeBackend, st routeState, keepSets bool) {
 	if config.RoutingIsBlock(st.mode) {
-		routeCleanupBlockRule(be, st)
+		routeCleanupBlockRule(be, st, keepSets)
 		return
 	}
 	if config.RoutingUsesTProxy(st.mode) {
-		routeCleanupProxyRule(be, st)
+		routeCleanupProxyRule(be, st, keepSets)
 		return
 	}
-	routeCleanupRule(be, st)
+	routeCleanupRule(be, st, keepSets)
+}
+
+func routeDropSets(be routeBackend, st routeState, keepSets bool) {
+	if keepSets {
+		return
+	}
+	be.flushIPSet(st.setV4)
+	be.destroyIPSet(st.setV4)
+	be.flushIPSet(st.setV6)
+	be.destroyIPSet(st.setV6)
+}
+
+func routeCleanupForRebuild(be routeBackend, old, cur routeState) func() {
+	sameShape := config.RoutingIsBlock(old.mode) == config.RoutingIsBlock(cur.mode) &&
+		config.RoutingUsesTProxy(old.mode) == config.RoutingUsesTProxy(cur.mode)
+	keepSets := sameShape && old.setV4 == cur.setV4 && old.setV6 == cur.setV6
+
+	sameFamilies := old.ipv4 == cur.ipv4 && old.ipv6 == cur.ipv6
+
+	if sameShape && sameFamilies && config.RoutingUsesTProxy(old.mode) {
+		if !cur.quicReject {
+			routeCleanupQUICReject(be, old)
+		}
+		return func() {
+			if old.mark == cur.mark && old.table == cur.table {
+				return
+			}
+			removeProxyInputAccept(be, old.mark)
+			if hasBinary("ip") && old.table > 0 {
+				routeDelRuleAllForms(old.mark, fmt.Sprintf("%d", old.table))
+			}
+		}
+	}
+
+	if !sameShape || !sameFamilies || config.RoutingIsBlock(old.mode) || config.RoutingUsesTProxy(old.mode) {
+		routeCleanupAnyKeeping(be, old, keepSets)
+		return func() {}
+	}
+
+	if old.iface != cur.iface || old.egressIP != cur.egressIP {
+		routeReleaseEgressAddress(old.iface, old.egressIP)
+	}
+	if old.iface != cur.iface {
+		routeReleaseRPFilter(old.iface, old.setID)
+	}
+
+	return func() {
+		if !hasBinary("ip") {
+			return
+		}
+		tableStr := fmt.Sprintf("%d", old.table)
+		if old.mark != cur.mark && routeMarkShareCount(old.mark) == 0 {
+			routeDelRuleAllForms(old.mark, tableStr)
+		}
+		if old.table != cur.table && routeTableShareCount(old.table) == 0 {
+			routeDeleteOwnRoutes(old.iface, tableStr)
+		}
+	}
 }
 
 func routeAddIPsToSets(be routeBackend, st routeState, ttl int, ips []net.IP, ipv4Enabled, ipv6Enabled bool) {
@@ -924,9 +998,10 @@ func RoutingSyncConfig(cfg *config.Config) {
 		}
 		sources := routeNormalizedSources(set.Routing.SourceInterfaces)
 
+		retireOld := func() {}
 		if old, ok := routeRuleCache[set.Id]; ok {
 			if !routeStateEqual(old, cur) {
-				routeCleanupAny(be, old)
+				retireOld = routeCleanupForRebuild(be, old, cur)
 				delete(routeRuleCache, set.Id)
 				routeForgetSetLearnState(set.Id)
 			}
@@ -942,10 +1017,12 @@ func RoutingSyncConfig(cfg *config.Config) {
 				err = routeEnsureRule(be, cfg, set, cur, sources)
 			}
 			if err != nil {
+				retireOld()
 				log.Errorf("Routing: failed to ensure rule for set '%s' during sync: %v", set.Name, err)
 				continue
 			}
 			routeRuleCache[set.Id] = cur
+			retireOld()
 			newRoutingSets = append(newRoutingSets, set)
 		}
 
@@ -1108,9 +1185,16 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 		return err
 	}
 
-	be.flushChain(st.chainPre, true)
-	be.flushChain(st.chainOut, true)
-	be.flushChain(st.chainSNAT, false)
+	superseded := []routeChainSnapshot{
+		be.snapshotChainRules(st.chainPre, true),
+		be.snapshotChainRules(st.chainOut, true),
+		be.snapshotChainRules(st.chainSNAT, false),
+	}
+	defer func() {
+		for _, snap := range superseded {
+			be.dropChainRules(snap)
+		}
+	}()
 
 	if cfg.Queue.IPv4Enabled {
 		if err := be.ensureIPSet(st.setV4, false); err != nil {
@@ -1343,9 +1427,11 @@ func routeReestablishJumpOrder(be routeBackend, cfg *config.Config, rebuilt bool
 	}
 	routeJumpOrderKey = orderKey
 
-	for _, set := range ordered {
-		st := routeRuleCache[set.Id]
-		routeEnsureGatedPreJump(be, st.chainPre, routeSetDeviceGate(cfg, set))
+	if !routePreJumpsAlreadyOrdered(be, ordered) {
+		for _, set := range ordered {
+			st := routeRuleCache[set.Id]
+			routeEnsureGatedPreJump(be, st.chainPre, routeSetDeviceGate(cfg, set))
+		}
 	}
 
 	out := ordered
@@ -1604,7 +1690,7 @@ func routeTableShareCount(table int) int {
 	return n
 }
 
-func routeCleanupRule(be routeBackend, st routeState) {
+func routeCleanupRule(be routeBackend, st routeState, keepSets bool) {
 	routeReleaseEgressAddress(st.iface, st.egressIP)
 	routeReleaseRPFilter(st.iface, st.setID)
 	tableStr := fmt.Sprintf("%d", st.table)
@@ -1628,10 +1714,7 @@ func routeCleanupRule(be routeBackend, st routeState) {
 	be.flushChain(st.chainSNAT, false)
 	be.deleteChain(st.chainSNAT, false)
 
-	be.flushIPSet(st.setV4)
-	be.destroyIPSet(st.setV4)
-	be.flushIPSet(st.setV6)
-	be.destroyIPSet(st.setV6)
+	routeDropSets(be, st, keepSets)
 }
 
 func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {

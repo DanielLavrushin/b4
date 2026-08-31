@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.80.4] - 2026-08-31
+
+- FIXED: **Changing anything on a routing set took it apart before putting it back, so for about a second the traffic it matched left by the ordinary uplink** - the policy rule, the route, the prerouting jump, the chain and the addresses learned from DNS all came down before the replacement went in, and a set marks a connection only on its first packet, so a connection opened in that window stayed off the set for as long as it lived. [#338](https://github.com/DanielLavrushin/b4/issues/338)
+
 ## [1.80.3] - 2026-08-30
 
 - FIXED: **A routing table named in `/etc/iproute2/rt_tables` was not recognised as the one a set was using** - `ip` prints such a table by its name rather than its number, which is how ASUS firmware ships tables 100 and 200, so b4 read its own live policy rule as missing and said so on every pass, the TUN engine left its rules behind on that table when it shut down, and b4 looked for those names in one file while `ip` also reads the copy that ships with the package.

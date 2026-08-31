@@ -135,6 +135,37 @@ func (b *routeNftBackend) flushChain(chain string, _ bool) {
 	runLogged("routing: flush chain "+chain, "nft", "flush", "chain", "inet", routeNftTable, chain)
 }
 
+func (b *routeNftBackend) snapshotChainRules(chain string, isMangle bool) routeChainSnapshot {
+	snap := routeChainSnapshot{chain: chain, isMangle: isMangle}
+	out, err := run("nft", "-a", "list", "chain", "inet", routeNftTable, chain)
+	if err != nil {
+		return snap
+	}
+	for _, line := range strings.Split(out, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "table ") || strings.HasPrefix(trimmed, "chain ") {
+			continue
+		}
+		idx := strings.LastIndex(trimmed, "# handle ")
+		if idx < 0 {
+			continue
+		}
+		handle := strings.TrimSpace(trimmed[idx+len("# handle "):])
+		if handle == "" {
+			continue
+		}
+		snap.handles = append(snap.handles, handle)
+	}
+	return snap
+}
+
+func (b *routeNftBackend) dropChainRules(snap routeChainSnapshot) {
+	for _, handle := range snap.handles {
+		runLogged("routing: drop superseded rule "+snap.chain,
+			"nft", "delete", "rule", "inet", routeNftTable, snap.chain, "handle", handle)
+	}
+}
+
 func (b *routeNftBackend) deleteChain(chain string, _ bool) {
 	runLogged("routing: delete chain "+chain, "nft", "delete", "chain", "inet", routeNftTable, chain)
 }

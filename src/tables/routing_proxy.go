@@ -344,8 +344,15 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	if err := be.ensureChain(st.chainOut, true); err != nil {
 		return err
 	}
-	be.flushChain(st.chainPre, true)
-	be.flushChain(st.chainOut, true)
+	superseded := []routeChainSnapshot{
+		be.snapshotChainRules(st.chainPre, true),
+		be.snapshotChainRules(st.chainOut, true),
+	}
+	defer func() {
+		for _, snap := range superseded {
+			be.dropChainRules(snap)
+		}
+	}()
 	if cfg.Queue.IPv4Enabled {
 		if err := be.ensureIPSet(st.setV4, false); err != nil {
 			return err
@@ -583,7 +590,7 @@ func addQUICRejectRuleIpt(v6 bool, chain, setName string, sources []string, lega
 	}
 }
 
-func routeCleanupProxyRule(be routeBackend, st routeState) {
+func routeCleanupProxyRule(be routeBackend, st routeState, keepSets bool) {
 	tableStr := fmt.Sprintf("%d", st.table)
 
 	if hasBinary("ip") && st.table > 0 {
@@ -609,10 +616,7 @@ func routeCleanupProxyRule(be routeBackend, st routeState) {
 	be.flushChain(st.chainOut, true)
 	be.deleteChain(st.chainOut, true)
 
-	be.flushIPSet(st.setV4)
-	be.destroyIPSet(st.setV4)
-	be.flushIPSet(st.setV6)
-	be.destroyIPSet(st.setV6)
+	routeDropSets(be, st, keepSets)
 }
 
 func routeEnsureLocalDelivery(mark uint32, table int, ipv4, ipv6 bool) {
@@ -648,6 +652,36 @@ func writeSysctlExec(path, value string) {
 	}
 	if err := os.WriteFile(path, []byte(value), 0644); err != nil {
 		log.Tracef("routing: sysctl %s=%s failed: %v", path, value, err)
+	}
+}
+
+func nftJumpHandles(table, parentChain, targetChain string) []string {
+	out, err := run("nft", "-a", "list", "chain", "inet", table, parentChain)
+	if err != nil {
+		log.Tracef("routing: list nft chain inet %s %s failed: %v", table, parentChain, err)
+		return nil
+	}
+	var handles []string
+	for _, line := range strings.Split(out, "\n") {
+		handleIdx := strings.LastIndex(line, "# handle ")
+		if handleIdx == -1 {
+			continue
+		}
+		if !strings.Contains(strings.TrimSpace(line[:handleIdx]), "jump "+targetChain) {
+			continue
+		}
+		handle := strings.TrimSpace(line[handleIdx+len("# handle "):])
+		if handle != "" {
+			handles = append(handles, handle)
+		}
+	}
+	return handles
+}
+
+func nftDropJumpHandles(table, parentChain string, handles []string) {
+	for _, handle := range handles {
+		runLogged("routing: delete superseded jump "+parentChain,
+			"nft", "delete", "rule", "inet", table, parentChain, "handle", handle)
 	}
 }
 

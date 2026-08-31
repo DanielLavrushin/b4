@@ -72,7 +72,7 @@ func routeEnsureBlockRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	return nil
 }
 
-func routeCleanupBlockRule(be routeBackend, st routeState) {
+func routeCleanupBlockRule(be routeBackend, st routeState, keepSets bool) {
 	switch be.name() {
 	case backendNFTables:
 		deleteNftJumpRules(routeNftTable, routeNftBlockFwd, st.chainPre)
@@ -86,10 +86,7 @@ func routeCleanupBlockRule(be routeBackend, st routeState) {
 		flushDeleteBlockChainIpt(st.chainPre, legacy)
 	}
 
-	be.flushIPSet(st.setV4)
-	be.destroyIPSet(st.setV4)
-	be.flushIPSet(st.setV6)
-	be.destroyIPSet(st.setV6)
+	routeDropSets(be, st, keepSets)
 }
 
 func ensureBlockBaseNft() error {
