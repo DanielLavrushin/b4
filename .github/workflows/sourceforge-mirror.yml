@@ -1,0 +1,178 @@
+name: Mirror to SourceForge
+
+on:
+  release:
+    types: [published]
+  workflow_call:
+    inputs:
+      tags:
+        description: "Space-separated release tags to mirror"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: "Space-separated release tags to mirror (empty = latest release)"
+        required: false
+        default: ""
+        type: string
+      prune:
+        description: "Remove SourceForge folders that no longer have a GitHub release"
+        required: false
+        default: "off"
+        type: choice
+        options:
+          - "off"
+          - dry-run
+          - delete
+
+env:
+  SF_PROJECT: b4core
+  SF_HOST: frs.sourceforge.net
+  DEFAULT_ASSET: b4-linux-amd64.tar.gz
+
+jobs:
+  mirror:
+    name: Upload release assets
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Resolve tags
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAGS: ${{ inputs.tags }}
+        run: |
+          set -euo pipefail
+          TAGS="$INPUT_TAGS"
+          if [ -z "$TAGS" ]; then
+            TAGS="$EVENT_TAG"
+          fi
+          if [ -z "$TAGS" ]; then
+            TAGS=$(gh release list --limit 1 --exclude-drafts --json tagName --jq '.[].tagName')
+          fi
+          if [ -z "$TAGS" ]; then
+            echo "No tag to mirror" >&2
+            exit 1
+          fi
+          echo "Tags to mirror: $TAGS"
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+
+      - name: Download assets from GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAGS: ${{ steps.resolve.outputs.tags }}
+        run: |
+          set -euo pipefail
+          for TAG in $TAGS; do
+            mkdir -p "staging/$TAG"
+            gh release download "$TAG" --dir "staging/$TAG" --clobber
+            echo "== $TAG =="
+            ls -la "staging/$TAG"
+          done
+
+      - name: Configure SSH
+        env:
+          SF_SSH_KEY: ${{ secrets.SF_SSH_KEY }}
+          SF_KNOWN_HOSTS: ${{ secrets.SF_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SF_SSH_KEY" > ~/.ssh/sf_key
+          chmod 600 ~/.ssh/sf_key
+          if [ -n "$SF_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$SF_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -t rsa,ecdsa,ed25519 "$SF_HOST" > ~/.ssh/known_hosts 2>/dev/null
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload to SourceForge
+        env:
+          SF_USER: ${{ secrets.SF_USER }}
+          TAGS: ${{ steps.resolve.outputs.tags }}
+        run: |
+          set -euo pipefail
+          for TAG in $TAGS; do
+            echo "Uploading $TAG -> /home/frs/project/$SF_PROJECT/$TAG/"
+            rsync -rlv --no-perms --no-owner --no-group --checksum \
+              -e "ssh -i ~/.ssh/sf_key -o BatchMode=yes" \
+              "staging/$TAG/" \
+              "$SF_USER@$SF_HOST:/home/frs/project/$SF_PROJECT/$TAG/"
+          done
+
+      - name: Set default download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SF_API_KEY: ${{ secrets.SF_API_KEY }}
+          TAGS: ${{ steps.resolve.outputs.tags }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SF_API_KEY:-}" ]; then
+            echo "SF_API_KEY not set, skipping default-download update"
+            exit 0
+          fi
+          LATEST=$(gh release list --limit 1 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[].tagName')
+          for TAG in $TAGS; do
+            if [ "$TAG" != "$LATEST" ]; then
+              echo "Skipping default for $TAG (latest stable is $LATEST)"
+              continue
+            fi
+            if [ ! -f "staging/$TAG/$DEFAULT_ASSET" ]; then
+              echo "Skipping default for $TAG ($DEFAULT_ASSET not in release)"
+              continue
+            fi
+            echo "Marking $TAG/$DEFAULT_ASSET as the default download"
+            curl -sS -f -X PUT \
+              -H "Accept: application/json" \
+              -d "api_key=$SF_API_KEY" \
+              -d "default=linux" -d "default=bsd" -d "default=solaris" \
+              -d "default=others" -d "default=mac" -d "default=windows" \
+              "https://sourceforge.net/projects/$SF_PROJECT/files/$TAG/$DEFAULT_ASSET" \
+              -o /dev/null
+          done
+
+      - name: Prune removed releases
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.prune != 'off' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SF_USER: ${{ secrets.SF_USER }}
+          PRUNE: ${{ inputs.prune }}
+        run: |
+          set -euo pipefail
+          gh release list --limit 300 --exclude-drafts --json tagName --jq '.[].tagName' | sort -u > live_tags.txt
+          echo "GitHub releases: $(wc -l < live_tags.txt)"
+
+          rsync -e "ssh -i ~/.ssh/sf_key -o BatchMode=yes" --list-only \
+            "$SF_USER@$SF_HOST:/home/frs/project/$SF_PROJECT/" \
+            | awk '$1 ~ /^d/ {print $NF}' \
+            | grep -E '^v[0-9]' | sort -u > sf_tags.txt || true
+          echo "SourceForge folders: $(wc -l < sf_tags.txt)"
+
+          comm -13 live_tags.txt sf_tags.txt > stale.txt
+          if [ ! -s stale.txt ]; then
+            echo "Nothing to prune"
+            exit 0
+          fi
+          echo "Stale folders:"
+          cat stale.txt
+
+          if [ "$PRUNE" != "delete" ]; then
+            echo "dry-run: nothing removed"
+            exit 0
+          fi
+
+          : > batch.sftp
+          while read -r TAG; do
+            [ -n "$TAG" ] || continue
+            echo "rm /home/frs/project/$SF_PROJECT/$TAG/*" >> batch.sftp
+            echo "rmdir /home/frs/project/$SF_PROJECT/$TAG" >> batch.sftp
+          done < stale.txt
+          sftp -i ~/.ssh/sf_key -o BatchMode=yes -b batch.sftp "$SF_USER@$SF_HOST"

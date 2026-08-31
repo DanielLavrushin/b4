@@ -204,6 +204,15 @@ jobs:
             release-assets/checksums.txt
           generate_release_notes: true
 
+  sourceforge:
+    name: Mirror to SourceForge
+    needs: release
+    if: ${{ !inputs.draft }}
+    uses: ./.github/workflows/sourceforge-mirror.yml
+    with:
+      tags: v${{ inputs.version }}
+    secrets: inherit
+
   docker:
     name: Docker Image
     needs: release
@@ -263,7 +272,7 @@ jobs:
 
   cleanup:
     name: Cleanup old artifacts
-    needs: [release, docker]
+    needs: [release, docker, sourceforge]
     runs-on: ubuntu-latest
     if: always()
     steps:
