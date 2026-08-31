@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       tags:
-        description: "Space-separated release tags to mirror (empty = latest release)"
+        description: "Release tags, space-separated, e.g. v1.80.3 (empty = latest release)"
         required: false
         default: ""
         type: string
@@ -58,8 +58,42 @@ jobs:
             echo "No tag to mirror" >&2
             exit 1
           fi
-          echo "Tags to mirror: $TAGS"
-          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+
+          RESOLVED=""
+          MISSING=""
+          for TAG in $TAGS; do
+            CANDIDATES="$TAG"
+            case "$TAG" in
+              v*) ;;
+              *) CANDIDATES="$TAG v$TAG" ;;
+            esac
+            FOUND=""
+            for CAND in $CANDIDATES; do
+              if gh release view "$CAND" --json tagName >/dev/null 2>&1; then
+                FOUND="$CAND"
+                break
+              fi
+            done
+            if [ -z "$FOUND" ]; then
+              MISSING="$MISSING $TAG"
+              continue
+            fi
+            if [ "$FOUND" != "$TAG" ]; then
+              echo "Resolved '$TAG' -> '$FOUND'"
+            fi
+            RESOLVED="$RESOLVED $FOUND"
+          done
+
+          if [ -n "$MISSING" ]; then
+            echo "No GitHub release found for:$MISSING" >&2
+            echo "Available releases:" >&2
+            gh release list --limit 15 --json tagName --jq '.[].tagName' >&2
+            exit 1
+          fi
+
+          RESOLVED="${RESOLVED# }"
+          echo "Tags to mirror: $RESOLVED"
+          echo "tags=$RESOLVED" >> "$GITHUB_OUTPUT"
 
       - name: Download assets from GitHub
         env:
