@@ -1190,7 +1190,11 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 		be.snapshotChainRules(st.chainOut, true),
 		be.snapshotChainRules(st.chainSNAT, false),
 	}
+	rebuilt := false
 	defer func() {
+		if !rebuilt {
+			return
+		}
 		for _, snap := range superseded {
 			be.dropChainRules(snap)
 		}
@@ -1234,6 +1238,7 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 	routeEnsureEgressAddress(st.iface, st.egressIP)
 	routeAddEgressRules(be, st, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	routeEnsurePolicyRouting(st, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	rebuilt = true
 	return nil
 }
 

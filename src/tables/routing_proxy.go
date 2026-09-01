@@ -348,7 +348,11 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		be.snapshotChainRules(st.chainPre, true),
 		be.snapshotChainRules(st.chainOut, true),
 	}
+	rebuilt := false
 	defer func() {
+		if !rebuilt {
+			return
+		}
 		for _, snap := range superseded {
 			be.dropChainRules(snap)
 		}
@@ -444,6 +448,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	}
 
 	routeEnsureLocalDelivery(st.mark, st.table, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	rebuilt = true
 	return nil
 }
 
