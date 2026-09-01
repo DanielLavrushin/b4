@@ -233,3 +233,89 @@ func TestNetnsAReconfiguredSetIsNeverDisarmed(t *testing.T) {
 func TestNetnsAReconfiguredSetIsNeverDisarmedNft(t *testing.T) {
 	netnsRebuildIsNeverDisarmed(t, backendNFTables)
 }
+
+func rebuildChainRuleCount(chain string) int {
+	out, err := run("iptables", "-t", "mangle", "-S", chain)
+	if err != nil {
+		return -1
+	}
+	n := 0
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "-A ") {
+			n++
+		}
+	}
+	return n
+}
+
+func rebuildPolicyRulePresent(mark uint32) bool {
+	out, err := run("ip", "rule", "show")
+	if err != nil {
+		return false
+	}
+	want := routeSetMarkRule(mark)
+	for _, line := range strings.Split(out, "\n") {
+		if routeRuleField(line, "fwmark") == want {
+			return true
+		}
+	}
+	return false
+}
+
+func TestNetnsAFailedEditLeavesThePreviousStateWorking(t *testing.T) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+
+	routeEngine = nil
+	defer func() { routeEngine = nil }()
+
+	cfg := rebuildConfig(backendIPTables)
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	defer func() { _ = ClearRules(cfg) }()
+
+	RoutingSyncConfig(cfg)
+	defer RoutingClearAll()
+
+	routeMu.Lock()
+	before, cached := routeRuleCache["netns-rebuild-moving"]
+	routeMu.Unlock()
+	if !cached {
+		t.Fatal("the set built no routing state")
+	}
+
+	learned := []string{"203.0.113.9", "203.0.113.10"}
+	getRouteBackend(cfg).addElements(before.setV4, learned, 3600)
+
+	rulesBefore := rebuildChainRuleCount(before.chainPre)
+	if rulesBefore <= 0 || !rebuildPolicyRulePresent(before.mark) {
+		t.Fatalf("the set is not fully installed before the test even starts: %d chain rules", rulesBefore)
+	}
+	membersBefore, _ := run("ipset", "list", before.setV4)
+
+	cfg.Sets[1].Routing.EgressInterface = "this-name-is-far-too-long-for-an-interface"
+	RoutingSyncConfig(cfg)
+
+	routeMu.Lock()
+	after, stillCached := routeRuleCache["netns-rebuild-moving"]
+	routeMu.Unlock()
+
+	if !stillCached {
+		t.Fatalf("an edit b4 could not install dropped the set from its cache, so nothing re-asserts the rules still standing in the kernel")
+	}
+	if after.mark != before.mark || after.table != before.table {
+		t.Fatalf("after a failed rebuild the cache holds mark 0x%x table %d, but mark 0x%x table %d is what is still installed",
+			after.mark, after.table, before.mark, before.table)
+	}
+	if !rebuildPolicyRulePresent(before.mark) {
+		t.Errorf("an edit b4 could not install took the policy rule away and left the marking chain behind, so the set marks traffic toward a table nothing points at")
+	}
+	if got := rebuildChainRuleCount(before.chainPre); got < rulesBefore {
+		t.Errorf("an edit b4 could not install cut the rules that were working: %d -> %d", rulesBefore, got)
+	}
+	membersAfter, _ := run("ipset", "list", before.setV4)
+	if a, b := strings.Count(membersAfter, "203.0.113."), strings.Count(membersBefore, "203.0.113."); a < b {
+		t.Errorf("an edit b4 could not install threw away addresses the set had learned: %d -> %d", b, a)
+	}
+}

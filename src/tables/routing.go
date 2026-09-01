@@ -178,8 +178,11 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 	sources := routeNormalizedSources(set.Routing.SourceInterfaces)
 
 	retireOld := func() {}
+	previous := routeState{}
+	hadPrevious := false
 	if old, ok := routeRuleCache[set.Id]; ok {
 		if !routeStateEqual(old, cur) {
+			previous, hadPrevious = old, true
 			retireOld = routeCleanupForRebuild(be, old, cur)
 			delete(routeRuleCache, set.Id)
 			routeForgetSetLearnState(set.Id)
@@ -196,7 +199,9 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 			err = routeEnsureRule(be, cfg, set, cur, sources)
 		}
 		if err != nil {
-			retireOld()
+			if hadPrevious {
+				routeRuleCache[set.Id] = previous
+			}
 			log.Errorf("Routing: failed to ensure rule for set '%s': %v", set.Name, err)
 			return
 		}
@@ -999,8 +1004,11 @@ func RoutingSyncConfig(cfg *config.Config) {
 		sources := routeNormalizedSources(set.Routing.SourceInterfaces)
 
 		retireOld := func() {}
+		previous := routeState{}
+		hadPrevious := false
 		if old, ok := routeRuleCache[set.Id]; ok {
 			if !routeStateEqual(old, cur) {
+				previous, hadPrevious = old, true
 				retireOld = routeCleanupForRebuild(be, old, cur)
 				delete(routeRuleCache, set.Id)
 				routeForgetSetLearnState(set.Id)
@@ -1017,7 +1025,9 @@ func RoutingSyncConfig(cfg *config.Config) {
 				err = routeEnsureRule(be, cfg, set, cur, sources)
 			}
 			if err != nil {
-				retireOld()
+				if hadPrevious {
+					routeRuleCache[set.Id] = previous
+				}
 				log.Errorf("Routing: failed to ensure rule for set '%s' during sync: %v", set.Name, err)
 				continue
 			}
