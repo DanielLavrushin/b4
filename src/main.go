@@ -217,11 +217,6 @@ func runB4(cmd *cobra.Command, args []string) error {
 		handler.GetMetricsCollector().TablesStatus = tables.DetectBackend(c)
 		return nil
 	})
-	handler.SetRoutingSyncFunc(func(c *config.Config) {
-		config.WarnIPv6Bypass(c)
-		tproxyMgr.SyncConfig(c)
-		tables.RoutingSyncConfig(c)
-	})
 	handler.SetDiscoveryRuntime(discoveryRT)
 	nfq.DNSTCPReadyFunc = tables.SetDNSTCPListenerReady
 	nfq.RoutingHandleDNSFunc = tables.RoutingHandleDNS
@@ -396,6 +391,13 @@ func runB4(cmd *cobra.Command, args []string) error {
 	}()
 
 	tproxyResolver.Set(pool.GetMatcher())
+
+	handler.SetRoutingSyncFunc(func(c *config.Config) {
+		tproxyResolver.Set(pool.GetMatcher())
+		config.WarnIPv6Bypass(c)
+		tproxyMgr.SyncConfig(c)
+		tables.RoutingSyncConfig(c)
+	})
 
 	handler.SetTUNEngine(tunEngine)
 

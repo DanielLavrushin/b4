@@ -409,12 +409,14 @@ func routeAddBlacklistGate(be routeBackend, table, chain string, ipv4, ipv6 bool
 
 func routeEnsureGatedPreJump(be routeBackend, chain string, gate routeDeviceGate) {
 	if be.name() == backendNFTables {
+		standing := nftJumpHandles(routeNftTable, routeNftPrerouting, chain)
 		if !gate.enabled {
-			be.ensureJumpRule("PREROUTING", chain, true, false)
-			return
+			runLogged("routing: add jump "+routeNftPrerouting+"->"+chain,
+				"nft", "add", "rule", "inet", routeNftTable, routeNftPrerouting, "jump", chain)
+		} else {
+			nftEmitGatedJump(routeNftPrerouting, chain, false, gate)
 		}
-		deleteNftJumpRules(routeNftTable, routeNftPrerouting, chain)
-		nftEmitGatedJump(routeNftPrerouting, chain, false, gate)
+		nftDropJumpHandles(routeNftTable, routeNftPrerouting, standing)
 		return
 	}
 	ib, ok := be.(*routeIptBackend)
@@ -426,14 +428,123 @@ func routeEnsureGatedPreJump(be routeBackend, chain string, gate routeDeviceGate
 		if !hasBinary(cmd) {
 			continue
 		}
-		iptDeleteJumpsTo(cmd, "mangle", "PREROUTING", chain)
-		at, readable := iptCaptureJumpIndex(cmd)
+		at, readable, standing := iptPreJumpPlacement(cmd, chain)
 		if !readable {
 			at = 1
 			log.Tracef("routing: %s could not read mangle PREROUTING, so %s goes in at the top; that keeps it above %s, and a later pass puts the sets back in the configured order",
 				cmd, chain, captureChainPre)
 		}
+		if at > 0 && !gate.isWhitelist() && len(standing) == 1 && standing[0] == at {
+			continue
+		}
 		iptEmitGatedJumpAt(cmd, "mangle", "PREROUTING", chain, at, gate)
+		added := len(iptJumpLineNumbers(cmd, "mangle", "PREROUTING", func(t string) bool { return t == chain })) - len(standing)
+		if added <= 0 {
+			continue
+		}
+		iptDropJumpsAt(cmd, "mangle", "PREROUTING", iptShiftedBy(standing, at, added))
+	}
+}
+
+func routePreJumpsAlreadyOrdered(be routeBackend, ordered []*config.SetConfig) bool {
+	ib, ok := be.(*routeIptBackend)
+	if !ok {
+		return false
+	}
+	want := make([]string, 0, len(ordered))
+	for _, set := range ordered {
+		st, cached := routeRuleCache[set.Id]
+		if !cached || st.chainPre == "" {
+			return false
+		}
+		want = append(want, st.chainPre)
+	}
+	checked := false
+	for _, cmd := range ib.iptBoth() {
+		if !hasBinary(cmd) {
+			continue
+		}
+		out, err := run(cmd, "-w", "-t", "mangle", "-L", "PREROUTING", "--line-numbers", "-n")
+		if err != nil {
+			return false
+		}
+		capture := 0
+		var seen []int
+		var order []string
+		for _, line := range strings.Split(out, "\n") {
+			f := strings.Fields(line)
+			if len(f) < 2 {
+				continue
+			}
+			n, convErr := strconv.Atoi(f[0])
+			if convErr != nil || n <= 0 {
+				continue
+			}
+			if f[1] == captureChainPre && capture == 0 {
+				capture = n
+				continue
+			}
+			if routeIsPreChainName(f[1]) {
+				order = append(order, f[1])
+				seen = append(seen, n)
+			}
+		}
+		if capture == 0 || len(order) != len(want) {
+			return false
+		}
+		for i := range want {
+			if order[i] != want[i] || seen[i] > capture {
+				return false
+			}
+		}
+		checked = true
+	}
+	return checked
+}
+
+func iptPreJumpPlacement(cmd, chain string) (at int, readable bool, standing []int) {
+	out, err := run(cmd, "-w", "-t", "mangle", "-L", "PREROUTING", "--line-numbers", "-n")
+	if err != nil {
+		return 0, false, nil
+	}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 {
+			continue
+		}
+		n, convErr := strconv.Atoi(f[0])
+		if convErr != nil || n <= 0 {
+			continue
+		}
+		switch {
+		case f[1] == captureChainPre && at == 0:
+			at = n
+		case f[1] == chain:
+			standing = append(standing, n)
+		}
+	}
+	return at, true, standing
+}
+
+func iptShiftedBy(positions []int, at, added int) []int {
+	moved := make([]int, 0, len(positions))
+	for _, p := range positions {
+		if at > 0 && p >= at {
+			p += added
+		}
+		moved = append(moved, p)
+	}
+	sort.Sort(sort.Reverse(sort.IntSlice(moved)))
+	return moved
+}
+
+func iptDropJumpsAt(cmd, table, parent string, positions []int) {
+	for _, n := range positions {
+		if _, err := run(cmd, "-w", "-t", table, "-D", parent, strconv.Itoa(n)); err != nil {
+			log.Warnf("routing: %s -t %s -D %s %d failed, so b4 stopped removing superseded jumps rather than cut a rule it never read: %v",
+				cmd, table, parent, n, err)
+			return
+		}
 	}
 }
 

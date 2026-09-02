@@ -1332,6 +1332,10 @@ func (m *mockRouteBackend) ensureIPSet(name string, v6 bool) error        { retu
 func (m *mockRouteBackend) ensureChain(chain string, isMangle bool) error { return nil }
 func (m *mockRouteBackend) flushChain(chain string, isMangle bool)        {}
 func (m *mockRouteBackend) deleteChain(chain string, isMangle bool)       {}
+func (m *mockRouteBackend) snapshotChainRules(chain string, isMangle bool) routeChainSnapshot {
+	return routeChainSnapshot{chain: chain, isMangle: isMangle}
+}
+func (m *mockRouteBackend) dropChainRules(snap routeChainSnapshot) {}
 func (m *mockRouteBackend) addBypassRule(chain string, mark uint32) {
 	if m.bypass == nil {
 		m.bypass = map[string][]uint32{}

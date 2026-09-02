@@ -156,10 +156,29 @@ const mcpHistoryLimit = 20
 // itself a way back to the saved configuration.
 var mcpHistory []mcpChange
 
+func mcpStripDerivedTargets(c *config.Config) {
+	if c == nil {
+		return
+	}
+	for _, set := range c.Sets {
+		if set == nil {
+			continue
+		}
+		set.Targets.DomainsToMatch = nil
+		set.Targets.IpsToMatch = nil
+	}
+}
+
 func mcpRecordChange(c mcpChange) {
+	mcpStripDerivedTargets(c.Snapshot)
 	mcpHistory = append(mcpHistory, c)
 	if len(mcpHistory) > mcpHistoryLimit {
-		mcpHistory = mcpHistory[len(mcpHistory)-mcpHistoryLimit:]
+		drop := len(mcpHistory) - mcpHistoryLimit
+		copy(mcpHistory, mcpHistory[drop:])
+		for i := mcpHistoryLimit; i < len(mcpHistory); i++ {
+			mcpHistory[i] = mcpChange{}
+		}
+		mcpHistory = mcpHistory[:mcpHistoryLimit]
 	}
 }
 
@@ -168,6 +187,7 @@ func mcpPopChange() (mcpChange, bool) {
 		return mcpChange{}, false
 	}
 	last := mcpHistory[len(mcpHistory)-1]
+	mcpHistory[len(mcpHistory)-1] = mcpChange{}
 	mcpHistory = mcpHistory[:len(mcpHistory)-1]
 	return last, true
 }

@@ -1,5 +1,11 @@
 # B4 - Bye Bye Big Bro
 
+## [1.80.4] - 2026-08-31
+
+- FIXED: **Changing anything on a routing set took it apart before putting it back, so for about a second the traffic it matched left by the ordinary uplink** - the policy rule, the route, the prerouting jump, the chain and the addresses learned from DNS all came down before the replacement went in, and a set marks a connection only on its first packet, so a connection opened in that window stayed off the set for as long as it lived.
+- FIXED: **Every setting changed through the MCP server left a whole copy of the configuration behind, so memory climbed by tens of megabytes and stayed there until b4 was restarted** - the undo history keeps the configuration as it stood before each of the last twenty writes, and on a router with a large geosite set each of those copies carried a few megabytes of expanded domain list.
+- FIXED: **A proxy set that resolves its upstream by domain went back to sending bare addresses a few minutes after any settings change, and stayed that way until b4 was restarted** - the transparent proxy kept reading the domain index built at start-up, which the capture engine stops feeding once the configuration is applied again, so the addresses it had learned aged out with nothing to replace them. [#338](https://github.com/DanielLavrushin/b4/issues/338)
+
 ## [1.80.3] - 2026-08-30
 
 - FIXED: **A routing table named in `/etc/iproute2/rt_tables` was not recognised as the one a set was using** - `ip` prints such a table by its name rather than its number, which is how ASUS firmware ships tables 100 and 200, so b4 read its own live policy rule as missing and said so on every pass, the TUN engine left its rules behind on that table when it shut down, and b4 looked for those names in one file while `ip` also reads the copy that ships with the package.

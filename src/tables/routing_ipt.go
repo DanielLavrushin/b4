@@ -118,6 +118,51 @@ func (b *routeIptBackend) flushChain(chain string, isMangle bool) {
 	}
 }
 
+func (b *routeIptBackend) snapshotChainRules(chain string, isMangle bool) routeChainSnapshot {
+	table := iptTable(isMangle)
+	snap := routeChainSnapshot{chain: chain, isMangle: isMangle, counts: map[string]int{}}
+	for _, cmd := range b.iptBoth() {
+		if !hasBinary(cmd) {
+			continue
+		}
+		snap.counts[cmd] = iptChainRuleCount(cmd, table, chain)
+	}
+	return snap
+}
+
+func (b *routeIptBackend) dropChainRules(snap routeChainSnapshot) {
+	table := iptTable(snap.isMangle)
+	for cmd, n := range snap.counts {
+		for i := 0; i < n; i++ {
+			if _, err := run(cmd, "-w", "-t", table, "-D", snap.chain, "1"); err != nil {
+				log.Warnf("routing: %s -t %s -D %s 1 failed with %d of %d superseded rules left, so b4 stopped rather than cut a rule it never read: %v",
+					cmd, table, snap.chain, n-i, n, err)
+				break
+			}
+		}
+	}
+}
+
+func iptChainRuleCount(cmd, table, chain string) int {
+	out, err := run(cmd, "-w", "-t", table, "-L", chain, "-n", "--line-numbers")
+	if err != nil {
+		return 0
+	}
+	last := 0
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		n, convErr := strconv.Atoi(fields[0])
+		if convErr != nil || n <= last {
+			continue
+		}
+		last = n
+	}
+	return last
+}
+
 func (b *routeIptBackend) deleteChain(chain string, isMangle bool) {
 	table := iptTable(isMangle)
 	for _, cmd := range b.iptBoth() {
