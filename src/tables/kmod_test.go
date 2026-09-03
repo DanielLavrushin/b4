@@ -188,6 +188,22 @@ func TestKmodInsmodFailureKeepsReasonAndDropsPackageHint(t *testing.T) {
 	}
 }
 
+func TestKmodMissingHintKeepsReasonsNextToPackages(t *testing.T) {
+	fx := newKmodFixture(t)
+	path := fx.module("xt_TPROXY.ko")
+	fx.stubRun(false, "insmod: can't insert '"+path+"': invalid module format")
+	_ = loadKernelModule("xt_TPROXY")
+	_ = loadKernelModule("xt_socket")
+	missing := []string{"xt_socket", "xt_TPROXY"}
+	hint := kmodMissingHint(missing, tproxyPkgsFor(missing))
+	if !strings.HasPrefix(hint, "Required package(s): kmod-ipt-socket") {
+		t.Fatalf("hint = %q", hint)
+	}
+	if !strings.Contains(hint, "xt_TPROXY: ") || !strings.Contains(hint, "invalid module format") {
+		t.Fatalf("hint dropped the insmod failure: %q", hint)
+	}
+}
+
 func TestKmodInsmodFileExistsCountsAsLoaded(t *testing.T) {
 	fx := newKmodFixture(t)
 	fx.module("xt_TPROXY.ko")

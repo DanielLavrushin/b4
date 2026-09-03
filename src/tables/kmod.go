@@ -242,11 +242,13 @@ func KernelModuleReasons(missing []string) []string {
 }
 
 func kmodMissingHint(missing, pkgs []string) string {
+	var parts []string
 	if len(pkgs) > 0 {
-		return "Required package(s): " + strings.Join(pkgs, " ")
+		parts = append(parts, "Required package(s): "+strings.Join(pkgs, " "))
 	}
-	if reasons := KernelModuleReasons(missing); len(reasons) > 0 {
-		return strings.Join(reasons, "; ")
+	parts = append(parts, KernelModuleReasons(missing)...)
+	if len(parts) == 0 {
+		return "The running kernel offers no such module"
 	}
-	return "The running kernel offers no such module"
+	return strings.Join(parts, "; ")
 }
