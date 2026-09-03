@@ -46,15 +46,18 @@ func probeQueueNft(queueAction string) queueCaps {
 	caps := queueCaps{probed: true}
 
 	queueRule := append([]string{"nft", "add", "rule", "inet", probeTable, "test", "counter"}, strings.Fields(queueAction)...)
-	if _, err := run(queueRule...); err != nil {
+	if out, err := run(queueRule...); err != nil {
 		caps.queueErr = err
+		kmodNoteRejected("nft_queue", "nft", out)
 	} else {
 		caps.queue = true
 	}
 
-	if _, err := run("nft", "add", "rule", "inet", probeTable, "test",
+	if out, err := run("nft", "add", "rule", "inet", probeTable, "test",
 		"ct", "original", "packets", "<", "20", "counter", "accept"); err == nil {
 		caps.ctPackets = true
+	} else {
+		kmodNoteRejected("nft_ct", "nft", out)
 	}
 
 	return caps
@@ -119,43 +122,18 @@ func nfqueueMissingIpt(legacy bool) (missing []string, probed bool) {
 		_, _ = run(ipt, "-w", "-t", "mangle", "-X", probeChain)
 	}()
 
-	if _, err := run(ipt, "-w", "-t", "mangle", "-A", probeChain,
+	if out, err := run(ipt, "-w", "-t", "mangle", "-A", probeChain,
 		"-j", "NFQUEUE", "--queue-num", "0", "--queue-bypass"); err != nil {
 		missing = append(missing, "xt_NFQUEUE")
+		kmodNoteRejected("xt_NFQUEUE", ipt, out)
 	}
-	if _, err := run(ipt, "-w", "-t", "mangle", "-A", probeChain,
+	if out, err := run(ipt, "-w", "-t", "mangle", "-A", probeChain,
 		"-p", "tcp", "-m", "connbytes", "--connbytes-dir", "original",
 		"--connbytes-mode", "packets", "--connbytes", "0:10", "-j", "ACCEPT"); err != nil {
 		missing = append(missing, "xt_connbytes")
+		kmodNoteRejected("xt_connbytes", ipt, out)
 	}
 	return missing, true
-}
-
-func nfqueuePkgsFor(missing []string) []string {
-	seen := map[string]bool{}
-	pkgs := make([]string, 0, len(missing))
-	add := func(p string) {
-		if !seen[p] {
-			seen[p] = true
-			pkgs = append(pkgs, p)
-		}
-	}
-	for _, m := range missing {
-		switch m {
-		case "nft_queue":
-			add("kmod-nft-queue")
-		case "nft_ct":
-			add("kmod-nft-core")
-		case "xt_NFQUEUE":
-			add("kmod-nfnetlink-queue")
-			add("kmod-ipt-nfqueue")
-			add("iptables-mod-nfqueue")
-		case "xt_connbytes":
-			add("kmod-ipt-conntrack-extra")
-			add("iptables-mod-conntrack-extra")
-		}
-	}
-	return pkgs
 }
 
 func ProbeNFQueueCapability(cfg *config.Config) (available bool, missing []string, packages []string) {
@@ -167,7 +145,7 @@ func ProbeNFQueueCapability(cfg *config.Config) (available bool, missing []strin
 	} else {
 		miss, probed = nfqueueMissingIpt(backend == backendIPTablesLegacy)
 	}
-	return probed && !containsFatalQueueModule(miss), miss, nfqueuePkgsFor(miss)
+	return probed && !containsFatalQueueModule(miss), miss, kmodPkgsFor(miss)
 }
 
 func containsFatalQueueModule(missing []string) bool {

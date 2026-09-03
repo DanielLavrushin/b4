@@ -176,6 +176,7 @@ type DiagCapability struct {
 	Available bool     `json:"available"`
 	Missing   []string `json:"missing,omitempty"`
 	Packages  []string `json:"packages,omitempty"`
+	Reasons   []string `json:"reasons,omitempty"`
 	Detail    string   `json:"detail,omitempty"`
 }
 

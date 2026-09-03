@@ -43,13 +43,14 @@ func TestNFQueueActionExpr(t *testing.T) {
 }
 
 func TestNFQueuePkgsFor(t *testing.T) {
-	pkgs := nfqueuePkgsFor([]string{"nft_queue", "nft_ct"})
+	newKmodFixture(t)
+	pkgs := kmodPkgsFor([]string{"nft_queue", "nft_ct"})
 	got := strings.Join(pkgs, " ")
 	if got != "kmod-nft-queue kmod-nft-core" {
 		t.Errorf("got %q", got)
 	}
 
-	pkgs = nfqueuePkgsFor([]string{"xt_NFQUEUE", "xt_NFQUEUE"})
+	pkgs = kmodPkgsFor([]string{"xt_NFQUEUE", "xt_NFQUEUE"})
 	if len(pkgs) != 3 {
 		t.Errorf("expected deduplicated packages, got %v", pkgs)
 	}

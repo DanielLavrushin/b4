@@ -433,29 +433,18 @@ var hashlimitModuleOnce sync.Once
 
 func loadHashlimitModule() {
 	hashlimitModuleOnce.Do(func() {
-		_, _ = run("sh", "-c", "modprobe -q xt_hashlimit 2>/dev/null || true")
+		loadKernelModuleList("xt_hashlimit")
 	})
 }
 
 func loadKernelModules() {
 	modulesLoaded.Do(func() {
-		_, _ = run("sh", "-c", "modprobe -q nfnetlink 2>/dev/null || true")
-		_, _ = run("sh", "-c", "modprobe -q nf_conntrack 2>/dev/null || true")
-		_, _ = run("sh", "-c", "modprobe -q nf_conntrack_netlink 2>/dev/null || true")
-		_, _ = run("sh", "-c", "modprobe -q xt_connbytes 2>/dev/null || true")
-		_, _ = run("sh", "-c", "modprobe -q nfnetlink_queue 2>/dev/null || true")
-		_, _ = run("sh", "-c", "modprobe -q xt_NFQUEUE 2>/dev/null || true")
-		_, _ = run("sh", "-c", "modprobe -q xt_multiport 2>/dev/null || true")
-		_, _ = run("sh", "-c", "modprobe -q nf_tables 2>/dev/null || true")
-		_, _ = run("sh", "-c", "modprobe -q nft_queue 2>/dev/null || true")
-		_, _ = run("sh", "-c", "modprobe -q nft_ct 2>/dev/null || true")
-		_, _ = run("sh", "-c", "modprobe -q nf_nat 2>/dev/null || true")
-		_, _ = run("sh", "-c", "modprobe -q nft_masq 2>/dev/null || true")
-		_, _ = run("sh", "-c", "modprobe -q nft_tproxy 2>/dev/null || true")
-		_, _ = run("sh", "-c", "modprobe -q nft_socket 2>/dev/null || true")
-		_, _ = run("sh", "-c", "modprobe -q xt_MASQUERADE 2>/dev/null || true")
-		_, _ = run("sh", "-c", "modprobe -q xt_set 2>/dev/null || true")
-		_, _ = run("sh", "-c", "modprobe -q nft_limit 2>/dev/null || true")
+		loadKernelModuleList(
+			"nfnetlink", "nf_conntrack", "nf_conntrack_netlink", "xt_connbytes",
+			"nfnetlink_queue", "xt_NFQUEUE", "xt_multiport", "nf_tables", "nft_queue",
+			"nft_ct", "nf_nat", "nft_masq", "nft_tproxy", "nft_socket", "xt_MASQUERADE",
+			"xt_set", "nft_limit",
+		)
 		loadHashlimitModule()
 	})
 }

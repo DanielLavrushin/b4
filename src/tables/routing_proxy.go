@@ -47,8 +47,7 @@ var (
 )
 
 func tproxyMissingNft() (missing []string, probed bool) {
-	_, _ = run("sh", "-c", "modprobe -q nft_tproxy 2>/dev/null || true")
-	_, _ = run("sh", "-c", "modprobe -q nft_socket 2>/dev/null || true")
+	loadKernelModuleList("nft_tproxy", "nft_socket")
 
 	tproxyProbeMu.Lock()
 	defer tproxyProbeMu.Unlock()
@@ -63,22 +62,21 @@ func tproxyMissingNft() (missing []string, probed bool) {
 		return nil, false
 	}
 
-	if _, err := run("nft", "add", "rule", "inet", probeTable, "test",
+	if out, err := run("nft", "add", "rule", "inet", probeTable, "test",
 		"socket", "transparent", "1", "drop"); err != nil {
 		missing = append(missing, "nft_socket")
+		kmodNoteRejected("nft_socket", "nft", out)
 	}
-	if _, err := run("nft", "add", "rule", "inet", probeTable, "test",
+	if out, err := run("nft", "add", "rule", "inet", probeTable, "test",
 		"ip", "protocol", "tcp", "tproxy", "ip", "to", ":1", "drop"); err != nil {
 		missing = append(missing, "nft_tproxy")
+		kmodNoteRejected("nft_tproxy", "nft", out)
 	}
 	return missing, true
 }
 
 func tproxyMissingIpt(legacy bool) (missing []string, probed bool) {
-	_, _ = run("sh", "-c", "modprobe -q nf_tproxy_ipv4 2>/dev/null || true")
-	_, _ = run("sh", "-c", "modprobe -q nf_tproxy_ipv6 2>/dev/null || true")
-	_, _ = run("sh", "-c", "modprobe -q xt_TPROXY 2>/dev/null || true")
-	_, _ = run("sh", "-c", "modprobe -q xt_socket 2>/dev/null || true")
+	loadKernelModuleList("nf_tproxy_ipv4", "nf_tproxy_ipv6", "xt_TPROXY", "xt_socket")
 
 	ipt := backendIPTables
 	if legacy {
@@ -102,32 +100,17 @@ func tproxyMissingIpt(legacy bool) (missing []string, probed bool) {
 		_, _ = run(ipt, "-w", "-t", "mangle", "-X", probeChain)
 	}()
 
-	if _, err := run(ipt, "-w", "-t", "mangle", "-A", probeChain,
+	if out, err := run(ipt, "-w", "-t", "mangle", "-A", probeChain,
 		"-p", "tcp", "-m", "socket", "--transparent", "-j", "ACCEPT"); err != nil {
 		missing = append(missing, "xt_socket")
+		kmodNoteRejected("xt_socket", ipt, out)
 	}
-	if _, err := run(ipt, "-w", "-t", "mangle", "-A", probeChain,
+	if out, err := run(ipt, "-w", "-t", "mangle", "-A", probeChain,
 		"-p", "tcp", "-j", "TPROXY", "--on-port", "1", "--tproxy-mark", "0x1/0x1"); err != nil {
 		missing = append(missing, "xt_TPROXY")
+		kmodNoteRejected("xt_TPROXY", ipt, out)
 	}
 	return missing, true
-}
-
-func tproxyPkgsFor(missing []string) []string {
-	pkgs := make([]string, 0, len(missing))
-	for _, m := range missing {
-		switch m {
-		case "nft_socket":
-			pkgs = append(pkgs, "kmod-nft-socket")
-		case "nft_tproxy":
-			pkgs = append(pkgs, "kmod-nft-tproxy")
-		case "xt_socket":
-			pkgs = append(pkgs, "kmod-ipt-socket")
-		case "xt_TPROXY":
-			pkgs = append(pkgs, "kmod-ipt-tproxy")
-		}
-	}
-	return pkgs
 }
 
 // ProbeTProxyCapability reports whether transparent proxy / TPROXY redirection
@@ -142,11 +125,11 @@ func ProbeTProxyCapability(cfg *config.Config) (available bool, missing []string
 	} else {
 		miss, probed = tproxyMissingIpt(backend == backendIPTablesLegacy)
 	}
-	return probed && len(miss) == 0, miss, tproxyPkgsFor(miss)
+	return probed && len(miss) == 0, miss, kmodPkgsFor(miss)
 }
 
 func connmarkMissingNft() (missing []string, probed bool) {
-	_, _ = run("sh", "-c", "modprobe -q nft_ct 2>/dev/null || true")
+	loadKernelModuleList("nft_ct")
 
 	tproxyProbeMu.Lock()
 	defer tproxyProbeMu.Unlock()
@@ -161,16 +144,16 @@ func connmarkMissingNft() (missing []string, probed bool) {
 		return nil, false
 	}
 
-	if _, err := run("nft", "add", "rule", "inet", probeTable, "test",
+	if out, err := run("nft", "add", "rule", "inet", probeTable, "test",
 		"ct", "mark", "set", "ct", "mark", "|", "0x8000"); err != nil {
 		missing = append(missing, "nft_ct")
+		kmodNoteRejected("nft_ct", "nft", out)
 	}
 	return missing, true
 }
 
 func connmarkMissingIpt(legacy bool) (missing []string, probed bool) {
-	_, _ = run("sh", "-c", "modprobe -q xt_connmark 2>/dev/null || true")
-	_, _ = run("sh", "-c", "modprobe -q xt_CONNMARK 2>/dev/null || true")
+	loadKernelModuleList("xt_connmark", "xt_CONNMARK")
 
 	ipt := backendIPTables
 	if legacy {
@@ -194,35 +177,17 @@ func connmarkMissingIpt(legacy bool) (missing []string, probed bool) {
 		_, _ = run(ipt, "-w", "-t", "mangle", "-X", probeChain)
 	}()
 
-	if _, err := run(ipt, "-w", "-t", "mangle", "-A", probeChain,
+	if out, err := run(ipt, "-w", "-t", "mangle", "-A", probeChain,
 		"-m", "connmark", "--mark", "0x8000/0x8000", "-j", "RETURN"); err != nil {
 		missing = append(missing, "xt_connmark")
+		kmodNoteRejected("xt_connmark", ipt, out)
 	}
-	if _, err := run(ipt, "-w", "-t", "mangle", "-A", probeChain,
+	if out, err := run(ipt, "-w", "-t", "mangle", "-A", probeChain,
 		"-j", "CONNMARK", "--save-mark", "--nfmask", "0x8000", "--ctmask", "0x8000"); err != nil {
 		missing = append(missing, "xt_CONNMARK")
+		kmodNoteRejected("xt_CONNMARK", ipt, out)
 	}
 	return missing, true
-}
-
-func connmarkPkgsFor(missing []string) []string {
-	seen := map[string]bool{}
-	pkgs := make([]string, 0, len(missing))
-	add := func(p string) {
-		if !seen[p] {
-			seen[p] = true
-			pkgs = append(pkgs, p)
-		}
-	}
-	for _, m := range missing {
-		switch m {
-		case "nft_ct":
-			add("kmod-nft-core")
-		case "xt_connmark", "xt_CONNMARK":
-			add("kmod-ipt-conntrack-extra")
-		}
-	}
-	return pkgs
 }
 
 // ProbeConnmarkCapability reports whether the conntrack-mark save/restore used
@@ -238,7 +203,7 @@ func ProbeConnmarkCapability(cfg *config.Config) (available bool, missing []stri
 	} else {
 		miss, probed = connmarkMissingIpt(backend == backendIPTablesLegacy)
 	}
-	return probed && len(miss) == 0, miss, connmarkPkgsFor(miss)
+	return probed && len(miss) == 0, miss, kmodPkgsFor(miss)
 }
 
 func proxyNftPreflight() {
@@ -247,8 +212,8 @@ func proxyNftPreflight() {
 		if !probed || len(missing) == 0 {
 			return
 		}
-		log.Errorf("Routing (proxy mode): missing kernel module(s) %s — proxy diversion inactive. Required package(s): %s",
-			strings.Join(missing, ", "), strings.Join(tproxyPkgsFor(missing), " "))
+		log.Errorf("Routing (proxy mode): the firewall does not support %s - proxy diversion inactive. %s",
+			strings.Join(missing, ", "), kmodMissingHint(missing))
 	})
 }
 
@@ -262,8 +227,8 @@ func proxyIptPreflight(legacy bool) {
 		if !probed || len(missing) == 0 {
 			return
 		}
-		log.Errorf("Routing (proxy/mtproto-ws mode): missing kernel module(s) %s — transparent diversion inactive; traffic for affected sets will NOT be redirected (e.g. the Telegram WS bridge will hang at \"Connecting…\"). Required package(s): %s",
-			strings.Join(missing, ", "), strings.Join(tproxyPkgsFor(missing), " "))
+		log.Errorf("Routing (proxy/mtproto-ws mode): the firewall does not support %s - transparent diversion inactive; traffic for affected sets will NOT be redirected (e.g. the Telegram WS bridge will hang at \"Connecting…\"). %s",
+			strings.Join(missing, ", "), kmodMissingHint(missing))
 	})
 }
 

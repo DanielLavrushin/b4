@@ -810,6 +810,7 @@ func collectKernelModules(cfg *config.Config) DiagKernel {
 		Available: queueOK,
 		Missing:   queueMissing,
 		Packages:  queuePkgs,
+		Reasons:   tables.KernelModuleReasons(queueMissing),
 	}
 	if queueOK {
 		queueCap.Detail = "NFQUEUE interception available (b4 can inspect and rewrite matched traffic)"
@@ -824,11 +825,12 @@ func collectKernelModules(cfg *config.Config) DiagKernel {
 		Available: tproxyOK,
 		Missing:   tproxyMissing,
 		Packages:  tproxyPkgs,
+		Reasons:   tables.KernelModuleReasons(tproxyMissing),
 	}
 	if tproxyOK {
 		tproxyCap.Detail = "TPROXY + socket match available (proxy and mtproto-ws routing modes work)"
 	} else {
-		tproxyCap.Detail = "TPROXY/socket match unavailable — transparent redirect (proxy and mtproto-ws routing, e.g. Telegram bridge) will not work"
+		tproxyCap.Detail = "TPROXY/socket match unavailable - transparent redirect (proxy and mtproto-ws routing, e.g. Telegram bridge) will not work"
 	}
 	result.Capabilities = append(result.Capabilities, tproxyCap)
 
@@ -838,6 +840,7 @@ func collectKernelModules(cfg *config.Config) DiagKernel {
 		Available: connmarkOK,
 		Missing:   connmarkMissing,
 		Packages:  connmarkPkgs,
+		Reasons:   tables.KernelModuleReasons(connmarkMissing),
 	}
 	if connmarkOK {
 		connmarkCap.Detail = "conntrack mark save/restore available (b4 exempts its own marked connections from reply-side processing)"

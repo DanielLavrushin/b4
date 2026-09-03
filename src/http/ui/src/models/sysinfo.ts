@@ -32,6 +32,7 @@ interface DiagCapability {
   available: boolean;
   missing?: string[];
   packages?: string[];
+  reasons?: string[];
   detail?: string;
 }
 

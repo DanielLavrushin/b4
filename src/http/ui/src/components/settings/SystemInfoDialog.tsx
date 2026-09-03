@@ -589,6 +589,22 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
                           })}
                         </Typography>
                       )}
+                    {!cap.available &&
+                      cap.reasons &&
+                      cap.reasons.map((reason) => (
+                        <Typography
+                          key={reason}
+                          variant="caption"
+                          sx={{
+                            color: colors.text.secondary,
+                            fontSize: "0.7rem",
+                            fontFamily: "monospace",
+                            wordBreak: "break-word",
+                          }}
+                        >
+                          {reason}
+                        </Typography>
+                      ))}
                   </Stack>
                 );
               })}
