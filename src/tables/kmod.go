@@ -221,12 +221,18 @@ func KernelModuleOnDisk(name string) bool {
 }
 
 func kmodPkgsFor(missing []string, pkgs func(module string) []string) []string {
+	seen := map[string]bool{}
 	out := make([]string, 0, len(missing))
 	for _, m := range missing {
 		if KernelModuleOnDisk(m) {
 			continue
 		}
-		out = append(out, pkgs(m)...)
+		for _, p := range pkgs(m) {
+			if !seen[p] {
+				seen[p] = true
+				out = append(out, p)
+			}
+		}
 	}
 	return out
 }

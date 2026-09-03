@@ -204,6 +204,14 @@ func TestKmodMissingHintKeepsReasonsNextToPackages(t *testing.T) {
 	}
 }
 
+func TestKmodPkgsForDeduplicates(t *testing.T) {
+	newKmodFixture(t)
+	pkgs := connmarkPkgsFor([]string{"xt_connmark", "xt_CONNMARK"})
+	if strings.Join(pkgs, " ") != "kmod-ipt-conntrack-extra" {
+		t.Fatalf("pkgs = %v", pkgs)
+	}
+}
+
 func TestKmodInsmodFileExistsCountsAsLoaded(t *testing.T) {
 	fx := newKmodFixture(t)
 	fx.module("xt_TPROXY.ko")
