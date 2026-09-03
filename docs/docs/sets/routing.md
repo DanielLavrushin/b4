@@ -370,7 +370,7 @@ On builds using `apk`:
 apk add kmod-nft-tproxy kmod-nft-socket
 ```
 
-On an iptables system the equivalents are `kmod-ipt-tproxy` and `kmod-ipt-socket`.
+On an iptables system the equivalents are `kmod-ipt-tproxy` and `kmod-ipt-socket`. On Keenetic the firmware ships these modules under `/lib/modules` and the service loads them itself; nothing needs to be installed.
 
 :::tip
 **Settings -> Diagnostics** reports whether TPROXY is usable and names any missing modules and the packages that provide them.

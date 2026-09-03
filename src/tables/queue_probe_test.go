@@ -43,6 +43,7 @@ func TestNFQueueActionExpr(t *testing.T) {
 }
 
 func TestNFQueuePkgsFor(t *testing.T) {
+	newKmodFixture(t)
 	pkgs := nfqueuePkgsFor([]string{"nft_queue", "nft_ct"})
 	got := strings.Join(pkgs, " ")
 	if got != "kmod-nft-queue kmod-nft-core" {

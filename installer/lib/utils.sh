@@ -1,6 +1,6 @@
 #!/bin/sh
 
-B4_KERNEL_MODULES="nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq nft_tproxy nft_socket xt_hashlimit nft_limit"
+B4_KERNEL_MODULES="nfnetlink nf_conntrack nf_conntrack_netlink xt_connbytes xt_NFQUEUE nfnetlink_queue xt_multiport nf_tables nft_queue nft_ct nf_nat nft_masq nft_tproxy nft_socket nf_tproxy_ipv4 nf_tproxy_ipv6 xt_TPROXY xt_socket xt_hashlimit nft_limit"
 # Core utility functions
 
 # --- Configuration ---

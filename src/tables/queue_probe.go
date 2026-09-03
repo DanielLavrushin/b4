@@ -141,6 +141,9 @@ func nfqueuePkgsFor(missing []string) []string {
 		}
 	}
 	for _, m := range missing {
+		if KernelModuleOnDisk(m) {
+			continue
+		}
 		switch m {
 		case "nft_queue":
 			add("kmod-nft-queue")
