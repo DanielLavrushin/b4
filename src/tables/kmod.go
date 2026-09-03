@@ -226,11 +226,11 @@ func loadKernelModuleList(names ...string) {
 }
 
 func loadKernelModuleAt(name string, depth int) error {
-	if kmodLoaded(name) || kmodBuiltin(name) {
+	if kmodLoaded(name) {
 		return nil
 	}
 	probeOut, probeErr := run("modprobe", "-q", name)
-	if probeErr == nil {
+	if probeErr == nil || kmodLoaded(name) || kmodBuiltin(name) {
 		return nil
 	}
 	path := kmodPath(name)

@@ -132,8 +132,8 @@ func TestKmodBuiltinCountsAsPresent(t *testing.T) {
 	if err := loadKernelModule("xt_socket"); err != nil {
 		t.Fatal(err)
 	}
-	if len(fx.calls) != 0 {
-		t.Fatalf("commands run for a built-in module: %v", fx.calls)
+	if strings.Join(fx.calls, "|") != "modprobe -q xt_socket" {
+		t.Fatalf("calls for a built-in module = %v, want a single modprobe and no insmod", fx.calls)
 	}
 	if got := kmodStateOf("xt_socket"); got != kmodStatePresent {
 		t.Fatalf("state = %v, want present", got)
