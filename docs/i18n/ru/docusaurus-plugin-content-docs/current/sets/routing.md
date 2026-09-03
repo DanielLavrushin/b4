@@ -375,7 +375,7 @@ opkg install kmod-nft-tproxy kmod-nft-socket
 apk add kmod-nft-tproxy kmod-nft-socket
 ```
 
-В системе с iptables соответствующие модули - `kmod-ipt-tproxy` и `kmod-ipt-socket`. На Keenetic эти модули входят в прошивку в `/lib/modules` и загружаются самим сервисом; устанавливать ничего не требуется.
+В системе с iptables соответствующие модули - `kmod-ipt-tproxy` и `kmod-ipt-socket`, а также `iptables-mod-tproxy` для самого расширения iptables. На Keenetic эти модули входят в прошивку в `/lib/modules` и загружаются самим сервисом; устанавливать ничего не требуется.
 
 :::tip
 **Настройки -> Диагностика** показывает, доступен ли TPROXY, и называет недостающие модули вместе с пакетами, которые их содержат.

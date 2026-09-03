@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"bufio"
 	"debug/elf"
 	"errors"
 	"fmt"
@@ -9,24 +10,61 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/utils"
 	"golang.org/x/sys/unix"
 )
 
-const kmodDepthLimit = 8
+const (
+	kmodDepthLimit      = 8
+	kmodIndexRebuildTTL = 30 * time.Second
+)
+
+type kmodPackageSet struct {
+	kernel    []string
+	userspace []string
+}
+
+var kmodPackageTable = map[string]kmodPackageSet{
+	"nft_queue":    {kernel: []string{"kmod-nft-queue"}},
+	"nft_ct":       {kernel: []string{"kmod-nft-core"}},
+	"nft_socket":   {kernel: []string{"kmod-nft-socket"}},
+	"nft_tproxy":   {kernel: []string{"kmod-nft-tproxy"}},
+	"xt_NFQUEUE":   {kernel: []string{"kmod-nfnetlink-queue", "kmod-ipt-nfqueue"}, userspace: []string{"iptables-mod-nfqueue"}},
+	"xt_connbytes": {kernel: []string{"kmod-ipt-conntrack-extra"}, userspace: []string{"iptables-mod-conntrack-extra"}},
+	"xt_socket":    {kernel: []string{"kmod-ipt-socket"}, userspace: []string{"iptables-mod-tproxy"}},
+	"xt_TPROXY":    {kernel: []string{"kmod-ipt-tproxy"}, userspace: []string{"iptables-mod-tproxy"}},
+	"xt_connmark":  {kernel: []string{"kmod-ipt-conntrack-extra"}, userspace: []string{"iptables-mod-conntrack-extra"}},
+	"xt_CONNMARK":  {kernel: []string{"kmod-ipt-conntrack-extra"}, userspace: []string{"iptables-mod-conntrack-extra"}},
+}
+
+type kmodState int
+
+const (
+	kmodStateUnknown kmodState = iota
+	kmodStateAbsent
+	kmodStateBroken
+	kmodStatePresent
+)
 
 var (
 	kmodSysRoot   = "/sys/module"
 	kmodLibRoot   = "/lib/modules"
 	kmodRelease   = unameRelease
 	kmodDependsOf = kmodDepends
+	kmodNow       = time.Now
 
-	kmodIndexMu sync.Mutex
-	kmodIndex   map[string]string
+	kmodIndexMu    sync.Mutex
+	kmodIndex      map[string]string
+	kmodBuiltins   map[string]bool
+	kmodIndexBuilt time.Time
 
-	kmodErrMu sync.Mutex
-	kmodErrs  = map[string]string{}
+	kmodStateMu   sync.Mutex
+	kmodLoadErrs  = map[string]string{}
+	kmodRejected  = map[string]string{}
+	kmodAttempted = map[string]bool{}
 )
 
 func unameRelease() string {
@@ -54,11 +92,24 @@ func kmodModulesDir() string {
 	return filepath.Join(kmodLibRoot, rel)
 }
 
-func kmodBuildIndex() map[string]string {
+func kmodModuleKey(base string) (string, bool) {
+	idx := strings.Index(base, ".ko")
+	if idx <= 0 {
+		return "", false
+	}
+	suffix := base[idx:]
+	if suffix != ".ko" && !strings.HasPrefix(suffix, ".ko.") {
+		return "", false
+	}
+	return kmodCanonical(base[:idx]), true
+}
+
+func kmodBuildIndex() (map[string]string, map[string]bool) {
 	index := map[string]string{}
+	builtins := map[string]bool{}
 	dir := kmodModulesDir()
 	if dir == "" {
-		return index
+		return index, builtins
 	}
 	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
 		dir = resolved
@@ -67,32 +118,53 @@ func kmodBuildIndex() map[string]string {
 		if err != nil || d.IsDir() {
 			return nil
 		}
-		base := d.Name()
-		idx := strings.Index(base, ".ko")
-		if idx <= 0 {
+		key, ok := kmodModuleKey(d.Name())
+		if !ok {
 			return nil
 		}
-		suffix := base[idx:]
-		if suffix != ".ko" && !strings.HasPrefix(suffix, ".ko.") {
-			return nil
-		}
-		key := kmodCanonical(base[:idx])
 		if prev, ok := index[key]; ok && strings.HasSuffix(prev, ".ko") {
 			return nil
 		}
 		index[key] = path
 		return nil
 	})
-	return index
+	if f, err := os.Open(filepath.Join(dir, "modules.builtin")); err == nil {
+		defer f.Close()
+		sc := bufio.NewScanner(f)
+		for sc.Scan() {
+			if key, ok := kmodModuleKey(filepath.Base(strings.TrimSpace(sc.Text()))); ok {
+				builtins[key] = true
+			}
+		}
+	}
+	return index, builtins
 }
 
-func kmodPath(name string) string {
+func kmodLookup(name string) (path string, builtin bool) {
+	key := kmodCanonical(name)
 	kmodIndexMu.Lock()
 	defer kmodIndexMu.Unlock()
 	if kmodIndex == nil {
-		kmodIndex = kmodBuildIndex()
+		kmodIndex, kmodBuiltins = kmodBuildIndex()
+		kmodIndexBuilt = kmodNow()
 	}
-	return kmodIndex[kmodCanonical(name)]
+	path, builtin = kmodIndex[key], kmodBuiltins[key]
+	if path == "" && !builtin && kmodNow().Sub(kmodIndexBuilt) > kmodIndexRebuildTTL {
+		kmodIndex, kmodBuiltins = kmodBuildIndex()
+		kmodIndexBuilt = kmodNow()
+		path, builtin = kmodIndex[key], kmodBuiltins[key]
+	}
+	return path, builtin
+}
+
+func kmodPath(name string) string {
+	path, _ := kmodLookup(name)
+	return path
+}
+
+func kmodBuiltin(name string) bool {
+	_, builtin := kmodLookup(name)
+	return builtin
 }
 
 func kmodDepends(path string) []string {
@@ -133,13 +205,15 @@ func kmodParseDepends(modinfo []byte) []string {
 
 func loadKernelModule(name string) error {
 	err := loadKernelModuleAt(name, 0)
-	kmodErrMu.Lock()
+	key := kmodCanonical(name)
+	kmodStateMu.Lock()
+	kmodAttempted[key] = true
 	if err != nil {
-		kmodErrs[kmodCanonical(name)] = err.Error()
+		kmodLoadErrs[key] = err.Error()
 	} else {
-		delete(kmodErrs, kmodCanonical(name))
+		delete(kmodLoadErrs, key)
 	}
-	kmodErrMu.Unlock()
+	kmodStateMu.Unlock()
 	return err
 }
 
@@ -152,7 +226,7 @@ func loadKernelModuleList(names ...string) {
 }
 
 func loadKernelModuleAt(name string, depth int) error {
-	if kmodLoaded(name) {
+	if kmodLoaded(name) || kmodBuiltin(name) {
 		return nil
 	}
 	probeOut, probeErr := run("modprobe", "-q", name)
@@ -184,7 +258,7 @@ func loadKernelModuleAt(name string, depth int) error {
 	if len(depErrs) > 0 {
 		msg += "; dependencies: " + strings.Join(depErrs, "; ")
 	}
-	return fmt.Errorf("%s", msg)
+	return errors.New(msg)
 }
 
 func kmodProbeReason(out string, err error) string {
@@ -210,47 +284,89 @@ func kmodCommandOutput(out string, err error) string {
 	return strings.TrimSpace(err.Error())
 }
 
+func kmodNoteRejected(name, tool, out string) {
+	msg := strings.TrimSpace(out)
+	if msg == "" {
+		msg = "no error text"
+	}
+	kmodStateMu.Lock()
+	kmodRejected[kmodCanonical(name)] = tool + " rejected the rule: " + msg
+	kmodStateMu.Unlock()
+}
+
 func KernelModuleLoadError(name string) string {
-	kmodErrMu.Lock()
-	defer kmodErrMu.Unlock()
-	return kmodErrs[kmodCanonical(name)]
+	kmodStateMu.Lock()
+	defer kmodStateMu.Unlock()
+	return kmodLoadErrs[kmodCanonical(name)]
 }
 
 func KernelModuleOnDisk(name string) bool {
 	return kmodPath(name) != ""
 }
 
-func kmodPkgsFor(missing []string, pkgs func(module string) []string) []string {
-	seen := map[string]bool{}
-	out := make([]string, 0, len(missing))
+func kmodStateOf(name string) kmodState {
+	key := kmodCanonical(name)
+	kmodStateMu.Lock()
+	attempted, loadErr := kmodAttempted[key], kmodLoadErrs[key]
+	kmodStateMu.Unlock()
+	if kmodLoaded(name) || kmodBuiltin(name) {
+		return kmodStatePresent
+	}
+	onDisk := KernelModuleOnDisk(name)
+	switch {
+	case loadErr != "" && onDisk:
+		return kmodStateBroken
+	case loadErr != "":
+		return kmodStateAbsent
+	case attempted:
+		return kmodStatePresent
+	case onDisk:
+		return kmodStateUnknown
+	}
+	return kmodStateAbsent
+}
+
+func kmodPkgsFor(missing []string) []string {
+	if len(missing) == 0 {
+		return nil
+	}
+	var out []string
 	for _, m := range missing {
-		if KernelModuleOnDisk(m) {
-			continue
-		}
-		for _, p := range pkgs(m) {
-			if !seen[p] {
-				seen[p] = true
-				out = append(out, p)
-			}
+		set := kmodPackageTable[kmodCanonical(m)]
+		switch kmodStateOf(m) {
+		case kmodStateAbsent:
+			out = append(out, set.kernel...)
+			out = append(out, set.userspace...)
+		case kmodStatePresent, kmodStateUnknown:
+			out = append(out, set.userspace...)
 		}
 	}
-	return out
+	return utils.FilterUniqueStrings(out)
 }
 
 func KernelModuleReasons(missing []string) []string {
 	reasons := make([]string, 0, len(missing))
 	for _, m := range missing {
-		if reason := KernelModuleLoadError(m); reason != "" {
-			reasons = append(reasons, m+": "+reason)
+		key := kmodCanonical(m)
+		kmodStateMu.Lock()
+		loadErr, rejected := kmodLoadErrs[key], kmodRejected[key]
+		kmodStateMu.Unlock()
+		switch {
+		case loadErr != "":
+			reasons = append(reasons, m+": "+loadErr)
+		case rejected != "" && kmodStateOf(m) == kmodStatePresent:
+			reasons = append(reasons, m+": the kernel module is present, but "+rejected)
+		case rejected != "":
+			reasons = append(reasons, m+": "+rejected)
 		}
 	}
 	return reasons
 }
 
-func kmodMissingHint(missing, pkgs []string) string {
+func kmodMissingHint(missing []string) string {
 	var parts []string
-	if len(pkgs) > 0 {
-		parts = append(parts, "Required package(s): "+strings.Join(pkgs, " "))
+	if pkgs := kmodPkgsFor(missing); len(pkgs) > 0 {
+		parts = append(parts, "Package(s) that may provide it: "+strings.Join(pkgs, " "))
 	}
 	parts = append(parts, KernelModuleReasons(missing)...)
 	if len(parts) == 0 {

@@ -6,21 +6,25 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type kmodFixture struct {
 	sysRoot string
+	relDir  string
 	modDir  string
 	calls   []string
+	now     time.Time
 }
 
 func newKmodFixture(t *testing.T) *kmodFixture {
 	t.Helper()
-	fx := &kmodFixture{}
+	fx := &kmodFixture{now: time.Unix(1_700_000_000, 0)}
 	root := t.TempDir()
 	fx.sysRoot = filepath.Join(root, "sys")
 	lib := filepath.Join(root, "lib")
-	fx.modDir = filepath.Join(lib, "4.9-ndm-5", "kernel", "net", "netfilter")
+	fx.relDir = filepath.Join(lib, "4.9-ndm-5")
+	fx.modDir = filepath.Join(fx.relDir, "kernel", "net", "netfilter")
 	if err := os.MkdirAll(fx.sysRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -28,14 +32,15 @@ func newKmodFixture(t *testing.T) *kmodFixture {
 		t.Fatal(err)
 	}
 
-	origSys, origLib, origRel, origRun, origDeps := kmodSysRoot, kmodLibRoot, kmodRelease, run, kmodDependsOf
+	origSys, origLib, origRel, origRun, origDeps, origNow := kmodSysRoot, kmodLibRoot, kmodRelease, run, kmodDependsOf, kmodNow
 	kmodSysRoot = fx.sysRoot
 	kmodLibRoot = lib
 	kmodRelease = func() string { return "4.9-ndm-5" }
 	kmodDependsOf = func(string) []string { return nil }
+	kmodNow = func() time.Time { return fx.now }
 	kmodResetForTest()
 	t.Cleanup(func() {
-		kmodSysRoot, kmodLibRoot, kmodRelease, run, kmodDependsOf = origSys, origLib, origRel, origRun, origDeps
+		kmodSysRoot, kmodLibRoot, kmodRelease, run, kmodDependsOf, kmodNow = origSys, origLib, origRel, origRun, origDeps, origNow
 		kmodResetForTest()
 	})
 	return fx
@@ -43,11 +48,14 @@ func newKmodFixture(t *testing.T) *kmodFixture {
 
 func kmodResetForTest() {
 	kmodIndexMu.Lock()
-	kmodIndex = nil
+	kmodIndex, kmodBuiltins = nil, nil
+	kmodIndexBuilt = time.Time{}
 	kmodIndexMu.Unlock()
-	kmodErrMu.Lock()
-	kmodErrs = map[string]string{}
-	kmodErrMu.Unlock()
+	kmodStateMu.Lock()
+	kmodLoadErrs = map[string]string{}
+	kmodRejected = map[string]string{}
+	kmodAttempted = map[string]bool{}
+	kmodStateMu.Unlock()
 }
 
 func (fx *kmodFixture) module(name string) string {
@@ -60,6 +68,16 @@ func (fx *kmodFixture) module(name string) string {
 
 func (fx *kmodFixture) loaded(name string) {
 	if err := os.MkdirAll(filepath.Join(fx.sysRoot, name), 0o755); err != nil {
+		panic(err)
+	}
+}
+
+func (fx *kmodFixture) builtin(names ...string) {
+	var lines []string
+	for _, n := range names {
+		lines = append(lines, "kernel/net/netfilter/"+n+".ko")
+	}
+	if err := os.WriteFile(filepath.Join(fx.relDir, "modules.builtin"), []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
 		panic(err)
 	}
 }
@@ -107,6 +125,24 @@ func TestKmodAlreadyLoadedSkipsCommands(t *testing.T) {
 	}
 }
 
+func TestKmodBuiltinCountsAsPresent(t *testing.T) {
+	fx := newKmodFixture(t)
+	fx.builtin("xt_socket")
+	fx.stubRun(false, "")
+	if err := loadKernelModule("xt_socket"); err != nil {
+		t.Fatal(err)
+	}
+	if len(fx.calls) != 0 {
+		t.Fatalf("commands run for a built-in module: %v", fx.calls)
+	}
+	if got := kmodStateOf("xt_socket"); got != kmodStatePresent {
+		t.Fatalf("state = %v, want present", got)
+	}
+	if pkgs := kmodPkgsFor([]string{"xt_socket"}); strings.Join(pkgs, " ") != "iptables-mod-tproxy" {
+		t.Fatalf("pkgs = %v", pkgs)
+	}
+}
+
 func TestKmodModprobeSuccessNeedsNoFallback(t *testing.T) {
 	fx := newKmodFixture(t)
 	fx.stubRun(true, "")
@@ -118,6 +154,9 @@ func TestKmodModprobeSuccessNeedsNoFallback(t *testing.T) {
 	}
 	if KernelModuleLoadError("xt_TPROXY") != "" {
 		t.Fatal("load error recorded after success")
+	}
+	if got := kmodStateOf("xt_TPROXY"); got != kmodStatePresent {
+		t.Fatalf("state = %v, want present after a successful modprobe", got)
 	}
 }
 
@@ -147,7 +186,7 @@ func TestKmodInsmodFallbackLoadsDependenciesFirst(t *testing.T) {
 	}
 }
 
-func TestKmodMissingModuleReportsPackages(t *testing.T) {
+func TestKmodAbsentModuleGetsKernelAndUserspacePackages(t *testing.T) {
 	fx := newKmodFixture(t)
 	fx.stubRun(false, "")
 	err := loadKernelModule("xt_socket")
@@ -157,33 +196,35 @@ func TestKmodMissingModuleReportsPackages(t *testing.T) {
 	if !strings.Contains(err.Error(), "no xt_socket.ko under") || !strings.Contains(err.Error(), "4.9-ndm-5") {
 		t.Fatalf("error = %v", err)
 	}
-	if KernelModuleOnDisk("xt_socket") {
-		t.Fatal("module reported on disk")
+	if got := kmodStateOf("xt_socket"); got != kmodStateAbsent {
+		t.Fatalf("state = %v, want absent", got)
 	}
-	pkgs := tproxyPkgsFor([]string{"xt_socket"})
-	if strings.Join(pkgs, " ") != "kmod-ipt-socket" {
+	if pkgs := kmodPkgsFor([]string{"xt_socket"}); strings.Join(pkgs, " ") != "kmod-ipt-socket iptables-mod-tproxy" {
 		t.Fatalf("pkgs = %v", pkgs)
 	}
-	if got := KernelModuleReasons([]string{"xt_socket"}); len(got) != 1 || !strings.HasPrefix(got[0], "xt_socket: ") {
+	if got := KernelModuleReasons([]string{"xt_socket"}); len(got) != 1 || !strings.HasPrefix(got[0], "xt_socket: modprobe could not load it") {
 		t.Fatalf("reasons = %v", got)
 	}
 }
 
-func TestKmodInsmodFailureKeepsReasonAndDropsPackageHint(t *testing.T) {
+func TestKmodBrokenModuleGetsNoPackagesAndKeepsInsmodError(t *testing.T) {
 	fx := newKmodFixture(t)
-	path := fx.module("xt_TPROXY.ko")
-	fx.stubRun(false, "insmod: can't insert '"+path+"': unknown symbol in module")
-	err := loadKernelModule("xt_TPROXY")
+	path := fx.module("xt_NFQUEUE.ko")
+	fx.stubRun(false, "insmod: can't insert '"+path+"': invalid module format")
+	err := loadKernelModule("xt_NFQUEUE")
 	if err == nil {
 		t.Fatal("expected insmod failure to surface")
 	}
-	if !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), "insmod failed") || !strings.Contains(err.Error(), "unknown symbol") {
+	if !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), "insmod failed") || !strings.Contains(err.Error(), "invalid module format") {
 		t.Fatalf("error = %v", err)
 	}
-	if pkgs := tproxyPkgsFor([]string{"xt_TPROXY"}); len(pkgs) != 0 {
-		t.Fatalf("package hint offered for a module that is already on disk: %v", pkgs)
+	if got := kmodStateOf("xt_NFQUEUE"); got != kmodStateBroken {
+		t.Fatalf("state = %v, want broken", got)
 	}
-	if !strings.Contains(kmodMissingHint([]string{"xt_TPROXY"}, nil), "insmod failed") {
+	if pkgs := kmodPkgsFor([]string{"xt_NFQUEUE"}); len(pkgs) != 0 {
+		t.Fatalf("package hint offered for a module that is on disk but does not load: %v", pkgs)
+	}
+	if !strings.Contains(kmodMissingHint([]string{"xt_NFQUEUE"}), "insmod failed") {
 		t.Fatal("hint lacks the insmod reason")
 	}
 }
@@ -194,9 +235,8 @@ func TestKmodMissingHintKeepsReasonsNextToPackages(t *testing.T) {
 	fx.stubRun(false, "insmod: can't insert '"+path+"': invalid module format")
 	_ = loadKernelModule("xt_TPROXY")
 	_ = loadKernelModule("xt_socket")
-	missing := []string{"xt_socket", "xt_TPROXY"}
-	hint := kmodMissingHint(missing, tproxyPkgsFor(missing))
-	if !strings.HasPrefix(hint, "Required package(s): kmod-ipt-socket") {
+	hint := kmodMissingHint([]string{"xt_socket", "xt_TPROXY"})
+	if !strings.HasPrefix(hint, "Package(s) that may provide it: kmod-ipt-socket iptables-mod-tproxy") {
 		t.Fatalf("hint = %q", hint)
 	}
 	if !strings.Contains(hint, "xt_TPROXY: ") || !strings.Contains(hint, "invalid module format") {
@@ -204,11 +244,40 @@ func TestKmodMissingHintKeepsReasonsNextToPackages(t *testing.T) {
 	}
 }
 
-func TestKmodPkgsForDeduplicates(t *testing.T) {
-	newKmodFixture(t)
-	pkgs := connmarkPkgsFor([]string{"xt_connmark", "xt_CONNMARK"})
-	if strings.Join(pkgs, " ") != "kmod-ipt-conntrack-extra" {
+func TestKmodLoadedButRejectedGetsUserspacePackagesAndToolError(t *testing.T) {
+	fx := newKmodFixture(t)
+	fx.loaded("xt_socket")
+	fx.loaded("xt_NFQUEUE")
+	fx.loaded("nft_ct")
+	kmodNoteRejected("xt_socket", "iptables", "iptables: No chain/target/match by that name.")
+	kmodNoteRejected("xt_NFQUEUE", "iptables", "iptables v1.8.7: Couldn't load target `NFQUEUE'")
+	kmodNoteRejected("nft_ct", "nft", "Error: syntax error, unexpected packets")
+	pkgs := kmodPkgsFor([]string{"xt_socket", "xt_NFQUEUE", "nft_ct"})
+	if strings.Join(pkgs, " ") != "iptables-mod-tproxy iptables-mod-nfqueue" {
 		t.Fatalf("pkgs = %v", pkgs)
+	}
+	reasons := KernelModuleReasons([]string{"xt_socket", "nft_ct"})
+	if len(reasons) != 2 {
+		t.Fatalf("reasons = %v", reasons)
+	}
+	if !strings.HasPrefix(reasons[0], "xt_socket: the kernel module is present, but iptables rejected the rule: iptables: No chain") {
+		t.Fatalf("reason = %q", reasons[0])
+	}
+	if !strings.Contains(reasons[1], "nft rejected the rule: Error: syntax error") || strings.Contains(reasons[1], "extension") {
+		t.Fatalf("reason = %q", reasons[1])
+	}
+}
+
+func TestKmodPkgsForDeduplicates(t *testing.T) {
+	fx := newKmodFixture(t)
+	fx.stubRun(false, "")
+	loadKernelModuleList("xt_connmark", "xt_CONNMARK")
+	pkgs := kmodPkgsFor([]string{"xt_connmark", "xt_CONNMARK"})
+	if strings.Join(pkgs, " ") != "kmod-ipt-conntrack-extra iptables-mod-conntrack-extra" {
+		t.Fatalf("pkgs = %v", pkgs)
+	}
+	if pkgs := kmodPkgsFor(nil); pkgs != nil {
+		t.Fatalf("pkgs for nothing = %v", pkgs)
 	}
 }
 
@@ -244,5 +313,20 @@ func TestKmodIndexPrefersUncompressedAndCanonicalisesNames(t *testing.T) {
 	}
 	if got := kmodPath("README"); got != "" {
 		t.Fatalf("non-module file indexed as %q", got)
+	}
+}
+
+func TestKmodIndexRebuildsAfterMissWhenStale(t *testing.T) {
+	fx := newKmodFixture(t)
+	if got := kmodPath("xt_TPROXY"); got != "" {
+		t.Fatalf("unexpected path %q", got)
+	}
+	path := fx.module("xt_TPROXY.ko")
+	if got := kmodPath("xt_TPROXY"); got != "" {
+		t.Fatalf("index rebuilt before the rebuild interval passed: %q", got)
+	}
+	fx.now = fx.now.Add(kmodIndexRebuildTTL + time.Second)
+	if got := kmodPath("xt_TPROXY"); got != path {
+		t.Fatalf("path = %q, want %q after the interval", got, path)
 	}
 }
