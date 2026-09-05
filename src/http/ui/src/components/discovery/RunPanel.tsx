@@ -1,9 +1,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import {
   Box,
-  Button,
   CircularProgress,
-  LinearProgress,
   Stack,
   Table,
   TableBody,
@@ -13,9 +11,8 @@ import {
   Typography,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import { StopIcon } from "@b4.icons";
 import { colors, typography } from "@design";
-import { B4Alert, B4Badge } from "@b4.elements";
+import { B4Alert, B4Badge, B4RunBar, B4RunHeader, B4RunSteps } from "@b4.elements";
 import {
   DiscoveryPhase,
   DiscoveryResult,
@@ -178,45 +175,20 @@ export const RunPanel = ({
 
   return (
     <Stack spacing={2}>
-      <Stack
-        direction="row"
-        justifyContent="space-between"
-        alignItems="flex-start"
-        flexWrap="wrap"
-        useFlexGap
-        spacing={2}
-      >
-        <Box>
-          <Typography sx={{ fontSize: 18, fontWeight: 600 }}>
-            {t("discovery.run.title", { count: sites.length })}
-          </Typography>
-          <Typography variant="caption" sx={{ color: colors.text.secondary }}>
-            {t("discovery.run.elapsed", {
-              duration: formatDuration(t, suite.start_time),
-            })}
+      <B4RunHeader
+        title={t("discovery.run.title", { count: sites.length })}
+        subtitle={
+          <>
+            {t("discovery.run.elapsed", { duration: formatDuration(t, suite.start_time) })}
             {" · "}
             {t("discovery.run.tested", { count: suite.completed_checks })}
-          </Typography>
-        </Box>
-        {canStop && (
-          <Button
-            variant="outlined"
-            color="secondary"
-            startIcon={
-              stopping ? (
-                <CircularProgress size={16} color="inherit" />
-              ) : (
-                <StopIcon />
-              )
-            }
-            onClick={onStop}
-            disabled={stopping}
-            sx={{ whiteSpace: "nowrap" }}
-          >
-            {stopping ? t("discovery.stopping") : t("discovery.stop")}
-          </Button>
-        )}
-      </Stack>
+          </>
+        }
+        onStop={canStop ? onStop : undefined}
+        stopping={stopping}
+        stopLabel={t("discovery.stop")}
+        stoppingLabel={t("discovery.stopping")}
+      />
 
       {suite.source === "watchdog" && (
         <B4Alert severity="info">{t("discovery.source.watchdog")}</B4Alert>
@@ -225,102 +197,24 @@ export const RunPanel = ({
         <B4Alert severity="info">{t("discovery.source.mcp")}</B4Alert>
       )}
 
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          flexWrap: "wrap",
-          rowGap: 1,
-        }}
-      >
-        {STEPS.map((step, i) => {
-          const done = i < active;
-          const on = i === active;
-          const skipped = step === "dns" && dnsSkipped;
-          const color = on
-            ? colors.secondary
-            : done
-              ? colors.text.secondary
-              : colors.text.disabled;
-          return (
-            <Box
-              key={step}
-              sx={{ display: "flex", alignItems: "center", flex: "0 1 auto" }}
-            >
-              <Box
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 1,
-                  color,
-                  fontSize: 12,
-                  fontWeight: on ? 600 : 400,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                <Box
-                  sx={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: "50%",
-                    display: "grid",
-                    placeItems: "center",
-                    fontSize: 11,
-                    border: `1px solid ${on ? colors.secondary : done ? colors.primary : colors.border.default}`,
-                    bgcolor: on
-                      ? colors.secondary
-                      : done
-                        ? colors.accent.primary
-                        : "transparent",
-                    color: on
-                      ? colors.background.dark
-                      : done
-                        ? colors.primaryLight
-                        : colors.text.disabled,
-                  }}
-                >
-                  {done && !skipped ? "✓" : i + 1}
-                </Box>
-                {t(`discovery.steps.${step}`)}
-                {skipped && (
-                  <Box component="span" sx={{ color: colors.text.disabled }}>
-                    · {t("discovery.steps.skipped")}
-                  </Box>
-                )}
-                {on && stepProgress && (
-                  <Box component="span" sx={{ fontWeight: 400 }}>
-                    · {stepProgress}
-                  </Box>
-                )}
-              </Box>
-              {i < STEPS.length - 1 && (
-                <Box
-                  sx={{
-                    width: 22,
-                    height: 1,
-                    mx: 1.25,
-                    bgcolor: done ? colors.primary : colors.border.light,
-                  }}
-                />
-              )}
-            </Box>
-          );
-        })}
-      </Box>
+      <B4RunSteps
+        steps={STEPS.map((step) => ({
+          key: step,
+          label: t(`discovery.steps.${step}`),
+          skipped: step === "dns" && dnsSkipped,
+          note:
+            step === "dns" && dnsSkipped
+              ? t("discovery.steps.skipped")
+              : step === "strategies" && active === 2 && stepProgress
+                ? stepProgress
+                : undefined,
+        }))}
+        active={active}
+      />
 
-      <LinearProgress
-        variant={active <= 2 && suite.total_checks > 0 ? "determinate" : "indeterminate"}
-        value={
-          suite.total_checks > 0
-            ? Math.min(100, (suite.completed_checks / suite.total_checks) * 100)
-            : 0
-        }
-        sx={{
-          height: 4,
-          borderRadius: 2,
-          bgcolor: colors.background.dark,
-          "& .MuiLinearProgress-bar": { bgcolor: colors.secondary },
-        }}
+      <B4RunBar
+        indeterminate={!(active <= 2 && suite.total_checks > 0)}
+        value={suite.total_checks > 0 ? (suite.completed_checks / suite.total_checks) * 100 : 0}
       />
 
       {logLine}

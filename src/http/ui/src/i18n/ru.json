@@ -2222,9 +2222,10 @@
       "starting": "Проверка запускается...",
       "preparing": "Подготовка",
       "progress": "{{done}} из {{total}}",
-      "queued": "затем {{scopes}}",
       "stop": "Остановить и сохранить результаты",
-      "stopping": "Остановка..."
+      "stopping": "Остановка...",
+      "title": "Проверка сайтов: {{count}}",
+      "elapsed": "Идёт {{seconds}} с"
     },
     "status": {
       "OK": "OK",

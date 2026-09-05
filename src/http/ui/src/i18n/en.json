@@ -2193,9 +2193,11 @@
       "starting": "Starting the check...",
       "preparing": "Preparing",
       "progress": "{{done}} of {{total}}",
-      "queued": "then {{scopes}}",
       "stop": "Stop and keep results",
-      "stopping": "Stopping..."
+      "stopping": "Stopping...",
+      "title": "Checking {{count}} sites",
+      "title_one": "Checking {{count}} site",
+      "elapsed": "Running for {{seconds}} s"
     },
     "status": {
       "OK": "OK",

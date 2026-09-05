@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Typography, Button } from "@mui/material";
 import { ClearIcon, LogsIcon, CloseIcon, DownloadIcon } from "@b4.icons";
-import { colors, typography } from "@design";
+import { colors } from "@design";
 import { B4Dialog } from "@common/B4Dialog";
+import { B4RunLine } from "@common/B4RunProgress";
 import { useTranslation } from "react-i18next";
 import { discoveryApi } from "@api/discovery";
 
@@ -33,50 +34,16 @@ export const DiscoveryLogLine = ({
   const last = logs.at(-1) ?? "";
 
   return (
-    <Box
-      sx={{
-        display: "flex",
-        alignItems: "center",
-        gap: 1.5,
-        px: 1.5,
-        py: 1,
-        border: `1px solid ${colors.border.light}`,
-        borderRadius: 1.5,
-        bgcolor: colors.background.dark,
-        minWidth: 0,
-      }}
-    >
-      <Box
-        sx={{
-          width: 9,
-          height: 9,
-          borderRadius: "50%",
-          flexShrink: 0,
-          bgcolor: connected ? colors.secondary : colors.text.disabled,
-          boxShadow: connected ? `0 0 8px ${colors.secondary}` : "none",
-        }}
-      />
-      <Typography
-        noWrap
-        sx={{
-          ...typography.recipes.monoSmall,
-          fontSize: typography.sizes.sm,
-          color: last ? colors.text.primary : colors.text.disabled,
-          flex: 1,
-          minWidth: 0,
-        }}
-      >
-        {last || t("discovery.logs.waiting")}
-      </Typography>
-      <Button
-        size="small"
-        startIcon={<LogsIcon />}
-        onClick={onOpen}
-        sx={{ textTransform: "none", flexShrink: 0 }}
-      >
-        {t("discovery.run.showLog")}
-      </Button>
-    </Box>
+    <B4RunLine
+      text={last}
+      placeholder={t("discovery.logs.waiting")}
+      live={connected}
+      action={
+        <Button size="small" startIcon={<LogsIcon />} onClick={onOpen} sx={{ textTransform: "none", flexShrink: 0 }}>
+          {t("discovery.run.showLog")}
+        </Button>
+      }
+    />
   );
 };
 
