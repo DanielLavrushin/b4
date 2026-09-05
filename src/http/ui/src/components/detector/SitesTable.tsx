@@ -21,7 +21,7 @@ import { colors } from "@design";
 import { B4Badge } from "@b4.elements";
 import type { B4SetConfig } from "@models/config";
 import type { SiteResult, SitesResult } from "@models/detector";
-import { FetchChip, StatusChip, outcomeColor } from "./statuses";
+import { FetchChip } from "./statuses";
 
 type Filter = "all" | "problems" | "still";
 
@@ -183,8 +183,7 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
               <TableCell>{t("detector.sites.site")}</TableCell>
               <TableCell>{t("detector.sites.direct")}</TableCell>
               {both && <TableCell>{t("detector.sites.throughB4Col")}</TableCell>}
-              <TableCell>{t("detector.sites.outcome")}</TableCell>
-              <TableCell sx={{ width: "42%" }}>{t("detector.sites.what")}</TableCell>
+              <TableCell sx={{ width: "48%" }}>{t("detector.sites.what")}</TableCell>
               <TableCell align="right" />
             </TableRow>
           </TableHead>
@@ -223,9 +222,6 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
                       <FetchChip fetch={s.through_b4} />
                     </TableCell>
                   )}
-                  <TableCell sx={{ whiteSpace: "nowrap" }}>
-                    <StatusChip label={t(`detector.outcome.${s.outcome}`)} color={outcomeColor(s.outcome)} />
-                  </TableCell>
                   <TableCell sx={{ color: colors.text.secondary, fontSize: "0.8rem" }}>{describe(s, t)}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
                     <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
@@ -259,7 +255,7 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
             })}
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={both ? 7 : 6} sx={{ color: colors.text.secondary }}>
+                <TableCell colSpan={both ? 6 : 5} sx={{ color: colors.text.secondary }}>
                   {t("detector.sites.none")}
                 </TableCell>
               </TableRow>
