@@ -68,11 +68,12 @@ export const DetectorRunner = () => {
   }, [updateLists, showError, showSuccess, t]);
 
   const handleAddToSet = useCallback(
-    async (setId: string, domain: string) => {
-      const res = await addDomainsToSet(setId, [domain]);
+    async (setId: string, domains: string[]) => {
+      const res = await addDomainsToSet(setId, domains);
       const set = sets.find((s) => s.id === setId);
-      if (res.success) showSuccess(t("detector.sites.addedToSet", { domain, set: set?.name ?? setId }));
-      else showError(t("detector.sites.addFailed", { domain }));
+      const label = domains.length === 1 ? domains[0] : t("detector.sites.domainsCount", { count: domains.length });
+      if (res.success) showSuccess(t("detector.sites.addedToSet", { domain: label, set: set?.name ?? setId }));
+      else showError(t("detector.sites.addFailed", { domain: label }));
     },
     [addDomainsToSet, sets, showSuccess, showError, t],
   );
@@ -108,7 +109,7 @@ export const DetectorRunner = () => {
             onOpenSet={(id) => {
               navigate(`/sets/${id}`)?.catch(() => {});
             }}
-            onAddToSet={(setId, domain) => void handleAddToSet(setId, domain)}
+            onAddToSet={(setId, domains) => void handleAddToSet(setId, domains)}
           />
         </B4Section>
       )}

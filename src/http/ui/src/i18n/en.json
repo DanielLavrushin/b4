@@ -2300,12 +2300,18 @@
       "noSet": "No set targets this site",
       "setDisabled": "Set \"{{set}}\" targets it but is disabled",
       "setNotHelping": "Set \"{{set}}\" targets it but does not help",
-      "openSet": "set \"{{set}}\"",
-      "discovery": "Discovery",
-      "addToSet": "add to set",
       "addedToSet": "{{domain}} added to \"{{set}}\"",
       "addFailed": "Could not add {{domain}}",
-      "altWorks": "The address DoH returns ({{ip}}) loads; the resolver's address does not. Discovery can pin the working address"
+      "altWorks": "The address DoH returns ({{ip}}) loads; the resolver's address does not. Discovery can pin the working address",
+      "selected": "{{count}} selected",
+      "fixSelected": "Fix {{count}} with Discovery",
+      "addSelected": "Add {{count}} to set",
+      "clearSelection": "clear",
+      "selectAll": "Select every still-blocked site in this view",
+      "openSetTip": "Open set \"{{set}}\"",
+      "discoveryTip": "Fix with Discovery",
+      "addToSetTip": "Add to a set",
+      "domainsCount": "{{count}} domains"
     },
     "dns": {
       "provider": "Provider",

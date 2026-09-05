@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import {
   Box,
   Button,
+  Checkbox,
+  IconButton,
   Menu,
   MenuItem,
   Stack,
@@ -10,9 +12,11 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
+import { AddIcon, DiscoveryIcon, SetsIcon } from "@b4.icons";
 import { colors } from "@design";
 import { B4Badge } from "@b4.elements";
 import type { B4SetConfig } from "@models/config";
@@ -27,11 +31,18 @@ interface SitesTableProps {
   sets: B4SetConfig[];
   onDiscovery: (sites: string[]) => void;
   onOpenSet: (id: string) => void;
-  onAddToSet: (setId: string, domain: string) => void;
+  onAddToSet: (setId: string, domains: string[]) => void;
 }
 
 const problem = (s: SiteResult) => ["fixed", "still_blocked", "blocked", "broken_by_b4"].includes(s.outcome);
 const still = (s: SiteResult) => ["still_blocked", "blocked", "broken_by_b4"].includes(s.outcome);
+const rowKey = (s: SiteResult) => `${s.input}|${s.family ?? ""}`;
+
+const checkboxSx = {
+  color: colors.text.secondary,
+  "&.Mui-checked, &.MuiCheckbox-indeterminate": { color: colors.secondary },
+  p: 0.5,
+};
 
 function describe(s: SiteResult, t: (k: string, o?: Record<string, unknown>) => string): string {
   const parts: string[] = [];
@@ -61,17 +72,39 @@ function describe(s: SiteResult, t: (k: string, o?: Record<string, unknown>) => 
 export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddToSet }: SitesTableProps) => {
   const { t } = useTranslation();
   const [filter, setFilter] = useState<Filter>("all");
-  const [menu, setMenu] = useState<{ anchor: HTMLElement; domain: string } | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [menu, setMenu] = useState<{ anchor: HTMLElement; domains: string[] } | null>(null);
 
+  const all = useMemo(() => result.sites ?? [], [result.sites]);
   const counts = useMemo(
-    () => ({
-      all: (result.sites ?? []).length,
-      problems: (result.sites ?? []).filter(problem).length,
-      still: (result.sites ?? []).filter(still).length,
-    }),
-    [result.sites],
+    () => ({ all: all.length, problems: all.filter(problem).length, still: all.filter(still).length }),
+    [all],
   );
-  const rows = (result.sites ?? []).filter((s) => (filter === "all" ? true : filter === "problems" ? problem(s) : still(s)));
+  const rows = all.filter((s) => (filter === "all" ? true : filter === "problems" ? problem(s) : still(s)));
+  const selectable = rows.filter((s) => s.done && still(s));
+  const selectedRows = all.filter((s) => selected.has(rowKey(s)));
+  const selectedInputs = [...new Set(selectedRows.map((s) => s.input))];
+  const selectedDomains = [...new Set(selectedRows.map((s) => s.domain))];
+  const allSelected = selectable.length > 0 && selectable.every((s) => selected.has(rowKey(s)));
+  const someSelected = selectable.some((s) => selected.has(rowKey(s)));
+
+  const toggle = (s: SiteResult) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const k = rowKey(s);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  const toggleAll = () =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allSelected) selectable.forEach((s) => next.delete(rowKey(s)));
+      else selectable.forEach((s) => next.add(rowKey(s)));
+      return next;
+    });
+
+  const iconSx = { color: colors.text.secondary };
 
   return (
     <Stack spacing={1.5}>
@@ -88,16 +121,47 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
             {t(`detector.sites.filter.${f}`, { count: counts[f] })}
           </Button>
         ))}
-        {result.stub_ips && result.stub_ips.length > 0 && (
+        {result.stub_ips && result.stub_ips.length > 0 && selectedInputs.length === 0 && (
           <Typography variant="caption" sx={{ color: colors.text.secondary, ml: "auto !important" }}>
             {t("detector.sites.stubs", { ips: result.stub_ips.join(", ") })}
           </Typography>
         )}
+        {selectedInputs.length > 0 && (
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ ml: "auto !important" }}>
+            <Typography variant="caption" sx={{ color: colors.text.secondary }}>
+              {t("detector.sites.selected", { count: selectedInputs.length })}
+            </Typography>
+            <Button
+              size="small"
+              variant="contained"
+              startIcon={<DiscoveryIcon />}
+              onClick={() => onDiscovery(selectedInputs)}
+              sx={{ bgcolor: colors.secondary, color: colors.background.default, "&:hover": { bgcolor: colors.primary }, whiteSpace: "nowrap" }}
+            >
+              {t("detector.sites.fixSelected", { count: selectedInputs.length })}
+            </Button>
+            {sets.length > 0 && (
+              <Button size="small" variant="outlined" startIcon={<AddIcon />} onClick={(e) => setMenu({ anchor: e.currentTarget, domains: selectedDomains })} sx={{ whiteSpace: "nowrap" }}>
+                {t("detector.sites.addSelected", { count: selectedDomains.length })}
+              </Button>
+            )}
+            <Button size="small" onClick={() => setSelected(new Set())}>
+              {t("detector.sites.clearSelection")}
+            </Button>
+          </Stack>
+        )}
       </Stack>
       <Box sx={{ overflowX: "auto" }}>
-        <Table size="small" sx={{ minWidth: 720 }}>
+        <Table size="small" sx={{ minWidth: 760 }}>
           <TableHead>
             <TableRow>
+              <TableCell padding="checkbox">
+                <Tooltip title={t("detector.sites.selectAll")}>
+                  <span>
+                    <Checkbox size="small" checked={allSelected} indeterminate={!allSelected && someSelected} disabled={selectable.length === 0} onChange={toggleAll} sx={checkboxSx} />
+                  </span>
+                </Tooltip>
+              </TableCell>
               <TableCell>{t("detector.sites.site")}</TableCell>
               <TableCell>{t("detector.sites.direct")}</TableCell>
               {both && <TableCell>{t("detector.sites.throughB4Col")}</TableCell>}
@@ -107,62 +171,77 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
             </TableRow>
           </TableHead>
           <TableBody>
-            {rows.map((s) => (
-              <TableRow key={s.input} sx={{ "&:last-child td": { border: 0 }, opacity: s.done ? 1 : 0.7 }}>
-                <TableCell sx={{ fontFamily: "monospace", fontSize: "0.8rem", whiteSpace: "nowrap" }}>
-                  {s.domain}
-                  {s.family === "ipv6" && (
-                    <Typography component="span" variant="caption" sx={{ color: colors.secondary, ml: 0.5 }}>
-                      IPv6
-                    </Typography>
-                  )}
-                  {s.url && s.url.replace(/^https:\/\/[^/]+/, "") !== "/" && (
-                    <Typography component="span" variant="caption" sx={{ color: colors.text.disabled, ml: 0.5 }}>
-                      {s.url.replace(/^https:\/\/[^/]+/, "").slice(0, 24)}
-                    </Typography>
-                  )}
-                  {s.ip && (
-                    <Typography variant="caption" sx={{ color: colors.text.disabled, display: "block" }}>
-                      {s.ip}
-                    </Typography>
-                  )}
-                </TableCell>
-                <TableCell sx={{ whiteSpace: "nowrap" }}>
-                  <FetchChip fetch={s.direct} />
-                </TableCell>
-                {both && (
-                  <TableCell sx={{ whiteSpace: "nowrap" }}>
-                    <FetchChip fetch={s.through_b4} />
+            {rows.map((s) => {
+              const canSelect = s.done && still(s);
+              const isSelected = selected.has(rowKey(s));
+              return (
+                <TableRow key={rowKey(s)} selected={isSelected} sx={{ "&:last-child td": { border: 0 }, opacity: s.done ? 1 : 0.7 }}>
+                  <TableCell padding="checkbox">
+                    {canSelect && <Checkbox size="small" checked={isSelected} onChange={() => toggle(s)} sx={checkboxSx} />}
                   </TableCell>
-                )}
-                <TableCell sx={{ whiteSpace: "nowrap" }}>
-                  <StatusChip label={t(`detector.outcome.${s.outcome}`)} color={outcomeColor(s.outcome)} />
-                </TableCell>
-                <TableCell sx={{ color: colors.text.secondary, fontSize: "0.8rem" }}>{describe(s, t)}</TableCell>
-                <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
-                  {s.set_id && (
-                    <Button size="small" onClick={() => onOpenSet(s.set_id!)} sx={{ textTransform: "none" }}>
-                      {t("detector.sites.openSet", { set: s.set_name })}
-                    </Button>
+                  <TableCell sx={{ fontFamily: "monospace", fontSize: "0.8rem", whiteSpace: "nowrap" }}>
+                    {s.domain}
+                    {s.family === "ipv6" && (
+                      <Typography component="span" variant="caption" sx={{ color: colors.secondary, ml: 0.5 }}>
+                        IPv6
+                      </Typography>
+                    )}
+                    {s.url && s.url.replace(/^https:\/\/[^/]+/, "") !== "/" && (
+                      <Typography component="span" variant="caption" sx={{ color: colors.text.disabled, ml: 0.5 }}>
+                        {s.url.replace(/^https:\/\/[^/]+/, "").slice(0, 24)}
+                      </Typography>
+                    )}
+                    {s.ip && (
+                      <Typography variant="caption" sx={{ color: colors.text.disabled, display: "block" }}>
+                        {s.ip}
+                      </Typography>
+                    )}
+                  </TableCell>
+                  <TableCell sx={{ whiteSpace: "nowrap" }}>
+                    <FetchChip fetch={s.direct} />
+                  </TableCell>
+                  {both && (
+                    <TableCell sx={{ whiteSpace: "nowrap" }}>
+                      <FetchChip fetch={s.through_b4} />
+                    </TableCell>
                   )}
-                  {still(s) && s.done && (
-                    <>
-                      <Button size="small" onClick={() => onDiscovery([s.input])}>
-                        {t("detector.sites.discovery")}
-                      </Button>
-                      {!s.set_id && sets.length > 0 && (
-                        <Button size="small" onClick={(e) => setMenu({ anchor: e.currentTarget, domain: s.domain })}>
-                          {t("detector.sites.addToSet")}
-                        </Button>
+                  <TableCell sx={{ whiteSpace: "nowrap" }}>
+                    <StatusChip label={t(`detector.outcome.${s.outcome}`)} color={outcomeColor(s.outcome)} />
+                  </TableCell>
+                  <TableCell sx={{ color: colors.text.secondary, fontSize: "0.8rem" }}>{describe(s, t)}</TableCell>
+                  <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
+                    <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+                      {s.set_id && (
+                        <Tooltip title={t("detector.sites.openSetTip", { set: s.set_name })}>
+                          <IconButton size="small" onClick={() => onOpenSet(s.set_id!)} sx={iconSx}>
+                            <SetsIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
                       )}
-                    </>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
+                      {canSelect && (
+                        <>
+                          <Tooltip title={t("detector.sites.discoveryTip")}>
+                            <IconButton size="small" onClick={() => onDiscovery([s.input])} sx={iconSx}>
+                              <DiscoveryIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          {!s.set_id && sets.length > 0 && (
+                            <Tooltip title={t("detector.sites.addToSetTip")}>
+                              <IconButton size="small" onClick={(e) => setMenu({ anchor: e.currentTarget, domains: [s.domain] })} sx={iconSx}>
+                                <AddIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+                        </>
+                      )}
+                    </Box>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={both ? 6 : 5} sx={{ color: colors.text.secondary }}>
+                <TableCell colSpan={both ? 7 : 6} sx={{ color: colors.text.secondary }}>
                   {t("detector.sites.none")}
                 </TableCell>
               </TableRow>
@@ -175,7 +254,7 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
           <MenuItem
             key={set.id}
             onClick={() => {
-              if (menu) onAddToSet(set.id, menu.domain);
+              if (menu) onAddToSet(set.id, menu.domains);
               setMenu(null);
             }}
           >
