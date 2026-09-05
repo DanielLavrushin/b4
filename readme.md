@@ -4,6 +4,7 @@
 ![GitHub Downloads](https://img.shields.io/github/downloads/daniellavrushin/b4/total)
 ![Docker Pulls](https://img.shields.io/docker/pulls/lavrushin/b4)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/140c35c115f14640a4010e08091d2034)](https://app.codacy.com/gh/DanielLavrushin/b4/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
+[![Quality gate status](https://sonarcloud.io/api/project_badges/measure?project=DanielLavrushin_b4&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=DanielLavrushin_b4)
 
 [[Documentation](https://docs.b4core.app/)] [[Документация (RU)](https://docs.b4core.app/ru/)] [[Telegram](https://t.me/byebyebigbro)]
 
