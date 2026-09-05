@@ -81,8 +81,10 @@ func lookupASN(ctx context.Context, mark uint, ipStr string) asnInfo {
 	if err == nil {
 		fields := strings.Split(origin, "|")
 		if len(fields) >= 3 {
-			info.ASN = strings.Fields(strings.TrimSpace(fields[0]))[0]
-			info.Country = strings.TrimSpace(fields[2])
+			if asnFields := strings.Fields(fields[0]); len(asnFields) > 0 {
+				info.ASN = asnFields[0]
+				info.Country = strings.TrimSpace(fields[2])
+			}
 		}
 	}
 	if info.ASN != "" {

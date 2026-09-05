@@ -8,6 +8,10 @@ import (
 
 func (s *Suite) Run(configPath string) {
 	s.mu.Lock()
+	if s.Status == StatusCanceled {
+		s.mu.Unlock()
+		return
+	}
 	s.Status = StatusRunning
 	s.StartTime = time.Now()
 	s.Progress.Total = s.estimateTotal()

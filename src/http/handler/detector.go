@@ -106,13 +106,8 @@ func (api *API) handleStartDetector(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("At most %d sites per run", detectorMaxSites), http.StatusBadRequest)
 		return
 	}
-	if running := detector.RunningSuite(); running != nil {
-		http.Error(w, "A detector run is already in progress", http.StatusConflict)
-		return
-	}
-
 	cfg := api.getCfg()
-	suite := detector.NewSuite(detector.Options{
+	suite, err := detector.NewSuite(detector.Options{
 		Sites:     req.Sites,
 		Scopes:    req.Scopes,
 		IPVersion: req.IPVersion,
@@ -121,6 +116,10 @@ func (api *API) handleStartDetector(w http.ResponseWriter, r *http.Request) {
 		SkipTLS12: req.SkipTLS12,
 		SNISearch: req.SNISearch,
 	}, cfg.MainInjectedMark(), api.detectorSetLookup())
+	if err != nil {
+		http.Error(w, "A detector run is already in progress", http.StatusConflict)
+		return
+	}
 
 	go suite.Run(cfg.ConfigPath)
 

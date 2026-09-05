@@ -3,6 +3,7 @@ package detector
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 
 	"github.com/google/uuid"
@@ -13,7 +14,19 @@ var (
 	suitesMu     sync.RWMutex
 )
 
-func NewSuite(opts Options, directMark uint, lookup SetLookup) *Suite {
+var ErrRunInProgress = errors.New("a detector run is already in progress")
+
+func NewSuite(opts Options, directMark uint, lookup SetLookup) (*Suite, error) {
+	suitesMu.Lock()
+	defer suitesMu.Unlock()
+	for _, other := range activeSuites {
+		other.mu.RLock()
+		busy := other.Status == StatusRunning || other.Status == StatusPending
+		other.mu.RUnlock()
+		if busy {
+			return nil, ErrRunInProgress
+		}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Suite{
 		Id:         uuid.New().String(),
@@ -25,11 +38,8 @@ func NewSuite(opts Options, directMark uint, lookup SetLookup) *Suite {
 		cancel:     cancel,
 		setLookup:  lookup,
 	}
-
-	suitesMu.Lock()
 	activeSuites[s.Id] = s
-	suitesMu.Unlock()
-	return s
+	return s, nil
 }
 
 func normalizeOptions(o Options) Options {

@@ -1164,12 +1164,6 @@
                         "schema": {
                             "type": "object"
                         }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "string"
-                        }
                     }
                 }
             }

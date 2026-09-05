@@ -16,7 +16,11 @@ var yamlServerLine = regexp.MustCompile(`^\s*-\s*\[(.*)\]`)
 var yamlTopKey = regexp.MustCompile(`^[A-Z_0-9]+:`)
 
 func fetchUpstream(ctx context.Context, mark uint, name string) (string, error) {
-	body := fetchText(ctx, mark, upstreamRaw+name, 20*time.Second)
+	data, err := fetchUpstreamFull(ctx, mark, name)
+	if err != nil {
+		return "", err
+	}
+	body := strings.TrimSpace(string(data))
 	if body == "" {
 		return "", fmt.Errorf("could not download %s", name)
 	}
