@@ -415,7 +415,7 @@ sf_url() {
 }
 
 _wget_supports() {
-    wget --help 2>&1 | grep -q "$1"
+    wget --help 2>&1 | grep -qF -- "$1"
 }
 
 mirror_alive() {

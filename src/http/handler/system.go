@@ -143,7 +143,7 @@ func writeUpdateLog(path, format string, args ...interface{}) {
 		return
 	}
 	defer f.Close()
-	ts := time.Now().Format("2006-01-02 15:04:05")
+	ts := time.Now().UTC().Format("2006-01-02 15:04:05")
 	fmt.Fprintf(f, "%s [HANDLER] %s\n", ts, fmt.Sprintf(format, args...))
 }
 
