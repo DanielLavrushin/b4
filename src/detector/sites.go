@@ -197,6 +197,9 @@ func (s *Suite) resolveAll(result *SitesResult) {
 			fam := result.Sites[idx].Family
 			sys, err := s.resolveSystem(s.ctx, domain, fam)
 			honest := s.resolveHonest(s.ctx, domain, fam)
+			if isFakeRange(honest) {
+				honest = ""
+			}
 			res[idx] = resolved{sys: sys, honest: honest, sysErr: err}
 		}(i)
 	}

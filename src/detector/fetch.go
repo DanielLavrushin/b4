@@ -43,6 +43,9 @@ func (s *Suite) fetchSite(ctx context.Context, domain, rawURL, ip string, mark u
 	if err != nil || u.Host == "" {
 		return Fetch{Status: netprobe.DomainError, Detail: "invalid URL"}
 	}
+	if isFakeRange(ip) {
+		return Fetch{Status: netprobe.DomainError, Detail: ip + " is a private or local address; not probed"}
+	}
 	port := u.Port()
 	if port == "" {
 		port = "443"
@@ -159,6 +162,9 @@ func (s *Suite) fetchSite(ctx context.Context, domain, rawURL, ip string, mark u
 }
 
 func (s *Suite) probePlainHTTP(ctx context.Context, domain, ip string, mark uint) (FetchStatus, string) {
+	if isFakeRange(ip) {
+		return netprobe.DomainError, ip + " is a private or local address; not probed"
+	}
 	ctx, cancel := context.WithTimeout(ctx, fetchConnectTimeout)
 	defer cancel()
 
@@ -254,14 +260,26 @@ func isBlockedStatus(st FetchStatus) bool {
 	return false
 }
 
+var reservedNets = func() []*net.IPNet {
+	var out []*net.IPNet
+	for _, cidr := range []string{"198.18.0.0/15", "100.64.0.0/10", "0.0.0.0/8", "240.0.0.0/4", "100::/64", "2001:db8::/32"} {
+		if _, n, err := net.ParseCIDR(cidr); err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
+}()
+
 func isFakeRange(ipStr string) bool {
 	ip := net.ParseIP(ipStr)
 	if ip == nil {
 		return false
 	}
-	for _, cidr := range []string{"198.18.0.0/15", "0.0.0.0/8", "127.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "192.168.0.0/16", "172.16.0.0/12", "::1/128", "100::/64"} {
-		_, n, _ := net.ParseCIDR(cidr)
-		if n != nil && n.Contains(ip) {
+	if ip.IsUnspecified() || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsInterfaceLocalMulticast() || ip.IsMulticast() {
+		return true
+	}
+	for _, n := range reservedNets {
+		if n.Contains(ip) {
 			return true
 		}
 	}

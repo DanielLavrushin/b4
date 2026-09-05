@@ -51,6 +51,9 @@ type fatOutcome struct {
 }
 
 func fatProbe(ctx context.Context, mark uint, ip string, port int, sni string, rttHint float64) fatOutcome {
+	if isFakeRange(ip) {
+		return fatOutcome{detail: "private address"}
+	}
 	scheme := "https"
 	if port == 80 {
 		scheme = "http"
