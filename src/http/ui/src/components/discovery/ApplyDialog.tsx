@@ -311,37 +311,49 @@ export const ApplyDialog = ({
             >
               {t("discovery.apply.existingList")}
             </Typography>
-            <Stack spacing={1}>
+            <RadioGroup
+              value={selectedSetId ?? ""}
+              onChange={(e) => setSelectedSetId(e.target.value)}
+            >
               {similar.map((set) => (
-                <Box
+                <FormControlLabel
                   key={set.id}
-                  onClick={() => setSelectedSetId(set.id)}
+                  value={set.id}
+                  control={<Radio />}
                   sx={{
-                    p: 1.5,
+                    alignItems: "flex-start",
+                    mx: 0,
+                    mb: 0.5,
+                    p: 1,
                     borderRadius: 1,
-                    cursor: "pointer",
+                    border: `1px solid ${
+                      set.id === selectedSetId
+                        ? colors.secondary
+                        : colors.border.default
+                    }`,
                     bgcolor:
                       set.id === selectedSetId
                         ? colors.accent.secondary
                         : colors.background.dark,
-                    border:
-                      set.id === selectedSetId
-                        ? `2px solid ${colors.secondary}`
-                        : `1px solid ${colors.border.default}`,
                   }}
-                >
-                  <Typography sx={{ fontWeight: 600 }}>{set.name}</Typography>
-                  <Typography
-                    variant="caption"
-                    sx={{ color: colors.text.secondary }}
-                  >
-                    {set.domains.slice(0, 3).join(", ")}
-                    {set.domains.length > 3 &&
-                      ` ${t("discovery.apply.more", { count: set.domains.length - 3 })}`}
-                  </Typography>
-                </Box>
+                  label={
+                    <Box>
+                      <Typography sx={{ fontWeight: 600 }}>
+                        {set.name}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        sx={{ color: colors.text.secondary }}
+                      >
+                        {set.domains.slice(0, 3).join(", ")}
+                        {set.domains.length > 3 &&
+                          ` ${t("discovery.apply.more", { count: set.domains.length - 3 })}`}
+                      </Typography>
+                    </Box>
+                  }
+                />
               ))}
-            </Stack>
+            </RadioGroup>
           </Box>
         )}
       </Stack>

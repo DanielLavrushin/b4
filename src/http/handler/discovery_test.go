@@ -90,4 +90,23 @@ func TestSimilarSetsNeedTheWholeStrategyToMatch(t *testing.T) {
 	if setsHaveSimilarConfig(&base, &split) {
 		t.Fatal("the split position is part of the strategy")
 	}
+
+	tls13 := base
+	tls13.Targets.TLSVersion = "1.3"
+	if setsHaveSimilarConfig(&base, &tls13) {
+		t.Fatal("a set limited to one TLS version would not handle what the run found on the other")
+	}
+
+	proxied := base
+	proxied.Routing.Enabled = true
+	proxied.Routing.Mode = "proxy"
+	if setsHaveSimilarConfig(&base, &proxied) {
+		t.Fatal("a routed set sends the domain elsewhere instead of applying the strategy")
+	}
+
+	redirected := base
+	redirected.DNS = config.DNSConfig{Enabled: true, DoHURL: "https://1.1.1.1/dns-query"}
+	if setsHaveSimilarConfig(&base, &redirected) {
+		t.Fatal("a DNS redirect changes what the added domain resolves to")
+	}
 }

@@ -418,7 +418,19 @@ func strategyShape(set *config.SetConfig) config.SetConfig {
 		UDP:           set.UDP,
 		Fragmentation: set.Fragmentation,
 		Faking:        set.Faking,
+		DNS: config.DNSConfig{
+			Enabled:       set.DNS.Enabled,
+			TargetDNS:     set.DNS.TargetDNS,
+			DoHURL:        set.DNS.DoHURL,
+			FragmentQuery: set.DNS.FragmentQuery,
+		},
+		Routing: config.RoutingConfig{
+			Enabled: set.Routing.Enabled,
+			Mode:    set.Routing.Mode,
+		},
 	}
+	shape.Targets.TLSVersion = set.Targets.TLSVersion
+	shape.Targets.IPVersion = set.Targets.IPVersion
 	shape.TCP.DPortFilter = ""
 	shape.TCP.IPBlockDetect = config.IPBlockDetectConfig{}
 	shape.TCP.RSTProtection = config.RSTProtectionConfig{}
