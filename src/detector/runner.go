@@ -1,72 +1,143 @@
 package detector
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 
 	"github.com/google/uuid"
 )
 
 var (
-	activeSuites = make(map[string]*DetectorSuite)
+	activeSuites = make(map[string]*Suite)
 	suitesMu     sync.RWMutex
 )
 
-func NewDetectorSuite(tests []TestType, mark uint) *DetectorSuite {
-	suite := &DetectorSuite{
-		Id:     uuid.New().String(),
-		Status: StatusPending,
-		Tests:  tests,
-		mark:   mark,
-		cancel: make(chan struct{}),
-	}
+var ErrRunInProgress = errors.New("a detector run is already in progress")
 
-	suitesMu.Lock()
-	activeSuites[suite.Id] = suite
-	suitesMu.Unlock()
-
-	return suite
-}
-
-func GetSuite(id string) (*DetectorSuite, bool) {
-	suitesMu.RLock()
-	defer suitesMu.RUnlock()
-	suite, ok := activeSuites[id]
-	return suite, ok
-}
-
-func CancelSuite(id string) error {
+func NewSuite(opts Options, directMark uint, lookup SetLookup) (*Suite, error) {
 	suitesMu.Lock()
 	defer suitesMu.Unlock()
-
-	suite, ok := activeSuites[id]
-	if !ok {
-		return nil
+	for _, other := range activeSuites {
+		other.mu.RLock()
+		busy := other.Status == StatusRunning || other.Status == StatusPending
+		other.mu.RUnlock()
+		if busy {
+			return nil, ErrRunInProgress
+		}
 	}
-
-	if suite.Status == StatusRunning {
-		close(suite.cancel)
-		suite.Status = StatusCanceled
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &Suite{
+		Id:         uuid.New().String(),
+		Status:     StatusPending,
+		Options:    normalizeOptions(opts),
+		ListsDate:  Lists().ListsDate,
+		directMark: directMark,
+		ctx:        ctx,
+		cancel:     cancel,
+		setLookup:  lookup,
 	}
+	s.Progress.Total = s.estimateTotal()
+	activeSuites[s.Id] = s
+	return s, nil
+}
 
+func normalizeOptions(o Options) Options {
+	if o.Parallel <= 0 {
+		o.Parallel = 5
+	}
+	if o.Parallel > 20 {
+		o.Parallel = 20
+	}
+	if o.IPVersion != "ipv6" && o.IPVersion != "both" {
+		o.IPVersion = "ipv4"
+	}
+	if o.FetchMode != FetchDirect {
+		o.FetchMode = FetchBoth
+	}
+	seen := make(map[Scope]bool)
+	var scopes []Scope
+	for _, sc := range []Scope{ScopeSites, ScopeDNS, ScopeHosting, ScopeTelegram} {
+		for _, want := range o.Scopes {
+			if want == sc && !seen[sc] {
+				seen[sc] = true
+				scopes = append(scopes, sc)
+			}
+		}
+	}
+	o.Scopes = scopes
+	return o
+}
+
+func GetSuite(id string) (*Suite, bool) {
+	suitesMu.RLock()
+	defer suitesMu.RUnlock()
+	s, ok := activeSuites[id]
+	return s, ok
+}
+
+func RunningSuite() *Suite {
+	suitesMu.RLock()
+	defer suitesMu.RUnlock()
+	for _, s := range activeSuites {
+		s.mu.RLock()
+		running := s.Status == StatusRunning || s.Status == StatusPending
+		s.mu.RUnlock()
+		if running {
+			return s
+		}
+	}
 	return nil
 }
 
-func (s *DetectorSuite) isCanceled() bool {
-	select {
-	case <-s.cancel:
-		return true
-	default:
+func CancelSuite(id string) bool {
+	suitesMu.RLock()
+	s, ok := activeSuites[id]
+	suitesMu.RUnlock()
+	if !ok {
 		return false
+	}
+	s.mu.Lock()
+	if s.Status == StatusRunning || s.Status == StatusPending {
+		s.Stopping = true
+	}
+	s.mu.Unlock()
+	s.cancel()
+	return true
+}
+
+func (s *Suite) canceled() bool {
+	return s.ctx.Err() != nil
+}
+
+func (s *Suite) MarshalJSON() ([]byte, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	type Alias Suite
+	return json.Marshal((*Alias)(s))
+}
+
+func (s *Suite) snapshot() *Suite {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return &Suite{
+		Id: s.Id, Status: s.Status, StartTime: s.StartTime, EndTime: s.EndTime,
+		Options: s.Options, Progress: s.Progress, ListsDate: s.ListsDate,
+		Network: s.Network, Sites: s.Sites, DNS: s.DNS, Hosting: s.Hosting,
+		Telegram: s.Telegram, Verdict: s.Verdict,
 	}
 }
 
-func (s *DetectorSuite) MarshalJSON() ([]byte, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+func (s *Suite) setProgress(phase Scope, current string) {
+	s.mu.Lock()
+	s.Progress.Phase = phase
+	s.Progress.Current = current
+	s.mu.Unlock()
+}
 
-	type Alias DetectorSuite
-	return json.Marshal(&struct {
-		*Alias
-	}{Alias: (*Alias)(s)})
+func (s *Suite) step(n int) {
+	s.mu.Lock()
+	s.Progress.Done += n
+	s.mu.Unlock()
 }

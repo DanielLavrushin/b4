@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { Box, Button, CircularProgress, Stack, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import {
   StartIcon,
   DiscoveryIcon,
@@ -51,6 +51,7 @@ const extractDomain = (url: string): string => {
 export const DiscoveryRunner = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const { showSuccess, showError } = useSnackbar();
   const {
     running,
@@ -172,6 +173,17 @@ export const DiscoveryRunner = () => {
   const removeUrl = useCallback((url: string) => {
     setCheckUrls((prev) => prev.filter((u) => u !== url));
   }, []);
+
+  useEffect(() => {
+    const state = location.state as { urls?: string[] } | null;
+    if (state?.urls?.length) {
+      addUrls(state.urls.join("\n"));
+      navigate(
+        { pathname: location.pathname, search: location.search, hash: location.hash },
+        { replace: true, state: null },
+      )?.catch(() => {});
+    }
+  }, [location.pathname, location.search, location.hash, location.state, addUrls, navigate]);
 
   const describeMoved = (moved?: DomainReassignment[]): string => {
     if (!moved || moved.length === 0) return "";

@@ -1,75 +1,38 @@
-export type DetectorTestType =
-  | "dns"
-  | "dns-availability"
-  | "domains"
-  | "tcp"
-  | "sni"
-  | "telegram";
+export type DetectorScope = "sites" | "dns" | "hosting" | "telegram";
 export type SuiteStatus = "pending" | "running" | "complete" | "failed" | "canceled";
+export type FetchMode = "both" | "direct";
+export type IPVersion = "ipv4" | "ipv6" | "both";
 
-// DNS types
-export type DNSStatus =
-  | "OK"
-  | "DNS_SPOOFING"
-  | "DNS_INTERCEPTION"
-  | "FAKE_IP"
-  | "FAKE_NXDOMAIN"
-  | "FAKE_EMPTY"
-  | "DOH_BLOCKED"
-  | "BOTH_UNAVAILABLE"
-  | "TIMEOUT"
-  | "BLOCKED";
-
-export interface DNSDomainResult {
-  domain: string;
-  doh_ip: string;
-  udp_ip: string;
-  status: DNSStatus;
-  is_stub_ip?: boolean;
+export interface DetectorOptions {
+  sites: string[];
+  scopes: DetectorScope[];
+  ip_version?: IPVersion;
+  parallel?: number;
+  fetch_mode?: FetchMode;
+  skip_tls12?: boolean;
+  sni_search?: boolean;
 }
 
-export interface DNSResult {
-  status: DNSStatus;
-  doh_server: string;
-  udp_server: string;
-  doh_blocked: boolean;
-  udp_blocked: boolean;
-  stub_ips?: string[];
-  domains: DNSDomainResult[];
-  summary: string;
-  spoof_count: number;
-  intercept_count: number;
-  fakeip_count: number;
-  ok_count: number;
-}
-
-// DNS availability types
-export type DNSAvailKind = "doh" | "udp";
-
-export interface DNSAvailProviderResult {
-  provider: string;
-  kind: DNSAvailKind;
-  address: string;
-  avg_ms: number;
-  ok: boolean;
-  ok_count: number;
+export interface DetectorProgress {
+  phase?: DetectorScope | "";
+  done: number;
   total: number;
+  current?: string;
 }
 
-export interface DNSAvailResult {
-  providers: DNSAvailProviderResult[];
-  doh_ok: number;
-  doh_total: number;
-  udp_ok: number;
-  udp_total: number;
-  summary: string;
+export interface NetworkInfo {
+  wan_ip?: string;
+  asn?: string;
+  org?: string;
+  country?: string;
+  ipv6: boolean;
 }
 
-// Domain accessibility types
-export type DomainStatus =
+export type FetchStatus =
   | "OK"
   | "TLS_DPI"
   | "TLS_MITM"
+  | "MTLS"
   | "TLS_SPOOF"
   | "TLS_ALERT"
   | "TLS_RST"
@@ -80,41 +43,117 @@ export type DomainStatus =
   | "BLOCKED"
   | "DNS_FAKE"
   | "TIMEOUT"
-  | "ERROR";
+  | "ERROR"
+  | "SERVER_ERROR"
+  | "PENDING"
+  | "CHECKING"
+  | "SKIPPED";
 
-export interface TLSProbeResult {
-  status: DomainStatus;
+export interface Fetch {
+  status: FetchStatus;
+  ip?: string;
+  source?: "system" | "pins" | "doh" | "target" | "none";
+  tried?: string[];
+  blocked_ips?: string[];
   detail?: string;
-  latency_ms: number;
-}
-
-export interface HTTPProbeResult {
-  status: DomainStatus;
-  detail?: string;
+  latency_ms?: number;
+  bytes?: number;
   status_code?: number;
   redirect_to?: string;
+  tls12?: FetchStatus;
+  http?: FetchStatus;
+  http_detail?: string;
 }
 
-export interface DomainCheckResult {
+export type SiteOutcome =
+  | "pending"
+  | "ok"
+  | "fixed"
+  | "still_blocked"
+  | "blocked"
+  | "broken_by_b4"
+  | "server"
+  | "error";
+
+export interface SiteResult {
+  input: string;
   domain: string;
-  ip: string;
-  tls13?: TLSProbeResult;
-  tls12?: TLSProbeResult;
-  http?: HTTPProbeResult;
-  is_fake_ip?: boolean;
-  overall: DomainStatus;
+  url: string;
+  family?: "ipv4" | "ipv6";
+  ip?: string;
+  ips?: string[];
+  honest_ip?: string;
+  honest_ips?: string[];
+  b4_ips?: string[];
+  b4_source?: "pins" | "doh" | "target";
+  fake_dns?: boolean;
+  alt_works?: boolean;
+  direct?: Fetch;
+  through_b4?: Fetch;
+  outcome: SiteOutcome;
+  set_id?: string;
+  set_name?: string;
+  set_enabled?: boolean;
+  set_dns?: boolean;
+  done: boolean;
 }
 
-export interface DomainsResult {
-  domains: DomainCheckResult[];
-  blocked_count: number;
-  ok_count: number;
-  dpi_count: number;
-  summary: string;
+export interface SitesResult {
+  sites: SiteResult[];
+  ok: number;
+  blocked: number;
+  fixed: number;
+  still_blocked: number;
+  broken_by_b4: number;
+  server: number;
+  errors: number;
+  stub_ips?: string[];
 }
 
-// TCP fat probe types
-export type TCPStatus = "OK" | "DETECTED" | "MIXED" | "TIMEOUT" | "ERROR";
+export type DNSProbeStatus = "ok" | "timeout" | "blocked" | "error";
+export type DNSHonesty = "honest" | "substituted" | "filtered" | "differs" | "unknown";
+
+export interface DNSProbe {
+  address: string;
+  status: DNSProbeStatus;
+  latency_ms?: number;
+  honesty?: DNSHonesty;
+  substituted?: number;
+  checked?: number;
+  answered_by?: string;
+  answered_by_asn?: string;
+  answered_by_org?: string;
+  hijacked?: boolean;
+  detail?: string;
+}
+
+export interface DNSProvider {
+  name: string;
+  router?: boolean;
+  udp?: DNSProbe;
+  doh?: DNSProbe;
+  dot?: DNSProbe;
+}
+
+export interface DNSResult {
+  providers: DNSProvider[];
+  udp_ok: number;
+  udp_total: number;
+  doh_ok: number;
+  doh_total: number;
+  dot_ok: number;
+  dot_total: number;
+  hijacked: number;
+  hijacked_by?: string;
+  hijacked_by_asn?: string;
+  substituting: number;
+  honest_doh?: string[];
+  stub_ips?: string[];
+  truth_available: boolean;
+  router_servers?: string[];
+}
+
+export type HostingStatus = "" | "ok" | "dropped" | "mixed" | "timeout" | "error";
 
 export interface TCPTarget {
   id: string;
@@ -123,44 +162,44 @@ export interface TCPTarget {
   asn: string;
   provider: string;
   sni?: string;
+  reference?: boolean;
 }
 
-export interface TCPTargetResult {
+export interface TargetResult {
   target: TCPTarget;
-  status: TCPStatus;
-  alive: boolean;
+  status: HostingStatus;
   drop_at_kb?: number;
   rtt_ms?: number;
   detail?: string;
+  done: boolean;
 }
 
-export interface TCPResult {
-  targets: TCPTargetResult[];
-  detected_count: number;
-  ok_count: number;
-  summary: string;
-}
-
-// SNI whitelist brute-force types
-export type SNIStatus = "FOUND" | "NOT_FOUND" | "NOT_BLOCKED";
-
-export interface SNIASNResult {
+export interface HostingGroup {
   asn: string;
   provider: string;
-  ip: string;
-  found_sni?: string;
-  status: SNIStatus;
+  reference?: boolean;
+  status: HostingStatus;
+  total: number;
+  dropped: number;
+  ok: number;
+  timeouts: number;
+  drop_min_kb?: number;
+  drop_max_kb?: number;
+  working_snis?: string[];
+  sni_searched?: boolean;
+  targets: TargetResult[];
 }
 
-export interface SNIResult {
-  asn_results: SNIASNResult[];
-  found_count: number;
-  tested_count: number;
-  summary: string;
+export interface HostingResult {
+  groups: HostingGroup[];
+  dropped_groups: number;
+  ok_groups: number;
+  total: number;
+  dropped: number;
+  ok: number;
 }
 
-// Telegram types
-export type TelegramVerdict = "ok" | "slow" | "stalled" | "blocked" | "partial" | "error";
+export type TelegramVerdict = "ok" | "slow" | "stalled" | "blocked" | "partial" | "error" | "";
 
 export interface TelegramThroughput {
   verdict: TelegramVerdict;
@@ -183,48 +222,61 @@ export interface TelegramDCPing {
 
 export interface TelegramResult {
   download: TelegramThroughput;
+  upload: TelegramThroughput;
   dc_pings: TelegramDCPing[];
   dc_reachable: number;
   dc_total: number;
   verdict: TelegramVerdict;
-  summary: string;
 }
 
-// Overall suite
+export interface DetectorVerdict {
+  blocked_by_isp: number;
+  fixed_by_b4: number;
+  still_blocked: number;
+  broken_by_b4: number;
+  not_blocked: number;
+  sites: number;
+  block_kinds?: Record<string, number>;
+  still_blocked_sites?: string[];
+  dns_hijacked: boolean;
+  dns_substituted: boolean;
+  doh_works: boolean;
+  dot_works: boolean;
+  dropped_networks?: string[];
+  telegram?: string;
+}
+
 export interface DetectorSuite {
   id: string;
   status: SuiteStatus;
+  stopping?: boolean;
   start_time: string;
   end_time?: string;
-  tests: DetectorTestType[];
-  current_test?: DetectorTestType;
-  total_checks: number;
-  completed_checks: number;
-  dns_result?: DNSResult;
-  dnsavail_result?: DNSAvailResult;
-  domains_result?: DomainsResult;
-  tcp_result?: TCPResult;
-  sni_result?: SNIResult;
-  telegram_result?: TelegramResult;
+  options: DetectorOptions;
+  progress: DetectorProgress;
+  lists_date?: string;
+  network?: NetworkInfo;
+  sites?: SitesResult;
+  dns?: DNSResult;
+  hosting?: HostingResult;
+  telegram?: TelegramResult;
+  verdict: DetectorVerdict;
 }
 
-export interface DetectorResponse {
+export interface DetectorStartResponse {
   id: string;
-  tests: string[];
-  estimated_tests: number;
+  total: number;
   message: string;
 }
 
-export interface DetectorHistoryEntry {
-  id: string;
-  status: SuiteStatus;
-  tests: DetectorTestType[];
-  start_time: string;
-  end_time: string;
-  dns_result?: DNSResult;
-  dnsavail_result?: DNSAvailResult;
-  domains_result?: DomainsResult;
-  tcp_result?: TCPResult;
-  sni_result?: SNIResult;
-  telegram_result?: TelegramResult;
+export interface DetectorLists {
+  lists_date: string;
+  lists_source: string;
+  embedded_date: string;
+  custom: boolean;
+  sites: string[];
+  site_count: number;
+  dns_servers: number;
+  tcp_targets: number;
+  whitelist_sni: number;
 }

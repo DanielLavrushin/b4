@@ -1,152 +1,160 @@
 package detector
 
 import (
-	"context"
 	"time"
 
-	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 )
 
-func (s *DetectorSuite) Run(cfg *config.Config) {
-	configPath := cfg.ConfigPath
+func (s *Suite) Run(configPath string) {
 	s.mu.Lock()
+	if s.ctx.Err() != nil {
+		s.Status = StatusCanceled
+		s.Stopping = false
+		s.StartTime = time.Now()
+		s.EndTime = s.StartTime
+		s.mu.Unlock()
+		s.scheduleRemoval()
+		return
+	}
 	s.Status = StatusRunning
 	s.StartTime = time.Now()
-	s.TotalChecks = s.estimateTotalChecks()
+	s.Progress.Total = s.estimateTotal()
 	s.mu.Unlock()
 
-	log.DiscoveryLogf("[Detector] Starting detection suite %s with tests: %v", s.Id, s.Tests)
+	log.DiscoveryLogf("[Detector] Run %s: %d sites, scopes %v, mode %s, %s, parallel %d",
+		s.Id, len(s.Options.Sites), s.Options.Scopes, s.Options.FetchMode, s.Options.IPVersion, s.Options.Parallel)
 
-	ctx := context.Background()
-	var stubIPs map[string]bool
+	s.runNetwork()
 
-	for _, test := range s.Tests {
-		if s.isCanceled() {
-			log.DiscoveryLogf("[Detector] Suite %s canceled", s.Id)
-			s.mu.Lock()
-			s.EndTime = time.Now()
-			s.CurrentTest = ""
-			s.mu.Unlock()
-			SaveToHistory(s, configPath)
-			s.scheduleCleanup()
-			return
+	for _, scope := range s.Options.Scopes {
+		if s.canceled() {
+			break
 		}
-
-		s.mu.Lock()
-		s.CurrentTest = test
-		s.mu.Unlock()
-
-		switch test {
-		case TestDNS:
-			result := s.runDNSCheck(ctx)
-			s.mu.Lock()
-			s.DNSResult = result
-			s.mu.Unlock()
-
-			// Collect stub IPs for domain check
-			if result != nil && len(result.StubIPs) > 0 {
-				stubIPs = make(map[string]bool)
-				for _, ip := range result.StubIPs {
-					stubIPs[ip] = true
-				}
-			}
-
-		case TestDomains:
-			if stubIPs == nil {
-				stubIPs = make(map[string]bool)
-			}
-			result := s.runDomainsCheck(ctx, stubIPs)
-			s.mu.Lock()
-			s.DomainsResult = result
-			s.mu.Unlock()
-
-		case TestTCP:
-			result := s.runTCPCheck(ctx)
-			s.mu.Lock()
-			s.TCPResult = result
-			s.mu.Unlock()
-
-		case TestSNI:
-			result := s.runSNICheck(ctx)
-			s.mu.Lock()
-			s.SNIResult = result
-			s.mu.Unlock()
-
-		case TestDNSAvail:
-			result := s.runDNSAvailCheck(ctx)
-			s.mu.Lock()
-			s.DNSAvailResult = result
-			s.mu.Unlock()
-
-		case TestTelegram:
-			result := s.runTelegramCheck(ctx)
-			s.mu.Lock()
-			s.TelegramResult = result
-			s.mu.Unlock()
+		switch scope {
+		case ScopeSites:
+			s.runSites()
+		case ScopeDNS:
+			s.runDNS()
+		case ScopeHosting:
+			s.runHosting()
+		case ScopeTelegram:
+			s.runTelegram()
 		}
+		s.refreshVerdict()
 	}
 
+	final := StatusComplete
+	if s.ctx.Err() != nil {
+		final = StatusCanceled
+	}
 	s.mu.Lock()
-	s.Status = StatusComplete
 	s.EndTime = time.Now()
-	s.CurrentTest = ""
+	s.Progress.Phase = ""
+	s.Progress.Current = ""
 	s.mu.Unlock()
+	s.refreshVerdict()
 
-	log.DiscoveryLogf("[Detector] Detection suite %s complete in %v", s.Id, s.EndTime.Sub(s.StartTime).Round(time.Second))
+	log.DiscoveryLogf("[Detector] Run %s %s in %v", s.Id, final, s.EndTime.Sub(s.StartTime).Round(time.Second))
 
-	SaveToHistory(s, configPath)
-	s.scheduleCleanup()
+	SaveToHistory(s, configPath, final)
+	s.mu.Lock()
+	s.Status = final
+	s.Stopping = false
+	s.mu.Unlock()
+	s.scheduleRemoval()
 }
 
-func (s *DetectorSuite) scheduleCleanup() {
+func (s *Suite) scheduleRemoval() {
 	go func() {
-		time.Sleep(30 * time.Second)
+		time.Sleep(60 * time.Second)
 		suitesMu.Lock()
 		delete(activeSuites, s.Id)
 		suitesMu.Unlock()
 	}()
 }
 
-func (s *DetectorSuite) estimateTotalChecks() int {
+func (s *Suite) estimateTotal() int {
+	lists := Lists()
 	total := 0
-	tcpRequested := false
-	for _, test := range s.Tests {
-		switch test {
-		case TestDNS:
-			total += len(DNSCheckDomains)
-		case TestDomains:
-			total += len(CheckDomains) * 3 // TLS1.3 + TLS1.2 + HTTP
-		case TestTCP:
-			total += len(TCPTargets)
-			tcpRequested = true
-		case TestSNI:
-			total += estimateSNIChecks(tcpRequested)
-		case TestDNSAvail:
-			domains := DNSAvailDomains
-			if len(domains) == 0 {
-				domains = DNSCheckDomains
-			}
-			total += len(DNSAvailServers) * len(domains)
-		case TestTelegram:
-			total += len(telegramDCEndpoints()) + 1
+	for _, scope := range s.Options.Scopes {
+		switch scope {
+		case ScopeSites:
+			total += len(uniqueSites(s.Options.Sites)) * s.modes() * len(s.families())
+		case ScopeDNS:
+			total += len(lists.DNSServers) + len(readResolvConf())
+		case ScopeHosting:
+			total += len(lists.TCPTargets)
+		case ScopeTelegram:
+			total += 7
 		}
 	}
 	return total
 }
 
-func estimateSNIChecks(tcpAlreadyRequested bool) int {
-	total := 0
-	asnSet := make(map[string]bool)
-	for _, t := range TCPTargets {
-		if t.Port != 443 {
-			continue
+func appendUnique(list []string, item string) []string {
+	for _, existing := range list {
+		if existing == item {
+			return list
 		}
-		if !tcpAlreadyRequested {
-			total++ // Phase 1 base probe
-		}
-		asnSet[t.ASN] = true
 	}
-	total += len(asnSet) // Phase 2 brute-force per ASN
-	return total
+	return append(list, item)
+}
+
+func (s *Suite) modes() int {
+	if s.Options.FetchMode == FetchBoth {
+		return 2
+	}
+	return 1
+}
+
+func (s *Suite) refreshVerdict() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v := Verdict{BlockKinds: map[string]int{}}
+	if r := s.Sites; r != nil {
+		v.Sites = len(r.Sites)
+		for _, site := range r.Sites {
+			if !site.Done {
+				continue
+			}
+			switch site.Outcome {
+			case OutcomeOk:
+				v.NotBlocked++
+			case OutcomeFixed:
+				v.BlockedByISP++
+				v.FixedByB4++
+			case OutcomeStillBlocked, OutcomeBlocked:
+				v.BlockedByISP++
+				v.StillBlocked++
+				v.StillBlockedAt = appendUnique(v.StillBlockedAt, site.Input)
+			case OutcomeBrokenByB4:
+				v.NotBlocked++
+				v.BrokenByB4++
+			}
+			if site.Direct != nil && isBlockedStatus(site.Direct.Status) {
+				v.BlockKinds[string(site.Direct.Status)]++
+			}
+		}
+	}
+	if r := s.DNS; r != nil {
+		v.DNSHijacked = r.Hijacked > 0
+		v.DNSSubstituted = r.Substituting > 0
+		v.DoHWorks = r.DoHOk > 0
+		v.DoTWorks = r.DoTOk > 0
+	}
+	if r := s.Hosting; r != nil {
+		for _, g := range r.Groups {
+			if g.Status == HostingDropped || g.Status == HostingMixed {
+				v.DroppedNets = append(v.DroppedNets, g.Provider)
+			}
+		}
+	}
+	if r := s.Telegram; r != nil {
+		v.Telegram = string(r.Verdict)
+	}
+	if len(v.BlockKinds) == 0 {
+		v.BlockKinds = nil
+	}
+	s.Verdict = v
 }
