@@ -38,6 +38,7 @@ func NewSuite(opts Options, directMark uint, lookup SetLookup) (*Suite, error) {
 		cancel:     cancel,
 		setLookup:  lookup,
 	}
+	s.Progress.Total = s.estimateTotal()
 	activeSuites[s.Id] = s
 	return s, nil
 }
@@ -99,7 +100,7 @@ func CancelSuite(id string) bool {
 	}
 	s.mu.Lock()
 	if s.Status == StatusRunning || s.Status == StatusPending {
-		s.Status = StatusCanceled
+		s.Stopping = true
 	}
 	s.mu.Unlock()
 	s.cancel()

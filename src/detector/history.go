@@ -67,10 +67,12 @@ func (h *History) Save(configPath string) error {
 	return nil
 }
 
-func (h *History) Add(s *Suite) {
+func (h *History) Add(s *Suite, final SuiteStatus) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	entry := s.snapshot()
+	entry.Status = final
+	entry.Stopping = false
 	entry.Progress = Progress{}
 	kept := make([]*Suite, 0, len(h.Entries)+1)
 	kept = append(kept, entry)
@@ -113,9 +115,9 @@ func (h *History) Get(id string) *Suite {
 	return nil
 }
 
-func SaveToHistory(s *Suite, configPath string) {
+func SaveToHistory(s *Suite, configPath string, final SuiteStatus) {
 	history := LoadHistory(configPath)
-	history.Add(s)
+	history.Add(s, final)
 	if err := history.Save(configPath); err != nil {
 		log.Errorf("Failed to save detector history: %v", err)
 	}

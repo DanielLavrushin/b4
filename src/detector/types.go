@@ -305,6 +305,7 @@ type Verdict struct {
 type Suite struct {
 	Id        string      `json:"id"`
 	Status    SuiteStatus `json:"status"`
+	Stopping  bool        `json:"stopping,omitempty"`
 	StartTime time.Time   `json:"start_time"`
 	EndTime   time.Time   `json:"end_time,omitempty"`
 	Options   Options     `json:"options"`

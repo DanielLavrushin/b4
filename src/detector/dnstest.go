@@ -223,7 +223,7 @@ func (s *Suite) runDNS() {
 
 	s.mu.Lock()
 	result.Providers = buildProviders(runs, true)
-	result.TruthAvailable = len(truth) > 0
+	result.TruthAvailable = truth.available()
 	for ip := range stubs {
 		result.StubIPs = append(result.StubIPs, ip)
 	}
@@ -353,25 +353,76 @@ func (s *Suite) probeResolver(r *serverRun, lists TargetLists, qtype uint16) {
 	}
 }
 
-func buildTruth(runs []*serverRun, domains []string) map[string][]string {
-	truth := make(map[string][]string)
+type truthTable struct {
+	votes     map[string]map[string]map[*serverRun]bool
+	answering map[string]map[*serverRun]bool
+}
+
+func buildTruth(runs []*serverRun, domains []string) *truthTable {
+	t := &truthTable{
+		votes:     make(map[string]map[string]map[*serverRun]bool),
+		answering: make(map[string]map[*serverRun]bool),
+	}
 	for _, r := range runs {
 		if r.probe == nil || r.probe.Status != DNSProbeOk || r.server.Kind == "udp" {
 			continue
 		}
 		for _, dom := range domains {
 			ans := r.answers[dom]
+			if len(ans.ips) == 0 {
+				continue
+			}
+			if t.answering[dom] == nil {
+				t.answering[dom] = make(map[*serverRun]bool)
+			}
+			t.answering[dom][r] = true
 			for _, ip := range ans.ips {
-				if !isFakeRange(ip) {
-					truth[dom] = append(truth[dom], ip)
+				if isFakeRange(ip) {
+					continue
 				}
+				if t.votes[dom] == nil {
+					t.votes[dom] = make(map[string]map[*serverRun]bool)
+				}
+				if t.votes[dom][ip] == nil {
+					t.votes[dom][ip] = make(map[*serverRun]bool)
+				}
+				t.votes[dom][ip][r] = true
 			}
 		}
 	}
-	return truth
+	return t
 }
 
-func findStubs(runs []*serverRun, truth map[string][]string) map[string]bool {
+func (t *truthTable) available() bool {
+	return len(t.answering) > 0
+}
+
+func (t *truthTable) forDomain(dom string, self *serverRun) []string {
+	others := 0
+	for r := range t.answering[dom] {
+		if r != self {
+			others++
+		}
+	}
+	if others == 0 {
+		return nil
+	}
+	var out []string
+	for ip, voters := range t.votes[dom] {
+		n := 0
+		for r := range voters {
+			if r != self {
+				n++
+			}
+		}
+		if n >= 2 || (n == 1 && others == 1) {
+			out = append(out, ip)
+		}
+	}
+	return out
+}
+
+func findStubs(runs []*serverRun, truth *truthTable) map[string]bool {
 	stubs := make(map[string]bool)
 	for _, r := range runs {
 		if r.probe == nil || r.probe.Status != DNSProbeOk {
@@ -380,7 +431,7 @@ func findStubs(runs []*serverRun, truth map[string][]string) map[string]bool {
 		byIP := make(map[string]map[string]bool)
 		for dom, ans := range r.answers {
 			for _, ip := range ans.ips {
-				if inTruth(ip, truth[dom]) {
+				if inTruth(ip, truth.forDomain(dom, r)) {
 					continue
 				}
 				if byIP[ip] == nil {
@@ -407,11 +458,11 @@ func inTruth(ip string, truth []string) bool {
 	return false
 }
 
-func judgeHonesty(r *serverRun, truth map[string][]string, stubs map[string]bool) {
+func judgeHonesty(r *serverRun, truth *truthTable, stubs map[string]bool) {
 	p := r.probe
 	match, nx, silent, fake, other := 0, 0, 0, 0, 0
 	for dom, ans := range r.answers {
-		t := truth[dom]
+		t := truth.forDomain(dom, r)
 		if len(t) == 0 {
 			continue
 		}

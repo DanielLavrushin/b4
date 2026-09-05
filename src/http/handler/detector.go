@@ -121,13 +121,14 @@ func (api *API) handleStartDetector(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	total := suite.Progress.Total
 	go suite.Run(cfg.ConfigPath)
 
 	setJsonHeader(w)
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(DetectorResponse{
 		Id:      suite.Id,
-		Total:   suite.Progress.Total,
+		Total:   total,
 		Message: "Detector run started",
 	})
 }

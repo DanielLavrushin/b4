@@ -19,7 +19,7 @@ export const RunPanel = ({ suite, onStop }: RunPanelProps) => {
 
   const p = suite.progress;
   const scopes = suite.options.scopes ?? [];
-  const stopping = suite.status === "canceled";
+  const stopping = !!suite.stopping;
   const phaseIndex = p.phase ? scopes.indexOf(p.phase) : -1;
   const active = phaseIndex >= 0 ? phaseIndex : 0;
   const started = new Date(suite.start_time).getTime();

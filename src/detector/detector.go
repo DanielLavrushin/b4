@@ -8,7 +8,9 @@ import (
 
 func (s *Suite) Run(configPath string) {
 	s.mu.Lock()
-	if s.Status == StatusCanceled {
+	if s.ctx.Err() != nil {
+		s.Status = StatusCanceled
+		s.EndTime = time.Now()
 		s.mu.Unlock()
 		return
 	}
@@ -39,19 +41,24 @@ func (s *Suite) Run(configPath string) {
 		s.refreshVerdict()
 	}
 
-	s.mu.Lock()
-	if s.Status == StatusRunning {
-		s.Status = StatusComplete
+	final := StatusComplete
+	if s.ctx.Err() != nil {
+		final = StatusCanceled
 	}
+	s.mu.Lock()
 	s.EndTime = time.Now()
 	s.Progress.Phase = ""
 	s.Progress.Current = ""
 	s.mu.Unlock()
 	s.refreshVerdict()
 
-	log.DiscoveryLogf("[Detector] Run %s %s in %v", s.Id, s.Status, s.EndTime.Sub(s.StartTime).Round(time.Second))
+	log.DiscoveryLogf("[Detector] Run %s %s in %v", s.Id, final, s.EndTime.Sub(s.StartTime).Round(time.Second))
 
-	SaveToHistory(s, configPath)
+	SaveToHistory(s, configPath, final)
+	s.mu.Lock()
+	s.Status = final
+	s.Stopping = false
+	s.mu.Unlock()
 	go func() {
 		time.Sleep(60 * time.Second)
 		suitesMu.Lock()

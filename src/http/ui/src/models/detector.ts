@@ -249,6 +249,7 @@ export interface DetectorVerdict {
 export interface DetectorSuite {
   id: string;
   status: SuiteStatus;
+  stopping?: boolean;
   start_time: string;
   end_time?: string;
   options: DetectorOptions;
