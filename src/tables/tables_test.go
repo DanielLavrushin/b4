@@ -1300,6 +1300,8 @@ type mockRouteBackend struct {
 	guards        []mockRouterGuard
 	guardOK       *bool
 	addElementsFn func(setName string, ips []string, ttlSec int)
+	delElementsFn func(setName string, ips []string)
+	setOps        []string
 	bypass        map[string][]uint32
 	chainOps      map[string][]string
 	jumps         []mockRouteJump
@@ -1404,8 +1406,15 @@ func (m *mockRouteBackend) flushIPSet(name string)   {}
 func (m *mockRouteBackend) destroyIPSet(name string) {}
 func (m *mockRouteBackend) clearAll()                {}
 func (m *mockRouteBackend) addElements(setName string, ips []string, ttlSec int) {
+	m.setOps = append(m.setOps, "add "+setName)
 	if m.addElementsFn != nil {
 		m.addElementsFn(setName, ips, ttlSec)
+	}
+}
+func (m *mockRouteBackend) delElements(setName string, ips []string) {
+	m.setOps = append(m.setOps, "del "+setName)
+	if m.delElementsFn != nil {
+		m.delElementsFn(setName, ips)
 	}
 }
 

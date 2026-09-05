@@ -38,6 +38,9 @@ var kmodPackageTable = map[string]kmodPackageSet{
 	"xt_TPROXY":    {kernel: []string{"kmod-ipt-tproxy"}, userspace: []string{"iptables-mod-tproxy"}},
 	"xt_connmark":  {kernel: []string{"kmod-ipt-conntrack-extra"}, userspace: []string{"iptables-mod-conntrack-extra"}},
 	"xt_CONNMARK":  {kernel: []string{"kmod-ipt-conntrack-extra"}, userspace: []string{"iptables-mod-conntrack-extra"}},
+	"xt_addrtype":  {kernel: []string{"kmod-ipt-extra"}, userspace: []string{"iptables-mod-extra"}},
+	"nft_fib_inet": {kernel: []string{"kmod-nft-fib"}},
+	"nft_fib":      {kernel: []string{"kmod-nft-fib"}},
 }
 
 type kmodState int

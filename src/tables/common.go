@@ -385,7 +385,9 @@ func hasBinary(name string) bool {
 	return found
 }
 
-func runStdin(stdin string, args ...string) error {
+var runStdin = runStdinExec
+
+func runStdinExec(stdin string, args ...string) error {
 	var out bytes.Buffer
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Stdin = strings.NewReader(stdin)

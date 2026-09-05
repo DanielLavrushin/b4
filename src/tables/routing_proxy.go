@@ -294,6 +294,19 @@ func proxyActiveCount() int {
 	return n
 }
 
+func routeAddProxyRouterTrafficGuard(be routeBackend, cfg *config.Config, st routeState) {
+	guarded := true
+	if cfg.Queue.IPv4Enabled && !be.addRouterTrafficGuard(st.chainOut, false, st.setV4, st.mark) {
+		guarded = false
+	}
+	if cfg.Queue.IPv6Enabled && !be.addRouterTrafficGuard(st.chainOut, true, st.setV6, st.mark) {
+		guarded = false
+	}
+	if !guarded {
+		log.Warnf("Routing: %s took no rate guard on the router's own traffic, so an upstream proxy whose own connections leave from this router and land in the set would open them without limit; on nftables this needs a kernel with rule limits, on iptables the xt_hashlimit module", st.chainOut)
+	}
+}
+
 func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState, sources []string) error {
 	if st.table <= 0 {
 		return fmt.Errorf("no free routing table for transparent proxying")
@@ -339,9 +352,11 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	routeSelfDialBypass(be, cfg, st.chainPre)
 	be.addClaimedBypassRule(st.chainPre, st.mark)
 	routeAddBlacklistGate(be, "mangle", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
+	routeAddLocalDestinationGuard(be, st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	if !sourceScoped {
 		routeSelfDialBypass(be, cfg, st.chainOut)
 		be.addClaimedBypassRule(st.chainOut, 0)
+		routeAddProxyRouterTrafficGuard(be, cfg, st)
 	}
 
 	port, _ := portFromState(st)
@@ -679,24 +694,55 @@ func deleteNftJumpRules(table, parentChain, targetChain string) {
 	}
 }
 
+var (
+	proxyOutMarkMu          sync.Mutex
+	proxyOutMarkUnqualified = map[string]bool{}
+)
+
+func proxyOutMarkFallsBack(tool, out string) {
+	proxyOutMarkMu.Lock()
+	warned := proxyOutMarkUnqualified[tool]
+	proxyOutMarkUnqualified[tool] = true
+	proxyOutMarkMu.Unlock()
+	if warned {
+		return
+	}
+	log.Warnf("Routing: %s rejected the connection-direction match (%s), so replies the router's own services send to an address a proxy set matches are marked for the upstream as well",
+		tool, strings.TrimSpace(out))
+}
+
+func proxyOutMarkForget() {
+	proxyOutMarkMu.Lock()
+	proxyOutMarkUnqualified = map[string]bool{}
+	proxyOutMarkMu.Unlock()
+}
+
 func addProxyOutputMarkRulesNft(cfg *config.Config, st routeState) {
 	markHex := fmt.Sprintf("0x%x", st.mark)
+	emit := func(proto []string, field, sn string) {
+		head := append([]string{"nft", "add", "rule", "inet", routeNftTable, st.chainOut}, proto...)
+		tail := []string{field, "daddr", "@" + sn, "meta", "mark", "set", markHex}
+		proxyOutMarkMu.Lock()
+		unqualified := proxyOutMarkUnqualified["nft"]
+		proxyOutMarkMu.Unlock()
+		if !unqualified {
+			args := append(append(append([]string{}, head...), "ct", "direction", "original"), tail...)
+			out, err := run(args...)
+			if err == nil {
+				return
+			}
+			proxyOutMarkFallsBack("nft", out)
+		}
+		runLogged("routing: add output mark rule (proxy)", append(head, tail...)...)
+	}
 	if cfg.Queue.IPv4Enabled {
 		for _, sn := range []string{st.setV4, routeNftDynSet(st.setV4)} {
-			runLogged("routing: add output mark rule (proxy)",
-				"nft", "add", "rule", "inet", routeNftTable, st.chainOut,
-				"ip", "protocol", "tcp",
-				"ip", "daddr", "@"+sn,
-				"meta", "mark", "set", markHex)
+			emit([]string{"ip", "protocol", "tcp"}, "ip", sn)
 		}
 	}
 	if cfg.Queue.IPv6Enabled {
 		for _, sn := range []string{st.setV6, routeNftDynSet(st.setV6)} {
-			runLogged("routing: add output mark rule (proxy)",
-				"nft", "add", "rule", "inet", routeNftTable, st.chainOut,
-				"meta", "l4proto", "tcp",
-				"ip6", "daddr", "@"+sn,
-				"meta", "mark", "set", markHex)
+			emit([]string{"meta", "l4proto", "tcp"}, "ip6", sn)
 		}
 	}
 }
@@ -739,10 +785,20 @@ func addProxyOutputMarkRuleIpt(v6 bool, chain, setName string, mark uint32, lega
 		return
 	}
 	markHex := fmt.Sprintf("0x%x/0x%x", mark, mark)
+	tail := []string{"-m", "set", "--match-set", setName, "dst", "-j", "MARK", "--set-mark", markHex}
+	proxyOutMarkMu.Lock()
+	unqualified := proxyOutMarkUnqualified[cmd]
+	proxyOutMarkMu.Unlock()
+	if !unqualified {
+		args := append([]string{cmd, "-w", "-t", "mangle", "-A", chain, "-p", "tcp", "-m", "conntrack", "--ctdir", "ORIGINAL"}, tail...)
+		out, err := run(args...)
+		if err == nil {
+			return
+		}
+		proxyOutMarkFallsBack(cmd, out)
+	}
 	runLogged("routing: add output mark rule "+chain,
-		cmd, "-w", "-t", "mangle", "-A", chain, "-p", "tcp",
-		"-m", "set", "--match-set", setName, "dst",
-		"-j", "MARK", "--set-mark", markHex)
+		append([]string{cmd, "-w", "-t", "mangle", "-A", chain, "-p", "tcp"}, tail...)...)
 }
 
 func addProxyDivertRuleIpt(v6 bool, chain, setName string, mark uint32, legacy bool) {

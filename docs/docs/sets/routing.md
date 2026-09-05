@@ -276,7 +276,7 @@ How long, in seconds, an IP obtained from a DNS response is kept in the routing 
 
 Default: **3600** seconds (1 hour).
 
-IPs added manually in the set targets also use this TTL and are refreshed on every config sync.
+IPs listed in the set targets are permanent members: they are written on every configuration sync and taken out of the kernel set when they are removed from the targets.
 
 :::tip
 For stable services with constant IPs you can raise the TTL. For CDN services where IPs change frequently, lower it.
@@ -348,7 +348,7 @@ flowchart LR
 
 2. **Transparent listener.** b4 opens a listener on a port derived from the set and marks it transparent, so it can accept connections addressed to someone else.
 
-3. **Diversion.** TPROXY rules in **PREROUTING** send TCP with a destination in the set to that listener, together with an `ip rule` and a local route so the packet is delivered locally instead of being forwarded.
+3. **Diversion.** TPROXY rules in **PREROUTING** send TCP, and UDP when **Route UDP through upstream** is on, with a destination in the set to that listener, together with an `ip rule` and a local route so the packet is delivered locally instead of being forwarded. Destinations that are the router's own addresses, broadcast or multicast are never diverted, so a set that matches every address leaves the router's DNS, DHCP and web interface reachable for the device it is bound to.
 
 4. **Relay.** For each accepted connection b4 opens a SOCKS5 CONNECT to the upstream and relays bytes in both directions.
 
@@ -371,6 +371,8 @@ apk add kmod-nft-tproxy kmod-nft-socket
 ```
 
 On an iptables system the equivalents are `kmod-ipt-tproxy` and `kmod-ipt-socket`, plus `iptables-mod-tproxy` for the iptables extension itself. On Keenetic the firmware ships these modules under `/lib/modules` and the service loads them itself; nothing needs to be installed.
+
+The rule that keeps the router's own addresses out of the diversion uses the address-type match: `kmod-ipt-extra` with `iptables-mod-extra` on an iptables system, `kmod-nft-fib` on nftables. Where that match is rejected, the service writes an explicit list of the router's addresses instead, refreshed the next time the set is rebuilt, and the log says so.
 
 :::tip
 **Settings -> Diagnostics** reports whether TPROXY is usable and names any missing modules and the packages that provide them.

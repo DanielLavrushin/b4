@@ -11,7 +11,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func udpSockControl(v6 bool, recvOrigDst bool) func(string, string, syscall.RawConn) error {
+func udpSockControl(v6 bool, recvOrigDst bool, mark uint32) func(string, string, syscall.RawConn) error {
 	return func(network, address string, c syscall.RawConn) error {
 		var ctlErr error
 		err := c.Control(func(fd uintptr) {
@@ -20,6 +20,7 @@ func udpSockControl(v6 bool, recvOrigDst bool) func(string, string, syscall.RawC
 				ctlErr = fmt.Errorf("SO_REUSEADDR: %w", e)
 				return
 			}
+			setSocketMark(f, mark)
 			if e := unix.SetsockoptInt(f, unix.SOL_SOCKET, unix.SO_REUSEPORT, 1); e != nil {
 				ctlErr = fmt.Errorf("SO_REUSEPORT: %w", e)
 				return
@@ -59,8 +60,8 @@ func udpSockControl(v6 bool, recvOrigDst bool) func(string, string, syscall.RawC
 	}
 }
 
-func listenTransparentUDP(ctx context.Context, network, addr string, v6 bool) (*net.UDPConn, error) {
-	lc := net.ListenConfig{Control: udpSockControl(v6, true)}
+func listenTransparentUDP(ctx context.Context, network, addr string, v6 bool, mark uint32) (*net.UDPConn, error) {
+	lc := net.ListenConfig{Control: udpSockControl(v6, true, mark)}
 	pc, err := lc.ListenPacket(ctx, network, addr)
 	if err != nil {
 		return nil, err
@@ -73,12 +74,12 @@ func listenTransparentUDP(ctx context.Context, network, addr string, v6 bool) (*
 	return uc, nil
 }
 
-func openReplySocket(ctx context.Context, dst *net.UDPAddr, v6 bool) (*net.UDPConn, error) {
+func openReplySocket(ctx context.Context, dst *net.UDPAddr, v6 bool, mark uint32) (*net.UDPConn, error) {
 	network := "udp4"
 	if v6 {
 		network = "udp6"
 	}
-	lc := net.ListenConfig{Control: udpSockControl(v6, false)}
+	lc := net.ListenConfig{Control: udpSockControl(v6, false, mark)}
 	pc, err := lc.ListenPacket(ctx, network, dst.String())
 	if err != nil {
 		return nil, err

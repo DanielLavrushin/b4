@@ -124,6 +124,41 @@ func (b *routeNftBackend) addElements(setName string, ips []string, ttlSec int) 
 	}
 }
 
+func (b *routeNftBackend) delElements(setName string, ips []string) {
+	if len(ips) == 0 {
+		return
+	}
+
+	const chunkSize = 128
+
+	for i := 0; i < len(ips); i += chunkSize {
+		end := i + chunkSize
+		if end > len(ips) {
+			end = len(ips)
+		}
+		chunk := ips[i:end]
+
+		args := []string{"nft", "delete", "element", "inet", routeNftTable, setName, "{"}
+		for idx, ip := range chunk {
+			args = append(args, ip)
+			if idx < len(chunk)-1 {
+				args = append(args, ",")
+			}
+		}
+		args = append(args, "}")
+		out, err := run(args...)
+		if err == nil {
+			continue
+		}
+		log.Tracef("routing: batch delete from %s failed (%v: %s), falling back to individual deletes", setName, err, strings.TrimSpace(out))
+		for _, ip := range chunk {
+			if out, err := run("nft", "delete", "element", "inet", routeNftTable, setName, "{", ip, "}"); err != nil {
+				log.Tracef("routing: delete element %s from %s failed: %s", ip, setName, strings.TrimSpace(out))
+			}
+		}
+	}
+}
+
 func (b *routeNftBackend) ensureChain(chain string, _ bool) error {
 	if err := runEnsure("nft", "add", "chain", "inet", routeNftTable, chain); err != nil {
 		return fmt.Errorf("ensure chain %s: %w", chain, err)

@@ -90,6 +90,23 @@ func (b *routeIptBackend) addElements(setName string, ips []string, ttlSec int) 
 	}
 }
 
+func (b *routeIptBackend) delElements(setName string, ips []string) {
+	if len(ips) == 0 || !hasBinary("ipset") {
+		return
+	}
+	var sb strings.Builder
+	sb.Grow(len(ips) * (len(setName) + 24))
+	for _, ip := range ips {
+		fmt.Fprintf(&sb, "del %s %s\n", setName, ip)
+	}
+	if err := runStdin(sb.String(), "ipset", "restore", "-exist"); err == nil {
+		return
+	}
+	for _, ip := range ips {
+		runLogged("routing: ipset del "+ip, "ipset", "del", setName, ip, "-exist")
+	}
+}
+
 func (b *routeIptBackend) ensureChain(chain string, isMangle bool) error {
 	table := iptTable(isMangle)
 	ipt4 := b.ipt4()

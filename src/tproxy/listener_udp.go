@@ -41,7 +41,7 @@ type udpSession struct {
 func (l *Listener) startUDP(addr4, addr6 string) {
 	l.udpSessions = make(map[string]*udpSession)
 
-	if uc, err := listenTransparentUDP(l.ctx, "udp4", addr4, false); err == nil {
+	if uc, err := listenTransparentUDP(l.ctx, "udp4", addr4, false, l.Upstream.BypassMark); err == nil {
 		l.udpV4 = uc
 		go l.udpReadLoop(uc, false)
 		log.Infof("tproxy: UDP listening on %s (v4) for set %q -> %s:%d", addr4, l.SetName, l.Upstream.Host, l.Upstream.Port)
@@ -49,7 +49,7 @@ func (l *Listener) startUDP(addr4, addr6 string) {
 		log.Errorf("tproxy: UDP v4 listen %s failed for set %q: %v", addr4, l.SetName, err)
 	}
 
-	if uc, err := listenTransparentUDP(l.ctx, "udp6", addr6, true); err == nil {
+	if uc, err := listenTransparentUDP(l.ctx, "udp6", addr6, true, l.Upstream.BypassMark); err == nil {
 		l.udpV6 = uc
 		go l.udpReadLoop(uc, true)
 		log.Infof("tproxy: UDP listening on %s (v6) for set %q -> %s:%d", addr6, l.SetName, l.Upstream.Host, l.Upstream.Port)
@@ -148,7 +148,7 @@ func (l *Listener) dispatchUDP(src, dst *net.UDPAddr, payload []byte, v6 bool) {
 }
 
 func (l *Listener) newUDPSession(src, dst *net.UDPAddr, v6 bool) (*udpSession, error) {
-	reply, err := openReplySocket(l.ctx, dst, v6)
+	reply, err := openReplySocket(l.ctx, dst, v6, l.Upstream.BypassMark)
 	if err != nil {
 		return nil, fmt.Errorf("reply socket: %w", err)
 	}
