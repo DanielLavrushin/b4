@@ -84,6 +84,8 @@ type mcpSuiteSnapshot struct {
 		BestSuccess   bool    `json:"best_success"`
 		BaselineWorks bool    `json:"baseline_works"`
 		Confirmed     int     `json:"confirmed"`
+		Outcome       string  `json:"outcome"`
+		Unconfirmed   bool    `json:"unconfirmed"`
 		DNSResult     *struct {
 			IsPoisoned       bool `json:"is_poisoned"`
 			TransportBlocked bool `json:"transport_blocked"`
@@ -178,12 +180,26 @@ func (api *API) mcpDiscoverySuiteRows(snap *mcpSuiteSnapshot, running bool) []mc
 			row.DNSPoisoned = r.DNSResult.IsPoisoned
 			row.Blocked = r.DNSResult.TransportBlocked
 		}
+		mcpApplyOutcome(&row, discovery.Outcome(r.Outcome))
 		row.Provisional = running && row.Found
 		row.Verdict = mcpDiscoveryVerdict(row, running)
 		rows = append(rows, row)
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Domain < rows[j].Domain })
 	return rows
+}
+
+func mcpApplyOutcome(row *mcpDiscoveryDomain, outcome discovery.Outcome) {
+	switch outcome {
+	case discovery.OutcomeFound:
+		row.Found, row.BaselineWorks, row.Blocked = true, false, false
+	case discovery.OutcomeWorksWithoutBypass:
+		row.Found, row.BaselineWorks = false, true
+	case discovery.OutcomeAddressBlocked:
+		row.Found, row.Blocked = false, true
+	case discovery.OutcomeNotFound:
+		row.Found = false
+	}
 }
 
 func (api *API) addMCPDiscoveryTools(srv *mcp.Server) {
@@ -248,7 +264,7 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		}
 	}
 
-	opts := discovery.StartSuiteOptions{ValidationTries: 1}
+	opts := discovery.StartSuiteOptions{ValidationTries: 1, Source: discovery.SourceMCP}
 	if strings.EqualFold(strings.TrimSpace(in.SkipDNS), "true") {
 		opts.SkipDNS = true
 	}
@@ -308,6 +324,7 @@ func (api *API) mcpDiscoveryStatus(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpD
 			BaselineWorks: e.BaselineWorks,
 			Confirmed:     e.Confirmed,
 		}
+		mcpApplyOutcome(&row, e.Outcome)
 		row.Verdict = mcpDiscoveryVerdict(row, false)
 		if row.Found && e.ApplicableSet() != nil {
 			applicable++

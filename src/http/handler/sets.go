@@ -260,20 +260,34 @@ func (api *API) handleSetDomains(w http.ResponseWriter, r *http.Request) {
 	setId := r.PathValue("id")
 
 	var req struct {
-		Domain string `json:"domain"`
+		Domain  string   `json:"domain"`
+		Domains []string `json:"domains"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, ErrInvalidJSON())
 		return
 	}
 
-	// Find set and add domain
+	domains := appendMissing(nil, req.Domains...)
+	if d := strings.TrimSpace(req.Domain); d != "" {
+		domains = appendMissing(domains, d)
+	}
+	if len(domains) == 0 {
+		writeAPIError(w, ErrBadRequest("domain is required"))
+		return
+	}
+
 	for _, set := range newCfg.Sets {
 		if set.Id == setId {
-			set.Targets.SNIDomains = append(set.Targets.SNIDomains, req.Domain)
-			set.Targets.DomainsToMatch = append(set.Targets.DomainsToMatch, req.Domain)
+			for _, domain := range domains {
+				if domainInList(set.Targets.SNIDomains, domain) {
+					continue
+				}
+				set.Targets.SNIDomains = append(set.Targets.SNIDomains, domain)
+				set.Targets.DomainsToMatch = append(set.Targets.DomainsToMatch, domain)
+			}
 
-			moved := api.releaseDomainsFromOtherSets(newCfg.Sets, setId, []string{req.Domain})
+			moved := api.releaseDomainsFromOtherSets(newCfg.Sets, setId, domains)
 
 			if err := api.saveAndPushConfig(newCfg); err != nil {
 				writeAPIError(w, err)
@@ -291,6 +305,15 @@ func (api *API) handleSetDomains(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeAPIError(w, ErrNotFound("Set not found"))
+}
+
+func domainInList(list []string, domain string) bool {
+	for _, existing := range list {
+		if strings.EqualFold(strings.TrimSpace(existing), domain) {
+			return true
+		}
+	}
+	return false
 }
 
 // GET /api/sets - list all, POST /api/sets - create new

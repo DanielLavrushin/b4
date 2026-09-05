@@ -37,6 +37,26 @@ type HistoryEntry struct {
 	FinalHost     string                         `json:"final_host,omitempty"`
 	SuiteId       string                         `json:"suite_id,omitempty"`
 	Set           *config.SetConfig              `json:"set,omitempty"`
+	Outcome       Outcome                        `json:"outcome,omitempty"`
+	Unconfirmed   bool                           `json:"unconfirmed,omitempty"`
+}
+
+// EffectiveOutcome returns the recorded outcome, deriving it for entries
+// written before the field existed.
+func (e HistoryEntry) EffectiveOutcome() Outcome {
+	if e.Outcome != "" {
+		return e.Outcome
+	}
+	switch {
+	case e.BaselineWorks:
+		return OutcomeWorksWithoutBypass
+	case e.BestSuccess && e.BestPreset != "" && e.BestPreset != presetNoBypass:
+		return OutcomeFound
+	case e.DNSResult != nil && e.DNSResult.TransportBlocked:
+		return OutcomeAddressBlocked
+	default:
+		return OutcomeNotFound
+	}
 }
 
 // ApplicableSet returns the set a caller can install for this entry: the
@@ -149,6 +169,8 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 			Confirmed:     domainResult.Confirmed,
 			ConfirmTries:  domainResult.ConfirmTries,
 			FinalHost:     domainResult.FinalHost,
+			Outcome:       domainResult.Outcome,
+			Unconfirmed:   domainResult.Unconfirmed,
 		}
 
 		// Replace existing entry for the same domain, or append

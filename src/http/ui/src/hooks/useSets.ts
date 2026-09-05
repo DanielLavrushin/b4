@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { B4SetConfig } from "@models/config";
 import { ApiResponse } from "@api/apiClient";
 import { setsApi } from "@b4.sets";
+import { AddDomainsResult } from "@api/sets";
 
 export function useSets() {
   const [loading, setLoading] = useState(false);
@@ -116,6 +117,21 @@ export function useSets() {
     []
   );
 
+  const addDomainsToSet = useCallback(
+    async (
+      setId: string,
+      domains: string[],
+    ): Promise<ApiResponse<AddDomainsResult>> => {
+      try {
+        const data = await setsApi.addDomainsToSet(setId, domains);
+        return { success: true, data };
+      } catch (e) {
+        return { success: false, error: e };
+      }
+    },
+    []
+  );
+
   return {
     createSet,
     updateSet,
@@ -125,6 +141,7 @@ export function useSets() {
     duplicateSet,
     reorderSets,
     addDomainToSet,
+    addDomainsToSet,
     loading,
   };
 }

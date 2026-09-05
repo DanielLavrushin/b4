@@ -214,3 +214,81 @@ func TestWinnersToConfirmSkipsAlreadyConfirmedPresets(t *testing.T) {
 		t.Fatalf("the domain mirror was not updated: %d/%d", dr.Confirmed, dr.ConfirmTries)
 	}
 }
+
+func TestOutcomesFollowTheVerdict(t *testing.T) {
+	ds := suiteWithResults(map[string]map[string]*DomainPresetResult{
+		"open.example": {
+			presetNoBypass: presetResult(CheckStatusComplete, 11000),
+		},
+		"blocked.example": {
+			presetNoBypass: presetResult(CheckStatusFailed, 0),
+			"combo-random": presetResult(CheckStatusComplete, 4000),
+		},
+		"dead.example": {
+			presetNoBypass: presetResult(CheckStatusFailed, 0),
+		},
+		"lost.example": {
+			presetNoBypass: presetResult(CheckStatusFailed, 0),
+		},
+	})
+	ds.domainResults["dead.example"].DNSResult = &DNSDiscoveryResult{TransportBlocked: true}
+
+	ds.determineBest()
+
+	want := map[string]Outcome{
+		"open.example":    OutcomeWorksWithoutBypass,
+		"blocked.example": OutcomeFound,
+		"dead.example":    OutcomeAddressBlocked,
+		"lost.example":    "",
+	}
+	for domain, outcome := range want {
+		if got := ds.domainResults[domain].Outcome; got != outcome {
+			t.Errorf("%s: outcome %q, want %q while the run is still going", domain, got, outcome)
+		}
+	}
+	if !ds.domainResults["blocked.example"].Unconfirmed {
+		t.Error("a winner that has not been through the confirmation pass must read as unconfirmed")
+	}
+
+	ds.refreshOutcomes(true)
+	if got := ds.domainResults["lost.example"].Outcome; got != OutcomeNotFound {
+		t.Errorf("once the run is over a domain with no working preset is %q, got %q", OutcomeNotFound, got)
+	}
+
+	ds.domainResults["blocked.example"].Confirmed = confirmTries
+	ds.domainResults["blocked.example"].ConfirmTries = confirmTries
+	ds.refreshOutcomes(true)
+	if ds.domainResults["blocked.example"].Unconfirmed {
+		t.Error("a winner that passed every confirmation try is confirmed")
+	}
+}
+
+func TestFailedResultsCarryNoSet(t *testing.T) {
+	ds := suiteWithResults(map[string]map[string]*DomainPresetResult{
+		"a.example": {},
+	})
+	set := config.NewSetConfig()
+
+	ds.storeResultsMulti(ConfigPreset{Name: "combo-random", Family: FamilyCombo}, map[string]CheckResult{
+		"a.example": {Domain: "a.example", Status: CheckStatusFailed, Set: &set},
+	})
+	if ds.domainResults["a.example"].Results["combo-random"].Set != nil {
+		t.Error("a failed preset is never applied, so its set is dead weight in every status poll")
+	}
+	if got := ds.domainResults["a.example"].Outcome; got != "" {
+		t.Errorf("nothing has worked yet and the run is not over, outcome should be open, got %q", got)
+	}
+
+	ds.storeResultsMulti(ConfigPreset{Name: "combo-pastseq", Family: FamilyCombo}, map[string]CheckResult{
+		"a.example": {Domain: "a.example", Status: CheckStatusComplete, Speed: 1000, Set: &set},
+	})
+	if ds.domainResults["a.example"].Results["combo-pastseq"].Set == nil {
+		t.Error("the set of a working preset is the one that gets applied")
+	}
+	if got := ds.domainResults["a.example"].Outcome; got != OutcomeFound {
+		t.Errorf("the first success makes the domain read as found, got %q", got)
+	}
+	if !ds.domainResults["a.example"].Unconfirmed {
+		t.Error("a first success is provisional until the confirmation pass")
+	}
+}

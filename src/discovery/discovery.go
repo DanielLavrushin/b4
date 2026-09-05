@@ -237,6 +237,10 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	ds.TotalChecks = (len(phase1Presets) + len(cachedPresets)) * len(ds.Domains)
 	ds.CheckSuite.mu.Unlock()
 
+	ds.setPhase(PhaseStrategy)
+	ds.storeResultsMulti(phase1Presets[0], ds.testPresetAllDomains(phase1Presets[0]))
+	ds.determineBest()
+
 	if len(cachedPresets) > 0 {
 		ds.setPhase(PhaseCached)
 		log.DiscoveryLogf("Phase 0: Testing %d cached configurations across %d domains", len(cachedPresets), len(ds.Domains))
@@ -326,9 +330,7 @@ func (ds *DiscoverySuite) runPhase1Multi(presets []ConfigPreset) ([]StrategyFami
 
 	log.DiscoveryLogf("Phase 1: Testing %d strategy families across %d domains", len(presets), len(ds.Domains))
 
-	// Test baseline (no-bypass) across all domains
-	baselineResults := ds.testPresetAllDomains(presets[0])
-	ds.storeResultsMulti(presets[0], baselineResults)
+	baselineResults := ds.baselineResults(presets[0])
 
 	allBaselineWorks := true
 	var totalBaselineSpeed float64
@@ -401,6 +403,32 @@ func (ds *DiscoverySuite) runPhase1Multi(presets []ConfigPreset) ([]StrategyFami
 	return workingFamilies, baselineSpeed, allBaselineWorks
 }
 
+func (ds *DiscoverySuite) baselineResults(baseline ConfigPreset) map[string]CheckResult {
+	ds.CheckSuite.mu.RLock()
+	stored := make(map[string]CheckResult, len(ds.domainResults))
+	for domain, dr := range ds.domainResults {
+		if r := dr.Results[baseline.Name]; r != nil {
+			stored[domain] = CheckResult{
+				Domain:     domain,
+				Status:     r.Status,
+				Speed:      r.Speed,
+				BytesRead:  r.BytesRead,
+				Error:      r.Error,
+				StatusCode: r.StatusCode,
+			}
+		}
+	}
+	ds.CheckSuite.mu.RUnlock()
+
+	if len(stored) == len(ds.domainResults) {
+		return stored
+	}
+
+	results := ds.testPresetAllDomains(baseline)
+	ds.storeResultsMulti(baseline, results)
+	return results
+}
+
 // filterTestedPresets removes presets we've already tested
 func (ds *DiscoverySuite) filterTestedPresets(presets []ConfigPreset) []ConfigPreset {
 	filtered := []ConfigPreset{}
@@ -449,6 +477,9 @@ func (ds *DiscoverySuite) runPhase2WithRepresentative(families []StrategyFamily)
 
 		// Validate optimized config against all domains
 		if bestPreset.Name != "" {
+			ds.CheckSuite.mu.Lock()
+			ds.TotalChecks += len(ds.Domains)
+			ds.CheckSuite.mu.Unlock()
 			validationResults := ds.testPresetAllDomains(bestPreset)
 			ds.storeResultsMulti(bestPreset, validationResults)
 		}
@@ -1424,7 +1455,7 @@ func (ds *DiscoverySuite) storeResult(preset ConfigPreset, result CheckResult) {
 		BytesRead:  result.BytesRead,
 		Error:      result.Error,
 		StatusCode: result.StatusCode,
-		Set:        result.Set,
+		Set:        setForResult(result),
 	}
 
 	if result.Status == CheckStatusComplete && result.FinalHost != "" {
@@ -1447,6 +1478,7 @@ func (ds *DiscoverySuite) storeResult(preset ConfigPreset, result CheckResult) {
 	}
 
 	ds.DomainDiscoveryResults = ds.domainResults
+	ds.refreshOutcomes(false)
 }
 
 // storeResultsMulti stores per-domain results from testPresetAllDomains.
@@ -1475,7 +1507,7 @@ func (ds *DiscoverySuite) storeResultsMulti(preset ConfigPreset, results map[str
 			BytesRead:  result.BytesRead,
 			Error:      result.Error,
 			StatusCode: result.StatusCode,
-			Set:        result.Set,
+			Set:        setForResult(result),
 		}
 
 		if result.Status == CheckStatusComplete && result.FinalHost != "" {
@@ -1499,6 +1531,7 @@ func (ds *DiscoverySuite) storeResultsMulti(preset ConfigPreset, results map[str
 	}
 
 	ds.DomainDiscoveryResults = ds.domainResults
+	ds.refreshOutcomes(false)
 }
 
 func (ds *DiscoverySuite) determineBest() {
@@ -1538,6 +1571,22 @@ func (ds *DiscoverySuite) determineBest() {
 		domainResult.BestSpeed = bestSpeed
 		domainResult.BestSuccess = bestSpeed > 0
 	}
+	ds.refreshOutcomes(false)
+}
+
+func (ds *DiscoverySuite) refreshOutcomes(finished bool) {
+	for _, dr := range ds.domainResults {
+		if dr != nil {
+			dr.refreshOutcome(finished)
+		}
+	}
+}
+
+func setForResult(result CheckResult) *config.SetConfig {
+	if result.Status != CheckStatusComplete {
+		return nil
+	}
+	return result.Set
 }
 
 func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
@@ -1767,6 +1816,7 @@ func (ds *DiscoverySuite) finalize() {
 	if ds.Status != CheckStatusCanceled {
 		ds.Status = CheckStatusComplete
 	}
+	ds.refreshOutcomes(true)
 	ds.CheckSuite.mu.Unlock()
 
 	ds.buildStrategyGroups()

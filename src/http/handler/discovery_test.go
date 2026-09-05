@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -36,6 +37,19 @@ func TestAddPresetAsSetDropsGeoCategoriesWithoutDatabases(t *testing.T) {
 	sets := api.getCfg().Sets
 	if len(sets) != 1 {
 		t.Fatalf("expected 1 set, got %d", len(sets))
+	}
+	var reply struct {
+		Id   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &reply); err != nil {
+		t.Fatalf("decode reply: %v", err)
+	}
+	if reply.Id == "" || reply.Id != sets[0].Id {
+		t.Errorf("the reply must name the set it created so the caller can open it, got %q want %q", reply.Id, sets[0].Id)
+	}
+	if reply.Name != "YouTube" {
+		t.Errorf("reply name = %q", reply.Name)
 	}
 	if len(sets[0].Targets.GeoSiteCategories) != 0 {
 		t.Errorf("geosite categories kept without a geosite database: %v", sets[0].Targets.GeoSiteCategories)

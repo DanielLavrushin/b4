@@ -238,6 +238,7 @@ func (w *Watchdog) healBatch(domains []string) {
 	suite, err := w.discoveryRT.StartSuite(cfg, domains, discovery.StartSuiteOptions{
 		SkipDNS:         true,
 		ValidationTries: tries,
+		Source:          discovery.SourceWatchdog,
 	})
 	if err != nil {
 		log.Warnf("[WATCHDOG] failed to start discovery: %v", err)

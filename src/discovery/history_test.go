@@ -27,7 +27,7 @@ func TestHistoryKeepsOnlyTheWinningPresetsSet(t *testing.T) {
 	suite := &CheckSuite{
 		Id: "run-1", Status: CheckStatusComplete, EndTime: time.Now(),
 		DomainDiscoveryResults: map[string]*DomainDiscoveryResult{
-			"meduza.io": {Domain: "meduza.io", BestPreset: "best", BestSuccess: true, Results: results},
+			"meduza.io": {Domain: "meduza.io", BestPreset: "best", BestSuccess: true, Results: results, Outcome: OutcomeFound, Unconfirmed: true},
 		},
 		StrategyGroups: []StrategyGroup{
 			{WinnerPreset: "best", Domains: []string{"meduza.io"}, Set: &winner},
@@ -65,6 +65,9 @@ func TestHistoryKeepsOnlyTheWinningPresetsSet(t *testing.T) {
 	if e.SuiteId != "run-1" {
 		t.Errorf("the run id must be recorded so a caller can address it later, got %q", e.SuiteId)
 	}
+	if e.Outcome != OutcomeFound || !e.Unconfirmed {
+		t.Errorf("the verdict and its confirmation state travel with the entry, got %q unconfirmed=%v", e.Outcome, e.Unconfirmed)
+	}
 }
 
 func TestCancelSuiteWithoutAChannelDoesNotPanic(t *testing.T) {
@@ -77,5 +80,24 @@ func TestCancelSuiteWithoutAChannelDoesNotPanic(t *testing.T) {
 	}
 	if suite.Status != CheckStatusCanceled {
 		t.Errorf("a suite built without NewCheckSuite must still cancel, got %q", suite.Status)
+	}
+}
+
+func TestEffectiveOutcomeDerivesLegacyEntries(t *testing.T) {
+	cases := []struct {
+		name  string
+		entry HistoryEntry
+		want  Outcome
+	}{
+		{"baseline works", HistoryEntry{BaselineWorks: true, BestSuccess: true, BestPreset: presetNoBypass}, OutcomeWorksWithoutBypass},
+		{"strategy found", HistoryEntry{BestSuccess: true, BestPreset: "combo-random"}, OutcomeFound},
+		{"address blocked", HistoryEntry{DNSResult: &DNSDiscoveryResult{TransportBlocked: true}}, OutcomeAddressBlocked},
+		{"nothing worked", HistoryEntry{}, OutcomeNotFound},
+		{"recorded wins", HistoryEntry{Outcome: OutcomeFound}, OutcomeFound},
+	}
+	for _, tc := range cases {
+		if got := tc.entry.EffectiveOutcome(); got != tc.want {
+			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
+		}
 	}
 }

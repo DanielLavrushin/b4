@@ -56,6 +56,21 @@ const (
 	FamilyTCPMD5    StrategyFamily = "tcpmd5"
 )
 
+type Outcome string
+
+const (
+	OutcomeFound              Outcome = "found"
+	OutcomeWorksWithoutBypass Outcome = "works_without_bypass"
+	OutcomeAddressBlocked     Outcome = "address_blocked"
+	OutcomeNotFound           Outcome = "not_found"
+)
+
+const (
+	SourceWeb      = "web"
+	SourceWatchdog = "watchdog"
+	SourceMCP      = "mcp"
+)
+
 type CheckResult struct {
 	ContentSize int64             `json:"content_size,omitempty"`
 	Domain      string            `json:"domain"`
@@ -91,6 +106,7 @@ type CheckSuite struct {
 	Domains                []DomainInput                     `json:"domains,omitempty"`
 	CurrentDomain          string                            `json:"current_domain,omitempty"`
 	CurrentPhase           DiscoveryPhase                    `json:"current_phase,omitempty"`
+	Source                 string                            `json:"source,omitempty"`
 	mu                     sync.RWMutex                      `json:"-"`
 	cancel                 chan struct{}                     `json:"-"`
 }
@@ -108,7 +124,7 @@ type DomainPresetResult struct {
 	StatusCode   int               `json:"status_code"`
 	Confirmed    int               `json:"confirmed,omitempty"`
 	ConfirmTries int               `json:"confirm_tries,omitempty"`
-	Set          *config.SetConfig `json:"set"`
+	Set          *config.SetConfig `json:"set,omitempty"`
 }
 
 type StrategyGroup struct {
@@ -132,6 +148,24 @@ type DomainDiscoveryResult struct {
 	ConfirmTries  int                            `json:"confirm_tries,omitempty"`
 	FinalHost     string                         `json:"final_host,omitempty"`
 	DNSResult     *DNSDiscoveryResult            `json:"dns_result,omitempty"`
+	Outcome       Outcome                        `json:"outcome,omitempty"`
+	Unconfirmed   bool                           `json:"unconfirmed,omitempty"`
+}
+
+func (dr *DomainDiscoveryResult) refreshOutcome(finished bool) {
+	switch {
+	case dr.BaselineWorks:
+		dr.Outcome = OutcomeWorksWithoutBypass
+	case dr.BestSuccess && dr.BestPreset != "" && dr.BestPreset != presetNoBypass:
+		dr.Outcome = OutcomeFound
+	case dr.DNSResult != nil && dr.DNSResult.TransportBlocked:
+		dr.Outcome = OutcomeAddressBlocked
+	case finished:
+		dr.Outcome = OutcomeNotFound
+	default:
+		dr.Outcome = ""
+	}
+	dr.Unconfirmed = dr.Outcome == OutcomeFound && (dr.ConfirmTries == 0 || dr.Confirmed < dr.ConfirmTries)
 }
 
 type ConfigPreset struct {

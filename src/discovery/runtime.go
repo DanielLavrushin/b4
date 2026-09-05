@@ -41,6 +41,7 @@ type StartSuiteOptions struct {
 	ValidationTries int
 	TLSVersion      string
 	IPVersion       string
+	Source          string
 }
 
 type Runtime struct {
@@ -142,6 +143,10 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 		opts.IPVersion,
 		runtimeState.FlowMark,
 	)
+	suite.Source = opts.Source
+	if suite.Source == "" {
+		suite.Source = SourceWeb
+	}
 	m.SetActiveSuiteID(suite.Id)
 	RegisterSuite(suite.CheckSuite)
 

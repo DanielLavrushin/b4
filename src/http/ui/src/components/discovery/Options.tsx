@@ -5,43 +5,86 @@ import {
   Typography,
   Collapse,
   Autocomplete,
-  Paper,
   ToggleButtonGroup,
   ToggleButton,
   Button,
 } from "@mui/material";
-import { FilterIcon, ExpandIcon, CollapseIcon } from "@b4.icons";
-import {
-  B4Badge,
-  B4FormGroup,
-  B4Slider,
-  B4Switch,
-  B4TextField,
-} from "@b4.elements";
+import { useTranslation } from "react-i18next";
+import { Link as RouterLink } from "react-router";
+import { CoreIcon, ExpandIcon, CollapseIcon } from "@b4.icons";
+import { B4Badge, B4Slider, B4Switch, B4TextField } from "@b4.elements";
 import { colors } from "@design";
 import { Capture } from "@b4.capture";
-import { useTranslation } from "react-i18next";
 
 export type TLSVersion = "auto" | "tls12" | "tls13";
 export type IPVersion = "auto" | "ipv4" | "ipv6";
 
 export interface DiscoveryOptions {
-  skipDNS: boolean;
-  skipCache: boolean;
+  checkDns: boolean;
+  useCache: boolean;
   payloadFiles: string[];
   validationTries: number;
   tlsVersion: TLSVersion;
   ipVersion: IPVersion;
 }
 
+const STORAGE_KEY = "b4_discovery_options";
+const EXPANDED_KEY = "b4_discovery_options_expanded";
+
+export const defaultOptions: DiscoveryOptions = {
+  checkDns: true,
+  useCache: true,
+  payloadFiles: [],
+  validationTries: 1,
+  tlsVersion: "auto",
+  ipVersion: "auto",
+};
+
+export function loadOptions(): DiscoveryOptions {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return defaultOptions;
+    const parsed = JSON.parse(raw) as Partial<DiscoveryOptions>;
+    return { ...defaultOptions, ...parsed, payloadFiles: [] };
+  } catch {
+    return defaultOptions;
+  }
+}
+
+export function saveOptions(options: DiscoveryOptions) {
+  try {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ ...options, payloadFiles: [] }),
+    );
+  } catch {
+    return;
+  }
+}
+
 interface DiscoveryOptionsPanelProps {
   options: DiscoveryOptions;
   onChange: (options: DiscoveryOptions) => void;
-  onClearCache?: () => void;
+  onClearCache: () => void;
   captures: Capture[];
   disabled?: boolean;
   ipVersionEnabled?: boolean;
 }
+
+const toggleSx = {
+  "& .MuiToggleButton-root": {
+    color: colors.text.secondary,
+    borderColor: colors.border.default,
+    textTransform: "none",
+    px: 2,
+    "&.Mui-selected": {
+      bgcolor: colors.accent.secondary,
+      color: colors.secondary,
+      borderColor: colors.secondary,
+      "&:hover": { bgcolor: colors.accent.secondary },
+    },
+  },
+};
 
 export const DiscoveryOptionsPanel = ({
   options,
@@ -52,22 +95,16 @@ export const DiscoveryOptionsPanel = ({
   ipVersionEnabled = true,
 }: DiscoveryOptionsPanelProps) => {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(() => {
-    return localStorage.getItem("b4_discovery_options_expanded") === "true";
-  });
+  const [expanded, setExpanded] = useState(
+    () => localStorage.getItem(EXPANDED_KEY) === "true",
+  );
 
   useEffect(() => {
-    localStorage.setItem("b4_discovery_options_expanded", String(expanded));
+    localStorage.setItem(EXPANDED_KEY, String(expanded));
   }, [expanded]);
 
   const tlsCaptures = captures.filter((c) => c.protocol === "tls");
-  const hasOptions =
-    options.skipDNS ||
-    options.skipCache ||
-    options.payloadFiles.length > 0 ||
-    options.validationTries > 1 ||
-    options.tlsVersion !== "auto" ||
-    (ipVersionEnabled && options.ipVersion !== "auto");
+  const summary = summarize(options, t, ipVersionEnabled);
 
   return (
     <Box
@@ -77,7 +114,6 @@ export const DiscoveryOptionsPanel = ({
         overflow: "hidden",
       }}
     >
-      {/* Header */}
       <Box
         onClick={() => setExpanded((e) => !e)}
         sx={{
@@ -91,18 +127,20 @@ export const DiscoveryOptionsPanel = ({
         }}
       >
         <Stack direction="row" alignItems="center" spacing={1}>
-          <FilterIcon sx={{ fontSize: 18, color: colors.text.secondary }} />
+          <CoreIcon sx={{ fontSize: 18, color: colors.text.secondary }} />
           <Typography variant="body2" sx={{ color: colors.text.secondary }}>
             {t("discovery.options.title")}
           </Typography>
-          {!expanded && hasOptions && (
+          {!expanded && (
             <B4Badge
-              label={getOptionsSummary(options, t, ipVersionEnabled)}
+              label={summary || t("discovery.options.defaults")}
               sx={{
                 height: 20,
                 fontSize: "0.7rem",
-                bgcolor: colors.accent.secondary,
-                color: colors.secondary,
+                bgcolor: summary
+                  ? colors.accent.secondary
+                  : colors.background.paper,
+                color: summary ? colors.secondary : colors.text.disabled,
               }}
             />
           )}
@@ -114,166 +152,129 @@ export const DiscoveryOptionsPanel = ({
         )}
       </Box>
 
-      {/* Content */}
       <Collapse in={expanded}>
-        <Paper
+        <Box
           sx={{
             p: 3,
-            bgcolor: colors.background.paper,
-            border: `1px solid ${colors.border.default}`,
-            display: "flex",
-            flexDirection: "column",
+            display: "grid",
+            gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+            gap: 3,
           }}
-          variant="outlined"
         >
-          <B4FormGroup label={t("discovery.options.title")} columns={2}>
+          <B4Switch
+            label={t("discovery.options.checkDns")}
+            description={t("discovery.options.checkDnsHint")}
+            checked={options.checkDns}
+            onChange={(checked) => onChange({ ...options, checkDns: checked })}
+            disabled={disabled}
+          />
+
+          <Box>
             <B4Switch
-              label={t("discovery.options.skipDns")}
-              checked={options.skipDNS}
-              onChange={(checked) => onChange({ ...options, skipDNS: checked })}
+              label={t("discovery.options.useCache")}
+              description={t("discovery.options.useCacheHint")}
+              checked={options.useCache}
+              onChange={(checked) =>
+                onChange({ ...options, useCache: checked })
+              }
               disabled={disabled}
             />
+            <Button
+              size="small"
+              onClick={onClearCache}
+              disabled={disabled}
+              sx={{ textTransform: "none", ml: "50px", mt: 0.5 }}
+            >
+              {t("discovery.options.forget")}
+            </Button>
+          </Box>
 
-            {/* Cache Controls */}
-            <Box>
-              <B4Switch
-                label={t("discovery.options.skipCache")}
-                checked={options.skipCache}
-                onChange={(checked) =>
-                  onChange({ ...options, skipCache: checked })
+          <B4Slider
+            label={t("discovery.options.validationTries")}
+            value={options.validationTries}
+            onChange={(value: number) =>
+              onChange({ ...options, validationTries: value })
+            }
+            min={1}
+            max={5}
+            step={1}
+            disabled={disabled}
+            helperText={t("discovery.options.validationTriesHint")}
+          />
+
+          <Box>
+            <Typography variant="body1" sx={{ mb: 0.5 }}>
+              {t("discovery.options.tlsVersion")}
+            </Typography>
+            <ToggleButtonGroup
+              value={options.tlsVersion}
+              exclusive
+              onChange={(_, value) => {
+                if (value !== null) {
+                  onChange({ ...options, tlsVersion: value as TLSVersion });
                 }
-                disabled={disabled}
-              />
-              <Stack
-                direction="row"
-                alignItems="center"
-                spacing={1}
-                sx={{ mt: 0.5 }}
-              >
-                <Typography variant="caption" color="text.secondary">
-                  {t("discovery.options.cacheHint")}
-                </Typography>
-                {onClearCache && (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={onClearCache}
-                    disabled={disabled}
-                  >
-                    {t("discovery.options.clearCache")}
-                  </Button>
-                )}
-              </Stack>
-            </Box>
+              }}
+              disabled={disabled}
+              size="small"
+              sx={toggleSx}
+            >
+              <ToggleButton value="auto">Auto</ToggleButton>
+              <ToggleButton value="tls12">TLS 1.2</ToggleButton>
+              <ToggleButton value="tls13">TLS 1.3</ToggleButton>
+            </ToggleButtonGroup>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ mt: 0.75, display: "block" }}
+            >
+              {t("discovery.options.tlsVersionHint")}
+            </Typography>
+          </Box>
 
-            {/* TLS Version */}
+          {ipVersionEnabled && (
             <Box>
-              <Typography variant="body1" sx={{ mb: 1 }}>
-                {t("discovery.options.tlsVersion")}
-              </Typography>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ mb: 1, display: "block" }}
-              >
-                {t("discovery.options.tlsVersionHint")}
+              <Typography variant="body1" sx={{ mb: 0.5 }}>
+                {t("discovery.options.ipVersion")}
               </Typography>
               <ToggleButtonGroup
-                value={options.tlsVersion}
+                value={options.ipVersion}
                 exclusive
                 onChange={(_, value) => {
                   if (value !== null) {
-                    onChange({ ...options, tlsVersion: value as TLSVersion });
+                    onChange({ ...options, ipVersion: value as IPVersion });
                   }
                 }}
                 disabled={disabled}
                 size="small"
-                sx={{
-                  "& .MuiToggleButton-root": {
-                    color: colors.text.secondary,
-                    borderColor: colors.border.default,
-                    textTransform: "none",
-                    px: 2,
-                    "&.Mui-selected": {
-                      bgcolor: colors.accent.secondary,
-                      color: colors.secondary,
-                      borderColor: colors.secondary,
-                      "&:hover": { bgcolor: colors.accent.secondary },
-                    },
-                  },
-                }}
+                sx={toggleSx}
               >
                 <ToggleButton value="auto">Auto</ToggleButton>
-                <ToggleButton value="tls12">TLS 1.2</ToggleButton>
-                <ToggleButton value="tls13">TLS 1.3</ToggleButton>
+                <ToggleButton value="ipv4">IPv4</ToggleButton>
+                <ToggleButton value="ipv6">IPv6</ToggleButton>
               </ToggleButtonGroup>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ mt: 0.75, display: "block" }}
+              >
+                {t("discovery.options.ipVersionHint")}
+              </Typography>
             </Box>
+          )}
 
-            {/* IP Version */}
-            {ipVersionEnabled && (
-              <Box>
-                <Typography variant="body1" sx={{ mb: 1 }}>
-                  {t("discovery.options.ipVersion")}
-                </Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ mb: 1, display: "block" }}
-                >
-                  {t("discovery.options.ipVersionHint")}
-                </Typography>
-                <ToggleButtonGroup
-                  value={options.ipVersion}
-                  exclusive
-                  onChange={(_, value) => {
-                    if (value !== null) {
-                      onChange({ ...options, ipVersion: value as IPVersion });
-                    }
-                  }}
-                  disabled={disabled}
-                  size="small"
-                  sx={{
-                    "& .MuiToggleButton-root": {
-                      color: colors.text.secondary,
-                      borderColor: colors.border.default,
-                      textTransform: "none",
-                      px: 2,
-                      "&.Mui-selected": {
-                        bgcolor: colors.accent.secondary,
-                        color: colors.secondary,
-                        borderColor: colors.secondary,
-                        "&:hover": { bgcolor: colors.accent.secondary },
-                      },
-                    },
-                  }}
-                >
-                  <ToggleButton value="auto">Auto</ToggleButton>
-                  <ToggleButton value="ipv4">IPv4</ToggleButton>
-                  <ToggleButton value="ipv6">IPv6</ToggleButton>
-                </ToggleButtonGroup>
-              </Box>
-            )}
-
-            {/* Custom Payloads */}
-            {tlsCaptures.length > 0 && (
-              <Box>
-                <Typography variant="body1" sx={{ mb: 1 }}>
-                  {t("discovery.options.customPayloads")}
-                </Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ mb: 1, display: "block" }}
-                >
-                  {t("discovery.options.customPayloadsHint")}
-                </Typography>
+          <Box>
+            <Typography variant="body1" sx={{ mb: 0.5 }}>
+              {t("discovery.options.payloads")}
+            </Typography>
+            {tlsCaptures.length > 0 ? (
+              <>
                 <Autocomplete
                   multiple
                   size="small"
                   options={tlsCaptures.map((c) => c.domain)}
                   value={options.payloadFiles}
-                  onChange={(_, newValue) =>
-                    onChange({ ...options, payloadFiles: newValue })
+                  onChange={(_, value) =>
+                    onChange({ ...options, payloadFiles: value })
                   }
                   disabled={disabled}
                   renderInput={(params) => (
@@ -302,67 +303,54 @@ export const DiscoveryOptionsPanel = ({
                     ))
                   }
                 />
-              </Box>
-            )}
-            {/* Validation Tries */}
-            <Box>
-              <B4Slider
-                label={t("discovery.options.validationTries")}
-                value={options.validationTries}
-                onChange={(value: number) =>
-                  onChange({ ...options, validationTries: value })
-                }
-                min={1}
-                max={5}
-                step={1}
-                helperText={t("discovery.options.validationTriesHint")}
-              />
-            </Box>
-
-            {tlsCaptures.length === 0 && (
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ mt: 0.75, display: "block" }}
+                >
+                  {t("discovery.options.payloadsHint")}
+                </Typography>
+              </>
+            ) : (
               <Typography variant="caption" color="text.secondary">
                 {t("discovery.options.noPayloads")}{" "}
-                <a
-                  href="/settings/payloads"
+                <RouterLink
+                  to="/settings/payloads"
                   style={{ color: colors.secondary }}
                 >
-                  {t("discovery.options.capturePayloads")}
-                </a>{" "}
-                {t("discovery.options.noPayloadsSuffix")}
+                  {t("core.nav.settings")}
+                </RouterLink>
               </Typography>
             )}
-          </B4FormGroup>
-        </Paper>
+          </Box>
+        </Box>
       </Collapse>
     </Box>
   );
 };
 
-function getOptionsSummary(
+function summarize(
   options: DiscoveryOptions,
   t: (key: string, opts?: Record<string, unknown>) => string,
   ipVersionEnabled: boolean,
 ): string {
   const parts: string[] = [];
-  if (options.skipDNS) parts.push(t("discovery.options.summarySkipDns"));
-  if (options.skipCache) parts.push(t("discovery.options.summarySkipCache"));
+  if (!options.checkDns) parts.push(t("discovery.options.summaryNoDns"));
+  if (!options.useCache) parts.push(t("discovery.options.summaryNoCache"));
   if (options.tlsVersion === "tls12") parts.push("TLS 1.2");
   if (options.tlsVersion === "tls13") parts.push("TLS 1.3");
   if (ipVersionEnabled && options.ipVersion === "ipv4") parts.push("IPv4");
   if (ipVersionEnabled && options.ipVersion === "ipv6") parts.push("IPv6");
-  if (options.validationTries > 1)
+  if (options.validationTries > 1) {
     parts.push(
-      t("discovery.options.summaryTries", { count: options.validationTries }),
+      t("discovery.options.tries", { count: options.validationTries }),
     );
+  }
   if (options.payloadFiles.length > 0) {
     parts.push(
-      options.payloadFiles.length > 1
-        ? t("discovery.options.summaryPayloads_plural", {
-            count: options.payloadFiles.length,
-          })
-        : t("discovery.options.summaryPayloads", {
-            count: options.payloadFiles.length,
-          }),
+      t("discovery.options.summaryPayloads", {
+        count: options.payloadFiles.length,
+      }),
     );
   }
   return parts.join(", ");

@@ -233,6 +233,7 @@ func (ds *DiscoverySuite) recordConfirmation(domain, presetName string, passes i
 		dr.Confirmed = passes
 		dr.ConfirmTries = confirmTries
 	}
+	ds.refreshOutcomes(false)
 }
 
 func (ds *DiscoverySuite) demoteWinner(presetName string, domains []string, reason string) {
@@ -250,10 +251,12 @@ func (ds *DiscoverySuite) demoteWinner(presetName string, domains []string, reas
 			r.Error = fmt.Sprintf("not reproducible: %s", reason)
 			r.Confirmed = 0
 			r.ConfirmTries = 0
+			r.Set = nil
 		}
 		if dr.BestPreset == presetName {
 			dr.Confirmed = 0
 			dr.ConfirmTries = 0
 		}
 	}
+	ds.refreshOutcomes(false)
 }
