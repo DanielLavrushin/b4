@@ -50,13 +50,6 @@ func (s *SecretStore) load() {
 	}
 }
 
-func (s *SecretStore) save() error {
-	s.mu.RLock()
-	data := s.data
-	s.mu.RUnlock()
-	return s.persist(data)
-}
-
 func (s *SecretStore) persist(data map[string]string) error {
 	raw, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {

@@ -6,26 +6,6 @@
   "files.eol": "\n",
   "explorer.fileNesting.enabled": true,
   "explorer.fileNesting.expand": false,
-  "VsCodeTaskButtons.showCounter": true,
-  "VsCodeTaskButtons.tasks": [
-    {
-      "label": "$(build) make",
-      "tasks": [
-        {
-          "task": "build-amd64",
-          "label": "amd64"
-        },
-        {
-          "task": "build-arm64",
-          "label": "arm64"
-        },
-        {
-          "task": "build-ui",
-          "label": "frontend"
-        }
-      ]
-    }
-  ],
   "go.coverOnSave": false,
   "go.coverageDecorator": {
     "type": "highlight",
@@ -140,19 +120,5 @@
   },
   "[dotenv]": {
     "editor.defaultFormatter": "foxundermoon.shell-format"
-  },
-  "favorites.resources": [
-    {
-      "filePath": "src/http/ui/src/models/config.ts",
-      "group": "Default"
-    },
-    {
-      "filePath": "src/config/types.go",
-      "group": "Default"
-    },
-    {
-      "filePath": "src/config/config.go",
-      "group": "Default"
-    }
-  ]
+  }
 }

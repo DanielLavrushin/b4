@@ -70,6 +70,7 @@ type routeBackend interface {
 	ensureBase() error
 	ensureIPSet(name string, v6 bool) error
 	addElements(setName string, ips []string, ttlSec int)
+	delElements(setName string, ips []string)
 	ensureChain(chain string, isMangle bool) error
 	flushChain(chain string, isMangle bool)
 	deleteChain(chain string, isMangle bool)
@@ -103,6 +104,11 @@ type routeChainSnapshot struct {
 
 const routeMaxLearnedHosts = 256
 
+type routeStaticEntries struct {
+	v4 []string
+	v6 []string
+}
+
 var (
 	routeMu             sync.Mutex
 	routeRuleCache      = make(map[string]routeState)
@@ -113,6 +119,7 @@ var (
 	routeLearnedHosts   = make(map[string]map[string]time.Time)
 	routeHostResolvedAt = make(map[string]time.Time)
 	routeOwnedAddrs     = make(map[string]bool)
+	routeStaticApplied  = make(map[string]routeStaticEntries)
 	routeJumpOrderKey   string
 )
 
@@ -476,6 +483,7 @@ func routeDropSets(be routeBackend, st routeState, keepSets bool) {
 	if keepSets {
 		return
 	}
+	delete(routeStaticApplied, st.setID)
 	be.flushIPSet(st.setV4)
 	be.destroyIPSet(st.setV4)
 	be.flushIPSet(st.setV6)
@@ -653,6 +661,7 @@ func RoutingClearAll() {
 	routeLearnedHosts = make(map[string]map[string]time.Time)
 	routeHostResolvedAt = make(map[string]time.Time)
 	routeOwnedAddrs = make(map[string]bool)
+	routeStaticApplied = make(map[string]routeStaticEntries)
 	routeEgressLoopWarned = sync.Map{}
 }
 
@@ -1036,13 +1045,7 @@ func RoutingSyncConfig(cfg *config.Config) {
 			newRoutingSets = append(newRoutingSets, set)
 		}
 
-		staticV4, staticV6 := routeCollectEntries(set)
-		if cur.ipv4 && len(staticV4) > 0 {
-			be.addElements(cur.setV4, staticV4, 0)
-		}
-		if cur.ipv6 && len(staticV6) > 0 {
-			be.addElements(cur.setV6, staticV6, 0)
-		}
+		routeApplyStaticEntries(be, set, cur)
 	}
 
 	routeIfaceAuto = make(map[string]routeState)
@@ -1646,15 +1649,6 @@ func routeAddEgressRules(be routeBackend, st routeState, ipv4, ipv6 bool) {
 	}
 	if ipv6 {
 		emit(true, st.setV6)
-	}
-}
-
-func routeAddMasqueradeRules(be routeBackend, iface, chain string, mark uint32, ipv4, ipv6 bool) {
-	if ipv4 {
-		be.addMasqueradeRule(chain, mark, iface, false)
-	}
-	if ipv6 {
-		be.addMasqueradeRule(chain, mark, iface, true)
 	}
 }
 
@@ -2529,11 +2523,49 @@ func routeForgetSetLearnState(setID string) {
 }
 
 func routeRestoreStaticEntries(be routeBackend, set *config.SetConfig, st routeState) {
-	staticV4, staticV6 := routeCollectEntries(set)
-	if st.ipv4 && len(staticV4) > 0 {
-		be.addElements(st.setV4, staticV4, 0)
+	routeApplyStaticEntries(be, set, st)
+}
+
+func routeEntriesGone(prev, cur []string) []string {
+	if len(prev) == 0 {
+		return nil
 	}
-	if st.ipv6 && len(staticV6) > 0 {
-		be.addElements(st.setV6, staticV6, 0)
+	keep := make(map[string]struct{}, len(cur))
+	for _, entry := range cur {
+		keep[entry] = struct{}{}
+	}
+	var gone []string
+	for _, entry := range prev {
+		if _, ok := keep[entry]; !ok {
+			gone = append(gone, entry)
+		}
+	}
+	return gone
+}
+
+func routeApplyStaticEntries(be routeBackend, set *config.SetConfig, st routeState) {
+	staticV4, staticV6 := routeCollectEntries(set)
+	if !st.ipv4 {
+		staticV4 = nil
+	}
+	if !st.ipv6 {
+		staticV6 = nil
+	}
+	prev := routeStaticApplied[st.setID]
+	cur := routeStaticEntries{v4: expandZeroPrefix(staticV4), v6: expandZeroPrefix(staticV6)}
+	routeReconcileStaticFamily(be, st.setID, st.setV4, prev.v4, cur.v4, staticV4)
+	routeReconcileStaticFamily(be, st.setID, st.setV6, prev.v6, cur.v6, staticV6)
+	routeStaticApplied[st.setID] = cur
+}
+
+func routeReconcileStaticFamily(be routeBackend, setID, setName string, prev, cur, raw []string) {
+	if gone := routeEntriesGone(prev, cur); len(gone) > 0 {
+		be.delElements(setName, gone)
+		for _, entry := range gone {
+			delete(routeLearnLast, setID+"|"+entry)
+		}
+	}
+	if len(raw) > 0 {
+		be.addElements(setName, raw, 0)
 	}
 }

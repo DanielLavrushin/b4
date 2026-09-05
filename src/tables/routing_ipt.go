@@ -90,6 +90,23 @@ func (b *routeIptBackend) addElements(setName string, ips []string, ttlSec int) 
 	}
 }
 
+func (b *routeIptBackend) delElements(setName string, ips []string) {
+	if len(ips) == 0 || !hasBinary("ipset") {
+		return
+	}
+	var sb strings.Builder
+	sb.Grow(len(ips) * (len(setName) + 24))
+	for _, ip := range ips {
+		fmt.Fprintf(&sb, "del %s %s\n", setName, ip)
+	}
+	if err := runStdin(sb.String(), "ipset", "restore", "-exist"); err == nil {
+		return
+	}
+	for _, ip := range ips {
+		runLogged("routing: ipset del "+ip, "ipset", "del", setName, ip, "-exist")
+	}
+}
+
 func (b *routeIptBackend) ensureChain(chain string, isMangle bool) error {
 	table := iptTable(isMangle)
 	ipt4 := b.ipt4()
@@ -353,25 +370,6 @@ func (b *routeIptBackend) addInjectedMarkRule(chain string, v6 bool, setName str
 		runLogged("routing: add injected mark rule "+chain,
 			append([]string{cmd}, routeIptInjectedMarkArgs(chain, setName, mark, queueMark, args)...)...)
 	}
-}
-
-func iptCaptureJumpIndex(cmd string) (int, bool) {
-	out, err := run(cmd, "-w", "-t", "mangle", "-L", "PREROUTING", "--line-numbers", "-n")
-	if err != nil {
-		return 0, false
-	}
-	for _, line := range strings.Split(out, "\n") {
-		f := strings.Fields(line)
-		if len(f) < 2 || f[1] != captureChainPre {
-			continue
-		}
-		n, err := strconv.Atoi(f[0])
-		if err != nil || n <= 0 {
-			continue
-		}
-		return n, true
-	}
-	return 0, true
 }
 
 func iptPreJumpsBelowCapture(cmd string) bool {

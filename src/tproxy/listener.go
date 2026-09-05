@@ -162,7 +162,7 @@ func (l *Listener) Start(parent context.Context) error {
 
 	l.ctx, l.cancel = context.WithCancel(parent)
 
-	lnV4, err := listenTransparent(l.ctx, "tcp4", addr4, false)
+	lnV4, err := listenTransparent(l.ctx, "tcp4", addr4, false, l.Upstream.BypassMark)
 	if err != nil {
 		l.cancel()
 		return fmt.Errorf("tproxy v4 listen %s: %w", addr4, err)
@@ -175,7 +175,7 @@ func (l *Listener) Start(parent context.Context) error {
 		l.startUDP(addr4, addr6)
 	}
 
-	lnV6, err := listenTransparent(l.ctx, "tcp6", addr6, true)
+	lnV6, err := listenTransparent(l.ctx, "tcp6", addr6, true, l.Upstream.BypassMark)
 	if err != nil {
 		log.Tracef("tproxy: v6 listener disabled for set %q: %v", l.SetName, err)
 		return nil
@@ -187,7 +187,16 @@ func (l *Listener) Start(parent context.Context) error {
 	return nil
 }
 
-func listenTransparent(ctx context.Context, network, addr string, v6 bool) (net.Listener, error) {
+func setSocketMark(fd int, mark uint32) {
+	if mark == 0 {
+		return
+	}
+	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_MARK, int(mark)); err != nil {
+		log.Tracef("tproxy: SO_MARK 0x%x not set on a listener socket: %v", mark, err)
+	}
+}
+
+func listenTransparent(ctx context.Context, network, addr string, v6 bool, mark uint32) (net.Listener, error) {
 	lc := net.ListenConfig{
 		Control: func(network, address string, c syscall.RawConn) error {
 			var ctlErr error
@@ -196,6 +205,7 @@ func listenTransparent(ctx context.Context, network, addr string, v6 bool) (net.
 					ctlErr = fmt.Errorf("set SO_REUSEADDR: %w", e)
 					return
 				}
+				setSocketMark(int(fd), mark)
 				if v6 {
 					if e := unix.SetsockoptInt(int(fd), unix.IPPROTO_IPV6, unix.IPV6_V6ONLY, 1); e != nil {
 						ctlErr = fmt.Errorf("set IPV6_V6ONLY: %w", e)
