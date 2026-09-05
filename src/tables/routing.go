@@ -2545,16 +2545,16 @@ func routeEntriesGone(prev, cur []string) []string {
 
 func routeApplyStaticEntries(be routeBackend, set *config.SetConfig, st routeState) {
 	staticV4, staticV6 := routeCollectEntries(set)
+	if !st.ipv4 {
+		staticV4 = nil
+	}
+	if !st.ipv6 {
+		staticV6 = nil
+	}
 	prev := routeStaticApplied[st.setID]
-	cur := routeStaticEntries{}
-	if st.ipv4 {
-		cur.v4 = expandZeroPrefix(staticV4)
-		routeReconcileStaticFamily(be, st.setID, st.setV4, prev.v4, cur.v4, staticV4)
-	}
-	if st.ipv6 {
-		cur.v6 = expandZeroPrefix(staticV6)
-		routeReconcileStaticFamily(be, st.setID, st.setV6, prev.v6, cur.v6, staticV6)
-	}
+	cur := routeStaticEntries{v4: expandZeroPrefix(staticV4), v6: expandZeroPrefix(staticV6)}
+	routeReconcileStaticFamily(be, st.setID, st.setV4, prev.v4, cur.v4, staticV4)
+	routeReconcileStaticFamily(be, st.setID, st.setV6, prev.v6, cur.v6, staticV6)
 	routeStaticApplied[st.setID] = cur
 }
 

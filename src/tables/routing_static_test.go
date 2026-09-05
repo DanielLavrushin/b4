@@ -328,3 +328,88 @@ func TestNftDelElementsTargetsTheIntervalSetAndFallsBackPerElement(t *testing.T)
 		}
 	}
 }
+
+func TestRoutingSyncConfig_DisablingAFamilyDeletesItsStaticEntries(t *testing.T) {
+	if !hasBinary("ip") {
+		t.Skip("needs the ip binary")
+	}
+	staticResetGlobals(t)
+
+	set := staticTestSet(config.RoutingModeInterface, []string{"203.0.113.9", "2001:db8::7"})
+	setV4, setV6 := routeBuildSetNames(set.Id)
+
+	var added, deleted []staticCall
+	routeEngine = staticSyncBackend(&added, &deleted)
+	sync := func(ipv6 bool) {
+		cfg := familyTestConfig(true, ipv6)
+		cfg.Sets = []*config.SetConfig{set}
+		RoutingSyncConfig(cfg)
+	}
+	deletesFor := func(name string) []string {
+		var out []string
+		for _, d := range deleted {
+			if d.set == name {
+				out = append(out, d.ips...)
+			}
+		}
+		return out
+	}
+
+	sync(true)
+	if len(deleted) != 0 {
+		t.Fatalf("the first sync has nothing to delete: %+v", deleted)
+	}
+
+	sync(false)
+	if got := deletesFor(setV6); !reflect.DeepEqual(got, []string{"2001:db8::7"}) {
+		t.Errorf("turning IPv6 off keeps the v6 set, so its static entries must be taken out while b4 still remembers them, got %v", got)
+	}
+	if got := deletesFor(setV4); len(got) != 0 {
+		t.Errorf("the IPv4 family stayed on, nothing of its should be deleted: %v", got)
+	}
+	if got := routeStaticApplied[set.Id].v6; len(got) != 0 {
+		t.Errorf("the v6 snapshot must be empty while the family is off, got %v", got)
+	}
+
+	set.Targets.IPs = []string{"203.0.113.9"}
+	set.Targets.IpsToMatch = []string{"203.0.113.9"}
+	deleted = nil
+	sync(false)
+	if len(deleted) != 0 {
+		t.Errorf("removing the v6 entry while IPv6 is off has nothing left to delete: %+v", deleted)
+	}
+
+	added = nil
+	sync(true)
+	for _, a := range added {
+		if a.set == setV6 {
+			t.Errorf("the removed v6 entry came back when IPv6 was turned on again: %+v", a)
+		}
+	}
+	if got := deletesFor(setV6); len(got) != 0 {
+		t.Errorf("nothing should be deleted on re-enable, got %v", got)
+	}
+}
+
+func TestRoutingSyncConfig_AFamilyThatWasNeverOnIsNeverTouched(t *testing.T) {
+	if !hasBinary("ip") {
+		t.Skip("needs the ip binary")
+	}
+	staticResetGlobals(t)
+
+	set := staticTestSet(config.RoutingModeProxy, []string{"203.0.113.9", "2001:db8::7"})
+	_, setV6 := routeBuildSetNames(set.Id)
+
+	var added, deleted []staticCall
+	routeEngine = staticSyncBackend(&added, &deleted)
+	cfg := familyTestConfig(true, false)
+	cfg.Sets = []*config.SetConfig{set}
+	RoutingSyncConfig(cfg)
+	RoutingSyncConfig(cfg)
+
+	for _, c := range append(added, deleted...) {
+		if c.set == setV6 {
+			t.Errorf("with IPv6 off from the start the v6 set does not exist, so nothing may be pushed into or deleted from it: %+v", c)
+		}
+	}
+}

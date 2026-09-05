@@ -42,6 +42,7 @@ func netnsStartDevice(t *testing.T) *netnsDevice {
 	}
 	_, _ = run("ip", "link", "del", netnsDevLink)
 	netnsRun(t, "ip", "link", "add", netnsDevLink, "type", "veth", "peer", "name", netnsDevPeer)
+	t.Cleanup(func() { _, _ = run("ip", "link", "del", netnsDevLink) })
 	netnsRun(t, "ip", "link", "set", netnsDevLink, "up")
 	netnsRun(t, "ip", "addr", "add", netnsDevRouter+"/24", "dev", netnsDevLink)
 	mac := netnsLinkMAC(t, netnsDevPeer)
@@ -54,7 +55,6 @@ func netnsStartDevice(t *testing.T) *netnsDevice {
 	t.Cleanup(func() {
 		_ = cmd.Process.Kill()
 		_, _ = cmd.Process.Wait()
-		_, _ = run("ip", "link", "del", netnsDevLink)
 	})
 
 	self, _ := os.Readlink("/proc/self/ns/net")
