@@ -2141,7 +2141,7 @@
       "sitesEmpty": "No sites added. The default list of {{count}} sites will be checked.",
       "fillFrom": "Fill from:",
       "fillDefault": "default list ({{count}})",
-      "fillSets": "my sets",
+      "fillSets": "domains from my sets ({{count}})",
       "clear": "clear",
       "whatToCheck": "What to check",
       "advanced": "Advanced",
@@ -2156,11 +2156,15 @@
       "sniSearchDesc": "For each network that drops long connections, try known whitelisted names as the SNI",
       "defaultListNote": "No sites of your own were added, so the default list of {{count}} sites will be checked.",
       "run": "Run check",
-      "updateLists": "Update target lists",
-      "listsDate": "lists from {{date}}",
       "listsReset": "back to the built-in lists ({{date}})",
       "updateListsDone": "Target lists updated from the dpi-detector project",
-      "updateListsFailed": "Could not update the target lists: {{error}}"
+      "updateListsFailed": "Could not update the target lists: {{error}}",
+      "fillSetsHint": "Domains listed by hand under Targets in the enabled sets. Geosite categories are not used.",
+      "fillSetsNone": "The enabled sets list no domains of their own under Targets. Geosite categories are not used.",
+      "listsInfo": "The built-in sites, hosting targets and resolvers come from the dpi-detector project: {{sites}} sites, {{targets}} targets, {{resolvers}} resolvers, dated {{date}}.",
+      "listsUpdate": "Fetch the project's current lists",
+      "listsUpdating": "Fetching...",
+      "listsUpdateHint": "Downloads the lists from github.com/Runnin4ik/dpi-detector and keeps them next to the config, so dead sites and addresses can be replaced without a new b4 version."
     },
     "scopes": {
       "sites": {

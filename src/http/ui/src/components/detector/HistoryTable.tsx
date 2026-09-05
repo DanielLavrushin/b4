@@ -1,4 +1,5 @@
-import { Box, Button, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@mui/material";
+import { Box, Button, IconButton, Table, TableBody, TableCell, TableHead, TableRow, Tooltip, Typography } from "@mui/material";
+import { CopyIcon, DeleteIcon } from "@b4.icons";
 import { useTranslation } from "react-i18next";
 import { colors } from "@design";
 import type { DetectorSuite } from "@models/detector";
@@ -52,17 +53,34 @@ export const HistoryTable = ({ entries, currentId, onOpen, onCopy, onDelete }: H
             <TableRow key={e.id} sx={{ "&:last-child td": { border: 0 }, bgcolor: e.id === currentId ? colors.accent.secondaryHover : undefined }}>
               <TableCell sx={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{new Date(e.start_time).toLocaleString()}</TableCell>
               <TableCell sx={{ whiteSpace: "nowrap", color: colors.text.secondary }}>
-                {[e.sites ? t("detector.history.sites", { count: e.sites.sites.length }) : "", ...e.options.scopes.filter((s) => s !== "sites").map((s) => t(`detector.scopes.${s}.name`))].filter(Boolean).join(" · ")}
+                {[e.sites ? t("detector.history.sites", { count: (e.sites.sites ?? []).length }) : "", ...(e.options.scopes ?? []).filter((s) => s !== "sites").map((s) => t(`detector.scopes.${s}.name`))].filter(Boolean).join(" · ")}
               </TableCell>
               <TableCell sx={{ color: colors.text.secondary, fontSize: "0.8rem" }}>{historySummary(e, t)}</TableCell>
               <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
-                {e.id === currentId ? (
-                  <Typography variant="caption" sx={{ color: colors.text.disabled, mr: 1 }}>{t("detector.history.thisRun")}</Typography>
-                ) : (
-                  <Button size="small" onClick={() => onOpen(e)}>{t("detector.history.open")}</Button>
-                )}
-                <Button size="small" onClick={() => onCopy(e)}>{t("detector.verdict.copyReport")}</Button>
-                <Button size="small" color="error" onClick={() => onDelete(e.id)}>{t("core.delete")}</Button>
+                <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+                  {e.id === currentId ? (
+                    <Typography variant="caption" sx={{ color: colors.text.disabled, mr: 1 }}>{t("detector.history.thisRun")}</Typography>
+                  ) : (
+                    <Button
+                      size="small"
+                      variant="contained"
+                      onClick={() => onOpen(e)}
+                      sx={{ bgcolor: colors.secondary, color: colors.background.default, "&:hover": { bgcolor: colors.primary }, whiteSpace: "nowrap" }}
+                    >
+                      {t("detector.history.open")}
+                    </Button>
+                  )}
+                  <Tooltip title={t("detector.verdict.copyReport")}>
+                    <IconButton size="small" onClick={() => onCopy(e)} sx={{ color: colors.text.secondary }}>
+                      <CopyIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title={t("core.history.removeFromHistory")}>
+                    <IconButton size="small" onClick={() => onDelete(e.id)} sx={{ color: colors.text.secondary }}>
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
               </TableCell>
             </TableRow>
           ))}

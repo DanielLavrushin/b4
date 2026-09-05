@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Box,
   Button,
@@ -7,14 +7,15 @@ import {
   Stack,
   ToggleButton,
   ToggleButtonGroup,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "react-router";
-import { StartIcon, RefreshIcon, ExpandIcon, CollapseIcon } from "@b4.icons";
+import { StartIcon, ExpandIcon, CollapseIcon } from "@b4.icons";
 import { colors } from "@design";
 import { B4TextField, B4ChipList, B4PlusButton, B4Switch, B4Alert } from "@b4.elements";
-import { setsApi } from "@api/sets";
+import type { B4SetConfig } from "@models/config";
 import type { DetectorLists, DetectorOptions, DetectorScope, FetchMode, IPVersion } from "@models/detector";
 
 const URL_SEPARATORS = /\s+|,(?=\s|$)/;
@@ -61,6 +62,7 @@ const extractDomain = (url: string): string => {
 };
 
 interface SetupPanelProps {
+  sets: B4SetConfig[];
   lists: DetectorLists | null;
   listsBusy: boolean;
   busy: boolean;
@@ -69,14 +71,24 @@ interface SetupPanelProps {
   onResetLists: () => void;
 }
 
-export const SetupPanel = ({ lists, listsBusy, busy, onStart, onUpdateLists, onResetLists }: SetupPanelProps) => {
+export const SetupPanel = ({ sets, lists, listsBusy, busy, onStart, onUpdateLists, onResetLists }: SetupPanelProps) => {
   const { t } = useTranslation();
   const location = useLocation();
   const [sites, setSites] = useState<string[]>(() => loadJSON<{ sites: string[] }>(SITES_KEY, { sites: [] }).sites);
   const [input, setInput] = useState("");
   const [options, setOptions] = useState<StoredOptions>(() => loadJSON(OPTIONS_KEY, defaultOptions));
   const [advanced, setAdvanced] = useState(false);
-  const [setsBusy, setSetsBusy] = useState(false);
+
+  const setDomains = useMemo(() => {
+    const domains = new Set<string>();
+    for (const s of sets) {
+      if (!s.enabled) continue;
+      for (const d of s.targets?.sni_domains ?? []) {
+        if (d && !d.startsWith("*") && !d.includes("/")) domains.add(d);
+      }
+    }
+    return [...domains].slice(0, 200);
+  }, [sets]);
 
   useEffect(() => {
     localStorage.setItem(SITES_KEY, JSON.stringify({ sites }));
@@ -114,22 +126,9 @@ export const SetupPanel = ({ lists, listsBusy, busy, onStart, onUpdateLists, onR
     }
   }, [location.state, addSites]);
 
-  const fillFromSets = async () => {
-    setSetsBusy(true);
-    try {
-      const all = await setsApi.getSets();
-      const domains = new Set<string>();
-      for (const s of all ?? []) {
-        if (!s.enabled) continue;
-        for (const d of s.targets?.sni_domains ?? []) {
-          if (d && !d.startsWith("*") && !d.includes("/")) domains.add(d);
-        }
-      }
-      setSites([]);
-      addSites([...domains].slice(0, 200).join("\n"));
-    } finally {
-      setSetsBusy(false);
-    }
+  const fillFromSets = () => {
+    setSites([]);
+    addSites(setDomains.join("\n"));
   };
 
   const toggleScope = (scope: DetectorScope) =>
@@ -211,9 +210,13 @@ export const SetupPanel = ({ lists, listsBusy, busy, onStart, onUpdateLists, onR
           <Button size="small" disabled={busy || !lists} onClick={() => { setSites([]); addSites((lists?.sites ?? []).join("\n")); }}>
             {t("detector.setup.fillDefault", { count: defaultCount })}
           </Button>
-          <Button size="small" disabled={busy || setsBusy} onClick={() => void fillFromSets()}>
-            {t("detector.setup.fillSets")}
-          </Button>
+          <Tooltip title={setDomains.length === 0 ? t("detector.setup.fillSetsNone") : t("detector.setup.fillSetsHint")}>
+            <span>
+              <Button size="small" disabled={busy || setDomains.length === 0} onClick={fillFromSets}>
+                {t("detector.setup.fillSets", { count: setDomains.length })}
+              </Button>
+            </span>
+          </Tooltip>
           <Button size="small" disabled={busy || sites.length === 0} onClick={() => setSites([])}>
             {t("detector.setup.clear")}
           </Button>
@@ -309,27 +312,30 @@ export const SetupPanel = ({ lists, listsBusy, busy, onStart, onUpdateLists, onR
         <B4Alert severity="info">{t("detector.setup.defaultListNote", { count: defaultCount })}</B4Alert>
       )}
 
-      <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
+      <Box>
         <Button variant="contained" startIcon={<StartIcon />} onClick={start} disabled={!canStart}>
           {t("detector.setup.run")}
         </Button>
-        <Button variant="outlined" size="small" startIcon={<RefreshIcon />} disabled={listsBusy || busy} onClick={onUpdateLists}>
-          {t("detector.setup.updateLists")}
-        </Button>
-        {lists && (
-          <Typography variant="caption" sx={{ color: colors.text.secondary }}>
-            {t("detector.setup.listsDate", { date: lists.lists_date })}
-            {lists.custom && (
-              <>
-                {" · "}
-                <Box component="span" onClick={onResetLists} sx={{ color: colors.secondary, cursor: "pointer" }}>
-                  {t("detector.setup.listsReset", { date: lists.embedded_date })}
-                </Box>
-              </>
-            )}
-          </Typography>
-        )}
-      </Stack>
+      </Box>
+
+      {lists && (
+        <Typography variant="caption" sx={{ color: colors.text.disabled, maxWidth: "90ch" }}>
+          {t("detector.setup.listsInfo", { sites: lists.site_count, targets: lists.tcp_targets, resolvers: lists.dns_servers, date: lists.lists_date })}{" "}
+          <Tooltip title={t("detector.setup.listsUpdateHint")}>
+            <Box component="span" onClick={() => !listsBusy && !busy && onUpdateLists()} sx={{ color: colors.secondary, cursor: listsBusy ? "wait" : "pointer" }}>
+              {listsBusy ? t("detector.setup.listsUpdating") : t("detector.setup.listsUpdate")}
+            </Box>
+          </Tooltip>
+          {lists.custom && (
+            <>
+              {" · "}
+              <Box component="span" onClick={onResetLists} sx={{ color: colors.secondary, cursor: "pointer" }}>
+                {t("detector.setup.listsReset", { date: lists.embedded_date })}
+              </Box>
+            </>
+          )}
+        </Typography>
+      )}
     </Stack>
   );
 };

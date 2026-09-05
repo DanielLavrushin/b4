@@ -20,7 +20,7 @@ export function buildReport(suite: DetectorSuite, t: TFunction): string {
   }
   out.push(
     line([
-      `scopes: ${suite.options.scopes.join(", ")}`,
+      `scopes: ${(suite.options.scopes ?? []).join(", ")}`,
       `mode: ${suite.options.fetch_mode ?? "both"}`,
       `${suite.options.ip_version ?? "ipv4"}`,
       suite.lists_date && `lists ${suite.lists_date}`,
@@ -35,7 +35,7 @@ export function buildReport(suite: DetectorSuite, t: TFunction): string {
     out.push("");
     out.push("| Site | Direct | Through b4 | Outcome | Detail |");
     out.push("|---|---|---|---|---|");
-    for (const s of suite.sites.sites) {
+    for (const s of suite.sites.sites ?? []) {
       const d = s.direct;
       const b = s.through_b4;
       const detail = [
@@ -68,7 +68,7 @@ export function buildReport(suite: DetectorSuite, t: TFunction): string {
     out.push("|---|---|---|---|---|---|");
     const cell = (p?: { status: string; latency_ms?: number }) =>
       !p ? "-" : p.status === "ok" ? `${p.latency_ms ?? 0} ms` : p.status;
-    for (const p of d.providers) {
+    for (const p of d.providers ?? []) {
       const h = p.udp?.honesty ?? p.doh?.honesty ?? p.dot?.honesty ?? "-";
       const by = p.udp?.answered_by
         ? line([
@@ -85,11 +85,11 @@ export function buildReport(suite: DetectorSuite, t: TFunction): string {
 
   if (suite.hosting) {
     const h = suite.hosting;
-    out.push(`## Hosting and CDN: ${h.dropped}/${h.total} targets dropped, ${h.dropped_groups} of ${h.groups.length} networks affected`);
+    out.push(`## Hosting and CDN: ${h.dropped}/${h.total} targets dropped, ${h.dropped_groups} of ${(h.groups ?? []).length} networks affected`);
     out.push("");
     out.push("| Network | Status | Targets | Drops at | Working SNI |");
     out.push("|---|---|---|---|---|");
-    for (const g of h.groups) {
+    for (const g of h.groups ?? []) {
       const drop = g.dropped
         ? g.drop_min_kb === g.drop_max_kb
           ? `${g.drop_min_kb} KB`

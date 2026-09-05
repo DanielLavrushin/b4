@@ -137,7 +137,6 @@ func (api *API) handleStartDetector(w http.ResponseWriter, r *http.Request) {
 // @Tags Detector
 // @Produce json
 // @Success 200 {object} object
-// @Failure 404 {string} string
 // @Security BearerAuth
 // @Router /detector/current [get]
 func (api *API) handleDetectorCurrent(w http.ResponseWriter, r *http.Request) {
@@ -145,12 +144,12 @@ func (api *API) handleDetectorCurrent(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	setJsonHeader(w)
 	suite := detector.RunningSuite()
 	if suite == nil {
-		http.Error(w, "No detector run in progress", http.StatusNotFound)
+		w.Write([]byte("null"))
 		return
 	}
-	setJsonHeader(w)
 	json.NewEncoder(w).Encode(suite)
 }
 

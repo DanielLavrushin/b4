@@ -46,7 +46,7 @@ The **Hosting and CDN** table has a row per network with the number of targets t
 
 ## Target lists
 
-The lists of sites, hosting targets, whitelisted SNI names and resolvers are embedded in the service and dated. **Update target lists** downloads the current lists from the dpi-detector project and keeps them next to the config; the date under the button says which lists are in use, and the built-in copy can be restored from there.
+The lists of sites, hosting targets, whitelisted SNI names and resolvers are embedded in the service and dated; the line under the Run button says where they come from and how old they are. **Fetch the project's current lists** downloads them from the dpi-detector repository and keeps them next to the config, so sites and addresses that have died since the release are replaced without a new b4 version. The built-in copy can be restored from the same line.
 
 ## History
 

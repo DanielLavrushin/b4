@@ -37,7 +37,7 @@ export const TelegramPanel = ({ result }: { result: TelegramResult }) => {
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
           <StatusChip label={t("detector.telegram.dcReachable", { ok: result.dc_reachable, total: result.dc_total })} color={dcColor} />
           <Typography variant="body2" sx={{ color: colors.text.secondary }}>
-            {result.dc_pings.map((p) => `DC${p.dc} ${p.ok ? `${p.rtt_ms} ms` : t("detector.telegram.dcDown")}`).join(" · ")}
+            {(result.dc_pings ?? []).map((p) => `DC${p.dc} ${p.ok ? `${p.rtt_ms} ms` : t("detector.telegram.dcDown")}`).join(" · ")}
           </Typography>
         </Stack>
       </Stack>

@@ -9,7 +9,7 @@ import type {
 export const detectorApi = {
   start: (options: DetectorOptions) =>
     apiPost<DetectorStartResponse>("/api/detector/start", options),
-  current: () => apiGet<DetectorSuite>("/api/detector/current"),
+  current: () => apiGet<DetectorSuite | null>("/api/detector/current"),
   status: (id: string) => apiGet<DetectorSuite>(`/api/detector/status/${id}`),
   cancel: (id: string) => apiDelete(`/api/detector/cancel/${id}`),
   history: () => apiGet<DetectorSuite[]>("/api/detector/history"),

@@ -15,7 +15,7 @@ export const RunPanel = ({ suite, onStop }: RunPanelProps) => {
   const pct = p.total > 0 ? Math.min(100, (p.done / p.total) * 100) : 0;
   const stopping = suite.status === "canceled";
   const phase = p.phase ? t(`detector.scopes.${p.phase}.name`) : t("detector.run.preparing");
-  const queued = suite.options.scopes
+  const queued = (suite.options.scopes ?? [])
     .filter((s) => s !== p.phase)
     .filter((s) => {
       const key = s as keyof DetectorSuite;

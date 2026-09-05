@@ -23,12 +23,19 @@ type DNSServer struct {
 	Port    int    `json:"port,omitempty"`
 }
 
+type TelegramDC struct {
+	DC int    `json:"dc"`
+	IP string `json:"ip"`
+}
+
 type TelegramTargets struct {
-	DownloadURL  string `json:"download_url"`
-	DownloadSize int64  `json:"download_size"`
-	UploadIP     string `json:"upload_ip"`
-	UploadPort   int    `json:"upload_port"`
-	UploadSize   int64  `json:"upload_size"`
+	DownloadURL  string       `json:"download_url"`
+	DownloadSize int64        `json:"download_size"`
+	UploadIP     string       `json:"upload_ip"`
+	UploadPort   int          `json:"upload_port"`
+	UploadSize   int64        `json:"upload_size"`
+	DCs          []TelegramDC `json:"dcs"`
+	DCPort       int          `json:"dc_port"`
 }
 
 type TargetLists struct {

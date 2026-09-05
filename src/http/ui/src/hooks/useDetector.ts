@@ -44,6 +44,7 @@ export function useDetector() {
     detectorApi
       .current()
       .then((s) => {
+        if (!s) return;
         setSuite(s);
         setSuiteId(s.id);
         setRunning(!FINISHED.includes(s.status));

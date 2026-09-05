@@ -104,7 +104,7 @@ export const VerdictPanel = ({ suite, running, onDiscovery, onCopy, onRunAgain }
   const durationSec = ended && ended.getFullYear() > 1970 ? Math.max(0, Math.round((ended.getTime() - started.getTime()) / 1000)) : 0;
   const meta = [
     started.toLocaleString(),
-    suite.options.scopes.map((s) => t(`detector.scopes.${s}.name`)).join(" · "),
+    (suite.options.scopes ?? []).map((s) => t(`detector.scopes.${s}.name`)).join(" · "),
     durationSec > 0 && t("detector.verdict.duration", { seconds: durationSec }),
     suite.network?.wan_ip && [suite.network.wan_ip, suite.network.asn && `AS${suite.network.asn}`, suite.network.org].filter(Boolean).join(" "),
   ]

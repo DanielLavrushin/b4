@@ -23,7 +23,7 @@ const dropRange = (g: HostingGroup) => {
 export const HostingTable = ({ result, onCopySNI }: HostingTableProps) => {
   const { t } = useTranslation();
   const [open, setOpen] = useState<string | null>(null);
-  const droppedNames = result.groups.filter((g) => g.status === "dropped" || g.status === "mixed").map((g) => g.provider);
+  const droppedNames = (result.groups ?? []).filter((g) => g.status === "dropped" || g.status === "mixed").map((g) => g.provider);
 
   return (
     <Stack spacing={1.5}>
@@ -43,10 +43,10 @@ export const HostingTable = ({ result, onCopySNI }: HostingTableProps) => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {result.groups.map((g) => {
+            {(result.groups ?? []).map((g) => {
               const key = `${g.asn}-${g.provider}`;
               const expanded = open === key;
-              const done = g.targets.filter((x) => x.done).length;
+              const done = (g.targets ?? []).filter((x) => x.done).length;
               return [
                 <TableRow key={key} sx={{ "& td": { borderBottom: expanded ? 0 : undefined } }}>
                   <TableCell sx={{ fontWeight: 600, whiteSpace: "nowrap" }}>
@@ -92,7 +92,7 @@ export const HostingTable = ({ result, onCopySNI }: HostingTableProps) => {
                       <Box sx={{ px: 2, py: 1, bgcolor: colors.background.control }}>
                         <Table size="small">
                           <TableBody>
-                            {g.targets.map((tr) => (
+                            {(g.targets ?? []).map((tr) => (
                               <TableRow key={tr.target.id} sx={{ "&:last-child td": { border: 0 } }}>
                                 <TableCell sx={{ fontFamily: "monospace", fontSize: "0.78rem", whiteSpace: "nowrap" }}>
                                   {tr.target.ip}:{tr.target.port}

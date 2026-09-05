@@ -86,7 +86,7 @@ export const DetectorRunner = () => {
       <B4Section title={t("detector.title")} description={t("detector.description")} icon={<SecurityIcon />}>
         <Stack spacing={2}>
           {showSetup && (
-            <SetupPanel lists={lists} listsBusy={listsBusy} busy={running} onStart={(o) => void start(o)} onUpdateLists={() => void handleUpdateLists()} onResetLists={() => void resetLists()} />
+            <SetupPanel sets={sets} lists={lists} listsBusy={listsBusy} busy={running} onStart={(o) => void start(o)} onUpdateLists={() => void handleUpdateLists()} onResetLists={() => void resetLists()} />
           )}
           {running && suite && <RunPanel suite={suite} onStop={() => void cancel()} />}
           {running && !suite && <B4Alert severity="info">{t("detector.run.starting")}</B4Alert>}

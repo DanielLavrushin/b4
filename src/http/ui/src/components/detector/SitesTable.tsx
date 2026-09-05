@@ -64,13 +64,13 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
 
   const counts = useMemo(
     () => ({
-      all: result.sites.length,
-      problems: result.sites.filter(problem).length,
-      still: result.sites.filter(still).length,
+      all: (result.sites ?? []).length,
+      problems: (result.sites ?? []).filter(problem).length,
+      still: (result.sites ?? []).filter(still).length,
     }),
     [result.sites],
   );
-  const rows = result.sites.filter((s) => (filter === "all" ? true : filter === "problems" ? problem(s) : still(s)));
+  const rows = (result.sites ?? []).filter((s) => (filter === "all" ? true : filter === "problems" ? problem(s) : still(s)));
 
   return (
     <Stack spacing={1.5}>

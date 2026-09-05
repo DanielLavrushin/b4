@@ -178,7 +178,7 @@ func (s *Suite) runDNS() {
 		return
 	}
 
-	result := &DNSResult{RouterServers: readResolvConf()}
+	result := &DNSResult{Providers: []DNSProvider{}, RouterServers: readResolvConf()}
 	s.mu.Lock()
 	s.DNS = result
 	s.mu.Unlock()

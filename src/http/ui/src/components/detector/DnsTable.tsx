@@ -69,7 +69,7 @@ export const DnsTable = ({ result, onUseDoH }: DnsTableProps) => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {result.providers.map((p) => {
+            {(result.providers ?? []).map((p) => {
               const h = honesty(p);
               const udp = p.udp;
               const by = udp?.answered_by

@@ -27,7 +27,7 @@ const (
 
 func (s *Suite) runTelegram() {
 	s.setProgress(ScopeTelegram, "datacenters")
-	result := &TelegramResult{}
+	result := &TelegramResult{DCPings: []TelegramDCPing{}}
 	s.mu.Lock()
 	s.Telegram = result
 	s.mu.Unlock()
@@ -72,6 +72,18 @@ type dcEndpoint struct {
 }
 
 func telegramDCEndpoints() []dcEndpoint {
+	cfg := Lists().Telegram
+	if len(cfg.DCs) > 0 {
+		port := cfg.DCPort
+		if port == 0 {
+			port = 443
+		}
+		endpoints := make([]dcEndpoint, 0, len(cfg.DCs))
+		for _, dc := range cfg.DCs {
+			endpoints = append(endpoints, dcEndpoint{dc: dc.DC, addr: net.JoinHostPort(dc.IP, strconv.Itoa(port))})
+		}
+		return endpoints
+	}
 	snap := mtproto.DCSnapshot()
 	var endpoints []dcEndpoint
 	for dc := 1; dc <= 5; dc++ {
