@@ -44,7 +44,9 @@ interface Row {
 
 const setKey = (entry: HistoryEntry): string | null => {
   if (!entry.set) return null;
-  const domains = [...(entry.set.targets?.sni_domains ?? [])].sort();
+  const domains = [...(entry.set.targets?.sni_domains ?? [])].sort((a, b) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  );
   if (domains.length < 2) return null;
   return `${entry.suite_id ?? ""}|${entry.set.name ?? ""}|${domains.join(",")}`;
 };
