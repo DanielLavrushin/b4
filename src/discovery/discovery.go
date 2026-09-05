@@ -264,20 +264,15 @@ func (ds *DiscoverySuite) RunDiscovery() {
 
 	// Phase 1: Strategy detection across all domains
 	ds.setPhase(PhaseStrategy)
-	workingFamilies, _, allBaselineWorks := ds.runPhase1Multi(phase1Presets)
+	workingFamilies := ds.runPhase1Multi(phase1Presets)
 	ds.determineBest()
 
-	if allBaselineWorks {
-		dnsNeeded := anyDNSPoisoned
-
-		if !dnsNeeded {
-			log.DiscoveryLogf("Verified: no DPI bypass needed for any domain")
-			ds.finalize()
-			ds.logDiscoverySummary()
-			return
-		}
-
-		log.DiscoveryLogf("Baseline works but DNS bypass required - continuing")
+	if !ds.anyDomainNeedsBypass() {
+		log.DiscoveryLogf("Verified: no packet strategy needed for any domain")
+		ds.confirmWinners()
+		ds.finalize()
+		ds.logDiscoverySummary()
+		return
 	}
 
 	if len(workingFamilies) == 0 {
@@ -325,31 +320,15 @@ func (ds *DiscoverySuite) RunDiscovery() {
 
 // runPhase1Multi tests all Phase 1 presets across all domains.
 // Each preset config is applied ONCE and all domains are tested.
-func (ds *DiscoverySuite) runPhase1Multi(presets []ConfigPreset) ([]StrategyFamily, float64, bool) {
+func (ds *DiscoverySuite) runPhase1Multi(presets []ConfigPreset) []StrategyFamily {
 	var workingFamilies []StrategyFamily
 
 	log.DiscoveryLogf("Phase 1: Testing %d strategy families across %d domains", len(presets), len(ds.Domains))
 
 	baselineResults := ds.baselineResults(presets[0])
 
-	allBaselineWorks := true
-	var totalBaselineSpeed float64
-	baselineCount := 0
-	for _, r := range baselineResults {
-		if r.Status != CheckStatusComplete {
-			allBaselineWorks = false
-		} else {
-			totalBaselineSpeed += r.Speed
-			baselineCount++
-		}
-	}
-	var baselineSpeed float64
-	if baselineCount > 0 {
-		baselineSpeed = totalBaselineSpeed / float64(baselineCount)
-	}
-
-	if allBaselineWorks {
-		log.DiscoveryLogf("  Baseline succeeded for all domains - verifying with bypass test...")
+	if !ds.anyDomainNeedsBypass() {
+		log.DiscoveryLogf("  Every domain loads without a packet strategy - testing the presets for comparison only")
 	}
 
 	// Payload detection uses the primary domain
@@ -370,7 +349,7 @@ func (ds *DiscoverySuite) runPhase1Multi(presets []ConfigPreset) ([]StrategyFami
 	for _, preset := range strategyPresets {
 		select {
 		case <-ds.cancel:
-			return workingFamilies, baselineSpeed, allBaselineWorks
+			return workingFamilies
 		default:
 		}
 
@@ -378,29 +357,18 @@ func (ds *DiscoverySuite) runPhase1Multi(presets []ConfigPreset) ([]StrategyFami
 		domainResults := ds.testPresetAllDomains(preset)
 		ds.storeResultsMulti(preset, domainResults)
 
-		// A family "works" if it succeeds for ANY domain
-		for _, r := range domainResults {
-			if r.Status == CheckStatusComplete && r.Speed > baselineSpeed*0.8 && preset.Family != FamilyNone {
-				if !containsFamily(workingFamilies, preset.Family) {
-					workingFamilies = append(workingFamilies, preset.Family)
-				}
-				break
+		for domain, r := range domainResults {
+			if r.Status != CheckStatusComplete || preset.Family == FamilyNone || !ds.needsBypass(domain) {
+				continue
 			}
+			if !containsFamily(workingFamilies, preset.Family) {
+				workingFamilies = append(workingFamilies, preset.Family)
+			}
+			break
 		}
 	}
 
-	// Check if bypass is significantly faster for any domain (even if baseline works)
-	if allBaselineWorks && len(workingFamilies) > 0 {
-		for _, domainResult := range ds.domainResults {
-			if domainResult.BestSpeed > baselineSpeed*1.5 {
-				log.DiscoveryLogf("  Bypass 50%%+ faster than baseline - DPI bypass needed")
-				allBaselineWorks = false
-				break
-			}
-		}
-	}
-
-	return workingFamilies, baselineSpeed, allBaselineWorks
+	return workingFamilies
 }
 
 func (ds *DiscoverySuite) baselineResults(baseline ConfigPreset) map[string]CheckResult {
@@ -496,6 +464,9 @@ func (ds *DiscoverySuite) findRepresentativeDomain(family StrategyFamily) string
 	var bestSpeed float64
 
 	for domain, domainResult := range ds.domainResults {
+		if !ds.needsBypass(domain) {
+			continue
+		}
 		for _, result := range domainResult.Results {
 			if result.Family == family && result.Status == CheckStatusComplete && result.Speed > bestSpeed {
 				bestSpeed = result.Speed
@@ -1099,9 +1070,18 @@ func (ds *DiscoverySuite) collectTargetIPs(domain string, maxIPs int) []string {
 	if dnsResult == nil {
 		return nil
 	}
+	if len(dnsResult.AlternativeIPs) > 0 && dnsResult.TransportBlocked {
+		return append([]string(nil), dnsResult.AlternativeIPs...)
+	}
 
 	seen := make(map[string]bool)
 	var ips []string
+	for _, ip := range dnsResult.AlternativeIPs {
+		if !seen[ip] {
+			seen[ip] = true
+			ips = append(ips, ip)
+		}
+	}
 	for _, ip := range dnsResult.ExpectedIPs {
 		if !seen[ip] {
 			seen[ip] = true
@@ -1114,8 +1094,8 @@ func (ds *DiscoverySuite) collectTargetIPs(domain string, maxIPs int) []string {
 			ips = append(ips, probe.ResolvedIP)
 		}
 	}
-	if maxIPs > 0 && len(ips) > maxIPs {
-		ips = ips[:maxIPs]
+	if maxIPs > 0 && len(ips) > maxIPs+len(dnsResult.AlternativeIPs) {
+		ips = ips[:maxIPs+len(dnsResult.AlternativeIPs)]
 	}
 	return ips
 }
@@ -1257,6 +1237,7 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 		Domain:    di.Domain,
 		Status:    CheckStatusRunning,
 		Timestamp: time.Now(),
+		UsedIP:    ip,
 	}
 
 	ctx, cancel := ds.fetchContext(timeout)
@@ -1462,6 +1443,10 @@ func (ds *DiscoverySuite) storeResult(preset ConfigPreset, result CheckResult) {
 		domainResult.FinalHost = result.FinalHost
 	}
 
+	if preset.Name == presetNoBypass {
+		ds.recordPlainFix(ds.Domain, domainResult, result)
+	}
+
 	if result.Status == CheckStatusComplete && preset.Name != presetNoBypass {
 		if result.Speed > domainResult.BestSpeed {
 			oldBest := domainResult.BestSpeed
@@ -1514,6 +1499,10 @@ func (ds *DiscoverySuite) storeResultsMulti(preset ConfigPreset, results map[str
 			domainResult.FinalHost = result.FinalHost
 		}
 
+		if preset.Name == presetNoBypass {
+			ds.recordPlainFix(domain, domainResult, result)
+		}
+
 		if result.Status == CheckStatusComplete && preset.Name != presetNoBypass {
 			if result.Speed > domainResult.BestSpeed {
 				oldBest := domainResult.BestSpeed
@@ -1545,6 +1534,14 @@ func (ds *DiscoverySuite) determineBest() {
 		}
 
 		domainResult.BaselineSpeed = domainBaseline
+
+		if name, r := plainFixResult(domainResult); r != nil {
+			domainResult.BaselineWorks = false
+			domainResult.BestPreset = name
+			domainResult.BestSpeed = r.Speed
+			domainResult.BestSuccess = true
+			continue
+		}
 
 		if domainBaseline > 0 {
 			domainResult.BaselineWorks = true
@@ -1742,6 +1739,7 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 		testSet.Targets.DomainsToMatch = allDomains
 		testSet.Targets.TLSVersion = ds.tlsFilterVersion()
 		testSet.Targets.IPVersion = ds.ipFilterVersion()
+		testSet.DNS.Pins = ds.pinsFor(allDomains)
 
 		if cidrIPs := asCIDRs(allIPs); len(cidrIPs) > 0 {
 			testSet.Targets.IPs = cidrIPs
@@ -1796,7 +1794,7 @@ func (ds *DiscoverySuite) allDomainsTransportBlocked() bool {
 		return false
 	}
 	for _, result := range ds.dnsResults {
-		if result == nil || !result.TransportBlocked {
+		if !result.addressBlocked() {
 			return false
 		}
 	}
@@ -1844,8 +1842,17 @@ func (ds *DiscoverySuite) scopeSetToDomains(set *config.SetConfig, domains []str
 	scoped.Targets.GeoIpCategories, scoped.Targets.GeoSiteCategories = ds.geoCategoriesFor(domains)
 	scoped.Targets.IPs = ds.targetIPsFor(domains)
 	scoped.Targets.IpsToMatch = scoped.Targets.IPs
+	scoped.DNS.Pins = ds.pinsFor(domains)
 	if scoped.DNS.Enabled && !ds.anyDNSPoisoned(domains) {
-		scoped.DNS = config.DNSConfig{}
+		scoped.DNS = config.DNSConfig{Pins: scoped.DNS.Pins}
+	}
+	if ds.anyAddressBlocked(domains) || len(scoped.DNS.Pins) > 0 {
+		ibd := config.DefaultSetConfig.TCP.IPBlockDetect
+		ibd.Enabled = true
+		ibd.SynDetect = true
+		ibd.HealDNS = true
+		ibd.CacheBlockedIPs = true
+		scoped.TCP.IPBlockDetect = ibd
 	}
 	return &scoped
 }
@@ -2061,8 +2068,10 @@ func (ds *DiscoverySuite) logDiscoverySummary() {
 		// DNS status line
 		if dnsResult != nil {
 			switch {
+			case dnsResult.TransportBlocked && len(dnsResult.AlternativeIPs) > 0:
+				log.DiscoveryLogf("  ⚡ [%s] known addresses blocked, answered with %v instead", di.Domain, dnsResult.AlternativeIPs)
 			case dnsResult.TransportBlocked:
-				log.DiscoveryLogf("  ⊘ [%s] IP-blocked: TCP connections fail to all known IPs — VPN/proxy required", di.Domain)
+				log.DiscoveryLogf("  ⊘ [%s] IP-blocked: TCP connections fail to all known IPs, a proxy or VPN route is needed", di.Domain)
 				continue
 			case dnsResult.IsPoisoned && dnsResult.BestServer != "":
 				log.DiscoveryLogf("  ⚡ [%s] DNS poisoned, bypassed via %s", di.Domain, dnsResult.BestServer)

@@ -2,7 +2,17 @@ package dns
 
 import (
 	"encoding/binary"
+	"net"
 	"strings"
+)
+
+const (
+	optRecordType   = 41
+	optUDPSize      = 1232
+	ecsOptionCode   = 8
+	ecsFamilyIPv4   = 1
+	ecsFamilyIPv6   = 2
+	ecsScopeUnknown = 0
 )
 
 func BuildAQuery(domain string, txid uint16) []byte {
@@ -40,4 +50,44 @@ func BuildQuery(domain string, txid uint16, qtype uint16) []byte {
 	buf = append(buf, qsuffix...)
 
 	return buf
+}
+
+// BuildQueryWithECS is BuildQuery plus an EDNS0 client-subnet option, so a
+// resolver that honours ECS answers as it would for a client inside subnet.
+func BuildQueryWithECS(domain string, txid uint16, qtype uint16, subnet net.IPNet) []byte {
+	query := BuildQuery(domain, txid, qtype)
+
+	family := uint16(ecsFamilyIPv4)
+	addr := subnet.IP.To4()
+	if addr == nil {
+		addr = subnet.IP.To16()
+		family = ecsFamilyIPv6
+	}
+	if addr == nil {
+		return query
+	}
+	prefix, bits := subnet.Mask.Size()
+	if bits == 0 || prefix > len(addr)*8 {
+		prefix = len(addr) * 8
+	}
+	addrLen := (prefix + 7) / 8
+
+	rdata := make([]byte, 0, 8+addrLen)
+	rdata = binary.BigEndian.AppendUint16(rdata, ecsOptionCode)
+	rdata = binary.BigEndian.AppendUint16(rdata, uint16(4+addrLen))
+	rdata = binary.BigEndian.AppendUint16(rdata, family)
+	rdata = append(rdata, byte(prefix), ecsScopeUnknown)
+	rdata = append(rdata, addr[:addrLen]...)
+
+	opt := make([]byte, 0, 11+len(rdata))
+	opt = append(opt, 0)
+	opt = binary.BigEndian.AppendUint16(opt, optRecordType)
+	opt = binary.BigEndian.AppendUint16(opt, optUDPSize)
+	opt = append(opt, 0, 0, 0, 0)
+	opt = binary.BigEndian.AppendUint16(opt, uint16(len(rdata)))
+	opt = append(opt, rdata...)
+
+	query = append(query, opt...)
+	binary.BigEndian.PutUint16(query[10:12], 1)
+	return query
 }

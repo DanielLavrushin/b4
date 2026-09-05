@@ -18,7 +18,7 @@ interface VerdictSource {
   best_success?: boolean;
   best_preset?: string;
   baseline_works?: boolean;
-  dns_result?: { transport_blocked?: boolean };
+  dns_result?: { transport_blocked?: boolean; alternative_ips?: string[] };
 }
 
 export function verdictOf(r: VerdictSource, finished: boolean): SiteVerdict {
@@ -27,7 +27,9 @@ export function verdictOf(r: VerdictSource, finished: boolean): SiteVerdict {
   if (r.best_success && r.best_preset && r.best_preset !== NO_BYPASS_PRESET) {
     return "found";
   }
-  if (r.dns_result?.transport_blocked) return "address_blocked";
+  if (r.dns_result?.transport_blocked && !r.dns_result.alternative_ips?.length) {
+    return "address_blocked";
+  }
   return finished ? "not_found" : "checking";
 }
 
@@ -84,6 +86,21 @@ const emptyDns = () => ({
   strict: false,
 });
 
+export function pinsFor(
+  set: B4SetConfig,
+  domains: string[],
+): Record<string, string[]> | undefined {
+  const all = set.dns?.pins;
+  if (!all) return undefined;
+  const wanted = domains.map((d) => d.toLowerCase());
+  const kept: Record<string, string[]> = {};
+  for (const [pin, ips] of Object.entries(all)) {
+    const key = pin.toLowerCase();
+    if (wanted.some((d) => d === key || d.endsWith(`.${key}`))) kept[key] = ips;
+  }
+  return Object.keys(kept).length > 0 ? kept : undefined;
+}
+
 export function normalizeSet(set: B4SetConfig): B4SetConfig {
   const targets = set.targets ?? ({} as B4SetConfig["targets"]);
   return {
@@ -105,6 +122,7 @@ export function scopeSet(
   keepDns: boolean,
 ): B4SetConfig {
   const base = normalizeSet(set);
+  const pins = pinsFor(base, domains);
   return {
     ...base,
     targets: {
@@ -114,9 +132,12 @@ export function scopeSet(
       geosite_categories: [],
       geoip_categories: [],
     },
-    dns: keepDns ? base.dns : emptyDns(),
+    dns: { ...(keepDns ? base.dns : emptyDns()), pins },
   };
 }
+
+export const hasPins = (set: B4SetConfig): boolean =>
+  Object.keys(set.dns?.pins ?? {}).length > 0;
 
 export function dnsPoisoned(results: DiscoveryResult[]): boolean {
   return results.some((dr) => !!dr.dns_result?.is_poisoned);
@@ -273,12 +294,17 @@ export function describeStrategy(set: B4SetConfig, t: TFn): string {
   const parts: string[] = [];
   const split = set.fragmentation?.strategy ?? "none";
   const faking = !!set.faking?.sni;
+  const pinned = hasPins(set);
 
   if (split !== "none") {
     parts.push(S(`split.${split}`));
     if (faking) parts.push(S("fake"));
   } else if (faking) {
     parts.push(S("fakeOnly"));
+  } else if (pinned) {
+    parts.push(S("pinsOnly"));
+  } else if (set.dns?.enabled) {
+    parts.push(S("dnsOnly"));
   } else {
     parts.push(S("split.none"));
   }
@@ -292,7 +318,10 @@ export function describeStrategy(set: B4SetConfig, t: TFn): string {
   if (faking && (set.faking.tcp_md5 || set.faking.md5_on_fake)) {
     parts.push(S("extras.md5"));
   }
-  if (set.dns?.enabled) parts.push(S("extras.dns"));
+  if (set.dns?.enabled && (split !== "none" || faking || pinned)) {
+    parts.push(S("extras.dns"));
+  }
+  if (pinned && (split !== "none" || faking)) parts.push(S("extras.pins"));
 
   const sentence = parts.join(S("join"));
   return sentence.charAt(0).toUpperCase() + sentence.slice(1) + S("end");

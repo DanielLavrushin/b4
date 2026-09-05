@@ -1960,7 +1960,7 @@
       "saved": "saved to history",
       "shareOne": "One strategy works for all of them. Applying creates one set.",
       "worksWithout": "Loads without b4. Nothing to apply.",
-      "addressBlocked": "Unreachable at the network level: connections to every known address of this site fail, so no bypass strategy can help. Route it through a proxy or VPN set instead.",
+      "addressBlocked": "Unreachable at the network level: connections to every known address of this site fail, and no other region's DNS answer reached it either, so no bypass strategy can help. Route it through a proxy or VPN set instead.",
       "nothingFound_one": "Nothing worked. {{count}} configuration was tried. Retrying with TLS 1.2 or a captured ClientHello sometimes helps; the log shows how each one failed.",
       "nothingFound_other": "Nothing worked. {{count}} configurations were tried. Retrying with TLS 1.2 or a captured ClientHello sometimes helps; the log shows how each one failed.",
       "apply": "Apply as a set",
@@ -1985,7 +1985,8 @@
       "tls": "TLS {{version}}",
       "ipv": "IPv{{version}}",
       "geosite": "geosite {{list}}",
-      "geoip": "geoip {{list}}"
+      "geoip": "geoip {{list}}",
+      "dnsPins": "answered with {{list}}"
     },
     "strategy": {
       "split": {
@@ -2009,10 +2010,13 @@
         "window": "plays with the TCP window",
         "delay": "delays the second segment",
         "md5": "signs the fakes with TCP MD5",
-        "dns": "redirects DNS"
+        "dns": "redirects DNS",
+        "pins": "answers DNS with an address the block does not cover"
       },
       "join": ", ",
-      "end": "."
+      "end": ".",
+      "pinsOnly": "answers DNS with an address the block does not cover, no packet changes",
+      "dnsOnly": "only answers DNS through a resolver that is not lying, no packet changes"
     },
     "apply": {
       "title": "Apply as a set",
@@ -2061,7 +2065,7 @@
       "title": "Options",
       "defaults": "defaults",
       "checkDns": "Check DNS for tampering",
-      "checkDnsHint": "Finds sites whose address is being lied about and adds a DNS fix to the set.",
+      "checkDnsHint": "Finds sites whose address is being lied about and adds a DNS fix to the set. When every known address of a site is unreachable, other regions' DNS answers are tried for one that is.",
       "useCache": "Try strategies that worked before",
       "useCacheHint": "Winners from earlier runs go first.",
       "forget": "Forget them",
@@ -2113,7 +2117,9 @@
       "window": "Window manipulation",
       "mutation": "SNI mutation",
       "incoming": "Incoming fakes",
-      "tcpmd5": "TCP MD5"
+      "tcpmd5": "TCP MD5",
+      "alt_address": "Alternative address",
+      "dns_redirect": "DNS redirect"
     }
   },
   "detector": {

@@ -20,7 +20,9 @@ export type StrategyFamily =
   | "window"
   | "mutation"
   | "incoming"
-  | "tcpmd5";
+  | "tcpmd5"
+  | "alt_address"
+  | "dns_redirect";
 
 export type DiscoveryPhase =
   | "baseline"
@@ -70,6 +72,14 @@ export interface BackendStrategyGroup {
   median_speed?: number;
 }
 
+export interface AltScanSummary {
+  resolver: string;
+  regions: number;
+  answered: number;
+  addresses: number;
+  reachable: number;
+}
+
 export interface DNSDiscoveryResult {
   is_poisoned: boolean;
   transport_blocked?: boolean;
@@ -77,6 +87,8 @@ export interface DNSDiscoveryResult {
   best_server?: string;
   best_doh_url?: string;
   needs_fragment: boolean;
+  alternative_ips?: string[];
+  alt_scan?: AltScanSummary;
 }
 
 export interface DiscoveryResult {

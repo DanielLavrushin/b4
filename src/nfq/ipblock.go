@@ -31,6 +31,7 @@ func (w *Worker) pinnedAnswer(set *config.SetConfig, query []byte, domain string
 	want6 := qtype == dnsTypeAAAA
 
 	ips := make([]net.IP, 0, len(pins))
+	dead := 0
 	for _, pin := range pins {
 		ip := net.ParseIP(pin)
 		if ip == nil {
@@ -39,9 +40,16 @@ func (w *Worker) pinnedAnswer(set *config.SetConfig, query []byte, domain string
 		if (ip.To4() == nil) != want6 {
 			continue
 		}
+		if w.ipHealth != nil && synDetectEnabled(set) && w.ipHealth.IsDead(pin) {
+			dead++
+			continue
+		}
 		ips = append(ips, ip)
 	}
 	if len(ips) == 0 {
+		if dead > 0 {
+			log.Warnf("DNS pin: every pinned address for %s is unreachable, passing the query through (set: %s)", domain, set.Name)
+		}
 		return nil
 	}
 

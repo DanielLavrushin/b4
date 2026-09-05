@@ -94,17 +94,27 @@ export const StrategySummary = ({
   });
 
   const dns = set.dns;
+  const pinned = Object.values(dns?.pins ?? {}).flat();
   let dnsValue = t("discovery.summary.dnsNotNeeded");
+  let dnsMuted: string | undefined;
   if (dns?.enabled) {
     dnsValue = dns.doh_url
       ? t("discovery.summary.dnsDoh", { url: dns.doh_url })
       : t("discovery.summary.dnsServer", { server: dns.target_dns });
+  }
+  if (pinned.length > 0) {
+    const pinText = t("discovery.summary.dnsPins", {
+      list: [...new Set(pinned)].join(", "),
+    });
+    if (dns?.enabled) dnsMuted = pinText;
+    else dnsValue = pinText;
   }
   rows.push({
     key: "dns",
     label: t("discovery.summary.dns"),
     color: facetColors.dns,
     value: dnsValue,
+    muted: dnsMuted,
   });
 
   return (

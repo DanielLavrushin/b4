@@ -102,7 +102,11 @@ func (ds *DiscoverySuite) runDNSDiscoveryForDomain(domain string) *DNSDiscoveryR
 	ctx, cancel := ds.fetchContext(30 * time.Second)
 	defer cancel()
 
-	return prober.Probe(ctx)
+	result := prober.Probe(ctx)
+	if result != nil && prober.ipNetwork() == "ip4" && (result.TransportBlocked || (result.IsPoisoned && !result.ReferenceServes)) {
+		ds.findAlternativeAddresses(domain, result)
+	}
+	return result
 }
 
 func (ds *DiscoverySuite) applyBestDNSConfig() {
@@ -186,6 +190,7 @@ func (p *DNSProber) Probe(ctx context.Context) *DNSDiscoveryResult {
 	}
 
 	var expectedIPs, systemIPs []string
+	referenceServes := false
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
@@ -198,9 +203,10 @@ func (p *DNSProber) Probe(ctx context.Context) *DNSDiscoveryResult {
 		defer wg.Done()
 		dohCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
-		expectedIPs = p.getExpectedIPs(dohCtx)
+		expectedIPs, referenceServes = p.getExpectedIPs(dohCtx)
 	}()
 	wg.Wait()
+	result.ReferenceServes = referenceServes
 
 	if validIP := p.findValidIP(ctx, systemIPs); validIP != "" {
 		log.DiscoveryLogf("  ✓ DNS OK: system IP %s serves %s", validIP, p.domain)
@@ -381,7 +387,7 @@ func (p *DNSProber) getSystemResolverIPs(ctx context.Context) []string {
 	return result
 }
 
-func (p *DNSProber) getExpectedIPs(ctx context.Context) []string {
+func (p *DNSProber) getExpectedIPs(ctx context.Context) ([]string, bool) {
 	r := &netprobe.Resolver{
 		Mark:    int(p.flowMark),
 		Timeout: p.timeout,
@@ -392,9 +398,9 @@ func (p *DNSProber) getExpectedIPs(ctx context.Context) []string {
 	if err != nil || len(out.IPs) == 0 {
 		ip := p.getExpectedIPFallback(ctx)
 		if ip != "" {
-			return []string{ip}
+			return []string{ip}, true
 		}
-		return nil
+		return nil, false
 	}
 
 	var validated []string
@@ -405,11 +411,11 @@ func (p *DNSProber) getExpectedIPs(ctx context.Context) []string {
 		}
 	}
 	if len(validated) > 0 {
-		return validated
+		return validated, true
 	}
 
 	log.Tracef("DoH: TLS validation failed for %s, trusting resolved IPs: %v", p.domain, out.IPs)
-	return out.IPs
+	return out.IPs, false
 }
 
 func (p *DNSProber) getExpectedIPFallback(ctx context.Context) string {
