@@ -178,9 +178,12 @@ export const DiscoveryRunner = () => {
     const state = location.state as { urls?: string[] } | null;
     if (state?.urls?.length) {
       addUrls(state.urls.join("\n"));
-      window.history.replaceState({}, "");
+      navigate(
+        { pathname: location.pathname, search: location.search, hash: location.hash },
+        { replace: true, state: null },
+      )?.catch(() => {});
     }
-  }, [location.state, addUrls]);
+  }, [location.pathname, location.search, location.hash, location.state, addUrls, navigate]);
 
   const describeMoved = (moved?: DomainReassignment[]): string => {
     if (!moved || moved.length === 0) return "";

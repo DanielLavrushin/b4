@@ -28,11 +28,11 @@ export function verdictSentences(suite: DetectorSuite, t: (k: string, o?: Record
 
   if (suite.sites) {
     const kinds = pickKinds(v.block_kinds).map((k) => t(`detector.kind.${k}`, { defaultValue: k.toLowerCase() }));
-    if (v.blocked_by_isp === 0 && v.sites > 0) {
+    if (v.blocked_by_isp === 0 && v.sites > 0 && suite.sites.ok === v.sites) {
       title = t("detector.verdict.titleClean");
-    } else if (kinds.length > 0) {
+    } else if (v.blocked_by_isp > 0 && kinds.length > 0) {
       title = t("detector.verdict.titleBlocks", { kinds: kinds.join(t("detector.verdict.and")) });
-    } else {
+    } else if (v.blocked_by_isp > 0) {
       title = t("detector.verdict.titleBlocked");
     }
     body.push(
@@ -62,7 +62,7 @@ export function verdictSentences(suite: DetectorSuite, t: (k: string, o?: Record
       body.push(t("detector.verdict.dnsHijacked", { by: d.hijacked_by || t("detector.verdict.unknownParty") }));
     } else if (d.substituting > 0) {
       body.push(t("detector.verdict.dnsSubstituted", { count: d.substituting }));
-    } else if (d.udp_total > 0) {
+    } else if (d.udp_ok > 0) {
       body.push(t("detector.verdict.dnsHonest"));
     }
     if (d.doh_total > 0) {

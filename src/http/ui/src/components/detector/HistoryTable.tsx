@@ -25,7 +25,7 @@ export function historySummary(e: DetectorSuite, t: (k: string, o?: Record<strin
   if (e.dns) {
     if (v.dns_hijacked) parts.push(t("detector.history.dnsHijacked"));
     else if (v.dns_substituted) parts.push(t("detector.history.dnsSubstituted"));
-    else parts.push(t("detector.history.dnsHonest"));
+    else if (e.dns.udp_ok > 0) parts.push(t("detector.history.dnsHonest"));
   }
   if (e.hosting) {
     parts.push(v.dropped_networks?.length ? t("detector.history.hostingDropped", { nets: v.dropped_networks.slice(0, 3).join(", ") }) : t("detector.history.hostingClean"));

@@ -11,7 +11,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import { useLocation } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { StartIcon, ExpandIcon, CollapseIcon, RefreshIcon } from "@b4.icons";
 import { colors } from "@design";
 import { B4TextField, B4ChipList, B4PlusButton, B4Switch, B4Alert } from "@b4.elements";
@@ -75,6 +75,7 @@ interface SetupPanelProps {
 export const SetupPanel = ({ sets, lists, listsBusy, busy, onStart, onUpdateLists, onResetLists }: SetupPanelProps) => {
   const { t } = useTranslation();
   const location = useLocation();
+  const navigate = useNavigate();
   const [sites, setSites] = useState<string[]>(() => loadJSON<{ sites: string[] }>(SITES_KEY, { sites: [] }).sites);
   const [input, setInput] = useState("");
   const [options, setOptions] = useState<StoredOptions>(() => loadJSON(OPTIONS_KEY, defaultOptions));
@@ -131,9 +132,12 @@ export const SetupPanel = ({ sets, lists, listsBusy, busy, onStart, onUpdateList
     if (state?.sites?.length) {
       setSites([]);
       addSites(state.sites.join("\n"));
-      window.history.replaceState({}, "");
+      navigate(
+        { pathname: location.pathname, search: location.search, hash: location.hash },
+        { replace: true, state: null },
+      )?.catch(() => {});
     }
-  }, [location.state, addSites]);
+  }, [location.pathname, location.search, location.hash, location.state, addSites, navigate]);
 
   const fillFromSets = () => {
     setSites([]);
