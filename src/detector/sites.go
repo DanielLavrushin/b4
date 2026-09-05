@@ -453,6 +453,9 @@ func (s *Suite) fetchAny(ctx context.Context, site SiteResult, ips []string, mar
 			firstFail = &copy
 		}
 	}
+	if firstFail == nil {
+		return Fetch{Status: FetchSkipped, Detail: "stopped before the address was tried"}
+	}
 	f := *firstFail
 	f.Tried = ips
 	f.Blocked = blocked
