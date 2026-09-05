@@ -1,7 +1,7 @@
 export type DetectorScope = "sites" | "dns" | "hosting" | "telegram";
 export type SuiteStatus = "pending" | "running" | "complete" | "failed" | "canceled";
 export type FetchMode = "both" | "direct";
-export type IPVersion = "ipv4" | "ipv6";
+export type IPVersion = "ipv4" | "ipv6" | "both";
 
 export interface DetectorOptions {
   sites: string[];
@@ -75,9 +75,11 @@ export interface SiteResult {
   input: string;
   domain: string;
   url: string;
+  family?: "ipv4" | "ipv6";
   ip?: string;
   honest_ip?: string;
   fake_dns?: boolean;
+  alt_works?: boolean;
   direct?: Fetch;
   through_b4?: Fetch;
   outcome: SiteOutcome;

@@ -62,11 +62,7 @@ func (s *Suite) estimateTotal() int {
 	for _, scope := range s.Options.Scopes {
 		switch scope {
 		case ScopeSites:
-			modes := 1
-			if s.Options.FetchMode == FetchBoth {
-				modes = 2
-			}
-			total += len(uniqueSites(s.Options.Sites)) * modes
+			total += len(uniqueSites(s.Options.Sites)) * s.modes() * len(s.families())
 		case ScopeDNS:
 			total += len(lists.DNSServers) + len(readResolvConf())
 		case ScopeHosting:
@@ -76,6 +72,13 @@ func (s *Suite) estimateTotal() int {
 		}
 	}
 	return total
+}
+
+func (s *Suite) modes() int {
+	if s.Options.FetchMode == FetchBoth {
+		return 2
+	}
+	return 1
 }
 
 func (s *Suite) refreshVerdict() {

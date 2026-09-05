@@ -2164,7 +2164,8 @@
       "listsInfo": "The built-in sites, hosting targets and resolvers come from the dpi-detector project: {{sites}} sites, {{targets}} targets, {{resolvers}} resolvers, dated {{date}}.",
       "listsUpdate": "Fetch the project's current lists",
       "listsUpdating": "Fetching...",
-      "listsUpdateHint": "Downloads the lists from github.com/Runnin4ik/dpi-detector and keeps them next to the config, so dead sites and addresses can be replaced without a new b4 version."
+      "listsUpdateHint": "Downloads the lists from github.com/Runnin4ik/dpi-detector and keeps them next to the config, so dead sites and addresses can be replaced without a new b4 version.",
+      "ipBoth": "both"
     },
     "scopes": {
       "sites": {
@@ -2303,7 +2304,8 @@
       "discovery": "Discovery",
       "addToSet": "add to set",
       "addedToSet": "{{domain}} added to \"{{set}}\"",
-      "addFailed": "Could not add {{domain}}"
+      "addFailed": "Could not add {{domain}}",
+      "altWorks": "The address DoH returns ({{ip}}) loads; the resolver's address does not. Discovery can pin the working address"
     },
     "dns": {
       "provider": "Provider",

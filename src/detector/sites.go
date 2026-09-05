@@ -54,11 +54,18 @@ func uniqueSites(inputs []string) []string {
 	return out
 }
 
-func (s *Suite) family() string {
-	if s.Options.IPVersion == "ipv6" {
+func familyNet(family string) string {
+	if family == "ipv6" {
 		return "ip6"
 	}
 	return "ip4"
+}
+
+func familyRecord(family string) string {
+	if family == "ipv6" {
+		return "AAAA"
+	}
+	return "A"
 }
 
 func (s *Suite) recordType() string {
@@ -68,10 +75,21 @@ func (s *Suite) recordType() string {
 	return "A"
 }
 
-func (s *Suite) resolveSystem(ctx context.Context, domain string) (string, error) {
+func (s *Suite) families() []string {
+	switch s.Options.IPVersion {
+	case "ipv6":
+		return []string{"ipv6"}
+	case "both":
+		return []string{"ipv4", "ipv6"}
+	default:
+		return []string{"ipv4"}
+	}
+}
+
+func (s *Suite) resolveSystem(ctx context.Context, domain, family string) (string, error) {
 	rctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	ips, err := net.DefaultResolver.LookupIP(rctx, s.family(), domain)
+	ips, err := net.DefaultResolver.LookupIP(rctx, familyNet(family), domain)
 	if err != nil {
 		return "", err
 	}
@@ -81,11 +99,11 @@ func (s *Suite) resolveSystem(ctx context.Context, domain string) (string, error
 	return ips[0].String(), nil
 }
 
-func (s *Suite) resolveHonest(ctx context.Context, domain string) string {
+func (s *Suite) resolveHonest(ctx context.Context, domain, family string) string {
 	rctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	r := &netprobe.Resolver{Mark: int(s.directMark), Timeout: 4 * time.Second}
-	out, err := r.ResolveResilient(rctx, domain, s.recordType())
+	out, err := r.ResolveResilient(rctx, domain, familyRecord(family))
 	if err != nil || len(out.IPs) == 0 {
 		return ""
 	}
@@ -99,16 +117,19 @@ func (s *Suite) runSites() {
 	}
 	s.setProgress(ScopeSites, "")
 
-	result := &SitesResult{Sites: make([]SiteResult, len(inputs))}
-	for i, in := range inputs {
+	families := s.families()
+	result := &SitesResult{}
+	for _, in := range inputs {
 		domain, full := parseSiteInput(in)
-		site := SiteResult{Input: in, Domain: domain, URL: full, Outcome: OutcomePending}
-		if s.setLookup != nil {
-			if m := s.setLookup(domain); m != nil {
-				site.SetId, site.SetName, site.SetEnabled, site.SetDNS = m.Id, m.Name, m.Enabled, m.DNS
+		for _, fam := range families {
+			site := SiteResult{Input: in, Domain: domain, URL: full, Family: fam, Outcome: OutcomePending}
+			if s.setLookup != nil {
+				if m := s.setLookup(domain); m != nil {
+					site.SetId, site.SetName, site.SetEnabled, site.SetDNS = m.Id, m.Name, m.Enabled, m.DNS
+				}
 			}
+			result.Sites = append(result.Sites, site)
 		}
-		result.Sites[i] = site
 	}
 	s.mu.Lock()
 	s.Sites = result
@@ -118,6 +139,21 @@ func (s *Suite) runSites() {
 	s.resolveAll(result)
 	if s.canceled() {
 		return
+	}
+	if len(families) > 1 {
+		s.mu.Lock()
+		kept := result.Sites[:0]
+		dropped := 0
+		for _, site := range result.Sites {
+			if site.Family == "ipv6" && site.IP == "" && site.HonestIP == "" {
+				dropped++
+				continue
+			}
+			kept = append(kept, site)
+		}
+		result.Sites = kept
+		s.Progress.Total -= dropped * s.modes()
+		s.mu.Unlock()
 	}
 
 	sem := make(chan struct{}, s.Options.Parallel)
@@ -158,8 +194,9 @@ func (s *Suite) resolveAll(result *SitesResult) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			domain := result.Sites[idx].Domain
-			sys, err := s.resolveSystem(s.ctx, domain)
-			honest := s.resolveHonest(s.ctx, domain)
+			fam := result.Sites[idx].Family
+			sys, err := s.resolveSystem(s.ctx, domain, fam)
+			honest := s.resolveHonest(s.ctx, domain, fam)
 			res[idx] = resolved{sys: sys, honest: honest, sysErr: err}
 		}(i)
 	}
@@ -226,6 +263,7 @@ func (s *Suite) checkSite(result *SitesResult, idx int) {
 	direct := s.fetchMode(site, s.directMark, true)
 	s.mu.Lock()
 	result.Sites[idx].Direct = &direct
+	result.Sites[idx].AltWorks = direct.AltWorks
 	if s.Options.FetchMode == FetchBoth {
 		result.Sites[idx].ThroughB4 = &Fetch{Status: FetchChecking}
 	}
@@ -255,6 +293,9 @@ func (s *Suite) fetchMode(site SiteResult, mark uint, direct bool) Fetch {
 	}
 
 	ip := site.IP
+	if !direct && site.SetDNS && site.SetEnabled && site.HonestIP != "" {
+		ip = site.HonestIP
+	}
 	if site.FakeDNS {
 		if direct || !site.SetDNS || site.HonestIP == "" {
 			f := Fetch{Status: netprobe.DomainDNSFake}
@@ -282,6 +323,13 @@ func (s *Suite) fetchMode(site SiteResult, mark uint, direct bool) Fetch {
 	f := s.fetchSite(ctx, site.Domain, site.URL, ip, mark, 0)
 	if !direct || s.canceled() {
 		return f
+	}
+	if isBlockedStatus(f.Status) && site.HonestIP != "" && site.HonestIP != site.IP {
+		alt := s.fetchSite(ctx, site.Domain, site.URL, site.HonestIP, mark, 0)
+		if alt.Status == FetchOk {
+			f.Detail += "; the address DoH returns (" + site.HonestIP + ") loads"
+			f.AltWorks = true
+		}
 	}
 	if isBlockedStatus(f.Status) && !s.Options.SkipTLS12 {
 		t12 := s.fetchSite(ctx, site.Domain, site.URL, ip, mark, tls.VersionTLS12)

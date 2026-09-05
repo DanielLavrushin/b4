@@ -39,7 +39,7 @@ func normalizeOptions(o Options) Options {
 	if o.Parallel > 20 {
 		o.Parallel = 20
 	}
-	if o.IPVersion != "ipv6" {
+	if o.IPVersion != "ipv6" && o.IPVersion != "both" {
 		o.IPVersion = "ipv4"
 	}
 	if o.FetchMode != FetchDirect {

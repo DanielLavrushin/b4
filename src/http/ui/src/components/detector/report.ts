@@ -48,7 +48,7 @@ export function buildReport(suite: DetectorSuite, t: TFunction): string {
         .filter(Boolean)
         .join("; ");
       out.push(
-        `| ${s.input} | ${d?.status ?? "-"} | ${b?.status ?? "-"} | ${t(`detector.outcome.${s.outcome}`)} | ${detail.replace(/\|/g, "/")} |`,
+        `| ${s.input}${s.family === "ipv6" ? " (IPv6)" : ""} ${s.ip ?? ""} | ${d?.status ?? "-"} | ${b?.status ?? "-"} | ${t(`detector.outcome.${s.outcome}`)} | ${detail.replace(/\|/g, "/")} |`,
       );
     }
     if (suite.sites.stub_ips?.length) {

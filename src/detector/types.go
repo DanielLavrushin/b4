@@ -77,6 +77,7 @@ type Fetch struct {
 	TLS12      FetchStatus `json:"tls12,omitempty"`
 	HTTP       FetchStatus `json:"http,omitempty"`
 	HTTPDetail string      `json:"http_detail,omitempty"`
+	AltWorks   bool        `json:"-"`
 }
 
 type SiteOutcome string
@@ -96,9 +97,11 @@ type SiteResult struct {
 	Input      string      `json:"input"`
 	Domain     string      `json:"domain"`
 	URL        string      `json:"url"`
+	Family     string      `json:"family,omitempty"`
 	IP         string      `json:"ip,omitempty"`
 	HonestIP   string      `json:"honest_ip,omitempty"`
 	FakeDNS    bool        `json:"fake_dns,omitempty"`
+	AltWorks   bool        `json:"alt_works,omitempty"`
 	Direct     *Fetch      `json:"direct,omitempty"`
 	ThroughB4  *Fetch      `json:"through_b4,omitempty"`
 	Outcome    SiteOutcome `json:"outcome"`

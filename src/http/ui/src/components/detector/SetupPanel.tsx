@@ -16,6 +16,7 @@ import { StartIcon, ExpandIcon, CollapseIcon } from "@b4.icons";
 import { colors } from "@design";
 import { B4TextField, B4ChipList, B4PlusButton, B4Switch, B4Alert } from "@b4.elements";
 import type { B4SetConfig } from "@models/config";
+import { configApi } from "@b4.settings";
 import type { DetectorLists, DetectorOptions, DetectorScope, FetchMode, IPVersion } from "@models/detector";
 
 const URL_SEPARATORS = /\s+|,(?=\s|$)/;
@@ -34,7 +35,7 @@ interface StoredOptions {
 
 const defaultOptions: StoredOptions = {
   scopes: ["sites", "dns"],
-  ipVersion: "ipv4",
+  ipVersion: "both",
   parallel: 5,
   fetchMode: "both",
   tls12: true,
@@ -78,6 +79,14 @@ export const SetupPanel = ({ sets, lists, listsBusy, busy, onStart, onUpdateList
   const [input, setInput] = useState("");
   const [options, setOptions] = useState<StoredOptions>(() => loadJSON(OPTIONS_KEY, defaultOptions));
   const [advanced, setAdvanced] = useState(false);
+  const [families, setFamilies] = useState<{ v4: boolean; v6: boolean }>({ v4: true, v6: false });
+
+  useEffect(() => {
+    void configApi
+      .get()
+      .then((c) => setFamilies({ v4: !!c.queue?.ipv4, v6: !!c.queue?.ipv6 }))
+      .catch(() => {});
+  }, []);
 
   const setDomains = useMemo(() => {
     const domains = new Set<string>();
@@ -137,11 +146,14 @@ export const SetupPanel = ({ sets, lists, listsBusy, busy, onStart, onUpdateList
       scopes: o.scopes.includes(scope) ? o.scopes.filter((s) => s !== scope) : [...o.scopes, scope],
     }));
 
+  const bothFamilies = families.v4 && families.v6;
+  const effectiveIpVersion: IPVersion = bothFamilies ? options.ipVersion : families.v6 && !families.v4 ? "ipv6" : "ipv4";
+
   const start = () => {
     onStart({
       sites,
       scopes: SCOPES.filter((s) => options.scopes.includes(s)),
-      ip_version: options.ipVersion,
+      ip_version: effectiveIpVersion,
       parallel: options.parallel,
       fetch_mode: options.fetchMode,
       skip_tls12: !options.tls12,
@@ -283,12 +295,15 @@ export const SetupPanel = ({ sets, lists, listsBusy, busy, onStart, onUpdateList
         </Button>
         <Collapse in={advanced}>
           <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 2, mt: 1 }}>
-            <OptionGroup label={t("detector.setup.ipFamily")}>
-              <ToggleButtonGroup size="small" exclusive value={options.ipVersion} onChange={(_, v: IPVersion | null) => v && setOptions((o) => ({ ...o, ipVersion: v }))}>
-                <ToggleButton value="ipv4">IPv4</ToggleButton>
-                <ToggleButton value="ipv6">IPv6</ToggleButton>
-              </ToggleButtonGroup>
-            </OptionGroup>
+            {bothFamilies && (
+              <OptionGroup label={t("detector.setup.ipFamily")}>
+                <ToggleButtonGroup size="small" exclusive value={options.ipVersion} onChange={(_, v: IPVersion | null) => v && setOptions((o) => ({ ...o, ipVersion: v }))}>
+                  <ToggleButton value="both">{t("detector.setup.ipBoth")}</ToggleButton>
+                  <ToggleButton value="ipv4">IPv4</ToggleButton>
+                  <ToggleButton value="ipv6">IPv6</ToggleButton>
+                </ToggleButtonGroup>
+              </OptionGroup>
+            )}
             <OptionGroup label={t("detector.setup.parallel")}>
               <ToggleButtonGroup size="small" exclusive value={options.parallel} onChange={(_, v: number | null) => v && setOptions((o) => ({ ...o, parallel: v }))}>
                 {[1, 5, 10, 20].map((n) => (

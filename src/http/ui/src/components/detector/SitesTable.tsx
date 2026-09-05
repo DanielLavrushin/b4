@@ -37,7 +37,7 @@ function describe(s: SiteResult, t: (k: string, o?: Record<string, unknown>) => 
   const parts: string[] = [];
   const d = s.direct;
   if (!d || d.status === "CHECKING" || d.status === "PENDING") return t("detector.sites.checking");
-  if (d.detail) parts.push(d.detail);
+  if (d.detail) parts.push(d.detail.replace(/; the address DoH returns \([^)]*\) loads/, ""));
   if (d.tls12 && d.tls12 !== "OK") parts.push(t("detector.sites.tls12Also", { status: t(`detector.status.${d.tls12}`, { defaultValue: d.tls12 }) }));
   else if (d.tls12 === "OK") parts.push(t("detector.sites.tls12Works"));
   if (d.http && d.http !== "OK") parts.push(t("detector.sites.httpAlso", { status: t(`detector.status.${d.http}`, { defaultValue: d.http }) }));
@@ -49,6 +49,7 @@ function describe(s: SiteResult, t: (k: string, o?: Record<string, unknown>) => 
       parts.push(t("detector.sites.throughB4", { detail: b.detail ?? t(`detector.status.${b.status}`, { defaultValue: b.status }) }));
     }
   }
+  if (s.alt_works && s.honest_ip) parts.push(t("detector.sites.altWorks", { ip: s.honest_ip }));
   if (still(s)) {
     if (!s.set_name) parts.push(t("detector.sites.noSet"));
     else if (!s.set_enabled) parts.push(t("detector.sites.setDisabled", { set: s.set_name }));
@@ -110,9 +111,19 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
               <TableRow key={s.input} sx={{ "&:last-child td": { border: 0 }, opacity: s.done ? 1 : 0.7 }}>
                 <TableCell sx={{ fontFamily: "monospace", fontSize: "0.8rem", whiteSpace: "nowrap" }}>
                   {s.domain}
+                  {s.family === "ipv6" && (
+                    <Typography component="span" variant="caption" sx={{ color: colors.secondary, ml: 0.5 }}>
+                      IPv6
+                    </Typography>
+                  )}
                   {s.url && s.url.replace(/^https:\/\/[^/]+/, "") !== "/" && (
                     <Typography component="span" variant="caption" sx={{ color: colors.text.disabled, ml: 0.5 }}>
                       {s.url.replace(/^https:\/\/[^/]+/, "").slice(0, 24)}
+                    </Typography>
+                  )}
+                  {s.ip && (
+                    <Typography variant="caption" sx={{ color: colors.text.disabled, display: "block" }}>
+                      {s.ip}
                     </Typography>
                   )}
                 </TableCell>

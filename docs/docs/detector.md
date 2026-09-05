@@ -7,7 +7,7 @@ title: DPI Detector
 
 The detector reports what the ISP does to traffic leaving the router: which sites are blocked and how, whether plain DNS is hijacked or answers are substituted, whether long connections to hosting and CDN networks are cut, and whether Telegram is reachable. It is built on the detection methods of the [dpi-detector](https://github.com/Runnin4ik/dpi-detector) project and reuses its target lists.
 
-Every site is fetched twice: once directly, with b4's processing bypassed, and once through b4 with the configured sets in effect. The first fetch shows the ISP; the second shows whether b4 fixes it. A check made only through the service would report the bypassed view and hide the blocking it is meant to show.
+Every site is fetched twice: once directly, with b4's processing bypassed, and once through b4 with the configured sets in effect, using the DoH answer for the address when the matching set has a DNS redirect. When the direct fetch fails, the address the DoH resolvers return is tried as well, and a row whose DoH address loads says so. The first fetch shows the ISP; the second shows whether b4 fixes it. A check made only through the service would report the bypassed view and hide the blocking it is meant to show.
 
 ## Input
 
@@ -22,7 +22,7 @@ Four scopes are offered, each with an estimate of how long it takes:
 | **Hosting and CDN** | Whether a keep-alive connection to Hetzner, Cloudflare, Akamai, AWS and other networks is cut after the first 12 to 40 KB, grouped by network with the drop point. With the SNI search on, whitelisted names are tried against each affected network and the ones that get through are listed. |
 | **Telegram** | Reachability of the datacenters, and download and upload throughput. |
 
-Sites and DNS are on by default. Under **Advanced**: the IP family, the number of parallel checks (lower is kinder to a small router), whether to fetch through b4 at all, the TLS 1.2 retry, and the SNI search.
+Sites and DNS are on by default. Under **Advanced**: the IP family, offered only while the capture engine handles both IPv4 and IPv6 (with both selected, a site that has an IPv6 address gets a second row), the number of parallel checks (lower is kinder to a small router), whether to fetch through b4 at all, the TLS 1.2 retry, and the SNI search.
 
 ## Reading the results
 
