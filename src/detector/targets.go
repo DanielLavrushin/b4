@@ -128,11 +128,14 @@ func saveListOverride(configPath string, lists TargetLists) error {
 	return nil
 }
 
-func ResetListOverride(configPath string) {
+func ResetListOverride(configPath string) error {
 	if path := overridePath(configPath); path != "" {
-		os.Remove(path)
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
 	}
 	listsMu.Lock()
 	currentLists = nil
 	listsMu.Unlock()
+	return nil
 }

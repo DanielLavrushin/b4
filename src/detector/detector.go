@@ -10,8 +10,11 @@ func (s *Suite) Run(configPath string) {
 	s.mu.Lock()
 	if s.ctx.Err() != nil {
 		s.Status = StatusCanceled
-		s.EndTime = time.Now()
+		s.Stopping = false
+		s.StartTime = time.Now()
+		s.EndTime = s.StartTime
 		s.mu.Unlock()
+		s.scheduleRemoval()
 		return
 	}
 	s.Status = StatusRunning
@@ -59,6 +62,10 @@ func (s *Suite) Run(configPath string) {
 	s.Status = final
 	s.Stopping = false
 	s.mu.Unlock()
+	s.scheduleRemoval()
+}
+
+func (s *Suite) scheduleRemoval() {
 	go func() {
 		time.Sleep(60 * time.Second)
 		suitesMu.Lock()
@@ -83,6 +90,15 @@ func (s *Suite) estimateTotal() int {
 		}
 	}
 	return total
+}
+
+func appendUnique(list []string, item string) []string {
+	for _, existing := range list {
+		if existing == item {
+			return list
+		}
+	}
+	return append(list, item)
 }
 
 func (s *Suite) modes() int {
@@ -111,7 +127,7 @@ func (s *Suite) refreshVerdict() {
 			case OutcomeStillBlocked, OutcomeBlocked:
 				v.BlockedByISP++
 				v.StillBlocked++
-				v.StillBlockedAt = append(v.StillBlockedAt, site.Domain)
+				v.StillBlockedAt = appendUnique(v.StillBlockedAt, site.Input)
 			case OutcomeBrokenByB4:
 				v.NotBlocked++
 				v.BrokenByB4++

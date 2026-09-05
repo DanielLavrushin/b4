@@ -47,7 +47,7 @@ export function verdictSentences(suite: DetectorSuite, t: (k: string, o?: Record
         body.push(
           t("detector.verdict.stillBlocked", {
             count: v.still_blocked,
-            sites: (v.still_blocked_sites ?? []).slice(0, 4).join(", "),
+            sites: (v.still_blocked_sites ?? []).slice(0, 4).map((u) => u.replace(/^https?:\/\//, "").split("/")[0]).join(", "),
           }),
         );
       }

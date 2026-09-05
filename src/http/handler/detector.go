@@ -336,6 +336,7 @@ func (api *API) handleDetectorListsUpdate(w http.ResponseWriter, r *http.Request
 // @Tags Detector
 // @Produce json
 // @Success 200 {object} DetectorListsResponse
+// @Failure 500 {string} string
 // @Security BearerAuth
 // @Router /detector/lists/reset [post]
 func (api *API) handleDetectorListsReset(w http.ResponseWriter, r *http.Request) {
@@ -344,7 +345,11 @@ func (api *API) handleDetectorListsReset(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	api.detectorLists()
-	detector.ResetListOverride(api.getCfg().ConfigPath)
+	if err := detector.ResetListOverride(api.getCfg().ConfigPath); err != nil {
+		log.Errorf("Detector list reset failed: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	setJsonHeader(w)
 	json.NewEncoder(w).Encode(detectorListsResponse(detector.Lists()))
 }
