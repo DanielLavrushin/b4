@@ -314,6 +314,7 @@ func (api *API) handleSetDomains(w http.ResponseWriter, r *http.Request) {
 }
 
 func mergePins(set *config.SetConfig, pins map[string][]string) {
+	merged := false
 	for rawDomain, ips := range pins {
 		domain := config.NormalizePinDomain(rawDomain)
 		if domain == "" {
@@ -328,8 +329,17 @@ func mergePins(set *config.SetConfig, pins map[string][]string) {
 				set.DNS.Pins = map[string][]string{}
 			}
 			set.DNS.Pins[domain] = append(set.DNS.Pins[domain], ip)
+			merged = true
 		}
 	}
+	if !merged {
+		return
+	}
+	ibd := &set.TCP.IPBlockDetect
+	ibd.Enabled = true
+	ibd.SynDetect = true
+	ibd.HealDNS = true
+	ibd.CacheBlockedIPs = true
 }
 
 func domainInList(list []string, domain string) bool {

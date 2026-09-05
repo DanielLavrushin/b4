@@ -61,9 +61,12 @@ export const HistoryTable = ({
   const { t } = useTranslation();
 
   const rows = useMemo<Row[]>(() => {
-    const sorted = [...entries].sort(
-      (a, b) => new Date(b.end_time).getTime() - new Date(a.end_time).getTime(),
-    );
+    const sorted = [...entries].sort((a, b) => {
+      const byTime =
+        new Date(b.end_time).getTime() - new Date(a.end_time).getTime();
+      if (byTime !== 0) return byTime;
+      return (a.order ?? 0) - (b.order ?? 0);
+    });
     const groups = new Map<string, string[]>();
     for (const entry of sorted) {
       const key = setKey(entry);

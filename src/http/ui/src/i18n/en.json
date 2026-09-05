@@ -2043,7 +2043,8 @@
       "openSet": "Open set",
       "createFailed": "Could not create the set.",
       "addFailed": "Could not add to the set.",
-      "shared": "{{domains}} won with the same strategy in one run, so one set covers all of them."
+      "shared": "{{domains}} won with the same strategy in one run, so one set covers all of them.",
+      "overlapCovered": "{{domains}} also overlaps with {{entries}} in {{sets}}. Those entries stay where they are; a name matched by two enabled sets is handled by whichever comes first in the list."
     },
     "history": {
       "title": "History",

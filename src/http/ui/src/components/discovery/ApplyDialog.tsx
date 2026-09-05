@@ -63,6 +63,7 @@ export const ApplyDialog = ({
   const [similar, setSimilar] = useState<SimilarSet[]>([]);
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
   const [claimed, setClaimed] = useState<SetDomainMatch[]>([]);
+  const [covered, setCovered] = useState<SetDomainMatch[]>([]);
 
   useEffect(() => {
     if (!open || !target) return;
@@ -72,6 +73,7 @@ export const ApplyDialog = ({
     setSimilar([]);
     setSelectedSetId(null);
     setClaimed([]);
+    setCovered([]);
 
     if (target.set.dns?.enabled) return;
 
@@ -100,6 +102,7 @@ export const ApplyDialog = ({
   useEffect(() => {
     if (!open || domains.length === 0) {
       setClaimed([]);
+      setCovered([]);
       return;
     }
     let active = true;
@@ -107,14 +110,17 @@ export const ApplyDialog = ({
       .checkDomain(domains.join(","))
       .then((matches) => {
         if (!active) return;
-        setClaimed(
-          Array.isArray(matches)
-            ? matches.filter((m) => m.enabled && m.relation === "exact")
-            : [],
-        );
+        const enabled = Array.isArray(matches)
+          ? matches.filter((m) => m.enabled)
+          : [];
+        setClaimed(enabled.filter((m) => m.relation === "exact"));
+        setCovered(enabled.filter((m) => m.relation !== "exact"));
       })
       .catch(() => {
-        if (active) setClaimed([]);
+        if (active) {
+          setClaimed([]);
+          setCovered([]);
+        }
       });
     return () => {
       active = false;
@@ -131,7 +137,11 @@ export const ApplyDialog = ({
   const confirm = () => {
     if (mode === "existing") {
       if (selectedSetId) {
-        onAddToExisting(selectedSetId, domains, pinsFor(target.set, domains));
+        onAddToExisting(
+          selectedSetId,
+          domains,
+          pinsFor(target.set, target.domains),
+        );
       }
       return;
     }
@@ -241,6 +251,15 @@ export const ApplyDialog = ({
             {t("discovery.apply.overlap", {
               domains: [...new Set(claimed.map((m) => m.domain))].join(", "),
               sets: [...new Set(claimed.map((m) => m.set_name))].join(", "),
+            })}
+          </B4Alert>
+        )}
+        {covered.length > 0 && (
+          <B4Alert severity="info">
+            {t("discovery.apply.overlapCovered", {
+              domains: [...new Set(covered.map((m) => m.domain))].join(", "),
+              entries: [...new Set(covered.map((m) => m.entry))].join(", "),
+              sets: [...new Set(covered.map((m) => m.set_name))].join(", "),
             })}
           </B4Alert>
         )}

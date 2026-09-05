@@ -80,6 +80,12 @@ func TestAddDomainsToSetInOneRequest(t *testing.T) {
 	if pins := got.DNS.Pins["twitch.tv"]; len(pins) != 2 || pins[0] != "151.101.2.167" || pins[1] != "151.101.66.167" {
 		t.Errorf("valid pins travel with the domains, garbage is dropped, got %v", got.DNS.Pins)
 	}
+	if ibd := got.TCP.IPBlockDetect; !ibd.Enabled || !ibd.SynDetect || !ibd.HealDNS {
+		t.Errorf("a set that gained pins must track dead addresses or a dead pin is served forever: %+v", ibd)
+	}
+	if rest.TCP.IPBlockDetect.Enabled {
+		t.Error("the untouched set keeps its own settings")
+	}
 }
 
 func TestAddDomainToSetRejectsAnEmptyRequest(t *testing.T) {

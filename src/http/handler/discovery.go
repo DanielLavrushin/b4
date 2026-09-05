@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"github.com/daniellavrushin/b4/config"
@@ -408,13 +409,22 @@ func (api *API) handleFindSimilarSets(w http.ResponseWriter, r *http.Request) {
 }
 
 func setsHaveSimilarConfig(a, b *config.SetConfig) bool {
-	return a.Fragmentation.Strategy == b.Fragmentation.Strategy &&
-		a.Fragmentation.ReverseOrder == b.Fragmentation.ReverseOrder &&
-		a.Fragmentation.MiddleSNI == b.Fragmentation.MiddleSNI &&
-		a.Faking.Strategy == b.Faking.Strategy &&
-		a.Faking.TTL == b.Faking.TTL &&
-		a.Faking.SNI == b.Faking.SNI &&
-		a.TCP.DropSACK == b.TCP.DropSACK
+	return reflect.DeepEqual(strategyShape(a), strategyShape(b))
+}
+
+func strategyShape(set *config.SetConfig) config.SetConfig {
+	shape := config.SetConfig{
+		TCP:           set.TCP,
+		UDP:           set.UDP,
+		Fragmentation: set.Fragmentation,
+		Faking:        set.Faking,
+	}
+	shape.TCP.DPortFilter = ""
+	shape.TCP.IPBlockDetect = config.IPBlockDetectConfig{}
+	shape.TCP.RSTProtection = config.RSTProtectionConfig{}
+	shape.UDP.DPortFilter = ""
+	config.ApplySetDefaults(&shape)
+	return shape
 }
 
 func extractDomainName(domain string) string {

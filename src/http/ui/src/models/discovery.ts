@@ -164,6 +164,7 @@ export interface HistoryEntry {
   set?: B4SetConfig;
   outcome?: DiscoveryOutcome;
   unconfirmed?: boolean;
+  order?: number;
 }
 
 export interface SimilarSet {

@@ -61,3 +61,33 @@ func TestAddPresetAsSetDropsGeoCategoriesWithoutDatabases(t *testing.T) {
 		t.Errorf("unexpected SNI domains: %v", sets[0].Targets.SNIDomains)
 	}
 }
+
+func TestSimilarSetsNeedTheWholeStrategyToMatch(t *testing.T) {
+	base := config.NewSetConfig()
+	base.Fragmentation.Strategy = "tcp"
+	base.Faking.SNI = true
+	base.Faking.Strategy = "pastseq"
+	base.Faking.TTL = 6
+
+	same := base
+	same.Name = "other"
+	same.Targets.SNIDomains = []string{"meduza.io"}
+	same.TCP.DPortFilter = "443"
+	same.TCP.IPBlockDetect.Enabled = true
+	if !setsHaveSimilarConfig(&base, &same) {
+		t.Fatal("port filters and address tracking are not part of the strategy")
+	}
+
+	desynced := base
+	desynced.TCP.Desync.Mode = "full"
+	desynced.TCP.Desync.TTL = 6
+	if setsHaveSimilarConfig(&base, &desynced) {
+		t.Fatal("a desync set is a different strategy, offering it would apply the wrong one")
+	}
+
+	split := base
+	split.Fragmentation.SNIPosition = 3
+	if setsHaveSimilarConfig(&base, &split) {
+		t.Fatal("the split position is part of the strategy")
+	}
+}

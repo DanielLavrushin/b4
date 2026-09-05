@@ -72,6 +72,30 @@ func TestHistoryKeepsOnlyTheWinningPresetsSet(t *testing.T) {
 	}
 }
 
+func TestHistoryKeepsTheOrderTheSitesWereTyped(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	suite := &CheckSuite{
+		Id: "run-2", Status: CheckStatusComplete, EndTime: time.Now(),
+		Domains: []DomainInput{{Domain: "zona.media"}, {Domain: "meduza.io"}, {Domain: "facebook.com"}},
+		DomainDiscoveryResults: map[string]*DomainDiscoveryResult{
+			"facebook.com": {Domain: "facebook.com"},
+			"meduza.io":    {Domain: "meduza.io"},
+			"zona.media":   {Domain: "zona.media"},
+		},
+	}
+	SaveToHistory(suite, cfgPath)
+
+	hist := LoadDiscoveryHistory(cfgPath)
+	got := map[string]int{}
+	for _, e := range hist.Entries {
+		got[e.Domain] = e.Order
+	}
+	if got["zona.media"] != 1 || got["meduza.io"] != 2 || got["facebook.com"] != 3 {
+		t.Fatalf("entries of one run share an end time, so the typed order must be recorded: %v", got)
+	}
+}
+
 func TestCancelSuiteWithoutAChannelDoesNotPanic(t *testing.T) {
 	suite := &CheckSuite{Id: "hand-built", Status: CheckStatusRunning}
 	RegisterSuite(suite)
