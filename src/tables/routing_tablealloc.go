@@ -129,10 +129,6 @@ func routeRuleLookupTargets() map[string][]string {
 	return targets
 }
 
-func routeTableRuleRefs(table int) []string {
-	return routeRuleRefsIn(routeRuleLookupTargets(), table)
-}
-
 func routeRuleRefsIn(targets map[string][]string, table int) []string {
 	var refs []string
 	add := func(lines []string) {
@@ -228,10 +224,6 @@ func routeTablesHoldingRoutes() map[string]bool {
 		}
 	}
 	return held
-}
-
-func routeTableHoldsForeignRoutes(table int) bool {
-	return routeTableHeldIn(routeTablesHoldingRoutes(), table)
 }
 
 func routeTableHeldIn(held map[string]bool, table int) bool {

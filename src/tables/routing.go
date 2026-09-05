@@ -1652,15 +1652,6 @@ func routeAddEgressRules(be routeBackend, st routeState, ipv4, ipv6 bool) {
 	}
 }
 
-func routeAddMasqueradeRules(be routeBackend, iface, chain string, mark uint32, ipv4, ipv6 bool) {
-	if ipv4 {
-		be.addMasqueradeRule(chain, mark, iface, false)
-	}
-	if ipv6 {
-		be.addMasqueradeRule(chain, mark, iface, true)
-	}
-}
-
 func routeHashlimitName(chain string, v6 bool) string {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(chain))
