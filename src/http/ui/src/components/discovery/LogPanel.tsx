@@ -1,127 +1,211 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  Box,
-  Typography,
-  Stack,
-  Button,
-} from "@mui/material";
-import {
-  ClearIcon,
-  LogsIcon,
-  CloseIcon,
-} from "@b4.icons";
-import { colors } from "@design";
-import { useDiscoveryLogs } from "@b4.discovery";
+import { Box, Typography, Button } from "@mui/material";
+import { ClearIcon, LogsIcon, CloseIcon, DownloadIcon } from "@b4.icons";
+import { colors, typography } from "@design";
 import { B4Dialog } from "@common/B4Dialog";
 import { useTranslation } from "react-i18next";
+import { discoveryApi } from "@api/discovery";
 
-interface DiscoveryLogPanelProps {
-  running: boolean;
+const downloadText = (text: string) => {
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `b4-discovery-${stamp}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
+
+interface DiscoveryLogLineProps {
+  logs: string[];
+  connected: boolean;
+  onOpen: () => void;
 }
 
-export const DiscoveryLogPanel = ({ running }: DiscoveryLogPanelProps) => {
+export const DiscoveryLogLine = ({
+  logs,
+  connected,
+  onOpen,
+}: DiscoveryLogLineProps) => {
   const { t } = useTranslation();
-  const { logs, connected, clearLogs } = useDiscoveryLogs();
-  const [modalOpen, setModalOpen] = useState(false);
-  const modalScrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (modalScrollRef.current && modalOpen) {
-      modalScrollRef.current.scrollTop = modalScrollRef.current.scrollHeight;
-    }
-  }, [logs, modalOpen]);
-
-  if (!running && logs.length === 0) return null;
+  const last = logs.at(-1) ?? "";
 
   return (
-    <>
-      <Stack direction="row" alignItems="center" spacing={1.5}>
-        <Button
-          variant="outlined"
-          size="small"
-          startIcon={<LogsIcon />}
-          onClick={() => setModalOpen(true)}
-          sx={{ textTransform: "none" }}
-        >
-          {t("discovery.logs.title")}
-        </Button>
-        <Box
-          sx={{
-            width: 10,
-            height: 10,
-            borderRadius: "50%",
-            bgcolor: connected ? colors.secondary : colors.text.disabled,
-          }}
-        />
-        {logs.length > 0 && (
-          <Typography variant="caption" sx={{ color: colors.text.secondary }}>
-            {logs[logs.length - 1]}
-          </Typography>
-        )}
-      </Stack>
-
-      <B4Dialog
-        title={t("discovery.logs.title")}
-        icon={<LogsIcon />}
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        fullWidth
-        maxWidth="xl"
-        actions={
-          <>
-            <Button
-              onClick={clearLogs}
-              startIcon={<ClearIcon />}
-              size="small"
-            >
-              {t("discovery.logs.clear")}
-            </Button>
-            <Box sx={{ flex: 1 }} />
-            <Button
-              onClick={() => setModalOpen(false)}
-              variant="contained"
-              startIcon={<CloseIcon />}
-            >
-              {t("core.close")}
-            </Button>
-          </>
-        }
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        gap: 1.5,
+        px: 1.5,
+        py: 1,
+        border: `1px solid ${colors.border.light}`,
+        borderRadius: 1.5,
+        bgcolor: colors.background.dark,
+        minWidth: 0,
+      }}
+    >
+      <Box
+        sx={{
+          width: 9,
+          height: 9,
+          borderRadius: "50%",
+          flexShrink: 0,
+          bgcolor: connected ? colors.secondary : colors.text.disabled,
+          boxShadow: connected ? `0 0 8px ${colors.secondary}` : "none",
+        }}
+      />
+      <Typography
+        noWrap
+        sx={{
+          ...typography.recipes.monoSmall,
+          fontSize: typography.sizes.sm,
+          color: last ? colors.text.primary : colors.text.disabled,
+          flex: 1,
+          minWidth: 0,
+        }}
       >
-        <div
-          ref={modalScrollRef}
-          style={{
-            height: "60vh",
-            overflowY: "auto",
-            backgroundColor: colors.background.dark,
-            fontFamily: "monospace",
-            fontSize: 12,
-            padding: 16,
-          }}
-        >
-          {logs.length === 0 ? (
-            <Typography
-              sx={{ color: colors.text.disabled, fontStyle: "italic" }}
+        {last || t("discovery.logs.waiting")}
+      </Typography>
+      <Button
+        size="small"
+        startIcon={<LogsIcon />}
+        onClick={onOpen}
+        sx={{ textTransform: "none", flexShrink: 0 }}
+      >
+        {t("discovery.run.showLog")}
+      </Button>
+    </Box>
+  );
+};
+
+interface DiscoveryLogDialogProps {
+  open: boolean;
+  logs: string[];
+  onClose: () => void;
+  onClear: () => void;
+}
+
+export const DiscoveryLogDialog = ({
+  open,
+  logs,
+  onClose,
+  onClear,
+}: DiscoveryLogDialogProps) => {
+  const { t } = useTranslation();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [saved, setSaved] = useState<string[]>([]);
+  const [fetched, setFetched] = useState(false);
+  const lines = logs.length > 0 ? logs : saved;
+
+  useEffect(() => {
+    if (!open) {
+      setFetched(false);
+      setSaved([]);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || logs.length > 0 || fetched) return;
+    setFetched(true);
+    let active = true;
+    discoveryApi
+      .log()
+      .then((text) => {
+        if (active) setSaved(text.split("\n").filter((l) => l.length > 0));
+      })
+      .catch(() => {
+        if (active) setSaved([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [open, logs.length, fetched]);
+
+  const clear = () => {
+    setSaved([]);
+    setFetched(true);
+    onClear();
+  };
+
+  useEffect(() => {
+    if (scrollRef.current && open) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [lines, open]);
+
+  const download = () => {
+    void discoveryApi
+      .log()
+      .then((text) => downloadText(text))
+      .catch(() => downloadText(lines.join("\n")));
+  };
+
+  return (
+    <B4Dialog
+      title={t("discovery.logs.title")}
+      icon={<LogsIcon />}
+      open={open}
+      onClose={onClose}
+      fullWidth
+      maxWidth="xl"
+      actions={
+        <>
+          <Button onClick={clear} startIcon={<ClearIcon />} size="small">
+            {t("discovery.logs.clear")}
+          </Button>
+          <Button
+            onClick={download}
+            startIcon={<DownloadIcon />}
+            size="small"
+            disabled={lines.length === 0}
+          >
+            {t("discovery.logs.download")}
+          </Button>
+          <Box sx={{ flex: 1 }} />
+          <Button
+            onClick={onClose}
+            variant="contained"
+            startIcon={<CloseIcon />}
+          >
+            {t("core.close")}
+          </Button>
+        </>
+      }
+    >
+      <div
+        ref={scrollRef}
+        style={{
+          height: "60vh",
+          overflowY: "auto",
+          backgroundColor: colors.background.dark,
+          fontFamily: "monospace",
+          fontSize: 12,
+          padding: 16,
+        }}
+      >
+        {lines.length === 0 ? (
+          <Typography sx={{ color: colors.text.disabled, fontStyle: "italic" }}>
+            {t("discovery.logs.waiting")}
+          </Typography>
+        ) : (
+          lines.map((line, i) => (
+            <div
+              key={`${i}-${line.slice(0, 24)}`}
+              style={{
+                color: getLogColor(line),
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                lineHeight: 1.6,
+              }}
             >
-              {t("discovery.logs.waiting")}
-            </Typography>
-          ) : (
-            logs.map((line, i) => (
-              <div
-                key={i}
-                style={{
-                  color: getLogColor(line),
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  lineHeight: 1.6,
-                }}
-              >
-                {line}
-              </div>
-            ))
-          )}
-        </div>
-      </B4Dialog>
-    </>
+              {line}
+            </div>
+          ))
+        )}
+      </div>
+    </B4Dialog>
   );
 };
 

@@ -30,63 +30,57 @@ On first launch the dashboard will be empty - that is normal. Data appears after
 
 ## Run discovery
 
-b4 can automatically pick a working configuration for your provider. This is done in the **Discovery** section.
+b4 can pick a working configuration for your provider on its own. This is done in the **Discovery** section.
 
 ### Step 1: Open Discovery
 
 In the side menu click **Discovery**.
 
-![20260418215702](../static/img/quickstart/20260418215702.png)
+### Step 2: Add sites
 
-### Step 2: Add domains
-
-In the **Add domain or URL** field enter a blocked site address and press Enter. You can add several domains separated by commas.
+In the **Site or URL** field enter the address of a blocked site and press Enter. Several sites can be added at once, separated by commas.
 
 Examples:
 
 - `youtube.com`
 - `googlevideo.com`
 
-![20260418215910](../static/img/quickstart/20260418215910.png)
+![Sites added to Discovery](/img/quickstart/20260905160500.png)
 
 ### Step 3: Start the search
 
-Click **Start search**.
+Click **Start**.
 
-b4 iterates through bypass strategies and tests them against the listed domains. The process goes through several phases:
+b4 tries its bypass strategies against the listed sites. The run goes through six steps, shown on the page: a DNS check, a fetch without any bypass, the strategies themselves, tuning, combining, and a confirmation of the winner.
 
-1. **Basic test** - check whether the site is actually blocked
-2. **Strategy search** - iterate through bypass methods
-3. **Optimization** - tune parameters
-4. **Combination test** - check combined strategies
-5. **DNS check** - check for DNS-based blocking
+![A run in progress](/img/quickstart/20260905160600.png)
 
-![20260418220026](../static/img/quickstart/20260418220026.png)
+A run takes from one to ten minutes depending on the provider. **Stop and keep results** ends it early and keeps whatever has been found.
 
-The search can take from 1 to 10 minutes depending on the provider.
-
-:::tip Skip DNS check
-If you are sure DNS works normally (for example, you use DoH or a third-party DNS server), enable **Skip DNS search** in **Search parameters**. This speeds up the process and removes false DNS-related results.
+:::tip DNS check
+When DNS is known to be clean, for example with DoH or a third-party resolver already in place, **Check DNS for tampering** under **Options** can be turned off. The run gets shorter and the set gets no DNS redirect.
 :::
 
 ### Step 4: Results
 
-After the search finishes, each domain shows a result:
+When the run finishes, every site gets a verdict:
 
-- **Success** - a working configuration was found
-- **Blocked** - the site is blocked at the DNS or transport layer and needs additional settings
+- **Strategy found** - a working configuration, described in words, with **Apply as a set**
+- **No bypass needed** - the site loads without b4, so there is nothing to apply
+- **Address blocked** - connections to the site's addresses fail, so a bypass strategy cannot help and the site needs a proxy or VPN set
+- **Nothing found** - no strategy made the site load
 
-![20260418220109](../static/img/quickstart/20260418220109.png)
+![Results of a run](/img/quickstart/20260905160700.png)
 
 ## Apply the configuration
 
-On a successful result card click **Use this configuration**.
+On a found result click **Apply as a set**.
 
 In the dialog that opens:
 
-1. Choose **Create a new set** (or **Add to an existing similar set** if you already have configured sets)
-2. Enter the set name (or keep the suggested one)
-3. Click **Create set**
+1. Check the rows describing what the set will do
+2. Keep the suggested name or enter another one
+3. Click **Create set**, or pick an existing set with the same strategy and click **Add to set**
 
 A set is a bundle of bypass settings tied to a list of domains or IP addresses. More on sets in the [Sets](./sets/) section.
 

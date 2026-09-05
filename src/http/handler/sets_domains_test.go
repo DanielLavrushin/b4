@@ -1,0 +1,114 @@
+package handler
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/geodat"
+)
+
+func TestAddDomainsToSetInOneRequest(t *testing.T) {
+	cfg := config.NewConfig()
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "b4.json")
+
+	target := config.NewSetConfig()
+	target.Id = "target"
+	target.Name = "Streaming"
+	target.Enabled = true
+	target.Targets.SNIDomains = []string{"youtube.com"}
+
+	other := config.NewSetConfig()
+	other.Id = "other"
+	other.Name = "Discord"
+	other.Enabled = true
+	other.Targets.SNIDomains = []string{"discord.com", "discordapp.com"}
+
+	cfg.Sets = []*config.SetConfig{&target, &other}
+
+	api := &API{
+		cfgPtr:         testCfgPtr(&cfg),
+		geodataManager: geodat.NewGeodataManager("", ""),
+	}
+	mux := http.NewServeMux()
+	api.mux = mux
+	api.RegisterSetsApi()
+
+	body := `{"domains":["discord.com"," Youtube.com ","twitch.tv","   "],"pins":{"twitch.tv":["151.101.2.167","not-an-ip"," 151.101.66.167 "]}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/sets/target/add-domain", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	var reply struct {
+		Moved []DomainReassignment `json:"moved"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &reply); err != nil {
+		t.Fatalf("decode reply: %v", err)
+	}
+
+	var got, rest *config.SetConfig
+	for _, s := range api.getCfg().Sets {
+		switch s.Id {
+		case "target":
+			got = s
+		case "other":
+			rest = s
+		}
+	}
+	if got == nil || rest == nil {
+		t.Fatal("both sets must survive the request")
+	}
+
+	want := []string{"youtube.com", "discord.com", "twitch.tv"}
+	if strings.Join(got.Targets.SNIDomains, ",") != strings.Join(want, ",") {
+		t.Errorf("one request adds every domain once, got %v want %v", got.Targets.SNIDomains, want)
+	}
+	if strings.Join(rest.Targets.SNIDomains, ",") != "discordapp.com" {
+		t.Errorf("a domain belongs to one enabled set, so discord.com must leave the other set, got %v", rest.Targets.SNIDomains)
+	}
+	if len(reply.Moved) != 1 || reply.Moved[0].Domain != "discord.com" || reply.Moved[0].SetName != "Discord" {
+		t.Errorf("the reply must report every reassignment, got %+v", reply.Moved)
+	}
+	if pins := got.DNS.Pins["twitch.tv"]; len(pins) != 2 || pins[0] != "151.101.2.167" || pins[1] != "151.101.66.167" {
+		t.Errorf("valid pins travel with the domains, garbage is dropped, got %v", got.DNS.Pins)
+	}
+	if ibd := got.TCP.IPBlockDetect; !ibd.Enabled || !ibd.SynDetect || !ibd.HealDNS {
+		t.Errorf("a set that gained pins must track dead addresses or a dead pin is served forever: %+v", ibd)
+	}
+	if rest.TCP.IPBlockDetect.Enabled {
+		t.Error("the untouched set keeps its own settings")
+	}
+}
+
+func TestAddDomainToSetRejectsAnEmptyRequest(t *testing.T) {
+	cfg := config.NewConfig()
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "b4.json")
+	set := config.NewSetConfig()
+	set.Id = "target"
+	set.Enabled = true
+	cfg.Sets = []*config.SetConfig{&set}
+
+	api := &API{
+		cfgPtr:         testCfgPtr(&cfg),
+		geodataManager: geodat.NewGeodataManager("", ""),
+	}
+	mux := http.NewServeMux()
+	api.mux = mux
+	api.RegisterSetsApi()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sets/target/add-domain", strings.NewReader(`{"domain":"  "}`))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("an empty domain must be refused, got %d (%s)", rec.Code, rec.Body.String())
+	}
+}

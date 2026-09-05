@@ -78,7 +78,7 @@ Then open `http://<device-ip>:7000`.
 
 ## First run
 
-1. Open the web UI, go to **Discovery**, type a blocked domain and press **Start search**. Takes 1-10 minutes.
+1. Open the web UI, go to **Discovery**, type a blocked site and press **Start**. Takes 1-10 minutes.
 2. On a successful result click **Use this configuration**, then **Create a new set**.
 3. Open the site. On the **Traffic** page, connections to that domain now show the set name.
 
@@ -201,7 +201,7 @@ Docs: [MTProto / Telegram](https://docs.b4core.app/docs/mtproto)
 
 ## Discovery, Watchdog, DPI Detector
 
-**Discovery** tests bypass strategies against your real network on an isolated queue, tunes the parameters of whatever works, and checks for DNS poisoning and IP-level blocks along the way. Results apply as sets without a restart.
+**Discovery** tests bypass strategies against your real network on an isolated queue, tunes the parameters of whatever works, and checks for DNS poisoning and IP-level blocks along the way, asking other regions' DNS answers for an address the block does not cover. Results apply as sets without a restart, and the set is previewed before it is created.
 
 **Watchdog** fetches the domains you list periodically. After enough consecutive failures it re-runs Discovery for that domain, verifies the result, and rolls back if it does not hold. Disabled by default.
 
@@ -335,7 +335,7 @@ make help           # all targets
 
 <https://docs.b4core.app/> · [Русская версия](https://docs.b4core.app/ru/)
 
-A few English pages (Discovery, DPI Detector, Connections, Logs and the Advanced section) are still being translated. Use the language switcher for the Russian originals.
+A few English pages (DPI Detector, Connections, Logs and the Advanced section) are still being translated. Use the language switcher for the Russian originals.
 
 ## Contributing
 
@@ -359,6 +359,7 @@ Based on research from:
 - [dpi-detector](https://github.com/Runnin4ik/dpi-detector) - DPI/TSPU detection techniques and test target lists (the DPI Detector feature is based on this project)
 - [Ladon](https://github.com/belotserkovtsev/ladon) - reactive Anti-DPI detection engine; its failure-classification approach (telling server-side rejection apart from DPI interference) informed the Watchdog feature
 - [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy) - Telegram MTProto-over-WebSocket bridging
+- [ori](https://ntc.party/u/ori/summary) - GoodCheck ideas in Discovery
 
 ## License
 

@@ -34,26 +34,43 @@ const (
 type StrategyFamily string
 
 const (
-	FamilyNone      StrategyFamily = "none"
-	FamilyTCPFrag   StrategyFamily = "tcp_frag"
-	FamilyTLSRec    StrategyFamily = "tls_record"
-	FamilyOOB       StrategyFamily = "oob"
-	FamilyIPFrag    StrategyFamily = "ip_frag"
-	FamilyFakeSNI   StrategyFamily = "fake_sni"
-	FamilySACK      StrategyFamily = "sack"
-	FamilySynFake   StrategyFamily = "syn_fake"
-	FamilyDesync    StrategyFamily = "desync"
-	FamilyWindow    StrategyFamily = "window"
-	FamilyDelay     StrategyFamily = "delay"
-	FamilyMutation  StrategyFamily = "mutation"
-	FamilyDisorder  StrategyFamily = "disorder"
-	FamilyOverlap   StrategyFamily = "overlap"
-	FamilyExtSplit  StrategyFamily = "extsplit"
-	FamilyFirstByte StrategyFamily = "firstbyte"
-	FamilyCombo     StrategyFamily = "combo"
-	FamilyHybrid    StrategyFamily = "hybrid"
-	FamilyIncoming  StrategyFamily = "incoming"
-	FamilyTCPMD5    StrategyFamily = "tcpmd5"
+	FamilyNone        StrategyFamily = "none"
+	FamilyTCPFrag     StrategyFamily = "tcp_frag"
+	FamilyTLSRec      StrategyFamily = "tls_record"
+	FamilyOOB         StrategyFamily = "oob"
+	FamilyIPFrag      StrategyFamily = "ip_frag"
+	FamilyFakeSNI     StrategyFamily = "fake_sni"
+	FamilySACK        StrategyFamily = "sack"
+	FamilySynFake     StrategyFamily = "syn_fake"
+	FamilyDesync      StrategyFamily = "desync"
+	FamilyWindow      StrategyFamily = "window"
+	FamilyDelay       StrategyFamily = "delay"
+	FamilyMutation    StrategyFamily = "mutation"
+	FamilyDisorder    StrategyFamily = "disorder"
+	FamilyOverlap     StrategyFamily = "overlap"
+	FamilyExtSplit    StrategyFamily = "extsplit"
+	FamilyFirstByte   StrategyFamily = "firstbyte"
+	FamilyCombo       StrategyFamily = "combo"
+	FamilyHybrid      StrategyFamily = "hybrid"
+	FamilyIncoming    StrategyFamily = "incoming"
+	FamilyTCPMD5      StrategyFamily = "tcpmd5"
+	FamilyAltAddress  StrategyFamily = "alt_address"
+	FamilyDNSRedirect StrategyFamily = "dns_redirect"
+)
+
+type Outcome string
+
+const (
+	OutcomeFound              Outcome = "found"
+	OutcomeWorksWithoutBypass Outcome = "works_without_bypass"
+	OutcomeAddressBlocked     Outcome = "address_blocked"
+	OutcomeNotFound           Outcome = "not_found"
+)
+
+const (
+	SourceWeb      = "web"
+	SourceWatchdog = "watchdog"
+	SourceMCP      = "mcp"
 )
 
 type CheckResult struct {
@@ -67,6 +84,7 @@ type CheckResult struct {
 	Timestamp   time.Time         `json:"timestamp"`
 	StatusCode  int               `json:"status_code"`
 	FinalHost   string            `json:"final_host,omitempty"`
+	UsedIP      string            `json:"used_ip,omitempty"`
 	Set         *config.SetConfig `json:"set"`
 }
 
@@ -91,6 +109,7 @@ type CheckSuite struct {
 	Domains                []DomainInput                     `json:"domains,omitempty"`
 	CurrentDomain          string                            `json:"current_domain,omitempty"`
 	CurrentPhase           DiscoveryPhase                    `json:"current_phase,omitempty"`
+	Source                 string                            `json:"source,omitempty"`
 	mu                     sync.RWMutex                      `json:"-"`
 	cancel                 chan struct{}                     `json:"-"`
 }
@@ -108,7 +127,7 @@ type DomainPresetResult struct {
 	StatusCode   int               `json:"status_code"`
 	Confirmed    int               `json:"confirmed,omitempty"`
 	ConfirmTries int               `json:"confirm_tries,omitempty"`
-	Set          *config.SetConfig `json:"set"`
+	Set          *config.SetConfig `json:"set,omitempty"`
 }
 
 type StrategyGroup struct {
@@ -132,6 +151,24 @@ type DomainDiscoveryResult struct {
 	ConfirmTries  int                            `json:"confirm_tries,omitempty"`
 	FinalHost     string                         `json:"final_host,omitempty"`
 	DNSResult     *DNSDiscoveryResult            `json:"dns_result,omitempty"`
+	Outcome       Outcome                        `json:"outcome,omitempty"`
+	Unconfirmed   bool                           `json:"unconfirmed,omitempty"`
+}
+
+func (dr *DomainDiscoveryResult) refreshOutcome(finished bool) {
+	switch {
+	case dr.BaselineWorks:
+		dr.Outcome = OutcomeWorksWithoutBypass
+	case dr.BestSuccess && dr.BestPreset != "" && dr.BestPreset != presetNoBypass:
+		dr.Outcome = OutcomeFound
+	case dr.DNSResult.addressBlocked():
+		dr.Outcome = OutcomeAddressBlocked
+	case finished:
+		dr.Outcome = OutcomeNotFound
+	default:
+		dr.Outcome = ""
+	}
+	dr.Unconfirmed = dr.Outcome == OutcomeFound && (dr.ConfirmTries == 0 || dr.Confirmed < dr.ConfirmTries)
 }
 
 type ConfigPreset struct {
@@ -161,7 +198,15 @@ type DNSDiscoveryResult struct {
 	BestServer       string           `json:"best_server,omitempty"`
 	BestDoHURL       string           `json:"best_doh_url,omitempty"`
 	NeedsFragment    bool             `json:"needs_fragment"`
+	ReferenceServes  bool             `json:"reference_serves,omitempty"`
+	SystemServes     bool             `json:"system_serves,omitempty"`
 	ProbeResults     []DNSProbeResult `json:"probe_results,omitempty"`
+	AlternativeIPs   []string         `json:"alternative_ips,omitempty"`
+	AltScan          *AltScanSummary  `json:"alt_scan,omitempty"`
+}
+
+func (r *DNSDiscoveryResult) addressBlocked() bool {
+	return r != nil && r.TransportBlocked && len(r.AlternativeIPs) == 0
 }
 
 type PayloadTestResult struct {
@@ -198,6 +243,7 @@ type DiscoverySuite struct {
 	flowMark        uint
 
 	discoveryCache *DiscoveryCache
+	plainSets      map[string]*config.SetConfig
 }
 
 type CustomPayload struct {

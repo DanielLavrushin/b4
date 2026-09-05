@@ -1,18 +1,34 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { ApiError, ApiResponse } from "@api/apiClient";
-import { discoveryApi, DiscoverySuite, HistoryEntry } from "@b4.discovery";
-import { B4SetConfig } from "@b4.sets";
-import { DomainReassignment } from "@models/sets";
+import {
+  AddPresetResult,
+  DiscoveryStartOptions,
+  discoveryApi,
+} from "@api/discovery";
+import { DiscoverySuite, HistoryEntry, isSuite } from "@models/discovery";
+import { B4SetConfig } from "@models/config";
 import { wsUrl, describeApiError } from "@utils";
 
+const POLL_MS = 1500;
+const TERMINAL = new Set(["complete", "failed", "canceled"]);
+
+const failureText = (e: unknown): string => {
+  if (e instanceof ApiError) {
+    const detail = typeof e.body === "string" ? e.body.trim() : "";
+    return detail.length > 0 ? detail : e.message;
+  }
+  return e instanceof Error ? e.message : String(e);
+};
+
 export function useDiscovery() {
-  const [discoveryRunning, setDiscoveryRunning] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [suiteId, setSuiteId] = useState<string | null>(null);
   const [suite, setSuite] = useState<DiscoverySuite | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const initRef = useRef(false);
 
   const loadHistory = useCallback(async () => {
@@ -27,115 +43,109 @@ export function useDiscovery() {
     }
   }, []);
 
-  // On mount: check for current running discovery and load history
   useEffect(() => {
     if (initRef.current) return;
     initRef.current = true;
 
     const init = async () => {
-      // Check for currently running discovery
       try {
         const current = await discoveryApi.current();
-        if (
-          current &&
-          (current.status === "running" || current.status === "pending")
-        ) {
-          setSuiteId(current.id);
-          setSuite(current);
-          setDiscoveryRunning(true);
+        if (isSuite(current)) {
+          if (current.status === "running" || current.status === "pending") {
+            setSuiteId(current.id);
+            setSuite(current);
+            setRunning(true);
+          }
+        } else if (current?.runtime_active) {
+          setFinishing(true);
         }
       } catch {
-        // No current discovery, that's fine
+        setFinishing(false);
       }
-
-      // Load history
       await loadHistory();
     };
 
     void init();
   }, [loadHistory]);
 
-  // Poll for status when running
   useEffect(() => {
-    if (!suiteId || !discoveryRunning) return;
+    if (!running && !finishing) return;
 
-    const fetchStatus = async () => {
+    const tick = async () => {
+      if (!suiteId) {
+        try {
+          const current = await discoveryApi.current();
+          if (isSuite(current)) {
+            setSuiteId(current.id);
+            setSuite(current);
+            setRunning(true);
+            setFinishing(false);
+          } else if (!current?.runtime_active) {
+            setFinishing(false);
+            void loadHistory();
+          }
+        } catch {
+          setFinishing(false);
+        }
+        return;
+      }
       try {
         const data = await discoveryApi.status(suiteId);
         setSuite(data);
-        if (["complete", "failed", "canceled"].includes(data.status)) {
-          setDiscoveryRunning(false);
-          // Refresh history when discovery finishes
+        if (!TERMINAL.has(data.status)) return;
+        setRunning(false);
+        setStopping(false);
+        if (data.runtime_active) {
+          setFinishing(true);
+        } else {
+          setFinishing(false);
           void loadHistory();
         }
       } catch (e) {
+        setRunning(false);
+        setStopping(false);
+        setFinishing(false);
         if (e instanceof ApiError && e.status === 404) {
-          setDiscoveryRunning(false);
-          setSuiteId(null);
-          // Discovery gone from server — refresh history in case it completed
           void loadHistory();
           return;
         }
-        setError(e instanceof Error ? e.message : "Unknown error");
-        setDiscoveryRunning(false);
+        setError(failureText(e));
       }
     };
 
-    // Immediate first fetch
-    void fetchStatus();
-    pollRef.current = setInterval(() => void fetchStatus(), 1500);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [suiteId, discoveryRunning, loadHistory]);
+    void tick();
+    const timer = setInterval(() => void tick(), POLL_MS);
+    return () => clearInterval(timer);
+  }, [suiteId, running, finishing, loadHistory]);
 
   const startDiscovery = useCallback(
     async (
       urls: string[],
-      skipDNS: boolean = false,
-      skipCache: boolean = false,
-      payloadFiles: string[] = [],
-      validationTries: number = 1,
-      tlsVersion: string = "auto",
-      ipVersion: string = "auto",
+      options: DiscoveryStartOptions,
     ): Promise<ApiResponse<void>> => {
+      const normalized = urls
+        .map((u) => u.trim())
+        .filter((u) => u.length > 0)
+        .map((u) =>
+          u.startsWith("http://") || u.startsWith("https://")
+            ? u
+            : `https://${u}`,
+        );
+      if (normalized.length === 0) {
+        return { success: false, error: "No sites given" };
+      }
       setError(null);
       setSuite(null);
-      setDiscoveryRunning(true);
+      setSuiteId(null);
+      setStopping(false);
+      setRunning(true);
       try {
-        const normalized = urls
-          .map((u) => u.trim())
-          .filter((u) => u.length > 0)
-          .map((u) =>
-            u.startsWith("http://") || u.startsWith("https://")
-              ? u
-              : `https://${u}`,
-          );
-        if (normalized.length === 0) {
-          setDiscoveryRunning(false);
-          setSuiteId(null);
-          setError("No URLs provided");
-          return { success: false, error: "No URLs provided" };
-        }
-        const res = await discoveryApi.start(
-          normalized,
-          skipDNS,
-          skipCache,
-          payloadFiles,
-          validationTries,
-          tlsVersion,
-          ipVersion,
-        );
+        const res = await discoveryApi.start(normalized, options);
         setSuiteId(res.id);
         return { success: true };
       } catch (e) {
-        setDiscoveryRunning(false);
-        setSuiteId(null);
-        let message = String(e);
-        if (e instanceof ApiError) {
-          const detail = typeof e.body === "string" ? e.body.trim() : "";
-          message = detail.length > 0 ? detail : e.message;
-        }
+        setRunning(false);
+        const message = failureText(e);
         setError(message);
         return { success: false, error: message };
       }
@@ -145,28 +155,28 @@ export function useDiscovery() {
 
   const cancelDiscovery = useCallback(async (): Promise<void> => {
     if (!suiteId) return;
+    setStopping(true);
     try {
       await discoveryApi.cancel(suiteId);
-      setDiscoveryRunning(false);
-      // Refresh history after cancel
-      void loadHistory();
     } catch (e) {
-      console.error("Failed to cancel discovery:", e);
+      setStopping(false);
+      setError(failureText(e));
     }
-  }, [suiteId, loadHistory]);
+  }, [suiteId]);
 
   const resetDiscovery = useCallback(() => {
     setSuiteId(null);
     setSuite(null);
     setError(null);
-    setDiscoveryRunning(false);
+    setStopping(false);
+    setRunning(false);
   }, []);
 
   const addPresetAsSet = useCallback(
-    async (config: B4SetConfig): Promise<ApiResponse<DomainReassignment[]>> => {
+    async (config: B4SetConfig): Promise<ApiResponse<AddPresetResult>> => {
       try {
         const res = await discoveryApi.addPresetAsSet(config);
-        return { success: true, data: res?.moved ?? [] };
+        return { success: true, data: res };
       } catch (e) {
         return { success: false, error: describeApiError(e) };
       }
@@ -179,10 +189,7 @@ export function useDiscovery() {
       await discoveryApi.clearCache();
       return { success: true };
     } catch (e) {
-      if (e instanceof ApiError) {
-        return { success: false, error: JSON.stringify(e.body ?? e.message) };
-      }
-      return { success: false, error: String(e) };
+      return { success: false, error: failureText(e) };
     }
   }, []);
 
@@ -192,10 +199,7 @@ export function useDiscovery() {
       setHistory([]);
       return { success: true };
     } catch (e) {
-      if (e instanceof ApiError) {
-        return { success: false, error: JSON.stringify(e.body ?? e.message) };
-      }
-      return { success: false, error: String(e) };
+      return { success: false, error: failureText(e) };
     }
   }, []);
 
@@ -206,17 +210,16 @@ export function useDiscovery() {
         setHistory((prev) => prev.filter((e) => e.domain !== domain));
         return { success: true };
       } catch (e) {
-        if (e instanceof ApiError) {
-          return { success: false, error: JSON.stringify(e.body ?? e.message) };
-        }
-        return { success: false, error: String(e) };
+        return { success: false, error: failureText(e) };
       }
     },
     [],
   );
 
   return {
-    discoveryRunning,
+    running,
+    finishing,
+    stopping,
     suiteId,
     suite,
     error,
@@ -233,7 +236,7 @@ export function useDiscovery() {
   };
 }
 
-const MAX_LOGS = 500;
+const MAX_LOGS = 4000;
 
 export function useDiscoveryLogs() {
   const [logs, setLogs] = useState<string[]>([]);

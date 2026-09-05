@@ -1,20 +1,26 @@
 // src/http/ui/src/context/SnackbarContext.tsx
 import { createContext, use, useEffect, useMemo, useRef, useState, useCallback, ReactNode } from "react";
-import { Snackbar } from "@mui/material";
+import { Button, Snackbar } from "@mui/material";
 import { B4Alert } from "@b4.elements";
 
 type Severity = "error" | "warning" | "info" | "success";
+
+export interface SnackbarAction {
+  label: string;
+  onClick: () => void;
+}
 
 interface SnackbarItem {
   key: number;
   message: string;
   severity: Severity;
+  action?: SnackbarAction;
 }
 
 interface SnackbarContextType {
-  showSnackbar: (message: string, severity?: Severity) => void;
+  showSnackbar: (message: string, severity?: Severity, action?: SnackbarAction) => void;
   showError: (message: string) => void;
-  showSuccess: (message: string) => void;
+  showSuccess: (message: string, action?: SnackbarAction) => void;
 }
 
 const SnackbarContext = createContext<SnackbarContextType | null>(null);
@@ -29,9 +35,9 @@ export function SnackbarProvider({
   const current = queue[0];
 
   const showSnackbar = useCallback(
-    (message: string, severity: Severity = "info") => {
+    (message: string, severity: Severity = "info", action?: SnackbarAction) => {
       keyRef.current += 1;
-      setQueue((q) => [...q, { key: keyRef.current, message, severity }]);
+      setQueue((q) => [...q, { key: keyRef.current, message, severity, action }]);
     },
     [],
   );
@@ -41,7 +47,8 @@ export function SnackbarProvider({
     [showSnackbar],
   );
   const showSuccess = useCallback(
-    (message: string) => showSnackbar(message, "success"),
+    (message: string, action?: SnackbarAction) =>
+      showSnackbar(message, "success", action),
     [showSnackbar],
   );
 
@@ -72,7 +79,26 @@ export function SnackbarProvider({
         slotProps={{ transition: { onExited: handleExited } }}
         anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
       >
-        <B4Alert noWrapper onClose={handleClose} severity={current?.severity ?? "info"}>
+        <B4Alert
+          noWrapper
+          onClose={handleClose}
+          severity={current?.severity ?? "info"}
+          action={
+            current?.action ? (
+              <Button
+                size="small"
+                color="inherit"
+                onClick={() => {
+                  current.action?.onClick();
+                  setOpen(false);
+                }}
+                sx={{ textTransform: "none", fontWeight: 600 }}
+              >
+                {current.action.label}
+              </Button>
+            ) : undefined
+          }
+        >
           {current?.message ?? ""}
         </B4Alert>
       </Snackbar>

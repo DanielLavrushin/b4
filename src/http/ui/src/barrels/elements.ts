@@ -11,6 +11,7 @@ export * from "@common/B4SecretField";
 export * from "@common/B4ConnectDetails";
 export * from "@common/B4TooltipButton";
 export * from "@common/B4Badge";
+export * from "@common/B4ResultCard";
 export * from "@components/common/B4Alert";
 export * from "@components/common/B4Hint";
 export * from "@components/common/B4FormHeader";

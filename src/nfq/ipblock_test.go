@@ -341,3 +341,29 @@ func TestApplyPinnedAnswerRecordsTheHostHint(t *testing.T) {
 		t.Errorf("host hint = %v/%q, want the pinned address tied back to the set so the connection still matches", gotSet, host)
 	}
 }
+
+func TestPinnedAnswerSkipsAddressesKnownToBeDead(t *testing.T) {
+	w := healWorker(t, "157.240.0.174")
+	set := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174", "157.240.253.174"}})
+	set.TCP.IPBlockDetect.Enabled = true
+	set.TCP.IPBlockDetect.SynDetect = true
+
+	query := dns.BuildQuery("www.instagram.com", 0x1234, 1)
+	pinned := w.pinnedAnswer(set, query, "www.instagram.com")
+	ips := dns.ParseResponseIPs(pinned)
+	if len(ips) != 1 || ips[0].String() != "157.240.253.174" {
+		t.Fatalf("a pin that stopped answering must not be handed out while another one works, got %v", ips)
+	}
+
+	only := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174"}})
+	only.TCP.IPBlockDetect.Enabled = true
+	only.TCP.IPBlockDetect.SynDetect = true
+	if got := w.pinnedAnswer(only, query, "www.instagram.com"); got != nil {
+		t.Fatal("when every pin is dead the query must pass through to the resolver instead of answering a dead address")
+	}
+
+	plain := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174"}})
+	if got := w.pinnedAnswer(plain, query, "www.instagram.com"); got == nil {
+		t.Fatal("without address tracking on the set, a pin is answered as configured")
+	}
+}

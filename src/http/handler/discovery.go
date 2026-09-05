@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"github.com/daniellavrushin/b4/config"
@@ -25,6 +26,44 @@ func (api *API) RegisterDiscoveryApi() {
 	api.mux.HandleFunc("/api/discovery/history", api.handleDiscoveryHistory)
 	api.mux.HandleFunc("/api/discovery/history/clear", api.handleClearDiscoveryHistory)
 	api.mux.HandleFunc("/api/discovery/history/{domain}", api.handleDeleteHistoryDomain)
+	api.mux.HandleFunc("/api/discovery/log", api.handleDiscoveryLog)
+}
+
+// @Summary Get the log of the running or last discovery run
+// @Tags Discovery
+// @Produce plain
+// @Param download query bool false "Send as an attachment"
+// @Success 200 {string} string
+// @Failure 404 {string} string
+// @Security BearerAuth
+// @Router /discovery/log [get]
+func (api *API) handleDiscoveryLog(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	var body []byte
+	if api.discoveryRT != nil && api.discoveryRT.IsActive() {
+		body = []byte(strings.Join(log.GetDiscoveryHub().Snapshot(), "\n"))
+	} else {
+		saved, err := discovery.LoadLastRunLog(api.getCfg().ConfigPath)
+		if err != nil {
+			if live := log.GetDiscoveryHub().Snapshot(); len(live) > 0 {
+				saved = []byte(strings.Join(live, "\n"))
+			} else {
+				http.Error(w, "no discovery run has been logged yet", http.StatusNotFound)
+				return
+			}
+		}
+		body = saved
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if r.URL.Query().Get("download") != "" {
+		w.Header().Set("Content-Disposition", `attachment; filename="b4-discovery.log"`)
+	}
+	w.Write(body)
 }
 
 // @Summary Get discovery status
@@ -53,8 +92,20 @@ func (api *API) handleCheckStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	api.writeSuite(w, suite)
+}
+
+func (api *API) writeSuite(w http.ResponseWriter, suite *discovery.CheckSuite) {
+	data, err := json.Marshal(suite)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if api.discoveryRT != nil && api.discoveryRT.IsActive() && len(data) > 1 && data[len(data)-1] == '}' {
+		data = append(data[:len(data)-1], []byte(`,"runtime_active":true}`)...)
+	}
 	setJsonHeader(w)
-	json.NewEncoder(w).Encode(suite)
+	w.Write(data)
 }
 
 // @Summary Cancel discovery
@@ -148,6 +199,7 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 		ValidationTries: validationTries,
 		TLSVersion:      req.TLSVersion,
 		IPVersion:       req.IPVersion,
+		Source:          discovery.SourceWeb,
 	})
 	if err != nil {
 		if errors.Is(err, discovery.ErrDiscoveryAlreadyRunning) {
@@ -212,6 +264,8 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 	if set.Name == "" {
 		set.Name = set.Targets.SNIDomains[0]
 	}
+
+	set.Targets.GeoIpCategories, set.Targets.GeoSiteCategories = cdnCategoriesFor(set.Targets.SNIDomains)
 
 	if len(set.Targets.SNIDomains) > 0 {
 		baseName := extractDomainName(set.Targets.SNIDomains[0])
@@ -279,7 +333,34 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 		"message": fmt.Sprintf("Added '%s' configuration", set.Name),
 		"moved":   moved,
+		"id":      set.Id,
+		"name":    set.Name,
 	})
+}
+
+func cdnCategoriesFor(domains []string) (geoip, geosite []string) {
+	for _, domain := range domains {
+		ip, site := discovery.GetCDNCategories(domain)
+		geoip = appendMissing(geoip, ip...)
+		geosite = appendMissing(geosite, site...)
+	}
+	return geoip, geosite
+}
+
+func appendMissing(list []string, items ...string) []string {
+	for _, item := range items {
+		found := false
+		for _, existing := range list {
+			if existing == item {
+				found = true
+				break
+			}
+		}
+		if !found {
+			list = append(list, item)
+		}
+	}
+	return list
 }
 
 // @Summary Find sets with similar configuration
@@ -328,13 +409,34 @@ func (api *API) handleFindSimilarSets(w http.ResponseWriter, r *http.Request) {
 }
 
 func setsHaveSimilarConfig(a, b *config.SetConfig) bool {
-	return a.Fragmentation.Strategy == b.Fragmentation.Strategy &&
-		a.Fragmentation.ReverseOrder == b.Fragmentation.ReverseOrder &&
-		a.Fragmentation.MiddleSNI == b.Fragmentation.MiddleSNI &&
-		a.Faking.Strategy == b.Faking.Strategy &&
-		a.Faking.TTL == b.Faking.TTL &&
-		a.Faking.SNI == b.Faking.SNI &&
-		a.TCP.DropSACK == b.TCP.DropSACK
+	return reflect.DeepEqual(strategyShape(a), strategyShape(b))
+}
+
+func strategyShape(set *config.SetConfig) config.SetConfig {
+	shape := config.SetConfig{
+		TCP:           set.TCP,
+		UDP:           set.UDP,
+		Fragmentation: set.Fragmentation,
+		Faking:        set.Faking,
+		DNS: config.DNSConfig{
+			Enabled:       set.DNS.Enabled,
+			TargetDNS:     set.DNS.TargetDNS,
+			DoHURL:        set.DNS.DoHURL,
+			FragmentQuery: set.DNS.FragmentQuery,
+		},
+		Routing: config.RoutingConfig{
+			Enabled: set.Routing.Enabled,
+			Mode:    set.Routing.Mode,
+		},
+	}
+	shape.Targets.TLSVersion = set.Targets.TLSVersion
+	shape.Targets.IPVersion = set.Targets.IPVersion
+	shape.TCP.DPortFilter = ""
+	shape.TCP.IPBlockDetect = config.IPBlockDetectConfig{}
+	shape.TCP.RSTProtection = config.RSTProtectionConfig{}
+	shape.UDP.DPortFilter = ""
+	config.ApplySetDefaults(&shape)
+	return shape
 }
 
 func extractDomainName(domain string) string {
@@ -372,12 +474,15 @@ func (api *API) handleGetCurrentDiscovery(w http.ResponseWriter, r *http.Request
 	if !ok {
 		setJsonHeader(w)
 		w.WriteHeader(http.StatusOK)
+		if api.discoveryRT != nil && api.discoveryRT.IsActive() {
+			w.Write([]byte(`{"runtime_active":true}`))
+			return
+		}
 		w.Write([]byte("null"))
 		return
 	}
 
-	setJsonHeader(w)
-	json.NewEncoder(w).Encode(suite)
+	api.writeSuite(w, suite)
 }
 
 // @Summary Get discovery history

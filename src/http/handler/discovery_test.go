@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -37,6 +38,19 @@ func TestAddPresetAsSetDropsGeoCategoriesWithoutDatabases(t *testing.T) {
 	if len(sets) != 1 {
 		t.Fatalf("expected 1 set, got %d", len(sets))
 	}
+	var reply struct {
+		Id   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &reply); err != nil {
+		t.Fatalf("decode reply: %v", err)
+	}
+	if reply.Id == "" || reply.Id != sets[0].Id {
+		t.Errorf("the reply must name the set it created so the caller can open it, got %q want %q", reply.Id, sets[0].Id)
+	}
+	if reply.Name != "YouTube" {
+		t.Errorf("reply name = %q", reply.Name)
+	}
 	if len(sets[0].Targets.GeoSiteCategories) != 0 {
 		t.Errorf("geosite categories kept without a geosite database: %v", sets[0].Targets.GeoSiteCategories)
 	}
@@ -45,5 +59,54 @@ func TestAddPresetAsSetDropsGeoCategoriesWithoutDatabases(t *testing.T) {
 	}
 	if len(sets[0].Targets.SNIDomains) != 1 || sets[0].Targets.SNIDomains[0] != "youtube.com" {
 		t.Errorf("unexpected SNI domains: %v", sets[0].Targets.SNIDomains)
+	}
+}
+
+func TestSimilarSetsNeedTheWholeStrategyToMatch(t *testing.T) {
+	base := config.NewSetConfig()
+	base.Fragmentation.Strategy = "tcp"
+	base.Faking.SNI = true
+	base.Faking.Strategy = "pastseq"
+	base.Faking.TTL = 6
+
+	same := base
+	same.Name = "other"
+	same.Targets.SNIDomains = []string{"meduza.io"}
+	same.TCP.DPortFilter = "443"
+	same.TCP.IPBlockDetect.Enabled = true
+	if !setsHaveSimilarConfig(&base, &same) {
+		t.Fatal("port filters and address tracking are not part of the strategy")
+	}
+
+	desynced := base
+	desynced.TCP.Desync.Mode = "full"
+	desynced.TCP.Desync.TTL = 6
+	if setsHaveSimilarConfig(&base, &desynced) {
+		t.Fatal("a desync set is a different strategy, offering it would apply the wrong one")
+	}
+
+	split := base
+	split.Fragmentation.SNIPosition = 3
+	if setsHaveSimilarConfig(&base, &split) {
+		t.Fatal("the split position is part of the strategy")
+	}
+
+	tls13 := base
+	tls13.Targets.TLSVersion = "1.3"
+	if setsHaveSimilarConfig(&base, &tls13) {
+		t.Fatal("a set limited to one TLS version would not handle what the run found on the other")
+	}
+
+	proxied := base
+	proxied.Routing.Enabled = true
+	proxied.Routing.Mode = "proxy"
+	if setsHaveSimilarConfig(&base, &proxied) {
+		t.Fatal("a routed set sends the domain elsewhere instead of applying the strategy")
+	}
+
+	redirected := base
+	redirected.DNS = config.DNSConfig{Enabled: true, DoHURL: "https://1.1.1.1/dns-query"}
+	if setsHaveSimilarConfig(&base, &redirected) {
+		t.Fatal("a DNS redirect changes what the added domain resolves to")
 	}
 }
