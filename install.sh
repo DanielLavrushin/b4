@@ -28,7 +28,7 @@ B4_UPDATE_LOG="${B4_UPDATE_LOG:-}"
 
 _log_emit() {
     [ -z "$B4_UPDATE_LOG" ] && return
-    printf '%s [%-4s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null)" "$1" "$2" \
+    printf '%s [%-4s] %s\n' "$(date -u '+%Y-%m-%d %H:%M:%S' 2>/dev/null)" "$1" "$2" \
         >>"$B4_UPDATE_LOG" 2>/dev/null || true
 }
 
@@ -455,7 +455,7 @@ sf_url() {
 }
 
 _wget_supports() {
-    wget --help 2>&1 | grep -q "$1"
+    wget --help 2>&1 | grep -qF -- "$1"
 }
 
 mirror_alive() {

@@ -1,8 +1,9 @@
 # B4 - Bye Bye Big Bro
 
-## [1.80.5] - 2026-09-04
+## [1.8x.x] - 2026-09-xx
 
 - FIXED: **A set routed through an interface sent only the first packet of each connection that way, and every packet after it by the ordinary uplink** - the routing decision is carried on the connection mark, and b4 judges whether a router keeps that mark by looking for its own claim in the connection table, where a connection still in its handshake carries the claim on every router, including the ones whose firmware owns the mark and overwrites it a moment later; the same claim gated the source rewrite into the interface, so that was left out as well.
+- FIXED: **On a router that downloads through wget, an update started from the web interface left grep's usage text in the update log, with the installer's lines stamped hours apart from b4's own** - the installer asks grep whether wget's help lists a timeout option by passing the option's name, which grep took for one of its own, and the two halves of the log took their time from different clocks.
 
 ## [1.80.4] - 2026-08-31
 

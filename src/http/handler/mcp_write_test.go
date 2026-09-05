@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"strings"
 	"testing"
 
@@ -389,6 +390,9 @@ func TestMCPWriteRejectsEnablingMTProtoWithoutSecretOrFakeSNI(t *testing.T) {
 	if !res.IsError {
 		t.Fatal("enabling MTProto with no secret and no fake SNI must be refused, as the REST API does")
 	}
+	if text := mcpErrorText(res); !strings.Contains(text, "at least one secret or a fake SNI") {
+		t.Fatalf("refusal must come from the precondition, not from a port probe: %q", text)
+	}
 	if cfg.System.MTProto.Enabled {
 		t.Error("config must be untouched when the precondition fails")
 	}
@@ -400,6 +404,8 @@ func TestMCPWriteAllowsEnablingMTProtoWithFakeSNI(t *testing.T) {
 	cfg.System.MTProto.Enabled = false
 	cfg.System.MTProto.Secrets = nil
 	cfg.System.MTProto.FakeSNI = "www.google.com"
+	cfg.System.MTProto.BindAddress = "127.0.0.1"
+	cfg.System.MTProto.Port = freeTCPPort(t)
 
 	srv := newMCPTestServer(t, cfg)
 	session, ctx := connectMCP(t, srv)
@@ -408,6 +414,17 @@ func TestMCPWriteAllowsEnablingMTProtoWithFakeSNI(t *testing.T) {
 	if res.IsError {
 		t.Fatalf("a fake SNI satisfies the precondition: %+v", res.Content)
 	}
+}
+
+func freeTCPPort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("free port: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+	return port
 }
 
 func writableCfg(t *testing.T) *config.Config {
