@@ -40,10 +40,43 @@ export const defaultOptions: DiscoveryOptions = {
   ipVersion: "auto",
 };
 
+const LEGACY_KEYS = {
+  skipDns: "b4_discovery_skipdns",
+  skipCache: "b4_discovery_skipcache",
+  tries: "b4_discovery_validation_tries",
+  tls: "b4_discovery_tls_version",
+  ip: "b4_discovery_ip_version",
+} as const;
+
+function loadLegacyOptions(): DiscoveryOptions | null {
+  const read = (key: string) => localStorage.getItem(key);
+  if (Object.values(LEGACY_KEYS).every((key) => read(key) === null)) {
+    return null;
+  }
+  const tries = Number(read(LEGACY_KEYS.tries));
+  const tls = read(LEGACY_KEYS.tls);
+  const ip = read(LEGACY_KEYS.ip);
+  const options: DiscoveryOptions = {
+    ...defaultOptions,
+    checkDns: read(LEGACY_KEYS.skipDns) !== "true",
+    useCache: read(LEGACY_KEYS.skipCache) !== "true",
+    validationTries: tries >= 1 && tries <= 5 ? tries : 1,
+    tlsVersion:
+      tls === "tls12" || tls === "tls13" ? (tls) : "auto",
+    ipVersion: ip === "ipv4" || ip === "ipv6" ? (ip) : "auto",
+  };
+  Object.values(LEGACY_KEYS).forEach((key) => localStorage.removeItem(key));
+  return options;
+}
+
 export function loadOptions(): DiscoveryOptions {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultOptions;
+    if (!raw) {
+      const legacy = loadLegacyOptions();
+      if (legacy) saveOptions(legacy);
+      return legacy ?? defaultOptions;
+    }
     const parsed = JSON.parse(raw) as Partial<DiscoveryOptions>;
     return { ...defaultOptions, ...parsed, payloadFiles: [] };
   } catch {

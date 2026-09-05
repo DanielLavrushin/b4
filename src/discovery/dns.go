@@ -103,7 +103,7 @@ func (ds *DiscoverySuite) runDNSDiscoveryForDomain(domain string) *DNSDiscoveryR
 	defer cancel()
 
 	result := prober.Probe(ctx)
-	if result != nil && prober.ipNetwork() == "ip4" && (result.TransportBlocked || (result.IsPoisoned && !result.ReferenceServes)) {
+	if prober.ipNetwork() == "ip4" && shouldScanAlternatives(result) {
 		ds.findAlternativeAddresses(domain, result)
 	}
 	return result
@@ -210,6 +210,7 @@ func (p *DNSProber) Probe(ctx context.Context) *DNSDiscoveryResult {
 
 	if validIP := p.findValidIP(ctx, systemIPs); validIP != "" {
 		log.DiscoveryLogf("  ✓ DNS OK: system IP %s serves %s", validIP, p.domain)
+		result.SystemServes = true
 		result.ExpectedIPs = uniqueIPs(systemIPs, expectedIPs)
 		result.ProbeResults = append(result.ProbeResults, DNSProbeResult{
 			ResolvedIP: validIP,

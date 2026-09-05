@@ -191,3 +191,38 @@ func TestScopedSetCarriesPinsAndIPBlockDetection(t *testing.T) {
 		t.Errorf("a group without a blocked site is left alone: %+v %v", other.TCP.IPBlockDetect, other.DNS.Pins)
 	}
 }
+
+func TestAlternativeScanRunsWheneverNothingServedTheSite(t *testing.T) {
+	cases := []struct {
+		name   string
+		result *DNSDiscoveryResult
+		want   bool
+	}{
+		{"system answer serves", &DNSDiscoveryResult{SystemServes: true}, false},
+		{"reference serves, system poisoned", &DNSDiscoveryResult{IsPoisoned: true, ReferenceServes: true}, false},
+		{"address blocked", &DNSDiscoveryResult{TransportBlocked: true}, true},
+		{"both fail TLS in one subnet", &DNSDiscoveryResult{}, true},
+		{"poisoned and reference fails TLS", &DNSDiscoveryResult{IsPoisoned: true}, true},
+		{"no result", nil, false},
+	}
+	for _, tc := range cases {
+		if got := shouldScanAlternatives(tc.result); got != tc.want {
+			t.Errorf("%s: scan=%v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestPlainFixSetIsNamedAfterItsStrategy(t *testing.T) {
+	ds := altSuite(t, "meduza.io", &DNSDiscoveryResult{
+		IsPoisoned: true, ReferenceServes: true, ExpectedIPs: []string{"8.47.69.0"}, BestDoHURL: "https://1.1.1.1/dns-query",
+	})
+	ds.discoveredDNS = config.DNSConfig{Enabled: true, DoHURL: "https://1.1.1.1/dns-query"}
+	set := config.NewSetConfig()
+	ds.storeResultsMulti(GetPhase1Presets()[0], map[string]CheckResult{
+		"meduza.io": {Domain: "meduza.io", Status: CheckStatusComplete, Speed: 5000, UsedIP: "8.47.69.0", Set: &set},
+	})
+	fix := ds.domainResults["meduza.io"].Results[presetDNSRedirect]
+	if fix == nil || fix.Set == nil || fix.Set.Name != presetDNSRedirect {
+		t.Fatalf("the history shows the set's name as the strategy, so it must match the preset: %+v", fix)
+	}
+}

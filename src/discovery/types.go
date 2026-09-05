@@ -199,6 +199,7 @@ type DNSDiscoveryResult struct {
 	BestDoHURL       string           `json:"best_doh_url,omitempty"`
 	NeedsFragment    bool             `json:"needs_fragment"`
 	ReferenceServes  bool             `json:"reference_serves,omitempty"`
+	SystemServes     bool             `json:"system_serves,omitempty"`
 	ProbeResults     []DNSProbeResult `json:"probe_results,omitempty"`
 	AlternativeIPs   []string         `json:"alternative_ips,omitempty"`
 	AltScan          *AltScanSummary  `json:"alt_scan,omitempty"`
@@ -242,7 +243,7 @@ type DiscoverySuite struct {
 	flowMark        uint
 
 	discoveryCache *DiscoveryCache
-	altSet         *config.SetConfig
+	plainSets      map[string]*config.SetConfig
 }
 
 type CustomPayload struct {

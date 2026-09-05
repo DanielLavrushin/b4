@@ -122,6 +122,7 @@ type mcpDiscoveryDomain struct {
 	Blocked       bool    `json:"transport_blocked,omitempty"`
 	Confirmed     int     `json:"confirmed,omitempty"`
 	Provisional   bool    `json:"provisional,omitempty"`
+	Unconfirmed   bool    `json:"unconfirmed,omitempty"`
 	Verdict       string  `json:"verdict"`
 }
 
@@ -146,6 +147,8 @@ func mcpDiscoveryVerdict(d mcpDiscoveryDomain, running bool) string {
 		return "the address itself is unreachable, so no packet strategy can help; only a proxy or VPN route would"
 	case d.Found && running:
 		return fmt.Sprintf("%s is the best so far, but the run is still testing and this is PROVISIONAL: it has not been confirmed, a better one may still win, and nothing can be applied until the run finishes or is cancelled", d.BestPreset)
+	case d.Found && d.Unconfirmed:
+		return fmt.Sprintf("%s loaded the site at least once, but the run ended before the confirmation pass re-checked it, so it is UNCONFIRMED: apply it if the user accepts that, and verify with b4_test_domain_now", d.BestPreset)
 	case d.Found:
 		return fmt.Sprintf("a working strategy was found (%s)", d.BestPreset)
 	default:
@@ -181,6 +184,7 @@ func (api *API) mcpDiscoverySuiteRows(snap *mcpSuiteSnapshot, running bool) []mc
 			row.Blocked = r.DNSResult.TransportBlocked
 		}
 		mcpApplyOutcome(&row, discovery.Outcome(r.Outcome))
+		row.Unconfirmed = row.Found && r.Unconfirmed && !running
 		row.Provisional = running && row.Found
 		row.Verdict = mcpDiscoveryVerdict(row, running)
 		rows = append(rows, row)
@@ -194,11 +198,11 @@ func mcpApplyOutcome(row *mcpDiscoveryDomain, outcome discovery.Outcome) {
 	case discovery.OutcomeFound:
 		row.Found, row.BaselineWorks, row.Blocked = true, false, false
 	case discovery.OutcomeWorksWithoutBypass:
-		row.Found, row.BaselineWorks = false, true
+		row.Found, row.BaselineWorks, row.Blocked = false, true, false
 	case discovery.OutcomeAddressBlocked:
-		row.Found, row.Blocked = false, true
+		row.Found, row.BaselineWorks, row.Blocked = false, false, true
 	case discovery.OutcomeNotFound:
-		row.Found = false
+		row.Found, row.BaselineWorks, row.Blocked = false, false, false
 	}
 }
 
@@ -324,7 +328,8 @@ func (api *API) mcpDiscoveryStatus(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpD
 			BaselineWorks: e.BaselineWorks,
 			Confirmed:     e.Confirmed,
 		}
-		mcpApplyOutcome(&row, e.Outcome)
+		mcpApplyOutcome(&row, e.EffectiveOutcome())
+		row.Unconfirmed = row.Found && (e.Unconfirmed || e.Status == discovery.CheckStatusCanceled)
 		row.Verdict = mcpDiscoveryVerdict(row, false)
 		if row.Found && e.ApplicableSet() != nil {
 			applicable++

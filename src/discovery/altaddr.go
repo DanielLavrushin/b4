@@ -19,15 +19,16 @@ const (
 	presetAltAddress  = "alt-address"
 	presetDNSRedirect = "dns-redirect"
 
-	altScanBudget       = 90 * time.Second
-	altScanQueryTimeout = 3 * time.Second
-	altScanWorkers      = 16
-	altScanTCPTimeout   = 2 * time.Second
-	altScanTCPTries     = 2
-	altScanTLSChecks    = 8
-	altScanMaxAnswers   = 3
-	altScanGridStep     = 10
-	altScanProbeSubnet  = "8.8.8.0/24"
+	altScanBudget          = 90 * time.Second
+	altScanQueryTimeout    = 3 * time.Second
+	altScanWorkers         = 16
+	altScanTCPTimeout      = 2 * time.Second
+	altScanTCPTries        = 2
+	altScanTLSChecks       = 8
+	altScanMaxAnswers      = 3
+	altScanFallbackTargets = 2
+	altScanGridStep        = 10
+	altScanProbeSubnet     = "8.8.8.0/24"
 )
 
 var ecsResolvers = []string{
@@ -50,11 +51,11 @@ type altCandidate struct {
 	latency time.Duration
 }
 
-func plainFixPreset() ConfigPreset {
+func plainFixPreset(name string, family StrategyFamily) ConfigPreset {
 	return ConfigPreset{
-		Name:        presetAltAddress,
+		Name:        name,
 		Description: "No packet changes, only the DNS answer is corrected",
-		Family:      FamilyAltAddress,
+		Family:      family,
 		Phase:       PhaseBaseline,
 		Priority:    0,
 		Config: config.SetConfig{
@@ -397,12 +398,19 @@ func (ds *DiscoverySuite) findAlternativeAddresses(domain string, result *DNSDis
 		return
 	}
 	for i, cand := range alive {
-		if i >= altScanMaxAnswers-1 {
+		if i >= altScanFallbackTargets {
 			break
 		}
 		result.AlternativeIPs = append(result.AlternativeIPs, cand.ip)
 	}
 	log.DiscoveryLogf("  [%s] no reachable address completes a TLS handshake, keeping %v as targets for the packet strategies", domain, result.AlternativeIPs)
+}
+
+func shouldScanAlternatives(result *DNSDiscoveryResult) bool {
+	if result == nil {
+		return false
+	}
+	return result.TransportBlocked || (!result.SystemServes && !result.ReferenceServes)
 }
 
 func plainFixResult(dr *DomainDiscoveryResult) (string, *DomainPresetResult) {
@@ -446,11 +454,16 @@ func (ds *DiscoverySuite) anyAddressBlocked(domains []string) bool {
 	return false
 }
 
-func (ds *DiscoverySuite) plainFixSet() *config.SetConfig {
-	if ds.altSet == nil {
-		ds.altSet = ds.buildTestConfigMulti(plainFixPreset()).Sets[0]
+func (ds *DiscoverySuite) plainFixSet(name string, family StrategyFamily) *config.SetConfig {
+	if ds.plainSets == nil {
+		ds.plainSets = map[string]*config.SetConfig{}
 	}
-	return ds.altSet
+	if set := ds.plainSets[name]; set != nil {
+		return set
+	}
+	set := ds.buildTestConfigMulti(plainFixPreset(name, family)).Sets[0]
+	ds.plainSets[name] = set
+	return set
 }
 
 func (ds *DiscoverySuite) recordPlainFix(domain string, domainResult *DomainDiscoveryResult, result CheckResult) {
@@ -484,7 +497,7 @@ func (ds *DiscoverySuite) recordPlainFix(domain string, domainResult *DomainDisc
 		Speed:      result.Speed,
 		BytesRead:  result.BytesRead,
 		StatusCode: result.StatusCode,
-		Set:        ds.plainFixSet(),
+		Set:        ds.plainFixSet(name, family),
 	}
 	domainResult.BaselineWorks = false
 	domainResult.BestPreset = name
