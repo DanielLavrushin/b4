@@ -26,6 +26,7 @@ export function buildReport(suite: DetectorSuite, t: TFunction): string {
       suite.lists_date && `lists ${suite.lists_date}`,
     ]),
   );
+  out.push("checks and target lists: https://github.com/Runnin4ik/dpi-detector");
   out.push("");
 
   if (suite.sites) {

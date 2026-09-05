@@ -12,7 +12,7 @@ import {
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "react-router";
-import { StartIcon, ExpandIcon, CollapseIcon } from "@b4.icons";
+import { StartIcon, ExpandIcon, CollapseIcon, RefreshIcon } from "@b4.icons";
 import { colors } from "@design";
 import { B4TextField, B4ChipList, B4PlusButton, B4Switch, B4Alert } from "@b4.elements";
 import type { B4SetConfig } from "@models/config";
@@ -333,24 +333,32 @@ export const SetupPanel = ({ sets, lists, listsBusy, busy, onStart, onUpdateList
         </Button>
       </Box>
 
-      {lists && (
-        <Typography variant="caption" sx={{ color: colors.text.disabled, maxWidth: "90ch" }}>
-          {t("detector.setup.listsInfo", { sites: lists.site_count, targets: lists.tcp_targets, resolvers: lists.dns_servers, date: lists.lists_date })}{" "}
-          <Tooltip title={t("detector.setup.listsUpdateHint")}>
-            <Box component="span" onClick={() => !listsBusy && !busy && onUpdateLists()} sx={{ color: colors.secondary, cursor: listsBusy ? "wait" : "pointer" }}>
-              {listsBusy ? t("detector.setup.listsUpdating") : t("detector.setup.listsUpdate")}
-            </Box>
-          </Tooltip>
-          {lists.custom && (
-            <>
-              {" · "}
-              <Box component="span" onClick={onResetLists} sx={{ color: colors.secondary, cursor: "pointer" }}>
-                {t("detector.setup.listsReset", { date: lists.embedded_date })}
-              </Box>
-            </>
-          )}
+      <Stack spacing={1} sx={{ pt: 1, borderTop: `1px solid ${colors.border.light}` }}>
+        <Typography variant="caption" sx={{ color: colors.text.secondary, maxWidth: "90ch" }}>
+          {t("detector.credits.text")}{" "}
+          <a href="https://github.com/Runnin4ik/dpi-detector" target="_blank" rel="noopener noreferrer" style={{ color: colors.secondary }}>
+            Runnin4ik/dpi-detector
+          </a>
+          {lists &&
+            ` ${t("detector.setup.listsInfo", { sites: lists.site_count, targets: lists.tcp_targets, resolvers: lists.dns_servers, date: lists.lists_date })}`}
         </Typography>
-      )}
+        {lists && (
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+            <Tooltip title={t("detector.setup.listsUpdateHint")}>
+              <span>
+                <Button size="small" variant="outlined" startIcon={<RefreshIcon />} disabled={listsBusy || busy} onClick={onUpdateLists}>
+                  {listsBusy ? t("detector.setup.listsUpdating") : t("detector.setup.listsUpdate")}
+                </Button>
+              </span>
+            </Tooltip>
+            {lists.custom && (
+              <Button size="small" disabled={listsBusy || busy} onClick={onResetLists}>
+                {t("detector.setup.listsReset", { date: lists.embedded_date })}
+              </Button>
+            )}
+          </Stack>
+        )}
+      </Stack>
     </Stack>
   );
 };
