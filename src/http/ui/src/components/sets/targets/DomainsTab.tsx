@@ -87,7 +87,9 @@ export const DomainsTab = ({
         .then((matches: SetDomainMatch[]) => {
           if (request !== checkSeq.current) return;
           setDuplicateWarning(
-            Array.isArray(matches) ? matches.map(describeMatch).join("; ") : "",
+            Array.isArray(matches)
+              ? matches.map((match) => describeMatch(match)).join("; ")
+              : "",
           );
         })
         .catch(() => {});
