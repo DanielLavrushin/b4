@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-const discoveryRingSize = 1000
+const discoveryRingSize = 4000
 
 var (
 	discoveryHub     *DiscoveryLogHub
@@ -34,7 +34,16 @@ func (h *DiscoveryLogHub) Subscribe() (chan string, []string) {
 	defer h.mu.Unlock()
 	ch := make(chan string, 256)
 	h.listeners = append(h.listeners, ch)
+	return ch, h.snapshotLocked()
+}
 
+func (h *DiscoveryLogHub) Snapshot() []string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.snapshotLocked()
+}
+
+func (h *DiscoveryLogHub) snapshotLocked() []string {
 	var snap []string
 	if h.ringFull {
 		snap = make([]string, 0, discoveryRingSize)
@@ -44,7 +53,7 @@ func (h *DiscoveryLogHub) Subscribe() (chan string, []string) {
 		snap = make([]string, h.ringHead)
 		copy(snap, h.ring[:h.ringHead])
 	}
-	return ch, snap
+	return snap
 }
 
 func (h *DiscoveryLogHub) Unsubscribe(ch chan string) {

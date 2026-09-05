@@ -257,7 +257,7 @@ export function alternatesFor(group: FoundGroup, limit = 5): Alternate[] {
     });
   }
   out.sort((a, b) => b.speed - a.speed);
-  return out.slice(0, limit);
+  return limit > 0 ? out.slice(0, limit) : out;
 }
 
 export interface TestedCounts {

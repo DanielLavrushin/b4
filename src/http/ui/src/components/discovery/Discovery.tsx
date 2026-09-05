@@ -2,7 +2,13 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { Box, Button, CircularProgress, Stack, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
-import { StartIcon, DiscoveryIcon, HistoryIcon, ClearIcon } from "@b4.icons";
+import {
+  StartIcon,
+  DiscoveryIcon,
+  HistoryIcon,
+  ClearIcon,
+  LogsIcon,
+} from "@b4.icons";
 import { colors } from "@design";
 import { B4SetConfig } from "@models/config";
 import { DomainReassignment } from "@models/sets";
@@ -373,14 +379,24 @@ export const DiscoveryRunner = () => {
           description={`${t("discovery.history.sites", { count: history.length })} · ${t("discovery.history.newestFirst")}`}
           icon={<HistoryIcon />}
           action={
-            <Button
-              size="small"
-              startIcon={<ClearIcon />}
-              onClick={handleClearHistory}
-              sx={{ color: colors.text.secondary, textTransform: "none" }}
-            >
-              {t("discovery.history.clear")}
-            </Button>
+            <Stack direction="row" spacing={1}>
+              <Button
+                size="small"
+                startIcon={<LogsIcon />}
+                onClick={() => setLogOpen(true)}
+                sx={{ color: colors.text.secondary, textTransform: "none" }}
+              >
+                {t("discovery.history.lastLog")}
+              </Button>
+              <Button
+                size="small"
+                startIcon={<ClearIcon />}
+                onClick={handleClearHistory}
+                sx={{ color: colors.text.secondary, textTransform: "none" }}
+              >
+                {t("discovery.history.clear")}
+              </Button>
+            </Stack>
           }
         >
           <HistoryTable

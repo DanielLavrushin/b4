@@ -1,9 +1,22 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Box, Typography, Button } from "@mui/material";
-import { ClearIcon, LogsIcon, CloseIcon } from "@b4.icons";
+import { ClearIcon, LogsIcon, CloseIcon, DownloadIcon } from "@b4.icons";
 import { colors, typography } from "@design";
 import { B4Dialog } from "@common/B4Dialog";
 import { useTranslation } from "react-i18next";
+import { discoveryApi } from "@api/discovery";
+
+const downloadText = (text: string) => {
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `b4-discovery-${stamp}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
 
 interface DiscoveryLogLineProps {
   logs: string[];
@@ -82,12 +95,37 @@ export const DiscoveryLogDialog = ({
 }: DiscoveryLogDialogProps) => {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [saved, setSaved] = useState<string[]>([]);
+  const lines = logs.length > 0 ? logs : saved;
+
+  useEffect(() => {
+    if (!open || logs.length > 0) return;
+    let active = true;
+    discoveryApi
+      .log()
+      .then((text) => {
+        if (active) setSaved(text.split("\n").filter((l) => l.length > 0));
+      })
+      .catch(() => {
+        if (active) setSaved([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [open, logs.length]);
 
   useEffect(() => {
     if (scrollRef.current && open) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [logs, open]);
+  }, [lines, open]);
+
+  const download = () => {
+    void discoveryApi
+      .log()
+      .then((text) => downloadText(text))
+      .catch(() => downloadText(lines.join("\n")));
+  };
 
   return (
     <B4Dialog
@@ -101,6 +139,14 @@ export const DiscoveryLogDialog = ({
         <>
           <Button onClick={onClear} startIcon={<ClearIcon />} size="small">
             {t("discovery.logs.clear")}
+          </Button>
+          <Button
+            onClick={download}
+            startIcon={<DownloadIcon />}
+            size="small"
+            disabled={lines.length === 0}
+          >
+            {t("discovery.logs.download")}
           </Button>
           <Box sx={{ flex: 1 }} />
           <Button
@@ -124,12 +170,12 @@ export const DiscoveryLogDialog = ({
           padding: 16,
         }}
       >
-        {logs.length === 0 ? (
+        {lines.length === 0 ? (
           <Typography sx={{ color: colors.text.disabled, fontStyle: "italic" }}>
             {t("discovery.logs.waiting")}
           </Typography>
         ) : (
-          logs.map((line, i) => (
+          lines.map((line, i) => (
             <div
               key={`${i}-${line.slice(0, 24)}`}
               style={{

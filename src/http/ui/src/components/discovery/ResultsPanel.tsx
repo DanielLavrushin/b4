@@ -7,7 +7,13 @@ import {
   Typography,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import { AddIcon, CollapseIcon, ExpandIcon, RefreshIcon } from "@b4.icons";
+import {
+  AddIcon,
+  CollapseIcon,
+  ExpandIcon,
+  LogsIcon,
+  RefreshIcon,
+} from "@b4.icons";
 import { colors, typography } from "@design";
 import { B4Alert, B4Badge, B4ResultCard } from "@b4.elements";
 import { DiscoverySuite } from "@models/discovery";
@@ -77,15 +83,24 @@ export const ResultsPanel = ({
             {t("discovery.results.saved")}
           </Typography>
         </Box>
-        <Button
-          variant="outlined"
-          startIcon={<RefreshIcon />}
-          onClick={onNewSearch}
-          disabled={!canReset}
-          sx={{ whiteSpace: "nowrap" }}
-        >
-          {t("discovery.newSearch")}
-        </Button>
+        <Stack direction="row" spacing={1}>
+          <Button
+            startIcon={<LogsIcon />}
+            onClick={onShowLog}
+            sx={{ textTransform: "none", whiteSpace: "nowrap" }}
+          >
+            {t("discovery.run.showLog")}
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<RefreshIcon />}
+            onClick={onNewSearch}
+            disabled={!canReset}
+            sx={{ whiteSpace: "nowrap" }}
+          >
+            {t("discovery.newSearch")}
+          </Button>
+        </Stack>
       </Stack>
 
       <Stack spacing={1.5}>
@@ -114,10 +129,14 @@ interface FoundCardProps {
   onApply: (target: ApplyTarget) => void;
 }
 
+const ALTERNATES_PREVIEW = 8;
+
 const FoundCard = ({ group, suite, applying, onApply }: FoundCardProps) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
-  const alternates = alternatesFor(group);
+  const [showAll, setShowAll] = useState(false);
+  const alternates = alternatesFor(group, 0);
+  const shown = showAll ? alternates : alternates.slice(0, ALTERNATES_PREVIEW);
   const first = group.results[0];
   const counts = first ? testedCounts(first) : null;
   const tries = first ? triesUntilFound(first, group.preset) : 0;
@@ -172,27 +191,39 @@ const FoundCard = ({ group, suite, applying, onApply }: FoundCardProps) => {
                 variant="caption"
                 sx={{ color: colors.text.secondary, display: "block", mb: 0.5 }}
               >
-                {t("discovery.results.alsoWorked")}
+                {t("discovery.results.alsoWorked", { count: alternates.length })}
               </Typography>
-              <Stack
-                direction="row"
-                flexWrap="wrap"
-                useFlexGap
-                spacing={1}
-                alignItems="center"
-              >
-                {alternates.map((alt) => (
-                  <Stack
+              <Stack spacing={0.5}>
+                {shown.map((alt) => (
+                  <Box
                     key={alt.preset}
-                    direction="row"
-                    alignItems="center"
-                    spacing={0.5}
+                    sx={{
+                      display: "grid",
+                      gridTemplateColumns: "auto 1fr auto",
+                      gap: 1.5,
+                      alignItems: "center",
+                    }}
                   >
                     <B4Badge
                       variant="outlined"
                       label={alt.preset}
-                      sx={{ fontFamily: typography.recipes.monoSmall.fontFamily }}
+                      sx={{
+                        fontFamily: typography.recipes.monoSmall.fontFamily,
+                        fontSize: typography.sizes.sm,
+                      }}
                     />
+                    <Typography
+                      variant="caption"
+                      noWrap
+                      sx={{ color: colors.text.secondary }}
+                    >
+                      {alt.family
+                        ? t(`discovery.familyNames.${alt.family}`, {
+                            defaultValue: alt.family,
+                          })
+                        : ""}
+                      {alt.speed > 0 ? ` · ${formatSpeed(alt.speed)}` : ""}
+                    </Typography>
                     <Button
                       size="small"
                       disabled={applying}
@@ -207,9 +238,22 @@ const FoundCard = ({ group, suite, applying, onApply }: FoundCardProps) => {
                     >
                       {t("discovery.results.useInstead")}
                     </Button>
-                  </Stack>
+                  </Box>
                 ))}
               </Stack>
+              {alternates.length > ALTERNATES_PREVIEW && (
+                <Button
+                  size="small"
+                  onClick={() => setShowAll((v) => !v)}
+                  sx={{ textTransform: "none", mt: 0.5, color: colors.text.secondary }}
+                >
+                  {showAll
+                    ? t("discovery.results.showFewer")
+                    : t("discovery.results.showAll", {
+                        count: alternates.length,
+                      })}
+                </Button>
+              )}
             </Box>
           )}
           <Typography
@@ -313,7 +357,11 @@ const FoundCard = ({ group, suite, applying, onApply }: FoundCardProps) => {
           >
             {expanded
               ? t("discovery.results.hideDetails")
-              : t("discovery.results.details")}
+              : alternates.length > 0
+                ? t("discovery.results.otherStrategies", {
+                    count: alternates.length,
+                  })
+                : t("discovery.results.details")}
           </Button>
         </Stack>
       </Box>

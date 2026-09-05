@@ -25,6 +25,44 @@ func (api *API) RegisterDiscoveryApi() {
 	api.mux.HandleFunc("/api/discovery/history", api.handleDiscoveryHistory)
 	api.mux.HandleFunc("/api/discovery/history/clear", api.handleClearDiscoveryHistory)
 	api.mux.HandleFunc("/api/discovery/history/{domain}", api.handleDeleteHistoryDomain)
+	api.mux.HandleFunc("/api/discovery/log", api.handleDiscoveryLog)
+}
+
+// @Summary Get the log of the running or last discovery run
+// @Tags Discovery
+// @Produce plain
+// @Param download query bool false "Send as an attachment"
+// @Success 200 {string} string
+// @Failure 404 {string} string
+// @Security BearerAuth
+// @Router /discovery/log [get]
+func (api *API) handleDiscoveryLog(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	var body []byte
+	if _, running := discovery.GetCurrentSuite(); running {
+		body = []byte(strings.Join(log.GetDiscoveryHub().Snapshot(), "\n"))
+	} else {
+		saved, err := discovery.LoadLastRunLog(api.getCfg().ConfigPath)
+		if err != nil {
+			if live := log.GetDiscoveryHub().Snapshot(); len(live) > 0 {
+				saved = []byte(strings.Join(live, "\n"))
+			} else {
+				http.Error(w, "no discovery run has been logged yet", http.StatusNotFound)
+				return
+			}
+		}
+		body = saved
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if r.URL.Query().Get("download") != "" {
+		w.Header().Set("Content-Disposition", `attachment; filename="b4-discovery.log"`)
+	}
+	w.Write(body)
 }
 
 // @Summary Get discovery status

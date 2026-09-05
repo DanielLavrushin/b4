@@ -3,10 +3,12 @@ package discovery
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/log"
 )
 
 func TestHistoryKeepsOnlyTheWinningPresetsSet(t *testing.T) {
@@ -99,5 +101,27 @@ func TestEffectiveOutcomeDerivesLegacyEntries(t *testing.T) {
 		if got := tc.entry.EffectiveOutcome(); got != tc.want {
 			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestLastRunLogIsSavedNextToTheConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	hub := log.GetDiscoveryHub()
+	hub.Reset()
+	hub.Broadcast("Starting discovery for 1 domains")
+	hub.Broadcast("  ✓ [example.com] Best: combo-pastseq")
+
+	SaveLastRunLog(cfgPath)
+
+	saved, err := LoadLastRunLog(cfgPath)
+	if err != nil {
+		t.Fatalf("the log must survive the ring being reset by the next run: %v", err)
+	}
+	if !strings.Contains(string(saved), "combo-pastseq") || !strings.HasPrefix(string(saved), "Starting discovery") {
+		t.Fatalf("saved log = %q", saved)
+	}
+	if _, err := LoadLastRunLog(""); err == nil {
+		t.Fatal("without a config path there is nowhere to read from")
 	}
 }

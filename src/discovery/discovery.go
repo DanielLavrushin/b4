@@ -131,6 +131,7 @@ func parseDiscoveryInputs(inputs []string) []DomainInput {
 
 func (ds *DiscoverySuite) RunDiscovery() {
 	defer ds.ctxCancel()
+	defer ds.saveRunLog()
 	log.DiscoveryLogf("═══════════════════════════════════════")
 	domainNames := make([]string, len(ds.Domains))
 	for i, di := range ds.Domains {

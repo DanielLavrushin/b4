@@ -1966,13 +1966,17 @@
       "apply": "Apply as a set",
       "details": "Details",
       "hideDetails": "Hide details",
-      "alsoWorked": "Also worked, slower or less common",
+      "alsoWorked": "Also worked, fastest first",
       "useInstead": "Use instead",
       "counts": "{{worked}} of {{tested}} configurations loaded the pages, {{failed}} did not.",
       "foundAfter_one": "found on try {{count}}",
       "foundAfter_other": "found on try {{count}}",
       "unconfirmedNote": "This run was stopped before the confirmation pass, so the strategy worked at least once but was not re-checked.",
-      "noSet": "The run did not keep the set for this strategy. Run it again to apply."
+      "noSet": "The run did not keep the set for this strategy. Run it again to apply.",
+      "otherStrategies_one": "{{count}} other strategy worked",
+      "otherStrategies_other": "{{count}} other strategies worked",
+      "showAll": "Show all {{count}}",
+      "showFewer": "Show fewer"
     },
     "summary": {
       "split": "Split",
@@ -2038,7 +2042,8 @@
       "moved": "{{domains}} moved out of {{sets}}.",
       "openSet": "Open set",
       "createFailed": "Could not create the set.",
-      "addFailed": "Could not add to the set."
+      "addFailed": "Could not add to the set.",
+      "shared": "{{domains}} won with the same strategy in one run, so one set covers all of them."
     },
     "history": {
       "title": "History",
@@ -2056,10 +2061,11 @@
       "apply": "Apply",
       "runAgain": "Run again",
       "remove": "Remove from history",
-      "sameAs": "Same strategy as {{domain}}, same run",
       "loadsWithout": "Loads without b4",
       "needsProxy": "Needs a proxy or VPN set",
-      "nothing": "No strategy made it load"
+      "nothing": "No strategy made it load",
+      "sharedWith": "One set together with {{domains}}",
+      "lastLog": "Last run log"
     },
     "options": {
       "title": "Options",
@@ -2091,7 +2097,8 @@
     "logs": {
       "title": "Discovery log",
       "waiting": "Waiting for the first line...",
-      "clear": "Clear"
+      "clear": "Clear",
+      "download": "Download"
     },
     "duration": {
       "seconds": "{{sec}} s",

@@ -161,6 +161,11 @@ export const ApplyDialog = ({
       }
     >
       <Stack spacing={3} sx={{ mt: 1 }}>
+        {target.domains.length > 1 && (
+          <B4Alert severity="info">
+            {t("discovery.apply.shared", { domains: target.domains.join(", ") })}
+          </B4Alert>
+        )}
         <Box>
           <Typography
             variant="subtitle2"

@@ -236,7 +236,7 @@ export function useDiscovery() {
   };
 }
 
-const MAX_LOGS = 500;
+const MAX_LOGS = 4000;
 
 export function useDiscoveryLogs() {
   const [logs, setLogs] = useState<string[]>([]);

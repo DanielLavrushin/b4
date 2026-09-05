@@ -3,6 +3,7 @@ import {
   Box,
   Button,
   CircularProgress,
+  LinearProgress,
   Stack,
   Table,
   TableBody,
@@ -306,6 +307,21 @@ export const RunPanel = ({
           );
         })}
       </Box>
+
+      <LinearProgress
+        variant={active <= 2 && suite.total_checks > 0 ? "determinate" : "indeterminate"}
+        value={
+          suite.total_checks > 0
+            ? Math.min(100, (suite.completed_checks / suite.total_checks) * 100)
+            : 0
+        }
+        sx={{
+          height: 4,
+          borderRadius: 2,
+          bgcolor: colors.background.dark,
+          "& .MuiLinearProgress-bar": { bgcolor: colors.secondary },
+        }}
+      />
 
       {logLine}
 

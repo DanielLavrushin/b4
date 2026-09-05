@@ -46,6 +46,7 @@ export const discoveryApi = {
   clearCache: () => apiPost("/api/discovery/cache/clear", {}),
   current: () => apiGet<DiscoveryCurrent>("/api/discovery/current"),
   history: () => apiGet<HistoryEntry[]>("/api/discovery/history"),
+  log: () => apiGet<string>("/api/discovery/log", "text"),
   clearHistory: () => apiPost("/api/discovery/history/clear", {}),
   deleteHistoryDomain: (domain: string) =>
     apiDelete(`/api/discovery/history/${encodeURIComponent(domain)}`),
