@@ -448,7 +448,7 @@ func (s *Suite) fetchAny(ctx context.Context, site SiteResult, ips []string, mar
 			blocked = append(blocked, ip)
 			notes = append(notes, ip+": "+f.Detail)
 		}
-		if firstFail == nil {
+		if firstFail == nil || (!isBlockedStatus(firstFail.Status) && isBlockedStatus(f.Status)) {
 			copy := f
 			firstFail = &copy
 		}

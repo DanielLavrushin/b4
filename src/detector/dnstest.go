@@ -289,8 +289,15 @@ func (s *Suite) runDNS() {
 func (s *Suite) probeResolver(r *serverRun, lists TargetLists, qtype uint16) {
 	s.setProgress(ScopeDNS, r.server.Name)
 	probe := &DNSProbe{Address: r.server.Address, Honesty: HonestyUnknown}
-	r.probe = probe
-	r.answers = make(map[string]dnsAnswer)
+	answers := make(map[string]dnsAnswer)
+	egress := ""
+	defer func() {
+		s.mu.Lock()
+		r.probe = probe
+		r.answers = answers
+		r.egress = egress
+		s.mu.Unlock()
+	}()
 
 	q := s.querierFor(r.server)
 	defer q.close()
@@ -338,15 +345,15 @@ func (s *Suite) probeResolver(r *serverRun, lists TargetLists, qtype uint16) {
 			return
 		}
 		body, err := q.query(s.ctx, dom, qtype)
-		r.answers[dom] = parseAnswer(body, err, s.recordType())
+		answers[dom] = parseAnswer(body, err, s.recordType())
 	}
 
 	if r.server.Kind == "udp" {
-		for attempt := 0; attempt < 2 && r.egress == ""; attempt++ {
+		for attempt := 0; attempt < 2 && egress == ""; attempt++ {
 			body, err := q.query(s.ctx, egressName, 1)
 			if err == nil {
 				if ips := dns.ParseResponseIPs(body); len(ips) > 0 {
-					r.egress = ips[0].String()
+					egress = ips[0].String()
 				}
 			}
 		}
