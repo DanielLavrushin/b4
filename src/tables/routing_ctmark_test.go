@@ -271,14 +271,14 @@ func TestTwoQuietSetsAreOneObservationNotTwo(t *testing.T) {
 	}
 }
 
-const conntrackTagLostOnceTheConnectionAnswers = `ipv4     2 tcp      6 118 SYN_SENT src=192.168.1.100 dst=1.2.3.4 sport=1 dport=443 packets=1 bytes=60 [UNREPLIED] src=1.2.3.4 dst=192.168.1.100 sport=443 dport=1 packets=0 bytes=0 mark=1073762169 use=2
+const conntrackTagOnlyOnAConnectionThatHasNotAnswered = `ipv4     2 tcp      6 118 SYN_SENT src=192.168.1.100 dst=1.2.3.4 sport=1 dport=443 packets=1 bytes=60 [UNREPLIED] src=1.2.3.4 dst=192.168.1.100 sport=443 dport=1 packets=0 bytes=0 mark=1073762169 use=2
 ipv4     2 tcp      6 299 ESTABLISHED src=192.168.1.100 dst=1.2.3.4 sport=2 dport=443 packets=9 bytes=1 src=1.2.3.4 dst=192.168.1.100 sport=443 dport=2 packets=7 bytes=1 [ASSURED] mark=68669 use=2
 `
 
-func TestAClaimTheConnectionLosesAfterItAnswersIsNotEvidence(t *testing.T) {
+func TestAClaimOnAConnectionThatHasNotAnsweredIsNotEvidence(t *testing.T) {
 	routeForgetCTMarkVerdict()
 	t.Cleanup(routeForgetCTMarkVerdict)
-	writeConntrack(t, conntrackTagLostOnceTheConnectionAnswers)
+	writeConntrack(t, conntrackTagOnlyOnAConnectionThatHasNotAnswered)
 
 	quiet := ctmarkDump(0, 80)
 	routeCheckCTMarkIn(quiet)
