@@ -20,7 +20,12 @@ import { SimilarSet } from "@models/discovery";
 import { SetDomainMatch } from "@models/sets";
 import { discoveryApi } from "@api/discovery";
 import { setsApi } from "@api/sets";
-import { ApplyTarget, generateDomainVariants, strategySuffix } from "@utils";
+import {
+  ApplyTarget,
+  generateDomainVariants,
+  strategySuffix,
+  suggestSetName,
+} from "@utils";
 import { StrategySummary } from "./StrategySummary";
 
 interface ApplyDialogProps {
@@ -56,7 +61,7 @@ export const ApplyDialog = ({
 
   useEffect(() => {
     if (!open || !target) return;
-    setName(`${target.domains[0]}${strategySuffix(target.set)}`);
+    setName(`${suggestSetName(target.domains[0])}${strategySuffix(target.set)}`);
     setVariant(single ? (variants[0] ?? single) : "");
     setMode("new");
     setSimilar([]);

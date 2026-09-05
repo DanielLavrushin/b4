@@ -2074,6 +2074,8 @@ func (ds *DiscoverySuite) logDiscoverySummary() {
 			case dnsResult.TransportBlocked:
 				log.DiscoveryLogf("  ⊘ [%s] IP-blocked: TCP connections fail to all known IPs, a proxy or VPN route is needed", di.Domain)
 				continue
+			case dnsResult.IsPoisoned && dnsResult.BestDoHURL != "":
+				log.DiscoveryLogf("  ⚡ [%s] DNS poisoned, bypassed via %s", di.Domain, dnsResult.BestDoHURL)
 			case dnsResult.IsPoisoned && dnsResult.BestServer != "":
 				log.DiscoveryLogf("  ⚡ [%s] DNS poisoned, bypassed via %s", di.Domain, dnsResult.BestServer)
 			case dnsResult.IsPoisoned && dnsResult.NeedsFragment:

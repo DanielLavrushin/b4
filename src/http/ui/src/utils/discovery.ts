@@ -327,6 +327,26 @@ export function describeStrategy(set: B4SetConfig, t: TFn): string {
   return sentence.charAt(0).toUpperCase() + sentence.slice(1) + S("end");
 }
 
+const SECOND_LEVEL = new Set(["co", "com", "org", "net", "gov", "edu", "ac"]);
+
+export function suggestSetName(domain: string): string {
+  const labels = domain
+    .toLowerCase()
+    .replace(/^\*\./, "")
+    .split(".")
+    .filter((l) => l.length > 0);
+  if (labels.length === 0) return domain;
+  if (labels[0] === "www" && labels.length > 1) labels.shift();
+  if (labels.length === 1) return labels[0];
+  if (/^\d+$/.test(labels[labels.length - 1])) return domain;
+  const last = labels[labels.length - 1];
+  const second = labels[labels.length - 2];
+  if (labels.length >= 3 && last.length === 2 && SECOND_LEVEL.has(second)) {
+    return labels[labels.length - 3];
+  }
+  return second;
+}
+
 export function strategySuffix(set: B4SetConfig): string {
   let suffix = "";
   if (set.targets?.tls) suffix += `-tls${set.targets.tls.replace(".", "")}`;
