@@ -323,7 +323,12 @@ func (s *Suite) checkSite(result *SitesResult, idx int) {
 
 	var through *Fetch
 	if s.Options.FetchMode == FetchBoth && !s.canceled() {
-		t := s.fetchMode(site, markThroughB4, false)
+		var t Fetch
+		if site.SetId != "" && site.SetEnabled {
+			t = s.fetchMode(site, markThroughB4, false)
+		} else {
+			t = Fetch{Status: direct.Status, IP: direct.IP, Source: "none", Tried: direct.Tried, Blocked: direct.Blocked, LatencyMs: direct.LatencyMs, Bytes: direct.Bytes, StatusCode: direct.StatusCode, Detail: direct.Detail}
+		}
 		through = &t
 		s.step(1)
 	}
@@ -377,20 +382,44 @@ func (s *Suite) fetchMode(site SiteResult, mark uint, direct bool) Fetch {
 	if !direct || s.canceled() {
 		return f
 	}
-	if isBlockedStatus(f.Status) && len(site.HonestIPs) > 0 && !overlaps(site.HonestIPs, ips) {
-		alt := s.fetchAny(ctx, site, site.HonestIPs, mark)
-		if alt.Status == FetchOk {
-			f.Detail += "; the address DoH returns (" + alt.IP + ") loads"
-			f.AltWorks = true
-		}
+
+	blocked := isBlockedStatus(f.Status)
+	var wg sync.WaitGroup
+	var alt Fetch
+	tryAlt := blocked && len(site.HonestIPs) > 0 && !overlaps(site.HonestIPs, ips)
+	if tryAlt {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			alt = s.fetchAny(ctx, site, site.HonestIPs, mark)
+		}()
 	}
-	if isBlockedStatus(f.Status) && !s.Options.SkipTLS12 {
-		t12 := s.fetchSite(ctx, site.Domain, site.URL, f.IP, mark, tls.VersionTLS12)
+	var t12 Fetch
+	tryTLS12 := blocked && !s.Options.SkipTLS12
+	if tryTLS12 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			t12 = s.fetchSite(ctx, site.Domain, site.URL, f.IP, mark, tls.VersionTLS12)
+		}()
+	}
+	var httpStatus FetchStatus
+	var httpDetail string
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		httpStatus, httpDetail = s.probePlainHTTP(ctx, site.Domain, f.IP, mark)
+	}()
+	wg.Wait()
+
+	if tryAlt && alt.Status == FetchOk {
+		f.Detail += "; the address DoH returns (" + alt.IP + ") loads"
+		f.AltWorks = true
+	}
+	if tryTLS12 {
 		f.TLS12 = t12.Status
 	}
-	if !s.canceled() {
-		f.HTTP, f.HTTPDetail = s.probePlainHTTP(ctx, site.Domain, f.IP, mark)
-	}
+	f.HTTP, f.HTTPDetail = httpStatus, httpDetail
 	return f
 }
 

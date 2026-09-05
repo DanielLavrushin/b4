@@ -52,7 +52,7 @@ export type FetchStatus =
 export interface Fetch {
   status: FetchStatus;
   ip?: string;
-  source?: "system" | "pins" | "doh" | "target";
+  source?: "system" | "pins" | "doh" | "target" | "none";
   tried?: string[];
   blocked_ips?: string[];
   detail?: string;

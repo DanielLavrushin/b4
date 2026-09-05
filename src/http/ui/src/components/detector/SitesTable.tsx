@@ -54,8 +54,10 @@ function describe(s: SiteResult, t: (k: string, o?: Record<string, unknown>) => 
   if (d.http && d.http !== "OK") parts.push(t("detector.sites.httpAlso", { status: t(`detector.status.${d.http}`, { defaultValue: d.http }) }));
   const b = s.through_b4;
   if (b && b.status !== "CHECKING") {
-    const via = b.source && b.source !== "system" ? t(`detector.sites.via.${b.source}`, { ip: b.ip ?? "" }) : "";
-    if (b.status === "OK" && s.outcome === "fixed") {
+    const via = b.source && b.source !== "system" && b.source !== "none" ? t(`detector.sites.via.${b.source}`, { ip: b.ip ?? "" }) : "";
+    if (b.source === "none") {
+      parts.push(t("detector.sites.throughSkipped"));
+    } else if (b.status === "OK" && s.outcome === "fixed") {
       parts.push((s.set_name ? t("detector.sites.fixedBySet", { set: s.set_name, ms: b.latency_ms ?? 0 }) : t("detector.sites.fixedNoSet", { ms: b.latency_ms ?? 0 })) + via);
     } else if (b.status === "OK" && via) {
       parts.push(t("detector.sites.throughOk") + via);

@@ -2323,7 +2323,8 @@
         "doh": " using the set's DoH answer {{ip}}",
         "target": " using the set's DNS server answer {{ip}}"
       },
-      "throughOk": "Loads through b4"
+      "throughOk": "Loads through b4",
+      "throughSkipped": "No enabled set targets this site, so the through-b4 result is the direct one"
     },
     "dns": {
       "provider": "Provider",
