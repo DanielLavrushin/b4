@@ -2340,7 +2340,9 @@
       "openSetTip": "Открыть сет «{{set}}»",
       "discoveryTip": "Починить через Дискавери",
       "addToSetTip": "Добавить в сет",
-      "domainsCount": "доменов: {{count}}"
+      "domainsCount": "доменов: {{count}}",
+      "fixAll": "Починить все {{count}} через Дискавери",
+      "bulkHint": "всё ещё заблокировано: {{count}}; отметьте строки, чтобы выбрать часть"
     },
     "dns": {
       "provider": "Провайдер",

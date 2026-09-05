@@ -2311,7 +2311,9 @@
       "openSetTip": "Open set \"{{set}}\"",
       "discoveryTip": "Fix with Discovery",
       "addToSetTip": "Add to a set",
-      "domainsCount": "{{count}} domains"
+      "domainsCount": "{{count}} domains",
+      "fixAll": "Fix all {{count}} with Discovery",
+      "bulkHint": "{{count}} still blocked; tick rows to pick a subset"
     },
     "dns": {
       "provider": "Provider",

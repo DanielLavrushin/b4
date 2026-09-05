@@ -85,6 +85,9 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
   const selectedRows = all.filter((s) => selected.has(rowKey(s)));
   const selectedInputs = [...new Set(selectedRows.map((s) => s.input))];
   const selectedDomains = [...new Set(selectedRows.map((s) => s.domain))];
+  const stillRows = all.filter((s) => s.done && still(s));
+  const stillInputs = [...new Set(stillRows.map((s) => s.input))];
+  const stillDomains = [...new Set(stillRows.map((s) => s.domain))];
   const allSelected = selectable.length > 0 && selectable.every((s) => selected.has(rowKey(s)));
   const someSelected = selectable.some((s) => selected.has(rowKey(s)));
 
@@ -121,36 +124,48 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
             {t(`detector.sites.filter.${f}`, { count: counts[f] })}
           </Button>
         ))}
-        {result.stub_ips && result.stub_ips.length > 0 && selectedInputs.length === 0 && (
-          <Typography variant="caption" sx={{ color: colors.text.secondary, ml: "auto !important" }}>
-            {t("detector.sites.stubs", { ips: result.stub_ips.join(", ") })}
-          </Typography>
-        )}
-        {selectedInputs.length > 0 && (
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ ml: "auto !important" }}>
+        {stillInputs.length > 0 && (
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ ml: "auto !important" }}>
             <Typography variant="caption" sx={{ color: colors.text.secondary }}>
-              {t("detector.sites.selected", { count: selectedInputs.length })}
+              {selectedInputs.length > 0
+                ? t("detector.sites.selected", { count: selectedInputs.length })
+                : t("detector.sites.bulkHint", { count: stillInputs.length })}
             </Typography>
             <Button
               size="small"
               variant="contained"
               startIcon={<DiscoveryIcon />}
-              onClick={() => onDiscovery(selectedInputs)}
+              onClick={() => onDiscovery(selectedInputs.length > 0 ? selectedInputs : stillInputs)}
               sx={{ bgcolor: colors.secondary, color: colors.background.default, "&:hover": { bgcolor: colors.primary }, whiteSpace: "nowrap" }}
             >
-              {t("detector.sites.fixSelected", { count: selectedInputs.length })}
+              {selectedInputs.length > 0
+                ? t("detector.sites.fixSelected", { count: selectedInputs.length })
+                : t("detector.sites.fixAll", { count: stillInputs.length })}
             </Button>
             {sets.length > 0 && (
-              <Button size="small" variant="outlined" startIcon={<AddIcon />} onClick={(e) => setMenu({ anchor: e.currentTarget, domains: selectedDomains })} sx={{ whiteSpace: "nowrap" }}>
-                {t("detector.sites.addSelected", { count: selectedDomains.length })}
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<AddIcon />}
+                onClick={(e) => setMenu({ anchor: e.currentTarget, domains: selectedDomains.length > 0 ? selectedDomains : stillDomains })}
+                sx={{ whiteSpace: "nowrap" }}
+              >
+                {t("detector.sites.addSelected", { count: selectedDomains.length > 0 ? selectedDomains.length : stillDomains.length })}
               </Button>
             )}
-            <Button size="small" onClick={() => setSelected(new Set())}>
-              {t("detector.sites.clearSelection")}
-            </Button>
+            {selectedInputs.length > 0 && (
+              <Button size="small" onClick={() => setSelected(new Set())}>
+                {t("detector.sites.clearSelection")}
+              </Button>
+            )}
           </Stack>
         )}
       </Stack>
+      {result.stub_ips && result.stub_ips.length > 0 && (
+        <Typography variant="caption" sx={{ color: colors.text.secondary }}>
+          {t("detector.sites.stubs", { ips: result.stub_ips.join(", ") })}
+        </Typography>
+      )}
       <Box sx={{ overflowX: "auto" }}>
         <Table size="small" sx={{ minWidth: 760 }}>
           <TableHead>
