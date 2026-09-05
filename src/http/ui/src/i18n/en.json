@@ -2218,7 +2218,9 @@
       "SERVER_ERROR": "Server error",
       "PENDING": "queued",
       "CHECKING": "checking",
-      "SKIPPED": "skipped"
+      "SKIPPED": "skipped",
+      "OK_PARTIAL": "OK, {{count}} address blocked",
+      "OK_PARTIAL_plural": "OK, {{count}} addresses blocked"
     },
     "kind": {
       "TLS_RST": "a TCP reset on the TLS handshake",
@@ -2315,7 +2317,13 @@
       "addToSetTip": "Add to a set",
       "domainsCount": "{{count}} domains",
       "fixAll": "Fix all {{count}} with Discovery",
-      "bulkHint": "{{count}} still blocked; tick rows to pick a subset"
+      "bulkHint": "{{count}} still blocked; tick rows to pick a subset",
+      "via": {
+        "pins": " using the set's pinned address {{ip}}",
+        "doh": " using the set's DoH answer {{ip}}",
+        "target": " using the set's DNS server answer {{ip}}"
+      },
+      "throughOk": "Loads through b4"
     },
     "dns": {
       "provider": "Provider",

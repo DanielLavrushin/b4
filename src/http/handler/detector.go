@@ -52,7 +52,7 @@ func (api *API) detectorSetLookup() detector.SetLookup {
 		out := &detector.SetMatch{Id: best.SetId, Name: best.SetName, Enabled: best.Enabled}
 		for _, set := range cfg.Sets {
 			if set.Id == best.SetId {
-				out.DNS = set.DNS.Enabled
+				out.DNS = set.DNS
 				break
 			}
 		}

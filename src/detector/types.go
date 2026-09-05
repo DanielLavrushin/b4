@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/netprobe"
 )
 
@@ -69,6 +70,10 @@ const (
 
 type Fetch struct {
 	Status     FetchStatus `json:"status"`
+	IP         string      `json:"ip,omitempty"`
+	Source     string      `json:"source,omitempty"`
+	Tried      []string    `json:"tried,omitempty"`
+	Blocked    []string    `json:"blocked_ips,omitempty"`
 	Detail     string      `json:"detail,omitempty"`
 	LatencyMs  int64       `json:"latency_ms,omitempty"`
 	Bytes      int64       `json:"bytes,omitempty"`
@@ -99,7 +104,11 @@ type SiteResult struct {
 	URL        string      `json:"url"`
 	Family     string      `json:"family,omitempty"`
 	IP         string      `json:"ip,omitempty"`
+	IPs        []string    `json:"ips,omitempty"`
 	HonestIP   string      `json:"honest_ip,omitempty"`
+	HonestIPs  []string    `json:"honest_ips,omitempty"`
+	B4IPs      []string    `json:"b4_ips,omitempty"`
+	B4Source   string      `json:"b4_source,omitempty"`
 	FakeDNS    bool        `json:"fake_dns,omitempty"`
 	AltWorks   bool        `json:"alt_works,omitempty"`
 	Direct     *Fetch      `json:"direct,omitempty"`
@@ -314,13 +323,14 @@ type Suite struct {
 	cancel     context.CancelFunc
 	mu         sync.RWMutex
 	setLookup  SetLookup
+	setDNS     map[string]config.DNSConfig
 }
 
 type SetMatch struct {
 	Id      string
 	Name    string
 	Enabled bool
-	DNS     bool
+	DNS     config.DNSConfig
 }
 
 type SetLookup func(domain string) *SetMatch

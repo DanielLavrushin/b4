@@ -51,6 +51,10 @@ export type FetchStatus =
 
 export interface Fetch {
   status: FetchStatus;
+  ip?: string;
+  source?: "system" | "pins" | "doh" | "target";
+  tried?: string[];
+  blocked_ips?: string[];
   detail?: string;
   latency_ms?: number;
   bytes?: number;
@@ -77,7 +81,11 @@ export interface SiteResult {
   url: string;
   family?: "ipv4" | "ipv6";
   ip?: string;
+  ips?: string[];
   honest_ip?: string;
+  honest_ips?: string[];
+  b4_ips?: string[];
+  b4_source?: "pins" | "doh" | "target";
   fake_dns?: boolean;
   alt_works?: boolean;
   direct?: Fetch;

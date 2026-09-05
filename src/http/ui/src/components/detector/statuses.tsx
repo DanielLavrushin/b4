@@ -124,9 +124,12 @@ export const StatusChip = ({ label, color, title }: ChipProps) => (
   <B4Badge label={label} color={color} size="small" title={title} sx={{ fontWeight: 600 }} />
 );
 
-export const FetchChip = ({ fetch }: { fetch?: { status: FetchStatus; detail?: string } }) => {
+export const FetchChip = ({ fetch }: { fetch?: { status: FetchStatus; detail?: string; blocked_ips?: string[] } }) => {
   const { t } = useTranslation();
   if (!fetch) return <StatusChip label={t("detector.status.PENDING")} color="default" />;
+  if (fetch.status === "OK" && fetch.blocked_ips && fetch.blocked_ips.length > 0) {
+    return <StatusChip label={t("detector.status.OK_PARTIAL", { count: fetch.blocked_ips.length })} color="warning" title={fetch.detail} />;
+  }
   return (
     <StatusChip
       label={t(`detector.status.${fetch.status}`, { defaultValue: fetch.status })}

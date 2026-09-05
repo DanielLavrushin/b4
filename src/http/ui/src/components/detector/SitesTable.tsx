@@ -54,10 +54,13 @@ function describe(s: SiteResult, t: (k: string, o?: Record<string, unknown>) => 
   if (d.http && d.http !== "OK") parts.push(t("detector.sites.httpAlso", { status: t(`detector.status.${d.http}`, { defaultValue: d.http }) }));
   const b = s.through_b4;
   if (b && b.status !== "CHECKING") {
+    const via = b.source && b.source !== "system" ? t(`detector.sites.via.${b.source}`, { ip: b.ip ?? "" }) : "";
     if (b.status === "OK" && s.outcome === "fixed") {
-      parts.push(s.set_name ? t("detector.sites.fixedBySet", { set: s.set_name, ms: b.latency_ms ?? 0 }) : t("detector.sites.fixedNoSet", { ms: b.latency_ms ?? 0 }));
+      parts.push((s.set_name ? t("detector.sites.fixedBySet", { set: s.set_name, ms: b.latency_ms ?? 0 }) : t("detector.sites.fixedNoSet", { ms: b.latency_ms ?? 0 })) + via);
+    } else if (b.status === "OK" && via) {
+      parts.push(t("detector.sites.throughOk") + via);
     } else if (b.status !== "OK") {
-      parts.push(t("detector.sites.throughB4", { detail: b.detail ?? t(`detector.status.${b.status}`, { defaultValue: b.status }) }));
+      parts.push(t("detector.sites.throughB4", { detail: b.detail ?? t(`detector.status.${b.status}`, { defaultValue: b.status }) }) + via);
     }
   }
   if (s.alt_works && s.honest_ip) parts.push(t("detector.sites.altWorks", { ip: s.honest_ip }));

@@ -7,10 +7,12 @@ import (
 	"net"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/netprobe"
 )
@@ -86,28 +88,51 @@ func (s *Suite) families() []string {
 	}
 }
 
-func (s *Suite) resolveSystem(ctx context.Context, domain, family string) (string, error) {
+const maxAddresses = 3
+
+func (s *Suite) resolveSystem(ctx context.Context, domain, family string) ([]string, error) {
 	rctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	ips, err := net.DefaultResolver.LookupIP(rctx, familyNet(family), domain)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	if len(ips) == 0 {
-		return "", fmt.Errorf("no address")
+	var out []string
+	for _, ip := range ips {
+		if len(out) == maxAddresses {
+			break
+		}
+		out = append(out, ip.String())
 	}
-	return ips[0].String(), nil
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no address")
+	}
+	return out, nil
 }
 
-func (s *Suite) resolveHonest(ctx context.Context, domain, family string) string {
+func (s *Suite) resolveHonest(ctx context.Context, domain, family string) []string {
 	rctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	r := &netprobe.Resolver{Mark: int(s.directMark), Timeout: 4 * time.Second}
 	out, err := r.ResolveResilient(rctx, domain, familyRecord(family))
-	if err != nil || len(out.IPs) == 0 {
+	if err != nil {
+		return nil
+	}
+	var ips []string
+	for _, ip := range out.IPs {
+		if isFakeRange(ip) || len(ips) == maxAddresses {
+			continue
+		}
+		ips = append(ips, ip)
+	}
+	return ips
+}
+
+func first(ips []string) string {
+	if len(ips) == 0 {
 		return ""
 	}
-	return out.IPs[0]
+	return ips[0]
 }
 
 func (s *Suite) runSites() {
@@ -125,7 +150,12 @@ func (s *Suite) runSites() {
 			site := SiteResult{Input: in, Domain: domain, URL: full, Family: fam, Outcome: OutcomePending}
 			if s.setLookup != nil {
 				if m := s.setLookup(domain); m != nil {
-					site.SetId, site.SetName, site.SetEnabled, site.SetDNS = m.Id, m.Name, m.Enabled, m.DNS
+					site.SetId, site.SetName, site.SetEnabled = m.Id, m.Name, m.Enabled
+					site.SetDNS = m.DNS.Enabled || len(m.DNS.PinnedAddresses(domain)) > 0
+					if s.setDNS == nil {
+						s.setDNS = make(map[string]config.DNSConfig)
+					}
+					s.setDNS[m.Id] = m.DNS
 				}
 			}
 			result.Sites = append(result.Sites, site)
@@ -181,8 +211,9 @@ func (s *Suite) runSites() {
 
 func (s *Suite) resolveAll(result *SitesResult) {
 	type resolved struct {
-		sys, honest string
-		sysErr      error
+		sys, honest, b4 []string
+		b4Source        string
+		sysErr          error
 	}
 	res := make([]resolved, len(result.Sites))
 	sem := make(chan struct{}, 10)
@@ -197,23 +228,22 @@ func (s *Suite) resolveAll(result *SitesResult) {
 			fam := result.Sites[idx].Family
 			sys, err := s.resolveSystem(s.ctx, domain, fam)
 			honest := s.resolveHonest(s.ctx, domain, fam)
-			if isFakeRange(honest) {
-				honest = ""
-			}
-			res[idx] = resolved{sys: sys, honest: honest, sysErr: err}
+			b4, source := s.resolveThroughB4(s.ctx, result.Sites[idx], fam)
+			res[idx] = resolved{sys: sys, honest: honest, b4: b4, b4Source: source, sysErr: err}
 		}(i)
 	}
 	wg.Wait()
 
 	byIP := make(map[string]map[string]bool)
 	for i, r := range res {
-		if r.sys == "" || r.honest == "" || r.sys == r.honest || sameNet(r.sys, r.honest) {
+		sys, honest := first(r.sys), first(r.honest)
+		if sys == "" || honest == "" || overlaps(r.sys, r.honest) {
 			continue
 		}
-		if byIP[r.sys] == nil {
-			byIP[r.sys] = make(map[string]bool)
+		if byIP[sys] == nil {
+			byIP[sys] = make(map[string]bool)
 		}
-		byIP[r.sys][result.Sites[i].Domain] = true
+		byIP[sys][result.Sites[i].Domain] = true
 	}
 	stubs := make(map[string]bool)
 	for ip, domains := range byIP {
@@ -226,12 +256,16 @@ func (s *Suite) resolveAll(result *SitesResult) {
 	for i := range result.Sites {
 		site := &result.Sites[i]
 		r := res[i]
-		site.IP = r.sys
-		site.HonestIP = r.honest
+		site.IPs = r.sys
+		site.IP = first(r.sys)
+		site.HonestIPs = r.honest
+		site.HonestIP = first(r.honest)
+		site.B4IPs = r.b4
+		site.B4Source = r.b4Source
 		switch {
-		case r.sys == "" && r.honest != "":
+		case site.IP == "" && site.HonestIP != "":
 			site.FakeDNS = true
-		case r.sys != "" && (isFakeRange(r.sys) || stubs[r.sys]):
+		case site.IP != "" && (isFakeRange(site.IP) || stubs[site.IP]):
 			site.FakeDNS = true
 		}
 	}
@@ -240,6 +274,17 @@ func (s *Suite) resolveAll(result *SitesResult) {
 	}
 	sort.Strings(result.StubIPs)
 	s.mu.Unlock()
+}
+
+func overlaps(a, b []string) bool {
+	for _, x := range a {
+		for _, y := range b {
+			if x == y || sameNet(x, y) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func sameNet(a, b string) bool {
@@ -267,6 +312,9 @@ func (s *Suite) checkSite(result *SitesResult, idx int) {
 	s.mu.Lock()
 	result.Sites[idx].Direct = &direct
 	result.Sites[idx].AltWorks = direct.AltWorks
+	if direct.IP != "" {
+		result.Sites[idx].IP = direct.IP
+	}
 	if s.Options.FetchMode == FetchBoth {
 		result.Sites[idx].ThroughB4 = &Fetch{Status: FetchChecking}
 	}
@@ -295,12 +343,14 @@ func (s *Suite) fetchMode(site SiteResult, mark uint, direct bool) Fetch {
 		return Fetch{Status: netprobe.DomainError, Detail: "name does not resolve"}
 	}
 
-	ip := site.IP
-	if !direct && site.SetDNS && site.SetEnabled && site.HonestIP != "" {
-		ip = site.HonestIP
+	ips := site.IPs
+	source := "system"
+	if !direct && site.SetEnabled && len(site.B4IPs) > 0 {
+		ips = site.B4IPs
+		source = site.B4Source
 	}
 	if site.FakeDNS {
-		if direct || !site.SetDNS || site.HonestIP == "" {
+		if direct || source == "system" {
 			f := Fetch{Status: netprobe.DomainDNSFake}
 			switch {
 			case site.IP == "":
@@ -308,11 +358,11 @@ func (s *Suite) fetchMode(site SiteResult, mark uint, direct bool) Fetch {
 			default:
 				f.Detail = "the resolver answers " + site.IP + ", DoH answers " + site.HonestIP
 			}
-			if !direct && !site.SetDNS && site.SetName != "" {
-				f.Detail += "; the set has no DNS redirect"
+			if !direct && site.SetName != "" {
+				f.Detail += "; the set has no DNS redirect or pin for it"
 			}
 			if direct && site.HonestIP != "" {
-				real := s.fetchSite(ctx, site.Domain, site.URL, site.HonestIP, mark, 0)
+				real := s.fetchAny(ctx, site, site.HonestIPs, mark)
 				f.Detail += "; on the real address: " + strings.ToLower(string(real.Status))
 				if real.Detail != "" && real.Status != FetchOk {
 					f.Detail += " (" + real.Detail + ")"
@@ -320,26 +370,65 @@ func (s *Suite) fetchMode(site SiteResult, mark uint, direct bool) Fetch {
 			}
 			return f
 		}
-		ip = site.HonestIP
 	}
 
-	f := s.fetchSite(ctx, site.Domain, site.URL, ip, mark, 0)
+	f := s.fetchAny(ctx, site, ips, mark)
+	f.Source = source
 	if !direct || s.canceled() {
 		return f
 	}
-	if isBlockedStatus(f.Status) && site.HonestIP != "" && site.HonestIP != site.IP {
-		alt := s.fetchSite(ctx, site.Domain, site.URL, site.HonestIP, mark, 0)
+	if isBlockedStatus(f.Status) && len(site.HonestIPs) > 0 && !overlaps(site.HonestIPs, ips) {
+		alt := s.fetchAny(ctx, site, site.HonestIPs, mark)
 		if alt.Status == FetchOk {
-			f.Detail += "; the address DoH returns (" + site.HonestIP + ") loads"
+			f.Detail += "; the address DoH returns (" + alt.IP + ") loads"
 			f.AltWorks = true
 		}
 	}
 	if isBlockedStatus(f.Status) && !s.Options.SkipTLS12 {
-		t12 := s.fetchSite(ctx, site.Domain, site.URL, ip, mark, tls.VersionTLS12)
+		t12 := s.fetchSite(ctx, site.Domain, site.URL, f.IP, mark, tls.VersionTLS12)
 		f.TLS12 = t12.Status
 	}
 	if !s.canceled() {
-		f.HTTP, f.HTTPDetail = s.probePlainHTTP(ctx, site.Domain, ip, mark)
+		f.HTTP, f.HTTPDetail = s.probePlainHTTP(ctx, site.Domain, f.IP, mark)
+	}
+	return f
+}
+
+func (s *Suite) fetchAny(ctx context.Context, site SiteResult, ips []string, mark uint) Fetch {
+	if len(ips) == 0 {
+		return Fetch{Status: netprobe.DomainError, Detail: "no address to try"}
+	}
+	var firstFail *Fetch
+	var blocked []string
+	var notes []string
+	for _, ip := range ips {
+		if s.canceled() {
+			break
+		}
+		f := s.fetchSite(ctx, site.Domain, site.URL, ip, mark, 0)
+		f.IP = ip
+		if f.Status == FetchOk {
+			f.Tried = append(append([]string{}, blocked...), ip)
+			f.Blocked = blocked
+			if len(blocked) > 0 {
+				f.Detail = strings.Join(notes, "; ") + "; " + ip + " loads (" + f.Detail + ")"
+			}
+			return f
+		}
+		if isBlockedStatus(f.Status) {
+			blocked = append(blocked, ip)
+			notes = append(notes, ip+": "+f.Detail)
+		}
+		if firstFail == nil {
+			copy := f
+			firstFail = &copy
+		}
+	}
+	f := *firstFail
+	f.Tried = ips
+	f.Blocked = blocked
+	if len(ips) > 1 {
+		f.Detail += "; " + strconv.Itoa(len(ips)) + " addresses tried"
 	}
 	return f
 }
@@ -406,4 +495,62 @@ func (s *Suite) tallySites(r *SitesResult) {
 			r.Errors++
 		}
 	}
+}
+
+func (s *Suite) resolveThroughB4(ctx context.Context, site SiteResult, family string) ([]string, string) {
+	if site.SetId == "" || !site.SetEnabled {
+		return nil, ""
+	}
+	dnsCfg, ok := s.setDNS[site.SetId]
+	if !ok {
+		return nil, ""
+	}
+	want6 := family == "ipv6"
+	var pinned []string
+	for _, pin := range dnsCfg.PinnedAddresses(site.Domain) {
+		ip := net.ParseIP(pin)
+		if ip == nil || (ip.To4() == nil) != want6 || isFakeRange(pin) {
+			continue
+		}
+		pinned = append(pinned, pin)
+		if len(pinned) == maxAddresses {
+			break
+		}
+	}
+	if len(pinned) > 0 {
+		return pinned, "pins"
+	}
+	if !dnsCfg.Enabled {
+		return nil, ""
+	}
+	qtype := uint16(1)
+	if want6 {
+		qtype = 28
+	}
+	var q dnsQuerier
+	source := ""
+	switch {
+	case dnsCfg.DoHURL != "":
+		q = &dohQuerier{client: netprobe.HTTPClient(int(s.directMark), dnsQueryTimeout+time.Second), url: dnsCfg.DoHURL}
+		source = "doh"
+	case net.ParseIP(dnsCfg.TargetDNS) != nil:
+		q = &udpQuerier{mark: s.directMark, addr: net.JoinHostPort(dnsCfg.TargetDNS, "53")}
+		source = "target"
+	default:
+		return nil, ""
+	}
+	defer q.close()
+	body, err := q.query(ctx, site.Domain, qtype)
+	ans := parseAnswer(body, err, familyRecord(family))
+	var ips []string
+	for _, ip := range ans.ips {
+		if isFakeRange(ip) || len(ips) == maxAddresses {
+			continue
+		}
+		ips = append(ips, ip)
+	}
+	if len(ips) == 0 {
+		return nil, ""
+	}
+	return ips, source
 }
