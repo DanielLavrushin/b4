@@ -213,9 +213,13 @@ export const DiscoveryRunner = () => {
     setApplyTarget(null);
   };
 
-  const handleAddToExisting = async (setId: string, domains: string[]) => {
+  const handleAddToExisting = async (
+    setId: string,
+    domains: string[],
+    pins?: Record<string, string[]>,
+  ) => {
     setApplying(true);
-    const res = await addDomainsToSet(setId, domains);
+    const res = await addDomainsToSet(setId, domains, pins);
     setApplying(false);
     if (!res.success) {
       showError(t("discovery.apply.addFailed"));
@@ -415,8 +419,8 @@ export const DiscoveryRunner = () => {
         loading={applying}
         onClose={() => setApplyTarget(null)}
         onCreate={(set) => void handleCreate(set)}
-        onAddToExisting={(setId, domains) =>
-          void handleAddToExisting(setId, domains)
+        onAddToExisting={(setId, domains, pins) =>
+          void handleAddToExisting(setId, domains, pins)
         }
       />
 

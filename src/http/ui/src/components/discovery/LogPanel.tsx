@@ -96,10 +96,19 @@ export const DiscoveryLogDialog = ({
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [saved, setSaved] = useState<string[]>([]);
+  const [fetched, setFetched] = useState(false);
   const lines = logs.length > 0 ? logs : saved;
 
   useEffect(() => {
-    if (!open || logs.length > 0) return;
+    if (!open) {
+      setFetched(false);
+      setSaved([]);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || logs.length > 0 || fetched) return;
+    setFetched(true);
     let active = true;
     discoveryApi
       .log()
@@ -112,7 +121,13 @@ export const DiscoveryLogDialog = ({
     return () => {
       active = false;
     };
-  }, [open, logs.length]);
+  }, [open, logs.length, fetched]);
+
+  const clear = () => {
+    setSaved([]);
+    setFetched(true);
+    onClear();
+  };
 
   useEffect(() => {
     if (scrollRef.current && open) {
@@ -137,7 +152,7 @@ export const DiscoveryLogDialog = ({
       maxWidth="xl"
       actions={
         <>
-          <Button onClick={onClear} startIcon={<ClearIcon />} size="small">
+          <Button onClick={clear} startIcon={<ClearIcon />} size="small">
             {t("discovery.logs.clear")}
           </Button>
           <Button

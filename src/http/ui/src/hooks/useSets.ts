@@ -121,9 +121,10 @@ export function useSets() {
     async (
       setId: string,
       domains: string[],
+      pins?: Record<string, string[]>,
     ): Promise<ApiResponse<AddDomainsResult>> => {
       try {
-        const data = await setsApi.addDomainsToSet(setId, domains);
+        const data = await setsApi.addDomainsToSet(setId, domains, pins);
         return { success: true, data };
       } catch (e) {
         return { success: false, error: e };

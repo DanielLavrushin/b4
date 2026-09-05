@@ -43,7 +43,7 @@ func (api *API) handleDiscoveryLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body []byte
-	if _, running := discovery.GetCurrentSuite(); running {
+	if api.discoveryRT != nil && api.discoveryRT.IsActive() {
 		body = []byte(strings.Join(log.GetDiscoveryHub().Snapshot(), "\n"))
 	} else {
 		saved, err := discovery.LoadLastRunLog(api.getCfg().ConfigPath)

@@ -38,7 +38,7 @@ func TestAddDomainsToSetInOneRequest(t *testing.T) {
 	api.mux = mux
 	api.RegisterSetsApi()
 
-	body := `{"domains":["discord.com","Youtube.com","twitch.tv"]}`
+	body := `{"domains":["discord.com"," Youtube.com ","twitch.tv","   "],"pins":{"twitch.tv":["151.101.2.167","not-an-ip"," 151.101.66.167 "]}}`
 	req := httptest.NewRequest(http.MethodPost, "/api/sets/target/add-domain", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -76,6 +76,9 @@ func TestAddDomainsToSetInOneRequest(t *testing.T) {
 	}
 	if len(reply.Moved) != 1 || reply.Moved[0].Domain != "discord.com" || reply.Moved[0].SetName != "Discord" {
 		t.Errorf("the reply must report every reassignment, got %+v", reply.Moved)
+	}
+	if pins := got.DNS.Pins["twitch.tv"]; len(pins) != 2 || pins[0] != "151.101.2.167" || pins[1] != "151.101.66.167" {
+		t.Errorf("valid pins travel with the domains, garbage is dropped, got %v", got.DNS.Pins)
 	}
 }
 

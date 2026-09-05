@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"strings"
 	"unicode"
@@ -260,17 +261,21 @@ func (api *API) handleSetDomains(w http.ResponseWriter, r *http.Request) {
 	setId := r.PathValue("id")
 
 	var req struct {
-		Domain  string   `json:"domain"`
-		Domains []string `json:"domains"`
+		Domain  string              `json:"domain"`
+		Domains []string            `json:"domains"`
+		Pins    map[string][]string `json:"pins"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, ErrInvalidJSON())
 		return
 	}
 
-	domains := appendMissing(nil, req.Domains...)
-	if d := strings.TrimSpace(req.Domain); d != "" {
-		domains = appendMissing(domains, d)
+	domains := make([]string, 0, len(req.Domains)+1)
+	for _, raw := range append(append([]string{}, req.Domains...), req.Domain) {
+		d := strings.TrimSpace(raw)
+		if d != "" && !domainInList(domains, d) {
+			domains = append(domains, d)
+		}
 	}
 	if len(domains) == 0 {
 		writeAPIError(w, ErrBadRequest("domain is required"))
@@ -286,6 +291,7 @@ func (api *API) handleSetDomains(w http.ResponseWriter, r *http.Request) {
 				set.Targets.SNIDomains = append(set.Targets.SNIDomains, domain)
 				set.Targets.DomainsToMatch = append(set.Targets.DomainsToMatch, domain)
 			}
+			mergePins(set, req.Pins)
 
 			moved := api.releaseDomainsFromOtherSets(newCfg.Sets, setId, domains)
 
@@ -305,6 +311,25 @@ func (api *API) handleSetDomains(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeAPIError(w, ErrNotFound("Set not found"))
+}
+
+func mergePins(set *config.SetConfig, pins map[string][]string) {
+	for rawDomain, ips := range pins {
+		domain := config.NormalizePinDomain(rawDomain)
+		if domain == "" {
+			continue
+		}
+		for _, raw := range ips {
+			ip := strings.TrimSpace(raw)
+			if net.ParseIP(ip) == nil || domainInList(set.DNS.Pins[domain], ip) {
+				continue
+			}
+			if set.DNS.Pins == nil {
+				set.DNS.Pins = map[string][]string{}
+			}
+			set.DNS.Pins[domain] = append(set.DNS.Pins[domain], ip)
+		}
+	}
 }
 
 func domainInList(list []string, domain string) bool {

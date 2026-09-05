@@ -23,6 +23,7 @@ import { setsApi } from "@api/sets";
 import {
   ApplyTarget,
   generateDomainVariants,
+  pinsFor,
   strategySuffix,
   suggestSetName,
 } from "@utils";
@@ -34,7 +35,11 @@ interface ApplyDialogProps {
   loading: boolean;
   onClose: () => void;
   onCreate: (set: B4SetConfig) => void;
-  onAddToExisting: (setId: string, domains: string[]) => void;
+  onAddToExisting: (
+    setId: string,
+    domains: string[],
+    pins?: Record<string, string[]>,
+  ) => void;
 }
 
 export const ApplyDialog = ({
@@ -67,6 +72,8 @@ export const ApplyDialog = ({
     setSimilar([]);
     setSelectedSetId(null);
     setClaimed([]);
+
+    if (target.set.dns?.enabled) return;
 
     let active = true;
     discoveryApi
@@ -123,7 +130,9 @@ export const ApplyDialog = ({
 
   const confirm = () => {
     if (mode === "existing") {
-      if (selectedSetId) onAddToExisting(selectedSetId, domains);
+      if (selectedSetId) {
+        onAddToExisting(selectedSetId, domains, pinsFor(target.set, domains));
+      }
       return;
     }
     onCreate({ ...previewSet, name: name.trim() || domains[0] });

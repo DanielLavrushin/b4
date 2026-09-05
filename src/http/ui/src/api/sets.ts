@@ -18,8 +18,15 @@ export const setsApi = {
     apiPost<void>("/api/sets/reorder", { set_ids }),
   addDomainToSet: (setId: string, domain: string) =>
     apiPost<B4SetConfig>(`/api/sets/${setId}/add-domain`, { domain }),
-  addDomainsToSet: (setId: string, domains: string[]) =>
-    apiPost<AddDomainsResult>(`/api/sets/${setId}/add-domain`, { domains }),
+  addDomainsToSet: (
+    setId: string,
+    domains: string[],
+    pins?: Record<string, string[]>,
+  ) =>
+    apiPost<AddDomainsResult>(`/api/sets/${setId}/add-domain`, {
+      domains,
+      pins,
+    }),
   deleteSets: (ids: string[]) =>
     apiPost<void>("/api/sets/batch-delete", { ids }),
   setEnabledForSets: (ids: string[], enabled: boolean) =>
