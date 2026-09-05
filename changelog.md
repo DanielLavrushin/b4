@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.80.5] - 2026-09-04
+
+- FIXED: **A set routed through an interface sent only the first packet of each connection that way, and every packet after it by the ordinary uplink** - the routing decision is carried on the connection mark, and b4 judges whether a router keeps that mark by looking for its own claim in the connection table, where a connection still in its handshake carries the claim on every router, including the ones whose firmware owns the mark and overwrites it a moment later; the same claim gated the source rewrite into the interface, so that was left out as well.
+
 ## [1.80.4] - 2026-08-31
 
 - FIXED: **Changing anything on a routing set took it apart before putting it back, so for about a second the traffic it matched left by the ordinary uplink** - the policy rule, the route, the prerouting jump, the chain and the addresses learned from DNS all came down before the replacement went in, and a set marks a connection only on its first packet, so a connection opened in that window stayed off the set for as long as it lived.

@@ -140,8 +140,8 @@ func routeCheckCTMarkIn(out string) {
 		return
 	}
 
-	tagged, readable := conntrackCarriesRouteTag()
-	if !readable {
+	tagged, answered, readable := conntrackKeepsRouteTag()
+	if !readable || !answered {
 		return
 	}
 	if tagged {
@@ -154,7 +154,7 @@ func routeCheckCTMarkIn(out string) {
 
 	if routeCTMarkHeld.CompareAndSwap(true, false) {
 		routeSaveCTMarkVerdict()
-		log.Warnf("Routing: this router does not keep the connection mark b4 writes. b4 claimed %d connections for a set and the connection table carries that claim on none of them, which means something else on the box owns the connection mark and overwrites it. A connection would leave by the set's interface and finish by the ordinary uplink, so b4 marks every packet the set matches instead of only the first", claimed)
+		log.Warnf("Routing: this router does not keep the connection mark b4 writes. b4 claimed %d connections for a set and not one connection that has answered still carries that claim, which means something else on the box owns the connection mark and overwrites it after b4 has written it. A connection would leave by the set's interface and finish by the ordinary uplink, so b4 marks every packet the set matches instead of only the first", claimed)
 	}
 }
 
@@ -165,24 +165,35 @@ func routeCTMarkConfirm() {
 
 var conntrackPath = "/proc/net/nf_conntrack"
 
-func conntrackCarriesRouteTag() (tagged bool, readable bool) {
+const conntrackUnreplied = "[UNREPLIED]"
+
+func conntrackSawReply(line string) bool {
+	return !strings.Contains(line, conntrackUnreplied)
+}
+
+func conntrackKeepsRouteTag() (tagged bool, answered bool, readable bool) {
 	f, err := os.Open(conntrackPath)
 	if err != nil {
-		return false, false
+		return false, false, false
 	}
 	defer f.Close()
 
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
-		if m, ok := conntrackMarkOf(sc.Text()); ok && m&uint64(hostRouteCTMark) != 0 {
-			return true, true
+		line := sc.Text()
+		if !conntrackSawReply(line) {
+			continue
+		}
+		answered = true
+		if m, ok := conntrackMarkOf(line); ok && m&uint64(hostRouteCTMark) != 0 {
+			return true, true, true
 		}
 	}
 	if sc.Err() != nil {
-		return false, false
+		return false, false, false
 	}
-	return false, true
+	return false, answered, true
 }
 
 func conntrackMarkOf(line string) (uint64, bool) {

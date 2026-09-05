@@ -270,3 +270,117 @@ func TestTwoQuietSetsAreOneObservationNotTwo(t *testing.T) {
 		t.Fatal("a second pass is a genuine second look and must be allowed to settle it")
 	}
 }
+
+const conntrackTagOnlyOnAConnectionThatHasNotAnswered = `ipv4     2 tcp      6 118 SYN_SENT src=192.168.1.100 dst=1.2.3.4 sport=1 dport=443 packets=1 bytes=60 [UNREPLIED] src=1.2.3.4 dst=192.168.1.100 sport=443 dport=1 packets=0 bytes=0 mark=1073762169 use=2
+ipv4     2 tcp      6 299 ESTABLISHED src=192.168.1.100 dst=1.2.3.4 sport=2 dport=443 packets=9 bytes=1 src=1.2.3.4 dst=192.168.1.100 sport=443 dport=2 packets=7 bytes=1 [ASSURED] mark=68669 use=2
+`
+
+func TestAClaimOnAConnectionThatHasNotAnsweredIsNotEvidence(t *testing.T) {
+	routeForgetCTMarkVerdict()
+	t.Cleanup(routeForgetCTMarkVerdict)
+	writeConntrack(t, conntrackTagOnlyOnAConnectionThatHasNotAnswered)
+
+	quiet := ctmarkDump(0, 80)
+	routeCheckCTMarkIn(quiet)
+	if !routeCTMarkIsHeld() {
+		t.Fatal("one look is not enough")
+	}
+	routeCheckCTMarkIn(quiet)
+	if routeCTMarkIsHeld() {
+		t.Fatal("b4 writes the claim on the first packet, so a connection still in its handshake carries it on " +
+			"every router, including the ones whose firmware owns the connection mark and overwrites it a " +
+			"moment later. Reading that as proof settles the question for the life of the process, and the set " +
+			"then routes the first packet of each connection through its interface and every packet after it " +
+			"by the ordinary uplink")
+	}
+}
+
+func TestAReplyingConnectionThatKeepsTheClaimStillSettlesIt(t *testing.T) {
+	routeForgetCTMarkVerdict()
+	t.Cleanup(routeForgetCTMarkVerdict)
+	writeConntrack(t, conntrackWithTag)
+
+	quiet := ctmarkDump(0, 80)
+	routeCheckCTMarkIn(quiet)
+	routeCheckCTMarkIn(quiet)
+	routeCheckCTMarkIn(quiet)
+
+	if !routeCTMarkIsHeld() {
+		t.Fatal("a connection that has answered and still carries b4's claim is the one piece of positive " +
+			"evidence that this router keeps the mark, and it must keep the set on the sticky path")
+	}
+}
+
+func TestNATIsNotGatedOnTheConnectionMark(t *testing.T) {
+	routeForgetCTMarkVerdict()
+	t.Cleanup(routeForgetCTMarkVerdict)
+	if !routeCTMarkIsHeld() {
+		t.Fatal("this case only exists while the connection mark is trusted")
+	}
+
+	cmds := stickyIptRules(t, func(be *routeIptBackend) {
+		be.addMasqueradeRule("b4r_test_nat", 0x5179, "xray0", false)
+		be.addSNATRule("b4r_test_nat", "b4r_test_v4", "xray0", "10.0.0.1", 0x5179, false)
+	})
+	if len(cmds) != 2 {
+		t.Fatalf("want one masquerade and one snat rule, got %v", cmds)
+	}
+	for _, c := range cmds {
+		if strings.Contains(c, "connmark") {
+			t.Fatalf("the source rewrite must not depend on the connection mark: b4 re-originates a packet "+
+				"from its own socket whenever it fragments or fakes one, and that copy carries the set mark "+
+				"but no claim on its connection, so the packet leaves the set's interface with the client's "+
+				"own address and the far end answers where nothing is listening: %q", c)
+		}
+		if !strings.Contains(c, "-m mark --mark 0x5179/0x27fff") || !strings.Contains(c, "-o xray0") {
+			t.Fatalf("the rule must stay scoped to the set's mark and its interface: %q", c)
+		}
+	}
+}
+
+func TestNftNATIsNotGatedOnTheConnectionMark(t *testing.T) {
+	routeForgetCTMarkVerdict()
+	t.Cleanup(routeForgetCTMarkVerdict)
+
+	prev := runLogged
+	var cmds []string
+	runLogged = func(op string, args ...string) bool {
+		cmds = append(cmds, strings.Join(args, " "))
+		return true
+	}
+	t.Cleanup(func() { runLogged = prev })
+
+	be := &routeNftBackend{}
+	be.addMasqueradeRule("b4r_test_snat", 0x5179, "xray0", false)
+	be.addSNATRule("b4r_test_snat", "b4r_test_v4", "xray0", "10.0.0.1", 0x5179, false)
+
+	if len(cmds) == 0 {
+		t.Fatal("no nft rules emitted")
+	}
+	for _, c := range cmds {
+		if strings.Contains(c, "ct mark") {
+			t.Fatalf("nftables must not gate the source rewrite on the connection mark either: %q", c)
+		}
+	}
+}
+
+const conntrackNothingHasAnsweredYet = `ipv4     2 tcp      6 118 SYN_SENT src=192.168.1.100 dst=1.2.3.4 sport=1 dport=443 packets=1 bytes=60 [UNREPLIED] src=1.2.3.4 dst=192.168.1.100 sport=443 dport=1 packets=0 bytes=0 mark=1073762169 use=2
+ipv4     2 tcp      6 118 SYN_SENT src=192.168.1.100 dst=1.2.3.5 sport=2 dport=443 packets=1 bytes=60 [UNREPLIED] src=1.2.3.5 dst=192.168.1.100 sport=443 dport=2 packets=0 bytes=0 mark=1073762169 use=2
+`
+
+func TestAConnectionTableWhereNothingHasAnsweredDecidesNothing(t *testing.T) {
+	routeForgetCTMarkVerdict()
+	t.Cleanup(routeForgetCTMarkVerdict)
+	writeConntrack(t, conntrackNothingHasAnsweredYet)
+
+	quiet := ctmarkDump(0, 80)
+	for i := 0; i < 5; i++ {
+		routeCheckCTMarkIn(quiet)
+	}
+	if !routeCTMarkIsHeld() {
+		t.Fatal("a connection table in which nothing has answered says nothing either way: on a router that " +
+			"does keep the mark the restore rule has simply had no packet to act on yet, and giving up there " +
+			"would put the set on per-packet marking for the life of the install on the strength of a sample " +
+			"that never had the evidence in it")
+	}
+}

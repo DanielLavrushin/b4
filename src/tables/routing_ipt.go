@@ -443,9 +443,6 @@ func (b *routeIptBackend) addMasqueradeRule(chain string, mark uint32, iface str
 	}
 	markHex := fmt.Sprintf("0x%x/0x%x", mark, routeSetMarkMask)
 	args := []string{cmd, "-w", "-t", "nat", "-A", chain, "-m", "mark", "--mark", markHex}
-	if routeCTMarkIsHeld() {
-		args = append(args, "-m", "connmark", "--mark", fmt.Sprintf("0x%x/0x%x", hostRouteCTMark, hostRouteCTMark))
-	}
 	args = append(args, "-o", iface, "-j", "MASQUERADE")
 	runLogged("routing: add masquerade rule", args...)
 }
@@ -459,9 +456,6 @@ func (b *routeIptBackend) addSNATRule(chain, setName, iface, srcIP string, mark 
 	args := []string{cmd, "-w", "-t", "nat", "-A", chain,
 		"-m", "mark", "--mark", markHex,
 		"-m", "set", "--match-set", setName, "dst"}
-	if routeCTMarkIsHeld() {
-		args = append(args, "-m", "connmark", "--mark", fmt.Sprintf("0x%x/0x%x", hostRouteCTMark, hostRouteCTMark))
-	}
 	args = append(args, "-o", iface, "-j", "SNAT", "--to-source", srcIP)
 	runLogged("routing: add snat rule", args...)
 }
