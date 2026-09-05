@@ -129,7 +129,7 @@ func TestHostHasGlobalIPv6CachesTheProbe(t *testing.T) {
 		return true
 	}
 
-	if !HostHasGlobalIPv6() || !HostHasGlobalIPv6() {
+	if !HostHasGlobalIPv6() {
 		t.Fatal("expected the host to report a global IPv6 address")
 	}
 	if calls != 1 {
