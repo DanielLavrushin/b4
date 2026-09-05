@@ -247,3 +247,56 @@ func skipDNSName(payload []byte, start int) (int, bool) {
 		}
 	}
 }
+
+func ParseResponseTXT(payload []byte) []string {
+	if len(payload) < 12 {
+		return nil
+	}
+	qdCount := int(binary.BigEndian.Uint16(payload[4:6]))
+	anCount := int(binary.BigEndian.Uint16(payload[6:8]))
+	if anCount == 0 {
+		return nil
+	}
+
+	offset := 12
+	for i := 0; i < qdCount; i++ {
+		next, ok := skipDNSName(payload, offset)
+		if !ok || next+4 > len(payload) {
+			return nil
+		}
+		offset = next + 4
+	}
+
+	var out []string
+	for i := 0; i < anCount; i++ {
+		next, ok := skipDNSName(payload, offset)
+		if !ok || next+10 > len(payload) {
+			break
+		}
+		offset = next
+		typ := binary.BigEndian.Uint16(payload[offset : offset+2])
+		offset += 8
+		rdLen := int(binary.BigEndian.Uint16(payload[offset : offset+2]))
+		offset += 2
+		if offset+rdLen > len(payload) {
+			break
+		}
+		if typ == 16 {
+			var txt []byte
+			p := offset
+			end := offset + rdLen
+			for p < end {
+				l := int(payload[p])
+				p++
+				if p+l > end {
+					break
+				}
+				txt = append(txt, payload[p:p+l]...)
+				p += l
+			}
+			out = append(out, string(txt))
+		}
+		offset += rdLen
+	}
+	return out
+}

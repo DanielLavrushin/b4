@@ -2,9 +2,12 @@ package detector
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
-	"fmt"
+	"io"
+	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,81 +18,52 @@ import (
 )
 
 const (
-	tgStallTimeout    = 10 * time.Second
-	tgTotalTimeout    = 60 * time.Second
-	tgOkThreshold     = 0.98
-	tgDCPingTimeout   = 5 * time.Second
-	tgDownloadDefault = "https://telegram.org/img/Telegram200million.png"
-	tgDownloadSize    = 32477141
-	tgReadChunk       = 65536
+	tgStallTimeout  = 10 * time.Second
+	tgTotalTimeout  = 60 * time.Second
+	tgOkThreshold   = 0.98
+	tgDCPingTimeout = 5 * time.Second
+	tgReadChunk     = 65536
 )
 
-func (s *DetectorSuite) runTelegramCheck(ctx context.Context) *TelegramResult {
-	log.DiscoveryLogf("[Detector] Starting Telegram reachability check")
-
+func (s *Suite) runTelegram() {
+	s.setProgress(ScopeTelegram, "datacenters")
 	result := &TelegramResult{}
+	s.mu.Lock()
+	s.Telegram = result
+	s.mu.Unlock()
 
-	result.DCPings = s.telegramDCPings(ctx)
-	for _, p := range result.DCPings {
+	pings := s.telegramDCPings()
+	s.mu.Lock()
+	result.DCPings = pings
+	for _, p := range pings {
 		result.DCTotal++
 		if p.Ok {
 			result.DCReachable++
 		}
 	}
-
-	if s.isCanceled() {
-		result.Verdict = TGError
-		return result
-	}
-
-	result.Download = s.telegramDownload(ctx)
-	s.mu.Lock()
-	s.CompletedChecks++
 	s.mu.Unlock()
-
-	result.Verdict = telegramVerdict(result)
-	result.Summary = fmt.Sprintf("DL %s, DC %d/%d reachable",
-		result.Download.Verdict, result.DCReachable, result.DCTotal)
-
-	log.DiscoveryLogf("[Detector] Telegram check complete: %s", result.Summary)
-	return result
-}
-
-func (s *DetectorSuite) telegramDCPings(ctx context.Context) []TelegramDCPing {
-	endpoints := telegramDCEndpoints()
-
-	pings := make([]TelegramDCPing, len(endpoints))
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 5)
-
-	for i, ep := range endpoints {
-		wg.Add(1)
-		go func(idx int, e dcEndpoint) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			p := TelegramDCPing{DC: e.dc, Address: e.addr}
-			pingCtx, cancel := context.WithTimeout(ctx, tgDCPingTimeout)
-			defer cancel()
-
-			start := time.Now()
-			conn, err := netprobe.Dialer(int(s.mark), tgDCPingTimeout, 0).DialContext(pingCtx, "tcp", e.addr)
-			if err == nil {
-				p.Ok = true
-				p.RTTMs = round1(float64(time.Since(start).Microseconds()) / 1000.0)
-				conn.Close()
-			}
-			pings[idx] = p
-
-			s.mu.Lock()
-			s.CompletedChecks++
-			s.mu.Unlock()
-		}(i, ep)
+	if s.canceled() {
+		return
 	}
 
-	wg.Wait()
-	return pings
+	s.setProgress(ScopeTelegram, "download")
+	dl := s.telegramDownload()
+	s.mu.Lock()
+	result.Download = dl
+	s.mu.Unlock()
+	s.step(1)
+	if s.canceled() {
+		return
+	}
+
+	s.setProgress(ScopeTelegram, "upload")
+	ul := s.telegramUpload()
+	s.mu.Lock()
+	result.Upload = ul
+	result.Verdict = telegramVerdict(result)
+	s.mu.Unlock()
+	s.step(1)
+	log.DiscoveryLogf("[Detector] Telegram: DC %d/%d, download %s, upload %s", result.DCReachable, result.DCTotal, dl.Verdict, ul.Verdict)
 }
 
 type dcEndpoint struct {
@@ -114,31 +88,57 @@ func telegramDCEndpoints() []dcEndpoint {
 	return endpoints
 }
 
-func (s *DetectorSuite) telegramDownload(ctx context.Context) TelegramThroughput {
-	url := TelegramConfig.DownloadURL
-	if url == "" {
-		url = tgDownloadDefault
+func (s *Suite) telegramDCPings() []TelegramDCPing {
+	endpoints := telegramDCEndpoints()
+	pings := make([]TelegramDCPing, len(endpoints))
+	var wg sync.WaitGroup
+	for i, ep := range endpoints {
+		wg.Add(1)
+		go func(idx int, e dcEndpoint) {
+			defer wg.Done()
+			p := TelegramDCPing{DC: e.dc, Address: e.addr}
+			ctx, cancel := context.WithTimeout(s.ctx, tgDCPingTimeout)
+			defer cancel()
+			start := time.Now()
+			conn, err := netprobe.Dialer(int(s.directMark), tgDCPingTimeout, 0).DialContext(ctx, "tcp", e.addr)
+			if err == nil {
+				p.Ok = true
+				p.RTTMs = round1(float64(time.Since(start).Microseconds()) / 1000.0)
+				conn.Close()
+			}
+			pings[idx] = p
+			s.step(1)
+		}(i, ep)
 	}
-	expected := TelegramConfig.DownloadSize
-	if expected == 0 {
-		expected = tgDownloadSize
-	}
+	wg.Wait()
+	return pings
+}
 
-	tp := TelegramThroughput{Expected: expected}
+func (s *Suite) telegramClient() *http.Client {
+	d := netprobe.Dialer(int(s.directMark), fatConnectTimeout, 0)
+	return &http.Client{Transport: &http.Transport{
+		DialContext:         d.DialContext,
+		ForceAttemptHTTP2:   true,
+		TLSHandshakeTimeout: fatConnectTimeout,
+		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+	}}
+}
 
-	runCtx, cancel := context.WithTimeout(ctx, tgTotalTimeout)
+func (s *Suite) telegramDownload() TelegramThroughput {
+	cfg := Lists().Telegram
+	tp := TelegramThroughput{Expected: cfg.DownloadSize}
+	ctx, cancel := context.WithTimeout(s.ctx, tgTotalTimeout)
 	defer cancel()
 
-	client := telegramClient(s.mark)
+	client := s.telegramClient()
 	defer client.CloseIdleConnections()
-	req, err := http.NewRequestWithContext(runCtx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, cfg.DownloadURL, nil)
 	if err != nil {
 		tp.Verdict = TGError
 		tp.Detail = err.Error()
 		return tp
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0")
-
+	req.Header.Set("User-Agent", fetchUserAgent)
 	resp, err := client.Do(req)
 	if err != nil {
 		tp.Verdict = TGBlocked
@@ -147,24 +147,144 @@ func (s *DetectorSuite) telegramDownload(ctx context.Context) TelegramThroughput
 	}
 	defer resp.Body.Close()
 
-	bytesRead, peak, dur, stalled := streamWithStall(runCtx, cancel, func(p []byte) (int, error) {
+	total, peak, dur, stalled := streamWithStall(ctx, cancel, func(p []byte) (int, error) {
 		return resp.Body.Read(p)
 	}, tgReadChunk)
+	fillThroughput(&tp, total, peak, dur, stalled)
+	return tp
+}
 
-	tp.Bytes = bytesRead
+func (s *Suite) telegramUpload() TelegramThroughput {
+	cfg := Lists().Telegram
+	tp := TelegramThroughput{Expected: cfg.UploadSize}
+	if cfg.UploadIP == "" || cfg.UploadSize == 0 {
+		tp.Verdict = TGError
+		tp.Detail = "no upload target configured"
+		return tp
+	}
+	ctx, cancel := context.WithTimeout(s.ctx, tgTotalTimeout)
+	defer cancel()
+
+	chunk := make([]byte, tgReadChunk)
+	rand.Read(chunk)
+	var sent int64
+	reader := &countingReader{ctx: ctx, chunk: chunk, remaining: cfg.UploadSize, sent: &sent}
+
+	client := s.telegramClient()
+	defer client.CloseIdleConnections()
+	addr := net.JoinHostPort(cfg.UploadIP, strconv.Itoa(cfg.UploadPort))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://"+addr+"/upload", reader)
+	if err != nil {
+		tp.Verdict = TGError
+		tp.Detail = err.Error()
+		return tp
+	}
+	req.ContentLength = cfg.UploadSize
+	req.Header.Set("User-Agent", fetchUserAgent)
+	req.Header.Set("Content-Type", "application/octet-stream")
+
+	start := time.Now()
+	stalledCh := make(chan struct{})
+	var lastProgress atomic.Int64
+	lastProgress.Store(start.UnixNano())
+	reader.progress = &lastProgress
+	var peak float64
+	go func() {
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		var lastBytes int64
+		lastTime := start
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-stalledCh:
+				return
+			case now := <-ticker.C:
+				if now.Sub(time.Unix(0, lastProgress.Load())) >= tgStallTimeout {
+					cancel()
+					return
+				}
+				cur := atomic.LoadInt64(&sent)
+				if d := now.Sub(lastTime); d > 0 {
+					if bps := float64(cur-lastBytes) / d.Seconds(); bps > peak {
+						peak = bps
+					}
+				}
+				lastBytes = cur
+				lastTime = now
+			}
+		}
+	}()
+	resp, err := client.Do(req)
+	close(stalledCh)
+	dur := time.Since(start)
+	if resp != nil {
+		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		resp.Body.Close()
+	}
+	total := atomic.LoadInt64(&sent)
+	stalled := err != nil && ctx.Err() != nil && time.Since(time.Unix(0, lastProgress.Load())) >= tgStallTimeout
+	if err != nil && total == 0 {
+		tp.Verdict = TGBlocked
+		tp.Detail = err.Error()
+		return tp
+	}
+	fillThroughput(&tp, total, peak, dur, stalled)
+	return tp
+}
+
+type countingReader struct {
+	ctx       context.Context
+	chunk     []byte
+	remaining int64
+	sent      *int64
+	progress  *atomic.Int64
+}
+
+func (r *countingReader) Read(p []byte) (int, error) {
+	if r.remaining <= 0 {
+		return 0, io.EOF
+	}
+	if r.ctx.Err() != nil {
+		return 0, r.ctx.Err()
+	}
+	n := len(p)
+	if int64(n) > r.remaining {
+		n = int(r.remaining)
+	}
+	if n > len(r.chunk) {
+		n = len(r.chunk)
+	}
+	copy(p, r.chunk[:n])
+	r.remaining -= int64(n)
+	atomic.AddInt64(r.sent, int64(n))
+	if r.progress != nil {
+		r.progress.Store(time.Now().UnixNano())
+	}
+	return n, nil
+}
+
+func fillThroughput(tp *TelegramThroughput, total int64, peak float64, dur time.Duration, stalled bool) {
+	tp.Bytes = total
 	tp.DurationMs = dur.Milliseconds()
 	tp.MbpsPeak = bpsToMbps(peak)
 	if dur > 0 {
-		tp.MbpsAvg = bpsToMbps(float64(bytesRead) / dur.Seconds())
+		tp.MbpsAvg = bpsToMbps(float64(total) / dur.Seconds())
 	}
 	if tp.MbpsPeak == 0 {
 		tp.MbpsPeak = tp.MbpsAvg
 	}
-	if expected > 0 {
-		tp.PctOk = round1(float64(bytesRead) / float64(expected) * 100)
+	if tp.Expected > 0 {
+		tp.PctOk = round1(float64(total) / float64(tp.Expected) * 100)
 	}
-	tp.Verdict = throughputVerdict(bytesRead, expected, stalled)
-	return tp
+	if stalled {
+		tp.DropAtSec = int(dur.Seconds()) - int(tgStallTimeout.Seconds())
+		if tp.DropAtSec < 0 {
+			tp.DropAtSec = 0
+		}
+	}
+	tp.Verdict = throughputVerdict(total, tp.Expected, stalled)
 }
 
 func streamWithStall(ctx context.Context, cancel context.CancelFunc, read func([]byte) (int, error), chunkSize int) (int64, float64, time.Duration, bool) {
@@ -189,8 +309,7 @@ func streamWithStall(ctx context.Context, cancel context.CancelFunc, read func([
 			case <-stalledCh:
 				return
 			case now := <-ticker.C:
-				last := time.Unix(0, lastProgress.Load())
-				if now.Sub(last) >= tgStallTimeout {
+				if now.Sub(time.Unix(0, lastProgress.Load())) >= tgStallTimeout {
 					cancel()
 					return
 				}
@@ -254,10 +373,10 @@ func telegramVerdict(r *TelegramResult) TelegramVerdict {
 	if dl == TGBlocked && r.DCReachable == 0 {
 		return TGBlocked
 	}
-	if dl == TGStalled {
+	if dl == TGStalled || r.Upload.Verdict == TGStalled {
 		return TGStalled
 	}
-	if dl == TGSlow || dl == TGBlocked {
+	if dl == TGSlow || dl == TGBlocked || r.Upload.Verdict == TGSlow || r.Upload.Verdict == TGBlocked {
 		return TGSlow
 	}
 	if r.DCTotal > 0 && r.DCReachable > 0 && r.DCReachable < r.DCTotal {
@@ -267,18 +386,6 @@ func telegramVerdict(r *TelegramResult) TelegramVerdict {
 		return TGOk
 	}
 	return TGError
-}
-
-func telegramClient(mark uint) *http.Client {
-	d := netprobe.Dialer(int(mark), fatConnectTimeout, 0)
-	return &http.Client{
-		Transport: &http.Transport{
-			DialContext:         d.DialContext,
-			ForceAttemptHTTP2:   true,
-			TLSHandshakeTimeout: fatConnectTimeout,
-			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
-		},
-	}
 }
 
 func bpsToMbps(bps float64) float64 {
