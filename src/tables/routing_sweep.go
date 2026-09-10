@@ -62,6 +62,9 @@ func routeSweepOwnRoutes(fam []string, proxy bool, table string) {
 		if len(fields) == 0 {
 			continue
 		}
+		if fields[0] == "default" && !routeIPSupportsProto() {
+			continue
+		}
 		dev := routeRuleField(line, "dev")
 		if !routeLineBelongsToIface(line, dev) {
 			continue

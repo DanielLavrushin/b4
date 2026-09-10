@@ -115,7 +115,7 @@ func TestSweepRemovesOrphanedOwnRulesAndLeavesForeignOnes(t *testing.T) {
 	f.mustNotTouch(t, "flush", "tun0", "eth1", "lookup 200", "table 200")
 }
 
-func TestSweepWithoutRouteProtocolsTakesBackOnlyOwnShapedRoutes(t *testing.T) {
+func TestSweepWithoutRouteProtocolsLeavesDefaultRoutesAlone(t *testing.T) {
 	table := 137
 	ownMark := fmt.Sprintf("0x%x/0x%x", 0x1234, routeSetMarkMask)
 	f := &sweepFixture{
@@ -127,6 +127,7 @@ func TestSweepWithoutRouteProtocolsTakesBackOnlyOwnShapedRoutes(t *testing.T) {
 		tables: map[string]string{
 			fmt.Sprintf("%d", table): strings.Join([]string{
 				"default dev wg0 scope link",
+				"default via 192.168.2.1 dev eth1 metric 50",
 				"blackhole default metric " + routeKillSwitchMetric,
 				"10.0.0.0/8 via 10.0.0.1 dev tun0",
 				"blackhole 10.99.0.0/16 metric 5",
@@ -137,9 +138,9 @@ func TestSweepWithoutRouteProtocolsTakesBackOnlyOwnShapedRoutes(t *testing.T) {
 
 	routeSweepOwnRules()
 
-	f.mustRunOnce(t,
-		fmt.Sprintf("ip route del default dev wg0 table %d", table),
-		fmt.Sprintf("ip route del blackhole default metric %s table %d", routeKillSwitchMetric, table),
-	)
-	f.mustNotTouch(t, "flush", "tun0", "10.99")
+	if want := fmt.Sprintf("v6=false %s %d", ownMark, table); len(f.deleted) != 1 || f.deleted[0] != want {
+		t.Fatalf("the orphaned rule must still be deleted, got %v", f.deleted)
+	}
+	f.mustRunOnce(t, fmt.Sprintf("ip route del blackhole default metric %s table %d", routeKillSwitchMetric, table))
+	f.mustNotTouch(t, "flush", "route del default", "tun0", "eth1", "10.99")
 }
