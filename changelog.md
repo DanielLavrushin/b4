@@ -1,6 +1,6 @@
 # B4 - Bye Bye Big Bro
 
-## [Unreleased]
+## [1.81.1] - 2026-09-10
 
 - FIXED: **b4 could be left running after a service restart on OpenWrt, deaf to everything but kill -9, or doubled after an update** - the daemon stopped listening for signals once shutdown began and never enforced its deadline, and the installer trusted a stop it never checked and a pidfile it never verified. [#351](https://github.com/DanielLavrushin/b4/issues/351)
 - FIXED: **A `--quiet` install or update left b4 stopped, and `--platform=` skipped the service setup** - the only start sat behind an interactive prompt, a forced platform never learned the service type, Ctrl-C at a prompt counted as the default answer, and a run without a terminal died at once.
