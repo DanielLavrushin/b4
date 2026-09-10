@@ -202,7 +202,11 @@ action_install() {
 
     # --- Install service ---
     log_info "Setting up service..."
-    service_call install || log_err "Service setup failed - b4 will not start automatically"
+    _svc_failed=0
+    service_call install || {
+        log_err "Service setup failed - b4 will not start automatically"
+        _svc_failed=1
+    }
 
     # --- Run enabled features ---
     if [ -n "$ENABLED_FEATURES" ]; then
@@ -257,6 +261,12 @@ _install_summary() {
     fi
 
     echo ""
+    if [ "${_svc_failed:-0}" -eq 1 ]; then
+        log_err "B4 is installed, but its service was not set up - start it by hand:"
+        log_err "  ${B4_BIN_DIR}/${BINARY_NAME} --config ${B4_CONFIG_FILE}"
+        echo ""
+        return 1
+    fi
     printf "${GREEN}${BOLD}  B4 installation finished!${NC}\n"
     echo ""
 }
