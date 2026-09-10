@@ -36,7 +36,17 @@ func (f *sweepFixture) install(t *testing.T, protoSupported bool) {
 	}
 	routeDelRuleLoop = func(ipv6 bool, mark, tbl string) {
 		f.deleted = append(f.deleted, fmt.Sprintf("v6=%v %s %s", ipv6, mark, tbl))
+		f.executed = append(f.executed, fmt.Sprintf("ip rule del fwmark %s lookup %s", mark, tbl))
 	}
+}
+
+func (f *sweepFixture) indexOf(cmd string) int {
+	for i, executed := range f.executed {
+		if executed == cmd {
+			return i
+		}
+	}
+	return -1
 }
 
 func (f *sweepFixture) count(cmd string) int {
@@ -55,6 +65,14 @@ func (f *sweepFixture) mustRunOnce(t *testing.T, cmds ...string) {
 		if n := f.count(cmd); n != 1 {
 			t.Fatalf("expected %q exactly once, ran %d times; everything executed:\n%s", cmd, n, strings.Join(f.executed, "\n"))
 		}
+	}
+}
+
+func (f *sweepFixture) mustRunBefore(t *testing.T, first, second string) {
+	t.Helper()
+	i, j := f.indexOf(first), f.indexOf(second)
+	if i < 0 || j < 0 || i > j {
+		t.Fatalf("%q must run before %q, so an interrupted sweep still finds the table through its rule next time; order was:\n%s", first, second, strings.Join(f.executed, "\n"))
 	}
 }
 
@@ -107,11 +125,12 @@ func TestSweepRemovesOrphanedOwnRulesAndLeavesForeignOnes(t *testing.T) {
 	if got := strings.Join(f.deleted, "\n"); got != wantDeleted {
 		t.Fatalf("every orphaned b4 rule must be deleted once, proxy sets share one table under distinct marks:\nwant\n%s\ngot\n%s", wantDeleted, got)
 	}
-	f.mustRunOnce(t,
-		fmt.Sprintf("ip route del local 0.0.0.0/0 dev lo table %d", sharedProxyTable),
-		fmt.Sprintf("ip route del default dev wg0 proto 155 table %d", table),
-		fmt.Sprintf("ip route del blackhole default metric %s proto 155 table %d", routeKillSwitchMetric, table),
-	)
+	proxyLocalDel := fmt.Sprintf("ip route del local 0.0.0.0/0 dev lo table %d", sharedProxyTable)
+	defaultDel := fmt.Sprintf("ip route del default dev wg0 proto 155 table %d", table)
+	killSwitchDel := fmt.Sprintf("ip route del blackhole default metric %s proto 155 table %d", routeKillSwitchMetric, table)
+	f.mustRunOnce(t, proxyLocalDel, defaultDel, killSwitchDel)
+	f.mustRunBefore(t, proxyLocalDel, fmt.Sprintf("ip rule del fwmark %s lookup %d", proxyMarkA, sharedProxyTable))
+	f.mustRunBefore(t, killSwitchDel, fmt.Sprintf("ip rule del fwmark %s lookup %d", ownMark, table))
 	f.mustNotTouch(t, "flush", "tun0", "eth1", "lookup 200", "table 200")
 }
 

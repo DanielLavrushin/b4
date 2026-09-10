@@ -26,17 +26,16 @@ func routeSweepOwnRules() {
 			if mark == "" || table == "" {
 				continue
 			}
+			if _, done := tablesSeen[table]; !done {
+				tablesSeen[table] = struct{}{}
+				prio, _ := routeRulePriority(line)
+				routeSweepOwnRoutes(fam, prio == proxyRulePriority, table)
+			}
 			rule := mark + " " + table
 			if _, done := rulesSeen[rule]; !done {
 				rulesSeen[rule] = struct{}{}
 				routeDelRuleLoop(ipv6, mark, table)
 			}
-			if _, done := tablesSeen[table]; done {
-				continue
-			}
-			tablesSeen[table] = struct{}{}
-			prio, _ := routeRulePriority(line)
-			routeSweepOwnRoutes(fam, prio == proxyRulePriority, table)
 		}
 	}
 }
