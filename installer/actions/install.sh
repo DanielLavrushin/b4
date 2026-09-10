@@ -129,10 +129,9 @@ action_install() {
     _newbin="${B4_BIN_DIR}/${BINARY_NAME}.new.$$"
     rm -f "$_newbin" 2>/dev/null || true
     _swap_failed=0
-    if mv "${BINARY_NAME}" "$_newbin" 2>/dev/null || cp "${BINARY_NAME}" "$_newbin"; then
-        chmod +x "$_newbin"
-        mv -f "$_newbin" "${B4_BIN_DIR}/${BINARY_NAME}" || _swap_failed=1
-    else
+    if ! { mv "${BINARY_NAME}" "$_newbin" 2>/dev/null || cp "${BINARY_NAME}" "$_newbin"; } ||
+        ! chmod +x "$_newbin" ||
+        ! mv -f "$_newbin" "${B4_BIN_DIR}/${BINARY_NAME}"; then
         _swap_failed=1
     fi
     if [ "$_swap_failed" -eq 1 ]; then
@@ -141,7 +140,6 @@ action_install() {
         restore_binary "${B4_BIN_DIR}/${BINARY_NAME}" "$backup_bin" && log_warn "Rolled back to the previous version"
         exit 1
     fi
-    chmod +x "${B4_BIN_DIR}/${BINARY_NAME}"
 
     # Verify — detect architecture mismatch (SIGILL on MIPS = wrong float ABI)
     _ver_exit=0

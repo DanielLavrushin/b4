@@ -100,6 +100,31 @@ refresh_legacy_service_script() {
     done
 }
 
+_update_restart_b4() {
+    if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
+        log_info "Restarting service (${B4_SERVICE_TYPE})..."
+        service_call start 2>/dev/null || true
+    fi
+
+    if is_b4_running; then
+        log_ok "b4 is running"
+    elif [ "$B4_SERVICE_TYPE" = "systemd" ] || [ "$B4_SERVICE_TYPE" = "procd" ]; then
+        log_err "b4 did not come back up under ${B4_SERVICE_TYPE}"
+        service_show_crash_log
+    elif [ -n "$saved_cmdline" ]; then
+        log_info "Service manager did not restart b4, relaunching directly"
+        if relaunch_b4 "$saved_cmdline"; then
+            log_ok "b4 relaunched"
+        else
+            log_warn "Failed to relaunch b4, start it manually:"
+            log_warn "  ${saved_cmdline}"
+        fi
+    else
+        log_warn "b4 is not running, start it manually:"
+        log_warn "  ${existing_bin} --config ${B4_CONFIG_FILE}"
+    fi
+}
+
 action_update() {
     target_ver="$1"
     force_arch="$2"
@@ -269,12 +294,11 @@ action_update() {
 
     _newbin="${existing_bin}.new.$$"
     rm -f "${existing_bin}".new.* 2>/dev/null || true
-    if mv "${TEMP_DIR}/${BINARY_NAME}" "$_newbin" 2>/dev/null ||
-        cp "${TEMP_DIR}/${BINARY_NAME}" "$_newbin"; then
-        chmod +x "$_newbin"
-    else
+    if ! { mv "${TEMP_DIR}/${BINARY_NAME}" "$_newbin" 2>/dev/null || cp "${TEMP_DIR}/${BINARY_NAME}" "$_newbin"; } ||
+        ! chmod +x "$_newbin"; then
         rm -f "$_newbin" 2>/dev/null || true
         log_err "Failed to stage the new binary in ${bin_dir}"
+        _update_restart_b4
         exit 1
     fi
 
@@ -284,6 +308,7 @@ action_update() {
     stash_binary "$existing_bin" "$backup_bin" || {
         rm -f "$_newbin" 2>/dev/null || true
         log_err "Could not move the current binary aside"
+        _update_restart_b4
         exit 1
     }
 
@@ -315,29 +340,7 @@ action_update() {
 
     refresh_legacy_service_script
 
-    # Restart service if it was running
-    if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
-        log_info "Restarting service (${B4_SERVICE_TYPE})..."
-        service_call start 2>/dev/null || true
-    fi
-
-    if is_b4_running; then
-        log_ok "b4 is running"
-    elif [ "$B4_SERVICE_TYPE" = "systemd" ] || [ "$B4_SERVICE_TYPE" = "procd" ]; then
-        log_err "b4 did not come back up under ${B4_SERVICE_TYPE}"
-        service_show_crash_log
-    elif [ -n "$saved_cmdline" ]; then
-        log_info "Service manager did not restart b4, relaunching directly"
-        if relaunch_b4 "$saved_cmdline"; then
-            log_ok "b4 relaunched"
-        else
-            log_warn "Failed to relaunch b4, start it manually:"
-            log_warn "  ${saved_cmdline}"
-        fi
-    else
-        log_warn "b4 is not running after update, start it manually:"
-        log_warn "  ${existing_bin} --config ${B4_CONFIG_FILE}"
-    fi
+    _update_restart_b4
 
     echo ""
     if [ "$update_failed" -eq 1 ]; then

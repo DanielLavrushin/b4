@@ -9,6 +9,7 @@ REPO_NAME="b4"
 BINARY_NAME="b4"
 TEMP_DIR="/tmp/b4_install_$$"
 WGET_INSECURE=""
+CURL_INSECURE=""
 B4_MIRRORS="${B4_MIRRORS:-https://proxy.b4core.app https://proxy2.b4core.app}"
 B4_SF_BASE="${B4_SF_BASE:-https://downloads.sourceforge.net/project/b4core}"
 B4_CONNECT_TIMEOUT="${B4_CONNECT_TIMEOUT:-8}"
@@ -417,6 +418,9 @@ check_https_support() {
 }
 
 _https_works_unverified() {
+    if command_exists curl && curl -sI -k --max-time 5 "https://github.com" >/dev/null 2>&1; then
+        return 0
+    fi
     command_exists wget && wget --spider -q --timeout=5 --no-check-certificate "https://github.com" 2>/dev/null
 }
 
@@ -463,6 +467,7 @@ ensure_https_support() {
     if [ "${B4_ALLOW_INSECURE_TLS:-0}" = "1" ]; then
         log_warn "B4_ALLOW_INSECURE_TLS=1 - continuing over unverified TLS"
         WGET_INSECURE="--no-check-certificate"
+        CURL_INSECURE="-k"
         return 0
     fi
 
@@ -474,6 +479,7 @@ ensure_https_support() {
 
     if confirm "Continue over UNVERIFIED TLS anyway?" "n"; then
         WGET_INSECURE="--no-check-certificate"
+        CURL_INSECURE="-k"
         return 0
     fi
 
@@ -521,9 +527,7 @@ mirror_alive() {
     _ma_base="$1"
 
     if command_exists curl; then
-        _ma_insecure=""
-        [ -n "$WGET_INSECURE" ] && _ma_insecure="-k"
-        curl -sf $_ma_insecure --connect-timeout "$B4_CONNECT_TIMEOUT" \
+        curl -sf $CURL_INSECURE --connect-timeout "$B4_CONNECT_TIMEOUT" \
             --max-time "$B4_PROBE_TIMEOUT" -o /dev/null \
             "${_ma_base}/b4/health" 2>/dev/null && return 0
         return 1
@@ -586,7 +590,7 @@ _do_fetch() {
     _fetch_url="$1"
     _fetch_out="$2"
     if [ -t 2 ] && [ "$QUIET_MODE" -ne 1 ]; then
-        if command_exists curl && curl -fL --progress-bar \
+        if command_exists curl && curl -fL $CURL_INSECURE --progress-bar \
             --connect-timeout "$B4_CONNECT_TIMEOUT" \
             --speed-limit 1024 --speed-time "$B4_STALL_TIMEOUT" \
             --max-time "$B4_MAX_TIME" -o "$_fetch_out" "$_fetch_url" 2>&1; then return 0; fi
@@ -598,7 +602,7 @@ _do_fetch() {
             _wget_guarded "$_fetch_out" 0 $_wget_args -O "$_fetch_out" "$_fetch_url" && return 0
         fi
     else
-        if command_exists curl && curl -sfL \
+        if command_exists curl && curl -sfL $CURL_INSECURE \
             --connect-timeout "$B4_CONNECT_TIMEOUT" \
             --speed-limit 1024 --speed-time "$B4_STALL_TIMEOUT" \
             --max-time "$B4_MAX_TIME" -o "$_fetch_out" "$_fetch_url" 2>/dev/null; then return 0; fi
@@ -654,7 +658,7 @@ _do_fetch_stdout() {
     _dfs_url="$1"
 
     if command_exists curl; then
-        curl -sfL --connect-timeout "$B4_CONNECT_TIMEOUT" --max-time 25 "$_dfs_url" 2>/dev/null && return 0
+        curl -sfL $CURL_INSECURE --connect-timeout "$B4_CONNECT_TIMEOUT" --max-time 25 "$_dfs_url" 2>/dev/null && return 0
     fi
     if command_exists wget; then
         _dfs_args="-qO- $WGET_INSECURE"
