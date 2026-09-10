@@ -486,8 +486,23 @@ func runB4(cmd *cobra.Command, args []string) error {
 	// Wait for shutdown signal
 	sig := <-sigChan
 
+	signal.Reset(syscall.SIGINT, syscall.SIGTERM)
+
 	log.Infof("Received signal: %v, shutting down gracefully", sig)
 	metrics.RecordEvent("info", fmt.Sprintf("Shutdown initiated by signal: %v", sig))
+
+	hardExit := make(chan struct{})
+	defer close(hardExit)
+	go func() {
+		select {
+		case <-hardExit:
+		case <-time.After(shutdownHardLimit):
+			log.Errorf("Shutdown exceeded %s, forcing exit", shutdownHardLimit)
+			log.Flush()
+			time.Sleep(100 * time.Millisecond)
+			os.Exit(1)
+		}
+	}()
 
 	wd.Stop()
 	if geoScheduler != nil {
@@ -506,6 +521,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 const (
 	shutdownGrace     = 9 * time.Second
 	httpShutdownGrace = 3 * time.Second
+	shutdownHardLimit = 15 * time.Second
 )
 
 func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engine, httpServer *http.Server, socks5Server *socks5.Server, mtprotoServer *mtproto.Server, metrics *handler.MetricsCollector, discoveryRT *discovery.Runtime) error {
@@ -601,9 +617,13 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 	// Clean up iptables/nftables rules
 	if tunEngine != nil {
 		if !cfg.System.Tables.SkipSetup {
-			tables.ClearMasqueradeOnly(cfg)
-			tables.ClearMSSClampOnly(cfg)
-			tables.RevertConntrackSysctls()
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				tables.ClearMasqueradeOnly(cfg)
+				tables.ClearMSSClampOnly(cfg)
+				tables.RevertConntrackSysctls()
+			}()
 		}
 		metrics.TablesStatus = "inactive"
 	} else if !cfg.System.Tables.SkipSetup {
@@ -622,7 +642,11 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 		}()
 	}
 
-	tables.RoutingClearAll()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		tables.RoutingClearAll()
+	}()
 
 	// Wait for all shutdown tasks or timeout
 	shutdownDone := make(chan struct{})
@@ -671,9 +695,10 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 }
 
 func ensureSingleInstance() (func(), error) {
-	candidates := []string{"/var/run/b4.pid", "/run/b4.pid"}
+	candidates := []string{"/var/run/b4.pid", "/run/b4.pid", "/tmp/b4.pid"}
 	var f *os.File
 	var path string
+	var lastErr error
 	for _, p := range candidates {
 		fp, err := os.OpenFile(p, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0600)
 		if err == nil {
@@ -681,14 +706,17 @@ func ensureSingleInstance() (func(), error) {
 			path = p
 			break
 		}
+		lastErr = err
 	}
 	if f == nil {
+		fmt.Fprintf(os.Stderr, "[INIT] WARNING: single-instance guard DISABLED, no lock file could be opened (tried %s; last error: %v)\n",
+			strings.Join(candidates, ", "), lastErr)
 		return nil, nil
 	}
 
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) {
-			fmt.Fprintf(os.Stderr, "[INIT] single-instance check skipped: flock(%s): %v\n", path, err)
+			fmt.Fprintf(os.Stderr, "[INIT] WARNING: single-instance guard DISABLED, flock(%s): %v\n", path, err)
 			f.Close()
 			return nil, nil
 		}

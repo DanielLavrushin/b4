@@ -2,6 +2,7 @@ package tables
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -33,11 +34,18 @@ func NewNFTablesManager(cfg *config.Config) *NFTablesManager {
 }
 
 func (n *NFTablesManager) runNft(args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), iptCommandTimeout)
+	defer cancel()
+
 	var out bytes.Buffer
-	cmd := exec.Command("nft", args...)
+	cmd := exec.CommandContext(ctx, "nft", args...)
 	cmd.Stdout = &out
 	cmd.Stderr = &out
+	cmd.WaitDelay = time.Second
 	err := cmd.Run()
+	if ctx.Err() != nil {
+		return out.String(), fmt.Errorf("command [nft %s] gave up after %v: %w", strings.Join(args, " "), iptCommandTimeout, ctx.Err())
+	}
 	if err != nil {
 		output := strings.TrimSpace(out.String())
 		cmdStr := "nft " + strings.Join(args, " ")
