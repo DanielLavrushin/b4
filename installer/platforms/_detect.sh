@@ -47,3 +47,14 @@ platform_auto_detect() {
 
     return 1
 }
+
+platform_init() {
+    _pi_bin_dir="$B4_BIN_DIR"
+    _pi_data_dir="$B4_DATA_DIR"
+    platform_auto_detect || return 1
+    platform_call info
+    [ -n "$_pi_bin_dir" ] && B4_BIN_DIR="$_pi_bin_dir"
+    [ -n "$_pi_data_dir" ] && B4_DATA_DIR="$_pi_data_dir"
+    [ -n "$_pi_data_dir" ] && B4_CONFIG_FILE="${_pi_data_dir}/b4.json"
+    return 0
+}

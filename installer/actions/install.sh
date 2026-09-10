@@ -20,11 +20,7 @@ action_install() {
             log_err "B4_DATA_DIR must be an absolute path (got: $_user_data_dir)"
             exit 1
         fi
-        platform_auto_detect
-        platform_call info
-        [ -n "$_user_bin_dir" ] && B4_BIN_DIR="$_user_bin_dir"
-        [ -n "$_user_data_dir" ] && B4_DATA_DIR="$_user_data_dir"
-        [ -n "$_user_data_dir" ] && B4_CONFIG_FILE="${_user_data_dir}/b4.json"
+        platform_init
         if [ -n "$force_arch" ]; then
             B4_ARCH="$force_arch"
         else

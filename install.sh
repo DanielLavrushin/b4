@@ -1593,6 +1593,17 @@ platform_auto_detect() {
 
     return 1
 }
+
+platform_init() {
+    _pi_bin_dir="$B4_BIN_DIR"
+    _pi_data_dir="$B4_DATA_DIR"
+    platform_auto_detect || return 1
+    platform_call info
+    [ -n "$_pi_bin_dir" ] && B4_BIN_DIR="$_pi_bin_dir"
+    [ -n "$_pi_data_dir" ] && B4_DATA_DIR="$_pi_data_dir"
+    [ -n "$_pi_data_dir" ] && B4_CONFIG_FILE="${_pi_data_dir}/b4.json"
+    return 0
+}
 platform_generic_linux_name() {
     echo "Generic Linux (Ubuntu/Debian/Fedora/Arch/Alpine)"
 }
@@ -3288,11 +3299,7 @@ action_install() {
             log_err "B4_DATA_DIR must be an absolute path (got: $_user_data_dir)"
             exit 1
         fi
-        platform_auto_detect
-        platform_call info
-        [ -n "$_user_bin_dir" ] && B4_BIN_DIR="$_user_bin_dir"
-        [ -n "$_user_data_dir" ] && B4_DATA_DIR="$_user_data_dir"
-        [ -n "$_user_data_dir" ] && B4_CONFIG_FILE="${_user_data_dir}/b4.json"
+        platform_init
         if [ -n "$force_arch" ]; then
             B4_ARCH="$force_arch"
         else
@@ -3546,10 +3553,7 @@ action_remove() {
 
     log_header "Removing B4"
 
-    platform_auto_detect || true
-    if [ -n "$B4_PLATFORM" ]; then
-        platform_call info
-    fi
+    platform_init || true
 
     _remove_find_config
 
@@ -3819,10 +3823,7 @@ action_update() {
 
     log_header "Updating B4"
 
-    platform_auto_detect || true
-    if [ -n "$B4_PLATFORM" ]; then
-        platform_call info
-    fi
+    platform_init || true
 
     existing_bin=""
 

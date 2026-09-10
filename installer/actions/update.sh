@@ -134,10 +134,7 @@ action_update() {
     log_header "Updating B4"
 
     # Detect platform
-    platform_auto_detect || true
-    if [ -n "$B4_PLATFORM" ]; then
-        platform_call info
-    fi
+    platform_init || true
 
     # Find existing binary
     existing_bin=""

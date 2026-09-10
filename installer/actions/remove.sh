@@ -6,10 +6,7 @@ action_remove() {
 
     log_header "Removing B4"
 
-    platform_auto_detect || true
-    if [ -n "$B4_PLATFORM" ]; then
-        platform_call info
-    fi
+    platform_init || true
 
     # Find config file, check all known locations
     _remove_find_config
