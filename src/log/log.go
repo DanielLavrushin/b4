@@ -298,7 +298,7 @@ var initPending []string
 
 func InitWarnf(format string, a ...any) {
 	msg := "[INIT] " + fmt.Sprintf(format, a...)
-	fmt.Fprintln(os.Stderr, msg)
+	fmt.Fprintln(OrigStderr(), msg)
 	errMu.Lock()
 	if errLogger != nil {
 		errLogger.Println(msg)

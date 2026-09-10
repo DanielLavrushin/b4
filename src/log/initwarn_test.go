@@ -15,7 +15,7 @@ func TestInitWarningsReachTheErrorFileOnceItOpens(t *testing.T) {
 	if err := InitErrorFile(path); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(CloseErrorFile)
+	t.Cleanup(func() { _ = SetErrorFile("") })
 	InitWarnf("could not update pidfile %s", "/var/run/b4.pid")
 
 	data, err := os.ReadFile(path)
@@ -24,11 +24,8 @@ func TestInitWarningsReachTheErrorFileOnceItOpens(t *testing.T) {
 	}
 	got := string(data)
 	for _, want := range []string{"=== b4 error log opened", "[INIT] single-instance guard DISABLED", "[INIT] could not update pidfile"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("errors.log is missing %q:\n%s", want, got)
+		if n := strings.Count(got, want); n != 1 {
+			t.Fatalf("errors.log must carry %q exactly once, found %d:\n%s", want, n, got)
 		}
-	}
-	if strings.Count(got, "=== b4 error log opened") != 1 {
-		t.Fatalf("the session header must be written once:\n%s", got)
 	}
 }

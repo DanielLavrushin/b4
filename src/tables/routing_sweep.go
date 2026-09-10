@@ -14,6 +14,7 @@ func routeSweepOwnRules() {
 		if err != nil {
 			continue
 		}
+		rulesSeen := make(map[string]struct{})
 		tablesSeen := make(map[string]struct{})
 		for _, line := range strings.Split(out, "\n") {
 			line = strings.TrimSpace(line)
@@ -25,11 +26,15 @@ func routeSweepOwnRules() {
 			if mark == "" || table == "" {
 				continue
 			}
+			rule := mark + " " + table
+			if _, done := rulesSeen[rule]; !done {
+				rulesSeen[rule] = struct{}{}
+				routeDelRuleLoop(ipv6, mark, table)
+			}
 			if _, done := tablesSeen[table]; done {
 				continue
 			}
 			tablesSeen[table] = struct{}{}
-			routeDelRuleLoop(ipv6, mark, table)
 			flush := append([]string{"ip"}, fam...)
 			flush = append(flush, "route", "flush", "table", table)
 			_, _ = run(flush...)

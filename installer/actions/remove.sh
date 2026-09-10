@@ -93,11 +93,17 @@ _remove_netfilter_state() {
     if [ -n "$_rns_bin" ]; then
         log_info "Clearing firewall and routing state..."
         if [ -n "$B4_CONFIG_FILE" ] && [ -f "$B4_CONFIG_FILE" ]; then
-            "$_rns_bin" --clear-tables --config "$B4_CONFIG_FILE" >/dev/null 2>&1 || true
+            _rns_out=$("$_rns_bin" --clear-tables --config "$B4_CONFIG_FILE" 2>&1) && return 0
         else
-            "$_rns_bin" --clear-tables >/dev/null 2>&1 || true
+            _rns_out=$("$_rns_bin" --clear-tables 2>&1) && return 0
         fi
-        return 0
+        log_warn "${_rns_bin} --clear-tables failed"
+        if [ -n "$_rns_out" ]; then
+            echo "$_rns_out" | tail -n 5 | while read -r _rns_line; do
+                printf "    %s\n" "$_rns_line" >&2
+            done
+        fi
+        log_warn "Removing the known nftables tables directly"
     fi
     command_exists nft || return 0
     for _rns_t in "inet b4_mangle" "inet b4_route" "ip b4_nat" "ip b4_dnsnat" "ip6 b4_dnsnat6"; do

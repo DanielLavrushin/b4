@@ -16,10 +16,17 @@ func TestSweepRemovesOrphanedOwnRulesAndLeavesForeignOnes(t *testing.T) {
 	})
 
 	table := 10420
+	sharedProxyTable := 10500
 	ownMark := fmt.Sprintf("0x%x/0x%x", 0x1234, routeSetMarkMask)
+	proxyMarkA := fmt.Sprintf("0x%x/0x%x", 0x1111, routeSetMarkMask)
+	proxyMarkB := fmt.Sprintf("0x%x/0x%x", 0x2222, routeSetMarkMask)
+	ownRule := fmt.Sprintf("%d:\tfrom all fwmark %s lookup %d", routePolicyRuleBase+table, ownMark, table)
 	listing := strings.Join([]string{
 		"0:\tfrom all lookup local",
-		fmt.Sprintf("%d:\tfrom all fwmark %s lookup %d", routePolicyRuleBase+table, ownMark, table),
+		fmt.Sprintf("%d:\tfrom all fwmark %s lookup %d", proxyRulePriority, proxyMarkA, sharedProxyTable),
+		fmt.Sprintf("%d:\tfrom all fwmark %s lookup %d", proxyRulePriority, proxyMarkB, sharedProxyTable),
+		ownRule,
+		ownRule,
 		"20000:\tfrom all fwmark 0x8000/0x8000 lookup 200",
 		"32766:\tfrom all lookup main",
 	}, "\n")
@@ -43,11 +50,20 @@ func TestSweepRemovesOrphanedOwnRulesAndLeavesForeignOnes(t *testing.T) {
 
 	routeSweepOwnRules()
 
-	if len(deleted) != 1 || deleted[0] != fmt.Sprintf("v6=false %s %d", ownMark, table) {
-		t.Fatalf("expected exactly the orphaned b4 rule to be deleted, got %v", deleted)
+	wantDeleted := strings.Join([]string{
+		fmt.Sprintf("v6=false %s %d", proxyMarkA, sharedProxyTable),
+		fmt.Sprintf("v6=false %s %d", proxyMarkB, sharedProxyTable),
+		fmt.Sprintf("v6=false %s %d", ownMark, table),
+	}, "\n")
+	if got := strings.Join(deleted, "\n"); got != wantDeleted {
+		t.Fatalf("every orphaned b4 rule must be deleted once, proxy sets share one table under distinct marks:\nwant\n%s\ngot\n%s", wantDeleted, got)
 	}
-	if len(flushed) != 1 || !strings.HasSuffix(flushed[0], fmt.Sprintf("table %d", table)) {
-		t.Fatalf("expected the orphaned table to be flushed once, got %v", flushed)
+	wantFlushed := strings.Join([]string{
+		fmt.Sprintf("ip route flush table %d", sharedProxyTable),
+		fmt.Sprintf("ip route flush table %d", table),
+	}, "\n")
+	if got := strings.Join(flushed, "\n"); got != wantFlushed {
+		t.Fatalf("each orphaned table must be flushed exactly once:\nwant\n%s\ngot\n%s", wantFlushed, got)
 	}
 	for _, cmd := range executed {
 		if strings.Contains(cmd, "lookup 200") || strings.Contains(cmd, "table 200") {

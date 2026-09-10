@@ -29,6 +29,7 @@ _recover_service_paths() {
 
     _rsp_prog=$(sed -n 's/^PROG="\([^"]*\)".*/\1/p' "$_rsp_svc" 2>/dev/null | head -1)
     [ -z "$_rsp_prog" ] && _rsp_prog=$(sed -n 's/^ExecStart=\([^ ]*\).*/\1/p' "$_rsp_svc" 2>/dev/null | head -1)
+    [ -z "$_rsp_prog" ] && _rsp_prog=$(sed -n 's/^command="\([^"]*\)".*/\1/p' "$_rsp_svc" 2>/dev/null | head -1)
 
     case "$_rsp_cfg" in
     /*)
