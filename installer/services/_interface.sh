@@ -43,6 +43,21 @@ service_dispatch() {
     fi
 }
 
+# Confirm a start by finding a b4 pid different from the one that was running
+# before. A name-only check cannot tell the incoming instance from the outgoing
+# one, so a dying process would certify a failed start as success.
+# Usage: service_verify_started <pid-before-start> [timeout]
+service_verify_started() {
+    _svs_old="$1"
+    if _svs_new=$(wait_for_new_b4 "$_svs_old" "${2:-15}"); then
+        log_ok "Service started (PID: ${_svs_new})"
+        return 0
+    fi
+    log_err "Service failed to start"
+    service_show_crash_log
+    return 1
+}
+
 service_show_crash_log() {
     _logdir=""
     if [ -f "$B4_CONFIG_FILE" ] && command_exists jq; then
@@ -63,5 +78,16 @@ service_show_crash_log() {
         tail -5 "$_errlog" 2>/dev/null | while IFS= read -r _line; do
             log_info "  $_line"
         done
+        return 0
     fi
+
+    # b4's earliest failures land on stderr, before the file logger exists.
+    log_info "No entries in ${_errlog}. Check the service manager's log:"
+    case "$B4_SERVICE_TYPE" in
+    systemd) log_info "  journalctl -u ${B4_SERVICE_NAME:-b4} --no-pager -n 30" ;;
+    procd) log_info "  logread -e b4" ;;
+    openrc) log_info "  rc-service ${B4_SERVICE_NAME:-b4} status; cat /var/log/messages" ;;
+    *) log_info "  logread 2>/dev/null || tail -n 30 /var/log/messages" ;;
+    esac
+    log_info "Or run it in the foreground: ${B4_BIN_DIR}/${BINARY_NAME} --config ${B4_CONFIG_FILE}"
 }

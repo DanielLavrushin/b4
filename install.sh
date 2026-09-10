@@ -94,6 +94,8 @@ B4_SERVICE_NAME=""
 B4_PKG_MANAGER=""
 B4_PLATFORM=""
 
+B4_SUPPORTED_ARCHS="amd64 arm64 armv7 armv6 armv5 386 mips mipsle mips_softfloat mipsle_softfloat mips64 mips64le loong64 ppc64 ppc64le riscv64 s390x"
+
 command_exists() {
     command -v "$1" >/dev/null 2>&1 || which "$1" >/dev/null 2>&1
 }
@@ -224,7 +226,15 @@ cleanup_temp() {
     rm -rf "$TEMP_DIR" 2>/dev/null || true
 }
 
-trap cleanup_temp EXIT INT TERM
+_on_interrupt() {
+    cleanup_temp
+    printf "\n" >&2
+    log_err "Aborted"
+    exit 130
+}
+
+trap cleanup_temp EXIT
+trap _on_interrupt INT TERM
 
 detect_pkg_manager() {
     if [ -n "$B4_PKG_MANAGER" ]; then
@@ -267,7 +277,52 @@ pkg_install() {
     esac
 }
 
+arch_is_supported() {
+    for _ais in $B4_SUPPORTED_ARCHS; do
+        [ "$_ais" = "$1" ] && return 0
+    done
+    return 1
+}
+
+require_supported_arch() {
+    if [ -z "$1" ]; then
+        log_err "Could not determine this machine's architecture"
+        log_info "Pick one with --arch=<name>. Available: ${B4_SUPPORTED_ARCHS}"
+        exit 1
+    fi
+    if ! arch_is_supported "$1"; then
+        log_err "No published b4 build for architecture '$1'"
+        log_info "Pick one with --arch=<name>. Available: ${B4_SUPPORTED_ARCHS}"
+        exit 1
+    fi
+}
+
+_arch_nearest_supported() {
+    case "$1" in
+    mips64_softfloat) echo "mips64" ;;
+    mips64le_softfloat) echo "mips64le" ;;
+    *) echo "" ;;
+    esac
+}
+
 detect_architecture() {
+    _da_arch=$(_detect_architecture_raw) || return 1
+    if arch_is_supported "$_da_arch"; then
+        echo "$_da_arch"
+        return 0
+    fi
+    _da_alt=$(_arch_nearest_supported "$_da_arch")
+    if [ -n "$_da_alt" ]; then
+        log_warn "No '${_da_arch}' build is published; using '${_da_alt}' instead"
+        echo "$_da_alt"
+        return 0
+    fi
+    log_err "Detected architecture '${_da_arch}' has no published build"
+    log_info "Pick one manually with --arch=<name>. Available: ${B4_SUPPORTED_ARCHS}"
+    exit 1
+}
+
+_detect_architecture_raw() {
     arch=$(uname -m)
 
     case "$arch" in
@@ -301,7 +356,6 @@ detect_architecture() {
     mips64*)
         variant="mips64"
         if is_little_endian; then variant="mips64le"; fi
-        if is_softfloat; then variant="${variant}_softfloat"; fi
         echo "$variant"
         ;;
     mips*)
@@ -399,9 +453,27 @@ check_https_support() {
     if command_exists wget && wget --spider -q --timeout=5 "https://github.com" 2>/dev/null; then
         return 0
     fi
-    if command_exists wget && wget --spider -q --timeout=5 --no-check-certificate "https://github.com" 2>/dev/null; then
-        WGET_INSECURE="--no-check-certificate"
-        log_warn "HTTPS works only with --no-check-certificate (CA certs missing)"
+    return 1
+}
+
+_https_works_unverified() {
+    command_exists wget && wget --spider -q --timeout=5 --no-check-certificate "https://github.com" 2>/dev/null
+}
+
+_install_ca_certificates() {
+    if command_exists opkg; then
+        opkg update >/dev/null 2>&1 || true
+        opkg install ca-certificates >/dev/null 2>&1 || true
+        opkg install ca-bundle >/dev/null 2>&1 || true
+        opkg install wget-ssl >/dev/null 2>&1 || true
+        hash -r 2>/dev/null || true
+        return 0
+    fi
+    if command_exists apk; then
+        apk update >/dev/null 2>&1 || true
+        apk add ca-certificates >/dev/null 2>&1 || true
+        apk add wget-ssl >/dev/null 2>&1 || true
+        hash -r 2>/dev/null || true
         return 0
     fi
     return 1
@@ -411,15 +483,41 @@ ensure_https_support() {
     if check_https_support; then
         return 0
     fi
-    log_warn "HTTPS not available — trying to install SSL support"
-    if command_exists opkg; then
-        opkg update >/dev/null 2>&1 || true
-        opkg install ca-certificates >/dev/null 2>&1 || true
-        opkg install wget-ssl >/dev/null 2>&1 || true
-        hash -r 2>/dev/null || true
-        if check_https_support; then return 0; fi
+
+    log_warn "Verified HTTPS not available — trying to install CA certificates"
+    if _install_ca_certificates && check_https_support; then
+        log_ok "CA certificates installed, verified HTTPS now works"
+        return 0
     fi
-    log_err "HTTPS not available. Cannot download from GitHub."
+
+    if ! _https_works_unverified; then
+        log_err "HTTPS not available. Cannot download from GitHub."
+        log_info "On Entware/OpenWrt: opkg install wget-ssl ca-certificates"
+        return 1
+    fi
+
+    log_warn "HTTPS works only WITHOUT certificate verification (CA certs missing)"
+    log_warn "Downloads could not be authenticated: the archive AND its checksum"
+    log_warn "would both come over a connection nobody can verify."
+
+    if [ "${B4_ALLOW_INSECURE_TLS:-0}" = "1" ]; then
+        log_warn "B4_ALLOW_INSECURE_TLS=1 — continuing over unverified TLS"
+        WGET_INSECURE="--no-check-certificate"
+        return 0
+    fi
+
+    if [ "$QUIET_MODE" -eq 1 ] 2>/dev/null; then
+        log_err "Refusing to download over unverified TLS in quiet mode."
+        log_info "Install CA certificates, or re-run with B4_ALLOW_INSECURE_TLS=1 to accept the risk."
+        return 1
+    fi
+
+    if confirm "Continue over UNVERIFIED TLS anyway?" "n"; then
+        WGET_INSECURE="--no-check-certificate"
+        return 0
+    fi
+
+    log_err "Aborted: no verified HTTPS available."
     log_info "On Entware/OpenWrt: opkg install wget-ssl ca-certificates"
     return 1
 }
@@ -692,7 +790,11 @@ verify_checksum() {
     }
 
     if [ "$expected" = "$actual" ]; then
-        log_ok "SHA256 verified: $actual"
+        if [ -n "$WGET_INSECURE" ]; then
+            log_warn "SHA256 matches ($actual) but was fetched over UNVERIFIED TLS — authenticity not proven"
+        else
+            log_ok "SHA256 verified: $actual"
+        fi
         return 0
     fi
 
@@ -914,38 +1016,117 @@ _warn_if_queue_unavailable() {
     return 1
 }
 
-is_b4_running() {
-    for pf in /var/run/b4.pid /opt/var/run/b4.pid; do
-        if [ -f "$pf" ]; then
-            _pid=$(cat "$pf" 2>/dev/null)
-            [ -n "$_pid" ] && kill -0 "$_pid" 2>/dev/null && return 0
+B4_PIDFILES="/var/run/b4.pid /run/b4.pid /opt/var/run/b4.pid /tmp/b4.pid"
+
+_pid_is_b4() {
+    _pib="$1"
+    [ -n "$_pib" ] || return 1
+    case "$_pib" in
+    *[!0-9]*) return 1 ;;
+    esac
+    kill -0 "$_pib" 2>/dev/null || return 1
+    grep -q '^State:[[:space:]]*Z' "/proc/${_pib}/status" 2>/dev/null && return 1
+    if [ -r "/proc/${_pib}/comm" ]; then
+        [ "$(cat "/proc/${_pib}/comm" 2>/dev/null)" = "$BINARY_NAME" ] && return 0
+        return 1
+    fi
+    if [ -r "/proc/${_pib}/cmdline" ]; then
+        tr '\0' '\n' <"/proc/${_pib}/cmdline" 2>/dev/null | head -1 |
+            grep -q "\(^\|/\)${BINARY_NAME}\$" && return 0
+        return 1
+    fi
+    return 0
+}
+
+b4_pid() {
+    for _bpf in $B4_PIDFILES; do
+        [ -f "$_bpf" ] || continue
+        _bp=$(tr -d ' \t\r\n' <"$_bpf" 2>/dev/null)
+        if _pid_is_b4 "$_bp"; then
+            echo "$_bp"
+            return 0
         fi
     done
-    if command_exists pgrep; then
-        pgrep -x "$BINARY_NAME" >/dev/null 2>&1 && return 0
+    if command_exists pidof; then
+        _bp=$(pidof "$BINARY_NAME" 2>/dev/null | tr ' ' '\n' | head -1)
+        if _pid_is_b4 "$_bp"; then
+            echo "$_bp"
+            return 0
+        fi
     fi
-    _mypid=$$
+    if command_exists pgrep; then
+        _bp=$(pgrep -x "$BINARY_NAME" 2>/dev/null | head -1)
+        if _pid_is_b4 "$_bp"; then
+            echo "$_bp"
+            return 0
+        fi
+    fi
     _ps_out=$(ps w 2>/dev/null || ps 2>/dev/null) || true
     if [ -n "$_ps_out" ]; then
-        echo "$_ps_out" | grep -v grep | grep -v "$_mypid" | grep -q "[/ ]${BINARY_NAME}$" && return 0
-        echo "$_ps_out" | grep -v grep | grep -v "$_mypid" | grep -q "[/ ]${BINARY_NAME} " && return 0
+        _bp=$(echo "$_ps_out" | grep -v grep |
+            grep -E "[/ ]${BINARY_NAME}( |\$)" |
+            awk '$1 ~ /^[0-9]+$/ {print $1; exit}')
+        if _pid_is_b4 "$_bp"; then
+            echo "$_bp"
+            return 0
+        fi
     fi
     return 1
 }
 
+is_b4_running() {
+    b4_pid >/dev/null 2>&1
+}
+
 stop_b4() {
-    if ! is_b4_running; then return 0; fi
-    log_info "Stopping running b4 process..."
-    for pf in /var/run/b4.pid /opt/var/run/b4.pid; do
-        if [ -f "$pf" ]; then
-            _pid=$(cat "$pf" 2>/dev/null)
-            [ -n "$_pid" ] && kill "$_pid" 2>/dev/null || true
-        fi
-    done
+    _sb_pid=$(b4_pid) || return 0
+    log_info "Stopping running b4 process (PID: ${_sb_pid})..."
+
+    kill "$_sb_pid" 2>/dev/null || true
     if command_exists pkill; then
         pkill -x "$BINARY_NAME" 2>/dev/null || true
     fi
-    sleep 2
+
+    _sb_i=0
+    while [ "$_sb_i" -lt 18 ]; do
+        sleep 1
+        b4_pid >/dev/null 2>&1 || return 0
+        _sb_i=$((_sb_i + 1))
+    done
+
+    _sb_pid=$(b4_pid) || return 0
+    log_warn "b4 (PID: ${_sb_pid}) ignored SIGTERM after 18s — sending SIGKILL"
+    kill -9 "$_sb_pid" 2>/dev/null || true
+    if command_exists pkill; then
+        pkill -9 -x "$BINARY_NAME" 2>/dev/null || true
+    fi
+
+    _sb_i=0
+    while [ "$_sb_i" -lt 5 ]; do
+        sleep 1
+        b4_pid >/dev/null 2>&1 || return 0
+        _sb_i=$((_sb_i + 1))
+    done
+
+    _sb_pid=$(b4_pid) || return 0
+    log_err "b4 (PID: ${_sb_pid}) is still running after SIGKILL"
+    return 1
+}
+
+wait_for_new_b4() {
+    _wfn_old="$1"
+    _wfn_limit="${2:-15}"
+    _wfn_i=0
+    while [ "$_wfn_i" -lt "$_wfn_limit" ]; do
+        _wfn_new=$(b4_pid) || _wfn_new=""
+        if [ -n "$_wfn_new" ] && [ "$_wfn_new" != "$_wfn_old" ]; then
+            echo "$_wfn_new"
+            return 0
+        fi
+        sleep 1
+        _wfn_i=$((_wfn_i + 1))
+    done
+    return 1
 }
 
 b4_running_cmdline() {
@@ -977,6 +1158,12 @@ relaunch_b4() {
     if [ "$_had_noglob" = 0 ]; then set +f; fi
     sleep 2
     is_b4_running
+}
+
+config_secure_perms() {
+    [ -n "$B4_CONFIG_FILE" ] || return 0
+    [ -f "$B4_CONFIG_FILE" ] || return 0
+    chmod 600 "$B4_CONFIG_FILE" 2>/dev/null || true
 }
 
 is_writable_dir() {
@@ -1034,7 +1221,11 @@ read_input() {
         return 0
     fi
     printf "${CYAN}%b${NC}" "$prompt" >&2
-    read _INPUT || _INPUT="$default"
+    if ! read _INPUT; then
+        printf "\n" >&2
+        log_err "Aborted (no more input)"
+        exit 130
+    fi
     _INPUT=$(printf '%s' "$_INPUT" | tr -d '\r')
     check_exit "$_INPUT"
     [ -z "$_INPUT" ] && _INPUT="$default"
@@ -1187,12 +1378,21 @@ wizard_manual_configure() {
     done
 
     echo ""
-    echo "  Service types: systemd, openrc, procd, sysv, entware, none"
-    read_input "Service type [${B4_SERVICE_TYPE}]: " "$B4_SERVICE_TYPE"
-    B4_SERVICE_TYPE="$_INPUT"
+    echo "  Service types:${REGISTERED_SERVICES}"
+    while true; do
+        read_input "Service type [${B4_SERVICE_TYPE}]: " "$B4_SERVICE_TYPE"
+        _svc_ok=0
+        for _svc in $REGISTERED_SERVICES; do
+            [ "$_svc" = "$_INPUT" ] && _svc_ok=1
+        done
+        if [ "$_svc_ok" -eq 1 ]; then
+            B4_SERVICE_TYPE="$_INPUT"
+            break
+        fi
+        log_warn "Unknown service type '${_INPUT}'. Available:${REGISTERED_SERVICES}"
+    done
 
     auto_arch=$(detect_architecture)
-    B4_SUPPORTED_ARCHS="amd64 arm64 armv7 armv6 armv5 386 mips mipsle mips_softfloat mipsle_softfloat mips64 mips64le loong64 ppc64 ppc64le riscv64 s390x"
 
     _arch_default=1
     _arch_idx=1
@@ -2081,17 +2281,19 @@ feature_auth_run() {
 
     if [ ! -f "$B4_CONFIG_FILE" ]; then
         ensure_dir "$(dirname "$B4_CONFIG_FILE")" "Config directory" || return 1
-        jq -n \
+        (umask 077 && jq -n \
             --arg user "$_auth_user" \
             --arg pass "$_auth_pass" \
             '{ system: { web_server: { username: $user, password: $pass } } }' \
-            >"$B4_CONFIG_FILE"
+            >"$B4_CONFIG_FILE")
+        config_secure_perms
     else
         tmp="${B4_CONFIG_FILE}.tmp"
-        if jq --arg user "$_auth_user" --arg pass "$_auth_pass" \
+        if (umask 077 && jq --arg user "$_auth_user" --arg pass "$_auth_pass" \
             '.system.web_server.username = $user | .system.web_server.password = $pass' \
-            "$B4_CONFIG_FILE" >"$tmp" 2>/dev/null; then
+            "$B4_CONFIG_FILE" >"$tmp" 2>/dev/null); then
             mv "$tmp" "$B4_CONFIG_FILE"
+            config_secure_perms
         else
             rm -f "$tmp"
             log_warn "Failed to update config"
@@ -2281,22 +2483,24 @@ _geo_update_config() {
     fi
 
     if [ ! -f "$B4_CONFIG_FILE" ]; then
-        jq -n \
+        (umask 077 && jq -n \
             --arg pv "$path_val" \
             --arg uv "$url_val" \
             "{ system: { geo: { ${path_key}: \$pv, ${url_key}: \$uv } } }" \
-            >"$B4_CONFIG_FILE"
+            >"$B4_CONFIG_FILE")
+        config_secure_perms
         log_ok "Created config with ${path_key}"
         return 0
     fi
 
     tmp="${B4_CONFIG_FILE}.tmp"
-    if jq \
+    if (umask 077 && jq \
         --arg pv "$path_val" \
         --arg uv "$url_val" \
         ".system.geo = (.system.geo // {}) + { \"${path_key}\": \$pv, \"${url_key}\": \$uv }" \
-        "$B4_CONFIG_FILE" >"$tmp" 2>/dev/null; then
+        "$B4_CONFIG_FILE" >"$tmp" 2>/dev/null); then
         mv "$tmp" "$B4_CONFIG_FILE"
+        config_secure_perms
         log_ok "Config updated: ${path_key}"
     else
         rm -f "$tmp"
@@ -2407,17 +2611,19 @@ feature_https_run() {
 
     if [ ! -f "$B4_CONFIG_FILE" ]; then
         ensure_dir "$(dirname "$B4_CONFIG_FILE")" "Config directory" || return 1
-        jq -n \
+        (umask 077 && jq -n \
             --arg cert "$cert_path" \
             --arg key "$key_path" \
             '{ system: { web_server: { tls_cert: $cert, tls_key: $key } } }' \
-            >"$B4_CONFIG_FILE"
+            >"$B4_CONFIG_FILE")
+        config_secure_perms
     else
         tmp="${B4_CONFIG_FILE}.tmp"
-        if jq --arg cert "$cert_path" --arg key "$key_path" \
+        if (umask 077 && jq --arg cert "$cert_path" --arg key "$key_path" \
             '.system.web_server.tls_cert = $cert | .system.web_server.tls_key = $key' \
-            "$B4_CONFIG_FILE" >"$tmp" 2>/dev/null; then
+            "$B4_CONFIG_FILE" >"$tmp" 2>/dev/null); then
             mv "$tmp" "$B4_CONFIG_FILE"
+            config_secure_perms
         else
             rm -f "$tmp"
             log_warn "Failed to update config"
@@ -2451,9 +2657,10 @@ _https_remove_config() {
         tls=$(jq -r '.system.web_server.tls_cert // ""' "$B4_CONFIG_FILE" 2>/dev/null) || true
         if [ -n "$tls" ]; then
             tmp="${B4_CONFIG_FILE}.tmp"
-            if jq 'del(.system.web_server.tls_cert, .system.web_server.tls_key)' \
-                "$B4_CONFIG_FILE" >"$tmp" 2>/dev/null; then
+            if (umask 077 && jq 'del(.system.web_server.tls_cert, .system.web_server.tls_key)' \
+                "$B4_CONFIG_FILE" >"$tmp" 2>/dev/null); then
                 mv "$tmp" "$B4_CONFIG_FILE"
+                config_secure_perms
                 log_info "Removed previous HTTPS configuration"
             else
                 rm -f "$tmp"
@@ -2493,6 +2700,17 @@ service_dispatch() {
     fi
 }
 
+service_verify_started() {
+    _svs_old="$1"
+    if _svs_new=$(wait_for_new_b4 "$_svs_old" "${2:-15}"); then
+        log_ok "Service started (PID: ${_svs_new})"
+        return 0
+    fi
+    log_err "Service failed to start"
+    service_show_crash_log
+    return 1
+}
+
 service_show_crash_log() {
     _logdir=""
     if [ -f "$B4_CONFIG_FILE" ] && command_exists jq; then
@@ -2511,7 +2729,17 @@ service_show_crash_log() {
         tail -5 "$_errlog" 2>/dev/null | while IFS= read -r _line; do
             log_info "  $_line"
         done
+        return 0
     fi
+
+    log_info "No entries in ${_errlog}. Check the service manager's log:"
+    case "$B4_SERVICE_TYPE" in
+    systemd) log_info "  journalctl -u ${B4_SERVICE_NAME:-b4} --no-pager -n 30" ;;
+    procd) log_info "  logread -e b4" ;;
+    openrc) log_info "  rc-service ${B4_SERVICE_NAME:-b4} status; cat /var/log/messages" ;;
+    *) log_info "  logread 2>/dev/null || tail -n 30 /var/log/messages" ;;
+    esac
+    log_info "Or run it in the foreground: ${B4_BIN_DIR}/${BINARY_NAME} --config ${B4_CONFIG_FILE}"
 }
 service_entware_install() {
     ensure_dir "$B4_SERVICE_DIR" "Service directory" || return 1
@@ -2567,6 +2795,12 @@ CONFIG="${B4_CONFIG_FILE}"
 PIDFILE="/opt/var/run/b4.pid"
 PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+# Nothing else creates /opt/var/run on an incomplete Entware tree, and this
+# variant is chosen precisely when that tree is incomplete.
+if ! mkdir -p "\$(dirname "\$PIDFILE")" 2>/dev/null; then
+    PIDFILE="/var/run/b4.pid"
+fi
+
 kernel_mod_load() {
     KERNEL=\$(uname -r)
     for mod in $B4_KERNEL_MODULES; do
@@ -2576,41 +2810,83 @@ kernel_mod_load() {
     done
 }
 
+b4_pidof() {
+    if [ -f "\$PIDFILE" ]; then
+        _p=\$(cat "\$PIDFILE" 2>/dev/null)
+        if [ -n "\$_p" ] && kill -0 "\$_p" 2>/dev/null; then
+            echo "\$_p"
+            return 0
+        fi
+    fi
+    if command -v pidof >/dev/null 2>&1; then
+        _p=\$(pidof ${BINARY_NAME} 2>/dev/null | tr ' ' '\n' | head -1)
+        [ -n "\$_p" ] && echo "\$_p" && return 0
+    fi
+    if command -v pgrep >/dev/null 2>&1; then
+        _p=\$(pgrep -x ${BINARY_NAME} 2>/dev/null | head -1)
+        [ -n "\$_p" ] && echo "\$_p" && return 0
+    fi
+    return 1
+}
+
+b4_running() {
+    b4_pidof >/dev/null 2>&1
+}
+
 start() {
     echo "Starting b4..."
-    [ -f "\$PIDFILE" ] && kill -0 \$(cat "\$PIDFILE") 2>/dev/null && echo "Already running" && return 1
+    if b4_running; then
+        echo "Already running (PID: \$(b4_pidof))"
+        return 1
+    fi
     kernel_mod_load
+    _started=""
     if which nohup >/dev/null 2>&1; then
         nohup \$PROG --config \$CONFIG >/dev/null 2>&1 &
+        _started=\$!
     elif which setsid >/dev/null 2>&1; then
         setsid \$PROG --config \$CONFIG >/dev/null 2>&1 &
+        _started=\$!
     else
         (\$PROG --config \$CONFIG >/dev/null 2>&1 &)
     fi
-    echo \$! >"\$PIDFILE"
-    sleep 1
-    if kill -0 \$(cat "\$PIDFILE") 2>/dev/null; then
-        echo "b4 started (PID: \$(cat \$PIDFILE))"
+    [ -n "\$_started" ] && echo "\$_started" >"\$PIDFILE"
+    sleep 2
+    if b4_running; then
+        echo "b4 started (PID: \$(b4_pidof))"
     else
         echo "b4 failed to start, check /var/log/b4/errors.log"
-        rm -f "\$PIDFILE"
         return 1
     fi
 }
 
 stop() {
     echo "Stopping b4..."
-    [ -f "\$PIDFILE" ] && kill \$(cat "\$PIDFILE") 2>/dev/null
-    rm -f "\$PIDFILE"
-    killall b4 2>/dev/null || true
+    _p=\$(b4_pidof) || { echo "b4 is not running"; return 0; }
+    kill "\$_p" 2>/dev/null
+    _i=0
+    while [ "\$_i" -lt 20 ]; do
+        sleep 1
+        b4_running || { echo "b4 stopped"; return 0; }
+        _i=\$((_i + 1))
+    done
+    _p=\$(b4_pidof) || { echo "b4 stopped"; return 0; }
+    echo "b4 (PID: \$_p) did not exit, sending SIGKILL"
+    kill -9 "\$_p" 2>/dev/null
+    sleep 1
+    if b4_running; then
+        echo "b4 is still running"
+        return 1
+    fi
     echo "b4 stopped"
 }
 
 case "\$1" in
     start)   start ;;
     stop)    stop ;;
-    restart) stop; sleep 1; start ;;
-    *)       echo "Usage: \$0 {start|stop|restart}"; exit 1 ;;
+    restart) stop && start ;;
+    status)  if b4_running; then echo "b4 is running (PID: \$(b4_pidof))"; else echo "b4 is not running"; exit 3; fi ;;
+    *)       echo "Usage: \$0 {start|stop|restart|status}"; exit 1 ;;
 esac
 EOF
 }
@@ -2624,22 +2900,17 @@ service_entware_remove() {
 }
 
 service_entware_start() {
-    if [ -f "${B4_SERVICE_DIR}/${B4_SERVICE_NAME}" ]; then
-        "${B4_SERVICE_DIR}/${B4_SERVICE_NAME}" start 2>/dev/null || {
-            log_warn "Could not start service"
-            return 1
-        }
-        sleep 2
-        if pidof b4 >/dev/null 2>&1 || pgrep -x b4 >/dev/null 2>&1; then
-            log_ok "Service started"
-            return 0
-        fi
-        log_err "Service crashed immediately after start"
-        service_show_crash_log
+    _init="${B4_SERVICE_DIR}/${B4_SERVICE_NAME}"
+    if [ ! -f "$_init" ]; then
+        log_warn "Could not start service"
         return 1
     fi
-    log_warn "Could not start service"
-    return 1
+    _old=$(b4_pid) || _old=""
+    "$_init" restart 2>/dev/null || {
+        log_warn "Could not start service"
+        return 1
+    }
+    service_verify_started "$_old"
 }
 
 service_entware_stop() {
@@ -2681,6 +2952,8 @@ command="${B4_BIN_DIR}/${BINARY_NAME}"
 command_args="--config ${B4_CONFIG_FILE}"
 command_background=true
 pidfile="/run/b4.pid"
+# b4 gives itself up to 15s to tear down; escalate only after that.
+retry="TERM/20/KILL/5"
 
 output_log="/dev/null"
 error_log="/dev/null"
@@ -2716,15 +2989,12 @@ service_openrc_remove() {
 }
 
 service_openrc_start() {
-    rc-service "${B4_SERVICE_NAME}" start 2>/dev/null || { log_warn "Could not start service"; return 1; }
-    sleep 2
-    if pidof b4 >/dev/null 2>&1 || pgrep -x b4 >/dev/null 2>&1; then
-        log_ok "Service started"
-        return 0
-    fi
-    log_err "Service crashed immediately after start"
-    service_show_crash_log
-    return 1
+    _old=$(b4_pid) || _old=""
+    rc-service "${B4_SERVICE_NAME}" restart 2>/dev/null || {
+        log_warn "Could not start service"
+        return 1
+    }
+    service_verify_started "$_old"
 }
 
 service_openrc_stop() {
@@ -2764,13 +3034,12 @@ start_service() {
     procd_set_param env PATH="\$PATH"
     procd_set_param respawn \${respawn_threshold:-3600} \${respawn_timeout:-5} \${respawn_retry:-5}
     procd_set_param stdout 0
-    procd_set_param stderr 0
-    procd_set_param pidfile /var/run/b4.pid
+    procd_set_param stderr 1
+    # Must exceed b4's own shutdown budget or procd SIGKILLs it mid-teardown,
+    # leaving its ip rules and routing tables behind. No pidfile param here:
+    # b4 writes and flocks /var/run/b4.pid itself for its single-instance guard.
+    procd_set_param term_timeout 20
     procd_close_instance
-}
-
-stop_service() {
-    return 0
 }
 
 service_triggers() {
@@ -2795,19 +3064,17 @@ service_procd_remove() {
 }
 
 service_procd_start() {
-    if [ -f "${B4_SERVICE_DIR}/${B4_SERVICE_NAME}" ]; then
-        "${B4_SERVICE_DIR}/${B4_SERVICE_NAME}" restart 2>/dev/null || { log_warn "Could not start service"; return 1; }
-        sleep 2
-        if pidof b4 >/dev/null 2>&1 || pgrep -x b4 >/dev/null 2>&1; then
-            log_ok "Service started"
-            return 0
-        fi
-        log_err "Service crashed immediately after start"
-        service_show_crash_log
+    _init="${B4_SERVICE_DIR}/${B4_SERVICE_NAME}"
+    if [ ! -f "$_init" ]; then
+        log_warn "Could not start service"
         return 1
     fi
-    log_warn "Could not start service"
-    return 1
+    _old=$(b4_pid) || _old=""
+    "$_init" restart 2>/dev/null || {
+        log_warn "Could not start service"
+        return 1
+    }
+    service_verify_started "$_old"
 }
 
 service_procd_stop() {
@@ -2902,40 +3169,83 @@ kernel_mod_load() {
     done
 }
 
+b4_pidof() {
+    if [ -f "\$PIDFILE" ]; then
+        _p=\$(cat "\$PIDFILE" 2>/dev/null)
+        if [ -n "\$_p" ] && kill -0 "\$_p" 2>/dev/null; then
+            echo "\$_p"
+            return 0
+        fi
+    fi
+    if command -v pidof >/dev/null 2>&1; then
+        _p=\$(pidof ${BINARY_NAME} 2>/dev/null | tr ' ' '\n' | head -1)
+        [ -n "\$_p" ] && echo "\$_p" && return 0
+    fi
+    if command -v pgrep >/dev/null 2>&1; then
+        _p=\$(pgrep -x ${BINARY_NAME} 2>/dev/null | head -1)
+        [ -n "\$_p" ] && echo "\$_p" && return 0
+    fi
+    return 1
+}
+
+b4_running() {
+    b4_pidof >/dev/null 2>&1
+}
+
 start() {
     echo "Starting b4..."
-    [ -f "\$PIDFILE" ] && kill -0 \$(cat "\$PIDFILE") 2>/dev/null && echo "Already running" && return 1
+    if b4_running; then
+        echo "Already running (PID: \$(b4_pidof))"
+        return 1
+    fi
     kernel_mod_load
+    _started=""
     if which nohup >/dev/null 2>&1; then
         nohup \$PROG --config \$CONFIG >/dev/null 2>&1 &
+        _started=\$!
     elif which setsid >/dev/null 2>&1; then
         setsid \$PROG --config \$CONFIG >/dev/null 2>&1 &
+        _started=\$!
     else
         (\$PROG --config \$CONFIG >/dev/null 2>&1 &)
     fi
-    echo \$! >"\$PIDFILE"
-    sleep 1
-    if kill -0 \$(cat "\$PIDFILE") 2>/dev/null; then
-        echo "b4 started (PID: \$(cat \$PIDFILE))"
+    [ -n "\$_started" ] && echo "\$_started" >"\$PIDFILE"
+    sleep 2
+    if b4_running; then
+        echo "b4 started (PID: \$(b4_pidof))"
     else
         echo "b4 failed to start, check /var/log/b4/errors.log"
-        rm -f "\$PIDFILE"
         return 1
     fi
 }
 
 stop() {
     echo "Stopping b4..."
-    [ -f "\$PIDFILE" ] && kill \$(cat "\$PIDFILE") 2>/dev/null
-    rm -f "\$PIDFILE"
+    _p=\$(b4_pidof) || { echo "b4 is not running"; return 0; }
+    kill "\$_p" 2>/dev/null
+    _i=0
+    while [ "\$_i" -lt 20 ]; do
+        sleep 1
+        b4_running || { echo "b4 stopped"; return 0; }
+        _i=\$((_i + 1))
+    done
+    _p=\$(b4_pidof) || { echo "b4 stopped"; return 0; }
+    echo "b4 (PID: \$_p) did not exit, sending SIGKILL"
+    kill -9 "\$_p" 2>/dev/null
+    sleep 1
+    if b4_running; then
+        echo "b4 is still running"
+        return 1
+    fi
     echo "b4 stopped"
 }
 
 case "\$1" in
     start)   start ;;
     stop)    stop ;;
-    restart) stop; sleep 1; start ;;
-    *)       echo "Usage: \$0 {start|stop|restart}"; exit 1 ;;
+    restart) stop && start ;;
+    status)  if b4_running; then echo "b4 is running (PID: \$(b4_pidof))"; else echo "b4 is not running"; exit 3; fi ;;
+    *)       echo "Usage: \$0 {start|stop|restart|status}"; exit 1 ;;
 esac
 EOF
 
@@ -2965,19 +3275,17 @@ service_sysv_remove() {
 }
 
 service_sysv_start() {
-    if [ -f "${B4_SERVICE_DIR}/${B4_SERVICE_NAME}" ]; then
-        "${B4_SERVICE_DIR}/${B4_SERVICE_NAME}" start 2>/dev/null || { log_warn "Could not start service"; return 1; }
-        sleep 2
-        if pidof b4 >/dev/null 2>&1 || pgrep -x b4 >/dev/null 2>&1; then
-            log_ok "Service started"
-            return 0
-        fi
-        log_err "Service crashed immediately after start"
-        service_show_crash_log
+    _init="${B4_SERVICE_DIR}/${B4_SERVICE_NAME}"
+    if [ ! -f "$_init" ]; then
+        log_warn "Could not start service"
         return 1
     fi
-    log_warn "Could not start service"
-    return 1
+    _old=$(b4_pid) || _old=""
+    "$_init" restart 2>/dev/null || {
+        log_warn "Could not start service"
+        return 1
+    }
+    service_verify_started "$_old"
 }
 
 service_sysv_stop() {
@@ -3011,6 +3319,7 @@ action_install() {
         [ -n "$_user_data_dir" ] && B4_DATA_DIR="$_user_data_dir"
         [ -n "$_user_data_dir" ] && B4_CONFIG_FILE="${_user_data_dir}/b4.json"
         B4_ARCH="${force_arch:-$(detect_architecture)}"
+        require_supported_arch "$B4_ARCH"
         detect_pkg_manager
         for f in $REGISTERED_FEATURES; do
             fdefault=$(feature_dispatch "$f" default_enabled)
@@ -3029,6 +3338,7 @@ action_install() {
         esac
 
         [ -n "$force_arch" ] && B4_ARCH="$force_arch"
+        require_supported_arch "$B4_ARCH"
 
         wizard_select_features
     fi
@@ -3088,7 +3398,15 @@ action_install() {
         exit 1
     fi
 
-    stop_b4
+    B4_WAS_RUNNING=0
+    is_b4_running && B4_WAS_RUNNING=1
+    if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
+        service_call stop 2>/dev/null || true
+    fi
+    stop_b4 || {
+        log_err "b4 is still running; refusing to replace the binary underneath it"
+        exit 1
+    }
 
     rm -f /var/log/b4.log /opt/var/log/b4.log /tmp/log/b4.log 2>/dev/null || true
 
@@ -3104,11 +3422,21 @@ action_install() {
         exit 1
     }
 
-    mv "${BINARY_NAME}" "${B4_BIN_DIR}/" 2>/dev/null || cp "${BINARY_NAME}" "${B4_BIN_DIR}/" || {
+    _newbin="${B4_BIN_DIR}/${BINARY_NAME}.new.$$"
+    rm -f "$_newbin" 2>/dev/null || true
+    _swap_failed=0
+    if mv "${BINARY_NAME}" "$_newbin" 2>/dev/null || cp "${BINARY_NAME}" "$_newbin"; then
+        chmod +x "$_newbin"
+        mv -f "$_newbin" "${B4_BIN_DIR}/${BINARY_NAME}" || _swap_failed=1
+    else
+        _swap_failed=1
+    fi
+    if [ "$_swap_failed" -eq 1 ]; then
+        rm -f "$_newbin" 2>/dev/null || true
         log_err "Failed to install binary to ${B4_BIN_DIR}"
         restore_binary "${B4_BIN_DIR}/${BINARY_NAME}" "$backup_bin" && log_warn "Rolled back to the previous version"
         exit 1
-    }
+    fi
     chmod +x "${B4_BIN_DIR}/${BINARY_NAME}"
 
     _ver_exit=0
@@ -3118,7 +3446,7 @@ action_install() {
         installed_ver=$("${B4_BIN_DIR}/${BINARY_NAME}" --version 2>&1 | head -1)
         log_ok "Binary installed: ${installed_ver}"
         rm -f "$backup_bin" 2>/dev/null || true
-    elif [ "$_ver_exit" -gt 128 ] && echo "$B4_ARCH" | grep -q "^mips" && ! echo "$B4_ARCH" | grep -q "softfloat"; then
+    elif [ "$_ver_exit" -gt 128 ] && arch_is_supported "${B4_ARCH}_softfloat"; then
         _sf_arch="${B4_ARCH}_softfloat"
         log_warn "Binary crashed (exit code $_ver_exit) — likely hardfloat/softfloat mismatch"
         log_info "Retrying with ${_sf_arch}..."
@@ -3164,7 +3492,7 @@ action_install() {
     fi
 
     log_info "Setting up service..."
-    service_call install
+    service_call install || log_warn "Service setup failed — b4 will not start automatically"
 
     if [ -n "$ENABLED_FEATURES" ]; then
         features_run
@@ -3196,11 +3524,15 @@ _install_summary() {
     log_info "To see all options: ${B4_BIN_DIR}/${BINARY_NAME} --help"
     echo ""
 
-    if [ "$QUIET_MODE" -eq 0 ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
-        if is_b4_running; then
+    if [ "$B4_SERVICE_TYPE" != "none" ]; then
+        if [ "$QUIET_MODE" -eq 1 ]; then
+            service_call start || log_warn "Could not start the b4 service"
+        elif is_b4_running; then
             if confirm "B4 is already running. Restart now?"; then
-                service_call stop || true
-                sleep 1
+                service_call start || true
+            fi
+        elif [ "${B4_WAS_RUNNING:-0}" -eq 1 ]; then
+            if confirm "B4 was running before the update. Start it again?"; then
                 service_call start || true
             fi
         else
@@ -3241,16 +3573,23 @@ action_remove() {
 
     log_header "Removing B4"
 
-    if [ -z "$B4_PLATFORM" ]; then
-        platform_auto_detect || true
-        if [ -n "$B4_PLATFORM" ]; then
-            platform_call info
-        fi
+    platform_auto_detect || true
+    if [ -n "$B4_PLATFORM" ]; then
+        platform_call info
     fi
 
     _remove_find_config
 
-    stop_b4
+    if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
+        service_call stop 2>/dev/null || true
+    fi
+    _b4_stopped=1
+    stop_b4 || _b4_stopped=0
+    if [ "$_b4_stopped" -eq 0 ]; then
+        log_err "b4 is still running and could not be stopped"
+        log_info "Stop it by hand and re-run, or its firewall rules will be left behind."
+        exit 1
+    fi
 
     if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
         log_info "Removing service..."
@@ -3270,17 +3609,39 @@ action_remove() {
 
     features_remove
 
-    for dir in /usr/local/bin /usr/bin /usr/sbin /opt/bin /opt/sbin /tmp/b4; do
+    _removed_any=0
+    for dir in "$B4_BIN_DIR" /usr/local/bin /usr/bin /usr/sbin /opt/bin /opt/sbin /jffs/b4 /ssd/b4 /tmp/b4; do
+        [ -z "$dir" ] && continue
         if [ -f "${dir}/${BINARY_NAME}" ]; then
             rm -f "${dir}/${BINARY_NAME}"
             rm -f "${dir}/${BINARY_NAME}".backup.* 2>/dev/null || true
+            rm -f "${dir}/${BINARY_NAME}".new.* 2>/dev/null || true
             log_info "Removed binary from: ${dir}"
+            _removed_any=1
         fi
     done
+    if [ "$_removed_any" -eq 0 ]; then
+        _stray=$(command -v "$BINARY_NAME" 2>/dev/null || true)
+        if [ -n "$_stray" ]; then
+            log_warn "A b4 binary is still on PATH at ${_stray} — remove it by hand"
+        fi
+    fi
 
     _remove_config_dirs
 
-    rm -f /var/run/b4.pid 2>/dev/null || true
+    if command_exists nft; then
+        for _t in b4_mangle b4_nat b4_route b4_dnsnat; do
+            nft delete table inet "$_t" 2>/dev/null || true
+        done
+    fi
+    if command_exists ip; then
+        if ip rule show 2>/dev/null | grep -q "fwmark"; then
+            log_warn "Policy routing rules with an fwmark are still present"
+            log_info "b4's own are gone once it shut down cleanly; review with: ip rule show"
+        fi
+    fi
+
+    rm -f /var/run/b4.pid /run/b4.pid /opt/var/run/b4.pid /tmp/b4.pid 2>/dev/null || true
     rm -f /var/log/b4.log /opt/var/log/b4.log /tmp/log/b4.log 2>/dev/null || true
     rm -rf /var/log/b4 2>/dev/null || true
 
@@ -3350,6 +3711,34 @@ installed_service_type() {
     fi
 }
 
+_recover_service_paths() {
+    _rsp_svc="$1"
+    [ -f "$_rsp_svc" ] || return 1
+
+    _rsp_cfg=$(sed -n 's/^CONFIG="\([^"]*\)".*/\1/p' "$_rsp_svc" 2>/dev/null | head -1)
+    [ -z "$_rsp_cfg" ] && _rsp_cfg=$(sed -n 's/^ARGS="--config=\([^"]*\)".*/\1/p' "$_rsp_svc" 2>/dev/null | head -1)
+    [ -z "$_rsp_cfg" ] && _rsp_cfg=$(sed -n 's/.*--config[ =]"\([^"]*\)".*/\1/p' "$_rsp_svc" 2>/dev/null | head -1)
+    [ -z "$_rsp_cfg" ] && _rsp_cfg=$(sed -n 's/.*--config[ =]\([^" ]*\).*/\1/p' "$_rsp_svc" 2>/dev/null | head -1)
+
+    _rsp_prog=$(sed -n 's/^PROG="\([^"]*\)".*/\1/p' "$_rsp_svc" 2>/dev/null | head -1)
+    [ -z "$_rsp_prog" ] && _rsp_prog=$(sed -n 's/^ExecStart=\([^ ]*\).*/\1/p' "$_rsp_svc" 2>/dev/null | head -1)
+
+    case "$_rsp_prog" in
+    /*) B4_BIN_DIR=$(dirname "$_rsp_prog") ;;
+    esac
+
+    case "$_rsp_cfg" in
+    /*)
+        if [ "$_rsp_cfg" != "$B4_CONFIG_FILE" ]; then
+            log_info "Keeping the config path the installed service uses: ${_rsp_cfg}"
+            B4_CONFIG_FILE="$_rsp_cfg"
+        fi
+        return 0
+        ;;
+    esac
+    return 1
+}
+
 refresh_legacy_service_script() {
     [ -z "$B4_SERVICE_DIR" ] && return 0
     [ -z "$B4_SERVICE_NAME" ] && return 0
@@ -3368,10 +3757,10 @@ refresh_legacy_service_script() {
     log_warn "Init script logs b4 output to a legacy file that is never rotated"
     log_info "Refreshing ${_svc_type} service script: ${_svc}"
 
-    if service_dispatch "$_svc_type" install >/dev/null 2>&1; then
+    if _recover_service_paths "$_svc" && service_dispatch "$_svc_type" install >/dev/null 2>&1; then
         log_ok "Service script refreshed"
     else
-        log_warn "Could not regenerate the service script, patching the redirect in place"
+        log_warn "Could not regenerate the service script safely, patching the redirect in place"
         for _legacy in $LEGACY_SERVICE_LOGS; do
             _esc=$(echo "$_legacy" | sed 's#\.#\\.#g')
             sed -i "s#>${_esc} 2>&1#>/dev/null 2>\&1#g" "$_svc" 2>/dev/null || true
@@ -3397,11 +3786,9 @@ action_update() {
 
     log_header "Updating B4"
 
-    if [ -z "$B4_PLATFORM" ]; then
-        platform_auto_detect || true
-        if [ -n "$B4_PLATFORM" ]; then
-            platform_call info
-        fi
+    platform_auto_detect || true
+    if [ -n "$B4_PLATFORM" ]; then
+        platform_call info
     fi
 
     existing_bin=""
@@ -3444,6 +3831,7 @@ action_update() {
     else
         B4_ARCH=$(detect_architecture)
     fi
+    require_supported_arch "$B4_ARCH"
 
     if [ -n "$B4_LOCAL_ARCHIVE" ]; then
         if [ -n "$target_ver" ]; then
@@ -3562,10 +3950,12 @@ action_update() {
 
     if is_b4_running; then
         log_info "Process still running after service stop — forcing stop"
-        stop_b4
-    fi
-    if is_b4_running; then
-        log_warn "Could not stop the running b4 process; replacing binary anyway"
+        stop_b4 || {
+            log_err "Could not stop the running b4 process"
+            log_info "Replacing the binary underneath a live b4 risks a half-written"
+            log_info "file being exec'd by a respawn. Stop it by hand and re-run."
+            exit 1
+        }
     fi
 
     ts=$(date '+%Y%m%d_%H%M%S')
@@ -3608,23 +3998,13 @@ action_update() {
     if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
         log_info "Restarting service (${B4_SERVICE_TYPE})..."
         service_call start 2>/dev/null || true
-        _wait=0
-        while [ "$_wait" -lt 10 ]; do
-            is_b4_running && break
-            sleep 1
-            _wait=$((_wait + 1))
-        done
     fi
 
     if is_b4_running; then
         log_ok "b4 is running"
-    elif [ "$B4_SERVICE_TYPE" = "systemd" ] || [ "$B4_SERVICE_TYPE" = "procd" ]; then
+    elif [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
         log_err "b4 did not come back up under ${B4_SERVICE_TYPE}"
-        log_info "Not starting it by hand: ${B4_SERVICE_TYPE} keeps its own restart schedule, and a second"
-        log_info "b4 outside the service manager would lose the single-instance lock race with it"
-        if [ "$B4_SERVICE_TYPE" = "systemd" ]; then
-            log_info "  check: journalctl -u ${B4_SERVICE_NAME:-b4} --no-pager -n 20"
-        fi
+        service_show_crash_log
     elif [ -n "$saved_cmdline" ]; then
         log_info "Service manager did not restart b4, relaunching directly"
         if relaunch_b4 "$saved_cmdline"; then
@@ -4139,12 +4519,23 @@ main() {
         v* | V*)
             VERSION="$arg"
             ;;
+        -*)
+            printf 'ERROR: unknown option: %s\n' "$arg" >&2
+            printf 'Options take the form --name=value (not --name value).\n' >&2
+            printf 'Run with --help for the full list.\n' >&2
+            exit 1
+            ;;
         *) ;;
         esac
     done
 
-    if [ "$QUIET_MODE" -ne 1 ] 2>/dev/null && [ ! -t 0 ] && [ -e /dev/tty ]; then
-        exec </dev/tty
+    if [ "$QUIET_MODE" -ne 1 ] 2>/dev/null && [ ! -t 0 ]; then
+        if (exec </dev/tty) 2>/dev/null; then
+            exec </dev/tty
+        else
+            QUIET_MODE=1
+            log_warn "No terminal available — continuing non-interactively with defaults"
+        fi
     fi
 
     case "$ACTION" in

@@ -6,19 +6,30 @@ action_remove() {
 
     log_header "Removing B4"
 
-    # Detect platform if not set
-    if [ -z "$B4_PLATFORM" ]; then
-        platform_auto_detect || true
-        if [ -n "$B4_PLATFORM" ]; then
-            platform_call info
-        fi
+    # Must run even when --platform= presets B4_PLATFORM: platform_<id>_info is
+    # what sets B4_SERVICE_TYPE/DIR/NAME, and without it service_call remove is
+    # skipped and the boot symlink is left dangling.
+    platform_auto_detect || true
+    if [ -n "$B4_PLATFORM" ]; then
+        platform_call info
     fi
 
     # Find config file — check all known locations
     _remove_find_config
 
-    # Stop running process
-    stop_b4
+    # Stop running process. Deleting the binary and init script out from under a
+    # live b4 would leave it running with its nft tables and ip rules installed
+    # and nothing left on disk to stop it.
+    if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
+        service_call stop 2>/dev/null || true
+    fi
+    _b4_stopped=1
+    stop_b4 || _b4_stopped=0
+    if [ "$_b4_stopped" -eq 0 ]; then
+        log_err "b4 is still running and could not be stopped"
+        log_info "Stop it by hand and re-run, or its firewall rules will be left behind."
+        exit 1
+    fi
 
     # Remove service
     if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
@@ -42,19 +53,44 @@ action_remove() {
     features_remove
 
     # Remove binary from known locations
-    for dir in /usr/local/bin /usr/bin /usr/sbin /opt/bin /opt/sbin /tmp/b4; do
+    _removed_any=0
+    for dir in "$B4_BIN_DIR" /usr/local/bin /usr/bin /usr/sbin /opt/bin /opt/sbin /jffs/b4 /ssd/b4 /tmp/b4; do
+        [ -z "$dir" ] && continue
         if [ -f "${dir}/${BINARY_NAME}" ]; then
             rm -f "${dir}/${BINARY_NAME}"
             rm -f "${dir}/${BINARY_NAME}".backup.* 2>/dev/null || true
+            rm -f "${dir}/${BINARY_NAME}".new.* 2>/dev/null || true
             log_info "Removed binary from: ${dir}"
+            _removed_any=1
         fi
     done
+    if [ "$_removed_any" -eq 0 ]; then
+        _stray=$(command -v "$BINARY_NAME" 2>/dev/null || true)
+        if [ -n "$_stray" ]; then
+            log_warn "A b4 binary is still on PATH at ${_stray} — remove it by hand"
+        fi
+    fi
 
     # Ask about config directories
     _remove_config_dirs
 
+    # Best-effort netfilter cleanup. b4 tears its own rules down on a clean
+    # shutdown, but an instance that had to be SIGKILLed leaves them installed —
+    # and past this point there is no b4 left on disk to do it.
+    if command_exists nft; then
+        for _t in b4_mangle b4_nat b4_route b4_dnsnat; do
+            nft delete table inet "$_t" 2>/dev/null || true
+        done
+    fi
+    if command_exists ip; then
+        if ip rule show 2>/dev/null | grep -q "fwmark"; then
+            log_warn "Policy routing rules with an fwmark are still present"
+            log_info "b4's own are gone once it shut down cleanly; review with: ip rule show"
+        fi
+    fi
+
     # Cleanup
-    rm -f /var/run/b4.pid 2>/dev/null || true
+    rm -f /var/run/b4.pid /run/b4.pid /opt/var/run/b4.pid /tmp/b4.pid 2>/dev/null || true
     rm -f /var/log/b4.log /opt/var/log/b4.log /tmp/log/b4.log 2>/dev/null || true
     rm -rf /var/log/b4 2>/dev/null || true
 

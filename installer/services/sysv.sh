@@ -22,40 +22,83 @@ kernel_mod_load() {
     done
 }
 
+b4_pidof() {
+    if [ -f "\$PIDFILE" ]; then
+        _p=\$(cat "\$PIDFILE" 2>/dev/null)
+        if [ -n "\$_p" ] && kill -0 "\$_p" 2>/dev/null; then
+            echo "\$_p"
+            return 0
+        fi
+    fi
+    if command -v pidof >/dev/null 2>&1; then
+        _p=\$(pidof ${BINARY_NAME} 2>/dev/null | tr ' ' '\n' | head -1)
+        [ -n "\$_p" ] && echo "\$_p" && return 0
+    fi
+    if command -v pgrep >/dev/null 2>&1; then
+        _p=\$(pgrep -x ${BINARY_NAME} 2>/dev/null | head -1)
+        [ -n "\$_p" ] && echo "\$_p" && return 0
+    fi
+    return 1
+}
+
+b4_running() {
+    b4_pidof >/dev/null 2>&1
+}
+
 start() {
     echo "Starting b4..."
-    [ -f "\$PIDFILE" ] && kill -0 \$(cat "\$PIDFILE") 2>/dev/null && echo "Already running" && return 1
+    if b4_running; then
+        echo "Already running (PID: \$(b4_pidof))"
+        return 1
+    fi
     kernel_mod_load
+    _started=""
     if which nohup >/dev/null 2>&1; then
         nohup \$PROG --config \$CONFIG >/dev/null 2>&1 &
+        _started=\$!
     elif which setsid >/dev/null 2>&1; then
         setsid \$PROG --config \$CONFIG >/dev/null 2>&1 &
+        _started=\$!
     else
         (\$PROG --config \$CONFIG >/dev/null 2>&1 &)
     fi
-    echo \$! >"\$PIDFILE"
-    sleep 1
-    if kill -0 \$(cat "\$PIDFILE") 2>/dev/null; then
-        echo "b4 started (PID: \$(cat \$PIDFILE))"
+    [ -n "\$_started" ] && echo "\$_started" >"\$PIDFILE"
+    sleep 2
+    if b4_running; then
+        echo "b4 started (PID: \$(b4_pidof))"
     else
         echo "b4 failed to start, check /var/log/b4/errors.log"
-        rm -f "\$PIDFILE"
         return 1
     fi
 }
 
 stop() {
     echo "Stopping b4..."
-    [ -f "\$PIDFILE" ] && kill \$(cat "\$PIDFILE") 2>/dev/null
-    rm -f "\$PIDFILE"
+    _p=\$(b4_pidof) || { echo "b4 is not running"; return 0; }
+    kill "\$_p" 2>/dev/null
+    _i=0
+    while [ "\$_i" -lt 20 ]; do
+        sleep 1
+        b4_running || { echo "b4 stopped"; return 0; }
+        _i=\$((_i + 1))
+    done
+    _p=\$(b4_pidof) || { echo "b4 stopped"; return 0; }
+    echo "b4 (PID: \$_p) did not exit, sending SIGKILL"
+    kill -9 "\$_p" 2>/dev/null
+    sleep 1
+    if b4_running; then
+        echo "b4 is still running"
+        return 1
+    fi
     echo "b4 stopped"
 }
 
 case "\$1" in
     start)   start ;;
     stop)    stop ;;
-    restart) stop; sleep 1; start ;;
-    *)       echo "Usage: \$0 {start|stop|restart}"; exit 1 ;;
+    restart) stop && start ;;
+    status)  if b4_running; then echo "b4 is running (PID: \$(b4_pidof))"; else echo "b4 is not running"; exit 3; fi ;;
+    *)       echo "Usage: \$0 {start|stop|restart|status}"; exit 1 ;;
 esac
 EOF
 
@@ -85,19 +128,17 @@ service_sysv_remove() {
 }
 
 service_sysv_start() {
-    if [ -f "${B4_SERVICE_DIR}/${B4_SERVICE_NAME}" ]; then
-        "${B4_SERVICE_DIR}/${B4_SERVICE_NAME}" start 2>/dev/null || { log_warn "Could not start service"; return 1; }
-        sleep 2
-        if pidof b4 >/dev/null 2>&1 || pgrep -x b4 >/dev/null 2>&1; then
-            log_ok "Service started"
-            return 0
-        fi
-        log_err "Service crashed immediately after start"
-        service_show_crash_log
+    _init="${B4_SERVICE_DIR}/${B4_SERVICE_NAME}"
+    if [ ! -f "$_init" ]; then
+        log_warn "Could not start service"
         return 1
     fi
-    log_warn "Could not start service"
-    return 1
+    _old=$(b4_pid) || _old=""
+    "$_init" restart 2>/dev/null || {
+        log_warn "Could not start service"
+        return 1
+    }
+    service_verify_started "$_old"
 }
 
 service_sysv_stop() {

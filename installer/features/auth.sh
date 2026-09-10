@@ -62,17 +62,19 @@ feature_auth_run() {
 
     if [ ! -f "$B4_CONFIG_FILE" ]; then
         ensure_dir "$(dirname "$B4_CONFIG_FILE")" "Config directory" || return 1
-        jq -n \
+        (umask 077 && jq -n \
             --arg user "$_auth_user" \
             --arg pass "$_auth_pass" \
             '{ system: { web_server: { username: $user, password: $pass } } }' \
-            >"$B4_CONFIG_FILE"
+            >"$B4_CONFIG_FILE")
+        config_secure_perms
     else
         tmp="${B4_CONFIG_FILE}.tmp"
-        if jq --arg user "$_auth_user" --arg pass "$_auth_pass" \
+        if (umask 077 && jq --arg user "$_auth_user" --arg pass "$_auth_pass" \
             '.system.web_server.username = $user | .system.web_server.password = $pass' \
-            "$B4_CONFIG_FILE" >"$tmp" 2>/dev/null; then
+            "$B4_CONFIG_FILE" >"$tmp" 2>/dev/null); then
             mv "$tmp" "$B4_CONFIG_FILE"
+            config_secure_perms
         else
             rm -f "$tmp"
             log_warn "Failed to update config"

@@ -45,6 +45,12 @@ main() {
         v* | V*)
             VERSION="$arg"
             ;;
+        -*)
+            printf 'ERROR: unknown option: %s\n' "$arg" >&2
+            printf 'Options take the form --name=value (not --name value).\n' >&2
+            printf 'Run with --help for the full list.\n' >&2
+            exit 1
+            ;;
         *) ;;
         esac
     done
@@ -52,8 +58,17 @@ main() {
     # Redirect stdin from tty for piped installs (curl | sh).
     # Skip in quiet mode — no interactive input needed, and /dev/tty
     # may not be available (e.g. web UI update running without a terminal).
-    if [ "$QUIET_MODE" -ne 1 ] 2>/dev/null && [ ! -t 0 ] && [ -e /dev/tty ]; then
-        exec </dev/tty
+    # `[ -e /dev/tty ]` only stats the node — it exists even with no controlling
+    # terminal, where open() then fails with ENXIO. A failed redirection on the
+    # special builtin `exec` kills a non-interactive shell outright, so probe by
+    # actually opening it in a subshell first.
+    if [ "$QUIET_MODE" -ne 1 ] 2>/dev/null && [ ! -t 0 ]; then
+        if (exec </dev/tty) 2>/dev/null; then
+            exec </dev/tty
+        else
+            QUIET_MODE=1
+            log_warn "No terminal available — continuing non-interactively with defaults"
+        fi
     fi
 
     # Dispatch

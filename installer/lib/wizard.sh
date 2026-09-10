@@ -139,13 +139,22 @@ wizard_manual_configure() {
 
     # 4. Service type
     echo ""
-    echo "  Service types: systemd, openrc, procd, sysv, entware, none"
-    read_input "Service type [${B4_SERVICE_TYPE}]: " "$B4_SERVICE_TYPE"
-    B4_SERVICE_TYPE="$_INPUT"
+    echo "  Service types:${REGISTERED_SERVICES}"
+    while true; do
+        read_input "Service type [${B4_SERVICE_TYPE}]: " "$B4_SERVICE_TYPE"
+        _svc_ok=0
+        for _svc in $REGISTERED_SERVICES; do
+            [ "$_svc" = "$_INPUT" ] && _svc_ok=1
+        done
+        if [ "$_svc_ok" -eq 1 ]; then
+            B4_SERVICE_TYPE="$_INPUT"
+            break
+        fi
+        log_warn "Unknown service type '${_INPUT}'. Available:${REGISTERED_SERVICES}"
+    done
 
     # 5. Architecture
     auto_arch=$(detect_architecture)
-    B4_SUPPORTED_ARCHS="amd64 arm64 armv7 armv6 armv5 386 mips mipsle mips_softfloat mipsle_softfloat mips64 mips64le loong64 ppc64 ppc64le riscv64 s390x"
 
     # Find the index of the detected architecture for default
     _arch_default=1

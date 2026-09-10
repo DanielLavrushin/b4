@@ -18,6 +18,38 @@ installed_service_type() {
     fi
 }
 
+# Recover the paths the installed init script actually uses. During an update
+# B4_CONFIG_FILE comes only from platform defaults, so regenerating a script
+# blind can repoint b4 at a config that does not exist — it then starts on
+# built-in defaults and the user's ruleset and web credentials are gone.
+_recover_service_paths() {
+    _rsp_svc="$1"
+    [ -f "$_rsp_svc" ] || return 1
+
+    _rsp_cfg=$(sed -n 's/^CONFIG="\([^"]*\)".*/\1/p' "$_rsp_svc" 2>/dev/null | head -1)
+    [ -z "$_rsp_cfg" ] && _rsp_cfg=$(sed -n 's/^ARGS="--config=\([^"]*\)".*/\1/p' "$_rsp_svc" 2>/dev/null | head -1)
+    [ -z "$_rsp_cfg" ] && _rsp_cfg=$(sed -n 's/.*--config[ =]"\([^"]*\)".*/\1/p' "$_rsp_svc" 2>/dev/null | head -1)
+    [ -z "$_rsp_cfg" ] && _rsp_cfg=$(sed -n 's/.*--config[ =]\([^" ]*\).*/\1/p' "$_rsp_svc" 2>/dev/null | head -1)
+
+    _rsp_prog=$(sed -n 's/^PROG="\([^"]*\)".*/\1/p' "$_rsp_svc" 2>/dev/null | head -1)
+    [ -z "$_rsp_prog" ] && _rsp_prog=$(sed -n 's/^ExecStart=\([^ ]*\).*/\1/p' "$_rsp_svc" 2>/dev/null | head -1)
+
+    case "$_rsp_prog" in
+    /*) B4_BIN_DIR=$(dirname "$_rsp_prog") ;;
+    esac
+
+    case "$_rsp_cfg" in
+    /*)
+        if [ "$_rsp_cfg" != "$B4_CONFIG_FILE" ]; then
+            log_info "Keeping the config path the installed service uses: ${_rsp_cfg}"
+            B4_CONFIG_FILE="$_rsp_cfg"
+        fi
+        return 0
+        ;;
+    esac
+    return 1
+}
+
 refresh_legacy_service_script() {
     [ -z "$B4_SERVICE_DIR" ] && return 0
     [ -z "$B4_SERVICE_NAME" ] && return 0
@@ -36,10 +68,10 @@ refresh_legacy_service_script() {
     log_warn "Init script logs b4 output to a legacy file that is never rotated"
     log_info "Refreshing ${_svc_type} service script: ${_svc}"
 
-    if service_dispatch "$_svc_type" install >/dev/null 2>&1; then
+    if _recover_service_paths "$_svc" && service_dispatch "$_svc_type" install >/dev/null 2>&1; then
         log_ok "Service script refreshed"
     else
-        log_warn "Could not regenerate the service script, patching the redirect in place"
+        log_warn "Could not regenerate the service script safely, patching the redirect in place"
         for _legacy in $LEGACY_SERVICE_LOGS; do
             _esc=$(echo "$_legacy" | sed 's#\.#\\.#g')
             sed -i "s#>${_esc} 2>&1#>/dev/null 2>\&1#g" "$_svc" 2>/dev/null || true
@@ -65,12 +97,13 @@ action_update() {
 
     log_header "Updating B4"
 
-    # Detect platform
-    if [ -z "$B4_PLATFORM" ]; then
-        platform_auto_detect || true
-        if [ -n "$B4_PLATFORM" ]; then
-            platform_call info
-        fi
+    # platform_<id>_info is the only setter of B4_SERVICE_TYPE/DIR/NAME/CONFIG_FILE,
+    # so it must run even when --platform= / B4_PLATFORM preset the platform —
+    # otherwise the whole service layer stays unconfigured. platform_auto_detect
+    # already honours a preset B4_PLATFORM.
+    platform_auto_detect || true
+    if [ -n "$B4_PLATFORM" ]; then
+        platform_call info
     fi
 
     # Find existing binary
@@ -116,6 +149,7 @@ action_update() {
     else
         B4_ARCH=$(detect_architecture)
     fi
+    require_supported_arch "$B4_ARCH"
 
     if [ -n "$B4_LOCAL_ARCHIVE" ]; then
         if [ -n "$target_ver" ]; then
@@ -239,10 +273,12 @@ action_update() {
 
     if is_b4_running; then
         log_info "Process still running after service stop — forcing stop"
-        stop_b4
-    fi
-    if is_b4_running; then
-        log_warn "Could not stop the running b4 process; replacing binary anyway"
+        stop_b4 || {
+            log_err "Could not stop the running b4 process"
+            log_info "Replacing the binary underneath a live b4 risks a half-written"
+            log_info "file being exec'd by a respawn. Stop it by hand and re-run."
+            exit 1
+        }
     fi
 
     ts=$(date '+%Y%m%d_%H%M%S')
@@ -287,23 +323,16 @@ action_update() {
     if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
         log_info "Restarting service (${B4_SERVICE_TYPE})..."
         service_call start 2>/dev/null || true
-        _wait=0
-        while [ "$_wait" -lt 10 ]; do
-            is_b4_running && break
-            sleep 1
-            _wait=$((_wait + 1))
-        done
     fi
 
     if is_b4_running; then
         log_ok "b4 is running"
-    elif [ "$B4_SERVICE_TYPE" = "systemd" ] || [ "$B4_SERVICE_TYPE" = "procd" ]; then
+    elif [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
+        # Only relaunch by hand when nothing is supervising b4. Any managed type
+        # keeps its own restart schedule, and a second b4 outside it would lose
+        # the single-instance lock race.
         log_err "b4 did not come back up under ${B4_SERVICE_TYPE}"
-        log_info "Not starting it by hand: ${B4_SERVICE_TYPE} keeps its own restart schedule, and a second"
-        log_info "b4 outside the service manager would lose the single-instance lock race with it"
-        if [ "$B4_SERVICE_TYPE" = "systemd" ]; then
-            log_info "  check: journalctl -u ${B4_SERVICE_NAME:-b4} --no-pager -n 20"
-        fi
+        service_show_crash_log
     elif [ -n "$saved_cmdline" ]; then
         log_info "Service manager did not restart b4, relaunching directly"
         if relaunch_b4 "$saved_cmdline"; then

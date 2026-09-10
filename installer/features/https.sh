@@ -48,17 +48,19 @@ feature_https_run() {
 
     if [ ! -f "$B4_CONFIG_FILE" ]; then
         ensure_dir "$(dirname "$B4_CONFIG_FILE")" "Config directory" || return 1
-        jq -n \
+        (umask 077 && jq -n \
             --arg cert "$cert_path" \
             --arg key "$key_path" \
             '{ system: { web_server: { tls_cert: $cert, tls_key: $key } } }' \
-            >"$B4_CONFIG_FILE"
+            >"$B4_CONFIG_FILE")
+        config_secure_perms
     else
         tmp="${B4_CONFIG_FILE}.tmp"
-        if jq --arg cert "$cert_path" --arg key "$key_path" \
+        if (umask 077 && jq --arg cert "$cert_path" --arg key "$key_path" \
             '.system.web_server.tls_cert = $cert | .system.web_server.tls_key = $key' \
-            "$B4_CONFIG_FILE" >"$tmp" 2>/dev/null; then
+            "$B4_CONFIG_FILE" >"$tmp" 2>/dev/null); then
             mv "$tmp" "$B4_CONFIG_FILE"
+            config_secure_perms
         else
             rm -f "$tmp"
             log_warn "Failed to update config"
@@ -94,9 +96,10 @@ _https_remove_config() {
         tls=$(jq -r '.system.web_server.tls_cert // ""' "$B4_CONFIG_FILE" 2>/dev/null) || true
         if [ -n "$tls" ]; then
             tmp="${B4_CONFIG_FILE}.tmp"
-            if jq 'del(.system.web_server.tls_cert, .system.web_server.tls_key)' \
-                "$B4_CONFIG_FILE" >"$tmp" 2>/dev/null; then
+            if (umask 077 && jq 'del(.system.web_server.tls_cert, .system.web_server.tls_key)' \
+                "$B4_CONFIG_FILE" >"$tmp" 2>/dev/null); then
                 mv "$tmp" "$B4_CONFIG_FILE"
+                config_secure_perms
                 log_info "Removed previous HTTPS configuration"
             else
                 rm -f "$tmp"

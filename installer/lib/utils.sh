@@ -26,6 +26,9 @@ B4_SERVICE_NAME=""
 B4_PKG_MANAGER=""
 B4_PLATFORM=""
 
+# --- Architectures actually published by the release workflow ---
+B4_SUPPORTED_ARCHS="amd64 arm64 armv7 armv6 armv5 386 mips mipsle mips_softfloat mipsle_softfloat mips64 mips64le loong64 ppc64 ppc64le riscv64 s390x"
+
 # --- Command existence check (works on BusyBox/minimal shells) ---
 command_exists() {
     command -v "$1" >/dev/null 2>&1 || which "$1" >/dev/null 2>&1
@@ -163,7 +166,18 @@ cleanup_temp() {
     rm -rf "$TEMP_DIR" 2>/dev/null || true
 }
 
-trap cleanup_temp EXIT INT TERM
+# A bare `trap cleanup_temp INT` would run the handler and then *resume* the
+# script, turning Ctrl-C at a prompt into "accept the default". Signals need
+# their own handler that actually exits.
+_on_interrupt() {
+    cleanup_temp
+    printf "\n" >&2
+    log_err "Aborted"
+    exit 130
+}
+
+trap cleanup_temp EXIT
+trap _on_interrupt INT TERM
 
 # --- Package manager detection ---
 detect_pkg_manager() {
@@ -208,7 +222,56 @@ pkg_install() {
 }
 
 # --- Architecture detection ---
+arch_is_supported() {
+    for _ais in $B4_SUPPORTED_ARCHS; do
+        [ "$_ais" = "$1" ] && return 0
+    done
+    return 1
+}
+
+# Validate a resolved architecture and abort with the published list if it is
+# empty or unknown. detect_architecture runs inside $(...), so its own `exit`
+# only ends that subshell — the caller has to check.
+require_supported_arch() {
+    if [ -z "$1" ]; then
+        log_err "Could not determine this machine's architecture"
+        log_info "Pick one with --arch=<name>. Available: ${B4_SUPPORTED_ARCHS}"
+        exit 1
+    fi
+    if ! arch_is_supported "$1"; then
+        log_err "No published b4 build for architecture '$1'"
+        log_info "Pick one with --arch=<name>. Available: ${B4_SUPPORTED_ARCHS}"
+        exit 1
+    fi
+}
+
+# Nearest published asset for an arch we can detect but do not build.
+_arch_nearest_supported() {
+    case "$1" in
+    mips64_softfloat) echo "mips64" ;;
+    mips64le_softfloat) echo "mips64le" ;;
+    *) echo "" ;;
+    esac
+}
+
 detect_architecture() {
+    _da_arch=$(_detect_architecture_raw) || return 1
+    if arch_is_supported "$_da_arch"; then
+        echo "$_da_arch"
+        return 0
+    fi
+    _da_alt=$(_arch_nearest_supported "$_da_arch")
+    if [ -n "$_da_alt" ]; then
+        log_warn "No '${_da_arch}' build is published; using '${_da_alt}' instead"
+        echo "$_da_alt"
+        return 0
+    fi
+    log_err "Detected architecture '${_da_arch}' has no published build"
+    log_info "Pick one manually with --arch=<name>. Available: ${B4_SUPPORTED_ARCHS}"
+    exit 1
+}
+
+_detect_architecture_raw() {
     arch=$(uname -m)
 
     case "$arch" in
@@ -241,9 +304,9 @@ detect_architecture() {
         fi
         ;;
     mips64*)
+        # No mips64*_softfloat assets are published — the 64-bit builds are hard-float only
         variant="mips64"
         if is_little_endian; then variant="mips64le"; fi
-        if is_softfloat; then variant="${variant}_softfloat"; fi
         echo "$variant"
         ;;
     mips*)
@@ -350,6 +413,8 @@ is_softfloat() {
 }
 
 # --- HTTPS support ---
+# Certificate-verified HTTPS only. Never sets WGET_INSECURE — an attacker who
+# can fail these probes must not be able to talk us into an unverified channel.
 check_https_support() {
     if command_exists curl && curl -sI --max-time 5 "https://github.com" >/dev/null 2>&1; then
         return 0
@@ -357,10 +422,27 @@ check_https_support() {
     if command_exists wget && wget --spider -q --timeout=5 "https://github.com" 2>/dev/null; then
         return 0
     fi
-    # Try with --no-check-certificate
-    if command_exists wget && wget --spider -q --timeout=5 --no-check-certificate "https://github.com" 2>/dev/null; then
-        WGET_INSECURE="--no-check-certificate"
-        log_warn "HTTPS works only with --no-check-certificate (CA certs missing)"
+    return 1
+}
+
+_https_works_unverified() {
+    command_exists wget && wget --spider -q --timeout=5 --no-check-certificate "https://github.com" 2>/dev/null
+}
+
+_install_ca_certificates() {
+    if command_exists opkg; then
+        opkg update >/dev/null 2>&1 || true
+        opkg install ca-certificates >/dev/null 2>&1 || true
+        opkg install ca-bundle >/dev/null 2>&1 || true
+        opkg install wget-ssl >/dev/null 2>&1 || true
+        hash -r 2>/dev/null || true
+        return 0
+    fi
+    if command_exists apk; then
+        apk update >/dev/null 2>&1 || true
+        apk add ca-certificates >/dev/null 2>&1 || true
+        apk add wget-ssl >/dev/null 2>&1 || true
+        hash -r 2>/dev/null || true
         return 0
     fi
     return 1
@@ -370,15 +452,44 @@ ensure_https_support() {
     if check_https_support; then
         return 0
     fi
-    log_warn "HTTPS not available — trying to install SSL support"
-    if command_exists opkg; then
-        opkg update >/dev/null 2>&1 || true
-        opkg install ca-certificates >/dev/null 2>&1 || true
-        opkg install wget-ssl >/dev/null 2>&1 || true
-        hash -r 2>/dev/null || true
-        if check_https_support; then return 0; fi
+
+    log_warn "Verified HTTPS not available — trying to install CA certificates"
+    if _install_ca_certificates && check_https_support; then
+        log_ok "CA certificates installed, verified HTTPS now works"
+        return 0
     fi
-    log_err "HTTPS not available. Cannot download from GitHub."
+
+    if ! _https_works_unverified; then
+        log_err "HTTPS not available. Cannot download from GitHub."
+        log_info "On Entware/OpenWrt: opkg install wget-ssl ca-certificates"
+        return 1
+    fi
+
+    # HTTPS works, but only without certificate verification. That is a
+    # downgrade an on-path attacker can force, and the checksum would travel
+    # the same channel as the binary — so it takes an explicit opt-in.
+    log_warn "HTTPS works only WITHOUT certificate verification (CA certs missing)"
+    log_warn "Downloads could not be authenticated: the archive AND its checksum"
+    log_warn "would both come over a connection nobody can verify."
+
+    if [ "${B4_ALLOW_INSECURE_TLS:-0}" = "1" ]; then
+        log_warn "B4_ALLOW_INSECURE_TLS=1 — continuing over unverified TLS"
+        WGET_INSECURE="--no-check-certificate"
+        return 0
+    fi
+
+    if [ "$QUIET_MODE" -eq 1 ] 2>/dev/null; then
+        log_err "Refusing to download over unverified TLS in quiet mode."
+        log_info "Install CA certificates, or re-run with B4_ALLOW_INSECURE_TLS=1 to accept the risk."
+        return 1
+    fi
+
+    if confirm "Continue over UNVERIFIED TLS anyway?" "n"; then
+        WGET_INSECURE="--no-check-certificate"
+        return 0
+    fi
+
+    log_err "Aborted: no verified HTTPS available."
     log_info "On Entware/OpenWrt: opkg install wget-ssl ca-certificates"
     return 1
 }
@@ -653,7 +764,13 @@ verify_checksum() {
     }
 
     if [ "$expected" = "$actual" ]; then
-        log_ok "SHA256 verified: $actual"
+        if [ -n "$WGET_INSECURE" ]; then
+            # The checksum came over the same unverified channel as the archive,
+            # so a match proves the download was not corrupted — not that it is authentic.
+            log_warn "SHA256 matches ($actual) but was fetched over UNVERIFIED TLS — authenticity not proven"
+        else
+            log_ok "SHA256 verified: $actual"
+        fi
         return 0
     fi
 
@@ -882,44 +999,132 @@ _warn_if_queue_unavailable() {
 }
 
 # --- Process management ---
-is_b4_running() {
-    # Check PID files first (most reliable)
-    for pf in /var/run/b4.pid /opt/var/run/b4.pid; do
-        if [ -f "$pf" ]; then
-            _pid=$(cat "$pf" 2>/dev/null)
-            [ -n "$_pid" ] && kill -0 "$_pid" 2>/dev/null && return 0
+# b4 flocks the first of these it can open (see ensureSingleInstance in main.go).
+# Never delete them here: unlinking the file replaces the inode and silently
+# destroys the lock a live b4 is holding on it.
+B4_PIDFILES="/var/run/b4.pid /run/b4.pid /opt/var/run/b4.pid /tmp/b4.pid"
+
+# True when $1 is a live pid whose executable really is b4. Without this a stale
+# pidfile whose pid has been recycled by an unrelated daemon would make us
+# report "running" — and then send that daemon a SIGTERM.
+_pid_is_b4() {
+    _pib="$1"
+    [ -n "$_pib" ] || return 1
+    case "$_pib" in
+    *[!0-9]*) return 1 ;;
+    esac
+    kill -0 "$_pib" 2>/dev/null || return 1
+    # A zombie still answers kill -0 and still reports comm=b4, so without this
+    # an unreaped child would look alive forever and stop_b4 could never succeed.
+    grep -q '^State:[[:space:]]*Z' "/proc/${_pib}/status" 2>/dev/null && return 1
+    if [ -r "/proc/${_pib}/comm" ]; then
+        [ "$(cat "/proc/${_pib}/comm" 2>/dev/null)" = "$BINARY_NAME" ] && return 0
+        return 1
+    fi
+    if [ -r "/proc/${_pib}/cmdline" ]; then
+        tr '\0' '\n' <"/proc/${_pib}/cmdline" 2>/dev/null | head -1 |
+            grep -q "\(^\|/\)${BINARY_NAME}\$" && return 0
+        return 1
+    fi
+    return 0
+}
+
+# Echo the pid of a running b4, or return non-zero.
+b4_pid() {
+    for _bpf in $B4_PIDFILES; do
+        [ -f "$_bpf" ] || continue
+        _bp=$(tr -d ' \t\r\n' <"$_bpf" 2>/dev/null)
+        if _pid_is_b4 "$_bp"; then
+            echo "$_bp"
+            return 0
         fi
     done
-    # Try pgrep -x (exact process name match — won't match scripts containing "b4")
-    if command_exists pgrep; then
-        pgrep -x "$BINARY_NAME" >/dev/null 2>&1 && return 0
+    if command_exists pidof; then
+        _bp=$(pidof "$BINARY_NAME" 2>/dev/null | tr ' ' '\n' | head -1)
+        if _pid_is_b4 "$_bp"; then
+            echo "$_bp"
+            return 0
+        fi
     fi
-    # Fallback: check ps for the actual b4 binary (not scripts mentioning b4)
-    # Match paths like /usr/bin/b4 or standalone "b4" command, exclude our own PID
-    _mypid=$$
+    if command_exists pgrep; then
+        _bp=$(pgrep -x "$BINARY_NAME" 2>/dev/null | head -1)
+        if _pid_is_b4 "$_bp"; then
+            echo "$_bp"
+            return 0
+        fi
+    fi
     _ps_out=$(ps w 2>/dev/null || ps 2>/dev/null) || true
     if [ -n "$_ps_out" ]; then
-        echo "$_ps_out" | grep -v grep | grep -v "$_mypid" | grep -q "[/ ]${BINARY_NAME}$" && return 0
-        echo "$_ps_out" | grep -v grep | grep -v "$_mypid" | grep -q "[/ ]${BINARY_NAME} " && return 0
+        _bp=$(echo "$_ps_out" | grep -v grep |
+            grep -E "[/ ]${BINARY_NAME}( |\$)" |
+            awk '$1 ~ /^[0-9]+$/ {print $1; exit}')
+        if _pid_is_b4 "$_bp"; then
+            echo "$_bp"
+            return 0
+        fi
     fi
     return 1
 }
 
+is_b4_running() {
+    b4_pid >/dev/null 2>&1
+}
+
+# Stop b4 and confirm it actually died. b4 gives itself up to 15s to tear down
+# (shutdownHardLimit), so wait past that before escalating.
+# Returns non-zero when a b4 process is STILL alive — callers must check.
 stop_b4() {
-    if ! is_b4_running; then return 0; fi
-    log_info "Stopping running b4 process..."
-    # Try PID file first
-    for pf in /var/run/b4.pid /opt/var/run/b4.pid; do
-        if [ -f "$pf" ]; then
-            _pid=$(cat "$pf" 2>/dev/null)
-            [ -n "$_pid" ] && kill "$_pid" 2>/dev/null || true
-        fi
-    done
-    # Then try pkill -x (exact name match)
+    _sb_pid=$(b4_pid) || return 0
+    log_info "Stopping running b4 process (PID: ${_sb_pid})..."
+
+    kill "$_sb_pid" 2>/dev/null || true
     if command_exists pkill; then
         pkill -x "$BINARY_NAME" 2>/dev/null || true
     fi
-    sleep 2
+
+    _sb_i=0
+    while [ "$_sb_i" -lt 18 ]; do
+        sleep 1
+        b4_pid >/dev/null 2>&1 || return 0
+        _sb_i=$((_sb_i + 1))
+    done
+
+    _sb_pid=$(b4_pid) || return 0
+    log_warn "b4 (PID: ${_sb_pid}) ignored SIGTERM after 18s — sending SIGKILL"
+    kill -9 "$_sb_pid" 2>/dev/null || true
+    if command_exists pkill; then
+        pkill -9 -x "$BINARY_NAME" 2>/dev/null || true
+    fi
+
+    _sb_i=0
+    while [ "$_sb_i" -lt 5 ]; do
+        sleep 1
+        b4_pid >/dev/null 2>&1 || return 0
+        _sb_i=$((_sb_i + 1))
+    done
+
+    _sb_pid=$(b4_pid) || return 0
+    log_err "b4 (PID: ${_sb_pid}) is still running after SIGKILL"
+    return 1
+}
+
+# Wait for a b4 whose pid differs from $1 (the pre-restart pid) to appear.
+# Echoes the new pid. Distinguishes a real start from the outgoing instance
+# still being in the process table.
+wait_for_new_b4() {
+    _wfn_old="$1"
+    _wfn_limit="${2:-15}"
+    _wfn_i=0
+    while [ "$_wfn_i" -lt "$_wfn_limit" ]; do
+        _wfn_new=$(b4_pid) || _wfn_new=""
+        if [ -n "$_wfn_new" ] && [ "$_wfn_new" != "$_wfn_old" ]; then
+            echo "$_wfn_new"
+            return 0
+        fi
+        sleep 1
+        _wfn_i=$((_wfn_i + 1))
+    done
+    return 1
 }
 
 b4_running_cmdline() {
@@ -954,6 +1159,16 @@ relaunch_b4() {
     if [ "$_had_noglob" = 0 ]; then set +f; fi
     sleep 2
     is_b4_running
+}
+
+# --- Config file helpers ---
+# b4 keeps its config at 0600 (config.ConfigFileMode) because it can hold the
+# web UI password and upstream proxy credentials. Writing via tmp+mv replaces
+# the inode, so the mode has to be re-applied every time.
+config_secure_perms() {
+    [ -n "$B4_CONFIG_FILE" ] || return 0
+    [ -f "$B4_CONFIG_FILE" ] || return 0
+    chmod 600 "$B4_CONFIG_FILE" 2>/dev/null || true
 }
 
 # --- Directory helpers ---
@@ -1017,7 +1232,11 @@ read_input() {
         return 0
     fi
     printf "${CYAN}%b${NC}" "$prompt" >&2
-    read _INPUT || _INPUT="$default"
+    if ! read _INPUT; then
+        printf "\n" >&2
+        log_err "Aborted (no more input)"
+        exit 130
+    fi
     # Strip carriage returns (some terminals/SSH clients send \r)
     _INPUT=$(printf '%s' "$_INPUT" | tr -d '\r')
     check_exit "$_INPUT"

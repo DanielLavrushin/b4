@@ -101,23 +101,25 @@ _geo_update_config() {
 
     if [ ! -f "$B4_CONFIG_FILE" ]; then
         # Create minimal config with just this geo key
-        jq -n \
+        (umask 077 && jq -n \
             --arg pv "$path_val" \
             --arg uv "$url_val" \
             "{ system: { geo: { ${path_key}: \$pv, ${url_key}: \$uv } } }" \
-            >"$B4_CONFIG_FILE"
+            >"$B4_CONFIG_FILE")
+        config_secure_perms
         log_ok "Created config with ${path_key}"
         return 0
     fi
 
     # Update existing config — merge into system.geo, preserving other keys
     tmp="${B4_CONFIG_FILE}.tmp"
-    if jq \
+    if (umask 077 && jq \
         --arg pv "$path_val" \
         --arg uv "$url_val" \
         ".system.geo = (.system.geo // {}) + { \"${path_key}\": \$pv, \"${url_key}\": \$uv }" \
-        "$B4_CONFIG_FILE" >"$tmp" 2>/dev/null; then
+        "$B4_CONFIG_FILE" >"$tmp" 2>/dev/null); then
         mv "$tmp" "$B4_CONFIG_FILE"
+        config_secure_perms
         log_ok "Config updated: ${path_key}"
     else
         rm -f "$tmp"

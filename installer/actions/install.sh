@@ -26,6 +26,7 @@ action_install() {
         [ -n "$_user_data_dir" ] && B4_DATA_DIR="$_user_data_dir"
         [ -n "$_user_data_dir" ] && B4_CONFIG_FILE="${_user_data_dir}/b4.json"
         B4_ARCH="${force_arch:-$(detect_architecture)}"
+        require_supported_arch "$B4_ARCH"
         detect_pkg_manager
         # Enable all default features in quiet mode
         for f in $REGISTERED_FEATURES; do
@@ -46,6 +47,7 @@ action_install() {
 
         # Override arch if user forced it
         [ -n "$force_arch" ] && B4_ARCH="$force_arch"
+        require_supported_arch "$B4_ARCH"
 
         # Feature selection
         wizard_select_features
@@ -113,8 +115,18 @@ action_install() {
         exit 1
     fi
 
-    # Stop running instance
-    stop_b4
+    # Stop running instance. Go through the service manager first: killing a
+    # supervised process out of band leaves procd/systemd thinking it crashed,
+    # so it respawns straight into the binary swap below.
+    B4_WAS_RUNNING=0
+    is_b4_running && B4_WAS_RUNNING=1
+    if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
+        service_call stop 2>/dev/null || true
+    fi
+    stop_b4 || {
+        log_err "b4 is still running; refusing to replace the binary underneath it"
+        exit 1
+    }
 
     # Remove stale stdout log files from older service scripts
     rm -f /var/log/b4.log /opt/var/log/b4.log /tmp/log/b4.log 2>/dev/null || true
@@ -131,12 +143,23 @@ action_install() {
         exit 1
     }
 
-    # Install
-    mv "${BINARY_NAME}" "${B4_BIN_DIR}/" 2>/dev/null || cp "${BINARY_NAME}" "${B4_BIN_DIR}/" || {
+    # Install. Stage next to the target and rename into place so nothing can
+    # ever exec a half-written binary (a respawning service manager might try).
+    _newbin="${B4_BIN_DIR}/${BINARY_NAME}.new.$$"
+    rm -f "$_newbin" 2>/dev/null || true
+    _swap_failed=0
+    if mv "${BINARY_NAME}" "$_newbin" 2>/dev/null || cp "${BINARY_NAME}" "$_newbin"; then
+        chmod +x "$_newbin"
+        mv -f "$_newbin" "${B4_BIN_DIR}/${BINARY_NAME}" || _swap_failed=1
+    else
+        _swap_failed=1
+    fi
+    if [ "$_swap_failed" -eq 1 ]; then
+        rm -f "$_newbin" 2>/dev/null || true
         log_err "Failed to install binary to ${B4_BIN_DIR}"
         restore_binary "${B4_BIN_DIR}/${BINARY_NAME}" "$backup_bin" && log_warn "Rolled back to the previous version"
         exit 1
-    }
+    fi
     chmod +x "${B4_BIN_DIR}/${BINARY_NAME}"
 
     # Verify — detect architecture mismatch (SIGILL on MIPS = wrong float ABI)
@@ -147,8 +170,10 @@ action_install() {
         installed_ver=$("${B4_BIN_DIR}/${BINARY_NAME}" --version 2>&1 | head -1)
         log_ok "Binary installed: ${installed_ver}"
         rm -f "$backup_bin" 2>/dev/null || true
-    elif [ "$_ver_exit" -gt 128 ] && echo "$B4_ARCH" | grep -q "^mips" && ! echo "$B4_ARCH" | grep -q "softfloat"; then
-        # Binary crashed (SIGILL/segfault) on MIPS hardfloat — retry with softfloat
+    elif [ "$_ver_exit" -gt 128 ] && arch_is_supported "${B4_ARCH}_softfloat"; then
+        # Binary crashed (SIGILL/segfault) on MIPS hardfloat — retry with softfloat.
+        # Gated on the published list: no mips64*_softfloat asset exists, so the
+        # old "^mips and not softfloat" test would have retried into a 404.
         _sf_arch="${B4_ARCH}_softfloat"
         log_warn "Binary crashed (exit code $_ver_exit) — likely hardfloat/softfloat mismatch"
         log_info "Retrying with ${_sf_arch}..."
@@ -195,7 +220,7 @@ action_install() {
 
     # --- Install service ---
     log_info "Setting up service..."
-    service_call install
+    service_call install || log_warn "Service setup failed — b4 will not start automatically"
 
     # --- Run enabled features ---
     if [ -n "$ENABLED_FEATURES" ]; then
@@ -231,12 +256,17 @@ _install_summary() {
     log_info "To see all options: ${B4_BIN_DIR}/${BINARY_NAME} --help"
     echo ""
 
-    # Offer to start/restart service
-    if [ "$QUIET_MODE" -eq 0 ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
-        if is_b4_running; then
+    # Start the service. We stopped b4 before the binary swap, so without this
+    # a --quiet install leaves the box with b4 down and every bypass off.
+    if [ "$B4_SERVICE_TYPE" != "none" ]; then
+        if [ "$QUIET_MODE" -eq 1 ]; then
+            service_call start || log_warn "Could not start the b4 service"
+        elif is_b4_running; then
             if confirm "B4 is already running. Restart now?"; then
-                service_call stop || true
-                sleep 1
+                service_call start || true
+            fi
+        elif [ "${B4_WAS_RUNNING:-0}" -eq 1 ]; then
+            if confirm "B4 was running before the update. Start it again?"; then
                 service_call start || true
             fi
         else
