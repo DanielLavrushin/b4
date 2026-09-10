@@ -5,7 +5,7 @@
 service_systemd_install() {
     ensure_dir "$B4_SERVICE_DIR" "Service directory" || return 1
 
-    cat >"${B4_SERVICE_DIR}/${B4_SERVICE_NAME}" <<EOF
+    cat >"${B4_SERVICE_DIR}/${B4_SERVICE_NAME}" <<EOF || return 1
 [Unit]
 Description=B4 DPI Bypass Service
 After=network.target

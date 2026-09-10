@@ -18,10 +18,6 @@ installed_service_type() {
     fi
 }
 
-# Recover the paths the installed init script actually uses. During an update
-# B4_CONFIG_FILE comes only from platform defaults, so regenerating a script
-# blind can repoint b4 at a config that does not exist — it then starts on
-# built-in defaults and the user's ruleset and web credentials are gone.
 _recover_service_paths() {
     _rsp_svc="$1"
     [ -f "$_rsp_svc" ] || return 1
@@ -34,12 +30,11 @@ _recover_service_paths() {
     _rsp_prog=$(sed -n 's/^PROG="\([^"]*\)".*/\1/p' "$_rsp_svc" 2>/dev/null | head -1)
     [ -z "$_rsp_prog" ] && _rsp_prog=$(sed -n 's/^ExecStart=\([^ ]*\).*/\1/p' "$_rsp_svc" 2>/dev/null | head -1)
 
-    case "$_rsp_prog" in
-    /*) B4_BIN_DIR=$(dirname "$_rsp_prog") ;;
-    esac
-
     case "$_rsp_cfg" in
     /*)
+        case "$_rsp_prog" in
+        /*) B4_BIN_DIR=$(dirname "$_rsp_prog") ;;
+        esac
         if [ "$_rsp_cfg" != "$B4_CONFIG_FILE" ]; then
             log_info "Keeping the config path the installed service uses: ${_rsp_cfg}"
             B4_CONFIG_FILE="$_rsp_cfg"
@@ -56,21 +51,35 @@ refresh_legacy_service_script() {
 
     _svc="${B4_SERVICE_DIR}/${B4_SERVICE_NAME}"
     [ -f "$_svc" ] || return 0
-    grep -q "b4\.log" "$_svc" 2>/dev/null || return 0
+
+    _legacy_log=0
+    grep -q "b4\.log" "$_svc" 2>/dev/null && _legacy_log=1
+    _outdated=0
+    _gen=$(sed -n 's/^B4_INIT_GEN=\([0-9]*\).*/\1/p' "$_svc" 2>/dev/null | head -1)
+    if [ "${_gen:-0}" -lt 2 ] 2>/dev/null && grep -q "B4 DPI Bypass Service" "$_svc" 2>/dev/null; then
+        _outdated=1
+    fi
+    [ "$_legacy_log" -eq 1 ] || [ "$_outdated" -eq 1 ] || return 0
 
     _svc_type=$(installed_service_type "$_svc")
     if [ "$_svc_type" = "systemd" ]; then
-        log_warn "Systemd unit ${_svc} sends b4 output to a legacy log file"
-        log_info "Leaving the unit as it is, b4 did not write it"
+        if [ "$_legacy_log" -eq 1 ]; then
+            log_warn "Systemd unit ${_svc} sends b4 output to a legacy log file"
+            log_info "Leaving the unit as it is, b4 did not write it"
+        fi
         return 0
     fi
 
-    log_warn "Init script logs b4 output to a legacy file that is never rotated"
+    if [ "$_legacy_log" -eq 1 ]; then
+        log_warn "Init script logs b4 output to a legacy file that is never rotated"
+    else
+        log_info "Installed ${_svc_type} service script needs regenerating"
+    fi
     log_info "Refreshing ${_svc_type} service script: ${_svc}"
 
     if _recover_service_paths "$_svc" && service_dispatch "$_svc_type" install >/dev/null 2>&1; then
         log_ok "Service script refreshed"
-    else
+    elif [ "$_legacy_log" -eq 1 ]; then
         log_warn "Could not regenerate the service script safely, patching the redirect in place"
         for _legacy in $LEGACY_SERVICE_LOGS; do
             _esc=$(echo "$_legacy" | sed 's#\.#\\.#g')
@@ -78,6 +87,8 @@ refresh_legacy_service_script() {
             sed -i "s#\"${_esc}\"#\"/dev/null\"#g" "$_svc" 2>/dev/null || true
             sed -i "s#${_esc}#/var/log/b4/errors.log#g" "$_svc" 2>/dev/null || true
         done
+    else
+        log_warn "Could not regenerate the service script safely, keeping the installed one"
     fi
 
     for _legacy in $LEGACY_SERVICE_LOGS; do
@@ -97,10 +108,7 @@ action_update() {
 
     log_header "Updating B4"
 
-    # platform_<id>_info is the only setter of B4_SERVICE_TYPE/DIR/NAME/CONFIG_FILE,
-    # so it must run even when --platform= / B4_PLATFORM preset the platform —
-    # otherwise the whole service layer stays unconfigured. platform_auto_detect
-    # already honours a preset B4_PLATFORM.
+    # Detect platform
     platform_auto_detect || true
     if [ -n "$B4_PLATFORM" ]; then
         platform_call info
@@ -147,7 +155,7 @@ action_update() {
     if [ -n "$force_arch" ]; then
         B4_ARCH="$force_arch"
     else
-        B4_ARCH=$(detect_architecture)
+        B4_ARCH=$(detect_architecture) || B4_ARCH=""
     fi
     require_supported_arch "$B4_ARCH"
 
@@ -223,23 +231,7 @@ action_update() {
         }
 
         # Verify
-        sha_url="${download_url}.sha256"
-        _cs_ret=0
-        verify_checksum "$archive_path" "$sha_url" || _cs_ret=$?
-        if [ "$_cs_ret" -ne 0 ]; then
-            if [ "$_cs_ret" -eq 2 ]; then
-                log_err "SHA256 mismatch: the archive is not the published release"
-            else
-                log_err "The archive could not be checked against its published SHA256"
-            fi
-            if [ "$QUIET_MODE" -eq 1 ]; then
-                log_err "Refusing to install an unverified binary unattended"
-                exit 1
-            fi
-            if ! confirm "Install it anyway?" "n"; then
-                exit 1
-            fi
-        fi
+        checksum_gate "$archive_path" "${download_url}.sha256" || exit 1
     fi
 
     # Extract
@@ -267,36 +259,40 @@ action_update() {
     # Stop service properly (prevents systemd/procd auto-restart race condition)
     if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
         log_info "Stopping service (${B4_SERVICE_TYPE})..."
-        service_call stop 2>/dev/null || true
-        sleep 1
     fi
+    service_stop_b4 || {
+        log_err "Could not stop the running b4 process"
+        log_info "Replacing the binary underneath a live b4 risks a half-written"
+        log_info "file being exec'd by a respawn. Stop it by hand and re-run."
+        exit 1
+    }
 
-    if is_b4_running; then
-        log_info "Process still running after service stop — forcing stop"
-        stop_b4 || {
-            log_err "Could not stop the running b4 process"
-            log_info "Replacing the binary underneath a live b4 risks a half-written"
-            log_info "file being exec'd by a respawn. Stop it by hand and re-run."
-            exit 1
-        }
+    _newbin="${existing_bin}.new.$$"
+    rm -f "${existing_bin}".new.* 2>/dev/null || true
+    if mv "${TEMP_DIR}/${BINARY_NAME}" "$_newbin" 2>/dev/null ||
+        cp "${TEMP_DIR}/${BINARY_NAME}" "$_newbin"; then
+        chmod +x "$_newbin"
+    else
+        rm -f "$_newbin" 2>/dev/null || true
+        log_err "Failed to stage the new binary in ${bin_dir}"
+        exit 1
     fi
 
     ts=$(date '+%Y%m%d_%H%M%S')
     backup_bin="${existing_bin}.backup.${ts}"
 
     stash_binary "$existing_bin" "$backup_bin" || {
+        rm -f "$_newbin" 2>/dev/null || true
         log_err "Could not move the current binary aside"
         exit 1
     }
 
     update_failed=0
-    if mv "${TEMP_DIR}/${BINARY_NAME}" "$existing_bin" 2>/dev/null ||
-        cp "${TEMP_DIR}/${BINARY_NAME}" "$existing_bin"; then
-        chmod +x "$existing_bin"
-    else
+    mv -f "$_newbin" "$existing_bin" || {
+        rm -f "$_newbin" 2>/dev/null || true
         log_err "Failed to replace binary"
         update_failed=1
-    fi
+    }
 
     # Verify
     if [ "$update_failed" -eq 0 ] && "$existing_bin" --version >/dev/null 2>&1; then
@@ -327,10 +323,7 @@ action_update() {
 
     if is_b4_running; then
         log_ok "b4 is running"
-    elif [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
-        # Only relaunch by hand when nothing is supervising b4. Any managed type
-        # keeps its own restart schedule, and a second b4 outside it would lose
-        # the single-instance lock race.
+    elif [ "$B4_SERVICE_TYPE" = "systemd" ] || [ "$B4_SERVICE_TYPE" = "procd" ]; then
         log_err "b4 did not come back up under ${B4_SERVICE_TYPE}"
         service_show_crash_log
     elif [ -n "$saved_cmdline" ]; then

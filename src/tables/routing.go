@@ -641,6 +641,7 @@ func RoutingClearAll() {
 				ipt.clearAll()
 			}
 		}
+		routeSweepOwnRules()
 	} else {
 		for id, st := range routeRuleCache {
 			routeCleanupAny(be, st)

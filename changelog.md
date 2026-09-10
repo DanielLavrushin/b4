@@ -1,5 +1,14 @@
 # B4 - Bye Bye Big Bro
 
+## [Unreleased]
+
+- FIXED: **b4 could be left running after a service restart on OpenWrt, deaf to everything but kill -9, or doubled after an update** - the daemon stopped listening for signals once shutdown began and never enforced its deadline, and the installer trusted a stop it never checked and a pidfile it never verified. [#351](https://github.com/DanielLavrushin/b4/issues/351)
+- CHANGED: **On OpenWrt, b4's errors and warnings appear in `logread`** - the init script discarded everything b4 printed before its own log file existed, so a start that failed left no trace.
+- FIXED: **A `--quiet` install or update left b4 stopped, and `--platform=` skipped the service setup** - the only start sat behind an interactive prompt, a forced platform never learned the service type, Ctrl-C at a prompt counted as the default answer, and a run without a terminal died at once.
+- FIXED: **The installer fell back to unverified downloads after one warning and wrote the configuration readable by every user** - a single failed certificate check switched every later download, checksum included, to unverified TLS.
+- FIXED: **Every OpenWrt MIPS64 install failed with a download error** - the installer asked for a `mips64_softfloat` build that was never published.
+- FIXED: **`--remove` left a killed b4's firewall rules behind, and a binary installed to a custom directory** - removal relied on the process cleaning up after itself and never looked in the directory chosen at install time.
+
 ## [1.81.0] - 2026-09-06
 
 - CHANGED: **The DPI Detector page is rebuilt around the sites typed into it, and every site is fetched twice** - once directly and once through b4, so a row says whether the ISP blocks the site, whether b4 fixes it, or whether it is still blocked, with a verdict sentence on top, a button that hands the still-blocked sites to Discovery, and a report to copy into an issue. The old page fetched only through the running engine, so a well-configured b4 hid the very blocking it was meant to show. The check takes any list of domains or URLs, can be filled from the sets, and its four scopes are named by the question they answer: Sites, DNS, Hosting and CDN, Telegram. The DNS check merges the two old ones into one table per provider over UDP, DoH and DoT, judges honesty against encrypted answers and names who really answered a port 53 query; the hosting check groups targets by network with the drop point and any whitelisted SNI that gets through; the Telegram check measures upload as well as download. The target lists are refreshed from the dpi-detector project as of 2026-09-04, several dead sites and addresses are dropped, and a button fetches the current upstream lists without a release.

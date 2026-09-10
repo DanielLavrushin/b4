@@ -6,33 +6,29 @@ action_remove() {
 
     log_header "Removing B4"
 
-    # Must run even when --platform= presets B4_PLATFORM: platform_<id>_info is
-    # what sets B4_SERVICE_TYPE/DIR/NAME, and without it service_call remove is
-    # skipped and the boot symlink is left dangling.
     platform_auto_detect || true
     if [ -n "$B4_PLATFORM" ]; then
         platform_call info
     fi
 
-    # Find config file — check all known locations
+    # Find config file, check all known locations
     _remove_find_config
 
-    # Stop running process. Deleting the binary and init script out from under a
-    # live b4 would leave it running with its nft tables and ip rules installed
-    # and nothing left on disk to stop it.
-    if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
-        service_call stop 2>/dev/null || true
-    fi
-    _b4_stopped=1
-    stop_b4 || _b4_stopped=0
-    if [ "$_b4_stopped" -eq 0 ]; then
+    # Stop running process
+    service_stop_b4 || {
         log_err "b4 is still running and could not be stopped"
         log_info "Stop it by hand and re-run, or its firewall rules will be left behind."
         exit 1
-    fi
+    }
+
+    _removed_any=0
+    _remove_netfilter_state
 
     # Remove service
     if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
+        if [ -n "$B4_SERVICE_DIR" ] && [ -f "${B4_SERVICE_DIR}/${B4_SERVICE_NAME}" ]; then
+            _removed_any=1
+        fi
         log_info "Removing service..."
         service_call remove 2>/dev/null || true
     else
@@ -44,16 +40,16 @@ action_remove() {
             if [ -f "$svc" ]; then
                 rm -f "$svc"
                 log_info "Removed: $svc"
+                _removed_any=1
             fi
         done
         command_exists systemctl && systemctl daemon-reload 2>/dev/null || true
     fi
 
-    # Remove features (geodat etc. — reads paths from config)
+    # Remove features (geodat etc., reads paths from config)
     features_remove
 
     # Remove binary from known locations
-    _removed_any=0
     for dir in "$B4_BIN_DIR" /usr/local/bin /usr/bin /usr/sbin /opt/bin /opt/sbin /jffs/b4 /ssd/b4 /tmp/b4; do
         [ -z "$dir" ] && continue
         if [ -f "${dir}/${BINARY_NAME}" ]; then
@@ -64,39 +60,49 @@ action_remove() {
             _removed_any=1
         fi
     done
-    if [ "$_removed_any" -eq 0 ]; then
-        _stray=$(command -v "$BINARY_NAME" 2>/dev/null || true)
-        if [ -n "$_stray" ]; then
-            log_warn "A b4 binary is still on PATH at ${_stray} — remove it by hand"
-        fi
+    _stray=$(command -v "$BINARY_NAME" 2>/dev/null || true)
+    if [ -n "$_stray" ] && [ -f "$_stray" ]; then
+        log_warn "A b4 binary is still on PATH at ${_stray} - remove it by hand"
     fi
 
     # Ask about config directories
     _remove_config_dirs
 
-    # Best-effort netfilter cleanup. b4 tears its own rules down on a clean
-    # shutdown, but an instance that had to be SIGKILLed leaves them installed —
-    # and past this point there is no b4 left on disk to do it.
-    if command_exists nft; then
-        for _t in b4_mangle b4_nat b4_route b4_dnsnat; do
-            nft delete table inet "$_t" 2>/dev/null || true
-        done
-    fi
-    if command_exists ip; then
-        if ip rule show 2>/dev/null | grep -q "fwmark"; then
-            log_warn "Policy routing rules with an fwmark are still present"
-            log_info "b4's own are gone once it shut down cleanly; review with: ip rule show"
-        fi
-    fi
-
     # Cleanup
     rm -f /var/run/b4.pid /run/b4.pid /opt/var/run/b4.pid /tmp/b4.pid 2>/dev/null || true
+    rm -f /var/run/b4-tun.state /run/b4-tun.state /tmp/b4_sysctl_snapshot.json 2>/dev/null || true
     rm -f /var/log/b4.log /opt/var/log/b4.log /tmp/log/b4.log 2>/dev/null || true
     rm -rf /var/log/b4 2>/dev/null || true
 
     echo ""
-    log_ok "B4 has been removed"
+    if [ "$_removed_any" -eq 1 ]; then
+        log_ok "B4 has been removed"
+    else
+        log_warn "Nothing to remove: no b4 binary or service was found"
+    fi
     echo ""
+}
+
+_remove_netfilter_state() {
+    _rns_bin=""
+    for _rns_dir in "$B4_BIN_DIR" /usr/local/bin /usr/bin /usr/sbin /opt/bin /opt/sbin /jffs/b4 /ssd/b4 /tmp/b4; do
+        [ -n "$_rns_dir" ] && [ -x "${_rns_dir}/${BINARY_NAME}" ] || continue
+        _rns_bin="${_rns_dir}/${BINARY_NAME}"
+        break
+    done
+    if [ -n "$_rns_bin" ]; then
+        log_info "Clearing firewall and routing state..."
+        if [ -n "$B4_CONFIG_FILE" ] && [ -f "$B4_CONFIG_FILE" ]; then
+            "$_rns_bin" --clear-tables --config "$B4_CONFIG_FILE" >/dev/null 2>&1 || true
+        else
+            "$_rns_bin" --clear-tables >/dev/null 2>&1 || true
+        fi
+        return 0
+    fi
+    command_exists nft || return 0
+    for _rns_t in "inet b4_mangle" "inet b4_route" "ip b4_nat" "ip b4_dnsnat" "ip6 b4_dnsnat6"; do
+        nft delete table ${_rns_t} 2>/dev/null || true
+    done
 }
 
 # Find the active config file so features can read paths from it

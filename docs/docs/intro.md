@@ -66,7 +66,7 @@ b4 consists of several parts, each described in detail in its own documentation 
 
 ### Supported architectures
 
-`amd64`, `arm64`, `armv7`, `armv6`, `armv5`, `386`, `mips`, `mipsle`, `mips64`, `mips64le`
+`amd64`, `386`, `arm64`, `armv5`, `armv6`, `armv7`, `mips`, `mipsle`, `mips_softfloat`, `mipsle_softfloat`, `mips64`, `mips64le`, `loong64`, `ppc64`, `ppc64le`, `riscv64`, `s390x`
 
 ### Minimum requirements
 

@@ -38,9 +38,13 @@ curl -fsSL https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh 
 
 On removal:
 
-1. The service is stopped and removed from autostart
+1. The service is stopped; if the process cannot be stopped, nothing is removed. The firewall and routing state b4 installed is cleared with b4's own cleanup before the binary is deleted
 2. The binary is deleted
 3. The configuration is kept or removed depending on the answer to the installer's prompt about deleting `/etc/b4` or `/opt/etc/b4`
+
+### Unverified TLS
+
+When neither `curl` nor `wget` can verify GitHub's certificate and installing CA certificates through the package manager does not help, the installer asks before downloading over unverified TLS. In `--quiet` mode it stops instead; `B4_ALLOW_INSECURE_TLS=1` in the environment accepts the risk for that run. A checksum fetched over the same unverified connection proves only that the download was not corrupted.
 
 ### Diagnostics
 

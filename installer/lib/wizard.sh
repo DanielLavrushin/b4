@@ -66,7 +66,7 @@ wizard_auto_detect() {
     [ -n "$_user_data_dir" ] && B4_CONFIG_FILE="${_user_data_dir}/b4.json"
 
     # 3. Detect architecture
-    B4_ARCH=$(detect_architecture)
+    B4_ARCH=$(detect_architecture) || B4_ARCH=""
 
     # 4. Detect package manager
     detect_pkg_manager
@@ -140,6 +140,7 @@ wizard_manual_configure() {
     # 4. Service type
     echo ""
     echo "  Service types:${REGISTERED_SERVICES}"
+    _svc_platform_type="$B4_SERVICE_TYPE"
     while true; do
         read_input "Service type [${B4_SERVICE_TYPE}]: " "$B4_SERVICE_TYPE"
         _svc_ok=0
@@ -152,9 +153,29 @@ wizard_manual_configure() {
         fi
         log_warn "Unknown service type '${_INPUT}'. Available:${REGISTERED_SERVICES}"
     done
+    if [ "$B4_SERVICE_TYPE" != "$_svc_platform_type" ]; then
+        case "$B4_SERVICE_TYPE" in
+        systemd)
+            B4_SERVICE_DIR="/etc/systemd/system"
+            B4_SERVICE_NAME="b4.service"
+            ;;
+        openrc | procd | sysv)
+            B4_SERVICE_DIR="/etc/init.d"
+            B4_SERVICE_NAME="b4"
+            ;;
+        entware)
+            B4_SERVICE_DIR="/opt/etc/init.d"
+            B4_SERVICE_NAME="S99b4"
+            ;;
+        none)
+            B4_SERVICE_DIR=""
+            B4_SERVICE_NAME=""
+            ;;
+        esac
+    fi
 
     # 5. Architecture
-    auto_arch=$(detect_architecture)
+    auto_arch=$(detect_architecture 2>/dev/null) || auto_arch=""
 
     # Find the index of the detected architecture for default
     _arch_default=1

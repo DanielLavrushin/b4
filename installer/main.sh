@@ -23,6 +23,10 @@ main() {
             ;;
         --arch=*)
             FORCE_ARCH="${arg#*=}"
+            if ! arch_is_supported "$FORCE_ARCH"; then
+                printf 'ERROR: unknown architecture: %s\nAvailable: %s\n' "$FORCE_ARCH" "$B4_SUPPORTED_ARCHS" >&2
+                exit 1
+            fi
             ;;
         --platform=*)
             B4_PLATFORM="${arg#*=}"
@@ -58,16 +62,15 @@ main() {
     # Redirect stdin from tty for piped installs (curl | sh).
     # Skip in quiet mode — no interactive input needed, and /dev/tty
     # may not be available (e.g. web UI update running without a terminal).
-    # `[ -e /dev/tty ]` only stats the node — it exists even with no controlling
-    # terminal, where open() then fails with ENXIO. A failed redirection on the
-    # special builtin `exec` kills a non-interactive shell outright, so probe by
-    # actually opening it in a subshell first.
     if [ "$QUIET_MODE" -ne 1 ] 2>/dev/null && [ ! -t 0 ]; then
         if (exec </dev/tty) 2>/dev/null; then
             exec </dev/tty
+        elif [ "$ACTION" = "remove" ]; then
+            log_err "No terminal available for the removal prompts; re-run with --quiet to remove without asking"
+            exit 1
         else
+            log_warn "No terminal available - continuing non-interactively with defaults"
             QUIET_MODE=1
-            log_warn "No terminal available — continuing non-interactively with defaults"
         fi
     fi
 
@@ -105,6 +108,7 @@ _show_help() {
     echo "  B4_BIN_DIR          Binary install directory"
     echo "  B4_DATA_DIR         Data/config directory"
     echo "  B4_PKG_MANAGER      Package manager (apt, dnf, pacman, opkg, ...)"
+    echo "  B4_ALLOW_INSECURE_TLS=1  Download over unverified TLS when no CA certificates work"
     echo ""
     echo "Architectures:"
     echo "  amd64, 386, arm64, armv5, armv6, armv7,"

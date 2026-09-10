@@ -27,6 +27,8 @@ wget -qO- https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh |
 curl -fsSL https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh | sh -s -- --quiet
 ```
 
+Без терминала на стандартном вводе, например из cron или по `ssh` без `-t`, установщик работает так, как если бы был указан `--quiet`. `--remove` в такой ситуации завершается с ошибкой, если `--quiet` не указан явно, поскольку вопросы об удалении конфигурации показать некому.
+
 ## Управление сервисом
 
 ### systemd (Ubuntu, Debian, Fedora и большинство дистрибутивов)
@@ -53,6 +55,17 @@ rc-service b4 stop
 rc-service b4 restart
 rc-update add b4 default   # автозапуск при загрузке
 ```
+
+### SysV init (системы без systemd и OpenRC)
+
+```bash
+/etc/init.d/b4 start
+/etc/init.d/b4 stop
+/etc/init.d/b4 restart
+/etc/init.d/b4 status
+```
+
+`stop` ждёт завершения процесса до двадцати секунд и затем убивает его, а `status` возвращает код 3, если b4 не запущен.
 
 ## Пути
 

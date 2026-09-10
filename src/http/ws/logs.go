@@ -96,7 +96,10 @@ func (w *broadcastWriter) Write(p []byte) (int, error) {
 		end := start + i
 		line := make([]byte, end-start)
 		copy(line, w.buf[start:end])
-		w.h.in <- line
+		select {
+		case w.h.in <- line:
+		case <-w.h.stop:
+		}
 		start = end + 1
 	}
 	if start > 0 {

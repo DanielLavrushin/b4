@@ -156,29 +156,21 @@ action_sysinfo() {
         log_detail "Service status" "${GREEN}running${NC}"
 
         # Get PID and process details
-        b4_pid=""
-        for pf in /var/run/b4.pid /opt/var/run/b4.pid; do
-            if [ -f "$pf" ] && kill -0 "$(cat "$pf")" 2>/dev/null; then
-                b4_pid=$(cat "$pf")
-                break
-            fi
-        done
-        [ -z "$b4_pid" ] && b4_pid=$(pgrep -x "$BINARY_NAME" 2>/dev/null | head -1)
-        [ -z "$b4_pid" ] && b4_pid=$(pgrep -f "${BINARY_NAME}" 2>/dev/null | head -1)
+        _si_pid=$(b4_pid) || _si_pid=""
 
-        if [ -n "$b4_pid" ]; then
+        if [ -n "$_si_pid" ]; then
             # Memory usage
-            if [ -f "/proc/${b4_pid}/status" ]; then
-                mem_kb=$(awk '/^VmRSS:/ {print $2}' "/proc/${b4_pid}/status" 2>/dev/null)
+            if [ -f "/proc/${_si_pid}/status" ]; then
+                mem_kb=$(awk '/^VmRSS:/ {print $2}' "/proc/${_si_pid}/status" 2>/dev/null)
                 if [ -n "$mem_kb" ]; then
                     mem_mb=$(awk "BEGIN {printf \"%.1f\", $mem_kb/1024}")
-                    log_detail "Memory usage" "${mem_mb} MB (PID: ${b4_pid})"
+                    log_detail "Memory usage" "${mem_mb} MB (PID: ${_si_pid})"
                 fi
             fi
 
             # Uptime
-            if [ -f "/proc/${b4_pid}/stat" ]; then
-                proc_start=$(awk '{print $22}' "/proc/${b4_pid}/stat" 2>/dev/null)
+            if [ -f "/proc/${_si_pid}/stat" ]; then
+                proc_start=$(awk '{print $22}' "/proc/${_si_pid}/stat" 2>/dev/null)
                 clk_tck=$(getconf CLK_TCK 2>/dev/null || echo 100)
                 sys_uptime=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)
                 if [ -n "$proc_start" ] && [ -n "$sys_uptime" ] && [ "$clk_tck" -gt 0 ] 2>/dev/null; then

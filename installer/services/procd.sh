@@ -5,13 +5,21 @@
 service_procd_install() {
     ensure_dir "$B4_SERVICE_DIR" "Service directory" || return 1
 
-    cat >"${B4_SERVICE_DIR}/${B4_SERVICE_NAME}" <<EOF
+    _procd_stderr=0
+    _procd_gen=1
+    if "${B4_BIN_DIR}/${BINARY_NAME}" --help 2>&1 | grep -q -- "--console-level"; then
+        _procd_stderr=1
+        _procd_gen=2
+    fi
+
+    cat >"${B4_SERVICE_DIR}/${B4_SERVICE_NAME}" <<EOF || return 1
 #!/bin/sh /etc/rc.common
 # B4 DPI Bypass Service (procd)
 
 START=99
 STOP=10
 USE_PROCD=1
+B4_INIT_GEN=${_procd_gen}
 
 PROG="${B4_BIN_DIR}/${BINARY_NAME}"
 CONFIG="${B4_CONFIG_FILE}"
@@ -31,13 +39,10 @@ start_service() {
 
     procd_open_instance
     procd_set_param command \$PROG --config \$CONFIG
-    procd_set_param env PATH="\$PATH"
+    procd_set_param env PATH="\$PATH" B4_CONSOLE_LEVEL=error
     procd_set_param respawn \${respawn_threshold:-3600} \${respawn_timeout:-5} \${respawn_retry:-5}
     procd_set_param stdout 0
-    procd_set_param stderr 1
-    # Must exceed b4's own shutdown budget or procd SIGKILLs it mid-teardown,
-    # leaving its ip rules and routing tables behind. No pidfile param here:
-    # b4 writes and flocks /var/run/b4.pid itself for its single-instance guard.
+    procd_set_param stderr ${_procd_stderr}
     procd_set_param term_timeout 20
     procd_close_instance
 }
@@ -47,7 +52,7 @@ service_triggers() {
 }
 EOF
 
-    chmod +x "${B4_SERVICE_DIR}/${B4_SERVICE_NAME}"
+    chmod +x "${B4_SERVICE_DIR}/${B4_SERVICE_NAME}" || return 1
     log_ok "Procd init script created: ${B4_SERVICE_DIR}/${B4_SERVICE_NAME}"
 
     # Enable the service to start on boot
@@ -70,9 +75,6 @@ service_procd_start() {
         log_warn "Could not start service"
         return 1
     fi
-    # procd serialises restart: it forks the new instance only after the old
-    # one has actually exited, so `restart` is safe here. What is not safe is
-    # confirming the start by process name.
     _old=$(b4_pid) || _old=""
     "$_init" restart 2>/dev/null || {
         log_warn "Could not start service"

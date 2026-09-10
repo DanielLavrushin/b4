@@ -41,6 +41,7 @@ var (
 	cfg             = config.NewConfig()
 	cliOverrides    config.CLIOverrides
 	verboseFlag     string
+	consoleLevel    string
 	showVersion     bool
 	clearTables     bool
 	Version         = "dev"
@@ -64,6 +65,7 @@ func init() {
 
 	// Add verbosity flags separately since they need special handling
 	rootCmd.Flags().StringVar(&verboseFlag, "verbose", "info", "Set verbosity level (debug, trace, info, silent), default: info")
+	rootCmd.Flags().StringVar(&consoleLevel, "console-level", "", "Cap what reaches stderr (error, info, trace, debug) without changing what is logged; B4_CONSOLE_LEVEL does the same")
 	rootCmd.Flags().BoolVarP(&showVersion, "version", "v", false, "Show version and exit")
 	rootCmd.Flags().BoolVar(&clearTables, "clear-tables", false, "Perform only iptables/nftables cleanup and exit")
 
@@ -486,7 +488,11 @@ func runB4(cmd *cobra.Command, args []string) error {
 	// Wait for shutdown signal
 	sig := <-sigChan
 
-	signal.Reset(syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		for repeat := range sigChan {
+			log.Infof("Received %v while already shutting down, ignoring it (SIGKILL forces an exit)", repeat)
+		}
+	}()
 
 	log.Infof("Received signal: %v, shutting down gracefully", sig)
 	metrics.RecordEvent("info", fmt.Sprintf("Shutdown initiated by signal: %v", sig))
@@ -779,7 +785,16 @@ func initLogging(cfg *config.Config) error {
 
 	fmt.Fprintf(os.Stderr, "[INIT] Logging initialized at level %d\n", cfg.System.Logging.Level)
 
-	w := io.MultiWriter(log.OrigStderr(), b4http.LogWriter())
+	var console io.Writer = log.OrigStderr()
+	capSource := os.Getenv("B4_CONSOLE_LEVEL")
+	if consoleLevel != "" {
+		capSource = consoleLevel
+	}
+	if capLevel, ok := log.ParseLevel(capSource); ok && capLevel < log.Level(cfg.System.Logging.Level) {
+		console = log.CapLevel(console, capLevel)
+		fmt.Fprintf(os.Stderr, "[INIT] Console output capped at level %s; the full level %d log still reaches the web interface and errors.log\n", capLevel, cfg.System.Logging.Level)
+	}
+	w := io.MultiWriter(console, b4http.LogWriter())
 	log.Init(w, log.Level(cfg.System.Logging.Level), cfg.System.Logging.Instaflush)
 
 	if cfg.System.Logging.Syslog {

@@ -25,7 +25,11 @@ action_install() {
         [ -n "$_user_bin_dir" ] && B4_BIN_DIR="$_user_bin_dir"
         [ -n "$_user_data_dir" ] && B4_DATA_DIR="$_user_data_dir"
         [ -n "$_user_data_dir" ] && B4_CONFIG_FILE="${_user_data_dir}/b4.json"
-        B4_ARCH="${force_arch:-$(detect_architecture)}"
+        if [ -n "$force_arch" ]; then
+            B4_ARCH="$force_arch"
+        else
+            B4_ARCH=$(detect_architecture) || B4_ARCH=""
+        fi
         require_supported_arch "$B4_ARCH"
         detect_pkg_manager
         # Enable all default features in quiet mode
@@ -85,24 +89,7 @@ action_install() {
     fi
 
     # Verify checksum
-    sha_url="${download_url}.sha256"
-    _cs_ret=0
-    verify_checksum "$archive_path" "$sha_url" || _cs_ret=$?
-    # exit code 2 = actual SHA256 mismatch (corrupted/tampered download)
-    if [ "$_cs_ret" -ne 0 ]; then
-        if [ "$_cs_ret" -eq 2 ]; then
-            log_err "SHA256 mismatch: the archive is not the published release"
-        else
-            log_err "The archive could not be checked against its published SHA256"
-        fi
-        if [ "$QUIET_MODE" -eq 1 ]; then
-            log_err "Refusing to install an unverified binary unattended"
-            exit 1
-        fi
-        if ! confirm "Install it anyway?" "n"; then
-            exit 1
-        fi
-    fi
+    checksum_gate "$archive_path" "${download_url}.sha256" || exit 1
 
     # Extract
     log_info "Extracting..."
@@ -115,15 +102,10 @@ action_install() {
         exit 1
     fi
 
-    # Stop running instance. Go through the service manager first: killing a
-    # supervised process out of band leaves procd/systemd thinking it crashed,
-    # so it respawns straight into the binary swap below.
+    # Stop running instance
     B4_WAS_RUNNING=0
     is_b4_running && B4_WAS_RUNNING=1
-    if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
-        service_call stop 2>/dev/null || true
-    fi
-    stop_b4 || {
+    service_stop_b4 || {
         log_err "b4 is still running; refusing to replace the binary underneath it"
         exit 1
     }
@@ -143,8 +125,7 @@ action_install() {
         exit 1
     }
 
-    # Install. Stage next to the target and rename into place so nothing can
-    # ever exec a half-written binary (a respawning service manager might try).
+    # Install
     _newbin="${B4_BIN_DIR}/${BINARY_NAME}.new.$$"
     rm -f "$_newbin" 2>/dev/null || true
     _swap_failed=0
@@ -171,11 +152,9 @@ action_install() {
         log_ok "Binary installed: ${installed_ver}"
         rm -f "$backup_bin" 2>/dev/null || true
     elif [ "$_ver_exit" -gt 128 ] && arch_is_supported "${B4_ARCH}_softfloat"; then
-        # Binary crashed (SIGILL/segfault) on MIPS hardfloat — retry with softfloat.
-        # Gated on the published list: no mips64*_softfloat asset exists, so the
-        # old "^mips and not softfloat" test would have retried into a 404.
+        # Binary crashed (SIGILL/segfault) on MIPS hardfloat, retry with softfloat
         _sf_arch="${B4_ARCH}_softfloat"
-        log_warn "Binary crashed (exit code $_ver_exit) — likely hardfloat/softfloat mismatch"
+        log_warn "Binary crashed (exit code $_ver_exit) - likely hardfloat/softfloat mismatch"
         log_info "Retrying with ${_sf_arch}..."
 
         _sf_file="${BINARY_NAME}-linux-${_sf_arch}.tar.gz"
@@ -183,13 +162,21 @@ action_install() {
         _sf_archive="${TEMP_DIR}/${_sf_file}"
 
         _sf_ok=0
-        if fetch_file "$_sf_url" "$_sf_archive"; then
+        if ! fetch_file "$_sf_url" "$_sf_archive"; then
+            log_err "Could not download softfloat variant"
+            log_info "Try reinstalling with: --arch=${_sf_arch}"
+        elif ! checksum_gate "$_sf_archive" "${_sf_url}.sha256"; then
+            rm -f "$_sf_archive" 2>/dev/null || true
+        else
             cd "$TEMP_DIR"
             rm -f "${BINARY_NAME}" 2>/dev/null
             tar -xzf "$_sf_archive" 2>/dev/null && rm -f "$_sf_archive"
             if [ -f "${BINARY_NAME}" ]; then
-                mv "${BINARY_NAME}" "${B4_BIN_DIR}/" 2>/dev/null || cp "${BINARY_NAME}" "${B4_BIN_DIR}/"
-                chmod +x "${B4_BIN_DIR}/${BINARY_NAME}"
+                _newbin="${B4_BIN_DIR}/${BINARY_NAME}.new.$$"
+                if mv "${BINARY_NAME}" "$_newbin" 2>/dev/null || cp "${BINARY_NAME}" "$_newbin"; then
+                    chmod +x "$_newbin"
+                    mv -f "$_newbin" "${B4_BIN_DIR}/${BINARY_NAME}" || rm -f "$_newbin"
+                fi
                 if "${B4_BIN_DIR}/${BINARY_NAME}" --version >/dev/null 2>&1; then
                     installed_ver=$("${B4_BIN_DIR}/${BINARY_NAME}" --version 2>&1 | head -1)
                     log_ok "Softfloat binary works: ${installed_ver}"
@@ -198,15 +185,12 @@ action_install() {
                     _sf_ok=1
                     rm -f "$backup_bin" 2>/dev/null || true
                 else
-                    log_err "Softfloat binary also failed — manual troubleshooting needed"
+                    log_err "Softfloat binary also failed - manual troubleshooting needed"
                     log_info "Run with --sysinfo for diagnostics, or try --arch=<arch> manually"
                 fi
             else
                 log_err "Failed to extract softfloat binary"
             fi
-        else
-            log_err "Could not download softfloat variant"
-            log_info "Try reinstalling with: --arch=${_sf_arch}"
         fi
         if [ "$_sf_ok" -eq 0 ] && restore_binary "${B4_BIN_DIR}/${BINARY_NAME}" "$backup_bin"; then
             log_warn "Rolled back to the previously installed version"
@@ -220,7 +204,7 @@ action_install() {
 
     # --- Install service ---
     log_info "Setting up service..."
-    service_call install || log_warn "Service setup failed — b4 will not start automatically"
+    service_call install || log_err "Service setup failed - b4 will not start automatically"
 
     # --- Run enabled features ---
     if [ -n "$ENABLED_FEATURES" ]; then
@@ -256,8 +240,6 @@ _install_summary() {
     log_info "To see all options: ${B4_BIN_DIR}/${BINARY_NAME} --help"
     echo ""
 
-    # Start the service. We stopped b4 before the binary swap, so without this
-    # a --quiet install leaves the box with b4 down and every bypass off.
     if [ "$B4_SERVICE_TYPE" != "none" ]; then
         if [ "$QUIET_MODE" -eq 1 ]; then
             service_call start || log_warn "Could not start the b4 service"

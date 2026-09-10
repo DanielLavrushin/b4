@@ -139,6 +139,10 @@ At the **Error** level, the **Logs** and **Connections** sections in the web int
 b4 does not keep a persistent log file - everything goes to stdout/stderr (and is captured by the web interface through a WebSocket). Only critical errors and crashes are written to `errors.log`.
 :::
 
+:::info Console output on OpenWrt
+The init script written for procd forwards b4's console output to the system log, so it appears in `logread`. The `--console-level` flag, or the `B4_CONSOLE_LEVEL` environment variable, caps what reaches the console independently of the log level; the init script sets it to `error`, so `logread` carries errors and warnings only while the web interface keeps the full stream. Both are honoured on every platform; left unset, everything at the configured level goes to stderr.
+:::
+
 :::tip
 For diagnosing issues use **Trace** or **Debug**. For normal operation **Info** is enough.
 :::

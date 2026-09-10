@@ -25,6 +25,8 @@ For a non-interactive install (default settings, no prompts):
 curl -fsSL https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh | sh -s -- --quiet
 ```
 
+Without a terminal on standard input, for example under cron or over `ssh` without `-t`, the installer behaves as if `--quiet` had been given. `--remove` in that situation stops with an error unless `--quiet` is passed explicitly, since its prompts about deleting the configuration cannot be shown.
+
 ## Service control
 
 ### systemd (Ubuntu, Debian, Fedora, and most distributions)
@@ -51,6 +53,17 @@ rc-service b4 stop
 rc-service b4 restart
 rc-update add b4 default   # autostart on boot
 ```
+
+### SysV init (systems without systemd or OpenRC)
+
+```bash
+/etc/init.d/b4 start
+/etc/init.d/b4 stop
+/etc/init.d/b4 restart
+/etc/init.d/b4 status
+```
+
+`stop` waits up to twenty seconds for the process to exit before killing it, and `status` exits with code 3 when b4 is not running.
 
 ## Paths
 

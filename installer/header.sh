@@ -3,7 +3,7 @@
 # Supports desktop Linux, OpenWRT, MerlinWRT, Keenetic, Mikrotik, Docker, and more
 #
 # AUTO-GENERATED — Do not edit directly
-# Edit files in installer2/ and run: make build-installer
+# Edit files in installer/ and run: make build-installer
 #
 
 set -e

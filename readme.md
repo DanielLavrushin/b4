@@ -74,7 +74,7 @@ Then open `http://<device-ip>:7000`.
 ```
 
 > [!WARNING]
-> `--remove --quiet` deletes the config directory and geodata without asking.
+> `--remove --quiet` deletes the config directory and geodata without asking. A run without a terminal on standard input behaves as `--quiet`, except `--remove`, which refuses unless `--quiet` is given explicitly.
 
 ## First run
 
@@ -89,7 +89,7 @@ Docs: [Quickstart](https://docs.b4core.app/docs/quickstart)
 | Platform                      | Service control                                              |
 | ----------------------------- | ------------------------------------------------------------ |
 | Generic Linux (systemd)       | `systemctl start\|stop\|restart b4`                          |
-| Generic Linux (OpenRC / SysV) | `rc-service b4 start`, `/etc/init.d/b4 start`                |
+| Generic Linux (OpenRC / SysV) | `rc-service b4 start`, `/etc/init.d/b4 start\|stop\|restart\|status` |
 | OpenWrt 19.07+                | `/etc/init.d/b4 start\|stop\|restart\|enable`                |
 | Asus Merlin, Keenetic         | `/opt/etc/init.d/S99b4 start\|stop\|restart` (needs Entware) |
 | MikroTik RouterOS 7.21.1+     | via the Docker container                                     |
