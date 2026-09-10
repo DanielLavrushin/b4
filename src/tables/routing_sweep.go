@@ -35,9 +35,51 @@ func routeSweepOwnRules() {
 				continue
 			}
 			tablesSeen[table] = struct{}{}
-			flush := append([]string{"ip"}, fam...)
-			flush = append(flush, "route", "flush", "table", table)
-			_, _ = run(flush...)
+			prio, _ := routeRulePriority(line)
+			routeSweepOwnRoutes(fam, prio == proxyRulePriority, table)
 		}
+	}
+}
+
+func routeSweepOwnRoutes(fam []string, proxy bool, table string) {
+	base := append([]string{"ip"}, fam...)
+	if proxy {
+		local := "0.0.0.0/0"
+		if len(fam) > 0 {
+			local = "::/0"
+		}
+		del := append(append([]string{}, base...), "route", "del", "local", local, "dev", "lo", "table", table)
+		_, _ = run(del...)
+		return
+	}
+	show := append(append([]string{}, base...), "route", "show", "table", table)
+	out, err := run(show...)
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		dev := routeRuleField(line, "dev")
+		if !routeLineBelongsToIface(line, dev) {
+			continue
+		}
+		del := append(append([]string{}, base...), "route", "del")
+		switch fields[0] {
+		case "blackhole":
+			del = append(del, "blackhole", "default", "metric", routeKillSwitchMetric)
+		case "default":
+			if dev == "" {
+				continue
+			}
+			del = append(del, "default", "dev", dev)
+		default:
+			continue
+		}
+		del = append(del, routeProtoArgs()...)
+		del = append(del, "table", table)
+		_, _ = run(del...)
 	}
 }

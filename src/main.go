@@ -501,8 +501,10 @@ func runB4(cmd *cobra.Command, args []string) error {
 		select {
 		case <-hardExit:
 		case <-time.After(shutdownHardLimit):
-			log.Errorf("Shutdown exceeded %s, forcing exit", shutdownHardLimit)
-			log.Flush()
+			go func() {
+				log.Errorf("Shutdown exceeded %s, forcing exit", shutdownHardLimit)
+				log.Flush()
+			}()
 			time.Sleep(100 * time.Millisecond)
 			os.Exit(1)
 		}
