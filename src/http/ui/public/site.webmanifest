@@ -1,6 +1,7 @@
 {
   "name": "B4",
   "short_name": "B4",
+  "description": "B4: Network packet processor with a friendly UI for circumventing Deep Packet Inspection (DPI) systems.",
   "icons": [
     {
       "src": "/web-app-manifest-192x192.png",
@@ -15,7 +16,10 @@
       "purpose": "maskable"
     }
   ],
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
   "theme_color": "#561530",
   "background_color": "#561530",
-  "display": "standalone"
+  "display": "fullscreen"
 }
