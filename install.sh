@@ -2769,13 +2769,10 @@ service_show_crash_log() {
         return 0
     fi
 
-    log_info "No entries in ${_errlog}. Check the service manager's log:"
-    case "$B4_SERVICE_TYPE" in
-    systemd) log_info "  journalctl -u ${B4_SERVICE_NAME:-b4} --no-pager -n 30" ;;
-    procd) log_info "  logread -e b4" ;;
-    openrc) log_info "  rc-service ${B4_SERVICE_NAME:-b4} status; cat /var/log/messages" ;;
-    *) log_info "  logread 2>/dev/null || tail -n 30 /var/log/messages" ;;
-    esac
+    log_info "No entries in ${_errlog}."
+    if [ "$B4_SERVICE_TYPE" = "systemd" ]; then
+        log_info "Check: journalctl -u ${B4_SERVICE_NAME:-b4} --no-pager -n 30"
+    fi
     log_info "Or run it in the foreground: ${B4_BIN_DIR}/${BINARY_NAME} --config ${B4_CONFIG_FILE}"
 }
 
@@ -3074,13 +3071,6 @@ register_service "openrc"
 service_procd_install() {
     ensure_dir "$B4_SERVICE_DIR" "Service directory" || return 1
 
-    _procd_stderr=0
-    _procd_gen=1
-    if "${B4_BIN_DIR}/${BINARY_NAME}" --help 2>&1 | grep -q -- "--console-level"; then
-        _procd_stderr=1
-        _procd_gen=2
-    fi
-
     cat >"${B4_SERVICE_DIR}/${B4_SERVICE_NAME}" <<EOF || return 1
 #!/bin/sh /etc/rc.common
 # B4 DPI Bypass Service (procd)
@@ -3088,7 +3078,7 @@ service_procd_install() {
 START=99
 STOP=10
 USE_PROCD=1
-B4_INIT_GEN=${_procd_gen}
+B4_INIT_GEN=2
 
 PROG="${B4_BIN_DIR}/${BINARY_NAME}"
 CONFIG="${B4_CONFIG_FILE}"
@@ -3108,10 +3098,10 @@ start_service() {
 
     procd_open_instance
     procd_set_param command \$PROG --config \$CONFIG
-    procd_set_param env PATH="\$PATH" B4_CONSOLE_LEVEL=error
+    procd_set_param env PATH="\$PATH"
     procd_set_param respawn \${respawn_threshold:-3600} \${respawn_timeout:-5} \${respawn_retry:-5}
     procd_set_param stdout 0
-    procd_set_param stderr ${_procd_stderr}
+    procd_set_param stderr 0
     procd_set_param term_timeout 20
     procd_close_instance
 }
@@ -3733,8 +3723,7 @@ refresh_legacy_service_script() {
     _legacy_log=0
     grep -q "b4\.log" "$_svc" 2>/dev/null && _legacy_log=1
     _outdated=0
-    _gen=$(sed -n 's/^B4_INIT_GEN=\([0-9]*\).*/\1/p' "$_svc" 2>/dev/null | head -1)
-    if [ "${_gen:-0}" -lt 2 ] 2>/dev/null && grep -q "B4 DPI Bypass Service" "$_svc" 2>/dev/null; then
+    if ! grep -q "^B4_INIT_GEN=" "$_svc" 2>/dev/null && grep -q "B4 DPI Bypass Service" "$_svc" 2>/dev/null; then
         _outdated=1
     fi
     [ "$_legacy_log" -eq 1 ] || [ "$_outdated" -eq 1 ] || return 0

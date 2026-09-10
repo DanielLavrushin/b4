@@ -41,7 +41,6 @@ var (
 	cfg             = config.NewConfig()
 	cliOverrides    config.CLIOverrides
 	verboseFlag     string
-	consoleLevel    string
 	showVersion     bool
 	clearTables     bool
 	Version         = "dev"
@@ -65,7 +64,6 @@ func init() {
 
 	// Add verbosity flags separately since they need special handling
 	rootCmd.Flags().StringVar(&verboseFlag, "verbose", "info", "Set verbosity level (debug, trace, info, silent), default: info")
-	rootCmd.Flags().StringVar(&consoleLevel, "console-level", "", "Cap what reaches stderr (error, info, trace, debug) without changing what is logged; B4_CONSOLE_LEVEL does the same")
 	rootCmd.Flags().BoolVarP(&showVersion, "version", "v", false, "Show version and exit")
 	rootCmd.Flags().BoolVar(&clearTables, "clear-tables", false, "Perform only iptables/nftables cleanup and exit")
 
@@ -118,7 +116,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	}
 
 	if limit, err := config.ApplyMemoryLimit(cfg.System.MemoryLimit); err != nil {
-		fmt.Fprintf(os.Stderr, "[INIT] invalid system.memory_limit %q: %v\n", cfg.System.MemoryLimit, err)
+		log.InitWarnf("invalid system.memory_limit %q: %v", cfg.System.MemoryLimit, err)
 	} else if limit > 0 {
 		fmt.Fprintf(os.Stderr, "[INIT] Memory limit set to %d MB\n", limit/(1024*1024))
 	}
@@ -715,14 +713,14 @@ func ensureSingleInstance() (func(), error) {
 		lastErr = err
 	}
 	if f == nil {
-		fmt.Fprintf(os.Stderr, "[INIT] WARNING: single-instance guard DISABLED, no lock file could be opened (tried %s; last error: %v)\n",
+		log.InitWarnf("WARNING: single-instance guard DISABLED, no lock file could be opened (tried %s; last error: %v)",
 			strings.Join(candidates, ", "), lastErr)
 		return nil, nil
 	}
 
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) {
-			fmt.Fprintf(os.Stderr, "[INIT] WARNING: single-instance guard DISABLED, flock(%s): %v\n", path, err)
+			log.InitWarnf("WARNING: single-instance guard DISABLED, flock(%s): %v", path, err)
 			f.Close()
 			return nil, nil
 		}
@@ -736,7 +734,7 @@ func ensureSingleInstance() (func(), error) {
 	}
 
 	if err := writePidFile(f, os.Getpid()); err != nil {
-		fmt.Fprintf(os.Stderr, "[INIT] could not update pidfile %s: %v\n", path, err)
+		log.InitWarnf("could not update pidfile %s: %v", path, err)
 	}
 
 	cleanup := func() {
@@ -785,16 +783,7 @@ func initLogging(cfg *config.Config) error {
 
 	fmt.Fprintf(os.Stderr, "[INIT] Logging initialized at level %d\n", cfg.System.Logging.Level)
 
-	var console io.Writer = log.OrigStderr()
-	capSource := os.Getenv("B4_CONSOLE_LEVEL")
-	if consoleLevel != "" {
-		capSource = consoleLevel
-	}
-	if capLevel, ok := log.ParseLevel(capSource); ok && capLevel < log.Level(cfg.System.Logging.Level) {
-		console = log.CapLevel(console, capLevel)
-		fmt.Fprintf(os.Stderr, "[INIT] Console output capped at level %s; the full level %d log still reaches the web interface and errors.log\n", capLevel, cfg.System.Logging.Level)
-	}
-	w := io.MultiWriter(console, b4http.LogWriter())
+	w := io.MultiWriter(log.OrigStderr(), b4http.LogWriter())
 	log.Init(w, log.Level(cfg.System.Logging.Level), cfg.System.Logging.Instaflush)
 
 	if cfg.System.Logging.Syslog {

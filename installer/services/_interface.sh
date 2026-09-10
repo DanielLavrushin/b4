@@ -86,13 +86,10 @@ service_show_crash_log() {
         return 0
     fi
 
-    log_info "No entries in ${_errlog}. Check the service manager's log:"
-    case "$B4_SERVICE_TYPE" in
-    systemd) log_info "  journalctl -u ${B4_SERVICE_NAME:-b4} --no-pager -n 30" ;;
-    procd) log_info "  logread -e b4" ;;
-    openrc) log_info "  rc-service ${B4_SERVICE_NAME:-b4} status; cat /var/log/messages" ;;
-    *) log_info "  logread 2>/dev/null || tail -n 30 /var/log/messages" ;;
-    esac
+    log_info "No entries in ${_errlog}."
+    if [ "$B4_SERVICE_TYPE" = "systemd" ]; then
+        log_info "Check: journalctl -u ${B4_SERVICE_NAME:-b4} --no-pager -n 30"
+    fi
     log_info "Or run it in the foreground: ${B4_BIN_DIR}/${BINARY_NAME} --config ${B4_CONFIG_FILE}"
 }
 

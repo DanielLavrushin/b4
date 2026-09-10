@@ -5,13 +5,6 @@
 service_procd_install() {
     ensure_dir "$B4_SERVICE_DIR" "Service directory" || return 1
 
-    _procd_stderr=0
-    _procd_gen=1
-    if "${B4_BIN_DIR}/${BINARY_NAME}" --help 2>&1 | grep -q -- "--console-level"; then
-        _procd_stderr=1
-        _procd_gen=2
-    fi
-
     cat >"${B4_SERVICE_DIR}/${B4_SERVICE_NAME}" <<EOF || return 1
 #!/bin/sh /etc/rc.common
 # B4 DPI Bypass Service (procd)
@@ -19,7 +12,7 @@ service_procd_install() {
 START=99
 STOP=10
 USE_PROCD=1
-B4_INIT_GEN=${_procd_gen}
+B4_INIT_GEN=2
 
 PROG="${B4_BIN_DIR}/${BINARY_NAME}"
 CONFIG="${B4_CONFIG_FILE}"
@@ -39,10 +32,10 @@ start_service() {
 
     procd_open_instance
     procd_set_param command \$PROG --config \$CONFIG
-    procd_set_param env PATH="\$PATH" B4_CONSOLE_LEVEL=error
+    procd_set_param env PATH="\$PATH"
     procd_set_param respawn \${respawn_threshold:-3600} \${respawn_timeout:-5} \${respawn_retry:-5}
     procd_set_param stdout 0
-    procd_set_param stderr ${_procd_stderr}
+    procd_set_param stderr 0
     procd_set_param term_timeout 20
     procd_close_instance
 }

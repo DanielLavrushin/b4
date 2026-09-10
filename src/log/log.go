@@ -253,6 +253,14 @@ func openErrorFileLocked(path string) error {
 	errSessionHeader = fmt.Sprintf("=== b4 error log opened pid=%d at %s ===\n",
 		os.Getpid(), time.Now().Format(time.RFC3339))
 	errHeaderPending = true
+	if len(initPending) > 0 {
+		_, _ = errCount.Write([]byte(errSessionHeader))
+		errHeaderPending = false
+		for _, line := range initPending {
+			errLogger.Println(line)
+		}
+		initPending = nil
+	}
 
 	if old != nil {
 		_ = old.Sync()
@@ -284,6 +292,20 @@ func CloseErrorFile() {
 		errLogger = nil
 		errCount = nil
 	}
+}
+
+var initPending []string
+
+func InitWarnf(format string, a ...any) {
+	msg := "[INIT] " + fmt.Sprintf(format, a...)
+	fmt.Fprintln(os.Stderr, msg)
+	errMu.Lock()
+	if errLogger != nil {
+		errLogger.Println(msg)
+	} else {
+		initPending = append(initPending, msg)
+	}
+	errMu.Unlock()
 }
 
 func Errorf(format string, a ...any) error {

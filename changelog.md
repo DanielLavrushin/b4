@@ -3,7 +3,6 @@
 ## [Unreleased]
 
 - FIXED: **b4 could be left running after a service restart on OpenWrt, deaf to everything but kill -9, or doubled after an update** - the daemon stopped listening for signals once shutdown began and never enforced its deadline, and the installer trusted a stop it never checked and a pidfile it never verified. [#351](https://github.com/DanielLavrushin/b4/issues/351)
-- CHANGED: **On OpenWrt, b4's errors and warnings appear in `logread`** - the init script discarded everything b4 printed before its own log file existed, so a start that failed left no trace.
 - FIXED: **A `--quiet` install or update left b4 stopped, and `--platform=` skipped the service setup** - the only start sat behind an interactive prompt, a forced platform never learned the service type, Ctrl-C at a prompt counted as the default answer, and a run without a terminal died at once.
 - FIXED: **The installer fell back to unverified downloads after one warning and wrote the configuration readable by every user** - a single failed certificate check switched every later download, checksum included, to unverified TLS.
 - FIXED: **Every OpenWrt MIPS64 install failed with a download error** - the installer asked for a `mips64_softfloat` build that was never published.

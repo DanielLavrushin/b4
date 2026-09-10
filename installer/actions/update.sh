@@ -55,8 +55,7 @@ refresh_legacy_service_script() {
     _legacy_log=0
     grep -q "b4\.log" "$_svc" 2>/dev/null && _legacy_log=1
     _outdated=0
-    _gen=$(sed -n 's/^B4_INIT_GEN=\([0-9]*\).*/\1/p' "$_svc" 2>/dev/null | head -1)
-    if [ "${_gen:-0}" -lt 2 ] 2>/dev/null && grep -q "B4 DPI Bypass Service" "$_svc" 2>/dev/null; then
+    if ! grep -q "^B4_INIT_GEN=" "$_svc" 2>/dev/null && grep -q "B4 DPI Bypass Service" "$_svc" 2>/dev/null; then
         _outdated=1
     fi
     [ "$_legacy_log" -eq 1 ] || [ "$_outdated" -eq 1 ] || return 0
