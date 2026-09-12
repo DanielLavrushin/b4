@@ -3462,6 +3462,107 @@
                 }
             }
         },
+        "/mtproto/web-proxy/page": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Reports whether a custom placeholder page is installed for the Telegram WEB proxy relay. With download=1 the page itself is returned.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "MTProto"
+                ],
+                "summary": "Custom WEB proxy placeholder page",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "Return the page body instead of its status",
+                        "name": "download",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Installs a self-contained HTML file that the relay serves to every visitor that is not a Telegram client. Replaces the built-in placeholder.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "MTProto"
+                ],
+                "summary": "Upload a custom WEB proxy placeholder page",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "HTML file, at most 1 MiB",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes the uploaded page. The relay falls back to the built-in placeholder.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "MTProto"
+                ],
+                "summary": "Remove the custom WEB proxy placeholder page",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/sets": {
             "get": {
                 "security": [
@@ -5332,6 +5433,15 @@
                     "type": "boolean"
                 },
                 "hostname": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "integer"
+                },
+                "tls_cert": {
+                    "type": "string"
+                },
+                "tls_key": {
                     "type": "string"
                 }
             }

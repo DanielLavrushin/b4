@@ -479,6 +479,23 @@ func (c *Config) checkPortCollisions(v *validator) {
 					"max_networks must be between 0 (unlimited) and 1000 (got %d)", mn)
 			}
 		}
+		if wp := c.System.MTProto.WebProxy; wp.Enabled && wp.Port != 0 {
+			if wp.Port < 1 || wp.Port > 65535 {
+				v.add("system.mtproto.web_proxy.port", "out_of_range", "port must be between 1 and 65535", portRangeParams)
+			} else {
+				refs = append(refs, portRef{"system.mtproto.web_proxy.port", wp.Port})
+			}
+		}
+		if wp := c.System.MTProto.WebProxy; (wp.TLSCert != "") != (wp.TLSKey != "") {
+			v.add("system.mtproto.web_proxy.tls_cert", "tls_pair_required", "both tls_cert and tls_key must be specified together", nil)
+		} else if wp.TLSCert != "" {
+			if _, err := os.Stat(wp.TLSCert); err != nil {
+				v.addf("system.mtproto.web_proxy.tls_cert", "file_not_found", map[string]any{"path": wp.TLSCert}, "TLS certificate file not found: %s", wp.TLSCert)
+			}
+			if _, err := os.Stat(wp.TLSKey); err != nil {
+				v.addf("system.mtproto.web_proxy.tls_key", "file_not_found", map[string]any{"path": wp.TLSKey}, "TLS key file not found: %s", wp.TLSKey)
+			}
+		}
 		if ut := c.System.MTProto.TCPUserTimeoutSec; ut < -1 || ut > 86400 {
 			v.addf("system.mtproto.tcp_user_timeout_sec", "out_of_range",
 				map[string]any{"value": ut, "min": -1, "max": 86400},

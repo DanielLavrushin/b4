@@ -12,10 +12,13 @@ import (
 
 type stubRelay struct {
 	host  string
+	port  int
 	taken []string
 }
 
 func (s *stubRelay) WebProxyHost() string { return s.host }
+
+func (s *stubRelay) WebProxyPort() int { return s.port }
 
 func (s *stubRelay) UpdateConfig(*config.Config) {}
 
@@ -106,5 +109,21 @@ func TestTelegramWebProxyVhostInactiveWhenUnconfigured(t *testing.T) {
 
 	if w.Code != stdhttp.StatusUnauthorized {
 		t.Fatalf("got %d, want the ordinary chain to answer with 401", w.Code)
+	}
+}
+
+func TestTelegramWebProxyVhostYieldsToDedicatedPort(t *testing.T) {
+	relay := &stubRelay{host: "relay.example.org", port: 8443}
+	h := chainWithRelay(t, relay)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(stdhttp.MethodGet, "http://relay.example.org/api/config", nil)
+	h.ServeHTTP(w, r)
+
+	if w.Code != stdhttp.StatusUnauthorized {
+		t.Fatalf("got %d, want the web server to keep the relay hostname once the relay has its own port", w.Code)
+	}
+	if len(relay.taken) != 0 {
+		t.Fatalf("shared vhost took a request while a dedicated port is configured: %v", relay.taken)
 	}
 }

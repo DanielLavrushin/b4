@@ -46,5 +46,5 @@ When the certificate and key do not load, b4 logs a warning and starts the web s
 :::
 
 :::info The Telegram WEB proxy needs more than this
-The [Telegram Desktop WEB proxy](../telegram/web-proxy.md) is served by this same web server, on a hostname of its own and ahead of the authentication above. Telegram Desktop requires a publicly trusted certificate on port 443 for that hostname, so a self-signed pair is not enough there, and requests to it never see the web interface's credentials.
+The [Telegram Desktop WEB proxy](../telegram/web-proxy.md) is served by this same web server unless it has a relay port of its own, on a hostname of its own and ahead of the authentication above. Telegram Desktop requires a publicly trusted certificate on port 443 for that hostname, so a self-signed pair is not enough there, and requests to it never see the web interface's credentials.
 :::

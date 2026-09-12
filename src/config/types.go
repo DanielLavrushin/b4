@@ -412,6 +412,9 @@ type MTProtoConfig struct {
 type MTProtoWebProxyConfig struct {
 	Enabled  bool   `json:"enabled"`
 	Hostname string `json:"hostname"`
+	Port     int    `json:"port"`
+	TLSCert  string `json:"tls_cert"`
+	TLSKey   string `json:"tls_key"`
 }
 
 type Socks5Config struct {
