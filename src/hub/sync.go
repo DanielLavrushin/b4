@@ -72,7 +72,7 @@ func (s *Service) Sync(ctx context.Context) (bool, error) {
 	if lastErr == nil {
 		lastErr = ErrUnreachable
 	} else {
-		lastErr = fmt.Errorf("%w: %v", ErrUnreachable, lastErr)
+		lastErr = fmt.Errorf("%w: %w", ErrUnreachable, lastErr)
 	}
 	s.markFailed(lastErr)
 	return false, lastErr

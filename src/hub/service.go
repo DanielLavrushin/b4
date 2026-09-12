@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -22,7 +23,8 @@ const (
 	DirName        = ".hub"
 	RequestTimeout = 60 * time.Second
 
-	baseScheme = "https://"
+	baseScheme  = "https://"
+	plainScheme = "http://"
 )
 
 var DefaultBases = []string{DefaultBaseURL}
@@ -130,7 +132,8 @@ func NormalizeBaseURL(raw string) string {
 		return ""
 	}
 	base = strings.TrimRight(base, "/")
-	if !strings.HasPrefix(base, baseScheme) {
+	plain := strings.HasPrefix(base, plainScheme)
+	if !strings.HasPrefix(base, baseScheme) && !plain {
 		return ""
 	}
 	for _, r := range base {
@@ -142,7 +145,21 @@ func NormalizeBaseURL(raw string) string {
 	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return ""
 	}
+	if plain && !localHost(u.Hostname()) {
+		return ""
+	}
 	return base
+}
+
+func localHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
 }
 
 func (s *Service) BaseURLs() []string {

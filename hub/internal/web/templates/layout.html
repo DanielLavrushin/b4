@@ -1,0 +1,62 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{.Title}} - b4 hub</title>
+<style>
+:root { color-scheme: light dark; --line: #8886; --muted: #777; --accent: #2a6ebb; --bg-soft: #8881; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow-wrap: anywhere; }
+header, main, footer { max-width: 56rem; margin: 0 auto; padding-inline: 1rem; }
+header { display: flex; flex-wrap: wrap; gap: 1rem; align-items: baseline; padding-block: .75rem; border-bottom: 1px solid var(--line); }
+header .brand { font-weight: 700; text-decoration: none; color: inherit; }
+header nav a { margin-right: .75rem; }
+main { padding-block: 1rem 2rem; }
+footer { padding-block: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .9rem; }
+a { color: var(--accent); }
+h1 { font-size: 1.4rem; margin: 1.25rem 0 .75rem; }
+h2 { font-size: 1.15rem; margin: 1rem 0 .5rem; }
+h3 { font-size: 1rem; margin: .75rem 0 .25rem; }
+p { margin: .35rem 0; }
+.muted { color: var(--muted); }
+.notice { padding: .5rem .75rem; border: 1px solid var(--line); background: var(--bg-soft); }
+form.search { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-block: .5rem 1rem; }
+form.search input { flex: 1 1 14rem; font: inherit; padding: .45rem .6rem; border: 1px solid var(--line); border-radius: .3rem; background: transparent; color: inherit; }
+button, input[type=submit] { font: inherit; padding: .45rem .8rem; border: 1px solid var(--line); border-radius: .3rem; background: var(--bg-soft); color: inherit; cursor: pointer; }
+form.inline { display: inline-flex; gap: .4rem; align-items: center; margin: .25rem .5rem .25rem 0; flex-wrap: wrap; }
+form.inline input { font: inherit; padding: .4rem .5rem; border: 1px solid var(--line); border-radius: .3rem; background: transparent; color: inherit; max-width: 100%; }
+ul.cards { list-style: none; margin: 0; padding: 0; }
+li.card, article.entry, details.row { border: 1px solid var(--line); border-radius: .4rem; padding: .75rem 1rem; margin-block: .75rem; }
+li.card h2 { margin: 0 0 .25rem; }
+details.row summary { cursor: pointer; }
+.targets { font-weight: 500; }
+.strategy { font-size: .95rem; }
+.rating { font-size: .95rem; }
+.meta { color: var(--muted); font-size: .9rem; }
+dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: .25rem .75rem; margin: .5rem 0; }
+dl.facts dt { color: var(--muted); }
+dl.facts dd { margin: 0; }
+ul.plain { margin: 0; padding-left: 1.1rem; }
+pre.json { border: 1px solid var(--line); border-radius: .4rem; padding: .75rem; overflow-x: auto; font-size: .85rem; white-space: pre; background: var(--bg-soft); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85rem; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+@media (max-width: 40rem) { dl.facts { grid-template-columns: 1fr; } dl.facts dt { margin-top: .4rem; } }
+</style>
+</head>
+<body>
+<header>
+<a class="brand" href="/">b4 hub</a>
+<nav><a href="/">Search</a>{{if .Admin}}<a href="/admin">Queue</a><a href="/admin/keys">Keys</a>{{end}}</nav>
+</header>
+<main>
+{{template "content" .}}
+</main>
+<footer>Sets shared by b4 users. A rating is the sum of their reports on their own networks, nothing more.</footer>
+</body>
+</html>{{end}}
+
+{{define "rating"}}{{if .Usable}}<p class="rating">{{.Percent}}% positive on {{.Where}}: {{n .N}} weighted reports from {{.Devices}} device{{if ne .Devices 1}}s{{end}}{{if .Newest}}, newest {{day .Newest}}{{end}}</p>{{else}}<p class="rating muted">not enough reports to rate{{if .Devices}} ({{.Devices}} device{{if ne .Devices 1}}s{{end}}{{if .Newest}}, newest {{day .Newest}}{{end}}){{end}}</p>{{end}}{{end}}

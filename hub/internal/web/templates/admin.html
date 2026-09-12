@@ -1,0 +1,66 @@
+{{define "content"}}
+{{if .Notice}}<p class="notice">{{.Notice}}</p>{{end}}
+<h1>Pending ({{len .Pending}})</h1>
+{{if not .Pending}}<p class="muted">Nothing is waiting.</p>{{end}}
+{{range .Pending}}
+<article class="entry">
+<h2>{{.Version.Title}}</h2>
+<p class="muted">{{.Version.SetID}}/{{.Version.Version}}, received {{when .Version.CreatedAt}}, author {{.Author}}{{if .Version.ASNObserved}}, seen from AS{{.Version.ASNObserved}}{{if .Version.CountryObserved}} {{.Version.CountryObserved}}{{end}}{{end}}{{if .Version.ASNHint}}, claims {{.Version.ASNHint}}{{if .Version.CountryHint}} {{.Version.CountryHint}}{{end}}{{end}}{{if .Version.Engine}}, {{.Version.Engine}}{{end}}{{if .Version.B4Version}}, b4 {{.Version.B4Version}}{{end}}</p>
+{{template "detail" .}}
+<form method="post" action="/admin/sets/{{.Version.SetID}}/{{.Version.Version}}/approve" class="inline"><button>Approve</button></form>
+<form method="post" action="/admin/sets/{{.Version.SetID}}/{{.Version.Version}}/reject" class="inline"><input name="reason" placeholder="reason" required><button>Reject</button></form>
+<form method="post" action="/admin/sets/{{.Version.SetID}}/{{.Version.Version}}/hide" class="inline"><input name="reason" placeholder="reason"><button>Hide</button></form>
+<form method="post" action="/admin/keys/{{.Version.UploaderHMAC}}/ban" class="inline"><input name="reason" placeholder="reason"><button>Ban uploader</button></form>
+</article>
+{{end}}
+
+<h1>Listed ({{len .Active}})</h1>
+{{if not .Active}}<p class="muted">Nothing is listed.</p>{{end}}
+{{range .Active}}
+<details class="row">
+<summary>{{.Version.Title}} <span class="muted">{{.Version.SetID}}/{{.Version.Version}}, {{.Version.Family}}, {{.Targets.Summary}}{{if .Reports}}, {{len .Reports}} report{{if ne (len .Reports) 1}}s{{end}}{{end}}</span></summary>
+<p class="muted">approved {{when .Version.UpdatedAt}}, author {{.Author}}, <a href="/s/{{.Version.SetID}}">public page</a></p>
+{{template "detail" .}}
+<form method="post" action="/admin/sets/{{.Version.SetID}}/{{.Version.Version}}/hide" class="inline"><input name="reason" placeholder="reason"><button>Hide</button></form>
+<form method="post" action="/admin/keys/{{.Version.UploaderHMAC}}/ban" class="inline"><input name="reason" placeholder="reason"><button>Ban uploader</button></form>
+</details>
+{{end}}
+
+<h1>Hidden ({{len .Hidden}})</h1>
+{{if not .Hidden}}<p class="muted">Nothing is hidden.</p>{{end}}
+{{range .Hidden}}
+<details class="row">
+<summary>{{.Version.Title}} <span class="muted">{{.Version.SetID}}/{{.Version.Version}}, {{when .Version.UpdatedAt}}: {{.Version.StatusReason}}</span></summary>
+{{template "detail" .}}
+<form method="post" action="/admin/sets/{{.Version.SetID}}/{{.Version.Version}}/approve" class="inline"><button>Restore</button></form>
+</details>
+{{end}}
+
+<h1>Rejected ({{len .Rejected}})</h1>
+{{if not .Rejected}}<p class="muted">Nothing was rejected.</p>{{end}}
+{{range .Rejected}}
+<details class="row">
+<summary>{{.Version.Title}} <span class="muted">{{.Version.SetID}}/{{.Version.Version}}, {{when .Version.UpdatedAt}}: {{.Version.StatusReason}}</span></summary>
+{{template "detail" .}}
+<form method="post" action="/admin/sets/{{.Version.SetID}}/{{.Version.Version}}/approve" class="inline"><button>Approve after all</button></form>
+</details>
+{{end}}
+{{end}}
+
+{{define "detail"}}
+{{if .Version.Description}}<p>{{.Version.Description}}</p>{{end}}
+<dl class="facts">
+<dt>Targets</dt><dd>{{.Targets.Summary}}</dd>
+<dt>Strategy</dt><dd>{{join .Strategy "; "}}</dd>
+<dt>Flags</dt><dd>{{if .Version.Flags}}{{join .Version.Flags ", "}}{{else}}none{{end}}</dd>
+<dt>Fake packets carry</dt><dd>{{if .Emitted}}<ul class="plain">{{range .Emitted}}<li>{{.Name}} <span class="muted">({{.Source}})</span></li>{{end}}</ul>{{else}}no server name{{end}}</dd>
+{{if .Pins}}<dt>Pins</dt><dd><ul class="plain">{{range .Pins}}<li>{{.Domain}}: {{join .Addresses ", "}}</li>{{end}}</ul></dd>{{end}}
+{{if .DoHHost}}<dt>DoH host</dt><dd>{{.DoHHost}}</dd>{{end}}
+{{if .Version.Payloads}}<dt>Payloads</dt><dd><ul class="plain">{{range .Version.Payloads}}<li>{{.Protocol}} {{.Domain}}, {{.Size}} bytes, <a class="mono" href="/b4/hub/blob/{{.SHA256}}">{{.SHA256}}</a></li>{{end}}</ul></dd>{{end}}
+{{if .Reports}}<dt>Reports</dt><dd>{{len .Reports}} ({{.Independent}} independent)<ul class="plain">{{range .Reports}}<li>{{when .ReceivedAt}}{{if .ASNObserved}} AS{{.ASNObserved}}{{end}}: {{.Reason}}</li>{{end}}</ul></dd>{{end}}
+<dt>Fingerprint</dt><dd class="mono">{{.Version.FP}}</dd>
+<dt>Needs b4</dt><dd>{{.Version.B4Min}}</dd>
+{{if .DecodeError}}<dt>Decode error</dt><dd>{{.DecodeError}}</dd>{{end}}
+</dl>
+<details><summary>Projection</summary><pre class="json">{{.Projection}}</pre></details>
+{{end}}

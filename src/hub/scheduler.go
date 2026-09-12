@@ -10,6 +10,7 @@ import (
 
 const (
 	syncInterval  = time.Hour
+	retryInterval = 5 * time.Minute
 	startupDelay  = 20 * time.Second
 	pollInterval  = 15 * time.Second
 	stopWaitLimit = 2 * time.Second
@@ -74,6 +75,7 @@ func (s *Service) run(ctx context.Context, stop <-chan struct{}, stopped chan<- 
 
 	armedAt := s.now().Add(startupDelay)
 	var lastRun time.Time
+	nextAfter := syncInterval
 	wasReady := false
 
 	for {
@@ -84,7 +86,7 @@ func (s *Service) run(ctx context.Context, stop <-chan struct{}, stopped chan<- 
 			if !s.ready() {
 				continue
 			}
-			s.tick(ctx)
+			nextAfter = s.tick(ctx)
 			lastRun = s.now()
 			wasReady = true
 		case <-poll.C:
@@ -96,24 +98,26 @@ func (s *Service) run(ctx context.Context, stop <-chan struct{}, stopped chan<- 
 			if now.Before(armedAt) {
 				continue
 			}
-			if wasReady && now.Sub(lastRun) < syncInterval {
+			if wasReady && now.Sub(lastRun) < nextAfter {
 				continue
 			}
-			s.tick(ctx)
+			nextAfter = s.tick(ctx)
 			lastRun = now
 			wasReady = true
 		}
 	}
 }
 
-func (s *Service) tick(ctx context.Context) {
+func (s *Service) tick(ctx context.Context) time.Duration {
 	if _, err := s.Sync(ctx); err != nil {
-		if ctx.Err() == nil {
-			log.Warnf("[HUB] sync failed: %v", err)
+		if ctx.Err() != nil {
+			return retryInterval
 		}
-		if errors.Is(err, ErrUnreachable) || ctx.Err() != nil {
-			return
+		log.Warnf("[HUB] sync failed: %v", err)
+		if errors.Is(err, ErrUnreachable) {
+			return retryInterval
 		}
 	}
 	s.FlushOutbox(ctx)
+	return syncInterval
 }

@@ -205,7 +205,7 @@ func (s *Service) FetchBlob(ctx context.Context, ref hubwire.BlobRef) ([]byte, e
 	if lastErr == nil {
 		return nil, ErrUnreachable
 	}
-	return nil, fmt.Errorf("%w: %v", ErrUnreachable, lastErr)
+	return nil, fmt.Errorf("%w: %w", ErrUnreachable, lastErr)
 }
 
 func (s *Service) Send(ctx context.Context, rec *hubwire.Record) (*MessageResponse, error) {
@@ -252,7 +252,7 @@ func (s *Service) Send(ctx context.Context, rec *hubwire.Record) (*MessageRespon
 		return nil, ErrUnreachable
 	}
 	log.Debugf("hub: no base accepted the %s record: %v", rec.Kind, lastErr)
-	return nil, fmt.Errorf("%w: %v", ErrUnreachable, lastErr)
+	return nil, fmt.Errorf("%w: %w", ErrUnreachable, lastErr)
 }
 
 func (s *Service) Sign(kind string, body interface{}) (*hubwire.Record, error) {

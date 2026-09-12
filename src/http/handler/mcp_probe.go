@@ -49,6 +49,55 @@ type mcpProbeOut struct {
 	Note    string           `json:"note"`
 }
 
+const (
+	probeModeThroughB4 = "through_b4"
+	probeModeBaseline  = "baseline"
+)
+
+func probeDomain(ctx context.Context, cfg *config.Config, domain, mode string, timeout time.Duration) mcpProbeResult {
+	opts := watchdog.ProbeOptions{Timeout: timeout}
+	if mode == probeModeBaseline {
+		opts.Mark = cfg.MainInjectedMark()
+	}
+	res, err := watchdog.ProbeHost(ctx, domain, opts)
+	var priv *watchdog.ErrPrivateDestination
+	if errors.As(err, &priv) {
+		return mcpProbeResult{
+			Domain: domain, Mode: mode,
+			Verdict: string(netprobe.DomainDNSFake),
+			Error: fmt.Sprintf("every address %s resolves to is private or local (%s), so the name is sinkholed: "+
+				"the answer is being forged, and no packet strategy fixes that", domain, priv.Addr),
+		}
+	}
+	if err != nil {
+		return mcpProbeResult{Domain: domain, Mode: mode, Error: err.Error()}
+	}
+	return mcpProbeResult{
+		Domain:    domain,
+		Mode:      mode,
+		OK:        res.OK,
+		Verdict:   string(res.Verdict),
+		Error:     res.Error,
+		KBPerSec:  res.Speed / 1024,
+		BytesRead: res.BytesRead,
+	}
+}
+
+func probeDomainBothWays(ctx context.Context, cfg *config.Config, domain string, timeout time.Duration) (through, baseline mcpProbeResult) {
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		through = probeDomain(ctx, cfg, domain, probeModeThroughB4, timeout)
+	}()
+	go func() {
+		defer wg.Done()
+		baseline = probeDomain(ctx, cfg, domain, probeModeBaseline, timeout)
+	}()
+	wg.Wait()
+	return through, baseline
+}
+
 func mcpProbeTimeout(v int) time.Duration {
 	switch {
 	case v <= 0:
@@ -127,11 +176,11 @@ func (api *API) addMCPProbeTools(srv *mcp.Server) {
 		var modes []string
 		switch strings.ToLower(strings.TrimSpace(in.Mode)) {
 		case "", "both":
-			modes = []string{"through_b4", "baseline"}
-		case "through_b4":
-			modes = []string{"through_b4"}
-		case "baseline":
-			modes = []string{"baseline"}
+			modes = []string{probeModeThroughB4, probeModeBaseline}
+		case probeModeThroughB4:
+			modes = []string{probeModeThroughB4}
+		case probeModeBaseline:
+			modes = []string{probeModeBaseline}
 		default:
 			return nil, mcpProbeOut{}, fmt.Errorf("unknown mode %q: expected both, through_b4 or baseline", in.Mode)
 		}
@@ -147,40 +196,11 @@ func (api *API) addMCPProbeTools(srv *mcp.Server) {
 				wg.Add(1)
 				go func(domain, mode string) {
 					defer wg.Done()
-					opts := watchdog.ProbeOptions{Timeout: timeout}
-					if mode == "baseline" {
-						opts.Mark = cfg.MainInjectedMark()
-					}
 					log.Infof("mcp: probing %s (%s)", domain, mode)
-					res, err := watchdog.ProbeHost(ctx, domain, opts)
-
+					result := probeDomain(ctx, cfg, domain, mode, timeout)
 					mu.Lock()
-					defer mu.Unlock()
-					var priv *watchdog.ErrPrivateDestination
-					if errors.As(err, &priv) {
-						out.Results = append(out.Results, mcpProbeResult{
-							Domain: domain, Mode: mode,
-							Verdict: string(netprobe.DomainDNSFake),
-							Error: fmt.Sprintf("every address %s resolves to is private or local (%s), so the name is sinkholed: "+
-								"the answer is being forged, and no packet strategy fixes that", domain, priv.Addr),
-						})
-						return
-					}
-					if err != nil {
-						out.Results = append(out.Results, mcpProbeResult{
-							Domain: domain, Mode: mode, Error: err.Error(),
-						})
-						return
-					}
-					out.Results = append(out.Results, mcpProbeResult{
-						Domain:    domain,
-						Mode:      mode,
-						OK:        res.OK,
-						Verdict:   string(res.Verdict),
-						Error:     res.Error,
-						KBPerSec:  res.Speed / 1024,
-						BytesRead: res.BytesRead,
-					})
+					out.Results = append(out.Results, result)
+					mu.Unlock()
 				}(domain, mode)
 			}
 		}
@@ -204,7 +224,7 @@ func (api *API) addMCPProbeTools(srv *mcp.Server) {
 				if out.Results[i].Domain != domain {
 					continue
 				}
-				if out.Results[i].Mode == "through_b4" {
+				if out.Results[i].Mode == probeModeThroughB4 {
 					through = &out.Results[i]
 				} else {
 					baseline = &out.Results[i]

@@ -23,6 +23,7 @@ import (
 	"github.com/daniellavrushin/b4/geodat"
 	b4http "github.com/daniellavrushin/b4/http"
 	"github.com/daniellavrushin/b4/http/handler"
+	"github.com/daniellavrushin/b4/hub"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/mtproto"
@@ -480,6 +481,10 @@ func runB4(cmd *cobra.Command, args []string) error {
 		geoScheduler.Start()
 	}
 
+	hubService := hub.New(func() *config.Config { return cfgPtr.Load() }, hub.Options{Version: Version})
+	handler.SetHubService(hubService)
+	hubService.Start()
+
 	log.Infof("B4 is running. Press Ctrl+C to stop")
 	metrics.RecordEvent("info", "B4 is fully operational")
 
@@ -511,6 +516,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	}()
 
 	wd.Stop()
+	hubService.Stop()
 	if geoScheduler != nil {
 		geoScheduler.Stop()
 	}

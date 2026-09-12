@@ -1,0 +1,54 @@
+{{define "content"}}
+<h1>{{.Set.Title}}</h1>
+<p class="targets">{{.Card.Targets}}</p>
+<p class="strategy">{{join .Card.Strategy "; "}}</p>
+{{template "rating" .Card.Rating}}
+{{if .Set.Description}}<p>{{.Set.Description}}</p>{{end}}
+<dl class="facts">
+<dt>Id</dt><dd class="mono">{{.Set.ID}} version {{.Set.Version}}</dd>
+<dt>Author</dt><dd class="mono">{{.Set.Author}}</dd>
+<dt>Family</dt><dd>{{.Set.Family}}</dd>
+<dt>Needs b4</dt><dd>{{.Set.B4Min}} or newer{{if .Set.B4Version}}, shared from {{.Set.B4Version}}{{end}}{{if .Set.Engine}} ({{.Set.Engine}}){{end}}</dd>
+<dt>Created</dt><dd>{{day .Set.CreatedAt}}</dd>
+<dt>Updated</dt><dd>{{day .Set.UpdatedAt}}</dd>
+{{if .Set.Flags}}<dt>Flags</dt><dd>{{join .Set.Flags ", "}}</dd>{{end}}
+{{if .Set.DerivedFrom}}<dt>Derived from</dt><dd><a href="/s/{{.Set.DerivedFrom.ID}}">{{.Set.DerivedFrom.ID}}</a>{{if .Set.DerivedFrom.Version}} version {{.Set.DerivedFrom.Version}}{{end}}</dd>{{end}}
+</dl>
+<h2>Targets</h2>
+{{if .Targets.Domains}}<h3>Domains</h3><ul class="plain">{{range .Targets.Domains}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{if .Targets.IPs}}<h3>Addresses</h3><ul class="plain">{{range .Targets.IPs}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{if .Targets.GeoSite}}<h3>GeoSite categories</h3><ul class="plain">{{range .Targets.GeoSite}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{if .Targets.GeoIP}}<h3>GeoIP categories</h3><ul class="plain">{{range .Targets.GeoIP}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{if .Targets.Empty}}<p class="muted">No targets.</p>{{end}}
+{{if .Payloads}}
+<h2>Payloads</h2>
+<ul class="plain">{{range .Payloads}}<li>{{.Protocol}} {{.Domain}}, {{.Size}} bytes, <span class="mono">{{.SHA256}}</span>{{if .Missing}} (missing on this hub){{end}}</li>{{end}}</ul>
+{{end}}
+<h2>Import into b4</h2>
+<p>Copy the JSON below and paste it into Import on the Sets page of b4. The payloads are included.</p>
+<p><button type="button" id="copy" data-copied="Copied">Copy JSON</button></p>
+<pre id="envelope" class="json">{{.Envelope}}</pre>
+<script>
+(function () {
+  var button = document.getElementById('copy');
+  var source = document.getElementById('envelope');
+  if (!button || !source) { return; }
+  function done() { button.textContent = button.getAttribute('data-copied'); }
+  function selectAndCopy() {
+    var range = document.createRange();
+    range.selectNodeContents(source);
+    var selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    try { if (document.execCommand('copy')) { done(); } } catch (e) {}
+  }
+  button.addEventListener('click', function () {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(source.textContent).then(done, selectAndCopy);
+    } else {
+      selectAndCopy();
+    }
+  });
+})();
+</script>
+{{end}}

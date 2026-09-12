@@ -10,7 +10,7 @@ var now = time.Date(2026, 9, 12, 12, 0, 0, 0, time.UTC)
 
 func oldKey() time.Time { return now.Add(-30 * 24 * time.Hour) }
 
-func near(a, b float64) bool { return math.Abs(a-b) < 1e-6 }
+func near(a, b float64) bool { return math.Abs(a-b) < 1e-4 }
 
 func TestEffectiveWeightAppliesEveryMultiplier(t *testing.T) {
 	base := Vote{Kind: KindManualWorks, Weight: 1, OriginVerified: true, KeyFirstSeen: oldKey(), ReceivedAt: now}

@@ -772,7 +772,7 @@
       },
       "identity": {
         "title": "Author identity",
-        "help": "Sets published from this router and reports on what works are signed with this key. The recovery code carries the key to another router, so the same author keeps their sets.",
+        "help": "Sets published from this device and reports on what works are signed with this key. The recovery code carries the key to another router, so the same author keeps their sets.",
         "keyId": "Key",
         "showRecovery": "Show recovery code",
         "restore": "Restore from code",
