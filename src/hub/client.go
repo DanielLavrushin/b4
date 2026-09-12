@@ -73,6 +73,7 @@ type MessageResponse struct {
 	Version    int    `json:"version,omitempty"`
 	Status     string `json:"status,omitempty"`
 	Duplicate  bool   `json:"duplicate,omitempty"`
+	Queued     bool   `json:"queued,omitempty"`
 	Code       string `json:"code,omitempty"`
 	Error      string `json:"error,omitempty"`
 	RetryAfter int    `json:"retry_after,omitempty"`
@@ -244,6 +245,9 @@ func (s *Service) Send(ctx context.Context, rec *hubwire.Record) (*MessageRespon
 		}
 		resp.HTTPStatus = status
 		if status == http.StatusOK || status == http.StatusAccepted {
+			if resp.Queued {
+				log.Debugf("hub: %s record accepted by relay %s and queued for the upstream hub", rec.Kind, base)
+			}
 			return &resp, nil
 		}
 		return nil, &HubError{Status: status, Code: resp.Code, Message: resp.Error, SetID: resp.SetID, Version: resp.Version, RetryAfter: resp.RetryAfter}

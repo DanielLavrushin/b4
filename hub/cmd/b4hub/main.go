@@ -22,6 +22,7 @@ import (
 	"github.com/daniellavrushin/b4hub/internal/geo"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
 	"github.com/daniellavrushin/b4hub/internal/ingest"
+	"github.com/daniellavrushin/b4hub/internal/mirror"
 	"github.com/daniellavrushin/b4hub/internal/ratelimit"
 	"github.com/daniellavrushin/b4hub/internal/store"
 	"github.com/daniellavrushin/b4hub/internal/web"
@@ -39,6 +40,8 @@ const (
 	envGeoSiteURL    = "B4HUB_GEOSITE_URL"
 	envGeoIPURL      = "B4HUB_GEOIP_URL"
 	envAdminPassword = "B4HUB_ADMIN_PASSWORD"
+	envUpstream      = "B4HUB_UPSTREAM"
+	envUpstreamKey   = "B4HUB_UPSTREAM_KEY"
 
 	shutdownGrace = 10 * time.Second
 )
@@ -49,11 +52,13 @@ func usage() {
 usage:
   b4hub keygen   [-data DIR]
   b4hub serve    [-data DIR] [-listen ADDR] [-public-url URL] [-geosite-url URL] [-geoip-url URL]
-  b4hub build    [-data DIR] [-public-url URL] [-new-epoch]
+  b4hub build    [-data DIR] [-public-url URL] [-new-epoch] [-revoke KEYID]
   b4hub moderate [-data DIR] list | approve <id> | reject <id> <reason> | hide <id> <reason> | ban <key_hmac> [reason]
+  b4hub moderate [-data DIR] mirrors | approve-mirror <id> | reject-mirror <id> <reason>
+  b4hub mirror   -upstream URL [-upstream-key KEYID] [-data DIR] [-listen ADDR] [-public-url URL] [-announce] [-refresh 5m]
 
-environment: %s %s %s %s %s %s
-`, Version, envData, envListen, envPublicURL, envGeoSiteURL, envGeoIPURL, envAdminPassword)
+environment: %s %s %s %s %s %s %s %s
+`, Version, envData, envListen, envPublicURL, envGeoSiteURL, envGeoIPURL, envAdminPassword, envUpstream, envUpstreamKey)
 	os.Exit(2)
 }
 
@@ -88,6 +93,8 @@ func main() {
 		runBuild(args)
 	case "moderate":
 		runModerate(args)
+	case "mirror":
+		runMirror(args)
 	case "version":
 		fmt.Println(Version)
 	default:
@@ -150,6 +157,7 @@ func (s *services) builder(publicURL string, sources []hubwire.GeoSource) *catal
 		PublicDir:  s.layout.Public(),
 		PublicURL:  publicURL,
 		GeoSources: sources,
+		Mirrors:    &catalogue.MirrorHealth{Store: s.store, KeyID: s.identity.KeyID()},
 	}
 }
 
@@ -222,21 +230,28 @@ func runServe(args []string) {
 	mux := server.Router()
 	site.Mount(mux)
 
-	httpServer := &http.Server{
-		Addr:              *listen,
-		Handler:           mux,
+	httpServer := newHTTPServer(*listen, mux)
+
+	go geoService.RunDaily(ctx)
+	go builder.Run(ctx, catalogue.DefaultInterval)
+	serveUntilSignal(httpServer, cancel)
+}
+
+func newHTTPServer(listen string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              listen,
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+}
 
-	go geoService.RunDaily(ctx)
-	go builder.Run(ctx, catalogue.DefaultInterval)
-
+func serveUntilSignal(httpServer *http.Server, cancel context.CancelFunc) {
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("listening on %s", *listen)
+		log.Printf("listening on %s", httpServer.Addr)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
@@ -258,6 +273,67 @@ func runServe(args []string) {
 	}
 }
 
+func runMirror(args []string) {
+	fs := flag.NewFlagSet("mirror", flag.ExitOnError)
+	data := dataFlag(fs)
+	listen := fs.String("listen", envOr(envListen, defaultListen), "listen address")
+	upstream := fs.String("upstream", envOr(envUpstream, ""), "central hub base URL")
+	upstreamKey := fs.String("upstream-key", envOr(envUpstreamKey, ""), "central hub key id, the built-in key when empty")
+	publicURL := fs.String("public-url", envOr(envPublicURL, ""), "public base URL of this mirror, announced to the central hub")
+	announce := fs.Bool("announce", false, "announce this mirror to the central hub on start and daily")
+	refresh := fs.Duration("refresh", mirror.DefaultRefresh, "how often to check the upstream manifest")
+	_ = fs.Parse(args)
+	if strings.TrimSpace(*upstream) == "" {
+		fatal(errors.New("-upstream is required"))
+	}
+	layout := hubdata.Layout{Root: *data}
+	if err := layout.EnsureDirs(); err != nil {
+		fatal(err)
+	}
+	identity, err := layout.LoadIdentity()
+	if err != nil && !errors.Is(err, hubdata.ErrNoIdentity) {
+		fatal(err)
+	}
+	if *announce {
+		if identity == nil {
+			fatal(fmt.Errorf("-announce needs a mirror identity, run b4hub keygen -data %s first", *data))
+		}
+		if strings.TrimSpace(*publicURL) == "" {
+			fatal(errors.New("-announce needs -public-url"))
+		}
+	}
+	var trusted []string
+	if *upstreamKey != "" {
+		if _, err := hubwire.DecodeKey(*upstreamKey); err != nil {
+			fatal(fmt.Errorf("-upstream-key: %w", err))
+		}
+		trusted = []string{strings.TrimSpace(*upstreamKey)}
+	}
+	svc, err := mirror.New(mirror.Options{
+		Upstream:    *upstream,
+		TrustedKeys: trusted,
+		Layout:      layout,
+		PublicURL:   strings.TrimRight(strings.TrimSpace(*publicURL), "/"),
+		Identity:    identity,
+		Announce:    *announce,
+		Version:     Version,
+		Refresh:     *refresh,
+	})
+	if err != nil {
+		fatal(err)
+	}
+	keyID := "no identity"
+	if identity != nil {
+		keyID = identity.KeyID()
+	}
+	log.Printf("b4hub %s mirror of %s, key id %s, data %s", Version, svc.Status().Upstream, keyID, layout.Root)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go svc.Run(ctx)
+	serveUntilSignal(newHTTPServer(*listen, svc.Router()), cancel)
+}
+
 func runBuild(args []string) {
 	fs := flag.NewFlagSet("build", flag.ExitOnError)
 	data := dataFlag(fs)
@@ -265,11 +341,21 @@ func runBuild(args []string) {
 	geoSiteURL := fs.String("geosite-url", envOr(envGeoSiteURL, geo.DefaultGeoSiteURL), "geosite.dat source")
 	geoIPURL := fs.String("geoip-url", envOr(envGeoIPURL, geo.DefaultGeoIPURL), "geoip.dat source")
 	newEpoch := fs.Bool("new-epoch", false, "start a new epoch before building")
+	revoke := fs.String("revoke", "", "add a key id to the revoked list carried by every manifest")
 	_ = fs.Parse(args)
 
 	svc := openServices(*data)
 	defer svc.store.Close()
 	ctx := context.Background()
+	if keyID := strings.TrimSpace(*revoke); keyID != "" {
+		if _, err := hubwire.DecodeKey(keyID); err != nil {
+			fatal(fmt.Errorf("-revoke: %w", err))
+		}
+		if err := svc.store.RevokeKey(ctx, keyID); err != nil {
+			fatal(err)
+		}
+		fmt.Printf("revoked %s\n", keyID)
+	}
 	if *newEpoch {
 		epoch, err := svc.store.NewEpoch(ctx, time.Now())
 		if err != nil {
@@ -390,7 +476,47 @@ func runModerate(args []string) {
 			fatal(err)
 		}
 		fmt.Printf("banned %s\n", rest[1])
+	case "mirrors":
+		mirrors, err := svc.store.Mirrors(ctx)
+		if err != nil {
+			fatal(err)
+		}
+		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(tw, "ID\tURL\tKEY\tSTATUS\tFIRST SEEN\tLAST SEEN\tLAST CHECK\tLAST OK\tREASON")
+		for _, m := range mirrors {
+			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", m.ID, m.URL, hubdata.AuthorLabel(m.KeyHMAC), m.Status, stamp(m.FirstSeen), stamp(m.LastSeen), stamp(m.LastCheck), stamp(m.LastOK), m.Reason)
+		}
+		tw.Flush()
+	case "approve-mirror":
+		need(2)
+		id := parseMirrorID(rest[1])
+		if err := svc.store.SetMirrorStatus(ctx, id, store.MirrorApproved, "", now); err != nil {
+			fatal(err)
+		}
+		fmt.Printf("approved mirror %d\n", id)
+	case "reject-mirror":
+		need(3)
+		id := parseMirrorID(rest[1])
+		if err := svc.store.SetMirrorStatus(ctx, id, store.MirrorRejected, strings.Join(rest[2:], " "), now); err != nil {
+			fatal(err)
+		}
+		fmt.Printf("rejected mirror %d\n", id)
 	default:
 		usage()
 	}
+}
+
+func stamp(t time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	return t.Format(time.RFC3339)
+}
+
+func parseMirrorID(raw string) int64 {
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || id <= 0 {
+		fatal(fmt.Errorf("%q is not a mirror id", raw))
+	}
+	return id
 }

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
@@ -27,6 +28,7 @@ const (
 	ActionHide    = "hide"
 	ActionBan     = "ban"
 	ActionUnban   = "unban"
+	ActionRemove  = "remove"
 )
 
 func (s *Server) mountAdmin(mux *http.ServeMux) {
@@ -36,6 +38,7 @@ func (s *Server) mountAdmin(mux *http.ServeMux) {
 	mux.Handle("GET "+PathAdmin+"/keys", guard(http.HandlerFunc(s.adminKeys)))
 	mux.Handle("POST "+PathAdmin+"/sets/{id}/{version}/{action}", guard(http.HandlerFunc(s.adminSetAction)))
 	mux.Handle("POST "+PathAdmin+"/keys/{key}/{action}", guard(http.HandlerFunc(s.adminKeyAction)))
+	mux.Handle("POST "+PathAdmin+"/mirrors/{id}/{action}", guard(http.HandlerFunc(s.adminMirrorAction)))
 }
 
 func (s *Server) adminGuard(next http.Handler) http.Handler {
@@ -95,12 +98,36 @@ func (s *Server) queueEntry(ctx context.Context, v store.Version) QueueEntry {
 	return e
 }
 
+type MirrorEntry struct {
+	store.Mirror
+	KeyLabel string
+	Health   string
+}
+
+func mirrorHealth(m store.Mirror) string {
+	switch {
+	case m.LastCheck.IsZero():
+		return "not checked yet"
+	case m.Healthy():
+		return "ok at " + templateFuncs["when"].(func(time.Time) string)(m.LastCheck)
+	}
+	text := "failed at " + templateFuncs["when"].(func(time.Time) string)(m.LastCheck)
+	if m.Reason != "" {
+		text += ": " + m.Reason
+	}
+	if !m.LastOK.IsZero() {
+		text += ", last ok " + templateFuncs["when"].(func(time.Time) string)(m.LastOK)
+	}
+	return text
+}
+
 type AdminPage struct {
 	Base
 	Pending  []QueueEntry
 	Active   []QueueEntry
 	Hidden   []QueueEntry
 	Rejected []QueueEntry
+	Mirrors  []MirrorEntry
 	Notice   string
 }
 
@@ -142,7 +169,59 @@ func (s *Server) adminQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page.Rejected = s.entries(ctx, rejected, recentDecisions)
+	mirrors, err := s.Store.Mirrors(ctx)
+	if err != nil {
+		s.message(w, http.StatusInternalServerError, true, "Error", err.Error())
+		return
+	}
+	page.Mirrors = make([]MirrorEntry, 0, len(mirrors))
+	for _, m := range mirrors {
+		page.Mirrors = append(page.Mirrors, MirrorEntry{Mirror: m, KeyLabel: hubdata.AuthorLabel(m.KeyHMAC), Health: mirrorHealth(m)})
+	}
 	s.render(w, http.StatusOK, "admin", page)
+}
+
+func (s *Server) adminMirrorAction(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		s.message(w, http.StatusNotFound, true, "No such mirror", "The address does not name a mirror.")
+		return
+	}
+	ctx := r.Context()
+	m, err := s.Store.GetMirror(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		s.message(w, http.StatusNotFound, true, "No such mirror", "The address does not name a mirror.")
+		return
+	} else if err != nil {
+		s.message(w, http.StatusInternalServerError, true, "Error", err.Error())
+		return
+	}
+	var notice string
+	switch r.PathValue("action") {
+	case ActionApprove:
+		err = s.Store.SetMirrorStatus(ctx, id, store.MirrorApproved, "", s.now())
+		notice = "approved mirror " + m.URL
+	case ActionReject:
+		reason := reasonOf(r)
+		if reason == "" {
+			s.message(w, http.StatusBadRequest, true, "Reason required", "A rejection needs a reason.")
+			return
+		}
+		err = s.Store.SetMirrorStatus(ctx, id, store.MirrorRejected, reason, s.now())
+		notice = "rejected mirror " + m.URL
+	case ActionRemove:
+		err = s.Store.DeleteMirror(ctx, id)
+		notice = "removed mirror " + m.URL
+	default:
+		s.message(w, http.StatusNotFound, true, "Unknown action", "Mirrors can be approved, rejected or removed.")
+		return
+	}
+	if err != nil {
+		s.message(w, http.StatusInternalServerError, true, "Error", err.Error())
+		return
+	}
+	s.rebuild()
+	http.Redirect(w, r, PathAdmin+"?notice="+url.QueryEscape(notice), http.StatusSeeOther)
 }
 
 func reasonOf(r *http.Request) string {

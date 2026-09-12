@@ -6,6 +6,7 @@ import {
   HubEnvelopeResponse,
   HubIdentity,
   HubImportResponse,
+  HubReportResponse,
   HubSet,
   HubSetsResponse,
   HubShareResponse,
@@ -43,6 +44,11 @@ export const hubApi = {
       kind,
       ...(domain ? { domain } : {}),
     }),
+  report: (id: string, reason: string) =>
+    apiPost<HubReportResponse>(
+      `/api/hub/sets/${encodeURIComponent(id)}/report`,
+      { reason },
+    ),
   test: (id: string, domain?: string) =>
     apiPost<HubTestResponse>(`/api/hub/sets/${encodeURIComponent(id)}/test`, {
       ...(domain ? { domain } : {}),

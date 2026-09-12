@@ -201,6 +201,9 @@ HUB_DIR := ./hub
 HUB_DATA ?= $(HUB_DIR)/data
 HUB_LISTEN ?= 0.0.0.0:7100
 HUB_PUBLIC_URL ?= http://127.0.0.1:7100
+HUB_UPSTREAM ?= https://hub.b4core.app
+HUB_MIRROR_DATA ?= $(HUB_DIR)/data-mirror
+HUB_MIRROR_LISTEN ?= 0.0.0.0:7101
 
 .PHONY: hub-build
 hub-build:
@@ -219,6 +222,10 @@ hub-keygen: hub-build
 .PHONY: hub-run
 hub-run: hub-build
 	@$(OUT_DIR)/b4hub serve -data $(HUB_DATA) -listen $(HUB_LISTEN) -public-url $(HUB_PUBLIC_URL)
+
+.PHONY: hub-mirror
+hub-mirror: hub-build
+	@$(OUT_DIR)/b4hub mirror -data $(HUB_MIRROR_DATA) -upstream $(HUB_UPSTREAM) -listen $(HUB_MIRROR_LISTEN) -public-url http://127.0.0.1:7101
 
 SFTP_PORT ?= 22
 SSH_OPTS ?= -o StrictHostKeyChecking=no -o IPQoS=none
@@ -283,6 +290,7 @@ help:
 	@printf "  %-25s %s\n" "make hub-test" "Run the hub service tests"
 	@printf "  %-25s %s\n" "make hub-keygen" "Create a development hub key under hub/data"
 	@printf "  %-25s %s\n" "make hub-run" "Run the hub service locally (HUB_LISTEN, default 0.0.0.0:7100)"
+	@printf "  %-25s %s\n" "make hub-mirror" "Run a child hub mirroring HUB_UPSTREAM on port 7101"
 	@printf "  %-25s %s\n" "make deploy-<arch>" "Build and upload via SFTP (requires .env)"
 	@printf "  %-25s %s\n" "make help" "Show this help"
 	@echo ""

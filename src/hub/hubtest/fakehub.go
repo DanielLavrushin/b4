@@ -21,8 +21,10 @@ type Answer struct {
 }
 
 type FakeHub struct {
-	Identity *hubwire.Identity
-	Server   *httptest.Server
+	Identity    *hubwire.Identity
+	Server      *httptest.Server
+	Mirrors     []string
+	RevokedKeys []string
 
 	mu        sync.Mutex
 	manifest  *hubwire.Manifest
@@ -112,6 +114,8 @@ func (f *FakeHub) Publish(t testing.TB, cat *hubwire.Catalogue, expiresAt time.T
 			SHA256: hubwire.BlobHash(gz),
 			Size:   int64(len(gz)),
 		},
+		Mirrors:     f.Mirrors,
+		RevokedKeys: f.RevokedKeys,
 	}
 	if err := hubwire.SignManifest(m, f.Identity); err != nil {
 		t.Fatal(err)

@@ -131,6 +131,17 @@ export function useHubVote() {
   });
 }
 
+export function useHubReport() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      hubApi.report(id, reason),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: hubKeys.status });
+    },
+  });
+}
+
 export function useHubTest() {
   return useMutation({
     mutationFn: ({ id, domain }: { id: string; domain?: string }) =>

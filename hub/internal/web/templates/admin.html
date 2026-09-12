@@ -14,6 +14,30 @@
 </article>
 {{end}}
 
+<h1>Mirrors ({{len .Mirrors}})</h1>
+{{if not .Mirrors}}<p class="muted">No mirror has announced itself.</p>{{else}}
+<div class="scroll">
+<table>
+<tr><th>URL</th><th>Key</th><th>Status</th><th>First seen</th><th>Last seen</th><th>Health</th><th></th></tr>
+{{range .Mirrors}}
+<tr>
+<td><a href="{{.URL}}" rel="noreferrer">{{.URL}}</a></td>
+<td class="mono">{{.KeyLabel}}</td>
+<td>{{.Status}}{{if and .Reason (eq .Status "rejected")}}: {{.Reason}}{{end}}</td>
+<td>{{when .FirstSeen}}</td>
+<td>{{when .LastSeen}}</td>
+<td>{{.Health}}</td>
+<td>
+{{if ne .Status "approved"}}<form method="post" action="/admin/mirrors/{{.ID}}/approve" class="inline"><button>Approve</button></form>{{end}}
+{{if ne .Status "rejected"}}<form method="post" action="/admin/mirrors/{{.ID}}/reject" class="inline"><input name="reason" placeholder="reason" required><button>Reject</button></form>{{end}}
+<form method="post" action="/admin/mirrors/{{.ID}}/remove" class="inline"><button>Remove</button></form>
+</td>
+</tr>
+{{end}}
+</table>
+</div>
+{{end}}
+
 <h1>Listed ({{len .Active}})</h1>
 {{if not .Active}}<p class="muted">Nothing is listed.</p>{{end}}
 {{range .Active}}

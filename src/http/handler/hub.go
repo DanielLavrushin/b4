@@ -3,10 +3,12 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/daniellavrushin/b4/capture"
 	"github.com/daniellavrushin/b4/config"
@@ -45,6 +47,7 @@ const (
 	hubEnvelopeBodyLimit = 1 << 20
 	hubImportBodyLimit   = 4 << 20
 	hubSmallBodyLimit    = 16 << 10
+	hubReportReasonLimit = 500
 )
 
 func (api *API) RegisterHubApi() {
@@ -56,6 +59,7 @@ func (api *API) RegisterHubApi() {
 	api.mux.HandleFunc("/api/hub/sets/{id}", api.handleHubSetByID)
 	api.mux.HandleFunc("/api/hub/sets/{id}/apply", api.handleHubApply)
 	api.mux.HandleFunc("/api/hub/sets/{id}/vote", api.handleHubVote)
+	api.mux.HandleFunc("/api/hub/sets/{id}/report", api.handleHubReport)
 	api.mux.HandleFunc("/api/hub/sets/{id}/test", api.handleHubTest)
 	api.mux.HandleFunc("/api/hub/share", api.handleHubShare)
 	api.mux.HandleFunc("/api/hub/identity", api.handleHubIdentity)
@@ -434,6 +438,66 @@ func (api *API) handleHubVote(w http.ResponseWriter, r *http.Request) {
 	setJsonHeader(w)
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(HubVoteResponse{Queued: queued, Sent: sent})
+}
+
+// @Summary Report a hub set to the moderators
+// @Description Sends a signed report with a free-text reason about a hub set; the set does not have to be applied on this device.
+// @Tags Hub
+// @Accept json
+// @Produce json
+// @Param id path string true "Hub set id"
+// @Param body body HubReportRequest true "Report"
+// @Success 202 {object} HubReportResponse
+// @Failure 400 {object} APIError "bad_request"
+// @Failure 404 {object} APIError
+// @Security BearerAuth
+// @Router /hub/sets/{id}/report [post]
+func (api *API) handleHubReport(w http.ResponseWriter, r *http.Request) {
+	if !api.hubRequest(w, r, hubSmallBodyLimit) {
+		return
+	}
+	svc, ok := api.hubService(w)
+	if !ok {
+		return
+	}
+	id := r.PathValue("id")
+	var req HubReportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, ErrInvalidJSON())
+		return
+	}
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" {
+		writeAPIError(w, ErrBadRequest("reason is required"))
+		return
+	}
+	if utf8.RuneCountInString(reason) > hubReportReasonLimit {
+		writeAPIError(w, ErrBadRequest(fmt.Sprintf("reason is longer than %d characters", hubReportReasonLimit)))
+		return
+	}
+	version := 0
+	if res, found := svc.Get(id); found {
+		version = res.Set.Version
+	} else if local := hubLocalSet(api.getCfg(), id); local != nil {
+		version = local.Hub.Version
+	} else {
+		writeAPIError(w, ErrNotFound("Hub set not found"))
+		return
+	}
+	rec, err := svc.Sign(hubwire.RecordReport, hubwire.ReportBody{SetID: id, Version: version, Reason: reason})
+	if err != nil {
+		writeAPIError(w, err)
+		return
+	}
+	sent, queued, _, err := svc.SendOrQueue(r.Context(), rec)
+	if err != nil {
+		writeHubError(w, err)
+		return
+	}
+	log.Infof("Hub: report on %s v%d %s", id, version, map[bool]string{true: "sent", false: "queued"}[sent])
+	setJsonHeader(w)
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(HubReportResponse{Queued: queued, Sent: sent})
 }
 
 // @Summary Share a saved set with the hub

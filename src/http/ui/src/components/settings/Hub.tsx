@@ -308,6 +308,14 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
                 value={data.urls.length > 0 ? data.urls.join(", ") : DEFAULT_HUB_URL}
               />
               <StatusRow
+                label={t("settings.Hub.status.mirrors")}
+                value={
+                  data.mirrors.length > 0
+                    ? data.mirrors.join(", ")
+                    : t("settings.Hub.status.noMirrors")
+                }
+              />
+              <StatusRow
                 label={t("settings.Hub.status.network")}
                 value={
                   data.network.asn || data.network.cc

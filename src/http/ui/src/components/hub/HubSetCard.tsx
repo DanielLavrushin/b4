@@ -15,6 +15,7 @@ import {
   BrokenIcon,
   DownloadIcon,
   InfoIcon,
+  ReportIcon,
   TestIcon,
   WorksIcon,
 } from "@b4.icons";
@@ -38,6 +39,7 @@ interface HubSetCardProps {
   onDetails: (set: HubSet) => void;
   onVote: (set: HubSet, kind: HubVoteKind) => void;
   onTest: (set: HubSet) => void;
+  onReport: (set: HubSet) => void;
   onOpenLocal: (localSetId: string) => void;
 }
 
@@ -48,6 +50,7 @@ export const HubSetCard = ({
   onDetails,
   onVote,
   onTest,
+  onReport,
   onOpenLocal,
 }: HubSetCardProps) => {
   const { t } = useTranslation();
@@ -273,6 +276,15 @@ export const HubSetCard = ({
           onClick={() => onDetails(set)}
         >
           {t("hub.card.details")}
+        </Button>
+        <Button
+          size="small"
+          startIcon={<ReportIcon />}
+          disabled={busy}
+          onClick={() => onReport(set)}
+          sx={{ color: colors.text.secondary }}
+        >
+          {t("hub.card.report")}
         </Button>
         {applied && (
           <>

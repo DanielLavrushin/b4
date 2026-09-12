@@ -27,6 +27,7 @@ const (
 	CodeNotActive         = "not_active"
 	CodeFingerprint       = "fp_mismatch"
 	CodeDuplicateStrategy = "duplicate_strategy"
+	CodeBadMirrorURL      = "bad_mirror_url"
 	CodeBanned            = "banned"
 	CodeRateLimited       = "rate_limited"
 	CodeTooLarge          = "too_large"
@@ -145,6 +146,8 @@ func (s *Service) Handle(ctx context.Context, raw []byte, peer net.IP) Response 
 		scope, limit = ratelimit.ScopeVote, ratelimit.VotesPerDay
 	case hubwire.RecordReport:
 		scope, limit = ratelimit.ScopeReport, ratelimit.ReportsPerDay
+	case hubwire.RecordMirror:
+		scope, limit = ratelimit.ScopeMirror, ratelimit.MirrorsPerDay
 	}
 	if ok, retry := s.Limiter.Allow(scope, keyHMAC, limit, ratelimit.Day); !ok {
 		return rateLimited(retry)
@@ -158,6 +161,8 @@ func (s *Service) Handle(ctx context.Context, raw []byte, peer net.IP) Response 
 		return s.vote(ctx, entry)
 	case hubwire.RecordReport:
 		return s.report(ctx, entry)
+	case hubwire.RecordMirror:
+		return s.mirror(ctx, entry)
 	}
 	return fail(http.StatusBadRequest, CodeBadRecord, "unknown record kind")
 }

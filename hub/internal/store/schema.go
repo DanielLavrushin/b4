@@ -109,4 +109,18 @@ CREATE TABLE asn_names (
 	updated_at TEXT NOT NULL
 );
 `,
+	`
+CREATE TABLE mirrors (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	url        TEXT NOT NULL UNIQUE,
+	key_hmac   TEXT NOT NULL,
+	first_seen TEXT NOT NULL,
+	last_seen  TEXT NOT NULL,
+	status     TEXT NOT NULL DEFAULT 'pending',
+	last_check TEXT NOT NULL DEFAULT '',
+	last_ok    TEXT NOT NULL DEFAULT '',
+	reason     TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX mirrors_status ON mirrors(status);
+`,
 }

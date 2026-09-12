@@ -52,3 +52,4 @@ CLAUDE.md
 # Local hub service state
 hub/data/
 hub/b4hub
+hub/data-mirror/

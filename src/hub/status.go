@@ -23,6 +23,7 @@ type Status struct {
 	LastError  string           `json:"last_error"`
 	Catalogue  *CatalogueStatus `json:"catalogue"`
 	URLs       []string         `json:"urls"`
+	Mirrors    []string         `json:"mirrors"`
 	Network    Network          `json:"network"`
 	Outbox     int              `json:"outbox"`
 }
@@ -32,6 +33,7 @@ func (s *Service) Status() Status {
 		Enabled:    s.Enabled(),
 		Configured: s.Configured(),
 		URLs:       s.BaseURLs(),
+		Mirrors:    s.KnownMirrors(),
 		Network:    s.Network(),
 		Outbox:     s.OutboxCount(),
 	}

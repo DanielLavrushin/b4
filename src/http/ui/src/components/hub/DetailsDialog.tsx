@@ -9,7 +9,7 @@ import {
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { B4Alert, B4Badge, B4Dialog, B4TextField } from "@b4.elements";
-import { CommunityIcon, CopyIcon, DownloadIcon } from "@b4.icons";
+import { CommunityIcon, CopyIcon, DownloadIcon, ReportIcon } from "@b4.icons";
 import { colors, typography } from "@design";
 import { HubSet, projectionToSet } from "@models/hub";
 import { copyText, describeApiError, formatBytes } from "@utils";
@@ -30,6 +30,7 @@ interface DetailsDialogProps {
   error: unknown;
   busy: boolean;
   onApply: (set: HubSet) => void;
+  onReport: (set: HubSet) => void;
   onClose: () => void;
 }
 
@@ -74,6 +75,7 @@ export const DetailsDialog = ({
   error,
   busy,
   onApply,
+  onReport,
   onClose,
 }: DetailsDialogProps) => {
   const { t } = useTranslation();
@@ -110,6 +112,15 @@ export const DetailsDialog = ({
       actions={
         <>
           <Button onClick={onClose}>{t("core.close")}</Button>
+          {set && (
+            <Button
+              startIcon={<ReportIcon />}
+              onClick={() => onReport(set)}
+              sx={{ color: colors.text.secondary }}
+            >
+              {t("hub.card.report")}
+            </Button>
+          )}
           <Box sx={{ flex: 1 }} />
           {set && (
             <Button

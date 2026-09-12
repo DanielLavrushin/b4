@@ -20,6 +20,7 @@ const (
 	RecordShare  = "share"
 	RecordVote   = "vote"
 	RecordReport = "report"
+	RecordMirror = "mirror"
 
 	VoteWorks  = "works"
 	VoteBroken = "broken"
@@ -181,6 +182,11 @@ type ReportBody struct {
 	Reason  string `json:"reason"`
 }
 
+type MirrorBody struct {
+	URL     string `json:"url"`
+	Version string `json:"version,omitempty"`
+}
+
 func recordDigest(r *Record) ([]byte, error) {
 	unsigned := *r
 	unsigned.Sig = ""
@@ -193,7 +199,7 @@ func recordDigest(r *Record) ([]byte, error) {
 
 func SignRecord(id *Identity, kind string, body interface{}, now time.Time) (*Record, error) {
 	switch kind {
-	case RecordShare, RecordVote, RecordReport:
+	case RecordShare, RecordVote, RecordReport, RecordMirror:
 	default:
 		return nil, ErrUnknownKind
 	}
@@ -226,7 +232,7 @@ func VerifyRecord(r *Record) (ed25519.PublicKey, error) {
 		return nil, ErrWireVersion
 	}
 	switch r.Kind {
-	case RecordShare, RecordVote, RecordReport:
+	case RecordShare, RecordVote, RecordReport, RecordMirror:
 	default:
 		return nil, ErrUnknownKind
 	}

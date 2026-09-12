@@ -336,3 +336,71 @@ func TestBaseURLsNormalisation(t *testing.T) {
 		t.Errorf("a self-hosted hub with its own key must not fall back to the central address: %v", got)
 	}
 }
+
+func assertBases(t *testing.T, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("base %d = %q want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestManifestMirrorsFollowConfiguredURLsAndRevokedKeysAreDropped(t *testing.T) {
+	f := hubtest.New(t)
+	hubKey := f.Identity.KeyID()
+	builtin := hubwire.BuiltinHubKeys
+	hubwire.BuiltinHubKeys = []string{hubKey}
+	t.Cleanup(func() { hubwire.BuiltinHubKeys = builtin })
+	f.Mirrors = []string{" https://mirror-a.example/ ", "http://plain.example", "http://10.0.0.5:8080", f.URL(), DefaultBaseURL, "https://mirror-b.example"}
+	f.Publish(t, sampleCatalogue(t, 1, 1), time.Now().Add(time.Hour))
+	dir := t.TempDir()
+	box := newTestBox(t, f, dir)
+	box.update(func(cfg *config.Config) { cfg.System.Hub.PublicKey = "" })
+	box.svc.builtin = DefaultBases
+
+	if _, err := box.svc.Sync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{f.URL(), "https://mirror-a.example", "http://10.0.0.5:8080", "https://mirror-b.example", DefaultBaseURL}
+	assertBases(t, box.svc.BaseURLs(), want)
+	if st := box.svc.Status(); len(st.Mirrors) != 4 {
+		t.Errorf("status must list the learned mirrors, got %v", st.Mirrors)
+	}
+
+	reloaded := newTestBox(t, f, dir)
+	reloaded.update(func(cfg *config.Config) { cfg.System.Hub.PublicKey = "" })
+	reloaded.svc.builtin = DefaultBases
+	assertBases(t, reloaded.svc.BaseURLs(), want)
+
+	old, _ := hubwire.NewIdentity()
+	hubwire.BuiltinHubKeys = []string{old.KeyID(), hubKey}
+	f.RevokedKeys = []string{old.KeyID()}
+	f.Mirrors = nil
+	f.Publish(t, sampleCatalogue(t, 1, 2), time.Now().Add(time.Hour))
+	if _, err := box.svc.Sync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if keys := box.svc.TrustedKeys(); len(keys) != 1 || keys[0] != hubKey {
+		t.Errorf("the revoked key must leave the trusted list: %v", keys)
+	}
+	assertBases(t, box.svc.BaseURLs(), []string{f.URL(), DefaultBaseURL})
+
+	box.svc.builtin = []string{}
+	f.Identity = old
+	f.Publish(t, sampleCatalogue(t, 1, 3), time.Now().Add(time.Hour))
+	if _, err := box.svc.Sync(context.Background()); !errors.Is(err, hubwire.ErrManifestSigner) {
+		t.Errorf("a manifest signed by a revoked key must be refused, got %v", err)
+	}
+	if m := box.svc.Manifest(); m == nil || m.Seq != 2 {
+		t.Errorf("the refused manifest must not replace the stored one")
+	}
+	again := newTestBox(t, f, dir)
+	again.update(func(cfg *config.Config) { cfg.System.Hub.PublicKey = "" })
+	if keys := again.svc.TrustedKeys(); len(keys) != 1 || keys[0] != hubKey {
+		t.Errorf("the revocation must survive a restart: %v", keys)
+	}
+}

@@ -28,6 +28,7 @@ import { HubSet, HubVoteKind } from "@models/hub";
 import { describeApiError } from "@utils";
 import { DetailsDialog } from "./DetailsDialog";
 import { HubSetCard } from "./HubSetCard";
+import { ReportDialog } from "./ReportDialog";
 import { StatusPanel } from "./StatusPanel";
 import { TestDialog } from "./TestDialog";
 import { defaultTestDomain, warningText } from "./text";
@@ -51,6 +52,7 @@ export const HubBrowser = () => {
   const [query, setQuery] = useState(searchParams.get("domain") ?? "");
   const [domain, setDomain] = useState(normalizeDomain(query));
   const [testSet, setTestSet] = useState<HubSet | null>(null);
+  const [reportSet, setReportSet] = useState<HubSet | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(
@@ -249,6 +251,7 @@ export const HubBrowser = () => {
               onDetails={(s) => openDetails(s.id)}
               onVote={(s, kind) => void handleVote(s, kind)}
               onTest={setTestSet}
+              onReport={setReportSet}
               onOpenLocal={(localId) => {
                 void navigate(`/sets/${localId}`);
               }}
@@ -269,6 +272,7 @@ export const HubBrowser = () => {
         error={details.error}
         busy={busy}
         onApply={(s) => void handleApply(s)}
+        onReport={setReportSet}
         onClose={() => openDetails(null)}
       />
 
@@ -278,6 +282,14 @@ export const HubBrowser = () => {
           set={testSet}
           defaultDomain={defaultTestDomain(testSet, domain)}
           onClose={() => setTestSet(null)}
+        />
+      )}
+
+      {reportSet && (
+        <ReportDialog
+          key={reportSet.id}
+          set={reportSet}
+          onClose={() => setReportSet(null)}
         />
       )}
     </Stack>

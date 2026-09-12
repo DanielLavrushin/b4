@@ -98,4 +98,5 @@ export {
   CloudUpload as PublishIcon,
   Key as KeyIcon,
   Verified as AppliedIcon,
+  Flag as ReportIcon,
 } from "@mui/icons-material";

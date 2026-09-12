@@ -170,6 +170,7 @@ export interface HubStatus {
   last_error: string;
   catalogue: HubCatalogueStatus | null;
   urls: string[];
+  mirrors: string[];
   network: { asn: string; cc: string };
   outbox: number;
 }
@@ -185,6 +186,11 @@ export interface HubApplyResponse {
 export type HubVoteKind = "works" | "broken";
 
 export interface HubVoteResponse {
+  queued: boolean;
+  sent: boolean;
+}
+
+export interface HubReportResponse {
   queued: boolean;
   sent: boolean;
 }
@@ -221,6 +227,7 @@ export function hubGateStatus(enabled: boolean): HubStatus {
     last_error: "",
     catalogue: null,
     urls: [],
+    mirrors: [],
     network: { asn: "", cc: "" },
     outbox: 0,
   };

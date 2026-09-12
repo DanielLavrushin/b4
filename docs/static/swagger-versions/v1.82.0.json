@@ -2533,6 +2533,64 @@
                 }
             }
         },
+        "/hub/sets/{id}/report": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sends a signed report with a free-text reason about a hub set; the set does not have to be applied on this device.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Hub"
+                ],
+                "summary": "Report a hub set to the moderators",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hub set id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Report",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.HubReportRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/handler.HubReportResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "bad_request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/hub/sets/{id}/test": {
             "post": {
                 "security": [
@@ -7309,6 +7367,25 @@
                 }
             }
         },
+        "handler.HubReportRequest": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.HubReportResponse": {
+            "type": "object",
+            "properties": {
+                "queued": {
+                    "type": "boolean"
+                },
+                "sent": {
+                    "type": "boolean"
+                }
+            }
+        },
         "handler.HubRestoreRequest": {
             "type": "object",
             "properties": {
@@ -7978,6 +8055,12 @@
                 },
                 "last_sync": {
                     "type": "string"
+                },
+                "mirrors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "network": {
                     "$ref": "#/definitions/hub.Network"

@@ -13,6 +13,7 @@ const (
 	SharesPerDay    = 5
 	VotesPerDay     = 20
 	ReportsPerDay   = 20
+	MirrorsPerDay   = 48
 	NewKeysPerDay   = 5
 	RequestsPerHour = 2000
 
@@ -22,6 +23,7 @@ const (
 	ScopeShare   = "share"
 	ScopeVote    = "vote"
 	ScopeReport  = "report"
+	ScopeMirror  = "mirror"
 	ScopeNewKey  = "newkey"
 	ScopeRequest = "request"
 )

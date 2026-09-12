@@ -40,6 +40,7 @@ func (s *Service) Sync(ctx context.Context) (bool, error) {
 
 		stored := s.Manifest()
 		if stored != nil && !m.Newer(stored) && s.catalogueLoaded() {
+			s.adoptManifest(m)
 			s.markSynced()
 			return false, nil
 		}
@@ -64,6 +65,7 @@ func (s *Service) Sync(ctx context.Context) (bool, error) {
 			return false, err
 		}
 		s.install(m, cat)
+		s.adoptManifest(m)
 		s.markSynced()
 		log.Infof("hub: catalogue %d-%d with %d sets synced from %s", cat.Epoch, cat.Seq, len(cat.Sets), base)
 		return true, nil

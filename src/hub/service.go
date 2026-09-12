@@ -60,6 +60,10 @@ type Service struct {
 	networkPinned bool
 	networkReadAt time.Time
 
+	trustMu sync.RWMutex
+	mirrors []string
+	revoked []string
+
 	syncMu sync.Mutex
 
 	runMu   sync.Mutex
@@ -86,6 +90,7 @@ func New(getCfg func() *config.Config, opts Options) *Service {
 	if s.now == nil {
 		s.now = time.Now
 	}
+	s.loadTrust()
 	s.loadStored()
 	return s
 }
@@ -108,9 +113,9 @@ func (s *Service) Enabled() bool {
 
 func (s *Service) TrustedKeys() []string {
 	if key := strings.TrimSpace(s.getCfg().System.Hub.PublicKey); key != "" {
-		return []string{key}
+		return s.withoutRevoked([]string{key})
 	}
-	return append([]string(nil), hubwire.BuiltinHubKeys...)
+	return s.withoutRevoked(append([]string(nil), hubwire.BuiltinHubKeys...))
 }
 
 func (s *Service) Configured() bool {
@@ -166,11 +171,12 @@ func (s *Service) BaseURLs() []string {
 	seen := map[string]bool{}
 	hubCfg := s.getCfg().System.Hub
 	configured := hubCfg.URLs
-	lists := [][]string{configured, s.builtin}
+	mirrors := s.KnownMirrors()
+	lists := [][]string{configured, mirrors, s.builtin}
 	if strings.TrimSpace(hubCfg.PublicKey) != "" && len(configured) > 0 {
-		lists = [][]string{configured}
+		lists = [][]string{configured, mirrors}
 	}
-	out := make([]string, 0, len(configured)+len(s.builtin))
+	out := make([]string, 0, len(configured)+len(mirrors)+len(s.builtin))
 	for _, list := range lists {
 		for _, raw := range list {
 			base := NormalizeBaseURL(raw)

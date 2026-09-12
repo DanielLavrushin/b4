@@ -49,6 +49,7 @@ type Builder struct {
 	PublicDir  string
 	PublicURL  string
 	GeoSources []hubwire.GeoSource
+	Mirrors    *MirrorHealth
 	Now        func() time.Time
 	Keep       int
 	MaxAge     time.Duration
@@ -97,33 +98,45 @@ func indexResult(m *hubwire.Manifest, cat *hubwire.Catalogue) *Result {
 	return &Result{Manifest: m, Catalogue: cat, ByID: byID}
 }
 
-func (b *Builder) LoadPublished() error {
-	raw, err := os.ReadFile(b.manifestPath())
+func ValidFileName(name string) bool {
+	return catalogueFilePattern.MatchString(name)
+}
+
+func ReadPublished(dir string) (*Result, error) {
+	raw, err := os.ReadFile(filepath.Join(dir, ManifestFile))
 	if errors.Is(err, os.ErrNotExist) {
-		return ErrNotPublished
+		return nil, ErrNotPublished
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var m hubwire.Manifest
 	if err := json.Unmarshal(raw, &m); err != nil {
-		return fmt.Errorf("published manifest does not decode: %w", err)
+		return nil, fmt.Errorf("published manifest does not decode: %w", err)
 	}
-	if !catalogueFilePattern.MatchString(m.Catalogue.File) {
-		return fmt.Errorf("published manifest names %q", m.Catalogue.File)
+	if !ValidFileName(m.Catalogue.File) {
+		return nil, fmt.Errorf("published manifest names %q", m.Catalogue.File)
 	}
-	gz, err := os.ReadFile(filepath.Join(b.PublicDir, m.Catalogue.File))
+	gz, err := os.ReadFile(filepath.Join(dir, m.Catalogue.File))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if hubwire.BlobHash(gz) != m.Catalogue.SHA256 {
-		return fmt.Errorf("published %s does not match the manifest hash", m.Catalogue.File)
+		return nil, fmt.Errorf("published %s does not match the manifest hash", m.Catalogue.File)
 	}
 	cat, err := Decode(gz)
 	if err != nil {
+		return nil, err
+	}
+	return indexResult(&m, cat), nil
+}
+
+func (b *Builder) LoadPublished() error {
+	result, err := ReadPublished(b.PublicDir)
+	if err != nil {
 		return err
 	}
-	b.latest.Store(indexResult(&m, cat))
+	b.latest.Store(result)
 	return nil
 }
 
@@ -204,6 +217,14 @@ func (b *Builder) Build(ctx context.Context) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	mirrors, err := b.mirrors(ctx)
+	if err != nil {
+		return nil, err
+	}
+	revoked, err := b.Store.RevokedKeys(ctx)
+	if err != nil {
+		return nil, err
+	}
 	epoch, seq, err := b.Store.NextSeq(ctx, now)
 	if err != nil {
 		return nil, err
@@ -262,11 +283,10 @@ func (b *Builder) Build(ctx context.Context) (*Result, error) {
 		GeneratedAt:  cat.GeneratedAt,
 		ExpiresAt:    now.Add(hubwire.ManifestTTL).Format(time.RFC3339),
 		Catalogue:    hubwire.FileRef{File: file, SHA256: hubwire.BlobHash(gz), Size: int64(len(gz))},
+		Mirrors:      mirrors,
 		GeoSources:   b.GeoSources,
 		DoHAllowlist: hubwire.DoHAllowlist(),
-	}
-	if base := strings.TrimRight(strings.TrimSpace(b.PublicURL), "/"); base != "" {
-		m.Mirrors = []string{base}
+		RevokedKeys:  revoked,
 	}
 	if err := hubwire.SignManifest(m, b.Identity); err != nil {
 		return nil, err
@@ -311,8 +331,35 @@ type publishedFile struct {
 	seq   int64
 }
 
+func (b *Builder) mirrors(ctx context.Context) ([]string, error) {
+	out := make([]string, 0, 1)
+	base := strings.TrimRight(strings.TrimSpace(b.PublicURL), "/")
+	if base != "" {
+		out = append(out, base)
+	}
+	if b.Mirrors != nil {
+		healthy, err := b.Mirrors.Healthy(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, u := range healthy {
+			if u != base {
+				out = append(out, u)
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
 func (b *Builder) prune(current string) {
-	entries, err := os.ReadDir(b.PublicDir)
+	Prune(b.PublicDir, current, b.keep())
+}
+
+func Prune(dir, current string, keep int) {
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
@@ -334,11 +381,11 @@ func (b *Builder) prune(current string) {
 	})
 	kept := 0
 	for _, f := range files {
-		if f.name == current || kept < b.keep() {
+		if f.name == current || kept < keep {
 			kept++
 			continue
 		}
-		_ = os.Remove(filepath.Join(b.PublicDir, f.name))
+		_ = os.Remove(filepath.Join(dir, f.name))
 	}
 }
 

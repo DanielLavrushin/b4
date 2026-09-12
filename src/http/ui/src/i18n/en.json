@@ -767,6 +767,8 @@
         "lastSync": "Last sync",
         "lastError": "Last error",
         "urls": "Addresses",
+        "mirrors": "Known mirrors",
+        "noMirrors": "none learned from the hub yet",
         "network": "Network",
         "outbox": "Reports waiting"
       },
@@ -2869,6 +2871,7 @@
       "works": "Works",
       "broken": "Broken",
       "test": "Test",
+      "report": "Report",
       "voteModified": "The local copy was edited after it was applied, so a report would not describe the published strategy."
     },
     "flags": {
@@ -2893,6 +2896,16 @@
       "queued": "Report saved; it goes out with the next sync.",
       "notApplied": "Apply the set first; reports are accepted only for sets in use.",
       "modified": "The local copy of this set was edited, so a report would not describe the published strategy.",
+      "failed": "Could not send the report: {{error}}"
+    },
+    "report": {
+      "title": "Report {{name}}",
+      "subtitle": "Tells the hub moderators what is wrong with this set",
+      "reason": "Reason",
+      "reasonHelp": "A broken strategy, a misleading title, targets it should not cover. Up to {{limit}} characters.",
+      "send": "Send",
+      "sent": "Report sent to the moderators.",
+      "queued": "Report saved; it goes out with the next sync.",
       "failed": "Could not send the report: {{error}}"
     },
     "test": {

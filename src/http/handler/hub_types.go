@@ -64,6 +64,15 @@ type HubVoteResponse struct {
 	Sent   bool `json:"sent"`
 }
 
+type HubReportRequest struct {
+	Reason string `json:"reason"`
+}
+
+type HubReportResponse struct {
+	Queued bool `json:"queued"`
+	Sent   bool `json:"sent"`
+}
+
 type HubShareRequest struct {
 	SetID       string `json:"set_id"`
 	Description string `json:"description,omitempty"`
