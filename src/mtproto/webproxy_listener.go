@@ -3,6 +3,7 @@ package mtproto
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	stdlog "log"
 	"net"
 	"net/http"
@@ -91,15 +92,37 @@ func (s *Server) startWebListenerLocked(cfg *config.Config) {
 		ErrorLog:          stdlog.New(webErrLog{}, "", 0),
 	}
 	s.webSrv = srv
+	s.webLn = ln
 	s.webSpec = spec
 	s.webUp.Store(true)
+	serve := srv.Serve
 	if tlsCfg != nil {
 		log.Infof("MTProto WEB proxy relay listening on https://%s", spec.addr)
-		go func() { _ = srv.ServeTLS(ln, "", "") }()
+		serve = func(l net.Listener) error { return srv.ServeTLS(l, "", "") }
+	} else {
+		log.Warnf("MTProto WEB proxy relay listening on http://%s without TLS; Telegram Desktop needs HTTPS, so a TLS-terminating proxy has to sit in front of it", spec.addr)
+	}
+	go s.serveWebListener(srv, ln, serve)
+}
+
+func (s *Server) serveWebListener(srv *http.Server, ln net.Listener, serve func(net.Listener) error) {
+	err := serve(ln)
+	if errors.Is(err, http.ErrServerClosed) {
 		return
 	}
-	log.Warnf("MTProto WEB proxy relay listening on http://%s without TLS; Telegram Desktop needs HTTPS, so a TLS-terminating proxy has to sit in front of it", spec.addr)
-	go func() { _ = srv.Serve(ln) }()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.webSrv != srv {
+		return
+	}
+	s.webUp.Store(false)
+	if s.webLn != nil {
+		_ = s.webLn.Close()
+		s.webLn = nil
+	}
+	s.webSrv = nil
+	s.webSpec = webListenerSpec{}
+	log.Errorf("MTProto WEB proxy relay port stopped: %v (the web server keeps serving the relay hostname until the configuration is saved again)", err)
 }
 
 func (s *Server) stopWebListenerLocked() {
@@ -112,6 +135,10 @@ func (s *Server) stopWebListenerLocked() {
 		_ = s.webSrv.Close()
 	}
 	cancel()
+	if s.webLn != nil {
+		_ = s.webLn.Close()
+		s.webLn = nil
+	}
 	s.webSrv = nil
 	s.webSpec = webListenerSpec{}
 }

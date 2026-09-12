@@ -55,9 +55,15 @@ func (l *Limiter) Allow(scope, id string, limit int, window time.Duration) (bool
 	start := now.Truncate(window)
 	key := scope + "|" + id
 	b := l.buckets[key]
-	if b == nil || !b.start.Equal(start) {
+	if b == nil {
+		if len(l.buckets) >= maxLiveBuckets {
+			return false, crowdedInterval
+		}
 		b = &bucket{start: start}
 		l.buckets[key] = b
+	} else if !b.start.Equal(start) {
+		b.start = start
+		b.count = 0
 	}
 	if b.count >= limit {
 		return false, start.Add(window).Sub(now)
@@ -67,10 +73,9 @@ func (l *Limiter) Allow(scope, id string, limit int, window time.Duration) (bool
 }
 
 const (
-	sweepInterval    = 10 * time.Minute
-	crowdedInterval  = time.Minute
-	maxLiveBuckets   = 100000
-	crowdedTrimShare = 4
+	sweepInterval   = 10 * time.Minute
+	crowdedInterval = time.Minute
+	maxLiveBuckets  = 100000
 )
 
 func (l *Limiter) sweep(now time.Time) {
@@ -84,17 +89,6 @@ func (l *Limiter) sweep(now time.Time) {
 		if now.Sub(b.start) > Day {
 			delete(l.buckets, key)
 		}
-	}
-	if len(l.buckets) < maxLiveBuckets {
-		return
-	}
-	drop := len(l.buckets) / crowdedTrimShare
-	for key := range l.buckets {
-		if drop == 0 {
-			break
-		}
-		delete(l.buckets, key)
-		drop--
 	}
 }
 

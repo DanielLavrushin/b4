@@ -78,6 +78,7 @@ type Server struct {
 	running  bool
 	listener net.Listener
 	webSrv   *http.Server
+	webLn    net.Listener
 	webSpec  webListenerSpec
 	webUp    atomic.Bool
 	ctx      context.Context

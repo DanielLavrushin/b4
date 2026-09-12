@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	neturl "net/url"
 	"strings"
 	"sync"
 	"time"
@@ -51,11 +53,81 @@ func (h *MirrorHealth) window() time.Duration {
 	return h.Window
 }
 
-func (h *MirrorHealth) client() *http.Client {
+func (h *MirrorHealth) client(rawURL string) *http.Client {
 	if h.Client != nil {
 		return h.Client
 	}
-	return http.DefaultClient
+	allowPrivate := false
+	if u, err := neturl.Parse(rawURL); err == nil {
+		if ip := net.ParseIP(u.Hostname()); ip != nil && !routableIP(ip) {
+			allowPrivate = true
+		}
+	}
+	return guardedClient(h.timeout(), allowPrivate)
+}
+
+var reservedRanges = func() []*net.IPNet {
+	out := []*net.IPNet{}
+	for _, cidr := range []string{"0.0.0.0/8", "100.64.0.0/10", "192.0.0.0/24", "198.18.0.0/15", "240.0.0.0/4", "::/128", "100::/64"} {
+		if _, n, err := net.ParseCIDR(cidr); err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
+}()
+
+func routableIP(ip net.IP) bool {
+	if ip.IsUnspecified() || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() {
+		return false
+	}
+	for _, n := range reservedRanges {
+		if n.Contains(ip) {
+			return false
+		}
+	}
+	return true
+}
+
+func guardedClient(timeout time.Duration, allowPrivate bool) *http.Client {
+	dialer := &net.Dialer{Timeout: timeout}
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+			if err != nil {
+				return nil, err
+			}
+			var lastErr error
+			for _, candidate := range addrs {
+				if !allowPrivate && !routableIP(candidate.IP) {
+					lastErr = fmt.Errorf("%s resolves to a non-routable address", host)
+					continue
+				}
+				conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(candidate.IP.String(), port))
+				if err == nil {
+					return conn, nil
+				}
+				lastErr = err
+			}
+			if lastErr == nil {
+				lastErr = fmt.Errorf("%s has no address", host)
+			}
+			return nil, lastErr
+		},
+		TLSHandshakeTimeout:   timeout,
+		ResponseHeaderTimeout: timeout,
+		DisableKeepAlives:     true,
+	}
+	return &http.Client{
+		Transport: transport,
+		Timeout:   timeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 }
 
 func (h *MirrorHealth) Healthy(ctx context.Context) ([]string, error) {
@@ -103,7 +175,7 @@ func (h *MirrorHealth) get(ctx context.Context, url string, limit int64) ([]byte
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "b4hub")
-	resp, err := h.client().Do(req)
+	resp, err := h.client(url).Do(req)
 	if err != nil {
 		return nil, err
 	}

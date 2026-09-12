@@ -329,3 +329,54 @@ func TestWebListenerBindFailureKeepsSharedVhost(t *testing.T) {
 		t.Errorf("shared path must still answer the relay hostname, got %d %q", plain.status, plain.body)
 	}
 }
+
+func TestWebListenerUnexpectedExitClearsState(t *testing.T) {
+	port := freeTCPPort(t)
+	cfg := webListenerConfig(t, port)
+	srv := &Server{}
+	srv.cfg.Store(cfg)
+	srv.mu.Lock()
+	srv.startWebListenerLocked(cfg)
+	web := srv.webSrv
+	srv.mu.Unlock()
+	if web == nil {
+		t.Fatal("relay listener did not start")
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln.Close()
+	srv.serveWebListener(web, ln, web.Serve)
+
+	srv.mu.Lock()
+	dead := srv.webSrv == nil && !srv.webUp.Load()
+	srv.mu.Unlock()
+	if !dead {
+		t.Error("an accept failure must clear the listener state so the shared vhost takes over")
+	}
+	if srv.WebProxyOwnListener() {
+		t.Error("WebProxyOwnListener still true after the listener died")
+	}
+	_ = web.Close()
+	if _, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(port), 200*time.Millisecond); err == nil {
+		t.Error("the dead listener's socket must be closed with its state")
+	}
+
+	other := &http.Server{}
+	srv.mu.Lock()
+	srv.startWebListenerLocked(cfg)
+	current := srv.webSrv
+	srv.mu.Unlock()
+	if current == nil {
+		t.Fatal("relay listener did not restart")
+	}
+	srv.serveWebListener(other, ln, other.Serve)
+	if srv.webSrv != current || !srv.WebProxyOwnListener() {
+		t.Error("a stale server's exit must not clear the current listener")
+	}
+	srv.mu.Lock()
+	srv.stopWebListenerLocked()
+	srv.mu.Unlock()
+}
