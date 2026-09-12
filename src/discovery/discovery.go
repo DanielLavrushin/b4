@@ -1628,6 +1628,7 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 	testSet.UDP = preset.Config.UDP
 	testSet.Fragmentation = preset.Config.Fragmentation
 	testSet.Faking = preset.Config.Faking
+	testSet.Hub = preset.Config.Hub
 	testSet.DNS = ds.discoveredDNS
 
 	config.ApplySetDefaults(&testSet)
@@ -1720,6 +1721,7 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 	testSet.UDP = preset.Config.UDP
 	testSet.Fragmentation = preset.Config.Fragmentation
 	testSet.Faking = preset.Config.Faking
+	testSet.Hub = preset.Config.Hub
 	testSet.DNS = ds.discoveredDNS
 
 	config.ApplySetDefaults(&testSet)
