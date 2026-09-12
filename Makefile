@@ -199,6 +199,8 @@ build-ui: gen-defaults
 
 HUB_DIR := ./hub
 HUB_DATA ?= $(HUB_DIR)/data
+HUB_LISTEN ?= 0.0.0.0:7100
+HUB_PUBLIC_URL ?= http://127.0.0.1:7100
 
 .PHONY: hub-build
 hub-build:
@@ -216,7 +218,7 @@ hub-keygen: hub-build
 
 .PHONY: hub-run
 hub-run: hub-build
-	@$(OUT_DIR)/b4hub serve -data $(HUB_DATA) -listen 127.0.0.1:7100 -public-url http://127.0.0.1:7100
+	@$(OUT_DIR)/b4hub serve -data $(HUB_DATA) -listen $(HUB_LISTEN) -public-url $(HUB_PUBLIC_URL)
 
 SFTP_PORT ?= 22
 SSH_OPTS ?= -o StrictHostKeyChecking=no -o IPQoS=none
@@ -280,7 +282,7 @@ help:
 	@printf "  %-25s %s\n" "make hub-build" "Build the community hub service into out/b4hub"
 	@printf "  %-25s %s\n" "make hub-test" "Run the hub service tests"
 	@printf "  %-25s %s\n" "make hub-keygen" "Create a development hub key under hub/data"
-	@printf "  %-25s %s\n" "make hub-run" "Run the hub service locally on 127.0.0.1:7100"
+	@printf "  %-25s %s\n" "make hub-run" "Run the hub service locally (HUB_LISTEN, default 0.0.0.0:7100)"
 	@printf "  %-25s %s\n" "make deploy-<arch>" "Build and upload via SFTP (requires .env)"
 	@printf "  %-25s %s\n" "make help" "Show this help"
 	@echo ""
