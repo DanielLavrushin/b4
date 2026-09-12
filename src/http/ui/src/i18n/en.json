@@ -2245,7 +2245,7 @@
       "summaryPayloads_one": "{{count}} payload",
       "summaryPayloads_other": "{{count}} payloads",
       "useCommunity": "Try community sets first",
-      "useCommunityHint": "The catalogue is refreshed from the hub first, then up to three sets other users published for these domains are tested before the presets. Needs Community sets on."
+      "useCommunityHint": "Refreshes the catalogue from the hub, then tests up to three sets other users published for these domains before the presets."
     },
     "logs": {
       "title": "Discovery log",

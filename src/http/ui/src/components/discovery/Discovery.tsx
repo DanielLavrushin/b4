@@ -75,6 +75,7 @@ export const DiscoveryRunner = () => {
 
   const [options, setOptions] = useState<DiscoveryOptions>(loadOptions);
   const [ipVersionEnabled, setIpVersionEnabled] = useState(true);
+  const [communityEnabled, setCommunityEnabled] = useState(false);
   const [checkUrls, setCheckUrls] = useState<string[]>([]);
   const [urlInput, setUrlInput] = useState("");
   const [logOpen, setLogOpen] = useState(false);
@@ -93,7 +94,10 @@ export const DiscoveryRunner = () => {
   useEffect(() => {
     void configApi
       .get()
-      .then((c) => setIpVersionEnabled(!!c.queue?.ipv4 && !!c.queue?.ipv6))
+      .then((c) => {
+        setIpVersionEnabled(!!c.queue?.ipv4 && !!c.queue?.ipv6);
+        setCommunityEnabled(Boolean(c.system?.hub?.enabled));
+      })
       .catch(() => {});
   }, []);
 
@@ -113,14 +117,14 @@ export const DiscoveryRunner = () => {
       void startDiscovery(urls, {
         skipDNS: !options.checkDns,
         skipCache: !options.useCache,
-        skipCommunity: !options.useCommunity,
+        skipCommunity: !communityEnabled || !options.useCommunity,
         payloadFiles: options.payloadFiles,
         validationTries: options.validationTries,
         tlsVersion: options.tlsVersion,
         ipVersion: effectiveIpVersion,
       });
     },
-    [startDiscovery, options, effectiveIpVersion],
+    [startDiscovery, options, effectiveIpVersion, communityEnabled],
   );
 
   const addUrls = useCallback((raw: string) => {
@@ -376,6 +380,7 @@ export const DiscoveryRunner = () => {
             <DiscoveryOptionsPanel
               options={options}
               ipVersionEnabled={ipVersionEnabled}
+              communityEnabled={communityEnabled}
               onChange={setOptions}
               onClearCache={handleClearCache}
               captures={captures}
