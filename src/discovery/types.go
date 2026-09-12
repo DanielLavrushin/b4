@@ -219,6 +219,7 @@ type DiscoverySuite struct {
 	*CheckSuite
 	networkBaseline float64
 	optimalTTL      uint8
+	ttlProbed       bool
 
 	ctx       context.Context
 	ctxCancel context.CancelFunc

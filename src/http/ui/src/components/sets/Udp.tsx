@@ -59,6 +59,11 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
       label: t("sets.udp.modeReject"),
       description: t("sets.udp.modeRejectDesc"),
     },
+    {
+      value: "coalesce",
+      label: t("sets.udp.modeCoalesce"),
+      description: t("sets.udp.modeCoalesceDesc"),
+    },
   ];
 
   const UDP_QUIC_FILTERS = [

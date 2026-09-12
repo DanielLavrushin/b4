@@ -733,12 +733,14 @@ func (ds *DiscoverySuite) optimizeTCPFrag() ConfigPreset {
 	base := baseConfig()
 	base.Fragmentation.Strategy = "tcp"
 	base.Fragmentation.ReverseOrder = true
-	base.Faking.SNI = true
-
-	base.Faking.TTL = ds.getOptimalTTL()
-
-	base.Faking.Strategy = "pastseq"
-	ds.applyBestPayload(&base.Faking)
+	if ttl, ok := ds.getOptimalTTL(); ok {
+		base.Faking.SNI = true
+		base.Faking.TTL = ttl
+		base.Faking.Strategy = "pastseq"
+		ds.applyBestPayload(&base.Faking)
+	} else {
+		base.Faking.SNI = false
+	}
 
 	basePreset := ConfigPreset{
 		Name:   "tcp-optimize",
@@ -781,12 +783,14 @@ func (ds *DiscoverySuite) optimizeTLSRec() ConfigPreset {
 
 	base := baseConfig()
 	base.Fragmentation.Strategy = "tls"
-	base.Faking.SNI = true
-
-	base.Faking.TTL = ds.getOptimalTTL()
-
-	base.Faking.Strategy = "pastseq"
-	ds.applyBestPayload(&base.Faking)
+	if ttl, ok := ds.getOptimalTTL(); ok {
+		base.Faking.SNI = true
+		base.Faking.TTL = ttl
+		base.Faking.Strategy = "pastseq"
+		ds.applyBestPayload(&base.Faking)
+	} else {
+		base.Faking.SNI = false
+	}
 
 	basePreset := ConfigPreset{
 		Name:   "tls-optimize",
@@ -1287,6 +1291,15 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 
 	result.StatusCode = resp.StatusCode
 	result.ContentSize = resp.ContentLength
+
+	// A malformed request is our own doing: the strategy under test corrupted the stream
+	// before the origin parsed it, so the fetch is not evidence that the strategy works.
+	if resp.StatusCode == http.StatusBadRequest {
+		result.Status = CheckStatusFailed
+		result.Error = "server answered HTTP 400, the strategy corrupted the request"
+		result.Duration = time.Since(start)
+		return result
+	}
 
 	// Check for ISP block page indicators before reading body.
 	if resp.StatusCode == 451 {

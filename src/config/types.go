@@ -51,9 +51,10 @@ const (
 )
 
 const (
-	UDPModeFake   = "fake"
-	UDPModeDrop   = "drop"
-	UDPModeReject = "reject"
+	UDPModeFake     = "fake"
+	UDPModeDrop     = "drop"
+	UDPModeReject   = "reject"
+	UDPModeCoalesce = "coalesce"
 )
 
 const (
@@ -96,7 +97,7 @@ func NormalizeQUICFilter(filter string) string {
 
 func NormalizeUDPMode(mode string) string {
 	switch mode {
-	case ConfigOff, UDPModeFake, UDPModeDrop, UDPModeReject:
+	case ConfigOff, UDPModeFake, UDPModeDrop, UDPModeReject, UDPModeCoalesce:
 		return mode
 	}
 	return DefaultSetConfig.UDP.Mode
@@ -178,6 +179,7 @@ type TCPConfig struct {
 	SynFakeLen     int    `json:"syn_fake_len"`
 	SynTTL         uint8  `json:"syn_ttl"`
 	DropSACK       bool   `json:"drop_sack"`
+	HTTPMethodEOL  bool   `json:"http_methodeol"`
 	DPortFilter    string `json:"dport_filter"` // comma separated list of ports and port ranges, e.g. "80,443,5222"
 
 	Incoming      IncomingConfig      `json:"incoming"`

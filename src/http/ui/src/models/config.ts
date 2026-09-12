@@ -127,7 +127,7 @@ export interface CategoryPreviewConfig {
   preview: string[];
 }
 
-export type UdpMode = "off" | "fake" | "drop" | "reject";
+export type UdpMode = "off" | "fake" | "drop" | "reject" | "coalesce";
 export type UdpFilterQuicMode = "sni" | "all";
 export type UdpFakingStrategy = "none" | "ttl" | "checksum";
 
@@ -224,6 +224,7 @@ export interface TcpConfig {
   syn_fake_len: number;
   syn_ttl: number;
   drop_sack: boolean;
+  http_methodeol: boolean;
   dport_filter: string;
 
   desync: DesyncConfig;

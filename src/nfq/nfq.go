@@ -203,6 +203,8 @@ func (w *Worker) dropAndInjectTCP(cfg *config.SetConfig, raw []byte, dst net.IP)
 		return
 	}
 
+	raw = w.applyHTTPMethodEOL(cfg, raw)
+
 	if cfg.Faking.SNIMutation.Mode != config.ConfigOff {
 		raw = w.MutateClientHello(cfg, raw, dst)
 	}

@@ -94,6 +94,8 @@ func (w *Worker) dropAndInjectTCPv6(cfg *config.SetConfig, raw []byte, dst net.I
 		return
 	}
 
+	raw = w.applyHTTPMethodEOL(cfg, raw)
+
 	if cfg.Faking.SNIMutation.Mode != config.ConfigOff {
 		raw = w.MutateClientHelloV6(cfg, raw, dst)
 	}

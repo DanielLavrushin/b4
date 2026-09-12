@@ -1,5 +1,11 @@
 # B4 - Bye Bye Big Bro
 
+## [1.82.0] - 2026-09-12
+
+- ADDED: **A QUIC handshake can be sent behind a padding packet inside the same datagram** - the new `coalesce` UDP mode builds a padding-only QUIC Initial, encrypted under the keys derived from the connection's own identifier, and puts it ahead of the client's Initial in one datagram, leaving the handshake itself byte for byte unchanged.
+- ADDED: **A plain HTTP request can carry an empty line before its method** - the new `http_methodeol` TCP option prepends an empty line to the request line and takes two characters off the end of the `User-Agent` value, so the request keeps its exact length and the client's sequence numbers stay correct. A server ignores the empty line, while inspection that expects the method at the start of the request stops finding the `Host` header. It needs a `User-Agent` header, covers port 80 only and suits nginx origins. Before this, b4 could not alter an HTTP request at all, so a site filtered by its `Host` header had nothing that worked.
+- FIXED: **Discovery could name a winning strategy for a site that stays blocked, and searched two families with a fake it had already proved harmful** - a reply of HTTP 400 counted as a working fetch, although a Bad Request is the strategy under test mangling its own request, and a 157-byte error page reached the finish line because it ended in the usual closing tags; separately, the TTL sweep reports nothing when every value fails, and the caller answered that by picking 7 and carrying on, so the TCP-fragmentation and TLS-record searches were measured with a fake the censor had just been shown to punish.
+
 ## [1.81.1] - 2026-09-10
 
 - FIXED: **b4 could be left running after a service restart on OpenWrt, deaf to everything but kill -9, or doubled after an update** - the daemon stopped listening for signals once shutdown began and never enforced its deadline, and the installer trusted a stop it never checked and a pidfile it never verified. [#351](https://github.com/DanielLavrushin/b4/issues/351)
