@@ -10,18 +10,25 @@ export interface SnackbarAction {
   onClick: () => void;
 }
 
+type SnackbarActions = SnackbarAction | SnackbarAction[];
+
 interface SnackbarItem {
   key: number;
   message: string;
   severity: Severity;
-  action?: SnackbarAction;
+  actions: SnackbarAction[];
 }
 
 interface SnackbarContextType {
-  showSnackbar: (message: string, severity?: Severity, action?: SnackbarAction) => void;
+  showSnackbar: (message: string, severity?: Severity, action?: SnackbarActions) => void;
   showError: (message: string) => void;
-  showSuccess: (message: string, action?: SnackbarAction) => void;
+  showSuccess: (message: string, action?: SnackbarActions) => void;
 }
+
+const toActionList = (action?: SnackbarActions): SnackbarAction[] => {
+  if (!action) return [];
+  return Array.isArray(action) ? action : [action];
+};
 
 const SnackbarContext = createContext<SnackbarContextType | null>(null);
 
@@ -35,9 +42,12 @@ export function SnackbarProvider({
   const current = queue[0];
 
   const showSnackbar = useCallback(
-    (message: string, severity: Severity = "info", action?: SnackbarAction) => {
+    (message: string, severity: Severity = "info", action?: SnackbarActions) => {
       keyRef.current += 1;
-      setQueue((q) => [...q, { key: keyRef.current, message, severity, action }]);
+      setQueue((q) => [
+        ...q,
+        { key: keyRef.current, message, severity, actions: toActionList(action) },
+      ]);
     },
     [],
   );
@@ -47,7 +57,7 @@ export function SnackbarProvider({
     [showSnackbar],
   );
   const showSuccess = useCallback(
-    (message: string, action?: SnackbarAction) =>
+    (message: string, action?: SnackbarActions) =>
       showSnackbar(message, "success", action),
     [showSnackbar],
   );
@@ -84,19 +94,22 @@ export function SnackbarProvider({
           onClose={handleClose}
           severity={current?.severity ?? "info"}
           action={
-            current?.action ? (
-              <Button
-                size="small"
-                color="inherit"
-                onClick={() => {
-                  current.action?.onClick();
-                  setOpen(false);
-                }}
-                sx={{ textTransform: "none", fontWeight: 600 }}
-              >
-                {current.action.label}
-              </Button>
-            ) : undefined
+            current && current.actions.length > 0
+              ? current.actions.map((action) => (
+                  <Button
+                    key={action.label}
+                    size="small"
+                    color="inherit"
+                    onClick={() => {
+                      action.onClick();
+                      setOpen(false);
+                    }}
+                    sx={{ textTransform: "none", fontWeight: 600 }}
+                  >
+                    {action.label}
+                  </Button>
+                ))
+              : undefined
           }
         >
           {current?.message ?? ""}

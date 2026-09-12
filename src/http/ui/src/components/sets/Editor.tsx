@@ -363,7 +363,11 @@ export const SetEditorPage = ({
           />
           {settings.hub?.enabled && (
             <Box sx={{ mt: 3 }}>
-              <ShareEnvelope config={editedSet} />
+              <ShareEnvelope
+                config={editedSet}
+                isNew={isNew}
+                dirty={JSON.stringify(editedSet) !== JSON.stringify(initialSet)}
+              />
             </Box>
           )}
         </B4TabPanel>

@@ -1,16 +1,43 @@
 import { useEffect, useState } from "react";
-import { Box, Button, Stack, Typography } from "@mui/material";
+import {
+  Box,
+  Button,
+  CircularProgress,
+  Stack,
+  Tooltip,
+  Typography,
+} from "@mui/material";
+import { Link } from "react-router";
 import { B4Alert, B4Section, B4TextField } from "@b4.elements";
-import { CopyIcon, DownloadIcon, ShareIcon, WarningIcon } from "@b4.icons";
+import {
+  CopyIcon,
+  DownloadIcon,
+  PublishIcon,
+  ShareIcon,
+  WarningIcon,
+} from "@b4.icons";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useTranslation } from "react-i18next";
 import { B4SetConfig } from "@models/config";
-import { HubEnvelopeResponse, formatWarningParam } from "@models/hub";
+import {
+  HubEnvelopeResponse,
+  HubShareResponse,
+  formatWarningParam,
+} from "@models/hub";
 import { hubApi } from "@api/hub";
-import { copyText } from "@utils";
+import { ApiError } from "@api/apiClient";
+import { useHubShare, useHubStatus } from "@hooks/useHub";
+import { copyText, describeApiError } from "@utils";
 
 interface ShareEnvelopeProps {
   config: B4SetConfig;
+  isNew?: boolean;
+  dirty?: boolean;
+}
+
+interface DuplicateAnswer {
+  hub_id: string;
+  version: number;
 }
 
 function fileNameFor(name: string): string {
@@ -21,17 +48,35 @@ function fileNameFor(name: string): string {
   return `${safe || "set"}.b4set.json`;
 }
 
-export const ShareEnvelope = ({ config }: ShareEnvelopeProps) => {
+const hubLink = (id: string) => `/hub?set=${encodeURIComponent(id)}`;
+
+export const ShareEnvelope = ({
+  config,
+  isNew = false,
+  dirty = false,
+}: ShareEnvelopeProps) => {
   const { t } = useTranslation();
   const { showSuccess, showError } = useSnackbar();
   const [result, setResult] = useState<HubEnvelopeResponse | null>(null);
   const [busy, setBusy] = useState(false);
+  const [published, setPublished] = useState<HubShareResponse | null>(null);
+  const [duplicate, setDuplicate] = useState<DuplicateAnswer | null>(null);
+  const hubStatus = useHubStatus();
+  const share = useHubShare();
 
   useEffect(() => {
     setResult(null);
   }, [config]);
 
+  useEffect(() => {
+    setPublished(null);
+    setDuplicate(null);
+  }, [config.id]);
+
   const json = result ? JSON.stringify(result.envelope) : "";
+  const hubReady = Boolean(
+    hubStatus.data?.enabled && hubStatus.data?.configured,
+  );
 
   const prepare = async () => {
     setBusy(true);
@@ -60,9 +105,37 @@ export const ShareEnvelope = ({ config }: ShareEnvelopeProps) => {
     URL.revokeObjectURL(url);
   };
 
+  const publish = async () => {
+    setPublished(null);
+    setDuplicate(null);
+    try {
+      const res = await share.mutateAsync({ setId: config.id });
+      setPublished(res);
+      showSuccess(t("sets.share.published", { id: res.hub_id }));
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "duplicate_strategy") {
+        const body = (e.body ?? {}) as Partial<DuplicateAnswer>;
+        setDuplicate({
+          hub_id: body.hub_id ?? "",
+          version: body.version ?? 0,
+        });
+        return;
+      }
+      if (e instanceof ApiError && e.code === "hub_unreachable") {
+        showError(t("sets.share.publishUnreachable"));
+        return;
+      }
+      showError(t("sets.share.publishFailed", { error: describeApiError(e) }));
+    }
+  };
+
   const stripped = result?.report.stripped ?? [];
   const warnings = result?.report.warnings ?? [];
   const payloads = result?.envelope.payloads ?? [];
+
+  let publishBlocked = "";
+  if (isNew) publishBlocked = t("sets.share.publishSaveFirst");
+  else if (dirty) publishBlocked = t("sets.share.publishUnsaved");
 
   return (
     <B4Section title={t("sets.share.sectionTitle")} icon={<ShareIcon />}>
@@ -70,10 +143,64 @@ export const ShareEnvelope = ({ config }: ShareEnvelopeProps) => {
         {t("sets.share.info")}
       </B4Alert>
       <Stack spacing={2}>
+        {hubReady && (
+          <Box>
+            <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+              <Tooltip title={publishBlocked}>
+                <span>
+                  <Button
+                    variant="contained"
+                    startIcon={
+                      share.isPending ? (
+                        <CircularProgress size={16} color="inherit" />
+                      ) : (
+                        <PublishIcon />
+                      )
+                    }
+                    onClick={() => void publish()}
+                    disabled={share.isPending || Boolean(publishBlocked)}
+                  >
+                    {t("sets.share.publish")}
+                  </Button>
+                </span>
+              </Tooltip>
+              <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                {t("sets.share.publishHint")}
+              </Typography>
+            </Stack>
+            {published && (
+              <B4Alert severity="success" sx={{ mt: 2 }}>
+                {t("sets.share.publishedDetail", {
+                  id: published.hub_id,
+                  version: published.version,
+                  status: t(`hub.status.set.${published.status}`, {
+                    defaultValue: published.status,
+                  }),
+                })}{" "}
+                <Link to={hubLink(published.hub_id)}>
+                  {t("sets.share.openHub")}
+                </Link>
+              </B4Alert>
+            )}
+            {duplicate && (
+              <B4Alert severity="warning" sx={{ mt: 2 }}>
+                {t("sets.share.publishDuplicate", {
+                  id: duplicate.hub_id,
+                  version: duplicate.version,
+                })}{" "}
+                {duplicate.hub_id && (
+                  <Link to={hubLink(duplicate.hub_id)}>
+                    {t("sets.share.openHub")}
+                  </Link>
+                )}
+              </B4Alert>
+            )}
+          </Box>
+        )}
         {!result && (
           <Box>
             <Button
-              variant="contained"
+              variant={hubReady ? "outlined" : "contained"}
               startIcon={<ShareIcon />}
               onClick={() => void prepare()}
               disabled={busy}

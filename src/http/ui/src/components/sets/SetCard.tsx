@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import {
   Box,
   Card,
@@ -94,6 +95,7 @@ export const SetCard = ({
   onFacetSelect,
 }: SetCardProps) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [railExpanded, setRailExpanded] = useState(false);
   const railTimer = useRef<number | null>(null);
@@ -410,9 +412,11 @@ export const SetCard = ({
           {set.hub_state && (
             <Tooltip
               title={
-                set.hub_state === "modified"
-                  ? t("sets.card.sharedSetEdited")
-                  : t("sets.card.sharedSet")
+                set.hub?.id
+                  ? t("sets.card.sharedSetOpenHub")
+                  : set.hub_state === "modified"
+                    ? t("sets.card.sharedSetEdited")
+                    : t("sets.card.sharedSet")
               }
             >
               <B4Badge
@@ -425,6 +429,16 @@ export const SetCard = ({
                 size="small"
                 color="secondary"
                 variant={set.hub_state === "modified" ? "outlined" : "filled"}
+                onClick={
+                  set.hub?.id
+                    ? (e) => {
+                        e.stopPropagation();
+                        navigate(
+                          `/hub?set=${encodeURIComponent(set.hub?.id ?? "")}`,
+                        )?.catch(() => {});
+                      }
+                    : undefined
+                }
               />
             </Tooltip>
           )}

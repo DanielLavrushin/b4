@@ -393,6 +393,8 @@ export interface UpdateConfig {
 
 export interface HubConfig {
   enabled: boolean;
+  urls?: string[];
+  public_key?: string;
 }
 
 export interface DnsSystemConfig {

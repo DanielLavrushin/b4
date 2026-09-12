@@ -15,7 +15,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { RefreshIcon, AiIcon, IpInfoIcon, McpIcon, CommunityIcon } from "@b4.icons";
+import { RefreshIcon, AiIcon, IpInfoIcon, McpIcon } from "@b4.icons";
 import {
   B4Accordion,
   B4Alert,
@@ -32,10 +32,11 @@ import { aiApi, mcpApi, AIModel } from "@api/ai";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useAiStatus } from "@context/AiStatusProvider";
 import { colors } from "@design";
+import { HubCard } from "./Hub";
 
 export interface ApiSettingsProps {
   config: B4Config;
-  onChange: (field: string, value: boolean | string | number) => void;
+  onChange: (field: string, value: boolean | string | number | string[]) => void;
 }
 
 interface ProviderOption {
@@ -73,23 +74,6 @@ export const ApiSettings = ({ config, onChange }: ApiSettingsProps) => (
     <HubCard config={config} onChange={onChange} />
   </Stack>
 );
-
-const HubCard = ({ config, onChange }: ApiSettingsProps) => {
-  const { t } = useTranslation();
-  const enabled = Boolean(config.system.hub?.enabled);
-  return (
-    <B4IntegrationCard
-      icon={<CommunityIcon />}
-      title={t("settings.Hub.title")}
-      description={t("settings.Hub.description")}
-      enabled={enabled}
-      onToggle={(checked) => onChange("system.hub.enabled", checked)}
-      toggleLabel={t("settings.Hub.enabled")}
-    >
-      <B4Alert severity="info">{t("settings.Hub.note")}</B4Alert>
-    </B4IntegrationCard>
-  );
-};
 
 const IPInfoCard = ({ config, onChange }: ApiSettingsProps) => {
   const { t } = useTranslation();

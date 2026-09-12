@@ -186,6 +186,15 @@ var knownDoHHosts = map[string]bool{
 	"dns.brahma.world": true, "doh.applied-privacy.net": true, "basic.rethinkdns.com": true,
 }
 
+func DoHAllowlist() []string {
+	hosts := make([]string, 0, len(knownDoHHosts))
+	for host := range knownDoHHosts {
+		hosts = append(hosts, host)
+	}
+	sort.Strings(hosts)
+	return hosts
+}
+
 func DoHHost(rawURL string) (string, bool) {
 	u, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil || u.Host == "" {

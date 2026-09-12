@@ -359,7 +359,9 @@ type UpdateConfig struct {
 }
 
 type HubConfig struct {
-	Enabled bool `json:"enabled"`
+	Enabled   bool     `json:"enabled"`
+	URLs      []string `json:"urls,omitempty"`
+	PublicKey string   `json:"public_key,omitempty"`
 }
 
 type MCPConfig struct {

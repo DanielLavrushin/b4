@@ -1,4 +1,6 @@
-import { B4SetConfig } from "./config";
+import { B4SetConfig, HubState } from "./config";
+import { createDefaultSet } from "./defaults";
+import { DomainReassignment } from "./sets";
 
 export interface HubPayload {
   sha256: string;
@@ -78,4 +80,183 @@ export function formatWarningParam(value: unknown): string {
     return value.map(scalarText).join(", ");
   }
   return scalarText(value);
+}
+
+export type HubBucket = "asn" | "country" | "global" | "none";
+
+export interface HubDisplayed {
+  bucket: HubBucket;
+  score: number;
+  n: number;
+  devices: number;
+  newest?: string;
+}
+
+export interface HubBlobRef {
+  sha256: string;
+  protocol: string;
+  domain?: string;
+  size: number;
+}
+
+export interface HubTargets {
+  domains: string[];
+  geosite: string[];
+  geoip: string[];
+  ip_count: number;
+}
+
+export interface HubMatch {
+  entry: string;
+  relation: string;
+  via: "domain" | "category";
+}
+
+export interface HubApplied {
+  set_id: string;
+  hub_state: HubState;
+}
+
+export type HubFlag =
+  | "needs_payload"
+  | "block"
+  | "pins"
+  | "blanket"
+  | "catch_all";
+
+export interface HubSet {
+  id: string;
+  version: number;
+  fp: string;
+  title: string;
+  description?: string;
+  author: string;
+  b4_min: string;
+  b4_version?: string;
+  engine?: string;
+  family?: string;
+  flags: string[];
+  status: string;
+  created_at: string;
+  updated_at: string;
+  geo: { site_url?: string; ip_url?: string } | null;
+  set: Record<string, unknown>;
+  payloads: HubBlobRef[];
+  targets: HubTargets;
+  display: HubDisplayed;
+  match: HubMatch | null;
+  applied: HubApplied | null;
+}
+
+export interface HubSetsResponse {
+  sets: HubSet[];
+  total: number;
+}
+
+export interface HubCatalogueStatus {
+  epoch: number;
+  seq: number;
+  generated_at: string;
+  expires_at: string;
+  sets: number;
+  expired: boolean;
+}
+
+export interface HubStatus {
+  enabled: boolean;
+  configured: boolean;
+  key_id: string;
+  last_sync: string;
+  last_error: string;
+  catalogue: HubCatalogueStatus | null;
+  urls: string[];
+  network: { asn: string; cc: string };
+  outbox: number;
+}
+
+export interface HubApplyResponse {
+  id: string;
+  name: string;
+  moved: DomainReassignment[];
+  warnings: HubWarning[];
+  payloads: HubInstalledPayload[];
+}
+
+export type HubVoteKind = "works" | "broken";
+
+export interface HubVoteResponse {
+  queued: boolean;
+  sent: boolean;
+}
+
+export interface HubShareResponse {
+  hub_id: string;
+  version: number;
+  status: string;
+}
+
+export interface HubIdentity {
+  key_id: string;
+  created_at: string;
+}
+
+export interface HubProbeResult {
+  ok: boolean;
+  status: string;
+  detail: string;
+}
+
+export interface HubTestResponse {
+  domain: string;
+  through_b4: HubProbeResult;
+  bypassed: HubProbeResult;
+}
+
+export function hubGateStatus(enabled: boolean): HubStatus {
+  return {
+    enabled,
+    configured: false,
+    key_id: "",
+    last_sync: "",
+    last_error: "",
+    catalogue: null,
+    urls: [],
+    network: { asn: "", cc: "" },
+    outbox: 0,
+  };
+}
+
+type PlainObject = Record<string, unknown>;
+
+function isPlainObject(v: unknown): v is PlainObject {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function mergeWithDefaults(partial: unknown, defaults: unknown): unknown {
+  if (partial === undefined || partial === null) return defaults;
+  if (Array.isArray(defaults)) {
+    return Array.isArray(partial) ? partial : defaults;
+  }
+  if (isPlainObject(defaults)) {
+    if (!isPlainObject(partial)) return defaults;
+    const merged: PlainObject = { ...defaults };
+    for (const [key, value] of Object.entries(partial)) {
+      merged[key] =
+        key in merged ? mergeWithDefaults(value, merged[key]) : value;
+    }
+    return merged;
+  }
+  return partial;
+}
+
+export function projectionToSet(
+  projection: Record<string, unknown>,
+  title: string,
+): B4SetConfig {
+  const defaults = createDefaultSet(0) as unknown as PlainObject;
+  const merged = mergeWithDefaults(projection, defaults) as B4SetConfig;
+  merged.id = "";
+  merged.name = title || merged.name;
+  merged.enabled = true;
+  return merged;
 }

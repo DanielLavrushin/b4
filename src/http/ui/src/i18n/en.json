@@ -67,7 +67,8 @@
       "logs": "Logs",
       "settings": "Settings",
       "watchdog": "Watchdog",
-      "documentation": "Documentation"
+      "documentation": "Documentation",
+      "hub": "Community"
     },
     "failed": "Failed",
     "filtered": "{{count}} filtered",
@@ -749,9 +750,42 @@
     },
     "Hub": {
       "title": "Community sets",
-      "description": "Share sets with other b4 users. The set editor gets a Share section that prepares a set with everything private left out. A shared set pasted into Import is accepted whether or not this is on.",
+      "description": "Browse strategies other b4 users published, apply one in a click, and report whether it works. The set editor gets a Share section that prepares a set with everything private left out.",
       "enabled": "Enable community sets",
-      "note": "Shared sets are passed around by hand for now, as text or a file. Browsing and rating sets on hub.b4core.app come in a later release."
+      "note": "The Community page lists the catalogue signed by the hub. Reports on what works are sent under the author identity below; nothing else about this router leaves it. A shared set pasted into Import is accepted whether or not this is on.",
+      "urls": "Hub addresses",
+      "urlsHelp": "One per line, tried in order until one answers. Empty means {{url}}.",
+      "publicKey": "Hub public key",
+      "publicKeyHelp": "Only needed for a self-hosted or development hub. The key of hub.b4core.app is built in.",
+      "status": {
+        "title": "Hub status",
+        "savedOff": "Community sets are off in the saved configuration. Save to turn them on.",
+        "catalogue": "Catalogue",
+        "catalogueLine": "{{date}}, epoch {{epoch}} seq {{seq}}, {{count}} sets",
+        "expires": "Valid until",
+        "expiredAt": "expired on {{date}}",
+        "lastSync": "Last sync",
+        "lastError": "Last error",
+        "urls": "Addresses",
+        "network": "Network",
+        "outbox": "Reports waiting"
+      },
+      "identity": {
+        "title": "Author identity",
+        "help": "Sets published from this router and reports on what works are signed with this key. The recovery code carries the key to another router, so the same author keeps their sets.",
+        "keyId": "Key",
+        "showRecovery": "Show recovery code",
+        "restore": "Restore from code",
+        "recoveryTitle": "Recovery code",
+        "recoveryWarning": "Anyone with this code can publish and report as this router's author. It restores the author identity on another router; keep it private.",
+        "recoveryCode": "Recovery code",
+        "recoveryFailed": "Could not read the recovery code: {{error}}",
+        "restoreTitle": "Restore author identity",
+        "restoreHelp": "Paste the recovery code shown on the other router. The current key of this router is replaced.",
+        "restoreAction": "Restore",
+        "restored": "Identity restored, key {{key}}.",
+        "restoreFailed": "Could not restore the identity: {{error}}"
+      }
     }
   },
   "dashboard": {
@@ -994,7 +1028,8 @@
         "dnsTarget": "Server"
       },
       "sharedSet": "Shared set",
-      "sharedSetEdited": "Shared set, edited"
+      "sharedSetEdited": "Shared set, edited",
+      "sharedSetOpenHub": "Open in Community"
     },
     "targets": {
       "sectionTitle": "Domain Filtering Configuration",
@@ -1963,7 +1998,17 @@
       },
       "minVersion": "Needs b4 {{version}} or newer.",
       "payloadsAttached_one": "{{count}} payload file is included.",
-      "payloadsAttached_other": "{{count}} payload files are included."
+      "payloadsAttached_other": "{{count}} payload files are included.",
+      "publish": "Publish to hub",
+      "publishHint": "Publishes the saved version of this set under this router's author key. Other users see it after moderation.",
+      "publishSaveFirst": "Save the set before publishing it.",
+      "publishUnsaved": "There are unsaved changes; the saved version is what gets published. Save first.",
+      "published": "Published as {{id}}, awaiting moderation.",
+      "publishedDetail": "Published as {{id}} (version {{version}}), status: {{status}}.",
+      "publishDuplicate": "The hub already has this strategy with the same targets as {{id}} (version {{version}}). The upload was counted as a report that it works.",
+      "publishUnreachable": "No hub answered, so the set was not published. Try again later.",
+      "publishFailed": "The hub refused the set: {{error}}",
+      "openHub": "Open in Community"
     }
   },
   "discovery": {
@@ -2744,5 +2789,150 @@
     "socks5_incomplete_credentials": "SOCKS5 username and password must both be set or both be empty",
     "doh_url_must_be_https": "Set \"{{set}}\": DNS-over-HTTPS URL must start with https://",
     "mark_conflict": "Mark value {{mark}} conflicts with reserved bits"
+  },
+  "hub": {
+    "title": "Community sets",
+    "description": "Strategies published by other b4 users, ranked by reports from your network, your country and the world.",
+    "status": {
+      "catalogue": "Catalogue from {{date}}",
+      "sets_one": "{{count}} set",
+      "sets_other": "{{count}} sets",
+      "lastSync": "synced {{ago}}",
+      "neverSynced": "not synced yet",
+      "syncNow": "Sync now",
+      "syncing": "Syncing...",
+      "synced": "Catalogue synced.",
+      "syncFailed": "No hub answered: {{error}}",
+      "disabled": "Community sets are off.",
+      "notConfigured": "No trusted hub key is available, so the catalogue cannot be verified. Set the hub public key in the settings.",
+      "expired": "The catalogue expired on {{date}} and no hub has answered since. The sets shown are the last ones seen.",
+      "noCatalogue": "no catalogue yet",
+      "lastError": "Last sync error: {{error}}",
+      "network": "your network {{asn}}, {{cc}}",
+      "outbox_one": "{{count}} report waiting to be sent",
+      "outbox_other": "{{count}} reports waiting to be sent",
+      "openSettings": "Open settings",
+      "unavailable": "The hub status could not be read: {{error}}",
+      "set": {
+        "pending": "pending moderation",
+        "active": "active",
+        "hidden": "hidden",
+        "rejected": "rejected"
+      }
+    },
+    "search": {
+      "label": "Domain",
+      "placeholder": "Type a domain to see the sets that cover it",
+      "clear": "Clear",
+      "results_one": "{{count}} set covers {{domain}}",
+      "results_other": "{{count}} sets cover {{domain}}",
+      "noResults": "No published set covers {{domain}}.",
+      "all_one": "{{count}} set, best rated first",
+      "all_other": "{{count}} sets, best rated first",
+      "empty": "The catalogue has no active sets yet.",
+      "failed": "The sets could not be loaded: {{error}}"
+    },
+    "card": {
+      "by": "by {{author}}",
+      "version": "v{{version}}",
+      "needsB4": "needs b4 {{version}}",
+      "categories": "categories {{list}}",
+      "domainCount_one": "{{count}} domain",
+      "domainCount_other": "{{count}} domains",
+      "ipCount_one": "{{count}} address",
+      "ipCount_other": "{{count}} addresses",
+      "noTargets": "no targets",
+      "reputation": "Reports",
+      "score": "{{percent}}% works",
+      "reports": {
+        "asn_one": "{{count}} report on your ISP",
+        "asn_other": "{{count}} reports on your ISP",
+        "country_one": "{{count}} report in your country",
+        "country_other": "{{count}} reports in your country",
+        "global_one": "{{count}} report worldwide",
+        "global_other": "{{count}} reports worldwide",
+        "none": "no reports yet"
+      },
+      "devices_one": "{{count}} device",
+      "devices_other": "{{count}} devices",
+      "newest": "last report {{ago}}",
+      "applied": "Applied",
+      "appliedModified": "Applied, edited",
+      "openLocal": "Open the local set",
+      "match": {
+        "domain": "covers it through {{entry}}",
+        "category": "covers it through the category {{entry}}"
+      },
+      "apply": "Apply",
+      "details": "Details",
+      "works": "Works",
+      "broken": "Broken",
+      "test": "Test",
+      "voteModified": "The local copy was edited after it was applied, so a report would not describe the published strategy."
+    },
+    "flags": {
+      "needs_payload": "needs payload",
+      "block": "block",
+      "pins": "pins",
+      "blanket": "blanket",
+      "catch_all": "catch-all"
+    },
+    "apply": {
+      "done": "Created set {{name}}.",
+      "moved": "{{domains}} moved out of {{sets}}.",
+      "openSet": "Open set",
+      "undo": "Undo",
+      "undone": "The set was removed.",
+      "undoFailed": "Could not remove the set: {{error}}",
+      "failed": "Could not apply the set: {{error}}",
+      "payloadUnreachable": "The payload could not be fetched from any hub, so the set was not applied."
+    },
+    "vote": {
+      "sent": "Report sent. Thank you.",
+      "queued": "Report saved; it goes out with the next sync.",
+      "notApplied": "Apply the set first; reports are accepted only for sets in use.",
+      "modified": "The local copy of this set was edited, so a report would not describe the published strategy.",
+      "failed": "Could not send the report: {{error}}"
+    },
+    "test": {
+      "title": "Test {{name}}",
+      "subtitle": "Fetches the domain once through b4 and once with b4 bypassed",
+      "domain": "Domain",
+      "domainHelp": "A domain the set covers. Empty picks the first one.",
+      "run": "Run test",
+      "ok": "OK",
+      "fail": "FAIL",
+      "throughB4": "Through b4",
+      "bypassed": "Bypassing b4",
+      "failed": "The test could not run: {{error}}",
+      "verdict": {
+        "bothOk": "{{domain}} loads both ways: nothing blocks it right now, so the set is not needed for it.",
+        "bypassNeeded": "{{domain}} loads through b4 and fails without it: the set does its job.",
+        "setBreaks": "{{domain}} loads without b4 but fails through it: the set breaks it.",
+        "bothFail": "{{domain}} fails both ways: the address may be blocked outright, or the site is down."
+      }
+    },
+    "details": {
+      "title": "Set details",
+      "loadFailed": "The set could not be loaded: {{error}}",
+      "reputation": "Reports",
+      "author": "Author",
+      "versions": "Versions",
+      "versionLine": "set v{{version}}, needs b4 {{min}}, built on {{built}}",
+      "engine": "Engine",
+      "dates": "Dates",
+      "dateLine": "created {{created}}, updated {{updated}}",
+      "fingerprint": "Fingerprint",
+      "targets": "Targets",
+      "domains": "Domains",
+      "geosite": "Geosite",
+      "geoip": "GeoIP",
+      "addresses": "Addresses",
+      "none": "none",
+      "strategy": "Strategy",
+      "payloads": "Payloads",
+      "noPayloads": "No payload files; fake packets use the built-in payload.",
+      "json": "Set JSON"
+    }
   }
 }

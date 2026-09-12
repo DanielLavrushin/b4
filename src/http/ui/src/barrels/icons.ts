@@ -90,4 +90,12 @@ export {
   VisibilityOff as EyeOffIcon,
   Public as IpInfoIcon,
   Extension as McpIcon,
+  Search as SearchIcon,
+  Sync as SyncIcon,
+  ThumbUpAlt as WorksIcon,
+  ThumbDownAlt as BrokenIcon,
+  NetworkCheck as TestIcon,
+  CloudUpload as PublishIcon,
+  Key as KeyIcon,
+  Verified as AppliedIcon,
 } from "@mui/icons-material";

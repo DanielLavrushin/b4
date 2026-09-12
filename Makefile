@@ -197,6 +197,27 @@ build-ui: gen-defaults
 	@cd src/http/ui && pnpm build
 	@echo "Web UI build complete."
 
+HUB_DIR := ./hub
+HUB_DATA ?= $(HUB_DIR)/data
+
+.PHONY: hub-build
+hub-build:
+	@echo "Building hub service..."
+	@CGO_ENABLED=0 go -C $(HUB_DIR) build $(BUILDFLAGS) -ldflags "-s -w -X main.Version=$(VERSION)" -o ../$(OUT_DIR)/b4hub ./cmd/b4hub
+	@echo "Hub build complete: $(OUT_DIR)/b4hub"
+
+.PHONY: hub-test
+hub-test:
+	@go -C $(HUB_DIR) test ./...
+
+.PHONY: hub-keygen
+hub-keygen: hub-build
+	@$(OUT_DIR)/b4hub keygen -data $(HUB_DATA)
+
+.PHONY: hub-run
+hub-run: hub-build
+	@$(OUT_DIR)/b4hub serve -data $(HUB_DATA) -listen 127.0.0.1:7100 -public-url http://127.0.0.1:7100
+
 SFTP_PORT ?= 22
 SSH_OPTS ?= -o StrictHostKeyChecking=no -o IPQoS=none
 B4_RESTART_CMD ?= /opt/etc/init.d/S99b4
@@ -256,6 +277,10 @@ help:
 	@printf "  %-25s %s\n" "make build-installer" "Build the installer script"
 	@printf "  %-25s %s\n" "make watch-installer" "Watch and rebuild installer on changes"
 	@printf "  %-25s %s\n" "make build-ui" "Build the web UI"
+	@printf "  %-25s %s\n" "make hub-build" "Build the community hub service into out/b4hub"
+	@printf "  %-25s %s\n" "make hub-test" "Run the hub service tests"
+	@printf "  %-25s %s\n" "make hub-keygen" "Create a development hub key under hub/data"
+	@printf "  %-25s %s\n" "make hub-run" "Run the hub service locally on 127.0.0.1:7100"
 	@printf "  %-25s %s\n" "make deploy-<arch>" "Build and upload via SFTP (requires .env)"
 	@printf "  %-25s %s\n" "make help" "Show this help"
 	@echo ""
