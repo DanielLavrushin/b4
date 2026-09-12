@@ -24,6 +24,7 @@ import {
   EditIcon,
   EscalateInIcon,
   EscalateOutIcon,
+  ShareIcon,
 } from "@b4.icons";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import { B4Badge } from "@b4.elements";
@@ -382,7 +383,9 @@ export const SetCard = ({
         </CardContent>
       </CardActionArea>
 
-      {(escalatesTo || (escalatedFrom && escalatedFrom.length > 0)) && (
+      {(escalatesTo ||
+        (escalatedFrom && escalatedFrom.length > 0) ||
+        set.hub_state) && (
         <Box
           sx={{
             display: "flex",
@@ -403,6 +406,27 @@ export const SetCard = ({
               onHover={onEscalationHover}
               onClick={onEscalationClick}
             />
+          )}
+          {set.hub_state && (
+            <Tooltip
+              title={
+                set.hub_state === "modified"
+                  ? t("sets.card.sharedSetEdited")
+                  : t("sets.card.sharedSet")
+              }
+            >
+              <B4Badge
+                icon={<ShareIcon sx={{ fontSize: ESCALATION_ICON }} />}
+                label={
+                  set.hub_state === "modified"
+                    ? t("sets.card.sharedSetEdited")
+                    : t("sets.card.sharedSet")
+                }
+                size="small"
+                color="secondary"
+                variant={set.hub_state === "modified" ? "outlined" : "filled"}
+              />
+            </Tooltip>
           )}
           {escalatedFrom?.map((link) => (
             <EscalationChip

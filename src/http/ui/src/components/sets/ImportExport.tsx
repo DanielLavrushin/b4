@@ -15,6 +15,9 @@ import { useTranslation, Trans } from "react-i18next";
 
 import { B4SetConfig, FakingPayloadType } from "@models/config";
 import { createDefaultSet } from "@models/defaults";
+import { HubWarning, formatWarningParam, isHubEnvelope } from "@models/hub";
+import { hubApi } from "@api/hub";
+import { ApiError } from "@api/apiClient";
 import { copyText } from "@utils";
 
 type Obj = Record<string, unknown>;
@@ -124,7 +127,7 @@ function mergeWithDefaults(partial: unknown, defaults: unknown): unknown {
 function buildExportJson(config: B4SetConfig): Record<string, unknown> {
   const defaults = createDefaultSet(0);
   const alwaysInclude = new Set(["name", "enabled"]);
-  const skip = new Set(["id", "stats"]);
+  const skip = new Set(["id", "stats", "hub_state"]);
   const configObj = structuredClone(config) as unknown as Record<
     string,
     unknown
@@ -188,6 +191,8 @@ export const ImportExportSettings = ({
   const { t } = useTranslation();
   const [jsonValue, setJsonValue] = useState("");
   const [importSuccess, setImportSuccess] = useState(false);
+  const [envelopeImported, setEnvelopeImported] = useState(false);
+  const [importWarnings, setImportWarnings] = useState<HubWarning[]>([]);
   const [importedPayloadRefs, setImportedPayloadRefs] = useState<string[]>([]);
   const [capturesReady, setCapturesReady] = useState(false);
   const { showSuccess, showError } = useSnackbar();
@@ -285,9 +290,35 @@ export const ImportExportSettings = ({
     return set as unknown as B4SetConfig;
   }
 
+  const importEnvelope = async (raw: unknown, text: string) => {
+    if (!isHubEnvelope(raw)) return;
+    try {
+      const result = await hubApi.importEnvelope(raw);
+      const parsed = { ...result.set, id: config.id, enabled: config.enabled };
+      onImport(parsed);
+      await loadCaptures();
+      setImportedPayloadRefs(collectPayloadRefs(parsed));
+      setImportWarnings(result.warnings ?? []);
+      setEnvelopeImported(true);
+      setImportSuccess(true);
+    } catch (e) {
+      const detail = e instanceof ApiError ? e.message : String(e);
+      setJsonValue(text);
+      setImportSuccess(false);
+      setEnvelopeImported(false);
+      setImportWarnings([]);
+      setImportedPayloadRefs([]);
+      showError(t("sets.importExport.envelopeFailed", { error: detail }));
+    }
+  };
+
   const importJson = (text: string) => {
     try {
       const raw = JSON.parse(text) as Record<string, unknown>;
+      if (isHubEnvelope(raw)) {
+        void importEnvelope(raw, text);
+        return true;
+      }
       const { b4_version: _, ...configFields } = raw;
 
       const defaults = createDefaultSet(0);
@@ -313,6 +344,8 @@ export const ImportExportSettings = ({
       parsed.id = config.id;
       onImport(parsed);
       setImportedPayloadRefs(collectPayloadRefs(parsed));
+      setImportWarnings([]);
+      setEnvelopeImported(false);
       void loadCaptures();
       setImportSuccess(true);
       return true;
@@ -346,11 +379,39 @@ export const ImportExportSettings = ({
     >
       {importSuccess ? (
         <B4Alert severity="success" icon={<CheckCircleIcon />} sx={{ mb: 2 }}>
-          <Trans i18nKey="sets.importExport.importSuccess" />
+          <Trans
+            i18nKey={
+              envelopeImported
+                ? "sets.importExport.envelopeImported"
+                : "sets.importExport.importSuccess"
+            }
+          />
         </B4Alert>
       ) : (
         <B4Alert severity="info" sx={{ mb: 2 }}>
           {t("sets.importExport.infoAlert")}
+        </B4Alert>
+      )}
+      {importWarnings.length > 0 && (
+        <B4Alert severity="warning" icon={<WarningIcon />} sx={{ mb: 2 }}>
+          <Typography variant="subtitle2">
+            {t("sets.importExport.warningsTitle")}
+          </Typography>
+          <ul style={{ margin: "4px 0 0", paddingLeft: 20 }}>
+            {importWarnings.map((w, i) => (
+              <li key={`${w.code}-${i}`}>
+                {t(`sets.importExport.warnings.${w.code}`, {
+                  defaultValue: w.code,
+                  ...Object.fromEntries(
+                    Object.entries(w.params ?? {}).map(([k, v]) => [
+                      k,
+                      formatWarningParam(v),
+                    ]),
+                  ),
+                })}
+              </li>
+            ))}
+          </ul>
         </B4Alert>
       )}
       {missingPayloads.length > 0 && (
@@ -373,6 +434,8 @@ export const ImportExportSettings = ({
           onChange={(e) => {
             setJsonValue(e.target.value);
             setImportSuccess(false);
+            setEnvelopeImported(false);
+            setImportWarnings([]);
             setImportedPayloadRefs([]);
           }}
           onPaste={handlePaste}

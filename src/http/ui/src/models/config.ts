@@ -381,6 +381,7 @@ export interface SystemConfig {
   dns: DnsSystemConfig;
   ip_health?: IPHealthConfig;
   update?: UpdateConfig;
+  hub?: HubConfig;
   timezone: string;
   memory_limit?: string;
   pprof?: boolean;
@@ -388,6 +389,10 @@ export interface SystemConfig {
 
 export interface UpdateConfig {
   mirrors?: string[];
+}
+
+export interface HubConfig {
+  enabled: boolean;
 }
 
 export interface DnsSystemConfig {
@@ -429,6 +434,17 @@ export interface B4SetConfig {
   routing: RoutingConfig;
   escalate?: EscalateConfig;
   mss_clamp?: MSSClampConfig;
+  hub?: B4HubOrigin;
+  hub_state?: HubState;
+}
+
+export type HubState = "unmodified" | "modified";
+
+export interface B4HubOrigin {
+  id?: string;
+  version?: number;
+  hash?: string;
+  applied_at?: string;
 }
 
 export interface EscalateConfig {

@@ -1,6 +1,8 @@
 package capture
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -489,6 +491,49 @@ func (m *Manager) SaveUploadedCapture(protocol, domain string, data []byte) erro
 
 	log.Infof("✓ Saved uploaded %s payload for %s (%d bytes)", protocol, domain, len(data))
 	return nil
+}
+
+func (m *Manager) SaveImportedPayload(protocol, domain string, data []byte) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	if domain == "" {
+		domain = "shared"
+	}
+	sum := sha256.Sum256(data)
+	candidates := []string{domain, domain + "-" + hex.EncodeToString(sum[:4])}
+	for _, name := range candidates {
+		filename := fmt.Sprintf(payloadFilenameFmt, protocol, sanitizeDomain(name))
+		filePath := filepath.Join(m.outputPath, filename)
+		existing, err := os.ReadFile(filePath)
+		if err == nil {
+			if bytes.Equal(existing, data) {
+				return filepath.Join("captures", filename), nil
+			}
+			continue
+		}
+		if !os.IsNotExist(err) {
+			return "", fmt.Errorf("failed to inspect %s: %v", filename, err)
+		}
+		if err := os.WriteFile(filePath, data, 0644); err != nil {
+			return "", fmt.Errorf("failed to save file: %v", err)
+		}
+		if m.metadata[name] == nil {
+			m.metadata[name] = make(map[string]*PayloadMetadata)
+		}
+		m.metadata[name][protocol] = &PayloadMetadata{
+			Timestamp: time.Now(),
+			Size:      len(data),
+			Filepath:  filename,
+		}
+		if err := m.saveMetadata(); err != nil {
+			return "", fmt.Errorf("failed to save metadata: %v", err)
+		}
+		log.Infof("Saved shared %s payload for %s (%d bytes)", protocol, name, len(data))
+		return filepath.Join("captures", filename), nil
+	}
+	return "", fmt.Errorf("a different payload already exists under every name derived from %s", domain)
 }
 
 func (m *Manager) LoadCaptureData(c *Capture) ([]byte, error) {

@@ -348,6 +348,7 @@ type SystemConfig struct {
 	DNS         DNSSystemConfig     `json:"dns"`
 	IPHealth    IPHealthConfig      `json:"ip_health"`
 	Update      UpdateConfig        `json:"update"`
+	Hub         HubConfig           `json:"hub"`
 	Timezone    string              `json:"timezone"`
 	MemoryLimit string              `json:"memory_limit,omitempty"`
 	Pprof       bool                `json:"pprof,omitempty"`
@@ -355,6 +356,10 @@ type SystemConfig struct {
 
 type UpdateConfig struct {
 	Mirrors []string `json:"mirrors,omitempty"`
+}
+
+type HubConfig struct {
+	Enabled bool `json:"enabled"`
 }
 
 type MCPConfig struct {
@@ -508,6 +513,14 @@ type SetConfig struct {
 	Routing       RoutingConfig       `json:"routing"`
 	Escalate      EscalateConfig      `json:"escalate"`
 	MSSClamp      MSSClampConfig      `json:"mss_clamp"`
+	Hub           *HubOrigin          `json:"hub,omitempty" mcp:"deny"`
+}
+
+type HubOrigin struct {
+	ID        string `json:"id,omitempty"`
+	Version   int    `json:"version,omitempty"`
+	Hash      string `json:"hash,omitempty"`
+	AppliedAt string `json:"applied_at,omitempty"`
 }
 
 type EscalateConfig struct {

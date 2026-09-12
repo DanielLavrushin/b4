@@ -888,6 +888,17 @@ func safeCapturePath(configDir, name string) (string, error) {
 	return candidate, nil
 }
 
+func (c *Config) ReadCapturePayload(name string) ([]byte, error) {
+	if c.ConfigPath == "" {
+		return nil, fmt.Errorf("config path is not set")
+	}
+	path, err := safeCapturePath(filepath.Dir(c.ConfigPath), name)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
+}
+
 func (c *Config) LoadCapturePayloads() {
 	capturesDir := ""
 	if c.ConfigPath != "" {

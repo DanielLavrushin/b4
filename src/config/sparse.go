@@ -57,6 +57,19 @@ func sparsifyMap(current, defaults map[string]interface{}) map[string]interface{
 	return result
 }
 
+func SparsifySetMap(setMap map[string]interface{}) (map[string]interface{}, error) {
+	defaultSet := NewSetConfig()
+	defSetMap, err := toMap(&defaultSet)
+	if err != nil {
+		return nil, err
+	}
+	return sparsifyMap(setMap, defSetMap), nil
+}
+
+func SetToMap(set *SetConfig) (map[string]interface{}, error) {
+	return toMap(set)
+}
+
 func MarshalSparse(cfg *Config) ([]byte, error) {
 	cfgMap, err := toMap(cfg)
 	if err != nil {

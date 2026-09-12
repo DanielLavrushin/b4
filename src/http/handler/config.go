@@ -176,6 +176,7 @@ func (a *API) getConfig(w http.ResponseWriter) {
 
 		setsWithStats[i] = SetWithStats{
 			SetConfig: set,
+			HubState:  hubStateOf(cfg, set),
 			Stats: SetStatistics{
 				ManualDomains:            manualDomains,
 				ManualIPs:                manualIPs,
@@ -359,6 +360,7 @@ func (a *API) updateConfig(w http.ResponseWriter, r *http.Request) {
 
 		setsWithStats[i] = SetWithStats{
 			SetConfig: set,
+			HubState:  hubStateOf(&newConfig, set),
 			Stats: SetStatistics{
 				ManualDomains:            manualDomains,
 				ManualIPs:                manualIPs,

@@ -33,6 +33,7 @@ const IGNORE_KEYS = new Set([
   "name",
   "enabled",
   "stats",
+  "hub_state",
   "manual_domains",
   "manual_ips",
   "geosite_domains",

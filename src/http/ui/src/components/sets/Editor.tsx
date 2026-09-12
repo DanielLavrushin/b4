@@ -29,6 +29,7 @@ import { B4Config, B4SetConfig, SystemConfig } from "@models/config";
 
 import { EscalationSettings } from "./Escalation";
 import { ImportExportSettings } from "./ImportExport";
+import { ShareEnvelope } from "./ShareEnvelope";
 import { SetStats } from "./Manager";
 import { RoutingSettings } from "./Routing";
 import { TargetSettings } from "./Target";
@@ -360,6 +361,11 @@ export const SetEditorPage = ({
             config={editedSet}
             onImport={handleApplyImport}
           />
+          {settings.hub?.enabled && (
+            <Box sx={{ mt: 3 }}>
+              <ShareEnvelope config={editedSet} />
+            </Box>
+          )}
         </B4TabPanel>
       </Box>
 

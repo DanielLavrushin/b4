@@ -746,6 +746,12 @@
       "copyFailed": "Failed to copy to clipboard",
       "loadFailed": "Failed to load diagnostics",
       "connectFailed": "Failed to connect"
+    },
+    "Hub": {
+      "title": "Community sets",
+      "description": "Share sets with other b4 users. The set editor gets a Share section that prepares a set with everything private left out. A shared set pasted into Import is accepted whether or not this is on.",
+      "enabled": "Enable community sets",
+      "note": "Shared sets are passed around by hand for now, as text or a file. Browsing and rating sets on hub.b4core.app come in a later release."
     }
   },
   "dashboard": {
@@ -986,7 +992,9 @@
         "onDns": "On DNS",
         "ttlSec": "TTL",
         "dnsTarget": "Server"
-      }
+      },
+      "sharedSet": "Shared set",
+      "sharedSetEdited": "Shared set, edited"
     },
     "targets": {
       "sectionTitle": "Domain Filtering Configuration",
@@ -1669,7 +1677,34 @@
       "invalidJson": "Invalid JSON format",
       "missingPayloads_one": "This set points to a payload file that does not exist on this device: {{files}}. Fake packets fall back to a built-in payload, so the set behaves differently than on the machine it was exported from. Ask the author for the .bin file and upload it under the same name.",
       "missingPayloads_other": "This set points to payload files that do not exist on this device: {{files}}. Fake packets fall back to a built-in payload, so the set behaves differently than on the machine it was exported from. Ask the author for the .bin files and upload them under the same names.",
-      "missingPayloadsLink": "Open Payloads settings"
+      "missingPayloadsLink": "Open Payloads settings",
+      "envelopeImported": "Shared set imported and its payload files installed. Review the tabs, then click <strong>Save</strong> to apply.",
+      "envelopeFailed": "The shared set could not be imported: {{error}}",
+      "warningsTitle": "Notes from the import",
+      "warnings": {
+        "no_targets": "The set targets nothing: no domains, addresses or categories.",
+        "private_domains": "Domains that look private to the author's network: {{domains}}.",
+        "too_many_domains": "The set lists {{count}} domains; a shared set carries at most {{max}}.",
+        "too_many_ips": "The set lists {{count}} addresses; a shared set carries at most {{max}}.",
+        "custom_payload_large": "The custom payload is {{size}} bytes; the limit is {{max}}.",
+        "pins": "The set pins {{domains}} to fixed addresses. Check them in the DNS tab before saving.",
+        "payload_missing": "{{path}} names a payload file that was not included in the shared set.",
+        "payload_invalid": "{{file}} is not a usable payload ({{reason}}).",
+        "unknown_fields": "Settings this b4 does not know were dropped: {{paths}}. A newer b4 may be needed for the set to work as shared.",
+        "fingerprint_mismatch": "The shared set was edited after it was prepared, so it may differ from what its author runs.",
+        "version_too_old": "The set was prepared for b4 {{min}} or newer; this device runs {{running}}.",
+        "values_changed": "Values this b4 does not accept were replaced by defaults: {{fields}}.",
+        "geosite_missing": "No geosite database is installed, so categories {{categories}} match nothing until one is downloaded in Settings.",
+        "geoip_missing": "No geoip database is installed, so categories {{categories}} match nothing until one is downloaded in Settings.",
+        "geosite_categories_missing": "Categories missing from this device's geosite database: {{categories}}. The author may use a different geosite source.",
+        "geoip_categories_missing": "Categories missing from this device's geoip database: {{categories}}. The author may use a different geoip source.",
+        "payload_install_failed": "The {{protocol}} payload for {{domain}} could not be saved to the captures folder.",
+        "pin_not_targeted": "The pin for {{domain}} was dropped: the set does not target that domain.",
+        "pin_private_address": "The pin for {{domain}} was dropped: it pointed at a private address.",
+        "dns_dropped": "The DNS redirect was dropped: {{host}} is not a known public DoH resolver. Set a resolver in the DNS tab if the set needs one.",
+        "private_addresses": "Addresses that look private to the author's network: {{addresses}}.",
+        "block_regexp": "This block set matches by pattern ({{entry}}), so it may block far more than intended."
+      }
     },
     "editor": {
       "namePlaceholder": "Set name...",
@@ -1895,6 +1930,40 @@
       "editInput": "Edit",
       "unresolvedForProfile": "This profile reads {{files}}, which is not available here. Open that file on the machine running zapret and paste the domains from it into this field - the converter cannot read it for you.",
       "movedFrom": "{{count}} domain(s) moved to the imported sets from: {{sets}}. A domain resolves in one set only, so {{domains}} no longer applies there."
+    },
+    "share": {
+      "sectionTitle": "Share with other b4 users",
+      "info": "A shared set carries the strategy and its targets only. Routing (except block mode), device filters, escalation, the DNS server address and anything else tied to this router are left out. Payload files travel inside the shared set.",
+      "prepare": "Prepare shared set",
+      "prepareFailed": "The shared set could not be prepared",
+      "refresh": "Prepare again",
+      "jsonLabel": "Shared set",
+      "copy": "Copy",
+      "download": "Download",
+      "strippedTitle": "Left out of the shared set",
+      "stripped": {
+        "routing_not_shareable": "{{path}}: routing to a proxy or an interface is tied to this router; only block mode can be shared",
+        "private": "{{path}}: tied to this router",
+        "pin_not_targeted": "{{path}}: pins a domain this set does not target",
+        "pin_private_address": "{{path}}: pins a private address"
+      },
+      "warningsTitle": "Check before sharing",
+      "warnings": {
+        "no_targets": "The set targets nothing: no domains, addresses or categories.",
+        "private_domains": "These domains look private to this network and mean nothing elsewhere: {{domains}}.",
+        "too_many_domains": "The set lists {{count}} domains; a shared set carries at most {{max}}.",
+        "too_many_ips": "The set lists {{count}} addresses; a shared set carries at most {{max}}.",
+        "custom_payload_large": "The custom payload is {{size}} bytes; the limit is {{max}}.",
+        "pins": "The set pins {{domains}} to fixed addresses; everyone who imports it will use those addresses.",
+        "payload_missing": "{{file}} does not exist on this device, so the shared set carries no payload for {{path}} and the fake packets fall back to a built-in one.",
+        "payload_invalid": "{{file}} is not a usable payload ({{reason}}); it was left out.",
+        "doh_unknown": "{{host}} is not a known public DoH resolver; whoever imports the set will get the DNS redirect dropped.",
+        "private_addresses": "These addresses look private to this network and mean nothing elsewhere: {{addresses}}.",
+        "block_regexp": "This block set matches by pattern ({{entry}}); whoever imports it may block far more than intended."
+      },
+      "minVersion": "Needs b4 {{version}} or newer.",
+      "payloadsAttached_one": "{{count}} payload file is included.",
+      "payloadsAttached_other": "{{count}} payload files are included."
     }
   },
   "discovery": {
