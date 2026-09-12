@@ -22,6 +22,7 @@ export type IPVersion = "auto" | "ipv4" | "ipv6";
 export interface DiscoveryOptions {
   checkDns: boolean;
   useCache: boolean;
+  useCommunity: boolean;
   payloadFiles: string[];
   validationTries: number;
   tlsVersion: TLSVersion;
@@ -34,6 +35,7 @@ const EXPANDED_KEY = "b4_discovery_options_expanded";
 export const defaultOptions: DiscoveryOptions = {
   checkDns: true,
   useCache: true,
+  useCommunity: true,
   payloadFiles: [],
   validationTries: 1,
   tlsVersion: "auto",
@@ -199,6 +201,16 @@ export const DiscoveryOptionsPanel = ({
             description={t("discovery.options.checkDnsHint")}
             checked={options.checkDns}
             onChange={(checked) => onChange({ ...options, checkDns: checked })}
+            disabled={disabled}
+          />
+
+          <B4Switch
+            label={t("discovery.options.useCommunity")}
+            description={t("discovery.options.useCommunityHint")}
+            checked={options.useCommunity}
+            onChange={(checked) =>
+              onChange({ ...options, useCommunity: checked })
+            }
             disabled={disabled}
           />
 

@@ -113,6 +113,7 @@ export const DiscoveryRunner = () => {
       void startDiscovery(urls, {
         skipDNS: !options.checkDns,
         skipCache: !options.useCache,
+        skipCommunity: !options.useCommunity,
         payloadFiles: options.payloadFiles,
         validationTries: options.validationTries,
         tlsVersion: options.tlsVersion,

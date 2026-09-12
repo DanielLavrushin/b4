@@ -56,6 +56,7 @@ const (
 	FamilyTCPMD5      StrategyFamily = "tcpmd5"
 	FamilyAltAddress  StrategyFamily = "alt_address"
 	FamilyDNSRedirect StrategyFamily = "dns_redirect"
+	FamilyCommunity   StrategyFamily = "community"
 )
 
 type Outcome string
@@ -245,6 +246,7 @@ type DiscoverySuite struct {
 
 	discoveryCache *DiscoveryCache
 	plainSets      map[string]*config.SetConfig
+	hubPresets     []ConfigPreset
 }
 
 type CustomPayload struct {

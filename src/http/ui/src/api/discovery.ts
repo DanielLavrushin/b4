@@ -20,6 +20,7 @@ export interface AddPresetResult {
 export interface DiscoveryStartOptions {
   skipDNS: boolean;
   skipCache: boolean;
+  skipCommunity?: boolean;
   payloadFiles: string[];
   validationTries: number;
   tlsVersion: string;
@@ -32,6 +33,7 @@ export const discoveryApi = {
       check_urls,
       skip_dns: options.skipDNS,
       skip_cache: options.skipCache,
+      skip_community: options.skipCommunity ?? false,
       payload_files: options.payloadFiles,
       validation_tries: options.validationTries,
       tls_version: options.tlsVersion,

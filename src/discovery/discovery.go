@@ -235,7 +235,7 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	phase1Presets := GetPhase1Presets()
 
 	ds.CheckSuite.mu.Lock()
-	ds.TotalChecks = (len(phase1Presets) + len(cachedPresets)) * len(ds.Domains)
+	ds.TotalChecks = (len(phase1Presets) + len(cachedPresets) + len(ds.hubPresets)) * len(ds.Domains)
 	ds.CheckSuite.mu.Unlock()
 
 	ds.setPhase(PhaseStrategy)
@@ -247,6 +247,27 @@ func (ds *DiscoverySuite) RunDiscovery() {
 		log.DiscoveryLogf("Phase 0: Testing %d cached configurations across %d domains", len(cachedPresets), len(ds.Domains))
 
 		for _, preset := range cachedPresets {
+			select {
+			case <-ds.cancel:
+				ds.finalize()
+				ds.logDiscoverySummary()
+				return
+			default:
+			}
+
+			if preset.Config.Faking.SNIType == config.FakePayloadRandom {
+				ds.applyBestPayload(&preset.Config.Faking)
+			}
+			results := ds.testPresetAllDomains(preset)
+			ds.storeResultsMulti(preset, results)
+		}
+	}
+
+	if len(ds.hubPresets) > 0 {
+		ds.setPhase(PhaseCached)
+		log.DiscoveryLogf("Community: testing %d strategies other users published for these domains", len(ds.hubPresets))
+
+		for _, preset := range ds.hubPresets {
 			select {
 			case <-ds.cancel:
 				ds.finalize()

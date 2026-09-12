@@ -2243,7 +2243,9 @@
       "summaryNoDns": "no DNS check",
       "summaryNoCache": "fresh search",
       "summaryPayloads_one": "{{count}} payload",
-      "summaryPayloads_other": "{{count}} payloads"
+      "summaryPayloads_other": "{{count}} payloads",
+      "useCommunity": "Try community sets first",
+      "useCommunityHint": "Up to three sets other users published for these domains are tested before the presets. Needs Community sets on."
     },
     "logs": {
       "title": "Discovery log",
