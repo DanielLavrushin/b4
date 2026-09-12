@@ -49,8 +49,8 @@ Shared by the proxy server and by the `Telegram over WebSocket` routing mode, so
 | --- | --- | --- |
 | Enable the WEB carrier | Serves the MTProto stream over HTTPS on the relay hostname. | Off |
 | Relay hostname | A bare public DNS name, no scheme, port or path, punycode for international names. Needs its own hostname with publicly trusted TLS on 443. | empty |
-| Relay port | `0` serves the relay on the web server's port, on the relay hostname only. Any other value opens a listener of its own that answers the relay hostname as the relay and every other name or IP with the placeholder page, so the web interface is not reachable through it. Cannot equal the web server or MTProto proxy port. | `0` |
-| Certificate file, Private key file | PEM pair for the relay port. Empty: the web server's pair. Both or neither. | empty |
+| Relay port | Empty serves the relay on the web server's port, on the relay hostname only. A value opens a listener of its own that answers the relay hostname as the relay and every other name or IP with the placeholder page, so the web interface is not reachable through it. Cannot equal the web server or MTProto proxy port. Filled with `443` when the carrier is switched on for the first time. | empty |
+| Certificate for the relay hostname | PEM pair served on the relay port only. Empty: the web server's pair, which then has to be trusted for the relay hostname and makes the interface HTTPS-only with a name-mismatch warning on visits by IP. Both or neither. | empty |
 | Placeholder page | Upload, download or remove a self-contained HTML file of at most 1 MiB that replaces the built-in placeholder, stored as `webproxy_page.html` next to the configuration. | built-in |
 
 The switch and the hostname take effect on the next request; the port and the certificate restart only the relay listener. The full set of preconditions is on [Telegram Desktop WEB proxy](../telegram/web-proxy.md).

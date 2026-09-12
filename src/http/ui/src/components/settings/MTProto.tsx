@@ -134,7 +134,9 @@ const ProxyCard = ({ config, onChange }: MTProtoSettingsProps) => {
           <B4TextField
             label={t("settings.MTProto.fakeSNI")}
             value={mtproto?.fake_sni || "storage.googleapis.com"}
-            onChange={(e) => onChange("system.mtproto.fake_sni", e.target.value)}
+            onChange={(e) =>
+              onChange("system.mtproto.fake_sni", e.target.value)
+            }
             helperText={t("settings.MTProto.fakeSNIHelp")}
           />
         </Grid>
@@ -213,9 +215,12 @@ const WebCarrierCard = ({ config, onChange }: MTProtoSettingsProps) => {
       title={t("settings.MTProto.webProxyTitle")}
       description={t("settings.MTProto.webProxyDesc")}
       enabled={enabled}
-      onToggle={(checked) =>
-        onChange("system.mtproto.web_proxy.enabled", checked)
-      }
+      onToggle={(checked) => {
+        onChange("system.mtproto.web_proxy.enabled", checked);
+        if (checked && !hostname && port === 0) {
+          onChange("system.mtproto.web_proxy.port", 443);
+        }
+      }}
       toggleLabel={t("settings.MTProto.webProxyEnable")}
     >
       <Grid container spacing={2}>
@@ -237,12 +242,16 @@ const WebCarrierCard = ({ config, onChange }: MTProtoSettingsProps) => {
           />
         </Grid>
         <Grid size={{ xs: 12, md: 4 }}>
-          <B4NumberField
+          <B4TextField
             label={t("settings.MTProto.webProxyPort")}
-            value={port}
-            onChange={(n) => onChange("system.mtproto.web_proxy.port", n)}
-            min={0}
-            max={65535}
+            value={port > 0 ? String(port) : ""}
+            onChange={(e) => {
+              const digits = e.target.value.replace(/\D/g, "");
+              const n = digits ? Math.min(Number(digits), 65535) : 0;
+              if (n !== port) onChange("system.mtproto.web_proxy.port", n);
+            }}
+            placeholder="443"
+            inputMode="numeric"
             error={portClash}
             helperText={
               portClash
@@ -261,32 +270,37 @@ const WebCarrierCard = ({ config, onChange }: MTProtoSettingsProps) => {
             : t("settings.MTProto.webProxyRequirements")}
         </B4Hint>
       </Grid>
-      <B4Accordion title={t("settings.MTProto.webProxyAdvanced")}>
-        <Grid container spacing={2}>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <B4TextField
-              label={t("settings.MTProto.webProxyTlsCert")}
-              value={webProxy?.tls_cert || ""}
-              onChange={(e) =>
-                onChange("system.mtproto.web_proxy.tls_cert", e.target.value)
-              }
-              placeholder="/etc/b4/relay.crt"
-              helperText={t("settings.MTProto.webProxyTlsCertHelp")}
-            />
+      {port > 0 && (
+        <B4Accordion title={t("settings.MTProto.webProxyTlsTitle")}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {t("settings.MTProto.webProxyTlsDesc")}
+          </Typography>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4TextField
+                label={t("settings.MTProto.webProxyTlsCert")}
+                value={webProxy?.tls_cert || ""}
+                onChange={(e) =>
+                  onChange("system.mtproto.web_proxy.tls_cert", e.target.value)
+                }
+                placeholder="/etc/b4/relay.crt"
+                helperText={t("settings.MTProto.webProxyTlsCertHelp")}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4TextField
+                label={t("settings.MTProto.webProxyTlsKey")}
+                value={webProxy?.tls_key || ""}
+                onChange={(e) =>
+                  onChange("system.mtproto.web_proxy.tls_key", e.target.value)
+                }
+                placeholder="/etc/b4/relay.key"
+                helperText={t("settings.MTProto.webProxyTlsKeyHelp")}
+              />
+            </Grid>
           </Grid>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <B4TextField
-              label={t("settings.MTProto.webProxyTlsKey")}
-              value={webProxy?.tls_key || ""}
-              onChange={(e) =>
-                onChange("system.mtproto.web_proxy.tls_key", e.target.value)
-              }
-              placeholder="/etc/b4/relay.key"
-              helperText={t("settings.MTProto.webProxyTlsKeyHelp")}
-            />
-          </Grid>
-        </Grid>
-      </B4Accordion>
+        </B4Accordion>
+      )}
       <WebProxyPagePanel enabled={enabled} hostname={hostname} />
     </B4IntegrationCard>
   );
@@ -336,7 +350,9 @@ const WebProxyPagePanel = ({
             })
           : t("settings.MTProto.webProxyPageBuiltin")}
       </Typography>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+      <Box
+        sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}
+      >
         <Button
           variant="outlined"
           size="small"

@@ -16,7 +16,7 @@ Because the hostname needs a publicly trusted certificate on port 443, this is a
 Four conditions. Only the first is enforced by the interface, which hides the WEB proxy card while the proxy server is off.
 
 - **The MTProto proxy is enabled and its listener binds.** Secrets are loaded only when that listener starts. If its port is already in use, start-up fails, no secrets load, and the relay answers every request with the placeholder page.
-- **The relay has a listener.** With **Relay port** at `0` the relay is a virtual host on b4's own web server, so a web server port of `0` means the relay does not exist. With a relay port of its own it is a listener of the MTProto proxy and the web server plays no part. Telegram fixes the scheme and the port, so the hostname has to answer `https://<host>/` on 443, either from b4 directly or through a forward or reverse proxy. See [Relay port](#relay-port).
+- **The relay has a listener.** With **Relay port** empty the relay is a virtual host on b4's own web server, so a web server port of `0` means the relay does not exist. With a relay port of its own it is a listener of the MTProto proxy and the web server plays no part. Telegram fixes the scheme and the port, so the hostname has to answer `https://<host>/` on 443, either from b4 directly or through a forward or reverse proxy. See [Relay port](#relay-port).
 - **The hostname is not shared with the interface.** Once the `Host` header matches, b4 claims every path on that name. The interface, the API and the login endpoints all return the placeholder page there.
 - **TLS is publicly trusted.** A self-signed certificate is enough for the b4 interface and is not enough here.
 
@@ -25,7 +25,7 @@ The relay virtual host matches only while both switches are on. With a hostname 
 :::
 
 :::warning An unusable certificate does not stop b4
-When the web server's certificate and key do not load, b4 logs a warning and falls back to plain HTTP. The web server comes up, the relay comes up with it, and nothing answers on 443. A relay port of its own behaves differently: a configured pair that does not load is an error in the log and that listener is not started at all, while an empty pair with no web server certificate to inherit starts it as plain HTTP.
+When the web server's certificate and key do not load, b4 logs a warning and falls back to plain HTTP. The web server comes up, the relay comes up with it, and nothing answers on 443. A relay port of its own behaves differently: a pair that fails to load, its own or the inherited one, is an error in the log and that listener is not started at all, while no pair at all starts it as plain HTTP.
 :::
 
 ## Setting it up
@@ -54,12 +54,12 @@ The token in the link is derived from the secret and the hostname together, and 
 
 The web server decides by the `Host` header alone. On the relay hostname it answers as the relay; on any other name, and on a bare IP address, it answers as the b4 interface with its login page. Whatever carries public 443 to that port carries both: a router forward from WAN 443 to the web server port, or the web server itself moved to 443, puts the login page on `https://<public IP>/` next to the placeholder on `https://<hostname>/`. The interface stays behind its credentials, but its presence is visible to anyone scanning the address.
 
-**Relay port** separates the two. With a port set, the MTProto proxy opens a listener of its own on that port, on the proxy's bind address, and the web server stops answering the relay hostname:
+**Relay port** separates the two. Switching the WEB carrier on for a fresh setup fills it with `443`, since that is where Telegram connects; an empty field is the shared layout above, which every configuration from before this field has. With a port set, the MTProto proxy opens a listener of its own on that port, on the proxy's bind address, and the web server stops answering the relay hostname:
 
 - A request for the relay hostname is handled exactly as before: the bridge page for a valid token, the carrier WebSocket on `/api/v1/ws`, the placeholder for everything else.
 - A request for any other name or for an IP address gets the placeholder page, `200` on `/` and `404` on every other path. The interface, its API and its login page do not exist on this port.
 
-TLS on the relay port comes from **Certificate file** and **Private key file** under the card, and when both are empty from the web server's pair. Both empty and no web server pair means plain HTTP with a warning in the log, which is the layout for a TLS-terminating proxy in front of b4. A port equal to the web server's or the MTProto proxy's is rejected on save, and a port already taken on the host is reported by the port check before the configuration is written.
+TLS on the relay port is the web server's certificate and key by default, the same pair the shared layout used, and that pair then has to be the trusted one for the relay hostname. Putting a public certificate into Settings, Web Server has a side effect on the interface: it becomes HTTPS-only, and every visit by IP on the LAN shows a browser warning because the name does not match. **Certificate for the relay hostname** under the card takes a pair that goes to the relay port only, so the interface can stay plain HTTP or keep a certificate of its own. No pair anywhere means plain HTTP on the relay port with a warning in the log, which is the layout for a TLS-terminating proxy in front of b4. A port equal to the web server's or the MTProto proxy's is rejected on save, and a port already taken on the host is reported by the port check before the configuration is written.
 
 :::tip A router with the interface on 7000
 The forward from WAN 443 goes to the relay port instead of the interface port, and the interface port is not forwarded at all. `https://<hostname>/` reaches the relay, `https://<public IP>/` reaches the placeholder, and the interface is reachable only from the LAN.
