@@ -124,7 +124,7 @@ export interface HubApplied {
 export type HubFlag =
   | "needs_payload"
   | "block"
-  | "pins"
+  | "has_pins"
   | "blanket"
   | "catch_all";
 

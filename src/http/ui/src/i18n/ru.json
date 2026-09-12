@@ -2963,7 +2963,7 @@
     "flags": {
       "needs_payload": "нужен payload",
       "block": "блокировка",
-      "pins": "пины",
+      "has_pins": "пины",
       "blanket": "широкий охват",
       "catch_all": "перехват всего"
     },

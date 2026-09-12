@@ -2914,7 +2914,7 @@
     "flags": {
       "needs_payload": "needs payload",
       "block": "block",
-      "pins": "pins",
+      "has_pins": "pins",
       "blanket": "blanket",
       "catch_all": "catch-all"
     },

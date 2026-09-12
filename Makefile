@@ -208,6 +208,7 @@ HUB_MIRROR_LISTEN ?= 0.0.0.0:7101
 .PHONY: hub-build
 hub-build:
 	@echo "Building hub service..."
+	@mkdir -p $(OUT_DIR)
 	@CGO_ENABLED=0 go -C $(HUB_DIR) build $(BUILDFLAGS) -ldflags "-s -w -X main.Version=$(VERSION)" -o ../$(OUT_DIR)/b4hub ./cmd/b4hub
 	@echo "Hub build complete: $(OUT_DIR)/b4hub"
 
