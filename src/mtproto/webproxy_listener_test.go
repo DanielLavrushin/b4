@@ -100,8 +100,8 @@ func TestWebListenerServesPlaceholderForForeignHosts(t *testing.T) {
 	if status != http.StatusOK {
 		t.Errorf("relay host root = %d, want 200", status)
 	}
-	if srv.WebProxyPort() != port {
-		t.Errorf("WebProxyPort = %d, want %d", srv.WebProxyPort(), port)
+	if !srv.WebProxyOwnListener() {
+		t.Error("WebProxyOwnListener must report the running relay port")
 	}
 }
 
@@ -146,7 +146,7 @@ func TestWebListenerReconcilesOnConfigChange(t *testing.T) {
 	srv.cfg.Store(&off)
 	srv.mu.Lock()
 	srv.reconcileWebListenerLocked(&off)
-	if srv.webSrv != nil {
+	if srv.webSrv != nil || srv.WebProxyOwnListener() {
 		t.Error("port 0 must fall back to the shared web server and close the relay port")
 	}
 	srv.mu.Unlock()
@@ -303,5 +303,29 @@ func TestWebListenerRefusesUnloadablePair(t *testing.T) {
 		srv.stopWebListenerLocked()
 		srv.mu.Unlock()
 		t.Fatal("a pair that does not load must not start the relay port as plain HTTP")
+	}
+	if srv.WebProxyOwnListener() {
+		t.Error("a relay port that failed to start must leave the shared vhost in charge")
+	}
+}
+
+func TestWebListenerBindFailureKeepsSharedVhost(t *testing.T) {
+	taken, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer taken.Close()
+	cfg := webListenerConfig(t, taken.Addr().(*net.TCPAddr).Port)
+	srv := &Server{}
+	srv.cfg.Store(cfg)
+	srv.mu.Lock()
+	srv.startWebListenerLocked(cfg)
+	srv.mu.Unlock()
+	if srv.webSrv != nil || srv.WebProxyOwnListener() {
+		t.Fatal("a relay port already in use must not count as an own listener")
+	}
+	plain := serveWebProxyTo(t, srv, "relay.example.org", "/")
+	if plain.status != http.StatusOK || !strings.Contains(plain.body, "Service status") {
+		t.Errorf("shared path must still answer the relay hostname, got %d %q", plain.status, plain.body)
 	}
 }

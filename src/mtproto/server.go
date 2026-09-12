@@ -79,6 +79,7 @@ type Server struct {
 	listener net.Listener
 	webSrv   *http.Server
 	webSpec  webListenerSpec
+	webUp    atomic.Bool
 	ctx      context.Context
 	cancel   context.CancelFunc
 }

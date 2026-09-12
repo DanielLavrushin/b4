@@ -300,7 +300,7 @@ func downloadFile(url, destPath string) (int64, error) {
 type MTProtoWebProxy interface {
 	ServeWebProxy(w http.ResponseWriter, r *http.Request) bool
 	WebProxyHost() string
-	WebProxyPort() int
+	WebProxyOwnListener() bool
 }
 
 func MTProtoWebProxyServer() MTProtoWebProxy {

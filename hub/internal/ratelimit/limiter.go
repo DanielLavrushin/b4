@@ -66,8 +66,17 @@ func (l *Limiter) Allow(scope, id string, limit int, window time.Duration) (bool
 	return true, 0
 }
 
+const (
+	sweepInterval    = 10 * time.Minute
+	crowdedInterval  = time.Minute
+	maxLiveBuckets   = 100000
+	crowdedTrimShare = 4
+)
+
 func (l *Limiter) sweep(now time.Time) {
-	if now.Sub(l.sweptAt) < 10*time.Minute && len(l.buckets) < 100000 {
+	since := now.Sub(l.sweptAt)
+	crowded := len(l.buckets) >= maxLiveBuckets
+	if since < sweepInterval && !(crowded && since >= crowdedInterval) {
 		return
 	}
 	l.sweptAt = now
@@ -75,6 +84,17 @@ func (l *Limiter) sweep(now time.Time) {
 		if now.Sub(b.start) > Day {
 			delete(l.buckets, key)
 		}
+	}
+	if len(l.buckets) < maxLiveBuckets {
+		return
+	}
+	drop := len(l.buckets) / crowdedTrimShare
+	for key := range l.buckets {
+		if drop == 0 {
+			break
+		}
+		delete(l.buckets, key)
+		drop--
 	}
 }
 

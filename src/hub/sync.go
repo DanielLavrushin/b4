@@ -20,6 +20,7 @@ func (s *Service) Sync(ctx context.Context) (bool, error) {
 	s.dropUntrusted(trusted)
 
 	var lastErr error
+	staleBases := 0
 	for _, base := range s.BaseURLs() {
 		if ctx.Err() != nil {
 			return false, ctx.Err()
@@ -37,14 +38,20 @@ func (s *Service) Sync(ctx context.Context) (bool, error) {
 			lastErr = fmt.Errorf("%s: %w", base, err)
 			continue
 		}
-		s.setPreferredBase(base)
-
 		stored := s.Manifest()
-		if stored != nil && !m.Newer(stored) && s.catalogueLoaded() {
-			s.adoptManifest(m)
-			s.markSynced()
-			return false, nil
+		if stored != nil && s.catalogueLoaded() && !m.Newer(stored) {
+			if sameCatalogue(m, stored) {
+				s.setPreferredBase(base)
+				s.adoptManifest(m)
+				s.markSynced()
+				return false, nil
+			}
+			staleBases++
+			lastErr = fmt.Errorf("%s serves an older catalogue %d-%d than the stored %d-%d", base, m.Epoch, m.Seq, stored.Epoch, stored.Seq)
+			log.Warnf("hub: %v, trying the next address", lastErr)
+			continue
 		}
+		s.setPreferredBase(base)
 
 		gz, err := s.fetchCatalogueFile(ctx, base, m.Catalogue)
 		if err != nil {
@@ -72,6 +79,10 @@ func (s *Service) Sync(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 
+	if staleBases > 0 && s.catalogueLoaded() {
+		s.markSynced()
+		return false, nil
+	}
 	if lastErr == nil {
 		lastErr = ErrUnreachable
 	} else {
@@ -79,4 +90,8 @@ func (s *Service) Sync(ctx context.Context) (bool, error) {
 	}
 	s.markFailed(lastErr)
 	return false, lastErr
+}
+
+func sameCatalogue(a, b *hubwire.Manifest) bool {
+	return a.Epoch == b.Epoch && a.Seq == b.Seq && a.Catalogue.SHA256 == b.Catalogue.SHA256
 }

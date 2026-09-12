@@ -41,12 +41,8 @@ func webListenerSpecFor(cfg *config.Config) (webListenerSpec, bool) {
 	return spec, true
 }
 
-func (s *Server) WebProxyPort() int {
-	cfg := s.cfg.Load()
-	if cfg == nil {
-		return 0
-	}
-	return cfg.System.MTProto.WebProxy.Port
+func (s *Server) WebProxyOwnListener() bool {
+	return s.webUp.Load()
 }
 
 type webErrLog struct{}
@@ -78,14 +74,14 @@ func (s *Server) startWebListenerLocked(cfg *config.Config) {
 	if spec.cert != "" {
 		pair, err := tls.LoadX509KeyPair(spec.cert, spec.key)
 		if err != nil {
-			log.Errorf("MTProto WEB proxy: TLS certificate/key pair not loaded: %v (relay port %s not started)", err, spec.addr)
+			log.Errorf("MTProto WEB proxy: TLS certificate/key pair not loaded: %v (relay port %s not started, the web server keeps serving the relay hostname)", err, spec.addr)
 			return
 		}
 		tlsCfg = &tls.Config{Certificates: []tls.Certificate{pair}, MinVersion: tls.VersionTLS12}
 	}
 	ln, err := net.Listen("tcp", spec.addr)
 	if err != nil {
-		log.Errorf("MTProto WEB proxy listen: %v (relay port not started)", err)
+		log.Errorf("MTProto WEB proxy listen: %v (relay port not started, the web server keeps serving the relay hostname)", err)
 		return
 	}
 	srv := &http.Server{
@@ -96,6 +92,7 @@ func (s *Server) startWebListenerLocked(cfg *config.Config) {
 	}
 	s.webSrv = srv
 	s.webSpec = spec
+	s.webUp.Store(true)
 	if tlsCfg != nil {
 		log.Infof("MTProto WEB proxy relay listening on https://%s", spec.addr)
 		go func() { _ = srv.ServeTLS(ln, "", "") }()
@@ -109,6 +106,7 @@ func (s *Server) stopWebListenerLocked() {
 	if s.webSrv == nil {
 		return
 	}
+	s.webUp.Store(false)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	if err := s.webSrv.Shutdown(ctx); err != nil {
 		_ = s.webSrv.Close()
