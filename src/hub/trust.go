@@ -54,13 +54,57 @@ func (s *Service) writeStringList(path string, list []string) {
 	}
 }
 
+type learnedMirrors struct {
+	KeyID   string   `json:"key_id"`
+	Mirrors []string `json:"mirrors"`
+}
+
+func readLearnedMirrors(path string) learnedMirrors {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Warnf("hub: %s ignored: %v", filepath.Base(path), err)
+		}
+		return learnedMirrors{}
+	}
+	var learned learnedMirrors
+	if err := json.Unmarshal(raw, &learned); err != nil {
+		return learnedMirrors{}
+	}
+	return learned
+}
+
+func (s *Service) writeLearnedMirrors(learned learnedMirrors) {
+	if err := s.ensureDir(); err != nil {
+		log.Warnf("hub: could not store %s: %v", mirrorsFileName, err)
+		return
+	}
+	raw, err := json.Marshal(learned)
+	if err != nil {
+		return
+	}
+	if err := writeFileAtomic(s.mirrorsPath(), raw, 0600); err != nil {
+		log.Warnf("hub: could not store %s: %v", mirrorsFileName, err)
+	}
+}
+
 func (s *Service) loadTrust() {
-	mirrors := s.manifestMirrors(readStringList(s.mirrorsPath()))
+	learned := readLearnedMirrors(s.mirrorsPath())
 	revoked := canonicalKeys(readStringList(s.revokedKeysPath()))
 	s.trustMu.Lock()
-	s.mirrors = mirrors
+	s.mirrors = s.manifestMirrors(learned.Mirrors)
+	s.mirrorsKey = learned.KeyID
 	s.revoked = revoked
 	s.trustMu.Unlock()
+}
+
+func keyTrusted(key string, trusted []string) bool {
+	for _, t := range trusted {
+		if t == key {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) manifestMirrors(raw []string) []string {
@@ -117,8 +161,12 @@ func equalStrings(a, b []string) bool {
 }
 
 func (s *Service) KnownMirrors() []string {
+	trusted := s.TrustedKeys()
 	s.trustMu.RLock()
 	defer s.trustMu.RUnlock()
+	if !keyTrusted(s.mirrorsKey, trusted) {
+		return []string{}
+	}
 	return append([]string{}, s.mirrors...)
 }
 
@@ -168,14 +216,15 @@ func (s *Service) adoptManifest(m *hubwire.Manifest) {
 		}
 	}
 	s.trustMu.Lock()
-	mirrorsChanged := !equalStrings(mirrors, s.mirrors)
+	mirrorsChanged := !equalStrings(mirrors, s.mirrors) || s.mirrorsKey != m.KeyID
 	revoked := canonicalKeys(append(append([]string{}, s.revoked...), fresh...))
 	revokedChanged := !equalStrings(revoked, s.revoked)
 	s.mirrors = mirrors
+	s.mirrorsKey = m.KeyID
 	s.revoked = revoked
 	s.trustMu.Unlock()
 	if mirrorsChanged {
-		s.writeStringList(s.mirrorsPath(), mirrors)
+		s.writeLearnedMirrors(learnedMirrors{KeyID: m.KeyID, Mirrors: mirrors})
 		log.Infof("hub: manifest lists %d mirrors", len(mirrors))
 	}
 	if revokedChanged {

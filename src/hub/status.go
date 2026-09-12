@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"strings"
 	"time"
 
 	"github.com/daniellavrushin/b4/log"
@@ -26,6 +27,8 @@ type Status struct {
 	Mirrors    []string         `json:"mirrors"`
 	Network    Network          `json:"network"`
 	Outbox     int              `json:"outbox"`
+	HubKey     string           `json:"hub_key"`
+	HubBuiltin bool             `json:"hub_key_builtin"`
 }
 
 func (s *Service) Status() Status {
@@ -36,6 +39,10 @@ func (s *Service) Status() Status {
 		Mirrors:    s.KnownMirrors(),
 		Network:    s.Network(),
 		Outbox:     s.OutboxCount(),
+	}
+	if keys := s.TrustedKeys(); len(keys) > 0 {
+		st.HubKey = keys[0]
+		st.HubBuiltin = strings.TrimSpace(s.getCfg().System.Hub.PublicKey) == ""
 	}
 	if id, _, err := s.Identity(); err == nil {
 		st.KeyID = id.KeyID()

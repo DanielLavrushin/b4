@@ -304,6 +304,19 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
                 />
               )}
               <StatusRow
+                label={t("settings.Hub.status.hubKey")}
+                value={
+                  data.hub_key
+                    ? t(
+                        data.hub_key_builtin
+                          ? "settings.Hub.status.hubKeyBuiltin"
+                          : "settings.Hub.status.hubKeyCustom",
+                        { key: data.hub_key },
+                      )
+                    : t("settings.Hub.status.hubKeyNone")
+                }
+              />
+              <StatusRow
                 label={t("settings.Hub.status.urls")}
                 value={data.urls.length > 0 ? data.urls.join(", ") : DEFAULT_HUB_URL}
               />

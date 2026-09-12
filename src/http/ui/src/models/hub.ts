@@ -173,6 +173,8 @@ export interface HubStatus {
   mirrors: string[];
   network: { asn: string; cc: string };
   outbox: number;
+  hub_key?: string;
+  hub_key_builtin?: boolean;
 }
 
 export interface HubApplyResponse {

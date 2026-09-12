@@ -60,9 +60,10 @@ type Service struct {
 	networkPinned bool
 	networkReadAt time.Time
 
-	trustMu sync.RWMutex
-	mirrors []string
-	revoked []string
+	trustMu    sync.RWMutex
+	mirrors    []string
+	mirrorsKey string
+	revoked    []string
 
 	syncMu sync.Mutex
 
@@ -216,6 +217,18 @@ func (s *Service) setPreferredBase(base string) {
 	s.mu.Lock()
 	s.preferredBase = base
 	s.mu.Unlock()
+}
+
+func (s *Service) dropUntrusted(trusted []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.manifest == nil || keyTrusted(s.manifest.KeyID, trusted) {
+		return
+	}
+	log.Infof("hub: dropping the catalogue signed by %s, that key is no longer trusted", s.manifest.KeyID)
+	s.manifest = nil
+	s.catalogue = nil
+	s.byID = nil
 }
 
 func (s *Service) install(m *hubwire.Manifest, cat *hubwire.Catalogue) {

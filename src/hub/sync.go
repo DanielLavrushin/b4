@@ -17,6 +17,7 @@ func (s *Service) Sync(ctx context.Context) (bool, error) {
 		s.markFailed(ErrNotConfigured)
 		return false, ErrNotConfigured
 	}
+	s.dropUntrusted(trusted)
 
 	var lastErr error
 	for _, base := range s.BaseURLs() {

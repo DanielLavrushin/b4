@@ -770,7 +770,11 @@
         "mirrors": "Known mirrors",
         "noMirrors": "none learned from the hub yet",
         "network": "Network",
-        "outbox": "Reports waiting"
+        "outbox": "Reports waiting",
+        "hubKey": "Trusted hub key",
+        "hubKeyBuiltin": "built-in key of hub.b4core.app ({{key}})",
+        "hubKeyCustom": "custom key {{key}}: only a hub signing with it is accepted",
+        "hubKeyNone": "none"
       },
       "identity": {
         "title": "Author identity",
