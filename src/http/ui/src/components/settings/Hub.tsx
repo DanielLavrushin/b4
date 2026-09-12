@@ -174,7 +174,6 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
             minRows={2}
             placeholder={DEFAULT_HUB_URL}
             helperText={t("settings.Hub.urlsHelp", { url: DEFAULT_HUB_URL })}
-            slotProps={{ input: { sx: { fontFamily: fonts.mono, fontSize: typography.sizes.sm } } }}
           />
         </Grid>
         <Grid size={{ xs: 12, md: 6 }}>
@@ -182,20 +181,21 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
             label={t("settings.Hub.publicKey")}
             value={hub?.public_key ?? ""}
             onChange={(e) => onChange("system.hub.public_key", e.target.value)}
-            multiline
-            minRows={2}
+            placeholder={t("settings.Hub.publicKeyPlaceholder")}
             helperText={t("settings.Hub.publicKeyHelp")}
-            slotProps={{ input: { sx: { fontFamily: fonts.mono, fontSize: typography.sizes.sm } } }}
           />
         </Grid>
       </Grid>
 
+      <Grid container spacing={2}>
+        <Grid size={{ xs: 12, lg: 6 }}>
       <Box
         sx={{
           border: `1px solid ${colors.border.light}`,
           borderRadius: `${radiusPx.md}px`,
           bgcolor: colors.background.dark,
           p: "14px 15px",
+          height: "100%",
         }}
       >
         <Stack spacing={1.25}>
@@ -323,13 +323,15 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
           )}
         </Stack>
       </Box>
-
+        </Grid>
+        <Grid size={{ xs: 12, lg: 6 }}>
       <Box
         sx={{
           border: `1px solid ${colors.border.light}`,
           borderRadius: `${radiusPx.md}px`,
           bgcolor: colors.background.dark,
           p: "14px 15px",
+          height: "100%",
         }}
       >
         <Stack spacing={1.25}>
@@ -381,6 +383,8 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
           </Stack>
         </Stack>
       </Box>
+        </Grid>
+      </Grid>
 
       <B4Dialog
         title={t("settings.Hub.identity.recoveryTitle")}

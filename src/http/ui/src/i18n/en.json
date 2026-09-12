@@ -785,7 +785,8 @@
         "restoreAction": "Restore",
         "restored": "Identity restored, key {{key}}.",
         "restoreFailed": "Could not restore the identity: {{error}}"
-      }
+      },
+      "publicKeyPlaceholder": "Key id printed by b4hub keygen"
     }
   },
   "dashboard": {

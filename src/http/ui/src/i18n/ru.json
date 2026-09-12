@@ -785,7 +785,8 @@
         "restoreAction": "Восстановить",
         "restored": "Ключ восстановлен: {{key}}.",
         "restoreFailed": "Не удалось восстановить ключ: {{error}}"
-      }
+      },
+      "publicKeyPlaceholder": "Идентификатор ключа, который печатает b4hub keygen"
     }
   },
   "dashboard": {
