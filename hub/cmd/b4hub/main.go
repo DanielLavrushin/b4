@@ -216,7 +216,6 @@ func runServe(args []string) {
 		Store:         svc.store,
 		Blobs:         svc.layout.Blobs(),
 		Catalogue:     builder,
-		Search:        server,
 		ASN:           resolver,
 		AdminPassword: server.AdminPassword,
 		Rebuild: func() error {

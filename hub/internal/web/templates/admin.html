@@ -43,7 +43,7 @@
 {{range .Active}}
 <details class="row">
 <summary>{{.Version.Title}} <span class="muted">{{.Version.SetID}}/{{.Version.Version}}, {{.Version.Family}}, {{.Targets.Summary}}{{if .Reports}}, {{len .Reports}} report{{if ne (len .Reports) 1}}s{{end}}{{end}}</span></summary>
-<p class="muted">approved {{when .Version.UpdatedAt}}, author {{.Author}}, <a href="/s/{{.Version.SetID}}">public page</a></p>
+<p class="muted">approved {{when .Version.UpdatedAt}}, author {{.Author}}</p>
 {{template "detail" .}}
 <form method="post" action="/admin/sets/{{.Version.SetID}}/{{.Version.Version}}/hide" class="inline"><input name="reason" placeholder="reason"><button>Hide</button></form>
 <form method="post" action="/admin/keys/{{.Version.UploaderHMAC}}/ban" class="inline"><input name="reason" placeholder="reason"><button>Ban uploader</button></form>

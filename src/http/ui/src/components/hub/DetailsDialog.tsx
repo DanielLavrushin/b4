@@ -13,6 +13,7 @@ import { CommunityIcon, CopyIcon, DownloadIcon, ReportIcon } from "@b4.icons";
 import { colors, typography } from "@design";
 import { HubSet, projectionToSet } from "@models/hub";
 import { copyText, describeApiError, formatBytes } from "@utils";
+import { ApiError } from "@api/apiClient";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { StrategySummary } from "@components/discovery/StrategySummary";
 import {
@@ -148,8 +149,14 @@ export const DetailsDialog = ({
           </Stack>
         )}
         {!loading && !set && Boolean(error) && (
-          <B4Alert severity="error">
-            {t("hub.details.loadFailed", { error: describeApiError(error) })}
+          <B4Alert
+            severity={
+              error instanceof ApiError && error.isNotFound ? "info" : "error"
+            }
+          >
+            {error instanceof ApiError && error.isNotFound
+              ? t("hub.details.notInCatalogue")
+              : t("hub.details.loadFailed", { error: describeApiError(error) })}
           </B4Alert>
         )}
         {set && localSet && (

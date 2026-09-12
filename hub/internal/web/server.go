@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"embed"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"html/template"
 	"log"
@@ -23,8 +21,6 @@ import (
 )
 
 const (
-	PathIndex = "/"
-	PathSet   = "/s/"
 	PathAdmin = "/admin"
 
 	maxDomainLength = 253
@@ -35,15 +31,10 @@ const (
 //go:embed templates/*.html
 var templateFS embed.FS
 
-type Searcher interface {
-	Search(domain string, limit int) ([]api.Hit, int)
-}
-
 type Server struct {
 	Store         *store.Store
 	Blobs         hubdata.Blobs
 	Catalogue     *catalogue.Builder
-	Search        Searcher
 	ASN           *asn.Resolver
 	AdminPassword string
 	Rebuild       func() error
@@ -61,8 +52,9 @@ func (s *Server) now() time.Time {
 
 func (s *Server) Mount(mux *http.ServeMux) {
 	s.pages = parsePages()
-	mux.HandleFunc("GET /{$}", s.index)
-	mux.HandleFunc("GET "+PathSet+"{id}", s.set)
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, PathAdmin, http.StatusFound)
+	})
 	s.mountAdmin(mux)
 }
 
@@ -92,7 +84,7 @@ var templateFuncs = template.FuncMap{
 }
 
 func parsePages() map[string]*template.Template {
-	names := []string{"index", "set", "admin", "keys", "message"}
+	names := []string{"admin", "keys", "message"}
 	pages := make(map[string]*template.Template, len(names))
 	for _, name := range names {
 		pages[name] = template.Must(template.New("layout").Funcs(templateFuncs).ParseFS(templateFS, "templates/layout.html", "templates/"+name+".html"))
@@ -204,30 +196,6 @@ func cleanDomain(raw string) string {
 	return domain
 }
 
-func (s *Server) index(w http.ResponseWriter, r *http.Request) {
-	domain := cleanDomain(r.URL.Query().Get("domain"))
-	page := IndexPage{Base: Base{Title: "Shared sets"}, Domain: domain, Query: r.URL.Query().Has("domain")}
-	if latest := s.Catalogue.Latest(); latest != nil {
-		page.Catalogue = latest.Catalogue
-	}
-	if page.Query && domain == "" {
-		s.render(w, http.StatusOK, "index", page)
-		return
-	}
-	page.Viewer = s.viewer(r)
-	var names map[string]string
-	if page.Catalogue != nil {
-		names = page.Catalogue.ASNNames
-	}
-	hits, total := s.Search.Search(domain, searchLimit)
-	page.Total = total
-	page.Cards = make([]Card, 0, len(hits))
-	for i := range hits {
-		page.Cards = append(page.Cards, s.card(&hits[i].CatalogueSet, names, page.Viewer, hits[i].Match))
-	}
-	s.render(w, http.StatusOK, "index", page)
-}
-
 type PayloadView struct {
 	Protocol string
 	Domain   string
@@ -244,85 +212,4 @@ type SetPage struct {
 	Payloads []PayloadView
 	Envelope string
 	Viewer   Viewer
-}
-
-func (s *Server) envelopeJSON(cs *hubwire.CatalogueSet) (string, []PayloadView) {
-	env := cs.ToEnvelope()
-	views := make([]PayloadView, 0, len(cs.Payloads))
-	for _, ref := range cs.Payloads {
-		view := PayloadView{Protocol: ref.Protocol, Domain: ref.Domain, Size: ref.Size, SHA256: ref.SHA256}
-		data, err := s.Blobs.Read(ref.SHA256)
-		if err != nil {
-			view.Missing = true
-			views = append(views, view)
-			continue
-		}
-		env.Payloads = append(env.Payloads, hubwire.Payload{SHA256: ref.SHA256, Protocol: ref.Protocol, Domain: ref.Domain, Size: len(data), Data: data})
-		views = append(views, view)
-	}
-	raw, err := json.MarshalIndent(env, "", "  ")
-	if err != nil {
-		return "", views
-	}
-	return string(raw), views
-}
-
-func (s *Server) set(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if !hubdata.ValidSetID(id) {
-		s.message(w, http.StatusNotFound, false, "No such set", "The address does not name a shared set.")
-		return
-	}
-	latest := s.Catalogue.Latest()
-	var cs *hubwire.CatalogueSet
-	if latest != nil {
-		cs = latest.ByID[id]
-	}
-	if cs == nil {
-		s.unlistedSet(w, r, id)
-		return
-	}
-	viewer := s.viewer(r)
-	envelope, payloads := s.envelopeJSON(cs)
-	page := SetPage{
-		Base:     Base{Title: cs.Title},
-		Set:      cs,
-		Card:     s.card(cs, latest.Catalogue.ASNNames, viewer, nil),
-		Targets:  TargetsOf(cs.Set),
-		Payloads: payloads,
-		Envelope: envelope,
-		Viewer:   viewer,
-	}
-	s.render(w, http.StatusOK, "set", page)
-}
-
-func (s *Server) unlistedSet(w http.ResponseWriter, r *http.Request, id string) {
-	if s.Store == nil {
-		s.message(w, http.StatusNotFound, false, "No such set", "This set is not in the published catalogue.")
-		return
-	}
-	v, err := s.Store.LatestVersion(r.Context(), id)
-	if errors.Is(err, store.ErrNotFound) {
-		s.message(w, http.StatusNotFound, false, "No such set", "This set is not in the published catalogue.")
-		return
-	}
-	if err != nil {
-		s.message(w, http.StatusInternalServerError, false, "Error", err.Error())
-		return
-	}
-	text := "This set is not listed."
-	switch v.Status {
-	case hubwire.SetStatusPending:
-		text = "This set is waiting for moderation and is not listed yet."
-	case hubwire.SetStatusHidden:
-		text = "This set was hidden from the catalogue."
-		if v.StatusReason != "" {
-			text += " Reason: " + v.StatusReason + "."
-		}
-	case hubwire.SetStatusRejected:
-		text = "This set was not accepted."
-	case hubwire.SetStatusActive:
-		text = "This set was approved and will appear once the catalogue is rebuilt."
-	}
-	s.message(w, http.StatusNotFound, false, "Set not listed", text)
 }

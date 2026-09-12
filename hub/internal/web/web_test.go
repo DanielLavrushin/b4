@@ -2,14 +2,11 @@ package web
 
 import (
 	"context"
-	"encoding/json"
-	"html"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -86,7 +83,6 @@ func newFixture(t *testing.T, adminPassword string) *fixture {
 		Store:         st,
 		Blobs:         layout.Blobs(),
 		Catalogue:     f.builder,
-		Search:        apiServer,
 		ASN:           resolver,
 		AdminPassword: adminPassword,
 		Now:           now,
@@ -212,90 +208,12 @@ func mustNotContain(t *testing.T, body string, wants ...string) {
 	}
 }
 
-var envelopeBlock = regexp.MustCompile(`(?s)<pre id="envelope" class="json">(.*?)</pre>`)
-
-func TestIndexAndSetPages(t *testing.T) {
+func TestRootRedirectsToAdmin(t *testing.T) {
 	f := newFixture(t, password)
-	listedID, env := f.share("YouTube <b>fast</b>", authorAddress, "youtube.com", "googlevideo.com")
-	f.approve(listedID)
-	pendingID, _ := f.share("Pending one", otherAddress, "example.net")
-	f.build()
-
-	page := f.get("/")
-	if page.status != http.StatusOK || !strings.HasPrefix(page.headers.Get("Content-Type"), "text/html") {
-		t.Fatalf("index: %d %s", page.status, page.headers.Get("Content-Type"))
+	resp := f.get("/")
+	if resp.status != http.StatusFound || resp.location != PathAdmin {
+		t.Fatalf("root must redirect to the admin page, got %d %q", resp.status, resp.location)
 	}
-	mustContain(t, page.body, "YouTube &lt;b&gt;fast&lt;/b&gt;", "/s/"+listedID, "youtube.com, googlevideo.com", "fake ClientHello", "attached capture for www.google.com", "tls fragmentation", "not enough reports to rate", "1 listed set")
-	mustNotContain(t, page.body, "<b>fast</b>", "Pending one", pendingID)
-
-	page = f.get("/?domain=WWW.YouTube.com")
-	if page.status != http.StatusOK {
-		t.Fatalf("search: %d", page.status)
-	}
-	mustContain(t, page.body, "Sets covering www.youtube.com", "matches youtube.com (covered)", "/s/"+listedID)
-
-	page = f.get("/?domain=example.org")
-	mustContain(t, page.body, "No listed set covers this domain.")
-	mustNotContain(t, page.body, "/s/"+listedID)
-
-	page = f.get("/?domain=")
-	mustContain(t, page.body, "Enter a domain name to search.")
-
-	page = f.get("/s/" + listedID)
-	if page.status != http.StatusOK {
-		t.Fatalf("set page: %d", page.status)
-	}
-	mustContain(t, page.body, "Copy JSON", "YouTube &lt;b&gt;fast&lt;/b&gt;", "tls www.google.com", "<li>youtube.com</li>", "<li>googlevideo.com</li>", "Import into b4")
-	match := envelopeBlock.FindStringSubmatch(page.body)
-	if match == nil {
-		t.Fatalf("set page carries no envelope block")
-	}
-	var shared hubwire.Envelope
-	if err := json.Unmarshal([]byte(html.UnescapeString(match[1])), &shared); err != nil {
-		t.Fatalf("envelope on the page does not decode: %v", err)
-	}
-	if shared.Format != hubwire.Format || shared.Fingerprint != env.Fingerprint || shared.DerivedFrom == nil || shared.DerivedFrom.ID != listedID || shared.DerivedFrom.Version != 1 {
-		t.Fatalf("unexpected envelope %+v", shared)
-	}
-	if len(shared.Payloads) != 1 || hubwire.BlobHash(shared.Payloads[0].Data) != env.Payloads[0].SHA256 || shared.Payloads[0].Domain != "www.google.com" {
-		t.Fatalf("the payload must be inlined from the blob store: %+v", shared.Payloads)
-	}
-	imp, err := hubwire.Open(&shared, hubwire.OpenOptions{})
-	if err != nil {
-		t.Fatalf("the pasted envelope must import: %v", err)
-	}
-	if imp.Set.Hub == nil || imp.Set.Hub.ID != listedID || len(imp.Payloads) != 1 {
-		t.Fatalf("imported set lost its hub origin or payload: %+v", imp.Set.Hub)
-	}
-
-	page = f.get("/s/" + pendingID)
-	if page.status != http.StatusNotFound {
-		t.Fatalf("a pending set must not be served, got %d", page.status)
-	}
-	mustContain(t, page.body, "waiting for moderation")
-	if page = f.get("/s/01ARZ3NDEKTSV4RRFFQ69G5FAV"); page.status != http.StatusNotFound {
-		t.Fatalf("unknown set must be 404, got %d", page.status)
-	}
-	if page = f.get("/s/not-an-id"); page.status != http.StatusNotFound {
-		t.Fatalf("malformed id must be 404, got %d", page.status)
-	}
-}
-
-func TestIndexShowsViewerNetworkRating(t *testing.T) {
-	f := newFixture(t, password)
-	listedID, env := f.share("YouTube", authorAddress, "youtube.com")
-	f.approve(listedID)
-	f.build()
-	f.vote(listedID, 1, env.Fingerprint, voterAddress)
-	f.clock = f.clock.Add(8 * 24 * time.Hour)
-	f.build()
-
-	page := f.request(http.MethodGet, "/", nil, func(req *http.Request) { req.Header.Set("X-Forwarded-For", authorAddress) })
-	mustContain(t, page.body, "Ratings are shown for EXAMPLE-A ISP A", "positive on EXAMPLE-A ISP A", "from 2 devices")
-
-	page = f.request(http.MethodGet, "/", nil, func(req *http.Request) { req.Header.Set("X-Forwarded-For", otherAddress) })
-	mustContain(t, page.body, "positive on all networks", "from 2 devices")
-	mustNotContain(t, page.body, "positive on EXAMPLE-A ISP A")
 }
 
 func TestAdminAuthentication(t *testing.T) {
@@ -370,8 +288,8 @@ func TestAdminQueueAndActions(t *testing.T) {
 	if latest := f.builder.Latest(); latest == nil || latest.ByID[pendingID] == nil {
 		t.Fatalf("the approved set must be in the rebuilt catalogue")
 	}
-	if page = f.get("/s/" + pendingID); page.status != http.StatusOK {
-		t.Fatalf("approved set must be public, got %d", page.status)
+	if page = f.get("/s/" + pendingID); page.status != http.StatusNotFound {
+		t.Fatalf("there is no public set page any more, got %d", page.status)
 	}
 	page = f.admin(http.MethodGet, afterApprove, nil)
 	mustContain(t, page.body, "Pending (0)", "Listed (1)", "approved "+pendingID+"/1")

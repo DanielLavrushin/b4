@@ -422,9 +422,13 @@ export const SetCard = ({
               <B4Badge
                 icon={<ShareIcon sx={{ fontSize: ESCALATION_ICON }} />}
                 label={
-                  set.hub_state === "modified"
-                    ? t("sets.card.sharedSetEdited")
-                    : t("sets.card.sharedSet")
+                  set.hub?.id
+                    ? set.hub_state === "modified"
+                      ? t("sets.card.communitySetEdited")
+                      : t("sets.card.communitySet")
+                    : set.hub_state === "modified"
+                      ? t("sets.card.sharedSetEdited")
+                      : t("sets.card.sharedSet")
                 }
                 size="small"
                 color="secondary"

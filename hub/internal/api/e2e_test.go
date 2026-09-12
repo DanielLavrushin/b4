@@ -29,6 +29,7 @@ var origins = map[string]testkit.Origin{
 
 type hub struct {
 	t        *testing.T
+	api      *Server
 	server   *httptest.Server
 	store    *store.Store
 	builder  *catalogue.Builder
@@ -84,6 +85,7 @@ func startHub(t *testing.T) *hub {
 		Geo:           geo.NewIndex(layout.Geo() + "/geosite.dat"),
 		AdminPassword: "secret",
 	}
+	h.api = server
 	h.server = httptest.NewServer(server.Router())
 	t.Cleanup(h.server.Close)
 	return h
@@ -307,18 +309,7 @@ func TestEndToEnd(t *testing.T) {
 
 func (h *hub) search(domain string) ([]Hit, int) {
 	h.t.Helper()
-	resp, raw := h.get(PathSearch + "?domain=" + domain)
-	if resp.StatusCode != http.StatusOK {
-		h.t.Fatalf("search %q: %d %s", domain, resp.StatusCode, raw)
-	}
-	var out struct {
-		Sets  []Hit `json:"sets"`
-		Total int   `json:"total"`
-	}
-	if err := json.Unmarshal(raw, &out); err != nil {
-		h.t.Fatal(err)
-	}
-	return out.Sets, out.Total
+	return h.api.Search(domain, 50)
 }
 
 func TestBasicAuthGuardsAdminHandlers(t *testing.T) {

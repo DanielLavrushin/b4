@@ -50,7 +50,6 @@ func (s *Server) Router() *http.ServeMux {
 	mux.HandleFunc("GET "+hubwire.PathFiles+"{file}", s.catalogueFile)
 	mux.HandleFunc("GET "+hubwire.PathBlob+"{hash}", s.blob)
 	mux.HandleFunc("POST "+hubwire.PathMessage, s.message)
-	mux.HandleFunc("GET "+PathSearch, s.search)
 	return mux
 }
 

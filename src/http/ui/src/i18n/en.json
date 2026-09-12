@@ -1030,9 +1030,11 @@
         "ttlSec": "TTL",
         "dnsTarget": "Server"
       },
-      "sharedSet": "Shared set",
-      "sharedSetEdited": "Shared set, edited",
-      "sharedSetOpenHub": "Open in Community"
+      "sharedSet": "Imported shared set",
+      "sharedSetEdited": "Imported shared set, edited",
+      "sharedSetOpenHub": "Linked to a hub set: published from here or applied from the Community page. Click to open it there.",
+      "communitySet": "Community set",
+      "communitySetEdited": "Community set, edited"
     },
     "targets": {
       "sectionTitle": "Domain Filtering Configuration",
@@ -2006,8 +2008,8 @@
       "publishHint": "Publishes the saved version of this set under this router's author key. Other users see it after moderation.",
       "publishSaveFirst": "Save the set before publishing it.",
       "publishUnsaved": "There are unsaved changes; the saved version is what gets published. Save first.",
-      "published": "Published as {{id}}, awaiting moderation.",
-      "publishedDetail": "Published as {{id}} (version {{version}}), status: {{status}}.",
+      "published": "Published as {{id}}. It waits in the hub's moderation queue; after approval it appears on the Community page at the next sync.",
+      "publishedDetail": "Published as {{id}} (version {{version}}), status: {{status}}. A moderator on the hub has to approve it before other users, and this router, see it in the catalogue.",
       "publishDuplicate": "The hub already has this strategy with the same targets as {{id}} (version {{version}}). The upload was counted as a report that it works.",
       "publishUnreachable": "No hub answered, so the set was not published. Try again later.",
       "publishFailed": "The hub refused the set: {{error}}",
@@ -2946,7 +2948,8 @@
       "strategy": "Strategy",
       "payloads": "Payloads",
       "noPayloads": "No payload files; fake packets use the built-in payload.",
-      "json": "Set JSON"
+      "json": "Set JSON",
+      "notInCatalogue": "This set is not in the catalogue on this router. Either it is still waiting for a moderator on the hub, or the catalogue has not been synced since it was approved. Check the hub's moderation queue, then Sync now under Settings, Integrations."
     }
   }
 }
