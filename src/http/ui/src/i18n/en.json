@@ -753,10 +753,10 @@
       "description": "Browse strategies other b4 users published, apply one in a click, and report whether it works. The set editor gets a Share section that prepares a set with everything private left out.",
       "enabled": "Enable community sets",
       "note": "The Community page lists the catalogue signed by the hub. Reports on what works are sent under the author identity below; nothing else about this router leaves it. A shared set pasted into Import is accepted whether or not this is on.",
-      "urls": "Hub addresses",
-      "urlsHelp": "One per line, tried in order until one answers. Empty means {{url}}.",
+      "urls": "Hub mirrors",
+      "urlsHelp": "Addresses of the same hub, one per line, tried in order until one answers. Empty means {{url}}. A mirror serves the same signed catalogue, so the key below stays the same.",
       "publicKey": "Hub public key",
-      "publicKeyHelp": "Only needed for a self-hosted or development hub. The key of hub.b4core.app is built in.",
+      "publicKeyHelp": "Only for a self-hosted hub with its own key, for example a development hub on this network. The key of hub.b4core.app is built in; leave this empty to use it.",
       "status": {
         "title": "Hub status",
         "savedOff": "Community sets are off in the saved configuration. Save to turn them on.",

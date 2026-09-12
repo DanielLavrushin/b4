@@ -255,6 +255,9 @@ func TestHubEndpointsAreGated(t *testing.T) {
 	previous := globalHubService
 	SetHubService(nil)
 	t.Cleanup(func() { SetHubService(previous) })
+	builtin := hubwire.BuiltinHubKeys
+	hubwire.BuiltinHubKeys = nil
+	t.Cleanup(func() { hubwire.BuiltinHubKeys = builtin })
 
 	expectCode(t, getJSON(t, mux, "/api/hub/status"), http.StatusConflict, "hub_disabled")
 	expectCode(t, postJSON(t, mux, "/api/hub/share", HubShareRequest{SetID: "x"}), http.StatusConflict, "hub_disabled")
@@ -282,10 +285,12 @@ func TestHubEndpointsAreGated(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/hub/sync", strings.NewReader("{}"))
-	req.Header.Set("Origin", "https://evil.example")
+	req.Header.Set("Origin", "https://another.example")
 	foreign := httptest.NewRecorder()
 	mux.ServeHTTP(foreign, req)
-	expectCode(t, foreign, http.StatusForbidden, "origin_not_allowed")
+	if foreign.Code == http.StatusForbidden {
+		t.Fatalf("a foreign Origin must not be refused, the UI is often served from another host: %s", foreign.Body.String())
+	}
 }
 
 func TestHubSyncEndpointReportsTheCatalogue(t *testing.T) {

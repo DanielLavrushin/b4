@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -64,30 +63,9 @@ func (api *API) RegisterHubApi() {
 	api.mux.HandleFunc("/api/hub/identity/restore", api.handleHubIdentityRestore)
 }
 
-func hubSameOrigin(r *http.Request) bool {
-	origin := strings.TrimSpace(r.Header.Get("Origin"))
-	if origin == "" {
-		return true
-	}
-	u, err := url.Parse(origin)
-	if err != nil || u.Host == "" {
-		return false
-	}
-	oHost, oPort := splitHostPort(u.Host)
-	hHost, hPort := splitHostPort(r.Host)
-	if !strings.EqualFold(oHost, hHost) {
-		return false
-	}
-	return oPort == "" || hPort == "" || strings.EqualFold(oPort, hPort)
-}
-
 func (api *API) hubRequest(w http.ResponseWriter, r *http.Request, limit int64) bool {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
-		return false
-	}
-	if !hubSameOrigin(r) {
-		writeAPIError(w, &APIError{Status: http.StatusForbidden, Code: "origin_not_allowed", Message: "Origin not allowed"})
 		return false
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, limit)

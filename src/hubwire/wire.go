@@ -49,7 +49,7 @@ var (
 	ErrRecoveryCode   = errors.New("malformed recovery code")
 )
 
-var BuiltinHubKeys []string
+var BuiltinHubKeys = []string{"rRHQJTsJaBzitKgCwhD2Q2dtRDAbCO3xEzHewM8zS1o"}
 
 func Canonical(v interface{}) ([]byte, error) {
 	raw, err := json.Marshal(v)

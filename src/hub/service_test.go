@@ -133,6 +133,9 @@ func TestSyncRefusesAnUntrustedSigner(t *testing.T) {
 		t.Errorf("the failure must be visible in the status")
 	}
 
+	builtin := hubwire.BuiltinHubKeys
+	hubwire.BuiltinHubKeys = nil
+	t.Cleanup(func() { hubwire.BuiltinHubKeys = builtin })
 	box.update(func(cfg *config.Config) { cfg.System.Hub.PublicKey = "" })
 	if box.svc.Configured() {
 		t.Fatal("with no key the service is not configured")
@@ -313,6 +316,7 @@ func TestBaseURLsNormalisation(t *testing.T) {
 	f := hubtest.New(t)
 	box := newTestBox(t, f, t.TempDir())
 	box.update(func(cfg *config.Config) {
+		cfg.System.Hub.PublicKey = ""
 		cfg.System.Hub.URLs = []string{" https://one.example/ ", "http://plain.example", "https://user:pw@two.example", "https://one.example", "https://three.example/path?x=1", "https://four.example/base"}
 	})
 	box.svc.builtin = DefaultBases
@@ -325,5 +329,10 @@ func TestBaseURLsNormalisation(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("base %d = %q want %q", i, got[i], want[i])
 		}
+	}
+	box.update(func(cfg *config.Config) { cfg.System.Hub.PublicKey = "custom" })
+	got = box.svc.BaseURLs()
+	if len(got) != 2 || got[len(got)-1] == DefaultBaseURL {
+		t.Errorf("a self-hosted hub with its own key must not fall back to the central address: %v", got)
 	}
 }

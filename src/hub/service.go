@@ -164,9 +164,14 @@ func localHost(host string) bool {
 
 func (s *Service) BaseURLs() []string {
 	seen := map[string]bool{}
-	configured := s.getCfg().System.Hub.URLs
+	hubCfg := s.getCfg().System.Hub
+	configured := hubCfg.URLs
+	lists := [][]string{configured, s.builtin}
+	if strings.TrimSpace(hubCfg.PublicKey) != "" && len(configured) > 0 {
+		lists = [][]string{configured}
+	}
 	out := make([]string, 0, len(configured)+len(s.builtin))
-	for _, list := range [][]string{configured, s.builtin} {
+	for _, list := range lists {
 		for _, raw := range list {
 			base := NormalizeBaseURL(raw)
 			if base == "" || seen[base] {
