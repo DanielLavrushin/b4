@@ -16,6 +16,8 @@ import (
 const (
 	communityCandidateLimit = 3
 	communityBlobTimeout    = 8 * time.Second
+	communityFreshFor       = 10 * time.Minute
+	communitySyncTimeout    = 10 * time.Second
 )
 
 func hubDomainOf(raw string) string {
@@ -46,6 +48,13 @@ func (api *API) communityPresets(urls []string, skip bool) []discovery.ConfigPre
 	svc := globalHubService
 	if skip || svc == nil || !svc.Enabled() || !svc.Configured() {
 		return nil
+	}
+	if !svc.SyncedWithin(communityFreshFor) {
+		ctx, cancel := context.WithTimeout(context.Background(), communitySyncTimeout)
+		if _, err := svc.Sync(ctx); err != nil {
+			log.Warnf("discovery: community catalogue not refreshed, using the stored copy: %v", err)
+		}
+		cancel()
 	}
 	seen := map[string]bool{}
 	var out []discovery.ConfigPreset

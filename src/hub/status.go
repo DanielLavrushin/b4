@@ -31,6 +31,12 @@ type Status struct {
 	HubBuiltin bool             `json:"hub_key_builtin"`
 }
 
+func (s *Service) SyncedWithin(d time.Duration) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return !s.lastSync.IsZero() && s.now().Sub(s.lastSync) <= d
+}
+
 func (s *Service) Status() Status {
 	st := Status{
 		Enabled:    s.Enabled(),

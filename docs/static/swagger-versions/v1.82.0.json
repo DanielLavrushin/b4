@@ -7170,6 +7170,9 @@
                 "skip_cache": {
                     "type": "boolean"
                 },
+                "skip_community": {
+                    "type": "boolean"
+                },
                 "skip_dns": {
                     "type": "boolean"
                 },
