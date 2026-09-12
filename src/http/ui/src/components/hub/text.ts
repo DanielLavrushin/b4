@@ -39,9 +39,11 @@ export function targetsSummary(t: TFunction, targets: HubTargets): string {
     const rest = domains.length - PREVIEW_DOMAINS;
     parts.push(rest > 0 ? `${preview} +${rest}` : preview);
   }
-  const categories = [...(targets.geosite ?? []), ...(targets.geoip ?? [])];
-  if (categories.length > 0) {
-    parts.push(t("hub.card.categories", { list: categories.join(", ") }));
+  if ((targets.geosite ?? []).length > 0) {
+    parts.push(t("hub.card.geosite", { list: targets.geosite.join(", ") }));
+  }
+  if ((targets.geoip ?? []).length > 0) {
+    parts.push(t("hub.card.geoip", { list: targets.geoip.join(", ") }));
   }
   if (domains.length > PREVIEW_DOMAINS) {
     parts.push(t("hub.card.domainCount", { count: domains.length }));

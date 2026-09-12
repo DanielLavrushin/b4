@@ -67,7 +67,7 @@ func RegistrableBaseName(domain string) string {
 	return strings.ToLower(parts[0])
 }
 
-func matchSet(cs *hubwire.CatalogueSet, domain, baseName string) *Match {
+func matchSet(cs *hubwire.CatalogueSet, domain, baseName string, resolve CategoryMatcher) *Match {
 	var best *Match
 	bestRank := 0
 	for _, entry := range TargetList(cs.Set, "sni_domains") {
@@ -85,11 +85,16 @@ func matchSet(cs *hubwire.CatalogueSet, domain, baseName string) *Match {
 	if best != nil {
 		return best
 	}
-	if baseName == "" {
-		return nil
+	categories := TargetList(cs.Set, "geosite_categories")
+	if baseName != "" {
+		for _, category := range categories {
+			if strings.EqualFold(strings.TrimSpace(category), baseName) {
+				return &Match{Entry: category, Relation: string(sni.RelationCovered), Via: MatchViaCategory}
+			}
+		}
 	}
-	for _, category := range TargetList(cs.Set, "geosite_categories") {
-		if strings.EqualFold(strings.TrimSpace(category), baseName) {
+	if resolve != nil && domain != "" && len(categories) > 0 {
+		if category, ok := resolve(domain, categories); ok {
 			return &Match{Entry: category, Relation: string(sni.RelationCovered), Via: MatchViaCategory}
 		}
 	}
@@ -147,6 +152,7 @@ func (s *Service) Search(domain string, limit int) ([]Result, int) {
 		baseName = RegistrableBaseName(domain)
 	}
 	net := s.Network()
+	resolve := s.categoryMatcher()
 
 	s.mu.RLock()
 	cat := s.catalogue
@@ -163,7 +169,7 @@ func (s *Service) Search(domain string, limit int) ([]Result, int) {
 		}
 		var m *Match
 		if domain != "" {
-			m = matchSet(cs, domain, baseName)
+			m = matchSet(cs, domain, baseName, resolve)
 			if m == nil {
 				continue
 			}

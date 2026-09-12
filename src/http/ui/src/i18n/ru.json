@@ -2956,7 +2956,9 @@
       "votedWorks": "Отмечен как работающий {{date}}",
       "votedBroken": "Отмечен как неработающий {{date}}",
       "update": "Обновить до версии {{version}}",
-      "reapply": "Применить заново"
+      "reapply": "Применить заново",
+      "geosite": "geosite {{list}}",
+      "geoip": "geoip {{list}}"
     },
     "flags": {
       "needs_payload": "нужен payload",

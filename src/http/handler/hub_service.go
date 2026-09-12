@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/hub"
@@ -14,8 +15,83 @@ import (
 
 var globalHubService *hub.Service
 
+var hubCategoryResolver hub.CategoryMatcher
+
 func SetHubService(s *hub.Service) {
 	globalHubService = s
+	if s != nil && hubCategoryResolver != nil {
+		s.SetCategoryMatcher(hubCategoryResolver)
+	}
+}
+
+func (api *API) attachHubCategoryResolver() {
+	hubCategoryResolver = api.hubCategoryMatch
+	if globalHubService != nil {
+		globalHubService.SetCategoryMatcher(hubCategoryResolver)
+	}
+}
+
+const hubCategoryMatchLimit = 25000
+
+type geositeCountCache struct {
+	mu     sync.Mutex
+	path   string
+	counts map[string]int
+}
+
+var hubCategoryCounts geositeCountCache
+
+func (api *API) hubCategoryCount(path, category string) (int, bool) {
+	hubCategoryCounts.mu.Lock()
+	if hubCategoryCounts.path != path {
+		hubCategoryCounts.path = path
+		hubCategoryCounts.counts = map[string]int{}
+	}
+	if n, ok := hubCategoryCounts.counts[category]; ok {
+		hubCategoryCounts.mu.Unlock()
+		return n, true
+	}
+	hubCategoryCounts.mu.Unlock()
+	counts, err := api.geodataManager.GetGeositeCategoryCounts([]string{category})
+	if err != nil {
+		return 0, false
+	}
+	n, ok := counts[category]
+	if !ok {
+		return 0, false
+	}
+	hubCategoryCounts.mu.Lock()
+	hubCategoryCounts.counts[category] = n
+	hubCategoryCounts.mu.Unlock()
+	return n, true
+}
+
+func (api *API) hubCategoryMatch(domain string, categories []string) (string, bool) {
+	if api.geodataManager == nil || !api.geodataManager.IsGeositeConfigured() {
+		return "", false
+	}
+	path := api.geodataManager.GetGeositePath()
+	for _, category := range categories {
+		category = strings.TrimSpace(category)
+		if category == "" {
+			continue
+		}
+		n, ok := api.hubCategoryCount(path, category)
+		if !ok || n == 0 || n > hubCategoryMatchLimit {
+			continue
+		}
+		entries, err := api.geodataManager.LoadGeositeCategory(category)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			switch rel, _ := sni.MatchDomainEntry(entry, domain); rel {
+			case sni.RelationExact, sni.RelationCovered, sni.RelationRegexp:
+				return category, true
+			}
+		}
+	}
+	return "", false
 }
 
 func (api *API) hubService(w http.ResponseWriter) (*hub.Service, bool) {

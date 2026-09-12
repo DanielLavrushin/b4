@@ -36,6 +36,8 @@ type Options struct {
 	Now          func() time.Time
 }
 
+type CategoryMatcher func(domain string, categories []string) (string, bool)
+
 type Service struct {
 	getCfg  func() *config.Config
 	version string
@@ -60,10 +62,11 @@ type Service struct {
 	networkPinned bool
 	networkReadAt time.Time
 
-	trustMu    sync.RWMutex
-	mirrors    []string
-	mirrorsKey string
-	revoked    []string
+	trustMu       sync.RWMutex
+	mirrors       []string
+	mirrorsKey    string
+	categoryMatch CategoryMatcher
+	revoked       []string
 
 	syncMu sync.Mutex
 
@@ -94,6 +97,18 @@ func New(getCfg func() *config.Config, opts Options) *Service {
 	s.loadTrust()
 	s.loadStored()
 	return s
+}
+
+func (s *Service) SetCategoryMatcher(fn CategoryMatcher) {
+	s.trustMu.Lock()
+	s.categoryMatch = fn
+	s.trustMu.Unlock()
+}
+
+func (s *Service) categoryMatcher() CategoryMatcher {
+	s.trustMu.RLock()
+	defer s.trustMu.RUnlock()
+	return s.categoryMatch
 }
 
 func (s *Service) Version() string {

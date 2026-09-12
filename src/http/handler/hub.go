@@ -52,6 +52,7 @@ const (
 )
 
 func (api *API) RegisterHubApi() {
+	api.attachHubCategoryResolver()
 	api.mux.HandleFunc("/api/hub/envelope", api.handleHubEnvelope)
 	api.mux.HandleFunc("/api/hub/import", api.handleHubImport)
 	api.mux.HandleFunc("/api/hub/status", api.handleHubStatus)

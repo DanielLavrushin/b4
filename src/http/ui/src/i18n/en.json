@@ -2907,7 +2907,9 @@
       "votedWorks": "Reported works on {{date}}",
       "votedBroken": "Reported broken on {{date}}",
       "update": "Update to version {{version}}",
-      "reapply": "Reapply"
+      "reapply": "Reapply",
+      "geosite": "geosite {{list}}",
+      "geoip": "geoip {{list}}"
     },
     "flags": {
       "needs_payload": "needs payload",
