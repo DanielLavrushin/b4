@@ -94,7 +94,8 @@ export function useHubSync() {
 export function useHubApply() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (set: HubSet) => hubApi.apply(set.id),
+    mutationFn: ({ set, replace }: { set: HubSet; replace?: string }) =>
+      hubApi.apply(set.id, replace),
     onSettled: () => {
       void client.invalidateQueries({ queryKey: ["hub", "sets"] });
       void client.invalidateQueries({ queryKey: ["hub", "set"] });
@@ -127,6 +128,8 @@ export function useHubVote() {
     }) => hubApi.vote(id, kind, domain),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: hubKeys.status });
+      void client.invalidateQueries({ queryKey: ["hub", "sets"] });
+      void client.invalidateQueries({ queryKey: ["hub", "set"] });
     },
   });
 }

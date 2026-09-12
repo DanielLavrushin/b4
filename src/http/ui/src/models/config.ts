@@ -442,11 +442,15 @@ export interface B4SetConfig {
 
 export type HubState = "unmodified" | "modified";
 
+export type HubVote = "works" | "broken";
+
 export interface B4HubOrigin {
   id?: string;
   version?: number;
   hash?: string;
   applied_at?: string;
+  vote?: HubVote;
+  voted_at?: string;
 }
 
 export interface EscalateConfig {

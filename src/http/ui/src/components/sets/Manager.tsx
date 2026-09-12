@@ -734,6 +734,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                           onFacetSelect={(key) => {
                             facetSelection.selectFacet(set.id, key);
                           }}
+                          onVoted={onRefresh}
                         />
                       )}
                     </SortableCardWrapper>

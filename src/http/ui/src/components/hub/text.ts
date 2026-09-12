@@ -1,8 +1,10 @@
 import type { TFunction } from "i18next";
 import {
+  HubApplied,
   HubDisplayed,
   HubSet,
   HubTargets,
+  HubVoteKind,
   HubWarning,
   formatWarningParam,
 } from "@models/hub";
@@ -93,4 +95,27 @@ export function formatDate(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
+}
+
+export type HubAppliedAction = "apply" | "applied" | "update" | "reapply";
+
+export function appliedAction(set: HubSet): HubAppliedAction {
+  const applied = set.applied;
+  if (!applied) return "apply";
+  if (applied.version < set.version) return "update";
+  if (applied.hub_state === "modified") return "reapply";
+  return "applied";
+}
+
+export function voteTooltip(
+  t: TFunction,
+  applied: Pick<HubApplied, "vote" | "voted_at"> | null | undefined,
+  kind: HubVoteKind,
+): string {
+  if (applied?.vote === kind && applied.voted_at) {
+    return t(kind === "works" ? "hub.card.votedWorks" : "hub.card.votedBroken", {
+      date: formatDate(applied.voted_at),
+    });
+  }
+  return t(kind === "works" ? "hub.card.works" : "hub.card.broken");
 }

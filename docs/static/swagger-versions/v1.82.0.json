@@ -2491,7 +2491,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Fetches the set's payloads from the hub, opens the envelope and creates a local set from it in front of the others.",
+                "description": "Fetches the set's payloads from the hub, opens the envelope and creates a local set from it in front of the others; with a replace id the new set takes that local set's id, position and enabled flag instead.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2509,6 +2509,14 @@
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "Local set to replace",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.HubApplyRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -5100,6 +5108,12 @@
                 },
                 "version": {
                     "type": "integer"
+                },
+                "vote": {
+                    "type": "string"
+                },
+                "voted_at": {
+                    "type": "string"
                 }
             }
         },
@@ -7234,6 +7248,26 @@
                 },
                 "set_id": {
                     "type": "string"
+                },
+                "set_name": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "vote": {
+                    "type": "string"
+                },
+                "voted_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.HubApplyRequest": {
+            "type": "object",
+            "properties": {
+                "replace": {
+                    "type": "string"
                 }
             }
         },
@@ -8045,6 +8079,12 @@
                     "type": "boolean"
                 },
                 "enabled": {
+                    "type": "boolean"
+                },
+                "hub_key": {
+                    "type": "string"
+                },
+                "hub_key_builtin": {
                     "type": "boolean"
                 },
                 "key_id": {

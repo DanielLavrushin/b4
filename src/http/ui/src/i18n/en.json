@@ -2010,6 +2010,9 @@
       "payloadsAttached_other": "{{count}} payload files are included.",
       "publish": "Publish to hub",
       "publishHint": "Publishes the saved version of this set under this router's author key. Other users see it after moderation.",
+      "linkedUnmodified": "Linked to community set {{id}} (version {{version}}), nothing to publish.",
+      "publishNewVersion": "Publish as new version",
+      "publishNewVersionHint": "This set changed since it was linked to {{id}}. Publishing creates the next version under your author key, or a new hub set when the original was published by someone else.",
       "publishSaveFirst": "Save the set before publishing it.",
       "publishUnsaved": "There are unsaved changes; the saved version is what gets published. Save first.",
       "published": "Published as {{id}}. It waits in the hub's moderation queue; after approval it appears on the Community page at the next sync.",
@@ -2878,7 +2881,11 @@
       "broken": "Broken",
       "test": "Test",
       "report": "Report",
-      "voteModified": "The local copy was edited after it was applied, so a report would not describe the published strategy."
+      "voteModified": "The local copy was edited after it was applied, so a report would not describe the published strategy.",
+      "votedWorks": "Reported works on {{date}}",
+      "votedBroken": "Reported broken on {{date}}",
+      "update": "Update to version {{version}}",
+      "reapply": "Reapply"
     },
     "flags": {
       "needs_payload": "needs payload",
@@ -2895,7 +2902,11 @@
       "undone": "The set was removed.",
       "undoFailed": "Could not remove the set: {{error}}",
       "failed": "Could not apply the set: {{error}}",
-      "payloadUnreachable": "The payload could not be fetched from any hub, so the set was not applied."
+      "payloadUnreachable": "The payload could not be fetched from any hub, so the set was not applied.",
+      "updated": "Set {{name}} updated to version {{version}}.",
+      "confirmTitle": "Replace the local set",
+      "confirmReplace": "Replaces the strategy and targets of set {{name}} with version {{version}}. Edits made to that set on this router are lost.",
+      "replace": "Replace"
     },
     "vote": {
       "sent": "Report sent. Thank you.",

@@ -523,6 +523,8 @@ type HubOrigin struct {
 	Version   int    `json:"version,omitempty"`
 	Hash      string `json:"hash,omitempty"`
 	AppliedAt string `json:"applied_at,omitempty"`
+	Vote      string `json:"vote,omitempty"`
+	VotedAt   string `json:"voted_at,omitempty"`
 }
 
 type EscalateConfig struct {

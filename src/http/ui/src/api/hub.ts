@@ -34,10 +34,10 @@ export const hubApi = {
   sets: (domain: string, limit?: number) =>
     apiGet<HubSetsResponse>(setsUrl(domain, limit)),
   set: (id: string) => apiGet<HubSet>(`/api/hub/sets/${encodeURIComponent(id)}`),
-  apply: (id: string) =>
+  apply: (id: string, replace?: string) =>
     apiPost<HubApplyResponse>(
       `/api/hub/sets/${encodeURIComponent(id)}/apply`,
-      {},
+      replace ? { replace } : {},
     ),
   vote: (id: string, kind: HubVoteKind, domain?: string) =>
     apiPost<HubVoteResponse>(`/api/hub/sets/${encodeURIComponent(id)}/vote`, {

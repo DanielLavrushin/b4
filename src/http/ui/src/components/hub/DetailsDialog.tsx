@@ -9,14 +9,16 @@ import {
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { B4Alert, B4Badge, B4Dialog, B4TextField } from "@b4.elements";
-import { CommunityIcon, CopyIcon, DownloadIcon, ReportIcon } from "@b4.icons";
+import { CommunityIcon, CopyIcon, EditIcon, ReportIcon } from "@b4.icons";
 import { colors, typography } from "@design";
 import { HubSet, projectionToSet } from "@models/hub";
 import { copyText, describeApiError, formatBytes } from "@utils";
 import { ApiError } from "@api/apiClient";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { StrategySummary } from "@components/discovery/StrategySummary";
+import { AppliedActionButton } from "./HubSetCard";
 import {
+  appliedAction,
   flagLabel,
   formatDate,
   reportsText,
@@ -31,6 +33,8 @@ interface DetailsDialogProps {
   error: unknown;
   busy: boolean;
   onApply: (set: HubSet) => void;
+  onUpdate: (set: HubSet) => void;
+  onOpenLocal: (localSetId: string) => void;
   onReport: (set: HubSet) => void;
   onClose: () => void;
 }
@@ -76,6 +80,8 @@ export const DetailsDialog = ({
   error,
   busy,
   onApply,
+  onUpdate,
+  onOpenLocal,
   onReport,
   onClose,
 }: DetailsDialogProps) => {
@@ -123,21 +129,22 @@ export const DetailsDialog = ({
             </Button>
           )}
           <Box sx={{ flex: 1 }} />
-          {set && (
+          {set?.applied && appliedAction(set) === "applied" && (
             <Button
-              variant="contained"
-              startIcon={
-                busy ? (
-                  <CircularProgress size={14} color="inherit" />
-                ) : (
-                  <DownloadIcon />
-                )
-              }
-              disabled={busy}
-              onClick={() => onApply(set)}
+              variant="outlined"
+              startIcon={<EditIcon />}
+              onClick={() => onOpenLocal(set.applied?.set_id ?? "")}
             >
-              {t("hub.card.apply")}
+              {t("hub.apply.openSet")}
             </Button>
+          )}
+          {set && (
+            <AppliedActionButton
+              set={set}
+              busy={busy}
+              onApply={onApply}
+              onUpdate={onUpdate}
+            />
           )}
         </>
       }

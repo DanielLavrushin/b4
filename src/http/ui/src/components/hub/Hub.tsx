@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Box,
+  Button,
   CircularProgress,
   IconButton,
   InputAdornment,
@@ -9,8 +10,8 @@ import {
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router";
-import { B4Alert, B4Section, B4TextField } from "@b4.elements";
-import { ClearIcon, CommunityIcon, SearchIcon } from "@b4.icons";
+import { B4Alert, B4Dialog, B4Section, B4TextField } from "@b4.elements";
+import { ClearIcon, CommunityIcon, SearchIcon, WarningIcon } from "@b4.icons";
 import { colors } from "@design";
 import { ApiError } from "@api/apiClient";
 import { useSnackbar } from "@context/SnackbarProvider";
@@ -53,6 +54,7 @@ export const HubBrowser = () => {
   const [domain, setDomain] = useState(normalizeDomain(query));
   const [testSet, setTestSet] = useState<HubSet | null>(null);
   const [reportSet, setReportSet] = useState<HubSet | null>(null);
+  const [updateSet, setUpdateSet] = useState<HubSet | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(
@@ -100,9 +102,47 @@ export const HubBrowser = () => {
     }
   };
 
+  const handleUpdate = async (set: HubSet) => {
+    const applied = set.applied;
+    setUpdateSet(null);
+    if (!applied) return;
+    try {
+      const res = await apply.mutateAsync({ set, replace: applied.set_id });
+      showSuccess(
+        [
+          t("hub.apply.updated", { name: res.name, version: set.version }),
+          describeMoved(res.moved),
+        ]
+          .filter(Boolean)
+          .join(" "),
+        {
+          label: t("hub.apply.openSet"),
+          onClick: () => {
+            void navigate(`/sets/${res.id}`);
+          },
+        },
+      );
+      if (res.warnings?.length) {
+        showSnackbar(
+          res.warnings
+            .map((w) => warningText(t, "sets.importExport.warnings", w))
+            .join(" "),
+          "warning",
+        );
+      }
+    } catch (e) {
+      const code = e instanceof ApiError ? e.code : undefined;
+      showError(
+        code === "hub_unreachable" || (e instanceof ApiError && e.status === 502)
+          ? t("hub.apply.payloadUnreachable")
+          : t("hub.apply.failed", { error: describeApiError(e) }),
+      );
+    }
+  };
+
   const handleApply = async (set: HubSet) => {
     try {
-      const res = await apply.mutateAsync(set);
+      const res = await apply.mutateAsync({ set });
       showSuccess(
         [t("hub.apply.done", { name: res.name }), describeMoved(res.moved)]
           .filter(Boolean)
@@ -248,6 +288,7 @@ export const HubBrowser = () => {
               set={set}
               busy={busy}
               onApply={(s) => void handleApply(s)}
+              onUpdate={setUpdateSet}
               onDetails={(s) => openDetails(s.id)}
               onVote={(s, kind) => void handleVote(s, kind)}
               onTest={setTestSet}
@@ -272,9 +313,45 @@ export const HubBrowser = () => {
         error={details.error}
         busy={busy}
         onApply={(s) => void handleApply(s)}
+        onUpdate={setUpdateSet}
+        onOpenLocal={(localId) => {
+          void navigate(`/sets/${localId}`);
+        }}
         onReport={setReportSet}
         onClose={() => openDetails(null)}
       />
+
+      <B4Dialog
+        open={Boolean(updateSet)}
+        title={t("hub.apply.confirmTitle")}
+        subtitle={updateSet?.title}
+        icon={<WarningIcon />}
+        onClose={() => setUpdateSet(null)}
+        actions={
+          <>
+            <Button onClick={() => setUpdateSet(null)}>
+              {t("core.cancel")}
+            </Button>
+            <Box sx={{ flex: 1 }} />
+            <Button
+              variant="contained"
+              disabled={busy}
+              onClick={() => {
+                if (updateSet) void handleUpdate(updateSet);
+              }}
+            >
+              {t("hub.apply.replace")}
+            </Button>
+          </>
+        }
+      >
+        <Typography sx={{ mt: 2 }}>
+          {t("hub.apply.confirmReplace", {
+            name: updateSet?.applied?.set_name ?? "",
+            version: updateSet?.version ?? 0,
+          })}
+        </Typography>
+      </B4Dialog>
 
       {testSet && (
         <TestDialog

@@ -6,6 +6,7 @@
 <article class="entry">
 <h2>{{.Version.Title}}</h2>
 <p class="muted">{{.Version.SetID}}/{{.Version.Version}}, received {{when .Version.CreatedAt}}, author {{.Author}}{{if .Version.ASNObserved}}, seen from AS{{.Version.ASNObserved}}{{if .Version.CountryObserved}} {{.Version.CountryObserved}}{{end}}{{end}}{{if .Version.ASNHint}}, claims {{.Version.ASNHint}}{{if .Version.CountryHint}} {{.Version.CountryHint}}{{end}}{{end}}{{if .Version.Engine}}, {{.Version.Engine}}{{end}}{{if .Version.B4Version}}, b4 {{.Version.B4Version}}{{end}}</p>
+<p class="muted">{{.Lineage}}</p>
 {{template "detail" .}}
 <form method="post" action="/admin/sets/{{.Version.SetID}}/{{.Version.Version}}/approve" class="inline"><button>Approve</button></form>
 <form method="post" action="/admin/sets/{{.Version.SetID}}/{{.Version.Version}}/reject" class="inline"><input name="reason" placeholder="reason" required><button>Reject</button></form>
@@ -43,10 +44,21 @@
 {{range .Active}}
 <details class="row">
 <summary>{{.Version.Title}} <span class="muted">{{.Version.SetID}}/{{.Version.Version}}, {{.Version.Family}}, {{.Targets.Summary}}{{if .Reports}}, {{len .Reports}} report{{if ne (len .Reports) 1}}s{{end}}{{end}}</span></summary>
-<p class="muted">approved {{when .Version.UpdatedAt}}, author {{.Author}}</p>
+<p class="muted">approved {{when .Version.UpdatedAt}}, author {{.Author}}{{if .Versions}}, versions: {{join .Versions ", "}}{{end}}</p>
 {{template "detail" .}}
 <form method="post" action="/admin/sets/{{.Version.SetID}}/{{.Version.Version}}/hide" class="inline"><input name="reason" placeholder="reason"><button>Hide</button></form>
 <form method="post" action="/admin/keys/{{.Version.UploaderHMAC}}/ban" class="inline"><input name="reason" placeholder="reason"><button>Ban uploader</button></form>
+</details>
+{{end}}
+
+<h1>Superseded ({{len .Superseded}})</h1>
+{{if not .Superseded}}<p class="muted">No older version is still active.</p>{{end}}
+{{range .Superseded}}
+<details class="row">
+<summary>{{.Version.Title}} <span class="muted">{{.Version.SetID}}/{{.Version.Version}}, superseded by /{{.SupersededBy}} on {{when .SupersededAt}}{{if .Reports}}, {{len .Reports}} report{{if ne (len .Reports) 1}}s{{end}}{{end}}</span></summary>
+<p class="muted">approved {{when .Version.UpdatedAt}}, author {{.Author}}</p>
+{{template "detail" .}}
+<form method="post" action="/admin/sets/{{.Version.SetID}}/{{.Version.Version}}/hide" class="inline"><input name="reason" placeholder="reason"><button>Hide</button></form>
 </details>
 {{end}}
 

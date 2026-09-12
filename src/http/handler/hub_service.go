@@ -105,9 +105,18 @@ func hubAppliedIndex(cfg *config.Config) map[string]*HubApplied {
 		if existing, ok := index[set.Hub.ID]; ok && existing.HubState == HubStateUnmodified {
 			continue
 		}
-		index[set.Hub.ID] = &HubApplied{SetID: set.Id, HubState: state}
+		index[set.Hub.ID] = &HubApplied{SetID: set.Id, SetName: set.Name, HubState: state, Version: set.Hub.Version, Vote: set.Hub.Vote, VotedAt: set.Hub.VotedAt}
 	}
 	return index
+}
+
+func hubSetByLocalID(cfg *config.Config, id string) *config.SetConfig {
+	for _, set := range cfg.Sets {
+		if set != nil && set.Id == id {
+			return set
+		}
+	}
+	return nil
 }
 
 func hubLocalSet(cfg *config.Config, hubID string) *config.SetConfig {

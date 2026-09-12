@@ -14,7 +14,11 @@ type HubTargets struct {
 
 type HubApplied struct {
 	SetID    string `json:"set_id"`
+	SetName  string `json:"set_name"`
 	HubState string `json:"hub_state"`
+	Version  int    `json:"version"`
+	Vote     string `json:"vote,omitempty"`
+	VotedAt  string `json:"voted_at,omitempty"`
 }
 
 type HubSet struct {
@@ -44,6 +48,10 @@ type HubSet struct {
 type HubSetsResponse struct {
 	Sets  []HubSet `json:"sets"`
 	Total int      `json:"total"`
+}
+
+type HubApplyRequest struct {
+	Replace string `json:"replace,omitempty"`
 }
 
 type HubApplyResponse struct {

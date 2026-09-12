@@ -12,30 +12,36 @@ import { B4Badge } from "@b4.elements";
 import { B4Card } from "@common/B4Card";
 import {
   AppliedIcon,
-  BrokenIcon,
   DownloadIcon,
+  EditIcon,
   InfoIcon,
   ReportIcon,
   TestIcon,
-  WorksIcon,
+  ThumbDownIcon,
+  ThumbDownOutlinedIcon,
+  ThumbUpIcon,
+  ThumbUpOutlinedIcon,
 } from "@b4.icons";
 import { colors, spacing, typography } from "@design";
 import { HubSet, HubVoteKind, projectionToSet } from "@models/hub";
 import { formatTimeAgo } from "@utils";
 import { StrategySummary } from "@components/discovery/StrategySummary";
 import {
+  appliedAction,
   flagLabel,
   matchText,
   reportsText,
   scorePercent,
   shortAuthor,
   targetsSummary,
+  voteTooltip,
 } from "./text";
 
 interface HubSetCardProps {
   set: HubSet;
   busy: boolean;
   onApply: (set: HubSet) => void;
+  onUpdate: (set: HubSet) => void;
   onDetails: (set: HubSet) => void;
   onVote: (set: HubSet, kind: HubVoteKind) => void;
   onTest: (set: HubSet) => void;
@@ -47,6 +53,7 @@ export const HubSetCard = ({
   set,
   busy,
   onApply,
+  onUpdate,
   onDetails,
   onVote,
   onTest,
@@ -61,6 +68,7 @@ export const HubSetCard = ({
   const percent = scorePercent(set.display);
   const applied = set.applied;
   const modified = applied?.hub_state === "modified";
+  const action = appliedAction(set);
   const newest = set.display.newest
     ? formatTimeAgo(t, set.display.newest)
     : "";
@@ -254,21 +262,22 @@ export const HubSetCard = ({
           alignItems: "center",
         }}
       >
-        <Button
-          variant="contained"
-          size="small"
-          startIcon={
-            busy ? (
-              <CircularProgress size={14} color="inherit" />
-            ) : (
-              <DownloadIcon />
-            )
-          }
-          disabled={busy}
-          onClick={() => onApply(set)}
-        >
-          {t("hub.card.apply")}
-        </Button>
+        <AppliedActionButton
+          set={set}
+          busy={busy}
+          onApply={onApply}
+          onUpdate={onUpdate}
+        />
+        {applied && action === "applied" && (
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<EditIcon />}
+            onClick={() => onOpenLocal(applied.set_id)}
+          >
+            {t("hub.apply.openSet")}
+          </Button>
+        )}
         <Button
           variant="outlined"
           size="small"
@@ -289,11 +298,23 @@ export const HubSetCard = ({
         {applied && (
           <>
             <Box sx={{ flex: 1 }} />
-            <Tooltip title={modified ? t("hub.card.voteModified") : ""}>
+            <Tooltip
+              title={
+                modified
+                  ? t("hub.card.voteModified")
+                  : voteTooltip(t, applied, "works")
+              }
+            >
               <span>
                 <Button
                   size="small"
-                  startIcon={<WorksIcon />}
+                  startIcon={
+                    applied.vote === "works" ? (
+                      <ThumbUpIcon />
+                    ) : (
+                      <ThumbUpOutlinedIcon />
+                    )
+                  }
                   disabled={busy || modified}
                   onClick={() => onVote(set, "works")}
                   sx={{ color: colors.state.success }}
@@ -302,11 +323,23 @@ export const HubSetCard = ({
                 </Button>
               </span>
             </Tooltip>
-            <Tooltip title={modified ? t("hub.card.voteModified") : ""}>
+            <Tooltip
+              title={
+                modified
+                  ? t("hub.card.voteModified")
+                  : voteTooltip(t, applied, "broken")
+              }
+            >
               <span>
                 <Button
                   size="small"
-                  startIcon={<BrokenIcon />}
+                  startIcon={
+                    applied.vote === "broken" ? (
+                      <ThumbDownIcon />
+                    ) : (
+                      <ThumbDownOutlinedIcon />
+                    )
+                  }
                   disabled={busy || modified}
                   onClick={() => onVote(set, "broken")}
                   sx={{ color: colors.state.error }}
@@ -327,5 +360,75 @@ export const HubSetCard = ({
         )}
       </Stack>
     </B4Card>
+  );
+};
+
+interface AppliedActionButtonProps {
+  set: HubSet;
+  busy: boolean;
+  onApply: (set: HubSet) => void;
+  onUpdate: (set: HubSet) => void;
+}
+
+export const AppliedActionButton = ({
+  set,
+  busy,
+  onApply,
+  onUpdate,
+}: AppliedActionButtonProps) => {
+  const { t } = useTranslation();
+  const action = appliedAction(set);
+  const spinner = busy ? (
+    <CircularProgress size={14} color="inherit" />
+  ) : null;
+
+  if (action === "applied") {
+    return (
+      <Button
+        variant="contained"
+        size="small"
+        startIcon={<AppliedIcon />}
+        disabled
+      >
+        {t("hub.card.applied")}
+      </Button>
+    );
+  }
+  if (action === "update") {
+    return (
+      <Button
+        variant="contained"
+        size="small"
+        startIcon={spinner ?? <DownloadIcon />}
+        disabled={busy}
+        onClick={() => onUpdate(set)}
+      >
+        {t("hub.card.update", { version: set.version })}
+      </Button>
+    );
+  }
+  if (action === "reapply") {
+    return (
+      <Button
+        variant="contained"
+        size="small"
+        startIcon={spinner ?? <DownloadIcon />}
+        disabled={busy}
+        onClick={() => onUpdate(set)}
+      >
+        {t("hub.card.reapply")}
+      </Button>
+    );
+  }
+  return (
+    <Button
+      variant="contained"
+      size="small"
+      startIcon={spinner ?? <DownloadIcon />}
+      disabled={busy}
+      onClick={() => onApply(set)}
+    >
+      {t("hub.card.apply")}
+    </Button>
   );
 };

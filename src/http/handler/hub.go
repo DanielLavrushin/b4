@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -279,11 +280,12 @@ func (api *API) handleHubSetByID(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary Apply a hub set
-// @Description Fetches the set's payloads from the hub, opens the envelope and creates a local set from it in front of the others.
+// @Description Fetches the set's payloads from the hub, opens the envelope and creates a local set from it in front of the others; with a replace id the new set takes that local set's id, position and enabled flag instead.
 // @Tags Hub
 // @Accept json
 // @Produce json
 // @Param id path string true "Hub set id"
+// @Param body body HubApplyRequest false "Local set to replace"
 // @Success 202 {object} HubApplyResponse
 // @Failure 404 {object} APIError
 // @Failure 502 {object} APIError "hub_unreachable or payload_missing"
@@ -295,6 +297,16 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 	}
 	svc, ok := api.hubService(w)
 	if !ok {
+		return
+	}
+	var req HubApplyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeAPIError(w, ErrInvalidJSON())
+		return
+	}
+	replace := strings.TrimSpace(req.Replace)
+	if replace != "" && hubSetByLocalID(api.getCfg(), replace) == nil {
+		writeAPIError(w, ErrNotFound("Set not found"))
 		return
 	}
 	res, found := svc.Get(r.PathValue("id"))
@@ -351,11 +363,30 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 
 	oldCfg := api.getCfg()
 	newCfg := oldCfg.Clone()
+	replaced := false
+	if replace != "" {
+		for i, existing := range newCfg.Sets {
+			if existing == nil || existing.Id != replace {
+				continue
+			}
+			set.Id = existing.Id
+			set.Enabled = existing.Enabled
+			newCfg.Sets[i] = &set
+			replaced = true
+			break
+		}
+		if !replaced {
+			writeAPIError(w, ErrNotFound("Set not found"))
+			return
+		}
+	}
 	moved := api.releaseDomainsFromOtherSets(newCfg.Sets, set.Id, set.Targets.SNIDomains)
 	if moved == nil {
 		moved = []DomainReassignment{}
 	}
-	newCfg.Sets = append([]*config.SetConfig{&set}, newCfg.Sets...)
+	if !replaced {
+		newCfg.Sets = append([]*config.SetConfig{&set}, newCfg.Sets...)
+	}
 
 	if err := api.saveAndPushConfig(newCfg); err != nil {
 		log.Errorf("Hub apply: failed to save config: %v", err)
@@ -365,7 +396,11 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 	if api.PerformSoftRestart(newCfg, oldCfg) {
 		log.Infof("Soft restart completed successfully")
 	}
-	log.Infof("Hub: applied set %s v%d as '%s'", cs.ID, cs.Version, set.Name)
+	if replaced {
+		log.Infof("Hub: replaced set '%s' with %s v%d", set.Name, cs.ID, cs.Version)
+	} else {
+		log.Infof("Hub: applied set %s v%d as '%s'", cs.ID, cs.Version, set.Name)
+	}
 
 	setJsonHeader(w)
 	w.WriteHeader(http.StatusAccepted)
@@ -434,6 +469,7 @@ func (api *API) handleHubVote(w http.ResponseWriter, r *http.Request) {
 		writeHubError(w, err)
 		return
 	}
+	api.stampHubVote(id, kind)
 	log.Infof("Hub: %s vote for %s v%d %s", kind, id, local.Hub.Version, map[bool]string{true: "sent", false: "queued"}[sent])
 	setJsonHeader(w)
 	w.WriteHeader(http.StatusAccepted)
@@ -575,6 +611,27 @@ func (api *API) handleHubShare(w http.ResponseWriter, r *http.Request) {
 	setJsonHeader(w)
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(HubShareResponse{HubID: resp.SetID, Version: resp.Version, Status: status})
+}
+
+func (api *API) stampHubVote(hubID, kind string) {
+	oldCfg := api.getCfg()
+	newCfg := oldCfg.Clone()
+	now := time.Now().UTC().Format(time.RFC3339)
+	changed := false
+	for _, set := range newCfg.Sets {
+		if set == nil || set.Hub == nil || set.Hub.ID != hubID {
+			continue
+		}
+		set.Hub.Vote = kind
+		set.Hub.VotedAt = now
+		changed = true
+	}
+	if !changed {
+		return
+	}
+	if err := api.saveAndPushConfig(newCfg); err != nil {
+		log.Errorf("Hub: %s vote for %s could not be remembered: %v", kind, hubID, err)
+	}
 }
 
 func (api *API) stampHubOrigin(localID, hubID string, version int, hash string) {

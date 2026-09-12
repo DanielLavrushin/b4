@@ -1,4 +1,4 @@
-import { B4SetConfig, HubState } from "./config";
+import { B4SetConfig, HubState, HubVote } from "./config";
 import { createDefaultSet } from "./defaults";
 import { DomainReassignment } from "./sets";
 
@@ -114,7 +114,11 @@ export interface HubMatch {
 
 export interface HubApplied {
   set_id: string;
+  set_name: string;
   hub_state: HubState;
+  version: number;
+  vote?: HubVote;
+  voted_at?: string;
 }
 
 export type HubFlag =
@@ -185,7 +189,7 @@ export interface HubApplyResponse {
   payloads: HubInstalledPayload[];
 }
 
-export type HubVoteKind = "works" | "broken";
+export type HubVoteKind = HubVote;
 
 export interface HubVoteResponse {
   queued: boolean;

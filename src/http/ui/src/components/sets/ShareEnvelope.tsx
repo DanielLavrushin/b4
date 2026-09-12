@@ -137,37 +137,56 @@ export const ShareEnvelope = ({
   if (isNew) publishBlocked = t("sets.share.publishSaveFirst");
   else if (dirty) publishBlocked = t("sets.share.publishUnsaved");
 
+  const linkedId = config.hub?.id ?? "";
+  const linkedUnmodified = Boolean(linkedId) && config.hub_state === "unmodified";
+  const linkedModified = Boolean(linkedId) && config.hub_state === "modified";
+
   return (
     <B4Section title={t("sets.share.sectionTitle")} icon={<ShareIcon />}>
       <B4Alert severity="info" sx={{ mb: 2 }}>
         {t("sets.share.info")}
       </B4Alert>
       <Stack spacing={2}>
-        {hubReady && (
+        {hubReady && linkedUnmodified && !published && (
+          <B4Alert severity="info">
+            {t("sets.share.linkedUnmodified", {
+              id: linkedId,
+              version: config.hub?.version ?? 0,
+            })}{" "}
+            <Link to={hubLink(linkedId)}>{t("sets.share.openHub")}</Link>
+          </B4Alert>
+        )}
+        {hubReady && (!linkedUnmodified || published) && (
           <Box>
-            <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
-              <Tooltip title={publishBlocked}>
-                <span>
-                  <Button
-                    variant="contained"
-                    startIcon={
-                      share.isPending ? (
-                        <CircularProgress size={16} color="inherit" />
-                      ) : (
-                        <PublishIcon />
-                      )
-                    }
-                    onClick={() => void publish()}
-                    disabled={share.isPending || Boolean(publishBlocked)}
-                  >
-                    {t("sets.share.publish")}
-                  </Button>
-                </span>
-              </Tooltip>
-              <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                {t("sets.share.publishHint")}
-              </Typography>
-            </Stack>
+            {!published && (
+              <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+                <Tooltip title={publishBlocked}>
+                  <span>
+                    <Button
+                      variant="contained"
+                      startIcon={
+                        share.isPending ? (
+                          <CircularProgress size={16} color="inherit" />
+                        ) : (
+                          <PublishIcon />
+                        )
+                      }
+                      onClick={() => void publish()}
+                      disabled={share.isPending || Boolean(publishBlocked)}
+                    >
+                      {linkedModified
+                        ? t("sets.share.publishNewVersion")
+                        : t("sets.share.publish")}
+                    </Button>
+                  </span>
+                </Tooltip>
+                <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                  {linkedModified
+                    ? t("sets.share.publishNewVersionHint", { id: linkedId })
+                    : t("sets.share.publishHint")}
+                </Typography>
+              </Stack>
+            )}
             {published && (
               <B4Alert severity="success" sx={{ mt: 2 }}>
                 {t("sets.share.publishedDetail", {

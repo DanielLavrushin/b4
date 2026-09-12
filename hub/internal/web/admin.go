@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -64,17 +65,21 @@ func (s *Server) adminGuard(next http.Handler) http.Handler {
 }
 
 type QueueEntry struct {
-	Version     store.Version
-	Author      string
-	Targets     Targets
-	Strategy    []string
-	Emitted     []EmittedName
-	Pins        []Pin
-	DoHHost     string
-	Projection  string
-	Reports     []store.Report
-	Independent int
-	DecodeError string
+	Version      store.Version
+	Author       string
+	Targets      Targets
+	Strategy     []string
+	Emitted      []EmittedName
+	Pins         []Pin
+	DoHHost      string
+	Projection   string
+	Reports      []store.Report
+	Independent  int
+	DecodeError  string
+	Versions     []string
+	SupersededBy int
+	SupersededAt time.Time
+	Lineage      string
 }
 
 func (s *Server) queueEntry(ctx context.Context, v store.Version) QueueEntry {
@@ -123,12 +128,25 @@ func mirrorHealth(m store.Mirror) string {
 
 type AdminPage struct {
 	Base
-	Pending  []QueueEntry
-	Active   []QueueEntry
-	Hidden   []QueueEntry
-	Rejected []QueueEntry
-	Mirrors  []MirrorEntry
-	Notice   string
+	Pending    []QueueEntry
+	Active     []QueueEntry
+	Superseded []QueueEntry
+	Hidden     []QueueEntry
+	Rejected   []QueueEntry
+	Mirrors    []MirrorEntry
+	Notice     string
+}
+
+func lineage(v store.Version, newest map[string]store.Version) string {
+	current, ok := newest[v.SetID]
+	switch {
+	case ok:
+		return "new version of " + v.SetID + ", currently listed as /" + strconv.Itoa(current.Version) + "; approving replaces it in the catalogue"
+	case v.Version > 1:
+		return "new version of " + v.SetID + ", nothing currently listed; approving lists it"
+	default:
+		return "first version"
+	}
 }
 
 func (s *Server) entries(ctx context.Context, versions []store.Version, limit int) []QueueEntry {
@@ -151,12 +169,42 @@ func (s *Server) adminQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page.Pending = s.entries(ctx, pending, 0)
-	active, err := s.Store.VersionsByStatus(ctx, hubwire.SetStatusActive)
+	listed, err := s.Store.ListedVersions(ctx)
 	if err != nil {
 		s.message(w, http.StatusInternalServerError, true, "Error", err.Error())
 		return
 	}
-	page.Active = s.entries(ctx, active, 0)
+	active, err := s.Store.ActiveVersions(ctx)
+	if err != nil {
+		s.message(w, http.StatusInternalServerError, true, "Error", err.Error())
+		return
+	}
+	newest := make(map[string]store.Version, len(listed))
+	for _, v := range listed {
+		newest[v.SetID] = v
+	}
+	versions := make(map[string][]string, len(listed))
+	superseded := make([]store.Version, 0)
+	for _, v := range active {
+		versions[v.SetID] = append(versions[v.SetID], strconv.Itoa(v.Version))
+		if v.Version < newest[v.SetID].Version {
+			superseded = append(superseded, v)
+		}
+	}
+	sort.SliceStable(listed, func(i, j int) bool { return listed[i].UpdatedAt.After(listed[j].UpdatedAt) })
+	page.Active = s.entries(ctx, listed, 0)
+	for i := range page.Active {
+		page.Active[i].Versions = versions[page.Active[i].Version.SetID]
+	}
+	page.Superseded = s.entries(ctx, superseded, 0)
+	for i := range page.Superseded {
+		current := newest[page.Superseded[i].Version.SetID]
+		page.Superseded[i].SupersededBy = current.Version
+		page.Superseded[i].SupersededAt = current.UpdatedAt
+	}
+	for i := range page.Pending {
+		page.Pending[i].Lineage = lineage(page.Pending[i].Version, newest)
+	}
 	hidden, err := s.Store.VersionsByStatus(ctx, hubwire.SetStatusHidden)
 	if err != nil {
 		s.message(w, http.StatusInternalServerError, true, "Error", err.Error())
