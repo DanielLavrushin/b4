@@ -54,14 +54,30 @@ func (s *Server) adminGuard(next http.Handler) http.Handler {
 			s.message(w, http.StatusUnauthorized, false, "Moderator credentials required", "Sign in as admin with the moderation password.")
 			return
 		}
-		if r.Method == http.MethodPost {
-			if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
-				s.message(w, http.StatusForbidden, true, "Refused", "Moderation actions are accepted only from this site.")
-				return
-			}
+		if r.Method == http.MethodPost && !sameSiteRequest(r) {
+			s.message(w, http.StatusForbidden, true, "Refused", "Moderation actions are accepted only from forms on this site.")
+			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func sameSiteRequest(r *http.Request) bool {
+	if site := r.Header.Get("Sec-Fetch-Site"); site != "" {
+		return site == "same-origin" || site == "none"
+	}
+	for _, header := range []string{"Origin", "Referer"} {
+		raw := strings.TrimSpace(r.Header.Get(header))
+		if raw == "" {
+			continue
+		}
+		u, err := url.Parse(raw)
+		if err != nil || u.Host == "" {
+			return false
+		}
+		return strings.EqualFold(u.Host, r.Host)
+	}
+	return false
 }
 
 type QueueEntry struct {

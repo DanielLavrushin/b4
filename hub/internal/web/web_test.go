@@ -179,6 +179,9 @@ func (f *fixture) get(path string) response {
 
 func asAdmin(req *http.Request) {
 	req.SetBasicAuth("admin", password)
+	if req.Method == http.MethodPost {
+		req.Header.Set("Origin", "http://"+req.Host)
+	}
 }
 
 func (f *fixture) admin(method, path string, form url.Values) response {
@@ -271,6 +274,12 @@ func TestAdminQueueAndActions(t *testing.T) {
 	})
 	if page.status != http.StatusForbidden {
 		t.Fatalf("cross-site posts must be refused, got %d", page.status)
+	}
+	page = f.request(http.MethodPost, "/admin/sets/"+pendingID+"/1/approve", url.Values{}, func(req *http.Request) {
+		req.SetBasicAuth("admin", password)
+	})
+	if page.status != http.StatusForbidden {
+		t.Fatalf("a post with no origin evidence at all must be refused, got %d", page.status)
 	}
 
 	page = f.admin(http.MethodPost, "/admin/sets/"+pendingID+"/1/approve", url.Values{})
