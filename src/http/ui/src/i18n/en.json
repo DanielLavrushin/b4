@@ -1395,7 +1395,7 @@
         "applyTtl": "Apply Fake TTL",
         "applyTtlDesc": "Send the fake at the TTL above whatever the fake strategy is. Without this the TTL only applies when the strategy is TTL",
         "matchLength": "Match Fake Size",
-        "matchLengthDesc": "Size the fake to the real ClientHello instead of using the payload's own length",
+        "matchLengthDesc": "Build the fake from the real ClientHello with the payload's domain fitted to the real name's length, so both have exactly the same size; a payload that is not a ClientHello is repeated or cut to that size",
         "md5OnFake": "MD5 Signature on Fake",
         "md5OnFakeDesc": "Put the TCP MD5 option on the fake ClientHello so the server discards it while DPI still reads it",
         "seqOffset": "Sequence Offset",

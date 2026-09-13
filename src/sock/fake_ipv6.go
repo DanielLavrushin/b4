@@ -48,10 +48,7 @@ func BuildFakeSNIPacketV6(original []byte, cfg *config.SetConfig) []byte {
 	payloadLen := tcpHdrLen + len(fakePayload)
 	binary.BigEndian.PutUint16(fake[4:6], uint16(payloadLen))
 
-	off := cfg.Faking.SeqOffset
-	if off <= 0 {
-		off = 10000
-	}
+	badsum := cfg.Faking.Strategy == "tcp_check"
 
 	if cfg.Faking.ApplyTTL || cfg.Faking.Strategy == "ttl" {
 		fake[7] = resolveFakeTTL(cfg.Faking.TTL, original[7])
@@ -82,14 +79,16 @@ func BuildFakeSNIPacketV6(original []byte, cfg *config.SetConfig) []byte {
 		if decrease == 0 {
 			decrease = 600000 // Default value matching youtubeUnblock
 		}
-		DecreaseTCPTimestamp(fake, decrease, true)
+		if !DecreaseTCPTimestamp(fake, decrease, true) {
+			badsum = true
+		}
 	case "tcp_check":
 	default:
 	}
 
 	FixTCPChecksumV6(fake)
 
-	if cfg.Faking.Strategy == "tcp_check" {
+	if badsum {
 		fake[ipv6HdrLen+16] ^= 0xFF
 	}
 

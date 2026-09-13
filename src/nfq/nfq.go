@@ -2,6 +2,7 @@ package nfq
 
 import (
 	"encoding/binary"
+	"errors"
 	"net"
 	"os"
 	"sync/atomic"
@@ -446,15 +447,21 @@ func (w *Worker) sendFakeSNISequence(cfg *config.SetConfig, original []byte, dst
 	if fake == nil {
 		return
 	}
+	badsum := !sock.TCPChecksumValid(fake)
 	if fk.MD5OnFake {
 		fake = sock.AddTCPMD5Option(fake, false)
+		if badsum {
+			sock.CorruptTCPChecksum(fake)
+		}
 	}
 	ipHdrLen := int((fake[0] & 0x0F) * 4)
 	tcpHdrLen := int((fake[ipHdrLen+12] >> 4) * 4)
 
 	for i := 0; i < fk.SNISeqLength; i++ {
 		log.Tracef("Sending fake SNI packet %d/%d to %s", i+1, fk.SNISeqLength, dst.String())
-		_ = w.sock.SendIPv4(fake, dst)
+		if err := w.sock.SendIPv4(fake, dst); err != nil {
+			w.warnFakeSend(cfg, len(fake), dst, err)
+		}
 
 		if i+1 < fk.SNISeqLength {
 			id := binary.BigEndian.Uint16(fake[4:6])
@@ -466,9 +473,28 @@ func (w *Worker) sendFakeSNISequence(cfg *config.SetConfig, original []byte, dst
 				binary.BigEndian.PutUint32(fake[ipHdrLen+4:ipHdrLen+8], seq+uint32(payloadLen))
 				sock.FixIPv4Checksum(fake[:ipHdrLen])
 				sock.FixTCPChecksum(fake)
+				if badsum {
+					sock.CorruptTCPChecksum(fake)
+				}
 			}
 		}
 	}
+}
+
+func (w *Worker) warnFakeSend(cfg *config.SetConfig, size int, dst net.IP, err error) {
+	now := time.Now().Unix()
+	last := atomic.LoadInt64(&w.lastFakeSendLog)
+	if now-last < 30 {
+		return
+	}
+	if !atomic.CompareAndSwapInt64(&w.lastFakeSendLog, last, now) {
+		return
+	}
+	hint := ""
+	if errors.Is(err, syscall.EMSGSIZE) {
+		hint = "; the fake is larger than the interface MTU, pick a smaller payload or enable fake_len_mode match"
+	}
+	log.Warnf("Fake ClientHello for set %q not sent (%d bytes to %s): %v%s", cfg.Name, size, dst.String(), err, hint)
 }
 
 func (w *Worker) getMacByIp(ip string) string {

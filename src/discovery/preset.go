@@ -578,8 +578,57 @@ func GetPhase1Presets() []ConfigPreset {
 				},
 			},
 		},
+
+		{
+			Name:        "fake-mirror-ts",
+			Description: "Full-TTL copy of the ClientHello with a swapped name and an old TCP timestamp, no fragmentation",
+			Family:      FamilyFakeSNI,
+			Phase:       PhaseBaseline,
+			Priority:    19,
+			Config: config.SetConfig{
+				TCP: config.TCPConfig{
+					ConnBytesLimit: 19,
+				},
+				UDP: udp,
+				Fragmentation: config.FragmentationConfig{
+					Strategy: config.ConfigNone,
+				},
+				Faking: mirrorFaking("timestamp"),
+			},
+		},
+
+		{
+			Name:        "fake-mirror-badsum",
+			Description: "Full-TTL copy of the ClientHello with a swapped name and a bad TCP checksum, no fragmentation",
+			Family:      FamilyFakeSNI,
+			Phase:       PhaseBaseline,
+			Priority:    20,
+			Config: config.SetConfig{
+				TCP: config.TCPConfig{
+					ConnBytesLimit: 19,
+				},
+				UDP: udp,
+				Fragmentation: config.FragmentationConfig{
+					Strategy: config.ConfigNone,
+				},
+				Faking: mirrorFaking("tcp_check"),
+			},
+		},
 	}
 
+}
+
+func mirrorFaking(strategy string) config.FakingConfig {
+	return config.FakingConfig{
+		SNI:               true,
+		TTL:               7,
+		Strategy:          strategy,
+		SeqOffset:         10000,
+		SNISeqLength:      1,
+		SNIType:           config.FakePayloadDefault1,
+		FakeLenMode:       "match",
+		TimestampDecrease: 600000,
+	}
 }
 
 func defaultUDP() config.UDPConfig {
@@ -1119,6 +1168,26 @@ func GetPhase2Presets(family StrategyFamily) []ConfigPreset {
 						MD5OnFake:    true,
 					}),
 					config.FragmentationConfig{Strategy: config.ConfigNone},
+				),
+			})
+		}
+
+		for _, strategy := range []string{"timestamp", "tcp_check"} {
+			presets = append(presets, ConfigPreset{
+				Name:     "fake-mirror-" + strategy + "-split",
+				Family:   FamilyFakeSNI,
+				Phase:    PhaseOptimize,
+				Priority: 9,
+				Config:   withFaking(base, mirrorFaking(strategy)),
+			})
+			presets = append(presets, ConfigPreset{
+				Name:     "fake-mirror-" + strategy + "-tcp",
+				Family:   FamilyFakeSNI,
+				Phase:    PhaseOptimize,
+				Priority: 9,
+				Config: withFragmentation(
+					withFaking(base, mirrorFaking(strategy)),
+					config.FragmentationConfig{Strategy: "tcp", MiddleSNI: true, SNIPosition: 1},
 				),
 			})
 		}

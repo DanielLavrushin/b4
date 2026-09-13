@@ -46,10 +46,7 @@ func BuildFakeSNIPacketV4(original []byte, cfg *config.SetConfig) []byte {
 	binary.BigEndian.PutUint16(fake[2:4], uint16(fakeLen))
 	setDistinctIPID(fake, original)
 
-	off := cfg.Faking.SeqOffset
-	if off <= 0 {
-		off = 10000
-	}
+	badsum := cfg.Faking.Strategy == "tcp_check"
 
 	if cfg.Faking.ApplyTTL || cfg.Faking.Strategy == "ttl" {
 		fake[8] = resolveFakeTTL(cfg.Faking.TTL, original[8])
@@ -80,7 +77,9 @@ func BuildFakeSNIPacketV4(original []byte, cfg *config.SetConfig) []byte {
 		if decrease == 0 {
 			decrease = 600000 // Default value matching youtubeUnblock
 		}
-		DecreaseTCPTimestamp(fake, decrease, false)
+		if !DecreaseTCPTimestamp(fake, decrease, false) {
+			badsum = true
+		}
 	case "tcp_check":
 	default:
 	}
@@ -88,7 +87,7 @@ func BuildFakeSNIPacketV4(original []byte, cfg *config.SetConfig) []byte {
 	FixIPv4Checksum(fake[:ipHdrLen])
 	FixTCPChecksum(fake)
 
-	if cfg.Faking.Strategy == "tcp_check" {
+	if badsum {
 		fake[ipHdrLen+16] ^= 0xFF
 	}
 
