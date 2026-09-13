@@ -2,27 +2,25 @@ package web
 
 import (
 	"context"
-	"crypto/subtle"
-	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/daniellavrushin/b4/hubwire"
+	"github.com/daniellavrushin/b4hub/internal/geo"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
 	"github.com/daniellavrushin/b4hub/internal/store"
 )
 
 const (
-	adminUser       = "admin"
-	adminRealm      = `Basic realm="b4hub moderation"`
 	maxReasonRunes  = 500
 	recentDecisions = 50
+	feedbackLimit   = 200
+	maxFeedback     = 1000
 
 	ActionApprove = "approve"
 	ActionReject  = "reject"
@@ -32,269 +30,31 @@ const (
 	ActionRemove  = "remove"
 )
 
-func (s *Server) mountAdmin(mux *http.ServeMux) {
-	guard := s.adminGuard
-	mux.Handle("GET "+PathAdmin, guard(http.HandlerFunc(s.adminQueue)))
-	mux.Handle("GET "+PathAdmin+"/{$}", guard(http.HandlerFunc(s.adminQueue)))
-	mux.Handle("GET "+PathAdmin+"/keys", guard(http.HandlerFunc(s.adminKeys)))
-	mux.Handle("POST "+PathAdmin+"/sets/{id}/{version}/{action}", guard(http.HandlerFunc(s.adminSetAction)))
-	mux.Handle("POST "+PathAdmin+"/keys/{key}/{action}", guard(http.HandlerFunc(s.adminKeyAction)))
-	mux.Handle("POST "+PathAdmin+"/mirrors/{id}/{action}", guard(http.HandlerFunc(s.adminMirrorAction)))
+type actionRequest struct {
+	Reason string `json:"reason"`
 }
 
-func (s *Server) adminGuard(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.AdminPassword == "" {
-			s.message(w, http.StatusServiceUnavailable, false, "Moderation is not configured", "Set B4HUB_ADMIN_PASSWORD in the service environment to enable this page.")
-			return
-		}
-		user, pass, ok := r.BasicAuth()
-		if !ok || subtle.ConstantTimeCompare([]byte(user), []byte(adminUser)) != 1 || subtle.ConstantTimeCompare([]byte(pass), []byte(s.AdminPassword)) != 1 {
-			w.Header().Set("WWW-Authenticate", adminRealm)
-			s.message(w, http.StatusUnauthorized, false, "Moderator credentials required", "Sign in as admin with the moderation password.")
-			return
-		}
-		if r.Method == http.MethodPost && !sameSiteRequest(r) {
-			s.message(w, http.StatusForbidden, true, "Refused", "Moderation actions are accepted only from forms on this site.")
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+type revokeRequest struct {
+	KeyID string `json:"key_id"`
 }
 
-func sameSiteRequest(r *http.Request) bool {
-	if site := r.Header.Get("Sec-Fetch-Site"); site != "" {
-		return site == "same-origin" || site == "none"
-	}
-	for _, header := range []string{"Origin", "Referer"} {
-		raw := strings.TrimSpace(r.Header.Get(header))
-		if raw == "" {
-			continue
-		}
-		u, err := url.Parse(raw)
-		if err != nil || u.Host == "" {
-			return false
-		}
-		return strings.EqualFold(u.Host, r.Host)
-	}
-	return false
-}
+func (s *Server) mountAPI(mux *http.ServeMux) {
+	mux.HandleFunc("GET "+PathAPI+"/session", s.session)
+	mux.HandleFunc("POST "+PathAPI+"/login", s.login)
+	mux.HandleFunc("POST "+PathAPI+"/logout", s.logout)
 
-type QueueEntry struct {
-	Version      store.Version
-	Author       string
-	Targets      Targets
-	Strategy     []string
-	Emitted      []EmittedName
-	Pins         []Pin
-	DoHHost      string
-	Projection   string
-	Reports      []store.Report
-	Independent  int
-	DecodeError  string
-	Versions     []string
-	SupersededBy int
-	SupersededAt time.Time
-	Lineage      string
-}
-
-func (s *Server) queueEntry(ctx context.Context, v store.Version) QueueEntry {
-	e := QueueEntry{Version: v, Author: hubdata.AuthorLabel(v.UploaderHMAC), Targets: TargetsOf(v.Projection)}
-	if raw, err := json.MarshalIndent(v.Projection, "", "  "); err == nil {
-		e.Projection = string(raw)
-	}
-	set, err := DecodeSet(v.Projection)
-	if err != nil {
-		e.DecodeError = err.Error()
-	} else {
-		e.Strategy = StrategyWords(&set, v.Payloads)
-		e.Emitted = EmittedNames(&set, v.Payloads)
-		e.Pins = PinsOf(&set)
-		e.DoHHost = DoHHostOf(&set)
-	}
-	if reports, err := s.Store.ReportsForVersion(ctx, v.SetID, v.Version); err == nil && len(reports) > 0 {
-		e.Reports = reports
-		e.Independent, _ = s.Store.IndependentReports(ctx, v.SetID, v.Version)
-	}
-	return e
-}
-
-type MirrorEntry struct {
-	store.Mirror
-	KeyLabel string
-	Health   string
-}
-
-func mirrorHealth(m store.Mirror) string {
-	switch {
-	case m.LastCheck.IsZero():
-		return "not checked yet"
-	case m.Healthy():
-		return "ok at " + templateFuncs["when"].(func(time.Time) string)(m.LastCheck)
-	}
-	text := "failed at " + templateFuncs["when"].(func(time.Time) string)(m.LastCheck)
-	if m.Reason != "" {
-		text += ": " + m.Reason
-	}
-	if !m.LastOK.IsZero() {
-		text += ", last ok " + templateFuncs["when"].(func(time.Time) string)(m.LastOK)
-	}
-	return text
-}
-
-type AdminPage struct {
-	Base
-	Pending    []QueueEntry
-	Active     []QueueEntry
-	Superseded []QueueEntry
-	Hidden     []QueueEntry
-	Rejected   []QueueEntry
-	Mirrors    []MirrorEntry
-	Notice     string
-}
-
-func lineage(v store.Version, newest map[string]store.Version) string {
-	current, ok := newest[v.SetID]
-	switch {
-	case ok:
-		return "new version of " + v.SetID + ", currently listed as /" + strconv.Itoa(current.Version) + "; approving replaces it in the catalogue"
-	case v.Version > 1:
-		return "new version of " + v.SetID + ", nothing currently listed; approving lists it"
-	default:
-		return "first version"
-	}
-}
-
-func (s *Server) entries(ctx context.Context, versions []store.Version, limit int) []QueueEntry {
-	if limit > 0 && len(versions) > limit {
-		versions = versions[:limit]
-	}
-	out := make([]QueueEntry, 0, len(versions))
-	for _, v := range versions {
-		out = append(out, s.queueEntry(ctx, v))
-	}
-	return out
-}
-
-func (s *Server) adminQueue(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	page := AdminPage{Base: Base{Title: "Moderation queue", Admin: true}, Notice: r.URL.Query().Get("notice")}
-	pending, err := s.Store.PendingVersions(ctx)
-	if err != nil {
-		s.message(w, http.StatusInternalServerError, true, "Error", err.Error())
-		return
-	}
-	page.Pending = s.entries(ctx, pending, 0)
-	listed, err := s.Store.ListedVersions(ctx)
-	if err != nil {
-		s.message(w, http.StatusInternalServerError, true, "Error", err.Error())
-		return
-	}
-	active, err := s.Store.ActiveVersions(ctx)
-	if err != nil {
-		s.message(w, http.StatusInternalServerError, true, "Error", err.Error())
-		return
-	}
-	newest := make(map[string]store.Version, len(listed))
-	for _, v := range listed {
-		newest[v.SetID] = v
-	}
-	versions := make(map[string][]string, len(listed))
-	superseded := make([]store.Version, 0)
-	for _, v := range active {
-		versions[v.SetID] = append(versions[v.SetID], strconv.Itoa(v.Version))
-		if v.Version < newest[v.SetID].Version {
-			superseded = append(superseded, v)
-		}
-	}
-	sort.SliceStable(listed, func(i, j int) bool { return listed[i].UpdatedAt.After(listed[j].UpdatedAt) })
-	page.Active = s.entries(ctx, listed, 0)
-	for i := range page.Active {
-		page.Active[i].Versions = versions[page.Active[i].Version.SetID]
-	}
-	page.Superseded = s.entries(ctx, superseded, 0)
-	for i := range page.Superseded {
-		current := newest[page.Superseded[i].Version.SetID]
-		page.Superseded[i].SupersededBy = current.Version
-		page.Superseded[i].SupersededAt = current.UpdatedAt
-	}
-	for i := range page.Pending {
-		page.Pending[i].Lineage = lineage(page.Pending[i].Version, newest)
-	}
-	hidden, err := s.Store.VersionsByStatus(ctx, hubwire.SetStatusHidden)
-	if err != nil {
-		s.message(w, http.StatusInternalServerError, true, "Error", err.Error())
-		return
-	}
-	page.Hidden = s.entries(ctx, hidden, recentDecisions)
-	rejected, err := s.Store.VersionsByStatus(ctx, hubwire.SetStatusRejected)
-	if err != nil {
-		s.message(w, http.StatusInternalServerError, true, "Error", err.Error())
-		return
-	}
-	page.Rejected = s.entries(ctx, rejected, recentDecisions)
-	mirrors, err := s.Store.Mirrors(ctx)
-	if err != nil {
-		s.message(w, http.StatusInternalServerError, true, "Error", err.Error())
-		return
-	}
-	page.Mirrors = make([]MirrorEntry, 0, len(mirrors))
-	for _, m := range mirrors {
-		page.Mirrors = append(page.Mirrors, MirrorEntry{Mirror: m, KeyLabel: hubdata.AuthorLabel(m.KeyHMAC), Health: mirrorHealth(m)})
-	}
-	s.render(w, http.StatusOK, "admin", page)
-}
-
-func (s *Server) adminMirrorAction(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil || id <= 0 {
-		s.message(w, http.StatusNotFound, true, "No such mirror", "The address does not name a mirror.")
-		return
-	}
-	ctx := r.Context()
-	m, err := s.Store.GetMirror(ctx, id)
-	if errors.Is(err, store.ErrNotFound) {
-		s.message(w, http.StatusNotFound, true, "No such mirror", "The address does not name a mirror.")
-		return
-	} else if err != nil {
-		s.message(w, http.StatusInternalServerError, true, "Error", err.Error())
-		return
-	}
-	var notice string
-	switch r.PathValue("action") {
-	case ActionApprove:
-		err = s.Store.SetMirrorStatus(ctx, id, store.MirrorApproved, "", s.now())
-		notice = "approved mirror " + m.URL
-	case ActionReject:
-		reason := reasonOf(r)
-		if reason == "" {
-			s.message(w, http.StatusBadRequest, true, "Reason required", "A rejection needs a reason.")
-			return
-		}
-		err = s.Store.SetMirrorStatus(ctx, id, store.MirrorRejected, reason, s.now())
-		notice = "rejected mirror " + m.URL
-	case ActionRemove:
-		err = s.Store.DeleteMirror(ctx, id)
-		notice = "removed mirror " + m.URL
-	default:
-		s.message(w, http.StatusNotFound, true, "Unknown action", "Mirrors can be approved, rejected or removed.")
-		return
-	}
-	if err != nil {
-		s.message(w, http.StatusInternalServerError, true, "Error", err.Error())
-		return
-	}
-	s.rebuild()
-	http.Redirect(w, r, PathAdmin+"?notice="+url.QueryEscape(notice), http.StatusSeeOther)
-}
-
-func reasonOf(r *http.Request) string {
-	reason := strings.TrimSpace(r.FormValue("reason"))
-	runes := []rune(reason)
-	if len(runes) > maxReasonRunes {
-		reason = strings.TrimSpace(string(runes[:maxReasonRunes]))
-	}
-	return reason
+	mux.Handle("GET "+PathAPI+"/overview", s.guard(s.overview))
+	mux.Handle("GET "+PathAPI+"/sets", s.guard(s.sets))
+	mux.Handle("GET "+PathAPI+"/sets/{id}", s.guard(s.setDetail))
+	mux.Handle("POST "+PathAPI+"/sets/{id}/{version}/{action}", s.guard(s.setAction))
+	mux.Handle("GET "+PathAPI+"/keys", s.guard(s.keys))
+	mux.Handle("POST "+PathAPI+"/keys/{key}/{action}", s.guard(s.keyAction))
+	mux.Handle("GET "+PathAPI+"/mirrors", s.guard(s.mirrors))
+	mux.Handle("POST "+PathAPI+"/mirrors/{id}/{action}", s.guard(s.mirrorAction))
+	mux.Handle("GET "+PathAPI+"/feedback", s.guard(s.feedback))
+	mux.Handle("POST "+PathAPI+"/catalogue/build", s.guard(s.catalogueBuild))
+	mux.Handle("POST "+PathAPI+"/catalogue/epoch", s.guard(s.catalogueEpoch))
+	mux.Handle("POST "+PathAPI+"/catalogue/revoke", s.guard(s.catalogueRevoke))
 }
 
 func (s *Server) rebuild() {
@@ -306,67 +66,230 @@ func (s *Server) rebuild() {
 	}
 }
 
-func (s *Server) adminSetAction(w http.ResponseWriter, r *http.Request) {
+func cleanReason(raw string) string {
+	reason := strings.TrimSpace(raw)
+	runes := []rune(reason)
+	if len(runes) > maxReasonRunes {
+		reason = strings.TrimSpace(string(runes[:maxReasonRunes]))
+	}
+	return reason
+}
+
+func (s *Server) readAction(w http.ResponseWriter, r *http.Request) (string, bool) {
+	var req actionRequest
+	if err := readBody(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+		return "", false
+	}
+	return cleanReason(req.Reason), true
+}
+
+type versionGroups struct {
+	pending    []store.Version
+	listed     []store.Version
+	superseded []store.Version
+	hidden     []store.Version
+	rejected   []store.Version
+	newest     map[string]store.Version
+	versions   map[string][]int
+}
+
+func (s *Server) groups(ctx context.Context) (*versionGroups, error) {
+	g := &versionGroups{}
+	var err error
+	if g.pending, err = s.Store.PendingVersions(ctx); err != nil {
+		return nil, err
+	}
+	if g.listed, err = s.Store.ListedVersions(ctx); err != nil {
+		return nil, err
+	}
+	active, err := s.Store.ActiveVersions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if g.hidden, err = s.Store.VersionsByStatus(ctx, hubwire.SetStatusHidden); err != nil {
+		return nil, err
+	}
+	if g.rejected, err = s.Store.VersionsByStatus(ctx, hubwire.SetStatusRejected); err != nil {
+		return nil, err
+	}
+	g.newest = make(map[string]store.Version, len(g.listed))
+	for _, v := range g.listed {
+		g.newest[v.SetID] = v
+	}
+	g.versions = make(map[string][]int, len(g.listed))
+	for _, v := range active {
+		g.versions[v.SetID] = append(g.versions[v.SetID], v.Version)
+		if v.Version < g.newest[v.SetID].Version {
+			g.superseded = append(g.superseded, v)
+		}
+	}
+	sort.SliceStable(g.listed, func(i, j int) bool { return g.listed[i].UpdatedAt.After(g.listed[j].UpdatedAt) })
+	return g, nil
+}
+
+func lineage(v store.Version, newest map[string]store.Version) *LineageView {
+	current, ok := newest[v.SetID]
+	switch {
+	case ok:
+		return &LineageView{Kind: LineageReplaces, CurrentVersion: current.Version}
+	case v.Version > 1:
+		return &LineageView{Kind: LineageRelists}
+	default:
+		return &LineageView{Kind: LineageFirst}
+	}
+}
+
+func (s *Server) entries(ctx context.Context, versions []store.Version, ec *entryContext, limit int) []EntryView {
+	if limit > 0 && len(versions) > limit {
+		versions = versions[:limit]
+	}
+	out := make([]EntryView, 0, len(versions))
+	for _, v := range versions {
+		out = append(out, s.entry(ctx, v, ec))
+	}
+	return out
+}
+
+func (s *Server) sets(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	g, err := s.groups(ctx)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	ec, err := s.entryContext(ctx)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	view := SetsView{
+		Pending:    s.entries(ctx, g.pending, ec, 0),
+		Listed:     s.entries(ctx, g.listed, ec, 0),
+		Superseded: s.entries(ctx, g.superseded, ec, 0),
+		Hidden:     s.entries(ctx, g.hidden, ec, recentDecisions),
+		Rejected:   s.entries(ctx, g.rejected, ec, recentDecisions),
+	}
+	for i := range view.Pending {
+		view.Pending[i].Lineage = lineage(g.pending[i], g.newest)
+	}
+	for i := range view.Listed {
+		view.Listed[i].Versions = g.versions[view.Listed[i].SetID]
+	}
+	for i := range view.Superseded {
+		current := g.newest[view.Superseded[i].SetID]
+		view.Superseded[i].SupersededBy = current.Version
+		view.Superseded[i].SupersededAt = optionalTime(current.UpdatedAt)
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+func (s *Server) setDetail(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !hubdata.ValidSetID(id) {
+		writeError(w, http.StatusNotFound, codeNotFound, "the address does not name a set")
+		return
+	}
+	ctx := r.Context()
+	set, versions, err := s.Store.GetSet(ctx, id)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	ec, err := s.entryContext(ctx)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	view := SetDetailView{
+		ID:                 set.ID,
+		Author:             hubdata.AuthorLabel(set.AuthorHMAC),
+		AuthorHMAC:         set.AuthorHMAC,
+		CurrentVersion:     set.CurrentVersion,
+		DerivedFromID:      set.DerivedFromID,
+		DerivedFromVersion: set.DerivedFromVersion,
+		CreatedAt:          set.CreatedAt,
+		UpdatedAt:          set.UpdatedAt,
+		Versions:           s.entries(ctx, versions, ec, 0),
+		Votes:              []VoteView{},
+	}
+	for _, v := range versions {
+		votes, err := s.Store.VotesForVersion(ctx, v.SetID, v.Version)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		for _, vote := range votes {
+			view.Votes = append(view.Votes, voteView(vote))
+		}
+	}
+	sort.SliceStable(view.Votes, func(i, j int) bool { return view.Votes[i].ReceivedAt.After(view.Votes[j].ReceivedAt) })
+	writeJSON(w, http.StatusOK, view)
+}
+
+func (s *Server) setAction(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	version, err := strconv.Atoi(r.PathValue("version"))
 	if !hubdata.ValidSetID(id) || err != nil || version <= 0 {
-		s.message(w, http.StatusNotFound, true, "No such set version", "The address does not name a set version.")
+		writeError(w, http.StatusNotFound, codeNotFound, "the address does not name a set version")
 		return
 	}
 	ctx := r.Context()
 	if _, err := s.Store.GetVersion(ctx, id, version); errors.Is(err, store.ErrNotFound) {
-		s.message(w, http.StatusNotFound, true, "No such set version", "The address does not name a set version.")
+		writeError(w, http.StatusNotFound, codeNotFound, "the address does not name a set version")
 		return
 	} else if err != nil {
-		s.message(w, http.StatusInternalServerError, true, "Error", err.Error())
+		s.fail(w, err)
+		return
+	}
+	action := r.PathValue("action")
+	reason, ok := s.readAction(w, r)
+	if !ok {
 		return
 	}
 	now := s.now()
-	action := r.PathValue("action")
-	reason := reasonOf(r)
+	ref := id + "/" + strconv.Itoa(version)
 	var notice string
 	switch action {
 	case ActionApprove:
 		err = s.Store.Approve(ctx, id, version, now)
-		notice = "approved " + id + "/" + strconv.Itoa(version)
+		notice = "approved " + ref
 	case ActionReject:
 		if reason == "" {
-			s.message(w, http.StatusBadRequest, true, "Reason required", "A rejection needs a reason.")
+			writeError(w, http.StatusBadRequest, codeBadRequest, "a rejection needs a reason")
 			return
 		}
 		err = s.Store.Reject(ctx, id, version, reason, now)
-		notice = "rejected " + id + "/" + strconv.Itoa(version)
+		notice = "rejected " + ref
 	case ActionHide:
 		if reason == "" {
 			reason = "hidden by moderator"
 		}
 		err = s.Store.Hide(ctx, id, version, reason, now)
-		notice = "hidden " + id + "/" + strconv.Itoa(version)
+		notice = "hidden " + ref
 	default:
-		s.message(w, http.StatusNotFound, true, "Unknown action", "Moderation knows approve, reject and hide.")
+		writeError(w, http.StatusNotFound, codeNotFound, "moderation knows approve, reject and hide")
 		return
 	}
 	if err != nil {
-		s.message(w, http.StatusInternalServerError, true, "Error", err.Error())
+		s.fail(w, err)
 		return
 	}
 	s.rebuild()
-	http.Redirect(w, r, PathAdmin+"?notice="+url.QueryEscape(notice), http.StatusSeeOther)
+	writeJSON(w, http.StatusOK, ActionResult{Notice: notice})
 }
 
-type KeysPage struct {
-	Base
-	Keys   []store.KeySummary
-	Notice string
-}
-
-func (s *Server) adminKeys(w http.ResponseWriter, r *http.Request) {
+func (s *Server) keys(w http.ResponseWriter, r *http.Request) {
 	keys, err := s.Store.Keys(r.Context())
 	if err != nil {
-		s.message(w, http.StatusInternalServerError, true, "Error", err.Error())
+		s.fail(w, err)
 		return
 	}
-	s.render(w, http.StatusOK, "keys", KeysPage{Base: Base{Title: "Keys", Admin: true}, Keys: keys, Notice: r.URL.Query().Get("notice")})
+	out := make([]KeyView, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, keyView(k))
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func validKeyHMAC(key string) bool {
@@ -382,10 +305,14 @@ func validKeyHMAC(key string) bool {
 	return true
 }
 
-func (s *Server) adminKeyAction(w http.ResponseWriter, r *http.Request) {
+func (s *Server) keyAction(w http.ResponseWriter, r *http.Request) {
 	key := strings.ToLower(r.PathValue("key"))
 	if !validKeyHMAC(key) {
-		s.message(w, http.StatusNotFound, true, "No such key", "The address does not name a key.")
+		writeError(w, http.StatusNotFound, codeNotFound, "the address does not name a key")
+		return
+	}
+	reason, ok := s.readAction(w, r)
+	if !ok {
 		return
 	}
 	ctx := r.Context()
@@ -393,7 +320,6 @@ func (s *Server) adminKeyAction(w http.ResponseWriter, r *http.Request) {
 	var notice string
 	switch r.PathValue("action") {
 	case ActionBan:
-		reason := reasonOf(r)
 		if reason == "" {
 			reason = "banned by moderator"
 		}
@@ -403,13 +329,254 @@ func (s *Server) adminKeyAction(w http.ResponseWriter, r *http.Request) {
 		err = s.Store.UnbanKey(ctx, key)
 		notice = "unbanned " + hubdata.AuthorLabel(key)
 	default:
-		s.message(w, http.StatusNotFound, true, "Unknown action", "Keys can be banned or unbanned.")
+		writeError(w, http.StatusNotFound, codeNotFound, "keys can be banned or unbanned")
 		return
 	}
 	if err != nil {
-		s.message(w, http.StatusInternalServerError, true, "Error", err.Error())
+		s.fail(w, err)
 		return
 	}
 	s.rebuild()
-	http.Redirect(w, r, PathAdmin+"/keys?notice="+url.QueryEscape(notice), http.StatusSeeOther)
+	writeJSON(w, http.StatusOK, ActionResult{Notice: notice})
+}
+
+func (s *Server) mirrors(w http.ResponseWriter, r *http.Request) {
+	mirrors, err := s.Store.Mirrors(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	out := make([]MirrorView, 0, len(mirrors))
+	for _, m := range mirrors {
+		out = append(out, mirrorView(m))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusNotFound, codeNotFound, "the address does not name a mirror")
+		return
+	}
+	ctx := r.Context()
+	m, err := s.Store.GetMirror(ctx, id)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	reason, ok := s.readAction(w, r)
+	if !ok {
+		return
+	}
+	var notice string
+	switch r.PathValue("action") {
+	case ActionApprove:
+		err = s.Store.SetMirrorStatus(ctx, id, store.MirrorApproved, "", s.now())
+		notice = "approved mirror " + m.URL
+	case ActionReject:
+		if reason == "" {
+			writeError(w, http.StatusBadRequest, codeBadRequest, "a rejection needs a reason")
+			return
+		}
+		err = s.Store.SetMirrorStatus(ctx, id, store.MirrorRejected, reason, s.now())
+		notice = "rejected mirror " + m.URL
+	case ActionRemove:
+		err = s.Store.DeleteMirror(ctx, id)
+		notice = "removed mirror " + m.URL
+	default:
+		writeError(w, http.StatusNotFound, codeNotFound, "mirrors can be approved, rejected or removed")
+		return
+	}
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.rebuild()
+	writeJSON(w, http.StatusOK, ActionResult{Notice: notice})
+}
+
+func (s *Server) feedback(w http.ResponseWriter, r *http.Request) {
+	limit := feedbackLimit
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n <= 0 {
+			writeError(w, http.StatusBadRequest, codeBadRequest, "limit must be a positive number")
+			return
+		}
+		limit = min(n, maxFeedback)
+	}
+	ctx := r.Context()
+	votes, err := s.Store.RecentVotes(ctx, limit)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	reports, err := s.Store.RecentReports(ctx, limit)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	view := FeedbackView{Votes: make([]VoteView, 0, len(votes)), Reports: make([]ReportView, 0, len(reports))}
+	for _, v := range votes {
+		view.Votes = append(view.Votes, voteView(v))
+	}
+	for _, rep := range reports {
+		view.Reports = append(view.Reports, reportView(rep))
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+func (s *Server) catalogueView(ctx context.Context) (CatalogueView, error) {
+	view := CatalogueView{Mirrors: []string{}, RevokedKeys: []string{}}
+	var err error
+	if view.Epoch, err = s.Store.Epoch(ctx); err != nil {
+		return view, err
+	}
+	if view.Dirty, err = s.Store.Dirty(ctx); err != nil {
+		return view, err
+	}
+	builtAt, err := s.Store.BuiltAt(ctx)
+	if err != nil {
+		return view, err
+	}
+	view.BuiltAt = optionalTime(builtAt)
+	revoked, err := s.Store.RevokedKeys(ctx)
+	if err != nil {
+		return view, err
+	}
+	if revoked != nil {
+		view.RevokedKeys = revoked
+	}
+	if s.Catalogue == nil {
+		return view, nil
+	}
+	latest := s.Catalogue.Latest()
+	if latest == nil {
+		return view, nil
+	}
+	view.Published = true
+	view.File = latest.Manifest.Catalogue.File
+	view.Size = latest.Manifest.Catalogue.Size
+	view.Epoch = latest.Manifest.Epoch
+	view.Seq = latest.Manifest.Seq
+	view.GeneratedAt = latest.Manifest.GeneratedAt
+	view.ExpiresAt = latest.Manifest.ExpiresAt
+	view.Sets = len(latest.Catalogue.Sets)
+	view.Blobs = len(latest.Catalogue.Blobs)
+	if latest.Manifest.Mirrors != nil {
+		view.Mirrors = latest.Manifest.Mirrors
+	}
+	return view, nil
+}
+
+func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	view := OverviewView{Version: s.Version, KeyID: s.KeyID, PublicURL: s.PublicURL, Now: s.now(), Geo: []geo.FileStatus{}}
+	var err error
+	if view.Catalogue, err = s.catalogueView(ctx); err != nil {
+		s.fail(w, err)
+		return
+	}
+	g, err := s.groups(ctx)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	view.Counts = CountsView{
+		Pending:    len(g.pending),
+		Listed:     len(g.listed),
+		Superseded: len(g.superseded),
+		Hidden:     len(g.hidden),
+		Rejected:   len(g.rejected),
+	}
+	keys, err := s.Store.Keys(ctx)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	view.Counts.Keys = len(keys)
+	for _, k := range keys {
+		if k.Banned {
+			view.Counts.Banned++
+		}
+	}
+	mirrors, err := s.Store.Mirrors(ctx)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	for _, m := range mirrors {
+		switch m.Status {
+		case store.MirrorPending:
+			view.Counts.MirrorsPending++
+		case store.MirrorApproved:
+			view.Counts.MirrorsApproved++
+		case store.MirrorRejected:
+			view.Counts.MirrorsRejected++
+		}
+	}
+	if view.Counts.Votes, err = s.Store.CountVotes(ctx); err != nil {
+		s.fail(w, err)
+		return
+	}
+	if view.Counts.Reports, err = s.Store.CountReports(ctx); err != nil {
+		s.fail(w, err)
+		return
+	}
+	if s.Geo != nil {
+		view.Geo = s.Geo.Status()
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+func (s *Server) catalogueBuild(w http.ResponseWriter, r *http.Request) {
+	if s.Catalogue == nil {
+		writeError(w, http.StatusServiceUnavailable, codeNotBuilt, "this hub has no catalogue builder")
+		return
+	}
+	result, err := s.Catalogue.Build(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ActionResult{Notice: fmt.Sprintf("published %s with %d sets", result.Manifest.Catalogue.File, len(result.Catalogue.Sets))})
+}
+
+func (s *Server) catalogueEpoch(w http.ResponseWriter, r *http.Request) {
+	epoch, err := s.Store.NewEpoch(r.Context(), s.now())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.rebuild()
+	writeJSON(w, http.StatusOK, ActionResult{Notice: "started epoch " + strconv.FormatInt(epoch, 10)})
+}
+
+func (s *Server) catalogueRevoke(w http.ResponseWriter, r *http.Request) {
+	var req revokeRequest
+	if err := readBody(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+		return
+	}
+	keyID := strings.TrimSpace(req.KeyID)
+	if _, err := hubwire.DecodeKey(keyID); err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, "key_id is not an ed25519 key id: "+err.Error())
+		return
+	}
+	if keyID == s.KeyID {
+		writeError(w, http.StatusBadRequest, codeBadRequest, "refusing to revoke the key this hub signs with")
+		return
+	}
+	ctx := r.Context()
+	if err := s.Store.RevokeKey(ctx, keyID); err != nil {
+		s.fail(w, err)
+		return
+	}
+	if err := s.Store.MarkDirty(ctx); err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.rebuild()
+	writeJSON(w, http.StatusOK, ActionResult{Notice: "revoked " + keyID})
 }

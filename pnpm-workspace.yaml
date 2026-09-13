@@ -1,0 +1,7 @@
+packages:
+  - src/http/ui
+  - hub/ui
+  - shared/design
+
+onlyBuiltDependencies:
+  - esbuild

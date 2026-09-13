@@ -131,22 +131,7 @@ func (s *Store) InsertReport(ctx context.Context, r Report) error {
 }
 
 func (s *Store) ReportsForVersion(ctx context.Context, setID string, version int) ([]Report, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, record_id, set_id, version, key_hmac, asn_observed, reason, received_at FROM reports WHERE set_id = ? AND version = ? ORDER BY received_at DESC`, setID, version)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := make([]Report, 0)
-	for rows.Next() {
-		var r Report
-		var receivedAt string
-		if err := rows.Scan(&r.ID, &r.RecordID, &r.SetID, &r.Version, &r.KeyHMAC, &r.ASNObserved, &r.Reason, &receivedAt); err != nil {
-			return nil, err
-		}
-		r.ReceivedAt = parseTime(receivedAt)
-		out = append(out, r)
-	}
-	return out, rows.Err()
+	return s.queryReports(ctx, `SELECT id, record_id, set_id, version, key_hmac, asn_observed, reason, received_at FROM reports WHERE set_id = ? AND version = ? ORDER BY received_at DESC`, setID, version)
 }
 
 func (s *Store) IndependentReports(ctx context.Context, setID string, version int) (int, error) {
@@ -197,4 +182,80 @@ func assignKeyToASN(asn string, keysByASN map[string]map[string]struct{}, matche
 		}
 	}
 	return false
+}
+
+func (s *Store) RecentVotes(ctx context.Context, limit int) ([]Vote, error) {
+	return s.queryVotes(ctx, `SELECT `+voteColumns+` FROM votes v LEFT JOIN keys k ON k.key_hmac = v.key_hmac ORDER BY v.received_at DESC, v.id DESC LIMIT ?`, limit)
+}
+
+type VoteTotals struct {
+	Works  int
+	Broken int
+}
+
+func (s *Store) VoteTotals(ctx context.Context) (map[string]map[int]VoteTotals, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT set_id, version, kind, COUNT(*) FROM votes GROUP BY set_id, version, kind`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]map[int]VoteTotals)
+	for rows.Next() {
+		var setID, kind string
+		var version, count int
+		if err := rows.Scan(&setID, &version, &kind, &count); err != nil {
+			return nil, err
+		}
+		if out[setID] == nil {
+			out[setID] = make(map[int]VoteTotals)
+		}
+		totals := out[setID][version]
+		switch weight := score.Weights[kind]; {
+		case weight > 0:
+			totals.Works += count
+		case weight < 0:
+			totals.Broken += count
+		}
+		out[setID][version] = totals
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CountVotes(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM votes`).Scan(&n)
+	return n, err
+}
+
+func (s *Store) CountReports(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM reports`).Scan(&n)
+	return n, err
+}
+
+func (s *Store) queryReports(ctx context.Context, query string, args ...interface{}) ([]Report, error) {
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]Report, 0)
+	for rows.Next() {
+		var r Report
+		var receivedAt string
+		if err := rows.Scan(&r.ID, &r.RecordID, &r.SetID, &r.Version, &r.KeyHMAC, &r.ASNObserved, &r.Reason, &receivedAt); err != nil {
+			return nil, err
+		}
+		r.ReceivedAt = parseTime(receivedAt)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) RecentReports(ctx context.Context, limit int) ([]Report, error) {
+	return s.queryReports(ctx, `SELECT id, record_id, set_id, version, key_hmac, asn_observed, reason, received_at FROM reports ORDER BY received_at DESC, id DESC LIMIT ?`, limit)
+}
+
+func (s *Store) AllReports(ctx context.Context) ([]Report, error) {
+	return s.queryReports(ctx, `SELECT id, record_id, set_id, version, key_hmac, asn_observed, reason, received_at FROM reports ORDER BY received_at DESC, id DESC`)
 }

@@ -1,46 +1,58 @@
 package web
 
 import (
-	"bytes"
-	"context"
-	"embed"
-	"fmt"
-	"html/template"
+	"encoding/json"
+	"errors"
+	"io/fs"
 	"log"
 	"net/http"
+	"path"
 	"strings"
 	"time"
 
-	"github.com/daniellavrushin/b4/hubwire"
-	"github.com/daniellavrushin/b4/sni"
-	"github.com/daniellavrushin/b4hub/internal/api"
 	"github.com/daniellavrushin/b4hub/internal/asn"
 	"github.com/daniellavrushin/b4hub/internal/catalogue"
+	"github.com/daniellavrushin/b4hub/internal/geo"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
+	"github.com/daniellavrushin/b4hub/internal/ratelimit"
 	"github.com/daniellavrushin/b4hub/internal/store"
+	"github.com/daniellavrushin/b4hub/ui"
 )
 
 const (
 	PathAdmin = "/admin"
+	PathAPI   = PathAdmin + "/api"
 
-	maxDomainLength = 253
-	searchLimit     = 50
-	cacheNever      = "no-cache"
+	cacheNever   = "no-store"
+	cacheForever = "public, max-age=31536000, immutable"
+
+	codeUnconfigured = "unconfigured"
+	codeUnauthorized = "unauthorized"
+	codeForbidden    = "forbidden"
+	codeNotFound     = "not_found"
+	codeBadRequest   = "bad_request"
+	codeTooMany      = "too_many_attempts"
+	codeInternal     = "internal"
+	codeNotBuilt     = "not_built"
 )
-
-//go:embed templates/*.html
-var templateFS embed.FS
 
 type Server struct {
 	Store         *store.Store
 	Blobs         hubdata.Blobs
 	Catalogue     *catalogue.Builder
+	Geo           *geo.Service
 	ASN           *asn.Resolver
+	Secret        []byte
 	AdminPassword string
+	Version       string
+	KeyID         string
+	PublicURL     string
 	Rebuild       func() error
 	Now           func() time.Time
 
-	pages map[string]*template.Template
+	logins *ratelimit.Limiter
+	dist   fs.FS
+	index  []byte
 }
 
 func (s *Server) now() time.Time {
@@ -51,11 +63,15 @@ func (s *Server) now() time.Time {
 }
 
 func (s *Server) Mount(mux *http.ServeMux) {
-	s.pages = parsePages()
+	s.logins = ratelimit.New(s.Now)
+	s.loadDist()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, PathAdmin, http.StatusFound)
+		http.Redirect(w, r, PathAdmin+"/", http.StatusFound)
 	})
-	s.mountAdmin(mux)
+	s.mountAPI(mux)
+	mux.HandleFunc("GET "+PathAdmin, s.spa)
+	mux.HandleFunc("GET "+PathAdmin+"/{$}", s.spa)
+	mux.HandleFunc("GET "+PathAdmin+"/{rest...}", s.spa)
 }
 
 func (s *Server) Router() *http.ServeMux {
@@ -64,152 +80,83 @@ func (s *Server) Router() *http.ServeMux {
 	return mux
 }
 
-var templateFuncs = template.FuncMap{
-	"day": func(stamp string) string {
-		if len(stamp) >= 10 {
-			return stamp[:10]
-		}
-		return stamp
-	},
-	"when": func(t time.Time) string {
-		if t.IsZero() {
-			return ""
-		}
-		return t.UTC().Format("2006-01-02 15:04")
-	},
-	"join": strings.Join,
-	"n": func(v float64) string {
-		return fmt.Sprintf("%.1f", v)
-	},
-}
-
-func parsePages() map[string]*template.Template {
-	names := []string{"admin", "keys", "message"}
-	pages := make(map[string]*template.Template, len(names))
-	for _, name := range names {
-		pages[name] = template.Must(template.New("layout").Funcs(templateFuncs).ParseFS(templateFS, "templates/layout.html", "templates/"+name+".html"))
-	}
-	return pages
-}
-
-type Base struct {
-	Title string
-	Admin bool
-}
-
-func (s *Server) render(w http.ResponseWriter, status int, page string, data interface{}) {
-	tmpl, ok := s.pages[page]
-	if !ok {
-		http.Error(w, "no such page", http.StatusInternalServerError)
+func (s *Server) loadDist() {
+	dist, err := fs.Sub(ui.Dist, "dist")
+	if err != nil {
 		return
 	}
-	var buf bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&buf, "layout", data); err != nil {
-		log.Printf("web: render %s: %v", page, err)
-		http.Error(w, "page failed to render", http.StatusInternalServerError)
+	index, err := fs.ReadFile(dist, "index.html")
+	if err != nil {
+		log.Printf("web: admin console is not built, %s serves a placeholder", PathAdmin)
 		return
+	}
+	s.dist = dist
+	s.index = index
+}
+
+func (s *Server) spa(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Referrer-Policy", "same-origin")
+	if s.index == nil {
+		w.Header().Set("Cache-Control", cacheNever)
+		http.Error(w, "the admin console was not built into this binary", http.StatusServiceUnavailable)
+		return
+	}
+	rest := strings.TrimPrefix(r.PathValue("rest"), "/")
+	if rest != "" && !strings.HasSuffix(rest, "/") {
+		name := path.Clean(rest)
+		if f, err := s.dist.Open(name); err == nil {
+			info, statErr := f.Stat()
+			f.Close()
+			if statErr == nil && !info.IsDir() {
+				if strings.HasPrefix(name, "assets/") {
+					w.Header().Set("Cache-Control", cacheForever)
+				} else {
+					w.Header().Set("Cache-Control", cacheNever)
+				}
+				http.ServeFileFS(w, r, s.dist, name)
+				return
+			}
+		}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", cacheNever)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(s.index)
+}
+
+func writeJSON(w http.ResponseWriter, status int, body interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", cacheNever)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Referrer-Policy", "same-origin")
 	w.WriteHeader(status)
-	_, _ = w.Write(buf.Bytes())
+	_ = json.NewEncoder(w).Encode(body)
 }
 
-type MessagePage struct {
-	Base
-	Heading string
-	Text    string
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	writeJSON(w, status, map[string]string{"code": code, "error": message})
 }
 
-func (s *Server) message(w http.ResponseWriter, status int, admin bool, heading, text string) {
-	s.render(w, status, "message", MessagePage{Base: Base{Title: heading, Admin: admin}, Heading: heading, Text: text})
-}
-
-type Viewer struct {
-	ASN     string
-	Country string
-	Name    string
-}
-
-func (s *Server) viewer(r *http.Request) Viewer {
-	if s.ASN == nil {
-		return Viewer{}
+func (s *Server) fail(w http.ResponseWriter, err error) {
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, codeNotFound, err.Error())
+		return
 	}
-	ip := asn.ClientIP(r)
-	if !asn.Routable(ip) {
-		return Viewer{}
+	log.Printf("web: %v", err)
+	writeError(w, http.StatusInternalServerError, codeInternal, err.Error())
+}
+
+const maxBodyBytes = 64 << 10
+
+func readBody(w http.ResponseWriter, r *http.Request, into interface{}) error {
+	if r.Body == nil || r.ContentLength == 0 {
+		return nil
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-	defer cancel()
-	info := s.ASN.Lookup(ctx, ip)
-	return Viewer{ASN: info.ASN, Country: info.Country, Name: info.Name}
-}
-
-type Card struct {
-	ID        string
-	Version   int
-	Title     string
-	Family    string
-	Targets   string
-	Strategy  []string
-	Rating    Rating
-	Flags     []string
-	UpdatedAt string
-	Match     *api.Match
-}
-
-func (s *Server) card(cs *hubwire.CatalogueSet, names map[string]string, viewer Viewer, match *api.Match) Card {
-	c := Card{
-		ID:        cs.ID,
-		Version:   cs.Version,
-		Title:     cs.Title,
-		Family:    cs.Family,
-		Targets:   TargetsOf(cs.Set).Summary(),
-		Rating:    RatingOf(cs.Scores, names, viewer.ASN, viewer.Country),
-		Flags:     cs.Flags,
-		UpdatedAt: cs.UpdatedAt,
-		Match:     match,
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(into); err != nil {
+		return err
 	}
-	if set, err := DecodeSet(cs.Set); err == nil {
-		c.Strategy = StrategyWords(&set, cs.Payloads)
-	}
-	return c
-}
-
-type IndexPage struct {
-	Base
-	Domain    string
-	Query     bool
-	Cards     []Card
-	Total     int
-	Viewer    Viewer
-	Catalogue *hubwire.Catalogue
-}
-
-func cleanDomain(raw string) string {
-	domain := sni.NormalizeDomain(strings.TrimSpace(raw))
-	if len(domain) > maxDomainLength {
-		return ""
-	}
-	return domain
-}
-
-type PayloadView struct {
-	Protocol string
-	Domain   string
-	Size     int
-	SHA256   string
-	Missing  bool
-}
-
-type SetPage struct {
-	Base
-	Set      *hubwire.CatalogueSet
-	Card     Card
-	Targets  Targets
-	Payloads []PayloadView
-	Envelope string
-	Viewer   Viewer
+	return nil
 }

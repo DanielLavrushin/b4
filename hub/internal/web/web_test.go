@@ -1,12 +1,14 @@
 package web
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +21,7 @@ import (
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
 	"github.com/daniellavrushin/b4hub/internal/ingest"
 	"github.com/daniellavrushin/b4hub/internal/ratelimit"
+	"github.com/daniellavrushin/b4hub/internal/score"
 	"github.com/daniellavrushin/b4hub/internal/store"
 	"github.com/daniellavrushin/b4hub/internal/testkit"
 )
@@ -84,7 +87,10 @@ func newFixture(t *testing.T, adminPassword string) *fixture {
 		Blobs:         layout.Blobs(),
 		Catalogue:     f.builder,
 		ASN:           resolver,
+		Secret:        secret,
 		AdminPassword: adminPassword,
+		Version:       "test",
+		KeyID:         hubID.KeyID(),
 		Now:           now,
 		Rebuild: func() error {
 			f.rebuilds++
@@ -143,18 +149,29 @@ type response struct {
 	location string
 }
 
-func (f *fixture) request(method, path string, form url.Values, mutate func(*http.Request)) response {
-	f.t.Helper()
-	var body io.Reader
-	if form != nil {
-		body = strings.NewReader(form.Encode())
+func (r response) decode(t *testing.T, into interface{}) {
+	t.Helper()
+	if err := json.Unmarshal([]byte(r.body), into); err != nil {
+		t.Fatalf("decode %q: %v", r.body, err)
 	}
-	req, err := http.NewRequest(method, f.server.URL+path, body)
+}
+
+func (f *fixture) request(method, path string, body interface{}, mutate func(*http.Request)) response {
+	f.t.Helper()
+	var reader io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		reader = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequest(method, f.server.URL+path, reader)
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	if form != nil {
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	if mutate != nil {
 		mutate(req)
@@ -177,116 +194,200 @@ func (f *fixture) get(path string) response {
 	return f.request(http.MethodGet, path, nil, nil)
 }
 
+func sameSite(req *http.Request) {
+	req.Header.Set("Origin", "http://"+req.Host)
+}
+
 func asAdmin(req *http.Request) {
 	req.SetBasicAuth("admin", password)
 	if req.Method == http.MethodPost {
-		req.Header.Set("Origin", "http://"+req.Host)
+		sameSite(req)
 	}
 }
 
-func (f *fixture) admin(method, path string, form url.Values) response {
+func (f *fixture) admin(method, path string, body interface{}) response {
 	f.t.Helper()
-	return f.request(method, path, form, asAdmin)
+	return f.request(method, path, body, asAdmin)
+}
+
+func (f *fixture) signIn(pass string) response {
+	f.t.Helper()
+	return f.request(http.MethodPost, PathAPI+"/login", map[string]string{"password": pass}, sameSite)
+}
+
+func sessionCookieOf(t *testing.T, resp response) *http.Cookie {
+	t.Helper()
+	parsed := (&http.Response{Header: resp.headers}).Cookies()
+	for _, c := range parsed {
+		if c.Name == sessionCookie {
+			return c
+		}
+	}
+	t.Fatalf("no %s cookie in %v", sessionCookie, resp.headers)
+	return nil
+}
+
+func withCookie(c *http.Cookie) func(*http.Request) {
+	return func(req *http.Request) {
+		req.AddCookie(&http.Cookie{Name: c.Name, Value: c.Value})
+		if req.Method == http.MethodPost {
+			sameSite(req)
+		}
+	}
 }
 
 func parseIP(s string) net.IP {
 	return net.ParseIP(s)
 }
 
-func mustContain(t *testing.T, body string, wants ...string) {
-	t.Helper()
-	for _, want := range wants {
-		if !strings.Contains(body, want) {
-			t.Errorf("page lacks %q", want)
-		}
-	}
+func setPath(id string, version int, action string) string {
+	return PathAPI + "/sets/" + id + "/" + itoa(version) + "/" + action
 }
 
-func mustNotContain(t *testing.T, body string, wants ...string) {
-	t.Helper()
-	for _, want := range wants {
-		if strings.Contains(body, want) {
-			t.Errorf("page must not contain %q", want)
-		}
-	}
+func itoa(n int) string {
+	return strconv.Itoa(n)
 }
 
 func TestRootRedirectsToAdmin(t *testing.T) {
 	f := newFixture(t, password)
 	resp := f.get("/")
-	if resp.status != http.StatusFound || resp.location != PathAdmin {
-		t.Fatalf("root must redirect to the admin page, got %d %q", resp.status, resp.location)
+	if resp.status != http.StatusFound || resp.location != PathAdmin+"/" {
+		t.Fatalf("root must redirect to the admin console, got %d %q", resp.status, resp.location)
+	}
+	if page := f.get(PathAdmin + "/"); page.status != http.StatusOK && page.status != http.StatusServiceUnavailable {
+		t.Fatalf("console shell: %d", page.status)
+	}
+	if page := f.get(PathAdmin + "/sets/anything"); page.status != http.StatusOK && page.status != http.StatusServiceUnavailable {
+		t.Fatalf("deep links must fall back to the shell, got %d", page.status)
 	}
 }
 
-func TestAdminAuthentication(t *testing.T) {
+func TestSessionLifecycle(t *testing.T) {
 	unset := newFixture(t, "")
-	if page := unset.get("/admin"); page.status != http.StatusServiceUnavailable {
-		t.Fatalf("no password configured must answer 503, got %d", page.status)
+	var state sessionState
+	unset.get(PathAPI+"/session").decode(t, &state)
+	if state.Configured || state.Authenticated {
+		t.Fatalf("unconfigured hub must report so: %+v", state)
 	}
-	if page := unset.request(http.MethodPost, "/admin/sets/01ARZ3NDEKTSV4RRFFQ69G5FAV/1/approve", url.Values{}, asAdmin); page.status != http.StatusServiceUnavailable {
-		t.Fatalf("actions without a configured password must answer 503, got %d", page.status)
+	if resp := unset.signIn("anything"); resp.status != http.StatusServiceUnavailable {
+		t.Fatalf("sign-in without a configured password must answer 503, got %d", resp.status)
+	}
+	if resp := unset.admin(http.MethodGet, PathAPI+"/sets", nil); resp.status != http.StatusServiceUnavailable {
+		t.Fatalf("reads without a configured password must answer 503, got %d", resp.status)
 	}
 
 	f := newFixture(t, password)
-	page := f.get("/admin")
-	if page.status != http.StatusUnauthorized || !strings.HasPrefix(page.headers.Get("WWW-Authenticate"), "Basic") {
-		t.Fatalf("missing credentials: %d %q", page.status, page.headers.Get("WWW-Authenticate"))
+	f.get(PathAPI+"/session").decode(t, &state)
+	if !state.Configured || state.Authenticated {
+		t.Fatalf("fresh visitor: %+v", state)
 	}
-	page = f.request(http.MethodGet, "/admin", nil, func(req *http.Request) { req.SetBasicAuth("admin", "wrong") })
-	if page.status != http.StatusUnauthorized {
-		t.Fatalf("wrong password must be refused, got %d", page.status)
+	if resp := f.get(PathAPI + "/sets"); resp.status != http.StatusUnauthorized {
+		t.Fatalf("anonymous read must be refused, got %d", resp.status)
 	}
-	if page = f.get("/admin/keys"); page.status != http.StatusUnauthorized {
-		t.Fatalf("keys page must be guarded, got %d", page.status)
+	if resp := f.request(http.MethodPost, PathAPI+"/login", map[string]string{"password": password}, nil); resp.status != http.StatusForbidden {
+		t.Fatalf("sign-in without origin evidence must be refused, got %d", resp.status)
 	}
-	if page = f.admin(http.MethodGet, "/admin", nil); page.status != http.StatusOK {
-		t.Fatalf("valid credentials: %d", page.status)
+	if resp := f.signIn("wrong"); resp.status != http.StatusUnauthorized {
+		t.Fatalf("wrong password must be refused, got %d", resp.status)
 	}
-	mustContain(t, page.body, "Nothing is waiting.")
+	resp := f.signIn(password)
+	if resp.status != http.StatusOK {
+		t.Fatalf("sign-in: %d %s", resp.status, resp.body)
+	}
+	cookie := sessionCookieOf(t, resp)
+	if !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode || cookie.Path != PathAdmin {
+		t.Fatalf("session cookie flags: %+v", cookie)
+	}
+	if resp := f.request(http.MethodGet, PathAPI+"/session", nil, withCookie(cookie)); resp.status != http.StatusOK || !strings.Contains(resp.body, `"authenticated":true`) {
+		t.Fatalf("cookie must authenticate: %d %s", resp.status, resp.body)
+	}
+	if resp := f.request(http.MethodGet, PathAPI+"/sets", nil, withCookie(cookie)); resp.status != http.StatusOK {
+		t.Fatalf("cookie read: %d %s", resp.status, resp.body)
+	}
+	if resp := f.request(http.MethodGet, PathAPI+"/sets", nil, withCookie(&http.Cookie{Name: sessionCookie, Value: cookie.Value + "x"})); resp.status != http.StatusUnauthorized {
+		t.Fatalf("tampered cookie must be refused, got %d", resp.status)
+	}
+
+	f.clock = f.clock.Add(sessionTTL + time.Minute)
+	if resp := f.request(http.MethodGet, PathAPI+"/sets", nil, withCookie(cookie)); resp.status != http.StatusUnauthorized {
+		t.Fatalf("expired session must be refused, got %d", resp.status)
+	}
+	f.clock = f.clock.Add(-sessionTTL)
+
+	f.web.AdminPassword = "rotated"
+	if resp := f.request(http.MethodGet, PathAPI+"/sets", nil, withCookie(cookie)); resp.status != http.StatusUnauthorized {
+		t.Fatalf("a password change must end every session, got %d", resp.status)
+	}
+	f.web.AdminPassword = password
+
+	out := f.request(http.MethodPost, PathAPI+"/logout", nil, withCookie(cookie))
+	if out.status != http.StatusNoContent || sessionCookieOf(t, out).MaxAge >= 0 {
+		t.Fatalf("logout must clear the cookie: %d %v", out.status, out.headers)
+	}
+
+	for i := 0; i < loginAttempts; i++ {
+		f.signIn("wrong")
+	}
+	if resp := f.signIn(password); resp.status != http.StatusTooManyRequests {
+		t.Fatalf("brute force must be throttled, got %d", resp.status)
+	}
 }
 
-func TestAdminQueueAndActions(t *testing.T) {
+func TestQueueAndActions(t *testing.T) {
 	f := newFixture(t, password)
 	pendingID, env := f.share("Queue <script>alert(1)</script>", authorAddress, "youtube.com")
 	f.build()
 
-	page := f.admin(http.MethodGet, "/admin", nil)
-	if page.status != http.StatusOK {
-		t.Fatalf("queue: %d", page.status)
+	resp := f.admin(http.MethodGet, PathAPI+"/sets", nil)
+	if resp.status != http.StatusOK {
+		t.Fatalf("sets: %d %s", resp.status, resp.body)
 	}
-	mustContain(t, page.body, "Pending (1)", "Queue &lt;script&gt;alert(1)&lt;/script&gt;", pendingID+"/1", "seen from AS64500 RU",
-		"www.google.com <span class=\"muted\">(attached TLS capture)</span>", "needs_payload", "/b4/hub/blob/"+env.Payloads[0].SHA256,
-		"/admin/sets/"+pendingID+"/1/approve", "/admin/sets/"+pendingID+"/1/reject", "/admin/sets/"+pendingID+"/1/hide", "&#34;payload_file&#34;: &#34;sha256:")
-	mustNotContain(t, page.body, "<script>alert(1)</script>")
+	var sets SetsView
+	resp.decode(t, &sets)
+	if len(sets.Pending) != 1 || len(sets.Listed) != 0 {
+		t.Fatalf("one pending set expected: %+v", sets)
+	}
+	p := sets.Pending[0]
+	if p.SetID != pendingID || p.Version != 1 || p.Title != "Queue <script>alert(1)</script>" || p.ASNObserved != "64500" || p.CountryObserved != "RU" {
+		t.Fatalf("pending entry: %+v", p)
+	}
+	if p.Lineage == nil || p.Lineage.Kind != LineageFirst {
+		t.Fatalf("first version lineage: %+v", p.Lineage)
+	}
+	if len(p.Emitted) != 1 || p.Emitted[0].Name != "www.google.com" || p.Emitted[0].Source != SourceCapture {
+		t.Fatalf("emitted names: %+v", p.Emitted)
+	}
+	if len(p.Payloads) != 1 || p.Payloads[0].SHA256 != env.Payloads[0].SHA256 {
+		t.Fatalf("payloads: %+v", p.Payloads)
+	}
+	if !strings.Contains(strings.Join(p.Flags, ","), "needs_payload") {
+		t.Fatalf("flags: %v", p.Flags)
+	}
+	if _, ok := p.Projection["faking"]; !ok {
+		t.Fatalf("projection must be carried raw: %v", p.Projection)
+	}
 
-	if page = f.get("/"); strings.Contains(page.body, pendingID) {
-		t.Fatalf("a pending set must not be public")
+	if resp = f.admin(http.MethodPost, setPath(pendingID, 1, ActionReject), map[string]string{}); resp.status != http.StatusBadRequest {
+		t.Fatalf("reject without a reason must be refused, got %d", resp.status)
 	}
-
-	page = f.admin(http.MethodPost, "/admin/sets/"+pendingID+"/1/reject", url.Values{})
-	if page.status != http.StatusBadRequest {
-		t.Fatalf("reject without a reason must be refused, got %d", page.status)
-	}
-	page = f.request(http.MethodPost, "/admin/sets/"+pendingID+"/1/approve", url.Values{}, func(req *http.Request) {
+	resp = f.request(http.MethodPost, setPath(pendingID, 1, ActionApprove), nil, func(req *http.Request) {
 		asAdmin(req)
 		req.Header.Set("Sec-Fetch-Site", "cross-site")
 	})
-	if page.status != http.StatusForbidden {
-		t.Fatalf("cross-site posts must be refused, got %d", page.status)
+	if resp.status != http.StatusForbidden {
+		t.Fatalf("cross-site posts must be refused, got %d", resp.status)
 	}
-	page = f.request(http.MethodPost, "/admin/sets/"+pendingID+"/1/approve", url.Values{}, func(req *http.Request) {
+	resp = f.request(http.MethodPost, setPath(pendingID, 1, ActionApprove), nil, func(req *http.Request) {
 		req.SetBasicAuth("admin", password)
 	})
-	if page.status != http.StatusForbidden {
-		t.Fatalf("a post with no origin evidence at all must be refused, got %d", page.status)
+	if resp.status != http.StatusForbidden {
+		t.Fatalf("a post with no origin evidence at all must be refused, got %d", resp.status)
 	}
 
-	page = f.admin(http.MethodPost, "/admin/sets/"+pendingID+"/1/approve", url.Values{})
-	if page.status != http.StatusSeeOther || !strings.HasPrefix(page.location, "/admin?notice=") {
-		t.Fatalf("approve: %d %q", page.status, page.location)
+	resp = f.admin(http.MethodPost, setPath(pendingID, 1, ActionApprove), nil)
+	if resp.status != http.StatusOK || !strings.Contains(resp.body, "approved "+pendingID+"/1") {
+		t.Fatalf("approve: %d %s", resp.status, resp.body)
 	}
-	afterApprove := page.location
 	if f.rebuilds != 1 {
 		t.Fatalf("approve must rebuild the catalogue, rebuilds %d", f.rebuilds)
 	}
@@ -297,15 +398,28 @@ func TestAdminQueueAndActions(t *testing.T) {
 	if latest := f.builder.Latest(); latest == nil || latest.ByID[pendingID] == nil {
 		t.Fatalf("the approved set must be in the rebuilt catalogue")
 	}
-	if page = f.get("/s/" + pendingID); page.status != http.StatusNotFound {
-		t.Fatalf("there is no public set page any more, got %d", page.status)
+	f.admin(http.MethodGet, PathAPI+"/sets", nil).decode(t, &sets)
+	if len(sets.Pending) != 0 || len(sets.Listed) != 1 || len(sets.Listed[0].Versions) != 1 {
+		t.Fatalf("after approve: %+v", sets)
 	}
-	page = f.admin(http.MethodGet, afterApprove, nil)
-	mustContain(t, page.body, "Pending (0)", "Listed (1)", "approved "+pendingID+"/1")
 
-	page = f.admin(http.MethodPost, "/admin/sets/"+pendingID+"/1/hide", url.Values{"reason": {"breaks video on ISP A"}})
-	if page.status != http.StatusSeeOther {
-		t.Fatalf("hide: %d", page.status)
+	f.vote(pendingID, 1, v.FP, voterAddress)
+	var detail SetDetailView
+	resp = f.admin(http.MethodGet, PathAPI+"/sets/"+pendingID, nil)
+	if resp.status != http.StatusOK {
+		t.Fatalf("detail: %d %s", resp.status, resp.body)
+	}
+	resp.decode(t, &detail)
+	if detail.ID != pendingID || len(detail.Versions) != 1 || len(detail.Votes) != 2 || detail.Versions[0].Votes.Works != 2 {
+		t.Fatalf("detail: %+v", detail)
+	}
+	if resp = f.admin(http.MethodGet, PathAPI+"/sets/01ARZ3NDEKTSV4RRFFQ69G5FAV", nil); resp.status != http.StatusNotFound {
+		t.Fatalf("unknown set must be 404, got %d", resp.status)
+	}
+
+	resp = f.admin(http.MethodPost, setPath(pendingID, 1, ActionHide), map[string]string{"reason": "breaks video on ISP A"})
+	if resp.status != http.StatusOK {
+		t.Fatalf("hide: %d %s", resp.status, resp.body)
 	}
 	v, _ = f.store.GetVersion(context.Background(), pendingID, 1)
 	if v.Status != hubwire.SetStatusHidden || v.StatusReason != "breaks video on ISP A" {
@@ -314,45 +428,75 @@ func TestAdminQueueAndActions(t *testing.T) {
 	if latest := f.builder.Latest(); latest.ByID[pendingID] != nil {
 		t.Fatalf("a hidden set must leave the catalogue")
 	}
-	page = f.admin(http.MethodGet, "/admin", nil)
-	mustContain(t, page.body, "Hidden (1)", "breaks video on ISP A")
+	f.admin(http.MethodGet, PathAPI+"/sets", nil).decode(t, &sets)
+	if len(sets.Hidden) != 1 || sets.Hidden[0].StatusReason != "breaks video on ISP A" {
+		t.Fatalf("hidden: %+v", sets.Hidden)
+	}
 
 	rejectedID, _ := f.share("Second", otherAddress, "example.net")
-	page = f.admin(http.MethodPost, "/admin/sets/"+rejectedID+"/1/reject", url.Values{"reason": {"private domain"}})
-	if page.status != http.StatusSeeOther {
-		t.Fatalf("reject: %d", page.status)
+	resp = f.admin(http.MethodPost, setPath(rejectedID, 1, ActionReject), map[string]string{"reason": "private domain"})
+	if resp.status != http.StatusOK {
+		t.Fatalf("reject: %d %s", resp.status, resp.body)
 	}
 	v, _ = f.store.GetVersion(context.Background(), rejectedID, 1)
 	if v.Status != hubwire.SetStatusRejected || v.StatusReason != "private domain" {
 		t.Fatalf("rejected version: %+v", v)
 	}
-	page = f.admin(http.MethodGet, "/admin", nil)
-	mustContain(t, page.body, "Rejected (1)", "private domain")
-
-	if page = f.admin(http.MethodPost, "/admin/sets/"+rejectedID+"/9/approve", url.Values{}); page.status != http.StatusNotFound {
-		t.Fatalf("unknown version must be 404, got %d", page.status)
+	f.admin(http.MethodGet, PathAPI+"/sets", nil).decode(t, &sets)
+	if len(sets.Rejected) != 1 {
+		t.Fatalf("rejected: %+v", sets.Rejected)
 	}
-	if page = f.admin(http.MethodPost, "/admin/sets/"+rejectedID+"/1/explode", url.Values{}); page.status != http.StatusNotFound {
-		t.Fatalf("unknown action must be 404, got %d", page.status)
+
+	if resp = f.admin(http.MethodPost, setPath(rejectedID, 9, ActionApprove), nil); resp.status != http.StatusNotFound {
+		t.Fatalf("unknown version must be 404, got %d", resp.status)
+	}
+	if resp = f.admin(http.MethodPost, setPath(rejectedID, 1, "explode"), nil); resp.status != http.StatusNotFound {
+		t.Fatalf("unknown action must be 404, got %d", resp.status)
+	}
+	if resp = f.admin(http.MethodPost, setPath(rejectedID, 1, ActionApprove), map[string]string{"bogus": "field"}); resp.status != http.StatusBadRequest {
+		t.Fatalf("unknown body fields must be refused, got %d", resp.status)
+	}
+
+	var overview OverviewView
+	resp = f.admin(http.MethodGet, PathAPI+"/overview", nil)
+	if resp.status != http.StatusOK {
+		t.Fatalf("overview: %d %s", resp.status, resp.body)
+	}
+	resp.decode(t, &overview)
+	if overview.Counts.Hidden != 1 || overview.Counts.Rejected != 1 || overview.Counts.Keys != 3 || overview.Counts.Votes != 3 || !overview.Catalogue.Published || overview.Catalogue.Sets != 0 || overview.Version != "test" {
+		t.Fatalf("overview: %+v", overview)
+	}
+
+	var feedback FeedbackView
+	f.admin(http.MethodGet, PathAPI+"/feedback?limit=5", nil).decode(t, &feedback)
+	if len(feedback.Votes) != 3 || feedback.Votes[0].SetID != rejectedID || feedback.Votes[1].Kind != score.KindManualWorks {
+		t.Fatalf("feedback: %+v", feedback)
+	}
+	if resp = f.admin(http.MethodGet, PathAPI+"/feedback?limit=zero", nil); resp.status != http.StatusBadRequest {
+		t.Fatalf("bad limit must be refused, got %d", resp.status)
 	}
 }
 
-func TestAdminKeys(t *testing.T) {
+func TestKeys(t *testing.T) {
 	f := newFixture(t, password)
 	setID, _ := f.share("Keyed", authorAddress, "youtube.com")
 	v, err := f.store.GetVersion(context.Background(), setID, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	page := f.admin(http.MethodGet, "/admin/keys", nil)
-	if page.status != http.StatusOK {
-		t.Fatalf("keys: %d", page.status)
+	var keys []KeyView
+	resp := f.admin(http.MethodGet, PathAPI+"/keys", nil)
+	if resp.status != http.StatusOK {
+		t.Fatalf("keys: %d", resp.status)
 	}
-	mustContain(t, page.body, "Keys (1)", v.UploaderHMAC, "/admin/keys/"+v.UploaderHMAC+"/ban", "<td>1</td>")
+	resp.decode(t, &keys)
+	if len(keys) != 1 || keys[0].KeyHMAC != v.UploaderHMAC || keys[0].Sets != 1 || keys[0].Banned {
+		t.Fatalf("keys: %+v", keys)
+	}
 
-	page = f.admin(http.MethodPost, "/admin/keys/"+v.UploaderHMAC+"/ban", url.Values{"reason": {"spam"}})
-	if page.status != http.StatusSeeOther || !strings.HasPrefix(page.location, "/admin/keys?notice=") {
-		t.Fatalf("ban: %d %q", page.status, page.location)
+	resp = f.admin(http.MethodPost, PathAPI+"/keys/"+v.UploaderHMAC+"/ban", map[string]string{"reason": "spam"})
+	if resp.status != http.StatusOK {
+		t.Fatalf("ban: %d %s", resp.status, resp.body)
 	}
 	key, err := f.store.GetKey(context.Background(), v.UploaderHMAC)
 	if err != nil || !key.Banned || key.BanReason != "spam" {
@@ -361,16 +505,62 @@ func TestAdminKeys(t *testing.T) {
 	if f.rebuilds != 1 {
 		t.Fatalf("a ban must rebuild the catalogue, rebuilds %d", f.rebuilds)
 	}
-	page = f.admin(http.MethodGet, "/admin/keys", nil)
-	mustContain(t, page.body, "banned", "spam", "/admin/keys/"+v.UploaderHMAC+"/unban")
+	f.admin(http.MethodGet, PathAPI+"/keys", nil).decode(t, &keys)
+	if !keys[0].Banned || keys[0].BanReason != "spam" || keys[0].BannedAt == nil {
+		t.Fatalf("banned view: %+v", keys[0])
+	}
 
-	if page = f.admin(http.MethodPost, "/admin/keys/"+v.UploaderHMAC+"/unban", url.Values{}); page.status != http.StatusSeeOther {
-		t.Fatalf("unban: %d", page.status)
+	if resp = f.admin(http.MethodPost, PathAPI+"/keys/"+v.UploaderHMAC+"/unban", nil); resp.status != http.StatusOK {
+		t.Fatalf("unban: %d", resp.status)
 	}
 	if key, _ = f.store.GetKey(context.Background(), v.UploaderHMAC); key.Banned {
 		t.Fatalf("key must be unbanned")
 	}
-	if page = f.admin(http.MethodPost, "/admin/keys/not-a-key/ban", url.Values{}); page.status != http.StatusNotFound {
-		t.Fatalf("malformed key must be 404, got %d", page.status)
+	if resp = f.admin(http.MethodPost, PathAPI+"/keys/not-a-key/ban", nil); resp.status != http.StatusNotFound {
+		t.Fatalf("malformed key must be 404, got %d", resp.status)
+	}
+}
+
+func TestCatalogueOperations(t *testing.T) {
+	f := newFixture(t, password)
+	setID, _ := f.share("Ops", authorAddress, "youtube.com")
+	f.approve(setID)
+
+	resp := f.admin(http.MethodPost, PathAPI+"/catalogue/build", nil)
+	if resp.status != http.StatusOK || !strings.Contains(resp.body, "with 1 sets") {
+		t.Fatalf("build: %d %s", resp.status, resp.body)
+	}
+	var overview OverviewView
+	f.admin(http.MethodGet, PathAPI+"/overview", nil).decode(t, &overview)
+	if !overview.Catalogue.Published || overview.Catalogue.Sets != 1 || overview.Catalogue.Dirty {
+		t.Fatalf("after build: %+v", overview.Catalogue)
+	}
+	epoch := overview.Catalogue.Epoch
+
+	f.clock = f.clock.Add(time.Minute)
+	if resp = f.admin(http.MethodPost, PathAPI+"/catalogue/epoch", nil); resp.status != http.StatusOK {
+		t.Fatalf("epoch: %d %s", resp.status, resp.body)
+	}
+	f.admin(http.MethodGet, PathAPI+"/overview", nil).decode(t, &overview)
+	if overview.Catalogue.Epoch <= epoch || overview.Catalogue.Seq != 1 {
+		t.Fatalf("a new epoch must restart the sequence: %+v", overview.Catalogue)
+	}
+
+	other := testkit.Identity(t)
+	if resp = f.admin(http.MethodPost, PathAPI+"/catalogue/revoke", map[string]string{"key_id": "not-a-key"}); resp.status != http.StatusBadRequest {
+		t.Fatalf("malformed key id must be refused, got %d", resp.status)
+	}
+	if resp = f.admin(http.MethodPost, PathAPI+"/catalogue/revoke", map[string]string{"key_id": f.web.KeyID}); resp.status != http.StatusBadRequest {
+		t.Fatalf("revoking the hub's own key must be refused, got %d", resp.status)
+	}
+	if resp = f.admin(http.MethodPost, PathAPI+"/catalogue/revoke", map[string]string{"key_id": other.KeyID()}); resp.status != http.StatusOK {
+		t.Fatalf("revoke: %d %s", resp.status, resp.body)
+	}
+	f.admin(http.MethodGet, PathAPI+"/overview", nil).decode(t, &overview)
+	if len(overview.Catalogue.RevokedKeys) != 1 || overview.Catalogue.RevokedKeys[0] != other.KeyID() {
+		t.Fatalf("revoked keys: %+v", overview.Catalogue.RevokedKeys)
+	}
+	if latest := f.builder.Latest(); len(latest.Manifest.RevokedKeys) != 1 {
+		t.Fatalf("the manifest must carry the revocation: %+v", latest.Manifest.RevokedKeys)
 	}
 }

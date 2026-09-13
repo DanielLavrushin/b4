@@ -205,12 +205,25 @@ HUB_UPSTREAM ?= https://hub.b4core.app
 HUB_MIRROR_DATA ?= $(HUB_DIR)/data-mirror
 HUB_MIRROR_LISTEN ?= 0.0.0.0:7101
 
+.PHONY: hub-build-ui
+hub-build-ui:
+	@echo "Building hub admin console..."
+	@cd $(HUB_DIR)/ui && VITE_APP_VERSION="$(VERSION)" pnpm build
+	@echo "Hub admin console build complete."
+
 .PHONY: hub-build
-hub-build:
+hub-build: hub-build-ui
 	@echo "Building hub service..."
 	@mkdir -p $(OUT_DIR)
 	@CGO_ENABLED=0 go -C $(HUB_DIR) build $(BUILDFLAGS) -ldflags "-s -w -X main.Version=$(VERSION)" -o ../$(OUT_DIR)/b4hub ./cmd/b4hub
 	@echo "Hub build complete: $(OUT_DIR)/b4hub"
+
+.PHONY: hub-linux-amd64
+hub-linux-amd64: hub-build-ui
+	@echo "Building hub service for linux/amd64..."
+	@mkdir -p $(OUT_DIR)
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go -C $(HUB_DIR) build $(BUILDFLAGS) -ldflags "-s -w -X main.Version=$(VERSION)" -o ../$(OUT_DIR)/b4hub-linux-amd64 ./cmd/b4hub
+	@echo "Hub build complete: $(OUT_DIR)/b4hub-linux-amd64"
 
 .PHONY: hub-test
 hub-test:
@@ -218,15 +231,15 @@ hub-test:
 
 .PHONY: hub-keygen
 hub-keygen: hub-build
-	@$(OUT_DIR)/b4hub keygen -data $(HUB_DATA)
+	@$(OUT_DIR)/b4hub keygen --data $(HUB_DATA)
 
 .PHONY: hub-run
 hub-run: hub-build
-	@$(OUT_DIR)/b4hub serve -data $(HUB_DATA) -listen $(HUB_LISTEN) -public-url $(HUB_PUBLIC_URL)
+	@$(OUT_DIR)/b4hub serve --data $(HUB_DATA) --listen $(HUB_LISTEN) --public-url $(HUB_PUBLIC_URL)
 
 .PHONY: hub-mirror
 hub-mirror: hub-build
-	@$(OUT_DIR)/b4hub mirror -data $(HUB_MIRROR_DATA) -upstream $(HUB_UPSTREAM) -listen $(HUB_MIRROR_LISTEN) -public-url http://127.0.0.1:7101
+	@$(OUT_DIR)/b4hub mirror --data $(HUB_MIRROR_DATA) --upstream $(HUB_UPSTREAM) --listen $(HUB_MIRROR_LISTEN) --public-url http://127.0.0.1:7101
 
 SFTP_PORT ?= 22
 SSH_OPTS ?= -o StrictHostKeyChecking=no -o IPQoS=none
@@ -287,7 +300,9 @@ help:
 	@printf "  %-25s %s\n" "make build-installer" "Build the installer script"
 	@printf "  %-25s %s\n" "make watch-installer" "Watch and rebuild installer on changes"
 	@printf "  %-25s %s\n" "make build-ui" "Build the web UI"
-	@printf "  %-25s %s\n" "make hub-build" "Build the community hub service into out/b4hub"
+	@printf "  %-25s %s\n" "make hub-build-ui" "Build the hub admin console (pnpm build in hub/ui)"
+	@printf "  %-25s %s\n" "make hub-build" "Build the community hub service into out/b4hub (runs hub-build-ui first)"
+	@printf "  %-25s %s\n" "make hub-linux-amd64" "Cross-compile the hub service for the deployment box"
 	@printf "  %-25s %s\n" "make hub-test" "Run the hub service tests"
 	@printf "  %-25s %s\n" "make hub-keygen" "Create a development hub key under hub/data"
 	@printf "  %-25s %s\n" "make hub-run" "Run the hub service locally (HUB_LISTEN, default 0.0.0.0:7100)"

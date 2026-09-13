@@ -6,6 +6,7 @@ replace github.com/daniellavrushin/b4 => ../src
 
 require (
 	github.com/daniellavrushin/b4 v0.0.0
+	github.com/spf13/cobra v1.10.1
 	modernc.org/sqlite v1.58.0
 )
 
@@ -16,7 +17,6 @@ require (
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/spf13/cobra v1.10.1 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/yl2chen/cidranger v1.0.2 // indirect
 	golang.org/x/crypto v0.43.0 // indirect

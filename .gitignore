@@ -53,3 +53,6 @@ CLAUDE.md
 hub/data/
 hub/b4hub
 hub/data-mirror/
+
+# web workspaces
+node_modules/

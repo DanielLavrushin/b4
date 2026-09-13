@@ -42,7 +42,7 @@ jobs:
           node-version: 22
           cache: "pnpm"
           cache-dependency-path: |
-            ./src/http/ui/pnpm-lock.yaml
+            ./pnpm-lock.yaml
 
       - name: Setup Go
         uses: actions/setup-go@v6
