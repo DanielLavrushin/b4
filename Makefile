@@ -225,6 +225,21 @@ hub-linux-amd64: hub-build-ui
 	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go -C $(HUB_DIR) build $(BUILDFLAGS) -ldflags "-s -w -X main.Version=$(VERSION)" -o ../$(OUT_DIR)/b4hub-linux-amd64 ./cmd/b4hub
 	@echo "Hub build complete: $(OUT_DIR)/b4hub-linux-amd64"
 
+HUB_DEPLOY_HOST ?=
+HUB_DEPLOY_KEY ?=
+HUB_DEPLOY_SSH := ssh $(if $(HUB_DEPLOY_KEY),-i $(HUB_DEPLOY_KEY)) -o StrictHostKeyChecking=accept-new $(HUB_DEPLOY_HOST)
+
+.PHONY: hub-deploy
+hub-deploy: hub-linux-amd64
+	@if [ -z "$(HUB_DEPLOY_HOST)" ]; then \
+		echo "Error: HUB_DEPLOY_HOST (user@host) must be set in .env or on the command line"; \
+		exit 1; \
+	fi
+	@echo "Deploying b4hub $(VERSION) to $(HUB_DEPLOY_HOST)..."
+	@scp $(if $(HUB_DEPLOY_KEY),-i $(HUB_DEPLOY_KEY)) -o StrictHostKeyChecking=accept-new $(OUT_DIR)/b4hub-linux-amd64 $(HUB_DEPLOY_HOST):/tmp/b4hub-linux-amd64
+	@$(HUB_DEPLOY_SSH) 'sudo install -m0755 /tmp/b4hub-linux-amd64 /usr/local/bin/b4hub && rm -f /tmp/b4hub-linux-amd64 && sudo systemctl restart b4hub && sleep 2 && systemctl is-active b4hub && b4hub version'
+	@echo "Hub deploy complete."
+
 .PHONY: hub-test
 hub-test:
 	@go -C $(HUB_DIR) test ./...
@@ -303,6 +318,7 @@ help:
 	@printf "  %-25s %s\n" "make hub-build-ui" "Build the hub admin console (pnpm build in hub/ui)"
 	@printf "  %-25s %s\n" "make hub-build" "Build the community hub service into out/b4hub (runs hub-build-ui first)"
 	@printf "  %-25s %s\n" "make hub-linux-amd64" "Cross-compile the hub service for the deployment box"
+	@printf "  %-25s %s\n" "make hub-deploy" "Build and install b4hub on the box in .env (HUB_DEPLOY_HOST, HUB_DEPLOY_KEY), then restart the unit"
 	@printf "  %-25s %s\n" "make hub-test" "Run the hub service tests"
 	@printf "  %-25s %s\n" "make hub-keygen" "Create a development hub key under hub/data"
 	@printf "  %-25s %s\n" "make hub-run" "Run the hub service locally (HUB_LISTEN, default 0.0.0.0:7100)"
