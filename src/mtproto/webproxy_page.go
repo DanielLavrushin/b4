@@ -56,7 +56,7 @@ func (c *webSiteCache) load(path string) []byte {
 		return c.body
 	}
 	data, err := os.ReadFile(path)
-	if err != nil || len(data) == 0 {
+	if err != nil || len(data) == 0 || len(data) > WebProxyPageMaxSize {
 		c.body = nil
 		return nil
 	}
