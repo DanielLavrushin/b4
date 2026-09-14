@@ -29,8 +29,9 @@ const (
 )
 
 type bucket struct {
-	start time.Time
-	count int
+	start  time.Time
+	window time.Duration
+	count  int
 }
 
 type Limiter struct {
@@ -59,10 +60,11 @@ func (l *Limiter) Allow(scope, id string, limit int, window time.Duration) (bool
 		if len(l.buckets) >= maxLiveBuckets {
 			return false, crowdedInterval
 		}
-		b = &bucket{start: start}
+		b = &bucket{start: start, window: window}
 		l.buckets[key] = b
 	} else if !b.start.Equal(start) {
 		b.start = start
+		b.window = window
 		b.count = 0
 	}
 	if b.count >= limit {
@@ -96,7 +98,7 @@ func (l *Limiter) sweep(now time.Time) {
 	}
 	l.sweptAt = now
 	for key, b := range l.buckets {
-		if now.Sub(b.start) > Day {
+		if now.Sub(b.start) > b.window {
 			delete(l.buckets, key)
 		}
 	}

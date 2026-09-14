@@ -54,3 +54,43 @@ func TestPrefixAndAddressKey(t *testing.T) {
 		t.Errorf("different prefixes must differ")
 	}
 }
+
+func TestSweepDropsBucketsByTheirOwnWindow(t *testing.T) {
+	clock := time.Date(2026, 9, 12, 12, 0, 0, 0, time.UTC)
+	l := New(func() time.Time { return clock })
+	l.Allow(ScopeRequest, "net", RequestsPerHour, Hour)
+	l.Allow(ScopeShare, "key", SharesPerDay, Day)
+	if len(l.buckets) != 2 {
+		t.Fatalf("two buckets expected, got %d", len(l.buckets))
+	}
+	clock = clock.Add(2 * time.Hour)
+	l.Allow(ScopeVote, "other", VotesPerDay, Day)
+	if _, ok := l.buckets[ScopeRequest+"|net"]; ok {
+		t.Errorf("an hourly bucket must be swept once its hour is over")
+	}
+	if _, ok := l.buckets[ScopeShare+"|key"]; !ok {
+		t.Errorf("a daily bucket must survive the sweep within its day")
+	}
+	clock = clock.Add(Day)
+	l.Allow(ScopeVote, "other", VotesPerDay, Day)
+	if _, ok := l.buckets[ScopeShare+"|key"]; ok {
+		t.Errorf("a daily bucket must be swept once its day is over")
+	}
+}
+
+func TestRefundOnlyWithinTheSameWindow(t *testing.T) {
+	clock := time.Date(2026, 9, 12, 12, 0, 0, 0, time.UTC)
+	l := New(func() time.Time { return clock })
+	for i := 0; i < SharesPerDay; i++ {
+		l.Allow(ScopeShare, "k", SharesPerDay, Day)
+	}
+	l.Refund(ScopeShare, "k", Day)
+	if ok, _ := l.Allow(ScopeShare, "k", SharesPerDay, Day); !ok {
+		t.Fatalf("a refund must free one slot")
+	}
+	clock = clock.Add(Day)
+	l.Refund(ScopeShare, "k", Day)
+	if l.buckets[ScopeShare+"|k"].count != SharesPerDay {
+		t.Errorf("a refund after the window must not touch the old count, got %d", l.buckets[ScopeShare+"|k"].count)
+	}
+}
