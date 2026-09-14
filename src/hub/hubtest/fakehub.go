@@ -33,6 +33,7 @@ type FakeHub struct {
 	records   []*hubwire.Record
 	answer    func(rec *hubwire.Record) Answer
 	down      bool
+	noFile    bool
 }
 
 func New(t testing.TB) *FakeHub {
@@ -74,6 +75,12 @@ func (f *FakeHub) Config(t testing.TB, configPath string) *config.Config {
 func (f *FakeHub) SetDown(down bool) {
 	f.mu.Lock()
 	f.down = down
+	f.mu.Unlock()
+}
+
+func (f *FakeHub) SetCatalogueMissing(missing bool) {
+	f.mu.Lock()
+	f.noFile = missing
 	f.mu.Unlock()
 }
 
@@ -224,9 +231,9 @@ func (f *FakeHub) serveFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f.mu.Lock()
-	m, gz := f.manifest, f.catalogue
+	m, gz, missing := f.manifest, f.catalogue, f.noFile
 	f.mu.Unlock()
-	if m == nil || r.PathValue("file") != m.Catalogue.File {
+	if m == nil || missing || r.PathValue("file") != m.Catalogue.File {
 		http.NotFound(w, r)
 		return
 	}

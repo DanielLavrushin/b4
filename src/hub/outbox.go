@@ -84,6 +84,9 @@ func (s *Service) FlushOutbox(ctx context.Context) {
 			_ = os.Remove(path)
 			continue
 		}
+		if ctx.Err() != nil {
+			return
+		}
 		if Retryable(err) {
 			log.Debugf("hub: outbox delivery postponed: %v", err)
 			return

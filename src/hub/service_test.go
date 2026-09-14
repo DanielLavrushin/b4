@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -115,6 +116,48 @@ func TestSyncIgnoresOlderManifestsAndReportsExpiry(t *testing.T) {
 	st := box.svc.Status()
 	if st.Catalogue == nil || st.Catalogue.Epoch != 3 || !st.Catalogue.Expired {
 		t.Errorf("an expired manifest must be kept and reported as expired: %+v", st.Catalogue)
+	}
+}
+
+func TestSyncFailsWhenANewerCatalogueIsNotDelivered(t *testing.T) {
+	stale := hubtest.New(t)
+	fresh := hubtest.New(t)
+	fresh.Identity = stale.Identity
+	stale.Publish(t, sampleCatalogue(t, 1, 1), time.Now().Add(time.Hour))
+	fresh.Publish(t, sampleCatalogue(t, 1, 2), time.Now().Add(time.Hour))
+	box := newTestBox(t, stale, t.TempDir())
+	box.update(func(cfg *config.Config) { cfg.System.Hub.URLs = []string{stale.URL(), fresh.URL()} })
+
+	stale.SetDown(true)
+	if changed, err := box.svc.Sync(context.Background()); err != nil || !changed {
+		t.Fatalf("the fresh base must be synced while the first one is down: changed=%v err=%v", changed, err)
+	}
+	stale.SetDown(false)
+
+	fresh.Publish(t, sampleCatalogue(t, 1, 3), time.Now().Add(time.Hour))
+	fresh.SetCatalogueMissing(true)
+	changed, err := box.svc.Sync(context.Background())
+	if !errors.Is(err, ErrUnreachable) || changed {
+		t.Fatalf("a newer catalogue that cannot be fetched must fail the sync: changed=%v err=%v", changed, err)
+	}
+	if m := box.svc.Manifest(); m == nil || m.Seq != 2 {
+		t.Errorf("the stored catalogue must survive the failed sync")
+	}
+	if st := box.svc.Status(); st.LastError == "" {
+		t.Errorf("the failure must be reported in the status: %+v", st)
+	}
+
+	fresh.SetCatalogueMissing(false)
+	if changed, err := box.svc.Sync(context.Background()); err != nil || !changed {
+		t.Fatalf("the newer catalogue must be picked up once it is served: changed=%v err=%v", changed, err)
+	}
+	if m := box.svc.Manifest(); m.Seq != 3 {
+		t.Errorf("stored manifest seq %d, want 3", m.Seq)
+	}
+
+	fresh.Publish(t, sampleCatalogue(t, 1, 1), time.Now().Add(time.Hour))
+	if changed, err := box.svc.Sync(context.Background()); err != nil || changed {
+		t.Errorf("bases that only serve older catalogues are not a failure: changed=%v err=%v", changed, err)
 	}
 }
 
@@ -248,6 +291,47 @@ func TestSendOrQueueQueuesWhileTheHubIsDownAndFlushDrains(t *testing.T) {
 	var he *HubError
 	if sent || queued || !errors.As(err, &he) || he.Code != "banned" || he.Status != http.StatusForbidden {
 		t.Errorf("a refusal must come back as a HubError and never queue: sent=%v queued=%v err=%v", sent, queued, err)
+	}
+}
+
+func TestFlushOutboxKeepsTheRecordWhenCancelled(t *testing.T) {
+	f := hubtest.New(t)
+	box := newTestBox(t, f, t.TempDir())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	released := make(chan struct{})
+	defer close(released)
+	stalled := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != hubwire.PathMessage {
+			http.NotFound(w, r)
+			return
+		}
+		cancel()
+		<-released
+	}))
+	t.Cleanup(stalled.Close)
+	box.update(func(cfg *config.Config) { cfg.System.Hub.URLs = []string{stalled.URL, f.URL()} })
+
+	vote, err := box.svc.Sign(hubwire.RecordVote, hubwire.VoteBody{SetID: "direct", Version: 1, FP: "ff", Kind: hubwire.VoteWorks})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := box.svc.enqueue(vote); err != nil {
+		t.Fatal(err)
+	}
+
+	box.svc.FlushOutbox(ctx)
+	if box.svc.OutboxCount() != 1 {
+		t.Fatalf("a flush cancelled mid-send must keep the record, %d left", box.svc.OutboxCount())
+	}
+	if len(f.Records()) != 0 {
+		t.Errorf("no further base may be tried after the cancellation")
+	}
+
+	box.update(func(cfg *config.Config) { cfg.System.Hub.URLs = []string{f.URL()} })
+	box.svc.FlushOutbox(context.Background())
+	if box.svc.OutboxCount() != 0 || len(f.Records()) != 1 {
+		t.Errorf("the kept record must drain on the next flush: outbox=%d delivered=%d", box.svc.OutboxCount(), len(f.Records()))
 	}
 }
 

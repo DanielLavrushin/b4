@@ -19,7 +19,7 @@ func (s *Service) Sync(ctx context.Context) (bool, error) {
 	}
 	s.dropUntrusted(trusted)
 
-	var lastErr error
+	var lastErr, catalogueErr error
 	staleBases := 0
 	for _, base := range s.BaseURLs() {
 		if ctx.Err() != nil {
@@ -55,16 +55,16 @@ func (s *Service) Sync(ctx context.Context) (bool, error) {
 
 		gz, err := s.fetchCatalogueFile(ctx, base, m.Catalogue)
 		if err != nil {
-			lastErr = err
+			catalogueErr = err
 			continue
 		}
 		cat, err := decodeCatalogue(gz)
 		if err != nil {
-			lastErr = fmt.Errorf("%s: %w", base, err)
+			catalogueErr = fmt.Errorf("%s: %w", base, err)
 			continue
 		}
 		if cat.Epoch != m.Epoch || cat.Seq != m.Seq {
-			lastErr = fmt.Errorf("%s: catalogue %d-%d does not match manifest %d-%d", base, cat.Epoch, cat.Seq, m.Epoch, m.Seq)
+			catalogueErr = fmt.Errorf("%s: catalogue %d-%d does not match manifest %d-%d", base, cat.Epoch, cat.Seq, m.Epoch, m.Seq)
 			continue
 		}
 		if err := s.store().save(m, gz); err != nil {
@@ -79,7 +79,9 @@ func (s *Service) Sync(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 
-	if staleBases > 0 && s.catalogueLoaded() {
+	if catalogueErr != nil {
+		lastErr = catalogueErr
+	} else if staleBases > 0 && s.catalogueLoaded() {
 		s.markSynced()
 		return false, nil
 	}

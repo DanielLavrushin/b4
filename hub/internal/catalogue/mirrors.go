@@ -209,8 +209,8 @@ func (h *MirrorHealth) check(ctx context.Context, base string) error {
 	if err := json.Unmarshal(body, &m); err != nil {
 		return fmt.Errorf("manifest does not decode: %w", err)
 	}
-	if m.KeyID != h.KeyID {
-		return fmt.Errorf("manifest is signed by key %s, not by this hub", m.KeyID)
+	if err := hubwire.VerifyManifest(&m, []string{h.KeyID}); err != nil {
+		return fmt.Errorf("manifest signature: %w", err)
 	}
 	return nil
 }
