@@ -32,7 +32,8 @@ export function mergeHubLink(
       };
     }
     if ((pasted.version ?? 0) > (current.version ?? 0) && pasted.hash) {
-      return { hub: { ...current, version: pasted.version, hash: pasted.hash }, warnings: [] };
+      const { vote: _vote, voted_at: _votedAt, ...rest } = current;
+      return { hub: { ...rest, version: pasted.version, hash: pasted.hash }, warnings: [] };
     }
     return { hub: current, warnings: [] };
   }

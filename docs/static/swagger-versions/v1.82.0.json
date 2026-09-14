@@ -7506,11 +7506,20 @@
                 "hub_id": {
                     "type": "string"
                 },
+                "limit": {
+                    "type": "integer"
+                },
                 "retry_after": {
                     "type": "integer"
                 },
+                "scope": {
+                    "type": "string"
+                },
                 "version": {
                     "type": "integer"
+                },
+                "window": {
+                    "type": "string"
                 }
             }
         },
@@ -8178,6 +8187,12 @@
                     "type": "string"
                 },
                 "cc": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "source": {
                     "type": "string"
                 }
             }
