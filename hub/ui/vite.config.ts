@@ -16,7 +16,7 @@ const keepDist = (): Plugin => ({
 
 export default defineConfig({
   base: "/admin/",
-  plugins: [tsconfigPaths(), react(), keepDist()],
+  plugins: [tsconfigPaths({ projects: ["./tsconfig.json"] }), react(), keepDist()],
   build: {
     outDir: "dist",
     emptyOutDir: true,

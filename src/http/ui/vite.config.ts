@@ -11,7 +11,7 @@ console.log("Using backend:", REMOTE_BACKEND);
 console.log("Building version:", APP_VERSION);
 
 export default defineConfig({
-  plugins: [tsconfigPaths(), react()],
+  plugins: [tsconfigPaths({ projects: ["./tsconfig.json"] }), react()],
   build: {
     outDir: "dist",
     emptyOutDir: true,

@@ -222,7 +222,11 @@ HUB_ARCHS := amd64 arm64
 
 .PHONY: hub-linux-%
 hub-linux-%: hub-build-ui
-	@$(eval HUB_ARCH := $(subst hub-linux-,,$@))
+	@$(MAKE) --no-print-directory hub-go-linux-$(subst hub-linux-,,$@) VERSION=$(VERSION)
+
+.PHONY: hub-go-linux-%
+hub-go-linux-%:
+	@$(eval HUB_ARCH := $(subst hub-go-linux-,,$@))
 	@echo "Building hub service for linux/$(HUB_ARCH)..."
 	@mkdir -p $(OUT_DIR)/linux-$(HUB_ARCH) $(OUT_DIR)/assets
 	@GOOS=linux GOARCH=$(HUB_ARCH) CGO_ENABLED=0 go -C $(HUB_DIR) build $(BUILDFLAGS) -ldflags "-s -w -X main.Version=$(VERSION)" -o ../$(OUT_DIR)/linux-$(HUB_ARCH)/b4hub ./cmd/b4hub
@@ -233,7 +237,7 @@ hub-linux-%: hub-build-ui
 
 .PHONY: hub-linux-all
 hub-linux-all: hub-build-ui
-	@for arch in $(HUB_ARCHS); do $(MAKE) --no-print-directory hub-linux-$$arch VERSION=$(VERSION); done
+	@for arch in $(HUB_ARCHS); do $(MAKE) --no-print-directory hub-go-linux-$$arch VERSION=$(VERSION); done
 
 .PHONY: hub-docker
 hub-docker:
