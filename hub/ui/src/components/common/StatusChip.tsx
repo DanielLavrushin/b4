@@ -10,6 +10,7 @@ const tones: Record<string, Tone> = {
   rejected: "error",
   approved: "success",
   banned: "error",
+  trusted: "info",
   ok: "success",
   healthy: "success",
   unhealthy: "error",

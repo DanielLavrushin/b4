@@ -3,7 +3,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { get, post } from "./client";
+import { get, post, put } from "./client";
 import type {
   ActionResult,
   FeedbackView,
@@ -16,6 +16,8 @@ import type {
   SetAction,
   SetDetailView,
   SetsView,
+  LimitsView,
+  SettingsView,
 } from "@/models/api";
 
 export const keys = {
@@ -26,6 +28,7 @@ export const keys = {
   keys: ["keys"] as const,
   mirrors: ["mirrors"] as const,
   feedback: (limit: number) => ["feedback", limit] as const,
+  settings: ["settings"] as const,
 };
 
 export const fetchSession = () => get<SessionState>("/session");
@@ -133,3 +136,19 @@ export const useCatalogueRevoke = () =>
   useInvalidatingMutation((keyId: string) =>
     post<ActionResult>("/catalogue/revoke", { key_id: keyId }),
   );
+
+export const useSettings = () =>
+  useQuery({
+    queryKey: keys.settings,
+    queryFn: () => get<SettingsView>("/settings"),
+  });
+
+export const useSaveSettings = () => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (limits: LimitsView) => put<SettingsView>("/settings", { limits }),
+    onSuccess: (data) => {
+      client.setQueryData(keys.settings, data);
+    },
+  });
+};

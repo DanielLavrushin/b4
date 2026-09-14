@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -369,4 +370,74 @@ func TestBlobsDirIsUnderLayout(t *testing.T) {
 	if filepath.Dir(layout.Blobs().Dir) != layout.Root {
 		t.Errorf("blobs must live under the data root")
 	}
+}
+
+func TestRateLimitedAnswerExplainsItself(t *testing.T) {
+	f := newFixture(t)
+	author := testkit.Identity(t)
+	for i := 0; i < ratelimit.SharesPerDay; i++ {
+		set := testkit.SampleSet("x", "x.example")
+		set.Faking.TTL = uint8(10 + i)
+		expect(t, f.share(t, author, set, peerA), http.StatusAccepted, "")
+	}
+	set := testkit.SampleSet("x", "x.example")
+	set.Faking.TTL = 99
+	resp := f.share(t, author, set, peerA)
+	expect(t, resp, http.StatusTooManyRequests, CodeRateLimited)
+	if resp.Body["scope"] != ratelimit.ScopeShare || resp.Body["limit"] != ratelimit.SharesPerDay || resp.Body["window"] != "day" {
+		t.Errorf("rate limited answers name the limit, got %v", resp.Body)
+	}
+	msg, _ := resp.Body["error"].(string)
+	if !strings.Contains(msg, "5 shares per day") || !strings.Contains(msg, "try again in 12h") {
+		t.Errorf("message must say what was limited and for how long, got %q", msg)
+	}
+}
+
+func TestShareLimitFollowsSettings(t *testing.T) {
+	f := newFixture(t)
+	limits := store.DefaultSettings()
+	limits.SharesPerDay = 2
+	if err := f.store.SaveSettings(context.Background(), limits); err != nil {
+		t.Fatal(err)
+	}
+	author := testkit.Identity(t)
+	for i := 0; i < 2; i++ {
+		set := testkit.SampleSet("x", "x.example")
+		set.Faking.TTL = uint8(10 + i)
+		expect(t, f.share(t, author, set, peerA), http.StatusAccepted, "")
+	}
+	set := testkit.SampleSet("x", "x.example")
+	set.Faking.TTL = 99
+	resp := f.share(t, author, set, peerA)
+	expect(t, resp, http.StatusTooManyRequests, CodeRateLimited)
+	if resp.Body["limit"] != 2 {
+		t.Errorf("the configured limit is reported, got %v", resp.Body)
+	}
+}
+
+func TestTrustedKeyIsNotRateLimited(t *testing.T) {
+	f := newFixture(t)
+	author := testkit.Identity(t)
+	first := testkit.SampleSet("x", "x.example")
+	expect(t, f.share(t, author, first, peerA), http.StatusAccepted, "")
+	keyHMAC := hubdata.KeyHMAC(f.svc.Secret, author.KeyID())
+	if err := f.store.TrustKey(context.Background(), keyHMAC, f.clock); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < ratelimit.SharesPerDay*2; i++ {
+		set := testkit.SampleSet("x", "x.example")
+		set.Faking.TTL = uint8(10 + i)
+		expect(t, f.share(t, author, set, peerA), http.StatusAccepted, "")
+	}
+}
+
+func TestRejectedShareDoesNotSpendTheQuota(t *testing.T) {
+	f := newFixture(t)
+	author := testkit.Identity(t)
+	for i := 0; i < ratelimit.SharesPerDay*2; i++ {
+		env := testkit.BuildEnvelope(t, &config.SetConfig{})
+		env.Set = map[string]interface{}{"targets": map[string]interface{}{}}
+		expect(t, f.post(t, testkit.SignShare(t, author, env, f.clock), peerA), http.StatusBadRequest, CodeInvalidSet)
+	}
+	expect(t, f.share(t, author, testkit.SampleSet("x", "x.example"), peerA), http.StatusAccepted, "")
 }

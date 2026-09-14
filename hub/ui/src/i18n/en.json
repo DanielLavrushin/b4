@@ -28,7 +28,8 @@
     "keys": "Keys",
     "mirrors": "Mirrors",
     "feedback": "Feedback",
-    "catalogue": "Catalogue"
+    "catalogue": "Catalogue",
+    "settings": "Settings"
   },
   "login": {
     "subtitle": "Moderation console",
@@ -207,7 +208,12 @@
     "unban": "Unban",
     "banTitle": "Ban {{key}}",
     "banText": "Every set by this key leaves the catalogue and new records from it are refused.",
-    "showBanned": "Banned only"
+    "showBanned": "Banned only",
+    "trusted": "trusted {{when}}",
+    "trust": "Trust",
+    "untrust": "Untrust",
+    "trustTitle": "Trust {{key}}",
+    "trustText": "A trusted key is exempt from the per-key daily limits on shares, votes, reports and mirror announcements. Its records still go through moderation."
   },
   "mirrors": {
     "title": "Mirrors ({{count}})",
@@ -290,5 +296,34 @@
     "minutes": "{{count}} min ago",
     "hours": "{{count}} h ago",
     "days": "{{count}} d ago"
+  },
+  "settings": {
+    "limits": "Limits",
+    "limitsDesc": "How much one contributor may send",
+    "limitsText": "Per-key limits count records signed by one router key; per-network limits count by the sender's /24 (IPv6: /48). Changes apply to the next request; counters already spent today are kept.",
+    "fields": {
+      "shares_per_day": "Shares per key",
+      "votes_per_day": "Votes per key",
+      "reports_per_day": "Reports per key",
+      "mirrors_per_day": "Mirror announcements per key",
+      "new_keys_per_day": "New keys per network",
+      "requests_per_hour": "Requests per network"
+    },
+    "per": {
+      "day": "per day",
+      "hour": "per hour"
+    },
+    "isDefault": "Default",
+    "defaultIs": "Default: {{value}}",
+    "invalid": "A whole number from 1 to {{max}}",
+    "save": "Save",
+    "revert": "Revert",
+    "restoreDefaults": "Restore defaults",
+    "saved": "Settings saved",
+    "notes": "How limits are counted",
+    "notesDesc": "What the numbers mean",
+    "notesWindow": "A day is the UTC calendar day and an hour is the clock hour, so a limit reached at 22:00 UTC clears at midnight. Counters live in memory and start over when the service restarts.",
+    "notesTrusted": "A key marked as trusted on the Keys page skips every per-key limit. Per-network limits still apply to it.",
+    "notesRefund": "A record the hub rejects, or a share that turns out to duplicate an existing set, does not spend the key's quota. Only accepted records count."
   }
 }

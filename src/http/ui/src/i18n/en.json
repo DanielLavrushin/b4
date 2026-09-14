@@ -3011,6 +3011,36 @@
       "noPayloads": "No payload files; fake packets use the built-in payload.",
       "json": "Set JSON",
       "notInCatalogue": "This set is not in the catalogue on this router. Either it is still waiting for a moderator on the hub, or the catalogue has not been synced since it was approved. Check the hub's moderation queue, then Sync now under Settings, Integrations."
+    },
+    "errors": {
+      "rateLimited": "the hub accepts at most {{what}} per {{window}} from one router; try again in {{retry}}",
+      "banned": "this router's author key is banned on the hub",
+      "scope": {
+        "share_one": "{{count}} shared set",
+        "share_other": "{{count}} shared sets",
+        "vote_one": "{{count}} report on what works",
+        "vote_other": "{{count}} reports on what works",
+        "report_one": "{{count}} report to the moderators",
+        "report_other": "{{count}} reports to the moderators",
+        "mirror_one": "{{count}} mirror announcement",
+        "mirror_other": "{{count}} mirror announcements",
+        "newkey_one": "{{count}} new author key from one network",
+        "newkey_other": "{{count}} new author keys from one network",
+        "request_one": "{{count}} request from one network",
+        "request_other": "{{count}} requests from one network"
+      },
+      "window": {
+        "day": "day",
+        "hour": "hour"
+      },
+      "retry": {
+        "hoursMinutes": "{{hours}} h {{minutes}} min",
+        "hours_one": "{{count}} hour",
+        "hours_other": "{{count}} hours",
+        "minutes_one": "{{count}} minute",
+        "minutes_other": "{{count}} minutes",
+        "moment": "a moment"
+      }
     }
   }
 }

@@ -21,6 +21,42 @@ export function describeApiError(error: unknown): string {
   return String(error);
 }
 
+interface HubErrorBody {
+  code?: string;
+  retry_after?: number;
+  scope?: string;
+  limit?: number;
+  window?: string;
+}
+
+const hubScopes = new Set(["share", "vote", "report", "mirror", "newkey", "request"]);
+
+function formatRetry(t: TFunction, seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.ceil((seconds % 3600) / 60);
+  if (hours > 0 && minutes > 0) return t("hub.errors.retry.hoursMinutes", { hours, minutes });
+  if (hours > 0) return t("hub.errors.retry.hours", { count: hours });
+  if (minutes > 0) return t("hub.errors.retry.minutes", { count: minutes });
+  return t("hub.errors.retry.moment");
+}
+
+export function describeHubError(error: unknown, t: TFunction): string {
+  if (error instanceof ApiError && error.body && typeof error.body === "object") {
+    const body = error.body as HubErrorBody;
+    if (error.code === "rate_limited") {
+      const scope = body.scope && hubScopes.has(body.scope) ? body.scope : "request";
+      const window = body.window === "hour" ? "hour" : "day";
+      return t("hub.errors.rateLimited", {
+        what: t(`hub.errors.scope.${scope}`, { count: body.limit ?? 0 }),
+        window: t(`hub.errors.window.${window}`),
+        retry: formatRetry(t, body.retry_after ?? 0),
+      });
+    }
+    if (error.code === "banned") return t("hub.errors.banned");
+  }
+  return describeApiError(error);
+}
+
 export function reportSaveError(
   error: unknown,
   showError: (message: string) => void,

@@ -83,6 +83,23 @@ export function useModeration() {
     [keyAction, run],
   );
 
+  const trust = useCallback(
+    (keyHmac: string, label: string) =>
+      setPrompt({
+        title: t("keys.trustTitle", { key: label }),
+        text: t("keys.trustText"),
+        confirmLabel: t("keys.trust"),
+        reason: "none",
+        onConfirm: () => run(() => keyAction.mutateAsync({ key: keyHmac, action: "trust" })),
+      }),
+    [keyAction, run, t],
+  );
+
+  const untrust = useCallback(
+    (keyHmac: string) => run(() => keyAction.mutateAsync({ key: keyHmac, action: "untrust" })),
+    [keyAction, run],
+  );
+
   const approveMirror = useCallback(
     (m: MirrorView) => run(() => mirrorAction.mutateAsync({ id: m.id, action: "approve" })),
     [mirrorAction, run],
@@ -117,7 +134,7 @@ export function useModeration() {
   const dialog = <ReasonDialog prompt={prompt} onClose={() => setPrompt(null)} />;
   const busy = setAction.isPending || keyAction.isPending || mirrorAction.isPending;
 
-  return { approve, reject, hide, ban, unban, approveMirror, rejectMirror, removeMirror, dialog, busy };
+  return { approve, reject, hide, ban, unban, trust, untrust, approveMirror, rejectMirror, removeMirror, dialog, busy };
 }
 
 export type Moderation = ReturnType<typeof useModeration>;

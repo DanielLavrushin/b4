@@ -10,7 +10,7 @@ import { useTranslation } from "react-i18next";
 import { B4Dialog, B4TextField } from "@b4.elements";
 import { ReportIcon } from "@b4.icons";
 import { HubSet } from "@models/hub";
-import { describeApiError } from "@utils";
+import { describeHubError } from "@utils";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useHubReport } from "@hooks/useHub";
 
@@ -40,7 +40,7 @@ export const ReportDialog = ({ set, onClose }: ReportDialogProps) => {
           onClose();
         },
         onError: (e) =>
-          showError(t("hub.report.failed", { error: describeApiError(e) })),
+          showError(t("hub.report.failed", { error: describeHubError(e, t) })),
       },
     );
   };

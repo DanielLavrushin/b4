@@ -149,6 +149,8 @@ export interface KeyView {
   banned: boolean;
   ban_reason?: string;
   banned_at?: string;
+  trusted: boolean;
+  trusted_at?: string;
   sets: number;
   votes: number;
   reports: number;
@@ -229,5 +231,19 @@ export interface ActionResult {
 }
 
 export type SetAction = "approve" | "reject" | "hide";
-export type KeyAction = "ban" | "unban";
+export type KeyAction = "ban" | "unban" | "trust" | "untrust";
 export type MirrorAction = "approve" | "reject" | "remove";
+
+export interface LimitsView {
+  shares_per_day: number;
+  votes_per_day: number;
+  reports_per_day: number;
+  mirrors_per_day: number;
+  new_keys_per_day: number;
+  requests_per_hour: number;
+}
+
+export interface SettingsView {
+  limits: LimitsView;
+  defaults: LimitsView;
+}

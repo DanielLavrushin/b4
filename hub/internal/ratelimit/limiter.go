@@ -72,6 +72,16 @@ func (l *Limiter) Allow(scope, id string, limit int, window time.Duration) (bool
 	return true, 0
 }
 
+func (l *Limiter) Refund(scope, id string, window time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	b := l.buckets[scope+"|"+id]
+	if b == nil || !b.start.Equal(l.now().Truncate(window)) || b.count == 0 {
+		return
+	}
+	b.count--
+}
+
 const (
 	sweepInterval   = 10 * time.Minute
 	crowdedInterval = time.Minute

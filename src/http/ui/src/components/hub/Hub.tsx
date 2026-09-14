@@ -26,7 +26,7 @@ import {
 } from "@hooks/useHub";
 import { DomainReassignment } from "@models/sets";
 import { HubSet, HubVoteKind } from "@models/hub";
-import { describeApiError } from "@utils";
+import { describeApiError, describeHubError } from "@utils";
 import { DetailsDialog } from "./DetailsDialog";
 import { HubSetCard } from "./HubSetCard";
 import { ReportDialog } from "./ReportDialog";
@@ -192,7 +192,7 @@ export const HubBrowser = () => {
       const code = e instanceof ApiError ? e.code : undefined;
       if (code === "not_applied") showError(t("hub.vote.notApplied"));
       else if (code === "modified") showError(t("hub.vote.modified"));
-      else showError(t("hub.vote.failed", { error: describeApiError(e) }));
+      else showError(t("hub.vote.failed", { error: describeHubError(e, t) }));
     }
   };
 

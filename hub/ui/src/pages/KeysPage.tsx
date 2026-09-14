@@ -69,20 +69,34 @@ export function KeysPage() {
                           </Typography>
                         )}
                       </Box>
+                    ) : k.trusted ? (
+                      <StatusChip status="trusted" label={t("keys.trusted", { when: formatAgo(t, k.trusted_at ?? k.first_seen) })} />
                     ) : (
                       <StatusChip status="ok" label={t("keys.ok")} />
                     )}
                   </TableCell>
                   <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
-                    {k.banned ? (
-                      <Button size="small" variant="outlined" color="success" disabled={moderation.busy} onClick={() => void moderation.unban(k.key_hmac)}>
-                        {t("keys.unban")}
-                      </Button>
-                    ) : (
-                      <Button size="small" variant="outlined" color="error" disabled={moderation.busy} onClick={() => moderation.ban(k.key_hmac, k.label)}>
-                        {t("keys.ban")}
-                      </Button>
-                    )}
+                    <Box sx={{ display: "inline-flex", gap: 1 }}>
+                      {!k.banned &&
+                        (k.trusted ? (
+                          <Button size="small" variant="outlined" disabled={moderation.busy} onClick={() => void moderation.untrust(k.key_hmac)}>
+                            {t("keys.untrust")}
+                          </Button>
+                        ) : (
+                          <Button size="small" variant="outlined" color="info" disabled={moderation.busy} onClick={() => moderation.trust(k.key_hmac, k.label)}>
+                            {t("keys.trust")}
+                          </Button>
+                        ))}
+                      {k.banned ? (
+                        <Button size="small" variant="outlined" color="success" disabled={moderation.busy} onClick={() => void moderation.unban(k.key_hmac)}>
+                          {t("keys.unban")}
+                        </Button>
+                      ) : (
+                        <Button size="small" variant="outlined" color="error" disabled={moderation.busy} onClick={() => moderation.ban(k.key_hmac, k.label)}>
+                          {t("keys.ban")}
+                        </Button>
+                      )}
+                    </Box>
                   </TableCell>
                 </TableRow>
               ))}

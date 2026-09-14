@@ -200,7 +200,7 @@ func sameSite(req *http.Request) {
 
 func asAdmin(req *http.Request) {
 	req.SetBasicAuth("admin", password)
-	if req.Method == http.MethodPost {
+	if req.Method != http.MethodGet {
 		sameSite(req)
 	}
 }
@@ -518,6 +518,56 @@ func TestKeys(t *testing.T) {
 	}
 	if resp = f.admin(http.MethodPost, PathAPI+"/keys/not-a-key/ban", nil); resp.status != http.StatusNotFound {
 		t.Fatalf("malformed key must be 404, got %d", resp.status)
+	}
+
+	rebuilds := f.rebuilds
+	if resp = f.admin(http.MethodPost, PathAPI+"/keys/"+v.UploaderHMAC+"/trust", nil); resp.status != http.StatusOK {
+		t.Fatalf("trust: %d %s", resp.status, resp.body)
+	}
+	if f.rebuilds != rebuilds {
+		t.Fatalf("trusting a key does not touch the catalogue")
+	}
+	f.admin(http.MethodGet, PathAPI+"/keys", nil).decode(t, &keys)
+	if !keys[0].Trusted || keys[0].TrustedAt == nil {
+		t.Fatalf("trusted view: %+v", keys[0])
+	}
+	if resp = f.admin(http.MethodPost, PathAPI+"/keys/"+v.UploaderHMAC+"/untrust", nil); resp.status != http.StatusOK {
+		t.Fatalf("untrust: %d", resp.status)
+	}
+	if key, _ = f.store.GetKey(context.Background(), v.UploaderHMAC); key.Trusted {
+		t.Fatalf("key must be untrusted")
+	}
+}
+
+func TestSettings(t *testing.T) {
+	f := newFixture(t, password)
+	var view SettingsView
+	resp := f.admin(http.MethodGet, PathAPI+"/settings", nil)
+	if resp.status != http.StatusOK {
+		t.Fatalf("settings: %d %s", resp.status, resp.body)
+	}
+	resp.decode(t, &view)
+	if view.Limits != view.Defaults || view.Limits.SharesPerDay != ratelimit.SharesPerDay {
+		t.Fatalf("fresh hub answers the defaults: %+v", view)
+	}
+	view.Limits.SharesPerDay = 50
+	resp = f.admin(http.MethodPut, PathAPI+"/settings", map[string]interface{}{"limits": view.Limits})
+	if resp.status != http.StatusOK {
+		t.Fatalf("save: %d %s", resp.status, resp.body)
+	}
+	resp.decode(t, &view)
+	if view.Limits.SharesPerDay != 50 || view.Defaults.SharesPerDay != ratelimit.SharesPerDay {
+		t.Fatalf("saved view: %+v", view)
+	}
+	if saved, _ := f.store.Settings(context.Background()); saved.SharesPerDay != 50 {
+		t.Fatalf("settings not stored: %+v", saved)
+	}
+	view.Limits.VotesPerDay = 0
+	if resp = f.admin(http.MethodPut, PathAPI+"/settings", map[string]interface{}{"limits": view.Limits}); resp.status != http.StatusBadRequest {
+		t.Fatalf("a zero limit must be refused, got %d %s", resp.status, resp.body)
+	}
+	if resp = f.request(http.MethodPut, PathAPI+"/settings", map[string]interface{}{"limits": view.Limits}, func(req *http.Request) { req.SetBasicAuth("admin", password) }); resp.status != http.StatusForbidden {
+		t.Fatalf("cross-site save must be refused, got %d", resp.status)
 	}
 }
 

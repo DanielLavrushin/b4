@@ -44,6 +44,9 @@ type HubError struct {
 	SetID      string
 	Version    int
 	RetryAfter int
+	Scope      string
+	Limit      int
+	Window     string
 }
 
 func (e *HubError) Error() string {
@@ -77,6 +80,9 @@ type MessageResponse struct {
 	Code       string `json:"code,omitempty"`
 	Error      string `json:"error,omitempty"`
 	RetryAfter int    `json:"retry_after,omitempty"`
+	Scope      string `json:"scope,omitempty"`
+	Limit      int    `json:"limit,omitempty"`
+	Window     string `json:"window,omitempty"`
 }
 
 func (s *Service) userAgent() string {
@@ -250,7 +256,7 @@ func (s *Service) Send(ctx context.Context, rec *hubwire.Record) (*MessageRespon
 			}
 			return &resp, nil
 		}
-		return nil, &HubError{Status: status, Code: resp.Code, Message: resp.Error, SetID: resp.SetID, Version: resp.Version, RetryAfter: resp.RetryAfter}
+		return nil, &HubError{Status: status, Code: resp.Code, Message: resp.Error, SetID: resp.SetID, Version: resp.Version, RetryAfter: resp.RetryAfter, Scope: resp.Scope, Limit: resp.Limit, Window: resp.Window}
 	}
 	if lastErr == nil {
 		return nil, ErrUnreachable

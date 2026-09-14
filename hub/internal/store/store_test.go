@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -258,5 +259,120 @@ func TestBanKeyWithoutPriorContact(t *testing.T) {
 	}
 	if _, created, _ := st.TouchKey(ctx, "k9", testNow); created {
 		t.Errorf("a banned key is already known")
+	}
+}
+
+func TestMigrationBacksUpTheDatabaseFirst(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "hub.db")
+	all := migrations
+	migrations = all[:1]
+	first, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.SetMeta(context.Background(), "probe", "kept"); err != nil {
+		t.Fatal(err)
+	}
+	first.Close()
+	migrations = all
+	if _, err := os.Stat(backupPath(path, 1)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a fresh database must not be backed up: %v", err)
+	}
+	second, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	if v, _ := second.SchemaVersion(context.Background()); v != len(all) {
+		t.Fatalf("schema version %d after upgrade", v)
+	}
+	backup, err := Open(backupPath(path, 1))
+	if err != nil {
+		t.Fatalf("the backup must be a usable database: %v", err)
+	}
+	defer backup.Close()
+	if v, _ := backup.Meta(context.Background(), "probe"); v != "kept" {
+		t.Errorf("the backup must hold the pre-migration rows, got %q", v)
+	}
+}
+
+func TestPruneBackupsKeepsTheNewest(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "hub.db")
+	for _, v := range []int{1, 2, 3, 10} {
+		if err := os.WriteFile(backupPath(path, v), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(path+".vfoo.bak", []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := pruneBackups(path, keptBackups); err != nil {
+		t.Fatal(err)
+	}
+	for v, want := range map[int]bool{1: false, 2: false, 3: true, 10: true} {
+		_, err := os.Stat(backupPath(path, v))
+		if got := err == nil; got != want {
+			t.Errorf("backup v%d present %v, want %v", v, got, want)
+		}
+	}
+	if _, err := os.Stat(path + ".vfoo.bak"); err != nil {
+		t.Errorf("files that are not numbered backups are left alone: %v", err)
+	}
+}
+
+func TestSettingsPersistAndDefault(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "hub.db")
+	st, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	got, err := st.Settings(ctx)
+	if err != nil || got != DefaultSettings() {
+		t.Fatalf("fresh store must answer the defaults: %+v %v", got, err)
+	}
+	want := DefaultSettings()
+	want.SharesPerDay = 42
+	if err := st.SaveSettings(ctx, want); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = st.Settings(ctx); got != want {
+		t.Fatalf("saved settings not read back: %+v", got)
+	}
+	bad := want
+	bad.VotesPerDay = 0
+	if err := st.SaveSettings(ctx, bad); err == nil {
+		t.Fatal("a zero limit must be refused")
+	}
+	st.Close()
+	again, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer again.Close()
+	if got, _ = again.Settings(ctx); got != want {
+		t.Fatalf("settings must survive reopening: %+v", got)
+	}
+}
+
+func TestTrustKey(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.TrustKey(ctx, "k1", testNow); err != nil {
+		t.Fatal(err)
+	}
+	k, err := st.GetKey(ctx, "k1")
+	if err != nil || !k.Trusted || !k.TrustedAt.Equal(testNow) {
+		t.Fatalf("trusting an unseen key must create it trusted, got %+v %v", k, err)
+	}
+	if err := st.UntrustKey(ctx, "k1"); err != nil {
+		t.Fatal(err)
+	}
+	if k, _ = st.GetKey(ctx, "k1"); k.Trusted || !k.TrustedAt.IsZero() {
+		t.Fatalf("untrust must clear the flag, got %+v", k)
+	}
+	summaries, err := st.Keys(ctx)
+	if err != nil || len(summaries) != 1 || summaries[0].Trusted {
+		t.Fatalf("keys: %+v %v", summaries, err)
 	}
 }

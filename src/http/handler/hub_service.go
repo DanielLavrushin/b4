@@ -125,7 +125,7 @@ func writeHubError(w http.ResponseWriter, err error) {
 	case errors.As(err, &he):
 		setJsonHeader(w)
 		w.WriteHeader(he.Status)
-		_ = json.NewEncoder(w).Encode(HubRemoteError{Code: he.Code, Message: he.Error(), HubID: he.SetID, Version: he.Version, RetryAfter: he.RetryAfter})
+		_ = json.NewEncoder(w).Encode(HubRemoteError{Code: he.Code, Message: he.Error(), HubID: he.SetID, Version: he.Version, RetryAfter: he.RetryAfter, Scope: he.Scope, Limit: he.Limit, Window: he.Window})
 	case errors.Is(err, hub.ErrUnreachable), errors.Is(err, hub.ErrShareNotQueued):
 		writeAPIError(w, &APIError{Status: http.StatusBadGateway, Code: "hub_unreachable", Message: err.Error()})
 	case errors.Is(err, hub.ErrRecordTooBig):

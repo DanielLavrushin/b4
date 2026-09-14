@@ -13,23 +13,35 @@ type Key struct {
 	Banned    bool
 	BanReason string
 	BannedAt  time.Time
+	Trusted   bool
+	TrustedAt time.Time
+}
+
+const keyColumns = `key_hmac, first_seen, banned, ban_reason, banned_at, trusted, trusted_at`
+
+func scanKey(row interface{ Scan(...interface{}) error }, k *Key) error {
+	var banned, trusted int
+	var firstSeen, bannedAt, trustedAt string
+	if err := row.Scan(&k.KeyHMAC, &firstSeen, &banned, &k.BanReason, &bannedAt, &trusted, &trustedAt); err != nil {
+		return err
+	}
+	k.FirstSeen = parseTime(firstSeen)
+	k.Banned = banned != 0
+	k.BannedAt = parseTime(bannedAt)
+	k.Trusted = trusted != 0
+	k.TrustedAt = parseTime(trustedAt)
+	return nil
 }
 
 func (s *Store) GetKey(ctx context.Context, keyHMAC string) (*Key, error) {
 	var k Key
-	var banned int
-	var firstSeen, bannedAt string
-	err := s.db.QueryRowContext(ctx, `SELECT key_hmac, first_seen, banned, ban_reason, banned_at FROM keys WHERE key_hmac = ?`, keyHMAC).
-		Scan(&k.KeyHMAC, &firstSeen, &banned, &k.BanReason, &bannedAt)
+	err := scanKey(s.db.QueryRowContext(ctx, `SELECT `+keyColumns+` FROM keys WHERE key_hmac = ?`, keyHMAC), &k)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, err
 	}
-	k.FirstSeen = parseTime(firstSeen)
-	k.Banned = banned != 0
-	k.BannedAt = parseTime(bannedAt)
 	return &k, nil
 }
 
@@ -69,8 +81,24 @@ func (s *Store) UnbanKey(ctx context.Context, keyHMAC string) error {
 	return s.MarkDirty(ctx)
 }
 
+func (s *Store) TrustKey(ctx context.Context, keyHMAC string, now time.Time) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE keys SET trusted = 1, trusted_at = ? WHERE key_hmac = ?`, formatTime(now), keyHMAC)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		_, err = s.db.ExecContext(ctx, `INSERT INTO keys(key_hmac, first_seen, trusted, trusted_at) VALUES(?, ?, 1, ?)`, keyHMAC, formatTime(now), formatTime(now))
+	}
+	return err
+}
+
+func (s *Store) UntrustKey(ctx context.Context, keyHMAC string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE keys SET trusted = 0, trusted_at = '' WHERE key_hmac = ?`, keyHMAC)
+	return err
+}
+
 func (s *Store) BannedKeys(ctx context.Context) ([]Key, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT key_hmac, first_seen, ban_reason, banned_at FROM keys WHERE banned = 1 ORDER BY banned_at DESC`)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+keyColumns+` FROM keys WHERE banned = 1 ORDER BY banned_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -78,13 +106,9 @@ func (s *Store) BannedKeys(ctx context.Context) ([]Key, error) {
 	var out []Key
 	for rows.Next() {
 		var k Key
-		var firstSeen, bannedAt string
-		if err := rows.Scan(&k.KeyHMAC, &firstSeen, &k.BanReason, &bannedAt); err != nil {
+		if err := scanKey(rows, &k); err != nil {
 			return nil, err
 		}
-		k.Banned = true
-		k.FirstSeen = parseTime(firstSeen)
-		k.BannedAt = parseTime(bannedAt)
 		out = append(out, k)
 	}
 	return out, rows.Err()
@@ -152,7 +176,7 @@ type KeySummary struct {
 }
 
 func (s *Store) Keys(ctx context.Context) ([]KeySummary, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT k.key_hmac, k.first_seen, k.banned, k.ban_reason, k.banned_at,
+	rows, err := s.db.QueryContext(ctx, `SELECT k.key_hmac, k.first_seen, k.banned, k.ban_reason, k.banned_at, k.trusted, k.trusted_at,
 		(SELECT COUNT(*) FROM sets WHERE author_hmac = k.key_hmac),
 		(SELECT COUNT(*) FROM votes WHERE key_hmac = k.key_hmac),
 		(SELECT COUNT(*) FROM reports WHERE key_hmac = k.key_hmac)
@@ -164,14 +188,16 @@ func (s *Store) Keys(ctx context.Context) ([]KeySummary, error) {
 	out := make([]KeySummary, 0)
 	for rows.Next() {
 		var k KeySummary
-		var banned int
-		var firstSeen, bannedAt string
-		if err := rows.Scan(&k.KeyHMAC, &firstSeen, &banned, &k.BanReason, &bannedAt, &k.Sets, &k.Votes, &k.Reports); err != nil {
+		var banned, trusted int
+		var firstSeen, bannedAt, trustedAt string
+		if err := rows.Scan(&k.KeyHMAC, &firstSeen, &banned, &k.BanReason, &bannedAt, &trusted, &trustedAt, &k.Sets, &k.Votes, &k.Reports); err != nil {
 			return nil, err
 		}
 		k.Banned = banned != 0
 		k.FirstSeen = parseTime(firstSeen)
 		k.BannedAt = parseTime(bannedAt)
+		k.Trusted = trusted != 0
+		k.TrustedAt = parseTime(trustedAt)
 		out = append(out, k)
 	}
 	return out, rows.Err()

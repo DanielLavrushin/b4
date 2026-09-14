@@ -141,9 +141,51 @@ type KeyView struct {
 	Banned    bool       `json:"banned"`
 	BanReason string     `json:"ban_reason,omitempty"`
 	BannedAt  *time.Time `json:"banned_at,omitempty"`
+	Trusted   bool       `json:"trusted"`
+	TrustedAt *time.Time `json:"trusted_at,omitempty"`
 	Sets      int        `json:"sets"`
 	Votes     int        `json:"votes"`
 	Reports   int        `json:"reports"`
+}
+
+type LimitsView struct {
+	SharesPerDay    int `json:"shares_per_day"`
+	VotesPerDay     int `json:"votes_per_day"`
+	ReportsPerDay   int `json:"reports_per_day"`
+	MirrorsPerDay   int `json:"mirrors_per_day"`
+	NewKeysPerDay   int `json:"new_keys_per_day"`
+	RequestsPerHour int `json:"requests_per_hour"`
+}
+
+type SettingsView struct {
+	Limits   LimitsView `json:"limits"`
+	Defaults LimitsView `json:"defaults"`
+}
+
+func limitsView(s store.Settings) LimitsView {
+	return LimitsView{
+		SharesPerDay:    s.SharesPerDay,
+		VotesPerDay:     s.VotesPerDay,
+		ReportsPerDay:   s.ReportsPerDay,
+		MirrorsPerDay:   s.MirrorsPerDay,
+		NewKeysPerDay:   s.NewKeysPerDay,
+		RequestsPerHour: s.RequestsPerHour,
+	}
+}
+
+func (v LimitsView) settings() store.Settings {
+	return store.Settings{
+		SharesPerDay:    v.SharesPerDay,
+		VotesPerDay:     v.VotesPerDay,
+		ReportsPerDay:   v.ReportsPerDay,
+		MirrorsPerDay:   v.MirrorsPerDay,
+		NewKeysPerDay:   v.NewKeysPerDay,
+		RequestsPerHour: v.RequestsPerHour,
+	}
+}
+
+func settingsView(s store.Settings) SettingsView {
+	return SettingsView{Limits: limitsView(s), Defaults: limitsView(store.DefaultSettings())}
 }
 
 type MirrorView struct {
@@ -277,6 +319,8 @@ func keyView(k store.KeySummary) KeyView {
 		Banned:    k.Banned,
 		BanReason: k.BanReason,
 		BannedAt:  optionalTime(k.BannedAt),
+		Trusted:   k.Trusted,
+		TrustedAt: optionalTime(k.TrustedAt),
 		Sets:      k.Sets,
 		Votes:     k.Votes,
 		Reports:   k.Reports,

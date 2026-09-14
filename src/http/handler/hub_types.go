@@ -98,6 +98,9 @@ type HubRemoteError struct {
 	HubID      string `json:"hub_id,omitempty"`
 	Version    int    `json:"version,omitempty"`
 	RetryAfter int    `json:"retry_after,omitempty"`
+	Scope      string `json:"scope,omitempty"`
+	Limit      int    `json:"limit,omitempty"`
+	Window     string `json:"window,omitempty"`
 }
 
 type HubIdentityResponse struct {

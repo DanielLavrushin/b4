@@ -27,6 +27,8 @@ const (
 	ActionHide    = "hide"
 	ActionBan     = "ban"
 	ActionUnban   = "unban"
+	ActionTrust   = "trust"
+	ActionUntrust = "untrust"
 	ActionRemove  = "remove"
 )
 
@@ -55,6 +57,8 @@ func (s *Server) mountAPI(mux *http.ServeMux) {
 	mux.Handle("POST "+PathAPI+"/catalogue/build", s.guard(s.catalogueBuild))
 	mux.Handle("POST "+PathAPI+"/catalogue/epoch", s.guard(s.catalogueEpoch))
 	mux.Handle("POST "+PathAPI+"/catalogue/revoke", s.guard(s.catalogueRevoke))
+	mux.Handle("GET "+PathAPI+"/settings", s.guard(s.settings))
+	mux.Handle("PUT "+PathAPI+"/settings", s.guard(s.saveSettings))
 }
 
 func (s *Server) rebuild() {
@@ -328,16 +332,51 @@ func (s *Server) keyAction(w http.ResponseWriter, r *http.Request) {
 	case ActionUnban:
 		err = s.Store.UnbanKey(ctx, key)
 		notice = "unbanned " + hubdata.AuthorLabel(key)
+	case ActionTrust:
+		err = s.Store.TrustKey(ctx, key, s.now())
+		notice = "trusted " + hubdata.AuthorLabel(key)
+	case ActionUntrust:
+		err = s.Store.UntrustKey(ctx, key)
+		notice = "untrusted " + hubdata.AuthorLabel(key)
 	default:
-		writeError(w, http.StatusNotFound, codeNotFound, "keys can be banned or unbanned")
+		writeError(w, http.StatusNotFound, codeNotFound, "keys can be banned, unbanned, trusted or untrusted")
 		return
 	}
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	s.rebuild()
+	if r.PathValue("action") == ActionBan || r.PathValue("action") == ActionUnban {
+		s.rebuild()
+	}
 	writeJSON(w, http.StatusOK, ActionResult{Notice: notice})
+}
+
+func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
+	current, err := s.Store.Settings(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, settingsView(current))
+}
+
+func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
+	var req SettingsView
+	if err := readBody(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+		return
+	}
+	in := req.Limits.settings()
+	if err := in.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+		return
+	}
+	if err := s.Store.SaveSettings(r.Context(), in); err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, settingsView(in))
 }
 
 func (s *Server) mirrors(w http.ResponseWriter, r *http.Request) {

@@ -6,7 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -24,8 +28,12 @@ const (
 
 var ErrNotFound = errors.New("not found")
 
+const keptBackups = 2
+
 type Store struct {
-	db *sql.DB
+	db       *sql.DB
+	path     string
+	settings settingsCache
 }
 
 func Open(path string) (*Store, error) {
@@ -37,7 +45,7 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	s := &Store{db: db}
+	s := &Store{db: db, path: path}
 	if err := s.migrate(context.Background()); err != nil {
 		db.Close()
 		return nil, err
@@ -67,6 +75,11 @@ func (s *Store) migrate(ctx context.Context) error {
 			}
 		}
 	}
+	if current > 0 && current < len(migrations) {
+		if err := s.backup(ctx, current); err != nil {
+			return fmt.Errorf("backup before migration %d: %w", current+1, err)
+		}
+	}
 	for i := current; i < len(migrations); i++ {
 		tx, err := s.db.BeginTx(ctx, nil)
 		if err != nil {
@@ -81,6 +94,51 @@ func (s *Store) migrate(ctx context.Context) error {
 			return err
 		}
 		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func backupPath(dbPath string, schema int) string {
+	return dbPath + ".v" + strconv.Itoa(schema) + ".bak"
+}
+
+func (s *Store) backup(ctx context.Context, schema int) error {
+	if s.path == "" || strings.HasPrefix(s.path, ":memory:") {
+		return nil
+	}
+	target := backupPath(s.path, schema)
+	if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `VACUUM INTO ?`, target); err != nil {
+		return err
+	}
+	return pruneBackups(s.path, keptBackups)
+}
+
+func pruneBackups(dbPath string, keep int) error {
+	matches, err := filepath.Glob(dbPath + ".v*.bak")
+	if err != nil {
+		return err
+	}
+	type backup struct {
+		path   string
+		schema int
+	}
+	var backups []backup
+	for _, m := range matches {
+		raw := strings.TrimSuffix(strings.TrimPrefix(m, dbPath+".v"), ".bak")
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			continue
+		}
+		backups = append(backups, backup{path: m, schema: n})
+	}
+	sort.Slice(backups, func(i, j int) bool { return backups[i].schema > backups[j].schema })
+	for i := keep; i < len(backups); i++ {
+		if err := os.Remove(backups[i].path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 	}

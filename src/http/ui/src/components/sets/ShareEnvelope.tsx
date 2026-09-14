@@ -27,7 +27,7 @@ import {
 import { hubApi } from "@api/hub";
 import { ApiError } from "@api/apiClient";
 import { useHubShare, useHubStatus } from "@hooks/useHub";
-import { copyText, describeApiError } from "@utils";
+import { copyText, describeHubError } from "@utils";
 
 interface ShareEnvelopeProps {
   config: B4SetConfig;
@@ -125,7 +125,7 @@ export const ShareEnvelope = ({
         showError(t("sets.share.publishUnreachable"));
         return;
       }
-      showError(t("sets.share.publishFailed", { error: describeApiError(e) }));
+      showError(t("sets.share.publishFailed", { error: describeHubError(e, t) }));
     }
   };
 

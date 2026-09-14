@@ -123,4 +123,8 @@ CREATE TABLE mirrors (
 );
 CREATE INDEX mirrors_status ON mirrors(status);
 `,
+	`
+ALTER TABLE keys ADD COLUMN trusted INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE keys ADD COLUMN trusted_at TEXT NOT NULL DEFAULT '';
+`,
 }

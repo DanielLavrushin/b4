@@ -26,6 +26,7 @@ import KeyIcon from "@mui/icons-material/KeyOutlined";
 import HubIcon from "@mui/icons-material/HubOutlined";
 import ForumIcon from "@mui/icons-material/ForumOutlined";
 import InventoryIcon from "@mui/icons-material/Inventory2Outlined";
+import TuneIcon from "@mui/icons-material/TuneOutlined";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { colors, Logo, theme } from "@design";
@@ -42,6 +43,7 @@ import { KeysPage } from "@/pages/KeysPage";
 import { MirrorsPage } from "@/pages/MirrorsPage";
 import { FeedbackPage } from "@/pages/FeedbackPage";
 import { CataloguePage } from "@/pages/CataloguePage";
+import { SettingsPage } from "@/pages/SettingsPage";
 
 const DRAWER_WIDTH = 240;
 const HEADER_HEIGHT = 64;
@@ -60,6 +62,7 @@ const navItems: NavItem[] = [
   { path: "/mirrors", labelKey: "nav.mirrors", icon: <HubIcon /> },
   { path: "/feedback", labelKey: "nav.feedback", icon: <ForumIcon /> },
   { path: "/catalogue", labelKey: "nav.catalogue", icon: <InventoryIcon /> },
+  { path: "/settings", labelKey: "nav.settings", icon: <TuneIcon /> },
 ];
 
 function Shell() {
@@ -169,6 +172,7 @@ function Shell() {
             <Route path="/mirrors" element={<MirrorsPage />} />
             <Route path="/feedback" element={<FeedbackPage />} />
             <Route path="/catalogue" element={<CataloguePage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/overview" replace />} />
           </Routes>
         </Box>
