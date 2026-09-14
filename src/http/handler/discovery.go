@@ -200,7 +200,7 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 		TLSVersion:      req.TLSVersion,
 		IPVersion:       req.IPVersion,
 		Source:          discovery.SourceWeb,
-		HubPresets:      api.communityPresets(urls, req.SkipCommunity),
+		HubPresets:      func() []discovery.ConfigPreset { return api.communityPresets(urls, req.SkipCommunity) },
 	})
 	if err != nil {
 		if errors.Is(err, discovery.ErrDiscoveryAlreadyRunning) {

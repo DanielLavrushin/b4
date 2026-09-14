@@ -263,6 +263,13 @@ func (ds *DiscoverySuite) RunDiscovery() {
 		}
 	}
 
+	if ds.hubPresetsFn != nil {
+		ds.setPhase(PhaseCached)
+		ds.hubPresets = ds.hubPresetsFn()
+		ds.CheckSuite.mu.Lock()
+		ds.TotalChecks += len(ds.hubPresets) * len(ds.Domains)
+		ds.CheckSuite.mu.Unlock()
+	}
 	if len(ds.hubPresets) > 0 {
 		ds.setPhase(PhaseCached)
 		log.DiscoveryLogf("Community: testing %d strategies other users published for these domains", len(ds.hubPresets))

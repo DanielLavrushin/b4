@@ -247,6 +247,7 @@ type DiscoverySuite struct {
 	discoveryCache *DiscoveryCache
 	plainSets      map[string]*config.SetConfig
 	hubPresets     []ConfigPreset
+	hubPresetsFn   func() []ConfigPreset
 }
 
 type CustomPayload struct {
