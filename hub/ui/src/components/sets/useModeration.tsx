@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useKeyAction, useMirrorAction, useSetAction } from "@/api/hub";
+import { useKeyAction, useMirrorAction, useSetAction, useSetDelete } from "@/api/hub";
 import { useSnackbar } from "@/context/SnackbarProvider";
 import type { EntryView, MirrorView } from "@/models/api";
 import { setRef } from "@/utils/format";
@@ -13,6 +13,7 @@ export function useModeration() {
   const setAction = useSetAction();
   const keyAction = useKeyAction();
   const mirrorAction = useMirrorAction();
+  const setDelete = useSetDelete();
 
   const run = useCallback(
     async (work: () => Promise<{ notice: string }>) => {
@@ -63,6 +64,23 @@ export function useModeration() {
         onConfirm: (reason) => run(() => setAction.mutateAsync({ id: e.set_id, version: e.version, action: "hide", reason })),
       }),
     [run, setAction, t],
+  );
+
+  const remove = useCallback(
+    (id: string, onDone?: () => void) =>
+      setPrompt({
+        title: t("detail.deleteTitle", { id }),
+        text: t("detail.deleteText"),
+        confirmLabel: t("detail.delete"),
+        reason: "none",
+        destructive: true,
+        confirmText: id,
+        onConfirm: async () => {
+          await run(() => setDelete.mutateAsync(id));
+          onDone?.();
+        },
+      }),
+    [run, setDelete, t],
   );
 
   const ban = useCallback(
@@ -132,9 +150,9 @@ export function useModeration() {
   );
 
   const dialog = <ReasonDialog prompt={prompt} onClose={() => setPrompt(null)} />;
-  const busy = setAction.isPending || keyAction.isPending || mirrorAction.isPending;
+  const busy = setAction.isPending || keyAction.isPending || mirrorAction.isPending || setDelete.isPending;
 
-  return { approve, reject, hide, ban, unban, trust, untrust, approveMirror, rejectMirror, removeMirror, dialog, busy };
+  return { approve, reject, hide, remove, ban, unban, trust, untrust, approveMirror, rejectMirror, removeMirror, dialog, busy };
 }
 
 export type Moderation = ReturnType<typeof useModeration>;

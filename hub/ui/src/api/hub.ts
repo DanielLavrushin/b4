@@ -100,6 +100,11 @@ export const useSetAction = () =>
     ),
   );
 
+export const useSetDelete = () =>
+  useInvalidatingMutation((id: string) =>
+    post<ActionResult>(`/sets/${encodeURIComponent(id)}/delete`, { confirm: id }),
+  );
+
 export interface KeyActionVariables {
   key: string;
   action: KeyAction;

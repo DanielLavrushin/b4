@@ -18,7 +18,7 @@ import { createDefaultSet } from "@models/defaults";
 import { HubWarning, formatWarningParam, isHubEnvelope } from "@models/hub";
 import { hubApi } from "@api/hub";
 import { ApiError } from "@api/apiClient";
-import { copyText } from "@utils";
+import { copyText, mergeHubLink } from "@utils";
 
 type Obj = Record<string, unknown>;
 
@@ -294,11 +294,12 @@ export const ImportExportSettings = ({
     if (!isHubEnvelope(raw)) return;
     try {
       const result = await hubApi.importEnvelope(raw);
-      const parsed = { ...result.set, id: config.id, enabled: config.enabled };
+      const link = mergeHubLink(config.hub, result.set.hub, true);
+      const parsed = { ...result.set, id: config.id, enabled: config.enabled, hub: link.hub };
       onImport(parsed);
       await loadCaptures();
       setImportedPayloadRefs(collectPayloadRefs(parsed));
-      setImportWarnings(result.warnings ?? []);
+      setImportWarnings([...(result.warnings ?? []), ...link.warnings]);
       setEnvelopeImported(true);
       setImportSuccess(true);
     } catch (e) {
@@ -342,9 +343,11 @@ export const ImportExportSettings = ({
       }
 
       parsed.id = config.id;
+      const link = mergeHubLink(config.hub, configFields.hub);
+      parsed.hub = link.hub;
       onImport(parsed);
       setImportedPayloadRefs(collectPayloadRefs(parsed));
-      setImportWarnings([]);
+      setImportWarnings(link.warnings);
       setEnvelopeImported(false);
       void loadCaptures();
       setImportSuccess(true);

@@ -51,6 +51,17 @@ func (b Blobs) Read(hash string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
+func (b Blobs) Remove(hash string) error {
+	path, ok := b.Path(hash)
+	if !ok {
+		return ErrBadBlobHash
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
 func (b Blobs) Exists(hash string) bool {
 	path, ok := b.Path(hash)
 	if !ok {

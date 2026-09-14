@@ -119,6 +119,17 @@ func (s *Service) share(ctx context.Context, entry record) Response {
 			return internalError(err)
 		}
 	}
+	sibling, err := s.authorSibling(ctx, entry.keyHMAC, version)
+	if err != nil {
+		return internalError(err)
+	}
+	if sibling != nil {
+		version.SetID = sibling.ID
+		if err := s.Store.AddVersion(ctx, version); err != nil {
+			return internalError(err)
+		}
+		return s.accepted(ctx, entry, version, body)
+	}
 	id, err := hubdata.NewSetID(entry.now)
 	if err != nil {
 		return internalError(err)
@@ -132,6 +143,31 @@ func (s *Service) share(ctx context.Context, entry record) Response {
 		return internalError(err)
 	}
 	return s.accepted(ctx, entry, version, body)
+}
+
+func (s *Service) authorSibling(ctx context.Context, authorHMAC string, version *store.Version) (*store.Set, error) {
+	sets, err := s.Store.SetsByAuthor(ctx, authorHMAC)
+	if err != nil {
+		return nil, err
+	}
+	targets := TargetSet(version.Projection)
+	var match *store.Set
+	for i := range sets {
+		latest, err := s.Store.LatestVersion(ctx, sets[i].ID)
+		if errors.Is(err, store.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if latest.TargetsKey != version.TargetsKey && !(sameTitle(latest.Title, version.Title) && targetsOverlap(targets, TargetSet(latest.Projection))) {
+			continue
+		}
+		if match == nil || sets[i].UpdatedAt.After(match.UpdatedAt) {
+			match = &sets[i]
+		}
+	}
+	return match, nil
 }
 
 func (s *Service) accepted(ctx context.Context, entry record, version *store.Version, body hubwire.ShareBody) Response {

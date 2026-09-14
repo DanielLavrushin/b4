@@ -40,6 +40,10 @@ type revokeRequest struct {
 	KeyID string `json:"key_id"`
 }
 
+type deleteRequest struct {
+	Confirm string `json:"confirm"`
+}
+
 func (s *Server) mountAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+PathAPI+"/session", s.session)
 	mux.HandleFunc("POST "+PathAPI+"/login", s.login)
@@ -49,6 +53,7 @@ func (s *Server) mountAPI(mux *http.ServeMux) {
 	mux.Handle("GET "+PathAPI+"/sets", s.guard(s.sets))
 	mux.Handle("GET "+PathAPI+"/sets/{id}", s.guard(s.setDetail))
 	mux.Handle("POST "+PathAPI+"/sets/{id}/{version}/{action}", s.guard(s.setAction))
+	mux.Handle("POST "+PathAPI+"/sets/{id}/delete", s.guard(s.setDelete))
 	mux.Handle("GET "+PathAPI+"/keys", s.guard(s.keys))
 	mux.Handle("POST "+PathAPI+"/keys/{key}/{action}", s.guard(s.keyAction))
 	mux.Handle("GET "+PathAPI+"/mirrors", s.guard(s.mirrors))
@@ -377,6 +382,39 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, settingsView(in))
+}
+
+func (s *Server) setDelete(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !hubdata.ValidSetID(id) {
+		writeError(w, http.StatusNotFound, codeNotFound, "the address does not name a set")
+		return
+	}
+	var req deleteRequest
+	if err := readBody(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+		return
+	}
+	if strings.TrimSpace(req.Confirm) != id {
+		writeError(w, http.StatusBadRequest, codeBadRequest, "type the set id to confirm the deletion")
+		return
+	}
+	orphaned, err := s.Store.DeleteSet(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, codeNotFound, "the address does not name a set")
+		return
+	}
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	for _, hash := range orphaned {
+		if err := s.Blobs.Remove(hash); err != nil {
+			log.Printf("web: payload %s left behind after deleting %s: %v", hash, id, err)
+		}
+	}
+	s.rebuild()
+	writeJSON(w, http.StatusOK, ActionResult{Notice: "deleted " + id + " permanently"})
 }
 
 func (s *Server) mirrors(w http.ResponseWriter, r *http.Request) {

@@ -1787,7 +1787,8 @@
         "pin_private_address": "The pin for {{domain}} was dropped: it pointed at a private address.",
         "dns_dropped": "The DNS redirect was dropped: {{host}} is not a known public DoH resolver. Set a resolver in the DNS tab if the set needs one.",
         "private_addresses": "Addresses that look private to the author's network: {{addresses}}.",
-        "block_regexp": "This block set matches by pattern ({{entry}}), so it may block far more than intended."
+        "block_regexp": "This block set matches by pattern ({{entry}}), so it may block far more than intended.",
+        "foreign_hub_link": "The pasted set was linked to community set {{pasted}}; this set stays linked to {{kept}} and publishing it creates its next version."
       }
     },
     "editor": {
@@ -2055,7 +2056,7 @@
       "publishNewVersionHint": "This set changed since it was linked to {{id}}. Publishing creates the next version under your author key, or a new hub set when the original was published by someone else.",
       "publishSaveFirst": "Save the set before publishing it.",
       "publishUnsaved": "There are unsaved changes; the saved version is what gets published. Save first.",
-      "published": "Published as {{id}}. It waits in the hub's moderation queue; after approval it appears on the Community page at the next sync.",
+      "published": "Published as {{id}} version {{version}}. It waits in the hub's moderation queue; after approval it appears on the Community page at the next sync.",
       "publishedDetail": "Published as {{id}} (version {{version}}), status: {{status}}. A moderator on the hub has to approve it before other users, and this router, see it in the catalogue.",
       "publishDuplicate": "The hub already has this strategy with the same targets as {{id}} (version {{version}}). The upload was counted as a report that it works.",
       "publishUnreachable": "No hub answered, so the set was not published. Try again later.",

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -571,6 +572,70 @@ func TestSettings(t *testing.T) {
 	}
 }
 
+func TestDeleteSet(t *testing.T) {
+	f := newFixture(t, password)
+	author := testkit.Identity(t)
+	set := testkit.SampleSet("Doomed", "doomed.example")
+	env := testkit.BuildEnvelope(t, &set)
+	raw := testkit.SignShare(t, author, env, f.clock)
+	first := f.ingest.Handle(context.Background(), raw, parseIP(authorAddress))
+	if first.Status != http.StatusAccepted {
+		t.Fatalf("share: %d %v", first.Status, first.Body)
+	}
+	doomed := first.Body["set_id"].(string)
+	keeper, _ := f.share("Keeper", otherAddress, "keeper.example")
+	f.approve(doomed)
+	f.build()
+	f.vote(doomed, 1, env.Fingerprint, voterAddress)
+	blob := env.Payloads[0].SHA256
+	if !f.web.Blobs.Exists(blob) {
+		t.Fatalf("the sample payload must be stored")
+	}
+
+	resp := f.admin(http.MethodPost, PathAPI+"/sets/"+doomed+"/delete", map[string]string{"confirm": "nope"})
+	if resp.status != http.StatusBadRequest {
+		t.Fatalf("a wrong confirmation must be refused, got %d %s", resp.status, resp.body)
+	}
+	rebuilds := f.rebuilds
+	resp = f.admin(http.MethodPost, PathAPI+"/sets/"+doomed+"/delete", map[string]string{"confirm": doomed})
+	if resp.status != http.StatusOK {
+		t.Fatalf("delete: %d %s", resp.status, resp.body)
+	}
+	if f.rebuilds != rebuilds+1 {
+		t.Fatalf("a delete must rebuild the catalogue")
+	}
+	ctx := context.Background()
+	if _, _, err := f.store.GetSet(ctx, doomed); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("set must be gone, got %v", err)
+	}
+	votes, _ := f.store.RecentVotes(ctx, 10)
+	for _, v := range votes {
+		if v.SetID == doomed {
+			t.Fatalf("votes of a deleted set must be gone")
+		}
+	}
+	if !f.web.Blobs.Exists(blob) {
+		t.Fatalf("the payload is still referenced by %s and must stay", keeper)
+	}
+	replay := f.ingest.Handle(ctx, raw, parseIP(authorAddress))
+	if replay.Status != http.StatusOK || replay.Body["duplicate"] != true || replay.Body["set_id"] != nil {
+		t.Fatalf("a replay of the deleted record must not resurrect it, got %d %v", replay.Status, replay.Body)
+	}
+	if resp = f.admin(http.MethodPost, PathAPI+"/sets/"+doomed+"/delete", map[string]string{"confirm": doomed}); resp.status != http.StatusNotFound {
+		t.Fatalf("deleting twice must be 404, got %d", resp.status)
+	}
+
+	if resp = f.admin(http.MethodPost, PathAPI+"/sets/"+keeper+"/delete", map[string]string{"confirm": keeper}); resp.status != http.StatusOK {
+		t.Fatalf("delete keeper: %d %s", resp.status, resp.body)
+	}
+	if f.web.Blobs.Exists(blob) {
+		t.Fatalf("an orphaned payload must be removed")
+	}
+	if resp = f.request(http.MethodPost, PathAPI+"/sets/"+keeper+"/delete", map[string]string{"confirm": keeper}, func(req *http.Request) { req.SetBasicAuth("admin", password) }); resp.status != http.StatusForbidden {
+		t.Fatalf("cross-site delete must be refused, got %d", resp.status)
+	}
+}
+
 func TestCatalogueOperations(t *testing.T) {
 	f := newFixture(t, password)
 	setID, _ := f.share("Ops", authorAddress, "youtube.com")
@@ -612,5 +677,32 @@ func TestCatalogueOperations(t *testing.T) {
 	}
 	if latest := f.builder.Latest(); len(latest.Manifest.RevokedKeys) != 1 {
 		t.Fatalf("the manifest must carry the revocation: %+v", latest.Manifest.RevokedKeys)
+	}
+}
+
+func TestTargetFiltersDescribeTargetsNotStrategy(t *testing.T) {
+	set := testkit.SampleSet("Filtered", "ntc.party")
+	set.Targets.TLSVersion = "1.3"
+	set.Targets.IPVersion = "4"
+	set.Targets.DomainOnly = true
+	env := testkit.BuildEnvelope(t, &set)
+	imp, err := hubwire.Open(env, hubwire.OpenOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection, _, err := hubwire.Scrub(&imp.Set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary := TargetsOf(projection).Summary()
+	for _, want := range []string{"ntc.party", "TLS 1.3 only", "IPv4 only", "domain-only matching"} {
+		if !strings.Contains(summary, want) {
+			t.Errorf("targets summary %q lacks %q", summary, want)
+		}
+	}
+	for _, word := range StrategyWords(&imp.Set, nil) {
+		if strings.Contains(word, "only") || strings.Contains(word, "domain-only") {
+			t.Errorf("strategy words must not carry a target filter, got %q", word)
+		}
 	}
 }

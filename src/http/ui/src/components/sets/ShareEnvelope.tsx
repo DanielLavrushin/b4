@@ -111,7 +111,7 @@ export const ShareEnvelope = ({
     try {
       const res = await share.mutateAsync({ setId: config.id });
       setPublished(res);
-      showSuccess(t("sets.share.published", { id: res.hub_id }));
+      showSuccess(t("sets.share.published", { id: res.hub_id, version: res.version }));
     } catch (e) {
       if (e instanceof ApiError && e.code === "duplicate_strategy") {
         const body = (e.body ?? {}) as Partial<DuplicateAnswer>;

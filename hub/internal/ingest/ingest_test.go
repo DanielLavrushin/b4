@@ -441,3 +441,43 @@ func TestRejectedShareDoesNotSpendTheQuota(t *testing.T) {
 	}
 	expect(t, f.share(t, author, testkit.SampleSet("x", "x.example"), peerA), http.StatusAccepted, "")
 }
+
+func TestUnlinkedShareJoinsTheAuthorsMatchingSet(t *testing.T) {
+	f := newFixture(t)
+	author := testkit.Identity(t)
+	first := f.share(t, author, testkit.SampleSet("ntc.party", "ntc.party"), peerA)
+	expect(t, first, http.StatusAccepted, "")
+	setID := first.Body["set_id"].(string)
+
+	sameTargets := testkit.SampleSet("ntc.party tuned", "ntc.party")
+	sameTargets.Faking.TTL = 9
+	resp := f.share(t, author, sameTargets, peerA)
+	expect(t, resp, http.StatusAccepted, "")
+	if resp.Body["set_id"] != setID || resp.Body["version"] != 2 {
+		t.Errorf("identical targets by the author must become version 2, got %v", resp.Body)
+	}
+
+	widened := testkit.SampleSet("NTC.party tuned ", "ntc.party", "cdn.example")
+	widened.Faking.TTL = 11
+	resp = f.share(t, author, widened, peerA)
+	expect(t, resp, http.StatusAccepted, "")
+	if resp.Body["set_id"] != setID || resp.Body["version"] != 3 {
+		t.Errorf("same title with a shared target must become version 3, got %v", resp.Body)
+	}
+
+	unrelated := testkit.SampleSet("ntc.party", "other.example")
+	unrelated.Faking.TTL = 13
+	resp = f.share(t, author, unrelated, peerA)
+	expect(t, resp, http.StatusAccepted, "")
+	if resp.Body["set_id"] == setID {
+		t.Errorf("same title without a shared target is a new set, got %v", resp.Body)
+	}
+
+	stranger := testkit.SampleSet("ntc.party", "ntc.party")
+	stranger.Faking.TTL = 15
+	resp = f.share(t, testkit.Identity(t), stranger, peerB)
+	expect(t, resp, http.StatusAccepted, "")
+	if resp.Body["set_id"] == setID {
+		t.Errorf("another author never joins the set, got %v", resp.Body)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/daniellavrushin/b4/hubwire"
@@ -325,6 +326,71 @@ func (s *Store) Reject(ctx context.Context, setID string, version int, reason st
 
 func (s *Store) Hide(ctx context.Context, setID string, version int, reason string, now time.Time) error {
 	return s.setStatus(ctx, setID, version, hubwire.SetStatusHidden, reason, now)
+}
+
+func (s *Store) DeleteSet(ctx context.Context, setID string) ([]string, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `SELECT payloads_json FROM set_versions WHERE set_id = ?`, setID)
+	if err != nil {
+		return nil, err
+	}
+	hashes := make(map[string]struct{})
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		var refs []hubwire.BlobRef
+		if json.Unmarshal([]byte(raw), &refs) == nil {
+			for _, ref := range refs {
+				hashes[ref.SHA256] = struct{}{}
+			}
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, stmt := range []string{
+		`DELETE FROM votes WHERE set_id = ?`,
+		`DELETE FROM reports WHERE set_id = ?`,
+		`UPDATE records SET set_id = '', version = 0 WHERE set_id = ?`,
+		`DELETE FROM set_versions WHERE set_id = ?`,
+	} {
+		if _, err := tx.ExecContext(ctx, stmt, setID); err != nil {
+			return nil, err
+		}
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM sets WHERE id = ?`, setID)
+	if err != nil {
+		return nil, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, ErrNotFound
+	}
+	orphaned := make([]string, 0, len(hashes))
+	for hash := range hashes {
+		var n int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM set_versions WHERE payloads_json LIKE ?`, "%"+hash+"%").Scan(&n); err != nil {
+			return nil, err
+		}
+		if n == 0 {
+			orphaned = append(orphaned, hash)
+		}
+	}
+	if err := setMetaTx(ctx, tx, metaDirty, "1"); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	sort.Strings(orphaned)
+	return orphaned, nil
 }
 
 func (s *Store) ReferencedCategories(ctx context.Context) ([]string, error) {

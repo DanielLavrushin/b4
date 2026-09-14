@@ -58,6 +58,33 @@ func TargetsKey(projection map[string]interface{}) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func TargetSet(projection map[string]interface{}) map[string]struct{} {
+	out := make(map[string]struct{})
+	add := func(prefix string, items []string, normalise func(string) string) {
+		for _, item := range canonicalTargets(items, normalise) {
+			out[prefix+item] = struct{}{}
+		}
+	}
+	add("sni:", store.TargetList(projection, "sni_domains"), sni.CanonicalDomainEntry)
+	add("ip:", store.TargetList(projection, "ip"), lowerTrimmed)
+	add("geosite:", store.TargetList(projection, "geosite_categories"), lowerTrimmed)
+	add("geoip:", store.TargetList(projection, "geoip_categories"), lowerTrimmed)
+	return out
+}
+
+func targetsOverlap(a, b map[string]struct{}) bool {
+	for k := range a {
+		if _, ok := b[k]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func sameTitle(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+}
+
 func Flags(projection map[string]interface{}, payloads []hubwire.BlobRef) []string {
 	flags := make([]string, 0, 5)
 	if len(payloads) > 0 {

@@ -16,6 +16,7 @@ export interface ReasonPrompt {
   confirmLabel: string;
   reason: "required" | "optional" | "none";
   destructive?: boolean;
+  confirmText?: string;
   onConfirm: (reason: string) => Promise<void> | void;
 }
 
@@ -27,17 +28,21 @@ interface ReasonDialogProps {
 export function ReasonDialog({ prompt, onClose }: ReasonDialogProps) {
   const { t } = useTranslation();
   const [reason, setReason] = useState("");
+  const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (prompt) {
       setReason("");
+      setTyped("");
       setBusy(false);
     }
   }, [prompt]);
 
   if (!prompt) return null;
   const needsReason = prompt.reason === "required" && reason.trim() === "";
+  const needsTyping = prompt.confirmText !== undefined && typed.trim() !== prompt.confirmText;
+  const blocked = needsReason || needsTyping;
 
   const confirm = async () => {
     setBusy(true);
@@ -67,7 +72,24 @@ export function ReasonDialog({ prompt, onClose }: ReasonDialogProps) {
             required={prompt.reason === "required"}
             helperText={needsReason ? t("app.reasonRequired") : " "}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !needsReason) {
+              if (e.key === "Enter" && !blocked) {
+                e.preventDefault();
+                void confirm();
+              }
+            }}
+          />
+        )}
+        {prompt.confirmText !== undefined && (
+          <TextField
+            autoFocus={prompt.reason === "none"}
+            fullWidth
+            size="small"
+            label={t("app.typeToConfirm", { text: prompt.confirmText })}
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            slotProps={{ input: { sx: { fontFamily: "monospace" } } }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !blocked) {
                 e.preventDefault();
                 void confirm();
               }
@@ -81,7 +103,7 @@ export function ReasonDialog({ prompt, onClose }: ReasonDialogProps) {
         </Button>
         <Button
           onClick={() => void confirm()}
-          disabled={busy || needsReason}
+          disabled={busy || blocked}
           variant="contained"
           color={prompt.destructive ? "error" : "primary"}
         >

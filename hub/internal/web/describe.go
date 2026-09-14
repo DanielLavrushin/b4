@@ -37,19 +37,42 @@ func DecodeSet(projection map[string]interface{}) (config.SetConfig, error) {
 }
 
 type Targets struct {
-	Domains []string
-	IPs     []string
-	GeoSite []string
-	GeoIP   []string
+	Domains    []string
+	IPs        []string
+	GeoSite    []string
+	GeoIP      []string
+	TLSVersion string
+	IPVersion  string
+	DomainOnly bool
 }
 
 func TargetsOf(projection map[string]interface{}) Targets {
-	return Targets{
+	t := Targets{
 		Domains: store.TargetList(projection, "sni_domains"),
 		IPs:     store.TargetList(projection, "ip"),
 		GeoSite: store.TargetList(projection, "geosite_categories"),
 		GeoIP:   store.TargetList(projection, "geoip_categories"),
 	}
+	if targets, ok := projection["targets"].(map[string]interface{}); ok {
+		t.TLSVersion, _ = targets["tls"].(string)
+		t.IPVersion, _ = targets["ip_version"].(string)
+		t.DomainOnly, _ = targets["domain_only"].(bool)
+	}
+	return t
+}
+
+func (t Targets) Filters() []string {
+	out := make([]string, 0, 3)
+	if t.TLSVersion != "" {
+		out = append(out, "TLS "+t.TLSVersion+" only")
+	}
+	if t.IPVersion != "" {
+		out = append(out, "IPv"+t.IPVersion+" only")
+	}
+	if t.DomainOnly {
+		out = append(out, "domain-only matching")
+	}
+	return out
 }
 
 func (t Targets) Empty() bool {
@@ -89,8 +112,9 @@ func (t Targets) Summary() string {
 		parts = append(parts, s)
 	}
 	if len(parts) == 0 {
-		return "no targets"
+		parts = append(parts, "no targets")
 	}
+	parts = append(parts, t.Filters()...)
 	return strings.Join(parts, "; ")
 }
 
@@ -229,15 +253,6 @@ func StrategyWords(set *config.SetConfig, payloads []hubwire.BlobRef) []string {
 	}
 	if set.MSSClamp.Enabled {
 		words = append(words, fmt.Sprintf("MSS clamp %d", set.MSSClamp.Size))
-	}
-	if set.Targets.TLSVersion != "" {
-		words = append(words, "TLS "+set.Targets.TLSVersion+" only")
-	}
-	if set.Targets.IPVersion != "" {
-		words = append(words, "IPv"+set.Targets.IPVersion+" only")
-	}
-	if set.Targets.DomainOnly {
-		words = append(words, "domain-only matching")
 	}
 	if len(words) == 0 {
 		words = append(words, "no bypass, matched traffic passes unchanged")

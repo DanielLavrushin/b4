@@ -19,7 +19,8 @@
     "reason": "Reason",
     "reasonRequired": "A reason is required",
     "error": "Request failed: {{message}}",
-    "documentation": "Documentation"
+    "documentation": "Documentation",
+    "typeToConfirm": "Type {{text}} to confirm"
   },
   "nav": {
     "overview": "Overview",
@@ -188,7 +189,11 @@
       "b4": "b4"
     },
     "verified": "verified",
-    "unverified": "unverified"
+    "unverified": "unverified",
+    "delete": "Delete permanently",
+    "deleteHint": "Removes the set with every version, its votes, reports and payloads no other set uses. Hiding is enough to take it out of the catalogue; deletion is for entries that should never have existed.",
+    "deleteTitle": "Delete {{id}}",
+    "deleteText": "This cannot be undone. Routers that applied the set keep their local copy but lose the link."
   },
   "keys": {
     "title": "Keys ({{count}})",

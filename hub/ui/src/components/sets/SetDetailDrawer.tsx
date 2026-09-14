@@ -174,6 +174,15 @@ export function SetDetailDrawer({ id, onClose, moderation }: SetDetailDrawerProp
             ))}
             <Typography variant="sectionHeader">{t("detail.votes", { count: data.votes.length })}</Typography>
             <Votes votes={data.votes} />
+            <Divider sx={{ borderColor: colors.border.light }} />
+            <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
+              <Typography variant="body2" sx={{ color: colors.text.secondary, flex: 1, minWidth: 200 }}>
+                {t("detail.deleteHint")}
+              </Typography>
+              <Button size="small" variant="outlined" color="error" disabled={moderation.busy} onClick={() => id && moderation.remove(id, onClose)}>
+                {t("detail.delete")}
+              </Button>
+            </Box>
           </>
         )}
       </Box>
