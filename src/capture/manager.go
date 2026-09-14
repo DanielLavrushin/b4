@@ -508,10 +508,20 @@ func (m *Manager) SaveImportedPayload(protocol, domain string, data []byte) (str
 		filePath := filepath.Join(m.outputPath, filename)
 		existing, err := os.ReadFile(filePath)
 		if err == nil {
-			if bytes.Equal(existing, data) {
-				return filepath.Join("captures", filename), nil
+			if !bytes.Equal(existing, data) {
+				continue
 			}
-			continue
+			if m.metadata[name] == nil || m.metadata[name][protocol] == nil {
+				at := time.Now()
+				if info, err := os.Stat(filePath); err == nil {
+					at = info.ModTime()
+				}
+				if err := m.registerImportedPayload(name, protocol, filename, len(data), at); err != nil {
+					return "", err
+				}
+				log.Infof("Registered existing shared %s payload for %s (%d bytes)", protocol, name, len(data))
+			}
+			return filepath.Join("captures", filename), nil
 		}
 		if !os.IsNotExist(err) {
 			return "", fmt.Errorf("failed to inspect %s: %v", filename, err)
@@ -519,21 +529,32 @@ func (m *Manager) SaveImportedPayload(protocol, domain string, data []byte) (str
 		if err := os.WriteFile(filePath, data, 0644); err != nil {
 			return "", fmt.Errorf("failed to save file: %v", err)
 		}
-		if m.metadata[name] == nil {
-			m.metadata[name] = make(map[string]*PayloadMetadata)
-		}
-		m.metadata[name][protocol] = &PayloadMetadata{
-			Timestamp: time.Now(),
-			Size:      len(data),
-			Filepath:  filename,
-		}
-		if err := m.saveMetadata(); err != nil {
-			return "", fmt.Errorf("failed to save metadata: %v", err)
+		if err := m.registerImportedPayload(name, protocol, filename, len(data), time.Now()); err != nil {
+			return "", err
 		}
 		log.Infof("Saved shared %s payload for %s (%d bytes)", protocol, name, len(data))
 		return filepath.Join("captures", filename), nil
 	}
 	return "", fmt.Errorf("a different payload already exists under every name derived from %s", domain)
+}
+
+func (m *Manager) registerImportedPayload(name, protocol, filename string, size int, at time.Time) error {
+	if m.metadata[name] == nil {
+		m.metadata[name] = make(map[string]*PayloadMetadata)
+	}
+	m.metadata[name][protocol] = &PayloadMetadata{
+		Timestamp: at,
+		Size:      size,
+		Filepath:  filename,
+	}
+	if err := m.saveMetadata(); err != nil {
+		delete(m.metadata[name], protocol)
+		if len(m.metadata[name]) == 0 {
+			delete(m.metadata, name)
+		}
+		return fmt.Errorf("failed to save metadata: %v", err)
+	}
+	return nil
 }
 
 func (m *Manager) LoadCaptureData(c *Capture) ([]byte, error) {
