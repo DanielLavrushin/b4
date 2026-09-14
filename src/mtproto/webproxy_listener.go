@@ -72,7 +72,7 @@ func (s *Server) startWebListenerLocked(cfg *config.Config) {
 		return
 	}
 	var tlsCfg *tls.Config
-	if spec.cert != "" {
+	if spec.cert != "" || spec.key != "" {
 		pair, err := tls.LoadX509KeyPair(spec.cert, spec.key)
 		if err != nil {
 			log.Errorf("MTProto WEB proxy: TLS certificate/key pair not loaded: %v (relay port %s not started, the web server keeps serving the relay hostname)", err, spec.addr)

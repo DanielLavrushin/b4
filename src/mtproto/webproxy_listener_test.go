@@ -309,6 +309,31 @@ func TestWebListenerRefusesUnloadablePair(t *testing.T) {
 	}
 }
 
+func TestWebListenerHalfPairFailsClosed(t *testing.T) {
+	for _, tc := range []struct{ name, cert, key string }{
+		{"key only", "", "/etc/b4/relay.key"},
+		{"cert only", "/etc/b4/relay.crt", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			port := freeTCPPort(t)
+			cfg := webListenerConfig(t, port)
+			cfg.System.MTProto.WebProxy.TLSCert = tc.cert
+			cfg.System.MTProto.WebProxy.TLSKey = tc.key
+			srv := &Server{}
+			srv.cfg.Store(cfg)
+			srv.mu.Lock()
+			srv.startWebListenerLocked(cfg)
+			srv.mu.Unlock()
+			if srv.webSrv != nil || srv.WebProxyOwnListener() {
+				srv.mu.Lock()
+				srv.stopWebListenerLocked()
+				srv.mu.Unlock()
+				t.Fatal("an incomplete TLS pair must not start the relay port as plain HTTP")
+			}
+		})
+	}
+}
+
 func TestWebListenerBindFailureKeepsSharedVhost(t *testing.T) {
 	taken, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
