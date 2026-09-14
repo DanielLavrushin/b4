@@ -181,6 +181,7 @@ func (api *API) RegisterEndpoints(mux *http.ServeMux, cfgPtr *atomic.Pointer[con
 	api.RegisterGeodatApi()
 	api.RegisterCaptureApi()
 	api.RegisterSetsApi()
+	api.RegisterHubApi()
 	api.RegisterConvertApi()
 	api.RegisterDnsApi()
 	api.RegisterDevicesApi()
@@ -299,6 +300,7 @@ func downloadFile(url, destPath string) (int64, error) {
 type MTProtoWebProxy interface {
 	ServeWebProxy(w http.ResponseWriter, r *http.Request) bool
 	WebProxyHost() string
+	WebProxyOwnListener() bool
 }
 
 func MTProtoWebProxyServer() MTProtoWebProxy {

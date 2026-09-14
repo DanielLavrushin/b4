@@ -24,6 +24,7 @@ func (api *API) RegisterMTProtoApi() {
 	api.mux.HandleFunc("/api/mtproto/sessions", api.handleMTProtoSessions)
 	api.mux.HandleFunc("/api/mtproto/active-clients", api.handleMTProtoActiveClients)
 	api.mux.HandleFunc("/api/mtproto/web-proxy", api.handleMTProtoWebProxy)
+	api.mux.HandleFunc("/api/mtproto/web-proxy/page", api.handleMTProtoWebProxyPage)
 }
 
 // @Summary Telegram Desktop WEB proxy status

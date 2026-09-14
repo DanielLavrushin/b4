@@ -20,7 +20,8 @@ type SetStatistics struct {
 
 type SetWithStats struct {
 	*config.SetConfig
-	Stats SetStatistics `json:"stats"`
+	Stats    SetStatistics `json:"stats"`
+	HubState string        `json:"hub_state,omitempty"`
 }
 
 // CategoryPreviewResponse for previewing category contents

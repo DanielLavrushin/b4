@@ -1,6 +1,8 @@
 package capture
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -13,6 +15,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/tlsgen"
+	"github.com/daniellavrushin/b4/utils"
 )
 
 const payloadFilenameFmt = "%s_%s.bin"
@@ -97,15 +100,8 @@ func (m *Manager) saveMetadata() error {
 	if err != nil {
 		return err
 	}
-	file, err := os.OpenFile(m.metadataFile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
-	if err != nil {
-		return log.Errorf("failed to create config file: %v", err)
-	}
-	defer file.Close()
-
-	_, err = file.Write(data)
-	if err != nil {
-		return log.Errorf("failed to write config file: %v", err)
+	if err := utils.WriteFileAtomic(m.metadataFile, data, 0644); err != nil {
+		return log.Errorf("failed to write capture metadata: %v", err)
 	}
 	return nil
 }
@@ -488,6 +484,70 @@ func (m *Manager) SaveUploadedCapture(protocol, domain string, data []byte) erro
 	}
 
 	log.Infof("✓ Saved uploaded %s payload for %s (%d bytes)", protocol, domain, len(data))
+	return nil
+}
+
+func (m *Manager) SaveImportedPayload(protocol, domain string, data []byte) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	if domain == "" {
+		domain = "shared"
+	}
+	sum := sha256.Sum256(data)
+	candidates := []string{domain, domain + "-" + hex.EncodeToString(sum[:4])}
+	for _, name := range candidates {
+		filename := fmt.Sprintf(payloadFilenameFmt, protocol, sanitizeDomain(name))
+		filePath := filepath.Join(m.outputPath, filename)
+		existing, err := os.ReadFile(filePath)
+		if err == nil {
+			if !bytes.Equal(existing, data) {
+				continue
+			}
+			if m.metadata[name] == nil || m.metadata[name][protocol] == nil {
+				at := time.Now()
+				if info, err := os.Stat(filePath); err == nil {
+					at = info.ModTime()
+				}
+				if err := m.registerImportedPayload(name, protocol, filename, len(data), at); err != nil {
+					return "", err
+				}
+				log.Infof("Registered existing shared %s payload for %s (%d bytes)", protocol, name, len(data))
+			}
+			return filepath.Join("captures", filename), nil
+		}
+		if !os.IsNotExist(err) {
+			return "", fmt.Errorf("failed to inspect %s: %v", filename, err)
+		}
+		if err := os.WriteFile(filePath, data, 0644); err != nil {
+			return "", fmt.Errorf("failed to save file: %v", err)
+		}
+		if err := m.registerImportedPayload(name, protocol, filename, len(data), time.Now()); err != nil {
+			return "", err
+		}
+		log.Infof("Saved shared %s payload for %s (%d bytes)", protocol, name, len(data))
+		return filepath.Join("captures", filename), nil
+	}
+	return "", fmt.Errorf("a different payload already exists under every name derived from %s", domain)
+}
+
+func (m *Manager) registerImportedPayload(name, protocol, filename string, size int, at time.Time) error {
+	if m.metadata[name] == nil {
+		m.metadata[name] = make(map[string]*PayloadMetadata)
+	}
+	m.metadata[name][protocol] = &PayloadMetadata{
+		Timestamp: at,
+		Size:      size,
+		Filepath:  filename,
+	}
+	if err := m.saveMetadata(); err != nil {
+		delete(m.metadata[name], protocol)
+		if len(m.metadata[name]) == 0 {
+			delete(m.metadata, name)
+		}
+		return fmt.Errorf("failed to save metadata: %v", err)
+	}
 	return nil
 }
 

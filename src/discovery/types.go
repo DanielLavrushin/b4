@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"strings"
 	"context"
 	"sync"
 	"time"
@@ -56,6 +57,7 @@ const (
 	FamilyTCPMD5      StrategyFamily = "tcpmd5"
 	FamilyAltAddress  StrategyFamily = "alt_address"
 	FamilyDNSRedirect StrategyFamily = "dns_redirect"
+	FamilyCommunity   StrategyFamily = "community"
 )
 
 type Outcome string
@@ -110,8 +112,11 @@ type CheckSuite struct {
 	CurrentDomain          string                            `json:"current_domain,omitempty"`
 	CurrentPhase           DiscoveryPhase                    `json:"current_phase,omitempty"`
 	Source                 string                            `json:"source,omitempty"`
+	StoppedEarly           bool                              `json:"stopped_early,omitempty"`
+	StoppedPhase           DiscoveryPhase                    `json:"stopped_phase,omitempty"`
 	mu                     sync.RWMutex                      `json:"-"`
 	cancel                 chan struct{}                     `json:"-"`
+	finish                 chan struct{}                     `json:"-"`
 }
 
 type DomainPresetResult struct {
@@ -179,6 +184,19 @@ type ConfigPreset struct {
 	Config       config.SetConfig `json:"config"`
 	Priority     int              `json:"priority"`
 	FixedPayload bool             `json:"-"`
+	Domains      []string         `json:"domains,omitempty"`
+}
+
+func (p ConfigPreset) covers(domain string) bool {
+	if len(p.Domains) == 0 {
+		return true
+	}
+	for _, d := range p.Domains {
+		if strings.EqualFold(d, domain) {
+			return true
+		}
+	}
+	return false
 }
 
 type DNSProbeResult struct {
@@ -219,6 +237,7 @@ type DiscoverySuite struct {
 	*CheckSuite
 	networkBaseline float64
 	optimalTTL      uint8
+	ttlProbed       bool
 
 	ctx       context.Context
 	ctxCancel context.CancelFunc
@@ -244,6 +263,8 @@ type DiscoverySuite struct {
 
 	discoveryCache *DiscoveryCache
 	plainSets      map[string]*config.SetConfig
+	hubPresets     []ConfigPreset
+	hubPresetsFn   func() []ConfigPreset
 }
 
 type CustomPayload struct {

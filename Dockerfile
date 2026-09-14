@@ -12,15 +12,19 @@ FROM --platform=$BUILDPLATFORM node:22-alpine AS ui-builder
 
 RUN corepack enable && corepack prepare pnpm@10.18.2 --activate
 
-WORKDIR /app/src/http/ui
-COPY src/http/ui/package.json src/http/ui/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+WORKDIR /app
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY src/http/ui/package.json ./src/http/ui/
+COPY hub/ui/package.json ./hub/ui/
+COPY shared/design/package.json ./shared/design/
+RUN pnpm install --frozen-lockfile --filter b4-ui...
 
-COPY src/http/ui/ ./
-COPY --from=defaults-gen /app/src/http/ui/src/models/defaults.json ./src/models/defaults.json
+COPY shared/design/ ./shared/design/
+COPY src/http/ui/ ./src/http/ui/
+COPY --from=defaults-gen /app/src/http/ui/src/models/defaults.json ./src/http/ui/src/models/defaults.json
 ARG VERSION=dev
 ENV VITE_APP_VERSION=${VERSION}
-RUN pnpm build
+RUN pnpm --filter b4-ui build
 
 # Stage 3: Build the Go binary
 FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS go-builder

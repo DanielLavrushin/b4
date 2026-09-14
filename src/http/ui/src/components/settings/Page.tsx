@@ -32,6 +32,7 @@ import {
 } from "@b4.icons";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useAiStatus } from "@context/AiStatusProvider";
+import { useHubInvalidate } from "@hooks/useHub";
 import { ApiSettings } from "./Api";
 import { DnsSettings } from "./Dns";
 import { IPHealthSettings } from "./IPHealth";
@@ -240,7 +241,9 @@ export function SettingsPage() {
         JSON.stringify(config.system.ai) !==
           JSON.stringify(originalConfig.system.ai) ||
         JSON.stringify(config.system.web_server.mcp) !==
-          JSON.stringify(originalConfig.system.web_server.mcp),
+          JSON.stringify(originalConfig.system.web_server.mcp) ||
+        JSON.stringify(config.system.hub) !==
+          JSON.stringify(originalConfig.system.hub),
 
       // PAYLOADS
       [TABS.PAYLOADS]: false,
@@ -281,6 +284,7 @@ export function SettingsPage() {
   }, [loadConfig]);
 
   const { refresh: refreshAiStatus } = useAiStatus();
+  const invalidateHub = useHubInvalidate();
 
   const saveConfig = async () => {
     if (!config) return;
@@ -300,6 +304,7 @@ export function SettingsPage() {
       setSaving(false);
       await loadConfig();
       void refreshAiStatus();
+      void invalidateHub();
     }
   };
 

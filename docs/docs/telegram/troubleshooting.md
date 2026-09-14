@@ -90,4 +90,4 @@ Confirmation comes from the log instead:
 [tg-bridge] web proxy new stream 1 from 203.0.113.9
 ```
 
-If neither line ever appears, work through the [preconditions](./web-proxy.md): the MTProto proxy has to be enabled and its listener has to have bound, the web server has to be running, the hostname has to reach b4 over trusted TLS on 443 with its `Host` header intact, and the link has to be the one from the share dialog rather than one assembled by hand.
+If neither line ever appears, work through the [preconditions](./web-proxy.md): the MTProto proxy has to be enabled and its listener has to have bound, the web server has to be running or a relay port has to be set, the hostname has to reach b4 over trusted TLS on 443 with its `Host` header intact, and the link has to be the one from the share dialog rather than one assembled by hand.

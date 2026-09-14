@@ -156,11 +156,11 @@ func (s *Server) ServeWebProxy(w http.ResponseWriter, r *http.Request) bool {
 	case r.URL.Path == webCarrierPath:
 		s.serveWebCarrier(w, r, host)
 	case r.URL.Path == webSessionPath && r.Method == http.MethodDelete:
-		webWriteSite(w, r, http.StatusNotFound)
+		s.webWriteSite(w, r, http.StatusNotFound)
 	case r.URL.Path == "/" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
 		s.serveWebRoot(w, r, host)
 	default:
-		webWriteSite(w, r, http.StatusNotFound)
+		s.webWriteSite(w, r, http.StatusNotFound)
 	}
 	return true
 }
@@ -169,12 +169,12 @@ func (s *Server) serveWebRoot(w http.ResponseWriter, r *http.Request, host strin
 	capability := r.URL.Query().Get("bridge")
 	secret := s.webSecretFor(host, capability)
 	if capability == "" || secret == nil {
-		webWriteSite(w, r, http.StatusOK)
+		s.webWriteSite(w, r, http.StatusOK)
 		return
 	}
 	token, err := s.webTickets.issue(secret)
 	if err != nil {
-		webWriteSite(w, r, http.StatusOK)
+		s.webWriteSite(w, r, http.StatusOK)
 		return
 	}
 	webPageHeaders(w)
@@ -209,22 +209,22 @@ func (s *Server) webSecretFor(host, capability string) *Secret {
 
 func (s *Server) serveWebCarrier(w http.ResponseWriter, r *http.Request, host string) {
 	if r.Method != http.MethodGet {
-		webWriteSite(w, r, http.StatusNotFound)
+		s.webWriteSite(w, r, http.StatusNotFound)
 		return
 	}
 	if !websocket.IsWebSocketUpgrade(r) {
-		webWriteSite(w, r, http.StatusNotFound)
+		s.webWriteSite(w, r, http.StatusNotFound)
 		return
 	}
 	subproto := webRequestedSubprotocol(r)
 	secret := s.webTickets.redeem(strings.TrimPrefix(subproto, webSubprotoPrefix))
 	if subproto == "" || secret == nil {
-		webWriteSite(w, r, http.StatusNotFound)
+		s.webWriteSite(w, r, http.StatusNotFound)
 		return
 	}
 	if webCarriers.Add(1) > webMaxCarriers {
 		webCarriers.Add(-1)
-		webWriteSite(w, r, http.StatusNotFound)
+		s.webWriteSite(w, r, http.StatusNotFound)
 		return
 	}
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import {
   Box,
   Card,
@@ -24,12 +25,23 @@ import {
   EditIcon,
   EscalateInIcon,
   EscalateOutIcon,
+  ShareIcon,
+  ThumbDownIcon,
+  ThumbDownOutlinedIcon,
+  ThumbUpIcon,
+  ThumbUpOutlinedIcon,
 } from "@b4.icons";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import { B4Badge } from "@b4.elements";
 import { colors, facets as facetColors, radius, spacing, typography } from "@design";
 import { B4SetConfig } from "@models/config";
+import { HubVoteKind } from "@models/hub";
 import { useTranslation } from "react-i18next";
+import { ApiError } from "@api/apiClient";
+import { useSnackbar } from "@context/SnackbarProvider";
+import { useHubStatus, useHubVote } from "@hooks/useHub";
+import { voteTooltip } from "@components/hub/text";
+import { describeApiError } from "@utils";
 import { SetStats } from "./Manager";
 import {
   EditorSection,
@@ -68,6 +80,7 @@ interface SetCardProps {
   onEscalationClick?: (setId: string) => void;
   activeFacet?: FacetKey | null;
   onFacetSelect?: (key: FacetKey) => void;
+  onVoted?: () => void;
 }
 
 export const SetCard = ({
@@ -91,11 +104,34 @@ export const SetCard = ({
   onEscalationClick,
   activeFacet = null,
   onFacetSelect,
+  onVoted,
 }: SetCardProps) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const { showSuccess, showError } = useSnackbar();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [railExpanded, setRailExpanded] = useState(false);
   const railTimer = useRef<number | null>(null);
+  const hubId = set.hub?.id ?? "";
+  const hubStatus = useHubStatus(Boolean(hubId));
+  const vote = useHubVote();
+  const canVote =
+    Boolean(hubId) &&
+    set.hub_state === "unmodified" &&
+    Boolean(hubStatus.data?.enabled && hubStatus.data?.configured);
+
+  const castVote = async (kind: HubVoteKind) => {
+    try {
+      const res = await vote.mutateAsync({ id: hubId, kind });
+      showSuccess(res.sent ? t("hub.vote.sent") : t("hub.vote.queued"));
+      onVoted?.();
+    } catch (e) {
+      const code = e instanceof ApiError ? e.code : undefined;
+      if (code === "not_applied") showError(t("hub.vote.notApplied"));
+      else if (code === "modified") showError(t("hub.vote.modified"));
+      else showError(t("hub.vote.failed", { error: describeApiError(e) }));
+    }
+  };
 
   const cancelRailRelease = () => {
     if (railTimer.current !== null) {
@@ -382,7 +418,9 @@ export const SetCard = ({
         </CardContent>
       </CardActionArea>
 
-      {(escalatesTo || (escalatedFrom && escalatedFrom.length > 0)) && (
+      {(escalatesTo ||
+        (escalatedFrom && escalatedFrom.length > 0) ||
+        set.hub_state) && (
         <Box
           sx={{
             display: "flex",
@@ -403,6 +441,85 @@ export const SetCard = ({
               onHover={onEscalationHover}
               onClick={onEscalationClick}
             />
+          )}
+          {set.hub_state && (
+            <Tooltip
+              title={
+                set.hub?.id
+                  ? t("sets.card.sharedSetOpenHub")
+                  : set.hub_state === "modified"
+                    ? t("sets.card.sharedSetEdited")
+                    : t("sets.card.sharedSet")
+              }
+            >
+              <B4Badge
+                icon={<ShareIcon sx={{ fontSize: ESCALATION_ICON }} />}
+                label={
+                  set.hub?.id
+                    ? set.hub_state === "modified"
+                      ? t("sets.card.communitySetEdited")
+                      : t("sets.card.communitySet")
+                    : set.hub_state === "modified"
+                      ? t("sets.card.sharedSetEdited")
+                      : t("sets.card.sharedSet")
+                }
+                size="small"
+                color="secondary"
+                variant={set.hub_state === "modified" ? "outlined" : "filled"}
+                onClick={
+                  set.hub?.id
+                    ? (e) => {
+                        e.stopPropagation();
+                        navigate(
+                          `/hub?set=${encodeURIComponent(set.hub?.id ?? "")}`,
+                        )?.catch(() => {});
+                      }
+                    : undefined
+                }
+              />
+            </Tooltip>
+          )}
+          {canVote && (
+            <>
+              <Tooltip title={voteTooltip(t, set.hub, "works")}>
+                <span>
+                  <IconButton
+                    size="small"
+                    disabled={vote.isPending}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void castVote("works");
+                    }}
+                    sx={{ color: colors.state.success, p: spacing.xs / 2 }}
+                  >
+                    {set.hub?.vote === "works" ? (
+                      <ThumbUpIcon sx={{ fontSize: VOTE_ICON }} />
+                    ) : (
+                      <ThumbUpOutlinedIcon sx={{ fontSize: VOTE_ICON }} />
+                    )}
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Tooltip title={voteTooltip(t, set.hub, "broken")}>
+                <span>
+                  <IconButton
+                    size="small"
+                    disabled={vote.isPending}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void castVote("broken");
+                    }}
+                    sx={{ color: colors.state.error, p: spacing.xs / 2 }}
+                  >
+                    {set.hub?.vote === "broken" ? (
+                      <ThumbDownIcon sx={{ fontSize: VOTE_ICON }} />
+                    ) : (
+                      <ThumbDownOutlinedIcon sx={{ fontSize: VOTE_ICON }} />
+                    )}
+                  </IconButton>
+                </span>
+              </Tooltip>
+            </>
           )}
           {escalatedFrom?.map((link) => (
             <EscalationChip
@@ -438,6 +555,7 @@ interface EscalationChipProps {
 }
 
 const ESCALATION_ICON = 12;
+const VOTE_ICON = 16;
 
 const EscalationChip = ({
   icon,

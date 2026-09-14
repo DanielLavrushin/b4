@@ -19,6 +19,7 @@ func (api *API) RegisterDiscoveryApi() {
 	api.mux.HandleFunc("/api/discovery/start", api.handleStartDiscovery)
 	api.mux.HandleFunc("/api/discovery/status/{id}", api.handleCheckStatus)
 	api.mux.HandleFunc("/api/discovery/cancel/{id}", api.handleCancelCheck)
+	api.mux.HandleFunc("/api/discovery/finish/{id}", api.handleFinishCheck)
 	api.mux.HandleFunc("/api/discovery/add", api.handleAddPresetAsSet)
 	api.mux.HandleFunc("/api/discovery/similar", api.handleFindSimilarSets)
 	api.mux.HandleFunc("/api/discovery/cache/clear", api.handleClearDiscoveryCache)
@@ -142,6 +143,40 @@ func (api *API) handleCancelCheck(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// @Summary Stop the search and confirm what was found
+// @Tags Discovery
+// @Produce json
+// @Param id path string true "Suite ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 404 {string} string
+// @Security BearerAuth
+// @Router /discovery/finish/{id} [post]
+func (api *API) handleFinishCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	testID := r.PathValue("id")
+	if testID == "" {
+		http.Error(w, "Check ID required", http.StatusBadRequest)
+		return
+	}
+
+	if err := discovery.FinishCheckSuite(testID); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	log.Infof("Finishing test suite %s early, confirming found strategies", testID)
+
+	setJsonHeader(w)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Check suite finishing",
+	})
+}
+
 // @Summary Start domain discovery
 // @Tags Discovery
 // @Accept json
@@ -200,6 +235,7 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 		TLSVersion:      req.TLSVersion,
 		IPVersion:       req.IPVersion,
 		Source:          discovery.SourceWeb,
+		HubPresets:      func() []discovery.ConfigPreset { return api.communityPresets(urls, req.SkipCommunity) },
 	})
 	if err != nil {
 		if errors.Is(err, discovery.ErrDiscoveryAlreadyRunning) {

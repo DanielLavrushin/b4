@@ -130,7 +130,7 @@ func parseDiscoveryInputs(inputs []string) []DomainInput {
 }
 
 func (ds *DiscoverySuite) RunDiscovery() {
-	defer ds.ctxCancel()
+	defer func() { ds.ctxCancel() }()
 	defer ds.saveRunLog()
 	log.DiscoveryLogf("═══════════════════════════════════════")
 	domainNames := make([]string, len(ds.Domains))
@@ -225,6 +225,11 @@ func (ds *DiscoverySuite) RunDiscovery() {
 		}
 	}
 
+	if ds.interrupted() {
+		ds.finishRun()
+		return
+	}
+
 	// Phase 0: Test previously successful cached configurations
 	var cachedPresets []ConfigPreset
 	if ds.skipCache {
@@ -235,7 +240,7 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	phase1Presets := GetPhase1Presets()
 
 	ds.CheckSuite.mu.Lock()
-	ds.TotalChecks = (len(phase1Presets) + len(cachedPresets)) * len(ds.Domains)
+	ds.TotalChecks = (len(phase1Presets) + len(cachedPresets) + len(ds.hubPresets)) * len(ds.Domains)
 	ds.CheckSuite.mu.Unlock()
 
 	ds.setPhase(PhaseStrategy)
@@ -247,12 +252,38 @@ func (ds *DiscoverySuite) RunDiscovery() {
 		log.DiscoveryLogf("Phase 0: Testing %d cached configurations across %d domains", len(cachedPresets), len(ds.Domains))
 
 		for _, preset := range cachedPresets {
-			select {
-			case <-ds.cancel:
-				ds.finalize()
-				ds.logDiscoverySummary()
+			if ds.interrupted() {
+				ds.finishRun()
 				return
-			default:
+			}
+
+			if preset.Config.Faking.SNIType == config.FakePayloadRandom {
+				ds.applyBestPayload(&preset.Config.Faking)
+			}
+			results := ds.testPresetAllDomains(preset)
+			ds.storeResultsMulti(preset, results)
+		}
+	}
+
+	if ds.hubPresetsFn != nil {
+		ds.setPhase(PhaseCached)
+		ds.hubPresets = ds.hubPresetsFn()
+		checks := 0
+		for _, preset := range ds.hubPresets {
+			checks += len(ds.presetDomains(preset))
+		}
+		ds.CheckSuite.mu.Lock()
+		ds.TotalChecks += checks
+		ds.CheckSuite.mu.Unlock()
+	}
+	if len(ds.hubPresets) > 0 {
+		ds.setPhase(PhaseCached)
+		log.DiscoveryLogf("Community: testing %d strategies other users published for these domains", len(ds.hubPresets))
+
+		for _, preset := range ds.hubPresets {
+			if ds.interrupted() {
+				ds.finishRun()
+				return
 			}
 
 			if preset.Config.Faking.SNIType == config.FakePayloadRandom {
@@ -268,11 +299,14 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	workingFamilies := ds.runPhase1Multi(phase1Presets)
 	ds.determineBest()
 
+	if ds.interrupted() {
+		ds.finishRun()
+		return
+	}
+
 	if !ds.anyDomainNeedsBypass() {
 		log.DiscoveryLogf("Verified: no packet strategy needed for any domain")
-		ds.confirmWinners()
-		ds.finalize()
-		ds.logDiscoverySummary()
+		ds.finishRun()
 		return
 	}
 
@@ -282,8 +316,7 @@ func (ds *DiscoverySuite) RunDiscovery() {
 		// no packet manipulation strategy will help — the blocking is at IP level.
 		if ds.allDomainsTransportBlocked() {
 			log.Warnf("All domains have transport-level blocking (IP blocked) — extended search skipped")
-			ds.finalize()
-			ds.logDiscoverySummary()
+			ds.finishRun()
 			return
 		}
 
@@ -294,8 +327,7 @@ func (ds *DiscoverySuite) RunDiscovery() {
 
 		if len(workingFamilies) == 0 {
 			log.Warnf("No working bypass strategies found")
-			ds.finalize()
-			ds.logDiscoverySummary()
+			ds.finishRun()
 			return
 		}
 	}
@@ -313,8 +345,18 @@ func (ds *DiscoverySuite) RunDiscovery() {
 		ds.runPhase3Multi(workingFamilies, bestParams)
 	}
 
-	ds.determineBest()
-	ds.confirmWinners()
+	ds.finishRun()
+}
+
+func (ds *DiscoverySuite) finishRun() {
+	if !ds.canceled() {
+		if ds.finishing() {
+			log.DiscoveryLogf("Search stopped by the user, confirming what was found so far")
+		}
+		ds.resetFetchContext()
+		ds.determineBest()
+		ds.confirmWinners()
+	}
 	ds.finalize()
 	ds.logDiscoverySummary()
 }
@@ -348,10 +390,8 @@ func (ds *DiscoverySuite) runPhase1Multi(presets []ConfigPreset) []StrategyFamil
 	}
 
 	for _, preset := range strategyPresets {
-		select {
-		case <-ds.cancel:
+		if ds.interrupted() {
 			return workingFamilies
-		default:
 		}
 
 		ds.applyBestPayload(&preset.Config.Faking)
@@ -418,10 +458,8 @@ func (ds *DiscoverySuite) runPhase2WithRepresentative(families []StrategyFamily)
 	log.DiscoveryLogf("Phase 2: Optimizing %d working families", len(families))
 
 	for _, family := range families {
-		select {
-		case <-ds.cancel:
+		if ds.interrupted() {
 			return bestParams
-		default:
 		}
 
 		// Find the best representative domain for this family
@@ -496,10 +534,8 @@ func (ds *DiscoverySuite) runPhase3Multi(workingFamilies []StrategyFamily, bestP
 	log.DiscoveryLogf("Phase 3: Testing %d combination presets across %d domains", len(presets), len(ds.Domains))
 
 	for _, preset := range presets {
-		select {
-		case <-ds.cancel:
+		if ds.interrupted() {
 			return
-		default:
 		}
 
 		ds.applyBestPayload(&preset.Config.Faking)
@@ -585,15 +621,43 @@ func (ds *DiscoverySuite) canceled() bool {
 	}
 }
 
+func (ds *DiscoverySuite) finishing() bool {
+	select {
+	case <-ds.finish:
+		return true
+	default:
+		return false
+	}
+}
+
+func (ds *DiscoverySuite) interrupted() bool {
+	return ds.canceled() || ds.finishing()
+}
+
 func (ds *DiscoverySuite) initCancelContext() {
-	ds.ctx, ds.ctxCancel = context.WithCancel(context.Background())
-	go func() {
-		select {
-		case <-ds.cancel:
-			ds.ctxCancel()
-		case <-ds.ctx.Done():
+	ds.ctx, ds.ctxCancel = watchedContext(ds.cancel, ds.finish)
+}
+
+func (ds *DiscoverySuite) resetFetchContext() {
+	ds.ctxCancel()
+	ds.ctx, ds.ctxCancel = watchedContext(ds.cancel, nil)
+}
+
+func watchedContext(stops ...chan struct{}) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	for _, stop := range stops {
+		if stop == nil {
+			continue
 		}
-	}()
+		go func(stop chan struct{}) {
+			select {
+			case <-stop:
+				cancel()
+			case <-ctx.Done():
+			}
+		}(stop)
+	}
+	return ctx, cancel
 }
 
 func (ds *DiscoverySuite) fetchContext(timeout time.Duration) (context.Context, context.CancelFunc) {
@@ -662,7 +726,7 @@ func (ds *DiscoverySuite) optimizeComboStrategy(basePreset ConfigPreset, optimal
 	bestSpeed := initialSpeed
 
 	for _, strat := range strategies {
-		if ds.canceled() {
+		if ds.interrupted() {
 			return bestStrategy, bestSpeed
 		}
 		if strat == "ttl" {
@@ -697,7 +761,7 @@ func (ds *DiscoverySuite) optimizeComboShuffleDelay(basePreset ConfigPreset, opt
 
 	for _, mode := range shuffleModes {
 		for _, d := range delays {
-			if ds.canceled() {
+			if ds.interrupted() {
 				return bestShuffle, bestDelay, bestSpeed
 			}
 			if mode == bestShuffle && d == bestDelay {
@@ -733,12 +797,13 @@ func (ds *DiscoverySuite) optimizeTCPFrag() ConfigPreset {
 	base := baseConfig()
 	base.Fragmentation.Strategy = "tcp"
 	base.Fragmentation.ReverseOrder = true
-	base.Faking.SNI = true
-
-	base.Faking.TTL = ds.getOptimalTTL()
-
-	base.Faking.Strategy = "pastseq"
-	ds.applyBestPayload(&base.Faking)
+	if _, ok := ds.getOptimalTTL(); ok {
+		base.Faking.SNI = true
+		base.Faking.Strategy = "pastseq"
+		ds.applyBestPayload(&base.Faking)
+	} else {
+		base.Faking.SNI = false
+	}
 
 	basePreset := ConfigPreset{
 		Name:   "tcp-optimize",
@@ -781,12 +846,13 @@ func (ds *DiscoverySuite) optimizeTLSRec() ConfigPreset {
 
 	base := baseConfig()
 	base.Fragmentation.Strategy = "tls"
-	base.Faking.SNI = true
-
-	base.Faking.TTL = ds.getOptimalTTL()
-
-	base.Faking.Strategy = "pastseq"
-	ds.applyBestPayload(&base.Faking)
+	if _, ok := ds.getOptimalTTL(); ok {
+		base.Faking.SNI = true
+		base.Faking.Strategy = "pastseq"
+		ds.applyBestPayload(&base.Faking)
+	} else {
+		base.Faking.SNI = false
+	}
 
 	basePreset := ConfigPreset{
 		Name:   "tls-optimize",
@@ -843,10 +909,8 @@ func (ds *DiscoverySuite) optimizeWithPresets(family StrategyFamily) ConfigPrese
 	var bestSpeed float64
 
 	for _, preset := range presets {
-		select {
-		case <-ds.cancel:
+		if ds.interrupted() {
 			return bestPreset
-		default:
 		}
 
 		result := ds.testPresetWithBestPayload(preset)
@@ -946,8 +1010,22 @@ func (ds *DiscoverySuite) testPreset(preset ConfigPreset) CheckResult {
 
 // testPresetAllDomains applies the config ONCE and tests ALL domains.
 // This is the core multi-domain optimization: 1 config switch, N fetches.
+func (ds *DiscoverySuite) presetDomains(preset ConfigPreset) []DomainInput {
+	if len(preset.Domains) == 0 {
+		return ds.Domains
+	}
+	out := make([]DomainInput, 0, len(preset.Domains))
+	for _, di := range ds.Domains {
+		if preset.covers(di.Domain) {
+			out = append(out, di)
+		}
+	}
+	return out
+}
+
 func (ds *DiscoverySuite) testPresetAllDomains(preset ConfigPreset) map[string]CheckResult {
-	log.DiscoveryLogf("  Testing '%s' across %d domains...", preset.Name, len(ds.Domains))
+	domains := ds.presetDomains(preset)
+	log.DiscoveryLogf("  Testing '%s' across %d domains...", preset.Name, len(domains))
 
 	results := make(map[string]CheckResult)
 
@@ -955,7 +1033,7 @@ func (ds *DiscoverySuite) testPresetAllDomains(preset ConfigPreset) map[string]C
 
 	if err := ds.pool.UpdateConfig(testConfig); err != nil {
 		log.DiscoveryLogf("    → FAILED (config error: %v)", err)
-		for _, di := range ds.Domains {
+		for _, di := range domains {
 			results[di.Domain] = CheckResult{
 				Domain: di.Domain,
 				Status: CheckStatusFailed,
@@ -963,7 +1041,7 @@ func (ds *DiscoverySuite) testPresetAllDomains(preset ConfigPreset) map[string]C
 			}
 		}
 		ds.CheckSuite.mu.Lock()
-		ds.CompletedChecks += len(ds.Domains)
+		ds.CompletedChecks += len(domains)
 		ds.CheckSuite.mu.Unlock()
 		return results
 	}
@@ -976,11 +1054,9 @@ func (ds *DiscoverySuite) testPresetAllDomains(preset ConfigPreset) map[string]C
 	var wg sync.WaitGroup
 
 spawn:
-	for _, di := range ds.Domains {
-		select {
-		case <-ds.cancel:
+	for _, di := range domains {
+		if ds.interrupted() {
 			break spawn
-		default:
 		}
 
 		wg.Add(1)
@@ -991,10 +1067,8 @@ spawn:
 			var lastResult CheckResult
 
 			for i := 0; i < ds.validationTries; i++ {
-				select {
-				case <-ds.cancel:
+				if ds.interrupted() {
 					return
-				default:
 				}
 
 				result := ds.fetchForDomain(di, timeout)
@@ -1287,6 +1361,15 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 
 	result.StatusCode = resp.StatusCode
 	result.ContentSize = resp.ContentLength
+
+	// A malformed request is our own doing: the strategy under test corrupted the stream
+	// before the origin parsed it, so the fetch is not evidence that the strategy works.
+	if resp.StatusCode == http.StatusBadRequest {
+		result.Status = CheckStatusFailed
+		result.Error = "server answered HTTP 400, the strategy corrupted the request"
+		result.Duration = time.Since(start)
+		return result
+	}
 
 	// Check for ISP block page indicators before reading body.
 	if resp.StatusCode == 451 {
@@ -1594,6 +1677,7 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 	testSet.UDP = preset.Config.UDP
 	testSet.Fragmentation = preset.Config.Fragmentation
 	testSet.Faking = preset.Config.Faking
+	testSet.Hub = preset.Config.Hub
 	testSet.DNS = ds.discoveredDNS
 
 	config.ApplySetDefaults(&testSet)
@@ -1686,6 +1770,7 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 	testSet.UDP = preset.Config.UDP
 	testSet.Fragmentation = preset.Config.Fragmentation
 	testSet.Faking = preset.Config.Faking
+	testSet.Hub = preset.Config.Hub
 	testSet.DNS = ds.discoveredDNS
 
 	config.ApplySetDefaults(&testSet)
@@ -2117,10 +2202,8 @@ func (ds *DiscoverySuite) runExtendedSearch() []StrategyFamily {
 	var workingFamilies []StrategyFamily
 
 	for _, family := range families {
-		select {
-		case <-ds.cancel:
+		if ds.interrupted() {
 			return workingFamilies
-		default:
 		}
 
 		presets := GetPhase2Presets(family)
@@ -2132,10 +2215,8 @@ func (ds *DiscoverySuite) runExtendedSearch() []StrategyFamily {
 		log.DiscoveryLogf("  Extended search: %s (%d variants)", family, len(presets))
 
 		for _, preset := range presets {
-			select {
-			case <-ds.cancel:
+			if ds.interrupted() {
 				return workingFamilies
-			default:
 			}
 
 			result := ds.testPresetWithBestPayload(preset)
@@ -2162,7 +2243,7 @@ func (ds *DiscoverySuite) findOptimalPosition(basePreset ConfigPreset, maxPos in
 	log.DiscoveryLogf("Binary search for optimal position (range %d-%d)", low, high)
 
 	for low < high {
-		if ds.canceled() {
+		if ds.interrupted() {
 			break
 		}
 		mid := (low + high) / 2

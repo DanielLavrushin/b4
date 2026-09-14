@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>b4 hub mirror</title>
+<style>
+:root { color-scheme: light dark; --line: #8886; --muted: #777; --accent: #2a6ebb; }
+body { margin: 0 auto; max-width: 48rem; padding: 1rem; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow-wrap: anywhere; }
+a { color: var(--accent); }
+h1 { font-size: 1.4rem; margin: .5rem 0 .75rem; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem .75rem; margin: .75rem 0; }
+dt { color: var(--muted); }
+dd { margin: 0; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85rem; }
+footer { margin-top: 1.5rem; padding-top: .75rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .9rem; }
+@media (max-width: 36rem) { dl { grid-template-columns: 1fr; } dt { margin-top: .4rem; } }
+</style>
+</head>
+<body>
+<h1>b4 hub mirror</h1>
+<p>Mirror of <a href="{{.Upstream}}" rel="noreferrer">{{.Upstream}}</a>{{if .PublicURL}}, reachable as {{.PublicURL}}{{end}}.</p>
+<dl>
+{{if .Manifest}}
+<dt>Catalogue</dt><dd>{{.Manifest.Epoch}}-{{.Manifest.Seq}}, built {{.Manifest.GeneratedAt}}, expires {{.Manifest.ExpiresAt}}</dd>
+<dt>Sets</dt><dd>{{.Sets}}</dd>
+<dt>Signed by</dt><dd class="mono">{{.Manifest.KeyID}}</dd>
+{{else}}
+<dt>Catalogue</dt><dd>no copy yet</dd>
+{{end}}
+<dt>Last refresh</dt><dd>{{when .LastRefresh}}</dd>
+<dt>Last error</dt><dd>{{if .LastError}}{{.LastError}}{{else}}none{{end}}</dd>
+<dt>Queued records</dt><dd>{{.Queued}}</dd>
+{{if not .LastAnnounce.IsZero}}<dt>Last announce</dt><dd>{{when .LastAnnounce}}: {{.AnnounceNote}}</dd>{{end}}
+</dl>
+<footer>b4hub {{.Version}}. This host serves a signed copy of the central catalogue and forwards records to it unchanged.</footer>
+</body>
+</html>

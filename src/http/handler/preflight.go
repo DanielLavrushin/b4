@@ -32,6 +32,16 @@ func preflightConfig(newCfg, oldCfg *config.Config) []FieldError {
 		}
 	}
 
+	if nw := newCfg.System.MTProto; nw.Enabled && nw.WebProxy.Enabled && nw.WebProxy.Port > 0 {
+		old := oldCfg.System.MTProto
+		oldOn := old.Enabled && old.WebProxy.Enabled && old.WebProxy.Port > 0
+		if !oldOn || old.WebProxy.Port != nw.WebProxy.Port || old.BindAddress != nw.BindAddress {
+			if f := probePort("system.mtproto.web_proxy.port", nw.BindAddress, nw.WebProxy.Port); f != nil {
+				fields = append(fields, *f)
+			}
+		}
+	}
+
 	if newCfg.System.Socks5.Enabled {
 		old := oldCfg.System.Socks5
 		nw := newCfg.System.Socks5

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"net/netip"
 	"slices"
 	"strconv"
@@ -71,10 +72,15 @@ type Server struct {
 	refusals map[string]*refusalState
 
 	webTickets webTicketStore
+	webSite    webSiteCache
 
 	mu       sync.Mutex
 	running  bool
 	listener net.Listener
+	webSrv   *http.Server
+	webLn    net.Listener
+	webSpec  webListenerSpec
+	webUp    atomic.Bool
 	ctx      context.Context
 	cancel   context.CancelFunc
 }
@@ -578,6 +584,7 @@ func (s *Server) startLocked() error {
 
 	s.running = true
 	go s.acceptLoop(ln)
+	s.startWebListenerLocked(cfg)
 	return nil
 }
 
@@ -596,6 +603,7 @@ func (s *Server) stopLocked() error {
 		pool.close()
 	}
 	s.workerPool.Swap(nil).close()
+	s.stopWebListenerLocked()
 	var err error
 	if s.listener != nil {
 		err = s.listener.Close()
@@ -628,6 +636,9 @@ func (s *Server) UpdateConfig(newCfg *config.Config) {
 	if old != nil && !mtprotoNeedsRestart(old, newCfg) {
 		if s.running && mtprotoSecretsChanged(old.System.MTProto, newCfg.System.MTProto) {
 			s.reloadSecretsLocked(newCfg)
+		}
+		if s.running {
+			s.reconcileWebListenerLocked(newCfg)
 		}
 		return
 	}

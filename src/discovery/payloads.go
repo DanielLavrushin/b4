@@ -105,7 +105,7 @@ func (ds *DiscoverySuite) detectWorkingPayloads(presets []ConfigPreset) {
 	}
 
 	for i, v := range variants {
-		if ds.canceled() {
+		if ds.interrupted() {
 			break
 		}
 		if _, exists := ds.domainResults[ds.Domain].Results[v.presetName]; exists {

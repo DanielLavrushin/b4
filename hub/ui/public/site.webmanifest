@@ -1,0 +1,25 @@
+{
+  "name": "B4 Hub",
+  "short_name": "B4 Hub",
+  "description": "Moderation console of the b4 community hub.",
+  "icons": [
+    {
+      "src": "/admin/web-app-manifest-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/admin/web-app-manifest-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "id": "/admin/",
+  "start_url": "/admin/",
+  "scope": "/admin/",
+  "theme_color": "#561530",
+  "background_color": "#1a0e15",
+  "display": "standalone"
+}

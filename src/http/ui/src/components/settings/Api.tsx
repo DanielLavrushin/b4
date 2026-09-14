@@ -32,10 +32,11 @@ import { aiApi, mcpApi, AIModel } from "@api/ai";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useAiStatus } from "@context/AiStatusProvider";
 import { colors } from "@design";
+import { HubCard } from "./Hub";
 
 export interface ApiSettingsProps {
   config: B4Config;
-  onChange: (field: string, value: boolean | string | number) => void;
+  onChange: (field: string, value: boolean | string | number | string[]) => void;
 }
 
 interface ProviderOption {
@@ -70,6 +71,7 @@ export const ApiSettings = ({ config, onChange }: ApiSettingsProps) => (
     <IPInfoCard config={config} onChange={onChange} />
     <AICard config={config} onChange={onChange} />
     <MCPCard config={config} onChange={onChange} />
+    <HubCard config={config} onChange={onChange} />
   </Stack>
 );
 

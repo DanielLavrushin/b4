@@ -49,8 +49,11 @@ Shared by the proxy server and by the `Telegram over WebSocket` routing mode, so
 | --- | --- | --- |
 | Enable the WEB carrier | Serves the MTProto stream over HTTPS on the relay hostname. | Off |
 | Relay hostname | A bare public DNS name, no scheme, port or path, punycode for international names. Needs its own hostname with publicly trusted TLS on 443. | empty |
+| Relay port | Empty serves the relay on the web server's port, on the relay hostname only. A value opens a listener of its own that answers the relay hostname as the relay and every other name or IP with the placeholder page, so the web interface is not reachable through it. Cannot equal the web server or MTProto proxy port. Filled with `443` when the carrier is switched on for the first time. | empty |
+| Certificate for the relay hostname | PEM pair served on the relay port only. Empty: the web server's pair, which then has to be trusted for the relay hostname and makes the interface HTTPS-only with a name-mismatch warning on visits by IP. Both or neither. | empty |
+| Placeholder page | Upload, download or remove a self-contained HTML file of at most 1 MiB that replaces the built-in placeholder, stored as `webproxy_page.html` next to the configuration. | built-in |
 
-Both fields take effect on the next request. The full set of preconditions is on [Telegram Desktop WEB proxy](../telegram/web-proxy.md).
+The switch and the hostname take effect on the next request; the port and the certificate restart only the relay listener. The full set of preconditions is on [Telegram Desktop WEB proxy](../telegram/web-proxy.md).
 
 ## Advanced
 
@@ -72,5 +75,5 @@ Three timeouts where `0` selects the built-in value rather than turning anything
 | Bridge Handshake Wait (sec) | How long the `Telegram over WebSocket` bridge waits for a client's first byte before dropping the connection. `0` uses the built-in value; `-1` waits indefinitely rather than disabling the wait. | `180` |
 
 :::info Saving does not restart the service
-b4 restarts the MTProto proxy itself when the enable switch, port, bind address, Fake SNI, transport mode, custom WebSocket domain, WS edge IP or CF proxy fallback changes, which drops the sessions it is carrying. Secrets and the WEB proxy fields are applied without restarting anything.
+b4 restarts the MTProto proxy itself when the enable switch, port, bind address, Fake SNI, transport mode, custom WebSocket domain, WS edge IP or CF proxy fallback changes, which drops the sessions it is carrying. Secrets and the WEB proxy fields are applied without restarting it; a changed relay port or certificate restarts only the relay listener.
 :::

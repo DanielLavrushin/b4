@@ -24,6 +24,7 @@ export function useDiscovery() {
   const [running, setRunning] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [finishRequested, setFinishRequested] = useState(false);
   const [suiteId, setSuiteId] = useState<string | null>(null);
   const [suite, setSuite] = useState<DiscoverySuite | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +96,7 @@ export function useDiscovery() {
         if (!TERMINAL.has(data.status)) return;
         setRunning(false);
         setStopping(false);
+        setFinishRequested(false);
         if (data.runtime_active) {
           setFinishing(true);
         } else {
@@ -104,6 +106,7 @@ export function useDiscovery() {
       } catch (e) {
         setRunning(false);
         setStopping(false);
+        setFinishRequested(false);
         setFinishing(false);
         if (e instanceof ApiError && e.status === 404) {
           void loadHistory();
@@ -138,6 +141,7 @@ export function useDiscovery() {
       setSuite(null);
       setSuiteId(null);
       setStopping(false);
+      setFinishRequested(false);
       setRunning(true);
       try {
         const res = await discoveryApi.start(normalized, options);
@@ -164,11 +168,23 @@ export function useDiscovery() {
     }
   }, [suiteId]);
 
+  const finishDiscovery = useCallback(async (): Promise<void> => {
+    if (!suiteId) return;
+    setFinishRequested(true);
+    try {
+      await discoveryApi.finish(suiteId);
+    } catch (e) {
+      setFinishRequested(false);
+      setError(failureText(e));
+    }
+  }, [suiteId]);
+
   const resetDiscovery = useCallback(() => {
     setSuiteId(null);
     setSuite(null);
     setError(null);
     setStopping(false);
+    setFinishRequested(false);
     setRunning(false);
   }, []);
 
@@ -220,6 +236,7 @@ export function useDiscovery() {
     running,
     finishing,
     stopping,
+    finishRequested,
     suiteId,
     suite,
     error,
@@ -227,6 +244,7 @@ export function useDiscovery() {
     historyLoading,
     startDiscovery,
     cancelDiscovery,
+    finishDiscovery,
     resetDiscovery,
     addPresetAsSet,
     clearCache,

@@ -6,10 +6,17 @@ import (
 	"github.com/daniellavrushin/b4/log"
 )
 
-func (ds *DiscoverySuite) getOptimalTTL() uint8 {
+// getOptimalTTL reports the lowest fake TTL that reached the censor without reaching the
+// origin, and whether one exists at all. A sweep where every TTL failed is evidence that a
+// fake packet does not help here, so the caller must drop the fake rather than pick a value.
+func (ds *DiscoverySuite) getOptimalTTL() (uint8, bool) {
 	if ds.optimalTTL > 0 {
-		return ds.optimalTTL
+		return ds.optimalTTL, true
 	}
+	if ds.ttlProbed {
+		return 0, false
+	}
+	ds.ttlProbed = true
 
 	base := baseConfig()
 	base.Faking.SNI = true
@@ -24,10 +31,11 @@ func (ds *DiscoverySuite) getOptimalTTL() uint8 {
 	ds.optimalTTL, _ = ds.findOptimalTTL(tmpPreset)
 
 	if ds.optimalTTL == 0 {
-		ds.optimalTTL = 7
+		log.DiscoveryLogf("  No fake TTL worked; testing this family without a fake packet")
+		return 0, false
 	}
 
-	return ds.optimalTTL
+	return ds.optimalTTL, true
 }
 
 func (ds *DiscoverySuite) findOptimalTTL(basePreset ConfigPreset) (uint8, float64) {
@@ -49,7 +57,7 @@ func (ds *DiscoverySuite) findOptimalTTL(basePreset ConfigPreset) (uint8, float6
 	log.DiscoveryLogf("Scanning for minimum working TTL (%d values)", len(ttlValues))
 
 	for _, ttl := range ttlValues {
-		if ds.canceled() {
+		if ds.interrupted() {
 			break
 		}
 		preset := basePreset

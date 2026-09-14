@@ -2,8 +2,88 @@ package mtproto
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
+	"time"
+
+	"github.com/daniellavrushin/b4/config"
 )
+
+const (
+	WebProxyPageFile    = "webproxy_page.html"
+	WebProxyPageMaxSize = 1 << 20
+	webSiteRecheck      = 2 * time.Second
+)
+
+func WebProxyPagePath(cfg *config.Config) string {
+	if cfg == nil || cfg.ConfigPath == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(cfg.ConfigPath), WebProxyPageFile)
+}
+
+type webSiteCache struct {
+	mu      sync.Mutex
+	checked time.Time
+	path    string
+	mod     time.Time
+	size    int64
+	body    []byte
+}
+
+func (c *webSiteCache) load(path string) []byte {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := time.Now()
+	if c.path == path && now.Sub(c.checked) < webSiteRecheck {
+		return c.body
+	}
+	c.checked = now
+	if c.path != path {
+		c.path = path
+		c.body = nil
+		c.mod = time.Time{}
+		c.size = 0
+	}
+	st, err := os.Stat(path)
+	if err != nil || st.IsDir() || st.Size() == 0 || st.Size() > WebProxyPageMaxSize {
+		c.body = nil
+		return nil
+	}
+	if c.body != nil && st.ModTime().Equal(c.mod) && st.Size() == c.size {
+		return c.body
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 || len(data) > WebProxyPageMaxSize {
+		c.body = nil
+		return nil
+	}
+	c.mod = st.ModTime()
+	c.size = st.Size()
+	c.body = data
+	return data
+}
+
+func (c *webSiteCache) invalidate() {
+	c.mu.Lock()
+	c.checked = time.Time{}
+	c.mu.Unlock()
+}
+
+func (s *Server) ReloadWebProxyPage() {
+	s.webSite.invalidate()
+}
+
+func (s *Server) webSiteBody() []byte {
+	if path := WebProxyPagePath(s.cfg.Load()); path != "" {
+		if body := s.webSite.load(path); body != nil {
+			return body
+		}
+	}
+	return []byte(webSitePage)
+}
 
 func webPageHeaders(w http.ResponseWriter) {
 	h := w.Header()
@@ -14,14 +94,14 @@ func webPageHeaders(w http.ResponseWriter) {
 	h.Del("X-Frame-Options")
 }
 
-func webWriteSite(w http.ResponseWriter, r *http.Request, status int) {
+func (s *Server) webWriteSite(w http.ResponseWriter, r *http.Request, status int) {
 	webPageHeaders(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	if r.Method == http.MethodHead {
 		return
 	}
-	_, _ = w.Write([]byte(webSitePage))
+	_, _ = w.Write(s.webSiteBody())
 }
 
 const webSitePage = `<!doctype html>

@@ -40,6 +40,7 @@ type PacketInfo struct {
 type Worker struct {
 	packetsProcessed uint64
 	lastOverflowLog  int64
+	lastFakeSendLog  int64
 	cfg              atomic.Value
 	qnum             uint16
 	ctx              context.Context

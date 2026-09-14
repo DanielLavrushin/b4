@@ -51,9 +51,10 @@ const (
 )
 
 const (
-	UDPModeFake   = "fake"
-	UDPModeDrop   = "drop"
-	UDPModeReject = "reject"
+	UDPModeFake     = "fake"
+	UDPModeDrop     = "drop"
+	UDPModeReject   = "reject"
+	UDPModeCoalesce = "coalesce"
 )
 
 const (
@@ -96,7 +97,7 @@ func NormalizeQUICFilter(filter string) string {
 
 func NormalizeUDPMode(mode string) string {
 	switch mode {
-	case ConfigOff, UDPModeFake, UDPModeDrop, UDPModeReject:
+	case ConfigOff, UDPModeFake, UDPModeDrop, UDPModeReject, UDPModeCoalesce:
 		return mode
 	}
 	return DefaultSetConfig.UDP.Mode
@@ -178,6 +179,7 @@ type TCPConfig struct {
 	SynFakeLen     int    `json:"syn_fake_len"`
 	SynTTL         uint8  `json:"syn_ttl"`
 	DropSACK       bool   `json:"drop_sack"`
+	HTTPMethodEOL  bool   `json:"http_methodeol"`
 	DPortFilter    string `json:"dport_filter"` // comma separated list of ports and port ranges, e.g. "80,443,5222"
 
 	Incoming      IncomingConfig      `json:"incoming"`
@@ -346,6 +348,7 @@ type SystemConfig struct {
 	DNS         DNSSystemConfig     `json:"dns"`
 	IPHealth    IPHealthConfig      `json:"ip_health"`
 	Update      UpdateConfig        `json:"update"`
+	Hub         HubConfig           `json:"hub"`
 	Timezone    string              `json:"timezone"`
 	MemoryLimit string              `json:"memory_limit,omitempty"`
 	Pprof       bool                `json:"pprof,omitempty"`
@@ -353,6 +356,12 @@ type SystemConfig struct {
 
 type UpdateConfig struct {
 	Mirrors []string `json:"mirrors,omitempty"`
+}
+
+type HubConfig struct {
+	Enabled   bool     `json:"enabled"`
+	URLs      []string `json:"urls,omitempty"`
+	PublicKey string   `json:"public_key,omitempty"`
 }
 
 type MCPConfig struct {
@@ -403,6 +412,9 @@ type MTProtoConfig struct {
 type MTProtoWebProxyConfig struct {
 	Enabled  bool   `json:"enabled"`
 	Hostname string `json:"hostname"`
+	Port     int    `json:"port"`
+	TLSCert  string `json:"tls_cert"`
+	TLSKey   string `json:"tls_key"`
 }
 
 type Socks5Config struct {
@@ -506,6 +518,16 @@ type SetConfig struct {
 	Routing       RoutingConfig       `json:"routing"`
 	Escalate      EscalateConfig      `json:"escalate"`
 	MSSClamp      MSSClampConfig      `json:"mss_clamp"`
+	Hub           *HubOrigin          `json:"hub,omitempty" mcp:"deny"`
+}
+
+type HubOrigin struct {
+	ID        string `json:"id,omitempty"`
+	Version   int    `json:"version,omitempty"`
+	Hash      string `json:"hash,omitempty"`
+	AppliedAt string `json:"applied_at,omitempty"`
+	Vote      string `json:"vote,omitempty"`
+	VotedAt   string `json:"voted_at,omitempty"`
 }
 
 type EscalateConfig struct {

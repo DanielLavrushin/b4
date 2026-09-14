@@ -1,12 +1,27 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Box, Grid, Link, Stack, Typography } from "@mui/material";
+import {
+  Button,
+  Box,
+  CircularProgress,
+  Grid,
+  Link,
+  Stack,
+  Typography,
+} from "@mui/material";
 import IosShareIcon from "@mui/icons-material/IosShare";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { MTProtoSecrets } from "./MTProtoSecrets";
 import { MTProtoUpstreamCard } from "./MTProtoUpstream";
 import { QRCodeSVG } from "qrcode.react";
-import { DomainIcon, SniIcon, TelegramIcon } from "@b4.icons";
+import {
+  DeleteIcon,
+  DomainIcon,
+  DownloadIcon,
+  SniIcon,
+  TelegramIcon,
+  UploadIcon,
+} from "@b4.icons";
 import {
   B4Accordion,
   B4ConnectDetails,
@@ -18,6 +33,14 @@ import {
 } from "@b4.elements";
 import { B4Config } from "@models/config";
 import { SettingsPropHandlerType } from "@models/settings";
+import { useSnackbar } from "@context/SnackbarProvider";
+import { describeApiError } from "@utils";
+import {
+  useDownloadWebProxyPage,
+  useRemoveWebProxyPage,
+  useUploadWebProxyPage,
+  useWebProxyPage,
+} from "@hooks/useWebProxyPage";
 
 interface MTProtoSettingsProps {
   config: B4Config;
@@ -111,7 +134,9 @@ const ProxyCard = ({ config, onChange }: MTProtoSettingsProps) => {
           <B4TextField
             label={t("settings.MTProto.fakeSNI")}
             value={mtproto?.fake_sni || "storage.googleapis.com"}
-            onChange={(e) => onChange("system.mtproto.fake_sni", e.target.value)}
+            onChange={(e) =>
+              onChange("system.mtproto.fake_sni", e.target.value)
+            }
             helperText={t("settings.MTProto.fakeSNIHelp")}
           />
         </Grid>
@@ -180,6 +205,9 @@ const WebCarrierCard = ({ config, onChange }: MTProtoSettingsProps) => {
   const webProxy = config.system.mtproto?.web_proxy;
   const hostname = (webProxy?.hostname || "").trim();
   const enabled = webProxy?.enabled ?? false;
+  const port = webProxy?.port ?? 0;
+  const webServerPort = config.system.web_server?.port ?? 0;
+  const portClash = port > 0 && port === webServerPort;
 
   return (
     <B4IntegrationCard
@@ -187,30 +215,213 @@ const WebCarrierCard = ({ config, onChange }: MTProtoSettingsProps) => {
       title={t("settings.MTProto.webProxyTitle")}
       description={t("settings.MTProto.webProxyDesc")}
       enabled={enabled}
-      onToggle={(checked) =>
-        onChange("system.mtproto.web_proxy.enabled", checked)
-      }
+      onToggle={(checked) => {
+        onChange("system.mtproto.web_proxy.enabled", checked);
+        if (checked && !hostname && port === 0) {
+          onChange("system.mtproto.web_proxy.port", 443);
+        }
+      }}
       toggleLabel={t("settings.MTProto.webProxyEnable")}
     >
-      <B4TextField
-        label={t("settings.MTProto.webProxyHostname")}
-        value={webProxy?.hostname || ""}
-        onChange={(e) =>
-          onChange("system.mtproto.web_proxy.hostname", e.target.value)
-        }
-        placeholder="relay.example.org"
-        error={!hostname}
-        helperText={
-          hostname
-            ? t("settings.MTProto.webProxyHostnameHelp")
-            : t("settings.MTProto.webProxyNoHost")
-        }
-        selectOnFocus
-      />
-      <Grid container>
-        <B4Hint>{t("settings.MTProto.webProxyRequirements")}</B4Hint>
+      <Grid container spacing={2}>
+        <Grid size={{ xs: 12, md: 8 }}>
+          <B4TextField
+            label={t("settings.MTProto.webProxyHostname")}
+            value={webProxy?.hostname || ""}
+            onChange={(e) =>
+              onChange("system.mtproto.web_proxy.hostname", e.target.value)
+            }
+            placeholder="relay.example.org"
+            error={!hostname}
+            helperText={
+              hostname
+                ? t("settings.MTProto.webProxyHostnameHelp")
+                : t("settings.MTProto.webProxyNoHost")
+            }
+            selectOnFocus
+          />
+        </Grid>
+        <Grid size={{ xs: 12, md: 4 }}>
+          <B4TextField
+            label={t("settings.MTProto.webProxyPort")}
+            value={port > 0 ? String(port) : ""}
+            onChange={(e) => {
+              const digits = e.target.value.replace(/\D/g, "");
+              const n = digits ? Math.min(Number(digits), 65535) : 0;
+              if (n !== port) onChange("system.mtproto.web_proxy.port", n);
+            }}
+            placeholder="443"
+            inputMode="numeric"
+            error={portClash}
+            helperText={
+              portClash
+                ? t("settings.MTProto.webProxyPortClash")
+                : port > 0
+                  ? t("settings.MTProto.webProxyPortOwn")
+                  : t("settings.MTProto.webProxyPortShared")
+            }
+          />
+        </Grid>
       </Grid>
+      <Grid container>
+        <B4Hint>
+          {port > 0
+            ? t("settings.MTProto.webProxyRequirementsOwnPort")
+            : t("settings.MTProto.webProxyRequirements")}
+        </B4Hint>
+      </Grid>
+      {port > 0 && (
+        <B4Accordion title={t("settings.MTProto.webProxyTlsTitle")}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {t("settings.MTProto.webProxyTlsDesc")}
+          </Typography>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4TextField
+                label={t("settings.MTProto.webProxyTlsCert")}
+                value={webProxy?.tls_cert || ""}
+                onChange={(e) =>
+                  onChange("system.mtproto.web_proxy.tls_cert", e.target.value)
+                }
+                placeholder="/etc/b4/relay.crt"
+                helperText={t("settings.MTProto.webProxyTlsCertHelp")}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4TextField
+                label={t("settings.MTProto.webProxyTlsKey")}
+                value={webProxy?.tls_key || ""}
+                onChange={(e) =>
+                  onChange("system.mtproto.web_proxy.tls_key", e.target.value)
+                }
+                placeholder="/etc/b4/relay.key"
+                helperText={t("settings.MTProto.webProxyTlsKeyHelp")}
+              />
+            </Grid>
+          </Grid>
+        </B4Accordion>
+      )}
+      <WebProxyPagePanel enabled={enabled} hostname={hostname} />
     </B4IntegrationCard>
+  );
+};
+
+const WebProxyPagePanel = ({
+  enabled,
+  hostname,
+}: {
+  enabled: boolean;
+  hostname: string;
+}) => {
+  const { t } = useTranslation();
+  const { showSuccess, showError } = useSnackbar();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const page = useWebProxyPage(enabled);
+  const upload = useUploadWebProxyPage();
+  const download = useDownloadWebProxyPage();
+  const remove = useRemoveWebProxyPage();
+  const custom = page.data?.custom ?? false;
+  const busy = upload.isPending || download.isPending || remove.isPending;
+
+  const onUpload = (file: File) => {
+    upload.mutate(file, {
+      onSuccess: () => showSuccess(t("settings.MTProto.webProxyPageUploaded")),
+      onError: (e) => showError(describeApiError(e)),
+    });
+  };
+  const onDownload = () => {
+    download.mutate(undefined, {
+      onError: (e) => showError(describeApiError(e)),
+    });
+  };
+  const onRemove = () => {
+    remove.mutate(undefined, {
+      onSuccess: () => showSuccess(t("settings.MTProto.webProxyPageRemoved")),
+      onError: (e) => showError(describeApiError(e)),
+    });
+  };
+
+  return (
+    <Box sx={{ mt: 2 }}>
+      <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+        {t("settings.MTProto.webProxyPageTitle")}
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        {t("settings.MTProto.webProxyPageDesc")}
+      </Typography>
+      <Typography variant="body2" sx={{ mb: 1 }}>
+        {custom
+          ? t("settings.MTProto.webProxyPageCustom", {
+              size: page.data?.size ?? 0,
+            })
+          : t("settings.MTProto.webProxyPageBuiltin")}
+      </Typography>
+      <Box
+        sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}
+      >
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={
+            upload.isPending ? <CircularProgress size={16} /> : <UploadIcon />
+          }
+          onClick={() => fileInputRef.current?.click()}
+          disabled={busy}
+        >
+          {upload.isPending ? t("core.uploading") : t("core.upload")}
+        </Button>
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={
+            download.isPending ? <CircularProgress size={16} /> : <DownloadIcon />
+          }
+          onClick={onDownload}
+          disabled={!custom || busy}
+        >
+          {t("core.download")}
+        </Button>
+        <Button
+          variant="outlined"
+          size="small"
+          color="error"
+          startIcon={
+            remove.isPending ? <CircularProgress size={16} /> : <DeleteIcon />
+          }
+          onClick={onRemove}
+          disabled={!custom || busy}
+        >
+          {t("settings.MTProto.webProxyPageRemove")}
+        </Button>
+        {hostname && (
+          <Button
+            variant="text"
+            size="small"
+            endIcon={<OpenInNewIcon />}
+            component="a"
+            href={`https://${hostname}/`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {t("settings.MTProto.webProxyPageOpen")}
+          </Button>
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".html,.htm,text/html"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) onUpload(file);
+            e.target.value = "";
+          }}
+        />
+      </Box>
+      <Grid container sx={{ mt: 1 }}>
+        <B4Hint>{t("settings.MTProto.webProxyPageHint")}</B4Hint>
+      </Grid>
+    </Box>
   );
 };
 

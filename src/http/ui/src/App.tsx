@@ -26,6 +26,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import {
+  CommunityIcon,
   ConnectionIcon,
   CoreIcon,
   DashboardIcon,
@@ -50,6 +51,7 @@ import { ConnectionsPage } from "@b4.connections";
 import { DashboardPage } from "@b4.dashboard";
 import { DetectorPage } from "@b4.detector";
 import { DiscoveryPage } from "@b4.discovery";
+import { HubPage, useHubStatus } from "@b4.hub";
 import { LogsPage } from "@b4.logs";
 import { SetsPage } from "@b4.sets";
 import { SettingsPage } from "@b4.settings";
@@ -69,6 +71,7 @@ const navItems: NavItem[] = [
   { path: "/dashboard", labelKey: "core.nav.dashboard", icon: <DashboardIcon /> },
   { path: "/sets", labelKey: "core.nav.sets", icon: <SetsIcon /> },
   { path: "/discovery", labelKey: "core.nav.discovery", icon: <DiscoveryIcon /> },
+  { path: "/hub", labelKey: "core.nav.hub", icon: <CommunityIcon /> },
   { path: "/watchdog", labelKey: "core.nav.watchdog", icon: <WatchdogIcon /> },
   { path: "/detector", labelKey: "core.nav.detector", icon: <SecurityIcon /> },
   { path: "/traffic", labelKey: "core.nav.connections", icon: <ConnectionIcon /> },
@@ -85,6 +88,8 @@ export default function App() {
   const { unseenDomainsCount, resetDomainsBadge } = useWebSocket();
   const { isAuthenticated, isLoading, authRequired, logout } = useAuth();
   const { t } = useTranslation();
+  const hubStatus = useHubStatus(!authRequired || isAuthenticated);
+  const hubEnabled = Boolean(hubStatus.data?.enabled);
 
   const drawerOpen = isCompact ? mobileDrawerOpen : desktopDrawerOpen;
   const toggleDrawer = () => {
@@ -114,6 +119,7 @@ export default function App() {
     if (path.startsWith("/sets")) return t("core.nav.sets");
     if (path.startsWith("/traffic")) return t("core.nav.connections");
     if (path.startsWith("/discovery")) return t("core.nav.discovery");
+    if (path.startsWith("/hub")) return t("core.nav.hub");
     if (path.startsWith("/watchdog")) return t("core.nav.watchdog");
     if (path.startsWith("/logs")) return t("core.nav.logs");
     if (path.startsWith("/detector")) return t("core.nav.detector");
@@ -160,6 +166,7 @@ export default function App() {
             <Divider sx={{ borderColor: colors.border.default }} />
             <List sx={{ py: 1 }}>
               {navItems.map((item) => {
+                if (item.path === "/hub" && !hubEnabled) return null;
                 let targetCount = 0;
                 if (item.path === "/traffic" && unseenDomainsCount > 0) {
                   targetCount = unseenDomainsCount;
@@ -285,6 +292,7 @@ export default function App() {
               <Route path="/traffic" element={<ConnectionsPage />} />
               <Route path="/connections" element={<Navigate to="/traffic" replace />} />
               <Route path="/discovery" element={<DiscoveryPage />} />
+              <Route path="/hub" element={<HubPage />} />
               <Route path="/watchdog" element={<WatchdogPage />} />
               <Route path="/detector" element={<DetectorPage />} />
               <Route path="/logs" element={<LogsPage />} />

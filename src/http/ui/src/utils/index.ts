@@ -6,3 +6,4 @@ export * from "./connectionFilter";
 export * from "./clipboard";
 export * from "./discovery";
 export * from "./errors";
+export * from "./hubLink";

@@ -197,6 +197,83 @@ build-ui: gen-defaults
 	@cd src/http/ui && pnpm build
 	@echo "Web UI build complete."
 
+HUB_DIR := ./hub
+HUB_DATA ?= $(HUB_DIR)/data
+HUB_LISTEN ?= 0.0.0.0:7100
+HUB_PUBLIC_URL ?= http://127.0.0.1:7100
+HUB_UPSTREAM ?= https://hub.b4core.app
+HUB_MIRROR_DATA ?= $(HUB_DIR)/data-mirror
+HUB_MIRROR_LISTEN ?= 0.0.0.0:7101
+
+.PHONY: hub-build-ui
+hub-build-ui:
+	@echo "Building hub admin console..."
+	@cd $(HUB_DIR)/ui && VITE_APP_VERSION="$(VERSION)" pnpm build
+	@echo "Hub admin console build complete."
+
+.PHONY: hub-build
+hub-build: hub-build-ui
+	@echo "Building hub service..."
+	@mkdir -p $(OUT_DIR)
+	@CGO_ENABLED=0 go -C $(HUB_DIR) build $(BUILDFLAGS) -ldflags "-s -w -X main.Version=$(VERSION)" -o ../$(OUT_DIR)/b4hub ./cmd/b4hub
+	@echo "Hub build complete: $(OUT_DIR)/b4hub"
+
+HUB_ARCHS := amd64 arm64
+
+.PHONY: hub-linux-%
+hub-linux-%: hub-build-ui
+	@$(MAKE) --no-print-directory hub-go-linux-$(subst hub-linux-,,$@) VERSION=$(VERSION)
+
+.PHONY: hub-go-linux-%
+hub-go-linux-%:
+	@$(eval HUB_ARCH := $(subst hub-go-linux-,,$@))
+	@echo "Building hub service for linux/$(HUB_ARCH)..."
+	@mkdir -p $(OUT_DIR)/linux-$(HUB_ARCH) $(OUT_DIR)/assets
+	@GOOS=linux GOARCH=$(HUB_ARCH) CGO_ENABLED=0 go -C $(HUB_DIR) build $(BUILDFLAGS) -ldflags "-s -w -X main.Version=$(VERSION)" -o ../$(OUT_DIR)/linux-$(HUB_ARCH)/b4hub ./cmd/b4hub
+	@cp $(OUT_DIR)/linux-$(HUB_ARCH)/b4hub $(OUT_DIR)/b4hub-linux-$(HUB_ARCH)
+	@tar -czf "$(OUT_DIR)/assets/b4hub-linux-$(HUB_ARCH).tar.gz" -C "$(OUT_DIR)/linux-$(HUB_ARCH)" b4hub
+	@sha256sum "$(OUT_DIR)/assets/b4hub-linux-$(HUB_ARCH).tar.gz" > "$(OUT_DIR)/assets/b4hub-linux-$(HUB_ARCH).tar.gz.sha256"
+	@echo "Hub build complete: $(OUT_DIR)/assets/b4hub-linux-$(HUB_ARCH).tar.gz"
+
+.PHONY: hub-linux-all
+hub-linux-all: hub-build-ui
+	@for arch in $(HUB_ARCHS); do $(MAKE) --no-print-directory hub-go-linux-$$arch VERSION=$(VERSION); done
+
+.PHONY: hub-docker
+hub-docker:
+	@docker build -f $(HUB_DIR)/Dockerfile --build-arg VERSION=$(VERSION) -t lavrushin/b4hub:$(VERSION) .
+
+HUB_DEPLOY_HOST ?=
+HUB_DEPLOY_KEY ?=
+HUB_DEPLOY_SSH := ssh $(if $(HUB_DEPLOY_KEY),-i $(HUB_DEPLOY_KEY)) -o StrictHostKeyChecking=accept-new $(HUB_DEPLOY_HOST)
+
+.PHONY: hub-deploy
+hub-deploy: hub-linux-amd64
+	@if [ -z "$(HUB_DEPLOY_HOST)" ]; then \
+		echo "Error: HUB_DEPLOY_HOST (user@host) must be set in .env or on the command line"; \
+		exit 1; \
+	fi
+	@echo "Deploying b4hub $(VERSION) to $(HUB_DEPLOY_HOST)..."
+	@scp $(if $(HUB_DEPLOY_KEY),-i $(HUB_DEPLOY_KEY)) -o StrictHostKeyChecking=accept-new $(OUT_DIR)/b4hub-linux-amd64 $(HUB_DEPLOY_HOST):/tmp/b4hub-linux-amd64
+	@$(HUB_DEPLOY_SSH) 'sudo install -m0755 /tmp/b4hub-linux-amd64 /usr/local/bin/b4hub && rm -f /tmp/b4hub-linux-amd64 && sudo systemctl restart b4hub && sleep 2 && systemctl is-active b4hub && b4hub version'
+	@echo "Hub deploy complete."
+
+.PHONY: hub-test
+hub-test:
+	@go -C $(HUB_DIR) test ./...
+
+.PHONY: hub-keygen
+hub-keygen: hub-build
+	@$(OUT_DIR)/b4hub keygen --data $(HUB_DATA)
+
+.PHONY: hub-run
+hub-run: hub-build
+	@$(OUT_DIR)/b4hub serve --data $(HUB_DATA) --listen $(HUB_LISTEN) --public-url $(HUB_PUBLIC_URL)
+
+.PHONY: hub-mirror
+hub-mirror: hub-build
+	@$(OUT_DIR)/b4hub mirror --data $(HUB_MIRROR_DATA) --upstream $(HUB_UPSTREAM) --listen $(HUB_MIRROR_LISTEN) --public-url http://127.0.0.1:7101
+
 SFTP_PORT ?= 22
 SSH_OPTS ?= -o StrictHostKeyChecking=no -o IPQoS=none
 B4_RESTART_CMD ?= /opt/etc/init.d/S99b4
@@ -256,6 +333,16 @@ help:
 	@printf "  %-25s %s\n" "make build-installer" "Build the installer script"
 	@printf "  %-25s %s\n" "make watch-installer" "Watch and rebuild installer on changes"
 	@printf "  %-25s %s\n" "make build-ui" "Build the web UI"
+	@printf "  %-25s %s\n" "make hub-build-ui" "Build the hub admin console (pnpm build in hub/ui)"
+	@printf "  %-25s %s\n" "make hub-build" "Build the community hub service into out/b4hub (runs hub-build-ui first)"
+	@printf "  %-25s %s\n" "make hub-linux-amd64" "Cross-compile the hub service (also arm64), tarball + sha256 into out/assets"
+	@printf "  %-25s %s\n" "make hub-linux-all" "Cross-compile the hub service for every release architecture"
+	@printf "  %-25s %s\n" "make hub-docker" "Build the lavrushin/b4hub:VERSION image from hub/Dockerfile"
+	@printf "  %-25s %s\n" "make hub-deploy" "Build and install b4hub on the box in .env (HUB_DEPLOY_HOST, HUB_DEPLOY_KEY), then restart the unit"
+	@printf "  %-25s %s\n" "make hub-test" "Run the hub service tests"
+	@printf "  %-25s %s\n" "make hub-keygen" "Create a development hub key under hub/data"
+	@printf "  %-25s %s\n" "make hub-run" "Run the hub service locally (HUB_LISTEN, default 0.0.0.0:7100)"
+	@printf "  %-25s %s\n" "make hub-mirror" "Run a child hub mirroring HUB_UPSTREAM on port 7101"
 	@printf "  %-25s %s\n" "make deploy-<arch>" "Build and upload via SFTP (requires .env)"
 	@printf "  %-25s %s\n" "make help" "Show this help"
 	@echo ""

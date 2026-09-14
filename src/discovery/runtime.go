@@ -42,6 +42,7 @@ type StartSuiteOptions struct {
 	TLSVersion      string
 	IPVersion       string
 	Source          string
+	HubPresets      func() []ConfigPreset
 }
 
 type Runtime struct {
@@ -143,6 +144,7 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 		opts.IPVersion,
 		runtimeState.FlowMark,
 	)
+	suite.hubPresetsFn = opts.HubPresets
 	suite.Source = opts.Source
 	if suite.Source == "" {
 		suite.Source = SourceWeb

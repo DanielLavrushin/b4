@@ -121,6 +121,8 @@ export interface DiscoverySuite {
   domain_discovery_results?: Record<string, DiscoveryResult>;
   strategy_groups?: BackendStrategyGroup[];
   source?: DiscoverySource;
+  stopped_early?: boolean;
+  stopped_phase?: DiscoveryPhase;
   runtime_active?: boolean;
 }
 
@@ -164,6 +166,7 @@ export interface HistoryEntry {
   set?: B4SetConfig;
   outcome?: DiscoveryOutcome;
   unconfirmed?: boolean;
+  stopped_early?: boolean;
   order?: number;
 }
 

@@ -22,6 +22,7 @@ export type IPVersion = "auto" | "ipv4" | "ipv6";
 export interface DiscoveryOptions {
   checkDns: boolean;
   useCache: boolean;
+  useCommunity: boolean;
   payloadFiles: string[];
   validationTries: number;
   tlsVersion: TLSVersion;
@@ -34,6 +35,7 @@ const EXPANDED_KEY = "b4_discovery_options_expanded";
 export const defaultOptions: DiscoveryOptions = {
   checkDns: true,
   useCache: true,
+  useCommunity: true,
   payloadFiles: [],
   validationTries: 1,
   tlsVersion: "auto",
@@ -102,6 +104,7 @@ interface DiscoveryOptionsPanelProps {
   captures: Capture[];
   disabled?: boolean;
   ipVersionEnabled?: boolean;
+  communityEnabled?: boolean;
 }
 
 const toggleSx = {
@@ -126,6 +129,7 @@ export const DiscoveryOptionsPanel = ({
   captures,
   disabled = false,
   ipVersionEnabled = true,
+  communityEnabled = false,
 }: DiscoveryOptionsPanelProps) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(
@@ -201,6 +205,18 @@ export const DiscoveryOptionsPanel = ({
             onChange={(checked) => onChange({ ...options, checkDns: checked })}
             disabled={disabled}
           />
+
+          {communityEnabled && (
+            <B4Switch
+              label={t("discovery.options.useCommunity")}
+              description={t("discovery.options.useCommunityHint")}
+              checked={options.useCommunity}
+              onChange={(checked) =>
+                onChange({ ...options, useCommunity: checked })
+              }
+              disabled={disabled}
+            />
+          )}
 
           <Box>
             <B4Switch

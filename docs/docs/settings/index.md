@@ -14,4 +14,6 @@ b4 settings are split across several tabs:
 - [Discovery](./discovery) - timeouts, DNS servers, reference domain
 - [Backup](./backup) - backup and restore
 
+The **Integrations** tab also holds the connection to the community hub, described under [Community Hub](../community/index.md#switching-it-on).
+
 Changes are applied after clicking the save button. Core settings, the queue among them, require a service restart. MTProto does not: b4 restarts the proxy itself when a field that needs it changes. Neither does the [SOCKS5 proxy](./core#socks5-proxy), which rebinds its own listener and applies credentials and the [allowed sources](./core#allowed-sources) list on save.

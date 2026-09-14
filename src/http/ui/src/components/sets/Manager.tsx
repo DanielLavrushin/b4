@@ -4,9 +4,6 @@ import {
   FormControlLabel,
   Grid,
   InputAdornment,
-  List,
-  ListItem,
-  ListItemText,
   Paper,
   Stack,
   Switch,
@@ -21,7 +18,6 @@ import {
   AddIcon,
   CheckIcon,
   ClearIcon,
-  CompareIcon,
   DomainIcon,
   ImportExportIcon,
   SetsIcon,
@@ -174,9 +170,8 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
   const [importToolOpen, setImportToolOpen] = useState(false);
   const [compareDialog, setCompareDialog] = useState<{
     open: boolean;
-    setA: B4SetConfig | null;
-    setB: B4SetConfig | null;
-  }>({ open: false, setA: null, setB: null });
+    setId: string | null;
+  }>({ open: false, setId: null });
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [highlightedSetId, setHighlightedSetId] = useState<string | null>(null);
@@ -204,6 +199,10 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
 
   const sets = setsData.map((s) => ("set" in s ? s.set : s)) as B4SetConfig[];
   const setsStats = setsData.map((s) => ("stats" in s ? s.stats : null));
+  const statsOf = (id: string) => {
+    const index = sets.findIndex((s) => s.id === id);
+    return index >= 0 ? setsStats[index] || undefined : undefined;
+  };
   const facetSelection = useSetFacetSelection(sets.map((s) => s.id));
 
   const sensors = useSensors(
@@ -708,11 +707,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                           }
                           onDuplicate={() => handleDuplicateSet(set)}
                           onCompare={() =>
-                            setCompareDialog({
-                              open: true,
-                              setA: set,
-                              setB: null,
-                            })
+                            setCompareDialog({ open: true, setId: set.id })
                           }
                           onDelete={() =>
                             setDeleteDialog({ open: true, setId: set.id })
@@ -734,6 +729,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                           onFacetSelect={(key) => {
                             facetSelection.selectFacet(set.id, key);
                           }}
+                          onVoted={onRefresh}
                         />
                       )}
                     </SortableCardWrapper>
@@ -882,44 +878,13 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
         onImported={onRefresh}
       />
 
-      <B4Dialog
-        open={compareDialog.open && !compareDialog.setB}
-        onClose={() =>
-          setCompareDialog({ open: false, setA: null, setB: null })
-        }
-        title={t("sets.compareDialog.title")}
-        subtitle={`${t("sets.compareDialog.comparingWith")}: ${compareDialog.setA?.name}`}
-        icon={<CompareIcon />}
-      >
-        <List>
-          {sets
-            .filter((s) => s.id !== compareDialog.setA?.id)
-            .map((s) => (
-              <ListItem
-                key={s.id}
-                component="div"
-                onClick={() =>
-                  setCompareDialog((prev) => ({ ...prev, setB: s }))
-                }
-                sx={{
-                  cursor: "pointer",
-                  borderRadius: 1,
-                  "&:hover": { bgcolor: colors.accent.primary },
-                }}
-              >
-                <ListItemText primary={s.name} />
-              </ListItem>
-            ))}
-        </List>
-      </B4Dialog>
-
       <SetCompare
-        open={compareDialog.open && !!compareDialog.setB}
-        setA={compareDialog.setA}
-        setB={compareDialog.setB}
-        onClose={() =>
-          setCompareDialog({ open: false, setA: null, setB: null })
-        }
+        open={compareDialog.open}
+        sets={sets}
+        statsOf={statsOf}
+        initialA={compareDialog.setId}
+        initialB={null}
+        onClose={() => setCompareDialog({ open: false, setId: null })}
       />
     </Stack>
   );

@@ -23,6 +23,7 @@ import (
 	"github.com/daniellavrushin/b4/geodat"
 	b4http "github.com/daniellavrushin/b4/http"
 	"github.com/daniellavrushin/b4/http/handler"
+	"github.com/daniellavrushin/b4/hub"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/mtproto"
@@ -401,12 +402,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	handler.SetTUNEngine(tunEngine)
 
-	// Start internal web server if configured
-	httpServer, apiHandler, err := b4http.StartServer(&cfgPtr, pool)
-	if err != nil {
-		metrics.RecordEvent("error", fmt.Sprintf("Failed to start web server: %v", err))
-		return log.Errorf("failed to start web server: %w", err)
-	}
+	hubService := hub.New(func() *config.Config { return cfgPtr.Load() }, hub.Options{Version: Version})
+	handler.SetHubService(hubService)
 
 	// Start SOCKS5 server if configured.
 	socks5Server := socks5.NewServer(&cfg)
@@ -459,6 +456,13 @@ func runB4(cmd *cobra.Command, args []string) error {
 	wd.Start()
 	handler.SetWatchdog(wd)
 
+	// Start internal web server if configured
+	httpServer, apiHandler, err := b4http.StartServer(&cfgPtr, pool)
+	if err != nil {
+		metrics.RecordEvent("error", fmt.Sprintf("Failed to start web server: %v", err))
+		return log.Errorf("failed to start web server: %w", err)
+	}
+
 	var geoScheduler *geodat.Scheduler
 	if apiHandler != nil {
 		geoScheduler = geodat.NewScheduler(
@@ -479,6 +483,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 		)
 		geoScheduler.Start()
 	}
+
+	hubService.Start()
 
 	log.Infof("B4 is running. Press Ctrl+C to stop")
 	metrics.RecordEvent("info", "B4 is fully operational")
@@ -511,6 +517,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	}()
 
 	wd.Stop()
+	hubService.Stop()
 	if geoScheduler != nil {
 		geoScheduler.Stop()
 	}

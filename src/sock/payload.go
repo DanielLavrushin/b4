@@ -17,6 +17,9 @@ func MatchPayloadLength(fakePayload, originalTLS []byte, mode string) []byte {
 	if mode != "match" || len(originalTLS) == 0 || len(fakePayload) == 0 {
 		return fakePayload
 	}
+	if mirrored := MirrorClientHello(originalTLS, fakePayload); mirrored != nil {
+		return mirrored
+	}
 	target := len(originalTLS)
 	if len(fakePayload) == target {
 		return fakePayload
@@ -28,6 +31,28 @@ func MatchPayloadLength(fakePayload, originalTLS []byte, mode string) []byte {
 	}
 	fixTLSRecordLength(out)
 	return out
+}
+
+func TCPChecksumValid(packet []byte) bool {
+	ipHdrLen := int((packet[0] & 0x0F) * 4)
+	probe := cloneBytes(packet)
+	FixTCPChecksum(probe)
+	return probe[ipHdrLen+16] == packet[ipHdrLen+16] && probe[ipHdrLen+17] == packet[ipHdrLen+17]
+}
+
+func TCPChecksumValidV6(packet []byte) bool {
+	probe := cloneBytes(packet)
+	FixTCPChecksumV6(probe)
+	return probe[40+16] == packet[40+16] && probe[40+17] == packet[40+17]
+}
+
+func CorruptTCPChecksum(packet []byte) {
+	ipHdrLen := int((packet[0] & 0x0F) * 4)
+	packet[ipHdrLen+16] ^= 0xFF
+}
+
+func CorruptTCPChecksumV6(packet []byte) {
+	packet[40+16] ^= 0xFF
 }
 
 func fixTLSRecordLength(payload []byte) {

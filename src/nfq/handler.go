@@ -160,6 +160,7 @@ func needsTCPInjection(set *config.SetConfig) bool {
 	}
 
 	return set.TCP.DropSACK ||
+		set.TCP.HTTPMethodEOL ||
 		set.Faking.SNI ||
 		set.Faking.SNIMutation.Mode != config.ConfigOff ||
 		set.TCP.Desync.Mode != config.ConfigOff ||
@@ -915,6 +916,34 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			if icmp := sock.BuildICMPv6Reject(pkt.raw, pkt.src.To16(), pkt.dst.To16()); icmp != nil {
 				_ = w.clientSender().SendIPv6(icmp, pkt.src)
 			}
+		}
+		return 0
+
+	case config.UDPModeCoalesce:
+		if !config.RoutingUsesTProxy(set.RoutingModeOrDefault()) && set.RoutingHandsOffPackets() {
+			return vc.accept()
+		}
+		coalesced, ok := quic.CoalesceInitial(payload, 0)
+		if !ok {
+			return vc.accept()
+		}
+		var out []byte
+		if pkt.ver == IPv4 {
+			out = sock.BuildUDPPacketV4(pkt.src, pkt.dst, sport, dport, coalesced)
+		} else {
+			out = sock.BuildUDPPacketV6(pkt.src, pkt.dst, sport, dport, coalesced)
+		}
+		if out == nil {
+			return vc.accept()
+		}
+		if !vc.drop() {
+			return 0
+		}
+		log.Tracef("Coalescing QUIC Initial to %s behind a %d byte padding packet", pkt.dstStr, len(coalesced)-len(payload))
+		if pkt.ver == IPv4 {
+			_ = w.sock.SendIPv4(out, pkt.dst)
+		} else {
+			_ = w.sock.SendIPv6(out, pkt.dst)
 		}
 		return 0
 

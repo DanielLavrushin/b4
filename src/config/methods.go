@@ -407,7 +407,13 @@ func (cfg *Config) CollectTCPPorts() []string {
 	portSet["443"] = true
 
 	for _, set := range cfg.Sets {
-		if !set.Enabled || set.TCP.DPortFilter == "" {
+		if !set.Enabled {
+			continue
+		}
+		if set.TCP.HTTPMethodEOL {
+			portSet["80"] = true
+		}
+		if set.TCP.DPortFilter == "" {
 			continue
 		}
 		for _, p := range strings.Split(set.TCP.DPortFilter, ",") {
@@ -886,6 +892,17 @@ func safeCapturePath(configDir, name string) (string, error) {
 		return "", fmt.Errorf("only .bin files are allowed")
 	}
 	return candidate, nil
+}
+
+func (c *Config) ReadCapturePayload(name string) ([]byte, error) {
+	if c.ConfigPath == "" {
+		return nil, fmt.Errorf("config path is not set")
+	}
+	path, err := safeCapturePath(filepath.Dir(c.ConfigPath), name)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
 }
 
 func (c *Config) LoadCapturePayloads() {

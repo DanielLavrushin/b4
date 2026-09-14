@@ -5,7 +5,7 @@ title: Import from another tool
 
 b4 reads a byedpi or zapret command line and turns it into sets. Open the **Sets** page and press **Import**.
 
-This is separate from the **Import/Export** tab inside the set editor, which moves a b4 set between b4 installations as JSON.
+This is separate from the **Import/Export** tab inside the set editor, which moves a b4 set between b4 installations as JSON, and from a [shared set](./sharing.md), which is the form for passing a set to someone else.
 
 :::info b4 is not a fork
 b4 is an independent implementation. It does not share code, configuration format, or a bypass engine with byedpi or zapret, and the three tools name almost nothing the same way. The import is a translation, not a transfer: some options land exactly, some land approximately, and some have no counterpart at all. Every option is listed with which of those happened to it.

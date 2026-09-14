@@ -12,10 +12,13 @@ import (
 
 type stubRelay struct {
 	host  string
+	own   bool
 	taken []string
 }
 
 func (s *stubRelay) WebProxyHost() string { return s.host }
+
+func (s *stubRelay) WebProxyOwnListener() bool { return s.own }
 
 func (s *stubRelay) UpdateConfig(*config.Config) {}
 
@@ -106,5 +109,21 @@ func TestTelegramWebProxyVhostInactiveWhenUnconfigured(t *testing.T) {
 
 	if w.Code != stdhttp.StatusUnauthorized {
 		t.Fatalf("got %d, want the ordinary chain to answer with 401", w.Code)
+	}
+}
+
+func TestTelegramWebProxyVhostYieldsToDedicatedPort(t *testing.T) {
+	relay := &stubRelay{host: "relay.example.org", own: true}
+	h := chainWithRelay(t, relay)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(stdhttp.MethodGet, "http://relay.example.org/api/config", nil)
+	h.ServeHTTP(w, r)
+
+	if w.Code != stdhttp.StatusUnauthorized {
+		t.Fatalf("got %d, want the web server to keep the relay hostname once the relay listener is up", w.Code)
+	}
+	if len(relay.taken) != 0 {
+		t.Fatalf("shared vhost took a request while the relay listener is up: %v", relay.taken)
 	}
 }

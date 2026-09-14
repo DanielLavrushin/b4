@@ -94,6 +94,8 @@ func (w *Worker) dropAndInjectTCPv6(cfg *config.SetConfig, raw []byte, dst net.I
 		return
 	}
 
+	raw = w.applyHTTPMethodEOL(cfg, raw)
+
 	if cfg.Faking.SNIMutation.Mode != config.ConfigOff {
 		raw = w.MutateClientHelloV6(cfg, raw, dst)
 	}
@@ -355,14 +357,21 @@ func (w *Worker) sendFakeSNISequencev6(cfg *config.SetConfig, original []byte, d
 	if fake == nil {
 		return
 	}
+	badsum := !sock.TCPChecksumValidV6(fake)
 	if faking.MD5OnFake {
 		fake = sock.AddTCPMD5Option(fake, true)
+		if badsum {
+			sock.FixTCPChecksumV6(fake)
+			sock.CorruptTCPChecksumV6(fake)
+		}
 	}
 
 	ipv6HdrLen := 40
 
 	for i := 0; i < faking.SNISeqLength; i++ {
-		_ = w.sock.SendIPv6(fake, dst)
+		if err := w.sock.SendIPv6(fake, dst); err != nil {
+			w.warnFakeSend(cfg, len(fake), dst, err)
+		}
 
 		// Update for next iteration
 		if i+1 < faking.SNISeqLength {
@@ -373,6 +382,9 @@ func (w *Worker) sendFakeSNISequencev6(cfg *config.SetConfig, original []byte, d
 				seq := binary.BigEndian.Uint32(fake[ipv6HdrLen+4 : ipv6HdrLen+8])
 				binary.BigEndian.PutUint32(fake[ipv6HdrLen+4:ipv6HdrLen+8], seq+uint32(payloadLen))
 				sock.FixTCPChecksumV6(fake)
+				if badsum {
+					sock.CorruptTCPChecksumV6(fake)
+				}
 			}
 		}
 	}

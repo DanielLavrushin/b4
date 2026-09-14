@@ -127,7 +127,7 @@ export interface CategoryPreviewConfig {
   preview: string[];
 }
 
-export type UdpMode = "off" | "fake" | "drop" | "reject";
+export type UdpMode = "off" | "fake" | "drop" | "reject" | "coalesce";
 export type UdpFilterQuicMode = "sni" | "all";
 export type UdpFakingStrategy = "none" | "ttl" | "checksum";
 
@@ -224,6 +224,7 @@ export interface TcpConfig {
   syn_fake_len: number;
   syn_ttl: number;
   drop_sack: boolean;
+  http_methodeol: boolean;
   dport_filter: string;
 
   desync: DesyncConfig;
@@ -365,6 +366,9 @@ export interface MTProtoConfig {
 export interface MTProtoWebProxyConfig {
   enabled: boolean;
   hostname: string;
+  port: number;
+  tls_cert: string;
+  tls_key: string;
 }
 
 export interface SystemConfig {
@@ -380,6 +384,7 @@ export interface SystemConfig {
   dns: DnsSystemConfig;
   ip_health?: IPHealthConfig;
   update?: UpdateConfig;
+  hub?: HubConfig;
   timezone: string;
   memory_limit?: string;
   pprof?: boolean;
@@ -387,6 +392,12 @@ export interface SystemConfig {
 
 export interface UpdateConfig {
   mirrors?: string[];
+}
+
+export interface HubConfig {
+  enabled: boolean;
+  urls?: string[];
+  public_key?: string;
 }
 
 export interface DnsSystemConfig {
@@ -428,6 +439,21 @@ export interface B4SetConfig {
   routing: RoutingConfig;
   escalate?: EscalateConfig;
   mss_clamp?: MSSClampConfig;
+  hub?: B4HubOrigin;
+  hub_state?: HubState;
+}
+
+export type HubState = "unmodified" | "modified";
+
+export type HubVote = "works" | "broken";
+
+export interface B4HubOrigin {
+  id?: string;
+  version?: number;
+  hash?: string;
+  applied_at?: string;
+  vote?: HubVote;
+  voted_at?: string;
 }
 
 export interface EscalateConfig {

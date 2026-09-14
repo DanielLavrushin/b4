@@ -35,7 +35,7 @@ The editor has 6 tabs:
 - [UDP](./udp) - UDP traffic handling, QUIC, STUN
 - [Routing](./routing) - DNS redirect and traffic routing through interfaces
 - [Escalation](./escalation) - automatic fallback to a backup set when this one keeps failing
-- **Import/Export** - JSON representation of the set configuration for moving between devices. To bring in a configuration from byedpi or zapret instead, see [Import from another tool](./import)
+- **Import/Export** - JSON representation of the set configuration for moving between devices, and a [shared set](./sharing) for passing a set to someone else. To bring in a configuration from byedpi or zapret instead, see [Import from another tool](./import)
 
 ![20260418234644](../../static/img/index/20260418234644.png)
 
@@ -135,4 +135,4 @@ The **Import/Export** tab shows the JSON configuration of a set. You can:
 - Copy the JSON to move it to another device
 - Paste JSON to import a configuration
 
-Source devices (MAC addresses) and the [Escalation](./escalation) settings are not exported - they reference local state (devices and other sets) that does not transfer between devices. Configure them again on the target.
+A set meant for another person is prepared as a [shared set](./sharing) instead, which leaves out everything tied to this router. Source devices (MAC addresses) and the [Escalation](./escalation) settings are not exported - they reference local state (devices and other sets) that does not transfer between devices. Configure them again on the target.

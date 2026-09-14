@@ -20,6 +20,7 @@ export interface AddPresetResult {
 export interface DiscoveryStartOptions {
   skipDNS: boolean;
   skipCache: boolean;
+  skipCommunity?: boolean;
   payloadFiles: string[];
   validationTries: number;
   tlsVersion: string;
@@ -32,6 +33,7 @@ export const discoveryApi = {
       check_urls,
       skip_dns: options.skipDNS,
       skip_cache: options.skipCache,
+      skip_community: options.skipCommunity ?? false,
       payload_files: options.payloadFiles,
       validation_tries: options.validationTries,
       tls_version: options.tlsVersion,
@@ -39,6 +41,7 @@ export const discoveryApi = {
     }),
   status: (id: string) => apiGet<DiscoverySuite>(`/api/discovery/status/${id}`),
   cancel: (id: string) => apiDelete(`/api/discovery/cancel/${id}`),
+  finish: (id: string) => apiPost(`/api/discovery/finish/${id}`, {}),
   addPresetAsSet: (preset: B4SetConfig) =>
     apiPost<AddPresetResult>("/api/discovery/add", preset),
   similar: (set: B4SetConfig) =>
