@@ -22,14 +22,15 @@ const (
 	defaultData   = "data"
 	defaultListen = "127.0.0.1:7100"
 
-	envData          = "B4HUB_DATA"
-	envListen        = "B4HUB_LISTEN"
-	envPublicURL     = "B4HUB_PUBLIC_URL"
-	envGeoSiteURL    = "B4HUB_GEOSITE_URL"
-	envGeoIPURL      = "B4HUB_GEOIP_URL"
-	envAdminPassword = "B4HUB_ADMIN_PASSWORD"
-	envUpstream      = "B4HUB_UPSTREAM"
-	envUpstreamKey   = "B4HUB_UPSTREAM_KEY"
+	envData           = "B4HUB_DATA"
+	envListen         = "B4HUB_LISTEN"
+	envPublicURL      = "B4HUB_PUBLIC_URL"
+	envGeoSiteURL     = "B4HUB_GEOSITE_URL"
+	envGeoIPURL       = "B4HUB_GEOIP_URL"
+	envAdminPassword  = "B4HUB_ADMIN_PASSWORD"
+	envUpstream       = "B4HUB_UPSTREAM"
+	envUpstreamKey    = "B4HUB_UPSTREAM_KEY"
+	envTrustedProxies = "B4HUB_TRUSTED_PROXIES"
 
 	shutdownGrace = 10 * time.Second
 )
@@ -50,6 +51,7 @@ Every flag has an environment variable counterpart used as its default:
   --geoip-url     ` + envGeoIPURL + `
   --upstream      ` + envUpstream + `
   --upstream-key  ` + envUpstreamKey + `
+  --trusted-proxies ` + envTrustedProxies + `
 The moderation password is read only from ` + envAdminPassword + `.`,
 	Version:       Version,
 	SilenceUsage:  true,
@@ -151,6 +153,10 @@ type geoFlags struct {
 	publicURL  string
 	geoSiteURL string
 	geoIPURL   string
+}
+
+func bindTrustedProxies(cmd *cobra.Command, target *string) {
+	cmd.Flags().StringVar(target, "trusted-proxies", envOr(envTrustedProxies, ""), "comma-separated addresses or CIDRs of reverse proxies whose X-Forwarded-For is trusted; loopback always is")
 }
 
 func bindGeoFlags(cmd *cobra.Command, f *geoFlags) {

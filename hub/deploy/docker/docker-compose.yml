@@ -8,6 +8,7 @@ services:
       B4HUB_ADMIN_PASSWORD: ${B4HUB_ADMIN_PASSWORD:-}
       B4HUB_UPSTREAM: ${B4HUB_UPSTREAM:-}
       B4HUB_UPSTREAM_KEY: ${B4HUB_UPSTREAM_KEY:-}
+      B4HUB_TRUSTED_PROXIES: 10.84.0.0/24
     volumes:
       - b4hub-data:/var/lib/b4hub
     restart: unless-stopped
@@ -28,6 +29,12 @@ services:
     depends_on:
       - b4hub
     restart: unless-stopped
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 10.84.0.0/24
 
 volumes:
   b4hub-data:

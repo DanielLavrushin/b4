@@ -70,3 +70,29 @@ func TestClientIPHonoursForwardedOnlyFromLoopback(t *testing.T) {
 		t.Errorf("X-Real-IP fallback failed, got %s", ip)
 	}
 }
+
+func TestClientIPHonoursForwardedFromTrustedProxies(t *testing.T) {
+	if err := SetTrustedProxies("10.84.0.0/24, 2001:db8::5"); err != nil {
+		t.Fatal(err)
+	}
+	defer SetTrustedProxies("")
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "10.84.0.3:4000"
+	req.Header.Set("X-Forwarded-For", "203.0.113.5")
+	if ip := ClientIP(req); ip.String() != "203.0.113.5" {
+		t.Errorf("a peer inside a trusted range must yield the forwarded address, got %s", ip)
+	}
+	req.RemoteAddr = "[2001:db8::5]:4000"
+	if ip := ClientIP(req); ip.String() != "203.0.113.5" {
+		t.Errorf("a trusted single address must yield the forwarded address, got %s", ip)
+	}
+	req.RemoteAddr = "10.84.1.3:4000"
+	if ip := ClientIP(req); ip.String() != "10.84.1.3" {
+		t.Errorf("a peer outside the trusted ranges must ignore the header, got %s", ip)
+	}
+	for _, bad := range []string{"nope", "10.84.0.0/99", "10.84.0.0/24,x"} {
+		if err := SetTrustedProxies(bad); err == nil {
+			t.Errorf("%q must be rejected", bad)
+		}
+	}
+}

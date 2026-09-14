@@ -154,13 +154,62 @@ func ParseDescription(txt string) string {
 	return strings.TrimSpace(fields[4])
 }
 
+var trustedProxies struct {
+	mu   sync.RWMutex
+	nets []*net.IPNet
+}
+
+func SetTrustedProxies(list string) error {
+	var nets []*net.IPNet
+	for _, item := range strings.Split(list, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if !strings.Contains(item, "/") {
+			ip := net.ParseIP(item)
+			if ip == nil {
+				return fmt.Errorf("trusted proxy %q: not an address or a CIDR", item)
+			}
+			bits := 32
+			if ip.To4() == nil {
+				bits = 128
+			}
+			item = fmt.Sprintf("%s/%d", ip, bits)
+		}
+		_, n, err := net.ParseCIDR(item)
+		if err != nil {
+			return fmt.Errorf("trusted proxy %q: %w", item, err)
+		}
+		nets = append(nets, n)
+	}
+	trustedProxies.mu.Lock()
+	trustedProxies.nets = nets
+	trustedProxies.mu.Unlock()
+	return nil
+}
+
+func trustedPeer(ip net.IP) bool {
+	if ip.IsLoopback() {
+		return true
+	}
+	trustedProxies.mu.RLock()
+	defer trustedProxies.mu.RUnlock()
+	for _, n := range trustedProxies.nets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
 func ClientIP(req *http.Request) net.IP {
 	host, _, err := net.SplitHostPort(req.RemoteAddr)
 	if err != nil {
 		host = req.RemoteAddr
 	}
 	peer := net.ParseIP(strings.Trim(host, "[]"))
-	if peer == nil || !peer.IsLoopback() {
+	if peer == nil || !trustedPeer(peer) {
 		return peer
 	}
 	if forwarded := req.Header.Get("X-Forwarded-For"); forwarded != "" {

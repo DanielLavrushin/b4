@@ -63,6 +63,13 @@ docker compose up -d
 docker compose logs -f b4hub
 ```
 
+The Compose network is pinned to `10.84.0.0/24` and `B4HUB_TRUSTED_PROXIES` covers it, so the
+hub takes the client address from Caddy's `X-Forwarded-For` instead of attributing every
+request to the Caddy container; without that, network scoring, login limits and ingest quotas
+would all see one client. If the subnet collides with a network already on the host, change it
+in both places. Nothing else may reach `b4hub` on that network: a peer in the trusted range can
+claim any client address.
+
 The signing key sits in the `b4hub-data` volume; `docker compose down -v` deletes it together
 with the store, so back up `hub.key` (`docker compose cp b4hub:/var/lib/b4hub/hub.key .`) before
 anything that removes volumes. The image runs as uid 7100; a bind mount in place of the named
@@ -77,7 +84,11 @@ docker run -d --name b4hub -v b4hub:/var/lib/b4hub -p 127.0.0.1:7100:7100 \
   -e B4HUB_PUBLIC_URL=https://hub.example.net -e B4HUB_ADMIN_PASSWORD=... lavrushin/b4hub
 ```
 
-behind any TLS-terminating proxy that forwards `X-Forwarded-Proto: https`.
+behind any TLS-terminating proxy that forwards `X-Forwarded-Proto: https`. A proxy on the host
+reaches the published port through Docker's bridge, so the hub sees the bridge gateway
+(`172.17.0.1` by default) as the peer, not loopback; `-e B4HUB_TRUSTED_PROXIES=172.17.0.1` makes
+its `X-Forwarded-For` count. The setting, also `--trusted-proxies`, takes addresses or CIDRs
+separated by commas; loopback is always trusted.
 
 ## Build
 

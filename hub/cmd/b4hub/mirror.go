@@ -9,18 +9,20 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/hubwire"
+	"github.com/daniellavrushin/b4hub/internal/asn"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
 	"github.com/daniellavrushin/b4hub/internal/mirror"
 	"github.com/spf13/cobra"
 )
 
 var mirrorFlags struct {
-	listen      string
-	upstream    string
-	upstreamKey string
-	publicURL   string
-	announce    bool
-	refresh     time.Duration
+	listen         string
+	upstream       string
+	upstreamKey    string
+	publicURL      string
+	announce       bool
+	refresh        time.Duration
+	trustedProxies string
 }
 
 var mirrorCmd = &cobra.Command{
@@ -38,11 +40,15 @@ func init() {
 	f.StringVar(&mirrorFlags.publicURL, "public-url", envOr(envPublicURL, ""), "public base URL of this mirror, announced to the central hub")
 	f.BoolVar(&mirrorFlags.announce, "announce", false, "announce this mirror to the central hub on start and daily")
 	f.DurationVar(&mirrorFlags.refresh, "refresh", mirror.DefaultRefresh, "how often to check the upstream manifest")
+	bindTrustedProxies(mirrorCmd, &mirrorFlags.trustedProxies)
 }
 
 func runMirror(cmd *cobra.Command, args []string) error {
 	if strings.TrimSpace(mirrorFlags.upstream) == "" {
 		return errors.New("--upstream is required")
+	}
+	if err := asn.SetTrustedProxies(mirrorFlags.trustedProxies); err != nil {
+		return err
 	}
 	layout := hubdata.Layout{Root: dataDir}
 	if err := layout.EnsureDirs(); err != nil {

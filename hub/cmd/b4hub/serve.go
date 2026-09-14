@@ -23,7 +23,8 @@ import (
 
 var serveFlags struct {
 	geoFlags
-	listen string
+	listen         string
+	trustedProxies string
 }
 
 var serveCmd = &cobra.Command{
@@ -35,10 +36,14 @@ var serveCmd = &cobra.Command{
 
 func init() {
 	serveCmd.Flags().StringVar(&serveFlags.listen, "listen", envOr(envListen, defaultListen), "listen address")
+	bindTrustedProxies(serveCmd, &serveFlags.trustedProxies)
 	bindGeoFlags(serveCmd, &serveFlags.geoFlags)
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
+	if err := asn.SetTrustedProxies(serveFlags.trustedProxies); err != nil {
+		return err
+	}
 	svc, err := openServices(dataDir)
 	if err != nil {
 		return err
