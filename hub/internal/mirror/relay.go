@@ -108,6 +108,16 @@ func unreachable(a *Answer, err error) (string, bool) {
 	return "", false
 }
 
+func retained(a *Answer, err error) (string, bool) {
+	if reason, down := unreachable(a, err); down {
+		return reason, true
+	}
+	if a.Status == http.StatusTooManyRequests || a.Status >= http.StatusInternalServerError {
+		return fmt.Sprintf("upstream answered %d", a.Status), true
+	}
+	return "", false
+}
+
 func queueable(kind string) bool {
 	return kind == hubwire.RecordVote || kind == hubwire.RecordReport
 }
@@ -192,8 +202,8 @@ func (r *Relay) Retry(ctx context.Context) error {
 			continue
 		}
 		answer, err := r.Forward(ctx, raw)
-		if reason, down := unreachable(answer, err); down {
-			return fmt.Errorf("hub unreachable (%s), %d records still queued", reason, len(entries)-i)
+		if reason, keep := retained(answer, err); keep {
+			return fmt.Errorf("delivery paused (%s), %d records still queued", reason, len(entries)-i)
 		}
 		_ = os.Remove(path)
 		log.Printf("relay: delivered queued %s: %d %s", e.Name(), answer.Status, strings.TrimSpace(string(answer.Body)))

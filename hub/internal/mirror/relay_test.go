@@ -109,3 +109,45 @@ func TestRelayForwardsAndQueuesWhileUpstreamIsDown(t *testing.T) {
 		t.Fatalf("upstream must receive the queued vote verbatim, got %d records", len(received))
 	}
 }
+
+func TestRetryKeepsRecordsTheHubDidNotAccept(t *testing.T) {
+	var status atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(int(status.Load()))
+		_, _ = w.Write([]byte(`{"code":"test"}`))
+	}))
+	defer upstream.Close()
+
+	dir := filepath.Join(t.TempDir(), "relay")
+	relay := &Relay{Upstream: upstream.URL, Dir: dir}
+	ctx := context.Background()
+	voter := testkit.Identity(t)
+	now := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	raw := testkit.Sign(t, voter, hubwire.RecordVote, hubwire.VoteBody{SetID: "01ARZ3NDEKTSV4RRFFQ69G5FAV", Version: 1, FP: "fp", Kind: hubwire.VoteWorks}, now)
+	var rec hubwire.Record
+	if err := json.Unmarshal(raw, &rec); err != nil {
+		t.Fatal(err)
+	}
+	if err := relay.enqueue(rec.ID(), raw); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, code := range []int{http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusServiceUnavailable} {
+		status.Store(int32(code))
+		if err := relay.Retry(ctx); err == nil {
+			t.Fatalf("a %d answer must pause the drain", code)
+		}
+		if relay.Queued() != 1 {
+			t.Fatalf("a %d answer must keep the record, got %d queued", code, relay.Queued())
+		}
+	}
+
+	status.Store(http.StatusBadRequest)
+	if err := relay.Retry(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if relay.Queued() != 0 {
+		t.Fatalf("a refused record must leave the queue, got %d queued", relay.Queued())
+	}
+}
