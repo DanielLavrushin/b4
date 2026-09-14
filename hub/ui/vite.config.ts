@@ -10,7 +10,7 @@ const APP_VERSION = process.env.VITE_APP_VERSION || "dev";
 const keepDist = (): Plugin => ({
   name: "b4hub-keep-dist",
   closeBundle() {
-    closeSync(openSync(join(__dirname, "dist", ".gitkeep"), "w"));
+    closeSync(openSync(join(import.meta.dirname, "dist", ".gitkeep"), "w"));
   },
 });
 
