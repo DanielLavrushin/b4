@@ -25,6 +25,7 @@ type FakeHub struct {
 	Server      *httptest.Server
 	Mirrors     []string
 	RevokedKeys []string
+	Network     *hubwire.NetworkInfo
 
 	mu        sync.Mutex
 	manifest  *hubwire.Manifest
@@ -49,6 +50,7 @@ func New(t testing.TB) *FakeHub {
 	mux.HandleFunc(hubwire.PathBlob+"{hash}", f.serveBlob)
 	mux.HandleFunc(hubwire.PathMessage, f.serveMessage)
 	mux.HandleFunc(hubwire.PathFiles+"{file}", f.serveFile)
+	mux.HandleFunc(hubwire.PathNetwork, f.serveNetwork)
 	f.Server = httptest.NewTLSServer(mux)
 	t.Cleanup(f.Server.Close)
 	return f
@@ -202,6 +204,20 @@ func (f *FakeHub) unavailable(w http.ResponseWriter) bool {
 	return down
 }
 
+func (f *FakeHub) serveNetwork(w http.ResponseWriter, _ *http.Request) {
+	if f.unavailable(w) {
+		return
+	}
+	f.mu.Lock()
+	info := f.Network
+	f.mu.Unlock()
+	if info == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
 func (f *FakeHub) serveHealth(w http.ResponseWriter, _ *http.Request) {
 	if f.unavailable(w) {
 		return
@@ -218,7 +234,7 @@ func (f *FakeHub) serveManifest(w http.ResponseWriter, _ *http.Request) {
 	m := f.manifest
 	f.mu.Unlock()
 	if m == nil {
-		http.NotFound(w, nil)
+		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

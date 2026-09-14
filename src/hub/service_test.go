@@ -488,3 +488,41 @@ func TestManifestMirrorsFollowConfiguredURLsAndRevokedKeysAreDropped(t *testing.
 		t.Errorf("the revocation must survive a restart: %v", keys)
 	}
 }
+
+func TestSyncLearnsTheNetworkFromTheHub(t *testing.T) {
+	f := hubtest.New(t)
+	f.Publish(t, sampleCatalogue(t, 1, 1), time.Now().Add(7*24*time.Hour))
+	dir := t.TempDir()
+	box := newTestBox(t, f, dir)
+	if _, err := box.svc.Sync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if n := box.svc.Network(); n.ASN != "" || n.Source != "" {
+		t.Fatalf("a hub without the network endpoint leaves the network unknown, got %+v", n)
+	}
+
+	f.Network = &hubwire.NetworkInfo{ASN: "3292", Country: "DK", Name: "TDC"}
+	if _, err := box.svc.Sync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want := Network{ASN: "3292", CC: "DK", Name: "TDC", Source: NetworkSourceHub}
+	if n := box.svc.Network(); n != want {
+		t.Fatalf("network must come from the hub after a sync, got %+v", n)
+	}
+	if st := box.svc.Status(); st.Network != want {
+		t.Fatalf("status must carry the learned network, got %+v", st.Network)
+	}
+
+	reloaded := newTestBox(t, f, dir)
+	if n := reloaded.svc.Network(); n != want {
+		t.Fatalf("the learned network must survive a restart, got %+v", n)
+	}
+
+	f.Network = &hubwire.NetworkInfo{ASN: "8359", Country: "RU", Name: "MTS"}
+	if _, err := reloaded.svc.Sync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if n := reloaded.svc.Network(); n.ASN != "8359" || n.CC != "RU" {
+		t.Fatalf("a changed network must replace the stored one, got %+v", n)
+	}
+}

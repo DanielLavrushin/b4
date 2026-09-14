@@ -175,7 +175,7 @@ export interface HubStatus {
   catalogue: HubCatalogueStatus | null;
   urls: string[];
   mirrors: string[];
-  network: { asn: string; cc: string };
+  network: { asn: string; cc: string; name?: string; source?: string };
   outbox: number;
   hub_key?: string;
   hub_key_builtin?: boolean;

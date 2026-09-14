@@ -336,3 +336,27 @@ func TestBasicAuthGuardsAdminHandlers(t *testing.T) {
 	}
 	_ = h
 }
+
+func TestNetworkAnswersTheCallersOrigin(t *testing.T) {
+	h := startHub(t)
+	req, err := http.NewRequest(http.MethodGet, h.server.URL+hubwire.PathNetwork, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Forwarded-For", "203.0.113.5")
+	resp, err := h.server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var info hubwire.NetworkInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("network: %d %v", resp.StatusCode, err)
+	}
+	if info.ASN != "64500" || info.Country != "RU" || info.Name == "" {
+		t.Fatalf("network must describe the caller, got %+v", info)
+	}
+	if resp.Header.Get("Cache-Control") != cacheNever {
+		t.Errorf("network answers must not be cached, got %q", resp.Header.Get("Cache-Control"))
+	}
+}

@@ -44,6 +44,7 @@ func (s *Service) Sync(ctx context.Context) (bool, error) {
 				s.setPreferredBase(base)
 				s.adoptManifest(m)
 				s.markSynced()
+				s.learnNetwork(ctx, base)
 				return false, nil
 			}
 			staleBases++
@@ -76,6 +77,7 @@ func (s *Service) Sync(ctx context.Context) (bool, error) {
 		s.adoptManifest(m)
 		s.markSynced()
 		log.Infof("hub: catalogue %d-%d with %d sets synced from %s", cat.Epoch, cat.Seq, len(cat.Sets), base)
+		s.learnNetwork(ctx, base)
 		return true, nil
 	}
 

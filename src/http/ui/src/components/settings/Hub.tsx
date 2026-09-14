@@ -44,9 +44,11 @@ const parseUrls = (text: string): string[] =>
 interface StatusRowProps {
   label: string;
   value: React.ReactNode;
+  hint?: string;
+  title?: string;
 }
 
-const StatusRow = ({ label, value }: StatusRowProps) => (
+const StatusRow = ({ label, value, hint, title }: StatusRowProps) => (
   <Box
     sx={{
       display: "grid",
@@ -65,13 +67,25 @@ const StatusRow = ({ label, value }: StatusRowProps) => (
     >
       {label}
     </Typography>
-    <Typography
-      component="div"
-      variant="body2"
-      sx={{ color: colors.text.primary, overflowWrap: "anywhere" }}
-    >
-      {value}
-    </Typography>
+    <Box sx={{ minWidth: 0 }}>
+      <Typography
+        component="div"
+        variant="body2"
+        title={title}
+        sx={{ color: colors.text.primary, overflowWrap: "anywhere" }}
+      >
+        {value}
+      </Typography>
+      {hint && (
+        <Typography
+          component="div"
+          variant="caption"
+          sx={{ color: colors.text.secondary, display: "block", mt: 0.25 }}
+        >
+          {hint}
+        </Typography>
+      )}
+    </Box>
   </Box>
 );
 
@@ -259,30 +273,42 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
             <B4Alert severity="warning">{t("hub.status.notConfigured")}</B4Alert>
           )}
           {data?.enabled && data.configured && (
-            <Stack spacing={0.75}>
+            <Stack spacing={1.25}>
               <StatusRow
                 label={t("settings.Hub.status.catalogue")}
                 value={
                   data.catalogue
                     ? t("settings.Hub.status.catalogueLine", {
-                        epoch: data.catalogue.epoch,
-                        seq: data.catalogue.seq,
-                        date: formatDate(data.catalogue.generated_at),
                         count: data.catalogue.sets,
+                        date: formatDate(data.catalogue.generated_at),
                       })
                     : t("hub.status.noCatalogue")
                 }
+                title={
+                  data.catalogue
+                    ? t("settings.Hub.status.catalogueBuild", {
+                        epoch: data.catalogue.epoch,
+                        seq: data.catalogue.seq,
+                      })
+                    : undefined
+                }
+                hint={t("settings.Hub.status.catalogueHint")}
               />
               {data.catalogue && (
                 <StatusRow
                   label={t("settings.Hub.status.expires")}
                   value={
-                    data.catalogue.expired
-                      ? t("settings.Hub.status.expiredAt", {
+                    data.catalogue.expired ? (
+                      <Box component="span" sx={{ color: colors.state.warning }}>
+                        {t("settings.Hub.status.expiredAt", {
                           date: formatDate(data.catalogue.expires_at),
-                        })
-                      : formatDate(data.catalogue.expires_at)
+                        })}
+                      </Box>
+                    ) : (
+                      formatDate(data.catalogue.expires_at)
+                    )
                   }
+                  hint={t("settings.Hub.status.expiresHint")}
                 />
               )}
               <StatusRow
@@ -292,6 +318,7 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
                     ? `${formatDate(data.last_sync)} (${formatTimeAgo(t, data.last_sync)})`
                     : t("hub.status.neverSynced")
                 }
+                hint={t("settings.Hub.status.lastSyncHint")}
               />
               {data.last_error && (
                 <StatusRow
@@ -301,8 +328,21 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
                       {data.last_error}
                     </Box>
                   }
+                  hint={t("settings.Hub.status.lastErrorHint")}
                 />
               )}
+              <StatusRow
+                label={t("settings.Hub.status.hub")}
+                value={[
+                  ...(data.urls.length > 0 ? data.urls : [DEFAULT_HUB_URL]),
+                  ...data.mirrors,
+                ].join(", ")}
+                hint={
+                  data.mirrors.length > 0
+                    ? t("settings.Hub.status.hubHintMirrors", { count: data.mirrors.length })
+                    : t("settings.Hub.status.hubHint")
+                }
+              />
               <StatusRow
                 label={t("settings.Hub.status.hubKey")}
                 value={
@@ -315,30 +355,37 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
                       )
                     : t("settings.Hub.status.hubKeyNone")
                 }
-              />
-              <StatusRow
-                label={t("settings.Hub.status.urls")}
-                value={data.urls.length > 0 ? data.urls.join(", ") : DEFAULT_HUB_URL}
-              />
-              <StatusRow
-                label={t("settings.Hub.status.mirrors")}
-                value={
-                  data.mirrors.length > 0
-                    ? data.mirrors.join(", ")
-                    : t("settings.Hub.status.noMirrors")
-                }
+                hint={t("settings.Hub.status.hubKeyHint")}
               />
               <StatusRow
                 label={t("settings.Hub.status.network")}
                 value={
                   data.network.asn || data.network.cc
-                    ? [data.network.asn, data.network.cc].filter(Boolean).join(", ")
-                    : t("core.unknown")
+                    ? t("settings.Hub.status.networkLine", {
+                        asn: data.network.asn ? `AS${data.network.asn}` : "?",
+                        cc: data.network.cc || "?",
+                        name: data.network.name ? ` (${data.network.name})` : "",
+                      })
+                    : t("settings.Hub.status.networkUnknown")
+                }
+                hint={
+                  data.network.asn || data.network.cc
+                    ? t(
+                        data.network.source === "hub"
+                          ? "settings.Hub.status.networkHintHub"
+                          : "settings.Hub.status.networkHintDetector",
+                      )
+                    : t("settings.Hub.status.networkHintUnknown")
                 }
               />
               <StatusRow
                 label={t("settings.Hub.status.outbox")}
-                value={String(data.outbox)}
+                value={
+                  data.outbox > 0
+                    ? t("settings.Hub.status.outboxWaiting", { count: data.outbox })
+                    : t("settings.Hub.status.outboxNone")
+                }
+                hint={t("settings.Hub.status.outboxHint")}
               />
             </Stack>
           )}

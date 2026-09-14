@@ -59,6 +59,7 @@ type Service struct {
 
 	networkMu     sync.Mutex
 	network       Network
+	hubNetwork    Network
 	networkPinned bool
 	networkReadAt time.Time
 
@@ -96,6 +97,7 @@ func New(getCfg func() *config.Config, opts Options) *Service {
 	}
 	s.loadTrust()
 	s.loadStored()
+	s.loadNetwork()
 	return s
 }
 

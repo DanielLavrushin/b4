@@ -38,8 +38,9 @@ export const hubStatusLine = (
   if (status.network.asn || status.network.cc) {
     parts.push(
       t("hub.status.network", {
-        asn: status.network.asn || "?",
+        asn: status.network.asn ? `AS${status.network.asn}` : "?",
         cc: status.network.cc || "?",
+        name: status.network.name ? ` (${status.network.name})` : "",
       }),
     );
   }

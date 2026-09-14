@@ -50,6 +50,7 @@ func (s *Server) Router() *http.ServeMux {
 	mux.HandleFunc("GET "+hubwire.PathFiles+"{file}", s.catalogueFile)
 	mux.HandleFunc("GET "+hubwire.PathBlob+"{hash}", s.blob)
 	mux.HandleFunc("POST "+hubwire.PathMessage, s.message)
+	mux.HandleFunc("GET "+hubwire.PathNetwork, s.network)
 	return mux
 }
 
@@ -140,6 +141,18 @@ func (s *Server) message(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := s.Ingest.Handle(r.Context(), raw, asn.ClientIP(r))
 	writeJSON(w, resp.Status, resp.Body)
+}
+
+func (s *Server) network(w http.ResponseWriter, r *http.Request) {
+	var info hubwire.NetworkInfo
+	if s.Ingest != nil && s.Ingest.ASN != nil {
+		if ip := asn.ClientIP(r); ip != nil {
+			found := s.Ingest.ASN.Lookup(r.Context(), ip)
+			info = hubwire.NetworkInfo{ASN: found.ASN, Country: found.Country, Name: found.Name}
+		}
+	}
+	w.Header().Set("Cache-Control", cacheNever)
+	writeJSON(w, http.StatusOK, info)
 }
 
 func (s *Server) BasicAuth(next http.Handler) http.Handler {

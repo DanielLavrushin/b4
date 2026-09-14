@@ -36,6 +36,7 @@ const (
 	PathManifest = "/b4/hub/manifest.json"
 	PathBlob     = "/b4/hub/blob/"
 	PathMessage  = "/b4/hub/v1/msg"
+	PathNetwork  = "/b4/hub/v1/network"
 	PathFiles    = "/b4/hub/"
 
 	ManifestTTL = 14 * 24 * time.Hour
@@ -267,6 +268,12 @@ type FileRef struct {
 	File   string `json:"file"`
 	SHA256 string `json:"sha256"`
 	Size   int64  `json:"size"`
+}
+
+type NetworkInfo struct {
+	ASN     string `json:"asn,omitempty"`
+	Country string `json:"country,omitempty"`
+	Name    string `json:"name,omitempty"`
 }
 
 type Manifest struct {
