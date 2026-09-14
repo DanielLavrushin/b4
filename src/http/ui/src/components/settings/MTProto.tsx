@@ -35,8 +35,8 @@ import { B4Config } from "@models/config";
 import { SettingsPropHandlerType } from "@models/settings";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { describeApiError } from "@utils";
-import { webProxyPageDownloadUrl } from "@api/mtproto";
 import {
+  useDownloadWebProxyPage,
   useRemoveWebProxyPage,
   useUploadWebProxyPage,
   useWebProxyPage,
@@ -318,13 +318,19 @@ const WebProxyPagePanel = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const page = useWebProxyPage(enabled);
   const upload = useUploadWebProxyPage();
+  const download = useDownloadWebProxyPage();
   const remove = useRemoveWebProxyPage();
   const custom = page.data?.custom ?? false;
-  const busy = upload.isPending || remove.isPending;
+  const busy = upload.isPending || download.isPending || remove.isPending;
 
   const onUpload = (file: File) => {
     upload.mutate(file, {
       onSuccess: () => showSuccess(t("settings.MTProto.webProxyPageUploaded")),
+      onError: (e) => showError(describeApiError(e)),
+    });
+  };
+  const onDownload = () => {
+    download.mutate(undefined, {
       onError: (e) => showError(describeApiError(e)),
     });
   };
@@ -367,9 +373,10 @@ const WebProxyPagePanel = ({
         <Button
           variant="outlined"
           size="small"
-          startIcon={<DownloadIcon />}
-          component="a"
-          href={webProxyPageDownloadUrl}
+          startIcon={
+            download.isPending ? <CircularProgress size={16} /> : <DownloadIcon />
+          }
+          onClick={onDownload}
           disabled={!custom || busy}
         >
           {t("core.download")}

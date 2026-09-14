@@ -9,16 +9,24 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discovery"
+	"github.com/daniellavrushin/b4/hub"
 	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4/log"
 )
 
 const (
 	communityCandidateLimit = 3
+	communitySearchDepth    = 10
 	communityBlobTimeout    = 8 * time.Second
 	communityFreshFor       = 10 * time.Minute
 	communitySyncTimeout    = 10 * time.Second
 )
+
+type communityQueue struct {
+	results []hub.Result
+	next    int
+	taken   int
+}
 
 func hubDomainOf(raw string) string {
 	raw = strings.TrimSpace(raw)
@@ -56,27 +64,38 @@ func (api *API) communityPresets(urls []string, skip bool) []discovery.ConfigPre
 		}
 		cancel()
 	}
-	seen := map[string]bool{}
-	var out []discovery.ConfigPreset
+	var queues []*communityQueue
 	for _, raw := range urls {
 		domain := hubDomainOf(raw)
 		if domain == "" {
 			continue
 		}
-		results, _ := svc.Search(domain, 10)
-		for _, r := range results {
-			if len(out) >= communityCandidateLimit {
-				return out
+		results, _ := svc.Search(domain, communitySearchDepth)
+		if len(results) > 0 {
+			queues = append(queues, &communityQueue{results: results})
+		}
+	}
+	seen := map[string]bool{}
+	var out []discovery.ConfigPreset
+	for progress := true; progress; {
+		progress = false
+		for _, q := range queues {
+			for q.taken < communityCandidateLimit && q.next < len(q.results) {
+				r := q.results[q.next]
+				q.next++
+				if r.Set == nil || seen[r.Set.FP] {
+					continue
+				}
+				seen[r.Set.FP] = true
+				preset, ok := api.communityPreset(r.Set)
+				if !ok {
+					continue
+				}
+				out = append(out, preset)
+				q.taken++
+				progress = true
+				break
 			}
-			if r.Set == nil || seen[r.Set.FP] {
-				continue
-			}
-			preset, ok := api.communityPreset(r.Set)
-			if !ok {
-				continue
-			}
-			seen[r.Set.FP] = true
-			out = append(out, preset)
 		}
 	}
 	if len(out) > 0 {

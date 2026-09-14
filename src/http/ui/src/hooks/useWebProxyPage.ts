@@ -24,6 +24,12 @@ export function useUploadWebProxyPage() {
   });
 }
 
+export function useDownloadWebProxyPage() {
+  return useMutation({
+    mutationFn: () => mtprotoApi.downloadWebProxyPage(),
+  });
+}
+
 export function useRemoveWebProxyPage() {
   const client = useQueryClient();
   return useMutation({

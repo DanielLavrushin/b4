@@ -43,10 +43,12 @@ export function ReasonDialog({ prompt, onClose }: ReasonDialogProps) {
     setBusy(true);
     try {
       await prompt.onConfirm(reason.trim());
-      onClose();
-    } finally {
+    } catch {
       setBusy(false);
+      return;
     }
+    setBusy(false);
+    onClose();
   };
 
   return (

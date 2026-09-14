@@ -242,6 +242,7 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
                 fake: "sets.udp.fakeModeInfo",
                 reject: "sets.udp.rejectModeInfo",
                 drop: "sets.udp.dropModeInfo",
+                coalesce: "sets.udp.coalesceModeInfo",
               };
               return (
                 <Trans i18nKey={infoKeys[config.udp.mode] || infoKeys.fake} />

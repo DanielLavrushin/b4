@@ -15,6 +15,7 @@ import (
 
 	"github.com/daniellavrushin/b4/capture"
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/discovery"
 	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/hub"
 	"github.com/daniellavrushin/b4/hub/hubtest"
@@ -613,5 +614,50 @@ func TestHubIdentityEndpoints(t *testing.T) {
 	decodeInto(t, rec, &restored)
 	if restored.KeyID != id.KeyID {
 		t.Errorf("restoring the same code must give the same key: %s vs %s", restored.KeyID, id.KeyID)
+	}
+}
+
+func TestCommunityPresetsCoverEveryRequestedDomain(t *testing.T) {
+	env := newHubEnv(t)
+	var sets []hubwire.CatalogueSet
+	for i, title := range []string{"A1", "A2", "A3", "A4"} {
+		set := hubStrategySet(title, "a.example")
+		set.Faking.TTL = uint8(10 + i)
+		cs, _ := hubtest.CatalogueSet(t, "a-"+title, 1, &set, nil)
+		sets = append(sets, cs)
+	}
+	forB := hubStrategySet("B1", "b.example")
+	forB.Faking.TTL = 20
+	csB, _ := hubtest.CatalogueSet(t, "b-1", 1, &forB, nil)
+	shared := hubStrategySet("AB", "a.example", "b.example")
+	shared.Faking.TTL = 30
+	csAB, _ := hubtest.CatalogueSet(t, "ab-1", 1, &shared, nil)
+	env.publish(t, append(sets, csB, csAB)...)
+
+	presets := env.api.communityPresets([]string{"https://a.example/watch?v=1", "b.example:443"}, false)
+	var titles []string
+	perTitle := map[string]int{}
+	for _, p := range presets {
+		titles = append(titles, p.Description)
+		perTitle[p.Description]++
+		if p.Family != discovery.FamilyCommunity || p.Phase != discovery.PhaseCached {
+			t.Errorf("preset %s must be a cached community preset, got %s/%s", p.Description, p.Family, p.Phase)
+		}
+	}
+	if perTitle["B1"] != 1 {
+		t.Fatalf("the second domain's own match must be queued, got %v", titles)
+	}
+	if perTitle["AB"] != 1 {
+		t.Fatalf("a set matching both domains must be queued exactly once, got %v", titles)
+	}
+	if len(presets) > 2*communityCandidateLimit {
+		t.Fatalf("at most %d presets per domain, got %v", communityCandidateLimit, titles)
+	}
+	if presets[0].Description == "B1" || presets[1].Description != "B1" && presets[1].Description != "AB" {
+		t.Errorf("each domain's best match must come before any domain's second match, got %v", titles)
+	}
+
+	if got := env.api.communityPresets([]string{"a.example", "b.example"}, true); got != nil {
+		t.Errorf("skip must return no community presets, got %d", len(got))
 	}
 }
