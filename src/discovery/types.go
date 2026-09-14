@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"strings"
 	"context"
 	"sync"
 	"time"
@@ -180,6 +181,19 @@ type ConfigPreset struct {
 	Config       config.SetConfig `json:"config"`
 	Priority     int              `json:"priority"`
 	FixedPayload bool             `json:"-"`
+	Domains      []string         `json:"domains,omitempty"`
+}
+
+func (p ConfigPreset) covers(domain string) bool {
+	if len(p.Domains) == 0 {
+		return true
+	}
+	for _, d := range p.Domains {
+		if strings.EqualFold(d, domain) {
+			return true
+		}
+	}
+	return false
 }
 
 type DNSProbeResult struct {

@@ -84,7 +84,7 @@ func hubStateOf(cfg *config.Config, set *config.SetConfig) string {
 	}
 	fp, err := hubwire.LiveFingerprint(set, cfg.ReadCapturePayload)
 	if err != nil {
-		return ""
+		return HubStateModified
 	}
 	if strings.EqualFold(fp, set.Hub.Hash) {
 		return HubStateUnmodified

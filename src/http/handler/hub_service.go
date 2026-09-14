@@ -175,9 +175,6 @@ func hubAppliedIndex(cfg *config.Config) map[string]*HubApplied {
 			continue
 		}
 		state := hubStateOf(cfg, set)
-		if state == "" {
-			state = HubStateModified
-		}
 		if existing, ok := index[set.Hub.ID]; ok && existing.HubState == HubStateUnmodified {
 			continue
 		}

@@ -266,8 +266,12 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	if ds.hubPresetsFn != nil {
 		ds.setPhase(PhaseCached)
 		ds.hubPresets = ds.hubPresetsFn()
+		checks := 0
+		for _, preset := range ds.hubPresets {
+			checks += len(ds.presetDomains(preset))
+		}
 		ds.CheckSuite.mu.Lock()
-		ds.TotalChecks += len(ds.hubPresets) * len(ds.Domains)
+		ds.TotalChecks += checks
 		ds.CheckSuite.mu.Unlock()
 	}
 	if len(ds.hubPresets) > 0 {
@@ -761,9 +765,8 @@ func (ds *DiscoverySuite) optimizeTCPFrag() ConfigPreset {
 	base := baseConfig()
 	base.Fragmentation.Strategy = "tcp"
 	base.Fragmentation.ReverseOrder = true
-	if ttl, ok := ds.getOptimalTTL(); ok {
+	if _, ok := ds.getOptimalTTL(); ok {
 		base.Faking.SNI = true
-		base.Faking.TTL = ttl
 		base.Faking.Strategy = "pastseq"
 		ds.applyBestPayload(&base.Faking)
 	} else {
@@ -811,9 +814,8 @@ func (ds *DiscoverySuite) optimizeTLSRec() ConfigPreset {
 
 	base := baseConfig()
 	base.Fragmentation.Strategy = "tls"
-	if ttl, ok := ds.getOptimalTTL(); ok {
+	if _, ok := ds.getOptimalTTL(); ok {
 		base.Faking.SNI = true
-		base.Faking.TTL = ttl
 		base.Faking.Strategy = "pastseq"
 		ds.applyBestPayload(&base.Faking)
 	} else {
@@ -978,8 +980,22 @@ func (ds *DiscoverySuite) testPreset(preset ConfigPreset) CheckResult {
 
 // testPresetAllDomains applies the config ONCE and tests ALL domains.
 // This is the core multi-domain optimization: 1 config switch, N fetches.
+func (ds *DiscoverySuite) presetDomains(preset ConfigPreset) []DomainInput {
+	if len(preset.Domains) == 0 {
+		return ds.Domains
+	}
+	out := make([]DomainInput, 0, len(preset.Domains))
+	for _, di := range ds.Domains {
+		if preset.covers(di.Domain) {
+			out = append(out, di)
+		}
+	}
+	return out
+}
+
 func (ds *DiscoverySuite) testPresetAllDomains(preset ConfigPreset) map[string]CheckResult {
-	log.DiscoveryLogf("  Testing '%s' across %d domains...", preset.Name, len(ds.Domains))
+	domains := ds.presetDomains(preset)
+	log.DiscoveryLogf("  Testing '%s' across %d domains...", preset.Name, len(domains))
 
 	results := make(map[string]CheckResult)
 
@@ -987,7 +1003,7 @@ func (ds *DiscoverySuite) testPresetAllDomains(preset ConfigPreset) map[string]C
 
 	if err := ds.pool.UpdateConfig(testConfig); err != nil {
 		log.DiscoveryLogf("    → FAILED (config error: %v)", err)
-		for _, di := range ds.Domains {
+		for _, di := range domains {
 			results[di.Domain] = CheckResult{
 				Domain: di.Domain,
 				Status: CheckStatusFailed,
@@ -995,7 +1011,7 @@ func (ds *DiscoverySuite) testPresetAllDomains(preset ConfigPreset) map[string]C
 			}
 		}
 		ds.CheckSuite.mu.Lock()
-		ds.CompletedChecks += len(ds.Domains)
+		ds.CompletedChecks += len(domains)
 		ds.CheckSuite.mu.Unlock()
 		return results
 	}
@@ -1008,7 +1024,7 @@ func (ds *DiscoverySuite) testPresetAllDomains(preset ConfigPreset) map[string]C
 	var wg sync.WaitGroup
 
 spawn:
-	for _, di := range ds.Domains {
+	for _, di := range domains {
 		select {
 		case <-ds.cancel:
 			break spawn

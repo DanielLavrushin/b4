@@ -671,6 +671,34 @@ func TestHubIdentityEndpoints(t *testing.T) {
 	}
 }
 
+func TestCommunityPresetsKeepDistinctSetsWithTheSameStrategy(t *testing.T) {
+	env := newHubEnv(t)
+	forA := hubStrategySet("A", "a.example")
+	forA.Faking.TTL = 12
+	csA, _ := hubtest.CatalogueSet(t, "same-a", 1, &forA, nil)
+	forB := hubStrategySet("B", "b.example")
+	forB.Faking.TTL = 12
+	csB, _ := hubtest.CatalogueSet(t, "same-b", 1, &forB, nil)
+	if csA.FP != csB.FP {
+		t.Fatalf("the fixture must publish one strategy under two sets")
+	}
+	env.publish(t, csA, csB)
+
+	presets := env.api.communityPresets([]string{"a.example", "b.example"}, false)
+	if len(presets) != 2 {
+		t.Fatalf("both publications must be queued, got %d", len(presets))
+	}
+	for _, p := range presets {
+		if p.Config.Hub == nil || len(p.Domains) != 1 {
+			t.Fatalf("preset %s must carry its own provenance and one domain, got %+v %v", p.Description, p.Config.Hub, p.Domains)
+		}
+		want := map[string]string{"A": "a.example", "B": "b.example"}[p.Description]
+		if p.Domains[0] != want {
+			t.Errorf("%s must be tested for %s only, got %v", p.Description, want, p.Domains)
+		}
+	}
+}
+
 func TestCommunityPresetsCoverEveryRequestedDomain(t *testing.T) {
 	env := newHubEnv(t)
 	var sets []hubwire.CatalogueSet
@@ -709,6 +737,22 @@ func TestCommunityPresetsCoverEveryRequestedDomain(t *testing.T) {
 	}
 	if presets[0].Description == "B1" || presets[1].Description != "B1" && presets[1].Description != "AB" {
 		t.Errorf("each domain's best match must come before any domain's second match, got %v", titles)
+	}
+	for _, p := range presets {
+		switch p.Description {
+		case "B1":
+			if len(p.Domains) != 1 || p.Domains[0] != "b.example" {
+				t.Errorf("B1 must be scoped to b.example, got %v", p.Domains)
+			}
+		case "AB":
+			if len(p.Domains) != 2 {
+				t.Errorf("a set matching both domains must be scoped to both, got %v", p.Domains)
+			}
+		default:
+			if len(p.Domains) != 1 || p.Domains[0] != "a.example" {
+				t.Errorf("%s must be scoped to a.example, got %v", p.Description, p.Domains)
+			}
+		}
 	}
 
 	if got := env.api.communityPresets([]string{"a.example", "b.example"}, true); got != nil {

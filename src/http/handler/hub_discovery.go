@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,9 +24,15 @@ const (
 )
 
 type communityQueue struct {
+	domain  string
 	results []hub.Result
 	next    int
 	taken   int
+}
+
+type communityCandidate struct {
+	preset  discovery.ConfigPreset
+	domains []string
 }
 
 func hubDomainOf(raw string) string {
@@ -72,31 +79,55 @@ func (api *API) communityPresets(urls []string, skip bool) []discovery.ConfigPre
 		}
 		results, _ := svc.Search(domain, communitySearchDepth)
 		if len(results) > 0 {
-			queues = append(queues, &communityQueue{results: results})
+			queues = append(queues, &communityQueue{domain: domain, results: results})
 		}
 	}
-	seen := map[string]bool{}
-	var out []discovery.ConfigPreset
+	byID := map[string]*communityCandidate{}
+	seenFP := map[string]map[string]bool{}
+	var order []*communityCandidate
 	for progress := true; progress; {
 		progress = false
 		for _, q := range queues {
+			if seenFP[q.domain] == nil {
+				seenFP[q.domain] = map[string]bool{}
+			}
 			for q.taken < communityCandidateLimit && q.next < len(q.results) {
 				r := q.results[q.next]
 				q.next++
-				if r.Set == nil || seen[r.Set.FP] {
+				if r.Set == nil || seenFP[q.domain][r.Set.FP] {
 					continue
 				}
-				seen[r.Set.FP] = true
-				preset, ok := api.communityPreset(r.Set)
-				if !ok {
-					continue
+				candidate := byID[r.Set.ID]
+				if candidate == nil {
+					preset, ok := api.communityPreset(r.Set)
+					if !ok {
+						continue
+					}
+					candidate = &communityCandidate{preset: preset}
+					byID[r.Set.ID] = candidate
+					order = append(order, candidate)
 				}
-				out = append(out, preset)
+				seenFP[q.domain][r.Set.FP] = true
 				q.taken++
 				progress = true
 				break
 			}
 		}
+	}
+	for _, q := range queues {
+		for _, r := range q.results {
+			if r.Set == nil {
+				continue
+			}
+			if c := byID[r.Set.ID]; c != nil && !slices.Contains(c.domains, q.domain) {
+				c.domains = append(c.domains, q.domain)
+			}
+		}
+	}
+	out := make([]discovery.ConfigPreset, 0, len(order))
+	for _, c := range order {
+		c.preset.Domains = c.domains
+		out = append(out, c.preset)
 	}
 	if len(out) > 0 {
 		log.Infof("discovery: %d community strategies queued ahead of the presets", len(out))
