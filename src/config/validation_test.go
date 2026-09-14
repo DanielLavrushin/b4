@@ -1,11 +1,19 @@
 package config
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/engine"
 )
@@ -126,7 +134,7 @@ func TestValidate_TLSPair(t *testing.T) {
 	t.Run("cert without key", func(t *testing.T) {
 		cfg := NewConfig()
 		cfg.System.WebServer.TLSCert = "/tmp/cert.pem"
-		ve := mustValidationErr(t, cfg.Validate())
+		ve := mustValidationErr(t, cfg.ValidateTLSFiles())
 		if findField(ve, "system.web_server.tls_cert", "tls_pair_required") == nil {
 			t.Errorf("missing tls_pair_required; got %+v", ve.Fields)
 		}
@@ -136,7 +144,7 @@ func TestValidate_TLSPair(t *testing.T) {
 		cfg := NewConfig()
 		cfg.System.WebServer.TLSCert = "/nonexistent/cert.pem"
 		cfg.System.WebServer.TLSKey = "/nonexistent/key.pem"
-		ve := mustValidationErr(t, cfg.Validate())
+		ve := mustValidationErr(t, cfg.ValidateTLSFiles())
 		f := findField(ve, "system.web_server.tls_cert", "file_not_found")
 		if f == nil {
 			t.Fatalf("missing file_not_found; got %+v", ve.Fields)
@@ -155,11 +163,118 @@ func TestValidate_TLSPair(t *testing.T) {
 		cfg := NewConfig()
 		cfg.System.WebServer.TLSCert = certPath
 		cfg.System.WebServer.TLSKey = filepath.Join(dir, "missing.key")
-		ve := mustValidationErr(t, cfg.Validate())
+		ve := mustValidationErr(t, cfg.ValidateTLSFiles())
 		if findField(ve, "system.web_server.tls_key", "file_not_found") == nil {
 			t.Errorf("missing tls_key file_not_found; got %+v", ve.Fields)
 		}
 	})
+
+	t.Run("encrypted key", func(t *testing.T) {
+		dir := t.TempDir()
+		certPath, keyPath := writeSelfSignedPair(t, dir)
+		for name, body := range map[string]string{
+			"pkcs8":  "-----BEGIN ENCRYPTED PRIVATE KEY-----\nMIIB\n-----END ENCRYPTED PRIVATE KEY-----\n",
+			"legacy": "-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-256-CBC,00\n\nMIIB\n-----END RSA PRIVATE KEY-----\n",
+		} {
+			if err := os.WriteFile(keyPath, []byte(body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg := NewConfig()
+			cfg.System.WebServer.TLSCert = certPath
+			cfg.System.WebServer.TLSKey = keyPath
+			ve := mustValidationErr(t, cfg.ValidateTLSFiles())
+			if findField(ve, "system.web_server.tls_key", "tls_key_encrypted") == nil {
+				t.Errorf("%s: missing tls_key_encrypted; got %+v", name, ve.Fields)
+			}
+		}
+	})
+
+	t.Run("pair does not load", func(t *testing.T) {
+		dir := t.TempDir()
+		certPath, keyPath := writeSelfSignedPair(t, dir)
+		if err := os.WriteFile(keyPath, []byte("not a key"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		cfg := NewConfig()
+		cfg.System.WebServer.TLSCert = certPath
+		cfg.System.WebServer.TLSKey = keyPath
+		ve := mustValidationErr(t, cfg.ValidateTLSFiles())
+		if findField(ve, "system.web_server.tls_cert", "tls_pair_unloadable") == nil {
+			t.Errorf("missing tls_pair_unloadable; got %+v", ve.Fields)
+		}
+	})
+
+	t.Run("valid pair", func(t *testing.T) {
+		dir := t.TempDir()
+		certPath, keyPath := writeSelfSignedPair(t, dir)
+		cfg := NewConfig()
+		cfg.System.WebServer.TLSCert = certPath
+		cfg.System.WebServer.TLSKey = keyPath
+		if err := cfg.ValidateTLSFiles(); err != nil {
+			t.Errorf("valid pair rejected: %v", err)
+		}
+		if err := cfg.ValidateWebServerTLS(); err != nil {
+			t.Errorf("valid pair rejected: %v", err)
+		}
+	})
+
+	t.Run("mtproto relay pair only checked when mtproto is enabled", func(t *testing.T) {
+		cfg := NewConfig()
+		cfg.System.MTProto.WebProxy.TLSCert = "/nonexistent/cert.pem"
+		cfg.System.MTProto.WebProxy.TLSKey = "/nonexistent/key.pem"
+		if err := cfg.ValidateTLSFiles(); err != nil {
+			t.Errorf("disabled mtproto must not be checked: %v", err)
+		}
+		if err := cfg.ValidateWebServerTLS(); err != nil {
+			t.Errorf("web server check must ignore the relay pair: %v", err)
+		}
+		cfg.System.MTProto.Enabled = true
+		cfg.System.MTProto.Port = 1443
+		ve := mustValidationErr(t, cfg.ValidateTLSFiles())
+		if findField(ve, "system.mtproto.web_proxy.tls_cert", "file_not_found") == nil {
+			t.Errorf("missing relay file_not_found; got %+v", ve.Fields)
+		}
+	})
+
+	t.Run("startup validation ignores TLS files", func(t *testing.T) {
+		cfg := NewConfig()
+		cfg.System.WebServer.TLSCert = "/nonexistent/cert.pem"
+		cfg.System.WebServer.TLSKey = "/nonexistent/key.pem"
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("Validate must not fail on TLS files: %v", err)
+		}
+	})
+}
+
+func writeSelfSignedPair(t *testing.T, dir string) (string, string) {
+	t.Helper()
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "b4"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, err := x509.MarshalECPrivateKey(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPath := filepath.Join(dir, "cert.pem")
+	keyPath := filepath.Join(dir, "key.pem")
+	if err := os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return certPath, keyPath
 }
 
 func TestValidate_GeoPathMissing(t *testing.T) {

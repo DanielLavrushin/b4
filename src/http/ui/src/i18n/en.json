@@ -2813,6 +2813,8 @@
     "required": "This field is required",
     "tls_pair_required": "Both TLS certificate and key must be specified together",
     "file_not_found": "File not found: {{path}}",
+    "tls_key_encrypted": "TLS key {{path}} is passphrase-protected; b4 needs an unencrypted PEM key (openssl pkey -in key.pem -out key-plain.pem)",
+    "tls_pair_unloadable": "TLS certificate/key pair does not load: {{error}}",
     "geosite_path_missing": "Geosite path must be configured to use geosite categories",
     "geoip_path_missing": "Geoip path must be configured to use geoip categories",
     "invalid_routing_mode": "Set \"{{set}}\": unknown routing mode \"{{mode}}\"",

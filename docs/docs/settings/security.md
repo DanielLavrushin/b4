@@ -41,8 +41,10 @@ Copy the files to the configuration directory (for example, `/etc/b4/`) and poin
 
 After HTTPS is enabled, the web interface is available over `https://`.
 
-:::warning An unusable pair falls back to HTTP
-When the certificate and key do not load, b4 logs a warning and starts the web server over plain HTTP anyway. The service comes up either way, so the log line is the only sign.
+:::warning Key requirements
+The key must be an unencrypted PEM file. A passphrase-protected key (`ENCRYPTED PRIVATE KEY`, or `Proc-Type: 4,ENCRYPTED` in the header) is rejected when the settings are saved; the passphrase is removed with `openssl pkey -in key.pem -out key-plain.pem`. Saving also fails when a file is missing or the certificate does not match the key.
+
+If the files become unusable later (moved, deleted, replaced with a protected key), b4 still starts, records an error in the log and on the dashboard, and serves the web interface over plain HTTP until the pair is fixed.
 :::
 
 :::info The Telegram WEB proxy needs more than this

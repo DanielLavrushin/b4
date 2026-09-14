@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/tls"
+	"encoding/pem"
 	"fmt"
 	"net"
 	"os"
@@ -60,26 +62,67 @@ func (v *validator) result() error {
 	return &ValidationError{Fields: out}
 }
 
+func (c *Config) ValidateWebServerTLS() error {
+	v := &validator{}
+	checkTLSPair(v, "system.web_server", c.System.WebServer.TLSCert, c.System.WebServer.TLSKey)
+	return v.result()
+}
+
+func (c *Config) ValidateTLSFiles() error {
+	v := &validator{}
+	checkTLSPair(v, "system.web_server", c.System.WebServer.TLSCert, c.System.WebServer.TLSKey)
+	if c.System.MTProto.Enabled {
+		wp := c.System.MTProto.WebProxy
+		checkTLSPair(v, "system.mtproto.web_proxy", wp.TLSCert, wp.TLSKey)
+	}
+	return v.result()
+}
+
+func checkTLSPair(v *validator, prefix, certPath, keyPath string) {
+	if (certPath != "") != (keyPath != "") {
+		v.add(prefix+".tls_cert", "tls_pair_required", "both tls_cert and tls_key must be specified together", nil)
+		return
+	}
+	if certPath == "" {
+		return
+	}
+	if _, err := os.Stat(certPath); err != nil {
+		v.addf(prefix+".tls_cert", "file_not_found", map[string]any{"path": certPath}, "TLS certificate file not found: %s", certPath)
+		return
+	}
+	if _, err := os.Stat(keyPath); err != nil {
+		v.addf(prefix+".tls_key", "file_not_found", map[string]any{"path": keyPath}, "TLS key file not found: %s", keyPath)
+		return
+	}
+	if tlsKeyIsEncrypted(keyPath) {
+		v.addf(prefix+".tls_key", "tls_key_encrypted", map[string]any{"path": keyPath}, "TLS key %s is passphrase-protected; an unencrypted PEM key is required", keyPath)
+		return
+	}
+	if _, err := tls.LoadX509KeyPair(certPath, keyPath); err != nil {
+		v.addf(prefix+".tls_cert", "tls_pair_unloadable", map[string]any{"error": err.Error()}, "TLS certificate/key pair does not load: %v", err)
+	}
+}
+
+func tlsKeyIsEncrypted(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	for {
+		var block *pem.Block
+		block, data = pem.Decode(data)
+		if block == nil {
+			return false
+		}
+		if block.Type == "ENCRYPTED PRIVATE KEY" || strings.Contains(block.Headers["Proc-Type"], "ENCRYPTED") {
+			return true
+		}
+	}
+}
+
 func (c *Config) Validate() error {
 	v := &validator{}
 	c.System.WebServer.IsEnabled = c.System.WebServer.Port > 0 && c.System.WebServer.Port <= 65535
-
-	hasCert := c.System.WebServer.TLSCert != ""
-	hasKey := c.System.WebServer.TLSKey != ""
-	if hasCert != hasKey {
-		v.add("system.web_server.tls_cert", "tls_pair_required", "both tls_cert and tls_key must be specified together", nil)
-		return v.result()
-	}
-	if hasCert {
-		if _, err := os.Stat(c.System.WebServer.TLSCert); err != nil {
-			v.addf("system.web_server.tls_cert", "file_not_found", map[string]any{"path": c.System.WebServer.TLSCert}, "TLS certificate file not found: %s", c.System.WebServer.TLSCert)
-			return v.result()
-		}
-		if _, err := os.Stat(c.System.WebServer.TLSKey); err != nil {
-			v.addf("system.web_server.tls_key", "file_not_found", map[string]any{"path": c.System.WebServer.TLSKey}, "TLS key file not found: %s", c.System.WebServer.TLSKey)
-			return v.result()
-		}
-	}
 
 	c.checkPortCollisions(v)
 	if v.hasErrors() {
@@ -484,16 +527,6 @@ func (c *Config) checkPortCollisions(v *validator) {
 				v.add("system.mtproto.web_proxy.port", "out_of_range", "port must be between 1 and 65535", portRangeParams)
 			} else {
 				refs = append(refs, portRef{"system.mtproto.web_proxy.port", wp.Port})
-			}
-		}
-		if wp := c.System.MTProto.WebProxy; (wp.TLSCert != "") != (wp.TLSKey != "") {
-			v.add("system.mtproto.web_proxy.tls_cert", "tls_pair_required", "both tls_cert and tls_key must be specified together", nil)
-		} else if wp.TLSCert != "" {
-			if _, err := os.Stat(wp.TLSCert); err != nil {
-				v.addf("system.mtproto.web_proxy.tls_cert", "file_not_found", map[string]any{"path": wp.TLSCert}, "TLS certificate file not found: %s", wp.TLSCert)
-			}
-			if _, err := os.Stat(wp.TLSKey); err != nil {
-				v.addf("system.mtproto.web_proxy.tls_key", "file_not_found", map[string]any{"path": wp.TLSKey}, "TLS key file not found: %s", wp.TLSKey)
 			}
 		}
 		if ut := c.System.MTProto.TCPUserTimeoutSec; ut < -1 || ut > 86400 {

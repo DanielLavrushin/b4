@@ -402,13 +402,15 @@ func (a *API) updateConfig(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) saveAndPushConfig(newCfg *config.Config) error {
 
-	if err := newCfg.Validate(); err != nil {
-		var ve *config.ValidationError
-		if errors.As(err, &ve) {
-			log.Errorf("Invalid configuration: %v", err)
-			return fromValidationError(ve)
+	for _, check := range []func() error{newCfg.Validate, newCfg.ValidateTLSFiles} {
+		if err := check(); err != nil {
+			var ve *config.ValidationError
+			if errors.As(err, &ve) {
+				log.Errorf("Invalid configuration: %v", err)
+				return fromValidationError(ve)
+			}
+			return ErrInternal("Invalid configuration: " + err.Error())
 		}
-		return ErrInternal("Invalid configuration: " + err.Error())
 	}
 
 	if s5 := newCfg.System.Socks5; (s5.Username == "") != (s5.Password == "") {

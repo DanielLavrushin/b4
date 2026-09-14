@@ -2842,6 +2842,8 @@
     "required": "Поле обязательно для заполнения",
     "tls_pair_required": "TLS-сертификат и ключ должны быть указаны вместе",
     "file_not_found": "Файл не найден: {{path}}",
+    "tls_key_encrypted": "TLS-ключ {{path}} защищён паролем; b4 требуется PEM-ключ без пароля (openssl pkey -in key.pem -out key-plain.pem)",
+    "tls_pair_unloadable": "Пара TLS-сертификат/ключ не загружается: {{error}}",
     "geosite_path_missing": "Для использования категорий geosite необходимо указать путь к geosite",
     "geoip_path_missing": "Для использования категорий geoip необходимо указать путь к geoip",
     "invalid_routing_mode": "Сет \"{{set}}\": неизвестный режим маршрутизации \"{{mode}}\"",

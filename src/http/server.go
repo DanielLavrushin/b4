@@ -1,7 +1,6 @@
 package http
 
 import (
-	"crypto/tls"
 	"embed"
 	"fmt"
 	"io"
@@ -77,11 +76,13 @@ func StartServer(cfgPtr *atomic.Pointer[config.Config], pool *nfq.Pool) (*stdhtt
 		addr = fmt.Sprintf("%s:%d", bindAddr, cfg.System.WebServer.Port)
 	}
 
-	tlsEnabled := cfg.System.WebServer.TLSCert != "" && cfg.System.WebServer.TLSKey != ""
+	metrics := handler.GetMetricsCollector()
 
+	tlsEnabled := cfg.System.WebServer.TLSCert != "" || cfg.System.WebServer.TLSKey != ""
 	if tlsEnabled {
-		if _, err := tls.LoadX509KeyPair(cfg.System.WebServer.TLSCert, cfg.System.WebServer.TLSKey); err != nil {
-			log.Warnf("Invalid TLS certificate/key pair: %v — falling back to HTTP", err)
+		if err := cfg.ValidateWebServerTLS(); err != nil {
+			log.Errorf("Web server TLS is not usable, serving plain HTTP instead: %v", err)
+			metrics.RecordEvent("error", fmt.Sprintf("Web server TLS is not usable, serving plain HTTP instead: %v", err))
 			tlsEnabled = false
 		}
 	}
@@ -92,7 +93,6 @@ func StartServer(cfgPtr *atomic.Pointer[config.Config], pool *nfq.Pool) (*stdhtt
 	}
 	log.Infof("Starting web server on %s://%s", protocol, addr)
 
-	metrics := handler.GetMetricsCollector()
 	metrics.RecordEvent("info", fmt.Sprintf("Web server started on %s://%s", protocol, addr))
 
 	srv := &stdhttp.Server{
@@ -112,7 +112,6 @@ func StartServer(cfgPtr *atomic.Pointer[config.Config], pool *nfq.Pool) (*stdhtt
 
 		if err != nil && err != stdhttp.ErrServerClosed {
 			log.Errorf("Web server error: %v", err)
-			metrics := handler.GetMetricsCollector()
 			metrics.RecordEvent("error", fmt.Sprintf("Web server error: %v", err))
 		}
 	}()
