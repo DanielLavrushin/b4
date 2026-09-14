@@ -2,10 +2,10 @@ import i18n from "../i18n";
 import type { TFunction } from "i18next";
 import { ApiError, type FieldError } from "@api/apiClient";
 
-export function localizeFieldError(f: FieldError): string {
+export function localizeFieldError(f: FieldError, lng?: string): string {
   const key = `errors.${f.code}`;
-  if (i18n.exists(key)) {
-    const out: unknown = i18n.t(key, f.params ?? {});
+  if (i18n.exists(key, { lng })) {
+    const out: unknown = i18n.t(key, { ...(f.params ?? {}), lng });
     if (typeof out === "string") return out;
   }
   return f.message;
@@ -13,7 +13,7 @@ export function localizeFieldError(f: FieldError): string {
 
 export function describeApiError(error: unknown): string {
   if (error instanceof ApiError && error.fields && error.fields.length > 0) {
-    return error.fields.map(localizeFieldError).join("; ");
+    return error.fields.map((f) => localizeFieldError(f)).join("; ");
   }
   if (error instanceof Error && error.message) {
     return error.message;

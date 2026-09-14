@@ -61,7 +61,7 @@ export function LoginPage() {
           </Typography>
         </Box>
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={(e) => void handleSubmit(e)}>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {error && (
               <B4Alert noWrapper severity="error">

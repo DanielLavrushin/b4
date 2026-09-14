@@ -8,12 +8,13 @@ export type FieldErrorMap = Record<string, LocalizedFieldError>;
 
 export function useFieldErrors(error: unknown): FieldErrorMap {
   const { i18n } = useTranslation();
+  const language = i18n.language;
   return useMemo(() => {
     if (!(error instanceof ApiError) || !error.fields) return {};
     const map: FieldErrorMap = {};
     for (const f of error.fields) {
-      map[f.path] = { ...f, localizedMessage: localizeFieldError(f) };
+      map[f.path] = { ...f, localizedMessage: localizeFieldError(f, language) };
     }
     return map;
-  }, [error, i18n.language]);
+  }, [error, language]);
 }
