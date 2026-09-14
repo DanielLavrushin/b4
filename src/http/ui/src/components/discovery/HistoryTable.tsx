@@ -184,6 +184,11 @@ export const HistoryTable = ({
                 })}
               </Typography>
             )}
+            {row.entry.stopped_early && !row.unconfirmed && (
+              <Typography variant="caption" sx={{ color: colors.text.disabled }}>
+                {t("discovery.history.stoppedEarly")}
+              </Typography>
+            )}
           </Box>
         );
       }

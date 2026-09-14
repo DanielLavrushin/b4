@@ -60,16 +60,20 @@ function activeStep(
 interface RunPanelProps {
   suite: DiscoverySuite;
   stopping: boolean;
+  finishRequested: boolean;
   canStop: boolean;
   onStop: () => void;
+  onFinish: () => void;
   logLine: ReactNode;
 }
 
 export const RunPanel = ({
   suite,
   stopping,
+  finishRequested,
   canStop,
   onStop,
+  onFinish,
   logLine,
 }: RunPanelProps) => {
   const { t } = useTranslation();
@@ -88,6 +92,27 @@ export const RunPanel = ({
   const active = activeStep(suite.current_phase, baselineDone);
   const dnsSkipped = active > 0 && !dnsSeen;
   const domainCount = Math.max(1, sites.length);
+  const found = sites.filter(
+    (site) => results[site] && verdictOf(results[site], false) === "found",
+  ).length;
+  const confirming =
+    !!suite.stopped_early || suite.current_phase === "confirmation";
+  const stoppedAt = suite.stopped_early
+    ? activeStep(suite.stopped_phase, baselineDone)
+    : -1;
+  const skippedByStop = (i: number) =>
+    stoppedAt >= 0 && i > stoppedAt && i < STEPS.length - 1;
+  const stopLabel = confirming
+    ? t("discovery.stopNow")
+    : found > 0
+      ? t("discovery.stopConfirm")
+      : t("discovery.stop");
+  const stopBusy = stopping || (finishRequested && !confirming);
+  const note = confirming
+    ? t("discovery.run.noteConfirming")
+    : found > 0
+      ? t("discovery.run.noteFound")
+      : t("discovery.run.note");
   const inStrategies =
     suite.current_phase === "cached" ||
     suite.current_phase === "strategy_detection";
@@ -184,9 +209,9 @@ export const RunPanel = ({
             {t("discovery.run.tested", { count: suite.completed_checks })}
           </>
         }
-        onStop={canStop ? onStop : undefined}
-        stopping={stopping}
-        stopLabel={t("discovery.stop")}
+        onStop={canStop ? (confirming ? onStop : onFinish) : undefined}
+        stopping={stopBusy}
+        stopLabel={stopLabel}
         stoppingLabel={t("discovery.stopping")}
       />
 
@@ -198,17 +223,19 @@ export const RunPanel = ({
       )}
 
       <B4RunSteps
-        steps={STEPS.map((step) => ({
-          key: step,
-          label: t(`discovery.steps.${step}`),
-          skipped: step === "dns" && dnsSkipped,
-          note:
-            step === "dns" && dnsSkipped
+        steps={STEPS.map((step, i) => {
+          const skipped = (step === "dns" && dnsSkipped) || skippedByStop(i);
+          return {
+            key: step,
+            label: t(`discovery.steps.${step}`),
+            skipped,
+            note: skipped
               ? t("discovery.steps.skipped")
               : step === "strategies" && active === 2 && stepProgress
                 ? stepProgress
                 : undefined,
-        }))}
+          };
+        })}
         active={active}
       />
 
@@ -254,7 +281,7 @@ export const RunPanel = ({
         variant="caption"
         sx={{ ...typography.recipes.monoSmall, color: colors.text.disabled }}
       >
-        {t("discovery.run.note")}
+        {note}
       </Typography>
     </Stack>
   );

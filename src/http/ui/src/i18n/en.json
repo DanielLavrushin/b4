@@ -2091,7 +2091,9 @@
     },
     "start": "Start",
     "newSearch": "New search",
-    "stop": "Stop and keep results",
+    "stop": "Stop",
+    "stopConfirm": "Stop and confirm",
+    "stopNow": "Stop now",
     "stopping": "Stopping...",
     "finishing": "The previous run is still releasing its firewall rules. Start becomes available in a moment.",
     "reconnecting": "Reconnecting to the running search...",
@@ -2114,7 +2116,9 @@
       "tried_other": "{{count}} tried, none made it load yet.",
       "loadsWithout": "Loads without b4. Nothing to fix here.",
       "addressBlocked": "Connections to every known address fail. No bypass strategy can help.",
-      "note": "A found strategy is confirmed at the end of the run. Stopping now keeps it unconfirmed."
+      "note": "A found strategy is confirmed before the run ends. Nothing has been found yet, so stopping now ends the run.",
+      "noteFound": "Stop ends the search here and confirms what was found. The steps that could have tuned it are skipped.",
+      "noteConfirming": "Confirming the strategies found. Stop now ends the run and keeps them unconfirmed."
     },
     "steps": {
       "dns": "DNS",
@@ -2159,6 +2163,7 @@
       "foundAfter_one": "found on try {{count}}",
       "foundAfter_other": "found on try {{count}}",
       "unconfirmedNote": "This run was stopped before the confirmation pass, so the strategy worked at least once but was not re-checked.",
+      "stoppedEarlyNote": "The search was stopped before it finished. The strategy passed the confirmation pass, but the steps that could have tuned it were skipped, so a faster one may exist.",
       "noSet": "The run did not keep the set for this strategy. Run it again to apply.",
       "otherStrategies_one": "{{count}} other strategy worked",
       "otherStrategies_other": "{{count}} other strategies worked",
@@ -2253,6 +2258,7 @@
       "needsProxy": "Needs a proxy or VPN set",
       "nothing": "No strategy made it load",
       "sharedWith": "One set together with {{domains}}",
+      "stoppedEarly": "search stopped early, not tuned",
       "lastLog": "Last run log"
     },
     "options": {

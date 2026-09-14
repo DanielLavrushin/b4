@@ -57,7 +57,7 @@ func (ds *DiscoverySuite) findOptimalTTL(basePreset ConfigPreset) (uint8, float6
 	log.DiscoveryLogf("Scanning for minimum working TTL (%d values)", len(ttlValues))
 
 	for _, ttl := range ttlValues {
-		if ds.canceled() {
+		if ds.interrupted() {
 			break
 		}
 		preset := basePreset

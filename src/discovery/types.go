@@ -112,8 +112,11 @@ type CheckSuite struct {
 	CurrentDomain          string                            `json:"current_domain,omitempty"`
 	CurrentPhase           DiscoveryPhase                    `json:"current_phase,omitempty"`
 	Source                 string                            `json:"source,omitempty"`
+	StoppedEarly           bool                              `json:"stopped_early,omitempty"`
+	StoppedPhase           DiscoveryPhase                    `json:"stopped_phase,omitempty"`
 	mu                     sync.RWMutex                      `json:"-"`
 	cancel                 chan struct{}                     `json:"-"`
+	finish                 chan struct{}                     `json:"-"`
 }
 
 type DomainPresetResult struct {

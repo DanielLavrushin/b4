@@ -63,6 +63,8 @@ export const DiscoveryRunner = () => {
     history,
     startDiscovery,
     cancelDiscovery,
+    finishDiscovery,
+    finishRequested,
     resetDiscovery,
     addPresetAsSet,
     clearCache,
@@ -315,8 +317,10 @@ export const DiscoveryRunner = () => {
           <RunPanel
             suite={suite}
             stopping={stopping}
+            finishRequested={finishRequested}
             canStop={suite.source !== "watchdog"}
             onStop={() => void cancelDiscovery()}
+            onFinish={() => void finishDiscovery()}
             logLine={logLine}
           />
         )}

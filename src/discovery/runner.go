@@ -50,6 +50,7 @@ func NewCheckSuite(domainInputs []DomainInput) *CheckSuite {
 			Status:    CheckStatusFailed,
 			StartTime: time.Now(),
 			cancel:    make(chan struct{}),
+			finish:    make(chan struct{}),
 			Domains:   domainInputs,
 		}
 	}
@@ -61,6 +62,7 @@ func NewCheckSuite(domainInputs []DomainInput) *CheckSuite {
 		Status:    CheckStatusPending,
 		StartTime: time.Now(),
 		cancel:    make(chan struct{}),
+		finish:    make(chan struct{}),
 		CheckURL:  primary.CheckURL,
 		Domain:    primary.Domain,
 		Domains:   domainInputs,
@@ -101,6 +103,35 @@ func CancelCheckSuite(id string) error {
 			}
 		}
 		suite.Status = CheckStatusCanceled
+	}
+
+	return nil
+}
+
+func FinishCheckSuite(id string) error {
+	suitesMu.Lock()
+	defer suitesMu.Unlock()
+
+	suite, ok := activeSuites[id]
+	if !ok {
+		return nil
+	}
+
+	suite.mu.Lock()
+	defer suite.mu.Unlock()
+
+	if suite.Status != CheckStatusPending && suite.Status != CheckStatusRunning {
+		return nil
+	}
+	if suite.finish == nil || suite.CurrentPhase == PhaseConfirm {
+		return nil
+	}
+	select {
+	case <-suite.finish:
+	default:
+		close(suite.finish)
+		suite.StoppedEarly = true
+		suite.StoppedPhase = suite.CurrentPhase
 	}
 
 	return nil

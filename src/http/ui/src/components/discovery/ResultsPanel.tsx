@@ -55,7 +55,7 @@ export const ResultsPanel = ({
   const sites = suite.domains?.length ?? entries.length;
 
   let headline = t("discovery.results.done", { duration });
-  if (suite.status === "canceled") {
+  if (suite.status === "canceled" || suite.stopped_early) {
     headline = t("discovery.results.stopped", { duration });
   } else if (suite.status === "failed") {
     headline = t("discovery.results.failed");
@@ -183,6 +183,11 @@ const FoundCard = ({ group, suite, applying, onApply }: FoundCardProps) => {
           {group.unconfirmed && (
             <Typography variant="body2" sx={{ color: colors.text.secondary }}>
               {t("discovery.results.unconfirmedNote")}
+            </Typography>
+          )}
+          {!group.unconfirmed && suite.stopped_early && (
+            <Typography variant="body2" sx={{ color: colors.text.secondary }}>
+              {t("discovery.results.stoppedEarlyNote")}
             </Typography>
           )}
           {alternates.length > 0 && (

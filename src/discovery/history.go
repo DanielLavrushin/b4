@@ -39,6 +39,7 @@ type HistoryEntry struct {
 	Set           *config.SetConfig              `json:"set,omitempty"`
 	Outcome       Outcome                        `json:"outcome,omitempty"`
 	Unconfirmed   bool                           `json:"unconfirmed,omitempty"`
+	StoppedEarly  bool                           `json:"stopped_early,omitempty"`
 	Order         int                            `json:"order,omitempty"`
 }
 
@@ -193,6 +194,7 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 			FinalHost:     domainResult.FinalHost,
 			Outcome:       domainResult.Outcome,
 			Unconfirmed:   domainResult.Unconfirmed,
+			StoppedEarly:  suite.StoppedEarly,
 			Order:         position + 1,
 		}
 

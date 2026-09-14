@@ -41,6 +41,7 @@ export const discoveryApi = {
     }),
   status: (id: string) => apiGet<DiscoverySuite>(`/api/discovery/status/${id}`),
   cancel: (id: string) => apiDelete(`/api/discovery/cancel/${id}`),
+  finish: (id: string) => apiPost(`/api/discovery/finish/${id}`, {}),
   addPresetAsSet: (preset: B4SetConfig) =>
     apiPost<AddPresetResult>("/api/discovery/add", preset),
   similar: (set: B4SetConfig) =>
