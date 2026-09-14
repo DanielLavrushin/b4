@@ -28,24 +28,36 @@ export const B4Dialog = ({
   children,
   actions,
   onClose,
+  fullWidth,
+  maxWidth,
   ...props
 }: B4DialogProps) => (
   <Dialog
     onClose={onClose}
     slotProps={{
       paper: {
-        sx: {
+        sx: (theme) => ({
           m: { xs: 1.5, sm: 4 },
-          width: { xs: "calc(100% - 24px)", sm: "auto" },
-          maxWidth: { xs: "calc(100% - 24px)", sm: undefined },
+          width: {
+            xs: "calc(100% - 24px)",
+            sm: fullWidth ? "calc(100% - 64px)" : "auto",
+          },
+          maxWidth: {
+            xs: "calc(100% - 24px)",
+            sm: maxWidth
+              ? `min(${theme.breakpoints.values[maxWidth]}px, calc(100% - 64px))`
+              : "calc(100% - 64px)",
+          },
           maxHeight: { xs: "calc(100% - 24px)", sm: "calc(100% - 64px)" },
           bgcolor: colors.background.default,
           border: `2px solid ${colors.border.default}`,
           borderRadius: radius.md,
           boxShadow: `0 24px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(245,173,24,0.04)`,
-        },
+        }),
       },
     }}
+    fullWidth={fullWidth}
+    maxWidth={maxWidth}
     {...props}
   >
     <DialogTitle

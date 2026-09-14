@@ -962,9 +962,28 @@
       "subtitle": "This action cannot be undone",
       "confirm": "Are you sure you want to delete the following sets?"
     },
-    "compareDialog": {
-      "title": "Select Set to Compare",
-      "comparingWith": "Comparing with"
+    "compare": {
+      "title": "Compare Sets",
+      "setA": "Set A",
+      "setB": "Set B",
+      "swap": "Swap sets",
+      "diffOnly": "Differences only",
+      "identical": "The sets are identical",
+      "sameSet": "Pick two different sets",
+      "fieldsDiffer_one": "{{count}} field differs",
+      "fieldsDiffer_other": "{{count}} fields differ",
+      "same": "same in both",
+      "noneConfigured": "not configured in either",
+      "onlyIn": "only in {{name}}",
+      "more_one": "+{{count}} more",
+      "more_other": "+{{count}} more",
+      "lists": {
+        "geosite": "Geosite",
+        "geoip": "GeoIP",
+        "manualDomains": "Manual domains",
+        "manualIps": "Manual IPs",
+        "devices": "Devices"
+      }
     },
     "card": {
       "noTargets": "No targets configured",

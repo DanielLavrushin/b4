@@ -964,9 +964,32 @@
       "subtitle": "Это действие нельзя отменить",
       "confirm": "Вы уверены, что хотите удалить следующие сеты?"
     },
-    "compareDialog": {
-      "title": "Выберите сет для сравнения",
-      "comparingWith": "Сравнение с"
+    "compare": {
+      "title": "Сравнение сетов",
+      "setA": "Сет A",
+      "setB": "Сет B",
+      "swap": "Поменять местами",
+      "diffOnly": "Только отличия",
+      "identical": "Сеты идентичны",
+      "sameSet": "Выберите два разных сета",
+      "fieldsDiffer_one": "{{count}} поле отличается",
+      "fieldsDiffer_few": "{{count}} поля отличаются",
+      "fieldsDiffer_many": "{{count}} полей отличаются",
+      "fieldsDiffer_other": "{{count}} полей отличаются",
+      "same": "одинаково в обоих",
+      "noneConfigured": "не настроено ни в одном",
+      "onlyIn": "только в {{name}}",
+      "more_one": "ещё {{count}}",
+      "more_few": "ещё {{count}}",
+      "more_many": "ещё {{count}}",
+      "more_other": "ещё {{count}}",
+      "lists": {
+        "geosite": "Geosite",
+        "geoip": "GeoIP",
+        "manualDomains": "Ручные домены",
+        "manualIps": "Ручные IP",
+        "devices": "Устройства"
+      }
     },
     "card": {
       "noTargets": "Цели не настроены",
