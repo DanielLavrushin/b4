@@ -91,9 +91,26 @@ jobs:
         working-directory: src
         run: go test ./...
 
+  hub-test:
+    name: Run Hub Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: hub/go.mod
+          cache-dependency-path: hub/go.sum
+
+      - name: Run hub tests
+        working-directory: hub
+        run: go test ./...
+
   build-linux:
     name: Build Linux ${{ matrix.arch }}
-    needs: test
+    needs: [test, hub-test]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

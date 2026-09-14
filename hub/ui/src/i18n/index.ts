@@ -22,6 +22,10 @@ const initial: Lang = (() => {
   return navigator.language.toLowerCase().startsWith("ru") ? "ru" : "en";
 })();
 
+i18n.on("languageChanged", (lng: string) => {
+  document.documentElement.lang = lng;
+});
+
 void i18n.use(initReactI18next).init({
   resources: {
     en: { translation: en },
