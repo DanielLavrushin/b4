@@ -26,14 +26,18 @@ environment template ([env.example](env.example)).
 
 ## Releases
 
-`b4hub` is released together with b4, under the same version and the same tag: every
-[b4 release](https://github.com/DanielLavrushin/b4/releases) carries `b4hub-linux-amd64.tar.gz`
-and `b4hub-linux-arm64.tar.gz` next to the router binaries, listed in the same `SHA256SUMS`, and
-the image `lavrushin/b4hub:<version>` (also `ghcr.io/daniellavrushin/b4hub`) is pushed for
-linux/amd64 and linux/arm64. The hub module depends on the router source tree
-(`replace ../src` in `hub/go.mod`) and the wire format lives in `src/hubwire`, so a hub build
-is always a build of one b4 commit; a shared version number is what makes "run a hub at least as
-new as the newest b4 talking to it" a rule an operator can follow.
+`b4hub` is released from the b4 release workflow, under the b4 version number. A [b4 release](https://github.com/DanielLavrushin/b4/releases)
+that publishes a hub carries `b4hub-linux-amd64.tar.gz` and `b4hub-linux-arm64.tar.gz` next to
+the router binaries, listed in the same `SHA256SUMS`, and pushes `lavrushin/b4hub:<version>`
+(also `ghcr.io/daniellavrushin/b4hub`) for linux/amd64 and linux/arm64. A release without those
+assets says in its notes which earlier version the hub is unchanged since; hub versions therefore
+have gaps, and `lavrushin/b4hub:latest` is the newest published one. Every release still compiles
+and tests the hub against its b4 tree, published or not.
+
+The hub module depends on the router source tree (`replace ../src` in `hub/go.mod`) and the wire
+format lives in `src/hubwire`, so a hub build is always a build of one b4 commit, and the b4
+version number is the honest name for it. For an operator the rule is: run the newest published
+hub.
 
 ## Run with Docker
 

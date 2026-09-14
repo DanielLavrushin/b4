@@ -152,9 +152,42 @@ jobs:
     name: Build Hub
     needs: test
     runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.changed.outputs.publish }}
+      baseline: ${{ steps.changed.outputs.baseline }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Compare with the last published hub
+        id: changed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          if [ "$PRERELEASE" = "true" ]; then
+            FILTER='.[] | select(.draft | not)'
+          else
+            FILTER='.[] | select((.draft or .prerelease) | not)'
+          fi
+          BASELINE=$(gh api "repos/${REPO}/releases?per_page=100" --paginate \
+            --jq "${FILTER} | select(.assets | any(.name == \"b4hub-linux-amd64.tar.gz\")) | .tag_name" | head -n1)
+          echo "baseline=${BASELINE}" >> $GITHUB_OUTPUT
+          if [ -z "$BASELINE" ] || ! git rev-parse -q --verify "refs/tags/${BASELINE}" >/dev/null; then
+            echo "no published hub to compare with, publishing"
+            echo "publish=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          if git diff --quiet "${BASELINE}" HEAD -- hub src/hubwire src/sni src/geodat src/go.mod shared/design pnpm-lock.yaml; then
+            echo "hub unchanged since ${BASELINE}, not publishing"
+            echo "publish=false" >> $GITHUB_OUTPUT
+          else
+            echo "hub changed since ${BASELINE}, publishing"
+            echo "publish=true" >> $GITHUB_OUTPUT
+          fi
 
       - name: Setup PNPM
         uses: pnpm/action-setup@v6
@@ -189,6 +222,7 @@ jobs:
         run: make hub-linux-all VERSION="$VERSION"
 
       - name: Upload artifacts
+        if: steps.changed.outputs.publish == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: b4hub-linux
@@ -208,9 +242,16 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v8
         with:
-          pattern: "{${{ env.BINARY_NAME }},b4hub}-*"
+          pattern: ${{ env.BINARY_NAME }}-*
           path: release-assets
           merge-multiple: true
+
+      - name: Download hub artifacts
+        if: needs.build-hub.outputs.publish == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: b4hub-linux
+          path: release-assets
 
       - name: Generate release files
         working-directory: release-assets
@@ -229,9 +270,17 @@ jobs:
 
       - name: Read Changelog
         id: read_changelog
+        env:
+          HUB_PUBLISHED: ${{ needs.build-hub.outputs.publish }}
+          HUB_BASELINE: ${{ needs.build-hub.outputs.baseline }}
+          REPO: ${{ github.repository }}
         run: |
           echo "Extracting latest changelog entry..."
           CHANGELOG=$(awk '/^## \[/{if (found++) exit} found {print}' changelog.md)
+          if [ "$HUB_PUBLISHED" != "true" ] && [ -n "$HUB_BASELINE" ]; then
+            NOTE="b4hub is unchanged since [${HUB_BASELINE}](https://github.com/${REPO}/releases/tag/${HUB_BASELINE}); its binaries and \`lavrushin/b4hub:${HUB_BASELINE#v}\` remain current."
+            CHANGELOG=$(printf '%s\n\n%s\n' "$CHANGELOG" "$NOTE")
+          fi
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
           echo "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -319,7 +368,8 @@ jobs:
 
   docker-hub:
     name: Docker Image (hub)
-    needs: release
+    needs: [release, build-hub]
+    if: needs.build-hub.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
