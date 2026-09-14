@@ -21,6 +21,7 @@ The options under the field change how the run probes, not what it looks for:
 | --- | --- |
 | **Check DNS for tampering** | Before the strategies, each site is resolved through the DNS servers listed under Settings, Discovery, and the answers are compared with a reference. A site whose resolver lies about its address gets a DNS redirect written into its set, and a site whose addresses are all unreachable is searched for [alternative addresses](#alternative-addresses). Off, the run trusts the system resolver and does neither. |
 | **Try strategies that worked before** | Presets that won an earlier run are tried before the built-in list. **Forget them** drops that list. |
+| **Try community sets first** | Shown while the [Community Hub](./community/index.md) is on. The catalogue is refreshed and up to three published sets per site are tested after the remembered winners and before the built-in list; see [Discovery and the catalogue](./community/applying.md#discovery-and-the-catalogue). |
 | **Confirm each strategy** | How many consecutive fetches a preset has to pass during the search, 1 to 5. Independent of the confirmation pass at the end of the run, which always fetches the winner three more times. |
 | **TLS version for the probes** | Limits the fetches to TLS 1.2 or 1.3, and limits the created set to that version, since some DPI treats the two differently. |
 | **IP version for the probes** | Same, for IPv4 and IPv6. Offered only while the capture engine handles both. |

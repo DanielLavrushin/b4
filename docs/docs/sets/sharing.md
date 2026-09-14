@@ -3,10 +3,14 @@ sidebar_position: 7
 title: Sharing a set
 ---
 
-A set can be handed to another b4 installation as a shared set: one JSON document that carries the strategy, the targets and the payload files the set uses, and nothing that is tied to the router it came from. The set editor prepares it under **Import/Export** once community sets are switched on under **Settings, Integrations**. A shared set pasted into the **Import** field of any b4 is checked, its payload files are installed, and the set opens in the editor for saving.
+A set can be handed to another b4 installation as a shared set: one JSON document that carries the strategy, the targets and the payload files the set uses, and nothing that is tied to the router it came from. The set editor prepares it under **Import/Export** once the Community Hub is switched on under **Settings, Integrations**. A shared set pasted into the **Import** field of any b4 is checked, its payload files are installed, and the set opens in the editor for saving.
 
 :::info
 The **Import/Export** JSON described under [Sets](./index.md#import-and-export) copies a set as it is, including routing, and is meant for moving a set between one person's own routers. A shared set is the form to pass to someone else. Both are accepted by the same **Import** field; b4 tells them apart by their shape.
+:::
+
+:::info
+The same shared set is what **Publish to hub** sends to the community hub, where other b4 users find it on their **Community** page. Publishing, moderation and versions are described under [Community Hub](../community/publishing.md).
 :::
 
 ## What leaves the router

@@ -769,9 +769,9 @@
       "connectFailed": "Failed to connect"
     },
     "Hub": {
-      "title": "Community sets",
+      "title": "Community Hub",
       "description": "Browse strategies other b4 users published, apply one in a click, and report whether it works. The set editor gets a Share section that prepares a set with everything private left out.",
-      "enabled": "Enable community sets",
+      "enabled": "Enable Community Hub",
       "note": "The Community page lists the catalogue signed by the hub. Reports on what works are sent under the author identity below; nothing else about this router leaves it. A shared set pasted into Import is accepted whether or not this is on.",
       "urls": "Hub mirrors",
       "urlsHelp": "Addresses of the same hub, one per line, tried in order until one answers. Empty means {{url}}. A mirror serves the same signed catalogue, so the key below stays the same.",
@@ -779,7 +779,7 @@
       "publicKeyHelp": "Only for a self-hosted hub with its own key, for example a development hub on this network. The key of hub.b4core.app is built in; leave this empty to use it.",
       "status": {
         "title": "Hub status",
-        "savedOff": "Community sets are off in the saved configuration. Save to turn them on.",
+        "savedOff": "The Community Hub is off in the saved configuration. Save to turn it on.",
         "catalogue": "Catalogue",
         "catalogueLine_one": "{{count}} set, published {{date}}",
         "catalogueLine_other": "{{count}} sets, published {{date}}",
@@ -2865,7 +2865,7 @@
     "payload_install_failed": "The {{protocol}} payload for {{domain}} could not be saved to the captures folder: {{reason}}"
   },
   "hub": {
-    "title": "Community sets",
+    "title": "Community Hub",
     "description": "Strategies published by other b4 users, ranked by reports from your network, your country and the world.",
     "status": {
       "catalogue": "Catalogue from {{date}}",
@@ -2877,7 +2877,7 @@
       "syncing": "Syncing...",
       "synced": "Catalogue synced.",
       "syncFailed": "No hub answered: {{error}}",
-      "disabled": "Community sets are off.",
+      "disabled": "The Community Hub is off.",
       "notConfigured": "No trusted hub key is available, so the catalogue cannot be verified. Set the hub public key in the settings.",
       "expired": "The catalogue expired on {{date}} and no hub has answered since. The sets shown are the last ones seen.",
       "noCatalogue": "no catalogue yet",
