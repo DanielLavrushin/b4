@@ -1,6 +1,6 @@
 # B4 - Bye Bye Big Bro
 
-## [1.82.0] - 2026-09-14
+## [1.82.0] - 2026-09-15
 
 - ADDED: **Community Hub: a set can be published to hub.b4core.app, and sets other b4 users published can be browsed, applied and rated from a new Community page** - a shared set carries only the strategy, its targets and its payload files, leaves out everything tied to the router, waits for a moderator before it appears, and stays linked once applied so it can be rated, updated or reported, while Discovery tries community sets for a domain before its own presets. It sits behind one switch under Settings, Integrations, off by default, and the `b4hub` service that ships alongside runs a self-hosted hub or a mirror of the central one, with the daily limits per contributor set from its moderation console and trusted keys exempt from them.
 - ADDED: **A QUIC handshake can be sent behind a padding packet inside the same datagram** - the new `coalesce` UDP mode puts a padding-only QUIC Initial, encrypted under the connection's own keys, ahead of the client's Initial in one datagram and leaves the handshake itself unchanged.
