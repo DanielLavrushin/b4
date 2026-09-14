@@ -150,23 +150,43 @@ func (api *API) handleHubImport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	set := imp.Set
-	installed, warnings := api.installHubPayloads(&set, imp.Payloads)
-	warnings = append(imp.Warnings, warnings...)
-	warnings = append(warnings, api.hubGeoWarnings(&set)...)
+	installed, err := api.installHubPayloads(&set, imp.Payloads)
+	if err != nil {
+		writeAPIError(w, err)
+		return
+	}
+	warnings := append(imp.Warnings, api.hubGeoWarnings(&set)...)
 
 	sendResponse(w, HubImportResponse{Set: &set, Warnings: warnings, Payloads: installed})
 }
 
-func (api *API) installHubPayloads(set *config.SetConfig, payloads []hubwire.Payload) ([]HubInstalledPayload, []hubwire.Warning) {
+func payloadInstallError(p hubwire.Payload, err error) *APIError {
+	path := "udp.fake_payload_file"
+	if p.Protocol == hubwire.ProtocolTLS {
+		path = "faking.payload_file"
+	}
+	message := fmt.Sprintf("The %s payload for %s could not be saved to the captures folder: %v", p.Protocol, p.Domain, err)
+	return &APIError{
+		Status:  http.StatusInternalServerError,
+		Code:    "payload_install_failed",
+		Message: message,
+		Fields: []FieldError{{
+			Path:    path,
+			Code:    "payload_install_failed",
+			Message: message,
+			Params:  map[string]any{"protocol": p.Protocol, "domain": p.Domain, "reason": err.Error()},
+		}},
+	}
+}
+
+func (api *API) installHubPayloads(set *config.SetConfig, payloads []hubwire.Payload) ([]HubInstalledPayload, error) {
 	installed := make([]HubInstalledPayload, 0, len(payloads))
-	warnings := []hubwire.Warning{}
 	manager := capture.GetManager(api.getCfg())
 	for _, p := range payloads {
 		rel, err := manager.SaveImportedPayload(p.Protocol, p.Domain, p.Data)
 		if err != nil {
 			log.Errorf("Hub: could not install %s payload for %s: %v", p.Protocol, p.Domain, err)
-			warnings = append(warnings, hubwire.Warning{Code: "payload_install_failed", Params: map[string]interface{}{"protocol": p.Protocol, "domain": p.Domain}})
-			continue
+			return nil, payloadInstallError(p, err)
 		}
 		ref := hubwire.RefPrefix + p.SHA256
 		if strings.EqualFold(set.Faking.PayloadFile, ref) {
@@ -183,7 +203,7 @@ func (api *API) installHubPayloads(set *config.SetConfig, payloads []hubwire.Pay
 	if strings.HasPrefix(set.UDP.FakePayloadFile, hubwire.RefPrefix) {
 		set.UDP.FakePayloadFile = ""
 	}
-	return installed, warnings
+	return installed, nil
 }
 
 // @Summary Hub status
@@ -332,9 +352,12 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	set := imp.Set
-	installed, warnings := api.installHubPayloads(&set, imp.Payloads)
-	warnings = append(imp.Warnings, warnings...)
-	warnings = append(warnings, api.hubGeoWarnings(&set)...)
+	installed, err := api.installHubPayloads(&set, imp.Payloads)
+	if err != nil {
+		writeAPIError(w, err)
+		return
+	}
+	warnings := append(imp.Warnings, api.hubGeoWarnings(&set)...)
 
 	set.Id = uuid.New().String()
 	if set.Name == "" {

@@ -1799,7 +1799,6 @@
         "geoip_missing": "No geoip database is installed, so categories {{categories}} match nothing until one is downloaded in Settings.",
         "geosite_categories_missing": "Categories missing from this device's geosite database: {{categories}}. The author may use a different geosite source.",
         "geoip_categories_missing": "Categories missing from this device's geoip database: {{categories}}. The author may use a different geoip source.",
-        "payload_install_failed": "The {{protocol}} payload for {{domain}} could not be saved to the captures folder.",
         "pin_not_targeted": "The pin for {{domain}} was dropped: the set does not target that domain.",
         "pin_private_address": "The pin for {{domain}} was dropped: it pointed at a private address.",
         "dns_dropped": "The DNS redirect was dropped: {{host}} is not a known public DoH resolver. Set a resolver in the DNS tab if the set needs one.",
@@ -2862,7 +2861,8 @@
     "socks5_source_unspecified": "\"{{value}}\" covers only the unspecified address, which no client connects from, so this entry allows nobody",
     "socks5_incomplete_credentials": "SOCKS5 username and password must both be set or both be empty",
     "doh_url_must_be_https": "Set \"{{set}}\": DNS-over-HTTPS URL must start with https://",
-    "mark_conflict": "Mark value {{mark}} conflicts with reserved bits"
+    "mark_conflict": "Mark value {{mark}} conflicts with reserved bits",
+    "payload_install_failed": "The {{protocol}} payload for {{domain}} could not be saved to the captures folder: {{reason}}"
   },
   "hub": {
     "title": "Community sets",

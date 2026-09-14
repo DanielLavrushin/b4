@@ -3,6 +3,8 @@ package handler
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -312,6 +314,58 @@ func TestHubSyncEndpointReportsTheCatalogue(t *testing.T) {
 
 	env.hub.SetDown(true)
 	expectCode(t, postJSON(t, env.mux, "/api/hub/sync", map[string]interface{}{}), http.StatusBadGateway, "sync_failed")
+}
+
+func TestHubApplyRefusesASetWhosePayloadCannotBeStored(t *testing.T) {
+	env := newHubEnv(t)
+	shared := hubStrategySet("Needs payload", "example.com")
+	shared.Faking.SNIType = config.FakePayloadCapture
+	shared.Faking.PayloadFile = "captures/tls_www_google_com.bin"
+	cs, payloads := hubtest.CatalogueSet(t, "p-2", 1, &shared, func(string) ([]byte, error) { return config.FakeSNI1, nil })
+	for _, p := range payloads {
+		env.hub.AddBlob(p)
+	}
+	env.publish(t, cs)
+
+	captures := capture.GetManager(env.api.getCfg()).GetOutputPath()
+	sum := sha256.Sum256(payloads[0].Data)
+	clash := []string{
+		filepath.Join(captures, "tls_www_google_com.bin"),
+		filepath.Join(captures, "tls_www_google_com-"+hex.EncodeToString(sum[:4])+".bin"),
+	}
+	saved := map[string][]byte{}
+	for _, path := range clash {
+		if old, err := os.ReadFile(path); err == nil {
+			saved[path] = old
+		}
+		if err := os.WriteFile(path, []byte("not the shared payload"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		for _, path := range clash {
+			if old, ok := saved[path]; ok {
+				os.WriteFile(path, old, 0644)
+			} else {
+				os.Remove(path)
+			}
+		}
+	})
+
+	rec := postJSON(t, env.mux, "/api/hub/sets/p-2/apply", map[string]interface{}{})
+	expectCode(t, rec, http.StatusInternalServerError, "payload_install_failed")
+	if !strings.Contains(rec.Body.String(), `"path":"faking.payload_file"`) {
+		t.Errorf("the error must name the payload slot, got %s", rec.Body.String())
+	}
+	if len(env.api.getCfg().Sets) != 0 {
+		t.Errorf("no set may be created when the payload cannot be stored")
+	}
+
+	body := map[string]interface{}{}
+	raw, _ := json.Marshal(cs.ToEnvelope())
+	json.Unmarshal(raw, &body)
+	body["payloads"] = []interface{}{map[string]interface{}{"sha256": payloads[0].SHA256, "protocol": payloads[0].Protocol, "domain": payloads[0].Domain, "size": payloads[0].Size, "data": payloads[0].Data}}
+	expectCode(t, postJSON(t, env.mux, "/api/hub/import", body), http.StatusInternalServerError, "payload_install_failed")
 }
 
 func TestHubApplyCreatesSetWithPayloadAndStamp(t *testing.T) {

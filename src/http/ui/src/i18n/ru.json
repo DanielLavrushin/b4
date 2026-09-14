@@ -1809,7 +1809,6 @@
         "geoip_missing": "База geoip не установлена, поэтому категории {{categories}} ничему не соответствуют, пока она не будет загружена в настройках.",
         "geosite_categories_missing": "Категорий нет в базе geosite этого устройства: {{categories}}. Возможно, автор использует другой источник geosite.",
         "geoip_categories_missing": "Категорий нет в базе geoip этого устройства: {{categories}}. Возможно, автор использует другой источник geoip.",
-        "payload_install_failed": "Payload {{protocol}} для {{domain}} не удалось сохранить в папку captures.",
         "pin_not_targeted": "Пин для {{domain}} отброшен: сет не таргетирует этот домен.",
         "pin_private_address": "Пин для {{domain}} отброшен: он указывал на внутренний адрес.",
         "dns_dropped": "DNS-перенаправление отброшено: {{host}} не входит в известные публичные DoH-резолверы. Если сету нужен резолвер, задайте его во вкладке DNS.",
@@ -2898,7 +2897,8 @@
     "socks5_source_unspecified": "\"{{value}}\" охватывает только неопределённый адрес, с которого не подключается ни один клиент, поэтому эта запись никого не разрешает",
     "socks5_incomplete_credentials": "Имя пользователя и пароль SOCKS5 должны быть либо оба заданы, либо оба пусты",
     "doh_url_must_be_https": "Сет \"{{set}}\": URL DNS-over-HTTPS должен начинаться с https://",
-    "mark_conflict": "Значение mark {{mark}} конфликтует с зарезервированными битами"
+    "mark_conflict": "Значение mark {{mark}} конфликтует с зарезервированными битами",
+    "payload_install_failed": "Payload {{protocol}} для {{domain}} не удалось сохранить в папку captures: {{reason}}"
   },
   "hub": {
     "title": "Сеты сообщества",

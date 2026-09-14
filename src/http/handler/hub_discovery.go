@@ -123,7 +123,10 @@ func (api *API) communityPreset(cs *hubwire.CatalogueSet) (discovery.ConfigPrese
 		return discovery.ConfigPreset{}, false
 	}
 	set := imp.Set
-	api.installHubPayloads(&set, imp.Payloads)
+	if _, err := api.installHubPayloads(&set, imp.Payloads); err != nil {
+		log.Warnf("discovery: community set %s skipped: %v", cs.ID, err)
+		return discovery.ConfigPreset{}, false
+	}
 	set.Targets = config.TargetsConfig{}
 	title := strings.ToLower(strings.Join(strings.Fields(cs.Title), "-"))
 	if title == "" {
