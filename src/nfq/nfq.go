@@ -451,6 +451,7 @@ func (w *Worker) sendFakeSNISequence(cfg *config.SetConfig, original []byte, dst
 	if fk.MD5OnFake {
 		fake = sock.AddTCPMD5Option(fake, false)
 		if badsum {
+			sock.FixTCPChecksum(fake)
 			sock.CorruptTCPChecksum(fake)
 		}
 	}
