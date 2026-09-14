@@ -9,6 +9,7 @@ import (
 
 	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/utils"
 )
 
 const identityFileName = "identity.json"
@@ -51,7 +52,7 @@ func writeIdentityFile(path string, id *hubwire.Identity, created time.Time) err
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(path, raw, 0600)
+	return utils.WriteFileAtomic(path, raw, 0600)
 }
 
 func (s *Service) Identity() (*hubwire.Identity, time.Time, error) {

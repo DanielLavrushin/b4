@@ -15,6 +15,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/tlsgen"
+	"github.com/daniellavrushin/b4/utils"
 )
 
 const payloadFilenameFmt = "%s_%s.bin"
@@ -99,15 +100,8 @@ func (m *Manager) saveMetadata() error {
 	if err != nil {
 		return err
 	}
-	file, err := os.OpenFile(m.metadataFile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
-	if err != nil {
-		return log.Errorf("failed to create config file: %v", err)
-	}
-	defer file.Close()
-
-	_, err = file.Write(data)
-	if err != nil {
-		return log.Errorf("failed to write config file: %v", err)
+	if err := utils.WriteFileAtomic(m.metadataFile, data, 0644); err != nil {
+		return log.Errorf("failed to write capture metadata: %v", err)
 	}
 	return nil
 }

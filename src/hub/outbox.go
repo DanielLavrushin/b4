@@ -11,6 +11,7 @@ import (
 
 	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/utils"
 )
 
 const (
@@ -37,7 +38,7 @@ func (s *Service) enqueue(rec *hubwire.Record) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(filepath.Join(s.outboxDir(), id+".json"), raw, 0600)
+	return utils.WriteFileAtomic(filepath.Join(s.outboxDir(), id+".json"), raw, 0600)
 }
 
 func (s *Service) outboxFiles() []string {

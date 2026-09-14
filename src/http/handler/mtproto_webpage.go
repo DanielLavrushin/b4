@@ -5,11 +5,11 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/mtproto"
+	"github.com/daniellavrushin/b4/utils"
 )
 
 func (api *API) webProxyPagePath() string {
@@ -119,7 +119,7 @@ func (api *API) uploadWebProxyPage(w http.ResponseWriter, r *http.Request) {
 		writeJsonError(w, http.StatusBadRequest, "file does not look like HTML")
 		return
 	}
-	if err := writeFileAtomic(path, data); err != nil {
+	if err := utils.WriteFileAtomic(path, data, 0o644); err != nil {
 		log.Errorf("MTProto WEB proxy page: write failed: %v", err)
 		writeJsonError(w, http.StatusInternalServerError, "failed to save page: "+err.Error())
 		return
@@ -149,31 +149,4 @@ func (api *API) deleteWebProxyPage(w http.ResponseWriter) {
 	reloadWebProxyPage()
 	log.Infof("MTProto WEB proxy placeholder page removed, built-in page restored")
 	sendResponse(w, map[string]interface{}{"success": true})
-}
-
-func writeFileAtomic(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
-		return err
-	}
-	if err := os.Chmod(tmpName, 0o644); err != nil {
-		os.Remove(tmpName)
-		return err
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		os.Remove(tmpName)
-		return err
-	}
-	return nil
 }

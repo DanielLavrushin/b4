@@ -8,6 +8,7 @@ import (
 
 	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/utils"
 )
 
 const (
@@ -49,7 +50,7 @@ func (s *Service) writeStringList(path string, list []string) {
 	if err != nil {
 		return
 	}
-	if err := writeFileAtomic(path, raw, 0600); err != nil {
+	if err := utils.WriteFileAtomic(path, raw, 0600); err != nil {
 		log.Warnf("hub: could not store %s: %v", filepath.Base(path), err)
 	}
 }
@@ -83,7 +84,7 @@ func (s *Service) writeLearnedMirrors(learned learnedMirrors) {
 	if err != nil {
 		return
 	}
-	if err := writeFileAtomic(s.mirrorsPath(), raw, 0600); err != nil {
+	if err := utils.WriteFileAtomic(s.mirrorsPath(), raw, 0600); err != nil {
 		log.Warnf("hub: could not store %s: %v", mirrorsFileName, err)
 	}
 }

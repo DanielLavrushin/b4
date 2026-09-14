@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/daniellavrushin/b4/hubwire"
+	"github.com/daniellavrushin/b4/utils"
 )
 
 const (
@@ -80,14 +81,14 @@ func (st store) save(m *hubwire.Manifest, gz []byte) error {
 	if err := os.MkdirAll(st.dir, 0700); err != nil {
 		return err
 	}
-	if err := writeFileAtomic(path, gz, 0600); err != nil {
+	if err := utils.WriteFileAtomic(path, gz, 0600); err != nil {
 		return err
 	}
 	raw, err := json.Marshal(m)
 	if err != nil {
 		return err
 	}
-	if err := writeFileAtomic(st.manifestPath(), raw, 0600); err != nil {
+	if err := utils.WriteFileAtomic(st.manifestPath(), raw, 0600); err != nil {
 		return err
 	}
 	st.prune(m.Catalogue.File)
@@ -106,39 +107,6 @@ func (st store) prune(keep string) {
 		}
 		_ = os.Remove(filepath.Join(st.dir, name))
 	}
-}
-
-func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	cleanup := func() {
-		tmp.Close()
-		os.Remove(tmpPath)
-	}
-	if err := tmp.Chmod(perm); err != nil {
-		cleanup()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		cleanup()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		cleanup()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
-		return err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
-		return err
-	}
-	return nil
 }
 
 func verifyFileRef(data []byte, ref hubwire.FileRef) error {
