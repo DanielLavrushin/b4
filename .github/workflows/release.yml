@@ -148,9 +148,56 @@ jobs:
           path: out/assets/*
           retention-days: 1
 
+  build-hub:
+    name: Build Hub
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.18.2
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: "pnpm"
+          cache-dependency-path: |
+            ./pnpm-lock.yaml
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: hub/go.mod
+          cache-dependency-path: |
+            hub/go.sum
+            src/go.sum
+
+      - name: Install UI dependencies
+        run: pnpm install --frozen-lockfile --filter b4hub-ui...
+
+      - name: Run hub tests
+        working-directory: hub
+        run: go test ./...
+
+      - name: Build hub binaries
+        run: make hub-linux-all VERSION="$VERSION"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: b4hub-linux
+          path: out/assets/b4hub-*
+          retention-days: 1
+
   release:
     name: Create Release
-    needs: [build-linux]
+    needs: [build-linux, build-hub]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -161,7 +208,7 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v8
         with:
-          pattern: ${{ env.BINARY_NAME }}-*
+          pattern: "{${{ env.BINARY_NAME }},b4hub}-*"
           path: release-assets
           merge-multiple: true
 
@@ -270,14 +317,74 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  docker-hub:
+    name: Docker Image (hub)
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine tags
+        id: tags
+        env:
+          OWNER: ${{ github.repository_owner }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          OWNER_LOWER=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          TAGS="lavrushin/b4hub:${VERSION}"
+          TAGS="${TAGS},ghcr.io/${OWNER_LOWER}/b4hub:${VERSION}"
+          if [ "$PRERELEASE" != "true" ]; then
+            TAGS="${TAGS},lavrushin/b4hub:latest"
+            TAGS="${TAGS},ghcr.io/${OWNER_LOWER}/b4hub:latest"
+          fi
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: hub/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            VERSION=${{ env.VERSION }}
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha,scope=hub
+          cache-to: type=gha,mode=max,scope=hub
+
   cleanup:
     name: Cleanup old artifacts
-    needs: [release, docker, sourceforge]
+    needs: [release, docker, docker-hub, sourceforge]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Delete artifacts
         uses: geekyeggo/delete-artifact@v6
         with:
-          name: ${{ env.BINARY_NAME }}-*
+          name: |
+            ${{ env.BINARY_NAME }}-*
+            b4hub-*
           failOnError: false

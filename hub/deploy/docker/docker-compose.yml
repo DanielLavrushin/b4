@@ -1,0 +1,35 @@
+services:
+  b4hub:
+    image: lavrushin/b4hub:latest
+    container_name: b4hub
+    command: ${B4HUB_COMMAND:-serve}
+    environment:
+      B4HUB_PUBLIC_URL: https://${HUB_DOMAIN:?set HUB_DOMAIN in .env}
+      B4HUB_ADMIN_PASSWORD: ${B4HUB_ADMIN_PASSWORD:-}
+      B4HUB_UPSTREAM: ${B4HUB_UPSTREAM:-}
+      B4HUB_UPSTREAM_KEY: ${B4HUB_UPSTREAM_KEY:-}
+    volumes:
+      - b4hub-data:/var/lib/b4hub
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: b4hub-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      HUB_DOMAIN: ${HUB_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - b4hub
+    restart: unless-stopped
+
+volumes:
+  b4hub-data:
+  caddy-data:
+  caddy-config:

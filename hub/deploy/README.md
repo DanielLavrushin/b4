@@ -20,24 +20,80 @@ An operator who wants an independent network (own moderation, own key, no relati
 `system.hub` settings. An operator who wants to serve their routers locally while staying
 part of the community runs `b4hub mirror`.
 
-This directory holds the systemd unit ([b4hub.service](b4hub.service)), the nginx vhost
-([nginx-hub.conf](nginx-hub.conf)) and the environment template ([env.example](env.example)).
+This directory holds the Docker Compose bundle ([docker/](docker/)), the systemd unit
+([b4hub.service](b4hub.service)), the nginx vhost ([nginx-hub.conf](nginx-hub.conf)) and the
+environment template ([env.example](env.example)).
+
+## Releases
+
+`b4hub` is released together with b4, under the same version and the same tag: every
+[b4 release](https://github.com/DanielLavrushin/b4/releases) carries `b4hub-linux-amd64.tar.gz`
+and `b4hub-linux-arm64.tar.gz` next to the router binaries, listed in the same `SHA256SUMS`, and
+the image `lavrushin/b4hub:<version>` (also `ghcr.io/daniellavrushin/b4hub`) is pushed for
+linux/amd64 and linux/arm64. The hub module depends on the router source tree
+(`replace ../src` in `hub/go.mod`) and the wire format lives in `src/hubwire`, so a hub build
+is always a build of one b4 commit; a shared version number is what makes "run a hub at least as
+new as the newest b4 talking to it" a rule an operator can follow.
+
+## Run with Docker
+
+The quickest way to run a hub of either role. [docker/](docker/) holds a Compose file with
+`b4hub` and a Caddy front that obtains and renews the certificate on its own; the only
+requirement is a host with ports 80 and 443 reachable under a DNS name.
+
+```sh
+mkdir b4hub && cd b4hub
+curl -fsSLO https://raw.githubusercontent.com/DanielLavrushin/b4/main/hub/deploy/docker/docker-compose.yml
+curl -fsSLO https://raw.githubusercontent.com/DanielLavrushin/b4/main/hub/deploy/docker/Caddyfile
+curl -fsSL -o .env https://raw.githubusercontent.com/DanielLavrushin/b4/main/hub/deploy/docker/.env.example
+```
+
+`.env` selects the role. A central hub keeps `B4HUB_COMMAND=serve` and needs
+`B4HUB_ADMIN_PASSWORD`; a child of `hub.b4core.app` sets `B4HUB_COMMAND=mirror --announce`
+and `B4HUB_UPSTREAM=https://hub.b4core.app` instead. `HUB_DOMAIN` is the public name in both
+cases; it becomes `B4HUB_PUBLIC_URL` and the Caddy site.
+
+```sh
+docker compose run --rm b4hub keygen     # once; prints the key id, writes hub.key into the volume
+docker compose up -d
+docker compose logs -f b4hub
+```
+
+The signing key sits in the `b4hub-data` volume; `docker compose down -v` deletes it together
+with the store, so back up `hub.key` (`docker compose cp b4hub:/var/lib/b4hub/hub.key .`) before
+anything that removes volumes. The image runs as uid 7100; a bind mount in place of the named
+volume has to be owned by that uid. Updating is `docker compose pull && docker compose up -d`;
+the store migrates on start.
+
+The image without Compose:
+
+```sh
+docker run --rm -v b4hub:/var/lib/b4hub lavrushin/b4hub keygen
+docker run -d --name b4hub -v b4hub:/var/lib/b4hub -p 127.0.0.1:7100:7100 \
+  -e B4HUB_PUBLIC_URL=https://hub.example.net -e B4HUB_ADMIN_PASSWORD=... lavrushin/b4hub
+```
+
+behind any TLS-terminating proxy that forwards `X-Forwarded-Proto: https`.
 
 ## Build
 
 From the repo root:
 
 ```sh
-make hub-build VERSION=0.3.0          # current platform, out/b4hub
-make hub-linux-amd64 VERSION=0.3.0    # linux/amd64, out/b4hub-linux-amd64
+make hub-build VERSION=1.82.0          # current platform, out/b4hub
+make hub-linux-amd64 VERSION=1.82.0    # linux/amd64, out/assets/b4hub-linux-amd64.tar.gz (+ .sha256)
+make hub-linux-arm64 VERSION=1.82.0    # linux/arm64
+make hub-linux-all VERSION=1.82.0      # both
+make hub-docker VERSION=1.82.0         # lavrushin/b4hub:1.82.0 from hub/Dockerfile, context = repo root
 ```
 
-Both build the moderation console first (`pnpm build` in `hub/ui`) and embed it. A plain
+All of them build the moderation console first (`pnpm build` in `hub/ui`) and embed it. A plain
 `go build` produces a binary whose `/admin` answers 503 "not built into this binary".
-`VERSION` is the string the console and the CLI report; the hub is versioned on its own,
-independent of b4.
+`VERSION` is the string the console and the CLI report.
 
-## Install a central hub
+## Install a central hub (systemd)
+
+This is how `hub.b4core.app` runs.
 
 1. Copy the binary: `sudo install -m0755 b4hub-linux-amd64 /usr/local/bin/b4hub`.
 2. Service account and data directory:
@@ -74,7 +130,7 @@ independent of b4.
    built once a share is approved, or on demand from the console's Catalogue page
    (`sudo -u b4hub b4hub build --data /var/lib/b4hub` does the same).
 
-## Install a child hub
+## Install a child hub (systemd)
 
 Same binary, own data directory and identity, `mirror` instead of `serve`:
 
@@ -92,7 +148,7 @@ admin password; the nginx vhost is the same minus the `/admin` locations.
 ## Update
 
 ```sh
-make hub-deploy VERSION=0.3.1
+make hub-deploy VERSION=1.82.1
 ```
 
 `hub-deploy` cross-compiles for linux/amd64, copies the binary to `HUB_DEPLOY_HOST` (a
@@ -112,7 +168,7 @@ to be updated by hand, since the deployed copy carries the box's certificate pat
 ## Checks
 
 ```sh
-curl -s https://hub.example.net/admin/api/session     # {"configured":true,"authenticated":false,"version":"0.3.0"}
+curl -s https://hub.example.net/admin/api/session     # {"configured":true,"authenticated":false,"version":"1.82.0"}
 curl -s -o /dev/null -w '%{http_code}\n' https://hub.example.net/b4/hub/manifest.json
 sudo -u b4hub b4hub moderate --data /var/lib/b4hub list
 ```

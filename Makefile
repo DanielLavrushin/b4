@@ -218,12 +218,26 @@ hub-build: hub-build-ui
 	@CGO_ENABLED=0 go -C $(HUB_DIR) build $(BUILDFLAGS) -ldflags "-s -w -X main.Version=$(VERSION)" -o ../$(OUT_DIR)/b4hub ./cmd/b4hub
 	@echo "Hub build complete: $(OUT_DIR)/b4hub"
 
-.PHONY: hub-linux-amd64
-hub-linux-amd64: hub-build-ui
-	@echo "Building hub service for linux/amd64..."
-	@mkdir -p $(OUT_DIR)
-	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go -C $(HUB_DIR) build $(BUILDFLAGS) -ldflags "-s -w -X main.Version=$(VERSION)" -o ../$(OUT_DIR)/b4hub-linux-amd64 ./cmd/b4hub
-	@echo "Hub build complete: $(OUT_DIR)/b4hub-linux-amd64"
+HUB_ARCHS := amd64 arm64
+
+.PHONY: hub-linux-%
+hub-linux-%: hub-build-ui
+	@$(eval HUB_ARCH := $(subst hub-linux-,,$@))
+	@echo "Building hub service for linux/$(HUB_ARCH)..."
+	@mkdir -p $(OUT_DIR)/linux-$(HUB_ARCH) $(OUT_DIR)/assets
+	@GOOS=linux GOARCH=$(HUB_ARCH) CGO_ENABLED=0 go -C $(HUB_DIR) build $(BUILDFLAGS) -ldflags "-s -w -X main.Version=$(VERSION)" -o ../$(OUT_DIR)/linux-$(HUB_ARCH)/b4hub ./cmd/b4hub
+	@cp $(OUT_DIR)/linux-$(HUB_ARCH)/b4hub $(OUT_DIR)/b4hub-linux-$(HUB_ARCH)
+	@tar -czf "$(OUT_DIR)/assets/b4hub-linux-$(HUB_ARCH).tar.gz" -C "$(OUT_DIR)/linux-$(HUB_ARCH)" b4hub
+	@sha256sum "$(OUT_DIR)/assets/b4hub-linux-$(HUB_ARCH).tar.gz" > "$(OUT_DIR)/assets/b4hub-linux-$(HUB_ARCH).tar.gz.sha256"
+	@echo "Hub build complete: $(OUT_DIR)/assets/b4hub-linux-$(HUB_ARCH).tar.gz"
+
+.PHONY: hub-linux-all
+hub-linux-all: hub-build-ui
+	@for arch in $(HUB_ARCHS); do $(MAKE) --no-print-directory hub-linux-$$arch VERSION=$(VERSION); done
+
+.PHONY: hub-docker
+hub-docker:
+	@docker build -f $(HUB_DIR)/Dockerfile --build-arg VERSION=$(VERSION) -t lavrushin/b4hub:$(VERSION) .
 
 HUB_DEPLOY_HOST ?=
 HUB_DEPLOY_KEY ?=
@@ -317,7 +331,9 @@ help:
 	@printf "  %-25s %s\n" "make build-ui" "Build the web UI"
 	@printf "  %-25s %s\n" "make hub-build-ui" "Build the hub admin console (pnpm build in hub/ui)"
 	@printf "  %-25s %s\n" "make hub-build" "Build the community hub service into out/b4hub (runs hub-build-ui first)"
-	@printf "  %-25s %s\n" "make hub-linux-amd64" "Cross-compile the hub service for the deployment box"
+	@printf "  %-25s %s\n" "make hub-linux-amd64" "Cross-compile the hub service (also arm64), tarball + sha256 into out/assets"
+	@printf "  %-25s %s\n" "make hub-linux-all" "Cross-compile the hub service for every release architecture"
+	@printf "  %-25s %s\n" "make hub-docker" "Build the lavrushin/b4hub:VERSION image from hub/Dockerfile"
 	@printf "  %-25s %s\n" "make hub-deploy" "Build and install b4hub on the box in .env (HUB_DEPLOY_HOST, HUB_DEPLOY_KEY), then restart the unit"
 	@printf "  %-25s %s\n" "make hub-test" "Run the hub service tests"
 	@printf "  %-25s %s\n" "make hub-keygen" "Create a development hub key under hub/data"

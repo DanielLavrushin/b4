@@ -6,8 +6,9 @@ docs/
 .vscode/
 *.md
 !src/http/ui/*.md
-src/http/ui/node_modules/
-docs/node_modules/
 .env
 .task/
 vendor/
+**/node_modules/
+hub/data/
+hub/data-mirror/
