@@ -16,15 +16,12 @@ import (
 	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4hub/internal/asn"
 	"github.com/daniellavrushin/b4hub/internal/catalogue"
-	"github.com/daniellavrushin/b4hub/internal/geo"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
 	"github.com/daniellavrushin/b4hub/internal/ingest"
 	"github.com/daniellavrushin/b4hub/internal/store"
 )
 
 const (
-	PathSearch = "/v1/search"
-
 	cacheForever = "public, max-age=31536000, immutable"
 	cacheNever   = "no-cache"
 
@@ -39,7 +36,6 @@ type Server struct {
 	PublicDir     string
 	Ingest        *ingest.Service
 	Catalogue     *catalogue.Builder
-	Geo           *geo.Index
 	AdminPassword string
 }
 

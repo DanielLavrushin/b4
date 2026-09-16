@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -82,7 +83,6 @@ func startHub(t *testing.T) *hub {
 			Now:     now,
 		},
 		Catalogue:     h.builder,
-		Geo:           geo.NewIndex(layout.Geo() + "/geosite.dat"),
 		AdminPassword: "secret",
 	}
 	h.api = server
@@ -158,9 +158,8 @@ func TestEndToEnd(t *testing.T) {
 	if _, err := h.builder.Build(ctx); err != nil {
 		t.Fatal(err)
 	}
-	hits, _ := h.search("youtube.com")
-	if len(hits) != 0 {
-		t.Fatalf("a pending set must not be listed, got %d", len(hits))
+	if listed := h.listed(); len(listed) != 0 {
+		t.Fatalf("a pending set must not be listed, got %d", len(listed))
 	}
 
 	if err := h.store.Approve(ctx, setID, 1, h.clock); err != nil {
@@ -241,15 +240,9 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatalf("path escapes must be 404, got %d", resp.StatusCode)
 	}
 
-	hits, total := h.search("www.youtube.com")
-	if total != 1 || hits[0].ID != setID || hits[0].Match == nil || hits[0].Match.Entry != "youtube.com" || hits[0].Match.Relation != "covered" || hits[0].Match.Via != MatchViaDomain {
-		t.Fatalf("search: %d %+v", total, hits)
-	}
-	if hits, total = h.search("example.org"); total != 0 || len(hits) != 0 {
-		t.Fatalf("unrelated domain must not match, got %+v", hits)
-	}
-	if hits, total = h.search(""); total != 1 || hits[0].Match != nil {
-		t.Fatalf("empty search lists everything without a match, got %+v", hits)
+	listed := h.listed()
+	if len(listed) != 1 || listed[0].ID != setID || !slices.Contains(store.TargetList(listed[0].Set, "sni_domains"), "youtube.com") {
+		t.Fatalf("the approved set must be listed with its targets, got %+v", listed)
 	}
 
 	voter := testkit.Identity(t)
@@ -307,9 +300,19 @@ func TestEndToEnd(t *testing.T) {
 	}
 }
 
-func (h *hub) search(domain string) ([]Hit, int) {
+func (h *hub) listed() []hubwire.CatalogueSet {
 	h.t.Helper()
-	return h.api.Search(domain, 50)
+	latest := h.api.Catalogue.Latest()
+	if latest == nil {
+		return nil
+	}
+	out := make([]hubwire.CatalogueSet, 0)
+	for _, cs := range latest.Catalogue.Sets {
+		if cs.Status == "" || cs.Status == hubwire.SetStatusActive {
+			out = append(out, cs)
+		}
+	}
+	return out
 }
 
 func TestBasicAuthGuardsAdminHandlers(t *testing.T) {

@@ -18,7 +18,6 @@ import (
 	"github.com/daniellavrushin/b4hub/internal/api"
 	"github.com/daniellavrushin/b4hub/internal/asn"
 	"github.com/daniellavrushin/b4hub/internal/catalogue"
-	"github.com/daniellavrushin/b4hub/internal/geo"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
 	"github.com/daniellavrushin/b4hub/internal/ingest"
 	"github.com/daniellavrushin/b4hub/internal/ratelimit"
@@ -81,7 +80,6 @@ func newFixture(t *testing.T, adminPassword string) *fixture {
 		PublicDir: layout.Public(),
 		Ingest:    f.ingest,
 		Catalogue: f.builder,
-		Geo:       geo.NewIndex(layout.Geo() + "/geosite.dat"),
 	}
 	f.web = &Server{
 		Store:         st,

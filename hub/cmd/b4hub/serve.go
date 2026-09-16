@@ -16,7 +16,6 @@ import (
 	"github.com/daniellavrushin/b4hub/internal/geo"
 	"github.com/daniellavrushin/b4hub/internal/ingest"
 	"github.com/daniellavrushin/b4hub/internal/ratelimit"
-	"github.com/daniellavrushin/b4hub/internal/store"
 	"github.com/daniellavrushin/b4hub/internal/web"
 	"github.com/spf13/cobra"
 )
@@ -55,19 +54,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	geoService := geo.New(geo.Options{Dir: svc.layout.Geo(), GeoSiteURL: serveFlags.geoSiteURL, GeoIPURL: serveFlags.geoIPURL})
-	index := geo.NewIndex(geoService.GeoSitePath())
 	builder := svc.builder(serveFlags.publicURL, geoService.Sources())
-	builder.OnBuild = func(result *catalogue.Result) {
-		categories := make([]string, 0)
-		for i := range result.Catalogue.Sets {
-			categories = append(categories, store.TargetList(result.Catalogue.Sets[i].Set, "geosite_categories")...)
-		}
-		go func() {
-			if err := index.Warm(categories); err != nil {
-				log.Printf("geo: category index: %v", err)
-			}
-		}()
-	}
 	if err := builder.LoadPublished(); err != nil && !errors.Is(err, catalogue.ErrNotPublished) {
 		log.Printf("catalogue: published files ignored: %v", err)
 	}
@@ -85,7 +72,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 			ASN:     resolver,
 		},
 		Catalogue: builder,
-		Geo:       index,
 	}
 
 	site := &web.Server{
