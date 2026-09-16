@@ -107,12 +107,20 @@ func newDNSTCPServerWithFamilies(t *testing.T, v4, v6 bool) (*dnsTCPServer, erro
 	w.matcher.Store(sni.NewSuffixSet(cfg.Sets))
 	w.ipToMac.Store(make(map[string]string))
 
-	srv := newDNSTCPServer(w, 45400)
-	err := srv.Start()
-	if err == nil {
-		t.Cleanup(srv.Stop)
+	if !v4 && !v6 {
+		srv := newDNSTCPServer(w, 45400)
+		return srv, srv.Start()
 	}
-	return srv, err
+	var lastErr error
+	for port := 45400; port < 45430; port++ {
+		srv := newDNSTCPServer(w, port)
+		if lastErr = srv.Start(); lastErr == nil {
+			t.Cleanup(srv.Stop)
+			return srv, nil
+		}
+	}
+	t.Skipf("no free port for dns tcp listener: %v", lastErr)
+	return nil, lastErr
 }
 
 func TestDNSTCPServerSkipsDisabledFamilies(t *testing.T) {
