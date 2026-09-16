@@ -63,7 +63,7 @@ func chainWithRelay(t *testing.T, relay *stubRelay) stdhttp.Handler {
 
 	var h stdhttp.Handler = mux
 	h = authMiddleware(&ptr, h)
-	h = cors(h)
+	h = cors(&ptr, h)
 	return telegramWebProxyVhost(h)
 }
 

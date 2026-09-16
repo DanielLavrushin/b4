@@ -55,7 +55,7 @@ func StartServer(cfgPtr *atomic.Pointer[config.Config], pool *nfq.Pool) (*stdhtt
 
 	var httpHandler stdhttp.Handler = mux
 	httpHandler = authMiddleware(cfgPtr, httpHandler)
-	httpHandler = cors(httpHandler)
+	httpHandler = cors(cfgPtr, httpHandler)
 	httpHandler = telegramWebProxyVhost(httpHandler)
 
 	if authEnabled(cfg) {
