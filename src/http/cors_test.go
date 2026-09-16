@@ -134,6 +134,27 @@ func TestCorsRefusesCrossSiteWritesWithoutCredentials(t *testing.T) {
 	if rec.Code != http.StatusOK || rec.Header().Get("Access-Control-Allow-Origin") != "http://192.168.1.1:7000" {
 		t.Fatalf("the router's own origin must be served, got %d", rec.Code)
 	}
+	rec = send(http.MethodPost, "/api/config", "http://192.168.1.1:5173", "")
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("another port on the same host is another origin, got %d", rec.Code)
+	}
+	rec = send(http.MethodPost, "/api/config", "https://192.168.1.1:7000", "")
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("another scheme on the same host is another origin, got %d", rec.Code)
+	}
+	rec = send(http.MethodPost, "/api/config", "http://addon.router.example", "same-site")
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("a sibling site is not trusted, got %d", rec.Code)
+	}
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:7000/api/config", nil)
+	req.Host = "b4.example.com"
+	req.Header.Set("Origin", "https://b4.example.com")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rec = httptest.NewRecorder()
+	guarded.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("behind a proxy that forwards Host and the scheme an old browser is still recognised, got %d", rec.Code)
+	}
 	rec = send(http.MethodPost, "/api/config", "https://b4.example.com", "same-origin")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("a browser-attested same-origin request behind a proxy must be served, got %d", rec.Code)
@@ -170,7 +191,7 @@ func TestCorsRefusesCrossSiteWritesWithoutCredentials(t *testing.T) {
 	}
 
 	authed := cors(corsCfg("admin"), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
-	req := httptest.NewRequest(http.MethodPost, "http://192.168.1.1:7000/api/config", nil)
+	req = httptest.NewRequest(http.MethodPost, "http://192.168.1.1:7000/api/config", nil)
 	req.Header.Set("Origin", "http://tool.example")
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	rec = httptest.NewRecorder()

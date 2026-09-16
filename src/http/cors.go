@@ -47,21 +47,39 @@ func trustedCaller(cfg *config.Config, r *http.Request, origin string) bool {
 
 func sameSiteOrigin(r *http.Request, origin string) bool {
 	switch r.Header.Get("Sec-Fetch-Site") {
-	case "same-origin", "same-site", "none":
+	case "same-origin", "none":
 		return true
-	case "cross-site":
+	case "same-site", "cross-site":
 		return false
 	}
 	u, err := url.Parse(origin)
-	if err != nil || u.Host == "" {
+	if err != nil || u.Host == "" || u.Scheme == "" {
 		return false
 	}
-	return hostOnly(u.Host) == hostOnly(r.Host)
+	return canonicalOrigin(u.Scheme, u.Host) == canonicalOrigin(requestScheme(r), r.Host)
 }
 
-func hostOnly(hostport string) string {
-	if h, _, err := net.SplitHostPort(hostport); err == nil {
-		return strings.ToLower(h)
+func requestScheme(r *http.Request) string {
+	if proto := strings.ToLower(strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0])); proto == "http" || proto == "https" {
+		return proto
 	}
-	return strings.ToLower(strings.Trim(hostport, "[]"))
+	if r.TLS != nil {
+		return "https"
+	}
+	return "http"
+}
+
+func canonicalOrigin(scheme, hostport string) string {
+	scheme = strings.ToLower(scheme)
+	host, port, err := net.SplitHostPort(hostport)
+	if err != nil {
+		host, port = strings.Trim(hostport, "[]"), ""
+	}
+	if port == "" {
+		port = "80"
+		if scheme == "https" {
+			port = "443"
+		}
+	}
+	return scheme + "://" + strings.ToLower(host) + ":" + port
 }
