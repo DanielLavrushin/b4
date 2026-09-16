@@ -73,11 +73,14 @@ func TestCoalesceInitialPutsDummyFirstAndKeepsOriginal(t *testing.T) {
 	}
 
 	head := out[:len(out)-len(original)]
-	if _, ok := DecryptInitial(dcid, head); !ok {
-		t.Fatal("prepended packet does not decrypt, peer would drop the datagram")
+	if !IsInitial(head) {
+		t.Fatal("prepended packet is not an Initial")
 	}
 	if got := ParseDCID(head); !bytes.Equal(got, dcid) {
 		t.Fatalf("prepended packet dcid %x, want %x", got, dcid)
+	}
+	if _, ok := DecryptInitial(dcid, head); ok {
+		t.Fatal("prepended packet decrypts under the real DCID, so the endpoint would accept its packet number and see an ACK for an unsent packet")
 	}
 }
 

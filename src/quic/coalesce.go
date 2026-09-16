@@ -115,18 +115,19 @@ func BuildDummyInitial(dcid, scid []byte, version uint32, packetNumber uint32, p
 	return pkt, true
 }
 
-// CoalesceInitial prepends a padding-only Initial to a client Initial datagram. The
-// returned datagram is what a DPI that only inspects the first packet of a datagram
-// sees, and the ClientHello is no longer in that slot.
 func CoalesceInitial(payload []byte, payloadLen int) ([]byte, bool) {
 	dcid, scid, version, ok := ParseInitialCIDs(payload)
+	if !ok || len(dcid) == 0 {
+		return nil, false
+	}
+	sealDCID := make([]byte, len(dcid))
+	copy(sealDCID, dcid)
+	sealDCID[0] ^= 0xff
+	dummy, ok := BuildDummyInitial(sealDCID, scid, version, dummyPacketNumber, payloadLen)
 	if !ok {
 		return nil, false
 	}
-	dummy, ok := BuildDummyInitial(dcid, scid, version, dummyPacketNumber, payloadLen)
-	if !ok {
-		return nil, false
-	}
+	copy(dummy[1+4+1:1+4+1+len(dcid)], dcid)
 	out := make([]byte, 0, len(dummy)+len(payload))
 	out = append(out, dummy...)
 	out = append(out, payload...)
