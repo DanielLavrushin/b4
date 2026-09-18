@@ -177,6 +177,7 @@ func (m *Monitor) tick(cfg *config.Config) bool {
 	}
 
 	if m.routingIfacesChanged(cfg) {
+		restored = true
 		log.Warnf("Routing interface change detected, resyncing routing rules...")
 		RoutingForceResync(cfg)
 		m.snapshotRoutingIfaces(cfg)
