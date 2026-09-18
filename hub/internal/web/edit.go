@@ -20,6 +20,8 @@ const (
 	codeUnchanged  = "unchanged"
 
 	noTargetsWarning = "no_targets"
+
+	maxEditBytes = 128 << 10
 )
 
 type editFailure struct {
@@ -129,7 +131,7 @@ func (s *Server) prepareEdit(ctx context.Context, v *store.Version, req EditRequ
 
 func (s *Server) readEdit(w http.ResponseWriter, r *http.Request, v *store.Version) (*editResult, *EditRequest, bool) {
 	var req EditRequest
-	if err := readBody(w, r, &req); err != nil {
+	if err := readBodyLimit(w, r, &req, maxEditBytes); err != nil {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return nil, nil, false
 	}
@@ -188,6 +190,7 @@ func (s *Server) setEdit(w http.ResponseWriter, r *http.Request) {
 		B4Min:       p.B4Min,
 		Family:      p.Family,
 		Note:        cleanReason(req.Note),
+		Approve:     req.Approve,
 	}
 	if err := s.Store.EditVersion(ctx, v.SetID, v.Version, edit, now); errors.Is(err, store.ErrNotPending) {
 		writeError(w, http.StatusConflict, codeNotPending, err.Error())
@@ -199,10 +202,6 @@ func (s *Server) setEdit(w http.ResponseWriter, r *http.Request) {
 	ref := v.SetID + "/" + strconv.Itoa(v.Version)
 	notice := "edited " + ref
 	if req.Approve {
-		if err := s.Store.Approve(ctx, v.SetID, v.Version, now); err != nil {
-			s.fail(w, err)
-			return
-		}
 		s.rebuild()
 		notice = "edited and approved " + ref
 	}

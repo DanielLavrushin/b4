@@ -309,7 +309,7 @@ export function EditSetDialog({ entry, onClose }: EditSetDialogProps) {
 
   const busy = preview.isPending || edit.isPending;
   const fresh = result !== null && !stale ? result : null;
-  const blocked = busy || parsed.projection === null || (fresh !== null && (!fresh.changed || fresh.duplicate !== undefined));
+  const blocked = busy || parsed.projection === null || fresh === null || !fresh.changed || fresh.duplicate !== undefined;
   const invalid = parsed.error !== null;
 
   return (

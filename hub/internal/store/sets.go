@@ -66,6 +66,7 @@ type VersionEdit struct {
 	B4Min       string
 	Family      string
 	Note        string
+	Approve     bool
 }
 
 const versionColumns = `id, set_id, version, fp, targets_key, title, description, projection_json, payloads_json, flags_json, geo_json,
@@ -226,7 +227,17 @@ func (s *Store) EditVersion(ctx context.Context, setID string, version int, edit
 		return err
 	}
 	if current.FP != v.FP {
-		if _, err := tx.ExecContext(ctx, `UPDATE OR IGNORE votes SET fp = ? WHERE set_id = ? AND version = ?`, v.FP, setID, version); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM votes WHERE set_id = ? AND version = ? AND EXISTS (
+			SELECT 1 FROM votes o WHERE o.id <> votes.id AND o.key_hmac = votes.key_hmac AND o.fp = ? AND o.asn_observed = votes.asn_observed AND o.bucket = votes.bucket)`,
+			setID, version, v.FP); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE votes SET fp = ? WHERE set_id = ? AND version = ?`, v.FP, setID, version); err != nil {
+			return err
+		}
+	}
+	if edit.Approve {
+		if err := setStatusTx(ctx, tx, setID, version, hubwire.SetStatusActive, "", now); err != nil {
 			return err
 		}
 	}
@@ -391,6 +402,13 @@ func (s *Store) setStatus(ctx context.Context, setID string, version int, status
 		return err
 	}
 	defer tx.Rollback()
+	if err := setStatusTx(ctx, tx, setID, version, status, reason, now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func setStatusTx(ctx context.Context, tx *sql.Tx, setID string, version int, status, reason string, now time.Time) error {
 	res, err := tx.ExecContext(ctx, `UPDATE set_versions SET status = ?, status_reason = ?, updated_at = ? WHERE set_id = ? AND version = ?`,
 		status, reason, formatTime(now), setID, version)
 	if err != nil {
@@ -404,10 +422,7 @@ func (s *Store) setStatus(ctx context.Context, setID string, version int, status
 			return err
 		}
 	}
-	if err := setMetaTx(ctx, tx, metaDirty, "1"); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return setMetaTx(ctx, tx, metaDirty, "1")
 }
 
 func (s *Store) Approve(ctx context.Context, setID string, version int, now time.Time) error {

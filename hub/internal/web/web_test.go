@@ -879,3 +879,56 @@ func TestEditPendingVersion(t *testing.T) {
 		t.Fatalf("unknown version must be 404, got %d", resp.status)
 	}
 }
+
+func TestEditRekeysVotesWithoutCollision(t *testing.T) {
+	f := newFixture(t, password)
+	ctx := context.Background()
+	author := testkit.Identity(t)
+	share := func(name string, domains ...string) string {
+		t.Helper()
+		set := testkit.SampleSet(name, domains...)
+		env := testkit.BuildEnvelope(t, &set)
+		resp := f.ingest.Handle(ctx, testkit.SignShare(t, author, env, f.clock), parseIP(authorAddress))
+		if resp.Status != http.StatusAccepted {
+			t.Fatalf("share %s: %d %v", name, resp.Status, resp.Body)
+		}
+		return resp.Body["set_id"].(string)
+	}
+	edit := func(id string) *store.Version {
+		t.Helper()
+		v, err := f.store.GetVersion(ctx, id, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := EditRequest{Title: v.Title, Projection: withFakeTTL(t, v.Projection, 3)}
+		if resp := f.admin(http.MethodPost, setPath(id, 1, "edit"), req); resp.status != http.StatusOK {
+			t.Fatalf("edit %s: %d %s", id, resp.status, resp.body)
+		}
+		v, _ = f.store.GetVersion(ctx, id, 1)
+		return v
+	}
+	first := share("First", "first.example")
+	firstVersion := edit(first)
+	second := share("Second", "second.example")
+	if votes, _ := f.store.VotesForVersion(ctx, second, 1); len(votes) != 1 || votes[0].FP == firstVersion.FP {
+		t.Fatalf("the second share must hold its own vote on the old fingerprint: %+v", votes)
+	}
+	secondVersion := edit(second)
+	if secondVersion.FP != firstVersion.FP {
+		t.Fatalf("both edits must land on one fingerprint: %s %s", firstVersion.FP, secondVersion.FP)
+	}
+	firstVotes, err := f.store.VotesForVersion(ctx, first, 1)
+	if err != nil || len(firstVotes) != 1 || firstVotes[0].FP != firstVersion.FP {
+		t.Fatalf("the first set keeps its vote on the new fingerprint: %v %+v", err, firstVotes)
+	}
+	secondVotes, err := f.store.VotesForVersion(ctx, second, 1)
+	if err != nil || len(secondVotes) != 0 {
+		t.Fatalf("the colliding vote of the second set must be dropped, not left on the old fingerprint: %v %+v", err, secondVotes)
+	}
+	all, _ := f.store.AllVotes(ctx)
+	for _, vote := range all {
+		if vote.FP != firstVersion.FP {
+			t.Fatalf("a vote still carries an obsolete fingerprint: %+v", vote)
+		}
+	}
+}
