@@ -76,41 +76,78 @@ type LineageView struct {
 }
 
 type EntryView struct {
-	SetID           string                 `json:"set_id"`
-	Version         int                    `json:"version"`
-	Title           string                 `json:"title"`
-	Description     string                 `json:"description,omitempty"`
-	Family          string                 `json:"family,omitempty"`
-	Engine          string                 `json:"engine,omitempty"`
-	B4Version       string                 `json:"b4_version,omitempty"`
-	B4Min           string                 `json:"b4_min,omitempty"`
-	FP              string                 `json:"fp"`
-	Status          string                 `json:"status"`
-	StatusReason    string                 `json:"status_reason,omitempty"`
-	Flags           []string               `json:"flags"`
-	Author          string                 `json:"author"`
-	UploaderHMAC    string                 `json:"uploader_hmac"`
-	ASNObserved     string                 `json:"asn_observed,omitempty"`
-	CountryObserved string                 `json:"country_observed,omitempty"`
-	ASNHint         string                 `json:"asn_hint,omitempty"`
-	CountryHint     string                 `json:"country_hint,omitempty"`
-	CreatedAt       time.Time              `json:"created_at"`
-	UpdatedAt       time.Time              `json:"updated_at"`
-	Targets         TargetsView            `json:"targets"`
-	Strategy        []string               `json:"strategy"`
-	Emitted         []EmittedView          `json:"emitted"`
-	Pins            []PinView              `json:"pins"`
-	DoHHost         string                 `json:"doh_host,omitempty"`
-	Payloads        []hubwire.BlobRef      `json:"payloads"`
-	Projection      map[string]interface{} `json:"projection"`
-	DecodeError     string                 `json:"decode_error,omitempty"`
-	Reports         []ReportView           `json:"reports"`
-	Independent     int                    `json:"independent_reports"`
-	Votes           VotesView              `json:"votes"`
-	Versions        []int                  `json:"versions,omitempty"`
-	SupersededBy    int                    `json:"superseded_by,omitempty"`
-	SupersededAt    *time.Time             `json:"superseded_at,omitempty"`
-	Lineage         *LineageView           `json:"lineage,omitempty"`
+	SetID              string                 `json:"set_id"`
+	Version            int                    `json:"version"`
+	Title              string                 `json:"title"`
+	Description        string                 `json:"description,omitempty"`
+	Family             string                 `json:"family,omitempty"`
+	Engine             string                 `json:"engine,omitempty"`
+	B4Version          string                 `json:"b4_version,omitempty"`
+	B4Min              string                 `json:"b4_min,omitempty"`
+	FP                 string                 `json:"fp"`
+	Status             string                 `json:"status"`
+	StatusReason       string                 `json:"status_reason,omitempty"`
+	Flags              []string               `json:"flags"`
+	Author             string                 `json:"author"`
+	UploaderHMAC       string                 `json:"uploader_hmac"`
+	ASNObserved        string                 `json:"asn_observed,omitempty"`
+	CountryObserved    string                 `json:"country_observed,omitempty"`
+	ASNHint            string                 `json:"asn_hint,omitempty"`
+	CountryHint        string                 `json:"country_hint,omitempty"`
+	CreatedAt          time.Time              `json:"created_at"`
+	UpdatedAt          time.Time              `json:"updated_at"`
+	Targets            TargetsView            `json:"targets"`
+	Strategy           []string               `json:"strategy"`
+	Emitted            []EmittedView          `json:"emitted"`
+	Pins               []PinView              `json:"pins"`
+	DoHHost            string                 `json:"doh_host,omitempty"`
+	Payloads           []hubwire.BlobRef      `json:"payloads"`
+	Projection         map[string]interface{} `json:"projection"`
+	DecodeError        string                 `json:"decode_error,omitempty"`
+	Reports            []ReportView           `json:"reports"`
+	Independent        int                    `json:"independent_reports"`
+	Votes              VotesView              `json:"votes"`
+	Versions           []int                  `json:"versions,omitempty"`
+	SupersededBy       int                    `json:"superseded_by,omitempty"`
+	SupersededAt       *time.Time             `json:"superseded_at,omitempty"`
+	Lineage            *LineageView           `json:"lineage,omitempty"`
+	EditedAt           *time.Time             `json:"edited_at,omitempty"`
+	EditNote           string                 `json:"edit_note,omitempty"`
+	OriginalProjection map[string]interface{} `json:"original_projection,omitempty"`
+}
+
+type EditRequest struct {
+	Title       string                 `json:"title"`
+	Description string                 `json:"description"`
+	Projection  map[string]interface{} `json:"projection"`
+	Note        string                 `json:"note"`
+	Approve     bool                   `json:"approve"`
+}
+
+type DuplicateView struct {
+	SetID   string `json:"set_id"`
+	Version int    `json:"version"`
+	Title   string `json:"title"`
+	Status  string `json:"status"`
+}
+
+type EditPreview struct {
+	Title       string                 `json:"title"`
+	Description string                 `json:"description"`
+	Projection  map[string]interface{} `json:"projection"`
+	Payloads    []hubwire.BlobRef      `json:"payloads"`
+	Warnings    []hubwire.Warning      `json:"warnings"`
+	Stripped    []hubwire.Stripped     `json:"stripped"`
+	FP          string                 `json:"fp"`
+	FPChanged   bool                   `json:"fp_changed"`
+	Changed     bool                   `json:"changed"`
+	Targets     TargetsView            `json:"targets"`
+	Strategy    []string               `json:"strategy"`
+	Flags       []string               `json:"flags"`
+	Family      string                 `json:"family"`
+	B4Min       string                 `json:"b4_min"`
+	Duplicate   *DuplicateView         `json:"duplicate,omitempty"`
+	Tidy        *Tidy                  `json:"tidy,omitempty"`
 }
 
 type SetsView struct {
@@ -369,33 +406,36 @@ func (s *Server) entryContext(ctx context.Context) (*entryContext, error) {
 
 func (s *Server) entry(ctx context.Context, v store.Version, ec *entryContext) EntryView {
 	e := EntryView{
-		SetID:           v.SetID,
-		Version:         v.Version,
-		Title:           v.Title,
-		Description:     v.Description,
-		Family:          v.Family,
-		Engine:          v.Engine,
-		B4Version:       v.B4Version,
-		B4Min:           v.B4Min,
-		FP:              v.FP,
-		Status:          v.Status,
-		StatusReason:    v.StatusReason,
-		Flags:           orEmpty(v.Flags),
-		Author:          hubdata.AuthorLabel(v.UploaderHMAC),
-		UploaderHMAC:    v.UploaderHMAC,
-		ASNObserved:     v.ASNObserved,
-		CountryObserved: v.CountryObserved,
-		ASNHint:         v.ASNHint,
-		CountryHint:     v.CountryHint,
-		CreatedAt:       v.CreatedAt,
-		UpdatedAt:       v.UpdatedAt,
-		Targets:         targetsView(TargetsOf(v.Projection)),
-		Strategy:        []string{},
-		Emitted:         []EmittedView{},
-		Pins:            []PinView{},
-		Payloads:        v.Payloads,
-		Projection:      v.Projection,
-		Reports:         []ReportView{},
+		SetID:              v.SetID,
+		Version:            v.Version,
+		Title:              v.Title,
+		Description:        v.Description,
+		Family:             v.Family,
+		Engine:             v.Engine,
+		B4Version:          v.B4Version,
+		B4Min:              v.B4Min,
+		FP:                 v.FP,
+		Status:             v.Status,
+		StatusReason:       v.StatusReason,
+		Flags:              orEmpty(v.Flags),
+		Author:             hubdata.AuthorLabel(v.UploaderHMAC),
+		UploaderHMAC:       v.UploaderHMAC,
+		ASNObserved:        v.ASNObserved,
+		CountryObserved:    v.CountryObserved,
+		ASNHint:            v.ASNHint,
+		CountryHint:        v.CountryHint,
+		CreatedAt:          v.CreatedAt,
+		UpdatedAt:          v.UpdatedAt,
+		Targets:            targetsView(TargetsOf(v.Projection)),
+		Strategy:           []string{},
+		Emitted:            []EmittedView{},
+		Pins:               []PinView{},
+		Payloads:           v.Payloads,
+		Projection:         v.Projection,
+		Reports:            []ReportView{},
+		EditedAt:           optionalTime(v.EditedAt),
+		EditNote:           v.EditNote,
+		OriginalProjection: v.OriginalProjection,
 	}
 	if e.Payloads == nil {
 		e.Payloads = []hubwire.BlobRef{}

@@ -22,6 +22,7 @@ import { ErrorState, Loading, EmptyState } from "@/components/common/States";
 import { StatusChip } from "@/components/common/StatusChip";
 import { Mono } from "@/components/common/Mono";
 import { formatStamp, setRef } from "@/utils/format";
+import { EditedNotice } from "./EditedNotice";
 import { EntryFacts, Origin } from "./EntryFacts";
 import type { Moderation } from "./useModeration";
 
@@ -39,6 +40,9 @@ function VersionActions({ entry, moderation }: { entry: EntryView; moderation: M
         <>
           <Button size="small" variant="contained" color="success" disabled={moderation.busy} onClick={() => moderation.approve(entry)}>
             {t("queue.approve")}
+          </Button>
+          <Button size="small" variant="outlined" color="primary" disabled={moderation.busy} onClick={() => moderation.edit(entry)}>
+            {t("queue.edit")}
           </Button>
           <Button size="small" variant="outlined" color="error" disabled={moderation.busy} onClick={() => moderation.reject(entry)}>
             {t("queue.reject")}
@@ -162,6 +166,7 @@ export function SetDetailDrawer({ id, onClose, moderation }: SetDetailDrawerProp
                 </Box>
                 <Typography sx={{ fontSize: 16, overflowWrap: "anywhere" }}>{v.title}</Typography>
                 <Origin entry={v} />
+                <EditedNotice entry={v} />
                 {v.status_reason && (
                   <Typography variant="body2" sx={{ color: colors.state.warning }}>
                     {v.status_reason}

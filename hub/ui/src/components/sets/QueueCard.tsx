@@ -5,6 +5,7 @@ import { colors, radiusPx } from "@design";
 import type { EntryView } from "@/models/api";
 import { useSetDetail } from "@/api/hub";
 import { formatAgo, formatStamp, setRef } from "@/utils/format";
+import { EditedNotice } from "./EditedNotice";
 import { EntryFacts, Origin } from "./EntryFacts";
 import { ProjectionDiff } from "./ProjectionDiff";
 import type { Moderation } from "./useModeration";
@@ -82,6 +83,7 @@ export function QueueCard({ entry, moderation }: QueueCardProps) {
           <Comparison entry={entry} />
         </Collapse>
       )}
+      <EditedNotice entry={entry} />
 
       <EntryFacts entry={entry} />
 
@@ -89,6 +91,9 @@ export function QueueCard({ entry, moderation }: QueueCardProps) {
       <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
         <Button variant="contained" color="success" size="small" disabled={moderation.busy} onClick={() => moderation.approve(entry)}>
           {t("queue.approve")}
+        </Button>
+        <Button variant="outlined" color="primary" size="small" disabled={moderation.busy} onClick={() => moderation.edit(entry)}>
+          {t("queue.edit")}
         </Button>
         <Button variant="outlined" color="error" size="small" disabled={moderation.busy} onClick={() => moderation.reject(entry)}>
           {t("queue.reject")}

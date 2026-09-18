@@ -15,28 +15,32 @@ interface ProjectionDiffProps {
   before: Projection;
   after: Projection;
   beforeVersion: number;
+  title?: string;
+  emptyText?: string;
+  beforeLabel?: string;
+  afterLabel?: string;
 }
 
-export function ProjectionDiff({ before, after, beforeVersion }: ProjectionDiffProps) {
+export function ProjectionDiff({ before, after, beforeVersion, title, emptyText, beforeLabel, afterLabel }: ProjectionDiffProps) {
   const { t } = useTranslation();
   const lines = useMemo(() => diffProjections(before, after), [before, after]);
 
   return (
     <Box sx={{ border: `1px solid ${colors.border.light}`, borderRadius: 1, overflowX: "auto" }}>
       <Typography variant="sectionHeader" sx={{ px: 2, pt: 1.5, display: "block" }}>
-        {t("entry.diff.title", { version: beforeVersion })}
+        {title ?? t("entry.diff.title", { version: beforeVersion })}
       </Typography>
       {lines.length === 0 ? (
         <Typography variant="body2" sx={{ px: 2, py: 1.5, color: colors.text.secondary }}>
-          {t("entry.diff.none")}
+          {emptyText ?? t("entry.diff.none")}
         </Typography>
       ) : (
         <Table size="small" sx={{ fontFamily: fonts.mono }}>
           <TableHead>
             <TableRow>
               <TableCell>{t("entry.diff.path")}</TableCell>
-              <TableCell>{t("entry.diff.before")}</TableCell>
-              <TableCell>{t("entry.diff.after")}</TableCell>
+              <TableCell>{beforeLabel ?? t("entry.diff.before")}</TableCell>
+              <TableCell>{afterLabel ?? t("entry.diff.after")}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>

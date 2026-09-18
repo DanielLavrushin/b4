@@ -53,6 +53,8 @@ func (s *Server) mountAPI(mux *http.ServeMux) {
 	mux.Handle("GET "+PathAPI+"/sets", s.guard(s.sets))
 	mux.Handle("GET "+PathAPI+"/sets/{id}", s.guard(s.setDetail))
 	mux.Handle("POST "+PathAPI+"/sets/{id}/{version}/{action}", s.guard(s.setAction))
+	mux.Handle("POST "+PathAPI+"/sets/{id}/{version}/preview", s.guard(s.setPreview))
+	mux.Handle("POST "+PathAPI+"/sets/{id}/{version}/edit", s.guard(s.setEdit))
 	mux.Handle("POST "+PathAPI+"/sets/{id}/delete", s.guard(s.setDelete))
 	mux.Handle("GET "+PathAPI+"/keys", s.guard(s.keys))
 	mux.Handle("POST "+PathAPI+"/keys/{key}/{action}", s.guard(s.keyAction))
@@ -75,13 +77,17 @@ func (s *Server) rebuild() {
 	}
 }
 
-func cleanReason(raw string) string {
-	reason := strings.TrimSpace(raw)
-	runes := []rune(reason)
-	if len(runes) > maxReasonRunes {
-		reason = strings.TrimSpace(string(runes[:maxReasonRunes]))
+func clipRunes(raw string, max int) string {
+	text := strings.TrimSpace(raw)
+	runes := []rune(text)
+	if len(runes) > max {
+		text = strings.TrimSpace(string(runes[:max]))
 	}
-	return reason
+	return text
+}
+
+func cleanReason(raw string) string {
+	return clipRunes(raw, maxReasonRunes)
 }
 
 func (s *Server) readAction(w http.ResponseWriter, r *http.Request) (string, bool) {
@@ -237,20 +243,12 @@ func (s *Server) setDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) setAction(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	version, err := strconv.Atoi(r.PathValue("version"))
-	if !hubdata.ValidSetID(id) || err != nil || version <= 0 {
-		writeError(w, http.StatusNotFound, codeNotFound, "the address does not name a set version")
+	v, ok := s.versionFromPath(w, r)
+	if !ok {
 		return
 	}
+	id, version := v.SetID, v.Version
 	ctx := r.Context()
-	if _, err := s.Store.GetVersion(ctx, id, version); errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusNotFound, codeNotFound, "the address does not name a set version")
-		return
-	} else if err != nil {
-		s.fail(w, err)
-		return
-	}
 	action := r.PathValue("action")
 	reason, ok := s.readAction(w, r)
 	if !ok {
@@ -258,6 +256,7 @@ func (s *Server) setAction(w http.ResponseWriter, r *http.Request) {
 	}
 	now := s.now()
 	ref := id + "/" + strconv.Itoa(version)
+	var err error
 	var notice string
 	switch action {
 	case ActionApprove:

@@ -23,35 +23,54 @@ type Set struct {
 }
 
 type Version struct {
-	RowID           int64
-	SetID           string
-	Version         int
-	FP              string
-	TargetsKey      string
-	Title           string
-	Description     string
-	Projection      map[string]interface{}
-	Payloads        []hubwire.BlobRef
-	Flags           []string
-	Geo             *hubwire.GeoSource
-	B4Min           string
-	B4Version       string
-	Engine          string
-	Family          string
-	Status          string
-	StatusReason    string
-	RecordID        string
-	UploaderHMAC    string
-	ASNObserved     string
-	CountryObserved string
-	ASNHint         string
-	CountryHint     string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	RowID              int64
+	SetID              string
+	Version            int
+	FP                 string
+	TargetsKey         string
+	Title              string
+	Description        string
+	Projection         map[string]interface{}
+	Payloads           []hubwire.BlobRef
+	Flags              []string
+	Geo                *hubwire.GeoSource
+	B4Min              string
+	B4Version          string
+	Engine             string
+	Family             string
+	Status             string
+	StatusReason       string
+	RecordID           string
+	UploaderHMAC       string
+	ASNObserved        string
+	CountryObserved    string
+	ASNHint            string
+	CountryHint        string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	OriginalProjection map[string]interface{}
+	EditedAt           time.Time
+	EditNote           string
+}
+
+var ErrNotPending = errors.New("only a pending version can be edited")
+
+type VersionEdit struct {
+	Title       string
+	Description string
+	Projection  map[string]interface{}
+	Payloads    []hubwire.BlobRef
+	Flags       []string
+	FP          string
+	TargetsKey  string
+	B4Min       string
+	Family      string
+	Note        string
 }
 
 const versionColumns = `id, set_id, version, fp, targets_key, title, description, projection_json, payloads_json, flags_json, geo_json,
-	b4_min, b4_version, engine, family, status, status_reason, record_id, uploader_hmac, asn_observed, country_observed, asn_hint, country_hint, created_at, updated_at`
+	b4_min, b4_version, engine, family, status, status_reason, record_id, uploader_hmac, asn_observed, country_observed, asn_hint, country_hint, created_at, updated_at,
+	original_projection_json, edited_at, edit_note`
 
 type rowScanner interface {
 	Scan(dest ...interface{}) error
@@ -59,15 +78,22 @@ type rowScanner interface {
 
 func scanVersion(row rowScanner) (*Version, error) {
 	var v Version
-	var projection, payloads, flags, geo, createdAt, updatedAt string
+	var projection, payloads, flags, geo, createdAt, updatedAt, original, editedAt string
 	err := row.Scan(&v.RowID, &v.SetID, &v.Version, &v.FP, &v.TargetsKey, &v.Title, &v.Description, &projection, &payloads, &flags, &geo,
-		&v.B4Min, &v.B4Version, &v.Engine, &v.Family, &v.Status, &v.StatusReason, &v.RecordID, &v.UploaderHMAC, &v.ASNObserved, &v.CountryObserved, &v.ASNHint, &v.CountryHint, &createdAt, &updatedAt)
+		&v.B4Min, &v.B4Version, &v.Engine, &v.Family, &v.Status, &v.StatusReason, &v.RecordID, &v.UploaderHMAC, &v.ASNObserved, &v.CountryObserved, &v.ASNHint, &v.CountryHint, &createdAt, &updatedAt,
+		&original, &editedAt, &v.EditNote)
 	if err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal([]byte(projection), &v.Projection); err != nil {
 		return nil, fmt.Errorf("set %s version %d projection: %w", v.SetID, v.Version, err)
 	}
+	if original != "" {
+		if err := json.Unmarshal([]byte(original), &v.OriginalProjection); err != nil {
+			return nil, fmt.Errorf("set %s version %d original projection: %w", v.SetID, v.Version, err)
+		}
+	}
+	v.EditedAt = parseTime(editedAt)
 	if payloads != "" {
 		if err := json.Unmarshal([]byte(payloads), &v.Payloads); err != nil {
 			return nil, fmt.Errorf("set %s version %d payloads: %w", v.SetID, v.Version, err)
@@ -90,53 +116,121 @@ func scanVersion(row rowScanner) (*Version, error) {
 	return &v, nil
 }
 
-func encodeVersion(v *Version) (projection, payloads, flags, geo string, err error) {
+type encodedVersion struct {
+	projection string
+	payloads   string
+	flags      string
+	geo        string
+	original   string
+}
+
+func encodeVersion(v *Version) (encodedVersion, error) {
+	var enc encodedVersion
 	raw, err := json.Marshal(v.Projection)
 	if err != nil {
-		return "", "", "", "", err
+		return enc, err
 	}
-	projection = string(raw)
+	enc.projection = string(raw)
 	if v.Payloads == nil {
 		v.Payloads = []hubwire.BlobRef{}
 	}
 	raw, err = json.Marshal(v.Payloads)
 	if err != nil {
-		return "", "", "", "", err
+		return enc, err
 	}
-	payloads = string(raw)
+	enc.payloads = string(raw)
 	if v.Flags == nil {
 		v.Flags = []string{}
 	}
 	raw, err = json.Marshal(v.Flags)
 	if err != nil {
-		return "", "", "", "", err
+		return enc, err
 	}
-	flags = string(raw)
+	enc.flags = string(raw)
 	if v.Geo != nil {
 		raw, err = json.Marshal(v.Geo)
 		if err != nil {
-			return "", "", "", "", err
+			return enc, err
 		}
-		geo = string(raw)
+		enc.geo = string(raw)
 	}
-	return projection, payloads, flags, geo, nil
+	if v.OriginalProjection != nil {
+		raw, err = json.Marshal(v.OriginalProjection)
+		if err != nil {
+			return enc, err
+		}
+		enc.original = string(raw)
+	}
+	return enc, nil
 }
 
 func insertVersionTx(ctx context.Context, tx *sql.Tx, v *Version) error {
-	projection, payloads, flags, geo, err := encodeVersion(v)
+	enc, err := encodeVersion(v)
 	if err != nil {
 		return err
 	}
 	res, err := tx.ExecContext(ctx, `INSERT INTO set_versions(set_id, version, fp, targets_key, title, description, projection_json, payloads_json, flags_json, geo_json,
-		b4_min, b4_version, engine, family, status, status_reason, record_id, uploader_hmac, asn_observed, country_observed, asn_hint, country_hint, created_at, updated_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		v.SetID, v.Version, v.FP, v.TargetsKey, v.Title, v.Description, projection, payloads, flags, geo,
-		v.B4Min, v.B4Version, v.Engine, v.Family, v.Status, v.StatusReason, v.RecordID, v.UploaderHMAC, v.ASNObserved, v.CountryObserved, v.ASNHint, v.CountryHint, formatTime(v.CreatedAt), formatTime(v.UpdatedAt))
+		b4_min, b4_version, engine, family, status, status_reason, record_id, uploader_hmac, asn_observed, country_observed, asn_hint, country_hint, created_at, updated_at,
+		original_projection_json, edited_at, edit_note)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		v.SetID, v.Version, v.FP, v.TargetsKey, v.Title, v.Description, enc.projection, enc.payloads, enc.flags, enc.geo,
+		v.B4Min, v.B4Version, v.Engine, v.Family, v.Status, v.StatusReason, v.RecordID, v.UploaderHMAC, v.ASNObserved, v.CountryObserved, v.ASNHint, v.CountryHint, formatTime(v.CreatedAt), formatTime(v.UpdatedAt),
+		enc.original, formatTime(v.EditedAt), v.EditNote)
 	if err != nil {
 		return err
 	}
 	v.RowID, _ = res.LastInsertId()
 	return nil
+}
+
+func (s *Store) EditVersion(ctx context.Context, setID string, version int, edit VersionEdit, now time.Time) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	current, err := scanVersion(tx.QueryRowContext(ctx, `SELECT `+versionColumns+` FROM set_versions WHERE set_id = ? AND version = ?`, setID, version))
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if current.Status != hubwire.SetStatusPending {
+		return ErrNotPending
+	}
+	v := *current
+	v.Title = edit.Title
+	v.Description = edit.Description
+	v.Projection = edit.Projection
+	v.Payloads = edit.Payloads
+	v.Flags = edit.Flags
+	v.FP = edit.FP
+	v.TargetsKey = edit.TargetsKey
+	v.B4Min = edit.B4Min
+	v.Family = edit.Family
+	v.EditNote = edit.Note
+	v.EditedAt = now
+	v.UpdatedAt = now
+	if v.OriginalProjection == nil {
+		v.OriginalProjection = current.Projection
+	}
+	enc, err := encodeVersion(&v)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE set_versions SET title = ?, description = ?, projection_json = ?, payloads_json = ?, flags_json = ?, fp = ?, targets_key = ?, b4_min = ?, family = ?,
+		original_projection_json = ?, edited_at = ?, edit_note = ?, updated_at = ? WHERE id = ?`,
+		v.Title, v.Description, enc.projection, enc.payloads, enc.flags, v.FP, v.TargetsKey, v.B4Min, v.Family,
+		enc.original, formatTime(v.EditedAt), v.EditNote, formatTime(v.UpdatedAt), v.RowID); err != nil {
+		return err
+	}
+	if current.FP != v.FP {
+		if _, err := tx.ExecContext(ctx, `UPDATE OR IGNORE votes SET fp = ? WHERE set_id = ? AND version = ?`, v.FP, setID, version); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *Store) CreateSet(ctx context.Context, set Set, v *Version) error {

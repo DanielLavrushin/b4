@@ -5,11 +5,13 @@ import { useSnackbar } from "@/context/SnackbarProvider";
 import type { EntryView, MirrorView } from "@/models/api";
 import { setRef } from "@/utils/format";
 import { ReasonDialog, type ReasonPrompt } from "@/components/common/ReasonDialog";
+import { EditSetDialog } from "./EditSetDialog";
 
 export function useModeration() {
   const { t } = useTranslation();
   const { notify, notifyError } = useSnackbar();
   const [prompt, setPrompt] = useState<ReasonPrompt | null>(null);
+  const [editing, setEditing] = useState<EntryView | null>(null);
   const setAction = useSetAction();
   const keyAction = useKeyAction();
   const mirrorAction = useMirrorAction();
@@ -39,6 +41,8 @@ export function useModeration() {
       }),
     [run, setAction, t],
   );
+
+  const edit = useCallback((e: EntryView) => setEditing(e), []);
 
   const reject = useCallback(
     (e: EntryView) =>
@@ -149,10 +153,15 @@ export function useModeration() {
     [mirrorAction, run, t],
   );
 
-  const dialog = <ReasonDialog prompt={prompt} onClose={() => setPrompt(null)} />;
+  const dialog = (
+    <>
+      <ReasonDialog prompt={prompt} onClose={() => setPrompt(null)} />
+      <EditSetDialog entry={editing} onClose={() => setEditing(null)} />
+    </>
+  );
   const busy = setAction.isPending || keyAction.isPending || mirrorAction.isPending || setDelete.isPending;
 
-  return { approve, reject, hide, remove, ban, unban, trust, untrust, approveMirror, rejectMirror, removeMirror, dialog, busy };
+  return { approve, edit, reject, hide, remove, ban, unban, trust, untrust, approveMirror, rejectMirror, removeMirror, dialog, busy };
 }
 
 export type Moderation = ReturnType<typeof useModeration>;

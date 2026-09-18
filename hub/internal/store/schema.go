@@ -127,4 +127,9 @@ CREATE INDEX mirrors_status ON mirrors(status);
 ALTER TABLE keys ADD COLUMN trusted INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE keys ADD COLUMN trusted_at TEXT NOT NULL DEFAULT '';
 `,
+	`
+ALTER TABLE set_versions ADD COLUMN original_projection_json TEXT NOT NULL DEFAULT '';
+ALTER TABLE set_versions ADD COLUMN edited_at TEXT NOT NULL DEFAULT '';
+ALTER TABLE set_versions ADD COLUMN edit_note TEXT NOT NULL DEFAULT '';
+`,
 }

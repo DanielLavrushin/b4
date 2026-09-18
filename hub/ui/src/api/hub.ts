@@ -6,6 +6,8 @@ import {
 import { get, post, put } from "./client";
 import type {
   ActionResult,
+  EditPreview,
+  EditRequest,
   FeedbackView,
   KeyAction,
   KeyView,
@@ -98,6 +100,26 @@ export const useSetAction = () =>
       `/sets/${encodeURIComponent(id)}/${String(version)}/${action}`,
       { reason: reason ?? "" },
     ),
+  );
+
+export interface EditVariables {
+  id: string;
+  version: number;
+  body: EditRequest;
+}
+
+const editPath = (id: string, version: number, action: "preview" | "edit") =>
+  `/sets/${encodeURIComponent(id)}/${String(version)}/${action}`;
+
+export const useSetPreview = () =>
+  useMutation({
+    mutationFn: ({ id, version, body }: EditVariables) =>
+      post<EditPreview>(editPath(id, version, "preview"), body),
+  });
+
+export const useSetEdit = () =>
+  useInvalidatingMutation(({ id, version, body }: EditVariables) =>
+    post<ActionResult>(editPath(id, version, "edit"), body),
   );
 
 export const useSetDelete = () =>
