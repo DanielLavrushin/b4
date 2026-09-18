@@ -113,21 +113,42 @@ func (n *NFTablesManager) createSet(name, addrType, extraFlags string) error {
 	return nil
 }
 
+func (n *NFTablesManager) runNftScript(script string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), iptCommandTimeout)
+	defer cancel()
+
+	var out bytes.Buffer
+	cmd := exec.CommandContext(ctx, "nft", "-f", "-")
+	cmd.Stdin = strings.NewReader(script)
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	cmd.WaitDelay = time.Second
+	err := cmd.Run()
+	if ctx.Err() != nil {
+		return out.String(), fmt.Errorf("command [nft -f -] gave up after %v: %w", iptCommandTimeout, ctx.Err())
+	}
+	if err != nil {
+		output := strings.TrimSpace(out.String())
+		if output != "" {
+			return output, fmt.Errorf("command [nft -f -] failed: %w (%s)", err, output)
+		}
+		return output, fmt.Errorf("command [nft -f -] failed: %w", err)
+	}
+	return out.String(), nil
+}
+
 func (n *NFTablesManager) addSetElements(name string, elements []string) error {
 	elements = expandZeroPrefix(elements)
+	if len(elements) == 0 {
+		return nil
+	}
 
-	const batchSize = 10000
-	for i := 0; i < len(elements); i += batchSize {
-		end := i + batchSize
-		if end > len(elements) {
-			end = len(elements)
-		}
-		chunk := elements[i:end]
-		elemExpr := "{ " + strings.Join(chunk, ", ") + " }"
-		_, err := n.runNft("add", "element", "inet", nftTableName, name, elemExpr)
-		if err != nil {
-			return fmt.Errorf("failed to add elements to set %s (batch %d-%d): %w", name, i, end, err)
-		}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "add element inet %s %s { ", nftTableName, name)
+	sb.WriteString(strings.Join(elements, ", "))
+	sb.WriteString(" }\n")
+	if _, err := n.runNftScript(sb.String()); err != nil {
+		return fmt.Errorf("failed to add %d elements to set %s: %w", len(elements), name, err)
 	}
 	log.Tracef("Added %d elements to nftables set: %s", len(elements), name)
 	return nil

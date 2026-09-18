@@ -4,6 +4,7 @@
 
 - FIXED: **An update could leave a damaged b4 binary behind when the router was rebooted soon after it** - the installer checked the new file and deleted the previous copy before the write had reached the storage, so a reboot that came before the disk caught up left a file of the right size with garbage inside, and b4 crashed on every start.
 - FIXED: **A custom list of five fallback UDP DNS servers under Settings, Discovery was gone after the next restart** - the loaded list was written over the built-in default it was later compared against, so the save took it for the default and left it out of the file.
+- FIXED: **On routers with nftables, a duplication set or a set with MSS clamping that held more than a few thousand addresses stopped b4 with `argument list too long`** - every address in a batch was handed to `nft` as one command-line word, and the kernel refuses a single word past 128 KB before the command starts.
 
 ## [1.82.0] - 2026-09-17
 
