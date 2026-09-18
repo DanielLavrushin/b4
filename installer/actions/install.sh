@@ -136,6 +136,7 @@ action_install() {
         restore_binary "${B4_BIN_DIR}/${BINARY_NAME}" "$backup_bin" && log_warn "Rolled back to the previous version"
         exit 1
     fi
+    flush_disk
 
     # Verify — detect architecture mismatch (SIGILL on MIPS = wrong float ABI)
     _ver_exit=0
@@ -170,6 +171,7 @@ action_install() {
                 if mv "${BINARY_NAME}" "$_newbin" 2>/dev/null || cp "${BINARY_NAME}" "$_newbin"; then
                     chmod +x "$_newbin"
                     mv -f "$_newbin" "${B4_BIN_DIR}/${BINARY_NAME}" || rm -f "$_newbin"
+                    flush_disk
                 fi
                 if "${B4_BIN_DIR}/${BINARY_NAME}" --version >/dev/null 2>&1; then
                     installed_ver=$("${B4_BIN_DIR}/${BINARY_NAME}" --version 2>&1 | head -1)

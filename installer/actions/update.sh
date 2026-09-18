@@ -315,6 +315,9 @@ action_update() {
         log_err "Failed to replace binary"
         update_failed=1
     }
+    if [ "$update_failed" -eq 0 ]; then
+        flush_disk
+    fi
 
     # Verify
     if [ "$update_failed" -eq 0 ] && "$existing_bin" --version >/dev/null 2>&1; then

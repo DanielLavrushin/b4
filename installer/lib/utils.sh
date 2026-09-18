@@ -117,6 +117,13 @@ restore_binary() {
     rm -f "$_rb_bin" 2>/dev/null || true
     mv "$_rb_backup" "$_rb_bin" 2>/dev/null || return 1
     chmod +x "$_rb_bin" 2>/dev/null || true
+    flush_disk
+    return 0
+}
+
+flush_disk() {
+    command_exists sync || return 0
+    sync 2>/dev/null || true
     return 0
 }
 

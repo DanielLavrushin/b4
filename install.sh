@@ -180,6 +180,13 @@ restore_binary() {
     rm -f "$_rb_bin" 2>/dev/null || true
     mv "$_rb_backup" "$_rb_bin" 2>/dev/null || return 1
     chmod +x "$_rb_bin" 2>/dev/null || true
+    flush_disk
+    return 0
+}
+
+flush_disk() {
+    command_exists sync || return 0
+    sync 2>/dev/null || true
     return 0
 }
 
@@ -3403,6 +3410,7 @@ action_install() {
         restore_binary "${B4_BIN_DIR}/${BINARY_NAME}" "$backup_bin" && log_warn "Rolled back to the previous version"
         exit 1
     fi
+    flush_disk
 
     _ver_exit=0
     sh -c "\"${B4_BIN_DIR}/${BINARY_NAME}\" --version" >/dev/null 2>&1 || _ver_exit=$?
@@ -3435,6 +3443,7 @@ action_install() {
                 if mv "${BINARY_NAME}" "$_newbin" 2>/dev/null || cp "${BINARY_NAME}" "$_newbin"; then
                     chmod +x "$_newbin"
                     mv -f "$_newbin" "${B4_BIN_DIR}/${BINARY_NAME}" || rm -f "$_newbin"
+                    flush_disk
                 fi
                 if "${B4_BIN_DIR}/${BINARY_NAME}" --version >/dev/null 2>&1; then
                     installed_ver=$("${B4_BIN_DIR}/${BINARY_NAME}" --version 2>&1 | head -1)
@@ -3996,6 +4005,9 @@ action_update() {
         log_err "Failed to replace binary"
         update_failed=1
     }
+    if [ "$update_failed" -eq 0 ]; then
+        flush_disk
+    fi
 
     if [ "$update_failed" -eq 0 ] && "$existing_bin" --version >/dev/null 2>&1; then
         new_ver=$("$existing_bin" --version 2>&1 | head -1)
