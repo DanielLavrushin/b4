@@ -954,3 +954,39 @@ func TestEditRefusesWhenPayloadUnreadable(t *testing.T) {
 		t.Fatalf("the version must be untouched: %+v", after)
 	}
 }
+
+func TestPreviewReportsStrippedFields(t *testing.T) {
+	f := newFixture(t, password)
+	ctx := context.Background()
+	id, _ := f.share("Routing", authorAddress, "routing.example")
+	v, err := f.store.GetVersion(ctx, id, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection := projectionCopy(t, v.Projection)
+	projection["routing"] = map[string]interface{}{"enabled": true, "mode": "proxy", "upstream": "socks5://10.0.0.1:1080"}
+	projection["targets"].(map[string]interface{})["source_devices"] = []string{"aa:bb:cc:dd:ee:ff"}
+	projection["tcp"] = map[string]interface{}{"seg2delay": 0, "made_up": 1}
+	var preview EditPreview
+	resp := f.admin(http.MethodPost, setPath(id, 1, "preview"), EditRequest{Title: v.Title, Projection: projection})
+	if resp.status != http.StatusOK {
+		t.Fatalf("preview: %d %s", resp.status, resp.body)
+	}
+	resp.decode(t, &preview)
+	got := map[string]string{}
+	for _, s := range preview.Stripped {
+		got[s.Path] = s.Reason
+	}
+	if got["routing.upstream"] != strippedPrivate || got["targets.source_devices"] != strippedPrivate || got["routing.mode"] != strippedNotShareable || got["routing.enabled"] != strippedNotShareable {
+		t.Fatalf("stripped: %+v", preview.Stripped)
+	}
+	if _, ok := got["tcp.seg2delay"]; ok {
+		t.Fatalf("a value equal to the default is not a strip: %+v", preview.Stripped)
+	}
+	if _, ok := got["tcp.made_up"]; ok {
+		t.Fatalf("an unknown field is reported as a warning, not a strip: %+v", preview.Stripped)
+	}
+	if _, ok := preview.Projection["routing"]; ok {
+		t.Fatalf("routing must not survive: %v", preview.Projection["routing"])
+	}
+}

@@ -5,8 +5,11 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
+	"strings"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
 	"github.com/daniellavrushin/b4hub/internal/ingest"
@@ -22,6 +25,10 @@ const (
 	noTargetsWarning = "no_targets"
 
 	maxEditBytes = 128 << 10
+
+	strippedPrivate      = "private"
+	strippedNotShareable = "not_shareable"
+	unknownFieldsWarning = "unknown_fields"
 )
 
 type editFailure struct {
@@ -33,6 +40,93 @@ type editFailure struct {
 type editResult struct {
 	preview    EditPreview
 	targetsKey string
+}
+
+func lookupPath(m map[string]interface{}, path string) (interface{}, bool) {
+	var cur interface{} = m
+	for _, part := range strings.Split(path, ".") {
+		sub, ok := cur.(map[string]interface{})
+		if !ok {
+			return nil, false
+		}
+		if cur, ok = sub[part]; !ok {
+			return nil, false
+		}
+	}
+	return cur, true
+}
+
+func leafPaths(m map[string]interface{}, prefix string, out map[string]interface{}) {
+	for k, v := range m {
+		path := k
+		if prefix != "" {
+			path = prefix + "." + k
+		}
+		if sub, ok := v.(map[string]interface{}); ok {
+			if _, leaf := hubwire.Fields[path]; !leaf {
+				leafPaths(sub, path, out)
+				continue
+			}
+		}
+		out[path] = v
+	}
+}
+
+func isPrivatePath(path string) bool {
+	for i := len(path); i > 0; i-- {
+		if i < len(path) && path[i] != '.' {
+			continue
+		}
+		if f, ok := hubwire.Fields[path[:i]]; ok && f.Class == hubwire.Never {
+			return true
+		}
+	}
+	return false
+}
+
+func unknownFields(warnings []hubwire.Warning) map[string]bool {
+	out := make(map[string]bool)
+	for _, w := range warnings {
+		if w.Code != unknownFieldsWarning {
+			continue
+		}
+		if paths, ok := w.Params["paths"].([]string); ok {
+			for _, p := range paths {
+				out[p] = true
+			}
+		}
+	}
+	return out
+}
+
+func strippedPaths(requested, result map[string]interface{}, warnings []hubwire.Warning) ([]hubwire.Stripped, error) {
+	defSet := config.NewSetConfig()
+	def, err := config.SetToMap(&defSet)
+	if err != nil {
+		return nil, err
+	}
+	unknown := unknownFields(warnings)
+	leaves := make(map[string]interface{})
+	leafPaths(requested, "", leaves)
+	out := make([]hubwire.Stripped, 0)
+	for path, value := range leaves {
+		if unknown[path] {
+			continue
+		}
+		if _, kept := lookupPath(result, path); kept {
+			continue
+		}
+		if defValue, ok := lookupPath(def, path); ok && sameJSON(value, defValue) {
+			continue
+		}
+		reason := strippedNotShareable
+		if isPrivatePath(path) {
+			reason = strippedPrivate
+		}
+		out = append(out, hubwire.Stripped{Path: path, Reason: reason})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out, nil
 }
 
 func sameJSON(a, b interface{}) bool {
@@ -94,6 +188,10 @@ func (s *Server) prepareEdit(ctx context.Context, v *store.Version, req EditRequ
 	for _, p := range imp.Payloads {
 		payloads = append(payloads, hubwire.BlobRef{SHA256: p.SHA256, Protocol: p.Protocol, Domain: p.Domain, Size: p.Size})
 	}
+	stripped, err := strippedPaths(req.Projection, projection, imp.Warnings)
+	if err != nil {
+		return nil, &editFailure{http.StatusInternalServerError, codeInternal, err.Error()}
+	}
 	title := clipRunes(imp.Set.Name, ingest.MaxTitleRunes)
 	preview := EditPreview{
 		Title:       title,
@@ -101,7 +199,7 @@ func (s *Server) prepareEdit(ctx context.Context, v *store.Version, req EditRequ
 		Projection:  projection,
 		Payloads:    payloads,
 		Warnings:    imp.Warnings,
-		Stripped:    report.Stripped,
+		Stripped:    append(report.Stripped, stripped...),
 		FP:          imp.Fingerprint,
 		FPChanged:   imp.Fingerprint != v.FP,
 		Changed:     title != v.Title || env.Description != v.Description || !sameJSON(projection, v.Projection),
@@ -114,9 +212,6 @@ func (s *Server) prepareEdit(ctx context.Context, v *store.Version, req EditRequ
 	}
 	if preview.Warnings == nil {
 		preview.Warnings = []hubwire.Warning{}
-	}
-	if preview.Stripped == nil {
-		preview.Stripped = []hubwire.Stripped{}
 	}
 	targetsKey := ingest.TargetsKey(projection)
 	existing, err := s.Store.FindDuplicate(ctx, imp.Fingerprint, targetsKey)

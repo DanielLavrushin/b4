@@ -14,7 +14,7 @@ import {
   Typography,
 } from "@mui/material";
 import type { TFunction } from "i18next";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { colors, fonts } from "@design";
 import { useSetEdit, useSetPreview } from "@/api/hub";
@@ -231,20 +231,32 @@ export function EditSetDialog({ entry, onClose }: EditSetDialogProps) {
 
   const notObject = t("edit.notObject");
   const parsed = useMemo(() => parse(text, notObject), [text, notObject]);
+  const sequence = useRef(0);
+  const latestDraft = useRef("");
+  const draftKey = parsed.projection ? JSON.stringify({ title, description, projection: parsed.projection }) : "";
+  useEffect(() => {
+    latestDraft.current = draftKey;
+  }, [draftKey]);
 
   const check = useCallback(
     (draft: Draft) => {
       if (!entry) return;
+      const key = JSON.stringify(draft);
+      sequence.current += 1;
+      const mine = sequence.current;
+      const current = () => mine === sequence.current && key === latestDraft.current;
       setCheckError(null);
       setStale(true);
       previewMutate(
         { id: entry.set_id, version: entry.version, body: { ...draft, note: "", approve: false } },
         {
           onSuccess: (data) => {
+            if (!current()) return;
             setResult(data);
             setStale(false);
           },
           onError: (err) => {
+            if (!current()) return;
             setResult(null);
             setCheckError(errorMessage(err));
           },
