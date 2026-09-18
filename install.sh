@@ -1550,6 +1550,14 @@ platform_call() {
     platform_dispatch "$B4_PLATFORM" "$func" "$@"
 }
 
+platform_call_optional() {
+    func="$1"
+    shift
+    fn="platform_${B4_PLATFORM}_${func}"
+    type "$fn" >/dev/null 2>&1 || return 0
+    "$fn" "$@"
+}
+
 platform_dispatch() {
     pid="$1"
     func="$2"
@@ -1886,6 +1894,38 @@ platform_keenetic_find_storage() {
     log_info "  - Newer models: Enable OPKG in system settings"
     log_info "  - Older models: Plug in a USB drive and install Entware"
     return 1
+}
+
+B4_KEENETIC_HOOK="/opt/etc/ndm/netfilter.d/50-b4.sh"
+
+platform_keenetic_install_hooks() {
+    ensure_dir "$(dirname "$B4_KEENETIC_HOOK")" "NDMS hook directory" || return 1
+    cat >"$B4_KEENETIC_HOOK" <<'EOF' || return 1
+#!/bin/sh
+[ "$type" = "iptables" ] || [ "$type" = "ip6tables" ] || exit 0
+case "$table" in
+mangle | nat | filter) ;;
+*) exit 0 ;;
+esac
+for f in /var/run/b4.pid /run/b4.pid /tmp/b4.pid /opt/var/run/b4.pid; do
+    [ -f "$f" ] || continue
+    pid=$(cat "$f" 2>/dev/null)
+    [ -n "$pid" ] || continue
+    [ "$(cat "/proc/$pid/comm" 2>/dev/null)" = "b4" ] || continue
+    kill -USR1 "$pid" 2>/dev/null && exit 0
+done
+pids=$(pidof b4 2>/dev/null)
+[ -n "$pids" ] && kill -USR1 $pids 2>/dev/null
+exit 0
+EOF
+    chmod +x "$B4_KEENETIC_HOOK" || return 1
+    log_ok "NDMS netfilter hook installed: ${B4_KEENETIC_HOOK}"
+}
+
+platform_keenetic_remove_hooks() {
+    [ -f "$B4_KEENETIC_HOOK" ] || return 0
+    rm -f "$B4_KEENETIC_HOOK" 2>/dev/null || return 1
+    log_info "Removed NDMS netfilter hook: ${B4_KEENETIC_HOOK}"
 }
 
 register_platform "keenetic"
@@ -3476,6 +3516,7 @@ action_install() {
         log_err "Service setup failed - b4 will not start automatically"
         _svc_failed=1
     }
+    platform_call_optional install_hooks || log_warn "Platform hooks could not be installed"
 
     if [ -n "$ENABLED_FEATURES" ]; then
         features_run
@@ -3574,6 +3615,7 @@ action_remove() {
 
     _removed_any=0
     _remove_netfilter_state
+    platform_call_optional remove_hooks || true
 
     if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
         if [ -n "$B4_SERVICE_DIR" ] && [ -f "${B4_SERVICE_DIR}/${B4_SERVICE_NAME}" ]; then
@@ -4028,6 +4070,7 @@ action_update() {
     fi
 
     refresh_legacy_service_script
+    platform_call_optional install_hooks || log_warn "Platform hooks could not be installed"
 
     _update_restart_b4
 

@@ -164,4 +164,36 @@ platform_keenetic_find_storage() {
     return 1
 }
 
+B4_KEENETIC_HOOK="/opt/etc/ndm/netfilter.d/50-b4.sh"
+
+platform_keenetic_install_hooks() {
+    ensure_dir "$(dirname "$B4_KEENETIC_HOOK")" "NDMS hook directory" || return 1
+    cat >"$B4_KEENETIC_HOOK" <<'EOF' || return 1
+#!/bin/sh
+[ "$type" = "iptables" ] || [ "$type" = "ip6tables" ] || exit 0
+case "$table" in
+mangle | nat | filter) ;;
+*) exit 0 ;;
+esac
+for f in /var/run/b4.pid /run/b4.pid /tmp/b4.pid /opt/var/run/b4.pid; do
+    [ -f "$f" ] || continue
+    pid=$(cat "$f" 2>/dev/null)
+    [ -n "$pid" ] || continue
+    [ "$(cat "/proc/$pid/comm" 2>/dev/null)" = "b4" ] || continue
+    kill -USR1 "$pid" 2>/dev/null && exit 0
+done
+pids=$(pidof b4 2>/dev/null)
+[ -n "$pids" ] && kill -USR1 $pids 2>/dev/null
+exit 0
+EOF
+    chmod +x "$B4_KEENETIC_HOOK" || return 1
+    log_ok "NDMS netfilter hook installed: ${B4_KEENETIC_HOOK}"
+}
+
+platform_keenetic_remove_hooks() {
+    [ -f "$B4_KEENETIC_HOOK" ] || return 0
+    rm -f "$B4_KEENETIC_HOOK" 2>/dev/null || return 1
+    log_info "Removed NDMS netfilter hook: ${B4_KEENETIC_HOOK}"
+}
+
 register_platform "keenetic"

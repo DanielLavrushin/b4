@@ -439,14 +439,26 @@ func loadHashlimitModule() {
 	})
 }
 
+var kernelModuleList = []string{
+	"nfnetlink", "nf_conntrack", "nf_conntrack_netlink", "xt_connbytes",
+	"nfnetlink_queue", "xt_NFQUEUE", "xt_multiport", "nf_tables", "nft_queue",
+	"nft_ct", "nf_nat", "nft_masq", "nft_tproxy", "nft_socket", "xt_MASQUERADE",
+	"xt_set", "nft_limit",
+}
+
 func loadKernelModules() {
 	modulesLoaded.Do(func() {
-		loadKernelModuleList(
-			"nfnetlink", "nf_conntrack", "nf_conntrack_netlink", "xt_connbytes",
-			"nfnetlink_queue", "xt_NFQUEUE", "xt_multiport", "nf_tables", "nft_queue",
-			"nft_ct", "nf_nat", "nft_masq", "nft_tproxy", "nft_socket", "xt_MASQUERADE",
-			"xt_set", "nft_limit",
-		)
+		loadKernelModuleList(kernelModuleList...)
 		loadHashlimitModule()
 	})
+}
+
+func ReloadKernelModules() {
+	loadKernelModuleList(kernelModuleList...)
+	kmodStateMu.Lock()
+	hashlimit := kmodAttempted["xt_hashlimit"]
+	kmodStateMu.Unlock()
+	if hashlimit {
+		loadKernelModuleList("xt_hashlimit")
+	}
 }

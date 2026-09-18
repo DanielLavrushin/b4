@@ -339,6 +339,7 @@ action_update() {
     fi
 
     refresh_legacy_service_script
+    platform_call_optional install_hooks || log_warn "Platform hooks could not be installed"
 
     _update_restart_b4
 

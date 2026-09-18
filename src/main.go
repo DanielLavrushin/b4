@@ -95,6 +95,25 @@ func runB4(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	var tablesMonitorRef atomic.Pointer[tables.Monitor]
+	recheckSig := make(chan os.Signal, 1)
+	signal.Notify(recheckSig, syscall.SIGUSR1)
+	defer func() {
+		signal.Stop(recheckSig)
+		close(recheckSig)
+	}()
+	go func() {
+		for range recheckSig {
+			mon := tablesMonitorRef.Load()
+			if mon == nil {
+				log.Infof("Received SIGUSR1, but the tables monitor is not running, so there are no firewall rules to re-check")
+				continue
+			}
+			log.Infof("Received SIGUSR1, re-checking firewall rules")
+			mon.Kick()
+		}
+	}()
+
 	releaseLock, err := ensureSingleInstance()
 	if err != nil {
 		return err
@@ -369,6 +388,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		if !cfg.System.Tables.SkipSetup && cfg.System.Tables.MonitorInterval > 0 {
 			tablesMonitor = tables.NewMonitor(&cfgPtr)
 			tablesMonitor.Start()
+			tablesMonitorRef.Store(tablesMonitor)
 		}
 	}
 

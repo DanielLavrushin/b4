@@ -25,6 +25,14 @@ platform_call() {
     platform_dispatch "$B4_PLATFORM" "$func" "$@"
 }
 
+platform_call_optional() {
+    func="$1"
+    shift
+    fn="platform_${B4_PLATFORM}_${func}"
+    type "$fn" >/dev/null 2>&1 || return 0
+    "$fn" "$@"
+}
+
 # Dispatch to a specific platform
 # Usage: platform_dispatch <platform_id> <function> [args...]
 platform_dispatch() {

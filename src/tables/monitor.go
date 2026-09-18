@@ -18,7 +18,11 @@ type Monitor struct {
 	interval time.Duration
 	backend  string
 
-	started bool
+	started    bool
+	kick       chan struct{}
+	kickSettle time.Duration
+	startDelay time.Duration
+	tickFn     func(cfg *config.Config) bool
 
 	ifaceStateMu sync.Mutex
 	ifaceState   map[string]ifaceSnapshot
@@ -37,6 +41,11 @@ var (
 	dnsRequestPortMatch  = "dport 53"
 )
 
+const (
+	monitorKickSettle = 1500 * time.Millisecond
+	monitorStartDelay = 5 * time.Second
+)
+
 func NewMonitor(cfgPtr *atomic.Pointer[config.Config]) *Monitor {
 	cfg := cfgPtr.Load()
 	interval := time.Duration(cfg.System.Tables.MonitorInterval) * time.Second
@@ -44,14 +53,26 @@ func NewMonitor(cfgPtr *atomic.Pointer[config.Config]) *Monitor {
 		interval = 10 * time.Second
 	}
 
-	return &Monitor{
+	m := &Monitor{
 		cfgPtr:       cfgPtr,
 		stop:         make(chan struct{}),
 		interval:     interval,
 		backend:      detectFirewallBackend(cfg),
+		kick:         make(chan struct{}, 1),
+		kickSettle:   monitorKickSettle,
+		startDelay:   monitorStartDelay,
 		ifaceState:   make(map[string]ifaceSnapshot),
 		egressIPHere: make(map[string]bool),
 		linkWatcher:  newLinkWatcher(cfgPtr),
+	}
+	m.tickFn = m.tick
+	return m
+}
+
+func (m *Monitor) Kick() {
+	select {
+	case m.kick <- struct{}{}:
+	default:
 	}
 }
 
@@ -99,7 +120,7 @@ func (m *Monitor) monitorLoop() {
 	select {
 	case <-m.stop:
 		return
-	case <-time.After(5 * time.Second):
+	case <-time.After(m.startDelay):
 	}
 
 	ticker := time.NewTicker(m.interval)
@@ -112,34 +133,66 @@ func (m *Monitor) monitorLoop() {
 		case <-m.stop:
 			return
 		case <-ticker.C:
-			cfg := m.cfgPtr.Load()
-			if !m.checkRules(cfg) {
-				log.Warnf("Tables rules missing, restoring...")
-				if err := m.restoreRules(cfg); err != nil {
-					log.Errorf("Failed to restore tables rules: %v", err)
-				} else {
-					log.Infof("Tables rules restored successfully")
-				}
-				m.snapshotRoutingIfaces(cfg)
+			m.tickFn(m.cfgPtr.Load())
+		case <-m.kick:
+			if !m.settleKicks() {
+				return
 			}
-
-			if m.routingIfacesChanged(cfg) {
-				log.Warnf("Routing interface change detected, resyncing routing rules...")
-				RoutingForceResync(cfg)
-				m.snapshotRoutingIfaces(cfg)
-				log.Tracef("Routing rules resynced after interface change")
-			} else if !RoutingRulesPresent(cfg) {
-				log.Warnf("Routing rules missing, restoring...")
-				RoutingForceResync(cfg)
-				m.snapshotRoutingIfaces(cfg)
-				log.Infof("Routing rules restored successfully")
-			} else {
-				RoutingReconcilePolicyRules(cfg)
-				RoutingEnsureJumpPrecedence(cfg)
-				RoutingPeriodicReResolve(cfg)
+			if !m.tickFn(m.cfgPtr.Load()) {
+				log.Infof("Tables rules re-checked on request, all present")
 			}
 		}
 	}
+}
+
+func (m *Monitor) settleKicks() bool {
+	timer := time.NewTimer(m.kickSettle)
+	defer timer.Stop()
+	for {
+		select {
+		case <-m.stop:
+			return false
+		case <-m.kick:
+			if !timer.Stop() {
+				<-timer.C
+			}
+			timer.Reset(m.kickSettle)
+		case <-timer.C:
+			return true
+		}
+	}
+}
+
+func (m *Monitor) tick(cfg *config.Config) bool {
+	restored := false
+	if !m.checkRules(cfg) {
+		restored = true
+		log.Warnf("Tables rules missing, restoring...")
+		if err := m.restoreRules(cfg); err != nil {
+			log.Errorf("Failed to restore tables rules: %v", err)
+		} else {
+			log.Infof("Tables rules restored successfully")
+		}
+		m.snapshotRoutingIfaces(cfg)
+	}
+
+	if m.routingIfacesChanged(cfg) {
+		log.Warnf("Routing interface change detected, resyncing routing rules...")
+		RoutingForceResync(cfg)
+		m.snapshotRoutingIfaces(cfg)
+		log.Tracef("Routing rules resynced after interface change")
+	} else if !RoutingRulesPresent(cfg) {
+		restored = true
+		log.Warnf("Routing rules missing, restoring...")
+		RoutingForceResync(cfg)
+		m.snapshotRoutingIfaces(cfg)
+		log.Infof("Routing rules restored successfully")
+	} else {
+		RoutingReconcilePolicyRules(cfg)
+		RoutingEnsureJumpPrecedence(cfg)
+		RoutingPeriodicReResolve(cfg)
+	}
+	return restored
 }
 
 func (m *Monitor) checkRules(cfg *config.Config) bool {
@@ -366,6 +419,7 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 }
 
 func (m *Monitor) restoreRules(cfg *config.Config) error {
+	ReloadKernelModules()
 	return AddRules(cfg)
 }
 

@@ -205,6 +205,7 @@ action_install() {
         log_err "Service setup failed - b4 will not start automatically"
         _svc_failed=1
     }
+    platform_call_optional install_hooks || log_warn "Platform hooks could not be installed"
 
     # --- Run enabled features ---
     if [ -n "$ENABLED_FEATURES" ]; then

@@ -56,6 +56,9 @@ func (im *IPTablesManager) checkConnbytesSupport(ipt string) error {
 	}
 
 	err := fmt.Errorf("xt_connbytes kernel module is not available for %s (%v) - install it with: modprobe xt_connbytes (or apt install xtables-addons-common / linux-modules-extra-$(uname -r))", ipt, probeErr)
+	if kmodLoaded("xt_connbytes") {
+		err = fmt.Errorf("%s rejected the connbytes match although the xt_connbytes kernel module is loaded (%v) - the iptables match library is missing (OpenWrt/Entware: opkg install iptables-mod-conntrack-extra) or another program kept rewriting the filter table while b4 was probing it", ipt, probeErr)
+	}
 	im.connbytesSupport[ipt] = err
 	return err
 }
@@ -110,13 +113,32 @@ func (im *IPTablesManager) hasConnmarkSupport(ipt string) bool {
 	return supported
 }
 
-// probeModuleInTempChain tests whether a rule spec is accepted by iptables
-// using a temporary chain in the given table, so the probe never touches live
-// traffic. Probe in the table where the rule will actually be installed - some
-// targets (e.g. TPROXY) are table-restricted, so probing in the wrong table can
-// yield a false negative.
+const (
+	probeAttempts   = 3
+	probeRetryDelay = 300 * time.Millisecond
+)
+
+var probeSleep = time.Sleep
+
 func (im *IPTablesManager) probeModuleInTempChain(ipt, table string, testSpec []string) (bool, error) {
 	const tmpChain = "B4_MODULE_TEST"
+	var err error
+	for attempt := 1; attempt <= probeAttempts; attempt++ {
+		var chainGone bool
+		chainGone, err = im.probeOnce(ipt, table, tmpChain, testSpec)
+		if err == nil {
+			return true, nil
+		}
+		if !chainGone || attempt == probeAttempts {
+			break
+		}
+		log.Debugf("IPTABLES[%s]: another program rewrote the %s table while b4 was probing it (attempt %d of %d), retrying", ipt, table, attempt, probeAttempts)
+		probeSleep(probeRetryDelay)
+	}
+	return false, err
+}
+
+func (im *IPTablesManager) probeOnce(ipt, table, tmpChain string, testSpec []string) (chainGone bool, err error) {
 	_, _ = run(ipt, "-w", "-t", table, "-F", tmpChain)
 	_, _ = run(ipt, "-w", "-t", table, "-X", tmpChain)
 	if _, err := run(ipt, "-w", "-t", table, "-N", tmpChain); err != nil {
@@ -126,8 +148,10 @@ func (im *IPTablesManager) probeModuleInTempChain(ipt, table string, testSpec []
 		_, _ = run(ipt, "-w", "-t", table, "-F", tmpChain)
 		_, _ = run(ipt, "-w", "-t", table, "-X", tmpChain)
 	}()
-	_, err := run(append([]string{ipt, "-w", "-t", table, "-A", tmpChain}, testSpec...)...)
-	return err == nil, err
+	if _, err = run(append([]string{ipt, "-w", "-t", table, "-A", tmpChain}, testSpec...)...); err == nil {
+		return false, nil
+	}
+	return !im.existsChain(ipt, table, tmpChain), err
 }
 
 func (im *IPTablesManager) existsChain(ipt, table, chain string) bool {

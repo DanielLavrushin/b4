@@ -20,6 +20,7 @@ action_remove() {
 
     _removed_any=0
     _remove_netfilter_state
+    platform_call_optional remove_hooks || true
 
     # Remove service
     if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then

@@ -73,6 +73,18 @@ The installer detects the architecture automatically.
 Without Entware, b4 is placed in `/tmp`, which is cleared on every reboot. For persistent operation, Entware is required.
 :::
 
+## Firewall rewrites {#firewall-rewrites}
+
+NDMS rebuilds its netfilter tables on its own schedule: a UPnP port mapping renewal, a WAN reconnect, a change to a policy or a component. Each rebuild drops the chains it does not own, including those of b4, and then runs every script under `/opt/etc/ndm/netfilter.d/` with the table name in `$table` and the family in `$type`.
+
+The installer places `50-b4.sh` in that directory. The script sends `SIGUSR1` to the running b4 process, which re-checks its rules as soon as the rebuild settles and restores what is missing. Without the hook, the tables monitor still restores the rules on its next poll, which is up to `system.tables.monitor_interval` seconds later (10 by default).
+
+A rewrite leaves `Tables rules missing, restoring...` followed by `Tables rules restored successfully` in the log. The same re-check can be requested by hand:
+
+```bash
+kill -USR1 $(cat /var/run/b4.pid)
+```
+
 ## Troubleshooting
 
 After the service starts, the log is worth checking:
