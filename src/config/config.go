@@ -343,6 +343,7 @@ func NewConfig() Config {
 	cfg := DefaultConfig
 
 	cfg.Sets = []*SetConfig{}
+	cfg.System.Checker.ReferenceDNS = append(make([]string, 0), DefaultConfig.System.Checker.ReferenceDNS...)
 
 	return cfg
 }

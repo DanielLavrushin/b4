@@ -1,5 +1,10 @@
 # B4 - Bye Bye Big Bro
 
+## [1.82.1] - 2026-09-18
+
+- FIXED: **An update could leave a damaged b4 binary behind when the router was rebooted soon after it** - the installer checked the new file and deleted the previous copy before the write had reached the storage, so a reboot that came before the disk caught up left a file of the right size with garbage inside, and b4 crashed on every start.
+- FIXED: **A custom list of five fallback UDP DNS servers under Settings, Discovery was gone after the next restart** - the loaded list was written over the built-in default it was later compared against, so the save took it for the default and left it out of the file.
+
 ## [1.82.0] - 2026-09-17
 
 - ADDED: **Community Hub: a set can be published to hub.b4core.app, and sets other b4 users published can be browsed, applied and rated from a new Community page** - a shared set carries only the strategy, its targets and its payload files, leaves out everything tied to the router, waits for a moderator before it appears, and stays linked once applied so it can be rated, updated or reported, while Discovery tries community sets for a domain before its own presets. It sits behind one switch under Settings, Integrations, off by default, and the `b4hub` service that ships alongside runs a self-hosted hub or a mirror of the central one, with the daily limits per contributor set from its moderation console and trusted keys exempt from them.

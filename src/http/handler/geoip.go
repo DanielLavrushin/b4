@@ -67,7 +67,7 @@ func (a *API) AddGeoIpTag(w http.ResponseWriter, r *http.Request) {
 	set := newCfg.GetSetById(req.SetId)
 
 	if set == nil && req.SetId == config.CreateSetSentinel {
-		newSet := config.DefaultSetConfig
+		newSet := config.NewSetConfig()
 		set = &newSet
 		set.Id = uuid.New().String()
 
