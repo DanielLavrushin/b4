@@ -932,3 +932,25 @@ func TestEditRekeysVotesWithoutCollision(t *testing.T) {
 		}
 	}
 }
+
+func TestEditRefusesWhenPayloadUnreadable(t *testing.T) {
+	f := newFixture(t, password)
+	ctx := context.Background()
+	id, env := f.share("Capture", authorAddress, "capture.example")
+	before, err := f.store.GetVersion(ctx, id, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.web.Blobs.Remove(env.Payloads[0].SHA256); err != nil {
+		t.Fatal(err)
+	}
+	req := EditRequest{Title: "Capture edited", Projection: before.Projection}
+	resp := f.admin(http.MethodPost, setPath(id, 1, "edit"), req)
+	if resp.status != http.StatusInternalServerError || !strings.Contains(resp.body, env.Payloads[0].SHA256) {
+		t.Fatalf("an unreadable payload must refuse the edit: %d %s", resp.status, resp.body)
+	}
+	after, _ := f.store.GetVersion(ctx, id, 1)
+	if after.Title != before.Title || len(after.Payloads) != 1 || !sameJSON(after.Projection, before.Projection) {
+		t.Fatalf("the version must be untouched: %+v", after)
+	}
+}

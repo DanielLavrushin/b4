@@ -73,7 +73,7 @@ func (s *Server) prepareEdit(ctx context.Context, v *store.Version, req EditRequ
 	for _, ref := range v.Payloads {
 		data, err := s.Blobs.Read(ref.SHA256)
 		if err != nil {
-			continue
+			return nil, &editFailure{http.StatusInternalServerError, codeInternal, "payload " + ref.SHA256 + " cannot be read, the set was left untouched: " + err.Error()}
 		}
 		env.Payloads = append(env.Payloads, hubwire.Payload{SHA256: ref.SHA256, Protocol: ref.Protocol, Domain: ref.Domain, Size: len(data), Data: data})
 	}
