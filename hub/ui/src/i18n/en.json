@@ -137,7 +137,7 @@
     "saveApprove": "Save and approve",
     "unchanged": "Nothing differs from the received set.",
     "targetsOnly": "Only targets, title or description differ. The strategy fingerprint stays the same, so existing votes still count.",
-    "fpChanged": "The strategy differs from what the author sent. The fingerprint changes and the published set will no longer match the author's own copy.",
+    "fpChanged": "The strategy differs from what the author sent. The fingerprint changes, the votes recorded for this version are dropped, and the published set will no longer match the author's own copy.",
     "duplicate": "The result duplicates {{ref}} ({{title}}, {{status}}). Saving is refused.",
     "tidy": "Suggestions for the domain list ({{count}})",
     "applyTidy": "Apply suggestions",
@@ -174,7 +174,8 @@
       "custom_payload_large": "The custom payload is large",
       "block_regexp": "A block set matches by pattern",
       "fingerprint_mismatch": "The fingerprint does not match the set"
-    }
+    },
+    "emptyValue": "(empty)"
   },
   "sets": {
     "listed": "Listed",

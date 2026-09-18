@@ -1,4 +1,5 @@
-import { Alert, Collapse, Link } from "@mui/material";
+import { Alert, Box, Collapse, Link, Typography } from "@mui/material";
+import { colors } from "@design";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -11,6 +12,13 @@ export function EditedNotice({ entry }: { entry: EntryView }) {
   const [compare, setCompare] = useState(false);
   if (!entry.edited_at) return null;
   const original = entry.original_projection;
+  const textChanges: { label: string; before: string; after: string }[] = [];
+  if (entry.original_title !== undefined && entry.original_title !== entry.title) {
+    textChanges.push({ label: t("edit.setTitle"), before: entry.original_title, after: entry.title });
+  }
+  if ((entry.original_description ?? "") !== (entry.description ?? "") && entry.original_projection !== undefined) {
+    textChanges.push({ label: t("edit.description"), before: entry.original_description ?? "", after: entry.description ?? "" });
+  }
   const note = entry.edit_note ? ` · ${t("queue.editedNote", { note: entry.edit_note })}` : "";
   return (
     <>
@@ -32,6 +40,19 @@ export function EditedNotice({ entry }: { entry: EntryView }) {
       </Alert>
       {original !== undefined && (
         <Collapse in={compare} unmountOnExit>
+          {textChanges.length > 0 && (
+            <Box sx={{ mb: 1.5, display: "flex", flexDirection: "column", gap: 0.5 }}>
+              {textChanges.map((c) => (
+                <Typography key={c.label} variant="body2">
+                  {c.label}:{" "}
+                  <Typography component="span" variant="body2" sx={{ color: colors.text.secondary, textDecoration: "line-through" }}>
+                    {c.before || t("edit.emptyValue")}
+                  </Typography>{" "}
+                  {c.after || t("edit.emptyValue")}
+                </Typography>
+              ))}
+            </Box>
+          )}
           <ProjectionDiff
             before={original}
             after={entry.projection}

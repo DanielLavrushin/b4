@@ -23,34 +23,36 @@ type Set struct {
 }
 
 type Version struct {
-	RowID              int64
-	SetID              string
-	Version            int
-	FP                 string
-	TargetsKey         string
-	Title              string
-	Description        string
-	Projection         map[string]interface{}
-	Payloads           []hubwire.BlobRef
-	Flags              []string
-	Geo                *hubwire.GeoSource
-	B4Min              string
-	B4Version          string
-	Engine             string
-	Family             string
-	Status             string
-	StatusReason       string
-	RecordID           string
-	UploaderHMAC       string
-	ASNObserved        string
-	CountryObserved    string
-	ASNHint            string
-	CountryHint        string
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
-	OriginalProjection map[string]interface{}
-	EditedAt           time.Time
-	EditNote           string
+	RowID               int64
+	SetID               string
+	Version             int
+	FP                  string
+	TargetsKey          string
+	Title               string
+	Description         string
+	Projection          map[string]interface{}
+	Payloads            []hubwire.BlobRef
+	Flags               []string
+	Geo                 *hubwire.GeoSource
+	B4Min               string
+	B4Version           string
+	Engine              string
+	Family              string
+	Status              string
+	StatusReason        string
+	RecordID            string
+	UploaderHMAC        string
+	ASNObserved         string
+	CountryObserved     string
+	ASNHint             string
+	CountryHint         string
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	OriginalProjection  map[string]interface{}
+	OriginalTitle       string
+	OriginalDescription string
+	EditedAt            time.Time
+	EditNote            string
 }
 
 var (
@@ -75,7 +77,7 @@ type VersionEdit struct {
 
 const versionColumns = `id, set_id, version, fp, targets_key, title, description, projection_json, payloads_json, flags_json, geo_json,
 	b4_min, b4_version, engine, family, status, status_reason, record_id, uploader_hmac, asn_observed, country_observed, asn_hint, country_hint, created_at, updated_at,
-	original_projection_json, edited_at, edit_note`
+	original_projection_json, edited_at, edit_note, original_title, original_description`
 
 type rowScanner interface {
 	Scan(dest ...interface{}) error
@@ -86,7 +88,7 @@ func scanVersion(row rowScanner) (*Version, error) {
 	var projection, payloads, flags, geo, createdAt, updatedAt, original, editedAt string
 	err := row.Scan(&v.RowID, &v.SetID, &v.Version, &v.FP, &v.TargetsKey, &v.Title, &v.Description, &projection, &payloads, &flags, &geo,
 		&v.B4Min, &v.B4Version, &v.Engine, &v.Family, &v.Status, &v.StatusReason, &v.RecordID, &v.UploaderHMAC, &v.ASNObserved, &v.CountryObserved, &v.ASNHint, &v.CountryHint, &createdAt, &updatedAt,
-		&original, &editedAt, &v.EditNote)
+		&original, &editedAt, &v.EditNote, &v.OriginalTitle, &v.OriginalDescription)
 	if err != nil {
 		return nil, err
 	}
@@ -176,11 +178,11 @@ func insertVersionTx(ctx context.Context, tx *sql.Tx, v *Version) error {
 	}
 	res, err := tx.ExecContext(ctx, `INSERT INTO set_versions(set_id, version, fp, targets_key, title, description, projection_json, payloads_json, flags_json, geo_json,
 		b4_min, b4_version, engine, family, status, status_reason, record_id, uploader_hmac, asn_observed, country_observed, asn_hint, country_hint, created_at, updated_at,
-		original_projection_json, edited_at, edit_note)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		original_projection_json, edited_at, edit_note, original_title, original_description)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		v.SetID, v.Version, v.FP, v.TargetsKey, v.Title, v.Description, enc.projection, enc.payloads, enc.flags, enc.geo,
 		v.B4Min, v.B4Version, v.Engine, v.Family, v.Status, v.StatusReason, v.RecordID, v.UploaderHMAC, v.ASNObserved, v.CountryObserved, v.ASNHint, v.CountryHint, formatTime(v.CreatedAt), formatTime(v.UpdatedAt),
-		enc.original, formatTime(v.EditedAt), v.EditNote)
+		enc.original, formatTime(v.EditedAt), v.EditNote, v.OriginalTitle, v.OriginalDescription)
 	if err != nil {
 		return err
 	}
@@ -222,24 +224,21 @@ func (s *Store) EditVersion(ctx context.Context, setID string, version int, edit
 	v.UpdatedAt = now
 	if v.OriginalProjection == nil {
 		v.OriginalProjection = current.Projection
+		v.OriginalTitle = current.Title
+		v.OriginalDescription = current.Description
 	}
 	enc, err := encodeVersion(&v)
 	if err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE set_versions SET title = ?, description = ?, projection_json = ?, payloads_json = ?, flags_json = ?, fp = ?, targets_key = ?, b4_min = ?, family = ?,
-		original_projection_json = ?, edited_at = ?, edit_note = ?, updated_at = ? WHERE id = ?`,
+		original_projection_json = ?, edited_at = ?, edit_note = ?, original_title = ?, original_description = ?, updated_at = ? WHERE id = ?`,
 		v.Title, v.Description, enc.projection, enc.payloads, enc.flags, v.FP, v.TargetsKey, v.B4Min, v.Family,
-		enc.original, formatTime(v.EditedAt), v.EditNote, formatTime(v.UpdatedAt), v.RowID); err != nil {
+		enc.original, formatTime(v.EditedAt), v.EditNote, v.OriginalTitle, v.OriginalDescription, formatTime(v.UpdatedAt), v.RowID); err != nil {
 		return err
 	}
 	if current.FP != v.FP {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM votes WHERE set_id = ? AND version = ? AND EXISTS (
-			SELECT 1 FROM votes o WHERE o.id <> votes.id AND o.key_hmac = votes.key_hmac AND o.fp = ? AND o.asn_observed = votes.asn_observed AND o.bucket = votes.bucket)`,
-			setID, version, v.FP); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE votes SET fp = ? WHERE set_id = ? AND version = ?`, v.FP, setID, version); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM votes WHERE set_id = ? AND version = ?`, setID, version); err != nil {
 			return err
 		}
 	}

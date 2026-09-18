@@ -132,4 +132,8 @@ ALTER TABLE set_versions ADD COLUMN original_projection_json TEXT NOT NULL DEFAU
 ALTER TABLE set_versions ADD COLUMN edited_at TEXT NOT NULL DEFAULT '';
 ALTER TABLE set_versions ADD COLUMN edit_note TEXT NOT NULL DEFAULT '';
 `,
+	`
+ALTER TABLE set_versions ADD COLUMN original_title TEXT NOT NULL DEFAULT '';
+ALTER TABLE set_versions ADD COLUMN original_description TEXT NOT NULL DEFAULT '';
+`,
 }

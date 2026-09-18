@@ -120,6 +120,8 @@ export interface EntryView {
   edited_at?: string;
   edit_note?: string;
   original_projection?: Projection;
+  original_title?: string;
+  original_description?: string;
 }
 
 export type TidyKind = "dead_wildcard" | "covered" | "duplicate" | "www_only";
