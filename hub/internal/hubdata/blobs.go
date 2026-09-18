@@ -5,9 +5,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"time"
 
 	"github.com/daniellavrushin/b4/hubwire"
 )
+
+const SweepMinAge = time.Hour
 
 var blobHashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
@@ -32,6 +36,8 @@ func (b Blobs) Put(data []byte) (string, error) {
 	hash := hubwire.BlobHash(data)
 	path, _ := b.Path(hash)
 	if _, err := os.Stat(path); err == nil {
+		now := time.Now()
+		_ = os.Chtimes(path, now, now)
 		return hash, nil
 	}
 	if err := os.MkdirAll(b.Dir, 0o755); err != nil {
@@ -60,6 +66,39 @@ func (b Blobs) Remove(hash string) error {
 		return err
 	}
 	return nil
+}
+
+func (b Blobs) Sweep(referenced map[string]struct{}, minAge time.Duration, now time.Time) ([]string, error) {
+	entries, err := os.ReadDir(b.Dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	removed := make([]string, 0)
+	for _, entry := range entries {
+		hash := entry.Name()
+		if entry.IsDir() || !ValidBlobHash(hash) {
+			continue
+		}
+		if _, ok := referenced[hash]; ok {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if now.Sub(info.ModTime()) < minAge {
+			continue
+		}
+		if err := b.Remove(hash); err != nil {
+			return removed, err
+		}
+		removed = append(removed, hash)
+	}
+	sort.Strings(removed)
+	return removed, nil
 }
 
 func (b Blobs) Exists(hash string) bool {

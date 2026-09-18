@@ -200,34 +200,34 @@ func insertVersionTx(ctx context.Context, tx *sql.Tx, v *Version) error {
 	return nil
 }
 
-func (s *Store) EditVersion(ctx context.Context, setID string, version int, edit VersionEdit, now time.Time) ([]string, error) {
+func (s *Store) EditVersion(ctx context.Context, setID string, version int, edit VersionEdit, now time.Time) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer tx.Rollback()
 	current, err := scanVersion(tx.QueryRowContext(ctx, `SELECT `+versionColumns+` FROM set_versions WHERE set_id = ? AND version = ?`, setID, version))
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
+		return ErrNotFound
 	}
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if current.Status != hubwire.SetStatusPending {
-		return nil, ErrNotPending
+		return ErrNotPending
 	}
 	if !edit.Expect.IsZero() && !edit.Expect.Equal(current.UpdatedAt) {
-		return nil, ErrStale
+		return ErrStale
 	}
 	var dupSet string
 	var dupVersion int
 	err = tx.QueryRowContext(ctx, `SELECT set_id, version FROM set_versions WHERE fp = ? AND targets_key = ? AND status <> ? AND id <> ? LIMIT 1`,
 		edit.FP, edit.TargetsKey, hubwire.SetStatusRejected, current.RowID).Scan(&dupSet, &dupVersion)
 	if err == nil {
-		return nil, &DuplicateError{SetID: dupSet, Version: dupVersion}
+		return &DuplicateError{SetID: dupSet, Version: dupVersion}
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		return nil, err
+		return err
 	}
 	v := *current
 	v.Title = edit.Title
@@ -249,54 +249,47 @@ func (s *Store) EditVersion(ctx context.Context, setID string, version int, edit
 	}
 	enc, err := encodeVersion(&v)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE set_versions SET title = ?, description = ?, projection_json = ?, payloads_json = ?, flags_json = ?, fp = ?, targets_key = ?, b4_min = ?, family = ?,
 		original_projection_json = ?, edited_at = ?, edit_note = ?, original_title = ?, original_description = ?, updated_at = ? WHERE id = ?`,
 		v.Title, v.Description, enc.projection, enc.payloads, enc.flags, v.FP, v.TargetsKey, v.B4Min, v.Family,
 		enc.original, formatTime(v.EditedAt), v.EditNote, v.OriginalTitle, v.OriginalDescription, formatTime(v.UpdatedAt), v.RowID); err != nil {
-		return nil, err
+		return err
 	}
 	if current.FP != v.FP {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM votes WHERE set_id = ? AND version = ?`, setID, version); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	if edit.Approve {
 		if err := setStatusTx(ctx, tx, setID, version, hubwire.SetStatusActive, "", now); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	orphaned, err := orphanedBlobsTx(ctx, tx, current.Payloads, v.Payloads)
+	return tx.Commit()
+}
+
+func (s *Store) ReferencedBlobs(ctx context.Context) (map[string]struct{}, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT payloads_json FROM set_versions`)
 	if err != nil {
 		return nil, err
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	return orphaned, nil
-}
-
-func orphanedBlobsTx(ctx context.Context, tx *sql.Tx, before, after []hubwire.BlobRef) ([]string, error) {
-	kept := make(map[string]struct{}, len(after))
-	for _, ref := range after {
-		kept[ref.SHA256] = struct{}{}
-	}
-	orphaned := make([]string, 0)
-	for _, ref := range before {
-		if _, ok := kept[ref.SHA256]; ok {
-			continue
-		}
-		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM set_versions WHERE payloads_json LIKE ?`, "%"+ref.SHA256+"%").Scan(&n); err != nil {
+	defer rows.Close()
+	out := make(map[string]struct{})
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
 			return nil, err
 		}
-		if n == 0 {
-			orphaned = append(orphaned, ref.SHA256)
+		var refs []hubwire.BlobRef
+		if json.Unmarshal([]byte(raw), &refs) == nil {
+			for _, ref := range refs {
+				out[ref.SHA256] = struct{}{}
+			}
 		}
 	}
-	sort.Strings(orphaned)
-	return orphaned, nil
+	return out, rows.Err()
 }
 
 func (s *Store) CreateSet(ctx context.Context, set Set, v *Version) error {

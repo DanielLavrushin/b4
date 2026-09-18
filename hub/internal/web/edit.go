@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -292,7 +291,7 @@ func (s *Server) setEdit(w http.ResponseWriter, r *http.Request) {
 	if req.Expect != nil {
 		edit.Expect = *req.Expect
 	}
-	orphaned, err := s.Store.EditVersion(ctx, v.SetID, v.Version, edit, now)
+	err := s.Store.EditVersion(ctx, v.SetID, v.Version, edit, now)
 	var duplicate *store.DuplicateError
 	switch {
 	case errors.Is(err, store.ErrNotPending):
@@ -307,11 +306,6 @@ func (s *Server) setEdit(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		s.fail(w, err)
 		return
-	}
-	for _, hash := range orphaned {
-		if err := s.Blobs.Remove(hash); err != nil {
-			log.Printf("web: payload %s left behind after editing %s/%d: %v", hash, v.SetID, v.Version, err)
-		}
 	}
 	ref := v.SetID + "/" + strconv.Itoa(v.Version)
 	notice := "edited " + ref

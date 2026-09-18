@@ -1009,13 +1009,26 @@ func withoutCapture(t *testing.T, projection map[string]interface{}) map[string]
 	return out
 }
 
-func TestEditRemovesOrphanedPayloads(t *testing.T) {
+func TestSweepRemovesPayloadsNoEditReferences(t *testing.T) {
 	f := newFixture(t, password)
 	ctx := context.Background()
 	first, env := f.share("First", authorAddress, "first.example")
 	second, _ := f.share("Second", otherAddress, "second.example")
 	hash := env.Payloads[0].SHA256
-	for i, id := range []string{first, second} {
+	sweep := func(minAge time.Duration) []string {
+		t.Helper()
+		referenced, err := f.store.ReferencedBlobs(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		removed, err := f.web.Blobs.Sweep(referenced, minAge, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return removed
+	}
+	detach := func(id string) {
+		t.Helper()
 		v, err := f.store.GetVersion(ctx, id, 1)
 		if err != nil {
 			t.Fatal(err)
@@ -1024,13 +1037,17 @@ func TestEditRemovesOrphanedPayloads(t *testing.T) {
 		if resp := f.admin(http.MethodPost, setPath(id, 1, "edit"), req); resp.status != http.StatusOK {
 			t.Fatalf("edit %s: %d %s", id, resp.status, resp.body)
 		}
-		after, _ := f.store.GetVersion(ctx, id, 1)
-		if len(after.Payloads) != 0 {
-			t.Fatalf("the capture must be detached: %+v", after.Payloads)
-		}
-		if exists := f.web.Blobs.Exists(hash); exists != (i == 0) {
-			t.Fatalf("after edit %d the blob must exist=%v, got %v", i, i == 0, exists)
-		}
+	}
+	detach(first)
+	if removed := sweep(0); len(removed) != 0 || !f.web.Blobs.Exists(hash) {
+		t.Fatalf("a blob another version still uses must stay: %v", removed)
+	}
+	detach(second)
+	if removed := sweep(time.Hour); len(removed) != 0 || !f.web.Blobs.Exists(hash) {
+		t.Fatalf("a young unreferenced blob must survive the sweep: %v", removed)
+	}
+	if removed := sweep(0); len(removed) != 1 || removed[0] != hash || f.web.Blobs.Exists(hash) {
+		t.Fatalf("an old unreferenced blob must go: %v", removed)
 	}
 }
 
@@ -1042,7 +1059,7 @@ func TestEditRefusesDuplicateInsideTransaction(t *testing.T) {
 	a, _ := f.store.GetVersion(ctx, first, 1)
 	b, _ := f.store.GetVersion(ctx, second, 1)
 	edit := store.VersionEdit{Title: b.Title, Projection: a.Projection, Payloads: b.Payloads, Flags: b.Flags, FP: a.FP, TargetsKey: a.TargetsKey, B4Min: b.B4Min, Family: b.Family}
-	_, err := f.store.EditVersion(ctx, second, 1, edit, f.clock)
+	err := f.store.EditVersion(ctx, second, 1, edit, f.clock)
 	var dup *store.DuplicateError
 	if !errors.As(err, &dup) || dup.SetID != first || dup.Version != 1 {
 		t.Fatalf("the store must refuse a duplicate regardless of the preview: %v", err)

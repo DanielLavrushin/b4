@@ -14,6 +14,7 @@ import (
 	"github.com/daniellavrushin/b4hub/internal/asn"
 	"github.com/daniellavrushin/b4hub/internal/catalogue"
 	"github.com/daniellavrushin/b4hub/internal/geo"
+	"github.com/daniellavrushin/b4hub/internal/hubdata"
 	"github.com/daniellavrushin/b4hub/internal/ingest"
 	"github.com/daniellavrushin/b4hub/internal/ratelimit"
 	"github.com/daniellavrushin/b4hub/internal/web"
@@ -99,8 +100,33 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	go geoService.RunDaily(ctx)
 	go builder.Run(ctx, catalogue.DefaultInterval)
+	go sweepBlobs(ctx, svc, hubdata.SweepMinAge)
 	serveUntilSignal(newHTTPServer(serveFlags.listen, mux), cancel)
 	return nil
+}
+
+func sweepBlobs(ctx context.Context, svc *services, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		referenced, err := svc.store.ReferencedBlobs(ctx)
+		if err != nil {
+			log.Printf("blobs: sweep skipped: %v", err)
+			continue
+		}
+		removed, err := svc.layout.Blobs().Sweep(referenced, hubdata.SweepMinAge, time.Now())
+		if err != nil {
+			log.Printf("blobs: sweep: %v", err)
+		}
+		if len(removed) > 0 {
+			log.Printf("blobs: removed %d unreferenced payload(s)", len(removed))
+		}
+	}
 }
 
 func newHTTPServer(listen string, handler http.Handler) *http.Server {
