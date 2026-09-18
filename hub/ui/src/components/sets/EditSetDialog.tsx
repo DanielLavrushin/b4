@@ -311,7 +311,11 @@ export function EditSetDialog({ entry, onClose }: EditSetDialogProps) {
     const draft = currentDraft();
     if (!entry || !draft) return;
     try {
-      const outcome = await edit.mutateAsync({ id: entry.set_id, version: entry.version, body: { ...draft, note, approve } });
+      const outcome = await edit.mutateAsync({
+        id: entry.set_id,
+        version: entry.version,
+        body: { ...draft, note, approve, expect_updated_at: entry.updated_at },
+      });
       notify(outcome.notice, "success");
       onClose();
     } catch (err) {

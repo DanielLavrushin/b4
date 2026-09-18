@@ -53,7 +53,10 @@ type Version struct {
 	EditNote           string
 }
 
-var ErrNotPending = errors.New("only a pending version can be edited")
+var (
+	ErrNotPending = errors.New("only a pending version can be edited")
+	ErrStale      = errors.New("the version changed since it was loaded")
+)
 
 type VersionEdit struct {
 	Title       string
@@ -67,6 +70,7 @@ type VersionEdit struct {
 	Family      string
 	Note        string
 	Approve     bool
+	Expect      time.Time
 }
 
 const versionColumns = `id, set_id, version, fp, targets_key, title, description, projection_json, payloads_json, flags_json, geo_json,
@@ -199,6 +203,9 @@ func (s *Store) EditVersion(ctx context.Context, setID string, version int, edit
 	}
 	if current.Status != hubwire.SetStatusPending {
 		return ErrNotPending
+	}
+	if !edit.Expect.IsZero() && !edit.Expect.Equal(current.UpdatedAt) {
+		return ErrStale
 	}
 	v := *current
 	v.Title = edit.Title

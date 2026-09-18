@@ -122,6 +122,7 @@ type EditRequest struct {
 	Projection  map[string]interface{} `json:"projection"`
 	Note        string                 `json:"note"`
 	Approve     bool                   `json:"approve"`
+	Expect      *time.Time             `json:"expect_updated_at,omitempty"`
 }
 
 type DuplicateView struct {

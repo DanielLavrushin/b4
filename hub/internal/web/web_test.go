@@ -990,3 +990,32 @@ func TestPreviewReportsStrippedFields(t *testing.T) {
 		t.Fatalf("routing must not survive: %v", preview.Projection["routing"])
 	}
 }
+
+func TestEditRefusesStaleRevision(t *testing.T) {
+	f := newFixture(t, password)
+	ctx := context.Background()
+	id, _ := f.share("Stale", authorAddress, "stale.example")
+	loaded, err := f.store.GetVersion(ctx, id, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened := loaded.UpdatedAt
+	f.clock = f.clock.Add(time.Minute)
+	first := EditRequest{Title: "First moderator", Projection: loaded.Projection, Expect: &opened}
+	if resp := f.admin(http.MethodPost, setPath(id, 1, "edit"), first); resp.status != http.StatusOK {
+		t.Fatalf("first edit: %d %s", resp.status, resp.body)
+	}
+	second := EditRequest{Title: "Second moderator", Projection: loaded.Projection, Expect: &opened}
+	resp := f.admin(http.MethodPost, setPath(id, 1, "edit"), second)
+	if resp.status != http.StatusConflict || !strings.Contains(resp.body, codeStale) {
+		t.Fatalf("an edit from a stale dialog must be refused: %d %s", resp.status, resp.body)
+	}
+	v, _ := f.store.GetVersion(ctx, id, 1)
+	if v.Title != "First moderator" {
+		t.Fatalf("the first edit must stand: %+v", v)
+	}
+	fresh := EditRequest{Title: "Second moderator", Projection: loaded.Projection, Expect: &v.UpdatedAt}
+	if resp := f.admin(http.MethodPost, setPath(id, 1, "edit"), fresh); resp.status != http.StatusOK {
+		t.Fatalf("an edit with the current revision must pass: %d %s", resp.status, resp.body)
+	}
+}

@@ -159,6 +159,7 @@ export interface EditRequest {
   projection: Projection;
   note: string;
   approve: boolean;
+  expect_updated_at?: string;
 }
 
 export interface EditPreview {

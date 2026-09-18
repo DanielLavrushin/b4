@@ -21,6 +21,7 @@ const (
 	codeNotPending = "not_pending"
 	codeDuplicate  = "duplicate_strategy"
 	codeUnchanged  = "unchanged"
+	codeStale      = "stale"
 
 	noTargetsWarning = "no_targets"
 
@@ -287,10 +288,18 @@ func (s *Server) setEdit(w http.ResponseWriter, r *http.Request) {
 		Note:        cleanReason(req.Note),
 		Approve:     req.Approve,
 	}
-	if err := s.Store.EditVersion(ctx, v.SetID, v.Version, edit, now); errors.Is(err, store.ErrNotPending) {
+	if req.Expect != nil {
+		edit.Expect = *req.Expect
+	}
+	err := s.Store.EditVersion(ctx, v.SetID, v.Version, edit, now)
+	switch {
+	case errors.Is(err, store.ErrNotPending):
 		writeError(w, http.StatusConflict, codeNotPending, err.Error())
 		return
-	} else if err != nil {
+	case errors.Is(err, store.ErrStale):
+		writeError(w, http.StatusConflict, codeStale, "the version was changed by someone else since the dialog was opened; close it and open the current one")
+		return
+	case err != nil:
 		s.fail(w, err)
 		return
 	}
