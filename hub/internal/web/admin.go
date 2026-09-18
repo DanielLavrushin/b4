@@ -548,7 +548,7 @@ func (s *Server) catalogueView(ctx context.Context) (CatalogueView, error) {
 
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	view := OverviewView{Version: s.Version, KeyID: s.KeyID, PublicURL: s.PublicURL, Now: s.now(), Geo: []geo.FileStatus{}}
+	view := OverviewView{Version: s.Version, Source: s.Source, KeyID: s.KeyID, PublicURL: s.PublicURL, Now: s.now(), Geo: []geo.FileStatus{}}
 	var err error
 	if view.Catalogue, err = s.catalogueView(ctx); err != nil {
 		s.fail(w, err)

@@ -277,6 +277,7 @@ type CountsView struct {
 
 type OverviewView struct {
 	Version   string           `json:"version"`
+	Source    string           `json:"source,omitempty"`
 	KeyID     string           `json:"key_id"`
 	PublicURL string           `json:"public_url,omitempty"`
 	Now       time.Time        `json:"now"`

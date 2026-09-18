@@ -45,6 +45,7 @@ type Server struct {
 	Secret        []byte
 	AdminPassword string
 	Version       string
+	Source        string
 	KeyID         string
 	PublicURL     string
 	Rebuild       func() error

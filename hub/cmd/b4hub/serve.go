@@ -48,7 +48,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer svc.store.Close()
-	log.Printf("b4hub %s, key id %s, data %s", Version, svc.identity.KeyID(), svc.layout.Root)
+	log.Printf("b4hub %s, key id %s, data %s", versionString(), svc.identity.KeyID(), svc.layout.Root)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -83,6 +83,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Secret:        svc.secret,
 		AdminPassword: os.Getenv(envAdminPassword),
 		Version:       Version,
+		Source:        Source,
 		KeyID:         svc.identity.KeyID(),
 		PublicURL:     serveFlags.publicURL,
 		Rebuild: func() error {

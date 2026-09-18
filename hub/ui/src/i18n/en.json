@@ -70,6 +70,7 @@
     "clean": "Catalogue matches the store",
     "keyId": "Key id",
     "version": "Version",
+    "source": "b4 source tree",
     "publicUrl": "Public URL",
     "revoked": "Revoked keys",
     "geoFile": "File",

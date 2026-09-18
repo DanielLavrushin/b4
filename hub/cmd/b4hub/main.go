@@ -16,7 +16,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var Version = "dev"
+var (
+	Version = "dev"
+	Source  = "unknown"
+)
+
+func versionString() string {
+	return Version + " (b4 " + Source + ")"
+}
 
 const (
 	defaultData   = "data"
@@ -53,7 +60,7 @@ Every flag has an environment variable counterpart used as its default:
   --upstream-key  ` + envUpstreamKey + `
   --trusted-proxies ` + envTrustedProxies + `
 The moderation password is read only from ` + envAdminPassword + `.`,
-	Version:       Version,
+	Version:       versionString(),
 	SilenceUsage:  true,
 	SilenceErrors: true,
 }
@@ -76,7 +83,7 @@ var versionCmd = &cobra.Command{
 	Short: "Print the version and exit",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println(Version)
+		fmt.Println(versionString())
 	},
 }
 

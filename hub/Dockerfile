@@ -27,11 +27,12 @@ COPY hub/ ./hub/
 COPY --from=ui-builder /app/hub/ui/dist ./hub/ui/dist
 
 ARG VERSION=dev
+ARG B4_SOURCE=unknown
 ARG TARGETARCH
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go -C hub build \
     -trimpath \
-    -ldflags "-s -w -X main.Version=${VERSION}" \
+    -ldflags "-s -w -X main.Version=${VERSION} -X main.Source=${B4_SOURCE}" \
     -o /b4hub ./cmd/b4hub
 
 FROM alpine:3.23.3

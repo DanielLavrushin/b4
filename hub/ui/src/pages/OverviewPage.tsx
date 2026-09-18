@@ -89,6 +89,7 @@ export function OverviewPage() {
             <Facts
               items={[
                 { label: t("overview.version"), value: data.version },
+                { label: t("overview.source"), value: data.source ?? "" },
                 { label: t("overview.keyId"), value: data.key_id, mono: true },
                 {
                   label: t("overview.publicUrl"),
