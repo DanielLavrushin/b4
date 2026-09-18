@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4hub/internal/api"
 	"github.com/daniellavrushin/b4hub/internal/asn"
@@ -996,5 +997,57 @@ func TestEditRefusesStaleRevision(t *testing.T) {
 	fresh := EditRequest{Title: "Second moderator", Projection: loaded.Projection, Expect: &v.UpdatedAt}
 	if resp := f.admin(http.MethodPost, setPath(id, 1, "edit"), fresh); resp.status != http.StatusOK {
 		t.Fatalf("an edit with the current revision must pass: %d %s", resp.status, resp.body)
+	}
+}
+
+func withoutCapture(t *testing.T, projection map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	out := projectionCopy(t, projection)
+	faking, _ := out["faking"].(map[string]interface{})
+	delete(faking, "payload_file")
+	faking["sni_type"] = config.FakePayloadDefault1
+	return out
+}
+
+func TestEditRemovesOrphanedPayloads(t *testing.T) {
+	f := newFixture(t, password)
+	ctx := context.Background()
+	first, env := f.share("First", authorAddress, "first.example")
+	second, _ := f.share("Second", otherAddress, "second.example")
+	hash := env.Payloads[0].SHA256
+	for i, id := range []string{first, second} {
+		v, err := f.store.GetVersion(ctx, id, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := EditRequest{Title: v.Title, Projection: withoutCapture(t, v.Projection)}
+		if resp := f.admin(http.MethodPost, setPath(id, 1, "edit"), req); resp.status != http.StatusOK {
+			t.Fatalf("edit %s: %d %s", id, resp.status, resp.body)
+		}
+		after, _ := f.store.GetVersion(ctx, id, 1)
+		if len(after.Payloads) != 0 {
+			t.Fatalf("the capture must be detached: %+v", after.Payloads)
+		}
+		if exists := f.web.Blobs.Exists(hash); exists != (i == 0) {
+			t.Fatalf("after edit %d the blob must exist=%v, got %v", i, i == 0, exists)
+		}
+	}
+}
+
+func TestEditRefusesDuplicateInsideTransaction(t *testing.T) {
+	f := newFixture(t, password)
+	ctx := context.Background()
+	first, _ := f.share("First", authorAddress, "same.example")
+	second, _ := f.share("Second", otherAddress, "other.example")
+	a, _ := f.store.GetVersion(ctx, first, 1)
+	b, _ := f.store.GetVersion(ctx, second, 1)
+	edit := store.VersionEdit{Title: b.Title, Projection: a.Projection, Payloads: b.Payloads, Flags: b.Flags, FP: a.FP, TargetsKey: a.TargetsKey, B4Min: b.B4Min, Family: b.Family}
+	_, err := f.store.EditVersion(ctx, second, 1, edit, f.clock)
+	var dup *store.DuplicateError
+	if !errors.As(err, &dup) || dup.SetID != first || dup.Version != 1 {
+		t.Fatalf("the store must refuse a duplicate regardless of the preview: %v", err)
+	}
+	if v, _ := f.store.GetVersion(ctx, second, 1); v.TargetsKey != b.TargetsKey {
+		t.Fatalf("the refused edit must not persist: %+v", v)
 	}
 }

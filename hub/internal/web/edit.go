@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -291,7 +292,8 @@ func (s *Server) setEdit(w http.ResponseWriter, r *http.Request) {
 	if req.Expect != nil {
 		edit.Expect = *req.Expect
 	}
-	err := s.Store.EditVersion(ctx, v.SetID, v.Version, edit, now)
+	orphaned, err := s.Store.EditVersion(ctx, v.SetID, v.Version, edit, now)
+	var duplicate *store.DuplicateError
 	switch {
 	case errors.Is(err, store.ErrNotPending):
 		writeError(w, http.StatusConflict, codeNotPending, err.Error())
@@ -299,9 +301,17 @@ func (s *Server) setEdit(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, store.ErrStale):
 		writeError(w, http.StatusConflict, codeStale, "the version was changed by someone else since the dialog was opened; close it and open the current one")
 		return
+	case errors.As(err, &duplicate):
+		writeError(w, http.StatusConflict, codeDuplicate, err.Error())
+		return
 	case err != nil:
 		s.fail(w, err)
 		return
+	}
+	for _, hash := range orphaned {
+		if err := s.Blobs.Remove(hash); err != nil {
+			log.Printf("web: payload %s left behind after editing %s/%d: %v", hash, v.SetID, v.Version, err)
+		}
 	}
 	ref := v.SetID + "/" + strconv.Itoa(v.Version)
 	notice := "edited " + ref
