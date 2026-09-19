@@ -111,6 +111,7 @@ type routeStaticEntries struct {
 
 var (
 	routeMu             sync.Mutex
+	routePhaseMu        sync.Mutex
 	routeRuleCache      = make(map[string]routeState)
 	routeIfaceAuto      = make(map[string]routeState)
 	routeEngine         routeBackend
@@ -906,6 +907,12 @@ func routeIptRulesPresent(be *routeIptBackend, cfg *config.Config) bool {
 }
 
 func RoutingForceResync(cfg *config.Config) {
+	routePhaseMu.Lock()
+	defer routePhaseMu.Unlock()
+	routingForceResync(cfg)
+}
+
+func routingForceResync(cfg *config.Config) {
 	if cfg == nil {
 		return
 	}
@@ -918,10 +925,16 @@ func RoutingForceResync(cfg *config.Config) {
 	routeHostResolvedAt = make(map[string]time.Time)
 	routeMu.Unlock()
 
-	RoutingSyncConfig(cfg)
+	routingSyncConfig(cfg)
 }
 
 func RoutingSyncConfig(cfg *config.Config) {
+	routePhaseMu.Lock()
+	defer routePhaseMu.Unlock()
+	routingSyncConfig(cfg)
+}
+
+func routingSyncConfig(cfg *config.Config) {
 	if cfg == nil {
 		return
 	}

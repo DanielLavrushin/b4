@@ -164,23 +164,41 @@ func TestRefreshRulesStopsAtAFailedClear(t *testing.T) {
 	rulesMu.Unlock()
 }
 
-func TestRoutingIsSkippedWhenConfigMovedDuringTheCheck(t *testing.T) {
+func TestRoutingPhaseWaitsForTheSyncAndUsesThePublishedConfig(t *testing.T) {
 	m, ptr := newLockTestMonitor(t)
-	stale := ptr.Load()
-	m.ifaceState = map[string]ifaceSnapshot{"b4test0": {v4: "203.0.113.1"}}
 
-	moved := config.NewConfig()
-	moved.Queue.IPv4Enabled = false
-	moved.Queue.IPv6Enabled = false
-	ptr.Store(&moved)
+	routePhaseMu.Lock()
+	done := make(chan bool, 1)
+	go func() { done <- m.reconcileRouting(false) }()
 
-	if m.reconcileRouting(stale, false) {
-		t.Fatalf("routing phase ran with the stale config")
+	select {
+	case <-done:
+		routePhaseMu.Unlock()
+		t.Fatalf("routing phase ran while a routing sync held the lock")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	published := config.NewConfig()
+	published.Queue.IPv4Enabled = false
+	published.Queue.IPv6Enabled = false
+	set := config.NewSetConfig()
+	set.Id = "routed"
+	set.Enabled = true
+	set.Routing.Enabled = true
+	set.Routing.EgressInterface = "b4test0"
+	published.Sets = []*config.SetConfig{&set}
+	ptr.Store(&published)
+	routePhaseMu.Unlock()
+
+	select {
+	case restored := <-done:
+		if restored {
+			t.Fatalf("routing phase reported a resync on a fresh config")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("routing phase never ran after the sync released the lock")
 	}
 	if _, tracked := m.ifaceState["b4test0"]; !tracked {
-		t.Fatalf("routing state was rewritten from a config the refresh had already replaced")
-	}
-	if !m.reconcileRouting(stale, true) {
-		t.Fatalf("the restore result was lost when routing was skipped")
+		t.Fatalf("routing phase used the config snapshot from before the sync instead of the one published under the lock")
 	}
 }

@@ -164,33 +164,35 @@ func (m *Monitor) settleKicks() bool {
 }
 
 func (m *Monitor) tick(requested bool) bool {
-	cfg, restored := m.ensureRules(requested)
-	return m.reconcileRouting(cfg, restored)
+	_, restored := m.ensureRules(requested)
+	return m.reconcileRouting(restored)
 }
 
-func (m *Monitor) reconcileRouting(cfg *config.Config, restored bool) bool {
-	if m.cfgPtr.Load() != cfg {
-		log.Tracef("Monitor: configuration changed during the check, leaving routing to the refresh that applied it")
-		return restored
-	}
+func (m *Monitor) reconcileRouting(restored bool) bool {
+	routePhaseMu.Lock()
+	cfg := m.cfgPtr.Load()
 
 	if m.routingIfacesChanged(cfg) {
-		restored = true
 		log.Warnf("Routing interface change detected, resyncing routing rules...")
-		RoutingForceResync(cfg)
+		routingForceResync(cfg)
 		m.snapshotRoutingIfaces(cfg)
+		routePhaseMu.Unlock()
 		log.Tracef("Routing rules resynced after interface change")
-	} else if !RoutingRulesPresent(cfg) {
-		restored = true
-		log.Warnf("Routing rules missing, restoring...")
-		RoutingForceResync(cfg)
-		m.snapshotRoutingIfaces(cfg)
-		log.Infof("Routing rules restored successfully")
-	} else {
-		RoutingReconcilePolicyRules(cfg)
-		RoutingEnsureJumpPrecedence(cfg)
-		RoutingPeriodicReResolve(cfg)
+		return true
 	}
+	if !RoutingRulesPresent(cfg) {
+		log.Warnf("Routing rules missing, restoring...")
+		routingForceResync(cfg)
+		m.snapshotRoutingIfaces(cfg)
+		routePhaseMu.Unlock()
+		log.Infof("Routing rules restored successfully")
+		return true
+	}
+	RoutingReconcilePolicyRules(cfg)
+	RoutingEnsureJumpPrecedence(cfg)
+	routePhaseMu.Unlock()
+
+	RoutingPeriodicReResolve(cfg)
 	return restored
 }
 
