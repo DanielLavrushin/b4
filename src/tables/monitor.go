@@ -165,6 +165,14 @@ func (m *Monitor) settleKicks() bool {
 
 func (m *Monitor) tick() bool {
 	cfg, restored := m.ensureRules()
+	return m.reconcileRouting(cfg, restored)
+}
+
+func (m *Monitor) reconcileRouting(cfg *config.Config, restored bool) bool {
+	if m.cfgPtr.Load() != cfg {
+		log.Tracef("Monitor: configuration changed during the check, leaving routing to the refresh that applied it")
+		return restored
+	}
 
 	if m.routingIfacesChanged(cfg) {
 		restored = true
@@ -428,7 +436,7 @@ func (m *Monitor) ensureRules() (*config.Config, bool) {
 
 func (m *Monitor) restoreRules(cfg *config.Config) error {
 	ReloadKernelModules()
-	return addRules(cfg)
+	return addRulesFn(cfg)
 }
 
 func (m *Monitor) ForceRestore() error {

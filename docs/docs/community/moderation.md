@@ -7,7 +7,7 @@ title: The moderation console
 
 Every version of every set waits for a moderator before it reaches the catalogue. The console is where that decision is made. It is part of the `b4hub` binary, served at `/admin` on the same address as the hub itself, and it is available in English and Russian.
 
-The console belongs to a hub, not to a mirror: a mirror stores nothing and decides nothing, so it has no console. [Running a hub](./hosting.md) describes the difference.
+The console belongs to a hub, not to a mirror: a mirror has no moderation database and makes no decisions, so it has no console. [Running a hub](./hosting.md) describes the difference.
 
 :::warning
 The console names two things differently from the router. What a router calls a **works or broken report** is a **vote** here, and what a router calls a **complaint** is a **report** here. The rest of this page uses the console's own words, so that every label matches what is on screen.

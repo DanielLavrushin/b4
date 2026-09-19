@@ -28,27 +28,29 @@ const (
 var (
 	modulesLoaded sync.Once
 	rulesMu       sync.Mutex
+	addRulesFn    = addRules
+	clearRulesFn  = clearRules
 )
 
 func AddRules(cfg *config.Config) error {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
-	return addRules(cfg)
+	return addRulesFn(cfg)
 }
 
 func ClearRules(cfg *config.Config) error {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
-	return clearRules(cfg)
+	return clearRulesFn(cfg)
 }
 
 func RefreshRules(cfg *config.Config) error {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
-	if err := clearRules(cfg); err != nil {
+	if err := clearRulesFn(cfg); err != nil {
 		return err
 	}
-	return addRules(cfg)
+	return addRulesFn(cfg)
 }
 
 func addRules(cfg *config.Config) error {

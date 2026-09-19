@@ -193,7 +193,7 @@ Once approved, the mirror is checked at every catalogue build: its `/b4/health` 
 
 ### Records sent through a mirror
 
-A mirror has no store, so it decides nothing. It posts what it receives to the upstream hub and returns that hub's answer unchanged, including every refusal.
+A mirror has no database, so it decides nothing. It posts what it receives to the upstream hub and returns that hub's answer unchanged, including every refusal.
 
 | When the upstream answers | What the router gets |
 | --- | --- |

@@ -1,12 +1,15 @@
 package tables
 
 import (
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
 )
+
+var errTestClear = errors.New("clear failed")
 
 func newLockTestMonitor(t *testing.T) (*Monitor, *atomic.Pointer[config.Config]) {
 	t.Helper()
@@ -78,35 +81,106 @@ func TestMonitorCheckUsesTheConfigTheRefreshApplied(t *testing.T) {
 	}
 }
 
-func TestRefreshRulesHoldsTheLockAcrossClearAndAdd(t *testing.T) {
-	cfg := config.NewConfig()
-	cfg.System.Tables.SkipSetup = true
+type pausedPass struct {
+	started chan struct{}
+	release chan struct{}
+}
 
-	rulesMu.Lock()
-	done := make(chan error, 1)
+func newPausedPass() *pausedPass {
+	return &pausedPass{started: make(chan struct{}), release: make(chan struct{})}
+}
+
+func (p *pausedPass) run(*config.Config) error {
+	close(p.started)
+	<-p.release
+	return nil
+}
+
+func TestRefreshRulesHoldsTheLockAcrossClearAndAdd(t *testing.T) {
+	origAdd, origClear := addRulesFn, clearRulesFn
+	clear, add := newPausedPass(), newPausedPass()
+	clearRulesFn, addRulesFn = clear.run, add.run
+	t.Cleanup(func() { addRulesFn, clearRulesFn = origAdd, origClear })
+
+	cfg := config.NewConfig()
+	refreshed := make(chan error, 1)
+	go func() { refreshed <- RefreshRules(&cfg) }()
+	<-clear.started
+
+	m, _ := newLockTestMonitor(t)
+	checked := make(chan struct{})
 	go func() {
-		done <- RefreshRules(&cfg)
+		m.ensureRules()
+		close(checked)
 	}()
 
 	select {
-	case <-done:
-		rulesMu.Unlock()
-		t.Fatalf("RefreshRules ran while another pass held the rules lock")
+	case <-checked:
+		t.Fatalf("monitor check ran while the refresh was still clearing")
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	rulesMu.Unlock()
+	close(clear.release)
+	<-add.started
 	select {
-	case err := <-done:
+	case <-checked:
+		t.Fatalf("monitor check ran between the refresh's clear and its add")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(add.release)
+	select {
+	case err := <-refreshed:
 		if err != nil {
 			t.Fatalf("RefreshRules: %v", err)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatalf("RefreshRules never ran after the lock was released")
+		t.Fatalf("RefreshRules never finished")
 	}
+	select {
+	case <-checked:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("monitor check never ran after the refresh finished")
+	}
+}
 
+func TestRefreshRulesStopsAtAFailedClear(t *testing.T) {
+	origAdd, origClear := addRulesFn, clearRulesFn
+	added := false
+	clearRulesFn = func(*config.Config) error { return errTestClear }
+	addRulesFn = func(*config.Config) error { added = true; return nil }
+	t.Cleanup(func() { addRulesFn, clearRulesFn = origAdd, origClear })
+
+	cfg := config.NewConfig()
+	if err := RefreshRules(&cfg); err != errTestClear {
+		t.Fatalf("RefreshRules error = %v, want the clear error", err)
+	}
+	if added {
+		t.Fatalf("RefreshRules added rules after the clear failed")
+	}
 	if !rulesMu.TryLock() {
 		t.Fatalf("RefreshRules left the rules lock held")
 	}
 	rulesMu.Unlock()
+}
+
+func TestRoutingIsSkippedWhenConfigMovedDuringTheCheck(t *testing.T) {
+	m, ptr := newLockTestMonitor(t)
+	stale := ptr.Load()
+	m.ifaceState = map[string]ifaceSnapshot{"b4test0": {v4: "203.0.113.1"}}
+
+	moved := config.NewConfig()
+	moved.Queue.IPv4Enabled = false
+	moved.Queue.IPv6Enabled = false
+	ptr.Store(&moved)
+
+	if m.reconcileRouting(stale, false) {
+		t.Fatalf("routing phase ran with the stale config")
+	}
+	if _, tracked := m.ifaceState["b4test0"]; !tracked {
+		t.Fatalf("routing state was rewritten from a config the refresh had already replaced")
+	}
+	if !m.reconcileRouting(stale, true) {
+		t.Fatalf("the restore result was lost when routing was skipped")
+	}
 }
