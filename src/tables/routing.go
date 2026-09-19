@@ -62,6 +62,7 @@ type routeState struct {
 	chainOut    string
 	chainSNAT   string
 	chainQUIC   string
+	targetsKey  string
 }
 
 type routeBackend interface {
@@ -112,7 +113,6 @@ type routeStaticEntries struct {
 var (
 	routeMu             sync.Mutex
 	routePhaseMu        sync.Mutex
-	routeGen            uint64
 	routeRuleCache      = make(map[string]routeState)
 	routeIfaceAuto      = make(map[string]routeState)
 	routeEngine         routeBackend
@@ -184,6 +184,7 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 	}
 
 	cur := buildRouteState(cfg, set)
+	cur.targetsKey = routeTargetsKey(set)
 	sources := routeNormalizedSources(set.Routing.SourceInterfaces)
 
 	retireOld := func() {}
@@ -195,6 +196,9 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 			retireOld = routeCleanupForRebuild(be, old, cur)
 			delete(routeRuleCache, set.Id)
 			routeForgetSetLearnState(set.Id)
+		} else if old.targetsKey != cur.targetsKey {
+			old.targetsKey = cur.targetsKey
+			routeRuleCache[set.Id] = old
 		}
 	}
 
@@ -339,42 +343,66 @@ func RoutingLearnHost(cfg *config.Config, set *config.SetConfig, host string) {
 			delete(routeHostResolvedAt, set.Id+"|"+oldest)
 		}
 	}
-	gen := routeGen
 	routeMu.Unlock()
 
 	cfgSnapshot := *cfg
 	go func(c *config.Config, s *config.SetConfig, h string) {
-		if ips := routeResolveHost(c, h); len(ips) > 0 {
-			log.Tracef("Routing: learned host %s -> %d IPs (set: %s)", h, len(ips), s.Name)
-			routeAddResolvedIPsAt(c, s, ips, gen)
+		ips := routeResolveHost(c, h)
+		if len(ips) == 0 {
+			return
+		}
+		log.Tracef("Routing: learned host %s -> %d IPs (set: %s)", h, len(ips), s.Name)
+		if !routeAddResolvedIPs(c, s, ips) {
+			routeMu.Lock()
+			delete(routeHostResolvedAt, s.Id+"|"+h)
+			routeMu.Unlock()
 		}
 	}(&cfgSnapshot, set, host)
 }
 
-func routeAddResolvedIPsAt(cfg *config.Config, set *config.SetConfig, ips []net.IP, gen uint64) {
+func routeTargetsKey(set *config.SetConfig) string {
+	h := fnv.New64a()
+	for _, group := range [][]string{set.Targets.SNIDomains, set.Targets.GeoSiteCategories, set.Targets.GeoIpCategories, set.Targets.IPs} {
+		items := make([]string, 0, len(group))
+		for _, item := range group {
+			items = append(items, strings.ToLower(strings.TrimSpace(item)))
+		}
+		sort.Strings(items)
+		for _, item := range items {
+			h.Write([]byte(item))
+			h.Write([]byte{0})
+		}
+		h.Write([]byte{1})
+	}
+	if set.Targets.DomainOnly {
+		h.Write([]byte{2})
+	}
+	return strconv.FormatUint(h.Sum64(), 16)
+}
+
+func routeAddResolvedIPs(cfg *config.Config, set *config.SetConfig, ips []net.IP) bool {
 	if cfg == nil || set == nil || len(ips) == 0 {
-		return
+		return true
 	}
 	if config.RoutingIsBlock(set.Routing.Mode) || set.Targets.DomainOnly {
-		return
+		return true
 	}
 
 	routeMu.Lock()
 	defer routeMu.Unlock()
 
-	if routeGen != gen {
-		log.Tracef("Routing: dropping %d resolved IPs for set %s, the routing state was rebuilt since they were requested", len(ips), set.Name)
-		delete(routeLastReResolve, set.Id)
-		return
-	}
-
 	st, ok := routeRuleCache[set.Id]
 	if !ok {
-		return
+		return false
+	}
+	if st.targetsKey != routeTargetsKey(set) {
+		log.Tracef("Routing: dropping %d resolved IPs for set %s, its targets changed while they were being resolved", len(ips), set.Name)
+		delete(routeLastReResolve, set.Id)
+		return false
 	}
 	be := routeEngine
 	if be == nil {
-		return
+		return true
 	}
 
 	ttl := set.Routing.IPTTLSeconds
@@ -382,6 +410,7 @@ func routeAddResolvedIPsAt(cfg *config.Config, set *config.SetConfig, ips []net.
 		ttl = 3600
 	}
 	routeAddIPsToSets(be, st, ttl, ips, st.ipv4, st.ipv6)
+	return true
 }
 
 func routeResolveHost(cfg *config.Config, host string) []net.IP {
@@ -658,7 +687,6 @@ func RoutingClearAll() {
 		}
 		be.clearAll()
 	}
-	routeGen++
 	routeRuleCache = make(map[string]routeState)
 	routeIfaceAuto = make(map[string]routeState)
 	routeEngine = nil
@@ -927,7 +955,6 @@ func routingForceResync(cfg *config.Config) {
 	}
 
 	routeMu.Lock()
-	routeGen++
 	routeRuleCache = make(map[string]routeState)
 	routeIfaceAuto = make(map[string]routeState)
 	routeLastReResolve = make(map[string]time.Time)
@@ -954,7 +981,6 @@ func routingSyncConfig(cfg *config.Config) {
 	routeMu.Lock()
 	defer routeMu.Unlock()
 
-	routeGen++
 	IPTablesLockBudgetReset()
 	routeLoadCTMarkVerdict(cfg)
 
@@ -1022,6 +1048,7 @@ func routingSyncConfig(cfg *config.Config) {
 	}
 
 	var newRoutingSets []*config.SetConfig
+	var retargetedSets []*config.SetConfig
 	for _, set := range cfg.Sets {
 		if set == nil {
 			continue
@@ -1031,6 +1058,7 @@ func routingSyncConfig(cfg *config.Config) {
 		}
 
 		cur := buildRouteState(cfg, set)
+		cur.targetsKey = routeTargetsKey(set)
 		if !config.RoutingIsBlock(cur.mode) && (cur.mark == 0 || cur.table <= 0) {
 			routeWarnIncomplete(set, "b4 could not take a routing table of its own for it")
 			continue
@@ -1046,6 +1074,10 @@ func routingSyncConfig(cfg *config.Config) {
 				retireOld = routeCleanupForRebuild(be, old, cur)
 				delete(routeRuleCache, set.Id)
 				routeForgetSetLearnState(set.Id)
+			} else if old.targetsKey != cur.targetsKey {
+				old.targetsKey = cur.targetsKey
+				routeRuleCache[set.Id] = old
+				retargetedSets = append(retargetedSets, set)
 			}
 		}
 
@@ -1089,9 +1121,10 @@ func routingSyncConfig(cfg *config.Config) {
 	routeReestablishJumpOrder(be, cfg, len(newRoutingSets) > 0)
 	routeEnsurePreJumpPrecedence(be, cfg)
 
-	if len(newRoutingSets) > 0 {
+	toResolve := append(newRoutingSets, retargetedSets...)
+	if len(toResolve) > 0 {
 		cfgSnapshot := *cfg
-		go routePreResolveDomains(&cfgSnapshot, newRoutingSets, routeGen)
+		go routePreResolveDomains(&cfgSnapshot, toResolve)
 	}
 }
 
@@ -1162,24 +1195,26 @@ func RoutingPeriodicReResolve(cfg *config.Config) {
 	for _, set := range setsToResolve {
 		routeLastReResolve[set.Id] = now
 	}
-	gen := routeGen
 	routeMu.Unlock()
 
 	cfgSnapshot := *cfg
-	go routePreResolveDomains(&cfgSnapshot, setsToResolve, gen)
+	go routePreResolveDomains(&cfgSnapshot, setsToResolve)
 }
 
-func routePreResolveDomains(cfg *config.Config, sets []*config.SetConfig, gen uint64) {
+func routePreResolveDomains(cfg *config.Config, sets []*config.SetConfig) {
 	for _, set := range sets {
 		if config.RoutingIsBlock(set.Routing.Mode) {
 			continue
 		}
 		for _, domain := range routeResolveTargets(set) {
 			resolved := routeResolveHost(cfg, domain)
-			if len(resolved) > 0 {
-				routeAddResolvedIPsAt(cfg, set, resolved, gen)
-				log.Tracef("Routing: pre-resolved %s -> %d IPs", domain, len(resolved))
+			if len(resolved) == 0 {
+				continue
 			}
+			if !routeAddResolvedIPs(cfg, set, resolved) {
+				break
+			}
+			log.Tracef("Routing: pre-resolved %s -> %d IPs", domain, len(resolved))
 		}
 	}
 }
