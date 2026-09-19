@@ -364,6 +364,7 @@ func routeAddResolvedIPsAt(cfg *config.Config, set *config.SetConfig, ips []net.
 
 	if routeGen != gen {
 		log.Tracef("Routing: dropping %d resolved IPs for set %s, the routing state was rebuilt since they were requested", len(ips), set.Name)
+		delete(routeLastReResolve, set.Id)
 		return
 	}
 

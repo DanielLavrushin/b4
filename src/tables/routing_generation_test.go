@@ -3,6 +3,7 @@ package tables
 import (
 	"net"
 	"testing"
+	"time"
 )
 
 func TestResolvedIPsFromAnOlderRoutingGenerationAreDiscarded(t *testing.T) {
@@ -20,9 +21,18 @@ func TestResolvedIPsFromAnOlderRoutingGenerationAreDiscarded(t *testing.T) {
 	gen := routeGen
 	routeMu.Unlock()
 
+	routeMu.Lock()
+	routeLastReResolve[set.Id] = time.Now()
+	routeMu.Unlock()
 	routeAddResolvedIPsAt(cfg, set, ips, gen-1)
 	if len(pushed) != 0 {
 		t.Fatalf("addresses resolved under an older routing generation were written: %v", pushed)
+	}
+	routeMu.Lock()
+	_, stamped := routeLastReResolve[set.Id]
+	routeMu.Unlock()
+	if stamped {
+		t.Fatalf("a dropped re-resolve kept its timestamp, so the set would wait a full interval before being resolved under the new state")
 	}
 
 	routeAddResolvedIPsAt(cfg, set, ips, gen)
