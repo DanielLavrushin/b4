@@ -22,7 +22,7 @@ type Monitor struct {
 	kick       chan struct{}
 	kickSettle time.Duration
 	startDelay time.Duration
-	tickFn     func() bool
+	tickFn     func(requested bool) bool
 
 	ifaceStateMu sync.Mutex
 	ifaceState   map[string]ifaceSnapshot
@@ -133,12 +133,12 @@ func (m *Monitor) monitorLoop() {
 		case <-m.stop:
 			return
 		case <-ticker.C:
-			m.tickFn()
+			m.tickFn(false)
 		case <-m.kick:
 			if !m.settleKicks() {
 				return
 			}
-			if !m.tickFn() {
+			if !m.tickFn(true) {
 				log.Infof("Tables rules re-checked on request, all present")
 			}
 		}
@@ -163,8 +163,8 @@ func (m *Monitor) settleKicks() bool {
 	}
 }
 
-func (m *Monitor) tick() bool {
-	cfg, restored := m.ensureRules()
+func (m *Monitor) tick(requested bool) bool {
+	cfg, restored := m.ensureRules(requested)
 	return m.reconcileRouting(cfg, restored)
 }
 
@@ -417,14 +417,18 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 	return true
 }
 
-func (m *Monitor) ensureRules() (*config.Config, bool) {
+func (m *Monitor) ensureRules(requested bool) (*config.Config, bool) {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
 	cfg := m.cfgPtr.Load()
 	if m.checkRules(cfg) {
 		return cfg, false
 	}
-	log.Warnf("Tables rules missing, restoring...")
+	if requested {
+		log.Infof("Tables rules missing after a firewall rewrite, restoring...")
+	} else {
+		log.Warnf("Tables rules missing, restoring...")
+	}
 	if err := m.restoreRules(cfg); err != nil {
 		log.Errorf("Failed to restore tables rules: %v", err)
 	} else {

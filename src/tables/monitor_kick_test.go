@@ -24,7 +24,7 @@ func newKickTestMonitor(t *testing.T, ticks *atomic.Int32) *Monitor {
 		ifaceState:   make(map[string]ifaceSnapshot),
 		egressIPHere: make(map[string]bool),
 	}
-	m.tickFn = func() bool {
+	m.tickFn = func(bool) bool {
 		ticks.Add(1)
 		return false
 	}

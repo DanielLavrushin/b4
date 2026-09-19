@@ -79,7 +79,7 @@ NDMS rebuilds its netfilter tables on its own schedule: a UPnP port mapping rene
 
 The installer places `50-b4.sh` in that directory. The script sends `SIGUSR1` to the running b4 process, which re-checks its rules as soon as the rebuild settles and restores what is missing. Without the hook, the tables monitor still restores the rules on its next poll, which is up to `system.tables.monitor_interval` seconds later (10 by default).
 
-A rewrite leaves `Tables rules missing, restoring...` followed by `Tables rules restored successfully` in the log. The same re-check can be requested by hand:
+A rewrite announced by the hook leaves `Tables rules missing after a firewall rewrite, restoring...` followed by `Tables rules restored successfully` in the log, at the INFO level. The same line at the WARN level, without the rewrite wording, means the poll found the rules gone with no signal from the hook: either the hook is missing or something other than NDMS removed them. The same re-check can be requested by hand:
 
 ```bash
 kill -USR1 $(cat /var/run/b4.pid)

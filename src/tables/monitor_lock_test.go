@@ -35,7 +35,7 @@ func TestMonitorCheckWaitsForARefreshInFlight(t *testing.T) {
 	rulesMu.Lock()
 	done := make(chan struct{})
 	go func() {
-		m.ensureRules()
+		m.ensureRules(false)
 		close(done)
 	}()
 
@@ -60,7 +60,7 @@ func TestMonitorCheckUsesTheConfigTheRefreshApplied(t *testing.T) {
 	rulesMu.Lock()
 	got := make(chan *config.Config, 1)
 	go func() {
-		cfg, _ := m.ensureRules()
+		cfg, _ := m.ensureRules(false)
 		got <- cfg
 	}()
 	time.Sleep(50 * time.Millisecond)
@@ -110,7 +110,7 @@ func TestRefreshRulesHoldsTheLockAcrossClearAndAdd(t *testing.T) {
 	m, _ := newLockTestMonitor(t)
 	checked := make(chan struct{})
 	go func() {
-		m.ensureRules()
+		m.ensureRules(false)
 		close(checked)
 	}()
 
