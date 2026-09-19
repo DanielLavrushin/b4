@@ -26,13 +26,17 @@ The message after applying offers **Open set**, which opens the editor, and **Un
 
 The local set records the hub set it came from: the id, the version, the strategy fingerprint and the date. The card on the Community page shows **Applied** and an **Open set** button; the card on the Sets page shows a **Community set** chip that opens the set on the Community page.
 
-The fingerprint covers the TCP, UDP, fragmentation, fake packet, MSS clamp and DNS redirect settings. Editing any of them in the editor changes the badge to **Applied, edited** and the chip to **Community set, edited**. Targets, port filters, pins, the name, routing and device filters are outside the fingerprint, so a community set can be narrowed to a few domains or routed through a proxy and stays linked.
+The fingerprint covers the TCP, UDP, fragmentation, fake packet, MSS clamp and DNS redirect settings. Editing any of them in the editor changes the badge to **Applied, edited** and the chip to **Community set, edited**. Targets, port filters, pins, the name, routing and device filters are outside the fingerprint, so a community set can be narrowed to a few domains or routed through a proxy and stays linked. Those local edits hold until the next **Update** or **Reapply**, which replaces the whole set with the published version.
 
 The link is required for [works and broken reports](./feedback.md) and for the update below.
 
 ## Updating and reapplying
 
-When the author publishes a new version, the card shows **Update to version N** in place of **Apply**. An edited set shows **Reapply**. Both replace the strategy and the targets of the local set with the published ones, after confirmation. The set keeps its id, its position, its enabled state, its routing and its device filters. Edits to the strategy and the targets are lost.
+When the author publishes a new version, the card shows **Update to version N** in place of **Apply**. An edited set already on the newest version shows **Reapply**. Both replace the whole local set with the published one, after confirmation. The set keeps its id, its place in the list and its enabled state; every other setting comes from the published version.
+
+:::warning
+Routing to a proxy or an interface, device filters and escalation are not carried by a publication, so **Update** and **Reapply** return them to their defaults along with the edits to the strategy and the targets. The set has to be routed again afterwards.
+:::
 
 :::info
 A router that applied version 1 keeps running version 1 until **Update** is pressed. The catalogue carries the newest version only, so the score on the card is that of the newest version.

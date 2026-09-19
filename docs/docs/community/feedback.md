@@ -22,7 +22,7 @@ A report carries:
 
 It is signed with the router's author key. The hub places the report on the network it sees the request coming from, not on the network named inside the report.
 
-One router has one current report per set, network and week. Pressing the other button replaces it. The tooltip of the pressed button shows the date of the report. A report made while no hub answers is kept in the outbox and delivered with the next sync; the status line on the Community page and the settings block show how many are waiting. The outbox keeps a report for 30 days.
+One router has one current report per strategy, network and week: the report is filed against the [fingerprint of the strategy](./applying.md#applied-and-edited), not against the set, so two sets carrying the same strategy share it and a version whose strategy changed takes a report of its own. Pressing the other button replaces it. The tooltip of the pressed button shows the date of the report. A report made while no hub answers is kept in the outbox and delivered with the next sync; the status line on the Community page and the settings block show how many are waiting. The outbox keeps a report for 30 days.
 
 :::tip
 **Test** on the same card fetches a domain through b4 and around it. A set that fails because the site is down or blocked outright is not a broken set.
@@ -30,7 +30,7 @@ One router has one current report per set, network and week. Pressing the other 
 
 ## How reports become the score
 
-The hub aggregates the reports of a set in three ways: per ASN, per country and worldwide. A report goes into the ASN and country cells of the network the hub saw it from, and into the worldwide cell. A report the hub could not place on a network goes into the worldwide cell only. Each cell holds the total weight, the number of routers and the date of the newest report; the card prints those under the percentage.
+The hub aggregates the reports of a strategy in three ways: per ASN, per country and worldwide. A report goes into the ASN and country cells of the network the hub saw it from, and into the worldwide cell. A report the hub could not place on a network goes into the worldwide cell only. Each cell holds the total weight, the number of routers and the date of the newest report; the card prints those under the percentage.
 
 Weights before decay:
 
@@ -41,6 +41,8 @@ Weights before decay:
 | The publication itself, counted as a works report from the author | +1 |
 | A report the hub could not place on a network | a quarter of the above |
 | A report from an author key the hub first saw less than a week ago | a quarter of the above |
+
+The two reductions apply one after the other: a report the hub could not place, sent from a key it first saw less than a week ago, keeps a sixteenth of its weight. A report cannot be placed when the hub finds no ASN for the address the request came from.
 
 Every report loses half its weight every two weeks. The percentage is `(works + 1) / (all + 2)`: two works reports and nothing else give 75%, an equal number of each gives about 50%.
 
@@ -61,4 +63,10 @@ A set that does not work on this network is a **Broken** report, not a complaint
 
 ## Limits
 
-The hub accepts a limited number of records from one router per day, with separate limits for shared sets, reports and complaints. The limits are set by the hub operator. A record over the limit is refused with a message that names the limit and the time it resets; it is not queued. A key banned by the moderators is refused with a message saying so.
+The hub accepts a limited number of records from one router per day, with separate limits for shared sets, works and broken reports, and complaints. The limits are set by the hub operator, on the [Settings page](./moderation.md#settings) of its console, and a key the moderators marked trusted is not counted against them.
+
+Two further limits are counted per network rather than per router: how many author keys the hub may see for the first time in a day, and how many records it accepts in an hour. A network here is an address block shared by everyone behind one public address, so a router the hub has never seen can be refused because other new routers in the same block arrived first that day.
+
+A record over the limit is refused with a message naming the limit and how long it stays in force. A works or broken report and a complaint survive that refusal: they stay in the outbox and go out with a later sync, so the router shows them as saved rather than rejected. A shared set is never queued, so its refusal reaches the screen as it is and the set has to be published again once the limit has reset.
+
+A key banned by the moderators is refused with a message saying so.

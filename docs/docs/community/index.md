@@ -11,10 +11,14 @@ The Community Hub is a catalogue of sets published by b4 users, served by `https
 - [Applying a set](./applying.md): what applying changes, updates, the test, the Discovery option
 - [Reports and complaints](./feedback.md): works and broken reports, the score formula, complaints to the moderators
 - [Publishing a set](./publishing.md): the Share section, moderation, versions, the author key
+- [Running a hub](./hosting.md): a hub of one's own, a mirror of another, what each one needs
+- [The moderation console](./moderation.md): the pages of the hub's own web interface
 
 ## The catalogue
 
 The hub publishes one catalogue: the newest approved version of every set, with the aggregated reports for each. The catalogue is signed with the hub's key. The key of `hub.b4core.app` is built into b4, and a catalogue signed with any other key is refused.
+
+Reports are kept against the fingerprint of the strategy, not against the set. Two sets carrying the same strategy share one score, a new version that changes only the targets keeps the score of the previous one, and a new version that changes the strategy starts with none.
 
 ```mermaid
 flowchart LR
@@ -69,8 +73,8 @@ The hub knows a router by its author key, not by an account. The key is generate
 | Field | Meaning |
 | --- | --- |
 | **Enable Community Hub** | Adds the **Community** page to the navigation, starts the hourly sync and shows the **Share** section in the set editor. A shared set pasted into **Import** is accepted with the switch off as well. |
-| **Hub mirrors** | Addresses of the same hub, one per line, tried in order until one answers. Empty means `https://hub.b4core.app`. Mirrors approved by the hub are learned from the catalogue and appended automatically. |
-| **Hub public key** | For a self-hosted hub with its own key. The key of `hub.b4core.app` is built in and needs no entry here. With a key in this field b4 trusts that key alone and does not contact `hub.b4core.app`. |
+| **Hub mirrors** | Addresses of the same hub, one per line, tried in order until one answers. Empty means `https://hub.b4core.app`. Mirrors the hub has approved are learned from its signed manifest and appended automatically; see [Running a hub](./hosting.md#a-mirror-of-another-hub). |
+| **Hub public key** | For a [self-hosted hub](./hosting.md#a-hub-of-its-own) with its own key. The key of `hub.b4core.app` is built in and needs no entry here. With a key in this field b4 trusts that key alone, and stops contacting `hub.b4core.app` only when **Hub mirrors** also carries the address of that hub. While the mirrors field is empty the sync still reaches `hub.b4core.app` and then refuses its catalogue for the wrong signature. |
 
 **Hub status** under the fields shows the catalogue and its build number, the date it is valid until, the last sync and its error, the hub addresses in the order they are tried, the key the catalogue was verified with, the network reported by the hub, and the number of reports waiting to be sent. **Author identity** next to it shows the key id, the recovery code and the restore action.
 

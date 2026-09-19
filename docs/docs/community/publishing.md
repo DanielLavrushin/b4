@@ -26,9 +26,9 @@ A published set is best limited to the targets it was tested on. A domain the se
 
 ## Publishing
 
-**Publish to hub** sends the saved version of the set. A new set has to be saved first; unsaved changes are not published, and the button says so. The published title is the set name; there is no separate description.
+**Publish to hub** sends the saved version of the set. A new set has to be saved first; unsaved changes are not published, and the button says so. The published title is the set name; the router sends no description of its own. A moderator can add one on the hub, and it then appears on the card and under **Details**.
 
-The hub runs the checks of an import, refuses a set with no targets, stores the payload files by hash and answers with the hub id and the version. The set enters the moderation queue with the status **pending**. Other users, and this router, see it in the catalogue after a moderator approves it and the next catalogue is built and synced. The section shows the id and the status and offers **Open in Community**; until the set is in the local catalogue, that opens the details dialog with a note saying so.
+The hub runs the checks of an import, refuses a set with no targets, stores the payload files by hash and answers with the hub id and the version. The set enters the moderation queue with the status **pending moderation**. Other users, and this router, see it in the catalogue after a moderator approves it and the next catalogue is built and synced. The section shows the id and the status and offers **Open in Community**; until the set is in the local catalogue, that opens the details dialog with a note saying so.
 
 The set is now linked to the hub set the same way an applied set is: the card on the Sets page shows **Community set**, and the Share section names the hub set and version it is linked to.
 
@@ -43,7 +43,7 @@ The hub attaches a publication to an existing set of the same author when:
 
 Otherwise the hub creates a new set. When the published set started as another author's community set, the hub records which one.
 
-A publication whose strategy and targets both match a set already in the catalogue, by any author, is not stored. The hub names the existing set and counts the upload as a works report for it.
+A publication whose strategy and targets both match a version the hub already holds, by any author, is not stored. A version still waiting for a moderator and a version a moderator has hidden count as well; only rejected ones are passed over. The hub names the existing set and counts the upload as a works report for it, so the set it names is not always one the catalogue lists.
 
 ## Moderation
 
@@ -57,7 +57,9 @@ The hub accepts a limited number of publications from one router per day. The li
 
 ## Author identity
 
-Every record a router sends to the hub is signed with its author key. The key is generated on first use and kept as `.hub/identity.json` in the configuration directory. The hub knows the router by this key: the sets it published belong to it, its reports count as one router, and the moderators can mark it trusted or ban it. The key id is shown as the author of a set in the catalogue.
+Every record a router sends to the hub is signed with its author key. The key is generated on first use and kept as `.hub/identity.json` in the configuration directory. The hub knows the router by this key: the sets it published belong to it, its reports count as one router, and the moderators can mark it trusted, which lifts the daily limits on it, or ban it.
+
+In the catalogue the author of a set is an author label, not the key id: a short pseudonym the hub derives from the author key with a secret of its own. Every set published under the same key carries the same label, the key itself is never published, and a label built by one hub does not match the label another hub builds for the same key.
 
 **Settings, Integrations, Community Hub, Author identity** shows the key id and two actions:
 

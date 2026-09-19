@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.82.2] - 2026-09-19
+
+- FIXED: **Saving a setting that rebuilds the firewall was followed by `Tables rules missing, restoring...`, sometimes a failed restore on the `B4_DNSTCP` chain, and on a slow router the rules were absent or half-built for up to twenty seconds** - the rebuild tears every rule down and puts it back while the tables monitor keeps polling, nothing ordered the two, so a poll that landed inside the teardown started a second restore that fought the rebuild over the same chains.
+
 ## [1.82.1] - 2026-09-18
 
 - ADDED: **b4 re-checks its firewall rules on `SIGUSR1`, and on Keenetic the installer wires that into the NDMS `netfilter.d` hook directory** - NDMS rebuilds its netfilter tables on a UPnP renewal, a WAN reconnect or a policy change and drops every chain it does not own, so the b4 rules were gone until the tables monitor's next poll, up to ten seconds later, on every rebuild.

@@ -225,10 +225,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 				}
 			}
 		}
-		if err := tables.ClearRules(c); err != nil {
-			return err
-		}
-		if err := tables.AddRules(c); err != nil {
+		if err := tables.RefreshRules(c); err != nil {
 			return err
 		}
 		nfq.ResetIfaceTraffic()
