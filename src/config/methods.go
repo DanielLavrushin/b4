@@ -1102,3 +1102,36 @@ func sanitizeIfaceName(name string) string {
 	}
 	return b.String()
 }
+
+func FirewallRefreshNeeded(oldCfg, newCfg *Config) bool {
+	if oldCfg == nil || newCfg == nil {
+		return oldCfg != newCfg
+	}
+	if oldCfg.System.Tables.SkipSetup != newCfg.System.Tables.SkipSetup {
+		return true
+	}
+	if !newCfg.System.Tables.SkipSetup {
+		if strings.Join(oldCfg.CollectUDPPorts(), ",") != strings.Join(newCfg.CollectUDPPorts(), ",") {
+			return true
+		}
+		if strings.Join(oldCfg.CollectTCPPorts(), ",") != strings.Join(newCfg.CollectTCPPorts(), ",") {
+			return true
+		}
+	}
+	if oldCfg.Queue.TCPConnBytesLimit != newCfg.Queue.TCPConnBytesLimit || oldCfg.Queue.UDPConnBytesLimit != newCfg.Queue.UDPConnBytesLimit {
+		return true
+	}
+	if oldCfg.System.DNS.TCPDisabled != newCfg.System.DNS.TCPDisabled || oldCfg.DNSTCPListenPort() != newCfg.DNSTCPListenPort() {
+		return true
+	}
+	if oldCfg.DNSTCPInterceptEnabled() != newCfg.DNSTCPInterceptEnabled() {
+		return true
+	}
+	if oldCfg.Queue.Mark != newCfg.Queue.Mark || oldCfg.Queue.IPv4Enabled != newCfg.Queue.IPv4Enabled || oldCfg.Queue.IPv6Enabled != newCfg.Queue.IPv6Enabled {
+		return true
+	}
+	if !oldCfg.System.Tables.Masquerade.Equal(newCfg.System.Tables.Masquerade) {
+		return true
+	}
+	return oldCfg.MSSClampFingerprint() != newCfg.MSSClampFingerprint()
+}

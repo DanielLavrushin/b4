@@ -62,7 +62,7 @@ type routeState struct {
 	chainOut    string
 	chainSNAT   string
 	chainQUIC   string
-	targetsKey  string
+	set         *config.SetConfig
 }
 
 type routeBackend interface {
@@ -113,6 +113,8 @@ type routeStaticEntries struct {
 var (
 	routeMu             sync.Mutex
 	routePhaseMu        sync.Mutex
+	routeSyncedCfg      *config.Config
+	routeSyncRetry      *config.Config
 	routeRuleCache      = make(map[string]routeState)
 	routeIfaceAuto      = make(map[string]routeState)
 	routeEngine         routeBackend
@@ -184,7 +186,7 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 	}
 
 	cur := buildRouteState(cfg, set)
-	cur.targetsKey = routeTargetsKey(set)
+	cur.set = set
 	sources := routeNormalizedSources(set.Routing.SourceInterfaces)
 
 	retireOld := func() {}
@@ -196,9 +198,6 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 			retireOld = routeCleanupForRebuild(be, old, cur)
 			delete(routeRuleCache, set.Id)
 			routeForgetSetLearnState(set.Id)
-		} else if old.targetsKey != cur.targetsKey {
-			old.targetsKey = cur.targetsKey
-			routeRuleCache[set.Id] = old
 		}
 	}
 
@@ -360,24 +359,25 @@ func RoutingLearnHost(cfg *config.Config, set *config.SetConfig, host string) {
 	}(&cfgSnapshot, set, host)
 }
 
-func routeTargetsKey(set *config.SetConfig) string {
-	h := fnv.New64a()
-	for _, group := range [][]string{set.Targets.SNIDomains, set.Targets.GeoSiteCategories, set.Targets.GeoIpCategories, set.Targets.IPs} {
-		items := make([]string, 0, len(group))
-		for _, item := range group {
-			items = append(items, strings.ToLower(strings.TrimSpace(item)))
-		}
-		sort.Strings(items)
-		for _, item := range items {
-			h.Write([]byte(item))
-			h.Write([]byte{0})
-		}
-		h.Write([]byte{1})
+func routeSameResolveTargets(a, b *config.SetConfig) bool {
+	if a == nil || b == nil {
+		return a == b
 	}
-	if set.Targets.DomainOnly {
-		h.Write([]byte{2})
+	if a.Targets.DomainOnly != b.Targets.DomainOnly || len(a.Targets.SNIDomains) != len(b.Targets.SNIDomains) {
+		return false
 	}
-	return strconv.FormatUint(h.Sum64(), 16)
+	counts := make(map[string]int, len(a.Targets.SNIDomains))
+	for _, domain := range a.Targets.SNIDomains {
+		counts[strings.ToLower(strings.TrimSpace(domain))]++
+	}
+	for _, domain := range b.Targets.SNIDomains {
+		key := strings.ToLower(strings.TrimSpace(domain))
+		if counts[key] == 0 {
+			return false
+		}
+		counts[key]--
+	}
+	return true
 }
 
 func routeAddResolvedIPs(cfg *config.Config, set *config.SetConfig, ips []net.IP) bool {
@@ -395,9 +395,8 @@ func routeAddResolvedIPs(cfg *config.Config, set *config.SetConfig, ips []net.IP
 	if !ok {
 		return false
 	}
-	if st.targetsKey != routeTargetsKey(set) {
+	if st.set != nil && st.set != set && !routeSameResolveTargets(st.set, set) {
 		log.Tracef("Routing: dropping %d resolved IPs for set %s, its targets changed while they were being resolved", len(ips), set.Name)
-		delete(routeLastReResolve, set.Id)
 		return false
 	}
 	be := routeEngine
@@ -690,6 +689,7 @@ func RoutingClearAll() {
 	routeRuleCache = make(map[string]routeState)
 	routeIfaceAuto = make(map[string]routeState)
 	routeEngine = nil
+	routeSyncedCfg, routeSyncRetry = nil, nil
 	proxyTableForget()
 	routeForgetRtTableNames()
 	routeForgetRPFilterState()
@@ -965,6 +965,18 @@ func routingForceResync(cfg *config.Config) {
 	routingSyncConfig(cfg)
 }
 
+func routingSyncedConfig() *config.Config {
+	routeMu.Lock()
+	defer routeMu.Unlock()
+	return routeSyncedCfg
+}
+
+func routingSyncRetryConfig() *config.Config {
+	routeMu.Lock()
+	defer routeMu.Unlock()
+	return routeSyncRetry
+}
+
 func RoutingSyncConfig(cfg *config.Config) {
 	routePhaseMu.Lock()
 	defer routePhaseMu.Unlock()
@@ -989,6 +1001,7 @@ func routingSyncConfig(cfg *config.Config) {
 		log.Tracef("Routing: no firewall backend available, skipping sync")
 		routeRuleCache = make(map[string]routeState)
 		routeIfaceAuto = make(map[string]routeState)
+		routeSyncedCfg, routeSyncRetry = cfg, nil
 		return
 	}
 
@@ -996,13 +1009,20 @@ func routingSyncConfig(cfg *config.Config) {
 		log.Tracef("Routing: ip binary is missing, skipping sync")
 		routeRuleCache = make(map[string]routeState)
 		routeIfaceAuto = make(map[string]routeState)
+		routeSyncedCfg, routeSyncRetry = cfg, nil
 		return
 	}
 
 	if err := be.ensureBase(); err != nil {
-		log.Errorf("Routing: failed to ensure base during sync (%s): %v", be.name(), err)
+		if routeSyncRetry == cfg {
+			log.Tracef("Routing: base still cannot be ensured during the retried sync (%s): %v", be.name(), err)
+		} else {
+			log.Errorf("Routing: failed to ensure base during sync (%s): %v, the tables monitor retries it", be.name(), err)
+		}
+		routeSyncRetry = cfg
 		return
 	}
+	routeSyncedCfg, routeSyncRetry = cfg, nil
 
 	if be.name() == backendNFTables {
 		routeNftSweepBaseOutputBypasses()
@@ -1058,7 +1078,7 @@ func routingSyncConfig(cfg *config.Config) {
 		}
 
 		cur := buildRouteState(cfg, set)
-		cur.targetsKey = routeTargetsKey(set)
+		cur.set = set
 		if !config.RoutingIsBlock(cur.mode) && (cur.mark == 0 || cur.table <= 0) {
 			routeWarnIncomplete(set, "b4 could not take a routing table of its own for it")
 			continue
@@ -1074,10 +1094,12 @@ func routingSyncConfig(cfg *config.Config) {
 				retireOld = routeCleanupForRebuild(be, old, cur)
 				delete(routeRuleCache, set.Id)
 				routeForgetSetLearnState(set.Id)
-			} else if old.targetsKey != cur.targetsKey {
-				old.targetsKey = cur.targetsKey
+			} else {
+				if old.set != set && !routeSameResolveTargets(old.set, set) {
+					retargetedSets = append(retargetedSets, set)
+				}
+				old.set = set
 				routeRuleCache[set.Id] = old
-				retargetedSets = append(retargetedSets, set)
 			}
 		}
 
@@ -1212,6 +1234,9 @@ func routePreResolveDomains(cfg *config.Config, sets []*config.SetConfig) {
 				continue
 			}
 			if !routeAddResolvedIPs(cfg, set, resolved) {
+				routeMu.Lock()
+				delete(routeLastReResolve, set.Id)
+				routeMu.Unlock()
 				break
 			}
 			log.Tracef("Routing: pre-resolved %s -> %d IPs", domain, len(resolved))

@@ -500,59 +500,13 @@ func (a *API) PerformSoftRestart(newCfg *config.Config, oldCfg *config.Config) b
 	newUDPPorts := strings.Join(newCfg.CollectUDPPorts(), ",")
 	oldTCPPorts := strings.Join(oldCfg.CollectTCPPorts(), ",")
 	newTCPPorts := strings.Join(newCfg.CollectTCPPorts(), ",")
-	shouldUpdate := false
-	if oldCfg.System.Tables.SkipSetup != newCfg.System.Tables.SkipSetup {
-
-		shouldUpdate = true
-	}
-
-	if !newCfg.System.Tables.SkipSetup && oldUDPPorts != newUDPPorts {
-		shouldUpdate = true
-	}
-
-	if !newCfg.System.Tables.SkipSetup && oldTCPPorts != newTCPPorts {
-		shouldUpdate = true
-	}
-
-	if oldCfg.Queue.TCPConnBytesLimit != newCfg.Queue.TCPConnBytesLimit {
-		shouldUpdate = true
-	}
-
-	if oldCfg.Queue.UDPConnBytesLimit != newCfg.Queue.UDPConnBytesLimit {
-		shouldUpdate = true
-	}
-
-	if oldCfg.System.DNS.TCPDisabled != newCfg.System.DNS.TCPDisabled ||
-		oldCfg.DNSTCPListenPort() != newCfg.DNSTCPListenPort() {
-		shouldUpdate = true
-	}
-
-	if oldCfg.DNSTCPInterceptEnabled() != newCfg.DNSTCPInterceptEnabled() {
-		shouldUpdate = true
-	}
-
-	if oldCfg.Queue.Mark != newCfg.Queue.Mark {
-		shouldUpdate = true
-	}
-
-	if oldCfg.Queue.IPv4Enabled != newCfg.Queue.IPv4Enabled {
-		shouldUpdate = true
-	}
-	if oldCfg.Queue.IPv6Enabled != newCfg.Queue.IPv6Enabled {
-		shouldUpdate = true
-	}
-
-	if !oldCfg.System.Tables.Masquerade.Equal(newCfg.System.Tables.Masquerade) {
-		shouldUpdate = true
-	}
-
-	if oldCfg.MSSClampFingerprint() != newCfg.MSSClampFingerprint() {
-		shouldUpdate = true
-		log.Infof("MSS clamp settings changed, refreshing firewall rules")
-	}
+	shouldUpdate := config.FirewallRefreshNeeded(oldCfg, newCfg)
 
 	if shouldUpdate {
 		log.Infof("Core settings changed, performing soft system restart")
+		if oldCfg.MSSClampFingerprint() != newCfg.MSSClampFingerprint() {
+			log.Infof("MSS clamp settings changed, refreshing firewall rules")
+		}
 		if oldUDPPorts != newUDPPorts {
 			log.Infof("UDP ports changed (%s -> %s), refreshing firewall rules", oldUDPPorts, newUDPPorts)
 		}

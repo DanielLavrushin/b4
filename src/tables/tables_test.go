@@ -939,9 +939,11 @@ func TestRouteAddResolvedIPs(t *testing.T) {
 	})
 
 	t.Run("no backend is a no-op", func(t *testing.T) {
-		routeRuleCache = map[string]routeState{"s1": {mode: config.RoutingModeProxy}}
+		routeRuleCache = map[string]routeState{"s1": {mode: config.RoutingModeProxy, set: set}}
 		routeEngine = nil
-		routeAddResolvedIPs(&cfg, set, ips)
+		if !routeAddResolvedIPs(&cfg, set, ips) {
+			t.Error("a missing backend must not read as a changed set")
+		}
 	})
 
 	t.Run("nil and empty args are safe", func(t *testing.T) {
@@ -1297,6 +1299,7 @@ type mockRouterGuard struct {
 }
 
 type mockRouteBackend struct {
+	ensureBaseFn  func() error
 	guards        []mockRouterGuard
 	guardOK       *bool
 	addElementsFn func(setName string, ips []string, ttlSec int)
@@ -1327,9 +1330,14 @@ func (m *mockRouteBackend) recordOp(chain, op string) {
 	m.chainOps[chain] = append(m.chainOps[chain], op)
 }
 
-func (m *mockRouteBackend) name() string                                  { return "mock" }
-func (m *mockRouteBackend) available() bool                               { return true }
-func (m *mockRouteBackend) ensureBase() error                             { return nil }
+func (m *mockRouteBackend) name() string    { return "mock" }
+func (m *mockRouteBackend) available() bool { return true }
+func (m *mockRouteBackend) ensureBase() error {
+	if m.ensureBaseFn != nil {
+		return m.ensureBaseFn()
+	}
+	return nil
+}
 func (m *mockRouteBackend) ensureIPSet(name string, v6 bool) error        { return nil }
 func (m *mockRouteBackend) ensureChain(chain string, isMangle bool) error { return nil }
 func (m *mockRouteBackend) flushChain(chain string, isMangle bool)        {}

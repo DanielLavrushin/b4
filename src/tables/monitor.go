@@ -18,11 +18,13 @@ type Monitor struct {
 	interval time.Duration
 	backend  string
 
-	started    bool
-	kick       chan struct{}
-	kickSettle time.Duration
-	startDelay time.Duration
-	tickFn     func(requested bool) bool
+	started        bool
+	pendingApply   *config.Config
+	retryAnnounced *config.Config
+	kick           chan struct{}
+	kickSettle     time.Duration
+	startDelay     time.Duration
+	tickFn         func(requested bool) bool
 
 	ifaceStateMu sync.Mutex
 	ifaceState   map[string]ifaceSnapshot
@@ -164,13 +166,32 @@ func (m *Monitor) settleKicks() bool {
 }
 
 func (m *Monitor) tick(requested bool) bool {
-	_, restored := m.ensureRules(requested)
+	rulesMu.Lock()
+	defer rulesMu.Unlock()
+	_, restored := m.ensureRulesLocked(requested)
 	return m.reconcileRouting(restored)
 }
 
 func (m *Monitor) reconcileRouting(restored bool) bool {
 	routePhaseMu.Lock()
-	cfg := m.cfgPtr.Load()
+	if pending := routingSyncRetryConfig(); pending != nil {
+		if m.retryAnnounced != pending {
+			log.Warnf("Routing: retrying the routing sync that failed...")
+			m.retryAnnounced = pending
+		}
+		routingSyncConfig(pending)
+		if routingSyncRetryConfig() != nil {
+			routePhaseMu.Unlock()
+			return true
+		}
+		log.Infof("Routing: the routing sync that failed has been retried successfully")
+		m.retryAnnounced = nil
+		restored = true
+	}
+	cfg := routingSyncedConfig()
+	if cfg == nil {
+		cfg = m.cfgPtr.Load()
+	}
 
 	if m.routingIfacesChanged(cfg) {
 		log.Warnf("Routing interface change detected, resyncing routing rules...")
@@ -422,10 +443,21 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 func (m *Monitor) ensureRules(requested bool) (*config.Config, bool) {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
+	return m.ensureRulesLocked(requested)
+}
+
+func (m *Monitor) ensureRulesLocked(requested bool) (*config.Config, bool) {
 	cfg := m.cfgPtr.Load()
 	if m.checkRules(cfg) {
+		m.pendingApply = nil
 		return cfg, false
 	}
+	if applied := rulesAppliedCfg; applied != nil && applied != cfg && m.pendingApply != cfg && config.FirewallRefreshNeeded(applied, cfg) && m.checkRules(applied) {
+		m.pendingApply = cfg
+		log.Infof("Tables rules still match the previous configuration while a newer one is being applied, leaving the rebuild to that apply")
+		return cfg, true
+	}
+	m.pendingApply = nil
 	if requested {
 		log.Infof("Tables rules missing after a firewall rewrite, restoring...")
 	} else {

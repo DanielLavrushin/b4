@@ -164,8 +164,34 @@ func TestRefreshRulesStopsAtAFailedClear(t *testing.T) {
 	rulesMu.Unlock()
 }
 
-func TestRoutingPhaseWaitsForTheSyncAndUsesThePublishedConfig(t *testing.T) {
-	m, ptr := newLockTestMonitor(t)
+func routedTestConfig(iface string) *config.Config {
+	cfg := config.NewConfig()
+	cfg.Queue.IPv4Enabled = false
+	cfg.Queue.IPv6Enabled = false
+	set := config.NewSetConfig()
+	set.Id = "routed"
+	set.Enabled = true
+	set.Routing.Enabled = true
+	set.Routing.EgressInterface = iface
+	cfg.Sets = []*config.SetConfig{&set}
+	return &cfg
+}
+
+func stubSyncedConfig(t *testing.T, cfg *config.Config) {
+	t.Helper()
+	routeMu.Lock()
+	prev := routeSyncedCfg
+	routeSyncedCfg = cfg
+	routeMu.Unlock()
+	t.Cleanup(func() {
+		routeMu.Lock()
+		routeSyncedCfg = prev
+		routeMu.Unlock()
+	})
+}
+
+func TestRoutingPhaseWaitsForASyncInFlight(t *testing.T) {
+	m, _ := newLockTestMonitor(t)
 
 	routePhaseMu.Lock()
 	done := make(chan bool, 1)
@@ -178,27 +204,95 @@ func TestRoutingPhaseWaitsForTheSyncAndUsesThePublishedConfig(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	published := config.NewConfig()
-	published.Queue.IPv4Enabled = false
-	published.Queue.IPv6Enabled = false
-	set := config.NewSetConfig()
-	set.Id = "routed"
-	set.Enabled = true
-	set.Routing.Enabled = true
-	set.Routing.EgressInterface = "b4test0"
-	published.Sets = []*config.SetConfig{&set}
-	ptr.Store(&published)
 	routePhaseMu.Unlock()
-
 	select {
-	case restored := <-done:
-		if restored {
-			t.Fatalf("routing phase reported a resync on a fresh config")
-		}
+	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatalf("routing phase never ran after the sync released the lock")
 	}
+}
+
+func TestRoutingPhaseFollowsTheLastCompletedSync(t *testing.T) {
+	m, ptr := newLockTestMonitor(t)
+	unsynced := ptr.Load()
+	published := routedTestConfig("b4test0")
+	ptr.Store(published)
+	stubSyncedConfig(t, unsynced)
+
+	m.reconcileRouting(false)
+	if _, tracked := m.ifaceState["b4test0"]; tracked {
+		t.Fatalf("routing phase reconciled against a published config the routing sync had not applied yet")
+	}
+
+	stubSyncedConfig(t, published)
+	m.reconcileRouting(false)
 	if _, tracked := m.ifaceState["b4test0"]; !tracked {
-		t.Fatalf("routing phase used the config snapshot from before the sync instead of the one published under the lock")
+		t.Fatalf("routing phase ignored the config the last sync applied")
+	}
+}
+
+func TestMonitorLeavesAPendingApplyToTheRefresh(t *testing.T) {
+	origRun, origAdd, origApplied := run, addRulesFn, rulesAppliedCfg
+	hasBinaryCache.Store(backendIPTables, true)
+	t.Cleanup(func() {
+		run, addRulesFn = origRun, origAdd
+		rulesMu.Lock()
+		rulesAppliedCfg = origApplied
+		rulesMu.Unlock()
+		hasBinaryCache.Delete(backendIPTables)
+	})
+
+	present := "-A B4_PREROUTING -p udp --sport 53 -j NFQUEUE -p tcp --dport 53 -j NFQUEUE -m mark 0x8000 -j B4"
+	calls := 0
+	run = func(args ...string) (string, error) {
+		calls++
+		if calls == 1 {
+			return "", errors.New("chain missing")
+		}
+		return present, nil
+	}
+	restores := 0
+	addRulesFn = func(*config.Config) error {
+		restores++
+		return nil
+	}
+
+	m, ptr := newLockTestMonitor(t)
+	applied := config.NewConfig()
+	applied.Queue.IPv4Enabled = true
+	published := config.NewConfig()
+	published.Queue.IPv4Enabled = true
+	published.Queue.TCPConnBytesLimit = applied.Queue.TCPConnBytesLimit + 2
+	ptr.Store(&published)
+	rulesMu.Lock()
+	rulesAppliedCfg = &applied
+	rulesMu.Unlock()
+
+	if _, acted := m.ensureRules(false); !acted {
+		t.Fatalf("a deferred check must not read as all present")
+	}
+	if restores != 0 {
+		t.Fatalf("monitor rebuilt the firewall under a pending apply")
+	}
+
+	calls = 0
+	if _, acted := m.ensureRules(false); !acted {
+		t.Fatalf("monitor kept waiting for an apply that never came")
+	}
+	if restores != 1 {
+		t.Fatalf("monitor did not rebuild the firewall on the second tick, restores=%d", restores)
+	}
+
+	calls = 0
+	devices := config.NewConfig()
+	devices.Queue.IPv4Enabled = true
+	devices.Queue.Devices.Enabled = true
+	ptr.Store(&devices)
+	rulesMu.Lock()
+	rulesAppliedCfg = &applied
+	rulesMu.Unlock()
+	m.ensureRules(false)
+	if restores != 2 {
+		t.Fatalf("a change that no refresh will apply was deferred instead of restored, restores=%d", restores)
 	}
 }

@@ -26,10 +26,11 @@ const (
 )
 
 var (
-	modulesLoaded sync.Once
-	rulesMu       sync.Mutex
-	addRulesFn    = addRules
-	clearRulesFn  = clearRules
+	modulesLoaded   sync.Once
+	rulesMu         sync.Mutex
+	rulesAppliedCfg *config.Config
+	addRulesFn      = addRules
+	clearRulesFn    = clearRules
 )
 
 func AddRules(cfg *config.Config) error {
@@ -54,6 +55,7 @@ func RefreshRules(cfg *config.Config) error {
 }
 
 func addRules(cfg *config.Config) error {
+	rulesAppliedCfg = cfg
 	if cfg.System.Tables.SkipSetup {
 		return nil
 	}
