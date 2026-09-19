@@ -293,6 +293,7 @@
     "empty": "No mirror has announced itself.",
     "columns": {
       "url": "URL",
+      "version": "Version",
       "key": "Key",
       "status": "Status",
       "firstSeen": "First seen",
@@ -312,6 +313,7 @@
     "rejectText": "A rejected mirror stays in the list with its reason and is never announced to routers.",
     "removeTitle": "Remove mirror",
     "removeText": "The mirror is forgotten. It can announce itself again.",
+    "versionUnknown": "not reported",
     "listedHint": "Approved and healthy mirrors are announced in the manifest."
   },
   "feedback": {

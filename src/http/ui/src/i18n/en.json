@@ -793,9 +793,15 @@
         "lastError": "Last error",
         "lastErrorHint": "The next sync clears this when it succeeds.",
         "hub": "Hub",
-        "hubHint": "Tried in the order listed. Mirrors the hub approves are learned automatically and appended here.",
-        "hubHintMirrors_one": "The last {{count}} address is a mirror learned from the hub; it serves the same signed list.",
-        "hubHintMirrors_other": "The last {{count}} addresses are mirrors learned from the hub; they serve the same signed list.",
+        "hubHint": "Tried in the order shown, the address that answered last first. Mirrors the hub approves are learned automatically and join the list.",
+        "hubHintMirrors_one": "Tried in the order shown, the address that answered last first. {{count}} of them is a mirror learned from the hub; it serves the same signed list.",
+        "hubHintMirrors_other": "Tried in the order shown, the address that answered last first. {{count}} of them are mirrors learned from the hub; they serve the same signed list.",
+        "address": {
+          "configured": "Entered under Hub mirrors",
+          "learned": "Mirror learned from the hub",
+          "builtin": "Built-in hub address",
+          "active": "Answered the last sync, tried first next time"
+        },
         "hubKey": "Signed by",
         "hubKeyBuiltin": "built-in key of hub.b4core.app ({{key}})",
         "hubKeyCustom": "custom key {{key}}",

@@ -165,6 +165,8 @@ What is verified before anything is copied: the manifest is signed by a trusted 
 A mirror keeps working with its upstream down. It loads whatever it copied last when it starts, so a restart during an outage still serves the last catalogue it received.
 :::
 
+The root of a mirror, `/`, is a page for a browser: the hub it mirrors, the catalogue it holds with the build number, the date it was built and the date it expires, when the upstream was last checked and whether it answered, and the outcome of the last announcement. It is in English or Russian by the browser's language. Error texts, the announcement record and the signing key stay out of it; they are in the mirror's log.
+
 ### Why a router ends up using one
 
 A router tries its addresses in order: the ones configured by hand, then the ones it learned, then the built-in one. Any of them can answer, and the answer is the same signed catalogue, so an address that responds is enough for the sync to succeed. A mirror is a second place to get the same bytes from, for a network where the first does not answer.

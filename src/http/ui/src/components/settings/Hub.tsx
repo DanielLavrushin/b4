@@ -3,10 +3,12 @@ import { useTranslation } from "react-i18next";
 import {
   Box,
   Button,
+  Chip,
   CircularProgress,
   DialogContent,
   Grid,
   Stack,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import {
@@ -15,9 +17,10 @@ import {
   B4IntegrationCard,
   B4TextField,
 } from "@b4.elements";
-import { CommunityIcon, CopyIcon, KeyIcon, RestoreIcon, SyncIcon } from "@b4.icons";
+import { CheckIcon, CommunityIcon, CopyIcon, KeyIcon, RestoreIcon, SyncIcon } from "@b4.icons";
 import { colors, fonts, radiusPx, typography } from "@design";
 import { B4Config } from "@models/config";
+import { HubStatus } from "@models/hub";
 import { useSnackbar } from "@context/SnackbarProvider";
 import {
   useHubRecoveryCode,
@@ -40,6 +43,85 @@ const parseUrls = (text: string): string[] =>
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
+
+type HubAddressRole = "configured" | "learned" | "builtin";
+
+interface HubAddress {
+  url: string;
+  label: string;
+  role: HubAddressRole;
+  active: boolean;
+}
+
+const addressLabel = (url: string): string => {
+  try {
+    const u = new URL(url);
+    const host = u.protocol === "http:" ? `http://${u.host}` : u.host;
+    return u.pathname && u.pathname !== "/" ? host + u.pathname : host;
+  } catch {
+    return url;
+  }
+};
+
+const hubAddresses = (status: HubStatus, configured: string[]): HubAddress[] => {
+  const urls = status.urls.length > 0 ? status.urls : [DEFAULT_HUB_URL];
+  const learned = new Set(status.mirrors);
+  const own = new Set(configured.map((u) => u.trim().replace(/\/+$/, "")));
+  return urls.map((url) => ({
+    url,
+    label: addressLabel(url),
+    role: learned.has(url) ? "learned" : own.has(url) ? "configured" : "builtin",
+    active: url === status.active,
+  }));
+};
+
+interface HubAddressChipsProps {
+  addresses: HubAddress[];
+}
+
+const HubAddressChips = ({ addresses }: HubAddressChipsProps) => {
+  const { t } = useTranslation();
+  return (
+    <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" sx={{ pt: 0.25 }}>
+      {addresses.map((a) => (
+        <Tooltip
+          key={a.url}
+          arrow
+          title={
+            <Box sx={{ fontFamily: fonts.mono, fontSize: typography.sizes.xs }}>
+              <div>{a.url}</div>
+              <div>{t(`settings.Hub.status.address.${a.role}`)}</div>
+              {a.active && <div>{t("settings.Hub.status.address.active")}</div>}
+            </Box>
+          }
+        >
+          <Chip
+            size="small"
+            label={a.label}
+            icon={a.active ? <CheckIcon /> : undefined}
+            variant={a.role === "learned" ? "outlined" : "filled"}
+            sx={{
+              fontFamily: fonts.mono,
+              fontSize: typography.sizes.xs,
+              ...(a.active
+                ? {
+                    bgcolor: colors.accent.secondary,
+                    color: colors.secondary,
+                    borderColor: colors.border.strong,
+                    "& .MuiChip-icon": { color: colors.secondary },
+                  }
+                : {
+                    bgcolor: a.role === "learned" ? "transparent" : colors.accent.tertiary,
+                    color: colors.text.secondary,
+                    borderColor: colors.border.medium,
+                  }),
+            }}
+          />
+        </Tooltip>
+      ))}
+    </Stack>
+  );
+};
 
 interface StatusRowProps {
   label: string;
@@ -333,10 +415,7 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
               )}
               <StatusRow
                 label={t("settings.Hub.status.hub")}
-                value={[
-                  ...(data.urls.length > 0 ? data.urls : [DEFAULT_HUB_URL]),
-                  ...data.mirrors,
-                ].join(", ")}
+                value={<HubAddressChips addresses={hubAddresses(data, hub?.urls ?? [])} />}
                 hint={
                   data.mirrors.length > 0
                     ? t("settings.Hub.status.hubHintMirrors", { count: data.mirrors.length })

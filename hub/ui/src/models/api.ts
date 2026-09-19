@@ -232,6 +232,7 @@ export interface MirrorView {
   last_check?: string;
   last_ok?: string;
   reason?: string;
+  version?: string;
 }
 
 export interface FeedbackView {

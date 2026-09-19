@@ -136,4 +136,7 @@ ALTER TABLE set_versions ADD COLUMN edit_note TEXT NOT NULL DEFAULT '';
 ALTER TABLE set_versions ADD COLUMN original_title TEXT NOT NULL DEFAULT '';
 ALTER TABLE set_versions ADD COLUMN original_description TEXT NOT NULL DEFAULT '';
 `,
+	`
+ALTER TABLE mirrors ADD COLUMN version TEXT NOT NULL DEFAULT '';
+`,
 }

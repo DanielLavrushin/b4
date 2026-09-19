@@ -144,9 +144,9 @@ var moderateMirrorsCmd = &cobra.Command{
 			return err
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "ID\tURL\tKEY\tSTATUS\tFIRST SEEN\tLAST SEEN\tLAST CHECK\tLAST OK\tREASON")
+		fmt.Fprintln(tw, "ID\tURL\tVERSION\tKEY\tSTATUS\tFIRST SEEN\tLAST SEEN\tLAST CHECK\tLAST OK\tREASON")
 		for _, m := range mirrors {
-			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", m.ID, m.URL, hubdata.AuthorLabel(m.KeyHMAC), m.Status, stamp(m.FirstSeen), stamp(m.LastSeen), stamp(m.LastCheck), stamp(m.LastOK), m.Reason)
+			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", m.ID, m.URL, m.Version, hubdata.AuthorLabel(m.KeyHMAC), m.Status, stamp(m.FirstSeen), stamp(m.LastSeen), stamp(m.LastCheck), stamp(m.LastOK), m.Reason)
 		}
 		return tw.Flush()
 	}),

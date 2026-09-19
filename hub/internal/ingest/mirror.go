@@ -13,7 +13,23 @@ import (
 	"github.com/daniellavrushin/b4/hubwire"
 )
 
-const MaxMirrorURLLength = 200
+const (
+	MaxMirrorURLLength     = 200
+	MaxMirrorVersionLength = 40
+)
+
+func cleanMirrorVersion(raw string) string {
+	clean := strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(raw))
+	if runes := []rune(clean); len(runes) > MaxMirrorVersionLength {
+		clean = string(runes[:MaxMirrorVersionLength])
+	}
+	return clean
+}
 
 func privateHost(host string) bool {
 	if strings.EqualFold(host, "localhost") {
@@ -72,7 +88,7 @@ func (s *Service) mirror(ctx context.Context, entry record) Response {
 	if err != nil {
 		return fail(http.StatusBadRequest, CodeBadMirrorURL, err.Error())
 	}
-	m, err := s.Store.AnnounceMirror(ctx, base, entry.keyHMAC, entry.now)
+	m, err := s.Store.AnnounceMirror(ctx, base, entry.keyHMAC, cleanMirrorVersion(body.Version), entry.now)
 	if err != nil {
 		return internalError(err)
 	}

@@ -25,6 +25,7 @@ type Status struct {
 	Catalogue  *CatalogueStatus `json:"catalogue"`
 	URLs       []string         `json:"urls"`
 	Mirrors    []string         `json:"mirrors"`
+	Active     string           `json:"active"`
 	Network    Network          `json:"network"`
 	Outbox     int              `json:"outbox"`
 	HubKey     string           `json:"hub_key"`
@@ -61,6 +62,7 @@ func (s *Service) Status() Status {
 		st.LastSync = s.lastSync.UTC().Format(time.RFC3339)
 	}
 	st.LastError = s.lastError
+	st.Active = s.preferredBase
 	if s.manifest != nil && s.catalogue != nil {
 		st.Catalogue = &CatalogueStatus{
 			Epoch:       s.manifest.Epoch,

@@ -453,6 +453,8 @@ func TestManifestMirrorsFollowConfiguredURLsAndRevokedKeysAreDropped(t *testing.
 	assertBases(t, box.svc.BaseURLs(), want)
 	if st := box.svc.Status(); len(st.Mirrors) != 4 {
 		t.Errorf("status must list the learned mirrors, got %v", st.Mirrors)
+	} else if st.Active != f.URL() {
+		t.Errorf("status must name the base that answered, got %q", st.Active)
 	}
 
 	reloaded := newTestBox(t, f, dir)

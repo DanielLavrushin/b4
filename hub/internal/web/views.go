@@ -240,6 +240,7 @@ type MirrorView struct {
 	LastCheck *time.Time `json:"last_check,omitempty"`
 	LastOK    *time.Time `json:"last_ok,omitempty"`
 	Reason    string     `json:"reason,omitempty"`
+	Version   string     `json:"version,omitempty"`
 }
 
 type FeedbackView struct {
@@ -381,6 +382,7 @@ func mirrorView(m store.Mirror) MirrorView {
 		LastCheck: optionalTime(m.LastCheck),
 		LastOK:    optionalTime(m.LastOK),
 		Reason:    m.Reason,
+		Version:   m.Version,
 	}
 }
 

@@ -1,39 +1,70 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{.Lang}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>b4 hub mirror</title>
+<meta name="color-scheme" content="dark">
+<title>{{if .PublicHost}}{{.PublicHost}} - {{end}}{{.T.title}}</title>
 <style>
-:root { color-scheme: light dark; --line: #8886; --muted: #777; --accent: #2a6ebb; }
-body { margin: 0 auto; max-width: 48rem; padding: 1rem; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow-wrap: anywhere; }
-a { color: var(--accent); }
-h1 { font-size: 1.4rem; margin: .5rem 0 .75rem; }
-dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem .75rem; margin: .75rem 0; }
-dt { color: var(--muted); }
+:root {
+  --bg: #1a0e15; --paper: #1f1218; --text: #ffe8f4; --muted: #f8d7e9; --dim: rgba(255, 232, 244, .5);
+  --line: rgba(245, 173, 24, .12); --line-strong: rgba(245, 173, 24, .24);
+  --amber: #f5ad18; --magenta: #9e1c60; --ok: #66bb6a; --warn: #ffa726;
+}
+html { background: var(--bg); }
+body {
+  margin: 0; min-height: 100vh; color: var(--text);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, "Helvetica Neue", Arial, sans-serif;
+  background: radial-gradient(ellipse at 50% -10%, rgba(158, 28, 96, .35) 0%, transparent 55%), var(--bg);
+  overflow-wrap: anywhere;
+}
+.bar { height: 4px; background: linear-gradient(90deg, #561530 0%, #811844 35%, #9e1c60 70%, #f5ad18 100%); }
+main { max-width: 44rem; margin: 0 auto; padding: 2rem 1rem 3rem; }
+.logo { display: flex; align-items: baseline; gap: .75rem; }
+.mark {
+  font-weight: 800; font-size: 2.2rem; line-height: 1; letter-spacing: -.08em;
+  background: linear-gradient(135deg, #f5ad18 0%, #9e1c60 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent;
+}
+.mark sup { font-size: .5em; }
+.tag { font-size: .65rem; letter-spacing: .15em; text-transform: uppercase; color: var(--muted); opacity: .7; }
+h1 { font-size: 1.35rem; font-weight: 600; margin: 1.75rem 0 .35rem; }
+.lead { color: var(--muted); margin: 0 0 1.25rem; }
+a { color: var(--amber); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.card { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.15rem; box-shadow: 0 0 24px rgba(245, 173, 24, .06); }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1.25rem; margin: 0; }
+dt { color: var(--dim); font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding-top: .25em; }
 dd { margin: 0; }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85rem; }
-footer { margin-top: 1.5rem; padding-top: .75rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .9rem; }
-@media (max-width: 36rem) { dl { grid-template-columns: 1fr; } dt { margin-top: .4rem; } }
+.mono { font-family: "JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, "Roboto Mono", monospace; font-size: .85rem; }
+.pill { display: inline-block; margin-left: .5rem; padding: .05rem .6rem; border-radius: 999px; border: 1px solid var(--line-strong); font-size: .75rem; vertical-align: middle; }
+.ok { color: var(--ok); border-color: rgba(102, 187, 106, .45); }
+.warn { color: var(--warn); border-color: rgba(255, 167, 38, .45); }
+footer { margin-top: 1.5rem; color: var(--dim); font-size: .85rem; }
+@media (max-width: 36rem) { dl { grid-template-columns: 1fr; gap: .2rem; } dt { margin-top: .6rem; } .pill { display: block; width: fit-content; margin: .3rem 0 0; } }
 </style>
 </head>
 <body>
-<h1>b4 hub mirror</h1>
-<p>Mirror of <a href="{{.Upstream}}" rel="noreferrer">{{.Upstream}}</a>{{if .PublicURL}}, reachable as {{.PublicURL}}{{end}}.</p>
+<div class="bar"></div>
+<main>
+<div class="logo"><span class="mark">B<sup>4</sup></span><span class="tag">{{.T.brand}}</span></div>
+<h1>{{if .PublicHost}}{{.PublicHost}}{{else}}{{.T.title}}{{end}}</h1>
+<p class="lead">{{.T.leadBefore}} <a href="{{.Upstream}}" rel="noreferrer">{{.UpstreamHost}}</a>{{.T.leadAfter}}</p>
+<div class="card">
 <dl>
-{{if .Manifest}}
-<dt>Catalogue</dt><dd>{{.Manifest.Epoch}}-{{.Manifest.Seq}}, built {{.Manifest.GeneratedAt}}, expires {{.Manifest.ExpiresAt}}</dd>
-<dt>Sets</dt><dd>{{.Sets}}</dd>
-<dt>Signed by</dt><dd class="mono">{{.Manifest.KeyID}}</dd>
-{{else}}
-<dt>Catalogue</dt><dd>no copy yet</dd>
-{{end}}
-<dt>Last refresh</dt><dd>{{when .LastRefresh}}</dd>
-<dt>Last error</dt><dd>{{if .LastError}}{{.LastError}}{{else}}none{{end}}</dd>
-<dt>Queued records</dt><dd>{{.Queued}}</dd>
-{{if not .LastAnnounce.IsZero}}<dt>Last announce</dt><dd>{{when .LastAnnounce}}: {{.AnnounceNote}}</dd>{{end}}
+<dt>{{.T.catalogue}}</dt>
+{{if .Catalogue}}<dd><span class="mono">{{.Catalogue}}</span>, {{.Sets}}</dd>
+<dt>{{.T.built}}</dt><dd>{{.Built}}</dd>
+<dt>{{.T.expires}}</dt><dd>{{.Expires}}</dd>
+{{else}}<dd>{{.T.noCopy}}</dd>{{end}}
+<dt>{{.T.lastCheck}}</dt>
+<dd>{{.LastRefresh}}{{if .Stale}}<span class="pill warn">{{.T.stale}}</span>{{else if .Catalogue}}<span class="pill ok">{{.T.inSync}}</span>{{end}}</dd>
+{{if .Queued}}<dt>{{.T.queued}}</dt><dd>{{.Queued}}</dd>{{end}}
+{{if .Announced}}<dt>{{.T.announced}}</dt><dd>{{.Announced}}<span class="pill">{{.Outcome}}</span></dd>{{end}}
 </dl>
-<footer>b4hub {{.Version}}. This host serves a signed copy of the central catalogue and forwards records to it unchanged.</footer>
+</div>
+<footer>b4hub {{.Version}}. {{.T.footer}}</footer>
+</main>
 </body>
 </html>

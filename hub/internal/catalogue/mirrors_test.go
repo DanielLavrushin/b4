@@ -49,7 +49,7 @@ func TestMirrorHealthRequiresAManifestSignedByTheHub(t *testing.T) {
 
 	ctx := context.Background()
 	now := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
-	row, err := st.AnnounceMirror(ctx, mirror.URL, "hmac", now)
+	row, err := st.AnnounceMirror(ctx, mirror.URL, "hmac", "1.0.0", now)
 	if err != nil {
 		t.Fatal(err)
 	}

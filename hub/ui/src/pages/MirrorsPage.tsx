@@ -55,6 +55,7 @@ export function MirrorsPage() {
             <TableHead>
               <TableRow>
                 <TableCell>{t("mirrors.columns.url")}</TableCell>
+                <TableCell>{t("mirrors.columns.version")}</TableCell>
                 <TableCell>{t("mirrors.columns.key")}</TableCell>
                 <TableCell>{t("mirrors.columns.status")}</TableCell>
                 <TableCell>{t("mirrors.columns.firstSeen")}</TableCell>
@@ -70,6 +71,13 @@ export function MirrorsPage() {
                     <Link href={m.url} rel="noreferrer" underline="hover">
                       {m.url}
                     </Link>
+                  </TableCell>
+                  <TableCell sx={{ whiteSpace: "nowrap" }}>
+                    {m.version ? <Mono>{m.version}</Mono> : (
+                      <Typography variant="caption" sx={{ color: colors.text.disabled }}>
+                        {t("mirrors.versionUnknown")}
+                      </Typography>
+                    )}
                   </TableCell>
                   <TableCell><Mono title={m.key_hmac}>{m.key}</Mono></TableCell>
                   <TableCell>

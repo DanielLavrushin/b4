@@ -159,7 +159,7 @@ Trust lifts the limits and nothing else. A trusted contributor's sets still wait
 
 ## Mirrors
 
-Every hub that announced itself as a mirror of this one, pending first. The row carries the URL, the key that announced it, the status, when it was first and last seen, and the result of the last health check.
+Every hub that announced itself as a mirror of this one, pending first. The row carries the URL, the b4hub version the mirror reported in its last announcement, the key that announced it, the status, when it was first and last seen, and the result of the last health check.
 
 | Action | Effect |
 | --- | --- |

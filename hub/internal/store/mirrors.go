@@ -28,18 +28,19 @@ type Mirror struct {
 	LastCheck time.Time
 	LastOK    time.Time
 	Reason    string
+	Version   string
 }
 
 func (m Mirror) Healthy() bool {
 	return !m.LastCheck.IsZero() && m.LastOK.Equal(m.LastCheck)
 }
 
-const mirrorColumns = `id, url, key_hmac, first_seen, last_seen, status, last_check, last_ok, reason`
+const mirrorColumns = `id, url, key_hmac, first_seen, last_seen, status, last_check, last_ok, reason, version`
 
 func scanMirror(row rowScanner) (*Mirror, error) {
 	var m Mirror
 	var firstSeen, lastSeen, lastCheck, lastOK string
-	if err := row.Scan(&m.ID, &m.URL, &m.KeyHMAC, &firstSeen, &lastSeen, &m.Status, &lastCheck, &lastOK, &m.Reason); err != nil {
+	if err := row.Scan(&m.ID, &m.URL, &m.KeyHMAC, &firstSeen, &lastSeen, &m.Status, &lastCheck, &lastOK, &m.Reason, &m.Version); err != nil {
 		return nil, err
 	}
 	m.FirstSeen = parseTime(firstSeen)
@@ -49,10 +50,10 @@ func scanMirror(row rowScanner) (*Mirror, error) {
 	return &m, nil
 }
 
-func (s *Store) AnnounceMirror(ctx context.Context, url, keyHMAC string, now time.Time) (*Mirror, error) {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO mirrors(url, key_hmac, first_seen, last_seen, status) VALUES(?, ?, ?, ?, ?)
-		ON CONFLICT(url) DO UPDATE SET last_seen = excluded.last_seen, key_hmac = excluded.key_hmac`,
-		url, keyHMAC, formatTime(now), formatTime(now), MirrorPending)
+func (s *Store) AnnounceMirror(ctx context.Context, url, keyHMAC, version string, now time.Time) (*Mirror, error) {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO mirrors(url, key_hmac, first_seen, last_seen, status, version) VALUES(?, ?, ?, ?, ?, ?)
+		ON CONFLICT(url) DO UPDATE SET last_seen = excluded.last_seen, key_hmac = excluded.key_hmac, version = excluded.version`,
+		url, keyHMAC, formatTime(now), formatTime(now), MirrorPending, version)
 	if err != nil {
 		return nil, err
 	}

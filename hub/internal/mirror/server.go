@@ -28,14 +28,7 @@ const (
 //go:embed templates/index.html
 var templateFS embed.FS
 
-var page = template.Must(template.New("index.html").Funcs(template.FuncMap{
-	"when": func(t time.Time) string {
-		if t.IsZero() {
-			return "never"
-		}
-		return t.UTC().Format("2006-01-02 15:04 UTC")
-	},
-}).ParseFS(templateFS, "templates/index.html"))
+var page = template.Must(template.New("index.html").ParseFS(templateFS, "templates/index.html"))
 
 func (s *Service) Router() *http.ServeMux {
 	mux := http.NewServeMux()
@@ -154,13 +147,14 @@ func (s *Service) index(w http.ResponseWriter, r *http.Request) {
 	status := s.Status()
 	status.Queued = s.relay.Queued()
 	var buf bytes.Buffer
-	if err := page.Execute(&buf, status); err != nil {
+	if err := page.Execute(&buf, newPageView(pageLang(r), status)); err != nil {
 		log.Printf("mirror: render index: %v", err)
 		http.Error(w, "page failed to render", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", cacheNever)
+	w.Header().Set("Vary", "Accept-Language")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	_, _ = w.Write(buf.Bytes())
 }

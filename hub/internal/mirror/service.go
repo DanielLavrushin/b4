@@ -41,16 +41,39 @@ type Options struct {
 }
 
 type Status struct {
-	Upstream     string
-	PublicURL    string
-	Manifest     *hubwire.Manifest
-	Sets         int
-	LastRefresh  time.Time
-	LastError    string
-	LastAnnounce time.Time
-	AnnounceNote string
-	Queued       int
-	Version      string
+	Upstream      string
+	PublicURL     string
+	Manifest      *hubwire.Manifest
+	Sets          int
+	LastRefresh   time.Time
+	LastError     string
+	LastAnnounce  time.Time
+	AnnounceNote  string
+	AnnounceState string
+	Queued        int
+	Version       string
+}
+
+const (
+	AnnounceFailed   = "failed"
+	AnnounceRefused  = "refused"
+	AnnounceAccepted = "accepted"
+)
+
+func announceState(answer *Answer, err error) string {
+	if err != nil {
+		return AnnounceFailed
+	}
+	if answer.Status != http.StatusAccepted && answer.Status != http.StatusOK {
+		return AnnounceRefused
+	}
+	var body struct {
+		Status string `json:"status"`
+	}
+	if json.Unmarshal(answer.Body, &body) != nil || strings.TrimSpace(body.Status) == "" {
+		return AnnounceAccepted
+	}
+	return strings.TrimSpace(body.Status)
 }
 
 type Service struct {
@@ -243,6 +266,7 @@ func (s *Service) Announce(ctx context.Context) error {
 	s.mu.Lock()
 	s.status.LastAnnounce = s.opts.Now().UTC()
 	s.status.AnnounceNote = note
+	s.status.AnnounceState = announceState(answer, err)
 	s.mu.Unlock()
 	log.Printf("mirror: announced %s to %s: %s", s.opts.PublicURL, s.opts.Upstream, note)
 	return err
