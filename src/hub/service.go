@@ -190,7 +190,7 @@ func (s *Service) BaseURLs() []string {
 	hubCfg := s.getCfg().System.Hub
 	configured := hubCfg.URLs
 	mirrors := s.KnownMirrors()
-	lists := [][]string{configured, mirrors, s.builtin}
+	lists := [][]string{configured, s.builtin, mirrors}
 	if strings.TrimSpace(hubCfg.PublicKey) != "" && len(configured) > 0 {
 		lists = [][]string{configured, mirrors}
 	}

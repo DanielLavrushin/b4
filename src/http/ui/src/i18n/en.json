@@ -793,9 +793,9 @@
         "lastError": "Last error",
         "lastErrorHint": "The next sync clears this when it succeeds.",
         "hub": "Hub",
-        "hubHint": "Tried in the order shown. Mirrors the hub approves are learned automatically and join the list.",
-        "hubHintMirrors_one": "Tried in the order shown. {{count}} of them is a mirror learned from the hub; it serves the same signed list.",
-        "hubHintMirrors_other": "Tried in the order shown. {{count}} of them are mirrors learned from the hub; they serve the same signed list.",
+        "hubHint": "Tried in the order shown: addresses entered by hand first, then the hub, then mirrors learned from it.",
+        "hubHintMirrors_one": "Tried in the order shown: addresses entered by hand first, then the hub, then {{count}} mirror learned from it; it serves the same signed list.",
+        "hubHintMirrors_other": "Tried in the order shown: addresses entered by hand first, then the hub, then {{count}} mirrors learned from it; they serve the same signed list.",
         "address": {
           "configured": "Entered under Hub mirrors",
           "learned": "Mirror learned from the hub",

@@ -169,7 +169,7 @@ The root of a mirror, `/`, is a page for a browser: the hub it mirrors, the cata
 
 ### Why a router ends up using one
 
-A router tries its addresses in order: the ones configured by hand, then the ones it learned, then the built-in one. Any of them can answer, and the answer is the same signed catalogue, so an address that responds is enough for the sync to succeed. A mirror is a second place to get the same bytes from, for a network where the first does not answer.
+A router tries its addresses in order: the ones configured by hand, then the built-in one, then the ones it learned. Any of them can answer, and the answer is the same signed catalogue, so an address that responds is enough for the sync to succeed. A mirror is a second place to get the same bytes from, for a network where the hub does not answer; a learned mirror that should come first goes into **Hub mirrors** by hand, which moves it ahead of the hub while the rest stay behind it.
 
 Mirrors are learned automatically. Each signed manifest carries the list of mirrors the hub has approved, and a router that verifies a manifest stores that list next to the key that signed it, up to 32 of them, and appends it to whatever is configured by hand. Changing **Hub public key** discards them, because a mirror list is only trusted as far as the key that announced it.
 

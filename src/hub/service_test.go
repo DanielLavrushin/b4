@@ -449,8 +449,11 @@ func TestManifestMirrorsFollowConfiguredURLsAndRevokedKeysAreDropped(t *testing.
 	if _, err := box.svc.Sync(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{f.URL(), "https://mirror-a.example", "http://10.0.0.5:8080", "https://mirror-b.example", DefaultBaseURL}
+	want := []string{f.URL(), DefaultBaseURL, "https://mirror-a.example", "http://10.0.0.5:8080", "https://mirror-b.example"}
 	assertBases(t, box.svc.BaseURLs(), want)
+	box.update(func(cfg *config.Config) { cfg.System.Hub.URLs = []string{"https://mirror-b.example", f.URL()} })
+	assertBases(t, box.svc.BaseURLs(), []string{"https://mirror-b.example", f.URL(), DefaultBaseURL, "https://mirror-a.example", "http://10.0.0.5:8080"})
+	box.update(func(cfg *config.Config) { cfg.System.Hub.URLs = []string{f.URL()} })
 	if st := box.svc.Status(); len(st.Mirrors) != 4 {
 		t.Errorf("status must list the learned mirrors, got %v", st.Mirrors)
 	} else if st.Active != f.URL() {
