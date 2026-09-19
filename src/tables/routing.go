@@ -115,6 +115,11 @@ var (
 	routePhaseMu        sync.Mutex
 	routeSyncedCfg      *config.Config
 	routeSyncRetry      *config.Config
+	routeSyncRetryTimer *time.Timer
+	routeSyncRetryDelay time.Duration
+	routeSyncRetryOwn   bool
+	routeSyncRetryBase  = 10 * time.Second
+	routeSyncRetryMax   = 10 * time.Minute
 	routeRuleCache      = make(map[string]routeState)
 	routeIfaceAuto      = make(map[string]routeState)
 	routeEngine         routeBackend
@@ -384,9 +389,6 @@ func routeAddResolvedIPs(cfg *config.Config, set *config.SetConfig, ips []net.IP
 	if cfg == nil || set == nil || len(ips) == 0 {
 		return true
 	}
-	if config.RoutingIsBlock(set.Routing.Mode) || set.Targets.DomainOnly {
-		return true
-	}
 
 	routeMu.Lock()
 	defer routeMu.Unlock()
@@ -395,9 +397,15 @@ func routeAddResolvedIPs(cfg *config.Config, set *config.SetConfig, ips []net.IP
 	if !ok {
 		return false
 	}
-	if st.set != nil && st.set != set && !routeSameResolveTargets(st.set, set) {
-		log.Tracef("Routing: dropping %d resolved IPs for set %s, its targets changed while they were being resolved", len(ips), set.Name)
-		return false
+	if st.set != nil && st.set != set {
+		if !routeSameResolveTargets(st.set, set) {
+			log.Tracef("Routing: dropping %d resolved IPs for set %s, its targets changed while they were being resolved", len(ips), set.Name)
+			return false
+		}
+		set = st.set
+	}
+	if config.RoutingIsBlock(st.mode) || set.Targets.DomainOnly {
+		return true
 	}
 	be := routeEngine
 	if be == nil {
@@ -663,6 +671,8 @@ func routeCollectEntries(set *config.SetConfig) (v4, v6 []string) {
 }
 
 func RoutingClearAll() {
+	routePhaseMu.Lock()
+	defer routePhaseMu.Unlock()
 	routeMu.Lock()
 	defer routeMu.Unlock()
 
@@ -689,7 +699,8 @@ func RoutingClearAll() {
 	routeRuleCache = make(map[string]routeState)
 	routeIfaceAuto = make(map[string]routeState)
 	routeEngine = nil
-	routeSyncedCfg, routeSyncRetry = nil, nil
+	routeSyncedCfg = nil
+	routeClearSyncRetry()
 	proxyTableForget()
 	routeForgetRtTableNames()
 	routeForgetRPFilterState()
@@ -977,6 +988,56 @@ func routingSyncRetryConfig() *config.Config {
 	return routeSyncRetry
 }
 
+func routeQueueSyncRetry(cfg *config.Config) {
+	if routeSyncRetry == cfg && routeSyncRetryOwn && routeSyncRetryDelay > 0 {
+		next := routeSyncRetryDelay * 2
+		if next >= routeSyncRetryMax {
+			if routeSyncRetryDelay < routeSyncRetryMax {
+				log.Warnf("Routing: the routing sync keeps failing, it will be retried every %v until it succeeds", routeSyncRetryMax)
+			}
+			next = routeSyncRetryMax
+		}
+		routeSyncRetryDelay = next
+	} else if routeSyncRetry != cfg || routeSyncRetryDelay == 0 {
+		routeSyncRetryDelay = routeSyncRetryBase
+	}
+	routeSyncRetryOwn = false
+	routeSyncRetry = cfg
+	if routeSyncRetryTimer != nil {
+		routeSyncRetryTimer.Stop()
+	}
+	delay := routeSyncRetryDelay
+	routeSyncRetryTimer = time.AfterFunc(delay, func() { routeRetrySync(cfg) })
+	log.Tracef("Routing: the routing sync will be retried in %v", delay)
+}
+
+func routeClearSyncRetry() {
+	if routeSyncRetryTimer != nil {
+		routeSyncRetryTimer.Stop()
+		routeSyncRetryTimer = nil
+	}
+	routeSyncRetry = nil
+	routeSyncRetryDelay = 0
+	routeSyncRetryOwn = false
+}
+
+func routeRetrySync(cfg *config.Config) {
+	routePhaseMu.Lock()
+	defer routePhaseMu.Unlock()
+	routeMu.Lock()
+	pending := routeSyncRetry == cfg
+	routeSyncRetryOwn = pending
+	routeMu.Unlock()
+	if !pending {
+		return
+	}
+	log.Tracef("Routing: retrying the routing sync that failed")
+	routingSyncConfig(cfg)
+	if routingSyncRetryConfig() == nil {
+		log.Infof("Routing: the routing sync that failed has been retried successfully")
+	}
+}
+
 func RoutingSyncConfig(cfg *config.Config) {
 	routePhaseMu.Lock()
 	defer routePhaseMu.Unlock()
@@ -1001,7 +1062,8 @@ func routingSyncConfig(cfg *config.Config) {
 		log.Tracef("Routing: no firewall backend available, skipping sync")
 		routeRuleCache = make(map[string]routeState)
 		routeIfaceAuto = make(map[string]routeState)
-		routeSyncedCfg, routeSyncRetry = cfg, nil
+		routeSyncedCfg = cfg
+		routeClearSyncRetry()
 		return
 	}
 
@@ -1009,7 +1071,8 @@ func routingSyncConfig(cfg *config.Config) {
 		log.Tracef("Routing: ip binary is missing, skipping sync")
 		routeRuleCache = make(map[string]routeState)
 		routeIfaceAuto = make(map[string]routeState)
-		routeSyncedCfg, routeSyncRetry = cfg, nil
+		routeSyncedCfg = cfg
+		routeClearSyncRetry()
 		return
 	}
 
@@ -1017,12 +1080,13 @@ func routingSyncConfig(cfg *config.Config) {
 		if routeSyncRetry == cfg {
 			log.Tracef("Routing: base still cannot be ensured during the retried sync (%s): %v", be.name(), err)
 		} else {
-			log.Errorf("Routing: failed to ensure base during sync (%s): %v, the tables monitor retries it", be.name(), err)
+			log.Errorf("Routing: failed to ensure base during sync (%s): %v, it will be retried", be.name(), err)
 		}
-		routeSyncRetry = cfg
+		routeQueueSyncRetry(cfg)
 		return
 	}
-	routeSyncedCfg, routeSyncRetry = cfg, nil
+	retrying := routeSyncRetry == cfg
+	failed := false
 
 	if be.name() == backendNFTables {
 		routeNftSweepBaseOutputBypasses()
@@ -1116,7 +1180,12 @@ func routingSyncConfig(cfg *config.Config) {
 				if hadPrevious {
 					routeRuleCache[set.Id] = previous
 				}
-				log.Errorf("Routing: failed to ensure rule for set '%s' during sync: %v", set.Name, err)
+				failed = true
+				if retrying {
+					log.Tracef("Routing: set '%s' still cannot be installed during the retried sync: %v", set.Name, err)
+				} else {
+					log.Errorf("Routing: failed to ensure rule for set '%s' during sync: %v, it will be retried", set.Name, err)
+				}
 				continue
 			}
 			routeRuleCache[set.Id] = cur
@@ -1142,6 +1211,13 @@ func routingSyncConfig(cfg *config.Config) {
 	routeReconcilePolicyRules(cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	routeReestablishJumpOrder(be, cfg, len(newRoutingSets) > 0)
 	routeEnsurePreJumpPrecedence(be, cfg)
+
+	routeSyncedCfg = cfg
+	if failed {
+		routeQueueSyncRetry(cfg)
+	} else {
+		routeClearSyncRetry()
+	}
 
 	toResolve := append(newRoutingSets, retargetedSets...)
 	if len(toResolve) > 0 {

@@ -1300,6 +1300,7 @@ type mockRouterGuard struct {
 
 type mockRouteBackend struct {
 	ensureBaseFn  func() error
+	ensureChainFn func(chain string, isMangle bool) error
 	guards        []mockRouterGuard
 	guardOK       *bool
 	addElementsFn func(setName string, ips []string, ttlSec int)
@@ -1338,10 +1339,15 @@ func (m *mockRouteBackend) ensureBase() error {
 	}
 	return nil
 }
-func (m *mockRouteBackend) ensureIPSet(name string, v6 bool) error        { return nil }
-func (m *mockRouteBackend) ensureChain(chain string, isMangle bool) error { return nil }
-func (m *mockRouteBackend) flushChain(chain string, isMangle bool)        {}
-func (m *mockRouteBackend) deleteChain(chain string, isMangle bool)       {}
+func (m *mockRouteBackend) ensureIPSet(name string, v6 bool) error { return nil }
+func (m *mockRouteBackend) ensureChain(chain string, isMangle bool) error {
+	if m.ensureChainFn != nil {
+		return m.ensureChainFn(chain, isMangle)
+	}
+	return nil
+}
+func (m *mockRouteBackend) flushChain(chain string, isMangle bool)  {}
+func (m *mockRouteBackend) deleteChain(chain string, isMangle bool) {}
 func (m *mockRouteBackend) snapshotChainRules(chain string, isMangle bool) routeChainSnapshot {
 	return routeChainSnapshot{chain: chain, isMangle: isMangle}
 }

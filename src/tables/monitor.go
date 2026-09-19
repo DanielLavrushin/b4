@@ -18,13 +18,12 @@ type Monitor struct {
 	interval time.Duration
 	backend  string
 
-	started        bool
-	pendingApply   *config.Config
-	retryAnnounced *config.Config
-	kick           chan struct{}
-	kickSettle     time.Duration
-	startDelay     time.Duration
-	tickFn         func(requested bool) bool
+	started      bool
+	pendingApply *config.Config
+	kick         chan struct{}
+	kickSettle   time.Duration
+	startDelay   time.Duration
+	tickFn       func(requested bool) bool
 
 	ifaceStateMu sync.Mutex
 	ifaceState   map[string]ifaceSnapshot
@@ -174,19 +173,10 @@ func (m *Monitor) tick(requested bool) bool {
 
 func (m *Monitor) reconcileRouting(restored bool) bool {
 	routePhaseMu.Lock()
-	if pending := routingSyncRetryConfig(); pending != nil {
-		if m.retryAnnounced != pending {
-			log.Warnf("Routing: retrying the routing sync that failed...")
-			m.retryAnnounced = pending
-		}
-		routingSyncConfig(pending)
-		if routingSyncRetryConfig() != nil {
-			routePhaseMu.Unlock()
-			return true
-		}
-		log.Infof("Routing: the routing sync that failed has been retried successfully")
-		m.retryAnnounced = nil
-		restored = true
+	if pending := routingSyncRetryConfig(); pending != nil && pending != routingSyncedConfig() {
+		log.Tracef("Monitor: a newer routing configuration is waiting to be retried, leaving routing alone this tick")
+		routePhaseMu.Unlock()
+		return restored
 	}
 	cfg := routingSyncedConfig()
 	if cfg == nil {

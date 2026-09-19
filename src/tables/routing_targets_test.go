@@ -2,7 +2,9 @@ package tables
 
 import (
 	"net"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 )
@@ -10,11 +12,14 @@ import (
 func TestResolvedIPsAreDroppedWhenTheSetTargetsChanged(t *testing.T) {
 	familyResetGlobals(t)
 	pushed := map[string][]string{}
+	var ttls []int
 	routeEngine = &mockRouteBackend{addElementsFn: func(name string, ips []string, ttlSec int) {
 		pushed[name] = append(pushed[name], ips...)
+		ttls = append(ttls, ttlSec)
 	}}
 	set := familyTestSet()
 	set.Targets.SNIDomains = []string{"a.example"}
+	set.Routing.IPTTLSeconds = 600
 	cfg := familyTestConfig(true, false)
 	ips := []net.IP{net.ParseIP("203.0.113.9")}
 
@@ -31,11 +36,15 @@ func TestResolvedIPsAreDroppedWhenTheSetTargetsChanged(t *testing.T) {
 
 	republished := *set
 	republished.Targets.SNIDomains = []string{"A.example "}
+	republished.Routing.IPTTLSeconds = 60
 	if !routeAddResolvedIPs(cfg, &republished, ips) {
 		t.Fatalf("addresses from a republished copy of the same targets were refused")
 	}
 	if got := len(pushed["b4r_famtest_v4"]); got != 2 {
 		t.Fatalf("addresses from an unchanged republished set were not written, got %d entries", got)
+	}
+	if ttls[len(ttls)-1] != set.Routing.IPTTLSeconds {
+		t.Fatalf("addresses from a republished set were written with the snapshot's TTL %d instead of the installed set's %d", ttls[len(ttls)-1], set.Routing.IPTTLSeconds)
 	}
 
 	edited := *set
@@ -101,11 +110,41 @@ func TestSameResolveTargets(t *testing.T) {
 	}
 }
 
-func TestFailedRoutingSyncIsRetriedByTheMonitor(t *testing.T) {
+func stubRetryState(t *testing.T) {
+	t.Helper()
+	routeMu.Lock()
+	prevSynced, prevRetry, prevBase := routeSyncedCfg, routeSyncRetry, routeSyncRetryBase
+	routeClearSyncRetry()
+	routeSyncedCfg = nil
+	routeSyncRetryBase = 20 * time.Millisecond
+	routeMu.Unlock()
+	t.Cleanup(func() {
+		routeMu.Lock()
+		routeClearSyncRetry()
+		routeSyncedCfg, routeSyncRetry, routeSyncRetryBase = prevSynced, prevRetry, prevBase
+		routeMu.Unlock()
+	})
+}
+
+func waitUntil(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", what)
+}
+
+func TestFailedRoutingSyncRetriesOnItsOwnWithBackoff(t *testing.T) {
 	familyResetGlobals(t)
-	fail := true
+	stubRetryState(t)
+	var fail atomic.Bool
+	fail.Store(true)
 	routeEngine = &mockRouteBackend{ensureBaseFn: func() error {
-		if fail {
+		if fail.Load() {
 			return errTestClear
 		}
 		return nil
@@ -113,16 +152,6 @@ func TestFailedRoutingSyncIsRetriedByTheMonitor(t *testing.T) {
 	set := familyTestSet()
 	cfg := familyTestConfig(true, false)
 	cfg.Sets = []*config.SetConfig{set}
-	routeMu.Lock()
-	prevSynced, prevRetry := routeSyncedCfg, routeSyncRetry
-	routeSyncedCfg, routeSyncRetry = nil, nil
-	routeMu.Unlock()
-	t.Cleanup(func() {
-		routeMu.Lock()
-		routeSyncedCfg, routeSyncRetry = prevSynced, prevRetry
-		routeMu.Unlock()
-	})
-
 	earlier := familyTestConfig(true, false)
 	routeMu.Lock()
 	routeSyncedCfg = earlier
@@ -136,34 +165,106 @@ func TestFailedRoutingSyncIsRetriedByTheMonitor(t *testing.T) {
 		t.Fatalf("a sync that failed at its base was not queued for retry")
 	}
 
-	m, ptr := newLockTestMonitor(t)
-	ptr.Store(cfg)
-	if !m.reconcileRouting(false) {
-		t.Fatalf("a tick with a failed retry read as nothing to do")
-	}
-	if routingSyncRetryConfig() != cfg {
-		t.Fatalf("a failed retry lost the pending config, got %v", routingSyncRetryConfig())
-	}
-	if routingSyncedConfig() != earlier {
-		t.Fatalf("a failed retry moved the last completed sync")
+	waitUntil(t, "a second failed attempt to back off", func() bool {
+		routeMu.Lock()
+		defer routeMu.Unlock()
+		return routeSyncRetryDelay > routeSyncRetryBase
+	})
+	if routingSyncRetryConfig() != cfg || routingSyncedConfig() != earlier {
+		t.Fatalf("a failed retry lost the pending config or moved the last completed sync")
 	}
 
-	fail = false
-	if !m.reconcileRouting(false) {
-		t.Fatalf("the monitor did not report the retried sync")
-	}
-	if routingSyncRetryConfig() != nil {
-		t.Fatalf("the retry was left queued after it succeeded")
-	}
-	if routingSyncedConfig() != cfg {
-		t.Fatalf("the retried sync was not recorded as the last completed sync")
-	}
+	fail.Store(false)
+	waitUntil(t, "the retry to succeed", func() bool {
+		return routingSyncRetryConfig() == nil && routingSyncedConfig() == cfg
+	})
 	routeMu.Lock()
 	_, installed := routeRuleCache[set.Id]
 	routeMu.Unlock()
 	if !installed {
 		t.Fatalf("the retried sync did not install the set")
 	}
+}
+
+func TestSetThatFailsToInstallKeepsTheSyncQueued(t *testing.T) {
+	familyResetGlobals(t)
+	stubRetryState(t)
+	var fail atomic.Bool
+	fail.Store(true)
+	routeEngine = &mockRouteBackend{ensureChainFn: func(string, bool) error {
+		if fail.Load() {
+			return errTestClear
+		}
+		return nil
+	}}
+	set := familyTestSet()
+	cfg := familyTestConfig(true, false)
+	cfg.Sets = []*config.SetConfig{set}
+
+	RoutingSyncConfig(cfg)
+	if routingSyncedConfig() != cfg {
+		t.Fatalf("a partially applied sync was not recorded as the state the cache is built from")
+	}
+	if routingSyncRetryConfig() != cfg {
+		t.Fatalf("a set that failed to install did not keep the sync queued for retry")
+	}
+
+	fail.Store(false)
+	waitUntil(t, "the retry to install the set", func() bool {
+		routeMu.Lock()
+		defer routeMu.Unlock()
+		_, installed := routeRuleCache[set.Id]
+		return installed && routeSyncRetry == nil
+	})
+}
+
+func TestMonitorLeavesRoutingAloneWhileARetryIsQueued(t *testing.T) {
+	familyResetGlobals(t)
+	stubRetryState(t)
+	m, ptr := newLockTestMonitor(t)
+	published := routedTestConfig("b4test0")
+	ptr.Store(published)
+	routeMu.Lock()
+	routeSyncRetry = published
+	routeMu.Unlock()
+
+	if m.reconcileRouting(false) {
+		t.Fatalf("routing phase reported work while a newer config was queued for retry")
+	}
+	if _, tracked := m.ifaceState["b4test0"]; tracked {
+		t.Fatalf("routing phase reconciled a config whose sync is still queued for retry")
+	}
+
+	routeMu.Lock()
+	routeSyncedCfg = published
+	routeMu.Unlock()
+	m.reconcileRouting(false)
+	if _, tracked := m.ifaceState["b4test0"]; !tracked {
+		t.Fatalf("routing phase stayed switched off although the queued retry is for the config that is already installed")
+	}
+}
+
+func TestRetryBackoffOnlyGrowsOnTheTimersOwnAttempts(t *testing.T) {
+	familyResetGlobals(t)
+	stubRetryState(t)
+	routeEngine = &mockRouteBackend{ensureBaseFn: func() error { return errTestClear }}
+	set := familyTestSet()
+	cfg := familyTestConfig(true, false)
+	cfg.Sets = []*config.SetConfig{set}
+
+	RoutingSyncConfig(cfg)
+	RoutingSyncConfig(cfg)
+	routeMu.Lock()
+	delay := routeSyncRetryDelay
+	routeMu.Unlock()
+	if delay != routeSyncRetryBase {
+		t.Fatalf("a sync driven by a save or link event doubled the retry delay to %v", delay)
+	}
+	waitUntil(t, "the timer's own retry to back off", func() bool {
+		routeMu.Lock()
+		defer routeMu.Unlock()
+		return routeSyncRetryDelay > routeSyncRetryBase
+	})
 }
 
 func TestSyncKeepsTheStateButFollowsTheSetOfAnUnchangedSet(t *testing.T) {
