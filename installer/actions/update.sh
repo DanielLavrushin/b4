@@ -52,6 +52,7 @@ _recover_service_paths() {
 }
 
 refresh_legacy_service_script() {
+    _svc_refreshed=0
     [ -z "$B4_SERVICE_DIR" ] && return 0
     [ -z "$B4_SERVICE_NAME" ] && return 0
 
@@ -86,6 +87,7 @@ refresh_legacy_service_script() {
 
     if _recover_service_paths "$_svc" && service_dispatch "$_svc_type" install >/dev/null 2>&1; then
         log_ok "Service script refreshed"
+        _svc_refreshed=1
     elif [ "$_legacy_log" -eq 1 ]; then
         log_warn "Could not regenerate the service script safely, patching the redirect in place"
         for _legacy in $LEGACY_SERVICE_LOGS; do
@@ -94,6 +96,7 @@ refresh_legacy_service_script() {
             sed -i "s#\"${_esc}\"#\"/dev/null\"#g" "$_svc" 2>/dev/null || true
             sed -i "s#${_esc}#/var/log/b4/errors.log#g" "$_svc" 2>/dev/null || true
         done
+        _svc_refreshed=1
     else
         log_warn "Could not regenerate the service script safely, keeping the installed one"
     fi
@@ -105,6 +108,24 @@ refresh_legacy_service_script() {
             rm -f "$_legacy" 2>/dev/null || true
         fi
     done
+}
+
+_refresh_installed_service() {
+    refresh_legacy_service_script
+    [ "$_svc_refreshed" -eq 1 ] || return 0
+    if ! is_b4_running; then
+        log_info "b4 is not running, the refreshed service script applies at its next start"
+        return 0
+    fi
+    saved_cmdline=$(b4_running_cmdline 2>/dev/null || true)
+    if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
+        log_info "Stopping service (${B4_SERVICE_TYPE}) so it comes back under the refreshed script..."
+    fi
+    service_stop_b4 || {
+        log_warn "Could not stop the running b4 process, restart it by hand to apply the refreshed script"
+        return 0
+    }
+    _update_restart_b4
 }
 
 _update_restart_b4() {
@@ -215,6 +236,7 @@ action_update() {
         _cur_num=$(version_number "$current_ver")
         if [ -n "$_cur_num" ] && [ "$_cur_num" = "$(version_number "$latest_ver")" ]; then
             log_ok "Already up to date"
+            _refresh_installed_service
             return 0
         fi
     fi
