@@ -13,7 +13,7 @@ It runs in one of two shapes.
 | --- | --- | --- |
 | Command | `b4hub serve` | `b4hub mirror` |
 | Catalogue | Built from the sets shared to it | Copied from an upstream hub |
-| Signing key | Its own, from `b4hub keygen` | None; it serves the upstream signature unchanged |
+| Signing key | Its own, from `b4hub keygen` | None for the catalogue, which keeps the upstream signature; an announcing mirror holds a key only to sign its announcement |
 | Moderation | Its own moderators and console | None |
 | Records from routers | Stored and acted on | Forwarded upstream unchanged |
 | Database | SQLite in the data directory | None |
@@ -53,7 +53,7 @@ One static binary with the console embedded in it. Every command takes `--data`,
 | `b4hub moderate` | Approves, rejects, hides, bans and handles mirrors from the command line, without the console. |
 | `b4hub version` | Prints the hub version and the b4 source tree it was built from. |
 
-Every flag has an environment variable counterpart, which is what a unit file or a container normally sets.
+The flags below have an environment variable counterpart, which is what a unit file or a container normally sets. The per-command flags `--new-epoch`, `--revoke`, `--announce` and `--refresh` are given on the command line only.
 
 | Flag | Variable | Default |
 | --- | --- | --- |
@@ -104,7 +104,7 @@ B4HUB_ADMIN_PASSWORD=... b4hub serve --data /var/lib/b4hub \
 `--public-url` is the address the hub advertises for itself in the manifest, so it should be the address routers actually reach, not the loopback one.
 
 :::warning
-With `B4HUB_ADMIN_PASSWORD` unset the hub serves its catalogue normally but the console is closed: the sign-in page reports that moderation is not configured, and every console request is refused. Moderation is then only possible through `b4hub moderate`, which needs the service stopped, since both processes open the same database.
+With `B4HUB_ADMIN_PASSWORD` unset the hub serves its catalogue normally but the console is closed: the sign-in page reports that moderation is not configured, and every sign-in and moderation request is refused. Moderation is then only possible through `b4hub moderate`, which runs alongside the service; the store is SQLite in WAL mode, so a running hub does not lock it out, and that hub picks the decision up at its next build.
 :::
 
 ### Pointing a router at it
@@ -125,11 +125,11 @@ Nothing is published until a moderator approves it, so a new hub starts with an 
 
 | | |
 | --- | --- |
-| Build | Immediately on start, then every 5 minutes when something changed, and at least once a day |
+| Build | Checked on start and every 5 minutes after that; one runs when nothing has been published yet, when something changed, or when the last one is a day old |
 | After a moderation action | The build runs inside the request, so an approval publishes at once |
 | File | `public/catalogue-<epoch>-<seq>.json.gz`, the newest three kept |
 | Manifest | Signed, valid for 14 days from the build |
-| Payloads | Swept hourly; a file no listed version refers to is deleted |
+| Payloads | Swept hourly; a file that no stored version refers to, and that was last written more than an hour ago, is deleted |
 
 A router accepts a manifest only when it is newer than the one it holds: a higher epoch, or the same epoch and a higher sequence number. An older one is refused and the router moves to the next address.
 
@@ -149,7 +149,7 @@ The lookup is a DNS query, not a local database, so the hub host needs working o
 
 ## A mirror of another hub
 
-A mirror carries the catalogue of a hub it does not control. It checks the upstream manifest every five minutes, and when a newer one appears it downloads the catalogue and any payload files it does not already hold, verifies each of them, and writes them into its own `public/` directory to serve as they are.
+A mirror carries the catalogue of a hub it does not control. It checks the upstream manifest every five minutes, and when a newer one appears it downloads the catalogue and any payload files it does not already hold, verifies each of them, stores the payloads in its own `blobs/` and writes the catalogue and the manifest into `public/`, to serve as they are.
 
 ```sh
 b4hub mirror --data /var/lib/b4hub-mirror \
@@ -167,7 +167,7 @@ A mirror keeps working with its upstream down. It loads whatever it copied last 
 
 ### Why a router ends up using one
 
-A router tries its addresses in order: the ones configured by hand, then the ones it learned, then the built-in one. Any of them can answer, and the answer is the same signed catalogue, so an address that responds is enough for the sync to succeed. That is the whole point of a mirror: a second place to get the same bytes from, for a network where the first place does not answer.
+A router tries its addresses in order: the ones configured by hand, then the ones it learned, then the built-in one. Any of them can answer, and the answer is the same signed catalogue, so an address that responds is enough for the sync to succeed. A mirror is a second place to get the same bytes from, for a network where the first does not answer.
 
 Mirrors are learned automatically. Each signed manifest carries the list of mirrors the hub has approved, and a router that verifies a manifest stores that list next to the key that signed it, up to 32 of them, and appends it to whatever is configured by hand. Changing **Hub public key** discards them, because a mirror list is only trusted as far as the key that announced it.
 
@@ -183,7 +183,7 @@ b4hub mirror --data /var/lib/b4hub-mirror \
   --public-url https://mirror.example.org --announce
 ```
 
-`--announce` needs both an identity of its own, so the announcement can be signed, and `--public-url`, which is the address being announced. The announcement is sent when the mirror starts and once a day after that. The URL must be `https://`, at most 200 characters, with no credentials, query or fragment.
+`--announce` needs both an identity of its own, so the announcement can be signed, and `--public-url`, which is the address being announced. The announcement is sent when the mirror starts and once a day after that. The URL must be `https://`, or `http://` on localhost, a loopback, a private or a link-local address, at most 200 characters, with no credentials, query or fragment.
 
 :::warning
 An announcement does not publish anything. It arrives at the upstream hub as **pending** and is never advertised until a moderator approves it on the [Mirrors page](./moderation.md#mirrors) of that hub's console. Announcing again refreshes when the mirror was last seen and never changes a decision already made, so a rejected mirror stays rejected.
@@ -198,7 +198,7 @@ A mirror has no store, so it decides nothing. It posts what it receives to the u
 | When the upstream answers | What the router gets |
 | --- | --- |
 | Normally, whatever the verdict | The hub's own answer, unchanged |
-| Not at all, or with 502, 503 or 504 | A works or broken report is signed, kept on disk and retried; anything else fails |
+| Not at all, or with 502, 503 or 504 | A works or broken report and a complaint are kept on disk, if their signature verifies, and retried; a shared set and a mirror announcement fail |
 
 The queue on disk is retried at every check and kept for 30 days. A shared set is never queued anywhere, so publishing through a mirror whose upstream is down fails and has to be repeated.
 
@@ -210,7 +210,7 @@ A mirror also does not answer `/b4/hub/v1/network`, so a router synced only thro
 
 ### Why a mirror cannot forge a set
 
-The router trusts a key, not an address. The key it trusts is the one built into b4, or the one entered under **Hub public key**, minus anything a manifest has revoked. Every manifest, from whatever address, has to be signed by that key; the manifest names the catalogue file with its size and hash; the catalogue names every payload file with its hash. A mirror holds none of the private material, so a single changed byte makes the router reject the answer and try the next address.
+The router trusts a key, not an address. The key it trusts is the one built into b4, or the one entered under **Hub public key**, minus anything a manifest has revoked. Every manifest, from whatever address, has to be signed by that key; the manifest names the catalogue file with its size and hash; the catalogue names every payload file with its hash. A mirror holds none of the private material, so a single changed byte makes the router reject the answer: a manifest or a catalogue that does not verify sends it to the next address, and a payload whose hash does not match fails the download outright.
 
 The same check runs one level up: a mirror verifies the upstream manifest against its own trusted key before copying anything.
 

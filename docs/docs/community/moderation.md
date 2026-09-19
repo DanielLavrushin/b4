@@ -21,14 +21,14 @@ The password is `B4HUB_ADMIN_PASSWORD` from the service environment. There are n
 | --- | --- |
 | Session | A cookie scoped to `/admin`, valid for seven days |
 | Changing the password | Ends every open session at once |
-| Wrong passwords | Ten attempts per address in fifteen minutes, then refusals with a retry time |
+| Sign-in attempts | Ten per address in each fifteen minute window, wrong or right, then refusals with a retry time |
 | Where actions are accepted from | The console itself; a moderation request that does not come from it is refused |
 
 :::info
 The cookie is marked secure when the request arrives over TLS or carries `X-Forwarded-Proto: https`, which a reverse proxy is expected to set.
 :::
 
-With the password unset the console loads but nothing works: the sign-in card reports that moderation is not configured, and every request behind it is refused. `b4hub moderate` on the host is then the only way to moderate, and it needs the service stopped.
+With the password unset the console loads but nothing works: the sign-in card reports that moderation is not configured, and every sign-in and moderation request is refused. `b4hub moderate` on the host is then the only way to moderate. It opens the same database, in WAL mode with a busy timeout, so a running service does not lock it out, but that service goes on serving the catalogue it last built until its next build.
 
 ## The pages
 
@@ -43,13 +43,13 @@ With the password unset the console loads but nothing works: the sign-in card re
 | **Catalogue** | The published files, and the three operations that republish them |
 | **Settings** | The daily and hourly limits |
 
-Overview, Sets and Mirrors refresh themselves every thirty seconds. Every action reports what it did in a notification carrying the hub's own wording, such as `approved 01J9.../2`.
+Overview, Queue, Sets and Mirrors refresh themselves every thirty seconds. Every action reports what it did in a notification carrying the hub's own wording, such as `approved 01J9.../2`.
 
 ## Overview
 
 Four counts across the top, each opening the page it counts: pending versions, listed sets, keys with the number banned, and mirrors with the number approved and pending.
 
-Below them, three cards. **Catalogue** is what routers download right now: the file, the epoch and sequence number, when it was generated and when it expires, how many sets and payload files it holds, how many mirrors it lists, and whether anything is waiting for the next build. **This hub** carries the version, the b4 source tree it was built from, the key id, the public URL and the number of revoked keys. **Geo databases** shows each downloaded file with its size, source and any error.
+Below them, four cards. **Catalogue** is what routers download right now: the file, the epoch and sequence number, when it was generated and when it expires, how many sets and payload files it holds, how many mirrors it lists, and whether anything is waiting for the next build. **This hub** carries the version, the b4 source tree it was built from, the key id, the public URL and the number of revoked keys. **Moderation** counts the decisions so far: listed, superseded, hidden and rejected versions, and the votes and reports received. **Geo databases** shows each downloaded file with its size, source and any error.
 
 ## Queue
 
@@ -68,7 +68,7 @@ When a listed version exists, **Compare with listed** opens a field-by-field dif
 The **Origin** line names the author label, the network the hub observed the upload from, the network the uploader claimed, and the b4 version and capture engine it was shared from.
 
 :::info
-The hub never stores a contributor's key. What it keeps, and what the console shows as the author, is an HMAC of that key under the hub's own secret: 16 characters on screen, the full value in the tooltip. Two sets by the same contributor carry the same label; the key itself cannot be recovered from it.
+The hub never stores a contributor's key. What it keeps, and what the console shows as the author, is an HMAC of that key under the hub's own secret: 16 characters wherever the author is named, with the full value in the tooltip on the Sets table and on the votes list. Two sets by the same contributor carry the same label; the key itself cannot be recovered from it.
 :::
 
 Under that, everything the version holds: the targets as a summary, the strategy written out as sentences, the flags, the server names the fake packets carry, the pins, the DoH host, the payload files with their sizes and download links, the **Votes** and **Reports** recorded for it, the fingerprint and the b4 version the set needs. **Projection** expands the set as JSON.
@@ -79,8 +79,8 @@ Under that, everything the version holds: the targets as a summary, the strategy
 | --- | --- | --- |
 | **Approve** | none | The version is listed at the build that starts immediately |
 | **Reject** | required | The version is refused and the reason is recorded |
-| **Hide** | optional | The version leaves the catalogue at the next build |
-| **Edit** | none | Opens the editor below |
+| **Hide** | optional | The version leaves the catalogue at the build that starts immediately |
+| **Edit** | none | Opens the editor in a dialog |
 | **Ban uploader** | optional | Every later record signed by that key is refused |
 
 :::warning
@@ -100,7 +100,7 @@ A submission with a good strategy and a flawed domain list can be corrected inst
 Four fields are editable: the title, the description, the domain list one entry per line, and the full set JSON. The domain list and the JSON stay in step, so a change to either is reflected in the other.
 
 :::info
-The description is the one field a router never sends. A set arrives with its name as the title and nothing else; anything under the description on a card was written here.
+The description is the one field the router's publish button leaves empty. A set normally arrives with its name as the title and nothing else, although the router's `/api/hub/share` endpoint accepts a description and the hub stores it, so a description on a card was either sent with the share or written here.
 :::
 
 **Check** runs the submission through the same checks as a fresh share and answers with one of three verdicts:
@@ -122,11 +122,11 @@ b4 has no wildcard syntax, and a plain entry already covers every subdomain. The
 | Check | Example | What it suggests |
 | --- | --- | --- |
 | Entry that can never match | `*.example.com` | Replace it with `example.com`, or drop it when that is already listed |
-| Subdomain with no apex | `www.example.com` alone | Replace it with `example.com`, which covers both |
+| `www.` entry with no apex | `www.example.com` alone | Replace it with `example.com`, which covers both. Other subdomains are not flagged |
 | Repeated entry | `Example.com.` after `example.com` | Drop it |
 | Entry already covered | `cdn.example.com` beside `example.com` | Drop it |
 
-A `regexp:` entry is left alone, and is neither flagged nor treated as covering anything.
+A `regexp:` entry is never treated as covering anything and is never flagged as covered; the only check that touches it is the repeated-entry one, which drops the same pattern listed twice.
 
 **Save** keeps the version pending. **Save and approve** publishes it in the same step. Both record the moderator's note, which is visible in the console only, and keep the received set so the card can show what was changed. A version changed by someone else since the dialog was opened is refused rather than overwritten.
 
@@ -136,10 +136,10 @@ Four tabs: **Listed** is the newest approved version of each set, **Superseded**
 
 One search box matches the title, the set id, the author label, the technique family, the reason a decision carried, every target domain, every geosite category and every sentence of the strategy.
 
-A row opens a panel holding every version of that set, each with its status, its facts and the actions its status allows. A hidden version can be restored and a rejected one approved after all, both of which put it back in the catalogue. The panel also lists every report recorded for the set with the network it came from, whether the hub could place that network, and the domain the reporter had filtered by.
+A row opens a panel holding every version of that set, each with its status, its facts and the actions its status allows. A hidden version can be restored and a rejected one approved after all, both of which put it back in the catalogue. The panel also lists every vote recorded for the set: when it arrived, its kind, the version it applies to, the network the hub observed and whether it could place that network, the contributor, the domain the list was filtered by, and the b4 version. The reports against a version sit on that version's own card.
 
 :::danger
-**Delete permanently**, at the bottom of the panel, removes the set with all its versions, its reports, its complaints and any payload file no other set uses. It asks for the set id to be typed. Hiding is what takes a set out of the catalogue; deletion is for an entry that should never have existed. Routers that applied the set keep their local copy and lose the link to the hub.
+**Delete permanently**, at the bottom of the panel, removes the set with all its versions, its votes, its reports and any payload file no other set uses. It asks for the set id to be typed. Hiding is what takes a set out of the catalogue; deletion is for an entry that should never have existed. Routers that applied the set keep their local copy and lose the link to the hub.
 :::
 
 ## Keys
@@ -203,7 +203,7 @@ Revoking and banning are different tools. Revoking names the signing key of a hu
 
 ## Settings
 
-Six limits, each a whole number, applied to the next request; what a key has already spent today is kept.
+Six limits, each a whole number from 1 to 1000000, applied to the next request; what a key has already spent today is kept.
 
 | Limit | Counted per | Default |
 | --- | --- | --- |
@@ -224,4 +224,4 @@ What a router sees when it runs into one of these is described under [Reports an
 
 ## Without the console
 
-`b4hub moderate` does the same work from the command line: `list`, `approve`, `reject`, `hide`, `ban`, and `mirrors`, `approve-mirror` and `reject-mirror`. It opens the same database directly, so it needs the service stopped.
+`b4hub moderate` does the same work from the command line: `list`, `approve`, `reject`, `hide`, `ban`, and `mirrors`, `approve-mirror` and `reject-mirror`. It opens the same database directly, in WAL mode with a busy timeout, so the service can stay up; it publishes nothing itself, and a running service picks the decision up at its next build.
