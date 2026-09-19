@@ -18,6 +18,11 @@ installed_service_type() {
     fi
 }
 
+installed_init_gen() {
+    _iig=$(sed -n 's/^B4_INIT_GEN=\([0-9][0-9]*\).*/\1/p' "$1" 2>/dev/null | head -1)
+    echo "${_iig:-0}"
+}
+
 _recover_service_paths() {
     _rsp_svc="$1"
     [ -f "$_rsp_svc" ] || return 1
@@ -53,15 +58,17 @@ refresh_legacy_service_script() {
     _svc="${B4_SERVICE_DIR}/${B4_SERVICE_NAME}"
     [ -f "$_svc" ] || return 0
 
+    _svc_type=$(installed_service_type "$_svc")
     _legacy_log=0
     grep -q "b4\.log" "$_svc" 2>/dev/null && _legacy_log=1
     _outdated=0
-    if ! grep -q "^B4_INIT_GEN=" "$_svc" 2>/dev/null && grep -q "B4 DPI Bypass Service" "$_svc" 2>/dev/null; then
+    _installed_gen=$(installed_init_gen "$_svc")
+    _wanted_gen=$(service_init_gen "$_svc_type")
+    if grep -q "B4 DPI Bypass Service" "$_svc" 2>/dev/null && [ "$_installed_gen" -lt "$_wanted_gen" ]; then
         _outdated=1
     fi
     [ "$_legacy_log" -eq 1 ] || [ "$_outdated" -eq 1 ] || return 0
 
-    _svc_type=$(installed_service_type "$_svc")
     if [ "$_svc_type" = "systemd" ]; then
         if [ "$_legacy_log" -eq 1 ]; then
             log_warn "Systemd unit ${_svc} sends b4 output to a legacy log file"
@@ -73,7 +80,7 @@ refresh_legacy_service_script() {
     if [ "$_legacy_log" -eq 1 ]; then
         log_warn "Init script logs b4 output to a legacy file that is never rotated"
     else
-        log_info "Installed ${_svc_type} service script needs regenerating"
+        log_info "Installed ${_svc_type} service script is generation ${_installed_gen}, current is ${_wanted_gen}"
     fi
     log_info "Refreshing ${_svc_type} service script: ${_svc}"
 
@@ -205,7 +212,8 @@ action_update() {
     fi
 
     if [ -z "$B4_LOCAL_ARCHIVE" ]; then
-        if [ "$current_ver" = "$latest_ver" ] || echo "$current_ver" | grep -Fq "$latest_ver"; then
+        _cur_num=$(version_number "$current_ver")
+        if [ -n "$_cur_num" ] && [ "$_cur_num" = "$(version_number "$latest_ver")" ]; then
             log_ok "Already up to date"
             return 0
         fi

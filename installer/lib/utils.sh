@@ -696,6 +696,10 @@ _extract_tag_name() {
     grep -o '"tag_name": *"[^"]*"' | head -1 | cut -d'"' -f4
 }
 
+version_number() {
+    echo "$1" | grep -o '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9A-Za-z.-]*' | head -1
+}
+
 get_latest_version() {
     api_url="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest"
     version=$(fetch_stdout "$api_url" | _extract_tag_name)

@@ -2,6 +2,10 @@
 # Service type: openrc
 # Manages b4 using OpenRC (Alpine Linux and other OpenRC-based distros)
 
+service_openrc_init_gen() {
+    echo 3
+}
+
 service_openrc_install() {
     ensure_dir "$B4_SERVICE_DIR" "Service directory" || return 1
 
@@ -10,7 +14,7 @@ service_openrc_install() {
 
 name="b4"
 description="B4 DPI Bypass Service"
-B4_INIT_GEN=2
+B4_INIT_GEN=$(service_openrc_init_gen)
 
 command="${B4_BIN_DIR}/${BINARY_NAME}"
 command_args="--config ${B4_CONFIG_FILE}"
@@ -21,7 +25,7 @@ retry="TERM/20/KILL/5"
 output_log="/dev/null"
 error_log="/dev/null"
 
-export PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH="\${PATH}:/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 depend() {
     need net
@@ -62,6 +66,9 @@ service_openrc_start() {
 
 service_openrc_stop() {
     rc-service "${B4_SERVICE_NAME}" stop 2>/dev/null || true
+    is_b4_running || return 0
+    log_info "OpenRC does not own the running b4, stopping it directly"
+    stop_b4
 }
 
 register_service "openrc"

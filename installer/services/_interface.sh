@@ -43,9 +43,18 @@ service_dispatch() {
     fi
 }
 
+service_init_gen() {
+    _sig_fn="service_${1}_init_gen"
+    if type "$_sig_fn" >/dev/null 2>&1; then
+        "$_sig_fn"
+    else
+        echo 2
+    fi
+}
+
 service_stop_b4() {
     if [ -n "$B4_SERVICE_TYPE" ] && [ "$B4_SERVICE_TYPE" != "none" ]; then
-        service_call stop 2>/dev/null || true
+        service_call stop || true
         wait_for_b4_exit 20 && return 0
         log_info "b4 is still running after the service stop, stopping it directly"
     fi
