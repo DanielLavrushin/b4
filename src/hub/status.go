@@ -62,7 +62,7 @@ func (s *Service) Status() Status {
 		st.LastSync = s.lastSync.UTC().Format(time.RFC3339)
 	}
 	st.LastError = s.lastError
-	st.Active = s.preferredBase
+	st.Active = s.syncedBase
 	if s.manifest != nil && s.catalogue != nil {
 		st.Catalogue = &CatalogueStatus{
 			Epoch:       s.manifest.Epoch,

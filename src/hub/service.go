@@ -52,6 +52,7 @@ type Service struct {
 	lastSync      time.Time
 	lastError     string
 	preferredBase string
+	syncedBase    string
 
 	identityMu      sync.Mutex
 	identity        *hubwire.Identity
@@ -294,15 +295,17 @@ func (s *Service) catalogueLoaded() bool {
 	return s.catalogue != nil
 }
 
-func (s *Service) markSynced() {
+func (s *Service) markSynced(base string) {
 	s.mu.Lock()
 	s.lastSync = s.now()
 	s.lastError = ""
+	s.syncedBase = base
 	s.mu.Unlock()
 }
 
 func (s *Service) markFailed(err error) {
 	s.mu.Lock()
 	s.lastError = err.Error()
+	s.syncedBase = ""
 	s.mu.Unlock()
 }

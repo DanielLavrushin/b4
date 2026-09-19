@@ -224,4 +224,4 @@ What a router sees when it runs into one of these is described under [Reports an
 
 ## Without the console
 
-`b4hub moderate` does the same work from the command line: `list`, `approve`, `reject`, `hide`, `ban`, and `mirrors`, `approve-mirror` and `reject-mirror`. It opens the same database directly, in WAL mode with a busy timeout, so the service can stay up; it publishes nothing itself, and a running service picks the decision up at its next build.
+`b4hub moderate` covers part of the console's work from the command line: `list`, `approve`, `reject`, `hide` and `ban` for sets and keys, `mirrors`, `approve-mirror` and `reject-mirror` for mirrors. Named as `<id>/<version>`, `approve` also restores a hidden or rejected version. Editing a version, deleting a set, unbanning or trusting a key, removing a mirror and changing the limits exist in the console only. The CLI opens the same database directly, in WAL mode with a busy timeout, so the service can stay up; it publishes nothing itself, and a running service picks the decision up at its next build.

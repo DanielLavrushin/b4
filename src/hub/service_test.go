@@ -132,6 +132,9 @@ func TestSyncFailsWhenANewerCatalogueIsNotDelivered(t *testing.T) {
 	if changed, err := box.svc.Sync(context.Background()); err != nil || !changed {
 		t.Fatalf("the fresh base must be synced while the first one is down: changed=%v err=%v", changed, err)
 	}
+	if st := box.svc.Status(); st.Active != fresh.URL() {
+		t.Errorf("the status must name the base that delivered the catalogue, got %q", st.Active)
+	}
 	stale.SetDown(false)
 
 	fresh.Publish(t, sampleCatalogue(t, 1, 3), time.Now().Add(time.Hour))
@@ -143,8 +146,8 @@ func TestSyncFailsWhenANewerCatalogueIsNotDelivered(t *testing.T) {
 	if m := box.svc.Manifest(); m == nil || m.Seq != 2 {
 		t.Errorf("the stored catalogue must survive the failed sync")
 	}
-	if st := box.svc.Status(); st.LastError == "" {
-		t.Errorf("the failure must be reported in the status: %+v", st)
+	if st := box.svc.Status(); st.LastError == "" || st.Active != "" {
+		t.Errorf("a failed sync must be reported without an answering base: %+v", st)
 	}
 
 	fresh.SetCatalogueMissing(false)
@@ -158,6 +161,9 @@ func TestSyncFailsWhenANewerCatalogueIsNotDelivered(t *testing.T) {
 	fresh.Publish(t, sampleCatalogue(t, 1, 1), time.Now().Add(time.Hour))
 	if changed, err := box.svc.Sync(context.Background()); err != nil || changed {
 		t.Errorf("bases that only serve older catalogues are not a failure: changed=%v err=%v", changed, err)
+	}
+	if st := box.svc.Status(); st.Active != "" {
+		t.Errorf("no base delivered the stored catalogue, yet the status names %q", st.Active)
 	}
 }
 

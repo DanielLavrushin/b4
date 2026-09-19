@@ -43,7 +43,7 @@ func (s *Service) Sync(ctx context.Context) (bool, error) {
 			if sameCatalogue(m, stored) {
 				s.setPreferredBase(base)
 				s.adoptManifest(m)
-				s.markSynced()
+				s.markSynced(base)
 				s.learnNetwork(ctx, base)
 				return false, nil
 			}
@@ -75,7 +75,7 @@ func (s *Service) Sync(ctx context.Context) (bool, error) {
 		}
 		s.install(m, cat)
 		s.adoptManifest(m)
-		s.markSynced()
+		s.markSynced(base)
 		log.Infof("hub: catalogue %d-%d with %d sets synced from %s", cat.Epoch, cat.Seq, len(cat.Sets), base)
 		s.learnNetwork(ctx, base)
 		return true, nil
@@ -84,7 +84,7 @@ func (s *Service) Sync(ctx context.Context) (bool, error) {
 	if catalogueErr != nil {
 		lastErr = catalogueErr
 	} else if staleBases > 0 && s.catalogueLoaded() {
-		s.markSynced()
+		s.markSynced("")
 		return false, nil
 	}
 	if lastErr == nil {
