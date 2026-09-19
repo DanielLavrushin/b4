@@ -3,7 +3,7 @@
 ## [1.82.2] - 2026-09-19
 
 - FIXED: **Saving a setting that rebuilds the firewall was followed by `Tables rules missing, restoring...`, sometimes a failed restore on the `B4_DNSTCP` chain, and on a slow router the rules were absent or half-built for up to twenty seconds** - the rebuild tears every rule down and puts it back while the tables monitor keeps polling, nothing ordered the two, so a poll that landed inside the teardown started a second restore that fought the rebuild over the same chains.
-- CHANGED: **The hub addresses under Settings, Integrations, Community Hub are chips with the host name only, in the order they are tried** - mirrors learned from the hub are outlined and the address that answered the last sync is marked. The row used to print the learned mirrors twice and call them the last addresses, since the status already carried them in the order they are tried and the row appended them once more.
+- CHANGED: **The hub addresses under Settings, Integrations, Community Hub are chips with the host name only, in the order they are tried** - mirrors learned from the hub are outlined and the address that answered the last sync is marked.
 
 ## [1.82.1] - 2026-09-18
 
