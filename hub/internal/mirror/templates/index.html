@@ -203,10 +203,7 @@
             >{{else if .Catalogue}}<span class="pill ok">{{.T.inSync}}</span
             >{{end}}
           </dd>
-          {{if .Queued}}
-          <dt>{{.T.queued}}</dt>
-          <dd>{{.Queued}}</dd>
-          {{end}} {{if .Announced}}
+          {{if .Announced}}
           <dt>{{.T.announced}}</dt>
           <dd>{{.Announced}}<span class="pill">{{.Outcome}}</span></dd>
           {{end}}

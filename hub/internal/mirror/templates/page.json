@@ -13,7 +13,6 @@
     "inSync": "in sync with the hub",
     "stale": "the last check failed, serving the previous copy",
     "checkFailed": "the last check failed",
-    "queued": "Waiting for the hub",
     "announced": "Announced",
     "pending": "accepted, awaiting approval",
     "approved": "approved",
@@ -22,9 +21,7 @@
     "refused": "refused by the hub",
     "failed": "the hub could not be reached",
     "sets_one": "%d set",
-    "sets_other": "%d sets",
-    "records_one": "%d record",
-    "records_other": "%d records"
+    "sets_other": "%d sets"
   },
   "ru": {
     "title": "Зеркало хаба b4",
@@ -40,7 +37,6 @@
     "inSync": "синхронизировано с хабом",
     "stale": "последняя проверка не удалась, отдаётся предыдущая копия",
     "checkFailed": "последняя проверка не удалась",
-    "queued": "Ждут отправки в хаб",
     "announced": "Объявлено хабу",
     "pending": "принято, ждёт одобрения",
     "approved": "одобрено",
@@ -50,9 +46,6 @@
     "failed": "хаб недоступен",
     "sets_one": "%d сет",
     "sets_few": "%d сета",
-    "sets_many": "%d сетов",
-    "records_one": "%d запись",
-    "records_few": "%d записи",
-    "records_many": "%d записей"
+    "sets_many": "%d сетов"
   }
 }

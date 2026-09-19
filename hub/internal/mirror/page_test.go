@@ -54,6 +54,9 @@ func TestIndexPageShowsTheStateWithoutInternals(t *testing.T) {
 	svc.status.AnnounceNote = `202 {"id":"5d7a64a8d236312311c712b80a51747af2156a917d0c9519c5bcb05de662ccae","kind":"mirror","status":"pending"}`
 	svc.status.AnnounceState = "pending"
 	svc.mu.Unlock()
+	if err := svc.relay.enqueue("0123456789abcdef", []byte(`{"kind":"vote"}`)); err != nil {
+		t.Fatal(err)
+	}
 
 	render := func(lang string) (string, http.Header) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -74,7 +77,7 @@ func TestIndexPageShowsTheStateWithoutInternals(t *testing.T) {
 			t.Errorf("english page lacks %q", want)
 		}
 	}
-	for _, leak := range []string{"SIGNERKEYID", "5d7a64a8d236", "Queued", "202 {"} {
+	for _, leak := range []string{"SIGNERKEYID", "5d7a64a8d236", "Waiting for the hub", "record", "202 {"} {
 		if strings.Contains(body, leak) {
 			t.Errorf("english page exposes %q", leak)
 		}
@@ -181,7 +184,7 @@ func TestPageStringsAgreeAcrossLanguages(t *testing.T) {
 		}
 	}
 	for lang, want := range forms {
-		for _, noun := range []string{"sets", "records"} {
+		for _, noun := range []string{"sets"} {
 			for _, form := range want {
 				if pageStrings[lang][noun+"_"+form] == "" {
 					t.Errorf("%s lacks %s_%s", lang, noun, form)

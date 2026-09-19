@@ -33,7 +33,6 @@ type pageView struct {
 	Expires      string
 	LastRefresh  string
 	Stale        bool
-	Queued       string
 	Announced    string
 	Outcome      string
 	Version      string
@@ -139,9 +138,6 @@ func newPageView(lang string, st Status) pageView {
 	}
 	if !st.LastRefresh.IsZero() {
 		v.LastRefresh = stamp(st.LastRefresh)
-	}
-	if st.Queued > 0 {
-		v.Queued = count(lang, "records", st.Queued)
 	}
 	if !st.LastAnnounce.IsZero() {
 		v.Announced = stamp(st.LastAnnounce)
