@@ -70,7 +70,7 @@ const hubAddresses = (status: HubStatus, configured: string[]): HubAddress[] => 
   return urls.map((url) => ({
     url,
     label: addressLabel(url),
-    role: learned.has(url) ? "learned" : own.has(url) ? "configured" : "builtin",
+    role: own.has(url) ? "configured" : learned.has(url) ? "learned" : "builtin",
     active: url === status.active,
   }));
 };
@@ -87,6 +87,7 @@ const HubAddressChips = ({ addresses }: HubAddressChipsProps) => {
         <Tooltip
           key={a.url}
           arrow
+          describeChild
           title={
             <Box sx={{ fontFamily: fonts.mono, fontSize: typography.sizes.xs }}>
               <div>{a.url}</div>
@@ -96,6 +97,7 @@ const HubAddressChips = ({ addresses }: HubAddressChipsProps) => {
           }
         >
           <Chip
+            tabIndex={0}
             size="small"
             label={a.label}
             icon={a.active ? <CheckIcon /> : undefined}
@@ -247,6 +249,8 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
   };
 
   const data = status.data;
+  const addresses = data ? hubAddresses(data, hub?.urls ?? []) : [];
+  const learnedCount = addresses.filter((a) => a.role === "learned").length;
 
   return (
     <B4IntegrationCard
@@ -415,10 +419,10 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
               )}
               <StatusRow
                 label={t("settings.Hub.status.hub")}
-                value={<HubAddressChips addresses={hubAddresses(data, hub?.urls ?? [])} />}
+                value={<HubAddressChips addresses={addresses} />}
                 hint={
-                  data.mirrors.length > 0
-                    ? t("settings.Hub.status.hubHintMirrors", { count: data.mirrors.length })
+                  learnedCount > 0
+                    ? t("settings.Hub.status.hubHintMirrors", { count: learnedCount })
                     : t("settings.Hub.status.hubHint")
                 }
               />

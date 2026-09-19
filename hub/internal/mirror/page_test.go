@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -93,8 +94,40 @@ func TestIndexPageShowsTheStateWithoutInternals(t *testing.T) {
 	svc.status.LastError = `manifest: Get "https://hub.example.net/b4/hub/manifest.json": dial tcp: lookup hub.example.net on 127.0.0.11:53: no such host`
 	svc.mu.Unlock()
 	body, _ = render("")
-	if !strings.Contains(body, "the hub did not answer, serving the last copy") || strings.Contains(body, "127.0.0.11") || strings.Contains(body, "no such host") {
+	if !strings.Contains(body, "the last check failed, serving the previous copy") || strings.Contains(body, "127.0.0.11") || strings.Contains(body, "no such host") {
 		t.Errorf("a failed check must be shown as a state, not as the error text")
+	}
+
+	svc.mu.Lock()
+	svc.status.Manifest = nil
+	svc.mu.Unlock()
+	body, _ = render("")
+	if !strings.Contains(body, "the last check failed") || strings.Contains(body, "previous copy") || !strings.Contains(body, "no copy yet") {
+		t.Errorf("a failed check without a copy must not claim to serve one")
+	}
+}
+
+func TestPageLangHonoursQualityWeights(t *testing.T) {
+	cases := map[string]string{
+		"":                           "en",
+		"de-CH":                      "en",
+		"ru":                         "ru",
+		"ru-RU,ru;q=0.9,en;q=0.8":    "ru",
+		"en-US,en;q=0.9,ru;q=0.8":    "en",
+		"ru;q=0, en;q=1":             "en",
+		"de;q=1, ru;q=0.5, en;q=0.7": "en",
+		"de;q=1, ru;q=0.7, en;q=0.5": "ru",
+		"en;q=0.3,ru;q=0.3":          "en",
+		"*, ru; Q=0.4":               "ru",
+	}
+	for header, want := range cases {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		if header != "" {
+			req.Header.Set("Accept-Language", header)
+		}
+		if got := pageLang(req); got != want {
+			t.Errorf("%q: got %s, want %s", header, got, want)
+		}
 	}
 }
 
@@ -117,5 +150,43 @@ func TestPluralsAndCounts(t *testing.T) {
 	}
 	if got := hostOf("http://192.168.1.10:7100"); got != "192.168.1.10:7100" {
 		t.Errorf("hostOf keeps a port, got %q", got)
+	}
+}
+
+func TestPageStringsAgreeAcrossLanguages(t *testing.T) {
+	forms := map[string][]string{"en": {"one", "other"}, "ru": {"one", "few", "many"}}
+	base := func(lang string) map[string]bool {
+		out := map[string]bool{}
+		for key := range pageStrings[lang] {
+			if noun, form, ok := strings.Cut(key, "_"); ok {
+				if !slices.Contains(forms[lang], form) {
+					t.Errorf("%s: %q is not a plural form of %s", lang, form, lang)
+				}
+				out[noun+"_*"] = true
+				continue
+			}
+			out[key] = true
+		}
+		return out
+	}
+	en, ru := base("en"), base("ru")
+	for key := range en {
+		if !ru[key] {
+			t.Errorf("ru lacks %q", key)
+		}
+	}
+	for key := range ru {
+		if !en[key] {
+			t.Errorf("en lacks %q", key)
+		}
+	}
+	for lang, want := range forms {
+		for _, noun := range []string{"sets", "records"} {
+			for _, form := range want {
+				if pageStrings[lang][noun+"_"+form] == "" {
+					t.Errorf("%s lacks %s_%s", lang, noun, form)
+				}
+			}
+		}
 	}
 }

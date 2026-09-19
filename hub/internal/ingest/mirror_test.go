@@ -39,7 +39,7 @@ func TestMirrorAnnounceIsStoredPendingAndRefreshed(t *testing.T) {
 	firstSeen := mirrors[0].FirstSeen
 
 	f.clock = f.clock.Add(time.Hour)
-	expect(t, announceVersion("https://mirror.example", " 1.0.1\x00\n"+strings.Repeat("x", 60)), http.StatusAccepted, "")
+	expect(t, announceVersion("https://mirror.example", " 1.0.1\x00\n\u202e\u200b"+strings.Repeat("x", 60)), http.StatusAccepted, "")
 	mirrors, _ = f.store.Mirrors(ctx)
 	if len(mirrors) != 1 || !mirrors[0].LastSeen.Equal(f.clock) || !mirrors[0].FirstSeen.Equal(firstSeen) {
 		t.Fatalf("a re-announce must refresh last_seen only: %+v", mirrors)

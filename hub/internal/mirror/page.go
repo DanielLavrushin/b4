@@ -1,6 +1,8 @@
 package mirror
 
 import (
+	_ "embed"
+	"encoding/json"
 	"net/http"
 	neturl "net/url"
 	"strconv"
@@ -8,64 +10,16 @@ import (
 	"time"
 )
 
-var pageStrings = map[string]map[string]string{
-	"en": {
-		"title":         "b4 hub mirror",
-		"brand":         "Community hub mirror",
-		"leadBefore":    "Mirror of",
-		"leadAfter":     ". It serves the hub's signed catalogue unchanged and forwards what routers send to the hub.",
-		"catalogue":     "Catalogue",
-		"noCopy":        "no copy yet",
-		"built":         "Built",
-		"expires":       "Expires",
-		"lastCheck":     "Last check",
-		"never":         "not yet",
-		"inSync":        "in sync with the hub",
-		"stale":         "the hub did not answer, serving the last copy",
-		"queued":        "Waiting for the hub",
-		"announced":     "Announced",
-		"pending":       "accepted, awaiting approval",
-		"approved":      "approved",
-		"rejected":      "rejected",
-		"accepted":      "accepted",
-		"refused":       "refused by the hub",
-		"failed":        "the hub could not be reached",
-		"footer":        "Routers verify the catalogue signature themselves; a mirror cannot change what they receive.",
-		"sets_one":      "%d set",
-		"sets_other":    "%d sets",
-		"records_one":   "%d record",
-		"records_other": "%d records",
-	},
-	"ru": {
-		"title":        "Зеркало хаба b4",
-		"brand":        "Зеркало хаба сообщества",
-		"leadBefore":   "Зеркало хаба",
-		"leadAfter":    ". Оно отдаёт подписанный каталог хаба без изменений и передаёт хабу всё, что присылают роутеры.",
-		"catalogue":    "Каталог",
-		"noCopy":       "копии ещё нет",
-		"built":        "Собран",
-		"expires":      "Действует до",
-		"lastCheck":    "Последняя проверка",
-		"never":        "ещё не было",
-		"inSync":       "синхронизировано с хабом",
-		"stale":        "хаб не ответил, отдаётся последняя копия",
-		"queued":       "Ждут отправки в хаб",
-		"announced":    "Объявлено хабу",
-		"pending":      "принято, ждёт одобрения",
-		"approved":     "одобрено",
-		"rejected":     "отклонено",
-		"accepted":     "принято",
-		"refused":      "хаб отказал",
-		"failed":       "хаб недоступен",
-		"footer":       "Роутеры сами проверяют подпись каталога; зеркало не может изменить то, что они получают.",
-		"sets_one":     "%d сет",
-		"sets_few":     "%d сета",
-		"sets_many":    "%d сетов",
-		"records_one":  "%d запись",
-		"records_few":  "%d записи",
-		"records_many": "%d записей",
-	},
-}
+//go:embed templates/page.json
+var pageStringsJSON []byte
+
+var pageStrings = func() map[string]map[string]string {
+	var out map[string]map[string]string
+	if err := json.Unmarshal(pageStringsJSON, &out); err != nil {
+		panic("mirror: templates/page.json: " + err.Error())
+	}
+	return out
+}()
 
 type pageView struct {
 	Lang         string
@@ -86,16 +40,32 @@ type pageView struct {
 }
 
 func pageLang(r *http.Request) string {
+	best, bestQ := "en", -1.0
 	for _, part := range strings.Split(r.Header.Get("Accept-Language"), ",") {
-		tag := strings.ToLower(strings.TrimSpace(strings.SplitN(part, ";", 2)[0]))
+		fields := strings.Split(part, ";")
+		tag := strings.ToLower(strings.TrimSpace(fields[0]))
+		lang := ""
 		switch {
 		case tag == "ru" || strings.HasPrefix(tag, "ru-"):
-			return "ru"
+			lang = "ru"
 		case tag == "en" || strings.HasPrefix(tag, "en-"):
-			return "en"
+			lang = "en"
+		default:
+			continue
+		}
+		q := 1.0
+		for _, param := range fields[1:] {
+			if kv := strings.SplitN(strings.TrimSpace(param), "=", 2); len(kv) == 2 && strings.EqualFold(strings.TrimSpace(kv[0]), "q") {
+				if v, err := strconv.ParseFloat(strings.TrimSpace(kv[1]), 64); err == nil {
+					q = v
+				}
+			}
+		}
+		if q > 0 && q > bestQ {
+			best, bestQ = lang, q
 		}
 	}
-	return "en"
+	return best
 }
 
 func plural(lang string, n int) string {

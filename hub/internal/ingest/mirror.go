@@ -20,13 +20,14 @@ const (
 
 func cleanMirrorVersion(raw string) string {
 	clean := strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
+		if r < 0x20 || r > 0x7e {
 			return -1
 		}
 		return r
-	}, strings.TrimSpace(raw))
-	if runes := []rune(clean); len(runes) > MaxMirrorVersionLength {
-		clean = string(runes[:MaxMirrorVersionLength])
+	}, raw)
+	clean = strings.TrimSpace(clean)
+	if len(clean) > MaxMirrorVersionLength {
+		clean = clean[:MaxMirrorVersionLength]
 	}
 	return clean
 }
