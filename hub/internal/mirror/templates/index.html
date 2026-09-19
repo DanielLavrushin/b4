@@ -200,7 +200,7 @@
             {{.LastRefresh}}{{if .Stale}}<span class="pill warn"
               >{{if
               .Catalogue}}{{.T.stale}}{{else}}{{.T.checkFailed}}{{end}}</span
-            >{{else if .Catalogue}}<span class="pill ok">{{.T.inSync}}</span
+            >{{else if and .Checked .Catalogue}}<span class="pill ok">{{.T.inSync}}</span
             >{{end}}
           </dd>
           {{if .Announced}}

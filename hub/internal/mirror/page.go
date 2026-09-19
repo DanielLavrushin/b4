@@ -32,6 +32,7 @@ type pageView struct {
 	Built        string
 	Expires      string
 	LastRefresh  string
+	Checked      bool
 	Stale        bool
 	Announced    string
 	Outcome      string
@@ -138,6 +139,7 @@ func newPageView(lang string, st Status) pageView {
 	}
 	if !st.LastRefresh.IsZero() {
 		v.LastRefresh = stamp(st.LastRefresh)
+		v.Checked = true
 	}
 	if !st.LastAnnounce.IsZero() {
 		v.Announced = stamp(st.LastAnnounce)

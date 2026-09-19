@@ -108,6 +108,16 @@ func TestIndexPageShowsTheStateWithoutInternals(t *testing.T) {
 	if !strings.Contains(body, "the last check failed") || strings.Contains(body, "previous copy") || !strings.Contains(body, "no copy yet") {
 		t.Errorf("a failed check without a copy must not claim to serve one")
 	}
+
+	svc.mu.Lock()
+	svc.status.Manifest = &hubwire.Manifest{Epoch: 1789237867, Seq: 145}
+	svc.status.LastError = ""
+	svc.status.LastRefresh = time.Time{}
+	svc.mu.Unlock()
+	body, _ = render("")
+	if !strings.Contains(body, "not yet") || strings.Contains(body, "in sync") || strings.Contains(body, "check failed") {
+		t.Errorf("a copy loaded from disk must not read as checked before the first check")
+	}
 }
 
 func TestPageLangHonoursQualityWeights(t *testing.T) {

@@ -932,7 +932,7 @@ func TestRouteAddResolvedIPs(t *testing.T) {
 	t.Run("a set removed during the lookup is not resurrected", func(t *testing.T) {
 		routeRuleCache = make(map[string]routeState)
 		routeEngine = nil
-		routeAddResolvedIPs(&cfg, set, ips)
+		routeAddResolvedIPsAt(&cfg, set, ips, routeGen)
 		if len(routeRuleCache) != 0 {
 			t.Error("addresses for an uninstalled set must be dropped, not used to install it")
 		}
@@ -941,12 +941,12 @@ func TestRouteAddResolvedIPs(t *testing.T) {
 	t.Run("no backend is a no-op", func(t *testing.T) {
 		routeRuleCache = map[string]routeState{"s1": {mode: config.RoutingModeProxy}}
 		routeEngine = nil
-		routeAddResolvedIPs(&cfg, set, ips)
+		routeAddResolvedIPsAt(&cfg, set, ips, routeGen)
 	})
 
 	t.Run("nil and empty args are safe", func(t *testing.T) {
-		routeAddResolvedIPs(nil, nil, nil)
-		routeAddResolvedIPs(&cfg, set, nil)
+		routeAddResolvedIPsAt(nil, nil, nil, routeGen)
+		routeAddResolvedIPsAt(&cfg, set, nil, routeGen)
 	})
 }
 
