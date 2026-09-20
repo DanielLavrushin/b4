@@ -93,6 +93,7 @@ const (
 	dnsActionFallbackUpstream = "dns-fallback-upstream"
 	dnsActionHeal             = "dns-heal"
 	dnsActionPin              = "dns-pin"
+	dnsActionPinEmpty         = "dns-pin-empty"
 	dnsActionNoClient         = "dns-no-client"
 	dnsActionOverload         = "dns-overload"
 	dnsActionDoHPrefix        = "dns-doh->"
@@ -349,8 +350,8 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					if !vc.drop() {
 						return 0
 					}
-					w.applyPinnedAnswer(cfg, set, clientIP, domain, pinned)
-					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionPin)
+					action := w.applyPinnedAnswer(cfg, set, clientIP, domain, pinned)
+					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, action)
 					w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, sport, pinned)
 					return 0
 				}

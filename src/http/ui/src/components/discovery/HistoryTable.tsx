@@ -132,6 +132,14 @@ export const HistoryTable = ({
             label={t("discovery.status.addressBlocked")}
           />
         );
+      case "gateway_intercepted":
+        return (
+          <B4Badge
+            variant="outlined"
+            color="error"
+            label={t("discovery.status.gatewayIntercepted")}
+          />
+        );
       default:
         return (
           <B4Badge
@@ -202,6 +210,12 @@ export const HistoryTable = ({
         return (
           <Typography variant="body2" sx={muted}>
             {t("discovery.history.needsProxy")}
+          </Typography>
+        );
+      case "gateway_intercepted":
+        return (
+          <Typography variant="body2" sx={muted}>
+            {t("discovery.history.gatewayIntercepted")}
           </Typography>
         );
       default:

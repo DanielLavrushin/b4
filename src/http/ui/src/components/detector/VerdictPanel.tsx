@@ -15,6 +15,7 @@ interface VerdictPanelProps {
 function pickKinds(kinds?: Record<string, number>): string[] {
   if (!kinds) return [];
   return Object.entries(kinds)
+    .filter(([k]) => k !== "GATEWAY")
     .sort((a, b) => b[1] - a[1])
     .slice(0, 2)
     .map(([k]) => k);
@@ -54,6 +55,9 @@ export function verdictSentences(suite: DetectorSuite, t: (k: string, o?: Record
     }
     if (v.broken_by_b4 > 0) {
       body.push(t("detector.verdict.brokenByB4", { count: v.broken_by_b4 }));
+    }
+    if ((v.block_kinds?.GATEWAY ?? 0) > 0) {
+      body.push(t("detector.verdict.gateway", { count: v.block_kinds?.GATEWAY }));
     }
   }
   if (suite.dns) {

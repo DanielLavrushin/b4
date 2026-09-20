@@ -478,6 +478,7 @@ type runtimeState struct {
 	pendingHello *pendingHelloCache
 	hostHints    *hostHintCache
 	ipHealth     *iphealth.Tracker
+	pinHealth    *pinHealth
 	goodIPs      *iphealth.KnownGood
 }
 
@@ -486,6 +487,7 @@ func newRuntimeState() *runtimeState {
 		pendingHello: newPendingHelloCache(),
 		hostHints:    newHostHintCache(),
 		ipHealth:     iphealth.NewTracker(nil),
+		pinHealth:    newPinHealth(nil),
 		goodIPs:      iphealth.NewKnownGood(),
 		tlsCache: &tlsInfoCache{
 			conns: make(map[string]*tlsInfo),

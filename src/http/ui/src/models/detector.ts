@@ -42,6 +42,7 @@ export type FetchStatus =
   | "ISP_PAGE"
   | "BLOCKED"
   | "DNS_FAKE"
+  | "GATEWAY"
   | "TIMEOUT"
   | "ERROR"
   | "SERVER_ERROR"

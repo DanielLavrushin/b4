@@ -37,6 +37,7 @@ export type DiscoveryOutcome =
   | "found"
   | "works_without_bypass"
   | "address_blocked"
+  | "gateway_intercepted"
   | "not_found";
 
 export type DiscoverySource = "web" | "watchdog" | "mcp";
@@ -88,6 +89,7 @@ export interface DNSDiscoveryResult {
   best_doh_url?: string;
   needs_fragment: boolean;
   alternative_ips?: string[];
+  gateway_ips?: string[];
   alt_scan?: AltScanSummary;
 }
 

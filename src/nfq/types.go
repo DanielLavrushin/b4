@@ -57,6 +57,7 @@ type Worker struct {
 	pendingHello     *pendingHelloCache
 	hostHints        *hostHintCache
 	ipHealth         *iphealth.Tracker
+	pinHealth        *pinHealth
 	goodIPs          *iphealth.KnownGood
 	srcResolver      *tunSrcResolver
 }

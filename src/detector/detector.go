@@ -1,6 +1,7 @@
 package detector
 
 import (
+	"github.com/daniellavrushin/b4/netprobe"
 	"time"
 
 	"github.com/daniellavrushin/b4/log"
@@ -118,6 +119,7 @@ func (s *Suite) refreshVerdict() {
 			if !site.Done {
 				continue
 			}
+			gateway := site.Direct != nil && site.Direct.Status == netprobe.DomainGateway
 			switch site.Outcome {
 			case OutcomeOk:
 				v.NotBlocked++
@@ -125,7 +127,9 @@ func (s *Suite) refreshVerdict() {
 				v.BlockedByISP++
 				v.FixedByB4++
 			case OutcomeStillBlocked, OutcomeBlocked:
-				v.BlockedByISP++
+				if !gateway {
+					v.BlockedByISP++
+				}
 				v.StillBlocked++
 				v.StillBlockedAt = appendUnique(v.StillBlockedAt, site.Input)
 			case OutcomeBrokenByB4:

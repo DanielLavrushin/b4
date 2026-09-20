@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -164,6 +165,20 @@ func TestSyncFailsWhenANewerCatalogueIsNotDelivered(t *testing.T) {
 	}
 	if st := box.svc.Status(); st.Active != "" {
 		t.Errorf("no base delivered the stored catalogue, yet the status names %q", st.Active)
+	}
+}
+
+func TestSyncNamesWhyABaseDidNotAnswer(t *testing.T) {
+	f := hubtest.New(t)
+	f.Publish(t, sampleCatalogue(t, 1, 1), time.Now().Add(time.Hour))
+	box := newTestBox(t, f, t.TempDir())
+	f.SetDown(true)
+	_, err := box.svc.Sync(context.Background())
+	if !errors.Is(err, ErrUnreachable) || !strings.Contains(err.Error(), f.URL()+" did not answer: ") || strings.HasSuffix(err.Error(), "did not answer: ") {
+		t.Fatalf("the error must carry the base and the cause, got %v", err)
+	}
+	if st := box.svc.Status(); !strings.Contains(st.LastError, "did not answer: ") {
+		t.Errorf("the status must carry the cause too: %q", st.LastError)
 	}
 }
 

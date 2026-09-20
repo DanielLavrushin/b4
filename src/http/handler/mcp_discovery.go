@@ -120,6 +120,7 @@ type mcpDiscoveryDomain struct {
 	BaselineWorks bool    `json:"works_without_b4"`
 	DNSPoisoned   bool    `json:"dns_poisoned,omitempty"`
 	Blocked       bool    `json:"transport_blocked,omitempty"`
+	Gateway       bool    `json:"gateway_intercepted,omitempty"`
 	Confirmed     int     `json:"confirmed,omitempty"`
 	Provisional   bool    `json:"provisional,omitempty"`
 	Unconfirmed   bool    `json:"unconfirmed,omitempty"`
@@ -143,6 +144,8 @@ func mcpDiscoveryVerdict(d mcpDiscoveryDomain, running bool) string {
 	switch {
 	case d.BaselineWorks:
 		return "works without b4 - do not create a set for it"
+	case d.Gateway:
+		return "TCP to every known address is terminated on the LAN gateway (a transparent proxy on the router), so packets from this host never reach the ISP; run b4 on the router or exclude this host from the router's redirect"
 	case d.Blocked:
 		return "the address itself is unreachable, so no packet strategy can help; only a proxy or VPN route would"
 	case d.Found && running:
@@ -201,6 +204,8 @@ func mcpApplyOutcome(row *mcpDiscoveryDomain, outcome discovery.Outcome) {
 		row.Found, row.BaselineWorks, row.Blocked = false, true, false
 	case discovery.OutcomeAddressBlocked:
 		row.Found, row.BaselineWorks, row.Blocked = false, false, true
+	case discovery.OutcomeGatewayIntercepted:
+		row.Found, row.BaselineWorks, row.Blocked, row.Gateway = false, false, false, true
 	case discovery.OutcomeNotFound:
 		row.Found, row.BaselineWorks, row.Blocked = false, false, false
 	}

@@ -33,7 +33,16 @@ type DNSProber struct {
 	cfg       *config.Config
 	flowMark  uint
 	ipVersion string
+
+	serves      func(context.Context, string) bool
+	connectable func(context.Context, []string) bool
+	gateway     func(context.Context, string) bool
 }
+
+const (
+	gatewayProbeTimeout = 2 * time.Second
+	connectableTimeout  = 5 * time.Second
+)
 
 var (
 	cdnEntries []CDNEntry
@@ -154,7 +163,7 @@ func (r *DNSDiscoveryResult) hasWorkingConfig() bool {
 }
 
 func NewDNSProber(domain string, timeout time.Duration, pool *nfq.Pool, cfg *config.Config, flowMark uint, ipVersion string) *DNSProber {
-	return &DNSProber{
+	p := &DNSProber{
 		domain:    domain,
 		timeout:   timeout,
 		pool:      pool,
@@ -162,6 +171,12 @@ func NewDNSProber(domain string, timeout time.Duration, pool *nfq.Pool, cfg *con
 		flowMark:  flowMark,
 		ipVersion: ipVersion,
 	}
+	p.serves = p.testIPServesDomain
+	p.connectable = p.anyIPConnectable
+	p.gateway = func(ctx context.Context, ip string) bool {
+		return netprobe.GatewayProbe(ctx, ip, 443, int(flowMark), gatewayProbeTimeout)
+	}
+	return p
 }
 
 func (p *DNSProber) ipNetwork() string {
@@ -185,10 +200,6 @@ func (p *DNSProber) dnsRecordType() string {
 }
 
 func (p *DNSProber) Probe(ctx context.Context) *DNSDiscoveryResult {
-	result := &DNSDiscoveryResult{
-		ProbeResults: []DNSProbeResult{},
-	}
-
 	var expectedIPs, systemIPs []string
 	referenceServes := false
 	var wg sync.WaitGroup
@@ -206,7 +217,15 @@ func (p *DNSProber) Probe(ctx context.Context) *DNSDiscoveryResult {
 		expectedIPs, referenceServes = p.getExpectedIPs(dohCtx)
 	}()
 	wg.Wait()
-	result.ReferenceServes = referenceServes
+
+	return p.evaluate(ctx, systemIPs, expectedIPs, referenceServes)
+}
+
+func (p *DNSProber) evaluate(ctx context.Context, systemIPs, expectedIPs []string, referenceServes bool) *DNSDiscoveryResult {
+	result := &DNSDiscoveryResult{
+		ProbeResults:    []DNSProbeResult{},
+		ReferenceServes: referenceServes,
+	}
 
 	if validIP := p.findValidIP(ctx, systemIPs); validIP != "" {
 		log.DiscoveryLogf("  ✓ DNS OK: system IP %s serves %s", validIP, p.domain)
@@ -222,17 +241,43 @@ func (p *DNSProber) Probe(ctx context.Context) *DNSDiscoveryResult {
 		log.DiscoveryLogf("  DNS: system IPs %v failed TLS validation for %s", systemIPs, p.domain)
 	}
 
+	systemAnswered := len(systemIPs) > 0
+	candidates := systemIPs
+	if !referenceServes {
+		candidates = uniqueIPs(systemIPs, expectedIPs)
+	}
+	terminated := p.probeGateways(ctx, candidates)
+	result.GatewayIPs = terminated
+	systemIPs = withoutIPs(systemIPs, terminated)
+	expectedIPs = withoutIPs(expectedIPs, terminated)
+	systemIntercepted := systemAnswered && len(systemIPs) == 0
+
 	if len(expectedIPs) == 0 {
+		if len(systemIPs) == 0 && len(result.GatewayIPs) > 0 {
+			log.DiscoveryLogf("  ✗ DNS: every known address of %s is terminated on the LAN gateway, nothing left to test", p.domain)
+			return result
+		}
 		log.DiscoveryLogf("  DNS: no reference IPs available for %s, assuming OK", p.domain)
 		result.ExpectedIPs = systemIPs
 		return result
 	}
 	log.DiscoveryLogf("  DNS: system IPs %v, reference IPs (DoH): %v", systemIPs, expectedIPs)
 
-	if !p.anyIPConnectable(ctx, expectedIPs) {
+	if !p.connectable(ctx, expectedIPs) {
 		log.DiscoveryLogf("  DNS: reference IPs for %s are unreachable at TCP level (transport issue or site down)", p.domain)
 		result.TransportBlocked = true
 		result.ExpectedIPs = uniqueIPs(expectedIPs, systemIPs)
+		return result
+	}
+
+	if systemIntercepted {
+		result.ExpectedIPs = append([]string(nil), expectedIPs...)
+		if referenceServes {
+			result.AlternativeIPs = append([]string(nil), expectedIPs...)
+			log.DiscoveryLogf("  DNS: the system answer for %s is terminated on the LAN gateway, the reference addresses %v serve the site from here and will be pinned", p.domain, expectedIPs)
+		} else {
+			log.DiscoveryLogf("  DNS: the system answer for %s is terminated on the LAN gateway, that says nothing about the resolver; keeping the reference addresses %v as targets", p.domain, expectedIPs)
+		}
 		return result
 	}
 
@@ -476,15 +521,61 @@ func (p *DNSProber) findValidIP(ctx context.Context, ips []string) string {
 	valCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	for _, ip := range ips {
-		if p.testIPServesDomain(valCtx, ip) {
+		if p.serves(valCtx, ip) {
 			return ip
 		}
 	}
 	return ""
 }
 
+func (p *DNSProber) probeGateways(ctx context.Context, ips []string) []string {
+	if len(ips) == 0 || ctx.Err() != nil {
+		return nil
+	}
+	if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < gatewayProbeTimeout+connectableTimeout {
+		log.DiscoveryLogf("  DNS: not enough time left to check %s addresses against the LAN gateway, skipping", p.domain)
+		return nil
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, gatewayProbeTimeout)
+	defer cancel()
+
+	hits := make([]bool, len(ips))
+	var wg sync.WaitGroup
+	for i, ip := range ips {
+		wg.Add(1)
+		go func(i int, ip string) {
+			defer wg.Done()
+			hits[i] = p.gateway(probeCtx, ip)
+		}(i, ip)
+	}
+	wg.Wait()
+
+	var terminated []string
+	for i, ip := range ips {
+		if !hits[i] {
+			continue
+		}
+		terminated = appendUnique(terminated, ip)
+		log.DiscoveryLogf("  ✗ [%s] %s: TCP is terminated by the LAN gateway at hop 1 (transparent proxy on the router), no packet strategy from this host can reach it", p.domain, ip)
+	}
+	return terminated
+}
+
+func withoutIPs(ips, excluded []string) []string {
+	if len(excluded) == 0 {
+		return ips
+	}
+	kept := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		if !containsString(excluded, ip) {
+			kept = append(kept, ip)
+		}
+	}
+	return kept
+}
+
 func (p *DNSProber) anyIPConnectable(ctx context.Context, ips []string) bool {
-	connCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	connCtx, cancel := context.WithTimeout(ctx, connectableTimeout)
 	defer cancel()
 	dialer := netprobe.Dialer(int(p.flowMark), p.timeout/2, p.timeout)
 	for _, ip := range ips {

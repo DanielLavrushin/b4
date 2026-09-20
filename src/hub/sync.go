@@ -25,8 +25,8 @@ func (s *Service) Sync(ctx context.Context) (bool, error) {
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		if !s.healthy(ctx, base) {
-			lastErr = fmt.Errorf("%s did not answer the health check", base)
+		if err := s.healthy(ctx, base); err != nil {
+			lastErr = fmt.Errorf("%s did not answer: %w", base, err)
 			continue
 		}
 		m, err := s.fetchManifest(ctx, base)

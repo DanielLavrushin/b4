@@ -410,6 +410,23 @@ const SiteCard = ({ entry, onShowLog }: SiteCardProps) => {
           }
         />
       );
+    case "gateway_intercepted":
+      return (
+        <B4ResultCard
+          status="error"
+          title={entry.domain}
+          subtitle={t("discovery.results.gatewayIntercepted", {
+            ips: (entry.result.dns_result?.gateway_ips ?? []).join(", "),
+          })}
+          badge={
+            <B4Badge
+              variant="outlined"
+              color="error"
+              label={t("discovery.status.gatewayIntercepted")}
+            />
+          }
+        />
+      );
     default:
       return (
         <B4ResultCard

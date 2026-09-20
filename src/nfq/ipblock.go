@@ -2,6 +2,7 @@ package nfq
 
 import (
 	"net"
+	"strconv"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
@@ -11,9 +12,21 @@ import (
 )
 
 const (
-	dnsTypeA    = 1
-	dnsTypeAAAA = 28
+	dnsTypeA     = 1
+	dnsTypeCNAME = 5
+	dnsTypeAAAA  = 28
+	dnsTypeSVCB  = 64
+	dnsTypeHTTPS = 65
+	dnsTypeANY   = 255
 )
+
+func pinnedNameLeaksThrough(qtype uint16) bool {
+	switch qtype {
+	case dnsTypeCNAME, dnsTypeSVCB, dnsTypeHTTPS, dnsTypeANY:
+		return true
+	}
+	return false
+}
 
 func (w *Worker) pinnedAnswer(set *config.SetConfig, query []byte, domain string) []byte {
 	if set == nil || len(query) == 0 {
@@ -25,13 +38,20 @@ func (w *Worker) pinnedAnswer(set *config.SetConfig, query []byte, domain string
 	}
 
 	qtype, ok := dns.QuestionType(query)
-	if !ok || (qtype != dnsTypeA && qtype != dnsTypeAAAA) {
+	if !ok {
+		return nil
+	}
+	if qtype != dnsTypeA && qtype != dnsTypeAAAA {
+		if pinnedNameLeaksThrough(qtype) {
+			return w.emptyPinnedAnswer(set, query, domain, qtype)
+		}
 		return nil
 	}
 	want6 := qtype == dnsTypeAAAA
 
-	ips := make([]net.IP, 0, len(pins))
-	dead := 0
+	family := make([]net.IP, 0, len(pins))
+	live := make([]net.IP, 0, len(pins))
+	blocked := 0
 	for _, pin := range pins {
 		ip := net.ParseIP(pin)
 		if ip == nil {
@@ -40,32 +60,73 @@ func (w *Worker) pinnedAnswer(set *config.SetConfig, query []byte, domain string
 		if (ip.To4() == nil) != want6 {
 			continue
 		}
-		if w.ipHealth != nil && synDetectEnabled(set) && w.ipHealth.IsDead(pin) {
-			dead++
+		family = append(family, ip)
+		key := ip.String()
+		if synDetectEnabled(set) && w.ipHealth != nil && w.ipHealth.IsDead(key) {
+			blocked++
 			continue
 		}
-		ips = append(ips, ip)
+		if w.pinHealth != nil && w.pinHealth.isDead(key) {
+			continue
+		}
+		live = append(live, ip)
 	}
-	if len(ips) == 0 {
-		if dead > 0 {
-			log.Warnf("DNS pin: every pinned address for %s is unreachable, passing the query through (set: %s)", domain, set.Name)
+	if len(family) == 0 {
+		if want6 {
+			return w.emptyPinnedAnswer(set, query, domain, qtype)
 		}
 		return nil
 	}
+	if len(live) == 0 {
+		if blocked == len(family) {
+			log.Warnf("DNS pin: every pinned address for %s is unreachable, passing the query through (set: %s)", domain, set.Name)
+			return nil
+		}
+		log.Tracef("DNS pin: every pinned address for %s failed the reachability check, answering with them anyway (set: %s)", domain, set.Name)
+		live = family
+	}
 
-	return dns.BuildAnswerFromIPs(query, config.DefaultDNSPinTTLSec, ips)
+	return dns.BuildAnswerFromIPs(query, config.DefaultDNSPinTTLSec, live)
 }
 
-func (w *Worker) applyPinnedAnswer(cfg *config.Config, set *config.SetConfig, clientIP net.IP, domain string, pinned []byte) {
+func (w *Worker) emptyPinnedAnswer(set *config.SetConfig, query []byte, domain string, qtype uint16) []byte {
+	empty := dns.BuildEmptyAnswer(query)
+	if empty == nil {
+		return nil
+	}
+	log.Tracef("DNS pin: answering the %s query for %s empty, the pin list is authoritative for the name (set: %s)", dnsTypeName(qtype), domain, set.Name)
+	return empty
+}
+
+func dnsTypeName(qtype uint16) string {
+	switch qtype {
+	case dnsTypeA:
+		return "A"
+	case dnsTypeCNAME:
+		return "CNAME"
+	case dnsTypeAAAA:
+		return "AAAA"
+	case dnsTypeSVCB:
+		return "SVCB"
+	case dnsTypeHTTPS:
+		return "HTTPS"
+	case dnsTypeANY:
+		return "ANY"
+	}
+	return "type " + strconv.Itoa(int(qtype))
+}
+
+func (w *Worker) applyPinnedAnswer(cfg *config.Config, set *config.SetConfig, clientIP net.IP, domain string, pinned []byte) string {
 	ips := dns.ParseResponseIPs(pinned)
 	if len(ips) == 0 {
-		return
+		return dnsActionPinEmpty
 	}
 	w.storeHostHints(clientIP, set, domain, ips)
 	if cfg != nil && set.Routing.Enabled && !set.Targets.DomainOnly && !cfg.Queue.IsDiscovery && routingHandleDNSAvailable() {
 		routingHandleDNSAsync(cfg, set, ips)
 	}
 	log.Infof("DNS pin: answering %s with %s (set: %s)", domain, ips[0], set.Name)
+	return dnsActionPin
 }
 
 func synDetectEnabled(set *config.SetConfig) bool {

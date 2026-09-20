@@ -496,6 +496,20 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			clearMatch()
 			matchedHint = false
 			hintHost = ""
+			if learnedSet, learnedDomain := learnedMatchAfterHintDrop(matcher, pkt.dst, pkt.srcMac, dport, tlsVersion, payload); learnedSet != nil {
+				log.Tracef("host hint for %s dropped, learned address match took over: %s (set: %s)", pkt.dstStr, learnedDomain, learnedSet.Name)
+				matched = true
+				set = learnedSet
+				st = learnedSet
+				matchedIP = true
+				matchedLearned = true
+				learnedHost = learnedDomain
+				if escSet := w.escalatedSetFor(cfg, learnedHost, pkt.srcMac); escSet != nil && escSet != set {
+					log.Tracef("escalation hit for %s after the hint drop: %s -> %s", learnedHost, set.Name, escSet.Name)
+					set = escSet
+					st = escSet
+				}
+			}
 		}
 	}
 

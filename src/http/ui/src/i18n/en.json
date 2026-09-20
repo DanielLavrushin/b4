@@ -2122,6 +2122,7 @@
       "tried_other": "{{count}} tried, none made it load yet.",
       "loadsWithout": "Loads without b4. Nothing to fix here.",
       "addressBlocked": "Connections to every known address fail. No bypass strategy can help.",
+      "gatewayIntercepted": "TCP to every known address is terminated on your LAN gateway. No strategy from this host can reach it.",
       "note": "A found strategy is confirmed before the run ends. Nothing has been found yet, so stopping now ends the run.",
       "noteFound": "Stop ends the search here and confirms what was found. The steps that could have tuned it are skipped.",
       "noteConfirming": "Confirming the strategies found. Stop now ends the run and keeps them unconfirmed."
@@ -2144,6 +2145,7 @@
       "stoppedEarly": "stopped early, not confirmed",
       "noBypass": "no bypass needed",
       "addressBlocked": "address blocked",
+      "gatewayIntercepted": "intercepted by the gateway",
       "nothingFound": "nothing found"
     },
     "results": {
@@ -2158,6 +2160,7 @@
       "shareOne": "One strategy works for all of them. Applying creates one set.",
       "worksWithout": "Loads without b4. Nothing to apply.",
       "addressBlocked": "Unreachable at the network level: connections to every known address of this site fail, and no other region's DNS answer reached it either, so no bypass strategy can help. Route it through a proxy or VPN set instead.",
+      "gatewayIntercepted": "TCP to {{ips}} is terminated on your LAN gateway (a transparent proxy on the router), so packets from this host never reach the ISP and no strategy can be tested. Run b4 on the router or exclude this host from the router's redirect.",
       "nothingFound_one": "Nothing worked. {{count}} configuration was tried. Retrying with TLS 1.2 or a captured ClientHello sometimes helps; the log shows how each one failed.",
       "nothingFound_other": "Nothing worked. {{count}} configurations were tried. Retrying with TLS 1.2 or a captured ClientHello sometimes helps; the log shows how each one failed.",
       "apply": "Apply as a set",
@@ -2262,6 +2265,7 @@
       "remove": "Remove from history",
       "loadsWithout": "Loads without b4",
       "needsProxy": "Needs a proxy or VPN set",
+      "gatewayIntercepted": "Intercepted by the LAN gateway, run b4 on the router",
       "nothing": "No strategy made it load",
       "sharedWith": "One set together with {{domains}}",
       "stoppedEarly": "search stopped early, not tuned",
@@ -2414,6 +2418,7 @@
       "ISP_PAGE": "ISP page",
       "BLOCKED": "Refused",
       "DNS_FAKE": "Fake DNS",
+      "GATEWAY": "Gateway",
       "TIMEOUT": "Timeout",
       "ERROR": "Error",
       "SERVER_ERROR": "Server error",
@@ -2435,7 +2440,8 @@
       "TLS_MITM": "certificate substitution",
       "BLOCKED": "refusing connections",
       "TIMEOUT": "timeouts",
-      "TLS_DPI": "TLS interference"
+      "TLS_DPI": "TLS interference",
+      "GATEWAY": "TCP terminated on your LAN gateway (a transparent proxy on the router)"
     },
     "outcome": {
       "pending": "checking",
@@ -2464,6 +2470,8 @@
       "fixed": "b4 loads {{fixed}} of them.",
       "stillBlocked": "{{count}} still blocked: {{sites}}.",
       "brokenByB4": "{{count}} loads directly but not through b4; check the set that matches it.",
+      "gateway_one": "For {{count}} of them TCP is terminated on your LAN gateway (a transparent proxy on the router): b4 on this host cannot fix that site; run b4 on the router or exclude this host from the router's redirect.",
+      "gateway_other": "For {{count}} of them TCP is terminated on your LAN gateway (a transparent proxy on the router): b4 on this host cannot fix those sites; run b4 on the router or exclude this host from the router's redirect.",
       "dnsHijacked": "Plain DNS on port 53 is hijacked: queries to public resolvers are answered by {{by}}.",
       "dnsSubstituted": "{{count}} resolvers substitute answers for blocked names.",
       "dnsHonest": "Plain DNS on port 53 reaches the resolver it is sent to.",
@@ -2738,6 +2746,7 @@
         "doh": "DNS resolved over DoH through {{target}}",
         "forward": "DNS resolved by b4 against {{target}}",
         "pin": "DNS answered from a pinned address",
+        "pin-empty": "DNS answered empty, the pinned name has no record of the requested type",
         "heal": "DNS answer had unreachable addresses replaced by IP block detection",
         "passthrough": "Matched a set with no resolver configured, DNS query forwarded unchanged",
         "ipv6-disabled": "IPv6 DNS query matched a set while IPv6 is off, forwarded unchanged",

@@ -26,6 +26,7 @@ const (
 	DomainISPPage  DomainStatus = "ISP_PAGE"
 	DomainBlocked  DomainStatus = "BLOCKED"
 	DomainDNSFake  DomainStatus = "DNS_FAKE"
+	DomainGateway  DomainStatus = "GATEWAY"
 	DomainTimeout  DomainStatus = "TIMEOUT"
 	DomainError    DomainStatus = "ERROR"
 )

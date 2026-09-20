@@ -54,6 +54,8 @@ func (e HistoryEntry) EffectiveOutcome() Outcome {
 		return OutcomeWorksWithoutBypass
 	case e.BestSuccess && e.BestPreset != "" && e.BestPreset != presetNoBypass:
 		return OutcomeFound
+	case e.DNSResult.gatewayIntercepted():
+		return OutcomeGatewayIntercepted
 	case e.DNSResult != nil && e.DNSResult.TransportBlocked:
 		return OutcomeAddressBlocked
 	default:

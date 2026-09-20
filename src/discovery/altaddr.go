@@ -328,6 +328,9 @@ func (ds *DiscoverySuite) findAlternativeAddresses(domain string, result *DNSDis
 			known[probe.ResolvedIP] = true
 		}
 	}
+	for _, ip := range result.GatewayIPs {
+		known[ip] = true
+	}
 
 	if result.TransportBlocked {
 		log.DiscoveryLogf("  [%s] every known address is unreachable, asking DNS how other regions are answered", domain)
@@ -377,14 +380,21 @@ func (ds *DiscoverySuite) findAlternativeAddresses(domain string, result *DNSDis
 		domain, len(alive), len(candidates), alive[0].ip, alive[0].latency.Round(time.Millisecond))
 
 	var serving []string
+	checked, intercepted := 0, 0
 	for i, cand := range alive {
 		if i >= altScanTLSChecks || len(serving) >= altScanMaxAnswers || ctx.Err() != nil {
 			break
 		}
-		if scanner.servesDomain(ctx, domain, cand.ip) {
+		checked++
+		switch {
+		case scanner.servesDomain(ctx, domain, cand.ip):
 			serving = append(serving, cand.ip)
 			log.DiscoveryLogf("  ✓ [%s] %s completes a TLS handshake for the site (%s)", domain, cand.ip, cand.latency.Round(time.Millisecond))
-		} else {
+		case ds.gatewayTerminates(ctx, cand.ip):
+			intercepted++
+			result.GatewayIPs = appendUnique(result.GatewayIPs, cand.ip)
+			log.DiscoveryLogf("  ✗ [%s] %s: TCP is terminated by the LAN gateway at hop 1 (transparent proxy on the router), no packet strategy from this host can reach it", domain, cand.ip)
+		default:
 			log.DiscoveryLogf("  ✗ [%s] %s accepts the connection but not the TLS handshake", domain, cand.ip)
 		}
 	}
@@ -393,17 +403,43 @@ func (ds *DiscoverySuite) findAlternativeAddresses(domain string, result *DNSDis
 		result.AlternativeIPs = serving
 		return
 	}
-	if !result.TransportBlocked {
-		log.DiscoveryLogf("  ✗ [%s] the reachable addresses do not complete a TLS handshake either, the site needs a packet strategy on its own addresses", domain)
+	allIntercepted := checked > 0 && intercepted == checked
+	knownIntercepted := len(result.ExpectedIPs) == 0 && len(result.GatewayIPs) > 0
+	if !result.TransportBlocked && !knownIntercepted {
+		if allIntercepted {
+			log.DiscoveryLogf("  ✗ [%s] every reachable alternative address is terminated on the LAN gateway as well", domain)
+		} else {
+			log.DiscoveryLogf("  ✗ [%s] the reachable addresses do not complete a TLS handshake either, the site needs a packet strategy on its own addresses", domain)
+		}
 		return
 	}
-	for i, cand := range alive {
-		if i >= altScanFallbackTargets {
+	for _, cand := range alive {
+		if len(result.AlternativeIPs) >= altScanFallbackTargets {
 			break
+		}
+		if result.isGateway(cand.ip) {
+			continue
 		}
 		result.AlternativeIPs = append(result.AlternativeIPs, cand.ip)
 	}
+	if len(result.AlternativeIPs) == 0 {
+		log.DiscoveryLogf("  ✗ [%s] every reachable alternative address is terminated on the LAN gateway as well", domain)
+		return
+	}
+	if knownIntercepted {
+		log.DiscoveryLogf("  [%s] the addresses DNS hands out here are terminated on the LAN gateway, keeping %v as targets for the packet strategies instead", domain, result.AlternativeIPs)
+		return
+	}
 	log.DiscoveryLogf("  [%s] no reachable address completes a TLS handshake, keeping %v as targets for the packet strategies", domain, result.AlternativeIPs)
+}
+
+func (ds *DiscoverySuite) gatewayTerminates(ctx context.Context, ip string) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, gatewayProbeTimeout)
+	defer cancel()
+	return netprobe.GatewayProbe(probeCtx, ip, 443, int(ds.flowMark), gatewayProbeTimeout)
 }
 
 func shouldScanAlternatives(result *DNSDiscoveryResult) bool {

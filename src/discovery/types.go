@@ -1,8 +1,8 @@
 package discovery
 
 import (
-	"strings"
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -66,6 +66,7 @@ const (
 	OutcomeFound              Outcome = "found"
 	OutcomeWorksWithoutBypass Outcome = "works_without_bypass"
 	OutcomeAddressBlocked     Outcome = "address_blocked"
+	OutcomeGatewayIntercepted Outcome = "gateway_intercepted"
 	OutcomeNotFound           Outcome = "not_found"
 )
 
@@ -166,6 +167,8 @@ func (dr *DomainDiscoveryResult) refreshOutcome(finished bool) {
 		dr.Outcome = OutcomeWorksWithoutBypass
 	case dr.BestSuccess && dr.BestPreset != "" && dr.BestPreset != presetNoBypass:
 		dr.Outcome = OutcomeFound
+	case dr.DNSResult.gatewayIntercepted():
+		dr.Outcome = OutcomeGatewayIntercepted
 	case dr.DNSResult.addressBlocked():
 		dr.Outcome = OutcomeAddressBlocked
 	case finished:
@@ -220,11 +223,20 @@ type DNSDiscoveryResult struct {
 	SystemServes     bool             `json:"system_serves,omitempty"`
 	ProbeResults     []DNSProbeResult `json:"probe_results,omitempty"`
 	AlternativeIPs   []string         `json:"alternative_ips,omitempty"`
+	GatewayIPs       []string         `json:"gateway_ips,omitempty"`
 	AltScan          *AltScanSummary  `json:"alt_scan,omitempty"`
 }
 
 func (r *DNSDiscoveryResult) addressBlocked() bool {
 	return r != nil && r.TransportBlocked && len(r.AlternativeIPs) == 0
+}
+
+func (r *DNSDiscoveryResult) gatewayIntercepted() bool {
+	return r != nil && len(r.GatewayIPs) > 0 && len(r.ExpectedIPs) == 0 && len(r.AlternativeIPs) == 0
+}
+
+func (r *DNSDiscoveryResult) isGateway(ip string) bool {
+	return r != nil && containsString(r.GatewayIPs, ip)
 }
 
 type PayloadTestResult struct {
@@ -237,6 +249,7 @@ type DiscoverySuite struct {
 	*CheckSuite
 	networkBaseline float64
 	optimalTTL      uint8
+	optimalTTLSpeed float64
 	ttlProbed       bool
 
 	ctx       context.Context

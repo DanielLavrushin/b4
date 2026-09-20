@@ -384,6 +384,7 @@ func (s *Suite) fetchMode(site SiteResult, mark uint, direct bool) Fetch {
 	}
 
 	blocked := isBlockedStatus(f.Status)
+	gateway := f.Status == netprobe.DomainGateway
 	var wg sync.WaitGroup
 	var alt Fetch
 	tryAlt := blocked && len(site.HonestIPs) > 0 && !overlaps(site.HonestIPs, ips)
@@ -395,7 +396,7 @@ func (s *Suite) fetchMode(site SiteResult, mark uint, direct bool) Fetch {
 		}()
 	}
 	var t12 Fetch
-	tryTLS12 := blocked && !s.Options.SkipTLS12
+	tryTLS12 := blocked && !gateway && !s.Options.SkipTLS12
 	if tryTLS12 {
 		wg.Add(1)
 		go func() {
@@ -405,11 +406,13 @@ func (s *Suite) fetchMode(site SiteResult, mark uint, direct bool) Fetch {
 	}
 	var httpStatus FetchStatus
 	var httpDetail string
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		httpStatus, httpDetail = s.probePlainHTTP(ctx, site.Domain, f.IP, mark)
-	}()
+	if !gateway {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			httpStatus, httpDetail = s.probePlainHTTP(ctx, site.Domain, f.IP, mark)
+		}()
+	}
 	wg.Wait()
 
 	if tryAlt && alt.Status == FetchOk {
@@ -419,7 +422,9 @@ func (s *Suite) fetchMode(site SiteResult, mark uint, direct bool) Fetch {
 	if tryTLS12 {
 		f.TLS12 = t12.Status
 	}
-	f.HTTP, f.HTTPDetail = httpStatus, httpDetail
+	if !gateway {
+		f.HTTP, f.HTTPDetail = httpStatus, httpDetail
+	}
 	return f
 }
 

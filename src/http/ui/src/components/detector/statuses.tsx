@@ -23,6 +23,7 @@ export const BLOCKED_STATUSES: FetchStatus[] = [
   "ISP_PAGE",
   "BLOCKED",
   "DNS_FAKE",
+  "GATEWAY",
   "TIMEOUT",
 ];
 

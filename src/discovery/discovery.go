@@ -113,6 +113,67 @@ func parseDiscoveryInput(input string) (domain string, testURL string) {
 	return input, "https://" + input + "/"
 }
 
+func upgradeCheckURL(di DomainInput, r CheckResult) (string, bool) {
+	u, err := url.Parse(di.CheckURL)
+	if err != nil || u.Scheme != "http" || u.Host == "" {
+		return di.CheckURL, false
+	}
+	if r.Status != CheckStatusFailed || r.StatusCode < 400 || r.StatusCode == http.StatusUnavailableForLegalReasons {
+		return di.CheckURL, false
+	}
+	if strings.HasPrefix(r.Error, "ISP block page") {
+		return di.CheckURL, false
+	}
+	if r.BytesRead >= minSuccessBytes {
+		return di.CheckURL, false
+	}
+	u.Scheme = "https"
+	return u.String(), true
+}
+
+func (ds *DiscoverySuite) rewriteDeadEndCheckURLs(baselineName string) []string {
+	var upgraded []string
+
+	ds.CheckSuite.mu.Lock()
+	defer ds.CheckSuite.mu.Unlock()
+	for i, di := range ds.Domains {
+		dr := ds.domainResults[di.Domain]
+		if dr == nil {
+			continue
+		}
+		r := dr.Results[baselineName]
+		if r == nil {
+			continue
+		}
+		next, ok := upgradeCheckURL(di, CheckResult{Status: r.Status, StatusCode: r.StatusCode, BytesRead: r.BytesRead, Error: r.Error})
+		if !ok {
+			continue
+		}
+		log.DiscoveryLogf("  [%s] http://%s answers HTTP %d with %d bytes to everyone, no strategy can pass with it; checking https://%s instead",
+			di.Domain, strings.TrimPrefix(di.CheckURL, "http://"), r.StatusCode, r.BytesRead, strings.TrimPrefix(next, "https://"))
+		ds.Domains[i].CheckURL = next
+		if ds.Domain == di.Domain {
+			ds.CheckURL = next
+		}
+		dr.Url = next
+		upgraded = append(upgraded, di.Domain)
+	}
+	ds.TotalChecks += len(upgraded)
+	return upgraded
+}
+
+func (ds *DiscoverySuite) upgradeDeadEndCheckURLs(baseline ConfigPreset) {
+	upgraded := ds.rewriteDeadEndCheckURLs(baseline.Name)
+	if len(upgraded) == 0 {
+		return
+	}
+
+	retry := baseline
+	retry.Domains = upgraded
+	ds.storeResultsMulti(retry, ds.testPresetAllDomains(retry))
+	ds.determineBest()
+}
+
 func parseDiscoveryInputs(inputs []string) []DomainInput {
 	seen := make(map[string]bool)
 	var result []DomainInput
@@ -206,6 +267,9 @@ func (ds *DiscoverySuite) RunDiscovery() {
 			if dnsResult != nil && len(dnsResult.ExpectedIPs) > 0 {
 				log.DiscoveryLogf("  [%s] Stored %d target IPs: %v", di.Domain, len(dnsResult.ExpectedIPs), dnsResult.ExpectedIPs)
 			}
+			if dnsResult.gatewayIntercepted() {
+				log.DiscoveryLogf("  ⊘ TCP to %s is terminated on your LAN gateway; b4 on this host cannot help, run b4 on the router or exclude this host from the router's redirect", di.Domain)
+			}
 
 			if dnsResult != nil && dnsResult.IsPoisoned {
 				anyDNSPoisoned = true
@@ -222,6 +286,12 @@ func (ds *DiscoverySuite) RunDiscovery() {
 		// Apply DNS config if any domain needs it
 		if anyDNSPoisoned {
 			ds.applyBestDNSConfig()
+		}
+
+		if ds.allDomainsGatewayIntercepted() {
+			log.DiscoveryLogf("Every domain is terminated on the LAN gateway, there is nothing a packet strategy from this host could change; search skipped")
+			ds.finishRun()
+			return
 		}
 	}
 
@@ -246,6 +316,7 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	ds.setPhase(PhaseStrategy)
 	ds.storeResultsMulti(phase1Presets[0], ds.testPresetAllDomains(phase1Presets[0]))
 	ds.determineBest()
+	ds.upgradeDeadEndCheckURLs(phase1Presets[0])
 
 	if len(cachedPresets) > 0 {
 		ds.setPhase(PhaseCached)
@@ -548,7 +619,7 @@ func (ds *DiscoverySuite) optimizeFakeSNI() ConfigPreset {
 	log.DiscoveryLogf("  Optimizing FakeSNI with TTL scan + strategy rotation")
 
 	ds.CheckSuite.mu.Lock()
-	ds.TotalChecks += 13
+	ds.TotalChecks += 3 + ds.ttlSweepChecks()
 	ds.CheckSuite.mu.Unlock()
 
 	base := baseConfig()
@@ -668,7 +739,7 @@ func (ds *DiscoverySuite) optimizeCombo() ConfigPreset {
 	log.DiscoveryLogf("  Optimizing Combo with TTL scan + strategy rotation")
 
 	ds.CheckSuite.mu.Lock()
-	ds.TotalChecks += 21
+	ds.TotalChecks += 11 + ds.ttlSweepChecks()
 	ds.CheckSuite.mu.Unlock()
 
 	combo := comboFrag()
@@ -1150,6 +1221,9 @@ func (ds *DiscoverySuite) collectTargetIPs(domain string, maxIPs int) []string {
 	}
 
 	seen := make(map[string]bool)
+	for _, ip := range dnsResult.GatewayIPs {
+		seen[ip] = true
+	}
 	var ips []string
 	for _, ip := range dnsResult.AlternativeIPs {
 		if !seen[ip] {
@@ -1176,6 +1250,13 @@ func (ds *DiscoverySuite) collectTargetIPs(domain string, maxIPs int) []string {
 }
 
 func (ds *DiscoverySuite) fetchForDomain(di DomainInput, timeout time.Duration) CheckResult {
+	if dnsResult := ds.dnsResults[di.Domain]; dnsResult.gatewayIntercepted() {
+		return CheckResult{
+			Domain: di.Domain,
+			Status: CheckStatusFailed,
+			Error:  "TCP to every known address is terminated on the LAN gateway, not tried",
+		}
+	}
 	// Use IPs already collected during DNS discovery — no fresh DNS lookups.
 	// Fresh lookups are slow (poisoned DNS can timeout) and redundant since
 	// DNS discovery already gathered all valid IPs from DoH + system resolver.
@@ -1195,21 +1276,20 @@ func (ds *DiscoverySuite) fetchForDomain(di DomainInput, timeout time.Duration) 
 		return ds.fetchUsingIPForDomain(di, timeout, ip)
 	}
 
+	var last CheckResult
 	for _, ip := range allIPs {
-		result := ds.fetchUsingIPForDomain(di, timeout, ip)
-		if result.Status == CheckStatusComplete {
+		last = ds.fetchUsingIPForDomain(di, timeout, ip)
+		if last.Status == CheckStatusComplete {
 			log.Tracef("Success with IP %s for %s", ip, di.Domain)
-			return result
+			return last
 		}
 		log.Tracef("IP %s failed for %s, trying next", ip, di.Domain)
 	}
 
 	if len(allIPs) > 0 {
-		return CheckResult{
-			Domain: di.Domain,
-			Status: CheckStatusFailed,
-			Error:  fmt.Sprintf("all %d IPs failed", len(allIPs)),
-		}
+		last.Status = CheckStatusFailed
+		last.Error = fmt.Sprintf("all %d IPs failed: %s", len(allIPs), last.Error)
+		return last
 	}
 
 	return ds.fetchUsingIPForDomain(di, timeout, "")
@@ -1731,7 +1811,7 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 			if dnsResult != nil {
 				ipsToAdd = append(ipsToAdd, dnsResult.ExpectedIPs...)
 				for _, probe := range dnsResult.ProbeResults {
-					if probe.ResolvedIP != "" {
+					if probe.ResolvedIP != "" && !dnsResult.isGateway(probe.ResolvedIP) {
 						found := false
 						for _, ip := range ipsToAdd {
 							if ip == probe.ResolvedIP {
@@ -1814,7 +1894,7 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 					allIPs = appendUnique(allIPs, ip)
 				}
 				for _, probe := range dnsResult.ProbeResults {
-					if probe.ResolvedIP != "" {
+					if probe.ResolvedIP != "" && !dnsResult.isGateway(probe.ResolvedIP) {
 						allIPs = appendUnique(allIPs, probe.ResolvedIP)
 					}
 				}
@@ -1880,7 +1960,19 @@ func (ds *DiscoverySuite) allDomainsTransportBlocked() bool {
 		return false
 	}
 	for _, result := range ds.dnsResults {
-		if !result.addressBlocked() {
+		if !result.addressBlocked() && !result.gatewayIntercepted() {
+			return false
+		}
+	}
+	return true
+}
+
+func (ds *DiscoverySuite) allDomainsGatewayIntercepted() bool {
+	if len(ds.dnsResults) == 0 {
+		return false
+	}
+	for _, result := range ds.dnsResults {
+		if !result.gatewayIntercepted() {
 			return false
 		}
 	}
@@ -1966,7 +2058,7 @@ func (ds *DiscoverySuite) targetIPsFor(domains []string) []string {
 		}
 		ips = appendUnique(ips, result.ExpectedIPs...)
 		for _, probe := range result.ProbeResults {
-			if probe.ResolvedIP != "" {
+			if probe.ResolvedIP != "" && !result.isGateway(probe.ResolvedIP) {
 				ips = appendUnique(ips, probe.ResolvedIP)
 			}
 		}
@@ -2154,6 +2246,9 @@ func (ds *DiscoverySuite) logDiscoverySummary() {
 		// DNS status line
 		if dnsResult != nil {
 			switch {
+			case dnsResult.gatewayIntercepted():
+				log.DiscoveryLogf("  ⊘ [%s] TCP to %v is terminated on your LAN gateway; b4 on this host cannot help, run b4 on the router or exclude this host from the router's redirect", di.Domain, dnsResult.GatewayIPs)
+				continue
 			case dnsResult.TransportBlocked && len(dnsResult.AlternativeIPs) > 0:
 				log.DiscoveryLogf("  ⚡ [%s] known addresses blocked, answered with %v instead", di.Domain, dnsResult.AlternativeIPs)
 			case dnsResult.TransportBlocked:

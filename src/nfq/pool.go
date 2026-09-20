@@ -78,6 +78,7 @@ func NewPool(cfg *config.Config) *Pool {
 		w.pendingHello = state.pendingHello
 		w.hostHints = state.hostHints
 		w.ipHealth = state.ipHealth
+		w.pinHealth = state.pinHealth
 		w.goodIPs = state.goodIPs
 		ws = append(ws, w)
 	}
@@ -107,6 +108,7 @@ func NewPool(cfg *config.Config) *Pool {
 		defer cleanupTicker.Stop()
 		escalationTicker := time.NewTicker(2 * time.Second)
 		defer escalationTicker.Stop()
+		pool.checkDNSPins(pool.GetFirstWorkerConfig())
 		for {
 			select {
 			case <-cleanupTicker.C:
@@ -117,6 +119,9 @@ func NewPool(cfg *config.Config) *Pool {
 				pool.state.hostHints.Cleanup()
 				pool.state.ipHealth.Cleanup(retest)
 				pool.state.goodIPs.Cleanup()
+				if pool.state.pinHealth.due(retest) {
+					pool.checkDNSPins(pool.GetFirstWorkerConfig())
+				}
 			case <-escalationTicker.C:
 				pool.state.pendingHello.Cleanup()
 				m := metrics.GetMetricsCollector()
@@ -196,6 +201,7 @@ func (p *Pool) Stop() {
 	}
 
 	if p.state != nil {
+		p.state.pinHealth.stop()
 		p.state.ipHealth.Stop()
 	}
 
@@ -313,6 +319,7 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 	}
 
 	p.reconcileDNSTCP(newCfg)
+	p.checkDNSPins(newCfg)
 
 	return nil
 }

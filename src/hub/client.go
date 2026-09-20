@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -120,12 +121,22 @@ func (s *Service) get(ctx context.Context, url string, limit int64, timeout time
 	return s.do(ctx, req, limit, timeout)
 }
 
-func (s *Service) healthy(ctx context.Context, base string) bool {
+func (s *Service) healthy(ctx context.Context, base string) error {
 	body, status, err := s.get(ctx, base+hubwire.PathHealth, 64, healthTimeout)
-	if err != nil || status != http.StatusOK {
-		return false
+	if err != nil {
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			return urlErr.Err
+		}
+		return err
 	}
-	return strings.TrimSpace(string(body)) == "ok"
+	if status != http.StatusOK {
+		return fmt.Errorf("health check answered %d", status)
+	}
+	if answer := strings.TrimSpace(string(body)); answer != "ok" {
+		return fmt.Errorf("health check answered %q", answer)
+	}
+	return nil
 }
 
 func (s *Service) fetchManifest(ctx context.Context, base string) (*hubwire.Manifest, error) {

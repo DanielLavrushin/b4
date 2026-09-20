@@ -68,6 +68,7 @@ When the run finishes, every site gets a verdict:
 - **Strategy found** - a working configuration, described in words, with **Apply as a set**
 - **No bypass needed** - the site loads without b4, so there is nothing to apply
 - **Address blocked** - connections to the site's addresses fail, so a bypass strategy cannot help and the site needs a proxy or VPN set
+- **Intercepted by the LAN gateway** - the router in front of this host answers the connections itself, so nothing b4 does here reaches the ISP; b4 has to run on that router
 - **Nothing found** - no strategy made the site load
 
 ![Results of a run](/img/quickstart/20260905160700.png)

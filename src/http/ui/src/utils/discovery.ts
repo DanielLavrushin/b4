@@ -18,7 +18,20 @@ interface VerdictSource {
   best_success?: boolean;
   best_preset?: string;
   baseline_works?: boolean;
-  dns_result?: { transport_blocked?: boolean; alternative_ips?: string[] };
+  dns_result?: {
+    transport_blocked?: boolean;
+    expected_ips?: string[];
+    alternative_ips?: string[];
+    gateway_ips?: string[];
+  };
+}
+
+export function gatewayIntercepted(dns?: VerdictSource["dns_result"]): boolean {
+  return (
+    !!dns?.gateway_ips?.length &&
+    !dns.expected_ips?.length &&
+    !dns.alternative_ips?.length
+  );
 }
 
 export function verdictOf(r: VerdictSource, finished: boolean): SiteVerdict {
@@ -27,6 +40,7 @@ export function verdictOf(r: VerdictSource, finished: boolean): SiteVerdict {
   if (r.best_success && r.best_preset && r.best_preset !== NO_BYPASS_PRESET) {
     return "found";
   }
+  if (gatewayIntercepted(r.dns_result)) return "gateway_intercepted";
   if (r.dns_result?.transport_blocked && !r.dns_result.alternative_ips?.length) {
     return "address_blocked";
   }
