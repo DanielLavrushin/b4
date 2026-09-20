@@ -26,6 +26,7 @@ type Status struct {
 	URLs       []string         `json:"urls"`
 	Mirrors    []string         `json:"mirrors"`
 	Active     string           `json:"active"`
+	SelfBypass bool             `json:"self_bypass"`
 	Network    Network          `json:"network"`
 	Outbox     int              `json:"outbox"`
 	HubKey     string           `json:"hub_key"`
@@ -63,6 +64,7 @@ func (s *Service) Status() Status {
 	}
 	st.LastError = s.lastError
 	st.Active = s.syncedBase
+	st.SelfBypass = s.plainMode
 	if s.manifest != nil && s.catalogue != nil {
 		st.Catalogue = &CatalogueStatus{
 			Epoch:       s.manifest.Epoch,

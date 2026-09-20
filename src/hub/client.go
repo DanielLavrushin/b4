@@ -98,7 +98,7 @@ func (s *Service) do(ctx context.Context, req *http.Request, limit int64, timeou
 	defer cancel()
 	req = req.WithContext(ctx)
 	req.Header.Set("User-Agent", s.userAgent())
-	resp, err := s.http.Do(req)
+	resp, err := s.client().Do(req)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -179,7 +179,7 @@ func (api *API) matchDomainsToSets(domains []string, excludeId string) []SetDoma
 	exactRank := sni.RelationExact.Priority()
 
 	for _, set := range api.getCfg().Sets {
-		if set.Id == excludeId {
+		if excludeId != "" && set.Id == excludeId {
 			continue
 		}
 

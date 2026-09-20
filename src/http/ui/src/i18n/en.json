@@ -802,6 +802,12 @@
           "builtin": "Built-in hub address",
           "active": "Answered the last sync"
         },
+        "matchedBy": "Matched by set",
+        "matchedByHint": "These sets target the hub addresses, so their strategy is applied to b4's own connection to the hub as well. A set that matches everything, such as a regexp catch-all, belongs after a set for these addresses with no strategy.",
+        "selfBypassHintSet": "b4 syncs the hub over a connection its own rules leave alone, because the one through its packet processing stalled. The strategy of {{set}} is applied to b4's own connection and breaks it on this router; put a set for the hub addresses with no strategy in front of it. The sync keeps working either way, but please report it.",
+        "selfBypass": "Own traffic",
+        "selfBypassValue": "the hub answers only with b4's own packet processing bypassed",
+        "selfBypassHint": "b4 syncs the hub over a connection its own rules leave alone, because the one through its packet processing stalled. Something in this router's sets or rules breaks b4's own connections; the sync keeps working, but please report it.",
         "hubKey": "Signed by",
         "hubKeyBuiltin": "built-in key of hub.b4core.app ({{key}})",
         "hubKeyCustom": "custom key {{key}}",

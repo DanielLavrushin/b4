@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -214,6 +215,32 @@ func (api *API) installHubPayloads(set *config.SetConfig, payloads []hubwire.Pay
 // @Failure 409 {object} APIError "hub_disabled or hub_not_configured"
 // @Security BearerAuth
 // @Router /hub/status [get]
+type hubStatusResponse struct {
+	hub.Status
+	SetMatches []SetDomainMatch `json:"set_matches"`
+}
+
+func (api *API) hubStatus(svc *hub.Service) hubStatusResponse {
+	st := svc.Status()
+	hosts := make([]string, 0, len(st.URLs))
+	seen := map[string]bool{}
+	for _, raw := range st.URLs {
+		u, err := url.Parse(raw)
+		if err != nil || u.Hostname() == "" || seen[u.Hostname()] {
+			continue
+		}
+		seen[u.Hostname()] = true
+		hosts = append(hosts, u.Hostname())
+	}
+	matches := make([]SetDomainMatch, 0)
+	for _, m := range api.matchDomainsToSets(hosts, "") {
+		if m.Enabled {
+			matches = append(matches, m)
+		}
+	}
+	return hubStatusResponse{Status: st, SetMatches: matches}
+}
+
 func (api *API) handleHubStatus(w http.ResponseWriter, r *http.Request) {
 	if !hubGetRequest(w, r) {
 		return
@@ -222,7 +249,7 @@ func (api *API) handleHubStatus(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	sendResponse(w, svc.Status())
+	sendResponse(w, api.hubStatus(svc))
 }
 
 // @Summary Sync the hub catalogue now
@@ -246,7 +273,7 @@ func (api *API) handleHubSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	svc.FlushOutbox(r.Context())
-	sendResponse(w, svc.Status())
+	sendResponse(w, api.hubStatus(svc))
 }
 
 // @Summary List hub sets

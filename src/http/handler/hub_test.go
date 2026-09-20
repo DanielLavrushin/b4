@@ -296,6 +296,40 @@ func TestHubEndpointsAreGated(t *testing.T) {
 	}
 }
 
+func TestHubStatusNamesTheSetsThatMatchItsAddresses(t *testing.T) {
+	env := newHubEnv(t)
+	env.update(func(cfg *config.Config) {
+		catchAll := config.NewSetConfig()
+		catchAll.Name = "catch-all"
+		catchAll.Targets.SNIDomains = []string{"regexp:.*"}
+		catchAll.Enabled = true
+		off := config.NewSetConfig()
+		off.Name = "disabled"
+		off.Targets.SNIDomains = []string{"b4core.app"}
+		off.Enabled = false
+		cfg.Sets = append(cfg.Sets, &catchAll, &off)
+		cfg.System.Hub.URLs = []string{"https://mirror.example/base", env.hub.URL()}
+	})
+	rec := getJSON(t, env.mux, "/api/hub/status")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var st hubStatusResponse
+	decodeInto(t, rec, &st)
+	hosts := map[string]string{}
+	for _, m := range st.SetMatches {
+		hosts[m.Domain] = m.SetName
+	}
+	if hosts["mirror.example"] != "catch-all" || hosts["127.0.0.1"] != "catch-all" {
+		t.Errorf("the enabled catch-all set must be reported for every hub host, got %+v", st.SetMatches)
+	}
+	for _, m := range st.SetMatches {
+		if m.SetName == "disabled" {
+			t.Errorf("a disabled set must not be reported: %+v", m)
+		}
+	}
+}
+
 func TestHubSyncEndpointReportsTheCatalogue(t *testing.T) {
 	env := newHubEnv(t)
 	set := hubStrategySet("Video", "youtube.com")

@@ -32,6 +32,7 @@ var DefaultBases = []string{DefaultBaseURL}
 type Options struct {
 	Version      string
 	HTTPClient   *http.Client
+	PlainClient  *http.Client
 	BuiltinBases []string
 	Now          func() time.Time
 }
@@ -42,6 +43,7 @@ type Service struct {
 	getCfg  func() *config.Config
 	version string
 	http    *http.Client
+	plain   *http.Client
 	builtin []string
 	now     func() time.Time
 
@@ -53,6 +55,7 @@ type Service struct {
 	lastError     string
 	preferredBase string
 	syncedBase    string
+	plainMode     bool
 
 	identityMu      sync.Mutex
 	identity        *hubwire.Identity
@@ -84,11 +87,15 @@ func New(getCfg func() *config.Config, opts Options) *Service {
 		getCfg:  getCfg,
 		version: opts.Version,
 		http:    opts.HTTPClient,
+		plain:   opts.PlainClient,
 		builtin: opts.BuiltinBases,
 		now:     opts.Now,
 	}
 	if s.http == nil {
 		s.http = netprobe.HTTPClient(int(config.SelfDialMark), RequestTimeout)
+	}
+	if s.plain == nil {
+		s.plain = netprobe.HTTPClient(int(s.bypassMark()), RequestTimeout)
 	}
 	if s.builtin == nil {
 		s.builtin = DefaultBases
@@ -293,6 +300,35 @@ func (s *Service) catalogueLoaded() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.catalogue != nil
+}
+
+func (s *Service) bypassMark() uint {
+	if cfg := s.getCfg(); cfg != nil {
+		return cfg.MainInjectedMark()
+	}
+	return config.DefaultConfig.Queue.Mark
+}
+
+func (s *Service) client() *http.Client {
+	s.mu.RLock()
+	plain := s.plainMode
+	s.mu.RUnlock()
+	if plain {
+		return s.plain
+	}
+	return s.http
+}
+
+func (s *Service) PlainMode() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.plainMode
+}
+
+func (s *Service) setPlainMode(plain bool) {
+	s.mu.Lock()
+	s.plainMode = plain
+	s.mu.Unlock()
 }
 
 func (s *Service) markSynced(base string) {
