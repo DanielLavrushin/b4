@@ -29,12 +29,15 @@ export function verdictSentences(suite: DetectorSuite, t: (k: string, o?: Record
 
   if (suite.sites) {
     const kinds = pickKinds(v.block_kinds).map((k) => t(`detector.kind.${k}`, { defaultValue: k.toLowerCase() }));
+    const gateway = v.gateway ?? 0;
     if (v.blocked_by_isp === 0 && v.sites > 0 && suite.sites.ok === v.sites) {
       title = t("detector.verdict.titleClean");
     } else if (v.blocked_by_isp > 0 && kinds.length > 0) {
       title = t("detector.verdict.titleBlocks", { kinds: kinds.join(t("detector.verdict.and")) });
     } else if (v.blocked_by_isp > 0) {
       title = t("detector.verdict.titleBlocked");
+    } else if (gateway > 0) {
+      title = t("detector.verdict.titleGateway");
     }
     body.push(
       t("detector.verdict.sites", {
@@ -56,8 +59,8 @@ export function verdictSentences(suite: DetectorSuite, t: (k: string, o?: Record
     if (v.broken_by_b4 > 0) {
       body.push(t("detector.verdict.brokenByB4", { count: v.broken_by_b4 }));
     }
-    if ((v.block_kinds?.GATEWAY ?? 0) > 0) {
-      body.push(t("detector.verdict.gateway", { count: v.block_kinds?.GATEWAY }));
+    if (gateway > 0) {
+      body.push(t("detector.verdict.gateway", { count: gateway }));
     }
   }
   if (suite.dns) {
@@ -121,6 +124,9 @@ export const VerdictPanel = ({ suite, running, onDiscovery, onCopy, onRunAgain }
     if (both) {
       counters.push({ value: v.fixed_by_b4, label: t("detector.verdict.countFixed"), color: colors.state.success });
       counters.push({ value: v.still_blocked, label: t("detector.verdict.countStill"), color: colors.state.warning });
+    }
+    if ((v.gateway ?? 0) > 0) {
+      counters.push({ value: v.gateway ?? 0, label: t("detector.verdict.countGateway"), color: colors.state.warning });
     }
     counters.push({ value: v.not_blocked, label: t("detector.verdict.countOk"), color: colors.text.primary });
   }

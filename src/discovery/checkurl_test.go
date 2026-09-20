@@ -64,6 +64,10 @@ func TestUpgradeCheckURLLeavesAFullBodyAlone(t *testing.T) {
 func TestUpgradeCheckURLLeavesABlockPageBodyAlone(t *testing.T) {
 	di := DomainInput{Domain: "example.com", CheckURL: "http://example.com/"}
 	got, ok := upgradeCheckURL(di, CheckResult{Status: CheckStatusFailed, StatusCode: 403, BytesRead: 512, Error: "ISP block page detected in response"})
+	if ok {
+		t.Fatalf("got (%q, %v), want no upgrade when a 403 carried an ISP block page, the origin never answered", got, ok)
+	}
+	got, ok = upgradeCheckURL(di, CheckResult{Status: CheckStatusFailed, StatusCode: 403, BytesRead: 512, Error: "all 2 IPs failed: ISP block page detected in response"})
 	if ok || got != di.CheckURL {
 		t.Fatalf("got (%q, %v), want no upgrade when a 403 carried an ISP block page, the origin never answered", got, ok)
 	}
@@ -86,16 +90,18 @@ func TestRewriteDeadEndCheckURLsTouchesOnlyTheDeadEndDomain(t *testing.T) {
 		CheckSuite: NewCheckSuite(inputs),
 		domainResults: map[string]*DomainDiscoveryResult{
 			"dead.example": {Domain: "dead.example", Url: "http://dead.example/", Results: map[string]*DomainPresetResult{
-				presetNoBypass: {Status: CheckStatusFailed, StatusCode: 403, BytesRead: 0, Error: "all 2 IPs failed: insufficient data: 0 bytes"},
+				presetNoBypass:  {Status: CheckStatusFailed, StatusCode: 403, BytesRead: 0, Error: "all 2 IPs failed: insufficient data: 0 bytes"},
+				"combo-pastseq": {Status: CheckStatusFailed, StatusCode: 403, BytesRead: 0, Error: "insufficient data: 0 bytes"},
 			}},
 			"fine.example": {Domain: "fine.example", Url: "https://fine.example/", Results: map[string]*DomainPresetResult{
-				presetNoBypass: {Status: CheckStatusFailed, StatusCode: 403, BytesRead: 0, Error: "insufficient data: 0 bytes"},
+				presetNoBypass:  {Status: CheckStatusFailed, StatusCode: 403, BytesRead: 0, Error: "insufficient data: 0 bytes"},
+				"combo-pastseq": {Status: CheckStatusFailed, StatusCode: 403, BytesRead: 0, Error: "insufficient data: 0 bytes"},
 			}},
 		},
 	}
 	ds.TotalChecks = 40
 
-	upgraded := ds.rewriteDeadEndCheckURLs(presetNoBypass)
+	upgraded := ds.rewriteDeadEndCheckURLs(3)
 
 	if len(upgraded) != 1 || upgraded[0] != "dead.example" {
 		t.Fatalf("upgraded = %v, want only dead.example", upgraded)
@@ -112,8 +118,8 @@ func TestRewriteDeadEndCheckURLsTouchesOnlyTheDeadEndDomain(t *testing.T) {
 	if ds.Domains[1].CheckURL != "https://fine.example/" || ds.domainResults["fine.example"].Url != "https://fine.example/" {
 		t.Fatalf("fine.example changed: CheckURL %q, Url %q", ds.Domains[1].CheckURL, ds.domainResults["fine.example"].Url)
 	}
-	if ds.TotalChecks != 41 {
-		t.Fatalf("TotalChecks = %d, want 41 (one re-run for the upgraded domain)", ds.TotalChecks)
+	if ds.TotalChecks != 43 {
+		t.Fatalf("TotalChecks = %d, want 43 (the phase-1 re-run for the upgraded domain)", ds.TotalChecks)
 	}
 }
 
@@ -129,12 +135,13 @@ func TestRewriteDeadEndCheckURLsLeavesASecondaryPrimaryURLAlone(t *testing.T) {
 				presetNoBypass: {Status: CheckStatusComplete, StatusCode: 200, BytesRead: 9000},
 			}},
 			"dead.example": {Domain: "dead.example", Url: "http://dead.example/", Results: map[string]*DomainPresetResult{
-				presetNoBypass: {Status: CheckStatusFailed, StatusCode: 404, BytesRead: 3, Error: "insufficient data: 3 bytes"},
+				presetNoBypass:  {Status: CheckStatusFailed, StatusCode: 404, BytesRead: 3, Error: "insufficient data: 3 bytes"},
+				"combo-pastseq": {Status: CheckStatusFailed, StatusCode: 404, BytesRead: 3, Error: "insufficient data: 3 bytes"},
 			}},
 		},
 	}
 
-	upgraded := ds.rewriteDeadEndCheckURLs(presetNoBypass)
+	upgraded := ds.rewriteDeadEndCheckURLs(3)
 
 	if len(upgraded) != 1 || upgraded[0] != "dead.example" {
 		t.Fatalf("upgraded = %v, want only dead.example", upgraded)
@@ -144,5 +151,39 @@ func TestRewriteDeadEndCheckURLsLeavesASecondaryPrimaryURLAlone(t *testing.T) {
 	}
 	if ds.Domains[1].CheckURL != "https://dead.example/" {
 		t.Fatalf("Domains[1].CheckURL = %q, want https://dead.example/", ds.Domains[1].CheckURL)
+	}
+}
+
+func TestDeadEndAnswerNeedsTheSameErrorUnderEveryStrategy(t *testing.T) {
+	uniform := map[string]*DomainPresetResult{
+		presetNoBypass:  {Status: CheckStatusFailed, StatusCode: 403, BytesRead: 0, Error: "insufficient data: 0 bytes"},
+		"combo-pastseq": {Status: CheckStatusFailed, StatusCode: 403, BytesRead: 0, Error: "insufficient data: 0 bytes"},
+		"disorder":      {Status: CheckStatusFailed, StatusCode: 403, BytesRead: 0, Error: "insufficient data: 0 bytes"},
+	}
+	if r, ok := deadEndAnswer(uniform); !ok || r.StatusCode != 403 {
+		t.Fatalf("got (%+v, %v), want the shared 403 when every strategy sees the same tiny error", r, ok)
+	}
+
+	injected := map[string]*DomainPresetResult{
+		presetNoBypass:  {Status: CheckStatusFailed, StatusCode: 403, BytesRead: 100, Error: "insufficient data: 100 bytes"},
+		"combo-pastseq": {Status: CheckStatusComplete, StatusCode: 200, BytesRead: 20000},
+	}
+	if _, ok := deadEndAnswer(injected); ok {
+		t.Fatal("a strategy that got past the 403 proves the DPI injected it, the http URL must stay")
+	}
+
+	dropped := map[string]*DomainPresetResult{
+		presetNoBypass:  {Status: CheckStatusFailed, StatusCode: 403, BytesRead: 0, Error: "insufficient data: 0 bytes"},
+		"combo-pastseq": {Status: CheckStatusFailed, StatusCode: 0, Error: "TLS handshake timed out (drop)"},
+	}
+	if _, ok := deadEndAnswer(dropped); ok {
+		t.Fatal("a strategy that changed the failure shows the path reacts to it, the http URL must stay")
+	}
+
+	alone := map[string]*DomainPresetResult{
+		presetNoBypass: {Status: CheckStatusFailed, StatusCode: 403, BytesRead: 0, Error: "insufficient data: 0 bytes"},
+	}
+	if _, ok := deadEndAnswer(alone); ok {
+		t.Fatal("one unbypassed fetch is not evidence about the origin")
 	}
 }

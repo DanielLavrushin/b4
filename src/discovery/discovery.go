@@ -121,7 +121,7 @@ func upgradeCheckURL(di DomainInput, r CheckResult) (string, bool) {
 	if r.Status != CheckStatusFailed || r.StatusCode < 400 || r.StatusCode == http.StatusUnavailableForLegalReasons {
 		return di.CheckURL, false
 	}
-	if strings.HasPrefix(r.Error, "ISP block page") {
+	if strings.Contains(r.Error, "ISP block page") {
 		return di.CheckURL, false
 	}
 	if r.BytesRead >= minSuccessBytes {
@@ -131,7 +131,27 @@ func upgradeCheckURL(di DomainInput, r CheckResult) (string, bool) {
 	return u.String(), true
 }
 
-func (ds *DiscoverySuite) rewriteDeadEndCheckURLs(baselineName string) []string {
+func deadEndAnswer(results map[string]*DomainPresetResult) (CheckResult, bool) {
+	if len(results) < 2 {
+		return CheckResult{}, false
+	}
+	var first *DomainPresetResult
+	for _, r := range results {
+		if r == nil || r.Status != CheckStatusFailed || r.StatusCode < 400 || r.BytesRead >= minSuccessBytes {
+			return CheckResult{}, false
+		}
+		if first == nil {
+			first = r
+			continue
+		}
+		if r.StatusCode != first.StatusCode {
+			return CheckResult{}, false
+		}
+	}
+	return CheckResult{Status: first.Status, StatusCode: first.StatusCode, BytesRead: first.BytesRead, Error: first.Error}, true
+}
+
+func (ds *DiscoverySuite) rewriteDeadEndCheckURLs(checksPerDomain int) []string {
 	var upgraded []string
 
 	ds.CheckSuite.mu.Lock()
@@ -141,15 +161,15 @@ func (ds *DiscoverySuite) rewriteDeadEndCheckURLs(baselineName string) []string 
 		if dr == nil {
 			continue
 		}
-		r := dr.Results[baselineName]
-		if r == nil {
+		r, uniform := deadEndAnswer(dr.Results)
+		if !uniform {
 			continue
 		}
-		next, ok := upgradeCheckURL(di, CheckResult{Status: r.Status, StatusCode: r.StatusCode, BytesRead: r.BytesRead, Error: r.Error})
+		next, ok := upgradeCheckURL(di, r)
 		if !ok {
 			continue
 		}
-		log.DiscoveryLogf("  [%s] http://%s answers HTTP %d with %d bytes to everyone, no strategy can pass with it; checking https://%s instead",
+		log.DiscoveryLogf("  [%s] http://%s answers HTTP %d with %d bytes whatever the strategy, no strategy can pass with it; checking https://%s instead",
 			di.Domain, strings.TrimPrefix(di.CheckURL, "http://"), r.StatusCode, r.BytesRead, strings.TrimPrefix(next, "https://"))
 		ds.Domains[i].CheckURL = next
 		if ds.Domain == di.Domain {
@@ -158,20 +178,24 @@ func (ds *DiscoverySuite) rewriteDeadEndCheckURLs(baselineName string) []string 
 		dr.Url = next
 		upgraded = append(upgraded, di.Domain)
 	}
-	ds.TotalChecks += len(upgraded)
+	ds.TotalChecks += len(upgraded) * checksPerDomain
 	return upgraded
 }
 
-func (ds *DiscoverySuite) upgradeDeadEndCheckURLs(baseline ConfigPreset) {
-	upgraded := ds.rewriteDeadEndCheckURLs(baseline.Name)
+func (ds *DiscoverySuite) upgradeDeadEndCheckURLs(presets []ConfigPreset) []StrategyFamily {
+	upgraded := ds.rewriteDeadEndCheckURLs(len(presets))
 	if len(upgraded) == 0 {
-		return
+		return nil
 	}
 
-	retry := baseline
-	retry.Domains = upgraded
-	ds.storeResultsMulti(retry, ds.testPresetAllDomains(retry))
+	scoped := make([]ConfigPreset, len(presets))
+	for i, p := range presets {
+		p.Domains = upgraded
+		scoped[i] = p
+	}
+	ds.storeResultsMulti(scoped[0], ds.testPresetAllDomains(scoped[0]))
 	ds.determineBest()
+	return ds.runPhase1Multi(scoped)
 }
 
 func parseDiscoveryInputs(inputs []string) []DomainInput {
@@ -268,7 +292,7 @@ func (ds *DiscoverySuite) RunDiscovery() {
 				log.DiscoveryLogf("  [%s] Stored %d target IPs: %v", di.Domain, len(dnsResult.ExpectedIPs), dnsResult.ExpectedIPs)
 			}
 			if dnsResult.gatewayIntercepted() {
-				log.DiscoveryLogf("  ⊘ TCP to %s is terminated on your LAN gateway; b4 on this host cannot help, run b4 on the router or exclude this host from the router's redirect", di.Domain)
+				log.DiscoveryLogf("  ⊘ TCP to %s is answered by the first hop in front of this host; b4 here cannot help: run b4 on that gateway or exclude this host from its redirect; if this host is the router itself, the ISP does this at its edge and only a proxy route helps", di.Domain)
 			}
 
 			if dnsResult != nil && dnsResult.IsPoisoned {
@@ -289,7 +313,7 @@ func (ds *DiscoverySuite) RunDiscovery() {
 		}
 
 		if ds.allDomainsGatewayIntercepted() {
-			log.DiscoveryLogf("Every domain is terminated on the LAN gateway, there is nothing a packet strategy from this host could change; search skipped")
+			log.DiscoveryLogf("Every domain is answered by the first hop in front of this host, there is nothing a packet strategy from this host could change; search skipped")
 			ds.finishRun()
 			return
 		}
@@ -316,7 +340,6 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	ds.setPhase(PhaseStrategy)
 	ds.storeResultsMulti(phase1Presets[0], ds.testPresetAllDomains(phase1Presets[0]))
 	ds.determineBest()
-	ds.upgradeDeadEndCheckURLs(phase1Presets[0])
 
 	if len(cachedPresets) > 0 {
 		ds.setPhase(PhaseCached)
@@ -369,6 +392,15 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	ds.setPhase(PhaseStrategy)
 	workingFamilies := ds.runPhase1Multi(phase1Presets)
 	ds.determineBest()
+
+	if !ds.interrupted() {
+		for _, family := range ds.upgradeDeadEndCheckURLs(phase1Presets) {
+			if !containsFamily(workingFamilies, family) {
+				workingFamilies = append(workingFamilies, family)
+			}
+		}
+		ds.determineBest()
+	}
 
 	if ds.interrupted() {
 		ds.finishRun()
@@ -1254,7 +1286,7 @@ func (ds *DiscoverySuite) fetchForDomain(di DomainInput, timeout time.Duration) 
 		return CheckResult{
 			Domain: di.Domain,
 			Status: CheckStatusFailed,
-			Error:  "TCP to every known address is terminated on the LAN gateway, not tried",
+			Error:  "TCP to every known address is answered by the first hop, not tried",
 		}
 	}
 	// Use IPs already collected during DNS discovery — no fresh DNS lookups.
@@ -2247,7 +2279,7 @@ func (ds *DiscoverySuite) logDiscoverySummary() {
 		if dnsResult != nil {
 			switch {
 			case dnsResult.gatewayIntercepted():
-				log.DiscoveryLogf("  ⊘ [%s] TCP to %v is terminated on your LAN gateway; b4 on this host cannot help, run b4 on the router or exclude this host from the router's redirect", di.Domain, dnsResult.GatewayIPs)
+				log.DiscoveryLogf("  ⊘ [%s] TCP to %v is answered by the first hop in front of this host; b4 here cannot help: run b4 on that gateway or exclude this host from its redirect; if this host is the router itself, the ISP does this at its edge and only a proxy route helps", di.Domain, dnsResult.GatewayIPs)
 				continue
 			case dnsResult.TransportBlocked && len(dnsResult.AlternativeIPs) > 0:
 				log.DiscoveryLogf("  ⚡ [%s] known addresses blocked, answered with %v instead", di.Domain, dnsResult.AlternativeIPs)

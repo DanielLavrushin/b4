@@ -99,10 +99,10 @@ func (h *pinHealth) check(pins []string, mark int) {
 	}
 	h.running = true
 	h.lastRun = time.Now()
+	h.wg.Add(1)
 	h.mu.Unlock()
 
 	log.Tracef("DNS pins: checking %d pinned addresses on TCP %d", len(pins), dnsPinProbePort)
-	h.wg.Add(1)
 	go func() {
 		defer h.wg.Done()
 		h.runRound(pins, mark)
@@ -150,7 +150,7 @@ func (h *pinHealth) runRound(pins []string, mark int) {
 		case pinDead:
 			if !wasDead {
 				h.dead[pin] = struct{}{}
-				log.Infof("DNS pin: %s does not answer on TCP %d from the router, leaving it out of the answers until it does", pin, dnsPinProbePort)
+				log.Infof("DNS pin: %s does not answer on TCP %d from the router, preferring the other pinned addresses until it does", pin, dnsPinProbePort)
 			}
 		case pinAlive:
 			if wasDead {

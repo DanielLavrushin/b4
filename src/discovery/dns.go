@@ -254,7 +254,7 @@ func (p *DNSProber) evaluate(ctx context.Context, systemIPs, expectedIPs []strin
 
 	if len(expectedIPs) == 0 {
 		if len(systemIPs) == 0 && len(result.GatewayIPs) > 0 {
-			log.DiscoveryLogf("  ✗ DNS: every known address of %s is terminated on the LAN gateway, nothing left to test", p.domain)
+			log.DiscoveryLogf("  ✗ DNS: every known address of %s is answered by the first hop in front of this host, nothing left to test", p.domain)
 			return result
 		}
 		log.DiscoveryLogf("  DNS: no reference IPs available for %s, assuming OK", p.domain)
@@ -274,9 +274,9 @@ func (p *DNSProber) evaluate(ctx context.Context, systemIPs, expectedIPs []strin
 		result.ExpectedIPs = append([]string(nil), expectedIPs...)
 		if referenceServes {
 			result.AlternativeIPs = append([]string(nil), expectedIPs...)
-			log.DiscoveryLogf("  DNS: the system answer for %s is terminated on the LAN gateway, the reference addresses %v serve the site from here and will be pinned", p.domain, expectedIPs)
+			log.DiscoveryLogf("  DNS: the system answer for %s is answered by the first hop in front of this host, the reference addresses %v serve the site from here and will be pinned", p.domain, expectedIPs)
 		} else {
-			log.DiscoveryLogf("  DNS: the system answer for %s is terminated on the LAN gateway, that says nothing about the resolver; keeping the reference addresses %v as targets", p.domain, expectedIPs)
+			log.DiscoveryLogf("  DNS: the system answer for %s is answered by the first hop in front of this host, that says nothing about the resolver; keeping the reference addresses %v as targets", p.domain, expectedIPs)
 		}
 		return result
 	}
@@ -533,7 +533,7 @@ func (p *DNSProber) probeGateways(ctx context.Context, ips []string) []string {
 		return nil
 	}
 	if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < gatewayProbeTimeout+connectableTimeout {
-		log.DiscoveryLogf("  DNS: not enough time left to check %s addresses against the LAN gateway, skipping", p.domain)
+		log.DiscoveryLogf("  DNS: not enough time left to check whether the first hop answers TCP for %s, skipping", p.domain)
 		return nil
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, gatewayProbeTimeout)
@@ -556,7 +556,7 @@ func (p *DNSProber) probeGateways(ctx context.Context, ips []string) []string {
 			continue
 		}
 		terminated = appendUnique(terminated, ip)
-		log.DiscoveryLogf("  ✗ [%s] %s: TCP is terminated by the LAN gateway at hop 1 (transparent proxy on the router), no packet strategy from this host can reach it", p.domain, ip)
+		log.DiscoveryLogf("  ✗ [%s] %s: TCP is answered by the first hop in front of this host (a transparent proxy on the gateway), no packet strategy from this host can reach past it", p.domain, ip)
 	}
 	return terminated
 }

@@ -40,15 +40,36 @@ func (ds *DiscoverySuite) getOptimalTTL() (uint8, bool) {
 }
 
 func (ds *DiscoverySuite) ttlSweepChecks() int {
+	if ds.optimalTTL > 0 {
+		return 1
+	}
 	if ds.ttlProbed {
 		return 0
 	}
 	return len(ttlSweepValues)
 }
 
+func (ds *DiscoverySuite) memoisedTTLPreset(basePreset ConfigPreset) (ConfigPreset, bool) {
+	if ds.optimalTTL == 0 {
+		return basePreset, false
+	}
+	preset := basePreset
+	preset.Name = fmt.Sprintf("%s-ttl%d-confirm", basePreset.Name, ds.optimalTTL)
+	preset.Config.Faking.Strategy = "ttl"
+	preset.Config.Faking.TTL = ds.optimalTTL
+	return preset, true
+}
+
 func (ds *DiscoverySuite) findOptimalTTL(basePreset ConfigPreset) (uint8, float64) {
-	if ds.optimalTTL > 0 {
-		return ds.optimalTTL, ds.optimalTTLSpeed
+	if preset, ok := ds.memoisedTTLPreset(basePreset); ok {
+		result := ds.testPresetWithBestPayload(preset)
+		ds.storeResult(preset, result)
+		if result.Status == CheckStatusComplete {
+			log.DiscoveryLogf("  fake TTL %d found earlier in this run holds for this family (%.2f KB/s)", ds.optimalTTL, result.Speed/1024)
+			return ds.optimalTTL, result.Speed
+		}
+		log.DiscoveryLogf("  fake TTL %d found earlier in this run does not hold for this family, testing it without a fake packet", ds.optimalTTL)
+		return 0, 0
 	}
 	if ds.ttlProbed {
 		log.DiscoveryLogf("  fake TTL sweep already found no working TTL on this path, not repeating it")
@@ -100,7 +121,6 @@ func (ds *DiscoverySuite) findOptimalTTL(basePreset ConfigPreset) (uint8, float6
 	if bestTTL > 0 {
 		log.DiscoveryLogf("Minimum working TTL: %d (%.2f KB/s)", bestTTL, bestSpeed/1024)
 		ds.optimalTTL = bestTTL
-		ds.optimalTTLSpeed = bestSpeed
 	} else if swept == len(ttlSweepValues) {
 		log.DiscoveryLogf("  every fake TTL from %d to %d killed the flow: this path discards low-TTL data segments, fakes here need full TTL with tcp_check or timestamp fooling",
 			ttlSweepValues[0], ttlSweepValues[len(ttlSweepValues)-1])

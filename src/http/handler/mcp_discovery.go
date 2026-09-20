@@ -145,7 +145,7 @@ func mcpDiscoveryVerdict(d mcpDiscoveryDomain, running bool) string {
 	case d.BaselineWorks:
 		return "works without b4 - do not create a set for it"
 	case d.Gateway:
-		return "TCP to every known address is terminated on the LAN gateway (a transparent proxy on the router), so packets from this host never reach the ISP; run b4 on the router or exclude this host from the router's redirect"
+		return "TCP to every known address is answered by the first hop in front of this host (a transparent proxy on the gateway), so packets from this host never reach the ISP; run b4 on that gateway or exclude this host from its redirect; if this host is the router itself, the ISP does this at its edge and only a proxy route helps"
 	case d.Blocked:
 		return "the address itself is unreachable, so no packet strategy can help; only a proxy or VPN route would"
 	case d.Found && running:

@@ -65,7 +65,7 @@ func TestGatewayIsCountedInBlockKinds(t *testing.T) {
 	if s.Verdict.BlockKinds["GATEWAY"] != 1 {
 		t.Fatalf("BlockKinds = %v, want GATEWAY counted once", s.Verdict.BlockKinds)
 	}
-	if s.Verdict.BlockedByISP != 0 || s.Verdict.StillBlocked != 1 {
-		t.Fatalf("a gateway-terminated site is still blocked from this host but the ISP never saw it, so it must not count as blocked by the ISP: %+v", s.Verdict)
+	if s.Verdict.BlockedByISP != 0 || s.Verdict.StillBlocked != 0 || s.Verdict.Gateway != 1 || len(s.Verdict.StillBlockedAt) != 0 {
+		t.Fatalf("a gateway-terminated site is neither blocked by the ISP nor something Discovery from this host can fix, it gets its own count: %+v", s.Verdict)
 	}
 }

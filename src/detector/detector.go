@@ -1,10 +1,10 @@
 package detector
 
 import (
-	"github.com/daniellavrushin/b4/netprobe"
 	"time"
 
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/netprobe"
 )
 
 func (s *Suite) Run(configPath string) {
@@ -127,9 +127,11 @@ func (s *Suite) refreshVerdict() {
 				v.BlockedByISP++
 				v.FixedByB4++
 			case OutcomeStillBlocked, OutcomeBlocked:
-				if !gateway {
-					v.BlockedByISP++
+				if gateway {
+					v.Gateway++
+					break
 				}
+				v.BlockedByISP++
 				v.StillBlocked++
 				v.StillBlockedAt = appendUnique(v.StillBlockedAt, site.Input)
 			case OutcomeBrokenByB4:

@@ -11,7 +11,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const GatewayDetail = "TCP is terminated on the LAN gateway (a transparent proxy on the router); packets from this host never reach the ISP"
+const GatewayDetail = "TCP is answered by the first hop in front of this host (a transparent proxy on the gateway); packets from this host never reach the ISP"
 
 var reservedNets = func() []*net.IPNet {
 	var out []*net.IPNet

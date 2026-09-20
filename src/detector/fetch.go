@@ -172,12 +172,24 @@ func (s *Suite) classifyFailure(ctx context.Context, err error, stage netprobe.T
 	if perr != nil {
 		return st, detail
 	}
-	probeCtx, cancel := context.WithTimeout(ctx, gatewayProbeTimeout)
-	defer cancel()
-	if netprobe.GatewayProbe(probeCtx, ip, portNum, int(mark), gatewayProbeTimeout) {
+	if s.gatewayTerminates(ctx, ip, portNum, mark) {
 		return netprobe.DomainGateway, netprobe.GatewayDetail
 	}
 	return st, detail
+}
+
+func (s *Suite) gatewayTerminates(ctx context.Context, ip string, port int, mark uint) bool {
+	key := net.JoinHostPort(ip, strconv.Itoa(port))
+	if hit, ok := s.gatewayHits.Load(key); ok {
+		return hit.(bool)
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, gatewayProbeTimeout)
+	defer cancel()
+	hit := netprobe.GatewayProbe(probeCtx, ip, port, int(mark), gatewayProbeTimeout)
+	if probeCtx.Err() == nil || hit {
+		s.gatewayHits.Store(key, hit)
+	}
+	return hit
 }
 
 func (s *Suite) probePlainHTTP(ctx context.Context, domain, ip string, mark uint) (FetchStatus, string) {

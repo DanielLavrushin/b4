@@ -50,8 +50,8 @@ func (w *Worker) pinnedAnswer(set *config.SetConfig, query []byte, domain string
 	want6 := qtype == dnsTypeAAAA
 
 	family := make([]net.IP, 0, len(pins))
+	unblocked := make([]net.IP, 0, len(pins))
 	live := make([]net.IP, 0, len(pins))
-	blocked := 0
 	for _, pin := range pins {
 		ip := net.ParseIP(pin)
 		if ip == nil {
@@ -63,10 +63,10 @@ func (w *Worker) pinnedAnswer(set *config.SetConfig, query []byte, domain string
 		family = append(family, ip)
 		key := ip.String()
 		if synDetectEnabled(set) && w.ipHealth != nil && w.ipHealth.IsDead(key) {
-			blocked++
 			continue
 		}
-		if w.pinHealth != nil && w.pinHealth.isDead(key) {
+		unblocked = append(unblocked, ip)
+		if !set.Routing.Enabled && w.pinHealth != nil && w.pinHealth.isDead(key) {
 			continue
 		}
 		live = append(live, ip)
@@ -77,13 +77,13 @@ func (w *Worker) pinnedAnswer(set *config.SetConfig, query []byte, domain string
 		}
 		return nil
 	}
+	if len(unblocked) == 0 {
+		log.Warnf("DNS pin: every pinned address for %s is unreachable, passing the query through (set: %s)", domain, set.Name)
+		return nil
+	}
 	if len(live) == 0 {
-		if blocked == len(family) {
-			log.Warnf("DNS pin: every pinned address for %s is unreachable, passing the query through (set: %s)", domain, set.Name)
-			return nil
-		}
 		log.Tracef("DNS pin: every pinned address for %s failed the reachability check, answering with them anyway (set: %s)", domain, set.Name)
-		live = family
+		live = unblocked
 	}
 
 	return dns.BuildAnswerFromIPs(query, config.DefaultDNSPinTTLSec, live)

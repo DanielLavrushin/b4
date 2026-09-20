@@ -234,6 +234,7 @@ export interface DetectorVerdict {
   blocked_by_isp: number;
   fixed_by_b4: number;
   still_blocked: number;
+  gateway?: number;
   broken_by_b4: number;
   not_blocked: number;
   sites: number;

@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -193,19 +194,20 @@ func TestGatewayInterceptedDomainIsNotFetched(t *testing.T) {
 func TestGatewayProbeSkipsCanceledContexts(t *testing.T) {
 	ds := altSuite(t, "www.whatsapp.com", &DNSDiscoveryResult{})
 	orig := netprobe.GatewayProbe
-	called := false
+	var called atomic.Bool
 	netprobe.GatewayProbe = func(context.Context, string, int, int, time.Duration) bool {
-		called = true
+		called.Store(true)
 		return true
 	}
 	t.Cleanup(func() { netprobe.GatewayProbe = orig })
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if ds.gatewayTerminates(ctx, "31.13.72.60") || called {
+	if hits := ds.gatewayTerminated(ctx, []string{"31.13.72.60"}); hits[0] || called.Load() {
 		t.Fatal("a canceled scan must not report a gateway")
 	}
-	if !ds.gatewayTerminates(context.Background(), "31.13.72.60") || !called {
-		t.Fatal("the stubbed probe must be consulted")
+	hits := ds.gatewayTerminated(context.Background(), []string{"31.13.72.60", "57.144.65.32"})
+	if !hits[0] || !hits[1] || !called.Load() {
+		t.Fatal("the stubbed probe must be consulted for every address")
 	}
 }

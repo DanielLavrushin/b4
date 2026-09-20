@@ -442,6 +442,31 @@ func TestPinnedAnswerSkipsAddressesKnownToBeDead(t *testing.T) {
 	}
 }
 
+func TestPinnedAnswerIgnoresTheStoreForRoutedSets(t *testing.T) {
+	w := pinWorker(t, "157.240.0.174")
+	set := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174", "157.240.253.174"}})
+	set.Routing.Enabled = true
+
+	ips := dns.ParseResponseIPs(w.pinnedAnswer(set, dns.BuildQuery("www.instagram.com", 1, 1), "www.instagram.com"))
+	if len(ips) != 2 {
+		t.Fatalf("a routed set's pins are reached through its own route, the router's direct-path verdict must not thin them, got %v", ips)
+	}
+}
+
+func TestPinnedAnswerFallbackLeavesOutClientBlockedPins(t *testing.T) {
+	w := pinWorker(t, "157.240.253.174")
+	tracker := healWorker(t, "157.240.0.174")
+	w.ipHealth = tracker.ipHealth
+	set := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174", "157.240.253.174"}})
+	set.TCP.IPBlockDetect.Enabled = true
+	set.TCP.IPBlockDetect.SynDetect = true
+
+	ips := dns.ParseResponseIPs(w.pinnedAnswer(set, dns.BuildQuery("www.instagram.com", 1, 1), "www.instagram.com"))
+	if len(ips) != 1 || ips[0].String() != "157.240.253.174" {
+		t.Fatalf("when the store calls the last candidate dead the answer falls back to it, never to the pin the clients' own SYNs proved blocked, got %v", ips)
+	}
+}
+
 func TestPinnedAnswerHonoursBlockDetectionOnlyWhenEnabled(t *testing.T) {
 	w := healWorker(t, "157.240.0.174")
 	set := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174", "157.240.253.174"}})

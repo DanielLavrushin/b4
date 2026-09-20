@@ -33,14 +33,22 @@ func TestGetOptimalTTLDoesNotRepeatAFailedSweep(t *testing.T) {
 	}
 }
 
-func TestFindOptimalTTLReturnsTheMemoisedSweep(t *testing.T) {
-	ds := &DiscoverySuite{optimalTTL: 7, optimalTTLSpeed: 4096, ttlProbed: true}
-	ttl, speed := ds.findOptimalTTL(ConfigPreset{Name: "combo-optimize"})
-	if ttl != 7 || speed != 4096 {
-		t.Fatalf("got (%d, %.0f), want the first sweep's (7, 4096) without a second sweep", ttl, speed)
+func TestFindOptimalTTLConfirmsTheMemoisedSweepOnce(t *testing.T) {
+	ds := &DiscoverySuite{optimalTTL: 7, ttlProbed: true}
+	base := ConfigPreset{Name: "combo-optimize", Config: baseConfig()}
+	base.Config.Faking.Strategy = "pastseq"
+	preset, ok := ds.memoisedTTLPreset(base)
+	if !ok {
+		t.Fatal("a sweep that found a TTL must hand later families that TTL")
 	}
-	if ds.ttlSweepChecks() != 0 {
-		t.Fatalf("a memoised sweep must not pre-count checks, got %d", ds.ttlSweepChecks())
+	if preset.Name != "combo-optimize-ttl7-confirm" || preset.Config.Faking.TTL != 7 || preset.Config.Faking.Strategy != "ttl" {
+		t.Fatalf("confirm preset = %s ttl=%d strategy=%s, want combo-optimize-ttl7-confirm with the ttl strategy on the caller's own base, so it never overwrites the sweep's own entry", preset.Name, preset.Config.Faking.TTL, preset.Config.Faking.Strategy)
+	}
+	if ds.ttlSweepChecks() != 1 {
+		t.Fatalf("a memoised sweep pre-counts the one confirming fetch, got %d", ds.ttlSweepChecks())
+	}
+	if _, ok := (&DiscoverySuite{ttlProbed: true}).memoisedTTLPreset(base); ok {
+		t.Fatal("a failed sweep memoises nothing to confirm")
 	}
 }
 
