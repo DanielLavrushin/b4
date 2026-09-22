@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/discovery"
 	"github.com/daniellavrushin/b4/geodat"
 )
 
@@ -108,5 +109,83 @@ func TestSimilarSetsNeedTheWholeStrategyToMatch(t *testing.T) {
 	redirected.DNS = config.DNSConfig{Enabled: true, DoHURL: "https://1.1.1.1/dns-query"}
 	if setsHaveSimilarConfig(&base, &redirected) {
 		t.Fatal("a DNS redirect changes what the added domain resolves to")
+	}
+}
+
+func TestHistoryOffersTheAlternativesAndRemembersWhatWasTried(t *testing.T) {
+	cfg := config.NewConfig()
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "b4.json")
+
+	api := &API{
+		cfgPtr:         testCfgPtr(&cfg),
+		geodataManager: geodat.NewGeodataManager("", ""),
+	}
+	mux := http.NewServeMux()
+	api.mux = mux
+	api.RegisterDiscoveryApi()
+
+	winner := config.NewSetConfig()
+	winner.Name = "meduza"
+	winner.Targets.SNIDomains = []string{"meduza.io"}
+	runnerUp := config.NewSetConfig()
+	runnerUp.Name = "runner-up"
+
+	discovery.SaveToHistory(&discovery.CheckSuite{
+		Id:     "run-1",
+		Status: discovery.CheckStatusComplete,
+		DomainDiscoveryResults: map[string]*discovery.DomainDiscoveryResult{
+			"meduza.io": {
+				Domain: "meduza.io", BestPreset: "best", BestSuccess: true,
+				Results: map[string]*discovery.DomainPresetResult{
+					"best":         {PresetName: "best", Set: &winner, Status: discovery.CheckStatusComplete, Speed: 100},
+					"combo-random": {PresetName: "combo-random", Set: &runnerUp, Status: discovery.CheckStatusComplete, Speed: 50},
+				},
+			},
+		},
+		StrategyGroups: []discovery.StrategyGroup{
+			{WinnerPreset: "best", Domains: []string{"meduza.io"}, Set: &winner},
+		},
+	}, cfg.ConfigPath)
+
+	read := func() []HistoryEntryView {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/discovery/history", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("history: %d (%s)", rec.Code, rec.Body.String())
+		}
+		var entries []HistoryEntryView
+		if err := json.Unmarshal(rec.Body.Bytes(), &entries); err != nil {
+			t.Fatalf("decode history: %v", err)
+		}
+		if len(entries) != 1 {
+			t.Fatalf("entries = %d", len(entries))
+		}
+		return entries
+	}
+
+	entry := read()[0]
+	if entry.Results["combo-random"].Set == nil {
+		t.Error("a strategy that also worked must stay applicable from history")
+	}
+	if entry.SizeBytes <= 0 {
+		t.Error("the history table shows what a site costs, so the size must be reported")
+	}
+	if len(entry.Applied) != 0 {
+		t.Errorf("nothing was installed yet, got %v", entry.Applied)
+	}
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/discovery/history/applied",
+		strings.NewReader(`{"domains":["meduza.io"],"preset":"combo-random","set_id":"set-1"}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("mark applied: %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	entry = read()[0]
+	if entry.Applied["combo-random"].SetId != "set-1" {
+		t.Errorf("the strategy the user installed must come back marked, got %v", entry.Applied)
+	}
+	if _, tried := entry.Applied["best"]; tried {
+		t.Error("only the strategy that was installed carries a mark")
 	}
 }

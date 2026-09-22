@@ -200,6 +200,18 @@ export function useDiscovery() {
     [],
   );
 
+  const markApplied = useCallback(
+    async (domains: string[], preset: string, setId?: string) => {
+      try {
+        await discoveryApi.markApplied(domains, preset, setId);
+        await loadHistory();
+      } catch {
+        return;
+      }
+    },
+    [loadHistory],
+  );
+
   const clearCache = useCallback(async (): Promise<ApiResponse<void>> => {
     try {
       await discoveryApi.clearCache();
@@ -247,6 +259,7 @@ export function useDiscovery() {
     finishDiscovery,
     resetDiscovery,
     addPresetAsSet,
+    markApplied,
     clearCache,
     clearHistory,
     deleteHistoryDomain,

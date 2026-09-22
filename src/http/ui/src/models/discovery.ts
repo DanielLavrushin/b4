@@ -147,6 +147,11 @@ export interface DiscoveryResponse {
   check_url: string;
 }
 
+export interface AppliedMark {
+  set_id?: string;
+  at: string;
+}
+
 export interface HistoryEntry {
   domain: string;
   url: string;
@@ -170,6 +175,8 @@ export interface HistoryEntry {
   unconfirmed?: boolean;
   stopped_early?: boolean;
   order?: number;
+  applied?: Record<string, AppliedMark>;
+  size_bytes?: number;
 }
 
 export interface SimilarSet {

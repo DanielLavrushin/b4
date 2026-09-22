@@ -14,26 +14,29 @@ import {
   LogsIcon,
   RefreshIcon,
 } from "@b4.icons";
-import { colors, typography } from "@design";
+import { colors } from "@design";
 import { B4Alert, B4Badge, B4ResultCard } from "@b4.elements";
-import { DiscoverySuite } from "@models/discovery";
+import { DiscoverySuite, HistoryEntry } from "@models/discovery";
 import {
   ApplyTarget,
   FoundGroup,
   ResultEntry,
   SiteEntry,
   alternatesFor,
+  appliedMarks,
   confirmationOf,
   formatDuration,
   formatSpeed,
   testedCounts,
   triesUntilFound,
 } from "@utils";
+import { AlternatesList } from "./AlternatesList";
 import { StrategySummary } from "./StrategySummary";
 
 interface ResultsPanelProps {
   suite: DiscoverySuite;
   entries: ResultEntry[];
+  history: HistoryEntry[];
   applying: boolean;
   canReset: boolean;
   onApply: (target: ApplyTarget) => void;
@@ -44,6 +47,7 @@ interface ResultsPanelProps {
 export const ResultsPanel = ({
   suite,
   entries,
+  history,
   applying,
   canReset,
   onApply,
@@ -110,6 +114,7 @@ export const ResultsPanel = ({
               key={entry.key}
               group={entry}
               suite={suite}
+              history={history}
               applying={applying}
               onApply={onApply}
             />
@@ -125,18 +130,22 @@ export const ResultsPanel = ({
 interface FoundCardProps {
   group: FoundGroup;
   suite: DiscoverySuite;
+  history: HistoryEntry[];
   applying: boolean;
   onApply: (target: ApplyTarget) => void;
 }
 
-const ALTERNATES_PREVIEW = 8;
-
-const FoundCard = ({ group, suite, applying, onApply }: FoundCardProps) => {
+const FoundCard = ({
+  group,
+  suite,
+  history,
+  applying,
+  onApply,
+}: FoundCardProps) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
-  const [showAll, setShowAll] = useState(false);
   const alternates = alternatesFor(group, 0);
-  const shown = showAll ? alternates : alternates.slice(0, ALTERNATES_PREVIEW);
+  const applied = appliedMarks(history, group.domains);
   const first = group.results[0];
   const counts = first ? testedCounts(first) : null;
   const tries = first ? triesUntilFound(first, group.preset) : 0;
@@ -169,6 +178,19 @@ const FoundCard = ({ group, suite, applying, onApply }: FoundCardProps) => {
     );
   }
 
+  if (applied[group.preset]) {
+    badge = (
+      <>
+        {badge}
+        <B4Badge
+          variant="outlined"
+          color="secondary"
+          label={t("discovery.results.tried")}
+        />
+      </>
+    );
+  }
+
   return (
     <B4ResultCard
       status="ok"
@@ -190,77 +212,18 @@ const FoundCard = ({ group, suite, applying, onApply }: FoundCardProps) => {
               {t("discovery.results.stoppedEarlyNote")}
             </Typography>
           )}
-          {alternates.length > 0 && (
-            <Box>
-              <Typography
-                variant="caption"
-                sx={{ color: colors.text.secondary, display: "block", mb: 0.5 }}
-              >
-                {t("discovery.results.alsoWorked", { count: alternates.length })}
-              </Typography>
-              <Stack spacing={0.5}>
-                {shown.map((alt) => (
-                  <Box
-                    key={alt.preset}
-                    sx={{
-                      display: "grid",
-                      gridTemplateColumns: "auto 1fr auto",
-                      gap: 1.5,
-                      alignItems: "center",
-                    }}
-                  >
-                    <B4Badge
-                      variant="outlined"
-                      label={alt.preset}
-                      sx={{
-                        fontFamily: typography.recipes.monoSmall.fontFamily,
-                        fontSize: typography.sizes.sm,
-                      }}
-                    />
-                    <Typography
-                      variant="caption"
-                      noWrap
-                      sx={{ color: colors.text.secondary }}
-                    >
-                      {alt.family
-                        ? t(`discovery.familyNames.${alt.family}`, {
-                            defaultValue: alt.family,
-                          })
-                        : ""}
-                      {alt.speed > 0 ? ` · ${formatSpeed(alt.speed)}` : ""}
-                    </Typography>
-                    <Button
-                      size="small"
-                      disabled={applying}
-                      onClick={() =>
-                        onApply({
-                          domains: group.domains,
-                          set: alt.set,
-                          preset: alt.preset,
-                        })
-                      }
-                      sx={{ textTransform: "none", minWidth: 0 }}
-                    >
-                      {t("discovery.results.useInstead")}
-                    </Button>
-                  </Box>
-                ))}
-              </Stack>
-              {alternates.length > ALTERNATES_PREVIEW && (
-                <Button
-                  size="small"
-                  onClick={() => setShowAll((v) => !v)}
-                  sx={{ textTransform: "none", mt: 0.5, color: colors.text.secondary }}
-                >
-                  {showAll
-                    ? t("discovery.results.showFewer")
-                    : t("discovery.results.showAll", {
-                        count: alternates.length,
-                      })}
-                </Button>
-              )}
-            </Box>
-          )}
+          <AlternatesList
+            alternates={alternates}
+            applied={applied}
+            busy={applying}
+            onUse={(alt) =>
+              onApply({
+                domains: group.domains,
+                set: alt.set,
+                preset: alt.preset,
+              })
+            }
+          />
           <Typography
             variant="caption"
             sx={{ color: colors.text.secondary, display: "block" }}

@@ -1,7 +1,8 @@
-import { useMemo } from "react";
+import { Fragment, useMemo, useState } from "react";
 import {
   Box,
   Button,
+  Collapse,
   IconButton,
   Table,
   TableBody,
@@ -12,18 +13,28 @@ import {
   Typography,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import { AddIcon, DeleteIcon, RefreshIcon } from "@b4.icons";
+import {
+  AddIcon,
+  CollapseIcon,
+  DeleteIcon,
+  ExpandIcon,
+  RefreshIcon,
+} from "@b4.icons";
 import { colors, typography } from "@design";
 import { B4Badge } from "@b4.elements";
 import { HistoryEntry, StrategyFamily } from "@models/discovery";
 import {
+  Alternate,
   ApplyTarget,
   describeStrategy,
+  formatBytes,
   formatTimeAgo,
+  historyAlternates,
   historySet,
   historyUnconfirmed,
   historyVerdict,
 } from "@utils";
+import { AlternatesList } from "./AlternatesList";
 
 interface HistoryTableProps {
   entries: HistoryEntry[];
@@ -40,6 +51,8 @@ interface Row {
   set: ReturnType<typeof historySet>;
   preset: string;
   sharedWith: string[];
+  domains: string[];
+  alternates: Alternate[];
 }
 
 const setKey = (entry: HistoryEntry): string | null => {
@@ -59,6 +72,7 @@ export const HistoryTable = ({
   onRemove,
 }: HistoryTableProps) => {
   const { t } = useTranslation();
+  const [open, setOpen] = useState<Record<string, boolean>>({});
 
   const rows = useMemo<Row[]>(() => {
     const sorted = [...entries].sort((a, b) => {
@@ -76,13 +90,23 @@ export const HistoryTable = ({
     return sorted.map((entry) => {
       const key = setKey(entry);
       const members = key ? (groups.get(key) ?? []) : [];
+      const set = historySet(entry);
+      const verdict = historyVerdict(entry);
+      const sharedWith = members.filter((d) => d !== entry.domain);
+      const domains = [
+        entry.domain,
+        ...sharedWith.filter((d) => set?.targets.sni_domains.includes(d)),
+      ];
       return {
         entry,
-        verdict: historyVerdict(entry),
+        verdict,
         unconfirmed: historyUnconfirmed(entry),
-        set: historySet(entry),
+        set,
         preset: entry.set?.name || entry.best_preset,
-        sharedWith: members.filter((d) => d !== entry.domain),
+        sharedWith,
+        domains,
+        alternates:
+          verdict === "found" ? historyAlternates(entry, domains) : [],
       };
     });
   }, [entries]);
@@ -183,6 +207,13 @@ export const HistoryTable = ({
                     {familyName(family)}
                   </Typography>
                 )}
+                {row.entry.applied?.[row.preset] && (
+                  <B4Badge
+                    variant="outlined"
+                    color="secondary"
+                    label={t("discovery.results.tried")}
+                  />
+                )}
               </Box>
             </Tooltip>
             {row.sharedWith.length > 0 && (
@@ -196,6 +227,30 @@ export const HistoryTable = ({
               <Typography variant="caption" sx={{ color: colors.text.disabled }}>
                 {t("discovery.history.stoppedEarly")}
               </Typography>
+            )}
+            {row.alternates.length > 0 && (
+              <Button
+                size="small"
+                endIcon={
+                  open[row.entry.domain] ? <CollapseIcon /> : <ExpandIcon />
+                }
+                onClick={() =>
+                  setOpen((prev) => ({
+                    ...prev,
+                    [row.entry.domain]: !prev[row.entry.domain],
+                  }))
+                }
+                sx={{
+                  textTransform: "none",
+                  alignSelf: "flex-start",
+                  px: 0.5,
+                  color: colors.text.secondary,
+                }}
+              >
+                {t("discovery.results.otherStrategies", {
+                  count: row.alternates.length,
+                })}
+              </Button>
             )}
           </Box>
         );
@@ -227,17 +282,8 @@ export const HistoryTable = ({
     }
   };
 
-  const applyTarget = (row: Row): ApplyTarget | null => {
-    if (!row.set) return null;
-    const others = row.sharedWith.filter((d) =>
-      row.set!.targets.sni_domains.includes(d),
-    );
-    return {
-      domains: [row.entry.domain, ...others],
-      set: row.set,
-      preset: row.preset,
-    };
-  };
+  const applyTarget = (row: Row): ApplyTarget | null =>
+    row.set ? { domains: row.domains, set: row.set, preset: row.preset } : null;
 
   return (
     <Box sx={{ overflowX: "auto" }}>
@@ -258,75 +304,119 @@ export const HistoryTable = ({
         <TableBody>
           {rows.map((row) => {
             const target = row.verdict === "found" ? applyTarget(row) : null;
+            const expanded = !!open[row.entry.domain];
             return (
-              <TableRow
-                key={row.entry.domain}
-                sx={{ "&:last-child td": { border: 0 } }}
-              >
-                <TableCell sx={{ fontWeight: 600, whiteSpace: "nowrap" }}>
-                  {row.entry.domain}
-                </TableCell>
-                <TableCell sx={{ whiteSpace: "nowrap" }}>{badge(row)}</TableCell>
-                <TableCell sx={{ minWidth: 220 }}>{strategy(row)}</TableCell>
-                <TableCell
-                  sx={{ color: colors.text.secondary, whiteSpace: "nowrap" }}
-                >
-                  {formatTimeAgo(t, row.entry.end_time, row.entry.start_time)}
-                </TableCell>
-                <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
-                  <Box
-                    sx={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 0.5,
-                    }}
+              <Fragment key={row.entry.domain}>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 600, whiteSpace: "nowrap" }}>
+                    {row.entry.domain}
+                  </TableCell>
+                  <TableCell sx={{ whiteSpace: "nowrap" }}>
+                    {badge(row)}
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 220 }}>{strategy(row)}</TableCell>
+                  <TableCell
+                    sx={{ color: colors.text.secondary, whiteSpace: "nowrap" }}
                   >
-                    {target && (
-                      <Button
-                        size="small"
-                        variant="contained"
-                        startIcon={<AddIcon />}
-                        disabled={busy}
-                        onClick={() => onApply(target)}
-                        sx={{
-                          bgcolor: colors.secondary,
-                          color: colors.background.default,
-                          "&:hover": { bgcolor: colors.primary },
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {t("discovery.history.apply")}
-                      </Button>
+                    {formatTimeAgo(t, row.entry.end_time, row.entry.start_time)}
+                    {!!row.entry.size_bytes && (
+                      <Tooltip title={t("discovery.history.sizeHint")}>
+                        <Typography
+                          variant="caption"
+                          sx={{ color: colors.text.disabled, display: "block" }}
+                        >
+                          {formatBytes(row.entry.size_bytes)}
+                        </Typography>
+                      </Tooltip>
                     )}
-                    <Tooltip title={t("discovery.history.runAgain")}>
-                      <span>
-                        <IconButton
+                  </TableCell>
+                  <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
+                    <Box
+                      sx={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 0.5,
+                      }}
+                    >
+                      {target && (
+                        <Button
                           size="small"
+                          variant="contained"
+                          startIcon={<AddIcon />}
                           disabled={busy}
-                          onClick={() =>
-                            onRerun(row.entry.url || row.entry.domain)
-                          }
-                          sx={{ color: colors.text.secondary }}
+                          onClick={() => onApply(target)}
+                          sx={{
+                            bgcolor: colors.secondary,
+                            color: colors.background.default,
+                            "&:hover": { bgcolor: colors.primary },
+                            whiteSpace: "nowrap",
+                          }}
                         >
-                          <RefreshIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                    <Tooltip title={t("discovery.history.remove")}>
-                      <span>
-                        <IconButton
-                          size="small"
-                          disabled={busy}
-                          onClick={() => onRemove(row.entry.domain)}
-                          sx={{ color: colors.text.secondary }}
+                          {t("discovery.history.apply")}
+                        </Button>
+                      )}
+                      <Tooltip title={t("discovery.history.runAgain")}>
+                        <span>
+                          <IconButton
+                            size="small"
+                            disabled={busy}
+                            onClick={() =>
+                              onRerun(row.entry.url || row.entry.domain)
+                            }
+                            sx={{ color: colors.text.secondary }}
+                          >
+                            <RefreshIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                      <Tooltip title={t("discovery.history.remove")}>
+                        <span>
+                          <IconButton
+                            size="small"
+                            disabled={busy}
+                            onClick={() => onRemove(row.entry.domain)}
+                            sx={{ color: colors.text.secondary }}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </Box>
+                  </TableCell>
+                </TableRow>
+                {row.alternates.length > 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={5}
+                      sx={{ py: 0, border: expanded ? undefined : 0 }}
+                    >
+                      <Collapse in={expanded} timeout="auto" unmountOnExit>
+                        <Box
+                          sx={{
+                            py: 1.5,
+                            maxWidth: 560,
+                            position: "sticky",
+                            left: 0,
+                          }}
                         >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                  </Box>
-                </TableCell>
-              </TableRow>
+                          <AlternatesList
+                            alternates={row.alternates}
+                            applied={row.entry.applied}
+                            busy={busy}
+                            onUse={(alt) =>
+                              onApply({
+                                domains: row.domains,
+                                set: alt.set,
+                                preset: alt.preset,
+                              })
+                            }
+                          />
+                        </Box>
+                      </Collapse>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </Fragment>
             );
           })}
         </TableBody>

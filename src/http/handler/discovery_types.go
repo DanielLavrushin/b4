@@ -1,5 +1,18 @@
 package handler
 
+import "github.com/daniellavrushin/b4/discovery"
+
+type HistoryEntryView struct {
+	discovery.HistoryEntry
+	SizeBytes int `json:"size_bytes"`
+}
+
+type HistoryAppliedRequest struct {
+	Domains []string `json:"domains"`
+	Preset  string   `json:"preset"`
+	SetId   string   `json:"set_id,omitempty"`
+}
+
 type DiscoveryRequest struct {
 	CheckURL        string   `json:"check_url,omitempty"`
 	CheckURLs       []string `json:"check_urls,omitempty"`

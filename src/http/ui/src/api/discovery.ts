@@ -51,6 +51,12 @@ export const discoveryApi = {
   history: () => apiGet<HistoryEntry[]>("/api/discovery/history"),
   log: () => apiGet<string>("/api/discovery/log", "text"),
   clearHistory: () => apiPost("/api/discovery/history/clear", {}),
+  markApplied: (domains: string[], preset: string, setId?: string) =>
+    apiPost("/api/discovery/history/applied", {
+      domains,
+      preset,
+      set_id: setId,
+    }),
   deleteHistoryDomain: (domain: string) =>
     apiDelete(`/api/discovery/history/${encodeURIComponent(domain)}`),
 };

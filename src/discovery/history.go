@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,7 +16,13 @@ import (
 const (
 	discoveryHistoryFile = "discovery_history.json"
 	maxHistoryEntries    = 100
+	maxAlternateSets     = 12
 )
+
+type AppliedMark struct {
+	SetId string    `json:"set_id,omitempty"`
+	At    time.Time `json:"at"`
+}
 
 // HistoryEntry represents a completed discovery result for a single domain.
 type HistoryEntry struct {
@@ -41,6 +48,19 @@ type HistoryEntry struct {
 	Unconfirmed   bool                           `json:"unconfirmed,omitempty"`
 	StoppedEarly  bool                           `json:"stopped_early,omitempty"`
 	Order         int                            `json:"order,omitempty"`
+	Applied       map[string]AppliedMark         `json:"applied,omitempty"`
+}
+
+func (e HistoryEntry) StorageBytes() int {
+	data, err := json.MarshalIndent(e, "    ", "  ")
+	if err != nil {
+		return 0
+	}
+	return len(data)
+}
+
+func (e HistoryEntry) AppliedSet(preset string) string {
+	return e.Applied[preset].SetId
 }
 
 // EffectiveOutcome returns the recorded outcome, deriving it for entries
@@ -204,6 +224,7 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 		replaced := false
 		for i, existing := range dh.Entries {
 			if existing.Domain == domainResult.Domain {
+				entry.Applied = existing.Applied
 				dh.Entries[i] = entry
 				replaced = true
 				break
@@ -221,6 +242,47 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 		})
 		dh.Entries = dh.Entries[:maxHistoryEntries]
 	}
+}
+
+func (dh *DiscoveryHistory) MarkApplied(domains []string, preset, setID string) int {
+	dh.mu.Lock()
+	defer dh.mu.Unlock()
+
+	if preset == "" || len(domains) == 0 {
+		return 0
+	}
+	wanted := make(map[string]bool, len(domains))
+	for _, d := range domains {
+		if d = strings.ToLower(strings.TrimSpace(d)); d != "" {
+			wanted[d] = true
+		}
+	}
+
+	marked := 0
+	for i := range dh.Entries {
+		if !wanted[strings.ToLower(dh.Entries[i].Domain)] {
+			continue
+		}
+		if dh.Entries[i].Applied == nil {
+			dh.Entries[i].Applied = make(map[string]AppliedMark, 1)
+		}
+		dh.Entries[i].Applied[preset] = AppliedMark{SetId: setID, At: time.Now()}
+		marked++
+	}
+	return marked
+}
+
+func (dh *DiscoveryHistory) AppliedSetFor(domain, preset string) string {
+	dh.mu.Lock()
+	defer dh.mu.Unlock()
+
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	for _, e := range dh.Entries {
+		if strings.ToLower(e.Domain) == domain {
+			return e.AppliedSet(preset)
+		}
+	}
+	return ""
 }
 
 // Clear removes all history entries.
@@ -264,12 +326,16 @@ func trimPresetSets(results map[string]*DomainPresetResult, best string) map[str
 	if len(results) == 0 {
 		return results
 	}
+	keep := map[string]bool{best: true}
+	for _, name := range fastestAlternates(results, best, maxAlternateSets) {
+		keep[name] = true
+	}
 	out := make(map[string]*DomainPresetResult, len(results))
 	for name, r := range results {
 		if r == nil {
 			continue
 		}
-		if name == best || r.Set == nil {
+		if keep[name] || r.Set == nil {
 			out[name] = r
 			continue
 		}
@@ -278,4 +344,28 @@ func trimPresetSets(results map[string]*DomainPresetResult, best string) map[str
 		out[name] = &trimmed
 	}
 	return out
+}
+
+func fastestAlternates(results map[string]*DomainPresetResult, best string, limit int) []string {
+	names := make([]string, 0, len(results))
+	for name, r := range results {
+		if r == nil || r.Set == nil || name == best || name == presetNoBypass {
+			continue
+		}
+		if r.Status != CheckStatusComplete {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		a, b := results[names[i]], results[names[j]]
+		if a.Speed != b.Speed {
+			return a.Speed > b.Speed
+		}
+		return names[i] < names[j]
+	})
+	if len(names) > limit {
+		names = names[:limit]
+	}
+	return names
 }

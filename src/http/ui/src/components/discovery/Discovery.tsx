@@ -24,7 +24,8 @@ import { useDiscovery, useDiscoveryLogs } from "@hooks/useDiscovery";
 import { useSets } from "@hooks/useSets";
 import { useCaptures } from "@b4.capture";
 import { configApi } from "@b4.settings";
-import { ApplyTarget, buildResultEntries } from "@utils";
+import { setsApi } from "@api/sets";
+import { ApplyTarget, buildResultEntries, withStrategyOf } from "@utils";
 import {
   DiscoveryOptionsPanel,
   DiscoveryOptions,
@@ -67,12 +68,13 @@ export const DiscoveryRunner = () => {
     finishRequested,
     resetDiscovery,
     addPresetAsSet,
+    markApplied,
     clearCache,
     clearHistory,
     deleteHistoryDomain,
   } = useDiscovery();
   const { logs, connected, clearLogs } = useDiscoveryLogs();
-  const { addDomainsToSet } = useSets();
+  const { addDomainsToSet, updateSet } = useSets();
   const { captures, loadCaptures } = useCaptures();
 
   const [options, setOptions] = useState<DiscoveryOptions>(loadOptions);
@@ -201,6 +203,7 @@ export const DiscoveryRunner = () => {
   };
 
   const handleCreate = async (set: B4SetConfig) => {
+    const applied = applyTarget;
     setApplying(true);
     const res = await addPresetAsSet(set);
     setApplying(false);
@@ -213,6 +216,7 @@ export const DiscoveryRunner = () => {
       return;
     }
     const id = res.data?.id;
+    if (applied) await markApplied(applied.domains, applied.preset, id);
     showSuccess(
       [
         t("discovery.apply.created", { name: res.data?.name ?? set.name }),
@@ -237,6 +241,7 @@ export const DiscoveryRunner = () => {
     domains: string[],
     pins?: Record<string, string[]>,
   ) => {
+    const applied = applyTarget;
     setApplying(true);
     const res = await addDomainsToSet(setId, domains, pins);
     setApplying(false);
@@ -244,6 +249,7 @@ export const DiscoveryRunner = () => {
       showError(t("discovery.apply.addFailed"));
       return;
     }
+    if (applied) await markApplied(applied.domains, applied.preset, setId);
     showSuccess(
       [t("discovery.apply.added"), describeMoved(res.data?.moved)]
         .filter(Boolean)
@@ -255,6 +261,39 @@ export const DiscoveryRunner = () => {
         },
       },
     );
+    setApplyTarget(null);
+  };
+
+  const handleReplaceStrategy = async (
+    setId: string,
+    set: B4SetConfig,
+    domains: string[],
+    pins?: Record<string, string[]>,
+  ) => {
+    const applied = applyTarget;
+    setApplying(true);
+    let name = "";
+    const res = await (async () => {
+      try {
+        const existing = await setsApi.getSet(setId);
+        name = existing.name;
+        return await updateSet(withStrategyOf(existing, set, domains, pins));
+      } catch {
+        return { success: false as const };
+      }
+    })();
+    setApplying(false);
+    if (!res.success) {
+      showError(t("discovery.apply.replaceFailed"));
+      return;
+    }
+    if (applied) await markApplied(applied.domains, applied.preset, setId);
+    showSuccess(t("discovery.apply.replaced", { name }), {
+      label: t("discovery.apply.openSet"),
+      onClick: () => {
+        void navigate(`/sets/${setId}`);
+      },
+    });
     setApplyTarget(null);
   };
 
@@ -329,6 +368,7 @@ export const DiscoveryRunner = () => {
           <ResultsPanel
             suite={suite}
             entries={entries}
+            history={history}
             applying={applying}
             canReset={!finishing}
             onApply={setApplyTarget}
@@ -443,6 +483,9 @@ export const DiscoveryRunner = () => {
         onCreate={(set) => void handleCreate(set)}
         onAddToExisting={(setId, domains, pins) =>
           void handleAddToExisting(setId, domains, pins)
+        }
+        onReplaceStrategy={(setId, set, domains, pins) =>
+          void handleReplaceStrategy(setId, set, domains, pins)
         }
       />
 

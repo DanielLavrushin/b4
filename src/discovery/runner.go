@@ -43,6 +43,14 @@ func SaveToHistory(suite *CheckSuite, configPath string) {
 	}
 }
 
+func MarkAppliedInHistory(configPath string, domains []string, preset, setID string) error {
+	history := LoadDiscoveryHistory(configPath)
+	if history.MarkApplied(domains, preset, setID) == 0 {
+		return nil
+	}
+	return history.Save(configPath)
+}
+
 func NewCheckSuite(domainInputs []DomainInput) *CheckSuite {
 	if len(domainInputs) == 0 {
 		return &CheckSuite{

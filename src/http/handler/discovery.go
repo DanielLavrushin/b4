@@ -26,6 +26,7 @@ func (api *API) RegisterDiscoveryApi() {
 	api.mux.HandleFunc("/api/discovery/current", api.handleGetCurrentDiscovery)
 	api.mux.HandleFunc("/api/discovery/history", api.handleDiscoveryHistory)
 	api.mux.HandleFunc("/api/discovery/history/clear", api.handleClearDiscoveryHistory)
+	api.mux.HandleFunc("/api/discovery/history/applied", api.handleMarkHistoryApplied)
 	api.mux.HandleFunc("/api/discovery/history/{domain}", api.handleDeleteHistoryDomain)
 	api.mux.HandleFunc("/api/discovery/log", api.handleDiscoveryLog)
 }
@@ -444,6 +445,26 @@ func (api *API) handleFindSimilarSets(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(similar)
 }
 
+func (api *API) setCoveringDomainWith(domain string, strategy *config.SetConfig) *config.SetConfig {
+	if strategy == nil || domain == "" {
+		return nil
+	}
+	candidate := *strategy
+	api.initializeSetDefaults(&candidate)
+
+	for _, set := range api.getCfg().Sets {
+		if !setsHaveSimilarConfig(set, &candidate) {
+			continue
+		}
+		for _, d := range set.Targets.SNIDomains {
+			if strings.EqualFold(d, domain) {
+				return set
+			}
+		}
+	}
+	return nil
+}
+
 func setsHaveSimilarConfig(a, b *config.SetConfig) bool {
 	return reflect.DeepEqual(strategyShape(a), strategyShape(b))
 }
@@ -472,6 +493,8 @@ func strategyShape(set *config.SetConfig) config.SetConfig {
 	shape.TCP.RSTProtection = config.RSTProtectionConfig{}
 	shape.UDP.DPortFilter = ""
 	config.ApplySetDefaults(&shape)
+	shape.Faking.PayloadData = nil
+	shape.UDP.FakePayloadData = nil
 	return shape
 }
 
@@ -534,8 +557,50 @@ func (api *API) handleDiscoveryHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	history := discovery.GetHistory(api.getCfg().ConfigPath)
+	views := make([]HistoryEntryView, 0, len(history.Entries))
+	for _, entry := range history.Entries {
+		views = append(views, HistoryEntryView{HistoryEntry: entry, SizeBytes: entry.StorageBytes()})
+	}
+
 	setJsonHeader(w)
-	json.NewEncoder(w).Encode(history.Entries)
+	json.NewEncoder(w).Encode(views)
+}
+
+// @Summary Mark a discovered strategy as applied
+// @Tags Discovery
+// @Accept json
+// @Produce json
+// @Param body body HistoryAppliedRequest true "Domains and the preset that was installed"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /discovery/history/applied [post]
+func (api *API) handleMarkHistoryApplied(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req HistoryAppliedRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.Preset == "" || len(req.Domains) == 0 {
+		http.Error(w, "Domains and preset required", http.StatusBadRequest)
+		return
+	}
+
+	if err := discovery.MarkAppliedInHistory(api.getCfg().ConfigPath, req.Domains, req.Preset, req.SetId); err != nil {
+		log.Errorf("Failed to save discovery history: %v", err)
+		http.Error(w, "Failed to save discovery history", http.StatusInternalServerError)
+		return
+	}
+
+	setJsonHeader(w)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Marked %s as applied", req.Preset),
+	})
 }
 
 // @Summary Clear discovery history

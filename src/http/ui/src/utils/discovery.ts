@@ -1,8 +1,10 @@
 import { B4SetConfig } from "@models/config";
 import {
+  AppliedMark,
   DiscoveryOutcome,
   DiscoveryResult,
   DiscoverySuite,
+  DomainPresetResult,
   HistoryEntry,
   StrategyFamily,
 } from "@models/discovery";
@@ -252,26 +254,104 @@ export interface Alternate {
   speed: number;
 }
 
-export function alternatesFor(group: FoundGroup, limit = 5): Alternate[] {
-  const first = group.results[0];
-  if (!first) return [];
-  const keepDns = dnsPoisoned(group.results);
+interface PresetResults {
+  results?: Record<string, DomainPresetResult>;
+}
+
+export function alternatesOf(
+  sources: PresetResults[],
+  domains: string[],
+  winner: string,
+  keepDns: boolean,
+  limit = 5,
+): Alternate[] {
+  const first = sources[0];
+  if (!first?.results) return [];
   const out: Alternate[] = [];
   for (const [preset, r] of Object.entries(first.results)) {
-    if (preset === group.preset || preset === NO_BYPASS_PRESET) continue;
+    if (preset === winner || preset === NO_BYPASS_PRESET) continue;
     if (r.status !== "complete" || !r.set) continue;
-    if (!group.results.every((dr) => dr.results[preset]?.status === "complete")) {
+    if (!sources.every((s) => s.results?.[preset]?.status === "complete")) {
       continue;
     }
     out.push({
       preset,
       family: r.family,
-      set: scopeSet(r.set, group.domains, keepDns),
-      speed: Math.min(...group.results.map((dr) => dr.results[preset]?.speed ?? 0)),
+      set: scopeSet(r.set, domains, keepDns),
+      speed: Math.min(...sources.map((s) => s.results?.[preset]?.speed ?? 0)),
     });
   }
   out.sort((a, b) => b.speed - a.speed);
   return limit > 0 ? out.slice(0, limit) : out;
+}
+
+export function alternatesFor(group: FoundGroup, limit = 5): Alternate[] {
+  return alternatesOf(
+    group.results,
+    group.domains,
+    group.preset,
+    dnsPoisoned(group.results),
+    limit,
+  );
+}
+
+export function historyAlternates(
+  entry: HistoryEntry,
+  domains: string[],
+  limit = 0,
+): Alternate[] {
+  return alternatesOf(
+    [entry],
+    domains.length > 0 ? domains : [entry.domain],
+    entry.best_preset,
+    !!entry.dns_result?.is_poisoned,
+    limit,
+  );
+}
+
+export function withStrategyOf(
+  existing: B4SetConfig,
+  strategy: B4SetConfig,
+  domains: string[],
+  pins?: Record<string, string[]>,
+): B4SetConfig {
+  const targets = existing.targets ?? ({} as B4SetConfig["targets"]);
+  const merged = { ...(existing.dns?.pins ?? {}), ...(pins ?? {}) };
+  return {
+    ...existing,
+    tcp: strategy.tcp,
+    udp: strategy.udp,
+    fragmentation: strategy.fragmentation,
+    faking: strategy.faking,
+    dns: {
+      ...(strategy.dns ?? emptyDns()),
+      pins: Object.keys(merged).length > 0 ? merged : undefined,
+    },
+    targets: {
+      ...targets,
+      sni_domains: [
+        ...new Set([...(targets.sni_domains ?? []), ...domains]),
+      ],
+      tls: strategy.targets?.tls ?? "",
+      ip_version: strategy.targets?.ip_version ?? "",
+    },
+  };
+}
+
+export function appliedMarks(
+  history: HistoryEntry[],
+  domains: string[],
+): Record<string, AppliedMark> {
+  const wanted = new Set(domains.map((d) => d.toLowerCase()));
+  const merged: Record<string, AppliedMark> = {};
+  for (const entry of history) {
+    if (!entry.applied || !wanted.has(entry.domain.toLowerCase())) continue;
+    for (const [preset, mark] of Object.entries(entry.applied)) {
+      const seen = merged[preset];
+      if (!seen || new Date(mark.at) > new Date(seen.at)) merged[preset] = mark;
+    }
+  }
+  return merged;
 }
 
 export interface TestedCounts {

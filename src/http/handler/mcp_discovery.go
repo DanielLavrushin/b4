@@ -25,28 +25,14 @@ const (
 )
 
 var (
-	mcpLastSuiteMu   sync.Mutex
-	mcpLastSuiteID   string
-	mcpAppliedGroups = map[string]string{}
+	mcpLastSuiteMu sync.Mutex
+	mcpLastSuiteID string
 )
 
 func mcpRememberSuite(id string) {
 	mcpLastSuiteMu.Lock()
 	mcpLastSuiteID = id
-	mcpAppliedGroups = map[string]string{}
 	mcpLastSuiteMu.Unlock()
-}
-
-func mcpMarkGroupApplied(suiteID, preset, setID string) {
-	mcpLastSuiteMu.Lock()
-	mcpAppliedGroups[suiteID+"|"+preset] = setID
-	mcpLastSuiteMu.Unlock()
-}
-
-func mcpGroupAppliedAs(suiteID, preset string) string {
-	mcpLastSuiteMu.Lock()
-	defer mcpLastSuiteMu.Unlock()
-	return mcpAppliedGroups[suiteID+"|"+preset]
 }
 
 func mcpResolveSuiteID(explicit string) string {
@@ -546,20 +532,18 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		}
 	}
 
-	if prior := mcpGroupAppliedAs(suiteID, preset); prior != "" {
-		if existing := findSetIn(api.getCfg(), prior); existing != nil {
-			out := mcpDiscoveryOut{Id: suiteID, Source: source}
-			for i, s := range api.getCfg().Sets {
-				if s.Id == prior {
-					out.Applied = &mcpSetRow{Position: i + 1, Id: s.Id, Name: s.Name, Enabled: s.Enabled}
-					break
-				}
+	if existing := api.setCoveringDomainWith(domain, chosen); existing != nil {
+		out := mcpDiscoveryOut{Id: suiteID, Source: source}
+		for i, s := range api.getCfg().Sets {
+			if s.Id == existing.Id {
+				out.Applied = &mcpSetRow{Position: i + 1, Id: s.Id, Name: s.Name, Enabled: s.Enabled}
+				break
 			}
-			out.Note = fmt.Sprintf(
-				"%s is already covered by set %q. The run grouped %s under one winning strategy, so a single apply created a set for all of them: applying again per domain would only duplicate it",
-				domain, existing.Name, mcpSummarizeList(groupDomains))
-			return nil, out, nil
 		}
+		out.Note = fmt.Sprintf(
+			"%s is already covered by set %q, which carries the same strategy. The run grouped %s under one winner, so a single apply created a set for all of them: applying again per domain would only duplicate it",
+			domain, existing.Name, mcpSummarizeList(groupDomains))
+		return nil, out, nil
 	}
 
 	mcpWriteMu.Lock()
@@ -630,7 +614,9 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		Current:  fmt.Sprintf("%d sets", len(live.Sets)),
 		When:     time.Now(), Snapshot: snapshot,
 	})
-	mcpMarkGroupApplied(suiteID, preset, set.Id)
+	if err := discovery.MarkAppliedInHistory(api.getCfg().ConfigPath, groupDomains, preset, set.Id); err != nil {
+		log.Errorf("Failed to record applied strategy in discovery history: %v", err)
+	}
 	log.Infof("mcp: applied discovery strategy %q for %s as set %q", preset, domain, set.Name)
 
 	out.Note = fmt.Sprintf("created set %q from the %s strategy, at position %d of %d, so it matches before the sets already there. Undo with b4_revert_last_change",

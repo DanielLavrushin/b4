@@ -11,20 +11,27 @@ import (
 	"github.com/daniellavrushin/b4/log"
 )
 
-func TestHistoryKeepsOnlyTheWinningPresetsSet(t *testing.T) {
+func TestHistoryKeepsTheWinnerAndTheFastestAlternatives(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")
 
 	results := map[string]*DomainPresetResult{}
 	for i := 0; i < 60; i++ {
 		s := config.NewSetConfig()
-		results[fmt.Sprintf("preset-%d", i)] = &DomainPresetResult{
-			PresetName: fmt.Sprintf("preset-%d", i), Set: &s,
+		name := fmt.Sprintf("preset-%d", i)
+		results[name] = &DomainPresetResult{
+			PresetName: name, Set: &s, Status: CheckStatusComplete, Speed: float64(i),
 		}
+	}
+	dead := config.NewSetConfig()
+	results["broken"] = &DomainPresetResult{
+		PresetName: "broken", Set: &dead, Status: CheckStatusFailed, Speed: 9999,
 	}
 	winner := config.NewSetConfig()
 	winner.Name = "winner"
-	results["best"] = &DomainPresetResult{PresetName: "best", Set: &winner}
+	results["best"] = &DomainPresetResult{
+		PresetName: "best", Set: &winner, Status: CheckStatusComplete, Speed: 500,
+	}
 
 	suite := &CheckSuite{
 		Id: "run-1", Status: CheckStatusComplete, EndTime: time.Now(),
@@ -46,20 +53,31 @@ func TestHistoryKeepsOnlyTheWinningPresetsSet(t *testing.T) {
 		t.Fatalf("entries = %d", len(hist.Entries))
 	}
 	e := hist.Entries[0]
-	if len(e.Results) != 61 {
+	if len(e.Results) != 62 {
 		t.Errorf("every preset must survive so the UI's count is right, got %d", len(e.Results))
 	}
-	kept := 0
-	for _, r := range e.Results {
+	kept := []string{}
+	for name, r := range e.Results {
 		if r.Set != nil {
-			kept++
+			kept = append(kept, name)
 		}
 	}
-	if kept != 1 {
-		t.Errorf("only the winner's set is worth keeping on a router's flash, got %d sets", kept)
+	if len(kept) != maxAlternateSets+1 {
+		t.Errorf("a router's flash caps what a domain may keep, got %d sets: %v", len(kept), kept)
 	}
 	if e.Results["best"].Set == nil {
 		t.Error("the winner's set is the one the web interface applies from")
+	}
+	if e.Results["broken"].Set != nil {
+		t.Error("a strategy that failed is not worth a set")
+	}
+	for i := 60 - maxAlternateSets; i < 60; i++ {
+		if e.Results[fmt.Sprintf("preset-%d", i)].Set == nil {
+			t.Errorf("preset-%d was among the fastest and must stay applicable", i)
+		}
+	}
+	if e.Results["preset-0"].Set != nil {
+		t.Error("the slowest alternatives are the ones to drop")
 	}
 	if e.ApplicableSet() == nil || e.ApplicableSet().Name != "winner" {
 		t.Errorf("the entry must expose the set a caller can install: %+v", e.ApplicableSet())
@@ -69,6 +87,53 @@ func TestHistoryKeepsOnlyTheWinningPresetsSet(t *testing.T) {
 	}
 	if e.Outcome != OutcomeFound || !e.Unconfirmed {
 		t.Errorf("the verdict and its confirmation state travel with the entry, got %q unconfirmed=%v", e.Outcome, e.Unconfirmed)
+	}
+	if e.StorageBytes() == 0 {
+		t.Error("the UI shows what an entry costs, so it must be measurable")
+	}
+}
+
+func TestHistoryRemembersWhichStrategiesWereTried(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+
+	build := func(id string) *CheckSuite {
+		winner := config.NewSetConfig()
+		winner.Name = "winner"
+		return &CheckSuite{
+			Id: id, Status: CheckStatusComplete, EndTime: time.Now(),
+			DomainDiscoveryResults: map[string]*DomainDiscoveryResult{
+				"meduza.io": {Domain: "meduza.io", BestPreset: "best", BestSuccess: true, Outcome: OutcomeFound,
+					Results: map[string]*DomainPresetResult{
+						"best": {PresetName: "best", Set: &winner, Status: CheckStatusComplete},
+					}},
+			},
+			StrategyGroups: []StrategyGroup{
+				{WinnerPreset: "best", Domains: []string{"meduza.io"}, Set: &winner},
+			},
+		}
+	}
+
+	SaveToHistory(build("run-1"), cfgPath)
+	if err := MarkAppliedInHistory(cfgPath, []string{"Meduza.IO"}, "combo-random", "set-7"); err != nil {
+		t.Fatalf("mark: %v", err)
+	}
+
+	hist := LoadDiscoveryHistory(cfgPath)
+	if got := hist.AppliedSetFor("meduza.io", "combo-random"); got != "set-7" {
+		t.Errorf("a strategy the user installed must be recognisable later, got %q", got)
+	}
+	if mark := hist.Entries[0].Applied["combo-random"]; mark.At.IsZero() {
+		t.Error("when it was tried is what makes the mark readable")
+	}
+
+	SaveToHistory(build("run-2"), cfgPath)
+	hist = LoadDiscoveryHistory(cfgPath)
+	if got := hist.AppliedSetFor("meduza.io", "combo-random"); got != "set-7" {
+		t.Errorf("re-running a site must not forget what was already tried, got %q", got)
+	}
+	if hist.AppliedSetFor("meduza.io", "never-tried") != "" {
+		t.Error("an untried strategy must stay unmarked")
 	}
 }
 

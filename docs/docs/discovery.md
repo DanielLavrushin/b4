@@ -66,12 +66,12 @@ Sites that share one winning preset are shown together on one card, since applyi
 
 ## Applying
 
-**Apply as a set** opens a dialog with the set previewed row by row. The suggested name is the site without its prefix and its top-level domain, `instagram` for `www.instagram.com`, with a suffix when the run was limited to a TLS or IP version. For a single site, the match can be shortened to a parent domain so that the set also covers subdomains. When a site is already listed in another enabled set, the dialog says so: a domain listed in two enabled sets is handled by whichever comes first in the list, so the site is moved into the new set. When an enabled set already uses the same strategy, the sites can be added to it instead of creating a new one.
+**Apply as a set** opens a dialog with the set previewed row by row. The suggested name is the site without its prefix and its top-level domain, `instagram` for `www.instagram.com`, with a suffix when the run was limited to a TLS or IP version. For a single site, the match can be shortened to a parent domain so that the set also covers subdomains. When a site is already listed in an enabled set, the dialog starts on replacing that set's strategy: the set keeps its name, its sites and its routing, and only the strategy changes, which is what trying one strategy after another for the same site calls for. Creating a new set instead moves the site out of the old one, since a domain listed in two enabled sets is handled by whichever comes first in the list. When an enabled set already carries the same strategy, the sites can be added to it rather than creating a new one.
 
 The created set goes to the top of the list and is enabled at once. Its targets are the sites named, plus any geosite or geoip category b4 associates with them through its built-in CDN table, when the corresponding database is installed. The addresses learned during the run are not carried over, so the set matches by server name. A DNS redirect is included only for a site whose resolver was found to be lying, and a [pin](./dns#pinned-addresses) only for a site that needed an alternative address.
 
 :::tip
-A history entry keeps the set the run built, so a result can be applied later without running Discovery again. The confirmation state travels with it.
+A history entry keeps the set the run built and the sets of the strategies that also worked, so a result can be applied, and another strategy tried in its place, without running Discovery again. The confirmation state travels with it.
 :::
 
 ## Alternative addresses
@@ -89,6 +89,12 @@ A probe made from a machine where b4 is already running goes through b4's own se
 ## History
 
 The last hundred results are kept, one entry per site, the newest run for a site replacing the older one. Every entry shows its verdict, the winning preset with its technique family, the sentence describing it on hover, and when it ran. Sites from one run that won with the same preset share one set; each of them says so, and applying either installs the set for all of them, named after the site that was clicked. **Apply** installs the set the run built, the refresh button starts a new run for the site, and an entry can be removed on its own or the whole history cleared.
+
+An entry also keeps the strategies that worked but lost to the winner. The twelve fastest of them are stored with the set each one builds; the entry expands to that list, fastest first, with the technique family and the speed measured during the run, and **Use instead** applies one of them exactly as **Apply** applies the winner. The remaining presets of the run stay in the entry as results without a set, and entries written before b4 kept alternatives hold the winner alone.
+
+A strategy that has been installed as a set is marked **Tried**, on the winner and on the alternatives alike, whichever page it was applied from. The mark records the attempt rather than the current configuration: it stays after the set is deleted and survives a new run for the same site, so a site that has been through a dozen strategies still shows which ones were tried.
+
+Under the time of the run, each row shows what its entry costs in the history file. The stored sets are most of that, which is why only the twelve fastest keep one: a site that found many working strategies costs tens of kilobytes, freed by removing the entry or clearing the history.
 
 The log of the last run stays available under **Last run log** and survives a restart of the service; the log dialog can also download it as a text file, during a run or after it.
 

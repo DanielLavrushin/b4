@@ -9,6 +9,7 @@ export interface AddDomainsResult {
 
 export const setsApi = {
   getSets: () => apiFetch<B4SetConfig[]>("/api/sets"),
+  getSet: (id: string) => apiFetch<B4SetConfig>(`/api/sets/${id}`),
   createSet: (set: Omit<B4SetConfig, "id">) =>
     apiPost<B4SetConfig>(`/api/sets`, set),
   updateSet: (id: string, set: B4SetConfig) =>
