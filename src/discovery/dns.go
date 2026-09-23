@@ -96,11 +96,13 @@ func (ds *DiscoverySuite) installedGeoCategories(geoip, geosite []string) ([]str
 	return geoip, geosite
 }
 
-func (ds *DiscoverySuite) runDNSDiscoveryForDomain(domain string) *DNSDiscoveryResult {
-	log.DiscoveryLogf("  DNS: Checking DNS poisoning for %s", domain)
+func (ds *DiscoverySuite) runDNSDiscoveryForDomain(di DomainInput) *DNSDiscoveryResult {
+	log.DiscoveryLogf("  DNS: Checking DNS poisoning for %s", di.Domain)
 
+	port := checkURLPort(di.CheckURL)
 	prober := NewDNSProber(
-		domain,
+		di.Domain,
+		port,
 		time.Duration(ds.cfg.System.Checker.DiscoveryTimeoutSec)*time.Second,
 		ds.pool,
 		ds.cfg,
@@ -113,7 +115,7 @@ func (ds *DiscoverySuite) runDNSDiscoveryForDomain(domain string) *DNSDiscoveryR
 
 	result := prober.Probe(ctx)
 	if prober.ipNetwork() == "ip4" && shouldScanAlternatives(result) {
-		ds.findAlternativeAddresses(domain, result)
+		ds.findAlternativeAddresses(di.Domain, port, result)
 	}
 	return result
 }
@@ -162,7 +164,7 @@ func (r *DNSDiscoveryResult) hasWorkingConfig() bool {
 	return !r.IsPoisoned || r.BestDoHURL != "" || r.BestServer != "" || r.NeedsFragment
 }
 
-func NewDNSProber(domain string, timeout time.Duration, pool *nfq.Pool, cfg *config.Config, flowMark uint, ipVersion string) *DNSProber {
+func NewDNSProber(domain string, port int, timeout time.Duration, pool *nfq.Pool, cfg *config.Config, flowMark uint, ipVersion string) *DNSProber {
 	p := &DNSProber{
 		domain:    domain,
 		timeout:   timeout,
@@ -174,7 +176,7 @@ func NewDNSProber(domain string, timeout time.Duration, pool *nfq.Pool, cfg *con
 	p.serves = p.testIPServesDomain
 	p.connectable = p.anyIPConnectable
 	p.gateway = func(ctx context.Context, ip string) bool {
-		return netprobe.GatewayProbe(ctx, ip, 443, int(flowMark), gatewayProbeTimeout)
+		return netprobe.GatewayProbe(ctx, ip, port, int(flowMark), gatewayProbeTimeout)
 	}
 	return p
 }

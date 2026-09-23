@@ -312,7 +312,7 @@ func (s *ecsScanner) servesDomain(ctx context.Context, domain, ip string) bool {
 	return true
 }
 
-func (ds *DiscoverySuite) findAlternativeAddresses(domain string, result *DNSDiscoveryResult) {
+func (ds *DiscoverySuite) findAlternativeAddresses(domain string, port int, result *DNSDiscoveryResult) {
 	if result == nil || ds.cfg == nil {
 		return
 	}
@@ -394,7 +394,7 @@ func (ds *DiscoverySuite) findAlternativeAddresses(domain string, result *DNSDis
 		refused = append(refused, cand.ip)
 	}
 	intercepted := 0
-	for i, hit := range ds.gatewayTerminated(ctx, refused) {
+	for i, hit := range ds.gatewayTerminated(ctx, refused, port) {
 		if hit {
 			intercepted++
 			result.GatewayIPs = appendUnique(result.GatewayIPs, refused[i])
@@ -432,7 +432,7 @@ func (ds *DiscoverySuite) findAlternativeAddresses(domain string, result *DNSDis
 		}
 		unprobed = append(unprobed, cand.ip)
 	}
-	for i, hit := range ds.gatewayTerminated(ctx, unprobed) {
+	for i, hit := range ds.gatewayTerminated(ctx, unprobed, port) {
 		if hit {
 			result.GatewayIPs = appendUnique(result.GatewayIPs, unprobed[i])
 			continue
@@ -451,7 +451,7 @@ func (ds *DiscoverySuite) findAlternativeAddresses(domain string, result *DNSDis
 	log.DiscoveryLogf("  [%s] no reachable address completes a TLS handshake, keeping %v as targets for the packet strategies", domain, result.AlternativeIPs)
 }
 
-func (ds *DiscoverySuite) gatewayTerminated(ctx context.Context, ips []string) []bool {
+func (ds *DiscoverySuite) gatewayTerminated(ctx context.Context, ips []string, port int) []bool {
 	hits := make([]bool, len(ips))
 	if len(ips) == 0 || ctx.Err() != nil {
 		return hits
@@ -463,7 +463,7 @@ func (ds *DiscoverySuite) gatewayTerminated(ctx context.Context, ips []string) [
 		wg.Add(1)
 		go func(i int, ip string) {
 			defer wg.Done()
-			hits[i] = netprobe.GatewayProbe(probeCtx, ip, 443, int(ds.flowMark), gatewayProbeTimeout)
+			hits[i] = netprobe.GatewayProbe(probeCtx, ip, port, int(ds.flowMark), gatewayProbeTimeout)
 		}(i, ip)
 	}
 	wg.Wait()

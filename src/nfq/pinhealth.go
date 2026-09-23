@@ -31,11 +31,17 @@ const (
 
 type pinProber func(ctx context.Context, ip string, mark int) pinVerdict
 
+type pinRound struct {
+	pins []string
+	mark int
+}
+
 type pinHealth struct {
 	mu      sync.Mutex
 	dead    map[string]struct{}
 	lastRun time.Time
 	running bool
+	queued  *pinRound
 	probe   pinProber
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -89,19 +95,28 @@ func (h *pinHealth) due(retest time.Duration) bool {
 }
 
 func (h *pinHealth) check(pins []string, mark int) {
-	if h == nil || len(pins) == 0 {
+	if h == nil {
 		return
 	}
 	h.mu.Lock()
-	if h.running || h.ctx.Err() != nil {
-		h.mu.Unlock()
+	defer h.mu.Unlock()
+	if h.ctx.Err() != nil {
+		return
+	}
+	if h.running {
+		h.queued = &pinRound{pins: pins, mark: mark}
+		return
+	}
+	h.start(pins, mark)
+}
+
+func (h *pinHealth) start(pins []string, mark int) {
+	if len(pins) == 0 {
 		return
 	}
 	h.running = true
 	h.lastRun = time.Now()
 	h.wg.Add(1)
-	h.mu.Unlock()
-
 	log.Tracef("DNS pins: checking %d pinned addresses on TCP %d", len(pins), dnsPinProbePort)
 	go func() {
 		defer h.wg.Done()
@@ -127,18 +142,25 @@ func (h *pinHealth) runRound(pins []string, mark int) {
 	}
 	wg.Wait()
 
-	alive := 0
-	for _, v := range verdicts {
-		if v == pinAlive {
-			alive++
-		}
-	}
-
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.running = false
 	if h.ctx.Err() != nil {
 		return
+	}
+	h.record(pins, verdicts)
+	if next := h.queued; next != nil {
+		h.queued = nil
+		h.start(next.pins, next.mark)
+	}
+}
+
+func (h *pinHealth) record(pins []string, verdicts []pinVerdict) {
+	alive := 0
+	for _, v := range verdicts {
+		if v == pinAlive {
+			alive++
+		}
 	}
 	if alive == 0 {
 		log.Tracef("DNS pins: none of %d pinned addresses answered, keeping the previous verdicts", len(pins))

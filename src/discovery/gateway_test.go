@@ -203,10 +203,10 @@ func TestGatewayProbeSkipsCanceledContexts(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if hits := ds.gatewayTerminated(ctx, []string{"31.13.72.60"}); hits[0] || called.Load() {
+	if hits := ds.gatewayTerminated(ctx, []string{"31.13.72.60"}, 443); hits[0] || called.Load() {
 		t.Fatal("a canceled scan must not report a gateway")
 	}
-	hits := ds.gatewayTerminated(context.Background(), []string{"31.13.72.60", "57.144.65.32"})
+	hits := ds.gatewayTerminated(context.Background(), []string{"31.13.72.60", "57.144.65.32"}, 443)
 	if !hits[0] || !hits[1] || !called.Load() {
 		t.Fatal("the stubbed probe must be consulted for every address")
 	}

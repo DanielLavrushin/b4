@@ -187,3 +187,18 @@ func TestDeadEndAnswerNeedsTheSameErrorUnderEveryStrategy(t *testing.T) {
 		t.Fatal("one unbypassed fetch is not evidence about the origin")
 	}
 }
+
+func TestCheckURLPortIsThePortTheCheckDials(t *testing.T) {
+	for raw, want := range map[string]int{
+		"https://web.whatsapp.com/":         443,
+		"http://web.whatsapp.com/":          80,
+		"HTTP://web.whatsapp.com/":          80,
+		"https://example.com:8443/check":    8443,
+		"http://example.com:8080/check?x=1": 8080,
+		"":                                  443,
+	} {
+		if got := checkURLPort(raw); got != want {
+			t.Errorf("checkURLPort(%q) = %d, want %d, the gateway probe must test the port the check dials", raw, got, want)
+		}
+	}
+}

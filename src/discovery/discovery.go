@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -129,6 +130,20 @@ func upgradeCheckURL(di DomainInput, r CheckResult) (string, bool) {
 	}
 	u.Scheme = "https"
 	return u.String(), true
+}
+
+func checkURLPort(raw string) int {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return 443
+	}
+	if port, err := strconv.Atoi(u.Port()); err == nil && port > 0 {
+		return port
+	}
+	if u.Scheme == "http" {
+		return 80
+	}
+	return 443
 }
 
 func deadEndAnswer(results map[string]*DomainPresetResult) (CheckResult, bool) {
@@ -284,7 +299,7 @@ func (ds *DiscoverySuite) RunDiscovery() {
 		for _, di := range ds.Domains {
 			ds.setCurrentDomain(di.Domain)
 			log.DiscoveryLogf("Running DNS discovery for %s", di.Domain)
-			dnsResult := ds.runDNSDiscoveryForDomain(di.Domain)
+			dnsResult := ds.runDNSDiscoveryForDomain(di)
 			ds.dnsResults[di.Domain] = dnsResult
 			ds.domainResults[di.Domain].DNSResult = dnsResult
 
