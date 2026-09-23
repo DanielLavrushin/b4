@@ -1,6 +1,6 @@
 # B4 - Bye Bye Big Bro
 
-## [1.82.3] - 2026-09-20
+## [1.82.3] - 2026-09-23
 
 - FIXED: **A site with pinned addresses opened in a browser drifted to an address b4 never handed out after about a minute, and the tab ended in a timeout** - only the A and AAAA queries were answered from the pin list, so the browser's parallel HTTPS query brought the site's CNAME back from the resolver, the system cache followed that CNAME on its own once the short pin answer expired, and the pins were not asked for again.
 - FIXED: **A pinned address the router could not reach was handed out first every time, and a browser waited on it for over two minutes before trying the next one** - dead pins were left out only with IP block detection on, which it is not by default, and nothing ever checked whether a pin answered at all.
