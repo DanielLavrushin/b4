@@ -11,6 +11,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/utils"
 )
 
 const (
@@ -18,6 +19,8 @@ const (
 	maxHistoryEntries    = 100
 	maxAlternateSets     = 12
 )
+
+var historyFileMu sync.Mutex
 
 type AppliedMark struct {
 	SetId string    `json:"set_id,omitempty"`
@@ -149,12 +152,22 @@ func (dh *DiscoveryHistory) Save(configPath string) error {
 		return log.Errorf("failed to marshal discovery history: %v", err)
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := utils.WriteFileAtomic(path, data, 0644); err != nil {
 		return log.Errorf("failed to write discovery history: %v", err)
 	}
 
 	log.Tracef("Saved discovery history with %d entries to %s", len(dh.Entries), path)
 	return nil
+}
+
+func UpdateHistory(configPath string, change func(*DiscoveryHistory) bool) error {
+	historyFileMu.Lock()
+	defer historyFileMu.Unlock()
+	history := LoadDiscoveryHistory(configPath)
+	if !change(history) {
+		return nil
+	}
+	return history.Save(configPath)
 }
 
 // AddFromSuite saves all domain results from a completed suite.

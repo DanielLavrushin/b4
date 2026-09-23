@@ -615,9 +615,11 @@ func (api *API) handleClearDiscoveryHistory(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	history := discovery.LoadDiscoveryHistory(api.getCfg().ConfigPath)
-	history.Clear()
-	if err := history.Save(api.getCfg().ConfigPath); err != nil {
+	err := discovery.UpdateHistory(api.getCfg().ConfigPath, func(history *discovery.DiscoveryHistory) bool {
+		history.Clear()
+		return true
+	})
+	if err != nil {
 		log.Errorf("Failed to clear discovery history: %v", err)
 		http.Error(w, "Failed to clear discovery history", http.StatusInternalServerError)
 		return
@@ -649,9 +651,11 @@ func (api *API) handleDeleteHistoryDomain(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	history := discovery.LoadDiscoveryHistory(api.getCfg().ConfigPath)
-	history.RemoveDomain(domain)
-	if err := history.Save(api.getCfg().ConfigPath); err != nil {
+	err := discovery.UpdateHistory(api.getCfg().ConfigPath, func(history *discovery.DiscoveryHistory) bool {
+		history.RemoveDomain(domain)
+		return true
+	})
+	if err != nil {
 		log.Errorf("Failed to save discovery history: %v", err)
 		http.Error(w, "Failed to save discovery history", http.StatusInternalServerError)
 		return

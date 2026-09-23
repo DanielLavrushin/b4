@@ -316,7 +316,11 @@ export function withStrategyOf(
   pins?: Record<string, string[]>,
 ): B4SetConfig {
   const targets = existing.targets ?? ({} as B4SetConfig["targets"]);
-  const merged = { ...(existing.dns?.pins ?? {}), ...(pins ?? {}) };
+  const replaced = new Set(domains.map((d) => d.toLowerCase()));
+  const unrelated = Object.entries(existing.dns?.pins ?? {}).filter(
+    ([pin]) => !replaced.has(pin.toLowerCase()),
+  );
+  const merged = { ...Object.fromEntries(unrelated), ...(pins ?? {}) };
   return {
     ...existing,
     tcp: strategy.tcp,
