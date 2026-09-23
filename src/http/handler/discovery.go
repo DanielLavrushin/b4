@@ -453,7 +453,7 @@ func (api *API) setCoveringDomainWith(domain string, strategy *config.SetConfig)
 	api.initializeSetDefaults(&candidate)
 
 	for _, set := range api.getCfg().Sets {
-		if !setsHaveSimilarConfig(set, &candidate) {
+		if set == nil || !set.Enabled || !setsHaveSimilarConfig(set, &candidate) {
 			continue
 		}
 		for _, d := range set.Targets.SNIDomains {
