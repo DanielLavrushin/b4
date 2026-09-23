@@ -52,6 +52,8 @@ func TestGatewayTerminatesClassifiesTheDialOutcome(t *testing.T) {
 		{"connect succeeds", nil, true},
 		{"refused by the first hop", syscall.ECONNREFUSED, true},
 		{"wrapped refusal", &net.OpError{Op: "dial", Err: &os.SyscallError{Syscall: "connect", Err: syscall.ECONNREFUSED}}, true},
+		{"reset by the first hop right after accepting", syscall.ECONNRESET, true},
+		{"wrapped reset", &net.OpError{Op: "dial", Err: &os.SyscallError{Syscall: "connect", Err: syscall.ECONNRESET}}, true},
 		{"host unreachable", syscall.EHOSTUNREACH, false},
 		{"network unreachable", syscall.ENETUNREACH, false},
 		{"timeout", context.DeadlineExceeded, false},

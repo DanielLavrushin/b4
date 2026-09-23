@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -212,5 +214,57 @@ func TestLastRunLogIsSavedNextToTheConfig(t *testing.T) {
 	}
 	if _, err := LoadLastRunLog(""); err == nil {
 		t.Fatal("without a config path there is nowhere to read from")
+	}
+}
+
+func TestUpdateHistoryKeepsEveryConcurrentChange(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	const writers = 50
+
+	var shrank atomic.Int64
+	stop := make(chan struct{})
+	readerDone := make(chan struct{})
+	go func() {
+		defer close(readerDone)
+		seen := 0
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			n := len(LoadDiscoveryHistory(cfgPath).Entries)
+			if n < seen {
+				shrank.Add(1)
+			}
+			if n > seen {
+				seen = n
+			}
+		}
+	}()
+
+	var wg sync.WaitGroup
+	for i := 0; i < writers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			err := UpdateHistory(cfgPath, func(h *DiscoveryHistory) bool {
+				h.Entries = append(h.Entries, HistoryEntry{Domain: fmt.Sprintf("site%d.example", i)})
+				return true
+			})
+			if err != nil {
+				t.Errorf("UpdateHistory: %v", err)
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(stop)
+	<-readerDone
+
+	if n := len(LoadDiscoveryHistory(cfgPath).Entries); n != writers {
+		t.Fatalf("history holds %d of %d entries; a finished run, a mark or a delete that lands while another write is in progress must not be lost", n, writers)
+	}
+	if shrank.Load() > 0 {
+		t.Fatalf("a reader saw the history shrink %d times; a half-written file reads as empty, and a run saving right then would replace the whole history with its own entries", shrank.Load())
 	}
 }

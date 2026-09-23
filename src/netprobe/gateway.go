@@ -78,7 +78,7 @@ func GatewayTerminates(ctx context.Context, ip string, port int, mark int, timeo
 		conn.Close()
 		return true
 	}
-	return errors.Is(err, syscall.ECONNREFUSED)
+	return errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET)
 }
 
 var GatewayProbe = GatewayTerminates

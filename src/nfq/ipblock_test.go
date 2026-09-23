@@ -603,3 +603,39 @@ func TestCheckDNSPinsSkipsDiscoveryAndStopsPromptly(t *testing.T) {
 		t.Fatal("stop must cancel an in-flight probe instead of waiting for it")
 	}
 }
+
+func TestPinHealthChecksASaveMadeDuringARound(t *testing.T) {
+	probed := make(chan string, 8)
+	release := make(chan struct{})
+	h := newPinHealth(func(ctx context.Context, ip string, _ int) pinVerdict {
+		probed <- ip
+		if ip == "157.240.0.174" {
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+		}
+		return pinAlive
+	})
+	t.Cleanup(h.stop)
+
+	h.check([]string{"157.240.0.174"}, 0)
+	<-probed
+	h.check([]string{"157.240.253.174"}, 0)
+	h.check([]string{"163.70.132.60"}, 0)
+	close(release)
+
+	select {
+	case ip := <-probed:
+		if ip != "163.70.132.60" {
+			t.Fatalf("the round after the running one probed %s, want the pins of the latest save", ip)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("a save made while a round was running was never checked, its pins would wait for the retest interval")
+	}
+	select {
+	case ip := <-probed:
+		t.Fatalf("only the latest save may run, %s was probed as well", ip)
+	case <-time.After(50 * time.Millisecond):
+	}
+}

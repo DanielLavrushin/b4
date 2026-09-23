@@ -121,6 +121,12 @@ func TestRewriteDeadEndCheckURLsTouchesOnlyTheDeadEndDomain(t *testing.T) {
 	if ds.TotalChecks != 43 {
 		t.Fatalf("TotalChecks = %d, want 43 (the phase-1 re-run for the upgraded domain)", ds.TotalChecks)
 	}
+	if n := len(ds.domainResults["dead.example"].Results); n != 0 {
+		t.Fatalf("dead.example kept %d results measured on the http URL; payload detection skips a strategy that already has a result, so combo-pastseq would never be tried on https", n)
+	}
+	if n := len(ds.domainResults["fine.example"].Results); n != 2 {
+		t.Fatalf("fine.example has %d results, want its 2: a domain that was not upgraded keeps what it measured", n)
+	}
 }
 
 func TestRewriteDeadEndCheckURLsLeavesASecondaryPrimaryURLAlone(t *testing.T) {
@@ -178,6 +184,14 @@ func TestDeadEndAnswerNeedsTheSameErrorUnderEveryStrategy(t *testing.T) {
 	}
 	if _, ok := deadEndAnswer(dropped); ok {
 		t.Fatal("a strategy that changed the failure shows the path reacts to it, the http URL must stay")
+	}
+
+	blockPage := map[string]*DomainPresetResult{
+		presetNoBypass:  {Status: CheckStatusFailed, StatusCode: 403, BytesRead: 600, Error: "ISP block page detected in response"},
+		"combo-pastseq": {Status: CheckStatusFailed, StatusCode: 403, BytesRead: 0, Error: "insufficient data: 0 bytes"},
+	}
+	if _, ok := deadEndAnswer(blockPage); ok {
+		t.Fatal("a strategy that got past the ISP block page to a 403 with the same code changed the failure, the http URL must stay whichever result is read first")
 	}
 
 	alone := map[string]*DomainPresetResult{

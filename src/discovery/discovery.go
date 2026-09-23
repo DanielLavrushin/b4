@@ -191,6 +191,7 @@ func (ds *DiscoverySuite) rewriteDeadEndCheckURLs(checksPerDomain int) []string 
 			ds.CheckURL = next
 		}
 		dr.Url = next
+		dr.Results = make(map[string]*DomainPresetResult)
 		upgraded = append(upgraded, di.Domain)
 	}
 	ds.TotalChecks += len(upgraded) * checksPerDomain
