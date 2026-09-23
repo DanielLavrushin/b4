@@ -3,7 +3,7 @@ import { Box, IconButton, Typography } from "@mui/material";
 import { ArrowDownIcon } from "@b4.icons";
 import { colors, fonts, glows } from "@design";
 import { useTranslation } from "react-i18next";
-import { LogRow } from "./LogRow";
+import { LogRow, logRowSx } from "./LogRow";
 import { ParsedLogLine } from "./parse";
 
 interface LogViewportProps {
@@ -41,6 +41,7 @@ export function LogViewport({
         wordBreak: "break-word",
         backgroundColor: colors.background.dark,
         color: colors.text.primary,
+        ...logRowSx,
       }}
     >
       {(() => {

@@ -776,7 +776,7 @@ func (s *SuffixSet) MatchLearnedIPWithSource(ip net.IP, srcMAC string) (bool, *c
 		return false, nil, ""
 	}
 
-	if !setMatchesSource(entry.set, srcMAC) {
+	if !setMatchesSource(entry.set, srcMAC) || !entry.set.MatchesIPVersion(ipVersionOf(ip)) {
 		if matched, altSet := s.MatchSNIWithSourceTLS(entry.domain, srcMAC, 0, ipVersionOf(ip)); matched {
 			entry.learnedAt = time.Now()
 			s.learnedIPCacheLRU.MoveToFront(entry.element)

@@ -3,7 +3,7 @@ import { Box, Container, Paper, Stack } from "@mui/material";
 import { ClearIcon } from "@b4.icons";
 import { B4Badge, B4TextField, B4Switch, B4TooltipButton } from "@b4.elements";
 import { colors } from "@design";
-import { useWebSocket } from "@context/B4WsProvider";
+import { useLogStream, useStreamControls } from "@context/B4WsProvider";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
@@ -29,7 +29,8 @@ export function LogsPage() {
   const [autoScroll, setAutoScroll] = useState(true);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const logRef = useRef<HTMLDivElement | null>(null);
-  const { logs, logsBase, pauseLogs, setPauseLogs, clearLogs } = useWebSocket();
+  const { logs, logsBase } = useLogStream();
+  const { pauseLogs, setPauseLogs, clearLogs } = useStreamControls();
   const trace = useTraceSession();
 
   const parsedCache = useRef(new Map<number, ParsedLogLine>());

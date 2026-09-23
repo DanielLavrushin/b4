@@ -11,6 +11,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discovery"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/sni"
 	"github.com/google/uuid"
 	"golang.org/x/net/publicsuffix"
 )
@@ -456,13 +457,26 @@ func (api *API) setCoveringDomainWith(domain string, strategy *config.SetConfig)
 		if set == nil || !set.Enabled || !setsHaveSimilarConfig(set, &candidate) {
 			continue
 		}
-		for _, d := range set.Targets.SNIDomains {
-			if strings.EqualFold(d, domain) {
-				return set
-			}
+		if len(set.Targets.SourceDevices) > 0 && !set.Targets.SourceDevicesExclude {
+			continue
+		}
+		if setCoversDomain(set, domain) {
+			return set
 		}
 	}
 	return nil
+}
+
+func setCoversDomain(set *config.SetConfig, domain string) bool {
+	for _, entries := range [][]string{set.Targets.SNIDomains, set.Targets.DomainsToMatch} {
+		for _, entry := range entries {
+			switch relation, _ := sni.MatchDomainEntry(entry, domain); relation {
+			case sni.RelationExact, sni.RelationCovered, sni.RelationRegexp:
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func setsHaveSimilarConfig(a, b *config.SetConfig) bool {

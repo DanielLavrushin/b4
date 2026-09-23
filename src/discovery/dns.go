@@ -28,6 +28,7 @@ type CDNEntry struct {
 
 type DNSProber struct {
 	domain    string
+	tlsPort   int
 	timeout   time.Duration
 	pool      *nfq.Pool
 	cfg       *config.Config
@@ -100,9 +101,11 @@ func (ds *DiscoverySuite) runDNSDiscoveryForDomain(di DomainInput) *DNSDiscovery
 	log.DiscoveryLogf("  DNS: Checking DNS poisoning for %s", di.Domain)
 
 	port := checkURLPort(di.CheckURL)
+	tlsPort := checkURLTLSPort(di.CheckURL)
 	prober := NewDNSProber(
 		di.Domain,
 		port,
+		tlsPort,
 		time.Duration(ds.cfg.System.Checker.DiscoveryTimeoutSec)*time.Second,
 		ds.pool,
 		ds.cfg,
@@ -115,7 +118,7 @@ func (ds *DiscoverySuite) runDNSDiscoveryForDomain(di DomainInput) *DNSDiscovery
 
 	result := prober.Probe(ctx)
 	if prober.ipNetwork() == "ip4" && shouldScanAlternatives(result) {
-		ds.findAlternativeAddresses(di.Domain, port, result)
+		ds.findAlternativeAddresses(di.Domain, port, tlsPort, result)
 	}
 	return result
 }
@@ -164,9 +167,10 @@ func (r *DNSDiscoveryResult) hasWorkingConfig() bool {
 	return !r.IsPoisoned || r.BestDoHURL != "" || r.BestServer != "" || r.NeedsFragment
 }
 
-func NewDNSProber(domain string, port int, timeout time.Duration, pool *nfq.Pool, cfg *config.Config, flowMark uint, ipVersion string) *DNSProber {
+func NewDNSProber(domain string, port, tlsPort int, timeout time.Duration, pool *nfq.Pool, cfg *config.Config, flowMark uint, ipVersion string) *DNSProber {
 	p := &DNSProber{
 		domain:    domain,
+		tlsPort:   tlsPort,
 		timeout:   timeout,
 		pool:      pool,
 		cfg:       cfg,
@@ -581,7 +585,7 @@ func (p *DNSProber) anyIPConnectable(ctx context.Context, ips []string) bool {
 	defer cancel()
 	dialer := netprobe.Dialer(int(p.flowMark), p.timeout/2, p.timeout)
 	for _, ip := range ips {
-		conn, err := dialer.DialContext(connCtx, "tcp", net.JoinHostPort(ip, "443"))
+		conn, err := dialer.DialContext(connCtx, "tcp", tlsAddress(ip, p.tlsPort))
 		if err == nil {
 			conn.Close()
 			return true
@@ -592,7 +596,7 @@ func (p *DNSProber) anyIPConnectable(ctx context.Context, ips []string) bool {
 
 func (p *DNSProber) testIPServesDomain(ctx context.Context, ip string) bool {
 	dialer := netprobe.Dialer(int(p.flowMark), p.timeout/2, p.timeout)
-	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(ip, "443"))
+	conn, err := dialer.DialContext(ctx, "tcp", tlsAddress(ip, p.tlsPort))
 	if err != nil {
 		return false
 	}

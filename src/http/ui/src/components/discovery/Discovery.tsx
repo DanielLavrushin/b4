@@ -273,27 +273,39 @@ export const DiscoveryRunner = () => {
     const applied = applyTarget;
     setApplying(true);
     let name = "";
-    const res = await (async () => {
+    let moved: DomainReassignment[] | undefined;
+    const ok = await (async () => {
       try {
+        const added = await addDomainsToSet(setId, domains);
+        if (!added.success) return false;
+        moved = added.data?.moved;
         const existing = await setsApi.getSet(setId);
         name = existing.name;
-        return await updateSet(withStrategyOf(existing, set, domains, pins));
+        const res = await updateSet(
+          withStrategyOf(existing, set, domains, pins),
+        );
+        return res.success;
       } catch {
-        return { success: false as const };
+        return false;
       }
     })();
     setApplying(false);
-    if (!res.success) {
+    if (!ok) {
       showError(t("discovery.apply.replaceFailed"));
       return;
     }
     if (applied) await markApplied(applied.domains, applied.preset, setId);
-    showSuccess(t("discovery.apply.replaced", { name }), {
+    showSuccess(
+      [t("discovery.apply.replaced", { name }), describeMoved(moved)]
+        .filter(Boolean)
+        .join(" "),
+      {
       label: t("discovery.apply.openSet"),
-      onClick: () => {
-        void navigate(`/sets/${setId}`);
+        onClick: () => {
+          void navigate(`/sets/${setId}`);
+        },
       },
-    });
+    );
     setApplyTarget(null);
   };
 

@@ -1,12 +1,14 @@
 import { memo } from "react";
-import { Box } from "@mui/material";
 import { colors } from "@design";
 import { LogLevel, ParsedLogLine } from "./parse";
 
-const rowTheme: Record<
-  LogLevel,
-  { border: string; tint: string; text: string }
-> = {
+interface RowTheme {
+  border: string;
+  tint: string;
+  text: string;
+}
+
+const rowTheme: Record<LogLevel, RowTheme> = {
   error: {
     border: colors.state.error,
     tint: "rgba(244, 67, 54, 0.10)",
@@ -34,50 +36,56 @@ const rowTheme: Record<
   },
 };
 
-const unparsedTheme = {
+const unparsedTheme: RowTheme = {
   border: "rgba(245, 173, 24, 0.20)",
   tint: "transparent",
   text: colors.text.primary,
+};
+
+const themeSx = (theme: RowTheme) => ({
+  borderLeftColor: theme.border,
+  bgcolor: theme.tint,
+  color: theme.text,
+});
+
+export const logRowSx = {
+  "& .log-row": {
+    display: "flex",
+    gap: 1.5,
+    pl: 1.25,
+    borderLeft: "2px solid",
+  },
+  "& .log-raw": themeSx(unparsedTheme),
+  "& .log-error": themeSx(rowTheme.error),
+  "& .log-warn": themeSx(rowTheme.warn),
+  "& .log-info": themeSx(rowTheme.info),
+  "& .log-trace": themeSx(rowTheme.trace),
+  "& .log-debug": themeSx(rowTheme.debug),
+  "& .log-row:hover": { bgcolor: colors.accent.primaryStrong },
+  "& .log-time": {
+    flexShrink: 0,
+    color: colors.text.disabled,
+    userSelect: "none",
+  },
+  "& .log-message": { flex: 1, minWidth: 0 },
 };
 
 function trimTime(time: string): string {
   return time.replace(/(\.\d{3})\d*$/, "$1");
 }
 
-export const LogRow = memo(({ line }: { line: ParsedLogLine }) => {
-  const theme = line.level ? rowTheme[line.level] : unparsedTheme;
-  return (
-    <Box
-      sx={{
-        display: "flex",
-        gap: 1.5,
-        pl: 1.25,
-        contentVisibility: "auto",
-        containIntrinsicSize: "auto 21px",
-        borderLeft: `2px solid ${theme.border}`,
-        bgcolor: theme.tint,
-        color: theme.text,
-        "&:hover": { bgcolor: colors.accent.primaryStrong },
-      }}
-    >
-      {line.time && (
-        <Box
-          component="span"
-          title={`${line.date ?? ""} ${line.time}`.trim()}
-          sx={{
-            flexShrink: 0,
-            color: colors.text.disabled,
-            userSelect: "none",
-          }}
-        >
-          {trimTime(line.time)}
-        </Box>
-      )}
-      <Box component="span" sx={{ flex: 1, minWidth: 0 }}>
-        {line.message}
-      </Box>
-    </Box>
-  );
-});
+export const LogRow = memo(({ line }: { line: ParsedLogLine }) => (
+  <div className={`log-row log-${line.level ?? "raw"}`}>
+    {line.time && (
+      <span
+        className="log-time"
+        title={`${line.date ?? ""} ${line.time}`.trim()}
+      >
+        {trimTime(line.time)}
+      </span>
+    )}
+    <span className="log-message">{line.message}</span>
+  </div>
+));
 
 LogRow.displayName = "LogRow";

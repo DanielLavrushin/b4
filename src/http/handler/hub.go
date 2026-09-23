@@ -229,9 +229,10 @@ func (api *API) hubStatus(svc *hub.Service) hubStatusResponse {
 		}
 		hosts = append(hosts, u.Hostname())
 	}
+	cfg := api.getCfg()
 	matches := make([]SetDomainMatch, 0)
 	for _, m := range api.matchDomainsToSets(hosts, "") {
-		if m.Enabled {
+		if m.Enabled && sni.SetMatchesSource(cfg.GetSetById(m.SetId), "") {
 			matches = append(matches, m)
 		}
 	}
@@ -253,7 +254,7 @@ func matchAddressesToSets(matcher *sni.SuffixSet, addresses []string) []SetDomai
 			continue
 		}
 		seen[ip.String()] = true
-		if ok, set := matcher.MatchIP(ip); ok && set != nil {
+		if ok, set := matcher.MatchIPWithSource(ip, ""); ok && set != nil {
 			matches = append(matches, SetDomainMatch{
 				Domain:   ip.String(),
 				SetName:  set.Name,

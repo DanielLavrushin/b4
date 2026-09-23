@@ -112,6 +112,7 @@ func ecsScanSubnets() []net.IPNet {
 
 type ecsScanner struct {
 	mark    int
+	port    int
 	timeout time.Duration
 	client  *http.Client
 	dialer  *net.Dialer
@@ -119,9 +120,10 @@ type ecsScanner struct {
 	txidMu  sync.Mutex
 }
 
-func newECSScanner(mark int, timeout time.Duration) *ecsScanner {
+func newECSScanner(mark, port int, timeout time.Duration) *ecsScanner {
 	return &ecsScanner{
 		mark:    mark,
+		port:    port,
 		timeout: timeout,
 		client:  dns.MarkedDoHClient(mark, timeout),
 		dialer:  netprobe.Dialer(mark, timeout, 0),
@@ -245,7 +247,7 @@ func (s *ecsScanner) tcpLatency(ctx context.Context, ip string) (time.Duration, 
 		}
 		dialCtx, cancel := context.WithTimeout(ctx, altScanTCPTimeout)
 		start := time.Now()
-		conn, err := s.dialer.DialContext(dialCtx, "tcp", net.JoinHostPort(ip, "443"))
+		conn, err := s.dialer.DialContext(dialCtx, "tcp", tlsAddress(ip, s.port))
 		cancel()
 		if err != nil {
 			continue
@@ -298,7 +300,7 @@ func (s *ecsScanner) servesDomain(ctx context.Context, domain, ip string) bool {
 	dialCtx, cancel := context.WithTimeout(ctx, altScanTCPTimeout*2)
 	defer cancel()
 
-	conn, err := s.dialer.DialContext(dialCtx, "tcp", net.JoinHostPort(ip, "443"))
+	conn, err := s.dialer.DialContext(dialCtx, "tcp", tlsAddress(ip, s.port))
 	if err != nil {
 		return false
 	}
@@ -312,7 +314,7 @@ func (s *ecsScanner) servesDomain(ctx context.Context, domain, ip string) bool {
 	return true
 }
 
-func (ds *DiscoverySuite) findAlternativeAddresses(domain string, port int, result *DNSDiscoveryResult) {
+func (ds *DiscoverySuite) findAlternativeAddresses(domain string, port, tlsPort int, result *DNSDiscoveryResult) {
 	if result == nil || ds.cfg == nil {
 		return
 	}
@@ -338,7 +340,7 @@ func (ds *DiscoverySuite) findAlternativeAddresses(domain string, port int, resu
 		log.DiscoveryLogf("  [%s] the known addresses do not serve the site from here, asking DNS how other regions are answered", domain)
 	}
 
-	scanner := newECSScanner(int(ds.flowMark), altScanQueryTimeout)
+	scanner := newECSScanner(int(ds.flowMark), tlsPort, altScanQueryTimeout)
 	resolver := scanner.pickResolver(ctx, domain)
 	if resolver == "" {
 		log.DiscoveryLogf("  [%s] no ECS-capable resolver answered, alternative addresses unknown", domain)

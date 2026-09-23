@@ -323,8 +323,18 @@ export function withStrategyOf(
   const merged = { ...Object.fromEntries(unrelated), ...(pins ?? {}) };
   return {
     ...existing,
-    tcp: strategy.tcp,
-    udp: strategy.udp,
+    tcp: {
+      ...strategy.tcp,
+      dport_filter: existing.tcp?.dport_filter ?? strategy.tcp.dport_filter,
+      rst_protection: existing.tcp?.rst_protection ?? strategy.tcp.rst_protection,
+      ip_block_detect: strategy.tcp.ip_block_detect?.enabled
+        ? strategy.tcp.ip_block_detect
+        : (existing.tcp?.ip_block_detect ?? strategy.tcp.ip_block_detect),
+    },
+    udp: {
+      ...strategy.udp,
+      dport_filter: existing.udp?.dport_filter ?? strategy.udp.dport_filter,
+    },
     fragmentation: strategy.fragmentation,
     faking: strategy.faking,
     dns: {

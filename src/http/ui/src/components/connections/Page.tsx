@@ -20,7 +20,10 @@ import {
   resolveDeviceName,
 } from "@utils";
 import { colors } from "@design";
-import { useWebSocket } from "@context/B4WsProvider";
+import {
+  useConnectionStream,
+  useStreamControls,
+} from "@context/B4WsProvider";
 import { AddIpModal } from "./AddIpModal";
 import { B4Config, B4SetConfig } from "@models/config";
 import { useSnackbar } from "@context/SnackbarProvider";
@@ -70,16 +73,15 @@ async function fetchAsnPrefixes(asnId: string): Promise<string[] | null> {
 
 export function ConnectionsPage() {
   const { t } = useTranslation();
+  const { domains, parsedDomains } = useConnectionStream();
   const {
-    domains,
-    parsedDomains,
     pauseDomains,
     showAll,
     setShowAll,
     setPauseDomains,
     clearDomains,
     resetDomainsBadge,
-  } = useWebSocket();
+  } = useStreamControls();
 
   const [view, setView] = useState<"aggregated" | "raw">(() => {
     const saved = localStorage.getItem("b4_connections_view");

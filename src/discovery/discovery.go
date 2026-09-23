@@ -132,6 +132,20 @@ func upgradeCheckURL(di DomainInput, r CheckResult) (string, bool) {
 	return u.String(), true
 }
 
+func checkURLTLSPort(raw string) int {
+	if u, err := url.Parse(raw); err == nil && u.Scheme == "http" {
+		return 443
+	}
+	return checkURLPort(raw)
+}
+
+func tlsAddress(ip string, port int) string {
+	if port <= 0 {
+		port = 443
+	}
+	return net.JoinHostPort(ip, strconv.Itoa(port))
+}
+
 func checkURLPort(raw string) int {
 	u, err := url.Parse(raw)
 	if err != nil {
