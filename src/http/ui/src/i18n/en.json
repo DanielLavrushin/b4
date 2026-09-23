@@ -2440,8 +2440,8 @@
       "PENDING": "queued",
       "CHECKING": "checking",
       "SKIPPED": "skipped",
-      "OK_PARTIAL": "OK, {{count}} address blocked",
-      "OK_PARTIAL_plural": "OK, {{count}} addresses blocked"
+      "OK_PARTIAL_one": "OK, {{count}} address blocked",
+      "OK_PARTIAL_other": "OK, {{count}} addresses blocked"
     },
     "kind": {
       "TLS_RST": "a TCP reset on the TLS handshake",

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"strings"
 	"time"
@@ -102,6 +103,13 @@ func (s *Service) userAgent() string {
 func (s *Service) do(ctx context.Context, req *http.Request, limit int64, timeout time.Duration) ([]byte, int, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		ConnectDone: func(_, addr string, err error) {
+			if err == nil {
+				s.noteAddress(addr)
+			}
+		},
+	})
 	req = req.WithContext(ctx)
 	req.Header.Set("User-Agent", s.userAgent())
 	resp, err := s.client().Do(req)

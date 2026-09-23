@@ -216,3 +216,27 @@ func TestCheckURLPortIsThePortTheCheckDials(t *testing.T) {
 		}
 	}
 }
+
+func TestScopePresetsNarrowsEachStrategyToTheUpgradedSites(t *testing.T) {
+	cached := ConfigPreset{Name: "cached-1-combo"}
+	published := ConfigPreset{Name: "hub-both", Domains: []string{"dead.example", "other.example"}}
+	unrelated := ConfigPreset{Name: "hub-other", Domains: []string{"other.example"}}
+
+	got := scopePresets([]ConfigPreset{cached, published, unrelated}, []string{"dead.example"})
+
+	names := make([]string, 0, len(got))
+	for _, p := range got {
+		names = append(names, p.Name)
+	}
+	if len(got) != 2 || got[0].Name != "cached-1-combo" || got[1].Name != "hub-both" {
+		t.Fatalf("re-run = %v, want the cached strategy and the community set published for dead.example, in their original order", names)
+	}
+	for _, p := range got {
+		if len(p.Domains) != 1 || p.Domains[0] != "dead.example" {
+			t.Fatalf("%s re-runs on %v, want only the upgraded site", p.Name, p.Domains)
+		}
+	}
+	if len(published.Domains) != 2 {
+		t.Fatal("scoping must not change the community set's own site list")
+	}
+}

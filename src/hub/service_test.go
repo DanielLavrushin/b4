@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -730,5 +731,20 @@ func TestSyncLearnsTheNetworkFromTheHub(t *testing.T) {
 	}
 	if n := reloaded.svc.Network(); n.ASN != "8359" || n.CC != "RU" {
 		t.Fatalf("a changed network must replace the stored one, got %+v", n)
+	}
+}
+
+func TestSyncRecordsTheAddressItReached(t *testing.T) {
+	f := hubtest.New(t)
+	f.Publish(t, sampleCatalogue(t, 1, 1), time.Now().Add(time.Hour))
+	box := newTestBox(t, f, t.TempDir())
+	for i := 0; i < 2; i++ {
+		if _, err := box.svc.Sync(context.Background()); err != nil {
+			t.Fatalf("sync: %v", err)
+		}
+	}
+	u, _ := url.Parse(f.URL())
+	if got := box.svc.ConnectedAddresses(); len(got) != 1 || got[0] != u.Hostname() {
+		t.Fatalf("ConnectedAddresses = %v, want [%s] once: the status names a set by the address b4's own connection reached", got, u.Hostname())
 	}
 }

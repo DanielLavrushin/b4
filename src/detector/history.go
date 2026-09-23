@@ -7,12 +7,15 @@ import (
 	"sync"
 
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/utils"
 )
 
 const (
 	detectorHistoryFile = "detector_history.json"
 	maxHistoryEntries   = 50
 )
+
+var historyFileMu sync.Mutex
 
 type History struct {
 	Entries []*Suite `json:"entries"`
@@ -61,10 +64,20 @@ func (h *History) Save(configPath string) error {
 	if err != nil {
 		return log.Errorf("failed to marshal detector history: %v", err)
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := utils.WriteFileAtomic(path, data, 0644); err != nil {
 		return log.Errorf("failed to write detector history: %v", err)
 	}
 	return nil
+}
+
+func UpdateHistory(configPath string, change func(*History) bool) error {
+	historyFileMu.Lock()
+	defer historyFileMu.Unlock()
+	history := LoadHistory(configPath)
+	if !change(history) {
+		return nil
+	}
+	return history.Save(configPath)
 }
 
 func (h *History) Add(s *Suite, final SuiteStatus) {
@@ -116,9 +129,11 @@ func (h *History) Get(id string) *Suite {
 }
 
 func SaveToHistory(s *Suite, configPath string, final SuiteStatus) {
-	history := LoadHistory(configPath)
-	history.Add(s, final)
-	if err := history.Save(configPath); err != nil {
+	err := UpdateHistory(configPath, func(history *History) bool {
+		history.Add(s, final)
+		return true
+	})
+	if err != nil {
 		log.Errorf("Failed to save detector history: %v", err)
 	}
 }

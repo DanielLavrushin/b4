@@ -25,6 +25,8 @@ const (
 
 	baseScheme  = "https://"
 	plainScheme = "http://"
+
+	maxHubAddresses = 8
 )
 
 var DefaultBases = []string{DefaultBaseURL}
@@ -60,6 +62,7 @@ type Service struct {
 	preferredBase string
 	syncedBase    string
 	plainMode     bool
+	addresses     []string
 
 	identityMu      sync.Mutex
 	identity        *hubwire.Identity
@@ -335,6 +338,28 @@ func (s *Service) plainClient() *http.Client {
 		s.plainMark = mark
 	}
 	return s.plain
+}
+
+func (s *Service) noteAddress(hostport string) {
+	host, _, err := net.SplitHostPort(hostport)
+	if err != nil || net.ParseIP(host) == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := []string{host}
+	for _, addr := range s.addresses {
+		if addr != host && len(kept) < maxHubAddresses {
+			kept = append(kept, addr)
+		}
+	}
+	s.addresses = kept
+}
+
+func (s *Service) ConnectedAddresses() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]string(nil), s.addresses...)
 }
 
 func (s *Service) PlainMode() bool {

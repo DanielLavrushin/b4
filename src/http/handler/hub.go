@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -215,6 +216,7 @@ type hubStatusResponse struct {
 func (api *API) hubStatus(svc *hub.Service) hubStatusResponse {
 	st := svc.Status()
 	hosts := make([]string, 0, len(st.URLs))
+	addresses := svc.ConnectedAddresses()
 	seen := map[string]bool{}
 	for _, raw := range st.URLs {
 		u, err := url.Parse(raw)
@@ -222,6 +224,9 @@ func (api *API) hubStatus(svc *hub.Service) hubStatusResponse {
 			continue
 		}
 		seen[u.Hostname()] = true
+		if net.ParseIP(u.Hostname()) != nil {
+			addresses = append(addresses, u.Hostname())
+		}
 		hosts = append(hosts, u.Hostname())
 	}
 	matches := make([]SetDomainMatch, 0)
@@ -230,7 +235,37 @@ func (api *API) hubStatus(svc *hub.Service) hubStatusResponse {
 			matches = append(matches, m)
 		}
 	}
+	if globalPool != nil {
+		matches = append(matches, matchAddressesToSets(globalPool.GetMatcher(), addresses)...)
+	}
 	return hubStatusResponse{Status: st, SetMatches: matches}
+}
+
+func matchAddressesToSets(matcher *sni.SuffixSet, addresses []string) []SetDomainMatch {
+	if matcher == nil {
+		return nil
+	}
+	var matches []SetDomainMatch
+	seen := map[string]bool{}
+	for _, addr := range addresses {
+		ip := net.ParseIP(addr)
+		if ip == nil || seen[ip.String()] {
+			continue
+		}
+		seen[ip.String()] = true
+		if ok, set := matcher.MatchIP(ip); ok && set != nil {
+			matches = append(matches, SetDomainMatch{
+				Domain:   ip.String(),
+				SetName:  set.Name,
+				SetId:    set.Id,
+				Via:      "ip",
+				Relation: string(sni.RelationCovered),
+				Entry:    ip.String(),
+				Enabled:  set.Enabled,
+			})
+		}
+	}
+	return matches
 }
 
 // @Summary Hub status

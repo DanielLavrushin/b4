@@ -198,20 +198,61 @@ func (ds *DiscoverySuite) rewriteDeadEndCheckURLs(checksPerDomain int) []string 
 	return upgraded
 }
 
-func (ds *DiscoverySuite) upgradeDeadEndCheckURLs(presets []ConfigPreset) []StrategyFamily {
+func (ds *DiscoverySuite) upgradeDeadEndCheckURLs(presets, cached []ConfigPreset) []StrategyFamily {
 	upgraded := ds.rewriteDeadEndCheckURLs(len(presets))
 	if len(upgraded) == 0 {
 		return nil
 	}
 
-	scoped := make([]ConfigPreset, len(presets))
-	for i, p := range presets {
-		p.Domains = upgraded
-		scoped[i] = p
-	}
+	scoped := scopePresets(presets, upgraded)
 	ds.storeResultsMulti(scoped[0], ds.testPresetAllDomains(scoped[0]))
+	ds.retestEarlyPresets(append(scopePresets(cached, upgraded), scopePresets(ds.hubPresets, upgraded)...))
 	ds.determineBest()
 	return ds.runPhase1Multi(scoped)
+}
+
+func scopePresets(presets []ConfigPreset, domains []string) []ConfigPreset {
+	out := make([]ConfigPreset, 0, len(presets))
+	for _, p := range presets {
+		var covered []string
+		for _, d := range domains {
+			if p.covers(d) {
+				covered = append(covered, d)
+			}
+		}
+		if len(covered) == 0 {
+			continue
+		}
+		p.Domains = covered
+		out = append(out, p)
+	}
+	return out
+}
+
+func (ds *DiscoverySuite) retestEarlyPresets(early []ConfigPreset) {
+	if len(early) == 0 {
+		return
+	}
+	checks := 0
+	for _, p := range early {
+		checks += len(p.Domains)
+	}
+	ds.CheckSuite.mu.Lock()
+	ds.TotalChecks += checks
+	ds.CheckSuite.mu.Unlock()
+
+	ds.setPhase(PhaseCached)
+	log.DiscoveryLogf("Re-testing %d cached and community strategies on the upgraded https addresses", len(early))
+	for _, preset := range early {
+		if ds.interrupted() {
+			break
+		}
+		if preset.Config.Faking.SNIType == config.FakePayloadRandom {
+			ds.applyBestPayload(&preset.Config.Faking)
+		}
+		ds.storeResultsMulti(preset, ds.testPresetAllDomains(preset))
+	}
+	ds.setPhase(PhaseStrategy)
 }
 
 func parseDiscoveryInputs(inputs []string) []DomainInput {
@@ -410,7 +451,7 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	ds.determineBest()
 
 	if !ds.interrupted() {
-		for _, family := range ds.upgradeDeadEndCheckURLs(phase1Presets) {
+		for _, family := range ds.upgradeDeadEndCheckURLs(phase1Presets, cachedPresets) {
 			if !containsFamily(workingFamilies, family) {
 				workingFamilies = append(workingFamilies, family)
 			}

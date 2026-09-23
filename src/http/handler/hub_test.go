@@ -22,6 +22,7 @@ import (
 	"github.com/daniellavrushin/b4/hub"
 	"github.com/daniellavrushin/b4/hub/hubtest"
 	"github.com/daniellavrushin/b4/hubwire"
+	"github.com/daniellavrushin/b4/sni"
 )
 
 var hubTestBase struct {
@@ -791,5 +792,21 @@ func TestCommunityPresetsCoverEveryRequestedDomain(t *testing.T) {
 
 	if got := env.api.communityPresets([]string{"a.example", "b.example"}, true); got != nil {
 		t.Errorf("skip must return no community presets, got %d", len(got))
+	}
+}
+
+func TestMatchAddressesToSetsNamesTheSetCoveringTheHubAddress(t *testing.T) {
+	set := config.NewSetConfig()
+	set.Id, set.Name, set.Enabled = "set-cloud", "cloud", true
+	set.Targets.IpsToMatch = []string{"20.0.0.0/8"}
+	matcher := sni.NewSuffixSet([]*config.SetConfig{&set})
+
+	got := matchAddressesToSets(matcher, []string{"20.1.2.3", "8.8.8.8", "20.1.2.3", "not-an-address"})
+
+	if len(got) != 1 || got[0].SetId != "set-cloud" || got[0].Domain != "20.1.2.3" || got[0].Via != "ip" || !got[0].Enabled {
+		t.Fatalf("matches = %+v, want the cloud set once for 20.1.2.3: a set that targets the hub by address applies its strategy to b4's own connection too", got)
+	}
+	if matchAddressesToSets(nil, []string{"20.1.2.3"}) != nil {
+		t.Fatal("without a running engine there is no matcher and nothing to report")
 	}
 }
