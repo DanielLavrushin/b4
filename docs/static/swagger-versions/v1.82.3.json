@@ -1820,6 +1820,45 @@
                 }
             }
         },
+        "/discovery/replace": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Discovery"
+                ],
+                "summary": "Replace the strategy of an existing set with a discovered one",
+                "parameters": [
+                    {
+                        "description": "Target set, discovered strategy, domains and pins",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.DiscoveryReplaceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/discovery/similar": {
             "post": {
                 "security": [
@@ -7221,6 +7260,32 @@
                 },
                 "success": {
                     "type": "boolean"
+                }
+            }
+        },
+        "handler.DiscoveryReplaceRequest": {
+            "type": "object",
+            "properties": {
+                "domains": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "pins": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "set": {
+                    "$ref": "#/definitions/config.SetConfig"
+                },
+                "set_id": {
+                    "type": "string"
                 }
             }
         },
