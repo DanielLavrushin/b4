@@ -31,6 +31,11 @@ func (s *Service) Sync(ctx context.Context) (bool, error) {
 	retried, _, retryErr := s.syncOnce(ctx, trusted)
 	if retryErr != nil {
 		s.setPlainMode(!plain)
+		path := "through b4's own packet processing"
+		if plain {
+			path = "with b4's own packet processing bypassed"
+		}
+		err = fmt.Errorf("%w; %s: %w", err, path, retryErr)
 		s.markFailed(err)
 		return changed, err
 	}
@@ -43,8 +48,9 @@ func (s *Service) Sync(ctx context.Context) (bool, error) {
 }
 
 func transportFailure(err error) bool {
+	var te transportError
 	var dnsErr *net.DNSError
-	return !errors.As(err, &dnsErr)
+	return errors.As(err, &te) && !errors.As(err, &dnsErr)
 }
 
 func (s *Service) syncOnce(ctx context.Context, trusted []string) (bool, bool, error) {
@@ -131,9 +137,6 @@ func (s *Service) syncOnce(ctx context.Context, trusted []string) (bool, bool, e
 	if lastErr == nil {
 		lastErr = ErrUnreachable
 	} else {
-		if errors.Is(lastErr, hubwire.ErrManifestSigner) {
-			retry = false
-		}
 		others := make([]string, 0, len(failures))
 		skipped := false
 		for _, f := range failures {

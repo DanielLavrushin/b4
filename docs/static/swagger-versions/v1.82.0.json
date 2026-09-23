@@ -2794,6 +2794,37 @@
                 }
             }
         },
+        "/hub/status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Reports whether the community hub is enabled and configured, the identity key, the last sync and the loaded catalogue.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Hub"
+                ],
+                "summary": "Hub status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/hub.Status"
+                        }
+                    },
+                    "409": {
+                        "description": "hub_disabled or hub_not_configured",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/hub/sync": {
             "post": {
                 "security": [
@@ -8209,9 +8240,6 @@
         "hub.Status": {
             "type": "object",
             "properties": {
-                "active": {
-                    "type": "string"
-                },
                 "catalogue": {
                     "$ref": "#/definitions/hub.CatalogueStatus"
                 },
@@ -8247,9 +8275,6 @@
                 },
                 "outbox": {
                     "type": "integer"
-                },
-                "self_bypass": {
-                    "type": "boolean"
                 },
                 "urls": {
                     "type": "array",

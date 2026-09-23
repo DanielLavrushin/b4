@@ -43,9 +43,13 @@ type Service struct {
 	getCfg  func() *config.Config
 	version string
 	http    *http.Client
-	plain   *http.Client
 	builtin []string
 	now     func() time.Time
+
+	plainMu    sync.Mutex
+	plain      *http.Client
+	plainMark  uint
+	plainFixed bool
 
 	mu            sync.RWMutex
 	manifest      *hubwire.Manifest
@@ -84,18 +88,16 @@ type Service struct {
 
 func New(getCfg func() *config.Config, opts Options) *Service {
 	s := &Service{
-		getCfg:  getCfg,
-		version: opts.Version,
-		http:    opts.HTTPClient,
-		plain:   opts.PlainClient,
-		builtin: opts.BuiltinBases,
-		now:     opts.Now,
+		getCfg:     getCfg,
+		version:    opts.Version,
+		http:       opts.HTTPClient,
+		plain:      opts.PlainClient,
+		plainFixed: opts.PlainClient != nil,
+		builtin:    opts.BuiltinBases,
+		now:        opts.Now,
 	}
 	if s.http == nil {
 		s.http = netprobe.HTTPClient(int(config.SelfDialMark), RequestTimeout)
-	}
-	if s.plain == nil {
-		s.plain = netprobe.HTTPClient(int(s.bypassMark()), RequestTimeout)
 	}
 	if s.builtin == nil {
 		s.builtin = DefaultBases
@@ -314,9 +316,25 @@ func (s *Service) client() *http.Client {
 	plain := s.plainMode
 	s.mu.RUnlock()
 	if plain {
-		return s.plain
+		return s.plainClient()
 	}
 	return s.http
+}
+
+func (s *Service) plainClient() *http.Client {
+	s.plainMu.Lock()
+	defer s.plainMu.Unlock()
+	if s.plainFixed {
+		return s.plain
+	}
+	if mark := s.bypassMark(); s.plain == nil || mark != s.plainMark {
+		if s.plain != nil {
+			s.plain.CloseIdleConnections()
+		}
+		s.plain = netprobe.HTTPClient(int(mark), RequestTimeout)
+		s.plainMark = mark
+	}
+	return s.plain
 }
 
 func (s *Service) PlainMode() bool {

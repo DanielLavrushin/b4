@@ -207,14 +207,6 @@ func (api *API) installHubPayloads(set *config.SetConfig, payloads []hubwire.Pay
 	return installed, nil
 }
 
-// @Summary Hub status
-// @Description Reports whether the community hub is enabled and configured, the identity key, the last sync and the loaded catalogue.
-// @Tags Hub
-// @Produce json
-// @Success 200 {object} hub.Status
-// @Failure 409 {object} APIError "hub_disabled or hub_not_configured"
-// @Security BearerAuth
-// @Router /hub/status [get]
 type hubStatusResponse struct {
 	hub.Status
 	SetMatches []SetDomainMatch `json:"set_matches"`
@@ -241,6 +233,14 @@ func (api *API) hubStatus(svc *hub.Service) hubStatusResponse {
 	return hubStatusResponse{Status: st, SetMatches: matches}
 }
 
+// @Summary Hub status
+// @Description Reports whether the community hub is enabled and configured, the identity key, the last sync and the loaded catalogue.
+// @Tags Hub
+// @Produce json
+// @Success 200 {object} hubStatusResponse
+// @Failure 409 {object} APIError "hub_disabled or hub_not_configured"
+// @Security BearerAuth
+// @Router /hub/status [get]
 func (api *API) handleHubStatus(w http.ResponseWriter, r *http.Request) {
 	if !hubGetRequest(w, r) {
 		return
@@ -256,7 +256,7 @@ func (api *API) handleHubStatus(w http.ResponseWriter, r *http.Request) {
 // @Description Fetches the signed manifest and the catalogue from the first hub base that answers, then delivers any queued votes.
 // @Tags Hub
 // @Produce json
-// @Success 200 {object} hub.Status
+// @Success 200 {object} hubStatusResponse
 // @Failure 502 {object} APIError "sync_failed"
 // @Security BearerAuth
 // @Router /hub/sync [post]
