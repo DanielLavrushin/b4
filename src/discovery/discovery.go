@@ -137,7 +137,7 @@ func deadEndAnswer(results map[string]*DomainPresetResult) (CheckResult, bool) {
 	}
 	var first *DomainPresetResult
 	for _, r := range results {
-		if r == nil || r.Status != CheckStatusFailed || r.StatusCode < 400 || r.BytesRead >= minSuccessBytes {
+		if r == nil || r.Status != CheckStatusFailed || r.StatusCode < 400 || r.BytesRead >= minSuccessBytes || strings.Contains(r.Error, "ISP block page") {
 			return CheckResult{}, false
 		}
 		if first == nil {

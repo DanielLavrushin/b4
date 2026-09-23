@@ -418,23 +418,28 @@ func (ds *DiscoverySuite) findAlternativeAddresses(domain string, result *DNSDis
 		}
 		return
 	}
-	var fallback []string
+	var fallback, unprobed []string
 	for _, cand := range alive {
-		if len(fallback) >= altScanFallbackTargets {
+		if len(fallback)+len(unprobed) >= altScanFallbackTargets {
 			break
 		}
-		if result.isGateway(cand.ip) || containsString(refused, cand.ip) {
+		if result.isGateway(cand.ip) {
 			continue
 		}
-		fallback = append(fallback, cand.ip)
+		if containsString(refused, cand.ip) {
+			fallback = append(fallback, cand.ip)
+			continue
+		}
+		unprobed = append(unprobed, cand.ip)
 	}
-	for i, hit := range ds.gatewayTerminated(ctx, fallback) {
+	for i, hit := range ds.gatewayTerminated(ctx, unprobed) {
 		if hit {
-			result.GatewayIPs = appendUnique(result.GatewayIPs, fallback[i])
+			result.GatewayIPs = appendUnique(result.GatewayIPs, unprobed[i])
 			continue
 		}
-		result.AlternativeIPs = append(result.AlternativeIPs, fallback[i])
+		fallback = append(fallback, unprobed[i])
 	}
+	result.AlternativeIPs = append(result.AlternativeIPs, fallback...)
 	if len(result.AlternativeIPs) == 0 {
 		log.DiscoveryLogf("  ✗ [%s] every reachable alternative address is answered by the first hop as well", domain)
 		return
