@@ -251,6 +251,9 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
   const data = status.data;
   const addresses = data ? hubAddresses(data, hub?.urls ?? []) : [];
   const learnedCount = addresses.filter((a) => a.role === "learned").length;
+  const matchedSets = (data?.set_matches ?? []).filter(
+    (m, i, all) => all.findIndex((o) => (o.set_id || o.set_name) === (m.set_id || m.set_name)) === i,
+  );
 
   return (
     <B4IntegrationCard
@@ -426,6 +429,41 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
                     : t("settings.Hub.status.hubHint")
                 }
               />
+              {matchedSets.length > 0 && (
+                <StatusRow
+                  label={t("settings.Hub.status.matchedBy")}
+                  value={
+                    <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" sx={{ pt: 0.25 }}>
+                      {matchedSets.map((m) => (
+                        <Tooltip key={m.set_id || m.set_name} arrow title={m.entry}>
+                          <Chip
+                            size="small"
+                            label={m.set_name}
+                            sx={{ fontFamily: fonts.mono, fontSize: typography.sizes.xs, bgcolor: colors.accent.tertiary, color: colors.text.secondary }}
+                          />
+                        </Tooltip>
+                      ))}
+                    </Stack>
+                  }
+                  hint={t("settings.Hub.status.matchedByHint")}
+                />
+              )}
+              {data.self_bypass && (
+                <StatusRow
+                  label={t("settings.Hub.status.selfBypass")}
+                  value={
+                    <Box component="span" sx={{ color: colors.state.warning }}>
+                      {t("settings.Hub.status.selfBypassValue")}
+                    </Box>
+                  }
+                  hint={t(
+                    matchedSets.length > 0
+                      ? "settings.Hub.status.selfBypassHintSet"
+                      : "settings.Hub.status.selfBypassHint",
+                    { set: matchedSets.map((m) => m.set_name).join(", ") },
+                  )}
+                />
+              )}
               <StatusRow
                 label={t("settings.Hub.status.hubKey")}
                 value={

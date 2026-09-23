@@ -5,7 +5,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -164,6 +166,200 @@ func TestSyncFailsWhenANewerCatalogueIsNotDelivered(t *testing.T) {
 	}
 	if st := box.svc.Status(); st.Active != "" {
 		t.Errorf("no base delivered the stored catalogue, yet the status names %q", st.Active)
+	}
+}
+
+type failingTransport struct{ calls atomic.Int32 }
+
+func (f *failingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	f.calls.Add(1)
+	return nil, errors.New("read: connection reset by peer")
+}
+
+func TestSyncFallsBackToTheBypassMarkWhenOwnProcessingBreaksTheConnection(t *testing.T) {
+	f := hubtest.New(t)
+	f.Publish(t, sampleCatalogue(t, 1, 1), time.Now().Add(time.Hour))
+	dir := t.TempDir()
+	cfg := f.Config(t, filepath.Join(dir, "config.json"))
+	ptr := &atomic.Pointer[config.Config]{}
+	ptr.Store(cfg)
+	broken := &failingTransport{}
+	svc := New(func() *config.Config { return ptr.Load() }, Options{
+		Version:      "1.83.0",
+		HTTPClient:   &http.Client{Transport: broken},
+		PlainClient:  f.Client(),
+		BuiltinBases: []string{},
+	})
+
+	if changed, err := svc.Sync(context.Background()); err != nil || !changed {
+		t.Fatalf("the sync must succeed through the bypass client: changed=%v err=%v", changed, err)
+	}
+	st := svc.Status()
+	if !st.SelfBypass || st.LastError != "" || st.Active != f.URL() {
+		t.Fatalf("status must report the bypass and a clean sync: %+v", st)
+	}
+	if broken.calls.Load() == 0 {
+		t.Fatalf("the protected client must be tried first")
+	}
+
+	protectedCalls := broken.calls.Load()
+	f.Publish(t, sampleCatalogue(t, 1, 2), time.Now().Add(time.Hour))
+	if changed, err := svc.Sync(context.Background()); err != nil || !changed {
+		t.Fatalf("the next sync must go straight to the bypass client: changed=%v err=%v", changed, err)
+	}
+	if broken.calls.Load() != protectedCalls {
+		t.Errorf("the protected client was tried again although the bypass one worked last time")
+	}
+	if !svc.PlainMode() {
+		t.Errorf("the bypass mode must stick while it works")
+	}
+
+	f.SetDown(true)
+	if _, err := svc.Sync(context.Background()); !errors.Is(err, ErrUnreachable) {
+		t.Fatalf("a hub that answers 503 must fail the sync, got %v", err)
+	}
+	if !svc.PlainMode() {
+		t.Errorf("a failed sync must keep the last working mode")
+	}
+	if st := svc.Status(); st.LastError == "" || st.Active != "" {
+		t.Errorf("the failure must be visible: %+v", st)
+	}
+}
+
+func serviceWithClients(t *testing.T, f *hubtest.FakeHub, protected, plain *http.Client, edit func(*config.Config)) *Service {
+	t.Helper()
+	cfg := f.Config(t, filepath.Join(t.TempDir(), "config.json"))
+	if edit != nil {
+		edit(cfg)
+	}
+	ptr := &atomic.Pointer[config.Config]{}
+	ptr.Store(cfg)
+	return New(func() *config.Config { return ptr.Load() }, Options{
+		Version:      "1.83.0",
+		HTTPClient:   protected,
+		PlainClient:  plain,
+		BuiltinBases: []string{},
+	})
+}
+
+func TestSyncDoesNotRetryWhenTheHubAnswered(t *testing.T) {
+	f := hubtest.New(t)
+	f.Publish(t, sampleCatalogue(t, 1, 1), time.Now().Add(time.Hour))
+	f.SetDown(true)
+	plain := &failingTransport{}
+	svc := serviceWithClients(t, f, f.Client(), &http.Client{Transport: plain}, nil)
+
+	if _, err := svc.Sync(context.Background()); !errors.Is(err, ErrUnreachable) {
+		t.Fatalf("expected an unreachable failure, got %v", err)
+	}
+	if plain.calls.Load() != 0 || svc.PlainMode() {
+		t.Errorf("the hub answered 503, so b4's own packet processing did not break the connection and the bypass must not be tried")
+	}
+}
+
+func TestSyncRetriesARefusedBaseAfterASignerFailure(t *testing.T) {
+	f := hubtest.New(t)
+	f.Publish(t, sampleCatalogue(t, 1, 1), time.Now().Add(time.Hour))
+	other, _ := hubwire.NewIdentity()
+	plain := &failingTransport{}
+	svc := serviceWithClients(t, f, f.Client(), &http.Client{Transport: plain}, func(cfg *config.Config) {
+		cfg.System.Hub.URLs = []string{"https://127.0.0.1:9", f.URL()}
+		cfg.System.Hub.PublicKey = other.KeyID()
+	})
+
+	if _, err := svc.Sync(context.Background()); !errors.Is(err, hubwire.ErrManifestSigner) {
+		t.Fatalf("expected the signer failure of the last base, got %v", err)
+	}
+	if plain.calls.Load() == 0 {
+		t.Errorf("the refused base must still be retried over the bypass when a later base failed the signer check")
+	}
+}
+
+func TestSyncNamesBothPathsWhenBothFail(t *testing.T) {
+	f := hubtest.New(t)
+	f.Publish(t, sampleCatalogue(t, 1, 1), time.Now().Add(time.Hour))
+	svc := serviceWithClients(t, f, &http.Client{Transport: &failingTransport{}}, &http.Client{Transport: &failingTransport{}}, nil)
+
+	_, err := svc.Sync(context.Background())
+	if !errors.Is(err, ErrUnreachable) || !strings.Contains(err.Error(), "; with b4's own packet processing bypassed: ") {
+		t.Fatalf("the error must carry the failure of each path, got %v", err)
+	}
+	if st := svc.Status(); !strings.Contains(st.LastError, "with b4's own packet processing bypassed: ") {
+		t.Errorf("the status must carry both failures too: %q", st.LastError)
+	}
+	if svc.PlainMode() {
+		t.Errorf("a failure on both paths must keep the mode the sync started in")
+	}
+}
+
+func TestSyncDoesNotRetryOnASignerOrLookupFailure(t *testing.T) {
+	f := hubtest.New(t)
+	f.Publish(t, sampleCatalogue(t, 1, 1), time.Now().Add(time.Hour))
+	dir := t.TempDir()
+	cfg := f.Config(t, filepath.Join(dir, "config.json"))
+	ptr := &atomic.Pointer[config.Config]{}
+	ptr.Store(cfg)
+	plain := &failingTransport{}
+	svc := New(func() *config.Config { return ptr.Load() }, Options{
+		Version:      "1.83.0",
+		HTTPClient:   f.Client(),
+		PlainClient:  &http.Client{Transport: plain},
+		BuiltinBases: []string{},
+	})
+	other, _ := hubwire.NewIdentity()
+	clone := cfg.Clone()
+	clone.System.Hub.PublicKey = other.KeyID()
+	ptr.Store(clone)
+	if _, err := svc.Sync(context.Background()); !errors.Is(err, hubwire.ErrManifestSigner) {
+		t.Fatalf("expected a signer failure, got %v", err)
+	}
+	if plain.calls.Load() != 0 || svc.PlainMode() {
+		t.Errorf("a signer failure must not be retried with the other mark")
+	}
+
+	ptr.Store(cfg)
+	lookup := cfg.Clone()
+	lookup.System.Hub.URLs = []string{"https://hub.invalid"}
+	ptr.Store(lookup)
+	if _, err := svc.Sync(context.Background()); !errors.Is(err, ErrUnreachable) {
+		t.Fatalf("expected an unreachable failure, got %v", err)
+	}
+	if plain.calls.Load() != 0 || svc.PlainMode() {
+		t.Errorf("a lookup failure must not be retried with the other mark")
+	}
+}
+
+func TestSyncNamesWhyABaseDidNotAnswer(t *testing.T) {
+	f := hubtest.New(t)
+	f.Publish(t, sampleCatalogue(t, 1, 1), time.Now().Add(time.Hour))
+	box := newTestBox(t, f, t.TempDir())
+	f.SetDown(true)
+	_, err := box.svc.Sync(context.Background())
+	if !errors.Is(err, ErrUnreachable) || !strings.Contains(err.Error(), f.URL()+" did not answer: ") || strings.HasSuffix(err.Error(), "did not answer: ") {
+		t.Fatalf("the error must carry the base and the cause, got %v", err)
+	}
+	if st := box.svc.Status(); !strings.Contains(st.LastError, "did not answer: ") {
+		t.Errorf("the status must carry the cause too: %q", st.LastError)
+	}
+
+	f.SetDown(false)
+	other := hubtest.New(t)
+	other.Identity = f.Identity
+	other.Publish(t, sampleCatalogue(t, 1, 1), time.Now().Add(time.Hour))
+	other.SetDown(true)
+	box.update(func(cfg *config.Config) { cfg.System.Hub.URLs = []string{other.URL(), "https://127.0.0.1:9", f.URL()} })
+	f.SetDown(true)
+	_, err = box.svc.Sync(context.Background())
+	if err == nil {
+		t.Fatal("every base is down, the sync must fail")
+	}
+	for _, base := range []string{other.URL(), "https://127.0.0.1:9", f.URL()} {
+		if !strings.Contains(err.Error(), base) {
+			t.Errorf("the error must name every base that failed, %s is missing in %v", base, err)
+		}
+	}
+	if strings.Index(err.Error(), other.URL()) > strings.Index(err.Error(), f.URL()) {
+		t.Errorf("the bases must be listed in the order they were tried: %v", err)
 	}
 }
 
@@ -535,5 +731,20 @@ func TestSyncLearnsTheNetworkFromTheHub(t *testing.T) {
 	}
 	if n := reloaded.svc.Network(); n.ASN != "8359" || n.CC != "RU" {
 		t.Fatalf("a changed network must replace the stored one, got %+v", n)
+	}
+}
+
+func TestSyncRecordsTheAddressItReached(t *testing.T) {
+	f := hubtest.New(t)
+	f.Publish(t, sampleCatalogue(t, 1, 1), time.Now().Add(time.Hour))
+	box := newTestBox(t, f, t.TempDir())
+	for i := 0; i < 2; i++ {
+		if _, err := box.svc.Sync(context.Background()); err != nil {
+			t.Fatalf("sync: %v", err)
+		}
+	}
+	u, _ := url.Parse(f.URL())
+	if got := box.svc.ConnectedAddresses(); len(got) != 1 || got[0] != u.Hostname() {
+		t.Fatalf("ConnectedAddresses = %v, want [%s] once: the status names a set by the address b4's own connection reached", got, u.Hostname())
 	}
 }

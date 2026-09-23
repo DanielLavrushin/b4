@@ -91,7 +91,8 @@ A pin replaces what DNS hands out for a name, without a hosts file on every devi
 - The address comes first, then the names it should answer for.
 - A pin covers each name and its subdomains, and the longest matching entry wins.
 - **A pin only applies to a name the set already targets.** Pinning a name that no target of the set covers does nothing, and the interface warns about it and offers to add the name to the set's domains.
-- Only A and AAAA queries are answered from pins, and only with addresses of the matching family. An AAAA query against a name pinned to one IPv4 address falls through to the resolver.
+- The pin list is the whole address answer for the name. A and AAAA queries are answered with the pinned addresses of the matching family; an AAAA query for a name pinned to IPv4 only, and the CNAME, SVCB, HTTPS and ANY queries, get an empty answer rather than the resolver's, because those answers would carry the site's CNAME and the system cache would follow it past the pins once the pin answer expired. An A query for a name pinned to IPv6 only still goes to the resolver, since an IPv4-only client has nothing else, and so do the other record types, MX, TXT or SRV among them.
+- In a set without routing, a pinned address the router cannot reach on TCP port 443 is left out of the answer. b4 connects to every such pin when it starts, when a set is saved and every `system.ip_health.retest_interval_sec` seconds (300 by default), and an address that stops answering is tried again at the same interval. The pins of a set with routing are not checked: the check connects straight from the router, while the set's connections leave through its route, so an address that fails directly can still be the right one. A round in which no pin answers at all, as during an uplink outage, proves nothing and changes no verdict. When every pin of a family is unreachable the pins are answered anyway, so a pinned host that simply does not listen on port 443 keeps its pin; only with IP block detection on does such a query go to the resolver instead.
 - Pinned answers are handed out with a 60 second TTL.
 - Pins are read even when **Enable DNS Redirect** is off, so a set can pin a few names and leave everything else with the client's resolver.
 
@@ -199,6 +200,7 @@ Every decision b4 makes about a query is recorded on the [Traffic](./connections
 | `dns-forward-><ip>` | Resolved by b4 against that plain DNS server |
 | `dns-passthrough` | Matched a set, but the set has no resolver configured, so the query was forwarded unchanged |
 | `dns-pin` | Answered from a pinned address |
+| `dns-pin-empty` | A pinned name was asked for a record type the pin list does not hold, so the answer was empty |
 | `dns-heal` | An answer had unreachable addresses replaced, by the set's IP block detection |
 | `dns-sinkhole` | Answered with NXDOMAIN by a blocking set |
 | `dns-block` | Dropped by a blocking set |

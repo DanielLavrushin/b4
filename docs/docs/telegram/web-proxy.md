@@ -92,7 +92,7 @@ web carrier up from <ip> (secret=<label>)
 web proxy new stream <n> from ...
 ```
 
-followed by the ordinary relay line for the data centre the stream reached. Connections carried this way also appear in the connections list tagged as MTProto with the secret's name.
+followed by the ordinary relay line for the data centre the stream reached. Connections carried this way also appear on the [Traffic](../connections.md) page, labelled as MTProto with the secret's name.
 
 ## Boundaries
 

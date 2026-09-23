@@ -34,13 +34,21 @@ func GetHistory(configPath string) *DiscoveryHistory {
 
 // SaveToHistory persists the suite results to history file.
 func SaveToHistory(suite *CheckSuite, configPath string) {
-	history := LoadDiscoveryHistory(configPath)
-	history.AddFromSuite(suite)
-	if err := history.Save(configPath); err != nil {
+	err := UpdateHistory(configPath, func(history *DiscoveryHistory) bool {
+		history.AddFromSuite(suite)
+		return true
+	})
+	if err != nil {
 		log.Errorf("Failed to save discovery history: %v", err)
 	} else {
 		log.Tracef("Saved discovery results to history")
 	}
+}
+
+func MarkAppliedInHistory(configPath string, domains []string, preset, setID string) error {
+	return UpdateHistory(configPath, func(history *DiscoveryHistory) bool {
+		return history.MarkApplied(domains, preset, setID) > 0
+	})
 }
 
 func NewCheckSuite(domainInputs []DomainInput) *CheckSuite {

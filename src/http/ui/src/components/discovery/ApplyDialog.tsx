@@ -29,6 +29,8 @@ import {
 } from "@utils";
 import { StrategySummary } from "./StrategySummary";
 
+type ApplyMode = "new" | "existing" | "replace";
+
 interface ApplyDialogProps {
   open: boolean;
   target: ApplyTarget | null;
@@ -37,6 +39,12 @@ interface ApplyDialogProps {
   onCreate: (set: B4SetConfig) => void;
   onAddToExisting: (
     setId: string,
+    domains: string[],
+    pins?: Record<string, string[]>,
+  ) => void;
+  onReplaceStrategy: (
+    setId: string,
+    set: B4SetConfig,
     domains: string[],
     pins?: Record<string, string[]>,
   ) => void;
@@ -49,6 +57,7 @@ export const ApplyDialog = ({
   onClose,
   onCreate,
   onAddToExisting,
+  onReplaceStrategy,
 }: ApplyDialogProps) => {
   const { t } = useTranslation();
   const single = target?.domains.length === 1 ? target.domains[0] : null;
@@ -59,7 +68,8 @@ export const ApplyDialog = ({
 
   const [name, setName] = useState("");
   const [variant, setVariant] = useState("");
-  const [mode, setMode] = useState<"new" | "existing">("new");
+  const [chosenMode, setChosenMode] = useState<ApplyMode | null>(null);
+  const [pickedReplaceId, setPickedReplaceId] = useState<string | null>(null);
   const [similar, setSimilar] = useState<SimilarSet[]>([]);
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
   const [claimed, setClaimed] = useState<SetDomainMatch[]>([]);
@@ -69,7 +79,8 @@ export const ApplyDialog = ({
     if (!open || !target) return;
     setName(`${suggestSetName(target.domains[0])}${strategySuffix(target.set)}`);
     setVariant(single ? (variants[0] ?? single) : "");
-    setMode("new");
+    setChosenMode(null);
+    setPickedReplaceId(null);
     setSimilar([]);
     setSelectedSetId(null);
     setClaimed([]);
@@ -100,11 +111,9 @@ export const ApplyDialog = ({
   }, [target, single, variant]);
 
   useEffect(() => {
-    if (!open || domains.length === 0) {
-      setClaimed([]);
-      setCovered([]);
-      return;
-    }
+    setClaimed([]);
+    setCovered([]);
+    if (!open || domains.length === 0) return;
     let active = true;
     setsApi
       .checkDomain(domains.join(","))
@@ -127,6 +136,26 @@ export const ApplyDialog = ({
     };
   }, [open, domains]);
 
+  const replaceTargets = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const m of claimed) {
+      if (!seen.has(m.set_id)) seen.set(m.set_id, m.set_name);
+    }
+    return [...seen].map(([id, name]) => ({ id, name }));
+  }, [claimed]);
+
+  const wantedMode: ApplyMode =
+    chosenMode ?? (replaceTargets.length > 0 ? "replace" : "new");
+  const mode: ApplyMode =
+    (wantedMode === "replace" && replaceTargets.length === 0) ||
+    (wantedMode === "existing" && similar.length === 0)
+      ? "new"
+      : wantedMode;
+  const replaceSetId =
+    replaceTargets.find((s) => s.id === pickedReplaceId)?.id ??
+    replaceTargets[0]?.id ??
+    null;
+
   if (!target) return null;
 
   const previewSet: B4SetConfig = {
@@ -145,10 +174,30 @@ export const ApplyDialog = ({
       }
       return;
     }
+    if (mode === "replace") {
+      if (replaceSetId) {
+        onReplaceStrategy(
+          replaceSetId,
+          previewSet,
+          domains,
+          pinsFor(target.set, target.domains),
+        );
+      }
+      return;
+    }
     onCreate({ ...previewSet, name: name.trim() || domains[0] });
   };
 
+  const chooseMode = (next: ApplyMode) => setChosenMode(next);
+
   const selectedSimilar = similar.find((s) => s.id === selectedSetId);
+  const selectedReplace = replaceTargets.find((s) => s.id === replaceSetId);
+  const confirmLabel =
+    mode === "new"
+      ? t("discovery.apply.create")
+      : mode === "existing"
+        ? t("discovery.apply.add")
+        : t("discovery.apply.replaceAction");
 
   return (
     <B4Dialog
@@ -167,7 +216,11 @@ export const ApplyDialog = ({
           <Button
             variant="contained"
             onClick={confirm}
-            disabled={loading || (mode === "existing" && !selectedSetId)}
+            disabled={
+              loading ||
+              (mode === "existing" && !selectedSetId) ||
+              (mode === "replace" && !replaceSetId)
+            }
             startIcon={
               loading ? (
                 <CircularProgress size={18} color="inherit" />
@@ -177,9 +230,7 @@ export const ApplyDialog = ({
             }
             sx={{ bgcolor: colors.secondary, color: colors.background.default }}
           >
-            {mode === "new"
-              ? t("discovery.apply.create")
-              : t("discovery.apply.add")}
+            {confirmLabel}
           </Button>
         </Stack>
       }
@@ -246,7 +297,7 @@ export const ApplyDialog = ({
           </Box>
         )}
 
-        {claimed.length > 0 && (
+        {claimed.length > 0 && mode !== "replace" && (
           <B4Alert severity="warning">
             {t("discovery.apply.overlap", {
               domains: [...new Set(claimed.map((m) => m.domain))].join(", "),
@@ -264,7 +315,7 @@ export const ApplyDialog = ({
           </B4Alert>
         )}
 
-        {similar.length > 0 && (
+        {(similar.length > 0 || replaceTargets.length > 0) && (
           <Box>
             <Typography
               variant="subtitle2"
@@ -274,20 +325,63 @@ export const ApplyDialog = ({
             </Typography>
             <RadioGroup
               value={mode}
-              onChange={(e) => setMode(e.target.value as "new" | "existing")}
+              onChange={(e) => chooseMode(e.target.value as ApplyMode)}
             >
+              {replaceTargets.length > 0 && (
+                <FormControlLabel
+                  value="replace"
+                  control={<Radio />}
+                  label={t("discovery.apply.replaceIn", {
+                    name: selectedReplace?.name,
+                  })}
+                />
+              )}
               <FormControlLabel
                 value="new"
                 control={<Radio />}
                 label={t("discovery.apply.createNew")}
               />
-              <FormControlLabel
-                value="existing"
-                control={<Radio />}
-                label={t("discovery.apply.addExisting", {
-                  name: selectedSimilar?.name ?? similar[0].name,
-                })}
-              />
+              {similar.length > 0 && (
+                <FormControlLabel
+                  value="existing"
+                  control={<Radio />}
+                  label={t("discovery.apply.addExisting", {
+                    name: selectedSimilar?.name ?? similar[0].name,
+                  })}
+                />
+              )}
+            </RadioGroup>
+            {mode === "replace" && (
+              <Typography
+                variant="caption"
+                sx={{ color: colors.text.secondary, display: "block" }}
+              >
+                {t("discovery.apply.replaceHint")}
+              </Typography>
+            )}
+          </Box>
+        )}
+
+        {mode === "replace" && replaceTargets.length > 1 && (
+          <Box>
+            <Typography
+              variant="subtitle2"
+              sx={{ mb: 1, color: colors.text.secondary }}
+            >
+              {t("discovery.apply.replaceList")}
+            </Typography>
+            <RadioGroup
+              value={replaceSetId ?? ""}
+              onChange={(e) => setPickedReplaceId(e.target.value)}
+            >
+              {replaceTargets.map((set) => (
+                <FormControlLabel
+                  key={set.id}
+                  value={set.id}
+                  control={<Radio />}
+                  label={set.name}
+                />
+              ))}
             </RadioGroup>
           </Box>
         )}

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -206,11 +208,72 @@ func (api *API) installHubPayloads(set *config.SetConfig, payloads []hubwire.Pay
 	return installed, nil
 }
 
+type hubStatusResponse struct {
+	hub.Status
+	SetMatches []SetDomainMatch `json:"set_matches"`
+}
+
+func (api *API) hubStatus(svc *hub.Service) hubStatusResponse {
+	st := svc.Status()
+	hosts := make([]string, 0, len(st.URLs))
+	addresses := svc.ConnectedAddresses()
+	seen := map[string]bool{}
+	for _, raw := range st.URLs {
+		u, err := url.Parse(raw)
+		if err != nil || u.Hostname() == "" || seen[u.Hostname()] {
+			continue
+		}
+		seen[u.Hostname()] = true
+		if net.ParseIP(u.Hostname()) != nil {
+			addresses = append(addresses, u.Hostname())
+		}
+		hosts = append(hosts, u.Hostname())
+	}
+	cfg := api.getCfg()
+	matches := make([]SetDomainMatch, 0)
+	for _, m := range api.matchDomainsToSets(hosts, "") {
+		if m.Enabled && sni.SetMatchesSource(cfg.GetSetById(m.SetId), "") {
+			matches = append(matches, m)
+		}
+	}
+	if globalPool != nil {
+		matches = append(matches, matchAddressesToSets(globalPool.GetMatcher(), addresses)...)
+	}
+	return hubStatusResponse{Status: st, SetMatches: matches}
+}
+
+func matchAddressesToSets(matcher *sni.SuffixSet, addresses []string) []SetDomainMatch {
+	if matcher == nil {
+		return nil
+	}
+	var matches []SetDomainMatch
+	seen := map[string]bool{}
+	for _, addr := range addresses {
+		ip := net.ParseIP(addr)
+		if ip == nil || seen[ip.String()] {
+			continue
+		}
+		seen[ip.String()] = true
+		if ok, set := matcher.MatchIPWithSource(ip, ""); ok && set != nil {
+			matches = append(matches, SetDomainMatch{
+				Domain:   ip.String(),
+				SetName:  set.Name,
+				SetId:    set.Id,
+				Via:      "ip",
+				Relation: string(sni.RelationCovered),
+				Entry:    ip.String(),
+				Enabled:  set.Enabled,
+			})
+		}
+	}
+	return matches
+}
+
 // @Summary Hub status
 // @Description Reports whether the community hub is enabled and configured, the identity key, the last sync and the loaded catalogue.
 // @Tags Hub
 // @Produce json
-// @Success 200 {object} hub.Status
+// @Success 200 {object} hubStatusResponse
 // @Failure 409 {object} APIError "hub_disabled or hub_not_configured"
 // @Security BearerAuth
 // @Router /hub/status [get]
@@ -222,14 +285,14 @@ func (api *API) handleHubStatus(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	sendResponse(w, svc.Status())
+	sendResponse(w, api.hubStatus(svc))
 }
 
 // @Summary Sync the hub catalogue now
 // @Description Fetches the signed manifest and the catalogue from the first hub base that answers, then delivers any queued votes.
 // @Tags Hub
 // @Produce json
-// @Success 200 {object} hub.Status
+// @Success 200 {object} hubStatusResponse
 // @Failure 502 {object} APIError "sync_failed"
 // @Security BearerAuth
 // @Router /hub/sync [post]
@@ -246,7 +309,7 @@ func (api *API) handleHubSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	svc.FlushOutbox(r.Context())
-	sendResponse(w, svc.Status())
+	sendResponse(w, api.hubStatus(svc))
 }
 
 // @Summary List hub sets

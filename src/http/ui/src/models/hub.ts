@@ -1,6 +1,6 @@
 import { B4SetConfig, HubState, HubVote } from "./config";
 import { createDefaultSet } from "./defaults";
-import { DomainReassignment } from "./sets";
+import { DomainReassignment, SetDomainMatch } from "./sets";
 
 export interface HubPayload {
   sha256: string;
@@ -176,6 +176,8 @@ export interface HubStatus {
   urls: string[];
   mirrors: string[];
   active?: string;
+  self_bypass?: boolean;
+  set_matches?: SetDomainMatch[];
   network: { asn: string; cc: string; name?: string; source?: string };
   outbox: number;
   hub_key?: string;

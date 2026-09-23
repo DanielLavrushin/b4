@@ -82,6 +82,10 @@ The hub knows a router by its author key, not by an account. The key is generate
 **Last error** in the status block names the cause of a failed sync. The next successful sync clears it.
 :::
 
+A **Matched by set** row lists the enabled sets whose targets cover the hub addresses. b4's requests to the hub pass through its own packet processing like any other traffic, so such a set applies its strategy to b4's own connection as well; a set that matches everything, such as a `regexp:.*` entry, is the usual case. A set for the hub addresses with no strategy, placed in front of it, takes the hub out of that strategy.
+
+An **Own traffic** row appears when the hub answered only over a connection that b4's own rules leave alone. On some routers the strategy of a matching set stalls b4's own TLS handshake; when a sync fails that way, b4 retries it over the exempt path, keeps using whichever path worked, and logs the switch. The sync works either way, but the row means that set breaks b4's own connections on that router and is worth reporting.
+
 ## Applied sets on the Sets page
 
 A set applied from the Community page is a normal set with a **Community set** chip on its card. The chip opens the set on the Community page. Once the strategy differs from the published one, the chip reads **Community set, edited**; see [Applied and edited](./applying.md#applied-and-edited).

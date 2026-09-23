@@ -112,6 +112,7 @@ func ecsScanSubnets() []net.IPNet {
 
 type ecsScanner struct {
 	mark    int
+	port    int
 	timeout time.Duration
 	client  *http.Client
 	dialer  *net.Dialer
@@ -119,9 +120,10 @@ type ecsScanner struct {
 	txidMu  sync.Mutex
 }
 
-func newECSScanner(mark int, timeout time.Duration) *ecsScanner {
+func newECSScanner(mark, port int, timeout time.Duration) *ecsScanner {
 	return &ecsScanner{
 		mark:    mark,
+		port:    port,
 		timeout: timeout,
 		client:  dns.MarkedDoHClient(mark, timeout),
 		dialer:  netprobe.Dialer(mark, timeout, 0),
@@ -245,7 +247,7 @@ func (s *ecsScanner) tcpLatency(ctx context.Context, ip string) (time.Duration, 
 		}
 		dialCtx, cancel := context.WithTimeout(ctx, altScanTCPTimeout)
 		start := time.Now()
-		conn, err := s.dialer.DialContext(dialCtx, "tcp", net.JoinHostPort(ip, "443"))
+		conn, err := s.dialer.DialContext(dialCtx, "tcp", tlsAddress(ip, s.port))
 		cancel()
 		if err != nil {
 			continue
@@ -298,7 +300,7 @@ func (s *ecsScanner) servesDomain(ctx context.Context, domain, ip string) bool {
 	dialCtx, cancel := context.WithTimeout(ctx, altScanTCPTimeout*2)
 	defer cancel()
 
-	conn, err := s.dialer.DialContext(dialCtx, "tcp", net.JoinHostPort(ip, "443"))
+	conn, err := s.dialer.DialContext(dialCtx, "tcp", tlsAddress(ip, s.port))
 	if err != nil {
 		return false
 	}
@@ -312,7 +314,7 @@ func (s *ecsScanner) servesDomain(ctx context.Context, domain, ip string) bool {
 	return true
 }
 
-func (ds *DiscoverySuite) findAlternativeAddresses(domain string, result *DNSDiscoveryResult) {
+func (ds *DiscoverySuite) findAlternativeAddresses(domain string, port, tlsPort int, result *DNSDiscoveryResult) {
 	if result == nil || ds.cfg == nil {
 		return
 	}
@@ -328,6 +330,9 @@ func (ds *DiscoverySuite) findAlternativeAddresses(domain string, result *DNSDis
 			known[probe.ResolvedIP] = true
 		}
 	}
+	for _, ip := range result.GatewayIPs {
+		known[ip] = true
+	}
 
 	if result.TransportBlocked {
 		log.DiscoveryLogf("  [%s] every known address is unreachable, asking DNS how other regions are answered", domain)
@@ -335,7 +340,7 @@ func (ds *DiscoverySuite) findAlternativeAddresses(domain string, result *DNSDis
 		log.DiscoveryLogf("  [%s] the known addresses do not serve the site from here, asking DNS how other regions are answered", domain)
 	}
 
-	scanner := newECSScanner(int(ds.flowMark), altScanQueryTimeout)
+	scanner := newECSScanner(int(ds.flowMark), tlsPort, altScanQueryTimeout)
 	resolver := scanner.pickResolver(ctx, domain)
 	if resolver == "" {
 		log.DiscoveryLogf("  [%s] no ECS-capable resolver answered, alternative addresses unknown", domain)
@@ -376,34 +381,95 @@ func (ds *DiscoverySuite) findAlternativeAddresses(domain string, result *DNSDis
 	log.DiscoveryLogf("  [%s] %d of %d alternative addresses accept a connection, fastest %s at %s",
 		domain, len(alive), len(candidates), alive[0].ip, alive[0].latency.Round(time.Millisecond))
 
-	var serving []string
+	var serving, refused []string
+	checked := 0
 	for i, cand := range alive {
 		if i >= altScanTLSChecks || len(serving) >= altScanMaxAnswers || ctx.Err() != nil {
 			break
 		}
+		checked++
 		if scanner.servesDomain(ctx, domain, cand.ip) {
 			serving = append(serving, cand.ip)
 			log.DiscoveryLogf("  ✓ [%s] %s completes a TLS handshake for the site (%s)", domain, cand.ip, cand.latency.Round(time.Millisecond))
-		} else {
-			log.DiscoveryLogf("  ✗ [%s] %s accepts the connection but not the TLS handshake", domain, cand.ip)
+			continue
 		}
+		refused = append(refused, cand.ip)
+	}
+	intercepted := 0
+	for i, hit := range ds.gatewayTerminated(ctx, refused, port) {
+		if hit {
+			intercepted++
+			result.GatewayIPs = appendUnique(result.GatewayIPs, refused[i])
+			log.DiscoveryLogf("  ✗ [%s] %s: TCP is answered by the first hop in front of this host (a transparent proxy on the gateway), no packet strategy from this host can reach past it", domain, refused[i])
+			continue
+		}
+		log.DiscoveryLogf("  ✗ [%s] %s accepts the connection but not the TLS handshake", domain, refused[i])
 	}
 	summary.Clean = len(serving)
 	if len(serving) > 0 {
 		result.AlternativeIPs = serving
 		return
 	}
-	if !result.TransportBlocked {
-		log.DiscoveryLogf("  ✗ [%s] the reachable addresses do not complete a TLS handshake either, the site needs a packet strategy on its own addresses", domain)
+	allIntercepted := checked > 0 && intercepted == checked
+	knownIntercepted := len(result.ExpectedIPs) == 0 && len(result.GatewayIPs) > 0
+	if !result.TransportBlocked && !knownIntercepted {
+		if allIntercepted {
+			log.DiscoveryLogf("  ✗ [%s] every reachable alternative address is answered by the first hop as well", domain)
+		} else {
+			log.DiscoveryLogf("  ✗ [%s] the reachable addresses do not complete a TLS handshake either, the site needs a packet strategy on its own addresses", domain)
+		}
 		return
 	}
-	for i, cand := range alive {
-		if i >= altScanFallbackTargets {
+	var fallback, unprobed []string
+	for _, cand := range alive {
+		if len(fallback)+len(unprobed) >= altScanFallbackTargets {
 			break
 		}
-		result.AlternativeIPs = append(result.AlternativeIPs, cand.ip)
+		if result.isGateway(cand.ip) {
+			continue
+		}
+		if containsString(refused, cand.ip) {
+			fallback = append(fallback, cand.ip)
+			continue
+		}
+		unprobed = append(unprobed, cand.ip)
+	}
+	for i, hit := range ds.gatewayTerminated(ctx, unprobed, port) {
+		if hit {
+			result.GatewayIPs = appendUnique(result.GatewayIPs, unprobed[i])
+			continue
+		}
+		fallback = append(fallback, unprobed[i])
+	}
+	result.AlternativeIPs = append(result.AlternativeIPs, fallback...)
+	if len(result.AlternativeIPs) == 0 {
+		log.DiscoveryLogf("  ✗ [%s] every reachable alternative address is answered by the first hop as well", domain)
+		return
+	}
+	if knownIntercepted {
+		log.DiscoveryLogf("  [%s] the addresses DNS hands out here are answered by the first hop, keeping %v as targets for the packet strategies instead", domain, result.AlternativeIPs)
+		return
 	}
 	log.DiscoveryLogf("  [%s] no reachable address completes a TLS handshake, keeping %v as targets for the packet strategies", domain, result.AlternativeIPs)
+}
+
+func (ds *DiscoverySuite) gatewayTerminated(ctx context.Context, ips []string, port int) []bool {
+	hits := make([]bool, len(ips))
+	if len(ips) == 0 || ctx.Err() != nil {
+		return hits
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, gatewayProbeTimeout)
+	defer cancel()
+	var wg sync.WaitGroup
+	for i, ip := range ips {
+		wg.Add(1)
+		go func(i int, ip string) {
+			defer wg.Done()
+			hits[i] = netprobe.GatewayProbe(probeCtx, ip, port, int(ds.flowMark), gatewayProbeTimeout)
+		}(i, ip)
+	}
+	wg.Wait()
+	return hits
 }
 
 func shouldScanAlternatives(result *DNSDiscoveryResult) bool {

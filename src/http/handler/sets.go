@@ -179,7 +179,7 @@ func (api *API) matchDomainsToSets(domains []string, excludeId string) []SetDoma
 	exactRank := sni.RelationExact.Priority()
 
 	for _, set := range api.getCfg().Sets {
-		if set.Id == excludeId {
+		if excludeId != "" && set.Id == excludeId {
 			continue
 		}
 
@@ -284,13 +284,7 @@ func (api *API) handleSetDomains(w http.ResponseWriter, r *http.Request) {
 
 	for _, set := range newCfg.Sets {
 		if set.Id == setId {
-			for _, domain := range domains {
-				if domainInList(set.Targets.SNIDomains, domain) {
-					continue
-				}
-				set.Targets.SNIDomains = append(set.Targets.SNIDomains, domain)
-				set.Targets.DomainsToMatch = append(set.Targets.DomainsToMatch, domain)
-			}
+			addSNIDomains(set, domains)
 			mergePins(set, req.Pins)
 
 			moved := api.releaseDomainsFromOtherSets(newCfg.Sets, setId, domains)
@@ -311,6 +305,16 @@ func (api *API) handleSetDomains(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeAPIError(w, ErrNotFound("Set not found"))
+}
+
+func addSNIDomains(set *config.SetConfig, domains []string) {
+	for _, domain := range domains {
+		if domainInList(set.Targets.SNIDomains, domain) {
+			continue
+		}
+		set.Targets.SNIDomains = append(set.Targets.SNIDomains, domain)
+		set.Targets.DomainsToMatch = append(set.Targets.DomainsToMatch, domain)
+	}
 }
 
 func mergePins(set *config.SetConfig, pins map[string][]string) {

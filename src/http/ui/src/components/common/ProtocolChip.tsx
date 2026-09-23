@@ -47,6 +47,12 @@ const DNS_VERDICT_STYLES: Record<string, DnsVerdictStyle> = {
     icon: "dns",
   },
   pin: { label: "pin", color: "primary", variant: "outlined", icon: "dns" },
+  "pin-empty": {
+    label: "pin empty",
+    color: "primary",
+    variant: "outlined",
+    icon: "dns",
+  },
   heal: { label: "heal", color: "warning", variant: "outlined", icon: "dns" },
   passthrough: {
     label: "passthrough",

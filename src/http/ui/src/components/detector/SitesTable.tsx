@@ -35,7 +35,7 @@ interface SitesTableProps {
 }
 
 const problem = (s: SiteResult) => ["fixed", "still_blocked", "blocked", "broken_by_b4"].includes(s.outcome);
-const still = (s: SiteResult) => ["still_blocked", "blocked", "broken_by_b4"].includes(s.outcome);
+const still = (s: SiteResult) => ["still_blocked", "blocked", "broken_by_b4"].includes(s.outcome) && s.direct?.status !== "GATEWAY";
 const rowKey = (s: SiteResult) => `${s.input}|${s.family ?? ""}`;
 
 const checkboxSx = {

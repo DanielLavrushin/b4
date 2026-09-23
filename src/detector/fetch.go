@@ -21,6 +21,7 @@ import (
 const (
 	fetchConnectTimeout = 8 * time.Second
 	fetchReadTimeout    = 12 * time.Second
+	gatewayProbeTimeout = 2 * time.Second
 	fetchMaxBody        = 100 * 1024
 	fetchUserAgent      = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
 )
@@ -61,8 +62,9 @@ func (s *Suite) fetchSite(ctx context.Context, domain, rawURL, ip string, mark u
 	start := time.Now()
 	conn, err := netprobe.Dialer(int(mark), fetchConnectTimeout, 0).DialContext(ctx, "tcp", net.JoinHostPort(ip, port))
 	if err != nil {
-		st, detail := netprobe.ClassifyTLSErrorStaged(err, netprobe.StageConnect, 0)
-		return Fetch{Status: st, Detail: detail, LatencyMs: ms(start)}
+		latency := ms(start)
+		st, detail := s.classifyFailure(ctx, err, netprobe.StageConnect, ip, port, mark)
+		return Fetch{Status: st, Detail: detail, LatencyMs: latency}
 	}
 	defer conn.Close()
 
@@ -78,7 +80,7 @@ func (s *Suite) fetchSite(ctx context.Context, domain, rawURL, ip string, mark u
 	hcancel()
 	latency := ms(start)
 	if err != nil {
-		st, detail := netprobe.ClassifyTLSErrorStaged(err, netprobe.StageHandshake, 0)
+		st, detail := s.classifyFailure(ctx, err, netprobe.StageHandshake, ip, port, mark)
 		return Fetch{Status: st, Detail: detail, LatencyMs: latency}
 	}
 
@@ -159,6 +161,35 @@ func (s *Suite) fetchSite(ctx context.Context, domain, rawURL, ip string, mark u
 		out.Detail = fmt.Sprintf("HTTP %d, %s", resp.StatusCode, tlsVersionName(tlsConn.ConnectionState().Version))
 	}
 	return out
+}
+
+func (s *Suite) classifyFailure(ctx context.Context, err error, stage netprobe.TLSStage, ip, port string, mark uint) (FetchStatus, string) {
+	st, detail := netprobe.ClassifyTLSErrorStaged(err, stage, 0)
+	if st == FetchOk || mark == markThroughB4 || ctx.Err() != nil {
+		return st, detail
+	}
+	portNum, perr := strconv.Atoi(port)
+	if perr != nil {
+		return st, detail
+	}
+	if s.gatewayTerminates(ctx, ip, portNum, mark) {
+		return netprobe.DomainGateway, netprobe.GatewayDetail
+	}
+	return st, detail
+}
+
+func (s *Suite) gatewayTerminates(ctx context.Context, ip string, port int, mark uint) bool {
+	key := net.JoinHostPort(ip, strconv.Itoa(port))
+	if hit, ok := s.gatewayHits.Load(key); ok {
+		return hit.(bool)
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, gatewayProbeTimeout)
+	defer cancel()
+	hit := netprobe.GatewayProbe(probeCtx, ip, port, int(mark), gatewayProbeTimeout)
+	if probeCtx.Err() == nil || hit {
+		s.gatewayHits.Store(key, hit)
+	}
+	return hit
 }
 
 func (s *Suite) probePlainHTTP(ctx context.Context, domain, ip string, mark uint) (FetchStatus, string) {
@@ -254,7 +285,8 @@ func isBlockedStatus(st FetchStatus) bool {
 	switch st {
 	case netprobe.DomainTLSDPI, netprobe.DomainTLSMITM, netprobe.DomainTLSSpoof, netprobe.DomainTLSAlert,
 		netprobe.DomainTLSReset, netprobe.DomainTLSDrop, netprobe.DomainSYNDrop, netprobe.DomainTCP16,
-		netprobe.DomainISPPage, netprobe.DomainBlocked, netprobe.DomainDNSFake, netprobe.DomainTimeout:
+		netprobe.DomainISPPage, netprobe.DomainBlocked, netprobe.DomainDNSFake, netprobe.DomainTimeout,
+		netprobe.DomainGateway:
 		return true
 	}
 	return false

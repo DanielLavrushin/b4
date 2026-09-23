@@ -11,6 +11,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discovery"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/sni"
 	"github.com/google/uuid"
 	"golang.org/x/net/publicsuffix"
 )
@@ -21,11 +22,13 @@ func (api *API) RegisterDiscoveryApi() {
 	api.mux.HandleFunc("/api/discovery/cancel/{id}", api.handleCancelCheck)
 	api.mux.HandleFunc("/api/discovery/finish/{id}", api.handleFinishCheck)
 	api.mux.HandleFunc("/api/discovery/add", api.handleAddPresetAsSet)
+	api.mux.HandleFunc("/api/discovery/replace", api.handleReplaceStrategy)
 	api.mux.HandleFunc("/api/discovery/similar", api.handleFindSimilarSets)
 	api.mux.HandleFunc("/api/discovery/cache/clear", api.handleClearDiscoveryCache)
 	api.mux.HandleFunc("/api/discovery/current", api.handleGetCurrentDiscovery)
 	api.mux.HandleFunc("/api/discovery/history", api.handleDiscoveryHistory)
 	api.mux.HandleFunc("/api/discovery/history/clear", api.handleClearDiscoveryHistory)
+	api.mux.HandleFunc("/api/discovery/history/applied", api.handleMarkHistoryApplied)
 	api.mux.HandleFunc("/api/discovery/history/{domain}", api.handleDeleteHistoryDomain)
 	api.mux.HandleFunc("/api/discovery/log", api.handleDiscoveryLog)
 }
@@ -374,6 +377,112 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// @Summary Replace the strategy of an existing set with a discovered one
+// @Tags Discovery
+// @Accept json
+// @Produce json
+// @Param body body DiscoveryReplaceRequest true "Target set, discovered strategy, domains and pins"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /discovery/replace [post]
+func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	req := DiscoveryReplaceRequest{Set: config.NewSetConfig()}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	domains := make([]string, 0, len(req.Domains))
+	for _, raw := range req.Domains {
+		if d := strings.TrimSpace(raw); d != "" && !domainInList(domains, d) {
+			domains = append(domains, d)
+		}
+	}
+	if req.SetId == "" || len(domains) == 0 {
+		http.Error(w, "set_id and domains are required", http.StatusBadRequest)
+		return
+	}
+	config.ApplySetDefaults(&req.Set)
+
+	oldCfg := api.getCfg()
+	newCfg := oldCfg.Clone()
+
+	var target *config.SetConfig
+	for _, set := range newCfg.Sets {
+		if set != nil && set.Id == req.SetId {
+			target = set
+			break
+		}
+	}
+	if target == nil {
+		writeAPIError(w, ErrNotFound("Set not found"))
+		return
+	}
+
+	replaceStrategy(target, &req.Set)
+	replacePins(target, domains, req.Pins)
+	addSNIDomains(target, domains)
+	moved := api.releaseDomainsFromOtherSets(newCfg.Sets, target.Id, domains)
+
+	if err := api.saveAndPushConfig(newCfg); err != nil {
+		log.Errorf("Failed to save config: %v", err)
+		writeAPIError(w, err)
+		return
+	}
+	if api.PerformSoftRestart(newCfg, oldCfg) {
+		log.Infof("Soft restart completed successfully")
+	}
+	log.Infof("Replaced the strategy of set '%s' with a discovered one for %s", target.Name, strings.Join(domains, ", "))
+
+	setJsonHeader(w)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"moved":   moved,
+		"id":      target.Id,
+		"name":    target.Name,
+	})
+}
+
+func replaceStrategy(dst, strategy *config.SetConfig) {
+	tcp := strategy.TCP
+	tcp.DPortFilter = dst.TCP.DPortFilter
+	tcp.RSTProtection = dst.TCP.RSTProtection
+	if !strategy.TCP.IPBlockDetect.Enabled {
+		tcp.IPBlockDetect = dst.TCP.IPBlockDetect
+	}
+	udp := strategy.UDP
+	udp.DPortFilter = dst.UDP.DPortFilter
+
+	pins := dst.DNS.Pins
+	dst.TCP = tcp
+	dst.UDP = udp
+	dst.Fragmentation = strategy.Fragmentation
+	dst.Faking = strategy.Faking
+	dst.DNS = strategy.DNS
+	dst.DNS.Pins = pins
+	dst.Targets.TLSVersion = strategy.Targets.TLSVersion
+	dst.Targets.IPVersion = strategy.Targets.IPVersion
+}
+
+func replacePins(set *config.SetConfig, domains []string, pins map[string][]string) {
+	applied := make(map[string]bool, len(domains))
+	for _, domain := range domains {
+		if normalized := config.NormalizePinDomain(domain); normalized != "" {
+			applied[normalized] = true
+		}
+	}
+	for pin := range set.DNS.Pins {
+		if applied[config.NormalizePinDomain(pin)] {
+			delete(set.DNS.Pins, pin)
+		}
+	}
+	mergePins(set, pins)
+}
+
 func cdnCategoriesFor(domains []string) (geoip, geosite []string) {
 	for _, domain := range domains {
 		ip, site := discovery.GetCDNCategories(domain)
@@ -444,6 +553,39 @@ func (api *API) handleFindSimilarSets(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(similar)
 }
 
+func (api *API) setCoveringDomainWith(domain string, strategy *config.SetConfig) *config.SetConfig {
+	if strategy == nil || domain == "" {
+		return nil
+	}
+	candidate := *strategy
+	api.initializeSetDefaults(&candidate)
+
+	for _, set := range api.getCfg().Sets {
+		if set == nil || !set.Enabled || !setsHaveSimilarConfig(set, &candidate) {
+			continue
+		}
+		if len(set.Targets.SourceDevices) > 0 && !set.Targets.SourceDevicesExclude {
+			continue
+		}
+		if setCoversDomain(set, domain) {
+			return set
+		}
+	}
+	return nil
+}
+
+func setCoversDomain(set *config.SetConfig, domain string) bool {
+	for _, entries := range [][]string{set.Targets.SNIDomains, set.Targets.DomainsToMatch} {
+		for _, entry := range entries {
+			switch relation, _ := sni.MatchDomainEntry(entry, domain); relation {
+			case sni.RelationExact, sni.RelationCovered, sni.RelationRegexp:
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func setsHaveSimilarConfig(a, b *config.SetConfig) bool {
 	return reflect.DeepEqual(strategyShape(a), strategyShape(b))
 }
@@ -472,6 +614,8 @@ func strategyShape(set *config.SetConfig) config.SetConfig {
 	shape.TCP.RSTProtection = config.RSTProtectionConfig{}
 	shape.UDP.DPortFilter = ""
 	config.ApplySetDefaults(&shape)
+	shape.Faking.PayloadData = nil
+	shape.UDP.FakePayloadData = nil
 	return shape
 }
 
@@ -534,8 +678,50 @@ func (api *API) handleDiscoveryHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	history := discovery.GetHistory(api.getCfg().ConfigPath)
+	views := make([]HistoryEntryView, 0, len(history.Entries))
+	for _, entry := range history.Entries {
+		views = append(views, HistoryEntryView{HistoryEntry: entry, SizeBytes: entry.StorageBytes()})
+	}
+
 	setJsonHeader(w)
-	json.NewEncoder(w).Encode(history.Entries)
+	json.NewEncoder(w).Encode(views)
+}
+
+// @Summary Mark a discovered strategy as applied
+// @Tags Discovery
+// @Accept json
+// @Produce json
+// @Param body body HistoryAppliedRequest true "Domains and the preset that was installed"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /discovery/history/applied [post]
+func (api *API) handleMarkHistoryApplied(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req HistoryAppliedRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.Preset == "" || len(req.Domains) == 0 {
+		http.Error(w, "Domains and preset required", http.StatusBadRequest)
+		return
+	}
+
+	if err := discovery.MarkAppliedInHistory(api.getCfg().ConfigPath, req.Domains, req.Preset, req.SetId); err != nil {
+		log.Errorf("Failed to save discovery history: %v", err)
+		http.Error(w, "Failed to save discovery history", http.StatusInternalServerError)
+		return
+	}
+
+	setJsonHeader(w)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Marked %s as applied", req.Preset),
+	})
 }
 
 // @Summary Clear discovery history
@@ -550,9 +736,11 @@ func (api *API) handleClearDiscoveryHistory(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	history := discovery.LoadDiscoveryHistory(api.getCfg().ConfigPath)
-	history.Clear()
-	if err := history.Save(api.getCfg().ConfigPath); err != nil {
+	err := discovery.UpdateHistory(api.getCfg().ConfigPath, func(history *discovery.DiscoveryHistory) bool {
+		history.Clear()
+		return true
+	})
+	if err != nil {
 		log.Errorf("Failed to clear discovery history: %v", err)
 		http.Error(w, "Failed to clear discovery history", http.StatusInternalServerError)
 		return
@@ -584,9 +772,11 @@ func (api *API) handleDeleteHistoryDomain(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	history := discovery.LoadDiscoveryHistory(api.getCfg().ConfigPath)
-	history.RemoveDomain(domain)
-	if err := history.Save(api.getCfg().ConfigPath); err != nil {
+	err := discovery.UpdateHistory(api.getCfg().ConfigPath, func(history *discovery.DiscoveryHistory) bool {
+		history.RemoveDomain(domain)
+		return true
+	})
+	if err != nil {
 		log.Errorf("Failed to save discovery history: %v", err)
 		http.Error(w, "Failed to save discovery history", http.StatusInternalServerError)
 		return

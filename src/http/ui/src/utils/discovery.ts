@@ -1,8 +1,10 @@
 import { B4SetConfig } from "@models/config";
 import {
+  AppliedMark,
   DiscoveryOutcome,
   DiscoveryResult,
   DiscoverySuite,
+  DomainPresetResult,
   HistoryEntry,
   StrategyFamily,
 } from "@models/discovery";
@@ -18,7 +20,20 @@ interface VerdictSource {
   best_success?: boolean;
   best_preset?: string;
   baseline_works?: boolean;
-  dns_result?: { transport_blocked?: boolean; alternative_ips?: string[] };
+  dns_result?: {
+    transport_blocked?: boolean;
+    expected_ips?: string[];
+    alternative_ips?: string[];
+    gateway_ips?: string[];
+  };
+}
+
+export function gatewayIntercepted(dns?: VerdictSource["dns_result"]): boolean {
+  return (
+    !!dns?.gateway_ips?.length &&
+    !dns.expected_ips?.length &&
+    !dns.alternative_ips?.length
+  );
 }
 
 export function verdictOf(r: VerdictSource, finished: boolean): SiteVerdict {
@@ -27,6 +42,7 @@ export function verdictOf(r: VerdictSource, finished: boolean): SiteVerdict {
   if (r.best_success && r.best_preset && r.best_preset !== NO_BYPASS_PRESET) {
     return "found";
   }
+  if (gatewayIntercepted(r.dns_result)) return "gateway_intercepted";
   if (r.dns_result?.transport_blocked && !r.dns_result.alternative_ips?.length) {
     return "address_blocked";
   }
@@ -238,26 +254,75 @@ export interface Alternate {
   speed: number;
 }
 
-export function alternatesFor(group: FoundGroup, limit = 5): Alternate[] {
-  const first = group.results[0];
-  if (!first) return [];
-  const keepDns = dnsPoisoned(group.results);
+interface PresetResults {
+  results?: Record<string, DomainPresetResult>;
+}
+
+export function alternatesOf(
+  sources: PresetResults[],
+  domains: string[],
+  winner: string,
+  keepDns: boolean,
+  limit = 5,
+): Alternate[] {
+  const first = sources[0];
+  if (!first?.results) return [];
   const out: Alternate[] = [];
   for (const [preset, r] of Object.entries(first.results)) {
-    if (preset === group.preset || preset === NO_BYPASS_PRESET) continue;
+    if (preset === winner || preset === NO_BYPASS_PRESET) continue;
     if (r.status !== "complete" || !r.set) continue;
-    if (!group.results.every((dr) => dr.results[preset]?.status === "complete")) {
+    if (!sources.every((s) => s.results?.[preset]?.status === "complete")) {
       continue;
     }
     out.push({
       preset,
       family: r.family,
-      set: scopeSet(r.set, group.domains, keepDns),
-      speed: Math.min(...group.results.map((dr) => dr.results[preset]?.speed ?? 0)),
+      set: scopeSet(r.set, domains, keepDns),
+      speed: Math.min(...sources.map((s) => s.results?.[preset]?.speed ?? 0)),
     });
   }
   out.sort((a, b) => b.speed - a.speed);
   return limit > 0 ? out.slice(0, limit) : out;
+}
+
+export function alternatesFor(group: FoundGroup, limit = 5): Alternate[] {
+  return alternatesOf(
+    group.results,
+    group.domains,
+    group.preset,
+    dnsPoisoned(group.results),
+    limit,
+  );
+}
+
+export function historyAlternates(
+  entry: HistoryEntry,
+  domains: string[],
+  limit = 0,
+): Alternate[] {
+  return alternatesOf(
+    [entry],
+    domains.length > 0 ? domains : [entry.domain],
+    entry.best_preset,
+    !!entry.dns_result?.is_poisoned,
+    limit,
+  );
+}
+
+export function appliedMarks(
+  history: HistoryEntry[],
+  domains: string[],
+): Record<string, AppliedMark> {
+  const wanted = new Set(domains.map((d) => d.toLowerCase()));
+  const merged: Record<string, AppliedMark> = {};
+  for (const entry of history) {
+    if (!entry.applied || !wanted.has(entry.domain.toLowerCase())) continue;
+    for (const [preset, mark] of Object.entries(entry.applied)) {
+      const seen = merged[preset];
+      if (!seen || new Date(mark.at) > new Date(seen.at)) merged[preset] = mark;
+    }
+  }
+  return merged;
 }
 
 export interface TestedCounts {

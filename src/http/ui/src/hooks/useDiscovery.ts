@@ -3,6 +3,7 @@ import { ApiError, ApiResponse } from "@api/apiClient";
 import {
   AddPresetResult,
   DiscoveryStartOptions,
+  ReplaceStrategyResult,
   discoveryApi,
 } from "@api/discovery";
 import { DiscoverySuite, HistoryEntry, isSuite } from "@models/discovery";
@@ -200,6 +201,35 @@ export function useDiscovery() {
     [],
   );
 
+  const replaceStrategy = useCallback(
+    async (
+      setId: string,
+      set: B4SetConfig,
+      domains: string[],
+      pins?: Record<string, string[]>,
+    ): Promise<ApiResponse<ReplaceStrategyResult>> => {
+      try {
+        const res = await discoveryApi.replaceStrategy(setId, set, domains, pins);
+        return { success: true, data: res };
+      } catch (e) {
+        return { success: false, error: describeApiError(e) };
+      }
+    },
+    [],
+  );
+
+  const markApplied = useCallback(
+    async (domains: string[], preset: string, setId?: string) => {
+      try {
+        await discoveryApi.markApplied(domains, preset, setId);
+        await loadHistory();
+      } catch {
+        return;
+      }
+    },
+    [loadHistory],
+  );
+
   const clearCache = useCallback(async (): Promise<ApiResponse<void>> => {
     try {
       await discoveryApi.clearCache();
@@ -247,6 +277,8 @@ export function useDiscovery() {
     finishDiscovery,
     resetDiscovery,
     addPresetAsSet,
+    replaceStrategy,
+    markApplied,
     clearCache,
     clearHistory,
     deleteHistoryDomain,

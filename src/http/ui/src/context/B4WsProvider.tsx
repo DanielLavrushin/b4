@@ -4,8 +4,7 @@ import {
   useEffect,
   useMemo,
   useState,
-  useCallback,
-  useRef,
+  useSyncExternalStore,
 } from "react";
 import { wsUrl } from "@utils";
 import { ParsedLog, parseSniLogLine } from "@hooks/useDomainActions";
@@ -13,15 +12,20 @@ import { ParsedLog, parseSniLogLine } from "@hooks/useDomainActions";
 const MAX_BUFFER_SIZE = 2000;
 const BATCH_INTERVAL_MS = 150; // Batch updates every 150ms
 
-interface WebSocketContextType {
+export interface LogStream {
   logs: string[];
   logsBase: number;
+}
+
+export interface ConnectionStream {
   domains: string[];
   parsedDomains: ParsedLog[];
+}
+
+interface StreamControls {
   pauseLogs: boolean;
   showAll: boolean;
   pauseDomains: boolean;
-  unseenDomainsCount: number;
   setShowAll: (showAll: boolean) => void;
   setPauseLogs: (paused: boolean) => void;
   setPauseDomains: (paused: boolean) => void;
@@ -29,8 +33,6 @@ interface WebSocketContextType {
   clearDomains: () => void;
   resetDomainsBadge: () => void;
 }
-
-const WebSocketContext = createContext<WebSocketContextType | null>(null);
 
 // Simple ring buffer class for efficient fixed-size storage
 class RingBuffer {
@@ -105,15 +107,141 @@ function isTargetedLine(line: string): boolean {
   return !!(hostSet || ipSet);
 }
 
+class Snapshot<T> {
+  private value: T;
+  private stale = false;
+  private readonly build: () => T;
+  private readonly listeners = new Set<() => void>();
+
+  constructor(build: () => T) {
+    this.build = build;
+    this.value = build();
+  }
+
+  readonly subscribe = (listener: () => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
+
+  readonly get = (): T => {
+    if (this.stale) {
+      this.stale = false;
+      this.value = this.build();
+    }
+    return this.value;
+  };
+
+  invalidate(): void {
+    this.stale = true;
+  }
+
+  notify(): void {
+    if (!this.stale) return;
+    for (const listener of this.listeners) listener();
+  }
+}
+
+class StreamStore {
+  pauseLogs = false;
+  pauseDomains = false;
+  private pendingLogLines: string[] = [];
+  private pendingConnLines: string[] = [];
+  private unseenCount = 0;
+  private readonly logsBuffer = new RingBuffer(MAX_BUFFER_SIZE);
+  private readonly domainsBuffer = new RingBuffer(MAX_BUFFER_SIZE);
+  private readonly parsedDomainsBuffer = new ParsedRingBuffer(MAX_BUFFER_SIZE);
+
+  readonly logs = new Snapshot<LogStream>(() => ({
+    logs: this.logsBuffer.getAll(),
+    logsBase: this.logsBuffer.base,
+  }));
+
+  readonly connections = new Snapshot<ConnectionStream>(() => ({
+    domains: this.domainsBuffer.getAll(),
+    parsedDomains: this.parsedDomainsBuffer.getAll(),
+  }));
+
+  readonly unseen = new Snapshot<number>(() => this.unseenCount);
+
+  readonly queueLogLine = (line: string) => {
+    this.pendingLogLines.push(line);
+  };
+
+  readonly queueConnLine = (line: string) => {
+    this.pendingConnLines.push(line);
+  };
+
+  processBatch(): void {
+    const pendingLogs = this.pendingLogLines;
+    const pendingConns = this.pendingConnLines;
+    if (pendingLogs.length === 0 && pendingConns.length === 0) return;
+
+    this.pendingLogLines = [];
+    this.pendingConnLines = [];
+
+    // Diagnostic logs feed only the /logs page.
+    if (pendingLogs.length > 0 && !this.pauseLogs) {
+      this.logsBuffer.push(pendingLogs);
+      this.logs.invalidate();
+    }
+
+    if (pendingConns.length > 0 && !this.pauseDomains) {
+      this.domainsBuffer.push(pendingConns);
+      this.parsedDomainsBuffer.push(pendingConns);
+      this.connections.invalidate();
+
+      let targetedCount = 0;
+      for (const line of pendingConns) {
+        if (isTargetedLine(line)) targetedCount++;
+      }
+      if (targetedCount > 0) {
+        this.unseenCount += targetedCount;
+        this.unseen.invalidate();
+      }
+    }
+
+    this.publish();
+  }
+
+  readonly publish = () => {
+    if (!document.hidden) this.logs.notify();
+    this.connections.notify();
+    this.unseen.notify();
+  };
+
+  readonly clearLogs = () => {
+    this.logsBuffer.clear();
+    this.logs.invalidate();
+    this.publish();
+  };
+
+  readonly clearDomains = () => {
+    this.domainsBuffer.clear();
+    this.parsedDomainsBuffer.clear();
+    this.unseenCount = 0;
+    this.connections.invalidate();
+    this.unseen.invalidate();
+    this.publish();
+  };
+
+  readonly resetDomainsBadge = () => {
+    this.unseenCount = 0;
+    this.unseen.invalidate();
+    this.publish();
+  };
+}
+
+const StreamStoreContext = createContext<StreamStore | null>(null);
+const StreamControlsContext = createContext<StreamControls | null>(null);
+
 export const WebSocketProvider = ({
   children,
 }: {
   children: React.ReactNode;
 }) => {
-  const [logs, setLogs] = useState<string[]>([]);
-  const [logsBase, setLogsBase] = useState(0);
-  const [domains, setDomains] = useState<string[]>([]);
-  const [parsedDomains, setParsedDomains] = useState<ParsedLog[]>([]);
+  const [store] = useState(() => new StreamStore());
   const [pauseLogs, setPauseLogs] = useState(false);
   const [pauseDomains, setPauseDomains] = useState(false);
   const [showAll, setShowAll] = useState(() => {
@@ -124,78 +252,31 @@ export const WebSocketProvider = ({
     localStorage.setItem("b4_connections_showall", String(showAll));
   }, [showAll]);
 
-  const [unseenDomainsCount, setUnseenDomainsCount] = useState(0);
-
-  // Use refs to avoid stale closures and unnecessary re-renders
-  const pauseLogsRef = useRef(pauseLogs);
-  const pauseDomainsRef = useRef(pauseDomains);
-  const logsBufferRef = useRef(new RingBuffer(MAX_BUFFER_SIZE));
-  const domainsBufferRef = useRef(new RingBuffer(MAX_BUFFER_SIZE));
-  const parsedDomainsBufferRef = useRef(new ParsedRingBuffer(MAX_BUFFER_SIZE));
-  const pendingLogLinesRef = useRef<string[]>([]);
-  const pendingConnLinesRef = useRef<string[]>([]);
-  const batchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const unseenCountRef = useRef(0);
-
-  // Keep refs in sync
   useEffect(() => {
-    pauseLogsRef.current = pauseLogs;
-  }, [pauseLogs]);
+    store.pauseLogs = pauseLogs;
+  }, [store, pauseLogs]);
 
   useEffect(() => {
-    pauseDomainsRef.current = pauseDomains;
-  }, [pauseDomains]);
-
-  // Batch processing function
-  const processBatch = useCallback(() => {
-    const pendingLogs = pendingLogLinesRef.current;
-    const pendingConns = pendingConnLinesRef.current;
-    if (pendingLogs.length === 0 && pendingConns.length === 0) return;
-
-    pendingLogLinesRef.current = [];
-    pendingConnLinesRef.current = [];
-
-    // Diagnostic logs feed only the /logs page.
-    if (pendingLogs.length > 0 && !pauseLogsRef.current) {
-      logsBufferRef.current.push(pendingLogs);
-      setLogs(logsBufferRef.current.getAll());
-      setLogsBase(logsBufferRef.current.base);
-    }
-
-    if (pendingConns.length > 0 && !pauseDomainsRef.current) {
-      domainsBufferRef.current.push(pendingConns);
-      parsedDomainsBufferRef.current.push(pendingConns);
-      setDomains(domainsBufferRef.current.getAll());
-      setParsedDomains(parsedDomainsBufferRef.current.getAll());
-
-      let targetedCount = 0;
-      for (const line of pendingConns) {
-        if (isTargetedLine(line)) targetedCount++;
-      }
-      if (targetedCount > 0) {
-        unseenCountRef.current += targetedCount;
-        setUnseenDomainsCount(unseenCountRef.current);
-      }
-    }
-  }, []);
-
-  // Schedule batch processing
-  const scheduleBatch = useCallback(() => {
-    batchTimeoutRef.current ??= setTimeout(() => {
-      batchTimeoutRef.current = null;
-      processBatch();
-    }, BATCH_INTERVAL_MS);
-  }, [processBatch]);
+    store.pauseDomains = pauseDomains;
+  }, [store, pauseDomains]);
 
   // WebSocket connections — diagnostic logs and connection events are now
   // separate streams. The logs stream is level-gated; the connections stream
   // is always-on (cheap fan-out, no listeners = no work).
   useEffect(() => {
     let isCleaningUp = false;
+    let batchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleBatch = () => {
+      batchTimeout ??= setTimeout(() => {
+        batchTimeout = null;
+        store.processBatch();
+      }, BATCH_INTERVAL_MS);
+    };
 
     const openStream = (
       path: string,
-      sink: { current: string[] },
+      sink: (line: string) => void,
       label: string,
     ): { close: () => void } => {
       let ws: WebSocket | null = null;
@@ -206,7 +287,7 @@ export const WebSocketProvider = ({
         ws = new WebSocket(wsUrl(path));
         ws.onopen = () => console.log(`${label} WebSocket connected`);
         ws.onmessage = (ev) => {
-          sink.current.push(String(ev.data));
+          sink(String(ev.data));
           scheduleBatch();
         };
         ws.onerror = (error) =>
@@ -229,82 +310,70 @@ export const WebSocketProvider = ({
       };
     };
 
-    const logsStream = openStream("/api/ws/logs", pendingLogLinesRef, "Logs");
+    const logsStream = openStream("/api/ws/logs", store.queueLogLine, "Logs");
     const connStream = openStream(
       "/api/ws/connections",
-      pendingConnLinesRef,
+      store.queueConnLine,
       "Connections",
     );
+    document.addEventListener("visibilitychange", store.publish);
 
     return () => {
       isCleaningUp = true;
-      if (batchTimeoutRef.current) {
-        clearTimeout(batchTimeoutRef.current);
-        batchTimeoutRef.current = null;
-      }
+      if (batchTimeout) clearTimeout(batchTimeout);
+      document.removeEventListener("visibilitychange", store.publish);
       logsStream.close();
       connStream.close();
     };
-  }, [scheduleBatch]);
+  }, [store]);
 
-  const clearLogs = useCallback(() => {
-    logsBufferRef.current.clear();
-    setLogs([]);
-    setLogsBase(0);
-  }, []);
-
-  const clearDomains = useCallback(() => {
-    domainsBufferRef.current.clear();
-    parsedDomainsBufferRef.current.clear();
-    setDomains([]);
-    setParsedDomains([]);
-    unseenCountRef.current = 0;
-    setUnseenDomainsCount(0);
-  }, []);
-
-  const resetDomainsBadge = useCallback(() => {
-    unseenCountRef.current = 0;
-    setUnseenDomainsCount(0);
-  }, []);
-
-  const contextValue = useMemo(
+  const controls = useMemo(
     () => ({
-      logs,
-      logsBase,
-      domains,
-      parsedDomains,
       pauseLogs,
-      pauseDomains,
-      unseenDomainsCount,
       showAll,
+      pauseDomains,
       setShowAll,
       setPauseLogs,
       setPauseDomains,
-      clearLogs,
-      clearDomains,
-      resetDomainsBadge,
+      clearLogs: store.clearLogs,
+      clearDomains: store.clearDomains,
+      resetDomainsBadge: store.resetDomainsBadge,
     }),
-    [
-      logs,
-      logsBase,
-      domains,
-      parsedDomains,
-      pauseLogs,
-      pauseDomains,
-      unseenDomainsCount,
-      showAll,
-      clearLogs,
-      clearDomains,
-      resetDomainsBadge,
-    ],
+    [store, pauseLogs, showAll, pauseDomains],
   );
 
-  return <WebSocketContext value={contextValue}>{children}</WebSocketContext>;
+  return (
+    <StreamStoreContext value={store}>
+      <StreamControlsContext value={controls}>{children}</StreamControlsContext>
+    </StreamStoreContext>
+  );
 };
 
-export const useWebSocket = () => {
-  const ctx = use(WebSocketContext);
+const useStreamStore = () => {
+  const store = use(StreamStoreContext);
+  if (!store)
+    throw new Error("useStreamStore must be used within WebSocketProvider");
+  return store;
+};
+
+export const useLogStream = (): LogStream => {
+  const { logs } = useStreamStore();
+  return useSyncExternalStore(logs.subscribe, logs.get);
+};
+
+export const useConnectionStream = (): ConnectionStream => {
+  const { connections } = useStreamStore();
+  return useSyncExternalStore(connections.subscribe, connections.get);
+};
+
+export const useUnseenDomainsCount = (): number => {
+  const { unseen } = useStreamStore();
+  return useSyncExternalStore(unseen.subscribe, unseen.get);
+};
+
+export const useStreamControls = () => {
+  const ctx = use(StreamControlsContext);
   if (!ctx)
-    throw new Error("useWebSocket must be used within WebSocketProvider");
+    throw new Error("useStreamControls must be used within WebSocketProvider");
   return ctx;
 };

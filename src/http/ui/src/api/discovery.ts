@@ -17,6 +17,13 @@ export interface AddPresetResult {
   name?: string;
 }
 
+export interface ReplaceStrategyResult {
+  success: boolean;
+  moved?: DomainReassignment[];
+  id?: string;
+  name?: string;
+}
+
 export interface DiscoveryStartOptions {
   skipDNS: boolean;
   skipCache: boolean;
@@ -44,6 +51,18 @@ export const discoveryApi = {
   finish: (id: string) => apiPost(`/api/discovery/finish/${id}`, {}),
   addPresetAsSet: (preset: B4SetConfig) =>
     apiPost<AddPresetResult>("/api/discovery/add", preset),
+  replaceStrategy: (
+    setId: string,
+    set: B4SetConfig,
+    domains: string[],
+    pins?: Record<string, string[]>,
+  ) =>
+    apiPost<ReplaceStrategyResult>("/api/discovery/replace", {
+      set_id: setId,
+      set,
+      domains,
+      pins,
+    }),
   similar: (set: B4SetConfig) =>
     apiPost<SimilarSet[]>("/api/discovery/similar", set),
   clearCache: () => apiPost("/api/discovery/cache/clear", {}),
@@ -51,6 +70,12 @@ export const discoveryApi = {
   history: () => apiGet<HistoryEntry[]>("/api/discovery/history"),
   log: () => apiGet<string>("/api/discovery/log", "text"),
   clearHistory: () => apiPost("/api/discovery/history/clear", {}),
+  markApplied: (domains: string[], preset: string, setId?: string) =>
+    apiPost("/api/discovery/history/applied", {
+      domains,
+      preset,
+      set_id: setId,
+    }),
   deleteHistoryDomain: (domain: string) =>
     apiDelete(`/api/discovery/history/${encodeURIComponent(domain)}`),
 };

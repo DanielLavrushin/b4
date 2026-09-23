@@ -289,6 +289,7 @@ type Verdict struct {
 	BlockedByISP   int            `json:"blocked_by_isp"`
 	FixedByB4      int            `json:"fixed_by_b4"`
 	StillBlocked   int            `json:"still_blocked"`
+	Gateway        int            `json:"gateway,omitempty"`
 	BrokenByB4     int            `json:"broken_by_b4"`
 	NotBlocked     int            `json:"not_blocked"`
 	Sites          int            `json:"sites"`
@@ -319,12 +320,13 @@ type Suite struct {
 	Telegram *TelegramResult `json:"telegram,omitempty"`
 	Verdict  Verdict         `json:"verdict"`
 
-	directMark uint
-	ctx        context.Context
-	cancel     context.CancelFunc
-	mu         sync.RWMutex
-	setLookup  SetLookup
-	setDNS     map[string]config.DNSConfig
+	directMark  uint
+	gatewayHits sync.Map
+	ctx         context.Context
+	cancel      context.CancelFunc
+	mu          sync.RWMutex
+	setLookup   SetLookup
+	setDNS      map[string]config.DNSConfig
 }
 
 type SetMatch struct {

@@ -78,13 +78,14 @@ to a private routing table whose default route points at this interface. See
 
 | Symptom | Setting to check |
 | --- | --- |
-| No connections in `Connections`, or only ones from the router itself | Network interfaces |
+| Nothing on the `Traffic` page, or only traffic from the router itself | Network interfaces |
 | Sets apply to the router but never to a client | Network interfaces, then source interfaces |
 | A set's marking rule shows zero packets in the firewall counters | Source interfaces |
 | Traffic is marked but leaves by the wrong path | Output interface, and any other service with `ip rule` entries |
 
-The `Connections` page answers the first two. When every row carries the router's own
-address as the source, the engine is seeing only traffic the router originates.
+The `Traffic` page answers the first two. When the router is the only source (**Router** in
+the device list, or its own address in the raw feed), the engine is seeing only traffic the
+router originates.
 
 :::info
 When another service also does policy routing, a set can mark traffic correctly and still

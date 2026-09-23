@@ -11,6 +11,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/engine"
+	"github.com/daniellavrushin/b4/sni"
 )
 
 func encodeDNSName(name string) []byte {
@@ -389,6 +390,45 @@ func TestClearSNIForAnotherDomainCancelsHint(t *testing.T) {
 
 	if bound := w.connTracker.GetSetForIncoming("10.0.0.1", 12345, "1.2.3.4", 443); bound != nil {
 		t.Fatalf("a clear SNI matching no set must cancel the hint, got %q", bound.Name)
+	}
+}
+
+func TestClearSNIForAnotherDomainFallsBackToLearnedIP(t *testing.T) {
+	set := newHintSet()
+	cfg := config.NewConfig()
+	cfg.Sets = []*config.SetConfig{&set}
+
+	w := newTestWorker(t, &cfg)
+	w.hostHints.Store("10.0.0.1", "1.2.3.4", set.Id, "i.ytimg.com")
+	w.matcher.Load().(*sni.SuffixSet).LearnIPToDomain(net.ParseIP("1.2.3.4"), "i.ytimg.com", &set)
+
+	foreign := buildClientHello("www.instagram.com", 16, 0xAB)
+	w.ProcessPacket(makeV4TCPPacket(foreign, 1000))
+
+	bound := w.connTracker.GetSetForIncoming("10.0.0.1", 12345, "1.2.3.4", 443)
+	if bound == nil {
+		t.Fatal("a dropped hint must fall back to the learned address match")
+	}
+	if bound.Id != set.Id {
+		t.Fatalf("bound set: want %q, got %q", set.Id, bound.Id)
+	}
+}
+
+func TestLearnedFallbackAfterHintDropRespectsTLSVersion(t *testing.T) {
+	set := newHintSet()
+	set.Targets.TLSVersion = "1.2"
+	cfg := config.NewConfig()
+	cfg.Sets = []*config.SetConfig{&set}
+
+	w := newTestWorker(t, &cfg)
+	w.hostHints.Store("10.0.0.1", "1.2.3.4", set.Id, "i.ytimg.com")
+	w.matcher.Load().(*sni.SuffixSet).LearnIPToDomain(net.ParseIP("1.2.3.4"), "i.ytimg.com", &set)
+
+	foreign := buildClientHello("www.instagram.com", 16, 0xAB)
+	w.ProcessPacket(makeV4TCPPacket(foreign, 1000))
+
+	if bound := w.connTracker.GetSetForIncoming("10.0.0.1", 12345, "1.2.3.4", 443); bound != nil {
+		t.Fatalf("the learned fallback must honour the set's TLS version filter, got %q", bound.Name)
 	}
 }
 

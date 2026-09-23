@@ -232,6 +232,18 @@ func (w *Worker) lookupHostHint(cfg *config.Config, clientIP, destIP, srcMac str
 	return set, host
 }
 
+func learnedMatchAfterHintDrop(matcher *sni.SuffixSet, dst net.IP, srcMac string, dport, tlsVersion uint16, payload []byte) (*config.SetConfig, string) {
+	mLearned, learnedSet, learnedDomain := matcher.MatchLearnedIPWithSource(dst, srcMac)
+	if !mLearned || !learnedSet.MatchesTCPDPort(dport) || !learnedSet.MatchesTLSVersion(tlsVersion) {
+		return nil, ""
+	}
+	tlsRecord := len(payload) >= 1 && payload[0] == 0x16
+	if !tlsRecord && learnedSet.Fragmentation.Strategy == config.ConfigNone && len(learnedSet.Fragmentation.StrategyPool) == 0 && learnedSet.TCP.Desync.Mode == config.ConfigOff {
+		return nil, ""
+	}
+	return learnedSet, learnedDomain
+}
+
 func (c *hostHintCache) Len() int {
 	if c == nil {
 		return 0

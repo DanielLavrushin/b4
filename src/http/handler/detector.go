@@ -233,9 +233,11 @@ func (api *API) handleClearDetectorHistory(w http.ResponseWriter, r *http.Reques
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	history := detector.LoadHistory(api.getCfg().ConfigPath)
-	history.Clear()
-	if err := history.Save(api.getCfg().ConfigPath); err != nil {
+	err := detector.UpdateHistory(api.getCfg().ConfigPath, func(history *detector.History) bool {
+		history.Clear()
+		return true
+	})
+	if err != nil {
 		http.Error(w, "Failed to clear detector history", http.StatusInternalServerError)
 		return
 	}
@@ -253,10 +255,9 @@ func (api *API) handleClearDetectorHistory(w http.ResponseWriter, r *http.Reques
 // @Router /detector/history/{id} [delete]
 func (api *API) handleDetectorHistoryEntry(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	history := detector.LoadHistory(api.getCfg().ConfigPath)
 	switch r.Method {
 	case http.MethodGet:
-		entry := history.Get(id)
+		entry := detector.LoadHistory(api.getCfg().ConfigPath).Get(id)
 		if entry == nil {
 			http.Error(w, "Entry not found", http.StatusNotFound)
 			return
@@ -264,8 +265,11 @@ func (api *API) handleDetectorHistoryEntry(w http.ResponseWriter, r *http.Reques
 		setJsonHeader(w)
 		json.NewEncoder(w).Encode(entry)
 	case http.MethodDelete:
-		history.Remove(id)
-		if err := history.Save(api.getCfg().ConfigPath); err != nil {
+		err := detector.UpdateHistory(api.getCfg().ConfigPath, func(history *detector.History) bool {
+			history.Remove(id)
+			return true
+		})
+		if err != nil {
 			http.Error(w, "Failed to save detector history", http.StatusInternalServerError)
 			return
 		}

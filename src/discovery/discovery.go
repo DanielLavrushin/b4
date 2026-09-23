@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -113,6 +114,161 @@ func parseDiscoveryInput(input string) (domain string, testURL string) {
 	return input, "https://" + input + "/"
 }
 
+func upgradeCheckURL(di DomainInput, r CheckResult) (string, bool) {
+	u, err := url.Parse(di.CheckURL)
+	if err != nil || u.Scheme != "http" || u.Host == "" {
+		return di.CheckURL, false
+	}
+	if r.Status != CheckStatusFailed || r.StatusCode < 400 || r.StatusCode == http.StatusUnavailableForLegalReasons {
+		return di.CheckURL, false
+	}
+	if strings.Contains(r.Error, "ISP block page") {
+		return di.CheckURL, false
+	}
+	if r.BytesRead >= minSuccessBytes {
+		return di.CheckURL, false
+	}
+	u.Scheme = "https"
+	return u.String(), true
+}
+
+func checkURLTLSPort(raw string) int {
+	if u, err := url.Parse(raw); err == nil && u.Scheme == "http" {
+		return 443
+	}
+	return checkURLPort(raw)
+}
+
+func tlsAddress(ip string, port int) string {
+	if port <= 0 {
+		port = 443
+	}
+	return net.JoinHostPort(ip, strconv.Itoa(port))
+}
+
+func checkURLPort(raw string) int {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return 443
+	}
+	if port, err := strconv.Atoi(u.Port()); err == nil && port > 0 {
+		return port
+	}
+	if u.Scheme == "http" {
+		return 80
+	}
+	return 443
+}
+
+func deadEndAnswer(results map[string]*DomainPresetResult) (CheckResult, bool) {
+	if len(results) < 2 {
+		return CheckResult{}, false
+	}
+	var first *DomainPresetResult
+	for _, r := range results {
+		if r == nil || r.Status != CheckStatusFailed || r.StatusCode < 400 || r.BytesRead >= minSuccessBytes || strings.Contains(r.Error, "ISP block page") {
+			return CheckResult{}, false
+		}
+		if first == nil {
+			first = r
+			continue
+		}
+		if r.StatusCode != first.StatusCode {
+			return CheckResult{}, false
+		}
+	}
+	return CheckResult{Status: first.Status, StatusCode: first.StatusCode, BytesRead: first.BytesRead, Error: first.Error}, true
+}
+
+func (ds *DiscoverySuite) rewriteDeadEndCheckURLs(checksPerDomain int) []string {
+	var upgraded []string
+
+	ds.CheckSuite.mu.Lock()
+	defer ds.CheckSuite.mu.Unlock()
+	for i, di := range ds.Domains {
+		dr := ds.domainResults[di.Domain]
+		if dr == nil {
+			continue
+		}
+		r, uniform := deadEndAnswer(dr.Results)
+		if !uniform {
+			continue
+		}
+		next, ok := upgradeCheckURL(di, r)
+		if !ok {
+			continue
+		}
+		log.DiscoveryLogf("  [%s] http://%s answers HTTP %d with %d bytes whatever the strategy, no strategy can pass with it; checking https://%s instead",
+			di.Domain, strings.TrimPrefix(di.CheckURL, "http://"), r.StatusCode, r.BytesRead, strings.TrimPrefix(next, "https://"))
+		ds.Domains[i].CheckURL = next
+		if ds.Domain == di.Domain {
+			ds.CheckURL = next
+		}
+		dr.Url = next
+		dr.Results = make(map[string]*DomainPresetResult)
+		upgraded = append(upgraded, di.Domain)
+	}
+	ds.TotalChecks += len(upgraded) * checksPerDomain
+	return upgraded
+}
+
+func (ds *DiscoverySuite) upgradeDeadEndCheckURLs(presets, cached []ConfigPreset) []StrategyFamily {
+	upgraded := ds.rewriteDeadEndCheckURLs(len(presets))
+	if len(upgraded) == 0 {
+		return nil
+	}
+
+	scoped := scopePresets(presets, upgraded)
+	ds.storeResultsMulti(scoped[0], ds.testPresetAllDomains(scoped[0]))
+	ds.retestEarlyPresets(append(scopePresets(cached, upgraded), scopePresets(ds.hubPresets, upgraded)...))
+	ds.determineBest()
+	return ds.runPhase1Multi(scoped)
+}
+
+func scopePresets(presets []ConfigPreset, domains []string) []ConfigPreset {
+	out := make([]ConfigPreset, 0, len(presets))
+	for _, p := range presets {
+		var covered []string
+		for _, d := range domains {
+			if p.covers(d) {
+				covered = append(covered, d)
+			}
+		}
+		if len(covered) == 0 {
+			continue
+		}
+		p.Domains = covered
+		out = append(out, p)
+	}
+	return out
+}
+
+func (ds *DiscoverySuite) retestEarlyPresets(early []ConfigPreset) {
+	if len(early) == 0 {
+		return
+	}
+	checks := 0
+	for _, p := range early {
+		checks += len(p.Domains)
+	}
+	ds.CheckSuite.mu.Lock()
+	ds.TotalChecks += checks
+	ds.CheckSuite.mu.Unlock()
+
+	ds.setPhase(PhaseCached)
+	log.DiscoveryLogf("Re-testing %d cached and community strategies on the upgraded https addresses", len(early))
+	for _, preset := range early {
+		if ds.interrupted() {
+			break
+		}
+		if preset.Config.Faking.SNIType == config.FakePayloadRandom {
+			ds.applyBestPayload(&preset.Config.Faking)
+		}
+		ds.storeResultsMulti(preset, ds.testPresetAllDomains(preset))
+	}
+	ds.setPhase(PhaseStrategy)
+}
+
 func parseDiscoveryInputs(inputs []string) []DomainInput {
 	seen := make(map[string]bool)
 	var result []DomainInput
@@ -199,12 +355,15 @@ func (ds *DiscoverySuite) RunDiscovery() {
 		for _, di := range ds.Domains {
 			ds.setCurrentDomain(di.Domain)
 			log.DiscoveryLogf("Running DNS discovery for %s", di.Domain)
-			dnsResult := ds.runDNSDiscoveryForDomain(di.Domain)
+			dnsResult := ds.runDNSDiscoveryForDomain(di)
 			ds.dnsResults[di.Domain] = dnsResult
 			ds.domainResults[di.Domain].DNSResult = dnsResult
 
 			if dnsResult != nil && len(dnsResult.ExpectedIPs) > 0 {
 				log.DiscoveryLogf("  [%s] Stored %d target IPs: %v", di.Domain, len(dnsResult.ExpectedIPs), dnsResult.ExpectedIPs)
+			}
+			if dnsResult.gatewayIntercepted() {
+				log.DiscoveryLogf("  ⊘ TCP to %s is answered by the first hop in front of this host; b4 here cannot help: run b4 on that gateway or exclude this host from its redirect; if this host is the router itself, the ISP does this at its edge and only a proxy route helps", di.Domain)
 			}
 
 			if dnsResult != nil && dnsResult.IsPoisoned {
@@ -222,6 +381,12 @@ func (ds *DiscoverySuite) RunDiscovery() {
 		// Apply DNS config if any domain needs it
 		if anyDNSPoisoned {
 			ds.applyBestDNSConfig()
+		}
+
+		if ds.allDomainsGatewayIntercepted() {
+			log.DiscoveryLogf("Every domain is answered by the first hop in front of this host, there is nothing a packet strategy from this host could change; search skipped")
+			ds.finishRun()
+			return
 		}
 	}
 
@@ -298,6 +463,15 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	ds.setPhase(PhaseStrategy)
 	workingFamilies := ds.runPhase1Multi(phase1Presets)
 	ds.determineBest()
+
+	if !ds.interrupted() {
+		for _, family := range ds.upgradeDeadEndCheckURLs(phase1Presets, cachedPresets) {
+			if !containsFamily(workingFamilies, family) {
+				workingFamilies = append(workingFamilies, family)
+			}
+		}
+		ds.determineBest()
+	}
 
 	if ds.interrupted() {
 		ds.finishRun()
@@ -548,7 +722,7 @@ func (ds *DiscoverySuite) optimizeFakeSNI() ConfigPreset {
 	log.DiscoveryLogf("  Optimizing FakeSNI with TTL scan + strategy rotation")
 
 	ds.CheckSuite.mu.Lock()
-	ds.TotalChecks += 13
+	ds.TotalChecks += 3 + ds.ttlSweepChecks()
 	ds.CheckSuite.mu.Unlock()
 
 	base := baseConfig()
@@ -668,7 +842,7 @@ func (ds *DiscoverySuite) optimizeCombo() ConfigPreset {
 	log.DiscoveryLogf("  Optimizing Combo with TTL scan + strategy rotation")
 
 	ds.CheckSuite.mu.Lock()
-	ds.TotalChecks += 21
+	ds.TotalChecks += 11 + ds.ttlSweepChecks()
 	ds.CheckSuite.mu.Unlock()
 
 	combo := comboFrag()
@@ -1150,6 +1324,9 @@ func (ds *DiscoverySuite) collectTargetIPs(domain string, maxIPs int) []string {
 	}
 
 	seen := make(map[string]bool)
+	for _, ip := range dnsResult.GatewayIPs {
+		seen[ip] = true
+	}
 	var ips []string
 	for _, ip := range dnsResult.AlternativeIPs {
 		if !seen[ip] {
@@ -1176,6 +1353,13 @@ func (ds *DiscoverySuite) collectTargetIPs(domain string, maxIPs int) []string {
 }
 
 func (ds *DiscoverySuite) fetchForDomain(di DomainInput, timeout time.Duration) CheckResult {
+	if dnsResult := ds.dnsResults[di.Domain]; dnsResult.gatewayIntercepted() {
+		return CheckResult{
+			Domain: di.Domain,
+			Status: CheckStatusFailed,
+			Error:  "TCP to every known address is answered by the first hop, not tried",
+		}
+	}
 	// Use IPs already collected during DNS discovery — no fresh DNS lookups.
 	// Fresh lookups are slow (poisoned DNS can timeout) and redundant since
 	// DNS discovery already gathered all valid IPs from DoH + system resolver.
@@ -1195,21 +1379,20 @@ func (ds *DiscoverySuite) fetchForDomain(di DomainInput, timeout time.Duration) 
 		return ds.fetchUsingIPForDomain(di, timeout, ip)
 	}
 
+	var last CheckResult
 	for _, ip := range allIPs {
-		result := ds.fetchUsingIPForDomain(di, timeout, ip)
-		if result.Status == CheckStatusComplete {
+		last = ds.fetchUsingIPForDomain(di, timeout, ip)
+		if last.Status == CheckStatusComplete {
 			log.Tracef("Success with IP %s for %s", ip, di.Domain)
-			return result
+			return last
 		}
 		log.Tracef("IP %s failed for %s, trying next", ip, di.Domain)
 	}
 
 	if len(allIPs) > 0 {
-		return CheckResult{
-			Domain: di.Domain,
-			Status: CheckStatusFailed,
-			Error:  fmt.Sprintf("all %d IPs failed", len(allIPs)),
-		}
+		last.Status = CheckStatusFailed
+		last.Error = fmt.Sprintf("all %d IPs failed: %s", len(allIPs), last.Error)
+		return last
 	}
 
 	return ds.fetchUsingIPForDomain(di, timeout, "")
@@ -1731,7 +1914,7 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 			if dnsResult != nil {
 				ipsToAdd = append(ipsToAdd, dnsResult.ExpectedIPs...)
 				for _, probe := range dnsResult.ProbeResults {
-					if probe.ResolvedIP != "" {
+					if probe.ResolvedIP != "" && !dnsResult.isGateway(probe.ResolvedIP) {
 						found := false
 						for _, ip := range ipsToAdd {
 							if ip == probe.ResolvedIP {
@@ -1814,7 +1997,7 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 					allIPs = appendUnique(allIPs, ip)
 				}
 				for _, probe := range dnsResult.ProbeResults {
-					if probe.ResolvedIP != "" {
+					if probe.ResolvedIP != "" && !dnsResult.isGateway(probe.ResolvedIP) {
 						allIPs = appendUnique(allIPs, probe.ResolvedIP)
 					}
 				}
@@ -1880,7 +2063,19 @@ func (ds *DiscoverySuite) allDomainsTransportBlocked() bool {
 		return false
 	}
 	for _, result := range ds.dnsResults {
-		if !result.addressBlocked() {
+		if !result.addressBlocked() && !result.gatewayIntercepted() {
+			return false
+		}
+	}
+	return true
+}
+
+func (ds *DiscoverySuite) allDomainsGatewayIntercepted() bool {
+	if len(ds.dnsResults) == 0 {
+		return false
+	}
+	for _, result := range ds.dnsResults {
+		if !result.gatewayIntercepted() {
 			return false
 		}
 	}
@@ -1966,7 +2161,7 @@ func (ds *DiscoverySuite) targetIPsFor(domains []string) []string {
 		}
 		ips = appendUnique(ips, result.ExpectedIPs...)
 		for _, probe := range result.ProbeResults {
-			if probe.ResolvedIP != "" {
+			if probe.ResolvedIP != "" && !result.isGateway(probe.ResolvedIP) {
 				ips = appendUnique(ips, probe.ResolvedIP)
 			}
 		}
@@ -2154,6 +2349,9 @@ func (ds *DiscoverySuite) logDiscoverySummary() {
 		// DNS status line
 		if dnsResult != nil {
 			switch {
+			case dnsResult.gatewayIntercepted():
+				log.DiscoveryLogf("  ⊘ [%s] TCP to %v is answered by the first hop in front of this host; b4 here cannot help: run b4 on that gateway or exclude this host from its redirect; if this host is the router itself, the ISP does this at its edge and only a proxy route helps", di.Domain, dnsResult.GatewayIPs)
+				continue
 			case dnsResult.TransportBlocked && len(dnsResult.AlternativeIPs) > 0:
 				log.DiscoveryLogf("  ⚡ [%s] known addresses blocked, answered with %v instead", di.Domain, dnsResult.AlternativeIPs)
 			case dnsResult.TransportBlocked:

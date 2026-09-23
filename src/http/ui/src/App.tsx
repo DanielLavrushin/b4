@@ -45,7 +45,10 @@ import { LoginPage } from "@components/auth/LoginPage";
 import { Logo } from "@common/Logo";
 import Version from "@components/version/Version";
 
-import { useWebSocket } from "./context/B4WsProvider";
+import {
+  useStreamControls,
+  useUnseenDomainsCount,
+} from "./context/B4WsProvider";
 
 import { ConnectionsPage } from "@b4.connections";
 import { DashboardPage } from "@b4.dashboard";
@@ -79,13 +82,40 @@ const navItems: NavItem[] = [
   { path: "/settings", labelKey: "core.nav.settings", icon: <CoreIcon /> },
 ];
 
+function UnseenDomainsBadge() {
+  const count = useUnseenDomainsCount();
+  if (count <= 0) return null;
+
+  return (
+    <Box
+      component="span"
+      sx={{
+        ml: "auto",
+        backgroundColor: colors.secondary,
+        color: colors.text.tertiary,
+        fontSize: 11,
+        fontWeight: 700,
+        px: "6px",
+        height: 18,
+        minWidth: 18,
+        borderRadius: "9px",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {count > 999 ? "999+" : String(count)}
+    </Box>
+  );
+}
+
 export default function App() {
   const [desktopDrawerOpen, setDesktopDrawerOpen] = useState<boolean>(true);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState<boolean>(false);
   const isCompact = useMediaQuery(theme.breakpoints.down("md"));
   const navigate = useNavigate();
   const location = useLocation();
-  const { unseenDomainsCount, resetDomainsBadge } = useWebSocket();
+  const { resetDomainsBadge } = useStreamControls();
   const { isAuthenticated, isLoading, authRequired, logout } = useAuth();
   const { t } = useTranslation();
   const hubStatus = useHubStatus(!authRequired || isAuthenticated);
@@ -167,12 +197,6 @@ export default function App() {
             <List sx={{ py: 1 }}>
               {navItems.map((item) => {
                 if (item.path === "/hub" && !hubEnabled) return null;
-                let targetCount = 0;
-                if (item.path === "/traffic" && unseenDomainsCount > 0) {
-                  targetCount = unseenDomainsCount;
-                }
-                const badgeLabel =
-                  targetCount > 999 ? "999+" : String(targetCount);
 
                 return (
                   <ListItem key={item.path} disablePadding>
@@ -208,27 +232,7 @@ export default function App() {
                         {item.icon}
                       </ListItemIcon>
                       <ListItemText primary={t(item.labelKey)} />
-                      {targetCount > 0 && (
-                        <Box
-                          component="span"
-                          sx={{
-                            ml: "auto",
-                            backgroundColor: colors.secondary,
-                            color: colors.text.tertiary,
-                            fontSize: 11,
-                            fontWeight: 700,
-                            px: "6px",
-                            height: 18,
-                            minWidth: 18,
-                            borderRadius: "9px",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                        >
-                          {badgeLabel}
-                        </Box>
-                      )}
+                      {item.path === "/traffic" && <UnseenDomainsBadge />}
                     </ListItemButton>
                   </ListItem>
                 );

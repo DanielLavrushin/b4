@@ -266,8 +266,8 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		}
 
 		if pinned := s.worker.pinnedAnswer(set, query, domain); pinned != nil {
-			s.worker.applyPinnedAnswer(cfg, set, clientIP, domain, pinned)
-			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionPin)
+			action := s.worker.applyPinnedAnswer(cfg, set, clientIP, domain, pinned)
+			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, action)
 			if writeDNSTCPMessage(client, pinned, ioTimeout) != nil {
 				return
 			}

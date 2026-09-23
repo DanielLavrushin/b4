@@ -22,6 +22,7 @@ import (
 	"github.com/daniellavrushin/b4/hub"
 	"github.com/daniellavrushin/b4/hub/hubtest"
 	"github.com/daniellavrushin/b4/hubwire"
+	"github.com/daniellavrushin/b4/sni"
 )
 
 var hubTestBase struct {
@@ -293,6 +294,40 @@ func TestHubEndpointsAreGated(t *testing.T) {
 	mux.ServeHTTP(foreign, req)
 	if foreign.Code == http.StatusForbidden {
 		t.Fatalf("a foreign Origin must not be refused, the UI is often served from another host: %s", foreign.Body.String())
+	}
+}
+
+func TestHubStatusNamesTheSetsThatMatchItsAddresses(t *testing.T) {
+	env := newHubEnv(t)
+	env.update(func(cfg *config.Config) {
+		catchAll := config.NewSetConfig()
+		catchAll.Name = "catch-all"
+		catchAll.Targets.SNIDomains = []string{"regexp:.*"}
+		catchAll.Enabled = true
+		off := config.NewSetConfig()
+		off.Name = "disabled"
+		off.Targets.SNIDomains = []string{"b4core.app"}
+		off.Enabled = false
+		cfg.Sets = append(cfg.Sets, &catchAll, &off)
+		cfg.System.Hub.URLs = []string{"https://mirror.example/base", env.hub.URL()}
+	})
+	rec := getJSON(t, env.mux, "/api/hub/status")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var st hubStatusResponse
+	decodeInto(t, rec, &st)
+	hosts := map[string]string{}
+	for _, m := range st.SetMatches {
+		hosts[m.Domain] = m.SetName
+	}
+	if hosts["mirror.example"] != "catch-all" || hosts["127.0.0.1"] != "catch-all" {
+		t.Errorf("the enabled catch-all set must be reported for every hub host, got %+v", st.SetMatches)
+	}
+	for _, m := range st.SetMatches {
+		if m.SetName == "disabled" {
+			t.Errorf("a disabled set must not be reported: %+v", m)
+		}
 	}
 }
 
@@ -757,5 +792,21 @@ func TestCommunityPresetsCoverEveryRequestedDomain(t *testing.T) {
 
 	if got := env.api.communityPresets([]string{"a.example", "b.example"}, true); got != nil {
 		t.Errorf("skip must return no community presets, got %d", len(got))
+	}
+}
+
+func TestMatchAddressesToSetsNamesTheSetCoveringTheHubAddress(t *testing.T) {
+	set := config.NewSetConfig()
+	set.Id, set.Name, set.Enabled = "set-cloud", "cloud", true
+	set.Targets.IpsToMatch = []string{"20.0.0.0/8"}
+	matcher := sni.NewSuffixSet([]*config.SetConfig{&set})
+
+	got := matchAddressesToSets(matcher, []string{"20.1.2.3", "8.8.8.8", "20.1.2.3", "not-an-address"})
+
+	if len(got) != 1 || got[0].SetId != "set-cloud" || got[0].Domain != "20.1.2.3" || got[0].Via != "ip" || !got[0].Enabled {
+		t.Fatalf("matches = %+v, want the cloud set once for 20.1.2.3: a set that targets the hub by address applies its strategy to b4's own connection too", got)
+	}
+	if matchAddressesToSets(nil, []string{"20.1.2.3"}) != nil {
+		t.Fatal("without a running engine there is no matcher and nothing to report")
 	}
 }

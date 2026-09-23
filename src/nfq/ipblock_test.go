@@ -1,8 +1,10 @@
 package nfq
 
 import (
+	"context"
 	"encoding/binary"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -293,16 +295,77 @@ func TestPinnedAnswerReplacesTheAddress(t *testing.T) {
 	}
 }
 
-func TestPinnedAnswerSkipsWrongFamilyAndTypes(t *testing.T) {
+func expectEmptyPinnedAnswer(t *testing.T, got []byte, query []byte, what string) {
+	t.Helper()
+	if got == nil {
+		t.Fatalf("%s: expected an empty answer, the query would otherwise reach the resolver and defeat the pin", what)
+	}
+	if got[2]&0x80 == 0 {
+		t.Errorf("%s: response bit not set", what)
+	}
+	if got[3]&0x0F != 0 {
+		t.Errorf("%s: rcode = %d, want NOERROR", what, got[3]&0x0F)
+	}
+	if got[0] != query[0] || got[1] != query[1] {
+		t.Errorf("%s: txid = %x%x, want the query's %x%x", what, got[0], got[1], query[0], query[1])
+	}
+	if qd := binary.BigEndian.Uint16(got[4:6]); qd != 1 {
+		t.Errorf("%s: qdcount = %d, want 1", what, qd)
+	}
+	if an := binary.BigEndian.Uint16(got[6:8]); an != 0 {
+		t.Errorf("%s: ancount = %d, want 0", what, an)
+	}
+	if ips := dns.ParseResponseIPs(got); len(ips) != 0 {
+		t.Errorf("%s: addresses = %v, want none", what, ips)
+	}
+	if qt, ok := dns.QuestionType(got); !ok || qt != mustQuestionType(query) {
+		t.Errorf("%s: question type = %d ok=%v, want the query's %d", what, qt, ok, mustQuestionType(query))
+	}
+}
+
+func mustQuestionType(query []byte) uint16 {
+	qt, _ := dns.QuestionType(query)
+	return qt
+}
+
+func TestPinnedAnswerAnswersOtherTypesEmpty(t *testing.T) {
+	w := healWorker(t)
+	set := pinnedSet(map[string][]string{"whatsapp.com": {"157.240.0.174"}})
+
+	https := dns.BuildQuery("web.whatsapp.com", 0x4321, 65)
+	expectEmptyPinnedAnswer(t, w.pinnedAnswer(set, https, "web.whatsapp.com"), https, "HTTPS query")
+
+	aaaa := dns.BuildQuery("web.whatsapp.com", 0x2222, 28)
+	expectEmptyPinnedAnswer(t, w.pinnedAnswer(set, aaaa, "web.whatsapp.com"), aaaa, "AAAA query against IPv4-only pins")
+
+	cname := dns.BuildQuery("web.whatsapp.com", 9, 5)
+	expectEmptyPinnedAnswer(t, w.pinnedAnswer(set, cname, "web.whatsapp.com"), cname, "CNAME query")
+
+	svcb := dns.BuildQuery("web.whatsapp.com", 10, 64)
+	expectEmptyPinnedAnswer(t, w.pinnedAnswer(set, svcb, "web.whatsapp.com"), svcb, "SVCB query")
+
+	for _, other := range []struct {
+		name  string
+		qtype uint16
+	}{{"MX", 15}, {"TXT", 16}, {"SRV", 33}, {"NS", 2}} {
+		q := dns.BuildQuery("web.whatsapp.com", 7, other.qtype)
+		if got := w.pinnedAnswer(set, q, "web.whatsapp.com"); got != nil {
+			t.Errorf("%s query for a pinned name must reach the resolver, it carries no address the pin replaces", other.name)
+		}
+	}
+
+	if action := w.applyPinnedAnswer(&config.Config{}, set, net.ParseIP("192.168.1.10"), "web.whatsapp.com", w.pinnedAnswer(set, https, "web.whatsapp.com")); action != dnsActionPinEmpty {
+		t.Errorf("action = %q, want %q for an empty pin answer", action, dnsActionPinEmpty)
+	}
+	if action := w.applyPinnedAnswer(&config.Config{}, set, net.ParseIP("192.168.1.10"), "web.whatsapp.com", w.pinnedAnswer(set, dns.BuildQuery("web.whatsapp.com", 8, 1), "web.whatsapp.com")); action != dnsActionPin {
+		t.Errorf("action = %q, want %q for an address answer", action, dnsActionPin)
+	}
+}
+
+func TestPinnedAnswerSkipsUnpinnedNames(t *testing.T) {
 	w := healWorker(t)
 	set := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174"}})
 
-	if got := w.pinnedAnswer(set, dns.BuildQuery("www.instagram.com", 1, 28), "www.instagram.com"); got != nil {
-		t.Errorf("an AAAA query must not be answered from an IPv4-only pin, got %d bytes", len(got))
-	}
-	if got := w.pinnedAnswer(set, dns.BuildQuery("www.instagram.com", 1, 15), "www.instagram.com"); got != nil {
-		t.Errorf("an MX query must not be answered from a pin")
-	}
 	if got := w.pinnedAnswer(set, dns.BuildQuery("example.com", 1, 1), "example.com"); got != nil {
 		t.Errorf("an unpinned name must not be answered")
 	}
@@ -342,11 +405,23 @@ func TestApplyPinnedAnswerRecordsTheHostHint(t *testing.T) {
 	}
 }
 
+func pinWorker(t *testing.T, dead ...string) *Worker {
+	t.Helper()
+	w := healWorker(t)
+	w.pinHealth = newPinHealth(func(context.Context, string, int) pinVerdict { return pinUnknown })
+	t.Cleanup(w.pinHealth.stop)
+	for _, ip := range dead {
+		w.pinHealth.dead[ip] = struct{}{}
+	}
+	return w
+}
+
 func TestPinnedAnswerSkipsAddressesKnownToBeDead(t *testing.T) {
-	w := healWorker(t, "157.240.0.174")
+	w := pinWorker(t, "157.240.0.174")
 	set := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174", "157.240.253.174"}})
-	set.TCP.IPBlockDetect.Enabled = true
-	set.TCP.IPBlockDetect.SynDetect = true
+	if set.TCP.IPBlockDetect.Enabled {
+		t.Fatal("this test relies on ip_block_detect being off by default")
+	}
 
 	query := dns.BuildQuery("www.instagram.com", 0x1234, 1)
 	pinned := w.pinnedAnswer(set, query, "www.instagram.com")
@@ -356,14 +431,211 @@ func TestPinnedAnswerSkipsAddressesKnownToBeDead(t *testing.T) {
 	}
 
 	only := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174"}})
+	got := w.pinnedAnswer(only, query, "www.instagram.com")
+	if ips := dns.ParseResponseIPs(got); len(ips) != 1 || ips[0].String() != "157.240.0.174" {
+		t.Fatalf("a pin that only the reachability check calls dead must still be answered when it is the only one, got %v", ips)
+	}
+
+	untracked := &Worker{goodIPs: iphealth.NewKnownGood(), hostHints: newHostHintCache()}
+	if got := untracked.pinnedAnswer(only, query, "www.instagram.com"); got == nil {
+		t.Fatal("without a liveness store, a pin is answered as configured")
+	}
+}
+
+func TestPinnedAnswerIgnoresTheStoreForRoutedSets(t *testing.T) {
+	w := pinWorker(t, "157.240.0.174")
+	set := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174", "157.240.253.174"}})
+	set.Routing.Enabled = true
+
+	ips := dns.ParseResponseIPs(w.pinnedAnswer(set, dns.BuildQuery("www.instagram.com", 1, 1), "www.instagram.com"))
+	if len(ips) != 2 {
+		t.Fatalf("a routed set's pins are reached through its own route, the router's direct-path verdict must not thin them, got %v", ips)
+	}
+}
+
+func TestPinnedAnswerFallbackLeavesOutClientBlockedPins(t *testing.T) {
+	w := pinWorker(t, "157.240.253.174")
+	tracker := healWorker(t, "157.240.0.174")
+	w.ipHealth = tracker.ipHealth
+	set := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174", "157.240.253.174"}})
+	set.TCP.IPBlockDetect.Enabled = true
+	set.TCP.IPBlockDetect.SynDetect = true
+
+	ips := dns.ParseResponseIPs(w.pinnedAnswer(set, dns.BuildQuery("www.instagram.com", 1, 1), "www.instagram.com"))
+	if len(ips) != 1 || ips[0].String() != "157.240.253.174" {
+		t.Fatalf("when the store calls the last candidate dead the answer falls back to it, never to the pin the clients' own SYNs proved blocked, got %v", ips)
+	}
+}
+
+func TestPinnedAnswerHonoursBlockDetectionOnlyWhenEnabled(t *testing.T) {
+	w := healWorker(t, "157.240.0.174")
+	set := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174", "157.240.253.174"}})
+	query := dns.BuildQuery("www.instagram.com", 0x1234, 1)
+
+	if ips := dns.ParseResponseIPs(w.pinnedAnswer(set, query, "www.instagram.com")); len(ips) != 2 {
+		t.Fatalf("with ip_block_detect off the client-observed tracker must not thin the pins, got %v", ips)
+	}
+
+	set.TCP.IPBlockDetect.Enabled = true
+	set.TCP.IPBlockDetect.SynDetect = true
+	if ips := dns.ParseResponseIPs(w.pinnedAnswer(set, query, "www.instagram.com")); len(ips) != 1 || ips[0].String() != "157.240.253.174" {
+		t.Fatalf("with syn_detect on a tracker-dead pin is skipped, got %v", ips)
+	}
+
+	only := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174"}})
 	only.TCP.IPBlockDetect.Enabled = true
 	only.TCP.IPBlockDetect.SynDetect = true
 	if got := w.pinnedAnswer(only, query, "www.instagram.com"); got != nil {
-		t.Fatal("when every pin is dead the query must pass through to the resolver instead of answering a dead address")
+		t.Fatal("with syn_detect on, a query whose every pin is dead passes through to the resolver")
+	}
+}
+
+func TestPinnedAnswerPassesIPv4QueryThroughForIPv6OnlyPins(t *testing.T) {
+	w := healWorker(t)
+	set := pinnedSet(map[string][]string{"instagram.com": {"2a03:2880::1"}})
+	if got := w.pinnedAnswer(set, dns.BuildQuery("www.instagram.com", 1, 1), "www.instagram.com"); got != nil {
+		t.Fatal("an A query for a name pinned to IPv6 only must reach the resolver, an IPv4-only client has nothing else")
+	}
+	v4 := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174"}})
+	aaaa := dns.BuildQuery("www.instagram.com", 2, 28)
+	expectEmptyPinnedAnswer(t, w.pinnedAnswer(v4, aaaa, "www.instagram.com"), aaaa, "AAAA query against IPv4-only pins")
+}
+
+func TestPinnedAddressesCollectsEnabledSetsOnly(t *testing.T) {
+	on := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174", "2A03:2880:0:0::1"}, "whatsapp.com": {"157.240.0.174", "157.240.253.174"}})
+	off := pinnedSet(map[string][]string{"example.com": {"93.184.216.34"}})
+	off.Enabled = false
+	routed := pinnedSet(map[string][]string{"proxied.example": {"10.20.30.40"}})
+	routed.Routing.Enabled = true
+	cfg := &config.Config{Sets: []*config.SetConfig{on, off, routed}}
+
+	got := pinnedAddresses(cfg)
+	want := []string{"157.240.0.174", "157.240.253.174"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("pins = %v, want %v (deduplicated, IPv4 only while IPv6 is off, disabled and routed sets skipped)", got, want)
 	}
 
-	plain := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174"}})
-	if got := w.pinnedAnswer(plain, query, "www.instagram.com"); got == nil {
-		t.Fatal("without address tracking on the set, a pin is answered as configured")
+	cfg.Queue.IPv6Enabled = true
+	got = pinnedAddresses(cfg)
+	want = []string{"157.240.0.174", "157.240.253.174", "2a03:2880::1"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("pins with IPv6 = %v, want %v (canonical form)", got, want)
+	}
+}
+
+func TestPinHealthRoundMarksOnlyTimeoutsDead(t *testing.T) {
+	verdicts := map[string]pinVerdict{"157.240.0.174": pinDead, "157.240.253.174": pinAlive, "163.70.132.60": pinUnknown}
+	h := newPinHealth(func(_ context.Context, ip string, _ int) pinVerdict { return verdicts[ip] })
+	t.Cleanup(h.stop)
+	pins := []string{"157.240.0.174", "157.240.253.174", "163.70.132.60"}
+
+	h.check(pins, 0)
+	if !waitFor(t, func() bool { return h.isDead("157.240.0.174") }) {
+		t.Fatal("a pin whose connect timed out never became dead")
+	}
+	if h.isDead("157.240.253.174") || h.isDead("163.70.132.60") {
+		t.Error("an answering pin and an inconclusive pin must not be dead")
+	}
+	if h.due(time.Hour) {
+		t.Error("a round that just ran must not be due again before the retest interval")
+	}
+	if !h.due(0) {
+		t.Error("a completed round must count as a run")
+	}
+
+	verdicts["157.240.0.174"] = pinAlive
+	h.check(pins, 0)
+	if !waitFor(t, func() bool { return !h.isDead("157.240.0.174") }) {
+		t.Fatal("a pin that answers again must return to the answers")
+	}
+}
+
+func TestPinHealthDiscardsARoundWhereNothingAnswered(t *testing.T) {
+	h := newPinHealth(func(context.Context, string, int) pinVerdict { return pinDead })
+	t.Cleanup(h.stop)
+	h.dead["157.240.253.174"] = struct{}{}
+
+	h.check([]string{"157.240.0.174", "157.240.253.174"}, 0)
+	if !waitFor(t, func() bool { return h.due(0) }) {
+		t.Fatal("round never finished")
+	}
+	if h.isDead("157.240.0.174") {
+		t.Error("a round in which no pin answered proves nothing about any single pin and must not mark it dead")
+	}
+	if !h.isDead("157.240.253.174") {
+		t.Error("a previous verdict survives an inconclusive round")
+	}
+}
+
+func TestCheckDNSPinsSkipsDiscoveryAndStopsPromptly(t *testing.T) {
+	probed := make(chan string, 8)
+	blocking := newPinHealth(func(ctx context.Context, ip string, _ int) pinVerdict {
+		probed <- ip
+		<-ctx.Done()
+		return pinUnknown
+	})
+	pool := &Pool{state: &runtimeState{pinHealth: blocking}}
+	set := pinnedSet(map[string][]string{"instagram.com": {"157.240.0.174"}})
+
+	discovery := &config.Config{Sets: []*config.SetConfig{set}}
+	discovery.Queue.IsDiscovery = true
+	pool.checkDNSPins(discovery)
+	select {
+	case ip := <-probed:
+		t.Fatalf("a discovery pool must not probe pins, probed %s", ip)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	pool.checkDNSPins(&config.Config{Sets: []*config.SetConfig{set}})
+	select {
+	case <-probed:
+	case <-time.After(time.Second):
+		t.Fatal("the pin was never probed")
+	}
+	done := make(chan struct{})
+	go func() {
+		blocking.stop()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("stop must cancel an in-flight probe instead of waiting for it")
+	}
+}
+
+func TestPinHealthChecksASaveMadeDuringARound(t *testing.T) {
+	probed := make(chan string, 8)
+	release := make(chan struct{})
+	h := newPinHealth(func(ctx context.Context, ip string, _ int) pinVerdict {
+		probed <- ip
+		if ip == "157.240.0.174" {
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+		}
+		return pinAlive
+	})
+	t.Cleanup(h.stop)
+
+	h.check([]string{"157.240.0.174"}, 0)
+	<-probed
+	h.check([]string{"157.240.253.174"}, 0)
+	h.check([]string{"163.70.132.60"}, 0)
+	close(release)
+
+	select {
+	case ip := <-probed:
+		if ip != "163.70.132.60" {
+			t.Fatalf("the round after the running one probed %s, want the pins of the latest save", ip)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("a save made while a round was running was never checked, its pins would wait for the retest interval")
+	}
+	select {
+	case ip := <-probed:
+		t.Fatalf("only the latest save may run, %s was probed as well", ip)
+	case <-time.After(50 * time.Millisecond):
 	}
 }

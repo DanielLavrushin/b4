@@ -25,6 +25,8 @@ const (
 
 	baseScheme  = "https://"
 	plainScheme = "http://"
+
+	maxHubAddresses = 8
 )
 
 var DefaultBases = []string{DefaultBaseURL}
@@ -32,6 +34,7 @@ var DefaultBases = []string{DefaultBaseURL}
 type Options struct {
 	Version      string
 	HTTPClient   *http.Client
+	PlainClient  *http.Client
 	BuiltinBases []string
 	Now          func() time.Time
 }
@@ -45,6 +48,11 @@ type Service struct {
 	builtin []string
 	now     func() time.Time
 
+	plainMu    sync.Mutex
+	plain      *http.Client
+	plainMark  uint
+	plainFixed bool
+
 	mu            sync.RWMutex
 	manifest      *hubwire.Manifest
 	catalogue     *hubwire.Catalogue
@@ -53,6 +61,8 @@ type Service struct {
 	lastError     string
 	preferredBase string
 	syncedBase    string
+	plainMode     bool
+	addresses     []string
 
 	identityMu      sync.Mutex
 	identity        *hubwire.Identity
@@ -81,11 +91,13 @@ type Service struct {
 
 func New(getCfg func() *config.Config, opts Options) *Service {
 	s := &Service{
-		getCfg:  getCfg,
-		version: opts.Version,
-		http:    opts.HTTPClient,
-		builtin: opts.BuiltinBases,
-		now:     opts.Now,
+		getCfg:     getCfg,
+		version:    opts.Version,
+		http:       opts.HTTPClient,
+		plain:      opts.PlainClient,
+		plainFixed: opts.PlainClient != nil,
+		builtin:    opts.BuiltinBases,
+		now:        opts.Now,
 	}
 	if s.http == nil {
 		s.http = netprobe.HTTPClient(int(config.SelfDialMark), RequestTimeout)
@@ -293,6 +305,73 @@ func (s *Service) catalogueLoaded() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.catalogue != nil
+}
+
+func (s *Service) bypassMark() uint {
+	if cfg := s.getCfg(); cfg != nil {
+		return cfg.MainInjectedMark()
+	}
+	return config.DefaultConfig.Queue.Mark
+}
+
+func (s *Service) client() *http.Client {
+	s.mu.RLock()
+	plain := s.plainMode
+	s.mu.RUnlock()
+	if plain {
+		return s.plainClient()
+	}
+	return s.http
+}
+
+func (s *Service) plainClient() *http.Client {
+	s.plainMu.Lock()
+	defer s.plainMu.Unlock()
+	if s.plainFixed {
+		return s.plain
+	}
+	if mark := s.bypassMark(); s.plain == nil || mark != s.plainMark {
+		if s.plain != nil {
+			s.plain.CloseIdleConnections()
+		}
+		s.plain = netprobe.HTTPClient(int(mark), RequestTimeout)
+		s.plainMark = mark
+	}
+	return s.plain
+}
+
+func (s *Service) noteAddress(hostport string) {
+	host, _, err := net.SplitHostPort(hostport)
+	if err != nil || net.ParseIP(host) == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := []string{host}
+	for _, addr := range s.addresses {
+		if addr != host && len(kept) < maxHubAddresses {
+			kept = append(kept, addr)
+		}
+	}
+	s.addresses = kept
+}
+
+func (s *Service) ConnectedAddresses() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]string(nil), s.addresses...)
+}
+
+func (s *Service) PlainMode() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.plainMode
+}
+
+func (s *Service) setPlainMode(plain bool) {
+	s.mu.Lock()
+	s.plainMode = plain
+	s.mu.Unlock()
 }
 
 func (s *Service) markSynced(base string) {

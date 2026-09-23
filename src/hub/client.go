@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
+	"net/url"
 	"strings"
 	"time"
 
@@ -68,6 +70,12 @@ func Retryable(err error) bool {
 	return errors.Is(err, ErrUnreachable)
 }
 
+type transportError struct{ err error }
+
+func (e transportError) Error() string { return e.err.Error() }
+
+func (e transportError) Unwrap() error { return e.err }
+
 type MessageResponse struct {
 	HTTPStatus int    `json:"-"`
 	ID         string `json:"id"`
@@ -95,16 +103,23 @@ func (s *Service) userAgent() string {
 func (s *Service) do(ctx context.Context, req *http.Request, limit int64, timeout time.Duration) ([]byte, int, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		ConnectDone: func(_, addr string, err error) {
+			if err == nil {
+				s.noteAddress(addr)
+			}
+		},
+	})
 	req = req.WithContext(ctx)
 	req.Header.Set("User-Agent", s.userAgent())
-	resp, err := s.http.Do(req)
+	resp, err := s.client().Do(req)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, transportError{err}
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
-		return nil, resp.StatusCode, err
+		return nil, resp.StatusCode, transportError{err}
 	}
 	if int64(len(body)) > limit {
 		return nil, resp.StatusCode, fmt.Errorf("%s returned more than the %d byte limit", req.URL, limit)
@@ -120,12 +135,23 @@ func (s *Service) get(ctx context.Context, url string, limit int64, timeout time
 	return s.do(ctx, req, limit, timeout)
 }
 
-func (s *Service) healthy(ctx context.Context, base string) bool {
+func (s *Service) healthy(ctx context.Context, base string) error {
 	body, status, err := s.get(ctx, base+hubwire.PathHealth, 64, healthTimeout)
-	if err != nil || status != http.StatusOK {
-		return false
+	if err != nil {
+		var te transportError
+		var urlErr *url.Error
+		if errors.As(err, &te) && errors.As(te.err, &urlErr) {
+			return transportError{urlErr.Err}
+		}
+		return err
 	}
-	return strings.TrimSpace(string(body)) == "ok"
+	if status != http.StatusOK {
+		return fmt.Errorf("health check answered %d", status)
+	}
+	if answer := strings.TrimSpace(string(body)); answer != "ok" {
+		return fmt.Errorf("health check answered %q", answer)
+	}
+	return nil
 }
 
 func (s *Service) fetchManifest(ctx context.Context, base string) (*hubwire.Manifest, error) {
