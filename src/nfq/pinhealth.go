@@ -165,7 +165,9 @@ func (h *pinHealth) stop() {
 	if h == nil {
 		return
 	}
+	h.mu.Lock()
 	h.cancel()
+	h.mu.Unlock()
 	h.wg.Wait()
 }
 
