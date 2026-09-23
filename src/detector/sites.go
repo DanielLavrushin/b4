@@ -453,7 +453,7 @@ func (s *Suite) fetchAny(ctx context.Context, site SiteResult, ips []string, mar
 			blocked = append(blocked, ip)
 			notes = append(notes, ip+": "+f.Detail)
 		}
-		if firstFail == nil || (!isBlockedStatus(firstFail.Status) && isBlockedStatus(f.Status)) {
+		if firstFail == nil || failureRank(f.Status) > failureRank(firstFail.Status) {
 			copy := f
 			firstFail = &copy
 		}
@@ -468,6 +468,16 @@ func (s *Suite) fetchAny(ctx context.Context, site SiteResult, ips []string, mar
 		f.Detail += "; " + strconv.Itoa(len(ips)) + " addresses tried"
 	}
 	return f
+}
+
+func failureRank(st FetchStatus) int {
+	switch {
+	case st == netprobe.DomainGateway:
+		return 1
+	case isBlockedStatus(st):
+		return 2
+	}
+	return 0
 }
 
 func outcomeFor(direct, through *Fetch) SiteOutcome {
