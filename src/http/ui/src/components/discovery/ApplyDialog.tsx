@@ -68,9 +68,8 @@ export const ApplyDialog = ({
 
   const [name, setName] = useState("");
   const [variant, setVariant] = useState("");
-  const [mode, setMode] = useState<ApplyMode>("new");
-  const [modeChosen, setModeChosen] = useState(false);
-  const [replaceSetId, setReplaceSetId] = useState<string | null>(null);
+  const [chosenMode, setChosenMode] = useState<ApplyMode | null>(null);
+  const [pickedReplaceId, setPickedReplaceId] = useState<string | null>(null);
   const [similar, setSimilar] = useState<SimilarSet[]>([]);
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
   const [claimed, setClaimed] = useState<SetDomainMatch[]>([]);
@@ -80,9 +79,8 @@ export const ApplyDialog = ({
     if (!open || !target) return;
     setName(`${suggestSetName(target.domains[0])}${strategySuffix(target.set)}`);
     setVariant(single ? (variants[0] ?? single) : "");
-    setMode("new");
-    setModeChosen(false);
-    setReplaceSetId(null);
+    setChosenMode(null);
+    setPickedReplaceId(null);
     setSimilar([]);
     setSelectedSetId(null);
     setClaimed([]);
@@ -113,11 +111,9 @@ export const ApplyDialog = ({
   }, [target, single, variant]);
 
   useEffect(() => {
-    if (!open || domains.length === 0) {
-      setClaimed([]);
-      setCovered([]);
-      return;
-    }
+    setClaimed([]);
+    setCovered([]);
+    if (!open || domains.length === 0) return;
     let active = true;
     setsApi
       .checkDomain(domains.join(","))
@@ -148,11 +144,17 @@ export const ApplyDialog = ({
     return [...seen].map(([id, name]) => ({ id, name }));
   }, [claimed]);
 
-  useEffect(() => {
-    if (modeChosen || replaceTargets.length === 0) return;
-    setMode("replace");
-    setReplaceSetId((prev) => prev ?? replaceTargets[0].id);
-  }, [modeChosen, replaceTargets]);
+  const wantedMode: ApplyMode =
+    chosenMode ?? (replaceTargets.length > 0 ? "replace" : "new");
+  const mode: ApplyMode =
+    (wantedMode === "replace" && replaceTargets.length === 0) ||
+    (wantedMode === "existing" && similar.length === 0)
+      ? "new"
+      : wantedMode;
+  const replaceSetId =
+    replaceTargets.find((s) => s.id === pickedReplaceId)?.id ??
+    replaceTargets[0]?.id ??
+    null;
 
   if (!target) return null;
 
@@ -186,10 +188,7 @@ export const ApplyDialog = ({
     onCreate({ ...previewSet, name: name.trim() || domains[0] });
   };
 
-  const chooseMode = (next: ApplyMode) => {
-    setModeChosen(true);
-    setMode(next);
-  };
+  const chooseMode = (next: ApplyMode) => setChosenMode(next);
 
   const selectedSimilar = similar.find((s) => s.id === selectedSetId);
   const selectedReplace = replaceTargets.find((s) => s.id === replaceSetId);
@@ -333,7 +332,7 @@ export const ApplyDialog = ({
                   value="replace"
                   control={<Radio />}
                   label={t("discovery.apply.replaceIn", {
-                    name: selectedReplace?.name ?? replaceTargets[0].name,
+                    name: selectedReplace?.name,
                   })}
                 />
               )}
@@ -373,7 +372,7 @@ export const ApplyDialog = ({
             </Typography>
             <RadioGroup
               value={replaceSetId ?? ""}
-              onChange={(e) => setReplaceSetId(e.target.value)}
+              onChange={(e) => setPickedReplaceId(e.target.value)}
             >
               {replaceTargets.map((set) => (
                 <FormControlLabel
