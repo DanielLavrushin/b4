@@ -24,8 +24,7 @@ import { useDiscovery, useDiscoveryLogs } from "@hooks/useDiscovery";
 import { useSets } from "@hooks/useSets";
 import { useCaptures } from "@b4.capture";
 import { configApi } from "@b4.settings";
-import { setsApi } from "@api/sets";
-import { ApplyTarget, buildResultEntries, withStrategyOf } from "@utils";
+import { ApplyTarget, buildResultEntries } from "@utils";
 import {
   DiscoveryOptionsPanel,
   DiscoveryOptions,
@@ -68,13 +67,14 @@ export const DiscoveryRunner = () => {
     finishRequested,
     resetDiscovery,
     addPresetAsSet,
+    replaceStrategy,
     markApplied,
     clearCache,
     clearHistory,
     deleteHistoryDomain,
   } = useDiscovery();
   const { logs, connected, clearLogs } = useDiscoveryLogs();
-  const { addDomainsToSet, updateSet } = useSets();
+  const { addDomainsToSet } = useSets();
   const { captures, loadCaptures } = useCaptures();
 
   const [options, setOptions] = useState<DiscoveryOptions>(loadOptions);
@@ -272,35 +272,26 @@ export const DiscoveryRunner = () => {
   ) => {
     const applied = applyTarget;
     setApplying(true);
-    let name = "";
-    let moved: DomainReassignment[] | undefined;
-    const ok = await (async () => {
-      try {
-        const added = await addDomainsToSet(setId, domains);
-        if (!added.success) return false;
-        moved = added.data?.moved;
-        const existing = await setsApi.getSet(setId);
-        name = existing.name;
-        const res = await updateSet(
-          withStrategyOf(existing, set, domains, pins),
-        );
-        return res.success;
-      } catch {
-        return false;
-      }
-    })();
+    const res = await replaceStrategy(setId, set, domains, pins);
     setApplying(false);
-    if (!ok) {
-      showError(t("discovery.apply.replaceFailed"));
+    if (!res.success) {
+      showError(
+        [t("discovery.apply.replaceFailed"), res.error]
+          .filter(Boolean)
+          .join(" "),
+      );
       return;
     }
     if (applied) await markApplied(applied.domains, applied.preset, setId);
     showSuccess(
-      [t("discovery.apply.replaced", { name }), describeMoved(moved)]
+      [
+        t("discovery.apply.replaced", { name: res.data?.name ?? "" }),
+        describeMoved(res.data?.moved),
+      ]
         .filter(Boolean)
         .join(" "),
       {
-      label: t("discovery.apply.openSet"),
+        label: t("discovery.apply.openSet"),
         onClick: () => {
           void navigate(`/sets/${setId}`);
         },

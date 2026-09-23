@@ -91,13 +91,13 @@ A set is a bundle of bypass settings tied to a list of domains or IP addresses. 
 
 Open a site that is covered by the bypass. If everything works, the site loads.
 
-### Through the Connections section
+### Through the Traffic section
 
-In the side menu click **Connections**. This view shows all current TCP/UDP connections in real time.
+In the side menu click **Traffic**. This page shows the packets b4 inspects in real time, grouped by device, protocol and domain.
 
-![20260418220155](../static/img/quickstart/20260418220155.png)
+![Traffic](/img/connections/20260923214001.png)
 
-If the bypass is working, the **Set** column for connections to the configured domain shows the name of your set.
+If the bypass is working, the **Set** column shows the name of your set next to the configured domain. More on the page in the [Traffic](./connections.md) section.
 
 ## What's next
 

@@ -1,10 +1,20 @@
 package handler
 
-import "github.com/daniellavrushin/b4/discovery"
+import (
+	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/discovery"
+)
 
 type HistoryEntryView struct {
 	discovery.HistoryEntry
 	SizeBytes int `json:"size_bytes"`
+}
+
+type DiscoveryReplaceRequest struct {
+	SetId   string              `json:"set_id"`
+	Set     config.SetConfig    `json:"set"`
+	Domains []string            `json:"domains"`
+	Pins    map[string][]string `json:"pins,omitempty"`
 }
 
 type HistoryAppliedRequest struct {

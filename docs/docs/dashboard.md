@@ -50,7 +50,7 @@ Shows which devices on the network access which domains:
 If a domain is not yet in any set, a "+" button appears next to it for quick addition.
 
 :::info TLS labels
-Domains may be tagged with **1.2** or **1.3** - the TLS protocol version used by the connection. The same labels appear in the Connections and Discovery sections. The TLS version matters because providers may block TLS 1.2 and TLS 1.3 with different methods - each may require a different bypass strategy.
+Domains may be tagged with **1.2** or **1.3** - the TLS protocol version used by the connection. The same labels appear on the Traffic and Discovery pages. The TLS version matters because providers may block TLS 1.2 and TLS 1.3 with different methods - each may require a different bypass strategy.
 :::
 
 ![20260418223112](../static/img/dashboard/20260418223112.png)

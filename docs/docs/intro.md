@@ -44,7 +44,7 @@ b4 consists of several parts, each described in detail in its own documentation 
 - **Sets** - bypass configurations for TCP/UDP traffic with different strategies
 - **Discovery** - automatic selection of a working configuration
 - **DPI Detector** - identifies the blocking methods used by your provider
-- **Connections monitor** - view traffic in real time
+- **Traffic** - the packets b4 inspects, in real time
 - **GeoSite/GeoIP** - work with site categories and IP addresses
 - **Per-device filtering** - different rules for different devices on the network
 - **Routing** - direct traffic through a specific interface (VPN, WireGuard, etc.)

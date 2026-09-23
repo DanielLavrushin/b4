@@ -132,7 +132,7 @@ Log levels:
 | Debug | Everything, including debug info |
 
 :::warning Error level
-At the **Error** level, the **Logs** and **Connections** sections in the web interface will not show data - they read from the log stream, which is almost empty at this level.
+At the **Error** level the **Logs** section shows almost nothing: it reads the log stream, which carries next to nothing at this level. The **Traffic** section has its own stream and is not affected.
 :::
 
 :::info Error file

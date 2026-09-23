@@ -309,49 +309,6 @@ export function historyAlternates(
   );
 }
 
-export function withStrategyOf(
-  existing: B4SetConfig,
-  strategy: B4SetConfig,
-  domains: string[],
-  pins?: Record<string, string[]>,
-): B4SetConfig {
-  const targets = existing.targets ?? ({} as B4SetConfig["targets"]);
-  const replaced = new Set(domains.map((d) => d.toLowerCase()));
-  const unrelated = Object.entries(existing.dns?.pins ?? {}).filter(
-    ([pin]) => !replaced.has(pin.toLowerCase()),
-  );
-  const merged = { ...Object.fromEntries(unrelated), ...(pins ?? {}) };
-  return {
-    ...existing,
-    tcp: {
-      ...strategy.tcp,
-      dport_filter: existing.tcp?.dport_filter ?? strategy.tcp.dport_filter,
-      rst_protection: existing.tcp?.rst_protection ?? strategy.tcp.rst_protection,
-      ip_block_detect: strategy.tcp.ip_block_detect?.enabled
-        ? strategy.tcp.ip_block_detect
-        : (existing.tcp?.ip_block_detect ?? strategy.tcp.ip_block_detect),
-    },
-    udp: {
-      ...strategy.udp,
-      dport_filter: existing.udp?.dport_filter ?? strategy.udp.dport_filter,
-    },
-    fragmentation: strategy.fragmentation,
-    faking: strategy.faking,
-    dns: {
-      ...(strategy.dns ?? emptyDns()),
-      pins: Object.keys(merged).length > 0 ? merged : undefined,
-    },
-    targets: {
-      ...targets,
-      sni_domains: [
-        ...new Set([...(targets.sni_domains ?? []), ...domains]),
-      ],
-      tls: strategy.targets?.tls ?? "",
-      ip_version: strategy.targets?.ip_version ?? "",
-    },
-  };
-}
-
 export function appliedMarks(
   history: HistoryEntry[],
   domains: string[],

@@ -133,8 +133,9 @@ to a direct outbound.
 A set routed into a TUN, TAP or WireGuard interface stops running its bypass strategy: no
 faking, fragmentation or desync, and no SYN health check, dead IP escalation, IP block
 detection or TCP duplication. Those work on the inner segment, which is wrapped or
-terminated on the router before the network sees it. Such connections appear in
-`Connections` tagged `routed-><iface>`.
+terminated on the router before the network sees it. Such connections carry the
+`routed-><iface>` flag: it ends their lines on the `Logs` page, and `flags:routed` finds
+them on the `Traffic` page.
 
 The strategy tabs still show their settings. They are not applied while the set routes into
 a tunnel.
@@ -153,8 +154,8 @@ iptables -t mangle -L -n -v | grep b4r_        # iptables
 nft list table inet b4_route                   # nftables
 
 # 1. whether b4 sees anything at all
-#    Connections in the web interface: when every source is the router's
-#    own address, the network interface filter is excluding the rest
+#    Traffic in the web interface: when the router is the only source,
+#    the network interface filter is excluding the rest
 ```
 
 A destination outside every set that still resolves to the tunnel device is being routed by

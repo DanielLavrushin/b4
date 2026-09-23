@@ -22,6 +22,7 @@ func (api *API) RegisterDiscoveryApi() {
 	api.mux.HandleFunc("/api/discovery/cancel/{id}", api.handleCancelCheck)
 	api.mux.HandleFunc("/api/discovery/finish/{id}", api.handleFinishCheck)
 	api.mux.HandleFunc("/api/discovery/add", api.handleAddPresetAsSet)
+	api.mux.HandleFunc("/api/discovery/replace", api.handleReplaceStrategy)
 	api.mux.HandleFunc("/api/discovery/similar", api.handleFindSimilarSets)
 	api.mux.HandleFunc("/api/discovery/cache/clear", api.handleClearDiscoveryCache)
 	api.mux.HandleFunc("/api/discovery/current", api.handleGetCurrentDiscovery)
@@ -374,6 +375,112 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 		"id":      set.Id,
 		"name":    set.Name,
 	})
+}
+
+// @Summary Replace the strategy of an existing set with a discovered one
+// @Tags Discovery
+// @Accept json
+// @Produce json
+// @Param body body DiscoveryReplaceRequest true "Target set, discovered strategy, domains and pins"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /discovery/replace [post]
+func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	req := DiscoveryReplaceRequest{Set: config.NewSetConfig()}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	domains := make([]string, 0, len(req.Domains))
+	for _, raw := range req.Domains {
+		if d := strings.TrimSpace(raw); d != "" && !domainInList(domains, d) {
+			domains = append(domains, d)
+		}
+	}
+	if req.SetId == "" || len(domains) == 0 {
+		http.Error(w, "set_id and domains are required", http.StatusBadRequest)
+		return
+	}
+	config.ApplySetDefaults(&req.Set)
+
+	oldCfg := api.getCfg()
+	newCfg := oldCfg.Clone()
+
+	var target *config.SetConfig
+	for _, set := range newCfg.Sets {
+		if set != nil && set.Id == req.SetId {
+			target = set
+			break
+		}
+	}
+	if target == nil {
+		writeAPIError(w, ErrNotFound("Set not found"))
+		return
+	}
+
+	replaceStrategy(target, &req.Set)
+	replacePins(target, domains, req.Pins)
+	addSNIDomains(target, domains)
+	moved := api.releaseDomainsFromOtherSets(newCfg.Sets, target.Id, domains)
+
+	if err := api.saveAndPushConfig(newCfg); err != nil {
+		log.Errorf("Failed to save config: %v", err)
+		writeAPIError(w, err)
+		return
+	}
+	if api.PerformSoftRestart(newCfg, oldCfg) {
+		log.Infof("Soft restart completed successfully")
+	}
+	log.Infof("Replaced the strategy of set '%s' with a discovered one for %s", target.Name, strings.Join(domains, ", "))
+
+	setJsonHeader(w)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"moved":   moved,
+		"id":      target.Id,
+		"name":    target.Name,
+	})
+}
+
+func replaceStrategy(dst, strategy *config.SetConfig) {
+	tcp := strategy.TCP
+	tcp.DPortFilter = dst.TCP.DPortFilter
+	tcp.RSTProtection = dst.TCP.RSTProtection
+	if !strategy.TCP.IPBlockDetect.Enabled {
+		tcp.IPBlockDetect = dst.TCP.IPBlockDetect
+	}
+	udp := strategy.UDP
+	udp.DPortFilter = dst.UDP.DPortFilter
+
+	pins := dst.DNS.Pins
+	dst.TCP = tcp
+	dst.UDP = udp
+	dst.Fragmentation = strategy.Fragmentation
+	dst.Faking = strategy.Faking
+	dst.DNS = strategy.DNS
+	dst.DNS.Pins = pins
+	dst.Targets.TLSVersion = strategy.Targets.TLSVersion
+	dst.Targets.IPVersion = strategy.Targets.IPVersion
+}
+
+func replacePins(set *config.SetConfig, domains []string, pins map[string][]string) {
+	applied := make(map[string]bool, len(domains))
+	for _, domain := range domains {
+		if normalized := config.NormalizePinDomain(domain); normalized != "" {
+			applied[normalized] = true
+		}
+	}
+	for pin := range set.DNS.Pins {
+		if applied[config.NormalizePinDomain(pin)] {
+			delete(set.DNS.Pins, pin)
+		}
+	}
+	mergePins(set, pins)
 }
 
 func cdnCategoriesFor(domains []string) (geoip, geosite []string) {

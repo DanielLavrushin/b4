@@ -189,3 +189,113 @@ func TestHistoryOffersTheAlternativesAndRemembersWhatWasTried(t *testing.T) {
 		t.Error("only the strategy that was installed carries a mark")
 	}
 }
+
+func replaceFixture(t *testing.T, mutate func(target *config.SetConfig)) (*API, *http.ServeMux) {
+	t.Helper()
+	cfg := config.NewConfig()
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "b4.json")
+
+	target := config.NewSetConfig()
+	target.Id, target.Name, target.Enabled = "set-a", "meduza", true
+	target.Targets.SNIDomains = []string{"meduza.io"}
+	target.TCP.DPortFilter = "443,8443"
+	target.TCP.RSTProtection.Enabled = true
+	target.Faking.Strategy = "timestamp"
+	target.DNS.Pins = map[string][]string{"meduza.io": {"1.1.1.1"}, "other.io": {"2.2.2.2"}}
+	if mutate != nil {
+		mutate(&target)
+	}
+
+	other := config.NewSetConfig()
+	other.Id, other.Name, other.Enabled = "set-b", "old", true
+	other.Targets.SNIDomains = []string{"cdn.meduza.io", "keep.io"}
+
+	cfg.Sets = []*config.SetConfig{&target, &other}
+	api := &API{cfgPtr: testCfgPtr(&cfg), geodataManager: geodat.NewGeodataManager("", "")}
+	mux := http.NewServeMux()
+	api.mux = mux
+	api.RegisterDiscoveryApi()
+	return api, mux
+}
+
+func replaceRequest(t *testing.T, mux *http.ServeMux) *httptest.ResponseRecorder {
+	t.Helper()
+	strategy := config.NewSetConfig()
+	strategy.Faking.Strategy = "pastseq"
+	strategy.TCP.ConnBytesLimit = 7
+	body, err := json.Marshal(DiscoveryReplaceRequest{
+		SetId:   "set-a",
+		Set:     strategy,
+		Domains: []string{"meduza.io", "cdn.meduza.io"},
+		Pins:    map[string][]string{"meduza.io": {"9.9.9.9"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/discovery/replace", strings.NewReader(string(body))))
+	return rec
+}
+
+func replaceSets(api *API) (target, other *config.SetConfig) {
+	for _, s := range api.getCfg().Sets {
+		switch s.Id {
+		case "set-a":
+			target = s
+		case "set-b":
+			other = s
+		}
+	}
+	return target, other
+}
+
+func TestReplaceStrategySwapsOnlyTheStrategyAndMovesTheGroupInOneSave(t *testing.T) {
+	api, mux := replaceFixture(t, nil)
+	rec := replaceRequest(t, mux)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("replace: %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	got, left := replaceSets(api)
+	if got.Faking.Strategy != "pastseq" || got.TCP.ConnBytesLimit != 7 {
+		t.Errorf("the discovered strategy must replace the old one, got faking=%q conn_bytes=%d", got.Faking.Strategy, got.TCP.ConnBytesLimit)
+	}
+	if got.Name != "meduza" || got.TCP.DPortFilter != "443,8443" || !got.TCP.RSTProtection.Enabled {
+		t.Errorf("the set's own settings are not part of the strategy and must survive: name=%q dport=%q rst=%v", got.Name, got.TCP.DPortFilter, got.TCP.RSTProtection.Enabled)
+	}
+	if pins := got.DNS.Pins["meduza.io"]; len(pins) != 1 || pins[0] != "9.9.9.9" {
+		t.Errorf("an applied site's pins come from the new strategy alone, got %v", got.DNS.Pins["meduza.io"])
+	}
+	if len(got.DNS.Pins["other.io"]) != 1 {
+		t.Errorf("pins of sites the replace did not touch must stay, got %v", got.DNS.Pins)
+	}
+	if !domainInList(got.Targets.SNIDomains, "cdn.meduza.io") || domainInList(left.Targets.SNIDomains, "cdn.meduza.io") {
+		t.Errorf("a grouped site must move into the set in the same save, target=%v other=%v", got.Targets.SNIDomains, left.Targets.SNIDomains)
+	}
+	if !domainInList(left.Targets.SNIDomains, "keep.io") {
+		t.Error("the other set keeps what the replace did not claim")
+	}
+	if !strings.Contains(rec.Body.String(), "cdn.meduza.io") {
+		t.Errorf("the reply must say what moved, got %s", rec.Body.String())
+	}
+}
+
+func TestReplaceStrategyChangesNothingWhenTheSaveIsRejected(t *testing.T) {
+	api, mux := replaceFixture(t, func(target *config.SetConfig) {
+		target.MSSClamp.Enabled, target.MSSClamp.Size = true, 1300
+	})
+	if rec := replaceRequest(t, mux); rec.Code == http.StatusOK {
+		t.Fatalf("a configuration the validator refuses must not be saved: %s", rec.Body.String())
+	}
+
+	got, left := replaceSets(api)
+	if got.Faking.Strategy != "timestamp" || domainInList(got.Targets.SNIDomains, "cdn.meduza.io") {
+		t.Errorf("a refused replace must leave the target as it was, got faking=%q sites=%v", got.Faking.Strategy, got.Targets.SNIDomains)
+	}
+	if !domainInList(left.Targets.SNIDomains, "cdn.meduza.io") {
+		t.Error("a refused replace must not move sites out of other sets")
+	}
+	if pins := got.DNS.Pins["meduza.io"]; len(pins) != 1 || pins[0] != "1.1.1.1" {
+		t.Errorf("a refused replace must leave the live pins alone, got %v", got.DNS.Pins)
+	}
+}
