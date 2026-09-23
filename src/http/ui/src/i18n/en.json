@@ -2640,6 +2640,7 @@
       "blocked": "{{count}} blocked by ISP",
       "fixed": "{{count}} fixed by b4",
       "still": "{{count}} still blocked",
+      "gateway": "{{count}} answered by the gateway",
       "dnsHijacked": "port 53 hijacked",
       "dnsSubstituted": "DNS substituted",
       "dnsHonest": "DNS honest",

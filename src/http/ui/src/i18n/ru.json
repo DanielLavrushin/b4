@@ -2678,6 +2678,7 @@
       "blocked": "заблокировано провайдером: {{count}}",
       "fixed": "починено b4: {{count}}",
       "still": "всё ещё заблокировано: {{count}}",
+      "gateway": "отвечает шлюз: {{count}}",
       "dnsHijacked": "порт 53 перехвачен",
       "dnsSubstituted": "DNS подменяется",
       "dnsHonest": "DNS честный",

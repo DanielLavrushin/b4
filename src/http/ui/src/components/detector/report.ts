@@ -31,7 +31,7 @@ export function buildReport(suite: DetectorSuite, t: TFunction): string {
 
   if (suite.sites) {
     out.push(
-      `## Sites: ${v.blocked_by_isp} blocked by ISP, ${v.fixed_by_b4} fixed by b4, ${v.still_blocked} still blocked, ${v.not_blocked} not blocked`,
+      `## Sites: ${v.blocked_by_isp} blocked by ISP, ${v.fixed_by_b4} fixed by b4, ${v.still_blocked} still blocked, ${v.gateway ? `${v.gateway} answered by the gateway, ` : ""}${v.not_blocked} not blocked`,
     );
     out.push("");
     out.push("| Site | Direct | Through b4 | Outcome | Detail |");

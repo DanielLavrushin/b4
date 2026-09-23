@@ -21,6 +21,7 @@ export function historySummary(e: DetectorSuite, t: (k: string, o?: Record<strin
       parts.push(t("detector.history.fixed", { count: v.fixed_by_b4 }));
       if (v.still_blocked > 0) parts.push(t("detector.history.still", { count: v.still_blocked }));
     }
+    if ((v.gateway ?? 0) > 0) parts.push(t("detector.history.gateway", { count: v.gateway }));
   }
   if (e.dns) {
     if (v.dns_hijacked) parts.push(t("detector.history.dnsHijacked"));
