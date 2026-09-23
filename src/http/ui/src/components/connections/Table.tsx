@@ -392,7 +392,7 @@ export const DomainsTable = ({
                   borderBottom: "none",
                 }}
               >
-                {t("connections.table.waitingForConnections")}
+                {t("connections.table.waitingForPackets")}
               </TableCell>
             </TableRow>
           ) : (

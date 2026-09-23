@@ -196,18 +196,12 @@ export function LogsPage() {
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
             />
-            <Stack direction="row" spacing={1} alignItems="center">
+            {(filter || enabledLevels.size < LOG_LEVELS.length) && (
               <B4Badge
-                label={t("core.lines", { count: logs.length })}
+                label={t("core.matching", { count: filtered.length })}
                 size="small"
               />
-              {(filter || enabledLevels.size < LOG_LEVELS.length) && (
-                <B4Badge
-                  label={t("core.filtered", { count: filtered.length })}
-                  size="small"
-                />
-              )}
-            </Stack>
+            )}
 
             <Box sx={{ flexGrow: 1 }} />
 

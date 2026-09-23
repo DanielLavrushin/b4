@@ -234,7 +234,7 @@ export const GroupList = ({
         {groups.length === 0 ? (
           <Stack sx={{ py: 6, alignItems: "center", color: colors.text.disabled }}>
             <Typography sx={{ fontStyle: "italic" }}>
-              {t("connections.table.waitingForConnections")}
+              {t("connections.table.waitingForPackets")}
             </Typography>
           </Stack>
         ) : (

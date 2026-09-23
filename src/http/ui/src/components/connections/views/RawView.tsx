@@ -105,7 +105,6 @@ export const RawView = ({
       <DomainsControlBar
         filter={filter}
         onFilterChange={onFilterChange}
-        totalCount={enrichedLogs.length}
         filteredCount={filteredLogs.length}
         sortColumn={sortColumn}
         showAll={showAll}

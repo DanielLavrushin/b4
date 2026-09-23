@@ -71,8 +71,9 @@
       "hub": "Community"
     },
     "failed": "Failed",
-    "filtered": "{{count}} filtered",
-    "lines": "{{count}} lines",
+    "matching": "{{count}} matching",
+    "lines_one": "{{count}} line",
+    "lines_other": "{{count}} lines",
     "addHostname": "Add Hostname",
     "timeAgo": {
       "justNow": "just now",
@@ -2663,11 +2664,10 @@
     },
     "controlBar": {
       "filterPlaceholder": "Filter (combine with +, exclude with !, e.g. tcp+!domain:google.com)",
-      "connections": "{{count}} connections",
       "sortedBy": "Sorted by {{column}}",
       "allPackets": "All packets",
       "domainsOnly": "Domains only",
-      "clearConnections": "Clear Connections"
+      "clearPackets": "Clear Packets"
     },
     "table": {
       "time": "Time",
@@ -2676,7 +2676,7 @@
       "domain": "Domain",
       "source": "Source",
       "destination": "Destination",
-      "waitingForConnections": "Waiting for connections...",
+      "waitingForPackets": "Waiting for packets...",
       "enrichAsn": "Enrich ASN",
       "enrichSuccess": "{{asn}} enriched ({{count}} prefixes)",
       "enrichFailed": "Failed to enrich ASN",

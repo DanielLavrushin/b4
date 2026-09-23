@@ -82,7 +82,7 @@ export const AggregatedControlBar = ({
         />
 
         <B4TooltipButton
-          title={t("connections.controlBar.clearConnections")}
+          title={t("connections.controlBar.clearPackets")}
           onClick={onReset}
           icon={<ClearIcon />}
         />

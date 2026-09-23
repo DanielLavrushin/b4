@@ -71,8 +71,12 @@
       "hub": "Сообщество"
     },
     "failed": "Ошибка",
-    "filtered": "{{count}} отфильтровано",
-    "lines": "{{count}} строк",
+    "matching_one": "{{count}} совпадение",
+    "matching_few": "{{count}} совпадения",
+    "matching_many": "{{count}} совпадений",
+    "lines_one": "{{count}} строка",
+    "lines_few": "{{count}} строки",
+    "lines_many": "{{count}} строк",
     "addHostname": "Добавить хост",
     "timeAgo": {
       "justNow": "только что",
@@ -2701,11 +2705,10 @@
     },
     "controlBar": {
       "filterPlaceholder": "Фильтр (объединяйте с +, исключайте с !, напр. tcp+!domain:google.com)",
-      "connections": "{{count}} соединений",
       "sortedBy": "Сортировка по {{column}}",
       "allPackets": "Все пакеты",
       "domainsOnly": "Только домены",
-      "clearConnections": "Очистить соединения"
+      "clearPackets": "Очистить пакеты"
     },
     "table": {
       "time": "Время",
@@ -2714,7 +2717,7 @@
       "domain": "Домен",
       "source": "Источник",
       "destination": "Назначение",
-      "waitingForConnections": "Ожидание соединений...",
+      "waitingForPackets": "Ожидание пакетов...",
       "enrichAsn": "Определить ASN",
       "enrichSuccess": "{{asn}} обогащён ({{count}} префиксов)",
       "enrichFailed": "Не удалось определить ASN",

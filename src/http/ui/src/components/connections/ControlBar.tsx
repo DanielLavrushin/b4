@@ -7,7 +7,6 @@ import { useTranslation } from "react-i18next";
 interface DomainsControlBarProps {
   filter: string;
   onFilterChange: (filter: string) => void;
-  totalCount: number;
   filteredCount: number;
   sortColumn: string | null;
   showAll: boolean;
@@ -19,7 +18,6 @@ interface DomainsControlBarProps {
 export const DomainsControlBar = ({
   filter,
   onFilterChange,
-  totalCount,
   filteredCount,
   sortColumn,
   showAll,
@@ -62,28 +60,29 @@ export const DomainsControlBar = ({
             },
           }}
         />
-        <Stack direction="row" spacing={1} alignItems="center">
-          <B4Badge label={t("connections.controlBar.connections", { count: totalCount })} />
-          {filter && (
-            <B4Badge label={t("core.filtered", { count: filteredCount })} variant="outlined" />
-          )}
-          {sortColumn && (
-            <B4Badge
-              label={t("connections.controlBar.sortedBy", { column: sortColumn })}
-              size="small"
-              onDelete={onClearSort}
-              variant="outlined"
-              color="primary"
-            />
-          )}
-        </Stack>
+        {(filter || sortColumn) && (
+          <Stack direction="row" spacing={1} alignItems="center">
+            {filter && (
+              <B4Badge label={t("core.matching", { count: filteredCount })} variant="outlined" />
+            )}
+            {sortColumn && (
+              <B4Badge
+                label={t("connections.controlBar.sortedBy", { column: sortColumn })}
+                size="small"
+                onDelete={onClearSort}
+                variant="outlined"
+                color="primary"
+              />
+            )}
+          </Stack>
+        )}
         <B4Switch
           label={showAll ? t("connections.controlBar.allPackets") : t("connections.controlBar.domainsOnly")}
           checked={showAll}
           onChange={(checked: boolean) => onShowAllChange(checked)}
         />
         <B4TooltipButton
-          title={t("connections.controlBar.clearConnections")}
+          title={t("connections.controlBar.clearPackets")}
           onClick={onReset}
           icon={<ClearIcon />}
         />
