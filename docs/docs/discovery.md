@@ -13,7 +13,7 @@ The basic flow is covered in the [quickstart](./quickstart). This page describes
 
 The field takes a domain or a full URL, several at once when separated by commas or new lines. A domain is fetched as `https://<domain>/`; a URL is fetched as given, so a page that lives under a path can be named directly. Two entries with the same hostname count as one site.
 
-Local and private destinations are refused in every run, whether it is started for free-form sites, for a set or through [MCP](./settings/mcp): `localhost` and addresses in the loopback, private, link-local and CGNAT ranges. The run does not start and the page names the address. Fetching them from the router reports on the network b4 runs on, not on a block.
+Local and private destinations are refused in every run, whether it is started for free-form sites, for a set or through [MCP](./settings/mcp): `localhost` and addresses in the loopback, private, link-local and CGNAT ranges. The run does not start and the page names the address. A name that resolves to such an address, and a redirect that leads to one, are not followed either: that fetch fails and names the address. Fetching them from the router reports on the network b4 runs on, not on a block.
 
 ![Discovery input and options](/img/discovery/20260905160100.png)
 

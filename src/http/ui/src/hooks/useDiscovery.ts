@@ -28,6 +28,7 @@ const START_ERROR_CODES = new Set([
   "no_urls",
   "too_many_urls",
   "reserved_host",
+  "routed_set",
 ]);
 
 const startFailureText = (e: unknown): string => {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/watchdog"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -118,6 +119,34 @@ func TestUpdateConfigRevisionCheckRunsUnderTheWriteLock(t *testing.T) {
 	expectCode(t, rec, http.StatusConflict, "config_changed")
 	if got := api.getCfg().Sets[0].TCP.Seg2Delay; got != 42 {
 		t.Errorf("the save made while the write waited is kept, got %d", got)
+	}
+}
+
+func TestARefusedConfigWriteLeavesTheLiveLogLevel(t *testing.T) {
+	api, mux := watchdogAPI(t, urlSet("yt", "https://www.youtube.com/"))
+	before := log.Level(log.CurLevel.Load())
+	t.Cleanup(func() { log.SetLevel(before) })
+	stored := api.getCfg().System.Logging.Level
+	log.SetLevel(stored)
+	wanted := log.LevelDebug
+	if stored == wanted {
+		wanted = log.LevelInfo
+	}
+
+	raw := map[string]any{}
+	data, _ := json.Marshal(api.getCfg())
+	_ = json.Unmarshal(data, &raw)
+	raw["revision"] = watchdog.ConfigRevision(api.getCfg())
+	raw["system"].(map[string]any)["logging"].(map[string]any)["level"] = int(wanted)
+	body, _ := json.Marshal(raw)
+
+	rec := serveWhileLocked(t, mux, http.MethodPut, "/api/config", string(body), func() {
+		storeConcurrently(t, api, func(c *config.Config) { c.Sets[0].TCP.Seg2Delay = 42 })
+	})
+
+	expectCode(t, rec, http.StatusConflict, "config_changed")
+	if got := log.Level(log.CurLevel.Load()); got != stored {
+		t.Errorf("a refused write must not leave its log level live: got %v, stored %v", got, stored)
 	}
 }
 
@@ -390,16 +419,16 @@ func TestMCPRevertGuardsTheMasterSwitchAndTheGlobalList(t *testing.T) {
 	current := mcpTestCfg()
 	snapshot := current.Clone()
 	snapshot.System.Checker.Watchdog.Enabled = true
-	if what := mcpRevertStartsProbes(snapshot, current); !strings.Contains(what, "master switch") {
+	if what := mcpStartsProbes(snapshot, current); !strings.Contains(what, "master switch") {
 		t.Errorf("turning the master switch on is caught: %q", what)
 	}
 	snapshot.System.Checker.Watchdog.Enabled = false
 	snapshot.System.Checker.Watchdog.Domains = []string{"https://rutracker.org/forum"}
-	if what := mcpRevertStartsProbes(snapshot, current); !strings.Contains(what, "global list") {
+	if what := mcpStartsProbes(snapshot, current); !strings.Contains(what, "global list") {
 		t.Errorf("adding a global entry is caught: %q", what)
 	}
 	current.System.Checker.Watchdog.Domains = []string{"rutracker.org"}
-	if what := mcpRevertStartsProbes(snapshot, current); what != "" {
+	if what := mcpStartsProbes(snapshot, current); what != "" {
 		t.Errorf("an entry whose host is already listed is not new: %q", what)
 	}
 
@@ -658,29 +687,46 @@ func TestMCPStartsProbesForwardOnlyCountsWatchedSets(t *testing.T) {
 	current := mcpTestCfg()
 	next := current.Clone()
 	next.Sets[0].Discovery.URLs = []string{"https://www.youtube.com/"}
-	if what := mcpStartsProbes(next, current, false); what != "" {
+	if what := mcpStartsProbes(next, current); what != "" {
 		t.Errorf("a URL on a set nobody watches starts nothing: %q", what)
 	}
-	if what := mcpRevertStartsProbes(next, current); !strings.Contains(what, "discovery URL") {
-		t.Errorf("the undo guard still counts every new URL: %q", what)
+	if what := mcpStartsProbes(next, current); what != "" {
+		t.Errorf("an undo that restores a URL on a set nobody watches starts nothing either: %q", what)
 	}
 
 	current.Sets[0].Discovery.URLs = []string{"https://www.youtube.com/"}
 	current.Sets[0].Discovery.Watchdog = true
 	next = current.Clone()
 	next.Sets[0].Discovery.URLs = append(next.Sets[0].Discovery.URLs, "https://m.youtube.com/")
-	if what := mcpStartsProbes(next, current, false); !strings.Contains(what, "m.youtube.com") {
+	if what := mcpStartsProbes(next, current); !strings.Contains(what, "m.youtube.com") {
 		t.Errorf("a new URL on a watched set is caught: %q", what)
 	}
 
 	next = current.Clone()
 	next.Sets[0].Enabled = false
-	if what := mcpStartsProbes(next, current, false); what != "" {
+	if what := mcpStartsProbes(next, current); what != "" {
 		t.Errorf("disabling a watched set starts nothing: %q", what)
 	}
 	next = current.Clone()
 	next.System.Checker.Watchdog.Enabled = true
-	if what := mcpStartsProbes(next, current, false); !strings.Contains(what, "master switch") {
+	if what := mcpStartsProbes(next, current); !strings.Contains(what, "master switch") {
 		t.Errorf("turning the master switch on is caught: %q", what)
+	}
+}
+
+func TestBatchEnableLoadsTheTargetsOfASetThatWasOffAtStart(t *testing.T) {
+	off := urlSet("off")
+	off.Enabled = false
+	off.Targets.SNIDomains = []string{"youtube.com"}
+	off.Targets.DomainsToMatch = nil
+	api, mux := watchdogAPI(t, off)
+
+	rec := serve(mux, http.MethodPost, "/api/sets/batch-set-enabled", `{"ids":["off"],"enabled":true}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("enable: %d %s", rec.Code, rec.Body.String())
+	}
+	got := api.getCfg().GetSetById("off")
+	if !got.Enabled || !slices.Contains(got.Targets.DomainsToMatch, "youtube.com") {
+		t.Fatalf("a set switched on must match its domains at once, got enabled=%v match=%v", got.Enabled, got.Targets.DomainsToMatch)
 	}
 }

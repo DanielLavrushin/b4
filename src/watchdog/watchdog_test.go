@@ -125,7 +125,10 @@ func TestApplyBatchResultsUsesConfirmedGroupWinner(t *testing.T) {
 			Domain:      "youtube.com",
 			BestPreset:  "fast",
 			BestSuccess: true,
-			Results:     map[string]*discovery.DomainPresetResult{"fast": {Status: discovery.CheckStatusComplete, Set: &fastest}},
+			Results: map[string]*discovery.DomainPresetResult{
+				"fast":    {Status: discovery.CheckStatusComplete, Set: &fastest},
+				"grouped": {Status: discovery.CheckStatusComplete, Set: &group, Confirmed: 3, ConfirmTries: 3},
+			},
 		},
 		"meduza.io": {
 			Domain:      "meduza.io",
@@ -167,6 +170,56 @@ func TestApplyBatchResultsUsesConfirmedGroupWinner(t *testing.T) {
 	}
 	if got.UDP.Mode != "drop" {
 		t.Errorf("UDP is never probed and must be kept, got %q", got.UDP.Mode)
+	}
+}
+
+func TestApplyBatchResultsSkipsUnconfirmedGroupWinner(t *testing.T) {
+	existing := config.NewSetConfig()
+	existing.Id = "yt"
+	existing.Name = "YouTube"
+	existing.Targets.SNIDomains = []string{"youtube.com"}
+	existing.Targets.DomainsToMatch = []string{"youtube.com"}
+	cfg := &config.Config{Sets: []*config.SetConfig{&existing}}
+
+	best := config.NewSetConfig()
+	best.Fragmentation.Strategy = "disorder"
+	grouped := config.NewSetConfig()
+	grouped.Fragmentation.Strategy = "combo"
+
+	suite := healSuite(map[string]*discovery.DomainDiscoveryResult{
+		"youtube.com": {
+			Domain:       "youtube.com",
+			BestPreset:   "best",
+			BestSuccess:  true,
+			Confirmed:    3,
+			ConfirmTries: 3,
+			Results: map[string]*discovery.DomainPresetResult{
+				"best":    {Status: discovery.CheckStatusComplete, Set: &best, Confirmed: 3, ConfirmTries: 3},
+				"grouped": {Status: discovery.CheckStatusComplete, Set: &grouped},
+			},
+		},
+		"meduza.io": {
+			Domain:      "meduza.io",
+			BestPreset:  "flaky",
+			BestSuccess: true,
+			Unconfirmed: true,
+			Results: map[string]*discovery.DomainPresetResult{
+				"flaky":   {Status: discovery.CheckStatusComplete, Set: &best},
+				"grouped": {Status: discovery.CheckStatusComplete, Set: &grouped},
+			},
+		},
+	}, discovery.StrategyGroup{WinnerPreset: "grouped", Domains: []string{"youtube.com", "meduza.io"}, Set: &grouped})
+
+	before := cfg.Sets[0].Fragmentation.Strategy
+	errs := applyBatchResults(cfg, []string{"youtube.com", "meduza.io"}, suite, func(*config.Config) error { return nil })
+	if !errors.Is(errs["youtube.com"], errUnconfirmed) {
+		t.Errorf("youtube.com: its group's winner is unconfirmed, and falling back to its own preset would split the group on one set, got %v", errs["youtube.com"])
+	}
+	if !errors.Is(errs["meduza.io"], errUnconfirmed) {
+		t.Errorf("meduza.io: the group winner did not pass confirmation, got %v", errs["meduza.io"])
+	}
+	if got := cfg.Sets[0].Fragmentation.Strategy; got != before {
+		t.Errorf("nothing unconfirmed is written, got %q", got)
 	}
 }
 

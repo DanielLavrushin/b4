@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"net"
 	"net/http"
 	"strings"
 	"unicode"
@@ -309,7 +308,7 @@ func (api *API) handleSetDomains(w http.ResponseWriter, r *http.Request) {
 			return ErrNotFound("Set not found")
 		}
 		addSNIDomains(set, domains)
-		mergePins(set, req.Pins)
+		set.MergePins(req.Pins)
 		moved = api.releaseDomainsFromOtherSets(next.Sets, setId, domains)
 		return nil
 	})
@@ -334,35 +333,6 @@ func addSNIDomains(set *config.SetConfig, domains []string) {
 		set.Targets.SNIDomains = append(set.Targets.SNIDomains, domain)
 		set.Targets.DomainsToMatch = append(set.Targets.DomainsToMatch, domain)
 	}
-}
-
-func mergePins(set *config.SetConfig, pins map[string][]string) {
-	merged := false
-	for rawDomain, ips := range pins {
-		domain := config.NormalizePinDomain(rawDomain)
-		if domain == "" {
-			continue
-		}
-		for _, raw := range ips {
-			ip := strings.TrimSpace(raw)
-			if net.ParseIP(ip) == nil || domainInList(set.DNS.Pins[domain], ip) {
-				continue
-			}
-			if set.DNS.Pins == nil {
-				set.DNS.Pins = map[string][]string{}
-			}
-			set.DNS.Pins[domain] = append(set.DNS.Pins[domain], ip)
-			merged = true
-		}
-	}
-	if !merged {
-		return
-	}
-	ibd := &set.TCP.IPBlockDetect
-	ibd.Enabled = true
-	ibd.SynDetect = true
-	ibd.HealDNS = true
-	ibd.CacheBlockedIPs = true
 }
 
 func domainInList(list []string, domain string) bool {
@@ -871,6 +841,9 @@ func (api *API) handleBatchSetEnabled(w http.ResponseWriter, r *http.Request) {
 				matched++
 				if set.Enabled != req.Enabled {
 					set.Enabled = req.Enabled
+					if req.Enabled {
+						api.loadTargetsForSetCached(set)
+					}
 					updated++
 				}
 			}

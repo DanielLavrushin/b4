@@ -38,7 +38,7 @@ import { B4Badge } from "@b4.elements";
 import { colors, facets as facetColors, radius, spacing, typography } from "@design";
 import { B4SetConfig } from "@models/config";
 import { HubVoteKind } from "@models/hub";
-import { SetWatchStatus, setWatchTone } from "@models/watchdog";
+import { SetWatchStatus, setWatchBlock, setWatchTone } from "@models/watchdog";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "@api/apiClient";
 import { useSnackbar } from "@context/SnackbarProvider";
@@ -171,9 +171,14 @@ export const SetCard = ({
   const targetSummary = buildTargetSummary(set, stats, t);
   const route = buildRouteSummary(set, t);
   const watched = !!set.discovery?.watchdog;
+  const watchBlock = watched ? setWatchBlock(set) : null;
   let watchTooltip = t("sets.card.watchdogPending");
   if (!watchdogOn) watchTooltip = t("sets.card.watchdogGlobalOff");
-  else if (watchStatus) {
+  else if (watchBlock) {
+    watchTooltip = t("sets.discovery.watchdog.paused", {
+      reason: t(`watchdog.errors.${watchBlock}`),
+    });
+  } else if (watchStatus) {
     const statusText = t(`watchdog.setStatus.${watchStatus.status}`, {
       defaultValue: watchStatus.status,
     });

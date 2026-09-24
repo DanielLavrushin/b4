@@ -334,3 +334,54 @@ func TestMCPDiscoveryApplyForASetFollowsTheVerdict(t *testing.T) {
 		t.Fatal("refused applies must leave the set alone")
 	}
 }
+
+func TestMCPDiscoveryApplyForADomainNeverWritesTheLastSetRun(t *testing.T) {
+	cfg := probeCfg(t)
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+	mcpResetHistory()
+
+	discovery.SaveToHistory(&discovery.CheckSuite{
+		Id: "set-run-old", Status: discovery.CheckStatusComplete, EndTime: time.Now(), SetId: "set-1",
+		Domains:    []discovery.DomainInput{{Domain: "youtube.com", CheckURL: "https://youtube.com/"}},
+		SetVerdict: coveredVerdict(),
+	}, cfg.ConfigPath)
+	meduza := config.NewSetConfig()
+	meduza.Name = "meduza"
+	meduza.Targets.SNIDomains = []string{"meduza.io"}
+	discovery.SaveToHistory(&discovery.CheckSuite{
+		Id: "plain-run", Status: discovery.CheckStatusComplete, EndTime: time.Now(),
+		DomainDiscoveryResults: map[string]*discovery.DomainDiscoveryResult{
+			"meduza.io": {Domain: "meduza.io", Url: "https://meduza.io/", BestPreset: "combo", BestSuccess: true, Confirmed: 3, ConfirmTries: 3},
+		},
+		StrategyGroups: []discovery.StrategyGroup{{WinnerPreset: "combo", Domains: []string{"meduza.io"}, Set: &meduza}},
+	}, cfg.ConfigPath)
+	mcpRememberSuite("set-run-old")
+	t.Cleanup(func() { mcpRememberSuite("") })
+
+	before := len(api.getCfg().Sets)
+	res := callDiscovery(t, session, ctx, map[string]any{"action": "apply", "domain": "meduza.io"})
+	if res.IsError {
+		t.Fatalf("apply domain=meduza.io: %s", mcpErrorText(res))
+	}
+	if got := api.getCfg().GetSetById("set-1").Fragmentation.Strategy; got == "tls" {
+		t.Fatal("a domain apply must not write the last set run into that set")
+	}
+	if got := len(api.getCfg().Sets); got != before+1 {
+		t.Errorf("a domain apply creates a set for the domain, %d sets from %d", got, before)
+	}
+
+	res = callDiscovery(t, session, ctx, map[string]any{"action": "apply", "id": "plain-run", "set": "video"})
+	if !res.IsError || !strings.Contains(mcpErrorText(res), "not the saved run of set") {
+		t.Errorf("an explicit id that is not the set's run must be refused, got %q", mcpErrorText(res))
+	}
+	res = callDiscovery(t, session, ctx, map[string]any{"action": "status", "id": "plain-run", "set": "video"})
+	if !res.IsError || !strings.Contains(mcpErrorText(res), "not the saved run of set") {
+		t.Errorf("status with an explicit id of another run must say so, got %q", mcpErrorText(res))
+	}
+	if got := api.getCfg().GetSetById("set-1").Fragmentation.Strategy; got == "tls" {
+		t.Fatal("refused applies leave the set alone")
+	}
+}

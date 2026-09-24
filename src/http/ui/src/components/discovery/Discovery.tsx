@@ -508,6 +508,7 @@ export const DiscoveryRunner = () => {
     setId: string,
     urls: string[],
     removed: string[],
+    dropHosts: string[],
   ): Promise<void> => {
     let target: B4SetConfig | undefined;
     try {
@@ -517,10 +518,19 @@ export const DiscoveryRunner = () => {
       target = sets.find((s) => s.id === setId);
     }
     if (!target) return;
+    const drop = new Set(dropHosts);
+    const stored = target.discovery?.urls ?? [];
+    const kept =
+      stored.length > 0
+        ? stored.filter((u) => {
+            const host = normalizeProbeUrl(u)?.host;
+            return !host || !drop.has(host);
+          })
+        : urls;
     try {
       await setsApi.updateSet(target.id, {
         ...target,
-        discovery: { ...target.discovery, urls },
+        discovery: { ...target.discovery, urls: kept },
       });
       showSuccess(
         t("discovery.verdict.pruned", {

@@ -48,7 +48,12 @@ interface SetVerdictCardProps {
   history: HistoryEntry[];
   applying: boolean;
   onApply: (req: VerdictApply) => Promise<boolean>;
-  onSaveUrls: (setId: string, urls: string[], removed: string[]) => Promise<void>;
+  onSaveUrls: (
+    setId: string,
+    urls: string[],
+    removed: string[],
+    dropHosts: string[],
+  ) => Promise<void>;
 }
 
 interface ForeignHandler {
@@ -184,7 +189,7 @@ export const SetVerdictCard = ({
   const prune = async () => {
     if (!set) return;
     setSaving(true);
-    await onSaveUrls(set.id, keptUrls, uncovered);
+    await onSaveUrls(set.id, keptUrls, uncovered, [...uncoveredHosts]);
     setSaving(false);
   };
 

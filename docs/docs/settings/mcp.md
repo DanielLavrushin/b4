@@ -235,7 +235,7 @@ The history is held in memory and covers only changes made through MCP since b4 
 An undo is refused, and the change stays on the list, in two cases:
 
 - the configuration was changed after the change being undone, by a [watchdog](../watchdog) heal, the web interface or another tool: restoring the older copy would overwrite that newer change as well;
-- the undo would switch a set's watchdog or the global watchdog on, or bring back Discovery addresses or watchdog domains, while **Allow active probes** is off, since the watchdog would then start fetching those sites on a timer.
+- the undo would switch a set's watchdog or the global watchdog on, or bring back watchdog domains or Discovery addresses of a set whose watchdog is on, while **Allow active probes** is off, since the watchdog would then start fetching those sites on a timer. Discovery addresses of a set whose watchdog is off are restored without it, because nothing fetches them.
 
 :::tip Ask for the undo in the same conversation
 The model has the previous value in the tool's reply, so "that made it worse, put it back" is enough.

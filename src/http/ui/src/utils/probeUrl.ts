@@ -78,6 +78,9 @@ function splitAuthority(
     if (!ipaddr.IPv6.isValid(host)) return null;
     return { host, port: rest.slice(1), v6: true };
   }
+  if (authority.split(":").length > 2 && ipaddr.IPv6.isValid(authority)) {
+    return { host: authority, port: "", v6: true };
+  }
   const colon = authority.lastIndexOf(":");
   const raw = colon < 0 ? authority : authority.slice(0, colon);
   const port = colon < 0 ? "" : authority.slice(colon + 1);
@@ -129,7 +132,7 @@ function parseProbeUrl(raw: string): ProbeParts | null {
   if (authority.includes("@")) return null;
   const parts = splitAuthority(authority);
   if (!parts) return null;
-  const host = parts.host.toLowerCase();
+  const host = parts.host.toLowerCase().replace(/\.$/, "");
   if (!host || isReservedProbeHost(host)) return null;
   const rawPath = m[3] ?? "";
   if (BAD_ESCAPE.test(rawPath)) return null;

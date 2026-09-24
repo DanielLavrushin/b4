@@ -78,10 +78,15 @@ func strictCheck(parent context.Context, rawURL string, opt strictOptions) URLCh
 		}
 	}
 
+	roots, verify := opt.RootCAs, true
+	if roots == nil {
+		roots, verify = netprobe.TLSRoots()
+	}
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-			RootCAs:    opt.RootCAs,
+			MinVersion:         tls.VersionTLS12,
+			RootCAs:            roots,
+			InsecureSkipVerify: !verify,
 		},
 		ForceAttemptHTTP2:     true,
 		ResponseHeaderTimeout: timeout,
@@ -113,7 +118,7 @@ func strictCheck(parent context.Context, rawURL string, opt strictOptions) URLCh
 	if err != nil {
 		return URLCheck{Status: URLStatusFailed, Error: err.Error()}
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+	req.Header.Set("User-Agent", netprobe.ProbeUserAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,*/*;q=0.8")
 
 	start := time.Now()

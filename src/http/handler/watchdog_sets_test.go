@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -421,29 +422,40 @@ func TestMCPRevertRefusesToStartProbesWithoutTheGate(t *testing.T) {
 	}
 
 	decodeWatchdog(t, callSetWatchdog(t, session, ctx, map[string]any{"action": "remove", "url": "https://www.youtube.com/"}))
+	if res, _ := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_revert_last_change"}); res.IsError {
+		t.Errorf("undoing a URL removal on a set nobody watches starts nothing and needs no gate: %s", mcpErrorText(res))
+	}
+	if got := api.getCfg().GetSetById("set-1").Discovery.URLs; !slices.Contains(got, "https://www.youtube.com/") {
+		t.Errorf("the URL is back: %v", got)
+	}
 	if res, _ := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_revert_last_change"}); !res.IsError {
-		t.Error("undoing a URL removal adds a discovery URL and needs the probe gate")
+		t.Error("the disable below it still needs the probe gate")
 	}
 }
 
 func TestMCPRevertStartsProbes(t *testing.T) {
 	current := mcpTestCfg()
 	snapshot := current.Clone()
-	if what := mcpRevertStartsProbes(snapshot, current); what != "" {
+	if what := mcpStartsProbes(snapshot, current); what != "" {
 		t.Fatalf("identical configs: %q", what)
 	}
 	snapshot.Sets[0].Discovery.URLs = []string{"https://www.youtube.com/"}
-	if what := mcpRevertStartsProbes(snapshot, current); !strings.Contains(what, "discovery URL") {
-		t.Errorf("an added URL is caught: %q", what)
+	if what := mcpStartsProbes(snapshot, current); what != "" {
+		t.Errorf("a URL on a set nobody watches starts nothing: %q", what)
 	}
 	current.Sets[0].Discovery.URLs = []string{"https://www.youtube.com/"}
 	current.Sets[0].Discovery.Watchdog = true
-	if what := mcpRevertStartsProbes(snapshot, current); what != "" {
+	added := current.Clone()
+	added.Sets[0].Discovery.URLs = append(added.Sets[0].Discovery.URLs, "https://m.youtube.com/")
+	if what := mcpStartsProbes(added, current); !strings.Contains(what, "discovery URL") {
+		t.Errorf("an added URL on a watched set is caught: %q", what)
+	}
+	if what := mcpStartsProbes(snapshot, current); what != "" {
 		t.Errorf("turning a watchdog off is always allowed: %q", what)
 	}
 	snapshot.Sets[0].Discovery.Watchdog = true
 	current.Sets[0].Discovery.Watchdog = false
-	if what := mcpRevertStartsProbes(snapshot, current); !strings.Contains(what, "watchdog") {
+	if what := mcpStartsProbes(snapshot, current); !strings.Contains(what, "watchdog") {
 		t.Errorf("turning a watchdog on is caught: %q", what)
 	}
 }

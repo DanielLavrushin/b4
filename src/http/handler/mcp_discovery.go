@@ -424,10 +424,11 @@ func (api *API) mcpDiscoveryStatus(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpD
 			return nil, mcpDiscoveryOut{Source: "history", Note: fmt.Sprintf(
 				"no discovery run for set %q is in memory or saved; start one with action=start and set=%q", target.Name, target.Name)}, nil
 		}
-		record = &rec
-		if strings.TrimSpace(in.Id) == "" {
-			id = rec.SuiteId
+		if explicit := strings.TrimSpace(in.Id); explicit != "" && explicit != rec.SuiteId {
+			return nil, mcpDiscoveryOut{}, fmt.Errorf("run %s is not the saved run of set %q (that is %s); only the newest run of each set is kept", explicit, target.Name, rec.SuiteId)
 		}
+		record = &rec
+		id = rec.SuiteId
 	} else if rec, ok := hist.SetRunForSuite(id); ok {
 		record = &rec
 	}
@@ -670,12 +671,14 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 	}
 
 	id := mcpResolveSuiteID(in.Id)
-	run, found, err := api.mcpSetRunFor(id, target)
-	if err != nil {
-		return nil, mcpDiscoveryOut{}, err
-	}
-	if target != nil || found {
-		return api.mcpApplySetRun(target, run, found)
+	if target != nil || domain == "" {
+		run, found, err := api.mcpSetRunFor(id, strings.TrimSpace(in.Id) != "", target)
+		if err != nil {
+			return nil, mcpDiscoveryOut{}, err
+		}
+		if target != nil || found {
+			return api.mcpApplySetRun(target, run, found)
+		}
 	}
 	if domain == "" {
 		return nil, mcpDiscoveryOut{}, fmt.Errorf("domain is required for action=apply, or set to write a set run's result into that set")
@@ -888,12 +891,18 @@ type mcpSetRun struct {
 	source         string
 }
 
-func (api *API) mcpSetRunFor(id string, target *config.SetConfig) (mcpSetRun, bool, error) {
+func (api *API) mcpSetRunFor(id string, explicit bool, target *config.SetConfig) (mcpSetRun, bool, error) {
 	if id != "" {
 		if suite, ok := discovery.GetCheckSuite(id); ok && suite != nil {
 			snap, err := mcpSuiteProjection(suite)
 			if err != nil {
 				return mcpSetRun{}, false, err
+			}
+			if explicit && target != nil && snap.SetId != target.Id {
+				if snap.SetId == "" {
+					return mcpSetRun{}, false, fmt.Errorf("run %s probed domains, it was not a run for set %q, so its result cannot be written into that set; start a run with set=%q", id, target.Name, target.Name)
+				}
+				return mcpSetRun{}, false, fmt.Errorf("run %s was for another set, not for set %q", id, target.Name)
 			}
 			if snap.SetId != "" && (target == nil || snap.SetId == target.Id) {
 				return mcpSetRun{
@@ -913,6 +922,9 @@ func (api *API) mcpSetRunFor(id string, target *config.SetConfig) (mcpSetRun, bo
 	var ok bool
 	if target != nil {
 		rec, ok = hist.SetRuns[target.Id]
+		if ok && explicit && rec.SuiteId != id {
+			return mcpSetRun{}, false, fmt.Errorf("run %s is not the saved run of set %q (that is %s); only the newest run of each set is kept", id, target.Name, rec.SuiteId)
+		}
 	} else {
 		rec, ok = hist.SetRunForSuite(id)
 	}
@@ -979,8 +991,8 @@ func (api *API) mcpApplySetRun(target *config.SetConfig, run mcpSetRun, found bo
 		return nil, mcpDiscoveryOut{}, fmt.Errorf("set %q disappeared before the write", target.Name)
 	}
 	live.AdoptStrategy(v.Set)
-	if pins := mcpVerdictPins(v); len(pins) > 0 {
-		replacePins(live, pinDomains(pins), pins)
+	if pins := v.CoveredPins(); len(pins) > 0 {
+		live.ReplacePins(config.PinDomains(pins), pins)
 	}
 
 	if err := mcpValidateCandidate(oldCfg, newCfg); err != nil {
@@ -1021,25 +1033,4 @@ func (api *API) mcpApplySetRun(target *config.SetConfig, run mcpSetRun, found bo
 	}
 	out.Note += ". Confirm it with b4_test_domain_now before telling the user it is fixed"
 	return nil, out, nil
-}
-
-func mcpVerdictPins(v *discovery.SetVerdict) map[string][]string {
-	if v == nil || v.Set == nil || len(v.Set.DNS.Pins) == 0 {
-		return nil
-	}
-	covered := make(map[string]bool, len(v.Covered))
-	for _, d := range v.Covered {
-		covered[config.NormalizePinDomain(d)] = true
-	}
-	var pins map[string][]string
-	for domain, ips := range v.Set.DNS.Pins {
-		if len(ips) == 0 || !covered[config.NormalizePinDomain(domain)] {
-			continue
-		}
-		if pins == nil {
-			pins = map[string][]string{}
-		}
-		pins[domain] = slices.Clone(ips)
-	}
-	return pins
 }

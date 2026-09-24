@@ -169,15 +169,19 @@ function buildExportJson(config: B4SetConfig): Record<string, unknown> {
   return result;
 }
 
-function importedDiscovery(value: unknown): B4SetConfig["discovery"] {
-  if (!isPlainObject(value)) return { urls: [] };
-  const urls = Array.isArray(value.urls)
-    ? value.urls.filter((u): u is string => typeof u === "string")
-    : [];
+function importedDiscovery(
+  value: unknown,
+  current: B4SetConfig["discovery"],
+): B4SetConfig["discovery"] {
+  const raw =
+    isPlainObject(value) && Array.isArray(value.urls)
+      ? value.urls.filter((u): u is string => typeof u === "string")
+      : [];
+  const urls = sanitizeProbeUrls(raw);
   const discovery: NonNullable<B4SetConfig["discovery"]> = {
-    urls: sanitizeProbeUrls(urls),
+    urls: urls.length > 0 ? urls : [...(current?.urls ?? [])],
   };
-  if ("watchdog" in value) discovery.watchdog = false;
+  if (current?.watchdog) discovery.watchdog = true;
   return discovery;
 }
 
@@ -373,7 +377,10 @@ export const ImportExportSettings = ({
       parsed.id = config.id;
       if (config.revision) parsed.revision = config.revision;
       else delete parsed.revision;
-      parsed.discovery = importedDiscovery(configFields.discovery);
+      parsed.discovery = importedDiscovery(
+        configFields.discovery,
+        config.discovery,
+      );
       const link = mergeHubLink(config.hub, configFields.hub);
       parsed.hub = link.hub;
       onImport(parsed);

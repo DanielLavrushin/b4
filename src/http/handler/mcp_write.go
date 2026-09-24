@@ -193,7 +193,7 @@ func (api *API) mcpSave(oldCfg, newCfg *config.Config) error {
 			return errMCPConfigMoved
 		}
 		if !current.System.WebServer.MCP.AllowActiveProbes {
-			if what := mcpStartsProbes(newCfg, current, false); what != "" {
+			if what := mcpStartsProbes(newCfg, current); what != "" {
 				return &mcpProbesError{what: what}
 			}
 		}
@@ -899,7 +899,7 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 				return errMCPRevertStale
 			}
 			if !current.System.WebServer.MCP.AllowActiveProbes {
-				if what := mcpRevertStartsProbes(last.Snapshot, current); what != "" {
+				if what := mcpStartsProbes(last.Snapshot, current); what != "" {
 					return &mcpProbesError{what: what}
 				}
 			}
@@ -945,11 +945,7 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 	})
 }
 
-func mcpRevertStartsProbes(snapshot, current *config.Config) string {
-	return mcpStartsProbes(snapshot, current, true)
-}
-
-func mcpStartsProbes(target, current *config.Config, everyNewURL bool) string {
+func mcpStartsProbes(target, current *config.Config) string {
 	if target == nil || current == nil {
 		return ""
 	}
@@ -976,7 +972,7 @@ func mcpStartsProbes(target, current *config.Config, everyNewURL bool) string {
 		if set.WatchdogActive() && !prior.WatchdogActive() {
 			return fmt.Sprintf("start the watchdog of set %q", set.Name)
 		}
-		if !everyNewURL && !set.WatchdogActive() {
+		if !set.WatchdogActive() {
 			continue
 		}
 		for _, url := range set.Discovery.URLs {

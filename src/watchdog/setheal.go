@@ -249,6 +249,9 @@ poll:
 		limit = setIdleWait
 	}
 	w.waitDiscoveryIdle(limit)
+	if w.stopping() {
+		return nil, setRunStopped
+	}
 
 	snap, ok := w.disc.Snapshot(suiteID)
 	if !ok || snap.SetVerdict == nil {
@@ -275,6 +278,9 @@ func (w *Watchdog) adoptAndVerify(id, key, expectedRevision string, urls []strin
 		}
 		saved = saveSections(target)
 		target.AdoptStrategy(verdict.Set)
+		if pins := verdict.CoveredPins(); len(pins) > 0 {
+			target.ReplacePins(config.PinDomains(pins), pins)
+		}
 		written = fresh
 		return fresh, nil
 	})
@@ -456,6 +462,7 @@ func (w *Watchdog) healSucceeded(id, preset string, results map[string]URLWatchS
 	if st == nil {
 		return
 	}
+	defer st.settleURLChange()
 	mergeURLResults(st, results)
 	st.Status = SetStatusHealthy
 	st.Reason = ""
@@ -485,6 +492,7 @@ func (w *Watchdog) healFailedWithResults(id, reason, detail string, results map[
 	if st == nil {
 		return
 	}
+	defer st.settleURLChange()
 	mergeURLResults(st, results)
 	st.HealFailures++
 	st.Reason = reason
@@ -513,6 +521,7 @@ func (w *Watchdog) healEdited(id string) {
 	if st == nil {
 		return
 	}
+	defer st.settleURLChange()
 	st.Status = SetStatusCooldown
 	st.Reason = ReasonEdited
 	st.LastError = "the set was edited during the heal, the result was not written"
@@ -529,6 +538,7 @@ func (w *Watchdog) healRequeuedEdited(id string) {
 	if st == nil {
 		return
 	}
+	defer st.settleURLChange()
 	st.resetToQueued(ReasonEdited)
 	log.Infof("[WATCHDOG] set %q was edited after it was queued to heal, checking it again first", st.SetName)
 }
@@ -540,6 +550,7 @@ func (w *Watchdog) healInterrupted(id string) {
 	if st == nil {
 		return
 	}
+	defer st.settleURLChange()
 	st.resetToQueued("")
 	log.Infof("[WATCHDOG] set %q: shutting down during verification, the adopted strategy is kept and the set is checked again on the next start", st.SetName)
 }
@@ -551,6 +562,7 @@ func (w *Watchdog) healAborted(id, why string) {
 	if st == nil {
 		return
 	}
+	defer st.settleURLChange()
 	st.resetToQueued("")
 	log.Infof("[WATCHDOG] set %q: heal canceled, %s", st.SetName, why)
 }
@@ -562,6 +574,7 @@ func (w *Watchdog) healUnverifiable(id, reason string) {
 	if st == nil {
 		return
 	}
+	defer st.settleURLChange()
 	st.Status = SetStatusUnverifiable
 	st.Reason = reason
 	st.ConsecutiveFailures = 0

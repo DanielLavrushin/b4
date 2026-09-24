@@ -86,6 +86,7 @@ func (ds *DiscoverySuite) baselineResults(baseline ConfigPreset) map[string]Chec
 			stored[domain] = CheckResult{
 				Domain:     domain,
 				Status:     r.Status,
+				Duration:   r.Duration,
 				Speed:      r.Speed,
 				BytesRead:  r.BytesRead,
 				Error:      r.Error,
@@ -295,7 +296,7 @@ func analyzeFailure(result CheckResult) FailureMode {
 			return FailureRSTImmediate
 		}
 	}
-	if strings.Contains(err, "timeout") || strings.Contains(err, "deadline") {
+	if strings.Contains(err, "timeout") || strings.Contains(err, "deadline") || strings.Contains(err, "stalled") {
 		return FailureTimeout
 	}
 	if strings.Contains(err, "tls") || strings.Contains(err, "certificate") {

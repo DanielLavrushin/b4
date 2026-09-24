@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"io"
 	"net"
@@ -12,7 +11,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/daniellavrushin/b4/netprobe"
@@ -25,19 +23,6 @@ const (
 	fetchMaxBody        = 100 * 1024
 	fetchUserAgent      = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
 )
-
-var (
-	caBundleOnce    sync.Once
-	caBundleMissing bool
-)
-
-func noCABundle() bool {
-	caBundleOnce.Do(func() {
-		pool, err := x509.SystemCertPool()
-		caBundleMissing = err != nil || pool == nil || pool.Equal(x509.NewCertPool())
-	})
-	return caBundleMissing
-}
 
 func (s *Suite) fetchSite(ctx context.Context, domain, rawURL, ip string, mark uint, maxTLS uint16) Fetch {
 	u, err := url.Parse(rawURL)
@@ -68,11 +53,13 @@ func (s *Suite) fetchSite(ctx context.Context, domain, rawURL, ip string, mark u
 	}
 	defer conn.Close()
 
+	roots, verify := netprobe.TLSRoots()
 	tlsConf := &tls.Config{
 		ServerName:         domain,
 		MinVersion:         tls.VersionTLS12,
 		MaxVersion:         maxTLS,
-		InsecureSkipVerify: noCABundle(),
+		RootCAs:            roots,
+		InsecureSkipVerify: !verify,
 	}
 	tlsConn := tls.Client(conn, tlsConf)
 	hctx, hcancel := context.WithTimeout(ctx, fetchConnectTimeout)
@@ -230,7 +217,7 @@ func (s *Suite) probePlainHTTP(ctx context.Context, domain, ip string, mark uint
 	location := resp.Header.Get("Location")
 	body := make([]byte, 8192)
 	n, _ := io.ReadFull(resp.Body, body)
-	st, detail := netprobe.ClassifyHTTPResponse(resp.StatusCode, location, string(body[:n]))
+	st, detail := netprobe.ClassifyHTTPResponse(req.URL, resp.StatusCode, location, string(body[:n]))
 	if st != FetchOk {
 		return st, detail
 	}

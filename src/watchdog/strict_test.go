@@ -154,7 +154,8 @@ func TestStrictCheckCertificateErrorsAreUnusable(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if res := strictLocal(srv.URL + "/"); res.Status != URLStatusUnusable || !strings.Contains(res.Error, "certificate") {
+	untrusted := strictOptions{Timeout: 5 * time.Second, RootCAs: x509.NewCertPool(), isReserved: allowLoopback}
+	if res := strictCheck(context.Background(), srv.URL+"/", untrusted); res.Status != URLStatusUnusable || !strings.Contains(res.Error, "certificate") {
 		t.Errorf("an untrusted certificate cannot be fixed by a strategy: %+v", res)
 	}
 
@@ -171,5 +172,20 @@ func TestStrictCheckRejectsNonHTTPURLs(t *testing.T) {
 		if res := checkURLStrict(context.Background(), raw, false, time.Second); res.Status != URLStatusFailed {
 			t.Errorf("%q: %+v", raw, res)
 		}
+	}
+}
+
+func TestStrictCheckSendsTheDiscoveryUserAgent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.UserAgent(), "Chrome/") {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, "<html>Sorry, something went wrong</html>")
+			return
+		}
+		fmt.Fprint(w, page(8000))
+	}))
+	defer srv.Close()
+	if res := strictLocal(srv.URL + "/"); res.Status != URLStatusOK {
+		t.Errorf("a site that refuses a Chrome User-Agent from a non-browser client must load: %s (%d, %s)", res.Status, res.StatusCode, res.Error)
 	}
 }

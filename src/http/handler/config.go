@@ -53,6 +53,7 @@ func (a *API) handleConfigReset(w http.ResponseWriter, r *http.Request) {
 	a.applyRuntimeChanges(&newCfg, curCfg)
 
 	if err := a.saveAndPushConfig(&newCfg); err != nil {
+		a.undoRuntimeChanges(&newCfg, curCfg)
 		log.Errorf("Failed to reset config: %v", err)
 		writeAPIError(w, ErrInternal("Failed to reset config"))
 		return
@@ -81,6 +82,19 @@ func (a *API) applyRuntimeChanges(newCfg, oldCfg *config.Config) {
 	}
 
 	a.geodataManager.UpdatePaths(newCfg.System.Geo.GeoSitePath, newCfg.System.Geo.GeoIpPath)
+}
+
+func (a *API) undoRuntimeChanges(applied, before *config.Config) {
+	live := a.getCfg()
+	if applied.System.Logging.Level != before.System.Logging.Level && log.Level(log.CurLevel.Load()) == applied.System.Logging.Level {
+		log.SetLevel(live.System.Logging.Level)
+	}
+	if applied.System.Timezone != before.System.Timezone {
+		config.ApplyTimezone(live.System.Timezone)
+	}
+	if applied.System.Geo.GeoSitePath != before.System.Geo.GeoSitePath || applied.System.Geo.GeoIpPath != before.System.Geo.GeoIpPath {
+		a.geodataManager.UpdatePaths(live.System.Geo.GeoSitePath, live.System.Geo.GeoIpPath)
+	}
 }
 
 func redactWebServerSecrets(cfg *config.Config) *config.Config {
@@ -411,6 +425,7 @@ func (a *API) updateConfig(w http.ResponseWriter, r *http.Request) {
 		oldConfig = current
 		return nil
 	}); err != nil {
+		a.undoRuntimeChanges(&newConfig, curCfg)
 		log.Errorf("Failed to update config: %v", err)
 		writeAPIError(w, err)
 		return

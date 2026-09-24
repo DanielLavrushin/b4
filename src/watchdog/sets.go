@@ -18,6 +18,7 @@ type setState struct {
 	urlKey         string
 	gaveUp         bool
 	queuedRevision string
+	urlsChanged    bool
 }
 
 func urlKeyOf(set *config.SetConfig) string {
@@ -133,6 +134,15 @@ func (st *setState) resetToQueued(reason string) {
 	st.queuedRevision = ""
 }
 
+func (st *setState) settleURLChange() {
+	if !st.urlsChanged {
+		return
+	}
+	st.urlsChanged = false
+	st.resetToQueued("")
+	st.CooldownUntil = time.Time{}
+}
+
 func (w *Watchdog) syncSetStatesLocked(cfg *config.Config) {
 	if w.setStates == nil {
 		w.setStates = make(map[string]*setState)
@@ -156,6 +166,9 @@ func (w *Watchdog) syncSetStatesLocked(cfg *config.Config) {
 			if st.Status != SetStatusHealing {
 				w.dropFromHealQueueLocked(set.Id)
 				st.resetToQueued("")
+				st.CooldownUntil = time.Time{}
+			} else {
+				st.urlsChanged = true
 			}
 			continue
 		}

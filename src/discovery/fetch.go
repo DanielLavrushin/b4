@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/netprobe"
+	"github.com/daniellavrushin/b4/utils"
 )
 
 // collectTargetIPs returns deduplicated IPs from DNS discovery results, limited to maxIPs.
@@ -25,12 +27,30 @@ func (ds *DiscoverySuite) collectTargetIPs(domain string, maxIPs int) []string {
 		return nil
 	}
 	if len(dnsResult.AlternativeIPs) > 0 && dnsResult.TransportBlocked {
-		return append([]string(nil), dnsResult.AlternativeIPs...)
+		var ips []string
+		for _, ip := range dnsResult.AlternativeIPs {
+			if !refusedProbeIP(ip) {
+				ips = append(ips, ip)
+			}
+		}
+		return ips
 	}
 
 	seen := make(map[string]bool)
 	for _, ip := range dnsResult.GatewayIPs {
 		seen[ip] = true
+	}
+	for _, list := range [][]string{dnsResult.AlternativeIPs, dnsResult.ExpectedIPs} {
+		for _, ip := range list {
+			if refusedProbeIP(ip) {
+				seen[ip] = true
+			}
+		}
+	}
+	for _, probe := range dnsResult.ProbeResults {
+		if refusedProbeIP(probe.ResolvedIP) {
+			seen[probe.ResolvedIP] = true
+		}
 	}
 	var ips []string
 	for _, ip := range dnsResult.AlternativeIPs {
@@ -131,7 +151,7 @@ func (ds *DiscoverySuite) dialNetwork() string {
 // dialContext builds the probe dialer: it forces the address family from
 // dialNetwork and pins pinnedIP when DNS discovery already resolved one.
 func (ds *DiscoverySuite) dialContext(timeout time.Duration, pinnedHost, pinnedIP string) func(context.Context, string, string) (net.Conn, error) {
-	baseDialer := netprobe.Dialer(int(ds.flowMark), timeout/2, timeout)
+	baseDialer := probeDialer(int(ds.flowMark), timeout/2, timeout)
 	baseDialer.Resolver = netprobe.MarkedResolver(int(ds.flowMark), timeout/2, "")
 	forcedNet := ds.dialNetwork()
 
@@ -173,6 +193,20 @@ func (ds *DiscoverySuite) tlsConfig() *tls.Config {
 
 const probeStallTimeout = 2 * time.Second
 
+var probeRefusesAddr = utils.IsReservedAddr
+
+func refusedProbeIP(ip string) bool {
+	if probeRefusesAddr == nil {
+		return false
+	}
+	addr, err := netip.ParseAddr(ip)
+	return err == nil && probeRefusesAddr(addr)
+}
+
+func probeDialer(mark int, timeout, keepAlive time.Duration) *net.Dialer {
+	return netprobe.RefuseAddrs(netprobe.Dialer(mark, timeout, keepAlive), probeRefusesAddr)
+}
+
 type blockPageRedirect struct {
 	target string
 }
@@ -213,6 +247,7 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 		IdleConnTimeout:       timeout,
 		ForceAttemptHTTP2:     true,
 	}
+	defer transport.CloseIdleConnections()
 
 	var armed atomic.Bool
 	var stalled atomic.Bool
@@ -260,16 +295,20 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 		return result
 	}
 
-	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
+	req.Header.Set("User-Agent", netprobe.ProbeUserAgent)
 
 	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
 		result.Status = CheckStatusFailed
 		var blocked *blockPageRedirect
-		if errors.As(err, &blocked) {
+		var reserved *netprobe.ReservedAddrError
+		switch {
+		case errors.As(err, &blocked):
 			result.Error = blocked.Error()
-		} else {
+		case errors.As(err, &reserved):
+			result.Error = reserved.Error()
+		default:
 			_, detail := netprobe.ClassifyTLSError(err)
 			result.Error = detail
 		}
@@ -417,13 +456,15 @@ func (ds *DiscoverySuite) measureNetworkBaseline() float64 {
 	ctx, cancel := ds.fetchContext(timeout)
 	defer cancel()
 
+	transport := &http.Transport{
+		TLSClientConfig:   ds.tlsConfig(),
+		DialContext:       ds.dialContext(timeout, "", ""),
+		ForceAttemptHTTP2: true,
+	}
+	defer transport.CloseIdleConnections()
 	client := &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			TLSClientConfig:   ds.tlsConfig(),
-			DialContext:       ds.dialContext(timeout, "", ""),
-			ForceAttemptHTTP2: true,
-		},
+		Timeout:   timeout,
+		Transport: transport,
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", testURL, nil)

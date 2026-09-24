@@ -3,6 +3,7 @@ package discovery
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
@@ -98,8 +99,7 @@ func coveringPresets(domains []string, results map[string]*DomainDiscoveryResult
 
 	var names []string
 	for name := range first.Results {
-		switch name {
-		case presetNoBypass, presetAltAddress, presetDNSRedirect:
+		if plainFixName(name) {
 			continue
 		}
 		if completeEverywhere(name, domains, results) {
@@ -116,6 +116,24 @@ func coveringPresets(domains []string, results map[string]*DomainDiscoveryResult
 		return presetRanksBefore(a, ar.Phase, ar.Priority, b, br.Phase, br.Priority)
 	})
 	return names
+}
+
+func plainFixName(name string) bool {
+	switch name {
+	case presetNoBypass, presetAltAddress, presetDNSRedirect:
+		return true
+	}
+	return false
+}
+
+func strategyGroups(groups []StrategyGroup) []StrategyGroup {
+	var out []StrategyGroup
+	for _, g := range groups {
+		if !plainFixName(g.WinnerPreset) {
+			out = append(out, g)
+		}
+	}
+	return out
 }
 
 func completeEverywhere(name string, domains []string, results map[string]*DomainDiscoveryResult) bool {
@@ -352,7 +370,7 @@ func (ds *DiscoverySuite) resolveSetVerdict() {
 	if (len(need) > 0 || len(lost) > 0) && winner == "" {
 		winner = ds.findJointWinner(candidates, domains)
 		if winner == "" && !ds.canceled() {
-			winner = ds.confirmLargestGroup(domains)
+			winner = ds.confirmNextCandidate(domains)
 		}
 	}
 	if ds.canceled() {
@@ -426,12 +444,15 @@ func (ds *DiscoverySuite) findJointWinner(candidates, domains []string) string {
 	return winner
 }
 
-func (ds *DiscoverySuite) confirmLargestGroup(domains []string) string {
+func (ds *DiscoverySuite) confirmNextCandidate(domains []string) string {
 	ds.buildStrategyGroups()
 	ds.CheckSuite.mu.RLock()
 	name := ""
-	if g := largestGroup(ds.StrategyGroups, domains); g != nil && !ds.jointTried[g.WinnerPreset] && completeEverywhere(g.WinnerPreset, domains, ds.domainResults) {
-		name = g.WinnerPreset
+	for _, candidate := range coveringPresets(domains, ds.domainResults) {
+		if !ds.jointTried[candidate] {
+			name = candidate
+			break
+		}
 	}
 	ds.CheckSuite.mu.RUnlock()
 	if name == "" {
@@ -476,7 +497,7 @@ func (ds *DiscoverySuite) buildSetVerdict(domains []string, winner string) *SetV
 	}
 	open := inRunOrder(domains, append(append([]string(nil), need...), lost...))
 
-	if winner != "" && completeEverywhere(winner, domains, ds.domainResults) {
+	if winner != "" && !plainFixName(winner) && completeEverywhere(winner, domains, ds.domainResults) {
 		r := ds.domainResults[domains[0]].Results[winner]
 		scoped := ds.scopeSetToDomains(r.Set, domains)
 		status := SetVerdictCovered
@@ -494,7 +515,7 @@ func (ds *DiscoverySuite) buildSetVerdict(domains []string, winner string) *SetV
 		}
 	}
 
-	if group := largestGroup(ds.StrategyGroups, domains); group != nil {
+	if group := largestGroup(strategyGroups(ds.StrategyGroups), domains); group != nil {
 		inGroup := map[string]bool{}
 		for _, d := range group.Domains {
 			inGroup[d] = true
@@ -512,6 +533,9 @@ func (ds *DiscoverySuite) buildSetVerdict(domains []string, winner string) *SetV
 				uncovered = append(uncovered, d)
 			}
 		}
+		if len(uncovered) == 0 {
+			return &SetVerdict{Status: SetVerdictNone, Uncovered: open, NoBypass: fine}
+		}
 		return &SetVerdict{
 			Status:       SetVerdictPartial,
 			WinnerPreset: group.WinnerPreset,
@@ -527,6 +551,27 @@ func (ds *DiscoverySuite) buildSetVerdict(domains []string, winner string) *SetV
 	return &SetVerdict{Status: SetVerdictNone, Uncovered: open, NoBypass: fine}
 }
 
+func (v *SetVerdict) CoveredPins() map[string][]string {
+	if v == nil || v.Set == nil || len(v.Set.DNS.Pins) == 0 {
+		return nil
+	}
+	covered := make(map[string]bool, len(v.Covered))
+	for _, d := range v.Covered {
+		covered[config.NormalizePinDomain(d)] = true
+	}
+	var pins map[string][]string
+	for domain, ips := range v.Set.DNS.Pins {
+		if len(ips) == 0 || !covered[config.NormalizePinDomain(domain)] {
+			continue
+		}
+		if pins == nil {
+			pins = map[string][]string{}
+		}
+		pins[domain] = append([]string(nil), ips...)
+	}
+	return pins
+}
+
 func (ds *DiscoverySuite) setLacksDNSFix(scoped *config.SetConfig) bool {
 	if scoped == nil {
 		return false
@@ -535,12 +580,35 @@ func (ds *DiscoverySuite) setLacksDNSFix(scoped *config.SetConfig) bool {
 	if ds.setStrategy != nil {
 		live = ds.setStrategy.DNS
 	}
-	if scoped.DNS.Enabled && !live.Enabled {
+	if scoped.DNS.Enabled && !sameResolver(live, scoped.DNS) {
 		return true
 	}
 	for domain, ips := range scoped.DNS.Pins {
-		if len(ips) > 0 && len(live.Pins[domain]) == 0 {
+		if len(ips) > 0 && !sharesAddress(live.PinnedAddresses(domain), ips) {
 			return true
+		}
+	}
+	return false
+}
+
+func sameResolver(live, tested config.DNSConfig) bool {
+	if !live.Enabled {
+		return false
+	}
+	if tested.DoHURL != "" {
+		return strings.EqualFold(strings.TrimSpace(live.DoHURL), strings.TrimSpace(tested.DoHURL))
+	}
+	return live.DoHURL == "" &&
+		strings.TrimSpace(live.TargetDNS) == strings.TrimSpace(tested.TargetDNS) &&
+		(live.FragmentQuery || !tested.FragmentQuery)
+}
+
+func sharesAddress(have, want []string) bool {
+	for _, a := range have {
+		for _, b := range want {
+			if strings.TrimSpace(a) == strings.TrimSpace(b) {
+				return true
+			}
 		}
 	}
 	return false

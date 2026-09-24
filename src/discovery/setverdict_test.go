@@ -651,3 +651,83 @@ func TestCurrentStrategyNeedingADNSFixIsCovered(t *testing.T) {
 		t.Fatalf("verdict = %+v, want current_works once the set already pins the address", v)
 	}
 }
+
+func TestCurrentStrategyWithAStalePinOrAnotherResolverIsCovered(t *testing.T) {
+	ds := setRunFixture(t, "a.example")
+	ds.put("a.example", presetNoBypass, CheckStatusFailed, PhaseBaseline, 0)
+	ds.put("a.example", presetSetCurrent, CheckStatusComplete, PhaseCached, 0)
+	ds.dnsResults["a.example"] = &DNSDiscoveryResult{AlternativeIPs: []string{"203.0.113.7"}}
+	ds.coverWinner = presetSetCurrent
+	ds.jointConfirmed = map[string]bool{presetSetCurrent: true}
+	ds.domainResults["a.example"].Results[presetSetCurrent].Confirmed = confirmTries
+	ds.domainResults["a.example"].Results[presetSetCurrent].ConfirmTries = confirmTries
+	withFakeConfirm(ds, nil)
+	ds.determineBest()
+
+	ds.setStrategy = &config.SetConfig{DNS: config.DNSConfig{Pins: map[string][]string{"a.example": {"198.51.100.1"}}}}
+	ds.resolveSetVerdict()
+	if v := ds.setVerdict; v == nil || v.Status != SetVerdictCovered {
+		t.Fatalf("verdict = %+v, want covered: the set pins a different address than the one that worked", v)
+	}
+
+	ds.dnsResults["a.example"] = &DNSDiscoveryResult{IsPoisoned: true}
+	ds.domainResults["a.example"].Results[presetSetCurrent].Set.DNS = config.DNSConfig{Enabled: true, DoHURL: "https://1.1.1.1/dns-query"}
+	ds.setStrategy = &config.SetConfig{DNS: config.DNSConfig{Enabled: true, TargetDNS: "8.8.8.8"}}
+	ds.resolveSetVerdict()
+	if v := ds.setVerdict; v == nil || v.Status != SetVerdictCovered {
+		t.Fatalf("verdict = %+v, want covered: the set resolves through a server the run did not test", v)
+	}
+
+	ds.setStrategy = &config.SetConfig{DNS: config.DNSConfig{Enabled: true, DoHURL: "https://1.1.1.1/dns-query"}}
+	ds.resolveSetVerdict()
+	if v := ds.setVerdict; v == nil || v.Status != SetVerdictCurrentWorks {
+		t.Fatalf("verdict = %+v, want current_works when the set already uses the tested resolver", v)
+	}
+}
+
+func TestAPlainFixNeverWinsTheSet(t *testing.T) {
+	build := func(t *testing.T, extra bool) (*DiscoverySuite, *fakeJointConfirm) {
+		ds := setRunFixture(t, "a.example", "b.example")
+		names := []string{presetSetCurrent, "p1", "p2"}
+		if extra {
+			names = append(names, "p3")
+		}
+		for _, d := range []string{"a.example", "b.example"} {
+			ds.put(d, presetNoBypass, CheckStatusFailed, PhaseBaseline, 0)
+			ds.put(d, presetDNSRedirect, CheckStatusComplete, PhaseBaseline, 0)
+			for _, name := range names {
+				ds.put(d, name, CheckStatusComplete, PhaseStrategy, 1)
+			}
+		}
+		fails := map[string]map[string]int{}
+		for _, name := range []string{presetSetCurrent, "p1", "p2"} {
+			fails[name] = map[string]int{"b.example": 2}
+		}
+		fake := withFakeConfirm(ds, fails)
+		ds.determineBest()
+		ds.resolveSetVerdict()
+		return ds, fake
+	}
+
+	ds, fake := build(t, true)
+	if !reflect.DeepEqual(fake.calls, []string{presetSetCurrent, "p1", "p2", "p3"}) {
+		t.Fatalf("joint confirmations = %v, want the three candidates and then the next untried strategy, never the plain fix", fake.calls)
+	}
+	if v := ds.setVerdict; v == nil || v.Status != SetVerdictCovered || v.WinnerPreset != "p3" {
+		t.Fatalf("verdict = %+v, want covered by p3", v)
+	}
+
+	ds, fake = build(t, false)
+	for _, call := range fake.calls {
+		if call == presetDNSRedirect {
+			t.Fatalf("joint confirmations = %v: a plain fix is never a strategy for the set", fake.calls)
+		}
+	}
+	v := ds.setVerdict
+	if v == nil || v.Status == SetVerdictCovered || v.WinnerPreset == presetDNSRedirect {
+		t.Fatalf("verdict = %+v: a plain fix must not become the winner", v)
+	}
+	if v.Status == SetVerdictPartial && len(v.Uncovered) == 0 {
+		t.Fatalf("verdict = %+v: a partial verdict always names what is missing", v)
+	}
+}

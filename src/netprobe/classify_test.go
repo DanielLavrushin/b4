@@ -73,17 +73,27 @@ func TestClassifyTLSErrorTyped(t *testing.T) {
 }
 
 func TestClassifyHTTPResponse(t *testing.T) {
-	if s, _ := ClassifyHTTPResponse(451, "", ""); s != DomainISPPage {
+	if s, _ := ClassifyHTTPResponse(nil, 451, "", ""); s != DomainISPPage {
 		t.Errorf("HTTP 451 should be ISP_PAGE, got %q", s)
 	}
-	if s, _ := ClassifyHTTPResponse(302, "https://warning.rt.ru/blocked", ""); s != DomainISPPage {
+	if s, _ := ClassifyHTTPResponse(nil, 302, "https://warning.rt.ru/blocked", ""); s != DomainISPPage {
 		t.Errorf("block redirect should be ISP_PAGE, got %q", s)
 	}
-	if s, _ := ClassifyHTTPResponse(200, "", "Доступ заблокирован по решению суда"); s != DomainISPPage {
+	if s, _ := ClassifyHTTPResponse(nil, 200, "", "Доступ заблокирован по решению суда"); s != DomainISPPage {
 		t.Errorf("block body should be ISP_PAGE, got %q", s)
 	}
-	if s, _ := ClassifyHTTPResponse(200, "", "<html>normal page</html>"); s != DomainOk {
+	if s, _ := ClassifyHTTPResponse(nil, 200, "", "<html>normal page</html>"); s != DomainOk {
 		t.Errorf("benign page should be OK, got %q", s)
+	}
+	origin, _ := url.Parse("http://example.com/")
+	if s, _ := ClassifyHTTPResponse(origin, 302, "https://example.com/access-denied", ""); s != DomainOk {
+		t.Errorf("a same-site redirect with a marker word is the site's own, got %q", s)
+	}
+	if s, _ := ClassifyHTTPResponse(origin, 302, "/login?reason=session_blocked", ""); s != DomainOk {
+		t.Errorf("a relative redirect stays on the site, got %q", s)
+	}
+	if s, _ := ClassifyHTTPResponse(origin, 302, "https://warning.rt.ru/blocked", ""); s != DomainISPPage {
+		t.Errorf("an off-site block page redirect is still caught, got %q", s)
 	}
 }
 

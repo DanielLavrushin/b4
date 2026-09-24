@@ -46,7 +46,7 @@ import { CSS } from "@dnd-kit/utilities";
 
 import { B4Dialog, B4Hint, B4Section } from "@b4.elements";
 import { useSnackbar } from "@context/SnackbarProvider";
-import { isStaleWriteError, reportSaveError, reportStaleWrite } from "@utils";
+import { reportSaveError } from "@utils";
 
 import { SetCompare } from "./Compare";
 import { SetCard } from "./SetCard";
@@ -157,14 +157,13 @@ const SortableCardWrapper = ({
 
 export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
   const { t } = useTranslation();
-  const { showSuccess, showError, showSnackbar } = useSnackbar();
+  const { showSuccess, showError } = useSnackbar();
   const navigate = useNavigate();
   const {
     deleteSet,
     deleteSets,
     duplicateSet,
     reorderSets,
-    updateSet,
     setEnabledForSets,
   } = useSets();
 
@@ -482,29 +481,12 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
     if (isTempId(set.id)) return;
     markSyncing([set.id], true);
     void (async () => {
-      const result = await updateSet({ ...set, enabled });
+      const result = await setEnabledForSets([set.id], enabled);
       markSyncing([set.id], false);
-      if (result.success) {
-        const saved = result.data;
-        if (saved) {
-          setSetsData((prev) =>
-            prev.map((s) =>
-              setItemId(s) === set.id ? setItemWithSaved(s, saved) : s,
-            ),
-          );
-        }
-        onRefresh();
-      } else if (isStaleWriteError(result.error)) {
-        setSetsData((prev) =>
-          prev.map((s) =>
-            setItemId(s) === set.id ? setItemWithEnabled(s, set.enabled) : s,
-          ),
-        );
-        reportStaleWrite(result.error, showSnackbar, t, onRefresh);
-      } else {
+      if (!result.success) {
         reportSaveError(result.error, showError, t, "sets.manager.failedToUpdate");
-        onRefresh();
       }
+      onRefresh();
     })();
   };
 

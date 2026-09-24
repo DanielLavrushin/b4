@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"strings"
 	"syscall"
@@ -170,13 +171,16 @@ func ClassifyTLSErrorStaged(err error, stage TLSStage, bytesRead int) (DomainSta
 	return DomainError, err.Error()
 }
 
-func ClassifyHTTPResponse(statusCode int, location, body string) (DomainStatus, string) {
+func ClassifyHTTPResponse(origin *url.URL, statusCode int, location, body string) (DomainStatus, string) {
 	if statusCode == 451 {
 		return DomainISPPage, "HTTP 451 Unavailable For Legal Reasons"
 	}
 
 	if IsBlockPageRedirect(location) {
-		return DomainISPPage, "Redirect to ISP block page: " + location
+		target, err := url.Parse(location)
+		if err != nil || origin == nil || IsBlockPageRedirectFrom(origin, origin.ResolveReference(target)) {
+			return DomainISPPage, "Redirect to ISP block page: " + location
+		}
 	}
 
 	if DetectBlockPageBody([]byte(body)) != "" {

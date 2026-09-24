@@ -50,6 +50,7 @@ interface ResultsPanelProps {
     setId: string,
     urls: string[],
     removed: string[],
+    dropHosts: string[],
   ) => Promise<void>;
   onShowLog: () => void;
   onNewSearch: () => void;

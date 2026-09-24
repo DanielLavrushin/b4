@@ -56,7 +56,7 @@ A set is checked as soon as it becomes watched, then on every **Check Interval**
 
 | Rule | Result |
 | --- | --- |
-| TLS certificate verification is on | A certificate error makes the address **Unusable**. |
+| TLS certificate verification is on, against the system root certificates plus those Entware installs under `/opt/etc/ssl` (`ca-bundle` or `ca-certificates`) | A certificate error makes the address **Unusable**. On a router with no root certificates at all the certificate is not verified. |
 | The server requires a client certificate | **Unusable**. |
 | Private and local destinations are refused on every hop, redirects included | **Unusable**. |
 | Up to 3 redirects are followed | More fail; a redirect to a known block page fails. |
@@ -104,7 +104,7 @@ When any address still fails, the strategy sections of this set (TCP, UDP, fragm
 
 ### Cooldown and giving up
 
-After every heal attempt, successful or not, the set waits for the **Healing Cooldown** before it is checked again. After three failed heals in a row the watchdog gives up on the set (**Gave up**): checks go on at the normal interval, but no heal is queued until one of these happens:
+After every heal attempt, successful or not, the set waits for the **Healing Cooldown** before it is checked again. A change to the set's Discovery addresses ends the wait, and the set is checked at once. After three failed heals in a row the watchdog gives up on the set (**Gave up**): checks go on at the normal interval, but no heal is queued until one of these happens:
 
 - a check finds every address loading;
 - **Check now** is pressed for the set on the Watchdog page;
@@ -117,7 +117,7 @@ A watched set shows one of these statuses, on the Watchdog page, in its Discover
 | Status | Meaning |
 | --- | --- |
 | **Queued** | Not checked yet, or waiting for a fresh check after a change. |
-| **Healthy** | Every address the set handles loaded on the last check. |
+| **Healthy** | Every address that could be checked loaded on the last check. An **Unusable** address, or one handled by another set, keeps its own status in the address list and does not count. |
 | **Degraded** | At least one address failed; the number of failed checks in a row is shown. Checked again on the failure interval. |
 | **Search queued** | **Max Retries** was reached and the heal waits for its turn. |
 | **Searching** | The heal's Discovery run is in progress. |

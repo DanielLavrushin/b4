@@ -508,10 +508,10 @@ func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
 		moved = nil
 		if req.KeepTargets {
 			if len(req.Pins) > 0 {
-				replacePins(target, pinDomains(req.Pins), req.Pins)
+				target.ReplacePins(config.PinDomains(req.Pins), req.Pins)
 			}
 		} else {
-			replacePins(target, domains, req.Pins)
+			target.ReplacePins(domains, req.Pins)
 			addSNIDomains(target, domains)
 			moved = api.releaseDomainsFromOtherSets(next.Sets, target.Id, domains)
 		}
@@ -585,29 +585,6 @@ func probeInputHost(raw string) string {
 		return host
 	}
 	return strings.Trim(authority, "[]")
-}
-
-func pinDomains(pins map[string][]string) []string {
-	domains := make([]string, 0, len(pins))
-	for domain := range pins {
-		domains = append(domains, domain)
-	}
-	return domains
-}
-
-func replacePins(set *config.SetConfig, domains []string, pins map[string][]string) {
-	applied := make(map[string]bool, len(domains))
-	for _, domain := range domains {
-		if normalized := config.NormalizePinDomain(domain); normalized != "" {
-			applied[normalized] = true
-		}
-	}
-	for pin := range set.DNS.Pins {
-		if applied[config.NormalizePinDomain(pin)] {
-			delete(set.DNS.Pins, pin)
-		}
-	}
-	mergePins(set, pins)
 }
 
 func cdnCategoriesFor(domains []string) (geoip, geosite []string) {

@@ -959,3 +959,113 @@ func TestLegacyUnusableGoesStraightToCooldown(t *testing.T) {
 		t.Fatal("no heal may start")
 	}
 }
+
+func TestHealWritesTheVerdictsPinsAndRollsThemBack(t *testing.T) {
+	pinned := func() *discovery.SetVerdict {
+		v := coveredVerdict("disorder")
+		v.Set.DNS.Pins = map[string][]string{"www.youtube.com": {"203.0.113.7"}, "other.example": {"203.0.113.9"}}
+		v.Covered = []string{"www.youtube.com"}
+		return v
+	}
+
+	h := newHarness(t, watchedSet("yt", ytURL))
+	h.check.set(ytURL, okCheck)
+	h.driver.verdict = pinned()
+	h.healNow("yt")
+	set := h.set("yt")
+	if got := set.DNS.Pins["www.youtube.com"]; len(got) != 1 || got[0] != "203.0.113.7" {
+		t.Fatalf("the address the verdict worked with is pinned: %v", set.DNS.Pins)
+	}
+	if _, ok := set.DNS.Pins["other.example"]; ok {
+		t.Errorf("only covered addresses are pinned: %v", set.DNS.Pins)
+	}
+	if !set.TCP.IPBlockDetect.Enabled || !set.TCP.IPBlockDetect.HealDNS {
+		t.Errorf("a pin turns on address block detection: %+v", set.TCP.IPBlockDetect)
+	}
+
+	h = newHarness(t, watchedSet("yt", ytURL))
+	h.check.set(ytURL, failCheck)
+	h.driver.verdict = pinned()
+	h.healNow("yt")
+	if pins := h.set("yt").DNS.Pins; len(pins) != 0 {
+		t.Errorf("a rollback removes the pins the heal wrote: %v", pins)
+	}
+}
+
+func TestAStopAfterTheRunWritesNothing(t *testing.T) {
+	h := newHarness(t, watchedSet("yt", ytURL))
+	h.check.set(ytURL, okCheck)
+	h.driver.verdict = coveredVerdict("disorder")
+	h.driver.runningFor = 1
+	h.driver.onSnapshot = func(n int) {
+		if n == 2 {
+			close(h.w.stop)
+		}
+	}
+
+	h.healNow("yt")
+
+	if h.saves.Load() != 0 {
+		t.Fatalf("a heal whose run finished during shutdown must not be written, got %d saves", h.saves.Load())
+	}
+	if got := h.set("yt").Fragmentation.Strategy; got != "tcp" {
+		t.Errorf("the set keeps its strategy, got %q", got)
+	}
+}
+
+func TestChangingTheURLsAfterAHealChecksThemAtOnce(t *testing.T) {
+	h := newHarness(t, watchedSet("yt", ytURL))
+	h.check.set(ytURL, okCheck)
+	h.driver.verdict = coveredVerdict("disorder")
+	h.healNow("yt")
+	if st := h.state("yt"); st.CooldownUntil.IsZero() {
+		t.Fatalf("precondition: a heal starts the cooldown: %+v", st)
+	}
+
+	h.edit("yt", func(s *config.SetConfig) {
+		s.Discovery.URLs = append(s.Discovery.URLs, videoURL)
+		s.Targets.SNIDomains = append(s.Targets.SNIDomains, "i.ytimg.com")
+	})
+	h.engine.mu.Lock()
+	h.engine.owners["i.ytimg.com"] = "yt"
+	h.engine.mu.Unlock()
+	h.check.set(videoURL, okCheck)
+
+	h.w.tick()
+
+	if n := h.check.callsFor(videoURL); n != 1 {
+		t.Fatalf("a new address is checked on the next tick, not after the old cooldown: %d calls", n)
+	}
+}
+
+func TestAURLChangeDuringVerificationIsCheckedAfterTheHeal(t *testing.T) {
+	h := newHarness(t, watchedSet("yt", ytURL))
+	h.check.set(ytURL, okCheck)
+	h.check.set(videoURL, okCheck)
+	h.driver.verdict = coveredVerdict("disorder")
+	h.engine.mu.Lock()
+	h.engine.owners["i.ytimg.com"] = "yt"
+	h.engine.mu.Unlock()
+
+	var once sync.Once
+	h.check.onCheck = func(string) {
+		once.Do(func() {
+			h.edit("yt", func(s *config.SetConfig) {
+				s.Discovery.URLs = append(s.Discovery.URLs, videoURL)
+				s.Targets.SNIDomains = append(s.Targets.SNIDomains, "i.ytimg.com")
+			})
+			h.w.mu.Lock()
+			h.w.syncSetStatesLocked(h.ptr.Load())
+			h.w.mu.Unlock()
+		})
+	}
+
+	h.healNow("yt")
+	if st := h.state("yt"); st.Status != SetStatusQueued || !st.CooldownUntil.IsZero() {
+		t.Fatalf("a set whose URLs changed during the heal is queued for a fresh check: %+v", st)
+	}
+	h.w.tick()
+	if n := h.check.callsFor(videoURL); n != 1 {
+		t.Fatalf("the added address is checked on the next tick: %d calls", n)
+	}
+}

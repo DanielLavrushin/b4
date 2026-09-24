@@ -268,6 +268,9 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 				}
 				if s.Enabled != want {
 					s.Enabled = want
+					if want {
+						api.loadTargetsForSetCached(s)
+					}
 					touched++
 				}
 				focusID = s.Id

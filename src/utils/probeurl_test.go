@@ -22,6 +22,8 @@ func TestNormalizeProbeURL(t *testing.T) {
 		{"https://example.com/?", "https://example.com/", "example.com"},
 		{"https://Example.com./x", "https://example.com/x", "example.com"},
 		{"2606:4700::1111", "https://[2606:4700::1111]/", "2606:4700::1111"},
+		{"2606:4700::abcd", "https://[2606:4700::abcd]/", "2606:4700::abcd"},
+		{"https://2606:4700::abcd/path", "https://[2606:4700::abcd]/path", "2606:4700::abcd"},
 	}
 	for _, c := range cases {
 		got, host, err := NormalizeProbeURL(c.in)

@@ -68,7 +68,7 @@ func NormalizeProbeURL(raw string) (string, string, error) {
 	if !strings.Contains(s, "://") {
 		s = "https://" + s
 	}
-	u, err := url.Parse(s)
+	u, err := url.Parse(bracketBareIPv6(s))
 	if err != nil {
 		return "", "", fmt.Errorf("%q is not a URL: %w", raw, err)
 	}
@@ -112,6 +112,26 @@ func NormalizeProbeURL(raw string) (string, string, error) {
 		u.RawPath = ""
 	}
 	return u.String(), host, nil
+}
+
+func bracketBareIPv6(s string) string {
+	i := strings.Index(s, "://")
+	if i < 0 {
+		return s
+	}
+	rest := s[i+3:]
+	end := strings.IndexAny(rest, "/?#")
+	if end < 0 {
+		end = len(rest)
+	}
+	authority := rest[:end]
+	if strings.HasPrefix(authority, "[") || strings.Count(authority, ":") < 2 {
+		return s
+	}
+	if addr, err := netip.ParseAddr(authority); err != nil || !addr.Is6() {
+		return s
+	}
+	return s[:i+3] + "[" + authority + "]" + rest[end:]
 }
 
 func SanitizeProbeURLs(raw []string, onDrop func(raw string, err error)) []string {

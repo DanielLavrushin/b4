@@ -3,6 +3,7 @@ package watchdog
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/daniellavrushin/b4/config"
@@ -36,13 +37,13 @@ func applyBatchResults(cfg *config.Config, domains []string, suite *discovery.Ch
 			results[input] = ErrBaselineWorks
 			continue
 		}
-		if dr.Unconfirmed {
-			results[input] = errUnconfirmed
-			continue
-		}
-		set := winnerSetFor(suite, domainKey, dr)
+		set, confirmed := winnerSetFor(suite, domainKey, dr)
 		if set == nil {
 			results[input] = fmt.Errorf("best preset has no set config")
+			continue
+		}
+		if !confirmed {
+			results[input] = errUnconfirmed
 			continue
 		}
 		successful = append(successful, domainWithSet{domain: input, set: set})
@@ -66,21 +67,22 @@ func applyBatchResults(cfg *config.Config, domains []string, suite *discovery.Ch
 	return results
 }
 
-func winnerSetFor(suite *discovery.CheckSuite, domainKey string, dr *discovery.DomainDiscoveryResult) *config.SetConfig {
+func winnerSetFor(suite *discovery.CheckSuite, domainKey string, dr *discovery.DomainDiscoveryResult) (*config.SetConfig, bool) {
 	for _, group := range suite.StrategyGroups {
-		if group.Set == nil {
+		if group.Set == nil || !slices.Contains(group.Domains, domainKey) {
 			continue
 		}
-		for _, d := range group.Domains {
-			if d == domainKey {
-				return group.Set
-			}
-		}
+		return group.Set, presetConfirmed(dr, group.WinnerPreset)
 	}
 	if best, ok := dr.Results[dr.BestPreset]; ok && best.Set != nil {
-		return best.Set
+		return best.Set, !dr.Unconfirmed
 	}
-	return nil
+	return nil, false
+}
+
+func presetConfirmed(dr *discovery.DomainDiscoveryResult, name string) bool {
+	r := dr.Results[name]
+	return r != nil && r.ConfirmTries > 0 && r.Confirmed >= r.ConfirmTries
 }
 
 func groupBySet(items []domainWithSet) [][]domainWithSet {

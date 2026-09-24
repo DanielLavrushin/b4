@@ -2,6 +2,7 @@ package config
 
 import (
 	"net"
+	"slices"
 	"strings"
 )
 
@@ -68,4 +69,59 @@ func sanitizePins(pins map[string][]string, onInvalid func(domain, value string)
 		return nil
 	}
 	return clean
+}
+
+func PinDomains(pins map[string][]string) []string {
+	domains := make([]string, 0, len(pins))
+	for domain := range pins {
+		domains = append(domains, domain)
+	}
+	return domains
+}
+
+func (s *SetConfig) ReplacePins(domains []string, pins map[string][]string) {
+	applied := make(map[string]bool, len(domains))
+	for _, domain := range domains {
+		if normalized := NormalizePinDomain(domain); normalized != "" {
+			applied[normalized] = true
+		}
+	}
+	for pin := range s.DNS.Pins {
+		if applied[NormalizePinDomain(pin)] {
+			delete(s.DNS.Pins, pin)
+		}
+	}
+	s.MergePins(pins)
+}
+
+func (s *SetConfig) MergePins(pins map[string][]string) {
+	merged := false
+	for rawDomain, ips := range pins {
+		domain := NormalizePinDomain(rawDomain)
+		if domain == "" {
+			continue
+		}
+		for _, raw := range ips {
+			ip := strings.TrimSpace(raw)
+			parsed := net.ParseIP(ip)
+			if parsed == nil || slices.ContainsFunc(s.DNS.Pins[domain], func(existing string) bool {
+				return parsed.Equal(net.ParseIP(strings.TrimSpace(existing)))
+			}) {
+				continue
+			}
+			if s.DNS.Pins == nil {
+				s.DNS.Pins = map[string][]string{}
+			}
+			s.DNS.Pins[domain] = append(s.DNS.Pins[domain], ip)
+			merged = true
+		}
+	}
+	if !merged {
+		return
+	}
+	ibd := &s.TCP.IPBlockDetect
+	ibd.Enabled = true
+	ibd.SynDetect = true
+	ibd.HealDNS = true
+	ibd.CacheBlockedIPs = true
 }

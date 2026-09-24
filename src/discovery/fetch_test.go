@@ -3,11 +3,14 @@ package discovery
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/tls"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +18,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/nfq"
+	"github.com/daniellavrushin/b4/utils"
 )
 
 func TestProbeRefusesARedirectToABlockPage(t *testing.T) {
@@ -273,5 +277,95 @@ func TestRunWithoutAConfigEndsFailedAndIsReleased(t *testing.T) {
 			t.Fatal("the failed run is never dropped from the active suites")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestProbeRefusesAPrivateDestination(t *testing.T) {
+	probeRefusesAddr = func(a netip.Addr) bool { return a == netip.MustParseAddr("127.0.0.2") }
+	t.Cleanup(func() { probeRefusesAddr = nil })
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://127.0.0.2:1/admin", http.StatusFound)
+	}))
+	defer srv.Close()
+
+	ds := newProbeOnlySuite(srv.URL)
+	res := ds.fetchUsingIPForDomain(ds.Domains[0], 5*time.Second, "")
+	if res.Status != CheckStatusFailed || !strings.Contains(res.Error, "127.0.0.2 is a private or local address") {
+		t.Fatalf("a redirect to a private address must not be followed, got %q (%s)", res.Status, res.Error)
+	}
+
+	probeRefusesAddr = utils.IsReservedAddr
+	direct := newProbeOnlySuite(srv.URL)
+	res = direct.fetchUsingIPForDomain(direct.Domains[0], 5*time.Second, "")
+	if res.Status != CheckStatusFailed || !strings.Contains(res.Error, "127.0.0.1 is a private or local address") {
+		t.Fatalf("a name or pin that leads to the router itself must not be probed, got %q (%s)", res.Status, res.Error)
+	}
+}
+
+func TestAStallCountsAsATimeout(t *testing.T) {
+	for _, msg := range []string{"stalled after 16384 bytes", "all 2 IPs failed: stalled after 16384 bytes"} {
+		if got := analyzeFailure(CheckResult{Error: msg, Duration: 2 * time.Second}); got != FailureTimeout {
+			t.Errorf("%q: got %q, want %q", msg, got, FailureTimeout)
+		}
+	}
+}
+
+func TestBaselineResultsKeepTheDuration(t *testing.T) {
+	ds := &DiscoverySuite{
+		CheckSuite: &CheckSuite{},
+		domainResults: map[string]*DomainDiscoveryResult{
+			"a.example": {Results: map[string]*DomainPresetResult{
+				presetNoBypass: {Status: CheckStatusFailed, Error: "read error after 16384 bytes: connection reset by peer", Duration: 3 * time.Second},
+			}},
+		},
+	}
+	stored := ds.baselineResults(ConfigPreset{Name: presetNoBypass})
+	if got := stored["a.example"].Duration; got != 3*time.Second {
+		t.Fatalf("stored baseline duration %v, want 3s", got)
+	}
+	if got := analyzeFailure(stored["a.example"]); got == FailureRSTImmediate {
+		t.Errorf("a reset three seconds into the transfer is not an immediate RST")
+	}
+}
+
+func TestRefusedAddressesDoNotTakeAFetchSlot(t *testing.T) {
+	probeRefusesAddr = utils.IsReservedAddr
+	t.Cleanup(func() { probeRefusesAddr = nil })
+	ds := &DiscoverySuite{dnsResults: map[string]*DNSDiscoveryResult{
+		"a.example": {ExpectedIPs: []string{"10.0.0.1", "203.0.113.7", "198.51.100.7"}},
+		"b.example": {TransportBlocked: true, AlternativeIPs: []string{"192.168.1.1", "203.0.113.9"}},
+	}}
+	if got := ds.collectTargetIPs("a.example", 2); !slices.Equal(got, []string{"203.0.113.7", "198.51.100.7"}) {
+		t.Errorf("a private answer must not use up one of the two addresses tried, got %v", got)
+	}
+	if got := ds.collectTargetIPs("b.example", 2); !slices.Equal(got, []string{"203.0.113.9"}) {
+		t.Errorf("private alternatives are dropped too, got %v", got)
+	}
+}
+
+func TestDNSPhaseRefusesPrivateAddresses(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	defer srv.Close()
+	_, portText, _ := net.SplitHostPort(srv.Listener.Addr().String())
+	port, _ := strconv.Atoi(portText)
+	ctx := context.Background()
+
+	probeRefusesAddr = utils.IsReservedAddr
+	t.Cleanup(func() { probeRefusesAddr = nil })
+	p := &DNSProber{domain: "example.com", tlsPort: port, timeout: 2 * time.Second}
+	if p.testIPServesDomain(ctx, "127.0.0.1") {
+		t.Error("a sinkholed private answer must not count as the site's server")
+	}
+	if p.anyIPConnectable(ctx, []string{"127.0.0.1"}) {
+		t.Error("a private address must not count as reachable")
+	}
+	if newECSScanner(0, port, 2*time.Second).servesDomain(ctx, "example.com", "127.0.0.1") {
+		t.Error("the alternative-address scan must not accept a private address")
+	}
+
+	probeRefusesAddr = nil
+	if !p.anyIPConnectable(ctx, []string{"127.0.0.1"}) {
+		t.Error("with the guard off the same listener is reachable, so the refusal above came from the guard")
 	}
 }

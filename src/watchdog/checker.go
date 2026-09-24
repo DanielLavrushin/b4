@@ -28,10 +28,12 @@ func checkDomain(parent context.Context, input string, mark uint, timeout time.D
 	guard := newDialGuard(nil)
 	dialer := guard.dialer(mark, timeout)
 
+	roots, verify := netprobe.TLSRoots()
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: false,
+			RootCAs:            roots,
+			InsecureSkipVerify: !verify,
 		},
 		ResponseHeaderTimeout: timeout,
 		IdleConnTimeout:       timeout,

@@ -463,6 +463,9 @@ func (w *Watchdog) healBatch(domains []string) {
 	}
 
 	w.waitDiscoveryIdle(discoveryIdleWait)
+	if w.stopping() {
+		return
+	}
 
 	cs, ok := w.disc.Snapshot(suiteID)
 	if !ok {

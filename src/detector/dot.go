@@ -25,7 +25,8 @@ func dialDoT(ctx context.Context, mark uint, host string, port int, timeout time
 	if err != nil {
 		return nil, err
 	}
-	conf := &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12, InsecureSkipVerify: noCABundle()}
+	roots, verify := netprobe.TLSRoots()
+	conf := &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12, RootCAs: roots, InsecureSkipVerify: !verify}
 	c := tls.Client(raw, conf)
 	hctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

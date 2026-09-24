@@ -58,10 +58,12 @@ func ProbeHost(ctx context.Context, host string, opt ProbeOptions) (CheckResult,
 	guard := newDialGuard(nil)
 	dialer := guard.dialer(opt.Mark, timeout)
 
+	roots, verify := netprobe.TLSRoots()
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: false,
+			RootCAs:            roots,
+			InsecureSkipVerify: !verify,
 		},
 		ResponseHeaderTimeout: timeout,
 		IdleConnTimeout:       timeout,
