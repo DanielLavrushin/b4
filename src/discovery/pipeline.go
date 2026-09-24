@@ -53,7 +53,9 @@ func (ds *DiscoverySuite) RunDiscovery() {
 
 	if ds.cfg == nil {
 		log.Errorf("Failed to get original configuration")
+		log.DiscoveryLogf("Discovery could not start: the discovery worker has no configuration")
 		ds.setStatus(CheckStatusFailed)
+		ds.finalize()
 		return
 	}
 
@@ -288,17 +290,24 @@ func (ds *DiscoverySuite) finishRun() {
 	ds.logDiscoverySummary()
 }
 
+var suiteRetention = 30 * time.Second
+
 func (ds *DiscoverySuite) finalize() {
 	ds.buildStrategyGroups()
 
 	ds.CheckSuite.mu.Lock()
-	ds.DomainDiscoveryResults = ds.domainResults
+	failed := ds.Status == CheckStatusFailed
+	if !failed {
+		ds.DomainDiscoveryResults = ds.domainResults
+	}
 	ds.EndTime = time.Now()
 	ds.publishSetVerdictLocked()
-	if ds.Status != CheckStatusCanceled {
+	if ds.Status != CheckStatusCanceled && !failed {
 		ds.Status = CheckStatusComplete
 	}
-	ds.refreshOutcomes(true)
+	if !failed {
+		ds.refreshOutcomes(true)
+	}
 	ds.CheckSuite.mu.Unlock()
 
 	// Persist results to history
@@ -307,7 +316,7 @@ func (ds *DiscoverySuite) finalize() {
 	}
 
 	go func() {
-		time.Sleep(30 * time.Second)
+		time.Sleep(suiteRetention)
 		suitesMu.Lock()
 		delete(activeSuites, ds.Id)
 		suitesMu.Unlock()

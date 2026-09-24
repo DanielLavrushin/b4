@@ -109,7 +109,7 @@ func (s *Suite) fetchSite(ctx context.Context, domain, rawURL, ip string, mark u
 		out.Detail = "HTTP 451 Unavailable For Legal Reasons"
 		return out
 	}
-	if location != "" && netprobe.IsBlockPageRedirect(location) {
+	if target, err := u.Parse(location); location != "" && err == nil && netprobe.IsBlockPageRedirectFrom(u, target) {
 		out.Status = netprobe.DomainISPPage
 		out.Detail = "redirect to ISP block page " + location
 		return out

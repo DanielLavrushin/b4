@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
@@ -169,6 +171,29 @@ func (ds *DiscoverySuite) tlsConfig() *tls.Config {
 	return cfg
 }
 
+const probeStallTimeout = 2 * time.Second
+
+type blockPageRedirect struct {
+	target string
+}
+
+func (e *blockPageRedirect) Error() string {
+	return "ISP block page (redirect to " + e.target + ")"
+}
+
+type progressConn struct {
+	net.Conn
+	onRead func()
+}
+
+func (c *progressConn) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	if n > 0 {
+		c.onRead()
+	}
+	return n, err
+}
+
 func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Duration, ip string) CheckResult {
 	result := CheckResult{
 		Domain:    di.Domain,
@@ -179,6 +204,8 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 
 	ctx, cancel := ds.fetchContext(timeout)
 	defer cancel()
+	reqCtx, abort := context.WithCancel(ctx)
+	defer abort()
 
 	transport := &http.Transport{
 		TLSClientConfig:       ds.tlsConfig(),
@@ -187,12 +214,37 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 		ForceAttemptHTTP2:     true,
 	}
 
-	transport.DialContext = ds.dialContext(timeout, di.Domain, ip)
+	var armed atomic.Bool
+	var stalled atomic.Bool
+	stall := time.AfterFunc(probeStallTimeout, func() {
+		stalled.Store(true)
+		abort()
+	})
+	stall.Stop()
+	defer func() {
+		armed.Store(false)
+		stall.Stop()
+	}()
+	dial := ds.dialContext(timeout, di.Domain, ip)
+	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		conn, err := dial(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		return &progressConn{Conn: conn, onRead: func() {
+			if armed.Load() {
+				stall.Reset(probeStallTimeout)
+			}
+		}}, nil
+	}
 
 	client := &http.Client{
 		Timeout:   timeout,
 		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) > 0 && netprobe.IsBlockPageRedirectFrom(via[0].URL, req.URL) {
+				return &blockPageRedirect{target: req.URL.String()}
+			}
 			if len(via) >= maxProbeRedirects {
 				return fmt.Errorf("stopped after %d redirects", len(via))
 			}
@@ -201,7 +253,7 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 		},
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", di.CheckURL, nil)
+	req, err := http.NewRequestWithContext(reqCtx, "GET", di.CheckURL, nil)
 	if err != nil {
 		result.Status = CheckStatusFailed
 		result.Error = err.Error()
@@ -214,8 +266,13 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 	resp, err := client.Do(req)
 	if err != nil {
 		result.Status = CheckStatusFailed
-		_, detail := netprobe.ClassifyTLSError(err)
-		result.Error = detail
+		var blocked *blockPageRedirect
+		if errors.As(err, &blocked) {
+			result.Error = blocked.Error()
+		} else {
+			_, detail := netprobe.ClassifyTLSError(err)
+			result.Error = detail
+		}
 		result.Duration = time.Since(start)
 		return result
 	}
@@ -246,20 +303,11 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 		result.Duration = time.Since(start)
 		return result
 	}
-	if loc := resp.Header.Get("Location"); loc != "" {
-		if netprobe.IsBlockPageRedirect(loc) {
-			result.Status = CheckStatusFailed
-			result.Error = "ISP block page (redirect to " + loc + ")"
-			result.Duration = time.Since(start)
-			return result
-		}
-	}
 
 	buf := make([]byte, 16*1024)
 	tailBuf := make([]byte, 0, 64)     // rolling tail for </body></html> detection
 	headBuf := make([]byte, 0, 4*1024) // first 4KB for ISP block page detection
 	var bytesRead int64
-	lastProgress := time.Now()
 
 	maxRead := int64(100 * 1024)
 	if result.ContentSize > 0 && result.ContentSize < maxRead {
@@ -275,8 +323,10 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
+			if !armed.Swap(true) {
+				stall.Reset(probeStallTimeout)
+			}
 			bytesRead += int64(n)
-			lastProgress = time.Now()
 			if len(headBuf) < 4*1024 {
 				headBuf = append(headBuf, buf[:n]...)
 				if len(headBuf) > 4*1024 {
@@ -294,15 +344,11 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 		}
 		if err != nil {
 			result.Status = CheckStatusFailed
-			result.Error = fmt.Sprintf("read error after %d bytes: %v", bytesRead, err)
-			result.Duration = time.Since(start)
-			result.BytesRead = bytesRead
-			return result
-		}
-
-		if time.Since(lastProgress) > 2*time.Second {
-			result.Status = CheckStatusFailed
-			result.Error = fmt.Sprintf("stalled after %d bytes", bytesRead)
+			if stalled.Load() {
+				result.Error = fmt.Sprintf("stalled after %d bytes", bytesRead)
+			} else {
+				result.Error = fmt.Sprintf("read error after %d bytes: %v", bytesRead, err)
+			}
 			result.Duration = time.Since(start)
 			result.BytesRead = bytesRead
 			return result

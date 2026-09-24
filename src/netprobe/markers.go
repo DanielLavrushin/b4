@@ -3,9 +3,12 @@ package netprobe
 import (
 	_ "embed"
 	"encoding/json"
+	"net"
+	"net/url"
 	"strings"
 
 	"github.com/daniellavrushin/b4/log"
+	"golang.org/x/net/publicsuffix"
 )
 
 //go:embed markers.json
@@ -42,6 +45,27 @@ func IsBlockPageRedirect(location string) bool {
 		}
 	}
 	return false
+}
+
+func IsBlockPageRedirectFrom(origin, target *url.URL) bool {
+	if target == nil || !IsBlockPageRedirect(target.String()) {
+		return false
+	}
+	if origin == nil {
+		return true
+	}
+	return siteOf(origin.Hostname()) != siteOf(target.Hostname())
+}
+
+func siteOf(host string) string {
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	if net.ParseIP(host) != nil {
+		return host
+	}
+	if site, err := publicsuffix.EffectiveTLDPlusOne(host); err == nil {
+		return site
+	}
+	return host
 }
 
 func DetectBlockPageBody(body []byte) string {

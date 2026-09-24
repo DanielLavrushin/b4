@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/url"
 	"syscall"
 	"testing"
 )
@@ -104,5 +105,28 @@ func TestIsBlockPageRedirect(t *testing.T) {
 	}
 	if IsBlockPageRedirect("https://accounts.google.com/login") {
 		t.Error("benign redirect must not trip detection")
+	}
+}
+
+func TestBlockPageRedirectMustLeaveTheSite(t *testing.T) {
+	cases := []struct {
+		from, to string
+		want     bool
+	}{
+		{"https://www.youtube.com/", "http://warning.rt.ru/?id=17", true},
+		{"https://example.com/", "https://lawfilter.isp.example.net/", true},
+		{"https://games.example.com/unblocked-games", "https://games.example.com/unblocked-games/", false},
+		{"https://example.com/signin", "https://www.example.com/login?reason=session_blocked", false},
+		{"https://bank.example.com.br/reais", "https://bank.example.com.br/cotacao/reais/hoje", false},
+		{"https://example.com/", "https://example.com/access-denied", false},
+		{"https://example.com/", "https://other.example.org/", false},
+		{"https://203.0.113.5/", "https://203.0.113.5/blocked", false},
+	}
+	for _, c := range cases {
+		from, _ := url.Parse(c.from)
+		to, _ := url.Parse(c.to)
+		if got := IsBlockPageRedirectFrom(from, to); got != c.want {
+			t.Errorf("%s -> %s: got %v, want %v", c.from, c.to, got, c.want)
+		}
 	}
 }

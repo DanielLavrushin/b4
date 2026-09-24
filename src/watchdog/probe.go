@@ -73,7 +73,7 @@ func ProbeHost(ctx context.Context, host string, opt ProbeOptions) (CheckResult,
 		Timeout:   timeout,
 		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if netprobe.IsBlockPageRedirect(req.URL.String()) {
+			if len(via) > 0 && netprobe.IsBlockPageRedirectFrom(via[0].URL, req.URL) {
 				return fmt.Errorf("ISP block page (redirect to %s)", req.URL.String())
 			}
 			if !strings.EqualFold(req.URL.Hostname(), host) {
