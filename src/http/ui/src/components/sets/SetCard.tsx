@@ -21,6 +21,7 @@ import {
   ClearIcon,
   CompareIcon,
   CopyIcon,
+  DiscoveryIcon,
   DragIcon,
   EditIcon,
   EscalateInIcon,
@@ -30,12 +31,14 @@ import {
   ThumbDownOutlinedIcon,
   ThumbUpIcon,
   ThumbUpOutlinedIcon,
+  WatchdogIcon,
 } from "@b4.icons";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import { B4Badge } from "@b4.elements";
 import { colors, facets as facetColors, radius, spacing, typography } from "@design";
 import { B4SetConfig } from "@models/config";
 import { HubVoteKind } from "@models/hub";
+import { SetWatchStatus, setWatchTone } from "@models/watchdog";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "@api/apiClient";
 import { useSnackbar } from "@context/SnackbarProvider";
@@ -81,6 +84,8 @@ interface SetCardProps {
   activeFacet?: FacetKey | null;
   onFacetSelect?: (key: FacetKey) => void;
   onVoted?: () => void;
+  watchStatus?: SetWatchStatus;
+  watchdogOn?: boolean;
 }
 
 export const SetCard = ({
@@ -105,6 +110,8 @@ export const SetCard = ({
   activeFacet = null,
   onFacetSelect,
   onVoted,
+  watchStatus,
+  watchdogOn = true,
 }: SetCardProps) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -163,6 +170,25 @@ export const SetCard = ({
   const openFacet = facets.find((f) => f.key === activeFacet);
   const targetSummary = buildTargetSummary(set, stats, t);
   const route = buildRouteSummary(set, t);
+  const watched = !!set.discovery?.watchdog;
+  let watchTooltip = t("sets.card.watchdogPending");
+  if (!watchdogOn) watchTooltip = t("sets.card.watchdogGlobalOff");
+  else if (watchStatus) {
+    const statusText = t(`watchdog.setStatus.${watchStatus.status}`, {
+      defaultValue: watchStatus.status,
+    });
+    const reasonText = watchStatus.reason
+      ? t(`watchdog.reason.${watchStatus.reason}`, {
+          defaultValue: watchStatus.reason,
+        })
+      : "";
+    watchTooltip = [
+      t("sets.card.watchdogStatus", { status: statusText }),
+      reasonText,
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
 
   const handleMenuOpen = (e: React.MouseEvent<HTMLElement>) => {
     e.stopPropagation();
@@ -259,6 +285,7 @@ export const SetCard = ({
           <Switch
             size="small"
             checked={set.enabled}
+            disabled={syncing}
             onChange={(e) => {
               e.stopPropagation();
               onToggleEnabled(e.target.checked);
@@ -314,6 +341,22 @@ export const SetCard = ({
             </ListItemIcon>
             <ListItemText>{t("core.compare")}</ListItemText>
           </MenuItem>
+          {!set.routing?.enabled && (
+            <MenuItem
+              onClick={() =>
+                handleAction(() => {
+                  navigate("/discovery", {
+                    state: { setId: set.id },
+                  })?.catch(() => {});
+                })
+              }
+            >
+              <ListItemIcon>
+                <DiscoveryIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>{t("sets.card.findStrategy")}</ListItemText>
+            </MenuItem>
+          )}
           <Divider />
           <MenuItem
             onClick={() => handleAction(onDelete)}
@@ -420,7 +463,8 @@ export const SetCard = ({
 
       {(escalatesTo ||
         (escalatedFrom && escalatedFrom.length > 0) ||
-        set.hub_state) && (
+        set.hub_state ||
+        watched) && (
         <Box
           sx={{
             display: "flex",
@@ -441,6 +485,26 @@ export const SetCard = ({
               onHover={onEscalationHover}
               onClick={onEscalationClick}
             />
+          )}
+          {watched && (
+            <Tooltip title={watchTooltip}>
+              <B4Badge
+                icon={<WatchdogIcon sx={{ fontSize: ESCALATION_ICON }} />}
+                label={t("sets.card.watchdog")}
+                size="small"
+                color={
+                  watchdogOn && watchStatus
+                    ? setWatchTone(watchStatus.status)
+                    : "default"
+                }
+                variant="outlined"
+                clickable
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate("/watchdog")?.catch(() => {});
+                }}
+              />
+            </Tooltip>
           )}
           {set.hub_state && (
             <Tooltip

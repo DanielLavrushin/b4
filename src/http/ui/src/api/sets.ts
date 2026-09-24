@@ -1,6 +1,8 @@
 import { apiDelete, apiFetch, apiPost, apiPut } from "./apiClient";
 import { B4SetConfig } from "@b4.sets";
-import { DomainReassignment } from "@models/sets";
+import { DomainReassignment, SetDomainMatch } from "@models/sets";
+
+export type { SetDomainMatch } from "@models/sets";
 
 export interface AddDomainsResult {
   success: boolean;
@@ -37,13 +39,3 @@ export const setsApi = {
       `/api/sets/check-domain?domain=${encodeURIComponent(domain)}`,
     ),
 };
-
-export interface SetDomainMatch {
-  domain: string;
-  set_id: string;
-  set_name: string;
-  entry: string;
-  relation: string;
-  via: string;
-  enabled: boolean;
-}

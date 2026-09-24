@@ -55,10 +55,6 @@ Domains may be tagged with **1.2** or **1.3** - the TLS protocol version used by
 
 ![20260418223112](../static/img/dashboard/20260418223112.png)
 
-## Domain watchdog
-
-If [domain watchdog](./watchdog) is enabled, a watchdog panel appears on the dashboard. It shows the status of each monitored domain, the time of the last check, and the error count. From here you can also add a new domain or trigger a forced check.
-
 ## Domains not in sets
 
 Top 15 domains handled by b4 that are not yet included in any set. Sorted by number of connections. Each domain can be added to a set through the "+" button.

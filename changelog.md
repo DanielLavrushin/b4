@@ -1,5 +1,16 @@
 # B4 - Bye Bye Big Bro
 
+## [1.83.0] - 2026-09-24
+
+- FIXED: **TUN mode did not start on routers with busybox `ip`, failing with `invalid argument '9998' to 'table ID'`** - TUN used the fixed routing tables 9999 and 9998. Busybox accepts table ids only up to 1023.
+- CHANGED: **TUN picks a free routing table itself** - it starts at 97 and goes down, skipping tables already used by the system, another program or a set. `queue.tun.route_table` still sets the table by hand, and a table that is already taken is refused with the reason. The kernel's own tables 253 to 255 fall back to the automatic choice. Busybox older than 1.33 cannot run TUN at all, and the start error says so.
+- FIXED: **Cleaning up after TUN removed other programs' routing rules and left some of b4's own behind** - the cleanup deleted every fwmark rule pointing at tables 9999 and 9998, whoever had added it. It also missed the two rules TUN adds to the main table. A TUN start that refused a busy table still flushed that table on exit.
+- ADDED: **Discovery can search for a strategy for an existing set** - a set can keep up to five Discovery addresses on the new Discovery tab of the set editor. Find a strategy on the set card runs Discovery on these addresses. The run tests the set's current strategy first and ends with one verdict for the whole set. MCP `b4_find_bypass_strategy` takes a `set` as well.
+- CHANGED: **Replacing a set's strategy from Discovery changes only the bypass strategy** - the set keeps its sites, UDP, routing and pinned addresses. Any set can be chosen, not only one that lists the site. Before, the replace also added the site to the set, removed it from other sets and copied UDP and DNS settings that Discovery never tested.
+- ADDED: **The watchdog can keep a set working** - with Keep this set working with the watchdog on in the set's Discovery tab, the watchdog checks the set's Discovery addresses on its schedule. When they keep failing, it runs Discovery for the set and writes in a strategy that works for every address. Then it checks the addresses again and puts the old strategy back if they still fail. The per-domain list keeps working, its entries can be moved into a set, and MCP `b4_watchdog` takes a `set`.
+- FIXED: **A watchdog heal could damage the set it healed** - it could write a strategy that had not passed confirmation, because the search stopped as soon as a success counter shared by all domains was high enough. It replaced the set's TCP and UDP sections whole, so the port filter, RST protection and UDP settings were lost. It saved without refreshing the firewall. A Settings or set page opened before the heal sent the old configuration back on its next save and undid the heal.
+- FIXED: **Discovery accepted local and private addresses such as `192.168.1.1` or `::1` and probed the router's own network with them** - only the MCP tool refused them.
+
 ## [1.82.3] - 2026-09-23
 
 - FIXED: **A site with pinned addresses opened in a browser drifted to an address b4 never handed out after about a minute, and the tab ended in a timeout** - only the A and AAAA queries were answered from the pin list, so the browser's parallel HTTPS query brought the site's CNAME back from the resolver, the system cache followed that CNAME on its own once the short pin answer expired, and the pins were not asked for again.

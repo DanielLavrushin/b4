@@ -432,7 +432,7 @@ func (api *API) addMCPTargetTools(srv *mcp.Server) {
 		}
 
 		snapshot := oldCfg.Clone()
-		if err := api.saveAndPushConfig(newCfg); err != nil {
+		if err := api.mcpSave(oldCfg, newCfg); err != nil {
 			return nil, mcpEditTargetsOut{}, fmt.Errorf("rejected: %w", err)
 		}
 		api.applyRuntimeChanges(newCfg, oldCfg)
@@ -459,7 +459,7 @@ func (api *API) addMCPTargetTools(srv *mcp.Server) {
 		mcpRecordChange(mcpChange{
 			Path: path, Previous: previousSummary, Current: currentSummary,
 			When: time.Now(), Snapshot: snapshot,
-		})
+		}, oldCfg, newCfg)
 		log.Infof("mcp: %s +%d -%d (now %d entries)", path, len(out.Added), len(out.Removed), len(stored))
 
 		out.Note = fmt.Sprintf("applied live; %s now holds %d entries. Undo with b4_revert_last_change",

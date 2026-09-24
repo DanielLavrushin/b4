@@ -202,7 +202,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	startCFRefresh(&cfg)
 	handler.SetMTProtoCFRefreshFunc(startCFRefresh)
 
-	handler.SetTablesRefreshFunc(func() error {
+	refreshTables := func() error {
 		c := cfgPtr.Load()
 		if c.System.Tables.SkipSetup {
 			return nil
@@ -233,7 +233,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 		tables.RoutingSyncConfig(c)
 		handler.GetMetricsCollector().TablesStatus = tables.DetectBackend(c)
 		return nil
-	})
+	}
+	handler.SetTablesRefreshFunc(refreshTables)
 	handler.SetDiscoveryRuntime(discoveryRT)
 	nfq.DNSTCPReadyFunc = tables.SetDNSTCPListenerReady
 	nfq.RoutingHandleDNSFunc = tables.RoutingHandleDNS
@@ -439,7 +440,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	}
 	handler.SetMTProtoServer(mtprotoServer)
 
-	wd := watchdog.New(&cfgPtr, discoveryRT, func(c *config.Config) error {
+	wd := watchdog.New(&cfgPtr, discoveryRT, watchdog.NewUpdateFunc(cfgPtr.Load, func(_, c *config.Config) error {
 		if err := c.Validate(); err != nil {
 			return fmt.Errorf("invalid configuration: %v", err)
 		}
@@ -469,7 +470,13 @@ func runB4(cmd *cobra.Command, args []string) error {
 			log.Errorf("invalid system.memory_limit %q: %v", c.System.MemoryLimit, err)
 		}
 		return nil
-	})
+	}, func() {
+		log.Infof("[WATCHDOG] the healed strategy changes the ports b4 intercepts, refreshing firewall rules")
+		if err := refreshTables(); err != nil {
+			log.Errorf("[WATCHDOG] firewall refresh after heal failed: %v", err)
+		}
+	}))
+	wd.SetEngine(watchdog.NewEngineView(pool, &cfgPtr))
 	wd.Start()
 	handler.SetWatchdog(wd)
 
@@ -489,6 +496,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 				return err
 			},
 			func(ts string) {
+				unlock := config.LockWrites()
+				defer unlock()
 				c := cfgPtr.Load().Clone()
 				c.System.Geo.AutoUpdate.LastRun = ts
 				if err := c.SaveToFile(c.ConfigPath); err != nil {

@@ -12,6 +12,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/netprobe"
+	"github.com/daniellavrushin/b4/utils"
 	"github.com/daniellavrushin/b4/watchdog"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -242,6 +243,8 @@ func (api *API) addMCPProbeTools(srv *mcp.Server) {
 type mcpWatchdogIn struct {
 	Action string `json:"action" jsonschema:"One of: status, add, remove, enable, disable, check."`
 	Domain string `json:"domain,omitempty" jsonschema:"Domain, for add, remove and check."`
+	Set    string `json:"set,omitempty" jsonschema:"Set id or exact name: act on that set's own watchdog."`
+	URL    string `json:"url,omitempty" jsonschema:"With set: the discovery URL to add or remove."`
 }
 
 type mcpWatchdogDomain struct {
@@ -252,128 +255,142 @@ type mcpWatchdogDomain struct {
 	LastCheck           string  `json:"last_check,omitempty"`
 	KBPerSec            float64 `json:"kb_per_sec,omitempty"`
 	MatchedSet          string  `json:"matched_set,omitempty"`
+	WatchedBySet        string  `json:"watched_by_set,omitempty"`
 	IntervalSec         int     `json:"interval_sec,omitempty"`
 	CoolingDown         bool    `json:"cooling_down,omitempty"`
 }
 
 type mcpWatchdogOut struct {
-	Enabled bool                `json:"enabled"`
-	Domains []mcpWatchdogDomain `json:"domains,omitempty"`
-	Changed bool                `json:"changed"`
-	Note    string              `json:"note"`
+	Enabled bool                      `json:"enabled"`
+	Domains []mcpWatchdogDomain       `json:"domains,omitempty"`
+	Sets    []watchdog.SetWatchStatus `json:"sets,omitempty"`
+	Set     *watchdog.SetWatchStatus  `json:"set,omitempty"`
+	Changed bool                      `json:"changed"`
+	Note    string                    `json:"note"`
 }
 
 func (api *API) addMCPWatchdogTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:  "b4_watchdog",
-		Title: "Read and edit the watchdog list",
-		Description: "The watchdog fetches the domains it is given on a schedule and records whether each one worked. " +
-			"action=status is the fastest answer to 'is my bypass working': it returns the last verdict, the error and the throughput per domain, without emitting any traffic, and needs no permission. " +
-			"remove and disable need 'Allow configuration changes'. add, enable and check make the router fetch a site, so they need 'Allow active probes' as well. " +
-			"Enabling the watchdog lets b4 REWRITE strategy sets on its own when a domain keeps failing.",
+		Title: "Read and edit the watchdog",
+		Description: "Fetches watched targets on a schedule; when one keeps failing b4 REWRITES a set's strategy on its own. " +
+			"Without set: the global domain list. With set: that set's own watchdog, which checks its discovery URLs, runs a discovery for the set on repeated failure, writes a confirmed strategy, verifies it and rolls back on failure. " +
+			"status emits no traffic and needs no permission; without set it also lists watched sets. " +
+			"remove and disable need 'Allow configuration changes'; add and enable also need 'Allow active probes'; check needs only 'Allow active probes'.",
 		Annotations: mcpDestructive,
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpWatchdogIn) (*mcp.CallToolResult, mcpWatchdogOut, error) {
-		action := strings.ToLower(strings.TrimSpace(in.Action))
-		if action == "" {
-			return nil, mcpWatchdogOut{}, fmt.Errorf("action is required: status, add, remove, enable, disable or check")
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpWatchdogIn) (*mcp.CallToolResult, any, error) {
+		res, out, err := api.mcpWatchdog(in)
+		if err != nil {
+			return nil, nil, err
 		}
-		if action == "status" {
-			return api.mcpWatchdogStatus()
-		}
+		return res, out, nil
+	})
+}
 
-		mcpCfg := api.getCfg().System.WebServer.MCP
-		if mcpWatchdogEmitsTraffic(action) && !mcpCfg.AllowActiveProbes {
+func (api *API) mcpWatchdog(in mcpWatchdogIn) (*mcp.CallToolResult, mcpWatchdogOut, error) {
+	action := strings.ToLower(strings.TrimSpace(in.Action))
+	if action == "" {
+		return nil, mcpWatchdogOut{}, fmt.Errorf("action is required: status, add, remove, enable, disable or check")
+	}
+	if ref := strings.TrimSpace(in.Set); ref != "" {
+		return api.mcpWatchdogSet(action, ref, in)
+	}
+	if action == "status" {
+		return api.mcpWatchdogStatus()
+	}
+
+	mcpCfg := api.getCfg().System.WebServer.MCP
+	if mcpWatchdogEmitsTraffic(action) && !mcpCfg.AllowActiveProbes {
+		return nil, mcpWatchdogOut{}, fmt.Errorf(
+			"active probes are disabled: %s makes the router fetch a site, so it needs 'Allow active probes' under Settings -> Integrations -> MCP server. "+
+				"action=status reports the verdicts already recorded and needs no permission", action)
+	}
+	if action == "check" {
+		return api.mcpWatchdogCheck(in.Domain)
+	}
+	if !mcpCfg.AllowWrites {
+		return nil, mcpWatchdogOut{}, fmt.Errorf(
+			"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
+	}
+
+	mcpWriteMu.Lock()
+	defer mcpWriteMu.Unlock()
+
+	oldCfg := api.getCfg()
+	newCfg := oldCfg.Clone()
+	wd := &newCfg.System.Checker.Watchdog
+	out := mcpWatchdogOut{}
+
+	switch action {
+	case "enable", "disable":
+		want := action == "enable"
+		if wd.Enabled == want {
+			out.Enabled = want
+			out.Note = fmt.Sprintf("the watchdog is already %sd", action)
+			return nil, out, nil
+		}
+		wd.Enabled = want
+
+	case "add", "remove":
+		domain := strings.ToLower(watchdog.ExtractDomain(strings.TrimSpace(in.Domain)))
+		if domain == "" {
+			return nil, mcpWatchdogOut{}, fmt.Errorf("domain is required for action=%s", action)
+		}
+		if action == "add" && watchdog.IsReservedHost(domain) {
 			return nil, mcpWatchdogOut{}, fmt.Errorf(
-				"active probes are disabled: %s makes the router fetch a site, so it needs 'Allow active probes' under Settings -> Integrations -> MCP server. "+
-					"action=status reports the verdicts already recorded and needs no permission", action)
+				"%s is a private or local address: the watchdog would fetch it from the router on a timer, which reports on the network b4 runs on rather than on censorship", domain)
 		}
-		if action == "check" {
-			return api.mcpWatchdogCheck(in.Domain)
+		idx := -1
+		for i, d := range wd.Domains {
+			if strings.EqualFold(watchdog.ExtractDomain(d), domain) {
+				idx = i
+				break
+			}
 		}
-		if !mcpCfg.AllowWrites {
-			return nil, mcpWatchdogOut{}, fmt.Errorf(
-				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
-		}
-
-		mcpWriteMu.Lock()
-		defer mcpWriteMu.Unlock()
-
-		oldCfg := api.getCfg()
-		newCfg := oldCfg.Clone()
-		wd := &newCfg.System.Checker.Watchdog
-		out := mcpWatchdogOut{}
-
-		switch action {
-		case "enable", "disable":
-			want := action == "enable"
-			if wd.Enabled == want {
-				out.Enabled = want
-				out.Note = fmt.Sprintf("the watchdog is already %sd", action)
+		if action == "add" {
+			if idx >= 0 {
+				out.Enabled = wd.Enabled
+				out.Note = fmt.Sprintf("%s is already watched", domain)
 				return nil, out, nil
 			}
-			wd.Enabled = want
-
-		case "add", "remove":
-			domain := strings.ToLower(watchdog.ExtractDomain(strings.TrimSpace(in.Domain)))
-			if domain == "" {
-				return nil, mcpWatchdogOut{}, fmt.Errorf("domain is required for action=%s", action)
+			wd.Domains = append(wd.Domains, domain)
+		} else {
+			if idx < 0 {
+				out.Enabled = wd.Enabled
+				out.Note = fmt.Sprintf("%s is not watched", domain)
+				return nil, out, nil
 			}
-			if action == "add" && watchdog.IsReservedHost(domain) {
-				return nil, mcpWatchdogOut{}, fmt.Errorf(
-					"%s is a private or local address: the watchdog would fetch it from the router on a timer, which reports on the network b4 runs on rather than on censorship", domain)
-			}
-			idx := -1
-			for i, d := range wd.Domains {
-				if strings.EqualFold(watchdog.ExtractDomain(d), domain) {
-					idx = i
-					break
-				}
-			}
-			if action == "add" {
-				if idx >= 0 {
-					out.Enabled = wd.Enabled
-					out.Note = fmt.Sprintf("%s is already watched", domain)
-					return nil, out, nil
-				}
-				wd.Domains = append(wd.Domains, domain)
-			} else {
-				if idx < 0 {
-					out.Enabled = wd.Enabled
-					out.Note = fmt.Sprintf("%s is not watched", domain)
-					return nil, out, nil
-				}
-				wd.Domains = append(wd.Domains[:idx], wd.Domains[idx+1:]...)
-			}
-
-		default:
-			return nil, mcpWatchdogOut{}, fmt.Errorf("unknown action %q: expected status, add, remove, enable, disable or check", action)
+			wd.Domains = append(wd.Domains[:idx], wd.Domains[idx+1:]...)
 		}
 
-		snapshot := oldCfg.Clone()
-		if err := api.saveAndPushConfig(newCfg); err != nil {
-			return nil, mcpWatchdogOut{}, fmt.Errorf("rejected: %w", err)
-		}
-		api.applyRuntimeChanges(newCfg, oldCfg)
-		api.PerformSoftRestart(newCfg, oldCfg)
+	default:
+		return nil, mcpWatchdogOut{}, fmt.Errorf("unknown action %q: expected status, add, remove, enable, disable or check", action)
+	}
 
-		live := api.getCfg().System.Checker.Watchdog
-		mcpRecordChange(mcpChange{
-			Path:     "system.checker.watchdog",
-			Previous: mcpWatchdogSummary(oldCfg),
-			Current:  mcpWatchdogSummary(api.getCfg()),
-			When:     time.Now(), Snapshot: snapshot,
-		})
-		log.Infof("mcp: watchdog %s (%d domains, enabled=%v)", action, len(live.Domains), live.Enabled)
+	snapshot := oldCfg.Clone()
+	if err := api.mcpSave(oldCfg, newCfg); err != nil {
+		return nil, mcpWatchdogOut{}, fmt.Errorf("rejected: %w", err)
+	}
+	api.applyRuntimeChanges(newCfg, oldCfg)
+	api.PerformSoftRestart(newCfg, oldCfg)
 
-		out.Enabled = live.Enabled
-		out.Changed = true
-		out.Note = fmt.Sprintf("applied live; the watchdog is %s and watching %d domain(s). Undo with b4_revert_last_change",
-			map[bool]string{true: "on", false: "off"}[live.Enabled], len(live.Domains))
-		if live.Enabled && action == "enable" {
-			out.Note += ". While it is on, b4 may rewrite a set's strategy on its own when a watched domain keeps failing"
-		}
-		return nil, out, nil
-	})
+	live := api.getCfg().System.Checker.Watchdog
+	mcpRecordChange(mcpChange{
+		Path:     "system.checker.watchdog",
+		Previous: mcpWatchdogSummary(oldCfg),
+		Current:  mcpWatchdogSummary(api.getCfg()),
+		When:     time.Now(), Snapshot: snapshot,
+	}, oldCfg, newCfg)
+	log.Infof("mcp: watchdog %s (%d domains, enabled=%v)", action, len(live.Domains), live.Enabled)
+
+	out.Enabled = live.Enabled
+	out.Changed = true
+	out.Note = fmt.Sprintf("applied live; the watchdog is %s and watching %d domain(s). Undo with b4_revert_last_change",
+		map[bool]string{true: "on", false: "off"}[live.Enabled], len(live.Domains))
+	if live.Enabled && action == "enable" {
+		out.Note += ". While it is on, b4 may rewrite a set's strategy on its own when a watched domain keeps failing"
+	}
+	return nil, out, nil
 }
 
 func mcpWatchdogEmitsTraffic(action string) bool {
@@ -410,6 +427,16 @@ func (api *API) mcpWatchdogCheck(raw string) (*mcp.CallToolResult, mcpWatchdogOu
 	globalWatchdog.ForceCheck(stored)
 	_, res, _ := api.mcpWatchdogStatus()
 	res.Note = fmt.Sprintf("scheduled an out-of-band check of %s; call action=status again in a few seconds for the result", stored)
+	for _, row := range res.Domains {
+		if row.Domain == stored && row.WatchedBySet != "" {
+			res.Note = fmt.Sprintf("nothing will happen: %s is checked through set %q, which has its own watchdog, so the global list entry is not fetched on its own. Use set=%q action=check instead",
+				stored, row.WatchedBySet, row.WatchedBySet)
+			return nil, res, nil
+		}
+	}
+	if !res.Enabled {
+		res.Note = fmt.Sprintf("nothing will happen until the watchdog master switch is turned on with action=enable: %s is not checked while it is off. Its cooldown was cleared", stored)
+	}
 	return nil, res, nil
 }
 
@@ -433,8 +460,9 @@ func (api *API) mcpWatchdogStatus() (*mcp.CallToolResult, mcpWatchdogOut, error)
 
 	state := globalWatchdog.GetState()
 	out.Enabled = state.Enabled
+	out.Sets = state.Sets
 	now := time.Now()
-	healthy, failing := 0, 0
+	healthy, failing, delegated := 0, 0, 0
 	for _, d := range state.Domains {
 		if d == nil {
 			continue
@@ -446,15 +474,19 @@ func (api *API) mcpWatchdogStatus() (*mcp.CallToolResult, mcpWatchdogOut, error)
 			LastError:           d.LastError,
 			KBPerSec:            d.LastSpeed / 1024,
 			MatchedSet:          d.MatchedSet,
+			WatchedBySet:        d.WatchedBySetName,
 			IntervalSec:         d.Interval,
 			CoolingDown:         !d.CooldownUntil.IsZero() && now.Before(d.CooldownUntil),
 		}
 		if !d.LastCheck.IsZero() {
 			row.LastCheck = d.LastCheck.UTC().Format(time.RFC3339)
 		}
-		if d.Status == watchdog.StatusHealthy {
+		switch {
+		case d.WatchedBySetId != "":
+			delegated++
+		case d.Status == watchdog.StatusHealthy:
 			healthy++
-		} else {
+		default:
 			failing++
 		}
 		out.Domains = append(out.Domains, row)
@@ -464,13 +496,244 @@ func (api *API) mcpWatchdogStatus() (*mcp.CallToolResult, mcpWatchdogOut, error)
 	switch {
 	case !out.Enabled:
 		out.Note = fmt.Sprintf("the watchdog is off, so these %d verdict(s) are whatever was recorded before it stopped", len(out.Domains))
+	case len(out.Domains) == 0 && len(state.Sets) > 0:
+		out.Note = fmt.Sprintf("the global list is empty; %d set(s) are watched on their own, see 'sets'", len(state.Sets))
 	case len(out.Domains) == 0:
-		out.Note = "the watchdog is on but watching nothing; add a domain with action=add"
+		out.Note = "the watchdog is on but watching nothing; add a domain with action=add, or watch a set with set=<set> action=enable"
+	case healthy+failing == 0:
+		out.Note = fmt.Sprintf("all %d entry(ies) on the global list are checked through the set named in 'watched_by_set', which has its own watchdog; see 'sets'", delegated)
 	case failing == 0:
 		out.Note = fmt.Sprintf("all %d watched domain(s) were working at their last check", healthy)
 	default:
 		out.Note = fmt.Sprintf("%d of %d watched domain(s) are not working; 'last_error' says why and 'matched_set' names the set handling each",
-			failing, len(out.Domains))
+			failing, healthy+failing)
+	}
+	if delegated > 0 && out.Enabled && healthy+failing > 0 {
+		out.Note += fmt.Sprintf("; %d entry(ies) are checked through the set named in 'watched_by_set', which has its own watchdog, so their own rows are not updated", delegated)
+	}
+	return nil, out, nil
+}
+
+func mcpSetNotWatchedWhy(set *config.SetConfig) string {
+	if !set.Discovery.Watchdog {
+		return "its watchdog is off; turn it on with action=enable"
+	}
+	if blocker := set.WatchdogBlocker(); blocker != "" {
+		return fmt.Sprintf("%s (%s)", config.WatchdogBlockerText(blocker), blocker)
+	}
+	return "it is not watched"
+}
+
+func mcpForceCheckNote(name, outcome string, cleared bool) string {
+	switch outcome {
+	case watchdog.ForceCheckNotWatched:
+		return fmt.Sprintf("nothing will happen: set %q is not watched by the running watchdog", name)
+	case watchdog.ForceCheckHealing:
+		note := fmt.Sprintf("nothing will happen now: set %q is being healed, and the heal verifies the set itself when it ends", name)
+		if cleared {
+			note += "; its heal failures and any give-up were cleared"
+		}
+		return note
+	case watchdog.ForceCheckMasterOff:
+		note := fmt.Sprintf("nothing will happen until the watchdog master switch is turned on (action=enable without set): set %q is not checked while it is off. Its cooldown and failure count were cleared", name)
+		if cleared {
+			note += ", and so were its heal failures and any give-up"
+		}
+		return note
+	}
+	note := fmt.Sprintf("scheduled a check of every URL of set %q and cleared its cooldown and failure count", name)
+	if cleared {
+		note += ", its heal failures and any give-up"
+	} else {
+		note += "; a give-up and the heal failures stay, clearing them needs 'Allow configuration changes'"
+	}
+	return note + "; call action=status again in a few seconds for the result"
+}
+
+func mcpWatchdogSetSummary(set *config.SetConfig) string {
+	if set == nil {
+		return "deleted"
+	}
+	return fmt.Sprintf("watchdog=%v urls=%s", set.Discovery.Watchdog, mcpSummarizeList(set.Discovery.URLs))
+}
+
+func mcpWatchdogSetRow(set *config.SetConfig) *watchdog.SetWatchStatus {
+	if globalWatchdog == nil || set == nil {
+		return nil
+	}
+	st, ok := globalWatchdog.GetSetState(set.Id)
+	if !ok {
+		return nil
+	}
+	return &st
+}
+
+func (api *API) mcpWatchdogSet(action, ref string, in mcpWatchdogIn) (*mcp.CallToolResult, mcpWatchdogOut, error) {
+	cfg := api.getCfg()
+	target, err := mcpFindDiscoverySet(cfg, ref)
+	if err != nil {
+		return nil, mcpWatchdogOut{}, err
+	}
+	mcpCfg := cfg.System.WebServer.MCP
+	out := mcpWatchdogOut{Enabled: cfg.System.Checker.Watchdog.Enabled}
+
+	switch action {
+	case "status":
+		row := mcpWatchdogSetRow(target)
+		out.Set = row
+		switch {
+		case !target.Discovery.Watchdog:
+			out.Note = fmt.Sprintf("set %q is not watched on its own; its discovery URLs are %s", target.Name, mcpSummarizeList(target.Discovery.URLs))
+		case !target.WatchdogActive():
+			out.Note = fmt.Sprintf("set %q has its watchdog switched on but is not checked: %s", target.Name, mcpSetNotWatchedWhy(target))
+		case row == nil:
+			out.Note = fmt.Sprintf("set %q is watched, but the watchdog is not running in this process, so there are no verdicts", target.Name)
+		case !out.Enabled:
+			out.Note = fmt.Sprintf("set %q is watched, but the master switch is off, so nothing is checked", target.Name)
+		default:
+			out.Note = fmt.Sprintf("set %q is %s", target.Name, row.Status)
+			if row.Reason != "" {
+				out.Note += " (" + row.Reason + ")"
+			}
+			if row.LastError != "" {
+				out.Note += ": " + row.LastError
+			}
+		}
+		return nil, out, nil
+	case "enable", "disable", "add", "remove", "check":
+	default:
+		return nil, mcpWatchdogOut{}, fmt.Errorf("unknown action %q: expected status, add, remove, enable, disable or check", action)
+	}
+
+	if mcpWatchdogEmitsTraffic(action) && !mcpCfg.AllowActiveProbes {
+		return nil, mcpWatchdogOut{}, fmt.Errorf(
+			"active probes are disabled: %s makes the router fetch a site, so it needs 'Allow active probes' under Settings -> Integrations -> MCP server. "+
+				"action=status reports the verdicts already recorded and needs no permission", action)
+	}
+
+	if action == "check" {
+		if !target.WatchdogActive() {
+			return nil, mcpWatchdogOut{}, fmt.Errorf("set %q is not watched, so there is nothing to re-check: %s", target.Name, mcpSetNotWatchedWhy(target))
+		}
+		if globalWatchdog == nil {
+			return nil, mcpWatchdogOut{}, fmt.Errorf("the watchdog is not running, so there is nothing to re-check")
+		}
+		outcome := globalWatchdog.ForceCheckSet(target.Id, mcpCfg.AllowWrites)
+		out.Set = mcpWatchdogSetRow(target)
+		out.Note = mcpForceCheckNote(target.Name, outcome, mcpCfg.AllowWrites)
+		return nil, out, nil
+	}
+
+	if !mcpCfg.AllowWrites {
+		return nil, mcpWatchdogOut{}, fmt.Errorf(
+			"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
+	}
+
+	mcpWriteMu.Lock()
+	defer mcpWriteMu.Unlock()
+
+	oldCfg := api.getCfg()
+	newCfg := oldCfg.Clone()
+	set := newCfg.GetSetById(target.Id)
+	if set == nil {
+		return nil, mcpWatchdogOut{}, fmt.Errorf("set %q disappeared while the change was prepared; retry", target.Name)
+	}
+	before := mcpWatchdogSetSummary(oldCfg.GetSetById(target.Id))
+	wasWatched := set.Discovery.Watchdog
+
+	switch action {
+	case "enable", "disable":
+		want := action == "enable"
+		if want {
+			if blocker := set.WatchdogBlocker(); blocker != "" {
+				return nil, mcpWatchdogOut{}, fmt.Errorf("set %q cannot be watched (%s): %s", set.Name, blocker, config.WatchdogBlockerText(blocker))
+			}
+		}
+		if set.Discovery.Watchdog == want {
+			out.Set = mcpWatchdogSetRow(set)
+			out.Note = fmt.Sprintf("the watchdog of set %q is already %s", set.Name, map[bool]string{true: "on", false: "off"}[want])
+			return nil, out, nil
+		}
+		set.Discovery.Watchdog = want
+
+	case "add", "remove":
+		raw := strings.TrimSpace(in.URL)
+		if raw == "" {
+			raw = strings.TrimSpace(in.Domain)
+		}
+		if raw == "" {
+			return nil, mcpWatchdogOut{}, fmt.Errorf("url is required for action=%s with set", action)
+		}
+		canonical, host, err := utils.NormalizeProbeURL(raw)
+		if err != nil {
+			if errors.Is(err, utils.ErrProbeURLReservedHost) || watchdog.IsReservedHost(raw) {
+				return nil, mcpWatchdogOut{}, fmt.Errorf(
+					"%s is a private or local address: the watchdog would fetch it from the router on a timer, which reports on the network b4 runs on rather than on censorship", raw)
+			}
+			return nil, mcpWatchdogOut{}, fmt.Errorf("%q cannot be a discovery URL: %v", raw, err)
+		}
+		idx := -1
+		for i, existing := range set.Discovery.URLs {
+			if _, existingHost, err := utils.NormalizeProbeURL(existing); existing == canonical || (err == nil && existingHost == host) {
+				idx = i
+				break
+			}
+		}
+		if action == "add" {
+			if idx >= 0 {
+				out.Set = mcpWatchdogSetRow(set)
+				out.Note = fmt.Sprintf("set %q already probes %s with %s", set.Name, host, set.Discovery.URLs[idx])
+				return nil, out, nil
+			}
+			if len(set.Discovery.URLs) >= utils.MaxProbeURLs {
+				return nil, mcpWatchdogOut{}, fmt.Errorf("set %q already has %d discovery URLs, the most it keeps; remove one first", set.Name, utils.MaxProbeURLs)
+			}
+			set.Discovery.URLs = append(set.Discovery.URLs, canonical)
+		} else {
+			if idx < 0 {
+				out.Set = mcpWatchdogSetRow(set)
+				out.Note = fmt.Sprintf("set %q does not probe %s", set.Name, host)
+				return nil, out, nil
+			}
+			set.Discovery.URLs = append(set.Discovery.URLs[:idx], set.Discovery.URLs[idx+1:]...)
+		}
+	}
+
+	if err := mcpValidateCandidate(oldCfg, newCfg); err != nil {
+		return nil, mcpWatchdogOut{}, fmt.Errorf("rejected: %w", err)
+	}
+
+	snapshot := oldCfg.Clone()
+	if err := api.mcpSave(oldCfg, newCfg); err != nil {
+		return nil, mcpWatchdogOut{}, fmt.Errorf("rejected: %w", err)
+	}
+	api.applyRuntimeChanges(newCfg, oldCfg)
+	api.PerformSoftRestart(newCfg, oldCfg)
+
+	live := api.getCfg().GetSetById(target.Id)
+	mcpRecordChange(mcpChange{
+		Path:     fmt.Sprintf("sets[%s].discovery", target.Name),
+		Previous: before,
+		Current:  mcpWatchdogSetSummary(live),
+		When:     time.Now(), Snapshot: snapshot,
+	}, oldCfg, newCfg)
+	log.Infof("mcp: set %q watchdog %s (%s)", target.Name, action, mcpWatchdogSetSummary(live))
+
+	if action == "enable" && globalWatchdog != nil {
+		globalWatchdog.ForceCheckSet(target.Id, true)
+	}
+
+	out.Changed = true
+	out.Set = mcpWatchdogSetRow(live)
+	out.Note = fmt.Sprintf("applied live; set %q: %s. Undo with b4_revert_last_change", target.Name, mcpWatchdogSetSummary(live))
+	if live != nil && action == "remove" && wasWatched && len(live.Discovery.URLs) == 0 {
+		out.Note += ". That was its last URL, so the set is not checked until a URL is added; its watchdog switch stays on"
+	}
+	if live != nil && live.Discovery.Watchdog && (action == "enable" || action == "add") {
+		out.Note += ". While it is on, b4 may rewrite this set's strategy on its own when its URLs keep failing"
+		if !out.Enabled {
+			out.Note += "; the watchdog master switch is off, so nothing is checked until it is enabled"
+		}
 	}
 	return nil, out, nil
 }

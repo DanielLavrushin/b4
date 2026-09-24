@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { colors, typography } from "@design";
 import { B4Badge } from "@b4.elements";
 import { AppliedMark, StrategyFamily } from "@models/discovery";
-import { Alternate, formatSpeed } from "@utils";
+import { Alternate, formatSpeed, presetLabel } from "@utils";
 
 interface AlternatesListProps {
   alternates: Alternate[];
@@ -57,7 +57,7 @@ export const AlternatesList = ({
             >
               <B4Badge
                 variant="outlined"
-                label={alt.preset}
+                label={presetLabel(alt.preset, t)}
                 sx={{
                   fontFamily: typography.recipes.monoSmall.fontFamily,
                   fontSize: typography.sizes.sm,

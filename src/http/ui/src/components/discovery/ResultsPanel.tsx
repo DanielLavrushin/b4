@@ -16,6 +16,7 @@ import {
 } from "@b4.icons";
 import { colors } from "@design";
 import { B4Alert, B4Badge, B4ResultCard } from "@b4.elements";
+import { B4SetConfig } from "@models/config";
 import { DiscoverySuite, HistoryEntry } from "@models/discovery";
 import {
   ApplyTarget,
@@ -24,6 +25,7 @@ import {
   SiteEntry,
   alternatesFor,
   appliedMarks,
+  checkUrlsFor,
   confirmationOf,
   formatDuration,
   formatSpeed,
@@ -32,6 +34,7 @@ import {
 } from "@utils";
 import { AlternatesList } from "./AlternatesList";
 import { StrategySummary } from "./StrategySummary";
+import { SetVerdictCard, VerdictApply } from "./SetVerdictCard";
 
 interface ResultsPanelProps {
   suite: DiscoverySuite;
@@ -39,7 +42,15 @@ interface ResultsPanelProps {
   history: HistoryEntry[];
   applying: boolean;
   canReset: boolean;
+  setName?: string;
+  runSet?: B4SetConfig;
   onApply: (target: ApplyTarget) => void;
+  onApplyVerdict: (req: VerdictApply) => Promise<boolean>;
+  onSaveSetUrls: (
+    setId: string,
+    urls: string[],
+    removed: string[],
+  ) => Promise<void>;
   onShowLog: () => void;
   onNewSearch: () => void;
 }
@@ -50,16 +61,24 @@ export const ResultsPanel = ({
   history,
   applying,
   canReset,
+  setName,
+  runSet,
   onApply,
+  onApplyVerdict,
+  onSaveSetUrls,
   onShowLog,
   onNewSearch,
 }: ResultsPanelProps) => {
   const { t } = useTranslation();
   const duration = formatDuration(t, suite.start_time, suite.end_time);
   const sites = suite.domains?.length ?? entries.length;
+  const verdict = suite.set_id ? suite.set_verdict : undefined;
 
   let headline = t("discovery.results.done", { duration });
-  if (suite.status === "canceled" || suite.stopped_early) {
+  if (
+    suite.status === "canceled" ||
+    (suite.stopped_early && !suite.stopped_covered)
+  ) {
     headline = t("discovery.results.stopped", { duration });
   } else if (suite.status === "failed") {
     headline = t("discovery.results.failed");
@@ -79,6 +98,11 @@ export const ResultsPanel = ({
           <Typography sx={{ fontSize: 18, fontWeight: 600 }}>
             {headline}
           </Typography>
+          {setName && (
+            <Typography variant="body2" sx={{ color: colors.text.secondary }}>
+              {t("discovery.results.forSet", { name: setName })}
+            </Typography>
+          )}
           <Typography variant="caption" sx={{ color: colors.text.secondary }}>
             {t("discovery.results.sites", { count: sites })}
             {" · "}
@@ -106,6 +130,28 @@ export const ResultsPanel = ({
           </Button>
         </Stack>
       </Stack>
+
+      {verdict && (
+        <SetVerdictCard
+          suite={suite}
+          verdict={verdict}
+          set={runSet}
+          setName={setName ?? runSet?.name ?? suite.set_id ?? ""}
+          history={history}
+          applying={applying}
+          onApply={onApplyVerdict}
+          onSaveUrls={onSaveSetUrls}
+        />
+      )}
+
+      {verdict && entries.length > 0 && (
+        <Typography
+          variant="subtitle2"
+          sx={{ color: colors.text.secondary, pt: 1 }}
+        >
+          {t("discovery.verdict.perAddress")}
+        </Typography>
+      )}
 
       <Stack spacing={1.5}>
         {entries.map((entry) =>
@@ -221,6 +267,8 @@ const FoundCard = ({
                 domains: group.domains,
                 set: alt.set,
                 preset: alt.preset,
+                urls: checkUrlsFor(suite, group.domains),
+                setId: suite.set_id,
               })
             }
           />
@@ -306,6 +354,8 @@ const FoundCard = ({
                 domains: group.domains,
                 set: group.set,
                 preset: group.preset,
+                urls: checkUrlsFor(suite, group.domains),
+                setId: suite.set_id,
               })
             }
             sx={{

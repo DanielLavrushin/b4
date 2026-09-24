@@ -281,6 +281,8 @@ func TestMCPDenyTagsArePresent(t *testing.T) {
 		{"sets[].routing.upstream.password", "video"},
 		{"sets[].routing.fwmark", "video"},
 		{"sets[].routing.table", "video"},
+		{"sets[].discovery.urls", "video"},
+		{"sets[].discovery.watchdog", "video"},
 		{"system.socks5.username", ""},
 		{"system.socks5.password", ""},
 		{"system.socks5.allowed_sources", ""},

@@ -33,15 +33,18 @@ func (a *API) handleDashboardLayout(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		unlock := config.LockWrites()
 		newCfg := a.getCfg().Clone()
 		newCfg.UI.Dashboard = layout.Sanitized()
 
 		if err := newCfg.SaveToFile(newCfg.ConfigPath); err != nil {
+			unlock()
 			log.Errorf("Failed to save dashboard layout: %v", err)
 			writeAPIError(w, ErrInternal("Failed to save dashboard layout"))
 			return
 		}
 		a.cfgPtr.Store(newCfg)
+		unlock()
 
 		setJsonHeader(w)
 		_ = json.NewEncoder(w).Encode(newCfg.UI.Dashboard)

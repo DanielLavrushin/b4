@@ -1,7 +1,7 @@
 import { useSnackbar } from "@context/SnackbarProvider";
 import { colors } from "@design";
 import { useSets } from "@hooks/useSets";
-import { reportSaveError } from "@utils";
+import { isStaleWriteError, reportSaveError, reportStaleWrite } from "@utils";
 import { B4Config, B4SetConfig } from "@models/config";
 import { createDefaultSet } from "@models/defaults";
 import {
@@ -17,18 +17,29 @@ import { Navigate, Route, Routes, useNavigate, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { SetEditorPage } from "./Editor";
-import { SetStats, SetWithStats, SetsManager } from "./Manager";
+import {
+  SetStats,
+  SetWithStats,
+  SetsManager,
+  setItemId,
+  setItemWithSaved,
+} from "./Manager";
 
 interface SetEditorRouteProps {
   config: B4Config & { sets?: SetWithStats[] };
   onRefresh: () => void;
+  onSaved: (set: B4SetConfig) => void;
 }
 
-function SetEditorRoute({ config, onRefresh }: Readonly<SetEditorRouteProps>) {
+function SetEditorRoute({
+  config,
+  onRefresh,
+  onSaved,
+}: Readonly<SetEditorRouteProps>) {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { showSuccess, showError } = useSnackbar();
+  const { showSuccess, showError, showSnackbar } = useSnackbar();
   const { createSet, updateSet, loading: saving } = useSets();
 
   const isNew = id === "new";
@@ -77,10 +88,13 @@ function SetEditorRoute({ config, onRefresh }: Readonly<SetEditorRouteProps>) {
 
       if (result.success) {
         showSuccess(isNew ? t("sets.setCreated") : t("sets.setUpdated"));
+        if (!isNew && result.data) onSaved(result.data);
         onRefresh();
         if (isNew && result.data) {
           await navigate(`/sets/${result.data.id}`, { replace: true });
         }
+      } else if (isStaleWriteError(result.error)) {
+        reportStaleWrite(result.error, showSnackbar, t, onRefresh);
       } else {
         reportSaveError(result.error, showError, t);
       }
@@ -101,6 +115,7 @@ function SetEditorRoute({ config, onRefresh }: Readonly<SetEditorRouteProps>) {
       isNew={isNew}
       saving={saving}
       onSave={handleSave}
+      onRefresh={onRefresh}
     />
   );
 }
@@ -136,6 +151,17 @@ export function SetsPage() {
   useEffect(() => {
     loadConfig().catch(() => {});
   }, [loadConfig]);
+
+  const handleSaved = useCallback((saved: B4SetConfig) => {
+    setConfig((prev) => {
+      if (!prev) return prev;
+      const current: SetWithStats[] = prev.sets ?? [];
+      const sets = current.map((s) =>
+        setItemId(s) === saved.id ? setItemWithSaved(s, saved) : s,
+      );
+      return { ...prev, sets };
+    });
+  }, []);
 
   if (loading || !config) {
     return (
@@ -182,6 +208,7 @@ export function SetsPage() {
                 onRefresh={() => {
                   loadConfig().catch(() => {});
                 }}
+                onSaved={handleSaved}
               />
             }
           />

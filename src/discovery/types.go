@@ -58,6 +58,7 @@ const (
 	FamilyAltAddress  StrategyFamily = "alt_address"
 	FamilyDNSRedirect StrategyFamily = "dns_redirect"
 	FamilyCommunity   StrategyFamily = "community"
+	FamilyCurrent     StrategyFamily = "current"
 )
 
 type Outcome string
@@ -69,6 +70,28 @@ const (
 	OutcomeGatewayIntercepted Outcome = "gateway_intercepted"
 	OutcomeNotFound           Outcome = "not_found"
 )
+
+type SetVerdictStatus string
+
+const (
+	SetVerdictCovered      SetVerdictStatus = "covered"
+	SetVerdictCurrentWorks SetVerdictStatus = "current_works"
+	SetVerdictPartial      SetVerdictStatus = "partial"
+	SetVerdictNotNeeded    SetVerdictStatus = "not_needed"
+	SetVerdictNone         SetVerdictStatus = "none"
+	SetVerdictIncomplete   SetVerdictStatus = "incomplete"
+)
+
+type SetVerdict struct {
+	Status       SetVerdictStatus  `json:"status"`
+	WinnerPreset string            `json:"winner_preset,omitempty"`
+	Family       StrategyFamily    `json:"family,omitempty"`
+	Set          *config.SetConfig `json:"set,omitempty"`
+	Covered      []string          `json:"covered,omitempty"`
+	Uncovered    []string          `json:"uncovered,omitempty"`
+	NoBypass     []string          `json:"no_bypass,omitempty"`
+	Confirmed    bool              `json:"confirmed,omitempty"`
+}
 
 const (
 	SourceWeb      = "web"
@@ -113,8 +136,11 @@ type CheckSuite struct {
 	CurrentDomain          string                            `json:"current_domain,omitempty"`
 	CurrentPhase           DiscoveryPhase                    `json:"current_phase,omitempty"`
 	Source                 string                            `json:"source,omitempty"`
+	SetId                  string                            `json:"set_id,omitempty"`
+	SetVerdict             *SetVerdict                       `json:"set_verdict,omitempty"`
 	StoppedEarly           bool                              `json:"stopped_early,omitempty"`
 	StoppedPhase           DiscoveryPhase                    `json:"stopped_phase,omitempty"`
+	StoppedCovered         bool                              `json:"stopped_covered,omitempty"`
 	mu                     sync.RWMutex                      `json:"-"`
 	cancel                 chan struct{}                     `json:"-"`
 	finish                 chan struct{}                     `json:"-"`
@@ -277,6 +303,18 @@ type DiscoverySuite struct {
 	plainSets      map[string]*config.SetConfig
 	hubPresets     []ConfigPreset
 	hubPresetsFn   func() []ConfigPreset
+
+	setStrategy     *config.SetConfig
+	stopWhenCovered bool
+	coverTried      map[string]bool
+	coverChecking   bool
+	coverFailures   int
+	jointTried      map[string]bool
+	coverWinner     string
+	coverStop       coverStopReason
+	jointConfirmed  map[string]bool
+	jointConfirmFn  func(presetName string, domains []string) (map[string]int, bool)
+	setVerdict      *SetVerdict
 }
 
 type CustomPayload struct {

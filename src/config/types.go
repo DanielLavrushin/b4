@@ -518,7 +518,13 @@ type SetConfig struct {
 	Routing       RoutingConfig       `json:"routing"`
 	Escalate      EscalateConfig      `json:"escalate"`
 	MSSClamp      MSSClampConfig      `json:"mss_clamp"`
+	Discovery     SetDiscoveryConfig  `json:"discovery" mcp:"deny"`
 	Hub           *HubOrigin          `json:"hub,omitempty" mcp:"deny"`
+}
+
+type SetDiscoveryConfig struct {
+	URLs     []string `json:"urls"`
+	Watchdog bool     `json:"watchdog"`
 }
 
 type HubOrigin struct {

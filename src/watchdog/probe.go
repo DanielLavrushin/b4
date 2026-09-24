@@ -6,16 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/netip"
 	"strings"
-	"sync"
-	"syscall"
 	"time"
 
 	"github.com/daniellavrushin/b4/netprobe"
-	"golang.org/x/sys/unix"
+	"github.com/daniellavrushin/b4/utils"
 )
 
 type ErrPrivateDestination struct{ Addr string }
@@ -29,36 +26,11 @@ type ProbeOptions struct {
 	Timeout time.Duration
 }
 
-func isReservedAddr(addr netip.Addr) bool {
-	addr = addr.Unmap()
-	switch {
-	case !addr.IsValid(),
-		addr.IsLoopback(),
-		addr.IsUnspecified(),
-		addr.IsLinkLocalUnicast(),
-		addr.IsLinkLocalMulticast(),
-		addr.IsMulticast(),
-		addr.IsInterfaceLocalMulticast(),
-		addr.IsPrivate():
-		return true
-	}
-	if addr.Is4() {
-		b := addr.As4()
-		if b[0] == 100 && b[1] >= 64 && b[1] <= 127 {
-			return true
-		}
-		if b[0] == 0 || b[0] >= 240 {
-			return true
-		}
-	}
-	return false
-}
-
 func IsReservedHost(host string) bool {
 	host = strings.TrimSpace(host)
 	for _, candidate := range []string{host, strings.Trim(host, "[]"), ExtractDomain(host)} {
-		if addr, err := netip.ParseAddr(candidate); err == nil {
-			return isReservedAddr(addr)
+		if utils.IsReservedHost(candidate) {
+			return true
 		}
 	}
 	return false
@@ -72,7 +44,7 @@ func ProbeHost(ctx context.Context, host string, opt ProbeOptions) (CheckResult,
 	if strings.ContainsAny(host, "/?#@ \t") {
 		return CheckResult{}, fmt.Errorf("%q is not a bare hostname", host)
 	}
-	if addr, err := netip.ParseAddr(host); err == nil && isReservedAddr(addr) {
+	if addr, err := netip.ParseAddr(host); err == nil && utils.IsReservedAddr(addr) {
 		return CheckResult{}, &ErrPrivateDestination{Addr: host}
 	}
 
@@ -83,48 +55,8 @@ func ProbeHost(ctx context.Context, host string, opt ProbeOptions) (CheckResult,
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	var attempts struct {
-		sync.Mutex
-		refused *ErrPrivateDestination
-		usable  bool
-	}
-
-	dialer := &net.Dialer{
-		Timeout:   timeout / 2,
-		KeepAlive: timeout,
-		Control: func(_, address string, c syscall.RawConn) error {
-			hostPart, _, err := net.SplitHostPort(address)
-			if err != nil {
-				return err
-			}
-			addr, err := netip.ParseAddr(hostPart)
-			if err != nil {
-				return err
-			}
-			if isReservedAddr(addr) {
-				refusal := &ErrPrivateDestination{Addr: addr.String()}
-				attempts.Lock()
-				if attempts.refused == nil {
-					attempts.refused = refusal
-				}
-				attempts.Unlock()
-				return refusal
-			}
-			attempts.Lock()
-			attempts.usable = true
-			attempts.Unlock()
-			if opt.Mark == 0 {
-				return nil
-			}
-			var ctrlErr error
-			if err := c.Control(func(fd uintptr) {
-				ctrlErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_MARK, int(opt.Mark))
-			}); err != nil {
-				return err
-			}
-			return ctrlErr
-		},
-	}
+	guard := newDialGuard(nil)
+	dialer := guard.dialer(opt.Mark, timeout)
 
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
@@ -163,10 +95,7 @@ func ProbeHost(ctx context.Context, host string, opt ProbeOptions) (CheckResult,
 	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
-		attempts.Lock()
-		refused, usable := attempts.refused, attempts.usable
-		attempts.Unlock()
-		if refused != nil && !usable {
+		if refused := guard.refusal(); refused != nil {
 			return CheckResult{}, refused
 		}
 		status, detail := netprobe.ClassifyTLSError(err)

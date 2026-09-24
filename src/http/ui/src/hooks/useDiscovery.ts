@@ -3,12 +3,14 @@ import { ApiError, ApiResponse } from "@api/apiClient";
 import {
   AddPresetResult,
   DiscoveryStartOptions,
+  ReplaceStrategyOptions,
   ReplaceStrategyResult,
   discoveryApi,
 } from "@api/discovery";
 import { DiscoverySuite, HistoryEntry, isSuite } from "@models/discovery";
 import { B4SetConfig } from "@models/config";
-import { wsUrl, describeApiError } from "@utils";
+import { MAX_PROBE_URLS, wsUrl, describeApiError } from "@utils";
+import i18n from "@/i18n";
 
 const POLL_MS = 1500;
 const TERMINAL = new Set(["complete", "failed", "canceled"]);
@@ -19,6 +21,20 @@ const failureText = (e: unknown): string => {
     return detail.length > 0 ? detail : e.message;
   }
   return e instanceof Error ? e.message : String(e);
+};
+
+const START_ERROR_CODES = new Set([
+  "not_found",
+  "no_urls",
+  "too_many_urls",
+  "reserved_host",
+]);
+
+const startFailureText = (e: unknown): string => {
+  if (e instanceof ApiError && e.code && START_ERROR_CODES.has(e.code)) {
+    return i18n.t(`discovery.errors.${e.code}`, { max: MAX_PROBE_URLS });
+  }
+  return failureText(e);
 };
 
 export function useDiscovery() {
@@ -150,7 +166,7 @@ export function useDiscovery() {
         return { success: true };
       } catch (e) {
         setRunning(false);
-        const message = failureText(e);
+        const message = startFailureText(e);
         setError(message);
         return { success: false, error: message };
       }
@@ -207,9 +223,16 @@ export function useDiscovery() {
       set: B4SetConfig,
       domains: string[],
       pins?: Record<string, string[]>,
+      opts?: ReplaceStrategyOptions,
     ): Promise<ApiResponse<ReplaceStrategyResult>> => {
       try {
-        const res = await discoveryApi.replaceStrategy(setId, set, domains, pins);
+        const res = await discoveryApi.replaceStrategy(
+          setId,
+          set,
+          domains,
+          pins,
+          opts,
+        );
         return { success: true, data: res };
       } catch (e) {
         return { success: false, error: describeApiError(e) };

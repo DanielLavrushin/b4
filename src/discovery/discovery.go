@@ -220,7 +220,11 @@ func (ds *DiscoverySuite) upgradeDeadEndCheckURLs(presets, cached []ConfigPreset
 
 	scoped := scopePresets(presets, upgraded)
 	ds.storeResultsMulti(scoped[0], ds.testPresetAllDomains(scoped[0]))
-	ds.retestEarlyPresets(append(scopePresets(cached, upgraded), scopePresets(ds.hubPresets, upgraded)...))
+	early := append(scopePresets(cached, upgraded), scopePresets(ds.hubPresets, upgraded)...)
+	if current, ok := ds.setCurrentPreset(); ok {
+		early = append(scopePresets([]ConfigPreset{current}, upgraded), early...)
+	}
+	ds.retestEarlyPresets(early)
 	ds.determineBest()
 	return ds.runPhase1Multi(scoped)
 }
@@ -403,14 +407,31 @@ func (ds *DiscoverySuite) RunDiscovery() {
 		cachedPresets = ds.discoveryCache.GetCachedPresets()
 	}
 	phase1Presets := GetPhase1Presets()
+	current, hasCurrent := ds.setCurrentPreset()
+	currentCount := 0
+	if hasCurrent {
+		currentCount = 1
+	}
 
 	ds.CheckSuite.mu.Lock()
-	ds.TotalChecks = (len(phase1Presets) + len(cachedPresets) + len(ds.hubPresets)) * len(ds.Domains)
+	ds.TotalChecks = (len(phase1Presets) + len(cachedPresets) + len(ds.hubPresets) + currentCount) * len(ds.Domains)
 	ds.CheckSuite.mu.Unlock()
 
 	ds.setPhase(PhaseStrategy)
 	ds.storeResultsMulti(phase1Presets[0], ds.testPresetAllDomains(phase1Presets[0]))
 	ds.determineBest()
+
+	if hasCurrent && !ds.interrupted() {
+		ds.setPhase(PhaseCached)
+		log.DiscoveryLogf("Testing the set's current strategy across %d domains", len(ds.Domains))
+		ds.storeResultsMulti(current, ds.testPresetAllDomains(current))
+		ds.determineBest()
+	}
+
+	if ds.interrupted() {
+		ds.finishRun()
+		return
+	}
 
 	if len(cachedPresets) > 0 {
 		ds.setPhase(PhaseCached)
@@ -433,6 +454,9 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	if ds.hubPresetsFn != nil {
 		ds.setPhase(PhaseCached)
 		ds.hubPresets = ds.hubPresetsFn()
+		if ds.setMode() {
+			ds.hubPresets = unscopedPresets(ds.hubPresets)
+		}
 		checks := 0
 		for _, preset := range ds.hubPresets {
 			checks += len(ds.presetDomains(preset))
@@ -524,12 +548,23 @@ func (ds *DiscoverySuite) RunDiscovery() {
 
 func (ds *DiscoverySuite) finishRun() {
 	if !ds.canceled() {
-		if ds.finishing() {
+		ds.CheckSuite.mu.RLock()
+		stop, winner := ds.coverStop, ds.coverWinner
+		ds.CheckSuite.mu.RUnlock()
+		switch {
+		case stop == coverStopCovered:
+			log.DiscoveryLogf("Every address of the set is covered by '%s' (confirmed), stopping the search", winner)
+		case stop == coverStopBaseline:
+			log.DiscoveryLogf("Every address of the set loads without b4, stopping the search")
+		case ds.finishing():
 			log.DiscoveryLogf("Search stopped by the user, confirming what was found so far")
 		}
 		ds.resetFetchContext()
 		ds.determineBest()
-		ds.confirmWinners()
+		if stop != coverStopCovered {
+			ds.confirmWinners()
+		}
+		ds.resolveSetVerdict()
 	}
 	ds.finalize()
 	ds.logDiscoverySummary()
@@ -550,6 +585,25 @@ func (ds *DiscoverySuite) runPhase1Multi(presets []ConfigPreset) []StrategyFamil
 
 	// Payload detection uses the primary domain
 	ds.detectWorkingPayloads(presets)
+
+	if ds.setMode() && len(ds.Domains) > 1 && !ds.interrupted() {
+		if variant, ok := ds.bestPayloadVariant(presets); ok {
+			ds.CheckSuite.mu.Lock()
+			ds.TotalChecks += len(ds.presetDomains(variant))
+			ds.CheckSuite.mu.Unlock()
+			log.DiscoveryLogf("  Re-testing '%s' on every address of the set", variant.Name)
+			results := ds.testPresetAllDomains(variant)
+			ds.storeResultsMulti(variant, results)
+			for domain, r := range results {
+				if r.Status == CheckStatusComplete && ds.needsBypass(domain) {
+					if !containsFamily(workingFamilies, FamilyCombo) {
+						workingFamilies = append(workingFamilies, FamilyCombo)
+					}
+					break
+				}
+			}
+		}
+	}
 
 	strategyPresets := ds.filterTestedPresets(presets)
 
@@ -1680,6 +1734,11 @@ evaluate:
 
 // storeResult stores a single-domain result (used during Phase 2 optimization via withSingleDomain).
 func (ds *DiscoverySuite) storeResult(preset ConfigPreset, result CheckResult) {
+	ds.recordResult(preset, result)
+	ds.checkCoverage()
+}
+
+func (ds *DiscoverySuite) recordResult(preset ConfigPreset, result CheckResult) {
 	ds.CheckSuite.mu.Lock()
 	defer ds.CheckSuite.mu.Unlock()
 
@@ -1735,6 +1794,11 @@ func (ds *DiscoverySuite) storeResult(preset ConfigPreset, result CheckResult) {
 
 // storeResultsMulti stores per-domain results from testPresetAllDomains.
 func (ds *DiscoverySuite) storeResultsMulti(preset ConfigPreset, results map[string]CheckResult) {
+	ds.recordResultsMulti(preset, results)
+	ds.checkCoverage()
+}
+
+func (ds *DiscoverySuite) recordResultsMulti(preset ConfigPreset, results map[string]CheckResult) {
 	ds.CheckSuite.mu.Lock()
 	defer ds.CheckSuite.mu.Unlock()
 
@@ -2089,16 +2153,17 @@ func (ds *DiscoverySuite) setPhase(phase DiscoveryPhase) {
 }
 
 func (ds *DiscoverySuite) finalize() {
+	ds.buildStrategyGroups()
+
 	ds.CheckSuite.mu.Lock()
 	ds.DomainDiscoveryResults = ds.domainResults
 	ds.EndTime = time.Now()
+	ds.publishSetVerdictLocked()
 	if ds.Status != CheckStatusCanceled {
 		ds.Status = CheckStatusComplete
 	}
 	ds.refreshOutcomes(true)
 	ds.CheckSuite.mu.Unlock()
-
-	ds.buildStrategyGroups()
 
 	// Persist results to history
 	if ds.cfg != nil {
@@ -2196,6 +2261,32 @@ func (ds *DiscoverySuite) anyDNSPoisoned(domains []string) bool {
 	return false
 }
 
+func phaseRank(p DiscoveryPhase) int {
+	switch p {
+	case PhaseBaseline, PhaseCached:
+		return 0
+	case PhaseStrategy:
+		return 1
+	case PhaseOptimize:
+		return 2
+	case PhaseCombination:
+		return 3
+	default:
+		return 4
+	}
+}
+
+func presetRanksBefore(a string, aPhase DiscoveryPhase, aPriority int, b string, bPhase DiscoveryPhase, bPriority int) bool {
+	ap, bp := phaseRank(aPhase), phaseRank(bPhase)
+	if ap != bp {
+		return ap < bp
+	}
+	if aPriority != bPriority {
+		return aPriority < bPriority
+	}
+	return a < b
+}
+
 func (ds *DiscoverySuite) buildStrategyGroups() {
 	ds.CheckSuite.mu.Lock()
 	defer ds.CheckSuite.mu.Unlock()
@@ -2243,31 +2334,9 @@ func (ds *DiscoverySuite) buildStrategyGroups() {
 		}
 	}
 
-	phaseRank := func(p DiscoveryPhase) int {
-		switch p {
-		case PhaseBaseline, PhaseCached:
-			return 0
-		case PhaseStrategy:
-			return 1
-		case PhaseOptimize:
-			return 2
-		case PhaseCombination:
-			return 3
-		default:
-			return 4
-		}
-	}
-
 	betterWinner := func(a, b string) bool {
 		ai, bi := presets[a], presets[b]
-		ap, bp := phaseRank(ai.phase), phaseRank(bi.phase)
-		if ap != bp {
-			return ap < bp
-		}
-		if ai.priority != bi.priority {
-			return ai.priority < bi.priority
-		}
-		return a < b
+		return presetRanksBefore(a, ai.phase, ai.priority, b, bi.phase, bi.priority)
 	}
 
 	var groups []StrategyGroup

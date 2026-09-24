@@ -161,6 +161,8 @@ var Fields = map[string]Field{
 
 	"mss_clamp.enabled": {Class: Crosses},
 	"mss_clamp.size":    {Class: Crosses},
+
+	"discovery": {Class: Never},
 }
 
 var silentStrips = map[string]bool{

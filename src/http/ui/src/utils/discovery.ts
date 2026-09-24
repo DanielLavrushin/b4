@@ -12,8 +12,19 @@ import {
 export type SiteVerdict = DiscoveryOutcome | "checking";
 
 export const NO_BYPASS_PRESET = "no-bypass";
+export const SET_CURRENT_PRESET = "set-current";
 
 type TFn = (key: string, opts?: Record<string, unknown>) => string;
+
+export function presetLabel(preset: string, t: TFn): string {
+  return preset === SET_CURRENT_PRESET
+    ? t("discovery.presetNames.setCurrent")
+    : preset;
+}
+
+export function suiteCheckUrls(suite: DiscoverySuite): string[] {
+  return (suite.domains ?? []).map((d) => d.check_url);
+}
 
 interface VerdictSource {
   outcome?: DiscoveryOutcome;
@@ -68,6 +79,20 @@ export interface ApplyTarget {
   domains: string[];
   set: B4SetConfig;
   preset: string;
+  urls: string[];
+  setId?: string;
+}
+
+export function checkUrlsFor(
+  suite: DiscoverySuite,
+  domains: string[],
+): string[] {
+  const byDomain = new Map(
+    (suite.domains ?? []).map((d) => [d.domain.toLowerCase(), d.check_url]),
+  );
+  return domains.map(
+    (d) => byDomain.get(d.toLowerCase()) || `https://${d}/`,
+  );
 }
 
 export interface FoundGroup {

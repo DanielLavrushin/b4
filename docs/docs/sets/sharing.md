@@ -32,6 +32,7 @@ Left out:
 - escalation, which points at a set id that exists on one router only;
 - the DNS server address the set redirects to;
 - IP block detection;
+- the [Discovery addresses](./discovery) and the watchdog switch, which describe what one network checks; the preview lists the addresses as private;
 - the set's id and its enabled state.
 
 A DNS pin survives only when the pinned domain is one the set targets and every address in it is public. A pin for another domain, or one pointing at a private address, is dropped and reported.

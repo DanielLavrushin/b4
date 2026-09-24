@@ -458,6 +458,7 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 			}
 			set.Id = existing.Id
 			set.Enabled = existing.Enabled
+			set.Discovery = existing.Discovery
 			newCfg.Sets[i] = &set
 			replaced = true
 			break

@@ -5,6 +5,8 @@ import {
   DiscoveryResponse,
   DiscoverySuite,
   HistoryEntry,
+  ProbeSuggestions,
+  SetRunRecord,
   SimilarSet,
 } from "@models/discovery";
 import { DomainReassignment } from "@models/sets";
@@ -32,6 +34,14 @@ export interface DiscoveryStartOptions {
   validationTries: number;
   tlsVersion: string;
   ipVersion: string;
+  setId?: string;
+  stopWhenCovered?: boolean;
+}
+
+export interface ReplaceStrategyOptions {
+  strategyOnly?: boolean;
+  keepTargets?: boolean;
+  probeUrls?: string[];
 }
 
 export const discoveryApi = {
@@ -45,6 +55,8 @@ export const discoveryApi = {
       validation_tries: options.validationTries,
       tls_version: options.tlsVersion,
       ip_version: options.ipVersion,
+      set_id: options.setId || undefined,
+      stop_when_covered: options.stopWhenCovered ?? false,
     }),
   status: (id: string) => apiGet<DiscoverySuite>(`/api/discovery/status/${id}`),
   cancel: (id: string) => apiDelete(`/api/discovery/cancel/${id}`),
@@ -56,13 +68,30 @@ export const discoveryApi = {
     set: B4SetConfig,
     domains: string[],
     pins?: Record<string, string[]>,
+    opts?: ReplaceStrategyOptions,
   ) =>
     apiPost<ReplaceStrategyResult>("/api/discovery/replace", {
       set_id: setId,
       set,
       domains,
       pins,
+      strategy_only: opts?.strategyOnly ?? false,
+      keep_targets: opts?.keepTargets ?? false,
+      probe_urls:
+        opts?.probeUrls && opts.probeUrls.length > 0
+          ? opts.probeUrls
+          : undefined,
     }),
+  suggest: (setId: string) =>
+    apiGet<ProbeSuggestions>(
+      `/api/discovery/suggest?set_id=${encodeURIComponent(setId)}`,
+    ),
+  setRuns: (setId?: string) =>
+    apiGet<SetRunRecord[]>(
+      setId
+        ? `/api/discovery/set-runs?set_id=${encodeURIComponent(setId)}`
+        : "/api/discovery/set-runs",
+    ),
   similar: (set: B4SetConfig) =>
     apiPost<SimilarSet[]>("/api/discovery/similar", set),
   clearCache: () => apiPost("/api/discovery/cache/clear", {}),

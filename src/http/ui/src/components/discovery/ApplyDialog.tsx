@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   FormControlLabel,
@@ -12,7 +13,7 @@ import {
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { AddIcon } from "@b4.icons";
-import { B4Alert, B4TextField } from "@b4.elements";
+import { B4Alert, B4Select, B4TextField } from "@b4.elements";
 import { B4Dialog } from "@common/B4Dialog";
 import { colors } from "@design";
 import { B4SetConfig } from "@models/config";
@@ -24,6 +25,8 @@ import {
   ApplyTarget,
   generateDomainVariants,
   pinsFor,
+  probeUrlLabel,
+  sanitizeProbeUrls,
   strategySuffix,
   suggestSetName,
 } from "@utils";
@@ -31,10 +34,33 @@ import { StrategySummary } from "./StrategySummary";
 
 type ApplyMode = "new" | "existing" | "replace";
 
+const COVERING = new Set(["exact", "covered", "regexp"]);
+const OTHER_SET = "__other__";
+
+export interface ReplaceOptions {
+  keepTargets: boolean;
+  probeUrls?: string[];
+}
+
+interface ReplaceCandidate {
+  id: string;
+  name: string;
+  fromRun: boolean;
+  exact: boolean;
+  entry?: string;
+}
+
+interface ShadowedDomain {
+  domain: string;
+  setName: string;
+}
+
 interface ApplyDialogProps {
   open: boolean;
   target: ApplyTarget | null;
   loading: boolean;
+  runSetId?: string | null;
+  sets: B4SetConfig[];
   onClose: () => void;
   onCreate: (set: B4SetConfig) => void;
   onAddToExisting: (
@@ -46,14 +72,19 @@ interface ApplyDialogProps {
     setId: string,
     set: B4SetConfig,
     domains: string[],
-    pins?: Record<string, string[]>,
+    pins: Record<string, string[]> | undefined,
+    opts: ReplaceOptions,
   ) => void;
 }
+
+const lower = (d: string) => d.toLowerCase();
 
 export const ApplyDialog = ({
   open,
   target,
   loading,
+  runSetId,
+  sets,
   onClose,
   onCreate,
   onAddToExisting,
@@ -69,33 +100,39 @@ export const ApplyDialog = ({
   const [name, setName] = useState("");
   const [variant, setVariant] = useState("");
   const [chosenMode, setChosenMode] = useState<ApplyMode | null>(null);
-  const [pickedReplaceId, setPickedReplaceId] = useState<string | null>(null);
+  const [pickedReplace, setPickedReplace] = useState<string | null>(null);
+  const [otherSetId, setOtherSetId] = useState("");
   const [similar, setSimilar] = useState<SimilarSet[]>([]);
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
-  const [claimed, setClaimed] = useState<SetDomainMatch[]>([]);
-  const [covered, setCovered] = useState<SetDomainMatch[]>([]);
+  const [matches, setMatches] = useState<SetDomainMatch[]>([]);
+  const [matchesReady, setMatchesReady] = useState(false);
+  const [matchesFailed, setMatchesFailed] = useState(false);
+  const [addDomains, setAddDomains] = useState(true);
+  const [urlsChoice, setUrlsChoice] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!open || !target) return;
     setName(`${suggestSetName(target.domains[0])}${strategySuffix(target.set)}`);
     setVariant(single ? (variants[0] ?? single) : "");
     setChosenMode(null);
-    setPickedReplaceId(null);
+    setPickedReplace(null);
+    setOtherSetId("");
     setSimilar([]);
     setSelectedSetId(null);
-    setClaimed([]);
-    setCovered([]);
+    setMatches([]);
+    setAddDomains(true);
+    setUrlsChoice(null);
 
     if (target.set.dns?.enabled) return;
 
     let active = true;
     discoveryApi
       .similar(target.set)
-      .then((sets) => {
+      .then((list) => {
         if (!active) return;
-        const list = Array.isArray(sets) ? sets : [];
-        setSimilar(list);
-        setSelectedSetId(list[0]?.id ?? null);
+        const found = Array.isArray(list) ? list : [];
+        setSimilar(found);
+        setSelectedSetId(found[0]?.id ?? null);
       })
       .catch(() => {
         if (active) setSimilar([]);
@@ -110,53 +147,140 @@ export const ApplyDialog = ({
     return single ? [variant || single] : target.domains;
   }, [target, single, variant]);
 
+  const tested = useMemo(() => target?.domains ?? [], [target]);
+
   useEffect(() => {
-    setClaimed([]);
-    setCovered([]);
+    setMatches([]);
+    setMatchesReady(false);
+    setMatchesFailed(false);
     if (!open || domains.length === 0) return;
+    const query = [...new Set([...domains, ...tested].map(lower))];
     let active = true;
     setsApi
-      .checkDomain(domains.join(","))
-      .then((matches) => {
+      .checkDomain(query.join(","))
+      .then((found) => {
         if (!active) return;
-        const enabled = Array.isArray(matches)
-          ? matches.filter((m) => m.enabled)
-          : [];
-        setClaimed(enabled.filter((m) => m.relation === "exact"));
-        setCovered(enabled.filter((m) => m.relation !== "exact"));
+        setMatches(Array.isArray(found) ? found : []);
+        setMatchesReady(true);
       })
       .catch(() => {
-        if (active) {
-          setClaimed([]);
-          setCovered([]);
-        }
+        if (!active) return;
+        setMatches([]);
+        setMatchesFailed(true);
+        setMatchesReady(true);
       });
     return () => {
       active = false;
     };
-  }, [open, domains]);
+  }, [open, domains, tested]);
 
-  const replaceTargets = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const m of claimed) {
-      if (!seen.has(m.set_id)) seen.set(m.set_id, m.set_name);
+  const setById = useMemo(() => new Map(sets.map((s) => [s.id, s])), [sets]);
+
+  const variantKeys = useMemo(() => new Set(domains.map(lower)), [domains]);
+  const enabledMatches = useMemo(
+    () => matches.filter((m) => m.enabled),
+    [matches],
+  );
+  const claimed = enabledMatches.filter(
+    (m) => variantKeys.has(lower(m.domain)) && m.relation === "exact",
+  );
+  const overlapping = enabledMatches.filter(
+    (m) => variantKeys.has(lower(m.domain)) && m.relation !== "exact",
+  );
+
+  const candidates = useMemo(() => {
+    const list: ReplaceCandidate[] = [];
+    const seen = new Set<string>();
+    const runSet = runSetId ? setById.get(runSetId) : undefined;
+    if (runSet && !runSet.routing?.enabled) {
+      list.push({ id: runSet.id, name: runSet.name, fromRun: true, exact: false });
+      seen.add(runSet.id);
     }
-    return [...seen].map(([id, name]) => ({ id, name }));
-  }, [claimed]);
+    for (const m of enabledMatches) {
+      if (!COVERING.has(m.relation) || seen.has(m.set_id)) continue;
+      if (setById.get(m.set_id)?.routing?.enabled) continue;
+      seen.add(m.set_id);
+      list.push({
+        id: m.set_id,
+        name: m.set_name,
+        fromRun: false,
+        exact:
+          m.relation === "exact" &&
+          enabledMatches.some(
+            (e) =>
+              e.set_id === m.set_id &&
+              e.relation === "exact" &&
+              variantKeys.has(lower(e.domain)),
+          ),
+        entry: m.entry,
+      });
+    }
+    return list;
+  }, [runSetId, setById, enabledMatches, variantKeys]);
 
+  const otherSets = useMemo(() => {
+    const taken = new Set(candidates.map((c) => c.id));
+    return sets.filter((s) => !s.routing?.enabled && !taken.has(s.id));
+  }, [sets, candidates]);
+
+  if (!target) return null;
+
+  const canReplace = candidates.length > 0 || otherSets.length > 0;
+  const preferReplace = candidates.some((c) => c.fromRun || c.exact);
   const wantedMode: ApplyMode =
-    chosenMode ?? (replaceTargets.length > 0 ? "replace" : "new");
+    chosenMode ?? (preferReplace ? "replace" : "new");
   const mode: ApplyMode =
-    (wantedMode === "replace" && replaceTargets.length === 0) ||
+    (wantedMode === "replace" && !canReplace) ||
     (wantedMode === "existing" && similar.length === 0)
       ? "new"
       : wantedMode;
-  const replaceSetId =
-    replaceTargets.find((s) => s.id === pickedReplaceId)?.id ??
-    replaceTargets[0]?.id ??
-    null;
 
-  if (!target) return null;
+  const fallbackPick = candidates[0]?.id ?? OTHER_SET;
+  const pick =
+    pickedReplace === OTHER_SET && otherSets.length > 0
+      ? OTHER_SET
+      : (candidates.find((c) => c.id === pickedReplace)?.id ?? fallbackPick);
+  const replaceSetId =
+    pick === OTHER_SET
+      ? (otherSets.find((s) => s.id === otherSetId)?.id ?? null)
+      : pick;
+  const replaceSet = replaceSetId ? setById.get(replaceSetId) : undefined;
+  const replaceName =
+    replaceSet?.name ??
+    candidates.find((c) => c.id === replaceSetId)?.name ??
+    "";
+
+  const ownMatch = (domain: string) =>
+    matches.find(
+      (m) =>
+        m.set_id === replaceSetId &&
+        lower(m.domain) === lower(domain) &&
+        COVERING.has(m.relation),
+    );
+  const coveredTested = tested.filter((d) => !!ownMatch(d));
+  const covers = matchesFailed || coveredTested.length === tested.length;
+  const missing = single
+    ? domains
+    : domains.filter(
+        (d) => !coveredTested.some((c) => lower(c) === lower(d)),
+      );
+  const keepTargets = covers || !addDomains;
+
+  const shadowed: ShadowedDomain[] = [];
+  for (const domain of coveredTested) {
+    const own = ownMatch(domain);
+    if (!own || own.handles) continue;
+    const handler = matches.find(
+      (m) => lower(m.domain) === lower(domain) && m.handles,
+    );
+    if (handler && handler.set_id !== replaceSetId) {
+      shadowed.push({ domain, setName: handler.set_name });
+    }
+  }
+
+  const probeUrls = sanitizeProbeUrls(target.urls ?? []);
+  const storedUrls = replaceSet?.discovery?.urls ?? [];
+  const useUrls = urlsChoice ?? storedUrls.length === 0;
 
   const previewSet: B4SetConfig = {
     ...target.set,
@@ -179,25 +303,43 @@ export const ApplyDialog = ({
         onReplaceStrategy(
           replaceSetId,
           previewSet,
-          domains,
+          keepTargets ? domains : missing,
           pinsFor(target.set, target.domains),
+          {
+            keepTargets,
+            probeUrls: useUrls && probeUrls.length > 0 ? probeUrls : undefined,
+          },
         );
       }
       return;
     }
-    onCreate({ ...previewSet, name: name.trim() || domains[0] });
+    onCreate({
+      ...previewSet,
+      name: name.trim() || domains[0],
+      discovery: { urls: probeUrls },
+    });
   };
 
-  const chooseMode = (next: ApplyMode) => setChosenMode(next);
+  const choosePick = (next: string) => {
+    setPickedReplace(next);
+    setUrlsChoice(null);
+  };
+
+  const chooseOther = (next: string) => {
+    setOtherSetId(next);
+    setUrlsChoice(null);
+  };
 
   const selectedSimilar = similar.find((s) => s.id === selectedSetId);
-  const selectedReplace = replaceTargets.find((s) => s.id === replaceSetId);
   const confirmLabel =
     mode === "new"
       ? t("discovery.apply.create")
       : mode === "existing"
         ? t("discovery.apply.add")
         : t("discovery.apply.replaceAction");
+
+  const subtitleSx = { mb: 1, color: colors.text.secondary };
+  const captionSx = { color: colors.text.secondary, display: "block" };
 
   return (
     <B4Dialog
@@ -219,7 +361,7 @@ export const ApplyDialog = ({
             disabled={
               loading ||
               (mode === "existing" && !selectedSetId) ||
-              (mode === "replace" && !replaceSetId)
+              (mode === "replace" && (!replaceSetId || !matchesReady))
             }
             startIcon={
               loading ? (
@@ -242,10 +384,7 @@ export const ApplyDialog = ({
           </B4Alert>
         )}
         <Box>
-          <Typography
-            variant="subtitle2"
-            sx={{ mb: 1, color: colors.text.secondary }}
-          >
+          <Typography variant="subtitle2" sx={subtitleSx}>
             {t("discovery.apply.will")}
           </Typography>
           <Box
@@ -260,12 +399,11 @@ export const ApplyDialog = ({
           </Box>
         </Box>
 
-        {single && variants.length > 1 && (
+        {single &&
+          variants.length > 1 &&
+          (mode !== "replace" || (!covers && addDomains)) && (
           <Box>
-            <Typography
-              variant="subtitle2"
-              sx={{ mb: 1, color: colors.text.secondary }}
-            >
+            <Typography variant="subtitle2" sx={subtitleSx}>
               {t("discovery.apply.pattern")}
             </Typography>
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -288,10 +426,7 @@ export const ApplyDialog = ({
                 />
               ))}
             </Stack>
-            <Typography
-              variant="caption"
-              sx={{ color: colors.text.secondary, display: "block", mt: 0.5 }}
-            >
+            <Typography variant="caption" sx={{ ...captionSx, mt: 0.5 }}>
               {t("discovery.apply.patternHint")}
             </Typography>
           </Box>
@@ -305,35 +440,30 @@ export const ApplyDialog = ({
             })}
           </B4Alert>
         )}
-        {covered.length > 0 && (
+        {overlapping.length > 0 && mode !== "replace" && (
           <B4Alert severity="info">
             {t("discovery.apply.overlapCovered", {
-              domains: [...new Set(covered.map((m) => m.domain))].join(", "),
-              entries: [...new Set(covered.map((m) => m.entry))].join(", "),
-              sets: [...new Set(covered.map((m) => m.set_name))].join(", "),
+              domains: [...new Set(overlapping.map((m) => m.domain))].join(", "),
+              entries: [...new Set(overlapping.map((m) => m.entry))].join(", "),
+              sets: [...new Set(overlapping.map((m) => m.set_name))].join(", "),
             })}
           </B4Alert>
         )}
 
-        {(similar.length > 0 || replaceTargets.length > 0) && (
+        {(similar.length > 0 || canReplace) && (
           <Box>
-            <Typography
-              variant="subtitle2"
-              sx={{ mb: 0.5, color: colors.text.secondary }}
-            >
+            <Typography variant="subtitle2" sx={{ ...subtitleSx, mb: 0.5 }}>
               {t("discovery.apply.addTo")}
             </Typography>
             <RadioGroup
               value={mode}
-              onChange={(e) => chooseMode(e.target.value as ApplyMode)}
+              onChange={(e) => setChosenMode(e.target.value as ApplyMode)}
             >
-              {replaceTargets.length > 0 && (
+              {canReplace && (
                 <FormControlLabel
                   value="replace"
                   control={<Radio />}
-                  label={t("discovery.apply.replaceIn", {
-                    name: selectedReplace?.name,
-                  })}
+                  label={t("discovery.apply.replaceInto")}
                 />
               )}
               <FormControlLabel
@@ -351,39 +481,131 @@ export const ApplyDialog = ({
                 />
               )}
             </RadioGroup>
-            {mode === "replace" && (
-              <Typography
-                variant="caption"
-                sx={{ color: colors.text.secondary, display: "block" }}
-              >
-                {t("discovery.apply.replaceHint")}
-              </Typography>
+          </Box>
+        )}
+
+        {mode === "replace" && (
+          <Box>
+            <Typography variant="subtitle2" sx={subtitleSx}>
+              {t("discovery.apply.replaceList")}
+            </Typography>
+            <RadioGroup value={pick} onChange={(e) => choosePick(e.target.value)}>
+              {candidates.map((c) => (
+                <FormControlLabel
+                  key={c.id}
+                  value={c.id}
+                  control={<Radio />}
+                  label={
+                    <Box>
+                      <Typography>{c.name}</Typography>
+                      <Typography variant="caption" sx={captionSx}>
+                        {c.fromRun
+                          ? t("discovery.apply.reasonRun")
+                          : t("discovery.apply.reasonMatch", {
+                              entry: c.entry,
+                            })}
+                      </Typography>
+                    </Box>
+                  }
+                />
+              ))}
+              {otherSets.length > 0 && (
+                <FormControlLabel
+                  value={OTHER_SET}
+                  control={<Radio />}
+                  label={t("discovery.apply.otherSet")}
+                />
+              )}
+            </RadioGroup>
+            {pick === OTHER_SET && (
+              <Box sx={{ mt: 1 }}>
+                <B4Select
+                  label={t("discovery.apply.otherSetLabel")}
+                  value={otherSetId}
+                  options={[
+                    { value: "", label: t("discovery.apply.otherSetPick") },
+                    ...otherSets.map((s) => ({
+                      value: s.id,
+                      label: s.enabled
+                        ? s.name
+                        : `${s.name} (${t("discovery.apply.disabledSet")})`,
+                    })),
+                  ]}
+                  onChange={(e) => chooseOther(String(e.target.value))}
+                />
+              </Box>
             )}
           </Box>
         )}
 
-        {mode === "replace" && replaceTargets.length > 1 && (
-          <Box>
-            <Typography
-              variant="subtitle2"
-              sx={{ mb: 1, color: colors.text.secondary }}
-            >
-              {t("discovery.apply.replaceList")}
-            </Typography>
-            <RadioGroup
-              value={replaceSetId ?? ""}
-              onChange={(e) => setPickedReplaceId(e.target.value)}
-            >
-              {replaceTargets.map((set) => (
+        {mode === "replace" && replaceSetId && matchesReady && (
+          <Stack spacing={1.5}>
+            {matchesFailed && (
+              <B4Alert severity="warning">
+                {t("discovery.apply.checkFailed")}
+              </B4Alert>
+            )}
+            {!covers && (
+              <Box>
                 <FormControlLabel
-                  key={set.id}
-                  value={set.id}
-                  control={<Radio />}
-                  label={set.name}
+                  control={
+                    <Checkbox
+                      checked={addDomains}
+                      onChange={(e) => setAddDomains(e.target.checked)}
+                    />
+                  }
+                  label={t("discovery.apply.addDomains", {
+                    domains: missing.join(", "),
+                  })}
                 />
-              ))}
-            </RadioGroup>
-          </Box>
+                {!addDomains && (
+                  <Typography variant="caption" sx={captionSx}>
+                    {t("discovery.apply.addDomainsOff", {
+                      domains: missing.join(", "),
+                    })}
+                  </Typography>
+                )}
+              </Box>
+            )}
+            {shadowed.length > 0 && (
+              <B4Alert severity="warning">
+                {t("discovery.apply.shadowed", {
+                  domains: [...new Set(shadowed.map((s) => s.domain))].join(
+                    ", ",
+                  ),
+                  sets: [...new Set(shadowed.map((s) => s.setName))].join(", "),
+                  name: replaceName,
+                })}
+              </B4Alert>
+            )}
+            {replaceSet && !replaceSet.enabled && (
+              <B4Alert severity="info">
+                {t("discovery.apply.setDisabled", { name: replaceName })}
+              </B4Alert>
+            )}
+            {probeUrls.length > 0 && (
+              <Box>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={useUrls}
+                      onChange={(e) => setUrlsChoice(e.target.checked)}
+                    />
+                  }
+                  label={t("discovery.apply.useUrls")}
+                />
+                <Typography variant="caption" sx={captionSx}>
+                  {probeUrls.map(probeUrlLabel).join(", ")}
+                  {storedUrls.length > 0 &&
+                    ` · ${t("discovery.apply.urlsStored", { count: storedUrls.length })}`}
+                </Typography>
+              </Box>
+            )}
+            <Typography variant="caption" sx={captionSx}>
+              {t("discovery.apply.replaceNote")}
+              {replaceSet?.hub?.id && ` ${t("discovery.apply.replaceHub")}`}
+            </Typography>
+          </Stack>
         )}
 
         {mode === "new" && (
@@ -399,10 +621,7 @@ export const ApplyDialog = ({
 
         {mode === "existing" && similar.length > 1 && (
           <Box>
-            <Typography
-              variant="subtitle2"
-              sx={{ mb: 1, color: colors.text.secondary }}
-            >
+            <Typography variant="subtitle2" sx={subtitleSx}>
               {t("discovery.apply.existingList")}
             </Typography>
             <RadioGroup

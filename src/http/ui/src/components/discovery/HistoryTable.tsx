@@ -22,6 +22,7 @@ import {
 } from "@b4.icons";
 import { colors, typography } from "@design";
 import { B4Badge } from "@b4.elements";
+import { B4SetConfig } from "@models/config";
 import { HistoryEntry, StrategyFamily } from "@models/discovery";
 import {
   Alternate,
@@ -33,14 +34,16 @@ import {
   historySet,
   historyUnconfirmed,
   historyVerdict,
+  presetLabel,
 } from "@utils";
 import { AlternatesList } from "./AlternatesList";
 
 interface HistoryTableProps {
   entries: HistoryEntry[];
+  sets?: B4SetConfig[];
   busy: boolean;
   onApply: (target: ApplyTarget) => void;
-  onRerun: (url: string) => void;
+  onRerun: (url: string, setId?: string) => void;
   onRemove: (domain: string) => void;
 }
 
@@ -52,6 +55,7 @@ interface Row {
   preset: string;
   sharedWith: string[];
   domains: string[];
+  urls: string[];
   alternates: Alternate[];
 }
 
@@ -66,6 +70,7 @@ const setKey = (entry: HistoryEntry): string | null => {
 
 export const HistoryTable = ({
   entries,
+  sets,
   busy,
   onApply,
   onRerun,
@@ -81,6 +86,9 @@ export const HistoryTable = ({
       if (byTime !== 0) return byTime;
       return (a.order ?? 0) - (b.order ?? 0);
     });
+    const urlOf = new Map(
+      sorted.map((e) => [e.domain, e.url || `https://${e.domain}/`]),
+    );
     const groups = new Map<string, string[]>();
     for (const entry of sorted) {
       const key = setKey(entry);
@@ -105,11 +113,17 @@ export const HistoryTable = ({
         preset: entry.set?.name || entry.best_preset,
         sharedWith,
         domains,
+        urls: domains.map((d) => urlOf.get(d) ?? `https://${d}/`),
         alternates:
           verdict === "found" ? historyAlternates(entry, domains) : [],
       };
     });
   }, [entries]);
+
+  const setNames = useMemo(
+    () => new Map((sets ?? []).map((s) => [s.id, s.name || s.id])),
+    [sets],
+  );
 
   const familyName = (family?: StrategyFamily) =>
     family
@@ -196,7 +210,7 @@ export const HistoryTable = ({
                 <B4Badge
                   variant="outlined"
                   color="primary"
-                  label={row.preset}
+                  label={presetLabel(row.preset, t)}
                   sx={{
                     fontFamily: typography.recipes.monoSmall.fontFamily,
                     fontSize: typography.sizes.sm,
@@ -283,7 +297,15 @@ export const HistoryTable = ({
   };
 
   const applyTarget = (row: Row): ApplyTarget | null =>
-    row.set ? { domains: row.domains, set: row.set, preset: row.preset } : null;
+    row.set
+      ? {
+          domains: row.domains,
+          set: row.set,
+          preset: row.preset,
+          urls: row.urls,
+          setId: row.entry.set_id,
+        }
+      : null;
 
   return (
     <Box sx={{ overflowX: "auto" }}>
@@ -305,11 +327,34 @@ export const HistoryTable = ({
           {rows.map((row) => {
             const target = row.verdict === "found" ? applyTarget(row) : null;
             const expanded = !!open[row.entry.domain];
+            const setName = row.entry.set_id
+              ? setNames.get(row.entry.set_id)
+              : undefined;
             return (
               <Fragment key={row.entry.domain}>
                 <TableRow>
                   <TableCell sx={{ fontWeight: 600, whiteSpace: "nowrap" }}>
                     {row.entry.domain}
+                    {setName && (
+                      <Tooltip
+                        title={t("discovery.results.forSet", { name: setName })}
+                      >
+                        <B4Badge
+                          size="small"
+                          variant="outlined"
+                          label={setName}
+                          sx={{
+                            display: "flex",
+                            width: "fit-content",
+                            maxWidth: 180,
+                            mt: 0.5,
+                            height: 18,
+                            fontSize: "0.7rem",
+                            fontWeight: 400,
+                          }}
+                        />
+                      </Tooltip>
+                    )}
                   </TableCell>
                   <TableCell sx={{ whiteSpace: "nowrap" }}>
                     {badge(row)}
@@ -361,7 +406,10 @@ export const HistoryTable = ({
                             size="small"
                             disabled={busy}
                             onClick={() =>
-                              onRerun(row.entry.url || row.entry.domain)
+                              onRerun(
+                                row.entry.url || row.entry.domain,
+                                row.entry.set_id,
+                              )
                             }
                             sx={{ color: colors.text.secondary }}
                           >
@@ -408,6 +456,8 @@ export const HistoryTable = ({
                                 domains: row.domains,
                                 set: alt.set,
                                 preset: alt.preset,
+                                urls: row.urls,
+                                setId: row.entry.set_id,
                               })
                             }
                           />

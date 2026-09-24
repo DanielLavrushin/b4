@@ -6,6 +6,7 @@ export interface SetDomainMatch {
   relation: string;
   entry: string;
   enabled: boolean;
+  handles?: boolean;
 }
 
 export interface DomainReassignment {

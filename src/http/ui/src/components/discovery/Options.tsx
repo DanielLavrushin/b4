@@ -27,6 +27,7 @@ export interface DiscoveryOptions {
   validationTries: number;
   tlsVersion: TLSVersion;
   ipVersion: IPVersion;
+  stopWhenCovered: boolean;
 }
 
 const STORAGE_KEY = "b4_discovery_options";
@@ -40,6 +41,7 @@ export const defaultOptions: DiscoveryOptions = {
   validationTries: 1,
   tlsVersion: "auto",
   ipVersion: "auto",
+  stopWhenCovered: true,
 };
 
 const LEGACY_KEYS = {
@@ -105,6 +107,7 @@ interface DiscoveryOptionsPanelProps {
   disabled?: boolean;
   ipVersionEnabled?: boolean;
   communityEnabled?: boolean;
+  setPicked?: boolean;
 }
 
 const toggleSx = {
@@ -130,6 +133,7 @@ export const DiscoveryOptionsPanel = ({
   disabled = false,
   ipVersionEnabled = true,
   communityEnabled = false,
+  setPicked = false,
 }: DiscoveryOptionsPanelProps) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(
@@ -141,7 +145,7 @@ export const DiscoveryOptionsPanel = ({
   }, [expanded]);
 
   const tlsCaptures = captures.filter((c) => c.protocol === "tls");
-  const summary = summarize(options, t, ipVersionEnabled);
+  const summary = summarize(options, t, ipVersionEnabled, setPicked);
 
   return (
     <Box
@@ -205,6 +209,18 @@ export const DiscoveryOptionsPanel = ({
             onChange={(checked) => onChange({ ...options, checkDns: checked })}
             disabled={disabled}
           />
+
+          {setPicked && (
+            <B4Switch
+              label={t("discovery.options.stopWhenCovered")}
+              description={t("discovery.options.stopWhenCoveredHint")}
+              checked={options.stopWhenCovered}
+              onChange={(checked) =>
+                onChange({ ...options, stopWhenCovered: checked })
+              }
+              disabled={disabled}
+            />
+          )}
 
           {communityEnabled && (
             <B4Switch
@@ -382,8 +398,12 @@ function summarize(
   options: DiscoveryOptions,
   t: (key: string, opts?: Record<string, unknown>) => string,
   ipVersionEnabled: boolean,
+  setPicked: boolean,
 ): string {
   const parts: string[] = [];
+  if (setPicked && !options.stopWhenCovered) {
+    parts.push(t("discovery.options.summaryFullSearch"));
+  }
   if (!options.checkDns) parts.push(t("discovery.options.summaryNoDns"));
   if (!options.useCache) parts.push(t("discovery.options.summaryNoCache"));
   if (options.tlsVersion === "tls12") parts.push("TLS 1.2");

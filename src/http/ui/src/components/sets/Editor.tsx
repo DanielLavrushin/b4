@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
 import {
+  DiscoveryIcon,
   DomainIcon,
   EscalateIcon,
   ImportExportIcon,
@@ -27,6 +28,7 @@ import { B4Tab, B4TabPanel, B4Tabs, B4TextField } from "@b4.elements";
 import { colors } from "@design";
 import { B4Config, B4SetConfig, SystemConfig } from "@models/config";
 
+import { DiscoveryTab } from "./DiscoveryTab";
 import { EscalationSettings } from "./Escalation";
 import { ImportExportSettings } from "./ImportExport";
 import { ShareEnvelope } from "./ShareEnvelope";
@@ -43,7 +45,8 @@ const EDITOR_TAB_INDEX: Record<string, number> = {
   udp: 2,
   routing: 3,
   escalation: 4,
-  importExport: 5,
+  discovery: 5,
+  importExport: 6,
 };
 
 export interface SetEditorPageProps {
@@ -55,6 +58,7 @@ export interface SetEditorPageProps {
   isNew: boolean;
   saving: boolean;
   onSave: (set: B4SetConfig) => void;
+  onRefresh?: () => void;
 }
 
 export const SetEditorPage = ({
@@ -66,6 +70,7 @@ export const SetEditorPage = ({
   otherSetsTargets,
   saving,
   onSave,
+  onRefresh,
 }: SetEditorPageProps) => {
   enum TABS {
     TARGETS = 0,
@@ -73,6 +78,7 @@ export const SetEditorPage = ({
     UDP,
     ROUTING,
     ESCALATION,
+    DISCOVERY,
     IMPORT_EXPORT,
   }
 
@@ -150,6 +156,8 @@ export const SetEditorPage = ({
   };
 
   if (!editedSet) return null;
+
+  const dirty = JSON.stringify(editedSet) !== JSON.stringify(initialSet);
 
   let saveTooltip: string;
   if (saving) saveTooltip = t("core.saving");
@@ -294,6 +302,13 @@ export const SetEditorPage = ({
               idPrefix="set-tab"
             />
             <B4Tab
+              icon={<DiscoveryIcon />}
+              label={t("sets.editor.tabs.discovery")}
+              inline
+              index={TABS.DISCOVERY}
+              idPrefix="set-tab"
+            />
+            <B4Tab
               icon={<ImportExportIcon />}
               label={t("sets.editor.tabs.importExport")}
               inline
@@ -356,6 +371,17 @@ export const SetEditorPage = ({
           />
         </B4TabPanel>
 
+        <B4TabPanel value={activeTab} index={TABS.DISCOVERY} idPrefix="set-tab" sx={{ pt: 3 }}>
+          <DiscoveryTab
+            config={editedSet}
+            isNew={isNew}
+            dirty={dirty}
+            savedWatchdog={!!initialSet.discovery?.watchdog}
+            globalWatchdog={!!settings.checker?.watchdog?.enabled}
+            onChange={handleChange}
+          />
+        </B4TabPanel>
+
         <B4TabPanel value={activeTab} index={TABS.IMPORT_EXPORT} idPrefix="set-tab" sx={{ pt: 3 }}>
           <ImportExportSettings
             config={editedSet}
@@ -366,7 +392,8 @@ export const SetEditorPage = ({
               <ShareEnvelope
                 config={editedSet}
                 isNew={isNew}
-                dirty={JSON.stringify(editedSet) !== JSON.stringify(initialSet)}
+                dirty={dirty}
+                onPublished={onRefresh}
               />
             </Box>
           )}

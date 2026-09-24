@@ -306,12 +306,15 @@ func (set *SetConfig) ResetToDefaults() {
 	id := set.Id
 	name := set.Name
 	targets := set.Targets
+	discoveryURLs := append(make([]string, 0, len(set.Discovery.URLs)), set.Discovery.URLs...)
+	discoveryWatchdog := set.Discovery.Watchdog
 
 	*set = defaultSet
 
 	set.Id = id
 	set.Name = name
 	set.Targets = targets
+	set.Discovery = SetDiscoveryConfig{URLs: discoveryURLs, Watchdog: discoveryWatchdog}
 
 	set.TCP.Win.Values = make([]int, len(defaultSet.TCP.Win.Values))
 	copy(set.TCP.Win.Values, defaultSet.TCP.Win.Values)

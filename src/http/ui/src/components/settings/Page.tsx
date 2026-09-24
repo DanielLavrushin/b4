@@ -51,7 +51,7 @@ import { WebServerSettings } from "./WebServer";
 
 import { B4Alert, B4Dialog, B4Tab, B4Tabs } from "@b4.elements";
 import { configApi, SettingsPropHandlerType } from "@b4.settings";
-import { reportSaveError } from "@utils";
+import { isStaleWriteError, reportSaveError, reportStaleWrite } from "@utils";
 import { colors, spacing } from "@design";
 
 import { B4Config } from "@models/config";
@@ -94,7 +94,7 @@ enum TABS {
 }
 
 export function SettingsPage() {
-  const { showError, showSuccess } = useSnackbar();
+  const { showError, showSuccess, showSnackbar } = useSnackbar();
   const { t } = useTranslation();
   const [config, setConfig] = useState<B4Config | null>(null);
   const [originalConfig, setOriginalConfig] = useState<B4Config | null>(null);
@@ -289,6 +289,7 @@ export function SettingsPage() {
   const saveConfig = async () => {
     if (!config) return;
 
+    let stale = false;
     try {
       setSaving(true);
       await configApi.save(config);
@@ -299,12 +300,21 @@ export function SettingsPage() {
         requiresRestart ? t("core.configSavedRestart") : t("core.configSaved"),
       );
     } catch (error) {
-      reportSaveError(error, showError, t);
+      if (isStaleWriteError(error)) {
+        stale = true;
+        reportStaleWrite(error, showSnackbar, t, () => {
+          loadConfig().catch(() => {});
+        });
+      } else {
+        reportSaveError(error, showError, t);
+      }
     } finally {
       setSaving(false);
-      await loadConfig();
-      void refreshAiStatus();
-      void invalidateHub();
+      if (!stale) {
+        await loadConfig();
+        void refreshAiStatus();
+        void invalidateHub();
+      }
     }
   };
 

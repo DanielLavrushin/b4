@@ -418,6 +418,7 @@ export interface B4Config {
   tunnel_ifaces?: string[];
   encapsulated_ifaces?: string[];
   iface_traffic?: Record<string, IfaceCounts>;
+  revision?: string;
 }
 
 export interface IfaceCounts {
@@ -439,8 +440,15 @@ export interface B4SetConfig {
   routing: RoutingConfig;
   escalate?: EscalateConfig;
   mss_clamp?: MSSClampConfig;
+  discovery?: SetDiscoveryConfig;
   hub?: B4HubOrigin;
   hub_state?: HubState;
+  revision?: string;
+}
+
+export interface SetDiscoveryConfig {
+  urls: string[];
+  watchdog?: boolean;
 }
 
 export type HubState = "unmodified" | "modified";

@@ -260,6 +260,17 @@ func (c *Config) Validate() error {
 			log.Warnf("Set '%s': DNS pin for %q ignores %q, which is not an IP address", set.Name, domain, value)
 		})
 
+		set.Discovery.URLs = utils.SanitizeProbeURLs(set.Discovery.URLs, func(raw string, err error) {
+			log.Warnf("Set '%s': dropping discovery URL %q: %v", set.Name, raw, err)
+		})
+
+		if set.Discovery.Watchdog {
+			if blocker := set.watchdogStructuralBlocker(); blocker != "" {
+				log.Warnf("Set '%s': turning its watchdog off: %s", set.Name, WatchdogBlockerText(blocker))
+				set.Discovery.Watchdog = false
+			}
+		}
+
 		if set.DNS.Enabled && set.DNS.DoHURL != "" && !strings.HasPrefix(strings.ToLower(set.DNS.DoHURL), "https://") {
 			v.addf(fmt.Sprintf("sets[%d].dns.doh_url", setIdx), "doh_url_must_be_https", map[string]any{"set": set.Name}, "set %q: DNS-over-HTTPS URL must start with https://", set.Name)
 			return v.result()
@@ -557,4 +568,58 @@ func (c *Config) checkPortCollisions(v *validator) {
 			}
 		}
 	}
+}
+
+const (
+	WatchdogBlockedDisabled = "set_disabled"
+	WatchdogBlockedRouted   = "routed_set"
+	WatchdogBlockedNoURLs   = "no_urls"
+	WatchdogBlockedDevices  = "device_scoped"
+	WatchdogBlockedIPOnly   = "ip_only"
+)
+
+func (s *SetConfig) WatchdogBlocker() string {
+	switch {
+	case s == nil || !s.Enabled:
+		return WatchdogBlockedDisabled
+	case s.Routing.Enabled:
+		return WatchdogBlockedRouted
+	case len(s.Discovery.URLs) == 0:
+		return WatchdogBlockedNoURLs
+	case len(s.Targets.SourceDevices) > 0 && !s.Targets.SourceDevicesExclude:
+		return WatchdogBlockedDevices
+	case len(s.Targets.SNIDomains) == 0 && len(s.Targets.GeoSiteCategories) == 0:
+		return WatchdogBlockedIPOnly
+	}
+	return ""
+}
+
+func (s *SetConfig) watchdogStructuralBlocker() string {
+	switch {
+	case s.Routing.Enabled:
+		return WatchdogBlockedRouted
+	case len(s.Targets.SourceDevices) > 0 && !s.Targets.SourceDevicesExclude:
+		return WatchdogBlockedDevices
+	}
+	return ""
+}
+
+func (s *SetConfig) WatchdogActive() bool {
+	return s != nil && s.Discovery.Watchdog && s.WatchdogBlocker() == ""
+}
+
+func WatchdogBlockerText(blocker string) string {
+	switch blocker {
+	case WatchdogBlockedDisabled:
+		return "the set is disabled"
+	case WatchdogBlockedRouted:
+		return "the set routes its traffic, so the direct path the watchdog heals is not the one it uses"
+	case WatchdogBlockedNoURLs:
+		return "the set has no discovery URLs to check"
+	case WatchdogBlockedDevices:
+		return "the set applies only to listed devices, and the router's own check carries no device address, so it never matches the set"
+	case WatchdogBlockedIPOnly:
+		return "the set lists no domains or geosite categories, only IP addresses or GeoIP categories, and the watchdog confirms which set handles a URL by its host name, so it can never confirm this one"
+	}
+	return blocker
 }

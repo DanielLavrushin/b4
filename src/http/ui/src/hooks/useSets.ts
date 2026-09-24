@@ -84,7 +84,8 @@ export function useSets() {
 
   const duplicateSet = useCallback(
     async (set: B4SetConfig): Promise<ApiResponse<B4SetConfig>> => {
-      const { id: _, ...rest } = structuredClone(set);
+      const { id: _, revision: _revision, ...rest } = structuredClone(set);
+      if (rest.discovery) rest.discovery = { ...rest.discovery, watchdog: false };
       return createSet({ ...rest, name: `${set.name} (copy)` });
     },
     [createSet]
