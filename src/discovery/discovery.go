@@ -616,7 +616,7 @@ func (ds *DiscoverySuite) baselineResults(baseline ConfigPreset) map[string]Chec
 func (ds *DiscoverySuite) filterTestedPresets(presets []ConfigPreset) []ConfigPreset {
 	filtered := []ConfigPreset{}
 	for _, p := range presets {
-		if p.Name == "no-bypass" || p.Name == "combo-pastseq" {
+		if p.Name == presetNoBypass || p.Name == "combo-pastseq" {
 			continue
 		}
 		filtered = append(filtered, p)
@@ -1879,7 +1879,7 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 		testSet.Faking.SNIMutation.FakeSNIs = []string{}
 	}
 
-	if preset.Name == "no-bypass" {
+	if preset.Name == presetNoBypass {
 		testSet.Enabled = false
 		testSet.DNS = config.DNSConfig{}
 	} else {
@@ -1972,7 +1972,7 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 		testSet.Faking.SNIMutation.FakeSNIs = []string{}
 	}
 
-	if preset.Name == "no-bypass" {
+	if preset.Name == presetNoBypass {
 		testSet.Enabled = false
 		testSet.DNS = config.DNSConfig{}
 	} else {

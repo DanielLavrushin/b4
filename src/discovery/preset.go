@@ -14,7 +14,7 @@ func GetPhase1Presets() []ConfigPreset {
 
 		// 0. Raw baseline - no bypass at all (to detect if DPI even blocks)
 		{
-			Name:        "no-bypass",
+			Name:        presetNoBypass,
 			Description: "No bypass techniques - test raw connectivity",
 			Family:      FamilyNone,
 			Phase:       PhaseBaseline,

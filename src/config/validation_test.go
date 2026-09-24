@@ -518,6 +518,34 @@ func TestValidate_QueueFields(t *testing.T) {
 		}
 	})
 
+	t.Run("tun mode falls back to automatic tables for reserved route tables", func(t *testing.T) {
+		for _, table := range []int{-1, 253, 254, 255} {
+			cfg := NewConfig()
+			cfg.Queue.Mode = "tun"
+			cfg.Queue.TUN.RouteTable = table
+			if err := cfg.Validate(); err != nil {
+				t.Errorf("route_table %d must not stop the service: %v", table, err)
+			}
+			if cfg.Queue.TUN.RouteTable != 0 {
+				t.Errorf("route_table %d kept, want 0 (automatic)", table)
+			}
+		}
+	})
+
+	t.Run("tun mode accepts automatic and custom route tables", func(t *testing.T) {
+		for _, table := range []int{0, 1, 97, 252, 256, 9999} {
+			cfg := NewConfig()
+			cfg.Queue.Mode = "tun"
+			cfg.Queue.TUN.RouteTable = table
+			if err := cfg.Validate(); err != nil {
+				t.Errorf("route_table %d rejected: %v", table, err)
+			}
+			if cfg.Queue.TUN.RouteTable != table {
+				t.Errorf("route_table %d changed to %d", table, cfg.Queue.TUN.RouteTable)
+			}
+		}
+	})
+
 	t.Run("tun mode rejects mark overlapping reserved bits", func(t *testing.T) {
 		cfg := NewConfig()
 		cfg.Queue.Mode = "tun"

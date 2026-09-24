@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"encoding/pem"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -371,6 +372,10 @@ func (c *Config) Validate() error {
 				"queue mark 0x%x overlaps reserved TUN mark bits (0x%x steer, 0x%x client, 0x%x reinject); choose a mark clear of those bits",
 				m, uint(engine.TunSteerMark), uint(engine.ClientMark), uint(engine.ReinjectMarkBit))
 			return v.result()
+		}
+		if t := c.Queue.TUN.RouteTable; t < 0 || (t >= 253 && t <= 255) || int64(t) > math.MaxUint32 {
+			log.Warnf("queue.tun.route_table %d is reserved or out of range, so TUN picks a free routing table instead; 253, 254 and 255 are the kernel's default, main and local tables", t)
+			c.Queue.TUN.RouteTable = 0
 		}
 	} else if c.System.Tables.Masquerade.Enabled {
 		if m := c.MainInjectedMark(); m&uint(engine.ClientMark) != 0 {

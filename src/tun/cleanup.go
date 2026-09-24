@@ -1,26 +1,16 @@
 package tun
 
 import (
-	"strconv"
 	"strings"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
-	"github.com/daniellavrushin/b4/tables"
 )
 
 func ClearStaleArtifacts(cfg *config.Config) {
 	device := cfg.Queue.TUN.DeviceName
 	if device == "" {
 		device = defaultDeviceName
-	}
-	routeTable := cfg.Queue.TUN.RouteTable
-	if routeTable == 0 {
-		routeTable = defaultRouteTable
-	}
-	captureTable := routeTable - 1
-	if captureTable <= 0 {
-		captureTable = routeTable + 1
 	}
 
 	cleared := false
@@ -40,11 +30,13 @@ func ClearStaleArtifacts(cfg *config.Config) {
 	run("iptables", "-t", "mangle", "-F", tunCaptureChain)
 	run("iptables", "-t", "mangle", "-X", tunCaptureChain)
 
-	for {
-		if _, err := run("iptables", "-t", "raw", "-D", "OUTPUT", "-m", "mark", "--mark", reinjectMarkMatch(), "-j", "CT", "--notrack"); err != nil {
-			break
+	for _, markStr := range []string{reinjectMarkMatch(), clientMarkMatch()} {
+		for {
+			if _, err := run("iptables", "-t", "raw", "-D", "OUTPUT", "-m", "mark", "--mark", markStr, "-j", "CT", "--notrack"); err != nil {
+				break
+			}
+			cleared = true
 		}
-		cleared = true
 	}
 
 	for _, dir := range []string{"-i", "-o"} {
@@ -60,10 +52,7 @@ func ClearStaleArtifacts(cfg *config.Config) {
 		cleared = true
 	}
 
-	if clearOwnedRoutingTable(captureTable) {
-		cleared = true
-	}
-	if clearOwnedRoutingTable(routeTable) {
+	if sweepTunPolicyRouting(cfg.Queue.TUN.RouteTable, cfg.Queue.Mark) > 0 {
 		cleared = true
 	}
 
@@ -97,33 +86,4 @@ func clearTunSNAT(device string) bool {
 		}
 	}
 	return cleared
-}
-
-func clearOwnedRoutingTable(table int) bool {
-	tableStr := strconv.Itoa(table)
-	out, err := run("ip", "rule", "show")
-	if err != nil {
-		return false
-	}
-	marks := make(map[string]struct{})
-	for _, line := range strings.Split(out, "\n") {
-		if !tables.RouteLookupMatchesTable(ruleFieldValue(line, "lookup"), tableStr) {
-			continue
-		}
-		if fw := ruleFieldValue(line, "fwmark"); fw != "" {
-			marks[fw] = struct{}{}
-		}
-	}
-	if len(marks) == 0 {
-		return false
-	}
-	run("ip", "route", "flush", "table", tableStr)
-	for fw := range marks {
-		for {
-			if _, err := run("ip", "rule", "del", "fwmark", fw, "lookup", tableStr); err != nil {
-				break
-			}
-		}
-	}
-	return true
 }

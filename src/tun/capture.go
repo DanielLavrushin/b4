@@ -23,6 +23,7 @@ const (
 	clientLocalPrio    = 88
 	clientBypassPrio   = 89
 	reinjectLocalPrio  = 99
+	bypassRulePrio     = 100
 	localRetryLimit    = 1
 )
 
@@ -65,7 +66,6 @@ func (r *routeManager) setupPortCapture(srcIP string) error {
 	r.ensureCaptureChain()
 	r.rebuildCaptureChain()
 	r.ensureCaptureJumps()
-	r.captureRulesAdded = true
 	log.Infof("TUN: port-capture mode - first %d tcp / %d udp packets on ports %s + DNS routed into %s (steer mark %s, ip rule priority %d, table %d; everything b4 re-injects follows this router's own routing)",
 		r.tcpLimit, r.udpLimit, strings.Join(r.tcpPorts, ","), r.tunName, r.steerMarkStr(), r.capturePrio, r.captureTable)
 	return nil
@@ -84,8 +84,9 @@ func (r *routeManager) setupCaptureTable() error {
 		}
 	}
 	if _, err := run("ip", "rule", "add", "fwmark", steer, "lookup", tableStr, "priority", strconv.Itoa(r.capturePrio)); err != nil {
-		return fmt.Errorf("ip rule add (capture steer; needs policy routing - install full iproute2): %w", err)
+		return routingError("ip rule add (capture steer; needs kernel policy routing)", r.captureTable, err)
 	}
+	r.captureRulesAdded = true
 	return r.replaceCaptureDefault(tableStr)
 }
 

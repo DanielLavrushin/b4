@@ -18,7 +18,6 @@ const (
 	tunBufSize        = 65536
 	defaultDeviceName = "b4tun0"
 	defaultAddress    = "10.255.0.1/30"
-	defaultRouteTable = 9999
 )
 
 type Engine struct {
@@ -68,10 +67,6 @@ func (e *Engine) Start() error {
 	if address == "" {
 		address = defaultAddress
 	}
-	routeTable := tunCfg.RouteTable
-	if routeTable == 0 {
-		routeTable = defaultRouteTable
-	}
 
 	for _, w := range e.pool.Workers {
 		if err := w.InitSender(); err != nil {
@@ -88,6 +83,10 @@ func (e *Engine) Start() error {
 		}
 		log.Infof("TUN: removing pre-existing TUN device %s (stale from a previous run)", deviceName)
 		run("ip", "link", "del", deviceName)
+	}
+
+	if n := sweepTunPolicyRouting(tunCfg.RouteTable, cfg.Queue.Mark); n > 0 {
+		log.Infof("TUN: removed %d policy routing rule(s) left by a previous run", n)
 	}
 
 	f, name, err := openTUN(deviceName)
@@ -108,11 +107,6 @@ func (e *Engine) Start() error {
 
 	replyCapture := replyCaptureNeeded(cfg)
 
-	captureTable := routeTable - 1
-	if captureTable <= 0 {
-		captureTable = routeTable + 1
-	}
-
 	tcpLimit := cfg.Queue.TCPConnBytesLimit
 	if tcpLimit <= 0 {
 		tcpLimit = 19
@@ -125,21 +119,21 @@ func (e *Engine) Start() error {
 	dupV4, _ := cfg.CollectDuplicateIPs()
 
 	e.routes = &routeManager{
-		tunName:      name,
-		tunAddr:      address,
-		tunAddrV6:    tunCfg.AddressV6,
-		outIface:     tunCfg.OutInterface,
-		outGateway:   tunCfg.OutGateway,
-		mark:         cfg.Queue.Mark,
-		routeTable:   routeTable,
-		skipTables:   cfg.System.Tables.SkipSetup,
-		captureTable: captureTable,
-		tcpPorts:     normalizePorts(cfg.CollectTCPPorts()),
-		udpPorts:     normalizePorts(cfg.CollectUDPPorts()),
-		tcpLimit:     tcpLimit,
-		udpLimit:     udpLimit,
-		dupIPs:       dupV4,
-		replyCapture: replyCapture,
+		tunName:       name,
+		tunAddr:       address,
+		tunAddrV6:     tunCfg.AddressV6,
+		outIface:      tunCfg.OutInterface,
+		outGateway:    tunCfg.OutGateway,
+		mark:          cfg.Queue.Mark,
+		skipTables:    cfg.System.Tables.SkipSetup,
+		explicitTable: tunCfg.RouteTable,
+		pinnedTables:  pinnedSetTables(cfg),
+		tcpPorts:      normalizePorts(cfg.CollectTCPPorts()),
+		udpPorts:      normalizePorts(cfg.CollectUDPPorts()),
+		tcpLimit:      tcpLimit,
+		udpLimit:      udpLimit,
+		dupIPs:        dupV4,
+		replyCapture:  replyCapture,
 
 		devicesEnabled: cfg.Queue.Devices.Enabled,
 		whiteIsBlack:   cfg.Queue.Devices.WhiteIsBlack,

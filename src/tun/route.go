@@ -41,10 +41,13 @@ type routeManager struct {
 	outIface           string
 	outGateway         string
 	mark               uint
+	explicitTable      int
+	pinnedTables       []int
 	routeTable         int
 	skipTables         bool
 	savedDefault       string
 	savedRPFilter      string
+	bypassTableClaimed bool
 	fwdRulesAdded      bool
 	snatAdded          bool
 	notrackAdded       bool
@@ -290,6 +293,9 @@ func (r *routeManager) setup() error {
 	}
 
 	r.resolvedCapture = r.resolveCaptureMode()
+	if err := r.pickTables(); err != nil {
+		return err
+	}
 	r.saveState()
 	var capErr error
 	if r.resolvedCapture == "ports" {
@@ -346,11 +352,12 @@ func (r *routeManager) setupBypassTable() error {
 		log.Infof("TUN: reusing route table %d left by a previous run (flushing stale entries)", r.routeTable)
 		run("ip", "route", "flush", "table", tableStr)
 	}
+	r.bypassTableClaimed = true
 
 	r.delFwmarkRule(markStr, tableStr)
 
-	if _, err := run("ip", "rule", "add", "fwmark", markStr, "lookup", tableStr, "priority", "100"); err != nil {
-		return fmt.Errorf("ip rule add (whole-default capture needs policy routing; a busybox 'ip' may reject custom tables - install full iproute2, e.g. 'apk add iproute2', or set queue.tun.route_table <= 255): %w", err)
+	if _, err := run("ip", "rule", "add", "fwmark", markStr, "lookup", tableStr, "priority", strconv.Itoa(bypassRulePrio)); err != nil {
+		return routingError("ip rule add (whole-default capture; needs kernel policy routing)", r.routeTable, err)
 	}
 	r.ensureReinjectLocalRule()
 	return r.addBypassDefault(tableStr)
@@ -607,7 +614,7 @@ func (r *routeManager) ensureBypass() {
 	markStr := reinjectMarkMatch()
 	tableStr := fmt.Sprintf("%d", r.routeTable)
 	if !r.ownsBypassTable(markStr, tableStr) {
-		if _, err := run("ip", "rule", "add", "fwmark", markStr, "lookup", tableStr, "priority", "100"); err != nil {
+		if _, err := run("ip", "rule", "add", "fwmark", markStr, "lookup", tableStr, "priority", strconv.Itoa(bypassRulePrio)); err != nil {
 			log.Warnf("TUN: reconcile failed to restore fwmark rule: %v", err)
 		} else {
 			log.Infof("TUN: reconcile restored fwmark rule (mark %s -> table %s)", markStr, tableStr)
@@ -720,7 +727,7 @@ func (r *routeManager) addBypassDefault(tableStr string) error {
 	}
 	args = append(args, "dev", r.outIface, "table", tableStr)
 	if _, err := run(args...); err != nil {
-		return fmt.Errorf("ip route replace table (whole-default capture needs policy routing; a busybox 'ip' may reject custom tables - install full iproute2, e.g. 'apk add iproute2', or set queue.tun.route_table <= 255): %w", err)
+		return routingError(fmt.Sprintf("ip route replace default (whole-default capture, bypass table %d)", r.routeTable), r.routeTable, err)
 	}
 	return nil
 }
@@ -748,7 +755,7 @@ func (r *routeManager) teardown() {
 	if r.reinjectLocalAdded {
 		r.removeReinjectLocalRule()
 	}
-	if r.resolvedCapture != "ports" {
+	if r.resolvedCapture != "ports" && r.bypassTableClaimed {
 		r.delFwmarkRule(markStr, tableStr)
 		if _, err := run("ip", "route", "flush", "table", tableStr); err != nil {
 			log.Tracef("TUN: route table %s not flushed: %v", tableStr, err)

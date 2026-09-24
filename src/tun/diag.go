@@ -36,7 +36,7 @@ func (e *Engine) DiagInfo() DiagInfo {
 		di.OutGateway = r.outGateway
 		di.ResolvedSrc = r.srcIP
 		di.Capture = r.resolvedCapture
-		di.RouteTable = r.routeTable
+		di.RouteTable = r.activeTable()
 		di.Mark = r.mark
 		di.ReplyCapture = r.replyCapture
 		di.SkipTables = r.skipTables
