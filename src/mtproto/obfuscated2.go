@@ -652,6 +652,10 @@ func recordDialFailure(dc int, a raceAttempt) {
 	if a.plan.native && timedOut && !isWSRedirect(a.err) {
 		wsRecordFailure(dc, false)
 	}
+	if a.plan.native && a.plan.frontSNI != "" && isFrontMiss(a.err) {
+		wsFrontRefuse(a.plan.dialHost, a.plan.frontSNI)
+		wsFrontRecord(a.plan.dialHost, a.plan.frontSNI, false)
+	}
 	if a.plan.cfBase == "" {
 		return
 	}

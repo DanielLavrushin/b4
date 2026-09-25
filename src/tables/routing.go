@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/netif"
 )
@@ -420,6 +421,8 @@ func routeAddResolvedIPs(cfg *config.Config, set *config.SetConfig, ips []net.IP
 	return true
 }
 
+var DNSNames *dns.NameCache
+
 func routeResolveHost(cfg *config.Config, host string) []net.IP {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -440,6 +443,7 @@ func routeResolveHost(cfg *config.Config, host string) []net.IP {
 		}
 		resolved = append(resolved, a.IP)
 	}
+	DNSNames.Observe(nil, host, resolved)
 	return resolved
 }
 

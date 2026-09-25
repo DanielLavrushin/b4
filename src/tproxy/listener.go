@@ -5,11 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/socks5"
 	"golang.org/x/sys/unix"
@@ -41,10 +44,6 @@ func setTCPUserTimeout(c net.Conn, d time.Duration) {
 	})
 }
 
-type DomainResolver interface {
-	DomainFor(ip net.IP) string
-}
-
 type MTProtoBridge interface {
 	Handle(client net.Conn, origIP net.IP, origPort int) (bool, net.Conn)
 	FailOpenViaWorker(client net.Conn, origIP net.IP, origPort int) bool
@@ -59,10 +58,16 @@ type Listener struct {
 	Upstream  socks5.ClientConfig
 	UseDomain bool
 	FailOpen  bool
-	Resolver  DomainResolver
+	Names     NameSource
 	MTProtoWS bool
 	UDP       bool
 	Bridge    MTProtoBridge
+
+	set      atomic.Pointer[config.SetConfig]
+	guard    *loopGuard
+	loopWarn sync.Once
+	relayMu  sync.Mutex
+	relays   map[string]int
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -307,26 +312,46 @@ func (l *Listener) handle(client net.Conn) {
 		return
 	}
 
-	domain := ""
-	if l.Resolver != nil {
-		domain = l.Resolver.DomainFor(origIP)
-	}
-	targetHost := origIP.String()
-	if l.UseDomain && domain != "" {
-		targetHost = domain
-	}
-
 	src := ""
 	if r := client.RemoteAddr(); r != nil {
 		src = r.String()
 	}
-	log.LogConnectionStr("TCP", l.SetName, domain, src, "",
-		net.JoinHostPort(origIP.String(), fmt.Sprintf("%d", origPort)),
-		"", "", "proxy")
+	dest := net.JoinHostPort(origIP.String(), fmt.Sprintf("%d", origPort))
+	clientAddr, _ := client.RemoteAddr().(*net.TCPAddr)
 
-	dialCtx, cancel := context.WithTimeout(l.ctx, 15*time.Second)
-	upstream, err := socks5.DialUpstream(dialCtx, l.Upstream, targetHost, origPort)
-	cancel()
+	if owner, loops := l.upstreamLoop(clientAddr, tcpAddr); loops {
+		log.LogConnectionStr("TCP", l.SetName, "", src, "", dest, "", "", "direct")
+		log.Tracef("tproxy: %s -> %s on set %q is the upstream's own connection (%s), sent direct", src, dest, l.SetName, owner)
+		l.relayDirect(client, dest, nil)
+		return
+	}
+
+	target := l.pickTarget(client, clientAddr, origIP)
+	targetHost := origIP.String()
+	if target.name != "" {
+		targetHost = target.name
+	}
+	keys := relayKeys("tcp", origPort, origIP.String(), target.name)
+
+	if clientAddr != nil && l.relayedForUpstreamHost(clientAddr.IP, keys) {
+		owner := "host " + clientAddr.IP.String()
+		l.warnUpstreamLoop(owner)
+		log.LogConnectionStr("TCP", l.SetName, target.logDomain(), src, "", dest, "", "", "direct")
+		log.Tracef("tproxy: %s -> %s on set %q is the upstream's own connection (%s), sent direct", src, dest, l.SetName, owner)
+		l.relayDirect(client, dest, target.sniffed.prefix)
+		return
+	}
+
+	log.LogConnectionStr("TCP", l.SetName, target.logDomain(), src, "", dest,
+		"", config.TLSVersionString(target.sniffed.tlsVersion), "proxy")
+
+	defer l.holdRelay(keys)()
+	upstream, err := l.dialUpstream(targetHost, origPort)
+	if err != nil && targetHost != origIP.String() && socks5.IsConnectRejected(err) {
+		log.Tracef("tproxy: upstream refused %s:%d on set %q (%v), retrying with %s", targetHost, origPort, l.SetName, err, dest)
+		targetHost = origIP.String()
+		upstream, err = l.dialUpstream(targetHost, origPort)
+	}
 	if err == nil {
 		l.noteUpstreamSuccess()
 	} else {
@@ -339,7 +364,7 @@ func (l *Listener) handle(client net.Conn) {
 		// re-redirect it to ourselves — infinite loop.
 		failoverDialer := markedDialer(10*time.Second, l.Upstream.BypassMark)
 		failoverCtx, failoverCancel := context.WithTimeout(l.ctx, 10*time.Second)
-		direct, derr := failoverDialer.DialContext(failoverCtx, "tcp", net.JoinHostPort(origIP.String(), fmt.Sprintf("%d", origPort)))
+		direct, derr := failoverDialer.DialContext(failoverCtx, "tcp", dest)
 		failoverCancel()
 		if derr != nil {
 			log.Tracef("tproxy: fail-open direct dial failed: %v", derr)
@@ -349,22 +374,193 @@ func (l *Listener) handle(client net.Conn) {
 	}
 	defer upstream.Close()
 
+	if err := writePrefix(upstream, target.sniffed.prefix); err != nil {
+		log.Tracef("tproxy: replaying %d sniffed bytes to %s on set %q failed: %v", len(target.sniffed.prefix), dest, l.SetName, err)
+		return
+	}
+
 	setTCPUserTimeout(client, failOpenUserTimeout)
 	setTCPUserTimeout(upstream, failOpenUserTimeout)
 
 	pipe(client, upstream)
 }
 
+type chosenTarget struct {
+	name    string
+	source  string
+	sniffed sniffResult
+	learned string
+}
+
+func (t chosenTarget) logDomain() string {
+	switch {
+	case t.name != "":
+		return t.name
+	case t.sniffed.host != "":
+		return t.sniffed.host
+	}
+	return t.learned
+}
+
+func (l *Listener) pickTarget(client net.Conn, clientAddr *net.TCPAddr, origIP net.IP) chosenTarget {
+	if l.Names == nil {
+		return chosenTarget{}
+	}
+	learned := l.Names.LearnedName(origIP, l.SetID)
+	if !l.UseDomain {
+		return chosenTarget{learned: learned}
+	}
+	var clientIP net.IP
+	if clientAddr != nil {
+		clientIP = clientAddr.IP
+	}
+	names := l.Names.ObservedNames(clientIP, origIP)
+	var sniffed sniffResult
+	if needsSniff(names, learned != "" || l.setListsDomains()) {
+		sniffed = sniffClient(client, sniffFirstWait, sniffTotalWait, sniffMaxBytes)
+	}
+	name, source := chooseTarget(targetInputs{
+		sniffed: sniffed.host,
+		names:   names,
+		learned: learned,
+		inSet:   func(host string) bool { return l.Names.SetHasDomain(l.SetID, host) },
+		pinned:  l.pinnedName,
+	})
+	if name != "" {
+		log.Tracef("tproxy: set %q names %s as %s (from %s)", l.SetName, origIP, name, source)
+	}
+	return chosenTarget{name: name, source: source, sniffed: sniffed, learned: learned}
+}
+
+func (l *Listener) setListsDomains() bool {
+	set := l.set.Load()
+	return set != nil && len(set.Targets.DomainsToMatch) > 0
+}
+
+func (l *Listener) coversEverything() bool {
+	set := l.set.Load()
+	if set == nil {
+		return false
+	}
+	for _, entry := range set.Targets.IPs {
+		if _, n, err := net.ParseCIDR(strings.TrimSpace(entry)); err == nil {
+			if ones, _ := n.Mask.Size(); ones == 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func relayKeys(proto string, port int, hosts ...string) []string {
+	keys := make([]string, 0, len(hosts))
+	for _, h := range hosts {
+		if h != "" {
+			keys = append(keys, proto+"|"+net.JoinHostPort(h, strconv.Itoa(port)))
+		}
+	}
+	return keys
+}
+
+func (l *Listener) holdRelay(keys []string) func() {
+	l.relayMu.Lock()
+	if l.relays == nil {
+		l.relays = make(map[string]int)
+	}
+	for _, k := range keys {
+		l.relays[k]++
+	}
+	l.relayMu.Unlock()
+	return func() {
+		l.relayMu.Lock()
+		for _, k := range keys {
+			if l.relays[k]--; l.relays[k] <= 0 {
+				delete(l.relays, k)
+			}
+		}
+		l.relayMu.Unlock()
+	}
+}
+
+func (l *Listener) relaying(keys []string) bool {
+	l.relayMu.Lock()
+	defer l.relayMu.Unlock()
+	for _, k := range keys {
+		if l.relays[k] > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (l *Listener) relayedForUpstreamHost(client net.IP, keys []string) bool {
+	return l.guard.fromUpstreamHost(client) && l.relaying(keys)
+}
+
+func (l *Listener) pinnedName(host string) bool {
+	set := l.set.Load()
+	return set != nil && len(set.DNS.PinnedAddresses(host)) > 0
+}
+
+func (l *Listener) dialUpstream(host string, port int) (net.Conn, error) {
+	ctx, cancel := context.WithTimeout(l.ctx, 15*time.Second)
+	defer cancel()
+	return socks5.DialUpstream(ctx, l.Upstream, host, port)
+}
+
+func (l *Listener) upstreamLoop(client, dst *net.TCPAddr) (string, bool) {
+	if l.guard == nil || client == nil {
+		return "", false
+	}
+	if l.guard.fromUpstreamHost(client.IP) && l.coversEverything() {
+		owner := "host " + client.IP.String()
+		l.warnUpstreamLoop(owner)
+		return owner, true
+	}
+	name, pid, ok := l.guard.fromUpstreamProcess(client, dst)
+	if !ok {
+		return "", false
+	}
+	owner := fmt.Sprintf("%s, pid %d", name, pid)
+	l.warnUpstreamLoop(owner)
+	return owner, true
+}
+
+func (l *Listener) warnUpstreamLoop(owner string) {
+	l.loopWarn.Do(func() {
+		log.Warnf("tproxy: set %q catches the connections of its own upstream %s (%s); b4 sends them direct, otherwise they would loop back into the upstream. Narrow the set's targets or mark the upstream's outbound traffic to avoid the extra hop",
+			l.SetName, l.upstreamAddr(), owner)
+	})
+}
+
+func writePrefix(c net.Conn, prefix []byte) error {
+	if len(prefix) == 0 {
+		return nil
+	}
+	_ = c.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	_, err := c.Write(prefix)
+	_ = c.SetWriteDeadline(time.Time{})
+	return err
+}
+
 func (l *Listener) failOpenDirect(client net.Conn, origIP net.IP, origPort int) {
+	l.relayDirect(client, net.JoinHostPort(origIP.String(), strconv.Itoa(origPort)), nil)
+}
+
+func (l *Listener) relayDirect(client net.Conn, dest string, prefix []byte) {
 	dialer := markedDialer(10*time.Second, l.Upstream.BypassMark)
 	ctx, cancel := context.WithTimeout(l.ctx, 10*time.Second)
-	direct, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(origIP.String(), fmt.Sprintf("%d", origPort)))
+	direct, err := dialer.DialContext(ctx, "tcp", dest)
 	cancel()
 	if err != nil {
-		log.Tracef("tproxy: mtproto-ws fail-open direct dial failed for %s:%d: %v", origIP, origPort, err)
+		log.Tracef("tproxy: direct dial to %s on set %q failed: %v", dest, l.SetName, err)
 		return
 	}
 	defer direct.Close()
+	if err := writePrefix(direct, prefix); err != nil {
+		log.Tracef("tproxy: replaying %d sniffed bytes to %s on set %q failed: %v", len(prefix), dest, l.SetName, err)
+		return
+	}
 	setTCPUserTimeout(client, failOpenUserTimeout)
 	setTCPUserTimeout(direct, failOpenUserTimeout)
 	pipe(client, direct)

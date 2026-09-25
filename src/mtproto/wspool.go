@@ -387,7 +387,7 @@ func wsFrontRefuse(host, front string) {
 
 func nativeRoutes(dc, absDC int, dialHost, front string) []transportPlan {
 	plans := nativeEdgePlans(dc, absDC, dialHost)
-	if !wsFrontPreferred(dialHost, front) {
+	if !wsFrontPreferred(dialHost, front) || wsFrontRefused(dialHost, front) {
 		return plans
 	}
 	for i := range plans {
@@ -842,6 +842,10 @@ func (p *wsPool) dialPlan(dc int, pl transportPlan, timeout time.Duration) (*wsP
 	twin := pl
 	switch {
 	case pl.frontSNI != "":
+		if isFrontMiss(err) {
+			wsFrontRefuse(pl.dialHost, pl.frontSNI)
+			wsFrontRecord(pl.dialHost, pl.frontSNI, false)
+		}
 		twin.frontSNI = ""
 	case isTLSStage(err) && !wsFrontRefused(pl.dialHost, front) && wsProbeAllowed(pl.dialHost+"|front"):
 		twin.frontSNI = front

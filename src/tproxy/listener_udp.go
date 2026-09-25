@@ -32,10 +32,19 @@ func (d *directUDP) SetReadDeadline(t time.Time) error { return d.conn.SetReadDe
 func (d *directUDP) Close() error                      { return d.conn.Close() }
 
 type udpSession struct {
-	relay  udpRelay
-	reply  *net.UDPConn
-	client *net.UDPAddr
-	last   atomic.Int64
+	relay   udpRelay
+	reply   *net.UDPConn
+	client  *net.UDPAddr
+	release func()
+	last    atomic.Int64
+}
+
+func (s *udpSession) close() {
+	s.relay.Close()
+	s.reply.Close()
+	if s.release != nil {
+		s.release()
+	}
 }
 
 func (l *Listener) startUDP(addr4, addr6 string) {
@@ -72,8 +81,7 @@ func (l *Listener) stopUDP() {
 	l.udpSessions = make(map[string]*udpSession)
 	l.udpMu.Unlock()
 	for _, s := range sessions {
-		s.relay.Close()
-		s.reply.Close()
+		s.close()
 	}
 }
 
@@ -124,13 +132,11 @@ func (l *Listener) dispatchUDP(src, dst *net.UDPAddr, payload []byte, v6 bool) {
 		l.udpMu.Lock()
 		if existing, dup := l.udpSessions[key]; dup {
 			l.udpMu.Unlock()
-			newSess.relay.Close()
-			newSess.reply.Close()
+			newSess.close()
 			sess = existing
 		} else if l.ctx.Err() != nil {
 			l.udpMu.Unlock()
-			newSess.relay.Close()
-			newSess.reply.Close()
+			newSess.close()
 			return
 		} else {
 			l.udpSessions[key] = newSess
@@ -153,36 +159,58 @@ func (l *Listener) newUDPSession(src, dst *net.UDPAddr, v6 bool) (*udpSession, e
 		return nil, fmt.Errorf("reply socket: %w", err)
 	}
 
-	var relay udpRelay
+	relay, action, release, err := l.openUDPRelay(src, dst)
+	if err != nil {
+		reply.Close()
+		return nil, err
+	}
+
+	log.LogConnectionStr("UDP", l.SetName, l.udpLogDomain(src, dst), src.String(), "",
+		net.JoinHostPort(dst.IP.String(), fmt.Sprintf("%d", dst.Port)),
+		"", "", action)
+
+	sess := &udpSession{relay: relay, reply: reply, client: src, release: release}
+	sess.last.Store(time.Now().UnixNano())
+	return sess, nil
+}
+
+func (l *Listener) openUDPRelay(src, dst *net.UDPAddr) (udpRelay, string, func(), error) {
+	keys := relayKeys("udp", dst.Port, dst.IP.String())
+	if l.guard.fromUpstreamHost(src.IP) && (l.coversEverything() || l.relaying(keys)) {
+		l.warnUpstreamLoop("host " + src.IP.String())
+		direct, err := l.dialDirectUDP(dst)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		return direct, "direct", nil, nil
+	}
+	release := l.holdRelay(keys)
 	dialCtx, cancel := context.WithTimeout(l.ctx, 10*time.Second)
 	up, derr := socks5.DialUpstreamUDP(dialCtx, l.Upstream, dst.IP, dst.Port)
 	cancel()
-	if derr != nil {
-		if !l.FailOpen {
-			reply.Close()
-			return nil, derr
-		}
-		direct, ferr := l.dialDirectUDP(dst)
-		if ferr != nil {
-			reply.Close()
-			return nil, fmt.Errorf("upstream %v; fail-open %w", derr, ferr)
-		}
-		relay = direct
-	} else {
-		relay = up
+	if derr == nil {
+		return up, "proxy", release, nil
 	}
-
-	domain := ""
-	if l.Resolver != nil {
-		domain = l.Resolver.DomainFor(dst.IP)
+	release()
+	if !l.FailOpen {
+		return nil, "", nil, derr
 	}
-	log.LogConnectionStr("UDP", l.SetName, domain, src.String(), "",
-		net.JoinHostPort(dst.IP.String(), fmt.Sprintf("%d", dst.Port)),
-		"", "", "proxy")
+	direct, ferr := l.dialDirectUDP(dst)
+	if ferr != nil {
+		return nil, "", nil, fmt.Errorf("upstream %v; fail-open %w", derr, ferr)
+	}
+	return direct, "proxy", nil, nil
+}
 
-	sess := &udpSession{relay: relay, reply: reply, client: src}
-	sess.last.Store(time.Now().UnixNano())
-	return sess, nil
+func (l *Listener) udpLogDomain(src, dst *net.UDPAddr) string {
+	if l.Names == nil {
+		return ""
+	}
+	names := l.Names.ObservedNames(src.IP, dst.IP)
+	if len(names.Own) > 0 {
+		return names.Own[0]
+	}
+	return l.Names.LearnedName(dst.IP, l.SetID)
 }
 
 func (l *Listener) udpReplyLoop(key string, sess *udpSession) {
@@ -210,8 +238,7 @@ func (l *Listener) closeUDPSession(key string) {
 	}
 	l.udpMu.Unlock()
 	if ok {
-		sess.relay.Close()
-		sess.reply.Close()
+		sess.close()
 	}
 }
 

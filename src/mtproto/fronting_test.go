@@ -269,3 +269,27 @@ func TestFrontNameSetting(t *testing.T) {
 		}
 	}
 }
+
+func TestPoolDropsAFrontNameThatStopsReachingTelegram(t *testing.T) {
+	wsResetState()
+	t.Cleanup(wsResetState)
+	startEdgeWithCert(t, edgeCertificate(t, "www.example.com"), "kws2.web.telegram.org")
+	cfg := MTProtoUpstream{WSEndpointHost: "127.0.0.1", FrontSNI: "sprinthost.ru"}
+	p := newWSPool(cfg, 0, 1)
+	defer p.close()
+	wsFrontRecord("127.0.0.1", "sprinthost.ru", true)
+
+	plan := wsPlansForDC(2, &cfg)[0]
+	if plan.frontSNI != "sprinthost.ru" {
+		t.Fatalf("setup: plan %s is not fronted", plan.describe())
+	}
+	if _, err := p.dialPlan(2, plan, time.Second); err == nil {
+		t.Fatal("an edge answering neither name was accepted")
+	}
+	if wsFrontPreferred("127.0.0.1", "sprinthost.ru") || !wsFrontRefused("127.0.0.1", "sprinthost.ru") {
+		t.Fatal("a front name that now lands elsewhere stayed in use")
+	}
+	if next := wsPlansForDC(2, &cfg)[0]; next.frontSNI != "" {
+		t.Fatalf("the pool kept dialling %s", next.describe())
+	}
+}

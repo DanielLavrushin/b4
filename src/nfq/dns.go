@@ -306,6 +306,9 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 		txid, txidOK := dns.ParseTransactionID(payload)
 		if ok {
 			domain = strings.ToLower(domain)
+			if txidOK && DNSNames.Wanted() {
+				noteDNSNameQuery(dnsRouteKeyRequest(ipVersion, pkt.src, sport, pkt.dst, dport, txid, domain))
+			}
 			matcher := w.getMatcher()
 			if matchedSet, set := matcher.MatchSNIWithSource(domain, srcMac); matchedSet {
 				cfg := w.getConfig()
@@ -437,6 +440,8 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 			var healSet *config.SetConfig
 			var failedSet *config.SetConfig
 			clientMac := w.getMacByIp(clientIP.String())
+			answersQuery := domain != "" && DNSNames.Wanted() &&
+				consumeDNSNameQuery(dnsRouteKeyResponse(ipVersion, clientIP, dport, dnsServerIP, sport, txid, domain))
 			if domain != "" {
 				if matched, set := w.getMatcher().MatchSNIWithSource(domain, clientMac); matched && set.Enabled {
 					healSet = set
@@ -445,6 +450,9 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 						failedSet = escSet
 					}
 					ips := dns.ParseResponseIPs(payload)
+					if answersQuery {
+						observeDNSNames(clientIP, domain, ips)
+					}
 					w.storeHostHints(clientIP, set, domain, ips)
 					if set.Routing.Enabled && !set.Targets.DomainOnly && len(ips) > 0 {
 						cfg := w.getConfig()
@@ -453,6 +461,8 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 							routed = true
 						}
 					}
+				} else if answersQuery {
+					observeDNSNames(clientIP, domain, dns.ParseResponseIPs(payload))
 				}
 			}
 
@@ -561,6 +571,7 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 	}
 
 	if ips := dns.ParseResponseIPs(resp); len(ips) > 0 {
+		observeDNSNames(clientIP, queryDomain, ips)
 		w.storeHostHints(clientIP, set, queryDomain, ips)
 		if set.Routing.Enabled && !set.Targets.DomainOnly && !cfg.Queue.IsDiscovery && RoutingHandleDNSFunc != nil {
 			RoutingHandleDNSFunc(cfg, set, ips)

@@ -3,6 +3,7 @@ package mtproto
 import (
 	"errors"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -496,5 +497,36 @@ func TestRaceTimesTheWorkerFromTheTierAheadOfIt(t *testing.T) {
 	out := r.run([]transportPlan{tcpPlan("203.0.113.9:443"), cfPlan("cf1"), workerPlan("worker")})
 	if out.winner == nil || out.winner.plan.sni != "cf1" {
 		t.Fatalf("winner %+v, want the WebSocket route: the Worker's wait starts when that tier does", out.winner)
+	}
+}
+
+func TestRaceStartsOneEarlyWorkerAtATime(t *testing.T) {
+	routes := map[string]fakeRoute{}
+	var plans []transportPlan
+	for _, n := range []string{"cf1", "cf2", "cf3", "cf4", "cf5"} {
+		routes[n] = fakeRoute{hang: true}
+		plans = append(plans, cfPlan(n))
+	}
+	for _, n := range []string{"w1", "w2", "w3"} {
+		routes[n] = fakeRoute{hang: true}
+		plans = append(plans, workerPlan(n))
+	}
+	h := newRaceHarness(routes)
+	r := h.race(time.Now().Add(2*time.Second), 20*time.Millisecond, 3)
+	r.workerAfter = 50 * time.Millisecond
+	r.timeoutFor = func(transportPlan) time.Duration { return 300 * time.Millisecond }
+	t.Cleanup(h.waitIdle)
+	r.run(plans)
+	workersBeforeCF4 := 0
+	for _, n := range h.startedNames() {
+		if n == "cf4" {
+			break
+		}
+		if strings.HasPrefix(n, "w") {
+			workersBeforeCF4++
+		}
+	}
+	if workersBeforeCF4 != 1 {
+		t.Fatalf("start order %v: %d Workers jumped ahead of the shared domains, want one", h.startedNames(), workersBeforeCF4)
 	}
 }

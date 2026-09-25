@@ -14,7 +14,7 @@ import (
 type Manager struct {
 	mu            sync.Mutex
 	listeners     map[string]*Listener
-	resolver      DomainResolver
+	resolver      NameSource
 	mtprotoBridge MTProtoBridge
 	ctx           context.Context
 	cancel        context.CancelFunc
@@ -29,7 +29,7 @@ func (m *Manager) SetMTProtoBridge(b MTProtoBridge) {
 	}
 }
 
-func NewManager(resolver DomainResolver) *Manager {
+func NewManager(resolver NameSource) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Manager{
 		listeners: make(map[string]*Listener),
@@ -39,13 +39,28 @@ func NewManager(resolver DomainResolver) *Manager {
 	}
 }
 
-func (m *Manager) SetResolver(r DomainResolver) {
+func (m *Manager) SetResolver(r NameSource) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.resolver = r
 	for _, l := range m.listeners {
-		l.Resolver = r
+		l.Names = r
 	}
+	m.syncNamesWantedLocked()
+}
+
+func (m *Manager) syncNamesWantedLocked() {
+	if m.resolver == nil {
+		return
+	}
+	wanted := false
+	for _, l := range m.listeners {
+		if l.UseDomain && !l.MTProtoWS {
+			wanted = true
+			break
+		}
+	}
+	m.resolver.WantNames(wanted)
 }
 
 func (m *Manager) SyncConfig(cfg *config.Config) {
@@ -97,7 +112,9 @@ func (m *Manager) SyncConfig(cfg *config.Config) {
 			log.Infof("tproxy: restarting listener for set %q (config changed)", set.Name)
 			_ = l.Stop()
 			delete(m.listeners, id)
+			continue
 		}
+		l.set.Store(set)
 	}
 
 	for id, set := range desired {
@@ -125,16 +142,19 @@ func (m *Manager) SyncConfig(cfg *config.Config) {
 			UseDomain: set.Routing.Upstream.UseDomain,
 			UDP:       set.Routing.Upstream.UDP,
 			FailOpen:  set.Routing.Upstream.FailOpen,
-			Resolver:  m.resolver,
+			Names:     m.resolver,
 			MTProtoWS: set.Routing.Mode == config.RoutingModeMTProtoWS,
 			Bridge:    m.mtprotoBridge,
+			guard:     newLoopGuard(host, set.Routing.Upstream.Port),
 		}
+		l.set.Store(set)
 		if err := l.Start(m.ctx); err != nil {
 			log.Errorf("tproxy: failed to start listener for set %q: %v", set.Name, err)
 			continue
 		}
 		m.listeners[id] = l
 	}
+	m.syncNamesWantedLocked()
 }
 
 func (m *Manager) Stop() {
@@ -144,6 +164,7 @@ func (m *Manager) Stop() {
 		_ = l.Stop()
 		delete(m.listeners, id)
 	}
+	m.syncNamesWantedLocked()
 	if m.cancel != nil {
 		m.cancel()
 	}

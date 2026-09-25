@@ -385,7 +385,7 @@ The rule that keeps the router's own addresses out of the diversion uses the add
 | Upstream SOCKS5 host | Hostname or IP of the proxy. Use `127.0.0.1` when it runs on the same router, or the address of another host on the network. |
 | Upstream SOCKS5 port | Port the proxy listens on. |
 | Username / Password | Filled in only if the proxy requires authentication. |
-| Send domain name to upstream | Passes the domain instead of the address when b4 knows it, so the upstream resolves the name itself and can pick a geographically appropriate address. |
+| Send domain name to upstream | Passes a host name instead of the address when one can be tied to the connection, so the upstream resolves the name itself and can pick a geographically appropriate address. See [Destination names](#destination-names). |
 | Route UDP through upstream | Tunnels matched UDP through the proxy using UDP ASSOCIATE. See [QUIC and HTTP/3](#quic-and-http3) below. |
 | Fall back to direct on upstream failure | Opens a plain direct connection to the original destination when the proxy is unreachable, instead of failing. Leave it off if a direct connection is worse than none. |
 
@@ -398,6 +398,36 @@ With **Route UDP through upstream** off, b4 refuses matched UDP on port 443 with
 That refusal is written per address family. The IPv6 half of it exists only while **IPv6 support** is on in [Settings -> Core](../settings/core#protocols). With IPv6 support off, only the IPv4 rule is created, so a destination the set matches that also answers over IPv6 is still reachable over QUIC there, and the connection does not go through the proxy.
 
 With the option on, matched UDP goes to the proxy through UDP ASSOCIATE. Turn it on only if the upstream implements it. If it does not, matched UDP is dropped and b4 logs a warning naming the set and the upstream.
+
+### Destination names
+
+With **Send domain name to upstream** on, the SOCKS5 CONNECT carries a host name instead of the destination address whenever b4 can tie one to the connection, and the upstream resolves that name itself.
+
+When the connection opens with a TLS ClientHello or a plain HTTP request, the name it carries (SNI or `Host`) is sent only if something backs it: a DNS answer b4 saw for this address in the last 30 minutes, whichever device asked or b4 itself for one of its sets, or the set's own domain list. Otherwise the connection goes by address. VLESS Reality, ShadowTLS and Telegram's fake-TLS proxies connect to one address and present the name of an unrelated site, and sending that name would take the connection to the unrelated site.
+
+When the connection carries no readable name, as with protocols where the server speaks first (SMTP, IMAP, FTP), the name comes from, in order: the DNS answer that gave this device this address, a name learned earlier from a ClientHello that matched the set, and a name b4 resolved itself for one of its sets. Names other devices looked up are not used for such a connection.
+
+While at least one proxy set sends names, b4 records the question name of every A and AAAA answer on UDP port 53 that replies to a query it saw, and of the answers it builds itself for a set's DNS redirect. Pinned answers are not recorded, and a name pinned in the set's DNS settings always goes by address, so the upstream cannot resolve it to something other than the pin.
+
+Reading the ClientHello means waiting for the first bytes of the connection before the CONNECT is sent. A client that speaks first sends them at once. A connection where the server speaks first waits 250 ms, unless this device resolved exactly one name for the address, or nothing could back a sniffed name anyway: no DNS answer for the address and no domains in the set.
+
+When the upstream refuses a name, for example a Tor exit that cannot resolve it, b4 repeats the CONNECT with the address.
+
+The option covers TCP. UDP through UDP ASSOCIATE always carries the address.
+
+:::info
+With `SafeSocks 1`, Tor refuses a connection it receives by address and logs `Your application (using socks5 to port 443) is giving Tor only an IP address`. Connections with no name b4 can back still arrive by address, for example from a device that resolves over DoH, DoT or Android Private DNS and opens an address matched by IP, CIDR or GeoIP targets under a name the set does not list. Tor's SOCKS port does not implement UDP ASSOCIATE, so a set pointed at Tor works with **Route UDP through upstream** off.
+:::
+
+### A set that covers its own upstream
+
+A proxy set also diverts connections the router itself opens to addresses in the set. An upstream proxy running on the router opens its own connection to its server from the router, so a set whose targets include that server's address, such as `0.0.0.0/0` or a broad GeoIP category, would hand the upstream its own connection and loop. b4 recognises such a connection by the process that owns it: one that holds the listening socket on the upstream's port. That connection goes straight to its destination instead of into the upstream. An upstream host given as a name is resolved for this check, and `0.0.0.0` counts as the router itself.
+
+For an upstream on another device in the network, b4 cannot see its processes. A connection from that device goes direct in two cases: the set targets `0.0.0.0/0` or `::/0`, or b4 is relaying a connection to the same destination through that upstream at that moment, which is the upstream's own outbound connection coming back. Everything else from that device is proxied as usual. A proxy on another device whose own server address falls inside a broad GeoIP set is not recognised; a set with that device excluded from its source devices leaves the device's traffic alone.
+
+The first time it happens, the log names the set and the process, or for an upstream on another device, that device's address.
+
+The upstream's own traffic still passes through b4 on its way out. A mark on the upstream's outbound sockets keeps it out of the set's diversion altogether: the proxy chains skip any packet whose mark has a bit inside `0x27FFF`, such as Xray's `sockopt.mark` set to `255` on the outbound.
 
 ### Verifying that it works
 

@@ -20,6 +20,7 @@ type raceAttempt struct {
 	timeout time.Duration
 	elapsed time.Duration
 	group   int
+	early   bool
 }
 
 type dialRace struct {
@@ -84,6 +85,7 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 	inFlight := 0
 	nativeBusy := false
 	nativeDead := false
+	earlyInFlight := 0
 	var nextStart time.Time
 
 	hasFallback := false
@@ -102,7 +104,7 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 		return -1
 	}
 	workerEarly := func(it raceItem) bool {
-		if r.workerAfter <= 0 || raceClass(it.plan) != 1 || it.group != current()+1 {
+		if r.workerAfter <= 0 || earlyInFlight > 0 || raceClass(it.plan) != 1 || it.group != current()+1 {
 			return false
 		}
 		if _, ok := groupBegan[current()]; !ok {
@@ -158,6 +160,10 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 	}
 	launch := func(it raceItem, timeout time.Duration) {
 		fresh := it.fresh
+		early := it.group != current()
+		if early {
+			earlyInFlight++
+		}
 		if _, ok := groupBegan[it.group]; !ok {
 			groupBegan[it.group] = time.Now()
 		}
@@ -171,7 +177,7 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 		go func() {
 			begin := time.Now()
 			conn, pooled, err := r.dial(it.plan, timeout, fresh)
-			results <- raceAttempt{plan: it.plan, conn: conn, pooled: pooled, err: err, timeout: timeout, elapsed: time.Since(begin), group: it.group}
+			results <- raceAttempt{plan: it.plan, conn: conn, pooled: pooled, err: err, timeout: timeout, elapsed: time.Since(begin), group: it.group, early: early}
 		}()
 	}
 	tryStart := func() {
@@ -235,6 +241,9 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 			}
 			inFlight--
 			outstanding[a.group]--
+			if a.early {
+				earlyInFlight--
+			}
 			if a.plan.native {
 				nativeBusy = false
 			}

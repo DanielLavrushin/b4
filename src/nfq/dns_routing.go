@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -21,6 +22,30 @@ var RoutingHandleDNSAsyncFunc func(cfg *config.Config, set *config.SetConfig, ip
 var RoutingLearnIPAsyncFunc func(cfg *config.Config, set *config.SetConfig, ip net.IP)
 
 var RoutingLearnHostAsyncFunc func(cfg *config.Config, set *config.SetConfig, host string)
+
+var DNSNames *dns.NameCache
+
+const dnsNameQueryTTL = 30 * time.Second
+
+var dnsNameQueries sync.Map
+
+func observeDNSNames(client net.IP, name string, ips []net.IP) {
+	DNSNames.Observe(client, name, ips)
+}
+
+func noteDNSNameQuery(key string) {
+	startDNSRouteCleanup()
+	dnsNameQueries.Store(key, time.Now().Add(dnsNameQueryTTL))
+}
+
+func consumeDNSNameQuery(key string) bool {
+	v, ok := dnsNameQueries.LoadAndDelete(key)
+	if !ok {
+		return false
+	}
+	expires, ok := v.(time.Time)
+	return ok && time.Now().Before(expires)
+}
 
 func routingHandleDNSAsync(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 	if RoutingHandleDNSAsyncFunc != nil {
@@ -175,6 +200,12 @@ func consumeDNSPendingRoute(key string) (string, bool) {
 
 func cleanupDNSPendingRoutes(now time.Time) int {
 	removed := 0
+	dnsNameQueries.Range(func(key, value any) bool {
+		if expires, ok := value.(time.Time); !ok || now.After(expires) {
+			dnsNameQueries.Delete(key)
+		}
+		return true
+	})
 	dnsRoutePending.Range(func(key, value any) bool {
 		r, ok := value.(pendingDNSRoute)
 		if !ok {

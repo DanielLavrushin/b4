@@ -1743,7 +1743,7 @@
       "upstreamPass": "Password (optional)",
       "upstreamAuthHelper": "Leave empty if the upstream proxy does not require authentication",
       "useDomain": "Send domain name to upstream",
-      "useDomainDesc": "When B4 already knows the domain for the destination IP (from prior DNS), pass the domain to the upstream so it can resolve and pick a geo-correct IP. Recommended.",
+      "useDomainDesc": "Pass the upstream a host name instead of the address, so it resolves the name itself. The name comes from the connection's TLS or HTTP request when a DNS answer or the set's domain list backs it, or, for a connection without one, from this device's DNS answer or a name learned for the set. Otherwise, and for names pinned in the set, the address is sent. TCP only.",
       "failOpen": "Fall back to direct on upstream failure",
       "failOpenDesc": "If the upstream proxy is unreachable, open a plain direct connection to the original destination instead of failing.",
       "failOpenWarning": "Fail-open exposes the destination to your ISP if the upstream goes down. Disable for whitelist-mode regions where direct connections do not work and you want failures to be visible.",

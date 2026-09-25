@@ -17,6 +17,8 @@
 - FIXED: **Discovery could count a strategy as working when the site redirected to the ISP's block page** - the probe followed the redirect and judged only the page it ended on. The check of the redirect address itself never ran.
 - FIXED: **The watchdog and the DPI Detector took a site's own redirect for the ISP's block page when its address contained a word like `blocked`** - a redirect such as `/login?reason=session_blocked` matched the block-page markers even though it stayed on the same site.
 - FIXED: **A connection that froze in the middle of a page cost every Discovery test the whole timeout** - the 2-second stall check ran only after a read finished, and a read waits for data until the timeout ends. Behind a DPI that freezes connections mid-transfer, runs took longer than they had to.
+- FIXED: **Send domain name to upstream changed nothing for most connections, so an upstream such as Tor received only an address and warned that the application was "giving Tor only an IP address"** - the name came only from a TLS hello b4 had seen before the set took the connection over, and a connection the set diverts never passes that point.
+- FIXED: **A proxy set whose targets included the address of its own upstream's server cut off every device behind the set** - the connections an upstream proxy on the router, or on another device in the network, opened to its own server were diverted back into that same upstream in a loop, which held off only while the upstream kept a connection it had opened before the set came up.
 
 ## [1.82.3] - 2026-09-23
 

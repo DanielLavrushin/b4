@@ -966,13 +966,14 @@ func relayConns(client, dc io.ReadWriteCloser, o relayOpts) (int64, int64) {
 	lastDown.Store(start.UnixNano())
 	noteUp := func(n int) {
 		now := time.Now().UnixNano()
+		lastUp.Store(now)
 		if upSinceDown.Add(int64(n)) == int64(n) {
 			upWrites.Store(0)
 		}
-		if upWrites.Add(1) == 2 {
+		if upWrites.Load() == 1 {
 			secondUp.Store(now)
 		}
-		lastUp.Store(now)
+		upWrites.Add(1)
 	}
 	noteDown := func() {
 		lastDown.Store(time.Now().UnixNano())

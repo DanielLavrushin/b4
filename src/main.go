@@ -20,6 +20,7 @@ import (
 	"github.com/daniellavrushin/b4/ai"
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discovery"
+	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/geodat"
 	b4http "github.com/daniellavrushin/b4/http"
 	"github.com/daniellavrushin/b4/http/handler"
@@ -162,7 +163,10 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	discoveryRT := discovery.NewRuntime()
 
-	tproxyResolver := tproxy.NewLearnedIPResolver(nil)
+	dnsNames := dns.NewNameCache()
+	nfq.DNSNames = dnsNames
+	tables.DNSNames = dnsNames
+	tproxyResolver := tproxy.NewResolver(dnsNames)
 	tproxyMgr := tproxy.NewManager(tproxyResolver)
 
 	mtprotoBridge := mtproto.NewTransparentBridge(&cfg)
