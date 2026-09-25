@@ -25,6 +25,7 @@ const (
 	reinjectLocalPrio  = 99
 	bypassRulePrio     = 100
 	localRetryLimit    = 1
+	captureRetryLimit  = 1
 )
 
 func (r *routeManager) steerMarkStr() string {
@@ -102,10 +103,25 @@ func (r *routeManager) replaceCaptureDefault(tableStr string) error {
 	return nil
 }
 
-func (r *routeManager) ensureCaptureChain() {
-	if _, err := run("iptables", "-t", "mangle", "-S", tunCaptureChain); err != nil {
-		run("iptables", "-t", "mangle", "-N", tunCaptureChain)
+func (r *routeManager) ensureCaptureChain() int {
+	out, err := run("iptables", "-t", "mangle", "-S", tunCaptureChain)
+	if err == nil {
+		return countChainRules(out, tunCaptureChain)
 	}
+	if _, err := run("iptables", "-t", "mangle", "-N", tunCaptureChain); err != nil {
+		return -1
+	}
+	return 0
+}
+
+func countChainRules(dump, chain string) int {
+	n := 0
+	for _, line := range strings.Split(dump, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "-A "+chain+" ") {
+			n++
+		}
+	}
+	return n
 }
 
 func (r *routeManager) deviceFilterActive() bool {
@@ -159,7 +175,7 @@ func gateRulesFromDump(out string) []string {
 		if !strings.HasPrefix(line, "-A "+tunGateChain) {
 			continue
 		}
-		cur = append(cur, ruleFieldValue(line, "--mac-source")+" "+ruleFieldValue(line, "-j"))
+		cur = append(cur, strings.ToUpper(ruleFieldValue(line, "--mac-source"))+" "+ruleFieldValue(line, "-j"))
 	}
 	return cur
 }
@@ -258,10 +274,12 @@ func (r *routeManager) rebuildCaptureChain() {
 	run("iptables", "-t", "mangle", "-F", tunCaptureChain)
 
 	applied := make([]string, 0, len(local))
+	installed, missing := 0, 0
 	for _, rule := range r.captureChainRules(excl, local) {
 		_, err := run(append([]string{"iptables", "-t", "mangle", "-A", tunCaptureChain}, rule.spec...)...)
 		switch {
 		case err == nil:
+			installed++
 			if rule.local != "" {
 				applied = append(applied, rule.local)
 			}
@@ -270,9 +288,15 @@ func (r *routeManager) rebuildCaptureChain() {
 		case rule.local != "":
 			log.Warnf("TUN: could not exempt local network %s from capture (%v); traffic between your own subnets on a captured port will be sent out %s instead of staying local", rule.local, err, r.outIface)
 		default:
+			missing++
 			log.Warnf("TUN: failed to add capture rule %v: %v", rule.spec, err)
 		}
 	}
+	if missing == 0 {
+		r.captureRetries = 0
+	}
+	r.captureInstalled = installed
+	r.captureMissing = missing
 	if len(applied) > 0 {
 		log.Tracef("TUN: %d directly connected network(s) exempted from capture: %s", len(applied), strings.Join(applied, ", "))
 	}
@@ -425,7 +449,7 @@ func (r *routeManager) ensurePortCapture() {
 		}
 	}
 
-	r.ensureCaptureChain()
+	present := r.ensureCaptureChain()
 	r.ensureCaptureJumps()
 	r.refreshSteerConflicts()
 	desired := r.desiredCaptureExclusions()
@@ -434,6 +458,9 @@ func (r *routeManager) ensurePortCapture() {
 		localNow = r.localNetsWanted
 	}
 	switch {
+	case present >= 0 && present < r.captureInstalled:
+		log.Warnf("TUN: capture chain %s lost %d of %d rules (removed outside b4), so traffic stopped reaching %s; rebuilding it", tunCaptureChain, r.captureInstalled-present, r.captureInstalled, r.tunName)
+		r.rebuildCaptureChain()
 	case !equalStringSet(desired, r.captureExcl):
 		log.Infof("TUN: reconcile refreshing capture exclusions (%d routing set(s))", len(desired))
 		r.rebuildCaptureChain()
@@ -443,6 +470,10 @@ func (r *routeManager) ensurePortCapture() {
 	case len(r.localNets) != len(r.localNetsWanted) && r.localRetries < localRetryLimit:
 		r.localRetries++
 		log.Infof("TUN: reconcile retrying %d local-network exemption(s) that did not install", len(r.localNetsWanted)-len(r.localNets))
+		r.rebuildCaptureChain()
+	case r.captureMissing > 0 && r.captureRetries < captureRetryLimit:
+		r.captureRetries++
+		log.Infof("TUN: reconcile retrying %d capture rule(s) that did not install", r.captureMissing)
 		r.rebuildCaptureChain()
 	}
 }

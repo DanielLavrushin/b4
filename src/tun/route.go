@@ -78,6 +78,9 @@ type routeManager struct {
 	localNets          []string
 	localNetsWanted    []string
 	localRetries       int
+	captureInstalled   int
+	captureMissing     int
+	captureRetries     int
 	capturePrio        int
 	conflicts          []steerConflict
 	captureExcl        []string

@@ -106,3 +106,48 @@ func TestSteerSpecsPerPortFallback(t *testing.T) {
 		t.Errorf("expected 2 per-port tcp rules, got %d", tcpRules)
 	}
 }
+
+func TestCountChainRules(t *testing.T) {
+	full := "-N B4_TUN\n" +
+		"-A B4_TUN -m mark --mark 0x8000/0x8000 -j RETURN\n" +
+		"-A B4_TUN -m mark --mark 0x20000000/0x20000000 -j RETURN\n" +
+		"-A B4_TUN -p udp -m udp --dport 53 -j MARK --set-xmark 0x40000000/0x40000000\n" +
+		"-A B4_TUN -d 192.168.31.0/24 -j RETURN\n"
+	cases := []struct {
+		name string
+		dump string
+		want int
+	}{
+		{"flushed chain", "-N B4_TUN\n", 0},
+		{"empty output", "", 0},
+		{"populated chain", full, 4},
+		{"gate chain lines are not capture rules", "-N B4_TUN_GATE\n-A B4_TUN_GATE -m mac --mac-source 02:42:AC:11:00:03 -j RETURN\n-A B4_TUN_GATE -j B4_TUN\n", 0},
+		{"surrounding whitespace", "  -A B4_TUN -j RETURN  \r\n", 1},
+	}
+	for _, c := range cases {
+		if got := countChainRules(c.dump, tunCaptureChain); got != c.want {
+			t.Errorf("%s: countChainRules = %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
+func TestGateRulesFromDumpMatchesMACsPrintedInLowercase(t *testing.T) {
+	for _, whiteIsBlack := range []bool{true, false} {
+		r := &routeManager{whiteIsBlack: whiteIsBlack, selectedMACs: []string{"02:07:15:be:63:58", "00:0C:29:87:6C:85"}}
+		var dump strings.Builder
+		dump.WriteString("-N B4_TUN_GATE\n")
+		target := tunCaptureChain
+		if whiteIsBlack {
+			target = "RETURN"
+		}
+		dump.WriteString("-A B4_TUN_GATE -m mac --mac-source 02:07:15:be:63:58 -j " + target + "\n")
+		dump.WriteString("-A B4_TUN_GATE -m mac --mac-source 00:0c:29:87:6c:85 -j " + target + "\n")
+		if whiteIsBlack {
+			dump.WriteString("-A B4_TUN_GATE -j B4_TUN\n")
+		}
+		got, want := gateRulesFromDump(dump.String()), r.desiredGateRules()
+		if !equalStringSet(got, want) {
+			t.Errorf("whiteIsBlack=%v: gate dump %q does not match desired %q, so the gate would be rebuilt every reconcile", whiteIsBlack, got, want)
+		}
+	}
+}
