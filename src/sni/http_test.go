@@ -31,6 +31,19 @@ func TestParseHTTPHost(t *testing.T) {
 	}
 }
 
+func TestIsHTTPMethodPrefix(t *testing.T) {
+	for _, in := range []string{"G", "GE", "GET", "P", "PO", "OPTIO", "CONNEC"} {
+		if !IsHTTPMethodPrefix([]byte(in)) {
+			t.Errorf("%q is the start of a method", in)
+		}
+	}
+	for _, in := range []string{"", "GET ", "GET / HTTP/1.1", "X", "GX", "\x16\x03", "SSH-2.0"} {
+		if IsHTTPMethodPrefix([]byte(in)) {
+			t.Errorf("%q is not a partial method", in)
+		}
+	}
+}
+
 func TestHTTPHeadersComplete(t *testing.T) {
 	if HTTPHeadersComplete([]byte("GET / HTTP/1.1\r\nHost: a.com\r\n")) {
 		t.Error("headers without the blank line are not complete")

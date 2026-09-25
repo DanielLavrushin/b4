@@ -58,7 +58,7 @@ func needsMoreBytes(b []byte) bool {
 	if sni.LooksLikeHTTPRequest(b) {
 		return !sni.HTTPHeadersComplete(b)
 	}
-	return false
+	return sni.IsHTTPMethodPrefix(b)
 }
 
 func sniffedHost(b []byte) (string, uint16) {

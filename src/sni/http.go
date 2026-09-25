@@ -32,6 +32,18 @@ func LooksLikeHTTPRequest(b []byte) bool {
 	return false
 }
 
+func IsHTTPMethodPrefix(b []byte) bool {
+	if len(b) == 0 {
+		return false
+	}
+	for _, m := range httpRequestMethods {
+		if len(b) < len(m) && bytes.HasPrefix(m, b) {
+			return true
+		}
+	}
+	return false
+}
+
 func HTTPHeadersComplete(b []byte) bool {
 	return bytes.Contains(b, httpHeadersEnd)
 }

@@ -80,6 +80,23 @@ func TestSniffClientTakesTheHTTPHost(t *testing.T) {
 	}
 }
 
+func TestSniffClientWaitsOutARequestSplitInsideTheMethod(t *testing.T) {
+	req := "GET / HTTP/1.1\r\nHost: myip.dk\r\n\r\n"
+	for _, cut := range []int{1, 2, 3} {
+		res, _ := sniffOver(t, func(w net.Conn) {
+			_, _ = w.Write([]byte(req[:cut]))
+			time.Sleep(30 * time.Millisecond)
+			_, _ = w.Write([]byte(req[cut:]))
+		})
+		if res.host != "myip.dk" {
+			t.Errorf("split after %q: host = %q, want myip.dk", req[:cut], res.host)
+		}
+		if string(res.prefix) != req {
+			t.Errorf("split after %q: prefix = %q, want the whole request", req[:cut], res.prefix)
+		}
+	}
+}
+
 func TestSniffClientGivesUpOnASilentPeer(t *testing.T) {
 	res, took := sniffOver(t, func(w net.Conn) {
 		_, _ = w.Read(make([]byte, 1))
