@@ -474,6 +474,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 	if config.RoutingIsBlock(mode) {
 		st.blockAction = config.NormalizeBlockAction(set.Routing.BlockAction)
 	} else if config.RoutingUsesTProxy(mode) {
+		st.srcScoped = routeProxySourceScoped(cfg, set)
 		mark, port := proxyMarkAndPort(set)
 		st.mark = mark
 		st.table = proxyTable()
@@ -1096,9 +1097,13 @@ func routingSyncConfig(cfg *config.Config) {
 		routeNftSweepBaseOutputBypasses()
 	}
 
-	desired := make(map[string]*config.SetConfig, len(cfg.Sets))
-	for _, set := range cfg.Sets {
+	routingSets := cfg.RoutingSets()
+	desired := make(map[string]*config.SetConfig, len(routingSets))
+	for _, set := range routingSets {
 		if set == nil || !set.Enabled || !set.Routing.Enabled {
+			continue
+		}
+		if config.IsTelegramBridgeSet(set) && (!telegramBridgeListenerUp() || !telegramBridgeTProxyUsable(be)) {
 			continue
 		}
 		mode := set.Routing.Mode
@@ -1137,7 +1142,7 @@ func routingSyncConfig(cfg *config.Config) {
 
 	var newRoutingSets []*config.SetConfig
 	var retargetedSets []*config.SetConfig
-	for _, set := range cfg.Sets {
+	for _, set := range routingSets {
 		if set == nil {
 			continue
 		}
@@ -1147,6 +1152,11 @@ func routingSyncConfig(cfg *config.Config) {
 
 		cur := buildRouteState(cfg, set)
 		cur.set = set
+		if config.IsTelegramBridgeSet(set) {
+			v4, v6 := telegramBridgeListenerFamilies()
+			cur.ipv4 = cur.ipv4 && v4
+			cur.ipv6 = cur.ipv6 && v6
+		}
 		if !config.RoutingIsBlock(cur.mode) && (cur.mark == 0 || cur.table <= 0) {
 			routeWarnIncomplete(set, "b4 could not take a routing table of its own for it")
 			continue
@@ -1258,7 +1268,7 @@ func RoutingPeriodicReResolve(cfg *config.Config) {
 	}
 
 	var setsToResolve []*config.SetConfig
-	for _, set := range cfg.Sets {
+	for _, set := range cfg.RoutingSets() {
 		if set == nil || !set.Enabled || !set.Routing.Enabled {
 			continue
 		}
@@ -1578,7 +1588,7 @@ func routeSetScopeRank(cfg *config.Config, set *config.SetConfig) int {
 
 func routeOrderedRoutingSets(cfg *config.Config) []*config.SetConfig {
 	var ordered []*config.SetConfig
-	for _, set := range cfg.Sets {
+	for _, set := range cfg.RoutingSets() {
 		if set == nil {
 			continue
 		}

@@ -197,7 +197,7 @@ func ClearMSSClampOnly(cfg *config.Config) {
 	mssAppliedRules.Store(0)
 	backend := detectFirewallBackend(cfg)
 	if backend == backendNFTables {
-		NewNFTablesManager(cfg).ClearMSSClamp()
+		clearNftMSSRules()
 		return
 	}
 	NewIPTablesManager(cfg, backend == backendIPTablesLegacy).ClearMSSClamp()

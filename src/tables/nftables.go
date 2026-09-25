@@ -325,6 +325,10 @@ func (n *NFTablesManager) apply() error {
 		return err
 	}
 
+	if err := n.addRule(nftChainName, "meta", "mark", "&", fmt.Sprintf("0x%x", config.PerSetRouteMarkBits), "==", fmt.Sprintf("0x%x", config.TelegramBridgeMark), "return"); err != nil {
+		return err
+	}
+
 	if cfg.Queue.Mark != 0 {
 		if err := n.addRule("prerouting", "ct", "mark", "&", markAccept, "==", markAccept, "return"); err != nil {
 			log.Warnf("nftables: connmark reply-side bypass unavailable: %v", err)
@@ -508,9 +512,9 @@ func (n *NFTablesManager) ApplyMasquerade() error {
 		return fmt.Errorf("failed to add masquerade mark-bypass rule: %w", err)
 	}
 
-	if n.cfg.Queue.Mode == "tun" {
+	if dev := activeTUNDevice(); dev != "" {
 		if _, err := n.runNft("add", "rule", "ip", nftNatTableName, nftNatChainName,
-			"oifname", fmt.Sprintf("%q", n.cfg.Queue.TUN.Device()), "return"); err != nil {
+			"oifname", fmt.Sprintf("%q", dev), "return"); err != nil {
 			return fmt.Errorf("failed to exempt the TUN device from masquerade: %w", err)
 		}
 	}

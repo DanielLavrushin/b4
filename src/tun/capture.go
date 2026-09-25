@@ -465,8 +465,8 @@ func (r *routeManager) ensurePortCapture() {
 		}
 	}
 
-	dirty := r.captureDirty
-	r.captureDirty = false
+	dirty, gateDirty := r.captureDirty, r.gateDirty
+	r.captureDirty, r.gateDirty = false, false
 	present := r.ensureCaptureChain()
 	hooks := r.ensureCaptureJumps()
 	r.refreshSteerConflicts()
@@ -476,8 +476,12 @@ func (r *routeManager) ensurePortCapture() {
 		localNow = r.localNetsWanted
 	}
 	lost := present >= 0 && present < r.captureInstalled
-	outside := lost || (hooks > 0 && !dirty)
-	if hooks > 0 && !lost && !dirty {
+	settingsChanged := dirty || gateDirty
+	outside := lost || (hooks > 0 && !settingsChanged)
+	if gateDirty && !dirty && hooks > 0 {
+		log.Infof("TUN: device filter changed, updated the hooks into %s", tunCaptureChain)
+	}
+	if hooks > 0 && !lost && !settingsChanged {
 		log.Warnf("TUN: %d capture hook(s) into %s (jumps or the device gate) were removed outside b4, so traffic stopped reaching %s; put them back", hooks, tunCaptureChain, r.tunName)
 	}
 	if outside {

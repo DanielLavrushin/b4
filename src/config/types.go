@@ -416,7 +416,13 @@ type MTProtoConfig struct {
 
 	WebProxy MTProtoWebProxyConfig `json:"web_proxy"`
 
+	Bridge MTProtoBridgeConfig `json:"bridge"`
+
 	BridgeSkipNativeEdge bool `json:"-"`
+}
+
+type MTProtoBridgeConfig struct {
+	Enabled bool `json:"enabled"`
 }
 
 type MTProtoWebProxyConfig struct {

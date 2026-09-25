@@ -317,6 +317,10 @@ func (e *Engine) Recheck() {
 	e.triggerReconcile()
 }
 
+func (e *Engine) DeviceName() string {
+	return e.tunName
+}
+
 func (e *Engine) logForwardError(err error, src, dst string) {
 	n := atomic.AddUint64(&e.fwdErrCount, 1)
 	now := time.Now().Unix()

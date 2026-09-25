@@ -560,6 +560,11 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string) Manifest {
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I", Spec: dnsResponseSpec},
 		)
 
+		rules = append(rules,
+			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A",
+				Spec: []string{"-m", "mark", "--mark", telegramBridgeMarkMatch(), "-j", "RETURN"}},
+		)
+
 		dupIPv4, dupIPv6 := cfg.CollectDuplicateIPs()
 		var dupIPs []string
 		var dupSetName string

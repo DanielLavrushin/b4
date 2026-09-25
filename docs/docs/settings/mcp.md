@@ -104,7 +104,7 @@ Only `POST` is served. `GET` and `DELETE` return 405, which is normal for this t
 
 | Tool | Answers | Example prompt |
 | --- | --- | --- |
-| `b4_status` | Version, capture engine, firewall backend, how many sets exist and are enabled, uptime | "Is b4 running, and which capture engine is active?" |
+| `b4_status` | Version, capture engine, firewall backend, how many sets exist and are enabled, the state of the Telegram over WebSocket bridge, uptime | "Is b4 running, and which capture engine is active?" |
 | `b4_get_topic` | What a setting does, its unit, its real default, and what a zero or empty value means | "What does the strict switch on a set's DNS actually do?" |
 | `b4_geo_lookup` | Which geosite or geoip categories exist, what one holds, and which of them cover a domain or an address | "Which geosite category covers rutracker.org?" |
 | `b4_edit_set_targets` | Adds or removes domains, addresses, geo categories or source devices on one set | "Add rutracker.org to the video set." |
@@ -191,7 +191,7 @@ Tool output may be forwarded to a third-party model, so credentials are removed 
 With **Allow configuration changes** off, nothing the AI does can alter b4. With it on, two areas become writable:
 
 - every setting inside a strategy set: targets, fragmentation, faking, TCP and UDP, DNS, escalation and routing
-- the MTProto and SOCKS5 subsystems
+- the MTProto and SOCKS5 subsystems, the Telegram over WebSocket switch `system.mtproto.bridge.enabled` among them
 - the logging settings, so the AI can raise the log level, reproduce a problem and read the result back
 
 `b4_list_writable_paths` reports the exact paths with their types, current values and accepted values, so a model does not have to guess one.

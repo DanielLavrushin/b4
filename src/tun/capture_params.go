@@ -41,14 +41,17 @@ func captureParamsFrom(cfg *config.Config) captureParams {
 	}
 }
 
-func (p captureParams) equal(o captureParams) bool {
+func (p captureParams) sameChain(o captureParams) bool {
 	return slices.Equal(p.tcpPorts, o.tcpPorts) &&
 		slices.Equal(p.udpPorts, o.udpPorts) &&
 		p.tcpLimit == o.tcpLimit &&
 		p.udpLimit == o.udpLimit &&
 		slices.Equal(p.dupIPs, o.dupIPs) &&
-		p.replyCapture == o.replyCapture &&
-		p.devicesEnabled == o.devicesEnabled &&
+		p.replyCapture == o.replyCapture
+}
+
+func (p captureParams) sameGate(o captureParams) bool {
+	return p.devicesEnabled == o.devicesEnabled &&
 		p.whiteIsBlack == o.whiteIsBlack &&
 		slices.Equal(p.selectedMACs, o.selectedMACs)
 }
@@ -91,10 +94,13 @@ func (r *routeManager) replyPorts() []string {
 func (r *routeManager) updateCapture(p captureParams) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.captureParams().equal(p) {
+	cur := r.captureParams()
+	chain, gate := !cur.sameChain(p), !cur.sameGate(p)
+	if !chain && !gate {
 		return false
 	}
 	r.setCaptureParams(p)
-	r.captureDirty = true
+	r.captureDirty = r.captureDirty || chain
+	r.gateDirty = r.gateDirty || gate
 	return true
 }

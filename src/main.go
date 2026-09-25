@@ -178,7 +178,24 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	mtprotoBridge := mtproto.NewTransparentBridge(&cfg)
 	tproxyMgr.SetMTProtoBridge(mtprotoBridge)
+	tproxyMgr.SetTelegramBridgeHook(func(v4, v6, retried bool) {
+		if tables.SetTelegramBridgeListener(v4, v6) && retried {
+			tables.RoutingResyncLatest()
+		}
+	})
 	handler.SetMTProtoBridge(mtprotoBridge)
+	handler.SetBridgeListenerFunc(func() handler.BridgeListenerInfo {
+		st := tproxyMgr.ListenerStatus(config.TelegramBridgeSetID, tproxy.PortFor(config.TelegramBridgeMark))
+		return handler.BridgeListenerInfo{
+			Running: st.Running,
+			Port:    st.Port,
+			V4:      st.V4,
+			V6:      st.V6,
+			Active:  st.Active,
+			Error:   st.Error,
+			V6Error: st.V6Error,
+		}
+	})
 	handler.SetUpstreamHealthFunc(func() []handler.DiagUpstream {
 		health := tproxyMgr.UpstreamHealth()
 		out := make([]handler.DiagUpstream, 0, len(health))
@@ -218,7 +235,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		if c.System.Tables.SkipSetup {
 			return nil
 		}
-		if c.Queue.Mode == "tun" {
+		if tunEngineRef.Load() != nil {
 			firewallErr := tables.RefreshTUNFirewall(c)
 			tproxyMgr.SyncConfig(c)
 			tables.RoutingSyncConfig(c)
@@ -300,6 +317,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 	}
 
 	log.Infof("Loaded targets: %d domains, %d IPs across %d sets", totalDomains, totalIps, len(cfg.Sets))
+	if cfg.TelegramBridgeEnabled() {
+		mtproto.LoadLocalTelegramCIDRs(&cfg)
+	}
 	b4tun.RestoreFromState()
 	tables.RoutingClearAll()
 
@@ -313,6 +333,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	if isTUN {
 		log.Infof("Starting TUN engine (device: %s, out: %s, threads: %d)",
 			cfg.Queue.TUN.DeviceName, cfg.Queue.TUN.OutInterface, cfg.Queue.Threads)
+		tables.SetTUNDevice(cfg.Queue.TUN.Device())
 
 		if !cfg.System.Tables.SkipSetup {
 			log.Tracef("Clearing any pre-existing NFQUEUE/tables rules before TUN setup")
@@ -334,8 +355,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		tunEngine = b4tun.NewEngine(&cfg, pool)
 		if err := tunEngine.Start(); err != nil {
 			if !cfg.System.Tables.SkipSetup {
-				tables.ClearMasqueradeOnly(&cfg)
-				tables.ClearMSSClampOnly(&cfg)
+				tables.ClearTUNFirewall(&cfg)
 				tables.RevertConntrackSysctls()
 			}
 			pool.Stop()
@@ -352,6 +372,15 @@ func runB4(cmd *cobra.Command, args []string) error {
 		metrics.NFQueueStatus = "active (tun)"
 		metrics.RecordEvent("info", fmt.Sprintf("TUN engine started with %d threads", cfg.Queue.Threads))
 		tunEngineRef.Store(tunEngine)
+
+		if name := tunEngine.DeviceName(); name != cfg.Queue.TUN.Device() {
+			tables.SetTUNDevice(name)
+			if !cfg.System.Tables.SkipSetup {
+				if err := tables.ApplyMasqueradeOnly(&cfg); err != nil {
+					log.Errorf("Failed to re-apply masquerade for TUN device %s: %v", name, err)
+				}
+			}
+		}
 
 		if !cfg.System.Tables.SkipSetup {
 			tproxyMgr.SyncConfig(&cfg)
@@ -414,8 +443,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		if tunEngine != nil {
 			tunEngine.Stop()
 			if !c.System.Tables.SkipSetup {
-				tables.ClearMasqueradeOnly(c)
-				tables.ClearMSSClampOnly(c)
+				tables.ClearTUNFirewall(c)
 				tables.RevertConntrackSysctls()
 			}
 		} else if !c.System.Tables.SkipSetup {
@@ -425,6 +453,21 @@ func runB4(cmd *cobra.Command, args []string) error {
 	}()
 
 	tproxyResolver.Set(pool.GetMatcher())
+
+	cidrCtx, cidrCancel := context.WithCancel(appCtx)
+	defer cidrCancel()
+	mtproto.StartTelegramCIDRRefresh(cidrCtx, cfgPtr.Load, func() {
+		unlock := config.LockWrites()
+		defer unlock()
+		if cidrCtx.Err() != nil {
+			return
+		}
+		c := cfgPtr.Load()
+		if c.System.Tables.SkipSetup || !c.TelegramBridgeEnabled() {
+			return
+		}
+		tables.RoutingSyncConfig(c)
+	})
 
 	handler.SetRoutingSyncFunc(func(c *config.Config) {
 		tproxyResolver.Set(pool.GetMatcher())
@@ -565,6 +608,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	if tablesMonitor != nil {
 		tablesMonitor.Stop()
 	}
+	cidrCancel()
 	tproxyMgr.Stop()
 
 	// Perform graceful shutdown with timeout
@@ -674,8 +718,7 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				tables.ClearMasqueradeOnly(cfg)
-				tables.ClearMSSClampOnly(cfg)
+				tables.ClearTUNFirewall(cfg)
 				tables.RevertConntrackSysctls()
 			}()
 		}

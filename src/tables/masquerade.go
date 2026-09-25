@@ -41,17 +41,10 @@ func masqueradeSpecs(cfg *config.Config) [][]string {
 	return specs
 }
 
-func masqueradeTUNExemption(cfg *config.Config) []string {
-	if cfg.Queue.Mode != "tun" {
-		return nil
-	}
-	return []string{"-o", cfg.Queue.TUN.Device(), "-j", "RETURN"}
-}
-
 func masqueradeChainSpecs(cfg *config.Config) [][]string {
 	specs := masqueradeSpecs(cfg)
-	if exempt := masqueradeTUNExemption(cfg); exempt != nil {
-		specs = append([][]string{exempt}, specs...)
+	if dev := activeTUNDevice(); dev != "" {
+		specs = append([][]string{{"-o", dev, "-j", "RETURN"}}, specs...)
 	}
 	return specs
 }

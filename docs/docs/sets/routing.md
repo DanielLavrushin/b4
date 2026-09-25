@@ -78,7 +78,7 @@ on **Match any IP address** on the Targets, IP addresses tab.
 | --- | --- |
 | Output interface | Sends matched traffic out a network interface. Described below. |
 | Upstream SOCKS5 proxy | Hands matched traffic to a SOCKS5 proxy. See [Upstream SOCKS5 proxy](#upstream-socks5-proxy). |
-| Telegram over WebSocket (built-in) | Intercepts matched Telegram traffic and relays it over Telegram's WebSocket edge. See [Telegram over WebSocket](../telegram/websocket-bridge.md). |
+| Telegram over WebSocket (built-in) | Intercepts matched Telegram traffic and relays it over Telegram's WebSocket edge. The switch on Settings, Telegram does the same for the whole network without a set. See [Telegram over WebSocket](../telegram/websocket-bridge.md). |
 | Block | Drops or rejects matched traffic. See [Blocking](./blocking.md). |
 
 ### General diagram
@@ -375,7 +375,7 @@ On an iptables system the equivalents are `kmod-ipt-tproxy` and `kmod-ipt-socket
 The rule that keeps the router's own addresses out of the diversion uses the address-type match: `kmod-ipt-extra` with `iptables-mod-extra` on an iptables system, `kmod-nft-fib` on nftables. Where that match is rejected, the service writes an explicit list of the router's addresses instead, refreshed the next time the set is rebuilt, and the log says so.
 
 :::tip
-**Settings -> Diagnostics** reports whether TPROXY is usable and names any missing modules and the packages that provide them.
+The **System Info** button on Settings -> Core reports, under **Kernel Capabilities**, whether TPROXY is usable, and names the packages that provide what is missing.
 :::
 
 ### Settings
@@ -458,7 +458,7 @@ tproxy: set "TMDB" cannot reach its upstream 10.8.0.1:1080 (1 consecutive failur
 traffic matched by this set is not getting through: dial upstream: dial tcp 10.8.0.1:1080: i/o timeout
 ```
 
-The message repeats at most once a minute while the upstream stays down, and a matching line is logged once it answers again. The same state is carried in **Settings -> Diagnostics** under `upstreams`, so a diagnostics bundle shows whether the proxy was reachable at the time it was taken:
+The message repeats at most once a minute while the upstream stays down, and a matching line is logged once it answers again. The same state is carried under `upstreams` in the diagnostics that **Copy JSON** copies from the **System Info** dialog on Settings -> Core, so a diagnostics bundle shows whether the proxy was reachable at the time it was taken:
 
 ```json
 {

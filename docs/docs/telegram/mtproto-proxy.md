@@ -11,7 +11,7 @@ This is the only mode that works from outside the LAN, and the only one every Te
 
 ## Enabling the proxy
 
-Settings, **MTProto Proxy**. The card's fields stay hidden until its switch is on.
+Settings, Telegram, **MTProto Proxy**. The card's fields stay hidden until its switch is on.
 
 | Field | What it does |
 | --- | --- |

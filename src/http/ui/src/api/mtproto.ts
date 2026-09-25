@@ -1,4 +1,5 @@
-import { ApiError, apiDelete, apiGet, apiUpload } from "./apiClient";
+import { ApiError, apiDelete, apiGet, apiPost, apiUpload } from "./apiClient";
+import { TelegramBridgeStatus } from "@models/mtproto";
 
 export interface WebProxyPageStatus {
   success: boolean;
@@ -12,6 +13,12 @@ export interface WebProxyPageStatus {
 const webProxyPageDownloadUrl = "/api/mtproto/web-proxy/page?download=1";
 
 export const mtprotoApi = {
+  telegramBridge: (check = false) =>
+    apiGet<TelegramBridgeStatus>(
+      check ? "/api/mtproto/bridge?check=1" : "/api/mtproto/bridge",
+    ),
+  refreshTelegramBridge: () =>
+    apiPost<TelegramBridgeStatus>("/api/mtproto/bridge/refresh"),
   webProxyPage: () => apiGet<WebProxyPageStatus>("/api/mtproto/web-proxy/page"),
   uploadWebProxyPage: (file: File) => {
     const formData = new FormData();

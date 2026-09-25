@@ -27,7 +27,7 @@ Install `socat` on the VPS:
 apt install -y socat
 ```
 
-Set **DC Relay** in Settings, MTProto Proxy to the VPS address with the base port, for example `my-vps.com:7007`. The field appears when the transport mode is Direct TCP or Auto.
+Set **DC Relay** in Settings, Telegram to the VPS address with the base port, for example `my-vps.com:7007`. The field appears when the transport mode is Direct TCP or Auto.
 
 Then open the **?** button beside the field. The **DC Relay socat setup** dialog lists the data centres and a ready-to-run `socat` command for each, with **Copy all** at the bottom.
 

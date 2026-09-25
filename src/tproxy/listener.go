@@ -73,6 +73,7 @@ type Listener struct {
 	cancel context.CancelFunc
 	lnV4   net.Listener
 	lnV6   net.Listener
+	v6Err  string
 
 	udpV4       *net.UDPConn
 	udpV6       *net.UDPConn
@@ -182,6 +183,7 @@ func (l *Listener) Start(parent context.Context) error {
 
 	lnV6, err := listenTransparent(l.ctx, "tcp6", addr6, true, l.Upstream.BypassMark)
 	if err != nil {
+		l.v6Err = fmt.Sprintf("tproxy v6 listen %s: %v", addr6, err)
 		log.Tracef("tproxy: v6 listener disabled for set %q: %v", l.SetName, err)
 		return nil
 	}

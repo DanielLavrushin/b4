@@ -33,6 +33,7 @@ import {
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useAiStatus } from "@context/AiStatusProvider";
 import { useHubInvalidate } from "@hooks/useHub";
+import { useTelegramBridgeInvalidate } from "@hooks/useTelegramBridge";
 import { ApiSettings } from "./Api";
 import { DnsSettings } from "./Dns";
 import { IPHealthSettings } from "./IPHealth";
@@ -285,6 +286,7 @@ export function SettingsPage() {
 
   const { refresh: refreshAiStatus } = useAiStatus();
   const invalidateHub = useHubInvalidate();
+  const invalidateTelegramBridge = useTelegramBridgeInvalidate();
 
   const saveConfig = async () => {
     if (!config) return;
@@ -314,6 +316,7 @@ export function SettingsPage() {
         await loadConfig();
         void refreshAiStatus();
         void invalidateHub();
+        void invalidateTelegramBridge();
       }
     }
   };
@@ -563,7 +566,13 @@ export function SettingsPage() {
           <Grid container spacing={spacing.lg} alignItems="stretch">
             <Grid size={{ xs: 12 }} sx={{ display: "flex" }}>
               <Box sx={{ width: "100%" }}>
-                <MTProtoSettings config={config} onChange={handleChange} />
+                <MTProtoSettings
+                  config={config}
+                  savedBridgeEnabled={
+                    originalConfig?.system.mtproto?.bridge?.enabled ?? false
+                  }
+                  onChange={handleChange}
+                />
               </Box>
             </Grid>
           </Grid>

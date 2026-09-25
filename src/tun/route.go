@@ -85,6 +85,7 @@ type routeManager struct {
 	captureRestores    int
 	lastCaptureRestore time.Time
 	captureDirty       bool
+	gateDirty          bool
 	liveTCPPorts       atomic.Pointer[[]string]
 	capturePrio        int
 	conflicts          []steerConflict
@@ -126,7 +127,7 @@ func (r *routeManager) setupNAT() {
 	if r.srcIP != "" {
 		snat := []string{"-o", r.tunName, "-j", "SNAT", "--to-source", r.srcIP}
 		if _, err := run(append([]string{"iptables", "-t", "nat", "-C", "POSTROUTING"}, snat...)...); err != nil {
-			if _, err := run(append([]string{"iptables", "-t", "nat", "-A", "POSTROUTING"}, snat...)...); err != nil {
+			if _, err := run(append([]string{"iptables", "-t", "nat", "-I", "POSTROUTING", "1"}, snat...)...); err != nil {
 				log.Warnf("TUN: failed to add SNAT %s -> %s: %v", r.tunName, r.srcIP, err)
 			} else {
 				r.snatAdded = true
@@ -551,16 +552,71 @@ func (r *routeManager) ensureNAT() {
 	if r.srcIP != "" {
 		snat := []string{"-o", r.tunName, "-j", "SNAT", "--to-source", r.srcIP}
 		if _, err := run(append([]string{"iptables", "-t", "nat", "-C", "POSTROUTING"}, snat...)...); err != nil {
-			if _, err := run(append([]string{"iptables", "-t", "nat", "-A", "POSTROUTING"}, snat...)...); err == nil {
+			if _, err := run(append([]string{"iptables", "-t", "nat", "-I", "POSTROUTING", "1"}, snat...)...); err == nil {
 				r.snatAdded = true
 				log.Infof("TUN: reconcile restored SNAT (%s -> %s)", r.tunName, r.srcIP)
 			}
 		} else {
 			r.snatAdded = true
+			r.keepSNATAhead(snat)
 		}
 	}
 	r.ensureNotrack(&r.notrackAdded, reinjectMarkMatch())
 	r.ensureNotrack(&r.clientNotrackAdded, clientMarkMatch())
+}
+
+func (r *routeManager) keepSNATAhead(snat []string) {
+	out, err := run("iptables", "-t", "nat", "-S", "POSTROUTING")
+	if err != nil || !snatShadowed(out, r.tunName) {
+		return
+	}
+	if _, err := run(append([]string{"iptables", "-t", "nat", "-D", "POSTROUTING"}, snat...)...); err != nil {
+		return
+	}
+	if _, err := run(append([]string{"iptables", "-t", "nat", "-I", "POSTROUTING", "1"}, snat...)...); err != nil {
+		log.Warnf("TUN: failed to move the SNAT for %s to the top of POSTROUTING: %v", r.tunName, err)
+		return
+	}
+	log.Infof("TUN: moved the SNAT for %s above a masquerade rule that would have rewritten captured packets to the %s address", r.tunName, r.tunName)
+}
+
+func snatShadowed(dump, tunName string) bool {
+	own := "-o " + tunName + " -j SNAT"
+	for _, line := range strings.Split(dump, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "-A POSTROUTING ") {
+			continue
+		}
+		if strings.Contains(line, own) {
+			return false
+		}
+		if !strings.Contains(line, "-j MASQUERADE") && !strings.Contains(line, "-j SNAT") {
+			continue
+		}
+		if outInterfaceCovers(line, tunName) {
+			return true
+		}
+	}
+	return false
+}
+
+func outInterfaceCovers(rule, tunName string) bool {
+	fields := strings.Fields(rule)
+	for i := 0; i+1 < len(fields); i++ {
+		if fields[i] != "-o" {
+			continue
+		}
+		out := fields[i+1]
+		matches := out == tunName
+		if strings.HasSuffix(out, "+") {
+			matches = strings.HasPrefix(tunName, strings.TrimSuffix(out, "+"))
+		}
+		if i > 0 && fields[i-1] == "!" {
+			return !matches
+		}
+		return matches
+	}
+	return true
 }
 
 func (r *routeManager) ensureNotrack(added *bool, markStr string) {

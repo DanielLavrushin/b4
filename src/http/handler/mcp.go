@@ -317,18 +317,49 @@ func (api *API) newMCPServer(caps mcpCapabilities) *mcp.Server {
 type mcpEmpty struct{}
 
 type mcpStatusOut struct {
-	Version         string `json:"version"`
-	Engine          string `json:"engine"`
-	FirewallBackend string `json:"firewall_backend"`
-	SetsTotal       int    `json:"sets_total"`
-	SetsEnabled     int    `json:"sets_enabled"`
-	Socks5Enabled   bool   `json:"socks5_enabled"`
-	MTProtoOn       bool   `json:"mtproto_enabled"`
-	Uptime          string `json:"uptime"`
-	ConnectionsSeen int64  `json:"connections_seen"`
-	CanChangeConfig bool   `json:"you_can_change_settings"`
-	CanProbe        bool   `json:"you_can_test_and_discover"`
+	Version         string               `json:"version"`
+	Engine          string               `json:"engine"`
+	FirewallBackend string               `json:"firewall_backend"`
+	SetsTotal       int                  `json:"sets_total"`
+	SetsEnabled     int                  `json:"sets_enabled"`
+	Socks5Enabled   bool                 `json:"socks5_enabled"`
+	MTProtoOn       bool                 `json:"mtproto_enabled"`
+	TelegramBridge  mcpTelegramBridgeOut `json:"telegram_bridge"`
+	Uptime          string               `json:"uptime"`
+	ConnectionsSeen int64                `json:"connections_seen"`
+	CanChangeConfig bool                 `json:"you_can_change_settings"`
+	CanProbe        bool                 `json:"you_can_test_and_discover"`
+	Note            string               `json:"note"`
+}
+
+type mcpTelegramBridgeOut struct {
+	Enabled         bool   `json:"enabled"`
+	Working         bool   `json:"working"`
+	AddressRanges   int    `json:"address_ranges"`
+	AddressSource   string `json:"address_source"`
+	ListenerPort    int    `json:"listener_port"`
+	ListenerError   string `json:"listener_error,omitempty"`
+	RuleInstalled   bool   `json:"rule_installed"`
+	SessionsRelayed uint64 `json:"sessions_relayed"`
+	SetsInBridge    int    `json:"sets_in_bridge_routing_mode"`
 	Note            string `json:"note"`
+}
+
+func mcpTelegramBridge(cfg *config.Config) mcpTelegramBridgeOut {
+	st := buildTelegramBridgeStatus(cfg, false, false)
+	out := mcpTelegramBridgeOut{
+		Enabled:         st.Enabled,
+		Working:         st.Enabled && st.RuleInstalled && st.Listener.Running,
+		AddressRanges:   st.Addresses.Total,
+		AddressSource:   st.Addresses.Source,
+		ListenerPort:    st.Listener.Port,
+		ListenerError:   st.Listener.Error,
+		RuleInstalled:   st.RuleInstalled,
+		SessionsRelayed: st.Stats.Relayed,
+		SetsInBridge:    len(st.LegacySets),
+		Note:            "The Telegram WebSocket bridge diverts Telegram TCP from every device behind b4 and from the router itself into the bridge, without a set. It is switched by system.mtproto.bridge.enabled.",
+	}
+	return out
 }
 
 type mcpConfigIn struct {
@@ -477,6 +508,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 			SetsTotal:       len(cfg.Sets),
 			Socks5Enabled:   cfg.System.Socks5.Enabled,
 			MTProtoOn:       cfg.System.MTProto.Enabled,
+			TelegramBridge:  mcpTelegramBridge(cfg),
 			Uptime:          snap.Uptime,
 			ConnectionsSeen: int64(snap.TotalConnections),
 		}

@@ -612,6 +612,7 @@ func TestMCPListWritablePaths(t *testing.T) {
 	for _, want := range []string{
 		"sets[].enabled", "sets[].tcp.seg2delay", "sets[].targets.domain_only",
 		"sets[].fragmentation.strategy", "system.mtproto.port", "system.socks5.udp_timeout",
+		"system.mtproto.bridge.enabled",
 	} {
 		if _, ok := byPath[want]; !ok {
 			t.Errorf("%q should be listed as writable", want)

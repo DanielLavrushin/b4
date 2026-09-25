@@ -74,6 +74,7 @@ Special cases are marked with labels: next to the domain in **Aggregated** mode,
 | `block` | The packet was blocked by a [blocking set](./sets/blocking) |
 | `proxy` | The connection came through b4's SOCKS5 proxy |
 | Telegram icon | A connection of b4's MTProto proxy, with the secret's name |
+| Telegram icon with **Telegram bridge** | A connection relayed by the [Telegram over WebSocket](./telegram/websocket-bridge.md) bridge |
 | `doh`, `forward`, `pin`, `sinkhole` and others | The decision about a DNS query, see [DNS](./dns#reading-the-result) |
 
 :::info TLS version

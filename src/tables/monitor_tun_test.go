@@ -261,19 +261,20 @@ func TestMonitorStopTwiceDoesNotPanic(t *testing.T) {
 	m.Stop()
 }
 
-func TestMasqueradeChainExemptsTheTUNDeviceOnlyInTUNMode(t *testing.T) {
+func TestMasqueradeChainExemptsTheRunningTUNDevice(t *testing.T) {
+	t.Cleanup(func() { tunDevice.Store(nil) })
 	cfg := newTUNTestConfig()
-	cfg.Queue.TUN.DeviceName = "tun9"
-	specs := masqueradeChainSpecs(cfg)
-	if len(specs) < 2 || strings.Join(specs[0], " ") != "-o tun9 -j RETURN" {
-		t.Fatalf("TUN mode: the device exemption must come first, got %v", specs)
-	}
 
-	cfg.Queue.Mode = "nfqueue"
 	for _, spec := range masqueradeChainSpecs(cfg) {
 		if strings.Contains(strings.Join(spec, " "), "RETURN") {
-			t.Fatalf("NFQUEUE mode got a TUN exemption: %v", spec)
+			t.Fatalf("no TUN device is running, yet the chain got an exemption: %v", spec)
 		}
+	}
+
+	SetTUNDevice("tun9")
+	specs := masqueradeChainSpecs(cfg)
+	if len(specs) < 2 || strings.Join(specs[0], " ") != "-o tun9 -j RETURN" {
+		t.Fatalf("the running device exemption must come first, got %v", specs)
 	}
 }
 
@@ -310,5 +311,146 @@ func TestRefreshTUNFirewallAppliesOnlyWhatChanged(t *testing.T) {
 	}
 	if fw.called("TCPMSS") {
 		t.Fatalf("an unchanged MSS clamp was rebuilt: %v", fw.calls)
+	}
+}
+
+func TestRefreshTUNFirewallKeepsTheOldMasqueradeTrackedWhenANewOneFails(t *testing.T) {
+	old := newTUNTestConfig()
+	old.System.Tables.Masquerade.Enabled = true
+	fw := stubTUNFirewall(t, map[string]string{"-t nat -S B4_MASQ": "-N B4_MASQ\n"})
+	t.Cleanup(func() {
+		masqLast.Store(nil)
+		mssLast.Store(nil)
+	})
+	masqApplied.Store(old)
+	masqLast.Store(old)
+	mssLast.Store(old)
+	fw.fail = func(line string) bool { return strings.Contains(line, "-A B4_MASQ") }
+
+	next := newTUNTestConfig()
+	next.System.Tables.Masquerade.Enabled = true
+	next.System.Tables.Masquerade.Interfaces = []string{"ppp0"}
+	if err := RefreshTUNFirewall(next); err == nil {
+		t.Fatalf("a failed masquerade apply returned no error")
+	}
+	if fw.called("-t nat -X B4_MASQ") {
+		t.Fatalf("the working masquerade was torn down before the new one applied: %v", fw.calls)
+	}
+	if masqApplied.Load() != old {
+		t.Fatalf("the monitor no longer tracks the masquerade that was working, so it cannot put it back")
+	}
+	if masqLast.Load() != nil {
+		t.Fatalf("a failed apply was recorded as the last good masquerade, so a revert would do nothing")
+	}
+
+	fw.fail = nil
+	fw.calls = nil
+	if err := RefreshTUNFirewall(old); err != nil {
+		t.Fatalf("revert: %v", err)
+	}
+	if !fw.called("-t nat -A B4_MASQ -j MASQUERADE") {
+		t.Fatalf("reverting after a failed apply did not put masquerade back: %v", fw.calls)
+	}
+}
+
+func TestRefreshTUNFirewallKeepsThePreviousMSSClampWhenTheNewOneFails(t *testing.T) {
+	prev := newTUNTestConfig()
+	prev.Queue.MSSClamp.Enabled = true
+	prev.Queue.MSSClamp.Size = 1360
+	fw := stubTUNFirewall(t, map[string]string{
+		"-t mangle -S OUTPUT": b4Clamp,
+	})
+	t.Cleanup(func() {
+		masqLast.Store(nil)
+		mssLast.Store(nil)
+	})
+	mssApplied.Store(prev)
+	mssAppliedRules.Store(1)
+	mssLast.Store(prev)
+	masqLast.Store(prev)
+	fw.fail = func(line string) bool { return strings.Contains(line, "--set-mss 1300") }
+
+	next := newTUNTestConfig()
+	next.Queue.MSSClamp.Enabled = true
+	next.Queue.MSSClamp.Size = 1300
+	if err := RefreshTUNFirewall(next); err == nil {
+		t.Fatalf("a failed MSS apply returned no error")
+	}
+	if !fw.called("-t mangle -I OUTPUT -p tcp --dport 443 --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1360") {
+		t.Fatalf("the previous MSS clamp was not put back after the new one failed: %v", fw.calls)
+	}
+	if mssLast.Load() != nil {
+		t.Fatalf("the next save would not retry the MSS settings that failed")
+	}
+}
+
+func TestNftTableHoldsOnlyEmptyBaseChains(t *testing.T) {
+	empty := `table inet b4_mangle {
+	chain prerouting {
+		type filter hook prerouting priority -150; policy accept;
+	}
+	chain forward {
+		type filter hook forward priority -150; policy accept;
+	}
+}`
+	if !nftTableHoldsOnlyEmptyBaseChains(empty) {
+		t.Fatalf("a table of empty base chains was kept")
+	}
+	withDiscovery := strings.Replace(empty, "\t}\n}", "\t}\n\tchain b4_discovery {\n\t}\n}", 1)
+	if nftTableHoldsOnlyEmptyBaseChains(withDiscovery) {
+		t.Fatalf("a table that still holds Discovery's chain would be deleted")
+	}
+	withRule := strings.Replace(empty, "policy accept;\n\t}", "policy accept;\n\t\tjump b4_discovery\n\t}", 1)
+	if nftTableHoldsOnlyEmptyBaseChains(withRule) {
+		t.Fatalf("a table with a rule in a base chain would be deleted")
+	}
+}
+
+func TestClearTUNFirewallStopsLaterRefreshes(t *testing.T) {
+	cfg := newTUNTestConfig()
+	cfg.System.Tables.Masquerade.Enabled = true
+	fw := stubTUNFirewall(t, nil)
+	t.Cleanup(func() {
+		tunFirewallClosed.Store(false)
+		masqLast.Store(nil)
+		mssLast.Store(nil)
+	})
+
+	ClearTUNFirewall(newTUNTestConfig())
+	fw.calls = nil
+	if err := RefreshTUNFirewall(cfg); err != nil {
+		t.Fatalf("refresh after close: %v", err)
+	}
+	if err := restoreTUNRules(backendIPTables, tunRuleParts{masq: true, mss: true}); err != nil {
+		t.Fatalf("restore after close: %v", err)
+	}
+	if len(fw.calls) != 0 {
+		t.Fatalf("a save or restore after shutdown touched the firewall: %v", fw.calls)
+	}
+}
+
+func TestNftMSSParsingFindsOnlyTheClampRulesAndSets(t *testing.T) {
+	chain := `table inet b4_mangle {
+	chain output { # handle 2
+		type filter hook output priority -150; policy accept;
+		meta mark 0x8002 accept # handle 11
+		jump b4_discovery # handle 12
+		tcp dport 443 tcp flags syn / syn,rst tcp option maxseg size set 1360 # handle 13
+	}
+}`
+	if got := nftMSSRuleHandles(chain); len(got) != 1 || got[0] != "13" {
+		t.Fatalf("nftMSSRuleHandles = %v, want [13]", got)
+	}
+	table := `table inet b4_mangle {
+	set b4_mss_0_v4 {
+		type ipv4_addr
+		flags interval
+	}
+	set b4_other {
+		type ipv4_addr
+	}
+}`
+	if got := nftMSSSetNames(table); len(got) != 1 || got[0] != "b4_mss_0_v4" {
+		t.Fatalf("nftMSSSetNames = %v, want [b4_mss_0_v4]", got)
 	}
 }
