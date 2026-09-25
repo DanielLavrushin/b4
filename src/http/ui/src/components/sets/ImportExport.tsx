@@ -173,13 +173,14 @@ function importedDiscovery(
   value: unknown,
   current: B4SetConfig["discovery"],
 ): B4SetConfig["discovery"] {
-  const raw =
+  const imported =
     isPlainObject(value) && Array.isArray(value.urls)
-      ? value.urls.filter((u): u is string => typeof u === "string")
-      : [];
-  const urls = sanitizeProbeUrls(raw);
+      ? sanitizeProbeUrls(
+          value.urls.filter((u): u is string => typeof u === "string"),
+        )
+      : null;
   const discovery: NonNullable<B4SetConfig["discovery"]> = {
-    urls: urls.length > 0 ? urls : [...(current?.urls ?? [])],
+    urls: imported ?? [...(current?.urls ?? [])],
   };
   if (current?.watchdog) discovery.watchdog = true;
   return discovery;
