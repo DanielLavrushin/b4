@@ -329,6 +329,11 @@ func (n *NFTablesManager) apply() error {
 		return err
 	}
 
+	noDPI := fmt.Sprintf("0x%x", config.SelfDialNoDPIBit)
+	if err := n.addRule(nftChainName, "meta", "mark", "&", noDPI, "==", noDPI, "return"); err != nil {
+		return err
+	}
+
 	if cfg.Queue.Mark != 0 {
 		if err := n.addRule("prerouting", "ct", "mark", "&", markAccept, "==", markAccept, "return"); err != nil {
 			log.Warnf("nftables: connmark reply-side bypass unavailable: %v", err)

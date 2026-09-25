@@ -166,3 +166,34 @@ func TestRefreshReloadsLocalSourcesOnlyWhenTheyChanged(t *testing.T) {
 		t.Error("a new GeoIP path must re-read the local sources")
 	}
 }
+
+func TestRelayRoutesSkipDPISetsAndTelegramRoutesDoNot(t *testing.T) {
+	base := uint(config.SelfDialMark)
+	relay := uint(config.SelfDialRelayMark)
+	cases := []struct {
+		name string
+		plan transportPlan
+		want uint
+	}{
+		{"cloudflare proxied domain", transportPlan{kind: transportWS, cfBase: "example.co.uk"}, relay},
+		{"custom websocket domain", transportPlan{kind: transportWS, cfBase: "relay.example.com"}, relay},
+		{"worker", transportPlan{kind: transportWS, isWorker: true}, relay},
+		{"telegram websocket edge", transportPlan{kind: transportWS, native: true}, base},
+		{"fronted telegram edge", transportPlan{kind: transportWS, native: true, frontSNI: "sprinthost.ru"}, base},
+		{"direct tcp to a data centre", transportPlan{kind: transportTCP, addr: "149.154.167.51:443"}, base},
+	}
+	for _, c := range cases {
+		if got := planDialMark(c.plan, base); got != c.want {
+			t.Errorf("%s: mark 0x%x, want 0x%x", c.name, got, c.want)
+		}
+	}
+	if got := planDialMark(transportPlan{isWorker: true}, 0); got != 0 {
+		t.Errorf("a test build without SO_MARK must stay unmarked, got 0x%x", got)
+	}
+	if config.SelfDialRelayMark&config.SelfDialMark == 0 {
+		t.Error("the relay mark must keep the self-dial bit so the routing chains still let it pass")
+	}
+	if config.SelfDialNoDPIBit&(config.PerSetRouteMarkBits|0x8000|0x10000|config.SelfDialMark) != 0 {
+		t.Error("the no-DPI bit overlaps a mark bit already in use")
+	}
+}

@@ -563,6 +563,8 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string) Manifest {
 		rules = append(rules,
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A",
 				Spec: []string{"-m", "mark", "--mark", telegramBridgeMarkMatch(), "-j", "RETURN"}},
+			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A",
+				Spec: []string{"-m", "mark", "--mark", selfDialNoDPIMarkMatch(), "-j", "RETURN"}},
 		)
 
 		dupIPv4, dupIPv6 := cfg.CollectDuplicateIPs()

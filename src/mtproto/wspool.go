@@ -869,7 +869,7 @@ func (p *wsPool) dialOnce(dc int, pl transportPlan, timeout time.Duration) (*wsP
 	if host == "" {
 		host = pl.sni
 	}
-	conn, err := dialWSAs(host, pl.tlsName(), pl.sni, pl.wsPath, timeout, p.mark)
+	conn, err := dialWSAs(host, pl.tlsName(), pl.sni, pl.wsPath, timeout, planDialMark(pl, p.mark))
 	if err != nil {
 		return nil, err
 	}

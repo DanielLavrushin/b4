@@ -151,3 +151,7 @@ func telegramBridgeMarkMatch() string {
 func routeProxySourceScoped(cfg *config.Config, set *config.SetConfig) bool {
 	return routeSetIsSourceScoped(set) || routeSetDeviceGate(cfg, set).isWhitelist()
 }
+
+func selfDialNoDPIMarkMatch() string {
+	return fmt.Sprintf("0x%x/0x%x", config.SelfDialNoDPIBit, config.SelfDialNoDPIBit)
+}

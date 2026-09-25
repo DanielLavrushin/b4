@@ -71,7 +71,7 @@ func (w *Worker) handlePacket(q *nfqueue.Nfqueue, a nfqueue.Attribute, mark uint
 		return vc.accept()
 	}
 
-	if a.Mark != nil && config.IsTelegramBridgeMark(*a.Mark) {
+	if a.Mark != nil && (config.IsTelegramBridgeMark(*a.Mark) || *a.Mark&config.SelfDialNoDPIBit != 0) {
 		return vc.accept()
 	}
 

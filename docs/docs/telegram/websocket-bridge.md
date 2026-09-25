@@ -93,9 +93,17 @@ A block set that is not limited to source interfaces or an included source-devic
 
 Connections from devices and from the router itself are handed to the bridge untouched by b4's packet processing, so no faking, fragmentation or desync is applied to them. The bridge ends the client's TCP connection at its listener and opens connections of its own.
 
-Those outgoing connections, to Telegram's WebSocket edge, to the Cloudflare routes or directly to a data centre, pass through b4's normal packet processing. An ordinary set whose targets match them applies its DPI settings to them. The switch is not a set, so it does not take these connections out of processing.
+The bridge's outgoing connections are treated by route, and the MTProto proxy server's upstream connections the same way:
 
-A set in the per-set **Telegram over WebSocket** routing mode behaves differently. When it is not limited by an included source-device list, it matches the bridge's own connections to addresses in its targets, which are Telegram's WebSocket edge and direct data-centre connections, and leaves them unmodified. Connections to the Cloudflare routes still go through the other sets. The set's own TCP DPI settings never apply to Telegram TCP.
+| Route | Packet processing |
+| --- | --- |
+| Telegram's WebSocket edge, with or without a fronting name | Passes through; an ordinary set whose targets match applies its DPI settings |
+| Direct TCP to a data centre | Passes through; an ordinary set whose targets match applies its DPI settings |
+| Cloudflare-proxied domains, a Cloudflare Worker, a custom WebSocket domain | Left out; no set applies faking, fragmentation or desync to them |
+
+The Cloudflare routes are relays that reach Telegram without touching its addresses, and a set that covers Cloudflare for other sites, such as one with the `cloudflare` GeoIP or GeoSite category, would otherwise apply its strategy to them as well. On a network where that strategy breaks connections to Cloudflare, every one of these routes would then fail at once.
+
+A set in the per-set **Telegram over WebSocket** routing mode behaves differently. When it is not limited by an included source-device list, it matches the bridge's own connections to addresses in its targets, which are Telegram's WebSocket edge and direct data-centre connections, and leaves them unmodified. The set's own TCP DPI settings never apply to Telegram TCP.
 
 ## What the bridge uses upstream
 
