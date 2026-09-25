@@ -108,8 +108,10 @@ func pickName(in targetInputs) (string, string) {
 	if in.learned != "" {
 		return in.learned, "learned"
 	}
-	if len(in.names.Local) > 0 {
-		return in.names.Local[0], "dns"
+	for _, name := range in.names.Local {
+		if in.inSet != nil && in.inSet(name) {
+			return name, "dns"
+		}
 	}
 	return "", ""
 }

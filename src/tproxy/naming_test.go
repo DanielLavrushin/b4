@@ -176,10 +176,15 @@ func TestChooseTarget(t *testing.T) {
 			wantSource: "learned",
 		},
 		{
-			name:       "b4's own resolution names a server-first connection",
-			in:         targetInputs{names: dns.NameMatches{Local: []string{"mail.example.com"}}},
+			name:       "b4's own resolution for this set names a server-first connection",
+			in:         targetInputs{names: dns.NameMatches{Local: []string{"cdn.other-set.com", "mail.example.com"}}, inSet: inSet("mail.example.com")},
 			wantHost:   "mail.example.com",
 			wantSource: "dns",
+		},
+		{
+			name:     "b4's own resolution for another set is not sent",
+			in:       targetInputs{names: dns.NameMatches{Local: []string{"cdn.other-set.com"}}, inSet: inSet("mail.example.com")},
+			wantHost: "",
 		},
 		{
 			name:     "a pinned name keeps the address",
