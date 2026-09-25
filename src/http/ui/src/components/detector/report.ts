@@ -1,8 +1,18 @@
-import type { DetectorSuite } from "@models/detector";
+import type { DetectorSuite, DNSProvider } from "@models/detector";
 import type { TFunction } from "i18next";
+import { honestyGroups } from "./DnsTable";
 
 const line = (parts: (string | undefined | null | false)[]) =>
   parts.filter(Boolean).join(" ");
+
+const named = (names?: string[]) => (names?.length ? ` (${names.join(", ")})` : "");
+
+function honestyCell(p: DNSProvider): string {
+  const groups = honestyGroups(p);
+  if (groups.length === 0) return "-";
+  if (groups.length === 1) return groups[0].honesty;
+  return groups.map((g) => `${g.honesty} (${g.transports.join("/")})`).join(", ");
+}
 
 export function buildReport(suite: DetectorSuite, t: TFunction): string {
   const out: string[] = [];
@@ -31,8 +41,9 @@ export function buildReport(suite: DetectorSuite, t: TFunction): string {
 
   if (suite.sites) {
     out.push(
-      `## Sites: ${v.blocked_by_isp} blocked by ISP, ${v.fixed_by_b4} fixed by b4, ${v.still_blocked} still blocked, ${v.gateway ? `${v.gateway} answered by the gateway, ` : ""}${v.not_blocked} not blocked`,
+      `## Sites: ${v.blocked_by_isp} blocked by ISP, ${v.fixed_by_b4} fixed by b4, ${v.still_blocked} still blocked, ${v.gateway ? `${v.gateway} answered by the gateway, ` : ""}${v.dns_fail ? `${v.dns_fail} without an address from the resolver, ` : ""}${v.not_blocked} not blocked`,
     );
+    if (suite.sites.resolvers?.length) out.push(`resolver: ${suite.sites.resolvers.join(", ")}`);
     out.push("");
     out.push("| Site | Direct | Through b4 | Outcome | Detail |");
     out.push("|---|---|---|---|---|");
@@ -40,6 +51,7 @@ export function buildReport(suite: DetectorSuite, t: TFunction): string {
       const d = s.direct;
       const b = s.through_b4;
       const detail = [
+        s.dns_error && d?.status !== "DNS_FAIL" && `resolver gave no address (${s.dns_error})`,
         d?.detail,
         d?.tls12 && `TLS1.2 ${d.tls12}`,
         d?.http && d.http !== "OK" && `HTTP ${d.http}`,
@@ -62,7 +74,7 @@ export function buildReport(suite: DetectorSuite, t: TFunction): string {
   if (suite.dns) {
     const d = suite.dns;
     out.push(
-      `## DNS: UDP ${d.udp_ok}/${d.udp_total}, DoH ${d.doh_ok}/${d.doh_total}, DoT ${d.dot_ok}/${d.dot_total}, hijacked ${d.hijacked}${d.hijacked_by ? ` (${d.hijacked_by})` : ""}, substituting ${d.substituting}`,
+      `## DNS: UDP ${d.udp_ok}/${d.udp_total}, DoH ${d.doh_ok}/${d.doh_total}, DoT ${d.dot_ok}/${d.dot_total}, hijacked ${d.hijacked}${d.hijacked_by ? ` (${d.hijacked_by})` : ""}, providers substituting ${d.substituting}${named(d.substituting_by)}, providers not answering ${d.no_answer ?? 0}${named(d.no_answer_by)}`,
     );
     out.push("");
     out.push("| Provider | UDP | DoH | DoT | Honest | Port 53 answered by |");
@@ -70,7 +82,7 @@ export function buildReport(suite: DetectorSuite, t: TFunction): string {
     const cell = (p?: { status: string; latency_ms?: number }) =>
       !p ? "-" : p.status === "ok" ? `${p.latency_ms ?? 0} ms` : p.status;
     for (const p of d.providers ?? []) {
-      const h = p.udp?.honesty ?? p.doh?.honesty ?? p.dot?.honesty ?? "-";
+      const h = honestyCell(p);
       const by = p.udp?.answered_by
         ? line([
             p.udp.answered_by,

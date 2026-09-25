@@ -22,10 +22,12 @@ export function historySummary(e: DetectorSuite, t: (k: string, o?: Record<strin
       if (v.still_blocked > 0) parts.push(t("detector.history.still", { count: v.still_blocked }));
     }
     if ((v.gateway ?? 0) > 0) parts.push(t("detector.history.gateway", { count: v.gateway }));
+    if ((v.dns_fail ?? 0) > 0) parts.push(t("detector.history.dnsFail", { count: v.dns_fail }));
   }
   if (e.dns) {
     if (v.dns_hijacked) parts.push(t("detector.history.dnsHijacked"));
     else if (v.dns_substituted) parts.push(t("detector.history.dnsSubstituted"));
+    else if (v.dns_no_answer) parts.push(t("detector.history.dnsNoAnswer"));
     else if (e.dns.udp_ok > 0) parts.push(t("detector.history.dnsHonest"));
   }
   if (e.hosting) {

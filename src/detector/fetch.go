@@ -24,6 +24,11 @@ const (
 	fetchUserAgent      = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
 )
 
+var (
+	fetchAddress = (*Suite).fetchSite
+	probeHTTP    = (*Suite).probePlainHTTP
+)
+
 func (s *Suite) fetchSite(ctx context.Context, domain, rawURL, ip string, mark uint, maxTLS uint16) Fetch {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Host == "" {

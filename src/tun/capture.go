@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
@@ -128,12 +129,15 @@ func (r *routeManager) deviceFilterActive() bool {
 	return r.devicesEnabled && len(r.selectedMACs) > 0
 }
 
-func (r *routeManager) ensureJump(base string, spec ...string) {
-	if _, err := run(append([]string{"iptables", "-t", "mangle", "-C", base}, spec...)...); err != nil {
-		if _, err := run(append([]string{"iptables", "-t", "mangle", "-I", base}, spec...)...); err != nil {
-			log.Warnf("TUN: failed to add capture jump from %s: %v", base, err)
-		}
+func (r *routeManager) ensureJump(base string, spec ...string) bool {
+	if _, err := run(append([]string{"iptables", "-t", "mangle", "-C", base}, spec...)...); err == nil {
+		return false
 	}
+	if _, err := run(append([]string{"iptables", "-t", "mangle", "-I", base}, spec...)...); err != nil {
+		log.Warnf("TUN: failed to add capture jump from %s: %v", base, err)
+		return false
+	}
+	return true
 }
 
 func (r *routeManager) removeJump(base string, spec ...string) {
@@ -144,29 +148,41 @@ func (r *routeManager) removeJump(base string, spec ...string) {
 	}
 }
 
-func (r *routeManager) ensureCaptureJumps() {
-	r.ensureJump("OUTPUT", "-j", tunCaptureChain)
+func (r *routeManager) ensureCaptureJumps() int {
+	restored := 0
+	if r.ensureJump("OUTPUT", "-j", tunCaptureChain) {
+		restored++
+	}
 
 	if r.deviceFilterActive() {
-		r.ensureGateChain()
-		r.ensureJump("PREROUTING", "-j", tunGateChain)
+		if r.ensureGateChain() {
+			restored++
+		}
+		if r.ensureJump("PREROUTING", "-j", tunGateChain) {
+			restored++
+		}
 		r.removeJump("PREROUTING", "-j", tunCaptureChain)
 	} else {
-		r.ensureJump("PREROUTING", "-j", tunCaptureChain)
+		if r.ensureJump("PREROUTING", "-j", tunCaptureChain) {
+			restored++
+		}
 		r.removeJump("PREROUTING", "-j", tunGateChain)
 	}
+	return restored
 }
 
-func (r *routeManager) ensureGateChain() {
+func (r *routeManager) ensureGateChain() bool {
 	out, err := run("iptables", "-t", "mangle", "-S", tunGateChain)
 	if err != nil {
 		run("iptables", "-t", "mangle", "-N", tunGateChain)
 		r.rebuildGateChain()
-		return
+		return true
 	}
 	if !equalStringSet(gateRulesFromDump(out), r.desiredGateRules()) {
 		r.rebuildGateChain()
+		return true
 	}
+	return false
 }
 
 func gateRulesFromDump(out string) []string {
@@ -450,15 +466,23 @@ func (r *routeManager) ensurePortCapture() {
 	}
 
 	present := r.ensureCaptureChain()
-	r.ensureCaptureJumps()
+	hooks := r.ensureCaptureJumps()
 	r.refreshSteerConflicts()
 	desired := r.desiredCaptureExclusions()
 	localNow, localOK := r.desiredLocalNets()
 	if !localOK {
 		localNow = r.localNetsWanted
 	}
+	lost := present >= 0 && present < r.captureInstalled
+	if hooks > 0 && !lost {
+		log.Warnf("TUN: %d capture hook(s) into %s (jumps or the device gate) were removed outside b4, so traffic stopped reaching %s; put them back", hooks, tunCaptureChain, r.tunName)
+	}
+	if hooks > 0 || lost {
+		r.captureRestores++
+		r.lastCaptureRestore = time.Now()
+	}
 	switch {
-	case present >= 0 && present < r.captureInstalled:
+	case lost:
 		log.Warnf("TUN: capture chain %s lost %d of %d rules (removed outside b4), so traffic stopped reaching %s; rebuilding it", tunCaptureChain, r.captureInstalled-present, r.captureInstalled, r.tunName)
 		r.rebuildCaptureChain()
 	case !equalStringSet(desired, r.captureExcl):

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
@@ -81,6 +82,8 @@ type routeManager struct {
 	captureInstalled   int
 	captureMissing     int
 	captureRetries     int
+	captureRestores    int
+	lastCaptureRestore time.Time
 	capturePrio        int
 	conflicts          []steerConflict
 	captureExcl        []string

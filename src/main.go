@@ -97,6 +97,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	}
 
 	var tablesMonitorRef atomic.Pointer[tables.Monitor]
+	var tunEngineRef atomic.Pointer[b4tun.Engine]
 	recheckSig := make(chan os.Signal, 1)
 	signal.Notify(recheckSig, syscall.SIGUSR1)
 	defer func() {
@@ -106,12 +107,18 @@ func runB4(cmd *cobra.Command, args []string) error {
 	go func() {
 		for range recheckSig {
 			mon := tablesMonitorRef.Load()
-			if mon == nil {
+			tunEng := tunEngineRef.Load()
+			if mon == nil && tunEng == nil {
 				log.Infof("Received SIGUSR1, but the tables monitor is not running, so there are no firewall rules to re-check")
 				continue
 			}
 			log.Infof("Received SIGUSR1, re-checking firewall rules")
-			mon.Kick()
+			if tunEng != nil {
+				tunEng.Recheck()
+			}
+			if mon != nil {
+				mon.Kick()
+			}
 		}
 	}()
 
@@ -343,6 +350,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		}
 		metrics.NFQueueStatus = "active (tun)"
 		metrics.RecordEvent("info", fmt.Sprintf("TUN engine started with %d threads", cfg.Queue.Threads))
+		tunEngineRef.Store(tunEngine)
 
 		if !cfg.System.Tables.SkipSetup {
 			tproxyMgr.SyncConfig(&cfg)
@@ -385,19 +393,21 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 		metrics.RecordEvent("info", fmt.Sprintf("NFQueue started with %d threads", cfg.Queue.Threads))
 		metrics.NFQueueStatus = "active"
+	}
 
-		// Start tables monitor to handle rule restoration if system wipes them
-		if !cfg.System.Tables.SkipSetup && cfg.System.Tables.MonitorInterval > 0 {
-			tablesMonitor = tables.NewMonitor(&cfgPtr)
-			tablesMonitor.Start()
-			tablesMonitorRef.Store(tablesMonitor)
-		}
+	if !cfg.System.Tables.SkipSetup && (isTUN || cfg.System.Tables.MonitorInterval > 0) {
+		tablesMonitor = tables.NewMonitor(&cfgPtr)
+		tablesMonitor.Start()
+		tablesMonitorRef.Store(tablesMonitor)
 	}
 
 	shutdownHandled := false
 	defer func() {
 		if shutdownHandled {
 			return
+		}
+		if tablesMonitor != nil {
+			tablesMonitor.Stop()
 		}
 		c := cfgPtr.Load()
 		if tunEngine != nil {

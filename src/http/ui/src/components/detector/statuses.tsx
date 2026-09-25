@@ -31,7 +31,7 @@ export function fetchStatusColor(status?: FetchStatus): BadgeColor {
   if (!status) return "default";
   if (status === "OK") return "success";
   if (status === "CHECKING") return "info";
-  if (status === "SERVER_ERROR" || status === "MTLS") return "warning";
+  if (status === "SERVER_ERROR" || status === "MTLS" || status === "DNS_FAIL") return "warning";
   if (BLOCKED_STATUSES.includes(status)) return "error";
   return "default";
 }
@@ -48,6 +48,7 @@ export function outcomeColor(outcome: SiteOutcome): BadgeColor {
     case "broken_by_b4":
       return "error";
     case "server":
+    case "dns":
       return "warning";
     case "pending":
       return "info";
@@ -78,6 +79,7 @@ export function honestyColor(h?: DNSHonesty): BadgeColor {
       return "success";
     case "substituted":
       return "error";
+    case "no_answer":
     case "filtered":
     case "differs":
       return "warning";

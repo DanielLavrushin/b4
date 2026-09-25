@@ -80,6 +80,9 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
     });
   };
 
+  const formatRestoreTime = (iso?: string) =>
+    iso ? new Date(iso).toLocaleString(i18n.language) : "";
+
   const boolChip = (ok: boolean, yesLabel: string, noLabel: string) => (
     <Chip
       size="small"
@@ -397,6 +400,33 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
                       t("settings.SystemInfo.tunIpv6Dropped"),
                       data.engine.tun.ipv6_dropped.toLocaleString(),
                     )}
+                  {data.engine.tun.capture_rules !== undefined &&
+                    row(
+                      t("settings.SystemInfo.tunCaptureRules"),
+                      boolChip(
+                        data.engine.tun.capture_rules > 0 &&
+                          data.engine.tun.capture_rules >=
+                            (data.engine.tun.capture_rules_expected ?? 0),
+                        t("settings.SystemInfo.tunCaptureRulesValue", {
+                          present: data.engine.tun.capture_rules,
+                          expected: data.engine.tun.capture_rules_expected ?? 0,
+                        }),
+                        t("settings.SystemInfo.tunCaptureRulesValue", {
+                          present: data.engine.tun.capture_rules,
+                          expected: data.engine.tun.capture_rules_expected ?? 0,
+                        }),
+                      ),
+                    )}
+                  {!!data.engine.tun.capture_restores &&
+                    row(
+                      t("settings.SystemInfo.tunCaptureRestores"),
+                      t("settings.SystemInfo.restoresValue", {
+                        count: data.engine.tun.capture_restores,
+                        time: formatRestoreTime(
+                          data.engine.tun.last_capture_restore,
+                        ),
+                      }),
+                    )}
                   {data.engine.tun.capture === "ports" &&
                     row(
                       t("settings.SystemInfo.tunSteerConflicts"),
@@ -431,6 +461,14 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
               flowOffloadText(data.firewall),
             ),
           )}
+          {!!data.firewall.rules_restores &&
+            row(
+              t("settings.SystemInfo.fwRulesRestores"),
+              t("settings.SystemInfo.restoresValue", {
+                count: data.firewall.rules_restores,
+                time: formatRestoreTime(data.firewall.last_rules_restore),
+              }),
+            )}
           {data.firewall.rule_groups &&
             data.firewall.rule_groups.length > 0 && (
               <Box

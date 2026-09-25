@@ -17,6 +17,9 @@ type Monitor struct {
 	wg       sync.WaitGroup
 	interval time.Duration
 	backend  string
+	tun      bool
+	tunLost  tunRuleParts
+	lost     bool
 
 	started      bool
 	pendingApply *config.Config
@@ -49,9 +52,13 @@ const (
 
 func NewMonitor(cfgPtr *atomic.Pointer[config.Config]) *Monitor {
 	cfg := cfgPtr.Load()
+	tun := cfg.Queue.Mode == "tun"
 	interval := time.Duration(cfg.System.Tables.MonitorInterval) * time.Second
 	if interval < time.Second {
 		interval = 10 * time.Second
+	}
+	if tun && interval < tunMonitorFloor {
+		interval = tunMonitorFloor
 	}
 
 	m := &Monitor{
@@ -59,6 +66,7 @@ func NewMonitor(cfgPtr *atomic.Pointer[config.Config]) *Monitor {
 		stop:         make(chan struct{}),
 		interval:     interval,
 		backend:      detectFirewallBackend(cfg),
+		tun:          tun,
 		kick:         make(chan struct{}, 1),
 		kickSettle:   monitorKickSettle,
 		startDelay:   monitorStartDelay,
@@ -82,7 +90,7 @@ func (m *Monitor) Start() {
 		return
 	}
 	cfg := m.cfgPtr.Load()
-	if cfg.System.Tables.SkipSetup || cfg.System.Tables.MonitorInterval <= 0 {
+	if cfg.System.Tables.SkipSetup || (cfg.System.Tables.MonitorInterval <= 0 && !m.tun) {
 		log.Infof("Tables monitor disabled")
 		return
 	}
@@ -90,7 +98,11 @@ func (m *Monitor) Start() {
 	m.started = true
 	m.wg.Add(1)
 	go m.monitorLoop()
-	log.Infof("Started tables monitor (backend: %s, interval: %v)", m.backend, m.interval)
+	if m.tun {
+		log.Infof("Started tables monitor for TUN mode: masquerade, MSS clamp and routing rules (backend: %s, interval: %v)", m.backend, m.interval)
+	} else {
+		log.Infof("Started tables monitor (backend: %s, interval: %v)", m.backend, m.interval)
+	}
 
 	if m.linkWatcher != nil {
 		if err := m.linkWatcher.Start(); err != nil {
@@ -112,6 +124,7 @@ func (m *Monitor) Stop() {
 	}
 	close(m.stop)
 	m.wg.Wait()
+	m.started = false
 	log.Infof("Stopped tables monitor")
 }
 
@@ -167,8 +180,13 @@ func (m *Monitor) settleKicks() bool {
 func (m *Monitor) tick(requested bool) bool {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
+	m.lost = false
 	_, restored := m.ensureRulesLocked(requested)
-	return m.reconcileRouting(restored)
+	acted := m.reconcileRouting(restored)
+	if m.lost {
+		noteRulesRestore()
+	}
+	return acted
 }
 
 func (m *Monitor) reconcileRouting(restored bool) bool {
@@ -193,6 +211,7 @@ func (m *Monitor) reconcileRouting(restored bool) bool {
 	}
 	if !RoutingRulesPresent(cfg) {
 		log.Warnf("Routing rules missing, restoring...")
+		m.lost = true
 		routingForceResync(cfg)
 		m.snapshotRoutingIfaces(cfg)
 		routePhaseMu.Unlock()
@@ -208,6 +227,9 @@ func (m *Monitor) reconcileRouting(restored bool) bool {
 }
 
 func (m *Monitor) checkRules(cfg *config.Config) bool {
+	if m.tun {
+		return m.checkTUNRules()
+	}
 	if m.backend == backendNFTables {
 		return m.checkNFTablesRules(cfg)
 	}
@@ -448,6 +470,7 @@ func (m *Monitor) ensureRulesLocked(requested bool) (*config.Config, bool) {
 		return cfg, true
 	}
 	m.pendingApply = nil
+	m.lost = true
 	if requested {
 		log.Infof("Tables rules missing after a firewall rewrite, restoring...")
 	} else {
@@ -463,6 +486,9 @@ func (m *Monitor) ensureRulesLocked(requested bool) (*config.Config, bool) {
 }
 
 func (m *Monitor) restoreRules(cfg *config.Config) error {
+	if m.tun {
+		return restoreTUNRules(m.backend, m.tunLost)
+	}
 	ReloadKernelModules()
 	return addRulesFn(cfg)
 }
@@ -471,6 +497,7 @@ func (m *Monitor) ForceRestore() error {
 	log.Infof("Manual rule restoration triggered")
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
+	m.tunLost = tunRuleParts{masq: true, mss: true}
 	return m.restoreRules(m.cfgPtr.Load())
 }
 

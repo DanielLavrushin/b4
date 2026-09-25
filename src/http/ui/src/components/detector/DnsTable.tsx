@@ -1,12 +1,63 @@
 import { Box, Button, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { colors } from "@design";
-import type { DNSProbe, DNSProvider, DNSResult } from "@models/detector";
+import type { DNSHonesty, DNSProbe, DNSProvider, DNSResult } from "@models/detector";
 import { StatusChip, dnsProbeColor, honestyColor } from "./statuses";
+
+type Translate = (k: string, o?: Record<string, unknown>) => string;
 
 interface DnsTableProps {
   result: DNSResult;
   onUseDoH: (url: string) => void;
+}
+
+export interface HonestyGroup {
+  honesty: DNSHonesty;
+  transports: string[];
+  probes: DNSProbe[];
+}
+
+const HONESTY_ORDER: DNSHonesty[] = ["substituted", "no_answer", "filtered", "differs", "honest"];
+const TRANSPORTS = [
+  ["UDP", "udp"],
+  ["DoH", "doh"],
+  ["DoT", "dot"],
+] as const;
+
+export function honestyGroups(p: DNSProvider): HonestyGroup[] {
+  const judged = TRANSPORTS.flatMap(([name, key]) => {
+    const probe = p[key];
+    return probe?.status === "ok" && probe.honesty && probe.honesty !== "unknown" ? [{ name, probe, honesty: probe.honesty }] : [];
+  });
+  return HONESTY_ORDER.map((honesty) => {
+    const hits = judged.filter((j) => j.honesty === honesty);
+    return { honesty, transports: hits.map((j) => j.name), probes: hits.map((j) => j.probe) };
+  }).filter((g) => g.probes.length > 0);
+}
+
+export function providersJudged(result: DNSResult, honesty: "substituted" | "no_answer"): string[] {
+  const saved = honesty === "substituted" ? result.substituting_by : result.no_answer_by;
+  if (saved) return saved;
+  return (result.providers ?? []).filter((p) => honestyGroups(p).some((g) => g.honesty === honesty)).map((p) => p.name);
+}
+
+export function sameEgress(result: DNSResult): string | undefined {
+  const rows = (result.providers ?? []).flatMap((p) => (!p.router && p.udp?.status === "ok" && p.udp.answered_by_asn ? [p.udp] : []));
+  if (rows.length < 5) return undefined;
+  const asn = rows[0].answered_by_asn;
+  if (rows.some((r) => r.answered_by_asn !== asn)) return undefined;
+  return rows.find((r) => r.answered_by_org)?.answered_by_org || `AS${asn}`;
+}
+
+function verdictCounts(g: HonestyGroup, t: Translate): string | undefined {
+  const probe = g.probes.find((x) => (x.checked ?? 0) > 0);
+  if (!probe) return undefined;
+  return t("detector.dns.verdictCounts", {
+    checked: probe.checked ?? 0,
+    substituted: probe.substituted ?? 0,
+    noAnswer: probe.no_answer ?? 0,
+    filtered: probe.filtered ?? 0,
+  });
 }
 
 const Cell = ({ probe }: { probe?: DNSProbe }) => {
@@ -22,20 +73,43 @@ const Cell = ({ probe }: { probe?: DNSProbe }) => {
   return <StatusChip label={t(`detector.dns.probe.${probe.status}`)} color={dnsProbeColor(probe.status)} title={probe.detail || probe.address} />;
 };
 
-function honesty(p: DNSProvider): DNSProbe | undefined {
-  return [p.udp, p.doh, p.dot].find((x) => x && x.status === "ok" && x.honesty && x.honesty !== "unknown");
-}
+const HonestyCell = ({ provider }: { provider: DNSProvider }) => {
+  const { t } = useTranslation();
+  const groups = honestyGroups(provider);
+  if (groups.length === 0) return <Typography variant="caption" sx={{ color: colors.text.disabled }}>-</Typography>;
+  return (
+    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+      {groups.map((g) => {
+        const verdict = t(`detector.dns.honesty.${g.honesty}`);
+        return (
+          <StatusChip
+            key={g.honesty}
+            label={groups.length > 1 ? `${verdict} · ${g.transports.join("/")}` : verdict}
+            color={honestyColor(g.honesty)}
+            title={verdictCounts(g, t)}
+          />
+        );
+      })}
+    </Stack>
+  );
+};
 
-export function dnsLead(result: DNSResult, t: (k: string, o?: Record<string, unknown>) => string): string {
+export function dnsLead(result: DNSResult, t: Translate): string {
   const parts: string[] = [];
+  const egress = sameEgress(result);
   if (result.hijacked > 0) {
     parts.push(t("detector.dns.leadHijacked", { by: result.hijacked_by || t("detector.verdict.unknownParty"), count: result.hijacked, total: result.udp_total }));
+  } else if (egress) {
+    parts.push(t("detector.dns.leadSameEgress", { by: egress }));
   } else if (result.udp_ok > 0) {
     parts.push(t("detector.dns.leadNotHijacked"));
   } else if (result.udp_total > 0) {
     parts.push(t("detector.dns.leadUdpDead"));
   }
-  if (result.substituting > 0) parts.push(t("detector.dns.leadSubstituting", { count: result.substituting }));
+  const substituting = providersJudged(result, "substituted");
+  const noAnswer = providersJudged(result, "no_answer");
+  if (substituting.length) parts.push(t("detector.dns.leadSubstituting", { names: substituting.join(", ") }));
+  if (noAnswer.length) parts.push(t("detector.dns.leadNoAnswer", { names: noAnswer.join(", ") }));
   if (result.stub_ips?.length) parts.push(t("detector.dns.leadStubs", { ips: result.stub_ips.join(", ") }));
   parts.push(
     result.doh_ok + result.dot_ok > 0
@@ -70,7 +144,6 @@ export const DnsTable = ({ result, onUseDoH }: DnsTableProps) => {
           </TableHead>
           <TableBody>
             {(result.providers ?? []).map((p) => {
-              const h = honesty(p);
               const udp = p.udp;
               const by = udp?.answered_by
                 ? [udp.answered_by_org || (udp.answered_by_asn ? `AS${udp.answered_by_asn}` : udp.answered_by)]
@@ -89,15 +162,7 @@ export const DnsTable = ({ result, onUseDoH }: DnsTableProps) => {
                   <TableCell sx={{ whiteSpace: "nowrap" }}><Cell probe={p.doh} /></TableCell>
                   <TableCell sx={{ whiteSpace: "nowrap" }}><Cell probe={p.dot} /></TableCell>
                   <TableCell sx={{ whiteSpace: "nowrap" }}>
-                    {h ? (
-                      <StatusChip
-                        label={t(`detector.dns.honesty.${h.honesty}`)}
-                        color={honestyColor(h.honesty)}
-                        title={h.substituted ? t("detector.dns.substitutedOf", { n: h.substituted, total: h.checked }) : undefined}
-                      />
-                    ) : (
-                      <Typography variant="caption" sx={{ color: colors.text.disabled }}>-</Typography>
-                    )}
+                    <HonestyCell provider={p} />
                   </TableCell>
                   <TableCell sx={{ color: udp?.hijacked ? colors.state.error : colors.text.secondary, fontSize: "0.8rem" }} title={udp?.answered_by}>
                     {by.length > 0 ? by.join(" ") : udp?.status === "ok" ? t("detector.dns.noEgress") : ""}

@@ -66,6 +66,7 @@ const (
 	FetchChecking FetchStatus = "CHECKING"
 	FetchSkipped  FetchStatus = "SKIPPED"
 	FetchServer   FetchStatus = "SERVER_ERROR"
+	FetchDNSFail  FetchStatus = "DNS_FAIL"
 )
 
 type Fetch struct {
@@ -95,6 +96,7 @@ const (
 	OutcomeBlocked      SiteOutcome = "blocked"
 	OutcomeBrokenByB4   SiteOutcome = "broken_by_b4"
 	OutcomeServer       SiteOutcome = "server"
+	OutcomeDNS          SiteOutcome = "dns"
 	OutcomeError        SiteOutcome = "error"
 )
 
@@ -110,6 +112,7 @@ type SiteResult struct {
 	B4IPs      []string    `json:"b4_ips,omitempty"`
 	B4Source   string      `json:"b4_source,omitempty"`
 	FakeDNS    bool        `json:"fake_dns,omitempty"`
+	DNSError   string      `json:"dns_error,omitempty"`
 	AltWorks   bool        `json:"alt_works,omitempty"`
 	Direct     *Fetch      `json:"direct,omitempty"`
 	ThroughB4  *Fetch      `json:"through_b4,omitempty"`
@@ -129,8 +132,10 @@ type SitesResult struct {
 	StillBlocked int          `json:"still_blocked"`
 	BrokenByB4   int          `json:"broken_by_b4"`
 	Server       int          `json:"server"`
+	DNSFail      int          `json:"dns_fail"`
 	Errors       int          `json:"errors"`
 	StubIPs      []string     `json:"stub_ips,omitempty"`
+	Resolvers    []string     `json:"resolvers,omitempty"`
 }
 
 type DNSProbeStatus string
@@ -149,6 +154,7 @@ const (
 	HonestySubstituted DNSHonesty = "substituted"
 	HonestyFiltered    DNSHonesty = "filtered"
 	HonestyDiffers     DNSHonesty = "differs"
+	HonestyNoAnswer    DNSHonesty = "no_answer"
 	HonestyUnknown     DNSHonesty = "unknown"
 )
 
@@ -158,6 +164,8 @@ type DNSProbe struct {
 	LatencyMs     float64        `json:"latency_ms,omitempty"`
 	Honesty       DNSHonesty     `json:"honesty,omitempty"`
 	Substituted   int            `json:"substituted,omitempty"`
+	NoAnswer      int            `json:"no_answer,omitempty"`
+	Filtered      int            `json:"filtered,omitempty"`
 	Checked       int            `json:"checked,omitempty"`
 	AnsweredBy    string         `json:"answered_by,omitempty"`
 	AnsweredByASN string         `json:"answered_by_asn,omitempty"`
@@ -186,6 +194,9 @@ type DNSResult struct {
 	HijackedBy     string        `json:"hijacked_by,omitempty"`
 	HijackedByASN  string        `json:"hijacked_by_asn,omitempty"`
 	Substituting   int           `json:"substituting"`
+	SubstitutingBy []string      `json:"substituting_by,omitempty"`
+	NoAnswer       int           `json:"no_answer"`
+	NoAnswerBy     []string      `json:"no_answer_by,omitempty"`
 	HonestDoH      []string      `json:"honest_doh,omitempty"`
 	StubIPs        []string      `json:"stub_ips,omitempty"`
 	TruthAvailable bool          `json:"truth_available"`
@@ -295,8 +306,11 @@ type Verdict struct {
 	Sites          int            `json:"sites"`
 	BlockKinds     map[string]int `json:"block_kinds,omitempty"`
 	StillBlockedAt []string       `json:"still_blocked_sites,omitempty"`
+	DNSFail        int            `json:"dns_fail,omitempty"`
+	DNSFailSites   []string       `json:"dns_fail_sites,omitempty"`
 	DNSHijacked    bool           `json:"dns_hijacked"`
 	DNSSubstituted bool           `json:"dns_substituted"`
+	DNSNoAnswer    bool           `json:"dns_no_answer"`
 	DoHWorks       bool           `json:"doh_works"`
 	DoTWorks       bool           `json:"dot_works"`
 	DroppedNets    []string       `json:"dropped_networks,omitempty"`

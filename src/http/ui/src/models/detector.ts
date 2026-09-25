@@ -42,6 +42,7 @@ export type FetchStatus =
   | "ISP_PAGE"
   | "BLOCKED"
   | "DNS_FAKE"
+  | "DNS_FAIL"
   | "GATEWAY"
   | "TIMEOUT"
   | "ERROR"
@@ -74,7 +75,10 @@ export type SiteOutcome =
   | "blocked"
   | "broken_by_b4"
   | "server"
+  | "dns"
   | "error";
+
+export type SiteDNSError = "timeout" | "not_found" | "server_failure" | "error";
 
 export interface SiteResult {
   input: string;
@@ -88,6 +92,7 @@ export interface SiteResult {
   b4_ips?: string[];
   b4_source?: "pins" | "doh" | "target";
   fake_dns?: boolean;
+  dns_error?: SiteDNSError;
   alt_works?: boolean;
   direct?: Fetch;
   through_b4?: Fetch;
@@ -107,12 +112,14 @@ export interface SitesResult {
   still_blocked: number;
   broken_by_b4: number;
   server: number;
+  dns_fail: number;
   errors: number;
   stub_ips?: string[];
+  resolvers?: string[];
 }
 
 export type DNSProbeStatus = "ok" | "timeout" | "blocked" | "error";
-export type DNSHonesty = "honest" | "substituted" | "filtered" | "differs" | "unknown";
+export type DNSHonesty = "honest" | "substituted" | "no_answer" | "filtered" | "differs" | "unknown";
 
 export interface DNSProbe {
   address: string;
@@ -120,6 +127,8 @@ export interface DNSProbe {
   latency_ms?: number;
   honesty?: DNSHonesty;
   substituted?: number;
+  no_answer?: number;
+  filtered?: number;
   checked?: number;
   answered_by?: string;
   answered_by_asn?: string;
@@ -148,6 +157,9 @@ export interface DNSResult {
   hijacked_by?: string;
   hijacked_by_asn?: string;
   substituting: number;
+  substituting_by?: string[];
+  no_answer: number;
+  no_answer_by?: string[];
   honest_doh?: string[];
   stub_ips?: string[];
   truth_available: boolean;
@@ -235,13 +247,16 @@ export interface DetectorVerdict {
   fixed_by_b4: number;
   still_blocked: number;
   gateway?: number;
+  dns_fail?: number;
   broken_by_b4: number;
   not_blocked: number;
   sites: number;
   block_kinds?: Record<string, number>;
   still_blocked_sites?: string[];
+  dns_fail_sites?: string[];
   dns_hijacked: boolean;
   dns_substituted: boolean;
+  dns_no_answer: boolean;
   doh_works: boolean;
   dot_works: boolean;
   dropped_networks?: string[];

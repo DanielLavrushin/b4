@@ -83,7 +83,7 @@ func (s *Suite) estimateTotal() int {
 		case ScopeSites:
 			total += len(uniqueSites(s.Options.Sites)) * s.modes() * len(s.families())
 		case ScopeDNS:
-			total += len(lists.DNSServers) + len(readResolvConf())
+			total += len(lists.DNSServers) + len(systemNameservers())
 		case ScopeHosting:
 			total += len(lists.TCPTargets)
 		case ScopeTelegram:
@@ -137,6 +137,9 @@ func (s *Suite) refreshVerdict() {
 			case OutcomeBrokenByB4:
 				v.NotBlocked++
 				v.BrokenByB4++
+			case OutcomeDNS:
+				v.DNSFail++
+				v.DNSFailSites = appendUnique(v.DNSFailSites, site.Input)
 			}
 			if site.Direct != nil && isBlockedStatus(site.Direct.Status) {
 				v.BlockKinds[string(site.Direct.Status)]++
@@ -146,6 +149,7 @@ func (s *Suite) refreshVerdict() {
 	if r := s.DNS; r != nil {
 		v.DNSHijacked = r.Hijacked > 0
 		v.DNSSubstituted = r.Substituting > 0
+		v.DNSNoAnswer = r.NoAnswer > 0
 		v.DoHWorks = r.DoHOk > 0
 		v.DoTWorks = r.DoTOk > 0
 	}

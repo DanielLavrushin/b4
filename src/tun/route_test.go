@@ -1,6 +1,9 @@
 package tun
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestExtractField(t *testing.T) {
 	cases := []struct {
@@ -43,5 +46,18 @@ func TestExtractGateway(t *testing.T) {
 				t.Errorf("extractGateway(%q) = %q, want %q", c.line, got, c.want)
 			}
 		})
+	}
+}
+
+func TestRecheckBeforeStartDoesNotBlock(t *testing.T) {
+	done := make(chan struct{})
+	go func() {
+		(&Engine{}).Recheck()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Recheck blocked on an engine that never started")
 	}
 }

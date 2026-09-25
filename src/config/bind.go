@@ -27,7 +27,7 @@ func (c *Config) BindFlags(cmd *cobra.Command, o *CLIOverrides) {
 	cmd.Flags().UintVar(&o.Mark, "mark", d.Queue.Mark, "Packet mark value (default 32768)")
 	cmd.Flags().BoolVar(&o.IPv4Enabled, "ipv4", d.Queue.IPv4Enabled, "Enable IPv4 processing")
 	cmd.Flags().BoolVar(&o.IPv6Enabled, "ipv6", d.Queue.IPv6Enabled, "Enable IPv6 processing")
-	cmd.Flags().IntVar(&o.MonitorInterval, "tables-monitor-interval", d.System.Tables.MonitorInterval, "Tables monitor interval in seconds (default 10, 0 to disable)")
+	cmd.Flags().IntVar(&o.MonitorInterval, "tables-monitor-interval", d.System.Tables.MonitorInterval, "Tables monitor interval in seconds (default 10, 0 to disable; in TUN mode at least 10 and 0 does not disable it)")
 	cmd.Flags().BoolVar(&o.SkipSetup, "skip-tables", d.System.Tables.SkipSetup, "Skip iptables/nftables setup on startup")
 	cmd.Flags().BoolVarP(&o.Instaflush, "instaflush", "i", d.System.Logging.Instaflush, "Flush logs immediately")
 	cmd.Flags().BoolVar(&o.Syslog, "syslog", d.System.Logging.Syslog, "Enable syslog output")
