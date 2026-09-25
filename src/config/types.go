@@ -124,6 +124,10 @@ type ApiConfig struct {
 // the 0x10000 XrayUI uses and of the engine's bits 28-30.
 const SelfDialMark = uint32(0x40000)
 
+const SelfDialNoDPIBit = uint32(0x200000)
+
+const SelfDialRelayMark = SelfDialMark | SelfDialNoDPIBit
+
 const PerSetRouteMarkBits = uint32(0x27FFF)
 
 type QueueConfig struct {

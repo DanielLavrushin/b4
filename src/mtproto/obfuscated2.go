@@ -244,6 +244,24 @@ var selfDialMark = func() uint {
 	return uint(config.SelfDialMark)
 }
 
+func (p transportPlan) relayRoute() bool {
+	return p.isWorker || p.cfBase != ""
+}
+
+func relayDialMark(base uint) uint {
+	if base == 0 {
+		return 0
+	}
+	return base | uint(config.SelfDialNoDPIBit)
+}
+
+func planDialMark(p transportPlan, base uint) uint {
+	if !p.relayRoute() {
+		return base
+	}
+	return relayDialMark(base)
+}
+
 func workerNameOf(p transportPlan) string {
 	if p.isWorker {
 		return p.sni
@@ -559,7 +577,7 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 				}
 			}
 			if p.kind == transportWS {
-				c, err := dialOneWS(p, selfDialMark(), timeout)
+				c, err := dialOneWS(p, planDialMark(p, selfDialMark()), timeout)
 				return c, false, err
 			}
 			c, err := dialOneTCP(p, selfDialMark(), timeout)
@@ -728,7 +746,7 @@ func ProbeTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc 
 	}
 	out := make([]TransportProbeResult, len(plans))
 	for i, p := range plans {
-		out[i] = probeOne(p, selfDialMark(), dc)
+		out[i] = probeOne(p, planDialMark(p, selfDialMark()), dc)
 	}
 	return out, nil
 }
