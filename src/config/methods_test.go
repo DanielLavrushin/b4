@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -302,6 +303,50 @@ func TestValidateMarks(t *testing.T) {
 		cfg.System.Checker.DiscoveryInjectedMark = 2
 		if err := cfg.Validate(); err != nil {
 			t.Errorf("expected valid config with explicit discovery marks at max mark: %v", err)
+		}
+	})
+
+	for _, mark := range []uint{uint(SelfDialMark), uint(SelfDialNoDPIBit), uint(SelfDialRelayMark)} {
+		t.Run(fmt.Sprintf("queue mark 0x%x made of self-dial bits", mark), func(t *testing.T) {
+			cfg := NewConfig()
+			cfg.Queue.Mark = mark
+			cfg.System.Checker.DiscoveryFlowMark = 0xAAAA
+			cfg.System.Checker.DiscoveryInjectedMark = 0xBBBB
+			if err := cfg.Validate(); err == nil {
+				t.Errorf("queue mark 0x%x would make b4's own connections look like its injected packets", mark)
+			}
+		})
+	}
+
+	t.Run("derived discovery flow mark carrying the no-DPI bit", func(t *testing.T) {
+		cfg := NewConfig()
+		cfg.Queue.Mark = uint(SelfDialNoDPIBit | 0x8000)
+		if err := cfg.Validate(); err == nil {
+			t.Error("a derived discovery flow mark with the no-DPI bit must be refused, Discovery would test without any strategy")
+		}
+	})
+
+	t.Run("explicit discovery marks carrying the no-DPI bit", func(t *testing.T) {
+		for _, tc := range []struct{ flow, injected uint }{
+			{uint(SelfDialNoDPIBit | 0x123), 0xBBBB},
+			{0xAAAA, uint(SelfDialNoDPIBit | 0x456)},
+		} {
+			cfg := NewConfig()
+			cfg.System.Checker.DiscoveryFlowMark = tc.flow
+			cfg.System.Checker.DiscoveryInjectedMark = tc.injected
+			if err := cfg.Validate(); err == nil {
+				t.Errorf("discovery marks 0x%x/0x%x carry the no-DPI bit and must be refused", tc.flow, tc.injected)
+			}
+		}
+	})
+
+	t.Run("queue mark with the no-DPI bit and explicit clean discovery marks", func(t *testing.T) {
+		cfg := NewConfig()
+		cfg.Queue.Mark = uint(SelfDialNoDPIBit | 0x8000)
+		cfg.System.Checker.DiscoveryFlowMark = 0xAAAA
+		cfg.System.Checker.DiscoveryInjectedMark = 0xBBBB
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("a queue mark that only contains the bit, with clean discovery marks, is not a conflict: %v", err)
 		}
 	})
 }

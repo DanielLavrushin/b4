@@ -415,9 +415,9 @@ func (c *Config) Validate() error {
 		return v.result()
 	}
 
-	if uint32(c.Queue.Mark) == SelfDialMark {
+	if c.Queue.Mark != 0 && uint32(c.Queue.Mark)&^SelfDialRelayMark == 0 {
 		v.addf("queue.mark", "mark_conflict", map[string]any{"mark": fmt.Sprintf("0x%x", c.Queue.Mark)},
-			"mark value 0x%x is the mark b4 puts on the connections it opens itself; sharing them would carry those connections past b4's own DPI bypass", c.Queue.Mark)
+			"mark value 0x%x is made only of the bits b4 puts on the connections it opens itself; sharing them would carry those connections past b4's own DPI bypass", c.Queue.Mark)
 		return v.result()
 	}
 
@@ -432,6 +432,19 @@ func (c *Config) Validate() error {
 	if c.System.Checker.DiscoveryFlowMark > maxMark || c.System.Checker.DiscoveryInjectedMark > maxMark {
 		v.add("queue.mark", "out_of_range", "discovery mark values exceed uint32 max", nil)
 		return v.result()
+	}
+	for _, dm := range []struct {
+		path string
+		mark uint
+	}{
+		{"system.checker.discovery_flow_mark", c.System.Checker.DiscoveryFlowMark},
+		{"system.checker.discovery_injected_mark", c.System.Checker.DiscoveryInjectedMark},
+	} {
+		if uint32(dm.mark)&SelfDialNoDPIBit != 0 {
+			v.addf(dm.path, "mark_conflict", map[string]any{"mark": fmt.Sprintf("0x%x", dm.mark)},
+				"discovery mark 0x%x carries bit 0x%x, which b4 reserves for its own connections that skip DPI processing, so Discovery would test nothing; choose a queue mark or discovery marks clear of that bit", dm.mark, SelfDialNoDPIBit)
+			return v.result()
+		}
 	}
 	if c.Queue.Mark == c.System.Checker.DiscoveryFlowMark ||
 		c.Queue.Mark == c.System.Checker.DiscoveryInjectedMark ||
