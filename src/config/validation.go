@@ -526,6 +526,13 @@ func (c *Config) checkPortCollisions(v *validator) {
 					"ws_endpoint_host must be a host or IP without port (got %q)", h)
 			}
 		}
+		if f := c.System.MTProto.WSFrontSNI; f != "" && f != "off" {
+			if net.ParseIP(f) != nil || !strings.Contains(f, ".") || strings.ContainsAny(f, " :/[]") {
+				v.addf("system.mtproto.ws_front_sni", "invalid_host",
+					map[string]any{"value": f},
+					"ws_front_sni must be a host name, or off (got %q)", f)
+			}
+		}
 		if mc := c.System.MTProto.MaxConnections; mc < 0 || mc > 100000 {
 			v.addf("system.mtproto.max_connections", "out_of_range",
 				map[string]any{"value": mc, "min": 0, "max": 100000},
@@ -579,15 +586,17 @@ const (
 )
 
 func (s *SetConfig) WatchdogBlocker() string {
-	switch {
-	case s == nil || !s.Enabled:
+	if s == nil {
 		return WatchdogBlockedDisabled
-	case s.Routing.Enabled:
-		return WatchdogBlockedRouted
+	}
+	if blocker := s.watchdogStructuralBlocker(); blocker != "" {
+		return blocker
+	}
+	switch {
+	case !s.Enabled:
+		return WatchdogBlockedDisabled
 	case len(s.Discovery.URLs) == 0:
 		return WatchdogBlockedNoURLs
-	case len(s.Targets.SourceDevices) > 0 && !s.Targets.SourceDevicesExclude:
-		return WatchdogBlockedDevices
 	case len(s.Targets.SNIDomains) == 0 && len(s.Targets.GeoSiteCategories) == 0:
 		return WatchdogBlockedIPOnly
 	}

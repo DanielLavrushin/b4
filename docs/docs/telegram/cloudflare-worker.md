@@ -7,7 +7,7 @@ title: Cloudflare Worker relay
 
 A Cloudflare Worker is a free per-user WebSocket relay, hosted on the reader's own Cloudflare account under a `*.workers.dev` name. b4 can reach any data centre through it, so it covers the ones the shared pool cannot reach from a given network.
 
-It is tried last of the WebSocket routes, after Telegram's own edge and after the shared CF proxy pool.
+It comes last of the WebSocket routes, after Telegram's own edge and after the shared CF proxy pool, and joins the race a second and a half into a dial when none of those has connected by then.
 
 :::info A different Worker mirrors b4's own downloads
 [Update mirrors](../advanced/update-mirrors) covers a separate Worker that stands in for GitHub when a release download is blocked. It uses a different script, and the session-length limit below does not apply to it.

@@ -568,10 +568,12 @@ func (s *Server) startLocked() error {
 		pool := newWSPool(MTProtoUpstream{
 			WSEndpointHost: mtCfg.WSEndpointHost,
 			WSCustomDomain: mtCfg.WSCustomDomain,
+			FrontSNI:       wsFrontName(mtCfg.WSFrontSNI),
 			CFProxyEnabled: mtCfg.CFProxyEnabled,
 		}, selfDialMark(), wsPoolDefaultSize)
 		pool.warmup(wsWarmupDCs(mtCfg))
 		s.wsPool.Store(pool)
+		sharedWSPool.Store(pool)
 		if len(workerDomains(mtCfg)) > 0 {
 			s.workerPool.Store(newCFWorkerPool(selfDialMark()))
 		} else {
@@ -600,6 +602,7 @@ func (s *Server) stopLocked() error {
 		s.cancel = nil
 	}
 	if pool := s.wsPool.Swap(nil); pool != nil {
+		sharedWSPool.CompareAndSwap(pool, nil)
 		pool.close()
 	}
 	s.workerPool.Swap(nil).close()
@@ -670,6 +673,7 @@ func mtprotoNeedsRestart(old, newCfg *config.Config) bool {
 		o.FakeSNI != n.FakeSNI ||
 		o.UpstreamMode != n.UpstreamMode ||
 		o.WSEndpointHost != n.WSEndpointHost ||
+		o.WSFrontSNI != n.WSFrontSNI ||
 		o.WSCustomDomain != n.WSCustomDomain ||
 		o.CFProxyEnabled != n.CFProxyEnabled ||
 		o.CFProxyURL != n.CFProxyURL {
@@ -891,11 +895,11 @@ func demoteRejectedRoute(dial dialInfo, clientDC int) {
 	p := dial.plan
 	switch {
 	case p.isWorker && p.sni != "":
-		workerRecordStall(p.sni)
+		workerDemote(p.sni)
 	case p.cfBase != "":
 		cfBalancerInst.penalize(p.cfBase, cfProxyTimeoutCooldown)
 	case p.native && p.dialHost != "" && p.sni != "":
-		wsEndpointFailed(p.dialHost, p.sni)
+		wsEndpointFailed(p.dialHost, p.tlsName())
 		wsRecordFailure(clientDC, false)
 	case p.kind == transportTCP && p.addr != "":
 		tcpRecordFailure(p.addr)
@@ -918,7 +922,11 @@ func demoteRejectedRoute(dial dialInfo, clientDC int) {
 // blamed the route for an ordinary request and response: on the fail-open path,
 // the relays that did answer took 269-361 ms, while ten closed by the client at
 // 69-103 ms were each recorded as a stall and kept the Worker in cooldown.
-const relayStallClose = 8 * time.Second
+var relayStallClose = 8 * time.Second
+
+var relayAnswerDue = 3 * time.Second
+
+var relayGaveUpWithin = 6 * time.Second
 
 // relayOpts is everything the relay needs beyond the two ends it joins.
 type relayOpts struct {
@@ -950,8 +958,43 @@ func relayConns(client, dc io.ReadWriteCloser, o relayOpts) (int64, int64) {
 	var upBytes, downBytes atomic.Int64
 	var lastDown atomic.Int64
 	var upSinceDown atomic.Int64
+	var secondUp atomic.Int64
+	var lastUp atomic.Int64
+	var upWrites atomic.Int64
 	var stallReported atomic.Bool
+	stallAfter, answerDue, gaveUpWithin := relayStallClose, relayAnswerDue, relayGaveUpWithin
 	lastDown.Store(start.UnixNano())
+	noteUp := func(n int) {
+		now := time.Now().UnixNano()
+		if upSinceDown.Add(int64(n)) == int64(n) {
+			upWrites.Store(0)
+		}
+		if upWrites.Add(1) == 2 {
+			secondUp.Store(now)
+		}
+		lastUp.Store(now)
+	}
+	noteDown := func() {
+		lastDown.Store(time.Now().UnixNano())
+		upSinceDown.Store(0)
+		upWrites.Store(0)
+	}
+	stalled := func() bool {
+		if upSinceDown.Load() == 0 || upWrites.Load() < 2 {
+			return false
+		}
+		now := time.Now()
+		return now.Sub(time.Unix(0, secondUp.Load())) >= stallAfter &&
+			now.Sub(time.Unix(0, lastUp.Load())) >= answerDue
+	}
+	gaveUp := func() bool {
+		if upSinceDown.Load() == 0 {
+			return false
+		}
+		now := time.Now()
+		return now.Sub(time.Unix(0, lastDown.Load())) >= stallAfter &&
+			now.Sub(time.Unix(0, lastUp.Load())) <= gaveUpWithin
+	}
 	reportStall := func() {
 		if onStall != nil && !stallReported.Swap(true) {
 			onStall()
@@ -975,10 +1018,9 @@ func relayConns(client, dc io.ReadWriteCloser, o relayOpts) (int64, int64) {
 			if n > 0 {
 				lastActive.Store(time.Now().UnixNano())
 				if up {
-					upSinceDown.Add(int64(n))
+					noteUp(n)
 				} else {
-					lastDown.Store(time.Now().UnixNano())
-					upSinceDown.Store(0)
+					noteDown()
 				}
 				out := buf[:n]
 				var rest []byte
@@ -1029,7 +1071,7 @@ func relayConns(client, dc io.ReadWriteCloser, o relayOpts) (int64, int64) {
 			n, err = src.Read(buf)
 			if n > 0 {
 				lastActive.Store(time.Now().UnixNano())
-				upSinceDown.Add(int64(n))
+				noteUp(n)
 				for _, pkt := range splitter.split(buf[:n]) {
 					if _, werr := dst.Write(pkt); werr != nil {
 						err = werr
@@ -1059,19 +1101,23 @@ func relayConns(client, dc io.ReadWriteCloser, o relayOpts) (int64, int64) {
 
 	done := make(chan struct{})
 	if onStall != nil {
+		tick := stallAfter / 8
+		if tick > time.Second {
+			tick = time.Second
+		}
+		if tick < 10*time.Millisecond {
+			tick = 10 * time.Millisecond
+		}
 		go func() {
-			t := time.NewTicker(time.Second)
+			t := time.NewTicker(tick)
 			defer t.Stop()
 			for {
 				select {
 				case <-done:
 					return
 				case <-t.C:
-					if upSinceDown.Load() == 0 {
-						continue
-					}
-					silent := time.Since(time.Unix(0, lastDown.Load()))
-					if silent >= relayStallClose {
+					if stalled() {
+						silent := time.Since(time.Unix(0, lastDown.Load()))
 						log.Infof("%s upstream silent for %s with %d B awaiting an answer, cutting the relay",
 							label, silent.Round(time.Second), upSinceDown.Load())
 						reportStall()
@@ -1119,8 +1165,7 @@ func relayConns(client, dc io.ReadWriteCloser, o relayOpts) (int64, int64) {
 	up, down := upBytes.Load(), downBytes.Load()
 	staleUpstream := first.dir == "DC->client" && down == 0
 	neverAnswered := staleUpstream && up > 0
-	wentQuiet := upSinceDown.Load() > 0 &&
-		time.Since(time.Unix(0, lastDown.Load())) >= relayStallClose
+	wentQuiet := stalled() || (first.dir == "client->DC" && gaveUp())
 	if neverAnswered || wentQuiet {
 		reportStall()
 	}

@@ -45,7 +45,7 @@ func checkDomain(parent context.Context, input string, mark uint, timeout time.D
 		Timeout:   timeout,
 		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) > 0 && netprobe.IsBlockPageRedirectFrom(via[0].URL, req.URL) {
+			if len(via) > 0 && netprobe.IsBlockPageRedirectFrom(via[len(via)-1].URL, req.URL) {
 				return fmt.Errorf("ISP block page (redirect to %s)", req.URL.String())
 			}
 			if len(via) >= 3 {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/netprobe"
 )
 
 const (
@@ -22,7 +23,7 @@ const (
 	cfProxyFetchMaxLen = 65536
 	// cfProxyDomainCooldown is how long a CF-proxy domain is skipped after it
 	// returns 429/503. Shared public domains get rate-limited in bursts; without
-	// this, every dial re-hammers all 11 and DC1/3/5 (which have no Telegram WS
+	// this, every dial re-hammers all of them and DC1/3/5 (which have no Telegram WS
 	// edge) stall entirely. Matches the observed recovery window in the field.
 	cfProxyDomainCooldown = 60 * time.Second
 	// cfProxyTimeoutCooldown is the same idea for a domain that answers nothing
@@ -46,6 +47,16 @@ var defaultCFProxyEncoded = []string{
 	"tjacxbqtj.com",
 	"bxaxtxmrw.com",
 	"dmohrsgmohcrwb.com",
+	"vwbmtmoi.com",
+	"khgrre.com",
+	"ulihssf.com",
+	"tmhqsdqmfpmk.com",
+	"xwuwoqbm.com",
+	"orgcnunpj.com",
+	"zhkuldz.com",
+	"zypoljnslxa.com",
+	"efabnxaowuzs.com",
+	"zaftuzsftqdq.com",
 }
 
 // decodeCFDomain reverses the Flowseal/tg-ws-proxy obfuscation.
@@ -270,7 +281,7 @@ func (b *cfBalancer) refreshFromURL(url string) error {
 		return err
 	}
 	req.Header.Set("User-Agent", "b4-mtproto")
-	cli := &http.Client{Timeout: 10 * time.Second}
+	cli := netprobe.HTTPClient(int(selfDialMark()), 10*time.Second)
 	resp, err := cli.Do(req)
 	if err != nil {
 		return err

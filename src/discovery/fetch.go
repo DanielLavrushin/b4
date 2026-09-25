@@ -277,7 +277,7 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 		Timeout:   timeout,
 		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) > 0 && netprobe.IsBlockPageRedirectFrom(via[0].URL, req.URL) {
+			if len(via) > 0 && netprobe.IsBlockPageRedirectFrom(via[len(via)-1].URL, req.URL) {
 				return &blockPageRedirect{target: req.URL.String()}
 			}
 			if len(via) >= maxProbeRedirects {

@@ -358,6 +358,8 @@
       "wsCustomDomainHelp": "Optional extra domain (e.g. your-domain.com) that proxies WebSocket traffic to Telegram. b4 prepends kws1., kws2., ... per DC automatically. Independent of the CF proxy fallback below.",
       "wsEndpointHost": "Telegram WS edge IP (advanced)",
       "wsEndpointHostHelp": "Override the IP used when WS uses native kws*.web.telegram.org SNI. Default: 149.154.167.220. Leave empty for default. Does not affect the custom WebSocket domain path.",
+      "wsFrontSni": "Fronting name for Telegram's WS edge (advanced)",
+      "wsFrontSniHelp": "TLS name tried on Telegram's own WebSocket edge when the handshake under its kws*.web.telegram.org names goes unanswered. The warm pool tries it first; client sessions use it only after it has worked. Empty: sprinthost.ru. off: never.",
       "cfProxyEnabled": "CF proxy fallback",
       "cfProxyEnabledHelp": "Use a rotating pool of Cloudflare-proxied domains as a fallback when Telegram's native edge can't reach a data center (notably DC 1, which is needed for media in foreign channels). The pool is refreshed once an hour from the URL below.",
       "cfProxyURL": "CF proxy domain list URL",

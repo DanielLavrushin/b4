@@ -98,6 +98,13 @@ func TestWatchdogBlockerCodes(t *testing.T) {
 	if !watchableSet("ok").WatchdogActive() {
 		t.Error("an enabled, direct set with URLs and the flag on is watched")
 	}
+
+	routedOff := watchableSet("routed-off")
+	routedOff.Enabled = false
+	routedOff.Routing.Enabled = true
+	if got := routedOff.WatchdogBlocker(); got != WatchdogBlockedRouted {
+		t.Errorf("a disabled routed set reports the blocker that clears its flag on save, got %q", got)
+	}
 	geosite := watchableSet("geosite")
 	geosite.Targets.SNIDomains = nil
 	geosite.Targets.GeoSiteCategories = []string{"youtube"}

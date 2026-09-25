@@ -56,9 +56,11 @@ type TransparentBridge struct {
 	cfg     atomic.Pointer[config.Config]
 	bufPool sync.Pool
 
-	mu       sync.Mutex
-	pool     *cfWorkerPool
-	poolInit bool
+	mu        sync.Mutex
+	pool      *cfWorkerPool
+	poolInit  bool
+	wsPool    *wsPool
+	wsPoolFor MTProtoUpstream
 }
 
 func NewTransparentBridge(cfg *config.Config) *TransparentBridge {
@@ -85,6 +87,42 @@ func (b *TransparentBridge) UpdateConfig(newCfg *config.Config) {
 	b.poolInit = false
 	b.mu.Unlock()
 	oldPool.close()
+}
+
+func (b *TransparentBridge) getWSPool() *wsPool {
+	shared := sharedWSPool.Load()
+	if shared != nil && shared.ctx.Err() != nil {
+		shared = nil
+	}
+	mt := b.cfg.Load().System.MTProto
+	want := MTProtoUpstream{WSEndpointHost: mt.WSEndpointHost, WSCustomDomain: mt.WSCustomDomain, CFProxyEnabled: mt.CFProxyEnabled, FrontSNI: wsFrontName(mt.WSFrontSNI)}
+	b.mu.Lock()
+	var stale *wsPool
+	if shared != nil || (b.wsPool != nil && b.wsPoolFor != want) {
+		stale, b.wsPool = b.wsPool, nil
+	}
+	if shared == nil && b.wsPool == nil {
+		b.wsPool = newWSPool(want, selfDialMark(), wsPoolDefaultSize)
+		b.wsPoolFor = want
+	}
+	own := b.wsPool
+	b.mu.Unlock()
+	if stale != nil {
+		stale.close()
+	}
+	if shared != nil {
+		return shared
+	}
+	return own
+}
+
+func (b *TransparentBridge) Close() {
+	b.mu.Lock()
+	ws, worker := b.wsPool, b.pool
+	b.wsPool, b.pool, b.poolInit = nil, nil, false
+	b.mu.Unlock()
+	ws.close()
+	worker.close()
 }
 
 // getPool returns the Worker pool, or nil when no Worker is configured.
@@ -181,7 +219,7 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 	mtCfg.DCRelay = ""
 
 	target := dialTarget{ip: origIP.String(), port: origPort}
-	dcConn, info, err := dialObfuscatedDC(&mtCfg, cfg.Queue, dc, res.ProtoTag, &dialPools{worker: b.getPool()}, id, target)
+	dcConn, info, err := dialObfuscatedDC(&mtCfg, cfg.Queue, dc, res.ProtoTag, &dialPools{ws: b.getWSPool(), worker: b.getPool()}, id, target)
 	if err != nil {
 		if shouldLogDialError(dc) {
 			log.Errorf("%s bridge dial DC %d failed: %v", tag, dc, err)

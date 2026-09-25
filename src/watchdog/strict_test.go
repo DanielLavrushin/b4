@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -187,5 +188,25 @@ func TestStrictCheckSendsTheDiscoveryUserAgent(t *testing.T) {
 	defer srv.Close()
 	if res := strictLocal(srv.URL + "/"); res.Status != URLStatusOK {
 		t.Errorf("a site that refuses a Chrome User-Agent from a non-browser client must load: %s (%d, %s)", res.Status, res.StatusCode, res.Error)
+	}
+}
+
+func TestStrictCheckJudgesEachRedirectAgainstTheHopThatSentIt(t *testing.T) {
+	signin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/access-denied" {
+			fmt.Fprint(w, page(8000))
+			return
+		}
+		http.Redirect(w, r, "/access-denied", http.StatusFound)
+	}))
+	defer signin.Close()
+	_, port, _ := net.SplitHostPort(signin.Listener.Addr().String())
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://localhost:"+port+"/start", http.StatusFound)
+	}))
+	defer origin.Close()
+
+	if res := strictLocal(origin.URL + "/"); res.Status != URLStatusOK {
+		t.Fatalf("a redirect that stays on the site it came from is that site's own: %s (%s)", res.Status, res.Error)
 	}
 }

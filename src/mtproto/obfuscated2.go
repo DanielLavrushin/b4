@@ -222,6 +222,14 @@ type transportPlan struct {
 	wsPath   string
 	isWorker bool
 	native   bool
+	frontSNI string
+}
+
+func (p transportPlan) tlsName() string {
+	if p.frontSNI != "" {
+		return p.frontSNI
+	}
+	return p.sni
 }
 
 // selfDialMark is what b4 puts on every connection it opens to Telegram. It is
@@ -257,6 +265,9 @@ func (p transportPlan) describe() string {
 	case transportWS:
 		if p.isWorker {
 			return "wsworker://" + p.sni
+		}
+		if p.frontSNI != "" {
+			return fmt.Sprintf("ws://%s@%s?sni=%s", p.sni, p.dialHost, p.frontSNI)
 		}
 		if p.dialHost != "" && p.dialHost != p.sni {
 			return fmt.Sprintf("ws://%s@%s", p.sni, p.dialHost)
@@ -345,7 +356,7 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 				log.Debugf("%s DC %d native WS edge skipped (blacklisted)", tg(""), dc)
 			} else {
 				dh := wsNativeDialHost(cfg.WSEndpointHost)
-				plans = append(plans, nativeEdgePlans(dc, absDC, dh)...)
+				plans = append(plans, nativeRoutes(dc, absDC, dh, wsFrontName(cfg.WSFrontSNI))...)
 			}
 		}
 		if d := strings.TrimSpace(cfg.WSCustomDomain); d != "" {
@@ -513,7 +524,7 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 		// clears. Without it a flapping edge was retried from scratch on every
 		// session and spent the whole budget before a Cloudflare domain was
 		// reached even once.
-		if p.native && haveFallback && (skipNative || wsEndpointCooling(p.dialHost, p.sni)) {
+		if p.native && haveFallback && (skipNative || wsEndpointCooling(p.dialHost, p.tlsName())) {
 			untried++
 			continue
 		}
@@ -527,6 +538,7 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 		maxInFlight: dialRaceMaxInFlight,
 		minAttempt:  wsDialMinAttempt,
 		deadline:    deadline,
+		workerAfter: dialRaceWorkerAfter,
 		timeoutFor: func(p transportPlan) time.Duration {
 			if p.kind != transportWS {
 				return tcpDialTimeout
@@ -536,8 +548,8 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 			}
 			return wsDialTimeout
 		},
-		dial: func(p transportPlan, timeout time.Duration) (net.Conn, bool, error) {
-			if p.isWorker {
+		dial: func(p transportPlan, timeout time.Duration, fresh bool) (net.Conn, bool, error) {
+			if p.isWorker && !fresh {
 				if raw := workerPool.get(p); raw != nil {
 					if raw.liveNow() {
 						return raw, true, nil
@@ -690,7 +702,7 @@ func dialOneWS(p transportPlan, mark uint, timeout time.Duration) (net.Conn, err
 	if host == "" {
 		host = p.sni
 	}
-	return dialWS(host, p.sni, p.wsPath, timeout, mark)
+	return dialWSAs(host, p.tlsName(), p.sni, p.wsPath, timeout, mark)
 }
 
 type TransportProbeResult struct {
@@ -765,11 +777,7 @@ func hasNonNativePlan(plans []transportPlan) bool {
 func dialOne(p transportPlan, mark uint) (net.Conn, error) {
 	switch p.kind {
 	case transportWS:
-		host := p.dialHost
-		if host == "" {
-			host = p.sni
-		}
-		return dialWS(host, p.sni, p.wsPath, wsDialTimeout, mark)
+		return dialOneWS(p, mark, wsDialTimeout)
 	default:
 		return dialOneTCP(p, mark, tcpDialTimeout)
 	}

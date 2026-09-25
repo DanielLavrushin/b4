@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
@@ -34,7 +35,7 @@ const (
 	// data center reached only through them is held at fewer spares than one on
 	// Telegram's own edge. One warm conn already takes the dial off the client's
 	// path, which is the whole point.
-	wsPoolCFTarget = 2
+	wsPoolCFTarget = 1
 	// A refill walks the transport list in the background, where nothing is
 	// waiting on it, but a data center with no edge has ten Cloudflare domains
 	// behind it and walking all of them at the dial timeout is minutes of work
@@ -86,6 +87,7 @@ var (
 	wsEndpointN  = map[string]int{}
 	wsEndpointAt = map[string]time.Time{}
 	wsProbeAt    = map[string]time.Time{}
+	wsFrontOn    = map[string]bool{}
 
 	tcpStateMu    sync.Mutex
 	tcpCooldownTo = map[string]time.Time{} // keyed by host:port
@@ -319,7 +321,53 @@ func wsEndpointRecovered(ip, sni string) {
 	}
 }
 
-func wsNativeDown(dc int, dialHost string) bool {
+const wsDefaultFrontSNI = "sprinthost.ru"
+
+func wsFrontName(v string) string {
+	switch v = strings.TrimSpace(v); v {
+	case "":
+		return wsDefaultFrontSNI
+	case "off":
+		return ""
+	}
+	return v
+}
+
+func wsFrontPreferred(host string) bool {
+	wsStateMu.Lock()
+	defer wsStateMu.Unlock()
+	return wsFrontOn[host]
+}
+
+func wsFrontRecord(host, front string, on bool) {
+	wsStateMu.Lock()
+	was := wsFrontOn[host]
+	if on {
+		wsFrontOn[host] = true
+	} else {
+		delete(wsFrontOn, host)
+	}
+	wsStateMu.Unlock()
+	switch {
+	case on && !was:
+		log.Infof("%s Telegram's edge %s answers under the name %s while its own names do not; its sessions use that name from now on", tg(""), host, front)
+	case !on && was:
+		log.Infof("%s Telegram's edge %s answers under its own names again", tg(""), host)
+	}
+}
+
+func nativeRoutes(dc, absDC int, dialHost, front string) []transportPlan {
+	plans := nativeEdgePlans(dc, absDC, dialHost)
+	if front == "" || !wsFrontPreferred(dialHost) {
+		return plans
+	}
+	for i := range plans {
+		plans[i].frontSNI = front
+	}
+	return plans
+}
+
+func wsNativeDown(dc int, dialHost, front string) bool {
 	absDC := dc
 	if absDC < 0 {
 		absDC = -absDC
@@ -330,8 +378,8 @@ func wsNativeDown(dc int, dialHost string) bool {
 	if wsCooldownActive(dc) {
 		return true
 	}
-	for _, p := range nativeEdgePlans(dc, absDC, dialHost) {
-		if !wsEndpointCooling(p.dialHost, p.sni) {
+	for _, p := range nativeRoutes(dc, absDC, dialHost, front) {
+		if !wsEndpointCooling(p.dialHost, p.tlsName()) {
 			return false
 		}
 	}
@@ -346,9 +394,12 @@ func wsResetState() {
 	wsEndpointN = map[string]int{}
 	wsEndpointAt = map[string]time.Time{}
 	wsProbeAt = map[string]time.Time{}
+	wsFrontOn = map[string]bool{}
 	wsStateMu.Unlock()
 	log.Debugf("%s WS cooldown/blacklist state reset", tg(""))
 }
+
+var sharedWSPool atomic.Pointer[wsPool]
 
 type wsPoolEntry struct {
 	conn    *wsConn
@@ -387,6 +438,7 @@ type MTProtoUpstream struct {
 	WSEndpointHost string
 	WSCustomDomain string
 	CFProxyEnabled bool
+	FrontSNI       string
 }
 
 func newWSPool(cfg MTProtoUpstream, mark uint, target int) *wsPool {
@@ -469,7 +521,7 @@ func (p *wsPool) keepWarmFor(k wsKey) time.Duration {
 }
 
 func (p *wsPool) nativeServes(k wsKey) bool {
-	return wsEdgeServesDC(k.dc) && !wsNativeDown(k.signed(), wsNativeDialHost(p.cfg.WSEndpointHost))
+	return wsEdgeServesDC(k.dc) && !wsNativeDown(k.signed(), wsNativeDialHost(p.cfg.WSEndpointHost), p.cfg.FrontSNI)
 }
 
 func (p *wsPool) offer(dc int, c *wsConn, plan transportPlan) bool {
@@ -536,6 +588,9 @@ func wsRefillBackoff(fails int) time.Duration {
 }
 
 func (p *wsPool) close() {
+	if p == nil {
+		return
+	}
 	p.cancel()
 	p.mu.Lock()
 	var conns []*wsConn
@@ -636,7 +691,7 @@ func (p *wsPool) refill(dc int) {
 	}
 
 	dh := wsNativeDialHost(p.cfg.WSEndpointHost)
-	nativeDown := wsNativeDown(dc, dh)
+	nativeDown := wsNativeDown(dc, dh, p.cfg.FrontSNI)
 	p.mu.Lock()
 	need := p.targetFor(k) - len(p.idle[k])
 	p.mu.Unlock()
@@ -736,31 +791,58 @@ func (p *wsPool) dialFresh(dc int, plans []transportPlan, timeout time.Duration)
 	}
 	var lastErr error
 	for _, pl := range plans {
-		host := pl.dialHost
-		if host == "" {
-			host = pl.sni
+		c, err := p.dialPlan(dc, pl, timeout)
+		if err == nil {
+			return c, nil
 		}
-		conn, err := dialWS(host, pl.sni, pl.wsPath, timeout, p.mark)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		if wsc, ok := conn.(*wsConn); ok {
-			// The refill runs with nothing waiting on it, which makes it the
-			// cheapest place to notice that a cooled-down edge is answering
-			// again: without this the cooldown only ever lapses on a timer,
-			// and a client pays the shortened-timeout path in the meantime.
-			if pl.native {
-				wsRecordSuccess(dc)
-			}
-			return &wsPoolConn{conn: wsc, plan: pl}, nil
-		}
-		_ = conn.Close()
+		lastErr = err
 	}
 	if lastErr == nil {
 		lastErr = net.ErrClosed
 	}
 	return nil, lastErr
+}
+
+func (p *wsPool) dialPlan(dc int, pl transportPlan, timeout time.Duration) (*wsPoolConn, error) {
+	c, err := p.dialOnce(dc, pl, timeout)
+	if err == nil || !pl.native || p.cfg.FrontSNI == "" || isConnectStage(err) {
+		return c, err
+	}
+	twin := pl
+	if pl.frontSNI != "" {
+		twin.frontSNI = ""
+	} else if isTLSStage(err) && wsProbeAllowed(pl.dialHost+"|front") {
+		twin.frontSNI = p.cfg.FrontSNI
+	} else {
+		return nil, err
+	}
+	c2, err2 := p.dialOnce(dc, twin, timeout)
+	if err2 != nil {
+		log.Tracef("%s WS pool %s answered neither as %s nor as %s: %v", tg(""), pl.dialHost, pl.tlsName(), twin.tlsName(), err2)
+		return nil, err
+	}
+	wsFrontRecord(twin.dialHost, p.cfg.FrontSNI, twin.frontSNI != "")
+	return c2, nil
+}
+
+func (p *wsPool) dialOnce(dc int, pl transportPlan, timeout time.Duration) (*wsPoolConn, error) {
+	host := pl.dialHost
+	if host == "" {
+		host = pl.sni
+	}
+	conn, err := dialWSAs(host, pl.tlsName(), pl.sni, pl.wsPath, timeout, p.mark)
+	if err != nil {
+		return nil, err
+	}
+	wsc, ok := conn.(*wsConn)
+	if !ok {
+		_ = conn.Close()
+		return nil, net.ErrClosed
+	}
+	if pl.native {
+		wsRecordSuccess(dc)
+	}
+	return &wsPoolConn{conn: wsc, plan: pl}, nil
 }
 
 func withoutNative(plans []transportPlan) []transportPlan {
@@ -790,15 +872,17 @@ func wsPlansForDC(dc int, cfg *MTProtoUpstream) []transportPlan {
 	}
 	var plans []transportPlan
 	override := ""
+	front := ""
 	cfProxy := false
 	if cfg != nil {
 		override = cfg.WSEndpointHost
+		front = cfg.FrontSNI
 		cfProxy = cfg.CFProxyEnabled
 	}
 	edge := wsEdgeServesDC(absDC)
 	dh := wsNativeDialHost(override)
 	if edge {
-		plans = append(plans, nativeEdgePlans(dc, absDC, dh)...)
+		plans = append(plans, nativeRoutes(dc, absDC, dh, front)...)
 	}
 	if cfg != nil && cfg.WSCustomDomain != "" {
 		plans = append(plans, transportPlan{
@@ -814,7 +898,7 @@ func wsPlansForDC(dc int, cfg *MTProtoUpstream) []transportPlan {
 	// domains on a cold dial, at the full dial timeout, on every session, and a
 	// single blocked domain there is longer than Telegram waits before calling
 	// the proxy misconfigured.
-	if cfProxy && (!edge || wsNativeDown(dc, dh)) {
+	if cfProxy && (!edge || wsNativeDown(dc, dh, front)) {
 		for _, base := range cfBalancerInst.domainsForDC(dc) {
 			plans = append(plans, transportPlan{
 				kind:   transportWS,
@@ -835,7 +919,7 @@ func (p *wsPool) targetFor(k wsKey) int {
 	if p.target < wsPoolCFTarget {
 		return p.target
 	}
-	if wsEdgeServesDC(k.dc) && !wsNativeDown(k.signed(), wsNativeDialHost(p.cfg.WSEndpointHost)) {
+	if wsEdgeServesDC(k.dc) && !wsNativeDown(k.signed(), wsNativeDialHost(p.cfg.WSEndpointHost), p.cfg.FrontSNI) {
 		return p.target
 	}
 	return wsPoolCFTarget

@@ -67,7 +67,7 @@ func (h *raceHarness) race(deadline time.Time, stagger time.Duration, maxInFligh
 	}
 }
 
-func (h *raceHarness) dial(p transportPlan, timeout time.Duration) (net.Conn, bool, error) {
+func (h *raceHarness) dial(p transportPlan, timeout time.Duration, fresh bool) (net.Conn, bool, error) {
 	h.mu.Lock()
 	r := h.routes[p.sni]
 	h.inFlight++
@@ -397,5 +397,68 @@ func TestRaceKeepsTheSiblingWhenNothingElseIsLeft(t *testing.T) {
 	out := r.run([]transportPlan{nativePlan("kws2-1"), nativePlan("kws2")})
 	if out.winner == nil || out.winner.plan.sni != "kws2" {
 		t.Fatalf("winner %+v, want kws2 when it is the only route left", out.winner)
+	}
+}
+
+func TestRaceGivesTheWorkerATurnWhileTheSharedDomainsHang(t *testing.T) {
+	h := newRaceHarness(map[string]fakeRoute{
+		"cf1":    {hang: true},
+		"cf2":    {hang: true},
+		"cf3":    {hang: true},
+		"cf4":    {hang: true},
+		"worker": {delay: 5 * time.Millisecond},
+	})
+	r := h.race(time.Now().Add(3*time.Second), 20*time.Millisecond, 3)
+	r.workerAfter = 200 * time.Millisecond
+	r.timeoutFor = func(transportPlan) time.Duration { return time.Second }
+	t.Cleanup(h.waitIdle)
+	start := time.Now()
+	out := r.run([]transportPlan{cfPlan("cf1"), cfPlan("cf2"), cfPlan("cf3"), cfPlan("cf4"), workerPlan("worker")})
+	if out.winner == nil || !out.winner.plan.isWorker {
+		t.Fatalf("winner %+v, want the Worker once the shared domains had their head start", out.winner)
+	}
+	if elapsed := time.Since(start); elapsed > 600*time.Millisecond {
+		t.Fatalf("the Worker waited %v behind hanging domains", elapsed)
+	}
+}
+
+func (h *raceHarness) waitIdle() {
+	until := time.Now().Add(5 * time.Second)
+	for time.Now().Before(until) {
+		h.mu.Lock()
+		n := h.inFlight
+		h.mu.Unlock()
+		if n == 0 {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestRaceRedialsAPooledConnThatDiedAtTheHandshake(t *testing.T) {
+	h := newRaceHarness(map[string]fakeRoute{"worker": {delay: 5 * time.Millisecond}})
+	r := h.race(time.Now().Add(2*time.Second), time.Second, 3)
+	var dials []bool
+	var mu sync.Mutex
+	r.dial = func(p transportPlan, timeout time.Duration, fresh bool) (net.Conn, bool, error) {
+		mu.Lock()
+		dials = append(dials, fresh)
+		mu.Unlock()
+		return &raceConn{}, !fresh, nil
+	}
+	r.accept = func(a raceAttempt) error {
+		if a.pooled {
+			return errors.New("send handshake: broken pipe")
+		}
+		return nil
+	}
+	out := r.run([]transportPlan{workerPlan("worker")})
+	if out.winner == nil || out.winner.pooled {
+		t.Fatalf("winner %+v, want a fresh dial after the pooled conn died", out.winner)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(dials) != 2 || dials[0] || !dials[1] {
+		t.Fatalf("dials %v, want one pooled then one fresh", dials)
 	}
 }

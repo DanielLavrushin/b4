@@ -9,6 +9,7 @@ import (
 const (
 	dialRaceStagger     = 500 * time.Millisecond
 	dialRaceMaxInFlight = 3
+	dialRaceWorkerAfter = 1500 * time.Millisecond
 )
 
 type raceAttempt struct {
@@ -26,8 +27,9 @@ type dialRace struct {
 	maxInFlight int
 	minAttempt  time.Duration
 	deadline    time.Time
+	workerAfter time.Duration
 	timeoutFor  func(p transportPlan) time.Duration
-	dial        func(p transportPlan, timeout time.Duration) (net.Conn, bool, error)
+	dial        func(p transportPlan, timeout time.Duration, fresh bool) (net.Conn, bool, error)
 	started     func(p transportPlan)
 	failed      func(a raceAttempt)
 	accept      func(a raceAttempt) error
@@ -45,6 +47,7 @@ type raceOutcome struct {
 type raceItem struct {
 	plan  transportPlan
 	group int
+	fresh bool
 }
 
 func raceClass(p transportPlan) int {
@@ -74,8 +77,9 @@ func raceGroups(plans []transportPlan) ([]raceItem, []int) {
 
 func (r *dialRace) run(plans []transportPlan) raceOutcome {
 	var out raceOutcome
+	began := time.Now()
 	pending, outstanding := raceGroups(plans)
-	results := make(chan raceAttempt, len(plans))
+	results := make(chan raceAttempt, 2*len(plans))
 	inFlight := 0
 	nativeBusy := false
 	nativeDead := false
@@ -96,11 +100,28 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 		}
 		return -1
 	}
+	workerEarly := func(it raceItem) bool {
+		return r.workerAfter > 0 && raceClass(it.plan) == 1 && it.group == current()+1
+	}
 	eligible := func(it raceItem) bool {
-		if it.group != current() {
+		if it.group != current() && !(workerEarly(it) && time.Since(began) >= r.workerAfter) {
 			return false
 		}
 		return !it.plan.native || (!nativeBusy && !nativeDead)
+	}
+	canStart := func(it raceItem) bool {
+		if !eligible(it) {
+			return false
+		}
+		return inFlight < r.maxInFlight || (it.group != current() && inFlight <= r.maxInFlight)
+	}
+	earlyWake := func() time.Duration {
+		for _, it := range pending {
+			if workerEarly(it) {
+				return time.Until(began.Add(r.workerAfter))
+			}
+		}
+		return -1
 	}
 	prune := func() {
 		if !nativeDead {
@@ -118,17 +139,15 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 		pending = kept
 	}
 	startable := func() bool {
-		if inFlight >= r.maxInFlight {
-			return false
-		}
 		for _, it := range pending {
-			if eligible(it) {
+			if canStart(it) {
 				return true
 			}
 		}
 		return false
 	}
 	launch := func(it raceItem, timeout time.Duration) {
+		fresh := it.fresh
 		inFlight++
 		if it.plan.native {
 			nativeBusy = true
@@ -138,7 +157,7 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 		}
 		go func() {
 			begin := time.Now()
-			conn, pooled, err := r.dial(it.plan, timeout)
+			conn, pooled, err := r.dial(it.plan, timeout, fresh)
 			results <- raceAttempt{plan: it.plan, conn: conn, pooled: pooled, err: err, timeout: timeout, elapsed: time.Since(begin), group: it.group}
 		}()
 	}
@@ -156,11 +175,22 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 			pending = nil
 			return
 		}
+		pick := -1
 		for i, it := range pending {
-			if !eligible(it) {
+			if !canStart(it) {
 				continue
 			}
-			pending = append(pending[:i], pending[i+1:]...)
+			if it.group != current() {
+				pick = i
+				break
+			}
+			if pick < 0 {
+				pick = i
+			}
+		}
+		if pick >= 0 {
+			it := pending[pick]
+			pending = append(pending[:pick], pending[pick+1:]...)
 			timeout := r.timeoutFor(it.plan)
 			if timeout > remaining {
 				timeout = remaining
@@ -179,6 +209,9 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 			if d < 0 {
 				d = 0
 			}
+			timer = time.NewTimer(d)
+			wake = timer.C
+		} else if d := earlyWake(); d > 0 {
 			timer = time.NewTimer(d)
 			wake = timer.C
 		}
@@ -200,6 +233,10 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 					return out
 				}
 				out.attempts = append(out.attempts, fmt.Sprintf("%s: %s", a.plan.describe(), shortErr(err)))
+				if a.pooled {
+					pending = append([]raceItem{{plan: a.plan, group: a.group, fresh: true}}, pending...)
+					outstanding[a.group]++
+				}
 			} else {
 				out.attempts = append(out.attempts, fmt.Sprintf("%s: %s", a.plan.describe(), shortErr(a.err)))
 				if a.plan.native && a.plan.kind == transportWS {

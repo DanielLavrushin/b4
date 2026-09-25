@@ -351,6 +351,20 @@ func wsDialEndpoints(ctx context.Context, host, sni string) []string {
 // kws203.sorokodin.co.uk at 172.67.197.117 timed out after 8067 ms while the
 // same name at 104.21.84.223 connected in 227 ms one second later.
 func dialWS(host, sni, path string, timeout time.Duration, mark uint) (net.Conn, error) {
+	return dialWSAs(host, sni, sni, path, timeout, mark)
+}
+
+type wsTLSError struct{ err error }
+
+func (e *wsTLSError) Error() string { return e.err.Error() }
+func (e *wsTLSError) Unwrap() error { return e.err }
+
+func isTLSStage(err error) bool {
+	var te *wsTLSError
+	return errors.As(err, &te)
+}
+
+func dialWSAs(host, sni, hostHeader, path string, timeout time.Duration, mark uint) (net.Conn, error) {
 	if path == "" {
 		path = "/apiws"
 	}
@@ -395,7 +409,7 @@ func dialWS(host, sni, path string, timeout time.Duration, mark uint) (net.Conn,
 				slot = remaining
 			}
 		}
-		conn, err := dialWSEndpoint(eps[i], sni, path, slot, mark)
+		conn, err := dialWSEndpoint(eps[i], sni, hostHeader, path, slot, mark)
 		if err == nil {
 			wsEndpointRecovered(eps[i], sni)
 			return conn, nil
@@ -430,7 +444,7 @@ func isConnectStage(err error) bool {
 // censored path has: the SYN arrives after retransmits and the ClientHello is
 // then swallowed. Twice the intended wait lands on the client, and the dial
 // budget it was drawn from is already spent.
-func dialWSEndpoint(host, sni, path string, timeout time.Duration, mark uint) (net.Conn, error) {
+func dialWSEndpoint(host, sni, hostHeader, path string, timeout time.Duration, mark uint) (net.Conn, error) {
 	deadline := time.Now().Add(timeout)
 	dialer := &net.Dialer{Deadline: deadline}
 	if mark > 0 {
@@ -468,7 +482,7 @@ func dialWSEndpoint(host, sni, path string, timeout time.Duration, mark uint) (n
 	_ = tlsConn.SetDeadline(deadline)
 	if err := tlsConn.Handshake(); err != nil {
 		raw.Close()
-		return nil, fmt.Errorf("tls handshake %s: %w", sni, err)
+		return nil, &wsTLSError{fmt.Errorf("tls handshake %s: %w", sni, err)}
 	}
 
 	keyBytes := make([]byte, 16)
@@ -479,7 +493,7 @@ func dialWSEndpoint(host, sni, path string, timeout time.Duration, mark uint) (n
 	wsKey := base64.StdEncoding.EncodeToString(keyBytes)
 
 	req := "GET " + path + " HTTP/1.1\r\n" +
-		"Host: " + sni + "\r\n" +
+		"Host: " + hostHeader + "\r\n" +
 		"Upgrade: websocket\r\n" +
 		"Connection: Upgrade\r\n" +
 		"Sec-WebSocket-Key: " + wsKey + "\r\n" +

@@ -369,3 +369,26 @@ func TestDNSPhaseRefusesPrivateAddresses(t *testing.T) {
 		t.Error("with the guard off the same listener is reachable, so the refusal above came from the guard")
 	}
 }
+
+func TestProbeJudgesEachRedirectAgainstTheHopThatSentIt(t *testing.T) {
+	page := "<html><body>" + strings.Repeat("x", 2048) + "</body></html>"
+	signin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/access-denied" {
+			_, _ = w.Write([]byte(page))
+			return
+		}
+		http.Redirect(w, r, "/access-denied", http.StatusFound)
+	}))
+	defer signin.Close()
+	_, port, _ := net.SplitHostPort(signin.Listener.Addr().String())
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://localhost:"+port+"/start", http.StatusFound)
+	}))
+	defer origin.Close()
+
+	ds := newProbeOnlySuite(origin.URL)
+	res := ds.fetchUsingIPForDomain(ds.Domains[0], 5*time.Second, "")
+	if res.Status != CheckStatusComplete {
+		t.Fatalf("a redirect that stays on the site it came from is that site's own, got %q (%s)", res.Status, res.Error)
+	}
+}

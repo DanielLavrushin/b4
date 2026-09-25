@@ -147,15 +147,15 @@ interface WatchableSet {
 }
 
 export function setWatchBlock(set: WatchableSet): SetWatchBlock | null {
-  if (!set.enabled) return "set_disabled";
   if (set.routing?.enabled) return "routed_set";
-  if ((set.discovery?.urls ?? []).length === 0) return "no_urls";
   if (
     (set.targets?.source_devices ?? []).length > 0 &&
     !set.targets?.source_devices_exclude
   ) {
     return "device_scoped";
   }
+  if (!set.enabled) return "set_disabled";
+  if ((set.discovery?.urls ?? []).length === 0) return "no_urls";
   if (
     (set.targets?.sni_domains ?? []).length === 0 &&
     (set.targets?.geosite_categories ?? []).length === 0

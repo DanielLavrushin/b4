@@ -289,3 +289,39 @@ func TestApplyHandshakeMedia(t *testing.T) {
 		})
 	}
 }
+
+func TestBridgeUsesTheProxyPoolWhenOneIsRunning(t *testing.T) {
+	b := NewTransparentBridge(&config.Config{})
+	t.Cleanup(b.Close)
+
+	own := b.getWSPool()
+	if own == nil {
+		t.Fatal("the bridge got no WebSocket pool with the proxy stopped")
+	}
+	if again := b.getWSPool(); again != own {
+		t.Fatal("the bridge rebuilt its pool on every session")
+	}
+
+	shared := newWSPool(MTProtoUpstream{}, 0, wsPoolDefaultSize)
+	sharedWSPool.Store(shared)
+	t.Cleanup(func() {
+		sharedWSPool.CompareAndSwap(shared, nil)
+		shared.close()
+	})
+	if got := b.getWSPool(); got != shared {
+		t.Fatal("the bridge kept its own pool while the proxy's was running")
+	}
+	if own.ctx.Err() == nil {
+		t.Fatal("the bridge's own pool was left running beside the proxy's")
+	}
+
+	sharedWSPool.CompareAndSwap(shared, nil)
+	shared.close()
+	cfg := &config.Config{}
+	cfg.System.MTProto.CFProxyEnabled = true
+	b.UpdateConfig(cfg)
+	rebuilt := b.getWSPool()
+	if rebuilt == nil || rebuilt == own || !rebuilt.cfg.CFProxyEnabled {
+		t.Fatal("the bridge did not build a pool for the current routes once the proxy stopped")
+	}
+}
