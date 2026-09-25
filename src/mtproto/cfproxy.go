@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/log"
-	"github.com/daniellavrushin/b4/netprobe"
 )
 
 const (
@@ -281,7 +280,7 @@ func (b *cfBalancer) refreshFromURL(url string) error {
 		return err
 	}
 	req.Header.Set("User-Agent", "b4-mtproto")
-	cli := netprobe.HTTPClient(int(selfDialMark()), 10*time.Second)
+	cli := &http.Client{Timeout: 10 * time.Second}
 	resp, err := cli.Do(req)
 	if err != nil {
 		return err

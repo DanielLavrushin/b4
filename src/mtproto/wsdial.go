@@ -354,14 +354,46 @@ func dialWS(host, sni, path string, timeout time.Duration, mark uint) (net.Conn,
 	return dialWSAs(host, sni, sni, path, timeout, mark)
 }
 
-type wsTLSError struct{ err error }
+type wsTLSError struct {
+	err    error
+	judged bool
+}
 
 func (e *wsTLSError) Error() string { return e.err.Error() }
 func (e *wsTLSError) Unwrap() error { return e.err }
 
 func isTLSStage(err error) bool {
 	var te *wsTLSError
-	return errors.As(err, &te)
+	return errors.As(err, &te) && te.judged
+}
+
+type wsFrontMissError struct {
+	sni  string
+	peer string
+}
+
+func (e *wsFrontMissError) Error() string {
+	return fmt.Sprintf("tls handshake %s: answered by %s, not Telegram's edge", e.sni, e.peer)
+}
+
+func isFrontMiss(err error) bool {
+	var fe *wsFrontMissError
+	return errors.As(err, &fe)
+}
+
+func telegramCertificate(cs tls.ConnectionState) (bool, string) {
+	if len(cs.PeerCertificates) == 0 {
+		return false, "a peer with no certificate"
+	}
+	leaf := cs.PeerCertificates[0]
+	names := append([]string{leaf.Subject.CommonName}, leaf.DNSNames...)
+	for _, n := range names {
+		n = strings.ToLower(strings.TrimPrefix(n, "*."))
+		if n == "telegram.org" || strings.HasSuffix(n, ".telegram.org") {
+			return true, n
+		}
+	}
+	return false, names[0]
 }
 
 func dialWSAs(host, sni, hostHeader, path string, timeout time.Duration, mark uint) (net.Conn, error) {
@@ -480,9 +512,16 @@ func dialWSEndpoint(host, sni, hostHeader, path string, timeout time.Duration, m
 		InsecureSkipVerify: true,
 	})
 	_ = tlsConn.SetDeadline(deadline)
+	tlsBegan := time.Now()
 	if err := tlsConn.Handshake(); err != nil {
 		raw.Close()
-		return nil, &wsTLSError{fmt.Errorf("tls handshake %s: %w", sni, err)}
+		return nil, &wsTLSError{err: fmt.Errorf("tls handshake %s: %w", sni, err), judged: time.Since(tlsBegan) >= timeout/2}
+	}
+	if sni != hostHeader {
+		if ok, peer := telegramCertificate(tlsConn.ConnectionState()); !ok {
+			tlsConn.Close()
+			return nil, &wsFrontMissError{sni: sni, peer: peer}
+		}
 	}
 
 	keyBytes := make([]byte, 16)

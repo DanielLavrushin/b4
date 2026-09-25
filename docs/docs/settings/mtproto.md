@@ -42,6 +42,7 @@ Shared by the proxy server and by the `Telegram over WebSocket` routing mode, so
 | CF proxy fallback | Uses a rotating pool of Cloudflare-proxied domains for the data centres Telegram's own edge does not serve. | On |
 | Custom WebSocket domain | One domain that proxies WebSocket traffic to Telegram. b4 prepends `kws1.`, `kws2.` and so on per data centre. | empty |
 | Telegram WS edge IP | Replaces the address a native `kws*.web.telegram.org` dial goes to. Does not affect the custom domain. | `149.154.167.220` |
+| Fronting name for Telegram's WS edge | A TLS name, such as `sprinthost.ru`, tried on Telegram's own edge when the handshake under its `kws*` names goes unanswered. See [Fronting name](../telegram/upstream.md#fronting-name-for-the-ws-edge). | empty (off) |
 
 ## Telegram Desktop WEB proxy
 
@@ -75,5 +76,5 @@ Three timeouts where `0` selects the built-in value rather than turning anything
 | Bridge Handshake Wait (sec) | How long the `Telegram over WebSocket` bridge waits for a client's first byte before dropping the connection. `0` uses the built-in value; `-1` waits indefinitely rather than disabling the wait. | `180` |
 
 :::info Saving does not restart the service
-b4 restarts the MTProto proxy itself when the enable switch, port, bind address, Fake SNI, transport mode, custom WebSocket domain, WS edge IP or CF proxy fallback changes, which drops the sessions it is carrying. Secrets and the WEB proxy fields are applied without restarting it; a changed relay port or certificate restarts only the relay listener.
+b4 restarts the MTProto proxy itself when the enable switch, port, bind address, Fake SNI, transport mode, custom WebSocket domain, WS edge IP, fronting name or CF proxy fallback changes, which drops the sessions it is carrying. Secrets and the WEB proxy fields are applied without restarting it; a changed relay port or certificate restarts only the relay listener.
 :::

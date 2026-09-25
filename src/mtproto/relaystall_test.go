@@ -16,9 +16,9 @@ func relayPool() *sync.Pool {
 
 func withFastStall(t *testing.T) {
 	t.Helper()
-	prevClose, prevDue := relayStallClose, relayAnswerDue
-	relayStallClose, relayAnswerDue = 400*time.Millisecond, 150*time.Millisecond
-	t.Cleanup(func() { relayStallClose, relayAnswerDue = prevClose, prevDue })
+	prevClose, prevDue, prevGaveUp := relayStallClose, relayAnswerDue, relayGaveUpWithin
+	relayStallClose, relayAnswerDue, relayGaveUpWithin = 400*time.Millisecond, 150*time.Millisecond, 300*time.Millisecond
+	t.Cleanup(func() { relayStallClose, relayAnswerDue, relayGaveUpWithin = prevClose, prevDue, prevGaveUp })
 }
 
 func TestRelayConns_ReportsMuteUpstream(t *testing.T) {
@@ -196,8 +196,12 @@ func TestWorkerStallCooldownExpires(t *testing.T) {
 		t.Fatal("a worker starts healthy")
 	}
 	workerRecordStall(d)
+	if workerInCooldown(d) {
+		t.Fatal("a single quiet session ranked the worker down")
+	}
+	workerRecordStall(d)
 	if !workerInCooldown(d) {
-		t.Fatal("a stalled worker must be in cooldown")
+		t.Fatal("a worker that went quiet twice must be in cooldown")
 	}
 
 	workerStallMu.Lock()
@@ -307,6 +311,163 @@ func TestRelayConns_RequestAfterALongQuietIsNotCut(t *testing.T) {
 	case <-answered:
 	default:
 		t.Fatal("a request sent after a quiet spell was cut before its answer arrived")
+	}
+	select {
+	case <-stalled:
+		t.Fatal("a request answered in time was scored as a stall")
+	default:
+	}
+}
+
+func TestWorkerStallsFarApartDoNotAddUp(t *testing.T) {
+	workerResetStall()
+	t.Cleanup(workerResetStall)
+	const d = "sparse.workers.dev"
+	workerRecordStall(d)
+	workerStallMu.Lock()
+	st := workerStrikes[d]
+	st.first = time.Now().Add(-2 * workerStallWindow)
+	workerStrikes[d] = st
+	workerStallMu.Unlock()
+	workerRecordStall(d)
+	if workerInCooldown(d) {
+		t.Fatal("two quiet sessions far apart ranked the worker down")
+	}
+}
+
+func TestRelayConns_ScoresAClientThatGaveUpOnAMuteUpstream(t *testing.T) {
+	withFastStall(t)
+	stall := relayStallClose
+	clientA, clientB := net.Pipe()
+	dcA, dcB := net.Pipe()
+	defer dcA.Close()
+
+	stalled := make(chan struct{}, 1)
+	onStall := func() { stalled <- struct{}{} }
+
+	go func() {
+		_, _ = dcA.Write([]byte("part of a file"))
+		buf := make([]byte, 512)
+		for {
+			if _, err := dcA.Read(buf); err != nil {
+				return
+			}
+		}
+	}()
+	go func() {
+		buf := make([]byte, 512)
+		_, _ = clientA.Read(buf)
+		time.Sleep(stall + stall/4)
+		_, _ = clientA.Write([]byte("where is the rest"))
+		time.Sleep(stall / 4)
+		_ = clientA.Close()
+	}()
+
+	relayConns(clientB, dcB, relayOpts{label: "test", bufPool: relayPool(), onStall: onStall})
+
+	select {
+	case <-stalled:
+	default:
+		t.Fatal("a client that gave up on a mute upstream right after asking was not scored")
+	}
+}
+
+func TestRelayConns_ClientStillSendingIsNotCut(t *testing.T) {
+	withFastStall(t)
+	stall := relayStallClose
+	clientA, clientB := net.Pipe()
+	dcA, dcB := net.Pipe()
+	defer dcA.Close()
+
+	stalled := make(chan struct{}, 1)
+	onStall := func() { stalled <- struct{}{} }
+	answered := make(chan struct{})
+
+	go func() {
+		buf := make([]byte, 512)
+		got := 0
+		for {
+			n, err := dcA.Read(buf)
+			if err != nil {
+				return
+			}
+			got += n
+			if got >= 20*len("chunk") {
+				_, _ = dcA.Write([]byte("saved"))
+				got = -1 << 30
+			}
+		}
+	}()
+	go func() {
+		for i := 0; i < 20; i++ {
+			_, _ = clientA.Write([]byte("chunk"))
+			time.Sleep(stall / 8)
+		}
+		buf := make([]byte, 512)
+		if _, err := clientA.Read(buf); err == nil {
+			close(answered)
+		}
+		_ = clientA.Close()
+	}()
+
+	relayConns(clientB, dcB, relayOpts{label: "test", bufPool: relayPool(), onStall: onStall})
+
+	select {
+	case <-answered:
+	default:
+		t.Fatal("an upload still in progress was cut")
+	}
+	select {
+	case <-stalled:
+		t.Fatal("an upload still in progress was scored as a stall")
+	default:
+	}
+}
+
+func TestRelayConns_AckThenRequestGetsTheFullWait(t *testing.T) {
+	withFastStall(t)
+	stall := relayStallClose
+	clientA, clientB := net.Pipe()
+	dcA, dcB := net.Pipe()
+	defer dcA.Close()
+
+	stalled := make(chan struct{}, 1)
+	onStall := func() { stalled <- struct{}{} }
+	answered := make(chan struct{})
+
+	go func() {
+		_, _ = dcA.Write([]byte("an update"))
+		buf := make([]byte, 512)
+		reads := 0
+		for {
+			if _, err := dcA.Read(buf); err != nil {
+				return
+			}
+			reads++
+			if reads == 2 {
+				time.Sleep(stall * 5 / 8)
+				_, _ = dcA.Write([]byte("the answer"))
+			}
+		}
+	}()
+	go func() {
+		buf := make([]byte, 512)
+		_, _ = clientA.Read(buf)
+		_, _ = clientA.Write([]byte("ack"))
+		time.Sleep(2 * stall)
+		_, _ = clientA.Write([]byte("a request"))
+		if _, err := clientA.Read(buf); err == nil {
+			close(answered)
+		}
+		_ = clientA.Close()
+	}()
+
+	relayConns(clientB, dcB, relayOpts{label: "test", bufPool: relayPool(), onStall: onStall})
+
+	select {
+	case <-answered:
+	default:
+		t.Fatal("a request sent after an unanswered ack was cut before its answer was due")
 	}
 	select {
 	case <-stalled:

@@ -325,3 +325,20 @@ func TestBridgeUsesTheProxyPoolWhenOneIsRunning(t *testing.T) {
 		t.Fatal("the bridge did not build a pool for the current routes once the proxy stopped")
 	}
 }
+
+func TestBridgeRebuildsItsPoolWhenTheRoutesChange(t *testing.T) {
+	b := NewTransparentBridge(&config.Config{})
+	t.Cleanup(b.Close)
+	first := b.getWSPool()
+
+	cfg := &config.Config{}
+	cfg.System.MTProto.WSFrontSNI = "sprinthost.ru"
+	b.UpdateConfig(cfg)
+	second := b.getWSPool()
+	if second == first || second.cfg.FrontSNI != "sprinthost.ru" {
+		t.Fatal("the bridge kept a pool built for routes that changed")
+	}
+	if first.ctx.Err() == nil {
+		t.Fatal("the pool for the old routes was left running")
+	}
+}

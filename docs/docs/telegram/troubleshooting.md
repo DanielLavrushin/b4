@@ -60,7 +60,7 @@ A configuration whose secrets are all disabled logs `secrets: 0` at start-up and
 [tg-bridge c=9] upstream silent for 8s with 512 B awaiting an answer, cutting the relay
 ```
 
-The route accepted two or more writes and answered none of them: the first has waited eight seconds and the latest three. A single write that expects no reply, such as an acknowledgement on an idle session, does not count. This is the failure mode a Cloudflare Worker produces, and b4 demotes a Worker that does it for ten minutes.
+The route accepted two or more writes and answered none of them, eight seconds after the second and three after the latest. A single write that expects no reply, such as an acknowledgement on an idle session, does not count. A session that Telegram closes within six seconds of a request, while the route has been silent for eight, counts as well. This is the failure mode a Cloudflare Worker produces, and b4 ranks a Worker down for ten minutes after two such sessions within five minutes.
 
 ## Dialling fails
 

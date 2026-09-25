@@ -28,6 +28,7 @@ type dialRace struct {
 	minAttempt  time.Duration
 	deadline    time.Time
 	workerAfter time.Duration
+	earlyOK     func(p transportPlan) bool
 	timeoutFor  func(p transportPlan) time.Duration
 	dial        func(p transportPlan, timeout time.Duration, fresh bool) (net.Conn, bool, error)
 	started     func(p transportPlan)
@@ -77,8 +78,8 @@ func raceGroups(plans []transportPlan) ([]raceItem, []int) {
 
 func (r *dialRace) run(plans []transportPlan) raceOutcome {
 	var out raceOutcome
-	began := time.Now()
 	pending, outstanding := raceGroups(plans)
+	groupBegan := map[int]time.Time{}
 	results := make(chan raceAttempt, 2*len(plans))
 	inFlight := 0
 	nativeBusy := false
@@ -101,10 +102,19 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 		return -1
 	}
 	workerEarly := func(it raceItem) bool {
-		return r.workerAfter > 0 && raceClass(it.plan) == 1 && it.group == current()+1
+		if r.workerAfter <= 0 || raceClass(it.plan) != 1 || it.group != current()+1 {
+			return false
+		}
+		if _, ok := groupBegan[current()]; !ok {
+			return false
+		}
+		return r.earlyOK == nil || r.earlyOK(it.plan)
+	}
+	earlyAt := func() time.Time {
+		return groupBegan[current()].Add(r.workerAfter)
 	}
 	eligible := func(it raceItem) bool {
-		if it.group != current() && !(workerEarly(it) && time.Since(began) >= r.workerAfter) {
+		if it.group != current() && !(workerEarly(it) && !time.Now().Before(earlyAt())) {
 			return false
 		}
 		return !it.plan.native || (!nativeBusy && !nativeDead)
@@ -118,7 +128,7 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 	earlyWake := func() time.Duration {
 		for _, it := range pending {
 			if workerEarly(it) {
-				return time.Until(began.Add(r.workerAfter))
+				return time.Until(earlyAt())
 			}
 		}
 		return -1
@@ -148,6 +158,9 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 	}
 	launch := func(it raceItem, timeout time.Duration) {
 		fresh := it.fresh
+		if _, ok := groupBegan[it.group]; !ok {
+			groupBegan[it.group] = time.Now()
+		}
 		inFlight++
 		if it.plan.native {
 			nativeBusy = true

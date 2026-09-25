@@ -87,7 +87,8 @@ var (
 	wsEndpointN  = map[string]int{}
 	wsEndpointAt = map[string]time.Time{}
 	wsProbeAt    = map[string]time.Time{}
-	wsFrontOn    = map[string]bool{}
+	wsFrontOn    = map[string]string{}
+	wsFrontNo    = map[string]time.Time{}
 
 	tcpStateMu    sync.Mutex
 	tcpCooldownTo = map[string]time.Time{} // keyed by host:port
@@ -321,29 +322,31 @@ func wsEndpointRecovered(ip, sni string) {
 	}
 }
 
-const wsDefaultFrontSNI = "sprinthost.ru"
+const wsFrontRefuseTTL = 30 * time.Minute
 
 func wsFrontName(v string) string {
-	switch v = strings.TrimSpace(v); v {
-	case "":
-		return wsDefaultFrontSNI
-	case "off":
+	v = strings.TrimSpace(v)
+	if strings.EqualFold(v, "off") {
 		return ""
 	}
 	return v
 }
 
-func wsFrontPreferred(host string) bool {
+func wsFrontPreferred(host, front string) bool {
+	if front == "" {
+		return false
+	}
 	wsStateMu.Lock()
 	defer wsStateMu.Unlock()
-	return wsFrontOn[host]
+	return wsFrontOn[host] == front
 }
 
 func wsFrontRecord(host, front string, on bool) {
 	wsStateMu.Lock()
-	was := wsFrontOn[host]
+	was := wsFrontOn[host] == front
 	if on {
-		wsFrontOn[host] = true
+		wsFrontOn[host] = front
+		delete(wsFrontNo, host+"|"+front)
 	} else {
 		delete(wsFrontOn, host)
 	}
@@ -356,9 +359,35 @@ func wsFrontRecord(host, front string, on bool) {
 	}
 }
 
+func wsFrontRefused(host, front string) bool {
+	k := host + "|" + front
+	wsStateMu.Lock()
+	defer wsStateMu.Unlock()
+	t, ok := wsFrontNo[k]
+	if !ok {
+		return false
+	}
+	if time.Now().After(t) {
+		delete(wsFrontNo, k)
+		return false
+	}
+	return true
+}
+
+func wsFrontRefuse(host, front string) {
+	k := host + "|" + front
+	wsStateMu.Lock()
+	_, had := wsFrontNo[k]
+	wsFrontNo[k] = time.Now().Add(wsFrontRefuseTTL)
+	wsStateMu.Unlock()
+	if !had {
+		log.Infof("%s the name %s does not lead to Telegram's edge %s on this network; not tried again for %v", tg(""), front, host, wsFrontRefuseTTL)
+	}
+}
+
 func nativeRoutes(dc, absDC int, dialHost, front string) []transportPlan {
 	plans := nativeEdgePlans(dc, absDC, dialHost)
-	if front == "" || !wsFrontPreferred(dialHost) {
+	if !wsFrontPreferred(dialHost, front) {
 		return plans
 	}
 	for i := range plans {
@@ -394,7 +423,8 @@ func wsResetState() {
 	wsEndpointN = map[string]int{}
 	wsEndpointAt = map[string]time.Time{}
 	wsProbeAt = map[string]time.Time{}
-	wsFrontOn = map[string]bool{}
+	wsFrontOn = map[string]string{}
+	wsFrontNo = map[string]time.Time{}
 	wsStateMu.Unlock()
 	log.Debugf("%s WS cooldown/blacklist state reset", tg(""))
 }
@@ -805,23 +835,28 @@ func (p *wsPool) dialFresh(dc int, plans []transportPlan, timeout time.Duration)
 
 func (p *wsPool) dialPlan(dc int, pl transportPlan, timeout time.Duration) (*wsPoolConn, error) {
 	c, err := p.dialOnce(dc, pl, timeout)
-	if err == nil || !pl.native || p.cfg.FrontSNI == "" || isConnectStage(err) {
+	front := p.cfg.FrontSNI
+	if err == nil || !pl.native || front == "" || isConnectStage(err) {
 		return c, err
 	}
 	twin := pl
-	if pl.frontSNI != "" {
+	switch {
+	case pl.frontSNI != "":
 		twin.frontSNI = ""
-	} else if isTLSStage(err) && wsProbeAllowed(pl.dialHost+"|front") {
-		twin.frontSNI = p.cfg.FrontSNI
-	} else {
+	case isTLSStage(err) && !wsFrontRefused(pl.dialHost, front) && wsProbeAllowed(pl.dialHost+"|front"):
+		twin.frontSNI = front
+	default:
 		return nil, err
 	}
 	c2, err2 := p.dialOnce(dc, twin, timeout)
 	if err2 != nil {
+		if isFrontMiss(err2) {
+			wsFrontRefuse(pl.dialHost, front)
+		}
 		log.Tracef("%s WS pool %s answered neither as %s nor as %s: %v", tg(""), pl.dialHost, pl.tlsName(), twin.tlsName(), err2)
 		return nil, err
 	}
-	wsFrontRecord(twin.dialHost, p.cfg.FrontSNI, twin.frontSNI != "")
+	wsFrontRecord(twin.dialHost, front, twin.frontSNI != "")
 	return c2, nil
 }
 

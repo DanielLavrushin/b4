@@ -44,7 +44,7 @@ The [Telegram upstream](./upstream.md) settings apply, with two overrides the br
 - The transport mode is forced to **Auto**, whatever the dropdown says.
 - The **DC Relay** is cleared. A relay configured for the proxy server is not used here, so a network where the WebSocket transport is blocked cannot be rescued by a relay in this mode.
 
-While the proxy server runs, the bridge draws warm WebSocket connections from the proxy server's pool. Otherwise it keeps a pool of its own, filled after the first bridged session to each data centre, so a data centre that has carried no bridged session within the last few minutes starts cold.
+While the proxy server runs in Auto or WebSocket only mode, the bridge draws warm WebSocket connections from the proxy server's pool. Otherwise it keeps a pool of its own, filled after the first bridged session to each data centre, so a data centre that has carried no bridged session within the last few minutes starts cold.
 
 Configure a [Cloudflare Worker domain](./cloudflare-worker.md) if media fails to load: the data centres Telegram's own edge does not serve are reached through the Cloudflare routes.
 

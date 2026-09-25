@@ -539,6 +539,7 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 		minAttempt:  wsDialMinAttempt,
 		deadline:    deadline,
 		workerAfter: dialRaceWorkerAfter,
+		earlyOK:     func(p transportPlan) bool { return !workerInCooldown(p.sni) },
 		timeoutFor: func(p transportPlan) time.Duration {
 			if p.kind != transportWS {
 				return tcpDialTimeout

@@ -462,3 +462,39 @@ func TestRaceRedialsAPooledConnThatDiedAtTheHandshake(t *testing.T) {
 		t.Fatalf("dials %v, want one pooled then one fresh", dials)
 	}
 }
+
+func TestRaceKeepsACooledWorkerBehindTheSharedDomains(t *testing.T) {
+	h := newRaceHarness(map[string]fakeRoute{
+		"cf1":    {hang: true},
+		"worker": {delay: 5 * time.Millisecond},
+	})
+	r := h.race(time.Now().Add(2*time.Second), 20*time.Millisecond, 3)
+	r.workerAfter = 100 * time.Millisecond
+	r.earlyOK = func(p transportPlan) bool { return p.sni != "worker" }
+	r.timeoutFor = func(transportPlan) time.Duration { return 400 * time.Millisecond }
+	t.Cleanup(h.waitIdle)
+	start := time.Now()
+	out := r.run([]transportPlan{cfPlan("cf1"), workerPlan("worker")})
+	if out.winner == nil || !out.winner.plan.isWorker {
+		t.Fatalf("winner %+v, want the Worker once the shared domain failed", out.winner)
+	}
+	if elapsed := time.Since(start); elapsed < 400*time.Millisecond {
+		t.Fatalf("a cooled Worker started after %v, ahead of the shared domain it is ranked behind", elapsed)
+	}
+}
+
+func TestRaceTimesTheWorkerFromTheTierAheadOfIt(t *testing.T) {
+	h := newRaceHarness(map[string]fakeRoute{
+		"":       {hang: true},
+		"cf1":    {delay: 100 * time.Millisecond},
+		"worker": {delay: 5 * time.Millisecond},
+	})
+	r := h.race(time.Now().Add(3*time.Second), 20*time.Millisecond, 3)
+	r.workerAfter = 200 * time.Millisecond
+	r.timeoutFor = func(transportPlan) time.Duration { return 300 * time.Millisecond }
+	t.Cleanup(h.waitIdle)
+	out := r.run([]transportPlan{tcpPlan("203.0.113.9:443"), cfPlan("cf1"), workerPlan("worker")})
+	if out.winner == nil || out.winner.plan.sni != "cf1" {
+		t.Fatalf("winner %+v, want the WebSocket route: the Worker's wait starts when that tier does", out.winner)
+	}
+}

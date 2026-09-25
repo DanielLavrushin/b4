@@ -506,6 +506,13 @@ func (c *Config) checkPortCollisions(v *validator) {
 			refs = append(refs, portRef{"system.dns.tcp_port", c.DNSTCPListenPort()})
 		}
 	}
+	if f := strings.TrimSpace(c.System.MTProto.WSFrontSNI); f != "" && !strings.EqualFold(f, "off") {
+		if net.ParseIP(f) != nil || !strings.Contains(f, ".") || strings.ContainsAny(f, " :/[]") {
+			v.addf("system.mtproto.ws_front_sni", "invalid_host",
+				map[string]any{"value": f},
+				"ws_front_sni must be a host name (got %q)", f)
+		}
+	}
 	if c.System.MTProto.Enabled {
 		if c.System.MTProto.Port < 1 || c.System.MTProto.Port > 65535 {
 			v.add("system.mtproto.port", "out_of_range", "port must be between 1 and 65535", portRangeParams)
@@ -524,13 +531,6 @@ func (c *Config) checkPortCollisions(v *validator) {
 				v.addf("system.mtproto.ws_endpoint_host", "invalid_host",
 					map[string]any{"value": h},
 					"ws_endpoint_host must be a host or IP without port (got %q)", h)
-			}
-		}
-		if f := c.System.MTProto.WSFrontSNI; f != "" && f != "off" {
-			if net.ParseIP(f) != nil || !strings.Contains(f, ".") || strings.ContainsAny(f, " :/[]") {
-				v.addf("system.mtproto.ws_front_sni", "invalid_host",
-					map[string]any{"value": f},
-					"ws_front_sni must be a host name, or off (got %q)", f)
 			}
 		}
 		if mc := c.System.MTProto.MaxConnections; mc < 0 || mc > 100000 {

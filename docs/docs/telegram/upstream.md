@@ -34,14 +34,14 @@ For a given data centre, b4 assembles a candidate list and walks it:
 
 Workers that recently went silent mid-session are appended behind everything else rather than dropped, and if the list ends up empty in a mode that allows TCP, the direct route is added back ignoring its cooldowns.
 
-Candidates overlap instead of queueing. The next one starts when the previous has not answered within half a second, or at once when it fails, with at most three in flight. The names of Telegram's own edge share one address, so they are dialled one at a time, and a sibling name is dropped once the address itself stopped answering. The list is also split into tiers in the order above: direct TCP starts only after every WebSocket route ahead of it has failed, and relay TCP placed first has to fail before any WebSocket route starts. The Workers wait for the routes ahead of them for a second and a half at most, then join the race. The first candidate to connect carries the session, and a slower one that connects afterwards is kept as a warm spare.
+Candidates overlap instead of queueing. The next one starts when the previous has not answered within half a second, or at once when it fails, with at most three in flight. The names of Telegram's own edge share one address, so they are dialled one at a time, and a sibling name is dropped once the address itself stopped answering. The list is also split into tiers in the order above: direct TCP starts only after every WebSocket route ahead of it has failed, and relay TCP placed first has to fail before any WebSocket route starts. A Worker joins the race once the WebSocket routes ahead of it have had a second and a half, unless it is ranked down after a stall. The first candidate to connect carries the session, and a slower one that connects afterwards is kept as a warm spare.
 
 No new attempt starts after about four and a half seconds, and each attempt gets at most three. Telegram Desktop abandons a session that has not reached a data centre within about three seconds.
 
 An address that did not answer the TCP handshake is stepped over by later sessions for a minute, a name whose TLS handshake was swallowed for five minutes, and both periods double while the failures repeat, up to thirty minutes. A single answer clears them.
 
 :::info The plan is not the whole story
-The proxy server keeps a small pool of warm WebSocket connections and consults it before building the list above. With Auto and a DC Relay configured, a warm pooled connection can therefore win over the relay that the plan puts first. The bridge draws on the same pool while the proxy server runs, and keeps one of its own otherwise.
+The proxy server keeps a small pool of warm WebSocket connections and consults it before building the list above. With Auto and a DC Relay configured, a warm pooled connection can therefore win over the relay that the plan puts first. The bridge draws on the same pool while the proxy server runs in Auto or WebSocket only mode, and keeps one of its own otherwise.
 
 A spare is retired after 75 seconds, since Telegram and the Cloudflare routes close an unused connection at about 90. Every five seconds the pool drops aged spares and tops up the data centres used within the last ten minutes, or three for those that ride the shared Cloudflare domains. While Telegram's own edge does not answer, data centres 2 and 4 are pooled on the Cloudflare routes and the edge is probed from the pool, at most every thirty seconds, instead of on a client's session.
 :::
@@ -68,10 +68,10 @@ Every dial that carries a native `kws*.web.telegram.org` name goes to one addres
 
 Telegram's edge answers any TLS server name with its own certificate and routes the WebSocket by the `Host` header alone. Where a DPI drops the handshake for the `kws*.web.telegram.org` names while the address itself stays reachable, b4 presents this name in the TLS handshake instead and keeps the real name in `Host`, so a session still reaches the data centre and the cluster it asked for.
 
-The name is tried by the warm pool only, at most every thirty seconds, after a handshake under Telegram's own names went unanswered or was reset. Once it has carried a connection, client sessions to the edge use it too, until a handshake under it fails and the edge answers its own names again. An address that does not accept the TCP connection at all is not retried under this name. An empty field uses `sprinthost.ru`, and `off` disables fronting.
+Fronting is off while the field is empty. `sprinthost.ru` is the name tg-ws-proxy uses. The name is tried by the warm pool only, at most every thirty seconds, after a handshake under Telegram's own names had time to finish and went unanswered or was reset. The handshake under the name has to end on a `telegram.org` certificate; anything else is closed before a request is sent, and the name is not tried on that address again for thirty minutes. Once the name has carried a connection, client sessions to the edge use it too, until a handshake under it fails and the edge answers its own names again. An address that does not accept the TCP connection at all is not retried under this name.
 
 :::info Where fronting does not help
-A network that blocks the edge's address outright, and one whose DPI answers for the address itself and forwards the connection by the name it sees, both defeat fronting. On the second kind the handshake under this name reaches the real host behind it, which answers the WebSocket request with an error, and the edge stays on the Cloudflare routes.
+A network that blocks the edge's address outright, and one whose DPI answers for the address itself and forwards the connection by the name it sees, both defeat fronting. On the second kind the handshake under this name reaches the real host behind it, whose certificate is not Telegram's, and data centres 2 and 4 stay on the Cloudflare routes.
 :::
 
 ## Fallback sources
