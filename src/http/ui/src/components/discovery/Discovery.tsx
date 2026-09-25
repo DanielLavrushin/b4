@@ -11,7 +11,8 @@ import {
 } from "@b4.icons";
 import { colors } from "@design";
 import { B4SetConfig } from "@models/config";
-import { DomainReassignment } from "@models/sets";
+import { ProbeSuggestion } from "@models/discovery";
+import { DomainReassignment, SetDomainMatch } from "@models/sets";
 import {
   B4Alert,
   B4Section,
@@ -24,7 +25,18 @@ import { useDiscovery, useDiscoveryLogs } from "@hooks/useDiscovery";
 import { useSets } from "@hooks/useSets";
 import { useCaptures } from "@b4.capture";
 import { configApi } from "@b4.settings";
-import { ApplyTarget, buildResultEntries } from "@utils";
+import { discoveryApi } from "@api/discovery";
+import { setsApi } from "@api/sets";
+import {
+  ApplyTarget,
+  MAX_PROBE_URLS,
+  ProbeUrl,
+  buildResultEntries,
+  describeApiError,
+  normalizeProbeUrl,
+  probeUrlLabel,
+  sanitizeProbeUrls,
+} from "@utils";
 import {
   DiscoveryOptionsPanel,
   DiscoveryOptions,
@@ -34,19 +46,17 @@ import {
 import { RunPanel } from "./RunPanel";
 import { ResultsPanel } from "./ResultsPanel";
 import { HistoryTable } from "./HistoryTable";
-import { ApplyDialog } from "./ApplyDialog";
+import { ApplyDialog, ReplaceOptions } from "./ApplyDialog";
 import { DiscoveryLogDialog, DiscoveryLogLine } from "./LogPanel";
+import { SetPicker, SetUrlHints } from "./SetPicker";
+import { VerdictApply } from "./SetVerdictCard";
 
 const URL_SEPARATORS = /\s+|,(?=\s|$)/;
 
-const extractDomain = (url: string): string => {
-  try {
-    const withProto = url.includes("://") ? url : `https://${url}`;
-    return new URL(withProto).hostname;
-  } catch {
-    return url.split("/")[0];
-  }
-};
+interface DiscoveryLocationState {
+  urls?: string[];
+  setId?: string;
+}
 
 export const DiscoveryRunner = () => {
   const { t } = useTranslation();
@@ -85,7 +95,39 @@ export const DiscoveryRunner = () => {
   const [logOpen, setLogOpen] = useState(false);
   const [applyTarget, setApplyTarget] = useState<ApplyTarget | null>(null);
   const [applying, setApplying] = useState(false);
+  const [refused, setRefused] = useState<string[]>([]);
+  const [sets, setSets] = useState<B4SetConfig[]>([]);
+  const [setsLoaded, setSetsLoaded] = useState(false);
+  const [pickedSetId, setPickedSetId] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<ProbeSuggestion[]>([]);
+  const [suggestionsLoaded, setSuggestionsLoaded] = useState(false);
+  const [owners, setOwners] = useState<SetDomainMatch[]>([]);
   const domainInputRef = useRef<HTMLInputElement | null>(null);
+  const suggestFor = useRef<string | null>(null);
+  const restoredSuite = useRef<string | null>(null);
+
+  const loadSets = useCallback(async () => {
+    try {
+      const list = await setsApi.getSets();
+      setSets(Array.isArray(list) ? list : []);
+    } catch {
+      setSets([]);
+    } finally {
+      setSetsLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSets();
+  }, [loadSets]);
+
+  const pickedSet = useMemo(
+    () =>
+      pickedSetId
+        ? sets.find((s) => s.id === pickedSetId && !s.routing?.enabled)
+        : undefined,
+    [sets, pickedSetId],
+  );
 
   useEffect(() => {
     saveOptions(options);
@@ -117,7 +159,7 @@ export const DiscoveryRunner = () => {
   );
 
   const start = useCallback(
-    (urls: string[]) => {
+    (urls: string[], setId?: string | null) => {
       void startDiscovery(urls, {
         skipDNS: !options.checkDns,
         skipCache: !options.useCache,
@@ -126,35 +168,141 @@ export const DiscoveryRunner = () => {
         validationTries: options.validationTries,
         tlsVersion: options.tlsVersion,
         ipVersion: effectiveIpVersion,
+        setId: setId ?? undefined,
+        stopWhenCovered: setId ? options.stopWhenCovered : undefined,
       });
     },
     [startDiscovery, options, effectiveIpVersion, communityEnabled],
   );
 
-  const addUrls = useCallback((raw: string) => {
-    const parts = raw
-      .split(URL_SEPARATORS)
-      .map((l) =>
-        l
-          .trim()
-          .replace(/^["'`]+|["'`]+$/g, "")
-          .trim(),
-      )
-      .filter((l) => l.length > 0);
-    if (parts.length === 0) return;
+  const appendUrls = useCallback((probes: ProbeUrl[]) => {
     setCheckUrls((prev) => {
-      const existing = new Set(prev);
+      const hosts = new Set(prev.map((u) => normalizeProbeUrl(u)?.host ?? u));
       const next = [...prev];
-      for (const url of parts) {
-        if (!existing.has(url)) {
-          existing.add(url);
-          next.push(url);
+      for (const probe of probes) {
+        if (!hosts.has(probe.host)) {
+          hosts.add(probe.host);
+          next.push(probe.url);
         }
       }
       return next;
     });
-    setUrlInput("");
   }, []);
+
+  const addUrls = useCallback(
+    (raw: string) => {
+      const parts = raw
+        .split(URL_SEPARATORS)
+        .map((l) =>
+          l
+            .trim()
+            .replace(/^["'`]+|["'`]+$/g, "")
+            .trim(),
+        )
+        .filter((l) => l.length > 0);
+      if (parts.length === 0) return;
+      const bad: string[] = [];
+      const good: ProbeUrl[] = [];
+      for (const part of parts) {
+        const probe = normalizeProbeUrl(part);
+        if (probe) good.push(probe);
+        else bad.push(part);
+      }
+      setRefused(bad);
+      appendUrls(good);
+      setUrlInput("");
+    },
+    [appendUrls],
+  );
+
+  const addSuggested = useCallback(
+    (url: string) => {
+      const probe = normalizeProbeUrl(url);
+      if (probe) appendUrls([probe]);
+    },
+    [appendUrls],
+  );
+
+  const loadSuggestions = useCallback((setId: string, fill: boolean) => {
+    suggestFor.current = setId;
+    setSuggestions([]);
+    setSuggestionsLoaded(false);
+    discoveryApi
+      .suggest(setId)
+      .then((res) => {
+        if (suggestFor.current !== setId) return;
+        const list = res?.urls ?? [];
+        setSuggestions(list);
+        setSuggestionsLoaded(true);
+        if (fill) {
+          const first = sanitizeProbeUrls(list.map((s) => s.url));
+          setCheckUrls((prev) => (prev.length === 0 ? first : prev));
+        }
+      })
+      .catch(() => {
+        if (suggestFor.current !== setId) return;
+        setSuggestions([]);
+        setSuggestionsLoaded(true);
+      });
+  }, []);
+
+  const pickSet = useCallback(
+    (setId: string | null, urls?: string[]) => {
+      setRefused([]);
+      setPickedSetId(setId);
+      if (!setId) {
+        suggestFor.current = null;
+        setSuggestions([]);
+        setSuggestionsLoaded(false);
+        return;
+      }
+      const set = sets.find((s) => s.id === setId);
+      const given = sanitizeProbeUrls(urls ?? []);
+      const stored = sanitizeProbeUrls(set?.discovery?.urls ?? []);
+      const initial = given.length > 0 ? given : stored;
+      setCheckUrls(initial);
+      loadSuggestions(setId, initial.length === 0);
+    },
+    [sets, loadSuggestions],
+  );
+
+  const hostsKey = useMemo(
+    () =>
+      checkUrls
+        .map((u) => normalizeProbeUrl(u)?.host)
+        .filter((h): h is string => !!h)
+        .join(","),
+    [checkUrls],
+  );
+
+  useEffect(() => {
+    setOwners([]);
+    if (!pickedSetId || !hostsKey) return;
+    let active = true;
+    setsApi
+      .checkDomain(hostsKey)
+      .then((found) => {
+        if (active) setOwners(Array.isArray(found) ? found : []);
+      })
+      .catch(() => {
+        if (active) setOwners([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [pickedSetId, hostsKey]);
+
+  useEffect(() => {
+    if (!suite?.set_id || restoredSuite.current === suite.id) return;
+    restoredSuite.current = suite.id;
+    if (suite.set_id === pickedSetId) return;
+    setPickedSetId(suite.set_id);
+    const urls = sanitizeProbeUrls(
+      (suite.domains ?? []).map((d) => d.check_url),
+    );
+    setCheckUrls(urls);
+    loadSuggestions(suite.set_id, false);
+  }, [suite, pickedSetId, loadSuggestions]);
 
   const handleUrlKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -184,15 +332,29 @@ export const DiscoveryRunner = () => {
   }, []);
 
   useEffect(() => {
-    const state = location.state as { urls?: string[] } | null;
-    if (state?.urls?.length) {
-      addUrls(state.urls.join("\n"));
-      navigate(
-        { pathname: location.pathname, search: location.search, hash: location.hash },
-        { replace: true, state: null },
-      )?.catch(() => {});
-    }
-  }, [location.pathname, location.search, location.hash, location.state, addUrls, navigate]);
+    const state = location.state as DiscoveryLocationState | null;
+    if (!state?.setId && !state?.urls?.length) return;
+    if (state.setId && !setsLoaded) return;
+    const target = state.setId
+      ? sets.find((s) => s.id === state.setId && !s.routing?.enabled)
+      : undefined;
+    if (target) pickSet(target.id, state.urls);
+    else if (state.urls?.length) addUrls(state.urls.join("\n"));
+    navigate(
+      { pathname: location.pathname, search: location.search, hash: location.hash },
+      { replace: true, state: null },
+    )?.catch(() => {});
+  }, [
+    location.pathname,
+    location.search,
+    location.hash,
+    location.state,
+    sets,
+    setsLoaded,
+    addUrls,
+    pickSet,
+    navigate,
+  ]);
 
   const describeMoved = (moved?: DomainReassignment[]): string => {
     if (!moved || moved.length === 0) return "";
@@ -217,6 +379,7 @@ export const DiscoveryRunner = () => {
     }
     const id = res.data?.id;
     if (applied) await markApplied(applied.domains, applied.preset, id);
+    void loadSets();
     showSuccess(
       [
         t("discovery.apply.created", { name: res.data?.name ?? set.name }),
@@ -250,6 +413,7 @@ export const DiscoveryRunner = () => {
       return;
     }
     if (applied) await markApplied(applied.domains, applied.preset, setId);
+    void loadSets();
     showSuccess(
       [t("discovery.apply.added"), describeMoved(res.data?.moved)]
         .filter(Boolean)
@@ -268,11 +432,16 @@ export const DiscoveryRunner = () => {
     setId: string,
     set: B4SetConfig,
     domains: string[],
-    pins?: Record<string, string[]>,
+    pins: Record<string, string[]> | undefined,
+    opts: ReplaceOptions,
   ) => {
     const applied = applyTarget;
     setApplying(true);
-    const res = await replaceStrategy(setId, set, domains, pins);
+    const res = await replaceStrategy(setId, set, domains, pins, {
+      strategyOnly: true,
+      keepTargets: opts.keepTargets,
+      probeUrls: opts.probeUrls,
+    });
     setApplying(false);
     if (!res.success) {
       showError(
@@ -283,6 +452,7 @@ export const DiscoveryRunner = () => {
       return;
     }
     if (applied) await markApplied(applied.domains, applied.preset, setId);
+    void loadSets();
     showSuccess(
       [
         t("discovery.apply.replaced", { name: res.data?.name ?? "" }),
@@ -300,10 +470,101 @@ export const DiscoveryRunner = () => {
     setApplyTarget(null);
   };
 
-  const handleRerun = (url: string) => {
-    setCheckUrls([url]);
+  const handleApplyVerdict = async (req: VerdictApply): Promise<boolean> => {
+    setApplying(true);
+    const res = await replaceStrategy(req.setId, req.set, req.domains, req.pins, {
+      strategyOnly: true,
+      keepTargets: true,
+      probeUrls: req.probeUrls,
+    });
+    setApplying(false);
+    if (!res.success) {
+      showError(
+        [t("discovery.apply.replaceFailed"), res.error]
+          .filter(Boolean)
+          .join(" "),
+      );
+      return false;
+    }
+    await markApplied(req.domains, req.preset, req.setId);
+    void loadSets();
+    const name =
+      res.data?.name ?? sets.find((s) => s.id === req.setId)?.name ?? "";
+    showSuccess(
+      [t("discovery.apply.replaced", { name }), describeMoved(res.data?.moved)]
+        .filter(Boolean)
+        .join(" "),
+      {
+        label: t("discovery.apply.openSet"),
+        onClick: () => {
+          void navigate(`/sets/${req.setId}`);
+        },
+      },
+    );
+    return true;
+  };
+
+  const handleSaveSetUrls = async (
+    setId: string,
+    urls: string[],
+    removed: string[],
+    dropHosts: string[],
+  ): Promise<void> => {
+    let target: B4SetConfig | undefined;
+    try {
+      const fresh = await setsApi.getSets();
+      target = (Array.isArray(fresh) ? fresh : []).find((s) => s.id === setId);
+    } catch {
+      target = sets.find((s) => s.id === setId);
+    }
+    if (!target) return;
+    const drop = new Set(dropHosts);
+    const stored = target.discovery?.urls ?? [];
+    const kept =
+      stored.length > 0
+        ? stored.filter((u) => {
+            const host = normalizeProbeUrl(u)?.host;
+            return !host || !drop.has(host);
+          })
+        : urls;
+    try {
+      await setsApi.updateSet(target.id, {
+        ...target,
+        discovery: { ...target.discovery, urls: kept },
+      });
+      showSuccess(
+        t("discovery.verdict.pruned", {
+          domains: removed.join(", "),
+          name: target.name,
+        }),
+      );
+      await loadSets();
+    } catch (e) {
+      showError(
+        [t("discovery.verdict.pruneFailed"), describeApiError(e)]
+          .filter(Boolean)
+          .join(" "),
+      );
+    }
+  };
+
+  const handleRerun = (url: string, setId?: string) => {
+    const known = setId
+      ? sets.find((s) => s.id === setId && !s.routing?.enabled)
+      : undefined;
+    const stored = sanitizeProbeUrls(known?.discovery?.urls ?? []);
+    const runSet = known && stored.length > 0 ? known.id : null;
+    const urls = runSet ? stored : [url];
+    setRefused([]);
+    setPickedSetId(runSet);
+    if (!runSet) {
+      suggestFor.current = null;
+      setSuggestions([]);
+      setSuggestionsLoaded(false);
+    }
+    setCheckUrls(urls);
     resetDiscovery();
-    start([url]);
+    start(urls, runSet);
   };
 
   const handleRemoveHistory = (domain: string) => {
@@ -330,6 +591,12 @@ export const DiscoveryRunner = () => {
       else showError(t("discovery.options.cacheClearFailed"));
     })();
   };
+
+  const runSet = suite?.set_id
+    ? sets.find((s) => s.id === suite.set_id)
+    : undefined;
+  const runSetName = runSet?.name;
+  const setTooMany = !!pickedSet && checkUrls.length > MAX_PROBE_URLS;
 
   const logLine = (
     <DiscoveryLogLine
@@ -364,6 +631,7 @@ export const DiscoveryRunner = () => {
             onStop={() => void cancelDiscovery()}
             onFinish={() => void finishDiscovery()}
             logLine={logLine}
+            setName={runSetName}
           />
         )}
 
@@ -374,7 +642,11 @@ export const DiscoveryRunner = () => {
             history={history}
             applying={applying}
             canReset={!finishing}
+            setName={runSetName}
+            runSet={runSet}
             onApply={setApplyTarget}
+            onApplyVerdict={handleApplyVerdict}
+            onSaveSetUrls={handleSaveSetUrls}
             onShowLog={() => setLogOpen(true)}
             onNewSearch={resetDiscovery}
           />
@@ -382,6 +654,14 @@ export const DiscoveryRunner = () => {
 
         {!showRun && !showResults && !isReconnecting && (
           <>
+            {sets.length > 0 && (
+              <SetPicker
+                sets={sets}
+                value={pickedSet ? pickedSet.id : null}
+                disabled={busy}
+                onChange={(id) => pickSet(id)}
+              />
+            )}
             <Box
               sx={{
                 display: "flex",
@@ -409,25 +689,42 @@ export const DiscoveryRunner = () => {
               <Button
                 startIcon={<StartIcon />}
                 variant="contained"
-                onClick={() => start(checkUrls)}
-                disabled={checkUrls.length === 0 || busy}
+                onClick={() => start(checkUrls, pickedSet?.id)}
+                disabled={checkUrls.length === 0 || busy || setTooMany}
                 sx={{ whiteSpace: "nowrap" }}
               >
                 {t("discovery.start")}
               </Button>
             </Box>
+            {refused.length > 0 && (
+              <B4Alert severity="warning" onClose={() => setRefused([])}>
+                {t("discovery.input.refused", { items: refused.join(", ") })}
+              </B4Alert>
+            )}
             <B4ChipList
               items={checkUrls}
               getKey={(url) => url}
-              getLabel={(url) => extractDomain(url)}
+              getLabel={(url) => probeUrlLabel(url)}
               onDelete={removeUrl}
               emptyMessage={t("discovery.input.empty")}
               showEmpty
             />
+            {pickedSet && (
+              <SetUrlHints
+                set={pickedSet}
+                urls={checkUrls}
+                suggestions={suggestions}
+                suggestionsLoaded={suggestionsLoaded}
+                owners={owners}
+                disabled={busy}
+                onAdd={addSuggested}
+              />
+            )}
             <DiscoveryOptionsPanel
               options={options}
               ipVersionEnabled={ipVersionEnabled}
               communityEnabled={communityEnabled}
+              setPicked={!!pickedSet}
               onChange={setOptions}
               onClearCache={handleClearCache}
               captures={captures}
@@ -470,6 +767,7 @@ export const DiscoveryRunner = () => {
         >
           <HistoryTable
             entries={history}
+            sets={sets}
             busy={busy || applying}
             onApply={setApplyTarget}
             onRerun={handleRerun}
@@ -482,13 +780,15 @@ export const DiscoveryRunner = () => {
         open={applyTarget !== null}
         target={applyTarget}
         loading={applying}
+        runSetId={applyTarget?.setId ?? null}
+        sets={sets}
         onClose={() => setApplyTarget(null)}
         onCreate={(set) => void handleCreate(set)}
         onAddToExisting={(setId, domains, pins) =>
           void handleAddToExisting(setId, domains, pins)
         }
-        onReplaceStrategy={(setId, set, domains, pins) =>
-          void handleReplaceStrategy(setId, set, domains, pins)
+        onReplaceStrategy={(setId, set, domains, pins, opts) =>
+          void handleReplaceStrategy(setId, set, domains, pins, opts)
         }
       />
 

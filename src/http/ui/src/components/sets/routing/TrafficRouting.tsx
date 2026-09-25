@@ -1,4 +1,5 @@
-import { Box, Grid, MenuItem, Typography } from "@mui/material";
+import { Box, Grid, Link, MenuItem, Typography } from "@mui/material";
+import { Link as RouterLink } from "react-router";
 import {
   B4Alert,
   B4Badge,
@@ -9,7 +10,7 @@ import {
 } from "@b4.elements";
 import { B4SetConfig, RouterTraffic, RoutingMode } from "@models/config";
 import { colors } from "@design";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import { hasTargets } from "../facets";
 
@@ -181,9 +182,19 @@ export const TrafficRouting = ({
               <MenuItem value="block">{t("sets.routing.modeBlock")}</MenuItem>
             </B4TextField>
             {isMTProtoWS && (
-              <B4Alert severity="info" sx={{ mt: 2 }}>
-                {t("sets.routing.mtprotoWsNote")}
-              </B4Alert>
+              <>
+                <B4Alert severity="info" sx={{ mt: 2 }}>
+                  {t("sets.routing.mtprotoWsNote")}
+                </B4Alert>
+                <B4Hint sx={{ mt: 2 }}>
+                  <Trans
+                    i18nKey="sets.routing.mtprotoWsSwitchHint"
+                    components={{
+                      a: <Link component={RouterLink} to="/settings/mtproto" />,
+                    }}
+                  />
+                </B4Hint>
+              </>
             )}
             {isBlock && (
               <B4TextField

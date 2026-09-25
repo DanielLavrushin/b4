@@ -302,6 +302,8 @@ func TestWSPlansCoverDataCentersWithNoTelegramEdge(t *testing.T) {
 }
 
 func TestPoolHoldsFewerSparesOnSharedDomains(t *testing.T) {
+	wsResetState()
+	t.Cleanup(wsResetState)
 	p := newWSPool(MTProtoUpstream{CFProxyEnabled: true}, 0, wsPoolDefaultSize)
 	defer p.close()
 

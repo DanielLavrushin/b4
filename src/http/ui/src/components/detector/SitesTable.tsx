@@ -34,7 +34,7 @@ interface SitesTableProps {
   onAddToSet: (setId: string, domains: string[]) => void;
 }
 
-const problem = (s: SiteResult) => ["fixed", "still_blocked", "blocked", "broken_by_b4"].includes(s.outcome);
+const problem = (s: SiteResult) => ["fixed", "still_blocked", "blocked", "broken_by_b4", "dns"].includes(s.outcome);
 const still = (s: SiteResult) => ["still_blocked", "blocked", "broken_by_b4"].includes(s.outcome) && s.direct?.status !== "GATEWAY";
 const rowKey = (s: SiteResult) => `${s.input}|${s.family ?? ""}`;
 
@@ -44,11 +44,20 @@ const checkboxSx = {
   p: 0.5,
 };
 
-function describe(s: SiteResult, t: (k: string, o?: Record<string, unknown>) => string): string {
+type Translate = (k: string, o?: Record<string, unknown>) => string;
+
+function describe(s: SiteResult, t: Translate, resolver: string): string {
   const parts: string[] = [];
   const d = s.direct;
   if (!d || d.status === "CHECKING" || d.status === "PENDING") return t("detector.sites.checking");
-  if (d.detail) parts.push(d.detail.replace(/; the address DoH returns \([^)]*\) loads/, ""));
+  const detail = d.detail?.replace(/; the address DoH returns \([^)]*\) loads/, "");
+  if (s.dns_error && s.honest_ip) {
+    const noAddress = t("detector.sites.dnsFail", { resolver, reason: t(`detector.sites.dnsError.${s.dns_error}`), ip: s.honest_ip });
+    const real = d.status === "DNS_FAIL" ? t("detector.sites.realLoads", { ip: d.ip ?? s.honest_ip }) : detail;
+    parts.push(real ? `${noAddress}; ${real}` : noAddress);
+  } else if (detail) {
+    parts.push(detail);
+  }
   if (d.tls12 && d.tls12 !== "OK") parts.push(t("detector.sites.tls12Also", { status: t(`detector.status.${d.tls12}`, { defaultValue: d.tls12 }) }));
   else if (d.tls12 === "OK") parts.push(t("detector.sites.tls12Works"));
   if (d.http && d.http !== "OK") parts.push(t("detector.sites.httpAlso", { status: t(`detector.status.${d.http}`, { defaultValue: d.http }) }));
@@ -113,6 +122,7 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
     });
 
   const iconSx = { color: colors.text.secondary };
+  const resolver = (result.resolvers ?? []).join(", ");
 
   return (
     <Stack spacing={1.5}>
@@ -166,6 +176,11 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
           </Stack>
         )}
       </Stack>
+      {resolver !== "" && (
+        <Typography variant="caption" sx={{ color: colors.text.secondary }}>
+          {t("detector.sites.resolverNote", { servers: resolver })}
+        </Typography>
+      )}
       {result.stub_ips && result.stub_ips.length > 0 && (
         <Typography variant="caption" sx={{ color: colors.text.secondary }}>
           {t("detector.sites.stubs", { ips: result.stub_ips.join(", ") })}
@@ -224,7 +239,7 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
                       <FetchChip fetch={s.through_b4} />
                     </TableCell>
                   )}
-                  <TableCell sx={{ color: colors.text.secondary, fontSize: "0.8rem" }}>{describe(s, t)}</TableCell>
+                  <TableCell sx={{ color: colors.text.secondary, fontSize: "0.8rem" }}>{describe(s, t, resolver)}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
                     <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
                       {s.set_id && (

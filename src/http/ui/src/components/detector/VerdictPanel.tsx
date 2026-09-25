@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { DiscoveryIcon, CopyIcon, RefreshIcon } from "@b4.icons";
 import { colors } from "@design";
 import type { DetectorSuite } from "@models/detector";
+import { providersJudged, sameEgress } from "./DnsTable";
 
 interface VerdictPanelProps {
   suite: DetectorSuite;
@@ -21,6 +22,12 @@ function pickKinds(kinds?: Record<string, number>): string[] {
     .map(([k]) => k);
 }
 
+const siteHosts = (urls?: string[]) =>
+  (urls ?? [])
+    .slice(0, 4)
+    .map((u) => u.replace(/^https?:\/\//, "").split("/")[0])
+    .join(", ");
+
 export function verdictSentences(suite: DetectorSuite, t: (k: string, o?: Record<string, unknown>) => string): { title: string; body: string[] } {
   const v = suite.verdict;
   const body: string[] = [];
@@ -30,7 +37,8 @@ export function verdictSentences(suite: DetectorSuite, t: (k: string, o?: Record
   if (suite.sites) {
     const kinds = pickKinds(v.block_kinds).map((k) => t(`detector.kind.${k}`, { defaultValue: k.toLowerCase() }));
     const gateway = v.gateway ?? 0;
-    if (v.blocked_by_isp === 0 && v.sites > 0 && suite.sites.ok === v.sites) {
+    const dnsFail = v.dns_fail ?? 0;
+    if (v.blocked_by_isp === 0 && dnsFail === 0 && v.sites > 0 && suite.sites.ok === v.sites) {
       title = t("detector.verdict.titleClean");
     } else if (v.blocked_by_isp > 0 && kinds.length > 0) {
       title = t("detector.verdict.titleBlocks", { kinds: kinds.join(t("detector.verdict.and")) });
@@ -38,6 +46,8 @@ export function verdictSentences(suite: DetectorSuite, t: (k: string, o?: Record
       title = t("detector.verdict.titleBlocked");
     } else if (gateway > 0) {
       title = t("detector.verdict.titleGateway");
+    } else if (dnsFail > 0) {
+      title = t("detector.verdict.titleDnsFail");
     }
     body.push(
       t("detector.verdict.sites", {
@@ -51,7 +61,7 @@ export function verdictSentences(suite: DetectorSuite, t: (k: string, o?: Record
         body.push(
           t("detector.verdict.stillBlocked", {
             count: v.still_blocked,
-            sites: (v.still_blocked_sites ?? []).slice(0, 4).map((u) => u.replace(/^https?:\/\//, "").split("/")[0]).join(", "),
+            sites: siteHosts(v.still_blocked_sites),
           }),
         );
       }
@@ -62,14 +72,29 @@ export function verdictSentences(suite: DetectorSuite, t: (k: string, o?: Record
     if (gateway > 0) {
       body.push(t("detector.verdict.gateway", { count: gateway }));
     }
+    if (dnsFail > 0) {
+      body.push(t("detector.verdict.dnsFail", { count: v.dns_fail_sites?.length || dnsFail, sites: siteHosts(v.dns_fail_sites) }));
+    }
   }
   if (suite.dns) {
     const d = suite.dns;
+    const substitutingBy = providersJudged(d, "substituted");
+    const noAnswerBy = providersJudged(d, "no_answer");
+    const substituting = substitutingBy.length > 0;
+    const noAnswer = noAnswerBy.length > 0;
     if (d.hijacked > 0) {
       body.push(t("detector.verdict.dnsHijacked", { by: d.hijacked_by || t("detector.verdict.unknownParty") }));
-    } else if (d.substituting > 0) {
-      body.push(t("detector.verdict.dnsSubstituted", { count: d.substituting }));
-    } else if (d.udp_ok > 0) {
+    }
+    if (substituting) {
+      body.push(t("detector.verdict.dnsSubstituted", { names: substitutingBy.join(", ") }));
+    }
+    if (noAnswer) {
+      body.push(t("detector.verdict.dnsNoAnswer", { names: noAnswerBy.join(", ") }));
+    }
+    const egress = d.hijacked === 0 ? sameEgress(d) : undefined;
+    if (egress) {
+      body.push(t("detector.verdict.dnsSameEgress", { by: egress }));
+    } else if (d.hijacked === 0 && !substituting && !noAnswer && d.udp_ok > 0) {
       body.push(t("detector.verdict.dnsHonest"));
     }
     if (d.doh_total > 0) {
@@ -79,7 +104,12 @@ export function verdictSentences(suite: DetectorSuite, t: (k: string, o?: Record
           : t("detector.verdict.dohBlocked"),
       );
     }
-    if (!title) title = d.hijacked > 0 ? t("detector.verdict.titleDnsHijacked") : t("detector.verdict.titleDns");
+    if (!title) {
+      if (d.hijacked > 0) title = t("detector.verdict.titleDnsHijacked");
+      else if (substituting) title = t("detector.verdict.titleDnsSubstituted");
+      else if (noAnswer) title = t("detector.verdict.titleDnsNoAnswer");
+      else title = t("detector.verdict.titleDns");
+    }
   }
   if (suite.hosting) {
     const h = suite.hosting;
@@ -127,6 +157,9 @@ export const VerdictPanel = ({ suite, running, onDiscovery, onCopy, onRunAgain }
     }
     if ((v.gateway ?? 0) > 0) {
       counters.push({ value: v.gateway ?? 0, label: t("detector.verdict.countGateway"), color: colors.state.warning });
+    }
+    if ((v.dns_fail ?? 0) > 0) {
+      counters.push({ value: v.dns_fail ?? 0, label: t("detector.verdict.countDnsFail"), color: colors.state.warning });
     }
     counters.push({ value: v.not_blocked, label: t("detector.verdict.countOk"), color: colors.text.primary });
   }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"strings"
 	"time"
@@ -18,26 +19,43 @@ func round1(v float64) float64 {
 	return float64(int64(v*10+0.5)) / 10
 }
 
-func readResolvConf() []string {
+const maxNameservers = 3
+
+var defaultNameservers = []string{"127.0.0.1", "::1"}
+
+func systemNameservers() []string {
 	f, err := os.Open("/etc/resolv.conf")
 	if err != nil {
-		return nil
+		return defaultNameservers
 	}
 	defer f.Close()
+	if servers := parseNameservers(f); len(servers) > 0 {
+		return servers
+	}
+	return defaultNameservers
+}
+
+func parseNameservers(r io.Reader) []string {
 	var out []string
 	seen := make(map[string]bool)
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
+	used := 0
+	sc := bufio.NewScanner(r)
+	for used < maxNameservers && sc.Scan() {
 		fields := strings.Fields(sc.Text())
 		if len(fields) < 2 || fields[0] != "nameserver" {
 			continue
 		}
-		ip := net.ParseIP(fields[1])
-		if ip == nil || ip.IsLoopback() || seen[fields[1]] {
+		addr, err := netip.ParseAddr(fields[1])
+		if err != nil {
 			continue
 		}
-		seen[fields[1]] = true
-		out = append(out, fields[1])
+		used++
+		ip := addr.String()
+		if seen[ip] {
+			continue
+		}
+		seen[ip] = true
+		out = append(out, ip)
 	}
 	return out
 }

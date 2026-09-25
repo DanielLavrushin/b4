@@ -104,10 +104,24 @@ func LoadListOverride(configPath string) {
 	if len(lists.Sites) == 0 || len(lists.TCPTargets) == 0 {
 		return
 	}
+	merged := withUpstreamLists(lists)
 	listsMu.Lock()
-	currentLists = &lists
+	currentLists = &merged
 	listsMu.Unlock()
 	log.Infof("Detector target lists loaded from %s (dated %s)", path, lists.ListsDate)
+}
+
+func withUpstreamLists(upstream TargetLists) TargetLists {
+	out := embeddedLists
+	out.ListsDate = upstream.ListsDate
+	out.ListsSource = upstream.ListsSource
+	out.Sites = upstream.Sites
+	out.WhitelistSNI = upstream.WhitelistSNI
+	out.TCPTargets = upstream.TCPTargets
+	if len(upstream.DNSServers) > 0 {
+		out.DNSServers = upstream.DNSServers
+	}
+	return out
 }
 
 func saveListOverride(configPath string, lists TargetLists) error {
@@ -122,8 +136,9 @@ func saveListOverride(configPath string, lists TargetLists) error {
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return err
 	}
+	merged := withUpstreamLists(lists)
 	listsMu.Lock()
-	currentLists = &lists
+	currentLists = &merged
 	listsMu.Unlock()
 	return nil
 }

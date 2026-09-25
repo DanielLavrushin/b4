@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
@@ -41,10 +42,13 @@ type routeManager struct {
 	outIface           string
 	outGateway         string
 	mark               uint
+	explicitTable      int
+	pinnedTables       []int
 	routeTable         int
 	skipTables         bool
 	savedDefault       string
 	savedRPFilter      string
+	bypassTableClaimed bool
 	fwdRulesAdded      bool
 	snatAdded          bool
 	notrackAdded       bool
@@ -75,6 +79,14 @@ type routeManager struct {
 	localNets          []string
 	localNetsWanted    []string
 	localRetries       int
+	captureInstalled   int
+	captureMissing     int
+	captureRetries     int
+	captureRestores    int
+	lastCaptureRestore time.Time
+	captureDirty       bool
+	gateDirty          bool
+	liveTCPPorts       atomic.Pointer[[]string]
 	capturePrio        int
 	conflicts          []steerConflict
 	captureExcl        []string
@@ -115,7 +127,7 @@ func (r *routeManager) setupNAT() {
 	if r.srcIP != "" {
 		snat := []string{"-o", r.tunName, "-j", "SNAT", "--to-source", r.srcIP}
 		if _, err := run(append([]string{"iptables", "-t", "nat", "-C", "POSTROUTING"}, snat...)...); err != nil {
-			if _, err := run(append([]string{"iptables", "-t", "nat", "-A", "POSTROUTING"}, snat...)...); err != nil {
+			if _, err := run(append([]string{"iptables", "-t", "nat", "-I", "POSTROUTING", "1"}, snat...)...); err != nil {
 				log.Warnf("TUN: failed to add SNAT %s -> %s: %v", r.tunName, r.srcIP, err)
 			} else {
 				r.snatAdded = true
@@ -290,6 +302,9 @@ func (r *routeManager) setup() error {
 	}
 
 	r.resolvedCapture = r.resolveCaptureMode()
+	if err := r.pickTables(); err != nil {
+		return err
+	}
 	r.saveState()
 	var capErr error
 	if r.resolvedCapture == "ports" {
@@ -346,11 +361,12 @@ func (r *routeManager) setupBypassTable() error {
 		log.Infof("TUN: reusing route table %d left by a previous run (flushing stale entries)", r.routeTable)
 		run("ip", "route", "flush", "table", tableStr)
 	}
+	r.bypassTableClaimed = true
 
 	r.delFwmarkRule(markStr, tableStr)
 
-	if _, err := run("ip", "rule", "add", "fwmark", markStr, "lookup", tableStr, "priority", "100"); err != nil {
-		return fmt.Errorf("ip rule add (whole-default capture needs policy routing; a busybox 'ip' may reject custom tables - install full iproute2, e.g. 'apk add iproute2', or set queue.tun.route_table <= 255): %w", err)
+	if _, err := run("ip", "rule", "add", "fwmark", markStr, "lookup", tableStr, "priority", strconv.Itoa(bypassRulePrio)); err != nil {
+		return routingError("ip rule add (whole-default capture; needs kernel policy routing)", r.routeTable, err)
 	}
 	r.ensureReinjectLocalRule()
 	return r.addBypassDefault(tableStr)
@@ -536,16 +552,71 @@ func (r *routeManager) ensureNAT() {
 	if r.srcIP != "" {
 		snat := []string{"-o", r.tunName, "-j", "SNAT", "--to-source", r.srcIP}
 		if _, err := run(append([]string{"iptables", "-t", "nat", "-C", "POSTROUTING"}, snat...)...); err != nil {
-			if _, err := run(append([]string{"iptables", "-t", "nat", "-A", "POSTROUTING"}, snat...)...); err == nil {
+			if _, err := run(append([]string{"iptables", "-t", "nat", "-I", "POSTROUTING", "1"}, snat...)...); err == nil {
 				r.snatAdded = true
 				log.Infof("TUN: reconcile restored SNAT (%s -> %s)", r.tunName, r.srcIP)
 			}
 		} else {
 			r.snatAdded = true
+			r.keepSNATAhead(snat)
 		}
 	}
 	r.ensureNotrack(&r.notrackAdded, reinjectMarkMatch())
 	r.ensureNotrack(&r.clientNotrackAdded, clientMarkMatch())
+}
+
+func (r *routeManager) keepSNATAhead(snat []string) {
+	out, err := run("iptables", "-t", "nat", "-S", "POSTROUTING")
+	if err != nil || !snatShadowed(out, r.tunName) {
+		return
+	}
+	if _, err := run(append([]string{"iptables", "-t", "nat", "-D", "POSTROUTING"}, snat...)...); err != nil {
+		return
+	}
+	if _, err := run(append([]string{"iptables", "-t", "nat", "-I", "POSTROUTING", "1"}, snat...)...); err != nil {
+		log.Warnf("TUN: failed to move the SNAT for %s to the top of POSTROUTING: %v", r.tunName, err)
+		return
+	}
+	log.Infof("TUN: moved the SNAT for %s above a masquerade rule that would have rewritten captured packets to the %s address", r.tunName, r.tunName)
+}
+
+func snatShadowed(dump, tunName string) bool {
+	own := "-o " + tunName + " -j SNAT"
+	for _, line := range strings.Split(dump, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "-A POSTROUTING ") {
+			continue
+		}
+		if strings.Contains(line, own) {
+			return false
+		}
+		if !strings.Contains(line, "-j MASQUERADE") && !strings.Contains(line, "-j SNAT") {
+			continue
+		}
+		if outInterfaceCovers(line, tunName) {
+			return true
+		}
+	}
+	return false
+}
+
+func outInterfaceCovers(rule, tunName string) bool {
+	fields := strings.Fields(rule)
+	for i := 0; i+1 < len(fields); i++ {
+		if fields[i] != "-o" {
+			continue
+		}
+		out := fields[i+1]
+		matches := out == tunName
+		if strings.HasSuffix(out, "+") {
+			matches = strings.HasPrefix(tunName, strings.TrimSuffix(out, "+"))
+		}
+		if i > 0 && fields[i-1] == "!" {
+			return !matches
+		}
+		return matches
+	}
+	return true
 }
 
 func (r *routeManager) ensureNotrack(added *bool, markStr string) {
@@ -607,7 +678,7 @@ func (r *routeManager) ensureBypass() {
 	markStr := reinjectMarkMatch()
 	tableStr := fmt.Sprintf("%d", r.routeTable)
 	if !r.ownsBypassTable(markStr, tableStr) {
-		if _, err := run("ip", "rule", "add", "fwmark", markStr, "lookup", tableStr, "priority", "100"); err != nil {
+		if _, err := run("ip", "rule", "add", "fwmark", markStr, "lookup", tableStr, "priority", strconv.Itoa(bypassRulePrio)); err != nil {
 			log.Warnf("TUN: reconcile failed to restore fwmark rule: %v", err)
 		} else {
 			log.Infof("TUN: reconcile restored fwmark rule (mark %s -> table %s)", markStr, tableStr)
@@ -720,7 +791,7 @@ func (r *routeManager) addBypassDefault(tableStr string) error {
 	}
 	args = append(args, "dev", r.outIface, "table", tableStr)
 	if _, err := run(args...); err != nil {
-		return fmt.Errorf("ip route replace table (whole-default capture needs policy routing; a busybox 'ip' may reject custom tables - install full iproute2, e.g. 'apk add iproute2', or set queue.tun.route_table <= 255): %w", err)
+		return routingError(fmt.Sprintf("ip route replace default (whole-default capture, bypass table %d)", r.routeTable), r.routeTable, err)
 	}
 	return nil
 }
@@ -748,7 +819,7 @@ func (r *routeManager) teardown() {
 	if r.reinjectLocalAdded {
 		r.removeReinjectLocalRule()
 	}
-	if r.resolvedCapture != "ports" {
+	if r.resolvedCapture != "ports" && r.bypassTableClaimed {
 		r.delFwmarkRule(markStr, tableStr)
 		if _, err := run("ip", "route", "flush", "table", tableStr); err != nil {
 			log.Tracef("TUN: route table %s not flushed: %v", tableStr, err)

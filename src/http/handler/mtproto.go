@@ -25,6 +25,8 @@ func (api *API) RegisterMTProtoApi() {
 	api.mux.HandleFunc("/api/mtproto/active-clients", api.handleMTProtoActiveClients)
 	api.mux.HandleFunc("/api/mtproto/web-proxy", api.handleMTProtoWebProxy)
 	api.mux.HandleFunc("/api/mtproto/web-proxy/page", api.handleMTProtoWebProxyPage)
+	api.mux.HandleFunc("/api/mtproto/bridge", api.handleTelegramBridge)
+	api.mux.HandleFunc("/api/mtproto/bridge/refresh", api.handleTelegramBridgeRefresh)
 }
 
 // @Summary Telegram Desktop WEB proxy status
@@ -360,10 +362,20 @@ func sanitizeSecretName(name string) string {
 }
 
 func (api *API) updateMTProtoConfig(w http.ResponseWriter, r *http.Request) {
-	var req config.MTProtoConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
 		writeJsonError(w, http.StatusBadRequest, "Invalid request body")
 		return
+	}
+	var req config.MTProtoConfig
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeJsonError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	var present map[string]json.RawMessage
+	_ = json.Unmarshal(body, &present)
+	if _, ok := present["bridge"]; !ok {
+		req.Bridge = api.getCfg().System.MTProto.Bridge
 	}
 
 	if req.Port < 1 || req.Port > 65535 {

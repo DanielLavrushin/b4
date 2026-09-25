@@ -329,6 +329,24 @@ export const MTProtoUpstreamCard = ({
             selectOnFocus
           />
         </Grid>
+        <Grid size={{ xs: 12, md: 6 }}>
+          <B4TextField
+            label={t("settings.MTProto.wsFrontSni")}
+            value={mtproto?.ws_front_sni || ""}
+            onChange={(e) =>
+              onChange("system.mtproto.ws_front_sni", e.target.value)
+            }
+            onBlur={(e) => {
+              const cleaned = normalizeHost(e.target.value);
+              if (cleaned !== e.target.value) {
+                onChange("system.mtproto.ws_front_sni", cleaned);
+              }
+            }}
+            placeholder="sprinthost.ru"
+            helperText={t("settings.MTProto.wsFrontSniHelp")}
+            selectOnFocus
+          />
+        </Grid>
       </Grid>
 
       <B4Accordion title={t("settings.MTProto.upstreamFallbacks")}>

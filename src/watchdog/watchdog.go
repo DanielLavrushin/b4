@@ -1,7 +1,10 @@
 package watchdog
 
 import (
+	"context"
 	"errors"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -12,27 +15,136 @@ import (
 	"github.com/daniellavrushin/b4/netprobe"
 )
 
-const verifyRetryDelay = 3 * time.Second
+const (
+	verifyRetryDelay  = 3 * time.Second
+	discoveryIdleWait = 30 * time.Second
+	healPollInterval  = 2 * time.Second
+	setIdleWait       = 60 * time.Second
+)
 
-type Watchdog struct {
-	cfgPtr       *atomic.Pointer[config.Config]
-	discoveryRT  *discovery.Runtime
-	mu           sync.Mutex
-	domainStates map[string]*DomainStatus
-	stop         chan struct{}
-	stopped      chan struct{}
-	saveFunc     func(*config.Config) error
-	healing      atomic.Bool
-	healWG       sync.WaitGroup
+type UpdateFunc func(mutate func(current *config.Config) (*config.Config, error)) error
+
+func NewUpdateFunc(load func() *config.Config, commit func(previous, next *config.Config) error, refreshFirewall func()) UpdateFunc {
+	return func(mutate func(current *config.Config) (*config.Config, error)) error {
+		refresh, err := func() (bool, error) {
+			unlock := config.LockWrites()
+			defer unlock()
+			previous := load()
+			next, err := mutate(previous)
+			if err != nil {
+				return false, err
+			}
+			if err := commit(previous, next); err != nil {
+				return false, err
+			}
+			return config.FirewallRefreshNeeded(previous, next), nil
+		}()
+		if err != nil {
+			return err
+		}
+		if refresh && refreshFirewall != nil {
+			refreshFirewall()
+		}
+		return nil
+	}
 }
 
-func New(cfgPtr *atomic.Pointer[config.Config], discoveryRT *discovery.Runtime, saveFunc func(*config.Config) error) *Watchdog {
+var (
+	errNothingToWrite = errors.New("nothing to write")
+	errConfigChanged  = errors.New("the configuration changed since the heal was written")
+)
+
+type Watchdog struct {
+	cfgPtr           *atomic.Pointer[config.Config]
+	disc             discoveryDriver
+	engine           EngineView
+	mu               sync.Mutex
+	domainStates     map[string]*DomainStatus
+	setStates        map[string]*setState
+	healQueue        []string
+	legacySkipLogged map[string]bool
+	stop             chan struct{}
+	stopped          chan struct{}
+	update           UpdateFunc
+	healing          atomic.Bool
+	healWG           sync.WaitGroup
+
+	now         func() time.Time
+	checkURL    func(ctx context.Context, rawURL string, ipv6Enabled bool, timeout time.Duration) URLCheck
+	checkLegacy func(ctx context.Context, domains []string, mark uint, timeout time.Duration) map[string]CheckResult
+	pollEvery   time.Duration
+	verifyDelay time.Duration
+	idleWait    time.Duration
+}
+
+func New(cfgPtr *atomic.Pointer[config.Config], discoveryRT *discovery.Runtime, update UpdateFunc) *Watchdog {
 	return &Watchdog{
-		cfgPtr:       cfgPtr,
-		discoveryRT:  discoveryRT,
-		domainStates: make(map[string]*DomainStatus),
-		saveFunc:     saveFunc,
+		cfgPtr:           cfgPtr,
+		disc:             runtimeDriver{rt: discoveryRT},
+		engine:           NewEngineView(nil, cfgPtr),
+		domainStates:     make(map[string]*DomainStatus),
+		setStates:        make(map[string]*setState),
+		legacySkipLogged: make(map[string]bool),
+		update:           update,
+		now:              time.Now,
+		checkURL:         checkURLStrict,
+		checkLegacy:      checkAllConcurrently,
+		pollEvery:        healPollInterval,
+		verifyDelay:      verifyRetryDelay,
+		idleWait:         setIdleWait,
 	}
+}
+
+func (w *Watchdog) SetEngine(engine EngineView) {
+	if engine != nil {
+		w.engine = engine
+	}
+}
+
+func (w *Watchdog) clock() time.Time {
+	if w.now != nil {
+		return w.now()
+	}
+	return time.Now()
+}
+
+func (w *Watchdog) stopContext() (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	stop := w.stop
+	if stop == nil {
+		return ctx, cancel
+	}
+	go func() {
+		select {
+		case <-stop:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	return ctx, cancel
+}
+
+func (w *Watchdog) stopping() bool {
+	select {
+	case <-w.stop:
+		return true
+	default:
+		return false
+	}
+}
+
+func (w *Watchdog) legacyOwners(cfg *config.Config) map[string]*config.SetConfig {
+	owners := make(map[string]*config.SetConfig, len(cfg.System.Checker.Watchdog.Domains))
+	if w.engine == nil {
+		return owners
+	}
+	for _, d := range cfg.System.Checker.Watchdog.Domains {
+		host := normalizeHost(ExtractDomain(d))
+		if _, done := owners[host]; !done {
+			owners[host] = w.engine.Owner(host)
+		}
+	}
+	return owners
 }
 
 func (w *Watchdog) Start() {
@@ -51,6 +163,9 @@ func (w *Watchdog) Stop() {
 
 func (w *Watchdog) GetState() WatchdogState {
 	cfg := w.cfgPtr.Load()
+	owners := w.legacyOwners(cfg)
+	watchers := legacyWatchers(cfg, owners)
+
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -68,6 +183,14 @@ func (w *Watchdog) GetState() WatchdogState {
 		}
 		domain := ExtractDomain(d)
 		copy.DisplayDomain = domain
+		copy.OwnerSetId, copy.OwnerSetName = "", ""
+		if owner := owners[normalizeHost(domain)]; owner != nil {
+			copy.OwnerSetId, copy.OwnerSetName = owner.Id, owner.Name
+		}
+		copy.WatchedBySetId, copy.WatchedBySetName = "", ""
+		if ref, ok := watchers[d]; ok {
+			copy.WatchedBySetId, copy.WatchedBySetName = ref.id, ref.name
+		}
 		for _, set := range cfg.Sets {
 			if !set.Enabled {
 				continue
@@ -83,6 +206,7 @@ func (w *Watchdog) GetState() WatchdogState {
 	return WatchdogState{
 		Enabled: cfg.System.Checker.Watchdog.Enabled,
 		Domains: domains,
+		Sets:    w.setSnapshotsLocked(cfg),
 	}
 }
 
@@ -125,8 +249,27 @@ func (w *Watchdog) run() {
 
 func (w *Watchdog) tick() {
 	cfg := w.cfgPtr.Load()
+	enabled := cfg.System.Checker.Watchdog.Enabled
+
+	w.mu.Lock()
+	w.syncSetStatesLocked(cfg)
+	if !enabled {
+		w.parkHealQueueLocked()
+	}
+	w.mu.Unlock()
+
+	if !enabled {
+		return
+	}
+
+	w.tickSets(cfg)
+	w.tickLegacy(cfg, legacyWatchers(cfg, w.legacyOwners(cfg)))
+	w.pumpHealQueue()
+}
+
+func (w *Watchdog) tickLegacy(cfg *config.Config, watchers map[string]setRef) {
 	wdCfg := cfg.System.Checker.Watchdog
-	if !wdCfg.Enabled || len(wdCfg.Domains) == 0 {
+	if len(wdCfg.Domains) == 0 {
 		return
 	}
 
@@ -140,6 +283,9 @@ func (w *Watchdog) tick() {
 	var domainsToCheck []string
 	for _, domain := range wdCfg.Domains {
 		st := w.domainStates[domain]
+		if w.skipLegacyDomainLocked(domain, st, watchers) {
+			continue
+		}
 		if st.Status == StatusEscalating {
 			continue
 		}
@@ -157,7 +303,16 @@ func (w *Watchdog) tick() {
 		return
 	}
 
-	results := checkAllConcurrently(domainsToCheck, mark, timeout)
+	check := w.checkLegacy
+	if check == nil {
+		check = checkAllConcurrently
+	}
+	ctx, cancel := w.stopContext()
+	results := check(ctx, domainsToCheck, mark, timeout)
+	cancel()
+	if w.stopping() {
+		return
+	}
 
 	w.mu.Lock()
 	var needsHealing []string
@@ -191,6 +346,12 @@ func (w *Watchdog) tick() {
 			continue
 		}
 
+		if result.Unusable {
+			st.CooldownUntil = now.Add(time.Duration(wdCfg.Cooldown) * time.Second)
+			log.Warnf("[WATCHDOG] %s: %s - skipping heal, cooldown %ds", domain, result.Error, wdCfg.Cooldown)
+			continue
+		}
+
 		st.ConsecutiveFailures++
 		log.Warnf("[WATCHDOG] %s: check FAILED [%s] (%s) [%d/%d]", domain, result.Verdict, result.Error, st.ConsecutiveFailures, wdCfg.MaxRetries)
 
@@ -215,7 +376,7 @@ func (w *Watchdog) healBatch(domains []string) {
 	cfg := w.cfgPtr.Load()
 	wdCfg := cfg.System.Checker.Watchdog
 
-	if w.discoveryRT.IsActive() {
+	if w.disc.IsActive() {
 		log.Infof("[WATCHDOG] deferring healing - user discovery active")
 		return
 	}
@@ -235,7 +396,7 @@ func (w *Watchdog) healBatch(domains []string) {
 		tries = 1
 	}
 
-	suite, err := w.discoveryRT.StartSuite(cfg, domains, discovery.StartSuiteOptions{
+	suiteID, err := w.disc.Start(cfg, discoveryInputs(domains), discovery.StartSuiteOptions{
 		SkipDNS:         true,
 		ValidationTries: tries,
 		Source:          discovery.SourceWatchdog,
@@ -256,14 +417,18 @@ func (w *Watchdog) healBatch(domains []string) {
 		return
 	}
 
-	pollTicker := time.NewTicker(2 * time.Second)
+	finishRequested := false
+	pollEvery := w.pollEvery
+	if pollEvery <= 0 {
+		pollEvery = healPollInterval
+	}
+	pollTicker := time.NewTicker(pollEvery)
 	defer pollTicker.Stop()
 	for {
 		select {
 		case <-w.stop:
 			log.Infof("[WATCHDOG] shutting down, canceling active discovery")
-			discovery.CancelCheckSuite(suite.Id)
-			w.discoveryRT.Stop(suite.Id)
+			w.disc.Cancel(suiteID)
 			return
 		case <-pollTicker.C:
 		}
@@ -271,8 +436,7 @@ func (w *Watchdog) healBatch(domains []string) {
 		currentCfg := w.cfgPtr.Load()
 		if !currentCfg.System.Checker.Watchdog.Enabled {
 			log.Infof("[WATCHDOG] disabled during healing, canceling discovery")
-			discovery.CancelCheckSuite(suite.Id)
-			w.discoveryRT.Stop(suite.Id)
+			w.disc.Cancel(suiteID)
 			w.mu.Lock()
 			for _, domain := range domains {
 				if st, ok := w.domainStates[domain]; ok {
@@ -284,22 +448,26 @@ func (w *Watchdog) healBatch(domains []string) {
 			return
 		}
 
-		cs, ok := discovery.GetCheckSuite(suite.Id)
+		snap, ok := w.disc.Snapshot(suiteID)
 		if !ok {
 			break
 		}
-		if cs.Status == discovery.CheckStatusComplete || cs.Status == discovery.CheckStatusFailed || cs.Status == discovery.CheckStatusCanceled {
+		if suiteFinished(snap.Status) {
 			break
 		}
-		if cs.SuccessfulChecks >= len(domains) && tries > 1 {
-			log.Infof("[WATCHDOG] strategies found for all domains and confirmed over %d tries, canceling discovery early", tries)
-			discovery.CancelCheckSuite(suite.Id)
-			time.Sleep(1 * time.Second)
-			break
+		if !finishRequested && tries > 1 && everyDomainSettled(snap, domains) {
+			log.Infof("[WATCHDOG] every domain has a result, stopping the search and confirming what was found")
+			w.disc.Finish(suiteID)
+			finishRequested = true
 		}
 	}
 
-	cs, ok := discovery.GetCheckSuite(suite.Id)
+	w.waitDiscoveryIdle(discoveryIdleWait)
+	if w.stopping() {
+		return
+	}
+
+	cs, ok := w.disc.Snapshot(suiteID)
 	if !ok {
 		log.Warnf("[WATCHDOG] discovery suite disappeared")
 		w.mu.Lock()
@@ -316,9 +484,7 @@ func (w *Watchdog) healBatch(domains []string) {
 		return
 	}
 
-	rollbackCfg := w.cfgPtr.Load().Clone()
-	freshCfg := w.cfgPtr.Load().Clone()
-	applyErrors := applyBatchResults(freshCfg, domains, cs, w.saveFunc)
+	applyErrors, undos := w.writeBatch(domains, cs)
 
 	applied := make([]string, 0, len(domains))
 	for _, domain := range domains {
@@ -328,15 +494,14 @@ func (w *Watchdog) healBatch(domains []string) {
 		applied = append(applied, domain)
 	}
 
-	verified := w.verifyApplied(applied, wdCfg)
+	verified, interrupted := w.verifyApplied(applied, wdCfg)
+	if interrupted {
+		log.Infof("[WATCHDOG] shutting down during verification, the healed configuration is kept and checked again on the next start")
+		return
+	}
 
-	rollback := len(applied) > 0 && len(verified) == 0
-	if rollback {
-		if err := w.saveFunc(rollbackCfg); err != nil {
-			log.Warnf("[WATCHDOG] failed to roll back config after failed verification: %v", err)
-		} else {
-			log.Warnf("[WATCHDOG] verification failed for all healed domains, rolled config back")
-		}
+	if len(applied) > 0 && len(verified) == 0 {
+		w.rollbackBatch(undos)
 	}
 
 	w.mu.Lock()
@@ -394,13 +559,180 @@ func (w *Watchdog) healBatch(domains []string) {
 	}
 }
 
+type setUndo struct {
+	id           string
+	name         string
+	created      bool
+	saved        strategySections
+	domains      []string
+	added        []string
+	postRevision string
+}
+
+func (w *Watchdog) writeBatch(domains []string, cs *discovery.CheckSuite) (map[string]error, []setUndo) {
+	var applyErrors map[string]error
+	var before, written *config.Config
+	err := w.update(func(current *config.Config) (*config.Config, error) {
+		before = current.Clone()
+		written = nil
+		applyErrors = applyBatchResults(current.Clone(), domains, cs, func(c *config.Config) error {
+			written = c
+			return nil
+		})
+		if written == nil {
+			return nil, errNothingToWrite
+		}
+		return written, nil
+	})
+	if applyErrors == nil {
+		applyErrors = make(map[string]error, len(domains))
+	}
+	switch {
+	case errors.Is(err, errNothingToWrite):
+		return applyErrors, nil
+	case err != nil:
+		for _, domain := range domains {
+			if prior, failed := applyErrors[domain]; !failed || prior == nil {
+				applyErrors[domain] = err
+			}
+		}
+		return applyErrors, nil
+	}
+	return applyErrors, batchUndos(before, written)
+}
+
+func batchUndos(before, after *config.Config) []setUndo {
+	var undos []setUndo
+	for _, set := range after.Sets {
+		if set == nil {
+			continue
+		}
+		revision := SetRevision(set)
+		prior := before.GetSetById(set.Id)
+		switch {
+		case prior == nil:
+			undos = append(undos, setUndo{id: set.Id, name: set.Name, created: true, postRevision: revision})
+		case SetRevision(prior) != revision:
+			undo := setUndo{
+				id:           set.Id,
+				name:         set.Name,
+				saved:        saveSections(prior),
+				domains:      slices.Clone(prior.Targets.SNIDomains),
+				postRevision: revision,
+			}
+			if len(set.Targets.SNIDomains) > len(prior.Targets.SNIDomains) {
+				undo.added = slices.Clone(set.Targets.SNIDomains[len(prior.Targets.SNIDomains):])
+			}
+			undos = append(undos, undo)
+		}
+	}
+	return undos
+}
+
+func (u setUndo) restoreInto(set *config.SetConfig) {
+	u.saved.restoreInto(set)
+	set.Targets.SNIDomains = slices.Clone(u.domains)
+	for _, domain := range u.added {
+		for i := len(set.Targets.DomainsToMatch) - 1; i >= 0; i-- {
+			if set.Targets.DomainsToMatch[i] == domain {
+				set.Targets.DomainsToMatch = slices.Delete(set.Targets.DomainsToMatch, i, i+1)
+				break
+			}
+		}
+	}
+}
+
+func (w *Watchdog) rollbackBatch(undos []setUndo) {
+	if len(undos) == 0 {
+		return
+	}
+	var restored, kept []string
+	err := w.update(func(current *config.Config) (*config.Config, error) {
+		restored, kept = nil, nil
+		next := current.Clone()
+		for _, undo := range undos {
+			live := current.GetSetById(undo.id)
+			if live == nil || SetRevision(live) != undo.postRevision {
+				kept = append(kept, undo.name)
+				continue
+			}
+			if undo.created {
+				next.Sets = slices.DeleteFunc(next.Sets, func(s *config.SetConfig) bool { return s != nil && s.Id == undo.id })
+			} else if target := next.GetSetById(undo.id); target != nil {
+				undo.restoreInto(target)
+			}
+			restored = append(restored, undo.name)
+		}
+		if len(restored) == 0 {
+			return nil, errConfigChanged
+		}
+		return next, nil
+	})
+	switch {
+	case errors.Is(err, errConfigChanged):
+		log.Warnf("[WATCHDOG] verification failed for all healed domains, but every set the heal wrote was changed after it, so they are left as they are")
+		return
+	case err != nil:
+		log.Warnf("[WATCHDOG] failed to roll back config after failed verification: %v", err)
+		return
+	}
+	for _, name := range kept {
+		log.Warnf("[WATCHDOG] set %q was changed after the heal was written, it is left as it is", name)
+	}
+	log.Warnf("[WATCHDOG] verification failed for all healed domains, rolled back %s", strings.Join(restored, ", "))
+}
+
+func suiteFinished(status discovery.CheckStatus) bool {
+	return status == discovery.CheckStatusComplete || status == discovery.CheckStatusFailed || status == discovery.CheckStatusCanceled
+}
+
+func everyDomainSettled(cs *discovery.CheckSuite, domains []string) bool {
+	for _, domain := range domains {
+		dr := cs.DomainDiscoveryResults[ExtractDomain(domain)]
+		if dr == nil {
+			return false
+		}
+		if dr.BestSuccess || dr.BaselineWorks {
+			continue
+		}
+		if r := dr.Results["no-bypass"]; r != nil && r.Status == discovery.CheckStatusComplete {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func (w *Watchdog) waitDiscoveryIdle(limit time.Duration) {
+	deadline := time.Now().Add(limit)
+	for w.disc.IsActive() && time.Now().Before(deadline) {
+		select {
+		case <-w.stop:
+			return
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+}
+
+func discoveryInputs(domains []string) []string {
+	inputs := make([]string, 0, len(domains))
+	for _, domain := range domains {
+		d := strings.TrimSpace(domain)
+		if !strings.Contains(d, "://") && strings.ContainsAny(d, "/:?") {
+			d = "https://" + d
+		}
+		inputs = append(inputs, d)
+	}
+	return inputs
+}
+
 // verifyApplied re-checks each domain through the live engine after the healed
 // config has been applied. Discovery runs on its own queues with its own probe
 // client, so a preset succeeding there is not evidence that normal traffic works.
-func (w *Watchdog) verifyApplied(domains []string, wdCfg config.WatchdogConfig) map[string]CheckResult {
+func (w *Watchdog) verifyApplied(domains []string, wdCfg config.WatchdogConfig) (map[string]CheckResult, bool) {
 	verified := make(map[string]CheckResult, len(domains))
 	if len(domains) == 0 {
-		return verified
+		return verified, false
 	}
 
 	tries := wdCfg.VerifyTries
@@ -410,17 +742,23 @@ func (w *Watchdog) verifyApplied(domains []string, wdCfg config.WatchdogConfig) 
 	mark := markThroughEngine
 	timeout := time.Duration(wdCfg.TimeoutSec) * time.Second
 
+	check := w.checkLegacy
+	if check == nil {
+		check = checkAllConcurrently
+	}
+	ctx, cancel := w.stopContext()
+	defer cancel()
+
 	pending := append([]string(nil), domains...)
 	for i := 0; i < tries && len(pending) > 0; i++ {
-		if i > 0 {
-			select {
-			case <-w.stop:
-				return verified
-			case <-time.After(verifyRetryDelay):
-			}
+		if i > 0 && !w.pause(w.verifyDelay) {
+			return verified, true
 		}
 
-		results := checkAllConcurrently(pending, mark, timeout)
+		results := check(ctx, pending, mark, timeout)
+		if w.stopping() {
+			return verified, true
+		}
 		var stillFailing []string
 		for _, domain := range pending {
 			res := results[domain]
@@ -434,7 +772,7 @@ func (w *Watchdog) verifyApplied(domains []string, wdCfg config.WatchdogConfig) 
 		pending = stillFailing
 	}
 
-	return verified
+	return verified, false
 }
 
 func (w *Watchdog) syncDomainStates(wdCfg config.WatchdogConfig) {

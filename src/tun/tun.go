@@ -16,9 +16,8 @@ import (
 
 const (
 	tunBufSize        = 65536
-	defaultDeviceName = "b4tun0"
+	defaultDeviceName = config.DefaultTUNDeviceName
 	defaultAddress    = "10.255.0.1/30"
-	defaultRouteTable = 9999
 )
 
 type Engine struct {
@@ -55,6 +54,9 @@ func (e *Engine) config() *config.Config {
 
 func (e *Engine) UpdateConfig(cfg *config.Config) {
 	e.cfg.Store(cfg)
+	if r := e.routes; r != nil && r.updateCapture(captureParamsFrom(cfg)) {
+		e.triggerReconcile()
+	}
 }
 
 func (e *Engine) Start() error {
@@ -67,10 +69,6 @@ func (e *Engine) Start() error {
 	address := tunCfg.Address
 	if address == "" {
 		address = defaultAddress
-	}
-	routeTable := tunCfg.RouteTable
-	if routeTable == 0 {
-		routeTable = defaultRouteTable
 	}
 
 	for _, w := range e.pool.Workers {
@@ -90,6 +88,10 @@ func (e *Engine) Start() error {
 		run("ip", "link", "del", deviceName)
 	}
 
+	if n := sweepTunPolicyRouting(tunCfg.RouteTable, cfg.Queue.Mark); n > 0 {
+		log.Infof("TUN: removed %d policy routing rule(s) left by a previous run", n)
+	}
+
 	f, name, err := openTUN(deviceName)
 	if err != nil {
 		return err
@@ -106,47 +108,23 @@ func (e *Engine) Start() error {
 	}
 	e.sender = sender
 
-	replyCapture := replyCaptureNeeded(cfg)
+	capture := captureParamsFrom(cfg)
+	replyCapture := capture.replyCapture
 
-	captureTable := routeTable - 1
-	if captureTable <= 0 {
-		captureTable = routeTable + 1
-	}
-
-	tcpLimit := cfg.Queue.TCPConnBytesLimit
-	if tcpLimit <= 0 {
-		tcpLimit = 19
-	}
-	udpLimit := cfg.Queue.UDPConnBytesLimit
-	if udpLimit <= 0 {
-		udpLimit = 8
-	}
-
-	dupV4, _ := cfg.CollectDuplicateIPs()
-
-	e.routes = &routeManager{
-		tunName:      name,
-		tunAddr:      address,
-		tunAddrV6:    tunCfg.AddressV6,
-		outIface:     tunCfg.OutInterface,
-		outGateway:   tunCfg.OutGateway,
-		mark:         cfg.Queue.Mark,
-		routeTable:   routeTable,
-		skipTables:   cfg.System.Tables.SkipSetup,
-		captureTable: captureTable,
-		tcpPorts:     normalizePorts(cfg.CollectTCPPorts()),
-		udpPorts:     normalizePorts(cfg.CollectUDPPorts()),
-		tcpLimit:     tcpLimit,
-		udpLimit:     udpLimit,
-		dupIPs:       dupV4,
-		replyCapture: replyCapture,
-
-		devicesEnabled: cfg.Queue.Devices.Enabled,
-		whiteIsBlack:   cfg.Queue.Devices.WhiteIsBlack,
-		selectedMACs:   cfg.Queue.Devices.SelectedMACs(),
-
+	routes := &routeManager{
+		tunName:       name,
+		tunAddr:       address,
+		tunAddrV6:     tunCfg.AddressV6,
+		outIface:      tunCfg.OutInterface,
+		outGateway:    tunCfg.OutGateway,
+		mark:          cfg.Queue.Mark,
+		skipTables:    cfg.System.Tables.SkipSetup,
+		explicitTable: tunCfg.RouteTable,
+		pinnedTables:  pinnedSetTables(cfg),
 		followDefault: tunCfg.FollowsDefaultRoute(),
 	}
+	routes.setCaptureParams(capture)
+	e.routes = routes
 	if err := e.routes.setup(); err != nil {
 		e.routes.teardown()
 		sender.Close()
@@ -301,7 +279,7 @@ func (e *Engine) senderFor(raw []byte) *sock.Sender {
 		}
 		return e.sender
 	}
-	if portMatches(sport, e.routes.tcpPorts) {
+	if portMatches(sport, e.routes.replyPorts()) {
 		return e.clientSender
 	}
 	return e.sender
@@ -333,6 +311,14 @@ func (e *Engine) triggerReconcile() {
 	case e.trigger <- struct{}{}:
 	default:
 	}
+}
+
+func (e *Engine) Recheck() {
+	e.triggerReconcile()
+}
+
+func (e *Engine) DeviceName() string {
+	return e.tunName
 }
 
 func (e *Engine) logForwardError(err error, src, dst string) {

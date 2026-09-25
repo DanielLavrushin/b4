@@ -3,6 +3,7 @@ package socks5
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -39,6 +40,19 @@ func ApplyBypassMark(d *net.Dialer, mark uint32) {
 		}
 		return sockErr
 	}
+}
+
+type ConnectRejectedError struct {
+	Code byte
+}
+
+func (e *ConnectRejectedError) Error() string {
+	return fmt.Sprintf("upstream connect rejected: code=%d", e.Code)
+}
+
+func IsConnectRejected(err error) bool {
+	var rejected *ConnectRejectedError
+	return errors.As(err, &rejected)
 }
 
 func DialUpstream(ctx context.Context, cfg ClientConfig, targetHost string, targetPort int) (net.Conn, error) {
@@ -170,7 +184,7 @@ func clientConnect(conn net.Conn, targetHost string, targetPort int) error {
 		return fmt.Errorf("upstream bad version in reply: %d", head[0])
 	}
 	if head[1] != repSuccess {
-		return fmt.Errorf("upstream connect rejected: code=%d", head[1])
+		return &ConnectRejectedError{Code: head[1]}
 	}
 
 	var skip int

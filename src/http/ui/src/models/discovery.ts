@@ -22,7 +22,8 @@ export type StrategyFamily =
   | "incoming"
   | "tcpmd5"
   | "alt_address"
-  | "dns_redirect";
+  | "dns_redirect"
+  | "current";
 
 export type DiscoveryPhase =
   | "baseline"
@@ -126,6 +127,37 @@ export interface DiscoverySuite {
   stopped_early?: boolean;
   stopped_phase?: DiscoveryPhase;
   runtime_active?: boolean;
+  set_id?: string;
+  set_verdict?: SetVerdict;
+  stopped_covered?: boolean;
+}
+
+export type SetVerdictStatus =
+  | "covered"
+  | "current_works"
+  | "partial"
+  | "not_needed"
+  | "none"
+  | "incomplete";
+
+export interface SetVerdict {
+  status: SetVerdictStatus;
+  winner_preset?: string;
+  family?: StrategyFamily;
+  set?: B4SetConfig;
+  covered?: string[];
+  uncovered?: string[];
+  no_bypass?: string[];
+  confirmed?: boolean;
+}
+
+export interface SetRunRecord {
+  set_id: string;
+  suite_id: string;
+  start_time: string;
+  end_time: string;
+  urls?: string[];
+  verdict: SetVerdict;
 }
 
 export interface DiscoveryRuntimeState {
@@ -145,6 +177,7 @@ export interface DiscoveryResponse {
   domain: string;
   domains?: string[];
   check_url: string;
+  set_id?: string;
 }
 
 export interface AppliedMark {
@@ -177,10 +210,31 @@ export interface HistoryEntry {
   order?: number;
   applied?: Record<string, AppliedMark>;
   size_bytes?: number;
+  set_id?: string;
 }
 
 export interface SimilarSet {
   id: string;
   name: string;
   domains: string[];
+}
+
+export type ProbeSuggestionSource =
+  | "stored"
+  | "history"
+  | "detector"
+  | "domain"
+  | "service";
+
+export interface ProbeSuggestion {
+  url: string;
+  host: string;
+  source: ProbeSuggestionSource;
+  owner_set_id?: string;
+  owner_set_name?: string;
+}
+
+export interface ProbeSuggestions {
+  set_id: string;
+  urls: ProbeSuggestion[] | null;
 }

@@ -60,7 +60,7 @@ A configuration whose secrets are all disabled logs `secrets: 0` at start-up and
 [tg-bridge c=9] upstream silent for 8s with 512 B awaiting an answer, cutting the relay
 ```
 
-The route accepted the data and stopped answering. This is the failure mode a Cloudflare Worker produces, and b4 demotes a Worker that does it for ten minutes.
+The route accepted two or more writes and answered none of them, eight seconds after the second and three after the latest. A single write that expects no reply, such as an acknowledgement on an idle session, does not count. A session that Telegram closes within six seconds of a request, while the route has been silent for eight, counts as well. This is the failure mode a Cloudflare Worker produces, and b4 ranks a Worker down for ten minutes after two such sessions within five minutes.
 
 ## Dialling fails
 
@@ -71,13 +71,63 @@ The route accepted the data and stopped answering. This is the failure mode a Cl
 - With Direct TCP and no relay, the data-centre addresses are blocked by IP. Auto or WebSocket only, or a [DC Relay](./dc-relay.md), routes around it.
 - With a DC Relay set, `socat` is not running on the VPS, the port is not open in its firewall, or the relay address is wrong. **Test direct TCP** probes without the relay and separates the two cases.
 
-## The WebSocket bridge steers nothing
+## The Telegram over WebSocket card shows a warning
 
-The mode needs the `tproxy` and `socket` kernel modules; without them b4 logs that transparent redirect is unavailable and installs no rule. **Settings -> Diagnostics** reports whether TPROXY is usable and names the modules that are missing and the packages carrying them, and the same list is under [Routing, requirements](../sets/routing.md#requirements).
+The card on Settings, Telegram reads **Working** when the diversion rule is installed and the bridge listener is running. Otherwise it reads **Not working**, and resting the pointer on it names the part that is missing: the listener, or the firewall rule that diverts Telegram traffic to the bridge. The warnings above the status box name the cause. The first three conditions below stop the bridge from diverting anything; the others leave it running. The [field reference](../settings/mtproto.md#telegram-over-websocket) lists the card's other contents.
 
-Matching also has to happen: the set needs the `telegram` GeoIP category and the GeoIP database configured, and a set whose category is named while the database path is empty is rejected at save time rather than running without it.
+### TPROXY support is missing
 
-A client that prefers QUIC bypasses the bridge silently, since this mode installs no QUIC rejection rule.
+The warning reads "This kernel has no TPROXY support". The bridge rides TPROXY, which needs the `tproxy` and `socket` kernel modules. Without them b4 logs that the firewall does not support them, installs no diversion rule for the switch and leaves Telegram on the normal path, and the card reads **Not working**. The warning names the packages that provide the missing modules, or the modules themselves when no package is known; on OpenWrt they are `kmod-nft-tproxy` and `kmod-nft-socket`, and the full list is under [Routing, requirements](../sets/routing.md#requirements). **Check again** re-runs the kernel check once they are installed and then installs the rule. The same result is in the **System Info** dialog on Settings, Core, under **Kernel Capabilities**, where the **Transparent proxy (TPROXY)** row reads available or unavailable.
+
+### Firewall setup is turned off
+
+**Skip IPTables/NFTables setup** is on in [Settings, Core](../settings/core#firewall), stored as `system.tables.skip_setup` and also set by the `--skip-tables` flag. b4 then installs no firewall rules at start-up, the bridge's diversion among them, so after a restart no Telegram connection reaches the listener whatever the switch says. Saving the settings installs the routing rules until the next restart.
+
+### The listener could not start
+
+The warning reads "The bridge listener on port 13443 failed", followed by the error. The port could not be bound, for example because another process already listens on it. The port is fixed. b4 keeps retrying and installs the diversion rules only once the listener is up, so in the meantime Telegram connections take the normal path instead of being sent to a closed port. `netstat -ltnp` on the router, where the build supports `-p`, shows which process holds the port.
+
+When only the IPv6 socket could not be opened, the card instead shows a note that IPv4 goes through the bridge and Telegram over IPv6 takes the normal path. The note appears only while IPv6 support is on. The IPv6 socket is tried again only when the listener restarts, for example after b4 restarts.
+
+### The address list could not be downloaded
+
+The warning carries the download error and names the source of the list still in use. Neither `core.telegram.org` nor either b4 mirror answered. The list already in use stays, whichever source it came from, and the built-in list is always part of it. The next attempt follows after 30 seconds, and the wait doubles after each further failure up to an hour; after a success the list is refreshed once a day. **Refresh addresses** tries again at once.
+
+### b4 runs in TUN mode
+
+The bridge has not been verified with the TUN engine. The switch can be turned on, and whether Telegram connections reach the listener shows in the card's session counter and on the [Traffic](../connections.md) page, under the set name **Telegram bridge**.
+
+### Sets use the Telegram over WebSocket routing mode
+
+The warning lists those sets, each linked to its editor, with disabled ones marked **off**. While the switch is on, a set in the *Telegram over WebSocket (built-in)* mode adds nothing: the switch already sends Telegram's addresses from every device into the same bridge. A set limited to devices or interfaces still takes its devices first, and they end up in the same bridge. Such a set, unless it is limited by an included source-device list, also keeps exempting the bridge's own connections to Telegram's addresses from DPI processing, which the switch alone does not do; see [DPI processing](./websocket-bridge.md#dpi-processing).
+
+## The counters under the bridge status
+
+A line under the status box appears once any of these is above zero.
+
+- **Passed on undecoded** counts connections that were not MTProto, HTTPS to Telegram's web hosts among them, and MTProto sessions b4 could not map to a data centre. They are handed to the Cloudflare Worker or dialled directly, so a growing count is not a fault in itself.
+- **Data center dial failures** counts MTProto sessions for which no upstream route connected. The log carries `bridge dial DC <n> failed` at error level, at most once per interval for the same data centre. The causes under [Dialling fails](#dialling-fails) apply, except the DC Relay, which the bridge does not use.
+- **Closed without a handshake** counts connections that closed, or stayed silent for the whole **Bridge Handshake Wait**, before sending a first byte. Telegram opens connections to a data centre before it has anything to send, so some of these are expected, and a shorter wait produces more of them.
+
+## Some Telegram traffic does not go through the bridge
+
+- **Voice calls** travel over UDP, which the bridge does not take.
+- **QUIC** is not rejected, so a client that prefers QUIC to a Telegram address bypasses the bridge silently.
+- **IPv6** ranges are diverted only while IPv6 support is on in [Settings, Core](../settings/core#protocols).
+- **Devices excluded by [device filtering](../settings/core.md#device-filtering)** keep the normal path.
+- **A set limited to devices or source interfaces** that matches Telegram addresses handles its devices before the switch does, and so does every routing set while device filtering is in allow-list mode.
+- **The router's own connections** keep the normal path while device filtering is in allow-list mode. See [Order among sets](./websocket-bridge.md#order-among-sets).
+- **An address outside the list in use** is not diverted. The card shows how many ranges are in use and where they came from.
+
+## A block set stops the bridge
+
+A block set that is not limited to source interfaces or an included source-device list, and whose targets cover Telegram addresses, still blocks the router's own connections to them, and the bridge's own upstream connections are router connections. Bridged sessions then fail to dial for every address the block set covers.
+
+## A set in the Telegram over WebSocket mode steers nothing
+
+The set mode has the same TPROXY requirement as the switch, see [TPROXY support is missing](#tproxy-support-is-missing).
+
+Matching also has to happen: the set needs the `telegram` GeoIP category and the GeoIP database configured, and a set whose category is named while the database path is empty is rejected at save time rather than running without it. A set scoped to source interfaces or devices leaves the router's own connections out, Telegram Desktop on the router included.
 
 ## The WEB proxy hostname shows a placeholder page
 

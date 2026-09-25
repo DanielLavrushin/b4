@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { useTranslation } from "react-i18next";
-import { Box, Grid, IconButton, Stack } from "@mui/material";
+import { Trans, useTranslation } from "react-i18next";
+import { Link as RouterLink } from "react-router";
+import { Box, Grid, IconButton, Link, Stack } from "@mui/material";
 import { AddIcon, DiscoveryIcon, WatchdogIcon } from "@b4.icons";
 import { B4Config } from "@models/config";
 import { colors } from "@design";
@@ -10,6 +11,7 @@ import {
   B4TextField,
   B4FormHeader,
   B4ChipList,
+  B4Hint,
   B4Switch,
 } from "@b4.elements";
 
@@ -168,6 +170,13 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
           />
         </Grid>
 
+        <B4Hint>
+          <Trans
+            i18nKey="settings.Watchdog.perSetHint"
+            components={{ a: <Link component={RouterLink} to="/sets" /> }}
+          />
+        </B4Hint>
+
         {(config.system.checker.watchdog?.enabled ?? false) && (
         <>
         <Grid size={{ xs: 12, lg: 6 }}>
@@ -245,6 +254,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
         </Grid>
 
         <B4FormHeader label={t("settings.Watchdog.domainsConfig")} />
+        <B4Hint>{t("settings.Watchdog.domainsHint")}</B4Hint>
         <Grid size={{ xs: 12, md: 6 }}>
           <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
             <B4TextField

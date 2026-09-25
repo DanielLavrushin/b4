@@ -33,7 +33,7 @@ When the web server's certificate and key do not load, b4 logs a warning and fal
 1. **Point a hostname at the b4 host.** A bare public DNS name. The field rejects a scheme, a port, a path, credentials, an IP address and a single-label name; an international name has to be entered in its punycode (`xn--`) form.
 2. **Serve it over trusted TLS on 443.** Either b4 itself with a valid certificate and key, on the web server port or on a [relay port](#relay-port) of its own, or a reverse proxy that terminates TLS, preserves the `Host` header or sets `X-Forwarded-Host`, and allows the WebSocket upgrade on `/api/v1/ws`.
 3. **Enable the MTProto proxy** and add at least one secret. Links are generated per secret.
-4. **Enable the WEB carrier** and enter the relay hostname, under Settings, MTProto Proxy, **Telegram Desktop WEB proxy**. The switch and the hostname take effect on the next request; a change to the relay port or its certificate restarts only that listener, the MTProto proxy and its connections stay up.
+4. **Enable the WEB carrier** and enter the relay hostname, under Settings, Telegram, **Telegram Desktop WEB proxy**. The switch and the hostname take effect on the next request; a change to the relay port or its certificate restarts only that listener, the MTProto proxy and its connections stay up.
 5. **Copy the link** from the secret's **Share connection link** dialog, the row labelled *WEB · Telegram Desktop 7.1.1+*, and add it in Telegram Desktop.
 
 ![The WEB proxy card](/img/telegram/20260826233004.png)

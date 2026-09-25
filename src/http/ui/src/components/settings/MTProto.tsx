@@ -11,6 +11,7 @@ import {
 } from "@mui/material";
 import IosShareIcon from "@mui/icons-material/IosShare";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import { MTProtoBridgeCard } from "./MTProtoBridge";
 import { MTProtoSecrets } from "./MTProtoSecrets";
 import { MTProtoUpstreamCard } from "./MTProtoUpstream";
 import { QRCodeSVG } from "qrcode.react";
@@ -55,7 +56,11 @@ interface ShareTarget {
 const webSecretForm = (secret: string) =>
   "dd" + secret.trim().slice(2, 34).toLowerCase();
 
-export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
+export const MTProtoSettings = ({
+  config,
+  savedBridgeEnabled,
+  onChange,
+}: MTProtoSettingsProps & { savedBridgeEnabled: boolean }) => {
   const [share, setShare] = useState<ShareTarget | null>(null);
 
   const enabled = config.system.mtproto?.enabled ?? false;
@@ -69,6 +74,11 @@ export const MTProtoSettings = ({ config, onChange }: MTProtoSettingsProps) => {
   return (
     <>
       <Stack spacing={2}>
+        <MTProtoBridgeCard
+          config={config}
+          savedEnabled={savedBridgeEnabled}
+          onChange={onChange}
+        />
         <ProxyCard config={config} onChange={onChange} />
         {enabled && (
           <>

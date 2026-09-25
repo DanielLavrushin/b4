@@ -44,7 +44,7 @@ The queue's address families are bound when the service starts, so changing this
 | Flag | Description | Default |
 | --- | --- | --- |
 | `--skip-tables` | Do not create iptables/nftables rules at startup | `false` |
-| `--tables-monitor-interval` | How often to check and restore the rules, in seconds. `0` disables it | `10` |
+| `--tables-monitor-interval` | How often to check and restore the rules, in seconds. With NFQUEUE `0` disables it; in TUN mode the interval is at least 10 and `0` does not disable it | `10` |
 
 ## Logging
 

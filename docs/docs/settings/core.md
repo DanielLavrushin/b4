@@ -69,7 +69,13 @@ Turning IPv6 support on or off changes which rules exist in the firewall for eve
 | Masquerade interface | Interface to apply masquerading on. Appears when NAT Masquerade is enabled | All |
 
 :::warning Monitor interval
-Setting this to 0 turns off rule monitoring completely. If an external program or script removes b4's rules, they will not be restored.
+With the NFQUEUE engine, setting this to 0 turns off rule monitoring completely. If an external program or script removes b4's rules, they will not be restored.
+:::
+
+In TUN mode the Firewall group holds only NAT Masquerade and the monitor interval. At that interval the TUN engine checks its capture chain `B4_TUN` and the jumps into it, and the firewall monitor checks the masquerade, MSS clamp and routing-set rules. Each puts back what the router's own firewall removed, for example when the router restarts its firewall after a port-forwarding change. In this mode the interval is at least 10 seconds, and 0 turns neither check off. `SIGUSR1` starts both checks without waiting for the interval. NAT Masquerade leaves the TUN device out: the TUN engine rewrites the source address of captured packets to the uplink address itself, and keeps that rule ahead of any masquerade rule that names no outgoing interface.
+
+:::info Rule restores in System Info
+When TUN captures by port (the Capture row reads `ports`), System Info compares the number of rules in the capture chain with the number b4 installed. After the first restore it also shows how many times the capture rules were restored and, in either engine mode, how many times the firewall monitor restored its rules, each with the time of the last restore. A count that keeps growing points to another service on the router rewriting the firewall.
 :::
 
 Firewall engine options:
@@ -229,7 +235,7 @@ Refusing a connection is not the same as not listening. The listener accepts and
 
 A built-in Telegram MTProto proxy with fake-TLS obfuscation. Telegram traffic is wrapped in a TLS connection, so what crosses the network looks like ordinary HTTPS.
 
-The proxy has a tab of its own. Its fields are listed under [Settings, MTProto](./mtproto.md), and the guides for the three Telegram modes are under [Telegram](../telegram/index.md).
+The proxy is configured on the **Telegram** tab, together with the WebSocket bridge and the WEB proxy. Its fields are listed under [Settings, Telegram](./mtproto.md), and the guides for the three Telegram modes are under [Telegram](../telegram/index.md).
 
 ## Global MSS Clamping
 

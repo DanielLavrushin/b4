@@ -7,5 +7,6 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	probeRefusesAddr = nil
 	leaktest.VerifyTestMain(m)
 }

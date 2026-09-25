@@ -56,6 +56,7 @@ import { FacetCompareBar } from "./SignalRail";
 import { colors, radius } from "@design";
 import { useSets } from "@hooks/useSets";
 import { useSetFacetSelection } from "@hooks/useSetFacetSelection";
+import { useWatchdogSetStatuses } from "@hooks/useWatchdog";
 import { B4Config, B4SetConfig } from "@models/config";
 import { useTranslation } from "react-i18next";
 
@@ -77,9 +78,20 @@ export interface SetWithStats extends B4SetConfig {
 const TEMP_ID_PREFIX = "temp-";
 const isTempId = (id: string): boolean => id.startsWith(TEMP_ID_PREFIX);
 
-const setItemId = (item: SetWithStats): string => {
+export const setItemId = (item: SetWithStats): string => {
   const nested = item as unknown as { set?: B4SetConfig };
   return nested.set ? nested.set.id : item.id;
+};
+
+export const setItemWithSaved = (
+  item: SetWithStats,
+  saved: B4SetConfig,
+): SetWithStats => {
+  const nested = item as unknown as { set?: B4SetConfig };
+  if (nested.set) {
+    return { ...item, set: { ...nested.set, ...saved } } as SetWithStats;
+  }
+  return { ...item, ...saved };
 };
 
 const setItemWithEnabled = (
@@ -152,7 +164,6 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
     deleteSets,
     duplicateSet,
     reorderSets,
-    updateSet,
     setEnabledForSets,
   } = useSets();
 
@@ -204,6 +215,9 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
     return index >= 0 ? setsStats[index] || undefined : undefined;
   };
   const facetSelection = useSetFacetSelection(sets.map((s) => s.id));
+  const watchdogOn = !!config.system?.checker?.watchdog?.enabled;
+  const anyWatched = sets.some((s) => !!s.discovery?.watchdog);
+  const watchStatuses = useWatchdogSetStatuses(anyWatched && watchdogOn);
 
   const sensors = useSensors(
     useSensor(MouseSensor, {
@@ -467,14 +481,12 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
     if (isTempId(set.id)) return;
     markSyncing([set.id], true);
     void (async () => {
-      const result = await updateSet({ ...set, enabled });
+      const result = await setEnabledForSets([set.id], enabled);
       markSyncing([set.id], false);
-      if (result.success) {
-        onRefresh();
-      } else {
+      if (!result.success) {
         reportSaveError(result.error, showError, t, "sets.manager.failedToUpdate");
-        onRefresh();
       }
+      onRefresh();
     })();
   };
 
@@ -730,6 +742,8 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                             facetSelection.selectFacet(set.id, key);
                           }}
                           onVoted={onRefresh}
+                          watchStatus={watchStatuses.byId.get(set.id)}
+                          watchdogOn={watchdogOn}
                         />
                       )}
                     </SortableCardWrapper>

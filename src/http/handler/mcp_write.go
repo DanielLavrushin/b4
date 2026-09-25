@@ -2,8 +2,10 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/watchdog"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -147,6 +150,9 @@ type mcpChange struct {
 	// restores it wholesale rather than re-writing the single field, so a write
 	// that b4 normalised on the way in is still fully reversed.
 	Snapshot *config.Config
+
+	PreRevision  string
+	PostRevision string
 }
 
 const mcpHistoryLimit = 20
@@ -169,7 +175,35 @@ func mcpStripDerivedTargets(c *config.Config) {
 	}
 }
 
-func mcpRecordChange(c mcpChange) {
+var (
+	errMCPConfigMoved = errors.New("the configuration changed while this change was prepared (by the watchdog, the web interface or another tool); nothing was written, read the current value and retry")
+	errMCPRevertStale = errors.New("the configuration changed since the change being undone")
+)
+
+type mcpProbesError struct{ what string }
+
+func (e *mcpProbesError) Error() string {
+	return fmt.Sprintf("this change would %s, which makes the router fetch sites on a timer. "+
+		"That needs allow_active_probes ('Allow active probes' under Settings -> Integrations -> MCP server); nothing was written", e.what)
+}
+
+func (api *API) mcpSave(oldCfg, newCfg *config.Config) error {
+	return api.saveAndPushConfigIf(newCfg, func(current *config.Config) error {
+		if current != oldCfg {
+			return errMCPConfigMoved
+		}
+		if !current.System.WebServer.MCP.AllowActiveProbes {
+			if what := mcpStartsProbes(newCfg, current); what != "" {
+				return &mcpProbesError{what: what}
+			}
+		}
+		return nil
+	})
+}
+
+func mcpRecordChange(c mcpChange, before, after *config.Config) {
+	c.PreRevision = watchdog.ConfigRevision(before)
+	c.PostRevision = watchdog.ConfigRevision(after)
 	mcpStripDerivedTargets(c.Snapshot)
 	mcpHistory = append(mcpHistory, c)
 	if len(mcpHistory) > mcpHistoryLimit {
@@ -778,7 +812,7 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 
 		snapshot := oldCfg.Clone()
 
-		if err := api.saveAndPushConfig(newCfg); err != nil {
+		if err := api.mcpSave(oldCfg, newCfg); err != nil {
 			return nil, mcpSetValueOut{}, fmt.Errorf("rejected: %w", err)
 		}
 
@@ -813,7 +847,7 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		mcpRecordChange(mcpChange{
 			Path: in.Path, Previous: previous, Current: current,
 			When: time.Now(), Snapshot: snapshot,
-		})
+		}, oldCfg, newCfg)
 
 		log.Infof("mcp: %s changed from %s to %s", in.Path, previous, current)
 
@@ -836,7 +870,8 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		Title: "Undo the last b4 setting change",
 		Description: "Restore the configuration as it stood before the most recent b4_set_config_value call, and apply it live. " +
 			"Call this as soon as a change turns out to be wrong. Repeating it walks further back, one change at a time. " +
-			"Only changes made through MCP since b4 last started can be undone; edits made in the web interface cannot.",
+			"Only changes made through MCP since b4 last started can be undone; edits made in the web interface cannot. " +
+			"The undo is refused when the configuration was changed after that change by anything else (the watchdog, the web interface or another tool), because restoring would overwrite that newer change too.",
 		Annotations: mcpDestructive,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpRevertOut, error) {
 		if !api.getCfg().System.WebServer.MCP.AllowWrites {
@@ -855,13 +890,43 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 			}, nil
 		}
 
-		oldCfg := api.getCfg()
 		for _, set := range last.Snapshot.Sets {
 			api.loadTargetsForSetCached(set)
 		}
-		if err := api.saveAndPushConfig(last.Snapshot); err != nil {
-			mcpRecordChange(last)
+		var oldCfg *config.Config
+		err := api.saveAndPushConfigIf(last.Snapshot, func(current *config.Config) error {
+			if last.PostRevision != "" && watchdog.ConfigRevision(current) != last.PostRevision {
+				return errMCPRevertStale
+			}
+			if !current.System.WebServer.MCP.AllowActiveProbes {
+				if what := mcpStartsProbes(last.Snapshot, current); what != "" {
+					return &mcpProbesError{what: what}
+				}
+			}
+			oldCfg = current
+			return nil
+		})
+		if err != nil {
+			mcpStripDerivedTargets(last.Snapshot)
+			mcpHistory = append(mcpHistory, last)
+			var probes *mcpProbesError
+			switch {
+			case errors.Is(err, errMCPRevertStale):
+				return nil, mcpRevertOut{}, fmt.Errorf(
+					"refusing to undo %s: the configuration was changed after that change (by the watchdog, the web interface or another tool), "+
+						"and restoring the configuration from before it would overwrite that newer change as well. Nothing was changed and the change stays on the undo list; "+
+						"read the current value and set it back with the matching tool instead",
+					last.Path)
+			case errors.As(err, &probes):
+				return nil, mcpRevertOut{}, fmt.Errorf(
+					"refusing to undo %s: it would %s, which makes the router fetch sites on a timer. "+
+						"That needs 'Allow active probes' under Settings -> Integrations -> MCP server; nothing was changed and the change stays on the undo list",
+					last.Path, probes.what)
+			}
 			return nil, mcpRevertOut{}, fmt.Errorf("could not restore the previous configuration: %w", err)
+		}
+		if n := len(mcpHistory); n > 0 && mcpHistory[n-1].PostRevision == last.PreRevision {
+			mcpHistory[n-1].PostRevision = watchdog.ConfigRevision(last.Snapshot)
 		}
 		api.applyRuntimeChanges(last.Snapshot, oldCfg)
 		api.PerformSoftRestart(last.Snapshot, oldCfg)
@@ -878,4 +943,53 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 				last.Path, last.Previous, last.Current),
 		}, nil
 	})
+}
+
+func mcpStartsProbes(target, current *config.Config) string {
+	if target == nil || current == nil {
+		return ""
+	}
+	want, have := target.System.Checker.Watchdog, current.System.Checker.Watchdog
+	if want.Enabled && !have.Enabled {
+		return "turn the watchdog master switch on"
+	}
+	for _, entry := range want.Domains {
+		if !mcpWatchdogListHas(have.Domains, entry) {
+			return fmt.Sprintf("add %s to the watchdog's global list", entry)
+		}
+	}
+	live := make(map[string]*config.SetConfig, len(current.Sets))
+	for _, set := range current.Sets {
+		if set != nil {
+			live[set.Id] = set
+		}
+	}
+	for _, set := range target.Sets {
+		if set == nil {
+			continue
+		}
+		prior := live[set.Id]
+		if set.WatchdogActive() && !prior.WatchdogActive() {
+			return fmt.Sprintf("start the watchdog of set %q", set.Name)
+		}
+		if !set.WatchdogActive() {
+			continue
+		}
+		for _, url := range set.Discovery.URLs {
+			if prior == nil || !slices.Contains(prior.Discovery.URLs, url) {
+				return fmt.Sprintf("add the discovery URL %s to set %q", url, set.Name)
+			}
+		}
+	}
+	return ""
+}
+
+func mcpWatchdogListHas(list []string, entry string) bool {
+	host := watchdog.ExtractDomain(entry)
+	for _, d := range list {
+		if strings.EqualFold(d, entry) || strings.EqualFold(watchdog.ExtractDomain(d), host) {
+			return true
+		}
+	}
+	return false
 }

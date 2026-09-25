@@ -275,7 +275,12 @@ const routeRows = (set: B4SetConfig, t: TFn): FacetRow[] => {
     ];
   }
   const mode = resolveRoutingMode(routing.mode);
-  const rows: FacetRow[] = [{ label: t(F("mode")), value: mode }];
+  const rows: FacetRow[] = [
+    {
+      label: t(F("mode")),
+      value: mode === "mtproto-ws" ? t(F("telegramBridge")) : mode,
+    },
+  ];
 
   if (mode === "block") {
     rows.push({
@@ -531,7 +536,7 @@ export const buildRouteSummary = (
   }
   if (mode === "mtproto-ws") {
     return {
-      text: "mtproto-ws",
+      text: t(F("telegramBridge")),
       color: facets.route,
       icon: <RoutingIcon />,
     };

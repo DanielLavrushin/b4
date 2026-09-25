@@ -222,6 +222,14 @@ type transportPlan struct {
 	wsPath   string
 	isWorker bool
 	native   bool
+	frontSNI string
+}
+
+func (p transportPlan) tlsName() string {
+	if p.frontSNI != "" {
+		return p.frontSNI
+	}
+	return p.sni
 }
 
 // selfDialMark is what b4 puts on every connection it opens to Telegram. It is
@@ -257,6 +265,9 @@ func (p transportPlan) describe() string {
 	case transportWS:
 		if p.isWorker {
 			return "wsworker://" + p.sni
+		}
+		if p.frontSNI != "" {
+			return fmt.Sprintf("ws://%s@%s?sni=%s", p.sni, p.dialHost, p.frontSNI)
 		}
 		if p.dialHost != "" && p.dialHost != p.sni {
 			return fmt.Sprintf("ws://%s@%s", p.sni, p.dialHost)
@@ -345,7 +356,7 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 				log.Debugf("%s DC %d native WS edge skipped (blacklisted)", tg(""), dc)
 			} else {
 				dh := wsNativeDialHost(cfg.WSEndpointHost)
-				plans = append(plans, nativeEdgePlans(dc, absDC, dh)...)
+				plans = append(plans, nativeRoutes(dc, absDC, dh, wsFrontName(cfg.WSFrontSNI))...)
 			}
 		}
 		if d := strings.TrimSpace(cfg.WSCustomDomain); d != "" {
@@ -474,7 +485,9 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 			obf, err := completeObfuscation(raw.conn, dc, protoTag)
 			if err == nil && raw.conn.liveNow() {
 				log.Infof("%s DC %d connected via ws-pool %s", tag, dc, raw.plan.describe())
-				wsRecordSuccess(dc)
+				if raw.plan.native {
+					wsRecordSuccess(dc)
+				}
 				return obf, dialInfo{transport: "ws-pool", plan: raw.plan}, nil
 			}
 			if err != nil {
@@ -502,117 +515,97 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 	haveFallback := hasNonNativePlan(plans)
 	skipNative := nativeCooling && haveFallback
 
-	deadline := time.Now().Add(dialBudget)
-	var attempts []string
-	nativeTried := 0
-	nativeRedirects := 0
+	dialStart := time.Now()
+	deadline := dialStart.Add(dialBudget)
 	untried := 0
+	candidates := make([]transportPlan, 0, len(plans))
 	for _, p := range plans {
 		// The per-address record outlives the per-DC one, which any success
 		// clears. Without it a flapping edge was retried from scratch on every
 		// session and spent the whole budget before a Cloudflare domain was
 		// reached even once.
-		if p.native && haveFallback && (skipNative || wsEndpointCooling(p.dialHost, p.sni)) {
+		if p.native && haveFallback && (skipNative || wsEndpointCooling(p.dialHost, p.tlsName())) {
 			untried++
 			continue
 		}
-		remaining := time.Until(deadline)
-		if remaining < wsDialMinAttempt {
-			untried++
-			continue
-		}
-		if p.isWorker {
-			if raw := workerPool.get(p); raw != nil {
-				obf, oerr := completeObfuscation(raw, dc, protoTag)
-				if oerr == nil && raw.liveNow() {
-					log.Infof("%s DC %d connected via %s (pooled)", tag, dc, p.describe())
-					workerPool.warm(p)
-					return obf, dialInfo{transport: p.describe(), isWorker: true, worker: p.sni, plan: p}, nil
-				}
-				if oerr != nil {
-					log.Debugf("%s DC %d worker pool conn obf init failed: %v", tag, dc, oerr)
-				} else {
-					log.Debugf("%s DC %d worker pool conn died before relay; re-dialing fresh", tag, dc)
-				}
-				_ = raw.Close()
-			}
-		}
+		candidates = append(candidates, p)
+	}
 
-		log.Debugf("%s DC %d dialing %s", tag, dc, p.describe())
-		start := time.Now()
-		var conn net.Conn
-		var derr error
-		if p.kind == transportWS {
-			// the shortened timeout belongs to the native edge that just failed;
-			// applying it to a Worker or CF-proxy dial would cut those off early
-			// for a fault that is not theirs
-			timeout := wsDialTimeout
+	wsp := pools.wsPool()
+	var obfConn *ObfuscatedConn
+	race := dialRace{
+		stagger:     dialRaceStagger,
+		maxInFlight: dialRaceMaxInFlight,
+		minAttempt:  wsDialMinAttempt,
+		deadline:    deadline,
+		workerAfter: dialRaceWorkerAfter,
+		earlyOK:     func(p transportPlan) bool { return !workerInCooldown(p.sni) },
+		timeoutFor: func(p transportPlan) time.Duration {
+			if p.kind != transportWS {
+				return tcpDialTimeout
+			}
 			if p.native && nativeCooling {
-				timeout = wsDialTimeoutCooldown
+				return wsDialTimeoutCooldown
 			}
-			if timeout > remaining {
-				timeout = remaining
+			return wsDialTimeout
+		},
+		dial: func(p transportPlan, timeout time.Duration, fresh bool) (net.Conn, bool, error) {
+			if p.isWorker && !fresh {
+				if raw := workerPool.get(p); raw != nil {
+					if raw.liveNow() {
+						return raw, true, nil
+					}
+					_ = raw.Close()
+				}
 			}
-			conn, derr = dialOneWS(p, selfDialMark(), timeout)
-		} else {
-			timeout := tcpDialTimeout
-			if timeout > remaining {
-				timeout = remaining
-			}
-			conn, derr = dialOneTCP(p, selfDialMark(), timeout)
-		}
-		if derr != nil {
-			attempts = append(attempts, fmt.Sprintf("%s: %s", p.describe(), shortErr(derr)))
-			timedOut := isDialTimeout(derr)
 			if p.kind == transportWS {
-				if p.native {
-					nativeTried++
-					if isWSRedirect(derr) {
-						nativeRedirects++
-					} else if timedOut {
-						// Cool the edge down here rather than after the loop. The
-						// loop only reaches its end when every transport failed, so
-						// an edge that timed out and was then rescued by a later
-						// route was recorded as healthy, and stayed first in line
-						// at full price for the next session as well. Measured on a
-						// censored network, the same 8 s timeout to
-						// 149.154.167.220 recurred at 18:29, 18:32 and 18:33.
-						wsRecordFailure(dc, false)
-						nativeCooling = true
-						// The sibling name resolves to the same address, so it is
-						// the same timeout again. Spend what is left of the budget
-						// on a route that might differ.
-						skipNative = haveFallback
-					}
-				}
-				if p.cfBase != "" {
-					switch {
-					case wsRateLimited(derr):
-						cfBalancerInst.penalize(p.cfBase, cfProxyDomainCooldown)
-					case timedOut:
-						// A domain that goes unanswered costs far more than one
-						// that answers 429, and nothing used to record it, so
-						// every session in flight paid the same timeout on the
-						// same pinned domain.
-						cfBalancerInst.penalize(p.cfBase, cfProxyTimeoutCooldown)
-					}
-				}
-			} else if timedOut {
-				tcpRecordFailure(p.addr)
+				c, err := dialOneWS(p, selfDialMark(), timeout)
+				return c, false, err
 			}
-			log.Debugf("%s DC %d %s failed after %dms: %v", tag, dc, p.describe(), time.Since(start).Milliseconds(), derr)
-			continue
-		}
-		obfConn, oerr := completeObfuscation(conn, dc, protoTag)
-		if oerr != nil {
-			attempts = append(attempts, fmt.Sprintf("%s: %s", p.describe(), shortErr(oerr)))
-			conn.Close()
-			log.Debugf("%s DC %d obf init failed on %s: %v", tag, dc, p.describe(), oerr)
-			continue
-		}
+			c, err := dialOneTCP(p, selfDialMark(), timeout)
+			return c, false, err
+		},
+		started: func(p transportPlan) {
+			log.Debugf("%s DC %d dialing %s", tag, dc, p.describe())
+		},
+		failed: func(a raceAttempt) {
+			recordDialFailure(dc, a)
+			log.Debugf("%s DC %d %s failed after %dms: %v", tag, dc, a.plan.describe(), a.elapsed.Milliseconds(), a.err)
+		},
+		accept: func(a raceAttempt) error {
+			obf, oerr := completeObfuscation(a.conn, dc, protoTag)
+			if oerr == nil && a.pooled {
+				if wc, ok := a.conn.(*wsConn); ok && !wc.liveNow() {
+					oerr = errors.New("pooled conn died before relay")
+				}
+			}
+			if oerr != nil {
+				_ = a.conn.Close()
+				log.Debugf("%s DC %d obf init failed on %s: %v", tag, dc, a.plan.describe(), oerr)
+				return oerr
+			}
+			obfConn = obf
+			return nil
+		},
+		spare: func(a raceAttempt) {
+			if wc, ok := a.conn.(*wsConn); ok && !a.pooled && wsp.offer(dc, wc, a.plan) {
+				log.Tracef("%s DC %d kept the slower %s as a spare", tag, dc, a.plan.describe())
+				return
+			}
+			_ = a.conn.Close()
+		},
+	}
+	out := race.run(candidates)
+	untried += out.untried
+
+	if w := out.winner; w != nil {
+		p := w.plan
 		if p.kind == transportWS {
 			if p.native {
 				wsRecordSuccess(dc)
+			}
+			if !p.isWorker {
+				wsp.noteSuccess(dc)
 			}
 			if p.isWorker {
 				workerPool.warm(p)
@@ -625,12 +618,16 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 		} else {
 			tcpRecordSuccess(p.addr)
 		}
-		log.Infof("%s DC %d connected via %s in %dms", tag, dc, p.describe(), time.Since(start).Milliseconds())
+		if w.pooled {
+			log.Infof("%s DC %d connected via %s (pooled)", tag, dc, p.describe())
+		} else {
+			log.Infof("%s DC %d connected via %s in %dms", tag, dc, p.describe(), time.Since(dialStart).Milliseconds())
+		}
 		return obfConn, dialInfo{transport: p.describe(), isWorker: p.isWorker, worker: workerNameOf(p), plan: p}, nil
 	}
 
-	if nativeTried > 0 {
-		wsRecordFailure(dc, nativeRedirects == nativeTried)
+	if out.nativeTried > 0 {
+		wsRecordFailure(dc, out.nativeRedirects == out.nativeTried)
 	}
 	if untried > 0 {
 		// Say so rather than letting the list look exhausted. Walking the rest is
@@ -638,10 +635,36 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 		// a connection made now is made for nobody.
 		log.Debugf("%s DC %d gave up with %d transport(s) untried (dial budget %v spent)", tag, dc, untried, dialBudget)
 	}
-	if len(attempts) == 0 {
+	if len(out.attempts) == 0 {
 		return nil, dialInfo{}, fmt.Errorf("no transport available (all in cooldown or blacklisted)")
 	}
-	return nil, dialInfo{}, fmt.Errorf("all transports failed: %s", strings.Join(attempts, "; "))
+	return nil, dialInfo{}, fmt.Errorf("all transports failed: %s", strings.Join(out.attempts, "; "))
+}
+
+func recordDialFailure(dc int, a raceAttempt) {
+	timedOut := isDialTimeout(a.err)
+	if a.plan.kind != transportWS {
+		if timedOut {
+			tcpRecordFailure(a.plan.addr)
+		}
+		return
+	}
+	if a.plan.native && timedOut && !isWSRedirect(a.err) {
+		wsRecordFailure(dc, false)
+	}
+	if a.plan.native && a.plan.frontSNI != "" && isFrontMiss(a.err) {
+		wsFrontRefuse(a.plan.dialHost, a.plan.frontSNI)
+		wsFrontRecord(a.plan.dialHost, a.plan.frontSNI, false)
+	}
+	if a.plan.cfBase == "" {
+		return
+	}
+	switch {
+	case wsRateLimited(a.err):
+		cfBalancerInst.penalize(a.plan.cfBase, cfProxyDomainCooldown)
+	case timedOut && a.timeout >= wsDialTimeout:
+		cfBalancerInst.penalize(a.plan.cfBase, cfProxyTimeoutCooldown)
+	}
 }
 
 func isDialTimeout(err error) bool {
@@ -684,7 +707,7 @@ func dialOneWS(p transportPlan, mark uint, timeout time.Duration) (net.Conn, err
 	if host == "" {
 		host = p.sni
 	}
-	return dialWS(host, p.sni, p.wsPath, timeout, mark)
+	return dialWSAs(host, p.tlsName(), p.sni, p.wsPath, timeout, mark)
 }
 
 type TransportProbeResult struct {
@@ -759,11 +782,7 @@ func hasNonNativePlan(plans []transportPlan) bool {
 func dialOne(p transportPlan, mark uint) (net.Conn, error) {
 	switch p.kind {
 	case transportWS:
-		host := p.dialHost
-		if host == "" {
-			host = p.sni
-		}
-		return dialWS(host, p.sni, p.wsPath, wsDialTimeout, mark)
+		return dialOneWS(p, mark, wsDialTimeout)
 	default:
 		return dialOneTCP(p, mark, tcpDialTimeout)
 	}

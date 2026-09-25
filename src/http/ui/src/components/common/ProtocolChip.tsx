@@ -160,7 +160,8 @@ export const FlagBadges = ({ flags }: FlagBadgesProps) => {
   const isBlackhole = flags === "block";
   const isSocks5 = flags === "socks5";
   const isDuplicate = flags === "tcp-dup";
-  const isMtproto = flags?.startsWith("mtproto");
+  const isTelegramBridge = flags === "mtproto-ws";
+  const isMtproto = flags === "mtproto" || !!flags?.startsWith("mtproto:");
   const mtprotoName = isMtproto
     ? (flags as string).slice("mtproto".length).replace(/^:/, "").trim()
     : "";
@@ -171,6 +172,7 @@ export const FlagBadges = ({ flags }: FlagBadgesProps) => {
     !isSocks5 &&
     !isDuplicate &&
     !isMtproto &&
+    !isTelegramBridge &&
     !dnsVerdict
   )
     return null;
@@ -187,6 +189,15 @@ export const FlagBadges = ({ flags }: FlagBadgesProps) => {
               ? t("connections.flags.mtprotoNamed", { name: mtprotoName })
               : t("connections.flags.mtproto")
           }
+          variant="outlined"
+          color="primary"
+        />
+      )}
+      {isTelegramBridge && (
+        <B4Badge
+          icon={<TelegramIcon />}
+          label={t("connections.flags.telegramBridgeLabel")}
+          title={t("connections.flags.telegramBridge")}
           variant="outlined"
           color="primary"
         />

@@ -33,6 +33,7 @@ interface ShareEnvelopeProps {
   config: B4SetConfig;
   isNew?: boolean;
   dirty?: boolean;
+  onPublished?: () => void;
 }
 
 interface DuplicateAnswer {
@@ -54,6 +55,7 @@ export const ShareEnvelope = ({
   config,
   isNew = false,
   dirty = false,
+  onPublished,
 }: ShareEnvelopeProps) => {
   const { t } = useTranslation();
   const { showSuccess, showError } = useSnackbar();
@@ -112,6 +114,7 @@ export const ShareEnvelope = ({
       const res = await share.mutateAsync({ setId: config.id });
       setPublished(res);
       showSuccess(t("sets.share.published", { id: res.hub_id, version: res.version }));
+      onPublished?.();
     } catch (e) {
       if (e instanceof ApiError && e.code === "duplicate_strategy") {
         const body = (e.body ?? {}) as Partial<DuplicateAnswer>;

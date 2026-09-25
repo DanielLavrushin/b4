@@ -22,6 +22,7 @@ interface FeatureSettingsProps {
 }
 
 const IPV6_BYPASS_DISMISS_KEY = "b4_ipv6_bypass_dismissed";
+const TUN_MONITOR_MIN_INTERVAL = 10;
 
 export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
   const { t } = useTranslation();
@@ -272,6 +273,24 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
       {config.queue.mode === "tun" && (
         <B4FormGroup label={t("settings.Feature.firewallFeatures")} columns={2}>
           {masqueradeSwitch}
+          <B4Slider
+            label={t("settings.Feature.firewallMonitorInterval")}
+            value={Math.max(
+              TUN_MONITOR_MIN_INTERVAL,
+              config.system.tables.monitor_interval,
+            )}
+            onChange={(value: number) =>
+              onChange("system.tables.monitor_interval", value)
+            }
+            min={TUN_MONITOR_MIN_INTERVAL}
+            max={120}
+            step={5}
+            helperText={t(
+              skipTables
+                ? "settings.Feature.firewallMonitorTunSkipped"
+                : "settings.Feature.firewallMonitorTunHelp",
+            )}
+          />
         </B4FormGroup>
       )}
       {config.system.tables.masquerade.enabled && (

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"reflect"
@@ -18,6 +19,7 @@ import (
 	"github.com/daniellavrushin/b4/mtproto"
 	"github.com/daniellavrushin/b4/netif"
 	"github.com/daniellavrushin/b4/nfq"
+	"github.com/daniellavrushin/b4/watchdog"
 )
 
 func (api *API) RegisterConfigApi() {
@@ -51,6 +53,7 @@ func (a *API) handleConfigReset(w http.ResponseWriter, r *http.Request) {
 	a.applyRuntimeChanges(&newCfg, curCfg)
 
 	if err := a.saveAndPushConfig(&newCfg); err != nil {
+		a.undoRuntimeChanges(&newCfg, curCfg)
 		log.Errorf("Failed to reset config: %v", err)
 		writeAPIError(w, ErrInternal("Failed to reset config"))
 		return
@@ -60,9 +63,10 @@ func (a *API) handleConfigReset(w http.ResponseWriter, r *http.Request) {
 
 	setJsonHeader(w)
 	_ = json.NewEncoder(w).Encode(ConfigResponse{
-		Success: true,
-		Message: "Configuration reset to defaults",
-		Config:  redactWebServerSecrets(&newCfg),
+		Success:  true,
+		Message:  "Configuration reset to defaults",
+		Config:   redactWebServerSecrets(&newCfg),
+		Revision: watchdog.ConfigRevision(&newCfg),
 	})
 }
 
@@ -78,6 +82,19 @@ func (a *API) applyRuntimeChanges(newCfg, oldCfg *config.Config) {
 	}
 
 	a.geodataManager.UpdatePaths(newCfg.System.Geo.GeoSitePath, newCfg.System.Geo.GeoIpPath)
+}
+
+func (a *API) undoRuntimeChanges(applied, before *config.Config) {
+	live := a.getCfg()
+	if applied.System.Logging.Level != before.System.Logging.Level && log.Level(log.CurLevel.Load()) == applied.System.Logging.Level {
+		log.SetLevel(live.System.Logging.Level)
+	}
+	if applied.System.Timezone != before.System.Timezone {
+		config.ApplyTimezone(live.System.Timezone)
+	}
+	if applied.System.Geo.GeoSitePath != before.System.Geo.GeoSitePath || applied.System.Geo.GeoIpPath != before.System.Geo.GeoIpPath {
+		a.geodataManager.UpdatePaths(live.System.Geo.GeoSitePath, live.System.Geo.GeoIpPath)
+	}
 }
 
 func redactWebServerSecrets(cfg *config.Config) *config.Config {
@@ -133,7 +150,7 @@ func (a *API) getConfig(w http.ResponseWriter) {
 
 	// Calculate statistics for each set
 	cfg := a.getCfg()
-	setsWithStats := make([]SetWithStats, len(cfg.Sets))
+	setsWithStats := make([]ConfigSet, len(cfg.Sets))
 	totalDomains := 0
 	totalIPs := 0
 
@@ -174,19 +191,22 @@ func (a *API) getConfig(w http.ResponseWriter) {
 		totalDomains += setTotalDomains
 		totalIPs += setTotalIPs
 
-		setsWithStats[i] = SetWithStats{
-			SetConfig: set,
-			HubState:  hubStateOf(cfg, set),
-			Stats: SetStatistics{
-				ManualDomains:            manualDomains,
-				ManualIPs:                manualIPs,
-				GeositeDomains:           geositeTotalDomains,
-				GeoipIPs:                 geoipTotalIPs,
-				TotalDomains:             setTotalDomains,
-				TotalIPs:                 setTotalIPs,
-				GeositeCategoryBreakdown: geositeCounts,
-				GeoipCategoryBreakdown:   geoipCounts,
+		setsWithStats[i] = ConfigSet{
+			SetWithStats: SetWithStats{
+				SetConfig: set,
+				HubState:  hubStateOf(cfg, set),
+				Stats: SetStatistics{
+					ManualDomains:            manualDomains,
+					ManualIPs:                manualIPs,
+					GeositeDomains:           geositeTotalDomains,
+					GeoipIPs:                 geoipTotalIPs,
+					TotalDomains:             setTotalDomains,
+					TotalIPs:                 setTotalIPs,
+					GeositeCategoryBreakdown: geositeCounts,
+					GeoipCategoryBreakdown:   geoipCounts,
+				},
 			},
+			Revision: watchdog.SetRevision(set),
 		}
 	}
 
@@ -213,6 +233,7 @@ func (a *API) getConfig(w http.ResponseWriter) {
 
 	response := ConfigResponse{
 		Config:              redactWebServerSecrets(cfg),
+		Revision:            watchdog.ConfigRevision(cfg),
 		Sets:                setsWithStats,
 		AvailableInterfaces: ifaces,
 		TunnelInterfaces:    tunnels,
@@ -294,10 +315,32 @@ func getSystemInterfaces() ([]string, error) {
 // @Security BearerAuth
 // @Router /config [put]
 func (a *API) updateConfig(w http.ResponseWriter, r *http.Request) {
-	var newConfig config.Config
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeAPIError(w, ErrInvalidJSON())
+		return
+	}
+	var probe struct {
+		Revision string `json:"revision"`
+	}
+	if err := json.Unmarshal(body, &probe); err != nil {
+		log.Errorf("Failed to decode config update: %v", err)
+		writeAPIError(w, ErrInvalidJSON())
+		return
+	}
+	revisionCheck := func(current *config.Config) error {
+		if probe.Revision != "" && probe.Revision != watchdog.ConfigRevision(current) {
+			return errConfigChanged()
+		}
+		return nil
+	}
+	if err := revisionCheck(a.getCfg()); err != nil {
+		writeAPIError(w, err)
+		return
+	}
 
-	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&newConfig); err != nil {
+	var newConfig config.Config
+	if err := json.Unmarshal(body, &newConfig); err != nil {
 		log.Errorf("Failed to decode config update: %v", err)
 		writeAPIError(w, ErrInvalidJSON())
 		return
@@ -316,7 +359,7 @@ func (a *API) updateConfig(w http.ResponseWriter, r *http.Request) {
 	a.applyRuntimeChanges(&newConfig, curCfg)
 
 	// Calculate statistics for response
-	setsWithStats := make([]SetWithStats, len(newConfig.Sets))
+	setsWithStats := make([]ConfigSet, len(newConfig.Sets))
 	allDomainsCount := 0
 	allIpsCount := 0
 
@@ -358,22 +401,31 @@ func (a *API) updateConfig(w http.ResponseWriter, r *http.Request) {
 		allDomainsCount += setTotalDomains
 		allIpsCount += setTotalIPs
 
-		setsWithStats[i] = SetWithStats{
-			SetConfig: set,
-			HubState:  hubStateOf(&newConfig, set),
-			Stats: SetStatistics{
-				ManualDomains:            manualDomains,
-				ManualIPs:                manualIPs,
-				GeositeDomains:           geositeTotalDomains,
-				TotalDomains:             setTotalDomains,
-				TotalIPs:                 setTotalIPs,
-				GeositeCategoryBreakdown: geositeCounts,
-				GeoipCategoryBreakdown:   geoipCounts,
+		setsWithStats[i] = ConfigSet{
+			SetWithStats: SetWithStats{
+				SetConfig: set,
+				HubState:  hubStateOf(&newConfig, set),
+				Stats: SetStatistics{
+					ManualDomains:            manualDomains,
+					ManualIPs:                manualIPs,
+					GeositeDomains:           geositeTotalDomains,
+					TotalDomains:             setTotalDomains,
+					TotalIPs:                 setTotalIPs,
+					GeositeCategoryBreakdown: geositeCounts,
+					GeoipCategoryBreakdown:   geoipCounts,
+				},
 			},
 		}
 	}
 
-	if err := a.saveAndPushConfig(&newConfig); err != nil {
+	if err := a.saveAndPushConfigIf(&newConfig, func(current *config.Config) error {
+		if err := revisionCheck(current); err != nil {
+			return err
+		}
+		oldConfig = current
+		return nil
+	}); err != nil {
+		a.undoRuntimeChanges(&newConfig, curCfg)
 		log.Errorf("Failed to update config: %v", err)
 		writeAPIError(w, err)
 		return
@@ -387,11 +439,17 @@ func (a *API) updateConfig(w http.ResponseWriter, r *http.Request) {
 	m.RecordEvent("info", fmt.Sprintf("Loaded %d domains and %d IPs across %d sets", allDomainsCount, allIpsCount, len(newConfig.Sets)))
 	log.Infof("Loaded %d domains and %d IPs across %d sets", allDomainsCount, allIpsCount, len(newConfig.Sets))
 
+	stored := &newConfig
+	for i := range setsWithStats {
+		setsWithStats[i].Revision = watchdog.SetRevision(stored.GetSetById(setsWithStats[i].Id))
+	}
+
 	response := ConfigResponse{
-		Success: true,
-		Message: "Configuration updated successfully",
-		Config:  redactWebServerSecrets(&newConfig),
-		Sets:    setsWithStats,
+		Success:  true,
+		Message:  "Configuration updated successfully",
+		Config:   redactWebServerSecrets(&newConfig),
+		Revision: watchdog.ConfigRevision(stored),
+		Sets:     setsWithStats,
 	}
 
 	setJsonHeader(w)
@@ -400,8 +458,62 @@ func (a *API) updateConfig(w http.ResponseWriter, r *http.Request) {
 	_ = enc.Encode(response)
 }
 
-func (a *API) saveAndPushConfig(newCfg *config.Config) error {
+func errConfigChanged() *APIError {
+	return &APIError{
+		Status:  http.StatusConflict,
+		Code:    "config_changed",
+		Message: "the configuration changed since it was loaded; reload it and apply the change again",
+	}
+}
 
+func (a *API) saveAndPushConfig(newCfg *config.Config) error {
+	return a.saveAndPushConfigIf(newCfg, nil)
+}
+
+func (a *API) saveAndPushConfigIf(newCfg *config.Config, check func(current *config.Config) error) error {
+	return a.updateAndPushConfig(func(current *config.Config) (*config.Config, error) {
+		if check != nil {
+			if err := check(current); err != nil {
+				return nil, err
+			}
+		}
+		return newCfg, nil
+	})
+}
+
+func (a *API) updateAndPushConfig(mutate func(current *config.Config) (*config.Config, error)) error {
+	unlock := config.LockWrites()
+	defer unlock()
+	newCfg, err := mutate(a.getCfg())
+	if err != nil {
+		return err
+	}
+	return a.pushConfigLocked(newCfg)
+}
+
+var errConfigUnchanged = errors.New("the configuration is already as requested")
+
+func (a *API) editConfig(edit func(next *config.Config) error) (oldCfg, newCfg *config.Config, err error) {
+	err = a.updateAndPushConfig(func(current *config.Config) (*config.Config, error) {
+		next := current.Clone()
+		if err := edit(next); err != nil {
+			return nil, err
+		}
+		oldCfg, newCfg = current, next
+		return next, nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return oldCfg, newCfg, nil
+}
+
+func isRefusal(err error) bool {
+	var ae *APIError
+	return errors.As(err, &ae) && ae.Status < http.StatusInternalServerError
+}
+
+func (a *API) pushConfigLocked(newCfg *config.Config) error {
 	for _, check := range []func() error{newCfg.Validate, newCfg.ValidateTLSFiles} {
 		if err := check(); err != nil {
 			var ve *config.ValidationError
@@ -434,6 +546,10 @@ func (a *API) saveAndPushConfig(newCfg *config.Config) error {
 		}
 	}
 
+	if globalTUNEngine != nil {
+		globalTUNEngine.UpdateConfig(newCfg)
+	}
+
 	if globalSocks5Server != nil {
 		globalSocks5Server.UpdateConfig(newCfg)
 	}
@@ -455,6 +571,7 @@ func (a *API) saveAndPushConfig(newCfg *config.Config) error {
 	if oldMT.DCFallbackEnabled != newMT.DCFallbackEnabled || oldMT.DCFallbackURL != newMT.DCFallbackURL {
 		go func() { _ = mtproto.RefreshDCs(newMT.DCFallbackEnabled, newMT.DCFallbackURL) }()
 	}
+	refreshBridgeList := newMT.Bridge.Enabled && (!oldMT.Bridge.Enabled || a.getCfg().System.Geo.GeoIpPath != newCfg.System.Geo.GeoIpPath)
 
 	if a.getCfg().System.Logging.Directory != newCfg.System.Logging.Directory {
 		if err := log.SetErrorFile(newCfg.System.Logging.ErrorFilePath()); err != nil {
@@ -481,6 +598,9 @@ func (a *API) saveAndPushConfig(newCfg *config.Config) error {
 	a.cfgPtr.Store(newCfg)
 	if routingSyncFunc != nil {
 		routingSyncFunc(newCfg)
+	}
+	if refreshBridgeList {
+		mtproto.TriggerTelegramCIDRRefresh()
 	}
 	if globalAIManager != nil {
 		globalAIManager.Update(newCfg.System.AI)

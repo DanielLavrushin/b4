@@ -90,6 +90,22 @@ func GetCheckSuite(id string) (*CheckSuite, bool) {
 	return suite, ok
 }
 
+func SnapshotCheckSuite(id string) (*CheckSuite, bool) {
+	suite, ok := GetCheckSuite(id)
+	if !ok || suite == nil {
+		return nil, false
+	}
+	data, err := json.Marshal(suite)
+	if err != nil {
+		return nil, false
+	}
+	var snap CheckSuite
+	if err := json.Unmarshal(data, &snap); err != nil {
+		return nil, false
+	}
+	return &snap, true
+}
+
 func CancelCheckSuite(id string) error {
 	suitesMu.Lock()
 	defer suitesMu.Unlock()

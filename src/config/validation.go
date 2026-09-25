@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"encoding/pem"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -123,6 +124,7 @@ func tlsKeyIsEncrypted(path string) bool {
 func (c *Config) Validate() error {
 	v := &validator{}
 	c.System.WebServer.IsEnabled = c.System.WebServer.Port > 0 && c.System.WebServer.Port <= 65535
+	c.releaseTelegramBridgeReservations()
 
 	c.checkPortCollisions(v)
 	if v.hasErrors() {
@@ -259,6 +261,17 @@ func (c *Config) Validate() error {
 			log.Warnf("Set '%s': DNS pin for %q ignores %q, which is not an IP address", set.Name, domain, value)
 		})
 
+		set.Discovery.URLs = utils.SanitizeProbeURLs(set.Discovery.URLs, func(raw string, err error) {
+			log.Warnf("Set '%s': dropping discovery URL %q: %v", set.Name, raw, err)
+		})
+
+		if set.Discovery.Watchdog {
+			if blocker := set.watchdogStructuralBlocker(); blocker != "" {
+				log.Warnf("Set '%s': turning its watchdog off: %s", set.Name, WatchdogBlockerText(blocker))
+				set.Discovery.Watchdog = false
+			}
+		}
+
 		if set.DNS.Enabled && set.DNS.DoHURL != "" && !strings.HasPrefix(strings.ToLower(set.DNS.DoHURL), "https://") {
 			v.addf(fmt.Sprintf("sets[%d].dns.doh_url", setIdx), "doh_url_must_be_https", map[string]any{"set": set.Name}, "set %q: DNS-over-HTTPS URL must start with https://", set.Name)
 			return v.result()
@@ -371,6 +384,10 @@ func (c *Config) Validate() error {
 				"queue mark 0x%x overlaps reserved TUN mark bits (0x%x steer, 0x%x client, 0x%x reinject); choose a mark clear of those bits",
 				m, uint(engine.TunSteerMark), uint(engine.ClientMark), uint(engine.ReinjectMarkBit))
 			return v.result()
+		}
+		if t := c.Queue.TUN.RouteTable; t < 0 || (t >= 253 && t <= 255) || int64(t) > math.MaxUint32 {
+			log.Warnf("queue.tun.route_table %d is reserved or out of range, so TUN picks a free routing table instead; 253, 254 and 255 are the kernel's default, main and local tables", t)
+			c.Queue.TUN.RouteTable = 0
 		}
 	} else if c.System.Tables.Masquerade.Enabled {
 		if m := c.MainInjectedMark(); m&uint(engine.ClientMark) != 0 {
@@ -490,6 +507,13 @@ func (c *Config) checkPortCollisions(v *validator) {
 			refs = append(refs, portRef{"system.dns.tcp_port", c.DNSTCPListenPort()})
 		}
 	}
+	if f := strings.TrimSpace(c.System.MTProto.WSFrontSNI); f != "" && !strings.EqualFold(f, "off") {
+		if net.ParseIP(f) != nil || !strings.Contains(f, ".") || strings.ContainsAny(f, " :/[]") {
+			v.addf("system.mtproto.ws_front_sni", "invalid_host",
+				map[string]any{"value": f},
+				"ws_front_sni must be a host name (got %q)", f)
+		}
+	}
 	if c.System.MTProto.Enabled {
 		if c.System.MTProto.Port < 1 || c.System.MTProto.Port > 65535 {
 			v.add("system.mtproto.port", "out_of_range", "port must be between 1 and 65535", portRangeParams)
@@ -552,4 +576,60 @@ func (c *Config) checkPortCollisions(v *validator) {
 			}
 		}
 	}
+}
+
+const (
+	WatchdogBlockedDisabled = "set_disabled"
+	WatchdogBlockedRouted   = "routed_set"
+	WatchdogBlockedNoURLs   = "no_urls"
+	WatchdogBlockedDevices  = "device_scoped"
+	WatchdogBlockedIPOnly   = "ip_only"
+)
+
+func (s *SetConfig) WatchdogBlocker() string {
+	if s == nil {
+		return WatchdogBlockedDisabled
+	}
+	if blocker := s.watchdogStructuralBlocker(); blocker != "" {
+		return blocker
+	}
+	switch {
+	case !s.Enabled:
+		return WatchdogBlockedDisabled
+	case len(s.Discovery.URLs) == 0:
+		return WatchdogBlockedNoURLs
+	case len(s.Targets.SNIDomains) == 0 && len(s.Targets.GeoSiteCategories) == 0:
+		return WatchdogBlockedIPOnly
+	}
+	return ""
+}
+
+func (s *SetConfig) watchdogStructuralBlocker() string {
+	switch {
+	case s.Routing.Enabled:
+		return WatchdogBlockedRouted
+	case len(s.Targets.SourceDevices) > 0 && !s.Targets.SourceDevicesExclude:
+		return WatchdogBlockedDevices
+	}
+	return ""
+}
+
+func (s *SetConfig) WatchdogActive() bool {
+	return s != nil && s.Discovery.Watchdog && s.WatchdogBlocker() == ""
+}
+
+func WatchdogBlockerText(blocker string) string {
+	switch blocker {
+	case WatchdogBlockedDisabled:
+		return "the set is disabled"
+	case WatchdogBlockedRouted:
+		return "the set routes its traffic, so the direct path the watchdog heals is not the one it uses"
+	case WatchdogBlockedNoURLs:
+		return "the set has no discovery URLs to check"
+	case WatchdogBlockedDevices:
+		return "the set applies only to listed devices, and the router's own check carries no device address, so it never matches the set"
+	case WatchdogBlockedIPOnly:
+		return "the set lists no domains or geosite categories, only IP addresses or GeoIP categories, and the watchdog confirms which set handles a URL by its host name, so it can never confirm this one"
+	}
+	return blocker
 }

@@ -3,7 +3,7 @@ package detector
 import (
 	"context"
 	"crypto/tls"
-	"fmt"
+	"errors"
 	"net"
 	"net/url"
 	"sort"
@@ -88,12 +88,28 @@ func (s *Suite) families() []string {
 	}
 }
 
-const maxAddresses = 3
+const (
+	maxAddresses     = 3
+	maxFailedRetries = 3
+)
+
+const (
+	dnsErrTimeout       = "timeout"
+	dnsErrNotFound      = "not_found"
+	dnsErrServerFailure = "server_failure"
+	dnsErrOther         = "error"
+)
+
+var (
+	systemResolver      = net.DefaultResolver
+	systemLookupTimeout = 5 * time.Second
+	errNoAddress        = errors.New("no address")
+)
 
 func (s *Suite) resolveSystem(ctx context.Context, domain, family string) ([]string, error) {
-	rctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	rctx, cancel := context.WithTimeout(ctx, systemLookupTimeout)
 	defer cancel()
-	ips, err := net.DefaultResolver.LookupIP(rctx, familyNet(family), domain)
+	ips, err := systemResolver.LookupIP(rctx, familyNet(family), domain)
 	if err != nil {
 		return nil, err
 	}
@@ -105,15 +121,48 @@ func (s *Suite) resolveSystem(ctx context.Context, domain, family string) ([]str
 		out = append(out, ip.String())
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("no address")
+		return nil, errNoAddress
 	}
 	return out, nil
 }
 
-func (s *Suite) resolveHonest(ctx context.Context, domain, family string) []string {
+func dnsErrorKind(err error) string {
+	var dnsErr *net.DNSError
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, context.Canceled):
+		return dnsErrOther
+	case errors.Is(err, context.DeadlineExceeded):
+		return dnsErrTimeout
+	case errors.Is(err, errNoAddress):
+		return dnsErrNotFound
+	case !errors.As(err, &dnsErr):
+		return dnsErrOther
+	case dnsErr.IsTimeout:
+		return dnsErrTimeout
+	case dnsErr.IsNotFound:
+		return dnsErrNotFound
+	}
+	return dnsErrServerFailure
+}
+
+func dnsFailReason(kind string) string {
+	switch kind {
+	case dnsErrTimeout:
+		return "no answer"
+	case dnsErrNotFound:
+		return "it answers that the name has no address"
+	case dnsErrServerFailure:
+		return "server failure or refusal"
+	}
+	return "the query failed"
+}
+
+var resolveHonest = func(ctx context.Context, mark uint, domain, family string) []string {
 	rctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	r := &netprobe.Resolver{Mark: int(s.directMark), Timeout: 4 * time.Second}
+	r := &netprobe.Resolver{Mark: int(mark), Timeout: 4 * time.Second}
 	out, err := r.ResolveResilient(rctx, domain, familyRecord(family))
 	if err != nil {
 		return nil
@@ -143,7 +192,7 @@ func (s *Suite) runSites() {
 	s.setProgress(ScopeSites, "")
 
 	families := s.families()
-	result := &SitesResult{}
+	result := &SitesResult{Resolvers: systemNameservers()}
 	for _, in := range inputs {
 		domain, full := parseSiteInput(in)
 		for _, fam := range families {
@@ -205,8 +254,8 @@ func (s *Suite) runSites() {
 	s.mu.Lock()
 	s.tallySites(result)
 	s.mu.Unlock()
-	log.DiscoveryLogf("[Detector] Sites: %d ok, %d blocked by ISP, %d fixed by b4, %d still blocked",
-		result.Ok, result.Blocked, result.Fixed, result.StillBlocked)
+	log.DiscoveryLogf("[Detector] Sites: %d ok, %d blocked by ISP, %d fixed by b4, %d still blocked, %d without an address from the resolver",
+		result.Ok, result.Blocked, result.Fixed, result.StillBlocked, result.DNSFail)
 }
 
 func (s *Suite) resolveAll(result *SitesResult) {
@@ -227,12 +276,30 @@ func (s *Suite) resolveAll(result *SitesResult) {
 			domain := result.Sites[idx].Domain
 			fam := result.Sites[idx].Family
 			sys, err := s.resolveSystem(s.ctx, domain, fam)
-			honest := s.resolveHonest(s.ctx, domain, fam)
+			honest := resolveHonest(s.ctx, s.directMark, domain, fam)
 			b4, source := s.resolveThroughB4(s.ctx, result.Sites[idx], fam)
 			res[idx] = resolved{sys: sys, honest: honest, b4: b4, b4Source: source, sysErr: err}
 		}(i)
 	}
 	wg.Wait()
+
+	timeoutsInARow := 0
+	for i := range res {
+		if s.canceled() || timeoutsInARow == maxFailedRetries {
+			break
+		}
+		if len(res[i].sys) > 0 || len(res[i].honest) == 0 || dnsErrorKind(res[i].sysErr) == dnsErrNotFound {
+			continue
+		}
+		s.setProgress(ScopeSites, result.Sites[i].Domain)
+		res[i].sys, res[i].sysErr = s.resolveSystem(s.ctx, result.Sites[i].Domain, result.Sites[i].Family)
+		switch {
+		case len(res[i].sys) > 0:
+			timeoutsInARow = 0
+		case dnsErrorKind(res[i].sysErr) == dnsErrTimeout:
+			timeoutsInARow++
+		}
+	}
 
 	byIP := make(map[string]map[string]bool)
 	for i, r := range res {
@@ -264,7 +331,7 @@ func (s *Suite) resolveAll(result *SitesResult) {
 		site.B4Source = r.b4Source
 		switch {
 		case site.IP == "" && site.HonestIP != "":
-			site.FakeDNS = true
+			site.DNSError = dnsErrorKind(r.sysErr)
 		case site.IP != "" && (isFakeRange(site.IP) || stubs[site.IP]):
 			site.FakeDNS = true
 		}
@@ -312,7 +379,7 @@ func (s *Suite) checkSite(result *SitesResult, idx int) {
 	s.mu.Lock()
 	result.Sites[idx].Direct = &direct
 	result.Sites[idx].AltWorks = direct.AltWorks
-	if direct.IP != "" {
+	if direct.IP != "" && site.IP != "" {
 		result.Sites[idx].IP = direct.IP
 	}
 	if s.Options.FetchMode == FetchBoth {
@@ -343,7 +410,6 @@ func (s *Suite) checkSite(result *SitesResult, idx int) {
 }
 
 func (s *Suite) fetchMode(site SiteResult, mark uint, direct bool) Fetch {
-	ctx := s.ctx
 	if site.IP == "" && site.HonestIP == "" {
 		return Fetch{Status: netprobe.DomainError, Detail: "name does not resolve"}
 	}
@@ -354,29 +420,48 @@ func (s *Suite) fetchMode(site SiteResult, mark uint, direct bool) Fetch {
 		ips = site.B4IPs
 		source = site.B4Source
 	}
-	if site.FakeDNS {
-		if direct || source == "system" {
-			f := Fetch{Status: netprobe.DomainDNSFake}
-			switch {
-			case site.IP == "":
-				f.Detail = "the resolver returns no address, DoH answers " + site.HonestIP
-			default:
-				f.Detail = "the resolver answers " + site.IP + ", DoH answers " + site.HonestIP
-			}
-			if !direct && site.SetName != "" {
-				f.Detail += "; the set has no DNS redirect or pin for it"
-			}
-			if direct && site.HonestIP != "" {
-				real := s.fetchAny(ctx, site, site.HonestIPs, mark)
-				f.Detail += "; on the real address: " + strings.ToLower(string(real.Status))
-				if real.Detail != "" && real.Status != FetchOk {
-					f.Detail += " (" + real.Detail + ")"
-				}
-			}
-			return f
+	if source == "system" && site.IP == "" {
+		if direct {
+			return noAddressFetch(site, s.fetchAt(site, site.HonestIPs, "doh", mark, true))
 		}
+		f := Fetch{Status: FetchDNSFail, Detail: "the resolver gave no address (" + dnsFailReason(site.DNSError) + ")"}
+		if site.SetName != "" && !site.SetDNS {
+			f.Detail += "; the set has no DNS redirect or pin for it"
+		}
+		return f
 	}
+	if site.FakeDNS && source == "system" {
+		f := Fetch{Status: netprobe.DomainDNSFake, Detail: "the resolver answers " + site.IP + ", DoH answers " + site.HonestIP}
+		if !direct && site.SetName != "" {
+			f.Detail += "; the set has no DNS redirect or pin for it"
+		}
+		if direct && site.HonestIP != "" {
+			real := s.fetchAny(s.ctx, site, site.HonestIPs, mark)
+			f.Detail += "; on the real address: " + strings.ToLower(string(real.Status))
+			if real.Detail != "" && real.Status != FetchOk {
+				f.Detail += " (" + real.Detail + ")"
+			}
+		}
+		return f
+	}
+	return s.fetchAt(site, ips, source, mark, direct)
+}
 
+func noAddressFetch(site SiteResult, f Fetch) Fetch {
+	if f.Status != FetchOk {
+		return f
+	}
+	detail := "the resolver gave no address (" + dnsFailReason(site.DNSError) + "), DoH answers " + site.HonestIP + "; the site loads at " + f.IP
+	if f.Detail != "" {
+		detail += " (" + f.Detail + ")"
+	}
+	f.Status = FetchDNSFail
+	f.Detail = detail
+	return f
+}
+
+func (s *Suite) fetchAt(site SiteResult, ips []string, source string, mark uint, direct bool) Fetch {
+	ctx := s.ctx
 	f := s.fetchAny(ctx, site, ips, mark)
 	f.Source = source
 	if !direct || s.canceled() {
@@ -401,7 +486,7 @@ func (s *Suite) fetchMode(site SiteResult, mark uint, direct bool) Fetch {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			t12 = s.fetchSite(ctx, site.Domain, site.URL, f.IP, mark, tls.VersionTLS12)
+			t12 = fetchAddress(s, ctx, site.Domain, site.URL, f.IP, mark, tls.VersionTLS12)
 		}()
 	}
 	var httpStatus FetchStatus
@@ -410,7 +495,7 @@ func (s *Suite) fetchMode(site SiteResult, mark uint, direct bool) Fetch {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			httpStatus, httpDetail = s.probePlainHTTP(ctx, site.Domain, f.IP, mark)
+			httpStatus, httpDetail = probeHTTP(s, ctx, site.Domain, f.IP, mark)
 		}()
 	}
 	wg.Wait()
@@ -439,7 +524,7 @@ func (s *Suite) fetchAny(ctx context.Context, site SiteResult, ips []string, mar
 		if s.canceled() {
 			break
 		}
-		f := s.fetchSite(ctx, site.Domain, site.URL, ip, mark, 0)
+		f := fetchAddress(s, ctx, site.Domain, site.URL, ip, mark, 0)
 		f.IP = ip
 		if f.Status == FetchOk {
 			f.Tried = append(append([]string{}, blocked...), ip)
@@ -484,6 +569,12 @@ func outcomeFor(direct, through *Fetch) SiteOutcome {
 	if direct == nil {
 		return OutcomePending
 	}
+	if direct.Status == FetchDNSFail {
+		if through != nil && isBlockedStatus(through.Status) {
+			return OutcomeBrokenByB4
+		}
+		return OutcomeDNS
+	}
 	dBlocked := isBlockedStatus(direct.Status)
 	dOk := direct.Status == FetchOk
 	if through == nil {
@@ -519,7 +610,7 @@ func outcomeFor(direct, through *Fetch) SiteOutcome {
 }
 
 func (s *Suite) tallySites(r *SitesResult) {
-	r.Ok, r.Blocked, r.Fixed, r.StillBlocked, r.BrokenByB4, r.Server, r.Errors = 0, 0, 0, 0, 0, 0, 0
+	r.Ok, r.Blocked, r.Fixed, r.StillBlocked, r.BrokenByB4, r.Server, r.DNSFail, r.Errors = 0, 0, 0, 0, 0, 0, 0, 0
 	for _, site := range r.Sites {
 		if !site.Done {
 			continue
@@ -538,6 +629,8 @@ func (s *Suite) tallySites(r *SitesResult) {
 			r.BrokenByB4++
 		case OutcomeServer:
 			r.Server++
+		case OutcomeDNS:
+			r.DNSFail++
 		default:
 			r.Errors++
 		}

@@ -155,6 +155,15 @@ func (t TUNConfig) FollowsDefaultRoute() bool {
 	return t.OutInterface == "" || t.OutInterface == "auto"
 }
 
+const DefaultTUNDeviceName = "b4tun0"
+
+func (t TUNConfig) Device() string {
+	if t.DeviceName == "" {
+		return DefaultTUNDeviceName
+	}
+	return t.DeviceName
+}
+
 type DevicesConfig struct {
 	Enabled      bool     `json:"enabled"`
 	VendorLookup bool     `json:"vendor_lookup"`
@@ -397,6 +406,7 @@ type MTProtoConfig struct {
 	UpstreamMode      string          `json:"upstream_mode"`
 	WSCustomDomain    string          `json:"ws_custom_domain"`
 	WSEndpointHost    string          `json:"ws_endpoint_host"`
+	WSFrontSNI        string          `json:"ws_front_sni"`
 	CFProxyEnabled    bool            `json:"cfproxy_enabled"` // enable Cloudflare-proxied fallback WS domains (rescues DCs the network blocks)
 	CFProxyURL        string          `json:"cfproxy_url"`     // URL to refresh CF-proxy domain list; empty = built-in default
 	CFWorkerDomain    string          `json:"cfworker_domain"` // user's Cloudflare Worker domain(s) (workers.dev), comma-separated; free per-user WS relay tried before the shared CF pool
@@ -406,7 +416,13 @@ type MTProtoConfig struct {
 
 	WebProxy MTProtoWebProxyConfig `json:"web_proxy"`
 
+	Bridge MTProtoBridgeConfig `json:"bridge"`
+
 	BridgeSkipNativeEdge bool `json:"-"`
+}
+
+type MTProtoBridgeConfig struct {
+	Enabled bool `json:"enabled"`
 }
 
 type MTProtoWebProxyConfig struct {
@@ -518,7 +534,13 @@ type SetConfig struct {
 	Routing       RoutingConfig       `json:"routing"`
 	Escalate      EscalateConfig      `json:"escalate"`
 	MSSClamp      MSSClampConfig      `json:"mss_clamp"`
+	Discovery     SetDiscoveryConfig  `json:"discovery" mcp:"deny"`
 	Hub           *HubOrigin          `json:"hub,omitempty" mcp:"deny"`
+}
+
+type SetDiscoveryConfig struct {
+	URLs     []string `json:"urls"`
+	Watchdog bool     `json:"watchdog"`
 }
 
 type HubOrigin struct {

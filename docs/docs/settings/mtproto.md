@@ -1,13 +1,52 @@
 ---
 sidebar_position: 2
-title: MTProto
+title: Telegram
 ---
 
-# MTProto
+# Telegram
 
-Settings, **MTProto Proxy**. The proxy server and the shared Telegram upstream are always present. The secrets card and the Telegram Desktop WEB proxy card appear only while the proxy server is on, because neither does anything without it. The proxy card and the WEB proxy card each hide their own fields until their switch is on.
+Settings, **Telegram**. Earlier versions labelled the tab **MTProto Proxy**; its address is still `/settings/mtproto`. The Telegram over WebSocket card, the proxy server and the shared Telegram upstream are always present. The secrets card and the Telegram Desktop WEB proxy card appear only while the proxy server is on, because neither does anything without it. The proxy card and the WEB proxy card each hide their own fields until their switch is on.
 
 Task-shaped guides for the three Telegram modes are under [Telegram](../telegram/index.md). This page is the field reference.
+
+## Telegram over WebSocket
+
+The first card on the tab. Its switch turns the [WebSocket bridge](../telegram/websocket-bridge.md) on for the whole network, with no set involved.
+
+![The Telegram over WebSocket card](/img/telegram/20260925200001.png)
+
+| Parameter | Description | Default |
+| --- | --- | --- |
+| Enable Telegram over WebSocket | `system.mtproto.bridge.enabled`. Diverts TCP connections to Telegram's address ranges, from every device behind b4 and from the router itself, into the bridge listener. [Device filtering](./core.md#device-filtering) applies; there is no scoping by source interface or device. The card shows **Save to apply** until the page is saved, and the switch then applies without a restart. Does not need the proxy server. | Off |
+
+While the switch is on and saved, the header shows **Working** when the diversion rule is installed and the bridge listener is running, and **Not working** otherwise, with the missing part named when the pointer rests on it. The **Bridge status** box holds no settings:
+
+| Item | Meaning |
+| --- | --- |
+| Listener port | The bridge listener's port, `13443`, which is fixed, and the address families it listens on, or **not running** |
+| Active connections | Bridged connections open right now |
+| Telegram ranges | How many ranges are in use, where the list on top of the built-in one came from (**telegram.org**, **b4 mirror**, **saved copy**, **GeoIP file**, or **built-in list** when none of them is available) and when it was last updated. See [Address list](../telegram/websocket-bridge.md#address-list) |
+| Relayed sessions | How many sessions the bridge has relayed, and when the last one was |
+| Counters line | Shown once any of them is above zero. **Passed on undecoded**: connections that were not MTProto or could not be mapped to a data centre, handed to the Cloudflare Worker or dialled directly. **Data center dial failures**: MTProto sessions for which no upstream route connected. **Closed without a handshake**: connections that closed, or stayed silent for the whole handshake wait, before sending a first byte |
+
+| Button | What it does |
+| --- | --- |
+| Check again | Re-runs the kernel check for TPROXY support |
+| Refresh addresses | Downloads the address list again instead of waiting for the daily refresh, and reports the number of ranges or the error |
+
+The warnings above the box, each explained under [Troubleshooting](../telegram/troubleshooting.md#the-telegram-over-websocket-card-shows-a-warning):
+
+| Warning | Meaning |
+| --- | --- |
+| No TPROXY support | The kernel lacks the `tproxy` or `socket` module, so no diversion rule is installed and the header reads **Not working**. The warning names the packages that add them, or the missing modules |
+| Firewall setup is off | **Skip IPTables/NFTables setup** is on in [Settings, Core](./core#firewall), so b4 installs no rules at start-up. A save installs the routing rules until the next restart |
+| The bridge listener failed | Port 13443 could not be bound, with the error. b4 retries, and Telegram connections take the normal path until it succeeds |
+| IPv6 listener note | Shown while IPv6 support is on and only the IPv6 socket failed to open. IPv4 goes through the bridge and Telegram over IPv6 takes the normal path |
+| Downloading the address list failed | Neither telegram.org nor either b4 mirror answered. The list in use is kept, and the warning names its source |
+| Not verified with TUN | b4 runs the TUN capture engine, with which the bridge has not been verified |
+| Redundant sets | Sets whose routing mode is *Telegram over WebSocket (built-in)*, each linked, with disabled ones marked **off**. They are redundant while the switch is on |
+
+A note under the box states that voice calls (UDP) and QUIC are not bridged.
 
 ## Proxy server
 
@@ -32,7 +71,7 @@ A configuration whose secrets all have their switch off starts, logs `secrets: 0
 
 ## Telegram upstream
 
-Shared by the proxy server and by the `Telegram over WebSocket` routing mode, so these apply even while the proxy server is off. The routes and the order they are tried in are described under [Telegram upstream](../telegram/upstream.md).
+Shared by the proxy server and by the Telegram over WebSocket bridge, whether the switch above or a set's routing mode feeds it, so these apply even while the proxy server is off. The routes and the order they are tried in are described under [Telegram upstream](../telegram/upstream.md).
 
 | Parameter | Description | Default |
 | --- | --- | --- |
@@ -42,6 +81,7 @@ Shared by the proxy server and by the `Telegram over WebSocket` routing mode, so
 | CF proxy fallback | Uses a rotating pool of Cloudflare-proxied domains for the data centres Telegram's own edge does not serve. | On |
 | Custom WebSocket domain | One domain that proxies WebSocket traffic to Telegram. b4 prepends `kws1.`, `kws2.` and so on per data centre. | empty |
 | Telegram WS edge IP | Replaces the address a native `kws*.web.telegram.org` dial goes to. Does not affect the custom domain. | `149.154.167.220` |
+| Fronting name for Telegram's WS edge | A TLS name, such as `sprinthost.ru`, tried on Telegram's own edge when the handshake under its `kws*` names goes unanswered. See [Fronting name](../telegram/upstream.md#fronting-name-for-the-ws-edge). | empty (off) |
 
 ## Telegram Desktop WEB proxy
 
@@ -72,8 +112,8 @@ Three timeouts where `0` selects the built-in value rather than turning anything
 | CF proxy domain list URL | Where the CF proxy pool is refreshed from, hourly. | tg-ws-proxy's list |
 | DC list fallback mirror | Uses the mirror below when Telegram's own endpoint for the data-centre list is unreachable. | On |
 | DC list mirror URL | The mirror to use. The default is hosted by the b4 author and receives the requesting IP address, nothing else. | b4 author's mirror |
-| Bridge Handshake Wait (sec) | How long the `Telegram over WebSocket` bridge waits for a client's first byte before dropping the connection. `0` uses the built-in value; `-1` waits indefinitely rather than disabling the wait. | `180` |
+| Bridge Handshake Wait (sec) | How long the bridge waits for a client's first byte before dropping the connection. Applies to the Telegram over WebSocket switch and to sets in the Telegram over WebSocket routing mode alike, so the field stays here where it is visible with the switch off. `0` uses the built-in value; `-1` waits indefinitely rather than disabling the wait. | `180` |
 
 :::info Saving does not restart the service
-b4 restarts the MTProto proxy itself when the enable switch, port, bind address, Fake SNI, transport mode, custom WebSocket domain, WS edge IP or CF proxy fallback changes, which drops the sessions it is carrying. Secrets and the WEB proxy fields are applied without restarting it; a changed relay port or certificate restarts only the relay listener.
+b4 restarts the MTProto proxy itself when the enable switch, port, bind address, Fake SNI, transport mode, custom WebSocket domain, WS edge IP, fronting name or CF proxy fallback changes, which drops the sessions it is carrying. Secrets and the WEB proxy fields are applied without restarting it; a changed relay port or certificate restarts only the relay listener. The Telegram over WebSocket switch takes effect on save, with no restart of the service.
 :::

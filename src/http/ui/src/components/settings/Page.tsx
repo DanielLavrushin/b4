@@ -22,17 +22,18 @@ import {
   ApiIcon,
   BackupIcon,
   CaptureIcon,
-  ConnectionIcon,
   CoreIcon,
   DiscoveryIcon,
   DomainIcon,
   RefreshIcon,
   SaveIcon,
+  TelegramIcon,
   WarningIcon,
 } from "@b4.icons";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useAiStatus } from "@context/AiStatusProvider";
 import { useHubInvalidate } from "@hooks/useHub";
+import { useTelegramBridgeInvalidate } from "@hooks/useTelegramBridge";
 import { ApiSettings } from "./Api";
 import { DnsSettings } from "./Dns";
 import { IPHealthSettings } from "./IPHealth";
@@ -51,7 +52,7 @@ import { WebServerSettings } from "./WebServer";
 
 import { B4Alert, B4Dialog, B4Tab, B4Tabs } from "@b4.elements";
 import { configApi, SettingsPropHandlerType } from "@b4.settings";
-import { reportSaveError } from "@utils";
+import { isStaleWriteError, reportSaveError, reportStaleWrite } from "@utils";
 import { colors, spacing } from "@design";
 
 import { B4Config } from "@models/config";
@@ -94,7 +95,7 @@ enum TABS {
 }
 
 export function SettingsPage() {
-  const { showError, showSuccess } = useSnackbar();
+  const { showError, showSuccess, showSnackbar } = useSnackbar();
   const { t } = useTranslation();
   const [config, setConfig] = useState<B4Config | null>(null);
   const [originalConfig, setOriginalConfig] = useState<B4Config | null>(null);
@@ -136,7 +137,7 @@ export function SettingsPage() {
         id: TABS.MTPROTO,
         path: "mtproto",
         label: t("settings.tabs.mtproto"),
-        icon: <ConnectionIcon />,
+        icon: <TelegramIcon />,
         description: t("settings.tabs.mtprotoDesc"),
         requiresRestart: false,
       },
@@ -285,10 +286,12 @@ export function SettingsPage() {
 
   const { refresh: refreshAiStatus } = useAiStatus();
   const invalidateHub = useHubInvalidate();
+  const invalidateTelegramBridge = useTelegramBridgeInvalidate();
 
   const saveConfig = async () => {
     if (!config) return;
 
+    let stale = false;
     try {
       setSaving(true);
       await configApi.save(config);
@@ -299,12 +302,22 @@ export function SettingsPage() {
         requiresRestart ? t("core.configSavedRestart") : t("core.configSaved"),
       );
     } catch (error) {
-      reportSaveError(error, showError, t);
+      if (isStaleWriteError(error)) {
+        stale = true;
+        reportStaleWrite(error, showSnackbar, t, () => {
+          loadConfig().catch(() => {});
+        });
+      } else {
+        reportSaveError(error, showError, t);
+      }
     } finally {
       setSaving(false);
-      await loadConfig();
-      void refreshAiStatus();
-      void invalidateHub();
+      if (!stale) {
+        await loadConfig();
+        void refreshAiStatus();
+        void invalidateHub();
+        void invalidateTelegramBridge();
+      }
     }
   };
 
@@ -553,7 +566,13 @@ export function SettingsPage() {
           <Grid container spacing={spacing.lg} alignItems="stretch">
             <Grid size={{ xs: 12 }} sx={{ display: "flex" }}>
               <Box sx={{ width: "100%" }}>
-                <MTProtoSettings config={config} onChange={handleChange} />
+                <MTProtoSettings
+                  config={config}
+                  savedBridgeEnabled={
+                    originalConfig?.system.mtproto?.bridge?.enabled ?? false
+                  }
+                  onChange={handleChange}
+                />
               </Box>
             </Grid>
           </Grid>

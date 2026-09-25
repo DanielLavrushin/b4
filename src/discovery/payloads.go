@@ -71,11 +71,7 @@ func (ds *DiscoverySuite) detectWorkingPayloads(presets []ConfigPreset) {
 
 	if len(ds.customPayloads) > 0 {
 		for i, cp := range ds.customPayloads {
-			testPreset := *basePreset
-			testPreset.Name = fmt.Sprintf("payload-test-%s", cp.Name)
-			testPreset.Config.Faking.SNIType = config.FakePayloadCapture
-			testPreset.Config.Faking.PayloadFile = cp.Filepath
-			testPreset.Config.Faking.PayloadData = cp.Data
+			testPreset := ds.customPayloadVariant(*basePreset, i)
 
 			result := ds.testPresetInternal(testPreset)
 
@@ -95,16 +91,7 @@ func (ds *DiscoverySuite) detectWorkingPayloads(presets []ConfigPreset) {
 		return
 	}
 
-	variants := []struct {
-		presetName string
-		sniType    int
-	}{
-		{basePreset.Name, config.FakePayloadSTUN},
-		{basePreset.Name + "-p1", config.FakePayloadDefault1},
-		{basePreset.Name + "-alt", config.FakePayloadDefault2},
-	}
-
-	for i, v := range variants {
+	for i, v := range payloadVariants(basePreset.Name) {
 		if ds.interrupted() {
 			break
 		}
@@ -139,6 +126,70 @@ func (ds *DiscoverySuite) detectWorkingPayloads(presets []ConfigPreset) {
 	}
 
 	ds.selectBestPayload()
+}
+
+type payloadVariant struct {
+	presetName string
+	sniType    int
+}
+
+func payloadVariants(base string) []payloadVariant {
+	return []payloadVariant{
+		{base, config.FakePayloadSTUN},
+		{base + "-p1", config.FakePayloadDefault1},
+		{base + "-alt", config.FakePayloadDefault2},
+	}
+}
+
+func (ds *DiscoverySuite) customPayloadVariant(base ConfigPreset, idx int) ConfigPreset {
+	cp := ds.customPayloads[idx]
+	variant := base
+	variant.Name = fmt.Sprintf("payload-test-%s", cp.Name)
+	variant.Config.Faking.SNIType = config.FakePayloadCapture
+	variant.Config.Faking.PayloadFile = cp.Filepath
+	variant.Config.Faking.PayloadData = cp.Data
+	return variant
+}
+
+func (ds *DiscoverySuite) bestPayloadVariant(presets []ConfigPreset) (ConfigPreset, bool) {
+	var base *ConfigPreset
+	for i := range presets {
+		if presets[i].Name == "combo-pastseq" {
+			base = &presets[i]
+			break
+		}
+	}
+	if base == nil {
+		return ConfigPreset{}, false
+	}
+
+	best := -1
+	for i, pr := range ds.workingPayloads {
+		if pr.Works && (best < 0 || pr.Speed > ds.workingPayloads[best].Speed) {
+			best = i
+		}
+	}
+	if best < 0 {
+		return ConfigPreset{}, false
+	}
+
+	payload := ds.workingPayloads[best].Payload
+	if isCustomPayload(payload) {
+		idx := payload - customPayloadBase
+		if idx >= len(ds.customPayloads) {
+			return ConfigPreset{}, false
+		}
+		return ds.customPayloadVariant(*base, idx), true
+	}
+	for _, v := range payloadVariants(base.Name) {
+		if v.sniType == payload {
+			variant := *base
+			variant.Name = v.presetName
+			variant.Config.Faking.SNIType = v.sniType
+			return variant, true
+		}
+	}
+	return ConfigPreset{}, false
 }
 
 func (ds *DiscoverySuite) selectBestPayload() {

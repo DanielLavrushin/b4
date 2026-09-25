@@ -116,6 +116,7 @@ type ecsScanner struct {
 	timeout time.Duration
 	client  *http.Client
 	dialer  *net.Dialer
+	probe   *net.Dialer
 	txid    uint32
 	txidMu  sync.Mutex
 }
@@ -127,6 +128,7 @@ func newECSScanner(mark, port int, timeout time.Duration) *ecsScanner {
 		timeout: timeout,
 		client:  dns.MarkedDoHClient(mark, timeout),
 		dialer:  netprobe.Dialer(mark, timeout, 0),
+		probe:   probeDialer(mark, timeout, 0),
 	}
 }
 
@@ -247,7 +249,7 @@ func (s *ecsScanner) tcpLatency(ctx context.Context, ip string) (time.Duration, 
 		}
 		dialCtx, cancel := context.WithTimeout(ctx, altScanTCPTimeout)
 		start := time.Now()
-		conn, err := s.dialer.DialContext(dialCtx, "tcp", tlsAddress(ip, s.port))
+		conn, err := s.probe.DialContext(dialCtx, "tcp", tlsAddress(ip, s.port))
 		cancel()
 		if err != nil {
 			continue
@@ -300,7 +302,7 @@ func (s *ecsScanner) servesDomain(ctx context.Context, domain, ip string) bool {
 	dialCtx, cancel := context.WithTimeout(ctx, altScanTCPTimeout*2)
 	defer cancel()
 
-	conn, err := s.dialer.DialContext(dialCtx, "tcp", tlsAddress(ip, s.port))
+	conn, err := s.probe.DialContext(dialCtx, "tcp", tlsAddress(ip, s.port))
 	if err != nil {
 		return false
 	}

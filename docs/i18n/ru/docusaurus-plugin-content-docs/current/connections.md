@@ -76,6 +76,7 @@ title: Трафик
 | `block` | Пакет заблокирован [блокирующим сетом](./sets/blocking) |
 | `proxy` | Соединение пришло через SOCKS5-прокси b4 |
 | Значок Telegram | Соединение MTProto-прокси b4, с именем секрета |
+| Значок Telegram с надписью **Мост Telegram** | Соединение, переправленное мостом [Telegram через WebSocket](./telegram/websocket-bridge.md) |
 | `doh`, `forward`, `pin`, `sinkhole` и другие | Решение по DNS-запросу, см. [DNS](./dns#как-посмотреть-результат) |
 
 :::info Версия TLS

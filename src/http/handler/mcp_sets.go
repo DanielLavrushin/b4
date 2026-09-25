@@ -199,6 +199,7 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 				fresh.Routing.Upstream.Username = ""
 				fresh.Routing.Upstream.Password = ""
 				fresh.DNS.Pins = nil
+				fresh.Discovery.Watchdog = false
 				routingDropped = fresh.Routing.Enabled
 				fresh.Routing = config.RoutingConfig{}
 				api.initializeSetDefaults(&fresh)
@@ -267,6 +268,9 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 				}
 				if s.Enabled != want {
 					s.Enabled = want
+					if want {
+						api.loadTargetsForSetCached(s)
+					}
 					touched++
 				}
 				focusID = s.Id
@@ -328,7 +332,7 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 		}
 
 		snapshot := oldCfg.Clone()
-		if err := api.saveAndPushConfig(newCfg); err != nil {
+		if err := api.mcpSave(oldCfg, newCfg); err != nil {
 			return nil, mcpManageSetOut{}, fmt.Errorf("rejected: %w", err)
 		}
 		api.applyRuntimeChanges(newCfg, oldCfg)
@@ -353,7 +357,7 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 			Previous: fmt.Sprintf("%d sets", len(oldCfg.Sets)),
 			Current:  fmt.Sprintf("%d sets", len(live.Sets)),
 			When:     time.Now(), Snapshot: snapshot,
-		})
+		}, oldCfg, newCfg)
 		log.Infof("mcp: sets %s (now %d sets)", action, len(live.Sets))
 
 		out.Note = fmt.Sprintf("applied live; %d set(s) configured. Undo with b4_revert_last_change", len(live.Sets))

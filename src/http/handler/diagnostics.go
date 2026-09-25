@@ -304,6 +304,11 @@ func collectFirewallInfo(cfg *config.Config) DiagFirewall {
 	info.FlowOffload, info.FlowOffloadGuard = detectFlowOffload()
 	info.FlowOffloadSafe = flowOffloadSafe(info.FlowOffload, info.FlowOffloadGuard, cfg)
 
+	if n, last := tables.RulesRestores(); n > 0 {
+		info.RulesRestores = n
+		info.LastRulesRestore = last.UTC().Format(time.RFC3339)
+	}
+
 	return info
 }
 
@@ -529,6 +534,15 @@ func collectTUNInfo(cfg *config.Config) *DiagTUN {
 		t.PacketsForwarded = di.PacketsForwarded
 		t.ForwardErrors = di.ForwardErrors
 		t.IPv6Dropped = di.IPv6Dropped
+		if di.CaptureRules >= 0 {
+			present, expected := di.CaptureRules, di.CaptureRulesExpected
+			t.CaptureRules = &present
+			t.CaptureRulesExpected = &expected
+		}
+		if di.CaptureRestores > 0 {
+			t.CaptureRestores = di.CaptureRestores
+			t.LastCaptureRestore = di.LastCaptureRestore.UTC().Format(time.RFC3339)
+		}
 	}
 
 	if t.DeviceName != "" {

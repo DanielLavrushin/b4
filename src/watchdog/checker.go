@@ -13,39 +13,49 @@ import (
 	"github.com/daniellavrushin/b4/netprobe"
 )
 
-func checkDomain(input string, mark uint, timeout time.Duration) CheckResult {
+func checkDomain(parent context.Context, input string, mark uint, timeout time.Duration) CheckResult {
 	checkURL := input
 	if !strings.HasPrefix(input, "http://") && !strings.HasPrefix(input, "https://") {
 		checkURL = "https://" + input + "/"
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
-	dialer := netprobe.Dialer(int(mark), timeout/2, timeout)
+	guard := newDialGuard(nil)
+	dialer := guard.dialer(mark, timeout)
 
+	roots, verify := netprobe.TLSRoots()
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: false,
+			RootCAs:            roots,
+			InsecureSkipVerify: !verify,
 		},
 		ResponseHeaderTimeout: timeout,
 		IdleConnTimeout:       timeout,
 		DialContext:           dialer.DialContext,
 	}
+	defer transport.CloseIdleConnections()
 
 	client := &http.Client{
 		Timeout:   timeout,
 		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) > 0 {
-				if netprobe.IsBlockPageRedirect(req.URL.String()) {
-					return fmt.Errorf("ISP block page (redirect to %s)", req.URL.String())
-				}
+			if len(via) > 0 && netprobe.IsBlockPageRedirectFrom(via[len(via)-1].URL, req.URL) {
+				return fmt.Errorf("ISP block page (redirect to %s)", req.URL.String())
 			}
 			if len(via) >= 3 {
 				return fmt.Errorf("too many redirects")
 			}
+			if refusal := guard.reservedLiteral(req.URL.Hostname()); refusal != nil {
+				guard.refuse(refusal)
+				return refusal
+			}
+			guard.nextHop()
 			return nil
 		},
 	}
@@ -59,6 +69,9 @@ func checkDomain(input string, mark uint, timeout time.Duration) CheckResult {
 	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
+		if refused := guard.refusal(); refused != nil {
+			return CheckResult{Error: refused.Error(), Verdict: netprobe.DomainError, Unusable: true}
+		}
 		status, detail := netprobe.ClassifyTLSError(err)
 		return CheckResult{Error: detail, Verdict: status}
 	}
@@ -121,7 +134,7 @@ evaluate:
 	}
 }
 
-func checkAllConcurrently(domains []string, mark uint, timeout time.Duration) map[string]CheckResult {
+func checkAllConcurrently(ctx context.Context, domains []string, mark uint, timeout time.Duration) map[string]CheckResult {
 	results := make(map[string]CheckResult, len(domains))
 	type result struct {
 		domain string
@@ -131,7 +144,7 @@ func checkAllConcurrently(domains []string, mark uint, timeout time.Duration) ma
 
 	for _, d := range domains {
 		go func(domain string) {
-			r := checkDomain(domain, mark, timeout)
+			r := checkDomain(ctx, domain, mark, timeout)
 			ch <- result{domain: domain, check: r}
 		}(d)
 	}

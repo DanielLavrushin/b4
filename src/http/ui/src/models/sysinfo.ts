@@ -68,6 +68,8 @@ interface DiagFirewall {
   flow_offload_guard?: number;
   flow_offload_safe: boolean;
   rule_groups?: DiagRuleGroup[];
+  rules_restores?: number;
+  last_rules_restore?: string;
 }
 
 interface DiagTUN {
@@ -87,6 +89,10 @@ interface DiagTUN {
   forward_errors: number;
   ipv6_dropped: number;
   steer_conflicts?: string[];
+  capture_rules?: number;
+  capture_rules_expected?: number;
+  capture_restores?: number;
+  last_capture_restore?: string;
 }
 
 interface DiagEngine {

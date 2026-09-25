@@ -57,6 +57,45 @@ export function describeHubError(error: unknown, t: TFunction): string {
   return describeApiError(error);
 }
 
+const staleWriteCodes = new Set(["config_changed", "set_changed"]);
+
+export function isStaleWriteError(error: unknown): error is ApiError {
+  return (
+    error instanceof ApiError &&
+    error.status === 409 &&
+    !!error.code &&
+    staleWriteCodes.has(error.code)
+  );
+}
+
+export function reportStaleWrite(
+  error: ApiError,
+  showSnackbar: (
+    message: string,
+    severity: "error",
+    action: { label: string; onClick: () => void },
+  ) => void,
+  t: TFunction,
+  onReload: () => void,
+): void {
+  showSnackbar(t(`errors.${error.code ?? "config_changed"}`), "error", {
+    label: t("core.reload"),
+    onClick: onReload,
+  });
+}
+
+export function describeCodedError(
+  error: unknown,
+  t: TFunction,
+  prefix: string,
+): string {
+  if (error instanceof ApiError && error.code) {
+    const key = `${prefix}.${error.code}`;
+    if (i18n.exists(key)) return t(key);
+  }
+  return describeApiError(error);
+}
+
 export function reportSaveError(
   error: unknown,
   showError: (message: string) => void,

@@ -85,6 +85,8 @@ A rewrite announced by the hook leaves `Tables rules missing after a firewall re
 kill -USR1 $(cat /var/run/b4.pid)
 ```
 
+In TUN mode the signal also makes the TUN engine re-check its capture chain `B4_TUN` and the jumps into it at once. The engine logs a rebuilt chain at the WARN level as `TUN: capture chain B4_TUN lost N of M rules (removed outside b4) ...`, whether the hook or the poll found it, and the tables monitor's lines cover only the masquerade, MSS clamp and routing-set rules. The poll interval in this mode is at least 10 seconds.
+
 ## Troubleshooting
 
 After the service starts, the log is worth checking:

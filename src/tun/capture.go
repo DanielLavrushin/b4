@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
@@ -23,7 +24,9 @@ const (
 	clientLocalPrio    = 88
 	clientBypassPrio   = 89
 	reinjectLocalPrio  = 99
+	bypassRulePrio     = 100
 	localRetryLimit    = 1
+	captureRetryLimit  = 1
 )
 
 func (r *routeManager) steerMarkStr() string {
@@ -65,7 +68,6 @@ func (r *routeManager) setupPortCapture(srcIP string) error {
 	r.ensureCaptureChain()
 	r.rebuildCaptureChain()
 	r.ensureCaptureJumps()
-	r.captureRulesAdded = true
 	log.Infof("TUN: port-capture mode - first %d tcp / %d udp packets on ports %s + DNS routed into %s (steer mark %s, ip rule priority %d, table %d; everything b4 re-injects follows this router's own routing)",
 		r.tcpLimit, r.udpLimit, strings.Join(r.tcpPorts, ","), r.tunName, r.steerMarkStr(), r.capturePrio, r.captureTable)
 	return nil
@@ -84,8 +86,9 @@ func (r *routeManager) setupCaptureTable() error {
 		}
 	}
 	if _, err := run("ip", "rule", "add", "fwmark", steer, "lookup", tableStr, "priority", strconv.Itoa(r.capturePrio)); err != nil {
-		return fmt.Errorf("ip rule add (capture steer; needs policy routing - install full iproute2): %w", err)
+		return routingError("ip rule add (capture steer; needs kernel policy routing)", r.captureTable, err)
 	}
+	r.captureRulesAdded = true
 	return r.replaceCaptureDefault(tableStr)
 }
 
@@ -101,22 +104,40 @@ func (r *routeManager) replaceCaptureDefault(tableStr string) error {
 	return nil
 }
 
-func (r *routeManager) ensureCaptureChain() {
-	if _, err := run("iptables", "-t", "mangle", "-S", tunCaptureChain); err != nil {
-		run("iptables", "-t", "mangle", "-N", tunCaptureChain)
+func (r *routeManager) ensureCaptureChain() int {
+	out, err := run("iptables", "-t", "mangle", "-S", tunCaptureChain)
+	if err == nil {
+		return countChainRules(out, tunCaptureChain)
 	}
+	if _, err := run("iptables", "-t", "mangle", "-N", tunCaptureChain); err != nil {
+		return -1
+	}
+	return 0
+}
+
+func countChainRules(dump, chain string) int {
+	n := 0
+	for _, line := range strings.Split(dump, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "-A "+chain+" ") {
+			n++
+		}
+	}
+	return n
 }
 
 func (r *routeManager) deviceFilterActive() bool {
 	return r.devicesEnabled && len(r.selectedMACs) > 0
 }
 
-func (r *routeManager) ensureJump(base string, spec ...string) {
-	if _, err := run(append([]string{"iptables", "-t", "mangle", "-C", base}, spec...)...); err != nil {
-		if _, err := run(append([]string{"iptables", "-t", "mangle", "-I", base}, spec...)...); err != nil {
-			log.Warnf("TUN: failed to add capture jump from %s: %v", base, err)
-		}
+func (r *routeManager) ensureJump(base string, spec ...string) bool {
+	if _, err := run(append([]string{"iptables", "-t", "mangle", "-C", base}, spec...)...); err == nil {
+		return false
 	}
+	if _, err := run(append([]string{"iptables", "-t", "mangle", "-I", base}, spec...)...); err != nil {
+		log.Warnf("TUN: failed to add capture jump from %s: %v", base, err)
+		return false
+	}
+	return true
 }
 
 func (r *routeManager) removeJump(base string, spec ...string) {
@@ -127,29 +148,41 @@ func (r *routeManager) removeJump(base string, spec ...string) {
 	}
 }
 
-func (r *routeManager) ensureCaptureJumps() {
-	r.ensureJump("OUTPUT", "-j", tunCaptureChain)
+func (r *routeManager) ensureCaptureJumps() int {
+	restored := 0
+	if r.ensureJump("OUTPUT", "-j", tunCaptureChain) {
+		restored++
+	}
 
 	if r.deviceFilterActive() {
-		r.ensureGateChain()
-		r.ensureJump("PREROUTING", "-j", tunGateChain)
+		if r.ensureGateChain() {
+			restored++
+		}
+		if r.ensureJump("PREROUTING", "-j", tunGateChain) {
+			restored++
+		}
 		r.removeJump("PREROUTING", "-j", tunCaptureChain)
 	} else {
-		r.ensureJump("PREROUTING", "-j", tunCaptureChain)
+		if r.ensureJump("PREROUTING", "-j", tunCaptureChain) {
+			restored++
+		}
 		r.removeJump("PREROUTING", "-j", tunGateChain)
 	}
+	return restored
 }
 
-func (r *routeManager) ensureGateChain() {
+func (r *routeManager) ensureGateChain() bool {
 	out, err := run("iptables", "-t", "mangle", "-S", tunGateChain)
 	if err != nil {
 		run("iptables", "-t", "mangle", "-N", tunGateChain)
 		r.rebuildGateChain()
-		return
+		return true
 	}
 	if !equalStringSet(gateRulesFromDump(out), r.desiredGateRules()) {
 		r.rebuildGateChain()
+		return true
 	}
+	return false
 }
 
 func gateRulesFromDump(out string) []string {
@@ -158,7 +191,7 @@ func gateRulesFromDump(out string) []string {
 		if !strings.HasPrefix(line, "-A "+tunGateChain) {
 			continue
 		}
-		cur = append(cur, ruleFieldValue(line, "--mac-source")+" "+ruleFieldValue(line, "-j"))
+		cur = append(cur, strings.ToUpper(ruleFieldValue(line, "--mac-source"))+" "+ruleFieldValue(line, "-j"))
 	}
 	return cur
 }
@@ -257,10 +290,12 @@ func (r *routeManager) rebuildCaptureChain() {
 	run("iptables", "-t", "mangle", "-F", tunCaptureChain)
 
 	applied := make([]string, 0, len(local))
+	installed, missing := 0, 0
 	for _, rule := range r.captureChainRules(excl, local) {
 		_, err := run(append([]string{"iptables", "-t", "mangle", "-A", tunCaptureChain}, rule.spec...)...)
 		switch {
 		case err == nil:
+			installed++
 			if rule.local != "" {
 				applied = append(applied, rule.local)
 			}
@@ -269,9 +304,15 @@ func (r *routeManager) rebuildCaptureChain() {
 		case rule.local != "":
 			log.Warnf("TUN: could not exempt local network %s from capture (%v); traffic between your own subnets on a captured port will be sent out %s instead of staying local", rule.local, err, r.outIface)
 		default:
+			missing++
 			log.Warnf("TUN: failed to add capture rule %v: %v", rule.spec, err)
 		}
 	}
+	if missing == 0 {
+		r.captureRetries = 0
+	}
+	r.captureInstalled = installed
+	r.captureMissing = missing
 	if len(applied) > 0 {
 		log.Tracef("TUN: %d directly connected network(s) exempted from capture: %s", len(applied), strings.Join(applied, ", "))
 	}
@@ -424,15 +465,36 @@ func (r *routeManager) ensurePortCapture() {
 		}
 	}
 
-	r.ensureCaptureChain()
-	r.ensureCaptureJumps()
+	dirty, gateDirty := r.captureDirty, r.gateDirty
+	r.captureDirty, r.gateDirty = false, false
+	present := r.ensureCaptureChain()
+	hooks := r.ensureCaptureJumps()
 	r.refreshSteerConflicts()
 	desired := r.desiredCaptureExclusions()
 	localNow, localOK := r.desiredLocalNets()
 	if !localOK {
 		localNow = r.localNetsWanted
 	}
+	lost := present >= 0 && present < r.captureInstalled
+	settingsChanged := dirty || gateDirty
+	outside := lost || (hooks > 0 && !settingsChanged)
+	if gateDirty && !dirty && hooks > 0 {
+		log.Infof("TUN: device filter changed, updated the hooks into %s", tunCaptureChain)
+	}
+	if hooks > 0 && !lost && !settingsChanged {
+		log.Warnf("TUN: %d capture hook(s) into %s (jumps or the device gate) were removed outside b4, so traffic stopped reaching %s; put them back", hooks, tunCaptureChain, r.tunName)
+	}
+	if outside {
+		r.captureRestores++
+		r.lastCaptureRestore = time.Now()
+	}
 	switch {
+	case lost:
+		log.Warnf("TUN: capture chain %s lost %d of %d rules (removed outside b4), so traffic stopped reaching %s; rebuilding it", tunCaptureChain, r.captureInstalled-present, r.captureInstalled, r.tunName)
+		r.rebuildCaptureChain()
+	case dirty:
+		log.Infof("TUN: capture settings changed, rebuilding %s (first %d tcp / %d udp packets on tcp ports %s, udp ports %s)", tunCaptureChain, r.tcpLimit, r.udpLimit, strings.Join(r.tcpPorts, ","), strings.Join(r.udpPorts, ","))
+		r.rebuildCaptureChain()
 	case !equalStringSet(desired, r.captureExcl):
 		log.Infof("TUN: reconcile refreshing capture exclusions (%d routing set(s))", len(desired))
 		r.rebuildCaptureChain()
@@ -442,6 +504,10 @@ func (r *routeManager) ensurePortCapture() {
 	case len(r.localNets) != len(r.localNetsWanted) && r.localRetries < localRetryLimit:
 		r.localRetries++
 		log.Infof("TUN: reconcile retrying %d local-network exemption(s) that did not install", len(r.localNetsWanted)-len(r.localNets))
+		r.rebuildCaptureChain()
+	case r.captureMissing > 0 && r.captureRetries < captureRetryLimit:
+		r.captureRetries++
+		log.Infof("TUN: reconcile retrying %d capture rule(s) that did not install", r.captureMissing)
 		r.rebuildCaptureChain()
 	}
 }

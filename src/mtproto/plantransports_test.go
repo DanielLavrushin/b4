@@ -522,7 +522,7 @@ func TestPlanTransports_StalledWorkerRanksLast(t *testing.T) {
 		t.Fatalf("a healthy worker should lead, got %q", before[0].describe())
 	}
 
-	workerRecordStall("stalled.user.workers.dev")
+	workerDemote("stalled.user.workers.dev")
 	after, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, 1, dialTarget{})
 	if err != nil {
 		t.Fatalf("unexpected error after stall: %v", err)
@@ -546,7 +546,7 @@ func TestPlanTransports_StalledWorkerStillOnlyRouteWhenAlone(t *testing.T) {
 		UpstreamMode:   "ws",
 		CFWorkerDomain: "stalled.user.workers.dev",
 	}
-	workerRecordStall("stalled.user.workers.dev")
+	workerDemote("stalled.user.workers.dev")
 	plans, err := planTransports(cfg, config.QueueConfig{}, 1, dialTarget{})
 	if err != nil {
 		t.Fatalf("a stalled worker must still be offered when it is the only route: %v", err)

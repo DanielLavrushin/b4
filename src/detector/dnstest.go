@@ -28,6 +28,31 @@ type dnsAnswer struct {
 	empty   bool
 	timeout bool
 	err     bool
+	rcode   int
+}
+
+func (a dnsAnswer) failed() bool {
+	return a.timeout || a.err || (a.rcode != 0 && a.rcode != 3)
+}
+
+func (a dnsAnswer) failure(err error) string {
+	switch {
+	case err != nil:
+		return err.Error()
+	case a.rcode != 0:
+		return rcodeName(a.rcode)
+	}
+	return "malformed reply"
+}
+
+func rcodeName(rcode int) string {
+	switch rcode {
+	case 2:
+		return "SERVFAIL"
+	case 5:
+		return "REFUSED"
+	}
+	return "rcode " + strconv.Itoa(rcode)
 }
 
 type serverRun struct {
@@ -141,8 +166,12 @@ func parseAnswer(body []byte, err error, recordType string) dnsAnswer {
 	if len(body) < 12 {
 		return dnsAnswer{err: true}
 	}
-	if body[3]&0x0F == 3 {
-		return dnsAnswer{nx: true}
+	rcode := int(body[3] & 0x0F)
+	if rcode == 3 {
+		return dnsAnswer{nx: true, rcode: rcode}
+	}
+	if rcode != 0 {
+		return dnsAnswer{rcode: rcode}
 	}
 	var ips []string
 	for _, ip := range dns.ParseResponseIPs(body) {
@@ -165,9 +194,10 @@ func (s *Suite) runDNS() {
 	s.setProgress(ScopeDNS, "")
 
 	var runs []*serverRun
-	for _, addr := range readResolvConf() {
+	routers := systemNameservers()
+	for _, addr := range routers {
 		runs = append(runs, &serverRun{
-			server: DNSServer{Name: "Router " + addr, Brand: "Router", Address: addr, Kind: "udp"},
+			server: DNSServer{Name: addr, Brand: "Router", Address: addr, Kind: "udp"},
 			router: true,
 		})
 	}
@@ -178,7 +208,7 @@ func (s *Suite) runDNS() {
 		return
 	}
 
-	result := &DNSResult{Providers: []DNSProvider{}, RouterServers: readResolvConf()}
+	result := &DNSResult{Providers: []DNSProvider{}, RouterServers: routers}
 	s.mu.Lock()
 	s.DNS = result
 	s.mu.Unlock()
@@ -264,10 +294,11 @@ func (s *Suite) runDNS() {
 				result.DoTOk++
 			}
 		}
-		if p.Honesty == HonestySubstituted {
-			result.Substituting++
-		}
 	}
+	result.SubstitutingBy = providersJudged(result.Providers, HonestySubstituted)
+	result.Substituting = len(result.SubstitutingBy)
+	result.NoAnswerBy = providersJudged(result.Providers, HonestyNoAnswer)
+	result.NoAnswer = len(result.NoAnswerBy)
 	best, bestN := "", 0
 	for org, n := range hijackOrg {
 		if n > bestN {
@@ -282,8 +313,8 @@ func (s *Suite) runDNS() {
 		}
 	}
 	s.mu.Unlock()
-	log.DiscoveryLogf("[Detector] DNS: UDP %d/%d, DoH %d/%d, DoT %d/%d, hijacked %d, substituting %d",
-		result.UDPOk, result.UDPTotal, result.DoHOk, result.DoHTotal, result.DoTOk, result.DoTTotal, result.Hijacked, result.Substituting)
+	log.DiscoveryLogf("[Detector] DNS: UDP %d/%d, DoH %d/%d, DoT %d/%d, hijacked %d, substituting %d, no answer %d",
+		result.UDPOk, result.UDPTotal, result.DoHOk, result.DoHTotal, result.DoTOk, result.DoTTotal, result.Hijacked, result.Substituting, result.NoAnswer)
 }
 
 func (s *Suite) probeResolver(r *serverRun, lists TargetLists, qtype uint16) {
@@ -312,23 +343,23 @@ func (s *Suite) probeResolver(r *serverRun, lists TargetLists, qtype uint16) {
 		start := time.Now()
 		body, err := q.query(s.ctx, dom, qtype)
 		ans := parseAnswer(body, err, s.recordType())
-		if err == nil && !ans.err {
-			answered++
-			lat := float64(time.Since(start).Microseconds()) / 1000.0
-			if best < 0 || lat < best {
-				best = lat
-			}
-		} else {
+		if ans.failed() {
 			lastErr = ans
-			if err != nil {
-				probe.Detail = err.Error()
-			}
+			probe.Detail = ans.failure(err)
+			continue
+		}
+		answered++
+		lat := float64(time.Since(start).Microseconds()) / 1000.0
+		if best < 0 || lat < best {
+			best = lat
 		}
 	}
 	if answered == 0 {
 		switch {
 		case lastErr.timeout:
 			probe.Status = DNSProbeTimeout
+		case lastErr.rcode != 0:
+			probe.Status = DNSProbeError
 		case r.server.Kind != "udp":
 			probe.Status = DNSProbeBlocked
 		default:
@@ -346,6 +377,26 @@ func (s *Suite) probeResolver(r *serverRun, lists TargetLists, qtype uint16) {
 		}
 		body, err := q.query(s.ctx, dom, qtype)
 		answers[dom] = parseAnswer(body, err, s.recordType())
+	}
+	timeoutsInARow := 0
+	for _, dom := range lists.DNSCheckDomains {
+		if timeoutsInARow == maxFailedRetries {
+			break
+		}
+		if !answers[dom].failed() {
+			continue
+		}
+		if s.canceled() {
+			return
+		}
+		body, err := q.query(s.ctx, dom, qtype)
+		answers[dom] = parseAnswer(body, err, s.recordType())
+		switch {
+		case !answers[dom].failed():
+			timeoutsInARow = 0
+		case answers[dom].timeout:
+			timeoutsInARow++
+		}
 	}
 
 	if r.server.Kind == "udp" {
@@ -467,13 +518,13 @@ func inTruth(ip string, truth []string) bool {
 
 func judgeHonesty(r *serverRun, truth *truthTable, stubs map[string]bool) {
 	p := r.probe
-	match, nx, silent, fake, other := 0, 0, 0, 0, 0
+	checked, match, fake, other, filtered, noAnswer := 0, 0, 0, 0, 0, 0
 	for dom, ans := range r.answers {
 		t := truth.forDomain(dom, r)
 		if len(t) == 0 {
 			continue
 		}
-		p.Checked++
+		checked++
 		switch {
 		case len(ans.ips) > 0:
 			hit := false
@@ -491,28 +542,26 @@ func judgeHonesty(r *serverRun, truth *truthTable, stubs map[string]bool) {
 			default:
 				other++
 			}
-		case ans.nx:
-			nx++
+		case ans.failed():
+			noAnswer++
 		default:
-			silent++
+			filtered++
 		}
 	}
-	if p.Checked == 0 {
-		p.Honesty = HonestyUnknown
-		return
-	}
-	p.Substituted = fake + silent + nx
+	p.Checked, p.Substituted, p.NoAnswer, p.Filtered = checked, fake, noAnswer, filtered
 	switch {
-	case fake > 0 || silent > 0:
+	case checked == 0:
+		p.Honesty = HonestyUnknown
+	case fake > 0:
 		p.Honesty = HonestySubstituted
-	case nx > 0:
+	case noAnswer > 0:
+		p.Honesty = HonestyNoAnswer
+	case filtered > 0:
 		p.Honesty = HonestyFiltered
 	case other > 0 && match == 0:
 		p.Honesty = HonestyDiffers
-		p.Substituted = 0
 	default:
 		p.Honesty = HonestyHonest
-		p.Substituted = 0
 	}
 }
 
@@ -540,14 +589,31 @@ func (s *Suite) judgeEgress(runs []*serverRun) {
 			if own.ASN == egress.ASN {
 				return
 			}
-			brand := strings.ToLower(strings.Fields(r.server.Brand)[0])
-			if knownResolverOrg(egress.Org) || strings.Contains(strings.ToLower(egress.Org), brand) {
+			if knownResolverOrg(egress.Org) || brandMatches(egress.Org, r.server.Brand) {
 				return
 			}
 			p.Hijacked = true
 		}(r)
 	}
 	wg.Wait()
+}
+
+func brandMatches(org, brand string) bool {
+	fields := strings.Fields(brand)
+	return len(fields) > 0 && strings.Contains(strings.ToLower(org), strings.ToLower(fields[0]))
+}
+
+func providersJudged(providers []DNSProvider, honesty DNSHonesty) []string {
+	var out []string
+	for _, p := range providers {
+		for _, probe := range []*DNSProbe{p.UDP, p.DoH, p.DoT} {
+			if probe != nil && probe.Honesty == honesty {
+				out = append(out, p.Name)
+				break
+			}
+		}
+	}
+	return out
 }
 
 func buildProviders(runs []*serverRun, final bool) []DNSProvider {

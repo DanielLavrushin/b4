@@ -14,10 +14,56 @@ import (
 type Manager struct {
 	mu            sync.Mutex
 	listeners     map[string]*Listener
-	resolver      DomainResolver
+	resolver      NameSource
 	mtprotoBridge MTProtoBridge
 	ctx           context.Context
 	cancel        context.CancelFunc
+
+	startErr   map[string]string
+	lastCfg    *config.Config
+	retryTimer *time.Timer
+	retryDelay time.Duration
+	onBridge   func(v4, v6, retried bool)
+}
+
+const (
+	listenerRetryBase = 5 * time.Second
+	listenerRetryMax  = 5 * time.Minute
+)
+
+type ListenerStatus struct {
+	Running bool
+	Port    int
+	V4      bool
+	V6      bool
+	Active  int64
+	Error   string
+	V6Error string
+}
+
+func (m *Manager) SetTelegramBridgeHook(fn func(v4, v6, retried bool)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onBridge = fn
+}
+
+func (m *Manager) ListenerStatus(setID string, port int) ListenerStatus {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	st := ListenerStatus{Port: port, Error: m.startErr[setID]}
+	l, ok := m.listeners[setID]
+	if !ok {
+		return st
+	}
+	st.Port = l.Port
+	st.V4 = l.lnV4 != nil
+	st.V6 = l.lnV6 != nil
+	st.Running = st.V4 || st.V6
+	st.Active = l.Active()
+	if !st.V6 {
+		st.V6Error = l.v6Err
+	}
+	return st
 }
 
 func (m *Manager) SetMTProtoBridge(b MTProtoBridge) {
@@ -29,23 +75,39 @@ func (m *Manager) SetMTProtoBridge(b MTProtoBridge) {
 	}
 }
 
-func NewManager(resolver DomainResolver) *Manager {
+func NewManager(resolver NameSource) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Manager{
 		listeners: make(map[string]*Listener),
+		startErr:  make(map[string]string),
 		resolver:  resolver,
 		ctx:       ctx,
 		cancel:    cancel,
 	}
 }
 
-func (m *Manager) SetResolver(r DomainResolver) {
+func (m *Manager) SetResolver(r NameSource) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.resolver = r
 	for _, l := range m.listeners {
-		l.Resolver = r
+		l.Names = r
 	}
+	m.syncNamesWantedLocked()
+}
+
+func (m *Manager) syncNamesWantedLocked() {
+	if m.resolver == nil {
+		return
+	}
+	wanted := false
+	for _, l := range m.listeners {
+		if l.UseDomain && !l.MTProtoWS {
+			wanted = true
+			break
+		}
+	}
+	m.resolver.WantNames(wanted)
 }
 
 func (m *Manager) SyncConfig(cfg *config.Config) {
@@ -55,11 +117,41 @@ func (m *Manager) SyncConfig(cfg *config.Config) {
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.syncLocked(cfg, false)
+}
 
+func (m *Manager) retryFailed() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.retryTimer = nil
+	if m.lastCfg == nil || m.ctx.Err() != nil {
+		return
+	}
+	m.syncLocked(m.lastCfg, true)
+}
+
+func (m *Manager) scheduleRetryLocked() {
+	if m.retryTimer != nil {
+		return
+	}
+	if m.retryDelay <= 0 {
+		m.retryDelay = listenerRetryBase
+	} else if m.retryDelay < listenerRetryMax {
+		m.retryDelay *= 2
+		if m.retryDelay > listenerRetryMax {
+			m.retryDelay = listenerRetryMax
+		}
+	}
+	m.retryTimer = time.AfterFunc(m.retryDelay, m.retryFailed)
+}
+
+func (m *Manager) syncLocked(cfg *config.Config, retried bool) {
+	m.lastCfg = cfg
 	bypassMark := proxyBypassMark(cfg)
 
-	desired := make(map[string]*config.SetConfig, len(cfg.Sets))
-	for _, set := range cfg.Sets {
+	routingSets := cfg.RoutingSets()
+	desired := make(map[string]*config.SetConfig, len(routingSets))
+	for _, set := range routingSets {
 		if set == nil || !set.Enabled || !set.RoutingDivertsPackets() {
 			continue
 		}
@@ -97,7 +189,9 @@ func (m *Manager) SyncConfig(cfg *config.Config) {
 			log.Infof("tproxy: restarting listener for set %q (config changed)", set.Name)
 			_ = l.Stop()
 			delete(m.listeners, id)
+			continue
 		}
+		l.set.Store(set)
 	}
 
 	for id, set := range desired {
@@ -125,25 +219,70 @@ func (m *Manager) SyncConfig(cfg *config.Config) {
 			UseDomain: set.Routing.Upstream.UseDomain,
 			UDP:       set.Routing.Upstream.UDP,
 			FailOpen:  set.Routing.Upstream.FailOpen,
-			Resolver:  m.resolver,
+			Names:     m.resolver,
 			MTProtoWS: set.Routing.Mode == config.RoutingModeMTProtoWS,
 			Bridge:    m.mtprotoBridge,
+			guard:     newLoopGuard(host, set.Routing.Upstream.Port),
 		}
+		l.set.Store(set)
 		if err := l.Start(m.ctx); err != nil {
-			log.Errorf("tproxy: failed to start listener for set %q: %v", set.Name, err)
+			msg := err.Error()
+			if m.startErr[id] != msg {
+				log.Errorf("tproxy: failed to start listener for set %q: %v, it will be retried", set.Name, err)
+			} else {
+				log.Tracef("tproxy: listener for set %q still cannot start: %v", set.Name, err)
+			}
+			m.startErr[id] = msg
 			continue
 		}
+		if _, failed := m.startErr[id]; failed {
+			log.Infof("tproxy: listener for set %q started on port %d after an earlier failure", set.Name, port)
+		}
+		delete(m.startErr, id)
 		m.listeners[id] = l
 	}
+	for id := range m.startErr {
+		if _, ok := desired[id]; !ok {
+			delete(m.startErr, id)
+		}
+	}
+	if len(m.startErr) > 0 {
+		m.scheduleRetryLocked()
+	} else {
+		m.retryDelay = 0
+		if m.retryTimer != nil {
+			m.retryTimer.Stop()
+			m.retryTimer = nil
+		}
+	}
+	m.syncNamesWantedLocked()
+	m.reportBridgeLocked(retried)
+}
+
+func (m *Manager) reportBridgeLocked(retried bool) {
+	if m.onBridge == nil {
+		return
+	}
+	v4, v6 := false, false
+	if l, ok := m.listeners[config.TelegramBridgeSetID]; ok {
+		v4 = l.lnV4 != nil
+		v6 = l.lnV6 != nil
+	}
+	m.onBridge(v4, v6, retried)
 }
 
 func (m *Manager) Stop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.retryTimer != nil {
+		m.retryTimer.Stop()
+		m.retryTimer = nil
+	}
 	for id, l := range m.listeners {
 		_ = l.Stop()
 		delete(m.listeners, id)
 	}
+	m.syncNamesWantedLocked()
 	if m.cancel != nil {
 		m.cancel()
 	}

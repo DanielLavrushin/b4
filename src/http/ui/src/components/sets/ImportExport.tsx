@@ -18,7 +18,7 @@ import { createDefaultSet } from "@models/defaults";
 import { HubWarning, formatWarningParam, isHubEnvelope } from "@models/hub";
 import { hubApi } from "@api/hub";
 import { ApiError } from "@api/apiClient";
-import { copyText, mergeHubLink } from "@utils";
+import { copyText, mergeHubLink, sanitizeProbeUrls } from "@utils";
 
 type Obj = Record<string, unknown>;
 
@@ -127,7 +127,7 @@ function mergeWithDefaults(partial: unknown, defaults: unknown): unknown {
 function buildExportJson(config: B4SetConfig): Record<string, unknown> {
   const defaults = createDefaultSet(0);
   const alwaysInclude = new Set(["name", "enabled"]);
-  const skip = new Set(["id", "stats", "hub_state"]);
+  const skip = new Set(["id", "stats", "hub_state", "revision"]);
   const configObj = structuredClone(config) as unknown as Record<
     string,
     unknown
@@ -155,9 +155,35 @@ function buildExportJson(config: B4SetConfig): Record<string, unknown> {
     delete result.targets.source_devices;
   }
 
+  if (isPlainObject(result.discovery)) {
+    const discovery = result.discovery;
+    delete discovery.watchdog;
+    if (Array.isArray(discovery.urls) && discovery.urls.length === 0) {
+      delete discovery.urls;
+    }
+    if (Object.keys(discovery).length === 0) delete result.discovery;
+  }
+
   delete result.escalate;
 
   return result;
+}
+
+function importedDiscovery(
+  value: unknown,
+  current: B4SetConfig["discovery"],
+): B4SetConfig["discovery"] {
+  const imported =
+    isPlainObject(value) && Array.isArray(value.urls)
+      ? sanitizeProbeUrls(
+          value.urls.filter((u): u is string => typeof u === "string"),
+        )
+      : null;
+  const discovery: NonNullable<B4SetConfig["discovery"]> = {
+    urls: imported ?? [...(current?.urls ?? [])],
+  };
+  if (current?.watchdog) discovery.watchdog = true;
+  return discovery;
 }
 
 function payloadBaseName(path: string): string {
@@ -295,7 +321,14 @@ export const ImportExportSettings = ({
     try {
       const result = await hubApi.importEnvelope(raw);
       const link = mergeHubLink(config.hub, result.set.hub, true);
-      const parsed = { ...result.set, id: config.id, enabled: config.enabled, hub: link.hub };
+      const parsed = {
+        ...result.set,
+        id: config.id,
+        enabled: config.enabled,
+        hub: link.hub,
+        discovery: config.discovery ?? result.set.discovery,
+        revision: config.revision,
+      };
       onImport(parsed);
       await loadCaptures();
       setImportedPayloadRefs(collectPayloadRefs(parsed));
@@ -343,6 +376,12 @@ export const ImportExportSettings = ({
       }
 
       parsed.id = config.id;
+      if (config.revision) parsed.revision = config.revision;
+      else delete parsed.revision;
+      parsed.discovery = importedDiscovery(
+        configFields.discovery,
+        config.discovery,
+      );
       const link = mergeHubLink(config.hub, configFields.hub);
       parsed.hub = link.hub;
       onImport(parsed);

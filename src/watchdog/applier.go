@@ -3,6 +3,7 @@ package watchdog
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/daniellavrushin/b4/config"
@@ -11,7 +12,10 @@ import (
 	"github.com/google/uuid"
 )
 
-var ErrBaselineWorks = errors.New("the domain loads without a bypass")
+var (
+	ErrBaselineWorks = errors.New("the domain loads without a bypass")
+	errUnconfirmed   = errors.New("the strategy discovery found did not pass confirmation")
+)
 
 type domainWithSet struct {
 	domain string
@@ -33,21 +37,23 @@ func applyBatchResults(cfg *config.Config, domains []string, suite *discovery.Ch
 			results[input] = ErrBaselineWorks
 			continue
 		}
-		best, ok := dr.Results[dr.BestPreset]
-		if !ok || best.Set == nil {
+		set, confirmed := winnerSetFor(suite, domainKey, dr)
+		if set == nil {
 			results[input] = fmt.Errorf("best preset has no set config")
 			continue
 		}
-		successful = append(successful, domainWithSet{domain: input, set: best.Set})
+		if !confirmed {
+			results[input] = errUnconfirmed
+			continue
+		}
+		successful = append(successful, domainWithSet{domain: input, set: set})
 	}
 
 	if len(successful) == 0 {
 		return results
 	}
 
-	groups := groupByConfig(successful)
-
-	for _, group := range groups {
+	for _, group := range groupBySet(successful) {
 		applyGroup(cfg, group)
 	}
 
@@ -61,35 +67,36 @@ func applyBatchResults(cfg *config.Config, domains []string, suite *discovery.Ch
 	return results
 }
 
-func groupByConfig(items []domainWithSet) [][]domainWithSet {
-	var groups [][]domainWithSet
-	used := make(map[int]bool)
-
-	for i := 0; i < len(items); i++ {
-		if used[i] {
+func winnerSetFor(suite *discovery.CheckSuite, domainKey string, dr *discovery.DomainDiscoveryResult) (*config.SetConfig, bool) {
+	for _, group := range suite.StrategyGroups {
+		if group.Set == nil || !slices.Contains(group.Domains, domainKey) {
 			continue
 		}
-		group := []domainWithSet{items[i]}
-		used[i] = true
-		for j := i + 1; j < len(items); j++ {
-			if used[j] {
-				continue
-			}
-			if configsMatch(items[i].set, items[j].set) {
-				group = append(group, items[j])
-				used[j] = true
-			}
-		}
-		groups = append(groups, group)
+		return group.Set, presetConfirmed(dr, group.WinnerPreset)
 	}
-	return groups
+	if best, ok := dr.Results[dr.BestPreset]; ok && best.Set != nil {
+		return best.Set, !dr.Unconfirmed
+	}
+	return nil, false
 }
 
-func configsMatch(a, b *config.SetConfig) bool {
-	return a.Fragmentation.Strategy == b.Fragmentation.Strategy &&
-		a.Faking.Strategy == b.Faking.Strategy &&
-		a.Faking.TTL == b.Faking.TTL &&
-		a.TCP.DropSACK == b.TCP.DropSACK
+func presetConfirmed(dr *discovery.DomainDiscoveryResult, name string) bool {
+	r := dr.Results[name]
+	return r != nil && r.ConfirmTries > 0 && r.Confirmed >= r.ConfirmTries
+}
+
+func groupBySet(items []domainWithSet) [][]domainWithSet {
+	var groups [][]domainWithSet
+	index := make(map[*config.SetConfig]int)
+	for _, item := range items {
+		if i, ok := index[item.set]; ok {
+			groups[i] = append(groups[i], item)
+			continue
+		}
+		index[item.set] = len(groups)
+		groups = append(groups, []domainWithSet{item})
+	}
+	return groups
 }
 
 func applyGroup(cfg *config.Config, group []domainWithSet) {
@@ -116,10 +123,7 @@ func applyGroup(cfg *config.Config, group []domainWithSet) {
 	if existingSet != nil {
 		changes := describeSetChanges(existingSet, refSet)
 
-		existingSet.TCP = refSet.TCP
-		existingSet.UDP = refSet.UDP
-		existingSet.Fragmentation = refSet.Fragmentation
-		existingSet.Faking = refSet.Faking
+		existingSet.AdoptStrategy(refSet)
 
 		for _, domain := range groupDomains {
 			if !domainInSNIList(existingSet.Targets.SNIDomains, domain) {
@@ -132,7 +136,7 @@ func applyGroup(cfg *config.Config, group []domainWithSet) {
 			log.Infof("[WATCHDOG] %s: set %q already matched the discovered strategy, left unchanged",
 				strings.Join(groupDomains, ", "), existingSet.Name)
 		} else {
-			log.Infof("[WATCHDOG] %s: overwrote tcp/udp/fragmentation/faking of set %q (%s)",
+			log.Infof("[WATCHDOG] %s: adopted the discovered strategy into set %q (%s)",
 				strings.Join(groupDomains, ", "), existingSet.Name, strings.Join(changes, ", "))
 		}
 	} else {
@@ -142,10 +146,7 @@ func applyGroup(cfg *config.Config, group []domainWithSet) {
 		newSet.Enabled = true
 		newSet.Targets.SNIDomains = groupDomains
 		newSet.Targets.DomainsToMatch = groupDomains
-		newSet.TCP = refSet.TCP
-		newSet.UDP = refSet.UDP
-		newSet.Fragmentation = refSet.Fragmentation
-		newSet.Faking = refSet.Faking
+		newSet.AdoptStrategy(refSet)
 		cfg.Sets = append([]*config.SetConfig{&newSet}, cfg.Sets...)
 		log.Infof("[WATCHDOG] %s: created set %q (strategy: %s)",
 			strings.Join(groupDomains, ", "), newSet.Name, refSet.Fragmentation.Strategy)

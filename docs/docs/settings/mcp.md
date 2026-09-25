@@ -104,14 +104,14 @@ Only `POST` is served. `GET` and `DELETE` return 405, which is normal for this t
 
 | Tool | Answers | Example prompt |
 | --- | --- | --- |
-| `b4_status` | Version, capture engine, firewall backend, how many sets exist and are enabled, uptime | "Is b4 running, and which capture engine is active?" |
+| `b4_status` | Version, capture engine, firewall backend, how many sets exist and are enabled, the state of the Telegram over WebSocket bridge, uptime | "Is b4 running, and which capture engine is active?" |
 | `b4_get_topic` | What a setting does, its unit, its real default, and what a zero or empty value means | "What does the strict switch on a set's DNS actually do?" |
 | `b4_geo_lookup` | Which geosite or geoip categories exist, what one holds, and which of them cover a domain or an address | "Which geosite category covers rutracker.org?" |
 | `b4_edit_set_targets` | Adds or removes domains, addresses, geo categories or source devices on one set | "Add rutracker.org to the video set." |
 | `b4_test_domain_now` | Fetches a domain through b4 and again with b4 bypassed, and says which of the two works | "Is rutracker.org actually loading right now?" |
-| `b4_watchdog` | The last verdict for every watched domain, and add/remove/enable/check | "Which of the sites you are watching are failing?" |
+| `b4_watchdog` | The last verdict for every watched set and domain, and add/remove/enable/disable/check; with `set`, one set's own watchdog and its addresses | "Which of the sites you are watching are failing?" / "Keep the video set working with the watchdog." |
 | `b4_manage_set` | Creates, duplicates, moves, enables, deletes or resets a strategy set | "Make a new set for rutracker.org and put it last." |
-| `b4_find_bypass_strategy` | Runs discovery against a domain and turns the winning strategy into a set | "Find something that makes rutracker.org load." |
+| `b4_find_bypass_strategy` | Runs discovery against a domain and turns the winning strategy into a set; with `set`, runs it for an existing set and writes a covering result into that set | "Find something that makes rutracker.org load." / "Find a strategy for the video set." |
 | `b4_check_domain` | Which sets target a domain, how the match was made, whether that set is enabled | "Is rutracker.org covered by any set?" |
 | `b4_list_sets` | Every set in priority order, with domain counts and primary strategy | "List the sets and how many domains each targets." |
 | `b4_get_set` | One set in full | "Show the full configuration of the set named video." |
@@ -137,7 +137,20 @@ The tool list is built from the two permission switches and rebuilt whenever the
 | Allow active probes | 15 |
 | Both | 19 |
 
-`b4_watchdog` is the one tool served at every level, because reading the watchdog's verdicts emits no traffic and changes nothing. Its actions are permitted separately: `status` always works, `remove` and `disable` need **Allow configuration changes**, and `add`, `enable` and `check` need **Allow active probes** as well, because each of them makes the router fetch a site.
+`b4_watchdog` is the one tool served at every level, because reading the watchdog's verdicts emits no traffic and changes nothing. Its actions are permitted separately. Without `set`, `add`, `remove` and `check` work on the [older per-domain list](../watchdog#older-per-domain-list), while `enable` and `disable` turn the global watchdog switch on and off, which covers the watched sets as well as the list. `status` always works and also lists the watched sets, `remove` and `disable` need **Allow configuration changes**, `add` and `enable` need **Allow active probes** as well, because each of them makes the router fetch a site, and `check` needs **Allow active probes** alone.
+
+With `set`, a set id or exact name, it acts on that set's own [watchdog](../watchdog#watching-a-set) and its [Discovery addresses](../sets/discovery), passed as `url`:
+
+| Action with `set` | Effect | Needs |
+| --- | --- | --- |
+| `status` | The set's watchdog status, reason and per-address results | Nothing |
+| `enable` | Switches the set's watchdog on and schedules a check; refused when the set cannot be watched | Allow configuration changes and Allow active probes |
+| `disable` | Switches the set's watchdog off | Allow configuration changes |
+| `add` | Adds `url` to the set's Discovery addresses | Allow configuration changes and Allow active probes |
+| `remove` | Removes `url` from them | Allow configuration changes |
+| `check` | Schedules a check of every address of a watched set and clears its cooldown | Allow active probes; a give-up is cleared only when Allow configuration changes is on as well |
+
+`b4_find_bypass_strategy` takes an optional `set` in the same form. `action=start` with `set` runs [Discovery for that set](../discovery#a-run-for-a-set): on the domains given, or on the set's Discovery addresses when none are, at most five, with the set's current strategy tested first and the search stopped at the first strategy confirmed on every address. `action=status` then reports the set verdict, and `action=apply` with `set` writes the result into that set, strategy only with its domains untouched, and only for the verdict `covered`. The same rule applies to `action=apply` without `set` when the run it addresses, by id or as the last run, was a run for a set. A set that `action=apply` creates for free-form domains keeps the addresses they were found on as its Discovery addresses. A set with routing enabled is refused. Starting a run needs **Allow active probes**; applying needs **Allow configuration changes**.
 
 The server also tells the AI which of the two it has, so it says "here is what I would change" rather than offering to change it. That message names the setting to turn on, which is how a model can answer "why can't you?".
 
@@ -178,7 +191,7 @@ Tool output may be forwarded to a third-party model, so credentials are removed 
 With **Allow configuration changes** off, nothing the AI does can alter b4. With it on, two areas become writable:
 
 - every setting inside a strategy set: targets, fragmentation, faking, TCP and UDP, DNS, escalation and routing
-- the MTProto and SOCKS5 subsystems
+- the MTProto and SOCKS5 subsystems, the Telegram over WebSocket switch `system.mtproto.bridge.enabled` among them
 - the logging settings, so the AI can raise the log level, reproduce a problem and read the result back
 
 `b4_list_writable_paths` reports the exact paths with their types, current values and accepted values, so a model does not have to guess one.
@@ -194,6 +207,7 @@ Refused whatever this setting is on:
 | Firewall backend | A wrong value leaves the machine with no rules at all |
 | Packet marks, routing tables | Load-bearing for b4's own traffic |
 | A set's id | Escalation targets refer to it |
+| A set's Discovery addresses and watchdog switch | Both make the router fetch sites on a timer; `b4_watchdog` with `set` changes them under its own permissions |
 | The log directory and the geo file locations | Filesystem locations, not contents: a wrong log directory silently stops file logging, and a wrong geo path empties every geosite category at once |
 
 :::info Refusing a path is not the same as refusing access
@@ -217,6 +231,11 @@ Writing a set's domains replaces the whole list. A model should read the current
 `b4_revert_last_change` restores the configuration as it stood before the most recent change and applies it live. Repeating it walks further back, one change at a time.
 
 The history is held in memory and covers only changes made through MCP since b4 last started. Edits made in the web interface are not part of it, and a restart clears it.
+
+An undo is refused, and the change stays on the list, in two cases:
+
+- the configuration was changed after the change being undone, by a [watchdog](../watchdog) heal, the web interface or another tool: restoring the older copy would overwrite that newer change as well;
+- the undo would switch a set's watchdog or the global watchdog on, or bring back watchdog domains or Discovery addresses of a set whose watchdog is on, while **Allow active probes** is off, since the watchdog would then start fetching those sites on a timer. Discovery addresses of a set whose watchdog is off are restored without it, because nothing fetches them.
 
 :::tip Ask for the undo in the same conversation
 The model has the previous value in the tool's reply, so "that made it worse, put it back" is enough.

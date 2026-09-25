@@ -81,6 +81,47 @@ func GetCDNCategories(domain string) (geoip, geosite []string) {
 	return nil, nil
 }
 
+func KnownServiceHosts(geosite []string) []string {
+	loadCDNEntries()
+
+	wanted := make(map[string]bool, len(geosite))
+	for _, category := range geosite {
+		if c := strings.ToLower(strings.TrimSpace(category)); c != "" {
+			wanted[c] = true
+		}
+	}
+	hosts := []string{}
+	if len(wanted) == 0 {
+		return hosts
+	}
+
+	seen := make(map[string]bool)
+	for _, entry := range cdnEntries {
+		matched := false
+		for _, category := range entry.GeoSite {
+			if wanted[strings.ToLower(category)] {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		for _, pattern := range entry.Match {
+			host := strings.ToLower(strings.TrimSpace(pattern))
+			if host == "" || strings.Contains(host, "*") {
+				continue
+			}
+			if !seen[host] {
+				seen[host] = true
+				hosts = append(hosts, host)
+			}
+			break
+		}
+	}
+	return hosts
+}
+
 func (ds *DiscoverySuite) installedGeoCategories(geoip, geosite []string) ([]string, []string) {
 	if ds.cfg == nil || ds.cfg.System.Geo.GeoIpPath == "" {
 		if len(geoip) > 0 {
@@ -583,7 +624,7 @@ func withoutIPs(ips, excluded []string) []string {
 func (p *DNSProber) anyIPConnectable(ctx context.Context, ips []string) bool {
 	connCtx, cancel := context.WithTimeout(ctx, connectableTimeout)
 	defer cancel()
-	dialer := netprobe.Dialer(int(p.flowMark), p.timeout/2, p.timeout)
+	dialer := probeDialer(int(p.flowMark), p.timeout/2, p.timeout)
 	for _, ip := range ips {
 		conn, err := dialer.DialContext(connCtx, "tcp", tlsAddress(ip, p.tlsPort))
 		if err == nil {
@@ -595,7 +636,7 @@ func (p *DNSProber) anyIPConnectable(ctx context.Context, ips []string) bool {
 }
 
 func (p *DNSProber) testIPServesDomain(ctx context.Context, ip string) bool {
-	dialer := netprobe.Dialer(int(p.flowMark), p.timeout/2, p.timeout)
+	dialer := probeDialer(int(p.flowMark), p.timeout/2, p.timeout)
 	conn, err := dialer.DialContext(ctx, "tcp", tlsAddress(ip, p.tlsPort))
 	if err != nil {
 		return false

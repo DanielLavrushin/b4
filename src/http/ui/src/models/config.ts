@@ -355,12 +355,18 @@ export interface MTProtoConfig {
   upstream_mode: "tcp" | "ws" | "auto";
   ws_custom_domain: string;
   ws_endpoint_host: string;
+  ws_front_sni: string;
   cfproxy_enabled: boolean;
   cfproxy_url: string;
   cfworker_domain: string;
   dc_fallback_enabled: boolean;
   dc_fallback_url: string;
   web_proxy: MTProtoWebProxyConfig;
+  bridge?: MTProtoBridgeConfig;
+}
+
+export interface MTProtoBridgeConfig {
+  enabled?: boolean;
 }
 
 export interface MTProtoWebProxyConfig {
@@ -418,6 +424,7 @@ export interface B4Config {
   tunnel_ifaces?: string[];
   encapsulated_ifaces?: string[];
   iface_traffic?: Record<string, IfaceCounts>;
+  revision?: string;
 }
 
 export interface IfaceCounts {
@@ -439,8 +446,15 @@ export interface B4SetConfig {
   routing: RoutingConfig;
   escalate?: EscalateConfig;
   mss_clamp?: MSSClampConfig;
+  discovery?: SetDiscoveryConfig;
   hub?: B4HubOrigin;
   hub_state?: HubState;
+  revision?: string;
+}
+
+export interface SetDiscoveryConfig {
+  urls: string[];
+  watchdog?: boolean;
 }
 
 export type HubState = "unmodified" | "modified";

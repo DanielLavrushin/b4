@@ -4,14 +4,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discovery"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sni"
+	"github.com/daniellavrushin/b4/utils"
 	"github.com/google/uuid"
 	"golang.org/x/net/publicsuffix"
 )
@@ -24,6 +27,8 @@ func (api *API) RegisterDiscoveryApi() {
 	api.mux.HandleFunc("/api/discovery/add", api.handleAddPresetAsSet)
 	api.mux.HandleFunc("/api/discovery/replace", api.handleReplaceStrategy)
 	api.mux.HandleFunc("/api/discovery/similar", api.handleFindSimilarSets)
+	api.mux.HandleFunc("/api/discovery/suggest", api.handleDiscoverySuggest)
+	api.mux.HandleFunc("/api/discovery/set-runs", api.handleDiscoverySetRuns)
 	api.mux.HandleFunc("/api/discovery/cache/clear", api.handleClearDiscoveryCache)
 	api.mux.HandleFunc("/api/discovery/current", api.handleGetCurrentDiscovery)
 	api.mux.HandleFunc("/api/discovery/history", api.handleDiscoveryHistory)
@@ -181,11 +186,15 @@ func (api *API) handleFinishCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary Start domain discovery
+// @Description With set_id the run is for that set: the URLs come from check_urls, or from the set's discovery.urls when none are given, and are normalised; at most 5 are accepted. The set's current strategy is tested first, an empty or auto tls_version and ip_version follow the set's targets, and the finished run carries set_verdict. stop_when_covered ends the search as soon as one strategy passes every confirmation try on every address.
 // @Tags Discovery
 // @Accept json
 // @Produce json
 // @Param body body DiscoveryRequest true "Discovery request"
 // @Success 202 {object} DiscoveryResponse
+// @Failure 400 {object} APIError "reserved_host, no_urls or too_many_urls"
+// @Failure 404 {object} APIError "not_found"
+// @Failure 409 {string} string
 // @Security BearerAuth
 // @Router /discovery/start [post]
 func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
@@ -214,6 +223,58 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 		urls = []string{req.CheckURL}
 	}
 
+	req.SetId = strings.TrimSpace(req.SetId)
+	var runSet *config.SetConfig
+	if req.SetId != "" {
+		runSet = api.getCfg().GetSetById(req.SetId)
+		if runSet == nil {
+			writeAPIError(w, ErrNotFound("Set not found"))
+			return
+		}
+		if runSet.Routing.Enabled {
+			writeAPIError(w, &APIError{
+				Status:  http.StatusBadRequest,
+				Code:    "routed_set",
+				Message: "The set routes its traffic to an interface or proxy, so it applies no bypass strategy to search for",
+			})
+			return
+		}
+		if len(urls) == 0 {
+			urls = slices.Clone(runSet.Discovery.URLs)
+		}
+	}
+
+	for _, u := range urls {
+		if host := probeInputHost(u); utils.IsReservedHost(host) {
+			writeAPIError(w, &APIError{
+				Status:  http.StatusBadRequest,
+				Code:    "reserved_host",
+				Message: host + " is a private or local address: discovery probes sites on the internet, not the network b4 runs on",
+			})
+			return
+		}
+	}
+
+	if req.SetId != "" {
+		if len(urls) > utils.MaxProbeURLs {
+			writeAPIError(w, &APIError{
+				Status:  http.StatusBadRequest,
+				Code:    "too_many_urls",
+				Message: fmt.Sprintf("At most %d URLs can be probed for a set", utils.MaxProbeURLs),
+			})
+			return
+		}
+		urls = utils.SanitizeProbeURLs(urls, nil)
+		if len(urls) == 0 {
+			writeAPIError(w, &APIError{
+				Status:  http.StatusBadRequest,
+				Code:    "no_urls",
+				Message: "No usable URL to probe for this set: pass check_urls or store discovery URLs on the set",
+			})
+			return
+		}
+	}
+
 	if len(urls) == 0 {
 		http.Error(w, "check_url or check_urls is required", http.StatusBadRequest)
 		return
@@ -230,7 +291,7 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	suite, err := api.discoveryRT.StartSuite(api.getCfg(), urls, discovery.StartSuiteOptions{
+	opts := discovery.StartSuiteOptions{
 		SkipDNS:         req.SkipDNS,
 		SkipCache:       req.SkipCache,
 		PayloadFiles:    req.PayloadFiles,
@@ -238,8 +299,16 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 		TLSVersion:      req.TLSVersion,
 		IPVersion:       req.IPVersion,
 		Source:          discovery.SourceWeb,
+		SetId:           req.SetId,
 		HubPresets:      func() []discovery.ConfigPreset { return api.communityPresets(urls, req.SkipCommunity) },
-	})
+	}
+	if runSet != nil {
+		opts.SetStrategy = discovery.SetRunStrategy(runSet)
+		opts.StopWhenCovered = req.StopWhenCovered
+		opts.TLSVersion, opts.IPVersion = discovery.SetRunVersions(runSet, req.TLSVersion, req.IPVersion)
+	}
+
+	suite, err := api.discoveryRT.StartSuite(api.getCfg(), urls, opts)
 	if err != nil {
 		if errors.Is(err, discovery.ErrDiscoveryAlreadyRunning) {
 			http.Error(w, err.Error(), http.StatusConflict)
@@ -263,6 +332,7 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 		CheckURL:       suite.CheckURL,
 		EstimatedTests: (phase1Count + 15) * len(suite.Domains),
 		Message:        fmt.Sprintf("Discovery started for %d domains", len(urls)),
+		SetId:          suite.SetId,
 	}
 
 	setJsonHeader(w)
@@ -345,18 +415,18 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 
 	set.Targets.IPs = nil
 
+	geoBefore := api.getCfg().System.Geo
 	api.loadTargetsForSetCached(&set)
 	config.ApplySetDefaults(&set)
 
-	oldCfg := api.getCfg()
-	newCfg := oldCfg.Clone()
-
-	moved := api.releaseDomainsFromOtherSets(newCfg.Sets, set.Id, set.Targets.SNIDomains)
-
-	newCfg.Sets = append([]*config.SetConfig{&set}, newCfg.Sets...)
-
-	// Save configuration
-	if err := api.saveAndPushConfig(newCfg); err != nil {
+	var moved []DomainReassignment
+	oldCfg, newCfg, err := api.editConfig(func(next *config.Config) error {
+		api.reloadTargetsIfGeoMoved(&set, geoBefore, next)
+		moved = api.releaseDomainsFromOtherSets(next.Sets, set.Id, set.Targets.SNIDomains)
+		next.Sets = append([]*config.SetConfig{&set}, next.Sets...)
+		return nil
+	})
+	if err != nil {
 		log.Errorf("Failed to save config: %v", err)
 		writeAPIError(w, err)
 		return
@@ -381,8 +451,10 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 // @Tags Discovery
 // @Accept json
 // @Produce json
-// @Param body body DiscoveryReplaceRequest true "Target set, discovered strategy, domains and pins"
+// @Param body body DiscoveryReplaceRequest true "Target set, discovered strategy, domains and pins. strategy_only adopts only the TCP, fragmentation and faking strategy (and DNS when the discovered one is enabled); keep_targets leaves the set's domains and other sets alone and makes domains optional; probe_urls become the set's discovery URLs"
 // @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} APIError
+// @Failure 404 {object} APIError
 // @Security BearerAuth
 // @Router /discovery/replace [post]
 func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
@@ -402,85 +474,117 @@ func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
 			domains = append(domains, d)
 		}
 	}
-	if req.SetId == "" || len(domains) == 0 {
+	if req.SetId == "" || (len(domains) == 0 && !req.KeepTargets) {
 		http.Error(w, "set_id and domains are required", http.StatusBadRequest)
 		return
 	}
 	config.ApplySetDefaults(&req.Set)
 
-	oldCfg := api.getCfg()
-	newCfg := oldCfg.Clone()
+	var probeURLs []string
+	if len(req.ProbeURLs) > 0 {
+		probeURLs = utils.SanitizeProbeURLs(req.ProbeURLs, nil)
+	}
 
-	var target *config.SetConfig
-	for _, set := range newCfg.Sets {
-		if set != nil && set.Id == req.SetId {
-			target = set
-			break
+	var moved []DomainReassignment
+	var name string
+	oldCfg, newCfg, err := api.editConfig(func(next *config.Config) error {
+		var target *config.SetConfig
+		for _, set := range next.Sets {
+			if set != nil && set.Id == req.SetId {
+				target = set
+				break
+			}
 		}
-	}
-	if target == nil {
-		writeAPIError(w, ErrNotFound("Set not found"))
-		return
-	}
+		if target == nil {
+			return ErrNotFound("Set not found")
+		}
 
-	replaceStrategy(target, &req.Set)
-	replacePins(target, domains, req.Pins)
-	addSNIDomains(target, domains)
-	moved := api.releaseDomainsFromOtherSets(newCfg.Sets, target.Id, domains)
+		if req.StrategyOnly {
+			target.AdoptStrategy(&req.Set)
+		} else {
+			replaceStrategy(target, &req.Set)
+		}
 
-	if err := api.saveAndPushConfig(newCfg); err != nil {
-		log.Errorf("Failed to save config: %v", err)
+		moved = nil
+		if req.KeepTargets {
+			if len(req.Pins) > 0 {
+				target.ReplacePins(config.PinDomains(req.Pins), req.Pins)
+			}
+		} else {
+			target.ReplacePins(domains, req.Pins)
+			addSNIDomains(target, domains)
+			moved = api.releaseDomainsFromOtherSets(next.Sets, target.Id, domains)
+		}
+
+		if len(probeURLs) > 0 {
+			target.Discovery.URLs = slices.Clone(probeURLs)
+		}
+		name = target.Name
+		return nil
+	})
+	if err != nil {
+		if !isRefusal(err) {
+			log.Errorf("Failed to save config: %v", err)
+		}
 		writeAPIError(w, err)
 		return
 	}
 	if api.PerformSoftRestart(newCfg, oldCfg) {
 		log.Infof("Soft restart completed successfully")
 	}
-	log.Infof("Replaced the strategy of set '%s' with a discovered one for %s", target.Name, strings.Join(domains, ", "))
+	if len(domains) > 0 {
+		log.Infof("Replaced the strategy of set '%s' with a discovered one for %s", name, strings.Join(domains, ", "))
+	} else {
+		log.Infof("Replaced the strategy of set '%s' with a discovered one", name)
+	}
 
 	setJsonHeader(w)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"moved":   moved,
-		"id":      target.Id,
-		"name":    target.Name,
+		"id":      req.SetId,
+		"name":    name,
 	})
 }
 
 func replaceStrategy(dst, strategy *config.SetConfig) {
-	tcp := strategy.TCP
-	tcp.DPortFilter = dst.TCP.DPortFilter
-	tcp.RSTProtection = dst.TCP.RSTProtection
-	if !strategy.TCP.IPBlockDetect.Enabled {
-		tcp.IPBlockDetect = dst.TCP.IPBlockDetect
-	}
+	dst.AdoptStrategy(strategy)
+
 	udp := strategy.UDP
+	udp.FakePayloadData = slices.Clone(strategy.UDP.FakePayloadData)
 	udp.DPortFilter = dst.UDP.DPortFilter
+	dst.UDP = udp
 
 	pins := dst.DNS.Pins
-	dst.TCP = tcp
-	dst.UDP = udp
-	dst.Fragmentation = strategy.Fragmentation
-	dst.Faking = strategy.Faking
 	dst.DNS = strategy.DNS
 	dst.DNS.Pins = pins
+
 	dst.Targets.TLSVersion = strategy.Targets.TLSVersion
 	dst.Targets.IPVersion = strategy.Targets.IPVersion
 }
 
-func replacePins(set *config.SetConfig, domains []string, pins map[string][]string) {
-	applied := make(map[string]bool, len(domains))
-	for _, domain := range domains {
-		if normalized := config.NormalizePinDomain(domain); normalized != "" {
-			applied[normalized] = true
-		}
+func probeInputHost(raw string) string {
+	s := strings.TrimSpace(strings.Trim(strings.TrimSpace(raw), "\"'`"))
+	if s == "" {
+		return ""
 	}
-	for pin := range set.DNS.Pins {
-		if applied[config.NormalizePinDomain(pin)] {
-			delete(set.DNS.Pins, pin)
-		}
+	authority := s
+	if i := strings.Index(authority, "://"); i >= 0 {
+		authority = authority[i+3:]
 	}
-	mergePins(set, pins)
+	if i := strings.IndexAny(authority, "/?#"); i >= 0 {
+		authority = authority[:i]
+	}
+	if i := strings.LastIndex(authority, "@"); i >= 0 {
+		authority = authority[i+1:]
+	}
+	if !strings.HasPrefix(authority, "[") && strings.Count(authority, ":") > 1 {
+		return authority
+	}
+	if host, _, err := net.SplitHostPort(authority); err == nil {
+		return host
+	}
+	return strings.Trim(authority, "[]")
 }
 
 func cdnCategoriesFor(domains []string) (geoip, geosite []string) {
@@ -663,6 +767,36 @@ func (api *API) handleGetCurrentDiscovery(w http.ResponseWriter, r *http.Request
 	}
 
 	api.writeSuite(w, suite)
+}
+
+// @Summary List the last discovery run of each set
+// @Description One record per set, the last run made for it with its set verdict, newest first. Records of sets that no longer exist are left out.
+// @Tags Discovery
+// @Produce json
+// @Param set_id query string false "Only the record of this set"
+// @Success 200 {array} discovery.SetRunRecord
+// @Security BearerAuth
+// @Router /discovery/set-runs [get]
+func (api *API) handleDiscoverySetRuns(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	cfg := api.getCfg()
+	only := strings.TrimSpace(r.URL.Query().Get("set_id"))
+	runs := make([]discovery.SetRunRecord, 0)
+	for _, run := range discovery.GetHistory(cfg.ConfigPath).SetRunsNewestFirst() {
+		if only != "" && run.SetId != only {
+			continue
+		}
+		if cfg.GetSetById(run.SetId) == nil {
+			continue
+		}
+		runs = append(runs, run)
+	}
+
+	sendResponse(w, runs)
 }
 
 // @Summary Get discovery history

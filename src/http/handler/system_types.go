@@ -134,6 +134,11 @@ type DiagTUN struct {
 	ForwardErrors    uint64   `json:"forward_errors"`
 	SteerConflicts   []string `json:"steer_conflicts,omitempty"`
 	IPv6Dropped      uint64   `json:"ipv6_dropped"`
+
+	CaptureRules         *int   `json:"capture_rules,omitempty"`
+	CaptureRulesExpected *int   `json:"capture_rules_expected,omitempty"`
+	CaptureRestores      int    `json:"capture_restores,omitempty"`
+	LastCaptureRestore   string `json:"last_capture_restore,omitempty"`
 }
 
 type DiagFirewall struct {
@@ -143,6 +148,9 @@ type DiagFirewall struct {
 	FlowOffloadGuard int             `json:"flow_offload_guard,omitempty"`
 	FlowOffloadSafe  bool            `json:"flow_offload_safe"`
 	RuleGroups       []DiagRuleGroup `json:"rule_groups,omitempty"`
+
+	RulesRestores    int64  `json:"rules_restores,omitempty"`
+	LastRulesRestore string `json:"last_rules_restore,omitempty"`
 }
 
 type DiagRuleGroup struct {

@@ -189,6 +189,10 @@ var DefaultSetConfig = SetConfig{
 		StallTimeoutMs: DefaultEscalateStallTimeoutMs,
 		DNSThreshold:   DefaultEscalateDNSThreshold,
 	},
+
+	Discovery: SetDiscoveryConfig{
+		URLs: []string{},
+	},
 }
 
 var DefaultConfig = Config{
@@ -335,6 +339,7 @@ func NewSetConfig() SetConfig {
 	cfg.Fragmentation.StrategyPool = append(make([]string, 0), DefaultSetConfig.Fragmentation.StrategyPool...)
 	cfg.Faking.TLSMod = append(make([]string, 0), DefaultSetConfig.Faking.TLSMod...)
 	cfg.Routing.SourceInterfaces = append(make([]string, 0), DefaultSetConfig.Routing.SourceInterfaces...)
+	cfg.Discovery.URLs = append(make([]string, 0), DefaultSetConfig.Discovery.URLs...)
 
 	return cfg
 }

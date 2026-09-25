@@ -351,6 +351,52 @@ func wsDialEndpoints(ctx context.Context, host, sni string) []string {
 // kws203.sorokodin.co.uk at 172.67.197.117 timed out after 8067 ms while the
 // same name at 104.21.84.223 connected in 227 ms one second later.
 func dialWS(host, sni, path string, timeout time.Duration, mark uint) (net.Conn, error) {
+	return dialWSAs(host, sni, sni, path, timeout, mark)
+}
+
+type wsTLSError struct {
+	err    error
+	judged bool
+}
+
+func (e *wsTLSError) Error() string { return e.err.Error() }
+func (e *wsTLSError) Unwrap() error { return e.err }
+
+func isTLSStage(err error) bool {
+	var te *wsTLSError
+	return errors.As(err, &te) && te.judged
+}
+
+type wsFrontMissError struct {
+	sni  string
+	peer string
+}
+
+func (e *wsFrontMissError) Error() string {
+	return fmt.Sprintf("tls handshake %s: answered by %s, not Telegram's edge", e.sni, e.peer)
+}
+
+func isFrontMiss(err error) bool {
+	var fe *wsFrontMissError
+	return errors.As(err, &fe)
+}
+
+func telegramCertificate(cs tls.ConnectionState) (bool, string) {
+	if len(cs.PeerCertificates) == 0 {
+		return false, "a peer with no certificate"
+	}
+	leaf := cs.PeerCertificates[0]
+	names := append([]string{leaf.Subject.CommonName}, leaf.DNSNames...)
+	for _, n := range names {
+		n = strings.ToLower(strings.TrimPrefix(n, "*."))
+		if n == "telegram.org" || strings.HasSuffix(n, ".telegram.org") {
+			return true, n
+		}
+	}
+	return false, names[0]
+}
+
+func dialWSAs(host, sni, hostHeader, path string, timeout time.Duration, mark uint) (net.Conn, error) {
 	if path == "" {
 		path = "/apiws"
 	}
@@ -395,7 +441,7 @@ func dialWS(host, sni, path string, timeout time.Duration, mark uint) (net.Conn,
 				slot = remaining
 			}
 		}
-		conn, err := dialWSEndpoint(eps[i], sni, path, slot, mark)
+		conn, err := dialWSEndpoint(eps[i], sni, hostHeader, path, slot, mark)
 		if err == nil {
 			wsEndpointRecovered(eps[i], sni)
 			return conn, nil
@@ -405,13 +451,22 @@ func dialWS(host, sni, path string, timeout time.Duration, mark uint) (net.Conn,
 		// to break it. Cooling one off for five minutes on the strength of a
 		// handshake cut short by the budget would retire a healthy route.
 		if isDialTimeout(err) && slot >= wsDialMinAttempt {
-			wsEndpointFailed(eps[i], sni)
+			if isConnectStage(err) {
+				wsAddressFailed(eps[i])
+			} else {
+				wsEndpointFailed(eps[i], sni)
+			}
 		}
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("tcp dial %s: no time left after resolving the name", host)
 	}
 	return nil, lastErr
+}
+
+func isConnectStage(err error) bool {
+	var oe *net.OpError
+	return errors.As(err, &oe) && oe.Op == "dial"
 }
 
 // dialWSEndpoint opens one WebSocket to one address. timeout bounds the attempt
@@ -421,7 +476,7 @@ func dialWS(host, sni, path string, timeout time.Duration, mark uint) (net.Conn,
 // censored path has: the SYN arrives after retransmits and the ClientHello is
 // then swallowed. Twice the intended wait lands on the client, and the dial
 // budget it was drawn from is already spent.
-func dialWSEndpoint(host, sni, path string, timeout time.Duration, mark uint) (net.Conn, error) {
+func dialWSEndpoint(host, sni, hostHeader, path string, timeout time.Duration, mark uint) (net.Conn, error) {
 	deadline := time.Now().Add(timeout)
 	dialer := &net.Dialer{Deadline: deadline}
 	if mark > 0 {
@@ -457,9 +512,16 @@ func dialWSEndpoint(host, sni, path string, timeout time.Duration, mark uint) (n
 		InsecureSkipVerify: true,
 	})
 	_ = tlsConn.SetDeadline(deadline)
+	tlsBegan := time.Now()
 	if err := tlsConn.Handshake(); err != nil {
 		raw.Close()
-		return nil, fmt.Errorf("tls handshake %s: %w", sni, err)
+		return nil, &wsTLSError{err: fmt.Errorf("tls handshake %s: %w", sni, err), judged: time.Since(tlsBegan) >= timeout/2}
+	}
+	if sni != hostHeader {
+		if ok, peer := telegramCertificate(tlsConn.ConnectionState()); !ok {
+			tlsConn.Close()
+			return nil, &wsFrontMissError{sni: sni, peer: peer}
+		}
 	}
 
 	keyBytes := make([]byte, 16)
@@ -470,7 +532,7 @@ func dialWSEndpoint(host, sni, path string, timeout time.Duration, mark uint) (n
 	wsKey := base64.StdEncoding.EncodeToString(keyBytes)
 
 	req := "GET " + path + " HTTP/1.1\r\n" +
-		"Host: " + sni + "\r\n" +
+		"Host: " + hostHeader + "\r\n" +
 		"Upgrade: websocket\r\n" +
 		"Connection: Upgrade\r\n" +
 		"Sec-WebSocket-Key: " + wsKey + "\r\n" +

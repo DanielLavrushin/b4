@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { colors, facets as facetColors, typography } from "@design";
 import { B4SetConfig } from "@models/config";
 import { buildSetFacets } from "@components/sets/facets";
-import { describeStrategy, normalizeSet } from "@utils";
+import { describeStrategy, normalizeSet, presetLabel } from "@utils";
 
 interface Row {
   key: string;
@@ -139,7 +139,7 @@ export const StrategySummary = ({
             mt: "3px",
           }}
         >
-          {preset}
+          {preset ? presetLabel(preset, t) : ""}
           {preset && note ? " · " : ""}
           {note}
         </Typography>

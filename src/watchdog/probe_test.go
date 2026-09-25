@@ -11,6 +11,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/netprobe"
+	"github.com/daniellavrushin/b4/utils"
 )
 
 func TestIsReservedAddrCoversTheWholeLocalSpace(t *testing.T) {
@@ -26,14 +27,14 @@ func TestIsReservedAddrCoversTheWholeLocalSpace(t *testing.T) {
 		"::ffff:192.168.1.1",
 	}
 	for _, s := range reserved {
-		if !isReservedAddr(netip.MustParseAddr(s)) {
+		if !utils.IsReservedAddr(netip.MustParseAddr(s)) {
 			t.Errorf("%s must be refused: probing it reaches the network b4 runs on", s)
 		}
 	}
 
 	public := []string{"1.1.1.1", "8.8.8.8", "104.22.45.1", "2606:4700::1111", "100.63.255.255", "100.128.0.1"}
 	for _, s := range public {
-		if isReservedAddr(netip.MustParseAddr(s)) {
+		if utils.IsReservedAddr(netip.MustParseAddr(s)) {
 			t.Errorf("%s is a public address and must not be refused", s)
 		}
 	}

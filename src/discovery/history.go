@@ -18,6 +18,7 @@ const (
 	discoveryHistoryFile = "discovery_history.json"
 	maxHistoryEntries    = 100
 	maxAlternateSets     = 12
+	maxSetRuns           = 64
 )
 
 var historyFileMu sync.Mutex
@@ -46,6 +47,7 @@ type HistoryEntry struct {
 	ConfirmTries  int                            `json:"confirm_tries,omitempty"`
 	FinalHost     string                         `json:"final_host,omitempty"`
 	SuiteId       string                         `json:"suite_id,omitempty"`
+	SetId         string                         `json:"set_id,omitempty"`
 	Set           *config.SetConfig              `json:"set,omitempty"`
 	Outcome       Outcome                        `json:"outcome,omitempty"`
 	Unconfirmed   bool                           `json:"unconfirmed,omitempty"`
@@ -102,10 +104,21 @@ func (e HistoryEntry) ApplicableSet() *config.SetConfig {
 	return nil
 }
 
+type SetRunRecord struct {
+	SetId          string     `json:"set_id"`
+	SuiteId        string     `json:"suite_id"`
+	StartTime      time.Time  `json:"start_time"`
+	EndTime        time.Time  `json:"end_time"`
+	URLs           []string   `json:"urls"`
+	StoppedCovered bool       `json:"stopped_covered,omitempty"`
+	Verdict        SetVerdict `json:"verdict"`
+}
+
 // DiscoveryHistory manages persistent discovery results.
 type DiscoveryHistory struct {
-	Entries []HistoryEntry `json:"entries"`
-	mu      sync.Mutex     `json:"-"`
+	Entries []HistoryEntry          `json:"entries"`
+	SetRuns map[string]SetRunRecord `json:"set_runs,omitempty"`
+	mu      sync.Mutex              `json:"-"`
 }
 
 func historyFilePath(configPath string) string {
@@ -175,6 +188,8 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 	dh.mu.Lock()
 	defer dh.mu.Unlock()
 
+	dh.recordSetRun(suite)
+
 	if suite.DomainDiscoveryResults == nil {
 		return
 	}
@@ -210,6 +225,7 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 
 		entry := HistoryEntry{
 			SuiteId:       suite.Id,
+			SetId:         suite.SetId,
 			Set:           suite.scopedSetFor(domainResult.Domain),
 			Domain:        domainResult.Domain,
 			Url:           domainResult.Url,
@@ -255,6 +271,71 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 		})
 		dh.Entries = dh.Entries[:maxHistoryEntries]
 	}
+}
+
+func (dh *DiscoveryHistory) recordSetRun(suite *CheckSuite) {
+	if suite.SetId == "" || suite.SetVerdict == nil {
+		return
+	}
+	urls := make([]string, 0, len(suite.Domains))
+	for _, di := range suite.Domains {
+		if di.CheckURL != "" {
+			urls = append(urls, di.CheckURL)
+		}
+	}
+	if dh.SetRuns == nil {
+		dh.SetRuns = map[string]SetRunRecord{}
+	}
+	dh.SetRuns[suite.SetId] = SetRunRecord{
+		SetId:          suite.SetId,
+		SuiteId:        suite.Id,
+		StartTime:      suite.StartTime,
+		EndTime:        suite.EndTime,
+		URLs:           urls,
+		StoppedCovered: suite.StoppedCovered,
+		Verdict:        *suite.SetVerdict,
+	}
+	for len(dh.SetRuns) > maxSetRuns {
+		oldest := ""
+		for id, rec := range dh.SetRuns {
+			if oldest == "" || rec.EndTime.Before(dh.SetRuns[oldest].EndTime) {
+				oldest = id
+			}
+		}
+		delete(dh.SetRuns, oldest)
+	}
+}
+
+func (dh *DiscoveryHistory) SetRunsNewestFirst() []SetRunRecord {
+	dh.mu.Lock()
+	defer dh.mu.Unlock()
+
+	runs := make([]SetRunRecord, 0, len(dh.SetRuns))
+	for _, run := range dh.SetRuns {
+		runs = append(runs, run)
+	}
+	sort.Slice(runs, func(i, j int) bool {
+		if !runs[i].EndTime.Equal(runs[j].EndTime) {
+			return runs[i].EndTime.After(runs[j].EndTime)
+		}
+		return runs[i].SetId < runs[j].SetId
+	})
+	return runs
+}
+
+func (dh *DiscoveryHistory) SetRunForSuite(suiteID string) (SetRunRecord, bool) {
+	dh.mu.Lock()
+	defer dh.mu.Unlock()
+
+	if suiteID == "" {
+		return SetRunRecord{}, false
+	}
+	for _, run := range dh.SetRuns {
+		if run.SuiteId == suiteID {
+			return run, true
+		}
+	}
+	return SetRunRecord{}, false
 }
 
 func (dh *DiscoveryHistory) MarkApplied(domains []string, preset, setID string) int {
@@ -303,6 +384,7 @@ func (dh *DiscoveryHistory) Clear() {
 	dh.mu.Lock()
 	defer dh.mu.Unlock()
 	dh.Entries = nil
+	dh.SetRuns = nil
 }
 
 // RemoveDomain removes history for a specific domain.

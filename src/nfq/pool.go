@@ -312,6 +312,9 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 			target := newCfg.GetSetById(setId)
 			return target != nil && target.Enabled
 		})
+		if n := p.state.destState.ResetBlocked(); n > 0 {
+			log.Infof("IPBlockDetect: the sets changed, %d address(es) cached as blocked are tested again", n)
+		}
 	}
 
 	if p.Dhcp != nil {

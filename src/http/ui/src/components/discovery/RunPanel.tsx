@@ -22,6 +22,7 @@ import {
   NO_BYPASS_PRESET,
   describeStrategy,
   formatDuration,
+  presetLabel,
   testedCounts,
   verdictOf,
 } from "@utils";
@@ -65,6 +66,7 @@ interface RunPanelProps {
   onStop: () => void;
   onFinish: () => void;
   logLine: ReactNode;
+  setName?: string;
 }
 
 export const RunPanel = ({
@@ -75,6 +77,7 @@ export const RunPanel = ({
   onStop,
   onFinish,
   logLine,
+  setName,
 }: RunPanelProps) => {
   const { t } = useTranslation();
   const [, setTick] = useState(0);
@@ -135,7 +138,7 @@ export const RunPanel = ({
       case "found": {
         const set = dr.results?.[dr.best_preset]?.set;
         return t("discovery.run.found", {
-          preset: dr.best_preset,
+          preset: presetLabel(dr.best_preset, t),
           description: set ? describeStrategy(set, t) : "",
         });
       }
@@ -211,7 +214,14 @@ export const RunPanel = ({
   return (
     <Stack spacing={2}>
       <B4RunHeader
-        title={t("discovery.run.title", { count: sites.length })}
+        title={
+          setName
+            ? t("discovery.run.titleSet", {
+                name: setName,
+                count: sites.length,
+              })
+            : t("discovery.run.title", { count: sites.length })
+        }
         subtitle={
           <>
             {t("discovery.run.elapsed", { duration: formatDuration(t, suite.start_time) })}

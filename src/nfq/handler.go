@@ -71,6 +71,10 @@ func (w *Worker) handlePacket(q *nfqueue.Nfqueue, a nfqueue.Attribute, mark uint
 		return vc.accept()
 	}
 
+	if a.Mark != nil && config.IsTelegramBridgeMark(*a.Mark) {
+		return vc.accept()
+	}
+
 	if !w.matchesInterface(a) {
 		return vc.accept()
 	}

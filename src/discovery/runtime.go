@@ -42,6 +42,9 @@ type StartSuiteOptions struct {
 	TLSVersion      string
 	IPVersion       string
 	Source          string
+	SetId           string
+	SetStrategy     *config.SetConfig
+	StopWhenCovered bool
 	HubPresets      func() []ConfigPreset
 }
 
@@ -149,6 +152,9 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 	if suite.Source == "" {
 		suite.Source = SourceWeb
 	}
+	suite.SetId = opts.SetId
+	suite.setStrategy = opts.SetStrategy
+	suite.stopWhenCovered = opts.StopWhenCovered
 	m.SetActiveSuiteID(suite.Id)
 	RegisterSuite(suite.CheckSuite)
 

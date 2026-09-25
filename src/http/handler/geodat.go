@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -191,36 +193,73 @@ func (api *API) RefreshGeodat(destPath, geositeURL, geoipURL string) (int64, int
 	}
 
 	removed := []string{}
+	previous := api.getCfg().System.Geo
 	if newGeoSitePath != "" {
-		if old := removeRelocatedGeodat(api.getCfg().System.Geo.GeoSitePath, newGeoSitePath, "geosite.dat"); old != "" {
+		if old := removeRelocatedGeodat(previous.GeoSitePath, newGeoSitePath, "geosite.dat"); old != "" {
 			removed = append(removed, old)
 		}
-		api.getCfg().System.Geo.GeoSitePath = newGeoSitePath
-		api.getCfg().System.Geo.GeoSiteURL = geositeURL
 	}
 	if newGeoIpPath != "" {
-		if old := removeRelocatedGeodat(api.getCfg().System.Geo.GeoIpPath, newGeoIpPath, "geoip.dat"); old != "" {
+		if old := removeRelocatedGeodat(previous.GeoIpPath, newGeoIpPath, "geoip.dat"); old != "" {
 			removed = append(removed, old)
 		}
-		api.getCfg().System.Geo.GeoIpPath = newGeoIpPath
-		api.getCfg().System.Geo.GeoIpURL = geoipURL
 	}
 
-	api.applyGeodatPaths()
-
-	if err := api.saveAndPushConfig(api.getCfg()); err != nil {
+	err := api.saveGeoConfig(func(geo *geodat.GeoDatConfig) {
+		if newGeoSitePath != "" {
+			geo.GeoSitePath = newGeoSitePath
+			geo.GeoSiteURL = geositeURL
+		}
+		if newGeoIpPath != "" {
+			geo.GeoIpPath = newGeoIpPath
+			geo.GeoIpURL = geoipURL
+		}
+	})
+	if err != nil {
 		return geositeSize, geoipSize, removed, fmt.Errorf("failed to save configuration: %v", err)
 	}
 
 	return geositeSize, geoipSize, removed, nil
 }
 
-func (api *API) applyGeodatPaths() {
-	api.geodataManager.UpdatePaths(api.getCfg().System.Geo.GeoSitePath, api.getCfg().System.Geo.GeoIpPath)
+func (api *API) saveGeoConfig(update func(geo *geodat.GeoDatConfig)) error {
+	geoSaveMu.Lock()
+	defer geoSaveMu.Unlock()
+	geo := api.getCfg().System.Geo
+	update(&geo)
+	api.geodataManager.UpdatePaths(geo.GeoSitePath, geo.GeoIpPath)
 	api.geodataManager.ClearCache()
-
 	for _, set := range api.getCfg().Sets {
-		log.Infof("Reloading geo targets for set: %s", set.Name)
+		for _, category := range set.Targets.GeoSiteCategories {
+			_, _ = api.geodataManager.LoadGeositeCategory(category)
+		}
+		for _, category := range set.Targets.GeoIpCategories {
+			_, _ = api.geodataManager.LoadGeoipCategory(category)
+		}
+	}
+
+	err := api.updateAndPushConfig(func(current *config.Config) (*config.Config, error) {
+		next := current.Clone()
+		update(&next.System.Geo)
+		for _, set := range next.Sets {
+			log.Infof("Reloading geo targets for set: %s", set.Name)
+			api.loadTargetsForSetCached(set)
+		}
+		return next, nil
+	})
+	if err != nil {
+		live := api.getCfg().System.Geo
+		api.geodataManager.UpdatePaths(live.GeoSitePath, live.GeoIpPath)
+		api.geodataManager.ClearCache()
+	}
+	return err
+}
+
+var geoSaveMu sync.Mutex
+
+func (api *API) reloadTargetsIfGeoMoved(set *config.SetConfig, before geodat.GeoDatConfig, current *config.Config) {
+	now := current.System.Geo
+	if now.GeoSitePath != before.GeoSitePath || now.GeoIpPath != before.GeoIpPath {
 		api.loadTargetsForSetCached(set)
 	}
 }
@@ -366,17 +405,20 @@ func (api *API) handleGeodatUpload(w http.ResponseWriter, r *http.Request) {
 	removed := ""
 	if fileType == "geosite" {
 		removed = removeRelocatedGeodat(api.getCfg().System.Geo.GeoSitePath, destFile, "geosite.dat")
-		api.getCfg().System.Geo.GeoSitePath = destFile
-		api.getCfg().System.Geo.GeoSiteURL = ""
 	} else {
 		removed = removeRelocatedGeodat(api.getCfg().System.Geo.GeoIpPath, destFile, "geoip.dat")
-		api.getCfg().System.Geo.GeoIpPath = destFile
-		api.getCfg().System.Geo.GeoIpURL = ""
 	}
 
-	api.applyGeodatPaths()
-
-	if err := api.saveAndPushConfig(api.getCfg()); err != nil {
+	err = api.saveGeoConfig(func(geo *geodat.GeoDatConfig) {
+		if fileType == "geosite" {
+			geo.GeoSitePath = destFile
+			geo.GeoSiteURL = ""
+		} else {
+			geo.GeoIpPath = destFile
+			geo.GeoIpURL = ""
+		}
+	})
+	if err != nil {
 		msg := fmt.Sprintf("Failed to save configuration: %v", err)
 		log.Errorf("geodat upload: %s", msg)
 		writeJsonError(w, http.StatusInternalServerError, msg)
@@ -427,7 +469,7 @@ func (api *API) handleGeodatRemove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	geo := &api.getCfg().System.Geo
+	geo := api.getCfg().System.Geo
 	removed := []string{}
 	kept := []string{}
 	cleared := []string{}
@@ -445,8 +487,6 @@ func (api *API) handleGeodatRemove(w http.ResponseWriter, r *http.Request) {
 		case deleted != "":
 			removed = append(removed, deleted)
 		}
-		geo.GeoSitePath = ""
-		geo.GeoSiteURL = ""
 		cleared = append(cleared, "geosite")
 	}
 
@@ -463,14 +503,20 @@ func (api *API) handleGeodatRemove(w http.ResponseWriter, r *http.Request) {
 		case deleted != "":
 			removed = append(removed, deleted)
 		}
-		geo.GeoIpPath = ""
-		geo.GeoIpURL = ""
 		cleared = append(cleared, "geoip")
 	}
 
-	api.applyGeodatPaths()
-
-	if err := api.saveAndPushConfig(api.getCfg()); err != nil {
+	err := api.saveGeoConfig(func(geo *geodat.GeoDatConfig) {
+		if req.Type == "geosite" || req.Type == "both" {
+			geo.GeoSitePath = ""
+			geo.GeoSiteURL = ""
+		}
+		if req.Type == "geoip" || req.Type == "both" {
+			geo.GeoIpPath = ""
+			geo.GeoIpURL = ""
+		}
+	})
+	if err != nil {
 		msg := fmt.Sprintf("Failed to save configuration: %v", err)
 		log.Errorf("geodat remove: %s", msg)
 		writeJsonError(w, http.StatusInternalServerError, msg)

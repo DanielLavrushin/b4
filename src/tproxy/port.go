@@ -19,7 +19,11 @@ func MarkForSet(setID string, pinned uint32) uint32 {
 	}
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(setID))
-	return MarkBase + (h.Sum32() % MarkRange)
+	mark := MarkBase + (h.Sum32() % MarkRange)
+	if mark == config.TelegramBridgeMark && setID != config.TelegramBridgeSetID {
+		mark++
+	}
+	return mark
 }
 
 func PortFor(mark uint32) int {

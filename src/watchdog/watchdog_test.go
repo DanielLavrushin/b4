@@ -1,9 +1,13 @@
 package watchdog
 
 import (
+	"errors"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/discovery"
 )
 
 func TestExtractDomain(t *testing.T) {
@@ -66,7 +70,7 @@ func TestSyncDomainStates(t *testing.T) {
 	}
 }
 
-func TestGroupByConfig(t *testing.T) {
+func TestGroupBySetKeepsDifferentWinnersApart(t *testing.T) {
 	setA := &config.SetConfig{}
 	setA.Fragmentation.Strategy = "combo"
 	setA.Faking.Strategy = "ttl"
@@ -76,55 +80,174 @@ func TestGroupByConfig(t *testing.T) {
 	setB.Fragmentation.Strategy = "combo"
 	setB.Faking.Strategy = "ttl"
 	setB.Faking.TTL = 3
+	setB.Fragmentation.SNIPosition = 7
 
-	setC := &config.SetConfig{}
-	setC.Fragmentation.Strategy = "disorder"
-	setC.Faking.Strategy = "pastseq"
-
-	items := []domainWithSet{
+	groups := groupBySet([]domainWithSet{
 		{domain: "youtube.com", set: setA},
-		{domain: "meduza.io", set: setC},
-		{domain: "googlevideo.com", set: setB},
-	}
-
-	groups := groupByConfig(items)
+		{domain: "meduza.io", set: setB},
+		{domain: "googlevideo.com", set: setA},
+	})
 
 	if len(groups) != 2 {
 		t.Fatalf("expected 2 groups, got %d", len(groups))
 	}
-
-	if len(groups[0]) != 2 {
-		t.Errorf("first group should have 2 domains, got %d", len(groups[0]))
+	if len(groups[0]) != 2 || groups[0][1].domain != "googlevideo.com" {
+		t.Errorf("domains that share one winner set must share a group, got %+v", groups[0])
 	}
-	if len(groups[1]) != 1 {
-		t.Errorf("second group should have 1 domain, got %d", len(groups[1]))
+	if len(groups[1]) != 1 || groups[1][0].domain != "meduza.io" {
+		t.Errorf("a different winner must stay in its own group, got %+v", groups[1])
 	}
 }
 
-func TestConfigsMatch(t *testing.T) {
-	a := &config.SetConfig{}
-	a.Fragmentation.Strategy = "combo"
-	a.Faking.Strategy = "ttl"
-	a.Faking.TTL = 3
+func healSuite(results map[string]*discovery.DomainDiscoveryResult, groups ...discovery.StrategyGroup) *discovery.CheckSuite {
+	return &discovery.CheckSuite{DomainDiscoveryResults: results, StrategyGroups: groups}
+}
 
-	b := &config.SetConfig{}
-	b.Fragmentation.Strategy = "combo"
-	b.Faking.Strategy = "ttl"
-	b.Faking.TTL = 3
+func TestApplyBatchResultsUsesConfirmedGroupWinner(t *testing.T) {
+	existing := config.NewSetConfig()
+	existing.Name = "YouTube"
+	existing.Enabled = true
+	existing.Targets.SNIDomains = []string{"youtube.com"}
+	existing.Targets.DomainsToMatch = []string{"youtube.com"}
+	existing.TCP.DPortFilter = "443,2053"
+	existing.TCP.RSTProtection.Enabled = true
+	existing.UDP.Mode = "drop"
+	cfg := &config.Config{Sets: []*config.SetConfig{&existing}}
 
-	if !configsMatch(a, b) {
-		t.Error("identical configs should match")
+	fastest := config.NewSetConfig()
+	fastest.Fragmentation.Strategy = "disorder"
+	group := config.NewSetConfig()
+	group.Fragmentation.Strategy = "combo"
+	group.UDP.Mode = "fake"
+
+	suite := healSuite(map[string]*discovery.DomainDiscoveryResult{
+		"youtube.com": {
+			Domain:      "youtube.com",
+			BestPreset:  "fast",
+			BestSuccess: true,
+			Results: map[string]*discovery.DomainPresetResult{
+				"fast":    {Status: discovery.CheckStatusComplete, Set: &fastest},
+				"grouped": {Status: discovery.CheckStatusComplete, Set: &group, Confirmed: 3, ConfirmTries: 3},
+			},
+		},
+		"meduza.io": {
+			Domain:      "meduza.io",
+			BestPreset:  "flaky",
+			BestSuccess: true,
+			Unconfirmed: true,
+			Results:     map[string]*discovery.DomainPresetResult{"flaky": {Status: discovery.CheckStatusComplete, Set: &fastest}},
+		},
+		"example.com": {Domain: "example.com", BestSuccess: true, BaselineWorks: true},
+	}, discovery.StrategyGroup{WinnerPreset: "grouped", Domains: []string{"youtube.com"}, Set: &group})
+
+	saved := 0
+	errs := applyBatchResults(cfg, []string{"youtube.com", "meduza.io", "example.com"}, suite, func(*config.Config) error {
+		saved++
+		return nil
+	})
+
+	if saved != 1 {
+		t.Fatalf("expected one save, got %d", saved)
 	}
-
-	b.Faking.TTL = 5
-	if configsMatch(a, b) {
-		t.Error("different TTL should not match")
+	if err := errs["youtube.com"]; err != nil {
+		t.Errorf("youtube.com: unexpected error %v", err)
 	}
+	if !errors.Is(errs["meduza.io"], errUnconfirmed) {
+		t.Errorf("meduza.io: an unconfirmed winner must not be applied, got %v", errs["meduza.io"])
+	}
+	if !errors.Is(errs["example.com"], ErrBaselineWorks) {
+		t.Errorf("example.com: got %v, want ErrBaselineWorks", errs["example.com"])
+	}
+	got := cfg.Sets[0]
+	if len(cfg.Sets) != 1 {
+		t.Fatalf("the existing set must be healed in place, got %d sets", len(cfg.Sets))
+	}
+	if got.Fragmentation.Strategy != "combo" {
+		t.Errorf("the group winner must be applied, got %q", got.Fragmentation.Strategy)
+	}
+	if got.TCP.DPortFilter != "443,2053" || !got.TCP.RSTProtection.Enabled {
+		t.Errorf("the set's port filter and RST protection must be kept, got %q / %v", got.TCP.DPortFilter, got.TCP.RSTProtection.Enabled)
+	}
+	if got.UDP.Mode != "drop" {
+		t.Errorf("UDP is never probed and must be kept, got %q", got.UDP.Mode)
+	}
+}
 
-	b.Faking.TTL = 3
-	b.Fragmentation.Strategy = "disorder"
-	if configsMatch(a, b) {
-		t.Error("different strategy should not match")
+func TestApplyBatchResultsSkipsUnconfirmedGroupWinner(t *testing.T) {
+	existing := config.NewSetConfig()
+	existing.Id = "yt"
+	existing.Name = "YouTube"
+	existing.Targets.SNIDomains = []string{"youtube.com"}
+	existing.Targets.DomainsToMatch = []string{"youtube.com"}
+	cfg := &config.Config{Sets: []*config.SetConfig{&existing}}
+
+	best := config.NewSetConfig()
+	best.Fragmentation.Strategy = "disorder"
+	grouped := config.NewSetConfig()
+	grouped.Fragmentation.Strategy = "combo"
+
+	suite := healSuite(map[string]*discovery.DomainDiscoveryResult{
+		"youtube.com": {
+			Domain:       "youtube.com",
+			BestPreset:   "best",
+			BestSuccess:  true,
+			Confirmed:    3,
+			ConfirmTries: 3,
+			Results: map[string]*discovery.DomainPresetResult{
+				"best":    {Status: discovery.CheckStatusComplete, Set: &best, Confirmed: 3, ConfirmTries: 3},
+				"grouped": {Status: discovery.CheckStatusComplete, Set: &grouped},
+			},
+		},
+		"meduza.io": {
+			Domain:      "meduza.io",
+			BestPreset:  "flaky",
+			BestSuccess: true,
+			Unconfirmed: true,
+			Results: map[string]*discovery.DomainPresetResult{
+				"flaky":   {Status: discovery.CheckStatusComplete, Set: &best},
+				"grouped": {Status: discovery.CheckStatusComplete, Set: &grouped},
+			},
+		},
+	}, discovery.StrategyGroup{WinnerPreset: "grouped", Domains: []string{"youtube.com", "meduza.io"}, Set: &grouped})
+
+	before := cfg.Sets[0].Fragmentation.Strategy
+	errs := applyBatchResults(cfg, []string{"youtube.com", "meduza.io"}, suite, func(*config.Config) error { return nil })
+	if !errors.Is(errs["youtube.com"], errUnconfirmed) {
+		t.Errorf("youtube.com: its group's winner is unconfirmed, and falling back to its own preset would split the group on one set, got %v", errs["youtube.com"])
+	}
+	if !errors.Is(errs["meduza.io"], errUnconfirmed) {
+		t.Errorf("meduza.io: the group winner did not pass confirmation, got %v", errs["meduza.io"])
+	}
+	if got := cfg.Sets[0].Fragmentation.Strategy; got != before {
+		t.Errorf("nothing unconfirmed is written, got %q", got)
+	}
+}
+
+func TestDiscoveryInputsKeepHostKeys(t *testing.T) {
+	in := []string{"youtube.com", "example.com/path", "example.org:8443", "https://meduza.io/x"}
+	got := discoveryInputs(in)
+	want := []string{"youtube.com", "https://example.com/path", "https://example.org:8443", "https://meduza.io/x"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("discoveryInputs(%q) = %q, want %q", in[i], got[i], want[i])
+		}
+	}
+}
+
+func TestEveryDomainSettled(t *testing.T) {
+	suite := healSuite(map[string]*discovery.DomainDiscoveryResult{
+		"a.com": {BestSuccess: true},
+		"b.com": {Results: map[string]*discovery.DomainPresetResult{"no-bypass": {Status: discovery.CheckStatusComplete}}},
+		"c.com": {Results: map[string]*discovery.DomainPresetResult{"no-bypass": {Status: discovery.CheckStatusFailed}}},
+	})
+	if everyDomainSettled(suite, []string{"a.com", "b.com", "c.com"}) {
+		t.Error("c.com has no result yet, the search must go on")
+	}
+	if !everyDomainSettled(suite, []string{"a.com", "https://b.com/"}) {
+		t.Error("a.com found a strategy and b.com loads without one, both are settled")
+	}
+	if everyDomainSettled(suite, []string{"missing.com"}) {
+		t.Error("a domain without results is not settled")
 	}
 }
 
@@ -426,5 +549,96 @@ func TestApplyGroup_ExistingSet_CaseInsensitive(t *testing.T) {
 	}
 	if cfg.Sets[0].Fragmentation.Strategy != "combo" {
 		t.Errorf("strategy should be healed to combo, got %s", cfg.Sets[0].Fragmentation.Strategy)
+	}
+}
+
+func updateFuncFixture(refresh func()) (*atomic.Pointer[config.Config], UpdateFunc) {
+	ptr := &atomic.Pointer[config.Config]{}
+	cfg := config.NewConfig()
+	ptr.Store(&cfg)
+	return ptr, NewUpdateFunc(ptr.Load, func(_, next *config.Config) error {
+		ptr.Store(next)
+		return nil
+	}, refresh)
+}
+
+func bumpConnBytes(current *config.Config) (*config.Config, error) {
+	next := current.Clone()
+	next.Queue.TCPConnBytesLimit++
+	return next, nil
+}
+
+func TestUpdateFuncRefreshesTheFirewallOutsideTheWriteLock(t *testing.T) {
+	refreshing := make(chan struct{})
+	release := make(chan struct{})
+	ptr, update := updateFuncFixture(func() {
+		close(refreshing)
+		<-release
+	})
+	start := ptr.Load().Queue.TCPConnBytesLimit
+
+	done := make(chan error, 1)
+	go func() { done <- update(bumpConnBytes) }()
+	select {
+	case <-refreshing:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a change to the intercepted connection bytes refreshes the firewall")
+	}
+	if got := ptr.Load().Queue.TCPConnBytesLimit; got != start+1 {
+		t.Errorf("the config is stored before the refresh runs, got %d", got)
+	}
+
+	saved := make(chan struct{})
+	go func() {
+		unlock := config.LockWrites()
+		unlock()
+		close(saved)
+	}()
+	select {
+	case <-saved:
+	case <-time.After(5 * time.Second):
+		t.Fatal("another save waits for a firewall refresh that is still running")
+	}
+
+	close(release)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the update never returned")
+	}
+}
+
+func TestUpdateFuncRefreshesOnlyWhenNeeded(t *testing.T) {
+	var refreshes atomic.Int32
+	ptr, update := updateFuncFixture(func() { refreshes.Add(1) })
+	start := ptr.Load().Queue.TCPConnBytesLimit
+
+	if err := update(func(current *config.Config) (*config.Config, error) {
+		next := current.Clone()
+		next.System.Geo.AutoUpdate.LastRun = "2026-09-24T12:00:00Z"
+		return next, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if refreshes.Load() != 0 {
+		t.Error("a save that leaves the firewall alone does not refresh it")
+	}
+
+	boom := errors.New("boom")
+	if err := update(func(*config.Config) (*config.Config, error) { return nil, boom }); !errors.Is(err, boom) {
+		t.Errorf("a refused mutate is returned: %v", err)
+	}
+	if refreshes.Load() != 0 {
+		t.Error("a refused mutate does not refresh")
+	}
+
+	if err := update(bumpConnBytes); err != nil {
+		t.Fatal(err)
+	}
+	if refreshes.Load() != 1 || ptr.Load().Queue.TCPConnBytesLimit != start+1 {
+		t.Errorf("a firewall-relevant change is stored and refreshes once, got %d refreshes", refreshes.Load())
 	}
 }

@@ -675,6 +675,37 @@ func (s *SuffixSet) findDomainCandidates(host string) (*config.SetConfig, []*con
 	return nil, nil
 }
 
+func (s *SuffixSet) SetHasDomain(setID, host string) bool {
+	if s == nil || setID == "" {
+		return false
+	}
+	h := NormalizeDomain(host)
+	if h == "" {
+		return false
+	}
+	for suffix := h; ; {
+		if set, ok := s.sets[suffix]; ok && set.Id == setID {
+			return true
+		}
+		for _, set := range s.multiSets[suffix] {
+			if set.Id == setID {
+				return true
+			}
+		}
+		idx := strings.IndexByte(suffix, '.')
+		if idx == -1 {
+			break
+		}
+		suffix = suffix[idx+1:]
+	}
+	for _, rws := range s.regexes {
+		if rws.set.Id == setID && rws.regex.MatchString(h) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *SuffixSet) matchRegexWithSourceTLS(host string, srcMAC string, tlsVersion uint16, ipVersion uint8) (bool, *config.SetConfig) {
 	var candidates []*config.SetConfig
 	for _, rws := range s.regexes {

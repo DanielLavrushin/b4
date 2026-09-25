@@ -5,7 +5,7 @@ title: Telegram upstream
 
 # Telegram upstream
 
-Settings, MTProto Proxy, **Telegram upstream (shared)**. These settings decide how b4 itself reaches Telegram's data centres. They are used by the [proxy server](./mtproto-proxy.md) and by the [WebSocket bridge](./websocket-bridge.md), so they apply even when the proxy server is off.
+Settings, Telegram, **Telegram upstream (shared)**. These settings decide how b4 itself reaches Telegram's data centres. They are used by the [proxy server](./mtproto-proxy.md) and by the [WebSocket bridge](./websocket-bridge.md), so they apply even when the proxy server is off.
 
 ![The Telegram upstream card](/img/telegram/20260826233003.png)
 
@@ -34,10 +34,16 @@ For a given data centre, b4 assembles a candidate list and walks it:
 
 Workers that recently went silent mid-session are appended behind everything else rather than dropped, and if the list ends up empty in a mode that allows TCP, the direct route is added back ignoring its cooldowns.
 
-The whole walk is bounded: about four and a half seconds across every candidate, three seconds per attempt. A client that waits longer has already given up.
+Candidates overlap instead of queueing. The next one starts when the previous has not answered within half a second, or at once when it fails, with at most three in flight. The names of Telegram's own edge share one address, so they are dialled one at a time, and a sibling name is dropped once the address itself stopped answering. The list is also split into tiers in the order above: direct TCP starts only after every WebSocket route ahead of it has failed, and relay TCP placed first has to fail before any WebSocket route starts. A Worker joins the race once the WebSocket routes ahead of it have had a second and a half, unless it is ranked down after a stall. The first candidate to connect carries the session, and a slower one that connects afterwards is kept as a warm spare.
+
+No new attempt starts after about four and a half seconds, and each attempt gets at most three. Telegram Desktop abandons a session that has not reached a data centre within about three seconds.
+
+An address that did not answer the TCP handshake is stepped over by later sessions for a minute, a name whose TLS handshake was swallowed for five minutes, and both periods double while the failures repeat, up to thirty minutes. A single answer clears them.
 
 :::info The plan is not the whole story
-The proxy server keeps a small pool of warm WebSocket connections and consults it before building the list above. With Auto and a DC Relay configured, a warm pooled connection can therefore win over the relay that the plan puts first. The bridge keeps no such pool, only a Worker pool.
+The proxy server keeps a small pool of warm WebSocket connections and consults it before building the list above. With Auto and a DC Relay configured, a warm pooled connection can therefore win over the relay that the plan puts first. The bridge draws on the same pool while the proxy server runs in Auto or WebSocket only mode, and keeps one of its own otherwise.
+
+A spare is retired after 75 seconds, since Telegram and the Cloudflare routes close an unused connection at about 90. Every five seconds the pool drops aged spares and tops up the data centres used within the last ten minutes, or three for those that ride the shared Cloudflare domains. While Telegram's own edge does not answer, data centres 2 and 4 are pooled on the Cloudflare routes and the edge is probed from the pool, at most every thirty seconds, instead of on a client's session.
 :::
 
 Only data centres 2 and 4 have a native edge. For 1, 3, 5 and 203, "WebSocket" means the custom domain, the shared pool or a Worker, which is why media in foreign channels is the first thing to fail when none of those is configured.
@@ -56,7 +62,17 @@ One domain that proxies WebSocket traffic to Telegram, for a self-hosted relay i
 
 ## Telegram WS edge IP
 
-Every dial that carries a native `kws*.web.telegram.org` server name goes to one address, `149.154.167.220`; the data centre is selected by the server name, not by the address. This field replaces that address for a network where the default one goes unanswered. It takes a host or an IP without a port, and an empty value keeps the default. The custom WebSocket domain resolves its own name and is unaffected.
+Every dial that carries a native `kws*.web.telegram.org` name goes to one address, `149.154.167.220`; the data centre is selected by the name in the HTTP `Host` header, not by the address. This field replaces that address for a network where the default one goes unanswered. It takes a host or an IP without a port, and an empty value keeps the default. The custom WebSocket domain resolves its own name and is unaffected.
+
+## Fronting name for the WS edge
+
+Telegram's edge answers any TLS server name with its own certificate and routes the WebSocket by the `Host` header alone. Where a DPI drops the handshake for the `kws*.web.telegram.org` names while the address itself stays reachable, b4 presents this name in the TLS handshake instead and keeps the real name in `Host`, so a session still reaches the data centre and the cluster it asked for.
+
+Fronting is off while the field is empty. `sprinthost.ru` is the name tg-ws-proxy uses. The name is tried by the warm pool only, at most every thirty seconds, after a handshake under Telegram's own names had time to finish and went unanswered or was reset. The handshake under the name has to end on a `telegram.org` certificate; anything else is closed before a request is sent, and the name is not tried on that address again for thirty minutes. Once the name has carried a connection, client sessions to the edge use it too, until a handshake under it fails and the edge answers its own names again. An address that does not accept the TCP connection at all is not retried under this name.
+
+:::info Where fronting does not help
+A network that blocks the edge's address outright, and one whose DPI answers for the address itself and forwards the connection by the name it sees, both defeat fronting. On the second kind the handshake under this name reaches the real host behind it, whose certificate is not Telegram's, and data centres 2 and 4 stay on the Cloudflare routes.
+:::
 
 ## Fallback sources
 
@@ -74,5 +90,5 @@ Refreshing the list changes how b4 attributes an address to a data centre and wh
 - **Test direct TCP** probes data centre 2 over direct TCP with the relay overridden, which separates a relay problem from a Telegram one.
 
 :::warning Changing these restarts the proxy
-Enabling or disabling the proxy, and changing the port, bind address, Fake SNI, transport mode, custom WebSocket domain, WS edge IP or CF proxy fallback, restarts the MTProto proxy and drops the sessions it is carrying. Telegram reconnects on its own. The service itself is not restarted.
+Enabling or disabling the proxy, and changing the port, bind address, Fake SNI, transport mode, custom WebSocket domain, WS edge IP, fronting name or CF proxy fallback, restarts the MTProto proxy and drops the sessions it is carrying. Telegram reconnects on its own. The service itself is not restarted.
 :::

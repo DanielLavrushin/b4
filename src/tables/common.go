@@ -101,16 +101,28 @@ func DetectBackend(cfg *config.Config) string {
 
 func ApplyMasqueradeOnly(cfg *config.Config) error {
 	if !cfg.System.Tables.Masquerade.Enabled {
+		masqApplied.Store(nil)
+		masqLast.Store(cfg)
 		return nil
 	}
 	loadKernelModules()
-	backend := detectFirewallBackend(cfg)
+	return applyMasqueradeFor(cfg, detectFirewallBackend(cfg))
+}
+
+func applyMasqueradeFor(cfg *config.Config, backend string) error {
+	var err error
 	if backend == backendNFTables {
 		nft := NewNFTablesManager(cfg)
 		nft.ClearMasquerade()
-		return nft.ApplyMasquerade()
+		err = nft.ApplyMasquerade()
+	} else {
+		err = NewIPTablesManager(cfg, backend == backendIPTablesLegacy).ApplyMasquerade()
 	}
-	return NewIPTablesManager(cfg, backend == backendIPTablesLegacy).ApplyMasquerade()
+	if err == nil {
+		masqApplied.Store(cfg)
+		masqLast.Store(cfg)
+	}
+	return err
 }
 
 func ApplyConntrackSysctls() {
@@ -126,6 +138,9 @@ func RevertConntrackSysctls() {
 }
 
 func ClearMasqueradeOnly(cfg *config.Config) {
+	if applied := masqApplied.Swap(nil); applied != nil {
+		cfg = applied
+	}
 	if !cfg.System.Tables.Masquerade.Enabled {
 		return
 	}
@@ -144,14 +159,31 @@ func hasMSSClamp(cfg *config.Config) bool {
 
 func ApplyMSSClampOnly(cfg *config.Config) error {
 	if !hasMSSClamp(cfg) {
+		mssApplied.Store(nil)
+		mssAppliedRules.Store(0)
+		mssLast.Store(cfg)
 		return nil
 	}
 	loadKernelModules()
 	backend := detectFirewallBackend(cfg)
+	err := applyMSSClampFor(cfg, backend)
+	recordMSSApplied(cfg, backend)
+	if err == nil {
+		mssLast.Store(cfg)
+	}
+	return err
+}
+
+func applyMSSClampFor(cfg *config.Config, backend string) error {
 	if backend == backendNFTables {
 		nft := NewNFTablesManager(cfg)
 		if err := nft.createTable(); err != nil {
 			return err
+		}
+		for _, hook := range []string{"prerouting", "output"} {
+			if err := nft.createChain(hook, hook, nftBaseChainPriority, "accept"); err != nil {
+				return err
+			}
 		}
 		return nft.ApplyMSSClamp()
 	}
@@ -159,9 +191,13 @@ func ApplyMSSClampOnly(cfg *config.Config) error {
 }
 
 func ClearMSSClampOnly(cfg *config.Config) {
+	if applied := mssApplied.Swap(nil); applied != nil {
+		cfg = applied
+	}
+	mssAppliedRules.Store(0)
 	backend := detectFirewallBackend(cfg)
 	if backend == backendNFTables {
-		NewNFTablesManager(cfg).ClearMSSClamp()
+		clearNftMSSRules()
 		return
 	}
 	NewIPTablesManager(cfg, backend == backendIPTablesLegacy).ClearMSSClamp()

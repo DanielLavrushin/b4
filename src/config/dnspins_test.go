@@ -109,3 +109,20 @@ func TestValidateClearsPinsWhenNoneAreUsable(t *testing.T) {
 		t.Errorf("pins = %v, want nil so the config file omits the field", cfg.Sets[0].DNS.Pins)
 	}
 }
+
+func TestMergePinsMatchesAddressesNotSpellings(t *testing.T) {
+	set := NewSetConfig()
+	set.DNS.Pins = map[string][]string{"example.com": {"2001:DB8::1"}}
+	set.MergePins(map[string][]string{"Example.com.": {"2001:db8::1", " 2001:db8::2 ", "not-an-ip"}})
+	if got := set.DNS.Pins["example.com"]; len(got) != 2 || got[1] != "2001:db8::2" {
+		t.Fatalf("the same address in another spelling is not pinned twice, got %v", got)
+	}
+	if !set.TCP.IPBlockDetect.Enabled || !set.TCP.IPBlockDetect.HealDNS {
+		t.Errorf("a new pin turns on address block detection: %+v", set.TCP.IPBlockDetect)
+	}
+
+	set.ReplacePins([]string{"example.com"}, map[string][]string{"example.com": {"203.0.113.7"}})
+	if got := set.DNS.Pins["example.com"]; len(got) != 1 || got[0] != "203.0.113.7" {
+		t.Errorf("replace drops the old pins of the listed domains, got %v", got)
+	}
+}

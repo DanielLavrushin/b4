@@ -2,7 +2,8 @@ package handler
 
 import (
 	"encoding/json"
-	"net"
+	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"unicode"
@@ -10,8 +11,18 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sni"
+	"github.com/daniellavrushin/b4/watchdog"
 	"github.com/google/uuid"
 )
+
+type SetWithRevision struct {
+	*config.SetConfig
+	Revision string `json:"revision,omitempty"`
+}
+
+func withRevision(set *config.SetConfig) SetWithRevision {
+	return SetWithRevision{SetConfig: set, Revision: watchdog.SetRevision(set)}
+}
 
 func (api *API) RegisterSetsApi() {
 	api.mux.HandleFunc("/api/sets", api.handleSets)
@@ -63,6 +74,7 @@ type SetDomainMatch struct {
 	Relation string `json:"relation"`
 	Entry    string `json:"entry"`
 	Enabled  bool   `json:"enabled"`
+	Handles  bool   `json:"handles,omitempty"`
 }
 
 type DomainReassignment struct {
@@ -232,9 +244,19 @@ func (api *API) matchDomainsToSets(domains []string, excludeId string) []SetDoma
 		}
 	}
 
+	matcher := api.engineMatcher()
 	matches := make([]SetDomainMatch, 0, len(domains))
 	for _, domain := range domains {
-		matches = append(matches, byDomain[domain]...)
+		found := byDomain[domain]
+		if owner := setMatchedBy(matcher, domain); owner != nil {
+			for i := range found {
+				if found[i].SetId == owner.Id {
+					found[i].Handles = true
+					break
+				}
+			}
+		}
+		matches = append(matches, found...)
 	}
 	return matches
 }
@@ -254,9 +276,6 @@ func (api *API) handleSetDomains(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-
-	oldCfg := api.getCfg()
-	newCfg := oldCfg.Clone()
 
 	setId := r.PathValue("id")
 
@@ -282,29 +301,28 @@ func (api *API) handleSetDomains(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for _, set := range newCfg.Sets {
-		if set.Id == setId {
-			addSNIDomains(set, domains)
-			mergePins(set, req.Pins)
-
-			moved := api.releaseDomainsFromOtherSets(newCfg.Sets, setId, domains)
-
-			if err := api.saveAndPushConfig(newCfg); err != nil {
-				writeAPIError(w, err)
-				return
-			}
-
-			if api.PerformSoftRestart(newCfg, oldCfg) {
-				log.Infof("Soft restart completed successfully")
-			}
-
-			setJsonHeader(w)
-			json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "moved": moved})
-			return
+	var moved []DomainReassignment
+	oldCfg, newCfg, err := api.editConfig(func(next *config.Config) error {
+		set := next.GetSetById(setId)
+		if set == nil {
+			return ErrNotFound("Set not found")
 		}
+		addSNIDomains(set, domains)
+		set.MergePins(req.Pins)
+		moved = api.releaseDomainsFromOtherSets(next.Sets, setId, domains)
+		return nil
+	})
+	if err != nil {
+		writeAPIError(w, err)
+		return
 	}
 
-	writeAPIError(w, ErrNotFound("Set not found"))
+	if api.PerformSoftRestart(newCfg, oldCfg) {
+		log.Infof("Soft restart completed successfully")
+	}
+
+	setJsonHeader(w)
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "moved": moved})
 }
 
 func addSNIDomains(set *config.SetConfig, domains []string) {
@@ -315,35 +333,6 @@ func addSNIDomains(set *config.SetConfig, domains []string) {
 		set.Targets.SNIDomains = append(set.Targets.SNIDomains, domain)
 		set.Targets.DomainsToMatch = append(set.Targets.DomainsToMatch, domain)
 	}
-}
-
-func mergePins(set *config.SetConfig, pins map[string][]string) {
-	merged := false
-	for rawDomain, ips := range pins {
-		domain := config.NormalizePinDomain(rawDomain)
-		if domain == "" {
-			continue
-		}
-		for _, raw := range ips {
-			ip := strings.TrimSpace(raw)
-			if net.ParseIP(ip) == nil || domainInList(set.DNS.Pins[domain], ip) {
-				continue
-			}
-			if set.DNS.Pins == nil {
-				set.DNS.Pins = map[string][]string{}
-			}
-			set.DNS.Pins[domain] = append(set.DNS.Pins[domain], ip)
-			merged = true
-		}
-	}
-	if !merged {
-		return
-	}
-	ibd := &set.TCP.IPBlockDetect
-	ibd.Enabled = true
-	ibd.SynDetect = true
-	ibd.HealDNS = true
-	ibd.CacheBlockedIPs = true
 }
 
 func domainInList(list []string, domain string) bool {
@@ -388,25 +377,27 @@ func (api *API) handleSetById(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary List all sets
+// @Description Each set carries a "revision": pass it back on PUT /sets/{id} to have a stale write refused with 409 set_changed.
 // @Tags Sets
 // @Produce json
-// @Success 200 {array} config.SetConfig
+// @Success 200 {array} SetWithRevision
 // @Security BearerAuth
 // @Router /sets [get]
 func (api *API) listSets(w http.ResponseWriter) {
 	setJsonHeader(w)
 	sets := api.getCfg().Sets
-	if sets == nil {
-		sets = []*config.SetConfig{}
+	out := make([]SetWithRevision, 0, len(sets))
+	for _, set := range sets {
+		out = append(out, withRevision(set))
 	}
-	json.NewEncoder(w).Encode(sets)
+	json.NewEncoder(w).Encode(out)
 }
 
 // @Summary Get a set by ID
 // @Tags Sets
 // @Produce json
 // @Param id path string true "Set ID"
-// @Success 200 {object} config.SetConfig
+// @Success 200 {object} SetWithRevision
 // @Failure 404 {string} string
 // @Security BearerAuth
 // @Router /sets/{id} [get]
@@ -417,7 +408,7 @@ func (api *API) getSet(w http.ResponseWriter, id string) {
 		return
 	}
 	setJsonHeader(w)
-	json.NewEncoder(w).Encode(set)
+	json.NewEncoder(w).Encode(withRevision(set))
 }
 
 // @Summary Create a new set
@@ -435,19 +426,20 @@ func (api *API) createSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	oldCfg := api.getCfg()
-	newCfg := oldCfg.Clone()
-
 	set.Id = uuid.New().String()
 	log.Tracef("createSet: routing before defaults: enabled=%v, egress=%s, ttl=%d", set.Routing.Enabled, set.Routing.EgressInterface, set.Routing.IPTTLSeconds)
 	api.initializeSetDefaults(&set)
 	log.Tracef("createSet: routing after defaults: enabled=%v, egress=%s, ttl=%d", set.Routing.Enabled, set.Routing.EgressInterface, set.Routing.IPTTLSeconds)
 
-	newCfg.Sets = append([]*config.SetConfig{&set}, newCfg.Sets...)
-
+	geoBefore := api.getCfg().System.Geo
 	api.loadTargetsForSetCached(&set)
 
-	if err := api.saveAndPushConfig(newCfg); err != nil {
+	oldCfg, newCfg, err := api.editConfig(func(next *config.Config) error {
+		api.reloadTargetsIfGeoMoved(&set, geoBefore, next)
+		next.Sets = append([]*config.SetConfig{&set}, next.Sets...)
+		return nil
+	})
+	if err != nil {
 		log.Errorf("Failed to save config after creating set: %v", err)
 		writeAPIError(w, err)
 		return
@@ -464,46 +456,80 @@ func (api *API) createSet(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary Update a set
+// @Description When the body carries the "revision" the set was read with and the stored set has changed since, the write is refused with 409 set_changed. A body without a revision is accepted as before.
 // @Tags Sets
 // @Accept json
 // @Produce json
 // @Param id path string true "Set ID"
-// @Param set body config.SetConfig true "Updated set configuration"
-// @Success 200 {object} config.SetConfig
+// @Param set body SetWithRevision true "Updated set configuration"
+// @Success 200 {object} SetWithRevision
 // @Failure 404 {string} string
+// @Failure 409 {object} APIError "code: set_changed"
 // @Security BearerAuth
 // @Router /sets/{id} [put]
 func (api *API) updateSet(w http.ResponseWriter, r *http.Request, id string) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeAPIError(w, ErrInvalidJSON())
+		return
+	}
+	var probe struct {
+		Revision string `json:"revision"`
+	}
+	if err := json.Unmarshal(body, &probe); err != nil {
+		writeAPIError(w, ErrInvalidJSON())
+		return
+	}
+	revisionCheck := func(current *config.Config) error {
+		if probe.Revision == "" {
+			return nil
+		}
+		if set := current.GetSetById(id); set != nil && watchdog.SetRevision(set) != probe.Revision {
+			return errSetChanged()
+		}
+		return nil
+	}
+	if err := revisionCheck(api.getCfg()); err != nil {
+		writeAPIError(w, err)
+		return
+	}
+
 	var updated config.SetConfig
-	if err := json.NewDecoder(r.Body).Decode(&updated); err != nil {
+	if err := json.Unmarshal(body, &updated); err != nil {
 		writeAPIError(w, ErrInvalidJSON())
 		return
 	}
 
 	log.Tracef("updateSet: routing received: enabled=%v, egress=%s, ttl=%d", updated.Routing.Enabled, updated.Routing.EgressInterface, updated.Routing.IPTTLSeconds)
 
-	oldCfg := api.getCfg()
-	newCfg := oldCfg.Clone()
-
-	found := false
-	for i, set := range newCfg.Sets {
-		if set.Id == id {
-			updated.Id = id // preserve ID
-			newCfg.Sets[i] = &updated
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		writeAPIError(w, ErrNotFound("Set not found"))
-		return
-	}
-
+	updated.Id = id
+	geoBefore := api.getCfg().System.Geo
 	api.loadTargetsForSetCached(&updated)
-
-	if err := api.saveAndPushConfig(newCfg); err != nil {
-		log.Errorf("Failed to save config after updating set: %v", err)
+	var oldCfg, newCfg *config.Config
+	err = api.updateAndPushConfig(func(current *config.Config) (*config.Config, error) {
+		if err := revisionCheck(current); err != nil {
+			return nil, err
+		}
+		api.reloadTargetsIfGeoMoved(&updated, geoBefore, current)
+		next := current.Clone()
+		found := false
+		for i, set := range next.Sets {
+			if set.Id == id {
+				next.Sets[i] = &updated
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, ErrNotFound("Set not found")
+		}
+		oldCfg, newCfg = current, next
+		return next, nil
+	})
+	if err != nil {
+		if !isRefusal(err) {
+			log.Errorf("Failed to save config after updating set: %v", err)
+		}
 		writeAPIError(w, err)
 		return
 	}
@@ -513,8 +539,20 @@ func (api *API) updateSet(w http.ResponseWriter, r *http.Request, id string) {
 	}
 
 	log.Infof("Updated set '%s' (id: %s)", updated.Name, id)
+	stored := newCfg.GetSetById(id)
+	if stored == nil {
+		stored = &updated
+	}
 	setJsonHeader(w)
-	json.NewEncoder(w).Encode(updated)
+	json.NewEncoder(w).Encode(withRevision(stored))
+}
+
+func errSetChanged() *APIError {
+	return &APIError{
+		Status:  http.StatusConflict,
+		Code:    "set_changed",
+		Message: "the set changed since it was loaded; reload it and apply the change again",
+	}
 }
 
 // @Summary Delete a set
@@ -526,28 +564,26 @@ func (api *API) updateSet(w http.ResponseWriter, r *http.Request, id string) {
 // @Security BearerAuth
 // @Router /sets/{id} [delete]
 func (api *API) deleteSet(w http.ResponseWriter, id string) {
-	oldCfg := api.getCfg()
-	newCfg := oldCfg.Clone()
-
-	found := false
-	filtered := make([]*config.SetConfig, 0, len(newCfg.Sets))
-	for _, set := range newCfg.Sets {
-		if set.Id == id {
-			found = true
-			continue
+	oldCfg, newCfg, err := api.editConfig(func(next *config.Config) error {
+		found := false
+		filtered := make([]*config.SetConfig, 0, len(next.Sets))
+		for _, set := range next.Sets {
+			if set.Id == id {
+				found = true
+				continue
+			}
+			filtered = append(filtered, set)
 		}
-		filtered = append(filtered, set)
-	}
-
-	if !found {
-		writeAPIError(w, ErrNotFound("Set not found"))
-		return
-	}
-
-	newCfg.Sets = filtered
-
-	if err := api.saveAndPushConfig(newCfg); err != nil {
-		log.Errorf("Failed to save config after deleting set: %v", err)
+		if !found {
+			return ErrNotFound("Set not found")
+		}
+		next.Sets = filtered
+		return nil
+	})
+	if err != nil {
+		if !isRefusal(err) {
+			log.Errorf("Failed to save config after deleting set: %v", err)
+		}
 		writeAPIError(w, err)
 		return
 	}
@@ -575,9 +611,6 @@ func (api *API) handleReorderSets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	oldCfg := api.getCfg()
-	newCfg := oldCfg.Clone()
-
 	var req struct {
 		SetIds []string `json:"set_ids"`
 	}
@@ -586,27 +619,24 @@ func (api *API) handleReorderSets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build new order
-	setMap := make(map[string]*config.SetConfig)
-	for _, set := range newCfg.Sets {
-		setMap[set.Id] = set
-	}
-
-	reordered := make([]*config.SetConfig, 0, len(req.SetIds))
-	for _, id := range req.SetIds {
-		if set, ok := setMap[id]; ok {
-			reordered = append(reordered, set)
+	oldCfg, newCfg, err := api.editConfig(func(next *config.Config) error {
+		setMap := make(map[string]*config.SetConfig)
+		for _, set := range next.Sets {
+			setMap[set.Id] = set
 		}
-	}
-
-	if len(reordered) != len(newCfg.Sets) {
-		writeAPIError(w, ErrBadRequest("Invalid set IDs"))
-		return
-	}
-
-	newCfg.Sets = reordered
-
-	if err := api.saveAndPushConfig(newCfg); err != nil {
+		reordered := make([]*config.SetConfig, 0, len(req.SetIds))
+		for _, id := range req.SetIds {
+			if set, ok := setMap[id]; ok {
+				reordered = append(reordered, set)
+			}
+		}
+		if len(reordered) != len(next.Sets) {
+			return ErrBadRequest("Invalid set IDs")
+		}
+		next.Sets = reordered
+		return nil
+	})
+	if err != nil {
 		writeAPIError(w, err)
 		return
 	}
@@ -643,6 +673,9 @@ func (api *API) initializeSetDefaults(set *config.SetConfig) {
 	}
 	if set.Routing.SourceInterfaces == nil {
 		set.Routing.SourceInterfaces = []string{}
+	}
+	if set.Discovery.URLs == nil {
+		set.Discovery.URLs = []string{}
 	}
 	if set.Routing.IPTTLSeconds <= 0 {
 		set.Routing.IPTTLSeconds = config.DefaultSetConfig.Routing.IPTTLSeconds
@@ -729,31 +762,30 @@ func (api *API) handleBatchDeleteSets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	oldCfg := api.getCfg()
-	newCfg := oldCfg.Clone()
-
 	toDelete := make(map[string]bool, len(req.Ids))
 	for _, id := range req.Ids {
 		toDelete[id] = true
 	}
 
-	filtered := make([]*config.SetConfig, 0, len(newCfg.Sets))
-	for _, set := range newCfg.Sets {
-		if !toDelete[set.Id] {
-			filtered = append(filtered, set)
+	deleted := 0
+	oldCfg, newCfg, err := api.editConfig(func(next *config.Config) error {
+		filtered := make([]*config.SetConfig, 0, len(next.Sets))
+		for _, set := range next.Sets {
+			if !toDelete[set.Id] {
+				filtered = append(filtered, set)
+			}
 		}
-	}
-
-	deleted := len(newCfg.Sets) - len(filtered)
-	if deleted == 0 {
-		writeAPIError(w, ErrNotFound("No matching sets found"))
-		return
-	}
-
-	newCfg.Sets = filtered
-
-	if err := api.saveAndPushConfig(newCfg); err != nil {
-		log.Errorf("Failed to save config after batch deleting sets: %v", err)
+		deleted = len(next.Sets) - len(filtered)
+		if deleted == 0 {
+			return ErrNotFound("No matching sets found")
+		}
+		next.Sets = filtered
+		return nil
+	})
+	if err != nil {
+		if !isRefusal(err) {
+			log.Errorf("Failed to save config after batch deleting sets: %v", err)
+		}
 		writeAPIError(w, err)
 		return
 	}
@@ -795,39 +827,44 @@ func (api *API) handleBatchSetEnabled(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	oldCfg := api.getCfg()
-	newCfg := oldCfg.Clone()
-
 	target := make(map[string]bool, len(req.Ids))
 	for _, id := range req.Ids {
 		target[id] = true
 	}
 
-	matched := 0
 	updated := 0
-	for _, set := range newCfg.Sets {
-		if target[set.Id] {
-			matched++
-			if set.Enabled != req.Enabled {
-				set.Enabled = req.Enabled
-				updated++
+	oldCfg, newCfg, err := api.editConfig(func(next *config.Config) error {
+		matched := 0
+		updated = 0
+		for _, set := range next.Sets {
+			if target[set.Id] {
+				matched++
+				if set.Enabled != req.Enabled {
+					set.Enabled = req.Enabled
+					if req.Enabled {
+						api.loadTargetsForSetCached(set)
+					}
+					updated++
+				}
 			}
 		}
-	}
-
-	if matched == 0 {
-		writeAPIError(w, ErrNotFound("No matching sets found"))
-		return
-	}
-
-	if updated == 0 {
+		if matched == 0 {
+			return ErrNotFound("No matching sets found")
+		}
+		if updated == 0 {
+			return errConfigUnchanged
+		}
+		return nil
+	})
+	switch {
+	case errors.Is(err, errConfigUnchanged):
 		setJsonHeader(w)
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "updated": 0})
 		return
-	}
-
-	if err := api.saveAndPushConfig(newCfg); err != nil {
-		log.Errorf("Failed to save config after batch toggling sets: %v", err)
+	case err != nil:
+		if !isRefusal(err) {
+			log.Errorf("Failed to save config after batch toggling sets: %v", err)
+		}
 		writeAPIError(w, err)
 		return
 	}
