@@ -34,10 +34,16 @@ For a given data centre, b4 assembles a candidate list and walks it:
 
 Workers that recently went silent mid-session are appended behind everything else rather than dropped, and if the list ends up empty in a mode that allows TCP, the direct route is added back ignoring its cooldowns.
 
-The whole walk is bounded: about four and a half seconds across every candidate, three seconds per attempt. A client that waits longer has already given up.
+Candidates overlap instead of queueing. The next one starts when the previous has not answered within half a second, or at once when it fails, with at most three in flight. The names of Telegram's own edge share one address, so they are dialled one at a time, and a sibling name is dropped once the address itself stopped answering. The list is also split into tiers in the order above: direct TCP and the Workers start only after every WebSocket route ahead of them has failed, and relay TCP placed first has to fail before any WebSocket route starts. The first candidate to connect carries the session, and a slower one that connects afterwards is kept as a warm spare.
+
+No new attempt starts after about four and a half seconds, and each attempt gets at most three. Telegram Desktop abandons a session that has not reached a data centre within about three seconds.
+
+An address that did not answer the TCP handshake is stepped over by later sessions for a minute, a name whose TLS handshake was swallowed for five minutes, and both periods double while the failures repeat, up to thirty minutes. A single answer clears them.
 
 :::info The plan is not the whole story
 The proxy server keeps a small pool of warm WebSocket connections and consults it before building the list above. With Auto and a DC Relay configured, a warm pooled connection can therefore win over the relay that the plan puts first. The bridge keeps no such pool, only a Worker pool.
+
+A spare is retired after 75 seconds, since Telegram and the Cloudflare routes close an unused connection at about 90. Every five seconds the pool drops aged spares and tops up the data centres used within the last ten minutes, or three for those that ride the shared Cloudflare domains. While Telegram's own edge does not answer, data centres 2 and 4 are pooled on the Cloudflare routes and the edge is probed from the pool, at most every thirty seconds, instead of on a client's session.
 :::
 
 Only data centres 2 and 4 have a native edge. For 1, 3, 5 and 203, "WebSocket" means the custom domain, the shared pool or a Worker, which is why media in foreign channels is the first thing to fail when none of those is configured.

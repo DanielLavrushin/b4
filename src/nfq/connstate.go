@@ -210,6 +210,14 @@ func (t *destStateTracker) AddBlocked(dstIPPort string) {
 	t.blocked[dstIPPort] = time.Now()
 }
 
+func (t *destStateTracker) ResetBlocked() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	n := len(t.blocked)
+	clear(t.blocked)
+	return n
+}
+
 func (t *destStateTracker) Cleanup(cacheTTL time.Duration) {
 	t.mu.Lock()
 	defer t.mu.Unlock()

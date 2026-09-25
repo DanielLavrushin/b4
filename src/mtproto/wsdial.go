@@ -405,13 +405,22 @@ func dialWS(host, sni, path string, timeout time.Duration, mark uint) (net.Conn,
 		// to break it. Cooling one off for five minutes on the strength of a
 		// handshake cut short by the budget would retire a healthy route.
 		if isDialTimeout(err) && slot >= wsDialMinAttempt {
-			wsEndpointFailed(eps[i], sni)
+			if isConnectStage(err) {
+				wsAddressFailed(eps[i])
+			} else {
+				wsEndpointFailed(eps[i], sni)
+			}
 		}
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("tcp dial %s: no time left after resolving the name", host)
 	}
 	return nil, lastErr
+}
+
+func isConnectStage(err error) bool {
+	var oe *net.OpError
+	return errors.As(err, &oe) && oe.Op == "dial"
 }
 
 // dialWSEndpoint opens one WebSocket to one address. timeout bounds the attempt

@@ -15,7 +15,15 @@ import (
 )
 
 const (
-	wsPoolMaxAge          = 20 * time.Second
+	wsPoolMaxAge          = 75 * time.Second
+	wsPoolCheckInterval   = 5 * time.Second
+	wsPoolKeepWarm        = 10 * time.Minute
+	wsPoolKeepWarmShared  = 3 * time.Minute
+	wsAddressFailTTL      = time.Minute
+	wsNativeProbeEvery    = 30 * time.Second
+	wsRefillBackoffBase   = time.Second
+	wsRefillBackoffMax    = 5 * time.Minute
+	wsEndpointFailMaxTTL  = 30 * time.Minute
 	wsPoolDefaultSize     = 4
 	wsDCFailCooldown      = 30 * time.Second
 	wsBlacklistTTL        = 5 * time.Minute
@@ -75,6 +83,9 @@ var (
 	wsBlacklist  = map[wsKey]time.Time{}
 	wsCooldownTo = map[wsKey]time.Time{}
 	wsEndpointTo = map[string]time.Time{} // "ip|sni" -> until
+	wsEndpointN  = map[string]int{}
+	wsEndpointAt = map[string]time.Time{}
+	wsProbeAt    = map[string]time.Time{}
 
 	tcpStateMu    sync.Mutex
 	tcpCooldownTo = map[string]time.Time{} // keyed by host:port
@@ -139,6 +150,13 @@ func wsKeyFromDC(dc int) wsKey {
 		abs = -abs
 	}
 	return wsKey{dc: abs, isMedia: dc < 0}
+}
+
+func (k wsKey) signed() int {
+	if k.isMedia {
+		return -k.dc
+	}
+	return k.dc
 }
 
 // Every writer of this state logs after releasing the lock, never under it. With
@@ -210,43 +228,114 @@ func wsEndpointKey(ip, sni string) string { return ip + "|" + sni }
 // censor filters on: one Cloudflare address fronts many names, and blaming the
 // address for all of them would retire routes that still work.
 func wsEndpointFailed(ip, sni string) {
-	k := wsEndpointKey(ip, sni)
+	wsMarkEndpoint(wsEndpointKey(ip, sni), wsEndpointFailTTL)
+}
+
+func wsAddressKey(ip string) string { return ip + "|*" }
+
+func wsAddressFailed(ip string) {
+	wsMarkEndpoint(wsAddressKey(ip), wsAddressFailTTL)
+}
+
+func wsEndpointTTL(base time.Duration, fails int) time.Duration {
+	ttl := base
+	for i := 0; i < fails && ttl < wsEndpointFailMaxTTL; i++ {
+		ttl *= 2
+	}
+	if ttl > wsEndpointFailMaxTTL {
+		ttl = wsEndpointFailMaxTTL
+	}
+	return ttl
+}
+
+func wsMarkEndpoint(k string, base time.Duration) {
+	now := time.Now()
 	wsStateMu.Lock()
 	t, ok := wsEndpointTo[k]
-	recorded := !ok || !time.Now().Before(t)
+	recorded := !ok || !now.Before(t)
+	var ttl time.Duration
 	if recorded {
-		wsEndpointTo[k] = time.Now().Add(wsEndpointFailTTL)
+		n := wsEndpointN[k]
+		if last, seen := wsEndpointAt[k]; seen && now.Sub(last) > 2*wsEndpointFailMaxTTL {
+			n = 0
+		}
+		ttl = wsEndpointTTL(base, n)
+		wsEndpointN[k] = n + 1
+		wsEndpointAt[k] = now
+		wsEndpointTo[k] = now.Add(ttl)
 	}
 	wsStateMu.Unlock()
 	if recorded {
-		log.Debugf("%s WS endpoint %s timed out, deprioritised for %v", tg(""), k, wsEndpointFailTTL)
+		log.Debugf("%s WS endpoint %s timed out, deprioritised for %v", tg(""), k, ttl)
 	}
 }
 
-func wsEndpointCooling(ip, sni string) bool {
-	k := wsEndpointKey(ip, sni)
+func wsProbeAllowed(host string) bool {
+	now := time.Now()
 	wsStateMu.Lock()
 	defer wsStateMu.Unlock()
+	if last, ok := wsProbeAt[host]; ok && now.Sub(last) < wsNativeProbeEvery {
+		return false
+	}
+	wsProbeAt[host] = now
+	return true
+}
+
+func wsKeyCoolingLocked(k string, now time.Time) bool {
 	t, ok := wsEndpointTo[k]
 	if !ok {
 		return false
 	}
-	if time.Now().After(t) {
+	if now.After(t) {
 		delete(wsEndpointTo, k)
 		return false
 	}
 	return true
 }
 
-func wsEndpointRecovered(ip, sni string) {
-	k := wsEndpointKey(ip, sni)
+func wsEndpointCooling(ip, sni string) bool {
+	now := time.Now()
 	wsStateMu.Lock()
-	_, cleared := wsEndpointTo[k]
-	delete(wsEndpointTo, k)
+	defer wsStateMu.Unlock()
+	byName := wsKeyCoolingLocked(wsEndpointKey(ip, sni), now)
+	byAddr := wsKeyCoolingLocked(wsAddressKey(ip), now)
+	return byName || byAddr
+}
+
+func wsEndpointRecovered(ip, sni string) {
+	cleared := false
+	wsStateMu.Lock()
+	for _, k := range []string{wsEndpointKey(ip, sni), wsAddressKey(ip)} {
+		if _, ok := wsEndpointTo[k]; ok {
+			cleared = true
+		}
+		delete(wsEndpointTo, k)
+		delete(wsEndpointN, k)
+		delete(wsEndpointAt, k)
+	}
 	wsStateMu.Unlock()
 	if cleared {
-		log.Debugf("%s WS endpoint %s answered again, cooldown cleared", tg(""), k)
+		log.Debugf("%s WS endpoint %s answered again, cooldown cleared", tg(""), wsEndpointKey(ip, sni))
 	}
+}
+
+func wsNativeDown(dc int, dialHost string) bool {
+	absDC := dc
+	if absDC < 0 {
+		absDC = -absDC
+	}
+	if !wsEdgeServesDC(absDC) {
+		return false
+	}
+	if wsCooldownActive(dc) {
+		return true
+	}
+	for _, p := range nativeEdgePlans(dc, absDC, dialHost) {
+		if !wsEndpointCooling(p.dialHost, p.sni) {
+			return false
+		}
+	}
+	return true
 }
 
 func wsResetState() {
@@ -254,6 +343,9 @@ func wsResetState() {
 	wsBlacklist = map[wsKey]time.Time{}
 	wsCooldownTo = map[wsKey]time.Time{}
 	wsEndpointTo = map[string]time.Time{}
+	wsEndpointN = map[string]int{}
+	wsEndpointAt = map[string]time.Time{}
+	wsProbeAt = map[string]time.Time{}
 	wsStateMu.Unlock()
 	log.Debugf("%s WS cooldown/blacklist state reset", tg(""))
 }
@@ -274,11 +366,14 @@ type wsPoolConn struct {
 }
 
 type wsPool struct {
-	mu        sync.Mutex
-	idle      map[wsKey][]wsPoolEntry
-	refilling map[wsKey]bool
-	target    int
-	maxAge    time.Duration
+	mu          sync.Mutex
+	idle        map[wsKey][]wsPoolEntry
+	refilling   map[wsKey]bool
+	lastUsed    map[wsKey]time.Time
+	refillFails map[wsKey]int
+	refillAfter map[wsKey]time.Time
+	target      int
+	maxAge      time.Duration
 
 	cfg    *MTProtoUpstream
 	mark   uint
@@ -299,27 +394,160 @@ func newWSPool(cfg MTProtoUpstream, mark uint, target int) *wsPool {
 		target = wsPoolDefaultSize
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &wsPool{
-		idle:      map[wsKey][]wsPoolEntry{},
-		refilling: map[wsKey]bool{},
-		target:    target,
-		maxAge:    wsPoolMaxAge,
-		cfg:       &cfg,
-		mark:      mark,
-		ctx:       ctx,
-		cancel:    cancel,
+	p := &wsPool{
+		idle:        map[wsKey][]wsPoolEntry{},
+		refilling:   map[wsKey]bool{},
+		lastUsed:    map[wsKey]time.Time{},
+		refillFails: map[wsKey]int{},
+		refillAfter: map[wsKey]time.Time{},
+		target:      target,
+		maxAge:      wsPoolMaxAge,
+		cfg:         &cfg,
+		mark:        mark,
+		ctx:         ctx,
+		cancel:      cancel,
 	}
+	go p.maintain()
+	return p
+}
+
+func (p *wsPool) maintain() {
+	t := time.NewTicker(wsPoolCheckInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		case now := <-t.C:
+			p.sweep(now)
+		}
+	}
+}
+
+func (p *wsPool) sweep(now time.Time) {
+	var stale []*wsConn
+	var warm []int
+	p.mu.Lock()
+	for k, bucket := range p.idle {
+		kept := make([]wsPoolEntry, 0, len(bucket))
+		for _, e := range bucket {
+			if e.conn.closed.Load() || now.Sub(e.created) > p.maxAge {
+				stale = append(stale, e.conn)
+				continue
+			}
+			kept = append(kept, e)
+		}
+		if len(kept) == 0 {
+			delete(p.idle, k)
+		} else {
+			p.idle[k] = kept
+		}
+	}
+	for k, used := range p.lastUsed {
+		if now.Sub(used) > p.keepWarmFor(k) {
+			delete(p.lastUsed, k)
+			continue
+		}
+		if len(p.idle[k]) < p.targetFor(k) {
+			warm = append(warm, k.signed())
+		}
+	}
+	p.mu.Unlock()
+	for _, c := range stale {
+		go func(c *wsConn) { _ = c.Close() }(c)
+	}
+	for _, dc := range warm {
+		p.scheduleRefill(dc)
+	}
+}
+
+func (p *wsPool) keepWarmFor(k wsKey) time.Duration {
+	if p.nativeServes(k) {
+		return wsPoolKeepWarm
+	}
+	return wsPoolKeepWarmShared
+}
+
+func (p *wsPool) nativeServes(k wsKey) bool {
+	return wsEdgeServesDC(k.dc) && !wsNativeDown(k.signed(), wsNativeDialHost(p.cfg.WSEndpointHost))
+}
+
+func (p *wsPool) offer(dc int, c *wsConn, plan transportPlan) bool {
+	if p == nil || c == nil || plan.isWorker {
+		return false
+	}
+	k := wsKeyFromDC(dc)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.ctx.Err() != nil || len(p.idle[k]) >= p.targetFor(k) {
+		return false
+	}
+	if !plan.native && p.nativeServes(k) {
+		return false
+	}
+	p.idle[k] = append(p.idle[k], wsPoolEntry{conn: c, created: time.Now(), plan: plan})
+	delete(p.refillFails, k)
+	delete(p.refillAfter, k)
+	return true
+}
+
+func (p *wsPool) noteSuccess(dc int) {
+	if p == nil {
+		return
+	}
+	k := wsKeyFromDC(dc)
+	p.mu.Lock()
+	delete(p.refillFails, k)
+	delete(p.refillAfter, k)
+	p.mu.Unlock()
+}
+
+func (p *wsPool) popIdle(k wsKey) (wsPoolEntry, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	bucket := p.idle[k]
+	if len(bucket) == 0 {
+		return wsPoolEntry{}, false
+	}
+	e := bucket[0]
+	if len(bucket) == 1 {
+		delete(p.idle, k)
+	} else {
+		p.idle[k] = bucket[1:]
+	}
+	return e, true
+}
+
+func (p *wsPool) idleCount(k wsKey) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.idle[k])
+}
+
+func wsRefillBackoff(fails int) time.Duration {
+	d := wsRefillBackoffBase
+	for i := 1; i < fails && d < wsRefillBackoffMax; i++ {
+		d *= 2
+	}
+	if d > wsRefillBackoffMax {
+		d = wsRefillBackoffMax
+	}
+	return d
 }
 
 func (p *wsPool) close() {
 	p.cancel()
 	p.mu.Lock()
-	defer p.mu.Unlock()
+	var conns []*wsConn
 	for k, b := range p.idle {
 		for _, e := range b {
-			_ = e.conn.Close()
+			conns = append(conns, e.conn)
 		}
 		delete(p.idle, k)
+	}
+	p.mu.Unlock()
+	for _, c := range conns {
+		go func(c *wsConn) { _ = c.Close() }(c)
 	}
 }
 
@@ -337,19 +565,19 @@ func (p *wsPool) get(dc int) *wsPoolConn {
 		return nil
 	}
 
-	p.mu.Lock()
-	bucket := p.idle[k]
 	now := time.Now()
+	p.mu.Lock()
+	p.lastUsed[k] = now
+	p.mu.Unlock()
+
 	var picked *wsPoolConn
 	var age time.Duration
 	dropped := 0
-	for len(bucket) > 0 {
-		e := bucket[0]
-		bucket = bucket[1:]
-		// stale check: TG may FIN/RST an idle conn server-side; handing such a conn
-		// to a client produces an up=N down=0 session (RPC sent, never answered).
-		// This is the path that breaks auth.importAuthorization on secondary DCs
-		// and makes foreign-channel media downloads hang.
+	for {
+		e, ok := p.popIdle(k)
+		if !ok {
+			break
+		}
 		if e.conn.closed.Load() || now.Sub(e.created) > p.maxAge || !e.conn.alive() {
 			go func(c *wsConn) { _ = c.Close() }(e.conn)
 			dropped++
@@ -359,9 +587,7 @@ func (p *wsPool) get(dc int) *wsPoolConn {
 		age = now.Sub(e.created)
 		break
 	}
-	remaining := len(bucket)
-	p.idle[k] = bucket
-	p.mu.Unlock()
+	remaining := p.idleCount(k)
 
 	if picked != nil {
 		log.Tracef("%s WS pool %s hit on %s, age %dms, %d spare(s) left, %d stale discarded",
@@ -380,7 +606,7 @@ func (p *wsPool) scheduleRefill(dc int) {
 	}
 	k := wsKeyFromDC(dc)
 	p.mu.Lock()
-	if p.refilling[k] {
+	if p.refilling[k] || time.Now().Before(p.refillAfter[k]) {
 		p.mu.Unlock()
 		return
 	}
@@ -404,12 +630,13 @@ func (p *wsPool) refill(dc int) {
 	if wsIsBlacklisted(dc) {
 		return
 	}
-	// A data center with no route configured would otherwise start a refill
-	// goroutine on every pool miss and dial nothing.
-	if len(wsPlansForDC(dc, p.cfg)) == 0 {
+	plans := wsPlansForDC(dc, p.cfg)
+	if len(plans) == 0 {
 		return
 	}
 
+	dh := wsNativeDialHost(p.cfg.WSEndpointHost)
+	nativeDown := wsNativeDown(dc, dh)
 	p.mu.Lock()
 	need := p.targetFor(k) - len(p.idle[k])
 	p.mu.Unlock()
@@ -417,26 +644,43 @@ func (p *wsPool) refill(dc int) {
 		return
 	}
 
-	// parallel dials so the pool fills in ~one RTT instead of need*RTT;
-	// individual failures don't abort siblings, matching tg-ws-proxy
+	slotPlans := plans
+	var probe []transportPlan
+	if nativeDown {
+		slotPlans = withoutNative(plans)
+		if len(slotPlans) == 0 {
+			slotPlans = plans
+		} else if wsProbeAllowed(dh) {
+			probe = onlyNative(plans)
+		}
+	}
+
 	type result struct {
 		conn *wsPoolConn
 		err  error
 	}
-	results := make(chan result, need)
-	for i := 0; i < need; i++ {
+	slots := need
+	if len(probe) > 0 {
+		slots++
+	}
+	results := make(chan result, slots)
+	for i := 0; i < slots; i++ {
+		ps, timeout := slotPlans, wsPoolDialTimeout
+		if i == need {
+			ps, timeout = probe, wsDialTimeout
+		}
 		go func() {
 			if p.ctx.Err() != nil {
 				results <- result{}
 				return
 			}
-			c, err := p.dialFresh(dc)
+			c, err := p.dialFresh(dc, ps, timeout)
 			results <- result{conn: c, err: err}
 		}()
 	}
 	added := 0
 	routes := map[string]int{}
-	for i := 0; i < need; i++ {
+	for i := 0; i < slots; i++ {
 		r := <-results
 		if r.err != nil || r.conn == nil {
 			if r.err != nil {
@@ -444,30 +688,49 @@ func (p *wsPool) refill(dc int) {
 			}
 			continue
 		}
-		if p.ctx.Err() != nil {
-			_ = r.conn.conn.Close()
+		p.mu.Lock()
+		keep := p.ctx.Err() == nil && len(p.idle[k]) < p.targetFor(k)
+		if keep {
+			p.idle[k] = append(p.idle[k], wsPoolEntry{conn: r.conn.conn, created: time.Now(), plan: r.conn.plan})
+		}
+		p.mu.Unlock()
+		if !keep {
+			go func(c *wsConn) { _ = c.Close() }(r.conn.conn)
 			continue
 		}
-		p.mu.Lock()
-		p.idle[k] = append(p.idle[k], wsPoolEntry{conn: r.conn.conn, created: time.Now(), plan: r.conn.plan})
-		p.mu.Unlock()
 		routes[r.conn.plan.describe()]++
 		added++
 	}
+
+	p.mu.Lock()
+	var backoff time.Duration
+	if added == 0 {
+		f := p.refillFails[k] + 1
+		p.refillFails[k] = f
+		backoff = wsRefillBackoff(f)
+		p.refillAfter[k] = time.Now().Add(backoff)
+	} else {
+		delete(p.refillFails, k)
+		delete(p.refillAfter, k)
+	}
+	target := p.targetFor(k)
+	p.mu.Unlock()
+
 	if added > 0 {
 		names := make([]string, 0, len(routes))
 		for r, n := range routes {
 			names = append(names, fmt.Sprintf("%s x%d", r, n))
 		}
 		sort.Strings(names)
-		log.Debugf("%s WS pool %s refilled +%d (target=%d) on %s", tg(""), k, added, p.targetFor(k), strings.Join(names, ", "))
+		log.Debugf("%s WS pool %s refilled +%d (target=%d) on %s", tg(""), k, added, target, strings.Join(names, ", "))
+	} else if p.ctx.Err() == nil {
+		log.Tracef("%s WS pool %s refill got nothing, next try in %v", tg(""), k, backoff)
 	}
 }
 
 // dialFresh opens a raw WS connection (TLS + Upgrade) to a TG edge for `dc`.
 // Returns the first plan to succeed together with that plan, or the last error.
-func (p *wsPool) dialFresh(dc int) (*wsPoolConn, error) {
-	plans := wsPlansForDC(dc, p.cfg)
+func (p *wsPool) dialFresh(dc int, plans []transportPlan, timeout time.Duration) (*wsPoolConn, error) {
 	if len(plans) > wsPoolMaxPlanAttempts {
 		plans = plans[:wsPoolMaxPlanAttempts]
 	}
@@ -477,7 +740,7 @@ func (p *wsPool) dialFresh(dc int) (*wsPoolConn, error) {
 		if host == "" {
 			host = pl.sni
 		}
-		conn, err := dialWS(host, pl.sni, pl.wsPath, wsPoolDialTimeout, p.mark)
+		conn, err := dialWS(host, pl.sni, pl.wsPath, timeout, p.mark)
 		if err != nil {
 			lastErr = err
 			continue
@@ -500,6 +763,26 @@ func (p *wsPool) dialFresh(dc int) (*wsPoolConn, error) {
 	return nil, lastErr
 }
 
+func withoutNative(plans []transportPlan) []transportPlan {
+	out := make([]transportPlan, 0, len(plans))
+	for _, pl := range plans {
+		if !pl.native {
+			out = append(out, pl)
+		}
+	}
+	return out
+}
+
+func onlyNative(plans []transportPlan) []transportPlan {
+	out := make([]transportPlan, 0, 2)
+	for _, pl := range plans {
+		if pl.native {
+			out = append(out, pl)
+		}
+	}
+	return out
+}
+
 func wsPlansForDC(dc int, cfg *MTProtoUpstream) []transportPlan {
 	absDC := dc
 	if absDC < 0 {
@@ -512,8 +795,9 @@ func wsPlansForDC(dc int, cfg *MTProtoUpstream) []transportPlan {
 		override = cfg.WSEndpointHost
 		cfProxy = cfg.CFProxyEnabled
 	}
-	if wsEdgeServesDC(absDC) {
-		dh := wsNativeDialHost(override)
+	edge := wsEdgeServesDC(absDC)
+	dh := wsNativeDialHost(override)
+	if edge {
 		plans = append(plans, nativeEdgePlans(dc, absDC, dh)...)
 	}
 	if cfg != nil && cfg.WSCustomDomain != "" {
@@ -530,7 +814,7 @@ func wsPlansForDC(dc int, cfg *MTProtoUpstream) []transportPlan {
 	// domains on a cold dial, at the full dial timeout, on every session, and a
 	// single blocked domain there is longer than Telegram waits before calling
 	// the proxy misconfigured.
-	if !wsEdgeServesDC(absDC) && cfProxy {
+	if cfProxy && (!edge || wsNativeDown(dc, dh)) {
 		for _, base := range cfBalancerInst.domainsForDC(dc) {
 			plans = append(plans, transportPlan{
 				kind:   transportWS,
@@ -548,7 +832,10 @@ func wsPlansForDC(dc int, cfg *MTProtoUpstream) []transportPlan {
 // Cloudflare domains get fewer, because those are the same handful of names
 // every b4 install dials.
 func (p *wsPool) targetFor(k wsKey) int {
-	if wsEdgeServesDC(k.dc) || p.target < wsPoolCFTarget {
+	if p.target < wsPoolCFTarget {
+		return p.target
+	}
+	if wsEdgeServesDC(k.dc) && !wsNativeDown(k.signed(), wsNativeDialHost(p.cfg.WSEndpointHost)) {
 		return p.target
 	}
 	return wsPoolCFTarget

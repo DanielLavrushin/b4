@@ -598,3 +598,34 @@ func TestFallbackAnswerLeavesTheDNSFailureCountAlone(t *testing.T) {
 		t.Fatalf("a fallback answer must not clear the count either, the second NXDOMAIN must still escalate, got %v", next)
 	}
 }
+
+func TestSetChangesForgetAddressesCachedAsBlocked(t *testing.T) {
+	ds := newDestState()
+	ds.AddBlocked("203.0.113.7:443")
+	cfg := config.NewConfig()
+	cfg.Queue.IsDiscovery = true
+	set := config.NewSetConfig()
+	set.Id = "a"
+	cfg.Sets = []*config.SetConfig{&set}
+
+	w := &Worker{}
+	w.cfg.Store(&cfg)
+	w.matcher.Store(buildMatcher(&cfg))
+	pool := &Pool{Workers: []*Worker{w}, state: &runtimeState{destState: ds}}
+
+	if err := pool.UpdateConfig(&cfg); err != nil {
+		t.Fatal(err)
+	}
+	if !ds.IsBlocked("203.0.113.7:443") {
+		t.Fatal("a reload that leaves the sets alone keeps the cache")
+	}
+
+	changed := cfg.Clone()
+	changed.Sets[0].Fragmentation.Strategy = "combo"
+	if err := pool.UpdateConfig(changed); err != nil {
+		t.Fatal(err)
+	}
+	if ds.IsBlocked("203.0.113.7:443") {
+		t.Fatal("a new strategy can open an address the old one lost, so the cache must be tested again")
+	}
+}
