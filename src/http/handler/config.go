@@ -546,6 +546,10 @@ func (a *API) pushConfigLocked(newCfg *config.Config) error {
 		}
 	}
 
+	if globalTUNEngine != nil {
+		globalTUNEngine.UpdateConfig(newCfg)
+	}
+
 	if globalSocks5Server != nil {
 		globalSocks5Server.UpdateConfig(newCfg)
 	}

@@ -84,6 +84,8 @@ type routeManager struct {
 	captureRetries     int
 	captureRestores    int
 	lastCaptureRestore time.Time
+	captureDirty       bool
+	liveTCPPorts       atomic.Pointer[[]string]
 	capturePrio        int
 	conflicts          []steerConflict
 	captureExcl        []string

@@ -102,6 +102,7 @@ func DetectBackend(cfg *config.Config) string {
 func ApplyMasqueradeOnly(cfg *config.Config) error {
 	if !cfg.System.Tables.Masquerade.Enabled {
 		masqApplied.Store(nil)
+		masqLast.Store(cfg)
 		return nil
 	}
 	loadKernelModules()
@@ -119,6 +120,7 @@ func applyMasqueradeFor(cfg *config.Config, backend string) error {
 	}
 	if err == nil {
 		masqApplied.Store(cfg)
+		masqLast.Store(cfg)
 	}
 	return err
 }
@@ -159,12 +161,16 @@ func ApplyMSSClampOnly(cfg *config.Config) error {
 	if !hasMSSClamp(cfg) {
 		mssApplied.Store(nil)
 		mssAppliedRules.Store(0)
+		mssLast.Store(cfg)
 		return nil
 	}
 	loadKernelModules()
 	backend := detectFirewallBackend(cfg)
 	err := applyMSSClampFor(cfg, backend)
 	recordMSSApplied(cfg, backend)
+	if err == nil {
+		mssLast.Store(cfg)
+	}
 	return err
 }
 

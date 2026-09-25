@@ -219,9 +219,10 @@ func runB4(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 		if c.Queue.Mode == "tun" {
+			firewallErr := tables.RefreshTUNFirewall(c)
 			tproxyMgr.SyncConfig(c)
 			tables.RoutingSyncConfig(c)
-			return nil
+			return firewallErr
 		}
 		if discoveryRT.IsActive() {
 			log.Warnf("Tables refresh requested while discovery is active, waiting for discovery to finish...")

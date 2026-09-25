@@ -260,3 +260,55 @@ func TestMonitorStopTwiceDoesNotPanic(t *testing.T) {
 	m := newKickTestMonitor(t, &ticks)
 	m.Stop()
 }
+
+func TestMasqueradeChainExemptsTheTUNDeviceOnlyInTUNMode(t *testing.T) {
+	cfg := newTUNTestConfig()
+	cfg.Queue.TUN.DeviceName = "tun9"
+	specs := masqueradeChainSpecs(cfg)
+	if len(specs) < 2 || strings.Join(specs[0], " ") != "-o tun9 -j RETURN" {
+		t.Fatalf("TUN mode: the device exemption must come first, got %v", specs)
+	}
+
+	cfg.Queue.Mode = "nfqueue"
+	for _, spec := range masqueradeChainSpecs(cfg) {
+		if strings.Contains(strings.Join(spec, " "), "RETURN") {
+			t.Fatalf("NFQUEUE mode got a TUN exemption: %v", spec)
+		}
+	}
+}
+
+func TestRefreshTUNFirewallAppliesOnlyWhatChanged(t *testing.T) {
+	applied := newTUNTestConfig()
+	applied.System.Tables.Masquerade.Enabled = true
+	fw := stubTUNFirewall(t, map[string]string{"-t nat -S B4_MASQ": "-N B4_MASQ\n"})
+	t.Cleanup(func() {
+		masqLast.Store(nil)
+		mssLast.Store(nil)
+	})
+	masqApplied.Store(applied)
+	masqLast.Store(applied)
+	mssLast.Store(applied)
+
+	same := newTUNTestConfig()
+	same.System.Tables.Masquerade.Enabled = true
+	if err := RefreshTUNFirewall(same); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	if len(fw.calls) != 0 {
+		t.Fatalf("unchanged masquerade and MSS settings touched the firewall: %v", fw.calls)
+	}
+
+	off := newTUNTestConfig()
+	if err := RefreshTUNFirewall(off); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	if !fw.called("-t nat -X B4_MASQ") {
+		t.Fatalf("turning masquerade off left the chain in place: %v", fw.calls)
+	}
+	if masqApplied.Load() != nil || masqLast.Load() != off {
+		t.Fatalf("masquerade state not updated after turning it off")
+	}
+	if fw.called("TCPMSS") {
+		t.Fatalf("an unchanged MSS clamp was rebuilt: %v", fw.calls)
+	}
+}

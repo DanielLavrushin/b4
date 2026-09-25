@@ -41,6 +41,21 @@ func masqueradeSpecs(cfg *config.Config) [][]string {
 	return specs
 }
 
+func masqueradeTUNExemption(cfg *config.Config) []string {
+	if cfg.Queue.Mode != "tun" {
+		return nil
+	}
+	return []string{"-o", cfg.Queue.TUN.Device(), "-j", "RETURN"}
+}
+
+func masqueradeChainSpecs(cfg *config.Config) [][]string {
+	specs := masqueradeSpecs(cfg)
+	if exempt := masqueradeTUNExemption(cfg); exempt != nil {
+		specs = append([][]string{exempt}, specs...)
+	}
+	return specs
+}
+
 func masqueradeLogLabel(cfg *config.Config) string {
 	ifaces := masqueradeInterfaces(cfg)
 	if len(ifaces) == 0 {
@@ -61,7 +76,7 @@ func (im *IPTablesManager) ApplyMasquerade() error {
 		return fmt.Errorf("failed to flush masquerade chain: %w", err)
 	}
 
-	for _, masqSpec := range masqueradeSpecs(im.cfg) {
+	for _, masqSpec := range masqueradeChainSpecs(im.cfg) {
 		if _, err := run(append([]string{iptBin, "-w", "-t", "nat", "-A", masqChainName}, masqSpec...)...); err != nil {
 			return fmt.Errorf("failed to add masquerade rule (%s): %w", strings.Join(masqSpec, " "), err)
 		}
@@ -97,7 +112,7 @@ func (manager *IPTablesManager) buildMasqueradeManifest(ipt string) ([]Chain, []
 		{manager: manager, IPT: ipt, Table: "nat", Chain: "POSTROUTING", Action: "I", Spec: []string{"-m", "mark", "--mark", markClient, "-j", "RETURN"}},
 		{manager: manager, IPT: ipt, Table: "nat", Chain: "POSTROUTING", Action: "A", Spec: []string{"-j", masqChainName}},
 	}
-	for _, masqSpec := range masqueradeSpecs(manager.cfg) {
+	for _, masqSpec := range masqueradeChainSpecs(manager.cfg) {
 		rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "nat", Chain: masqChainName, Action: "A", Spec: masqSpec})
 	}
 	return chains, rules

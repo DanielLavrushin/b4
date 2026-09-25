@@ -465,6 +465,8 @@ func (r *routeManager) ensurePortCapture() {
 		}
 	}
 
+	dirty := r.captureDirty
+	r.captureDirty = false
 	present := r.ensureCaptureChain()
 	hooks := r.ensureCaptureJumps()
 	r.refreshSteerConflicts()
@@ -474,16 +476,20 @@ func (r *routeManager) ensurePortCapture() {
 		localNow = r.localNetsWanted
 	}
 	lost := present >= 0 && present < r.captureInstalled
-	if hooks > 0 && !lost {
+	outside := lost || (hooks > 0 && !dirty)
+	if hooks > 0 && !lost && !dirty {
 		log.Warnf("TUN: %d capture hook(s) into %s (jumps or the device gate) were removed outside b4, so traffic stopped reaching %s; put them back", hooks, tunCaptureChain, r.tunName)
 	}
-	if hooks > 0 || lost {
+	if outside {
 		r.captureRestores++
 		r.lastCaptureRestore = time.Now()
 	}
 	switch {
 	case lost:
 		log.Warnf("TUN: capture chain %s lost %d of %d rules (removed outside b4), so traffic stopped reaching %s; rebuilding it", tunCaptureChain, r.captureInstalled-present, r.captureInstalled, r.tunName)
+		r.rebuildCaptureChain()
+	case dirty:
+		log.Infof("TUN: capture settings changed, rebuilding %s (first %d tcp / %d udp packets on tcp ports %s, udp ports %s)", tunCaptureChain, r.tcpLimit, r.udpLimit, strings.Join(r.tcpPorts, ","), strings.Join(r.udpPorts, ","))
 		r.rebuildCaptureChain()
 	case !equalStringSet(desired, r.captureExcl):
 		log.Infof("TUN: reconcile refreshing capture exclusions (%d routing set(s))", len(desired))

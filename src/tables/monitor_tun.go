@@ -2,6 +2,7 @@ package tables
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -19,7 +20,9 @@ type tunRuleParts struct {
 
 var (
 	masqApplied     atomic.Pointer[config.Config]
+	masqLast        atomic.Pointer[config.Config]
 	mssApplied      atomic.Pointer[config.Config]
+	mssLast         atomic.Pointer[config.Config]
 	mssAppliedRules atomic.Int64
 	mssNftVerbose   atomic.Bool
 
@@ -123,6 +126,31 @@ func (m *Monitor) checkTUNRules() bool {
 		}
 	}
 	return !m.tunLost.masq && !m.tunLost.mss
+}
+
+func RefreshTUNFirewall(cfg *config.Config) error {
+	if cfg.System.Tables.SkipSetup {
+		return nil
+	}
+	rulesMu.Lock()
+	defer rulesMu.Unlock()
+	IPTablesLockBudgetReset()
+	var errs []error
+	if last := masqLast.Load(); last == nil || !last.System.Tables.Masquerade.Equal(cfg.System.Tables.Masquerade) {
+		log.Infof("Masquerade settings changed in TUN mode, re-applying masquerade")
+		ClearMasqueradeOnly(cfg)
+		if err := ApplyMasqueradeOnly(cfg); err != nil {
+			errs = append(errs, fmt.Errorf("masquerade: %w", err))
+		}
+	}
+	if last := mssLast.Load(); last == nil || last.MSSClampFingerprint() != cfg.MSSClampFingerprint() {
+		log.Infof("MSS clamp settings changed in TUN mode, re-applying MSS clamp")
+		ClearMSSClampOnly(cfg)
+		if err := ApplyMSSClampOnly(cfg); err != nil {
+			errs = append(errs, fmt.Errorf("MSS clamp: %w", err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func restoreTUNRules(backend string, lost tunRuleParts) error {

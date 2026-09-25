@@ -508,6 +508,13 @@ func (n *NFTablesManager) ApplyMasquerade() error {
 		return fmt.Errorf("failed to add masquerade mark-bypass rule: %w", err)
 	}
 
+	if n.cfg.Queue.Mode == "tun" {
+		if _, err := n.runNft("add", "rule", "ip", nftNatTableName, nftNatChainName,
+			"oifname", fmt.Sprintf("%q", n.cfg.Queue.TUN.Device()), "return"); err != nil {
+			return fmt.Errorf("failed to exempt the TUN device from masquerade: %w", err)
+		}
+	}
+
 	ifaces := masqueradeInterfaces(n.cfg)
 	if len(ifaces) == 0 {
 		if _, err := n.runNft("add", "rule", "ip", nftNatTableName, nftNatChainName, "masquerade"); err != nil {
