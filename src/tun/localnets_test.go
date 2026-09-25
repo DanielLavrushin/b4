@@ -356,3 +356,18 @@ func TestConflictsEqual(t *testing.T) {
 		t.Fatalf("a conflict that changed target must be re-logged")
 	}
 }
+
+func TestCaptureChainLeavesTelegramBridgeTrafficToTheRouter(t *testing.T) {
+	r := orderedCaptureManager(true)
+	rules := r.captureChainRules(nil, []string{"192.168.31.0/24"})
+
+	relay := captureRuleIndex(rules, func(s string) bool { return strings.Contains(s, "--mark 0x200000/0x200000 -j RETURN") })
+	bridge := captureRuleIndex(rules, func(s string) bool { return strings.Contains(s, "--mark 0x24bab/0x27fff -j RETURN") })
+	steer := captureRuleIndex(rules, func(s string) bool { return strings.Contains(s, "connbytes") })
+	if relay < 0 || bridge < 0 || steer < 0 {
+		t.Fatalf("chain is missing a rule: %v", rules)
+	}
+	if relay > steer || bridge > steer {
+		t.Fatalf("b4's Cloudflare-route dials and bridge-diverted packets must leave the chain before anything steers them into TUN, got relay=%d bridge=%d steer=%d", relay, bridge, steer)
+	}
+}
