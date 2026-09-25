@@ -21,9 +21,10 @@ import (
 )
 
 const (
-	TelegramCIDRURL       = "https://core.telegram.org/resources/cidr.txt"
-	TelegramCIDRMirrorURL = "https://proxy.b4core.app/telegram/cidr.txt"
-	TelegramCIDRCacheFile = "telegram_cidr.txt"
+	TelegramCIDRURL        = "https://core.telegram.org/resources/cidr.txt"
+	TelegramCIDRMirrorURL  = "https://proxy.b4core.app/telegram/cidr.txt"
+	TelegramCIDRMirror2URL = "https://proxy2.b4core.app/telegram/cidr.txt"
+	TelegramCIDRCacheFile  = "telegram_cidr.txt"
 
 	telegramCIDRGeoIPCategory = "telegram"
 	telegramCIDRMaxBody       = 64 << 10
@@ -41,6 +42,7 @@ type telegramCIDRSource struct {
 var telegramCIDRSources = []telegramCIDRSource{
 	{TelegramCIDRURL, config.TelegramCIDRSourceTelegram},
 	{TelegramCIDRMirrorURL, config.TelegramCIDRSourceMirror},
+	{TelegramCIDRMirror2URL, config.TelegramCIDRSourceMirror},
 }
 
 type TelegramCIDRStatus struct {
@@ -336,7 +338,7 @@ func runTelegramCIDRRefresh(ctx context.Context, getCfg func() *config.Config) {
 			timer.Stop()
 			continue
 		}
-		fetchCtx, cancel := context.WithTimeout(ctx, 3*telegramCIDRTimeout)
+		fetchCtx, cancel := context.WithTimeout(ctx, time.Duration(len(telegramCIDRSources)+1)*telegramCIDRTimeout)
 		err := RefreshTelegramCIDRsNow(fetchCtx, cfg)
 		cancel()
 		next := telegramCIDRInterval

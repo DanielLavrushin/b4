@@ -13,6 +13,8 @@ The bridge is switched on for the whole network from Settings, Telegram. A per-s
 
 Settings, **Telegram**, card **Telegram over WebSocket**, switch **Enable Telegram over WebSocket**. It is stored as `system.mtproto.bridge.enabled` and is off by default. The card shows **Save to apply** until the page's **Save Changes** button is pressed, and the switch then takes effect without a service restart. No set is involved, and no GeoIP or GeoSite file is needed.
 
+![The Telegram over WebSocket card](/img/telegram/20260925200001.png)
+
 While the switch is on, b4 diverts TCP connections addressed to Telegram's [address ranges](#address-list) into its bridge listener on port 13443. The port is fixed. The diversion covers:
 
 - every device behind b4;
@@ -53,7 +55,7 @@ IPv6 ranges are diverted only while **IPv6 support** is on in [Settings, Core](.
 b4 keeps a list of Telegram's address ranges. The built-in list compiled into b4 is always part of it. On top of the built-in list b4 uses one of these sources, in order of preference:
 
 1. The list Telegram publishes at `https://core.telegram.org/resources/cidr.txt`.
-2. The same file from the b4 mirror at `proxy.b4core.app`, when telegram.org cannot be reached.
+2. The same file from the b4 mirrors, `proxy.b4core.app` and then `proxy2.b4core.app`, when telegram.org cannot be reached.
 3. The last downloaded copy, saved as `telegram_cidr.txt` next to the configuration file.
 4. The `telegram` category of the configured GeoIP file.
 

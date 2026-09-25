@@ -22,12 +22,12 @@ import {
   ApiIcon,
   BackupIcon,
   CaptureIcon,
-  ConnectionIcon,
   CoreIcon,
   DiscoveryIcon,
   DomainIcon,
   RefreshIcon,
   SaveIcon,
+  TelegramIcon,
   WarningIcon,
 } from "@b4.icons";
 import { useSnackbar } from "@context/SnackbarProvider";
@@ -137,7 +137,7 @@ export function SettingsPage() {
         id: TABS.MTPROTO,
         path: "mtproto",
         label: t("settings.tabs.mtproto"),
-        icon: <ConnectionIcon />,
+        icon: <TelegramIcon />,
         description: t("settings.tabs.mtprotoDesc"),
         requiresRestart: false,
       },

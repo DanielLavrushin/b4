@@ -152,7 +152,7 @@ func (api *API) handleTelegramBridgeRefresh(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	cfg := api.getCfg()
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 45*time.Second)
 	defer cancel()
 	if err := mtproto.RefreshTelegramCIDRsNow(ctx, cfg); err != nil {
 		log.Warnf("Telegram bridge: manual address list refresh failed: %v", err)

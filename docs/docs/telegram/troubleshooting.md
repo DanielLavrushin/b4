@@ -91,7 +91,7 @@ When only the IPv6 socket could not be opened, the card instead shows a note tha
 
 ### The address list could not be downloaded
 
-The warning carries the download error and names the source of the list still in use. Neither `core.telegram.org` nor the b4 mirror answered. The list already in use stays, whichever source it came from, and the built-in list is always part of it. The next attempt follows after 30 seconds, and the wait doubles after each further failure up to an hour; after a success the list is refreshed once a day. **Refresh addresses** tries again at once.
+The warning carries the download error and names the source of the list still in use. Neither `core.telegram.org` nor either b4 mirror answered. The list already in use stays, whichever source it came from, and the built-in list is always part of it. The next attempt follows after 30 seconds, and the wait doubles after each further failure up to an hour; after a success the list is refreshed once a day. **Refresh addresses** tries again at once.
 
 ### b4 runs in TUN mode
 

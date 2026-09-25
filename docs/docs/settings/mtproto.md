@@ -13,6 +13,8 @@ Task-shaped guides for the three Telegram modes are under [Telegram](../telegram
 
 The first card on the tab. Its switch turns the [WebSocket bridge](../telegram/websocket-bridge.md) on for the whole network, with no set involved.
 
+![The Telegram over WebSocket card](/img/telegram/20260925200001.png)
+
 | Parameter | Description | Default |
 | --- | --- | --- |
 | Enable Telegram over WebSocket | `system.mtproto.bridge.enabled`. Diverts TCP connections to Telegram's address ranges, from every device behind b4 and from the router itself, into the bridge listener. [Device filtering](./core.md#device-filtering) applies; there is no scoping by source interface or device. The card shows **Save to apply** until the page is saved, and the switch then applies without a restart. Does not need the proxy server. | Off |
@@ -40,7 +42,7 @@ The warnings above the box, each explained under [Troubleshooting](../telegram/t
 | Firewall setup is off | **Skip IPTables/NFTables setup** is on in [Settings, Core](./core#firewall), so b4 installs no rules at start-up. A save installs the routing rules until the next restart |
 | The bridge listener failed | Port 13443 could not be bound, with the error. b4 retries, and Telegram connections take the normal path until it succeeds |
 | IPv6 listener note | Shown while IPv6 support is on and only the IPv6 socket failed to open. IPv4 goes through the bridge and Telegram over IPv6 takes the normal path |
-| Downloading the address list failed | Neither telegram.org nor the mirror answered. The list in use is kept, and the warning names its source |
+| Downloading the address list failed | Neither telegram.org nor either b4 mirror answered. The list in use is kept, and the warning names its source |
 | Not verified with TUN | b4 runs the TUN capture engine, with which the bridge has not been verified |
 | Redundant sets | Sets whose routing mode is *Telegram over WebSocket (built-in)*, each linked, with disabled ones marked **off**. They are redundant while the switch is on |
 
