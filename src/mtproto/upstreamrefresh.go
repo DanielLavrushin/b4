@@ -21,9 +21,13 @@ var (
 )
 
 type upstreamRefreshState struct {
-	dcKey  string
-	cfURL  string
-	cfNext time.Time
+	dcKey      string
+	dcRetry    time.Time
+	dcFailures int
+	cfURL      string
+	cfNext     time.Time
+	cfFailures int
+	cfOK       bool
 }
 
 func KickUpstreamRefresh() {
@@ -64,31 +68,81 @@ func (st *upstreamRefreshState) step(cfg *config.Config, now time.Time) time.Dur
 		return 0
 	}
 	mt := cfg.System.MTProto
+	st.stepDCs(mt, now)
+	st.stepCF(mt, now)
+	return st.nextWake(now)
+}
+
+func (st *upstreamRefreshState) stepDCs(mt config.MTProtoConfig, now time.Time) {
 	dcKey := strconv.FormatBool(mt.DCFallbackEnabled) + "|" + mt.DCFallbackURL
-	if dcKey != st.dcKey {
-		st.dcKey = dcKey
-		if err := upstreamRefreshDCs(mt.DCFallbackEnabled, mt.DCFallbackURL); err != nil {
-			log.Infof("MTProto DC list not refreshed, keeping the built-in addresses: %v", err)
+	changed := dcKey != st.dcKey
+	if !changed && (st.dcRetry.IsZero() || now.Before(st.dcRetry)) {
+		return
+	}
+	if changed {
+		st.dcKey, st.dcFailures = dcKey, 0
+	}
+	st.dcRetry = time.Time{}
+	err := upstreamRefreshDCs(mt.DCFallbackEnabled, mt.DCFallbackURL)
+	if err == nil {
+		st.dcFailures = 0
+		return
+	}
+	st.dcFailures++
+	wait := telegramCIDRRetryDelay(st.dcFailures)
+	st.dcRetry = now.Add(wait)
+	if st.dcFailures == 1 {
+		log.Infof("MTProto DC list not refreshed, keeping the built-in addresses, next attempt in %v: %v", wait, err)
+	} else {
+		log.Debugf("MTProto DC list refresh failed again (%d), next attempt in %v: %v", st.dcFailures, wait, err)
+	}
+}
+
+func (st *upstreamRefreshState) stepCF(mt config.MTProtoConfig, now time.Time) {
+	if !mt.CFProxyEnabled {
+		st.cfURL, st.cfNext, st.cfFailures, st.cfOK = "", time.Time{}, 0, false
+		return
+	}
+	changed := mt.CFProxyURL != st.cfURL
+	if !changed && now.Before(st.cfNext) {
+		return
+	}
+	if changed {
+		st.cfURL, st.cfFailures, st.cfOK = mt.CFProxyURL, 0, false
+	}
+	n, err := upstreamRefreshCF(mt.CFProxyURL)
+	if err == nil {
+		if st.cfOK {
+			log.Debugf("CF proxy pool refreshed (%d domains)", n)
+		} else {
+			log.Infof("CF proxy pool refreshed (%d domains)", n)
+		}
+		st.cfFailures, st.cfOK = 0, true
+		st.cfNext = now.Add(cfProxyRefreshInt)
+		return
+	}
+	st.cfFailures++
+	wait := telegramCIDRRetryDelay(st.cfFailures)
+	st.cfNext = now.Add(wait)
+	if st.cfFailures == 1 && !st.cfOK {
+		log.Warnf("CF proxy list not refreshed, keeping the current pool, next attempt in %v: %v", wait, err)
+	} else {
+		log.Debugf("CF proxy list refresh failed again (%d), next attempt in %v: %v", st.cfFailures, wait, err)
+	}
+}
+
+func (st *upstreamRefreshState) nextWake(now time.Time) time.Duration {
+	var next time.Time
+	for _, t := range []time.Time{st.dcRetry, st.cfNext} {
+		if !t.IsZero() && (next.IsZero() || t.Before(next)) {
+			next = t
 		}
 	}
-	if !mt.CFProxyEnabled {
-		st.cfURL, st.cfNext = "", time.Time{}
+	if next.IsZero() {
 		return 0
 	}
-	if mt.CFProxyURL != st.cfURL || !now.Before(st.cfNext) {
-		first := mt.CFProxyURL != st.cfURL
-		st.cfURL, st.cfNext = mt.CFProxyURL, now.Add(cfProxyRefreshInt)
-		n, err := upstreamRefreshCF(mt.CFProxyURL)
-		switch {
-		case err != nil && first:
-			log.Warnf("CF proxy list not refreshed, keeping the current pool: %v", err)
-		case err != nil:
-			log.Debugf("CF proxy refresh failed: %v", err)
-		case first:
-			log.Infof("CF proxy pool refreshed (%d domains)", n)
-		default:
-			log.Debugf("CF proxy pool refreshed (%d domains)", n)
-		}
+	if d := next.Sub(now); d > 0 {
+		return d
 	}
-	return st.cfNext.Sub(now)
+	return time.Millisecond
 }

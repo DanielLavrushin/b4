@@ -1,6 +1,7 @@
 package mtproto
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -95,5 +96,53 @@ func TestUpstreamRefreshFetchesOnceWhenTelegramIsTurnedOn(t *testing.T) {
 	st.step(&cfg, now.Add(3*cfProxyRefreshInt))
 	if len(calls.dcs) != 3 || len(calls.cf) != 4 {
 		t.Errorf("turning Telegram off and on again must fetch again, got dcs=%v cf=%v", calls.dcs, calls.cf)
+	}
+}
+
+func TestUpstreamRefreshRetriesAFailedDownload(t *testing.T) {
+	calls := upstreamRefreshTestEnv(t)
+	dcErr, cfErr := errors.New("network is unreachable"), errors.New("network is unreachable")
+	upstreamRefreshDCs = func(_ bool, url string) error {
+		calls.dcs = append(calls.dcs, url)
+		return dcErr
+	}
+	upstreamRefreshCF = func(url string) (int, error) {
+		calls.cf = append(calls.cf, url)
+		return 5, cfErr
+	}
+	cfg := config.NewConfig()
+	cfg.System.MTProto.Enabled = true
+	cfg.System.MTProto.CFProxyEnabled = false
+	var st upstreamRefreshState
+	now := time.Unix(1_800_000_000, 0)
+
+	if next := st.step(&cfg, now); next != telegramCIDRRetryBase || len(calls.dcs) != 1 {
+		t.Fatalf("a failed DC download at start must be retried after %v even with the CF fallback off, got next=%v dcs=%d", telegramCIDRRetryBase, next, len(calls.dcs))
+	}
+	if st.step(&cfg, now.Add(10*time.Second)); len(calls.dcs) != 1 {
+		t.Errorf("a save before the retry is due must not download again, got %d downloads", len(calls.dcs))
+	}
+	if next := st.step(&cfg, now.Add(telegramCIDRRetryBase)); next != 2*telegramCIDRRetryBase || len(calls.dcs) != 2 {
+		t.Errorf("the second failure must double the wait, got next=%v dcs=%d", next, len(calls.dcs))
+	}
+
+	cfg.System.MTProto.DCFallbackURL = "https://mirror.example/getProxyConfig"
+	if next := st.step(&cfg, now.Add(time.Minute)); next != telegramCIDRRetryBase || len(calls.dcs) != 3 {
+		t.Errorf("a new source must be tried at once and restart the backoff, got next=%v dcs=%d", next, len(calls.dcs))
+	}
+
+	dcErr = nil
+	if next := st.step(&cfg, now.Add(time.Minute+telegramCIDRRetryBase)); next != 0 || len(calls.dcs) != 4 {
+		t.Errorf("a success must clear the retry, got next=%v dcs=%d", next, len(calls.dcs))
+	}
+
+	cfg.System.MTProto.CFProxyEnabled = true
+	base := now.Add(time.Hour)
+	if next := st.step(&cfg, base); next != telegramCIDRRetryBase || len(calls.cf) != 1 {
+		t.Fatalf("a failed CF download must be retried after %v, not an hour, got next=%v cf=%d", telegramCIDRRetryBase, next, len(calls.cf))
+	}
+	cfErr = nil
+	if next := st.step(&cfg, base.Add(telegramCIDRRetryBase)); next != cfProxyRefreshInt || len(calls.cf) != 2 || len(calls.dcs) != 4 {
+		t.Errorf("after the CF retry succeeds only the hourly refresh remains, got next=%v cf=%d dcs=%d", next, len(calls.cf), len(calls.dcs))
 	}
 }
