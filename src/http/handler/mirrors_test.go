@@ -138,7 +138,7 @@ func TestDownloadFileMirroredFallsBackToMirror(t *testing.T) {
 	swapMirrors(t, []string{mirror.URL})
 
 	dest := filepath.Join(t.TempDir(), "install.sh")
-	size, err := downloadFileMirrored(direct, dest, b4Mirrors)
+	size, err := downloadFileMirrored(context.Background(), direct, dest, b4Mirrors, nil)
 	if err != nil {
 		t.Fatalf("expected mirror fallback to succeed, got %v", err)
 	}
@@ -167,7 +167,7 @@ func TestDownloadFileMirroredSkipsMirrorsForForeignURL(t *testing.T) {
 
 	dest := filepath.Join(t.TempDir(), "x")
 	foreign := dead + "/torvalds/linux/archive/master.tar.gz"
-	if _, err := downloadFileMirrored(foreign, dest, b4Mirrors); err == nil {
+	if _, err := downloadFileMirrored(context.Background(), foreign, dest, b4Mirrors, nil); err == nil {
 		t.Fatal("expected a foreign URL to fail rather than reach a mirror")
 	}
 }

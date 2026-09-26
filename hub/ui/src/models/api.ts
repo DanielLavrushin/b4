@@ -18,6 +18,7 @@ export interface TargetsView {
   ips: string[];
   geosite: string[];
   geoip: string[];
+  asns: string[];
   summary: string;
 }
 

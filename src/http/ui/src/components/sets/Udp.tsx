@@ -104,6 +104,7 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
   const hasNonDomainTargets =
     (config.targets?.ip?.length ?? 0) > 0 ||
     (config.targets?.geoip_categories?.length ?? 0) > 0 ||
+    (config.targets?.asns?.length ?? 0) > 0 ||
     (config.udp.dport_filter ?? "").trim() !== "";
 
   const isPassthrough = config.udp.mode === "off";

@@ -193,6 +193,10 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 
 	cur := buildRouteState(cfg, set)
 	cur.set = set
+	if !config.RoutingIsBlock(cur.mode) && (cur.mark == 0 || cur.table <= 0) {
+		routeWarnIncomplete(set, "b4 could not take a routing table of its own for it")
+		return
+	}
 	sources := routeNormalizedSources(set.Routing.SourceInterfaces)
 
 	retireOld := func() {}
@@ -1254,6 +1258,7 @@ func RoutingEnsureJumpPrecedence(cfg *config.Config) {
 		return
 	}
 	routeEnsurePreJumpPrecedence(be, cfg)
+	routeEnsureOutJumpPrecedence(be, cfg)
 }
 
 func RoutingPeriodicReResolve(cfg *config.Config) {
@@ -1364,6 +1369,9 @@ func routeResolveTargets(set *config.SetConfig) []string {
 }
 
 func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState, sources []string) error {
+	if st.mark == 0 || st.table <= 0 {
+		return fmt.Errorf("no routing mark and table of its own (mark 0x%x, table %d)", st.mark, st.table)
+	}
 	if err := be.ensureChain(st.chainPre, true); err != nil {
 		return err
 	}
@@ -1838,6 +1846,9 @@ func routeHashlimitName(chain string, v6 bool) string {
 }
 
 func routeDeleteOwnRoutes(iface, table string) {
+	if routeTableArgUnset(table) {
+		return
+	}
 	for _, fam := range routeFamilyArgs(true, true) {
 		base := append([]string{"ip"}, fam.flag...)
 		if iface != "" {
@@ -2580,7 +2591,21 @@ func routeTableTakenByOthers(table int, iface string, refs map[string][]string) 
 
 var routeDelRuleLoop = routeDelRuleLoopExec
 
+func routeTableArgUnset(table string) bool {
+	t := strings.TrimSpace(table)
+	return t == "" || t == "0" || t == "unspec"
+}
+
+func routeMarkArgZero(mark string) bool {
+	value, _, _ := strings.Cut(strings.TrimSpace(mark), "/")
+	v, err := strconv.ParseUint(value, 0, 32)
+	return err == nil && v == 0
+}
+
 func routeDelRuleLoopExec(ipv6 bool, mark, table string) {
+	if routeTableArgUnset(table) || routeMarkArgZero(mark) {
+		return
+	}
 	for i := 0; i < 100; i++ {
 		var err error
 		if ipv6 {

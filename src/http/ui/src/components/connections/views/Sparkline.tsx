@@ -41,7 +41,7 @@ export const Sparkline = memo<SparklineProps>(({ data, width = 120, height = 24,
           fontFamily: "monospace",
         }}
       >
-        —
+        -
       </Box>
     );
   }

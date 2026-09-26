@@ -182,7 +182,7 @@ export const GroupRow = memo<Props>(
                 whiteSpace: "nowrap",
               }}
             >
-              {group.destIp || "—"}
+              {group.destIp || "-"}
             </Typography>
             {asnSlot}
             {group.destIps.length > 1 && (
@@ -238,7 +238,7 @@ export const GroupRow = memo<Props>(
                 whiteSpace: "nowrap",
               }}
             >
-              {deviceLabel || "—"}
+              {deviceLabel || "-"}
             </Typography>
           </Tooltip>
         </Box>

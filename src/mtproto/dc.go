@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/netprobe"
 )
 
 var dcAddressesV4 = map[int]string{
@@ -197,7 +198,8 @@ func RefreshDCs(fallbackEnabled bool, fallbackURL string) error {
 		}
 		urls = append(urls, fallbackURL)
 	}
-	cli := &http.Client{Timeout: 3 * time.Second}
+	cli := netprobe.HTTPClient(int(selfDialMark()), 3*time.Second)
+	defer cli.CloseIdleConnections()
 	var body []byte
 	var lastErr error
 	for _, u := range urls {

@@ -109,6 +109,23 @@ interface DiagGeodata {
   geoip_size?: string;
   total_domains: number;
   total_ips: number;
+  asn?: DiagASN;
+}
+
+interface DiagASNTarget {
+  id: string;
+  name?: string;
+  prefix_count: number;
+  updated_at?: number;
+  sets: string[];
+  last_error?: string;
+}
+
+interface DiagASN {
+  cache_path?: string;
+  cached: number;
+  referenced?: DiagASNTarget[];
+  unresolved?: string[];
 }
 
 interface DiagPaths {

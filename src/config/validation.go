@@ -286,6 +286,12 @@ func (c *Config) Validate() error {
 			}
 		}
 
+		if len(set.Targets.ASNs) > 0 {
+			if !normalizeSetASNs(v, setIdx, set) {
+				return v.result()
+			}
+		}
+
 		if set.TCP.Duplicate.Enabled {
 			if set.TCP.Duplicate.Count < 1 {
 				set.TCP.Duplicate.Count = 1
@@ -293,7 +299,7 @@ func (c *Config) Validate() error {
 			if set.TCP.Duplicate.Count > 10 {
 				set.TCP.Duplicate.Count = 10
 			}
-			if len(set.Targets.IPs) == 0 && len(set.Targets.GeoIpCategories) == 0 {
+			if len(set.Targets.IPs) == 0 && len(set.Targets.GeoIpCategories) == 0 && len(set.Targets.ASNs) == 0 {
 				log.Warnf("Set '%s' has duplication enabled but no IP targets configured", set.Name)
 			}
 		}
@@ -331,12 +337,12 @@ func (c *Config) Validate() error {
 			if set.MSSClamp.Size > 1460 {
 				set.MSSClamp.Size = 1460
 			}
-			hasIPScope := len(set.Targets.IPs) > 0 || len(set.Targets.GeoIpCategories) > 0
+			hasIPScope := len(set.Targets.IPs) > 0 || len(set.Targets.GeoIpCategories) > 0 || len(set.Targets.ASNs) > 0
 			hasMACScope := len(set.Targets.SourceDevices) > 0 && !set.Targets.SourceDevicesExclude
 			if !hasIPScope && !hasMACScope {
 				v.addf(fmt.Sprintf("sets[%d].mss_clamp", setIdx), "mss_clamp_scope_required",
 					map[string]any{"set": set.Name},
-					"set %q: MSS clamp requires IP, GeoIP, or included source device targets (MSS is set on SYN, before SNI/GeoSite can match; excluded devices cannot scope it)", set.Name)
+					"set %q: MSS clamp requires IP, GeoIP, ASN, or included source device targets (MSS is set on SYN, before SNI/GeoSite can match; excluded devices cannot scope it)", set.Name)
 				return v.result()
 			}
 		}
@@ -468,6 +474,31 @@ func (c *Config) Validate() error {
 	c.BuildSetPortRanges()
 
 	return v.result()
+}
+
+func normalizeSetASNs(v *validator, setIdx int, set *SetConfig) bool {
+	path := fmt.Sprintf("sets[%d].targets.asns", setIdx)
+	clean := make([]string, 0, len(set.Targets.ASNs))
+	seen := make(map[string]struct{}, len(set.Targets.ASNs))
+	valid := true
+	for _, raw := range set.Targets.ASNs {
+		id, ok := NormalizeASN(raw)
+		if !ok {
+			v.addf(path, "asn_invalid", map[string]any{"set": set.Name, "value": raw},
+				"set %q: %q is not a public AS number", set.Name, raw)
+			valid = false
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		clean = append(clean, id)
+	}
+	if valid {
+		set.Targets.ASNs = clean
+	}
+	return valid
 }
 
 func (c *Config) checkSocks5Sources(v *validator) {
@@ -642,7 +673,7 @@ func WatchdogBlockerText(blocker string) string {
 	case WatchdogBlockedDevices:
 		return "the set applies only to listed devices, and the router's own check carries no device address, so it never matches the set"
 	case WatchdogBlockedIPOnly:
-		return "the set lists no domains or geosite categories, only IP addresses or GeoIP categories, and the watchdog confirms which set handles a URL by its host name, so it can never confirm this one"
+		return "the set lists no domains or geosite categories, only IP addresses, GeoIP categories or ASNs, and the watchdog confirms which set handles a URL by its host name, so it can never confirm this one"
 	}
 	return blocker
 }

@@ -789,8 +789,11 @@ func (manager *IPTablesManager) buildMSSManifestFor(ipts []string, preChain stri
 				setFamily = "inet"
 			}
 			hasIPs := len(ips) > 0
-			macOnly := len(e.IPv4) == 0 && len(e.IPv6) == 0
+			macOnly := mssClampMACOnly(cfg, e)
 			if !hasIPs && !macOnly {
+				if mssClampUnresolved(cfg, e) {
+					log.Infof("IPTABLES[%s]: per-set MSS clamp for set %q skipped: its IP targets resolve to no addresses yet", ipt, e.SetID)
+				}
 				continue
 			}
 			if !setHasSourceForFamily(e.Sources, isV6) {

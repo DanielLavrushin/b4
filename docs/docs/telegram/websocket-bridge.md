@@ -30,7 +30,7 @@ flowchart TB
     C -->|"UDP, QUIC"| N["Normal path"]
     L --> M{"MTProto with a<br/>known data centre?"}
     M -->|"Yes"| U["Telegram upstream<br/>WS edge, Cloudflare, direct"]
-    M -->|"No"| W["Cloudflare Worker<br/>if configured, then direct"]
+    M -->|"No"| W["Passed on<br/>Worker or direct"]
 
     style C fill:#4a9eff,color:#fff,stroke:none
     style L fill:#e91e63,color:#fff,stroke:none
@@ -83,7 +83,7 @@ Over [MCP](../settings/mcp.md), `b4_status` reports the bridge state, and with c
 
 Telegram Desktop names its data centre in the first bytes of a connection. The Android app leaves that field random, so for its connections b4 takes the data centre from the address the connection was sent to: from the list Telegram publishes for proxies, from a table built into b4, and from the address ranges of each data centre. The `dc-from` field of the relay line starts with the source that decided, `handshake`, `ip` or `ip-range`, followed by `+learned` when an earlier `-444` moved the address to another data centre and `+handshake-media` when the handshake marked a media session.
 
-A data centre answers a session that belongs to another one with `-444`. When the data centre came from the address and the client did not name the same one, b4 cuts that session and leaves the route it used in place, because the route delivered the session where b4 sent it. Later sessions to the same address go to the other data centre at the same site, 4 instead of 2 or 3 instead of 1 and the reverse, for six hours, and the log notes the change once. An address that answers `-444` to both, or to data centre 5 or 203, which have no sibling, is handled for 30 minutes like a connection b4 cannot map to a data centre: it goes to the Cloudflare Worker when one is configured, otherwise directly. A session whose client named its data centre keeps the proxy server's handling, and a `-444` ranks the route down.
+A data centre answers a session that belongs to another one with `-444`. When the data centre came from the address and the client did not name the same one, b4 cuts that session and leaves the route it used in place, because the route delivered the session where b4 sent it. Later sessions to the same address go to the other data centre at the same site, 4 instead of 2 or 3 instead of 1 and the reverse, for six hours, and the log notes the change once. An address that answers `-444` to both, or to data centre 5 or 203, which have no sibling, is handled for 30 minutes like a connection b4 cannot map to a data centre and is [passed on](#connections-the-bridge-passes-on). A session whose client named its data centre keeps the proxy server's handling, and a `-444` ranks the route down.
 
 ## Order among sets
 
@@ -107,9 +107,12 @@ The bridge's outgoing connections are treated by route, and the MTProto proxy se
 | --- | --- |
 | Telegram's WebSocket edge, with or without a fronting name | Passes through; an ordinary set whose targets match applies its DPI settings |
 | Direct TCP to a data centre | Passes through; an ordinary set whose targets match applies its DPI settings |
-| Cloudflare-proxied domains, a Cloudflare Worker, a custom WebSocket domain | Left out; no set applies faking, fragmentation or desync to them |
+| Cloudflare-proxied domains, a custom WebSocket domain | Left out; no set applies faking, fragmentation or desync to them |
+| A Cloudflare Worker | Left out, unless **Let sets process Worker connections** is on; with it on, an ordinary set whose targets match applies its DPI settings |
 
 The Cloudflare routes are relays that reach Telegram without touching its addresses, and a set that covers Cloudflare for other sites, such as one with the `cloudflare` GeoIP or GeoSite category, would otherwise apply its strategy to them as well. On a network where that strategy breaks connections to Cloudflare, every one of these routes would then fail at once.
+
+Some networks throttle `workers.dev` instead: the TLS handshake with the Worker completes and the stream stops after the first few kilobytes. **Let sets process Worker connections**, shown on the Telegram upstream card once a Worker domain is set, hands the Worker connections to packet processing, so a set whose targets cover the Worker, by the `workers.dev` domain or by Cloudflare's addresses, applies its strategy to them. The switch covers the Worker only; the Cloudflare-proxied domains and the custom WebSocket domain stay out of packet processing either way. It is off by default and applies without a restart.
 
 A set in the per-set **Telegram over WebSocket** routing mode behaves differently. When it is not limited by an included source-device list, it matches the bridge's own connections to addresses in its targets, which are Telegram's WebSocket edge and direct data-centre connections, and leaves them unmodified. The set's own TCP DPI settings never apply to Telegram TCP.
 
@@ -128,12 +131,25 @@ A [Cloudflare Worker domain](./cloudflare-worker.md) is the setting to add when 
 
 Only TCP MTProto sessions are bridged.
 
-- A connection b4 cannot decode or cannot map to a data centre is offered to the configured Cloudflare Worker first, and only then dialled directly.
+- A connection b4 cannot decode or cannot map to a data centre is [passed on](#connections-the-bridge-passes-on) to the Cloudflare Worker or directly.
 - Voice calls are not diverted. They travel over UDP, no UDP listener is started, and calls take the ordinary path.
 - No QUIC rejection rule is installed, so a client that prefers QUIC to a Telegram address bypasses the bridge without a log line saying so.
-- The diversion carries no destination-port filter. Every TCP connection to a Telegram range enters the listener, including plain HTTPS to Telegram's web hosts inside those ranges, such as `web.telegram.org` or `t.me`. Such a connection is read, recognised as not MTProto and passed on: to the Cloudflare Worker first when one is configured, then directly.
+- The diversion carries no destination-port filter. Every TCP connection to a Telegram range enters the listener, including plain HTTPS to Telegram's web hosts inside those ranges, such as `web.telegram.org` or `t.me`. Such a connection is read, recognised as not MTProto and [passed on](#connections-the-bridge-passes-on).
 
 A connection that reaches the listener and then sends nothing occupies the listener for the **Bridge Handshake Wait**, 180 seconds by default, set under **Fallback sources** on the Telegram upstream (shared) card. Setting that field to `-1` means waiting indefinitely, not disabling the wait.
+
+### Connections the bridge passes on
+
+A connection that is not MTProto, or that b4 cannot map to a data centre, is relayed unchanged to its original address and counted under **Passed on undecoded** on the card. The route depends on the port and on what carried earlier connections to the same address:
+
+| Case | Route |
+| --- | --- |
+| Port other than 443 | Directly. The Worker always connects to port 443 of the address it is given. |
+| Port 443, no Worker configured, or every Worker set aside after stalling | Directly |
+| Port 443, a usable Worker | The Worker first; directly if no Worker connects |
+| Port 443, an address remembered as direct | Directly first, with a 5-second connect wait; the Worker if the direct connection cannot be opened |
+
+An address is remembered as direct for 30 minutes when a Worker stalls on a connection to it or when a direct connection to it carries data. A direct connection that cannot be opened, or that opens and carries nothing back, removes the address from memory, so the next one goes to the Worker first again. A stall also counts against the Worker itself: two within five minutes set that Worker aside for ten minutes, for all routes.
 
 ## Limiting the bridge to some devices or interfaces
 

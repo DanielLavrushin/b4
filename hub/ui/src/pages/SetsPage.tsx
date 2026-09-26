@@ -25,6 +25,7 @@ const matches = (entry: EntryView, needle: string) => {
     entry.status_reason ?? "",
     ...entry.targets.domains,
     ...entry.targets.geosite,
+    ...entry.targets.asns.map((id) => `AS${id}`),
     ...entry.strategy,
   ]
     .join("\n")

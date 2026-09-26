@@ -28,7 +28,8 @@ export const ActiveSets = ({ sets }: ActiveSetsProps) => {
             (set.targets.geosite_categories?.length || 0);
           const ipCount =
             (set.targets.ip?.length || 0) +
-            (set.targets.geoip_categories?.length || 0);
+            (set.targets.geoip_categories?.length || 0) +
+            (set.targets.asns?.length || 0);
           const totalTargets = domainCount + ipCount;
 
           const goToSet = () => {

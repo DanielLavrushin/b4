@@ -12,6 +12,7 @@
 
 REGISTERED_FEATURES=""
 ENABLED_FEATURES=""
+FAILED_FEATURES=""
 
 register_feature() {
     id="$1"
@@ -32,12 +33,25 @@ feature_dispatch() {
     fi
 }
 
+features_prepare() {
+    for f in $ENABLED_FEATURES; do
+        type "feature_${f}_prepare" >/dev/null 2>&1 || continue
+        fname=$(feature_dispatch "$f" name)
+        log_header "Feature: ${fname}"
+        feature_dispatch "$f" prepare || true
+    done
+}
+
 # Run all enabled features
 features_run() {
     for f in $ENABLED_FEATURES; do
         fname=$(feature_dispatch "$f" name)
-        log_header "Feature: ${fname}"
-        feature_dispatch "$f" run || log_warn "Feature '${fname}' had issues"
+        _fr_name="$fname"
+        log_header "Feature: ${_fr_name}"
+        if ! feature_dispatch "$f" run; then
+            log_warn "Feature '${_fr_name}' had issues"
+            FAILED_FEATURES="${FAILED_FEATURES:+${FAILED_FEATURES}, }${_fr_name}"
+        fi
     done
 }
 

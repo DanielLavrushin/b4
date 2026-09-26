@@ -13,6 +13,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -244,8 +245,10 @@ var selfDialMark = func() uint {
 	return uint(config.SelfDialMark)
 }
 
-func (p transportPlan) relayRoute() bool {
-	return p.isWorker || p.cfBase != ""
+var workerFollowsSets atomic.Bool
+
+func setWorkerFollowsSets(cfg *config.Config) {
+	workerFollowsSets.Store(cfg != nil && cfg.System.MTProto.CFWorkerDPI)
 }
 
 func relayDialMark(base uint) uint {
@@ -255,11 +258,21 @@ func relayDialMark(base uint) uint {
 	return base | uint(config.SelfDialNoDPIBit)
 }
 
-func planDialMark(p transportPlan, base uint) uint {
-	if !p.relayRoute() {
+func workerDialMark(base uint) uint {
+	if workerFollowsSets.Load() {
 		return base
 	}
 	return relayDialMark(base)
+}
+
+func planDialMark(p transportPlan, base uint) uint {
+	switch {
+	case p.isWorker:
+		return workerDialMark(base)
+	case p.cfBase != "":
+		return relayDialMark(base)
+	}
+	return base
 }
 
 func workerNameOf(p transportPlan) string {

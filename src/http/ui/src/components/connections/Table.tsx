@@ -17,7 +17,7 @@ import { SortableTableCell, SortDirection } from "@common/SortableTableCell";
 import { ProtocolChip } from "@common/ProtocolChip";
 import { colors } from "@design";
 import { B4Badge } from "@common/B4Badge";
-import { asnStorage, stripPort } from "@utils";
+import { AsnLabels, stripPort } from "@utils";
 import { ParsedLog } from "@b4.connections";
 import { useTranslation } from "react-i18next";
 
@@ -39,7 +39,7 @@ interface DomainsTableProps {
   onEnrichIp: (ip: string) => Promise<void>;
   onDeleteAsn: (asnId: string) => void;
   enrichingIps: Set<string>;
-  asnVersion: number;
+  asnLabels: AsnLabels;
   onScrollStateChange: (isAtBottom: boolean) => void;
 }
 
@@ -53,7 +53,7 @@ const TableRowMemo = memo<{
   onEnrichIp: (ip: string) => Promise<void>;
   onDeleteAsn: (asnId: string) => void;
   enrichingIps: Set<string>;
-  asnVersion: number;
+  asnLabels: AsnLabels;
 }>(
   ({
     log,
@@ -62,12 +62,13 @@ const TableRowMemo = memo<{
     onEnrichIp,
     onDeleteAsn,
     enrichingIps,
+    asnLabels,
   }) => {
     const { t } = useTranslation();
-    const asnInfo = useMemo(() => {
-      if (!log.destination) return null;
-      return asnStorage.findAsnForIp(log.destination);
-    }, [log.destination]);
+    const asnInfo = useMemo(
+      () => (log.destination ? asnLabels.find(log.destination) : null),
+      [log.destination, asnLabels],
+    );
 
     const isEnriching = enrichingIps.has(stripPort(log.destination));
 
@@ -252,7 +253,7 @@ const TableRowMemo = memo<{
   (prev, next) =>
     prev.log.raw === next.log.raw &&
     prev.enrichingIps === next.enrichingIps &&
-    prev.asnVersion === next.asnVersion,
+    prev.asnLabels === next.asnLabels,
 );
 
 TableRowMemo.displayName = "TableRowMemo";
@@ -267,7 +268,7 @@ export const DomainsTable = ({
   onEnrichIp,
   onDeleteAsn,
   enrichingIps,
-  asnVersion,
+  asnLabels,
   onScrollStateChange,
 }: DomainsTableProps) => {
   const { t } = useTranslation();
@@ -416,7 +417,7 @@ export const DomainsTable = ({
                   onEnrichIp={onEnrichIp}
                   onDeleteAsn={onDeleteAsn}
                   enrichingIps={enrichingIps}
-                  asnVersion={asnVersion}
+                  asnLabels={asnLabels}
                 />
               ))}
 

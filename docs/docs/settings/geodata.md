@@ -73,7 +73,7 @@ On a device with little storage, removing a database you do not use in any set f
 :::
 
 :::warning File size
-GeoSite and GeoIP files can take up 5-15 MB each. On routers with limited storage, make sure there is enough space.
+GeoSite and GeoIP files range from a few MB to more than 70 MB (the RUNET Freedom GeoSite). A new copy is written next to the current one before it replaces it, so an update needs room for both at once. When there is not enough, the update fails and the current file is kept.
 :::
 
 ## Using in sets
@@ -87,7 +87,17 @@ The number of domains/IPs in each category is shown next to it. Click a category
 
 ## Updating
 
-Databases are updated manually - go to settings and click **Download** again. No b4 restart is required - new data is picked up automatically.
+**Download** replaces a database on demand, and b4 picks up the new data without a restart. Under **Auto-update**, **Refresh on startup** downloads both files each time b4 starts, and **Schedule** (Daily, Weekly, Monthly) refreshes them in the background. With a source URL set and the web server on, a missing or damaged file is downloaded again about 45 seconds after start whatever these options say.
+
+### Checks before a file is replaced
+
+A download or an upload goes to a temporary file in the destination directory and replaces the current file only after a check: it has to parse as a GeoSite or GeoIP database from start to end, and its first records have to hold domains (GeoSite) or address ranges (GeoIP). An error or block page, an empty response, a transfer cut short and a GeoIP file uploaded as GeoSite are all rejected, and the current file stays in place. A download that receives no data for 60 seconds, or takes longer than an hour, is abandoned. A rejected download from a source hosted on GitHub is tried again through the [update mirrors](../advanced/update-mirrors.md).
+
+The installer lists every source with the size of its file. When no source is configured yet, it offers the recommended one (RUNET Freedom for GeoSite, b4geoip for GeoIP) if that file fits in the target directory next to the current one, and otherwise the smallest source that fits; a reinstall keeps the source already configured. It downloads the files next to the current ones while b4 is still running, compares each with the `.sha256sum` that the source publishes next to it, and moves them into place only after b4 is stopped. A failed or rejected download leaves the current file, and a file whose checksum already matches the published one is not downloaded again. `B4_GEO_MAX_TIME` sets the time limit of one download attempt in seconds (3600 by default, `0` for none).
+
+### Damaged files
+
+A file can still end up damaged, for example cut short by an earlier version of the installer or by a full disk. b4 then starts with the categories it can read and logs each category that it could not read together with the sets that run without it. Such a set matches only its other targets (domains, addresses, ASNs); a set whose only targets are those categories matches nothing, and its port filter does not turn it into a port-only set. With a source URL set and the web server on, b4 downloads the damaged file again about 45 seconds after start. When that fails, it tries again two hours later, and after each further failure it waits twice as long, up to once a day.
 
 ## Tools
 

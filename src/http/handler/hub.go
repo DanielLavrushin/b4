@@ -158,6 +158,7 @@ func (api *API) handleHubImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	warnings := append(imp.Warnings, api.hubGeoWarnings(&set)...)
+	warnings = append(warnings, hubASNWarnings(&set)...)
 
 	sendResponse(w, HubImportResponse{Set: &set, Warnings: warnings, Payloads: installed})
 }
@@ -421,6 +422,8 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	warnings := append(imp.Warnings, api.hubGeoWarnings(&set)...)
+	asnWarnings := hubASNWarnings(&set)
+	warnings = append(warnings, asnWarnings...)
 
 	set.Id = uuid.New().String()
 	if set.Name == "" {
@@ -440,7 +443,7 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 		log.Warnf("Set '%s': dropping geoip categories %v, no geoip database is installed", set.Name, set.Targets.GeoIpCategories)
 		set.Targets.GeoIpCategories = []string{}
 	}
-	if len(set.Targets.SNIDomains) == 0 && len(set.Targets.IPs) == 0 && len(set.Targets.GeoSiteCategories) == 0 && len(set.Targets.GeoIpCategories) == 0 {
+	if len(set.Targets.SNIDomains) == 0 && len(set.Targets.IPs) == 0 && len(set.Targets.GeoSiteCategories) == 0 && len(set.Targets.GeoIpCategories) == 0 && len(set.Targets.ASNs) == 0 {
 		writeAPIError(w, &APIError{Status: http.StatusBadRequest, Code: "no_targets", Message: "The set targets nothing this device can match"})
 		return
 	}
@@ -480,6 +483,9 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 		log.Errorf("Hub apply: failed to save config: %v", err)
 		writeAPIError(w, err)
 		return
+	}
+	if len(asnWarnings) > 0 {
+		config.RequestASNRefresh()
 	}
 	if api.PerformSoftRestart(newCfg, oldCfg) {
 		log.Infof("Soft restart completed successfully")
@@ -892,6 +898,14 @@ func (api *API) hubGeoWarnings(set *config.SetConfig) []hubwire.Warning {
 		}
 	}
 	return out
+}
+
+func hubASNWarnings(set *config.SetConfig) []hubwire.Warning {
+	unresolved := unresolvedASNs(set.Targets.ASNs)
+	if len(unresolved) == 0 {
+		return nil
+	}
+	return []hubwire.Warning{{Code: "asn_unresolved", Params: map[string]interface{}{"asns": unresolved}}}
 }
 
 func (api *API) missingCategories(path string, wanted []string) []string {

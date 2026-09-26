@@ -19,6 +19,7 @@ const (
 	MaxCustomPayloadBytes = 8 * 1024
 	MaxSNIDomains         = 500
 	MaxIPs                = 200
+	MaxASNs               = 50
 )
 
 var Fields = map[string]Field{
@@ -131,6 +132,7 @@ var Fields = map[string]Field{
 	"targets.ip":                     {Class: Crosses},
 	"targets.geosite_categories":     {Class: Crosses},
 	"targets.geoip_categories":       {Class: Crosses},
+	"targets.asns":                   {Class: Crosses, Since: "1.83.0"},
 	"targets.source_devices":         {Class: Never},
 	"targets.source_devices_exclude": {Class: Never},
 	"targets.domain_only":            {Class: Crosses},

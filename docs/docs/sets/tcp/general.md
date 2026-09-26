@@ -49,9 +49,9 @@ Limits the TCP Maximum Segment Size for connections this set covers. A smaller M
 | MSS size | MSS size in bytes. Lower = more fragmentation | 10-1460 | `88` |
 
 :::warning What a per-set MSS can and cannot narrow down
-The MSS is written into the TCP `SYN`, which is the very first packet of a connection - long before the TLS handshake reveals which site is being visited. So this clamp can only be scoped by things the kernel already knows at `SYN` time: **IP targets, GeoIP categories and source devices**. `SNI domains`, `GeoSite categories` and the TLS version filter play no part in it.
+The MSS is written into the TCP `SYN`, which is the very first packet of a connection - long before the TLS handshake reveals which site is being visited. So this clamp can only be scoped by things the kernel already knows at `SYN` time: **IP targets, GeoIP categories, ASNs and source devices**. `SNI domains`, `GeoSite categories` and the TLS version filter play no part in it.
 
-The switch stays disabled until the set has an IP, GeoIP or source device target.
+The switch stays disabled until the set has an IP, GeoIP, ASN or source device target. A set whose IP, GeoIP and ASN targets resolve to no addresses yet, such as an ASN not fetched yet or a GeoIP category missing from the file, installs no clamp until they do.
 
 A source device discovered from the ARP table is matched by its MAC address; one you added by hand is matched by the IP
 address you entered for it, so such a device needs a fixed address to be usable as a clamp scope.
@@ -59,11 +59,11 @@ address you entered for it, so such a device needs a fixed address to be usable 
 
 The consequence is worth spelling out, because it surprises people:
 
-- Set scoped by **IP or GeoIP**: the clamp applies only to connections headed for those addresses. This is what most people expect.
+- Set scoped by **IP, GeoIP or ASN**: the clamp applies only to connections headed for those addresses. This is what most people expect.
 - Set scoped **only by source device**: the clamp applies to **every** port 443 connection from those devices, wherever it is going - not just to the set's domains. That device's HTTPS is slowed across the board.
 - Set with **both**: the clamp applies to connections from those devices *and* headed for those addresses.
 
-If the goal is simply "slow this one TV down on port 443", the [per-device MSS](../../settings/core#device-filtering) column does the same job and reads more honestly. Reach for a per-set MSS when the set carries IP or GeoIP targets to aim it at.
+If the goal is simply "slow this one TV down on port 443", the [per-device MSS](../../settings/core#device-filtering) column does the same job and reads more honestly. Reach for a per-set MSS when the set carries IP, GeoIP or ASN targets to aim it at.
 
 :::info
 Enabling the switch fills the size in as `88` if it is empty. That is the smallest useful value and the usual TSPU workaround for smart TVs on YouTube, but it is an aggressive one - every segment carries at most 88 bytes of payload, so large downloads over a clamped connection are slow. Raise it if the connection works but crawls.

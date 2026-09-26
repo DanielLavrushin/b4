@@ -414,6 +414,7 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	set.Targets.IPs = nil
+	set.Targets.ASNs = nil
 
 	geoBefore := api.getCfg().System.Geo
 	api.loadTargetsForSetCached(&set)

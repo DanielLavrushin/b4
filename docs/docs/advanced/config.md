@@ -121,7 +121,7 @@ The address families are bound when the service starts, so a change here needs a
 
 Each set is one object in the `sets` array, carrying its whole configuration. Its keys line up with the tabs of the set editor:
 
-- `targets` - domains, IPs, GeoSite and GeoIP categories, source devices
+- `targets` - domains, IPs, GeoSite and GeoIP categories, ASNs, source devices
 - `tcp` - general TCP settings, desync, window, incoming, RST protection
 - `fragmentation` - the fragmentation method and its parameters
 - `faking` - SNI faking, SYN fakes, mutation
@@ -145,5 +145,7 @@ Editing by hand works, but the web interface validates values and applies migrat
 ## Migrations
 
 When the format changes between releases, b4 migrates the file on startup: new fields arrive with their defaults and renamed ones are carried over. Before it touches anything it writes a backup next to the file, named after the version it is migrating from, for example `b4.json.v51.bak`.
+
+A file that cannot be read at startup, for example one cut short by a power loss during a save or left with a JSON syntax error after a manual edit, is copied next to itself as `b4.json.corrupt`, or `b4.json.corrupt.1` and onward when an earlier copy with different content is already there, and an error line in the log names the copy. b4 then starts on the defaults, and the next save replaces the original file, so the unreadable settings remain only in that copy.
 
 A file whose `version` is higher than the running binary understands is loaded as it is, with a warning: settings that binary does not know about are dropped the next time the configuration is saved.

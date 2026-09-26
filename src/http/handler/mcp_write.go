@@ -292,11 +292,24 @@ func mcpExpansionNote(e *mcpTargetExpansion) string {
 			"geoip %s matched no addresses - an unknown category name is skipped silently, so check the spelling or whether a geoip database is installed",
 			strings.Join(e.EmptyGeoIP, ", ")))
 	}
-	if len(parts) == 0 {
-		return fmt.Sprintf("the set now matches %d domains and %d addresses.", e.Domains, e.IPs)
+	if len(e.UnresolvedASNs) > 0 {
+		verb := "have"
+		if len(e.UnresolvedASNs) == 1 {
+			verb = "has"
+		}
+		parts = append(parts, fmt.Sprintf(
+			"%s %s no known prefixes yet - b4 is fetching them from RIPEstat in the background, and until that succeeds the set matches none of their addresses",
+			mcpASNLabels(e.UnresolvedASNs), verb))
 	}
-	return fmt.Sprintf("The set now matches %d domains and %d addresses, but %s.",
-		e.Domains, e.IPs, strings.Join(parts, "; "))
+	addresses := fmt.Sprintf("%d addresses", e.IPs)
+	if e.ASNPrefixes > 0 {
+		addresses = fmt.Sprintf("%d addresses (%d of them prefixes announced by its ASNs)", e.IPs, e.ASNPrefixes)
+	}
+	if len(parts) == 0 {
+		return fmt.Sprintf("the set now matches %d domains and %s.", e.Domains, addresses)
+	}
+	return fmt.Sprintf("The set now matches %d domains and %s, but %s.",
+		e.Domains, addresses, strings.Join(parts, "; "))
 }
 
 func mcpPathAllowed(canonical string) bool {
@@ -664,10 +677,34 @@ type mcpSetValueIn struct {
 }
 
 type mcpTargetExpansion struct {
-	Domains      int      `json:"domain_count"`
-	IPs          int      `json:"ip_count"`
-	EmptyGeoSite []string `json:"geosite_categories_matching_nothing,omitempty"`
-	EmptyGeoIP   []string `json:"geoip_categories_matching_nothing,omitempty"`
+	Domains        int      `json:"domain_count"`
+	IPs            int      `json:"ip_count"`
+	ASNPrefixes    int      `json:"-"`
+	EmptyGeoSite   []string `json:"geosite_categories_matching_nothing,omitempty"`
+	EmptyGeoIP     []string `json:"geoip_categories_matching_nothing,omitempty"`
+	UnresolvedASNs []string `json:"unresolved_asns,omitempty"`
+}
+
+func mcpExpansionOf(report targetExpansion) *mcpTargetExpansion {
+	return &mcpTargetExpansion{
+		Domains:        report.Domains,
+		IPs:            report.IPs,
+		ASNPrefixes:    report.ASNIPs,
+		EmptyGeoSite:   report.EmptyGeoSite,
+		EmptyGeoIP:     report.EmptyGeoIP,
+		UnresolvedASNs: report.UnresolvedASNs,
+	}
+}
+
+func mcpASNLabels(ids []string) string {
+	labels := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if canonical, ok := config.NormalizeASN(id); ok {
+			id = "AS" + canonical
+		}
+		labels = append(labels, id)
+	}
+	return strings.Join(labels, ", ")
 }
 
 type mcpSetValueOut struct {
@@ -801,12 +838,7 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		if mcpPathTouchesTargets(canonical) {
 			if set := findSetIn(newCfg, readRef); set != nil {
 				report := api.loadTargetsForSetCached(set)
-				expansion = &mcpTargetExpansion{
-					Domains:      report.Domains,
-					IPs:          report.IPs,
-					EmptyGeoSite: report.EmptyGeoSite,
-					EmptyGeoIP:   report.EmptyGeoIP,
-				}
+				expansion = mcpExpansionOf(report)
 			}
 		}
 

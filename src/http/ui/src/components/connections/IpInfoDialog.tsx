@@ -11,19 +11,8 @@ import { B4Dialog } from "@common/B4Dialog";
 import { B4Badge } from "@common/B4Badge";
 import { B4Alert } from "@b4.elements";
 import { useTranslation } from "react-i18next";
-import { stripPort } from "@utils";
-
-interface IpInfo {
-  ip: string;
-  hostname?: string;
-  city?: string;
-  region?: string;
-  country?: string;
-  loc?: string;
-  org?: string;
-  postal?: string;
-  timezone?: string;
-}
+import { localizeApiError } from "@utils";
+import { IpInfo, fetchIpInfo, ipInfoLocation } from "./ipinfo";
 
 interface IpInfoModalProps {
   open: boolean;
@@ -47,26 +36,23 @@ export const IpInfoModal = ({
 
   useEffect(() => {
     if (!open || !ip || !token) return;
-
-    const fetchIpInfo = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const cleanIp = stripPort(ip);
-        const response = await fetch(
-          `/api/integration/ipinfo?ip=${encodeURIComponent(cleanIp)}`
-        );
-        if (!response.ok) throw new Error("Failed to fetch IP info");
-        const data = (await response.json()) as IpInfo;
-        setIpInfo(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
-      } finally {
-        setLoading(false);
-      }
+    let active = true;
+    setLoading(true);
+    setError(null);
+    setIpInfo(null);
+    fetchIpInfo(ip)
+      .then((data) => {
+        if (active) setIpInfo(data);
+      })
+      .catch((err: unknown) => {
+        if (active) setError(localizeApiError(err));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
     };
-
-    void fetchIpInfo();
   }, [open, ip, token]);
 
   const handleAddHostname = () => {
@@ -122,7 +108,7 @@ export const IpInfoModal = ({
                 </Typography>
                 <Typography variant="body1">
                   <a
-                    href={"https://ipinfo.io/" + ipInfo.org.split(" ")[0]}
+                    href={`https://ipinfo.io/${encodeURIComponent(ipInfo.org.split(" ")[0])}`}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -149,7 +135,7 @@ export const IpInfoModal = ({
               </Typography>
               <Typography variant="body1" fontFamily="monospace">
                 <a
-                  href={"https://ipinfo.io/" + ipInfo.ip}
+                  href={`https://ipinfo.io/${encodeURIComponent(ipInfo.ip)}`}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -163,11 +149,7 @@ export const IpInfoModal = ({
                 <Typography variant="caption" color="text.secondary">
                   {t("connections.ipInfo.location")}
                 </Typography>
-                <Typography variant="body1">
-                  {[ipInfo.city, ipInfo.region, ipInfo.country]
-                    .filter(Boolean)
-                    .join(", ")}
-                </Typography>
+                <Typography variant="body1">{ipInfoLocation(ipInfo)}</Typography>
               </Box>
             )}
 

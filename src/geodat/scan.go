@@ -20,6 +20,11 @@ func fileStamp(path string) (string, bool) {
 	return fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano()), true
 }
 
+func FileStamp(path string) string {
+	stamp, _ := fileStamp(path)
+	return stamp
+}
+
 var ErrStopScan = errStopScan
 
 func (gm *GeodataManager) ScanGeositeEntries(fn func(tag, entry string) error) error {

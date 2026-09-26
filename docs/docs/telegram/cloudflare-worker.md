@@ -28,6 +28,10 @@ Data centres 1, 3 and 5 have no native edge, so a network where the shared pool 
 
 `cloudflare.com`, `cloudflare.dev` and `workers.dev` all have to be reachable from the network in question.
 
+:::info Networks that throttle workers.dev
+On some networks the TLS handshake with a `workers.dev` name completes and the stream then stops after the first few kilobytes. b4 counts such a stall against the Worker and sets it aside for ten minutes after two stalls within five minutes. b4's own connections to the Worker skip DPI processing by default; with **Let sets process Worker connections** on, a set whose targets cover the Worker applies its strategy to them. See [DPI processing](./websocket-bridge.md#dpi-processing).
+:::
+
 The Worker needs a **compatibility date of `2026-04-07` or later**. From that date the runtime answers a close frame by itself, which is the documented cause of `The Workers runtime canceled this request because it detected that your Worker's code had hung`.
 
 The step-by-step with screenshots is maintained by tg-ws-proxy: [CfWorker.md](https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfWorker.md). b4 asks the Worker for a data-centre address without a port: Telegram serves the same endpoint on 80, 443 and 5222, `443` is the one every data centre listens on, and DC 203 does not answer on 5222 at all.

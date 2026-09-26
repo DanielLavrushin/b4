@@ -44,7 +44,7 @@ The order is:
 
 ![A community set card](/img/community/20260914230100.png)
 
-The header shows the title, the author label, the version, the technique family, the b4 version the set needs, and the targets: the first domains, the geosite and geoip categories, the total number of domains and addresses. The badges on the right:
+The header shows the title, the author label, the version, the technique family, the b4 version the set needs, and the targets: the first domains, the geosite and geoip categories, the ASNs, the total number of domains and addresses. The badges on the right:
 
 | Badge | Meaning |
 | --- | --- |

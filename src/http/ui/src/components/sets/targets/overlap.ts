@@ -14,3 +14,5 @@ export const findSetOverlaps = (
   }
   return found.join("; ");
 };
+
+export const asnOverlapKey = (id: string): string => `AS${id}`;

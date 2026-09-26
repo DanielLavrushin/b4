@@ -122,7 +122,7 @@ func (p *cfWorkerPool) refill(k cfWorkerKey, pl transportPlan) {
 		p.mu.Unlock()
 	}()
 
-	conn, err := dialWS(pl.dialHost, pl.sni, pl.wsPath, wsPoolDialTimeout, relayDialMark(p.mark))
+	conn, err := dialWS(pl.dialHost, pl.sni, pl.wsPath, wsPoolDialTimeout, workerDialMark(p.mark))
 	if err != nil {
 		log.Tracef("%s CF worker pool warm %s DC %d failed: %v", tg(""), k.domain, k.dc, err)
 		return

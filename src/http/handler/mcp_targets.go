@@ -21,6 +21,7 @@ const (
 	mcpTargetKindIPs      = "ip"
 	mcpTargetKindGeoSite  = "geosite_categories"
 	mcpTargetKindGeoIP    = "geoip_categories"
+	mcpTargetKindASNs     = "asns"
 	mcpTargetKindDevices  = "source_devices"
 	mcpTargetSummaryLimit = 120
 	mcpTargetMaxEntries   = 200
@@ -28,12 +29,12 @@ const (
 
 var mcpTargetKinds = []string{
 	mcpTargetKindDomains, mcpTargetKindIPs,
-	mcpTargetKindGeoSite, mcpTargetKindGeoIP, mcpTargetKindDevices,
+	mcpTargetKindGeoSite, mcpTargetKindGeoIP, mcpTargetKindASNs, mcpTargetKindDevices,
 }
 
 type mcpEditTargetsIn struct {
 	Set    string `json:"set" jsonschema:"Set id or name, as reported by b4_list_sets."`
-	Kind   string `json:"kind" jsonschema:"Which selector to edit: sni_domains, ip, geosite_categories, geoip_categories or source_devices. These are the config field names."`
+	Kind   string `json:"kind" jsonschema:"Which selector to edit: sni_domains, ip, geosite_categories, geoip_categories, asns or source_devices. These are the config field names."`
 	Add    string `json:"add,omitempty" jsonschema:"Comma-separated entries to add."`
 	Remove string `json:"remove,omitempty" jsonschema:"Comma-separated entries to remove. Matched case-insensitively against what is stored."`
 }
@@ -63,6 +64,8 @@ func mcpTargetList(t *config.TargetsConfig, kind string) []string {
 		return t.GeoSiteCategories
 	case mcpTargetKindGeoIP:
 		return t.GeoIpCategories
+	case mcpTargetKindASNs:
+		return t.ASNs
 	case mcpTargetKindDevices:
 		return t.SourceDevices
 	}
@@ -79,6 +82,8 @@ func mcpTargetSetList(t *config.TargetsConfig, kind string, v []string) {
 		t.GeoSiteCategories = v
 	case mcpTargetKindGeoIP:
 		t.GeoIpCategories = v
+	case mcpTargetKindASNs:
+		t.ASNs = v
 	case mcpTargetKindDevices:
 		t.SourceDevices = v
 	}
@@ -157,6 +162,17 @@ func (api *API) mcpCanonicalTarget(kind, raw string) (canonical, rewritten strin
 			return lower, fmt.Sprintf("%s -> %s (category names are lower case)", raw, lower), nil
 		}
 		return lower, "", nil
+
+	case mcpTargetKindASNs:
+		id, ok := config.NormalizeASN(value)
+		if !ok {
+			return "", "", fmt.Errorf(
+				"%q is not a public AS number: pass digits with an optional AS prefix, such as AS15169. 0, 23456, the private and documentation ranges 64496-131071 and 4200000000 and above are refused", raw)
+		}
+		if id != value {
+			return id, fmt.Sprintf("%s -> %s (stored as the bare number)", raw, id), nil
+		}
+		return id, "", nil
 
 	case mcpTargetKindDevices:
 		hw, herr := net.ParseMAC(value)
@@ -264,8 +280,8 @@ func (api *API) addMCPTargetTools(srv *mcp.Server) {
 		Name:  "b4_edit_set_targets",
 		Title: "Add or remove what a set matches",
 		Description: "Add or remove entries in one of a set's selectors, without rewriting the whole list. " +
-			"Use this rather than b4_set_config_value, which replaces a target list wholesale. " +
 			"Entries are validated first: an unparseable address or an unknown geo category is refused here, because nothing else in b4 rejects them. " +
+			"An asns entry is an AS number: b4 fetches its prefixes and refreshes them daily; a large network adds thousands. " +
 			"Adding a domain REMOVES it from every other enabled set; the result lists what moved.",
 		Annotations: mcpDestructive,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpEditTargetsIn) (*mcp.CallToolResult, mcpEditTargetsOut, error) {
@@ -420,12 +436,7 @@ func (api *API) addMCPTargetTools(srv *mcp.Server) {
 		}
 
 		report := api.loadTargetsForSetCached(set)
-		out.Expansion = &mcpTargetExpansion{
-			Domains:      report.Domains,
-			IPs:          report.IPs,
-			EmptyGeoSite: report.EmptyGeoSite,
-			EmptyGeoIP:   report.EmptyGeoIP,
-		}
+		out.Expansion = mcpExpansionOf(report)
 
 		if err := mcpValidateCandidate(oldCfg, newCfg); err != nil {
 			return nil, mcpEditTargetsOut{}, fmt.Errorf("rejected: %w", err)
@@ -436,6 +447,9 @@ func (api *API) addMCPTargetTools(srv *mcp.Server) {
 			return nil, mcpEditTargetsOut{}, fmt.Errorf("rejected: %w", err)
 		}
 		api.applyRuntimeChanges(newCfg, oldCfg)
+		if len(out.Expansion.UnresolvedASNs) > 0 {
+			config.RequestASNRefresh()
+		}
 		refreshed := api.PerformSoftRestart(newCfg, oldCfg)
 
 		path := fmt.Sprintf("sets[%s].targets.%s", set.Name, kind)

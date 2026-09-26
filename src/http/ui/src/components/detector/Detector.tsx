@@ -7,6 +7,7 @@ import { B4Alert, B4Section } from "@b4.elements";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useDetector } from "@hooks/useDetector";
 import { useSets } from "@hooks/useSets";
+import { useIpActions } from "@hooks/useIpActions";
 import { setsApi } from "@api/sets";
 import type { B4SetConfig } from "@models/config";
 import type { DetectorSuite } from "@models/detector";
@@ -17,6 +18,7 @@ import { VerdictPanel } from "./VerdictPanel";
 import { SitesTable } from "./SitesTable";
 import { DnsTable } from "./DnsTable";
 import { HostingTable } from "./HostingTable";
+import { AddIpDialog } from "@components/connections/AddIpDialog";
 import { TelegramPanel } from "./TelegramPanel";
 import { HistoryTable } from "./HistoryTable";
 import { buildReport } from "./report";
@@ -27,14 +29,21 @@ export const DetectorRunner = () => {
   const { showSuccess, showError } = useSnackbar();
   const { running, suite, suiteId, error, history, lists, listsBusy, start, cancel, reset, open, clearHistory, deleteHistoryEntry, updateLists, resetLists } = useDetector();
   const { addDomainsToSet } = useSets();
+  const { dialog: ipDialog, openDialog: openIpDialog, closeDialog: closeIpDialog, addTarget: addIpTarget } = useIpActions();
   const [sets, setSets] = useState<B4SetConfig[]>([]);
 
+  const loadSets = useCallback(
+    () =>
+      setsApi
+        .getSets()
+        .then((s) => setSets(Array.isArray(s) ? s : []))
+        .catch(() => setSets([])),
+    [],
+  );
+
   useEffect(() => {
-    setsApi
-      .getSets()
-      .then((s) => setSets(Array.isArray(s) ? s : []))
-      .catch(() => setSets([]));
-  }, []);
+    void loadSets();
+  }, [loadSets]);
 
   const goDiscovery = useCallback(
     (sites: string[]) => {
@@ -122,7 +131,11 @@ export const DetectorRunner = () => {
 
       {suite?.hosting && (
         <B4Section title={t("detector.scopes.hosting.name")} icon={<NetworkIcon />}>
-          <HostingTable result={suite.hosting} onCopySNI={(sni) => void copyPlain(sni, t("detector.hosting.sniCopied", { sni }))} />
+          <HostingTable
+            result={suite.hosting}
+            onCopySNI={(sni) => void copyPlain(sni, t("detector.hosting.sniCopied", { sni }))}
+            onAddAsn={({ ip, asn, provider }) => openIpDialog(ip, asn, provider)}
+          />
         </B4Section>
       )}
 
@@ -146,6 +159,20 @@ export const DetectorRunner = () => {
           <HistoryTable entries={history} currentId={suiteId} onOpen={open} onCopy={(e) => void copyReport(e)} onDelete={(id) => void deleteHistoryEntry(id)} />
         </B4Section>
       )}
+
+      <AddIpDialog
+        key={ipDialog.session}
+        open={ipDialog.open}
+        ip={ipDialog.ip}
+        asn={ipDialog.asn}
+        asnName={ipDialog.asnName}
+        sets={sets}
+        onClose={closeIpDialog}
+        onSubmit={async (request) => {
+          await addIpTarget(request);
+          void loadSets();
+        }}
+      />
     </Stack>
   );
 };

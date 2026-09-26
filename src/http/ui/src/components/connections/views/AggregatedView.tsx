@@ -5,6 +5,7 @@ import { colors, theme } from "@design";
 import { useConnectionGroups, type EnrichedGroup } from "@hooks/useConnectionGroups";
 import {
   AGG_SORT_STORAGE_KEY,
+  AsnLabels,
   loadSortState,
   matchesConnectionFilter,
   parseConnectionFilter,
@@ -29,6 +30,7 @@ interface Props {
   filter: string;
   onFilterChange: (v: string) => void;
   enrichingIps: Set<string>;
+  asnLabels: AsnLabels;
   onAddDomain: (domain: string) => void;
   onAddIp: (ip: string) => void;
   onEnrichAsn: (ip: string) => void;
@@ -92,6 +94,7 @@ export const AggregatedView = ({
   filter,
   onFilterChange,
   enrichingIps,
+  asnLabels,
   onAddDomain,
   onAddIp,
   onEnrichAsn,
@@ -153,12 +156,25 @@ export const AggregatedView = ({
 
   const state = useConnectionGroups(lines, deviceMap, paused, ipToMac);
 
+  const groups = useMemo(
+    () =>
+      state.groups.map((g) => {
+        const asn = g.destIp ? asnLabels.find(g.destIp) : null;
+        const asnId = asn?.id ?? null;
+        const asnName = asn?.name ?? null;
+        return asnId === g.asnId && asnName === g.asnName
+          ? g
+          : { ...g, asnId, asnName };
+      }),
+    [state.groups, asnLabels],
+  );
+
   const dataLatest = useMemo(() => {
     let latest = 0;
-    for (const g of state.groups) if (g.lastSeen > latest) latest = g.lastSeen;
+    for (const g of groups) if (g.lastSeen > latest) latest = g.lastSeen;
     for (const d of state.devices) if (d.lastSeen > latest) latest = d.lastSeen;
     return latest;
-  }, [state.groups, state.devices]);
+  }, [groups, state.devices]);
 
   const anchorRef = useRef({ data: 0, wall: 0 });
   if (anchorRef.current.data !== dataLatest) {
@@ -179,7 +195,7 @@ export const AggregatedView = ({
   const filteredGroups = useMemo(() => {
     const cutoff = window === 0 || now === 0 ? 0 : now - window * 1000;
     const parsedFilter = parseConnectionFilter(filter);
-    return state.groups.filter((g) => {
+    return groups.filter((g) => {
       if (cutoff > 0 && g.lastSeen < cutoff) return false;
       if (unmatchedOnly && (g.hostSet || g.ipSet)) return false;
       if (!showAll && !g.domain) return false;
@@ -195,7 +211,7 @@ export const AggregatedView = ({
         return false;
       return true;
     });
-  }, [state.groups, window, unmatchedOnly, showAll, selectedMac, filter, now]);
+  }, [groups, window, unmatchedOnly, showAll, selectedMac, filter, now]);
 
   const sortedGroups = useMemo(() => {
     const arr = [...filteredGroups];
@@ -219,8 +235,8 @@ export const AggregatedView = ({
   }, [filteredGroups, sortColumn, sortDirection]);
 
   const selectedGroup = useMemo(
-    () => (selectedKey ? state.groups.find((g) => g.key === selectedKey) ?? null : null),
-    [selectedKey, state.groups],
+    () => (selectedKey ? groups.find((g) => g.key === selectedKey) ?? null : null),
+    [selectedKey, groups],
   );
 
   const visibleDevices = useMemo(() => {

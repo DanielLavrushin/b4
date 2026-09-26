@@ -47,7 +47,14 @@ func setTCPUserTimeout(c net.Conn, d time.Duration) {
 type MTProtoBridge interface {
 	Handle(client net.Conn, origIP net.IP, origPort int) (bool, net.Conn)
 	FailOpenViaWorker(client net.Conn, origIP net.IP, origPort int) bool
+	FailOpenOrder(origIP net.IP, origPort int) (directFirst, workerFallback bool)
+	NoteFailOpenDirect(origIP net.IP, dialed bool, received int64)
 }
+
+const (
+	failOpenDirectTimeout      = 10 * time.Second
+	failOpenDirectFirstTimeout = 5 * time.Second
+)
 
 type Listener struct {
 	SetID     string
@@ -300,17 +307,34 @@ func (l *Listener) handle(client net.Conn) {
 		log.LogConnectionStr("TCP", l.SetName, "", src, "",
 			net.JoinHostPort(origIP.String(), fmt.Sprintf("%d", origPort)),
 			"", "", "mtproto-ws")
-		if l.Bridge != nil {
-			if handled, failover := l.Bridge.Handle(client, origIP, origPort); handled {
-				return
-			} else if failover != nil {
-				client = failover
-			}
-			if l.Bridge.FailOpenViaWorker(client, origIP, origPort) {
-				return
-			}
+		if l.Bridge == nil {
+			l.failOpenDirect(client, origIP, origPort)
+			return
 		}
-		l.failOpenDirect(client, origIP, origPort)
+		if handled, failover := l.Bridge.Handle(client, origIP, origPort); handled {
+			return
+		} else if failover != nil {
+			client = failover
+		}
+		dest := net.JoinHostPort(origIP.String(), strconv.Itoa(origPort))
+		directFirst, workerFallback := l.Bridge.FailOpenOrder(origIP, origPort)
+		if directFirst {
+			timeout := failOpenDirectTimeout
+			if workerFallback {
+				timeout = failOpenDirectFirstTimeout
+			}
+			dialed, received := l.relayDirectCounted(client, dest, nil, timeout)
+			l.Bridge.NoteFailOpenDirect(origIP, dialed, received)
+			if !dialed && workerFallback {
+				l.Bridge.FailOpenViaWorker(client, origIP, origPort)
+			}
+			return
+		}
+		if l.Bridge.FailOpenViaWorker(client, origIP, origPort) {
+			return
+		}
+		dialed, received := l.relayDirectCounted(client, dest, nil, failOpenDirectTimeout)
+		l.Bridge.NoteFailOpenDirect(origIP, dialed, received)
 		return
 	}
 
@@ -550,24 +574,50 @@ func (l *Listener) failOpenDirect(client net.Conn, origIP net.IP, origPort int) 
 }
 
 func (l *Listener) relayDirect(client net.Conn, dest string, prefix []byte) {
-	dialer := markedDialer(10*time.Second, l.Upstream.BypassMark)
-	ctx, cancel := context.WithTimeout(l.ctx, 10*time.Second)
+	l.relayDirectCounted(client, dest, prefix, 10*time.Second)
+}
+
+func (l *Listener) relayDirectCounted(client net.Conn, dest string, prefix []byte, timeout time.Duration) (bool, int64) {
+	dialer := markedDialer(timeout, l.Upstream.BypassMark)
+	ctx, cancel := context.WithTimeout(l.ctx, timeout)
 	direct, err := dialer.DialContext(ctx, "tcp", dest)
 	cancel()
 	if err != nil {
 		log.Tracef("tproxy: direct dial to %s on set %q failed: %v", dest, l.SetName, err)
-		return
+		return false, 0
 	}
 	defer direct.Close()
 	if err := writePrefix(direct, prefix); err != nil {
 		log.Tracef("tproxy: replaying %d sniffed bytes to %s on set %q failed: %v", len(prefix), dest, l.SetName, err)
-		return
+		return true, 0
 	}
 	setTCPUserTimeout(client, failOpenUserTimeout)
 	setTCPUserTimeout(direct, failOpenUserTimeout)
-	pipe(client, direct)
+	counted := &countingConn{Conn: direct}
+	pipe(client, counted)
+	return true, counted.received.Load()
 }
 
 func pipe(a, b net.Conn) {
 	_ = socks5.Relay(a, b)
+}
+
+type countingConn struct {
+	net.Conn
+	received atomic.Int64
+}
+
+func (c *countingConn) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	if n > 0 {
+		c.received.Add(int64(n))
+	}
+	return n, err
+}
+
+func (c *countingConn) CloseWrite() error {
+	if cw, ok := c.Conn.(interface{ CloseWrite() error }); ok {
+		return cw.CloseWrite()
+	}
+	return nil
 }

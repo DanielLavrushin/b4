@@ -33,7 +33,8 @@ func streamGeoIP(file string, filters []string, emit cidrFunc) error {
 	got := make(map[string]struct{}, len(want))
 	var scratch []byte
 
-	return scanEntries(file, func(tag string, body *entryBody) error {
+	before, stamped := fileStamp(file)
+	return track(file, before, stamped, scanEntries(file, func(tag string, body *entryBody) error {
 		if _, ok := want[tag]; !ok {
 			return nil
 		}
@@ -56,12 +57,13 @@ func streamGeoIP(file string, filters []string, emit cidrFunc) error {
 			return errStopScan
 		}
 		return nil
-	})
+	}))
 }
 
 func streamAllGeoIP(file string, emit cidrFunc) error {
 	var scratch []byte
-	return scanEntries(file, func(tag string, body *entryBody) error {
+	before, stamped := fileStamp(file)
+	return track(file, before, stamped, scanEntries(file, func(tag string, body *entryBody) error {
 		return scanRecords(body, &scratch, func(rec []byte) error {
 			ip, bits, err := parseCIDR(rec)
 			if err != nil {
@@ -73,7 +75,7 @@ func streamAllGeoIP(file string, emit cidrFunc) error {
 			}
 			return emit(tag, prefix)
 		})
-	})
+	}))
 }
 
 func UnpackGeoIP(args *UnpackArgs) error {

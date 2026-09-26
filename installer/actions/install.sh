@@ -98,6 +98,10 @@ action_install() {
         exit 1
     fi
 
+    if [ -n "$ENABLED_FEATURES" ]; then
+        features_prepare
+    fi
+
     # Stop running instance
     B4_WAS_RUNNING=0
     is_b4_running && B4_WAS_RUNNING=1
@@ -267,6 +271,10 @@ _install_summary() {
     fi
 
     echo ""
+    if [ -n "$FAILED_FEATURES" ]; then
+        log_err "Not completed: ${FAILED_FEATURES} (see the messages above)"
+        echo ""
+    fi
     if [ "${_svc_failed:-0}" -eq 1 ]; then
         log_err "B4 is installed, but its service was not set up - start it by hand:"
         log_err "  ${B4_BIN_DIR}/${BINARY_NAME} --config ${B4_CONFIG_FILE}"

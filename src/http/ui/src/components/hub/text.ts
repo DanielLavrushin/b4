@@ -8,6 +8,7 @@ import {
   HubWarning,
   formatWarningParam,
 } from "@models/hub";
+import { formatAsn } from "@models/asn";
 
 const PREVIEW_DOMAINS = 3;
 const AUTHOR_PREVIEW = 12;
@@ -44,6 +45,11 @@ export function targetsSummary(t: TFunction, targets: HubTargets): string {
   }
   if ((targets.geoip ?? []).length > 0) {
     parts.push(t("hub.card.geoip", { list: targets.geoip.join(", ") }));
+  }
+  if ((targets.asns ?? []).length > 0) {
+    parts.push(
+      t("hub.card.asns", { list: targets.asns.map(formatAsn).join(", ") }),
+    );
   }
   if (domains.length > PREVIEW_DOMAINS) {
     parts.push(t("hub.card.domainCount", { count: domains.length }));

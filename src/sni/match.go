@@ -222,7 +222,6 @@ func parsePortRange(part string, set *config.SetConfig) (portRange, bool) {
 	return portRange{}, false
 }
 
-// MatchUDPPort matches a UDP port against sets that have NO IP or domain targets (global port-only sets).
 func (s *SuffixSet) MatchUDPPort(dport uint16, srcMAC string) (bool, *config.SetConfig) {
 	if s == nil || len(s.udpPortRanges) == 0 {
 		return false, nil
@@ -231,7 +230,7 @@ func (s *SuffixSet) MatchUDPPort(dport uint16, srcMAC string) (bool, *config.Set
 	port := int(dport)
 
 	for _, r := range s.udpPortRanges {
-		if r.set.HasIPOrDomainTargets() {
+		if r.set.DeclaresDestinationTargets() {
 			continue
 		}
 		if !setMatchesSource(r.set, srcMAC) {
@@ -245,7 +244,6 @@ func (s *SuffixSet) MatchUDPPort(dport uint16, srcMAC string) (bool, *config.Set
 	return false, nil
 }
 
-// MatchTCPPort matches a TCP port against sets that have NO IP or domain targets (global port-only sets).
 func (s *SuffixSet) MatchTCPPort(dport uint16, srcMAC string) (bool, *config.SetConfig) {
 	if s == nil || len(s.tcpPortRanges) == 0 {
 		return false, nil
@@ -254,7 +252,7 @@ func (s *SuffixSet) MatchTCPPort(dport uint16, srcMAC string) (bool, *config.Set
 	port := int(dport)
 
 	for _, r := range s.tcpPortRanges {
-		if r.set.HasIPOrDomainTargets() {
+		if r.set.DeclaresDestinationTargets() {
 			continue
 		}
 		if !setMatchesSource(r.set, srcMAC) {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import {
   Box,
   Container,
@@ -10,66 +10,29 @@ import { DashboardIcon, LogsIcon } from "@b4.icons";
 import { AddSniModal } from "./AddSniModal";
 import { AggregatedView } from "./views/AggregatedView";
 import { RawView } from "./views/RawView";
-import { useDomainActions, clearAsnLookupCache } from "@hooks/useDomainActions";
+import { useDomainActions } from "@hooks/useDomainActions";
 import { useIpActions } from "@hooks/useIpActions";
 import {
   generateDomainVariants,
-  generateIpVariants,
+  asnLabel,
   asnStorage,
   stripPort,
   resolveDeviceName,
+  localizeApiError,
 } from "@utils";
 import { colors } from "@design";
 import {
   useConnectionStream,
   useStreamControls,
 } from "@context/B4WsProvider";
-import { AddIpModal } from "./AddIpModal";
+import { AddIpDialog } from "./AddIpDialog";
 import { B4Config, B4SetConfig } from "@models/config";
+import { formatAsn } from "@models/asn";
+import { asnApi, asnInUseSets } from "@api/asn";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { devicesApi } from "@b4.devices";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
-
-interface RipeNetworkInfo {
-  asns: string[];
-  prefix: string;
-}
-
-async function resolveAsn(
-  ip: string,
-  token: string,
-): Promise<{ id: string; name: string } | null> {
-  if (token) {
-    const response = await fetch(
-      `/api/integration/ipinfo?ip=${encodeURIComponent(ip)}`,
-    );
-    if (response.ok) {
-      const data = (await response.json()) as { org?: string };
-      const match = data.org ? /AS(\d+)/.exec(data.org) : null;
-      if (match) return { id: match[1], name: data.org! };
-    }
-  }
-
-  const response = await fetch(
-    `/api/integration/ripestat?ip=${encodeURIComponent(ip)}`,
-  );
-  if (!response.ok) return null;
-  const data = (await response.json()) as { data: RipeNetworkInfo };
-  const asnId = data.data?.asns?.[0];
-  return asnId ? { id: asnId, name: `AS${asnId}` } : null;
-}
-
-async function fetchAsnPrefixes(asnId: string): Promise<string[] | null> {
-  const response = await fetch(
-    `/api/integration/ripestat/asn?asn=${encodeURIComponent(asnId)}`,
-  );
-  if (!response.ok) return null;
-  const data = (await response.json()) as {
-    data: { prefixes: Array<{ prefix: string }> };
-  };
-  return data.data.prefixes.map((p) => p.prefix);
-}
 
 export function ConnectionsPage() {
   const { t } = useTranslation();
@@ -96,13 +59,16 @@ export function ConnectionsPage() {
     useDomainActions();
 
   const {
-    modalState: modalIpState,
-    openModal: openIpModal,
-    closeModal: closeIpModal,
-    selectVariant: selectIpVariant,
-    addIp,
+    dialog: ipDialog,
+    openDialog: openIpDialog,
+    closeDialog: closeIpDialog,
+    addTarget: addIpTarget,
   } = useIpActions();
   const { showSuccess, showError } = useSnackbar();
+  const asnLabels = useSyncExternalStore(
+    asnStorage.subscribe,
+    asnStorage.getLabels,
+  );
 
   const [availableSets, setAvailableSets] = useState<B4SetConfig[]>([]);
   const [ipInfoToken, setIpInfoToken] = useState<string>("");
@@ -116,7 +82,6 @@ export function ConnectionsPage() {
     Record<string, string>
   >({});
   const [enrichingIps, setEnrichingIps] = useState<Set<string>>(new Set());
-  const [asnVersion, setAsnVersion] = useState(0);
 
   useEffect(() => {
     localStorage.setItem("b4_connections_filter", filter);
@@ -198,7 +163,7 @@ export function ConnectionsPage() {
   useEffect(() => {
     const controller = new AbortController();
     void fetchSets(controller.signal);
-    void asnStorage.init();
+    void asnStorage.reload();
     return () => {
       controller.abort();
     };
@@ -209,27 +174,25 @@ export function ConnectionsPage() {
       const cleanIp = stripPort(ip);
       setEnrichingIps((prev) => new Set(prev).add(cleanIp));
       try {
-        const asn = await resolveAsn(cleanIp, ipInfoToken);
-        if (!asn) {
+        const lookup = await asnApi.lookup(cleanIp);
+        const origin = lookup.asns[0];
+        if (!origin) {
           showError(t("connections.table.enrichNoAsn"));
           return;
         }
-        const prefixes = await fetchAsnPrefixes(asn.id);
-        if (!prefixes) {
-          showError(t("connections.table.enrichFailed"));
-          return;
-        }
-        await asnStorage.addAsn(asn.id, asn.name, prefixes);
-        clearAsnLookupCache();
-        setAsnVersion((v) => v + 1);
+        const view = await asnApi.resolve(origin.id);
+        asnStorage.put(view);
+        await asnStorage.init();
         showSuccess(
           t("connections.table.enrichSuccess", {
-            asn: asn.name,
-            count: prefixes.length,
+            asn: asnLabel(view.id, view.name || origin.name),
+            prefixes: view.prefix_count.toLocaleString(i18n.language),
           }),
         );
-      } catch {
-        showError(t("connections.table.enrichFailed"));
+      } catch (e) {
+        showError(
+          t("connections.table.enrichFailed", { error: localizeApiError(e) }),
+        );
       } finally {
         setEnrichingIps((prev) => {
           const next = new Set(prev);
@@ -238,27 +201,38 @@ export function ConnectionsPage() {
         });
       }
     },
-    [ipInfoToken, showSuccess, showError, t],
+    [showSuccess, showError, t],
   );
 
   const handleDeleteAsn = useCallback(
     (asnId: string) => {
-      void (async () => {
-        await asnStorage.deleteAsn(asnId);
-        clearAsnLookupCache();
-        setAsnVersion((v) => v + 1);
-        showSuccess(t("connections.table.asnDeleted", { asn: asnId }));
-      })();
+      const asn = formatAsn(asnId);
+      asnStorage
+        .remove(asnId)
+        .then(() => showSuccess(t("connections.table.asnDeleted", { asn })))
+        .catch((e: unknown) => {
+          const usedBy = asnInUseSets(e);
+          showError(
+            usedBy
+              ? t("connections.table.asnInUse", {
+                  asn,
+                  sets: usedBy.join(", "),
+                })
+              : t("connections.table.asnDeleteFailed", {
+                  asn,
+                  error: localizeApiError(e),
+                }),
+          );
+        });
     },
-    [showSuccess, t],
+    [showSuccess, showError, t],
   );
 
   const handleIpClick = useCallback(
     (ip: string) => {
-      const variants = generateIpVariants(ip);
-      openIpModal(ip, variants);
+      openIpDialog(ip);
     },
-    [openIpModal],
+    [openIpDialog],
   );
 
   const handleDomainClick = useCallback(
@@ -392,6 +366,7 @@ export function ConnectionsPage() {
             filter={filter}
             onFilterChange={setFilter}
             enrichingIps={enrichingIps}
+            asnLabels={asnLabels}
             onAddDomain={handleDomainClick}
             onAddIp={handleIpClick}
             onEnrichAsn={(ip) => {
@@ -411,7 +386,7 @@ export function ConnectionsPage() {
             filter={filter}
             onFilterChange={setFilter}
             enrichingIps={enrichingIps}
-            asnVersion={asnVersion}
+            asnLabels={asnLabels}
             onAddDomain={handleDomainClick}
             onAddIp={handleIpClick}
             onEnrichIp={handleEnrichIp}
@@ -436,20 +411,16 @@ export function ConnectionsPage() {
         }}
       />
 
-      <AddIpModal
-        open={modalIpState.open}
-        ip={modalIpState.ip}
-        variants={modalIpState.variants}
-        selected={modalIpState.selected as string}
+      <AddIpDialog
+        key={ipDialog.session}
+        open={ipDialog.open}
+        ip={ipDialog.ip}
         sets={availableSets}
         ipInfoToken={ipInfoToken}
-        onClose={closeIpModal}
-        onSelectVariant={selectIpVariant}
-        onAdd={(...args) => {
-          void (async () => {
-            await addIp(...args);
-            await fetchSets();
-          })();
+        onClose={closeIpDialog}
+        onSubmit={async (request) => {
+          await addIpTarget(request);
+          void fetchSets();
         }}
         onAddHostname={(hostname) => {
           const variants = generateDomainVariants(hostname);
