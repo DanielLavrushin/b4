@@ -48,6 +48,15 @@ export const DevicesTab = ({
     );
   };
 
+  const handleBulkToggle = (macs: string[], checked: boolean) => {
+    const macSet = new Set(macs);
+    onChange(
+      checked
+        ? Array.from(new Set([...selected, ...macs]))
+        : selected.filter((m) => !macSet.has(m)),
+    );
+  };
+
   const hasMssHints = devices.some((d) => d.mss_clamp);
 
   const selectedManual = devices.filter(
@@ -146,6 +155,7 @@ export const DevicesTab = ({
               onSelectAll={(checked) =>
                 onChange(checked ? devices.map((d) => d.mac) : [])
               }
+              onBulkToggle={handleBulkToggle}
               extraColumns={
                 hasMssHints
                   ? [

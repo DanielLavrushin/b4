@@ -90,6 +90,7 @@
     },
     "devices": {
       "availableDevices": "Available Devices",
+      "filterPlaceholder": "Filter (by MAC Address, IP or Name)",
       "refreshDevices": "Refresh devices",
       "loadingDevices": "Loading devices...",
       "noDevices": "No devices found",

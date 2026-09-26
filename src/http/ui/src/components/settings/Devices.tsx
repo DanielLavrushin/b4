@@ -30,7 +30,7 @@ import {
   B4InlineEdit,
   B4Hint,
 } from "@b4.elements";
-import { useDevices, DevicesSettingsProps } from "@b4.devices";
+import { useDevices, DevicesSettingsProps, DeviceInfo } from "@b4.devices";
 import { B4DeviceTable } from "@common/B4DeviceTable";
 
 const toMac = (bytes: number[]): string =>
@@ -176,6 +176,31 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
     onChange("queue.devices.devices", cleaned);
   };
 
+  const handleBulkToggle = (macs: string[], checked: boolean) => {
+    const macSet = new Set(macs.map((m) => m.toUpperCase()));
+    const updated = configDevices.map((d) => {
+      if (!macSet.has(d.mac.toUpperCase())) return d;
+      if (!checked && d.is_manual) return d;
+      return { ...d, selected: checked };
+    });
+    if (checked) {
+      for (const mac of macs) {
+        const upper = mac.toUpperCase();
+        if (!updated.some((u) => u.mac.toUpperCase() === upper)) {
+          updated.push({ mac: upper, selected: true });
+        }
+      }
+    }
+    const cleaned = updated.filter(
+      (d) =>
+        d.selected || d.is_manual || (d.mss_clamp && d.mss_clamp > 0) || d.name,
+    );
+    onChange("queue.devices.devices", cleaned);
+  };
+
+  const getSearchableName = (device: DeviceInfo) =>
+    findConfigDevice(device.mac)?.name || device.alias || device.vendor || "";
+
   const handleAddManualDevice = () => {
     const ip = manualIp.trim();
     if (!ip) return;
@@ -301,6 +326,8 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                   isSelected={isSelected}
                   onToggle={handleToggle}
                   onSelectAll={handleSelectAll}
+                  onBulkToggle={handleBulkToggle}
+                  getSearchableName={getSearchableName}
                   showOfflineChip
                   maxHeight={300}
                   renderNameCell={(device) =>

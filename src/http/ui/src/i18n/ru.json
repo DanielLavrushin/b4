@@ -93,6 +93,7 @@
     },
     "devices": {
       "availableDevices": "Доступные устройства",
+      "filterPlaceholder": "Фильтр (по MAC-адресу, IP или Имени)",
       "refreshDevices": "Обновить устройства",
       "loadingDevices": "Загрузка устройств...",
       "noDevices": "Устройства не найдены",
