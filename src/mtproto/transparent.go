@@ -222,7 +222,11 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 
 	res, derr := decodeObfuscatedDirect(init, client)
 	if derr != nil {
-		log.Debugf("%s bridge obfuscated decode failed from %s:%d: %v -> fail open", tag, origIP, origPort, derr)
+		if looksLikeTLSRecord(init) {
+			log.Debugf("%s bridge TLS handshake from %s:%d is HTTPS, not MTProto -> fail open", tag, origIP, origPort)
+		} else {
+			log.Debugf("%s bridge obfuscated decode failed from %s:%d: %v -> fail open", tag, origIP, origPort, derr)
+		}
 		return b.failOpen(&prefixConn{Conn: client, prefix: append([]byte(nil), init...)})
 	}
 	log.Tracef("%s bridge handshake ok from %s:%d: proto=0x%08x handshake-dc=%d", tag, origIP, origPort, res.ProtoTag, res.DC)
@@ -368,4 +372,8 @@ func applyHandshakeMedia(resolved, handshake int) (int, bool) {
 
 func reservedFirst4(b []byte) bool {
 	return isReservedFirst4(b)
+}
+
+func looksLikeTLSRecord(b []byte) bool {
+	return len(b) >= 3 && b[0] == 0x16 && b[1] == 0x03 && b[2] <= 0x04
 }
