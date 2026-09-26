@@ -1,5 +1,5 @@
 # Stage 1: Generate UI defaults from Go config
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS defaults-gen
+FROM --platform=$BUILDPLATFORM golang:1.25.14-alpine AS defaults-gen
 
 WORKDIR /app
 COPY src/go.mod src/go.sum ./src/
@@ -27,7 +27,7 @@ ENV VITE_APP_VERSION=${VERSION}
 RUN pnpm --filter b4-ui build
 
 # Stage 3: Build the Go binary
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS go-builder
+FROM --platform=$BUILDPLATFORM golang:1.25.14-alpine AS go-builder
 
 WORKDIR /app
 

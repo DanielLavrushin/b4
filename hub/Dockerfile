@@ -15,7 +15,7 @@ ARG VERSION=dev
 ENV VITE_APP_VERSION=${VERSION}
 RUN pnpm --filter b4hub-ui build
 
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS go-builder
+FROM --platform=$BUILDPLATFORM golang:1.25.14-alpine AS go-builder
 
 WORKDIR /app
 COPY src/go.mod src/go.sum ./src/
