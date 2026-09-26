@@ -152,33 +152,81 @@ func (c *Config) LogString() string {
 	return ""
 }
 
-// LoadTargets returns all targets (domains and IPs) from all sets grouped by set name
-func (c *Config) LoadTargets() ([]*SetConfig, int, int, error) {
-	result := make([]*SetConfig, 0, len(c.Sets))
-	totalDomains := 0
-	totalIps := 0
-
-	// Process all sets
+func (c *Config) LoadTargets() ([]*SetConfig, int, int, []error) {
+	var siteCategories, ipCategories []string
 	for _, set := range c.Sets {
-
 		if !set.Enabled {
 			continue
 		}
+		siteCategories = append(siteCategories, set.Targets.GeoSiteCategories...)
+		ipCategories = append(ipCategories, set.Targets.GeoIpCategories...)
+	}
 
-		domains, ips, err := c.GetTargetsForSet(set)
+	var warnings []error
+	geositeDomains := map[string][]string{}
+	if len(siteCategories) > 0 && c.System.Geo.GeoSitePath != "" {
+		found, err := geodat.LoadDomainsByCategory(c.System.Geo.GeoSitePath, siteCategories)
+		geositeDomains = found
 		if err != nil {
-			return nil, -1, -1, fmt.Errorf("failed to load domains for set '%s': %w", set.Name, err)
+			warnings = append(warnings, c.geoLoadWarning("GeoSite", err, found, func(set *SetConfig) []string {
+				return set.Targets.GeoSiteCategories
+			}))
 		}
-		if len(domains) > 0 {
-			totalDomains += len(domains)
+	}
+	geoipIPs := map[string][]string{}
+	if len(ipCategories) > 0 && c.System.Geo.GeoIpPath != "" {
+		found, err := geodat.LoadIpsByCategory(c.System.Geo.GeoIpPath, ipCategories)
+		geoipIPs = found
+		if err != nil {
+			warnings = append(warnings, c.geoLoadWarning("GeoIP", err, found, func(set *SetConfig) []string {
+				return set.Targets.GeoIpCategories
+			}))
 		}
-		if len(ips) > 0 {
-			totalIps += len(ips)
+	}
+
+	result := make([]*SetConfig, 0, len(c.Sets))
+	totalDomains := 0
+	totalIps := 0
+	for _, set := range c.Sets {
+		if !set.Enabled {
+			continue
 		}
+		domains, ips, _ := c.GetTargetsForSetWithCache(set, geositeDomains, geoipIPs)
+		totalDomains += len(domains)
+		totalIps += len(ips)
 		result = append(result, set)
 	}
 
-	return result, totalDomains, totalIps, nil
+	return result, totalDomains, totalIps, warnings
+}
+
+func (c *Config) geoLoadWarning(kind string, err error, found map[string][]string, categories func(*SetConfig) []string) error {
+	var unread, sets []string
+	seen := map[string]bool{}
+	for _, set := range c.Sets {
+		if !set.Enabled {
+			continue
+		}
+		affected := false
+		for _, category := range categories(set) {
+			if _, ok := found[category]; ok {
+				continue
+			}
+			affected = true
+			if !seen[category] {
+				seen[category] = true
+				unread = append(unread, category)
+			}
+		}
+		if affected {
+			sets = append(sets, "'"+set.Name+"'")
+		}
+	}
+	if len(unread) == 0 {
+		return fmt.Errorf("%s database could not be read completely: %w", kind, err)
+	}
+	return fmt.Errorf("%s categories %s could not be read (%w); sets %s run without them and match only their other targets until the file is replaced",
+		kind, strings.Join(unread, ", "), err, strings.Join(sets, ", "))
 }
 
 func (c *Config) GetTargetsForSet(set *SetConfig) ([]string, []string, error) {

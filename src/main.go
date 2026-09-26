@@ -306,11 +306,10 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	config.InitAsnStore(cfg.ConfigPath)
 
-	// Load domains
-	_, totalDomains, totalIps, err := cfg.LoadTargets()
-	if err != nil {
-		metrics.RecordEvent("error", fmt.Sprintf("Failed to load domains: %v", err))
-		return fmt.Errorf("failed to load domains: %w", err)
+	_, totalDomains, totalIps, targetWarnings := cfg.LoadTargets()
+	for _, warning := range targetWarnings {
+		log.Errorf("%v", warning)
+		metrics.RecordEvent("error", warning.Error())
 	}
 
 	log.Infof("Loaded targets: %d domains, %d IPs across %d sets", totalDomains, totalIps, len(cfg.Sets))
@@ -537,6 +536,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 	wd.Start()
 	handler.SetWatchdog(wd)
 
+	geodat.RemoveStaleDownloads(cfg.System.Geo.GeoSitePath, cfg.System.Geo.GeoIpPath)
+
 	// Start internal web server if configured
 	httpServer, apiHandler, err := b4http.StartServer(&cfgPtr, pool)
 	if err != nil {
@@ -548,8 +549,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 	if apiHandler != nil {
 		geoScheduler = geodat.NewScheduler(
 			func() geodat.GeoDatConfig { return cfgPtr.Load().System.Geo },
-			func(dest, siteURL, ipURL string) error {
-				_, _, _, err := apiHandler.RefreshGeodat(dest, siteURL, ipURL)
+			func(ctx context.Context, dest, siteURL, ipURL string) error {
+				_, _, _, err := apiHandler.RefreshGeodat(ctx, dest, siteURL, ipURL)
 				return err
 			},
 			func(ts string) {

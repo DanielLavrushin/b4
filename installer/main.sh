@@ -109,6 +109,7 @@ _show_help() {
     echo "  B4_DATA_DIR         Data/config directory"
     echo "  B4_PKG_MANAGER      Package manager (apt, dnf, pacman, opkg, ...)"
     echo "  B4_ALLOW_INSECURE_TLS=1  Download over unverified TLS when no CA certificates work"
+    echo "  B4_GEO_MAX_TIME     Time limit for one geodata download in seconds (default 3600, 0 = none)"
     echo ""
     echo "Architectures:"
     echo "  amd64, 386, arm64, armv5, armv6, armv7,"

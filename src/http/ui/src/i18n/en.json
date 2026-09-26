@@ -694,7 +694,7 @@
       "removeDialogSetsWarning": "{{count}} set(s) use categories from this database and will match nothing until it is restored:",
       "autoUpdate": "Auto-update",
       "autoUpdateOnStartup": "Refresh on startup",
-      "autoUpdateOnStartupDesc": "Re-download both files when b4 starts. Missing files (e.g. when stored in /tmp) are always re-downloaded if a source URL is set.",
+      "autoUpdateOnStartupDesc": "Re-download both files when b4 starts. Missing or damaged files (e.g. when stored in /tmp) are always re-downloaded if a source URL is set.",
       "autoUpdateInterval": "Schedule",
       "autoUpdateIntervalHelp": "Run periodic refresh in the background using the configured source URLs",
       "autoUpdateOff": "Off",

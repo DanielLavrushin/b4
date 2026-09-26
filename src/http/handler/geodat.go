@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
 	"errors"
@@ -129,7 +130,7 @@ func (api *API) handleGeodatDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	geositeSize, geoipSize, removed, err := api.RefreshGeodat(req.DestinationPath, req.GeositeURL, req.GeoipURL)
+	geositeSize, geoipSize, removed, err := api.RefreshGeodat(context.WithoutCancel(r.Context()), req.DestinationPath, req.GeositeURL, req.GeoipURL)
 	if err != nil {
 		log.Errorf("geodat download: %v", err)
 		writeJsonError(w, http.StatusInternalServerError, err.Error())
@@ -164,32 +165,54 @@ func (api *API) handleGeodatDownload(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-func (api *API) RefreshGeodat(destPath, geositeURL, geoipURL string) (int64, int64, []string, error) {
+var errGeodatBusy = errors.New("another geodata download is already running")
+
+var geodatDownloadMu sync.Mutex
+
+func verifyGeodat(kind geodat.Kind) func(string) error {
+	return func(path string) error {
+		return geodat.Validate(path, kind)
+	}
+}
+
+func (api *API) RefreshGeodat(ctx context.Context, destPath, geositeURL, geoipURL string) (int64, int64, []string, error) {
+	if !geodatDownloadMu.TryLock() {
+		return 0, 0, nil, errGeodatBusy
+	}
+	defer geodatDownloadMu.Unlock()
+
 	if err := os.MkdirAll(destPath, 0755); err != nil {
 		return 0, 0, nil, fmt.Errorf("failed to create directory %s: %v", destPath, err)
 	}
 
 	var geositeSize, geoipSize int64
 	var newGeoSitePath, newGeoIpPath string
+	var errs []error
 
 	if geositeURL != "" {
 		geositePath := filepath.Join(destPath, "geosite.dat")
-		size, err := downloadFileMirrored(geositeURL, geositePath, api.updateMirrors())
+		size, err := downloadFileMirrored(ctx, geositeURL, geositePath, api.updateMirrors(), verifyGeodat(geodat.KindSite))
 		if err != nil {
-			return 0, 0, nil, fmt.Errorf("failed to download geosite.dat: %v", err)
+			errs = append(errs, fmt.Errorf("failed to download geosite.dat: %w", err))
+		} else {
+			geositeSize = size
+			newGeoSitePath = geositePath
 		}
-		geositeSize = size
-		newGeoSitePath = geositePath
 	}
 
-	if geoipURL != "" {
+	if geoipURL != "" && ctx.Err() == nil {
 		geoipPath := filepath.Join(destPath, "geoip.dat")
-		size, err := downloadFileMirrored(geoipURL, geoipPath, api.updateMirrors())
+		size, err := downloadFileMirrored(ctx, geoipURL, geoipPath, api.updateMirrors(), verifyGeodat(geodat.KindIP))
 		if err != nil {
-			return geositeSize, 0, nil, fmt.Errorf("failed to download geoip.dat: %v", err)
+			errs = append(errs, fmt.Errorf("failed to download geoip.dat: %w", err))
+		} else {
+			geoipSize = size
+			newGeoIpPath = geoipPath
 		}
-		geoipSize = size
-		newGeoIpPath = geoipPath
+	}
+
+	if newGeoSitePath == "" && newGeoIpPath == "" {
+		return 0, 0, nil, errors.Join(errs...)
 	}
 
 	removed := []string{}
@@ -216,10 +239,10 @@ func (api *API) RefreshGeodat(destPath, geositeURL, geoipURL string) (int64, int
 		}
 	})
 	if err != nil {
-		return geositeSize, geoipSize, removed, fmt.Errorf("failed to save configuration: %v", err)
+		errs = append(errs, fmt.Errorf("failed to save configuration: %w", err))
 	}
 
-	return geositeSize, geoipSize, removed, nil
+	return geositeSize, geoipSize, removed, errors.Join(errs...)
 }
 
 func (api *API) saveGeoConfig(update func(geo *geodat.GeoDatConfig)) error {
@@ -396,6 +419,18 @@ func (api *API) handleGeodatUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tmpFile.Close()
+
+	kind := geodat.KindSite
+	if fileType == "geoip" {
+		kind = geodat.KindIP
+	}
+	if err := geodat.Validate(tmpPath, kind); err != nil {
+		os.Remove(tmpPath)
+		msg := fmt.Sprintf("%s is not a usable %s database: %v", header.Filename, kind, err)
+		log.Errorf("geodat upload: %s", msg)
+		writeJsonError(w, http.StatusBadRequest, msg)
+		return
+	}
 
 	if err := os.Rename(tmpPath, destFile); err != nil {
 		os.Remove(tmpPath)

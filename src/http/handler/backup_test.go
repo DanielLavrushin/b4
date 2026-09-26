@@ -103,6 +103,28 @@ func TestBackupExcludesGeodataAndOui(t *testing.T) {
 	}
 }
 
+func TestBackupExcludesUnfinishedDownloads(t *testing.T) {
+	dir := t.TempDir()
+	writeFileMode(t, filepath.Join(dir, "b4.json"), `{}`, 0644)
+	unfinished := []string{"geosite.dat.part", "geosite.dat.new", "geoip.dat.new.part", ".download-123.tmp", ".geodat-upload-456.tmp"}
+	for _, name := range unfinished {
+		writeFileMode(t, filepath.Join(dir, name), "partial", 0644)
+	}
+
+	rec := httptest.NewRecorder()
+	newBackupAPI(t, dir).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/backup", nil))
+
+	entries := readArchive(t, rec.Body)
+	for _, name := range unfinished {
+		if _, ok := entries[name]; ok {
+			t.Errorf("%s should be excluded", name)
+		}
+	}
+	if _, ok := entries["b4.json"]; !ok {
+		t.Error("b4.json should be included")
+	}
+}
+
 func TestBackupOmitsWalkRootEntry(t *testing.T) {
 	dir := t.TempDir()
 	writeFileMode(t, filepath.Join(dir, "b4.json"), `{}`, 0644)

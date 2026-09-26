@@ -369,7 +369,11 @@ func createFileBeneath(rootFd int, parts []string, mode os.FileMode) (*os.File, 
 func shouldExcludeFromBackup(info os.FileInfo) bool {
 	name := info.Name()
 
-	if strings.HasSuffix(name, ".dat") {
+	if strings.HasSuffix(name, ".dat") || strings.HasSuffix(name, ".dat.new") || strings.HasSuffix(name, ".part") {
+		return true
+	}
+
+	if strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".tmp") {
 		return true
 	}
 

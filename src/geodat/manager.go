@@ -144,7 +144,10 @@ func (gm *GeodataManager) GetGeositeCategoryCounts(categories []string) (map[str
 	path := gm.geositePath
 	gm.mu.RUnlock()
 
-	if len(missing) == 0 {
+	if len(missing) == 0 || IsDamaged(path) {
+		for _, category := range missing {
+			counts[category] = 0
+		}
 		return counts, nil
 	}
 
@@ -186,7 +189,10 @@ func (gm *GeodataManager) GetGeoipCategoryCounts(categories []string) (map[strin
 	path := gm.geoipPath
 	gm.mu.RUnlock()
 
-	if len(missing) == 0 {
+	if len(missing) == 0 || IsDamaged(path) {
+		for _, category := range missing {
+			counts[category] = 0
+		}
 		return counts, nil
 	}
 
@@ -274,10 +280,10 @@ func (gm *GeodataManager) ListCategories(filePath string) ([]string, error) {
 	log.Tracef("Listing geo dat tags from %s", filePath)
 
 	set := map[string]struct{}{}
-	err := scanEntries(filePath, func(tag string, _ *entryBody) error {
+	err := track(filePath, scanEntries(filePath, func(tag string, _ *entryBody) error {
 		set[tag] = struct{}{}
 		return nil
-	})
+	}))
 	if err != nil {
 		return nil, err
 	}
@@ -302,31 +308,62 @@ func (gm *GeodataManager) PreloadCategories(t GeodataType, categories []string) 
 	log.Infof("Preloading %d geodata categories...", len(categories))
 
 	counts := make(map[string]int, len(categories))
-	total := 0
+	missing := make([]string, 0, len(categories))
 
+	gm.mu.RLock()
+	path, cache := gm.geositePath, gm.categoryDomains
+	if t == GEOIP {
+		path, cache = gm.geoipPath, gm.categoryIps
+	}
 	for _, category := range categories {
-		var n int
-		if t == GEOIP {
-			ips, err := gm.LoadGeoipCategory(category)
-			if err != nil {
-				log.Errorf("Failed to preload category %s: %v", category, err)
-				counts[category] = 0
-				continue
-			}
-			n = len(ips)
-		} else {
-			domains, err := gm.LoadGeositeCategory(category)
-			if err != nil {
-				log.Errorf("Failed to preload category %s: %v", category, err)
-				counts[category] = 0
-				continue
-			}
-			n = len(domains)
+		if list, ok := cache[category]; ok {
+			counts[category] = len(list)
+			continue
 		}
-		counts[category] = n
-		total += n
+		missing = append(missing, category)
+	}
+	gm.mu.RUnlock()
+
+	if len(missing) > 0 && path != "" {
+		load := LoadDomainsByCategory
+		if t == GEOIP {
+			load = LoadIpsByCategory
+		}
+		found, err := load(path, missing)
+		if err != nil {
+			log.Errorf("Failed to preload categories: %v", err)
+		}
+
+		gm.mu.Lock()
+		for _, category := range missing {
+			list, ok := found[category]
+			if !ok && err != nil {
+				counts[category] = 0
+				continue
+			}
+			if list == nil {
+				list = []string{}
+			}
+			if t == GEOIP {
+				gm.categoryIps[category] = list
+				gm.categoryIpsCounts[category] = len(list)
+			} else {
+				gm.categoryDomains[category] = list
+				gm.categoryDomainsCounts[category] = len(list)
+			}
+			counts[category] = len(list)
+		}
+		gm.mu.Unlock()
+	} else {
+		for _, category := range missing {
+			counts[category] = 0
+		}
 	}
 
+	total := 0
+	for _, n := range counts {
+		total += n
+	}
 	log.Infof("Preloaded %d entries across %d categories", total, len(counts))
 	return counts, nil
 }

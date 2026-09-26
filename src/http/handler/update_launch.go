@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -86,7 +87,7 @@ func (r installerRun) obtainInstaller(path string) error {
 	url := githubRawBase + "/" + repoOwner + "/" + repoName + "/main/install.sh"
 
 	writeUpdateLog(r.logPath, "Downloading installer from %s", url)
-	_, err := downloadFileMirrored(url, path, r.mirrors)
+	_, err := downloadFileMirrored(context.Background(), url, path, r.mirrors, nil)
 	switch {
 	case err != nil:
 	case !looksLikeShellScript(path):

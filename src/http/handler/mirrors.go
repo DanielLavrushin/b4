@@ -89,19 +89,23 @@ var mirrorOwners = []string{
 	"Flowseal",
 }
 
-var mirrorClient = &http.Client{
-	Timeout: 10 * time.Minute,
-	Transport: &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   10 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 30 * time.Second,
-		ExpectContinueTimeout: time.Second,
-	},
+var mirrorTransport = &http.Transport{
+	Proxy: http.ProxyFromEnvironment,
+	DialContext: (&net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}).DialContext,
+	TLSHandshakeTimeout:   10 * time.Second,
+	ResponseHeaderTimeout: 30 * time.Second,
+	ExpectContinueTimeout: time.Second,
 }
+
+var mirrorClient = &http.Client{
+	Timeout:   10 * time.Minute,
+	Transport: mirrorTransport,
+}
+
+var downloadClient = &http.Client{Transport: mirrorTransport}
 
 func isMirrorable(rawURL string) bool {
 	for _, owner := range mirrorOwners {
@@ -141,8 +145,8 @@ func mirrorAlive(base string) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-func downloadFileMirrored(url, destPath string, mirrors []string) (int64, error) {
-	size, err := downloadFile(url, destPath)
+func downloadFileMirrored(ctx context.Context, url, destPath string, mirrors []string, verify func(path string) error) (int64, error) {
+	size, err := downloadFile(ctx, url, destPath, verify)
 	if err == nil {
 		return size, nil
 	}
@@ -153,10 +157,13 @@ func downloadFileMirrored(url, destPath string, mirrors []string) (int64, error)
 	log.Warnf("Direct download of %s failed: %v", url, err)
 
 	for _, base := range mirrors {
+		if ctx.Err() != nil {
+			return 0, err
+		}
 		if !mirrorAlive(base) {
 			continue
 		}
-		size, mirrorErr := downloadFile(mirrorURL(base, url), destPath)
+		size, mirrorErr := downloadFile(ctx, mirrorURL(base, url), destPath, verify)
 		if mirrorErr == nil {
 			log.Infof("Downloaded %s via mirror %s", url, base)
 			return size, nil
