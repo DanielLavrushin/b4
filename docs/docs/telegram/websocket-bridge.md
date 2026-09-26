@@ -50,6 +50,8 @@ The bridge has not been verified with the TUN engine, and the card says so while
 
 IPv6 ranges are diverted only while **IPv6 support** is on in [Settings, Core](../settings/core#protocols). With it off, Telegram over IPv6 takes the normal path.
 
+On iptables, a rule of another program that matches local sockets, such as the `DIVERT` rule XrayUI adds every time xray starts, takes the packets of diverted connections away from the listener. b4 keeps the diversion rule above such rules, as described under [b4 with Xray or XrayUI](../guides/xray.md#xrayuis-tproxy-rule-and-connections-b4-diverts).
+
 ## Address list
 
 b4 keeps a list of Telegram's address ranges. The built-in list compiled into b4 is always part of it. On top of the built-in list b4 uses one of these sources, in order of preference:
@@ -65,7 +67,7 @@ GeoIP and GeoSite files are therefore not required for the switch. GeoSite plays
 
 ## Checking that it works
 
-With the switch on and saved, the card reads **Working** when the diversion rule is installed and the bridge listener is running, and **Not working** otherwise; hovering the status names what is missing. Below it are the listener port, the active connections, how many Telegram ranges are in use and where they came from, and the number of relayed sessions with the time of the last one. The card's fields are listed under [Settings, Telegram](../settings/mtproto.md#telegram-over-websocket), and each of its warnings is explained under [Troubleshooting](./troubleshooting.md#the-telegram-over-websocket-card-shows-a-warning).
+With the switch on and saved, the card reads **Working** when the diversion rule is installed, the bridge listener is running and no other program's rule that matches local sockets sits above the diversion rule, and **Not working** otherwise; hovering the status names what is missing. Below it are the listener port, the active connections, how many Telegram ranges are in use and where they came from, and the number of relayed sessions with the time of the last one. The card's fields are listed under [Settings, Telegram](../settings/mtproto.md#telegram-over-websocket), and each of its warnings is explained under [Troubleshooting](./troubleshooting.md#the-telegram-over-websocket-card-shows-a-warning).
 
 A relayed session logs one line at info level:
 
@@ -76,6 +78,12 @@ A relayed session logs one line at info level:
 Bridged connections appear in the [logs](../logs.md) and on the [Traffic](../connections.md) page under the set name **Telegram bridge**, and on the Traffic page they carry the **Telegram bridge** label. No set of that name exists in the set list; the name only labels what the switch diverted.
 
 Over [MCP](../settings/mcp.md), `b4_status` reports the bridge state, and with configuration changes allowed the switch is writable as `system.mtproto.bridge.enabled`.
+
+## Which data centre a session goes to
+
+Telegram Desktop names its data centre in the first bytes of a connection. The Android app leaves that field random, so for its connections b4 takes the data centre from the address the connection was sent to: from the list Telegram publishes for proxies, from a table built into b4, and from the address ranges of each data centre. The `dc-from` field of the relay line starts with the source that decided, `handshake`, `ip` or `ip-range`, followed by `+learned` when an earlier `-444` moved the address to another data centre and `+handshake-media` when the handshake marked a media session.
+
+A data centre answers a session that belongs to another one with `-444`. When the data centre came from the address and the client did not name the same one, b4 cuts that session and leaves the route it used in place, because the route delivered the session where b4 sent it. Later sessions to the same address go to the other data centre at the same site, 4 instead of 2 or 3 instead of 1 and the reverse, for six hours, and the log notes the change once. An address that answers `-444` to both, or to data centre 5 or 203, which have no sibling, is handled for 30 minutes like a connection b4 cannot map to a data centre: it goes to the Cloudflare Worker when one is configured, otherwise directly. A session whose client named its data centre keeps the proxy server's handling, and a `-444` ranks the route down.
 
 ## Order among sets
 

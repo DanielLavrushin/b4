@@ -55,8 +55,9 @@ func mustParseDCNets(pairs [][2]interface{}) []dcNet {
 // neither appears in getProxyConfig, so without these the range hands a DC4
 // session the kws2 hostname and Cloudflare relays it to DC2.
 var dcExtraV4 = map[string]int{
-	"149.154.167.43": 4,
-	"149.154.167.92": 4,
+	"149.154.167.43":  4,
+	"149.154.167.92":  4,
+	"149.154.167.255": 4,
 }
 
 // A range is a guess where an address is a fact, so a range that covers two data

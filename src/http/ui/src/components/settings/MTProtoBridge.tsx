@@ -222,7 +222,11 @@ export const MTProtoBridgeCard = ({
   const data = status.data;
   const dirty = savedEnabled !== enabled;
   const live = !!data && data.enabled && enabled && !dirty;
-  const working = !!data && data.rule_installed && data.listener.running;
+  const working =
+    !!data &&
+    data.rule_installed &&
+    data.listener.running &&
+    !data.rule_shadowed_by;
 
   const notWorkingReason = (() => {
     if (!data) return "";
@@ -231,6 +235,15 @@ export const MTProtoBridgeCard = ({
     }
     if (data.tproxy.checked && !data.tproxy.available) {
       return t(K("tproxyUnavailable"));
+    }
+    if (data.rule_installed && data.rule_shadowed_by) {
+      const tables = config.system.tables;
+      const monitorOff =
+        !!tables?.skip_setup ||
+        (tables?.monitor_interval === 0 && data.queue_mode !== "tun");
+      return t(K(monitorOff ? "reasonShadowedNoMonitor" : "reasonShadowed"), {
+        rule: data.rule_shadowed_by,
+      });
     }
     return t(K("reasonRule"));
   })();

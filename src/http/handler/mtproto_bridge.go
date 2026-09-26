@@ -40,6 +40,7 @@ type TelegramBridgeStatus struct {
 	Addresses     mtproto.TelegramCIDRStatus `json:"addresses"`
 	Listener      BridgeListenerInfo         `json:"listener"`
 	RuleInstalled bool                       `json:"rule_installed"`
+	RuleShadowed  string                     `json:"rule_shadowed_by,omitempty"`
 	TProxy        BridgeTProxyInfo           `json:"tproxy"`
 	SkipSetup     bool                       `json:"skip_setup"`
 	QueueMode     string                     `json:"queue_mode"`
@@ -111,6 +112,9 @@ func buildTelegramBridgeStatus(cfg *config.Config, recheck, probe bool) Telegram
 		st.Listener.V6Error = ""
 	}
 	st.RuleInstalled = tables.RoutingSetInstalled(config.TelegramBridgeSetID)
+	if st.RuleInstalled {
+		st.RuleShadowed = tables.RoutingPreJumpShadowedBy(config.TelegramBridgeSetID)
+	}
 	if b, ok := globalMTProtoBridge.(interface{ Stats() mtproto.BridgeStats }); ok {
 		st.Stats = b.Stats()
 	}
@@ -118,7 +122,7 @@ func buildTelegramBridgeStatus(cfg *config.Config, recheck, probe bool) Telegram
 }
 
 // @Summary Telegram bridge status
-// @Description State of the Settings switch that sends Telegram through the WebSocket bridge: address list, listener, firewall rule, kernel support and relay counters. check=1 re-runs the kernel TPROXY check.
+// @Description State of the Settings switch that sends Telegram through the WebSocket bridge: address list, listener, firewall rule, kernel support and relay counters. check=1 re-runs the kernel TPROXY check and moves b4's routing rules back above another program's rule that sits over them.
 // @Tags MTProto
 // @Produce json
 // @Param check query string false "1 to re-run the kernel TPROXY check"
@@ -135,6 +139,12 @@ func (api *API) handleTelegramBridge(w http.ResponseWriter, r *http.Request) {
 	st := buildTelegramBridgeStatus(cfg, recheck, true)
 	if recheck && st.Enabled && st.TProxy.Available && st.Listener.Running && !st.RuleInstalled {
 		tables.RoutingResyncLatest()
+	}
+	if recheck {
+		tables.RoutingLiftShadowedJumps()
+		if st.RuleInstalled {
+			st.RuleShadowed = tables.RoutingPreJumpShadowedBy(config.TelegramBridgeSetID)
+		}
 	}
 	sendResponse(w, st)
 }

@@ -95,8 +95,8 @@ num  target         prot opt source     destination
 		t.Run(tc.name, func(t *testing.T) {
 			stubIptPrerouting(t, tc.listing)
 			stubBinaries(t, backendIPTables)
-			if got := iptPreJumpsBelowCapture(backendIPTables); got != tc.want {
-				t.Errorf("iptPreJumpsBelowCapture = %v, want %v", got, tc.want)
+			if got, _ := iptPreJumpsDisplaced(backendIPTables); got != tc.want {
+				t.Errorf("iptPreJumpsDisplaced = %v, want %v", got, tc.want)
 			}
 		})
 	}

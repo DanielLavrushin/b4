@@ -225,25 +225,11 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 	}
 	log.Tracef("%s bridge handshake ok from %s:%d: proto=0x%08x handshake-dc=%d", tag, origIP, origPort, res.ProtoTag, res.DC)
 
-	var dc int
-	var dcSrc string
-	if mapped, ok := dcForIP(origIP); ok {
-		dc, dcSrc = mapped, "ip"
-	} else if validTransparentDC(res.DC) {
-		dc, dcSrc = res.DC, "handshake"
-	} else if mapped, ok := dcForIPRange(origIP); ok {
-		dc, dcSrc = mapped, "ip-range"
-	} else {
+	choice, resolved := bridgeChooseDC(tag, origIP, res.DC)
+	dc, dcSrc := choice.dc, choice.src
+	if !resolved {
 		log.Debugf("%s bridge unresolved DC for %s:%d (handshake dc=%d proto=0x%08x) -> fail open", tag, origIP, origPort, res.DC, res.ProtoTag)
 		return b.failOpen(&prefixConn{Conn: client, prefix: append([]byte(nil), init...)})
-	}
-	if signed, ok := applyHandshakeMedia(dc, res.DC); ok {
-		log.Debugf("%s bridge DC%d is the media cluster per handshake -> using DC%d (src=%s+handshake-media)", tag, dc, signed, dcSrc)
-		dc = signed
-		dcSrc += "+handshake-media"
-	}
-	if rng, ok := dcForIPRange(origIP); ok && validTransparentDC(res.DC) && rng != res.DC {
-		log.Debugf("%s bridge DC ambiguity for %s: ip-range=DC%d handshake=DC%d -> using DC%d (src=%s)", tag, origIP, rng, res.DC, dc, dcSrc)
 	}
 
 	cfg := b.cfg.Load()
@@ -277,7 +263,7 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 		idle:           mtprotoIdleTimeout(cfg),
 		onStall:        stallReporter(info),
 		scan:           newDCFrameScanner(res.ProtoTag),
-		onTransportErr: transportErrHandler(info, dc, label),
+		onTransportErr: choice.errHandler(info, label, origIP),
 	})
 	return true, nil
 }
