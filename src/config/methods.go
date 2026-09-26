@@ -566,6 +566,11 @@ func (set *SetConfig) DeclaresDestinationTargets() bool {
 	return len(t.SNIDomains) > 0 || len(t.IPs) > 0 || len(t.GeoSiteCategories) > 0 || len(t.GeoIpCategories) > 0 || len(t.ASNs) > 0
 }
 
+func (set *SetConfig) DeclaresIPTargets() bool {
+	t := &set.Targets
+	return len(t.IpsToMatch) > 0 || len(t.IPs) > 0 || len(t.GeoIpCategories) > 0 || len(t.ASNs) > 0
+}
+
 func (set *SetConfig) RoutingDivertsPackets() bool {
 	return set.Routing.Enabled && set.HasIPOrDomainTargets()
 }
@@ -843,11 +848,16 @@ func (cfg *Config) MSSClampFingerprint() string {
 		ipv6 := append([]string(nil), e.IPv6...)
 		sort.Strings(ipv4)
 		sort.Strings(ipv6)
-		parts = append(parts, fmt.Sprintf("set:%s:%d:v4=%s:v6=%s:src=%s",
+		declared := false
+		if e.SetIdx >= 0 && e.SetIdx < len(cfg.Sets) && cfg.Sets[e.SetIdx] != nil {
+			declared = cfg.Sets[e.SetIdx].DeclaresIPTargets()
+		}
+		parts = append(parts, fmt.Sprintf("set:%s:%d:v4=%s:v6=%s:src=%s:declared=%t",
 			e.SetID, e.Size,
 			strings.Join(ipv4, ","),
 			strings.Join(ipv6, ","),
-			deviceMatchKeys(e.Sources)))
+			deviceMatchKeys(e.Sources),
+			declared))
 	}
 
 	sort.Strings(parts)

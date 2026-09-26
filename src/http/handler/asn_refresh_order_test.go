@@ -3,7 +3,10 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"testing"
+
+	"github.com/daniellavrushin/b4/config"
 )
 
 func TestSetWritersAskForAnASNRefreshOnceTheSetIsSaved(t *testing.T) {
@@ -56,5 +59,57 @@ func TestSavingASetWithResolvedASNsDoesNotAskForARefresh(t *testing.T) {
 	}
 	if drainASNRefresh() {
 		t.Error("an ASN whose prefixes are known needs no refresh")
+	}
+}
+
+func TestAConfigWriteCommitsTheASNPrefixesKnownAtCommitTime(t *testing.T) {
+	cases := []struct {
+		name    string
+		resolve func(t *testing.T, api *API, s *config.AsnStore)
+	}{
+		{"the refresher reloads before the write takes the lock", func(t *testing.T, api *API, s *config.AsnStore) {
+			putTelegram(t, s)
+			api.ReloadASNTargets([]string{"62041"})
+		}},
+		{"the store changes before the reload runs", func(t *testing.T, api *API, s *config.AsnStore) {
+			putTelegram(t, s)
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := useAsnStore(t)
+			base := asnSet("s1")
+			base.Targets.IPs = []string{"198.51.100.0/24"}
+			api, _ := asnAPI(t, base)
+			countRefreshes(t)
+
+			updated := asnSet("s1", "62041")
+			updated.Targets.IPs = []string{"198.51.100.0/24"}
+			api.loadTargetsForSetCached(updated)
+			if slices.Contains(updated.Targets.IpsToMatch, telegramPrefixes[0]) {
+				t.Fatal("the ASN must be unresolved when the write expands the set")
+			}
+
+			tc.resolve(t, api, s)
+
+			err := api.updateAndPushConfig(func(current *config.Config) (*config.Config, error) {
+				next := current.Clone()
+				for i, set := range next.Sets {
+					if set.Id == "s1" {
+						next.Sets[i] = updated
+					}
+				}
+				return next, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := api.getCfg().GetSetById("s1").Targets.IpsToMatch
+			for _, p := range append([]string{"198.51.100.0/24"}, telegramPrefixes...) {
+				if !slices.Contains(got, p) {
+					t.Fatalf("the committed set lost %s: %v", p, got)
+				}
+			}
+		})
 	}
 }

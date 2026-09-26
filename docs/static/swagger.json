@@ -448,7 +448,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Looks the address up in the server-side ASN cache first (longest prefix); when no cached ASN covers it, asks RIPEstat network-info. Private and reserved addresses are answered with no ASN and never sent out. cached tells whether the ASN's prefixes are already in the cache.",
+                "description": "Asks RIPEstat network-info for the prefix and origin ASNs of the address; when RIPEstat cannot be reached, answers from the server-side ASN cache (longest prefix). Private and reserved addresses are answered with no ASN and never sent out. cached tells whether the ASN's prefixes are already in the cache.",
                 "produces": [
                     "application/json"
                 ],
@@ -494,7 +494,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns the cached entry while it is fresh (fetched within 20 hours); otherwise, or with refresh, b4 fetches the prefixes from RIPEstat and stores them. When the fetch fails without refresh and a cached copy exists, that copy is returned with last_error set.",
+                "description": "Returns the cached entry while it is fresh (fetched within 20 hours); otherwise, or with refresh, b4 fetches the prefixes from RIPEstat and stores them. When the fetch fails without refresh and a cached copy exists, that copy is returned with last_error set. A fetch that covers less than half of the cached copy's addresses is not stored, with or without refresh: the background refresh accepts such a shrink only after seeing it on 3 consecutive fetches an hour apart. Until then the cached copy is returned with last_error without refresh, and 502 asn_fetch_failed with refresh.",
                 "consumes": [
                     "application/json"
                 ],

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/daniellavrushin/b4/asnprefix"
 	"github.com/daniellavrushin/b4/config"
@@ -17,6 +18,7 @@ import (
 var (
 	asnResolve        = asnprefix.Resolve
 	asnLookupUpstream = asnprefix.LookupIP
+	asnLookupTimeout  = 8 * time.Second
 )
 
 type AsnView struct {
@@ -142,7 +144,7 @@ func (a *API) getAsnAll(w http.ResponseWriter, _ *http.Request) {
 }
 
 // @Summary Resolve an ASN to its announced prefixes
-// @Description Returns the cached entry while it is fresh (fetched within 20 hours); otherwise, or with refresh, b4 fetches the prefixes from RIPEstat and stores them. When the fetch fails without refresh and a cached copy exists, that copy is returned with last_error set.
+// @Description Returns the cached entry while it is fresh (fetched within 20 hours); otherwise, or with refresh, b4 fetches the prefixes from RIPEstat and stores them. When the fetch fails without refresh and a cached copy exists, that copy is returned with last_error set. A fetch that covers less than half of the cached copy's addresses is not stored, with or without refresh: the background refresh accepts such a shrink only after seeing it on 3 consecutive fetches an hour apart. Until then the cached copy is returned with last_error without refresh, and 502 asn_fetch_failed with refresh.
 // @Tags ASN
 // @Accept json
 // @Produce json
@@ -236,7 +238,7 @@ func (a *API) deleteAsn(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary Find the ASN announcing an IP address
-// @Description Looks the address up in the server-side ASN cache first (longest prefix); when no cached ASN covers it, asks RIPEstat network-info. Private and reserved addresses are answered with no ASN and never sent out. cached tells whether the ASN's prefixes are already in the cache.
+// @Description Asks RIPEstat network-info for the prefix and origin ASNs of the address; when RIPEstat cannot be reached, answers from the server-side ASN cache (longest prefix). Private and reserved addresses are answered with no ASN and never sent out. cached tells whether the ASN's prefixes are already in the cache.
 // @Tags ASN
 // @Produce json
 // @Param ip query string true "IP address, optionally with a port"
@@ -257,7 +259,18 @@ func (a *API) handleAsnLookup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ip := addr.String()
+	ctx, cancel := context.WithTimeout(r.Context(), asnLookupTimeout)
+	defer cancel()
+	res, err := asnLookupUpstream(ctx, ip)
+	if err == nil {
+		sendResponse(w, res)
+		return
+	}
+	if r.Context().Err() != nil {
+		return
+	}
 	if prefix, matches := config.Asns().LookupIP(ip); len(matches) > 0 {
+		log.Debugf("ASN lookup of %s failed (%v), answering from the ASN cache", ip, err)
 		out := asnprefix.Lookup{IP: ip, Prefix: prefix, ASNs: make([]asnprefix.LookupASN, 0, len(matches))}
 		for _, info := range matches {
 			out.ASNs = append(out.ASNs, asnprefix.LookupASN{ID: info.ID, Name: info.Name, Cached: true})
@@ -265,16 +278,8 @@ func (a *API) handleAsnLookup(w http.ResponseWriter, r *http.Request) {
 		sendResponse(w, out)
 		return
 	}
-	res, err := asnLookupUpstream(r.Context(), ip)
-	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			return
-		}
-		log.Warnf("ASN lookup of %s failed: %v", ip, err)
-		writeAPIError(w, &APIError{Status: http.StatusBadGateway, Code: "asn_lookup_failed", Message: fmt.Sprintf("Could not look up %s: %v", ip, err)})
-		return
-	}
-	sendResponse(w, res)
+	log.Warnf("ASN lookup of %s failed: %v", ip, err)
+	writeAPIError(w, &APIError{Status: http.StatusBadGateway, Code: "asn_lookup_failed", Message: fmt.Sprintf("Could not look up %s: %v", ip, err)})
 }
 
 func (a *API) ReloadASNTargets(changed []string) {

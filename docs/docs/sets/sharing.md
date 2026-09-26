@@ -37,7 +37,7 @@ Left out:
 
 A DNS pin survives only when the pinned domain is one the set targets and every address in it is public. A pin for another domain, or one pointing at a private address, is dropped and reported.
 
-An [ASN](./targets#asn) travels as its number only, never as the prefixes the sharing router holds; the importing b4 fetches the prefixes itself. A shared set that carries ASNs needs b4 1.84.0 or newer, and more than 50 ASNs are reported when the set is prepared.
+An [ASN](./targets#asn) travels as its number only, never as the prefixes the sharing router holds; the importing b4 fetches the prefixes itself. A shared set that carries ASNs needs b4 1.83.0 or newer, and more than 50 ASNs are reported when the set is prepared.
 
 :::warning
 Domains that look private to the sharing network are reported, not removed: a single label such as `nas`, an address literal, or a suffix such as `.lan`, `.local` or `.home`. They mean nothing on another network and are worth deleting before the set is passed on.

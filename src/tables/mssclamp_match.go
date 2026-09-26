@@ -68,8 +68,7 @@ func setDeclaresIPTargets(set *config.SetConfig) bool {
 	if set == nil {
 		return false
 	}
-	t := &set.Targets
-	return len(t.IpsToMatch) > 0 || len(t.IPs) > 0 || len(t.GeoIpCategories) > 0 || len(t.ASNs) > 0
+	return set.DeclaresIPTargets()
 }
 
 func mssClampEntrySet(cfg *config.Config, e config.SetMSSClampEntry) *config.SetConfig {

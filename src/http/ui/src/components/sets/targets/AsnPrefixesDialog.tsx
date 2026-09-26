@@ -17,7 +17,7 @@ interface AsnPrefixesDialogProps {
 }
 
 export const AsnPrefixesDialog = ({ view, onClose }: AsnPrefixesDialogProps) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { showSuccess, showError } = useSnackbar();
   const [filter, setFilter] = useState("");
 
@@ -87,8 +87,8 @@ export const AsnPrefixesDialog = ({ view, onClose }: AsnPrefixesDialogProps) => 
               sx={{ display: "block", mt: 1, color: colors.text.secondary }}
             >
               {t("sets.targets.asn.prefixesShowing", {
-                shown: PREVIEW_LIMIT.toLocaleString(),
-                total: matching.length.toLocaleString(),
+                shown: PREVIEW_LIMIT.toLocaleString(i18n.language),
+                total: matching.length.toLocaleString(i18n.language),
               })}
             </Typography>
           )}

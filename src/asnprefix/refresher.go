@@ -2,6 +2,8 @@ package asnprefix
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -98,6 +100,14 @@ func lessThanHalf(after, before uint64) bool {
 	return after < before && before-after > after
 }
 
+var ErrCoverageShrunk = errors.New("the fetched prefixes cover less than half of the known addresses")
+
+func shrinkError(id string, previous, fetched *config.AsnInfo) error {
+	before, after := previous.Counts(), fetched.Counts()
+	return fmt.Errorf("AS%s: RIPEstat lists %d prefixes (%d IPv4 addresses, %d IPv6 /64s), the known list has %d (%d IPv4 addresses, %d IPv6 /64s): %w; the known list stays until the background refresh sees the same shrink %d times in a row",
+		id, len(fetched.Prefixes), after.IPv4Addresses, after.IPv6Slash64s, len(previous.Prefixes), before.IPv4Addresses, before.IPv6Slash64s, ErrCoverageShrunk, shrinkConfirmations)
+}
+
 func (r *refresher) run(ctx context.Context) {
 	timer := time.NewTimer(0)
 	defer timer.Stop()
@@ -178,13 +188,15 @@ func (r *refresher) pass(ctx context.Context) time.Duration {
 			st = r.entry(id)
 			st.failures = 0
 			st.shrinks++
+			before, after := current.Counts(), fetched.Counts()
 			if st.shrinks < shrinkConfirmations {
 				st.next = r.now().Add(retryMax)
-				log.Warnf("ASN AS%s: RIPEstat now lists %d prefixes covering less than half of the %d known ones; keeping the known list until the same shrink is seen %d times in a row (%d so far)", id, len(fetched.Prefixes), len(current.Prefixes), shrinkConfirmations, st.shrinks)
+				recordFailure(id, shrinkError(id, current, fetched))
+				log.Warnf("ASN AS%s: RIPEstat now lists %d prefixes covering %d IPv4 addresses and %d IPv6 /64s, less than half of the %d known prefixes (%d IPv4 addresses, %d IPv6 /64s); keeping the known list until the same shrink is seen %d times in a row (%d so far)", id, len(fetched.Prefixes), after.IPv4Addresses, after.IPv6Slash64s, len(current.Prefixes), before.IPv4Addresses, before.IPv6Slash64s, shrinkConfirmations, st.shrinks)
 				later(st.next)
 				continue
 			}
-			log.Warnf("ASN AS%s: accepting the smaller prefix list (%d prefixes, was %d) after %d consecutive fetches", id, len(fetched.Prefixes), len(current.Prefixes), st.shrinks)
+			log.Warnf("ASN AS%s: accepting the reduced prefix list (%d prefixes, %d IPv4 addresses, %d IPv6 /64s; was %d, %d, %d) after %d consecutive fetches", id, len(fetched.Prefixes), after.IPv4Addresses, after.IPv6Slash64s, len(current.Prefixes), before.IPv4Addresses, before.IPv6Slash64s, st.shrinks)
 		}
 		delete(r.state, id)
 		clearFailure(id)

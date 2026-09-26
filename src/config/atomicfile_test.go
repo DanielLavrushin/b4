@@ -1,8 +1,11 @@
 package config
 
 import (
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -89,6 +92,152 @@ func TestWriteFileAtomicFallsBackInPlaceWhenTheDirectoryIsReadOnly(t *testing.T)
 
 	if err := writeFileAtomic(path, []byte("new"), ConfigFileMode); err != nil {
 		t.Fatalf("a writable file in a read-only directory must still be saved: %v", err)
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != "new" {
+		t.Fatalf("content = %q", got)
+	}
+}
+
+const erofsChildEnv = "B4_TEST_EROFS_DIR"
+
+func TestWriteFileAtomicFallsBackInPlaceOnAReadOnlyFilesystem(t *testing.T) {
+	if dir := os.Getenv(erofsChildEnv); dir != "" {
+		erofsChild(t, dir)
+		return
+	}
+	if _, err := exec.LookPath("unshare"); err != nil {
+		t.Skip("unshare is not installed")
+	}
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "ro"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "rw"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	host := filepath.Join(dir, "rw", "b4.json")
+	if err := os.WriteFile(host, []byte("old"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("unshare", "-rm", os.Args[0], "-test.run=^TestWriteFileAtomicFallsBackInPlaceOnAReadOnlyFilesystem$", "-test.v")
+	cmd.Env = append(os.Environ(), erofsChildEnv+"="+dir)
+	out, err := cmd.CombinedOutput()
+	if strings.Contains(string(out), "--- SKIP") {
+		t.Skipf("no read-only filesystem available: %s", out)
+	}
+	if err != nil {
+		if !strings.Contains(string(out), "--- ") {
+			t.Skipf("cannot open a user and mount namespace: %v: %s", err, out)
+		}
+		t.Fatalf("child failed: %v\n%s", err, out)
+	}
+	got, _ := os.ReadFile(host)
+	if string(got) != "new" {
+		t.Fatalf("the bind-mounted file behind a read-only directory was not saved, content = %q\n%s", got, out)
+	}
+}
+
+func erofsChild(t *testing.T, dir string) {
+	ro := filepath.Join(dir, "ro")
+	target := filepath.Join(ro, "b4.json")
+	if err := syscall.Mount("tmpfs", ro, "tmpfs", 0, "size=64k"); err != nil {
+		t.Skipf("mount tmpfs: %v", err)
+	}
+	if err := os.WriteFile(target, nil, 0600); err != nil {
+		t.Skipf("create the mount point: %v", err)
+	}
+	if err := syscall.Mount(filepath.Join(dir, "rw", "b4.json"), target, "", syscall.MS_BIND, ""); err != nil {
+		t.Skipf("bind mount: %v", err)
+	}
+	if err := syscall.Mount("", ro, "", syscall.MS_REMOUNT|syscall.MS_RDONLY, ""); err != nil {
+		t.Skipf("remount read-only: %v", err)
+	}
+	if f, err := os.CreateTemp(ro, "probe-*"); err == nil {
+		_ = f.Close()
+		t.Skip("the directory is still writable")
+	} else if !errors.Is(err, syscall.EROFS) {
+		t.Skipf("expected EROFS from the read-only directory, got %v", err)
+	}
+
+	if err := writeFileAtomic(target, []byte("new"), ConfigFileMode); err != nil {
+		t.Fatalf("a writable bind-mounted file in a read-only directory must still be saved: %v", err)
+	}
+	got, _ := os.ReadFile(target)
+	if string(got) != "new" {
+		t.Fatalf("content = %q", got)
+	}
+}
+
+func TestWriteFileAtomicKeepsTheGroup(t *testing.T) {
+	groups, err := os.Getgroups()
+	if err != nil {
+		t.Skipf("getgroups: %v", err)
+	}
+	other := -1
+	for _, g := range groups {
+		if g != os.Getegid() {
+			other = g
+			break
+		}
+	}
+	if other < 0 {
+		t.Skip("the test user belongs to no second group")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "b4.json")
+	if err := os.WriteFile(path, []byte("old"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chown(path, -1, other); err != nil {
+		t.Skipf("chgrp: %v", err)
+	}
+
+	if err := writeFileAtomic(path, []byte("new"), ConfigFileMode); err != nil {
+		t.Fatalf("writeFileAtomic: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gid := int(info.Sys().(*syscall.Stat_t).Gid); gid != other {
+		t.Fatalf("group = %d, want %d", gid, other)
+	}
+	if info.Mode().Perm() != ConfigFileMode {
+		t.Fatalf("mode = %#o, want %#o", info.Mode().Perm(), ConfigFileMode)
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != "new" {
+		t.Fatalf("content = %q", got)
+	}
+}
+
+func TestWriteFileAtomicKeepsTheOwner(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("changing a file's owner needs root")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "b4.json")
+	if err := os.WriteFile(path, []byte("old"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chown(path, 12345, 12345); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := writeFileAtomic(path, []byte("new"), ConfigFileMode); err != nil {
+		t.Fatalf("writeFileAtomic: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := info.Sys().(*syscall.Stat_t)
+	if st.Uid != 12345 || st.Gid != 12345 {
+		t.Fatalf("owner = %d:%d, want 12345:12345", st.Uid, st.Gid)
+	}
+	if info.Mode().Perm() != ConfigFileMode {
+		t.Fatalf("mode = %#o, want %#o", info.Mode().Perm(), ConfigFileMode)
 	}
 	got, _ := os.ReadFile(path)
 	if string(got) != "new" {

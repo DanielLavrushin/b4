@@ -2,6 +2,7 @@ package asnprefix
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"slices"
 	"strings"
@@ -308,6 +309,80 @@ func TestPassResetsTheShrinkCountOnANormalResult(t *testing.T) {
 	}
 	if len(changes.all()) != 0 {
 		t.Fatalf("nothing changed: %v", changes.all())
+	}
+}
+
+func TestResolveHoldsAShrinkUntilTheRefresherConfirmsIt(t *testing.T) {
+	s := useStore(t)
+	clk := useClock(t)
+	var shrunk atomic.Bool
+	small := strings.Replace(string(fixture(t, "ris_prefixes_AS62041.json")), `"91.108.4.0/23","149.154.163.0/24"`, `"91.108.4.0/23"],"x":["149.154.163.0/24"`, 1)
+	useFake(t, func(w http.ResponseWriter, r *http.Request, call, resource string) {
+		if call == "ris-prefixes" && shrunk.Load() {
+			writeJSON(w, 200, []byte(small))
+			return
+		}
+		realRIPE(t)(w, r, call, resource)
+	})
+	_ = s.Put(&config.AsnInfo{ID: "62041", Name: "Telegram", Prefixes: config.SanitizeASNPrefixes(fullAS62041(t)), UpdatedAt: clk.Now().Add(-StaleAfter - time.Minute).Unix(), Source: config.AsnSourceRIPEstat})
+	known := s.Get("62041").Prefixes
+	changes := &changeLog{}
+	r := testRefresher(asnConfig([]string{"62041"}), clk, changes)
+
+	shrunk.Store(true)
+	r.pass(context.Background())
+	if st := r.state["62041"]; st == nil || st.shrinks != 1 {
+		t.Fatalf("the refresher holds the first shrink: %+v", st)
+	}
+	if LastError("62041") == "" {
+		t.Fatal("a held shrink is reported as the last error")
+	}
+
+	clk.Advance(5 * time.Minute)
+	for _, force := range []bool{false, true} {
+		info, err := Resolve(context.Background(), "62041", force)
+		if !errors.Is(err, ErrCoverageShrunk) || info != nil {
+			t.Fatalf("force=%v: a resolve during the hold must refuse the shrink, got %v, %v", force, info, err)
+		}
+		if got := s.Get("62041"); !slices.Equal(got.Prefixes, known) {
+			t.Fatalf("force=%v: the known list is kept: %v", force, got.Prefixes)
+		}
+		if !strings.Contains(LastError("62041"), "IPv4 addresses") {
+			t.Fatalf("force=%v: the refusal is the last error: %q", force, LastError("62041"))
+		}
+	}
+
+	clk.Advance(time.Hour + time.Second)
+	r.pass(context.Background())
+	if st := r.state["62041"]; st == nil || st.shrinks != 2 {
+		t.Fatalf("the refresher keeps counting: %+v", st)
+	}
+	clk.Advance(time.Hour + time.Second)
+	r.pass(context.Background())
+	if got := s.Get("62041"); slices.Equal(got.Prefixes, known) {
+		t.Fatalf("the third consecutive shrink is accepted: %v", got.Prefixes)
+	}
+	if LastError("62041") != "" {
+		t.Fatalf("the accepted shrink clears the last error: %q", LastError("62041"))
+	}
+	if c := changes.all(); len(c) != 1 || c[0][0] != "62041" {
+		t.Fatalf("and is reported as a change: %v", c)
+	}
+}
+
+func TestResolveStoresAGrowingOrFirstList(t *testing.T) {
+	s := useStore(t)
+	clk := useClock(t)
+	useFake(t, realRIPE(t))
+
+	info, err := Resolve(context.Background(), "62041", false)
+	if err != nil || len(info.Prefixes) == 0 {
+		t.Fatalf("a first resolve stores the list: %v, %v", info, err)
+	}
+	_ = s.Put(&config.AsnInfo{ID: "62041", Name: "Telegram", Prefixes: []string{"91.108.4.0/23"}, UpdatedAt: clk.Now().Add(-StaleAfter - time.Minute).Unix(), Source: config.AsnSourceRIPEstat})
+	info, err = Resolve(context.Background(), "62041", false)
+	if err != nil || len(info.Prefixes) <= 1 {
+		t.Fatalf("a larger list is stored at once: %v, %v", info, err)
 	}
 }
 

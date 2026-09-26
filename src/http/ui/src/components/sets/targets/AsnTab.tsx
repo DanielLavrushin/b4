@@ -64,7 +64,7 @@ export const AsnTab = ({
   otherSetsTargets,
   onChange,
 }: AsnTabProps) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { showSuccess, showError } = useSnackbar();
   const asns = useMemo(() => config.targets.asns ?? [], [config.targets.asns]);
   const asnsRef = useRef(asns);
@@ -328,7 +328,7 @@ export const AsnTab = ({
                 sx={{ color: colors.text.secondary }}
               >
                 {t("sets.targets.asn.savedTotal", {
-                  value: stats.asn_ips.toLocaleString(),
+                  value: stats.asn_ips.toLocaleString(i18n.language),
                 })}
               </Typography>
             )}
@@ -368,11 +368,6 @@ export const AsnTab = ({
                 view={views?.[id]}
                 state={rowState(id)}
                 setName={config.name}
-                filtered={
-                  config.targets.ip_version
-                    ? stats?.asn_breakdown?.[id]
-                    : undefined
-                }
                 ipVersion={config.targets.ip_version}
                 refreshing={refreshing.has(id)}
                 onRefresh={() => void refresh(id)}
@@ -480,7 +475,6 @@ interface AsnRowProps {
   view?: AsnView;
   state: RowState;
   setName: string;
-  filtered?: number;
   ipVersion?: string;
   refreshing: boolean;
   onRefresh: () => void;
@@ -493,15 +487,20 @@ const AsnRow = ({
   view,
   state,
   setName,
-  filtered,
   ipVersion,
   refreshing,
   onRefresh,
   onPreview,
   onRemove,
 }: AsnRowProps) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const unresolved = state === "unresolved";
+  const filtered =
+    ipVersion === "4"
+      ? view?.v4_count
+      : ipVersion === "6"
+        ? view?.v6_count
+        : undefined;
   const accent = unresolved ? colors.state.warning : colors.border.default;
   const otherSets = (view?.used_by ?? []).filter((name) => name !== setName);
   const showFiltered =
@@ -562,7 +561,7 @@ const AsnRow = ({
               sx={{ color: colors.text.secondary }}
             >
               {t("sets.targets.asn.filtered", {
-                value: (filtered ?? 0).toLocaleString(),
+                value: (filtered ?? 0).toLocaleString(i18n.language),
                 version: ipVersion,
               })}
             </Typography>

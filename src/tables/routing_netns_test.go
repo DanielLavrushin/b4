@@ -170,10 +170,12 @@ func netnsRoutingSetName(t *testing.T, engine string) string {
 func netnsAddCounters(t *testing.T) {
 	t.Helper()
 	for _, dev := range []string{netnsPrimary, netnsSecondary} {
-		spec := []string{"iptables", "-w", "-t", "mangle", "-C", "POSTROUTING",
+		spec := []string{"iptables", "-w", "-t", "mangle", "-D", "POSTROUTING",
 			"-o", dev, "-d", netnsTarget, "-p", "tcp", "-j", "ACCEPT"}
-		if _, err := run(spec...); err == nil {
-			continue
+		for {
+			if _, err := run(spec...); err != nil {
+				break
+			}
 		}
 		spec[4] = "-I"
 		netnsRun(t, spec...)
@@ -372,6 +374,28 @@ func TestNetnsOutputChainSitsAboveTheQueueAccept(t *testing.T) {
 	RoutingSyncConfig(cfg)
 	defer RoutingClearAll()
 
+	netnsAssertOutJumpAboveQueueAccept(t, cfg, "after the first sync")
+
+	if err := RefreshRules(cfg); err != nil {
+		t.Fatalf("RefreshRules: %v", err)
+	}
+	netnsAssertOutJumpAboveQueueAccept(t, cfg, "after the capture rules were rebuilt, as saving a queue or port setting does")
+
+	netnsRun(t, "ipset", "add", netnsRoutingSetName(t, backendIPTables), netnsTarget, "-exist")
+	netnsAddCounters(t)
+	stopQueue := netnsStartQueueListener(t, uint16(cfg.Queue.StartNum))
+	defer stopQueue()
+
+	netnsZeroCounters(t)
+	netnsSendMarked(t, uint32(cfg.Queue.Mark), 41011, 443)
+	if counts := netnsEgressCounts(t); counts[netnsSecondary] != 1 || counts[netnsPrimary] != 0 {
+		netnsLogState(t, backendIPTables)
+		t.Errorf("after a capture refresh an injected packet has to leave by the set's interface %s, counters were %v", netnsSecondary, counts)
+	}
+}
+
+func netnsAssertOutJumpAboveQueueAccept(t *testing.T, cfg *config.Config, why string) {
+	t.Helper()
 	out := netnsRun(t, "iptables", "-w", "-t", "mangle", "-S", "OUTPUT")
 	jump, accept := -1, -1
 	for i, line := range strings.Split(strings.TrimSpace(out), "\n") {
@@ -383,13 +407,13 @@ func TestNetnsOutputChainSitsAboveTheQueueAccept(t *testing.T) {
 		}
 	}
 	if jump < 0 {
-		t.Fatalf("the set's OUTPUT chain is not hung off mangle OUTPUT:\n%s", out)
+		t.Fatalf("%s: the set's OUTPUT chain is not hung off mangle OUTPUT:\n%s", why, out)
 	}
 	if accept < 0 {
-		t.Fatalf("b4's queue-mark ACCEPT is missing from mangle OUTPUT:\n%s", out)
+		t.Fatalf("%s: b4's queue-mark ACCEPT is missing from mangle OUTPUT:\n%s", why, out)
 	}
 	if jump > accept {
-		t.Errorf("the set's chain is below the queue-mark ACCEPT, which ends the mangle table, so injected packets never reach it:\n%s", out)
+		t.Errorf("%s: the set's chain is below the queue-mark ACCEPT, which ends the mangle table, so injected packets never reach it:\n%s", why, out)
 	}
 }
 

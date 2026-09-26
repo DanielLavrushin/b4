@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"slices"
@@ -181,6 +182,38 @@ func TestAsnResolveReportsAnUpstreamFailure(t *testing.T) {
 	expectCode(t, rec, http.StatusBadGateway, "asn_fetch_failed")
 }
 
+func TestAsnResolveKeepsTheCachedCopyWhileAShrinkIsHeld(t *testing.T) {
+	s := useAsnStore(t)
+	tg := asnSet("tg", "62041")
+	tg.Targets.IpsToMatch = append([]string{}, telegramPrefixes...)
+	api, mux := asnAPI(t, tg)
+	putTelegram(t, s)
+	held := fmt.Errorf("AS62041: RIPEstat lists 1 prefixes, the known list has 4: %w", asnprefix.ErrCoverageShrunk)
+	swapResolve(t, func(ctx context.Context, id string, force bool) (*config.AsnInfo, error) {
+		return nil, held
+	})
+	before := api.getCfg()
+
+	rec := postJSON(t, mux, "/api/asn/resolve", map[string]any{"asn": "62041"})
+	var view AsnView
+	decodeInto(t, rec, &view)
+	if rec.Code != http.StatusOK || !slices.Equal(view.Prefixes, telegramPrefixes) || !strings.Contains(view.LastError, "less than half") {
+		t.Fatalf("without refresh the cached copy is served with the pending shrink: %d %+v", rec.Code, view)
+	}
+	if api.getCfg() != before || !slices.Equal(api.getCfg().GetSetById("tg").Targets.IpsToMatch, telegramPrefixes) {
+		t.Fatal("a held shrink reloads no set")
+	}
+
+	rec = postJSON(t, mux, "/api/asn/resolve", map[string]any{"asn": "62041", "refresh": true})
+	expectCode(t, rec, http.StatusBadGateway, "asn_fetch_failed")
+	if !strings.Contains(rec.Body.String(), "less than half") {
+		t.Errorf("the refusal says why: %s", rec.Body.String())
+	}
+	if api.getCfg() != before {
+		t.Fatal("a refused refresh reloads no set")
+	}
+}
+
 func TestAsnResolveReloadsTheSetsUsingAChangedASN(t *testing.T) {
 	s := useAsnStore(t)
 	api, mux := asnAPI(t, asnSet("tg", "62041"))
@@ -197,12 +230,43 @@ func TestAsnResolveReloadsTheSetsUsingAChangedASN(t *testing.T) {
 	}
 }
 
-func TestAsnLookupAnswersFromTheStoreFirst(t *testing.T) {
+func TestAsnLookupPrefersTheRIPEstatOriginOverACachedAggregate(t *testing.T) {
+	s := useAsnStore(t)
+	_, mux := asnAPI(t)
+	if err := s.Put(&config.AsnInfo{ID: "3356", Name: "LEVEL3", Prefixes: []string{"8.0.0.0/9"}, UpdatedAt: time.Now().Unix(), Source: config.AsnSourceRIPEstat}); err != nil {
+		t.Fatal(err)
+	}
+	calls := swapLookup(t, func(ctx context.Context, ip string) (*asnprefix.Lookup, error) {
+		entry := asnprefix.LookupASN{ID: "15169", Name: "GOOGLE"}
+		if info := config.Asns().Get("15169"); info != nil {
+			entry.Cached = len(info.Prefixes) > 0
+		}
+		return &asnprefix.Lookup{IP: ip, Prefix: "8.8.8.0/24", ASNs: []asnprefix.LookupASN{entry}}, nil
+	})
+
+	rec := getJSON(t, mux, "/api/asn/lookup?ip=8.8.8.8")
+	var out asnprefix.Lookup
+	decodeInto(t, rec, &out)
+	if rec.Code != http.StatusOK || *calls != 1 || out.Prefix != "8.8.8.0/24" || len(out.ASNs) != 1 || out.ASNs[0] != (asnprefix.LookupASN{ID: "15169", Name: "GOOGLE"}) {
+		t.Fatalf("the announcing origin is reported, not the cached transit aggregate: %d %+v", rec.Code, out)
+	}
+
+	if err := s.Put(&config.AsnInfo{ID: "15169", Name: "GOOGLE", Prefixes: []string{"8.8.8.0/24"}, UpdatedAt: time.Now().Unix(), Source: config.AsnSourceRIPEstat}); err != nil {
+		t.Fatal(err)
+	}
+	rec = getJSON(t, mux, "/api/asn/lookup?ip=8.8.8.8")
+	decodeInto(t, rec, &out)
+	if *calls != 2 || len(out.ASNs) != 1 || !out.ASNs[0].Cached {
+		t.Fatalf("a cached origin is flagged as cached: %+v", out)
+	}
+}
+
+func TestAsnLookupAnswersFromTheStoreWhenRIPEstatFails(t *testing.T) {
 	s := useAsnStore(t)
 	_, mux := asnAPI(t)
 	putTelegram(t, s)
 	calls := swapLookup(t, func(ctx context.Context, ip string) (*asnprefix.Lookup, error) {
-		return nil, errors.New("unreachable")
+		return nil, errors.New("RIPEstat network-info: dial tcp: i/o timeout")
 	})
 
 	rec := getJSON(t, mux, "/api/asn/lookup?ip=149.154.167.51:443")
@@ -212,14 +276,40 @@ func TestAsnLookupAnswersFromTheStoreFirst(t *testing.T) {
 	var out asnprefix.Lookup
 	decodeInto(t, rec, &out)
 	if out.IP != "149.154.167.51" || out.Prefix != "149.154.160.0/20" || len(out.ASNs) != 1 || out.ASNs[0] != (asnprefix.LookupASN{ID: "62041", Name: "Telegram", Cached: true}) {
-		t.Fatalf("store hit: %+v", out)
+		t.Fatalf("store answer: %+v", out)
 	}
-	if *calls != 0 {
-		t.Error("a store hit asks no one")
+	if *calls != 1 {
+		t.Errorf("RIPEstat is asked first: %d", *calls)
 	}
+	expectCode(t, getJSON(t, mux, "/api/asn/lookup?ip=142.250.120.139"), http.StatusBadGateway, "asn_lookup_failed")
 }
 
-func TestAsnLookupFallsBackToRIPEstat(t *testing.T) {
+func TestAsnLookupFallsBackToTheStoreWhenRIPEstatHangs(t *testing.T) {
+	s := useAsnStore(t)
+	_, mux := asnAPI(t)
+	putTelegram(t, s)
+	prev := asnLookupTimeout
+	asnLookupTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { asnLookupTimeout = prev })
+	swapLookup(t, func(ctx context.Context, ip string) (*asnprefix.Lookup, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+
+	start := time.Now()
+	rec := getJSON(t, mux, "/api/asn/lookup?ip=149.154.167.51")
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("lookup waited %v for a hung RIPEstat", elapsed)
+	}
+	var out asnprefix.Lookup
+	decodeInto(t, rec, &out)
+	if rec.Code != http.StatusOK || len(out.ASNs) != 1 || out.ASNs[0].ID != "62041" || !out.ASNs[0].Cached {
+		t.Fatalf("store answer after the lookup deadline: %d %+v", rec.Code, out)
+	}
+	expectCode(t, getJSON(t, mux, "/api/asn/lookup?ip=142.250.120.139"), http.StatusBadGateway, "asn_lookup_failed")
+}
+
+func TestAsnLookupRelaysRIPEstat(t *testing.T) {
 	useAsnStore(t)
 	_, mux := asnAPI(t)
 	var fail bool
@@ -309,8 +399,11 @@ func TestReloadASNTargetsReExpandsOnlyTheAffectedSets(t *testing.T) {
 	tg := asnSet("tg", "62041")
 	tg.TCP.Duplicate.Enabled = true
 	tg.TCP.Duplicate.Count = 2
+	if err := s.Put(&config.AsnInfo{ID: "15169", Name: "Google", Prefixes: []string{"8.8.8.0/24"}, UpdatedAt: time.Now().Unix(), Source: config.AsnSourceRIPEstat}); err != nil {
+		t.Fatal(err)
+	}
 	google := asnSet("google", "15169")
-	google.Targets.IpsToMatch = []string{"203.0.113.9"}
+	google.Targets.IpsToMatch = []string{"8.8.8.0/24"}
 	plain := asnSet("plain")
 	plain.Targets.IPs = []string{"198.51.100.0/24"}
 	plain.Targets.IpsToMatch = []string{"198.51.100.0/24"}
@@ -323,7 +416,7 @@ func TestReloadASNTargetsReExpandsOnlyTheAffectedSets(t *testing.T) {
 	if got := cfg.GetSetById("tg").Targets.IpsToMatch; !slices.Equal(got, telegramPrefixes) {
 		t.Fatalf("the set using the changed ASN is re-expanded: %v", got)
 	}
-	if got := cfg.GetSetById("google").Targets.IpsToMatch; !slices.Equal(got, []string{"203.0.113.9"}) {
+	if got := cfg.GetSetById("google").Targets.IpsToMatch; !slices.Equal(got, []string{"8.8.8.0/24"}) {
 		t.Errorf("a set using another ASN is left alone: %v", got)
 	}
 	if got := cfg.GetSetById("plain").Targets.IpsToMatch; !slices.Equal(got, []string{"198.51.100.0/24"}) {

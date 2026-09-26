@@ -130,7 +130,7 @@ Services that serve content from many subdomains (YouTube, CDNs) are covered by 
 
 ## Adding addresses and networks to sets
 
-The **+** button next to a destination address (and, in the raw feed, a click on the address itself) opens the add dialog. On opening, the dialog asks b4 which network announces the address. b4 answers from its ASN cache when a cached network covers the address and otherwise asks [RIPEstat](https://stat.ripe.net/); the browser does not contact RIPEstat itself. The dialog then shows the address, the announced prefix that covers it and the origin network, such as **AS15169 Google LLC**. When more than one network announces the prefix, one of them is picked in the dialog. A private address has no network. A lookup that fails can be retried, and the address itself can be added either way.
+The **+** button next to a destination address (and, in the raw feed, a click on the address itself) opens the add dialog. On opening, the dialog asks b4 which network announces the address. b4 asks [RIPEstat](https://stat.ripe.net/), and when that request fails it answers from its ASN cache if a cached network covers the address; the browser does not contact RIPEstat itself. The dialog then shows the address, the announced prefix that covers it and the origin network, such as **AS15169 Google LLC**. When more than one network announces the prefix, one of them is picked in the dialog. A private address has no network. A lookup that fails can be retried, and the address itself can be added either way.
 
 ### What to add
 

@@ -87,7 +87,7 @@ func TestShareAcceptsASetThatTargetsOnlyASNs(t *testing.T) {
 	if got := store.TargetList(v.Projection, "asns"); !reflect.DeepEqual(got, []string{"62041", "44907"}) {
 		t.Errorf("the stored projection must carry the ASNs, got %v", got)
 	}
-	if v.B4Min != "1.84.0" {
+	if v.B4Min != "1.83.0" {
 		t.Errorf("a set with ASNs needs the release that reads them, got %q", v.B4Min)
 	}
 

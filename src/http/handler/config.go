@@ -440,6 +440,11 @@ func (a *API) updateAndPushConfig(mutate func(current *config.Config) (*config.C
 	if err != nil {
 		return err
 	}
+	for _, set := range newCfg.Sets {
+		if set != nil && len(set.Targets.ASNs) > 0 {
+			a.loadTargetsForSetCached(set)
+		}
+	}
 	return a.pushConfigLocked(newCfg)
 }
 

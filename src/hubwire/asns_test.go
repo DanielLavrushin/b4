@@ -38,7 +38,7 @@ func TestScrubCountsASNsAsTargets(t *testing.T) {
 	if !reflect.DeepEqual(stringList(got), []string{"62041", "44907"}) {
 		t.Errorf("the projection must carry the ASNs as references, got %v", got)
 	}
-	if v := MinVersion(projection); v != "1.84.0" {
+	if v := MinVersion(projection); v != "1.83.0" {
 		t.Errorf("a set with ASNs needs the release that reads them, got %s", v)
 	}
 
@@ -108,14 +108,14 @@ func TestFingerprintIgnoresASNs(t *testing.T) {
 
 func TestBuildOpenRoundTripCarriesASNs(t *testing.T) {
 	set := asnOnlySet("62041", "44907")
-	env, _, err := Build(&set, BuildOptions{B4Version: "1.84.0"})
+	env, _, err := Build(&set, BuildOptions{B4Version: "1.83.0"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if env.MinB4 != "1.84.0" {
+	if env.MinB4 != "1.83.0" {
 		t.Errorf("the envelope must ask for the release that reads ASNs, got %s", env.MinB4)
 	}
-	imp, err := Open(env, OpenOptions{B4Version: "1.84.0"})
+	imp, err := Open(env, OpenOptions{B4Version: "1.83.0"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,11 +132,11 @@ func TestBuildOpenRoundTripCarriesASNs(t *testing.T) {
 		}
 	}
 
-	old, err := Open(env, OpenOptions{B4Version: "1.83.0"})
+	old, err := Open(env, OpenOptions{B4Version: "1.82.3"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if w, ok := warningCodes(old.Warnings)["version_too_old"]; !ok || w.Params["min"] != "1.84.0" {
+	if w, ok := warningCodes(old.Warnings)["version_too_old"]; !ok || w.Params["min"] != "1.83.0" {
 		t.Errorf("a release before ASN targets must be told it is too old: %+v", old.Warnings)
 	}
 }

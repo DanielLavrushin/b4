@@ -127,6 +127,11 @@ func Resolve(ctx context.Context, id string, force bool) (*config.AsnInfo, error
 		}
 		return nil, err
 	}
+	if shrinksCoverage(current, info) {
+		err := shrinkError(norm, current, info)
+		recordFailure(norm, err)
+		return nil, err
+	}
 	clearFailure(norm)
 	return store(info, current), nil
 }

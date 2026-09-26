@@ -22,7 +22,7 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(target)+".tmp-*")
 	if err != nil {
-		if errors.Is(err, os.ErrPermission) {
+		if errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.EROFS) {
 			log.Debugf("Cannot create a temporary file next to %s (%v), writing it in place", target, err)
 			return writeFileInPlace(target, data, mode)
 		}
@@ -44,6 +44,7 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 		_ = tmp.Close()
 		return err
 	}
+	keepOwner(tmp, target)
 	if err := tmp.Chmod(mode); err != nil {
 		_ = tmp.Close()
 		return err
@@ -61,6 +62,20 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	renamed = true
 	syncDir(dir)
 	return nil
+}
+
+func keepOwner(tmp *os.File, target string) {
+	st, err := os.Stat(target)
+	if err != nil {
+		return
+	}
+	sys, ok := st.Sys().(*syscall.Stat_t)
+	if !ok || (int(sys.Uid) == os.Geteuid() && int(sys.Gid) == os.Getegid()) {
+		return
+	}
+	if err := tmp.Chown(int(sys.Uid), int(sys.Gid)); err != nil {
+		log.Debugf("Cannot keep the owner %d:%d of %s (%v), it will belong to the b4 user", sys.Uid, sys.Gid, target, err)
+	}
 }
 
 func writeFileInPlace(path string, data []byte, mode os.FileMode) error {

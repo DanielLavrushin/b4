@@ -65,13 +65,13 @@ The result is kept in `asn_cache.json` in the directory of the configuration fil
 
 | Event | What happens |
 | --- | --- |
-| b4 starts | The prefixes in `asn_cache.json` are used as they are, however old. Starting makes no network request, so after a reboot without internet access the sets keep matching the last known prefixes. |
-| Every hour | A background check fetches each ASN referenced by any set, enabled or not, whose entry is missing or older than 20 hours. ASNs are fetched one at a time. |
+| b4 starts | Loading `asn_cache.json` makes no network request, and the sets use its prefixes as they are, however old, so after a reboot without internet access the sets keep matching the last known prefixes. The background check below runs right after start. |
+| Right after start, then every hour | A background check fetches each ASN referenced by any set, enabled or not, whose entry is missing or older than 20 hours. ASNs are fetched one at a time. |
 | A set gains an ASN that has no prefixes yet | The check runs at once. |
 | A fetch fails | The last good copy stays in use. The next attempt follows after 30 seconds, and the wait doubles with every further failure up to one hour. |
 | The prefixes changed | Every set that references the ASN is expanded again and the firewall rules are refreshed, without a save. |
 
-An answer with no prefixes is refused. An answer that covers less than half the address space known before, counted in IPv4 addresses or in IPv6 /64 networks, is taken only after three fetches in a row, an hour apart, return the same shrink; until then the previous list stays in use, so a gap in the RIPEstat data does not empty a set.
+An answer with no prefixes is refused. An answer that covers less than half the address space known before, counted in IPv4 addresses or in IPv6 /64 networks, is taken only after three fetches in a row, an hour apart, return the same shrink; until then the previous list stays in use, so a gap in the RIPEstat data does not empty a set. The refresh button in the set editor follows the same rule: it keeps the previous list and reports the shrink, and only the background check can accept it.
 
 ### Before the first resolve
 

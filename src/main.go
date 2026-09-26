@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -580,10 +581,36 @@ func runB4(cmd *cobra.Command, args []string) error {
 	asnCtx, asnCancel := context.WithCancel(appCtx)
 	defer asnCancel()
 	asnprefix.Start(asnCtx, cfgPtr.Load, func(changed []string) {
-		if apiHandler == nil || asnCtx.Err() != nil {
+		if asnCtx.Err() != nil {
 			return
 		}
-		apiHandler.ReloadASNTargets(changed)
+		if apiHandler != nil {
+			apiHandler.ReloadASNTargets(changed)
+			return
+		}
+		refresh := reloadASNTargetsHeadless(asnCtx, cfgPtr.Load, changed, func(_, c *config.Config) error {
+			if pool != nil {
+				if err := pool.UpdateConfig(c); err != nil {
+					return fmt.Errorf("failed to update pool config: %v", err)
+				}
+			}
+			if tunEngine != nil {
+				tunEngine.UpdateConfig(c)
+			}
+			cfgPtr.Store(c)
+			socks5Server.UpdateConfig(c)
+			tproxyResolver.Set(pool.GetMatcher())
+			if !c.System.Tables.SkipSetup {
+				tproxyMgr.SyncConfig(c)
+				tables.RoutingSyncConfig(c)
+			}
+			return nil
+		})
+		if refresh {
+			if err := refreshTables(); err != nil {
+				log.Errorf("Firewall refresh after the ASN prefix change failed: %v", err)
+			}
+		}
 	})
 
 	log.Infof("B4 is running. Press Ctrl+C to stop")
@@ -887,6 +914,48 @@ func initTimezone() {
 	if tzName := os.Getenv("TZ"); tzName != "" {
 		config.ApplyTimezone(tzName)
 	}
+}
+
+func reloadASNTargetsHeadless(ctx context.Context, load func() *config.Config, changed []string, commit func(previous, next *config.Config) error) bool {
+	ids := make(map[string]bool, len(changed))
+	for _, raw := range changed {
+		if id, ok := config.NormalizeASN(raw); ok {
+			ids[id] = true
+		}
+	}
+	if len(ids) == 0 {
+		return false
+	}
+	unlock := config.LockWrites()
+	defer unlock()
+	if ctx.Err() != nil {
+		return false
+	}
+	previous := load()
+	next := previous.Clone()
+	var names []string
+	for _, set := range next.Sets {
+		if set == nil || !slices.ContainsFunc(set.Targets.ASNs, func(raw string) bool {
+			id, ok := config.NormalizeASN(raw)
+			return ok && ids[id]
+		}) {
+			continue
+		}
+		if _, _, err := next.GetTargetsForSet(set); err != nil {
+			log.Errorf("ASN prefixes changed but the targets of set '%s' could not be reloaded: %v", set.Name, err)
+			continue
+		}
+		names = append(names, set.Name)
+	}
+	if len(names) == 0 {
+		return false
+	}
+	if err := commit(previous, next); err != nil {
+		log.Errorf("ASN prefixes changed but the sets using them could not be reloaded: %v", err)
+		return false
+	}
+	log.Infof("Reloaded the ASN targets of %s", strings.Join(names, ", "))
+	return config.FirewallRefreshNeeded(previous, next)
 }
 
 func keepUnreadableConfig(path string, loadErr error) string {
