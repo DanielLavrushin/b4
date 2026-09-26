@@ -588,3 +588,19 @@ func TestDamageRaceDoesNotMarkTheReplacementFile(t *testing.T) {
 		t.Fatalf("a scan of the old file must not mark the file that replaced it (scan err %v)", scanErr)
 	}
 }
+
+func TestValidateChecksRecordsPastTheSample(t *testing.T) {
+	var body []byte
+	body = protowire.AppendTag(body, 1, protowire.BytesType)
+	body = protowire.AppendString(body, "LAST")
+	body = append(body, 0x12, 0x10, 'a', 'b')
+	var b []byte
+	b = append(b, rawEntry("FIRST", rawDomain("first.example"))...)
+	b = protowire.AppendTag(b, 1, protowire.BytesType)
+	b = protowire.AppendBytes(b, body)
+	path := writeBytes(t, "geosite.dat", b)
+
+	if err := Validate(path, KindSite); !errors.Is(err, ErrUnusable) {
+		t.Fatalf("a broken record in a later entry must be rejected, got %v", err)
+	}
+}

@@ -30,30 +30,18 @@ const validateSampleRecords = 64
 
 var ErrUnusable = errors.New("not a usable geodata file")
 
-var errSampled = errors.New("geodat: sample complete")
-
 func Validate(path string, kind Kind) error {
 	sampled := 0
 	usable := false
 	var scratch []byte
 	err := scanEntries(path, func(_ string, body *entryBody) error {
-		if usable || sampled >= validateSampleRecords {
-			return nil
-		}
-		err := scanRecords(body, &scratch, func(rec []byte) error {
-			sampled++
-			if recordUsable(kind, rec) {
-				usable = true
-			}
-			if usable || sampled >= validateSampleRecords {
-				return errSampled
+		return scanRecords(body, &scratch, func(rec []byte) error {
+			if !usable && sampled < validateSampleRecords {
+				sampled++
+				usable = recordUsable(kind, rec)
 			}
 			return nil
 		})
-		if errors.Is(err, errSampled) {
-			return nil
-		}
-		return err
 	})
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrUnusable, err)
