@@ -36,9 +36,13 @@ func Validate(path string, kind Kind) error {
 	var scratch []byte
 	err := scanEntries(path, func(_ string, body *entryBody) error {
 		return scanRecords(body, &scratch, func(rec []byte) error {
+			ok, err := checkRecord(kind, rec)
+			if err != nil {
+				return err
+			}
 			if !usable && sampled < validateSampleRecords {
 				sampled++
-				usable = recordUsable(kind, rec)
+				usable = ok
 			}
 			return nil
 		})
@@ -52,15 +56,15 @@ func Validate(path string, kind Kind) error {
 	return nil
 }
 
-func recordUsable(kind Kind, rec []byte) bool {
+func checkRecord(kind Kind, rec []byte) (bool, error) {
 	if kind == KindIP {
 		ip, bits, err := parseCIDR(rec)
 		if err != nil {
-			return false
+			return false, err
 		}
 		_, ok := toPrefix(ip, bits)
-		return ok
+		return ok, nil
 	}
-	_, value, err := parseDomain(rec)
-	return err == nil && value != ""
+	_, value, err := domainFields(rec)
+	return len(value) > 0, err
 }

@@ -604,3 +604,44 @@ func TestValidateChecksRecordsPastTheSample(t *testing.T) {
 		t.Fatalf("a broken record in a later entry must be rejected, got %v", err)
 	}
 }
+
+func rawCIDR(ip []byte, prefix uint64) []byte {
+	var rec []byte
+	rec = protowire.AppendTag(rec, 1, protowire.BytesType)
+	rec = protowire.AppendBytes(rec, ip)
+	rec = protowire.AppendTag(rec, 2, protowire.VarintType)
+	return protowire.AppendVarint(rec, prefix)
+}
+
+func TestValidateRejectsAMalformedRecordAfterAGoodOne(t *testing.T) {
+	brokenDomain := []byte{0x12, 0x10, 'a'}
+	brokenCIDR := []byte{0x0A, 0x10, 1, 2, 3, 4}
+	cases := []struct {
+		name string
+		kind Kind
+		file []byte
+	}{
+		{"geosite", KindSite, append(rawEntry("FIRST", rawDomain("first.example")), rawEntry("LAST", rawDomain("last.example"), brokenDomain)...)},
+		{"geoip", KindIP, append(rawEntry("FIRST", rawCIDR([]byte{91, 108, 4, 0}, 22)), rawEntry("LAST", rawCIDR([]byte{1, 1, 1, 0}, 24), brokenCIDR)...)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeBytes(t, "x.dat", tc.file)
+			if err := Validate(path, tc.kind); !errors.Is(err, ErrUnusable) {
+				t.Fatalf("a malformed record with valid framing must be rejected, got %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateSkipsInvalidPrefixesLikeTheLoader(t *testing.T) {
+	file := append(rawEntry("FIRST", rawCIDR([]byte{91, 108, 4, 0}, 22)), rawEntry("ODD", rawCIDR([]byte{1, 2, 3}, 24))...)
+	path := writeBytes(t, "geoip.dat", file)
+	if err := Validate(path, KindIP); err != nil {
+		t.Fatalf("an address the loader skips is not damage, got %v", err)
+	}
+	found, err := LoadIpsByCategory(path, []string{"first", "odd"})
+	if err != nil || len(found["first"]) != 1 || len(found["odd"]) != 0 {
+		t.Fatalf("loader: %v %v", found, err)
+	}
+}

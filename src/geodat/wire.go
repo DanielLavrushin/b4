@@ -287,13 +287,21 @@ func skipBytesValue(b []byte, wire byte) ([]byte, error) {
 }
 
 func parseDomain(b []byte) (uint64, string, error) {
+	kind, value, err := domainFields(b)
+	if err != nil {
+		return 0, "", err
+	}
+	return kind, string(value), nil
+}
+
+func domainFields(b []byte) (uint64, []byte, error) {
 	var kind uint64
-	var value string
+	var value []byte
 
 	for len(b) > 0 {
 		key, n := binary.Uvarint(b)
 		if n <= 0 {
-			return 0, "", errMalformed
+			return 0, nil, errMalformed
 		}
 		b = b[n:]
 		field := key >> 3
@@ -303,21 +311,21 @@ func parseDomain(b []byte) (uint64, string, error) {
 		case field == 1 && wire == wireVarint:
 			v, n := binary.Uvarint(b)
 			if n <= 0 {
-				return 0, "", errMalformed
+				return 0, nil, errMalformed
 			}
 			kind = v
 			b = b[n:]
 		case field == 2 && wire == wireBytes:
 			size, n := binary.Uvarint(b)
 			if n <= 0 || uint64(len(b)-n) < size {
-				return 0, "", errMalformed
+				return 0, nil, errMalformed
 			}
-			value = string(b[n : n+int(size)])
+			value = b[n : n+int(size)]
 			b = b[n+int(size):]
 		default:
 			rest, err := skipBytesValue(b, wire)
 			if err != nil {
-				return 0, "", err
+				return 0, nil, err
 			}
 			b = rest
 		}
