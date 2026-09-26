@@ -2,9 +2,9 @@
 # Feature: GeoIP data (geoip.dat)
 # Downloads v2ray-format geoip database for IP-based filtering
 
-GEOIP_SOURCES="1|Loyalsoldier|https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download
-2|RUNET Freedom|https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release
-3|B4 GeoIP (recommended)|https://github.com/DanielLavrushin/b4geoip/releases/latest/download"
+GEOIP_SOURCES="1|Loyalsoldier|https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download|16
+2|RUNET Freedom|https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release|18
+3|B4 GeoIP|https://github.com/DanielLavrushin/b4geoip/releases/latest/download|18"
 
 feature_geoip_name() {
     echo "GeoIP data"

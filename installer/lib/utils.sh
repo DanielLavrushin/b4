@@ -572,6 +572,12 @@ _wget_timeout_opt() {
     fi
 }
 
+_wget_once_opt() {
+    if _wget_supports "--tries"; then
+        echo "--tries=1"
+    fi
+}
+
 mirror_alive() {
     _ma_base="$1"
 
@@ -583,7 +589,7 @@ mirror_alive() {
     fi
 
     if command_exists wget; then
-        _ma_args="-q $WGET_INSECURE -O /dev/null $(_wget_timeout_opt "$B4_PROBE_TIMEOUT")"
+        _ma_args="-q $WGET_INSECURE -O /dev/null $(_wget_timeout_opt "$B4_PROBE_TIMEOUT") $(_wget_once_opt)"
         wget $_ma_args "${_ma_base}/b4/health" 2>/dev/null && return 0
     fi
 
@@ -780,14 +786,15 @@ _content_length() {
 
 remote_size() {
     _rs_url="$1"
+    _rs_max="${2:-25}"
     _rs_len=""
 
     if command_exists curl; then
         _rs_len=$(curl -sIL $CURL_INSECURE --connect-timeout "$B4_CONNECT_TIMEOUT" \
-            --max-time 25 "$_rs_url" 2>/dev/null | _content_length)
+            --max-time "$_rs_max" "$_rs_url" 2>/dev/null | _content_length)
     fi
     if [ -z "$_rs_len" ] && command_exists wget; then
-        _rs_args="$WGET_INSECURE $(_wget_timeout_opt 25)"
+        _rs_args="$WGET_INSECURE $(_wget_timeout_opt "$_rs_max") $(_wget_once_opt)"
         _wget_supports "--connect-timeout" && _rs_args="$_rs_args --connect-timeout=$B4_CONNECT_TIMEOUT"
         _rs_len=$(wget -S --spider $_rs_args "$_rs_url" 2>&1 | _content_length)
     fi
@@ -803,7 +810,7 @@ _do_fetch_stdout() {
         curl -sfL $CURL_INSECURE --connect-timeout "$B4_CONNECT_TIMEOUT" --max-time 25 "$_dfs_url" 2>/dev/null && return 0
     fi
     if command_exists wget; then
-        _dfs_args="-qO- $WGET_INSECURE $(_wget_timeout_opt 25)"
+        _dfs_args="-qO- $WGET_INSECURE $(_wget_timeout_opt 25) $(_wget_once_opt)"
         _wget_supports "--connect-timeout" && _dfs_args="$_dfs_args --connect-timeout=$B4_CONNECT_TIMEOUT"
         wget $_dfs_args "$_dfs_url" 2>/dev/null && return 0
     fi

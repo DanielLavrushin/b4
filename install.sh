@@ -613,6 +613,12 @@ _wget_timeout_opt() {
     fi
 }
 
+_wget_once_opt() {
+    if _wget_supports "--tries"; then
+        echo "--tries=1"
+    fi
+}
+
 mirror_alive() {
     _ma_base="$1"
 
@@ -624,7 +630,7 @@ mirror_alive() {
     fi
 
     if command_exists wget; then
-        _ma_args="-q $WGET_INSECURE -O /dev/null $(_wget_timeout_opt "$B4_PROBE_TIMEOUT")"
+        _ma_args="-q $WGET_INSECURE -O /dev/null $(_wget_timeout_opt "$B4_PROBE_TIMEOUT") $(_wget_once_opt)"
         wget $_ma_args "${_ma_base}/b4/health" 2>/dev/null && return 0
     fi
 
@@ -821,14 +827,15 @@ _content_length() {
 
 remote_size() {
     _rs_url="$1"
+    _rs_max="${2:-25}"
     _rs_len=""
 
     if command_exists curl; then
         _rs_len=$(curl -sIL $CURL_INSECURE --connect-timeout "$B4_CONNECT_TIMEOUT" \
-            --max-time 25 "$_rs_url" 2>/dev/null | _content_length)
+            --max-time "$_rs_max" "$_rs_url" 2>/dev/null | _content_length)
     fi
     if [ -z "$_rs_len" ] && command_exists wget; then
-        _rs_args="$WGET_INSECURE $(_wget_timeout_opt 25)"
+        _rs_args="$WGET_INSECURE $(_wget_timeout_opt "$_rs_max") $(_wget_once_opt)"
         _wget_supports "--connect-timeout" && _rs_args="$_rs_args --connect-timeout=$B4_CONNECT_TIMEOUT"
         _rs_len=$(wget -S --spider $_rs_args "$_rs_url" 2>&1 | _content_length)
     fi
@@ -844,7 +851,7 @@ _do_fetch_stdout() {
         curl -sfL $CURL_INSECURE --connect-timeout "$B4_CONNECT_TIMEOUT" --max-time 25 "$_dfs_url" 2>/dev/null && return 0
     fi
     if command_exists wget; then
-        _dfs_args="-qO- $WGET_INSECURE $(_wget_timeout_opt 25)"
+        _dfs_args="-qO- $WGET_INSECURE $(_wget_timeout_opt 25) $(_wget_once_opt)"
         _wget_supports "--connect-timeout" && _dfs_args="$_dfs_args --connect-timeout=$B4_CONNECT_TIMEOUT"
         wget $_dfs_args "$_dfs_url" 2>/dev/null && return 0
     fi
@@ -2551,9 +2558,9 @@ feature_auth_remove() {
 }
 
 register_feature "auth"
-GEOIP_SOURCES="1|Loyalsoldier|https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download
-2|RUNET Freedom|https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release
-3|B4 GeoIP (recommended)|https://github.com/DanielLavrushin/b4geoip/releases/latest/download"
+GEOIP_SOURCES="1|Loyalsoldier|https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download|16
+2|RUNET Freedom|https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release|18
+3|B4 GeoIP|https://github.com/DanielLavrushin/b4geoip/releases/latest/download|18"
 
 feature_geoip_name() {
     echo "GeoIP data"
@@ -2580,8 +2587,8 @@ feature_geoip_remove() {
 }
 
 register_feature "geoip"
-GEOSITE_SOURCES="1|Loyalsoldier|https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download
-2|RUNET Freedom (recommended)|https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release"
+GEOSITE_SOURCES="1|Loyalsoldier|https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download|11
+2|RUNET Freedom|https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release|74"
 
 feature_geosite_name() {
     echo "GeoSite data"
@@ -2717,12 +2724,138 @@ _geo_kept_notice() {
     fi
 }
 
+_geo_mb() {
+    awk -v b="$1" 'BEGIN { printf "%.1f MB", b / 1048576 }'
+}
+
+_geo_existing_dir() {
+    _ged_dir="$1"
+    while [ -n "$_ged_dir" ] && [ "$_ged_dir" != "/" ] && [ ! -d "$_ged_dir" ]; do
+        _ged_dir=$(dirname "$_ged_dir")
+    done
+    echo "${_ged_dir:-/}"
+}
+
+_geo_source_field() {
+    echo "$_gk_sources" | awk -F'|' -v n="$1" -v f="$2" '$1 == n { print $f; exit }'
+}
+
+_geo_probe_sizes() {
+    _gp_sizes="${TEMP_DIR:-/tmp}/geo_sizes_${_gp_kind}_$$"
+    rm -rf "$_gp_sizes" 2>/dev/null || true
+    mkdir -p "$_gp_sizes" 2>/dev/null || return 0
+    echo "$_gk_sources" | {
+        while IFS='|' read -r _gps_num _gps_name _gps_base _gps_approx; do
+            [ -n "$_gps_num" ] || continue
+            (remote_size "${_gps_base}/${_gk_file}" "$B4_PROBE_TIMEOUT" >"${_gp_sizes}/${_gps_num}" 2>/dev/null || true) &
+        done
+        wait
+    }
+}
+
+_geo_source_size() {
+    _gss_live=$(cat "${_gp_sizes}/$1" 2>/dev/null) || _gss_live=""
+    case "$_gss_live" in
+    '' | *[!0-9]*) ;;
+    *)
+        echo "$_gss_live live"
+        return 0
+        ;;
+    esac
+    _gss_mb=$(_geo_source_field "$1" 4)
+    case "$_gss_mb" in
+    '' | *[!0-9]*) ;;
+    *) echo "$((_gss_mb * 1048576)) approx" ;;
+    esac
+}
+
+_geo_source_bytes() {
+    _geo_source_size "$1" | cut -d' ' -f1
+}
+
+_geo_size_text() {
+    _gst_size=$(_geo_source_size "$1")
+    case "$_gst_size" in
+    *live) _geo_mb "${_gst_size% live}" ;;
+    *approx) echo "~$(_geo_source_field "$1" 4) MB" ;;
+    esac
+}
+
+_geo_source_label() {
+    _gsl_label=$(_geo_source_field "$1" 2)
+    _gsl_size=$(_geo_size_text "$1")
+    if [ -n "$_gsl_size" ]; then
+        _gsl_label="${_gsl_label}, ${_gsl_size}"
+    fi
+    if [ "$1" = "$_gk_default" ]; then
+        _gsl_label="${_gsl_label}, recommended"
+    fi
+    echo "$_gsl_label"
+}
+
+_geo_fits() {
+    case "$1" in
+    '' | *[!0-9]*) return 0 ;;
+    esac
+    case "$_gp_avail" in
+    '' | *[!0-9]*) return 0 ;;
+    esac
+    [ "$_gp_avail" -ge $((($1 + 1023) / 1024 + 1024)) ]
+}
+
+_geo_pick_default() {
+    _gp_pick="$_gk_default"
+    _gpd_bytes=$(_geo_source_bytes "$_gk_default")
+    if _geo_fits "$_gpd_bytes"; then
+        return 0
+    fi
+
+    _gpd_best=""
+    _gpd_best_bytes=""
+    for _gpd_num in $(echo "$_gk_sources" | cut -d'|' -f1); do
+        _gpd_size=$(_geo_source_bytes "$_gpd_num")
+        case "$_gpd_size" in
+        '' | *[!0-9]*) continue ;;
+        esac
+        _geo_fits "$_gpd_size" || continue
+        if [ -z "$_gpd_best" ] || [ "$_gpd_size" -lt "$_gpd_best_bytes" ]; then
+            _gpd_best="$_gpd_num"
+            _gpd_best_bytes="$_gpd_size"
+        fi
+    done
+    if [ -z "$_gpd_best" ]; then
+        return 0
+    fi
+
+    _gp_pick="$_gpd_best"
+    _gp_note="$(_geo_source_field "$_gk_default" 2) ($(_geo_size_text "$_gk_default")) does not fit in ${_gp_dir} ($(_geo_mb $((_gp_avail * 1024))) free), so the default is $(_geo_source_field "$_gpd_best" 2) ($(_geo_size_text "$_gpd_best"))"
+}
+
+_geo_smaller_hint() {
+    [ -n "$_gp_sizes" ] || return 0
+    _gp_avail=$(get_avail_kb "$(dirname "$_gp_target")") || _gp_avail=""
+    for _gsh_num in $(echo "$_gk_sources" | cut -d'|' -f1); do
+        [ "$_gsh_num" != "$_gp_pick" ] || continue
+        _gsh_bytes=$(_geo_source_bytes "$_gsh_num")
+        case "$_gsh_bytes" in
+        '' | *[!0-9]*) continue ;;
+        esac
+        if _geo_fits "$_gsh_bytes"; then
+            log_info "$(_geo_source_field "$_gsh_num" 2) ($(_geo_size_text "$_gsh_num")) fits in the free space"
+        fi
+    done
+}
+
 _geo_room_ok() {
     _gr_target="$1"
     _gr_src="$2"
+    _gr_bytes="${3:-}"
     _gr_dir=$(dirname "$_gr_target")
 
-    _gr_bytes=$(remote_size "$_gr_src") || _gr_bytes=""
+    case "$_gr_bytes" in
+    -) _gr_bytes="" ;;
+    '') _gr_bytes=$(remote_size "$_gr_src") || _gr_bytes="" ;;
+    esac
     if [ -z "$_gr_bytes" ] && [ -f "$_gr_target" ]; then
         _gr_bytes=$(wc -c 2>/dev/null <"$_gr_target" | awk '{print $1}')
     fi
@@ -2736,8 +2869,21 @@ _geo_room_ok() {
     esac
 
     _gr_need=$(((_gr_bytes + 1023) / 1024 + 1024))
+    _gr_for=""
+    _gr_bin="${TEMP_DIR}/${BINARY_NAME}"
+    if [ -f "$_gr_bin" ] && [ -d "$B4_BIN_DIR" ] &&
+        same_filesystem "$_gr_dir" "$B4_BIN_DIR" && ! same_filesystem "$TEMP_DIR" "$B4_BIN_DIR"; then
+        _gr_binkb=$(du -k "$_gr_bin" 2>/dev/null | awk '{print $1}')
+        case "$_gr_binkb" in
+        '' | *[!0-9]*) ;;
+        *)
+            _gr_need=$((_gr_need + _gr_binkb + BIN_SLACK_KB))
+            _gr_for=", including room for the new b4 binary"
+            ;;
+        esac
+    fi
     [ "$_gr_avail" -ge "$_gr_need" ] && return 0
-    log_err "Not enough space in ${_gr_dir}: ${_gr_avail}KB free, ${_gr_need}KB needed"
+    log_err "Not enough space in ${_gr_dir}: ${_gr_avail}KB free, ${_gr_need}KB needed${_gr_for}"
     return 1
 }
 
@@ -2746,24 +2892,8 @@ _geo_prepare() {
     _geo_kind "$_gp_kind" || return 1
     _geo_state_set "$_gp_kind" failed "" "" ""
 
-    _gp_base=$(echo "$_gk_sources" | grep "^${_gk_default}|" | cut -d'|' -f3)
     _gp_dir="$B4_DATA_DIR"
-
-    if [ "$QUIET_MODE" -ne 1 ]; then
-        log_sep
-        echo ""
-
-        echo "  Available ${_gp_kind} sources:"
-        echo "$_gk_sources" | while IFS='|' read -r num name _url; do
-            [ -n "$num" ] && printf "    ${BOLD}%s${NC}) %s\n" "$num" "$name"
-        done
-        echo ""
-
-        read_input "Select source [${_gk_default}]: " "$_gk_default"
-
-        _gp_sel=$(echo "$_gk_sources" | grep "^${_INPUT}|" | cut -d'|' -f3) || true
-        [ -n "$_gp_sel" ] && _gp_base="$_gp_sel" || log_warn "Invalid selection, using default"
-    fi
+    _gp_current=""
 
     if [ -f "$B4_CONFIG_FILE" ] && command_exists jq; then
         _gp_existing=$(jq -r ".system.geo.${_gk_path_key} // empty" "$B4_CONFIG_FILE" 2>/dev/null) || true
@@ -2775,6 +2905,75 @@ _geo_prepare() {
                 log_warn "Ignoring non-absolute ${_gp_kind} path in config: $_gp_existing"
             fi
         fi
+        _gp_current=$(jq -r ".system.geo.${_gk_url_key} // empty" "$B4_CONFIG_FILE" 2>/dev/null) || true
+        [ "$_gp_current" != "null" ] || _gp_current=""
+    fi
+
+    _gp_pick=""
+    _gp_custom=""
+    if [ -n "$_gp_current" ]; then
+        _gp_pick=$(echo "$_gk_sources" | awk -F'|' -v u="$_gp_current" -v f="$_gk_file" '$3 "/" f == u { print $1; exit }')
+        if [ -z "$_gp_pick" ]; then
+            _gp_custom=$(($(echo "$_gk_sources" | grep -c '|') + 1))
+            _gp_pick="$_gp_custom"
+        fi
+    fi
+
+    _gp_sizes=""
+    _gp_avail=""
+    _gp_note=""
+    if [ "$QUIET_MODE" -ne 1 ] || [ -z "$_gp_pick" ]; then
+        log_info "Checking the size of each ${_gk_label} source..."
+        _geo_probe_sizes
+        _gp_avail=$(get_avail_kb "$(_geo_existing_dir "$_gp_dir")") || _gp_avail=""
+    fi
+    if [ -z "$_gp_pick" ]; then
+        _geo_pick_default
+        if [ -n "$_gp_note" ] && [ "$QUIET_MODE" -eq 1 ]; then
+            log_warn "$_gp_note"
+        fi
+    fi
+
+    if [ "$QUIET_MODE" -ne 1 ]; then
+        log_sep
+        echo ""
+
+        echo "  Available ${_gp_kind} sources:"
+        for _gp_num in $(echo "$_gk_sources" | cut -d'|' -f1); do
+            _gp_line=$(_geo_source_label "$_gp_num")
+            if [ -n "$_gp_current" ] && [ "$_gp_num" = "$_gp_pick" ]; then
+                _gp_line="${_gp_line}, in use"
+            fi
+            printf "    ${BOLD}%s${NC}) %s\n" "$_gp_num" "$_gp_line"
+        done
+        if [ -n "$_gp_custom" ]; then
+            printf "    ${BOLD}%s${NC}) %s\n" "$_gp_custom" "Source in use: ${_gp_current}"
+        fi
+        echo ""
+        if [ -n "$_gp_note" ]; then
+            log_warn "$_gp_note"
+        fi
+
+        read_input "Select source [${_gp_pick}]: " "$_gp_pick"
+
+        if [ -n "$_gp_custom" ] && [ "$_INPUT" = "$_gp_custom" ]; then
+            _gp_pick="$_gp_custom"
+        elif [ -n "$(_geo_source_field "$_INPUT" 3)" ]; then
+            _gp_pick="$_INPUT"
+        else
+            log_warn "Invalid selection, using default"
+        fi
+    fi
+
+    _gp_known=""
+    if [ -n "$_gp_custom" ] && [ "$_gp_pick" = "$_gp_custom" ]; then
+        _gp_src="$_gp_current"
+    else
+        _gp_src="$(_geo_source_field "$_gp_pick" 3)/${_gk_file}"
+        case "$(_geo_source_size "$_gp_pick")" in
+        *live) _gp_known=$(_geo_source_bytes "$_gp_pick") ;;
+        *) [ -z "$_gp_sizes" ] || _gp_known="-" ;;
+        esac
     fi
 
     if [ "$QUIET_MODE" -ne 1 ]; then
@@ -2801,7 +3000,6 @@ _geo_prepare() {
         _gp_real=$(readlink -f "$_gp_target" 2>/dev/null) || _gp_real=""
         [ -n "$_gp_real" ] && _gp_target="$_gp_real"
     fi
-    _gp_src="${_gp_base}/${_gk_file}"
     _gp_new="${_gp_target}.new"
     rm -f "$_gp_new" "${_gp_new}.part" 2>/dev/null || true
 
@@ -2815,7 +3013,8 @@ _geo_prepare() {
         fi
     fi
 
-    if ! _geo_room_ok "$_gp_target" "$_gp_src"; then
+    if ! _geo_room_ok "$_gp_target" "$_gp_src" "$_gp_known"; then
+        _geo_smaller_hint
         _geo_kept_notice "$_gp_kind" "$_gp_target"
         return 1
     fi
