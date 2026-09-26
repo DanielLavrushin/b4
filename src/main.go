@@ -637,6 +637,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	wd.Stop()
 	hubService.Stop()
+	handler.StopGeodatDownloads()
 	if geoScheduler != nil {
 		geoScheduler.Stop()
 	}
@@ -934,8 +935,7 @@ func reloadASNTargetsHeadless(ctx context.Context, load func() *config.Config, c
 			continue
 		}
 		if _, _, err := next.GetTargetsForSet(set); err != nil {
-			log.Errorf("ASN prefixes changed but the targets of set '%s' could not be reloaded: %v", set.Name, err)
-			continue
+			log.Warnf("Set '%s' takes its new ASN prefixes without the geo categories that could not be read: %v", set.Name, err)
 		}
 		names = append(names, set.Name)
 	}

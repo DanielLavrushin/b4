@@ -124,3 +124,28 @@ func TestLoadTargetsReportsNothingForIntactFiles(t *testing.T) {
 		t.Fatalf("domains = %v (%d)", set.Targets.DomainsToMatch, domains)
 	}
 }
+
+func TestGetTargetsForSetKeepsWhatItCouldRead(t *testing.T) {
+	sitePath, ipPath := truncatedGeoFiles(t)
+	cfg := NewConfig()
+	cfg.System.Geo.GeoSitePath = sitePath
+	cfg.System.Geo.GeoIpPath = ipPath
+
+	set := NewSetConfig()
+	set.Name = "mixed"
+	set.Targets.GeoSiteCategories = []string{"youtube", "discord"}
+	set.Targets.GeoIpCategories = []string{"cloudflare"}
+	set.Targets.SNIDomains = []string{"manual.example"}
+	set.Targets.IPs = []string{"203.0.113.7"}
+
+	domains, ips, err := cfg.GetTargetsForSet(&set)
+	if err == nil || !strings.Contains(err.Error(), "geosite") || !strings.Contains(err.Error(), "geoip") {
+		t.Fatalf("both damaged files are reported, got %v", err)
+	}
+	if !slices.Equal(domains, []string{"youtube.com", "manual.example"}) || !slices.Equal(set.Targets.DomainsToMatch, domains) {
+		t.Fatalf("domains = %v, DomainsToMatch = %v", domains, set.Targets.DomainsToMatch)
+	}
+	if !slices.Equal(ips, []string{"203.0.113.7"}) || !slices.Equal(set.Targets.IpsToMatch, ips) {
+		t.Fatalf("ips = %v, IpsToMatch = %v", ips, set.Targets.IpsToMatch)
+	}
+}

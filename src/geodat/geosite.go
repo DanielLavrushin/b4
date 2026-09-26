@@ -22,7 +22,8 @@ func streamGeoSite(file string, filters []string, emit domainFunc) error {
 	got := make(map[string]struct{}, len(want))
 	var scratch []byte
 
-	return track(file, scanEntries(file, func(tag string, body *entryBody) error {
+	before, stamped := fileStamp(file)
+	return track(file, before, stamped, scanEntries(file, func(tag string, body *entryBody) error {
 		if _, ok := want[tag]; !ok {
 			return nil
 		}
@@ -46,7 +47,8 @@ func streamGeoSite(file string, filters []string, emit domainFunc) error {
 
 func streamAllGeoSite(file string, emit domainFunc) error {
 	var scratch []byte
-	return track(file, scanEntries(file, func(tag string, body *entryBody) error {
+	before, stamped := fileStamp(file)
+	return track(file, before, stamped, scanEntries(file, func(tag string, body *entryBody) error {
 		return scanRecords(body, &scratch, func(rec []byte) error {
 			kind, value, err := parseDomain(rec)
 			if err != nil {

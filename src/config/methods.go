@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -230,7 +231,25 @@ func (c *Config) geoLoadWarning(kind string, err error, found map[string][]strin
 }
 
 func (c *Config) GetTargetsForSet(set *SetConfig) ([]string, []string, error) {
-	return c.GetTargetsForSetWithCache(set, nil, nil)
+	var errs []error
+	geositeDomains := map[string][]string{}
+	if len(set.Targets.GeoSiteCategories) > 0 && c.System.Geo.GeoSitePath != "" {
+		found, err := geodat.LoadDomainsByCategory(c.System.Geo.GeoSitePath, set.Targets.GeoSiteCategories)
+		geositeDomains = found
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to load geosite domains for set '%s': %w", set.Name, err))
+		}
+	}
+	geoipIPs := map[string][]string{}
+	if len(set.Targets.GeoIpCategories) > 0 && c.System.Geo.GeoIpPath != "" {
+		found, err := geodat.LoadIpsByCategory(c.System.Geo.GeoIpPath, set.Targets.GeoIpCategories)
+		geoipIPs = found
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to load geoip for set '%s': %w", set.Name, err))
+		}
+	}
+	domains, ips, _ := c.GetTargetsForSetWithCache(set, geositeDomains, geoipIPs)
+	return domains, ips, errors.Join(errs...)
 }
 
 func (c *Config) GetTargetsForSetWithCache(set *SetConfig, geositeDomains, geoipIPs map[string][]string) ([]string, []string, error) {
@@ -238,23 +257,10 @@ func (c *Config) GetTargetsForSetWithCache(set *SetConfig, geositeDomains, geoip
 	ips := []string{}
 
 	if len(set.Targets.GeoSiteCategories) > 0 && c.System.Geo.GeoSitePath != "" {
-		if geositeDomains != nil {
-			// Use cached data
-			for _, cat := range set.Targets.GeoSiteCategories {
-				if cached, ok := geositeDomains[cat]; ok {
-					domains = append(domains, cached...)
-				}
+		for _, cat := range set.Targets.GeoSiteCategories {
+			if cached, ok := geositeDomains[cat]; ok {
+				domains = append(domains, cached...)
 			}
-		} else {
-			// Fallback to disk (slow path)
-			geoDomains, err := geodat.LoadDomainsFromCategories(
-				c.System.Geo.GeoSitePath,
-				set.Targets.GeoSiteCategories,
-			)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to load geosite domains for set '%s': %w", set.Name, err)
-			}
-			domains = append(domains, geoDomains...)
 		}
 	}
 
@@ -264,21 +270,10 @@ func (c *Config) GetTargetsForSetWithCache(set *SetConfig, geositeDomains, geoip
 	set.Targets.DomainsToMatch = domains
 
 	if len(set.Targets.GeoIpCategories) > 0 && c.System.Geo.GeoIpPath != "" {
-		if geoipIPs != nil {
-			for _, cat := range set.Targets.GeoIpCategories {
-				if cached, ok := geoipIPs[cat]; ok {
-					ips = append(ips, cached...)
-				}
+		for _, cat := range set.Targets.GeoIpCategories {
+			if cached, ok := geoipIPs[cat]; ok {
+				ips = append(ips, cached...)
 			}
-		} else {
-			geoIps, err := geodat.LoadIpsFromCategories(
-				c.System.Geo.GeoIpPath,
-				set.Targets.GeoIpCategories,
-			)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to load geoip for set '%s': %w", set.Name, err)
-			}
-			ips = append(ips, geoIps...)
 		}
 	}
 

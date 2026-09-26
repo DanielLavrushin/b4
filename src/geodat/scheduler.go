@@ -30,11 +30,14 @@ type Scheduler struct {
 
 const (
 	startupDelay      = 45 * time.Second
-	startupTimeout    = 5 * time.Minute
-	startupRetry      = 60 * time.Second
 	tickInterval      = 30 * time.Minute
 	failureBackoff    = 2 * time.Hour
 	maxFailureBackoff = 24 * time.Hour
+)
+
+var (
+	startupTimeout = 5 * time.Minute
+	startupRetry   = 60 * time.Second
 )
 
 func NewScheduler(getState StateFunc, refreshFunc RefreshFunc, persistLast PersistLastRunFunc) *Scheduler {
@@ -87,8 +90,8 @@ func (s *Scheduler) run() {
 func (s *Scheduler) runStartup() {
 	st := s.getState()
 
-	siteMissing := st.GeoSitePath != "" && st.GeoSiteURL != "" && needsDownload(st.GeoSitePath)
-	ipMissing := st.GeoIpPath != "" && st.GeoIpURL != "" && needsDownload(st.GeoIpPath)
+	siteMissing := st.GeoSitePath != "" && st.GeoSiteURL != "" && needsDownload(st.GeoSitePath, true)
+	ipMissing := st.GeoIpPath != "" && st.GeoIpURL != "" && needsDownload(st.GeoIpPath, true)
 	forced := st.AutoUpdate.OnStartup && (st.GeoSiteURL != "" || st.GeoIpURL != "")
 
 	if !siteMissing && !ipMissing && !forced {
@@ -118,22 +121,30 @@ func (s *Scheduler) runStartup() {
 }
 
 func (s *Scheduler) refreshWithRetry(destPath, siteURL, ipURL string, timeout time.Duration) {
+	full := s.coversAll(siteURL, ipURL)
 	deadline := time.Now().Add(timeout)
 	for {
-		err := s.refresh(destPath, siteURL, ipURL)
+		siteURL, ipURL = s.stillConfigured(siteURL, ipURL)
+		if siteURL == "" && ipURL == "" {
+			return
+		}
+		err := s.attempt(destPath, siteURL, ipURL)
 		if err == nil {
+			s.settle(nil, full)
 			return
 		}
 		log.Errorf("[GEODAT] refresh failed: %v", err)
 		if s.ctx.Err() != nil {
 			return
 		}
-		if errors.Is(err, ErrUnusable) {
-			log.Errorf("[GEODAT] the source did not return a usable file, not retrying before %s", s.lastFailure.Add(s.backoff()).Format(time.RFC3339))
-			return
-		}
-		if time.Now().After(deadline) {
-			log.Errorf("[GEODAT] giving up after %s", timeout)
+		siteURL, ipURL = retryable(err, siteURL, ipURL)
+		if siteURL == "" && ipURL == "" || time.Now().After(deadline) {
+			s.settle(err, full)
+			if errors.Is(err, ErrUnusable) {
+				log.Errorf("[GEODAT] the source did not return a usable file, not retrying before %s", s.lastFailure.Add(s.backoff()).Format(time.RFC3339))
+			} else {
+				log.Errorf("[GEODAT] giving up after %s", timeout)
+			}
 			return
 		}
 		select {
@@ -149,6 +160,9 @@ func (s *Scheduler) runScheduled() {
 	if st.GeoSiteURL == "" && st.GeoIpURL == "" {
 		return
 	}
+	if !s.lastFailure.IsZero() && time.Since(s.lastFailure) < s.backoff() {
+		return
+	}
 
 	siteURL, ipURL := "", ""
 	reason := ""
@@ -158,18 +172,15 @@ func (s *Scheduler) runScheduled() {
 		siteURL, ipURL = st.GeoSiteURL, st.GeoIpURL
 		reason = "scheduled refresh (interval=" + st.AutoUpdate.Interval + ")"
 	} else {
-		if st.GeoSiteURL != "" && st.GeoSitePath != "" && IsDamaged(st.GeoSitePath) {
+		if st.GeoSiteURL != "" && st.GeoSitePath != "" && needsDownload(st.GeoSitePath, false) {
 			siteURL = st.GeoSiteURL
 		}
-		if st.GeoIpURL != "" && st.GeoIpPath != "" && IsDamaged(st.GeoIpPath) {
+		if st.GeoIpURL != "" && st.GeoIpPath != "" && needsDownload(st.GeoIpPath, false) {
 			ipURL = st.GeoIpURL
 		}
-		reason = "damaged file refresh"
+		reason = "refresh of a missing or damaged file"
 	}
 	if siteURL == "" && ipURL == "" {
-		return
-	}
-	if !s.lastFailure.IsZero() && time.Since(s.lastFailure) < s.backoff() {
 		return
 	}
 
@@ -179,23 +190,86 @@ func (s *Scheduler) runScheduled() {
 	}
 
 	log.Infof("[GEODAT] %s", reason)
-	if err := s.refresh(destPath, siteURL, ipURL); err != nil {
+	err := s.attempt(destPath, siteURL, ipURL)
+	if err != nil {
 		log.Errorf("[GEODAT] %s failed: %v", reason, err)
+	}
+	if s.ctx.Err() == nil {
+		s.settle(err, s.coversAll(siteURL, ipURL))
 	}
 }
 
-func (s *Scheduler) refresh(destPath, siteURL, ipURL string) error {
+func (s *Scheduler) attempt(destPath, siteURL, ipURL string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.refreshFunc(s.ctx, destPath, siteURL, ipURL); err != nil {
-		s.lastFailure = time.Now()
-		s.failures++
-		return err
+	return s.refreshFunc(s.ctx, destPath, siteURL, ipURL)
+}
+
+func (s *Scheduler) settle(err error, full bool) {
+	if err == nil {
+		s.lastFailure = time.Time{}
+		s.failures = 0
+		if full && s.persistLast != nil {
+			s.persistLast(time.Now().UTC().Format(time.RFC3339))
+		}
+		return
 	}
-	s.lastFailure = time.Time{}
-	s.failures = 0
-	if s.persistLast != nil {
-		s.persistLast(time.Now().UTC().Format(time.RFC3339))
+	if errors.Is(err, ErrBusy) {
+		return
+	}
+	s.lastFailure = time.Now()
+	s.failures++
+}
+
+func (s *Scheduler) coversAll(siteURL, ipURL string) bool {
+	st := s.getState()
+	return siteURL == st.GeoSiteURL && ipURL == st.GeoIpURL
+}
+
+func (s *Scheduler) stillConfigured(siteURL, ipURL string) (string, string) {
+	st := s.getState()
+	if siteURL != st.GeoSiteURL {
+		siteURL = ""
+	}
+	if ipURL != st.GeoIpURL {
+		ipURL = ""
+	}
+	return siteURL, ipURL
+}
+
+func retryable(err error, siteURL, ipURL string) (string, string) {
+	failures := downloadFailures(err)
+	if len(failures) == 0 {
+		if errors.Is(err, ErrUnusable) {
+			return "", ""
+		}
+		return siteURL, ipURL
+	}
+	site, ip := "", ""
+	for _, failure := range failures {
+		if errors.Is(failure, ErrUnusable) {
+			continue
+		}
+		if failure.Kind == KindIP {
+			ip = ipURL
+		} else {
+			site = siteURL
+		}
+	}
+	return site, ip
+}
+
+func downloadFailures(err error) []*DownloadError {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		var out []*DownloadError
+		for _, e := range joined.Unwrap() {
+			out = append(out, downloadFailures(e)...)
+		}
+		return out
+	}
+	var failure *DownloadError
+	if errors.As(err, &failure) {
+		return []*DownloadError{failure}
 	}
 	return nil
 }
@@ -232,13 +306,15 @@ func parseLastRun(s string) time.Time {
 	return t
 }
 
-func needsDownload(p string) bool {
+func needsDownload(p string, report bool) bool {
 	info, err := os.Stat(p)
 	if err != nil {
 		return true
 	}
 	if info.Size() == 0 || IsDamaged(p) {
-		log.Errorf("[GEODAT] %s is damaged, downloading it again", p)
+		if report {
+			log.Errorf("[GEODAT] %s is damaged, downloading it again", p)
+		}
 		return true
 	}
 	return false

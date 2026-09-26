@@ -441,3 +441,150 @@ func TestSchedulerStopCancelsARunningRefresh(t *testing.T) {
 		t.Fatal("Stop must cancel the refresh instead of waiting for it")
 	}
 }
+
+func fastStartupRetries(t *testing.T) {
+	t.Helper()
+	prevTimeout, prevRetry := startupTimeout, startupRetry
+	startupTimeout, startupRetry = 200*time.Millisecond, 20*time.Millisecond
+	t.Cleanup(func() { startupTimeout, startupRetry = prevTimeout, prevRetry })
+}
+
+func TestStartupWindowCountsAsOneFailure(t *testing.T) {
+	fastStartupRetries(t)
+	path := writeBytes(t, "geosite.dat", nil)
+	calls := 0
+	s := startedScheduler(t, GeoDatConfig{GeoSitePath: path, GeoSiteURL: "https://example.invalid/geosite.dat"}, func(context.Context, string, string, string) error {
+		calls++
+		return &DownloadError{Kind: KindSite, Err: errors.New("dial tcp: i/o timeout")}
+	})
+	s.runStartup()
+	if calls < 3 {
+		t.Fatalf("a transient failure is retried within the window, calls = %d", calls)
+	}
+	if s.failures != 1 || s.backoff() != failureBackoff {
+		t.Fatalf("one startup window is one failure: failures=%d backoff=%s", s.failures, s.backoff())
+	}
+}
+
+func TestStartupRetriesOnlyTheFileThatFailedTransiently(t *testing.T) {
+	fastStartupRetries(t)
+	dir := t.TempDir()
+	st := GeoDatConfig{
+		GeoSitePath: filepath.Join(dir, "geosite.dat"), GeoSiteURL: "https://example.invalid/geosite.dat",
+		GeoIpPath: filepath.Join(dir, "geoip.dat"), GeoIpURL: "https://example.invalid/geoip.dat",
+	}
+	var got [][2]string
+	s := startedScheduler(t, st, func(_ context.Context, _, siteURL, ipURL string) error {
+		got = append(got, [2]string{siteURL, ipURL})
+		if len(got) == 1 {
+			return errors.Join(
+				&DownloadError{Kind: KindSite, Err: errors.New("stalled")},
+				&DownloadError{Kind: KindIP, Err: ErrUnusable},
+			)
+		}
+		return nil
+	})
+	s.runStartup()
+	if len(got) != 2 || got[1] != [2]string{st.GeoSiteURL, ""} {
+		t.Fatalf("the retry covers only the transient geosite failure, calls = %v", got)
+	}
+	if s.failures != 0 {
+		t.Fatalf("a window that ends in success leaves no failure, got %d", s.failures)
+	}
+}
+
+func TestStartupStopsWhenTheSourceWasChangedMeanwhile(t *testing.T) {
+	fastStartupRetries(t)
+	path := writeBytes(t, "geosite.dat", nil)
+	st := GeoDatConfig{GeoSitePath: path, GeoSiteURL: "https://example.invalid/geosite.dat"}
+	calls := 0
+	s := NewScheduler(func() GeoDatConfig { return st }, func(context.Context, string, string, string) error {
+		calls++
+		st.GeoSiteURL = ""
+		return &DownloadError{Kind: KindSite, Err: errors.New("stalled")}
+	}, nil)
+	s.ctx, s.cancel = context.WithCancel(context.Background())
+	s.stop = make(chan struct{})
+	t.Cleanup(s.cancel)
+	s.runStartup()
+	if calls != 1 {
+		t.Fatalf("an upload or remove that cleared the source ends the retries, calls = %d", calls)
+	}
+}
+
+func TestBusyRefreshIsNotAFailure(t *testing.T) {
+	path := writeBytes(t, "geosite.dat", nil)
+	s := startedScheduler(t, GeoDatConfig{GeoSitePath: path, GeoSiteURL: "https://example.invalid/geosite.dat"}, func(context.Context, string, string, string) error {
+		return ErrBusy
+	})
+	s.runScheduled()
+	if s.failures != 0 || !s.lastFailure.IsZero() {
+		t.Fatalf("a download already running is not a failure: failures=%d", s.failures)
+	}
+}
+
+func TestScheduledTickDownloadsAMissingFile(t *testing.T) {
+	calls := 0
+	s := startedScheduler(t, GeoDatConfig{GeoSitePath: filepath.Join(t.TempDir(), "geosite.dat"), GeoSiteURL: "https://example.invalid/geosite.dat"}, func(context.Context, string, string, string) error {
+		calls++
+		return nil
+	})
+	s.runScheduled()
+	if calls != 1 {
+		t.Fatalf("calls = %d", calls)
+	}
+}
+
+func TestOnlyAFullRefreshMovesLastRun(t *testing.T) {
+	dir := t.TempDir()
+	site := sampleGeoSite(t)
+	st := GeoDatConfig{
+		GeoSitePath: site, GeoSiteURL: "https://example.invalid/geosite.dat",
+		GeoIpPath: filepath.Join(dir, "geoip.dat"), GeoIpURL: "https://example.invalid/geoip.dat",
+		AutoUpdate: GeoAutoUpdateConfig{Interval: "weekly", LastRun: time.Now().Add(-24 * time.Hour).UTC().Format(time.RFC3339)},
+	}
+	persisted := 0
+	s := NewScheduler(func() GeoDatConfig { return st }, func(context.Context, string, string, string) error { return nil }, func(string) { persisted++ })
+	s.ctx, s.cancel = context.WithCancel(context.Background())
+	t.Cleanup(s.cancel)
+
+	s.runScheduled()
+	if persisted != 0 {
+		t.Fatal("healing one missing file must not move the weekly refresh of both")
+	}
+
+	st.AutoUpdate.LastRun = time.Now().Add(-8 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	s.runScheduled()
+	if persisted != 1 {
+		t.Fatalf("the scheduled refresh of both files records its run, persisted = %d", persisted)
+	}
+}
+
+func TestDamageRaceDoesNotMarkTheReplacementFile(t *testing.T) {
+	b, ends := fourCategorySite(t)
+	path := writeBytes(t, "geosite.dat", b[:ends[0]+2])
+	replaced := false
+	err := streamGeoSite(path, []string{"fourth"}, func(string, uint64, string) error { return nil })
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	damagedFiles.Delete(path)
+
+	before, stamped := fileStamp(path)
+	scanErr := scanEntries(path, func(tag string, _ *entryBody) error {
+		if !replaced {
+			replaced = true
+			if err := os.WriteFile(path+".new", b, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Rename(path+".new", path); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return nil
+	})
+	_ = track(path, before, stamped, scanErr)
+	if scanErr == nil || IsDamaged(path) {
+		t.Fatalf("a scan of the old file must not mark the file that replaced it (scan err %v)", scanErr)
+	}
+}

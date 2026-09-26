@@ -19,6 +19,13 @@ func (k Kind) String() string {
 	return "GeoSite"
 }
 
+func (k Kind) FileName() string {
+	if k == KindIP {
+		return "geoip.dat"
+	}
+	return "geosite.dat"
+}
+
 const validateSampleRecords = 64
 
 var ErrUnusable = errors.New("not a usable geodata file")

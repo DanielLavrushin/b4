@@ -126,8 +126,8 @@ func mirrorURL(base, rawURL string) string {
 	return base + "/github/" + rawURL
 }
 
-func mirrorAlive(base string) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+func mirrorAlive(parent context.Context, base string) bool {
+	ctx, cancel := context.WithTimeout(parent, 6*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/b4/health", nil)
@@ -160,7 +160,7 @@ func downloadFileMirrored(ctx context.Context, url, destPath string, mirrors []s
 		if ctx.Err() != nil {
 			return 0, err
 		}
-		if !mirrorAlive(base) {
+		if !mirrorAlive(ctx, base) {
 			continue
 		}
 		size, mirrorErr := downloadFile(ctx, mirrorURL(base, url), destPath, verify)
@@ -217,7 +217,7 @@ func fetchBytesMirrored(ctx context.Context, url string, limit int64, mirrorPath
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if !mirrorAlive(base) {
+		if !mirrorAlive(ctx, base) {
 			continue
 		}
 

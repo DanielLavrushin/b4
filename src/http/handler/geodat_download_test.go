@@ -211,8 +211,8 @@ func TestRefreshGeodatRefusesAConcurrentDownload(t *testing.T) {
 	geodatDownloadMu.Lock()
 	defer geodatDownloadMu.Unlock()
 	api := &API{}
-	if _, _, _, err := api.RefreshGeodat(context.Background(), t.TempDir(), "http://127.0.0.1:1/geosite.dat", ""); !errors.Is(err, errGeodatBusy) {
-		t.Fatalf("want errGeodatBusy, got %v", err)
+	if _, _, _, err := api.RefreshGeodat(context.Background(), t.TempDir(), "http://127.0.0.1:1/geosite.dat", ""); !errors.Is(err, geodat.ErrBusy) {
+		t.Fatalf("want ErrBusy, got %v", err)
 	}
 }
 
@@ -269,4 +269,117 @@ func mustGeoIP(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return b
+}
+
+func TestDownloadFileMirroredStopsProbingWhenCancelled(t *testing.T) {
+	hang := make(chan struct{})
+	defer close(hang)
+	mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-hang:
+		case <-r.Context().Done():
+		}
+	}))
+	defer mirror.Close()
+	dead := deadServerURL(t)
+	swapBases(t, dead, dead, dead)
+	swapMirrors(t, []string{mirror.URL})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(100*time.Millisecond, cancel)
+	start := time.Now()
+	_, err := downloadFileMirrored(ctx, dead+"/runetfreedom/russia-v2ray-rules-dat/release/geosite.dat", filepath.Join(t.TempDir(), "geosite.dat"), b4Mirrors, nil)
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	if time.Since(start) > 3*time.Second {
+		t.Fatalf("a cancelled refresh must not wait out the mirror probe, took %s", time.Since(start))
+	}
+}
+
+func TestUploadInterruptsARunningDownloadAndWins(t *testing.T) {
+	useAsnStore(t)
+	countRefreshes(t)
+	api, _ := asnAPI(t)
+	api.RegisterGeodatApi()
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "geosite.dat")
+	api.getCfg().System.Geo.GeoSitePath = dest
+	api.getCfg().System.Geo.GeoSiteURL = "http://old.invalid/geosite.dat"
+
+	started := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "100000")
+		_, _ = w.Write([]byte{0x0A})
+		w.(http.Flusher).Flush()
+		close(started)
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		_, _, _, err := api.RefreshGeodat(context.Background(), dir, srv.URL+"/geosite.dat", "")
+		done <- err
+	}()
+	<-started
+
+	uploaded := geositeBytes(t)
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, _ := mw.CreateFormFile("file", "geosite.dat")
+	_, _ = fw.Write(uploaded)
+	_ = mw.WriteField("type", "geosite")
+	_ = mw.WriteField("destination_path", dir)
+	_ = mw.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/geodat/upload", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rec := httptest.NewRecorder()
+	api.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("upload: %d %s", rec.Code, rec.Body.String())
+	}
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("the download is interrupted, got %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the download was not interrupted")
+	}
+	got, _ := os.ReadFile(dest)
+	if !bytes.Equal(got, uploaded) {
+		t.Fatal("the uploaded file must stay in place")
+	}
+	if geo := api.getCfg().System.Geo; geo.GeoSiteURL != "" || geo.GeoSitePath != dest {
+		t.Fatalf("the upload's configuration must stay: %+v", geo)
+	}
+}
+
+func TestRefreshGeodatDoesNotCommitAfterCancel(t *testing.T) {
+	useAsnStore(t)
+	countRefreshes(t)
+	api, _ := asnAPI(t)
+	dir := t.TempDir()
+	good := geositeBytes(t)
+	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(good) }))
+	defer site.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	ip := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "100000")
+		_, _ = w.Write([]byte{0x0A})
+		w.(http.Flusher).Flush()
+		cancel()
+		<-r.Context().Done()
+	}))
+	defer ip.Close()
+
+	_, _, _, err := api.RefreshGeodat(ctx, dir, site.URL+"/geosite.dat", ip.URL+"/geoip.dat")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("want context.Canceled, got %v", err)
+	}
+	if geo := api.getCfg().System.Geo; geo.GeoSiteURL != "" || geo.GeoSitePath != "" {
+		t.Fatalf("a stopping refresh must not commit the configuration: %+v", geo)
+	}
 }

@@ -2,11 +2,13 @@ package handler
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -277,6 +279,12 @@ func downloadFile(parent context.Context, url, destPath string, verify func(path
 	defer cancelTimeout()
 	stall := time.AfterFunc(downloadStallTimeout, func() { cancel(errDownloadStalled) })
 	defer stall.Stop()
+	progress := func() { stall.Reset(downloadStallTimeout) }
+	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		ConnectDone:          func(string, string, error) { progress() },
+		TLSHandshakeDone:     func(tls.ConnectionState, error) { progress() },
+		GotFirstResponseByte: progress,
+	})
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -287,6 +295,7 @@ func downloadFile(parent context.Context, url, destPath string, verify func(path
 		return 0, downloadError(ctx, "failed to fetch %s", err, url)
 	}
 	defer resp.Body.Close()
+	progress()
 
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("remote server returned %s for %s", resp.Status, url)

@@ -113,6 +113,7 @@ func loadByCategory(path string, categories []string, readable func(string) bool
 	byTag := make(map[string][]string, len(want))
 	var scratch []byte
 	var recordErr error
+	before, stamped := fileStamp(path)
 	err := scanEntries(path, func(tag string, body *entryBody) error {
 		if _, ok := want[tag]; !ok {
 			return nil
@@ -148,7 +149,7 @@ func loadByCategory(path string, categories []string, readable func(string) bool
 			found[category] = list
 		}
 	}
-	return found, track(path, err)
+	return found, track(path, before, stamped, err)
 }
 
 func CountDomainsInCategories(geodataPath string, categories []string) (map[string]int, error) {
