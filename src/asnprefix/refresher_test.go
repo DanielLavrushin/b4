@@ -273,6 +273,62 @@ func TestPassAcceptsAShrinkOnlyAfterThreeConsecutiveFetches(t *testing.T) {
 	}
 }
 
+func TestPassCountsOnlyTheSameShrunkListAsAConfirmation(t *testing.T) {
+	s := useStore(t)
+	clk := useClock(t)
+	body := string(fixture(t, "ris_prefixes_AS62041.json"))
+	cut := func(after, next string) string {
+		return strings.Replace(body, `"`+after+`","`+next+`"`, `"`+after+`"],"x":["`+next+`"`, 1)
+	}
+	lists := []string{
+		cut("91.108.4.0/23", "149.154.163.0/24"),
+		cut("149.154.163.0/24", "149.154.166.0/24"),
+		cut("149.154.166.0/24", "95.161.64.0/21"),
+	}
+	var current atomic.Value
+	current.Store(lists[0])
+	useFake(t, func(w http.ResponseWriter, r *http.Request, call, resource string) {
+		if call == "ris-prefixes" {
+			writeJSON(w, 200, []byte(current.Load().(string)))
+			return
+		}
+		realRIPE(t)(w, r, call, resource)
+	})
+	_ = s.Put(&config.AsnInfo{ID: "62041", Name: "Telegram", Prefixes: config.SanitizeASNPrefixes(fullAS62041(t)), UpdatedAt: clk.Now().Add(-StaleAfter - time.Minute).Unix(), Source: config.AsnSourceRIPEstat})
+	known := s.Get("62041").Prefixes
+	changes := &changeLog{}
+	r := testRefresher(asnConfig([]string{"62041"}), clk, changes)
+
+	for i, list := range lists {
+		current.Store(list)
+		r.pass(context.Background())
+		if st := r.state["62041"]; st == nil || st.shrinks != 1 {
+			t.Fatalf("a different shrunk list %d starts the count over: %+v", i, st)
+		}
+		if got := s.Get("62041"); !slices.Equal(got.Prefixes, known) || len(changes.all()) != 0 {
+			t.Fatalf("three different shrunk lists are not a confirmation: %v %v", got.Prefixes, changes.all())
+		}
+		clk.Advance(time.Hour + time.Second)
+	}
+
+	r.pass(context.Background())
+	if st := r.state["62041"]; st == nil || st.shrinks != 2 {
+		t.Fatalf("the same list again counts: %+v", st)
+	}
+	clk.Advance(time.Hour + time.Second)
+	r.pass(context.Background())
+	got := s.Get("62041")
+	if slices.Equal(got.Prefixes, known) {
+		t.Fatalf("the third identical shrunk list is accepted: %v", got.Prefixes)
+	}
+	if want := config.SanitizeASNPrefixes([]string{"91.108.4.0/23", "149.154.163.0/24", "149.154.166.0/24", "2001:67c:4e8::/48"}); !slices.Equal(got.Prefixes, want) {
+		t.Fatalf("the accepted list is the repeated one: %v, want %v", got.Prefixes, want)
+	}
+	if c := changes.all(); len(c) != 1 || c[0][0] != "62041" {
+		t.Fatalf("and reported as a change: %v", c)
+	}
+}
+
 func TestPassResetsTheShrinkCountOnANormalResult(t *testing.T) {
 	s := useStore(t)
 	clk := useClock(t)

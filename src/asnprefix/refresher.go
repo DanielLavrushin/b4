@@ -2,9 +2,11 @@ package asnprefix
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
@@ -20,9 +22,14 @@ const (
 )
 
 type attempt struct {
-	failures int
-	shrinks  int
-	next     time.Time
+	failures  int
+	shrinks   int
+	candidate [sha256.Size]byte
+	next      time.Time
+}
+
+func prefixFingerprint(prefixes []string) [sha256.Size]byte {
+	return sha256.Sum256([]byte(strings.Join(slices.Sorted(slices.Values(prefixes)), "\n")))
 }
 
 type refresher struct {
@@ -187,7 +194,12 @@ func (r *refresher) pass(ctx context.Context) time.Duration {
 		if shrinksCoverage(current, fetched) {
 			st = r.entry(id)
 			st.failures = 0
-			st.shrinks++
+			if fp := prefixFingerprint(fetched.Prefixes); st.shrinks == 0 || fp != st.candidate {
+				st.candidate = fp
+				st.shrinks = 1
+			} else {
+				st.shrinks++
+			}
 			before, after := current.Counts(), fetched.Counts()
 			if st.shrinks < shrinkConfirmations {
 				st.next = r.now().Add(retryMax)
