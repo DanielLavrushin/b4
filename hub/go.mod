@@ -1,6 +1,6 @@
 module github.com/daniellavrushin/b4hub
 
-go 1.25.5
+go 1.25.14
 
 replace github.com/daniellavrushin/b4 => ../src
 

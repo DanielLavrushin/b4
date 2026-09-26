@@ -312,7 +312,7 @@ For bug reports: on the **Logs** page click **Start trace**, reproduce the probl
 
 ## Building from source
 
-Requires Go 1.25.3, Node 22 and pnpm 10.
+Requires Go 1.25.14, Node 22 and pnpm 10.
 
 ```bash
 git clone https://github.com/daniellavrushin/b4.git
