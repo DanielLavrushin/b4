@@ -19,7 +19,7 @@ The first card on the tab. Its switch turns the [WebSocket bridge](../telegram/w
 | --- | --- | --- |
 | Enable Telegram over WebSocket | `system.mtproto.bridge.enabled`. Diverts TCP connections to Telegram's address ranges, from every device behind b4 and from the router itself, into the bridge listener. [Device filtering](./core.md#device-filtering) applies; there is no scoping by source interface or device. The card shows **Save to apply** until the page is saved, and the switch then applies without a restart. Does not need the proxy server. | Off |
 
-While the switch is on and saved, the header shows **Working** when the diversion rule is installed and the bridge listener is running, and **Not working** otherwise, with the missing part named when the pointer rests on it. The **Bridge status** box holds no settings:
+While the switch is on and saved, the header shows **Working** when the diversion rule is installed, the bridge listener is running and no other program's rule that matches local sockets sits above the diversion rule, and **Not working** otherwise, with the missing part named when the pointer rests on it. The **Bridge status** box holds no settings:
 
 | Item | Meaning |
 | --- | --- |

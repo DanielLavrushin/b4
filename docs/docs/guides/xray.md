@@ -140,6 +140,24 @@ them on the `Traffic` page.
 The strategy tabs still show their settings. They are not applied while the set routes into
 a tunnel.
 
+## XrayUI's TPROXY rule and connections b4 diverts
+
+XrayUI adds this rule to the top of mangle PREROUTING every time xray starts:
+
+```sh
+iptables -t mangle -I PREROUTING 1 -p tcp -m socket --transparent -j DIVERT
+```
+
+`DIVERT` marks the packet `0x10000` and accepts it. The rule matches every packet addressed to a local transparent socket, and the connections b4 diverts to its own listeners end on such sockets: sets in the *Upstream SOCKS5 proxy* and *Telegram over WebSocket* routing modes, and the Telegram over WebSocket switch. A packet the rule accepts never reaches b4's rule, and where no `ip rule` sends mark `0x10000` to the router itself, it leaves by the default route. The client's connection then never completes its handshake with b4's listener.
+
+On iptables b4 keeps its routing jumps above every rule in mangle PREROUTING that matches local sockets. When such a rule appears above them, the next firewall check moves b4's jumps back above it and logs a warning naming the rule; the check runs at the **Firewall monitor interval** under Settings, Core, 10 seconds by default. Until then the Telegram over WebSocket card reads **Not working** and names the rule, and **Check again** on the card moves the jumps back at once. While the firewall monitor is off, with the interval at `0` or **Skip IPTables/NFTables setup** on, no check runs, and only **Check again** or saving the settings restores the order.
+
+```sh
+iptables -t mangle -L PREROUTING -n --line-numbers
+```
+
+The order is right when every `b4r_*_pre` line comes before `DIVERT`.
+
 ## Checking the result
 
 The commands below run on the router. Each one answers a different layer.

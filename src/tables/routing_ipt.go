@@ -372,32 +372,6 @@ func (b *routeIptBackend) addInjectedMarkRule(chain string, v6 bool, setName str
 	}
 }
 
-func iptPreJumpsBelowCapture(cmd string) bool {
-	out, err := run(cmd, "-w", "-t", "mangle", "-L", "PREROUTING", "--line-numbers", "-n")
-	if err != nil {
-		return false
-	}
-	capture := 0
-	var below bool
-	for _, line := range strings.Split(out, "\n") {
-		f := strings.Fields(line)
-		if len(f) < 2 {
-			continue
-		}
-		n, err := strconv.Atoi(f[0])
-		if err != nil || n <= 0 {
-			continue
-		}
-		switch {
-		case f[1] == captureChainPre:
-			capture = n
-		case routeIsPreChainName(f[1]) && capture > 0 && n > capture:
-			below = true
-		}
-	}
-	return below
-}
-
 func routeIsPreChainName(target string) bool {
 	return strings.HasPrefix(target, routeChainPrefix) && strings.HasSuffix(target, "_pre")
 }

@@ -464,36 +464,29 @@ func routePreJumpsAlreadyOrdered(be routeBackend, ordered []*config.SetConfig) b
 		if !hasBinary(cmd) {
 			continue
 		}
-		out, err := run(cmd, "-w", "-t", "mangle", "-L", "PREROUTING", "--line-numbers", "-n")
-		if err != nil {
+		rules, readable := iptListPrerouting(cmd)
+		if !readable {
 			return false
 		}
 		capture := 0
 		var seen []int
 		var order []string
-		for _, line := range strings.Split(out, "\n") {
-			f := strings.Fields(line)
-			if len(f) < 2 {
+		for _, r := range rules {
+			if r.target == captureChainPre && capture == 0 {
+				capture = r.n
 				continue
 			}
-			n, convErr := strconv.Atoi(f[0])
-			if convErr != nil || n <= 0 {
-				continue
-			}
-			if f[1] == captureChainPre && capture == 0 {
-				capture = n
-				continue
-			}
-			if routeIsPreChainName(f[1]) {
-				order = append(order, f[1])
-				seen = append(seen, n)
+			if routeIsPreChainName(r.target) {
+				order = append(order, r.target)
+				seen = append(seen, r.n)
 			}
 		}
+		guard, _ := iptPreGuard(rules)
 		if capture == 0 || len(order) != len(want) {
 			return false
 		}
 		for i := range want {
-			if order[i] != want[i] || seen[i] > capture {
+			if order[i] != want[i] || seen[i] > guard {
 				return false
 			}
 		}
@@ -503,24 +496,14 @@ func routePreJumpsAlreadyOrdered(be routeBackend, ordered []*config.SetConfig) b
 }
 
 func iptPreJumpPlacement(cmd, chain string) (at int, readable bool, standing []int) {
-	out, err := run(cmd, "-w", "-t", "mangle", "-L", "PREROUTING", "--line-numbers", "-n")
-	if err != nil {
+	rules, ok := iptListPrerouting(cmd)
+	if !ok {
 		return 0, false, nil
 	}
-	for _, line := range strings.Split(out, "\n") {
-		f := strings.Fields(line)
-		if len(f) < 2 {
-			continue
-		}
-		n, convErr := strconv.Atoi(f[0])
-		if convErr != nil || n <= 0 {
-			continue
-		}
-		switch {
-		case f[1] == captureChainPre && at == 0:
-			at = n
-		case f[1] == chain:
-			standing = append(standing, n)
+	at, _ = iptPreGuard(rules)
+	for _, r := range rules {
+		if r.target == chain {
+			standing = append(standing, r.n)
 		}
 	}
 	return at, true, standing
@@ -553,17 +536,24 @@ func routeEnsurePreJumpPrecedence(be routeBackend, cfg *config.Config) {
 	if !ok || cfg == nil {
 		return
 	}
-	wrong := false
+	blocker := ""
 	for _, cmd := range ib.iptBoth() {
-		if hasBinary(cmd) && iptPreJumpsBelowCapture(cmd) {
-			wrong = true
+		if !hasBinary(cmd) {
+			continue
+		}
+		if wrong, by := iptPreJumpsDisplaced(cmd); wrong {
+			blocker = by
 			break
 		}
 	}
-	if !wrong {
+	switch blocker {
+	case "":
 		return
+	case captureChainPre:
+		log.Warnf("Routing: a set's prerouting jump sits below %s, so the capture engine takes the reply packets of a diverted connection before the set can hand them to its listener; lifting the routing jumps back above it", captureChainPre)
+	default:
+		log.Warnf("Routing: another program's %s rule matches local sockets and sits above b4's routing jumps in mangle PREROUTING, so it takes the packets of connections b4 diverted to its own listeners (the handshake never completes); moving b4's jumps back above it", blocker)
 	}
-	log.Warnf("Routing: a set's prerouting jump sits below %s, so the capture engine takes the reply packets of a diverted connection before the set can hand them to its listener; lifting the routing jumps back above it", captureChainPre)
 	for _, set := range routeOrderedRoutingSets(cfg) {
 		st, ok := routeRuleCache[set.Id]
 		if !ok || st.chainPre == "" {

@@ -340,6 +340,7 @@ type mcpTelegramBridgeOut struct {
 	ListenerPort    int    `json:"listener_port"`
 	ListenerError   string `json:"listener_error,omitempty"`
 	RuleInstalled   bool   `json:"rule_installed"`
+	RuleShadowedBy  string `json:"rule_shadowed_by,omitempty"`
 	SessionsRelayed uint64 `json:"sessions_relayed"`
 	SetsInBridge    int    `json:"sets_in_bridge_routing_mode"`
 	Note            string `json:"note"`
@@ -349,12 +350,13 @@ func mcpTelegramBridge(cfg *config.Config) mcpTelegramBridgeOut {
 	st := buildTelegramBridgeStatus(cfg, false, false)
 	out := mcpTelegramBridgeOut{
 		Enabled:         st.Enabled,
-		Working:         st.Enabled && st.RuleInstalled && st.Listener.Running,
+		Working:         st.Enabled && st.RuleInstalled && st.Listener.Running && st.RuleShadowed == "",
 		AddressRanges:   st.Addresses.Total,
 		AddressSource:   st.Addresses.Source,
 		ListenerPort:    st.Listener.Port,
 		ListenerError:   st.Listener.Error,
 		RuleInstalled:   st.RuleInstalled,
+		RuleShadowedBy:  st.RuleShadowed,
 		SessionsRelayed: st.Stats.Relayed,
 		SetsInBridge:    len(st.LegacySets),
 		Note:            "The Telegram WebSocket bridge diverts Telegram TCP from every device behind b4 and from the router itself into the bridge, without a set. It is switched by system.mtproto.bridge.enabled.",

@@ -416,6 +416,8 @@
       "workingHint": "The firewall rule is installed and the bridge listener is running.",
       "reasonListener": "The bridge listener is not running.",
       "reasonRule": "The firewall rule that diverts Telegram traffic to the bridge is not installed.",
+      "reasonShadowed": "Another program's {{rule}} rule sits above the bridge's firewall rule and takes its connections, so they never complete. b4 moves its rule back above it on the next firewall check, and Check again does it at once.",
+      "reasonShadowedNoMonitor": "Another program's {{rule}} rule sits above the bridge's firewall rule and takes its connections, so they never complete. The firewall monitor is off, so b4 moves its rule back only when Check again is pressed or the settings are saved.",
       "saveToApply": "Save to apply",
       "saveToApplyHint": "The switch takes effect when the settings are saved.",
       "statusTitle": "Bridge status",

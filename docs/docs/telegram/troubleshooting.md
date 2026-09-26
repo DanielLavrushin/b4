@@ -32,6 +32,8 @@ end at the data center the client asked for, cutting it and ranking the route do
 
 The session reached a data centre other than the one the client asked for, and both Telegram clients answer a single `-444` by disabling the proxy. The client repeats its data centre inside an encrypted field that b4 can neither read nor correct, so this is always the route's fault rather than a setting.
 
+Through the WebSocket bridge the data centre often comes from the connection's address rather than from the client, as described under [Which data centre a session goes to](./websocket-bridge.md#which-data-centre-a-session-goes-to). A `-444` then means the address was taken for the wrong data centre, and the route is not ranked down: later sessions to that address go to the other data centre at the same site, or around the data-centre routes when there is none.
+
 b4 swallows the code, ranks that route down and lets the client redial onto another one, so a single occurrence is expected to recover by itself. A run of them for the same data centre means the routes available for it all end in the wrong place, and the fix is to give it another one: a [Cloudflare Worker domain](./cloudflare-worker.md), or a custom WebSocket domain.
 
 ## Media, stickers or reactions do not load
@@ -73,7 +75,7 @@ The route accepted two or more writes and answered none of them, eight seconds a
 
 ## The Telegram over WebSocket card shows a warning
 
-The card on Settings, Telegram reads **Working** when the diversion rule is installed and the bridge listener is running. Otherwise it reads **Not working**, and resting the pointer on it names the part that is missing: the listener, or the firewall rule that diverts Telegram traffic to the bridge. The warnings above the status box name the cause. The first three conditions below stop the bridge from diverting anything; the others leave it running. The [field reference](../settings/mtproto.md#telegram-over-websocket) lists the card's other contents.
+The card on Settings, Telegram reads **Working** when the diversion rule is installed, the bridge listener is running and no other program's rule that matches local sockets sits above the diversion rule. Otherwise it reads **Not working**, and resting the pointer on it names the part that is missing: the listener, the firewall rule that diverts Telegram traffic to the bridge, or the other program's rule above it. The warnings above the status box name the cause. The first four conditions below stop the bridge from diverting anything; the others leave it running. The [field reference](../settings/mtproto.md#telegram-over-websocket) lists the card's other contents.
 
 ### TPROXY support is missing
 
@@ -88,6 +90,10 @@ The warning reads "This kernel has no TPROXY support". The bridge rides TPROXY, 
 The warning reads "The bridge listener on port 13443 failed", followed by the error. The port could not be bound, for example because another process already listens on it. The port is fixed. b4 keeps retrying and installs the diversion rules only once the listener is up, so in the meantime Telegram connections take the normal path instead of being sent to a closed port. `netstat -ltnp` on the router, where the build supports `-p`, shows which process holds the port.
 
 When only the IPv6 socket could not be opened, the card instead shows a note that IPv4 goes through the bridge and Telegram over IPv6 takes the normal path. The note appears only while IPv6 support is on. The IPv6 socket is tried again only when the listener restarts, for example after b4 restarts.
+
+### Another program's rule sits above the bridge
+
+The status reads **Not working**, and resting the pointer on it names a rule such as `DIVERT`. Another program has put a rule in mangle PREROUTING, above the bridge's, that accepts every packet addressed to a local transparent socket; XrayUI adds one each time xray starts. It takes the packets of connections the bridge diverted, so they never complete their handshake. At the next firewall check b4 moves its rule back above it and logs a warning naming the rule, and **Check again** does the same at once. While the firewall monitor is off, with the monitor interval at `0` or **Skip IPTables/NFTables setup** on in Settings, Core, no check runs, and only **Check again** or saving the settings restores the order. The mechanism is described under [b4 with Xray or XrayUI](../guides/xray.md#xrayuis-tproxy-rule-and-connections-b4-diverts).
 
 ### The address list could not be downloaded
 

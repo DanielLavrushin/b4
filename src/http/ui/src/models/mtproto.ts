@@ -52,6 +52,7 @@ export interface TelegramBridgeStatus {
   addresses: TelegramBridgeAddresses;
   listener: TelegramBridgeListener;
   rule_installed: boolean;
+  rule_shadowed_by?: string;
   tproxy: TelegramBridgeTproxy;
   skip_setup: boolean;
   queue_mode: string;
