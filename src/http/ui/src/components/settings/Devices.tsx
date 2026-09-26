@@ -133,6 +133,14 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
   const findConfigDevice = (mac: string): Device | undefined =>
     configDevices.find((d) => d.mac.toUpperCase() === mac.toUpperCase());
 
+  const saveDevices = (list: Device[]) => {
+    const cleaned = list.filter(
+      (d) =>
+        d.selected || d.is_manual || (d.mss_clamp && d.mss_clamp > 0) || d.name,
+    );
+    onChange("queue.devices.devices", cleaned);
+  };
+
   const updateDevice = (mac: string, update: Partial<Device>) => {
     const current = [...configDevices];
     const idx = current.findIndex(
@@ -143,11 +151,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
     } else {
       current[idx] = { ...current[idx], ...update };
     }
-    const cleaned = current.filter(
-      (d) =>
-        d.selected || d.is_manual || (d.mss_clamp && d.mss_clamp > 0) || d.name,
-    );
-    onChange("queue.devices.devices", cleaned);
+    saveDevices(current);
   };
 
   const handleToggle = (mac: string) => {
@@ -155,50 +159,29 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
     updateDevice(mac, { selected: !existing?.selected });
   };
 
-  const handleSelectAll = (selectAll: boolean) => {
-    const visibleMacs = new Set(devices.map((d) => d.mac.toUpperCase()));
-    const updated = configDevices.map((d) => {
-      if (selectAll && !visibleMacs.has(d.mac.toUpperCase())) return d;
-      if (!selectAll && d.is_manual) return d;
-      return { ...d, selected: selectAll };
-    });
-    if (selectAll) {
-      for (const d of devices) {
-        if (!updated.some((u) => u.mac.toUpperCase() === d.mac.toUpperCase())) {
-          updated.push({ mac: d.mac.toUpperCase(), selected: true });
-        }
-      }
-    }
-    const cleaned = updated.filter(
-      (d) =>
-        d.selected || d.is_manual || (d.mss_clamp && d.mss_clamp > 0) || d.name,
-    );
-    onChange("queue.devices.devices", cleaned);
-  };
-
   const handleBulkToggle = (macs: string[], checked: boolean) => {
-    const macSet = new Set(macs.map((m) => m.toUpperCase()));
-    const updated = configDevices.map((d) => {
-      if (!macSet.has(d.mac.toUpperCase())) return d;
-      if (!checked && d.is_manual) return d;
-      return { ...d, selected: checked };
-    });
+    const targets = new Set(macs.map((m) => m.toUpperCase()));
+    const updated = configDevices.map((d) =>
+      targets.has(d.mac.toUpperCase()) && (checked || !d.is_manual)
+        ? { ...d, selected: checked }
+        : d,
+    );
     if (checked) {
-      for (const mac of macs) {
-        const upper = mac.toUpperCase();
-        if (!updated.some((u) => u.mac.toUpperCase() === upper)) {
-          updated.push({ mac: upper, selected: true });
-        }
+      const known = new Set(configDevices.map((d) => d.mac.toUpperCase()));
+      for (const mac of targets) {
+        if (!known.has(mac)) updated.push({ mac, selected: true });
       }
     }
-    const cleaned = updated.filter(
-      (d) =>
-        d.selected || d.is_manual || (d.mss_clamp && d.mss_clamp > 0) || d.name,
-    );
-    onChange("queue.devices.devices", cleaned);
+    saveDevices(updated);
   };
 
-  const getSearchableName = (device: DeviceInfo) =>
+  const handleSelectAll = (checked: boolean) =>
+    handleBulkToggle(
+      (checked ? devices : configDevices).map((d) => d.mac),
+      checked,
+    );
+
+  const displayName = (device: DeviceInfo) =>
     findConfigDevice(device.mac)?.name || device.alias || device.vendor || "";
 
   const handleAddManualDevice = () => {
@@ -327,18 +310,13 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                   onToggle={handleToggle}
                   onSelectAll={handleSelectAll}
                   onBulkToggle={handleBulkToggle}
-                  getSearchableName={getSearchableName}
+                  getSearchableName={displayName}
                   showOfflineChip
                   maxHeight={300}
                   renderNameCell={(device) =>
                     editingMac === device.mac ? (
                       <B4InlineEdit
-                        value={
-                          findConfigDevice(device.mac)?.name ||
-                          device.alias ||
-                          device.vendor ||
-                          ""
-                        }
+                        value={displayName(device)}
                         onSave={(name) => {
                           updateDevice(device.mac, { name });
                           setEditingMac(null);
@@ -353,16 +331,9 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                           gap: 0.5,
                         }}
                       >
-                        {findConfigDevice(device.mac)?.name ||
-                        device.alias ||
-                        device.vendor ? (
+                        {displayName(device) ? (
                           <B4Badge
-                            label={
-                              findConfigDevice(device.mac)?.name ||
-                              device.alias ||
-                              device.vendor ||
-                              ""
-                            }
+                            label={displayName(device)}
                             color="primary"
                             variant={
                               isSelected(device.mac) ? "filled" : "outlined"
