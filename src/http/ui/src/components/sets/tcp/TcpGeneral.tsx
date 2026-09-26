@@ -42,7 +42,8 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
   const mss: MSSClampConfig = config.mss_clamp ?? { enabled: false, size: 88 };
   const hasIPScope =
     (config.targets?.ip?.length ?? 0) > 0 ||
-    (config.targets?.geoip_categories?.length ?? 0) > 0;
+    (config.targets?.geoip_categories?.length ?? 0) > 0 ||
+    (config.targets?.asns?.length ?? 0) > 0;
   const hasMACScope = (config.targets?.source_devices?.length ?? 0) > 0;
   const mssScopeOk = hasIPScope || hasMACScope;
 

@@ -152,6 +152,7 @@ export function normalizeSet(set: B4SetConfig): B4SetConfig {
       ip: targets.ip ?? [],
       geosite_categories: targets.geosite_categories ?? [],
       geoip_categories: targets.geoip_categories ?? [],
+      asns: targets.asns ?? [],
     },
     dns: set.dns ?? emptyDns(),
   };
@@ -172,6 +173,7 @@ export function scopeSet(
       ip: [],
       geosite_categories: [],
       geoip_categories: [],
+      asns: [],
     },
     dns: { ...(keepDns ? base.dns : emptyDns()), pins },
   };

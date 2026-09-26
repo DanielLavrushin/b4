@@ -58,6 +58,7 @@ import { useSets } from "@hooks/useSets";
 import { useSetFacetSelection } from "@hooks/useSetFacetSelection";
 import { useWatchdogSetStatuses } from "@hooks/useWatchdog";
 import { B4Config, B4SetConfig } from "@models/config";
+import { formatAsn } from "@models/asn";
 import { useTranslation } from "react-i18next";
 
 export interface SetStats {
@@ -67,8 +68,11 @@ export interface SetStats {
   geoip_ips: number;
   total_domains: number;
   total_ips: number;
+  asn_ips: number;
   geosite_category_breakdown?: Record<string, number>;
   geoip_category_breakdown?: Record<string, number>;
+  asn_breakdown?: Record<string, number>;
+  asn_unresolved?: string[];
 }
 
 export interface SetWithStats extends B4SetConfig {
@@ -298,6 +302,12 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
       if (
         set.targets?.geosite_categories?.some((c) =>
           c.toLowerCase().includes(lower),
+        )
+      )
+        return true;
+      if (
+        set.targets?.asns?.some((a) =>
+          formatAsn(a).toLowerCase().includes(lower),
         )
       )
         return true;

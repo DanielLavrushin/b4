@@ -63,3 +63,36 @@ func setHasSourceForFamily(sources []config.DeviceMatch, v6 bool) bool {
 	}
 	return false
 }
+
+func setDeclaresIPTargets(set *config.SetConfig) bool {
+	if set == nil {
+		return false
+	}
+	return set.DeclaresIPTargets()
+}
+
+func mssClampEntrySet(cfg *config.Config, e config.SetMSSClampEntry) *config.SetConfig {
+	if cfg == nil || e.SetIdx < 0 || e.SetIdx >= len(cfg.Sets) {
+		return nil
+	}
+	set := cfg.Sets[e.SetIdx]
+	if set == nil || set.Id != e.SetID {
+		return nil
+	}
+	return set
+}
+
+func mssClampUnresolved(cfg *config.Config, e config.SetMSSClampEntry) bool {
+	if len(e.IPv4) > 0 || len(e.IPv6) > 0 {
+		return false
+	}
+	set := mssClampEntrySet(cfg, e)
+	return set == nil || setDeclaresIPTargets(set)
+}
+
+func mssClampMACOnly(cfg *config.Config, e config.SetMSSClampEntry) bool {
+	if len(e.IPv4) > 0 || len(e.IPv6) > 0 || len(e.Sources) == 0 {
+		return false
+	}
+	return !mssClampUnresolved(cfg, e)
+}

@@ -131,6 +131,7 @@ func (ds *DiscoverySuite) confirmConfig(stored *config.SetConfig, domains []stri
 	set.Enabled = true
 	set.Targets.IPs = nil
 	set.Targets.IpsToMatch = nil
+	set.Targets.ASNs = nil
 
 	if len(set.Targets.GeoIpCategories) > 0 || len(set.Targets.GeoSiteCategories) > 0 {
 		tempCfg := &config.Config{System: ds.cfg.System}

@@ -574,14 +574,19 @@ var routeNoDestinationWarned sync.Map
 
 func routeWarnNoDestination(set *config.SetConfig) {
 	scope := "no domain or IP target"
-	if routeSetIsSourceScoped(set) {
+	advice := "add a destination, or turn on 'Match any IP address' under Targets to send everything from those devices"
+	switch {
+	case set.DeclaresDestinationTargets():
+		scope = "targets that resolve to no domain or address yet (an ASN whose prefixes are not fetched yet, a GeoIP or GeoSite category missing from its file, or IPs all filtered out by the IP version)"
+		advice = "its rules are installed once they resolve"
+	case routeSetIsSourceScoped(set):
 		scope = "source devices selected but no domain or IP target"
 	}
 	if prev, ok := routeNoDestinationWarned.Load(set.Id); ok && prev == scope {
 		return
 	}
 	routeNoDestinationWarned.Store(set.Id, scope)
-	log.Warnf("Routing: set '%s' has %s, so there is no destination to steer and no rule is installed; add a destination, or turn on 'Match any IP address' under Targets to send everything from those devices", set.Name, scope)
+	log.Warnf("Routing: set '%s' has %s, so there is no destination to steer and no rule is installed; %s", set.Name, scope, advice)
 }
 
 func routeForgetNoDestinationWarning(setID string) {

@@ -11,7 +11,7 @@ import {
   useFilteredLogs,
   useSortedLogs,
 } from "@hooks/useDomainActions";
-import { loadSortState, saveSortState } from "@utils";
+import { AsnLabels, loadSortState, saveSortState } from "@utils";
 import { useTranslation } from "react-i18next";
 
 const MAX_DISPLAY_ROWS = 1000;
@@ -27,7 +27,7 @@ interface Props {
   filter: string;
   onFilterChange: (v: string) => void;
   enrichingIps: Set<string>;
-  asnVersion: number;
+  asnLabels: AsnLabels;
   onAddDomain: (domain: string) => void;
   onAddIp: (ip: string) => void;
   onEnrichIp: (ip: string) => Promise<void>;
@@ -45,7 +45,7 @@ export const RawView = ({
   filter,
   onFilterChange,
   enrichingIps,
-  asnVersion,
+  asnLabels,
   onAddDomain,
   onAddIp,
   onEnrichIp,
@@ -72,7 +72,7 @@ export const RawView = ({
   }, [entries, showAll]);
 
   const enrichedLogs = useEnrichedLogs(parsedLogs, deviceMap);
-  const filteredLogs = useFilteredLogs(enrichedLogs, filter);
+  const filteredLogs = useFilteredLogs(enrichedLogs, filter, asnLabels);
   const sortedData = useSortedLogs(filteredLogs, sortColumn, sortDirection);
 
   const handleSort = useCallback((column: SortColumn) => {
@@ -130,7 +130,7 @@ export const RawView = ({
           onEnrichIp={onEnrichIp}
           onDeleteAsn={onDeleteAsn}
           enrichingIps={enrichingIps}
-          asnVersion={asnVersion}
+          asnLabels={asnLabels}
           onScrollStateChange={handleScrollStateChange}
         />
         <Tooltip

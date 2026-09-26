@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Box, Stack } from "@mui/material";
-import { DomainIcon, IpIcon, DeviceIcon } from "@b4.icons";
+import { AsnIcon, DomainIcon, IpIcon, DeviceIcon } from "@b4.icons";
 import { B4Section, B4Tabs, B4Tab, B4TabPanel } from "@b4.elements";
 import { B4SetConfig, GeoConfig } from "@models/config";
 import { useDevices } from "@b4.devices";
@@ -10,6 +10,7 @@ import { hasTargets } from "./facets";
 import { SetStats } from "./Manager";
 import { DomainsTab } from "./targets/DomainsTab";
 import { IpsTab } from "./targets/IpsTab";
+import { AsnTab } from "./targets/AsnTab";
 import { DevicesTab } from "./targets/DevicesTab";
 import { OtherSetsTargets } from "./targets/overlap";
 
@@ -18,7 +19,8 @@ export type { OtherSetsTargets };
 const TARGET_SUB_INDEX: Record<string, number> = {
   domains: 0,
   ips: 1,
-  devices: 2,
+  asns: 2,
+  devices: 3,
 };
 
 interface TargetSettingsProps {
@@ -35,6 +37,7 @@ interface TargetSettingsProps {
 enum TARGET_TABS {
   DOMAINS = 0,
   IPS,
+  ASNS,
   DEVICES,
 }
 
@@ -73,6 +76,7 @@ export const TargetSettings = ({
   }, [loadDevices]);
 
   const selectedSourceDevices: string[] = config.targets.source_devices ?? [];
+  const asnCount = config.targets.asns?.length ?? 0;
 
   return (
     <Stack spacing={3}>
@@ -94,6 +98,15 @@ export const TargetSettings = ({
             <B4Tab
               icon={<IpIcon />}
               label={t("sets.targets.tabs.ips")}
+              inline
+            />
+            <B4Tab
+              icon={<AsnIcon />}
+              label={
+                asnCount > 0
+                  ? `${t("sets.targets.tabs.asns")} (${asnCount})`
+                  : t("sets.targets.tabs.asns")
+              }
               inline
             />
             <B4Tab
@@ -138,6 +151,19 @@ export const TargetSettings = ({
             geoipCategories={geoipCategories}
             geoipLoading={geoipLoading}
             ipv6={ipv6}
+            onChange={onChange}
+          />
+        </B4TabPanel>
+
+        <B4TabPanel
+          value={activeTab}
+          index={TARGET_TABS.ASNS}
+          idPrefix="target-tab"
+        >
+          <AsnTab
+            config={config}
+            stats={stats}
+            otherSetsTargets={otherSetsTargets}
             onChange={onChange}
           />
         </B4TabPanel>

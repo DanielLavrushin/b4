@@ -781,8 +781,12 @@ func (api *API) collectGeodataInfo() DiagGeodata {
 				}
 			}
 		}
+
+		asnIPs, _, _ := asnTargetStats(set.Targets)
+		info.TotalIPs += asnIPs
 	}
 
+	info.ASN = collectASNDiag(cfg)
 	return info
 }
 

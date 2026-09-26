@@ -156,6 +156,21 @@ func (c *Config) TelegramBridgeEnabled() bool {
 	return c != nil && c.System.MTProto.Bridge.Enabled
 }
 
+func (c *Config) TelegramInUse() bool {
+	if c == nil {
+		return false
+	}
+	if c.System.MTProto.Enabled || c.System.MTProto.Bridge.Enabled {
+		return true
+	}
+	for _, set := range c.Sets {
+		if set != nil && set.Enabled && set.Routing.Enabled && set.Routing.Mode == RoutingModeMTProtoWS {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *Config) TelegramBridgeSet() *SetConfig {
 	set := NewSetConfig()
 	set.Id = TelegramBridgeSetID

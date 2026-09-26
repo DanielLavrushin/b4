@@ -662,6 +662,9 @@ func (api *API) initializeSetDefaults(set *config.SetConfig) {
 	if set.Targets.GeoIpCategories == nil {
 		set.Targets.GeoIpCategories = []string{}
 	}
+	if set.Targets.ASNs == nil {
+		set.Targets.ASNs = []string{}
+	}
 	if set.Targets.SourceDevices == nil {
 		set.Targets.SourceDevices = []string{}
 	}
@@ -697,10 +700,12 @@ func (api *API) retainGeoCaches(sets []*config.SetConfig) {
 }
 
 type targetExpansion struct {
-	Domains      int
-	IPs          int
-	EmptyGeoSite []string
-	EmptyGeoIP   []string
+	Domains        int
+	IPs            int
+	ASNIPs         int
+	EmptyGeoSite   []string
+	EmptyGeoIP     []string
+	UnresolvedASNs []string
 }
 
 func (api *API) loadTargetsForSetCached(set *config.SetConfig) targetExpansion {
@@ -727,6 +732,18 @@ func (api *API) loadTargetsForSetCached(set *config.SetConfig) targetExpansion {
 		}
 		ips = append(ips, cached...)
 	}
+
+	if len(set.Targets.ASNs) > 0 {
+		asnPrefixes, unresolved := config.ExpandASNs(set.Targets.ASNs, set.Targets.IPVersion)
+		ips = append(ips, asnPrefixes...)
+		report.ASNIPs = len(asnPrefixes)
+		if len(unresolved) > 0 {
+			report.UnresolvedASNs = unresolved
+			log.Debugf("Set '%s': ASNs %v have no known prefixes yet, requesting a refresh", set.Name, unresolved)
+			config.RequestASNRefresh()
+		}
+	}
+
 	ips = append(ips, set.Targets.IPs...)
 	set.Targets.IpsToMatch = ips
 

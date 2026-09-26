@@ -1,13 +1,12 @@
 import { useState, useCallback, useMemo } from "react";
 import { SortDirection } from "@common/SortableTableCell";
 import {
-  asnStorage,
+  AsnLabels,
   matchesConnectionFilter,
   parseConnectionFilter,
 } from "@utils";
 import { useSnackbar } from "@context/SnackbarProvider";
 
-// Types
 export type SortColumn =
   | "timestamp"
   | "set"
@@ -36,33 +35,6 @@ interface DomainModalState {
   domain: string;
   variants: string[];
   selected: string;
-}
-
-// ASN Lookup cache
-const asnLookupCache = new Map<string, string | null>();
-
-export function getAsnForIp(destination: string): string | null {
-  if (!destination) return null;
-
-  const cached = asnLookupCache.get(destination);
-  if (cached !== undefined) return cached;
-
-  const asn = asnStorage.findAsnForIp(destination);
-  const result = asn?.name || null;
-
-  asnLookupCache.set(destination, result);
-
-  if (asnLookupCache.size > 2000) {
-    const entries = Array.from(asnLookupCache.entries());
-    asnLookupCache.clear();
-    entries.slice(-1000).forEach(([k, v]) => asnLookupCache.set(k, v));
-  }
-
-  return result;
-}
-
-export function clearAsnLookupCache(): void {
-  asnLookupCache.clear();
 }
 
 export function parseSniLogLine(line: string): ParsedLog | null {
@@ -100,7 +72,6 @@ export function parseSniLogLine(line: string): ParsedLog | null {
   return result;
 }
 
-// Domain actions hook
 export function useDomainActions() {
   const { showSuccess, showError } = useSnackbar();
   const [modalState, setModalState] = useState<DomainModalState>({
@@ -170,7 +141,6 @@ export function useDomainActions() {
   };
 }
 
-// Enrich logs with device names
 export function useEnrichedLogs(
   parsedLogs: ParsedLog[],
   deviceMap: Record<string, string>,
@@ -188,18 +158,21 @@ export function useEnrichedLogs(
   }, [parsedLogs, deviceMap]);
 }
 
-// Optimized filtering with memoization
 export function useFilteredLogs(
   parsedLogs: ParsedLog[],
   filter: string,
+  asnLabels: AsnLabels,
 ): ParsedLog[] {
   return useMemo(() => {
     const parsed = parseConnectionFilter(filter);
     if (!parsed) return parsedLogs;
 
+    const asnName = (destination: string): string | null =>
+      destination ? (asnLabels.find(destination)?.name ?? null) : null;
+
     const getFieldValue = (log: ParsedLog, field: string): string => {
       if (field === "asn") {
-        return getAsnForIp(log.destination)?.toLowerCase() || "";
+        return asnName(log.destination)?.toLowerCase() || "";
       }
       if (field === "alias" || field === "device") {
         return `${log.sourceAlias || ""} ${log.deviceName || ""}`.toLowerCase();
@@ -217,7 +190,7 @@ export function useFilteredLogs(
       log.protocol,
       log.destination,
       log.flags,
-      getAsnForIp(log.destination),
+      asnName(log.destination),
     ];
 
     return parsedLogs.filter((log: ParsedLog) =>
@@ -227,10 +200,9 @@ export function useFilteredLogs(
         getSearchableValues(log),
       ),
     );
-  }, [parsedLogs, filter]);
+  }, [parsedLogs, filter, asnLabels]);
 }
 
-// Optimized sorting
 export function useSortedLogs(
   filteredLogs: ParsedLog[],
   sortColumn: SortColumn | null,

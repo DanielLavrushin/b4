@@ -14,7 +14,6 @@ type API struct {
 	mux            *http.ServeMux
 	geodataManager *geodat.GeodataManager
 	discoveryRT    *discovery.Runtime
-	asnStore       *config.AsnStore
 
 	overrideServiceManager  func() string
 	overrideLaunchInstaller func(installerRun)

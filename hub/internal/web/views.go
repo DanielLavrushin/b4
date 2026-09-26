@@ -21,6 +21,7 @@ type TargetsView struct {
 	IPs     []string `json:"ips"`
 	GeoSite []string `json:"geosite"`
 	GeoIP   []string `json:"geoip"`
+	ASNs    []string `json:"asns"`
 	Summary string   `json:"summary"`
 }
 
@@ -307,6 +308,7 @@ func targetsView(t Targets) TargetsView {
 		IPs:     orEmpty(t.IPs),
 		GeoSite: orEmpty(t.GeoSite),
 		GeoIP:   orEmpty(t.GeoIP),
+		ASNs:    orEmpty(t.ASNs),
 		Summary: t.Summary(),
 	}
 }

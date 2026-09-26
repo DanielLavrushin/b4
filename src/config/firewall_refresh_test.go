@@ -85,3 +85,80 @@ func TestFirewallRefreshNeededSkipsPortsWhenTablesAreSkipped(t *testing.T) {
 		t.Fatalf("a port change was read as needing a refresh while table setup is skipped")
 	}
 }
+
+func TestFirewallRefreshNeededFollowsDuplicateIPs(t *testing.T) {
+	withIPs := func(dup bool, ips ...string) *Config {
+		c := refreshTestConfig()
+		c.Sets[0].TCP.Duplicate.Enabled = dup
+		c.Sets[0].Targets.IPs = append([]string(nil), ips...)
+		c.Sets[0].Targets.IpsToMatch = append([]string(nil), ips...)
+		return c
+	}
+
+	if !FirewallRefreshNeeded(withIPs(false, "203.0.113.0/24"), withIPs(true, "203.0.113.0/24")) {
+		t.Fatal("enabling TCP duplicate on a set with IPs must rebuild the duplicate sets")
+	}
+	if !FirewallRefreshNeeded(withIPs(true, "203.0.113.0/24"), withIPs(false, "203.0.113.0/24")) {
+		t.Fatal("disabling TCP duplicate must rebuild the duplicate sets")
+	}
+	if !FirewallRefreshNeeded(withIPs(true, "203.0.113.0/24"), withIPs(true, "203.0.113.0/24", "2001:db8::/32")) {
+		t.Fatal("a new IP on a duplicate set must rebuild the duplicate sets")
+	}
+	if !FirewallRefreshNeeded(withIPs(true, "203.0.113.0/24"), withIPs(true, "198.51.100.0/24")) {
+		t.Fatal("a replaced IP on a duplicate set must rebuild the duplicate sets")
+	}
+	if FirewallRefreshNeeded(withIPs(true, "203.0.113.0/24", "198.51.100.0/24"), withIPs(true, "198.51.100.0/24", "203.0.113.0/24")) {
+		t.Fatal("reordering the same IPs changes nothing in the firewall")
+	}
+	if FirewallRefreshNeeded(withIPs(false, "203.0.113.0/24"), withIPs(false, "198.51.100.0/24")) {
+		t.Fatal("IPs of a set without duplication do not feed the duplicate sets")
+	}
+
+	disabled := withIPs(true, "203.0.113.0/24")
+	disabled.Sets[0].Enabled = false
+	if !FirewallRefreshNeeded(withIPs(true, "203.0.113.0/24"), disabled) {
+		t.Fatal("disabling a duplicate set must rebuild the duplicate sets")
+	}
+}
+
+func TestFirewallRefreshNeededWhenAnEmptyIPTargetComesOrGoes(t *testing.T) {
+	deviceClampSet := func(declare func(*SetConfig)) *Config {
+		c := refreshTestConfig()
+		s := c.Sets[0]
+		s.MSSClamp.Enabled = true
+		s.MSSClamp.Size = 88
+		s.Targets.SNIDomains = []string{"example.com"}
+		s.Targets.DomainsToMatch = []string{"example.com"}
+		s.Targets.SourceDevices = []string{"AA:BB:CC:DD:EE:FF"}
+		if declare != nil {
+			declare(s)
+		}
+		return c
+	}
+	cases := []struct {
+		name    string
+		declare func(*SetConfig)
+	}{
+		{"a geoip category that resolved to nothing", func(s *SetConfig) { s.Targets.GeoIpCategories = []string{"gone"} }},
+		{"an unresolved ASN", func(s *SetConfig) { s.Targets.ASNs = []string{"64500"} }},
+		{"manual IPs filtered out entirely", func(s *SetConfig) { s.Targets.IPs = []string{"2001:db8::1"} }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			macOnly := deviceClampSet(nil)
+			declared := deviceClampSet(tc.declare)
+			if macOnly.MSSClampFingerprint() == declared.MSSClampFingerprint() {
+				t.Fatalf("the MAC-only clamp and the skipped clamp share a fingerprint: %q", macOnly.MSSClampFingerprint())
+			}
+			if !FirewallRefreshNeeded(declared, macOnly) {
+				t.Fatal("removing the empty IP target must install the MAC-only clamp")
+			}
+			if !FirewallRefreshNeeded(macOnly, declared) {
+				t.Fatal("adding an empty IP target must remove the MAC-only clamp")
+			}
+			if FirewallRefreshNeeded(declared, deviceClampSet(tc.declare)) {
+				t.Fatal("two identical configs were read as needing a refresh")
+			}
+		})
+	}
+}

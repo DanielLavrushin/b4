@@ -177,6 +177,7 @@ var DefaultSetConfig = SetConfig{
 		IPs:               []string{},
 		GeoSiteCategories: []string{},
 		GeoIpCategories:   []string{},
+		ASNs:              []string{},
 		SourceDevices:     []string{},
 	},
 
@@ -334,6 +335,7 @@ func NewSetConfig() SetConfig {
 	cfg.Targets.IPs = append(make([]string, 0), DefaultSetConfig.Targets.IPs...)
 	cfg.Targets.GeoSiteCategories = append(make([]string, 0), DefaultSetConfig.Targets.GeoSiteCategories...)
 	cfg.Targets.GeoIpCategories = append(make([]string, 0), DefaultSetConfig.Targets.GeoIpCategories...)
+	cfg.Targets.ASNs = append(make([]string, 0), DefaultSetConfig.Targets.ASNs...)
 	cfg.Targets.SourceDevices = append(make([]string, 0), DefaultSetConfig.Targets.SourceDevices...)
 	cfg.Fragmentation.SeqOverlapPattern = append(make([]string, 0), DefaultSetConfig.Fragmentation.SeqOverlapPattern...)
 	cfg.Fragmentation.StrategyPool = append(make([]string, 0), DefaultSetConfig.Fragmentation.StrategyPool...)

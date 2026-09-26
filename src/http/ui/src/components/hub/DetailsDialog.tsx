@@ -12,6 +12,7 @@ import { B4Alert, B4Badge, B4Dialog, B4TextField } from "@b4.elements";
 import { CommunityIcon, CopyIcon, EditIcon, ReportIcon } from "@b4.icons";
 import { colors, typography } from "@design";
 import { HubSet, projectionToSet } from "@models/hub";
+import { formatAsn } from "@models/asn";
 import { copyText, describeApiError, formatBytes } from "@utils";
 import { ApiError } from "@api/apiClient";
 import { useSnackbar } from "@context/SnackbarProvider";
@@ -266,6 +267,11 @@ export const DetailsDialog = ({
                 {set.targets.geoip?.length > 0 && (
                   <FieldRow label={t("hub.details.geoip")}>
                     {set.targets.geoip.join(", ")}
+                  </FieldRow>
+                )}
+                {(set.targets.asns ?? []).length > 0 && (
+                  <FieldRow label={t("hub.details.asns")}>
+                    {set.targets.asns.map(formatAsn).join(", ")}
                   </FieldRow>
                 )}
                 {set.targets.ip_count > 0 && (

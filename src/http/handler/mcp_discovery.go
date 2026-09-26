@@ -819,6 +819,7 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 	}
 	set.Routing.Upstream.Username = ""
 	set.Routing.Upstream.Password = ""
+	set.Targets.ASNs = nil
 	set.Discovery.URLs = mcpProbeURLsFor(domain, groupDomains, checkURLs)
 	api.initializeSetDefaults(&set)
 

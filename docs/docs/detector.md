@@ -51,7 +51,7 @@ The **DNS** table has a row per provider. The first rows are the same resolvers 
 
 *Port 53 answered by* is the network that handled an identity query sent to that resolver over UDP. When that network is neither the provider's own nor a known public resolver, the row is marked as hijacked. A redirect to a known public resolver is not marked on the row: when a router forwards all port 53 traffic from b4's host to AdGuard Home, which uses Google as its upstream, the column shows Google without the mark. When at least five public resolvers answered the identity query and all of them from one such network, the summary says that port 53 is redirected on this network or by the ISP; the UDP 53 column then describes that one resolver, not the listed providers. A DoH server that answered honestly can be copied to paste into a set's DNS redirect.
 
-The **Hosting and CDN** table has a row per network with the number of targets that were cut and the byte count at which it happened. Working SNI names, when the search was on, can be copied to use as a set's fake SNI. **Details** lists every target of the network.
+The **Hosting and CDN** table has a row per network with the number of targets that were cut and the byte count at which it happened. Working SNI names, when the search was on, can be copied to use as a set's fake SNI. **Details** lists every target of the network. Each network also offers to add its ASN to a set, which opens the add dialog of the [Traffic](./connections#adding-addresses-and-networks-to-sets) page with the whole network chosen.
 
 ## Target lists
 

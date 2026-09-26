@@ -3,7 +3,7 @@ sidebar_position: 6
 title: Sets
 ---
 
-A set is a bundle of DPI bypass settings tied to a list of domains, IP addresses, UDP ports, or GeoSite/GeoIP categories. You can create multiple sets with different strategies for different sites.
+A set is a bundle of DPI bypass settings tied to a list of domains, IP addresses, ASNs, UDP ports, or GeoSite/GeoIP categories. You can create multiple sets with different strategies for different sites.
 
 ## Managing sets
 
@@ -30,7 +30,7 @@ Available actions:
 
 The editor has 7 tabs:
 
-- [Targets](./targets) - domains, IPs, GeoSite/GeoIP categories, devices
+- [Targets](./targets) - domains, IPs, GeoSite/GeoIP categories, ASNs, devices
 - [TCP](./tcp/) - fragmentation, faking, desync, and other TCP strategies
 - [UDP](./udp) - UDP traffic handling, QUIC, STUN
 - [Routing](./routing) - DNS redirect and traffic routing through interfaces

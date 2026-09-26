@@ -15,7 +15,12 @@ B4_SF_BASE="${B4_SF_BASE:-https://downloads.sourceforge.net/project/b4core}"
 B4_CONNECT_TIMEOUT="${B4_CONNECT_TIMEOUT:-8}"
 B4_STALL_TIMEOUT="${B4_STALL_TIMEOUT:-30}"
 B4_MAX_TIME="${B4_MAX_TIME:-600}"
+B4_GEO_MAX_TIME="${B4_GEO_MAX_TIME:-3600}"
 B4_PROBE_TIMEOUT="${B4_PROBE_TIMEOUT:-6}"
+B4_FETCH_MAX_TIME=""
+B4_FETCH_TMP=""
+B4_FETCH_PID=""
+B4_PENDING_FILES=""
 
 # --- Runtime state (set by platform/wizard) ---
 B4_BIN_DIR=""
@@ -169,7 +174,36 @@ setup_temp() {
     }
 }
 
+pending_add() {
+    B4_PENDING_FILES="${B4_PENDING_FILES:+${B4_PENDING_FILES}
+}$1"
+}
+
+pending_drop() {
+    B4_PENDING_FILES=$(printf '%s\n' "$B4_PENDING_FILES" | grep -vxF -e "$1") || B4_PENDING_FILES=""
+}
+
+_pending_cleanup() {
+    [ -n "$B4_PENDING_FILES" ] || return 0
+    while IFS= read -r _pc_file; do
+        [ -z "$_pc_file" ] || rm -f "$_pc_file" 2>/dev/null || true
+    done <<EOF
+$B4_PENDING_FILES
+EOF
+    B4_PENDING_FILES=""
+}
+
 cleanup_temp() {
+    if [ -n "$B4_FETCH_PID" ]; then
+        kill "$B4_FETCH_PID" 2>/dev/null || true
+        wait "$B4_FETCH_PID" 2>/dev/null || true
+        B4_FETCH_PID=""
+    fi
+    if [ -n "$B4_FETCH_TMP" ]; then
+        rm -f "$B4_FETCH_TMP" 2>/dev/null || true
+        B4_FETCH_TMP=""
+    fi
+    _pending_cleanup
     rm -rf "$TEMP_DIR" 2>/dev/null || true
 }
 
@@ -182,7 +216,7 @@ _on_interrupt() {
 }
 
 trap cleanup_temp EXIT
-trap _on_interrupt INT TERM
+trap _on_interrupt INT TERM HUP
 
 # --- Package manager detection ---
 detect_pkg_manager() {
@@ -530,6 +564,14 @@ _wget_supports() {
     wget --help 2>&1 | grep -qF -- "$1"
 }
 
+_wget_timeout_opt() {
+    if _wget_supports "--timeout"; then
+        echo "--timeout=$1"
+    elif _wget_supports "-T SEC"; then
+        echo "-T $1"
+    fi
+}
+
 mirror_alive() {
     _ma_base="$1"
 
@@ -541,8 +583,7 @@ mirror_alive() {
     fi
 
     if command_exists wget; then
-        _ma_args="-q $WGET_INSECURE -O /dev/null"
-        _wget_supports "--timeout" && _ma_args="$_ma_args --timeout=$B4_PROBE_TIMEOUT"
+        _ma_args="-q $WGET_INSECURE -O /dev/null $(_wget_timeout_opt "$B4_PROBE_TIMEOUT")"
         wget $_ma_args "${_ma_base}/b4/health" 2>/dev/null && return 0
     fi
 
@@ -560,7 +601,9 @@ _wget_guarded() {
         wget "$@" &
     fi
     _wg_pid=$!
+    B4_FETCH_PID=$_wg_pid
 
+    _wg_max="${B4_FETCH_MAX_TIME:-$B4_MAX_TIME}"
     _wg_prev=0
     _wg_stall=0
     _wg_elapsed=0
@@ -569,9 +612,10 @@ _wget_guarded() {
 
     while kill -0 "$_wg_pid" 2>/dev/null; do
         sleep "$_wg_tick"
+        kill -0 "$_wg_pid" 2>/dev/null || break
         _wg_elapsed=$((_wg_elapsed + _wg_tick))
 
-        _wg_now=$(wc -c <"$_wg_out" 2>/dev/null | awk '{print $1}')
+        _wg_now=$(wc -c 2>/dev/null <"$_wg_out" | awk '{print $1}')
         if [ -z "$_wg_now" ]; then
             _wg_now=0
         fi
@@ -583,82 +627,173 @@ _wget_guarded() {
         fi
         _wg_prev=$_wg_now
 
-        if [ "$_wg_stall" -ge "$B4_STALL_TIMEOUT" ] || [ "$_wg_elapsed" -ge "$B4_MAX_TIME" ]; then
+        _wg_over=0
+        if [ "$_wg_max" -gt 0 ] 2>/dev/null && [ "$_wg_elapsed" -ge "$_wg_max" ]; then
+            _wg_over=1
+        fi
+        if [ "$_wg_stall" -ge "$B4_STALL_TIMEOUT" ] || [ "$_wg_over" -eq 1 ]; then
             kill "$_wg_pid" 2>/dev/null || true
             wait "$_wg_pid" 2>/dev/null || true
+            B4_FETCH_PID=""
             return 1
         fi
     done
 
-    wait "$_wg_pid"
+    _wg_rc=0
+    wait "$_wg_pid" || _wg_rc=$?
+    B4_FETCH_PID=""
+    return "$_wg_rc"
 }
 
 _do_fetch() {
-    _fetch_url="$1"
-    _fetch_out="$2"
-    if [ -t 2 ] && [ "$QUIET_MODE" -ne 1 ]; then
-        if command_exists curl && curl -fL $CURL_INSECURE --progress-bar \
-            --connect-timeout "$B4_CONNECT_TIMEOUT" \
-            --speed-limit 1024 --speed-time "$B4_STALL_TIMEOUT" \
-            --max-time "$B4_MAX_TIME" -o "$_fetch_out" "$_fetch_url" 2>&1; then return 0; fi
-        if command_exists wget; then
-            _wget_args="$WGET_INSECURE"
-            _wget_supports "--show-progress" && _wget_args="$_wget_args --show-progress -q"
-            _wget_supports "--connect-timeout" && _wget_args="$_wget_args --connect-timeout=$B4_CONNECT_TIMEOUT"
-            _wget_supports "--timeout" && _wget_args="$_wget_args --timeout=$B4_STALL_TIMEOUT"
-            _wget_guarded "$_fetch_out" 0 $_wget_args -O "$_fetch_out" "$_fetch_url" && return 0
+    _df_url="$1"
+    _df_out="$2"
+    _df_max="${B4_FETCH_MAX_TIME:-$B4_MAX_TIME}"
+    _df_progress=0
+    [ -t 2 ] && [ "$QUIET_MODE" -ne 1 ] && _df_progress=1
+
+    if command_exists curl; then
+        _df_args="-fL $CURL_INSECURE --connect-timeout $B4_CONNECT_TIMEOUT --speed-limit 1024 --speed-time $B4_STALL_TIMEOUT"
+        if [ "$_df_max" -gt 0 ] 2>/dev/null; then
+            _df_args="$_df_args --max-time $_df_max"
         fi
+        _df_rc=0
+        if [ "$_df_progress" -eq 1 ]; then
+            curl $_df_args --progress-bar -o "$_df_out" "$_df_url" 2>&1 || _df_rc=$?
+        else
+            curl -s $_df_args -o "$_df_out" "$_df_url" 2>/dev/null || _df_rc=$?
+        fi
+        case "$_df_rc" in
+        0) return 0 ;;
+        23) return 2 ;;
+        18 | 22 | 28 | 56 | 63) return 1 ;;
+        esac
+    fi
+
+    command_exists wget || return 1
+    rm -f "$_df_out" 2>/dev/null || true
+    if [ "$_df_progress" -eq 1 ]; then
+        _df_wargs="$WGET_INSECURE"
+        _wget_supports "--show-progress" && _df_wargs="$_df_wargs --show-progress -q"
     else
-        if command_exists curl && curl -sfL $CURL_INSECURE \
-            --connect-timeout "$B4_CONNECT_TIMEOUT" \
-            --speed-limit 1024 --speed-time "$B4_STALL_TIMEOUT" \
-            --max-time "$B4_MAX_TIME" -o "$_fetch_out" "$_fetch_url" 2>/dev/null; then return 0; fi
-        if command_exists wget; then
-            _wget_args="-q $WGET_INSECURE"
-            _wget_supports "--connect-timeout" && _wget_args="$_wget_args --connect-timeout=$B4_CONNECT_TIMEOUT"
-            _wget_supports "--timeout" && _wget_args="$_wget_args --timeout=$B4_STALL_TIMEOUT"
-            _wget_guarded "$_fetch_out" 1 $_wget_args -O "$_fetch_out" "$_fetch_url" && return 0
+        _df_wargs="-q $WGET_INSECURE"
+    fi
+    _df_wargs="$_df_wargs $(_wget_timeout_opt "$B4_STALL_TIMEOUT")"
+    _wget_supports "--connect-timeout" && _df_wargs="$_df_wargs --connect-timeout=$B4_CONNECT_TIMEOUT"
+    _df_rc=0
+    _wget_guarded "$_df_out" $((1 - _df_progress)) $_df_wargs -O "$_df_out" "$_df_url" || _df_rc=$?
+    case "$_df_rc" in
+    0) return 0 ;;
+    3) return 2 ;;
+    esac
+    return 1
+}
+
+_fetch_attempt() {
+    _fa_url="$1"
+    _fa_part="$2"
+    _fa_check="$3"
+    _fa_orig="$4"
+
+    rm -f "$_fa_part" 2>/dev/null || true
+    _fa_rc=0
+    _do_fetch "$_fa_url" "$_fa_part" || _fa_rc=$?
+    if [ "$_fa_rc" -eq 0 ] && [ -s "$_fa_part" ]; then
+        if [ -z "$_fa_check" ] || "$_fa_check" "$_fa_part" "$_fa_url" "$_fa_orig"; then
+            return 0
         fi
     fi
+    rm -f "$_fa_part" 2>/dev/null || true
+    [ "$_fa_rc" -eq 2 ] && return 2
     return 1
 }
 
 fetch_file() {
-    url="$1"
-    output="$2"
+    _ff_src="$1"
+    _ff_out="$2"
+    _ff_check="$3"
+    _ff_part="${_ff_out}.part"
 
     if ! command_exists curl && ! command_exists wget; then
         log_err "Neither curl nor wget found"
         return 1
     fi
 
-    if _do_fetch "$url" "$output"; then return 0; fi
+    B4_FETCH_TMP="$_ff_part"
+    _ff_rc=0
+    _fetch_attempt "$_ff_src" "$_ff_part" "$_ff_check" "$_ff_src" || _ff_rc=$?
 
     _ff_announced=0
-    for _ff_base in $B4_MIRRORS; do
-        _ff_url=$(mirror_url "$_ff_base" "$url")
-        [ -z "$_ff_url" ] && continue
-        mirror_alive "$_ff_base" || continue
-        if [ "$_ff_announced" -eq 0 ]; then
-            log_warn "Direct download failed, trying mirrors..."
-            _ff_announced=1
-        fi
-        log_info "Mirror: ${_ff_base}"
-        if _do_fetch "$_ff_url" "$output"; then return 0; fi
-    done
-
-    _ff_sf=$(sf_url "$url")
-    if [ -n "$_ff_sf" ]; then
-        if [ "$_ff_announced" -eq 0 ]; then
-            log_warn "Direct download failed, trying mirrors..."
-            _ff_announced=1
-        fi
-        log_info "Mirror: SourceForge"
-        if _do_fetch "$_ff_sf" "$output"; then return 0; fi
+    if [ "$_ff_rc" -eq 1 ]; then
+        for _ff_base in $B4_MIRRORS; do
+            _ff_url=$(mirror_url "$_ff_base" "$_ff_src")
+            [ -z "$_ff_url" ] && continue
+            mirror_alive "$_ff_base" || continue
+            if [ "$_ff_announced" -eq 0 ]; then
+                log_warn "Direct download failed, trying mirrors..."
+                _ff_announced=1
+            fi
+            log_info "Mirror: ${_ff_base}"
+            _ff_rc=0
+            _fetch_attempt "$_ff_url" "$_ff_part" "$_ff_check" "$_ff_src" || _ff_rc=$?
+            [ "$_ff_rc" -eq 1 ] || break
+        done
     fi
 
-    log_err "Failed to download: $url"
+    if [ "$_ff_rc" -eq 1 ]; then
+        _ff_sf=$(sf_url "$_ff_src")
+        if [ -n "$_ff_sf" ]; then
+            if [ "$_ff_announced" -eq 0 ]; then
+                log_warn "Direct download failed, trying mirrors..."
+                _ff_announced=1
+            fi
+            log_info "Mirror: SourceForge"
+            _ff_rc=0
+            _fetch_attempt "$_ff_sf" "$_ff_part" "$_ff_check" "$_ff_src" || _ff_rc=$?
+        fi
+    fi
+
+    if [ "$_ff_rc" -eq 0 ]; then
+        flush_disk
+        if mv -f "$_ff_part" "$_ff_out" 2>/dev/null; then
+            B4_FETCH_TMP=""
+            return 0
+        fi
+        log_err "Could not move the download into place: ${_ff_out}"
+    elif [ "$_ff_rc" -eq 2 ]; then
+        log_err "Could not write ${_ff_part} (disk full or not writable)"
+    fi
+
+    rm -f "$_ff_part" 2>/dev/null || true
+    B4_FETCH_TMP=""
+    log_err "Failed to download: $_ff_src"
     return 1
+}
+
+_content_length() {
+    tr -d '\r' | awk '
+        { sub(/^[ \t]+/, "") }
+        /^HTTP\// { v = ""; ok = ($2 ~ /^2/) }
+        tolower($1) == "content-length:" { v = $2 }
+        END { if (ok && v ~ /^[0-9]+$/ && v > 0) print v }'
+}
+
+remote_size() {
+    _rs_url="$1"
+    _rs_len=""
+
+    if command_exists curl; then
+        _rs_len=$(curl -sIL $CURL_INSECURE --connect-timeout "$B4_CONNECT_TIMEOUT" \
+            --max-time 25 "$_rs_url" 2>/dev/null | _content_length)
+    fi
+    if [ -z "$_rs_len" ] && command_exists wget; then
+        _rs_args="$WGET_INSECURE $(_wget_timeout_opt 25)"
+        _wget_supports "--connect-timeout" && _rs_args="$_rs_args --connect-timeout=$B4_CONNECT_TIMEOUT"
+        _rs_len=$(wget -S --spider $_rs_args "$_rs_url" 2>&1 | _content_length)
+    fi
+
+    [ -n "$_rs_len" ] || return 1
+    echo "$_rs_len"
 }
 
 _do_fetch_stdout() {
@@ -668,24 +803,23 @@ _do_fetch_stdout() {
         curl -sfL $CURL_INSECURE --connect-timeout "$B4_CONNECT_TIMEOUT" --max-time 25 "$_dfs_url" 2>/dev/null && return 0
     fi
     if command_exists wget; then
-        _dfs_args="-qO- $WGET_INSECURE"
+        _dfs_args="-qO- $WGET_INSECURE $(_wget_timeout_opt 25)"
         _wget_supports "--connect-timeout" && _dfs_args="$_dfs_args --connect-timeout=$B4_CONNECT_TIMEOUT"
-        _wget_supports "--timeout" && _dfs_args="$_dfs_args --timeout=25"
         wget $_dfs_args "$_dfs_url" 2>/dev/null && return 0
     fi
     return 1
 }
 
 fetch_stdout() {
-    url="$1"
+    _fs_src="$1"
 
-    result=$(_do_fetch_stdout "$url") && [ -n "$result" ] && echo "$result" && return 0
+    _fs_out=$(_do_fetch_stdout "$_fs_src") && [ -n "$_fs_out" ] && echo "$_fs_out" && return 0
 
     for _fs_base in $B4_MIRRORS; do
-        _fs_url=$(mirror_url "$_fs_base" "$url")
+        _fs_url=$(mirror_url "$_fs_base" "$_fs_src")
         [ -z "$_fs_url" ] && continue
         mirror_alive "$_fs_base" || continue
-        result=$(_do_fetch_stdout "$_fs_url") && [ -n "$result" ] && echo "$result" && return 0
+        _fs_out=$(_do_fetch_stdout "$_fs_url") && [ -n "$_fs_out" ] && echo "$_fs_out" && return 0
     done
 
     return 1

@@ -128,42 +128,36 @@ The **+** button next to a domain opens the add dialog.
 Services that serve content from many subdomains (YouTube, CDNs) are covered by the parent domain, such as `googlevideo.com`. Otherwise every subdomain has to be added separately.
 :::
 
-## Adding IP/CIDR to sets
+## Adding addresses and networks to sets
 
-The **+** button next to a destination address (and, in the raw feed, a click on the address itself) opens the add IP dialog.
-
-### Address details
-
-| Button | Source | What it shows |
-| --- | --- | --- |
-| **Load Network Info** | RIPE NCC | The ASN and the prefixes it announces |
-| **Enrich with IPInfo** | ipinfo.io | Organization, hostname, location |
-
-:::info IPInfo
-The IPInfo button appears once an API token is set on the **Settings → Integrations** tab. A free token is available from [ipinfo.io](https://ipinfo.io).
-:::
+The **+** button next to a destination address (and, in the raw feed, a click on the address itself) opens the add dialog. On opening, the dialog asks b4 which network announces the address. b4 asks [RIPEstat](https://stat.ripe.net/), and when that request fails it answers from its ASN cache if a cached network covers the address; the browser does not contact RIPEstat itself. The dialog then shows the address, the announced prefix that covers it and the origin network, such as **AS15169 Google LLC**. When more than one network announces the prefix, one of them is picked in the dialog. A private address has no network. A lookup that fails can be retried, and the address itself can be added either way.
 
 ### What to add
 
-**When an ASN is found**, the options are:
-
-- **Add 142.250.74.110 only** - that single address
-- **Add all N prefixes** - every address range of that ASN
-
-**Without an ASN** - the address with a mask of choice:
-
-| Mask | Description |
+| Choice | What goes into the set |
 | --- | --- |
-| `/32` | A single IP address |
-| `/24` | ~256 addresses - a local subnet |
-| `/16` | ~65K addresses - a network block |
-| `/8` | ~16M addresses - a class A |
+| The address | The address alone, as `/32`, or `/128` for IPv6. This is the default |
+| The announced prefix | The prefix that covers the address, such as `142.250.0.0/15`, when it is known and wider than the address |
+| A broader mask | The address with a mask such as `/24` or `/16`, for IPv6 `/64` or `/48`. The host bits are cleared on saving, so `142.250.120.139/24` is stored as `142.250.120.0/24` |
+| The whole network | The ASN itself, see [ASN](./sets/targets#asn). b4 fetches its prefixes and keeps them up to date daily |
 
-For IPv6 the masks are `/128`, `/64`, `/48` and `/32`. The set is chosen the same way as for a domain.
+Choosing the whole network makes b4 resolve the ASN at once, and the dialog shows its prefix count and approximate number of IPv4 addresses, with the same warning for a large network as the set editor. The choice is unavailable when the selected set already has that ASN.
+
+The set is one of the existing sets or a new set with the name entered; a new set is placed at the top of the list. The confirm button names what is added, such as **Add 142.250.120.139** or **Add AS15169**. Only that one address or that one ASN number is sent to b4, which validates it, adds it to the set and refreshes the firewall rules the set affects, including the MSS clamp and duplication addresses. An ASN without known prefixes is added anyway and fetched in the background. A refused request shows the reason b4 gave.
+
+:::info IPInfo
+With an API token set on the **Settings → Integrations** tab, the dialog also offers ipinfo.io details for the address: hostname, organization and location, with an option to add the hostname to a set's domains. A free token is available from [ipinfo.io](https://ipinfo.io).
+:::
+
+The [DPI Detector](./detector) opens the same dialog from its Hosting and CDN results, with the network of the affected provider already chosen.
 
 ## ASN
 
-The network icon next to a destination address looks up its ASN without opening the dialog: through IPInfo when a token is set, otherwise through RIPE NCC. Addresses of that ASN then carry a label such as **AS15169 Google LLC** (just the number without IPInfo), and the `asn:` filter starts finding them. ASN data is stored in b4 and shared by every browser; the cross on the label removes the ASN.
+The network icon next to a destination address looks up its network without opening the dialog: b4 finds the ASN that announces the address and fetches that network's prefixes into its ASN cache. Addresses of that network then carry a label such as **AS15169 Google LLC**, and the `asn:` filter finds them.
+
+The labels come from b4's ASN cache, `asn_cache.json` next to the configuration, which also holds the prefixes of the ASNs that sets target. Every browser sees the same labels, and an ASN a set targets labels its addresses as well.
+
+The cross on a label deletes that ASN from the cache and removes its labels. An ASN that a set still targets is not deleted: b4 names the sets that use it and the label stays.
 
 ## Pausing and clearing
 

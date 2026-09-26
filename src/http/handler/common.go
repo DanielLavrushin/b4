@@ -1,13 +1,18 @@
 package handler
 
 import (
+	"context"
+	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"os"
 	"path/filepath"
 	"sync/atomic"
+	"time"
 
 	"github.com/daniellavrushin/b4/ai"
 	"github.com/daniellavrushin/b4/config"
@@ -35,18 +40,17 @@ type ConfigRefresher interface {
 }
 
 var (
-	globalPool           *nfq.Pool
-	globalSocks5Server   ConfigRefresher
-	globalMTProtoServer  ConfigRefresher
-	globalMTProtoBridge  ConfigRefresher
-	tablesRefreshFunc    func() error
-	routingSyncFunc      func(*config.Config)
-	mtprotoCFRefreshFunc func(*config.Config)
-	upstreamHealthFunc   func() []DiagUpstream
-	discoveryRuntime     *discovery.Runtime
-	globalWatchdog       *watchdog.Watchdog
-	globalAIManager      *ai.Manager
-	globalTUNEngine      *b4tun.Engine
+	globalPool          *nfq.Pool
+	globalSocks5Server  ConfigRefresher
+	globalMTProtoServer ConfigRefresher
+	globalMTProtoBridge ConfigRefresher
+	tablesRefreshFunc   func() error
+	routingSyncFunc     func(*config.Config)
+	upstreamHealthFunc  func() []DiagUpstream
+	discoveryRuntime    *discovery.Runtime
+	globalWatchdog      *watchdog.Watchdog
+	globalAIManager     *ai.Manager
+	globalTUNEngine     *b4tun.Engine
 )
 
 func SetTUNEngine(e *b4tun.Engine) {
@@ -160,7 +164,6 @@ func NewAPIHandler(cfgPtr *atomic.Pointer[config.Config]) *API {
 		cfgPtr:         cfgPtr,
 		geodataManager: geodataManager,
 		discoveryRT:    discoveryRuntime,
-		asnStore:       config.NewAsnStore(cfg.ConfigPath),
 	}
 }
 func (api *API) RegisterEndpoints(mux *http.ServeMux, cfgPtr *atomic.Pointer[config.Config]) {
@@ -213,10 +216,6 @@ func SetRoutingSyncFunc(fn func(*config.Config)) {
 	routingSyncFunc = fn
 }
 
-func SetMTProtoCFRefreshFunc(fn func(*config.Config)) {
-	mtprotoCFRefreshFunc = fn
-}
-
 func SetUpstreamHealthFunc(fn func() []DiagUpstream) {
 	upstreamHealthFunc = fn
 }
@@ -243,12 +242,60 @@ func checkDiskSpace(dir string, needed int64) error {
 	return nil
 }
 
-func downloadFile(url, destPath string) (int64, error) {
-	resp, err := mirrorClient.Get(url)
+var (
+	downloadStallTimeout = 60 * time.Second
+	downloadMaxDuration  = time.Hour
+	errDownloadStalled   = errors.New("download stalled")
+	errDownloadTooLong   = errors.New("download took too long")
+)
+
+type stallReader struct {
+	r     io.Reader
+	timer *time.Timer
+}
+
+func (s *stallReader) Read(p []byte) (int, error) {
+	n, err := s.r.Read(p)
+	if n > 0 {
+		s.timer.Reset(downloadStallTimeout)
+	}
+	return n, err
+}
+
+func downloadError(ctx context.Context, format string, err error, args ...any) error {
+	switch cause := context.Cause(ctx); {
+	case errors.Is(cause, errDownloadStalled):
+		err = fmt.Errorf("%w: no data received for %s", cause, downloadStallTimeout)
+	case errors.Is(cause, errDownloadTooLong):
+		err = fmt.Errorf("%w: gave up after %s", cause, downloadMaxDuration)
+	}
+	return fmt.Errorf(format+": %w", append(args, err)...)
+}
+
+func downloadFile(parent context.Context, url, destPath string, verify func(path string) error) (int64, error) {
+	ctx, cancel := context.WithCancelCause(parent)
+	defer cancel(nil)
+	ctx, cancelTimeout := context.WithTimeoutCause(ctx, downloadMaxDuration, errDownloadTooLong)
+	defer cancelTimeout()
+	stall := time.AfterFunc(downloadStallTimeout, func() { cancel(errDownloadStalled) })
+	defer stall.Stop()
+	progress := func() { stall.Reset(downloadStallTimeout) }
+	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		ConnectDone:          func(string, string, error) { progress() },
+		TLSHandshakeDone:     func(tls.ConnectionState, error) { progress() },
+		GotFirstResponseByte: progress,
+	})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return 0, fmt.Errorf("failed to fetch %s: %v", url, err)
+		return 0, fmt.Errorf("failed to fetch %s: %w", url, err)
+	}
+	resp, err := downloadClient.Do(req)
+	if err != nil {
+		return 0, downloadError(ctx, "failed to fetch %s", err, url)
 	}
 	defer resp.Body.Close()
+	progress()
 
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("remote server returned %s for %s", resp.Status, url)
@@ -273,10 +320,10 @@ func downloadFile(url, destPath string) (int64, error) {
 		os.Remove(tmpPath)
 	}
 
-	size, err := io.Copy(tmpFile, resp.Body)
+	size, err := io.Copy(tmpFile, &stallReader{r: resp.Body, timer: stall})
 	if err != nil {
 		cleanup()
-		return 0, fmt.Errorf("failed to write data to disk (%d bytes written): %v", size, err)
+		return 0, downloadError(ctx, "failed to download %s (%d bytes written)", err, url, size)
 	}
 
 	if err := tmpFile.Sync(); err != nil {
@@ -287,6 +334,13 @@ func downloadFile(url, destPath string) (int64, error) {
 	if err := tmpFile.Close(); err != nil {
 		os.Remove(tmpPath)
 		return 0, fmt.Errorf("failed to finalize file write: %v", err)
+	}
+
+	if verify != nil {
+		if err := verify(tmpPath); err != nil {
+			os.Remove(tmpPath)
+			return 0, fmt.Errorf("the file downloaded from %s (%d bytes) was rejected: %w", url, size, err)
+		}
 	}
 
 	if err := os.Rename(tmpPath, destPath); err != nil {

@@ -13,6 +13,7 @@ import { CompareIcon, SwapIcon } from "@b4.icons";
 import { B4Dialog } from "@common/B4Dialog";
 import { B4Select } from "@common/B4Select";
 import { B4SetConfig } from "@models/config";
+import { formatAsn } from "@models/asn";
 import {
   colors,
   facets as facetColors,
@@ -66,14 +67,18 @@ const IGNORE_KEYS = new Set([
   "geoip_ips",
   "total_domains",
   "total_ips",
+  "asn_ips",
   "geosite_category_breakdown",
   "geoip_category_breakdown",
+  "asn_breakdown",
+  "asn_unresolved",
 ]);
 
 const LIST_FIELDS: {
   path: string;
   key: keyof B4SetConfig["targets"];
   label: string;
+  format?: (value: string) => string;
 }[] = [
   {
     path: "targets.geosite_categories",
@@ -81,6 +86,7 @@ const LIST_FIELDS: {
     label: "geosite",
   },
   { path: "targets.geoip_categories", key: "geoip_categories", label: "geoip" },
+  { path: "targets.asns", key: "asns", label: "asns", format: formatAsn },
   { path: "targets.sni_domains", key: "sni_domains", label: "manualDomains" },
   { path: "targets.ip", key: "ip", label: "manualIps" },
   { path: "targets.source_devices", key: "source_devices", label: "devices" },
@@ -303,11 +309,13 @@ const buildGroups = (
   const skipTargetRows = new Set([
     t("sets.card.f.geosite"),
     t("sets.card.f.geoip"),
+    t("sets.card.f.asns"),
   ]);
 
   const lists: ListRow[] = LIST_FIELDS.map((field) => {
-    const a = (setA.targets[field.key] as string[] | undefined) ?? [];
-    const b = (setB.targets[field.key] as string[] | undefined) ?? [];
+    const format = field.format ?? ((value: string) => value);
+    const a = ((setA.targets[field.key] as string[] | undefined) ?? []).map(format);
+    const b = ((setB.targets[field.key] as string[] | undefined) ?? []).map(format);
     return {
       label: t(`sets.compare.lists.${field.label}`),
       a,

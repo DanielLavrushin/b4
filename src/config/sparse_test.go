@@ -329,7 +329,7 @@ func TestMarshalSparse_DefaultArraysOmitted(t *testing.T) {
 	setMap := sets[0].(map[string]interface{})
 
 	if targets, ok := setMap["targets"].(map[string]interface{}); ok {
-		arrayFields := []string{"sni_domains", "ip", "geosite_categories", "geoip_categories", "source_devices"}
+		arrayFields := []string{"sni_domains", "ip", "geosite_categories", "geoip_categories", "asns", "source_devices"}
 		for _, field := range arrayFields {
 			if _, exists := targets[field]; exists {
 				t.Errorf("targets.%s should be omitted when default", field)
@@ -341,5 +341,60 @@ func TestMarshalSparse_DefaultArraysOmitted(t *testing.T) {
 		if _, exists := routing["source_interfaces"]; exists {
 			t.Error("routing.source_interfaces should be omitted when default")
 		}
+	}
+}
+
+func TestMarshalSparse_ASNs(t *testing.T) {
+	cfg := NewConfig()
+	empty := NewSetConfig()
+	empty.Id = "empty"
+	nilASNs := NewSetConfig()
+	nilASNs.Id = "nil"
+	nilASNs.Targets.ASNs = nil
+	withASNs := NewSetConfig()
+	withASNs.Id = "with"
+	withASNs.Targets.ASNs = []string{"15169", "13335"}
+	cfg.Sets = []*SetConfig{&empty, &nilASNs, &withASNs}
+
+	data, err := MarshalSparse(&cfg)
+	if err != nil {
+		t.Fatalf("MarshalSparse failed: %v", err)
+	}
+	var raw struct {
+		Sets []map[string]json.RawMessage `json:"sets"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	for i, id := range []string{"empty", "nil"} {
+		var targets map[string]json.RawMessage
+		_ = json.Unmarshal(raw.Sets[i]["targets"], &targets)
+		if _, ok := targets["asns"]; ok {
+			t.Errorf("set %s: an empty ASN list must be omitted", id)
+		}
+	}
+	var targets struct {
+		ASNs []string `json:"asns"`
+	}
+	if err := json.Unmarshal(raw.Sets[2]["targets"], &targets); err != nil {
+		t.Fatal(err)
+	}
+	if len(targets.ASNs) != 2 || targets.ASNs[0] != "15169" || targets.ASNs[1] != "13335" {
+		t.Fatalf("asns = %v", targets.ASNs)
+	}
+
+	path := filepath.Join(t.TempDir(), "b4.json")
+	if err := cfg.SaveToFile(path); err != nil {
+		t.Fatal(err)
+	}
+	loaded := NewConfig()
+	if err := loaded.LoadFromFile(path); err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Sets[0].Targets.ASNs == nil || len(loaded.Sets[0].Targets.ASNs) != 0 {
+		t.Fatalf("a loaded set without asns must default to an empty list, got %#v", loaded.Sets[0].Targets.ASNs)
+	}
+	if len(loaded.Sets[2].Targets.ASNs) != 2 {
+		t.Fatalf("asns did not round-trip: %v", loaded.Sets[2].Targets.ASNs)
 	}
 }

@@ -9,6 +9,7 @@ type HubTargets struct {
 	Domains []string `json:"domains"`
 	GeoSite []string `json:"geosite"`
 	GeoIP   []string `json:"geoip"`
+	ASNs    []string `json:"asns"`
 	IPCount int      `json:"ip_count"`
 }
 

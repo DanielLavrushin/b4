@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	_ "time/tzdata"
 
 	"github.com/daniellavrushin/b4/ai"
+	"github.com/daniellavrushin/b4/asnprefix"
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discovery"
 	"github.com/daniellavrushin/b4/dns"
@@ -133,7 +135,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 	initTimezone()
 	config.ApplyPATH()
 
-	needsSave, _ := cfg.LoadWithMigration(cfg.ConfigPath)
+	needsSave, loadErr := cfg.LoadWithMigration(cfg.ConfigPath)
+	unreadableConfigNotice := keepUnreadableConfig(cfg.ConfigPath, loadErr)
 	if needsSave {
 		cfg.SaveToFile(cfg.ConfigPath)
 	}
@@ -219,17 +222,6 @@ func runB4(cmd *cobra.Command, args []string) error {
 		}
 		return out
 	})
-	go func() {
-		_ = mtproto.RefreshDCs(cfg.System.MTProto.DCFallbackEnabled, cfg.System.MTProto.DCFallbackURL)
-	}()
-	startCFRefresh := func(c *config.Config) {
-		if c.System.MTProto.CFProxyEnabled {
-			mtproto.StartCFProxyRefresh(appCtx, c.System.MTProto.CFProxyURL)
-		}
-	}
-	startCFRefresh(&cfg)
-	handler.SetMTProtoCFRefreshFunc(startCFRefresh)
-
 	refreshTables := func() error {
 		c := cfgPtr.Load()
 		if c.System.Tables.SkipSetup {
@@ -276,6 +268,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 	if err := initLogging(&cfg); err != nil {
 		return fmt.Errorf("logging initialization failed: %w", err)
 	}
+	if unreadableConfigNotice != "" {
+		log.Errorf("%s", unreadableConfigNotice)
+	}
 
 	if clearTables {
 		log.Infof("Clearing iptables rules as requested (--clear-iptables)")
@@ -309,11 +304,12 @@ func runB4(cmd *cobra.Command, args []string) error {
 		metrics.RecordEvent("info", fmt.Sprintf("Web server started on port %d", cfg.System.WebServer.Port))
 	}
 
-	// Load domains
-	_, totalDomains, totalIps, err := cfg.LoadTargets()
-	if err != nil {
-		metrics.RecordEvent("error", fmt.Sprintf("Failed to load domains: %v", err))
-		return fmt.Errorf("failed to load domains: %w", err)
+	config.InitAsnStore(cfg.ConfigPath)
+
+	_, totalDomains, totalIps, targetWarnings := cfg.LoadTargets()
+	for _, warning := range targetWarnings {
+		log.Errorf("%v", warning)
+		metrics.RecordEvent("error", warning.Error())
 	}
 
 	log.Infof("Loaded targets: %d domains, %d IPs across %d sets", totalDomains, totalIps, len(cfg.Sets))
@@ -454,6 +450,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	tproxyResolver.Set(pool.GetMatcher())
 
+	mtproto.StartUpstreamRefresh(appCtx, cfgPtr.Load)
+
 	cidrCtx, cidrCancel := context.WithCancel(appCtx)
 	defer cidrCancel()
 	mtproto.StartTelegramCIDRRefresh(cidrCtx, cfgPtr.Load, func() {
@@ -517,7 +515,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		socks5Server.UpdateConfig(c)
 		mtprotoServer.UpdateConfig(c)
 		mtprotoBridge.UpdateConfig(c)
-		startCFRefresh(c)
+		mtproto.KickUpstreamRefresh()
 		tproxyResolver.Set(pool.GetMatcher())
 		if !c.System.Tables.SkipSetup {
 			tproxyMgr.SyncConfig(c)
@@ -538,6 +536,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 	wd.Start()
 	handler.SetWatchdog(wd)
 
+	geodat.RemoveStaleDownloads(cfg.System.Geo.GeoSitePath, cfg.System.Geo.GeoIpPath)
+
 	// Start internal web server if configured
 	httpServer, apiHandler, err := b4http.StartServer(&cfgPtr, pool)
 	if err != nil {
@@ -549,8 +549,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 	if apiHandler != nil {
 		geoScheduler = geodat.NewScheduler(
 			func() geodat.GeoDatConfig { return cfgPtr.Load().System.Geo },
-			func(dest, siteURL, ipURL string) error {
-				_, _, _, err := apiHandler.RefreshGeodat(dest, siteURL, ipURL)
+			func(ctx context.Context, dest, siteURL, ipURL string) error {
+				_, _, _, err := apiHandler.RefreshGeodat(ctx, dest, siteURL, ipURL)
 				return err
 			},
 			func(ts string) {
@@ -569,6 +569,41 @@ func runB4(cmd *cobra.Command, args []string) error {
 	}
 
 	hubService.Start()
+
+	asnCtx, asnCancel := context.WithCancel(appCtx)
+	defer asnCancel()
+	asnprefix.Start(asnCtx, cfgPtr.Load, func(changed []string) {
+		if asnCtx.Err() != nil {
+			return
+		}
+		if apiHandler != nil {
+			apiHandler.ReloadASNTargets(changed)
+			return
+		}
+		refresh := reloadASNTargetsHeadless(asnCtx, cfgPtr.Load, changed, func(_, c *config.Config) error {
+			if pool != nil {
+				if err := pool.UpdateConfig(c); err != nil {
+					return fmt.Errorf("failed to update pool config: %v", err)
+				}
+			}
+			if tunEngine != nil {
+				tunEngine.UpdateConfig(c)
+			}
+			cfgPtr.Store(c)
+			socks5Server.UpdateConfig(c)
+			tproxyResolver.Set(pool.GetMatcher())
+			if !c.System.Tables.SkipSetup {
+				tproxyMgr.SyncConfig(c)
+				tables.RoutingSyncConfig(c)
+			}
+			return nil
+		})
+		if refresh {
+			if err := refreshTables(); err != nil {
+				log.Errorf("Firewall refresh after the ASN prefix change failed: %v", err)
+			}
+		}
+	})
 
 	log.Infof("B4 is running. Press Ctrl+C to stop")
 	metrics.RecordEvent("info", "B4 is fully operational")
@@ -602,6 +637,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	wd.Stop()
 	hubService.Stop()
+	handler.StopGeodatDownloads()
 	if geoScheduler != nil {
 		geoScheduler.Stop()
 	}
@@ -609,6 +645,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		tablesMonitor.Stop()
 	}
 	cidrCancel()
+	asnCancel()
 	tproxyMgr.Stop()
 
 	// Perform graceful shutdown with timeout
@@ -870,6 +907,61 @@ func initTimezone() {
 	if tzName := os.Getenv("TZ"); tzName != "" {
 		config.ApplyTimezone(tzName)
 	}
+}
+
+func reloadASNTargetsHeadless(ctx context.Context, load func() *config.Config, changed []string, commit func(previous, next *config.Config) error) bool {
+	ids := make(map[string]bool, len(changed))
+	for _, raw := range changed {
+		if id, ok := config.NormalizeASN(raw); ok {
+			ids[id] = true
+		}
+	}
+	if len(ids) == 0 {
+		return false
+	}
+	unlock := config.LockWrites()
+	defer unlock()
+	if ctx.Err() != nil {
+		return false
+	}
+	previous := load()
+	next := previous.Clone()
+	var names []string
+	for _, set := range next.Sets {
+		if set == nil || !slices.ContainsFunc(set.Targets.ASNs, func(raw string) bool {
+			id, ok := config.NormalizeASN(raw)
+			return ok && ids[id]
+		}) {
+			continue
+		}
+		if _, _, err := next.GetTargetsForSet(set); err != nil {
+			log.Warnf("Set '%s' takes its new ASN prefixes without the geo categories that could not be read: %v", set.Name, err)
+		}
+		names = append(names, set.Name)
+	}
+	if len(names) == 0 {
+		return false
+	}
+	if err := commit(previous, next); err != nil {
+		log.Errorf("ASN prefixes changed but the sets using them could not be reloaded: %v", err)
+		return false
+	}
+	log.Infof("Reloaded the ASN targets of %s", strings.Join(names, ", "))
+	return config.FirewallRefreshNeeded(previous, next)
+}
+
+func keepUnreadableConfig(path string, loadErr error) string {
+	if loadErr == nil {
+		return ""
+	}
+	kept, err := config.KeepCorruptCopy(path)
+	switch {
+	case err != nil:
+		return fmt.Sprintf("The config file %s could not be loaded (%v) and no copy of it could be kept (%v); b4 starts without the settings it could not read, and the next save replaces the file", path, loadErr, err)
+	case kept != "":
+		return fmt.Sprintf("The config file %s could not be loaded (%v); a copy was kept as %s, b4 starts without the settings it could not read, and the next save replaces the original", path, loadErr, kept)
+	}
+	return ""
 }
 
 func initLogging(cfg *config.Config) error {

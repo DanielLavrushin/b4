@@ -4,12 +4,11 @@ import (
 	"bufio"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"os"
 	"strings"
-
-	"github.com/daniellavrushin/b4/log"
 )
 
 const (
@@ -146,6 +145,9 @@ func scanEntries(path string, fn func(tag string, body *entryBody) error) error 
 	if err != nil {
 		return err
 	}
+	if fi.Size() == 0 {
+		return &DamageError{Path: path, Err: ErrEmpty}
+	}
 
 	br := bufio.NewReaderSize(f, scanBufferSize)
 	left := fi.Size()
@@ -161,33 +163,36 @@ func scanEntries(path string, fn func(tag string, body *entryBody) error) error 
 		}
 		left--
 		if b != keyEntry {
-			return log.Errorf("unexpected wire tag %02X", b)
+			return &DamageError{Path: path, Err: fmt.Errorf("unexpected wire tag %02X", b)}
 		}
 
 		size, n, err := readUvarint(br)
 		if err != nil {
-			return log.Errorf("failed to read varint: %w", err)
+			return &DamageError{Path: path, Err: fmt.Errorf("failed to read varint: %w", err)}
 		}
 		left -= int64(n)
 		if size > uint64(left) {
-			return log.Errorf("entry size %d exceeds %d bytes left in %s", size, left, path)
+			return &DamageError{Path: path, Err: fmt.Errorf("entry size %d exceeds %d bytes left", size, left)}
 		}
 		left -= int64(size)
 
 		body := &entryBody{br: br, n: int64(size)}
 		tag, err := readCountryCode(body, ccBuf[:])
 		if err != nil {
-			return err
+			return &DamageError{Path: path, Err: err}
 		}
 
 		if err := fn(tag, body); err != nil {
 			if errors.Is(err, errStopScan) {
 				return nil
 			}
+			if isRecordDamage(err) {
+				return &DamageError{Path: path, Err: err}
+			}
 			return err
 		}
 		if err := body.drain(); err != nil {
-			return err
+			return &DamageError{Path: path, Err: err}
 		}
 	}
 }
@@ -195,18 +200,18 @@ func scanEntries(path string, fn func(tag string, body *entryBody) error) error 
 func readCountryCode(body *entryBody, buf []byte) (string, error) {
 	b, err := body.ReadByte()
 	if err != nil || b != keyCountryCode {
-		return "", log.Errorf("bad key")
+		return "", fmt.Errorf("%w: bad entry key", errMalformed)
 	}
 	size, _, err := readUvarint(body)
 	if err != nil {
-		return "", log.Errorf("bad varint")
+		return "", fmt.Errorf("%w: bad country code length", errMalformed)
 	}
 	if size > uint64(len(buf)) || int64(size) > body.remaining() {
-		return "", log.Errorf("string truncated")
+		return "", fmt.Errorf("%w: country code truncated", errMalformed)
 	}
 	p := buf[:size]
 	if err := body.readFull(p); err != nil {
-		return "", log.Errorf("string truncated")
+		return "", fmt.Errorf("%w: country code truncated", errMalformed)
 	}
 	return strings.ToLower(string(p)), nil
 }
@@ -232,7 +237,7 @@ func scanRecords(body *entryBody, scratch *[]byte, fn func(rec []byte) error) er
 			return err
 		}
 		if size > maxRecordLen {
-			return log.Errorf("record size %d exceeds limit %d", size, maxRecordLen)
+			return fmt.Errorf("%w: record size %d exceeds limit %d", errMalformed, size, maxRecordLen)
 		}
 		if int64(size) > body.remaining() {
 			return io.ErrUnexpectedEOF

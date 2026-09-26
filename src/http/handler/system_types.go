@@ -159,14 +159,15 @@ type DiagRuleGroup struct {
 }
 
 type DiagGeodata struct {
-	GeositeConfigured bool   `json:"geosite_configured"`
-	GeositePath       string `json:"geosite_path,omitempty"`
-	GeositeSize       string `json:"geosite_size,omitempty"`
-	GeoipConfigured   bool   `json:"geoip_configured"`
-	GeoipPath         string `json:"geoip_path,omitempty"`
-	GeoipSize         string `json:"geoip_size,omitempty"`
-	TotalDomains      int    `json:"total_domains"`
-	TotalIPs          int    `json:"total_ips"`
+	GeositeConfigured bool     `json:"geosite_configured"`
+	GeositePath       string   `json:"geosite_path,omitempty"`
+	GeositeSize       string   `json:"geosite_size,omitempty"`
+	GeoipConfigured   bool     `json:"geoip_configured"`
+	GeoipPath         string   `json:"geoip_path,omitempty"`
+	GeoipSize         string   `json:"geoip_size,omitempty"`
+	TotalDomains      int      `json:"total_domains"`
+	TotalIPs          int      `json:"total_ips"`
+	ASN               *DiagASN `json:"asn,omitempty"`
 }
 
 type DiagKernel struct {

@@ -21,6 +21,44 @@ export function describeApiError(error: unknown): string {
   return String(error);
 }
 
+function apiErrorParams(
+  error: ApiError,
+  extra?: Record<string, unknown>,
+): Record<string, unknown> {
+  const body =
+    error.body && typeof error.body === "object"
+      ? (error.body as Record<string, unknown>)
+      : {};
+  const params: Record<string, unknown> = {
+    detail: typeof body.error === "string" ? body.error : error.message,
+  };
+  if (Array.isArray(body.used_by)) {
+    params.sets = body.used_by
+      .filter((name): name is string => typeof name === "string")
+      .join(", ");
+  }
+  return { ...params, ...extra };
+}
+
+export function localizeApiError(
+  error: unknown,
+  extra?: Record<string, unknown>,
+): string {
+  if (error instanceof ApiError) {
+    if (error.fields && error.fields.length > 0) {
+      return error.fields.map((f) => localizeFieldError(f)).join("; ");
+    }
+    if (error.code) {
+      const key = `errors.${error.code}`;
+      if (i18n.exists(key)) {
+        const out: unknown = i18n.t(key, apiErrorParams(error, extra));
+        if (typeof out === "string") return out;
+      }
+    }
+  }
+  return describeApiError(error);
+}
+
 interface HubErrorBody {
   code?: string;
   retry_after?: number;

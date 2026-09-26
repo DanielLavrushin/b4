@@ -144,6 +144,14 @@ Devices are added to the `b4users` address list:
 /ip firewall address-list add list=b4users address=192.168.100.51
 ```
 
+## Step 8: NAT Masquerade
+
+In the web interface (`http://192.168.210.10:7000`), **NAT Masquerade** is turned on under [Settings -> Core -> Firewall](../settings/core#firewall). The masquerade interface stays at its default, all interfaces.
+
+The routing mark from Step 4 applies only to packets arriving from the LAN, so RouterOS sends the server's replies straight to the client and they never pass through the container. Conntrack inside the container sees the client's SYN, never sees the answer to it, and marks every later packet of the connection as invalid. b4 picks the first packets of a connection by the conntrack packet count, so without masquerade it never receives the TLS ClientHello, and the strategies that act on it do not run.
+
+With masquerade on, the container rewrites the source of forwarded traffic to its own address, 192.168.210.10. The replies return to the container, which hands them back to the client through RouterOS. On the leg from the container to the internet, RouterOS sees 192.168.210.10 as the source of every connection, so rules on that leg cannot tell the clients apart.
+
 ## Web interface
 
 After the container starts: `http://192.168.210.10:7000`
@@ -169,6 +177,12 @@ Logs are lost on reboot, but storage lasts longer.
 
 The configuration is stored on the mount point and is preserved when the container is recreated.
 
+## Sending a set to another container
+
+A set can hand its traffic to a SOCKS5 proxy in another container on the same bridge, such as Xray, sing-box or mihomo with a SOCKS5 inbound, instead of letting it leave through the main route of RouterOS. The set's **Routing mode** is *Upstream SOCKS5 proxy*, with the other container's address (for example 192.168.210.20) and its SOCKS5 port as the upstream. RouterOS needs no extra rules for this: b4's connection to the proxy stays inside `bridge-docker`, and only the proxy's own connections go out through RouterOS.
+
+In this mode b4 applies no DPI strategy to the set's traffic; the proxy reaches the destination. [Upstream SOCKS5 proxy](/docs/sets/routing#upstream-socks5-proxy) describes the diversion, UDP handling and the kernel modules it needs. Several sets can point at different proxies.
+
 ## Troubleshooting
 
 **Container will not start:**
@@ -187,3 +201,7 @@ The configuration is stored on the mount point and is preserved when the contain
 1. The list: `/ip firewall address-list print where list=b4users`
 2. Mangle: `/ip firewall mangle print`
 3. The route: `/ip route print where routing-table=to_b4`
+
+**Traffic reaches the container but the bypass has no effect:**
+
+1. NAT Masquerade has to be on in b4, see [Step 8](#step-8-nat-masquerade)

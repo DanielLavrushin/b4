@@ -20,6 +20,8 @@ const (
 	nftNatChainName = "b4_masq"
 
 	nftBaseChainPriority = -150
+
+	nftIntervalSetFlags = "flags interval ; auto-merge ;"
 )
 
 type NFTablesManager struct {
@@ -114,6 +116,12 @@ func (n *NFTablesManager) createSet(name, addrType, extraFlags string) error {
 }
 
 func (n *NFTablesManager) runNftScript(script string) (string, error) {
+	return runNftStdin(script)
+}
+
+var runNftStdin = runNftStdinExec
+
+func runNftStdinExec(script string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), iptCommandTimeout)
 	defer cancel()
 
@@ -349,33 +357,8 @@ func (n *NFTablesManager) apply() error {
 		tcpPortExpr = "{ " + strings.Join(tcpPorts, ", ") + " }"
 	}
 
-	// Duplication rules: queue ALL TCP packets on configured ports to specific IPs (no connbytes limit).
-	// Must come before the generic connbytes-limited rules.
-	dupIPv4, dupIPv6 := cfg.CollectDuplicateIPs()
-	queueAction := strings.Fields(n.buildNFQueueAction())
-	if len(dupIPv4) > 0 && cfg.Queue.IPv4Enabled {
-		if err := n.createSet("b4_dup_v4", "ipv4_addr", "flags interval ;"); err != nil {
-			return err
-		}
-		if err := n.addSetElements("b4_dup_v4", dupIPv4); err != nil {
-			return err
-		}
-		args := append([]string{"meta", "nfproto", "ipv4", "ip", "daddr", "@b4_dup_v4", "tcp", "dport", tcpPortExpr, "counter"}, queueAction...)
-		if err := n.addRule(nftChainName, args...); err != nil {
-			return err
-		}
-	}
-	if len(dupIPv6) > 0 && cfg.Queue.IPv6Enabled {
-		if err := n.createSet("b4_dup_v6", "ipv6_addr", "flags interval ;"); err != nil {
-			return err
-		}
-		if err := n.addSetElements("b4_dup_v6", dupIPv6); err != nil {
-			return err
-		}
-		args := append([]string{"meta", "nfproto", "ipv6", "ip6", "daddr", "@b4_dup_v6", "tcp", "dport", tcpPortExpr, "counter"}, queueAction...)
-		if err := n.addRule(nftChainName, args...); err != nil {
-			return err
-		}
+	if err := n.addDuplicateQueueRules(tcpPortExpr); err != nil {
+		return err
 	}
 
 	tcpLimit := fmt.Sprintf("%d", cfg.Queue.TCPConnBytesLimit+1)
@@ -444,6 +427,37 @@ func (n *NFTablesManager) apply() error {
 		log.Tracef("Current nftables rules:\n%s", out)
 	}
 
+	return nil
+}
+
+func (n *NFTablesManager) addDuplicateQueueRules(tcpPortExpr string) error {
+	cfg := n.cfg
+	dupIPv4, dupIPv6 := cfg.CollectDuplicateIPs()
+	queueAction := strings.Fields(n.buildNFQueueAction())
+	if len(dupIPv4) > 0 && cfg.Queue.IPv4Enabled {
+		if err := n.createSet("b4_dup_v4", "ipv4_addr", nftIntervalSetFlags); err != nil {
+			return err
+		}
+		if err := n.addSetElements("b4_dup_v4", dupIPv4); err != nil {
+			return err
+		}
+		args := append([]string{"meta", "nfproto", "ipv4", "ip", "daddr", "@b4_dup_v4", "tcp", "dport", tcpPortExpr, "counter"}, queueAction...)
+		if err := n.addRule(nftChainName, args...); err != nil {
+			return err
+		}
+	}
+	if len(dupIPv6) > 0 && cfg.Queue.IPv6Enabled {
+		if err := n.createSet("b4_dup_v6", "ipv6_addr", nftIntervalSetFlags); err != nil {
+			return err
+		}
+		if err := n.addSetElements("b4_dup_v6", dupIPv6); err != nil {
+			return err
+		}
+		args := append([]string{"meta", "nfproto", "ipv6", "ip6", "daddr", "@b4_dup_v6", "tcp", "dport", tcpPortExpr, "counter"}, queueAction...)
+		if err := n.addRule(nftChainName, args...); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -657,7 +671,7 @@ func (n *NFTablesManager) ApplyMSSClamp() error {
 		emitV6 := hasV6 && setHasSourceForFamily(e.Sources, true)
 
 		if emitV4 {
-			if err := n.createSet(setName4, "ipv4_addr", "flags interval ; auto-merge ;"); err != nil {
+			if err := n.createSet(setName4, "ipv4_addr", nftIntervalSetFlags); err != nil {
 				return fmt.Errorf("failed to create set MSS ipv4 set: %w", err)
 			}
 			if err := n.addSetElements(setName4, e.IPv4); err != nil {
@@ -665,7 +679,7 @@ func (n *NFTablesManager) ApplyMSSClamp() error {
 			}
 		}
 		if emitV6 {
-			if err := n.createSet(setName6, "ipv6_addr", "flags interval ; auto-merge ;"); err != nil {
+			if err := n.createSet(setName6, "ipv6_addr", nftIntervalSetFlags); err != nil {
 				return fmt.Errorf("failed to create set MSS ipv6 set: %w", err)
 			}
 			if err := n.addSetElements(setName6, e.IPv6); err != nil {
@@ -747,7 +761,11 @@ func (n *NFTablesManager) ApplyMSSClamp() error {
 				return err
 			}
 		}
-		if !hasV4 && !hasV6 && len(e.Sources) > 0 {
+		if mssClampUnresolved(cfg, e) {
+			log.Infof("NFTABLES: per-set MSS clamp for set %q skipped: its IP targets resolve to no addresses yet", e.SetID)
+			continue
+		}
+		if mssClampMACOnly(cfg, e) {
 			if cfg.Queue.IPv4Enabled {
 				if err := applyFamily("ipv4", "", "", false); err != nil {
 					return err

@@ -300,8 +300,17 @@ func TestIptDelElementsUsesRestoreThenFallsBack(t *testing.T) {
 }
 
 func TestNftDelElementsTargetsTheIntervalSetAndFallsBackPerElement(t *testing.T) {
-	origRun := run
-	t.Cleanup(func() { run = origRun })
+	origRun, origStdin := run, runNftStdin
+	t.Cleanup(func() {
+		run = origRun
+		runNftStdin = origStdin
+	})
+
+	var scripts []string
+	runNftStdin = func(script string) (string, error) {
+		scripts = append(scripts, script)
+		return "Error: Could not process rule: No such file or directory", errors.New("exit status 1")
+	}
 
 	var calls []string
 	run = func(args ...string) (string, error) {
@@ -321,6 +330,9 @@ func TestNftDelElementsTargetsTheIntervalSetAndFallsBackPerElement(t *testing.T)
 	}
 	if !reflect.DeepEqual(calls, want) {
 		t.Errorf("calls = %v, want %v", calls, want)
+	}
+	if !reflect.DeepEqual(scripts, []string{"delete element inet b4_route b4r_x_v4 { 0.0.0.0/1, 128.0.0.0/1 }\n"}) {
+		t.Errorf("the one-script delete must be tried first, got %q", scripts)
 	}
 	for _, c := range calls {
 		if strings.Contains(c, "_d") {

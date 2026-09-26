@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/hub"
 	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4/sni"
@@ -36,15 +37,18 @@ const hubCategoryMatchLimit = 25000
 type geositeCountCache struct {
 	mu     sync.Mutex
 	path   string
+	stamp  string
 	counts map[string]int
 }
 
 var hubCategoryCounts geositeCountCache
 
 func (api *API) hubCategoryCount(path, category string) (int, bool) {
+	stamp := geodat.FileStamp(path)
 	hubCategoryCounts.mu.Lock()
-	if hubCategoryCounts.path != path {
+	if hubCategoryCounts.path != path || hubCategoryCounts.stamp != stamp {
 		hubCategoryCounts.path = path
+		hubCategoryCounts.stamp = stamp
 		hubCategoryCounts.counts = map[string]int{}
 	}
 	if n, ok := hubCategoryCounts.counts[category]; ok {
@@ -243,6 +247,7 @@ func hubSetView(res hub.Result, applied map[string]*HubApplied) HubSet {
 			Domains: nonNilStrings(hub.TargetList(cs.Set, "sni_domains")),
 			GeoSite: nonNilStrings(hub.TargetList(cs.Set, "geosite_categories")),
 			GeoIP:   nonNilStrings(hub.TargetList(cs.Set, "geoip_categories")),
+			ASNs:    nonNilStrings(hub.TargetList(cs.Set, "asns")),
 			IPCount: len(hub.TargetList(cs.Set, "ip")),
 		},
 		Display: res.Display,

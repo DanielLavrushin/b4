@@ -13,6 +13,7 @@ import {
   FakingPayloadType,
   RoutingMode,
 } from "@models/config";
+import { formatAsn } from "@models/asn";
 import { SetStats } from "./Manager";
 
 export type FacetKey =
@@ -133,6 +134,18 @@ const targetRows = (
     rows.push({
       label: t(F("geoip")),
       value: targets.geoip_categories.join(", "),
+    });
+  }
+  const asns = targets.asns ?? [];
+  if (asns.length > 0) {
+    const unresolved = stats?.asn_unresolved?.length ?? 0;
+    rows.push({
+      label: t(F("asns")),
+      value: asns.map(formatAsn).join(", "),
+      muted:
+        unresolved > 0
+          ? `${unresolved} ${t(F("asnPending"))}`
+          : undefined,
     });
   }
 
@@ -398,6 +411,7 @@ const escalateRows = (
 export const hasTargets = (set: B4SetConfig) =>
   set.targets.geosite_categories.length > 0 ||
   set.targets.geoip_categories.length > 0 ||
+  (set.targets.asns?.length ?? 0) > 0 ||
   set.targets.sni_domains.length > 0 ||
   set.targets.ip.length > 0;
 
@@ -478,6 +492,7 @@ export const buildTargetSummary = (
   const named = [
     ...targets.geosite_categories,
     ...targets.geoip_categories,
+    ...(targets.asns ?? []).map(formatAsn),
     ...targets.sni_domains,
     ...targets.ip,
   ];

@@ -17,6 +17,7 @@ export function TargetsSummary({ entry }: { entry: EntryView }) {
   if (entry.targets.ips.length) parts.push(t("entry.ips", { count: entry.targets.ips.length }));
   if (entry.targets.geosite.length) parts.push(t("entry.geosite", { count: entry.targets.geosite.length }));
   if (entry.targets.geoip.length) parts.push(t("entry.geoip", { count: entry.targets.geoip.length }));
+  if (entry.targets.asns.length) parts.push(t("entry.asns", { count: entry.targets.asns.length }));
   return (
     <Typography variant="body2" component="span" title={entry.targets.summary} sx={{ color: colors.text.secondary }}>
       {entry.targets.summary}

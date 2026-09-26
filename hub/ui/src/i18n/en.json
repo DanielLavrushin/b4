@@ -167,6 +167,7 @@
       "private_addresses": "Some addresses look private",
       "too_many_domains": "Too many domains for a shared set",
       "too_many_ips": "Too many addresses for a shared set",
+      "too_many_asns": "Too many ASNs for a shared set",
       "pins": "The set pins domains to fixed addresses",
       "pin_not_targeted": "A pin names a domain the set does not target",
       "pin_private_address": "A pin points at a private address",
@@ -227,6 +228,7 @@
     "ips": "{{count}} addresses",
     "geosite": "{{count}} geosite categories",
     "geoip": "{{count}} geoip categories",
+    "asns": "{{count}} ASNs",
     "diff": {
       "title": "Changes against v{{version}}",
       "none": "The projection is identical to the listed version.",
