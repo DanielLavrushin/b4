@@ -303,6 +303,21 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
             t("settings.SystemInfo.totalIPs"),
             data.geodata.total_ips.toLocaleString(),
           )}
+          {data.geodata.asn &&
+            row(
+              t("settings.SystemInfo.asnCache"),
+              t("settings.SystemInfo.asnCacheValue", {
+                cached: data.geodata.asn.cached,
+                used: data.geodata.asn.referenced?.length ?? 0,
+              }),
+            )}
+          {(data.geodata.asn?.unresolved?.length ?? 0) > 0 &&
+            row(
+              t("settings.SystemInfo.asnUnresolved"),
+              (data.geodata.asn?.unresolved ?? [])
+                .map((id) => `AS${id}`)
+                .join(", "),
+            )}
 
           {sectionTitle(t("settings.SystemInfo.engine"))}
           {row(

@@ -121,7 +121,7 @@ The address families are bound when the service starts, so a change here needs a
 
 Each set is one object in the `sets` array, carrying its whole configuration. Its keys line up with the tabs of the set editor:
 
-- `targets` - domains, IPs, GeoSite and GeoIP categories, source devices
+- `targets` - domains, IPs, GeoSite and GeoIP categories, ASNs, source devices
 - `tcp` - general TCP settings, desync, window, incoming, RST protection
 - `fragmentation` - the fragmentation method and its parameters
 - `faking` - SNI faking, SYN fakes, mutation

@@ -13,7 +13,7 @@ A set is published from the set editor. The **Share with other b4 users** sectio
 
 **Prepare shared set** builds the shared set from the editor state and shows:
 
-- **Check before sharing**: domains or addresses that look private to this network, pins that everyone importing the set will use, a DoH resolver outside the public list, a payload file that is missing or unusable, a block set that matches by pattern, more domains or addresses than a shared set carries.
+- **Check before sharing**: domains or addresses that look private to this network, pins that everyone importing the set will use, a DoH resolver outside the public list, a payload file that is missing or unusable, a block set that matches by pattern, more domains, addresses or ASNs than a shared set carries.
 - **Left out of the shared set**: every setting that was dropped and why. Routing to a proxy or an interface, device filters, escalation and the DNS server address are always dropped; the full list is under [What leaves the router](../sets/sharing.md#what-leaves-the-router).
 - The b4 version the set needs and the number of payload files included.
 - The JSON, with **Copy** and **Download**.

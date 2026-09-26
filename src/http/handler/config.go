@@ -155,56 +155,15 @@ func (a *API) getConfig(w http.ResponseWriter) {
 	totalIPs := 0
 
 	for i, set := range cfg.Sets {
-		// Count manual domains and IPs
-		manualDomains := len(set.Targets.SNIDomains)
-		manualIPs := len(set.Targets.IPs)
-
-		// Get geosite category counts
-		geositeCounts := make(map[string]int)
-		geositeTotalDomains := 0
-		if len(set.Targets.GeoSiteCategories) > 0 && a.geodataManager.IsGeositeConfigured() {
-			counts, err := a.geodataManager.GetGeositeCategoryCounts(set.Targets.GeoSiteCategories)
-			if err == nil {
-				geositeCounts = counts
-				for _, count := range counts {
-					geositeTotalDomains += count
-				}
-			}
-		}
-
-		// Get geoip category counts
-		geoipCounts := make(map[string]int)
-		geoipTotalIPs := 0
-		if len(set.Targets.GeoIpCategories) > 0 && a.geodataManager.IsGeoipConfigured() {
-			counts, err := a.geodataManager.GetGeoipCategoryCounts(set.Targets.GeoIpCategories)
-			if err == nil {
-				geoipCounts = counts
-				for _, count := range counts {
-					geoipTotalIPs += count
-				}
-			}
-		}
-
-		setTotalDomains := manualDomains + geositeTotalDomains
-		setTotalIPs := manualIPs + geoipTotalIPs
-
-		totalDomains += setTotalDomains
-		totalIPs += setTotalIPs
+		stats := a.setStatistics(set)
+		totalDomains += stats.TotalDomains
+		totalIPs += stats.TotalIPs
 
 		setsWithStats[i] = ConfigSet{
 			SetWithStats: SetWithStats{
 				SetConfig: set,
 				HubState:  hubStateOf(cfg, set),
-				Stats: SetStatistics{
-					ManualDomains:            manualDomains,
-					ManualIPs:                manualIPs,
-					GeositeDomains:           geositeTotalDomains,
-					GeoipIPs:                 geoipTotalIPs,
-					TotalDomains:             setTotalDomains,
-					TotalIPs:                 setTotalIPs,
-					GeositeCategoryBreakdown: geositeCounts,
-					GeoipCategoryBreakdown:   geoipCounts,
-				},
+				Stats:     stats,
 			},
 			Revision: watchdog.SetRevision(set),
 		}
@@ -244,6 +203,39 @@ func (a *API) getConfig(w http.ResponseWriter) {
 	}
 	enc := json.NewEncoder(w)
 	_ = enc.Encode(response)
+}
+
+func (a *API) setStatistics(set *config.SetConfig) SetStatistics {
+	stats := SetStatistics{
+		ManualDomains:            len(set.Targets.SNIDomains),
+		ManualIPs:                len(set.Targets.IPs),
+		GeositeCategoryBreakdown: make(map[string]int),
+		GeoipCategoryBreakdown:   make(map[string]int),
+	}
+
+	if len(set.Targets.GeoSiteCategories) > 0 && a.geodataManager.IsGeositeConfigured() {
+		if counts, err := a.geodataManager.GetGeositeCategoryCounts(set.Targets.GeoSiteCategories); err == nil {
+			stats.GeositeCategoryBreakdown = counts
+			for _, count := range counts {
+				stats.GeositeDomains += count
+			}
+		}
+	}
+
+	if len(set.Targets.GeoIpCategories) > 0 && a.geodataManager.IsGeoipConfigured() {
+		if counts, err := a.geodataManager.GetGeoipCategoryCounts(set.Targets.GeoIpCategories); err == nil {
+			stats.GeoipCategoryBreakdown = counts
+			for _, count := range counts {
+				stats.GeoipIPs += count
+			}
+		}
+	}
+
+	stats.ASNIPs, stats.ASNBreakdown, stats.ASNUnresolved = asnTargetStats(set.Targets)
+
+	stats.TotalDomains = stats.ManualDomains + stats.GeositeDomains
+	stats.TotalIPs = stats.ManualIPs + stats.GeoipIPs + stats.ASNIPs
+	return stats
 }
 
 func getSystemInterfaces() ([]string, error) {
@@ -365,55 +357,15 @@ func (a *API) updateConfig(w http.ResponseWriter, r *http.Request) {
 
 	for i, set := range newConfig.Sets {
 		a.loadTargetsForSetCached(set)
-
-		manualDomains := len(set.Targets.SNIDomains)
-		manualIPs := len(set.Targets.IPs)
-
-		// Get geosite counts
-		geositeCounts := make(map[string]int)
-		geositeTotalDomains := 0
-		if len(set.Targets.GeoSiteCategories) > 0 {
-			counts, err := a.geodataManager.GetGeositeCategoryCounts(set.Targets.GeoSiteCategories)
-			if err == nil {
-				geositeCounts = counts
-				for _, count := range counts {
-					geositeTotalDomains += count
-				}
-			}
-		}
-
-		// Get geoip counts
-		geoipCounts := make(map[string]int)
-		geoipTotalIPs := 0
-		if len(set.Targets.GeoIpCategories) > 0 {
-			counts, err := a.geodataManager.GetGeoipCategoryCounts(set.Targets.GeoIpCategories)
-			if err == nil {
-				geoipCounts = counts
-				for _, count := range counts {
-					geoipTotalIPs += count
-				}
-			}
-		}
-
-		setTotalDomains := manualDomains + geositeTotalDomains
-		setTotalIPs := manualIPs + geoipTotalIPs
-
-		allDomainsCount += setTotalDomains
-		allIpsCount += setTotalIPs
+		stats := a.setStatistics(set)
+		allDomainsCount += stats.TotalDomains
+		allIpsCount += stats.TotalIPs
 
 		setsWithStats[i] = ConfigSet{
 			SetWithStats: SetWithStats{
 				SetConfig: set,
 				HubState:  hubStateOf(&newConfig, set),
-				Stats: SetStatistics{
-					ManualDomains:            manualDomains,
-					ManualIPs:                manualIPs,
-					GeositeDomains:           geositeTotalDomains,
-					TotalDomains:             setTotalDomains,
-					TotalIPs:                 setTotalIPs,
-					GeositeCategoryBreakdown: geositeCounts,
-					GeoipCategoryBreakdown:   geoipCounts,
-				},
+				Stats:     stats,
 			},
 		}
 	}
@@ -596,6 +548,9 @@ func (a *API) pushConfigLocked(newCfg *config.Config) error {
 	}
 
 	a.cfgPtr.Store(newCfg)
+	if setsChanged && configHasUnresolvedASNs(newCfg) {
+		config.RequestASNRefresh()
+	}
 	if routingSyncFunc != nil {
 		routingSyncFunc(newCfg)
 	}

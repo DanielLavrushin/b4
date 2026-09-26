@@ -20,7 +20,7 @@ A shared set is built from an allow-list of settings. Anything not on it is left
 Carried:
 
 - the TCP, UDP, fragmentation and fake packet settings, including port filters;
-- the targets: domains, addresses, geosite and geoip category names, the TLS and IP version filters;
+- the targets: domains, addresses, geosite and geoip category names, ASNs, the TLS and IP version filters;
 - the DNS redirect: whether it is on, the DoH URL, strict mode, and pins for domains the set targets; a DoH URL whose host is not a known public resolver is reported when the set is prepared, and the import drops the whole DNS redirect rather than send every query for the set's domains to an unknown resolver;
 - the MSS clamp;
 - routing in block mode, since a set that blackholes ads or trackers carries nothing private.
@@ -36,6 +36,8 @@ Left out:
 - the set's id and its enabled state.
 
 A DNS pin survives only when the pinned domain is one the set targets and every address in it is public. A pin for another domain, or one pointing at a private address, is dropped and reported.
+
+An [ASN](./targets#asn) travels as its number only, never as the prefixes the sharing router holds; the importing b4 fetches the prefixes itself. A shared set that carries ASNs needs b4 1.84.0 or newer, and more than 50 ASNs are reported when the set is prepared.
 
 :::warning
 Domains that look private to the sharing network are reported, not removed: a single label such as `nas`, an address literal, or a suffix such as `.lan`, `.local` or `.home`. They mean nothing on another network and are worth deleting before the set is passed on.
@@ -57,6 +59,7 @@ The import runs on the router, not in the browser, and reports what it had to ch
 - values this b4 does not accept, such as a mode name from a newer release, which are replaced by defaults and named;
 - each payload file's hash against its contents, and whether every payload the set refers to is present;
 - geosite and geoip categories the set names that are missing from the databases on this router, or the absence of a database altogether;
+- ASNs whose prefixes this router has not fetched yet, which are named; b4 fetches them in the background once the set is saved, and until then they match nothing;
 - pins, to which the same rule applies as when the set was prepared: a pin for a domain the set does not target or one pointing at a private address is dropped and named, and the surviving pins are listed so they can be checked in the **DNS** tab before saving;
 - a DoH URL whose host is not a known public resolver, which drops the DNS redirect and names the host.
 

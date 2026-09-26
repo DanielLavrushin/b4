@@ -1,14 +1,29 @@
 import { useState } from "react";
-import { Box, Button, Collapse, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@mui/material";
+import { Box, Button, Collapse, Stack, Table, TableBody, TableCell, TableHead, TableRow, Tooltip, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
+import { AddIcon } from "@b4.icons";
 import { colors } from "@design";
+import { formatAsn, normalizeAsn } from "@models/asn";
 import type { HostingGroup, HostingResult } from "@models/detector";
 import { StatusChip, hostingColor } from "./statuses";
+
+export interface HostingAsnAction {
+  asn: string;
+  ip: string;
+  provider: string;
+}
 
 interface HostingTableProps {
   result: HostingResult;
   onCopySNI: (sni: string) => void;
+  onAddAsn?: (action: HostingAsnAction) => void;
 }
+
+const asnAction = (g: HostingGroup): HostingAsnAction | null => {
+  const asn = normalizeAsn(g.asn);
+  const ip = (g.targets ?? []).find((tr) => tr.target.ip)?.target.ip;
+  return asn && ip ? { asn, ip, provider: g.provider } : null;
+};
 
 export function hostingLead(result: HostingResult, dropped: string[], t: (k: string, o?: Record<string, unknown>) => string): string {
   if (result.dropped_groups === 0) return t("detector.hosting.leadClean", { total: result.total });
@@ -20,7 +35,7 @@ const dropRange = (g: HostingGroup) => {
   return g.drop_min_kb === g.drop_max_kb ? `${g.drop_min_kb} KB` : `${g.drop_min_kb}-${g.drop_max_kb} KB`;
 };
 
-export const HostingTable = ({ result, onCopySNI }: HostingTableProps) => {
+export const HostingTable = ({ result, onCopySNI, onAddAsn }: HostingTableProps) => {
   const { t } = useTranslation();
   const [open, setOpen] = useState<string | null>(null);
   const droppedNames = (result.groups ?? []).filter((g) => g.status === "dropped" || g.status === "mixed").map((g) => g.provider);
@@ -47,6 +62,7 @@ export const HostingTable = ({ result, onCopySNI }: HostingTableProps) => {
               const key = `${g.asn}-${g.provider}`;
               const expanded = open === key;
               const done = (g.targets ?? []).filter((x) => x.done).length;
+              const addAction = onAddAsn ? asnAction(g) : null;
               return [
                 <TableRow key={key} sx={{ "& td": { borderBottom: expanded ? 0 : undefined } }}>
                   <TableCell sx={{ fontWeight: 600, whiteSpace: "nowrap" }}>
@@ -81,6 +97,13 @@ export const HostingTable = ({ result, onCopySNI }: HostingTableProps) => {
                         : ""}
                   </TableCell>
                   <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
+                    {addAction && onAddAsn && (
+                      <Tooltip title={t("detector.hosting.addAsnTooltip", { asn: formatAsn(addAction.asn) })}>
+                        <Button size="small" startIcon={<AddIcon />} onClick={() => onAddAsn(addAction)} sx={{ mr: 0.5 }}>
+                          {t("detector.hosting.addAsn", { asn: formatAsn(addAction.asn) })}
+                        </Button>
+                      </Tooltip>
+                    )}
                     <Button size="small" onClick={() => setOpen(expanded ? null : key)}>
                       {expanded ? t("detector.hosting.hide") : t("detector.hosting.details")}
                     </Button>

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -35,18 +36,15 @@ func (c *Config) SaveToFile(path string) error {
 		}
 	}
 
-	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, ConfigFileMode)
-	if err != nil {
-		return log.Errorf("failed to create config file: %v", err)
+	if current, err := os.ReadFile(path); err == nil && bytes.Equal(current, data) {
+		warnRestrictFailure(path, restrictFileMode(path))
+		return nil
 	}
-	defer file.Close()
 
-	warnRestrictFailure(path, restrictFileMode(path))
-
-	_, err = file.Write(data)
-	if err != nil {
+	if err := writeFileAtomic(path, data, ConfigFileMode); err != nil {
 		return log.Errorf("failed to write config file: %v", err)
 	}
+	warnRestrictFailure(path, restrictFileMode(path))
 	return nil
 }
 
@@ -236,6 +234,15 @@ func (c *Config) GetTargetsForSetWithCache(set *SetConfig, geositeDomains, geoip
 		}
 	}
 
+	if len(set.Targets.ASNs) > 0 {
+		asnPrefixes, unresolved := ExpandASNs(set.Targets.ASNs, set.Targets.IPVersion)
+		ips = append(ips, asnPrefixes...)
+		if len(unresolved) > 0 {
+			log.Debugf("Set '%s': ASNs %v have no known prefixes yet, requesting a refresh", set.Name, unresolved)
+			RequestASNRefresh()
+		}
+	}
+
 	if len(set.Targets.IPs) > 0 {
 		ips = append(ips, set.Targets.IPs...)
 	}
@@ -334,33 +341,54 @@ func (set *SetConfig) ResetToDefaults() {
 }
 
 func (t *TargetsConfig) AppendIP(ip []string) error {
-	for _, newIP := range ip {
-		exists := false
-		for _, existingIP := range t.IPs {
-			if existingIP == newIP {
-				exists = true
-				break
-			}
-		}
-		if !exists {
-			t.IPs = append(t.IPs, newIP)
-		}
-	}
-
-	for _, newIP := range ip {
-		exists := false
-		for _, existingIP := range t.IpsToMatch {
-			if existingIP == newIP {
-				exists = true
-				break
-			}
-		}
-		if !exists {
-			t.IpsToMatch = append(t.IpsToMatch, newIP)
-		}
-	}
-
+	t.IPs = appendMissing(t.IPs, ip)
+	t.IpsToMatch = appendMissing(t.IpsToMatch, ip)
 	return nil
+}
+
+func (t *TargetsConfig) AppendASNs(raw []string) (added, invalid []string) {
+	have := make(map[string]struct{}, len(t.ASNs)+len(raw))
+	for _, existing := range t.ASNs {
+		if id, ok := NormalizeASN(existing); ok {
+			have[id] = struct{}{}
+		}
+	}
+	for _, entry := range raw {
+		id, ok := NormalizeASN(entry)
+		if !ok {
+			invalid = append(invalid, entry)
+			continue
+		}
+		if _, dup := have[id]; dup {
+			continue
+		}
+		have[id] = struct{}{}
+		t.ASNs = append(t.ASNs, id)
+		added = append(added, id)
+	}
+	if len(added) > 0 {
+		prefixes, _ := ExpandASNs(added, t.IPVersion)
+		t.IpsToMatch = appendMissing(t.IpsToMatch, prefixes)
+	}
+	return added, invalid
+}
+
+func appendMissing(dst, add []string) []string {
+	if len(add) == 0 {
+		return dst
+	}
+	seen := make(map[string]struct{}, len(dst)+len(add))
+	for _, s := range dst {
+		seen[s] = struct{}{}
+	}
+	for _, s := range add {
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		dst = append(dst, s)
+	}
+	return dst
 }
 func (t *TargetsConfig) AppendSNI(sni string) error {
 
@@ -528,6 +556,14 @@ func (set *SetConfig) MatchesIPVersion(version uint8) bool {
 
 func (set *SetConfig) HasIPOrDomainTargets() bool {
 	return len(set.Targets.IpsToMatch) > 0 || len(set.Targets.DomainsToMatch) > 0
+}
+
+func (set *SetConfig) DeclaresDestinationTargets() bool {
+	if set.HasIPOrDomainTargets() {
+		return true
+	}
+	t := &set.Targets
+	return len(t.SNIDomains) > 0 || len(t.IPs) > 0 || len(t.GeoSiteCategories) > 0 || len(t.GeoIpCategories) > 0 || len(t.ASNs) > 0
 }
 
 func (set *SetConfig) RoutingDivertsPackets() bool {
@@ -1136,5 +1172,25 @@ func FirewallRefreshNeeded(oldCfg, newCfg *Config) bool {
 	if !oldCfg.System.Tables.Masquerade.Equal(newCfg.System.Tables.Masquerade) {
 		return true
 	}
+	if !sameDuplicateIPs(oldCfg, newCfg) {
+		return true
+	}
 	return oldCfg.MSSClampFingerprint() != newCfg.MSSClampFingerprint()
+}
+
+func sameDuplicateIPs(a, b *Config) bool {
+	a4, a6 := a.CollectDuplicateIPs()
+	b4, b6 := b.CollectDuplicateIPs()
+	return sameStringSet(a4, b4) && sameStringSet(a6, b6)
+}
+
+func sameStringSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	as := append(make([]string, 0, len(a)), a...)
+	bs := append(make([]string, 0, len(b)), b...)
+	sort.Strings(as)
+	sort.Strings(bs)
+	return sameStrings(as, bs)
 }

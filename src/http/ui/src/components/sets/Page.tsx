@@ -17,6 +17,7 @@ import { Navigate, Route, Routes, useNavigate, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { SetEditorPage } from "./Editor";
+import { asnOverlapKey } from "./targets/overlap";
 import {
   SetStats,
   SetWithStats,
@@ -65,6 +66,12 @@ function SetEditorRoute({
         const existing = map.get(ip);
         if (existing) existing.push(s.name);
         else map.set(ip, [s.name]);
+      }
+      for (const asn of s.targets.asns ?? []) {
+        const key = asnOverlapKey(asn);
+        const existing = map.get(key);
+        if (existing) existing.push(s.name);
+        else map.set(key, [s.name]);
       }
     }
     return map;

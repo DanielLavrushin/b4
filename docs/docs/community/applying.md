@@ -12,7 +12,7 @@ title: Applying a set
 1. The payload files the set refers to are fetched from the hub by hash. When no hub answers, the set is not applied.
 2. The set is opened with the checks of a [shared set](../sets/sharing.md#what-the-import-checks) pasted into **Import**: unknown settings are dropped, values this b4 does not accept are replaced by defaults, a pin for a domain outside the set or pointing at a private address is dropped, a DNS redirect to a DoH resolver outside the public list is dropped. Each change is reported after the set is created.
 3. Payload files are installed under `captures/` and appear under **Settings, Payloads**, named by protocol and server name. An existing file with the same name and different contents is kept; the new one gets a hash suffix.
-4. Geosite and geoip categories are checked against the local databases. Missing categories are reported. Without a database, the categories are removed from the set; a set left with no targets is refused.
+4. Geosite and geoip categories are checked against the local databases. Missing categories are reported. Without a database, the categories are removed from the set; a set left with no targets is refused. ASNs whose prefixes this router has not fetched yet are reported and fetched in the background.
 5. The set is created enabled, named after the published title, at the top of the **Sets** page. Domains it lists are removed from every other enabled set that listed them. The message names the domains and the sets they were removed from.
 6. The change is applied without a restart.
 

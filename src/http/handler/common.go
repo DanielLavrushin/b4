@@ -160,7 +160,6 @@ func NewAPIHandler(cfgPtr *atomic.Pointer[config.Config]) *API {
 		cfgPtr:         cfgPtr,
 		geodataManager: geodataManager,
 		discoveryRT:    discoveryRuntime,
-		asnStore:       config.NewAsnStore(cfg.ConfigPath),
 	}
 }
 func (api *API) RegisterEndpoints(mux *http.ServeMux, cfgPtr *atomic.Pointer[config.Config]) {

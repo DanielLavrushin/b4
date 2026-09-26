@@ -322,8 +322,10 @@ func addWarnings(sparse map[string]interface{}, r *Report) {
 	ips := stringList(ipsRaw)
 	geositeRaw, _ := lookupPath(sparse, "targets.geosite_categories")
 	geoipRaw, _ := lookupPath(sparse, "targets.geoip_categories")
+	asnsRaw, _ := lookupPath(sparse, "targets.asns")
+	asns := stringList(asnsRaw)
 
-	if len(domains) == 0 && len(ips) == 0 && len(stringList(geositeRaw)) == 0 && len(stringList(geoipRaw)) == 0 {
+	if len(domains) == 0 && len(ips) == 0 && len(stringList(geositeRaw)) == 0 && len(stringList(geoipRaw)) == 0 && len(asns) == 0 {
 		r.warn("no_targets", nil)
 	}
 
@@ -350,6 +352,9 @@ func addWarnings(sparse map[string]interface{}, r *Report) {
 	}
 	if len(ips) > MaxIPs {
 		r.warn("too_many_ips", map[string]interface{}{"count": len(ips), "max": MaxIPs})
+	}
+	if len(asns) > MaxASNs {
+		r.warn("too_many_asns", map[string]interface{}{"count": len(asns), "max": MaxASNs})
 	}
 	if custom, ok := lookupPath(sparse, "faking.custom_payload"); ok {
 		if s, ok := custom.(string); ok && len(s) > MaxCustomPayloadBytes {

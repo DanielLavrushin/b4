@@ -81,7 +81,7 @@ A set is watched while all of these hold:
 | The set has Discovery addresses | The switch stays on; nothing is checked until an address is added. |
 | Routing is off | The switch is turned off when the set is saved. A routed set sends its traffic away from the direct path the watchdog heals. |
 | The set is not limited to specific devices by an include list | The switch is turned off when the set is saved. The router's own check carries no device MAC and never matches such a set. An exclude list does not count. |
-| The set has domain or GeoSite targets | The switch stays on, but the set is not checked. The watchdog decides which set handles an address by its host name, which a set of only IP addresses or GeoIP categories cannot confirm. |
+| The set has domain or GeoSite targets | The switch stays on, but the set is not checked. The watchdog decides which set handles an address by its host name, which a set of only IP addresses, GeoIP categories or ASNs cannot confirm. |
 
 While a condition fails, the switch cannot be turned on, and a caption under it names the reason.
 

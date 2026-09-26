@@ -84,6 +84,11 @@ func (b *routeNftBackend) addElements(setName string, ips []string, ttlSec int) 
 		setName = routeNftDynSet(setName)
 	} else {
 		ips = expandZeroPrefix(ips)
+		_, err := runNftStdin(routeNftElementScript("add", setName, ips))
+		if err == nil {
+			return
+		}
+		log.Tracef("routing: loading %d elements into %s in one script failed (%s), falling back to batches", len(ips), setName, routeNftScriptError(err))
 	}
 
 	const chunkSize = 128
@@ -124,10 +129,47 @@ func (b *routeNftBackend) addElements(setName string, ips []string, ttlSec int) 
 	}
 }
 
+func routeNftElementScript(verb, setName string, ips []string) string {
+	var sb strings.Builder
+	sb.Grow(len(verb) + len(routeNftTable) + len(setName) + 24 + len(ips)*24)
+	sb.WriteString(verb)
+	sb.WriteString(" element inet ")
+	sb.WriteString(routeNftTable)
+	sb.WriteByte(' ')
+	sb.WriteString(setName)
+	sb.WriteString(" { ")
+	for i, ip := range ips {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteString(ip)
+	}
+	sb.WriteString(" }\n")
+	return sb.String()
+}
+
+func routeNftScriptError(err error) string {
+	msg := err.Error()
+	if i := strings.IndexByte(msg, '\n'); i >= 0 {
+		msg = msg[:i]
+	}
+	const limit = 300
+	if len(msg) > limit {
+		msg = msg[:limit] + "..."
+	}
+	return msg
+}
+
 func (b *routeNftBackend) delElements(setName string, ips []string) {
 	if len(ips) == 0 {
 		return
 	}
+
+	_, err := runNftStdin(routeNftElementScript("delete", setName, ips))
+	if err == nil {
+		return
+	}
+	log.Tracef("routing: deleting %d elements from %s in one script failed (%s), falling back to batches", len(ips), setName, routeNftScriptError(err))
 
 	const chunkSize = 128
 

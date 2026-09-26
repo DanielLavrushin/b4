@@ -32,6 +32,8 @@ type traceSetTargets struct {
 	DomainSample    []string `json:"domain_sample,omitempty"`
 	GeoSite         []string `json:"geosite_categories,omitempty"`
 	GeoIP           []string `json:"geoip_categories,omitempty"`
+	ASNs            []string `json:"asns,omitempty"`
+	ASNsUnresolved  []string `json:"asns_unresolved,omitempty"`
 	SourceDevices   int      `json:"source_devices,omitempty"`
 	SourceExclude   bool     `json:"source_devices_exclude,omitempty"`
 	DomainOnly      bool     `json:"domain_only,omitempty"`
@@ -176,6 +178,8 @@ func traceTargets(t config.TargetsConfig) traceSetTargets {
 		ResolvedIPs:     len(t.IpsToMatch),
 		GeoSite:         t.GeoSiteCategories,
 		GeoIP:           t.GeoIpCategories,
+		ASNs:            t.ASNs,
+		ASNsUnresolved:  unresolvedASNs(t.ASNs),
 		SourceDevices:   len(t.SourceDevices),
 		SourceExclude:   t.SourceDevicesExclude,
 		DomainOnly:      t.DomainOnly,

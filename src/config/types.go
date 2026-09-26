@@ -339,6 +339,7 @@ type TargetsConfig struct {
 	IPs                  []string `json:"ip"`
 	GeoSiteCategories    []string `json:"geosite_categories"`
 	GeoIpCategories      []string `json:"geoip_categories"`
+	ASNs                 []string `json:"asns"`
 	SourceDevices        []string `json:"source_devices"`
 	SourceDevicesExclude bool     `json:"source_devices_exclude"`
 	DomainOnly           bool     `json:"domain_only"`

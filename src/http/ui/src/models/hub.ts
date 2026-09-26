@@ -103,6 +103,7 @@ export interface HubTargets {
   domains: string[];
   geosite: string[];
   geoip: string[];
+  asns: string[];
   ip_count: number;
 }
 

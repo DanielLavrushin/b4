@@ -18,6 +18,7 @@ import (
 	_ "time/tzdata"
 
 	"github.com/daniellavrushin/b4/ai"
+	"github.com/daniellavrushin/b4/asnprefix"
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discovery"
 	"github.com/daniellavrushin/b4/dns"
@@ -133,7 +134,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 	initTimezone()
 	config.ApplyPATH()
 
-	needsSave, _ := cfg.LoadWithMigration(cfg.ConfigPath)
+	needsSave, loadErr := cfg.LoadWithMigration(cfg.ConfigPath)
+	unreadableConfigNotice := keepUnreadableConfig(cfg.ConfigPath, loadErr)
 	if needsSave {
 		cfg.SaveToFile(cfg.ConfigPath)
 	}
@@ -276,6 +278,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 	if err := initLogging(&cfg); err != nil {
 		return fmt.Errorf("logging initialization failed: %w", err)
 	}
+	if unreadableConfigNotice != "" {
+		log.Errorf("%s", unreadableConfigNotice)
+	}
 
 	if clearTables {
 		log.Infof("Clearing iptables rules as requested (--clear-iptables)")
@@ -308,6 +313,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 	if cfg.System.WebServer.Port > 0 {
 		metrics.RecordEvent("info", fmt.Sprintf("Web server started on port %d", cfg.System.WebServer.Port))
 	}
+
+	config.InitAsnStore(cfg.ConfigPath)
 
 	// Load domains
 	_, totalDomains, totalIps, err := cfg.LoadTargets()
@@ -570,6 +577,15 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	hubService.Start()
 
+	asnCtx, asnCancel := context.WithCancel(appCtx)
+	defer asnCancel()
+	asnprefix.Start(asnCtx, cfgPtr.Load, func(changed []string) {
+		if apiHandler == nil || asnCtx.Err() != nil {
+			return
+		}
+		apiHandler.ReloadASNTargets(changed)
+	})
+
 	log.Infof("B4 is running. Press Ctrl+C to stop")
 	metrics.RecordEvent("info", "B4 is fully operational")
 
@@ -609,6 +625,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		tablesMonitor.Stop()
 	}
 	cidrCancel()
+	asnCancel()
 	tproxyMgr.Stop()
 
 	// Perform graceful shutdown with timeout
@@ -870,6 +887,20 @@ func initTimezone() {
 	if tzName := os.Getenv("TZ"); tzName != "" {
 		config.ApplyTimezone(tzName)
 	}
+}
+
+func keepUnreadableConfig(path string, loadErr error) string {
+	if loadErr == nil {
+		return ""
+	}
+	kept, err := config.KeepCorruptCopy(path)
+	switch {
+	case err != nil:
+		return fmt.Sprintf("The config file %s could not be loaded (%v) and no copy of it could be kept (%v); b4 starts without the settings it could not read, and the next save replaces the file", path, loadErr, err)
+	case kept != "":
+		return fmt.Sprintf("The config file %s could not be loaded (%v); a copy was kept as %s, b4 starts without the settings it could not read, and the next save replaces the original", path, loadErr, kept)
+	}
+	return ""
 }
 
 func initLogging(cfg *config.Config) error {

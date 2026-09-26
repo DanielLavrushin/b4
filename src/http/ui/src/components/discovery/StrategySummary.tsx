@@ -77,6 +77,13 @@ export const StrategySummary = ({
       t("discovery.summary.geoip", { list: targets.geoip_categories.join(", ") }),
     );
   }
+  if (targets?.asns?.length) {
+    targetExtras.push(
+      t("discovery.summary.asns", {
+        list: targets.asns.map((id) => `AS${id}`).join(", "),
+      }),
+    );
+  }
   if (targets?.tls) {
     targetExtras.push(t("discovery.summary.tls", { version: targets.tls }));
   }

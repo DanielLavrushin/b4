@@ -89,7 +89,8 @@ export const TrafficRouting = ({
   const routesAnyIP =
     !config.targets.domain_only ||
     (config.targets.ip?.length ?? 0) > 0 ||
-    (config.targets.geoip_categories?.length ?? 0) > 0;
+    (config.targets.geoip_categories?.length ?? 0) > 0 ||
+    (config.targets.asns?.length ?? 0) > 0;
   const strategyHandedOff =
     isInterface && egressIsEncapsulated && routesAnyIP;
 

@@ -238,21 +238,24 @@ func (api *API) saveGeoConfig(update func(geo *geodat.GeoDatConfig)) error {
 		}
 	}
 
-	err := api.updateAndPushConfig(func(current *config.Config) (*config.Config, error) {
-		next := current.Clone()
+	oldCfg, newCfg, err := api.editConfig(func(next *config.Config) error {
 		update(&next.System.Geo)
 		for _, set := range next.Sets {
 			log.Infof("Reloading geo targets for set: %s", set.Name)
 			api.loadTargetsForSetCached(set)
 		}
-		return next, nil
+		return nil
 	})
 	if err != nil {
 		live := api.getCfg().System.Geo
 		api.geodataManager.UpdatePaths(live.GeoSitePath, live.GeoIpPath)
 		api.geodataManager.ClearCache()
+		return err
 	}
-	return err
+	if api.PerformSoftRestart(newCfg, oldCfg) {
+		log.Infof("Soft restart completed successfully")
+	}
+	return nil
 }
 
 var geoSaveMu sync.Mutex

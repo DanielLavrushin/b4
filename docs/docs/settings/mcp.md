@@ -107,7 +107,7 @@ Only `POST` is served. `GET` and `DELETE` return 405, which is normal for this t
 | `b4_status` | Version, capture engine, firewall backend, how many sets exist and are enabled, the state of the Telegram over WebSocket bridge, uptime | "Is b4 running, and which capture engine is active?" |
 | `b4_get_topic` | What a setting does, its unit, its real default, and what a zero or empty value means | "What does the strict switch on a set's DNS actually do?" |
 | `b4_geo_lookup` | Which geosite or geoip categories exist, what one holds, and which of them cover a domain or an address | "Which geosite category covers rutracker.org?" |
-| `b4_edit_set_targets` | Adds or removes domains, addresses, geo categories or source devices on one set | "Add rutracker.org to the video set." |
+| `b4_edit_set_targets` | Adds or removes domains, addresses, geo categories, ASNs or source devices on one set | "Add rutracker.org to the video set." |
 | `b4_test_domain_now` | Fetches a domain through b4 and again with b4 bypassed, and says which of the two works | "Is rutracker.org actually loading right now?" |
 | `b4_watchdog` | The last verdict for every watched set and domain, and add/remove/enable/disable/check; with `set`, one set's own watchdog and its addresses | "Which of the sites you are watching are failing?" / "Keep the video set working with the watchdog." |
 | `b4_manage_set` | Creates, duplicates, moves, enables, deletes or resets a strategy set | "Make a new set for rutracker.org and put it last." |
@@ -225,6 +225,8 @@ A change goes through the same validation and live-apply path as the web interfa
 :::warning List settings are replaced, not appended to
 Writing a set's domains replaces the whole list. A model should read the current value and send it back in full, and the previous value is reported so the change can be undone.
 :::
+
+`b4_edit_set_targets` adds and removes single entries instead, with `kind` naming the list: `sni_domains`, `ip`, `geosite_categories`, `geoip_categories`, `asns` or `source_devices`. An `asns` entry is written as `AS15169` or `15169` and stored as the bare number; reserved numbers are refused. An ASN whose prefixes b4 has not fetched yet is added anyway and fetched at once, and the reply names it, because until the fetch succeeds the set matches none of its addresses. The prefixes and their refresh are described under [ASN](../sets/targets#asn).
 
 ## Undoing a change
 

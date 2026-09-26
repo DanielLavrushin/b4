@@ -176,7 +176,7 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 		var focusID string
 		var routingDropped bool
 		var copiedFrom string
-		var copiedDomains, copiedIPs int
+		var copiedDomains, copiedIPs, copiedASNs int
 
 		switch action {
 		case "create", "duplicate":
@@ -206,6 +206,7 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 				copiedFrom = src.Name
 				copiedDomains = len(fresh.Targets.SNIDomains)
 				copiedIPs = len(fresh.Targets.IPs)
+				copiedASNs = len(fresh.Targets.ASNs)
 				if name == "" {
 					name = src.Name + " copy"
 					for i := 2; mcpNameTaken(newCfg, name); i++ {
@@ -371,8 +372,13 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 			case "create":
 				out.Note += ". It targets nothing yet, so it matches nothing: add targets with b4_edit_set_targets"
 			case "duplicate":
-				out.Note += fmt.Sprintf(". It copied %d domain(s) and %d address(es) from %q, so both sets claim them and whichever sits earlier wins",
-					copiedDomains, copiedIPs, copiedFrom)
+				if copiedASNs > 0 {
+					out.Note += fmt.Sprintf(". It copied %d domain(s), %d address(es) and %d ASN(s) from %q, so both sets claim them and whichever sits earlier wins",
+						copiedDomains, copiedIPs, copiedASNs, copiedFrom)
+				} else {
+					out.Note += fmt.Sprintf(". It copied %d domain(s) and %d address(es) from %q, so both sets claim them and whichever sits earlier wins",
+						copiedDomains, copiedIPs, copiedFrom)
+				}
 				if routingDropped {
 					out.Note += ". Routing was NOT copied: the upstream credentials cannot be read here, and a copy pointing at a proxy without them would misroute"
 				}

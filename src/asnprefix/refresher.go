@@ -1,0 +1,211 @@
+package asnprefix
+
+import (
+	"context"
+	"slices"
+	"time"
+
+	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/log"
+)
+
+const (
+	passInterval        = time.Hour
+	retryBase           = 30 * time.Second
+	retryMax            = time.Hour
+	shrinkConfirmations = 3
+	minWait             = time.Second
+)
+
+type attempt struct {
+	failures int
+	shrinks  int
+	next     time.Time
+}
+
+type refresher struct {
+	getCfg   func() *config.Config
+	onChange func([]string)
+	now      func() time.Time
+	wake     <-chan struct{}
+	state    map[string]*attempt
+}
+
+func newRefresher(getCfg func() *config.Config, onChange func([]string)) *refresher {
+	return &refresher{
+		getCfg:   getCfg,
+		onChange: onChange,
+		now:      nowFn,
+		wake:     config.ASNRefreshRequests(),
+		state:    make(map[string]*attempt),
+	}
+}
+
+func Start(ctx context.Context, getCfg func() *config.Config, onChange func(changedIDs []string)) {
+	r := newRefresher(getCfg, onChange)
+	go r.run(ctx)
+}
+
+func ReferencedASNs(cfg *config.Config) []string {
+	if cfg == nil {
+		return nil
+	}
+	var raw []string
+	for _, set := range cfg.Sets {
+		if set == nil {
+			continue
+		}
+		raw = append(raw, set.Targets.ASNs...)
+	}
+	ids := config.NormalizeASNs(raw)
+	slices.SortFunc(ids, compareASN)
+	return ids
+}
+
+func compareASN(a, b string) int {
+	if len(a) != len(b) {
+		return len(a) - len(b)
+	}
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	}
+	return 0
+}
+
+func retryDelay(n int) time.Duration {
+	d := retryBase
+	for i := 1; i < n && d < retryMax; i++ {
+		d *= 2
+	}
+	if d > retryMax {
+		d = retryMax
+	}
+	return d
+}
+
+func shrinksCoverage(previous, fetched *config.AsnInfo) bool {
+	if previous == nil || len(previous.Prefixes) == 0 || previous.UpdatedAt <= 0 || previous.Source != config.AsnSourceRIPEstat {
+		return false
+	}
+	before, after := previous.Counts(), fetched.Counts()
+	return lessThanHalf(after.IPv4Addresses, before.IPv4Addresses) || lessThanHalf(after.IPv6Slash64s, before.IPv6Slash64s)
+}
+
+func lessThanHalf(after, before uint64) bool {
+	return after < before && before-after > after
+}
+
+func (r *refresher) run(ctx context.Context) {
+	timer := time.NewTimer(0)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-r.wake:
+		case <-timer.C:
+		}
+		wait := r.pass(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		timer.Stop()
+		timer.Reset(wait)
+	}
+}
+
+func (r *refresher) entry(id string) *attempt {
+	st := r.state[id]
+	if st == nil {
+		st = &attempt{}
+		r.state[id] = st
+	}
+	return st
+}
+
+func (r *refresher) pass(ctx context.Context) time.Duration {
+	ids := ReferencedASNs(r.getCfg())
+	wait := passInterval
+	later := func(at time.Time) {
+		if d := at.Sub(r.now()); d < wait {
+			wait = d
+		}
+	}
+	live := make(map[string]bool, len(ids))
+	var changed []string
+	s := config.Asns()
+	for _, id := range ids {
+		live[id] = true
+		if ctx.Err() != nil {
+			break
+		}
+		current := s.Get(id)
+		if isFresh(current, r.now()) {
+			delete(r.state, id)
+			later(time.Unix(current.UpdatedAt, 0).Add(StaleAfter))
+			continue
+		}
+		st := r.state[id]
+		if st != nil && r.now().Before(st.next) {
+			later(st.next)
+			continue
+		}
+		fetched, err := fetchShared(ctx, id)
+		if err != nil {
+			if ctx.Err() != nil {
+				break
+			}
+			recordFailure(id, err)
+			st = r.entry(id)
+			st.failures++
+			st.next = r.now().Add(retryDelay(st.failures))
+			if st.failures == 1 {
+				if current != nil && len(current.Prefixes) > 0 {
+					log.Warnf("ASN AS%s: cannot refresh the prefixes, keeping the %d known ones, next attempt in %v: %v", id, len(current.Prefixes), st.next.Sub(r.now()).Round(time.Second), err)
+				} else {
+					log.Warnf("ASN AS%s: cannot resolve the prefixes, sets that reference it match none of its addresses yet, next attempt in %v: %v", id, st.next.Sub(r.now()).Round(time.Second), err)
+				}
+			} else {
+				log.Tracef("ASN AS%s: prefix refresh failed again (%d), next attempt in %v: %v", id, st.failures, st.next.Sub(r.now()).Round(time.Second), err)
+			}
+			later(st.next)
+			continue
+		}
+		if shrinksCoverage(current, fetched) {
+			st = r.entry(id)
+			st.failures = 0
+			st.shrinks++
+			if st.shrinks < shrinkConfirmations {
+				st.next = r.now().Add(retryMax)
+				log.Warnf("ASN AS%s: RIPEstat now lists %d prefixes covering less than half of the %d known ones; keeping the known list until the same shrink is seen %d times in a row (%d so far)", id, len(fetched.Prefixes), len(current.Prefixes), shrinkConfirmations, st.shrinks)
+				later(st.next)
+				continue
+			}
+			log.Warnf("ASN AS%s: accepting the smaller prefix list (%d prefixes, was %d) after %d consecutive fetches", id, len(fetched.Prefixes), len(current.Prefixes), st.shrinks)
+		}
+		delete(r.state, id)
+		clearFailure(id)
+		stored := store(fetched, current)
+		if current == nil || !slices.Equal(current.Prefixes, stored.Prefixes) {
+			changed = append(changed, id)
+			log.Infof("ASN AS%s (%s): %d prefixes", id, stored.Name, len(stored.Prefixes))
+		} else {
+			log.Debugf("ASN AS%s: prefixes unchanged (%d)", id, len(stored.Prefixes))
+		}
+	}
+	for id := range r.state {
+		if !live[id] {
+			delete(r.state, id)
+		}
+	}
+	if len(changed) > 0 && r.onChange != nil && ctx.Err() == nil {
+		r.onChange(changed)
+	}
+	if wait < minWait {
+		wait = minWait
+	}
+	return wait
+}

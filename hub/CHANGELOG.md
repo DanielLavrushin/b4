@@ -2,6 +2,10 @@
 
 Releases of the community hub service, published from the `b4hub` repository. The router changelog is `changelog.md` at the repository root.
 
+## [1.2.0] - 2026-09-26
+
+- ADDED: **Sets with ASN targets, which b4 1.84.0 can share, are handled as targets throughout the hub** - an ASN counts toward the same-targets duplicate check and the no-targets check, the targets summary, the moderation console and its search show it as `AS15169`, and a set carrying more than 50 ASNs is flagged with `too_many_asns`.
+
 ## [1.1.0] - 2026-09-19
 
 - ADDED: **The Mirrors page of the console and `b4hub moderate mirrors` show the b4hub version each mirror reported** - the version travels in the announcement, so it refreshes when the mirror starts and once a day after that.

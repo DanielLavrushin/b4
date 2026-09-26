@@ -222,6 +222,7 @@ func (ds *DiscoverySuite) scopeSetToDomains(set *config.SetConfig, domains []str
 	scoped.Targets.GeoIpCategories, scoped.Targets.GeoSiteCategories = ds.geoCategoriesFor(domains)
 	scoped.Targets.IPs = ds.targetIPsFor(domains)
 	scoped.Targets.IpsToMatch = scoped.Targets.IPs
+	scoped.Targets.ASNs = []string{}
 	scoped.DNS.Pins = ds.pinsFor(domains)
 	if scoped.DNS.Enabled && !ds.anyDNSPoisoned(domains) {
 		scoped.DNS = config.DNSConfig{Pins: scoped.DNS.Pins}

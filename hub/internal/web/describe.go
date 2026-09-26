@@ -41,6 +41,7 @@ type Targets struct {
 	IPs        []string
 	GeoSite    []string
 	GeoIP      []string
+	ASNs       []string
 	TLSVersion string
 	IPVersion  string
 	DomainOnly bool
@@ -52,6 +53,7 @@ func TargetsOf(projection map[string]interface{}) Targets {
 		IPs:     store.TargetList(projection, "ip"),
 		GeoSite: store.TargetList(projection, "geosite_categories"),
 		GeoIP:   store.TargetList(projection, "geoip_categories"),
+		ASNs:    store.TargetList(projection, "asns"),
 	}
 	if targets, ok := projection["targets"].(map[string]interface{}); ok {
 		t.TLSVersion, _ = targets["tls"].(string)
@@ -76,7 +78,18 @@ func (t Targets) Filters() []string {
 }
 
 func (t Targets) Empty() bool {
-	return len(t.Domains) == 0 && len(t.IPs) == 0 && len(t.GeoSite) == 0 && len(t.GeoIP) == 0
+	return len(t.Domains) == 0 && len(t.IPs) == 0 && len(t.GeoSite) == 0 && len(t.GeoIP) == 0 && len(t.ASNs) == 0
+}
+
+func asnLabels(ids []string) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if canonical, ok := config.NormalizeASN(id); ok {
+			id = canonical
+		}
+		out = append(out, "AS"+id)
+	}
+	return out
 }
 
 func preview(items []string, label string) string {
@@ -109,6 +122,9 @@ func (t Targets) Summary() string {
 		parts = append(parts, s)
 	}
 	if s := preview(t.GeoIP, "geoip"); s != "" {
+		parts = append(parts, s)
+	}
+	if s := preview(asnLabels(t.ASNs), "ASNs"); s != "" {
 		parts = append(parts, s)
 	}
 	if len(parts) == 0 {

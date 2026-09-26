@@ -83,6 +83,16 @@
       "daysAgo": "{{count}}d ago",
       "monthsAgo": "{{count}}mo ago"
     },
+    "asn": {
+      "prefixes": "Prefixes: {{total}} (IPv4 {{v4}}, IPv6 {{v6}})",
+      "ipv4Addresses": "IPv4 addresses: ~{{value}}",
+      "updated": "updated {{ago}}",
+      "neverFetched": "not fetched by b4 yet",
+      "pending": "not resolved",
+      "unresolved": "No prefixes are known yet. b4 fetches them from RIPEstat in the background; until then this ASN adds no addresses to the set.",
+      "lastError": "Last fetch failed: {{error}}",
+      "largeNetwork": "{{asn}} is a large network ({{prefixes}} prefixes, about {{addresses}} IPv4 addresses). Matching it may slow the router, and it also captures unrelated services hosted on the same network, such as clouds and CDNs. A routing set over it may also catch DNS resolvers."
+    },
     "history": {
       "title": "Previous Results",
       "clearHistory": "Clear History",
@@ -774,6 +784,9 @@
       "notConfigured": "not configured",
       "totalDomains": "Total Domains",
       "totalIPs": "Total IPs",
+      "asnCache": "ASN cache",
+      "asnCacheValue": "{{cached}} cached, {{used}} used by sets",
+      "asnUnresolved": "Unresolved ASNs",
       "firewall": "Firewall",
       "fwBackend": "Backend",
       "flowOffload": "Flow Offloading",
@@ -1068,6 +1081,7 @@
       "lists": {
         "geosite": "Geosite",
         "geoip": "GeoIP",
+        "asns": "ASNs",
         "manualDomains": "Manual domains",
         "manualIps": "Manual IPs",
         "devices": "Devices"
@@ -1113,6 +1127,8 @@
         "off": "off",
         "geosite": "Geosite",
         "geoip": "GeoIP",
+        "asns": "ASN",
+        "asnPending": "not resolved",
         "devices": "Devices",
         "included": "included",
         "excluded": "excluded",
@@ -1171,7 +1187,10 @@
       "watchdog": "Watchdog",
       "watchdogPending": "The watchdog is on for this set and has not checked it yet.",
       "watchdogGlobalOff": "The watchdog is on for this set but off in Settings, so the set is not checked.",
-      "watchdogStatus": "Watchdog: {{status}}."
+      "watchdogStatus": "Watchdog: {{status}}.",
+      "asnUnresolved_one": "{{count}} ASN unresolved",
+      "asnUnresolved_other": "{{count}} ASNs unresolved",
+      "asnUnresolvedTooltip": "No prefixes are known yet for {{asns}}, so these ASNs add no addresses to the set. b4 fetches them from RIPEstat in the background."
     },
     "targets": {
       "sectionTitle": "Domain Filtering Configuration",
@@ -1202,6 +1221,7 @@
       "tabs": {
         "domains": "Bypass Domains",
         "ips": "Bypass IPs",
+        "asns": "ASN",
         "sourceDevices": "Source Devices"
       },
       "domainAlert": "Domains in this list will use DPI bypass techniques (fragmentation, faking) when matched.",
@@ -1244,6 +1264,45 @@
       "addGeoipPlaceholder": "Select or type GeoIP category",
       "geoipCatAvailable": "{{count}} GeoIP categories available",
       "activeGeoipCategories": "Active Bypass GeoIP Categories",
+      "asn": {
+        "hint": "Only the AS number is stored in the configuration. b4 fetches the prefixes the network announces from RIPEstat, refreshes them daily and keeps the last good copy when a fetch fails. For routing, where two sets cover the same addresses, the set higher in the list wins.",
+        "title": "Networks (ASN)",
+        "tooltip": "An autonomous system number identifies the network of one operator. The set matches every prefix that network announces.",
+        "inputLabel": "Add ASN or IP address",
+        "inputHelper": "e.g. AS15169 or 15169; an IP address finds the network that announces it",
+        "inputPlaceholder": "AS15169",
+        "invalid": "\"{{value}}\" is neither an AS number nor an IP address",
+        "reserved": "\"{{value}}\" is a private or reserved AS number, which no public network announces",
+        "alreadyAdded": "{{asn}} is already in this set",
+        "otherSets": "{{asn}} is also in {{sets}}",
+        "resolveFailed": "{{asn}} could not be resolved: {{error}}",
+        "addAnyway": "Add anyway, resolve later",
+        "addAnywayHint": "b4 retries in the background. Until a fetch succeeds, the ASN adds no addresses to the set.",
+        "lookupTitle": "Networks announcing {{ip}}",
+        "lookupPrefix": "Announced prefix: {{prefix}}",
+        "lookupNone": "No public network announces {{ip}}. Private and reserved addresses have no ASN.",
+        "lookupAdd": "Add {{asn}}",
+        "inSet": "In this set",
+        "activeTitle": "ASNs in this set",
+        "savedTotal": "Prefixes from ASNs in the saved set: {{value}}",
+        "empty": "No ASN added",
+        "loadFailed": "ASN details could not be loaded: {{error}}",
+        "unnamed": "Unknown holder",
+        "refresh": "Refresh from RIPEstat",
+        "showPrefixes": "Show prefixes",
+        "remove": "Remove from the set",
+        "refreshed": "{{asn}} refreshed",
+        "refreshFailed": "{{asn}} could not be refreshed: {{error}}",
+        "filtered": "With the IPv{{version}} filter, {{value}} of these prefixes apply",
+        "usedByOthers": "Also used by: {{sets}}",
+        "prefixesFilter": "Filter prefixes",
+        "prefixesShowing": "Showing {{shown}} of {{total}}",
+        "prefixesCopy": "Copy all",
+        "prefixesCopied": "Prefixes copied",
+        "prefixesCopyFailed": "The prefixes could not be copied",
+        "prefixesEmpty": "No prefixes are known for this network yet.",
+        "prefixesNoMatch": "No prefix matches the filter"
+      },
       "deviceAlert": "Restrict this set to specific source devices. When devices are selected, this set will only apply to traffic from those devices. Device-specific sets take priority over general sets.",
       "selectedCount": "{{count}} selected",
       "excludedCount": "{{count}} excluded",
@@ -1256,7 +1315,7 @@
       "previewFailed": "Failed to load category preview",
       "manualDeviceInfo": "Manually added devices have no MAC address on the network, so they are matched by the IP address you entered. Give such a device a fixed or reserved address, and note that it cannot be matched at all when an intermediate router replaces the source address of its traffic.",
       "manualDeviceNoIp": "These manually added devices have no IP address, so they cannot be matched: {{names}}. If they are the only devices selected, the set matches nothing; with \"all devices except selected\" enabled, it applies to every device instead.",
-      "deviceNoDestination": "Source devices narrow who this set applies to; they do not select traffic on their own. With routing on and no domain or IP target, this set steers nothing. To send everything from these devices, turn on \"Match any IP address\" on the IP addresses tab.",
+      "deviceNoDestination": "Source devices narrow who this set applies to; they do not select traffic on their own. With routing on and no domain, IP or ASN target, this set steers nothing. To send everything from these devices, turn on \"Match any IP address\" on the IP addresses tab.",
       "catchAllIpsPartial": "This set holds {{present}}, but not {{missing}}. Turn the switch on to cover every address, or add the missing entry below."
     },
     "tcp": {
@@ -1313,9 +1372,9 @@
         "rstTtlToleranceHelper": "Maximum allowed difference between the server's reference TTL and an incoming RST packet's TTL",
         "mssClamp": "MSS Clamping",
         "mssEnable": "Enable per-set MSS",
-        "mssEnableDesc": "Override TCP MSS for connections matching this set's IP, GeoIP, or device targets",
-        "mssScopeHint": "MSS is set on the TCP SYN, before the TLS handshake. It can only be scoped by IP / GeoIP / source device. SNI domain, GeoSite and TLS version filters do not participate in MSS clamping.",
-        "mssScopeRequired": "Add an IP, GeoIP, or source device target before enabling per-set MSS.",
+        "mssEnableDesc": "Override TCP MSS for connections matching this set's IP, GeoIP, ASN or device targets",
+        "mssScopeHint": "MSS is set on the TCP SYN, before the TLS handshake. It can only be scoped by IP / GeoIP / ASN / source device. SNI domain, GeoSite and TLS version filters do not participate in MSS clamping.",
+        "mssScopeRequired": "Add an IP, GeoIP, ASN or source device target before enabling per-set MSS.",
         "mssAppliesTo": "Scope: IPs {{ips}}  Devices {{macs}}",
         "mssSize": "MSS size (bytes)",
         "mssSizeHelper": "Typical TSPU workaround for Smart TVs on YouTube: 88"
@@ -1827,8 +1886,8 @@
       "sourceInterfacesDesc": "Choose which network interfaces B4 should watch for traffic. For example, select your LAN or Wi-Fi bridge to only route traffic from devices on that network. Leave empty to route traffic from all interfaces.",
       "ipTtlDesc": "After B4 learns an IP address from a DNS response, it keeps the routing rule for this many seconds. If the domain's IP changes (e.g. CDN rotation), the old rule expires and B4 picks up the new IP on the next DNS query.",
       "domainOnlyConflict": "Domain-only matching is on, so this set routes only the IP addresses you list explicitly. Routing picks traffic by destination address, before the domain name is visible, so a set that learns no addresses routes nothing. Turning it off routes these domains, and with them every other domain that shares the same CDN address.",
-      "noDestination": "This set has no domain or IP target, so there is nothing for the firewall to steer and no rule is installed. Routing rules always match a destination address.",
-      "noDestinationWithDevices": "This set selects source devices but has no domain or IP target. Source devices decide whose traffic is offered to the routing rule, not which traffic is steered, so nothing is routed and no rule is installed. To send everything from those devices, turn on \"Match any IP address\" under Targets, IP addresses.",
+      "noDestination": "This set has no domain, IP or ASN target, so there is nothing for the firewall to steer and no rule is installed. Routing rules always match a destination address.",
+      "noDestinationWithDevices": "This set selects source devices but has no domain, IP or ASN target. Source devices decide whose traffic is offered to the routing rule, not which traffic is steered, so nothing is routed and no rule is installed. To send everything from those devices, turn on \"Match any IP address\" under Targets, IP addresses.",
       "routerTraffic": "Router's own traffic",
       "routerTrafficHelper": "Whether connections the router itself opens to this set's destinations also go out the output interface.",
       "routerTrafficScoped": "This set is already limited to a source interface or device, and the router's own traffic comes from neither, so it always stays on the normal route.",
@@ -1861,10 +1920,11 @@
       "envelopeFailed": "The shared set could not be imported: {{error}}",
       "warningsTitle": "Notes from the import",
       "warnings": {
-        "no_targets": "The set targets nothing: no domains, addresses or categories.",
+        "no_targets": "The set targets nothing: no domains, addresses, ASNs or categories.",
         "private_domains": "Domains that look private to the author's network: {{domains}}.",
         "too_many_domains": "The set lists {{count}} domains; a shared set carries at most {{max}}.",
         "too_many_ips": "The set lists {{count}} addresses; a shared set carries at most {{max}}.",
+        "too_many_asns": "The set lists {{count}} ASNs; a shared set carries at most {{max}}.",
         "custom_payload_large": "The custom payload is {{size}} bytes; the limit is {{max}}.",
         "pins": "The set pins {{domains}} to fixed addresses. Check them in the DNS tab before saving.",
         "payload_missing": "{{path}} names a payload file that was not included in the shared set.",
@@ -1882,7 +1942,8 @@
         "dns_dropped": "The DNS redirect was dropped: {{host}} is not a known public DoH resolver. Set a resolver in the DNS tab if the set needs one.",
         "private_addresses": "Addresses that look private to the author's network: {{addresses}}.",
         "block_regexp": "This block set matches by pattern ({{entry}}), so it may block far more than intended.",
-        "foreign_hub_link": "The pasted set was linked to community set {{pasted}}; this set stays linked to {{kept}} and publishing it creates its next version."
+        "foreign_hub_link": "The pasted set was linked to community set {{pasted}}; this set stays linked to {{kept}} and publishing it creates its next version.",
+        "asn_unresolved": "No prefixes are known on this device yet for ASNs {{asns}}. b4 fetches them from RIPEstat in the background; until then they add no addresses to the set."
       }
     },
     "editor": {
@@ -2169,10 +2230,11 @@
       },
       "warningsTitle": "Check before sharing",
       "warnings": {
-        "no_targets": "The set targets nothing: no domains, addresses or categories.",
+        "no_targets": "The set targets nothing: no domains, addresses, ASNs or categories.",
         "private_domains": "These domains look private to this network and mean nothing elsewhere: {{domains}}.",
         "too_many_domains": "The set lists {{count}} domains; a shared set carries at most {{max}}.",
         "too_many_ips": "The set lists {{count}} addresses; a shared set carries at most {{max}}.",
+        "too_many_asns": "The set lists {{count}} ASNs; a shared set carries at most {{max}}.",
         "custom_payload_large": "The custom payload is {{size}} bytes; the limit is {{max}}.",
         "pins": "The set pins {{domains}} to fixed addresses; everyone who imports it will use those addresses.",
         "payload_missing": "{{file}} does not exist on this device, so the shared set carries no payload for {{path}} and the fake packets fall back to a built-in one.",
@@ -2385,6 +2447,7 @@
       "ipv": "IPv{{version}}",
       "geosite": "geosite {{list}}",
       "geoip": "geoip {{list}}",
+      "asns": "networks {{list}}",
       "dnsPins": "answered with {{list}}"
     },
     "strategy": {
@@ -2848,7 +2911,9 @@
         "mixed": "Mixed",
         "timeout": "No answer",
         "error": "Error"
-      }
+      },
+      "addAsn": "Add {{asn}} to a set",
+      "addAsnTooltip": "Every prefix announced by {{asn}}; b4 refreshes the list daily"
     },
     "telegram": {
       "datacenters": "Datacenters",
@@ -2916,10 +2981,12 @@
       "destination": "Destination",
       "waitingForPackets": "Waiting for packets...",
       "enrichAsn": "Enrich ASN",
-      "enrichSuccess": "{{asn}} enriched ({{count}} prefixes)",
-      "enrichFailed": "Failed to enrich ASN",
+      "enrichSuccess": "{{asn}} labelled (prefixes: {{prefixes}})",
+      "enrichFailed": "Could not look up the network: {{error}}",
       "enrichNoAsn": "No ASN found for this IP",
-      "asnDeleted": "AS{{asn}} removed"
+      "asnDeleted": "Label {{asn}} removed",
+      "asnInUse": "{{asn}} is used by {{sets}}, so its label stays. Remove the ASN from those sets first.",
+      "asnDeleteFailed": "Label {{asn}} was not removed: {{error}}"
     },
     "aggregated": {
       "tabAggregated": "Aggregated",
@@ -2958,28 +3025,40 @@
       "intermediate": "Intermediate specificity"
     },
     "addIp": {
-      "title": "Add IP/CIDR to Manual List",
-      "addIpCidr": "Add IP/CIDR",
-      "addAllPrefixes": "Add All {{count}} Prefixes",
-      "alert": "Select the desired IP or CIDR range. You can enrich with network information to load all ASN prefixes.",
-      "originalIp": "Original IP:",
+      "title": "Add to a set",
+      "address": "Address",
+      "lookupLoading": "Looking up the network that announces this address...",
+      "lookupFailed": "{{error}} The address and its CIDR ranges can still be added.",
+      "lookupNone": "No public network announces this address (a private, reserved or unannounced range), so only the address and its CIDR ranges are offered.",
+      "prefix": "Prefix",
+      "announcedBy": "Announced by",
+      "retry": "Retry",
+      "enrichWithIpInfo": "Enrich with IPInfo",
       "org": "Org:",
       "hostname": "Hostname:",
       "location": "Location:",
-      "loadingPrefixes": "Loading AS{{asn}} prefixes...",
-      "enrichWithIpInfo": "Enrich with IPInfo",
-      "loadNetworkInfo": "Load Network Info",
-      "loadedPrefixes": "Loaded {{count}} prefixes from AS{{asn}}",
-      "addIpOnly": "Add {{ip}} only",
-      "addAllPrefixesBadge": "Add all {{count}} prefixes",
-      "cidrVariants": "CIDR variants:",
+      "ipInfoEmpty": "IPInfo returned no details for this address.",
+      "noSets": "There are no sets yet: a new set with this name is created.",
+      "whatToAdd": "What to add",
       "singleIp": "Single IP",
-      "subnet256": "~256 IPs - local subnet",
-      "network65k": "~65K IPs - network block",
-      "classA": "~16M IPs - class A",
+      "announcedPrefix": "Announced prefix that covers this address",
+      "subnet256": "~256 IPs, local subnet",
+      "network65k": "~65K IPs, network block",
+      "classA": "~16M IPs, class A",
       "ipv6Subnet": "IPv6 subnet",
       "ipv6Site": "IPv6 site",
-      "ipv6IspRange": "IPv6 ISP range"
+      "ipv6IspRange": "IPv6 ISP range",
+      "wholeNetwork": "The whole network: every prefix it announces, kept up to date daily",
+      "severalOrigins": "{{ip}} is announced by several networks. Pick one:",
+      "asnResolving": "Fetching the prefixes of {{asn}} from RIPEstat...",
+      "asnAddAnyway": "The ASN can still be added: b4 keeps retrying in the background, and until then it adds no addresses to the set.",
+      "asnInSet": "\"{{set}}\" already has {{asn}}",
+      "submit": "Add {{target}}",
+      "added": "{{target}} added to \"{{set}}\"",
+      "addedPending": "{{target}} added to \"{{set}}\". Its prefixes are not known yet; b4 fetches them in the background.",
+      "alreadyInSet": "\"{{set}}\" already has {{target}}",
+      "addFailed": "{{target}} was not added: {{error}}",
+      "openSet": "Open set"
     },
     "ipInfo": {
       "title": "IP Information",
@@ -3164,7 +3243,7 @@
       "not_watched": "The watchdog is not on for this set.",
       "invalid_url": "This domain cannot become a Discovery address of a set.",
       "invalid_json": "The request could not be read.",
-      "ip_only": "The set targets only IP addresses or GeoIP categories. The watchdog decides which set handles an address by its name, so it cannot check this set."
+      "ip_only": "The set targets only IP addresses, GeoIP categories or ASNs. The watchdog decides which set handles an address by its name, so it cannot check this set."
     },
     "sets": {
       "title": "Watched sets",
@@ -3230,7 +3309,19 @@
     "mark_conflict": "Mark value {{mark}} conflicts with reserved bits",
     "payload_install_failed": "The {{protocol}} payload for {{domain}} could not be saved to the captures folder: {{reason}}",
     "config_changed": "The configuration was changed on the router after this page loaded, for example by the watchdog. Reload to see the current state; unsaved changes on this page are lost.",
-    "set_changed": "This set was changed on the router after this page loaded, for example by the watchdog. Reload to see the current state; unsaved changes to the set are lost."
+    "set_changed": "This set was changed on the router after this page loaded, for example by the watchdog. Reload to see the current state; unsaved changes to the set are lost.",
+    "asn_invalid": "\"{{value}}\" is not a public AS number",
+    "cidr_invalid": "\"{{value}}\" is not an IP address or CIDR range",
+    "ip_invalid": "This is not a valid IP address",
+    "asn_fetch_failed": "The prefixes could not be fetched from RIPEstat. {{detail}}",
+    "asn_lookup_failed": "The address could not be looked up in RIPEstat. {{detail}}",
+    "asn_in_use": "This ASN is used by {{sets}}. Remove it from those sets first.",
+    "ipinfo_token_missing": "No IPInfo token is configured in Settings.",
+    "ipinfo_failed": "The IPInfo lookup failed. {{detail}}",
+    "invalid_json": "The request could not be read (invalid JSON).",
+    "bad_request": "The request was refused: {{detail}}",
+    "not_found": "The set or item no longer exists; it may have been deleted elsewhere. Reload the page.",
+    "validation_failed": "Some values were rejected: {{detail}}"
   },
   "hub": {
     "title": "Community Hub",
@@ -3317,7 +3408,8 @@
       "update": "Update to version {{version}}",
       "reapply": "Reapply",
       "geosite": "geosite {{list}}",
-      "geoip": "geoip {{list}}"
+      "geoip": "geoip {{list}}",
+      "asns": "networks {{list}}"
     },
     "flags": {
       "needs_payload": "needs payload",
@@ -3390,6 +3482,7 @@
       "domains": "Domains",
       "geosite": "Geosite",
       "geoip": "GeoIP",
+      "asns": "Networks (ASN)",
       "addresses": "Addresses",
       "none": "none",
       "strategy": "Strategy",

@@ -134,7 +134,7 @@ A `regexp:` entry is never treated as covering anything and is never flagged as 
 
 Four tabs: **Listed** is the newest approved version of each set, **Superseded** the older approved versions still on record, **Hidden** and **Rejected** the decisions taken, most recent first and capped at the fifty most recent.
 
-One search box matches the title, the set id, the author label, the technique family, the reason a decision carried, every target domain, every geosite category and every sentence of the strategy.
+One search box matches the title, the set id, the author label, the technique family, the reason a decision carried, every target domain, every geosite category, every ASN written as `AS15169` and every sentence of the strategy.
 
 A row opens a panel holding every version of that set, each with its status, its facts and the actions its status allows. A hidden version can be restored and a rejected one approved after all, both of which put it back in the catalogue. The panel also lists every vote recorded for the set: when it arrived, its kind, the version it applies to, the network the hub observed and whether it could place that network, the contributor, the domain the list was filtered by, and the b4 version. The reports against a version sit on that version's own card.
 

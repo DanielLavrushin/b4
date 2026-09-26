@@ -31,6 +31,7 @@ import {
   ThumbDownOutlinedIcon,
   ThumbUpIcon,
   ThumbUpOutlinedIcon,
+  WarningIcon,
   WatchdogIcon,
 } from "@b4.icons";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
@@ -39,6 +40,7 @@ import { colors, facets as facetColors, radius, spacing, typography } from "@des
 import { B4SetConfig } from "@models/config";
 import { HubVoteKind } from "@models/hub";
 import { SetWatchStatus, setWatchBlock, setWatchTone } from "@models/watchdog";
+import { formatAsn } from "@models/asn";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "@api/apiClient";
 import { useSnackbar } from "@context/SnackbarProvider";
@@ -170,6 +172,7 @@ export const SetCard = ({
   const openFacet = facets.find((f) => f.key === activeFacet);
   const targetSummary = buildTargetSummary(set, stats, t);
   const route = buildRouteSummary(set, t);
+  const unresolvedAsns = stats?.asn_unresolved ?? [];
   const watched = !!set.discovery?.watchdog;
   const watchBlock = watched ? setWatchBlock(set) : null;
   let watchTooltip = t("sets.card.watchdogPending");
@@ -469,7 +472,8 @@ export const SetCard = ({
       {(escalatesTo ||
         (escalatedFrom && escalatedFrom.length > 0) ||
         set.hub_state ||
-        watched) && (
+        watched ||
+        unresolvedAsns.length > 0) && (
         <Box
           sx={{
             display: "flex",
@@ -490,6 +494,28 @@ export const SetCard = ({
               onHover={onEscalationHover}
               onClick={onEscalationClick}
             />
+          )}
+          {unresolvedAsns.length > 0 && (
+            <Tooltip
+              title={t("sets.card.asnUnresolvedTooltip", {
+                asns: unresolvedAsns.map(formatAsn).join(", "),
+              })}
+            >
+              <B4Badge
+                icon={<WarningIcon sx={{ fontSize: ESCALATION_ICON }} />}
+                label={t("sets.card.asnUnresolved", {
+                  count: unresolvedAsns.length,
+                })}
+                size="small"
+                color="warning"
+                variant="outlined"
+                clickable
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit({ tab: "targets", sub: "asns" });
+                }}
+              />
+            </Tooltip>
           )}
           {watched && (
             <Tooltip title={watchTooltip}>
