@@ -519,15 +519,8 @@ func (a *API) pushConfigLocked(newCfg *config.Config) error {
 		globalMTProtoBridge.UpdateConfig(newCfg)
 	}
 
-	if mtprotoCFRefreshFunc != nil {
-		mtprotoCFRefreshFunc(newCfg)
-	}
-
 	oldMT := a.getCfg().System.MTProto
 	newMT := newCfg.System.MTProto
-	if oldMT.DCFallbackEnabled != newMT.DCFallbackEnabled || oldMT.DCFallbackURL != newMT.DCFallbackURL {
-		go func() { _ = mtproto.RefreshDCs(newMT.DCFallbackEnabled, newMT.DCFallbackURL) }()
-	}
 	refreshBridgeList := newMT.Bridge.Enabled && (!oldMT.Bridge.Enabled || a.getCfg().System.Geo.GeoIpPath != newCfg.System.Geo.GeoIpPath)
 
 	if a.getCfg().System.Logging.Directory != newCfg.System.Logging.Directory {
@@ -562,6 +555,7 @@ func (a *API) pushConfigLocked(newCfg *config.Config) error {
 	if refreshBridgeList {
 		mtproto.TriggerTelegramCIDRRefresh()
 	}
+	mtproto.KickUpstreamRefresh()
 	if globalAIManager != nil {
 		globalAIManager.Update(newCfg.System.AI)
 	}

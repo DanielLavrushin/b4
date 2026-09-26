@@ -77,11 +77,13 @@ func NewTransparentBridge(cfg *config.Config) *TransparentBridge {
 		}},
 	}
 	b.cfg.Store(cfg)
+	setWorkerFollowsSets(cfg)
 	return b
 }
 
 func (b *TransparentBridge) UpdateConfig(newCfg *config.Config) {
 	old := b.cfg.Swap(newCfg)
+	setWorkerFollowsSets(newCfg)
 	if old != nil &&
 		old.System.MTProto.CFWorkerDomain == newCfg.System.MTProto.CFWorkerDomain &&
 		old.Queue.Mark == newCfg.Queue.Mark {
@@ -279,7 +281,27 @@ func stallReporter(info dialInfo) func() {
 	return func() { workerRecordStall(info.worker) }
 }
 
+func (b *TransparentBridge) FailOpenOrder(origIP net.IP, origPort int) (directFirst, workerFallback bool) {
+	if origPort != failOpenWorkerPort {
+		return true, false
+	}
+	mt := b.cfg.Load().System.MTProto
+	for _, wd := range workerDomains(&mt) {
+		if !workerInCooldown(wd) {
+			return failOpenPrefersDirect(origIP.String()), true
+		}
+	}
+	return true, false
+}
+
+func (b *TransparentBridge) NoteFailOpenDirect(origIP net.IP, dialed bool, received int64) {
+	failOpenRemember(origIP.String(), dialed && received > 0)
+}
+
 func (b *TransparentBridge) FailOpenViaWorker(client net.Conn, origIP net.IP, origPort int) bool {
+	if origPort != failOpenWorkerPort {
+		return false
+	}
 	cfg := b.cfg.Load()
 	mt := cfg.System.MTProto
 	domains := workerDomains(&mt)
@@ -296,11 +318,11 @@ func (b *TransparentBridge) FailOpenViaWorker(client net.Conn, origIP net.IP, or
 		dc = m
 	}
 	for _, wd := range domains {
-		if workerInCooldown(wd) && len(domains) > 1 {
+		if workerInCooldown(wd) {
 			continue
 		}
 		path := fmt.Sprintf("/apiws?dst=%s&dc=%d", dst, dc)
-		wc, derr := dialWS(wd, wd, path, wsDialTimeout, relayDialMark(selfDialMark()))
+		wc, derr := dialWS(wd, wd, path, wsDialTimeout, workerDialMark(selfDialMark()))
 		if derr != nil {
 			log.Debugf("%s failopen worker dial %s for %s:%d failed: %v", tag, wd, dst, origPort, derr)
 			continue
@@ -309,11 +331,17 @@ func (b *TransparentBridge) FailOpenViaWorker(client net.Conn, origIP net.IP, or
 		label := fmt.Sprintf("%s %s<->%s:%d(failopen)", tag, client.RemoteAddr(), dst, origPort)
 		// No scanner here: the fail-open relay carries the client's obfuscated
 		// stream untouched, so the transport framing is still encrypted.
+		workerStalled := stallReporter(dialInfo{isWorker: true, worker: wd})
 		relayConns(client, wc, relayOpts{
 			label:   label,
 			bufPool: &b.bufPool,
 			idle:    mtprotoIdleTimeout(cfg),
-			onStall: stallReporter(dialInfo{isWorker: true, worker: wd}),
+			onStall: func() {
+				if workerStalled != nil {
+					workerStalled()
+				}
+				failOpenRemember(dst, true)
+			},
 		})
 		return true
 	}

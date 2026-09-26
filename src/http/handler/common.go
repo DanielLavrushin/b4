@@ -35,18 +35,17 @@ type ConfigRefresher interface {
 }
 
 var (
-	globalPool           *nfq.Pool
-	globalSocks5Server   ConfigRefresher
-	globalMTProtoServer  ConfigRefresher
-	globalMTProtoBridge  ConfigRefresher
-	tablesRefreshFunc    func() error
-	routingSyncFunc      func(*config.Config)
-	mtprotoCFRefreshFunc func(*config.Config)
-	upstreamHealthFunc   func() []DiagUpstream
-	discoveryRuntime     *discovery.Runtime
-	globalWatchdog       *watchdog.Watchdog
-	globalAIManager      *ai.Manager
-	globalTUNEngine      *b4tun.Engine
+	globalPool          *nfq.Pool
+	globalSocks5Server  ConfigRefresher
+	globalMTProtoServer ConfigRefresher
+	globalMTProtoBridge ConfigRefresher
+	tablesRefreshFunc   func() error
+	routingSyncFunc     func(*config.Config)
+	upstreamHealthFunc  func() []DiagUpstream
+	discoveryRuntime    *discovery.Runtime
+	globalWatchdog      *watchdog.Watchdog
+	globalAIManager     *ai.Manager
+	globalTUNEngine     *b4tun.Engine
 )
 
 func SetTUNEngine(e *b4tun.Engine) {
@@ -210,10 +209,6 @@ func SetTablesRefreshFunc(fn func() error) {
 
 func SetRoutingSyncFunc(fn func(*config.Config)) {
 	routingSyncFunc = fn
-}
-
-func SetMTProtoCFRefreshFunc(fn func(*config.Config)) {
-	mtprotoCFRefreshFunc = fn
 }
 
 func SetUpstreamHealthFunc(fn func() []DiagUpstream) {

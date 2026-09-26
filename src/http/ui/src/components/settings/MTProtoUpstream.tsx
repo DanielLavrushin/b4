@@ -278,7 +278,7 @@ export const MTProtoUpstreamCard = ({
                         <IconButton
                           size="small"
                           component="a"
-                          href="https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfWorker.md"
+                          href={t("settings.MTProto.cfWorkerDomainGuideUrl")}
                           target="_blank"
                           rel="noreferrer"
                           sx={{ px: 0 }}
@@ -293,6 +293,18 @@ export const MTProtoUpstreamCard = ({
             }}
           />
         </Grid>
+        {(mtproto?.cfworker_domain || "").trim() !== "" && (
+          <Grid size={{ xs: 12 }}>
+            <B4Switch
+              label={t("settings.MTProto.cfWorkerDpi")}
+              checked={mtproto?.cfworker_dpi ?? false}
+              onChange={(checked: boolean) =>
+                onChange("system.mtproto.cfworker_dpi", checked)
+              }
+              description={t("settings.MTProto.cfWorkerDpiHelp")}
+            />
+          </Grid>
+        )}
         <Grid size={{ xs: 12, md: 6 }}>
           <B4TextField
             label={t("settings.MTProto.wsCustomDomain")}

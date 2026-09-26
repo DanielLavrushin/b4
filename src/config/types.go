@@ -415,6 +415,7 @@ type MTProtoConfig struct {
 	CFProxyEnabled    bool            `json:"cfproxy_enabled"` // enable Cloudflare-proxied fallback WS domains (rescues DCs the network blocks)
 	CFProxyURL        string          `json:"cfproxy_url"`     // URL to refresh CF-proxy domain list; empty = built-in default
 	CFWorkerDomain    string          `json:"cfworker_domain"` // user's Cloudflare Worker domain(s) (workers.dev), comma-separated; free per-user WS relay tried before the shared CF pool
+	CFWorkerDPI       bool            `json:"cfworker_dpi"`
 
 	DCFallbackEnabled bool   `json:"dc_fallback_enabled"` // fetch the DC IP list from DCFallbackURL when Telegram's official endpoint is blocked
 	DCFallbackURL     string `json:"dc_fallback_url"`     // fallback source for the Telegram DC list; empty = built-in default

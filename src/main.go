@@ -222,17 +222,6 @@ func runB4(cmd *cobra.Command, args []string) error {
 		}
 		return out
 	})
-	go func() {
-		_ = mtproto.RefreshDCs(cfg.System.MTProto.DCFallbackEnabled, cfg.System.MTProto.DCFallbackURL)
-	}()
-	startCFRefresh := func(c *config.Config) {
-		if c.System.MTProto.CFProxyEnabled {
-			mtproto.StartCFProxyRefresh(appCtx, c.System.MTProto.CFProxyURL)
-		}
-	}
-	startCFRefresh(&cfg)
-	handler.SetMTProtoCFRefreshFunc(startCFRefresh)
-
 	refreshTables := func() error {
 		c := cfgPtr.Load()
 		if c.System.Tables.SkipSetup {
@@ -462,6 +451,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	tproxyResolver.Set(pool.GetMatcher())
 
+	mtproto.StartUpstreamRefresh(appCtx, cfgPtr.Load)
+
 	cidrCtx, cidrCancel := context.WithCancel(appCtx)
 	defer cidrCancel()
 	mtproto.StartTelegramCIDRRefresh(cidrCtx, cfgPtr.Load, func() {
@@ -525,7 +516,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		socks5Server.UpdateConfig(c)
 		mtprotoServer.UpdateConfig(c)
 		mtprotoBridge.UpdateConfig(c)
-		startCFRefresh(c)
+		mtproto.KickUpstreamRefresh()
 		tproxyResolver.Set(pool.GetMatcher())
 		if !c.System.Tables.SkipSetup {
 			tproxyMgr.SyncConfig(c)

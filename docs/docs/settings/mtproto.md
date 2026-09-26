@@ -27,7 +27,7 @@ While the switch is on and saved, the header shows **Working** when the diversio
 | Active connections | Bridged connections open right now |
 | Telegram ranges | How many ranges are in use, where the list on top of the built-in one came from (**telegram.org**, **b4 mirror**, **saved copy**, **GeoIP file**, or **built-in list** when none of them is available) and when it was last updated. See [Address list](../telegram/websocket-bridge.md#address-list) |
 | Relayed sessions | How many sessions the bridge has relayed, and when the last one was |
-| Counters line | Shown once any of them is above zero. **Passed on undecoded**: connections that were not MTProto or could not be mapped to a data centre, handed to the Cloudflare Worker or dialled directly. **Data center dial failures**: MTProto sessions for which no upstream route connected. **Closed without a handshake**: connections that closed, or stayed silent for the whole handshake wait, before sending a first byte |
+| Counters line | Shown once any of them is above zero. **Passed on undecoded**: connections that were not MTProto or could not be mapped to a data centre, handed to the Cloudflare Worker or dialled directly, as described under [Connections the bridge passes on](../telegram/websocket-bridge.md#connections-the-bridge-passes-on). **Data center dial failures**: MTProto sessions for which no upstream route connected. **Closed without a handshake**: connections that closed, or stayed silent for the whole handshake wait, before sending a first byte |
 
 | Button | What it does |
 | --- | --- |
@@ -78,6 +78,7 @@ Shared by the proxy server and by the Telegram over WebSocket bridge, whether th
 | Transport mode | `Direct TCP`, `Auto (WebSocket -> TCP)` or `WebSocket only`. Applies to the proxy server; the bridge forces Auto. | `Auto` |
 | DC Relay | `host:port` of a VPS forwarding to the data centres. Ignored by the bridge and in WebSocket only mode. See [DC Relay](../telegram/dc-relay.md). | empty |
 | Cloudflare Worker domain | One or more `*.workers.dev` names, comma-separated. Tried last of the WebSocket routes. | empty |
+| Let sets process Worker connections | `system.mtproto.cfworker_dpi`. Shown once a Worker domain is set. Hands b4's own connections to the Worker to packet processing, so a set whose targets cover the Worker applies its DPI strategy to them. The Cloudflare-proxied domains skip DPI processing either way. See [DPI processing](../telegram/websocket-bridge.md#dpi-processing). | Off |
 | CF proxy fallback | Uses a rotating pool of Cloudflare-proxied domains for the data centres Telegram's own edge does not serve. | On |
 | Custom WebSocket domain | One domain that proxies WebSocket traffic to Telegram. b4 prepends `kws1.`, `kws2.` and so on per data centre. | empty |
 | Telegram WS edge IP | Replaces the address a native `kws*.web.telegram.org` dial goes to. Does not affect the custom domain. | `149.154.167.220` |
@@ -113,6 +114,8 @@ Three timeouts where `0` selects the built-in value rather than turning anything
 | DC list fallback mirror | Uses the mirror below when Telegram's own endpoint for the data-centre list is unreachable. | On |
 | DC list mirror URL | The mirror to use. The default is hosted by the b4 author and receives the requesting IP address, nothing else. | b4 author's mirror |
 | Bridge Handshake Wait (sec) | How long the bridge waits for a client's first byte before dropping the connection. Applies to the Telegram over WebSocket switch and to sets in the Telegram over WebSocket routing mode alike, so the field stays here where it is visible with the switch off. `0` uses the built-in value; `-1` waits indefinitely rather than disabling the wait. | `180` |
+
+The data-centre list and the CF proxy pool are downloaded only while the MTProto proxy, the Telegram over WebSocket switch or an enabled set in the Telegram over WebSocket routing mode is on. With all of them off, b4 contacts neither Telegram nor the list hosts. The lists are fetched at start-up and on the save that turns one of these on or changes a list's URL or switch, with no restart; the CF proxy pool is then refreshed hourly. Until a download succeeds, the built-in addresses and domains are used.
 
 :::info Saving does not restart the service
 b4 restarts the MTProto proxy itself when the enable switch, port, bind address, Fake SNI, transport mode, custom WebSocket domain, WS edge IP, fronting name or CF proxy fallback changes, which drops the sessions it is carrying. Secrets and the WEB proxy fields are applied without restarting it; a changed relay port or certificate restarts only the relay listener. The Telegram over WebSocket switch takes effect on save, with no restart of the service.

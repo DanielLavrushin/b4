@@ -360,6 +360,7 @@ export interface MTProtoConfig {
   cfproxy_enabled: boolean;
   cfproxy_url: string;
   cfworker_domain: string;
+  cfworker_dpi?: boolean;
   dc_fallback_enabled: boolean;
   dc_fallback_url: string;
   web_proxy: MTProtoWebProxyConfig;

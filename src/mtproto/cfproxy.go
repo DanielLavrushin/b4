@@ -8,10 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
-
-	"github.com/daniellavrushin/b4/log"
 )
 
 const (
@@ -357,44 +354,4 @@ func cfproxyCacheBust() string {
 	var b [4]byte
 	_, _ = rand.Read(b[:])
 	return hex.EncodeToString(b[:])
-}
-
-var (
-	cfRefreshOnce sync.Once
-	cfRefreshURL  atomic.Pointer[string]
-)
-
-func StartCFProxyRefresh(ctx interface{ Done() <-chan struct{} }, url string) {
-	cfRefreshURL.Store(&url)
-	cfRefreshOnce.Do(func() {
-		go runCFProxyRefreshLoop(ctx)
-	})
-}
-
-func runCFProxyRefreshLoop(ctx interface{ Done() <-chan struct{} }) {
-	currentURL := func() string {
-		if p := cfRefreshURL.Load(); p != nil {
-			return *p
-		}
-		return ""
-	}
-	if err := cfBalancerInst.refreshFromURL(currentURL()); err != nil {
-		log.Warnf("CF proxy refresh failed at startup: %v", err)
-	} else {
-		log.Infof("CF proxy pool refreshed (%d domains)", cfBalancerInst.size())
-	}
-	ticker := time.NewTicker(cfProxyRefreshInt)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if err := cfBalancerInst.refreshFromURL(currentURL()); err != nil {
-				log.Debugf("CF proxy refresh failed: %v", err)
-			} else {
-				log.Debugf("CF proxy pool refreshed (%d domains)", cfBalancerInst.size())
-			}
-		}
-	}
 }
