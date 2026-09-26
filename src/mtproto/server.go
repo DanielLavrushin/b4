@@ -876,7 +876,12 @@ func (s *Server) relay(result *ClientHandshakeResult, dc io.ReadWriteCloser, spl
 // one. Every other code is between the client and Telegram, so it is passed on.
 func transportErrHandler(dial dialInfo, clientDC int, label string) func(int32) bool {
 	return func(code int32) bool {
-		if code != tgErrInvalidDC {
+		switch code {
+		case tgErrAuthKeyNotFound:
+			log.Debugf("%s upstream answered -404 (auth key not found), passed to the client, which creates a new key", label)
+			return false
+		case tgErrInvalidDC:
+		default:
 			log.Warnf("%s upstream transport error %d (%s), relayed to the client", label, code, transportErrName(code))
 			return false
 		}
