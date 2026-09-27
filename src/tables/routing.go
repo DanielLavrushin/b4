@@ -356,7 +356,7 @@ func RoutingLearnHost(cfg *config.Config, set *config.SetConfig, host string) {
 
 	cfgSnapshot := *cfg
 	go func(c *config.Config, s *config.SetConfig, h string) {
-		ips := routeResolveHost(c, h)
+		ips := routeResolveHost(c, s, h)
 		if len(ips) == 0 {
 			return
 		}
@@ -374,6 +374,9 @@ func routeSameResolveTargets(a, b *config.SetConfig) bool {
 		return a == b
 	}
 	if a.Targets.DomainOnly != b.Targets.DomainOnly || len(a.Targets.SNIDomains) != len(b.Targets.SNIDomains) {
+		return false
+	}
+	if a.DNS.Enabled != b.DNS.Enabled || a.DNS.TargetDNS != b.DNS.TargetDNS || a.DNS.DoHURL != b.DNS.DoHURL || a.DNS.Strict != b.DNS.Strict {
 		return false
 	}
 	counts := make(map[string]int, len(a.Targets.SNIDomains))
@@ -427,28 +430,31 @@ func routeAddResolvedIPs(cfg *config.Config, set *config.SetConfig, ips []net.IP
 
 var DNSNames *dns.NameCache
 
-func routeResolveHost(cfg *config.Config, host string) []net.IP {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+var routeSetLookup dns.LookupFunc = dns.LookupIPs
+
+func routeResolveHost(cfg *config.Config, set *config.SetConfig, host string) []net.IP {
+	var srv dns.Server
+	useSet, strict := false, false
+	if set != nil {
+		srv, useSet = dns.SetServer(set.DNS.Enabled, set.DNS.TargetDNS, set.DNS.DoHURL)
+		strict = set.DNS.Strict
+	}
+	srv.Mark, srv.Timeout = int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout()
+	if useSet && strict && dns.SourceUnreachable(srv.Source) {
+		log.Tracef("Routing: set '%s' skips resolving %s, its resolver %s is cooling down after repeated failures", set.Name, host, dns.SourceLabel(srv.Source))
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), srv.Budget()+time.Second)
 	defer cancel()
 
-	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	ips, err := dns.LookupWithFallback(ctx, routeSetLookup, srv, useSet, strict, host, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	if err != nil {
 		log.Tracef("Routing: resolve %s failed: %v", host, err)
 		return nil
 	}
-
-	resolved := make([]net.IP, 0, len(addrs))
-	for _, a := range addrs {
-		if a.IP.To4() != nil && !cfg.Queue.IPv4Enabled {
-			continue
-		}
-		if a.IP.To4() == nil && !cfg.Queue.IPv6Enabled {
-			continue
-		}
-		resolved = append(resolved, a.IP)
-	}
-	DNSNames.Observe(nil, host, resolved)
-	return resolved
+	DNSNames.Observe(nil, host, ips)
+	return ips
 }
 
 func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
@@ -1329,7 +1335,7 @@ func routePreResolveDomains(cfg *config.Config, sets []*config.SetConfig) {
 			continue
 		}
 		for _, domain := range routeResolveTargets(set) {
-			resolved := routeResolveHost(cfg, domain)
+			resolved := routeResolveHost(cfg, set, domain)
 			if len(resolved) == 0 {
 				continue
 			}

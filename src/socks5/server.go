@@ -398,6 +398,9 @@ func (s *Server) handleConnect(conn net.Conn, dest string) error {
 		return fmt.Errorf("destination %s is cached as blocked", dest)
 	}
 
+	if err := conn.SetDeadline(time.Time{}); err != nil {
+		return fmt.Errorf("clear deadline: %w", err)
+	}
 	remote, err := s.dial(dest)
 	if err != nil {
 		log.Tracef("SOCKS5 connect to %s failed: %v", dest, err)
@@ -408,10 +411,6 @@ func (s *Server) handleConnect(conn net.Conn, dest string) error {
 
 	if err := sendReply(conn, repSuccess, remote.LocalAddr()); err != nil {
 		return fmt.Errorf("send reply: %w", err)
-	}
-
-	if err := conn.SetDeadline(time.Time{}); err != nil {
-		return fmt.Errorf("clear deadline: %w", err)
 	}
 
 	s.logAndRecordConnection("TCP", conn.RemoteAddr().String(), dest, "socks5")

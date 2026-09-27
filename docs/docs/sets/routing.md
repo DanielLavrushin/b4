@@ -120,7 +120,7 @@ Routing uses policy-based routing - routing decisions based on packet marks:
 
 4. **Masquerade.** In the **POSTROUTING** (nat) chain, masquerade is applied to all marked traffic leaving through the target interface - the packet's source IP is replaced with the output interface's IP. This is required so that reply packets return through the same tunnel.
 
-5. **Pre-resolution.** When routing is enabled, b4 immediately resolves all domains in the set targets and adds their IPs to the set. This enables routing from the first request without waiting for DNS traffic to pass through NFQUEUE.
+5. **Pre-resolution.** When routing is enabled, b4 immediately resolves all domains in the set targets and adds their IPs to the set. This enables routing from the first request without waiting for DNS traffic to pass through NFQUEUE. The names are resolved through the set's own resolver when its DNS redirect has one; see [Lookups b4 makes itself](../dns.md#lookups-b4-makes-itself).
 
 ### Routing setup
 
@@ -421,7 +421,7 @@ With `SafeSocks 1`, Tor refuses a connection it receives by address and logs `Yo
 
 ### Connections through the built-in SOCKS5 proxy
 
-A client of b4's own [SOCKS5 proxy](../settings/core.md#socks5-proxy) that asks for a host name the set matches is handed to the set's upstream directly, without the firewall rules. The CONNECT to the upstream carries that name, under the same rules as above: a name pinned in the set's DNS settings goes by its pinned address, with **Send domain name to upstream** off the name is resolved through the router's own resolver and the address is sent, and a name the upstream refuses is repeated with the address from that resolver. A `.onion` name is never resolved locally, and never falls back to a direct connection. **Fall back to direct on upstream failure** applies when the upstream cannot be reached, not when it refuses a destination.
+A client of b4's own [SOCKS5 proxy](../settings/core.md#socks5-proxy) that asks for a host name the set matches is handed to the set's upstream directly, without the firewall rules. The CONNECT to the upstream carries that name, under the same rules as above: a name pinned in the set's DNS settings goes by its pinned address, with **Send domain name to upstream** off b4 resolves the name and sends the address, and a name the upstream refuses is repeated with an address. These lookups use the set's own resolver when its DNS redirect has one, and the router's otherwise; see [Lookups b4 makes itself](../dns.md#lookups-b4-makes-itself). A `.onion` name is never resolved locally, and never falls back to a direct connection. **Fall back to direct on upstream failure** applies when the upstream cannot be reached, not when it refuses a destination.
 
 This does not depend on b4 having seen a DNS answer for the name. It works in TUN mode, where the answers to the router's own lookups never reach b4, and for names that have no address outside the upstream, such as Tor's `.onion`.
 

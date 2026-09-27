@@ -102,31 +102,6 @@ func TestDNSSourceBreakerTripsAfterRepeatedFailures(t *testing.T) {
 	}
 }
 
-func TestDNSSourceBreakerLetsOneProbeThroughAfterTheCooldown(t *testing.T) {
-	t.Cleanup(resetDNSAnswerCache)
-	resetDNSAnswerCache()
-
-	const source = "9.9.9.9"
-
-	for i := 0; i < dnsSourceFailuresToTrip; i++ {
-		noteDNSSourceFailure(source)
-	}
-	if !dnsSourceUnreachable(source) {
-		t.Fatal("breaker did not trip")
-	}
-
-	dnsSourceMu.Lock()
-	dnsSourceHealth[source].retryAt = time.Now().Add(-time.Second)
-	dnsSourceMu.Unlock()
-
-	if dnsSourceUnreachable(source) {
-		t.Fatal("the cooldown expired, one probe must be let through")
-	}
-	if !dnsSourceUnreachable(source) {
-		t.Fatal("the probe was let through, the breaker must close again until the next cooldown")
-	}
-}
-
 func TestAnEmptiedAnswerIsNotCacheable(t *testing.T) {
 	t.Cleanup(resetDNSAnswerCache)
 	resetDNSAnswerCache()

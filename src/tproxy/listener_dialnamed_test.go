@@ -1,13 +1,16 @@
 package tproxy
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/socks5"
 )
 
@@ -212,5 +215,130 @@ func TestDialNamedHoldsTheRelayUntilTheConnectionCloses(t *testing.T) {
 	conn.Close()
 	if l.relaying(keys) {
 		t.Fatal("the relay is still held after the connection closed")
+	}
+}
+
+func withSetDNS(t *testing.T, l *Listener, strict bool, answer func(host string) ([]net.IP, error)) *[]dns.Server {
+	t.Helper()
+	set := &config.SetConfig{}
+	set.DNS.Enabled = true
+	set.DNS.DoHURL = "https://dns.example/dns-query"
+	set.DNS.Strict = strict
+	l.set.Store(set)
+	l.SetDNSOptions(0x8000, 3*time.Second, false)
+	dns.ResetSourceHealth()
+	t.Cleanup(dns.ResetSourceHealth)
+	var used []dns.Server
+	orig := setLookup
+	t.Cleanup(func() { setLookup = orig })
+	setLookup = func(_ context.Context, srv dns.Server, host string, _, _ bool) ([]net.IP, error) {
+		used = append(used, srv)
+		return answer(host)
+	}
+	return &used
+}
+
+func TestDialNamedResolvesThroughTheSetsDNSServer(t *testing.T) {
+	up := startMockSocks(t, 0, func(byte) byte { return 0 })
+	l := newTestListener(t, up.port(), fakeNames{})
+	l.UseDomain = false
+	used := withSetDNS(t, l, false, func(string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("2001:db8::5"), net.IPv4(203, 0, 113, 50)}, nil
+	})
+
+	conn, err := l.DialNamed("blocked.example", 443)
+	if err != nil {
+		t.Fatalf("DialNamed: %v", err)
+	}
+	conn.Close()
+	if r := up.next(t); r.atyp != 1 || r.host != "203.0.113.50" {
+		t.Fatalf("upstream got atyp %d host %q, want the set's DNS answer", r.atyp, r.host)
+	}
+	if len(*used) != 1 || (*used)[0].DoHURL != "https://dns.example/dns-query" || (*used)[0].Mark != 0x8000 || (*used)[0].Timeout != 3*time.Second {
+		t.Fatalf("lookup went to %+v", *used)
+	}
+}
+
+func TestDialNamedFallsBackToTheRoutersResolverUnlessStrict(t *testing.T) {
+	up := startMockSocks(t, 0, func(byte) byte { return 0 })
+	l := newTestListener(t, up.port(), fakeNames{})
+	l.UseDomain = false
+	withSetDNS(t, l, false, func(string) ([]net.IP, error) { return nil, errors.New("resolver down") })
+
+	conn, err := l.DialNamed("localhost", 443)
+	if err != nil {
+		t.Fatalf("DialNamed: %v", err)
+	}
+	conn.Close()
+	if r := up.next(t); r.host != "127.0.0.1" {
+		t.Fatalf("upstream got %q, want the router's answer after the set's resolver failed", r.host)
+	}
+
+	strict := newTestListener(t, up.port(), fakeNames{})
+	strict.UseDomain = false
+	withSetDNS(t, strict, true, func(string) ([]net.IP, error) { return nil, errors.New("resolver down") })
+	if _, err := strict.DialNamed("localhost", 443); err == nil {
+		t.Fatal("with Strict on, a failed set resolver must fail the connection")
+	}
+	select {
+	case r := <-up.reqs:
+		t.Fatalf("a strict set still reached the upstream with %q", r.host)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestDialNamedRetriesARefusedNameWithTheSetsDNSAnswer(t *testing.T) {
+	up := startMockSocks(t, 0, func(atyp byte) byte {
+		if atyp == 3 {
+			return 4
+		}
+		return 0
+	})
+	l := newTestListener(t, up.port(), fakeNames{})
+	withSetDNS(t, l, false, func(string) ([]net.IP, error) { return []net.IP{net.IPv4(203, 0, 113, 51)}, nil })
+
+	conn, err := l.DialNamed("blocked.example", 443)
+	if err != nil {
+		t.Fatalf("DialNamed: %v", err)
+	}
+	conn.Close()
+	first, second := up.next(t), up.next(t)
+	if first.host != "blocked.example" || second.host != "203.0.113.51" {
+		t.Fatalf("CONNECTs %q then %q, want the name then the set's DNS answer", first.host, second.host)
+	}
+}
+
+func TestDialNamedFailsOpenToTheSetsDNSAnswer(t *testing.T) {
+	dead, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadPort := dead.Addr().(*net.TCPAddr).Port
+	dead.Close()
+	direct, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer direct.Close()
+	go func() {
+		c, err := direct.Accept()
+		if err != nil {
+			return
+		}
+		_, _ = c.Write([]byte("direct"))
+		c.Close()
+	}()
+
+	l := newTestListener(t, deadPort, fakeNames{})
+	l.FailOpen = true
+	withSetDNS(t, l, false, func(string) ([]net.IP, error) { return []net.IP{net.IPv4(127, 0, 0, 1)}, nil })
+
+	conn, err := l.DialNamed("blocked.example", direct.Addr().(*net.TCPAddr).Port)
+	if err != nil {
+		t.Fatalf("fail-open dial: %v", err)
+	}
+	defer conn.Close()
+	if got, _ := io.ReadAll(conn); string(got) != "direct" {
+		t.Fatalf("fail-open reached %q", got)
 	}
 }

@@ -193,6 +193,7 @@ func (m *Manager) syncLocked(cfg *config.Config, retried bool) {
 			continue
 		}
 		l.set.Store(set)
+		l.SetDNSOptions(int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout(), cfg.Queue.IPv6Enabled)
 	}
 
 	for id, set := range desired {
@@ -226,6 +227,7 @@ func (m *Manager) syncLocked(cfg *config.Config, retried bool) {
 			guard:     newLoopGuard(host, set.Routing.Upstream.Port),
 		}
 		l.set.Store(set)
+		l.SetDNSOptions(int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout(), cfg.Queue.IPv6Enabled)
 		if err := l.Start(m.ctx); err != nil {
 			msg := err.Error()
 			if m.startErr[id] != msg {
