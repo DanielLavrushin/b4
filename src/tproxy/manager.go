@@ -2,6 +2,7 @@ package tproxy
 
 import (
 	"context"
+	"net"
 	"sort"
 	"sync"
 	"time"
@@ -286,6 +287,17 @@ func (m *Manager) Stop() {
 	if m.cancel != nil {
 		m.cancel()
 	}
+}
+
+func (m *Manager) DialViaSet(setID, host string, port int) (net.Conn, bool, error) {
+	m.mu.Lock()
+	l, ok := m.listeners[setID]
+	m.mu.Unlock()
+	if !ok || l.MTProtoWS {
+		return nil, false, nil
+	}
+	conn, err := l.DialNamed(host, port)
+	return conn, true, err
 }
 
 func (m *Manager) UpstreamHealth() []UpstreamHealth {

@@ -180,7 +180,7 @@ If authentication is enabled but TLS is not configured, the username and passwor
 
 ## SOCKS5 proxy
 
-A built-in SOCKS5 proxy. Applications can route traffic through it - it is processed by b4 with the configured sets applied.
+A built-in SOCKS5 proxy. Applications can route traffic through it - it is processed by b4 with the configured sets applied. A host name matched by a set in proxy mode is handed to that set's upstream; see [Connections through the built-in SOCKS5 proxy](../sets/routing.md#connections-through-the-built-in-socks5-proxy).
 
 ![20260418230122](../../static/img/core/20260418230122.png)
 

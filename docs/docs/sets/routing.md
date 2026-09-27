@@ -419,6 +419,14 @@ The option covers TCP. UDP through UDP ASSOCIATE always carries the address.
 With `SafeSocks 1`, Tor refuses a connection it receives by address and logs `Your application (using socks5 to port 443) is giving Tor only an IP address`. Connections with no name b4 can back still arrive by address, for example from a device that resolves over DoH, DoT or Android Private DNS and opens an address matched by IP, CIDR or GeoIP targets under a name the set does not list. Tor's SOCKS port does not implement UDP ASSOCIATE, so a set pointed at Tor works with **Route UDP through upstream** off.
 :::
 
+### Connections through the built-in SOCKS5 proxy
+
+A client of b4's own [SOCKS5 proxy](../settings/core.md#socks5-proxy) that asks for a host name the set matches is handed to the set's upstream directly, without the firewall rules. The CONNECT to the upstream carries that name, under the same rules as above: a name pinned in the set's DNS settings goes by its pinned address, with **Send domain name to upstream** off the name is resolved through the router's own resolver and the address is sent, and a name the upstream refuses is repeated with the address from that resolver. A `.onion` name is never resolved locally, and never falls back to a direct connection. **Fall back to direct on upstream failure** applies when the upstream cannot be reached, not when it refuses a destination.
+
+This does not depend on b4 having seen a DNS answer for the name. It works in TUN mode, where the answers to the router's own lookups never reach b4, and for names that have no address outside the upstream, such as Tor's `.onion`.
+
+The set that decides is the first one that matches the name, as for a DNS answer. The hand-off covers a set in proxy mode whose listener is running, that carries the router's own traffic (not limited to source interfaces or an included source-device list), and that does not use domain-only matching. A request by address, and a name the deciding set does not cover, is opened by the router and goes through the firewall rules like any other connection the router opens.
+
 ### A set that covers its own upstream
 
 A proxy set also diverts connections the router itself opens to addresses in the set. An upstream proxy running on the router opens its own connection to its server from the router, so a set whose targets include that server's address, such as `0.0.0.0/0` or a broad GeoIP category, would hand the upstream its own connection and loop. b4 recognises such a connection by the process that owns it: one that holds the listening socket on the upstream's port. That connection goes straight to its destination instead of into the upstream. An upstream host given as a name is resolved for this check, and `0.0.0.0` counts as the router itself.

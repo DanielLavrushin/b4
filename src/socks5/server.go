@@ -57,6 +57,10 @@ type IPBlockCache interface {
 	AddBlocked(dstIPPort string)
 }
 
+type UpstreamDialer interface {
+	DialViaSet(setID, host string, port int) (net.Conn, bool, error)
+}
+
 // Server is a SOCKS5 proxy server.
 type Server struct {
 	cfg      atomic.Pointer[config.Config]
@@ -74,6 +78,7 @@ type Server struct {
 	matcher      atomic.Value // stores *sni.SuffixSet
 	acl          atomic.Pointer[sourceACL]
 	ipBlockCache IPBlockCache
+	upstreams    UpstreamDialer
 
 	liveMu     sync.Mutex
 	live       map[net.Conn]struct{}
@@ -82,6 +87,10 @@ type Server struct {
 
 func (s *Server) SetIPBlockCache(cache IPBlockCache) {
 	s.ipBlockCache = cache
+}
+
+func (s *Server) SetUpstreamDialer(d UpstreamDialer) {
+	s.upstreams = d
 }
 
 func (s *Server) getCfg() *config.Config {
@@ -389,7 +398,7 @@ func (s *Server) handleConnect(conn net.Conn, dest string) error {
 		return fmt.Errorf("destination %s is cached as blocked", dest)
 	}
 
-	remote, err := net.DialTimeout("tcp", dest, dialTimeout)
+	remote, err := s.dial(dest)
 	if err != nil {
 		log.Tracef("SOCKS5 connect to %s failed: %v", dest, err)
 		sendReply(conn, repHostUnreachable, nil)
@@ -408,6 +417,72 @@ func (s *Server) handleConnect(conn net.Conn, dest string) error {
 	s.logAndRecordConnection("TCP", conn.RemoteAddr().String(), dest, "socks5")
 
 	return s.relay(conn, remote)
+}
+
+func (s *Server) dial(dest string) (net.Conn, error) {
+	if set, host, port := s.proxySetFor(dest); set != nil {
+		if conn, handled, err := s.upstreams.DialViaSet(set.Id, host, port); handled {
+			return conn, err
+		}
+	}
+	return net.DialTimeout("tcp", dest, dialTimeout)
+}
+
+func (s *Server) proxySetFor(dest string) (*config.SetConfig, string, int) {
+	if s.upstreams == nil {
+		return nil, "", 0
+	}
+	rawHost, portStr, err := net.SplitHostPort(dest)
+	if err != nil || net.ParseIP(rawHost) != nil {
+		return nil, "", 0
+	}
+	host := sni.NormalizeDomain(rawHost)
+	port, err := strconv.Atoi(portStr)
+	if err != nil || host == "" {
+		return nil, "", 0
+	}
+	matched, set := s.getMatcher().MatchSNIWithSource(host, "")
+	if !matched || set == nil || !set.Enabled || !set.Routing.Enabled ||
+		set.Routing.Mode != config.RoutingModeProxy || set.RoutingSourceScoped() ||
+		set.Targets.DomainOnly || s.upstreamIsSelf(set.Routing.Upstream) {
+		return nil, "", 0
+	}
+	return set, host, port
+}
+
+func (s *Server) upstreamIsSelf(up config.UpstreamProxyConfig) bool {
+	cfg := s.getCfg()
+	if cfg == nil || up.Port != cfg.System.Socks5.Port {
+		return false
+	}
+	if up.Host == "" {
+		return true
+	}
+	ips := []net.IP{net.ParseIP(up.Host)}
+	if ips[0] == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		resolved, err := net.DefaultResolver.LookupIP(ctx, "ip", up.Host)
+		if err != nil || len(resolved) == 0 {
+			return true
+		}
+		ips = resolved
+	}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return true
+	}
+	for _, ip := range ips {
+		if ip.IsLoopback() || ip.IsUnspecified() {
+			return true
+		}
+		for _, a := range addrs {
+			if n, ok := a.(*net.IPNet); ok && n.IP.Equal(ip) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *Server) relay(a, b net.Conn) error {

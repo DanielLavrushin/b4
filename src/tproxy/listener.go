@@ -26,6 +26,8 @@ func markedDialer(timeout time.Duration, bypassMark uint32) net.Dialer {
 
 const failOpenUserTimeout = 120 * time.Second
 
+const namedDialBudget = 20 * time.Second
+
 func setTCPUserTimeout(c net.Conn, d time.Duration) {
 	tc, ok := c.(*net.TCPConn)
 	if !ok || d <= 0 {
@@ -528,8 +530,106 @@ func (l *Listener) pinnedName(host string) bool {
 	return set != nil && len(set.DNS.PinnedAddresses(host)) > 0
 }
 
+func (l *Listener) DialNamed(host string, port int) (net.Conn, error) {
+	ctx, cancel := context.WithTimeout(l.ctx, namedDialBudget)
+	defer cancel()
+	onion := isOnionName(host)
+	target, err := l.namedTarget(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	release := l.holdRelay(relayKeys("tcp", port, host, target))
+	upstream, err := l.dialUpstreamWithin(ctx, target, port)
+	if err != nil && target == host && !onion && socks5.IsConnectRejected(err) {
+		if addr, rerr := l.resolveHost(ctx, host); rerr == nil {
+			log.Tracef("tproxy: upstream refused %s:%d on set %q (%v), retrying with %s", host, port, l.SetName, err, addr)
+			target = addr
+			upstream, err = l.dialUpstreamWithin(ctx, target, port)
+		}
+	}
+	switch {
+	case err == nil:
+		l.noteUpstreamSuccess()
+		setTCPUserTimeout(upstream, failOpenUserTimeout)
+		return &heldConn{Conn: upstream, release: release}, nil
+	case socks5.IsConnectRejected(err):
+		l.noteUpstreamSuccess()
+		release()
+		log.Tracef("tproxy: upstream of set %q refused %s:%d: %v", l.SetName, target, port, err)
+		return nil, err
+	}
+	release()
+	l.noteUpstreamFailure(target, port, err)
+	if !l.FailOpen || onion {
+		return nil, err
+	}
+	dialer := markedDialer(failOpenDirectTimeout, l.Upstream.BypassMark)
+	direct, derr := dialer.DialContext(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+	if derr != nil {
+		return nil, derr
+	}
+	setTCPUserTimeout(direct, failOpenUserTimeout)
+	return direct, nil
+}
+
+func isOnionName(host string) bool {
+	return strings.HasSuffix(strings.ToLower(strings.TrimSuffix(host, ".")), ".onion")
+}
+
+func (l *Listener) namedTarget(ctx context.Context, host string) (string, error) {
+	if set := l.set.Load(); set != nil {
+		if pins := set.DNS.PinnedAddresses(host); len(pins) > 0 {
+			return pins[0], nil
+		}
+	}
+	if l.UseDomain {
+		return host, nil
+	}
+	return l.resolveHost(ctx, host)
+}
+
+func (l *Listener) resolveHost(ctx context.Context, host string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+	if err != nil {
+		return "", err
+	}
+	for _, ip := range ips {
+		if ip.To4() != nil {
+			return ip.String(), nil
+		}
+	}
+	if len(ips) == 0 {
+		return "", fmt.Errorf("no address for %s", host)
+	}
+	return ips[0].String(), nil
+}
+
+type heldConn struct {
+	net.Conn
+	release func()
+	once    sync.Once
+}
+
+func (c *heldConn) Close() error {
+	c.once.Do(c.release)
+	return c.Conn.Close()
+}
+
+func (c *heldConn) CloseWrite() error {
+	if cw, ok := c.Conn.(interface{ CloseWrite() error }); ok {
+		return cw.CloseWrite()
+	}
+	return nil
+}
+
 func (l *Listener) dialUpstream(host string, port int) (net.Conn, error) {
-	ctx, cancel := context.WithTimeout(l.ctx, 15*time.Second)
+	return l.dialUpstreamWithin(l.ctx, host, port)
+}
+
+func (l *Listener) dialUpstreamWithin(parent context.Context, host string, port int) (net.Conn, error) {
+	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
 	defer cancel()
 	return socks5.DialUpstream(ctx, l.Upstream, host, port)
 }

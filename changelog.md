@@ -4,6 +4,7 @@
 
 - FIXED: **With Allow only selected devices on under Device Filtering, connections through b4's SOCKS5 server and others the router opened itself went out directly instead of through proxy sets and Telegram over WebSocket** - the rule that hands a connection to the set's listener accepted only the selected devices, while the router's own connections reach it over the loopback interface, so they hung before 1.83.0 and were left out of these sets since.
 - FIXED: **On iptables, a routing set that Allow only selected devices left with no device, for example because the set excludes them or because they are manually added IPv4 devices while IPv6 is on, kept the devices it had before and made b4 rebuild routing at every firewall check** - the set's old jump was replaced only when the new filter produced a new one, and the check for missing rules expected a jump in every address family.
+- FIXED: **In TUN mode, a site of a proxy set opened through b4's SOCKS5 server timed out unless its exact name was listed in the set, and a `.onion` address never worked through it in any mode** - the SOCKS5 server looked the name up itself and connected directly, leaving it to the firewall rules to catch the address, but b4 learns a set's addresses from the DNS answers it sees, TUN mode never shows it the answers to the router's own lookups, and a `.onion` name has no address to look up.
 
 ## [1.83.0] - 2026-09-26
 
