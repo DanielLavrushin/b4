@@ -34,8 +34,12 @@ func scanKey(row interface{ Scan(...interface{}) error }, k *Key) error {
 }
 
 func (s *Store) GetKey(ctx context.Context, keyHMAC string) (*Key, error) {
+	return getKey(ctx, s.db, keyHMAC)
+}
+
+func getKey(ctx context.Context, q querier, keyHMAC string) (*Key, error) {
 	var k Key
-	err := scanKey(s.db.QueryRowContext(ctx, `SELECT `+keyColumns+` FROM keys WHERE key_hmac = ?`, keyHMAC), &k)
+	err := scanKey(q.QueryRowContext(ctx, `SELECT `+keyColumns+` FROM keys WHERE key_hmac = ?`, keyHMAC), &k)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -60,41 +64,121 @@ func (s *Store) TouchKey(ctx context.Context, keyHMAC string, now time.Time) (*K
 }
 
 func (s *Store) BanKey(ctx context.Context, keyHMAC, reason string, now time.Time) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE keys SET banned = 1, ban_reason = ?, banned_at = ? WHERE key_hmac = ?`, reason, formatTime(now), keyHMAC)
+	return banKeyTx(ctx, s.db, keyHMAC, reason, now)
+}
+
+func banKeyTx(ctx context.Context, q querier, keyHMAC, reason string, now time.Time) error {
+	res, err := q.ExecContext(ctx, `UPDATE keys SET banned = 1, ban_reason = ?, banned_at = ? WHERE key_hmac = ?`, reason, formatTime(now), keyHMAC)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		_, err = s.db.ExecContext(ctx, `INSERT INTO keys(key_hmac, first_seen, banned, ban_reason, banned_at) VALUES(?, ?, 1, ?, ?)`, keyHMAC, formatTime(now), reason, formatTime(now))
+		_, err = q.ExecContext(ctx, `INSERT INTO keys(key_hmac, first_seen, banned, ban_reason, banned_at) VALUES(?, ?, 1, ?, ?)`, keyHMAC, formatTime(now), reason, formatTime(now))
 		if err != nil {
 			return err
 		}
 	}
-	return s.MarkDirty(ctx)
+	return markDirtyTx(ctx, q)
 }
 
 func (s *Store) UnbanKey(ctx context.Context, keyHMAC string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE keys SET banned = 0, ban_reason = '', banned_at = '' WHERE key_hmac = ?`, keyHMAC)
-	if err != nil {
-		return err
-	}
-	return s.MarkDirty(ctx)
+	return unbanKeyTx(ctx, s.db, keyHMAC)
 }
 
-func (s *Store) TrustKey(ctx context.Context, keyHMAC string, now time.Time) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE keys SET trusted = 1, trusted_at = ? WHERE key_hmac = ?`, formatTime(now), keyHMAC)
+func unbanKeyTx(ctx context.Context, q querier, keyHMAC string) error {
+	res, err := q.ExecContext(ctx, `UPDATE keys SET banned = 0, ban_reason = '', banned_at = '' WHERE key_hmac = ?`, keyHMAC)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		_, err = s.db.ExecContext(ctx, `INSERT INTO keys(key_hmac, first_seen, trusted, trusted_at) VALUES(?, ?, 1, ?)`, keyHMAC, formatTime(now), formatTime(now))
+		return ErrNotFound
+	}
+	return markDirtyTx(ctx, q)
+}
+
+func (s *Store) TrustKey(ctx context.Context, keyHMAC string, now time.Time) error {
+	return trustKeyTx(ctx, s.db, keyHMAC, now)
+}
+
+func trustKeyTx(ctx context.Context, q querier, keyHMAC string, now time.Time) error {
+	res, err := q.ExecContext(ctx, `UPDATE keys SET trusted = 1, trusted_at = ? WHERE key_hmac = ?`, formatTime(now), keyHMAC)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		_, err = q.ExecContext(ctx, `INSERT INTO keys(key_hmac, first_seen, trusted, trusted_at) VALUES(?, ?, 1, ?)`, keyHMAC, formatTime(now), formatTime(now))
 	}
 	return err
 }
 
 func (s *Store) UntrustKey(ctx context.Context, keyHMAC string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE keys SET trusted = 0, trusted_at = '' WHERE key_hmac = ?`, keyHMAC)
-	return err
+	return untrustKeyTx(ctx, s.db, keyHMAC)
+}
+
+func untrustKeyTx(ctx context.Context, q querier, keyHMAC string) error {
+	res, err := q.ExecContext(ctx, `UPDATE keys SET trusted = 0, trusted_at = '' WHERE key_hmac = ?`, keyHMAC)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+type VersionRef struct {
+	SetID   string
+	Version int
+	Title   string
+}
+
+type KeyImpact struct {
+	Listed    []VersionRef
+	Pending   []VersionRef
+	Votes     int
+	VotedSets int
+	Reports   int
+	Mirrors   []Mirror
+}
+
+func versionRefs(ctx context.Context, q querier, query string, args ...interface{}) ([]VersionRef, error) {
+	rows, err := q.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]VersionRef, 0)
+	for rows.Next() {
+		var r VersionRef
+		if err := rows.Scan(&r.SetID, &r.Version, &r.Title); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) KeyImpact(ctx context.Context, keyHMAC string) (*KeyImpact, error) {
+	var impact KeyImpact
+	var err error
+	if impact.Listed, err = versionRefs(ctx, s.db, `SELECT v.set_id, v.version, v.title FROM set_versions v
+		WHERE `+listedFilter+` AND v.set_id IN (SELECT id FROM sets WHERE author_hmac = ?) ORDER BY v.title, v.set_id`, keyHMAC); err != nil {
+		return nil, err
+	}
+	if impact.Pending, err = versionRefs(ctx, s.db, `SELECT v.set_id, v.version, v.title FROM set_versions v
+		WHERE v.status = 'pending' AND v.uploader_hmac = ? ORDER BY v.created_at`, keyHMAC); err != nil {
+		return nil, err
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*), COUNT(DISTINCT fp) FROM votes WHERE key_hmac = ?`, keyHMAC).Scan(&impact.Votes, &impact.VotedSets); err != nil {
+		return nil, err
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM reports WHERE key_hmac = ? AND state = 'open'`, keyHMAC).Scan(&impact.Reports); err != nil {
+		return nil, err
+	}
+	if impact.Mirrors, err = queryMirrors(ctx, s.db, `SELECT `+mirrorColumns+` FROM mirrors WHERE key_hmac = ? ORDER BY id`, keyHMAC); err != nil {
+		return nil, err
+	}
+	return &impact, nil
 }
 
 func (s *Store) BannedKeys(ctx context.Context) ([]Key, error) {
@@ -168,37 +252,19 @@ func (s *Store) ASNNames(ctx context.Context) (map[string]string, error) {
 	return out, rows.Err()
 }
 
-type KeySummary struct {
-	Key
-	Sets    int
-	Votes   int
-	Reports int
-}
-
-func (s *Store) Keys(ctx context.Context) ([]KeySummary, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT k.key_hmac, k.first_seen, k.banned, k.ban_reason, k.banned_at, k.trusted, k.trusted_at,
-		(SELECT COUNT(*) FROM sets WHERE author_hmac = k.key_hmac),
-		(SELECT COUNT(*) FROM votes WHERE key_hmac = k.key_hmac),
-		(SELECT COUNT(*) FROM reports WHERE key_hmac = k.key_hmac)
-		FROM keys k ORDER BY k.first_seen DESC, k.key_hmac`)
+func (s *Store) BannedKeySet(ctx context.Context) (map[string]bool, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT key_hmac FROM keys WHERE banned = 1`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := make([]KeySummary, 0)
+	out := make(map[string]bool)
 	for rows.Next() {
-		var k KeySummary
-		var banned, trusted int
-		var firstSeen, bannedAt, trustedAt string
-		if err := rows.Scan(&k.KeyHMAC, &firstSeen, &banned, &k.BanReason, &bannedAt, &trusted, &trustedAt, &k.Sets, &k.Votes, &k.Reports); err != nil {
+		var key string
+		if err := rows.Scan(&key); err != nil {
 			return nil, err
 		}
-		k.Banned = banned != 0
-		k.FirstSeen = parseTime(firstSeen)
-		k.BannedAt = parseTime(bannedAt)
-		k.Trusted = trusted != 0
-		k.TrustedAt = parseTime(trustedAt)
-		out = append(out, k)
+		out[key] = true
 	}
 	return out, rows.Err()
 }

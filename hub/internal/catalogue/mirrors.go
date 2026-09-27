@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	neturl "net/url"
@@ -17,10 +18,16 @@ import (
 )
 
 const (
-	DefaultMirrorTimeout = 5 * time.Second
-	DefaultMirrorWindow  = 24 * time.Hour
-	mirrorHealthLimit    = 64
-	mirrorManifestLimit  = 1 << 20
+	DefaultMirrorTimeout       = 5 * time.Second
+	DefaultMirrorWindow        = 24 * time.Hour
+	DefaultMirrorCheckInterval = 10 * time.Minute
+	mirrorHealthLimit          = 64
+	mirrorManifestLimit        = 1 << 20
+
+	CheckHealth    = "health"
+	CheckManifest  = "manifest"
+	CheckDecode    = "decode"
+	CheckSignature = "signature"
 )
 
 type MirrorHealth struct {
@@ -130,41 +137,68 @@ func guardedClient(timeout time.Duration, allowPrivate bool) *http.Client {
 	}
 }
 
-func (h *MirrorHealth) Healthy(ctx context.Context) ([]string, error) {
+func (h *MirrorHealth) CheckOne(ctx context.Context, m store.Mirror) store.MirrorCheck {
+	started := h.now()
+	c := h.check(ctx, m.URL)
+	c.At = started.UTC()
+	c.Millis = h.now().Sub(started).Milliseconds()
+	if err := h.Store.RecordMirrorCheck(ctx, m.ID, c); err != nil {
+		log.Printf("mirrors: recording the check of %s: %v", m.URL, err)
+	}
+	return c
+}
+
+func (h *MirrorHealth) CheckAll(ctx context.Context) ([]store.MirrorCheck, error) {
 	mirrors, err := h.Store.MirrorsByStatus(ctx, store.MirrorApproved)
 	if err != nil {
 		return nil, err
 	}
-	now := h.now().UTC()
-	results := make([]error, len(mirrors))
+	results := make([]store.MirrorCheck, len(mirrors))
 	var wg sync.WaitGroup
 	for i := range mirrors {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			results[i] = h.check(ctx, mirrors[i].URL)
+			results[i] = h.CheckOne(ctx, mirrors[i])
 		}(i)
 	}
 	wg.Wait()
-	healthy := make([]string, 0, len(mirrors))
-	for i, m := range mirrors {
-		ok := results[i] == nil
-		reason := ""
-		if !ok {
-			reason = results[i].Error()
+	return results, nil
+}
+
+func (h *MirrorHealth) Announceable(ctx context.Context) ([]string, error) {
+	return h.Store.AnnounceableMirrors(ctx, h.now().UTC(), h.window())
+}
+
+func (h *MirrorHealth) Healthy(ctx context.Context) ([]string, error) {
+	if _, err := h.CheckAll(ctx); err != nil {
+		return nil, err
+	}
+	return h.Announceable(ctx)
+}
+
+func (h *MirrorHealth) AnnounceWindow() time.Duration {
+	return h.window()
+}
+
+func (h *MirrorHealth) Run(ctx context.Context, interval time.Duration, onRound func()) {
+	if interval <= 0 {
+		interval = DefaultMirrorCheckInterval
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		if _, err := h.CheckAll(ctx); err != nil {
+			log.Printf("mirrors: health round: %v", err)
+		} else if onRound != nil {
+			onRound()
 		}
-		if err := h.Store.RecordMirrorCheck(ctx, m.ID, now, ok, reason); err != nil {
-			return nil, err
-		}
-		lastOK := m.LastOK
-		if ok {
-			lastOK = now
-		}
-		if !lastOK.IsZero() && now.Sub(lastOK) <= h.window() {
-			healthy = append(healthy, m.URL)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
 		}
 	}
-	return healthy, nil
 }
 
 func (h *MirrorHealth) get(ctx context.Context, url string, limit int64) ([]byte, error) {
@@ -193,24 +227,28 @@ func (h *MirrorHealth) get(ctx context.Context, url string, limit int64) ([]byte
 	return body, nil
 }
 
-func (h *MirrorHealth) check(ctx context.Context, base string) error {
+func failedCheck(code string, err error) store.MirrorCheck {
+	return store.MirrorCheck{Code: code, Error: err.Error()}
+}
+
+func (h *MirrorHealth) check(ctx context.Context, base string) store.MirrorCheck {
 	body, err := h.get(ctx, base+hubwire.PathHealth, mirrorHealthLimit)
 	if err != nil {
-		return fmt.Errorf("health: %w", err)
+		return failedCheck(CheckHealth, err)
 	}
-	if strings.TrimSpace(string(body)) != "ok" {
-		return fmt.Errorf("health answered %q", strings.TrimSpace(string(body)))
+	if answer := strings.TrimSpace(string(body)); answer != "ok" {
+		return failedCheck(CheckHealth, fmt.Errorf("answered %q", answer))
 	}
 	body, err = h.get(ctx, base+hubwire.PathManifest, mirrorManifestLimit)
 	if err != nil {
-		return fmt.Errorf("manifest: %w", err)
+		return failedCheck(CheckManifest, err)
 	}
 	var m hubwire.Manifest
 	if err := json.Unmarshal(body, &m); err != nil {
-		return fmt.Errorf("manifest does not decode: %w", err)
+		return failedCheck(CheckDecode, err)
 	}
 	if err := hubwire.VerifyManifest(&m, []string{h.KeyID}); err != nil {
-		return fmt.Errorf("manifest signature: %w", err)
+		return failedCheck(CheckSignature, err)
 	}
-	return nil
+	return store.MirrorCheck{OK: true, Epoch: m.Epoch, Seq: m.Seq, GeneratedAt: m.GeneratedAt}
 }

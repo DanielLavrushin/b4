@@ -265,6 +265,10 @@ hub-deploy: hub-linux-amd64
 hub-test:
 	@go -C $(HUB_DIR) test ./...
 
+.PHONY: hub-types
+hub-types:
+	@go -C $(HUB_DIR) test ./internal/web -run TestAdminTypes -count=1 -update-types
+
 .PHONY: hub-keygen
 hub-keygen: hub-build
 	@$(OUT_DIR)/b4hub keygen --data $(HUB_DATA)
@@ -343,6 +347,7 @@ help:
 	@printf "  %-25s %s\n" "make hub-docker" "Build the lavrushin/b4hub:VERSION image from hub/Dockerfile"
 	@printf "  %-25s %s\n" "make hub-deploy" "Build and install b4hub on the box in .env (HUB_DEPLOY_HOST, HUB_DEPLOY_KEY), then restart the unit"
 	@printf "  %-25s %s\n" "make hub-test" "Run the hub service tests"
+	@printf "  %-25s %s\n" "make hub-types" "Regenerate the console's API types from the Go views"
 	@printf "  %-25s %s\n" "make hub-keygen" "Create a development hub key under hub/data"
 	@printf "  %-25s %s\n" "make hub-run" "Run the hub service locally (HUB_LISTEN, default 0.0.0.0:7100)"
 	@printf "  %-25s %s\n" "make hub-mirror" "Run a child hub mirroring HUB_UPSTREAM on port 7101"

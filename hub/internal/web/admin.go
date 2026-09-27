@@ -2,17 +2,20 @@ package web
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
-	"fmt"
-	"log"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/daniellavrushin/b4/hubwire"
-	"github.com/daniellavrushin/b4hub/internal/geo"
+	"github.com/daniellavrushin/b4hub/internal/asn"
+	"github.com/daniellavrushin/b4hub/internal/catalogue"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
+	"github.com/daniellavrushin/b4hub/internal/moderation"
 	"github.com/daniellavrushin/b4hub/internal/store"
 )
 
@@ -22,26 +25,46 @@ const (
 	feedbackLimit   = 200
 	maxFeedback     = 1000
 
-	ActionApprove = "approve"
-	ActionReject  = "reject"
-	ActionHide    = "hide"
-	ActionBan     = "ban"
-	ActionUnban   = "unban"
-	ActionTrust   = "trust"
-	ActionUntrust = "untrust"
-	ActionRemove  = "remove"
+	ActionApprove   = moderation.ActionApprove
+	ActionReject    = moderation.ActionReject
+	ActionHide      = moderation.ActionHide
+	ActionRestore   = moderation.ActionRestore
+	ActionBan       = moderation.ActionBan
+	ActionUnban     = moderation.ActionUnban
+	ActionTrust     = moderation.ActionTrust
+	ActionUntrust   = moderation.ActionUntrust
+	ActionRemove    = moderation.ActionRemove
+	ActionWithdraw  = moderation.ActionWithdraw
+	ActionReinstate = moderation.ActionReinstate
+	ActionDismiss   = moderation.ActionDismiss
+	ActionResolve   = moderation.ActionResolve
+	ActionReopen    = moderation.ActionReopen
 )
 
 type actionRequest struct {
-	Reason string `json:"reason"`
+	Reason       string `json:"reason"`
+	ExpectStatus string `json:"expect_status,omitempty"`
+	Force        bool   `json:"force,omitempty"`
+	Withdraw     bool   `json:"withdraw,omitempty"`
+	KeepReports  bool   `json:"keep_reports,omitempty"`
+}
+
+type noteRequest struct {
+	Note string `json:"note"`
 }
 
 type revokeRequest struct {
-	KeyID string `json:"key_id"`
+	KeyID        string `json:"key_id"`
+	Confirm      string `json:"confirm"`
+	AllowBuiltin bool   `json:"allow_builtin,omitempty"`
 }
 
 type deleteRequest struct {
 	Confirm string `json:"confirm"`
+}
+
+type buildRequest struct {
+	Wait bool `json:"wait"`
 }
 
 func (s *Server) mountAPI(mux *http.ServeMux) {
@@ -50,58 +73,126 @@ func (s *Server) mountAPI(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+PathAPI+"/logout", s.logout)
 
 	mux.Handle("GET "+PathAPI+"/overview", s.guard(s.overview))
+	mux.Handle("GET "+PathAPI+"/counts", s.guard(s.counts))
+	mux.Handle("GET "+PathAPI+"/health", s.guard(s.healthHandler))
 	mux.Handle("GET "+PathAPI+"/sets", s.guard(s.sets))
+	mux.Handle("GET "+PathAPI+"/sets/rows", s.guard(s.setRows))
+	mux.Handle("GET "+PathAPI+"/queue", s.guard(s.queue))
 	mux.Handle("GET "+PathAPI+"/sets/{id}", s.guard(s.setDetail))
 	mux.Handle("POST "+PathAPI+"/sets/{id}/{version}/{action}", s.guard(s.setAction))
 	mux.Handle("POST "+PathAPI+"/sets/{id}/{version}/preview", s.guard(s.setPreview))
 	mux.Handle("POST "+PathAPI+"/sets/{id}/{version}/edit", s.guard(s.setEdit))
+	mux.Handle("POST "+PathAPI+"/sets/{id}/{version}/reports/{action}", s.guard(s.versionReports))
+	mux.Handle("GET "+PathAPI+"/sets/{id}/{version}/similar", s.guard(s.similar))
+	mux.Handle("POST "+PathAPI+"/sets/{id}/{version}/text", s.guard(s.setText))
+	mux.Handle("POST "+PathAPI+"/sets/{id}/withdraw", s.guard(s.setWithdraw))
+	mux.Handle("POST "+PathAPI+"/sets/{id}/reinstate", s.guard(s.setReinstate))
 	mux.Handle("POST "+PathAPI+"/sets/{id}/delete", s.guard(s.setDelete))
-	mux.Handle("GET "+PathAPI+"/keys", s.guard(s.keys))
+	mux.Handle("POST "+PathAPI+"/moderation", s.guard(s.moderate))
+	mux.Handle("GET "+PathAPI+"/keys", s.guard(s.keyList))
+	mux.Handle("GET "+PathAPI+"/keys/notable", s.guard(s.notableKeys))
+	mux.Handle("GET "+PathAPI+"/keys/{key}", s.guard(s.keyDetail))
+	mux.Handle("PUT "+PathAPI+"/keys/{key}", s.guard(s.keyProfile))
+	mux.Handle("GET "+PathAPI+"/keys/{key}/impact", s.guard(s.keyImpact))
 	mux.Handle("POST "+PathAPI+"/keys/{key}/{action}", s.guard(s.keyAction))
 	mux.Handle("GET "+PathAPI+"/mirrors", s.guard(s.mirrors))
+	mux.Handle("POST "+PathAPI+"/mirrors/check", s.guard(s.mirrorsCheck))
+	mux.Handle("POST "+PathAPI+"/mirrors/{id}/check", s.guard(s.mirrorCheck))
 	mux.Handle("POST "+PathAPI+"/mirrors/{id}/{action}", s.guard(s.mirrorAction))
 	mux.Handle("GET "+PathAPI+"/feedback", s.guard(s.feedback))
+	mux.Handle("GET "+PathAPI+"/votes", s.guard(s.votes))
+	mux.Handle("GET "+PathAPI+"/reports", s.guard(s.reports))
+	mux.Handle("POST "+PathAPI+"/reports/bulk", s.guard(s.reportsBulk))
+	mux.Handle("POST "+PathAPI+"/reports/{id}/{action}", s.guard(s.reportAction))
+	mux.Handle("GET "+PathAPI+"/catalogue/status", s.guard(s.catalogueStatus))
+	mux.Handle("GET "+PathAPI+"/catalogue/builds", s.guard(s.catalogueBuilds))
 	mux.Handle("POST "+PathAPI+"/catalogue/build", s.guard(s.catalogueBuild))
 	mux.Handle("POST "+PathAPI+"/catalogue/epoch", s.guard(s.catalogueEpoch))
 	mux.Handle("POST "+PathAPI+"/catalogue/revoke", s.guard(s.catalogueRevoke))
+	mux.Handle("GET "+PathAPI+"/audit", s.guard(s.audit))
+	mux.Handle("GET "+PathAPI+"/stats", s.guard(s.stats))
+	mux.Handle("GET "+PathAPI+"/reasons", s.guard(s.reasons))
+	mux.Handle("POST "+PathAPI+"/reasons", s.guard(s.createReason))
+	mux.Handle("PUT "+PathAPI+"/reasons/{id}", s.guard(s.updateReason))
+	mux.Handle("DELETE "+PathAPI+"/reasons/{id}", s.guard(s.deleteReason))
 	mux.Handle("GET "+PathAPI+"/settings", s.guard(s.settings))
 	mux.Handle("PUT "+PathAPI+"/settings", s.guard(s.saveSettings))
-}
-
-func (s *Server) rebuild() {
-	if s.Rebuild == nil {
-		return
-	}
-	if err := s.Rebuild(); err != nil {
-		log.Printf("web: catalogue rebuild after moderation: %v", err)
-	}
+	mux.Handle("GET "+PathAPI+"/notify", s.guard(s.notifySettings))
+	mux.Handle("PUT "+PathAPI+"/notify", s.guard(s.saveNotify))
+	mux.Handle("POST "+PathAPI+"/notify/test", s.guard(s.testNotify))
+	mux.Handle("GET "+PathAPI+"/{rest...}", s.guard(func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, http.StatusNotFound, codeNotFound, "no such console endpoint")
+	}))
 }
 
 func clipRunes(raw string, max int) string {
-	text := strings.TrimSpace(raw)
-	runes := []rune(text)
-	if len(runes) > max {
-		text = strings.TrimSpace(string(runes[:max]))
-	}
-	return text
+	return moderation.CleanText(raw, max)
 }
 
 func cleanReason(raw string) string {
 	return clipRunes(raw, maxReasonRunes)
 }
 
-func (s *Server) readAction(w http.ResponseWriter, r *http.Request) (string, bool) {
-	var req actionRequest
-	if err := readBody(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
-		return "", false
+func (s *Server) actor(r *http.Request) moderation.Actor {
+	a := moderation.Actor{Kind: store.ActorBasic}
+	if c, err := r.Cookie(sessionCookie); err == nil && s.validToken(c.Value) {
+		sum := sha256.Sum256([]byte(c.Value))
+		a.Kind = store.ActorConsole
+		a.Ref = hex.EncodeToString(sum[:4])
 	}
-	return cleanReason(req.Reason), true
+	if ip := asn.ClientIP(r); ip != nil {
+		a.IP = ip.String()
+	}
+	return a
+}
+
+var moderationStatus = map[string]int{
+	moderation.CodeNotFound:          http.StatusNotFound,
+	moderation.CodeUnknownKey:        http.StatusNotFound,
+	moderation.CodeInvalidTransition: http.StatusConflict,
+	moderation.CodeStale:             http.StatusConflict,
+	moderation.CodeAuthorBanned:      http.StatusConflict,
+	moderation.CodeSetWithdrawn:      http.StatusConflict,
+	moderation.CodeNotWithdrawn:      http.StatusConflict,
+	moderation.CodeBatchInvalid:      http.StatusConflict,
+	moderation.CodeNotPending:        http.StatusConflict,
+	moderation.CodeDuplicate:         http.StatusConflict,
+	moderation.CodeNotEditable:       http.StatusConflict,
+}
+
+func (s *Server) failModeration(w http.ResponseWriter, err error) {
+	var me *moderation.Error
+	if errors.As(err, &me) {
+		status, ok := moderationStatus[me.Code]
+		if !ok {
+			status = http.StatusBadRequest
+		}
+		body := ErrorBody{Code: me.Code, Error: me.Message, Params: me.Params}
+		if len(me.Items) > 0 {
+			body.Items = moderationItems(me.Items)
+		}
+		writeJSON(w, status, body)
+		return
+	}
+	s.fail(w, err)
+}
+
+func (s *Server) result(ctx context.Context, res moderation.Result) ActionResult {
+	return ActionResult{Notice: res.Notice, Code: res.Code, Params: res.Params, Build: s.buildState(ctx)}
+}
+
+func (s *Server) readJSON(w http.ResponseWriter, r *http.Request, into interface{}) bool {
+	if err := readBody(w, r, into); err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+		return false
+	}
+	return true
 }
 
 type versionGroups struct {
 	pending    []store.Version
 	listed     []store.Version
+	withheld   []store.Version
 	superseded []store.Version
 	hidden     []store.Version
 	rejected   []store.Version
@@ -115,7 +206,14 @@ func (s *Server) groups(ctx context.Context) (*versionGroups, error) {
 	if g.pending, err = s.Store.PendingVersions(ctx); err != nil {
 		return nil, err
 	}
-	if g.listed, err = s.Store.ListedVersions(ctx); err != nil {
+	if g.listed, err = s.Store.CatalogueVersions(ctx); err != nil {
+		return nil, err
+	}
+	if g.withheld, err = s.Store.WithheldVersions(ctx); err != nil {
+		return nil, err
+	}
+	eligible, err := s.Store.ListedVersions(ctx)
+	if err != nil {
 		return nil, err
 	}
 	active, err := s.Store.ActiveVersions(ctx)
@@ -128,11 +226,11 @@ func (s *Server) groups(ctx context.Context) (*versionGroups, error) {
 	if g.rejected, err = s.Store.VersionsByStatus(ctx, hubwire.SetStatusRejected); err != nil {
 		return nil, err
 	}
-	g.newest = make(map[string]store.Version, len(g.listed))
-	for _, v := range g.listed {
+	g.newest = make(map[string]store.Version, len(eligible))
+	for _, v := range eligible {
 		g.newest[v.SetID] = v
 	}
-	g.versions = make(map[string][]int, len(g.listed))
+	g.versions = make(map[string][]int, len(eligible))
 	for _, v := range active {
 		g.versions[v.SetID] = append(g.versions[v.SetID], v.Version)
 		if v.Version < g.newest[v.SetID].Version {
@@ -146,8 +244,10 @@ func (s *Server) groups(ctx context.Context) (*versionGroups, error) {
 func lineage(v store.Version, newest map[string]store.Version) *LineageView {
 	current, ok := newest[v.SetID]
 	switch {
-	case ok:
+	case ok && v.Version > current.Version:
 		return &LineageView{Kind: LineageReplaces, CurrentVersion: current.Version}
+	case ok:
+		return &LineageView{Kind: LineageOlder, CurrentVersion: current.Version}
 	case v.Version > 1:
 		return &LineageView{Kind: LineageRelists}
 	default:
@@ -155,13 +255,13 @@ func lineage(v store.Version, newest map[string]store.Version) *LineageView {
 	}
 }
 
-func (s *Server) entries(ctx context.Context, versions []store.Version, ec *entryContext, limit int) []EntryView {
+func (s *Server) entries(versions []store.Version, ec *entryContext, limit int) []EntryView {
 	if limit > 0 && len(versions) > limit {
 		versions = versions[:limit]
 	}
 	out := make([]EntryView, 0, len(versions))
 	for _, v := range versions {
-		out = append(out, s.entry(ctx, v, ec))
+		out = append(out, s.entry(v, ec))
 	}
 	return out
 }
@@ -179,11 +279,12 @@ func (s *Server) sets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := SetsView{
-		Pending:    s.entries(ctx, g.pending, ec, 0),
-		Listed:     s.entries(ctx, g.listed, ec, 0),
-		Superseded: s.entries(ctx, g.superseded, ec, 0),
-		Hidden:     s.entries(ctx, g.hidden, ec, recentDecisions),
-		Rejected:   s.entries(ctx, g.rejected, ec, recentDecisions),
+		Pending:    s.entries(g.pending, ec, 0),
+		Listed:     s.entries(g.listed, ec, 0),
+		Withheld:   s.entries(g.withheld, ec, 0),
+		Superseded: s.entries(g.superseded, ec, 0),
+		Hidden:     s.entries(g.hidden, ec, recentDecisions),
+		Rejected:   s.entries(g.rejected, ec, recentDecisions),
 	}
 	for i := range view.Pending {
 		view.Pending[i].Lineage = lineage(g.pending[i], g.newest)
@@ -225,8 +326,19 @@ func (s *Server) setDetail(w http.ResponseWriter, r *http.Request) {
 		DerivedFromVersion: set.DerivedFromVersion,
 		CreatedAt:          set.CreatedAt,
 		UpdatedAt:          set.UpdatedAt,
-		Versions:           s.entries(ctx, versions, ec, 0),
+		WithdrawnAt:        optionalTime(set.WithdrawnAt),
+		WithdrawReason:     set.WithdrawReason,
+		Withheld:           ec.withheld[set.ID],
+		AuthorBanned:       ec.banned[set.AuthorHMAC],
+		Versions:           s.entries(versions, ec, 0),
 		Votes:              []VoteView{},
+	}
+	if view.Withheld == "" {
+		for _, v := range versions {
+			if v.Status == hubwire.SetStatusActive && v.Version > view.ListedVersion {
+				view.ListedVersion = v.Version
+			}
+		}
 	}
 	for _, v := range versions {
 		votes, err := s.Store.VotesForVersion(ctx, v.SetID, v.Version)
@@ -242,118 +354,184 @@ func (s *Server) setDetail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, view)
 }
 
+func versionPath(r *http.Request) (string, int, bool) {
+	id := r.PathValue("id")
+	version, err := strconv.Atoi(r.PathValue("version"))
+	if !hubdata.ValidSetID(id) || err != nil || version <= 0 {
+		return "", 0, false
+	}
+	return id, version, true
+}
+
 func (s *Server) setAction(w http.ResponseWriter, r *http.Request) {
-	v, ok := s.versionFromPath(w, r)
+	id, version, ok := versionPath(r)
 	if !ok {
+		writeError(w, http.StatusNotFound, codeNotFound, "the address does not name a set version")
 		return
 	}
-	id, version := v.SetID, v.Version
-	ctx := r.Context()
 	action := r.PathValue("action")
-	reason, ok := s.readAction(w, r)
+	if !moderation.IsVersionAction(action) {
+		writeError(w, http.StatusNotFound, codeNotFound, "moderation knows approve, reject, hide and restore")
+		return
+	}
+	var req actionRequest
+	if !s.readJSON(w, r, &req) {
+		return
+	}
+	ctx := r.Context()
+	res, err := s.Moderation.Moderate(ctx, s.actor(r), action, []moderation.Ref{{SetID: id, Version: version, ExpectStatus: req.ExpectStatus}}, moderation.Options{
+		Reason:      req.Reason,
+		Force:       req.Force,
+		Withdraw:    req.Withdraw,
+		KeepReports: req.KeepReports,
+	})
+	if err != nil {
+		s.failModeration(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.result(ctx, res))
+}
+
+func (s *Server) moderate(w http.ResponseWriter, r *http.Request) {
+	var req ModerationRequest
+	if !s.readJSON(w, r, &req) {
+		return
+	}
+	refs := make([]moderation.Ref, 0, len(req.Items))
+	for _, it := range req.Items {
+		refs = append(refs, moderation.Ref{SetID: it.SetID, Version: it.Version, ExpectStatus: it.ExpectStatus})
+	}
+	ctx := r.Context()
+	res, err := s.Moderation.Moderate(ctx, s.actor(r), req.Action, refs, moderation.Options{
+		Reason:      req.Reason,
+		Force:       req.Force,
+		Withdraw:    req.Withdraw,
+		KeepReports: req.KeepReports,
+		Partial:     req.Partial,
+		DryRun:      req.DryRun,
+	})
+	if err != nil {
+		s.failModeration(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ModerationView{
+		Notice:  res.Notice,
+		Code:    res.Code,
+		Params:  res.Params,
+		BatchID: res.BatchID,
+		Items:   moderationItems(res.Items),
+		Build:   s.buildState(ctx),
+	})
+}
+
+func (s *Server) setWithdraw(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !hubdata.ValidSetID(id) {
+		writeError(w, http.StatusNotFound, codeNotFound, "the address does not name a set")
+		return
+	}
+	var req actionRequest
+	if !s.readJSON(w, r, &req) {
+		return
+	}
+	res, err := s.Moderation.Withdraw(r.Context(), s.actor(r), id, req.Reason)
+	if err != nil {
+		s.failModeration(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.result(r.Context(), res))
+}
+
+func (s *Server) setReinstate(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !hubdata.ValidSetID(id) {
+		writeError(w, http.StatusNotFound, codeNotFound, "the address does not name a set")
+		return
+	}
+	res, err := s.Moderation.Reinstate(r.Context(), s.actor(r), id)
+	if err != nil {
+		s.failModeration(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.result(r.Context(), res))
+}
+
+func (s *Server) setDelete(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !hubdata.ValidSetID(id) {
+		writeError(w, http.StatusNotFound, codeNotFound, "the address does not name a set")
+		return
+	}
+	var req deleteRequest
+	if !s.readJSON(w, r, &req) {
+		return
+	}
+	res, err := s.Moderation.Delete(r.Context(), s.actor(r), id, req.Confirm)
+	if err != nil {
+		s.failModeration(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.result(r.Context(), res))
+}
+
+func (s *Server) versionReports(w http.ResponseWriter, r *http.Request) {
+	id, version, ok := versionPath(r)
 	if !ok {
+		writeError(w, http.StatusNotFound, codeNotFound, "the address does not name a set version")
 		return
 	}
-	now := s.now()
-	ref := id + "/" + strconv.Itoa(version)
-	var err error
-	var notice string
-	switch action {
-	case ActionApprove:
-		err = s.Store.Approve(ctx, id, version, now)
-		notice = "approved " + ref
-	case ActionReject:
-		if reason == "" {
-			writeError(w, http.StatusBadRequest, codeBadRequest, "a rejection needs a reason")
-			return
-		}
-		err = s.Store.Reject(ctx, id, version, reason, now)
-		notice = "rejected " + ref
-	case ActionHide:
-		if reason == "" {
-			reason = "hidden by moderator"
-		}
-		err = s.Store.Hide(ctx, id, version, reason, now)
-		notice = "hidden " + ref
-	default:
-		writeError(w, http.StatusNotFound, codeNotFound, "moderation knows approve, reject and hide")
+	var req noteRequest
+	if !s.readJSON(w, r, &req) {
 		return
 	}
+	res, err := s.Moderation.VersionReports(r.Context(), s.actor(r), id, version, r.PathValue("action"), req.Note)
 	if err != nil {
-		s.fail(w, err)
+		s.failModeration(w, err)
 		return
 	}
-	s.rebuild()
-	writeJSON(w, http.StatusOK, ActionResult{Notice: notice})
+	writeJSON(w, http.StatusOK, ActionResult{Notice: res.Notice, Code: res.Code, Params: res.Params})
 }
 
-func (s *Server) keys(w http.ResponseWriter, r *http.Request) {
-	keys, err := s.Store.Keys(r.Context())
+func (s *Server) keyImpact(w http.ResponseWriter, r *http.Request) {
+	impact, err := s.Moderation.KeyImpact(r.Context(), r.PathValue("key"))
 	if err != nil {
-		s.fail(w, err)
+		s.failModeration(w, err)
 		return
 	}
-	out := make([]KeyView, 0, len(keys))
-	for _, k := range keys {
-		out = append(out, keyView(k))
+	view := KeyImpactView{Listed: []SetRefView{}, Pending: []SetRefView{}, Votes: impact.Votes, VotedSets: impact.VotedSets, Reports: impact.Reports, Mirrors: []MirrorView{}}
+	for _, v := range impact.Listed {
+		view.Listed = append(view.Listed, SetRefView{SetID: v.SetID, Version: v.Version, Title: v.Title})
 	}
-	writeJSON(w, http.StatusOK, out)
-}
-
-func validKeyHMAC(key string) bool {
-	if len(key) != 64 {
-		return false
+	for _, v := range impact.Pending {
+		view.Pending = append(view.Pending, SetRefView{SetID: v.SetID, Version: v.Version, Title: v.Title})
 	}
-	for i := 0; i < len(key); i++ {
-		c := key[i]
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-			return false
-		}
+	for _, m := range impact.Mirrors {
+		view.Mirrors = append(view.Mirrors, mirrorView(m))
 	}
-	return true
+	writeJSON(w, http.StatusOK, view)
 }
 
 func (s *Server) keyAction(w http.ResponseWriter, r *http.Request) {
 	key := strings.ToLower(r.PathValue("key"))
-	if !validKeyHMAC(key) {
+	if !hubdata.ValidKeyHMAC(key) {
 		writeError(w, http.StatusNotFound, codeNotFound, "the address does not name a key")
 		return
 	}
-	reason, ok := s.readAction(w, r)
-	if !ok {
-		return
-	}
-	ctx := r.Context()
-	var err error
-	var notice string
-	switch r.PathValue("action") {
-	case ActionBan:
-		if reason == "" {
-			reason = "banned by moderator"
-		}
-		err = s.Store.BanKey(ctx, key, reason, s.now())
-		notice = "banned " + hubdata.AuthorLabel(key)
-	case ActionUnban:
-		err = s.Store.UnbanKey(ctx, key)
-		notice = "unbanned " + hubdata.AuthorLabel(key)
-	case ActionTrust:
-		err = s.Store.TrustKey(ctx, key, s.now())
-		notice = "trusted " + hubdata.AuthorLabel(key)
-	case ActionUntrust:
-		err = s.Store.UntrustKey(ctx, key)
-		notice = "untrusted " + hubdata.AuthorLabel(key)
-	default:
+	action := r.PathValue("action")
+	if !moderation.IsKeyAction(action) {
 		writeError(w, http.StatusNotFound, codeNotFound, "keys can be banned, unbanned, trusted or untrusted")
 		return
 	}
-	if err != nil {
-		s.fail(w, err)
+	var req actionRequest
+	if !s.readJSON(w, r, &req) {
 		return
 	}
-	if r.PathValue("action") == ActionBan || r.PathValue("action") == ActionUnban {
-		s.rebuild()
+	res, err := s.Moderation.Key(r.Context(), s.actor(r), key, action, moderation.KeyOptions{Reason: req.Reason, Create: true})
+	if err != nil {
+		s.failModeration(w, err)
+		return
 	}
-	writeJSON(w, http.StatusOK, ActionResult{Notice: notice})
+	writeJSON(w, http.StatusOK, s.result(r.Context(), res))
 }
 
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
@@ -367,8 +545,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	var req SettingsView
-	if err := readBody(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !s.readJSON(w, r, &req) {
 		return
 	}
 	in := req.Limits.settings()
@@ -376,100 +553,33 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
-	if err := s.Store.SaveSettings(r.Context(), in); err != nil {
+	ctx := r.Context()
+	before, err := s.Store.Settings(ctx)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	a := s.actor(r)
+	entry := store.AuditEntry{
+		At: s.now().UTC(), Actor: a.Kind, ActorRef: a.Ref, ActorIP: a.IP, Action: "settings.save", TargetKind: store.TargetSettings,
+		Before: limitsMap(limitsView(before)), After: limitsMap(limitsView(in)),
+	}
+	if err := s.Store.SaveSettings(ctx, in, entry); err != nil {
 		s.fail(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, settingsView(in))
 }
 
-func (s *Server) setDelete(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if !hubdata.ValidSetID(id) {
-		writeError(w, http.StatusNotFound, codeNotFound, "the address does not name a set")
-		return
+func limitsMap(l LimitsView) map[string]interface{} {
+	return map[string]interface{}{
+		"shares_per_day":    l.SharesPerDay,
+		"votes_per_day":     l.VotesPerDay,
+		"reports_per_day":   l.ReportsPerDay,
+		"mirrors_per_day":   l.MirrorsPerDay,
+		"new_keys_per_day":  l.NewKeysPerDay,
+		"requests_per_hour": l.RequestsPerHour,
 	}
-	var req deleteRequest
-	if err := readBody(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
-		return
-	}
-	if strings.TrimSpace(req.Confirm) != id {
-		writeError(w, http.StatusBadRequest, codeBadRequest, "type the set id to confirm the deletion")
-		return
-	}
-	orphaned, err := s.Store.DeleteSet(r.Context(), id)
-	if errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusNotFound, codeNotFound, "the address does not name a set")
-		return
-	}
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	for _, hash := range orphaned {
-		if err := s.Blobs.Remove(hash); err != nil {
-			log.Printf("web: payload %s left behind after deleting %s: %v", hash, id, err)
-		}
-	}
-	s.rebuild()
-	writeJSON(w, http.StatusOK, ActionResult{Notice: "deleted " + id + " permanently"})
-}
-
-func (s *Server) mirrors(w http.ResponseWriter, r *http.Request) {
-	mirrors, err := s.Store.Mirrors(r.Context())
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	out := make([]MirrorView, 0, len(mirrors))
-	for _, m := range mirrors {
-		out = append(out, mirrorView(m))
-	}
-	writeJSON(w, http.StatusOK, out)
-}
-
-func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusNotFound, codeNotFound, "the address does not name a mirror")
-		return
-	}
-	ctx := r.Context()
-	m, err := s.Store.GetMirror(ctx, id)
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	reason, ok := s.readAction(w, r)
-	if !ok {
-		return
-	}
-	var notice string
-	switch r.PathValue("action") {
-	case ActionApprove:
-		err = s.Store.SetMirrorStatus(ctx, id, store.MirrorApproved, "", s.now())
-		notice = "approved mirror " + m.URL
-	case ActionReject:
-		if reason == "" {
-			writeError(w, http.StatusBadRequest, codeBadRequest, "a rejection needs a reason")
-			return
-		}
-		err = s.Store.SetMirrorStatus(ctx, id, store.MirrorRejected, reason, s.now())
-		notice = "rejected mirror " + m.URL
-	case ActionRemove:
-		err = s.Store.DeleteMirror(ctx, id)
-		notice = "removed mirror " + m.URL
-	default:
-		writeError(w, http.StatusNotFound, codeNotFound, "mirrors can be approved, rejected or removed")
-		return
-	}
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	s.rebuild()
-	writeJSON(w, http.StatusOK, ActionResult{Notice: notice})
 }
 
 func (s *Server) feedback(w http.ResponseWriter, r *http.Request) {
@@ -504,7 +614,7 @@ func (s *Server) feedback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) catalogueView(ctx context.Context) (CatalogueView, error) {
-	view := CatalogueView{Mirrors: []string{}, RevokedKeys: []string{}}
+	view := CatalogueView{Mirrors: []string{}, Announced: []string{}, RevokedKeys: []string{}, SigningKey: s.KeyID, BuiltinKeys: hubwire.BuiltinHubKeys}
 	var err error
 	if view.Epoch, err = s.Store.Epoch(ctx); err != nil {
 		return view, err
@@ -540,20 +650,27 @@ func (s *Server) catalogueView(ctx context.Context) (CatalogueView, error) {
 	view.ExpiresAt = latest.Manifest.ExpiresAt
 	view.Sets = len(latest.Catalogue.Sets)
 	view.Blobs = len(latest.Catalogue.Blobs)
-	if latest.Manifest.Mirrors != nil {
-		view.Mirrors = latest.Manifest.Mirrors
+	base := s.Catalogue.HubBase()
+	for _, m := range latest.Manifest.Mirrors {
+		view.Mirrors = append(view.Mirrors, m)
+		if m == base {
+			view.HubListed = true
+		} else {
+			view.Announced = append(view.Announced, m)
+		}
 	}
 	return view, nil
 }
 
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	view := OverviewView{Version: s.Version, Source: s.Source, KeyID: s.KeyID, PublicURL: s.PublicURL, Now: s.now(), Geo: []geo.FileStatus{}}
+	view := OverviewView{Version: s.Version, Source: s.Source, KeyID: s.KeyID, PublicURL: s.PublicURL, Now: s.now()}
 	var err error
 	if view.Catalogue, err = s.catalogueView(ctx); err != nil {
 		s.fail(w, err)
 		return
 	}
+	view.Build = *s.buildState(ctx)
 	g, err := s.groups(ctx)
 	if err != nil {
 		s.fail(w, err)
@@ -562,21 +679,18 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	view.Counts = CountsView{
 		Pending:    len(g.pending),
 		Listed:     len(g.listed),
+		Withheld:   len(g.withheld),
 		Superseded: len(g.superseded),
 		Hidden:     len(g.hidden),
 		Rejected:   len(g.rejected),
 	}
-	keys, err := s.Store.Keys(ctx)
+	badges, err := s.Store.Badges(ctx)
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	view.Counts.Keys = len(keys)
-	for _, k := range keys {
-		if k.Banned {
-			view.Counts.Banned++
-		}
-	}
+	view.Counts.Keys = badges.Keys
+	view.Counts.Banned = badges.Banned
 	mirrors, err := s.Store.Mirrors(ctx)
 	if err != nil {
 		s.fail(w, err)
@@ -600,8 +714,69 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	if s.Geo != nil {
-		view.Geo = s.Geo.Status()
+	reportCounts, err := s.Store.ReportCounts(ctx)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	view.Counts.ReportsOpen = reportCounts[store.ReportOpen]
+	writeJSON(w, http.StatusOK, view)
+}
+
+func (s *Server) buildState(ctx context.Context) *BuildStateView {
+	view := &BuildStateView{State: catalogue.BuildIdle}
+	view.Dirty, _ = s.Store.Dirty(ctx)
+	b := s.builds()
+	if b == nil {
+		return view
+	}
+	st := b.Status()
+	view.State = st.State
+	view.Trigger = st.Trigger
+	view.QueuedAt = optionalTime(st.QueuedAt)
+	view.StartedAt = optionalTime(st.StartedAt)
+	view.LastOK = buildRunView(st.LastOK)
+	view.LastError = buildRunView(st.LastError)
+	return view
+}
+
+func (s *Server) catalogueStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.buildState(r.Context()))
+}
+
+func (s *Server) catalogueBuilds(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	f := store.BuildQuery{Limit: 50}
+	if raw := q.Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n <= 0 {
+			writeError(w, http.StatusBadRequest, codeBadRequest, "limit must be a positive number")
+			return
+		}
+		f.Limit = min(n, 200)
+	}
+	if raw := q.Get("before"); raw != "" {
+		n, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, codeBadRequest, "before must be a build id")
+			return
+		}
+		f.Before = n
+	}
+	switch q.Get("only") {
+	case "changes":
+		f.OnlyChanges = true
+	case "failed":
+		f.OnlyFailed = true
+	}
+	runs, next, err := s.Store.BuildRuns(r.Context(), f)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	view := BuildsPageView{Items: make([]BuildRunView, 0, len(runs)), Next: next}
+	for i := range runs {
+		view.Items = append(view.Items, *buildRunView(&runs[i]))
 	}
 	writeJSON(w, http.StatusOK, view)
 }
@@ -611,48 +786,50 @@ func (s *Server) catalogueBuild(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, codeNotBuilt, "this hub has no catalogue builder")
 		return
 	}
-	result, err := s.Catalogue.Build(r.Context())
-	if err != nil {
-		s.fail(w, err)
+	var req buildRequest
+	if !s.readJSON(w, r, &req) {
 		return
 	}
-	writeJSON(w, http.StatusOK, ActionResult{Notice: fmt.Sprintf("published %s with %d sets", result.Manifest.Catalogue.File, len(result.Catalogue.Sets))})
+	ctx := r.Context()
+	_ = s.Moderation.RecordBuildRequest(ctx, s.actor(r))
+	if req.Wait {
+		buildCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		result, err := s.Catalogue.BuildFor(buildCtx, catalogue.TriggerManual)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, codeBuildFailed, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, ActionResult{
+			Notice: "published " + result.Manifest.Catalogue.File,
+			Code:   "catalogue.published",
+			Params: map[string]interface{}{"file": result.Manifest.Catalogue.File, "sets": len(result.Catalogue.Sets)},
+			Build:  s.buildState(ctx),
+		})
+		return
+	}
+	s.builds().RequestForced(catalogue.TriggerManual)
+	writeJSON(w, http.StatusAccepted, ActionResult{Notice: "build queued", Code: "catalogue.build_queued", Build: s.buildState(ctx)})
 }
 
 func (s *Server) catalogueEpoch(w http.ResponseWriter, r *http.Request) {
-	epoch, err := s.Store.NewEpoch(r.Context(), s.now())
+	res, err := s.Moderation.NewEpoch(r.Context(), s.actor(r))
 	if err != nil {
-		s.fail(w, err)
+		s.failModeration(w, err)
 		return
 	}
-	s.rebuild()
-	writeJSON(w, http.StatusOK, ActionResult{Notice: "started epoch " + strconv.FormatInt(epoch, 10)})
+	writeJSON(w, http.StatusOK, s.result(r.Context(), res))
 }
 
 func (s *Server) catalogueRevoke(w http.ResponseWriter, r *http.Request) {
 	var req revokeRequest
-	if err := readBody(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !s.readJSON(w, r, &req) {
 		return
 	}
-	keyID := strings.TrimSpace(req.KeyID)
-	if _, err := hubwire.DecodeKey(keyID); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, "key_id is not an ed25519 key id: "+err.Error())
+	res, err := s.Moderation.Revoke(r.Context(), s.actor(r), req.KeyID, moderation.RevokeOptions{Confirm: req.Confirm, AllowBuiltin: req.AllowBuiltin})
+	if err != nil {
+		s.failModeration(w, err)
 		return
 	}
-	if keyID == s.KeyID {
-		writeError(w, http.StatusBadRequest, codeBadRequest, "refusing to revoke the key this hub signs with")
-		return
-	}
-	ctx := r.Context()
-	if err := s.Store.RevokeKey(ctx, keyID); err != nil {
-		s.fail(w, err)
-		return
-	}
-	if err := s.Store.MarkDirty(ctx); err != nil {
-		s.fail(w, err)
-		return
-	}
-	s.rebuild()
-	writeJSON(w, http.StatusOK, ActionResult{Notice: "revoked " + keyID})
+	writeJSON(w, http.StatusOK, s.result(r.Context(), res))
 }

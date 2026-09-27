@@ -36,12 +36,13 @@ const (
 )
 
 type Service struct {
-	Store   *store.Store
-	Blobs   hubdata.Blobs
-	Secret  []byte
-	Limiter *ratelimit.Limiter
-	ASN     *asn.Resolver
-	Now     func() time.Time
+	Store      *store.Store
+	Blobs      hubdata.Blobs
+	Secret     []byte
+	Limiter    *ratelimit.Limiter
+	ASN        *asn.Resolver
+	Now        func() time.Time
+	OnAccepted func(kind string)
 }
 
 type Response struct {
@@ -199,6 +200,9 @@ func (s *Service) Handle(ctx context.Context, raw []byte, peer net.IP) Response 
 	resp := s.dispatch(ctx, entry)
 	if !key.Trusted && resp.Status >= http.StatusBadRequest {
 		s.Limiter.Refund(scope, keyHMAC, ratelimit.Day)
+	}
+	if resp.Status == http.StatusAccepted && s.OnAccepted != nil {
+		s.OnAccepted(rec.Kind)
 	}
 	return resp
 }

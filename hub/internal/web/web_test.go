@@ -31,6 +31,7 @@ const (
 	authorAddress = "203.0.113.5"
 	voterAddress  = "203.0.113.9"
 	otherAddress  = "198.51.100.7"
+	thirdAddress  = "192.0.2.9"
 	password      = "moderator-secret"
 )
 
@@ -38,6 +39,7 @@ var origins = map[string]testkit.Origin{
 	authorAddress: {ASN: "64500", Country: "RU", Name: "EXAMPLE-A ISP A"},
 	voterAddress:  {ASN: "64500", Country: "RU", Name: "EXAMPLE-A ISP A"},
 	otherAddress:  {ASN: "64501", Country: "DE", Name: "EXAMPLE-B ISP B"},
+	thirdAddress:  {ASN: "64502", Country: "NL", Name: "EXAMPLE-C ISP C"},
 }
 
 type fixture struct {
@@ -92,17 +94,31 @@ func newFixture(t *testing.T, adminPassword string) *fixture {
 		Version:       "test",
 		KeyID:         hubID.KeyID(),
 		Now:           now,
-		Rebuild: func() error {
-			f.rebuilds++
-			_, _, err := f.builder.BuildIfNeeded(context.Background())
-			return err
-		},
+		Builds:        syncBuilds{f},
 	}
 	mux := apiServer.Router()
 	f.web.Mount(mux)
 	f.server = httptest.NewServer(mux)
 	t.Cleanup(f.server.Close)
 	return f
+}
+
+type syncBuilds struct {
+	f *fixture
+}
+
+func (b syncBuilds) Request(string) {
+	b.f.rebuilds++
+	_, _, _ = b.f.builder.BuildIfNeeded(context.Background())
+}
+
+func (b syncBuilds) RequestForced(string) {
+	b.f.rebuilds++
+	_, _ = b.f.builder.Build(context.Background())
+}
+
+func (b syncBuilds) Status() catalogue.BuildStatus {
+	return b.f.builder.Status()
 }
 
 func (f *fixture) share(name string, address string, domains ...string) (string, *hubwire.Envelope) {
@@ -354,7 +370,7 @@ func TestQueueAndActions(t *testing.T) {
 	if p.Lineage == nil || p.Lineage.Kind != LineageFirst {
 		t.Fatalf("first version lineage: %+v", p.Lineage)
 	}
-	if len(p.Emitted) != 1 || p.Emitted[0].Name != "www.google.com" || p.Emitted[0].Source != SourceCapture {
+	if len(p.Emitted) != 1 || p.Emitted[0].Name != "www.google.com" || p.Emitted[0].Source != EmitCapture {
 		t.Fatalf("emitted names: %+v", p.Emitted)
 	}
 	if len(p.Payloads) != 1 || p.Payloads[0].SHA256 != env.Payloads[0].SHA256 {
@@ -484,15 +500,16 @@ func TestKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var keys []KeyView
+	var list KeyListView
 	resp := f.admin(http.MethodGet, PathAPI+"/keys", nil)
 	if resp.status != http.StatusOK {
 		t.Fatalf("keys: %d", resp.status)
 	}
-	resp.decode(t, &keys)
-	if len(keys) != 1 || keys[0].KeyHMAC != v.UploaderHMAC || keys[0].Sets != 1 || keys[0].Banned {
-		t.Fatalf("keys: %+v", keys)
+	resp.decode(t, &list)
+	if list.Total != 1 || list.Items[0].KeyHMAC != v.UploaderHMAC || list.Items[0].Sets != 1 || list.Items[0].Banned || list.Items[0].Records != 1 {
+		t.Fatalf("keys: %+v", list)
 	}
+	keys := list.Items
 
 	resp = f.admin(http.MethodPost, PathAPI+"/keys/"+v.UploaderHMAC+"/ban", map[string]string{"reason": "spam"})
 	if resp.status != http.StatusOK {
@@ -505,8 +522,9 @@ func TestKeys(t *testing.T) {
 	if f.rebuilds != 1 {
 		t.Fatalf("a ban must rebuild the catalogue, rebuilds %d", f.rebuilds)
 	}
-	f.admin(http.MethodGet, PathAPI+"/keys", nil).decode(t, &keys)
-	if !keys[0].Banned || keys[0].BanReason != "spam" || keys[0].BannedAt == nil {
+	f.admin(http.MethodGet, PathAPI+"/keys", nil).decode(t, &list)
+	keys = list.Items
+	if !keys[0].Banned || keys[0].BanReason != "spam" || keys[0].BannedAt == nil || list.Counts.Banned != 1 {
 		t.Fatalf("banned view: %+v", keys[0])
 	}
 
@@ -527,7 +545,8 @@ func TestKeys(t *testing.T) {
 	if f.rebuilds != rebuilds {
 		t.Fatalf("trusting a key does not touch the catalogue")
 	}
-	f.admin(http.MethodGet, PathAPI+"/keys", nil).decode(t, &keys)
+	f.admin(http.MethodGet, PathAPI+"/keys", nil).decode(t, &list)
+	keys = list.Items
 	if !keys[0].Trusted || keys[0].TrustedAt == nil {
 		t.Fatalf("trusted view: %+v", keys[0])
 	}
@@ -627,8 +646,15 @@ func TestDeleteSet(t *testing.T) {
 	if resp = f.admin(http.MethodPost, PathAPI+"/sets/"+keeper+"/delete", map[string]string{"confirm": keeper}); resp.status != http.StatusOK {
 		t.Fatalf("delete keeper: %d %s", resp.status, resp.body)
 	}
-	if f.web.Blobs.Exists(blob) {
-		t.Fatalf("an orphaned payload must be removed")
+	if !f.web.Blobs.Exists(blob) {
+		t.Fatalf("an orphaned payload must stay until the blob sweep, routers on the previous catalogue may still fetch it")
+	}
+	referenced, err := f.store.ReferencedBlobs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, still := referenced[blob]; still {
+		t.Fatalf("no remaining set may reference the payload of the deleted sets")
 	}
 	if resp = f.request(http.MethodPost, PathAPI+"/sets/"+keeper+"/delete", map[string]string{"confirm": keeper}, func(req *http.Request) { req.SetBasicAuth("admin", password) }); resp.status != http.StatusForbidden {
 		t.Fatalf("cross-site delete must be refused, got %d", resp.status)
@@ -641,8 +667,12 @@ func TestCatalogueOperations(t *testing.T) {
 	f.approve(setID)
 
 	resp := f.admin(http.MethodPost, PathAPI+"/catalogue/build", nil)
-	if resp.status != http.StatusOK || !strings.Contains(resp.body, "with 1 sets") {
+	if resp.status != http.StatusAccepted || !strings.Contains(resp.body, `"code":"catalogue.build_queued"`) {
 		t.Fatalf("build: %d %s", resp.status, resp.body)
+	}
+	resp = f.admin(http.MethodPost, PathAPI+"/catalogue/build", map[string]bool{"wait": true})
+	if resp.status != http.StatusOK || !strings.Contains(resp.body, `"code":"catalogue.published"`) || !strings.Contains(resp.body, `"sets":1`) {
+		t.Fatalf("build and wait: %d %s", resp.status, resp.body)
 	}
 	var overview OverviewView
 	f.admin(http.MethodGet, PathAPI+"/overview", nil).decode(t, &overview)
@@ -664,11 +694,21 @@ func TestCatalogueOperations(t *testing.T) {
 	if resp = f.admin(http.MethodPost, PathAPI+"/catalogue/revoke", map[string]string{"key_id": "not-a-key"}); resp.status != http.StatusBadRequest {
 		t.Fatalf("malformed key id must be refused, got %d", resp.status)
 	}
-	if resp = f.admin(http.MethodPost, PathAPI+"/catalogue/revoke", map[string]string{"key_id": f.web.KeyID}); resp.status != http.StatusBadRequest {
-		t.Fatalf("revoking the hub's own key must be refused, got %d", resp.status)
+	if resp = f.admin(http.MethodPost, PathAPI+"/catalogue/revoke", map[string]string{"key_id": f.web.KeyID, "confirm": f.web.KeyID}); resp.status != http.StatusBadRequest || !strings.Contains(resp.body, `"code":"own_key"`) {
+		t.Fatalf("revoking the hub's own key must be refused, got %d %s", resp.status, resp.body)
 	}
-	if resp = f.admin(http.MethodPost, PathAPI+"/catalogue/revoke", map[string]string{"key_id": other.KeyID()}); resp.status != http.StatusOK {
+	builtin := hubwire.BuiltinHubKeys[0]
+	if resp = f.admin(http.MethodPost, PathAPI+"/catalogue/revoke", map[string]string{"key_id": builtin, "confirm": builtin}); resp.status != http.StatusBadRequest || !strings.Contains(resp.body, `"code":"builtin_key"`) {
+		t.Fatalf("revoking a key built into b4 must need the override, got %d %s", resp.status, resp.body)
+	}
+	if resp = f.admin(http.MethodPost, PathAPI+"/catalogue/revoke", map[string]string{"key_id": other.KeyID()}); resp.status != http.StatusBadRequest || !strings.Contains(resp.body, `"code":"confirm_mismatch"`) {
+		t.Fatalf("a revocation without the typed confirmation must be refused, got %d %s", resp.status, resp.body)
+	}
+	if resp = f.admin(http.MethodPost, PathAPI+"/catalogue/revoke", map[string]string{"key_id": other.KeyID(), "confirm": other.KeyID()}); resp.status != http.StatusOK || !strings.Contains(resp.body, `"code":"catalogue.revoked"`) {
 		t.Fatalf("revoke: %d %s", resp.status, resp.body)
+	}
+	if resp = f.admin(http.MethodPost, PathAPI+"/catalogue/revoke", map[string]string{"key_id": other.KeyID(), "confirm": other.KeyID()}); resp.status != http.StatusOK || !strings.Contains(resp.body, `"code":"catalogue.revoke_known"`) {
+		t.Fatalf("revoking twice must be a no-op: %d %s", resp.status, resp.body)
 	}
 	f.admin(http.MethodGet, PathAPI+"/overview", nil).decode(t, &overview)
 	if len(overview.Catalogue.RevokedKeys) != 1 || overview.Catalogue.RevokedKeys[0] != other.KeyID() {
@@ -693,15 +733,21 @@ func TestTargetFiltersDescribeTargetsNotStrategy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	summary := TargetsOf(projection).Summary()
-	for _, want := range []string{"ntc.party", "TLS 1.3 only", "IPv4 only", "domain-only matching"} {
-		if !strings.Contains(summary, want) {
-			t.Errorf("targets summary %q lacks %q", summary, want)
-		}
+	codes := map[string]interface{}{}
+	for _, f := range TargetsOf(projection).FilterTerms() {
+		codes[f.Code] = f.Params["version"]
 	}
-	for _, word := range StrategyWords(&imp.Set, nil) {
-		if strings.Contains(word, "only") || strings.Contains(word, "domain-only") {
-			t.Errorf("strategy words must not carry a target filter, got %q", word)
+	if codes[FilterTLSOnly] != "1.3" || codes[FilterIPOnly] != "4" || len(codes) != 3 {
+		t.Errorf("target filters must be described as codes: %v", codes)
+	}
+	if _, ok := codes[FilterDomainOnly]; !ok {
+		t.Errorf("domain-only matching must be a filter: %v", codes)
+	}
+	for _, tech := range Techniques(&imp.Set, nil) {
+		for _, filter := range filterCodes {
+			if tech.Code == filter {
+				t.Errorf("techniques must not carry a target filter, got %v", tech)
+			}
 		}
 	}
 }
@@ -997,6 +1043,26 @@ func TestEditRefusesStaleRevision(t *testing.T) {
 	fresh := EditRequest{Title: "Second moderator", Projection: loaded.Projection, Expect: &v.UpdatedAt}
 	if resp := f.admin(http.MethodPost, setPath(id, 1, "edit"), fresh); resp.status != http.StatusOK {
 		t.Fatalf("an edit with the current revision must pass: %d %s", resp.status, resp.body)
+	}
+}
+
+func TestEditRefusesADialogOpenedBeforeATextEdit(t *testing.T) {
+	f := newFixture(t, password)
+	ctx := context.Background()
+	id, _ := f.share("Retitled", authorAddress, "retitled.example")
+	loaded, err := f.store.GetVersion(ctx, id, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened := loaded.UpdatedAt
+	f.clock = f.clock.Add(time.Minute)
+	f.expectOK(f.admin(http.MethodPost, setPath(id, 1, "text"), TextEditRequest{Title: "Retitled elsewhere"}))
+	resp := f.admin(http.MethodPost, setPath(id, 1, "edit"), EditRequest{Title: "Old dialog", Projection: loaded.Projection, Expect: &opened})
+	if resp.status != http.StatusConflict || !strings.Contains(resp.body, codeStale) {
+		t.Fatalf("a dialog opened before a text edit must be refused: %d %s", resp.status, resp.body)
+	}
+	if v, _ := f.store.GetVersion(ctx, id, 1); v.Title != "Retitled elsewhere" {
+		t.Fatalf("the text edit must stand: %+v", v)
 	}
 }
 

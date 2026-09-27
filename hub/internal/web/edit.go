@@ -13,6 +13,7 @@ import (
 	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
 	"github.com/daniellavrushin/b4hub/internal/ingest"
+	"github.com/daniellavrushin/b4hub/internal/moderation"
 	"github.com/daniellavrushin/b4hub/internal/store"
 )
 
@@ -205,7 +206,7 @@ func (s *Server) prepareEdit(ctx context.Context, v *store.Version, req EditRequ
 		FPChanged:   imp.Fingerprint != v.FP,
 		Changed:     title != v.Title || env.Description != v.Description || !sameJSON(projection, v.Projection),
 		Targets:     targetsView(TargetsOf(projection)),
-		Strategy:    orEmpty(StrategyWords(&imp.Set, payloads)),
+		Strategy:    Techniques(&imp.Set, payloads),
 		Flags:       orEmpty(ingest.Flags(projection, payloads)),
 		Family:      ingest.Family(&imp.Set),
 		B4Min:       hubwire.MinVersion(projection),
@@ -273,8 +274,6 @@ func (s *Server) setEdit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, codeUnchanged, "nothing differs from the received set")
 		return
 	}
-	ctx := r.Context()
-	now := s.now()
 	edit := store.VersionEdit{
 		Title:       p.Title,
 		Description: p.Description,
@@ -285,33 +284,16 @@ func (s *Server) setEdit(w http.ResponseWriter, r *http.Request) {
 		TargetsKey:  result.targetsKey,
 		B4Min:       p.B4Min,
 		Family:      p.Family,
-		Note:        cleanReason(req.Note),
-		Approve:     req.Approve,
+		Note:        req.Note,
 	}
 	if req.Expect != nil {
 		edit.Expect = *req.Expect
 	}
-	err := s.Store.EditVersion(ctx, v.SetID, v.Version, edit, now)
-	var duplicate *store.DuplicateError
-	switch {
-	case errors.Is(err, store.ErrNotPending):
-		writeError(w, http.StatusConflict, codeNotPending, err.Error())
-		return
-	case errors.Is(err, store.ErrStale):
-		writeError(w, http.StatusConflict, codeStale, "the version was changed by someone else since the dialog was opened; close it and open the current one")
-		return
-	case errors.As(err, &duplicate):
-		writeError(w, http.StatusConflict, codeDuplicate, err.Error())
-		return
-	case err != nil:
-		s.fail(w, err)
+	ctx := r.Context()
+	res, err := s.Moderation.Edit(ctx, s.actor(r), moderation.Ref{SetID: v.SetID, Version: v.Version}, edit, req.Approve)
+	if err != nil {
+		s.failModeration(w, err)
 		return
 	}
-	ref := v.SetID + "/" + strconv.Itoa(v.Version)
-	notice := "edited " + ref
-	if req.Approve {
-		s.rebuild()
-		notice = "edited and approved " + ref
-	}
-	writeJSON(w, http.StatusOK, ActionResult{Notice: notice})
+	writeJSON(w, http.StatusOK, s.result(ctx, res))
 }

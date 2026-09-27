@@ -17,16 +17,19 @@ import (
 )
 
 const (
-	metaSchemaVersion = "schema_version"
-	metaEpoch         = "epoch"
-	metaSeq           = "seq"
-	metaDirty         = "dirty"
-	metaBuiltAt       = "built_at"
+	metaSchemaVersion  = "schema_version"
+	metaEpoch          = "epoch"
+	metaSeq            = "seq"
+	metaDirty          = "dirty"
+	metaBuiltAt        = "built_at"
+	metaBuildRequested = "build_requested"
 
 	timeLayout = time.RFC3339
 )
 
 var ErrNotFound = errors.New("not found")
+
+var errNoRows = sql.ErrNoRows
 
 const keptBackups = 2
 
@@ -39,6 +42,7 @@ type Store struct {
 func Open(path string) (*Store, error) {
 	dsn := "file:" + path + "?" + url.Values{
 		"_pragma": []string{"journal_mode(WAL)", "busy_timeout(5000)", "foreign_keys(1)", "synchronous(NORMAL)"},
+		"_txlock": []string{"immediate"},
 	}.Encode()
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -167,12 +171,12 @@ func (s *Store) SetMeta(ctx context.Context, key, value string) error {
 	return err
 }
 
-func setMetaTx(ctx context.Context, tx *sql.Tx, key, value string) error {
+func setMetaTx(ctx context.Context, tx querier, key, value string) error {
 	_, err := tx.ExecContext(ctx, `INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
 	return err
 }
 
-func metaTx(ctx context.Context, tx *sql.Tx, key string) (string, error) {
+func metaTx(ctx context.Context, tx querier, key string) (string, error) {
 	var value string
 	err := tx.QueryRowContext(ctx, `SELECT value FROM meta WHERE key = ?`, key).Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -190,11 +194,16 @@ func (s *Store) Epoch(ctx context.Context) (int64, error) {
 }
 
 func (s *Store) NewEpoch(ctx context.Context, now time.Time) (int64, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback()
+	var epoch int64
+	err := s.Update(ctx, func(t *Tx) error {
+		var err error
+		epoch, err = newEpochTx(ctx, t.tx, now)
+		return err
+	})
+	return epoch, err
+}
+
+func newEpochTx(ctx context.Context, tx querier, now time.Time) (int64, error) {
 	raw, err := metaTx(ctx, tx, metaEpoch)
 	if err != nil {
 		return 0, err
@@ -210,10 +219,10 @@ func (s *Store) NewEpoch(ctx context.Context, now time.Time) (int64, error) {
 	if err := setMetaTx(ctx, tx, metaSeq, "0"); err != nil {
 		return 0, err
 	}
-	if err := setMetaTx(ctx, tx, metaDirty, "1"); err != nil {
+	if err := markDirtyTx(ctx, tx); err != nil {
 		return 0, err
 	}
-	return epoch, tx.Commit()
+	return epoch, nil
 }
 
 func (s *Store) NextSeq(ctx context.Context, now time.Time) (epoch, seq int64, err error) {
@@ -245,13 +254,33 @@ func (s *Store) NextSeq(ctx context.Context, now time.Time) (epoch, seq int64, e
 	return epoch, seq, tx.Commit()
 }
 
+type querier interface {
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
+}
+
+func markDirtyTx(ctx context.Context, q querier) error {
+	_, err := q.ExecContext(ctx, `INSERT INTO meta(key, value) VALUES(?, '1')
+		ON CONFLICT(key) DO UPDATE SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT)`, metaDirty)
+	return err
+}
+
 func (s *Store) MarkDirty(ctx context.Context) error {
-	return s.SetMeta(ctx, metaDirty, "1")
+	return markDirtyTx(ctx, s.db)
 }
 
 func (s *Store) Dirty(ctx context.Context) (bool, error) {
 	raw, err := s.Meta(ctx, metaDirty)
-	return raw == "1", err
+	return raw != "" && raw != "0", err
+}
+
+func (s *Store) DirtyGeneration(ctx context.Context) (string, error) {
+	raw, err := s.Meta(ctx, metaDirty)
+	if raw == "" {
+		raw = "0"
+	}
+	return raw, err
 }
 
 func (s *Store) MarkBuilt(ctx context.Context, now time.Time) error {
@@ -267,6 +296,34 @@ func (s *Store) MarkBuilt(ctx context.Context, now time.Time) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+func (s *Store) MarkPublished(ctx context.Context, now time.Time, generation string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE meta SET value = '0' WHERE key = ? AND value = ?`, metaDirty, generation); err != nil {
+		return err
+	}
+	if err := setMetaTx(ctx, tx, metaBuiltAt, formatTime(now)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) RequestBuild(ctx context.Context, now time.Time) error {
+	return s.SetMeta(ctx, metaBuildRequested, formatTime(now))
+}
+
+func (s *Store) TakeBuildRequest(ctx context.Context) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM meta WHERE key = ?`, metaBuildRequested)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 func (s *Store) BuiltAt(ctx context.Context) (time.Time, error) {

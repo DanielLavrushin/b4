@@ -50,7 +50,7 @@ One static binary with the console embedded in it. Every command takes `--data`,
 | `b4hub serve` | Runs a hub: the catalogue builder, the endpoints routers talk to, and the console. |
 | `b4hub mirror` | Runs a mirror of another hub. |
 | `b4hub build` | Builds and signs the catalogue once, then exits. `--new-epoch` and `--revoke` do the same as the console's Catalogue page. |
-| `b4hub moderate` | Approves, rejects, hides, bans and handles mirrors from the command line, without the console. |
+| `b4hub moderate` | Does most of what the console does from the command line: versions, sets, keys, reports, mirrors, the build history and the audit log. |
 | `b4hub version` | Prints the hub version and the b4 source tree it was built from. |
 
 The flags below have an environment variable counterpart, which is what a unit file or a container normally sets. The per-command flags `--new-epoch`, `--revoke`, `--announce` and `--refresh` are given on the command line only.
@@ -66,6 +66,8 @@ The flags below have an environment variable counterpart, which is what a unit f
 | `--upstream-key` | `B4HUB_UPSTREAM_KEY` | empty, meaning the built-in key |
 | `--trusted-proxies` | `B4HUB_TRUSTED_PROXIES` | empty |
 | no flag | `B4HUB_ADMIN_PASSWORD` | empty, which closes the console |
+| no flag | `B4HUB_TELEGRAM_TOKEN`, `B4HUB_TELEGRAM_CHAT` | empty; when set, they override the Telegram [notification](./moderation.md#notifications) settings of the console |
+| no flag | `B4HUB_WEBHOOK_URL`, `B4HUB_WEBHOOK_SECRET` | empty; when set, they override the webhook notification settings of the console |
 
 The data directory holds `hub.key` (the signing seed), `hub.db` (the SQLite store), `secret` (created on first use), `blobs/` (payload files by hash), `public/` (the signed files routers download) and `geo/`.
 
@@ -104,7 +106,7 @@ B4HUB_ADMIN_PASSWORD=... b4hub serve --data /var/lib/b4hub \
 `--public-url` is the address the hub advertises for itself in the manifest, so it should be the address routers actually reach, not the loopback one.
 
 :::warning
-With `B4HUB_ADMIN_PASSWORD` unset the hub serves its catalogue normally but the console is closed: the sign-in page reports that moderation is not configured, and every sign-in and moderation request is refused. Moderation is then only possible through `b4hub moderate`, which runs alongside the service; the store is SQLite in WAL mode, so a running hub does not lock it out, and that hub picks the decision up at its next build.
+With `B4HUB_ADMIN_PASSWORD` unset the hub serves its catalogue normally but the console is closed: the sign-in page reports that moderation is not configured, and every sign-in and moderation request is refused. Moderation is then only possible through `b4hub moderate`, which runs alongside the service; the store is SQLite in WAL mode, so a running hub does not lock it out. Every change leaves a build request, which that hub picks up within about ten seconds.
 :::
 
 ### Pointing a router at it
@@ -126,7 +128,7 @@ Nothing is published until a moderator approves it, so a new hub starts with an 
 | | |
 | --- | --- |
 | Build | Checked on start and every 5 minutes after that; one runs when nothing has been published yet, when something changed, or when the last one is a day old |
-| After a moderation action | The build runs inside the request, so an approval publishes at once |
+| After a moderation action | A build starts in the background 1.5 seconds after the last change and no later than 10 seconds after the first; a request left by `b4hub moderate` is picked up within about 10 seconds |
 | File | `public/catalogue-<epoch>-<seq>.json.gz`, the newest three kept |
 | Manifest | Signed, valid for 14 days from the build |
 | Payloads | Swept hourly; a file that no stored version refers to, and that was last written more than an hour ago, is deleted |
@@ -145,7 +147,7 @@ The hub resolves the ASN and country of the address a record arrives from, and t
 An untrusted proxy collapses the whole hub into one network. Every contribution is attributed to the proxy, per-network limits are shared by everyone at once, and a private proxy address means no ASN is recorded at all, so reports lose their per-ISP and per-country scores.
 :::
 
-The lookup is a DNS query, not a local database, so the hub host needs working outbound DNS. The `geosite.dat` and `geoip.dat` files the service downloads daily are advertised in the manifest and shown on the console, and are not used for this.
+The lookup is a DNS query, not a local database, so the hub host needs working outbound DNS. The `geosite.dat` and `geoip.dat` files the service downloads daily are advertised in the manifest and are not used for this.
 
 ## A mirror of another hub
 
@@ -191,7 +193,7 @@ b4hub mirror --data /var/lib/b4hub-mirror \
 An announcement does not publish anything. It arrives at the upstream hub as **pending** and is never advertised until a moderator approves it on the [Mirrors page](./moderation.md#mirrors) of that hub's console. Announcing again refreshes when the mirror was last seen and never changes a decision already made, so a rejected mirror stays rejected.
 :::
 
-Once approved, the mirror is checked at every catalogue build: its `/b4/health` must answer `ok` and its manifest must verify against the hub's own key. It is listed in the manifest while a check has succeeded within the last 24 hours, so a brief failure does not drop it, and a lasting one does.
+Once approved, the mirror is checked every 10 minutes, independently of builds: its `/b4/health` must answer `ok` and its manifest must verify against the hub's own key. It is listed in the manifest while a check has succeeded within the last 24 hours, so a brief failure does not drop it, and a lasting one does.
 
 ### Records sent through a mirror
 

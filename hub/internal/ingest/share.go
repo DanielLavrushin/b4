@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	MaxTitleRunes       = 120
-	MaxDescriptionRunes = 2000
+	MaxTitleRunes       = hubdata.MaxTitleRunes
+	MaxDescriptionRunes = hubdata.MaxDescriptionRunes
 	MaxHintRunes        = 32
 )
 

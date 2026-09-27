@@ -6,11 +6,15 @@ export const API_BASE = "/admin/api";
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly params: Record<string, unknown>;
+  readonly body: ApiErrorBody | null;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, body: ApiErrorBody | null = null) {
     super(message);
     this.status = status;
     this.code = code;
+    this.params = body?.params ?? {};
+    this.body = body;
   }
 }
 
@@ -60,7 +64,7 @@ export async function request<T>(
     if (response.status === 401 && path !== "/login") {
       unauthorizedListeners.forEach((listener) => listener());
     }
-    throw new ApiError(response.status, code, message);
+    throw new ApiError(response.status, code, message, isErrorBody(body) ? body : null);
   }
   return body as T;
 }
@@ -75,6 +79,18 @@ export const post = <T>(path: string, body?: unknown) =>
 
 export const put = <T>(path: string, body: unknown) =>
   request<T>(path, { method: "PUT", body: JSON.stringify(body) });
+
+export const del = <T>(path: string) => request<T>(path, { method: "DELETE" });
+
+export const query = (params: Record<string, string | number | boolean | undefined | null>): string => {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "" || value === false) return;
+    search.set(key, String(value));
+  });
+  const text = search.toString();
+  return text ? "?" + text : "";
+};
 
 export const queryClient = new QueryClient({
   defaultOptions: {

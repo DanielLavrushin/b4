@@ -74,8 +74,8 @@ func TestMirrorHealthRequiresAManifestSignedByTheHub(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if checked.Healthy() || checked.Reason == "" {
-		t.Errorf("the failed check must be recorded with its reason, got %+v", checked)
+	if checked.Healthy() || checked.CheckCode != CheckSignature || checked.CheckError == "" || checked.Reason != "" {
+		t.Errorf("the failed check must be recorded with its stage and error and leave the moderation reason alone, got %+v", checked)
 	}
 
 	signed := base
@@ -89,6 +89,9 @@ func TestMirrorHealthRequiresAManifestSignedByTheHub(t *testing.T) {
 	}
 	if len(healthy) != 1 || healthy[0] != mirror.URL {
 		t.Fatalf("a mirror serving the hub's signed manifest must be advertised, got %v", healthy)
+	}
+	if served, _ := st.GetMirror(ctx, row.ID); served.ServedEpoch != 1 || served.ServedSeq != 1 || served.CheckCode != "" {
+		t.Errorf("a passing check must record what the mirror serves, got %+v", served)
 	}
 
 	other, _ := hubwire.NewIdentity()

@@ -73,19 +73,61 @@ func BucketOf(t time.Time) int64 {
 	return t.Unix() / int64(Bucket/time.Second)
 }
 
-func EffectiveWeight(v Vote, now time.Time) float64 {
+type Factors struct {
+	Base     float64
+	Origin   float64
+	YoungKey float64
+	Decay    float64
+	Weight   float64
+}
+
+func WeightFactors(v Vote, now time.Time) Factors {
+	f := Factors{Base: v.Weight, Origin: 1, YoungKey: 1}
 	w := v.Weight
 	if !v.OriginVerified {
+		f.Origin = UnverifiedOriginMultiplier
 		w *= UnverifiedOriginMultiplier
 	}
 	if !v.KeyFirstSeen.IsZero() && now.Sub(v.KeyFirstSeen) < YoungKeyAge {
+		f.YoungKey = YoungKeyMultiplier
 		w *= YoungKeyMultiplier
 	}
 	age := now.Sub(v.ReceivedAt)
 	if age < 0 {
 		age = 0
 	}
-	return w * math.Pow(0.5, age.Hours()/HalfLife.Hours())
+	f.Decay = math.Pow(0.5, age.Hours()/HalfLife.Hours())
+	f.Weight = w * f.Decay
+	return f
+}
+
+func EffectiveWeight(v Vote, now time.Time) float64 {
+	return WeightFactors(v, now).Weight
+}
+
+func Counted(votes []Vote, now time.Time) []bool {
+	out := make([]bool, len(votes))
+	var humanMass float64
+	automated := make([]int, 0)
+	for i, v := range votes {
+		if IsHuman(v.Kind) {
+			out[i] = true
+			humanMass += math.Abs(EffectiveWeight(v, now))
+			continue
+		}
+		automated = append(automated, i)
+	}
+	sort.SliceStable(automated, func(a, b int) bool { return votes[automated[a]].ReceivedAt.After(votes[automated[b]].ReceivedAt) })
+	var automatedMass float64
+	for _, i := range automated {
+		w := math.Abs(EffectiveWeight(votes[i], now))
+		if automatedMass+w > humanMass {
+			break
+		}
+		out[i] = true
+		automatedMass += w
+	}
+	return out
 }
 
 type cell struct {
