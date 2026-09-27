@@ -183,7 +183,7 @@ func routeWarnDeviceGate(setName string, gate routeDeviceGate) {
 		return
 	}
 	if gate.isWhitelist() && len(gate.matches) == 0 {
-		log.Warnf("Routing: set '%s' is limited to source devices but %s, so the set matches no device and its traffic keeps using the normal route", setName, gate.degraded)
+		log.Warnf("Routing: set '%s' is limited to source devices but %s, so the set matches no device and traffic from the network keeps using the normal route", setName, gate.degraded)
 		return
 	}
 	log.Warnf("Routing: set '%s' skips part of its source device filter because %s", setName, gate.degraded)
@@ -407,7 +407,65 @@ func routeAddBlacklistGate(be routeBackend, table, chain string, ipv4, ipv6 bool
 	}
 }
 
-func routeEnsureGatedPreJump(be routeBackend, chain string, gate routeDeviceGate) {
+func routePreLoopMark(st routeState, gate routeDeviceGate) uint32 {
+	if !gate.isWhitelist() || !config.RoutingUsesTProxy(st.mode) || !routeWantsOutputJump(st) {
+		return 0
+	}
+	return st.mark & routeSetMarkMask
+}
+
+func iptEmitLoopJumpAt(cmd, chain string, at int, mark uint32) {
+	args := []string{cmd, "-w", "-t", "mangle", "-A", "PREROUTING"}
+	if at > 0 {
+		args = []string{cmd, "-w", "-t", "mangle", "-I", "PREROUTING", strconv.Itoa(at)}
+	}
+	args = append(args, "-i", "lo", "-m", "mark", "--mark", routeSetMarkRule(mark), "-j", chain)
+	runLogged("routing: add loopback jump PREROUTING->"+chain, args...)
+}
+
+func nftEmitLoopJump(chain string, mark uint32) {
+	runLogged("routing: add loopback jump "+routeNftPrerouting+"->"+chain,
+		"nft", "add", "rule", "inet", routeNftTable, routeNftPrerouting,
+		"iifname", strconv.Quote("lo"),
+		"meta", "mark", "&", "0x"+strconv.FormatUint(uint64(routeSetMarkMask), 16), "==", "0x"+strconv.FormatUint(uint64(mark), 16),
+		"jump", chain)
+}
+
+func routeGatedJumpCount(gate routeDeviceGate, loopMark uint32, v6 bool) int {
+	if !gate.isWhitelist() {
+		return 1
+	}
+	n := 0
+	for _, m := range gate.matches {
+		if _, ok := iptMatchArgs(m, v6); ok {
+			n++
+		}
+	}
+	if loopMark != 0 {
+		n++
+	}
+	return n
+}
+
+func routeJumplessGatedChains(cfg *config.Config, st routeState, v6 bool) []string {
+	if st.set == nil {
+		return nil
+	}
+	gate := routeSetDeviceGate(cfg, st.set)
+	if !gate.isWhitelist() {
+		return nil
+	}
+	var out []string
+	if st.chainPre != "" && routeGatedJumpCount(gate, routePreLoopMark(st, gate), v6) == 0 {
+		out = append(out, st.chainPre)
+	}
+	if st.quicReject && st.chainQUIC != "" && routeGatedJumpCount(gate, 0, v6) == 0 {
+		out = append(out, st.chainQUIC)
+	}
+	return out
+}
+
+func routeEnsureGatedPreJump(be routeBackend, chain string, gate routeDeviceGate, loopMark uint32) {
 	if be.name() == backendNFTables {
 		standing := nftJumpHandles(routeNftTable, routeNftPrerouting, chain)
 		if !gate.enabled {
@@ -415,6 +473,9 @@ func routeEnsureGatedPreJump(be routeBackend, chain string, gate routeDeviceGate
 				"nft", "add", "rule", "inet", routeNftTable, routeNftPrerouting, "jump", chain)
 		} else {
 			nftEmitGatedJump(routeNftPrerouting, chain, false, gate)
+		}
+		if loopMark != 0 && gate.isWhitelist() {
+			nftEmitLoopJump(chain, loopMark)
 		}
 		nftDropJumpHandles(routeNftTable, routeNftPrerouting, standing)
 		return
@@ -438,8 +499,14 @@ func routeEnsureGatedPreJump(be routeBackend, chain string, gate routeDeviceGate
 			continue
 		}
 		iptEmitGatedJumpAt(cmd, "mangle", "PREROUTING", chain, at, gate)
+		if loopMark != 0 && gate.isWhitelist() {
+			iptEmitLoopJumpAt(cmd, chain, at, loopMark)
+		}
 		added := len(iptJumpLineNumbers(cmd, "mangle", "PREROUTING", func(t string) bool { return t == chain })) - len(standing)
 		if added <= 0 {
+			if routeGatedJumpCount(gate, loopMark, iptCmdIsV6(cmd)) == 0 {
+				iptDropJumpsAt(cmd, "mangle", "PREROUTING", iptShiftedBy(standing, at, 0))
+			}
 			continue
 		}
 		iptDropJumpsAt(cmd, "mangle", "PREROUTING", iptShiftedBy(standing, at, added))
@@ -476,10 +543,15 @@ func routePreJumpsAlreadyOrdered(be routeBackend, ordered []*config.SetConfig) b
 				capture = r.n
 				continue
 			}
-			if routeIsPreChainName(r.target) {
-				order = append(order, r.target)
-				seen = append(seen, r.n)
+			if !routeIsPreChainName(r.target) {
+				continue
 			}
+			if n := len(order); n > 0 && order[n-1] == r.target {
+				seen[n-1] = r.n
+				continue
+			}
+			order = append(order, r.target)
+			seen = append(seen, r.n)
 		}
 		guard, _ := iptPreGuard(rules)
 		if capture == 0 || len(order) != len(want) {
@@ -559,7 +631,8 @@ func routeEnsurePreJumpPrecedence(be routeBackend, cfg *config.Config) {
 		if !ok || st.chainPre == "" {
 			continue
 		}
-		routeEnsureGatedPreJump(be, st.chainPre, routeSetDeviceGate(cfg, set))
+		gate := routeSetDeviceGate(cfg, set)
+		routeEnsureGatedPreJump(be, st.chainPre, gate, routePreLoopMark(st, gate))
 	}
 }
 

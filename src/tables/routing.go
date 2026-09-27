@@ -478,7 +478,6 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 	if config.RoutingIsBlock(mode) {
 		st.blockAction = config.NormalizeBlockAction(set.Routing.BlockAction)
 	} else if config.RoutingUsesTProxy(mode) {
-		st.srcScoped = routeProxySourceScoped(cfg, set)
 		mark, port := proxyMarkAndPort(set)
 		st.mark = mark
 		st.table = proxyTable()
@@ -931,6 +930,12 @@ func routeIptRulesPresent(be *routeIptBackend, cfg *config.Config) bool {
 		if !hasBinary(cmd) {
 			continue
 		}
+		jumpless := make(map[string]bool)
+		for _, st := range routeRuleCache {
+			for _, chain := range routeJumplessGatedChains(cfg, st, v6) {
+				jumpless[chain] = true
+			}
+		}
 		for table, wantChains := range needed {
 			out, err := run(cmd, "-w", "-t", table, "-L", "-n", "-v", "-x")
 			if err != nil {
@@ -944,7 +949,7 @@ func routeIptRulesPresent(be *routeIptBackend, cfg *config.Config) bool {
 				if _, ok := chains[chain]; !ok {
 					return false
 				}
-				if parent := jumps[table+"|"+chain]; parent != "" && !iptDumpJumpsTo(chains, parent, chain) {
+				if parent := jumps[table+"|"+chain]; parent != "" && !jumpless[chain] && !iptDumpJumpsTo(chains, parent, chain) {
 					log.Infof("Routing: %s still exists but nothing in %s %s jumps to it any more, so no packet reaches it; the router's own firewall was rebuilt under b4 and its rules are being put back", chain, table, parent)
 					return false
 				}
@@ -1632,7 +1637,8 @@ func routeReestablishJumpOrder(be routeBackend, cfg *config.Config, rebuilt bool
 	if !routePreJumpsAlreadyOrdered(be, ordered) {
 		for _, set := range ordered {
 			st := routeRuleCache[set.Id]
-			routeEnsureGatedPreJump(be, st.chainPre, routeSetDeviceGate(cfg, set))
+			gate := routeSetDeviceGate(cfg, set)
+			routeEnsureGatedPreJump(be, st.chainPre, gate, routePreLoopMark(st, gate))
 		}
 	}
 
@@ -1653,7 +1659,7 @@ func routeReestablishJumpOrder(be routeBackend, cfg *config.Config, rebuilt bool
 }
 
 func routeEnsureChainJumps(be routeBackend, st routeState, gate routeDeviceGate) {
-	routeEnsureGatedPreJump(be, st.chainPre, gate)
+	routeEnsureGatedPreJump(be, st.chainPre, gate, routePreLoopMark(st, gate))
 	be.ensureJumpRule("OUTPUT", st.chainOut, true, true)
 	be.ensureJumpRule("POSTROUTING", st.chainSNAT, false, st.egressIP != "")
 }

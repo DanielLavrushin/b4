@@ -1,5 +1,10 @@
 # B4 - Bye Bye Big Bro
 
+## [1.83.1] - 2026-09-27
+
+- FIXED: **With Allow only selected devices on under Device Filtering, connections through b4's SOCKS5 server and others the router opened itself went out directly instead of through proxy sets and Telegram over WebSocket** - the rule that hands a connection to the set's listener accepted only the selected devices, while the router's own connections reach it over the loopback interface, so they hung before 1.83.0 and were left out of these sets since.
+- FIXED: **On iptables, a routing set that Allow only selected devices left with no device, for example because the set excludes them or because they are manually added IPv4 devices while IPv6 is on, kept the devices it had before and made b4 rebuild routing at every firewall check** - the set's old jump was replaced only when the new filter produced a new one, and the check for missing rules expected a jump in every address family.
+
 ## [1.83.0] - 2026-09-26
 
 - ADDED: **Sets can target whole networks by their ASN** - an ASN tab in the set editor takes a number such as `AS15169` or an IP address, and b4 fetches the network's announced prefixes from RIPEstat and refreshes them daily. The Traffic page can add an address's announced prefix or its whole network to a set, the DPI Detector can add a hosting network, MCP `b4_edit_set_targets` takes the kind `asns`, and shared and community sets carry ASNs.

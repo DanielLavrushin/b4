@@ -204,19 +204,18 @@ func TestRoutingSyncSkipsTheBridgeWithoutTProxy(t *testing.T) {
 	}
 }
 
-func TestProxySetsLeaveRouterTrafficAloneUnderAnAllowList(t *testing.T) {
+func TestProxySetsKeepRouterTrafficUnderAnAllowList(t *testing.T) {
 	bridgeResetReadiness(t)
 	cfg := bridgeTestConfig(false)
 	set := cfg.TelegramBridgeSet()
-	if routeProxySourceScoped(cfg, set) {
-		t.Fatal("an unscoped bridge with device filtering off must include the router's own traffic")
-	}
 	cfg.Queue.Devices.Enabled = true
 	cfg.Queue.Devices.Devices = []config.Device{{MAC: "AA:BB:CC:DD:EE:FF", Selected: true}}
-	if !routeProxySourceScoped(cfg, set) {
-		t.Error("with an allow list the router is not a selected device, its traffic must keep the normal route")
-	}
-	if st := buildRouteState(cfg, set); !st.srcScoped || routeWantsOutputJump(st) {
+	st := buildRouteState(cfg, set)
+	if st.srcScoped || !routeWantsOutputJump(st) {
 		t.Errorf("route state srcScoped=%v wantsOutput=%v under an allow list", st.srcScoped, routeWantsOutputJump(st))
+	}
+	gate := routeSetDeviceGate(cfg, set)
+	if got := routePreLoopMark(st, gate); got != st.mark || got == 0 {
+		t.Errorf("routePreLoopMark = 0x%x, want the set mark 0x%x", got, st.mark)
 	}
 }

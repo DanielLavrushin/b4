@@ -20,7 +20,7 @@ While the switch is on, b4 diverts TCP connections addressed to Telegram's [addr
 - every device behind b4;
 - connections the router opens itself, such as Telegram Desktop running on the same machine.
 
-[Device filtering](../settings/core.md#device-filtering) on Settings, Core applies: with an allow list only the selected devices are diverted and the router's own connections keep the normal path, and with a deny list the selected devices keep the normal path. The switch has no source-interface or per-device scoping of its own; that remains the job of the [per-set mode](#limiting-the-bridge-to-some-devices-or-interfaces).
+[Device filtering](../settings/core.md#device-filtering) on Settings, Core applies: with an allow list the selected devices and the router's own connections are diverted, and with a deny list the selected devices keep the normal path. The switch has no source-interface or per-device scoping of its own; that remains the job of the [per-set mode](#limiting-the-bridge-to-some-devices-or-interfaces).
 
 The diversion rules exist only while the listener is running. When port 13443 cannot be bound, b4 keeps retrying, and until it succeeds Telegram connections take the normal path instead of being diverted to a closed port. When only the IPv6 socket fails to open, IPv4 is bridged, Telegram over IPv6 takes the normal path, and the card shows a note; the IPv6 socket is tried again only when the listener restarts.
 
@@ -91,7 +91,7 @@ The switch's rules come first among the routing sets that are not limited to dev
 
 A set limited to specific devices, by an included or an excluded source-device list, or to source interfaces still handles its devices first when it also matches Telegram addresses. That is the way to keep one device's Telegram traffic on a different route while the switch covers everyone else.
 
-With device filtering on Settings, Core in allow-list mode, every routing set is limited to the selected devices, and the switch comes before all of them.
+With device filtering on Settings, Core in allow-list mode, every routing set takes only the selected devices from the network, and the switch comes before all of them.
 
 :::warning A block set blocks the bridge too
 A block set that is not limited to source interfaces or an included source-device list, and whose targets cover Telegram addresses, still blocks the router's own connections to those addresses. The bridge's own upstream connections are among them, so such a set cuts the bridge off from every address it covers.
@@ -173,7 +173,7 @@ The routing mode **Telegram over WebSocket (built-in)** on a set feeds the same 
 A set that also names the `telegram` GeoSite category, as earlier versions of this example did, keeps working. The GeoSite category only adds Telegram's web hosts to the diversion, which the bridge recognises as not MTProto and passes on, and does nothing for MTProto itself.
 
 :::warning Source scoping does more than narrow the LAN side
-The rules that send the router's own Telegram traffic into the bridge are installed only while the set is not scoped to source interfaces or devices. Selecting a source interface therefore excludes the router itself, not just the devices on other interfaces. Device filtering in allow-list mode has the same effect.
+The rules that send the router's own Telegram traffic into the bridge are installed only while the set is not scoped to source interfaces or devices. Selecting a source interface therefore excludes the router itself, not just the devices on other interfaces. Device filtering has no such effect in either mode.
 :::
 
 Connections a set in this mode carries appear in the logs and on the Traffic page under the set's own name, with the same **Telegram bridge** label.

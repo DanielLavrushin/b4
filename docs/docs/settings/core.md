@@ -289,6 +289,11 @@ manually added devices leaves DPI bypass applying to every device.
 
 :::
 
+The filter selects devices on the network, and the router is not one of them. Connections the router opens itself, including
+the ones the [SOCKS5 proxy](#socks5-proxy) opens for its clients, get DPI bypass in both modes. Block sets, and for TCP proxy and
+Telegram over WebSocket sets, act on them unless the set is limited to source interfaces or an included source-device list. Sets
+in interface mode follow their [Router's own traffic](../sets/routing.md#routers-own-traffic) setting.
+
 ### Device table
 
 When filtering is enabled, a table of discovered devices appears:
