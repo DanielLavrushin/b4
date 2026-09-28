@@ -495,9 +495,6 @@ func routeEnsureGatedPreJump(be routeBackend, chain string, gate routeDeviceGate
 			log.Tracef("routing: %s could not read mangle PREROUTING, so %s goes in at the top; that keeps it above %s, and a later pass puts the sets back in the configured order",
 				cmd, chain, captureChainPre)
 		}
-		if at > 0 && !gate.isWhitelist() && len(standing) == 1 && standing[0] == at {
-			continue
-		}
 		iptEmitGatedJumpAt(cmd, "mangle", "PREROUTING", chain, at, gate)
 		if loopMark != 0 && gate.isWhitelist() {
 			iptEmitLoopJumpAt(cmd, chain, at, loopMark)

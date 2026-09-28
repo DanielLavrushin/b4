@@ -245,3 +245,29 @@ func TestJumplessGatedChainsFollowTheFamilyOfTheAllowedDevices(t *testing.T) {
 		t.Errorf("with the filter off every chain has its unconditioned jump, got %v", got)
 	}
 }
+
+func TestTurningTheFilterOffReplacesALoopbackOnlyJump(t *testing.T) {
+	stubBinaries(t, backendIPTables)
+	chain := simulatedPrerouting(t, []string{"b4r_x_pre", captureChainPre})
+	inner := runLogged
+	var emitted []string
+	runLogged = func(op string, args ...string) bool {
+		emitted = append(emitted, strings.Join(args, " "))
+		return inner(op, args...)
+	}
+
+	routeEnsureGatedPreJump(&routeIptBackend{}, "b4r_x_pre", routeDeviceGate{}, 0)
+
+	want := backendIPTables + " -w -t mangle -I PREROUTING 2 -j b4r_x_pre"
+	if len(emitted) == 0 || emitted[0] != want {
+		t.Fatalf("emitted %v, want the unconditioned jump %q; the standing jump may be the loopback-only one, which -L cannot tell apart", emitted, want)
+	}
+	for _, e := range emitted {
+		if !strings.HasSuffix(e, " -I PREROUTING 2 -j b4r_x_pre") {
+			t.Errorf("with the filter off every family gets the unconditioned jump, got %q", e)
+		}
+	}
+	if got := strings.Join(*chain, ","); got != "b4r_x_pre,"+captureChainPre {
+		t.Fatalf("mangle PREROUTING is %s, want the old jump replaced by the new one", got)
+	}
+}
