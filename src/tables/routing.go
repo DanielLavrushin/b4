@@ -562,6 +562,9 @@ func routeCleanupForRebuild(be routeBackend, old, cur routeState) func() {
 			removeProxyInputAccept(be, old.mark)
 			if hasBinary("ip") && old.table > 0 {
 				routeDelRuleAllForms(old.mark, fmt.Sprintf("%d", old.table))
+				if old.mark != cur.mark {
+					routeDelSourceCheckRule(routeSetMarkRule(old.mark))
+				}
 			}
 		}
 	}

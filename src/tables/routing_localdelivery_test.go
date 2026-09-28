@@ -14,10 +14,13 @@ type localDeliveryRuleDel struct {
 func localDeliveryEnsure(t *testing.T, ipv4, ipv6 bool) ([]localDeliveryRuleDel, []string) {
 	t.Helper()
 	logged, delRule, sysctl := runLogged, routeDelRuleLoop, writeSysctl
+	addCheck, delCheck := routeAddSourceCheckRule, routeDelSourceCheckRule
 	t.Cleanup(func() {
 		runLogged = logged
 		routeDelRuleLoop = delRule
 		writeSysctl = sysctl
+		routeAddSourceCheckRule = addCheck
+		routeDelSourceCheckRule = delCheck
 	})
 
 	var dels []localDeliveryRuleDel
@@ -30,9 +33,55 @@ func localDeliveryEnsure(t *testing.T, ipv4, ipv6 bool) ([]localDeliveryRuleDel,
 		cmds = append(cmds, strings.Join(args, " "))
 		return true
 	}
+	routeAddSourceCheckRule = func(mark uint32) {
+		cmds = append(cmds, strings.Join(proxySourceCheckRuleArgs("add", routeSetMarkRule(mark)), " "))
+	}
+	routeDelSourceCheckRule = func(markStrMask string) {
+		cmds = append(cmds, strings.Join(proxySourceCheckRuleArgs("del", markStrMask), " "))
+	}
 
 	routeEnsureLocalDelivery(0x20fa, proxyLocalDeliveryTable, ipv4, ipv6)
 	return dels, cmds
+}
+
+func localDeliveryCmdIndex(cmds []string, want string) int {
+	for i, c := range cmds {
+		if c == want {
+			return i
+		}
+	}
+	return -1
+}
+
+func TestRouteEnsureLocalDelivery_PointsTheSourceCheckAtMainForIPv4(t *testing.T) {
+	const (
+		addCheck = "ip rule add fwmark 0x20fa/0x27fff iif lo lookup main suppress_prefixlength 7 priority 2"
+		delCheck = "ip rule del fwmark 0x20fa/0x27fff iif lo lookup main"
+	)
+
+	for _, tc := range []struct{ ipv4, ipv6 bool }{{true, true}, {true, false}} {
+		_, cmds := localDeliveryEnsure(t, tc.ipv4, tc.ipv6)
+		added, cleared := localDeliveryCmdIndex(cmds, addCheck), localDeliveryCmdIndex(cmds, delCheck)
+		if added < 0 {
+			t.Fatalf("ipv4=%v ipv6=%v: the source-check rule was never added, so with net.ipv4.conf.all.src_valid_mark=1 every LAN SYN the set diverts is checked against the local-delivery table and dropped as a martian: %v", tc.ipv4, tc.ipv6, cmds)
+		}
+		if cleared < 0 || cleared > added {
+			t.Errorf("ipv4=%v ipv6=%v: the source-check rule is added without clearing the previous one first, so every re-install stacks another copy: %v", tc.ipv4, tc.ipv6, cmds)
+		}
+	}
+
+	_, v6only := localDeliveryEnsure(t, false, true)
+	if localDeliveryCmdIndex(v6only, addCheck) >= 0 {
+		t.Errorf("the source-check rule was added while IPv4 is disabled: %v", v6only)
+	}
+	if localDeliveryCmdIndex(v6only, delCheck) < 0 {
+		t.Errorf("the source-check rule from an earlier ensure is never removed when IPv4 is turned off: %v", v6only)
+	}
+	for _, c := range v6only {
+		if strings.HasPrefix(c, "ip -6 ") && strings.Contains(c, "suppress_prefixlength") {
+			t.Errorf("an IPv6 source-check rule was added; IPv6 input has no source validation, so it would only change routing: %q", c)
+		}
+	}
 }
 
 func localDeliveryDeletedFamily(dels []localDeliveryRuleDel, ipv6 bool) []string {

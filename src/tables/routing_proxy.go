@@ -580,6 +580,7 @@ func routeCleanupProxyRule(be routeBackend, st routeState, keepSets bool) {
 
 	if hasBinary("ip") && st.table > 0 {
 		routeDelRuleAllForms(st.mark, tableStr)
+		routeDelSourceCheckRule(routeSetMarkRule(st.mark))
 		if proxyActiveCount() <= 1 {
 			runLogged("routing: delete proxy local route v4", "ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", tableStr)
 			runLogged("routing: delete proxy local route v6", "ip", "-6", "route", "del", "local", "::/0", "dev", "lo", "table", tableStr)
@@ -613,8 +614,10 @@ func routeEnsureLocalDelivery(mark uint32, table int, ipv4, ipv6 bool) {
 	writeSysctl("/proc/sys/net/ipv4/conf/all/rp_filter", "2")
 
 	routeDelRuleAllForms(mark, tableStr)
+	routeDelSourceCheckRule(markStrMask)
 
 	if ipv4 {
+		routeAddSourceCheckRule(mark)
 		runLogged("routing: add ip rule v4 (proxy)", "ip", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
 		runLogged("routing: add local route v4 (proxy)", "ip", "route", "replace", "local", "0.0.0.0/0", "dev", "lo", "table", tableStr)
 	} else {
