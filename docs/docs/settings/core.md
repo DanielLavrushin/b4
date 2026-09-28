@@ -180,7 +180,7 @@ If authentication is enabled but TLS is not configured, the username and passwor
 
 ## SOCKS5 proxy
 
-A built-in SOCKS5 proxy. Applications can route traffic through it - it is processed by b4 with the configured sets applied.
+A built-in SOCKS5 proxy. Applications can route traffic through it - it is processed by b4 with the configured sets applied. A host name matched by a set in proxy mode is handed to that set's upstream; see [Connections through the built-in SOCKS5 proxy](../sets/routing.md#connections-through-the-built-in-socks5-proxy).
 
 ![20260418230122](../../static/img/core/20260418230122.png)
 
@@ -288,6 +288,11 @@ manually added devices leaves DPI bypass applying to every device.
 - **Deny list** (invert selection) - selected devices are **excluded** from DPI bypass
 
 :::
+
+The filter selects devices on the network, and the router is not one of them. Connections the router opens itself, including
+the ones the [SOCKS5 proxy](#socks5-proxy) opens for its clients, get DPI bypass in both modes. Block sets, and for TCP proxy and
+Telegram over WebSocket sets, act on them unless the set is limited to source interfaces or an included source-device list. Sets
+in interface mode follow their [Router's own traffic](../sets/routing.md#routers-own-traffic) setting.
 
 ### Device table
 

@@ -348,7 +348,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 
 	gate := routeSetDeviceGate(cfg, set)
 	routeWarnDeviceGate(set.Name, gate)
-	sourceScoped := routeProxySourceScoped(cfg, set)
+	sourceScoped := routeSetIsSourceScoped(set)
 	routeSelfDialBypass(be, cfg, st.chainPre)
 	be.addClaimedBypassRule(st.chainPre, st.mark)
 	routeAddBlacklistGate(be, "mangle", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
@@ -412,7 +412,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	} else {
 		be.deleteJumpRules("OUTPUT", st.chainOut, true)
 	}
-	routeEnsureGatedPreJump(be, st.chainPre, gate)
+	routeEnsureGatedPreJump(be, st.chainPre, gate, routePreLoopMark(st, gate))
 	addProxyInputAccept(be, st.mark)
 
 	if sourceScoped {

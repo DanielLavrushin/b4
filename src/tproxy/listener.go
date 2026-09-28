@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/socks5"
 	"golang.org/x/sys/unix"
@@ -25,6 +26,10 @@ func markedDialer(timeout time.Duration, bypassMark uint32) net.Dialer {
 }
 
 const failOpenUserTimeout = 120 * time.Second
+
+const namedDialBudget = 20 * time.Second
+
+var setLookup dns.LookupFunc = dns.LookupIPs
 
 func setTCPUserTimeout(c net.Conn, d time.Duration) {
 	tc, ok := c.(*net.TCPConn)
@@ -70,11 +75,14 @@ type Listener struct {
 	UDP       bool
 	Bridge    MTProtoBridge
 
-	set      atomic.Pointer[config.SetConfig]
-	guard    *loopGuard
-	loopWarn sync.Once
-	relayMu  sync.Mutex
-	relays   map[string]int
+	set        atomic.Pointer[config.SetConfig]
+	dnsMark    atomic.Int64
+	dnsTimeout atomic.Int64
+	dnsV6      atomic.Bool
+	guard      *loopGuard
+	loopWarn   sync.Once
+	relayMu    sync.Mutex
+	relays     map[string]int
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -528,8 +536,166 @@ func (l *Listener) pinnedName(host string) bool {
 	return set != nil && len(set.DNS.PinnedAddresses(host)) > 0
 }
 
+func (l *Listener) SetDNSOptions(mark int, timeout time.Duration, v6 bool) {
+	l.dnsMark.Store(int64(mark))
+	l.dnsTimeout.Store(int64(timeout))
+	l.dnsV6.Store(v6)
+}
+
+func (l *Listener) dnsServer() (dns.Server, *config.SetConfig, bool) {
+	set := l.set.Load()
+	if set == nil {
+		return dns.Server{}, nil, false
+	}
+	srv, ok := dns.SetServer(set.DNS.Enabled, set.DNS.TargetDNS, set.DNS.DoHURL)
+	srv.Mark, srv.Timeout = int(l.dnsMark.Load()), time.Duration(l.dnsTimeout.Load())
+	return srv, set, ok
+}
+
+func (l *Listener) DialNamed(host string, port int) (net.Conn, error) {
+	srv, _, _ := l.dnsServer()
+	ctx, cancel := context.WithTimeout(l.ctx, namedDialBudget+2*srv.Budget())
+	defer cancel()
+	onion := isOnionName(host)
+	target, err := l.namedTarget(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	release := l.holdRelay(relayKeys("tcp", port, host, target))
+	upstream, err := l.dialUpstreamWithin(ctx, target, port)
+	if err != nil && target == host && !onion && socks5.IsConnectRejected(err) {
+		if addrs, rerr := l.resolveHost(ctx, host); rerr == nil {
+			log.Tracef("tproxy: upstream refused %s:%d on set %q (%v), retrying with %s", host, port, l.SetName, err, addrs[0])
+			target = addrs[0]
+			nameRelease, addrRelease := release, l.holdRelay(relayKeys("tcp", port, target))
+			release = func() {
+				addrRelease()
+				nameRelease()
+			}
+			upstream, err = l.dialUpstreamWithin(ctx, target, port)
+		}
+	}
+	switch {
+	case err == nil:
+		l.noteUpstreamSuccess()
+		setTCPUserTimeout(upstream, failOpenUserTimeout)
+		return &heldConn{Conn: upstream, release: release}, nil
+	case socks5.IsConnectRejected(err):
+		l.noteUpstreamSuccess()
+		release()
+		log.Tracef("tproxy: upstream of set %q refused %s:%d: %v", l.SetName, target, port, err)
+		return nil, err
+	}
+	release()
+	l.noteUpstreamFailure(target, port, err)
+	if !l.FailOpen || onion {
+		return nil, err
+	}
+	return l.dialDirect(ctx, host, target, port)
+}
+
+func (l *Listener) dialDirect(ctx context.Context, host, target string, port int) (net.Conn, error) {
+	addrs := []string{target}
+	if net.ParseIP(target) == nil {
+		var err error
+		if addrs, err = l.namedAddresses(ctx, host); err != nil {
+			return nil, err
+		}
+	}
+	dialer := markedDialer(failOpenDirectTimeout, l.Upstream.BypassMark)
+	var lastErr error
+	for _, addr := range addrs {
+		direct, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(addr, strconv.Itoa(port)))
+		if err == nil {
+			setTCPUserTimeout(direct, failOpenUserTimeout)
+			return direct, nil
+		}
+		lastErr = err
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	return nil, lastErr
+}
+
+func isOnionName(host string) bool {
+	return strings.HasSuffix(strings.ToLower(strings.TrimSuffix(host, ".")), ".onion")
+}
+
+func (l *Listener) namedTarget(ctx context.Context, host string) (string, error) {
+	if isOnionName(host) || (l.UseDomain && len(l.pinnedAddresses(host)) == 0) {
+		return host, nil
+	}
+	addrs, err := l.namedAddresses(ctx, host)
+	if err != nil {
+		return "", err
+	}
+	return addrs[0], nil
+}
+
+func (l *Listener) namedAddresses(ctx context.Context, host string) ([]string, error) {
+	if pins := l.pinnedAddresses(host); len(pins) > 0 {
+		return pins, nil
+	}
+	return l.resolveHost(ctx, host)
+}
+
+func (l *Listener) pinnedAddresses(host string) []string {
+	set := l.set.Load()
+	if set == nil {
+		return nil
+	}
+	return set.DNS.PinnedAddresses(host)
+}
+
+func (l *Listener) resolveHost(ctx context.Context, host string) ([]string, error) {
+	srv, set, useSet := l.dnsServer()
+	ctx, cancel := context.WithTimeout(ctx, srv.Budget()+time.Second)
+	defer cancel()
+	strict := set != nil && set.DNS.Strict
+	ips, err := dns.LookupWithFallback(ctx, setLookup, srv, useSet, strict, host, true, l.dnsV6.Load())
+	if err != nil {
+		return nil, err
+	}
+	addrs := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		if ip.To4() != nil {
+			addrs = append(addrs, ip.String())
+		}
+	}
+	for _, ip := range ips {
+		if ip.To4() == nil {
+			addrs = append(addrs, ip.String())
+		}
+	}
+	return addrs, nil
+}
+
+type heldConn struct {
+	net.Conn
+	release func()
+	once    sync.Once
+}
+
+func (c *heldConn) Close() error {
+	err := c.Conn.Close()
+	c.once.Do(c.release)
+	return err
+}
+
+func (c *heldConn) CloseWrite() error {
+	if cw, ok := c.Conn.(interface{ CloseWrite() error }); ok {
+		return cw.CloseWrite()
+	}
+	return nil
+}
+
 func (l *Listener) dialUpstream(host string, port int) (net.Conn, error) {
-	ctx, cancel := context.WithTimeout(l.ctx, 15*time.Second)
+	return l.dialUpstreamWithin(l.ctx, host, port)
+}
+
+func (l *Listener) dialUpstreamWithin(parent context.Context, host string, port int) (net.Conn, error) {
+	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
 	defer cancel()
 	return socks5.DialUpstream(ctx, l.Upstream, host, port)
 }

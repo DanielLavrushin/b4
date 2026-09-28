@@ -121,8 +121,7 @@ A line under the status box appears once any of these is above zero.
 - **QUIC** is not rejected, so a client that prefers QUIC to a Telegram address bypasses the bridge silently.
 - **IPv6** ranges are diverted only while IPv6 support is on in [Settings, Core](../settings/core#protocols).
 - **Devices excluded by [device filtering](../settings/core.md#device-filtering)** keep the normal path.
-- **A set limited to devices or source interfaces** that matches Telegram addresses handles its devices before the switch does, and so does every routing set while device filtering is in allow-list mode.
-- **The router's own connections** keep the normal path while device filtering is in allow-list mode. See [Order among sets](./websocket-bridge.md#order-among-sets).
+- **A set limited to devices or source interfaces** that matches Telegram addresses handles its devices before the switch does.
 - **An address outside the list in use** is not diverted. The card shows how many ranges are in use and where they came from.
 
 ## A block set stops the bridge

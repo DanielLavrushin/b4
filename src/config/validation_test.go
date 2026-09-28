@@ -425,23 +425,25 @@ func TestValidate_RoutingMode(t *testing.T) {
 		}
 	})
 
-	t.Run("socks5 loopback loop detected", func(t *testing.T) {
-		cfg := NewConfig()
-		cfg.System.Socks5.Enabled = true
-		cfg.System.Socks5.Port = 1080
-		set := NewSetConfig()
-		set.Id = "s1"
-		set.Routing.Enabled = true
-		set.Routing.Mode = RoutingModeProxy
-		set.Routing.Upstream.Host = "127.0.0.1"
-		set.Routing.Upstream.Port = 1080
-		cfg.Sets = []*SetConfig{&set}
+	for _, host := range []string{"127.0.0.1", "::"} {
+		t.Run("socks5 loopback loop detected for "+host, func(t *testing.T) {
+			cfg := NewConfig()
+			cfg.System.Socks5.Enabled = true
+			cfg.System.Socks5.Port = 1080
+			set := NewSetConfig()
+			set.Id = "s1"
+			set.Routing.Enabled = true
+			set.Routing.Mode = RoutingModeProxy
+			set.Routing.Upstream.Host = host
+			set.Routing.Upstream.Port = 1080
+			cfg.Sets = []*SetConfig{&set}
 
-		ve := mustValidationErr(t, cfg.Validate())
-		if findField(ve, "sets[0].routing.upstream.port", "socks5_loop") == nil {
-			t.Errorf("missing socks5_loop; got %+v", ve.Fields)
-		}
-	})
+			ve := mustValidationErr(t, cfg.Validate())
+			if findField(ve, "sets[0].routing.upstream.port", "socks5_loop") == nil {
+				t.Errorf("missing socks5_loop; got %+v", ve.Fields)
+			}
+		})
+	}
 }
 
 func TestValidate_QueueFields(t *testing.T) {

@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strconv"
@@ -22,6 +23,10 @@ type ForwardOptions struct {
 }
 
 func ResolveUpstream(query []byte, target net.IP, opts ForwardOptions) ([]byte, error) {
+	return ResolveUpstreamContext(context.Background(), query, target, opts)
+}
+
+func ResolveUpstreamContext(ctx context.Context, query []byte, target net.IP, opts ForwardOptions) ([]byte, error) {
 	port := opts.Port
 	if port == 0 {
 		port = 53
@@ -41,7 +46,7 @@ func ResolveUpstream(query []byte, target net.IP, opts ForwardOptions) ([]byte, 
 		}
 	}
 
-	c, err := d.Dial("udp", net.JoinHostPort(target.String(), strconv.Itoa(port)))
+	c, err := d.DialContext(ctx, "udp", net.JoinHostPort(target.String(), strconv.Itoa(port)))
 	if err != nil {
 		return nil, err
 	}
@@ -68,10 +73,15 @@ func ResolveUpstream(query []byte, target net.IP, opts ForwardOptions) ([]byte, 
 	if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
 		return nil, err
 	}
+	stop := context.AfterFunc(ctx, func() { _ = conn.SetReadDeadline(time.Unix(1, 0)) })
+	defer stop()
 
 	buf := make([]byte, 65535)
 	n, err := conn.Read(buf)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		return nil, err
 	}
 	return buf[:n], nil

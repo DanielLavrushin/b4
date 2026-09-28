@@ -65,9 +65,9 @@ func (b *routeIptBackend) ensureIPSet(name string, v6 bool) error {
 	return nil
 }
 
-func (b *routeIptBackend) addElements(setName string, ips []string, ttlSec int) {
+func (b *routeIptBackend) addElements(setName string, ips []string, ttlSec int) []string {
 	if len(ips) == 0 {
-		return
+		return nil
 	}
 	entries := expandZeroPrefix(ips)
 	if ttlSec < 0 {
@@ -81,13 +81,17 @@ func (b *routeIptBackend) addElements(setName string, ips []string, ttlSec int) 
 	}
 
 	if err := runStdin(sb.String(), "ipset", "restore", "-exist"); err == nil {
-		return
+		return nil
 	}
 
+	var failed []string
 	for _, ip := range entries {
-		runLogged("routing: ipset add "+ip,
-			"ipset", "add", setName, ip, "timeout", fmt.Sprintf("%d", ttlSec), "-exist")
+		if !runLogged("routing: ipset add "+ip,
+			"ipset", "add", setName, ip, "timeout", fmt.Sprintf("%d", ttlSec), "-exist") {
+			failed = append(failed, ip)
+		}
 	}
+	return failed
 }
 
 func (b *routeIptBackend) delElements(setName string, ips []string) {
@@ -320,6 +324,8 @@ func (b *routeIptBackend) addEgressLoopGuard(chain, iface string, ipv4, ipv6 boo
 }
 
 func (b *routeIptBackend) sharesFamilies() bool { return false }
+
+func (b *routeIptBackend) learnedSharesStatic() bool { return true }
 
 func (b *routeIptBackend) addMarkRestoreRule(chain string, v6 bool, sourceIface string, mark uint32) {
 	cmd := b.iptFor(v6)

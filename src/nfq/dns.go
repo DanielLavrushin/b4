@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -270,10 +269,7 @@ func (w *Worker) dnsClientAddressable(pkt *pktInfo, sport, dport uint16) bool {
 }
 
 func dnsUpstreamLabel(rawURL string) string {
-	if u, err := url.Parse(rawURL); err == nil && u.Host != "" {
-		return u.Host
-	}
-	return rawURL
+	return dns.SourceLabel(rawURL)
 }
 
 func dnsRedirectAction(set *config.SetConfig) string {

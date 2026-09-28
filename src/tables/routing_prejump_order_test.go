@@ -43,7 +43,7 @@ func TestPreJumpGoesAboveTheCaptureChain(t *testing.T) {
 	emitted := stubIptPrerouting(t, preroutingWithCapture)
 	stubBinaries(t, backendIPTables)
 
-	routeEnsureGatedPreJump(&routeIptBackend{}, "b4r_x_pre", routeDeviceGate{})
+	routeEnsureGatedPreJump(&routeIptBackend{}, "b4r_x_pre", routeDeviceGate{}, 0)
 
 	var added string
 	for _, e := range *emitted {
@@ -63,7 +63,7 @@ func TestPreJumpIsAppendedWhenThereIsNoCaptureChain(t *testing.T) {
 	emitted := stubIptPrerouting(t, "Chain PREROUTING (policy ACCEPT)\nnum  target  prot opt source destination\n")
 	stubBinaries(t, backendIPTables)
 
-	routeEnsureGatedPreJump(&routeIptBackend{}, "b4r_x_pre", routeDeviceGate{})
+	routeEnsureGatedPreJump(&routeIptBackend{}, "b4r_x_pre", routeDeviceGate{}, 0)
 
 	for _, e := range *emitted {
 		if strings.Contains(e, "b4r_x_pre") && strings.Contains(e, "-A PREROUTING") {
@@ -151,7 +151,7 @@ func TestPreJumpOrderSurvivesSeveralSets(t *testing.T) {
 	}
 
 	for _, name := range []string{"first", "second", "third"} {
-		routeEnsureGatedPreJump(&routeIptBackend{}, routeChainPrefix+name+"_pre", routeDeviceGate{})
+		routeEnsureGatedPreJump(&routeIptBackend{}, routeChainPrefix+name+"_pre", routeDeviceGate{}, 0)
 	}
 
 	var got []string
@@ -198,7 +198,7 @@ func TestPreJumpGoesToTheTopWhenTheChainCannotBeRead(t *testing.T) {
 		return true
 	}
 
-	routeEnsureGatedPreJump(&routeIptBackend{}, "b4r_x_pre", routeDeviceGate{})
+	routeEnsureGatedPreJump(&routeIptBackend{}, "b4r_x_pre", routeDeviceGate{}, 0)
 
 	for _, e := range emitted {
 		if !strings.Contains(e, "b4r_x_pre") {

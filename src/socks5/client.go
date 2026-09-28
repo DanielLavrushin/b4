@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -40,6 +41,16 @@ func ApplyBypassMark(d *net.Dialer, mark uint32) {
 		}
 		return sockErr
 	}
+}
+
+var ownUpstreamDials sync.Map
+
+func isOwnUpstreamDial(addr net.Addr) bool {
+	if addr == nil {
+		return false
+	}
+	_, ok := ownUpstreamDials.Load(addr.String())
+	return ok
 }
 
 type ConnectRejectedError struct {
@@ -75,6 +86,9 @@ func DialUpstream(ctx context.Context, cfg ClientConfig, targetHost string, targ
 	if err != nil {
 		return nil, fmt.Errorf("dial upstream: %w", err)
 	}
+	own := conn.LocalAddr().String()
+	ownUpstreamDials.Store(own, struct{}{})
+	defer ownUpstreamDials.Delete(own)
 
 	deadline := time.Now().Add(timeout)
 	_ = conn.SetDeadline(deadline)

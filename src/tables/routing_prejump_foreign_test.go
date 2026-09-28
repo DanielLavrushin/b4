@@ -20,7 +20,7 @@ func TestPreJumpGoesAboveAForeignSocketRule(t *testing.T) {
 	emitted := stubIptPrerouting(t, preroutingWithXrayDivert)
 	stubBinaries(t, backendIPTables)
 
-	routeEnsureGatedPreJump(&routeIptBackend{}, "b4r_x_pre", routeDeviceGate{})
+	routeEnsureGatedPreJump(&routeIptBackend{}, "b4r_x_pre", routeDeviceGate{}, 0)
 
 	var added string
 	for _, e := range *emitted {

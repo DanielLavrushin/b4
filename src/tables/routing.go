@@ -71,7 +71,7 @@ type routeBackend interface {
 	available() bool
 	ensureBase() error
 	ensureIPSet(name string, v6 bool) error
-	addElements(setName string, ips []string, ttlSec int)
+	addElements(setName string, ips []string, ttlSec int) []string
 	delElements(setName string, ips []string)
 	ensureChain(chain string, isMangle bool) error
 	flushChain(chain string, isMangle bool)
@@ -84,6 +84,7 @@ type routeBackend interface {
 	addMarkRule(chain string, v6 bool, setName string, mark uint32, sourceIface string, tagHostConntrack bool)
 	addMarkRestoreRule(chain string, v6 bool, sourceIface string, mark uint32)
 	sharesFamilies() bool
+	learnedSharesStatic() bool
 	addMarkFallbackRule(chain string, v6 bool, setName string, mark uint32, sourceIface string)
 	addEgressLoopGuard(chain, iface string, ipv4, ipv6 bool) bool
 	addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32, sources []config.DeviceMatch)
@@ -107,8 +108,9 @@ type routeChainSnapshot struct {
 const routeMaxLearnedHosts = 256
 
 type routeStaticEntries struct {
-	v4 []string
-	v6 []string
+	v4    []string
+	v6    []string
+	hosts map[string]struct{}
 }
 
 var (
@@ -126,6 +128,7 @@ var (
 	routeEngine         routeBackend
 	routeLastReResolve  = make(map[string]time.Time)
 	routeLearnLast      = make(map[string]time.Time)
+	routeRefreshedAt    = make(map[string]time.Time)
 	routeLearnedHosts   = make(map[string]map[string]time.Time)
 	routeHostResolvedAt = make(map[string]time.Time)
 	routeOwnedAddrs     = make(map[string]bool)
@@ -282,16 +285,8 @@ func RoutingLearnIP(cfg *config.Config, set *config.SetConfig, ip net.IP) {
 	if last, seen := routeLearnLast[key]; seen && now.Sub(last) < refresh {
 		return
 	}
+	routePruneStamps(routeLearnLast, routeLearnLastMax, now, refresh)
 	routeLearnLast[key] = now
-
-	if len(routeLearnLast) > 4096 {
-		cutoff := time.Duration(ttl) * time.Second
-		for k, t := range routeLearnLast {
-			if now.Sub(t) > cutoff {
-				delete(routeLearnLast, k)
-			}
-		}
-	}
 
 	routeAddIPsToSets(be, st, ttl, []net.IP{ip}, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 }
@@ -356,7 +351,7 @@ func RoutingLearnHost(cfg *config.Config, set *config.SetConfig, host string) {
 
 	cfgSnapshot := *cfg
 	go func(c *config.Config, s *config.SetConfig, h string) {
-		ips := routeResolveHost(c, h)
+		ips := routeResolveHost(c, s, h)
 		if len(ips) == 0 {
 			return
 		}
@@ -374,6 +369,9 @@ func routeSameResolveTargets(a, b *config.SetConfig) bool {
 		return a == b
 	}
 	if a.Targets.DomainOnly != b.Targets.DomainOnly || len(a.Targets.SNIDomains) != len(b.Targets.SNIDomains) {
+		return false
+	}
+	if a.DNS.Enabled != b.DNS.Enabled || a.DNS.TargetDNS != b.DNS.TargetDNS || a.DNS.DoHURL != b.DNS.DoHURL || a.DNS.Strict != b.DNS.Strict {
 		return false
 	}
 	counts := make(map[string]int, len(a.Targets.SNIDomains))
@@ -427,28 +425,31 @@ func routeAddResolvedIPs(cfg *config.Config, set *config.SetConfig, ips []net.IP
 
 var DNSNames *dns.NameCache
 
-func routeResolveHost(cfg *config.Config, host string) []net.IP {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+var routeSetLookup dns.LookupFunc = dns.LookupIPs
+
+func routeResolveHost(cfg *config.Config, set *config.SetConfig, host string) []net.IP {
+	var srv dns.Server
+	useSet, strict := false, false
+	if set != nil {
+		srv, useSet = dns.SetServer(set.DNS.Enabled, set.DNS.TargetDNS, set.DNS.DoHURL)
+		strict = set.DNS.Strict
+	}
+	srv.Mark, srv.Timeout = int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout()
+	if useSet && strict && dns.SourceUnreachable(srv.Source) {
+		log.Tracef("Routing: set '%s' skips resolving %s, its resolver %s is cooling down after repeated failures", set.Name, host, dns.SourceLabel(srv.Source))
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), srv.Budget()+time.Second)
 	defer cancel()
 
-	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	ips, err := dns.LookupWithFallback(ctx, routeSetLookup, srv, useSet, strict, host, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	if err != nil {
 		log.Tracef("Routing: resolve %s failed: %v", host, err)
 		return nil
 	}
-
-	resolved := make([]net.IP, 0, len(addrs))
-	for _, a := range addrs {
-		if a.IP.To4() != nil && !cfg.Queue.IPv4Enabled {
-			continue
-		}
-		if a.IP.To4() == nil && !cfg.Queue.IPv6Enabled {
-			continue
-		}
-		resolved = append(resolved, a.IP)
-	}
-	DNSNames.Observe(nil, host, resolved)
-	return resolved
+	DNSNames.Observe(nil, host, ips)
+	return ips
 }
 
 func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
@@ -478,7 +479,6 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 	if config.RoutingIsBlock(mode) {
 		st.blockAction = config.NormalizeBlockAction(set.Routing.BlockAction)
 	} else if config.RoutingUsesTProxy(mode) {
-		st.srcScoped = routeProxySourceScoped(cfg, set)
 		mark, port := proxyMarkAndPort(set)
 		st.mark = mark
 		st.table = proxyTable()
@@ -597,6 +597,17 @@ func routeAddIPsToSets(be routeBackend, st routeState, ttl int, ips []net.IP, ip
 	v6 := make([]string, 0, len(ips))
 	seen4 := make(map[string]struct{}, len(ips))
 	seen6 := make(map[string]struct{}, len(ips))
+	var static map[string]struct{}
+	if ttl > 0 && be.learnedSharesStatic() {
+		static = routeStaticApplied[st.setID].hosts
+	}
+	now := time.Now()
+	take := func(s string) bool {
+		if _, listed := static[s]; listed {
+			return false
+		}
+		return ttl <= 0 || routeRefreshDue(st.setID+"|"+s, ttl, now)
+	}
 
 	for _, ip := range ips {
 		if ip4 := ip.To4(); ip4 != nil {
@@ -608,7 +619,9 @@ func routeAddIPsToSets(be routeBackend, st routeState, ttl int, ips []net.IP, ip
 				continue
 			}
 			seen4[s] = struct{}{}
-			v4 = append(v4, s)
+			if take(s) {
+				v4 = append(v4, s)
+			}
 			continue
 		}
 		if ip6 := ip.To16(); ip6 != nil {
@@ -620,15 +633,21 @@ func routeAddIPsToSets(be routeBackend, st routeState, ttl int, ips []net.IP, ip
 				continue
 			}
 			seen6[s] = struct{}{}
-			v6 = append(v6, s)
+			if take(s) {
+				v6 = append(v6, s)
+			}
 		}
 	}
 
+	var failed []string
 	if len(v4) > 0 {
-		be.addElements(st.setV4, v4, ttl)
+		failed = append(failed, be.addElements(st.setV4, v4, ttl)...)
 	}
 	if len(v6) > 0 {
-		be.addElements(st.setV6, v6, ttl)
+		failed = append(failed, be.addElements(st.setV6, v6, ttl)...)
+	}
+	if ttl > 0 && len(failed) > 0 {
+		routeForgetLearnedEntries(st.setID, failed)
 	}
 }
 
@@ -717,6 +736,7 @@ func RoutingClearAll() {
 	routeForgetCTMarkVerdict()
 	routeLastReResolve = make(map[string]time.Time)
 	routeLearnLast = make(map[string]time.Time)
+	routeRefreshedAt = make(map[string]time.Time)
 	routeLearnedHosts = make(map[string]map[string]time.Time)
 	routeHostResolvedAt = make(map[string]time.Time)
 	routeOwnedAddrs = make(map[string]bool)
@@ -931,6 +951,12 @@ func routeIptRulesPresent(be *routeIptBackend, cfg *config.Config) bool {
 		if !hasBinary(cmd) {
 			continue
 		}
+		jumpless := make(map[string]bool)
+		for _, st := range routeRuleCache {
+			for _, chain := range routeJumplessGatedChains(cfg, st, v6) {
+				jumpless[chain] = true
+			}
+		}
 		for table, wantChains := range needed {
 			out, err := run(cmd, "-w", "-t", table, "-L", "-n", "-v", "-x")
 			if err != nil {
@@ -944,7 +970,7 @@ func routeIptRulesPresent(be *routeIptBackend, cfg *config.Config) bool {
 				if _, ok := chains[chain]; !ok {
 					return false
 				}
-				if parent := jumps[table+"|"+chain]; parent != "" && !iptDumpJumpsTo(chains, parent, chain) {
+				if parent := jumps[table+"|"+chain]; parent != "" && !jumpless[chain] && !iptDumpJumpsTo(chains, parent, chain) {
 					log.Infof("Routing: %s still exists but nothing in %s %s jumps to it any more, so no packet reaches it; the router's own firewall was rebuilt under b4 and its rules are being put back", chain, table, parent)
 					return false
 				}
@@ -979,6 +1005,7 @@ func routingForceResync(cfg *config.Config) {
 	routeIfaceAuto = make(map[string]routeState)
 	routeLastReResolve = make(map[string]time.Time)
 	routeLearnLast = make(map[string]time.Time)
+	routeRefreshedAt = make(map[string]time.Time)
 	routeHostResolvedAt = make(map[string]time.Time)
 	routeMu.Unlock()
 
@@ -1324,7 +1351,7 @@ func routePreResolveDomains(cfg *config.Config, sets []*config.SetConfig) {
 			continue
 		}
 		for _, domain := range routeResolveTargets(set) {
-			resolved := routeResolveHost(cfg, domain)
+			resolved := routeResolveHost(cfg, set, domain)
 			if len(resolved) == 0 {
 				continue
 			}
@@ -1632,7 +1659,8 @@ func routeReestablishJumpOrder(be routeBackend, cfg *config.Config, rebuilt bool
 	if !routePreJumpsAlreadyOrdered(be, ordered) {
 		for _, set := range ordered {
 			st := routeRuleCache[set.Id]
-			routeEnsureGatedPreJump(be, st.chainPre, routeSetDeviceGate(cfg, set))
+			gate := routeSetDeviceGate(cfg, set)
+			routeEnsureGatedPreJump(be, st.chainPre, gate, routePreLoopMark(st, gate))
 		}
 	}
 
@@ -1653,7 +1681,7 @@ func routeReestablishJumpOrder(be routeBackend, cfg *config.Config, rebuilt bool
 }
 
 func routeEnsureChainJumps(be routeBackend, st routeState, gate routeDeviceGate) {
-	routeEnsureGatedPreJump(be, st.chainPre, gate)
+	routeEnsureGatedPreJump(be, st.chainPre, gate, routePreLoopMark(st, gate))
 	be.ensureJumpRule("OUTPUT", st.chainOut, true, true)
 	be.ensureJumpRule("POSTROUTING", st.chainSNAT, false, st.egressIP != "")
 }
@@ -2716,6 +2744,11 @@ func routeForgetSetLearnState(setID string) {
 			delete(routeLearnLast, k)
 		}
 	}
+	for k := range routeRefreshedAt {
+		if strings.HasPrefix(k, prefix) {
+			delete(routeRefreshedAt, k)
+		}
+	}
 	for k := range routeHostResolvedAt {
 		if strings.HasPrefix(k, prefix) {
 			delete(routeHostResolvedAt, k)
@@ -2754,17 +2787,89 @@ func routeApplyStaticEntries(be routeBackend, set *config.SetConfig, st routeSta
 	}
 	prev := routeStaticApplied[st.setID]
 	cur := routeStaticEntries{v4: expandZeroPrefix(staticV4), v6: expandZeroPrefix(staticV6)}
+	cur.hosts = routeStaticHosts(cur.v4, cur.v6)
 	routeReconcileStaticFamily(be, st.setID, st.setV4, prev.v4, cur.v4, staticV4)
 	routeReconcileStaticFamily(be, st.setID, st.setV6, prev.v6, cur.v6, staticV6)
 	routeStaticApplied[st.setID] = cur
 }
 
+const (
+	routeRefreshedMax = 8192
+	routeLearnLastMax = 4096
+)
+
+func routeRefreshDue(key string, ttl int, now time.Time) bool {
+	window := time.Duration(ttl) * time.Second / 4
+	if last, ok := routeRefreshedAt[key]; ok && now.Sub(last) < window {
+		return false
+	}
+	routePruneStamps(routeRefreshedAt, routeRefreshedMax, now, window)
+	routeRefreshedAt[key] = now
+	return true
+}
+
+func routePruneStamps(stamps map[string]time.Time, limit int, now time.Time, stale time.Duration) {
+	if len(stamps) < limit {
+		return
+	}
+	for k, t := range stamps {
+		if now.Sub(t) >= stale {
+			delete(stamps, k)
+		}
+	}
+	keep := limit * 3 / 4
+	for k := range stamps {
+		if len(stamps) <= keep {
+			return
+		}
+		delete(stamps, k)
+	}
+}
+
+func routeStaticHost(entry string) (string, bool) {
+	entry = strings.TrimSpace(entry)
+	if ip := net.ParseIP(entry); ip != nil {
+		return ip.String(), true
+	}
+	if _, n, err := net.ParseCIDR(entry); err == nil {
+		if ones, bits := n.Mask.Size(); ones == bits {
+			return n.IP.String(), true
+		}
+	}
+	return "", false
+}
+
+func routeStaticHosts(families ...[]string) map[string]struct{} {
+	hosts := make(map[string]struct{})
+	for _, entries := range families {
+		for _, entry := range entries {
+			if host, ok := routeStaticHost(entry); ok {
+				hosts[host] = struct{}{}
+			}
+		}
+	}
+	return hosts
+}
+
+func routeForgetLearnedEntries(setID string, entries []string) {
+	keys := make([]string, 0, 2*len(entries))
+	for _, entry := range entries {
+		keys = append(keys, setID+"|"+entry)
+		if host, ok := routeStaticHost(entry); ok {
+			keys = append(keys, setID+"|"+host)
+		}
+	}
+	for _, k := range keys {
+		delete(routeLearnLast, k)
+		delete(routeRefreshedAt, k)
+	}
+	routeAsyncForgetKeys(keys)
+}
+
 func routeReconcileStaticFamily(be routeBackend, setID, setName string, prev, cur, raw []string) {
 	if gone := routeEntriesGone(prev, cur); len(gone) > 0 {
 		be.delElements(setName, gone)
-		for _, entry := range gone {
-			delete(routeLearnLast, setID+"|"+entry)
-		}
+		routeForgetLearnedEntries(setID, gone)
 	}
 	if len(raw) > 0 {
 		be.addElements(setName, raw, 0)

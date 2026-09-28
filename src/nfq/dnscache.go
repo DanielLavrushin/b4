@@ -112,75 +112,24 @@ func resetDNSAnswerCache() {
 	dnsAnswerCache = map[dnsAnswerKey]dnsAnswerEntry{}
 	dnsAnswerMu.Unlock()
 
-	dnsSourceMu.Lock()
-	dnsSourceHealth = map[string]*dnsSourceState{}
-	dnsSourceMu.Unlock()
+	dns.ResetSourceHealth()
 }
 
-const (
-	dnsSourceFailuresToTrip = 3
-	dnsSourceCooldown       = 30 * time.Second
-)
-
-type dnsSourceState struct {
-	failures int
-	retryAt  time.Time
-}
-
-var (
-	dnsSourceMu     sync.Mutex
-	dnsSourceHealth = map[string]*dnsSourceState{}
-)
+const dnsSourceFailuresToTrip = dns.SourceFailuresToTrip
 
 func dnsSourceUnreachable(source string) bool {
-	if source == "" {
-		return false
-	}
-	dnsSourceMu.Lock()
-	defer dnsSourceMu.Unlock()
-
-	state := dnsSourceHealth[source]
-	if state == nil || state.failures < dnsSourceFailuresToTrip {
-		return false
-	}
-	if time.Now().Before(state.retryAt) {
-		return true
-	}
-	state.retryAt = time.Now().Add(dnsSourceCooldown)
-	return false
+	return dns.SourceUnreachable(source)
 }
 
 func noteDNSSourceFailure(source string) {
-	if source == "" {
-		return
-	}
-	dnsSourceMu.Lock()
-	defer dnsSourceMu.Unlock()
-
-	state := dnsSourceHealth[source]
-	if state == nil {
-		state = &dnsSourceState{}
-		dnsSourceHealth[source] = state
-	}
-	state.failures++
-	if state.failures == dnsSourceFailuresToTrip {
-		state.retryAt = time.Now().Add(dnsSourceCooldown)
-		log.Warnf("DNS redirect: %s failed %d times in a row, answering from the fallback until it recovers", dnsUpstreamLabel(source), state.failures)
+	if dns.NoteSourceFailure(source) {
+		log.Warnf("DNS redirect: %s failed %d times in a row, answering from the fallback until it recovers", dnsUpstreamLabel(source), dnsSourceFailuresToTrip)
 	}
 }
 
 func noteDNSSourceSuccess(source string) {
-	if source == "" {
-		return
-	}
-	dnsSourceMu.Lock()
-	defer dnsSourceMu.Unlock()
-
-	if state := dnsSourceHealth[source]; state != nil && state.failures > 0 {
-		if state.failures >= dnsSourceFailuresToTrip {
-			log.Infof("DNS redirect: %s is answering again", dnsUpstreamLabel(source))
-		}
-		delete(dnsSourceHealth, source)
+	if dns.NoteSourceSuccess(source) {
+		log.Infof("DNS redirect: %s is answering again", dnsUpstreamLabel(source))
 	}
 }
 

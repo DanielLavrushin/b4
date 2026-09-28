@@ -2,6 +2,7 @@ package tproxy
 
 import (
 	"context"
+	"net"
 	"sort"
 	"sync"
 	"time"
@@ -192,6 +193,7 @@ func (m *Manager) syncLocked(cfg *config.Config, retried bool) {
 			continue
 		}
 		l.set.Store(set)
+		l.SetDNSOptions(int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout(), cfg.Queue.IPv6Enabled)
 	}
 
 	for id, set := range desired {
@@ -225,6 +227,7 @@ func (m *Manager) syncLocked(cfg *config.Config, retried bool) {
 			guard:     newLoopGuard(host, set.Routing.Upstream.Port),
 		}
 		l.set.Store(set)
+		l.SetDNSOptions(int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout(), cfg.Queue.IPv6Enabled)
 		if err := l.Start(m.ctx); err != nil {
 			msg := err.Error()
 			if m.startErr[id] != msg {
@@ -286,6 +289,17 @@ func (m *Manager) Stop() {
 	if m.cancel != nil {
 		m.cancel()
 	}
+}
+
+func (m *Manager) DialViaSet(setID, host string, port int) (net.Conn, bool, error) {
+	m.mu.Lock()
+	l, ok := m.listeners[setID]
+	m.mu.Unlock()
+	if !ok || l.MTProtoWS {
+		return nil, false, nil
+	}
+	conn, err := l.DialNamed(host, port)
+	return conn, true, err
 }
 
 func (m *Manager) UpstreamHealth() []UpstreamHealth {

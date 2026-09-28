@@ -142,17 +142,57 @@ func TestNftStaticEntriesBadElementDegradesToPerEntryAdds(t *testing.T) {
 	}
 }
 
-func TestNftLearnedEntriesKeepTheirBatches(t *testing.T) {
+func TestNftLearnedEntriesAreRefreshedInOneTransaction(t *testing.T) {
 	rec := recordNftScripts(t, nil, nil)
 
 	(&routeNftBackend{}).addElements("b4r_x_v4", []string{"203.0.113.9", "203.0.113.10"}, 600)
 
 	if len(rec.scripts) != 0 {
-		t.Errorf("learned entries go to the dynamic set with a timeout and keep the batch path, got scripts %q", rec.scripts)
+		t.Errorf("learned entries go to the dynamic set as one command per batch, got scripts %q", rec.scripts)
 	}
-	want := []string{"nft add element inet b4_route b4r_x_v4_d { 203.0.113.9 timeout 600s , 203.0.113.10 timeout 600s }"}
+	want := []string{"nft add element inet b4_route b4r_x_v4_d { 203.0.113.9 timeout 600s , 203.0.113.10 timeout 600s }" +
+		" ; delete element inet b4_route b4r_x_v4_d { 203.0.113.9 , 203.0.113.10 }" +
+		" ; add element inet b4_route b4r_x_v4_d { 203.0.113.9 timeout 600s , 203.0.113.10 timeout 600s }"}
 	if !reflect.DeepEqual(rec.calls, want) {
-		t.Errorf("calls = %v, want %v", rec.calls, want)
+		t.Errorf("calls = %v, want %v; a plain re-add leaves the old expiry running", rec.calls, want)
+	}
+}
+
+func TestNftRefreshFallbackKeepsEachElementInOneTransaction(t *testing.T) {
+	rec := recordNftScripts(t, nil, func(joined string) error {
+		if strings.Contains(joined, "203.0.113.10 timeout") {
+			return errors.New("bad element")
+		}
+		return nil
+	})
+
+	(&routeNftBackend{}).addElements("b4r_x_v4", []string{"203.0.113.9", "203.0.113.10"}, 600)
+
+	want := []string{
+		"nft add element inet b4_route b4r_x_v4_d { 203.0.113.9 timeout 600s } ; delete element inet b4_route b4r_x_v4_d { 203.0.113.9 } ; add element inet b4_route b4r_x_v4_d { 203.0.113.9 timeout 600s }",
+		"nft add element inet b4_route b4r_x_v4_d { 203.0.113.10 timeout 600s } ; delete element inet b4_route b4r_x_v4_d { 203.0.113.10 } ; add element inet b4_route b4r_x_v4_d { 203.0.113.10 timeout 600s }",
+	}
+	if !reflect.DeepEqual(rec.logged, want) {
+		t.Errorf("per-element fallback = %v, want %v; a delete split from its add would open a gap", rec.logged, want)
+	}
+}
+
+func TestNftLearnedEntriesAreRefreshedInChunks(t *testing.T) {
+	rec := recordNftScripts(t, nil, nil)
+	ips := make([]string, 0, routeNftChunkSize+1)
+	for i := 0; i <= routeNftChunkSize; i++ {
+		ips = append(ips, fmt.Sprintf("10.0.%d.%d", i/256, i%256))
+	}
+
+	(&routeNftBackend{}).addElements("b4r_x_v4", ips, 600)
+
+	if len(rec.calls) != 2 {
+		t.Fatalf("%d commands for %d entries, want 2", len(rec.calls), len(ips))
+	}
+	for _, call := range rec.calls {
+		if strings.Count(call, " ; ") != 2 {
+			t.Errorf("a chunk is not one add-delete-add transaction: %s", call)
+		}
 	}
 }
 
@@ -183,5 +223,40 @@ func TestRouteNftScriptErrorKeepsTheFirstLineOnly(t *testing.T) {
 	flat := strings.Repeat("x", 1000)
 	if got := routeNftScriptError(errors.New(flat)); len(got) > 310 || !strings.HasSuffix(got, "...") {
 		t.Errorf("a long single-line error must be cut, got %d bytes", len(got))
+	}
+}
+
+func TestNftReportsTheEntriesItCouldNotInstall(t *testing.T) {
+	recordNftScripts(t, errors.New("no stdin"), func(string) error { return errors.New("no such set") })
+	origLogged := runLogged
+	t.Cleanup(func() { runLogged = origLogged })
+	runLogged = func(op string, args ...string) bool {
+		return !strings.Contains(strings.Join(args, " "), "203.0.113.10")
+	}
+
+	got := (&routeNftBackend{}).addElements("b4r_x_v4", []string{"203.0.113.9", "203.0.113.10"}, 600)
+	if !reflect.DeepEqual(got, []string{"203.0.113.10"}) {
+		t.Fatalf("learned add reported %v as not installed, want [203.0.113.10]", got)
+	}
+	got = (&routeNftBackend{}).addElements("b4r_x_v4", []string{"198.51.100.1", "203.0.113.10"}, 0)
+	if !reflect.DeepEqual(got, []string{"203.0.113.10"}) {
+		t.Fatalf("static add reported %v as not installed, want [203.0.113.10]", got)
+	}
+}
+
+func TestIpsetReportsTheEntriesItCouldNotInstall(t *testing.T) {
+	origStdin, origLogged := runStdin, runLogged
+	t.Cleanup(func() {
+		runStdin = origStdin
+		runLogged = origLogged
+	})
+	runStdin = func(string, ...string) error { return errors.New("restore failed") }
+	runLogged = func(op string, args ...string) bool {
+		return !strings.Contains(strings.Join(args, " "), "203.0.113.10")
+	}
+
+	got := (&routeIptBackend{}).addElements("b4r_x_v4", []string{"203.0.113.9", "203.0.113.10"}, 600)
+	if !reflect.DeepEqual(got, []string{"203.0.113.10"}) {
+		t.Fatalf("ipset add reported %v as not installed, want [203.0.113.10]", got)
 	}
 }
