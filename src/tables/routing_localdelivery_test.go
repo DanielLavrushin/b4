@@ -34,7 +34,7 @@ func localDeliveryEnsure(t *testing.T, ipv4, ipv6 bool) ([]localDeliveryRuleDel,
 		return true
 	}
 	routeAddSourceCheckRule = func(mark uint32) {
-		cmds = append(cmds, "add source-check "+routeSetMarkRule(mark))
+		cmds = append(cmds, "add source-check "+routeSourceCheckMarkRule(mark))
 	}
 	routeDelSourceCheckRule = func(markStrMask string) {
 		cmds = append(cmds, "del source-check "+markStrMask)
@@ -55,8 +55,9 @@ func localDeliveryCmdIndex(cmds []string, want string) int {
 
 func TestRouteEnsureLocalDelivery_PointsTheSourceCheckAtMainForIPv4(t *testing.T) {
 	const (
-		addCheck = "add source-check 0x20fa/0x27fff"
-		delCheck = "del source-check 0x20fa/0x27fff"
+		addCheck    = "add source-check 0x20fa/0x1027fff"
+		delCheck    = "del source-check 0x20fa/0x1027fff"
+		delOldCheck = "del source-check 0x20fa/0x27fff"
 	)
 
 	for _, tc := range []struct{ ipv4, ipv6 bool }{{true, true}, {true, false}} {
@@ -67,6 +68,9 @@ func TestRouteEnsureLocalDelivery_PointsTheSourceCheckAtMainForIPv4(t *testing.T
 		}
 		if cleared < 0 || cleared > added {
 			t.Errorf("ipv4=%v ipv6=%v: the source-check rule is added without clearing the previous one first, so every re-install stacks another copy: %v", tc.ipv4, tc.ipv6, cmds)
+		}
+		if old := localDeliveryCmdIndex(cmds, delOldCheck); old < 0 || old > added {
+			t.Errorf("ipv4=%v ipv6=%v: a source-check rule an earlier build added with the per-set mask is never removed, and it sends the router's own connections past the set: %v", tc.ipv4, tc.ipv6, cmds)
 		}
 	}
 

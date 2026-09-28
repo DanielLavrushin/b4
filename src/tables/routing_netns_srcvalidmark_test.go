@@ -44,7 +44,7 @@ func netnsProxySetAnswersALanClientUnderSrcValidMark(t *testing.T, engine string
 		t.Fatal("the proxy set built no rules")
 	}
 	rules := netnsRun(t, "ip", "rule", "show")
-	want := routeSetMarkRule(st.mark) + " iif lo lookup main"
+	want := routeSourceCheckMarkRule(st.mark) + " iif lo lookup main"
 	if !strings.Contains(rules, want) {
 		t.Errorf("no source-check rule for the set's mark (%q) in:\n%s", want, rules)
 	}
@@ -52,13 +52,25 @@ func netnsProxySetAnswersALanClientUnderSrcValidMark(t *testing.T, engine string
 	port, _ := portFromState(st)
 	s := netnsRouterSockets(t, port, SelfDialMark)
 	got := dev.probe(t, "tcp", netnsDevInet, 443, "inet")
-	t.Logf("device -> internet with src_valid_mark=1: %s", got)
+	t.Logf("device %s -> internet with src_valid_mark=1: %s", netnsDevIP, got)
 	if got != "reply=tproxy:inet" {
 		netnsLogState(t, engine)
 		t.Fatalf("device -> internet through a proxy set with net.ipv4.conf.all.src_valid_mark=1: %s; the kernel checked the device's address in the set's local-delivery table and dropped the SYN as a martian source", got)
 	}
 	if !s.got("tcp", "tproxy", "inet") {
 		t.Errorf("the transparent listener never saw the device's connection: tcp=%v", s.tcp)
+	}
+
+	const publicRouter, publicDev = "203.0.113.1", "203.0.113.100"
+	netnsRun(t, "ip", "addr", "add", publicRouter+"/24", "dev", netnsDevLink)
+	dev.in(t, "ip", "addr", "flush", "dev", netnsDevPeer)
+	dev.in(t, "ip", "addr", "add", publicDev+"/24", "dev", netnsDevPeer)
+	dev.in(t, "ip", "route", "replace", "default", "via", publicRouter)
+	got = dev.probe(t, "tcp", netnsDevInet, 443, "inet")
+	t.Logf("device %s -> internet with src_valid_mark=1: %s", publicDev, got)
+	if got != "reply=tproxy:inet" {
+		netnsLogState(t, engine)
+		t.Errorf("a device on a public LAN subnet -> internet through a proxy set with net.ipv4.conf.all.src_valid_mark=1: %s; its source check never reached the main table and the SYN was dropped as a martian source", got)
 	}
 }
 
@@ -69,6 +81,8 @@ func TestNetnsProxySetAnswersALanClientUnderSrcValidMark(t *testing.T) {
 func TestNetnsProxySetAnswersALanClientUnderSrcValidMarkNft(t *testing.T) {
 	netnsProxySetAnswersALanClientUnderSrcValidMark(t, backendNFTables)
 }
+
+const netnsPrivateProxyTarget = "10.8.0.2"
 
 func netnsProxySetKeepsTheRoutersOwnDialOverASpecificRoute(t *testing.T, engine string) {
 	netnsRequire(t)
@@ -92,24 +106,27 @@ func netnsProxySetKeepsTheRoutersOwnDialOverASpecificRoute(t *testing.T, engine 
 		t.Fatal("the proxy set built no rules")
 	}
 	netnsAddProxyTarget(t, engine, st)
+	netnsAddProxyTargetIP(t, engine, st, netnsPrivateProxyTarget)
 	port, _ := portFromState(st)
-	mark := routeSetMarkRule(st.mark)
 
 	rules := netnsRun(t, "ip", "rule", "show")
-	for _, clientNet := range proxySourceCheckClientNets {
-		if !strings.Contains(rules, "to "+clientNet+" fwmark "+mark+" iif lo lookup main") {
-			t.Errorf("no source-check rule for clients in %s with the set's mark %s in:\n%s", clientNet, mark, rules)
-		}
+	if want := "fwmark " + routeSourceCheckMarkRule(st.mark) + " iif lo lookup main"; !strings.Contains(rules, want) {
+		t.Errorf("no source-check rule %q in:\n%s", want, rules)
 	}
 
-	for _, route := range []string{"198.0.0.0/8", "198.51.100.0/24", netnsProxyTarget + "/32"} {
-		netnsRun(t, "ip", "route", "add", route, "via", netnsSecondGW, "dev", netnsSecondary)
-		t.Cleanup(func() { _, _ = run("ip", "route", "del", route, "via", netnsSecondGW, "dev", netnsSecondary) })
-		reached := netnsRouterDialReachesListener(t, port, 3*time.Second)
-		_, _ = run("ip", "route", "del", route, "via", netnsSecondGW, "dev", netnsSecondary)
+	for _, tc := range []struct{ route, target string }{
+		{"198.0.0.0/8", netnsProxyTarget},
+		{"198.51.100.0/24", netnsProxyTarget},
+		{netnsProxyTarget + "/32", netnsProxyTarget},
+		{"10.8.0.0/24", netnsPrivateProxyTarget},
+	} {
+		netnsRun(t, "ip", "route", "add", tc.route, "via", netnsSecondGW, "dev", netnsSecondary)
+		t.Cleanup(func() { _, _ = run("ip", "route", "del", tc.route, "via", netnsSecondGW, "dev", netnsSecondary) })
+		reached := netnsRouterDialToReachesListener(t, port, tc.target, 3*time.Second)
+		_, _ = run("ip", "route", "del", tc.route, "via", netnsSecondGW, "dev", netnsSecondary)
 		if !reached {
 			netnsLogState(t, engine)
-			t.Errorf("with %s via %s in the main table, the router's own dial to %s never reached the set's listener; the source-check rule sent it out through main instead of the local-delivery table", route, netnsSecondary, netnsProxyTarget)
+			t.Errorf("with %s via %s in the main table, the router's own dial to %s never reached the set's listener; the source-check rule sent it out through main instead of the local-delivery table", tc.route, netnsSecondary, tc.target)
 		}
 	}
 
@@ -117,13 +134,14 @@ func netnsProxySetKeepsTheRoutersOwnDialOverASpecificRoute(t *testing.T, engine 
 	t.Cleanup(func() {
 		_, _ = run("ip", "route", "del", "198.51.100.0/24", "via", netnsSecondGW, "dev", netnsSecondary)
 	})
-	netnsRun(t, "ip", "rule", "add", "fwmark", mark, "iif", "lo", "lookup", "main", "suppress_prefixlength", "7", "priority", "1")
+	perSet := routeSetMarkRule(st.mark)
+	netnsRun(t, "ip", "rule", "add", "fwmark", perSet, "iif", "lo", "lookup", "main", "priority", "1")
 	t.Cleanup(func() {
-		_, _ = run("ip", "rule", "del", "fwmark", mark, "iif", "lo", "lookup", "main", "priority", "1")
+		_, _ = run("ip", "rule", "del", "fwmark", perSet, "iif", "lo", "lookup", "main", "priority", "1")
 	})
-	unscoped := netnsRouterDialReachesListener(t, port, time.Second)
-	if unscoped {
-		t.Error("the dial reached the listener even with a source-check rule that has no destination scope, so the test proves nothing about the scope")
+	blind := netnsRouterDialReachesListener(t, port, time.Second)
+	if blind {
+		t.Error("the dial reached the listener even with a source-check rule that ignores the router's own mark bit, so the test proves nothing about that bit")
 	}
 }
 
@@ -135,19 +153,20 @@ func TestNetnsProxySetKeepsTheRoutersOwnDialOverASpecificRouteNft(t *testing.T) 
 	netnsProxySetKeepsTheRoutersOwnDialOverASpecificRoute(t, backendNFTables)
 }
 
-func netnsSourceCheckRuleCounts(t *testing.T, mark string) (scoped, unscoped int) {
+func netnsSourceCheckRuleCounts(t *testing.T, mark uint32) (current, earlier int) {
 	t.Helper()
 	for _, line := range strings.Split(netnsRun(t, "ip", "rule", "show"), "\n") {
-		if !routeRuleIsSourceCheck(line) || routeRuleField(line, "fwmark") != mark {
+		if !routeRuleIsSourceCheck(line) {
 			continue
 		}
-		if routeRuleField(line, "to") == "" {
-			unscoped++
-		} else {
-			scoped++
+		switch routeRuleField(line, "fwmark") {
+		case routeSourceCheckMarkRule(mark):
+			current++
+		case routeSetMarkRule(mark):
+			earlier++
 		}
 	}
-	return scoped, unscoped
+	return current, earlier
 }
 
 func TestNetnsSourceCheckRulesAreReplacedAndRemovedWithTheSet(t *testing.T) {
@@ -171,20 +190,21 @@ func TestNetnsSourceCheckRulesAreReplacedAndRemovedWithTheSet(t *testing.T) {
 	if !ok {
 		t.Fatal("the proxy set built no rules")
 	}
-	mark := routeSetMarkRule(st.mark)
+	perSet := routeSetMarkRule(st.mark)
 
-	routeDelSourceCheckRule(mark)
-	netnsRun(t, "ip", "rule", "add", "fwmark", mark, "iif", "lo", "lookup", "main", "suppress_prefixlength", "7", "priority", "2")
+	routeDelSourceCheckRules(st.mark)
+	netnsRun(t, "ip", "rule", "add", "fwmark", perSet, "iif", "lo", "lookup", "main", "suppress_prefixlength", "7", "priority", "2")
+	netnsRun(t, "ip", "rule", "add", "fwmark", perSet, "to", "10.0.0.0/8", "iif", "lo", "lookup", "main", "suppress_prefixlength", "7", "priority", "2")
 	routeEnsureLocalDelivery(st.mark, st.table, true, false)
 	routeEnsureLocalDelivery(st.mark, st.table, true, false)
-	if scoped, unscoped := netnsSourceCheckRuleCounts(t, mark); scoped != len(proxySourceCheckClientNets) || unscoped != 0 {
-		t.Errorf("after two ensures over an unscoped rule from an earlier build: %d scoped and %d unscoped source-check rules, want %d and 0; an unscoped one takes the router's own dials away from the set, and extra copies pile up at every rebuild:\n%s",
-			scoped, unscoped, len(proxySourceCheckClientNets), netnsRun(t, "ip", "rule", "show"))
+	if current, earlier := netnsSourceCheckRuleCounts(t, st.mark); current != 1 || earlier != 0 {
+		t.Errorf("after two ensures over the rules earlier builds added: %d current and %d earlier source-check rules, want 1 and 0; an earlier one ignores the router's own mark bit and takes its connections past the set, and extra copies pile up at every rebuild:\n%s",
+			current, earlier, netnsRun(t, "ip", "rule", "show"))
 	}
 
 	RoutingClearAll()
 	cleared = true
-	if scoped, unscoped := netnsSourceCheckRuleCounts(t, mark); scoped+unscoped != 0 {
-		t.Errorf("removing the set left %d source-check rules behind:\n%s", scoped+unscoped, netnsRun(t, "ip", "rule", "show"))
+	if current, earlier := netnsSourceCheckRuleCounts(t, st.mark); current+earlier != 0 {
+		t.Errorf("removing the set left %d source-check rules behind:\n%s", current+earlier, netnsRun(t, "ip", "rule", "show"))
 	}
 }

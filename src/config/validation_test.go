@@ -478,6 +478,22 @@ func TestValidate_QueueFields(t *testing.T) {
 		}
 	})
 
+	t.Run("mark conflicts with the router's own proxy mark bit", func(t *testing.T) {
+		for _, mark := range []uint{0x1000000, 0x1000100} {
+			cfg := NewConfig()
+			cfg.Queue.Mark = mark
+			ve := mustValidationErr(t, cfg.Validate())
+			if findField(ve, "queue.mark", "mark_conflict") == nil {
+				t.Errorf("queue mark 0x%x fits inside the mark of the router's own connections to a proxy set, so the queue bypass would return them before TPROXY; got %+v", mark, ve.Fields)
+			}
+		}
+		cfg := NewConfig()
+		cfg.Queue.Mark = 0x1008000
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("queue mark 0x1008000 has bit 15, which no proxy-set mark carries, yet it was rejected: %v", err)
+		}
+	})
+
 	t.Run("invalid queue mode", func(t *testing.T) {
 		cfg := NewConfig()
 		cfg.Queue.Mode = "bogus"

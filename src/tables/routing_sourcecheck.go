@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -11,11 +12,8 @@ import (
 
 const (
 	proxySourceCheckRulePriority = 2
-	proxySourceCheckMinPrefix    = 8
 	srcValidMarkSysctl           = "/proc/sys/net/ipv4/conf/all/src_valid_mark"
 )
-
-var proxySourceCheckClientNets = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10"}
 
 var (
 	routeAddSourceCheckRule = routeAddSourceCheckRuleExec
@@ -24,9 +22,12 @@ var (
 	routeSourceCheckWarned  atomic.Bool
 )
 
-func proxySourceCheckRuleAddArgs(markStrMask, clientNet string) []string {
-	return []string{"ip", "rule", "add", "fwmark", markStrMask, "to", clientNet, "iif", "lo", "lookup", "main",
-		"suppress_prefixlength", strconv.Itoa(proxySourceCheckMinPrefix - 1),
+func routeSourceCheckMarkRule(mark uint32) string {
+	return fmt.Sprintf("0x%x/0x%x", mark, routeProxyMarkMask)
+}
+
+func proxySourceCheckRuleAddArgs(markStrMask string) []string {
+	return []string{"ip", "rule", "add", "fwmark", markStrMask, "iif", "lo", "lookup", "main",
 		"priority", strconv.Itoa(proxySourceCheckRulePriority)}
 }
 
@@ -40,22 +41,14 @@ func routeSrcValidMarkOnExec() bool {
 }
 
 func routeAddSourceCheckRuleExec(mark uint32) {
-	markStrMask := routeSetMarkRule(mark)
-	for _, clientNet := range proxySourceCheckClientNets {
-		out, err := run(proxySourceCheckRuleAddArgs(markStrMask, clientNet)...)
-		if err == nil {
-			continue
-		}
-		reason := strings.TrimSpace(out)
-		if reason == "" {
-			reason = err.Error()
-		}
-		routeWarnSourceCheckRejected(mark, reason)
+	out, err := run(proxySourceCheckRuleAddArgs(routeSourceCheckMarkRule(mark))...)
+	if err == nil {
 		return
 	}
-}
-
-func routeWarnSourceCheckRejected(mark uint32, reason string) {
+	reason := strings.TrimSpace(out)
+	if reason == "" {
+		reason = err.Error()
+	}
 	if !routeSrcValidMarkOn() {
 		log.Tracef("routing: the source-check rule for mark 0x%x was rejected (%s); it only matters while net.ipv4.conf.all.src_valid_mark is 1", mark, reason)
 		return
@@ -74,6 +67,11 @@ func routeDelSourceCheckRuleExec(markStrMask string) {
 	}
 }
 
+func routeDelSourceCheckRules(mark uint32) {
+	routeDelSourceCheckRule(routeSourceCheckMarkRule(mark))
+	routeDelSourceCheckRule(routeSetMarkRule(mark))
+}
+
 func routeRuleIsSourceCheck(line string) bool {
 	if routeRuleField(line, "iif") != "lo" || routeRuleField(line, "lookup") != "main" {
 		return false
@@ -88,5 +86,5 @@ func routeRuleIsSourceCheck(line string) bool {
 		return false
 	}
 	mask, err := strconv.ParseUint(strings.TrimPrefix(fw[slash+1:], "0x"), 16, 32)
-	return err == nil && uint32(mask) == routeSetMarkMask
+	return err == nil && (uint32(mask) == routeProxyMarkMask || uint32(mask) == routeSetMarkMask)
 }

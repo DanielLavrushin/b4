@@ -115,7 +115,7 @@ func TestProxySetBehindAnAllowListStillMarksTheRoutersOwnConnections(t *testing.
 	joined := strings.Join(*emitted, "\n")
 	for _, want := range []string{
 		"-I OUTPUT 1 -j b4r_guard_out",
-		"-A b4r_guard_out -p tcp -m conntrack --ctdir ORIGINAL -m set --match-set b4r_guard_v4 dst -j MARK --set-mark 0x239c9/0x239c9",
+		"-A b4r_guard_out -p tcp -m conntrack --ctdir ORIGINAL -m set --match-set b4r_guard_v4 dst -j MARK --set-mark 0x10239c9/0x1027fff",
 		"-A PREROUTING -i lo -m mark --mark 0x239c9/0x27fff -j b4r_guard_pre",
 	} {
 		if !strings.Contains(joined, want) {
