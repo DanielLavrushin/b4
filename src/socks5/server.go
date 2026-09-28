@@ -463,18 +463,20 @@ func (s *Server) upstreamIsSelf(up config.UpstreamProxyConfig) bool {
 		defer cancel()
 		resolved, err := net.DefaultResolver.LookupIP(ctx, "ip", up.Host)
 		if err != nil || len(resolved) == 0 {
-			return true
+			return false
 		}
 		ips = resolved
-	}
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return true
 	}
 	for _, ip := range ips {
 		if ip.IsLoopback() || ip.IsUnspecified() {
 			return true
 		}
+	}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return false
+	}
+	for _, ip := range ips {
 		for _, a := range addrs {
 			if n, ok := a.(*net.IPNet); ok && n.IP.Equal(ip) {
 				return true

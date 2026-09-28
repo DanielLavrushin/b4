@@ -209,3 +209,26 @@ func withDomain(set *config.SetConfig, domain string) *config.SetConfig {
 	set.Targets.DomainsToMatch = []string{domain}
 	return set
 }
+
+func TestAnUpstreamNameThatDoesNotResolveKeepsTheSetsPolicy(t *testing.T) {
+	up := &fakeUpstreams{handled: true, target: startGreeter(t, "via-upstream")}
+	cfg := &config.Config{}
+	cfg.System.Socks5 = config.Socks5Config{Enabled: true, BindAddress: "127.0.0.1", Port: freePort(t)}
+	set := torSet(config.RoutingModeProxy)
+	set.Routing.Upstream.Host = "upstream.b4-test.invalid"
+	set.Routing.Upstream.Port = cfg.System.Socks5.Port
+	cfg.Sets = []*config.SetConfig{set}
+	s := NewServer(cfg)
+	s.SetUpstreamDialer(up)
+	if err := s.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Stop() })
+
+	if _, err := fetchThrough(t, cfg.System.Socks5.Port, "www.blocked.example", 443); err != nil {
+		t.Fatalf("CONNECT: %v", err)
+	}
+	if calls := up.seen(); len(calls) != 1 {
+		t.Fatalf("an upstream name that failed to resolve was taken for this server and the set's upstream was skipped, calls %v", calls)
+	}
+}
