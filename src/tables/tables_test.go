@@ -1796,3 +1796,50 @@ func TestBuildRouteStateDeviceKeyInvalidatesCache(t *testing.T) {
 		t.Errorf("per-set source devices must change device key: %q", scoped.deviceKey)
 	}
 }
+
+func TestPruneStampsStaysBoundedWhenNothingIsStale(t *testing.T) {
+	now := time.Now()
+	stamps := make(map[string]time.Time)
+	for i := 0; i < 100; i++ {
+		stamps[fmt.Sprintf("k%d", i)] = now
+	}
+	routePruneStamps(stamps, 100, now, time.Hour)
+	if len(stamps) > 75 {
+		t.Fatalf("%d entries left at a limit of 100 with none stale; the map would keep growing and every insert rescan it", len(stamps))
+	}
+
+	stale := make(map[string]time.Time)
+	for i := 0; i < 100; i++ {
+		at := now
+		if i%2 == 0 {
+			at = now.Add(-2 * time.Hour)
+		}
+		stale[fmt.Sprintf("k%d", i)] = at
+	}
+	routePruneStamps(stale, 100, now, time.Hour)
+	for k, at := range stale {
+		if now.Sub(at) >= time.Hour {
+			t.Fatalf("stale entry %s survived", k)
+		}
+	}
+	if len(stale) != 50 {
+		t.Fatalf("%d entries left, want the 50 fresh ones kept while under three quarters of the limit", len(stale))
+	}
+
+	small := map[string]time.Time{"a": now.Add(-2 * time.Hour)}
+	routePruneStamps(small, 100, now, time.Hour)
+	if len(small) != 1 {
+		t.Fatal("a map under the limit was pruned")
+	}
+}
+
+func TestRefreshThrottleStaysBoundedUnderABurst(t *testing.T) {
+	resetRouteRefreshed(t)
+	now := time.Now()
+	for i := 0; i < 3*routeRefreshedMax; i++ {
+		routeRefreshDue(fmt.Sprintf("s|10.%d.%d.%d", i>>16&255, i>>8&255, i&255), 3600, now)
+	}
+	if len(routeRefreshedAt) > routeRefreshedMax {
+		t.Fatalf("%d throttle entries after a burst of fresh addresses, the limit is %d", len(routeRefreshedAt), routeRefreshedMax)
+	}
+}

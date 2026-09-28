@@ -78,13 +78,7 @@ func routeAsyncClaim(set *config.SetConfig, ips []net.IP) []net.IP {
 	routeAsyncSeenMu.Lock()
 	defer routeAsyncSeenMu.Unlock()
 
-	if len(routeAsyncSeen) > routeAsyncSeenMax {
-		for k, t := range routeAsyncSeen {
-			if now.Sub(t) >= refresh {
-				delete(routeAsyncSeen, k)
-			}
-		}
-	}
+	routePruneStamps(routeAsyncSeen, routeAsyncSeenMax, now, refresh)
 
 	fresh := make([]net.IP, 0, len(ips))
 	for _, ip := range ips {

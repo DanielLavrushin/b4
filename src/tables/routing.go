@@ -285,16 +285,8 @@ func RoutingLearnIP(cfg *config.Config, set *config.SetConfig, ip net.IP) {
 	if last, seen := routeLearnLast[key]; seen && now.Sub(last) < refresh {
 		return
 	}
+	routePruneStamps(routeLearnLast, routeLearnLastMax, now, refresh)
 	routeLearnLast[key] = now
-
-	if len(routeLearnLast) > 4096 {
-		cutoff := time.Duration(ttl) * time.Second
-		for k, t := range routeLearnLast {
-			if now.Sub(t) > cutoff {
-				delete(routeLearnLast, k)
-			}
-		}
-	}
 
 	routeAddIPsToSets(be, st, ttl, []net.IP{ip}, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 }
@@ -2801,22 +2793,37 @@ func routeApplyStaticEntries(be routeBackend, set *config.SetConfig, st routeSta
 	routeStaticApplied[st.setID] = cur
 }
 
-const routeRefreshedMax = 8192
+const (
+	routeRefreshedMax = 8192
+	routeLearnLastMax = 4096
+)
 
 func routeRefreshDue(key string, ttl int, now time.Time) bool {
 	window := time.Duration(ttl) * time.Second / 4
 	if last, ok := routeRefreshedAt[key]; ok && now.Sub(last) < window {
 		return false
 	}
-	if len(routeRefreshedAt) >= routeRefreshedMax {
-		for k, t := range routeRefreshedAt {
-			if now.Sub(t) >= window {
-				delete(routeRefreshedAt, k)
-			}
-		}
-	}
+	routePruneStamps(routeRefreshedAt, routeRefreshedMax, now, window)
 	routeRefreshedAt[key] = now
 	return true
+}
+
+func routePruneStamps(stamps map[string]time.Time, limit int, now time.Time, stale time.Duration) {
+	if len(stamps) < limit {
+		return
+	}
+	for k, t := range stamps {
+		if now.Sub(t) >= stale {
+			delete(stamps, k)
+		}
+	}
+	keep := limit * 3 / 4
+	for k := range stamps {
+		if len(stamps) <= keep {
+			return
+		}
+		delete(stamps, k)
+	}
 }
 
 func routeStaticHost(entry string) (string, bool) {
