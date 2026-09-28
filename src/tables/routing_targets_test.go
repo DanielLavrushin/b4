@@ -37,6 +37,7 @@ func TestResolvedIPsAreDroppedWhenTheSetTargetsChanged(t *testing.T) {
 	republished := *set
 	republished.Targets.SNIDomains = []string{"A.example "}
 	republished.Routing.IPTTLSeconds = 60
+	routeRefreshedAt = make(map[string]time.Time)
 	if !routeAddResolvedIPs(cfg, &republished, ips) {
 		t.Fatalf("addresses from a republished copy of the same targets were refused")
 	}
@@ -62,6 +63,7 @@ func TestResolvedIPsAreDroppedWhenTheSetTargetsChanged(t *testing.T) {
 		t.Fatalf("addresses resolved for the old targets were written, got %d entries", got)
 	}
 
+	routeRefreshedAt = make(map[string]time.Time)
 	if !routeAddResolvedIPs(cfg, &edited, ips) {
 		t.Fatalf("addresses for the new targets were refused")
 	}

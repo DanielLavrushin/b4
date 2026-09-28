@@ -2,6 +2,7 @@ package tables
 
 import (
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 )
@@ -29,18 +30,20 @@ func familyTestSet() *config.SetConfig {
 
 func familyResetGlobals(t *testing.T) {
 	t.Helper()
-	engine, cache, auto := routeEngine, routeRuleCache, routeIfaceAuto
+	engine, cache, auto, refreshed := routeEngine, routeRuleCache, routeIfaceAuto, routeRefreshedAt
 	logged, delRule := runLogged, routeDelRuleLoop
 	t.Cleanup(func() {
 		routeEngine = engine
 		routeRuleCache = cache
 		routeIfaceAuto = auto
+		routeRefreshedAt = refreshed
 		runLogged = logged
 		routeDelRuleLoop = delRule
 	})
 	routeEngine = nil
 	routeRuleCache = make(map[string]routeState)
 	routeIfaceAuto = make(map[string]routeState)
+	routeRefreshedAt = make(map[string]time.Time)
 	runLogged = func(op string, args ...string) bool { return true }
 	routeDelRuleLoop = func(ipv6 bool, mark, table string) {}
 }

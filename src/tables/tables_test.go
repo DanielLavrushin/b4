@@ -1065,7 +1065,15 @@ func TestRouteResolveIDs(t *testing.T) {
 	})
 }
 
+func resetRouteRefreshed(t *testing.T) {
+	t.Helper()
+	saved := routeRefreshedAt
+	routeRefreshedAt = make(map[string]time.Time)
+	t.Cleanup(func() { routeRefreshedAt = saved })
+}
+
 func TestRouteAddIPsToSets(t *testing.T) {
+	resetRouteRefreshed(t)
 	t.Run("classifies v4 and v6", func(t *testing.T) {
 		var v4calls, v6calls [][]string
 		mock := &mockRouteBackend{
@@ -1093,6 +1101,7 @@ func TestRouteAddIPsToSets(t *testing.T) {
 	})
 
 	t.Run("skips v4 when disabled", func(t *testing.T) {
+		resetRouteRefreshed(t)
 		calls := 0
 		mock := &mockRouteBackend{
 			addElementsFn: func(setName string, ips []string, ttl int) { calls++ },
@@ -1106,6 +1115,7 @@ func TestRouteAddIPsToSets(t *testing.T) {
 	})
 
 	t.Run("deduplicates IPs", func(t *testing.T) {
+		resetRouteRefreshed(t)
 		var gotIPs []string
 		mock := &mockRouteBackend{
 			addElementsFn: func(setName string, ips []string, ttl int) { gotIPs = ips },
@@ -1121,6 +1131,86 @@ func TestRouteAddIPsToSets(t *testing.T) {
 			t.Errorf("expected 1 deduplicated IP, got %d", len(gotIPs))
 		}
 	})
+}
+
+func TestLearnedAddressesLeaveStaticHostsPermanent(t *testing.T) {
+	routeMu.Lock()
+	saved := routeStaticApplied
+	routeStaticApplied = map[string]routeStaticEntries{
+		"s": {hosts: routeStaticHosts([]string{"1.2.3.4/32", "10.0.0.0/8"}, []string{"2001:db8::1"})},
+	}
+	routeMu.Unlock()
+	t.Cleanup(func() {
+		routeMu.Lock()
+		routeStaticApplied = saved
+		routeMu.Unlock()
+	})
+
+	var got []string
+	ipset := &mockRouteBackend{
+		sharedStatic:  true,
+		addElementsFn: func(setName string, ips []string, ttl int) { got = append(got, ips...) },
+	}
+	st := routeState{setID: "s", setV4: "set_v4", setV6: "set_v6"}
+	ips := []net.IP{net.ParseIP("1.2.3.4"), net.ParseIP("10.1.2.3"), net.ParseIP("2001:db8::1"), net.ParseIP("5.6.7.8")}
+
+	resetRouteRefreshed(t)
+	routeAddIPsToSets(ipset, st, 3600, ips, true, true)
+	if strings.Join(got, ",") != "10.1.2.3,5.6.7.8" {
+		t.Fatalf("learned add on ipset = %v; a host listed in the set must not be re-added with a timeout, or ipset turns its permanent entry into one that expires", got)
+	}
+
+	got = nil
+	resetRouteRefreshed(t)
+	routeAddIPsToSets(ipset, st, 0, ips, true, true)
+	if len(got) != 4 {
+		t.Fatalf("static add = %v, want every address", got)
+	}
+
+	got = nil
+	resetRouteRefreshed(t)
+	nft := &mockRouteBackend{addElementsFn: ipset.addElementsFn}
+	routeAddIPsToSets(nft, st, 3600, ips, true, true)
+	if len(got) != 4 {
+		t.Fatalf("learned add on nft = %v; its learned copies live in their own set and must keep a listed host that is later removed", got)
+	}
+}
+
+func TestRecentlyRefreshedAddressesAreNotRefreshedAgain(t *testing.T) {
+	resetRouteRefreshed(t)
+	calls := 0
+	mock := &mockRouteBackend{addElementsFn: func(string, []string, int) { calls++ }}
+	st := routeState{setID: "s", setV4: "set_v4", setV6: "set_v6"}
+	ip := []net.IP{net.ParseIP("203.0.113.5")}
+
+	routeAddIPsToSets(mock, st, 3600, ip, true, true)
+	routeAddIPsToSets(mock, st, 3600, ip, true, true)
+	if calls != 1 {
+		t.Fatalf("%d refreshes within a quarter of the TTL, want 1", calls)
+	}
+	routeRefreshedAt["s|203.0.113.5"] = time.Now().Add(-901 * time.Second)
+	routeAddIPsToSets(mock, st, 3600, ip, true, true)
+	if calls != 2 {
+		t.Fatalf("an address refreshed over a quarter of the TTL ago was not refreshed, calls %d", calls)
+	}
+}
+
+func TestRemovingAListedHostLetsItBeLearnedAtOnce(t *testing.T) {
+	resetRouteRefreshed(t)
+	routeMu.Lock()
+	savedLearn := routeLearnLast
+	routeLearnLast = map[string]time.Time{"s|1.2.3.4": time.Now()}
+	routeRefreshedAt["s|1.2.3.4"] = time.Now()
+	routeMu.Unlock()
+	t.Cleanup(func() { routeLearnLast = savedLearn })
+
+	routeForgetLearnedEntries("s", []string{"1.2.3.4/32"})
+	if _, ok := routeLearnLast["s|1.2.3.4"]; ok {
+		t.Error("the learn throttle of a removed listed host is still set")
+	}
+	if _, ok := routeRefreshedAt["s|1.2.3.4"]; ok {
+		t.Error("the refresh throttle of a removed listed host is still set")
+	}
 }
 
 func TestRouteAddIPsToSets_StaticNoTTL(t *testing.T) {
@@ -1299,6 +1389,7 @@ type mockRouterGuard struct {
 }
 
 type mockRouteBackend struct {
+	sharedStatic  bool
 	ensureBaseFn  func() error
 	ensureChainFn func(chain string, isMangle bool) error
 	guards        []mockRouterGuard
@@ -1369,7 +1460,8 @@ func (m *mockRouteBackend) addEgressLoopGuard(chain, iface string, ipv4, ipv6 bo
 func (m *mockRouteBackend) addMarkFallbackRule(chain string, v6 bool, setName string, mark uint32, sourceIface string) {
 	m.recordOp(chain, "fallback")
 }
-func (m *mockRouteBackend) sharesFamilies() bool { return false }
+func (m *mockRouteBackend) sharesFamilies() bool      { return false }
+func (m *mockRouteBackend) learnedSharesStatic() bool { return m.sharedStatic }
 func (m *mockRouteBackend) addMarkRestoreRule(chain string, v6 bool, sourceIface string, mark uint32) {
 	m.recordOp(chain, "restore")
 }

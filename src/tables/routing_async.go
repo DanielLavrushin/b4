@@ -115,6 +115,14 @@ func routeAsyncForgetSet(setID string) {
 	routeAsyncSeenMu.Unlock()
 }
 
+func routeAsyncForgetKeys(keys []string) {
+	routeAsyncSeenMu.Lock()
+	for _, k := range keys {
+		delete(routeAsyncSeen, k)
+	}
+	routeAsyncSeenMu.Unlock()
+}
+
 func routeAsyncForgetAll() {
 	routeAsyncSeenMu.Lock()
 	defer routeAsyncSeenMu.Unlock()
