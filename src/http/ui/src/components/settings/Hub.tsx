@@ -17,7 +17,14 @@ import {
   B4IntegrationCard,
   B4TextField,
 } from "@b4.elements";
-import { CheckIcon, CommunityIcon, CopyIcon, KeyIcon, RestoreIcon, SyncIcon } from "@b4.icons";
+import {
+  CheckIcon,
+  CommunityIcon,
+  CopyIcon,
+  KeyIcon,
+  RestoreIcon,
+  SyncIcon,
+} from "@b4.icons";
 import { colors, fonts, radiusPx, typography } from "@design";
 import { B4Config } from "@models/config";
 import { HubStatus } from "@models/hub";
@@ -63,14 +70,21 @@ const addressLabel = (url: string): string => {
   }
 };
 
-const hubAddresses = (status: HubStatus, configured: string[]): HubAddress[] => {
+const hubAddresses = (
+  status: HubStatus,
+  configured: string[],
+): HubAddress[] => {
   const urls = status.urls.length > 0 ? status.urls : [DEFAULT_HUB_URL];
   const learned = new Set(status.mirrors);
   const own = new Set(configured.map((u) => u.trim().replace(/\/+$/, "")));
   return urls.map((url) => ({
     url,
     label: addressLabel(url),
-    role: own.has(url) ? "configured" : learned.has(url) ? "learned" : "builtin",
+    role: own.has(url)
+      ? "configured"
+      : learned.has(url)
+        ? "learned"
+        : "builtin",
     active: url === status.active,
   }));
 };
@@ -82,7 +96,13 @@ interface HubAddressChipsProps {
 const HubAddressChips = ({ addresses }: HubAddressChipsProps) => {
   const { t } = useTranslation();
   return (
-    <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" sx={{ pt: 0.25 }}>
+    <Stack
+      direction="row"
+      spacing={0.75}
+      useFlexGap
+      flexWrap="wrap"
+      sx={{ pt: 0.25 }}
+    >
       {addresses.map((a) => (
         <Tooltip
           key={a.url}
@@ -113,7 +133,10 @@ const HubAddressChips = ({ addresses }: HubAddressChipsProps) => {
                     "& .MuiChip-icon": { color: colors.secondary },
                   }
                 : {
-                    bgcolor: a.role === "learned" ? "transparent" : colors.accent.tertiary,
+                    bgcolor:
+                      a.role === "learned"
+                        ? "transparent"
+                        : colors.accent.tertiary,
                     color: colors.text.secondary,
                     borderColor: colors.border.medium,
                   }),
@@ -233,9 +256,7 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
   const submitRestore = () => {
     restore.mutate(restoreCode, {
       onSuccess: (res) => {
-        showSuccess(
-          t("settings.Hub.identity.restored", { key: res.key_id }),
-        );
+        showSuccess(t("settings.Hub.identity.restored", { key: res.key_id }));
         setRestoreOpen(false);
         setRestoreCode("");
       },
@@ -252,7 +273,10 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
   const addresses = data ? hubAddresses(data, hub?.urls ?? []) : [];
   const learnedCount = addresses.filter((a) => a.role === "learned").length;
   const matchedSets = (data?.set_matches ?? []).filter(
-    (m, i, all) => all.findIndex((o) => (o.set_id || o.set_name) === (m.set_id || m.set_name)) === i,
+    (m, i, all) =>
+      all.findIndex(
+        (o) => (o.set_id || o.set_name) === (m.set_id || m.set_name),
+      ) === i,
   );
 
   return (
@@ -292,286 +316,331 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
 
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, lg: 6 }}>
-      <Box
-        sx={{
-          border: `1px solid ${colors.border.light}`,
-          borderRadius: `${radiusPx.md}px`,
-          bgcolor: colors.background.dark,
-          p: "14px 15px",
-          height: "100%",
-        }}
-      >
-        <Stack spacing={1.25}>
-          <Stack
-            direction="row"
-            alignItems="center"
-            justifyContent="space-between"
-            spacing={1}
-            useFlexGap
-            flexWrap="wrap"
-          >
-            <Typography
-              sx={{
-                fontFamily: fonts.mono,
-                fontSize: typography.sizes.xs,
-                letterSpacing: typography.tracking.wide,
-                textTransform: "uppercase",
-                color: colors.text.secondary,
-              }}
-            >
-              {t("settings.Hub.status.title")}
-            </Typography>
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={
-                sync.isPending ? (
-                  <CircularProgress size={14} color="inherit" />
-                ) : (
-                  <SyncIcon fontSize="small" />
-                )
-              }
-              disabled={sync.isPending || !data?.configured}
-              onClick={handleSync}
-            >
-              {sync.isPending ? t("hub.status.syncing") : t("hub.status.syncNow")}
-            </Button>
-          </Stack>
-
-          {status.isLoading && !data && (
-            <Stack direction="row" spacing={1} alignItems="center">
-              <CircularProgress size={14} sx={{ color: colors.secondary }} />
-              <Typography variant="body2" sx={{ color: colors.text.secondary }}>
-                {t("core.loading")}
-              </Typography>
-            </Stack>
-          )}
-          {status.isError && (
-            <B4Alert severity="error">
-              {t("hub.status.unavailable", {
-                error: describeApiError(status.error),
-              })}
-            </B4Alert>
-          )}
-          {data && !data.enabled && (
-            <Typography variant="body2" sx={{ color: colors.text.secondary }}>
-              {t("settings.Hub.status.savedOff")}
-            </Typography>
-          )}
-          {data?.enabled && !data.configured && (
-            <B4Alert severity="warning">{t("hub.status.notConfigured")}</B4Alert>
-          )}
-          {data?.enabled && data.configured && (
-            <Stack spacing={1.25}>
-              <StatusRow
-                label={t("settings.Hub.status.catalogue")}
-                value={
-                  data.catalogue
-                    ? t("settings.Hub.status.catalogueLine", {
-                        count: data.catalogue.sets,
-                        date: formatDate(data.catalogue.generated_at),
-                      })
-                    : t("hub.status.noCatalogue")
-                }
-                title={
-                  data.catalogue
-                    ? t("settings.Hub.status.catalogueBuild", {
-                        epoch: data.catalogue.epoch,
-                        seq: data.catalogue.seq,
-                      })
-                    : undefined
-                }
-                hint={t("settings.Hub.status.catalogueHint")}
-              />
-              {data.catalogue && (
-                <StatusRow
-                  label={t("settings.Hub.status.expires")}
-                  value={
-                    data.catalogue.expired ? (
-                      <Box component="span" sx={{ color: colors.state.warning }}>
-                        {t("settings.Hub.status.expiredAt", {
-                          date: formatDate(data.catalogue.expires_at),
-                        })}
-                      </Box>
-                    ) : (
-                      formatDate(data.catalogue.expires_at)
-                    )
-                  }
-                  hint={t("settings.Hub.status.expiresHint")}
-                />
-              )}
-              <StatusRow
-                label={t("settings.Hub.status.lastSync")}
-                value={
-                  data.last_sync
-                    ? `${formatDate(data.last_sync)} (${formatTimeAgo(t, data.last_sync)})`
-                    : t("hub.status.neverSynced")
-                }
-                hint={t("settings.Hub.status.lastSyncHint")}
-              />
-              {data.last_error && (
-                <StatusRow
-                  label={t("settings.Hub.status.lastError")}
-                  value={
-                    <Box component="span" sx={{ color: colors.state.error }}>
-                      {data.last_error}
-                    </Box>
-                  }
-                  hint={t("settings.Hub.status.lastErrorHint")}
-                />
-              )}
-              <StatusRow
-                label={t("settings.Hub.status.hub")}
-                value={<HubAddressChips addresses={addresses} />}
-                hint={
-                  learnedCount > 0
-                    ? t("settings.Hub.status.hubHintMirrors", { count: learnedCount })
-                    : t("settings.Hub.status.hubHint")
-                }
-              />
-              {matchedSets.length > 0 && (
-                <StatusRow
-                  label={t("settings.Hub.status.matchedBy")}
-                  value={
-                    <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" sx={{ pt: 0.25 }}>
-                      {matchedSets.map((m) => (
-                        <Tooltip key={m.set_id || m.set_name} arrow title={m.entry}>
-                          <Chip
-                            size="small"
-                            label={m.set_name}
-                            sx={{ fontFamily: fonts.mono, fontSize: typography.sizes.xs, bgcolor: colors.accent.tertiary, color: colors.text.secondary }}
-                          />
-                        </Tooltip>
-                      ))}
-                    </Stack>
-                  }
-                  hint={t("settings.Hub.status.matchedByHint")}
-                />
-              )}
-              {data.self_bypass && (
-                <StatusRow
-                  label={t("settings.Hub.status.selfBypass")}
-                  value={
-                    <Box component="span" sx={{ color: colors.state.warning }}>
-                      {t("settings.Hub.status.selfBypassValue")}
-                    </Box>
-                  }
-                  hint={t(
-                    matchedSets.length > 0
-                      ? "settings.Hub.status.selfBypassHintSet"
-                      : "settings.Hub.status.selfBypassHint",
-                    { set: matchedSets.map((m) => m.set_name).join(", ") },
-                  )}
-                />
-              )}
-              <StatusRow
-                label={t("settings.Hub.status.hubKey")}
-                value={
-                  data.hub_key
-                    ? t(
-                        data.hub_key_builtin
-                          ? "settings.Hub.status.hubKeyBuiltin"
-                          : "settings.Hub.status.hubKeyCustom",
-                        { key: data.hub_key },
-                      )
-                    : t("settings.Hub.status.hubKeyNone")
-                }
-                hint={t("settings.Hub.status.hubKeyHint")}
-              />
-              <StatusRow
-                label={t("settings.Hub.status.network")}
-                value={
-                  data.network.asn || data.network.cc
-                    ? t("settings.Hub.status.networkLine", {
-                        asn: data.network.asn ? `AS${data.network.asn}` : "?",
-                        cc: data.network.cc || "?",
-                        name: data.network.name ? ` (${data.network.name})` : "",
-                      })
-                    : t("settings.Hub.status.networkUnknown")
-                }
-                hint={
-                  data.network.asn || data.network.cc
-                    ? t(
-                        data.network.source === "hub"
-                          ? "settings.Hub.status.networkHintHub"
-                          : "settings.Hub.status.networkHintDetector",
-                      )
-                    : t("settings.Hub.status.networkHintUnknown")
-                }
-              />
-              <StatusRow
-                label={t("settings.Hub.status.outbox")}
-                value={
-                  data.outbox > 0
-                    ? t("settings.Hub.status.outboxWaiting", { count: data.outbox })
-                    : t("settings.Hub.status.outboxNone")
-                }
-                hint={t("settings.Hub.status.outboxHint")}
-              />
-            </Stack>
-          )}
-        </Stack>
-      </Box>
-        </Grid>
-        <Grid size={{ xs: 12, lg: 6 }}>
-      <Box
-        sx={{
-          border: `1px solid ${colors.border.light}`,
-          borderRadius: `${radiusPx.md}px`,
-          bgcolor: colors.background.dark,
-          p: "14px 15px",
-          height: "100%",
-        }}
-      >
-        <Stack spacing={1.25}>
-          <Typography
+          <Box
             sx={{
-              fontFamily: fonts.mono,
-              fontSize: typography.sizes.xs,
-              letterSpacing: typography.tracking.wide,
-              textTransform: "uppercase",
-              color: colors.text.secondary,
+              border: `1px solid ${colors.border.light}`,
+              borderRadius: `${radiusPx.md}px`,
+              bgcolor: colors.background.dark,
+              p: "14px 15px",
+              height: "100%",
             }}
           >
-            {t("settings.Hub.identity.title")}
-          </Typography>
-          <Typography variant="body2" sx={{ color: colors.text.secondary }}>
-            {t("settings.Hub.identity.help")}
-          </Typography>
-          <StatusRow
-            label={t("settings.Hub.identity.keyId")}
-            value={
-              data?.key_id ? (
-                <Box component="span" sx={{ fontFamily: fonts.mono }}>
-                  {data.key_id}
-                </Box>
-              ) : (
-                t("core.unknown")
-              )
-            }
-          />
-          <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<KeyIcon fontSize="small" />}
-              onClick={openRecovery}
-              disabled={!data?.enabled}
-            >
-              {t("settings.Hub.identity.showRecovery")}
-            </Button>
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<RestoreIcon fontSize="small" />}
-              onClick={() => setRestoreOpen(true)}
-              disabled={!data?.enabled}
-            >
-              {t("settings.Hub.identity.restore")}
-            </Button>
-          </Stack>
-        </Stack>
-      </Box>
+            <Stack spacing={1.25}>
+              <Stack
+                direction="row"
+                alignItems="center"
+                justifyContent="space-between"
+                spacing={1}
+                useFlexGap
+                flexWrap="wrap"
+              >
+                <Typography
+                  sx={{
+                    fontFamily: fonts.mono,
+                    fontSize: typography.sizes.xs,
+                    letterSpacing: typography.tracking.wide,
+                    textTransform: "uppercase",
+                    color: colors.text.secondary,
+                  }}
+                >
+                  {t("settings.Hub.status.title")}
+                </Typography>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={
+                    sync.isPending ? (
+                      <CircularProgress size={14} color="inherit" />
+                    ) : (
+                      <SyncIcon fontSize="small" />
+                    )
+                  }
+                  disabled={sync.isPending || !data?.configured}
+                  onClick={handleSync}
+                >
+                  {sync.isPending
+                    ? t("hub.status.syncing")
+                    : t("hub.status.syncNow")}
+                </Button>
+              </Stack>
+
+              {status.isLoading && !data && (
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <CircularProgress
+                    size={14}
+                    sx={{ color: colors.secondary }}
+                  />
+                  <Typography
+                    variant="body2"
+                    sx={{ color: colors.text.secondary }}
+                  >
+                    {t("core.loading")}
+                  </Typography>
+                </Stack>
+              )}
+              {status.isError && (
+                <B4Alert severity="error">
+                  {t("hub.status.unavailable", {
+                    error: describeApiError(status.error),
+                  })}
+                </B4Alert>
+              )}
+              {data && !data.enabled && (
+                <Typography
+                  variant="body2"
+                  sx={{ color: colors.text.secondary }}
+                >
+                  {t("settings.Hub.status.savedOff")}
+                </Typography>
+              )}
+              {data?.enabled && !data.configured && (
+                <B4Alert severity="warning">
+                  {t("hub.status.notConfigured")}
+                </B4Alert>
+              )}
+              {data?.enabled && data.configured && (
+                <Stack spacing={1.25}>
+                  <StatusRow
+                    label={t("settings.Hub.status.catalogue")}
+                    value={
+                      data.catalogue
+                        ? t("settings.Hub.status.catalogueLine", {
+                            count: data.catalogue.sets,
+                            date: formatDate(data.catalogue.generated_at),
+                          })
+                        : t("hub.status.noCatalogue")
+                    }
+                    title={
+                      data.catalogue
+                        ? t("settings.Hub.status.catalogueBuild", {
+                            epoch: data.catalogue.epoch,
+                            seq: data.catalogue.seq,
+                          })
+                        : undefined
+                    }
+                    hint={t("settings.Hub.status.catalogueHint")}
+                  />
+                  {data.catalogue && (
+                    <StatusRow
+                      label={t("settings.Hub.status.expires")}
+                      value={
+                        data.catalogue.expired ? (
+                          <Box
+                            component="span"
+                            sx={{ color: colors.state.warning }}
+                          >
+                            {t("settings.Hub.status.expiredAt", {
+                              date: formatDate(data.catalogue.expires_at),
+                            })}
+                          </Box>
+                        ) : (
+                          formatDate(data.catalogue.expires_at)
+                        )
+                      }
+                      hint={t("settings.Hub.status.expiresHint")}
+                    />
+                  )}
+                  <StatusRow
+                    label={t("settings.Hub.status.lastSync")}
+                    value={
+                      data.last_sync
+                        ? `${formatDate(data.last_sync)} (${formatTimeAgo(t, data.last_sync)})`
+                        : t("hub.status.neverSynced")
+                    }
+                    hint={t("settings.Hub.status.lastSyncHint")}
+                  />
+                  {data.last_error && (
+                    <StatusRow
+                      label={t("settings.Hub.status.lastError")}
+                      value={
+                        <Box
+                          component="span"
+                          sx={{ color: colors.state.error }}
+                        >
+                          {data.last_error}
+                        </Box>
+                      }
+                      hint={t("settings.Hub.status.lastErrorHint")}
+                    />
+                  )}
+                  <StatusRow
+                    label={t("settings.Hub.status.hub")}
+                    value={<HubAddressChips addresses={addresses} />}
+                    hint={
+                      learnedCount > 0
+                        ? t("settings.Hub.status.hubHintMirrors", {
+                            count: learnedCount,
+                          })
+                        : t("settings.Hub.status.hubHint")
+                    }
+                  />
+                  {matchedSets.length > 0 && (
+                    <StatusRow
+                      label={t("settings.Hub.status.matchedBy")}
+                      value={
+                        <Stack
+                          direction="row"
+                          spacing={0.75}
+                          useFlexGap
+                          flexWrap="wrap"
+                          sx={{ pt: 0.25 }}
+                        >
+                          {matchedSets.map((m) => (
+                            <Tooltip
+                              key={m.set_id || m.set_name}
+                              arrow
+                              title={m.entry}
+                            >
+                              <Chip
+                                size="small"
+                                label={m.set_name}
+                                sx={{
+                                  fontFamily: fonts.mono,
+                                  fontSize: typography.sizes.xs,
+                                  bgcolor: colors.accent.tertiary,
+                                  color: colors.text.secondary,
+                                }}
+                              />
+                            </Tooltip>
+                          ))}
+                        </Stack>
+                      }
+                      hint={t("settings.Hub.status.matchedByHint")}
+                    />
+                  )}
+                  {data.self_bypass && (
+                    <StatusRow
+                      label={t("settings.Hub.status.selfBypass")}
+                      value={
+                        <Box
+                          component="span"
+                          sx={{ color: colors.state.warning }}
+                        >
+                          {t("settings.Hub.status.selfBypassValue")}
+                        </Box>
+                      }
+                      hint={t(
+                        matchedSets.length > 0
+                          ? "settings.Hub.status.selfBypassHintSet"
+                          : "settings.Hub.status.selfBypassHint",
+                        { set: matchedSets.map((m) => m.set_name).join(", ") },
+                      )}
+                    />
+                  )}
+                  <StatusRow
+                    label={t("settings.Hub.status.hubKey")}
+                    value={
+                      data.hub_key
+                        ? t(
+                            data.hub_key_builtin
+                              ? "settings.Hub.status.hubKeyBuiltin"
+                              : "settings.Hub.status.hubKeyCustom",
+                            { key: data.hub_key },
+                          )
+                        : t("settings.Hub.status.hubKeyNone")
+                    }
+                    hint={t("settings.Hub.status.hubKeyHint")}
+                  />
+                  <StatusRow
+                    label={t("settings.Hub.status.network")}
+                    value={
+                      data.network.asn || data.network.cc
+                        ? t("settings.Hub.status.networkLine", {
+                            asn: data.network.asn
+                              ? `AS${data.network.asn}`
+                              : "?",
+                            cc: data.network.cc || "?",
+                            name: data.network.name
+                              ? ` (${data.network.name})`
+                              : "",
+                          })
+                        : t("settings.Hub.status.networkUnknown")
+                    }
+                    hint={
+                      data.network.asn || data.network.cc
+                        ? t(
+                            data.network.source === "hub"
+                              ? "settings.Hub.status.networkHintHub"
+                              : "settings.Hub.status.networkHintDetector",
+                          )
+                        : t("settings.Hub.status.networkHintUnknown")
+                    }
+                  />
+                  <StatusRow
+                    label={t("settings.Hub.status.outbox")}
+                    value={
+                      data.outbox > 0
+                        ? t("settings.Hub.status.outboxWaiting", {
+                            count: data.outbox,
+                          })
+                        : t("settings.Hub.status.outboxNone")
+                    }
+                    hint={t("settings.Hub.status.outboxHint")}
+                  />
+                </Stack>
+              )}
+            </Stack>
+          </Box>
+        </Grid>
+        <Grid size={{ xs: 12, lg: 6 }}>
+          <Box
+            sx={{
+              border: `1px solid ${colors.border.light}`,
+              borderRadius: `${radiusPx.md}px`,
+              bgcolor: colors.background.dark,
+              p: "14px 15px",
+              height: "100%",
+            }}
+          >
+            <Stack spacing={1.25}>
+              <Typography
+                sx={{
+                  fontFamily: fonts.mono,
+                  fontSize: typography.sizes.xs,
+                  letterSpacing: typography.tracking.wide,
+                  textTransform: "uppercase",
+                  color: colors.text.secondary,
+                }}
+              >
+                {t("settings.Hub.identity.title")}
+              </Typography>
+              <Typography variant="body2" sx={{ color: colors.text.secondary }}>
+                {t("settings.Hub.identity.help")}
+              </Typography>
+              <StatusRow
+                label={t("settings.Hub.identity.keyId")}
+                value={
+                  data?.key_id ? (
+                    <Box component="span" sx={{ fontFamily: fonts.mono }}>
+                      {data.key_id}
+                    </Box>
+                  ) : (
+                    t("core.unknown")
+                  )
+                }
+              />
+              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<KeyIcon fontSize="small" />}
+                  onClick={openRecovery}
+                  disabled={!data?.enabled}
+                >
+                  {t("settings.Hub.identity.showRecovery")}
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<RestoreIcon fontSize="small" />}
+                  onClick={() => setRestoreOpen(true)}
+                  disabled={!data?.enabled}
+                >
+                  {t("settings.Hub.identity.restore")}
+                </Button>
+              </Stack>
+            </Stack>
+          </Box>
         </Grid>
       </Grid>
 
@@ -584,7 +653,9 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
         fullWidth
         actions={
           <>
-            <Button onClick={() => setRecoveryOpen(false)}>{t("core.close")}</Button>
+            <Button onClick={() => setRecoveryOpen(false)}>
+              {t("core.close")}
+            </Button>
             <Box sx={{ flex: 1 }} />
             <Button
               variant="contained"
@@ -605,7 +676,10 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
             {recovery.isPending && (
               <Stack direction="row" spacing={1} alignItems="center">
                 <CircularProgress size={14} sx={{ color: colors.secondary }} />
-                <Typography variant="body2" sx={{ color: colors.text.secondary }}>
+                <Typography
+                  variant="body2"
+                  sx={{ color: colors.text.secondary }}
+                >
                   {t("core.loading")}
                 </Typography>
               </Stack>
@@ -619,7 +693,10 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
                 slotProps={{
                   input: {
                     readOnly: true,
-                    sx: { fontFamily: fonts.mono, fontSize: typography.sizes.md },
+                    sx: {
+                      fontFamily: fonts.mono,
+                      fontSize: typography.sizes.md,
+                    },
                   },
                 }}
               />
@@ -633,11 +710,14 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
         icon={<RestoreIcon />}
         open={restoreOpen}
         onClose={() => setRestoreOpen(false)}
-        maxWidth="sm"
+        maxWidth="md"
         fullWidth
         actions={
           <>
-            <Button onClick={() => setRestoreOpen(false)} disabled={restore.isPending}>
+            <Button
+              onClick={() => setRestoreOpen(false)}
+              disabled={restore.isPending}
+            >
               {t("core.cancel")}
             </Button>
             <Box sx={{ flex: 1 }} />
