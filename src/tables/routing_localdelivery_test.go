@@ -34,10 +34,10 @@ func localDeliveryEnsure(t *testing.T, ipv4, ipv6 bool) ([]localDeliveryRuleDel,
 		return true
 	}
 	routeAddSourceCheckRule = func(mark uint32) {
-		cmds = append(cmds, strings.Join(proxySourceCheckRuleArgs("add", routeSetMarkRule(mark)), " "))
+		cmds = append(cmds, "add source-check "+routeSetMarkRule(mark))
 	}
 	routeDelSourceCheckRule = func(markStrMask string) {
-		cmds = append(cmds, strings.Join(proxySourceCheckRuleArgs("del", markStrMask), " "))
+		cmds = append(cmds, "del source-check "+markStrMask)
 	}
 
 	routeEnsureLocalDelivery(0x20fa, proxyLocalDeliveryTable, ipv4, ipv6)
@@ -55,8 +55,8 @@ func localDeliveryCmdIndex(cmds []string, want string) int {
 
 func TestRouteEnsureLocalDelivery_PointsTheSourceCheckAtMainForIPv4(t *testing.T) {
 	const (
-		addCheck = "ip rule add fwmark 0x20fa/0x27fff iif lo lookup main suppress_prefixlength 7 priority 2"
-		delCheck = "ip rule del fwmark 0x20fa/0x27fff iif lo lookup main"
+		addCheck = "add source-check 0x20fa/0x27fff"
+		delCheck = "del source-check 0x20fa/0x27fff"
 	)
 
 	for _, tc := range []struct{ ipv4, ipv6 bool }{{true, true}, {true, false}} {

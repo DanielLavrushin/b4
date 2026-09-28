@@ -22,7 +22,11 @@ func routeSweepOwnRules() {
 				continue
 			}
 			if !ipv6 && routeRuleIsSourceCheck(line) {
-				routeDelSourceCheckRule(routeRuleField(line, "fwmark"))
+				mark := routeRuleField(line, "fwmark")
+				if _, done := rulesSeen[mark+" main"]; !done {
+					rulesSeen[mark+" main"] = struct{}{}
+					routeDelSourceCheckRule(mark)
+				}
 				continue
 			}
 			if !routeRuleIsOwn(line) {

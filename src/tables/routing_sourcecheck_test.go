@@ -2,6 +2,7 @@ package tables
 
 import (
 	"errors"
+	"net"
 	"strconv"
 	"strings"
 	"testing"
@@ -10,11 +11,11 @@ import (
 )
 
 func TestProxySourceCheckRuleArgs(t *testing.T) {
-	add := strings.Join(proxySourceCheckRuleArgs("add", "0x24bab/0x27fff"), " ")
-	if want := "ip rule add fwmark 0x24bab/0x27fff iif lo lookup main suppress_prefixlength 7 priority 2"; add != want {
+	add := strings.Join(proxySourceCheckRuleAddArgs("0x24bab/0x27fff", "192.168.0.0/16"), " ")
+	if want := "ip rule add fwmark 0x24bab/0x27fff to 192.168.0.0/16 iif lo lookup main suppress_prefixlength 7 priority 2"; add != want {
 		t.Fatalf("add = %q, want %q", add, want)
 	}
-	del := strings.Join(proxySourceCheckRuleArgs("del", "0x24bab/0x27fff"), " ")
+	del := strings.Join(proxySourceCheckRuleDelArgs("0x24bab/0x27fff"), " ")
 	if want := "ip rule del fwmark 0x24bab/0x27fff iif lo lookup main"; del != want {
 		t.Fatalf("del = %q, want %q", del, want)
 	}
@@ -24,15 +25,10 @@ func TestProxySourceCheckRuleArgs(t *testing.T) {
 }
 
 func TestProxySourceCheckKeepsNetworksAndSkipsDefaultRoutes(t *testing.T) {
-	args := proxySourceCheckRuleArgs("add", "0x24bab/0x27fff")
-	suppress := -1
-	for i := 0; i+1 < len(args); i++ {
-		if args[i] == "suppress_prefixlength" {
-			suppress, _ = strconv.Atoi(args[i+1])
-		}
-	}
-	if suppress < 0 {
-		t.Fatalf("the source-check rule has no suppress_prefixlength, so the router's own marked dials would follow the main default route and never reach the set: %v", args)
+	args := proxySourceCheckRuleAddArgs("0x24bab/0x27fff", proxySourceCheckClientNets[0])
+	suppress, err := strconv.Atoi(routeRuleField(strings.Join(args, " "), "suppress_prefixlength"))
+	if err != nil {
+		t.Fatalf("the source-check rule has no suppress_prefixlength, so the router's own marked dials to a private address would follow the main default route and never reach the set: %v", args)
 	}
 	for _, tc := range []struct {
 		route string
@@ -51,11 +47,48 @@ func TestProxySourceCheckKeepsNetworksAndSkipsDefaultRoutes(t *testing.T) {
 	}
 }
 
+func TestProxySourceCheckAnswersClientsButNotTheRoutersOwnDials(t *testing.T) {
+	var scopes []*net.IPNet
+	for _, clientNet := range proxySourceCheckClientNets {
+		to := routeRuleField(strings.Join(proxySourceCheckRuleAddArgs("0x24bab/0x27fff", clientNet), " "), "to")
+		if to == "" {
+			t.Fatalf("the source-check rule for %s has no destination, so it also takes the router's own marked dials to a set address that main routes by a specific prefix, and they never reach the set's listener", clientNet)
+		}
+		_, scope, err := net.ParseCIDR(to)
+		if err != nil {
+			t.Fatalf("the source-check rule's destination %q does not parse: %v", to, err)
+		}
+		scopes = append(scopes, scope)
+	}
+	covered := func(addr string) bool {
+		ip := net.ParseIP(addr)
+		for _, scope := range scopes {
+			if scope.Contains(ip) {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, client := range []string{"192.168.50.120", "10.8.0.3", "172.17.0.2", "100.64.3.4"} {
+		if !covered(client) {
+			t.Errorf("the source check for client %s is not sent to main, so with net.ipv4.conf.all.src_valid_mark=1 its connections to a proxy set are dropped as martians", client)
+		}
+	}
+	for _, target := range []string{"149.154.167.50", "91.108.56.100", "198.51.100.9", "1.1.1.1", "104.16.0.1"} {
+		if covered(target) {
+			t.Errorf("the router's own dial to %s matches the source-check rule, so a specific main route to it, such as a split-tunnel VPN's, takes the dial away from the proxy set", target)
+		}
+	}
+}
+
 func TestRouteRuleIsSourceCheck(t *testing.T) {
 	for _, tc := range []struct {
 		line string
 		want bool
 	}{
+		{"2:\tfrom all to 10.0.0.0/8 fwmark 0x24bab/0x27fff iif lo lookup main suppress_prefixlength 7", true},
+		{"2:      from all to 192.168.0.0/16 fwmark 0x24bab/0x27fff iif lo lookup main suppress_prefixlength 7", true},
 		{"2:\tfrom all fwmark 0x24bab/0x27fff iif lo lookup main suppress_prefixlength 7", true},
 		{"2:      from all fwmark 0x24bab/0x27fff iif lo lookup main suppress_prefixlength 7", true},
 		{"2:\tfrom all fwmark 0x2a1b3/0x27fff iif lo lookup main suppress_prefixlength 7", true},
@@ -94,12 +127,26 @@ func sourceCheckStubRun(t *testing.T, srcValidMark, reject bool) *[]string {
 	return &cmds
 }
 
-func TestRouteAddSourceCheckRule_AddsTheRule(t *testing.T) {
+func TestRouteAddSourceCheckRule_AddsTheRules(t *testing.T) {
 	cmds := sourceCheckStubRun(t, true, false)
 	routeAddSourceCheckRuleExec(config.TelegramBridgeMark)
-	want := "ip rule add fwmark 0x24bab/0x27fff iif lo lookup main suppress_prefixlength 7 priority 2"
-	if len(*cmds) != 1 || (*cmds)[0] != want {
-		t.Fatalf("commands = %v, want exactly %q", *cmds, want)
+	want := []string{
+		"ip rule add fwmark 0x24bab/0x27fff to 10.0.0.0/8 iif lo lookup main suppress_prefixlength 7 priority 2",
+		"ip rule add fwmark 0x24bab/0x27fff to 172.16.0.0/12 iif lo lookup main suppress_prefixlength 7 priority 2",
+		"ip rule add fwmark 0x24bab/0x27fff to 192.168.0.0/16 iif lo lookup main suppress_prefixlength 7 priority 2",
+		"ip rule add fwmark 0x24bab/0x27fff to 100.64.0.0/10 iif lo lookup main suppress_prefixlength 7 priority 2",
+	}
+	if strings.Join(*cmds, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("commands = %v, want %v", *cmds, want)
+	}
+}
+
+func TestRouteAddSourceCheckRule_StopsAtTheFirstRejection(t *testing.T) {
+	captureTablesLog(t)
+	cmds := sourceCheckStubRun(t, true, true)
+	routeAddSourceCheckRuleExec(config.TelegramBridgeMark)
+	if len(*cmds) != 1 {
+		t.Fatalf("an ip that rejected the first source-check rule was asked for the rest as well, so an ip that cannot parse the rule costs an exec and a log line per client network on every sync: %v", *cmds)
 	}
 }
 
@@ -144,7 +191,13 @@ func TestRouteSweepOwnRules_RemovesTheSourceCheckRuleWithoutTouchingMain(t *test
 	f := &sweepFixture{
 		rules: "0:      from all lookup local\n" +
 			"2:      from all fwmark 0x10000/0x10000 lookup 77\n" +
+			"2:      from all to 10.0.0.0/8 fwmark 0x24bab/0x27fff iif lo lookup main suppress_prefixlength 7\n" +
+			"2:      from all to 172.16.0.0/12 fwmark 0x24bab/0x27fff iif lo lookup main suppress_prefixlength 7\n" +
+			"2:      from all to 192.168.0.0/16 fwmark 0x24bab/0x27fff iif lo lookup main suppress_prefixlength 7\n" +
+			"2:      from all to 100.64.0.0/10 fwmark 0x24bab/0x27fff iif lo lookup main suppress_prefixlength 7\n" +
 			"2:      from all fwmark 0x24bab/0x27fff iif lo lookup main suppress_prefixlength 7\n" +
+			"2:      from all to 10.0.0.0/8 fwmark 0x2a1b3/0x27fff iif lo lookup main suppress_prefixlength 7\n" +
+			"2:      from all to 192.168.0.0/16 fwmark 0x2a1b3/0x27fff iif lo lookup main suppress_prefixlength 7\n" +
 			"3:      from all fwmark 0x24bab/0x27fff lookup 252\n" +
 			"20:     from all lookup 8437\n" +
 			"32766:  from all lookup main\n",
@@ -158,8 +211,8 @@ func TestRouteSweepOwnRules_RemovesTheSourceCheckRuleWithoutTouchingMain(t *test
 
 	routeSweepOwnRules()
 
-	if len(removed) != 1 || removed[0] != "0x24bab/0x27fff" {
-		t.Fatalf("source-check rules removed = %v, want exactly the leftover for mark 0x24bab", removed)
+	if strings.Join(removed, " ") != "0x24bab/0x27fff 0x2a1b3/0x27fff" {
+		t.Fatalf("source-check rules removed = %v, want one delete per mark, which clears every rule of that mark; any other count leaves a set's leftover rules behind or runs the delete loop again for nothing", removed)
 	}
 	for _, d := range f.deleted {
 		if strings.HasSuffix(d, " main") {

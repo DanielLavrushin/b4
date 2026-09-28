@@ -15,6 +15,8 @@ const (
 	srcValidMarkSysctl           = "/proc/sys/net/ipv4/conf/all/src_valid_mark"
 )
 
+var proxySourceCheckClientNets = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10"}
+
 var (
 	routeAddSourceCheckRule = routeAddSourceCheckRuleExec
 	routeDelSourceCheckRule = routeDelSourceCheckRuleExec
@@ -22,14 +24,14 @@ var (
 	routeSourceCheckWarned  atomic.Bool
 )
 
-func proxySourceCheckRuleArgs(verb, markStrMask string) []string {
-	args := []string{"ip", "rule", verb, "fwmark", markStrMask, "iif", "lo", "lookup", "main"}
-	if verb != "add" {
-		return args
-	}
-	return append(args,
-		"suppress_prefixlength", strconv.Itoa(proxySourceCheckMinPrefix-1),
-		"priority", strconv.Itoa(proxySourceCheckRulePriority))
+func proxySourceCheckRuleAddArgs(markStrMask, clientNet string) []string {
+	return []string{"ip", "rule", "add", "fwmark", markStrMask, "to", clientNet, "iif", "lo", "lookup", "main",
+		"suppress_prefixlength", strconv.Itoa(proxySourceCheckMinPrefix - 1),
+		"priority", strconv.Itoa(proxySourceCheckRulePriority)}
+}
+
+func proxySourceCheckRuleDelArgs(markStrMask string) []string {
+	return []string{"ip", "rule", "del", "fwmark", markStrMask, "iif", "lo", "lookup", "main"}
 }
 
 func routeSrcValidMarkOnExec() bool {
@@ -38,14 +40,22 @@ func routeSrcValidMarkOnExec() bool {
 }
 
 func routeAddSourceCheckRuleExec(mark uint32) {
-	out, err := run(proxySourceCheckRuleArgs("add", routeSetMarkRule(mark))...)
-	if err == nil {
+	markStrMask := routeSetMarkRule(mark)
+	for _, clientNet := range proxySourceCheckClientNets {
+		out, err := run(proxySourceCheckRuleAddArgs(markStrMask, clientNet)...)
+		if err == nil {
+			continue
+		}
+		reason := strings.TrimSpace(out)
+		if reason == "" {
+			reason = err.Error()
+		}
+		routeWarnSourceCheckRejected(mark, reason)
 		return
 	}
-	reason := strings.TrimSpace(out)
-	if reason == "" {
-		reason = err.Error()
-	}
+}
+
+func routeWarnSourceCheckRejected(mark uint32, reason string) {
 	if !routeSrcValidMarkOn() {
 		log.Tracef("routing: the source-check rule for mark 0x%x was rejected (%s); it only matters while net.ipv4.conf.all.src_valid_mark is 1", mark, reason)
 		return
@@ -58,7 +68,7 @@ func routeAddSourceCheckRuleExec(mark uint32) {
 
 func routeDelSourceCheckRuleExec(markStrMask string) {
 	for i := 0; i < 100; i++ {
-		if _, err := run(proxySourceCheckRuleArgs("del", markStrMask)...); err != nil {
+		if _, err := run(proxySourceCheckRuleDelArgs(markStrMask)...); err != nil {
 			return
 		}
 	}
