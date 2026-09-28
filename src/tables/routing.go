@@ -71,7 +71,7 @@ type routeBackend interface {
 	available() bool
 	ensureBase() error
 	ensureIPSet(name string, v6 bool) error
-	addElements(setName string, ips []string, ttlSec int)
+	addElements(setName string, ips []string, ttlSec int) []string
 	delElements(setName string, ips []string)
 	ensureChain(chain string, isMangle bool) error
 	flushChain(chain string, isMangle bool)
@@ -647,11 +647,15 @@ func routeAddIPsToSets(be routeBackend, st routeState, ttl int, ips []net.IP, ip
 		}
 	}
 
+	var failed []string
 	if len(v4) > 0 {
-		be.addElements(st.setV4, v4, ttl)
+		failed = append(failed, be.addElements(st.setV4, v4, ttl)...)
 	}
 	if len(v6) > 0 {
-		be.addElements(st.setV6, v6, ttl)
+		failed = append(failed, be.addElements(st.setV6, v6, ttl)...)
+	}
+	if ttl > 0 && len(failed) > 0 {
+		routeForgetLearnedEntries(st.setID, failed)
 	}
 }
 

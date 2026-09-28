@@ -225,3 +225,38 @@ func TestRouteNftScriptErrorKeepsTheFirstLineOnly(t *testing.T) {
 		t.Errorf("a long single-line error must be cut, got %d bytes", len(got))
 	}
 }
+
+func TestNftReportsTheEntriesItCouldNotInstall(t *testing.T) {
+	recordNftScripts(t, errors.New("no stdin"), func(string) error { return errors.New("no such set") })
+	origLogged := runLogged
+	t.Cleanup(func() { runLogged = origLogged })
+	runLogged = func(op string, args ...string) bool {
+		return !strings.Contains(strings.Join(args, " "), "203.0.113.10")
+	}
+
+	got := (&routeNftBackend{}).addElements("b4r_x_v4", []string{"203.0.113.9", "203.0.113.10"}, 600)
+	if !reflect.DeepEqual(got, []string{"203.0.113.10"}) {
+		t.Fatalf("learned add reported %v as not installed, want [203.0.113.10]", got)
+	}
+	got = (&routeNftBackend{}).addElements("b4r_x_v4", []string{"198.51.100.1", "203.0.113.10"}, 0)
+	if !reflect.DeepEqual(got, []string{"203.0.113.10"}) {
+		t.Fatalf("static add reported %v as not installed, want [203.0.113.10]", got)
+	}
+}
+
+func TestIpsetReportsTheEntriesItCouldNotInstall(t *testing.T) {
+	origStdin, origLogged := runStdin, runLogged
+	t.Cleanup(func() {
+		runStdin = origStdin
+		runLogged = origLogged
+	})
+	runStdin = func(string, ...string) error { return errors.New("restore failed") }
+	runLogged = func(op string, args ...string) bool {
+		return !strings.Contains(strings.Join(args, " "), "203.0.113.10")
+	}
+
+	got := (&routeIptBackend{}).addElements("b4r_x_v4", []string{"203.0.113.9", "203.0.113.10"}, 600)
+	if !reflect.DeepEqual(got, []string{"203.0.113.10"}) {
+		t.Fatalf("ipset add reported %v as not installed, want [203.0.113.10]", got)
+	}
+}

@@ -75,32 +75,35 @@ func (b *routeNftBackend) ensureIPSet(name string, v6 bool) error {
 	return nil
 }
 
-func (b *routeNftBackend) addElements(setName string, ips []string, ttlSec int) {
+func (b *routeNftBackend) addElements(setName string, ips []string, ttlSec int) []string {
 	if len(ips) == 0 {
-		return
+		return nil
 	}
 
 	if ttlSec > 0 {
-		routeNftRefreshElements(routeNftDynSet(setName), ips, ttlSec)
-		return
+		return routeNftRefreshElements(routeNftDynSet(setName), ips, ttlSec)
 	}
 
 	ips = expandZeroPrefix(ips)
 	_, err := runNftStdin(routeNftElementScript("add", setName, ips))
 	if err == nil {
-		return
+		return nil
 	}
 	log.Tracef("routing: loading %d elements into %s in one script failed (%s), falling back to batches", len(ips), setName, routeNftScriptError(err))
 
+	var failed []string
 	for _, chunk := range routeNftChunks(ips) {
 		args := append([]string{"nft"}, routeNftElementArgs("add", setName, chunk, 0)...)
 		if out, err := run(args...); err != nil {
 			log.Tracef("routing: batch add to %s failed (%v: %s), falling back to individual adds", setName, err, strings.TrimSpace(out))
 			for _, ip := range chunk {
-				runLogged("routing: add element "+ip, append([]string{"nft"}, routeNftElementArgs("add", setName, []string{ip}, 0)...)...)
+				if !runLogged("routing: add element "+ip, append([]string{"nft"}, routeNftElementArgs("add", setName, []string{ip}, 0)...)...) {
+					failed = append(failed, ip)
+				}
 			}
 		}
 	}
+	return failed
 }
 
 const routeNftChunkSize = 128
@@ -136,7 +139,8 @@ func routeNftRefreshArgs(setName string, ips []string, ttlSec int) []string {
 	return append(args, routeNftElementArgs("add", setName, ips, ttlSec)...)
 }
 
-func routeNftRefreshElements(setName string, ips []string, ttlSec int) {
+func routeNftRefreshElements(setName string, ips []string, ttlSec int) []string {
+	var failed []string
 	for _, chunk := range routeNftChunks(ips) {
 		out, err := run(routeNftRefreshArgs(setName, chunk, ttlSec)...)
 		if err == nil {
@@ -144,9 +148,12 @@ func routeNftRefreshElements(setName string, ips []string, ttlSec int) {
 		}
 		log.Tracef("routing: batch refresh of %s failed (%v: %s), refreshing one by one", setName, err, strings.TrimSpace(out))
 		for _, ip := range chunk {
-			runLogged("routing: refresh element "+ip, routeNftRefreshArgs(setName, []string{ip}, ttlSec)...)
+			if !runLogged("routing: refresh element "+ip, routeNftRefreshArgs(setName, []string{ip}, ttlSec)...) {
+				failed = append(failed, ip)
+			}
 		}
 	}
+	return failed
 }
 
 func routeNftElementScript(verb, setName string, ips []string) string {

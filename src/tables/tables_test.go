@@ -1195,6 +1195,29 @@ func TestRecentlyRefreshedAddressesAreNotRefreshedAgain(t *testing.T) {
 	}
 }
 
+func TestAFailedInstallIsRetriedOnTheNextAnswer(t *testing.T) {
+	resetRouteRefreshed(t)
+	routeMu.Lock()
+	savedLearn := routeLearnLast
+	routeLearnLast = map[string]time.Time{"s|203.0.113.6": time.Now()}
+	routeMu.Unlock()
+	t.Cleanup(func() { routeLearnLast = savedLearn })
+
+	calls := 0
+	mock := &mockRouteBackend{addFails: true, addElementsFn: func(string, []string, int) { calls++ }}
+	st := routeState{setID: "s", setV4: "set_v4", setV6: "set_v6"}
+	ip := []net.IP{net.ParseIP("203.0.113.6")}
+
+	routeAddIPsToSets(mock, st, 3600, ip, true, true)
+	routeAddIPsToSets(mock, st, 3600, ip, true, true)
+	if calls != 2 {
+		t.Fatalf("%d install attempts, want 2; an address the backend could not install must not be throttled", calls)
+	}
+	if _, ok := routeLearnLast["s|203.0.113.6"]; ok {
+		t.Error("the learn throttle of an address that failed to install is still set")
+	}
+}
+
 func TestRemovingAListedHostLetsItBeLearnedAtOnce(t *testing.T) {
 	resetRouteRefreshed(t)
 	routeMu.Lock()
@@ -1390,6 +1413,7 @@ type mockRouterGuard struct {
 
 type mockRouteBackend struct {
 	sharedStatic  bool
+	addFails      bool
 	ensureBaseFn  func() error
 	ensureChainFn func(chain string, isMangle bool) error
 	guards        []mockRouterGuard
@@ -1511,11 +1535,15 @@ func (m *mockRouteBackend) addSNATRule(chain, setName, iface, srcIP string, mark
 func (m *mockRouteBackend) flushIPSet(name string)   {}
 func (m *mockRouteBackend) destroyIPSet(name string) {}
 func (m *mockRouteBackend) clearAll()                {}
-func (m *mockRouteBackend) addElements(setName string, ips []string, ttlSec int) {
+func (m *mockRouteBackend) addElements(setName string, ips []string, ttlSec int) []string {
 	m.setOps = append(m.setOps, "add "+setName)
 	if m.addElementsFn != nil {
 		m.addElementsFn(setName, ips, ttlSec)
 	}
+	if m.addFails {
+		return ips
+	}
+	return nil
 }
 func (m *mockRouteBackend) delElements(setName string, ips []string) {
 	m.setOps = append(m.setOps, "del "+setName)
