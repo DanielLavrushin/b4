@@ -23,6 +23,7 @@ interface FeatureSettingsProps {
 
 const IPV6_BYPASS_DISMISS_KEY = "b4_ipv6_bypass_dismissed";
 const TUN_MONITOR_MIN_INTERVAL = 10;
+const ENGINE_FAILURE_RECHECK_MS = 15000;
 
 export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
   const { t } = useTranslation();
@@ -69,6 +70,18 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
       })
       .catch(() => setIpv6BypassesSets(false));
   }, []);
+
+  const engineFailed = engineFailure !== null;
+  useEffect(() => {
+    if (!engineFailed) return;
+    const timer = setInterval(() => {
+      systemApi
+        .info()
+        .then((info) => setEngineFailure(info?.engine_failure ?? null))
+        .catch(() => {});
+    }, ENGINE_FAILURE_RECHECK_MS);
+    return () => clearInterval(timer);
+  }, [engineFailed]);
 
   const dismissIpv6Bypass = () => {
     try {

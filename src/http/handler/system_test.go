@@ -413,11 +413,17 @@ func TestSystemInfoAndDiagnosticsReportAFailedEngine(t *testing.T) {
 		t.Fatalf("system info must carry the engine failure, got %+v", info.EngineFailure)
 	}
 
-	if got := collectEngineInfo(&cfg).StartError; got != "iptables rejected the NFQUEUE target" {
-		t.Fatalf("diagnostics must carry the start error, got %q", got)
+	cfg.Queue.Mode = "tun"
+	engine := collectEngineInfo(&cfg)
+	if engine.StartError != "iptables rejected the NFQUEUE target" {
+		t.Fatalf("diagnostics must carry the start error, got %q", engine.StartError)
+	}
+	if engine.Mode != "nfqueue" || engine.TUN != nil {
+		t.Fatalf("with the mode switched but b4 not restarted, diagnostics must name the engine that failed, got mode %q", engine.Mode)
 	}
 	mc.SetEngineFailure(nil)
-	if got := collectEngineInfo(&cfg).StartError; got != "" {
-		t.Fatalf("a running engine has no start error, got %q", got)
+	engine = collectEngineInfo(&cfg)
+	if engine.StartError != "" || engine.Mode != "tun" {
+		t.Fatalf("a running engine reports the configured mode and no start error, got mode %q error %q", engine.Mode, engine.StartError)
 	}
 }
