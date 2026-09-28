@@ -237,7 +237,7 @@ func openErrorFileLocked(path string) error {
 	// MultiWriter set up in Init, so the error file stays error-level only;
 	// fd 2 is redirected to the file only so Go panics/fatals are captured.
 	if origStderr == 0 {
-		origStderr, _ = unix.Dup(int(os.Stderr.Fd()))
+		origStderr = dupStderr()
 	}
 	unix.Dup2(int(f.Fd()), int(os.Stderr.Fd()))
 
@@ -275,11 +275,19 @@ func OrigStderr() *os.File {
 	defer errMu.Unlock()
 	if origStderrFile == nil {
 		if origStderr == 0 {
-			origStderr, _ = unix.Dup(int(os.Stderr.Fd()))
+			origStderr = dupStderr()
 		}
 		origStderrFile = os.NewFile(uintptr(origStderr), "stderr")
 	}
 	return origStderrFile
+}
+
+func dupStderr() int {
+	fd, err := unix.Dup(int(os.Stderr.Fd()))
+	if err == nil {
+		unix.CloseOnExec(fd)
+	}
+	return fd
 }
 
 func CloseErrorFile() {
@@ -309,7 +317,8 @@ func InitWarnf(format string, a ...any) {
 }
 
 func Errorf(format string, a ...any) error {
-	msg := fmt.Sprintf("[ERROR] "+format, a...)
+	err := fmt.Errorf(format, a...)
+	msg := "[ERROR] " + err.Error()
 	out("%s", msg)
 
 	errMu.Lock()
@@ -328,7 +337,7 @@ func Errorf(format string, a ...any) error {
 	}
 	errMu.Unlock()
 
-	return fmt.Errorf(format, a...)
+	return err
 }
 
 func Warnf(format string, a ...any) {

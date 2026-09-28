@@ -43,6 +43,13 @@ export interface GeodatRemoveResult {
   kept: string[];
 }
 
+export interface EngineFailure {
+  mode: "nfqueue" | "tun";
+  error: string;
+  retry_at: number;
+  retries_left: number;
+}
+
 export interface SystemInfo {
   service_manager: string;
   os: string;
@@ -51,6 +58,7 @@ export interface SystemInfo {
   is_docker: boolean;
   host_has_global_ipv6?: boolean;
   ipv6_bypasses_sets?: boolean;
+  engine_failure?: EngineFailure;
 }
 
 export interface RestartResponse {

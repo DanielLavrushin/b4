@@ -82,7 +82,11 @@ func init() {
 // @name Authorization
 // @description Enter "Bearer {token}" to authorize
 func main() {
-	if err := rootCmd.Execute(); err != nil {
+	err := rootCmd.Execute()
+	if err == nil {
+		err = restartIfRequested()
+	}
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -222,9 +226,14 @@ func runB4(cmd *cobra.Command, args []string) error {
 		}
 		return out
 	})
+	var engineDown atomic.Bool
 	refreshTables := func() error {
 		c := cfgPtr.Load()
 		if c.System.Tables.SkipSetup {
+			return nil
+		}
+		if engineDown.Load() {
+			log.Infof("Firewall refresh skipped: the packet engine is not running, so the change applies when b4 restarts")
 			return nil
 		}
 		if tunEngineRef.Load() != nil {
@@ -279,7 +288,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		tables.RoutingClearAll()
 		b4tun.ClearStaleArtifacts(&cfg)
 		if clearErr != nil {
-			return fmt.Errorf("failed to clear iptables/nftables rules: %w", clearErr)
+			return log.Errorf("failed to clear iptables/nftables rules: %w", clearErr)
 		}
 		log.Infof("IPTables rules cleared successfully")
 		return nil
@@ -320,108 +329,41 @@ func runB4(cmd *cobra.Command, args []string) error {
 	tables.RoutingClearAll()
 
 	isTUN := cfg.Queue.Mode == "tun"
+	engineAttempt = loadEngineAttempt()
 
 	pool := nfq.NewPool(&cfg)
 
 	var tunEngine *b4tun.Engine
 	var tablesMonitor *tables.Monitor
+	var engineErr error
 
 	if isTUN {
-		log.Infof("Starting TUN engine (device: %s, out: %s, threads: %d)",
-			cfg.Queue.TUN.DeviceName, cfg.Queue.TUN.OutInterface, cfg.Queue.Threads)
-		tables.SetTUNDevice(cfg.Queue.TUN.Device())
-
-		if !cfg.System.Tables.SkipSetup {
-			log.Tracef("Clearing any pre-existing NFQUEUE/tables rules before TUN setup")
-			if err := tables.ClearRules(&cfg); err != nil {
-				log.Warnf("TUN: failed to clear pre-existing tables rules (continuing): %v", err)
-			}
-			if err := tables.ApplyMasqueradeOnly(&cfg); err != nil {
-				metrics.RecordEvent("error", fmt.Sprintf("Failed to apply masquerade: %v", err))
-				return fmt.Errorf("failed to apply masquerade: %w", err)
-			}
-			tables.ApplyConntrackSysctls()
-			if err := tables.ApplyMSSClampOnly(&cfg); err != nil {
-				log.Errorf("Failed to apply MSS clamp in TUN mode: %v", err)
-			}
-		} else {
-			log.Infof("Skipping masquerade and conntrack sysctls (--skip-tables); the TUN engine also skips its own firewall/sysctl rules and only sets up routing")
-		}
-
-		tunEngine = b4tun.NewEngine(&cfg, pool)
-		if err := tunEngine.Start(); err != nil {
-			if !cfg.System.Tables.SkipSetup {
-				tables.ClearTUNFirewall(&cfg)
-				tables.RevertConntrackSysctls()
-			}
-			pool.Stop()
-			metrics.RecordEvent("error", fmt.Sprintf("TUN engine start failed: %v", err))
-			metrics.NFQueueStatus = "error"
-			return fmt.Errorf("TUN engine start failed: %w", err)
-		}
-
-		if cfg.System.Tables.SkipSetup {
-			metrics.TablesStatus = "tun (skip-tables)"
-		} else {
-			metrics.TablesStatus = "tun"
-		}
-		metrics.NFQueueStatus = "active (tun)"
-		metrics.RecordEvent("info", fmt.Sprintf("TUN engine started with %d threads", cfg.Queue.Threads))
-		tunEngineRef.Store(tunEngine)
-
-		if name := tunEngine.DeviceName(); name != cfg.Queue.TUN.Device() {
-			tables.SetTUNDevice(name)
-			if !cfg.System.Tables.SkipSetup {
-				if err := tables.ApplyMasqueradeOnly(&cfg); err != nil {
-					log.Errorf("Failed to re-apply masquerade for TUN device %s: %v", name, err)
-				}
-			}
-		}
-
-		if !cfg.System.Tables.SkipSetup {
-			tproxyMgr.SyncConfig(&cfg)
-			tables.RoutingSyncConfig(&cfg)
-		}
+		tunEngine, engineErr = startTUNEngine(&cfg, pool, tproxyMgr, metrics)
 	} else {
-		// Setup iptables/nftables rules
-		if !cfg.System.Tables.SkipSetup {
-			log.Tracef("Clearing existing iptables/nftables rules")
-			tables.ClearRules(&cfg)
-			b4tun.ClearStaleArtifacts(&cfg)
-
-			log.Tracef("Adding tables rules")
-			if err := tables.AddRules(&cfg); err != nil {
-				metrics.RecordEvent("error", fmt.Sprintf("Failed to add tables rules: %v", err))
-				return fmt.Errorf("failed to add tables rules: %w", err)
-			}
-			metrics.TablesStatus = tables.DetectBackend(&cfg)
-			metrics.RecordEvent("info", "Tables rules configured successfully")
-		} else {
-			log.Infof("Skipping tables setup (--skip-tables)")
-			metrics.TablesStatus = "skipped"
-		}
-
-		// Ensure routing runtime state is applied at startup as well.
-		if !cfg.System.Tables.SkipSetup {
-			tproxyMgr.SyncConfig(&cfg)
-			tables.RoutingSyncConfig(&cfg)
-		} else {
-			log.Tracef("Skipping routing sync due to --skip-tables")
-		}
-
-		// Start netfilter queue pool
-		log.Infof("Starting netfilter queue pool (queue: %d, threads: %d)", cfg.Queue.StartNum, cfg.Queue.Threads)
-		if err := pool.Start(); err != nil {
-			metrics.RecordEvent("error", fmt.Sprintf("NFQueue start failed: %v", err))
-			metrics.NFQueueStatus = "error"
-			return fmt.Errorf("netfilter queue start failed: %w", err)
-		}
-
-		metrics.RecordEvent("info", fmt.Sprintf("NFQueue started with %d threads", cfg.Queue.Threads))
-		metrics.NFQueueStatus = "active"
+		engineErr = startNFQueueEngine(&cfg, pool, tproxyMgr, metrics)
 	}
 
-	if !cfg.System.Tables.SkipSetup && (isTUN || cfg.System.Tables.MonitorInterval > 0) {
+	engineName := engineLabel(engineMode(&cfg))
+	if engineErr != nil {
+		tproxyMgr.Stop()
+		tables.RoutingClearAll()
+		if cfg.System.WebServer.Port == 0 {
+			return log.Errorf("%s engine did not start: %v. b4 stops because the web server is off (port 0)", engineName, engineErr)
+		}
+		engineDown.Store(true)
+		if retry := enterDegradedMode(&cfg, engineErr, engineAttempt, metrics); retry != nil {
+			defer retry.Stop()
+		}
+	} else {
+		if tunEngine != nil {
+			tunEngineRef.Store(tunEngine)
+		}
+		if engineAttempt > 0 {
+			log.Infof("%s engine started on automatic retry %d of %d", engineName, engineAttempt, len(engineRetryDelays))
+		}
+	}
+
+	if !engineDown.Load() && !cfg.System.Tables.SkipSetup && (isTUN || cfg.System.Tables.MonitorInterval > 0) {
 		tablesMonitor = tables.NewMonitor(&cfgPtr)
 		tablesMonitor.Start()
 		tablesMonitorRef.Store(tablesMonitor)
@@ -442,7 +384,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 				tables.ClearTUNFirewall(c)
 				tables.RevertConntrackSysctls()
 			}
-		} else if !c.System.Tables.SkipSetup {
+		} else if !c.System.Tables.SkipSetup && !engineDown.Load() {
 			tables.ClearRules(c)
 		}
 		tables.RoutingClearAll()
@@ -461,7 +403,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 			return
 		}
 		c := cfgPtr.Load()
-		if c.System.Tables.SkipSetup || !c.TelegramBridgeEnabled() {
+		if c.System.Tables.SkipSetup || engineDown.Load() || !c.TelegramBridgeEnabled() {
 			return
 		}
 		tables.RoutingSyncConfig(c)
@@ -470,11 +412,15 @@ func runB4(cmd *cobra.Command, args []string) error {
 	handler.SetRoutingSyncFunc(func(c *config.Config) {
 		tproxyResolver.Set(pool.GetMatcher())
 		config.WarnIPv6Bypass(c)
+		if engineDown.Load() {
+			return
+		}
 		tproxyMgr.SyncConfig(c)
 		tables.RoutingSyncConfig(c)
 	})
 
 	handler.SetTUNEngine(tunEngine)
+	handler.SetSelfRestartFunc(func() { requestRestart(restartManual) })
 
 	hubService := hub.New(func() *config.Config { return cfgPtr.Load() }, hub.Options{Version: Version})
 	handler.SetHubService(hubService)
@@ -534,8 +480,10 @@ func runB4(cmd *cobra.Command, args []string) error {
 		}
 	}))
 	wd.SetEngine(watchdog.NewEngineView(pool, &cfgPtr))
-	wd.Start()
-	handler.SetWatchdog(wd)
+	if !engineDown.Load() {
+		wd.Start()
+		handler.SetWatchdog(wd)
+	}
 
 	geodat.RemoveStaleDownloads(cfg.System.Geo.GeoSitePath, cfg.System.Geo.GeoIpPath)
 
@@ -593,7 +541,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 			cfgPtr.Store(c)
 			socks5Server.UpdateConfig(c)
 			tproxyResolver.Set(pool.GetMatcher())
-			if !c.System.Tables.SkipSetup {
+			if !c.System.Tables.SkipSetup && !engineDown.Load() {
 				tproxyMgr.SyncConfig(c)
 				tables.RoutingSyncConfig(c)
 			}
@@ -610,16 +558,35 @@ func runB4(cmd *cobra.Command, args []string) error {
 	metrics.RecordEvent("info", "B4 is fully operational")
 
 	// Wait for shutdown signal
-	sig := <-sigChan
+	var sig os.Signal
+	var restart restartKind
+	select {
+	case sig = <-sigChan:
+	case restart = <-restartRequests:
+		pendingRestart.Store(int32(restart))
+	}
 
 	go func() {
 		for repeat := range sigChan {
+			if restartKind(pendingRestart.Swap(int32(restartNone))) != restartNone {
+				log.Infof("Received %v during the restart, b4 stops instead of starting again", repeat)
+				continue
+			}
 			log.Infof("Received %v while already shutting down, ignoring it (SIGKILL forces an exit)", repeat)
 		}
 	}()
 
-	log.Infof("Received signal: %v, shutting down gracefully", sig)
-	metrics.RecordEvent("info", fmt.Sprintf("Shutdown initiated by signal: %v", sig))
+	switch {
+	case sig != nil:
+		log.Infof("Received signal: %v, shutting down gracefully", sig)
+		metrics.RecordEvent("info", fmt.Sprintf("Shutdown initiated by signal: %v", sig))
+	case restart == restartEngineRetry:
+		log.Infof("Restarting b4 for automatic engine retry %d of %d", engineAttempt+1, len(engineRetryDelays))
+		metrics.RecordEvent("info", "Restart initiated for an automatic engine retry")
+	default:
+		log.Infof("Restarting b4 in place")
+		metrics.RecordEvent("info", "Restart initiated")
+	}
 
 	hardExit := make(chan struct{})
 	defer close(hardExit)
@@ -651,7 +618,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	// Perform graceful shutdown with timeout
 	shutdownHandled = true
-	return gracefulShutdown(cfgPtr.Load(), pool, tunEngine, httpServer, socks5Server, mtprotoServer, metrics, discoveryRT)
+	return gracefulShutdown(cfgPtr.Load(), pool, tunEngine, !engineDown.Load(), httpServer, socks5Server, mtprotoServer, metrics, discoveryRT)
 }
 
 const (
@@ -660,7 +627,7 @@ const (
 	shutdownHardLimit = 15 * time.Second
 )
 
-func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engine, httpServer *http.Server, socks5Server *socks5.Server, mtprotoServer *mtproto.Server, metrics *handler.MetricsCollector, discoveryRT *discovery.Runtime) error {
+func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engine, engineUp bool, httpServer *http.Server, socks5Server *socks5.Server, mtprotoServer *mtproto.Server, metrics *handler.MetricsCollector, discoveryRT *discovery.Runtime) error {
 	// Create shutdown context with timeout
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
@@ -761,7 +728,7 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 			}()
 		}
 		metrics.TablesStatus = "inactive"
-	} else if !cfg.System.Tables.SkipSetup {
+	} else if engineUp && !cfg.System.Tables.SkipSetup {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

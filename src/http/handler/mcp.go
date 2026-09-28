@@ -522,6 +522,9 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		out.CanChangeConfig = cfg.System.WebServer.MCP.AllowWrites
 		out.CanProbe = cfg.System.WebServer.MCP.AllowActiveProbes
 		out.Note = mcpCapabilityNote(out.CanChangeConfig, out.CanProbe)
+		if snap.EngineFailure != nil {
+			out.Note = fmt.Sprintf("The %s engine did not start, so b4 is running without it and processes no traffic: %s. %s", out.Engine, snap.EngineFailure.Error, out.Note)
+		}
 		return nil, out, nil
 	})
 

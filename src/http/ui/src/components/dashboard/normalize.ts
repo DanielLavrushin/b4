@@ -1,3 +1,4 @@
+import type { EngineFailure } from "@models/settings";
 import type {
   EscalationEntry,
   Metrics,
@@ -41,6 +42,17 @@ const normalizeMTProto = (raw: unknown): MTProtoStats | undefined => {
             : [],
         }))
       : [],
+  };
+};
+
+const normalizeEngineFailure = (raw: unknown): EngineFailure | undefined => {
+  if (!raw || typeof raw !== "object") return undefined;
+  const f = raw as Partial<EngineFailure>;
+  return {
+    mode: f.mode === "tun" ? "tun" : "nfqueue",
+    error: String(f.error ?? ""),
+    retry_at: safeNumber(f.retry_at),
+    retries_left: safeNumber(f.retries_left),
   };
 };
 
@@ -272,5 +284,6 @@ export const normalizeMetrics = (data: null | Metrics): Metrics => {
     escalations: normalizeEscalations(data.escalations),
     total_escalations: safeNumber(data.total_escalations),
     mtproto: normalizeMTProto(data.mtproto),
+    engine_failure: normalizeEngineFailure(data.engine_failure),
   };
 };

@@ -15,6 +15,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/metrics"
 )
 
 func (api *API) RegisterSystemApi() {
@@ -149,8 +150,9 @@ func writeUpdateLog(path, format string, args ...interface{}) {
 
 type SystemInfoResponse struct {
 	SystemInfo
-	HostHasGlobalIPv6 bool `json:"host_has_global_ipv6"`
-	IPv6BypassesSets  bool `json:"ipv6_bypasses_sets"`
+	HostHasGlobalIPv6 bool                   `json:"host_has_global_ipv6"`
+	IPv6BypassesSets  bool                   `json:"ipv6_bypasses_sets"`
+	EngineFailure     *metrics.EngineFailure `json:"engine_failure,omitempty"`
 }
 
 // @Summary Get system information
@@ -167,7 +169,7 @@ func (api *API) handleSystemInfo(w http.ResponseWriter, r *http.Request) {
 
 	serviceManager := api.getServiceManager()
 	isDocker := serviceManager == "docker"
-	canRestart := serviceManager != "standalone" && !isDocker
+	canRestart := (serviceManager != "standalone" && !isDocker) || selfRestartFunc != nil
 
 	cfg := api.getCfg()
 	hostIPv6 := config.HostHasGlobalIPv6()
@@ -182,6 +184,7 @@ func (api *API) handleSystemInfo(w http.ResponseWriter, r *http.Request) {
 		},
 		HostHasGlobalIPv6: hostIPv6,
 		IPv6BypassesSets:  hostIPv6 && cfg != nil && !cfg.Queue.IPv6Enabled,
+		EngineFailure:     GetMetricsCollector().GetEngineFailure(),
 	}
 
 	setJsonHeader(w)
@@ -207,6 +210,7 @@ func (api *API) handleRestart(w http.ResponseWriter, r *http.Request) {
 	var response RestartResponse
 	response.ServiceManager = serviceManager
 
+	var restartSelf func()
 	switch serviceManager {
 	case "systemd":
 		response.Success = true
@@ -223,13 +227,18 @@ func (api *API) handleRestart(w http.ResponseWriter, r *http.Request) {
 		response.Message = "Restart initiated via init script"
 		response.RestartCommand = "/etc/init.d/b4 restart"
 
-	case "standalone":
-		response.Success = false
-		response.Message = "Cannot restart: B4 is not running as a service. Please restart manually."
-		setJsonHeader(w)
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(response)
-		return
+	case "standalone", "docker":
+		if selfRestartFunc == nil {
+			response.Success = false
+			response.Message = "Cannot restart: B4 is not running as a service. Please restart manually."
+			setJsonHeader(w)
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(response)
+			return
+		}
+		restartSelf = selfRestartFunc
+		response.Success = true
+		response.Message = "Restarting b4 in place"
 
 	default:
 		response.Success = false
@@ -249,6 +258,10 @@ func (api *API) handleRestart(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		time.Sleep(500 * time.Millisecond)
+		if restartSelf != nil {
+			restartSelf()
+			return
+		}
 		log.Infof("Executing restart command: %s", response.RestartCommand)
 
 		var cmd *exec.Cmd

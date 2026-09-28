@@ -14,7 +14,7 @@ import {
   B4TextField,
 } from "@b4.elements";
 import { Box, Typography } from "@mui/material";
-import { SettingsPropHandlerType } from "@models/settings";
+import { EngineFailure, SettingsPropHandlerType } from "@models/settings";
 
 interface FeatureSettingsProps {
   config: B4Config;
@@ -23,10 +23,14 @@ interface FeatureSettingsProps {
 
 const IPV6_BYPASS_DISMISS_KEY = "b4_ipv6_bypass_dismissed";
 const TUN_MONITOR_MIN_INTERVAL = 10;
+const ENGINE_FAILURE_RECHECK_MS = 15000;
 
 export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
   const { t } = useTranslation();
   const [ipv6BypassesSets, setIpv6BypassesSets] = useState(false);
+  const [engineFailure, setEngineFailure] = useState<EngineFailure | null>(
+    null,
+  );
   const [ipv6BypassDismissed, setIpv6BypassDismissed] = useState(() => {
     try {
       return localStorage.getItem(IPV6_BYPASS_DISMISS_KEY) === "true";
@@ -60,9 +64,24 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
   useEffect(() => {
     systemApi
       .info()
-      .then((info) => setIpv6BypassesSets(!!info?.ipv6_bypasses_sets))
+      .then((info) => {
+        setIpv6BypassesSets(!!info?.ipv6_bypasses_sets);
+        setEngineFailure(info?.engine_failure ?? null);
+      })
       .catch(() => setIpv6BypassesSets(false));
   }, []);
+
+  const engineFailed = engineFailure !== null;
+  useEffect(() => {
+    if (!engineFailed) return;
+    const timer = setInterval(() => {
+      systemApi
+        .info()
+        .then((info) => setEngineFailure(info?.engine_failure ?? null))
+        .catch(() => {});
+    }, ENGINE_FAILURE_RECHECK_MS);
+    return () => clearInterval(timer);
+  }, [engineFailed]);
 
   const dismissIpv6Bypass = () => {
     try {
@@ -162,6 +181,14 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
           ]}
           helperText={t("settings.Feature.engineModeHelp")}
         />
+        {engineFailure && (
+          <B4Alert severity="error" noWrapper>
+            {t("settings.Feature.engineFailed", {
+              engine: engineFailure.mode === "tun" ? "TUN" : "NFQUEUE",
+              error: engineFailure.error,
+            })}
+          </B4Alert>
+        )}
       </B4FormGroup>
       {config.queue.mode === "tun" && (
         <B4FormGroup label={t("settings.Feature.tunSettings")} columns={2}>

@@ -642,3 +642,11 @@ func TestUpdateFuncRefreshesOnlyWhenNeeded(t *testing.T) {
 		t.Errorf("a firewall-relevant change is stored and refreshes once, got %d refreshes", refreshes.Load())
 	}
 }
+
+func TestStopWithoutStartIsANoOp(t *testing.T) {
+	cfg := config.NewConfig()
+	var ptr atomic.Pointer[config.Config]
+	ptr.Store(&cfg)
+	w := New(&ptr, nil, nil)
+	w.Stop()
+}

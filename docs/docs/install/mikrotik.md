@@ -205,3 +205,8 @@ In this mode b4 applies no DPI strategy to the set's traffic; the proxy reaches 
 **Traffic reaches the container but the bypass has no effect:**
 
 1. NAT Masquerade has to be on in b4, see [Step 8](#step-8-nat-masquerade)
+
+**The dashboard reports that the NFQUEUE engine did not start:**
+
+1. The error on the dashboard card names the cause. `Extension NFQUEUE revision 0 not supported, missing kernel module?` means the kernel RouterOS runs the container on has no NFQUEUE support
+2. **Switch to TUN** on the same card selects the TUN engine, which needs no queue modules, and restarts b4, see [Packet engine](../settings/core.md#packet-engine)

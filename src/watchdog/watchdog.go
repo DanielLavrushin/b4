@@ -155,6 +155,9 @@ func (w *Watchdog) Start() {
 }
 
 func (w *Watchdog) Stop() {
+	if w.stop == nil {
+		return
+	}
 	close(w.stop)
 	<-w.stopped
 	w.healWG.Wait()
