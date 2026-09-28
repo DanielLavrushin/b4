@@ -74,6 +74,9 @@ func startTUNEngine(cfg *config.Config, pool *nfq.Pool, tproxyMgr *tproxy.Manage
 
 	tunEngine := b4tun.NewEngine(cfg, pool)
 	if err := tunEngine.Start(); err != nil {
+		for _, w := range pool.Workers {
+			w.Stop()
+		}
 		if !skipTables {
 			tables.ClearTUNFirewall(cfg)
 			tables.RevertConntrackSysctls()

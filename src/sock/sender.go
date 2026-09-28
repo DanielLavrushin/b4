@@ -65,7 +65,7 @@ func NewSenderWithMarkDevice(mark int, device string) (*Sender, error) {
 	}
 
 	// Create IPv4 raw socket
-	fd4, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, syscall.IPPROTO_RAW)
+	fd4, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW|syscall.SOCK_CLOEXEC, syscall.IPPROTO_RAW)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func NewSenderWithMarkDevice(mark int, device string) (*Sender, error) {
 	}
 
 	// Create IPv6 raw socket
-	fd6, err := syscall.Socket(syscall.AF_INET6, syscall.SOCK_RAW, syscall.IPPROTO_RAW)
+	fd6, err := syscall.Socket(syscall.AF_INET6, syscall.SOCK_RAW|syscall.SOCK_CLOEXEC, syscall.IPPROTO_RAW)
 	if err != nil {
 		log.Warnf("Failed to create IPv6 raw socket: %v - IPv6 bypass disabled", err)
 		s.fd6 = -1
