@@ -250,7 +250,7 @@ func (c *Config) Validate() error {
 				h = "127.0.0.1"
 			}
 			if c.System.Socks5.Enabled && set.Routing.Upstream.Port == c.System.Socks5.Port {
-				if h == "127.0.0.1" || h == "::1" || h == "localhost" || h == "0.0.0.0" {
+				if h == "127.0.0.1" || h == "::1" || h == "localhost" || h == "0.0.0.0" || h == "::" {
 					v.addf(fmt.Sprintf("sets[%d].routing.upstream.port", setIdx), "socks5_loop", map[string]any{"set": set.Name}, "set %q: upstream proxy points to b4's own SOCKS5 server (loop)", set.Name)
 					return v.result()
 				}

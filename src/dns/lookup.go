@@ -77,6 +77,9 @@ func LookupWithFallback(ctx context.Context, lookup LookupFunc, srv Server, useS
 				}
 				return ips, err
 			}
+			if ctx.Err() != nil {
+				return nil, err
+			}
 			if NoteSourceFailure(srv.Source) {
 				log.Warnf("DNS: %s failed %d times in a row, lookups of sets that allow a fallback skip it for %s", SourceLabel(srv.Source), SourceFailuresToTrip, sourceCooldown)
 			}
@@ -173,7 +176,7 @@ func (s Server) exchange(ctx context.Context, name string, qtype uint16) ([]net.
 			timeout = min(timeout, left)
 		}
 		txid = uint16(rand.Uint32())
-		resp, err = ResolveUpstream(BuildQuery(name, txid, qtype), s.UDP, ForwardOptions{Mark: s.Mark, Timeout: timeout, Port: s.Port})
+		resp, err = ResolveUpstreamContext(ctx, BuildQuery(name, txid, qtype), s.UDP, ForwardOptions{Mark: s.Mark, Timeout: timeout, Port: s.Port})
 	}
 	if err != nil {
 		return nil, err

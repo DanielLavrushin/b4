@@ -333,3 +333,35 @@ func TestDoHClientsAreKeyedOnTheConfiguredTimeout(t *testing.T) {
 		t.Fatalf("%d DoH clients for one resolver, want 1", n)
 	}
 }
+
+func TestAUDPLookupStopsWhenItsContextIsCancelled(t *testing.T) {
+	srv, _ := startBlackHole(t)
+	srv.Timeout = 5 * time.Second
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(100*time.Millisecond, cancel)
+
+	start := time.Now()
+	_, err := LookupIPs(ctx, srv, "late.example", true, true)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Fatalf("the lookup ran %s after its context was cancelled, until the %s socket timeout", took, srv.Timeout)
+	}
+}
+
+func TestACancelledLookupIsNotCountedAgainstTheResolver(t *testing.T) {
+	resetHealth(t)
+	srv, _ := startBlackHole(t)
+	srv.Timeout = 5 * time.Second
+	for i := 0; i < SourceFailuresToTrip+1; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		time.AfterFunc(20*time.Millisecond, cancel)
+		if _, err := LookupWithFallback(ctx, LookupIPs, srv, true, false, "late.example", true, false); err == nil {
+			t.Fatal("a cancelled lookup returned an answer")
+		}
+	}
+	if SourceUnreachable(srv.Source) {
+		t.Fatal("lookups cancelled by their caller put a resolver that never failed into cooldown")
+	}
+}

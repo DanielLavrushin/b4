@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -401,7 +402,7 @@ func (s *Server) handleConnect(conn net.Conn, dest string) error {
 	if err := conn.SetDeadline(time.Time{}); err != nil {
 		return fmt.Errorf("clear deadline: %w", err)
 	}
-	remote, err := s.dial(dest)
+	remote, err := s.dial(conn.RemoteAddr(), dest)
 	if err != nil {
 		log.Tracef("SOCKS5 connect to %s failed: %v", dest, err)
 		sendReply(conn, repHostUnreachable, nil)
@@ -418,8 +419,8 @@ func (s *Server) handleConnect(conn net.Conn, dest string) error {
 	return s.relay(conn, remote)
 }
 
-func (s *Server) dial(dest string) (net.Conn, error) {
-	if set, host, port := s.proxySetFor(dest); set != nil {
+func (s *Server) dial(client net.Addr, dest string) (net.Conn, error) {
+	if set, host, port := s.proxySetFor(client, dest); set != nil {
 		if conn, handled, err := s.upstreams.DialViaSet(set.Id, host, port); handled {
 			return conn, err
 		}
@@ -427,8 +428,12 @@ func (s *Server) dial(dest string) (net.Conn, error) {
 	return net.DialTimeout("tcp", dest, dialTimeout)
 }
 
-func (s *Server) proxySetFor(dest string) (*config.SetConfig, string, int) {
+func (s *Server) proxySetFor(client net.Addr, dest string) (*config.SetConfig, string, int) {
 	if s.upstreams == nil {
+		return nil, "", 0
+	}
+	if isOwnUpstreamDial(client) {
+		log.Tracef("SOCKS5 request for %s comes from b4's own upstream dial, so it is not handed to a set again", dest)
 		return nil, "", 0
 	}
 	rawHost, portStr, err := net.SplitHostPort(dest)
@@ -454,18 +459,37 @@ func (s *Server) upstreamIsSelf(up config.UpstreamProxyConfig) bool {
 	if cfg == nil || up.Port != cfg.System.Socks5.Port {
 		return false
 	}
-	if up.Host == "" {
-		return true
+	host := up.Host
+	if host == "" {
+		host = "127.0.0.1"
 	}
-	ips := []net.IP{net.ParseIP(up.Host)}
+	ips := []net.IP{net.ParseIP(host)}
 	if ips[0] == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		resolved, err := net.DefaultResolver.LookupIP(ctx, "ip", up.Host)
+		resolved, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
 		if err != nil || len(resolved) == 0 {
 			return false
 		}
 		ips = resolved
+	}
+	bind := net.ParseIP(strings.TrimSpace(cfg.System.Socks5.BindAddress))
+	if bind != nil && !bind.IsUnspecified() {
+		for _, ip := range ips {
+			reach := []net.IP{ip}
+			switch {
+			case ip.IsUnspecified() && ip.To4() != nil:
+				reach = []net.IP{net.IPv4(127, 0, 0, 1)}
+			case ip.IsUnspecified():
+				reach = []net.IP{net.IPv6loopback, net.IPv4(127, 0, 0, 1)}
+			}
+			for _, r := range reach {
+				if r.Equal(bind) {
+					return true
+				}
+			}
+		}
+		return false
 	}
 	for _, ip := range ips {
 		if ip.IsLoopback() || ip.IsUnspecified() {
