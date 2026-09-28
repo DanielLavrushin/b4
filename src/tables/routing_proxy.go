@@ -580,6 +580,7 @@ func routeCleanupProxyRule(be routeBackend, st routeState, keepSets bool) {
 
 	if hasBinary("ip") && st.table > 0 {
 		routeDelRuleAllForms(st.mark, tableStr)
+		routeDelSourceCheckRules(st.mark)
 		if proxyActiveCount() <= 1 {
 			runLogged("routing: delete proxy local route v4", "ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", tableStr)
 			runLogged("routing: delete proxy local route v6", "ip", "-6", "route", "del", "local", "::/0", "dev", "lo", "table", tableStr)
@@ -613,8 +614,10 @@ func routeEnsureLocalDelivery(mark uint32, table int, ipv4, ipv6 bool) {
 	writeSysctl("/proc/sys/net/ipv4/conf/all/rp_filter", "2")
 
 	routeDelRuleAllForms(mark, tableStr)
+	routeDelSourceCheckRules(mark)
 
 	if ipv4 {
+		routeAddSourceCheckRule(mark)
 		runLogged("routing: add ip rule v4 (proxy)", "ip", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
 		runLogged("routing: add local route v4 (proxy)", "ip", "route", "replace", "local", "0.0.0.0/0", "dev", "lo", "table", tableStr)
 	} else {
@@ -718,7 +721,7 @@ func proxyOutMarkForget() {
 }
 
 func addProxyOutputMarkRulesNft(cfg *config.Config, st routeState) {
-	markHex := fmt.Sprintf("0x%x", st.mark)
+	markHex := fmt.Sprintf("0x%x", st.mark|config.RouterOwnProxyMarkBit)
 	emit := func(proto []string, field, sn string) {
 		head := append([]string{"nft", "add", "rule", "inet", routeNftTable, st.chainOut}, proto...)
 		tail := []string{field, "daddr", "@" + sn, "meta", "mark", "set", markHex}
@@ -784,7 +787,7 @@ func addProxyOutputMarkRuleIpt(v6 bool, chain, setName string, mark uint32, lega
 	if !hasBinary(cmd) {
 		return
 	}
-	markHex := fmt.Sprintf("0x%x/0x%x", mark, mark)
+	markHex := fmt.Sprintf("0x%x/0x%x", mark|config.RouterOwnProxyMarkBit, routeProxyMarkMask)
 	tail := []string{"-m", "set", "--match-set", setName, "dst", "-j", "MARK", "--set-mark", markHex}
 	proxyOutMarkMu.Lock()
 	unqualified := proxyOutMarkUnqualified[cmd]
@@ -816,7 +819,7 @@ func addProxyDivertRuleIpt(v6 bool, chain, setName string, mark uint32, legacy b
 	if !hasBinary(cmd) {
 		return
 	}
-	markHex := fmt.Sprintf("0x%x/0x%x", mark, mark)
+	markHex := fmt.Sprintf("0x%x/0x%x", mark, routeProxyMarkMask)
 	runLogged("routing: add divert mark "+chain,
 		cmd, "-w", "-t", "mangle", "-A", chain, "-p", "tcp",
 		"-m", "socket", "--transparent",
@@ -1017,7 +1020,7 @@ func addProxyTProxyRuleIpt(v6 bool, chain, setName string, mark uint32, port int
 	if !hasBinary(cmd) {
 		return
 	}
-	markHex := fmt.Sprintf("0x%x/0x%x", mark, mark)
+	markHex := fmt.Sprintf("0x%x/0x%x", mark, routeProxyMarkMask)
 
 	emit := func(src string) {
 		args := []string{cmd, "-w", "-t", "mangle", "-A", chain, "-p", proto}

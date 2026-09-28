@@ -409,7 +409,7 @@ func TestProxyOutputMarkRuleClaimsOnlyTheOriginalDirection(t *testing.T) {
 		t.Fatalf("routeEnsureProxyRule: %v", err)
 	}
 	out := chainRuleLines(*emitted, st.chainOut)
-	want := "-A b4r_guard_out -p tcp -m conntrack --ctdir ORIGINAL -m set --match-set b4r_guard_v4 dst -j MARK --set-mark 0x239c9/0x239c9"
+	want := "-A b4r_guard_out -p tcp -m conntrack --ctdir ORIGINAL -m set --match-set b4r_guard_v4 dst -j MARK --set-mark 0x10239c9/0x1027fff"
 	mark := firstLineWith(out, want)
 	if mark < 0 {
 		t.Fatalf("expected %q in the out chain:\n%s", want, strings.Join(out, "\n"))
@@ -438,7 +438,7 @@ func TestProxyOutputMarkRuleNftClaimsOnlyTheOriginalDirection(t *testing.T) {
 	}
 	out := chainRuleLines(*emitted, st.chainOut)
 	for _, sn := range []string{"b4r_guard_v4", "b4r_guard_v4_d"} {
-		if firstLineWith(out, "ip protocol tcp ct direction original ip daddr @"+sn+" meta mark set 0x239c9") < 0 {
+		if firstLineWith(out, "ip protocol tcp ct direction original ip daddr @"+sn+" meta mark set 0x10239c9") < 0 {
 			t.Errorf("no direction-qualified mark rule for %s:\n%s", sn, strings.Join(out, "\n"))
 		}
 	}

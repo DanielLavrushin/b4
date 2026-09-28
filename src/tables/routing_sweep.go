@@ -18,7 +18,18 @@ func routeSweepOwnRules() {
 		tablesSeen := make(map[string]struct{})
 		for _, line := range strings.Split(out, "\n") {
 			line = strings.TrimSpace(line)
-			if line == "" || !routeRuleIsOwn(line) {
+			if line == "" {
+				continue
+			}
+			if !ipv6 && routeRuleIsSourceCheck(line) {
+				mark := routeRuleField(line, "fwmark")
+				if _, done := rulesSeen[mark+" main"]; !done {
+					rulesSeen[mark+" main"] = struct{}{}
+					routeDelSourceCheckRule(mark)
+				}
+				continue
+			}
+			if !routeRuleIsOwn(line) {
 				continue
 			}
 			mark := routeRuleField(line, "fwmark")

@@ -39,11 +39,16 @@ func netnsRequireEngine(t *testing.T, engine string) {
 
 func netnsAddProxyTarget(t *testing.T, engine string, st routeState) {
 	t.Helper()
+	netnsAddProxyTargetIP(t, engine, st, netnsProxyTarget)
+}
+
+func netnsAddProxyTargetIP(t *testing.T, engine string, st routeState, ip string) {
+	t.Helper()
 	if engine == backendNFTables {
-		netnsRun(t, "nft", "add", "element", "inet", routeNftTable, st.setV4, "{", netnsProxyTarget, "}")
+		netnsRun(t, "nft", "add", "element", "inet", routeNftTable, st.setV4, "{", ip, "}")
 		return
 	}
-	netnsRun(t, "ipset", "add", st.setV4, netnsProxyTarget, "-exist")
+	netnsRun(t, "ipset", "add", st.setV4, ip, "-exist")
 }
 
 func netnsPreroutingRules(t *testing.T, engine string) []string {
@@ -71,6 +76,11 @@ func netnsLoopJumps(t *testing.T, engine, chain string) (loop, other []string) {
 
 func netnsRouterDialReachesListener(t *testing.T, port int, timeout time.Duration) bool {
 	t.Helper()
+	return netnsRouterDialToReachesListener(t, port, netnsProxyTarget, timeout)
+}
+
+func netnsRouterDialToReachesListener(t *testing.T, port int, target string, timeout time.Duration) bool {
+	t.Helper()
 	ln := netnsTransparentListener(t, port)
 	defer ln.Close()
 	accepted := make(chan string, 1)
@@ -82,14 +92,14 @@ func netnsRouterDialReachesListener(t *testing.T, port int, timeout time.Duratio
 		accepted <- conn.LocalAddr().String()
 		_ = conn.Close()
 	}()
-	conn, err := net.DialTimeout("tcp", netnsProxyTarget+":443", timeout)
+	conn, err := net.DialTimeout("tcp", target+":443", timeout)
 	if err != nil {
 		return false
 	}
 	defer conn.Close()
 	select {
 	case local := <-accepted:
-		return strings.HasPrefix(local, netnsProxyTarget+":")
+		return strings.HasPrefix(local, target+":")
 	case <-time.After(timeout):
 		return false
 	}

@@ -130,6 +130,8 @@ const SelfDialRelayMark = SelfDialMark | SelfDialNoDPIBit
 
 const PerSetRouteMarkBits = uint32(0x27FFF)
 
+const RouterOwnProxyMarkBit = uint32(0x1000000)
+
 type QueueConfig struct {
 	Mode              string         `json:"mode"`
 	StartNum          int            `json:"start_num"`

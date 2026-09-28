@@ -26,6 +26,8 @@ const routePolicyRuleBase = 10000
 
 const routeSetMarkMask = config.PerSetRouteMarkBits
 
+const routeProxyMarkMask = routeSetMarkMask | config.RouterOwnProxyMarkBit
+
 const routeChainPrefix = "b4r_"
 
 const captureChainPre = "B4_PREROUTING"
@@ -562,6 +564,9 @@ func routeCleanupForRebuild(be routeBackend, old, cur routeState) func() {
 			removeProxyInputAccept(be, old.mark)
 			if hasBinary("ip") && old.table > 0 {
 				routeDelRuleAllForms(old.mark, fmt.Sprintf("%d", old.table))
+				if old.mark != cur.mark {
+					routeDelSourceCheckRules(old.mark)
+				}
 			}
 		}
 	}
