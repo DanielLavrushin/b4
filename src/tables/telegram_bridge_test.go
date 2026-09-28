@@ -2,6 +2,7 @@ package tables
 
 import (
 	"reflect"
+	"slices"
 	"sort"
 	"testing"
 
@@ -217,5 +218,30 @@ func TestProxySetsKeepRouterTrafficUnderAnAllowList(t *testing.T) {
 	gate := routeSetDeviceGate(cfg, set)
 	if got := routePreLoopMark(st, gate); got != st.mark || got == 0 {
 		t.Errorf("routePreLoopMark = 0x%x, want the set mark 0x%x", got, st.mark)
+	}
+}
+
+func TestTheCaptureChainSkipsEveryProxySetsMark(t *testing.T) {
+	cfg := config.NewConfig()
+	proxy := config.NewSetConfig()
+	proxy.Id, proxy.Enabled = "p", true
+	proxy.Routing.Enabled, proxy.Routing.Mode = true, config.RoutingModeProxy
+	pinned := config.NewSetConfig()
+	pinned.Id, pinned.Enabled = "q", true
+	pinned.Routing.Enabled, pinned.Routing.Mode, pinned.Routing.FWMark = true, config.RoutingModeProxy, 0x123
+	iface := config.NewSetConfig()
+	iface.Id, iface.Enabled = "i", true
+	iface.Routing.Enabled, iface.Routing.Mode = true, config.RoutingModeInterface
+	off := proxy
+	off.Id, off.Routing.Enabled = "o", false
+	cfg.Sets = []*config.SetConfig{&proxy, &pinned, &iface, &off}
+
+	got := captureProxySetMarks(&cfg)
+	want := []uint32{0x123, tproxy.MarkForSet("p", 0)}
+	if len(got) != 2 || !slices.Contains(got, want[0]) || !slices.Contains(got, want[1]) {
+		t.Fatalf("capture skips %x, want the marks of the two proxy sets %x", got, want)
+	}
+	if slices.Contains(got, config.TelegramBridgeMark) {
+		t.Error("the bridge mark already has its own skip rule")
 	}
 }

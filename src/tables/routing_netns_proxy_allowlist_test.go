@@ -105,7 +105,7 @@ func TestNetnsProxySetTakesTheRoutersOwnDialBehindAnAllowList(t *testing.T) {
 	}{
 		{backendNFTables, true},
 		{backendIPTablesLegacy, true},
-		{backendIPTables, false},
+		{backendIPTables, true},
 	} {
 		t.Run(tc.engine, func(t *testing.T) {
 			netnsRequireEngine(t, tc.engine)
@@ -222,5 +222,35 @@ func TestNetnsAnAllowListThatLeavesASetNoDeviceTakesItsJumpAway(t *testing.T) {
 				t.Error("right after a clean sync the presence check reports rules missing, so the firewall monitor rebuilds routing on every tick")
 			}
 		})
+	}
+}
+
+func TestNetnsTheCaptureChainLeavesTheRoutersProxiedDialToTheSet(t *testing.T) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+	netnsRequireEngine(t, backendIPTables)
+	routeEngine = nil
+	defer func() { routeEngine = nil }()
+
+	cfg := netnsAllowListConfig(backendIPTables, "off")
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	defer func() { _ = ClearRules(cfg) }()
+	stopQueue := netnsStartQueueListener(t, uint16(cfg.Queue.StartNum))
+	defer stopQueue()
+	RoutingSyncConfig(cfg)
+	defer RoutingClearAll()
+
+	st, ok := routeRuleCache["netns-proxy-set"]
+	if !ok {
+		t.Fatal("the proxy set built no rules")
+	}
+	netnsAddProxyTarget(t, backendIPTables, st)
+	port, _ := portFromState(st)
+
+	if !netnsRouterDialReachesListener(t, port, 3*time.Second) {
+		t.Fatalf("the router's own dial to a proxied address with the capture chain installed never reached the listener; on iptables-nft a queue verdict in mangle OUTPUT cancels the reroute the set's mark asked for:\n%s",
+			netnsRun(t, backendIPTables, "-w", "-t", "mangle", "-S"))
 	}
 }

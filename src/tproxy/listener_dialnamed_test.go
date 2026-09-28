@@ -342,3 +342,47 @@ func TestDialNamedFailsOpenToTheSetsDNSAnswer(t *testing.T) {
 		t.Fatalf("fail-open reached %q", got)
 	}
 }
+
+func TestDialNamedSendsAnOnionNameEvenWithUseDomainOff(t *testing.T) {
+	up := startMockSocks(t, 0, func(byte) byte { return 0 })
+	l := newTestListener(t, up.port(), fakeNames{})
+	l.UseDomain = false
+	withSetDNS(t, l, false, func(host string) ([]net.IP, error) {
+		t.Errorf("%s was looked up locally; a .onion name only exists inside the upstream", host)
+		return nil, errors.New("no")
+	})
+
+	conn, err := l.DialNamed("x3.onion", 443)
+	if err != nil {
+		t.Fatalf("DialNamed: %v", err)
+	}
+	conn.Close()
+	if r := up.next(t); r.atyp != 3 || r.host != "x3.onion" {
+		t.Fatalf("upstream got atyp %d host %q, want the .onion name", r.atyp, r.host)
+	}
+}
+
+func TestDialNamedHoldsTheRetriedAddressForTheLoopGuard(t *testing.T) {
+	up := startMockSocks(t, 0, func(atyp byte) byte {
+		if atyp == 3 {
+			return 4
+		}
+		return 0
+	})
+	l := newTestListener(t, up.port(), fakeNames{})
+
+	conn, err := l.DialNamed("localhost", 443)
+	if err != nil {
+		t.Fatalf("DialNamed: %v", err)
+	}
+	up.next(t)
+	up.next(t)
+	addrKeys := relayKeys("tcp", 443, "127.0.0.1")
+	if !l.relaying(addrKeys) {
+		t.Fatal("the address the retry went to is not held, so the upstream's own connection to it would not be recognised")
+	}
+	conn.Close()
+	if l.relaying(addrKeys) || l.relaying(relayKeys("tcp", 443, "localhost")) {
+		t.Fatal("the relay keys outlived the connection")
+	}
+}

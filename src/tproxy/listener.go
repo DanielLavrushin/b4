@@ -567,6 +567,11 @@ func (l *Listener) DialNamed(host string, port int) (net.Conn, error) {
 		if addrs, rerr := l.resolveHost(ctx, host); rerr == nil {
 			log.Tracef("tproxy: upstream refused %s:%d on set %q (%v), retrying with %s", host, port, l.SetName, err, addrs[0])
 			target = addrs[0]
+			nameRelease, addrRelease := release, l.holdRelay(relayKeys("tcp", port, target))
+			release = func() {
+				addrRelease()
+				nameRelease()
+			}
 			upstream, err = l.dialUpstreamWithin(ctx, target, port)
 		}
 	}
@@ -618,7 +623,7 @@ func isOnionName(host string) bool {
 }
 
 func (l *Listener) namedTarget(ctx context.Context, host string) (string, error) {
-	if l.UseDomain && len(l.pinnedAddresses(host)) == 0 {
+	if isOnionName(host) || (l.UseDomain && len(l.pinnedAddresses(host)) == 0) {
 		return host, nil
 	}
 	addrs, err := l.namedAddresses(ctx, host)
@@ -673,8 +678,9 @@ type heldConn struct {
 }
 
 func (c *heldConn) Close() error {
+	err := c.Conn.Close()
 	c.once.Do(c.release)
-	return c.Conn.Close()
+	return err
 }
 
 func (c *heldConn) CloseWrite() error {

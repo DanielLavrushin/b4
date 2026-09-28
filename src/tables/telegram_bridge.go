@@ -2,6 +2,7 @@ package tables
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/tproxy"
 )
 
 var (
@@ -146,6 +148,23 @@ func RoutingSetInstalled(setID string) bool {
 
 func telegramBridgeMarkMatch() string {
 	return fmt.Sprintf("0x%x/0x%x", config.TelegramBridgeMark, config.PerSetRouteMarkBits)
+}
+
+func captureProxySetMarks(cfg *config.Config) []uint32 {
+	seen := map[uint32]bool{config.TelegramBridgeMark: true}
+	var marks []uint32
+	for _, set := range cfg.RoutingSets() {
+		if set == nil || !set.Enabled || !set.Routing.Enabled || !config.RoutingUsesTProxy(set.Routing.Mode) {
+			continue
+		}
+		mark := tproxy.MarkForSet(set.Id, set.Routing.FWMark)
+		if !seen[mark] {
+			seen[mark] = true
+			marks = append(marks, mark)
+		}
+	}
+	slices.Sort(marks)
+	return marks
 }
 
 func selfDialNoDPIMarkMatch() string {
