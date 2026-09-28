@@ -337,6 +337,13 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
               }}
             />,
           )}
+          {data.engine.start_error &&
+            row(
+              t("settings.SystemInfo.engineStartError"),
+              <Box component="span" sx={{ color: colors.quaternary }}>
+                {data.engine.start_error}
+              </Box>,
+            )}
 
           {data.engine.mode === "tun" && data.engine.tun && (
             <>

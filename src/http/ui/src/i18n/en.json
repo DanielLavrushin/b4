@@ -210,6 +210,7 @@
       "engineMode": "Packet Engine",
       "engineModeLabel": "Ingestion mode",
       "engineModeHelp": "How b4 receives packets. NFQUEUE uses iptables/nftables rules; TUN routes target traffic through a virtual interface, useful where NFQUEUE kernel modules are unavailable.",
+      "engineFailed": "The {{engine}} engine did not start: {{error}}",
       "engineModeNfqueue": "NFQUEUE (default)",
       "engineModeTun": "TUN interface",
       "tunSettings": "TUN settings",
@@ -807,6 +808,7 @@
       "network": "Network",
       "engine": "Engine",
       "engineMode": "Mode",
+      "engineStartError": "Start error",
       "engineTun": "TUN",
       "engineNfqueue": "NFQUEUE",
       "tunDevice": "TUN Device",
@@ -992,6 +994,17 @@
       "resetTitle": "Reset Statistics",
       "resetConfirm": "Reset all statistics? This will clear all connection counters, device activity, and domain statistics. The service will continue running.",
       "reset": "Reset"
+    },
+    "engineFailure": {
+      "title": "{{engine}} engine is not running",
+      "body": "b4 is running without its packet engine, so traffic passes through unprocessed. The web interface stays available to switch the engine or fix the cause.",
+      "retryAt_one": "Last automatic retry at {{time}}.",
+      "retryAt_other": "Next automatic retry at {{time}}, {{count}} left.",
+      "noRetries": "No automatic retries left: b4 stays in this state until it restarts.",
+      "switchTo": "Switch to {{engine}}",
+      "restart": "Restart b4",
+      "settings": "Engine settings",
+      "switchFailed": "The engine mode could not be saved"
     },
     "activeSets": {
       "title": "Active Sets",

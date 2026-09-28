@@ -1,3 +1,5 @@
+import type { EngineFailure } from "@models/settings";
+
 export interface Metrics {
   total_connections: number;
   active_flows: number;
@@ -63,6 +65,7 @@ export interface Metrics {
   escalations: EscalationEntry[];
   total_escalations: number;
   mtproto?: MTProtoStats;
+  engine_failure?: EngineFailure;
 }
 
 export interface MTProtoSecretStat {

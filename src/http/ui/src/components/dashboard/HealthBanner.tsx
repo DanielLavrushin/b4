@@ -18,6 +18,8 @@ type HealthLevel = "healthy" | "degraded" | "critical";
 
 function deriveHealth(metrics: Metrics, connected: boolean): HealthLevel {
   if (!connected) return "critical";
+  if (metrics.engine_failure || metrics.nfqueue_status === "error")
+    return "critical";
   if (
     metrics.nfqueue_status === "unknown" ||
     metrics.tables_status === "unknown"

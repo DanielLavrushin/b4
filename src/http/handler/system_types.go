@@ -113,8 +113,9 @@ type DiagInterface struct {
 }
 
 type DiagEngine struct {
-	Mode string   `json:"mode"`
-	TUN  *DiagTUN `json:"tun,omitempty"`
+	Mode       string   `json:"mode"`
+	StartError string   `json:"start_error,omitempty"`
+	TUN        *DiagTUN `json:"tun,omitempty"`
 }
 
 type DiagTUN struct {

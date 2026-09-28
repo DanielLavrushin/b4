@@ -10,15 +10,29 @@ The main page that opens by default. It shows the current state of b4, metrics, 
 The banner at the top of the page shows:
 
 - **Status** - Running / Unstable / Critical
-- **NFQueue** - state of the netfilter queue
-- **Firewall** - state of iptables/nftables rules
+- **NFQueue** - state of the packet engine: `active`, `active (tun)` in TUN mode, or `error` when the engine did not start
+- **Firewall** - state of iptables/nftables rules, `inactive` while the engine is not running
 - **Workers** - how many worker threads are active (for example, "3/4 active")
 - **Uptime** - time since the last start
 - **Version** - current b4 version
 
-The same banner has a **Reset statistics** button to zero all counters.
+The status reads **Critical** while the packet engine is not running. The same banner has a **Reset statistics** button to zero all counters.
 
 ![20260418222956](../static/img/dashboard/20260418222956.png)
+
+## Packet engine not running
+
+When the packet engine did not start, a card under the banner shows the reason and what b4 does next. The state itself is described in [Settings -> Core -> When the engine does not start](settings/core.md#when-the-engine-does-not-start).
+
+![20260928134207](/img/dashboard/20260928134207.png)
+
+The card shows the error that stopped the engine, as written to the log, and the time of the next automatic retry with the number of retries left, or that none are left.
+
+| Button | Action |
+| --- | --- |
+| **Switch to TUN** / **Switch to NFQUEUE** | Saves the other engine mode and opens the restart dialog |
+| **Restart b4** | Opens the restart dialog without changing the settings, for example after a missing kernel module was loaded |
+| **Engine settings** | Opens Settings -> Core |
 
 ## Metrics
 

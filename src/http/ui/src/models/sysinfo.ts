@@ -97,6 +97,7 @@ interface DiagTUN {
 
 interface DiagEngine {
   mode: string;
+  start_error?: string;
   tun?: DiagTUN;
 }
 

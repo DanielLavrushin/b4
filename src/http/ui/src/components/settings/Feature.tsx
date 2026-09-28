@@ -14,7 +14,7 @@ import {
   B4TextField,
 } from "@b4.elements";
 import { Box, Typography } from "@mui/material";
-import { SettingsPropHandlerType } from "@models/settings";
+import { EngineFailure, SettingsPropHandlerType } from "@models/settings";
 
 interface FeatureSettingsProps {
   config: B4Config;
@@ -27,6 +27,9 @@ const TUN_MONITOR_MIN_INTERVAL = 10;
 export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
   const { t } = useTranslation();
   const [ipv6BypassesSets, setIpv6BypassesSets] = useState(false);
+  const [engineFailure, setEngineFailure] = useState<EngineFailure | null>(
+    null,
+  );
   const [ipv6BypassDismissed, setIpv6BypassDismissed] = useState(() => {
     try {
       return localStorage.getItem(IPV6_BYPASS_DISMISS_KEY) === "true";
@@ -60,7 +63,10 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
   useEffect(() => {
     systemApi
       .info()
-      .then((info) => setIpv6BypassesSets(!!info?.ipv6_bypasses_sets))
+      .then((info) => {
+        setIpv6BypassesSets(!!info?.ipv6_bypasses_sets);
+        setEngineFailure(info?.engine_failure ?? null);
+      })
       .catch(() => setIpv6BypassesSets(false));
   }, []);
 
@@ -162,6 +168,14 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
           ]}
           helperText={t("settings.Feature.engineModeHelp")}
         />
+        {engineFailure && (
+          <B4Alert severity="error" noWrapper>
+            {t("settings.Feature.engineFailed", {
+              engine: engineFailure.mode === "tun" ? "TUN" : "NFQUEUE",
+              error: engineFailure.error,
+            })}
+          </B4Alert>
+        )}
       </B4FormGroup>
       {config.queue.mode === "tun" && (
         <B4FormGroup label={t("settings.Feature.tunSettings")} columns={2}>

@@ -17,12 +17,14 @@ import {
 import { SortableContext } from "@dnd-kit/sortable";
 import { useTranslation } from "react-i18next";
 import { HealthBanner } from "./HealthBanner";
+import { EngineFailureCard } from "./EngineFailureCard";
 import { CustomizeBar, HiddenPanelEntry } from "./CustomizeBar";
 import { ColumnGuides, PanelFrame, PanelGhost, ROW_UNIT } from "./PanelFrame";
 import { PANELS_BY_ID, PanelContext } from "./registry";
 import { normalizeMetrics } from "./normalize";
 import { useDashboardSets } from "@hooks/useDashboardSets";
 import { useDashboardLayout } from "@hooks/useDashboardLayout";
+import { RestartDialog } from "@components/settings/RestartDialog";
 import { wsUrl } from "@utils";
 import type { Metrics } from "./types";
 
@@ -41,6 +43,7 @@ export function DashboardPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [resizingPanel, setResizingPanel] = useState(false);
+  const [restartOpen, setRestartOpen] = useState(false);
   const { sets, targetedDomains, refresh: refreshSets } = useDashboardSets();
   const { order, hidden, spans, move, setSpan, setHidden, reset, customized } =
     useDashboardLayout();
@@ -169,6 +172,14 @@ export function DashboardPage() {
         editing={editing}
         onToggleEditing={() => setEditing((prev) => !prev)}
       />
+
+      {metrics.engine_failure && (
+        <EngineFailureCard
+          failure={metrics.engine_failure}
+          onRestart={() => setRestartOpen(true)}
+        />
+      )}
+      <RestartDialog open={restartOpen} onClose={() => setRestartOpen(false)} />
 
       <CustomizeBar
         editing={editing}

@@ -46,6 +46,7 @@ var (
 	globalMTProtoBridge ConfigRefresher
 	tablesRefreshFunc   func() error
 	routingSyncFunc     func(*config.Config)
+	selfRestartFunc     func()
 	upstreamHealthFunc  func() []DiagUpstream
 	discoveryRuntime    *discovery.Runtime
 	globalWatchdog      *watchdog.Watchdog
@@ -214,6 +215,10 @@ func SetTablesRefreshFunc(fn func() error) {
 
 func SetRoutingSyncFunc(fn func(*config.Config)) {
 	routingSyncFunc = fn
+}
+
+func SetSelfRestartFunc(fn func()) {
+	selfRestartFunc = fn
 }
 
 func SetUpstreamHealthFunc(fn func() []DiagUpstream) {

@@ -47,6 +47,7 @@ type MetricsCollector struct {
 	Escalations       []EscalationEntry            `json:"escalations"`
 	TotalEscalations  uint64                       `json:"total_escalations"`
 	MTProto           *MTProtoStats                `json:"mtproto,omitempty"`
+	EngineFailure     *EngineFailure               `json:"engine_failure,omitempty"`
 
 	lastUpdate      time.Time    `json:"-"`
 	mu              sync.RWMutex `json:"-"`
@@ -115,6 +116,13 @@ type MTProtoStats struct {
 	BytesUp           int64               `json:"bytes_up"`
 	BytesDown         int64               `json:"bytes_down"`
 	Secrets           []MTProtoSecretStat `json:"secrets"`
+}
+
+type EngineFailure struct {
+	Mode        string `json:"mode"`
+	Error       string `json:"error"`
+	RetryAt     int64  `json:"retry_at,omitempty"`
+	RetriesLeft int    `json:"retries_left"`
 }
 
 type MTProtoSecretStat struct {
@@ -459,6 +467,26 @@ func (m *MetricsCollector) UpdateSingleWorker(workerID int, status string, proce
 	}
 }
 
+func (m *MetricsCollector) SetEngineFailure(f *EngineFailure) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.EngineFailure = f
+}
+
+func (m *MetricsCollector) GetEngineFailure() *EngineFailure {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.engineFailureCopyLocked()
+}
+
+func (m *MetricsCollector) engineFailureCopyLocked() *EngineFailure {
+	if m.EngineFailure == nil {
+		return nil
+	}
+	f := *m.EngineFailure
+	return &f
+}
+
 func (m *MetricsCollector) ResetStats() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -537,6 +565,7 @@ func (m *MetricsCollector) GetSnapshot() *MetricsCollector {
 		CurrentCPS:          m.CurrentCPS,
 		CurrentPPS:          m.CurrentPPS,
 		CurrentBPS:          m.CurrentBPS,
+		EngineFailure:       m.engineFailureCopyLocked(),
 	}
 
 	if len(m.ConnectionRate) > 0 {

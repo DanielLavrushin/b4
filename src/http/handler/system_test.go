@@ -9,9 +9,11 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/geodat"
+	"github.com/daniellavrushin/b4/metrics"
 )
 
 func testCfgPtr(cfg *config.Config) *atomic.Pointer[config.Config] {
@@ -340,5 +342,82 @@ func TestStoppedWithService(t *testing.T) {
 	}
 	if stoppedWithService(err) {
 		t.Errorf("plain exit status read as a stop alongside the service: %v", err)
+	}
+}
+
+func TestHandleRestart_RestartsInPlaceWithoutAServiceManager(t *testing.T) {
+	for _, manager := range []string{"standalone", "docker"} {
+		t.Run(manager, func(t *testing.T) {
+			restarted := make(chan struct{})
+			selfRestartFunc = func() { close(restarted) }
+			t.Cleanup(func() { selfRestartFunc = nil })
+
+			cfg := config.NewConfig()
+			api := &API{
+				cfgPtr:                 testCfgPtr(&cfg),
+				overrideServiceManager: func() string { return manager },
+			}
+			mux := http.NewServeMux()
+			api.mux = mux
+			api.RegisterSystemApi()
+
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/system/restart", nil))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+			}
+			var resp RestartResponse
+			if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+				t.Fatal(err)
+			}
+			if !resp.Success || resp.ServiceManager != manager {
+				t.Fatalf("unexpected response %+v", resp)
+			}
+			select {
+			case <-restarted:
+			case <-time.After(3 * time.Second):
+				t.Fatal("the in-place restart was never requested")
+			}
+		})
+	}
+}
+
+func TestSystemInfoAndDiagnosticsReportAFailedEngine(t *testing.T) {
+	mc := GetMetricsCollector()
+	mc.SetEngineFailure(&metrics.EngineFailure{Mode: "nfqueue", Error: "iptables rejected the NFQUEUE target", RetryAt: 1700000000000, RetriesLeft: 2})
+	selfRestartFunc = func() {}
+	t.Cleanup(func() {
+		mc.SetEngineFailure(nil)
+		selfRestartFunc = nil
+	})
+
+	cfg := config.NewConfig()
+	api := &API{
+		cfgPtr:                 testCfgPtr(&cfg),
+		overrideServiceManager: func() string { return "standalone" },
+	}
+	mux := http.NewServeMux()
+	api.mux = mux
+	api.RegisterSystemApi()
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/system/info", nil))
+	var info SystemInfoResponse
+	if err := json.NewDecoder(rec.Body).Decode(&info); err != nil {
+		t.Fatal(err)
+	}
+	if !info.CanRestart {
+		t.Error("an in-place restart makes restarting possible without a service manager")
+	}
+	if info.EngineFailure == nil || info.EngineFailure.Error != "iptables rejected the NFQUEUE target" || info.EngineFailure.RetriesLeft != 2 {
+		t.Fatalf("system info must carry the engine failure, got %+v", info.EngineFailure)
+	}
+
+	if got := collectEngineInfo(&cfg).StartError; got != "iptables rejected the NFQUEUE target" {
+		t.Fatalf("diagnostics must carry the start error, got %q", got)
+	}
+	mc.SetEngineFailure(nil)
+	if got := collectEngineInfo(&cfg).StartError; got != "" {
+		t.Fatalf("a running engine has no start error, got %q", got)
 	}
 }

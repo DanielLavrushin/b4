@@ -11,6 +11,8 @@ Buttons at the top of the settings:
 
 - **Restart service** - restart b4 (expected downtime: 5-10 seconds)
 
+When b4 runs under systemd or from an init script (`/etc/init.d/b4`, or `/opt/etc/init.d/S99b4` on Entware), the button restarts it through that service manager. Without one, in a container or when b4 was started by hand, b4 restarts itself in place: it shuts down the same way it does on a stop signal, then starts again with the same command line and reads the configuration file anew. The process ID stays the same, so a container runtime or a supervisor sees no exit.
+
 :::warning Reset configuration
 When the configuration is reset, these are preserved: domains, GeoSite/GeoIP categories, and test settings. Everything else (network, DPI bypass, protocols, logging) is reset to defaults.
 :::
@@ -55,6 +57,31 @@ Two things soften it. b4 strips IPv6 addresses out of DNS answers for domains a 
 :::note Restart to apply
 Turning IPv6 support on or off changes which rules exist in the firewall for every set. Sets are rebuilt on the next configuration sync, but the packet queue itself binds its address families at startup, so the change takes full effect only after the service restarts.
 :::
+
+### Packet engine
+
+**Ingestion mode** selects how packets reach b4. The engine starts once, when the service starts, so a change applies after a restart.
+
+| Mode | How packets reach b4 | Kernel and tools it needs |
+| --- | --- | --- |
+| NFQUEUE (default) | iptables or nftables rules hand packets to a netfilter queue that b4 reads | The queue modules: `nfnetlink_queue`, plus `xt_NFQUEUE` with iptables or `nft_queue` with nftables |
+| TUN interface | Target traffic is routed through a virtual interface that b4 reads | `/dev/net/tun` and the `iptables` binary (or the iptables-nft shim); no queue modules |
+
+Selecting TUN adds the **TUN settings** group: uplink interface, uplink gateway, TUN address and TUN device name.
+
+#### When the engine does not start
+
+b4 starts the packet engine before the web interface. When the engine fails, b4 removes the rules it had installed and keeps running without it:
+
+- traffic passes through the router without b4 touching it;
+- the web interface, the SOCKS5 proxy and the MTProto proxy stay up;
+- firewall rules, routing sets and the watchdog stay off.
+
+The reason is written to the log at the ERROR level, and the [dashboard](../dashboard.md#packet-engine-not-running) shows it together with buttons that switch to the other engine or restart b4. For example, on a kernel without the queue modules iptables rejects the NFQUEUE target, and a TUN engine with an automatic uplink finds no default route while the WAN or VPN is still down.
+
+b4 retries on its own by restarting itself in place, three times: 15, 30 and 60 seconds after each failure. A cause that clears up by itself, such as a WAN link that comes up after b4, is picked up by one of these retries. After the third failed retry b4 stays in this state until it is restarted. A restart from the web interface or by the service manager starts the count again.
+
+With the web server off (port `0`) there is no interface to fall back to, and b4 exits with the error instead.
 
 ### Firewall
 

@@ -488,6 +488,9 @@ func collectEngineInfo(cfg *config.Config) DiagEngine {
 	}
 
 	de := DiagEngine{Mode: mode}
+	if f := GetMetricsCollector().GetEngineFailure(); f != nil {
+		de.StartError = f.Error
+	}
 	if mode == "tun" {
 		de.TUN = collectTUNInfo(cfg)
 	}
