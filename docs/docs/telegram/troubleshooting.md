@@ -19,7 +19,7 @@ A working session logs one line per client at info level:
 [tg-bridge c=3] proxy relay [phone] 192.168.1.50:51234 <-> DC2 via ws:kws2.web.telegram.org
 ```
 
-If nothing appears at all, the connection is not reaching b4. On a host with a default-deny input policy nothing does: b4 installs no firewall rule for its own listen port, and reaching it from outside the LAN also needs a port forward.
+If nothing appears at all, the connection is not reaching b4. On a host whose firewall drops incoming connections, nothing from outside does until **Expose to internet** is on for the proxy port, and a router or modem in front of the host also needs a port forward. The share dialog in **Internet** mode warns about the causes it can detect, and [What the switch cannot open](../settings/security.md#expose-limits) lists the ones no rule on the b4 host can fix.
 
 If the relay line appears and Telegram still waits, the problem is upstream. **Test connection** probes data centre 2 over the configured transports.
 

@@ -34,6 +34,7 @@ import { useSnackbar } from "@context/SnackbarProvider";
 import { useAiStatus } from "@context/AiStatusProvider";
 import { useHubInvalidate } from "@hooks/useHub";
 import { useTelegramBridgeInvalidate } from "@hooks/useTelegramBridge";
+import { useSystemAddressesInvalidate } from "@hooks/useSystemAddresses";
 import { ApiSettings } from "./Api";
 import { DnsSettings } from "./Dns";
 import { IPHealthSettings } from "./IPHealth";
@@ -46,7 +47,7 @@ import { LoggingSettings } from "./Core";
 import { MSSClampingSettings } from "./MSSClamping";
 import { QueueSettings } from "./Queue";
 import { Socks5Settings } from "./Socks5";
-import { MTProtoSettings } from "./MTProto";
+import { MTProtoSettings } from "./telegram/MTProto";
 import { BackupSettings } from "./Backup";
 import { WebServerSettings } from "./WebServer";
 
@@ -56,6 +57,29 @@ import { isStaleWriteError, reportSaveError, reportStaleWrite } from "@utils";
 import { colors, spacing } from "@design";
 
 import { B4Config } from "@models/config";
+
+const generalTab = (c: B4Config) => [
+  c.system.logging,
+  c.queue,
+  { ...c.system.web_server, mcp: undefined },
+  c.system.socks5,
+  c.system.tables,
+  c.system.dns,
+];
+
+const generalTabRestartScope = (c: B4Config) => [
+  c.system.logging,
+  c.queue,
+  c.system.web_server.port,
+  c.system.web_server.bind_address,
+  c.system.web_server.tls_cert,
+  c.system.web_server.tls_key,
+  c.system.tables,
+  c.system.dns,
+];
+
+const changed = (pick: (c: B4Config) => unknown, a: B4Config, b: B4Config) =>
+  JSON.stringify(pick(a)) !== JSON.stringify(pick(b));
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -205,20 +229,7 @@ export function SettingsPage() {
 
     return {
       // Core
-      [TABS.GENERAL]:
-        JSON.stringify(config.system.logging) !==
-          JSON.stringify(originalConfig.system.logging) ||
-        JSON.stringify(config.queue) !== JSON.stringify(originalConfig.queue) ||
-        JSON.stringify(config.system.web_server) !==
-          JSON.stringify(originalConfig.system.web_server) ||
-        JSON.stringify(config.system.socks5) !==
-          JSON.stringify(originalConfig.system.socks5) ||
-        JSON.stringify(config.system.tables) !==
-          JSON.stringify(originalConfig.system.tables) ||
-        JSON.stringify(config.system.dns) !==
-          JSON.stringify(originalConfig.system.dns) ||
-        JSON.stringify(config.queue.devices) !==
-          JSON.stringify(originalConfig.queue.devices),
+      [TABS.GENERAL]: changed(generalTab, config, originalConfig),
 
       // Geosite Settings
       [TABS.DOMAINS]:
@@ -254,6 +265,13 @@ export function SettingsPage() {
     };
   }, [config, originalConfig, hasChanges]);
 
+  const generalNeedsRestart = useMemo(() => {
+    if (!categoryHasChanges[TABS.GENERAL] || !config || !originalConfig) {
+      return false;
+    }
+    return changed(generalTabRestartScope, config, originalConfig);
+  }, [categoryHasChanges, config, originalConfig]);
+
   const showErrorRef = useRef(showError);
   showErrorRef.current = showError;
 
@@ -287,6 +305,7 @@ export function SettingsPage() {
   const { refresh: refreshAiStatus } = useAiStatus();
   const invalidateHub = useHubInvalidate();
   const invalidateTelegramBridge = useTelegramBridgeInvalidate();
+  const invalidateSystemAddresses = useSystemAddressesInvalidate();
 
   const saveConfig = async () => {
     if (!config) return;
@@ -297,9 +316,10 @@ export function SettingsPage() {
       await configApi.save(config);
       setOriginalConfig(structuredClone(config));
 
-      const requiresRestart = categoryHasChanges[0];
       showSuccess(
-        requiresRestart ? t("core.configSavedRestart") : t("core.configSaved"),
+        generalNeedsRestart
+          ? t("core.configSavedRestart")
+          : t("core.configSaved"),
       );
     } catch (error) {
       if (isStaleWriteError(error)) {
@@ -317,6 +337,7 @@ export function SettingsPage() {
         void refreshAiStatus();
         void invalidateHub();
         void invalidateTelegramBridge();
+        void invalidateSystemAddresses();
       }
     }
   };
@@ -427,7 +448,7 @@ export function SettingsPage() {
               justifyContent="flex-end"
               sx={{ flex: { xs: "1 1 100%", sm: "0 1 auto" } }}
             >
-              {categoryHasChanges[TABS.GENERAL] && (
+              {generalNeedsRestart && (
                 <B4Alert severity="warning" sx={{ py: 0, px: spacing.sm }}>
                   <Trans
                     i18nKey="core.coreRestartWarning"
@@ -568,6 +589,7 @@ export function SettingsPage() {
               <Box sx={{ width: "100%" }}>
                 <MTProtoSettings
                   config={config}
+                  savedMtproto={originalConfig?.system.mtproto}
                   savedBridgeEnabled={
                     originalConfig?.system.mtproto?.bridge?.enabled ?? false
                   }

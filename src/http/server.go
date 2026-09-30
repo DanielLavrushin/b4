@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	stdlog "log"
+	"net"
 	stdhttp "net/http"
 	"os"
 	"strings"
@@ -20,6 +21,12 @@ import (
 
 //go:embed ui/dist/*
 var uiDist embed.FS
+
+var webListening atomic.Bool
+
+func WebListening() bool {
+	return webListening.Load()
+}
 
 type errLogFilter struct{ w io.Writer }
 
@@ -100,15 +107,26 @@ func StartServer(cfgPtr *atomic.Pointer[config.Config], pool *nfq.Pool) (*stdhtt
 		Handler:           httpHandler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ErrorLog:          stdlog.New(errLogFilter{w: os.Stderr}, "", stdlog.LstdFlags),
+		ConnContext:       authAtAccept(cfgPtr),
 	}
+
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Errorf("Web server error: %v", err)
+		metrics.RecordEvent("error", fmt.Sprintf("Web server error: %v", err))
+		return srv, api, nil
+	}
+	webListening.Store(true)
+	handler.SetLoginDroppedFunc(noteLoginDropped)
 
 	go func() {
 		var err error
 		if tlsEnabled {
-			err = srv.ListenAndServeTLS(cfg.System.WebServer.TLSCert, cfg.System.WebServer.TLSKey)
+			err = srv.ServeTLS(ln, cfg.System.WebServer.TLSCert, cfg.System.WebServer.TLSKey)
 		} else {
-			err = srv.ListenAndServe()
+			err = srv.Serve(ln)
 		}
+		webListening.Store(false)
 
 		if err != nil && err != stdhttp.ErrServerClosed {
 			log.Errorf("Web server error: %v", err)

@@ -197,6 +197,10 @@ func TestMCPWriteRejectsNonAllowlistedPaths(t *testing.T) {
 		"system.web_server.port",
 		"system.socks5.password",
 		"system.mtproto.secrets",
+		"system.mtproto.expose",
+		"system.mtproto.web_proxy.expose",
+		"system.socks5.expose",
+		"system.web_server.expose",
 		"system.tables.skip_setup",
 		"system.ai.api_key_ref",
 		"system.logging.directory",
@@ -287,6 +291,9 @@ func TestMCPDenyTagsArePresent(t *testing.T) {
 		{"system.socks5.password", ""},
 		{"system.socks5.allowed_sources", ""},
 		{"system.mtproto.secrets", ""},
+		{"system.mtproto.expose", ""},
+		{"system.mtproto.web_proxy.expose", ""},
+		{"system.socks5.expose", ""},
 		// Inside a writable root, but the directory is a filesystem location:
 		// pointing it elsewhere silently stops file logging, which is also what
 		// b4_logs_tail reads.
@@ -878,5 +885,62 @@ func TestMCPWriteRenameReadsBackByID(t *testing.T) {
 	}
 	if got := api.getCfg().Sets[0].Name; got != "clips" {
 		t.Fatalf("name = %q, want clips", got)
+	}
+}
+
+func TestMCPWriteRefusesOpeningAnExposedPort(t *testing.T) {
+	cfg := writableCfg(t)
+	cfg.System.MTProto.Enabled = false
+	cfg.System.MTProto.Expose = true
+	cfg.System.MTProto.FakeSNI = "www.google.com"
+
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	res := callSetValue(t, session, ctx, "system.mtproto.enabled", "true")
+	if !res.IsError {
+		t.Fatal("enabling MTProto while its Expose to internet switch is on opens a port to the internet and must be refused over MCP")
+	}
+	if text := mcpErrorText(res); !strings.Contains(text, "system.mtproto.expose") {
+		t.Fatalf("the refusal must name the switch responsible: %q", text)
+	}
+	if cfg.System.MTProto.Enabled {
+		t.Error("config must be untouched when the write is refused")
+	}
+}
+
+func TestMCPWriteRefusesMovingOrWideningAnExposedPort(t *testing.T) {
+	for _, tc := range []struct{ path, value string }{
+		{"system.socks5.port", "10800"},
+		{"system.socks5.bind_address", "0.0.0.0"},
+	} {
+		cfg := writableCfg(t)
+		cfg.System.Socks5.Enabled = true
+		cfg.System.Socks5.Expose = true
+		cfg.System.Socks5.BindAddress = "192.168.1.1"
+
+		srv := newMCPTestServer(t, cfg)
+		session, ctx := connectMCP(t, srv)
+
+		res := callSetValue(t, session, ctx, tc.path, tc.value)
+		if !res.IsError {
+			t.Fatalf("%s=%s opens a new port or address to the internet and must be refused over MCP", tc.path, tc.value)
+		}
+		if text := mcpErrorText(res); !strings.Contains(text, "system.socks5.expose") {
+			t.Fatalf("%s: the refusal must name the switch responsible: %q", tc.path, text)
+		}
+	}
+}
+
+func TestMCPWriteMayCloseAnExposedPort(t *testing.T) {
+	cfg := writableCfg(t)
+	cfg.System.Socks5.Enabled = true
+	cfg.System.Socks5.Expose = true
+
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	if res := callSetValue(t, session, ctx, "system.socks5.enabled", "false"); res.IsError {
+		t.Fatalf("turning an exposed listener off closes a port and must stay allowed: %+v", res.Content)
 	}
 }

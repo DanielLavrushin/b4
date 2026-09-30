@@ -299,6 +299,7 @@ func collectFirewallInfo(cfg *config.Config) DiagFirewall {
 	info.RuleGroups = append(info.RuleGroups, collectNftRuleGroups()...)
 	info.RuleGroups = append(info.RuleGroups, collectIptablesRuleGroups(info.Backend)...)
 	info.RuleGroups = append(info.RuleGroups, collectPolicyRuleGroup()...)
+	info.RuleGroups = append(info.RuleGroups, collectExposureRuleGroup()...)
 
 	info.NFQueueWorks = testNFQueue(info.Backend)
 	info.FlowOffload, info.FlowOffloadGuard = detectFlowOffload()
@@ -367,6 +368,43 @@ func detectFirewallBackend() string {
 	}
 
 	return "none"
+}
+
+func collectExposureRuleGroup() []DiagRuleGroup {
+	st := tables.ExposureStatus()
+	if len(st.Ports) == 0 && len(st.Blocked) == 0 && st.Error == "" {
+		return nil
+	}
+	var rules []string
+	for _, p := range st.Ports {
+		fams := []string{}
+		if p.V4 {
+			fams = append(fams, "IPv4")
+		}
+		if p.V6 {
+			fams = append(fams, "IPv6")
+		}
+		line := fmt.Sprintf("%s tcp/%d %s", p.Service, p.Port, strings.Join(fams, "+"))
+		if p.Address != "" {
+			line += " on " + p.Address
+		}
+		rules = append(rules, line)
+	}
+	for _, b := range st.Blocked {
+		rules = append(rules, fmt.Sprintf("%s not opened: %s", b.Service, b.Reason))
+	}
+	switch {
+	case st.SkipSetup:
+		rules = append(rules, "skip_setup is on: no rule installed")
+	case len(st.Chains) > 0:
+		rules = append(rules, "installed in: "+strings.Join(st.Chains, ", "))
+	case len(st.Ports) > 0 && st.Error == "":
+		rules = append(rules, "installed in: no filtering input chain found")
+	}
+	if st.Error != "" && !st.SkipSetup {
+		rules = append(rules, "failed: "+st.Error)
+	}
+	return []DiagRuleGroup{{Title: "Expose to internet", Rules: rules}}
 }
 
 func collectNftRuleGroups() []DiagRuleGroup {
@@ -460,6 +498,7 @@ type diagChainRef struct {
 }
 
 var diagB4Chains = []diagChainRef{
+	{"filter", "B4_EXPOSE"},
 	{"mangle", "B4"},
 	{"mangle", "B4_PREROUTING"},
 	{"mangle", "B4_TUN"},

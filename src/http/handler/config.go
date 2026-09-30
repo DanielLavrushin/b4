@@ -490,6 +490,10 @@ func (a *API) pushConfigLocked(newCfg *config.Config) error {
 		})
 	}
 
+	if err := exposureRefusal(a.getCfg(), newCfg); err != nil {
+		return err
+	}
+
 	if fields := preflightConfig(newCfg, a.getCfg()); len(fields) > 0 {
 		return ErrValidation("Some ports are unavailable", fields...)
 	}
@@ -501,6 +505,14 @@ func (a *API) pushConfigLocked(newCfg *config.Config) error {
 		if err != nil {
 			return ErrInternal(fmt.Sprintf("failed to update global pool config: %v", err))
 		}
+	}
+
+	if err := newCfg.SaveToFile(newCfg.ConfigPath); err != nil {
+		return fmt.Errorf("failed to save config to file: %v", err)
+	}
+
+	if exposureShrinkFunc != nil {
+		exposureShrinkFunc(newCfg)
 	}
 
 	if globalTUNEngine != nil {
@@ -531,11 +543,6 @@ func (a *API) pushConfigLocked(newCfg *config.Config) error {
 		}
 	}
 
-	err := newCfg.SaveToFile(newCfg.ConfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to save config to file: %v", err)
-	}
-
 	if ouiDB != nil {
 		oldCfg := a.getCfg()
 		if oldCfg.Queue.Devices.VendorLookup && !newCfg.Queue.Devices.VendorLookup {
@@ -545,12 +552,19 @@ func (a *API) pushConfigLocked(newCfg *config.Config) error {
 		}
 	}
 
+	loginWasOn := mcpAuthConfigured(a.getCfg())
 	a.cfgPtr.Store(newCfg)
+	if loginWasOn && !mcpAuthConfigured(newCfg) && loginDroppedFunc != nil {
+		loginDroppedFunc()
+	}
 	if setsChanged && configHasUnresolvedASNs(newCfg) {
 		config.RequestASNRefresh()
 	}
 	if routingSyncFunc != nil {
 		routingSyncFunc(newCfg)
+	}
+	if exposureSyncFunc != nil {
+		exposureSyncFunc(newCfg)
 	}
 	if refreshBridgeList {
 		mtproto.TriggerTelegramCIDRRefresh()

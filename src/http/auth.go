@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
@@ -252,11 +253,43 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 	writeAuthJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+type authAtAcceptKey struct{}
+
+var (
+	loginDropGrace = 2 * time.Minute
+	loginDroppedAt atomic.Int64
+)
+
+func noteLoginDropped() {
+	loginDroppedAt.Store(time.Now().UnixNano())
+}
+
+func loginDroppedWithin(window time.Duration) bool {
+	at := loginDroppedAt.Load()
+	return at != 0 && time.Since(time.Unix(0, at)) < window
+}
+
+func authAtAccept(cfgPtr *atomic.Pointer[config.Config]) func(context.Context, net.Conn) context.Context {
+	return func(ctx context.Context, _ net.Conn) context.Context {
+		required := authEnabled(cfgPtr.Load()) || loginDroppedWithin(loginDropGrace)
+		return context.WithValue(ctx, authAtAcceptKey{}, required)
+	}
+}
+
+func acceptedUnderAuth(ctx context.Context) bool {
+	required, _ := ctx.Value(authAtAcceptKey{}).(bool)
+	return required
+}
+
 func authMiddleware(cfgPtr *atomic.Pointer[config.Config], next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !authEnabled(cfgPtr.Load()) {
+		loginOn := authEnabled(cfgPtr.Load())
+		if !loginOn && !acceptedUnderAuth(r.Context()) {
 			next.ServeHTTP(w, r)
 			return
+		}
+		if !loginOn {
+			w.Header().Set("Connection", "close")
 		}
 
 		// Allow auth endpoints without token

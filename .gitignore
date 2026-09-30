@@ -55,4 +55,4 @@ hub/b4hub
 hub/data-mirror/
 
 # web workspaces
-node_modules/
+node_modules

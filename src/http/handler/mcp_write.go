@@ -192,6 +192,9 @@ func (api *API) mcpSave(oldCfg, newCfg *config.Config) error {
 		if current != oldCfg {
 			return errMCPConfigMoved
 		}
+		if err := mcpExposureRefusal(current, newCfg); err != nil {
+			return err
+		}
 		if !current.System.WebServer.MCP.AllowActiveProbes {
 			if what := mcpStartsProbes(newCfg, current); what != "" {
 				return &mcpProbesError{what: what}
@@ -573,7 +576,17 @@ func mcpValidateCandidate(oldCfg, newCfg *config.Config) error {
 			return fmt.Errorf("%s", rule.err)
 		}
 	}
-	return nil
+	return mcpExposureRefusal(oldCfg, newCfg)
+}
+
+func mcpExposureRefusal(oldCfg, newCfg *config.Config) error {
+	added := config.ExposureAdded(oldCfg, newCfg)
+	if len(added) == 0 {
+		return nil
+	}
+	return fmt.Errorf("this change would open TCP port %d to the internet, because %s is on. "+
+		"A write that opens a port to the internet is refused over MCP; it can be made in the web interface",
+		added[0].Port, config.ExposeSwitchPath(added[0].Service))
 }
 
 // mcpWritablePaths walks the writable roots and lists every leaf a caller can
@@ -729,7 +742,7 @@ func mcpWriteToolDescription() string {
 	var sb strings.Builder
 	sb.WriteString("Change one b4 setting and apply it live. Address a per-set setting as sets[<id or name>].<path>, e.g. sets[video].tcp.seg2delay.\n")
 	sb.WriteString("Call b4_list_writable_paths for the exact paths, types and accepted values rather than guessing, and b4_get_topic for what a setting means before changing it.\n")
-	sb.WriteString("Refused here: every credential, the web server, the capture engine, the firewall backend and the packet marks. A set's target lists belong to b4_edit_set_targets; its lifecycle to b4_manage_set.\n")
+	sb.WriteString("Refused here: every credential, the web server, the capture engine, the firewall backend, the packet marks and port exposure. A set's target lists belong to b4_edit_set_targets; its lifecycle to b4_manage_set.\n")
 	sb.WriteString("A list setting is replaced wholesale. The result reports the value read back after saving, so changed:false means b4 did not keep it. Undo with b4_revert_last_change.")
 	return sb.String()
 }
@@ -929,6 +942,9 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		err := api.saveAndPushConfigIf(last.Snapshot, func(current *config.Config) error {
 			if last.PostRevision != "" && watchdog.ConfigRevision(current) != last.PostRevision {
 				return errMCPRevertStale
+			}
+			if err := mcpExposureRefusal(current, last.Snapshot); err != nil {
+				return err
 			}
 			if !current.System.WebServer.MCP.AllowActiveProbes {
 				if what := mcpStartsProbes(last.Snapshot, current); what != "" {

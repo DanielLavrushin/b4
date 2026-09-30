@@ -59,6 +59,7 @@ b4 хранит конфигурацию в одном JSON-файле. По у�
     "web_server": {
       "port": 7000,
       "bind_address": "0.0.0.0",
+      "expose": false,
       "tls_cert": "",
       "tls_key": "",
       "username": "",
@@ -76,9 +77,10 @@ b4 хранит конфигурацию в одном JSON-файле. По у�
       "enabled": false,
       "port": 1080,
       "bind_address": "0.0.0.0",
+      "expose": false,
       "allowed_sources": ["192.168.1.0/24", "127.0.0.1/32"]
     },
-    "mtproto": { "enabled": false, "port": 3128, "bind_address": "0.0.0.0" },
+    "mtproto": { "enabled": false, "port": 3128, "bind_address": "0.0.0.0", "expose": false },
     "checker": {
       "discovery_timeout": 5,
       "config_propagate_ms": 1500,

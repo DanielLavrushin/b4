@@ -98,6 +98,10 @@ func (s *Server) getCfg() *config.Config {
 	return s.cfg.Load()
 }
 
+func (s *Server) Running() bool {
+	return s.running.Load()
+}
+
 // NewServer creates a new SOCKS5 server.
 func NewServer(cfg *config.Config) *Server {
 	s := &Server{
@@ -194,6 +198,7 @@ func (s *Server) acceptLoop(ln net.Listener) {
 			time.Sleep(50 * time.Millisecond)
 			continue
 		}
+		accepted := s.getCfg().System.Socks5
 
 		if acl := s.acl.Load(); !acl.allows(conn.RemoteAddr()) {
 			log.Debugf("SOCKS5 refusing %s, source is not in system.socks5.allowed_sources", conn.RemoteAddr())
@@ -232,12 +237,12 @@ func (s *Server) acceptLoop(ln net.Listener) {
 				<-s.connSem
 				s.activeConns.Add(-1)
 			}()
-			s.handleConn(conn)
+			s.handleConn(conn, &accepted)
 		}()
 	}
 }
 
-func (s *Server) handleConn(conn net.Conn) {
+func (s *Server) handleConn(conn net.Conn, socksCfg *config.Socks5Config) {
 	clientAddr := conn.RemoteAddr().String()
 	log.Debugf("SOCKS5 new connection from %s", clientAddr)
 
@@ -247,7 +252,7 @@ func (s *Server) handleConn(conn net.Conn) {
 		return
 	}
 
-	if err := s.authenticate(conn); err != nil {
+	if err := s.authenticate(conn, socksCfg); err != nil {
 		log.Tracef("SOCKS5 auth failed from %s: %v", clientAddr, err)
 		return
 	}
@@ -259,7 +264,7 @@ func (s *Server) handleConn(conn net.Conn) {
 
 // --- Authentication (RFC 1928 + RFC 1929) ---
 
-func (s *Server) authenticate(conn net.Conn) error {
+func (s *Server) authenticate(conn net.Conn, socksCfg *config.Socks5Config) error {
 	// Read version + method count
 	hdr := make([]byte, 2)
 	if _, err := io.ReadFull(conn, hdr); err != nil {
@@ -276,7 +281,6 @@ func (s *Server) authenticate(conn net.Conn) error {
 
 	log.Debugf("SOCKS5 auth from %s: methods=%v", conn.RemoteAddr(), methods)
 
-	socksCfg := &s.getCfg().System.Socks5
 	if credentialsIncomplete(socksCfg) {
 		_, _ = conn.Write([]byte{socks5Version, authNoAccept})
 		return fmt.Errorf("incomplete credentials, username and password must both be set or both be empty")
@@ -307,14 +311,14 @@ func (s *Server) authenticate(conn net.Conn) error {
 		return fmt.Errorf("no acceptable auth method")
 	}
 	if chosen == authUserPass {
-		return s.subnegotiateUserPass(conn)
+		return s.subnegotiateUserPass(conn, socksCfg)
 	}
 
 	log.Debugf("SOCKS5 auth successful from %s (method: %d)", conn.RemoteAddr(), chosen)
 	return nil
 }
 
-func (s *Server) subnegotiateUserPass(conn net.Conn) error {
+func (s *Server) subnegotiateUserPass(conn net.Conn, socksCfg *config.Socks5Config) error {
 	// RFC 1929: VER(1) ULEN(1) UNAME(1-255) PLEN(1) PASSWD(1-255)
 	hdr := make([]byte, 2)
 	if _, err := io.ReadFull(conn, hdr); err != nil {
@@ -339,7 +343,6 @@ func (s *Server) subnegotiateUserPass(conn net.Conn) error {
 		return fmt.Errorf("read password: %w", err)
 	}
 
-	socksCfg := &s.getCfg().System.Socks5
 	// Constant-time comparison to prevent timing attacks
 	userOK := subtle.ConstantTimeCompare(uname, []byte(socksCfg.Username)) == 1
 	passOK := subtle.ConstantTimeCompare(passwd, []byte(socksCfg.Password)) == 1
@@ -535,7 +538,12 @@ func buildMatcher(cfg *config.Config) *sni.SuffixSet {
 func socks5NeedsRestart(old, new *config.Socks5Config) bool {
 	return old.Enabled != new.Enabled ||
 		old.Port != new.Port ||
-		old.BindAddress != new.BindAddress
+		old.BindAddress != new.BindAddress ||
+		socks5GateRelaxed(old, new)
+}
+
+func socks5GateRelaxed(old, new *config.Socks5Config) bool {
+	return old.Username != "" && new.Username == ""
 }
 
 func (s *Server) UpdateConfig(newCfg *config.Config) {

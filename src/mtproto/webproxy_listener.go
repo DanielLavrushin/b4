@@ -46,6 +46,12 @@ func (s *Server) WebProxyOwnListener() bool {
 	return s.webUp.Load()
 }
 
+func (s *Server) Running() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.running
+}
+
 type webErrLog struct{}
 
 func (webErrLog) Write(p []byte) (int, error) {
