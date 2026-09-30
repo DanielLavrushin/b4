@@ -402,7 +402,21 @@ func (c *Config) Validate() error {
 				m, uint(engine.ClientMark))
 			return v.result()
 		}
+	} else if c.System.Tables.DSCP.Enabled {
+		if m := c.MainInjectedMark(); m&uint(engine.ClientMark) != 0 {
+			v.addf("queue.mark", "mark_conflict", map[string]any{"mark": fmt.Sprintf("0x%x", m)},
+				"queue mark 0x%x overlaps the reserved client mark bit (0x%x) the DSCP stamp uses to leave b4's packets to LAN clients alone; choose a mark clear of that bit",
+				m, uint(engine.ClientMark))
+			return v.result()
+		}
 	}
+
+	if dscp := &c.System.Tables.DSCP; dscp.Enabled && (dscp.Value < 0 || dscp.Value > MaxDSCPValue) {
+		v.addf("system.tables.dscp.value", "out_of_range", map[string]any{"value": dscp.Value, "min": 0, "max": MaxDSCPValue},
+			"DSCP value %d is outside 0-%d", dscp.Value, MaxDSCPValue)
+		return v.result()
+	}
+	c.System.Tables.DSCP.Interfaces = cleanIfaceList(c.System.Tables.DSCP.Interfaces)
 
 	if c.Queue.StartNum < 0 || c.Queue.StartNum > 65535 {
 		v.add("queue.start_num", "out_of_range", "queue-num must be between 0 and 65535", nil)

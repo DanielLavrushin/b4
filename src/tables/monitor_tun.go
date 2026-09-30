@@ -51,6 +51,7 @@ func ClearTUNFirewall(cfg *config.Config) {
 	IPTablesLockBudgetReset()
 	ClearMasqueradeOnly(cfg)
 	ClearMSSClampOnly(cfg)
+	ClearDSCPOnly(cfg)
 }
 
 func RulesRestores() (int64, time.Time) {
@@ -186,6 +187,13 @@ func RefreshTUNFirewall(cfg *config.Config) error {
 				}
 				mssLast.Store(nil)
 			}
+		}
+	}
+	if last := dscpLast.Load(); last == nil || !last.System.Tables.DSCP.Equal(cfg.System.Tables.DSCP) {
+		log.Infof("Applying DSCP stamp settings in TUN mode")
+		dscpLast.Store(nil)
+		if err := ApplyDSCPOnly(cfg); err != nil {
+			errs = append(errs, fmt.Errorf("DSCP stamp: %w", err))
 		}
 	}
 	return errors.Join(errs...)

@@ -24,6 +24,8 @@ interface FeatureSettingsProps {
 const IPV6_BYPASS_DISMISS_KEY = "b4_ipv6_bypass_dismissed";
 const TUN_MONITOR_MIN_INTERVAL = 10;
 const ENGINE_FAILURE_RECHECK_MS = 15000;
+const DSCP_SUGGESTED_VALUE = 7;
+const DSCP_MAX_VALUE = 63;
 
 export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
   const { t } = useTranslation();
@@ -111,6 +113,20 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
     onChange("system.tables.masquerade.interfaces", updated);
   };
 
+  const dscp = config.system.tables.dscp ?? {
+    enabled: false,
+    value: 0,
+    interfaces: [],
+  };
+  const dscpInterfaces = dscp.interfaces || [];
+
+  const handleDscpInterfaceToggle = (iface: string) => {
+    const updated = dscpInterfaces.includes(iface)
+      ? dscpInterfaces.filter((i) => i !== iface)
+      : [...dscpInterfaces, iface];
+    onChange("system.tables.dscp.interfaces", updated);
+  };
+
   const tunOutInterface = config.queue.tun?.out_interface;
   const tunFollowsDefault = !tunOutInterface || tunOutInterface === "auto";
 
@@ -129,6 +145,26 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
           ? "settings.Feature.natMasqueradeSkipped"
           : "settings.Feature.natMasqueradeDesc",
       )}
+    />
+  );
+
+  const dscpSwitch = (
+    <B4Switch
+      label={t("settings.Feature.dscp")}
+      checked={dscp.enabled}
+      onChange={(checked: boolean) => {
+        onChange("system.tables.dscp.enabled", checked);
+        if (checked && !dscp.value) {
+          onChange("system.tables.dscp.value", DSCP_SUGGESTED_VALUE);
+        }
+      }}
+      disabled={skipTables}
+      description={t(
+        skipTables
+          ? "settings.Feature.dscpSkipped"
+          : "settings.Feature.dscpDesc",
+      )}
+      aiTopic="system.tables.dscp.enabled"
     />
   );
 
@@ -295,11 +331,13 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
             helperText={t("settings.Feature.firewallEngineHelp")}
           />
           {masqueradeSwitch}
+          {dscpSwitch}
         </B4FormGroup>
       )}
       {config.queue.mode === "tun" && (
         <B4FormGroup label={t("settings.Feature.firewallFeatures")} columns={2}>
           {masqueradeSwitch}
+          {dscpSwitch}
           <B4Slider
             label={t("settings.Feature.firewallMonitorInterval")}
             value={Math.max(
@@ -353,6 +391,55 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
             {(config.system.tables.masquerade.interfaces || []).length === 0 && (
               <B4Alert severity="info" sx={{ mt: 2 }}>
                 {t("settings.Feature.masqueradeAllInterfaces")}
+              </B4Alert>
+            )}
+          </Box>
+        </B4FormGroup>
+      )}
+      {dscp.enabled && (
+        <B4FormGroup label={t("settings.Feature.dscpSettings")} columns={1}>
+          <B4Slider
+            label={t("settings.Feature.dscpValue")}
+            value={dscp.value}
+            onChange={(value: number) =>
+              onChange("system.tables.dscp.value", value)
+            }
+            min={0}
+            max={DSCP_MAX_VALUE}
+            step={1}
+            disabled={skipTables}
+            helperText={t("settings.Feature.dscpValueHelp")}
+            aiTopic="system.tables.dscp.value"
+          />
+          <Box>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              {t("settings.Feature.dscpInterfacesDesc")}
+            </Typography>
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+              {(config.available_ifaces ?? []).map((iface) => (
+                <B4Badge
+                  key={iface}
+                  label={iface}
+                  onClick={
+                    skipTables
+                      ? undefined
+                      : () => handleDscpInterfaceToggle(iface)
+                  }
+                  variant={
+                    dscpInterfaces.includes(iface) ? "filled" : "outlined"
+                  }
+                  color={"primary"}
+                />
+              ))}
+            </Box>
+            {(config.available_ifaces ?? []).length === 0 && (
+              <B4Alert severity="warning" sx={{ mt: 1 }}>
+                {t("settings.Feature.noInterfacesDetected")}
+              </B4Alert>
+            )}
+            {dscpInterfaces.length === 0 && (
+              <B4Alert severity="info" sx={{ mt: 2 }}>
+                {t("settings.Feature.dscpAllInterfaces")}
               </B4Alert>
             )}
           </Box>

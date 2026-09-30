@@ -68,6 +68,9 @@ func startTUNEngine(cfg *config.Config, pool *nfq.Pool, tproxyMgr *tproxy.Manage
 		if err := tables.ApplyMSSClampOnly(cfg); err != nil {
 			log.Errorf("Failed to apply MSS clamp in TUN mode: %v", err)
 		}
+		if err := tables.ApplyDSCPOnly(cfg); err != nil {
+			log.Errorf("Failed to apply the DSCP stamp in TUN mode: %v", err)
+		}
 	} else {
 		log.Infof("Skipping masquerade and conntrack sysctls (--skip-tables); the TUN engine also skips its own firewall/sysctl rules and only sets up routing")
 	}

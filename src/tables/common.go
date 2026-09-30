@@ -48,7 +48,10 @@ func ClearRules(cfg *config.Config) error {
 func RefreshRules(cfg *config.Config) error {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
-	if err := clearRulesFn(cfg); err != nil {
+	dscpKeepOnRefresh = true
+	err := clearRulesFn(cfg)
+	dscpKeepOnRefresh = false
+	if err != nil {
 		return err
 	}
 	return addRulesFn(cfg)
@@ -67,13 +70,16 @@ func addRules(cfg *config.Config) error {
 
 	if backend == backendNFTables {
 		nft := NewNFTablesManager(cfg)
-		return nft.Apply()
+		err := nft.Apply()
+		applyDSCPLogged(cfg, backend)
+		return err
 	}
 
 	ipt := NewIPTablesManager(cfg, backend == backendIPTablesLegacy)
 
 	err := ipt.Apply()
 	RoutingEnsureJumpPrecedence(cfg)
+	applyDSCPLogged(cfg, backend)
 	return err
 }
 
@@ -88,11 +94,15 @@ func clearRules(cfg *config.Config) error {
 
 	if backend == backendNFTables {
 		nft := NewNFTablesManager(cfg)
-		return nft.Clear()
+		err := nft.Clear()
+		clearDSCPUnlessKept(cfg, backend)
+		return err
 	}
 
 	ipt := NewIPTablesManager(cfg, backend == backendIPTablesLegacy)
-	return ipt.Clear()
+	err := ipt.Clear()
+	clearDSCPUnlessKept(cfg, backend)
+	return err
 }
 
 func DetectBackend(cfg *config.Config) string {

@@ -30,6 +30,7 @@ func TestFirewallRefreshNeededFlipsOnEveryRefreshedSetting(t *testing.T) {
 		{"ipv4", func(c *Config) { c.Queue.IPv4Enabled = !c.Queue.IPv4Enabled }},
 		{"ipv6", func(c *Config) { c.Queue.IPv6Enabled = !c.Queue.IPv6Enabled }},
 		{"masquerade", func(c *Config) { c.System.Tables.Masquerade.Enabled = !c.System.Tables.Masquerade.Enabled }},
+		{"dscp stamp", func(c *Config) { c.System.Tables.DSCP = DSCPConfig{Enabled: true, Value: 7} }},
 		{"mss clamp", func(c *Config) { c.Queue.MSSClamp.Enabled = true; c.Queue.MSSClamp.Size = 1200 }},
 	}
 	for _, tc := range cases {
@@ -55,6 +56,7 @@ func TestFirewallRefreshNeededIgnoresSettingsThatDoNotRebuildTheFirewall(t *test
 		{"device filtering", func(c *Config) { c.Queue.Devices.Enabled = !c.Queue.Devices.Enabled }},
 		{"set domains", func(c *Config) { c.Sets[0].Targets.SNIDomains = []string{"a.example"} }},
 		{"monitor interval", func(c *Config) { c.System.Tables.MonitorInterval += 5 }},
+		{"value of a dscp stamp that is off", func(c *Config) { c.System.Tables.DSCP.Value = 31 }},
 		{"ports of a disabled set", func(c *Config) {
 			extra := NewSetConfigWithDefaults()
 			extra.Id = "two"

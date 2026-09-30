@@ -504,6 +504,7 @@ var diagB4Chains = []diagChainRef{
 	{"mangle", "B4_TUN"},
 	{"mangle", "B4_TUN_GATE"},
 	{"mangle", "B4_DISCOVERY"},
+	{"mangle", "B4_DSCP"},
 	{"nat", "B4_MASQ"},
 }
 

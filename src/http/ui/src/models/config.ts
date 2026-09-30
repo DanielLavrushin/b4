@@ -273,11 +273,17 @@ export interface MasqueradeConfig {
   enabled: boolean;
   interfaces: string[];
 }
+export interface DSCPConfig {
+  enabled: boolean;
+  value: number;
+  interfaces: string[];
+}
 export interface TableConfig {
   monitor_interval: number;
   skip_setup: boolean;
   engine: string;
   masquerade: MasqueradeConfig;
+  dscp?: DSCPConfig;
 }
 
 export interface GeoConfig {

@@ -30,6 +30,13 @@ func (m MasqueradeConfig) Equal(o MasqueradeConfig) bool {
 	return m.Enabled == o.Enabled && equalStringSet(m.Interfaces, o.Interfaces)
 }
 
+func (d DSCPConfig) Equal(o DSCPConfig) bool {
+	if !d.Enabled && !o.Enabled {
+		return true
+	}
+	return d.Enabled == o.Enabled && d.Value == o.Value && equalStringSet(d.Interfaces, o.Interfaces)
+}
+
 func equalStringSlice(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

@@ -60,6 +60,7 @@ func TestDiagB4ChainsCoverTheTUNChains(t *testing.T) {
 		"B4_TUN":        "mangle",
 		"B4_TUN_GATE":   "mangle",
 		"B4_DISCOVERY":  "mangle",
+		"B4_DSCP":       "mangle",
 		"B4_MASQ":       "nat",
 	}
 	got := make(map[string]string, len(diagB4Chains))

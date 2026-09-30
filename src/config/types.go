@@ -460,10 +460,19 @@ type TablesConfig struct {
 	SkipSetup       bool             `json:"skip_setup"`
 	Engine          string           `json:"engine"`
 	Masquerade      MasqueradeConfig `json:"masquerade"`
+	DSCP            DSCPConfig       `json:"dscp"`
 }
 
 type MasqueradeConfig struct {
 	Enabled    bool     `json:"enabled"`
+	Interfaces []string `json:"interfaces"`
+}
+
+const MaxDSCPValue = 63
+
+type DSCPConfig struct {
+	Enabled    bool     `json:"enabled"`
+	Value      int      `json:"value"`
 	Interfaces []string `json:"interfaces"`
 }
 

@@ -3,7 +3,7 @@ sidebar_position: 1
 title: Core
 ---
 
-Most changes on this tab require a service restart. The exceptions are the interface language, the web interface's username and password, the [SOCKS5 proxy](#socks5-proxy) settings and the web server's **Expose to internet** switch, which apply on save. The header shows the restart notice only while a change that needs one is unsaved.
+Most changes on this tab require a service restart. The exceptions are the interface language, the web interface's username and password, the [SOCKS5 proxy](#socks5-proxy) settings, the [Set DSCP](#dscp) settings and the web server's **Expose to internet** switch, which apply on save. The header shows the restart notice only while a change that needs one is unsaved.
 
 ## Controls
 
@@ -28,7 +28,7 @@ Settings for the packet processing core over netfilter.
 | Parameter | Description | Range | Default |
 | --- | --- | --- | --- |
 | Starting queue number | NFQUEUE number. Change if other programs use the same numbers | 0-65535 | `537` |
-| Packet mark | netfilter mark for iptables/nftables rules. b4 uses it to mark processed packets | - | `32768` |
+| Packet mark | netfilter mark for iptables/nftables rules. b4 uses it to mark processed packets. The mark is kernel metadata of this host and is never written into the packet, so another router cannot match it; [Set DSCP](#dscp) writes a value that leaves the host | - | `32768` |
 | Worker threads | Number of parallel workers. More threads = higher throughput on multi-core systems | 1-16 | `4` |
 | TCP per-connection packet limit | How many TCP packets per connection to analyze. Sets cannot exceed this value | 1-100 | `19` |
 | UDP per-connection packet limit | How many UDP packets per connection to analyze. Sets cannot exceed this value | 1-30 | `8` |
@@ -94,6 +94,9 @@ With the web server off (port `0`) there is no interface to fall back to, and b4
 | Firewall engine | Which backend to use for rules | Auto-detect |
 | NAT Masquerade | Enable NAT masquerading. Needed for containers and gateways where b4 forwards traffic | Off |
 | Masquerade interface | Interface to apply masquerading on. Appears when NAT Masquerade is enabled | All |
+| Set DSCP | Write a DSCP value into the packets this host sends out. See [Set DSCP](#dscp) | Off |
+| DSCP value | The value written into the DSCP field, 0-63. Appears when Set DSCP is enabled; turning the switch on with the value at `0` fills in `7` | `0` |
+| DSCP interfaces | Output interfaces that get the value. Appears when Set DSCP is enabled | All |
 
 :::warning Monitor interval
 With the NFQUEUE engine, setting this to 0 turns off rule monitoring completely. If an external program or script removes b4's rules, they will not be restored.
@@ -103,7 +106,7 @@ With the NFQUEUE engine, setting this to 0 turns off rule monitoring completely.
 The **Expose to internet** switches of the web server, the SOCKS5 proxy and the listeners on the Telegram tab add accept rules to the host's own input chains, separately from the rules of the packet engine. The monitor interval also sets how often b4 checks them and puts back the ones a firewall reload removed, whatever the packet engine; at `0` only `SIGUSR1` starts that check. **Skip IPTables/NFTables setup** stops b4 from adding them. See [Access from the internet](./security.md#expose-to-internet).
 :::
 
-In TUN mode the Firewall group holds only NAT Masquerade and the monitor interval. At that interval the TUN engine checks its capture chain `B4_TUN` and the jumps into it, and the firewall monitor checks the masquerade, MSS clamp and routing-set rules. Each puts back what the router's own firewall removed, for example when the router restarts its firewall after a port-forwarding change. In this mode the interval is at least 10 seconds, and 0 turns neither check off. `SIGUSR1` starts both checks without waiting for the interval. NAT Masquerade leaves the TUN device out: the TUN engine rewrites the source address of captured packets to the uplink address itself, and keeps that rule ahead of any masquerade rule that names no outgoing interface.
+In TUN mode the Firewall group holds only NAT Masquerade, Set DSCP and the monitor interval. At that interval the TUN engine checks its capture chain `B4_TUN` and the jumps into it, and the firewall monitor checks the masquerade, MSS clamp, DSCP and routing-set rules. Each puts back what the router's own firewall removed, for example when the router restarts its firewall after a port-forwarding change. In this mode the interval is at least 10 seconds, and 0 turns neither check off. `SIGUSR1` starts both checks without waiting for the interval. NAT Masquerade leaves the TUN device out: the TUN engine rewrites the source address of captured packets to the uplink address itself, and keeps that rule ahead of any masquerade rule that names no outgoing interface.
 
 :::info Rule restores in System Info
 When TUN captures by port (the Capture row reads `ports`), System Info compares the number of rules in the capture chain with the number b4 installed. After the first restore it also shows how many times the capture rules were restored and, in either engine mode, how many times the firewall monitor restored its rules, each with the time of the last restore. A count that keeps growing points to another service on the router rewriting the firewall.
@@ -117,6 +120,34 @@ Firewall engine options:
 | nftables | Use nftables |
 | iptables | Use iptables |
 | iptables-legacy | Use iptables-legacy (for older systems) |
+
+#### Set DSCP {#dscp}
+
+DSCP is the upper six bits of the IPv4 ToS byte and of the IPv6 Traffic Class byte. With **Set DSCP** on, b4 writes the configured value into that field of every packet the host sends out, so a router in front of b4 can tell b4's traffic apart by a field in the packet itself. The marks b4 uses internally, **Packet mark** among them, cannot do this: they are kernel metadata of the packet on this host and never appear on the wire.
+
+The value is written into:
+
+- traffic forwarded through the host;
+- b4's own connections;
+- the fakes, fragments and segments b4 injects for the DPI bypass, so they carry the same value as the real packets of the same connection.
+
+It is not written into loopback traffic, into the packets b4 itself sends toward LAN clients, such as DNS answers and resets, or into replies within connections another host opened, such as the web interface's responses or the server replies b4 passes back to a LAN client after masquerade. The two ECN bits of the field are kept. Both IPv4 and IPv6 are covered, whatever the **IPv4** and **IPv6** switches say. With interfaces selected, only packets leaving through them get the value.
+
+With iptables the rule sits in its own chain `B4_DSCP` in the `mangle` table, jumped from the top of `POSTROUTING` and kept above b4's capture jump there: a packet b4 inspects leaves `mangle POSTROUTING` at that jump, and a rule below it never sees the packet. The DSCP target needs the `xt_DSCP` kernel module, packaged on OpenWrt as `kmod-ipt-ipopt` and `iptables-mod-ipopt`. With nftables the rule sits in its own table `inet b4_dscp` and needs no extra module. With iptables, when the kernel refuses the rule for one address family, b4 logs it once and leaves that family without the value; with nftables, a refused table leaves both families without it. The firewall monitor puts the rule back when another program removes it, in both engine modes.
+
+Every device on the path sees the value until something rewrites it, and some of them act on it. Linux Wi-Fi drivers and many access points choose the WMM queue from it: `7`, from the range RFC 2474 leaves for local use, stays in the best-effort queue with traffic that carries no DSCP value, `8` and most other values below `24` go to the background queue, and values from `32` up go to the video and voice queues. `0` clears whatever value the packets carried.
+
+:::warning The value reaches the internet
+The router that reads the value is expected to reset the field on its internet uplink. Without that reset, the ISP sees the value on every connection b4 carries.
+:::
+
+:::info Flow offloading
+Flows that the kernel or the hardware offloads (an nftables flowtable, `FLOWOFFLOAD`, vendor hardware NAT) skip the rule once offloaded, so only their first packets carry the value. A router that decides on the first packet of a connection and keeps that decision for the whole connection is not affected; one that reads the value on every packet sees the rest of the connection without it.
+:::
+
+:::info RouterOS
+RouterOS tells the packets of a b4 container, or of a b4 machine with a subnet of its own, apart by the interface they arrive on, so routing through b4 there needs no DSCP value, see [Routing chosen destinations through the container](../install/mikrotik.md#routing-by-destination).
+:::
 
 ### Network interfaces
 

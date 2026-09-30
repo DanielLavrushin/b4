@@ -99,7 +99,7 @@ func (m *Monitor) Start() {
 	m.wg.Add(1)
 	go m.monitorLoop()
 	if m.tun {
-		log.Infof("Started tables monitor for TUN mode: masquerade, MSS clamp and routing rules (backend: %s, interval: %v)", m.backend, m.interval)
+		log.Infof("Started tables monitor for TUN mode: masquerade, MSS clamp, DSCP stamp and routing rules (backend: %s, interval: %v)", m.backend, m.interval)
 	} else {
 		log.Infof("Started tables monitor (backend: %s, interval: %v)", m.backend, m.interval)
 	}
@@ -182,6 +182,10 @@ func (m *Monitor) tick(requested bool) bool {
 	defer rulesMu.Unlock()
 	m.lost = false
 	_, restored := m.ensureRulesLocked(requested)
+	if ensureDSCPLocked(m.cfgPtr.Load(), requested) {
+		m.lost = true
+		restored = true
+	}
 	acted := m.reconcileRouting(restored)
 	if m.lost {
 		noteRulesRestore()
@@ -499,7 +503,11 @@ func (m *Monitor) ForceRestore() error {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
 	m.tunLost = tunRuleParts{masq: true, mss: true}
-	return m.restoreRules(m.cfgPtr.Load())
+	err := m.restoreRules(m.cfgPtr.Load())
+	if m.tun {
+		reapplyDSCPLocked()
+	}
+	return err
 }
 
 func (m *Monitor) snapshotRoutingIfaces(cfg *config.Config) {

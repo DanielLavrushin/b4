@@ -239,6 +239,11 @@ var DefaultConfig = Config{
 				Enabled:    false,
 				Interfaces: []string{},
 			},
+			DSCP: DSCPConfig{
+				Enabled:    false,
+				Value:      0,
+				Interfaces: []string{},
+			},
 		},
 
 		WebServer: WebServerConfig{
