@@ -207,10 +207,11 @@ func TestExposureAddedReportsOnlyNewOpenings(t *testing.T) {
 	}
 
 	for name, mutate := range map[string]func(*Config){
-		"enable":       func(c *Config) {},
-		"new port":     func(c *Config) { c.System.MTProto.Port = 4443 },
-		"wider bind":   func(c *Config) { c.System.MTProto.BindAddress = "0.0.0.0" },
-		"other family": func(c *Config) { c.System.MTProto.BindAddress = "2001:db8::1" },
+		"enable":        func(c *Config) {},
+		"new port":      func(c *Config) { c.System.MTProto.Port = 4443 },
+		"wider bind":    func(c *Config) { c.System.MTProto.BindAddress = "0.0.0.0" },
+		"other family":  func(c *Config) { c.System.MTProto.BindAddress = "2001:db8::1" },
+		"other address": func(c *Config) { c.System.MTProto.BindAddress = "192.168.1.2" },
 	} {
 		old := base()
 		if name == "enable" {
@@ -220,6 +221,23 @@ func TestExposureAddedReportsOnlyNewOpenings(t *testing.T) {
 		mutate(next)
 		if added := ExposureAdded(old, next); len(added) != 1 || added[0].Service != ExposeMTProto {
 			t.Errorf("%s: expected the MTProto port to be reported as newly opened, got %+v", name, added)
+		}
+	}
+}
+
+func TestExposureAddedAllowsNarrowingAWildcardBind(t *testing.T) {
+	wildcard := exposeTestConfig()
+	wildcard.System.MTProto.Enabled = true
+	wildcard.System.MTProto.Expose = true
+	wildcard.System.MTProto.BindAddress = "0.0.0.0"
+
+	for _, bind := range []string{"192.168.1.1", "2001:db8::1"} {
+		narrowed := exposeTestConfig()
+		narrowed.System.MTProto.Enabled = true
+		narrowed.System.MTProto.Expose = true
+		narrowed.System.MTProto.BindAddress = bind
+		if added := ExposureAdded(wildcard, narrowed); len(added) != 0 {
+			t.Errorf("narrowing the bind from 0.0.0.0 to %s only closes access, got %+v", bind, added)
 		}
 	}
 }

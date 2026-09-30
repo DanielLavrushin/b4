@@ -118,7 +118,7 @@ func ExposureAdded(oldCfg, newCfg *Config) []ExposedPort {
 	var added []ExposedPort
 	for _, p := range newPorts {
 		for _, t := range p.tuples() {
-			if !open[t] {
+			if !open[t] && !open[t.wildcard()] {
 				added = append(added, p)
 				break
 			}
@@ -131,6 +131,10 @@ type exposeTuple struct {
 	port    int
 	v6      bool
 	address string
+}
+
+func (t exposeTuple) wildcard() exposeTuple {
+	return exposeTuple{port: t.port, v6: t.v6}
 }
 
 func (p ExposedPort) tuples() []exposeTuple {
