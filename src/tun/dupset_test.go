@@ -275,3 +275,54 @@ func TestClearStaleArtifactsDestroysTheDupSetAfterTheChain(t *testing.T) {
 		t.Fatalf("a set left by a TUN run must go after %s is deleted (delete %d, destroy %d)", tunCaptureChain, del, destroy)
 	}
 }
+
+func TestAFailedFlushLeavesTheChainAndTheSetAlone(t *testing.T) {
+	f := stubCapture(t, true, nil)
+	f.fail = func(c string) bool { return c == "iptables -t mangle -F "+tunCaptureChain }
+	r := dupRebuildManager()
+	r.captureExcl = []string{"b4r_old_v4"}
+	r.localNetsWanted = []string{"192.168.31.0/24"}
+	r.captureInstalled = 12
+	r.rebuildCaptureChain()
+
+	if f.appends != 0 {
+		t.Fatalf("rules appended after a failed flush land behind the old ones, which then win: got %d append(s)", f.appends)
+	}
+	if n := f.count(func(c string) bool { return strings.HasPrefix(c, "ipset ") }); n != 0 || f.fills != 0 {
+		t.Fatalf("the old chain may still use the set, so it must stay as it is: %d ipset call(s), %d fill(s)", n, f.fills)
+	}
+	if !r.rebuildPending {
+		t.Fatalf("a failed flush must leave a rebuild pending for the next check")
+	}
+	if r.captureInstalled != 12 || !equalStringSet(r.captureExcl, []string{"b4r_old_v4"}) || !equalStringSet(r.localNetsWanted, []string{"192.168.31.0/24"}) {
+		t.Fatalf("the chain did not change, so neither may the record of what it holds: installed %d, exclusions %q, local %q", r.captureInstalled, r.captureExcl, r.localNetsWanted)
+	}
+}
+
+func TestAFailedFlushIsRetriedAtTheNextCheck(t *testing.T) {
+	f := stubCapture(t, true, nil)
+	flushFails := true
+	f.fail = func(c string) bool {
+		if c == "iptables -t mangle -F "+tunCaptureChain {
+			return flushFails
+		}
+		return strings.Contains(c, " -D ")
+	}
+	r := dupRebuildManager()
+	r.resolvedCapture = "ports"
+	r.captureTable = 96
+	r.rebuildCaptureChain()
+
+	local := parseLocalNets(addrShowSample, r.tunName)
+	r.localNetsWanted, r.localNets = local, local
+	flushFails = false
+	f.calls = nil
+	r.ensurePortCapture()
+
+	if r.rebuildPending {
+		t.Fatalf("a rebuild that went through must clear the pending retry")
+	}
+	if viaSet, _ := f.dupRules(); viaSet != 1 || f.appends == 0 {
+		t.Fatalf("the next check must rebuild the chain, got %d append(s) and %d set rule(s)", f.appends, viaSet)
+	}
+}

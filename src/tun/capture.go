@@ -300,7 +300,12 @@ func (r *routeManager) rebuildCaptureChain() {
 		local = r.localNetsWanted
 	}
 
-	run("iptables", "-t", "mangle", "-F", tunCaptureChain)
+	if _, err := run("iptables", "-t", "mangle", "-F", tunCaptureChain); err != nil {
+		r.rebuildPending = true
+		log.Warnf("TUN: could not flush %s to rebuild it, so it keeps its current rules until the next check: %v", tunCaptureChain, err)
+		return
+	}
+	r.rebuildPending = false
 	r.dupSetActive = r.prepareDupSet()
 
 	applied := make([]string, 0, len(local))
@@ -604,6 +609,9 @@ func (r *routeManager) ensurePortCapture() {
 	switch {
 	case lost:
 		log.Warnf("TUN: capture chain %s lost %d of %d rules (removed outside b4), so traffic stopped reaching %s; rebuilding it", tunCaptureChain, r.captureInstalled-present, r.captureInstalled, r.tunName)
+		r.rebuildCaptureChain()
+	case r.rebuildPending:
+		log.Infof("TUN: retrying the rebuild of %s, whose flush failed at the previous check", tunCaptureChain)
 		r.rebuildCaptureChain()
 	case dirty:
 		log.Infof("TUN: capture settings changed, rebuilding %s (first %d tcp / %d udp packets on tcp ports %s, udp ports %s)", tunCaptureChain, r.tcpLimit, r.udpLimit, strings.Join(r.tcpPorts, ","), strings.Join(r.udpPorts, ","))
