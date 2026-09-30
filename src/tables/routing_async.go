@@ -22,8 +22,13 @@ var (
 	routeAsyncDropped atomic.Uint64
 	routeAsyncLastLog atomic.Int64
 
-	routeAsyncSeenMu sync.Mutex
-	routeAsyncSeen   = make(map[string]time.Time)
+	routeAsyncSeenMu  sync.Mutex
+	routeAsyncSeen    = make(map[string]time.Time)
+	routeAsyncPending = make(map[string]chan struct{})
+	routeAsyncOpen    = make(map[string]*routeAsyncBatch)
+
+	routeInstallFailedAt    sync.Map
+	routeInstallFailureMemo = time.Minute
 )
 
 func routeAsyncStart() {
@@ -72,27 +77,106 @@ func routeAsyncRefresh(set *config.SetConfig) time.Duration {
 }
 
 func routeAsyncClaim(set *config.SetConfig, ips []net.IP) []net.IP {
-	refresh := routeAsyncRefresh(set)
-	now := time.Now()
-
 	routeAsyncSeenMu.Lock()
 	defer routeAsyncSeenMu.Unlock()
+	fresh, _ := routeAsyncClaimLocked(set, ips, false)
+	return fresh
+}
+
+func routeAsyncClaimLocked(set *config.SetConfig, ips []net.IP, joinPending bool) ([]net.IP, []<-chan struct{}) {
+	refresh := routeAsyncRefresh(set)
+	now := time.Now()
 
 	routePruneStamps(routeAsyncSeen, routeAsyncSeenMax, now, refresh)
 
 	fresh := make([]net.IP, 0, len(ips))
+	var waits []<-chan struct{}
 	for _, ip := range ips {
 		if ip == nil {
 			continue
 		}
 		key := set.Id + "|" + ip.String()
+		if joinPending {
+			if pending, ok := routeAsyncPending[key]; ok {
+				waits = routeAsyncJoin(waits, pending)
+				continue
+			}
+		}
 		if last, seen := routeAsyncSeen[key]; seen && now.Sub(last) < refresh {
 			continue
 		}
 		routeAsyncSeen[key] = now
 		fresh = append(fresh, ip)
 	}
-	return fresh
+	return fresh, waits
+}
+
+func routeAsyncJoin(waits []<-chan struct{}, pending chan struct{}) []<-chan struct{} {
+	for _, w := range waits {
+		if w == pending {
+			return waits
+		}
+	}
+	return append(waits, pending)
+}
+
+func routeAsyncTrackLocked(setID string, ips []net.IP, done chan struct{}) {
+	for _, ip := range ips {
+		routeAsyncPending[setID+"|"+ip.String()] = done
+	}
+}
+
+func routeAsyncSettle(setID string, ips []net.IP, done chan struct{}) {
+	routeAsyncSeenMu.Lock()
+	for _, ip := range ips {
+		key := setID + "|" + ip.String()
+		if routeAsyncPending[key] == done {
+			delete(routeAsyncPending, key)
+		}
+	}
+	routeAsyncSeenMu.Unlock()
+	close(done)
+}
+
+func routeAsyncAbandon(setID string, ips []net.IP, done chan struct{}) {
+	routeAsyncSeenMu.Lock()
+	for _, ip := range ips {
+		key := setID + "|" + ip.String()
+		delete(routeAsyncSeen, key)
+		if routeAsyncPending[key] == done {
+			delete(routeAsyncPending, key)
+		}
+	}
+	routeAsyncSeenMu.Unlock()
+	close(done)
+}
+
+func routeAsyncStamp(set *config.SetConfig, ips []net.IP) {
+	now := time.Now()
+	routeAsyncSeenMu.Lock()
+	for _, ip := range ips {
+		if ip != nil {
+			routeAsyncSeen[set.Id+"|"+ip.String()] = now
+		}
+	}
+	routeAsyncSeenMu.Unlock()
+}
+
+func routeAsyncUsable(cfg *config.Config, ips []net.IP) []net.IP {
+	usable := make([]net.IP, 0, len(ips))
+	for _, ip := range ips {
+		switch {
+		case ip.To4() != nil:
+			if cfg.Queue.IPv4Enabled {
+				usable = append(usable, ip)
+			}
+		case ip.To16() != nil:
+			if cfg.Queue.IPv6Enabled {
+				usable = append(usable, ip)
+			}
+		}
+	}
+	return usable
 }
 
 func routeAsyncForgetSet(setID string) {
@@ -106,6 +190,11 @@ func routeAsyncForgetSet(setID string) {
 			delete(routeAsyncSeen, k)
 		}
 	}
+	for k := range routeAsyncPending {
+		if strings.HasPrefix(k, prefix) {
+			delete(routeAsyncPending, k)
+		}
+	}
 	routeAsyncSeenMu.Unlock()
 }
 
@@ -113,6 +202,7 @@ func routeAsyncForgetKeys(keys []string) {
 	routeAsyncSeenMu.Lock()
 	for _, k := range keys {
 		delete(routeAsyncSeen, k)
+		delete(routeAsyncPending, k)
 	}
 	routeAsyncSeenMu.Unlock()
 }
@@ -121,6 +211,7 @@ func routeAsyncForgetAll() {
 	routeAsyncSeenMu.Lock()
 	defer routeAsyncSeenMu.Unlock()
 	routeAsyncSeen = make(map[string]time.Time)
+	routeAsyncPending = make(map[string]chan struct{})
 }
 
 func routeAsyncRelease(set *config.SetConfig, ips []net.IP) {
@@ -134,18 +225,99 @@ func routeAsyncRelease(set *config.SetConfig, ips []net.IP) {
 	}
 }
 
+type routeAsyncBatch struct {
+	cfg  *config.Config
+	set  *config.SetConfig
+	ips  []net.IP
+	done chan struct{}
+}
+
+func routeAsyncSeal(setID string, batch *routeAsyncBatch) (*config.Config, *config.SetConfig, []net.IP) {
+	routeAsyncSeenMu.Lock()
+	defer routeAsyncSeenMu.Unlock()
+	if routeAsyncOpen[setID] == batch {
+		delete(routeAsyncOpen, setID)
+	}
+	return batch.cfg, batch.set, batch.ips
+}
+
+func routeAsyncFlush(setID string, batch *routeAsyncBatch) {
+	cfg, set, ips := routeAsyncSeal(setID, batch)
+	defer routeAsyncSettle(setID, ips, batch.done)
+	RoutingHandleDNS(cfg, set, ips)
+}
+
+func routeAsyncDropBatch(setID string, batch *routeAsyncBatch) {
+	_, _, ips := routeAsyncSeal(setID, batch)
+	routeAsyncAbandon(setID, ips, batch.done)
+}
+
+func routeLacksEgress(set *config.SetConfig) bool {
+	mode := set.Routing.Mode
+	return (mode == "" || mode == config.RoutingModeInterface) && set.Routing.EgressInterface == ""
+}
+
+func routeNoteInstallFailed(setID string) {
+	routeInstallFailedAt.Store(setID, time.Now())
+}
+
+func routeNoteInstalled(setID string) {
+	routeInstallFailedAt.Delete(setID)
+}
+
+func routeInstallFailedRecently(setID string) bool {
+	v, ok := routeInstallFailedAt.Load(setID)
+	if !ok {
+		return false
+	}
+	at, _ := v.(time.Time)
+	return time.Since(at) < routeInstallFailureMemo
+}
+
 func RoutingHandleDNSAsync(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
-	if cfg == nil || set == nil || !set.Routing.Enabled || len(ips) == 0 || set.Targets.DomainOnly {
-		return
+	RoutingHandleDNSAwait(cfg, set, ips)
+}
+
+func RoutingHandleDNSAwait(cfg *config.Config, set *config.SetConfig, ips []net.IP) []<-chan struct{} {
+	if cfg == nil || set == nil || !set.Routing.Enabled || len(ips) == 0 || set.Targets.DomainOnly || routeLacksEgress(set) {
+		return nil
 	}
-	fresh := routeAsyncClaim(set, ips)
-	if len(fresh) == 0 {
-		return
+	usable := routeAsyncUsable(cfg, ips)
+	if len(usable) == 0 {
+		return nil
 	}
-	routeAsyncSubmit(
-		func() { RoutingHandleDNS(cfg, set, fresh) },
-		func() { routeAsyncRelease(set, fresh) },
-	)
+
+	routeAsyncSeenMu.Lock()
+	fresh, waits := routeAsyncClaimLocked(set, usable, true)
+	var queued *routeAsyncBatch
+	if len(fresh) > 0 {
+		batch := routeAsyncOpen[set.Id]
+		if batch == nil {
+			batch = &routeAsyncBatch{done: make(chan struct{})}
+			routeAsyncOpen[set.Id] = batch
+			queued = batch
+		}
+		batch.cfg, batch.set = cfg, set
+		batch.ips = append(batch.ips, fresh...)
+		routeAsyncTrackLocked(set.Id, fresh, batch.done)
+		waits = routeAsyncJoin(waits, batch.done)
+		if len(batch.ips) >= routeNftChunkSize && routeAsyncOpen[set.Id] == batch {
+			delete(routeAsyncOpen, set.Id)
+		}
+	}
+	routeAsyncSeenMu.Unlock()
+
+	if queued != nil {
+		setID := set.Id
+		routeAsyncSubmit(
+			func() { routeAsyncFlush(setID, queued) },
+			func() { routeAsyncDropBatch(setID, queued) },
+		)
+	}
+	if routeInstallFailedRecently(set.Id) {
+		return nil
+	}
+	return waits
 }
 
 func RoutingLearnIPAsync(cfg *config.Config, set *config.SetConfig, ip net.IP) {
@@ -155,13 +327,24 @@ func RoutingLearnIPAsync(cfg *config.Config, set *config.SetConfig, ip net.IP) {
 	if config.RoutingIsBlock(set.Routing.Mode) {
 		return
 	}
-	fresh := routeAsyncClaim(set, []net.IP{ip})
+	routeAsyncSeenMu.Lock()
+	fresh, _ := routeAsyncClaimLocked(set, []net.IP{ip}, true)
+	var done chan struct{}
+	if len(fresh) > 0 {
+		done = make(chan struct{})
+		routeAsyncTrackLocked(set.Id, fresh, done)
+	}
+	routeAsyncSeenMu.Unlock()
 	if len(fresh) == 0 {
 		return
 	}
+	setID := set.Id
 	routeAsyncSubmit(
-		func() { RoutingLearnIP(cfg, set, fresh[0]) },
-		func() { routeAsyncRelease(set, fresh) },
+		func() {
+			defer routeAsyncSettle(setID, fresh, done)
+			RoutingLearnIP(cfg, set, fresh[0])
+		},
+		func() { routeAsyncAbandon(setID, fresh, done) },
 	)
 }
 

@@ -20,9 +20,10 @@ func NewWorkerWithQueue(cfg *config.Config, qnum uint16) *Worker {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	w := &Worker{
-		qnum:   qnum,
-		ctx:    ctx,
-		cancel: cancel,
+		qnum:     qnum,
+		ctx:      ctx,
+		cancel:   cancel,
+		holdStop: make(chan struct{}),
 	}
 
 	w.cfg.Store(cfg)

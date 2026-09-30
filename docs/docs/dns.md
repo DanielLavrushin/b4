@@ -50,7 +50,7 @@ For a matched query b4 works through these steps in order:
 1. **Blocking.** If the set's routing mode is `block`, the query is answered with NXDOMAIN or dropped, according to the block action. See [Blocking](./sets/blocking.md).
 2. **Pinned addresses.** If the name has a pin, b4 answers from the pin and stops. This happens whether or not the redirect below is enabled.
 3. **Resolver.** If the redirect is enabled and a resolver is configured, b4 resolves the name itself and answers the client directly. Otherwise the query is forwarded unchanged.
-4. **The answer.** Addresses from the answer are remembered for the client, and written into the set's IP set when [routing](./sets/routing.md) is on.
+4. **The answer.** Addresses from the answer are remembered for the client, and written into the set's IP set when [routing](./sets/routing.md) is on. An answer, forwarded or pinned, that brings addresses the set does not hold yet reaches the client once they are written, after at most 250 ms each time b4 sees the answer, so the connection that follows it usually takes the set's route; see [Routing](./sets/routing.md#how-it-works-in-detail).
 
 ### Resolver types
 

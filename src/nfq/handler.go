@@ -65,7 +65,10 @@ func (w *Worker) handlePacket(q *nfqueue.Nfqueue, a nfqueue.Attribute, mark uint
 		return 0
 	}
 
-	vc := &verdictCtx{id: *a.PacketID, q: q}
+	vc := &verdictCtx{id: *a.PacketID}
+	if q != nil {
+		vc.q = q
+	}
 
 	if a.Mark != nil && selfInjectedMark(*a.Mark, uint32(mark), w.getConfig()) {
 		return vc.accept()
@@ -1027,6 +1030,10 @@ func (w *Worker) handleNfqError(e error) int {
 	}
 	msg := e.Error()
 	if strings.Contains(msg, "use of closed file") || strings.Contains(msg, "file descriptor") {
+		return 0
+	}
+	if errors.Is(e, syscall.ENOENT) {
+		log.Tracef("nfq queue %d: a verdict arrived for a packet the kernel had already dropped: %v", w.qnum, e)
 		return 0
 	}
 	log.Errorf("nfq: %v", e)

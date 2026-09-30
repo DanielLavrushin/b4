@@ -110,7 +110,7 @@ flowchart TB
 
 Routing uses policy-based routing - routing decisions based on packet marks:
 
-1. **Collecting IPs.** When b4 sees a DNS response for a domain in the set, it extracts the IP addresses and adds them to an internal IP set (nftables set or ipset). IPs entered manually in the [set targets](./targets.md) are added when the configuration is loaded.
+1. **Collecting IPs.** When b4 sees a DNS response for a domain in the set, it extracts the IP addresses and adds them to an internal IP set (nftables set or ipset). A response that brings addresses the set does not hold yet is passed on to the client once b4 has added them, so the connection that follows it usually takes the set's route. b4 waits at most 250 ms each time it sees the response; when adding takes longer, for example while b4 re-applies its routing rules, the response goes out at the limit and the first connection can still leave outside the set. Addresses that several responses bring at the same time are added in one step, and a response whose addresses were added recently is normally not held. With the TUN engine the response is not held, and the first connection to a new address can leave before the address is in the set. IPs entered manually in the [set targets](./targets.md) are added when the configuration is loaded.
 
 2. **Marking packets.** b4 creates firewall chains for each set:
    - **PREROUTING** (mangle) - marks forwarded traffic (from devices on the network) when the destination IP is in the set. If source interfaces are set, only traffic from those interfaces is marked.
@@ -344,7 +344,7 @@ flowchart LR
 
 ### How it works
 
-1. **Collecting IPs.** Same sources as interface mode: DNS responses b4 observes, static IPs from the set targets, and pre-resolution of the set's domains. In addition, a hostname that matches the set by domain suffix is resolved in full, so every address it answers with enters the set rather than being learned one connection at a time.
+1. **Collecting IPs.** Same sources as interface mode: DNS responses b4 observes, static IPs from the set targets, and pre-resolution of the set's domains. In addition, a hostname that matches the set by domain suffix is resolved in full, so every address it answers with enters the set rather than being learned one connection at a time. An address that b4 learns from the SNI of a TLS ClientHello, rather than from a DNS response, enters the set only after the connection that carried the ClientHello has been sent on directly; later connections to that address are diverted.
 
 2. **Transparent listener.** b4 opens a listener on a port derived from the set and marks it transparent, so it can accept connections addressed to someone else.
 
@@ -473,8 +473,10 @@ curl -s https://ipinfo.io/ip
 Then check the connection log for the matched connection. Traffic that went through the proxy is tagged `[proxy]`:
 
 ```text
-TCP 192.168.1.37:20854 → 34.117.59.81:443 sni-set=ipinfo.io [proxy]
+TCP 192.168.1.37:20854 → 34.117.59.81:443 ipinfo.io tls=1.3 sni-set=ipinfo.io [proxy]
 ```
+
+The line carries the name from the connection's TLS ClientHello or HTTP request, whether or not **Send domain name to upstream** is on. A connection where the server speaks first shows no name.
 
 If there is no `[proxy]` line, the connection was never diverted. The usual cause is that the address it connected to is not in the set.
 

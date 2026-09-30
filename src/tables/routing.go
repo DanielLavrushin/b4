@@ -191,14 +191,22 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 		return
 	}
 
+	cur := buildRouteState(cfg, set)
+	cur.set = set
+	if old, ok := routeRuleCache[set.Id]; ok && routeStateEqual(old, cur) {
+		routeAsyncStamp(set, ips)
+		routeAddIPsToSets(be, cur, routeSetTTL(set), ips, cur.ipv4, cur.ipv6)
+		return
+	}
+
 	if err := be.ensureBase(); err != nil {
+		routeNoteInstallFailed(set.Id)
 		log.Errorf("Routing: failed to ensure base (%s): %v", be.name(), err)
 		return
 	}
 
-	cur := buildRouteState(cfg, set)
-	cur.set = set
 	if !config.RoutingIsBlock(cur.mode) && (cur.mark == 0 || cur.table <= 0) {
+		routeNoteInstallFailed(set.Id)
 		routeWarnIncomplete(set, "b4 could not take a routing table of its own for it")
 		return
 	}
@@ -229,10 +237,12 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 			if hadPrevious {
 				routeRuleCache[set.Id] = previous
 			}
+			routeNoteInstallFailed(set.Id)
 			log.Errorf("Routing: failed to ensure rule for set '%s': %v", set.Name, err)
 			return
 		}
 		routeRuleCache[set.Id] = cur
+		routeNoteInstalled(set.Id)
 		retireOld()
 		routeRestoreStaticEntries(be, set, cur)
 		switch cur.mode {
@@ -248,12 +258,15 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 		routeReestablishJumpOrder(be, cfg, true)
 	}
 
-	ttl := set.Routing.IPTTLSeconds
-	if ttl <= 0 {
-		ttl = 3600
-	}
+	routeAsyncStamp(set, ips)
+	routeAddIPsToSets(be, cur, routeSetTTL(set), ips, cur.ipv4, cur.ipv6)
+}
 
-	routeAddIPsToSets(be, cur, ttl, ips, cur.ipv4, cur.ipv6)
+func routeSetTTL(set *config.SetConfig) int {
+	if set.Routing.IPTTLSeconds > 0 {
+		return set.Routing.IPTTLSeconds
+	}
+	return 3600
 }
 
 func RoutingLearnIP(cfg *config.Config, set *config.SetConfig, ip net.IP) {
@@ -1167,6 +1180,7 @@ func routingSyncConfig(cfg *config.Config) {
 		if _, ok := desired[setID]; !ok {
 			routeCleanupAny(be, st)
 			delete(routeRuleCache, setID)
+			routeNoteInstalled(setID)
 			routeForgetSetLearnState(setID)
 			routeForgetEgressLoopWarning(setID)
 			for host := range routeLearnedHosts[setID] {
@@ -1194,6 +1208,7 @@ func routingSyncConfig(cfg *config.Config) {
 			cur.ipv6 = cur.ipv6 && v6
 		}
 		if !config.RoutingIsBlock(cur.mode) && (cur.mark == 0 || cur.table <= 0) {
+			routeNoteInstallFailed(set.Id)
 			routeWarnIncomplete(set, "b4 could not take a routing table of its own for it")
 			continue
 		}
@@ -1231,6 +1246,7 @@ func routingSyncConfig(cfg *config.Config) {
 					routeRuleCache[set.Id] = previous
 				}
 				failed = true
+				routeNoteInstallFailed(set.Id)
 				if retrying {
 					log.Tracef("Routing: set '%s' still cannot be installed during the retried sync: %v", set.Name, err)
 				} else {
@@ -1242,6 +1258,7 @@ func routingSyncConfig(cfg *config.Config) {
 			retireOld()
 			newRoutingSets = append(newRoutingSets, set)
 		}
+		routeNoteInstalled(set.Id)
 
 		routeApplyStaticEntries(be, set, cur)
 	}
