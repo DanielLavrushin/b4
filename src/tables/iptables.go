@@ -297,10 +297,15 @@ type IPSet struct {
 	Name    string
 	Family  string // "inet" for IPv4, "inet6" for IPv6
 	Entries []string
+	MaxElem int
 }
 
 func (s IPSet) Create() error {
-	if _, err := run("ipset", "create", s.Name, "hash:net", "family", s.Family, "-exist"); err != nil {
+	args := []string{"ipset", "create", s.Name, "hash:net", "family", s.Family}
+	if s.MaxElem > 0 {
+		args = append(args, "maxelem", strconv.Itoa(s.MaxElem))
+	}
+	if _, err := run(append(args, "-exist")...); err != nil {
 		return fmt.Errorf("failed to create ipset %s: %w", s.Name, err)
 	}
 	if _, err := run("ipset", "flush", s.Name); err != nil {

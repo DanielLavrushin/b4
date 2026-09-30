@@ -122,6 +122,7 @@ func (e *Engine) Start() error {
 		explicitTable: tunCfg.RouteTable,
 		pinnedTables:  pinnedSetTables(cfg),
 		followDefault: tunCfg.FollowsDefaultRoute(),
+		quit:          e.quit,
 	}
 	routes.setCaptureParams(capture)
 	e.routes = routes
