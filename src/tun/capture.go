@@ -35,10 +35,15 @@ func (r *routeManager) steerMarkStr() string {
 }
 
 func (r *routeManager) resolveCaptureMode() string {
-	if iptablesMatchSupported([]string{
+	r.noConnbytes = !iptablesMatchSupported([]string{
 		"-p", "tcp", "-m", "connbytes", "--connbytes-dir", "original",
 		"--connbytes-mode", "packets", "--connbytes", "0:10", "-j", "ACCEPT",
-	}) {
+	})
+	if !r.noConnbytes {
+		return "ports"
+	}
+	if r.localOnly {
+		log.Warnf("TUN: xt_connbytes not available; whole connections on the capture ports go through %s instead of their first N packets (install xtables-addons / linux-modules-extra for first-N capture)", r.tunName)
 		return "ports"
 	}
 	log.Warnf("TUN: xt_connbytes not available; capturing the whole default route instead of first-N packets (install xtables-addons / linux-modules-extra for first-N capture)")
@@ -64,14 +69,27 @@ func (r *routeManager) setupPortCapture(srcIP string) error {
 		return err
 	}
 	r.clientBypassOK.Store(true)
-	r.conflicts = r.warnOnSteerConflicts()
+	if !r.localOnly {
+		r.conflicts = r.warnOnSteerConflicts()
+	}
 	r.multiport = iptablesMatchSupported([]string{"-p", "tcp", "-m", "multiport", "--dports", "80,443", "-j", "ACCEPT"})
 	r.ensureCaptureChain()
 	r.rebuildCaptureChain()
 	r.ensureCaptureJumps()
-	log.Infof("TUN: port-capture mode - first %d tcp / %d udp packets on ports %s + DNS routed into %s (steer mark %s, ip rule priority %d, table %d; everything b4 re-injects follows this router's own routing)",
-		r.tcpLimit, r.udpLimit, strings.Join(r.tcpPorts, ","), r.tunName, r.steerMarkStr(), r.capturePrio, r.captureTable)
+	log.Infof("TUN: port-capture mode - %s, routed into %s (steer mark %s, ip rule priority %d, table %d; everything b4 re-injects follows this router's own routing)",
+		r.captureSummary(), r.tunName, r.steerMarkStr(), r.capturePrio, r.captureTable)
 	return nil
+}
+
+func (r *routeManager) captureSummary() string {
+	what := fmt.Sprintf("first %d tcp / %d udp packets on tcp ports %s, udp ports %s + DNS", r.tcpLimit, r.udpLimit, strings.Join(r.tcpPorts, ","), strings.Join(r.udpPorts, ","))
+	if r.noConnbytes {
+		what = fmt.Sprintf("whole connections on tcp ports %s, udp ports %s + DNS", strings.Join(r.tcpPorts, ","), strings.Join(r.udpPorts, ","))
+	}
+	if r.localOnly {
+		what += ", this device's own traffic only"
+	}
+	return what
 }
 
 func (r *routeManager) setupCaptureTable() error {
@@ -153,6 +171,12 @@ func (r *routeManager) ensureCaptureJumps() int {
 	restored := 0
 	if r.ensureJump("OUTPUT", "-j", tunCaptureChain) {
 		restored++
+	}
+
+	if r.localOnly {
+		r.removeJump("PREROUTING", "-j", tunCaptureChain)
+		r.removeJump("PREROUTING", "-j", tunGateChain)
+		return restored
 	}
 
 	if r.deviceFilterActive() {
@@ -247,6 +271,7 @@ type captureRule struct {
 	spec  []string
 	local string
 	soft  bool
+	steer bool
 }
 
 func (r *routeManager) captureChainRules(excl, local []string) []captureRule {
@@ -269,16 +294,23 @@ func (r *routeManager) captureChainRules(excl, local []string) []captureRule {
 		locals = append(locals, captureRule{spec: []string{"-d", cidr, "-j", "RETURN"}, local: cidr})
 	}
 
-	if r.reinjectReachesLocal() {
+	switch {
+	case r.localOnly:
+		if r.outGateway != "" {
+			rules = append(rules, captureRule{spec: []string{"-d", r.outGateway, "-p", "udp", "--dport", "53", "-j", "MARK", "--set-xmark", r.steerMarkStr()}})
+		}
+		rules = append(rules, locals...)
+		rules = append(rules, replies...)
+	case r.reinjectReachesLocal():
 		rules = append(rules, replies...)
 		rules = append(rules, locals...)
-	} else {
+	default:
 		rules = append(rules, locals...)
 		rules = append(rules, replies...)
 	}
 
 	for _, spec := range r.steerSpecs() {
-		rules = append(rules, captureRule{spec: spec})
+		rules = append(rules, captureRule{spec: spec, steer: true})
 	}
 	return rules
 }
@@ -294,11 +326,18 @@ func (r *routeManager) rebuildCaptureChain() {
 
 	applied := make([]string, 0, len(local))
 	installed, missing := 0, 0
+	steerWanted, steerInstalled := 0, 0
 	for _, rule := range r.captureChainRules(excl, local) {
+		if rule.steer {
+			steerWanted++
+		}
 		_, err := run(append([]string{"iptables", "-t", "mangle", "-A", tunCaptureChain}, rule.spec...)...)
 		switch {
 		case err == nil:
 			installed++
+			if rule.steer {
+				steerInstalled++
+			}
 			if rule.local != "" {
 				applied = append(applied, rule.local)
 			}
@@ -313,6 +352,9 @@ func (r *routeManager) rebuildCaptureChain() {
 	}
 	if missing == 0 {
 		r.captureRetries = 0
+	}
+	if steerWanted > 0 && steerInstalled == 0 {
+		log.Errorf("TUN: none of the %d rules that steer traffic into %s could be installed (see the warnings above; the MARK target may be missing from this kernel), so b4 processes no traffic", steerWanted, r.tunName)
 	}
 	r.captureInstalled = installed
 	r.captureMissing = missing
@@ -415,6 +457,9 @@ func (r *routeManager) steerSpecs() [][]string {
 
 	var specs [][]string
 	cb := func(portRange string) []string {
+		if r.noConnbytes {
+			return nil
+		}
 		return []string{"-m", "connbytes", "--connbytes-dir", "original", "--connbytes-mode", "packets", "--connbytes", portRange}
 	}
 
@@ -472,7 +517,9 @@ func (r *routeManager) ensurePortCapture() {
 	r.captureDirty, r.gateDirty = false, false
 	present := r.ensureCaptureChain()
 	hooks := r.ensureCaptureJumps()
-	r.refreshSteerConflicts()
+	if !r.localOnly {
+		r.refreshSteerConflicts()
+	}
 	desired := r.desiredCaptureExclusions()
 	localNow, localOK := r.desiredLocalNets()
 	if !localOK {
@@ -496,7 +543,7 @@ func (r *routeManager) ensurePortCapture() {
 		log.Warnf("TUN: capture chain %s lost %d of %d rules (removed outside b4), so traffic stopped reaching %s; rebuilding it", tunCaptureChain, r.captureInstalled-present, r.captureInstalled, r.tunName)
 		r.rebuildCaptureChain()
 	case dirty:
-		log.Infof("TUN: capture settings changed, rebuilding %s (first %d tcp / %d udp packets on tcp ports %s, udp ports %s)", tunCaptureChain, r.tcpLimit, r.udpLimit, strings.Join(r.tcpPorts, ","), strings.Join(r.udpPorts, ","))
+		log.Infof("TUN: capture settings changed, rebuilding %s (%s)", tunCaptureChain, r.captureSummary())
 		r.rebuildCaptureChain()
 	case !equalStringSet(desired, r.captureExcl):
 		log.Infof("TUN: reconcile refreshing capture exclusions (%d routing set(s))", len(desired))
