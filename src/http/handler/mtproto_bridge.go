@@ -52,6 +52,8 @@ type TelegramBridgeStatus struct {
 
 var bridgeListenerFunc func() BridgeListenerInfo
 
+var routingSetFamilies = tables.RoutingSetFamilies
+
 var bridgeTProxyProbe = func(cfg *config.Config, recheck bool) BridgeTProxyInfo {
 	ok, checked, missing, packages := tables.TProxyCapability(cfg, recheck)
 	return bridgeTProxyResult(ok, checked, missing, packages)
@@ -117,7 +119,9 @@ func buildTelegramBridgeStatus(cfg *config.Config, recheck, probe bool) Telegram
 		st.RuleShadowed = tables.RoutingPreJumpShadowedBy(config.TelegramBridgeSetID)
 	}
 	if enabled {
-		st.BridgeNetfilter = readBridgeNetfilter().Bridges(diagFamilies(cfg))
+		if ipv4, ipv6, installed := routingSetFamilies(config.TelegramBridgeSetID); installed {
+			st.BridgeNetfilter = readBridgeNetfilter().Bridges(ipv4, ipv6)
+		}
 	}
 	if b, ok := globalMTProtoBridge.(interface{ Stats() mtproto.BridgeStats }); ok {
 		st.Stats = b.Stats()

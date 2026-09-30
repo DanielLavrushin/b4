@@ -303,9 +303,7 @@ func collectFirewallInfo(cfg *config.Config) DiagFirewall {
 	info.NFQueueWorks = testNFQueue(info.Backend)
 	info.FlowOffload, info.FlowOffloadGuard = detectFlowOffload()
 	info.FlowOffloadSafe = flowOffloadSafe(info.FlowOffload, info.FlowOffloadGuard, cfg)
-	bn := readBridgeNetfilter()
-	info.BridgeNetfilter, info.BridgeNetfilterSafe = bridgeNetfilterStatus(bn, cfg)
-	info.BridgeNetfilterSysctls, info.BridgeNetfilterAttrs = bn.Switches(diagFamilies(cfg))
+	info.BridgeNetfilter, info.BridgeNetfilterSafe, info.BridgeNetfilterSysctls, info.BridgeNetfilterAttrs = bridgeNetfilterDiag(readBridgeNetfilter(), cfg)
 
 	if n, last := tables.RulesRestores(); n > 0 {
 		info.RulesRestores = n
@@ -326,7 +324,10 @@ func collectPolicyRuleGroup() []DiagRuleGroup {
 	return groups
 }
 
-var readBridgeNetfilter = tables.ReadBridgeNetfilter
+var (
+	readBridgeNetfilter   = tables.ReadBridgeNetfilter
+	routingTProxyFamilies = tables.RoutingTProxyFamilies
+)
 
 func diagFamilies(cfg *config.Config) (ipv4, ipv6 bool) {
 	if cfg == nil {
@@ -335,21 +336,13 @@ func diagFamilies(cfg *config.Config) (ipv4, ipv6 bool) {
 	return cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled
 }
 
-func bridgeNetfilterStatus(bn tables.BridgeNetfilter, cfg *config.Config) ([]string, bool) {
-	bridges := bn.Bridges(diagFamilies(cfg))
-	return bridges, len(bridges) == 0 || !tproxyRoutingConfigured(cfg)
-}
-
-func tproxyRoutingConfigured(cfg *config.Config) bool {
-	if cfg == nil {
-		return false
+func bridgeNetfilterDiag(bn tables.BridgeNetfilter, cfg *config.Config) (bridges []string, safe bool, sysctls, attrs []string) {
+	ipv4, ipv6 := routingTProxyFamilies()
+	if conflicting := bn.Bridges(ipv4, ipv6); len(conflicting) > 0 {
+		sysctls, attrs = bn.Switches(ipv4, ipv6)
+		return conflicting, false, sysctls, attrs
 	}
-	for _, set := range cfg.RoutingSets() {
-		if set != nil && set.Enabled && set.Routing.Enabled && config.RoutingUsesTProxy(set.Routing.Mode) {
-			return true
-		}
-	}
-	return false
+	return bn.Bridges(diagFamilies(cfg)), true, nil, nil
 }
 
 func detectFirewallBackend() string {
@@ -883,7 +876,7 @@ func collectKernelModules(cfg *config.Config) DiagKernel {
 		Packages:  tproxyPkgs,
 		Reasons:   tables.KernelModuleReasons(tproxyMissing),
 	}
-	if bridges, safe := bridgeNetfilterStatus(readBridgeNetfilter(), cfg); tproxyOK && !safe {
+	if bridges, safe, _, _ := bridgeNetfilterDiag(readBridgeNetfilter(), cfg); tproxyOK && !safe {
 		tproxyCap.Detail = fmt.Sprintf("TPROXY + socket match available, but bridge netfilter is on for %s, so proxy and mtproto-ws routing modes cannot capture the devices behind these bridges", strings.Join(bridges, ", "))
 	} else if tproxyOK {
 		tproxyCap.Detail = "TPROXY + socket match available (proxy and mtproto-ws routing modes work)"

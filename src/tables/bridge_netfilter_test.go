@@ -307,6 +307,31 @@ func TestRouteNoteBridgeNetfilterWarnsOnChange(t *testing.T) {
 	}
 }
 
+func TestRoutingInstalledFamilies(t *testing.T) {
+	routeMu.Lock()
+	saved := routeRuleCache
+	routeRuleCache = map[string]routeState{
+		config.TelegramBridgeSetID: {mode: config.RoutingModeMTProtoWS, ipv4: true},
+		"iface":                    {mode: config.RoutingModeInterface, ipv4: true, ipv6: true},
+	}
+	routeMu.Unlock()
+	t.Cleanup(func() {
+		routeMu.Lock()
+		routeRuleCache = saved
+		routeMu.Unlock()
+	})
+
+	if ipv4, ipv6, ok := RoutingSetFamilies(config.TelegramBridgeSetID); !ok || !ipv4 || ipv6 {
+		t.Errorf("bridge set: got v4 %v v6 %v installed %v, want true false true", ipv4, ipv6, ok)
+	}
+	if _, _, ok := RoutingSetFamilies("missing"); ok {
+		t.Error("a set that is not installed reported as installed")
+	}
+	if ipv4, ipv6 := RoutingTProxyFamilies(); !ipv4 || ipv6 {
+		t.Errorf("only the IPv4 mtproto-ws rule uses TPROXY: got v4 %v v6 %v", ipv4, ipv6)
+	}
+}
+
 func TestRouteTProxyFamiliesLocked(t *testing.T) {
 	routeMu.Lock()
 	saved := routeRuleCache

@@ -122,10 +122,13 @@ var (
 )
 
 func RoutingCheckBridgeNetfilter() {
+	routeNoteBridgeNetfilter(RoutingTProxyFamilies())
+}
+
+func RoutingTProxyFamilies() (ipv4, ipv6 bool) {
 	routeMu.Lock()
-	ipv4, ipv6 := routeTProxyFamiliesLocked()
-	routeMu.Unlock()
-	routeNoteBridgeNetfilter(ipv4, ipv6)
+	defer routeMu.Unlock()
+	return routeTProxyFamiliesLocked()
 }
 
 func routeTProxyFamiliesLocked() (ipv4, ipv6 bool) {
