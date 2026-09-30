@@ -22,7 +22,7 @@ A value given on the command line is not written back into the file. When b4 sav
 | --- | --- | --- |
 | `--queue-num` | Netfilter queue number | `537` |
 | `--threads` | Number of worker threads | `4` |
-| `--mark` | Packet mark used in the firewall rules | `32768` |
+| `--mark` | Queue mark (`queue.mark`), see [Packet marks](/docs/guides/marks#the-queue-mark) | `32768` |
 | `--ipv4` | Process IPv4 traffic (`queue.ipv4`) | `true` |
 | `--ipv6` | Process IPv6 traffic (`queue.ipv6`) | `false` |
 

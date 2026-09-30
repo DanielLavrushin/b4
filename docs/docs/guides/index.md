@@ -11,3 +11,4 @@ and new ones are collected here.
 | --- | --- |
 | [Which interface is which](/docs/guides/interfaces) | The three settings that take an interface name, what each one filters, and how to find which is wrong |
 | [b4 with Xray or XrayUI](/docs/guides/xray) | Routing a set into an Xray TUN inbound, and the three layers that decide where a packet goes |
+| [Packet marks](/docs/guides/marks) | Every packet, connection and socket mark b4 uses, the routing rules keyed on them, and the marks of some other services on a router |

@@ -12,7 +12,7 @@ A set decides which resolver answers the domains it targets. Everything else kee
 | UDP port 53 | Queue rules in `PREROUTING` and `OUTPUT`, for requests (`dport 53`) and for replies (`sport 53`) | Always, while b4 is running |
 | TCP port 53 | A `nat` `REDIRECT` into a local listener, port 5453 by default | Only while at least one enabled set has a DNS server or a DoH URL, and **Intercept DNS over TCP** is on |
 
-Both cases cover traffic forwarded from the network and queries the router makes for itself. b4's own lookups carry a firewall mark that skips these rules, so a query b4 sends on a client's behalf never re-enters the queue.
+Both cases cover traffic forwarded from the network and queries the router makes for itself. The queries b4 sends on a client's behalf and its lookups through a set's resolver carry the [queue mark](./guides/marks.md#the-queue-mark), and these rules skip packets that carry it, so such a query never re-enters the queue through them. Lookups b4 makes through the router's own resolver carry no mark.
 
 ```mermaid
 flowchart TB

@@ -28,7 +28,7 @@ Settings for the packet processing core over netfilter.
 | Parameter | Description | Range | Default |
 | --- | --- | --- | --- |
 | Starting queue number | NFQUEUE number. Change if other programs use the same numbers | 0-65535 | `537` |
-| Packet mark | netfilter mark for iptables/nftables rules. b4 uses it to mark processed packets | - | `32768` |
+| Packet mark | The queue mark: b4 puts it on the fakes, split segments and packets it sends back out, and on the DNS queries it sends for clients and for its sets; its iptables/nftables rules let packets that carry it through. See [Packet marks](/docs/guides/marks#the-queue-mark) | - | `32768` |
 | Worker threads | Number of parallel workers. More threads = higher throughput on multi-core systems | 1-16 | `4` |
 | TCP per-connection packet limit | How many TCP packets per connection to analyze. Sets cannot exceed this value | 1-100 | `19` |
 | UDP per-connection packet limit | How many UDP packets per connection to analyze. Sets cannot exceed this value | 1-30 | `8` |

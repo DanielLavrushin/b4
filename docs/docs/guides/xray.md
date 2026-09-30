@@ -74,6 +74,11 @@ number takes every packet its selector matches. `ip rule` on the router shows th
 order; neither web interface does.
 :::
 
+:::info
+Every mark and `ip rule` b4 installs, and the values Xray, XKeen and XrayUI use, are listed in
+[Packet marks](/docs/guides/marks).
+:::
+
 ## Deciding which service routes
 
 Both arrangements below work. A mixture of the two produces a set that marks traffic and
