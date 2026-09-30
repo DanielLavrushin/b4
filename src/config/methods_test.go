@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -989,6 +990,41 @@ func TestCollectDuplicateIPs_Dedup(t *testing.T) {
 	}
 	if len(v6) != 1 {
 		t.Errorf("expected 1 unique IPv6, got %d: %v", len(v6), v6)
+	}
+}
+
+func TestCollectDuplicateIPs_PassesOnlyParsedAddressesToTheFirewall(t *testing.T) {
+	cfg := &Config{
+		Sets: []*SetConfig{
+			{
+				Enabled: true,
+				TCP: TCPConfig{
+					Duplicate: DuplicateConfig{Enabled: true},
+				},
+			},
+		},
+	}
+	cfg.Sets[0].Targets.IpsToMatch = []string{
+		" 10.1.2.3/24 ",
+		"10.1.2.0/24",
+		"198.51.100.7\nadd b4r_proxyset01_345b_v4 0.0.0.0/1",
+		"10.0.0.0/99",
+		"10.1/16",
+		"not-an-address",
+		"1.2.3.4-1.2.3.9",
+		"2001:DB8::/32",
+		"::ffff:192.0.2.1",
+		"0.0.0.0/0",
+	}
+
+	v4, v6 := cfg.CollectDuplicateIPs()
+	wantV4 := []string{"10.1.2.0/24", "192.0.2.1", "0.0.0.0/0"}
+	wantV6 := []string{"2001:db8::/32"}
+	if strings.Join(v4, ",") != strings.Join(wantV4, ",") {
+		t.Errorf("ipset restore and nft -f take one entry per line, so anything that does not parse must stay out: got v4 %q, want %q", v4, wantV4)
+	}
+	if strings.Join(v6, ",") != strings.Join(wantV6, ",") {
+		t.Errorf("got v6 %q, want %q", v6, wantV6)
 	}
 }
 

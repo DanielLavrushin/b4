@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -916,9 +917,9 @@ func (cfg *Config) CollectDuplicateIPs() (ipv4 []string, ipv6 []string) {
 		if !set.Enabled || !set.TCP.Duplicate.Enabled {
 			continue
 		}
-		for _, ipStr := range set.Targets.IpsToMatch {
-			ipStr = strings.TrimSpace(ipStr)
-			if ipStr == "" {
+		for _, raw := range set.Targets.IpsToMatch {
+			ipStr, ok := canonicalIPTarget(raw)
+			if !ok {
 				continue
 			}
 			if strings.Contains(ipStr, ":") {
@@ -935,6 +936,25 @@ func (cfg *Config) CollectDuplicateIPs() (ipv4 []string, ipv6 []string) {
 		}
 	}
 	return
+}
+
+func canonicalIPTarget(raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", false
+	}
+	if strings.Contains(raw, "/") {
+		_, ipNet, err := net.ParseCIDR(raw)
+		if err != nil {
+			return "", false
+		}
+		return ipNet.String(), true
+	}
+	ip := net.ParseIP(raw)
+	if ip == nil {
+		return "", false
+	}
+	return ip.String(), true
 }
 
 func (c *Config) Clone() *Config {

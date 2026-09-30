@@ -88,11 +88,17 @@ type routeManager struct {
 	captureRestores    int
 	lastCaptureRestore time.Time
 	captureDirty       bool
+	rebuildPending     bool
 	gateDirty          bool
 	liveTCPPorts       atomic.Pointer[[]string]
 	capturePrio        int
 	conflicts          []steerConflict
 	captureExcl        []string
+	dupSetActive       bool
+	dupSetProbed       bool
+	dupSetMatchOK      bool
+	dupCaptureNote     string
+	quit               <-chan struct{}
 }
 
 func resolveDefaultEgress(skipDev string) (iface, gw, src string, ok bool) {
@@ -520,6 +526,9 @@ func (r *routeManager) refreshEgress() bool {
 func (r *routeManager) reconcile() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.stopping() {
+		return
+	}
 
 	r.refreshEgress()
 
@@ -874,7 +883,9 @@ func extractGateway(routeLine string) string {
 	return extractField(routeLine, "via")
 }
 
-func run(args ...string) (string, error) {
+var run = runExec
+
+func runExec(args ...string) (string, error) {
 	if len(args) > 0 && (args[0] == "iptables" || args[0] == "ip6tables") {
 		if w := tables.WaitArgs(args[0]); len(w) > 0 {
 			newArgs := make([]string, 0, len(args)+len(w))

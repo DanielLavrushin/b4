@@ -3,6 +3,7 @@ package tun
 import (
 	"fmt"
 	"net"
+	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,6 +19,7 @@ const (
 	tunCaptureChain    = "B4_TUN"
 	tunGateChain       = "B4_TUN_GATE"
 	tunProbeChain      = "B4_TUN_PROBE"
+	tunDupSet          = "b4_tun_dup_v4"
 	defaultSteerMark   = engine.TunSteerMark
 	defaultClientMark  = engine.ClientMark
 	defaultCapturePrio = 10
@@ -28,6 +30,11 @@ const (
 	bypassRulePrio     = 100
 	localRetryLimit    = 1
 	captureRetryLimit  = 1
+)
+
+const (
+	dupSetMinMaxElem = 65536
+	dupRuleWarnAt    = 100
 )
 
 func (r *routeManager) steerMarkStr() string {
@@ -316,18 +323,32 @@ func (r *routeManager) captureChainRules(excl, local []string) []captureRule {
 }
 
 func (r *routeManager) rebuildCaptureChain() {
+	if r.stopping() {
+		return
+	}
 	excl := r.desiredCaptureExclusions()
 	local, localOK := r.desiredLocalNets()
 	if !localOK {
 		local = r.localNetsWanted
 	}
 
-	run("iptables", "-t", "mangle", "-F", tunCaptureChain)
+	if _, err := run("iptables", "-t", "mangle", "-F", tunCaptureChain); err != nil {
+		r.rebuildPending = true
+		log.Warnf("TUN: could not flush %s to rebuild it, so it keeps its current rules until the next check: %v", tunCaptureChain, err)
+		return
+	}
+	r.rebuildPending = false
+	r.dupSetActive = r.prepareDupSet()
 
 	applied := make([]string, 0, len(local))
 	installed, missing := 0, 0
 	steerWanted, steerInstalled := 0, 0
 	for _, rule := range r.captureChainRules(excl, local) {
+		if r.stopping() {
+			r.captureInstalled = installed
+			log.Infof("TUN: stopping, so the rebuild of %s ends after %d rule(s)", tunCaptureChain, installed)
+			return
+		}
 		if rule.steer {
 			steerWanted++
 		}
@@ -368,6 +389,82 @@ func (r *routeManager) rebuildCaptureChain() {
 	r.captureExcl = excl
 	r.localNets = applied
 	r.localNetsWanted = local
+}
+
+func (r *routeManager) stopping() bool {
+	select {
+	case <-r.quit:
+		return true
+	default:
+		return false
+	}
+}
+
+var lookPath = exec.LookPath
+
+var fillDupSet = func(entries []string, maxElem int) error {
+	return tables.IPSet{Name: tunDupSet, Family: "inet", Entries: entries, MaxElem: maxElem}.Create()
+}
+
+func (r *routeManager) prepareDupSet() bool {
+	destroyDupSet()
+	if len(r.dupIPs) == 0 {
+		r.dupCaptureNote = ""
+		return false
+	}
+	if _, err := lookPath("ipset"); err != nil {
+		r.noteDupCapture(false, "the ipset command is not installed")
+		return false
+	}
+	if r.dupSetProbed && !r.dupSetMatchOK {
+		r.noteDupCapture(false, "the xt_set probe failed")
+		return false
+	}
+	if err := fillDupSet(r.dupIPs, dupSetMaxElem(len(r.dupIPs))); err != nil {
+		destroyDupSet()
+		r.noteDupCapture(false, err.Error())
+		return false
+	}
+	if !r.dupSetProbed {
+		r.dupSetMatchOK = iptablesMatchSupported([]string{"-m", "set", "--match-set", tunDupSet, "dst", "-j", "ACCEPT"})
+		r.dupSetProbed = true
+	}
+	if !r.dupSetMatchOK {
+		destroyDupSet()
+		r.noteDupCapture(false, "the xt_set probe failed")
+		return false
+	}
+	r.noteDupCapture(true, "")
+	return true
+}
+
+func dupSetMaxElem(n int) int {
+	return max(dupSetMinMaxElem, 2*n)
+}
+
+func (r *routeManager) noteDupCapture(viaSet bool, reason string) {
+	note := fmt.Sprintf("%t %d %s", viaSet, len(r.dupIPs), reason)
+	if note == r.dupCaptureNote {
+		return
+	}
+	r.dupCaptureNote = note
+	if viaSet {
+		log.Infof("TUN: %d packet duplication address(es) are captured through the ipset %s", len(r.dupIPs), tunDupSet)
+		return
+	}
+	msg := fmt.Sprintf("TUN: %d packet duplication address(es) get a capture rule each because %s; a long list slows every rebuild of %s and every packet that walks it, which an ipset (the ipset command and the xt_set kernel module) avoids", len(r.dupIPs), reason, tunCaptureChain)
+	if len(r.dupIPs) >= dupRuleWarnAt {
+		log.Warnf("%s", msg)
+		return
+	}
+	log.Infof("%s", msg)
+}
+
+func destroyDupSet() {
+	if _, err := lookPath("ipset"); err != nil {
+		return
+	}
+	run("ipset", "destroy", tunDupSet)
 }
 
 func (r *routeManager) desiredLocalNets() ([]string, bool) {
@@ -463,18 +560,6 @@ func (r *routeManager) steerSpecs() [][]string {
 		return []string{"-m", "connbytes", "--connbytes-dir", "original", "--connbytes-mode", "packets", "--connbytes", portRange}
 	}
 
-	for _, ip := range r.dupIPs {
-		if r.multiport {
-			for _, chunk := range chunkPorts(r.tcpPorts, 15) {
-				specs = append(specs, append([]string{"-p", "tcp", "-d", ip, "-m", "multiport", "--dports", strings.Join(chunk, ",")}, mark...))
-			}
-		} else {
-			for _, p := range r.tcpPorts {
-				specs = append(specs, append([]string{"-p", "tcp", "-d", ip, "--dport", p}, mark...))
-			}
-		}
-	}
-
 	if r.multiport {
 		for _, chunk := range chunkPorts(r.tcpPorts, 15) {
 			spec := append([]string{"-p", "tcp", "-m", "multiport", "--dports", strings.Join(chunk, ",")}, cb(tcpRange)...)
@@ -495,6 +580,36 @@ func (r *routeManager) steerSpecs() [][]string {
 		}
 	}
 
+	return append(specs, r.dupSteerSpecs(mark)...)
+}
+
+func (r *routeManager) dupSteerSpecs(mark []string) [][]string {
+	if len(r.dupIPs) == 0 {
+		return nil
+	}
+	var dests [][]string
+	if r.dupSetActive {
+		dests = [][]string{{"-m", "set", "--match-set", tunDupSet, "dst"}}
+	} else {
+		for _, ip := range r.dupIPs {
+			dests = append(dests, []string{"-d", ip})
+		}
+	}
+
+	var specs [][]string
+	for _, dst := range dests {
+		if r.multiport {
+			for _, chunk := range chunkPorts(r.tcpPorts, 15) {
+				spec := append(append([]string{"-p", "tcp"}, dst...), "-m", "multiport", "--dports", strings.Join(chunk, ","))
+				specs = append(specs, append(spec, mark...))
+			}
+		} else {
+			for _, p := range r.tcpPorts {
+				spec := append(append([]string{"-p", "tcp"}, dst...), "--dport", p)
+				specs = append(specs, append(spec, mark...))
+			}
+		}
+	}
 	return specs
 }
 
@@ -541,6 +656,9 @@ func (r *routeManager) ensurePortCapture() {
 	switch {
 	case lost:
 		log.Warnf("TUN: capture chain %s lost %d of %d rules (removed outside b4), so traffic stopped reaching %s; rebuilding it", tunCaptureChain, r.captureInstalled-present, r.captureInstalled, r.tunName)
+		r.rebuildCaptureChain()
+	case r.rebuildPending:
+		log.Infof("TUN: retrying the rebuild of %s, whose flush failed at the previous check", tunCaptureChain)
 		r.rebuildCaptureChain()
 	case dirty:
 		log.Infof("TUN: capture settings changed, rebuilding %s (%s)", tunCaptureChain, r.captureSummary())
@@ -599,6 +717,7 @@ func (r *routeManager) teardownPortCapture() {
 	run("iptables", "-t", "mangle", "-X", tunGateChain)
 	run("iptables", "-t", "mangle", "-F", tunCaptureChain)
 	run("iptables", "-t", "mangle", "-X", tunCaptureChain)
+	destroyDupSet()
 
 	for {
 		if _, err := run("ip", "rule", "del", "fwmark", steer, "lookup", tableStr); err != nil {
