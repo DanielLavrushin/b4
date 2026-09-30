@@ -26,6 +26,7 @@ type Engine struct {
 	tunFile       *os.File
 	tunName       string
 	routes        *routeManager
+	limiter       *firstNLimiter
 	sender        *sock.Sender
 	clientSender  *sock.Sender
 	trigger       chan struct{}
@@ -54,7 +55,11 @@ func (e *Engine) config() *config.Config {
 
 func (e *Engine) UpdateConfig(cfg *config.Config) {
 	e.cfg.Store(cfg)
-	if r := e.routes; r != nil && r.updateCapture(captureParamsFrom(cfg)) {
+	capture := captureParamsFrom(cfg)
+	if l := e.limiter; l != nil {
+		l.setParams(capture)
+	}
+	if r := e.routes; r != nil && r.updateCapture(capture) {
 		e.triggerReconcile()
 	}
 }
@@ -148,8 +153,13 @@ func (e *Engine) Start() error {
 		log.Infof("TUN: reply-direction RST capture enabled (experimental; RST protection / escalation). Validate on a real device")
 	}
 
-	if !cfg.System.Tables.SkipSetup {
+	if !cfg.System.Tables.SkipSetup && !e.routes.localOnly {
 		e.pool.EnableTUNSourceResolver(e.routes.currentSrcIP())
+	}
+
+	if e.routes.noConnbytes {
+		e.limiter = newFirstNLimiter(capture)
+		log.Infof("TUN: without xt_connbytes b4 counts packets itself and processes the first %d tcp / %d udp packets of each connection, as the kernel match would", routes.tcpLimit, routes.udpLimit)
 	}
 
 	threads := cfg.Queue.Threads
@@ -195,10 +205,13 @@ func (e *Engine) reconcileLoop() {
 				e.routes.reconcile()
 				e.pool.UpdateTUNSourceWAN(e.routes.currentSrcIP())
 			}
-		case <-ticker.C:
+		case now := <-ticker.C:
 			if e.routes != nil {
 				e.routes.reconcile()
 				e.pool.UpdateTUNSourceWAN(e.routes.currentSrcIP())
+			}
+			if e.limiter != nil {
+				e.limiter.sweep(now)
 			}
 		}
 	}
@@ -233,6 +246,10 @@ func (e *Engine) readLoop(workerIdx int) {
 		}
 
 		raw := buf[:n]
+		if l := e.limiter; l != nil && !l.admit(raw, time.Now()) {
+			e.forwardPacket(raw)
+			continue
+		}
 		if worker.ProcessPacket(raw) == engine.VerdictAccept {
 			e.forwardPacket(raw)
 		}
@@ -357,5 +374,8 @@ func (e *Engine) Stop() {
 
 		log.Infof("TUN: engine stopped (%d packets forwarded, %d forward errors, %d ipv6 dropped)",
 			atomic.LoadUint64(&e.fwdCount), atomic.LoadUint64(&e.fwdErrCount), atomic.LoadUint64(&e.v6DropCount))
+		if e.limiter != nil {
+			log.Infof("TUN: %d packets past the first ones of their connection were forwarded without processing", e.limiter.passed.Load())
+		}
 	})
 }

@@ -219,5 +219,5 @@ Every decision b4 makes about a query is recorded on the [Traffic](./connections
 | `dns-heal+ipv6-stripped` | Both of the above happened to the same answer: unreachable addresses were replaced and the IPv6 addresses were removed |
 
 :::note
-In TUN mode, requests to port 53 are captured, but replies are only seen when b4 carries the whole default route. Redirects and pins work either way, since b4 produces those answers itself.
+In TUN mode, requests to port 53 are captured, but replies are only seen when b4 carries the whole default route. Redirects and pins work either way, since b4 produces those answers itself. When b4 cannot install its NOTRACK rule, TUN captures only the device's own traffic, so the DNS of other hosts reaches b4 only when a resolver on this device handles it, see [Packet engine](settings/core.md#packet-engine).
 :::

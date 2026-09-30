@@ -13,6 +13,7 @@ type DiagInfo struct {
 	OutGateway           string
 	ResolvedSrc          string
 	Capture              string
+	LocalOnly            bool
 	RouteTable           int
 	Mark                 uint
 	ReplyCapture         bool
@@ -44,6 +45,7 @@ func (e *Engine) DiagInfo() DiagInfo {
 		di.OutGateway = r.outGateway
 		di.ResolvedSrc = r.srcIP
 		di.Capture = r.resolvedCapture
+		di.LocalOnly = r.localOnly
 		di.RouteTable = r.activeTable()
 		di.Mark = r.mark
 		di.ReplyCapture = r.replyCapture
@@ -51,7 +53,7 @@ func (e *Engine) DiagInfo() DiagInfo {
 		for _, c := range r.conflicts {
 			di.SteerConflicts = append(di.SteerConflicts, c.String())
 		}
-		di.CaptureRulesExpected = r.captureInstalled
+		di.CaptureRulesExpected = r.captureInstalled + r.captureMissing
 		di.CaptureRestores = r.captureRestores
 		di.LastCaptureRestore = r.lastCaptureRestore
 		if di.Capture == "ports" {

@@ -74,17 +74,31 @@ func clearTunSNAT(device string) bool {
 	}
 	cleared := false
 	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "-A POSTROUTING") {
+		spec, ok := ownTunNatRule(line, device)
+		if !ok {
 			continue
 		}
-		if ruleFieldValue(line, "-o") != device || ruleFieldValue(line, "-j") != "SNAT" {
-			continue
-		}
-		spec := strings.Fields(strings.TrimPrefix(line, "-A POSTROUTING"))
 		if _, err := run(append([]string{"iptables", "-t", "nat", "-D", "POSTROUTING"}, spec...)...); err == nil {
 			cleared = true
 		}
 	}
 	return cleared
+}
+
+func ownTunNatRule(line, device string) ([]string, bool) {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "-A POSTROUTING ") {
+		return nil, false
+	}
+	spec := strings.Fields(strings.TrimPrefix(line, "-A POSTROUTING"))
+	if len(spec) < 4 || spec[0] != "-o" || spec[1] != device || spec[2] != "-j" {
+		return nil, false
+	}
+	switch {
+	case len(spec) == 4 && spec[3] == "ACCEPT":
+		return spec, true
+	case len(spec) == 6 && spec[3] == "SNAT" && spec[4] == "--to-source":
+		return spec, true
+	}
+	return nil, false
 }

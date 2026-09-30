@@ -859,6 +859,8 @@
       "tunGateway": "Исходящий шлюз",
       "tunSource": "IP источника",
       "tunCapture": "Захват",
+      "tunScope": "Захватываемый трафик",
+      "tunScopeLocal": "Только это устройство",
       "tunRouteTable": "Таблица маршрутов",
       "tunForwarded": "Переслано пакетов",
       "tunForwardErrors": "Ошибки пересылки",
