@@ -112,6 +112,62 @@ func TestExposeOwnedTableIsReportedWithTheFirewalldStepAndNotRetriedEveryTick(t 
 	}
 }
 
+func TestExposeSwitchedOffWhileTheTableIsOwnedHasNothingToRemove(t *testing.T) {
+	resetExposeState(t)
+	f := newFakeExposeFW()
+	f.addNftChain("inet", "firewalld", "filter_INPUT", `reject with icmpx admin-prohibited`)
+	f.nftHooks["inet firewalld filter_INPUT"] = "type filter hook input priority filter + 10; policy accept;"
+	f.nftOwned["inet firewalld"] = true
+	f.install(t, map[string]bool{
+		"iptables": false, "ip6tables": false, "iptables-legacy": false, "ip6tables-legacy": false,
+		"iptables-nft": false, "ip6tables-nft": false, "nft": true,
+	}, map[string]string{})
+
+	SyncExposure(mtprotoWildcard, nil, false)
+	if ExposureStatus().Error == "" {
+		t.Fatal("setup: the owned table must have refused the rule")
+	}
+
+	scripts := len(f.scripts)
+	SyncExposure(nil, nil, false)
+	if s := ExposureStatus(); s.Error != "" || len(f.scripts) != scripts {
+		t.Fatalf("b4 never got a rule into the owned table, so switching off has nothing to remove or report: %+v, %d scripts", s, len(f.scripts)-scripts)
+	}
+}
+
+func TestExposeRefusedNftRemovalStaysPendingAndIsRetried(t *testing.T) {
+	resetExposeState(t)
+	f := newFw4Router(t)
+	key := "inet fw4 input"
+	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	exposeNow = func() time.Time { return now }
+
+	SyncExposure(mtprotoWildcard, nil, false)
+	if texts := f.nftTexts(key); !strings.Contains(texts[0], "b4-expose:mtproto") {
+		t.Fatalf("setup: the rule must be installed: %q", texts)
+	}
+
+	f.nftOwned["inet fw4"] = true
+	SyncExposure(nil, nil, false)
+	if s := ExposureStatus(); s.Error == "" || !strings.Contains(strings.Join(f.nftTexts(key), "\n"), "b4-expose:mtproto") {
+		t.Fatalf("a refused delete leaves the rule in place, so the removal must be reported as failed, got %+v", s)
+	}
+
+	scripts := len(f.scripts)
+	exposeCheck()
+	exposeCheck()
+	if len(f.scripts) != scripts {
+		t.Fatalf("a table that refused the delete must not be written to on every tick, ran %d more scripts", len(f.scripts)-scripts)
+	}
+
+	now = now.Add(exposeOwnedRetry + time.Second)
+	f.nftOwned["inet fw4"] = false
+	exposeCheck()
+	if texts := strings.Join(f.nftTexts(key), "\n"); strings.Contains(texts, "b4-expose") || ExposureStatus().Error != "" {
+		t.Fatalf("after the retry interval the removal goes through: %q %+v", texts, ExposureStatus())
+	}
+}
+
 func TestExposeFailedRemovalIsReportedAndRetried(t *testing.T) {
 	resetExposeState(t)
 	f := newLegacyRouter(t)

@@ -54,7 +54,7 @@ var (
 
 var (
 	nftExposeNameRe      = regexp.MustCompile(`^[A-Za-z_.][A-Za-z0-9/_.\-]*$`)
-	errExposeTableOwned  = errors.New("the table belongs to another program, which lets no other program add rules to it")
+	errExposeTableOwned  = errors.New("the table belongs to another program, which lets no other program change its rules")
 	nftNamedHookPriority = map[string]int{"raw": -300, "mangle": -150, "dstnat": -100, "filter": 0, "security": 50, "srcnat": 100}
 )
 
@@ -897,11 +897,21 @@ func (t nftExposeTarget) ownedError(ports []config.ExposedPort) error {
 }
 
 func (t nftExposeTarget) remove() error {
-	if t.ownedByAnother() {
+	_, handles, err := t.owned()
+	if err != nil {
+		if strings.Contains(err.Error(), "No such file or directory") {
+			return nil
+		}
+		return err
+	}
+	if len(handles) == 0 {
 		return nil
 	}
-	err := t.replace(nil)
-	if err == nil || errors.Is(err, errExposeTableOwned) || strings.Contains(err.Error(), "No such file or directory") {
+	if t.ownedByAnother() {
+		return errExposeTableOwned
+	}
+	err = t.replace(nil)
+	if err != nil && strings.Contains(err.Error(), "No such file or directory") {
 		return nil
 	}
 	return err
