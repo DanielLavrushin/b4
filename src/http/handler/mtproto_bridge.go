@@ -35,21 +35,24 @@ type BridgeLegacySet struct {
 }
 
 type TelegramBridgeStatus struct {
-	Success       bool                       `json:"success"`
-	Enabled       bool                       `json:"enabled"`
-	Addresses     mtproto.TelegramCIDRStatus `json:"addresses"`
-	Listener      BridgeListenerInfo         `json:"listener"`
-	RuleInstalled bool                       `json:"rule_installed"`
-	RuleShadowed  string                     `json:"rule_shadowed_by,omitempty"`
-	TProxy        BridgeTProxyInfo           `json:"tproxy"`
-	SkipSetup     bool                       `json:"skip_setup"`
-	QueueMode     string                     `json:"queue_mode"`
-	IPv6Enabled   bool                       `json:"ipv6_enabled"`
-	LegacySets    []BridgeLegacySet          `json:"legacy_sets"`
-	Stats         mtproto.BridgeStats        `json:"stats"`
+	Success         bool                       `json:"success"`
+	Enabled         bool                       `json:"enabled"`
+	Addresses       mtproto.TelegramCIDRStatus `json:"addresses"`
+	Listener        BridgeListenerInfo         `json:"listener"`
+	RuleInstalled   bool                       `json:"rule_installed"`
+	RuleShadowed    string                     `json:"rule_shadowed_by,omitempty"`
+	TProxy          BridgeTProxyInfo           `json:"tproxy"`
+	SkipSetup       bool                       `json:"skip_setup"`
+	QueueMode       string                     `json:"queue_mode"`
+	IPv6Enabled     bool                       `json:"ipv6_enabled"`
+	BridgeNetfilter []string                   `json:"bridge_netfilter,omitempty"`
+	LegacySets      []BridgeLegacySet          `json:"legacy_sets"`
+	Stats           mtproto.BridgeStats        `json:"stats"`
 }
 
 var bridgeListenerFunc func() BridgeListenerInfo
+
+var routingSetFamilies = tables.RoutingSetFamilies
 
 var bridgeTProxyProbe = func(cfg *config.Config, recheck bool) BridgeTProxyInfo {
 	ok, checked, missing, packages := tables.TProxyCapability(cfg, recheck)
@@ -114,6 +117,11 @@ func buildTelegramBridgeStatus(cfg *config.Config, recheck, probe bool) Telegram
 	st.RuleInstalled = tables.RoutingSetInstalled(config.TelegramBridgeSetID)
 	if st.RuleInstalled {
 		st.RuleShadowed = tables.RoutingPreJumpShadowedBy(config.TelegramBridgeSetID)
+	}
+	if enabled {
+		if ipv4, ipv6, installed := routingSetFamilies(config.TelegramBridgeSetID); installed {
+			st.BridgeNetfilter = readBridgeNetfilter().Bridges(ipv4, ipv6)
+		}
 	}
 	if b, ok := globalMTProtoBridge.(interface{ Stats() mtproto.BridgeStats }); ok {
 		st.Stats = b.Stats()

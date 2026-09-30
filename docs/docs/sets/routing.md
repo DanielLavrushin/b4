@@ -378,6 +378,29 @@ The rule that keeps the router's own addresses out of the diversion uses the add
 The **System Info** button on Settings -> Core reports, under **Kernel Capabilities**, whether TPROXY is usable, and names the packages that provide what is missing.
 :::
 
+### Bridge netfilter
+
+With `net.bridge.bridge-nf-call-iptables` set to `1`, the kernel runs the IPv4 PREROUTING rules for traffic that enters through a network bridge, such as `br-lan` or Docker's `docker0`, inside the bridge code, and does not run them again when the packet reaches the IP layer. The TPROXY rule assigns the connection to b4's listener in that pass, and the IP layer drops the assignment when the bridge passes the packet up to it. The routing mark survives, so the packet is still delivered locally, but no socket takes it, and the kernel cannot answer from the original destination address either. Connections from the devices behind the bridge hang until they time out, and b4 logs no connection line for them. Connections the router opens itself do not pass through a bridge and are diverted as usual. `net.bridge.bridge-nf-call-ip6tables` does the same for IPv6. Each bridge also has its own `nf_call_iptables` and `nf_call_ip6tables` attributes under `/sys/class/net/<bridge>/bridge/`. The kernel runs the pass when either the global setting or the bridge's attribute is `1`, so a `0` written to an attribute turns the pass off for that bridge only while the global setting is `0` too.
+
+On OpenWrt the `dockerd` package turns both settings on at boot through `/etc/sysctl.d/12-br-netfilter-ip.conf`. They are turned off at runtime with:
+
+```sh
+sysctl -w net.bridge.bridge-nf-call-iptables=0
+sysctl -w net.bridge.bridge-nf-call-ip6tables=0
+```
+
+The same lines in `/etc/sysctl.conf`, which is applied after the files in `/etc/sysctl.d`, keep them off after a reboot, except in the two Docker configurations described below:
+
+```sh
+printf 'net.bridge.bridge-nf-call-iptables=0\nnet.bridge.bridge-nf-call-ip6tables=0\n' >> /etc/sysctl.conf
+```
+
+With bridge netfilter off, containers on a Docker network created with `icc=false` are no longer isolated from each other, and with Docker's userland proxy disabled a container cannot reach ports that other containers on the same network publish. OpenWrt's default Docker configuration uses neither. In either configuration dockerd sets `net.bridge.bridge-nf-call-iptables` back to `1` each time it sets up an affected network, which includes every dockerd start and on OpenWrt comes after the boot-time sysctl pass, and does the same with `net.bridge.bridge-nf-call-ip6tables` for a network with IPv6, so the settings above do not stay off there.
+
+:::info
+While bridge netfilter is on for a bridge with ports and a set in this mode or in the Telegram over WebSocket mode, or the Telegram over WebSocket switch, is active, the service logs a warning that names the bridge and the setting to change. **System Info** on Settings -> Core shows the same in the **Bridge netfilter** row under **Firewall**, and the Telegram over WebSocket card shows a warning while the switch is on.
+:::
+
 ### Settings
 
 | Setting | Description |

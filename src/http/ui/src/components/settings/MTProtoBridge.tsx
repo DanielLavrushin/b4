@@ -184,6 +184,17 @@ const BridgeWarnings = ({ data }: { data: TelegramBridgeStatus }) => {
       {data.queue_mode === "tun" && (
         <B4Alert severity="info">{t(K("tunUnverified"))}</B4Alert>
       )}
+      {!!data.bridge_netfilter?.length && (
+        <B4Alert severity="warning">
+          <Trans
+            i18nKey={K("bridgeNetfilter")}
+            values={{ bridges: data.bridge_netfilter.join(", ") }}
+            components={{
+              a: <Link component={RouterLink} to="/settings/general" />,
+            }}
+          />
+        </B4Alert>
+      )}
       {data.legacy_sets.length > 0 && (
         <B4Alert severity="info">
           {t(K("legacySets"))}{" "}

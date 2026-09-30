@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/tables"
 )
 
 func bridgeTestAPI(t *testing.T, cfg *config.Config) (*API, *http.ServeMux) {
@@ -19,10 +21,12 @@ func bridgeTestAPI(t *testing.T, cfg *config.Config) (*API, *http.ServeMux) {
 	api.mux = mux
 	api.RegisterMTProtoApi()
 
-	prevProbe, prevCached, prevListener := bridgeTProxyProbe, bridgeTProxyCached, bridgeListenerFunc
+	prevProbe, prevCached, prevListener, prevNetfilter, prevFamilies := bridgeTProxyProbe, bridgeTProxyCached, bridgeListenerFunc, readBridgeNetfilter, routingSetFamilies
 	t.Cleanup(func() {
-		bridgeTProxyProbe, bridgeTProxyCached, bridgeListenerFunc = prevProbe, prevCached, prevListener
+		bridgeTProxyProbe, bridgeTProxyCached, bridgeListenerFunc, readBridgeNetfilter, routingSetFamilies = prevProbe, prevCached, prevListener, prevNetfilter, prevFamilies
 	})
+	readBridgeNetfilter = func() tables.BridgeNetfilter { return tables.BridgeNetfilter{} }
+	routingSetFamilies = func(string) (bool, bool, bool) { return false, false, false }
 	bridgeTProxyCached = func(*config.Config) BridgeTProxyInfo {
 		return BridgeTProxyInfo{Missing: []string{}, Packages: []string{}}
 	}
@@ -112,6 +116,45 @@ func TestTelegramBridgeStatusDoesNotProbeWhileOff(t *testing.T) {
 	}
 	if st.LegacySets == nil || st.TProxy.Missing == nil || st.TProxy.Packages == nil {
 		t.Error("lists must be empty arrays, not null")
+	}
+}
+
+func TestTelegramBridgeStatusNamesBridgeNetfilter(t *testing.T) {
+	cfg := config.NewConfig()
+	_, mux := bridgeTestAPI(t, &cfg)
+	bridgeTProxyProbe = func(*config.Config, bool) BridgeTProxyInfo {
+		return BridgeTProxyInfo{Missing: []string{}, Packages: []string{}}
+	}
+	readBridgeNetfilter = func() tables.BridgeNetfilter {
+		return tables.BridgeNetfilter{GlobalV4: true, GlobalV6: true, BridgesV4: []string{"br-lan"}, BridgesV6: []string{"br-lan", "br-v6"}}
+	}
+	var ipv4, ipv6, installed bool
+	routingSetFamilies = func(id string) (bool, bool, bool) {
+		if id != config.TelegramBridgeSetID {
+			t.Errorf("asked for the families of set %q", id)
+		}
+		return ipv4, ipv6, installed
+	}
+
+	ipv4, ipv6, installed = true, true, true
+	if st := getBridgeStatus(t, mux, ""); len(st.BridgeNetfilter) != 0 {
+		t.Errorf("with the switch off the card has nothing to warn about, got %v", st.BridgeNetfilter)
+	}
+
+	cfg.System.MTProto.Bridge.Enabled = true
+	ipv4, ipv6, installed = false, false, false
+	if st := getBridgeStatus(t, mux, ""); len(st.BridgeNetfilter) != 0 {
+		t.Errorf("without an installed bridge rule there is nothing to warn about, got %v", st.BridgeNetfilter)
+	}
+
+	ipv4, ipv6, installed = true, false, true
+	if st := getBridgeStatus(t, mux, ""); !slices.Equal(st.BridgeNetfilter, []string{"br-lan"}) {
+		t.Errorf("with the IPv6 listener down only the IPv4 bridges matter, got %v", st.BridgeNetfilter)
+	}
+
+	ipv4, ipv6, installed = true, true, true
+	if st := getBridgeStatus(t, mux, ""); !slices.Equal(st.BridgeNetfilter, []string{"br-lan", "br-v6"}) {
+		t.Errorf("with both families installed every affected bridge matters, got %v", st.BridgeNetfilter)
 	}
 }
 
