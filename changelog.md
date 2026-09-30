@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.83.2] - 2026-09-30
+
+- ADDED: **System Info, the log and the Telegram over WebSocket card name the network bridges that keep the devices behind them out of proxy sets and Telegram over WebSocket** - with `net.bridge.bridge-nf-call-iptables` at 1, which the dockerd package sets on OpenWrt, the kernel loses the handover to b4's listener for connections that enter through a bridge such as `br-lan`, so they hung without a single log line while the router's own connections worked. The Bridge netfilter row under Firewall in System Info names the setting to turn off.
+
 ## [1.83.1] - 2026-09-27
 
 - ADDED: **When the packet engine fails to start, b4 keeps running without it, so the web interface stays reachable** - the dashboard shows the reason, such as a kernel without NFQUEUE support, with a button that switches to the other engine and restarts b4, and b4 retries on its own three times within about two minutes.

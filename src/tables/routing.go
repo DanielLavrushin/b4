@@ -1261,6 +1261,7 @@ func routingSyncConfig(cfg *config.Config) {
 	routeReconcilePolicyRules(cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	routeReestablishJumpOrder(be, cfg, len(newRoutingSets) > 0)
 	routeEnsurePreJumpPrecedence(be, cfg)
+	routeNoteBridgeNetfilter(routeTProxyFamiliesLocked())
 
 	routeSyncedCfg = cfg
 	if failed {
@@ -2251,6 +2252,29 @@ func RoutingPolicyRuleLines() []string {
 		}
 	}
 	return out
+}
+
+func RoutingProxyTableLines() (int, []string) {
+	table := proxyTableIfChosen()
+	if table <= 0 || !hasBinary("ip") {
+		return 0, nil
+	}
+	var out []string
+	for _, fam := range routeFamilyArgs(true, true) {
+		args := append([]string{"ip"}, fam.flag...)
+		args = append(args, "route", "show", "table", strconv.Itoa(table))
+		res, err := run(args...)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(res, "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				out = append(out, fam.name+" "+line)
+			}
+		}
+	}
+	return table, out
 }
 
 func RoutingReinstallForInterface(cfg *config.Config, iface string) {

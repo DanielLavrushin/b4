@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/tables"
 )
 
 func bridgeTestAPI(t *testing.T, cfg *config.Config) (*API, *http.ServeMux) {
@@ -19,10 +20,11 @@ func bridgeTestAPI(t *testing.T, cfg *config.Config) (*API, *http.ServeMux) {
 	api.mux = mux
 	api.RegisterMTProtoApi()
 
-	prevProbe, prevCached, prevListener := bridgeTProxyProbe, bridgeTProxyCached, bridgeListenerFunc
+	prevProbe, prevCached, prevListener, prevNetfilter := bridgeTProxyProbe, bridgeTProxyCached, bridgeListenerFunc, readBridgeNetfilter
 	t.Cleanup(func() {
-		bridgeTProxyProbe, bridgeTProxyCached, bridgeListenerFunc = prevProbe, prevCached, prevListener
+		bridgeTProxyProbe, bridgeTProxyCached, bridgeListenerFunc, readBridgeNetfilter = prevProbe, prevCached, prevListener, prevNetfilter
 	})
+	readBridgeNetfilter = func() tables.BridgeNetfilter { return tables.BridgeNetfilter{} }
 	bridgeTProxyCached = func(*config.Config) BridgeTProxyInfo {
 		return BridgeTProxyInfo{Missing: []string{}, Packages: []string{}}
 	}
@@ -112,6 +114,29 @@ func TestTelegramBridgeStatusDoesNotProbeWhileOff(t *testing.T) {
 	}
 	if st.LegacySets == nil || st.TProxy.Missing == nil || st.TProxy.Packages == nil {
 		t.Error("lists must be empty arrays, not null")
+	}
+}
+
+func TestTelegramBridgeStatusNamesBridgeNetfilter(t *testing.T) {
+	cfg := config.NewConfig()
+	cfg.Queue.IPv4Enabled = true
+	cfg.Queue.IPv6Enabled = false
+	_, mux := bridgeTestAPI(t, &cfg)
+	bridgeTProxyProbe = func(*config.Config, bool) BridgeTProxyInfo {
+		return BridgeTProxyInfo{Missing: []string{}, Packages: []string{}}
+	}
+	readBridgeNetfilter = func() tables.BridgeNetfilter {
+		return tables.BridgeNetfilter{GlobalV4: true, GlobalV6: true, BridgesV4: []string{"br-lan"}, BridgesV6: []string{"br-lan", "br-v6"}}
+	}
+
+	if st := getBridgeStatus(t, mux, ""); len(st.BridgeNetfilter) != 0 {
+		t.Errorf("with the switch off the card has nothing to warn about, got %v", st.BridgeNetfilter)
+	}
+
+	cfg.System.MTProto.Bridge.Enabled = true
+	st := getBridgeStatus(t, mux, "")
+	if len(st.BridgeNetfilter) != 1 || st.BridgeNetfilter[0] != "br-lan" {
+		t.Errorf("with IPv6 off only the IPv4 bridges matter, got %v", st.BridgeNetfilter)
 	}
 }
 

@@ -277,6 +277,15 @@ func proxyTable() int {
 	return proxyTableChosen
 }
 
+func proxyTableIfChosen() int {
+	proxyTableMu.Lock()
+	defer proxyTableMu.Unlock()
+	if !proxyTableResolved {
+		return 0
+	}
+	return proxyTableChosen
+}
+
 func proxyTableForget() {
 	proxyTableMu.Lock()
 	proxyTableChosen = 0
