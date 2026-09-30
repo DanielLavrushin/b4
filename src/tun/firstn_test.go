@@ -63,23 +63,52 @@ func TestFirstNLimiterProcessesOnlyTheFirstPacketsOfAFlow(t *testing.T) {
 	}
 }
 
-func TestFirstNLimiterRestartsTheCountOnSYNAndForgetsFlowsOnFIN(t *testing.T) {
+func withSeq(raw []byte, seq uint32) []byte {
+	raw[24], raw[25], raw[26], raw[27] = byte(seq>>24), byte(seq>>16), byte(seq>>8), byte(seq)
+	return raw
+}
+
+func TestFirstNLimiterCountsRetransmittedSYNs(t *testing.T) {
+	l := newFirstNLimiter(captureParams{tcpLimit: 2, udpLimit: 2})
+	now := time.Now()
+	syn := withSeq(testPacket(6, "192.168.0.10", "203.0.113.10", 40000, 443, tcpSYN), 1000)
+	if got := admitted(l, syn, 4, now); got != 2 {
+		t.Fatalf("retransmitted SYNs belong to the same connection and count against its limit, got %d of 4 processed", got)
+	}
+}
+
+func TestFirstNLimiterRestartsTheCountForANewConnectionOnTheSameTuple(t *testing.T) {
 	l := newFirstNLimiter(captureParams{tcpLimit: 2, udpLimit: 2})
 	now := time.Now()
 	data := testPacket(6, "192.168.0.10", "203.0.113.10", 40000, 443, tcpACK)
-	syn := testPacket(6, "192.168.0.10", "203.0.113.10", 40000, 443, tcpSYN)
-	fin := testPacket(6, "192.168.0.10", "203.0.113.10", 40000, 443, tcpFIN|tcpACK)
+	first := withSeq(testPacket(6, "192.168.0.10", "203.0.113.10", 40000, 443, tcpSYN), 1000)
+	second := withSeq(testPacket(6, "192.168.0.10", "203.0.113.10", 40000, 443, tcpSYN), 777777)
 
+	l.admit(first, now)
 	admitted(l, data, 5, now)
-	if !l.admit(syn, now) {
-		t.Fatal("a SYN on a reused tuple is a new connection and must be processed")
+	if !l.admit(second, now) {
+		t.Fatal("a SYN with a new initial sequence number opens a new connection and must be processed")
 	}
 	if !l.admit(data, now) || l.admit(data, now) {
-		t.Fatal("after the SYN the new connection gets its own first packets")
+		t.Fatal("the new connection gets its own first packets")
 	}
-	l.admit(fin, now)
-	if _, ok := l.flows[flowKey{proto: 6, src: [4]byte{192, 168, 0, 10}, dst: [4]byte{203, 0, 113, 10}, sport: 40000, dport: 443}]; ok {
-		t.Fatal("a FIN must drop the flow from the table")
+}
+
+func TestFirstNLimiterKeepsCountingAfterFINAndExpiresClosedFlowsSoon(t *testing.T) {
+	l := newFirstNLimiter(captureParams{tcpLimit: 2, udpLimit: 2})
+	start := time.Now()
+	data := testPacket(6, "192.168.0.10", "203.0.113.10", 40000, 443, tcpACK)
+	fin := testPacket(6, "192.168.0.10", "203.0.113.10", 40000, 443, tcpFIN|tcpACK)
+	live := testPacket(6, "192.168.0.10", "203.0.113.10", 40001, 443, tcpACK)
+
+	admitted(l, data, 2, start)
+	l.admit(live, start)
+	if l.admit(fin, start) || l.admit(data, start) {
+		t.Fatal("packets after a FIN belong to the same connection and must not restart its count")
+	}
+	l.sweep(start.Add(firstNClosedIdle + time.Second))
+	if len(l.flows) != 1 {
+		t.Fatalf("a closed flow must expire after %s while a live one stays, %d left", firstNClosedIdle, len(l.flows))
 	}
 }
 
@@ -132,9 +161,31 @@ func TestFirstNLimiterSweepsIdleFlowsAndStaysBounded(t *testing.T) {
 	for i := 0; i < firstNMaxFlows; i++ {
 		l.flows[flowKey{proto: 6, sport: uint16(i), dport: uint16(i >> 16)}] = &flowCount{packets: 9, seen: start}
 	}
-	fresh := testPacket(6, "192.168.0.10", "203.0.113.10", 41000, 443, tcpACK)
-	if got := admitted(l, fresh, 3, start); got != 3 {
-		t.Fatalf("with the table full a new flow is processed rather than dropped from counting, got %d of 3", got)
+	for i := 0; i < 50; i++ {
+		fresh := testPacket(6, "192.168.0.10", "203.0.113.10", uint16(41000+i), 443, tcpACK)
+		if got := admitted(l, fresh, 3, start); got != 1 {
+			t.Fatalf("flow %d: with the table full of live flows a new flow must still get a counter, got %d of 3 processed", i, got)
+		}
+	}
+	if len(l.flows) != firstNMaxFlows {
+		t.Fatalf("the table must stay at its cap by evicting, has %d entries", len(l.flows))
+	}
+}
+
+func TestFirstNLimiterEvictsTheStalestOfItsSample(t *testing.T) {
+	l := newFirstNLimiter(captureParams{tcpLimit: 1, udpLimit: 1})
+	start := time.Now()
+	stale := flowKey{proto: 6, sport: 1}
+	l.flows[stale] = &flowCount{packets: 1, seen: start.Add(-time.Hour)}
+	for i := 2; i <= firstNEvictSample-1; i++ {
+		l.flows[flowKey{proto: 6, sport: uint16(i)}] = &flowCount{packets: 1, seen: start}
+	}
+	l.evictStalestLocked()
+	if _, ok := l.flows[stale]; ok {
+		t.Fatal("with fewer flows than the sample size the stalest one must be the one evicted")
+	}
+	if len(l.flows) != firstNEvictSample-2 {
+		t.Fatalf("exactly one flow must go, %d left", len(l.flows))
 	}
 }
 

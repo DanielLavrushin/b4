@@ -1,6 +1,7 @@
 package tun
 
 import (
+	"encoding/binary"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -8,9 +9,12 @@ import (
 )
 
 const (
-	firstNMaxFlows = 1 << 16
-	firstNTCPIdle  = 30 * time.Minute
-	firstNUDPIdle  = 2 * time.Minute
+	firstNMaxFlows    = 1 << 16
+	firstNTCPIdle     = 30 * time.Minute
+	firstNUDPIdle     = 2 * time.Minute
+	firstNClosedIdle  = 10 * time.Second
+	firstNSweepGap    = time.Second
+	firstNEvictSample = 8
 )
 
 type flowKey struct {
@@ -21,6 +25,9 @@ type flowKey struct {
 
 type flowCount struct {
 	packets uint32
+	isn     uint32
+	synSeen bool
+	closing bool
 	seen    time.Time
 }
 
@@ -35,8 +42,9 @@ type firstNLimiter struct {
 	params atomic.Pointer[firstNParams]
 	passed atomic.Uint64
 
-	mu    sync.Mutex
-	flows map[flowKey]*flowCount
+	mu        sync.Mutex
+	flows     map[flowKey]*flowCount
+	lastSweep time.Time
 }
 
 func newFirstNLimiter(p captureParams) *firstNLimiter {
@@ -111,10 +119,12 @@ func (l *firstNLimiter) admit(raw []byte, now time.Time) bool {
 	}
 
 	var syn, fin bool
+	var seq uint32
 	if proto == 6 && len(raw) >= ihl+14 {
 		flags := raw[ihl+13]
 		syn = flags&0x02 != 0 && flags&0x10 == 0
 		fin = flags&0x05 != 0
+		seq = binary.BigEndian.Uint32(raw[ihl+4 : ihl+8])
 	}
 
 	l.mu.Lock()
@@ -122,23 +132,25 @@ func (l *firstNLimiter) admit(raw []byte, now time.Time) bool {
 	f, ok := l.flows[k]
 	if !ok {
 		if len(l.flows) >= firstNMaxFlows {
-			l.sweepLocked(now)
+			if now.Sub(l.lastSweep) >= firstNSweepGap {
+				l.sweepLocked(now)
+			}
 			if len(l.flows) >= firstNMaxFlows {
-				return true
+				l.evictStalestLocked()
 			}
 		}
 		f = &flowCount{}
 		l.flows[k] = f
 	}
-	if syn {
-		f.packets = 0
+	if syn && (!f.synSeen || f.isn != seq) {
+		*f = flowCount{isn: seq, synSeen: true}
 	}
 	f.packets++
 	f.seen = now
-	pass := f.packets <= limit
 	if fin {
-		delete(l.flows, k)
+		f.closing = true
 	}
+	pass := f.packets <= limit
 	if !pass {
 		l.passed.Add(1)
 	}
@@ -151,10 +163,32 @@ func (l *firstNLimiter) sweep(now time.Time) {
 	l.mu.Unlock()
 }
 
+func (l *firstNLimiter) evictStalestLocked() {
+	var victim flowKey
+	var oldest time.Time
+	n := 0
+	for k, f := range l.flows {
+		if n == 0 || f.seen.Before(oldest) {
+			victim, oldest = k, f.seen
+		}
+		n++
+		if n == firstNEvictSample {
+			break
+		}
+	}
+	if n > 0 {
+		delete(l.flows, victim)
+	}
+}
+
 func (l *firstNLimiter) sweepLocked(now time.Time) {
+	l.lastSweep = now
 	for k, f := range l.flows {
 		idle := firstNUDPIdle
-		if k.proto == 6 {
+		switch {
+		case f.closing:
+			idle = firstNClosedIdle
+		case k.proto == 6:
 			idle = firstNTCPIdle
 		}
 		if now.Sub(f.seen) > idle {
