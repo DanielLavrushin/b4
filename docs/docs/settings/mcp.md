@@ -22,7 +22,7 @@ Configured in **Settings -> Integrations -> MCP server**.
 | **Client configuration** | The endpoint URL and header block to paste into the AI application. **Copy** puts the whole block, with the full token, on the clipboard. |
 
 :::info Served by the web server
-The endpoint uses the web server's port, TLS certificate and bind address. With the web server disabled (port 0) it is unreachable, and b4 logs a warning at startup.
+The endpoint uses the web server's port, TLS certificate and bind address. With the web server disabled (port 0) it is unreachable, and b4 logs a warning at startup. With the web server's [Expose to internet](./security.md#expose-to-internet) on, the endpoint is reachable from the internet along with the interface.
 :::
 
 ## Token
@@ -205,6 +205,7 @@ Refused whatever this setting is on:
 | The MCP settings themselves | The AI cannot widen its own permissions |
 | Packet capture engine and TUN | Switching it underneath a live network can cut the machine off |
 | Firewall backend | A wrong value leaves the machine with no rules at all |
+| Every **Expose to internet** switch, and any write that would open a port while one of them is on, such as turning the MTProto proxy on or changing its port or bind address | An open port is reachable from the whole internet at once, and a revert does not undo what reached it |
 | Packet marks, routing tables | Load-bearing for b4's own traffic |
 | A set's id | Escalation targets refer to it |
 | A set's Discovery addresses and watchdog switch | Both make the router fetch sites on a timer; `b4_watchdog` with `set` changes them under its own permissions |

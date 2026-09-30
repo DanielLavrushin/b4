@@ -61,6 +61,60 @@ export interface SystemInfo {
   engine_failure?: EngineFailure;
 }
 
+export type AddressScope = "public" | "private" | "cgnat" | "ula" | "other";
+
+export interface HostAddress {
+  iface: string;
+  ip: string;
+  scope: AddressScope;
+}
+
+export type ExposeService =
+  | "web_server"
+  | "mtproto"
+  | "mtproto_web_proxy"
+  | "socks5";
+
+export type ExposeBlockReason =
+  | "no_auth"
+  | "web_no_auth"
+  | "open_relay"
+  | "shared_port"
+  | "loopback"
+  | "invalid_bind"
+  | "not_listening";
+
+export interface ExposedPort {
+  service: ExposeService;
+  port: number;
+  address?: string;
+  v4: boolean;
+  v6: boolean;
+}
+
+export interface ExposeBlock {
+  service: ExposeService;
+  reason: ExposeBlockReason;
+}
+
+export interface ExposureStatus {
+  skip_setup: boolean;
+  ports: ExposedPort[] | null;
+  blocked: ExposeBlock[] | null;
+  chains: string[] | null;
+  error?: string;
+}
+
+export interface SystemAddresses {
+  success: boolean;
+  wan_v4?: HostAddress;
+  wan_v6?: HostAddress;
+  lan: HostAddress[] | null;
+  public_v4?: string;
+  public_error?: string;
+  exposure: ExposureStatus;
+}
+
 export interface RestartResponse {
   success: boolean;
   message: string;

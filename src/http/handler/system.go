@@ -28,6 +28,7 @@ func (api *API) RegisterSystemApi() {
 	api.mux.HandleFunc("/api/system/changelog", api.handleChangelog)
 	api.mux.HandleFunc("/api/system/cache", api.handleCacheStats)
 	api.mux.HandleFunc("/api/system/diagnostics", api.handleDiagnostics)
+	api.mux.HandleFunc("/api/system/addresses", api.handleHostAddresses)
 }
 
 func (api *API) backupConfig(logPath string) {

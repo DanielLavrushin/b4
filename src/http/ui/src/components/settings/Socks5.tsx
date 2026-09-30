@@ -6,7 +6,7 @@ import {
   B4Alert,
   B4ChipList,
   B4FormGroup,
-  B4NumberField,
+  B4FormRow,
   B4PlusButton,
   B4Section,
   B4Switch,
@@ -15,6 +15,7 @@ import {
 import { useDevices } from "@b4.devices";
 import { B4Config } from "@models/config";
 import { SettingsPropHandlerType } from "@models/settings";
+import { ListenerFields } from "./ListenerFields";
 
 interface Socks5SettingsProps {
   config: B4Config;
@@ -120,6 +121,19 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
   };
 
   const openRelay = enabled && sources.length === 0 && !username && !password;
+  const exposed = socks5?.expose ?? false;
+  const guarded = (!!username && !!password) || sources.length > 0;
+  const webServer = config.system.web_server;
+  const webProtected =
+    !!webServer?.username &&
+    (!!webServer?.password || !!webServer?.password_set);
+
+  let exposeBlocked: string | undefined;
+  if (!guarded) {
+    exposeBlocked = t("settings.Socks5.exposeNeedsAuth");
+  } else if (!webProtected) {
+    exposeBlocked = t("settings.Socks5.exposeNeedsWebAuth");
+  }
 
   return (
     <B4Section
@@ -128,34 +142,28 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
       icon={<ConnectionIcon />}
     >
       <B4FormGroup label={t("settings.Socks5.settings")} columns={2}>
-        <B4Switch
-          label={t("settings.Socks5.enable")}
-          checked={enabled}
-          onChange={(checked: boolean) =>
-            onChange("system.socks5.enabled", checked)
-          }
-          description={t("settings.Socks5.enableDesc")}
-        />
-        <B4TextField
-          label={t("settings.Socks5.bindAddress")}
-          value={socks5?.bind_address || "0.0.0.0"}
-          onChange={(e) =>
-            onChange("system.socks5.bind_address", e.target.value)
-          }
-          placeholder={t("settings.Socks5.bindAddressPlaceholder")}
-          disabled={!enabled}
-          helperText={t("settings.Socks5.bindAddressHelp")}
-          selectOnFocus
-        />
-        <B4NumberField
-          label={t("settings.Socks5.port")}
-          value={socks5?.port ?? 1080}
-          onChange={(n) => onChange("system.socks5.port", n)}
-          min={1}
-          max={65535}
-          disabled={!enabled}
-          helperText={t("settings.Socks5.portHelp")}
-        />
+        <B4FormRow>
+          <B4Switch
+            label={t("settings.Socks5.enable")}
+            checked={enabled}
+            onChange={(checked: boolean) =>
+              onChange("system.socks5.enabled", checked)
+            }
+            description={t("settings.Socks5.enableDesc")}
+          />
+        </B4FormRow>
+        <B4FormRow>
+          <ListenerFields
+            path="system.socks5"
+            listener={socks5}
+            defaultPort={1080}
+            skipSetup={config.system.tables.skip_setup}
+            onChange={onChange}
+            exposeBlocked={exposeBlocked}
+            exposeNote={t("settings.Socks5.exposeNote")}
+            disabled={!enabled}
+          />
+        </B4FormRow>
         <B4TextField
           label={t("settings.Socks5.username")}
           value={username}
@@ -228,9 +236,19 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
 
         <B4Alert severity="info">{t("settings.Socks5.sourcesNote")}</B4Alert>
 
+        {enabled && exposed && guarded && !webProtected && (
+          <B4Alert severity="error">
+            {t("settings.Socks5.exposeWebAuthMissing")}
+          </B4Alert>
+        )}
+
         {openRelay && (
-          <B4Alert severity="warning">
-            {t("settings.Socks5.openRelayWarning")}
+          <B4Alert severity={exposed ? "error" : "warning"}>
+            {t(
+              exposed
+                ? "settings.Socks5.exposeOpenRelay"
+                : "settings.Socks5.openRelayWarning",
+            )}
           </B4Alert>
         )}
       </B4FormGroup>

@@ -164,6 +164,17 @@ USB flash and SD cards have a limited number of write cycles. b4 logs can be mov
 Logs are lost on reboot, but storage lasts longer.
 :::
 
+## Access from the WAN {#access-from-the-wan}
+
+The container sits behind RouterOS, which filters and translates everything that arrives from the WAN before it reaches the bridge. A b4 port, such as the MTProto proxy's `3128`, is reachable from outside only through a `dst-nat` rule on RouterOS towards the container's address:
+
+```routeros
+/ip firewall nat add chain=dstnat action=dst-nat in-interface-list=WAN \
+    protocol=tcp dst-port=3128 to-addresses=192.168.210.10 to-ports=3128
+```
+
+**Expose to internet** in b4 changes only the firewall inside the container and does not replace this rule. What the switch does elsewhere is described under [Access from the internet](../settings/security.md#expose-to-internet).
+
 ## Update
 
 ```routeros

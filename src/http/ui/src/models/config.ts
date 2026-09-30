@@ -260,6 +260,7 @@ export interface DesyncConfig {
 export interface WebServerConfig {
   port: number;
   bind_address: string;
+  expose?: boolean;
   tls_cert: string;
   tls_key: string;
   username: string;
@@ -327,6 +328,7 @@ export interface Socks5Config {
   enabled: boolean;
   port: number;
   bind_address: string;
+  expose?: boolean;
   username: string;
   password: string;
   allowed_sources?: string[];
@@ -346,6 +348,7 @@ export interface MTProtoConfig {
   enabled: boolean;
   port: number;
   bind_address: string;
+  expose?: boolean;
   max_connections: number;
   tcp_user_timeout_sec: number;
   idle_timeout_sec: number;
@@ -375,6 +378,7 @@ export interface MTProtoWebProxyConfig {
   enabled: boolean;
   hostname: string;
   port: number;
+  expose?: boolean;
   tls_cert: string;
   tls_key: string;
 }

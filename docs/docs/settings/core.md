@@ -3,7 +3,7 @@ sidebar_position: 1
 title: Core
 ---
 
-Most changes on this tab require a service restart. The exceptions are the interface language and the [SOCKS5 proxy](#socks5-proxy) settings, which apply on save.
+Most changes on this tab require a service restart. The exceptions are the interface language, the web interface's username and password, the [SOCKS5 proxy](#socks5-proxy) settings and the web server's **Expose to internet** switch, which apply on save. The header shows the restart notice only while a change that needs one is unsaved.
 
 ## Controls
 
@@ -74,8 +74,8 @@ Selecting TUN adds the **TUN settings** group: uplink interface, uplink gateway,
 b4 starts the packet engine before the web interface. When the engine fails, b4 removes the rules it had installed and keeps running without it:
 
 - traffic passes through the router without b4 touching it;
-- the web interface, the SOCKS5 proxy and the MTProto proxy stay up;
-- firewall rules, routing sets and the watchdog stay off.
+- the web interface, the SOCKS5 proxy and the MTProto proxy stay up, and so do the rules of their **Expose to internet** switches;
+- the other firewall rules, routing sets and the watchdog stay off.
 
 The reason is written to the log at the ERROR level, and the [dashboard](../dashboard.md#packet-engine-not-running) shows it together with buttons that switch to the other engine or restart b4. For example, on a kernel without the queue modules iptables rejects the NFQUEUE target, and a TUN engine with an automatic uplink finds no default route while the WAN or VPN is still down.
 
@@ -97,6 +97,10 @@ With the web server off (port `0`) there is no interface to fall back to, and b4
 
 :::warning Monitor interval
 With the NFQUEUE engine, setting this to 0 turns off rule monitoring completely. If an external program or script removes b4's rules, they will not be restored.
+:::
+
+:::info Rules for Expose to internet
+The **Expose to internet** switches of the web server, the SOCKS5 proxy and the listeners on the Telegram tab add accept rules to the host's own input chains, separately from the rules of the packet engine. The monitor interval also sets how often b4 checks them and puts back the ones a firewall reload removed, whatever the packet engine; at `0` only `SIGUSR1` starts that check. **Skip IPTables/NFTables setup** stops b4 from adding them. See [Access from the internet](./security.md#expose-to-internet).
 :::
 
 In TUN mode the Firewall group holds only NAT Masquerade and the monitor interval. At that interval the TUN engine checks its capture chain `B4_TUN` and the jumps into it, and the firewall monitor checks the masquerade, MSS clamp and routing-set rules. Each puts back what the router's own firewall removed, for example when the router restarts its firewall after a port-forwarding change. In this mode the interval is at least 10 seconds, and 0 turns neither check off. `SIGUSR1` starts both checks without waiting for the interval. NAT Masquerade leaves the TUN device out: the TUN engine rewrites the source address of captured packets to the uplink address itself, and keeps that rule ahead of any masquerade rule that names no outgoing interface.
@@ -184,8 +188,9 @@ Settings for the b4 web interface.
 
 | Parameter | Description | Default |
 | --- | --- | --- |
-| Bind address | IP to listen on. `0.0.0.0` = all interfaces, `127.0.0.1` = localhost only, `::` = all IPv6 | `0.0.0.0` |
+| Bind address | IP to listen on. `0.0.0.0` or `::` = every address, IPv4 and IPv6; `127.0.0.1` = localhost only | `0.0.0.0` |
 | Port | Web interface port | `7000` |
+| Expose to internet | `system.web_server.expose`. Adds a firewall rule that accepts connections to the web interface port from any address, IPv4 and IPv6, and puts it back after firewall reloads. Can be turned on only with a username and a password set. The rule follows the port the running server listens on, so a port change moves it after a restart. See [Access from the internet](./security.md#expose-to-internet) | Off |
 | TLS Certificate | Path to a `.crt` or `.pem` certificate file (empty = HTTP) | - |
 | TLS Key | Path to a `.key` or `.pem` key file (empty = HTTP) | - |
 | Language | Interface language: English / Русский | English |
@@ -214,8 +219,9 @@ A built-in SOCKS5 proxy. Applications can route traffic through it - it is proce
 | Parameter | Description | Default |
 | --- | --- | --- |
 | Enable | Start the SOCKS5 server | Off |
-| Bind address | IP to listen on. `0.0.0.0` = all, `127.0.0.1` = localhost only | `0.0.0.0` |
+| Bind address | IP to listen on. `0.0.0.0` = every address, IPv4 and IPv6; `127.0.0.1` = localhost only | `0.0.0.0` |
 | Port | Proxy port | `1080` |
+| Expose to internet | `system.socks5.expose`. Adds a firewall rule that accepts TCP connections to the proxy port from any address, IPv4 and IPv6, and puts it back after firewall reloads. Can be turned on only with credentials or an allowed sources list and, while the web server is on, with a username and a password on the web interface, which a SOCKS5 client could otherwise reach through the proxy. UDP is not covered. See [Access from the internet](./security.md#expose-to-internet) | Off |
 | Username | Login for SOCKS5 authentication (empty = no authentication) | - |
 | Password | Password for SOCKS5 authentication (empty = no authentication) | - |
 | Allowed sources | IP addresses and CIDR ranges permitted to open a connection (empty = no restriction) | - |
@@ -253,7 +259,7 @@ Loopback is not implicitly allowed. A client running on the router itself needs 
 Editing the list takes effect on save, with no service restart. Live sessions whose source no longer matches are disconnected, and a source added to the list can connect immediately.
 
 :::warning The port stays reachable
-Refusing a connection is not the same as not listening. The listener accepts and then closes, so the port still answers a port scan, and b4 adds no firewall rule for it. With the default bind address `0.0.0.0` the proxy is exposed on the WAN whatever the source list contains. Binding to the LAN address is still the way to keep the proxy off the WAN.
+Refusing a connection is not the same as not listening. The listener accepts and then closes, so the port still answers a port scan. The list adds no firewall rule either: with the default bind address `0.0.0.0` the proxy listens on the WAN address as well, and whether a connection from outside gets through is decided by the host's firewall and by **Expose to internet**, whose rule accepts every source address. Binding to the LAN address remains the way to keep the proxy off the WAN.
 :::
 
 `0.0.0.0/0` and `::/0` are refused when the configuration is saved, because an entry that matches every address switches the restriction off while leaving it looking enabled. An entry that is neither an IP address nor a CIDR range is refused the same way.

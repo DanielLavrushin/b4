@@ -225,7 +225,7 @@ The web UI and the REST API share one port, 7000 by default.
 Most changes apply immediately. Core settings need a restart, and the UI says so when they do.
 
 > [!CAUTION]
-> The web UI and REST API are unauthenticated until you set **both** a username and a password under **Settings → Core → Web Server**. Do not expose port 7000 to the internet.
+> The web UI and REST API are unauthenticated until you set **both** a username and a password under **Settings → Core → Web Server**. Do not expose port 7000 to the internet without them; the **Expose to internet** switch on that screen refuses to open the port until both are set, and HTTPS keeps them off the wire in plain text.
 
 HTTPS is enabled by pointing the same screen at a certificate and key. The installer detects router certificates on OpenWrt and Asus Merlin and offers to turn it on.
 

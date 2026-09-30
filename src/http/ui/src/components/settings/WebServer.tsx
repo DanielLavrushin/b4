@@ -4,13 +4,14 @@ import { ApiIcon } from "@b4.icons";
 import {
   B4Alert,
   B4FormGroup,
-  B4NumberField,
+  B4FormRow,
   B4Section,
   B4Select,
   B4TextField,
 } from "@b4.elements";
 import { B4Config } from "@models/config";
 import { SettingsPropHandlerType } from "@models/settings";
+import { ListenerFields } from "./ListenerFields";
 
 interface WebServerSettingsProps {
   config: B4Config;
@@ -38,6 +39,9 @@ export const WebServerSettings = ({
   const hasPassword =
     !!config.system.web_server.password ||
     !!config.system.web_server.password_set;
+  const authSet = hasUsername && hasPassword;
+  const hasTls = !!config.system.web_server.tls_cert;
+  const exposed = config.system.web_server.expose ?? false;
 
   return (
     <B4Section
@@ -46,24 +50,19 @@ export const WebServerSettings = ({
       icon={<ApiIcon />}
     >
       <B4FormGroup label={t("settings.WebServer.serverSettings")} columns={2}>
-        <B4TextField
-          label={t("settings.WebServer.bindAddress")}
-          value={config.system.web_server.bind_address || "0.0.0.0"}
-          onChange={(e) =>
-            onChange("system.web_server.bind_address", e.target.value)
-          }
-          placeholder={t("settings.WebServer.bindAddressPlaceholder")}
-          helperText={t("settings.WebServer.bindAddressHelp")}
-          selectOnFocus
-        />
-        <B4NumberField
-          label={t("settings.WebServer.port")}
-          value={config.system.web_server.port}
-          onChange={(n) => onChange("system.web_server.port", n)}
-          min={1}
-          max={65535}
-          helperText={t("settings.WebServer.portHelp")}
-        />
+        <B4FormRow>
+          <ListenerFields
+            path="system.web_server"
+            listener={config.system.web_server}
+            defaultPort={7000}
+            skipSetup={config.system.tables.skip_setup}
+            onChange={onChange}
+            exposeBlocked={
+              authSet ? undefined : t("settings.WebServer.exposeNeedsAuth")
+            }
+            exposeNote={t("settings.WebServer.exposeNote")}
+          />
+        </B4FormRow>
         <B4TextField
           label={t("settings.WebServer.tlsCert")}
           value={config.system.web_server.tls_cert || ""}
@@ -122,7 +121,17 @@ export const WebServerSettings = ({
           {t("settings.WebServer.authPartialWarning")}
         </B4Alert>
       )}
-      {hasUsername && hasPassword && !config.system.web_server.tls_cert && (
+      {exposed && !authSet && (
+        <B4Alert severity="error">
+          {t("settings.WebServer.exposeAuthMissing")}
+        </B4Alert>
+      )}
+      {exposed && !hasTls && (
+        <B4Alert severity="warning">
+          {t("settings.WebServer.exposeNoTls")}
+        </B4Alert>
+      )}
+      {authSet && !hasTls && !exposed && (
         <B4Alert severity="warning">
           {t("settings.WebServer.authHttpWarning")}
         </B4Alert>

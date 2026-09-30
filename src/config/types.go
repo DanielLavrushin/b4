@@ -403,6 +403,7 @@ type MTProtoConfig struct {
 	Enabled           bool            `json:"enabled"`
 	Port              int             `json:"port"`
 	BindAddress       string          `json:"bind_address"`
+	Expose            bool            `json:"expose" mcp:"deny"`
 	MaxConnections    int             `json:"max_connections"` // max concurrent client connections; 0 = default (2048)
 	TCPUserTimeoutSec int             `json:"tcp_user_timeout_sec"`
 	IdleTimeoutSec    int             `json:"idle_timeout_sec"`
@@ -437,6 +438,7 @@ type MTProtoWebProxyConfig struct {
 	Enabled  bool   `json:"enabled"`
 	Hostname string `json:"hostname"`
 	Port     int    `json:"port"`
+	Expose   bool   `json:"expose" mcp:"deny"`
 	TLSCert  string `json:"tls_cert"`
 	TLSKey   string `json:"tls_key"`
 }
@@ -445,6 +447,7 @@ type Socks5Config struct {
 	Enabled        bool     `json:"enabled"`
 	Port           int      `json:"port"`
 	BindAddress    string   `json:"bind_address"`
+	Expose         bool     `json:"expose" mcp:"deny"`
 	Username       string   `json:"username" mcp:"deny"`
 	Password       string   `json:"password" mcp:"deny"`
 	AllowedSources []string `json:"allowed_sources,omitempty" mcp:"deny"`
@@ -467,6 +470,7 @@ type MasqueradeConfig struct {
 type WebServerConfig struct {
 	Port        int       `json:"port"`
 	BindAddress string    `json:"bind_address"`
+	Expose      bool      `json:"expose" mcp:"deny"`
 	TLSCert     string    `json:"tls_cert"`
 	TLSKey      string    `json:"tls_key"`
 	Username    string    `json:"username"`

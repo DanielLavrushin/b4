@@ -112,10 +112,15 @@ func runB4(cmd *cobra.Command, args []string) error {
 	}()
 	go func() {
 		for range recheckSig {
+			tables.KickExposure()
 			mon := tablesMonitorRef.Load()
 			tunEng := tunEngineRef.Load()
 			if mon == nil && tunEng == nil {
-				log.Infof("Received SIGUSR1, but the tables monitor is not running, so there are no firewall rules to re-check")
+				if st := tables.ExposureStatus(); len(st.Ports) > 0 && !st.SkipSetup {
+					log.Infof("Received SIGUSR1, re-checking the rules that open b4's ports; the tables monitor is not running, so no other firewall rule is re-checked")
+				} else {
+					log.Infof("Received SIGUSR1, but the tables monitor is not running and no port is exposed, so there are no firewall rules to re-check")
+				}
 				continue
 			}
 			log.Infof("Received SIGUSR1, re-checking firewall rules")
@@ -286,6 +291,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		clearErr := tables.ClearRules(&cfg)
 		b4tun.RestoreFromState()
 		tables.RoutingClearAll()
+		tables.SweepExposure()
 		b4tun.ClearStaleArtifacts(&cfg)
 		if clearErr != nil {
 			return log.Errorf("failed to clear iptables/nftables rules: %w", clearErr)
@@ -369,11 +375,14 @@ func runB4(cmd *cobra.Command, args []string) error {
 		tablesMonitorRef.Store(tablesMonitor)
 	}
 
+	stopExposureWatch := func() {}
 	shutdownHandled := false
 	defer func() {
 		if shutdownHandled {
 			return
 		}
+		stopExposureWatch()
+		tables.ClearExposure()
 		if tablesMonitor != nil {
 			tablesMonitor.Stop()
 		}
@@ -487,12 +496,48 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	geodat.RemoveStaleDownloads(cfg.System.Geo.GeoSitePath, cfg.System.Geo.GeoIpPath)
 
+	webListener := cfgPtr.Load().ConfiguredWebListener()
+	handler.SetRunningWebListener(webListener)
+	listening := func(service string) bool {
+		switch service {
+		case config.ExposeWebServer:
+			return b4http.WebListening()
+		case config.ExposeMTProto:
+			return mtprotoServer.Running()
+		case config.ExposeMTProtoWebProxy:
+			return mtprotoServer.WebProxyOwnListener()
+		case config.ExposeSocks5:
+			return socks5Server.Running()
+		}
+		return false
+	}
+	exposurePlan := func(c *config.Config) ([]config.ExposedPort, []config.ExposeBlock, bool) {
+		ports, blocked := c.ExposurePlan(webListener)
+		ports, blocked = exposeListeningOnly(ports, blocked, listening)
+		return ports, blocked, c.System.Tables.SkipSetup
+	}
+	handler.SetExposureSyncFunc(func(c *config.Config) { tables.SyncExposure(exposurePlan(c)) })
+	handler.SetExposureShrinkFunc(func(c *config.Config) {
+		ports, _, _ := exposurePlan(c)
+		tables.ShrinkExposure(ports)
+	})
+
 	// Start internal web server if configured
 	httpServer, apiHandler, err := b4http.StartServer(&cfgPtr, pool)
 	if err != nil {
 		metrics.RecordEvent("error", fmt.Sprintf("Failed to start web server: %v", err))
 		return log.Errorf("failed to start web server: %w", err)
 	}
+
+	tables.SyncExposure(exposurePlan(cfgPtr.Load()))
+	stopExposureWatch = tables.StartExposureWatch(
+		time.Duration(cfgPtr.Load().System.Tables.MonitorInterval)*time.Second,
+		func() {
+			unlock := config.LockWrites()
+			defer unlock()
+			tables.SyncExposure(exposurePlan(cfgPtr.Load()))
+		},
+	)
 
 	var geoScheduler *geodat.Scheduler
 	if apiHandler != nil {
@@ -612,6 +657,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	if tablesMonitor != nil {
 		tablesMonitor.Stop()
 	}
+	stopExposureWatch()
 	cidrCancel()
 	asnCancel()
 	tproxyMgr.Stop()
@@ -626,6 +672,18 @@ const (
 	httpShutdownGrace = 3 * time.Second
 	shutdownHardLimit = 15 * time.Second
 )
+
+func exposeListeningOnly(ports []config.ExposedPort, blocked []config.ExposeBlock, listening func(string) bool) ([]config.ExposedPort, []config.ExposeBlock) {
+	var kept []config.ExposedPort
+	for _, p := range ports {
+		if listening(p.Service) {
+			kept = append(kept, p)
+			continue
+		}
+		blocked = append(blocked, config.ExposeBlock{Service: p.Service, Reason: config.ExposeBlockedNotListening})
+	}
+	return kept, blocked
+}
 
 func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engine, engineUp bool, httpServer *http.Server, socks5Server *socks5.Server, mtprotoServer *mtproto.Server, metrics *handler.MetricsCollector, discoveryRT *discovery.Runtime) error {
 	// Create shutdown context with timeout
@@ -747,6 +805,7 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		tables.ClearExposure()
 		tables.RoutingClearAll()
 	}()
 

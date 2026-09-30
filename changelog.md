@@ -1,5 +1,10 @@
 # B4 - Bye Bye Big Bro
 
+## [1.84.0] - 2026-09-30
+
+- ADDED: **Expose to internet switches for the ports of the web interface, the MTProto and SOCKS5 proxies and the Telegram Desktop WEB proxy, off by default** - each opens its port in the firewall and keeps it open through firewall restarts, and the MTProto share dialog can switch its link to the internet address.
+- FIXED: **The settings page asked for a restart of b4 after a change to the SOCKS5 proxy, to the web interface's username, password or language, or to the MCP settings, none of which needs one** - it counted every change on the Core tab as needing a restart, and the MCP settings of the Integrations tab as Core ones.
+
 ## [1.83.1] - 2026-09-27
 
 - ADDED: **When the packet engine fails to start, b4 keeps running without it, so the web interface stays reachable** - the dashboard shows the reason, such as a kernel without NFQUEUE support, with a button that switches to the other engine and restarts b4, and b4 retries on its own three times within about two minutes.

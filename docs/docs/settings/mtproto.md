@@ -55,10 +55,11 @@ A note under the box states that voice calls (UDP) and QUIC are not bridged.
 | Enable MTProto Proxy | Starts the listener. The secrets and the WEB proxy depend on it: both reuse this listener's secrets, and their cards are hidden while it is off. | Off |
 | Bind Address | Address to listen on. `0.0.0.0` accepts from every interface, `127.0.0.1` from the host only. | `0.0.0.0` |
 | Port | Listen port. | `3128` |
+| Expose to internet | `system.mtproto.expose`. Adds a firewall rule that accepts connections to the port from any address, IPv4 and IPv6, and puts it back after firewall reloads. Applies while the proxy is enabled. See [Access from the internet](./security.md#expose-to-internet). | Off |
 | Fake SNI Domain | The domain the fake-TLS handshake presents, and the site an unverified connection is spliced through to on port 443. Also seeds a generated secret. | `storage.googleapis.com` |
 
-:::warning No firewall rule is added
-b4 does not open its own listen port. On a host with a default-deny input policy the proxy is unreachable until a rule is added by hand.
+:::warning Off adds no rule and blocks nothing
+With **Expose to internet** off, b4 adds no firewall rule for the port: a host whose firewall drops incoming connections keeps the proxy unreachable from outside, and a host without one leaves it reachable. The rule acts on this host only; a router in front, carrier-grade NAT and a cloud provider's firewall are covered under [What the switch cannot open](./security.md#expose-limits).
 :::
 
 ## Secrets
@@ -91,6 +92,7 @@ Shared by the proxy server and by the Telegram over WebSocket bridge, whether th
 | Enable the WEB carrier | Serves the MTProto stream over HTTPS on the relay hostname. | Off |
 | Relay hostname | A bare public DNS name, no scheme, port or path, punycode for international names. Needs its own hostname with publicly trusted TLS on 443. | empty |
 | Relay port | Empty serves the relay on the web server's port, on the relay hostname only. A value opens a listener of its own that answers the relay hostname as the relay and every other name or IP with the placeholder page, so the web interface is not reachable through it. Cannot equal the web server or MTProto proxy port. Filled with `443` when the carrier is switched on for the first time. | empty |
+| Expose to internet | `system.mtproto.web_proxy.expose`. Shown while **Relay port** holds a port, and while it is on with the field empty, so that it can be turned off. Adds a firewall rule that accepts connections to the relay port from any address, IPv4 and IPv6. With the field empty the relay rides the web server's port, which only the web server's own switch opens, together with the interface. See [Access from the internet](./security.md#expose-to-internet). | Off |
 | Certificate for the relay hostname | PEM pair served on the relay port only. Empty: the web server's pair, which then has to be trusted for the relay hostname and makes the interface HTTPS-only with a name-mismatch warning on visits by IP. Both or neither. | empty |
 | Placeholder page | Upload, download or remove a self-contained HTML file of at most 1 MiB that replaces the built-in placeholder, stored as `webproxy_page.html` next to the configuration. | built-in |
 
@@ -118,5 +120,5 @@ Three timeouts where `0` selects the built-in value rather than turning anything
 The data-centre list and the CF proxy pool are downloaded only while the MTProto proxy, the Telegram over WebSocket switch or an enabled set in the Telegram over WebSocket routing mode is on. With all of them off, b4 contacts neither Telegram nor the list hosts. The lists are fetched at start-up and on the save that turns one of these on or changes a list's URL or switch, with no restart; the CF proxy pool is then refreshed hourly. A failed download is tried again after 30 seconds, the wait doubling after each further failure up to an hour, so a list that could not be fetched at start-up, for example before the uplink was up, arrives without a restart. Until a download succeeds, the built-in addresses and domains are used.
 
 :::info Saving does not restart the service
-b4 restarts the MTProto proxy itself when the enable switch, port, bind address, Fake SNI, transport mode, custom WebSocket domain, WS edge IP, fronting name or CF proxy fallback changes, which drops the sessions it is carrying. Secrets and the WEB proxy fields are applied without restarting it; a changed relay port or certificate restarts only the relay listener. The Telegram over WebSocket switch takes effect on save, with no restart of the service.
+b4 restarts the MTProto proxy itself when the enable switch, port, bind address, Fake SNI, transport mode, custom WebSocket domain, WS edge IP, fronting name or CF proxy fallback changes, which drops the sessions it is carrying. Secrets and the WEB proxy fields are applied without restarting it; a changed relay port or certificate restarts only the relay listener. The **Expose to internet** switches change only the firewall rule. The Telegram over WebSocket switch takes effect on save, with no restart of the service.
 :::

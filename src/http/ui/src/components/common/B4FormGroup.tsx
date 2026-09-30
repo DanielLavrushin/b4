@@ -1,4 +1,4 @@
-import { Children } from "react";
+import { Children, isValidElement } from "react";
 import { Box, Grid, Typography } from "@mui/material";
 import { colors, spacing } from "@design";
 
@@ -9,6 +9,12 @@ interface B4FormGroupProps {
   children: React.ReactNode;
   columns?: 1 | 2;
 }
+
+export const B4FormRow = ({ children }: { children: React.ReactNode }) =>
+  children;
+
+const isFullRow = (child: React.ReactNode) =>
+  isValidElement(child) && child.type === B4FormRow;
 
 export const B4FormGroup = ({
   label,
@@ -34,7 +40,9 @@ export const B4FormGroup = ({
 
     <Grid container spacing={spacing.md}>
       {Children.map(children, (child) => (
-        <Grid size={{ xs: 12, md: 12 / columns }}>{child}</Grid>
+        <Grid size={{ xs: 12, md: isFullRow(child) ? 12 : 12 / columns }}>
+          {child}
+        </Grid>
       ))}
     </Grid>
   </Box>
