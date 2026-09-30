@@ -394,7 +394,7 @@ sysctl -w net.bridge.bridge-nf-call-iptables=0
 sysctl -w net.bridge.bridge-nf-call-ip6tables=0
 ```
 
-Чтобы значение пережило перезагрузку, те же строки добавляются в `/etc/sysctl.conf`, который применяется после файлов из `/etc/sysctl.d`:
+Чтобы значение пережило перезагрузку (кроме двух конфигураций Docker, описанных ниже), те же строки добавляются в `/etc/sysctl.conf`, который применяется после файлов из `/etc/sysctl.d`:
 
 ```sh
 printf 'net.bridge.bridge-nf-call-iptables=0\nnet.bridge.bridge-nf-call-ip6tables=0\n' >> /etc/sysctl.conf

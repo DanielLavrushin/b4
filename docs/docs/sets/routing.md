@@ -389,7 +389,7 @@ sysctl -w net.bridge.bridge-nf-call-iptables=0
 sysctl -w net.bridge.bridge-nf-call-ip6tables=0
 ```
 
-The same lines in `/etc/sysctl.conf`, which is applied after the files in `/etc/sysctl.d`, keep them off after a reboot:
+The same lines in `/etc/sysctl.conf`, which is applied after the files in `/etc/sysctl.d`, keep them off after a reboot, except in the two Docker configurations described below:
 
 ```sh
 printf 'net.bridge.bridge-nf-call-iptables=0\nnet.bridge.bridge-nf-call-ip6tables=0\n' >> /etc/sysctl.conf
