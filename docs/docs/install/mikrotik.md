@@ -220,7 +220,7 @@ The marking rules, here and in Step 4, apply only to packets that arrive from th
     in-interface=bridge-docker place-before=0
 ```
 
-b4 on a separate Linux machine instead of a container needs the same layout: a subnet of its own on its own RouterOS port, VLAN or bridge, RouterOS as its default gateway, and the route in `to_b4` pointing at the machine's address. On the clients' own subnet the machine hands the server's replies straight to the client, so RouterOS sees only the client's half of each connection, and the default rule that drops invalid packets stalls or breaks the client's connections.
+b4 on a separate Linux machine instead of a container needs the same layout: a subnet of its own on its own RouterOS port, VLAN or bridge, RouterOS as its default gateway, the route in `to_b4` pointing at the machine's address, NAT Masquerade on in b4 as in Step 8, and that interface kept out of the LAN interface list or exempted by the same accept rule with its name in place of `bridge-docker`. On the clients' own subnet the machine hands the server's replies straight to the client, so RouterOS sees only the client's half of each connection and treats the client's following TCP packets as invalid, which stalls or breaks its TCP connections.
 
 RouterOS tells b4's packets apart by the interface they arrive on, so these rules need nothing from b4 inside the packets. The marks b4 uses internally, the packet mark among them, never leave the container or the machine.
 
@@ -246,7 +246,7 @@ RouterOS tells b4's packets apart by the interface they arrive on, so these rule
 **Destinations routed through the container do not open:**
 
 1. The route to the container has to be in table `to_b4`, not in the main table, see [Routing chosen destinations through the container](#routing-by-destination)
-2. `bridge-docker` has to stay out of the LAN interface list, or its packets have to be exempted from the marking rules as shown there
+2. `bridge-docker`, or the interface of a separate b4 machine, has to stay out of the LAN interface list, or its packets have to be exempted from the marking rules as shown there
 
 **Traffic reaches the container but the bypass has no effect:**
 

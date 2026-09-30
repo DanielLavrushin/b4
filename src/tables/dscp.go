@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -114,8 +115,10 @@ func applyDSCPFor(cfg *config.Config, backend string) error {
 		}
 		return nil
 	}
-	if prev := dscpApplied.Load(); prev != nil && prev.backend != backend && !removeDSCPObjects(prev.cfg, prev.backend) {
-		dscpStale.Store(prev)
+	if prev := dscpApplied.Load(); prev != nil && prev.backend != backend {
+		if gone, _ := removeDSCPObjects(prev.cfg, prev.backend); !gone {
+			dscpStale.Store(prev)
+		}
 	}
 	if s := dscpStale.Load(); s != nil && s.backend == backend {
 		dscpStale.CompareAndSwap(s, nil)
@@ -126,10 +129,20 @@ func applyDSCPFor(cfg *config.Config, backend string) error {
 	return applyDSCPIpt(cfg, backend, value, ifaces)
 }
 
+func dscpTransient(out string, err error) bool {
+	return isXtablesLockBusy(out, err) || errors.Is(err, context.DeadlineExceeded)
+}
+
 func applyDSCPNft(cfg *config.Config, value int, ifaces []string) error {
 	script, stamps := dscpNftScript(value, ifaces)
-	if _, err := runNftStdin(script); err != nil {
-		removeDSCPNft()
+	if out, err := runNftStdin(script); err != nil {
+		if dscpTransient(out, err) {
+			dscpApplied.Store(&dscpState{cfg: cfg, backend: backendNFTables, stamps: stamps})
+			return fmt.Errorf("nftables did not answer while loading the %s table, the firewall monitor tries again: %w", dscpNftTable, err)
+		}
+		if gone, _ := removeDSCPNft(); !gone {
+			dscpStale.Store(&dscpState{cfg: cfg, backend: backendNFTables})
+		}
 		dscpApplied.Store(nil)
 		return fmt.Errorf("nftables rejected the %s table, so neither IPv4 nor IPv6 packets get the DSCP value: %w", dscpNftTable, err)
 	}
@@ -192,11 +205,24 @@ func (im *IPTablesManager) dscpChainMatches(bin string, specs [][]string) bool {
 	return true
 }
 
+func iptChainPresence(bin, table, chain string) (present, known bool) {
+	out, err := run(bin, "-w", "-t", table, "-S", chain)
+	if err == nil {
+		return true, true
+	}
+	msg := iptErrText(out, err)
+	if strings.Contains(msg, "No chain/target/match") || strings.Contains(msg, "does not exist") {
+		return false, true
+	}
+	return false, false
+}
+
 func (im *IPTablesManager) applyDSCPChain(bin string, specs [][]string) (bool, error) {
 	if !im.dscpChainMatches(bin, specs) {
 		if !im.existsChain(bin, "mangle", dscpChainName) {
 			if out, err := run(bin, "-w", "-t", "mangle", "-N", dscpChainName); err != nil {
-				permanent := !isXtablesLockBusy(out, err) && !im.existsChain(bin, "mangle", dscpChainName)
+				present, known := iptChainPresence(bin, "mangle", dscpChainName)
+				permanent := !dscpTransient(out, err) && known && !present
 				return permanent, fmt.Errorf("could not create the mangle chain %s: %s", dscpChainName, iptErrText(out, err))
 			}
 		} else if out, err := run(bin, "-w", "-t", "mangle", "-F", dscpChainName); err != nil {
@@ -207,8 +233,8 @@ func (im *IPTablesManager) applyDSCPChain(bin string, specs [][]string) (bool, e
 			if err == nil {
 				continue
 			}
-			if isXtablesLockBusy(out, err) || !im.existsChain(bin, "mangle", dscpChainName) {
-				return false, fmt.Errorf("the mangle table changed while b4 was filling %s: %s", dscpChainName, iptErrText(out, err))
+			if present, known := iptChainPresence(bin, "mangle", dscpChainName); dscpTransient(out, err) || !known || !present {
+				return false, fmt.Errorf("the mangle table was busy or changed while b4 was filling %s: %s", dscpChainName, iptErrText(out, err))
 			}
 			if iptSpecTarget(spec) == "DSCP" {
 				kmodNoteRejected("xt_DSCP", bin, out)
@@ -266,7 +292,7 @@ func iptSeatDSCPJump(bin string) error {
 	jump, capture, copies := dscpJumpPlacement(listing)
 	if jump == 0 || (capture > 0 && capture < jump) {
 		if copies > 0 {
-			log.Infof("IPTABLES[%s]: the jump to %s sits below b4's capture jump in mangle POSTROUTING, where the packets b4 inspects would skip it; moving it to the top", bin, dscpChainName)
+			log.Tracef("IPTABLES[%s]: the jump to %s sits below b4's capture jump in mangle POSTROUTING, where the packets b4 inspects would skip it; moving it to the top", bin, dscpChainName)
 		}
 		if out, err := run(bin, "-w", "-t", "mangle", "-I", "POSTROUTING", "1", "-j", dscpChainName); err != nil {
 			return fmt.Errorf("could not add the mangle POSTROUTING jump to %s: %s", dscpChainName, iptErrText(out, err))
@@ -294,76 +320,100 @@ func iptDropExtraJumps(bin, table, parent, target string) {
 	}
 }
 
-func (im *IPTablesManager) teardownDSCPChain(bin string) bool {
-	if !im.existsChain(bin, "mangle", dscpChainName) {
-		return true
+func (im *IPTablesManager) teardownDSCPChain(bin string) (gone, seen bool) {
+	present, known := iptChainPresence(bin, "mangle", dscpChainName)
+	if !known {
+		log.Tracef("IPTABLES[%s]: could not tell whether the mangle chain %s exists", bin, dscpChainName)
+		return false, false
+	}
+	if !present {
+		return true, false
 	}
 	iptDeleteJumpsTo(bin, "mangle", "POSTROUTING", dscpChainName)
 	_, _ = run(bin, "-w", "-t", "mangle", "-F", dscpChainName)
 	out, err := run(bin, "-w", "-t", "mangle", "-X", dscpChainName)
 	if err == nil {
-		return true
+		return true, true
 	}
-	if !im.existsChain(bin, "mangle", dscpChainName) {
-		return true
+	if present, known := iptChainPresence(bin, "mangle", dscpChainName); known && !present {
+		return true, true
 	}
 	log.Warnf("IPTABLES[%s]: could not delete the mangle chain %s, the firewall monitor tries again: %s", bin, dscpChainName, iptErrText(out, err))
-	return false
+	return false, true
 }
 
-func dscpNftTablePresent() bool {
+func dscpNftTablePresence() (present, known bool) {
 	if !hasBinary("nft") {
-		return false
+		return false, true
 	}
 	out, err := run("nft", "list", "tables")
 	if err != nil {
-		return false
+		return false, false
 	}
 	want := "table inet " + dscpNftTable
 	for _, line := range strings.Split(out, "\n") {
 		if strings.TrimSpace(line) == want {
-			return true
+			return true, true
 		}
 	}
-	return false
+	return false, true
 }
 
-func removeDSCPNft() bool {
-	if !dscpNftTablePresent() {
-		return true
+func dscpNftTablePresent() bool {
+	present, _ := dscpNftTablePresence()
+	return present
+}
+
+func removeDSCPNft() (gone, seen bool) {
+	present, known := dscpNftTablePresence()
+	if !known {
+		return false, false
+	}
+	if !present {
+		return true, false
 	}
 	if out, err := run("nft", "delete", "table", "inet", dscpNftTable); err != nil {
 		log.Warnf("NFTABLES: could not delete the %s table, the firewall monitor tries again: %s", dscpNftTable, iptErrText(out, err))
-		return false
+		return false, true
 	}
-	return true
+	return true, true
 }
 
-func removeDSCPObjects(cfg *config.Config, backend string) bool {
+func removeDSCPObjects(cfg *config.Config, backend string) (gone, seen bool) {
 	if backend == backendNFTables {
 		return removeDSCPNft()
 	}
 	im := NewIPTablesManager(cfg, backend == backendIPTablesLegacy)
-	gone := true
+	gone = true
 	for _, bin := range im.teardownBinaries() {
-		if !im.teardownDSCPChain(bin) {
+		g, s := im.teardownDSCPChain(bin)
+		if !g {
 			gone = false
 		}
+		if s {
+			seen = true
+		}
 	}
-	return gone
+	return gone, seen
 }
 
 func clearDSCPFor(cfg *config.Config, backend string) {
-	if prev := dscpApplied.Swap(nil); prev != nil && prev.backend != backend && !removeDSCPObjects(prev.cfg, prev.backend) {
-		dscpStale.Store(prev)
+	prev := dscpApplied.Swap(nil)
+	if prev != nil && prev.backend != backend {
+		if gone, _ := removeDSCPObjects(prev.cfg, prev.backend); !gone {
+			dscpStale.Store(prev)
+		}
 	}
-	if removeDSCPObjects(cfg, backend) {
+	gone, seen := removeDSCPObjects(cfg, backend)
+	if gone {
 		if s := dscpStale.Load(); s != nil && s.backend == backend {
 			dscpStale.CompareAndSwap(s, nil)
 		}
 		return
 	}
-	dscpStale.Store(&dscpState{cfg: cfg, backend: backend})
+	if seen || (prev != nil && prev.backend == backend) {
+		dscpStale.Store(&dscpState{cfg: cfg, backend: backend})
+	}
 }
 
 func clearDSCPUnlessKept(cfg *config.Config, backend string) {
@@ -402,9 +452,11 @@ func ensureDSCPLocked(cfg *config.Config, requested bool) bool {
 		return false
 	}
 	acted := false
-	if s := dscpStale.Load(); s != nil && removeDSCPObjects(s.cfg, s.backend) {
-		dscpStale.CompareAndSwap(s, nil)
-		acted = true
+	if s := dscpStale.Load(); s != nil {
+		if gone, _ := removeDSCPObjects(s.cfg, s.backend); gone {
+			dscpStale.CompareAndSwap(s, nil)
+			acted = true
+		}
 	}
 	st := dscpApplied.Load()
 	if st == nil || dscpIntact(st) {
@@ -417,9 +469,6 @@ func ensureDSCPLocked(cfg *config.Config, requested bool) bool {
 	}
 	if err := applyDSCPFor(st.cfg, st.backend); err != nil {
 		warnDSCPOnce(err)
-		if cur := dscpApplied.Load(); cur == nil || len(cur.bins) < len(st.bins) {
-			dscpApplied.Store(st)
-		}
 	}
 	return true
 }
@@ -446,10 +495,14 @@ func ApplyDSCPOnly(cfg *config.Config) error {
 
 func ClearDSCPOnly(cfg *config.Config) {
 	dscpLast.Store(nil)
-	if st := dscpApplied.Swap(nil); st != nil && !removeDSCPObjects(st.cfg, st.backend) {
-		dscpStale.Store(st)
+	if st := dscpApplied.Swap(nil); st != nil {
+		if gone, _ := removeDSCPObjects(st.cfg, st.backend); !gone {
+			dscpStale.Store(st)
+		}
 	}
-	if s := dscpStale.Load(); s != nil && removeDSCPObjects(s.cfg, s.backend) {
-		dscpStale.CompareAndSwap(s, nil)
+	if s := dscpStale.Load(); s != nil {
+		if gone, _ := removeDSCPObjects(s.cfg, s.backend); gone {
+			dscpStale.CompareAndSwap(s, nil)
+		}
 	}
 }

@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -458,7 +459,7 @@ func TestDSCPTransientFailureStaysWantedAndIsRetried(t *testing.T) {
 	}
 }
 
-func TestDSCPFailedReapplyKeepsTheRecord(t *testing.T) {
+func TestDSCPPermanentRefusalOnReapplyStopsDemanding(t *testing.T) {
 	f := newFakeMangle(backendIPTables)
 	installFakeMangle(t, f)
 	cfg := dscpTestConfig(true, 7)
@@ -471,15 +472,121 @@ func TestDSCPFailedReapplyKeepsTheRecord(t *testing.T) {
 	if !ensureDSCPLocked(cfg, false) {
 		t.Fatalf("the monitor did not notice the missing stamp")
 	}
-	if st := dscpApplied.Load(); st == nil || len(st.bins) != 1 {
-		t.Fatalf("a failed re-apply dropped the record, so no later tick would retry: %+v", st)
+	if st := dscpApplied.Load(); st != nil {
+		t.Fatalf("a family the kernel now refuses is still demanded, so every tick would rebuild it: %+v", st)
 	}
-	f.rejectDSCP[backendIPTables] = false
+	f.calls = nil
+	if ensureDSCPLocked(cfg, false) || len(f.mutations()) != 0 {
+		t.Errorf("the monitor kept rebuilding a refused family: %v", f.mutations())
+	}
+}
+
+func TestDSCPTimeoutOnReapplyIsRetried(t *testing.T) {
+	f := newFakeMangle(backendIPTables)
+	installFakeMangle(t, f)
+	cfg := dscpTestConfig(true, 7)
+	if err := applyDSCPFor(cfg, backendIPTables); err != nil {
+		t.Fatalf("applyDSCPFor: %v", err)
+	}
+	delete(f.chains[backendIPTables], dscpChainName)
+	f.chains[backendIPTables]["POSTROUTING"] = nil
+	realRun := run
+	stall := true
+	run = func(args ...string) (string, error) {
+		if stall && len(args) > 5 && args[4] == "-N" && args[5] == dscpChainName {
+			stall = false
+			return "", fmt.Errorf("command [%s] gave up after 15s: %w", strings.Join(args, " "), context.DeadlineExceeded)
+		}
+		return realRun(args...)
+	}
+	if !ensureDSCPLocked(cfg, false) {
+		t.Fatalf("the monitor did not notice the missing stamp")
+	}
+	if st := dscpApplied.Load(); st == nil || len(st.bins) != 1 {
+		t.Fatalf("a timed-out command was taken as a permanent refusal: %+v", st)
+	}
 	if !ensureDSCPLocked(cfg, false) {
 		t.Fatalf("the next tick did not retry")
 	}
 	if _, ok := f.chains[backendIPTables][dscpChainName]; !ok {
 		t.Errorf("the stamp did not come back on the next tick")
+	}
+}
+
+func TestDSCPUnreadableSweepOfNothingIsNotRetried(t *testing.T) {
+	f := newFakeMangle(backendIPTables, backendIP6Tables)
+	installFakeMangle(t, f)
+	realRun := run
+	run = func(args ...string) (string, error) {
+		if args[0] == backendIP6Tables && len(args) > 4 && args[4] == "-S" {
+			return "ip6tables: Protocol not supported.", errors.New("exit status 1")
+		}
+		return realRun(args...)
+	}
+	clearDSCPFor(dscpTestConfig(false, 0), backendIPTables)
+	if dscpStale.Load() != nil {
+		t.Fatalf("an unreadable family with nothing ever installed must not be retried on every tick")
+	}
+	f.calls = nil
+	if ensureDSCPLocked(dscpTestConfig(false, 0), false) || len(f.calls) != 0 {
+		t.Errorf("the monitor ran commands for a stamp that was never installed: %v", f.calls)
+	}
+}
+
+func TestDSCPUnreadableRemovalOfAnInstalledStampIsRetried(t *testing.T) {
+	f := newFakeMangle(backendIPTables)
+	installFakeMangle(t, f)
+	cfg := dscpTestConfig(true, 7)
+	if err := applyDSCPFor(cfg, backendIPTables); err != nil {
+		t.Fatalf("applyDSCPFor: %v", err)
+	}
+	realRun := run
+	stall := true
+	run = func(args ...string) (string, error) {
+		if stall && len(args) > 5 && args[4] == "-S" && args[5] == dscpChainName {
+			return "", fmt.Errorf("command [%s] gave up after 15s: %w", strings.Join(args, " "), context.DeadlineExceeded)
+		}
+		return realRun(args...)
+	}
+	clearDSCPFor(dscpTestConfig(false, 7), backendIPTables)
+	if dscpStale.Load() == nil {
+		t.Fatalf("a stamp b4 installed but could not confirm removed was forgotten")
+	}
+	stall = false
+	if !ensureDSCPLocked(dscpTestConfig(false, 7), false) {
+		t.Fatalf("the monitor did not retry the removal")
+	}
+	if _, ok := f.chains[backendIPTables][dscpChainName]; ok {
+		t.Errorf("the chain survived the retried removal")
+	}
+	if dscpStale.Load() != nil {
+		t.Errorf("the retried removal left the stale record behind")
+	}
+}
+
+func TestDSCPNftTimeoutKeepsTheTableAndIsRetried(t *testing.T) {
+	resetDSCPState(t)
+	stubBinaryPresence(t, map[string]bool{"nft": true})
+	origRun, origStdin := run, runNftStdin
+	t.Cleanup(func() { run, runNftStdin = origRun, origStdin })
+	var calls []string
+	run = func(args ...string) (string, error) {
+		calls = append(calls, strings.Join(args, " "))
+		return "", nil
+	}
+	runNftStdin = func(string) (string, error) {
+		return "", fmt.Errorf("command [nft -f -] gave up after 15s: %w", context.DeadlineExceeded)
+	}
+	if err := applyDSCPFor(dscpTestConfig(true, 7), backendNFTables); err == nil {
+		t.Fatalf("a timed-out load must be reported")
+	}
+	for _, c := range calls {
+		if strings.Contains(c, "delete table") {
+			t.Errorf("a timed-out load deleted the table: %s", c)
+		}
+	}
+	if st := dscpApplied.Load(); st == nil || st.backend != backendNFTables {
+		t.Fatalf("a timed-out load must stay wanted so the monitor retries, got %+v", st)
 	}
 }
 
