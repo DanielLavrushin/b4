@@ -29,6 +29,7 @@ func ClearStaleArtifacts(cfg *config.Config) {
 	run("iptables", "-t", "mangle", "-X", tunGateChain)
 	run("iptables", "-t", "mangle", "-F", tunCaptureChain)
 	run("iptables", "-t", "mangle", "-X", tunCaptureChain)
+	destroyDupSet()
 
 	for _, markStr := range []string{reinjectMarkMatch(), clientMarkMatch()} {
 		for {

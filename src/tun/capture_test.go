@@ -151,3 +151,134 @@ func TestGateRulesFromDumpMatchesMACsPrintedInLowercase(t *testing.T) {
 		}
 	}
 }
+
+func dupCaptureManager(viaSet, multiport bool) *routeManager {
+	return &routeManager{
+		mark:         0x8000,
+		multiport:    multiport,
+		tcpPorts:     []string{"443", "8443"},
+		udpPorts:     []string{"443"},
+		tcpLimit:     19,
+		udpLimit:     8,
+		dupIPs:       []string{"20.33.25.0/24", "52.146.136.33", "140.82.112.0/20"},
+		dupSetActive: viaSet,
+	}
+}
+
+func joinSpecs(specs [][]string) []string {
+	out := make([]string, len(specs))
+	for i, s := range specs {
+		out[i] = strings.Join(s, " ")
+	}
+	return out
+}
+
+func isDupSpec(s string) bool {
+	return strings.Contains(s, " -d ") || strings.Contains(s, "--match-set "+tunDupSet+" ")
+}
+
+func TestDupAddressesShareOneSetRulePerPortChunk(t *testing.T) {
+	var dup []string
+	for _, s := range joinSpecs(dupCaptureManager(true, true).steerSpecs()) {
+		if strings.Contains(s, " -d ") {
+			t.Fatalf("with the ipset in place no address may get a rule of its own: %q", s)
+		}
+		if isDupSpec(s) {
+			dup = append(dup, s)
+		}
+	}
+	want := "-p tcp -m set --match-set b4_tun_dup_v4 dst -m multiport --dports 443,8443 -j MARK --set-xmark 0x40000000/0x40000000"
+	if len(dup) != 1 || dup[0] != want {
+		t.Fatalf("want only %q, got %q", want, dup)
+	}
+}
+
+func TestDupSetGetsOneRulePerPortWithoutMultiport(t *testing.T) {
+	var dup []string
+	for _, s := range joinSpecs(dupCaptureManager(true, false).steerSpecs()) {
+		if isDupSpec(s) {
+			dup = append(dup, s)
+		}
+	}
+	want := []string{
+		"-p tcp -m set --match-set b4_tun_dup_v4 dst --dport 443 -j MARK --set-xmark 0x40000000/0x40000000",
+		"-p tcp -m set --match-set b4_tun_dup_v4 dst --dport 8443 -j MARK --set-xmark 0x40000000/0x40000000",
+	}
+	if !equalStringSet(dup, want) {
+		t.Fatalf("want %q, got %q", want, dup)
+	}
+}
+
+func TestDupAddressesFallBackToARuleEachWithoutTheSet(t *testing.T) {
+	r := dupCaptureManager(false, true)
+	all := strings.Join(joinSpecs(r.steerSpecs()), "\n")
+	for _, ip := range r.dupIPs {
+		want := "-p tcp -d " + ip + " -m multiport --dports 443,8443 -j MARK --set-xmark 0x40000000/0x40000000"
+		if !strings.Contains(all, want) {
+			t.Fatalf("missing %q in\n%s", want, all)
+		}
+	}
+	if strings.Contains(all, "--match-set") {
+		t.Fatalf("the fallback must not reference the ipset:\n%s", all)
+	}
+}
+
+func TestFirstPacketCaptureComesBeforeTheDuplicationRules(t *testing.T) {
+	for _, viaSet := range []bool{true, false} {
+		lastFirstN, firstDup := -1, -1
+		for i, s := range joinSpecs(dupCaptureManager(viaSet, true).steerSpecs()) {
+			switch {
+			case strings.Contains(s, "connbytes"):
+				lastFirstN = i
+			case isDupSpec(s) && firstDup < 0:
+				firstDup = i
+			}
+		}
+		if lastFirstN < 0 || firstDup < 0 || lastFirstN > firstDup {
+			t.Fatalf("viaSet=%v: a rebuild must restore first-packet capture before it spends time on duplication rules, got last first-N %d, first dup %d", viaSet, lastFirstN, firstDup)
+		}
+	}
+}
+
+func TestNoDuplicationRulesWithoutDuplicationAddresses(t *testing.T) {
+	r := dupCaptureManager(true, true)
+	r.dupIPs = nil
+	for _, s := range joinSpecs(r.steerSpecs()) {
+		if isDupSpec(s) {
+			t.Fatalf("no duplication address, yet a duplication rule: %q", s)
+		}
+	}
+}
+
+func TestDupSetRuleIsARequiredCaptureRule(t *testing.T) {
+	rules := dupCaptureManager(true, true).captureChainRules([]string{"b4r_abc_v4"}, []string{"192.168.31.0/24"})
+	found := 0
+	for _, rule := range rules {
+		joined := strings.Join(rule.spec, " ")
+		if !strings.Contains(joined, "--match-set "+tunDupSet+" ") {
+			continue
+		}
+		found++
+		if rule.soft || rule.local != "" {
+			t.Fatalf("a failed duplication rule must count as missing, not pass as an optional exclusion: %q", joined)
+		}
+	}
+	if found != 1 {
+		t.Fatalf("want one duplication set rule in the chain, got %d", found)
+	}
+}
+
+func TestRebuildStopsOnlyWhenTheEngineQuits(t *testing.T) {
+	if (&routeManager{}).stopping() {
+		t.Fatalf("a manager without a quit channel must never cut a rebuild short")
+	}
+	quit := make(chan struct{})
+	r := &routeManager{quit: quit}
+	if r.stopping() {
+		t.Fatalf("stopping before the engine quits")
+	}
+	close(quit)
+	if !r.stopping() {
+		t.Fatalf("a closed quit channel must stop the rebuild")
+	}
+}
