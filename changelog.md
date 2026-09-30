@@ -3,6 +3,7 @@
 ## [1.84.0] - 2026-09-30
 
 - ADDED: **Expose to internet switches for the ports of the web interface, the MTProto and SOCKS5 proxies and the Telegram Desktop WEB proxy, off by default** - each opens its port in the firewall and keeps it open through firewall restarts, and the MTProto share dialog can switch its link to the internet address.
+- ADDED: **System Info, the log and the Telegram over WebSocket card name the network bridges that keep the devices behind them out of proxy sets and Telegram over WebSocket** - with `net.bridge.bridge-nf-call-iptables` at 1, which the dockerd package sets on OpenWrt, the kernel loses the handover to b4's listener for connections that enter through a bridge such as `br-lan`, so they hung without a single log line while the router's own connections worked. The Bridge netfilter row under Firewall in System Info names the setting to turn off.
 - FIXED: **The settings page asked for a restart of b4 after a change to the SOCKS5 proxy, to the web interface's username, password or language, or to the MCP settings, none of which needs one** - it counted every change on the Core tab as needing a restart, and the MCP settings of the Integrations tab as Core ones.
 
 ## [1.83.1] - 2026-09-27

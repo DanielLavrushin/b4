@@ -222,6 +222,7 @@ func (m *Monitor) reconcileRouting(restored bool) bool {
 	RoutingEnsureJumpPrecedence(cfg)
 	routePhaseMu.Unlock()
 
+	RoutingCheckBridgeNetfilter()
 	RoutingPeriodicReResolve(cfg)
 	return restored
 }

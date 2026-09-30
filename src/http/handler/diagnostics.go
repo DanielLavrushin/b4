@@ -304,6 +304,7 @@ func collectFirewallInfo(cfg *config.Config) DiagFirewall {
 	info.NFQueueWorks = testNFQueue(info.Backend)
 	info.FlowOffload, info.FlowOffloadGuard = detectFlowOffload()
 	info.FlowOffloadSafe = flowOffloadSafe(info.FlowOffload, info.FlowOffloadGuard, cfg)
+	info.BridgeNetfilter, info.BridgeNetfilterSafe, info.BridgeNetfilterSysctls, info.BridgeNetfilterAttrs = bridgeNetfilterDiag(readBridgeNetfilter(), cfg)
 
 	if n, last := tables.RulesRestores(); n > 0 {
 		info.RulesRestores = n
@@ -314,11 +315,35 @@ func collectFirewallInfo(cfg *config.Config) DiagFirewall {
 }
 
 func collectPolicyRuleGroup() []DiagRuleGroup {
-	rules := tables.RoutingPolicyRuleLines()
-	if len(rules) == 0 {
-		return nil
+	var groups []DiagRuleGroup
+	if rules := tables.RoutingPolicyRuleLines(); len(rules) > 0 {
+		groups = append(groups, DiagRuleGroup{Title: "ip rule (policy routing)", Rules: rules})
 	}
-	return []DiagRuleGroup{{Title: "ip rule (policy routing)", Rules: rules}}
+	if table, routes := tables.RoutingProxyTableLines(); len(routes) > 0 {
+		groups = append(groups, DiagRuleGroup{Title: fmt.Sprintf("ip route (proxy table %d)", table), Rules: routes})
+	}
+	return groups
+}
+
+var (
+	readBridgeNetfilter   = tables.ReadBridgeNetfilter
+	routingTProxyFamilies = tables.RoutingTProxyFamilies
+)
+
+func diagFamilies(cfg *config.Config) (ipv4, ipv6 bool) {
+	if cfg == nil {
+		return true, false
+	}
+	return cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled
+}
+
+func bridgeNetfilterDiag(bn tables.BridgeNetfilter, cfg *config.Config) (bridges []string, safe bool, sysctls, attrs []string) {
+	ipv4, ipv6 := routingTProxyFamilies()
+	if conflicting := bn.Bridges(ipv4, ipv6); len(conflicting) > 0 {
+		sysctls, attrs = bn.Switches(ipv4, ipv6)
+		return conflicting, false, sysctls, attrs
+	}
+	return bn.Bridges(diagFamilies(cfg)), true, nil, nil
 }
 
 func detectFirewallBackend() string {
@@ -890,7 +915,9 @@ func collectKernelModules(cfg *config.Config) DiagKernel {
 		Packages:  tproxyPkgs,
 		Reasons:   tables.KernelModuleReasons(tproxyMissing),
 	}
-	if tproxyOK {
+	if bridges, safe, _, _ := bridgeNetfilterDiag(readBridgeNetfilter(), cfg); tproxyOK && !safe {
+		tproxyCap.Detail = fmt.Sprintf("TPROXY + socket match available, but bridge netfilter is on for %s, so proxy and mtproto-ws routing modes cannot capture the devices behind these bridges", strings.Join(bridges, ", "))
+	} else if tproxyOK {
 		tproxyCap.Detail = "TPROXY + socket match available (proxy and mtproto-ws routing modes work)"
 	} else {
 		tproxyCap.Detail = "TPROXY/socket match unavailable - transparent redirect (proxy and mtproto-ws routing, e.g. Telegram bridge) will not work"

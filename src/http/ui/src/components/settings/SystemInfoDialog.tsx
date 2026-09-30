@@ -80,6 +80,30 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
     });
   };
 
+  const bridgeNetfilterText = (fw: Diagnostics["firewall"]) => {
+    const bridges = fw.bridge_netfilter ?? [];
+    if (bridges.length === 0)
+      return t("settings.SystemInfo.bridgeNetfilterOff");
+    const key = fw.bridge_netfilter_safe
+      ? "bridgeNetfilterOn"
+      : "bridgeNetfilterUnsafe";
+    return t(`settings.SystemInfo.${key}`, { bridges: bridges.join(", ") });
+  };
+
+  const bridgeNetfilterHint = (fw: Diagnostics["firewall"]) => {
+    const sysctls = fw.bridge_netfilter_sysctls ?? [];
+    const attrs = fw.bridge_netfilter_attrs ?? [];
+    return [
+      t("settings.SystemInfo.bridgeNetfilterHint"),
+      ...sysctls.map((key) =>
+        t("settings.SystemInfo.bridgeNetfilterFixSysctl", { key }),
+      ),
+      ...attrs.map((attr) =>
+        t("settings.SystemInfo.bridgeNetfilterFixAttr", { attr }),
+      ),
+    ].join(" ");
+  };
+
   const formatRestoreTime = (iso?: string) =>
     iso ? new Date(iso).toLocaleString(i18n.language) : "";
 
@@ -482,6 +506,27 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
               flowOffloadText(data.firewall),
               flowOffloadText(data.firewall),
             ),
+          )}
+          {row(
+            t("settings.SystemInfo.bridgeNetfilter"),
+            boolChip(
+              data.firewall.bridge_netfilter_safe,
+              bridgeNetfilterText(data.firewall),
+              bridgeNetfilterText(data.firewall),
+            ),
+          )}
+          {!data.firewall.bridge_netfilter_safe && (
+            <Typography
+              variant="caption"
+              sx={{
+                display: "block",
+                px: 1,
+                color: colors.text.secondary,
+                fontSize: "0.7rem",
+              }}
+            >
+              {bridgeNetfilterHint(data.firewall)}
+            </Typography>
           )}
           {!!data.firewall.rules_restores &&
             row(

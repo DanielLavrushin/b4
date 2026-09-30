@@ -46,6 +46,8 @@ The bridge rides the TPROXY path, which needs the `tproxy` and `socket` kernel m
 
 The diversion is a firewall rule, so b4 has to be managing the firewall. With **Skip IPTables/NFTables setup** on in [Settings, Core](../settings/core#firewall) (`system.tables.skip_setup`, the `--skip-tables` flag) no rule is installed at start-up. Saving the settings still installs the routing rules, and they stay until the next restart.
 
+With bridge netfilter on (`net.bridge.bridge-nf-call-iptables=1`, which the `dockerd` package sets on OpenWrt), connections from devices behind a network bridge such as `br-lan` never reach the listener, while the router's own connections still do, and the card shows a warning. The cause and the fix are described under [Bridge netfilter](../sets/routing.md#bridge-netfilter).
+
 The bridge has not been verified with the TUN engine, and the card says so while b4 runs in that mode.
 
 IPv6 ranges are diverted only while **IPv6 support** is on in [Settings, Core](../settings/core#protocols). With it off, Telegram over IPv6 takes the normal path.

@@ -95,6 +95,10 @@ When only the IPv6 socket could not be opened, the card instead shows a note tha
 
 The status reads **Not working**, and resting the pointer on it names a rule such as `DIVERT`. Another program has put a rule in mangle PREROUTING, above the bridge's, that accepts every packet addressed to a local transparent socket; XrayUI adds one each time xray starts. It takes the packets of connections the bridge diverted, so they never complete their handshake. At the next firewall check b4 moves its rule back above it and logs a warning naming the rule, and **Check again** does the same at once. While the firewall monitor is off, with the monitor interval at `0` or **Skip IPTables/NFTables setup** on in Settings, Core, no check runs, and only **Check again** or saving the settings restores the order. The mechanism is described under [b4 with Xray or XrayUI](../guides/xray.md#xrayuis-tproxy-rule-and-connections-b4-diverts).
 
+### Bridge netfilter is on for a network bridge
+
+The warning starts with "Bridge netfilter is on for" and names the network bridges. With `net.bridge.bridge-nf-call-iptables` at `1`, which the `dockerd` package sets on OpenWrt, connections from the devices behind those bridges never reach the listener and hang, while the router's own connections are relayed. The status still reads **Working**, because the rule and the listener are in place. The cause, the fix and its effect on Docker are described under [Bridge netfilter](../sets/routing.md#bridge-netfilter), and the **Bridge netfilter** row under **Firewall** in the **System Info** dialog on Settings, Core names the setting to change.
+
 ### The address list could not be downloaded
 
 The warning carries the download error and names the source of the list still in use. Neither `core.telegram.org` nor either b4 mirror answered. The list already in use stays, whichever source it came from, and the built-in list is always part of it. The next attempt follows after 30 seconds, and the wait doubles after each further failure up to an hour; after a success the list is refreshed once a day. **Refresh addresses** tries again at once.
@@ -133,6 +137,10 @@ A block set that is not limited to source interfaces or an included source-devic
 The set mode has the same TPROXY requirement as the switch, see [TPROXY support is missing](#tproxy-support-is-missing).
 
 Matching also has to happen: the set needs the `telegram` GeoIP category and the GeoIP database configured, and a set whose category is named while the database path is empty is rejected at save time rather than running without it. A set scoped to source interfaces or devices leaves the router's own connections out, Telegram Desktop on the router included.
+
+## Devices behind a network bridge hang while the router's own Telegram works
+
+With bridge netfilter on, connections that enter through a network bridge such as `br-lan` never reach b4's listener. Telegram on the devices behind it stays at "Connecting" and the log shows no `[tg-bridge]` line for them, while connections the router opens itself, including those b4's SOCKS5 server opens for its clients, are relayed as usual. Sets in the Upstream SOCKS5 proxy mode are affected the same way. The cause and the settings that remove it are described under [Bridge netfilter](../sets/routing.md#bridge-netfilter).
 
 ## The WEB proxy hostname shows a placeholder page
 

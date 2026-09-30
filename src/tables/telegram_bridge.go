@@ -146,6 +146,13 @@ func RoutingSetInstalled(setID string) bool {
 	return ok
 }
 
+func RoutingSetFamilies(setID string) (ipv4, ipv6, installed bool) {
+	routeMu.Lock()
+	defer routeMu.Unlock()
+	st, ok := routeRuleCache[setID]
+	return st.ipv4, st.ipv6, ok
+}
+
 func telegramBridgeMarkMatch() string {
 	return fmt.Sprintf("0x%x/0x%x", config.TelegramBridgeMark, config.PerSetRouteMarkBits)
 }

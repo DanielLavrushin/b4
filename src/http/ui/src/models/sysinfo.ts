@@ -67,6 +67,10 @@ interface DiagFirewall {
   flow_offload: string;
   flow_offload_guard?: number;
   flow_offload_safe: boolean;
+  bridge_netfilter?: string[];
+  bridge_netfilter_safe: boolean;
+  bridge_netfilter_sysctls?: string[];
+  bridge_netfilter_attrs?: string[];
   rule_groups?: DiagRuleGroup[];
   rules_restores?: number;
   last_rules_restore?: string;

@@ -57,6 +57,7 @@ export interface TelegramBridgeStatus {
   skip_setup: boolean;
   queue_mode: string;
   ipv6_enabled: boolean;
+  bridge_netfilter?: string[];
   legacy_sets: TelegramBridgeLegacySet[];
   stats: TelegramBridgeStats;
 }
