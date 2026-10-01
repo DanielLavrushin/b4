@@ -2,6 +2,7 @@ package tables
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
@@ -208,5 +209,35 @@ func TestDiscoverySteeringComesBackAfterAFirewallRebuild(t *testing.T) {
 	rulesMu.Unlock()
 	if len(*calls) != 0 {
 		t.Errorf("after the run ended a rebuild put Discovery's rules back: %v", *calls)
+	}
+}
+
+func TestClearRulesUsesTheBackendTheRulesWereAppliedWith(t *testing.T) {
+	appliedResetGlobals(t)
+	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: false})
+	prevApplied, prevStale := dscpApplied.Load(), dscpStale.Load()
+	dscpApplied.Store(nil)
+	dscpStale.Store(nil)
+	t.Cleanup(func() {
+		dscpApplied.Store(prevApplied)
+		dscpStale.Store(prevStale)
+	})
+	var calls []string
+	run = func(args ...string) (string, error) {
+		calls = append(calls, strings.Join(args, " "))
+		return "", errors.New("rule missing")
+	}
+
+	installed := appliedTestConfig(0x8000)
+	installed.System.Tables.Engine = backendNFTables
+	rulesAppliedCfg, rulesAppliedBackend = installed, backendIPTables
+	_ = clearRules(installed)
+
+	sawIptables := false
+	for _, call := range calls {
+		sawIptables = sawIptables || strings.HasPrefix(call, backendIPTables+" ")
+	}
+	if !sawIptables {
+		t.Errorf("the rules were installed with iptables, but the clear detected the backend again and ran no iptables command: %v", calls)
 	}
 }

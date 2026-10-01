@@ -238,3 +238,19 @@ func TestRoutingSyncConfig_AQueueMarkCoveringAnAutoMarkMovesTheSet(t *testing.T)
 		t.Errorf("the set kept route mark 0x%x, which queue mark 0x%x carries in its per-set bits, so every packet b4 injects follows the set's ip rule", auto, uint32(moved.Queue.Mark))
 	}
 }
+
+func TestRouteResolveIDs_AHandSetMarkEqualToTheQueueMarksSetBitsIsReplaced(t *testing.T) {
+	if !hasBinary("ip") {
+		t.Skip("routeResolveIDs looks up routing tables with the ip binary")
+	}
+	familyResetGlobals(t)
+
+	set := familyTestSet()
+	set.Routing.FWMark = 0x100
+	if mark, _ := routeResolveIDs(queueMarkTestConfig(0x8100), set); mark == 0x100 {
+		t.Errorf("hand-set fwmark 0x100 equals queue mark 0x8100 under 0x%x, so every packet b4 injects follows the set's ip rule; the mark must be replaced", routeSetMarkMask)
+	}
+	if mark, table := routeResolveIDs(queueMarkTestConfig(0x8000), set); mark != 0x100 || table != 232 {
+		t.Errorf("a hand-set mark clear of the queue mark must be kept, got 0x%x and table %d", mark, table)
+	}
+}

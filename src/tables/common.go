@@ -107,7 +107,10 @@ func clearRules(cfg *config.Config) error {
 
 	IPTablesLockBudgetReset()
 
-	backend := detectFirewallBackend(cfg)
+	backend := rulesAppliedBackend
+	if cfg != rulesAppliedCfg || backend == "" {
+		backend = detectFirewallBackend(cfg)
+	}
 
 	if backend == backendNFTables {
 		nft := NewNFTablesManager(cfg)

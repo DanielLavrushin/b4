@@ -311,7 +311,7 @@ looked up by another service's `ip rule`. If the table is taken, b4 moves to the
 cleanup b4 removes only the routes it added to the table.
 
 :::info
-Manual `fwmark` and `table` values can be set in the configuration file. They are used when both are set, the mark lies within `0x27FFF`, is not `0x24BAB` (the Telegram over WebSocket mark, which b4 removes from a set) and does not contain every bit of the [queue mark](/docs/guides/marks#the-queue-mark); otherwise b4 assigns its own.
+Manual `fwmark` and `table` values can be set in the configuration file. They are used when both are set, the mark lies within `0x27FFF`, is not `0x24BAB` (the Telegram over WebSocket mark, which b4 removes from a set), does not contain every bit of the [queue mark](/docs/guides/marks#the-queue-mark) and does not equal its bits under `0x27FFF`; otherwise b4 assigns its own.
 :::
 
 :::info

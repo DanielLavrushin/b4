@@ -2582,6 +2582,9 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 		case set.Routing.FWMark&q == q:
 			log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which carries every bit of the queue mark 0x%x; b4 cannot tell such a packet from one it injected itself, so a mark is assigned instead",
 				set.Name, set.Routing.FWMark, q)
+		case set.Routing.FWMark == q&routeSetMarkMask:
+			log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which equals the bits of the queue mark 0x%x under the routing mark mask 0x%x, so every packet b4 injects would follow the set's ip rule; a mark is assigned instead",
+				set.Name, set.Routing.FWMark, q, routeSetMarkMask)
 		case set.Routing.FWMark&^routeSetMarkMask != 0:
 			log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which has bits outside the routing mark mask 0x%x that b4 cannot carry through its firewall rules, so a mark is assigned instead",
 				set.Name, set.Routing.FWMark, routeSetMarkMask)
