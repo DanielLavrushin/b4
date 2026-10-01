@@ -1284,3 +1284,16 @@ func TestRoutingMarkPinDropsAPinEqualToTheQueueMarksSetBits(t *testing.T) {
 		t.Errorf("with the default queue mark 0x8000 the pin 0x100 is clear of it and must be kept, got 0x%x", got)
 	}
 }
+
+func TestValidateRefusesAQueueMarkCarryingTheBridgeMark(t *testing.T) {
+	cfg := NewConfig()
+	cfg.Queue.Mark = uint(0x80000000 | TelegramBridgeMark)
+	if err := cfg.Validate(); err == nil {
+		t.Errorf("queue mark 0x%x has the Telegram bridge mark under 0x%x, so every packet b4 injects follows the bridge's rule; it must be refused", cfg.Queue.Mark, PerSetRouteMarkBits)
+	}
+	cfg = NewConfig()
+	cfg.Queue.Mark = uint(0x80000000 | (TelegramBridgeMark + 1))
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("a queue mark one off the bridge mark must stay valid: %v", err)
+	}
+}

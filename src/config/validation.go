@@ -441,6 +441,13 @@ func (c *Config) Validate() error {
 		return v.result()
 	}
 
+	if c.QueueRouteBits() == TelegramBridgeMark {
+		v.addf("queue.mark", "mark_conflict", map[string]any{"mark": fmt.Sprintf("0x%x", c.Queue.Mark)},
+			"queue mark 0x%x has the Telegram bridge mark 0x%x as its bits under 0x%x, so every packet b4 injects would follow the bridge's rule; choose a mark with other bits there",
+			c.Queue.Mark, TelegramBridgeMark, PerSetRouteMarkBits)
+		return v.result()
+	}
+
 	if c.Queue.Mark != 0 && uint32(c.Queue.Mark)&^SelfDialRelayMark == 0 {
 		v.addf("queue.mark", "mark_conflict", map[string]any{"mark": fmt.Sprintf("0x%x", c.Queue.Mark)},
 			"mark value 0x%x is made only of the bits b4 puts on the connections it opens itself; sharing them would carry those connections past b4's own DPI bypass", c.Queue.Mark)

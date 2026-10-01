@@ -171,6 +171,7 @@ b4 refuses a value that:
 - is made only of bits of `0x27fff` and `0x1000000`, the bits of set marks;
 - overlaps `0x70000000` in TUN mode;
 - has bit `0x20000000` in NFQUEUE mode while **NAT Masquerade** or **Set DSCP** is on;
+- has `0x24bab`, the Telegram over WebSocket mark, as its bits under `0x27fff`;
 - equals the flow or injected mark of Discovery;
 - is above `0xffffffff`, or, while either Discovery mark is left out of the configuration, is
   above `0xfffffffd` or gives that mark (the value plus 1 for the flow mark, plus 2 for the
@@ -257,7 +258,7 @@ port.
 
 | Item | Value |
 | --- | --- |
-| Mark | `0x20000`-`0x27dff`, from a hash of the set's ID; `routing.fwmark` replaces it when it lies within `0x27fff`, is not `0x24bab` and does not equal the queue mark's bits under `0x27fff` |
+| Mark | `0x20000`-`0x27dff`, from a hash of the set's ID, or the value after it when the hash equals the queue mark's bits under `0x27fff`; `routing.fwmark` replaces it when it lies within `0x27fff`, is not `0x24bab` and does not equal the queue mark's bits under `0x27fff` |
 | Telegram over WebSocket switch | `0x24bab`, port `13443` |
 | Listener port | `13000 + mark % 50000` |
 | Rule, priority 3 | `fwmark <mark>/0x27fff lookup 252`, for IPv4, and for IPv6 when **IPv6 support** is on; table 252 holds `local default dev lo` and is shared by every proxy set. When 252 belongs to another service, b4 takes 251, 250, then 300-399 |

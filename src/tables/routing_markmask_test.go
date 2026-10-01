@@ -186,7 +186,8 @@ func TestAProxySetNeverTakesAPinnedMarkTheRulesCannotCarry(t *testing.T) {
 }
 
 func TestTheRulesAndTheTProxyListenerAgreeOnAPinnedMark(t *testing.T) {
-	for _, queueMark := range []uint{0x8000, 0x8100} {
+	natural := tproxy.MarkForSet("agree-set", 0)
+	for _, queueMark := range []uint{0x8000, 0x8100, uint(0x80000000 | natural)} {
 		cfg := config.NewConfig()
 		cfg.Queue.Mark = queueMark
 		for _, pinned := range []uint32{0, 0x1b1d, 0x100000, 0x100} {
@@ -197,11 +198,14 @@ func TestTheRulesAndTheTProxyListenerAgreeOnAPinnedMark(t *testing.T) {
 			set.Routing.FWMark = pinned
 
 			mark, port := proxyMarkAndPort(&cfg, &set)
-			if want := tproxy.MarkForSet(set.Id, cfg.RoutingMarkPin(&set)); mark != want {
+			if want := tproxy.MarkForConfig(&cfg, &set); mark != want {
 				t.Errorf("queue mark 0x%x: the firewall rules use mark 0x%x for pinned 0x%x while the listener uses 0x%x, so the TPROXY rule diverts to a port nothing is bound to", queueMark, mark, pinned, want)
 			}
 			if want := tproxy.PortFor(mark); port != want {
 				t.Errorf("port %d does not follow from mark 0x%x, want %d", port, mark, want)
+			}
+			if bits := cfg.QueueRouteBits(); bits != 0 && mark == bits {
+				t.Errorf("queue mark 0x%x: the set's mark 0x%x equals its bits under 0x%x, so b4's injected packets follow the set's rule", queueMark, mark, routeSetMarkMask)
 			}
 		}
 	}

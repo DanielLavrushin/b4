@@ -255,7 +255,7 @@ func proxyMarkAndPort(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 		log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which equals the bits of the queue mark 0x%x under the routing mark mask 0x%x, so every packet b4 injects would follow the set's ip rule; a mark is assigned instead",
 			set.Name, set.Routing.FWMark, cfg.MainInjectedMark(), routeSetMarkMask)
 	}
-	mark := tproxy.MarkForSet(set.Id, pin)
+	mark := tproxy.MarkForConfig(cfg, set)
 	if pin > 0 && mark != pin {
 		log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which has bits outside the routing mark mask 0x%x that b4 cannot carry through its firewall rules, so a mark is assigned instead",
 			set.Name, set.Routing.FWMark, routeSetMarkMask)

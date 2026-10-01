@@ -330,7 +330,7 @@ func effectiveMark(cfg *config.Config, set *config.SetConfig) uint32 {
 	if set == nil {
 		return 0
 	}
-	return MarkForSet(set.Id, cfg.RoutingMarkPin(set))
+	return MarkForConfig(cfg, set)
 }
 
 // proxyBypassMark returns the SO_MARK value the listener uses on its outbound
