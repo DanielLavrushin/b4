@@ -276,6 +276,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	nfq.RoutingLearnIPFunc = tables.RoutingLearnIP
 	nfq.RoutingLearnHostFunc = tables.RoutingLearnHost
 	nfq.RoutingHandleDNSAsyncFunc = tables.RoutingHandleDNSAsync
+	nfq.RoutingHandleDNSAwaitFunc = tables.RoutingHandleDNSAwait
 	nfq.RoutingLearnIPAsyncFunc = tables.RoutingLearnIPAsync
 	nfq.RoutingLearnHostAsyncFunc = tables.RoutingLearnHostAsync
 
@@ -747,6 +748,8 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 		log.Infof("Stopping active discovery...")
 		discoveryRT.Stop("")
 	}
+
+	pool.ReleaseHolds()
 
 	tunDown := make(chan struct{})
 

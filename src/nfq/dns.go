@@ -212,7 +212,8 @@ func (w *Worker) answerViaSetInline(ipVersion byte, cfg *config.Config, set *con
 	}
 
 	if pinned := w.pinnedAnswer(set, query, domain); pinned != nil {
-		w.applyPinnedAnswer(cfg, set, clientIP, domain, pinned)
+		_, routeWaits := w.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned)
+		w.waitRoutesInline(routeWaits, nil)
 		w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, pinned)
 		return true
 	}
@@ -227,14 +228,17 @@ func (w *Worker) answerViaSetInline(ipVersion byte, cfg *config.Config, set *con
 	return true
 }
 
-func (w *Worker) answerViaSet(ipVersion byte, cfg *config.Config, set *config.SetConfig, domain string, query []byte, clientIP net.IP, clientPort uint16, originalDst net.IP) bool {
+func (w *Worker) answerViaSet(vc *verdictCtx, ipVersion byte, cfg *config.Config, set *config.SetConfig, domain string, query []byte, clientIP net.IP, clientPort uint16, originalDst net.IP) bool {
 	if w == nil || cfg == nil || set == nil || len(query) == 0 {
 		return false
 	}
 
 	if pinned := w.pinnedAnswer(set, query, domain); pinned != nil {
-		w.applyPinnedAnswer(cfg, set, clientIP, domain, pinned)
-		w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, pinned)
+		_, routeWaits := w.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned)
+		send := func() { w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, pinned) }
+		if !w.holdForRoutes(vc, routeWaits, domain, send) {
+			send()
+		}
 		return true
 	}
 
@@ -349,9 +353,12 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					if !vc.drop() {
 						return 0
 					}
-					action := w.applyPinnedAnswer(cfg, set, clientIP, domain, pinned)
+					action, routeWaits := w.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned)
 					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, action)
-					w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, sport, pinned)
+					send := func() { w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, sport, pinned) }
+					if !w.holdForRoutes(vc, routeWaits, domain, send) {
+						send()
+					}
 					return 0
 				}
 
@@ -433,6 +440,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 			dnsServerIP := pkt.src
 
 			routed := false
+			var routeWaits []<-chan struct{}
 			var healSet *config.SetConfig
 			var failedSet *config.SetConfig
 			clientMac := w.getMacByIp(clientIP.String())
@@ -453,7 +461,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					if set.Routing.Enabled && !set.Targets.DomainOnly && len(ips) > 0 {
 						cfg := w.getConfig()
 						if routingHandleDNSAvailable() && !cfg.Queue.IsDiscovery {
-							routingHandleDNSAsync(cfg, set, ips)
+							routeWaits = routingHandleDNSAwait(cfg, set, ips)
 							routed = true
 						}
 					}
@@ -473,7 +481,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 						}
 						w.storeHostHints(clientIP, set, domain, ips)
 						if !set.Targets.DomainOnly && routingHandleDNSAvailable() && !cfg.Queue.IsDiscovery {
-							routingHandleDNSAsync(cfg, set, ips)
+							routeWaits = routingHandleDNSAwait(cfg, set, ips)
 						}
 					}
 				}
@@ -486,7 +494,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					query := dns.BuildQuery(domain, txid, qtype)
 					client := append(net.IP(nil), clientIP...)
 					server := append(net.IP(nil), dnsServerIP...)
-					if w.answerViaSet(ipVersion, cfg, next, domain, query, client, dport, server) {
+					if w.answerViaSet(vc, ipVersion, cfg, next, domain, query, client, dport, server) {
 						if !vc.drop() {
 							return 0
 						}
@@ -501,7 +509,16 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					return 0
 				}
 				logDNSEvent("UDP", healSet, domain, clientIP, dnsServerIP, dport, clientMac, action)
-				w.sendDNSResponseToClient(ipVersion, dnsServerIP, clientIP, dport, filtered)
+				client := append(net.IP(nil), clientIP...)
+				server := append(net.IP(nil), dnsServerIP...)
+				send := func() { w.sendDNSResponseToClient(ipVersion, server, client, dport, filtered) }
+				if !w.holdForRoutes(vc, routeWaits, domain, send) {
+					send()
+				}
+				return 0
+			}
+
+			if w.holdForRoutes(vc, routeWaits, domain, func() { vc.accept() }) {
 				return 0
 			}
 		}
@@ -592,9 +609,14 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 	log.Tracef("DNS redirect: %s -> %s answered for %s with %d IPs (set: %s)", originalDst, upstream, clientIP, len(dns.ParseResponseIPs(resp)), set.Name)
 }
 
+var dnsReplyObserver func(resp []byte)
+
 func (w *Worker) sendDNSResponseToClient(ipVersion byte, originalDst, clientIP net.IP, clientPort uint16, resp []byte) {
 	if len(resp) == 0 {
 		return
+	}
+	if dnsReplyObserver != nil {
+		dnsReplyObserver(resp)
 	}
 	sender := w.clientSender()
 	if sender == nil {

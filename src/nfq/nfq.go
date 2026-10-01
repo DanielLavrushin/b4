@@ -507,6 +507,7 @@ func (w *Worker) getMacByIp(ip string) string {
 }
 
 func (w *Worker) Stop() {
+	w.releaseHolds()
 	if w.cancel != nil {
 		w.cancel()
 	}

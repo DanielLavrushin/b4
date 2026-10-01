@@ -19,6 +19,8 @@ var RoutingLearnHostFunc func(cfg *config.Config, set *config.SetConfig, host st
 
 var RoutingHandleDNSAsyncFunc func(cfg *config.Config, set *config.SetConfig, ips []net.IP)
 
+var RoutingHandleDNSAwaitFunc func(cfg *config.Config, set *config.SetConfig, ips []net.IP) []<-chan struct{}
+
 var RoutingLearnIPAsyncFunc func(cfg *config.Config, set *config.SetConfig, ip net.IP)
 
 var RoutingLearnHostAsyncFunc func(cfg *config.Config, set *config.SetConfig, host string)
@@ -57,8 +59,16 @@ func routingHandleDNSAsync(cfg *config.Config, set *config.SetConfig, ips []net.
 	}
 }
 
+func routingHandleDNSAwait(cfg *config.Config, set *config.SetConfig, ips []net.IP) []<-chan struct{} {
+	if RoutingHandleDNSAwaitFunc != nil {
+		return RoutingHandleDNSAwaitFunc(cfg, set, ips)
+	}
+	routingHandleDNSAsync(cfg, set, ips)
+	return nil
+}
+
 func routingHandleDNSAvailable() bool {
-	return RoutingHandleDNSAsyncFunc != nil || RoutingHandleDNSFunc != nil
+	return RoutingHandleDNSAwaitFunc != nil || RoutingHandleDNSAsyncFunc != nil || RoutingHandleDNSFunc != nil
 }
 
 func registerEscalatedRoute(cfg *config.Config, escSet *config.SetConfig, ips []net.IP) {

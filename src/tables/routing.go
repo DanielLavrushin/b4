@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -164,6 +165,10 @@ func getRouteBackend(cfg *config.Config) routeBackend {
 }
 
 func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
+	routeHandleDNS(cfg, set, ips, nil)
+}
+
+func routeHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP, stale func() bool) {
 	if cfg == nil || set == nil || !set.Routing.Enabled || len(ips) == 0 {
 		return
 	}
@@ -185,20 +190,34 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 	routeMu.Lock()
 	defer routeMu.Unlock()
 
+	if stale != nil && stale() {
+		routeAddToInstalledSet(set, ips)
+		return
+	}
+
 	be := getRouteBackend(cfg)
 	if be == nil {
 		log.Tracef("Routing: no firewall backend available (need nft or iptables+ipset)")
 		return
 	}
 
+	cur := buildRouteState(cfg, set)
+	cur.set = set
+	if old, ok := routeRuleCache[set.Id]; ok && routeStateEqual(old, cur) {
+		routeNoteInstalled(set.Id)
+		failed := routeAddIPsToSets(be, cur, routeSetTTL(set), ips, cur.ipv4, cur.ipv6)
+		routeAsyncStampExcept(set, ips, failed)
+		return
+	}
+
 	if err := be.ensureBase(); err != nil {
+		routeNoteInstallFailed(set.Id)
 		log.Errorf("Routing: failed to ensure base (%s): %v", be.name(), err)
 		return
 	}
 
-	cur := buildRouteState(cfg, set)
-	cur.set = set
 	if !config.RoutingIsBlock(cur.mode) && (cur.mark == 0 || cur.table <= 0) {
+		routeNoteInstallFailed(set.Id)
 		routeWarnIncomplete(set, "b4 could not take a routing table of its own for it")
 		return
 	}
@@ -229,10 +248,12 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 			if hadPrevious {
 				routeRuleCache[set.Id] = previous
 			}
+			routeNoteInstallFailed(set.Id)
 			log.Errorf("Routing: failed to ensure rule for set '%s': %v", set.Name, err)
 			return
 		}
 		routeRuleCache[set.Id] = cur
+		routeNoteInstalled(set.Id)
 		retireOld()
 		routeRestoreStaticEntries(be, set, cur)
 		switch cur.mode {
@@ -248,12 +269,15 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 		routeReestablishJumpOrder(be, cfg, true)
 	}
 
-	ttl := set.Routing.IPTTLSeconds
-	if ttl <= 0 {
-		ttl = 3600
-	}
+	failed := routeAddIPsToSets(be, cur, routeSetTTL(set), ips, cur.ipv4, cur.ipv6)
+	routeAsyncStampExcept(set, ips, failed)
+}
 
-	routeAddIPsToSets(be, cur, ttl, ips, cur.ipv4, cur.ipv6)
+func routeSetTTL(set *config.SetConfig) int {
+	if set.Routing.IPTTLSeconds > 0 {
+		return set.Routing.IPTTLSeconds
+	}
+	return 3600
 }
 
 func RoutingLearnIP(cfg *config.Config, set *config.SetConfig, ip net.IP) {
@@ -422,6 +446,58 @@ func routeAddResolvedIPs(cfg *config.Config, set *config.SetConfig, ips []net.IP
 		ttl = 3600
 	}
 	routeAddIPsToSets(be, st, ttl, ips, st.ipv4, st.ipv6)
+	return true
+}
+
+func routeAddToInstalledSet(set *config.SetConfig, ips []net.IP) {
+	st, ok := routeRuleCache[set.Id]
+	if !ok {
+		log.Tracef("Routing: dropping %d queued IPs for set %s, its rules were removed while they waited", len(ips), set.Name)
+		return
+	}
+	if st.set != nil && st.set != set {
+		if !routeQueuedTargetsKept(set, st.set) {
+			log.Tracef("Routing: dropping %d queued IPs for set %s, its targets changed while they waited", len(ips), set.Name)
+			return
+		}
+		set = st.set
+	}
+	be := routeEngine
+	if be == nil || set.Targets.DomainOnly {
+		return
+	}
+	failed := routeAddIPsToSets(be, st, routeSetTTL(set), ips, st.ipv4, st.ipv6)
+	routeAsyncStampExcept(set, ips, failed)
+}
+
+func routeQueuedTargetsKept(was, now *config.SetConfig) bool {
+	if was == nil || now == nil {
+		return was == now
+	}
+	if was.Targets.DomainOnly != now.Targets.DomainOnly {
+		return false
+	}
+	if was.DNS.Enabled != now.DNS.Enabled || was.DNS.TargetDNS != now.DNS.TargetDNS || was.DNS.DoHURL != now.DNS.DoHURL || was.DNS.Strict != now.DNS.Strict {
+		return false
+	}
+	return routeNamesCovered(was.Targets.SNIDomains, now.Targets.SNIDomains) &&
+		routeNamesCovered(was.Targets.GeoSiteCategories, now.Targets.GeoSiteCategories) &&
+		routeNamesCovered(was.Targets.DomainsToMatch, now.Targets.DomainsToMatch)
+}
+
+func routeNamesCovered(was, now []string) bool {
+	if slices.Equal(was, now) {
+		return true
+	}
+	have := make(map[string]struct{}, len(now))
+	for _, name := range now {
+		have[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
+	}
+	for _, name := range was {
+		if _, ok := have[strings.ToLower(strings.TrimSpace(name))]; !ok {
+			return false
+		}
+	}
 	return true
 }
 
@@ -597,7 +673,7 @@ func routeCleanupForRebuild(be routeBackend, old, cur routeState) func() {
 	}
 }
 
-func routeAddIPsToSets(be routeBackend, st routeState, ttl int, ips []net.IP, ipv4Enabled, ipv6Enabled bool) {
+func routeAddIPsToSets(be routeBackend, st routeState, ttl int, ips []net.IP, ipv4Enabled, ipv6Enabled bool) []string {
 	v4 := make([]string, 0, len(ips))
 	v6 := make([]string, 0, len(ips))
 	seen4 := make(map[string]struct{}, len(ips))
@@ -654,6 +730,7 @@ func routeAddIPsToSets(be routeBackend, st routeState, ttl int, ips []net.IP, ip
 	if ttl > 0 && len(failed) > 0 {
 		routeForgetLearnedEntries(st.setID, failed)
 	}
+	return failed
 }
 
 func routeCollectEntries(set *config.SetConfig) (v4, v6 []string) {
@@ -708,6 +785,11 @@ func RoutingClearAll() {
 	defer routePhaseMu.Unlock()
 	routeMu.Lock()
 	defer routeMu.Unlock()
+	routeAsyncForgetAll()
+	routeInstallFailedAt.Range(func(setID, _ any) bool {
+		routeInstallFailedAt.Delete(setID)
+		return true
+	})
 
 	be := routeEngine
 	if be == nil {
@@ -1006,15 +1088,14 @@ func routingForceResync(cfg *config.Config) {
 	}
 
 	routeMu.Lock()
+	defer routeMu.Unlock()
 	routeRuleCache = make(map[string]routeState)
 	routeIfaceAuto = make(map[string]routeState)
 	routeLastReResolve = make(map[string]time.Time)
 	routeLearnLast = make(map[string]time.Time)
 	routeRefreshedAt = make(map[string]time.Time)
 	routeHostResolvedAt = make(map[string]time.Time)
-	routeMu.Unlock()
-
-	routingSyncConfig(cfg)
+	routingSyncConfigLocked(cfg)
 }
 
 func routingSyncedConfig() *config.Config {
@@ -1090,11 +1171,13 @@ func routingSyncConfig(cfg *config.Config) {
 		return
 	}
 
-	routeAsyncForgetAll()
-
 	routeMu.Lock()
 	defer routeMu.Unlock()
+	routingSyncConfigLocked(cfg)
+}
 
+func routingSyncConfigLocked(cfg *config.Config) {
+	routeAsyncForgetAll()
 	IPTablesLockBudgetReset()
 	routeLoadCTMarkVerdict(cfg)
 
@@ -1167,6 +1250,7 @@ func routingSyncConfig(cfg *config.Config) {
 		if _, ok := desired[setID]; !ok {
 			routeCleanupAny(be, st)
 			delete(routeRuleCache, setID)
+			routeNoteInstalled(setID)
 			routeForgetSetLearnState(setID)
 			routeForgetEgressLoopWarning(setID)
 			for host := range routeLearnedHosts[setID] {
@@ -1194,6 +1278,7 @@ func routingSyncConfig(cfg *config.Config) {
 			cur.ipv6 = cur.ipv6 && v6
 		}
 		if !config.RoutingIsBlock(cur.mode) && (cur.mark == 0 || cur.table <= 0) {
+			routeNoteInstallFailed(set.Id)
 			routeWarnIncomplete(set, "b4 could not take a routing table of its own for it")
 			continue
 		}
@@ -1231,6 +1316,7 @@ func routingSyncConfig(cfg *config.Config) {
 					routeRuleCache[set.Id] = previous
 				}
 				failed = true
+				routeNoteInstallFailed(set.Id)
 				if retrying {
 					log.Tracef("Routing: set '%s' still cannot be installed during the retried sync: %v", set.Name, err)
 				} else {
@@ -1242,6 +1328,7 @@ func routingSyncConfig(cfg *config.Config) {
 			retireOld()
 			newRoutingSets = append(newRoutingSets, set)
 		}
+		routeNoteInstalled(set.Id)
 
 		routeApplyStaticEntries(be, set, cur)
 	}

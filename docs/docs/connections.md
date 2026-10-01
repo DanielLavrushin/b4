@@ -7,6 +7,8 @@ The Traffic page shows the packets b4 takes from the queue and inspects: the pro
 
 b4 does not receive every packet of a connection, only the first ones, as many as the **TCP per-connection packet limit** and **UDP per-connection packet limit** in the [queue settings](./settings/core#queue-and-packet-processing) allow. One connection therefore produces several entries in a row, and the packet counts on this page say nothing about download speed or volume. DNS queries b4 intercepts are part of the stream too, each with the decision b4 made about it.
 
+A TCP connection that a set in [proxy mode](./sets/routing.md#upstream-socks5-proxy) diverts to its upstream does not pass through the queue. It appears once, usually within 250 ms of the connection, whether or not **Send domain name to upstream** is on. Its name is the one b4 already ties to the address, or else the domain from its TLS ClientHello or HTTP request; see [Verifying that it works](./sets/routing.md#verifying-that-it-works). UDP that the set relays appears once the upstream has set up its UDP ASSOCIATE. It is named only from the device's DNS answer, which b4 records while some proxy set sends domain names, or from a name learned earlier for the address.
+
 The page opens in **Aggregated** mode. The choice between **Aggregated** and **Raw feed** in the top right corner is remembered by the browser.
 
 ![Traffic, Aggregated mode](/img/connections/20260923214001.png)

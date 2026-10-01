@@ -295,6 +295,7 @@ func (l *Listener) acceptLoop(ln net.Listener, family string) {
 }
 
 func (l *Listener) handle(client net.Conn) {
+	accepted := time.Now()
 	l.activeConns.Add(1)
 	defer l.activeConns.Add(-1)
 	defer client.Close()
@@ -376,8 +377,21 @@ func (l *Listener) handle(client net.Conn) {
 		return
 	}
 
-	log.LogConnectionStr("TCP", l.SetName, target.logDomain(), src, "", dest,
-		"", config.TLSVersionString(target.sniffed.tlsVersion), "proxy")
+	var namer *proxyNamer
+	if domain := target.logDomain(); domain != "" || len(target.sniffed.prefix) > 0 {
+		log.LogConnectionStr("TCP", l.SetName, domain, src, "", dest,
+			"", config.TLSVersionString(target.sniffed.tlsVersion), "proxy")
+	} else {
+		namer = &proxyNamer{log: func(host string, tlsVersion uint16) {
+			log.LogConnectionStr("TCP", l.SetName, host, src, "", dest,
+				"", config.TLSVersionString(tlsVersion), "proxy")
+		}}
+		first := time.AfterFunc(max(0, sniffFirstWait-time.Since(accepted)), func() { namer.deadline(client) })
+		defer first.Stop()
+		total := time.AfterFunc(max(0, sniffTotalWait-time.Since(accepted)), func() { namer.expire(client) })
+		defer total.Stop()
+		defer namer.expire(client)
+	}
 
 	defer l.holdRelay(keys)()
 	upstream, err := l.dialUpstream(targetHost, origPort)
@@ -416,6 +430,10 @@ func (l *Listener) handle(client net.Conn) {
 	setTCPUserTimeout(client, failOpenUserTimeout)
 	setTCPUserTimeout(upstream, failOpenUserTimeout)
 
+	if namer != nil {
+		pipe(namer.wrap(client), upstream)
+		return
+	}
 	pipe(client, upstream)
 }
 

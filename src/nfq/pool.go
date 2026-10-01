@@ -20,9 +20,10 @@ func NewWorkerWithQueue(cfg *config.Config, qnum uint16) *Worker {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	w := &Worker{
-		qnum:   qnum,
-		ctx:    ctx,
-		cancel: cancel,
+		qnum:     qnum,
+		ctx:      ctx,
+		cancel:   cancel,
+		holdStop: make(chan struct{}),
 	}
 
 	w.cfg.Store(cfg)
@@ -182,7 +183,23 @@ func (p *Pool) DNSTCPReady() (v4 bool, v6 bool) {
 	return p.dnsTCP.ReadyV4(), p.dnsTCP.ReadyV6()
 }
 
+func (p *Pool) ReleaseHolds() {
+	if p == nil {
+		return
+	}
+	var wg sync.WaitGroup
+	for _, w := range p.Workers {
+		wg.Add(1)
+		go func(w *Worker) {
+			defer wg.Done()
+			w.releaseHolds()
+		}(w)
+	}
+	wg.Wait()
+}
+
 func (p *Pool) Stop() {
+	p.ReleaseHolds()
 	if p.dnsTCP != nil {
 		p.dnsTCP.Stop()
 		p.dnsTCP = nil
