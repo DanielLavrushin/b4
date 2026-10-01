@@ -131,7 +131,9 @@ export const SetUrlHints = ({
           >
             {t("discovery.set.suggested")}
           </Typography>
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          <Stack direction="row" spacing={1} useFlexGap sx={{
+            flexWrap: "wrap"
+          }}>
             {extra.map((s) => (
               <Tooltip key={s.url} title={t(`discovery.set.source.${s.source}`)}>
                 <Chip

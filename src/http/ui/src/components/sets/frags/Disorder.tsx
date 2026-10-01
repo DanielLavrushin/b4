@@ -82,10 +82,11 @@ export const DisorderSettings = ({
         >
           <Typography
             variant="caption"
-            color="text.secondary"
             component="div"
-            sx={{ mb: 1 }}
-          >
+            sx={{
+              color: "text.secondary",
+              mb: 1
+            }}>
             {t("sets.tcp.splitting.disorder.segOrderExample")}
           </Typography>
           <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
@@ -128,9 +129,11 @@ export const DisorderSettings = ({
           </Box>
           <Typography
             variant="caption"
-            color="text.secondary"
-            sx={{ mt: 1, display: "block" }}
-          >
+            sx={{
+              color: "text.secondary",
+              mt: 1,
+              display: "block"
+            }}>
             {disorder.shuffle_mode === "full"
               ? t("sets.tcp.splitting.disorder.segRandomOrder")
               : t("sets.tcp.splitting.disorder.segReverseOrder")}

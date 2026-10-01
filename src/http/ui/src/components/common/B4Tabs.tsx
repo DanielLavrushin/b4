@@ -11,7 +11,7 @@ export const B4Tabs = ({ sx, ...props }: TabsProps) => (
     sx={{
       borderBottom: `1px solid ${colors.border.light}`,
       minHeight: 38,
-      "& .MuiTabs-flexContainer": {
+      "& .MuiTabs-list": {
         gap: "4px",
       },
       "& .MuiTab-root": {
@@ -65,7 +65,9 @@ export const B4Tab = ({
       iconPosition={inline ? "start" : undefined}
       label={
         hasChanges ? (
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack direction="row" spacing={1} sx={{
+            alignItems: "center"
+          }}>
             <span>{label}</span>
             <Box
               sx={{

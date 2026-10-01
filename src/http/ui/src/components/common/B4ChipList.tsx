@@ -73,7 +73,9 @@ export function B4ChipList<T>({
         }}
       >
         {items.length === 0 ? (
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" sx={{
+            color: "text.secondary"
+          }}>
             {emptyMessage}
           </Typography>
         ) : (

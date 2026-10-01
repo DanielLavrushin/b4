@@ -119,6 +119,38 @@ export const theme = createTheme({
           borderRadius: 9999,
           backgroundColor: colors.accent.secondaryHover,
           color: colors.text.primary,
+          variants: [
+            {
+              props: { variant: "filled", color: "primary" },
+              style: {
+                backgroundColor: colors.primary,
+                color: colors.text.primary,
+              },
+            },
+            {
+              props: { variant: "filled", color: "secondary" },
+              style: {
+                backgroundColor: colors.secondary,
+                color: colors.text.tertiary,
+              },
+            },
+            {
+              props: { variant: "outlined", color: "primary" },
+              style: {
+                borderColor: colors.primary,
+                backgroundColor: colors.background.paper,
+                color: colors.text.primary,
+              },
+            },
+            {
+              props: { variant: "outlined", color: "secondary" },
+              style: {
+                borderColor: colors.secondary,
+                backgroundColor: colors.accent.secondaryHover,
+                color: colors.text.secondary,
+              },
+            },
+          ],
         },
         sizeSmall: {
           height: 24,
@@ -126,28 +158,15 @@ export const theme = createTheme({
         label: {
           paddingLeft: 10,
           paddingRight: 10,
-        },
-        labelSmall: {
-          paddingLeft: 10,
-          paddingRight: 10,
-        },
-        filledPrimary: {
-          backgroundColor: colors.primary,
-          color: colors.text.primary,
-        },
-        filledSecondary: {
-          backgroundColor: colors.secondary,
-          color: colors.text.tertiary,
-        },
-        outlinedPrimary: {
-          borderColor: colors.primary,
-          backgroundColor: colors.background.paper,
-          color: colors.text.primary,
-        },
-        outlinedSecondary: {
-          borderColor: colors.secondary,
-          backgroundColor: colors.accent.secondaryHover,
-          color: colors.text.secondary,
+          variants: [
+            {
+              props: { size: "small" },
+              style: {
+                paddingLeft: 10,
+                paddingRight: 10,
+              },
+            },
+          ],
         },
         colorInfo: {
           "&.MuiChip-filled": {
@@ -211,81 +230,101 @@ export const theme = createTheme({
           "&:disabled": {
             color: colors.text.disabled,
           },
-        },
-        textPrimary: {
-          color: colors.text.primary,
-          backgroundColor: "transparent",
-          "&:hover": {
-            backgroundColor: colors.accent.primaryHover,
-          },
-          "&:disabled": {
-            color: colors.text.disabled,
-          },
-        },
-        textSecondary: {
-          color: colors.secondary,
-          backgroundColor: "transparent",
-          "&:hover": {
-            backgroundColor: colors.accent.secondaryHover,
-            color: colors.secondary,
-          },
-          "&:disabled": {
-            color: colors.text.disabled,
-          },
-        },
-        containedPrimary: {
-          backgroundColor: colors.primary,
-          color: colors.text.primary,
-          "&:hover": {
-            backgroundColor: colors.secondary,
-            color: colors.text.tertiary,
-          },
-          "&:disabled": {
-            backgroundColor: colors.accent.primary,
-            color: colors.text.disabled,
-          },
-        },
-        containedSecondary: {
-          backgroundColor: colors.secondary,
-          color: colors.text.tertiary,
-          "&:hover": {
-            backgroundColor: colors.secondary,
-            color: colors.text.tertiary,
-          },
-          "&:disabled": {
-            backgroundColor: colors.accent.secondary,
-            color: colors.text.disabled,
-          },
-        },
-        outlinedPrimary: {
-          borderColor: colors.primary,
-          backgroundColor: colors.accent.primaryHover,
-          color: colors.text.primary,
-          "&:hover": {
-            borderColor: colors.secondary,
-            backgroundColor: colors.accent.secondaryHover,
-            color: colors.text.secondary,
-          },
-          "&:disabled": {
-            borderColor: colors.accent.primary,
-            backgroundColor: colors.accent.primary,
-            color: colors.text.disabled,
-          },
-        },
-        outlinedSecondary: {
-          borderColor: colors.secondary,
-          backgroundColor: colors.accent.secondaryHover,
-          color: colors.text.secondary,
-          "&:hover": {
-            borderColor: colors.primary,
-            backgroundColor: colors.accent.primaryHover,
-            color: colors.text.primary,
-          },
-          "&:disabled": {
-            borderColor: colors.accent.secondary,
-            backgroundColor: colors.accent.secondary,
-            color: colors.text.disabled,
-          },
+          variants: [
+            {
+              props: { variant: "text", color: "primary" },
+              style: {
+                color: colors.text.primary,
+                backgroundColor: "transparent",
+                "&:hover": {
+                  backgroundColor: colors.accent.primaryHover,
+                },
+                "&:disabled": {
+                  color: colors.text.disabled,
+                },
+              },
+            },
+            {
+              props: { variant: "text", color: "secondary" },
+              style: {
+                color: colors.secondary,
+                backgroundColor: "transparent",
+                "&:hover": {
+                  backgroundColor: colors.accent.secondaryHover,
+                  color: colors.secondary,
+                },
+                "&:disabled": {
+                  color: colors.text.disabled,
+                },
+              },
+            },
+            {
+              props: { variant: "contained", color: "primary" },
+              style: {
+                backgroundColor: colors.primary,
+                color: colors.text.primary,
+                "&:hover": {
+                  backgroundColor: colors.secondary,
+                  color: colors.text.tertiary,
+                },
+                "&:disabled": {
+                  backgroundColor: colors.accent.primary,
+                  color: colors.text.disabled,
+                },
+              },
+            },
+            {
+              props: { variant: "contained", color: "secondary" },
+              style: {
+                backgroundColor: colors.secondary,
+                color: colors.text.tertiary,
+                "&:hover": {
+                  backgroundColor: colors.secondary,
+                  color: colors.text.tertiary,
+                },
+                "&:disabled": {
+                  backgroundColor: colors.accent.secondary,
+                  color: colors.text.disabled,
+                },
+              },
+            },
+            {
+              props: { variant: "outlined", color: "primary" },
+              style: {
+                borderColor: colors.primary,
+                backgroundColor: colors.accent.primaryHover,
+                color: colors.text.primary,
+                "&:hover": {
+                  borderColor: colors.secondary,
+                  backgroundColor: colors.accent.secondaryHover,
+                  color: colors.text.secondary,
+                },
+                "&:disabled": {
+                  borderColor: colors.accent.primary,
+                  backgroundColor: colors.accent.primary,
+                  color: colors.text.disabled,
+                },
+              },
+            },
+            {
+              props: { variant: "outlined", color: "secondary" },
+              style: {
+                borderColor: colors.secondary,
+                backgroundColor: colors.accent.secondaryHover,
+                color: colors.text.secondary,
+                "&:hover": {
+                  borderColor: colors.primary,
+                  backgroundColor: colors.accent.primaryHover,
+                  color: colors.text.primary,
+                },
+                "&:disabled": {
+                  borderColor: colors.accent.secondary,
+                  backgroundColor: colors.accent.secondary,
+                  color: colors.text.disabled,
+                },
+              },
+            },
+          ],
         },
       },
     },
@@ -312,18 +351,30 @@ export const theme = createTheme({
         },
       },
     },
+    MuiListItemIcon: {
+      styleOverrides: {
+        root: {
+          minWidth: 56,
+        },
+      },
+    },
     MuiAlert: {
       styleOverrides: {
         root: {
           borderRadius: radiusPx.sm,
-        },
-        standardInfo: {
-          backgroundColor: `${colors.accent.primary}`,
-          borderLeft: `1px solid ${colors.text.secondary}`,
-          color: colors.text.primary,
-          "& .MuiAlert-icon": {
-            color: colors.text.secondary,
-          },
+          variants: [
+            {
+              props: { variant: "standard", colorSeverity: "info" },
+              style: {
+                backgroundColor: `${colors.accent.primary}`,
+                borderLeft: `1px solid ${colors.text.secondary}`,
+                color: colors.text.primary,
+                "& .MuiAlert-icon": {
+                  color: colors.text.secondary,
+                },
+              },
+            },
+          ],
         },
       },
     },

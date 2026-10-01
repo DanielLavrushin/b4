@@ -26,9 +26,12 @@ export function LevelFilterBar({
     <Stack
       direction="row"
       spacing={1}
-      alignItems="center"
-      sx={{ mt: 1.5, flexWrap: "wrap", rowGap: 1 }}
-    >
+      sx={{
+        alignItems: "center",
+        mt: 1.5,
+        flexWrap: "wrap",
+        rowGap: 1
+      }}>
       <FilterIcon sx={{ fontSize: 16, color: colors.text.disabled, mr: 0.5 }} />
       {LOG_LEVELS.map((level) => {
         const active = enabledLevels.has(level);

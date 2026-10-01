@@ -342,7 +342,9 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                         ) : (
                           <Typography
                             variant="caption"
-                            color="text.secondary"
+                            sx={{
+                              color: "text.secondary"
+                            }}
                           >
                             {t("core.unknown")}
                           </Typography>
@@ -502,7 +504,9 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                             ) : (
                               <Typography
                                 variant="caption"
-                                color="text.secondary"
+                                sx={{
+                                  color: "text.secondary"
+                                }}
                               >
                                 —
                               </Typography>

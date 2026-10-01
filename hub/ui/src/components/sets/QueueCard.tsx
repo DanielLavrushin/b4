@@ -88,7 +88,9 @@ export function QueueCard({ entry, moderation }: QueueCardProps) {
       <EntryFacts entry={entry} />
 
       <Divider sx={{ borderColor: colors.border.light }} />
-      <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+      <Stack direction="row" spacing={1} useFlexGap sx={{
+        flexWrap: "wrap"
+      }}>
         <Button variant="contained" color="success" size="small" disabled={moderation.busy} onClick={() => moderation.approve(entry)}>
           {t("queue.approve")}
         </Button>

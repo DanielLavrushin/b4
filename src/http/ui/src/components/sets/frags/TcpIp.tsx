@@ -53,10 +53,11 @@ export const TcpIpSettings = ({ config, onChange }: TcpIpSettingsProps) => {
         >
           <Typography
             variant="caption"
-            color="text.secondary"
             component="div"
-            sx={{ mb: 1 }}
-          >
+            sx={{
+              color: "text.secondary",
+              mb: 1
+            }}>
             {t("sets.tcp.splitting.tcpIp.packetStructViz")}
           </Typography>
           <Box
@@ -134,9 +135,11 @@ export const TcpIpSettings = ({ config, onChange }: TcpIpSettingsProps) => {
           </Box>
           <Typography
             variant="caption"
-            color="text.secondary"
-            sx={{ mt: 1, display: "block" }}
-          >
+            sx={{
+              color: "text.secondary",
+              mt: 1,
+              display: "block"
+            }}>
             {getSplitModeDescription()}
           </Typography>
         </Box>
@@ -145,9 +148,11 @@ export const TcpIpSettings = ({ config, onChange }: TcpIpSettingsProps) => {
       <Grid size={{ xs: 12 }}>
         <Typography
           variant="caption"
-          color="warning.main"
           gutterBottom
           component="div"
+          sx={{
+            color: "warning.main"
+          }}
         >
           {t("sets.tcp.splitting.tcpIp.manualOverride")}
         </Typography>

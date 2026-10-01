@@ -34,8 +34,13 @@ interface SitesTableProps {
   onAddToSet: (setId: string, domains: string[]) => void;
 }
 
-const problem = (s: SiteResult) => ["fixed", "still_blocked", "blocked", "broken_by_b4", "dns"].includes(s.outcome);
-const still = (s: SiteResult) => ["still_blocked", "blocked", "broken_by_b4"].includes(s.outcome) && s.direct?.status !== "GATEWAY";
+const problem = (s: SiteResult) =>
+  ["fixed", "still_blocked", "blocked", "broken_by_b4", "dns"].includes(
+    s.outcome,
+  );
+const still = (s: SiteResult) =>
+  ["still_blocked", "blocked", "broken_by_b4"].includes(s.outcome) &&
+  s.direct?.status !== "GATEWAY";
 const rowKey = (s: SiteResult) => `${s.input}|${s.family ?? ""}`;
 
 const checkboxSx = {
@@ -49,52 +54,108 @@ type Translate = (k: string, o?: Record<string, unknown>) => string;
 function describe(s: SiteResult, t: Translate, resolver: string): string {
   const parts: string[] = [];
   const d = s.direct;
-  if (!d || d.status === "CHECKING" || d.status === "PENDING") return t("detector.sites.checking");
-  const detail = d.detail?.replace(/; the address DoH returns \([^)]*\) loads/, "");
+  if (!d || d.status === "CHECKING" || d.status === "PENDING")
+    return t("detector.sites.checking");
+  const detail = d.detail?.replace(
+    /; the address DoH returns \([^)]*\) loads/,
+    "",
+  );
   if (s.dns_error && s.honest_ip) {
-    const noAddress = t("detector.sites.dnsFail", { resolver, reason: t(`detector.sites.dnsError.${s.dns_error}`), ip: s.honest_ip });
-    const real = d.status === "DNS_FAIL" ? t("detector.sites.realLoads", { ip: d.ip ?? s.honest_ip }) : detail;
+    const noAddress = t("detector.sites.dnsFail", {
+      resolver,
+      reason: t(`detector.sites.dnsError.${s.dns_error}`),
+      ip: s.honest_ip,
+    });
+    const real =
+      d.status === "DNS_FAIL"
+        ? t("detector.sites.realLoads", { ip: d.ip ?? s.honest_ip })
+        : detail;
     parts.push(real ? `${noAddress}; ${real}` : noAddress);
   } else if (detail) {
     parts.push(detail);
   }
-  if (d.tls12 && d.tls12 !== "OK") parts.push(t("detector.sites.tls12Also", { status: t(`detector.status.${d.tls12}`, { defaultValue: d.tls12 }) }));
+  if (d.tls12 && d.tls12 !== "OK")
+    parts.push(
+      t("detector.sites.tls12Also", {
+        status: t(`detector.status.${d.tls12}`, { defaultValue: d.tls12 }),
+      }),
+    );
   else if (d.tls12 === "OK") parts.push(t("detector.sites.tls12Works"));
-  if (d.http && d.http !== "OK") parts.push(t("detector.sites.httpAlso", { status: t(`detector.status.${d.http}`, { defaultValue: d.http }) }));
+  if (d.http && d.http !== "OK")
+    parts.push(
+      t("detector.sites.httpAlso", {
+        status: t(`detector.status.${d.http}`, { defaultValue: d.http }),
+      }),
+    );
   const b = s.through_b4;
   if (b && b.status !== "CHECKING") {
-    const via = b.source && b.source !== "system" && b.source !== "none" ? t(`detector.sites.via.${b.source}`, { ip: b.ip ?? "" }) : "";
+    const via =
+      b.source && b.source !== "system" && b.source !== "none"
+        ? t(`detector.sites.via.${b.source}`, { ip: b.ip ?? "" })
+        : "";
     if (b.source === "none") {
       parts.push(t("detector.sites.throughSkipped"));
     } else if (b.status === "OK" && s.outcome === "fixed") {
-      parts.push((s.set_name ? t("detector.sites.fixedBySet", { set: s.set_name, ms: b.latency_ms ?? 0 }) : t("detector.sites.fixedNoSet", { ms: b.latency_ms ?? 0 })) + via);
+      parts.push(
+        (s.set_name
+          ? t("detector.sites.fixedBySet", {
+              set: s.set_name,
+              ms: b.latency_ms ?? 0,
+            })
+          : t("detector.sites.fixedNoSet", { ms: b.latency_ms ?? 0 })) + via,
+      );
     } else if (b.status === "OK" && via) {
       parts.push(t("detector.sites.throughOk") + via);
     } else if (b.status !== "OK") {
-      parts.push(t("detector.sites.throughB4", { detail: b.detail ?? t(`detector.status.${b.status}`, { defaultValue: b.status }) }) + via);
+      parts.push(
+        t("detector.sites.throughB4", {
+          detail:
+            b.detail ??
+            t(`detector.status.${b.status}`, { defaultValue: b.status }),
+        }) + via,
+      );
     }
   }
-  if (s.alt_works && s.honest_ip) parts.push(t("detector.sites.altWorks", { ip: s.honest_ip }));
+  if (s.alt_works && s.honest_ip)
+    parts.push(t("detector.sites.altWorks", { ip: s.honest_ip }));
   if (still(s)) {
     if (!s.set_name) parts.push(t("detector.sites.noSet"));
-    else if (!s.set_enabled) parts.push(t("detector.sites.setDisabled", { set: s.set_name }));
-    else if (s.outcome !== "broken_by_b4") parts.push(t("detector.sites.setNotHelping", { set: s.set_name }));
+    else if (!s.set_enabled)
+      parts.push(t("detector.sites.setDisabled", { set: s.set_name }));
+    else if (s.outcome !== "broken_by_b4")
+      parts.push(t("detector.sites.setNotHelping", { set: s.set_name }));
   }
   return parts.join(". ");
 }
 
-export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddToSet }: SitesTableProps) => {
+export const SitesTable = ({
+  result,
+  both,
+  sets,
+  onDiscovery,
+  onOpenSet,
+  onAddToSet,
+}: SitesTableProps) => {
   const { t } = useTranslation();
   const [filter, setFilter] = useState<Filter>("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [menu, setMenu] = useState<{ anchor: HTMLElement; domains: string[] } | null>(null);
+  const [menu, setMenu] = useState<{
+    anchor: HTMLElement;
+    domains: string[];
+  } | null>(null);
 
   const all = useMemo(() => result.sites ?? [], [result.sites]);
   const counts = useMemo(
-    () => ({ all: all.length, problems: all.filter(problem).length, still: all.filter(still).length }),
+    () => ({
+      all: all.length,
+      problems: all.filter(problem).length,
+      still: all.filter(still).length,
+    }),
     [all],
   );
-  const rows = all.filter((s) => (filter === "all" ? true : filter === "problems" ? problem(s) : still(s)));
+  const rows = all.filter((s) =>
+    filter === "all" ? true : filter === "problems" ? problem(s) : still(s),
+  );
   const selectable = rows.filter((s) => s.done && still(s));
   const selectedRows = all.filter((s) => selected.has(rowKey(s)));
   const selectedInputs = [...new Set(selectedRows.map((s) => s.input))];
@@ -102,7 +163,8 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
   const stillRows = all.filter((s) => s.done && still(s));
   const stillInputs = [...new Set(stillRows.map((s) => s.input))];
   const stillDomains = [...new Set(stillRows.map((s) => s.domain))];
-  const allSelected = selectable.length > 0 && selectable.every((s) => selected.has(rowKey(s)));
+  const allSelected =
+    selectable.length > 0 && selectable.every((s) => selected.has(rowKey(s)));
   const someSelected = selectable.some((s) => selected.has(rowKey(s)));
 
   const toggle = (s: SiteResult) =>
@@ -126,7 +188,15 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
 
   return (
     <Stack spacing={1.5}>
-      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+      <Stack
+        direction="row"
+        spacing={1}
+        useFlexGap
+        sx={{
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
         {(["all", "problems", "still"] as Filter[]).map((f) => (
           <Button
             key={f}
@@ -140,7 +210,16 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
           </Button>
         ))}
         {stillInputs.length > 0 && (
-          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ ml: "auto !important" }}>
+          <Stack
+            direction="row"
+            spacing={1}
+            useFlexGap
+            sx={{
+              alignItems: "center",
+              flexWrap: "wrap",
+              ml: "auto !important",
+            }}
+          >
             <Typography variant="caption" sx={{ color: colors.text.secondary }}>
               {selectedInputs.length > 0
                 ? t("detector.sites.selected", { count: selectedInputs.length })
@@ -150,11 +229,22 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
               size="small"
               variant="contained"
               startIcon={<DiscoveryIcon />}
-              onClick={() => onDiscovery(selectedInputs.length > 0 ? selectedInputs : stillInputs)}
-              sx={{ bgcolor: colors.secondary, color: colors.background.default, "&:hover": { bgcolor: colors.primary }, whiteSpace: "nowrap" }}
+              onClick={() =>
+                onDiscovery(
+                  selectedInputs.length > 0 ? selectedInputs : stillInputs,
+                )
+              }
+              sx={{
+                bgcolor: colors.secondary,
+                color: colors.background.default,
+                "&:hover": { bgcolor: colors.primary },
+                whiteSpace: "nowrap",
+              }}
             >
               {selectedInputs.length > 0
-                ? t("detector.sites.fixSelected", { count: selectedInputs.length })
+                ? t("detector.sites.fixSelected", {
+                    count: selectedInputs.length,
+                  })
                 : t("detector.sites.fixAll", { count: stillInputs.length })}
             </Button>
             {sets.length > 0 && (
@@ -162,10 +252,23 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
                 size="small"
                 variant="outlined"
                 startIcon={<AddIcon />}
-                onClick={(e) => setMenu({ anchor: e.currentTarget, domains: selectedDomains.length > 0 ? selectedDomains : stillDomains })}
+                onClick={(e) =>
+                  setMenu({
+                    anchor: e.currentTarget,
+                    domains:
+                      selectedDomains.length > 0
+                        ? selectedDomains
+                        : stillDomains,
+                  })
+                }
                 sx={{ whiteSpace: "nowrap" }}
               >
-                {t("detector.sites.addSelected", { count: selectedDomains.length > 0 ? selectedDomains.length : stillDomains.length })}
+                {t("detector.sites.addSelected", {
+                  count:
+                    selectedDomains.length > 0
+                      ? selectedDomains.length
+                      : stillDomains.length,
+                })}
               </Button>
             )}
             {selectedInputs.length > 0 && (
@@ -193,14 +296,25 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
               <TableCell padding="checkbox">
                 <Tooltip title={t("detector.sites.selectAll")}>
                   <span>
-                    <Checkbox size="small" checked={allSelected} indeterminate={!allSelected && someSelected} disabled={selectable.length === 0} onChange={toggleAll} sx={checkboxSx} />
+                    <Checkbox
+                      size="small"
+                      checked={allSelected}
+                      indeterminate={!allSelected && someSelected}
+                      disabled={selectable.length === 0}
+                      onChange={toggleAll}
+                      sx={checkboxSx}
+                    />
                   </span>
                 </Tooltip>
               </TableCell>
               <TableCell>{t("detector.sites.site")}</TableCell>
               <TableCell>{t("detector.sites.direct")}</TableCell>
-              {both && <TableCell>{t("detector.sites.throughB4Col")}</TableCell>}
-              <TableCell sx={{ width: "48%" }}>{t("detector.sites.what")}</TableCell>
+              {both && (
+                <TableCell>{t("detector.sites.throughB4Col")}</TableCell>
+              )}
+              <TableCell sx={{ width: "48%" }}>
+                {t("detector.sites.what")}
+              </TableCell>
               <TableCell align="right" />
             </TableRow>
           </TableHead>
@@ -209,24 +323,55 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
               const canSelect = s.done && still(s);
               const isSelected = selected.has(rowKey(s));
               return (
-                <TableRow key={rowKey(s)} selected={isSelected} sx={{ "&:last-child td": { border: 0 }, opacity: s.done ? 1 : 0.7 }}>
+                <TableRow
+                  key={rowKey(s)}
+                  selected={isSelected}
+                  sx={{
+                    "&:last-child td": { border: 0 },
+                    opacity: s.done ? 1 : 0.7,
+                  }}
+                >
                   <TableCell padding="checkbox">
-                    {canSelect && <Checkbox size="small" checked={isSelected} onChange={() => toggle(s)} sx={checkboxSx} />}
+                    {canSelect && (
+                      <Checkbox
+                        size="small"
+                        checked={isSelected}
+                        onChange={() => toggle(s)}
+                        sx={checkboxSx}
+                      />
+                    )}
                   </TableCell>
-                  <TableCell sx={{ fontFamily: "monospace", fontSize: "0.8rem", whiteSpace: "nowrap" }}>
+                  <TableCell
+                    sx={{
+                      fontFamily: "monospace",
+                      fontSize: "0.8rem",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
                     {s.domain}
                     {s.family === "ipv6" && (
-                      <Typography component="span" variant="caption" sx={{ color: colors.secondary, ml: 0.5 }}>
+                      <Typography
+                        component="span"
+                        variant="caption"
+                        sx={{ color: colors.secondary, ml: 0.5 }}
+                      >
                         IPv6
                       </Typography>
                     )}
                     {s.url && s.url.replace(/^https:\/\/[^/]+/, "") !== "/" && (
-                      <Typography component="span" variant="caption" sx={{ color: colors.text.disabled, ml: 0.5 }}>
+                      <Typography
+                        component="span"
+                        variant="caption"
+                        sx={{ color: colors.text.disabled, ml: 0.5 }}
+                      >
                         {s.url.replace(/^https:\/\/[^/]+/, "").slice(0, 24)}
                       </Typography>
                     )}
                     {s.ip && (
-                      <Typography variant="caption" sx={{ color: colors.text.disabled, display: "block" }}>
+                      <Typography
+                        variant="caption"
+                        sx={{ color: colors.text.disabled, display: "block" }}
+                      >
                         {s.ip}
                       </Typography>
                     )}
@@ -239,12 +384,30 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
                       <FetchChip fetch={s.through_b4} />
                     </TableCell>
                   )}
-                  <TableCell sx={{ color: colors.text.secondary, fontSize: "0.8rem" }}>{describe(s, t, resolver)}</TableCell>
+                  <TableCell
+                    sx={{ color: colors.text.secondary, fontSize: "0.8rem" }}
+                  >
+                    {describe(s, t, resolver)}
+                  </TableCell>
                   <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
-                    <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+                    <Box
+                      sx={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 0.5,
+                      }}
+                    >
                       {s.set_id && (
-                        <Tooltip title={t("detector.sites.openSetTip", { set: s.set_name })}>
-                          <IconButton size="small" onClick={() => onOpenSet(s.set_id!)} sx={iconSx}>
+                        <Tooltip
+                          title={t("detector.sites.openSetTip", {
+                            set: s.set_name,
+                          })}
+                        >
+                          <IconButton
+                            size="small"
+                            onClick={() => onOpenSet(s.set_id!)}
+                            sx={iconSx}
+                          >
                             <SetsIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
@@ -252,13 +415,26 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
                       {canSelect && (
                         <>
                           <Tooltip title={t("detector.sites.discoveryTip")}>
-                            <IconButton size="small" onClick={() => onDiscovery([s.input])} sx={iconSx}>
+                            <IconButton
+                              size="small"
+                              onClick={() => onDiscovery([s.input])}
+                              sx={iconSx}
+                            >
                               <DiscoveryIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
                           {!s.set_id && sets.length > 0 && (
                             <Tooltip title={t("detector.sites.addToSetTip")}>
-                              <IconButton size="small" onClick={(e) => setMenu({ anchor: e.currentTarget, domains: [s.domain] })} sx={iconSx}>
+                              <IconButton
+                                size="small"
+                                onClick={(e) =>
+                                  setMenu({
+                                    anchor: e.currentTarget,
+                                    domains: [s.domain],
+                                  })
+                                }
+                                sx={iconSx}
+                              >
                                 <AddIcon fontSize="small" />
                               </IconButton>
                             </Tooltip>
@@ -272,7 +448,10 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
             })}
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={both ? 6 : 5} sx={{ color: colors.text.secondary }}>
+                <TableCell
+                  colSpan={both ? 6 : 5}
+                  sx={{ color: colors.text.secondary }}
+                >
                   {t("detector.sites.none")}
                 </TableCell>
               </TableRow>
@@ -290,7 +469,9 @@ export const SitesTable = ({ result, both, sets, onDiscovery, onOpenSet, onAddTo
             }}
           >
             {set.name}
-            {!set.enabled && <B4Badge label={t("core.disabled")} size="small" sx={{ ml: 1 }} />}
+            {!set.enabled && (
+              <B4Badge label={t("core.disabled")} size="small" sx={{ ml: 1 }} />
+            )}
           </MenuItem>
         ))}
       </Menu>

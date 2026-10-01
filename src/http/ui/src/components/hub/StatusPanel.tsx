@@ -61,7 +61,9 @@ export const StatusPanel = ({
 
   if (loading && !status) {
     return (
-      <Stack direction="row" spacing={1.5} alignItems="center">
+      <Stack direction="row" spacing={1.5} sx={{
+        alignItems: "center"
+      }}>
         <CircularProgress size={16} sx={{ color: colors.secondary }} />
         <Typography variant="body2" sx={{ color: colors.text.secondary }}>
           {t("core.loading")}
@@ -111,12 +113,13 @@ export const StatusPanel = ({
     <Stack spacing={1.5}>
       <Stack
         direction="row"
-        alignItems="center"
-        justifyContent="space-between"
         spacing={2}
         useFlexGap
-        flexWrap="wrap"
-      >
+        sx={{
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap"
+        }}>
         <Typography variant="body2" sx={{ color: colors.text.secondary }}>
           {hubStatusLine(t, status)}
         </Typography>

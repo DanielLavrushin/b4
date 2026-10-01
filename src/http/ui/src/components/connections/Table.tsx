@@ -128,7 +128,9 @@ const TableRowMemo = memo<{
             log.domain && !log.hostSet && onDomainClick(log.domain)
           }
         >
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack direction="row" spacing={1} sx={{
+            alignItems: "center"
+          }}>
             {log.tls && (
               <B4Badge variant="outlined" color="primary" label={log.tls} />
             )}
@@ -174,7 +176,9 @@ const TableRowMemo = memo<{
             py: 1,
           }}
         >
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack direction="row" spacing={1} sx={{
+            alignItems: "center"
+          }}>
             <Box
               sx={{
                 cursor: log.ipSet ? "default" : "pointer",

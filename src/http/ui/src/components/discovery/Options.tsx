@@ -167,7 +167,9 @@ export const DiscoveryOptionsPanel = ({
           "&:hover": { bgcolor: colors.accent.primary },
         }}
       >
-        <Stack direction="row" alignItems="center" spacing={1}>
+        <Stack direction="row" spacing={1} sx={{
+          alignItems: "center"
+        }}>
           <CoreIcon sx={{ fontSize: 18, color: colors.text.secondary }} />
           <Typography variant="body2" sx={{ color: colors.text.secondary }}>
             {t("discovery.options.title")}
@@ -289,9 +291,11 @@ export const DiscoveryOptionsPanel = ({
             </ToggleButtonGroup>
             <Typography
               variant="caption"
-              color="text.secondary"
-              sx={{ mt: 0.75, display: "block" }}
-            >
+              sx={{
+                color: "text.secondary",
+                mt: 0.75,
+                display: "block"
+              }}>
               {t("discovery.options.tlsVersionHint")}
             </Typography>
           </Box>
@@ -319,9 +323,11 @@ export const DiscoveryOptionsPanel = ({
               </ToggleButtonGroup>
               <Typography
                 variant="caption"
-                color="text.secondary"
-                sx={{ mt: 0.75, display: "block" }}
-              >
+                sx={{
+                  color: "text.secondary",
+                  mt: 0.75,
+                  display: "block"
+                }}>
                 {t("discovery.options.ipVersionHint")}
               </Typography>
             </Box>
@@ -370,14 +376,18 @@ export const DiscoveryOptionsPanel = ({
                 />
                 <Typography
                   variant="caption"
-                  color="text.secondary"
-                  sx={{ mt: 0.75, display: "block" }}
-                >
+                  sx={{
+                    color: "text.secondary",
+                    mt: 0.75,
+                    display: "block"
+                  }}>
                   {t("discovery.options.payloadsHint")}
                 </Typography>
               </>
             ) : (
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" sx={{
+                color: "text.secondary"
+              }}>
                 {t("discovery.options.noPayloads")}{" "}
                 <RouterLink
                   to="/settings/payloads"

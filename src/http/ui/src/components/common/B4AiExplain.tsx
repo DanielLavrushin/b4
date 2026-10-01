@@ -154,7 +154,9 @@ export const B4AiExplain = ({
         }}
       >
         <Stack spacing={1.5}>
-          <Stack direction="row" alignItems="center" spacing={1}>
+          <Stack direction="row" spacing={1} sx={{
+            alignItems: "center"
+          }}>
             <AiIcon fontSize="small" sx={{ color: colors.secondary }} />
             <Typography variant="subtitle2" sx={{ flex: 1 }}>
               {t("aiExplain.title", { topic })}
@@ -199,7 +201,9 @@ export const B4AiExplain = ({
             {text ? (
               <ReactMarkdown>{text}</ReactMarkdown>
             ) : streaming ? (
-              <Stack direction="row" spacing={1} alignItems="center">
+              <Stack direction="row" spacing={1} sx={{
+                alignItems: "center"
+              }}>
                 <CircularProgress size={14} />
                 <Typography
                   variant="caption"

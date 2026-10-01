@@ -413,10 +413,11 @@ export const SetCard = ({
           <Tooltip title={targetSummary}>
             <Stack
               direction="row"
-              alignItems="center"
               spacing={spacing.xs}
-              sx={{ mt: spacing.xs / 2 }}
-            >
+              sx={{
+                alignItems: "center",
+                mt: spacing.xs / 2
+              }}>
               <Box
                 sx={{
                   width: 7,
@@ -440,16 +441,15 @@ export const SetCard = ({
 
           <Stack
             direction="row"
-            alignItems="center"
             spacing={spacing.xs}
             sx={{
+              alignItems: "center",
               mt: spacing.sm,
               pt: spacing.sm,
               borderTop: `1px solid ${colors.border.light}`,
               color: route.color,
-              minWidth: 0,
-            }}
-          >
+              minWidth: 0
+            }}>
             <Box sx={{ display: "flex", "& svg": { fontSize: ROUTE_ICON } }}>
               {route.icon}
             </Box>

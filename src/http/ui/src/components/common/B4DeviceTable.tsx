@@ -191,7 +191,9 @@ export const B4DeviceTable = ({
                     sx={{ fontFamily: "monospace", fontSize: "0.85rem" }}
                   >
                     {device.is_manual ? (
-                      <Typography variant="caption" color="text.secondary">
+                      <Typography variant="caption" sx={{
+                        color: "text.secondary"
+                      }}>
                         {t("core.devices.byIp")}
                       </Typography>
                     ) : (

@@ -19,7 +19,7 @@ import {
 } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
-import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
+import HelpOutlineIcon from "@mui/icons-material/HelpOutlineOutlined";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import { B4Alert, B4Dialog } from "@b4.elements";
 import { copyText } from "@utils";
@@ -184,22 +184,37 @@ export const MTProtoRelayHelpDialog = ({
         </>
       }
     >
-      <Stack gap={2} sx={{ mt: 1 }}>
-        <Typography variant="body2" color="text.secondary">
+      <Stack
+        sx={{
+          gap: 2,
+          mt: 1
+        }}>
+        <Typography variant="body2" sx={{
+          color: "text.secondary"
+        }}>
           {t("settings.MTProto.dcRelayHelpIntro")}
         </Typography>
 
         <Typography
           variant="body2"
-          color="text.secondary"
           dangerouslySetInnerHTML={{
             __html: t("settings.MTProto.relaySetup"),
+          }}
+          sx={{
+            color: "text.secondary"
           }}
         />
 
         {hasV6 && (
-          <Stack direction="row" alignItems="center" gap={1.5}>
-            <Typography variant="body2" color="text.secondary">
+          <Stack
+            direction="row"
+            sx={{
+              alignItems: "center",
+              gap: 1.5
+            }}>
+            <Typography variant="body2" sx={{
+              color: "text.secondary"
+            }}>
               {t("settings.MTProto.dcRelayHelpFamily")}
             </Typography>
             <ToggleButtonGroup
@@ -227,9 +242,16 @@ export const MTProtoRelayHelpDialog = ({
         )}
 
         {fetchPending && (
-          <Stack direction="row" alignItems="center" gap={1}>
+          <Stack
+            direction="row"
+            sx={{
+              alignItems: "center",
+              gap: 1
+            }}>
             <CircularProgress size={16} />
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" sx={{
+              color: "text.secondary"
+            }}>
               {t("settings.MTProto.dcRelayHelpLoading")}
             </Typography>
           </Stack>

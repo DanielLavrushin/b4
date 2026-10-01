@@ -28,16 +28,15 @@ export const B4ModalAlertStrip = ({
   return (
     <Stack
       direction="row"
-      alignItems="flex-start"
-      gap="12px"
       sx={{
+        alignItems: "flex-start",
+        gap: "12px",
         p: "12px 14px",
         borderRadius: `${radiusPx.sm}px`,
         bgcolor: colors.background.paper,
         border: `1px solid ${colors.border.default}`,
-        ...sx,
-      }}
-    >
+        ...sx
+      }}>
       <Box
         sx={{
           width: 26,

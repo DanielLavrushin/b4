@@ -72,7 +72,9 @@ export function EntryFacts({ entry, blobBase = "/b4/hub/blob/" }: { entry: Entry
     {
       label: t("entry.flags"),
       value: entry.flags.length ? (
-        <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap">
+        <Stack direction="row" spacing={0.5} useFlexGap sx={{
+          flexWrap: "wrap"
+        }}>
           {entry.flags.map((flag) => (
             <Chip key={flag} size="small" variant="outlined" color="warning" label={flag} />
           ))}

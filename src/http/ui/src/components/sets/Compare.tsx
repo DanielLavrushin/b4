@@ -571,15 +571,14 @@ const GroupBlock = ({
     >
       <Stack
         direction="row"
-        alignItems="center"
-        gap={spacing.sm}
         sx={{
+          alignItems: "center",
+          gap: spacing.sm,
           px: spacing.md,
           py: "8px",
           bgcolor: colors.background.dark,
-          borderBottom: empty ? "none" : `1px solid ${colors.border.light}`,
-        }}
-      >
+          borderBottom: empty ? "none" : `1px solid ${colors.border.light}`
+        }}>
         <Box
           sx={{
             width: 8,
@@ -773,8 +772,17 @@ export const SetCompare = ({
       maxWidth="md"
       fullWidth
     >
-      <Stack gap={spacing.md} sx={{ mt: spacing.sm }}>
-        <Stack direction="row" alignItems="flex-start" gap={spacing.sm}>
+      <Stack
+        sx={{
+          gap: spacing.md,
+          mt: spacing.sm
+        }}>
+        <Stack
+          direction="row"
+          sx={{
+            alignItems: "flex-start",
+            gap: spacing.sm
+          }}>
           <SetPicker
             label={t("sets.compare.setA")}
             value={aId}
@@ -801,11 +809,12 @@ export const SetCompare = ({
         {setA && setB && (
           <Stack
             direction="row"
-            alignItems="center"
-            flexWrap="wrap"
             useFlexGap
-            gap={spacing.sm}
-          >
+            sx={{
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: spacing.sm
+            }}>
             <Typography sx={{ ...valueSx, color: colors.text.secondary }}>
               {setA.id === setB.id
                 ? t("sets.compare.sameSet")
@@ -816,7 +825,12 @@ export const SetCompare = ({
                       .join(", ")}`}
             </Typography>
             <Box sx={{ flex: 1 }} />
-            <Stack direction="row" alignItems="center" gap="2px">
+            <Stack
+              direction="row"
+              sx={{
+                alignItems: "center",
+                gap: "2px"
+              }}>
               <Switch
                 size="small"
                 checked={diffOnly}
@@ -853,7 +867,9 @@ export const SetCompare = ({
                 {nameB}
               </Typography>
             </Box>
-            <Stack gap={spacing.sm}>
+            <Stack sx={{
+              gap: spacing.sm
+            }}>
               {groups.map((group) => (
                 <GroupBlock
                   key={group.key}

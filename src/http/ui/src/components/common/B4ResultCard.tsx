@@ -38,12 +38,13 @@ export const B4ResultCard = ({
     <Box sx={{ px: spacing.md, py: 1.5 }}>
       <Stack
         direction="row"
-        alignItems="flex-start"
-        justifyContent="space-between"
         spacing={spacing.md}
         useFlexGap
-        flexWrap="wrap"
-      >
+        sx={{
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          flexWrap: "wrap"
+        }}>
         <Box sx={{ flex: "1 1 260px", minWidth: 0 }}>
           <Typography
             component="div"

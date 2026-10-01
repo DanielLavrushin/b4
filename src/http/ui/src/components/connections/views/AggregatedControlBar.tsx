@@ -40,7 +40,14 @@ export const AggregatedControlBar = ({
         bgcolor: colors.background.control,
       }}
     >
-      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+      <Stack
+        direction="row"
+        spacing={2}
+        useFlexGap
+        sx={{
+          alignItems: "center",
+          flexWrap: "wrap"
+        }}>
         <TextField
           size="small"
           placeholder={t("connections.controlBar.filterPlaceholder")}

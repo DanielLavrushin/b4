@@ -100,9 +100,10 @@ const HubAddressChips = ({ addresses }: HubAddressChipsProps) => {
       direction="row"
       spacing={0.75}
       useFlexGap
-      flexWrap="wrap"
-      sx={{ pt: 0.25 }}
-    >
+      sx={{
+        flexWrap: "wrap",
+        pt: 0.25
+      }}>
       {addresses.map((a) => (
         <Tooltip
           key={a.url}
@@ -328,12 +329,13 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
             <Stack spacing={1.25}>
               <Stack
                 direction="row"
-                alignItems="center"
-                justifyContent="space-between"
                 spacing={1}
                 useFlexGap
-                flexWrap="wrap"
-              >
+                sx={{
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap"
+                }}>
                 <Typography
                   sx={{
                     fontFamily: fonts.mono,
@@ -365,7 +367,9 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
               </Stack>
 
               {status.isLoading && !data && (
-                <Stack direction="row" spacing={1} alignItems="center">
+                <Stack direction="row" spacing={1} sx={{
+                  alignItems: "center"
+                }}>
                   <CircularProgress
                     size={14}
                     sx={{ color: colors.secondary }}
@@ -482,9 +486,10 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
                           direction="row"
                           spacing={0.75}
                           useFlexGap
-                          flexWrap="wrap"
-                          sx={{ pt: 0.25 }}
-                        >
+                          sx={{
+                            flexWrap: "wrap",
+                            pt: 0.25
+                          }}>
                           {matchedSets.map((m) => (
                             <Tooltip
                               key={m.set_id || m.set_name}
@@ -619,7 +624,9 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
                   )
                 }
               />
-              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+              <Stack direction="row" spacing={1} useFlexGap sx={{
+                flexWrap: "wrap"
+              }}>
                 <Button
                   size="small"
                   variant="outlined"
@@ -674,7 +681,9 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
               {t("settings.Hub.identity.recoveryWarning")}
             </B4Alert>
             {recovery.isPending && (
-              <Stack direction="row" spacing={1} alignItems="center">
+              <Stack direction="row" spacing={1} sx={{
+                alignItems: "center"
+              }}>
                 <CircularProgress size={14} sx={{ color: colors.secondary }} />
                 <Typography
                   variant="body2"

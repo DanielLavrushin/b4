@@ -162,7 +162,14 @@ export const ShareEnvelope = ({
         {hubReady && (!linkedUnmodified || published) && (
           <Box>
             {!published && (
-              <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+              <Stack
+                direction="row"
+                spacing={2}
+                useFlexGap
+                sx={{
+                  alignItems: "center",
+                  flexWrap: "wrap"
+                }}>
                 <Tooltip title={publishBlocked}>
                   <span>
                     <Button
@@ -274,7 +281,9 @@ export const ShareEnvelope = ({
                 </ul>
               </Box>
             )}
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" sx={{
+              color: "text.secondary"
+            }}>
               {t("sets.share.minVersion", {
                 version: result.envelope.min_b4_version,
               })}
@@ -289,7 +298,9 @@ export const ShareEnvelope = ({
               rows={8}
               slotProps={{ input: { readOnly: true } }}
             />
-            <Stack direction="row" spacing={2} alignItems="center">
+            <Stack direction="row" spacing={2} sx={{
+              alignItems: "center"
+            }}>
               <Button
                 variant="outlined"
                 startIcon={<CopyIcon />}

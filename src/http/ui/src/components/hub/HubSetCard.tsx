@@ -88,12 +88,13 @@ export const HubSetCard = ({
       <Box sx={{ px: spacing.md, pt: 1.5, pb: 1 }}>
         <Stack
           direction="row"
-          alignItems="flex-start"
-          justifyContent="space-between"
           spacing={spacing.md}
           useFlexGap
-          flexWrap="wrap"
-        >
+          sx={{
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            flexWrap: "wrap"
+          }}>
           <Box sx={{ flex: "1 1 260px", minWidth: 0 }}>
             <Typography
               component="div"
@@ -140,9 +141,11 @@ export const HubSetCard = ({
             direction="row"
             spacing={0.75}
             useFlexGap
-            flexWrap="wrap"
-            sx={{ flexShrink: 0, alignItems: "center" }}
-          >
+            sx={{
+              flexWrap: "wrap",
+              flexShrink: 0,
+              alignItems: "center"
+            }}>
             {applied && (
               <Tooltip title={t("hub.card.openLocal")}>
                 <B4Badge
@@ -254,14 +257,13 @@ export const HubSetCard = ({
         direction="row"
         spacing={1}
         useFlexGap
-        flexWrap="wrap"
         sx={{
+          flexWrap: "wrap",
           px: spacing.md,
           py: 1,
           borderTop: `1px solid ${colors.border.light}`,
-          alignItems: "center",
-        }}
-      >
+          alignItems: "center"
+        }}>
         <AppliedActionButton
           set={set}
           busy={busy}

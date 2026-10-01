@@ -229,7 +229,9 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
             collapsedMax={20}
           />
         ) : (
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" sx={{
+            color: "text.secondary"
+          }}>
             {t("settings.Socks5.sourcesEmpty")}
           </Typography>
         )}

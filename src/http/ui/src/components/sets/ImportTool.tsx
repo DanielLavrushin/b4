@@ -205,7 +205,9 @@ export function ImportToolDialog({
         </>
       }
     >
-      <Stack gap={2}>
+      <Stack sx={{
+        gap: 2
+      }}>
         <B4Alert severity="info" noWrapper>
           {t("sets.convert.disclaimer")}
         </B4Alert>
@@ -213,15 +215,14 @@ export function ImportToolDialog({
         {collapsed ? (
           <Stack
             direction="row"
-            gap={1.5}
-            alignItems="center"
             sx={{
+              gap: 1.5,
+              alignItems: "center",
               border: `1px solid ${colors.border.default}`,
               borderRadius: 1,
               px: 1.5,
-              py: 1,
-            }}
-          >
+              py: 1
+            }}>
             <Typography
               variant="caption"
               sx={{
@@ -253,7 +254,9 @@ export function ImportToolDialog({
               }}
             />
 
-            <Stack direction={{ xs: "column", sm: "row" }} gap={2}>
+            <Stack direction={{ xs: "column", sm: "row" }} sx={{
+              gap: 2
+            }}>
               <B4TextField
                 select
                 label={t("sets.convert.tool")}
@@ -442,8 +445,18 @@ function ProfileHeader({
   const entry = plan?.role !== "fallback";
 
   return (
-    <Stack gap={1} sx={{ mb: 1 }}>
-      <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
+    <Stack
+      sx={{
+        gap: 1,
+        mb: 1
+      }}>
+      <Stack
+        direction="row"
+        sx={{
+          gap: 1,
+          alignItems: "center",
+          flexWrap: "wrap"
+        }}>
         <Typography variant="subtitle2">
           {t("sets.convert.profileHeading", { index: index + 1, name })}
         </Typography>
@@ -511,8 +524,16 @@ function Summary({ result }: Readonly<{ result: ConvertResult }>) {
   ).map((s) => ({ status: s, count: countFor(result, s) }));
 
   return (
-    <Stack gap={1}>
-      <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
+    <Stack sx={{
+      gap: 1
+    }}>
+      <Stack
+        direction="row"
+        sx={{
+          gap: 1,
+          alignItems: "center",
+          flexWrap: "wrap"
+        }}>
         <Chip
           size="small"
           label={`${result.tool_label} ${result.version_label}`}
@@ -536,9 +557,10 @@ function Summary({ result }: Readonly<{ result: ConvertResult }>) {
       <Box>
         <Stack
           direction="row"
-          justifyContent="space-between"
-          alignItems="center"
-        >
+          sx={{
+            justifyContent: "space-between",
+            alignItems: "center"
+          }}>
           <Typography variant="caption" sx={{ color: colors.text.secondary }}>
             {t("sets.convert.fidelity")}
           </Typography>
@@ -551,7 +573,12 @@ function Summary({ result }: Readonly<{ result: ConvertResult }>) {
         />
       </Box>
 
-      <Stack direction="row" gap={0.75} flexWrap="wrap">
+      <Stack
+        direction="row"
+        sx={{
+          gap: 0.75,
+          flexWrap: "wrap"
+        }}>
         {counts.map(({ status, count }) => (
           <Chip
             key={status}

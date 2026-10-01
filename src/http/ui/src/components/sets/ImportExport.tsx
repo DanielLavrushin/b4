@@ -485,7 +485,9 @@ export const ImportExportSettings = ({
           rows={10}
           helperText={t("sets.importExport.jsonHelper")}
         />
-        <Stack direction="row" spacing={2} alignItems="center">
+        <Stack direction="row" spacing={2} sx={{
+          alignItems: "center"
+        }}>
           <Button
             variant="outlined"
             startIcon={<CopyIcon />}
@@ -501,7 +503,9 @@ export const ImportExportSettings = ({
             {t("sets.importExport.import")}
           </Button>
           {hasSourceDevices && (
-            <Typography variant="caption" color="warning.main">
+            <Typography variant="caption" sx={{
+              color: "warning.main"
+            }}>
               {t("sets.importExport.deviceFilterWarning")}
             </Typography>
           )}

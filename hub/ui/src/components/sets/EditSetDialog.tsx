@@ -118,7 +118,9 @@ function CheckResult({ entry, result, busy, onApplyTidy }: CheckResultProps) {
     {
       label: t("entry.flags"),
       value: result.flags.length ? (
-        <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap">
+        <Stack direction="row" spacing={0.5} useFlexGap sx={{
+          flexWrap: "wrap"
+        }}>
           {result.flags.map((flag) => (
             <Chip key={flag} size="small" variant="outlined" color="warning" label={flag} />
           ))}

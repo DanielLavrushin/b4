@@ -360,8 +360,9 @@ const AICard = ({ config, onChange }: ApiSettingsProps) => {
                 helperText={modelsError || t("settings.Ai.modelHelp")}
                 error={Boolean(modelsError)}
                 slotProps={{
+                  ...params.slotProps,
                   input: {
-                    ...params.InputProps,
+                    ...params.slotProps.input,
                     endAdornment: (
                       <>
                         {modelsLoading ? <CircularProgress size={16} /> : null}
@@ -380,7 +381,7 @@ const AICard = ({ config, onChange }: ApiSettingsProps) => {
                             </span>
                           </Tooltip>
                         )}
-                        {params.InputProps.endAdornment}
+                        {params.slotProps.input.endAdornment}
                       </>
                     ),
                   },

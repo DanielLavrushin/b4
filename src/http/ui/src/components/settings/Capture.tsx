@@ -178,7 +178,9 @@ export const CaptureSettings = () => {
         <Typography variant="subtitle2" gutterBottom>
           {t("settings.Capture.alert")}
         </Typography>
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" sx={{
+          color: "text.secondary"
+        }}>
           {t("settings.Capture.alertSub")}
         </Typography>
       </B4Alert>
@@ -221,7 +223,9 @@ export const CaptureSettings = () => {
                 helperText={t("settings.Capture.protocolHelp")}
                 disabled={loading}
               />
-              <Stack direction="row" spacing={1} alignItems="center">
+              <Stack direction="row" spacing={1} sx={{
+                alignItems: "center"
+              }}>
                 <Button
                   component="label"
                   color="secondary"
@@ -243,7 +247,9 @@ export const CaptureSettings = () => {
                   />
                 </Button>
                 {uploadForm.file && (
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography variant="caption" sx={{
+                    color: "text.secondary"
+                  }}>
                     {uploadForm.file.size} bytes
                   </Typography>
                 )}
@@ -368,10 +374,14 @@ export const CaptureSettings = () => {
           <CaptureIcon
             sx={{ fontSize: 48, color: colors.text.secondary, mb: 2 }}
           />
-          <Typography variant="h6" color="text.secondary">
+          <Typography variant="h6" sx={{
+            color: "text.secondary"
+          }}>
             {t("settings.Capture.emptyTitle")}
           </Typography>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" sx={{
+            color: "text.secondary"
+          }}>
             {t("settings.Capture.emptyDesc")}
           </Typography>
         </Paper>
@@ -465,23 +475,25 @@ const CaptureCard = ({
       {/* Header */}
       <Stack
         direction="row"
-        justifyContent="space-between"
-        alignItems="flex-start"
-        mb={1}
-      >
+        sx={{
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          mb: 1
+        }}>
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Typography
             variant="subtitle1"
-            fontWeight={600}
             sx={{
+              fontWeight: 600,
               overflow: "hidden",
               textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
+              whiteSpace: "nowrap"
+            }}>
             {capture.domain}
           </Typography>
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" sx={{
+            color: "text.secondary"
+          }}>
             {capture.size.toLocaleString()} bytes
           </Typography>
         </Box>
@@ -513,7 +525,12 @@ const CaptureCard = ({
       </Stack>
 
       {/* Timestamp */}
-      <Typography variant="caption" color="text.secondary" sx={{ mb: 2 }}>
+      <Typography
+        variant="caption"
+        sx={{
+          color: "text.secondary",
+          mb: 2
+        }}>
         {new Date(capture.timestamp).toLocaleString()}
       </Typography>
 

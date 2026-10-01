@@ -196,10 +196,11 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
           <Grid size={{ xs: 12 }}>
             <Typography
               variant="caption"
-              color="text.secondary"
               component="div"
-              sx={{ mb: 1 }}
-            >
+              sx={{
+                color: "text.secondary",
+                mb: 1
+              }}>
               {t("sets.dns.modeLabel")}
             </Typography>
             <ToggleButtonGroup
@@ -263,13 +264,17 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
                       height: "100%",
                     }}
                   >
-                    <Stack direction="row" alignItems="center" spacing={1}>
+                    <Stack direction="row" spacing={1} sx={{
+                      alignItems: "center"
+                    }}>
                       <DnsIcon sx={{ color: colors.secondary }} />
                       <Typography variant="subtitle2">
                         {selectedServer.name}
                       </Typography>
                     </Stack>
-                    <Typography variant="caption" color="text.secondary">
+                    <Typography variant="caption" sx={{
+                      color: "text.secondary"
+                    }}>
                       {selectedServer.desc}
                     </Typography>
                   </Box>
@@ -338,8 +343,10 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
                           primary={
                             <Stack
                               direction="row"
-                              alignItems="center"
                               spacing={1}
+                              sx={{
+                                alignItems: "center"
+                              }}
                             >
                               <Typography
                                 variant="body2"
@@ -354,7 +361,9 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
                               </Typography>
                               <Typography
                                 variant="body2"
-                                color="text.secondary"
+                                sx={{
+                                  color: "text.secondary"
+                                }}
                               >
                                 {server.ip}
                               </Typography>
@@ -403,13 +412,17 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
                       height: "100%",
                     }}
                   >
-                    <Stack direction="row" alignItems="center" spacing={1}>
+                    <Stack direction="row" spacing={1} sx={{
+                      alignItems: "center"
+                    }}>
                       <DnsIcon sx={{ color: colors.secondary }} />
                       <Typography variant="subtitle2">
                         {selectedDoH.name}
                       </Typography>
                     </Stack>
-                    <Typography variant="caption" color="text.secondary">
+                    <Typography variant="caption" sx={{
+                      color: "text.secondary"
+                    }}>
                       {selectedDoH.desc}
                     </Typography>
                   </Box>
@@ -462,8 +475,10 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
                           primary={
                             <Stack
                               direction="row"
-                              alignItems="center"
                               spacing={1}
+                              sx={{
+                                alignItems: "center"
+                              }}
                             >
                               <Typography variant="body2">
                                 {server.name}
@@ -474,14 +489,17 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
                             <Stack component="span">
                               <Typography
                                 variant="caption"
-                                color="text.secondary"
-                                sx={{ fontFamily: "monospace" }}
-                              >
+                                sx={{
+                                  color: "text.secondary",
+                                  fontFamily: "monospace"
+                                }}>
                                 {server.url}
                               </Typography>
                               <Typography
                                 variant="caption"
-                                color="text.secondary"
+                                sx={{
+                                  color: "text.secondary"
+                                }}
                               >
                                 {server.desc}
                               </Typography>
@@ -509,19 +527,21 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
             >
               <Typography
                 variant="caption"
-                color="text.secondary"
                 component="div"
-                sx={{ mb: 1 }}
-              >
+                sx={{
+                  color: "text.secondary",
+                  mb: 1
+                }}>
                 {t("sets.dns.howItWorks")}
               </Typography>
               <Stack
                 direction="row"
-                alignItems="center"
                 spacing={1}
-                flexWrap="wrap"
                 useFlexGap
-              >
+                sx={{
+                  alignItems: "center",
+                  flexWrap: "wrap"
+                }}>
                 <B4Badge
                   label={t("sets.dns.vizApp")}
                   sx={{ bgcolor: colors.accent.primary }}
@@ -598,7 +618,9 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
 
         {uncovered.length > 0 && (
           <B4Alert severity="warning" sx={{ mt: 2 }}>
-            <Stack spacing={1} alignItems="flex-start">
+            <Stack spacing={1} sx={{
+              alignItems: "flex-start"
+            }}>
               <span>
                 {t("sets.dns.pinsNotTargeted", {
                   domains: uncovered.join(", "),

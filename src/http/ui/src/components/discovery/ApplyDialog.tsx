@@ -406,7 +406,9 @@ export const ApplyDialog = ({
             <Typography variant="subtitle2" sx={subtitleSx}>
               {t("discovery.apply.pattern")}
             </Typography>
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Stack direction="row" spacing={1} useFlexGap sx={{
+              flexWrap: "wrap"
+            }}>
               {variants.map((v) => (
                 <Chip
                   key={v}

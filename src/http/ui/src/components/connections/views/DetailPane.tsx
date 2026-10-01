@@ -67,14 +67,13 @@ export const DetailPane = memo<Props>(
       >
         <Stack
           direction="row"
-          alignItems="center"
           sx={{
+            alignItems: "center",
             px: 2,
             height: 32,
             borderBottom: `2px solid ${colors.border.default}`,
-            bgcolor: colors.background.paper,
-          }}
-        >
+            bgcolor: colors.background.paper
+          }}>
           <Typography
             sx={{
               color: colors.secondary,
@@ -95,10 +94,11 @@ export const DetailPane = memo<Props>(
             <Stack
               direction="row"
               spacing={1}
-              alignItems="center"
-              flexWrap="wrap"
               useFlexGap
-            >
+              sx={{
+                alignItems: "center",
+                flexWrap: "wrap"
+              }}>
               <ProtocolChip protocol={group.protocol} flags={group.flags} />
               {group.tls && (
                 <B4Badge variant="outlined" color="primary" label={group.tls} />
@@ -169,7 +169,12 @@ export const DetailPane = memo<Props>(
           </Box>
 
           <Box>
-            <Stack direction="row" alignItems="center" sx={{ mb: 0.5 }}>
+            <Stack
+              direction="row"
+              sx={{
+                alignItems: "center",
+                mb: 0.5
+              }}>
               <Typography
                 variant="overline"
                 sx={{ fontSize: 10, color: colors.text.disabled, flex: 1 }}
@@ -195,7 +200,9 @@ export const DetailPane = memo<Props>(
                       "&:hover": { bgcolor: colors.accent.primaryStrong },
                     }}
                   >
-                    <Stack direction="row" spacing={1} alignItems="center">
+                    <Stack direction="row" spacing={1} sx={{
+                      alignItems: "center"
+                    }}>
                       <Typography
                         sx={{
                           fontFamily: "monospace",
@@ -285,10 +292,11 @@ export const DetailPane = memo<Props>(
               <Stack
                 direction="row"
                 spacing={1}
-                sx={{ mt: 0.5 }}
-                flexWrap="wrap"
                 useFlexGap
-              >
+                sx={{
+                  flexWrap: "wrap",
+                  mt: 0.5
+                }}>
                 {group.hostSet && (
                   <B4Badge color="secondary" label={group.hostSet} />
                 )}
@@ -304,16 +312,15 @@ export const DetailPane = memo<Props>(
               <Stack
                 direction="row"
                 spacing={1}
-                alignItems="center"
                 onClick={() => onAddDomain(group.domain)}
                 sx={{
+                  alignItems: "center",
                   p: 1,
                   border: `1px solid ${colors.border.default}`,
                   borderRadius: 1,
                   cursor: "pointer",
-                  "&:hover": { bgcolor: colors.accent.secondaryHover },
-                }}
-              >
+                  "&:hover": { bgcolor: colors.accent.secondaryHover }
+                }}>
                 <AddIcon sx={{ fontSize: 16, color: colors.secondary }} />
                 <Typography sx={{ fontSize: 13, color: colors.text.primary }}>
                   {t("connections.aggregated.addDomainToSet")}

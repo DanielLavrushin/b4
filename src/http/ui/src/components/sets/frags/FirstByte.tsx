@@ -28,10 +28,11 @@ export const FirstByteSettings = ({ config }: FirstByteSettingsProps) => {
         >
           <Typography
             variant="caption"
-            color="text.secondary"
             component="div"
-            sx={{ mb: 1 }}
-          >
+            sx={{
+              color: "text.secondary",
+              mb: 1
+            }}>
             {t("sets.tcp.splitting.firstByte.timingViz")}
           </Typography>
           <Box
@@ -91,9 +92,11 @@ export const FirstByteSettings = ({ config }: FirstByteSettingsProps) => {
           </Box>
           <Typography
             variant="caption"
-            color="text.secondary"
-            sx={{ mt: 1, display: "block" }}
-          >
+            sx={{
+              color: "text.secondary",
+              mt: 1,
+              display: "block"
+            }}>
             {t("sets.tcp.splitting.firstByte.vizNote")}
           </Typography>
         </Box>

@@ -186,10 +186,11 @@ export function LogsPage() {
           <Stack
             direction="row"
             spacing={2}
-            alignItems="center"
-            flexWrap="wrap"
             useFlexGap
-          >
+            sx={{
+              alignItems: "center",
+              flexWrap: "wrap"
+            }}>
             <B4TextField
               size="small"
               placeholder={t("logs.filterPlaceholder")}

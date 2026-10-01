@@ -120,9 +120,10 @@ export const GroupRow = memo<Props>(
           <Stack
             direction="row"
             spacing={1}
-            alignItems="center"
-            sx={{ minWidth: 0 }}
-          >
+            sx={{
+              alignItems: "center",
+              minWidth: 0
+            }}>
             {group.tls && <B4ConfidencePill score={group.tls} />}
             <Typography
               sx={{
@@ -169,9 +170,10 @@ export const GroupRow = memo<Props>(
           <Stack
             direction="row"
             spacing={1}
-            alignItems="center"
-            sx={{ minWidth: 0 }}
-          >
+            sx={{
+              alignItems: "center",
+              minWidth: 0
+            }}>
             <Typography
               sx={{
                 fontFamily: fonts.mono,
@@ -216,7 +218,9 @@ export const GroupRow = memo<Props>(
         </Box>
 
         <Box sx={{ width: 130, flexShrink: 0 }}>
-          <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+          <Stack direction="row" spacing={0.5} useFlexGap sx={{
+            flexWrap: "wrap"
+          }}>
             {group.hostSet && <B4CountPill value={group.hostSet} />}
             {group.ipSet && group.ipSet !== group.hostSet && (
               <B4CountPill value={group.ipSet} />

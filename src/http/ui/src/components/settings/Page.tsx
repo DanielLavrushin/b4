@@ -376,7 +376,9 @@ export function SettingsPage() {
   if (loading || !config) {
     return (
       <Backdrop open sx={{ zIndex: 9999 }}>
-        <Stack alignItems="center" spacing={2}>
+        <Stack spacing={2} sx={{
+          alignItems: "center"
+        }}>
           <CircularProgress sx={{ color: colors.secondary }} />
           <Typography sx={{ color: colors.text.primary }}>
             {t("core.loadingConfiguration")}
@@ -412,14 +414,17 @@ export function SettingsPage() {
           {/* Action bar */}
           <Stack
             direction="row"
-            justifyContent="space-between"
-            alignItems="center"
-            flexWrap="wrap"
             useFlexGap
             spacing={1}
-            sx={{ mb: 2 }}
-          >
-            <Stack direction="row" spacing={2} alignItems="center">
+            sx={{
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              mb: 2
+            }}>
+            <Stack direction="row" spacing={2} sx={{
+              alignItems: "center"
+            }}>
               <Typography
                 sx={{
                   color: colors.text.primary,
@@ -444,10 +449,11 @@ export function SettingsPage() {
             <Stack
               direction="row"
               spacing={1}
-              alignItems="center"
-              justifyContent="flex-end"
-              sx={{ flex: { xs: "1 1 100%", sm: "0 1 auto" } }}
-            >
+              sx={{
+                alignItems: "center",
+                justifyContent: "flex-end",
+                flex: { xs: "1 1 100%", sm: "0 1 auto" }
+              }}>
               {generalNeedsRestart && (
                 <B4Alert severity="warning" sx={{ py: 0, px: spacing.sm }}>
                   <Trans
@@ -512,7 +518,9 @@ export function SettingsPage() {
 
       <Box sx={{ flex: 1, overflow: "auto", pb: 2 }}>
         <TabPanel value={validTab} index={TABS.GENERAL}>
-          <Grid container spacing={spacing.lg} alignItems="stretch">
+          <Grid container spacing={spacing.lg} sx={{
+            alignItems: "stretch"
+          }}>
             <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex" }}>
               <Box sx={{ width: "100%" }}>
                 <LoggingSettings config={config} onChange={handleChange} />
@@ -584,7 +592,9 @@ export function SettingsPage() {
         </TabPanel>
 
         <TabPanel value={validTab} index={TABS.MTPROTO}>
-          <Grid container spacing={spacing.lg} alignItems="stretch">
+          <Grid container spacing={spacing.lg} sx={{
+            alignItems: "stretch"
+          }}>
             <Grid size={{ xs: 12 }} sx={{ display: "flex" }}>
               <Box sx={{ width: "100%" }}>
                 <MTProtoSettings

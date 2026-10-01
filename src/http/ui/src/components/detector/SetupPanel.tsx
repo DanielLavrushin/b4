@@ -219,7 +219,14 @@ export const SetupPanel = ({ sets, lists, listsBusy, busy, onStart, onUpdateList
           emptyMessage={t("detector.setup.sitesEmpty", { count: defaultCount })}
           collapsedMax={24}
         />
-        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+        <Stack
+          direction="row"
+          spacing={1}
+          useFlexGap
+          sx={{
+            alignItems: "center",
+            flexWrap: "wrap"
+          }}>
           <Typography variant="caption" sx={{ color: colors.text.secondary }}>
             {t("detector.setup.fillFrom")}
           </Typography>
@@ -347,7 +354,14 @@ export const SetupPanel = ({ sets, lists, listsBusy, busy, onStart, onUpdateList
             ` ${t("detector.setup.listsInfo", { sites: lists.site_count, targets: lists.tcp_targets, resolvers: lists.dns_servers, date: lists.lists_date })}`}
         </Typography>
         {lists && (
-          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+          <Stack
+            direction="row"
+            spacing={1}
+            useFlexGap
+            sx={{
+              alignItems: "center",
+              flexWrap: "wrap"
+            }}>
             <Tooltip title={t("detector.setup.listsUpdateHint")}>
               <span>
                 <Button size="small" variant="outlined" startIcon={<RefreshIcon />} disabled={listsBusy || busy} onClick={onUpdateLists}>

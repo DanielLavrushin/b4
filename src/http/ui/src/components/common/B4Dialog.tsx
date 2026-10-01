@@ -68,7 +68,12 @@ export const B4Dialog = ({
         p: "14px 18px",
       }}
     >
-      <Stack direction="row" alignItems="center" gap="14px">
+      <Stack
+        direction="row"
+        sx={{
+          alignItems: "center",
+          gap: "14px"
+        }}>
         {icon && (
           <Box
             sx={{

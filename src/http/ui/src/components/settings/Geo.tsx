@@ -115,7 +115,9 @@ const GeoFileCard = ({
             justifyContent: "space-between",
           }}
         >
-          <Typography variant="subtitle2" fontWeight={600}>
+          <Typography variant="subtitle2" sx={{
+            fontWeight: 600
+          }}>
             {title}
           </Typography>
           {fileInfo.exists ? (
@@ -155,9 +157,10 @@ const GeoFileCard = ({
 
         <Typography
           variant="caption"
-          color="text.secondary"
-          sx={{ wordBreak: "break-all" }}
-        >
+          sx={{
+            color: "text.secondary",
+            wordBreak: "break-all"
+          }}>
           {t("settings.Geo.source")}:{" "}
           {configUrl ||
             (fileInfo.exists
@@ -167,10 +170,14 @@ const GeoFileCard = ({
 
         {fileInfo.exists && (
           <Box sx={{ display: "flex", justifyContent: "space-between" }}>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" sx={{
+              color: "text.secondary"
+            }}>
               {formatFileSize(fileInfo.size)}
             </Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" sx={{
+              color: "text.secondary"
+            }}>
               {formatDate(fileInfo.last_modified)}
             </Typography>
           </Box>
@@ -603,7 +610,9 @@ export const GeoSettings = ({
         <Typography variant="subtitle2" gutterBottom>
           {t("settings.Geo.alert")}
         </Typography>
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" sx={{
+          color: "text.secondary"
+        }}>
           {t("settings.Geo.alertSub")}
         </Typography>
       </B4Alert>
@@ -752,7 +761,12 @@ export const GeoSettings = ({
         >
           {removeTargetPath || t("settings.Geo.notConfigured")}
         </Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+        <Typography
+          variant="caption"
+          sx={{
+            color: "text.secondary",
+            mt: 1
+          }}>
           {t("settings.Geo.removeDialogEffect")}
         </Typography>
         {affectedSets.length > 0 && (
@@ -762,7 +776,9 @@ export const GeoSettings = ({
                 count: affectedSets.length,
               })}
             </Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" sx={{
+              color: "text.secondary"
+            }}>
               {affectedSets.join(", ")}
             </Typography>
           </B4Alert>

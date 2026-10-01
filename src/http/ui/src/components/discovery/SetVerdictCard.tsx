@@ -245,7 +245,12 @@ export const SetVerdictCard = ({
             domains={covered}
           />
         </Box>
-        <Stack spacing={1} alignItems="flex-end" sx={{ flexShrink: 0 }}>
+        <Stack
+          spacing={1}
+          sx={{
+            alignItems: "flex-end",
+            flexShrink: 0
+          }}>
           {actions}
         </Stack>
       </Box>
