@@ -14,6 +14,8 @@ import (
 const (
 	sniffFirstWait  = 250 * time.Millisecond
 	sniffTotalWait  = time.Second
+	sniffRetryWait  = 10 * time.Millisecond
+	sniffRetries    = 5
 	sniffMaxBytes   = 16 * 1024
 	tlsRecordHeader = 5
 )
@@ -72,51 +74,78 @@ func peekClient(c net.Conn, limit int) []byte {
 }
 
 type proxyNamer struct {
-	log   func(host string, tlsVersion uint16)
-	mu    sync.Mutex
-	head  []byte
-	seen  bool
-	named bool
+	log     func(host string, tlsVersion uint16)
+	mu      sync.Mutex
+	head    []byte
+	seen    bool
+	reading bool
+	named   bool
 }
 
 func (p *proxyNamer) deadline(client net.Conn) {
-	p.settle(client, false)
+	p.settle(client, false, 0)
 }
 
 func (p *proxyNamer) expire(client net.Conn) {
-	p.settle(client, true)
+	p.settle(client, true, 0)
 }
 
-func (p *proxyNamer) settle(client net.Conn, final bool) {
+func (p *proxyNamer) settle(client net.Conn, final bool, retried int) {
 	p.mu.Lock()
-	named, seen := p.named, p.seen
+	named, seen, read := p.named, p.seen, len(p.head)
 	p.mu.Unlock()
 	if named || (seen && !final) {
 		return
 	}
-	var peeked []byte
-	if !seen {
-		peeked = peekClient(client, sniffMaxBytes)
-		if !final && len(peeked) > 0 && len(peeked) < sniffMaxBytes && needsMoreBytes(peeked) {
-			return
-		}
+	peeked := peekClient(client, sniffMaxBytes)
+	if !seen && !final && len(peeked) > 0 && len(peeked) < sniffMaxBytes && needsMoreBytes(peeked) {
+		return
 	}
 	p.mu.Lock()
 	if p.named || (p.seen && !final) {
 		p.mu.Unlock()
 		return
 	}
+	busy := p.reading || p.seen != seen || len(p.head) != read
+	if busy && final && retried < sniffRetries {
+		p.mu.Unlock()
+		time.AfterFunc(sniffRetryWait, func() { p.settle(client, true, retried+1) })
+		return
+	}
 	first := p.head
-	if len(peeked) > len(first) {
+	switch {
+	case len(peeked) == 0:
+	case busy && !final:
+		p.mu.Unlock()
+		return
+	case busy:
+	case !seen:
 		first = peeked
+	default:
+		first = withRest(p.head, peeked)
 	}
 	p.named, p.head = true, nil
 	p.mu.Unlock()
 	p.write(first)
 }
 
+func withRest(head, rest []byte) []byte {
+	joined := append(append([]byte(nil), head...), rest...)
+	if host, _ := sniffedHost(joined); host != "" {
+		return joined
+	}
+	return head
+}
+
+func (p *proxyNamer) enter() {
+	p.mu.Lock()
+	p.reading = true
+	p.mu.Unlock()
+}
+
 func (p *proxyNamer) observe(b []byte, err error) bool {
 	p.mu.Lock()
+	p.reading = false
 	if p.named {
 		p.mu.Unlock()
 		return true
@@ -152,10 +181,12 @@ type namingConn struct {
 }
 
 func (c *namingConn) Read(b []byte) (int, error) {
-	n, err := c.Conn.Read(b)
-	if !c.done {
-		c.done = c.namer.observe(b[:n], err)
+	if c.done {
+		return c.Conn.Read(b)
 	}
+	c.namer.enter()
+	n, err := c.Conn.Read(b)
+	c.done = c.namer.observe(b[:n], err)
 	return n, err
 }
 

@@ -450,6 +450,40 @@ func TestResyncDroppedTargetsAreNotAddedToTheNewSet(t *testing.T) {
 	}
 }
 
+func resyncGeositeReload(t *testing.T, ip string, before, after []string) bool {
+	t.Helper()
+	cfg, set, be := awaitSetup(t, false)
+	stubRetryState(t)
+	set.Targets.GeoSiteCategories = []string{"cat-a"}
+	set.Targets.DomainsToMatch = before
+	resyncSeedState(cfg, set)
+	adds := recordResyncAdds(be)
+	release := holdAsyncWorker(t)
+
+	wait := resyncOne(t, RoutingHandleDNSAwait(cfg, set, []net.IP{net.ParseIP(ip)}))
+	reloaded := resyncSetCopy(set)
+	reloaded.Targets.DomainsToMatch = after
+	next := familyTestConfig(true, false)
+	next.Sets = []*config.SetConfig{reloaded}
+	RoutingSyncConfig(next)
+	release()
+	awaitClosed(t, wait, "the queued answer")
+	drainAsync(t)
+	return adds.has(ip)
+}
+
+func TestResyncGeositeReloadThatDroppedADomainDropsTheQueuedAnswer(t *testing.T) {
+	if resyncGeositeReload(t, "198.51.100.111", []string{"a.example", "b.example"}, []string{"b.example"}) {
+		t.Fatal("an answer queued before a geosite reload took a domain out of the category was still added to the set")
+	}
+}
+
+func TestResyncGeositeReloadThatOnlyAddedDomainsKeepsTheQueuedAnswer(t *testing.T) {
+	if !resyncGeositeReload(t, "198.51.100.112", []string{"a.example", "b.example"}, []string{"a.example", "b.example", "c.example"}) {
+		t.Fatal("an answer queued before a geosite reload that only added domains was released without its address")
+	}
+}
+
 func TestResyncChangedSetStillGetsTheQueuedAddress(t *testing.T) {
 	cfg, set, be := awaitSetup(t, false)
 	stubRetryState(t)

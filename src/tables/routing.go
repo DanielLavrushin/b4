@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -479,10 +480,15 @@ func routeQueuedTargetsKept(was, now *config.SetConfig) bool {
 	if was.DNS.Enabled != now.DNS.Enabled || was.DNS.TargetDNS != now.DNS.TargetDNS || was.DNS.DoHURL != now.DNS.DoHURL || was.DNS.Strict != now.DNS.Strict {
 		return false
 	}
-	return routeNamesCovered(was.Targets.SNIDomains, now.Targets.SNIDomains) && routeNamesCovered(was.Targets.GeoSiteCategories, now.Targets.GeoSiteCategories)
+	return routeNamesCovered(was.Targets.SNIDomains, now.Targets.SNIDomains) &&
+		routeNamesCovered(was.Targets.GeoSiteCategories, now.Targets.GeoSiteCategories) &&
+		routeNamesCovered(was.Targets.DomainsToMatch, now.Targets.DomainsToMatch)
 }
 
 func routeNamesCovered(was, now []string) bool {
+	if slices.Equal(was, now) {
+		return true
+	}
 	have := make(map[string]struct{}, len(now))
 	for _, name := range now {
 		have[strings.ToLower(strings.TrimSpace(name))] = struct{}{}

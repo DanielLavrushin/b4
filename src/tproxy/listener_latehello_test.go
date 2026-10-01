@@ -1,6 +1,7 @@
 package tproxy
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"net"
@@ -321,6 +322,168 @@ func TestFirstWaitLeavesAPartialHelloForLater(t *testing.T) {
 	namer.expire(p.accepted)
 	if got := names(); len(got) != 1 || got[0] != "api.formula1.com" {
 		t.Fatalf("names %v, want api.formula1.com once the rest of the hello arrived", got)
+	}
+}
+
+func TestFinalWaitNamesFromTheRestTheRelayHasNotReadYet(t *testing.T) {
+	p := acceptedPair(t)
+	defer p.client.Close()
+	defer p.accepted.Close()
+	namer, names := namesSeen(t)
+	wrapped := namer.wrap(p.accepted)
+	hello := realClientHello(t, "www.formula1.com")
+	if _, err := p.client.Write(hello[:100]); err != nil {
+		t.Fatal(err)
+	}
+	_ = wrapped.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := io.ReadFull(wrapped, make([]byte, 100)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.client.Write(hello[100:]); err != nil {
+		t.Fatal(err)
+	}
+	queued(t, p.accepted, len(hello)-100)
+
+	namer.expire(p.accepted)
+	if _, err := io.ReadFull(wrapped, make([]byte, len(hello)-100)); err != nil {
+		t.Fatal(err)
+	}
+	if got := names(); len(got) != 1 || got[0] != "www.formula1.com" {
+		t.Fatalf("names %v, want www.formula1.com once from the part the relay read plus the rest still queued", got)
+	}
+}
+
+type gatedConn struct {
+	*net.TCPConn
+	mu      sync.Mutex
+	armed   bool
+	took    chan []byte
+	release chan struct{}
+}
+
+func (c *gatedConn) Read(b []byte) (int, error) {
+	n, err := c.TCPConn.Read(b)
+	c.mu.Lock()
+	armed := c.armed
+	c.armed = false
+	c.mu.Unlock()
+	if armed && n > 0 {
+		c.took <- append([]byte(nil), b[:n]...)
+		<-c.release
+	}
+	return n, err
+}
+
+func namesWithAReadInFlight(t *testing.T, stream []byte, a, b int) []string {
+	t.Helper()
+	p := acceptedPair(t)
+	defer p.client.Close()
+	defer p.accepted.Close()
+	namer, names := namesSeen(t)
+	gate := &gatedConn{TCPConn: p.accepted.(*net.TCPConn), took: make(chan []byte, 1), release: make(chan struct{})}
+	wrapped := namer.wrap(gate)
+	if _, err := p.client.Write(stream[:a]); err != nil {
+		t.Fatal(err)
+	}
+	_ = wrapped.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := io.ReadFull(wrapped, make([]byte, a)); err != nil {
+		t.Fatal(err)
+	}
+	gate.mu.Lock()
+	gate.armed = true
+	gate.mu.Unlock()
+	readDone := make(chan struct{})
+	go func() {
+		defer close(readDone)
+		_, _ = wrapped.Read(make([]byte, 64*1024))
+	}()
+	if _, err := p.client.Write(stream[a:b]); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-gate.took:
+		if !bytes.Equal(got, stream[a:b]) {
+			close(gate.release)
+			<-readDone
+			t.Fatalf("the relay read %d bytes, want the %d-byte middle part", len(got), b-a)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the relay never read the middle part")
+	}
+	if _, err := p.client.Write(stream[b:]); err != nil {
+		t.Fatal(err)
+	}
+	queued(t, p.accepted, len(stream)-b)
+
+	namer.expire(p.accepted)
+	close(gate.release)
+	<-readDone
+	if _, err := io.ReadFull(wrapped, make([]byte, len(stream)-b)); err != nil {
+		t.Fatal(err)
+	}
+	return names()
+}
+
+func TestFinalWaitDoesNotJoinAcrossAReadInFlightHTTP(t *testing.T) {
+	stream := []byte("GET /x HTTP/1.1\r\nHost: example.com\r\nAccept-Language: en-US,en;q=0.9\r\nConnection: keep-alive\r\n\r\n")
+	a := bytes.Index(stream, []byte("mple.com"))
+	b := bytes.Index(stream, []byte("0.9\r\n"))
+	if got := namesWithAReadInFlight(t, stream, a, b); len(got) != 1 || got[0] != "example.com" {
+		t.Fatalf("names %q, want example.com once, not a name glued across the bytes the relay was still holding", got)
+	}
+}
+
+func TestFinalWaitDoesNotJoinAcrossAReadInFlightTLS(t *testing.T) {
+	const name = "www.formula1.com"
+	hello := realClientHello(t, name)
+	a := bytes.Index(hello, []byte(name)) + len("www.f")
+	if got := namesWithAReadInFlight(t, hello, a, a+1); len(got) != 1 || got[0] != name {
+		t.Fatalf("names %q, want %s once, not a name glued across the byte the relay was still holding", got, name)
+	}
+}
+
+func TestFinalWaitWaitsForARelayReadThatTookTheWholeRest(t *testing.T) {
+	const name = "www.formula1.com"
+	hello := realClientHello(t, name)
+	if got := namesWithAReadInFlight(t, hello, 100, len(hello)); len(got) != 1 || got[0] != name {
+		t.Fatalf("names %q, want %s once from the read the relay was still holding", got, name)
+	}
+}
+
+func TestFinalWaitStillWritesALineWhileTheRelayStaysInsideARead(t *testing.T) {
+	p := acceptedPair(t)
+	defer p.client.Close()
+	defer p.accepted.Close()
+	namer, names := namesSeen(t)
+	wrapped := namer.wrap(p.accepted)
+	hello := realClientHello(t, "www.formula1.com")
+	if _, err := p.client.Write(hello[:100]); err != nil {
+		t.Fatal(err)
+	}
+	_ = wrapped.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := io.ReadFull(wrapped, make([]byte, 100)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.client.Write(hello[100:150]); err != nil {
+		t.Fatal(err)
+	}
+	queued(t, p.accepted, 50)
+
+	namer.enter()
+	namer.expire(p.accepted)
+	if got := names(); len(got) != 0 {
+		t.Fatalf("names %v while the relay was inside a read, want the line left to the relay", got)
+	}
+	_ = p.accepted.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := io.ReadFull(p.accepted, make([]byte, 50)); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for len(names()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := names(); len(got) != 1 {
+		t.Fatalf("names %v, want one line within a few retries although the relay never left its read", got)
 	}
 }
 
