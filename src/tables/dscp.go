@@ -301,10 +301,17 @@ func dscpCaptureSlot(bin string) []string {
 	if err != nil {
 		return nil
 	}
-	if rules := iptListedRules(listing); len(rules) > 0 && rules[0].n == 1 && rules[0].target == dscpChainName {
-		return []string{"2"}
+	jump, _, _ := dscpJumpPlacement(listing)
+	if jump == 0 {
+		return nil
 	}
-	return nil
+	if jump > 1 {
+		if _, err := run(bin, "-w", "-t", "mangle", "-I", "POSTROUTING", "1", "-j", dscpChainName); err != nil {
+			return nil
+		}
+		iptDropExtraJumps(bin, "mangle", "POSTROUTING", dscpChainName)
+	}
+	return []string{"2"}
 }
 
 func iptSeatDSCPJump(bin string) error {

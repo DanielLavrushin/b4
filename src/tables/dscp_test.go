@@ -683,8 +683,23 @@ func TestDSCPCaptureJumpGoesBelowTheStamp(t *testing.T) {
 	if err := capture.Apply(); err != nil {
 		t.Fatalf("capture.Apply under a foreign rule: %v", err)
 	}
-	if got := f.chains[backendIPTables]["POSTROUTING"]; !reflect.DeepEqual(got, []string{"-j B4", "-j FOREIGN", "-j B4_DSCP"}) {
-		t.Errorf("with a foreign rule on top the capture jump must still go first: POSTROUTING = %v", got)
+	if got := f.chains[backendIPTables]["POSTROUTING"]; !reflect.DeepEqual(got, []string{"-j B4_DSCP", "-j B4", "-j FOREIGN"}) {
+		t.Errorf("with a foreign rule on top the stamp must go back on top before the capture jump: POSTROUTING = %v", got)
+	}
+	f.calls = nil
+	if err := applyDSCPFor(cfg, backendIPTables); err != nil {
+		t.Fatalf("applyDSCPFor after the capture insert under a foreign rule: %v", err)
+	}
+	if m := f.mutations(); len(m) != 0 {
+		t.Errorf("the stamp needed re-seating after the capture insert under a foreign rule: %v", m)
+	}
+
+	f.chains[backendIPTables]["POSTROUTING"] = []string{"-j FOREIGN"}
+	if err := capture.Apply(); err != nil {
+		t.Fatalf("capture.Apply with the stamp jump gone: %v", err)
+	}
+	if got := f.chains[backendIPTables]["POSTROUTING"]; !reflect.DeepEqual(got, []string{"-j B4", "-j FOREIGN"}) {
+		t.Errorf("with the stamp jump gone the capture jump must go first and leave the stamp to the monitor: POSTROUTING = %v", got)
 	}
 }
 
