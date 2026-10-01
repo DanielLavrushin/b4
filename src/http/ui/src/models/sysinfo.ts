@@ -87,6 +87,7 @@ interface DiagTUN {
   out_gateway?: string;
   resolved_src?: string;
   capture?: string;
+  local_only?: boolean;
   route_table?: number;
   reply_capture: boolean;
   packets_forwarded: number;

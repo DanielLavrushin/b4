@@ -864,6 +864,8 @@
       "tunGateway": "Egress Gateway",
       "tunSource": "Source IP",
       "tunCapture": "Capture",
+      "tunScope": "Captured Traffic",
+      "tunScopeLocal": "This device only",
       "tunRouteTable": "Route Table",
       "tunForwarded": "Packets Forwarded",
       "tunForwardErrors": "Forward Errors",

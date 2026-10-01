@@ -601,6 +601,7 @@ func collectTUNInfo(cfg *config.Config) *DiagTUN {
 		}
 		t.ResolvedSrc = di.ResolvedSrc
 		t.Capture = di.Capture
+		t.LocalOnly = di.LocalOnly
 		t.ReplyCapture = di.ReplyCapture
 		t.PacketsForwarded = di.PacketsForwarded
 		t.ForwardErrors = di.ForwardErrors

@@ -129,6 +129,7 @@ type DiagTUN struct {
 	OutGateway       string   `json:"out_gateway,omitempty"`
 	ResolvedSrc      string   `json:"resolved_src,omitempty"`
 	Capture          string   `json:"capture,omitempty"`
+	LocalOnly        bool     `json:"local_only,omitempty"`
 	RouteTable       int      `json:"route_table,omitempty"`
 	ReplyCapture     bool     `json:"reply_capture"`
 	PacketsForwarded uint64   `json:"packets_forwarded"`
