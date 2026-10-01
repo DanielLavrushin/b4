@@ -52,6 +52,8 @@ var (
 	catalogueFilePattern = regexp.MustCompile(`^catalogue-([0-9]+)-([0-9]+)\.json\.gz$`)
 
 	ErrNotPublished = errors.New("no catalogue has been published yet")
+	ErrEmptyNewHub  = errors.New("refusing to sign an empty catalogue from a database that has never published one: this key already has a catalogue in use, so this is likely the wrong data directory; restore the hub's database, or pass --allow-empty to publish an empty catalogue")
+	ErrBehind       = errors.New("the database is behind the catalogue the network already has")
 )
 
 type Result struct {
@@ -72,6 +74,9 @@ type Builder struct {
 	MaxAge     time.Duration
 	Debounce   time.Duration
 	OnBuild    func(*Result)
+
+	RefuseEmpty bool
+	AllowEmpty  bool
 
 	mu     sync.Mutex
 	latest atomic.Pointer[Result]
@@ -350,6 +355,9 @@ func (b *Builder) publish(ctx context.Context, now time.Time) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := b.guard(ctx, now, len(versions)); err != nil {
+		return nil, err
+	}
 	epoch, seq, err := b.Store.NextSeq(ctx, now)
 	if err != nil {
 		return nil, err
@@ -433,6 +441,51 @@ func (b *Builder) publish(ctx context.Context, now time.Time) (*Result, error) {
 		b.OnBuild(result)
 	}
 	return result, nil
+}
+
+func (b *Builder) guard(ctx context.Context, now time.Time, sets int) error {
+	epoch, seq, err := b.Store.CurrentSeq(ctx)
+	if err != nil {
+		return err
+	}
+	latest := b.latest.Load()
+	if epoch == 0 && sets == 0 && !b.AllowEmpty && (b.RefuseEmpty || (latest != nil && len(latest.Catalogue.Sets) > 0)) {
+		return ErrEmptyNewHub
+	}
+	next := &hubwire.Manifest{Epoch: epoch, Seq: seq + 1, GeneratedAt: now.Format(time.RFC3339)}
+	if epoch == 0 {
+		next.Epoch = now.Unix()
+	}
+	known, where, err := b.newestKnown(ctx, latest)
+	if err != nil {
+		return err
+	}
+	if known != nil && !next.Newer(known) {
+		return fmt.Errorf("%w: this build would be %d-%d while %s already has %d-%d, and routers and mirrors ignore a catalogue older than the one they hold; restore the newer database, or start a new epoch to publish this one", ErrBehind, next.Epoch, next.Seq, where, known.Epoch, known.Seq)
+	}
+	return nil
+}
+
+func (b *Builder) newestKnown(ctx context.Context, latest *Result) (*hubwire.Manifest, string, error) {
+	var newest *hubwire.Manifest
+	where := ""
+	if latest != nil {
+		newest, where = latest.Manifest, "the published directory"
+	}
+	mirrors, err := b.Store.MirrorsByStatus(ctx, store.MirrorApproved)
+	if err != nil {
+		return nil, "", err
+	}
+	for _, m := range mirrors {
+		if m.ServedEpoch == 0 {
+			continue
+		}
+		served := &hubwire.Manifest{Epoch: m.ServedEpoch, Seq: m.ServedSeq, GeneratedAt: m.ServedGeneratedAt}
+		if newest == nil || served.Newer(newest) {
+			newest, where = served, "mirror "+m.URL
+		}
+	}
+	return newest, where, nil
 }
 
 func Diff(prev, next *Result) store.BuildChanges {
@@ -529,17 +582,11 @@ func (b *Builder) MirrorsDrift(ctx context.Context) (bool, error) {
 	if b.Mirrors == nil {
 		return false, nil
 	}
-	announceable, err := b.Mirrors.Announceable(ctx)
+	want, err := b.listedMirrors(ctx)
 	if err != nil {
 		return false, err
 	}
 	base := b.HubBase()
-	want := make([]string, 0, len(announceable))
-	for _, u := range announceable {
-		if u != base {
-			want = append(want, u)
-		}
-	}
 	latest := b.Latest()
 	if latest == nil {
 		return len(want) > 0, nil
@@ -556,23 +603,51 @@ func (b *Builder) MirrorsDrift(ctx context.Context) (bool, error) {
 
 func (b *Builder) mirrors(ctx context.Context) ([]string, error) {
 	out := make([]string, 0, 1)
-	base := b.HubBase()
-	if base != "" {
+	if base := b.HubBase(); base != "" {
 		out = append(out, base)
 	}
-	if b.Mirrors != nil {
-		healthy, err := b.Mirrors.Announceable(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, u := range healthy {
-			if u != base {
-				out = append(out, u)
-			}
-		}
+	listed, err := b.listedMirrors(ctx)
+	if err != nil {
+		return nil, err
 	}
+	out = append(out, listed...)
 	if len(out) == 0 {
 		return nil, nil
+	}
+	return out, nil
+}
+
+func (b *Builder) listedMirrors(ctx context.Context) ([]string, error) {
+	if b.Mirrors == nil {
+		return nil, nil
+	}
+	base := b.HubBase()
+	healthy, err := b.Mirrors.Announceable(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(healthy))
+	for _, u := range healthy {
+		if u != base {
+			out = append(out, u)
+		}
+	}
+	latest := b.Latest()
+	if len(out) > 0 || latest == nil {
+		return out, nil
+	}
+	approved, err := b.Store.MirrorsByStatus(ctx, store.MirrorApproved)
+	if err != nil {
+		return nil, err
+	}
+	still := make(map[string]bool, len(approved))
+	for _, m := range approved {
+		still[m.URL] = true
+	}
+	for _, u := range latest.Manifest.Mirrors {
+		if u != base && still[u] {
+			out = append(out, u)
+		}
 	}
 	return out, nil
 }
@@ -812,6 +887,11 @@ func (b *Builder) Run(ctx context.Context, interval time.Duration) {
 	defer ticker.Stop()
 	requests := time.NewTicker(RequestPoll)
 	defer requests.Stop()
+	if b.Mirrors != nil {
+		if _, err := b.Mirrors.CheckIfStale(ctx, DefaultMirrorCheckInterval); err != nil {
+			log.Printf("catalogue: mirror check before the first build: %v", err)
+		}
+	}
 	b.tick(ctx, TriggerStartup, false)
 	for {
 		select {

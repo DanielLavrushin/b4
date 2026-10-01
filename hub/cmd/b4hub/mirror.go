@@ -22,6 +22,7 @@ var mirrorFlags struct {
 	publicURL      string
 	announce       bool
 	refresh        time.Duration
+	queueLimit     int
 	trustedProxies string
 }
 
@@ -40,6 +41,7 @@ func init() {
 	f.StringVar(&mirrorFlags.publicURL, "public-url", envOr(envPublicURL, ""), "public base URL of this mirror, announced to the central hub")
 	f.BoolVar(&mirrorFlags.announce, "announce", false, "announce this mirror to the central hub on start and daily")
 	f.DurationVar(&mirrorFlags.refresh, "refresh", mirror.DefaultRefresh, "how often to check the upstream manifest")
+	f.IntVar(&mirrorFlags.queueLimit, "queue-limit", mirror.DefaultQueueLimit, "how many reports and complaints to hold while the upstream is unreachable; 0 holds none and leaves them on the routers")
 	bindTrustedProxies(mirrorCmd, &mirrorFlags.trustedProxies)
 }
 
@@ -82,6 +84,7 @@ func runMirror(cmd *cobra.Command, args []string) error {
 		Announce:    mirrorFlags.announce,
 		Version:     Version,
 		Refresh:     mirrorFlags.refresh,
+		QueueLimit:  queueLimit(mirrorFlags.queueLimit),
 	})
 	if err != nil {
 		return err
@@ -97,4 +100,11 @@ func runMirror(cmd *cobra.Command, args []string) error {
 	go svc.Run(ctx)
 	serveUntilSignal(newHTTPServer(mirrorFlags.listen, svc.Router()), cancel)
 	return nil
+}
+
+func queueLimit(flag int) int {
+	if flag <= 0 {
+		return -1
+	}
+	return flag
 }

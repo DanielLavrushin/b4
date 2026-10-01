@@ -344,17 +344,51 @@ func TestMirrorsDriftFollowsAnnounceableMirrors(t *testing.T) {
 		t.Fatalf("a manifest that lists the mirror has no drift")
 	}
 	clock = clock.Add(DefaultMirrorWindow + time.Minute)
+	if drift, _ := b.MirrorsDrift(ctx); drift {
+		t.Fatalf("while no mirror passes its check the published list is kept, so there is no drift")
+	}
+	if result, err = b.Build(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Manifest.Mirrors) != 2 || result.Manifest.Mirrors[1] != m.URL {
+		t.Fatalf("a build while no mirror passes keeps the approved mirrors it listed: %v", result.Manifest.Mirrors)
+	}
+
+	other, err := st.AnnounceMirror(ctx, "https://other.example", "k2", "1.0.0", clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetMirrorStatus(ctx, other.ID, store.MirrorApproved, "", clock); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordMirrorCheck(ctx, other.ID, store.MirrorCheck{At: clock, OK: true, Epoch: 1, Seq: 1}); err != nil {
+		t.Fatal(err)
+	}
 	if drift, _ := b.MirrorsDrift(ctx); !drift {
-		t.Fatalf("a mirror past its window must drift out")
+		t.Fatalf("once another mirror passes, the one past its window must drift out")
+	}
+	if result, err = b.Build(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Manifest.Mirrors) != 2 || result.Manifest.Mirrors[1] != other.URL {
+		t.Fatalf("the stale mirror is replaced by the passing one: %v", result.Manifest.Mirrors)
+	}
+	if changes := b.Status().LastOK.Changes; len(changes.MirrorsRemoved) != 1 || changes.MirrorsRemoved[0] != m.URL {
+		t.Fatalf("the drop is recorded: %+v", changes)
+	}
+
+	clock = clock.Add(DefaultMirrorWindow + time.Minute)
+	if err := st.SetMirrorStatus(ctx, other.ID, store.MirrorRejected, "gone", clock); err != nil {
+		t.Fatal(err)
+	}
+	if drift, _ := b.MirrorsDrift(ctx); !drift {
+		t.Fatalf("a mirror a moderator rejected must leave even when nothing else passes")
 	}
 	if result, err = b.Build(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if len(result.Manifest.Mirrors) != 1 {
-		t.Fatalf("the stale mirror is dropped from the manifest: %v", result.Manifest.Mirrors)
-	}
-	if changes := b.Status().LastOK.Changes; len(changes.MirrorsRemoved) != 1 || changes.MirrorsRemoved[0] != m.URL {
-		t.Fatalf("the drop is recorded: %+v", changes)
+		t.Fatalf("only the hub stays listed: %v", result.Manifest.Mirrors)
 	}
 }
 

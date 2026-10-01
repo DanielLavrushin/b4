@@ -135,7 +135,7 @@ func (s *Server) message(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, ingest.CodeBadRecord, err.Error())
 		return
 	}
-	resp := s.Ingest.Handle(r.Context(), raw, asn.ClientIP(r))
+	resp := s.Ingest.HandleFrom(r.Context(), raw, ingest.Source{IP: asn.ClientIP(r), Relayed: ingest.RelayedBy(r.UserAgent())})
 	writeJSON(w, resp.Status, resp.Body)
 }
 

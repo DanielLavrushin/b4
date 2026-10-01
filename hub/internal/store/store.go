@@ -225,6 +225,20 @@ func newEpochTx(ctx context.Context, tx querier, now time.Time) (int64, error) {
 	return epoch, nil
 }
 
+func (s *Store) CurrentSeq(ctx context.Context) (epoch, seq int64, err error) {
+	rawEpoch, err := s.Meta(ctx, metaEpoch)
+	if err != nil {
+		return 0, 0, err
+	}
+	rawSeq, err := s.Meta(ctx, metaSeq)
+	if err != nil {
+		return 0, 0, err
+	}
+	epoch, _ = strconv.ParseInt(rawEpoch, 10, 64)
+	seq, _ = strconv.ParseInt(rawSeq, 10, 64)
+	return epoch, seq, nil
+}
+
 func (s *Store) NextSeq(ctx context.Context, now time.Time) (epoch, seq int64, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

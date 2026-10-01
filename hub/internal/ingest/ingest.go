@@ -29,6 +29,7 @@ const (
 	CodeFingerprint       = "fp_mismatch"
 	CodeDuplicateStrategy = "duplicate_strategy"
 	CodeBadMirrorURL      = "bad_mirror_url"
+	CodeMirrorKey         = "mirror_key_mismatch"
 	CodeBanned            = "banned"
 	CodeRateLimited       = "rate_limited"
 	CodeTooLarge          = "too_large"
@@ -125,7 +126,17 @@ func (s *Service) observe(ctx context.Context, peer net.IP) origin {
 	return origin{ASN: info.ASN, Country: info.Country}
 }
 
+type Source struct {
+	IP      net.IP
+	Relayed bool
+}
+
 func (s *Service) Handle(ctx context.Context, raw []byte, peer net.IP) Response {
+	return s.HandleFrom(ctx, raw, Source{IP: peer})
+}
+
+func (s *Service) HandleFrom(ctx context.Context, raw []byte, src Source) Response {
+	peer := src.IP
 	now := s.now()
 	if len(raw) > MaxBodyBytes {
 		return fail(http.StatusRequestEntityTooLarge, CodeTooLarge, "record exceeds the message limit")
@@ -150,6 +161,9 @@ func (s *Service) Handle(ctx context.Context, raw []byte, peer net.IP) Response 
 			return fail(http.StatusBadRequest, CodeBadSignature, err.Error())
 		}
 		return fail(http.StatusBadRequest, CodeBadRecord, err.Error())
+	}
+	if !CanonicalEncoding(&rec) {
+		return fail(http.StatusBadRequest, CodeBadSignature, "the key or the signature is not in its canonical encoding")
 	}
 	keyHMAC := hubdata.KeyHMAC(s.Secret, rec.Key)
 	key, err := s.Store.GetKey(ctx, keyHMAC)
@@ -195,7 +209,10 @@ func (s *Service) Handle(ctx context.Context, raw []byte, peer net.IP) Response 
 			return rateLimited(scope, limit, ratelimit.Day, retry)
 		}
 	}
-	observed := s.observe(ctx, peer)
+	observed := origin{}
+	if !src.Relayed {
+		observed = s.observe(ctx, peer)
+	}
 	entry := record{rec: &rec, id: recordID, keyHMAC: keyHMAC, origin: observed, now: now}
 	resp := s.dispatch(ctx, entry)
 	if !key.Trusted && resp.Status >= http.StatusBadRequest {

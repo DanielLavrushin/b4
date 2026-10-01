@@ -16,6 +16,7 @@ var buildFlags struct {
 	newEpoch     bool
 	revoke       string
 	allowBuiltin bool
+	allowEmpty   bool
 }
 
 var buildCmd = &cobra.Command{
@@ -30,6 +31,7 @@ func init() {
 	buildCmd.Flags().BoolVar(&buildFlags.newEpoch, "new-epoch", false, "start a new epoch before building")
 	buildCmd.Flags().StringVar(&buildFlags.revoke, "revoke", "", "add a key id to the revoked list carried by every manifest; routers never forget a revocation")
 	buildCmd.Flags().BoolVar(&buildFlags.allowBuiltin, "allow-builtin", false, "allow --revoke to name a key built into b4")
+	bindAllowEmpty(buildCmd, &buildFlags.allowEmpty)
 }
 
 func runBuild(cmd *cobra.Command, args []string) error {
@@ -56,6 +58,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 	sources := []hubwire.GeoSource{{SiteURL: buildFlags.geoSiteURL, IPURL: buildFlags.geoIPURL}}
 	builder := svc.builder(buildFlags.publicURL, sources)
+	builder.AllowEmpty = buildFlags.allowEmpty
 	if _, err := builder.Mirrors.CheckAll(ctx); err != nil {
 		return err
 	}

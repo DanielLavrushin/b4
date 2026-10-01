@@ -37,6 +37,9 @@ type MirrorHealth struct {
 	Now     func() time.Time
 	Timeout time.Duration
 	Window  time.Duration
+
+	roundMu   sync.Mutex
+	lastRound time.Time
 }
 
 func (h *MirrorHealth) now() time.Time {
@@ -149,6 +152,24 @@ func (h *MirrorHealth) CheckOne(ctx context.Context, m store.Mirror) store.Mirro
 }
 
 func (h *MirrorHealth) CheckAll(ctx context.Context) ([]store.MirrorCheck, error) {
+	h.roundMu.Lock()
+	defer h.roundMu.Unlock()
+	return h.checkAllLocked(ctx)
+}
+
+func (h *MirrorHealth) CheckIfStale(ctx context.Context, maxAge time.Duration) (bool, error) {
+	h.roundMu.Lock()
+	defer h.roundMu.Unlock()
+	if !h.lastRound.IsZero() && h.now().Sub(h.lastRound) < maxAge {
+		return false, nil
+	}
+	if _, err := h.checkAllLocked(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (h *MirrorHealth) checkAllLocked(ctx context.Context) ([]store.MirrorCheck, error) {
 	mirrors, err := h.Store.MirrorsByStatus(ctx, store.MirrorApproved)
 	if err != nil {
 		return nil, err
@@ -163,6 +184,7 @@ func (h *MirrorHealth) CheckAll(ctx context.Context) ([]store.MirrorCheck, error
 		}(i)
 	}
 	wg.Wait()
+	h.lastRound = h.now()
 	return results, nil
 }
 
@@ -188,9 +210,9 @@ func (h *MirrorHealth) Run(ctx context.Context, interval time.Duration, onRound 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		if _, err := h.CheckAll(ctx); err != nil {
+		if ran, err := h.CheckIfStale(ctx, interval/2); err != nil {
 			log.Printf("mirrors: health round: %v", err)
-		} else if onRound != nil {
+		} else if ran && onRound != nil {
 			onRound()
 		}
 		select {

@@ -71,7 +71,8 @@ func scanMirror(row rowScanner) (*Mirror, error) {
 
 func (s *Store) AnnounceMirror(ctx context.Context, url, keyHMAC, version string, now time.Time) (*Mirror, error) {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO mirrors(url, key_hmac, first_seen, last_seen, status, version) VALUES(?, ?, ?, ?, ?, ?)
-		ON CONFLICT(url) DO UPDATE SET last_seen = excluded.last_seen, key_hmac = excluded.key_hmac, version = excluded.version`,
+		ON CONFLICT(url) DO UPDATE SET last_seen = excluded.last_seen, key_hmac = excluded.key_hmac, version = excluded.version
+		WHERE mirrors.status = 'pending' OR mirrors.key_hmac = excluded.key_hmac`,
 		url, keyHMAC, formatTime(now), formatTime(now), MirrorPending, version)
 	if err != nil {
 		return nil, err
