@@ -254,3 +254,34 @@ func TestRouteResolveIDs_AHandSetMarkEqualToTheQueueMarksSetBitsIsReplaced(t *te
 		t.Errorf("a hand-set mark clear of the queue mark must be kept, got 0x%x and table %d", mark, table)
 	}
 }
+
+func TestRoutingSyncConfig_ABroadQueueMarkKeepsTheAutoMarkStable(t *testing.T) {
+	if !hasBinary("ip") {
+		t.Skip("RoutingSyncConfig gives up before it touches a set when the ip binary is missing")
+	}
+	familyResetGlobals(t)
+
+	set := familyTestSet()
+	set.Routing.FWMark = 0
+	set.Routing.Table = 0
+	cfg := queueMarkTestConfig(0x80027fff)
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("queue mark 0x80027fff should be accepted: %v", err)
+	}
+	cfg.Sets = []*config.SetConfig{set}
+
+	marks := map[uint32]int{}
+	for i := 0; i < 10; i++ {
+		routeEngine = &mockRouteBackend{}
+		RoutingSyncConfig(cfg)
+		marks[routeRuleCache[set.Id].mark]++
+	}
+	if _, none := marks[0]; none || len(marks) != 1 {
+		t.Errorf("with queue mark 0x80027fff every set mark is a subset of its bits, yet only 0x27fff matches them; the set must keep one automatic mark across syncs, got %v", marks)
+	}
+	for mark := range marks {
+		if mark == 0x27fff {
+			t.Errorf("the set took mark 0x27fff, the queue mark's bits under 0x%x", routeSetMarkMask)
+		}
+	}
+}

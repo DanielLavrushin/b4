@@ -201,7 +201,7 @@ agree on all three share both.
 
 | Item | Value |
 | --- | --- |
-| Mark | From a hash of the three, in `0x100`-`0x7eff`; if every hashed candidate is taken, counted up from `0x66` instead |
+| Mark | From a hash of the three, in `0x100`-`0x7eff` and never equal to the queue mark's bits under `0x27fff`; if every hashed candidate is taken, counted up from `0x66` instead |
 | Table | `100`-`249`, skipping tables named in `rt_tables`, looked up by another service's rule, or holding routes b4 did not add |
 | Rule | `ip rule add fwmark <mark>/0x27fff lookup <table> priority <10000 + table>`, for IPv4, and for IPv6 when **IPv6 support** is on |
 | Table contents | A default route through the interface, plus `blackhole default metric 4096` with the [kill switch](/docs/sets/routing#kill-switch) |
