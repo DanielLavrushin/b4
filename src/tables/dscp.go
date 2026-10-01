@@ -20,6 +20,7 @@ const (
 	dscpNftTable     = "b4_dscp"
 	dscpNftChain     = "postrouting"
 	dscpNftPriority  = 150
+	dscpReturnRules  = 3
 )
 
 type dscpState struct {
@@ -27,6 +28,7 @@ type dscpState struct {
 	backend string
 	bins    []string
 	stamps  int
+	pending bool
 }
 
 var (
@@ -137,7 +139,7 @@ func applyDSCPNft(cfg *config.Config, value int, ifaces []string) error {
 	script, stamps := dscpNftScript(value, ifaces)
 	if out, err := runNftStdin(script); err != nil {
 		if dscpTransient(out, err) {
-			dscpApplied.Store(&dscpState{cfg: cfg, backend: backendNFTables, stamps: stamps})
+			dscpApplied.Store(&dscpState{cfg: cfg, backend: backendNFTables, stamps: stamps, pending: true})
 			return fmt.Errorf("nftables did not answer while loading the %s table, the firewall monitor tries again: %w", dscpNftTable, err)
 		}
 		if gone, _ := removeDSCPNft(); !gone {
@@ -175,7 +177,7 @@ func applyDSCPIpt(cfg *config.Config, backend string, value int, ifaces []string
 	if len(wanted) == 0 {
 		dscpApplied.Store(nil)
 	} else {
-		dscpApplied.Store(&dscpState{cfg: cfg, backend: backend, bins: wanted, stamps: dscpIptStampCount(ifaces)})
+		dscpApplied.Store(&dscpState{cfg: cfg, backend: backend, bins: wanted, stamps: dscpIptStampCount(ifaces), pending: len(installed) < len(wanted)})
 	}
 	if len(installed) > 0 {
 		log.Infof("IPTABLES: DSCP %d is written into the packets this host sends out (%s; %s)", value, dscpScopeLabel(ifaces), strings.Join(installed, ", "))
@@ -185,16 +187,7 @@ func applyDSCPIpt(cfg *config.Config, backend string, value int, ifaces []string
 
 func (im *IPTablesManager) dscpChainMatches(bin string, specs [][]string) bool {
 	out, err := run(bin, "-w", "-t", "mangle", "-S", dscpChainName)
-	if err != nil {
-		return false
-	}
-	rules := 0
-	for _, line := range strings.Split(out, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "-A ") {
-			rules++
-		}
-	}
-	if rules != len(specs) {
+	if err != nil || !dscpIptChainShape(out, len(specs)-dscpReturnRules) {
 		return false
 	}
 	for _, spec := range specs {
@@ -425,19 +418,58 @@ func clearDSCPUnlessKept(cfg *config.Config, backend string) {
 	clearDSCPFor(cfg, backend)
 }
 
+func dscpIptChainShape(listing string, stamps int) bool {
+	returns, dscps := 0, 0
+	for _, line := range strings.Split(listing, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "-A ") {
+			continue
+		}
+		switch iptSpecTarget(strings.Fields(line)) {
+		case "RETURN":
+			if dscps > 0 {
+				return false
+			}
+			returns++
+		case "DSCP":
+			dscps++
+		default:
+			return false
+		}
+	}
+	return returns == dscpReturnRules && dscps == stamps
+}
+
+func dscpNftChainShape(listing string, stamps int) bool {
+	returns, dscps := 0, 0
+	for _, line := range strings.Split(listing, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.Contains(line, "dscp set"):
+			dscps++
+		case line == "return" || strings.HasSuffix(line, " return"):
+			if dscps > 0 {
+				return false
+			}
+			returns++
+		}
+	}
+	return returns == dscpReturnRules && dscps == stamps
+}
+
 func dscpIptIntact(bin string, stamps int) bool {
 	listing, err := run(bin, "-w", "-t", "mangle", "-L", "POSTROUTING", "-n", "--line-numbers")
 	if err != nil || !dscpJumpSeated(listing) {
 		return false
 	}
 	chain, err := run(bin, "-w", "-t", "mangle", "-S", dscpChainName)
-	return err == nil && strings.Count(chain, "-j DSCP") >= stamps
+	return err == nil && dscpIptChainShape(chain, stamps)
 }
 
 func dscpIntact(st *dscpState) bool {
 	if st.backend == backendNFTables {
 		out, err := run("nft", "list", "chain", "inet", dscpNftTable, dscpNftChain)
-		return err == nil && strings.Count(out, "dscp set") >= st.stamps
+		return err == nil && dscpNftChainShape(out, st.stamps)
 	}
 	for _, bin := range st.bins {
 		if !dscpIptIntact(bin, st.stamps) {
@@ -459,12 +491,15 @@ func ensureDSCPLocked(cfg *config.Config, requested bool) bool {
 		}
 	}
 	st := dscpApplied.Load()
-	if st == nil || dscpIntact(st) {
+	if st == nil || (!st.pending && dscpIntact(st)) {
 		return acted
 	}
-	if requested {
+	switch {
+	case st.pending:
+		log.Tracef("Monitor: retrying the DSCP stamp rules that did not apply")
+	case requested:
 		log.Infof("DSCP stamp rules missing after a firewall rewrite, restoring...")
-	} else {
+	default:
 		log.Warnf("DSCP stamp rules missing or out of place, restoring...")
 	}
 	if err := applyDSCPFor(st.cfg, st.backend); err != nil {

@@ -225,6 +225,15 @@ func TestDSCPIptSpecs(t *testing.T) {
 	if dscpIptStampCount(nil) != 1 || dscpIptStampCount([]string{"a", "b"}) != 2 {
 		t.Errorf("stamp count does not follow the interface list")
 	}
+	returns := 0
+	for _, spec := range got {
+		if iptSpecTarget(spec) == "RETURN" {
+			returns++
+		}
+	}
+	if returns != dscpReturnRules {
+		t.Errorf("the chain has %d RETURN rules but the monitor expects %d", returns, dscpReturnRules)
+	}
 }
 
 func TestDSCPNftScript(t *testing.T) {
@@ -258,6 +267,9 @@ func TestDSCPNftScript(t *testing.T) {
 	}
 	if strings.Contains(script, "ip dscp set 31\nadd rule inet b4_dscp postrouting meta nfproto") {
 		t.Errorf("an interface list must not also leave an unscoped stamp:\n%s", script)
+	}
+	if n := strings.Count(script, " return\n"); n != dscpReturnRules {
+		t.Errorf("the table has %d return rules but the monitor expects %d", n, dscpReturnRules)
 	}
 }
 
@@ -445,11 +457,14 @@ func TestDSCPTransientFailureStaysWantedAndIsRetried(t *testing.T) {
 		t.Errorf("a vanished chain was blamed on a missing DSCP target: %v", err)
 	}
 	st := dscpApplied.Load()
-	if st == nil || !reflect.DeepEqual(st.bins, []string{backendIPTables}) {
-		t.Fatalf("a transient failure must keep the family wanted so the monitor retries, got %+v", st)
+	if st == nil || !reflect.DeepEqual(st.bins, []string{backendIPTables}) || !st.pending {
+		t.Fatalf("a transient failure must keep the family wanted and pending so the monitor retries, got %+v", st)
 	}
 	if !ensureDSCPLocked(cfg, false) {
 		t.Fatalf("the monitor did not retry the family that failed")
+	}
+	if st := dscpApplied.Load(); st == nil || st.pending {
+		t.Errorf("a successful retry left the stamp pending: %+v", st)
 	}
 	if got := f.chains[backendIPTables]["POSTROUTING"]; !reflect.DeepEqual(got, []string{"-j B4_DSCP"}) {
 		t.Errorf("after the retry POSTROUTING = %v", got)
@@ -585,8 +600,29 @@ func TestDSCPNftTimeoutKeepsTheTableAndIsRetried(t *testing.T) {
 			t.Errorf("a timed-out load deleted the table: %s", c)
 		}
 	}
-	if st := dscpApplied.Load(); st == nil || st.backend != backendNFTables {
-		t.Fatalf("a timed-out load must stay wanted so the monitor retries, got %+v", st)
+	if st := dscpApplied.Load(); st == nil || st.backend != backendNFTables || !st.pending {
+		t.Fatalf("a timed-out load must stay wanted and pending so the monitor retries, got %+v", st)
+	}
+
+	loads := 0
+	runNftStdin = func(string) (string, error) {
+		loads++
+		return "", nil
+	}
+	run = func(args ...string) (string, error) {
+		if strings.Join(args, " ") == "nft list chain inet b4_dscp postrouting" {
+			return "table inet b4_dscp {\n\tchain postrouting {\n\t\toifname \"lo\" return\n\t\tmeta mark & 0x20000000 == 0x20000000 return\n\t\tct direction reply return\n\t\tip dscp set 0x03\n\t\tip6 dscp set 0x03\n\t}\n}\n", nil
+		}
+		return "", nil
+	}
+	if !ensureDSCPLocked(dscpTestConfig(true, 7), false) || loads != 1 {
+		t.Fatalf("the monitor trusted a table of the same shape left from before the timeout, loads=%d", loads)
+	}
+	if st := dscpApplied.Load(); st == nil || st.pending {
+		t.Fatalf("a successful retry left the stamp pending: %+v", st)
+	}
+	if ensureDSCPLocked(dscpTestConfig(true, 7), false) || loads != 1 {
+		t.Errorf("the monitor kept reloading a table that was in place, loads=%d", loads)
 	}
 }
 
@@ -764,7 +800,7 @@ func TestDSCPNftRejectedScriptLeavesNoTable(t *testing.T) {
 	}
 }
 
-func TestDSCPNftIntactCountsStamps(t *testing.T) {
+func TestDSCPNftIntactChecksTheWholeChain(t *testing.T) {
 	origRun := run
 	t.Cleanup(func() { run = origRun })
 	listing := ""
@@ -781,12 +817,97 @@ func TestDSCPNftIntactCountsStamps(t *testing.T) {
 	if dscpIntact(st) {
 		t.Errorf("a missing table reads as intact")
 	}
-	listing = "table inet b4_dscp {\n chain postrouting {\n  oifname \"lo\" return\n  ct direction reply return\n  ip dscp set 0x07\n }\n}\n"
-	if dscpIntact(st) {
-		t.Errorf("one stamp out of two reads as intact")
+
+	chain := func(rules ...string) string {
+		return "table inet b4_dscp {\n\tchain postrouting {\n\t\ttype filter hook postrouting priority 150; policy accept;\n\t\t" +
+			strings.Join(rules, "\n\t\t") + "\n\t}\n}\n"
 	}
-	listing = strings.Replace(listing, "ip dscp set 0x07\n", "ip dscp set 0x07\n  ip6 dscp set 0x07\n", 1)
-	if !dscpIntact(st) {
-		t.Errorf("both stamps present but read as missing")
+	lo := `oifname "lo" return`
+	client := "meta mark & 0x20000000 == 0x20000000 return"
+	reply := "ct direction reply return"
+	v4, v6 := "ip dscp set 0x07", "ip6 dscp set 0x07"
+	cases := []struct {
+		name    string
+		listing string
+		want    bool
+	}{
+		{"complete", chain(lo, client, reply, v4, v6), true},
+		{"a named value", chain(lo, client, reply, `oifname "wan" ip dscp set ef`, `oifname "wan" ip6 dscp set ef`), true},
+		{"one stamp missing", chain(lo, client, reply, v4), false},
+		{"a stamp twice", chain(lo, client, reply, v4, v6, v4), false},
+		{"client mark return missing", chain(lo, reply, v4, v6), false},
+		{"reply return missing", chain(lo, client, v4, v6), false},
+		{"a return after a stamp", chain(lo, client, v4, reply, v6), false},
+	}
+	for _, tc := range cases {
+		listing = tc.listing
+		if got := dscpIntact(st); got != tc.want {
+			t.Errorf("%s: intact=%v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestDSCPIptChainShape(t *testing.T) {
+	chain := func(rules ...string) string {
+		var b strings.Builder
+		b.WriteString("-N B4_DSCP\n")
+		for _, r := range rules {
+			fmt.Fprintf(&b, "-A B4_DSCP %s\n", r)
+		}
+		return b.String()
+	}
+	lo := "-o lo -j RETURN"
+	client := "-m mark --mark 0x20000000/0x20000000 -j RETURN"
+	reply := "-m conntrack --ctdir REPLY -j RETURN"
+	stamp := "-j DSCP --set-dscp 0x07"
+	cases := []struct {
+		name    string
+		listing string
+		stamps  int
+		want    bool
+	}{
+		{"complete", chain(lo, client, reply, stamp), 1, true},
+		{"one stamp per interface", chain(lo, client, reply, "-o eth0 "+stamp, "-o wg0 "+stamp), 2, true},
+		{"a warning line is ignored", chain(lo, client, reply, stamp) + "# Warning: iptables-legacy tables present, use iptables-legacy to see them\n", 1, true},
+		{"flushed", chain(), 1, false},
+		{"client mark return missing", chain(lo, reply, stamp), 1, false},
+		{"a return after the stamp", chain(lo, client, stamp, reply), 1, false},
+		{"one interface stamp missing", chain(lo, client, reply, "-o eth0 "+stamp), 2, false},
+		{"a stamp twice", chain(lo, client, reply, stamp, stamp), 1, false},
+		{"a foreign rule", chain(lo, client, reply, "-j ACCEPT", stamp), 1, false},
+	}
+	for _, tc := range cases {
+		if got := dscpIptChainShape(tc.listing, tc.stamps); got != tc.want {
+			t.Errorf("%s: intact=%v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestDSCPMonitorRestoresAMissingExemption(t *testing.T) {
+	f := newFakeMangle(backendIPTables)
+	installFakeMangle(t, f)
+	cfg := dscpTestConfig(true, 7)
+	if err := applyDSCPFor(cfg, backendIPTables); err != nil {
+		t.Fatalf("applyDSCPFor: %v", err)
+	}
+	want := append([]string(nil), f.chains[backendIPTables][dscpChainName]...)
+
+	f.chains[backendIPTables][dscpChainName] = append(want[:1:1], want[2:]...)
+	if !ensureDSCPLocked(cfg, false) {
+		t.Fatalf("the monitor took a chain without the client mark exemption for intact")
+	}
+	if got := f.chains[backendIPTables][dscpChainName]; !reflect.DeepEqual(got, want) {
+		t.Errorf("after the restore %s = %v, want %v", dscpChainName, got, want)
+	}
+
+	f.chains[backendIPTables][dscpChainName] = []string{want[0], want[1], want[3], want[2]}
+	if !ensureDSCPLocked(cfg, false) {
+		t.Fatalf("the monitor took a stamp ahead of the reply exemption for intact")
+	}
+	if got := f.chains[backendIPTables][dscpChainName]; !reflect.DeepEqual(got, want) {
+		t.Errorf("after the reorder restore %s = %v, want %v", dscpChainName, got, want)
+	}
+	if ensureDSCPLocked(cfg, false) {
+		t.Errorf("the monitor kept restoring a chain that was back in shape")
 	}
 }
