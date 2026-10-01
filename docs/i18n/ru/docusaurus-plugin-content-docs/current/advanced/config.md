@@ -48,7 +48,8 @@ b4 хранит конфигурацию в одном JSON-файле. По у�
       "skip_setup": false,
       "monitor_interval": 10,
       "engine": "",
-      "masquerade": { "enabled": false, "interfaces": [] }
+      "masquerade": { "enabled": false, "interfaces": [] },
+      "dscp": { "enabled": false, "value": 0, "interfaces": [] }
     },
     "logging": {
       "level": 1,

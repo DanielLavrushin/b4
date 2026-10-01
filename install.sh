@@ -4234,7 +4234,7 @@ _remove_netfilter_state() {
         log_warn "Removing the known nftables tables directly"
     fi
     command_exists nft || return 0
-    for _rns_t in "inet b4_mangle" "inet b4_route" "ip b4_nat" "ip b4_dnsnat" "ip6 b4_dnsnat6"; do
+    for _rns_t in "inet b4_mangle" "inet b4_route" "inet b4_dscp" "ip b4_nat" "ip b4_dnsnat" "ip6 b4_dnsnat6"; do
         nft delete table ${_rns_t} 2>/dev/null || true
     done
 }

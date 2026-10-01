@@ -7,9 +7,13 @@ import (
 	"github.com/florianl/go-nfqueue"
 )
 
+type verdictSetter interface {
+	SetVerdict(id uint32, verdict int) error
+}
+
 type verdictCtx struct {
 	id      uint32
-	q       *nfqueue.Nfqueue
+	q       verdictSetter
 	verdict engine.PacketVerdict
 }
 

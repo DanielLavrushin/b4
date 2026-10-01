@@ -504,6 +504,7 @@ var diagB4Chains = []diagChainRef{
 	{"mangle", "B4_TUN"},
 	{"mangle", "B4_TUN_GATE"},
 	{"mangle", "B4_DISCOVERY"},
+	{"mangle", "B4_DSCP"},
 	{"nat", "B4_MASQ"},
 }
 
@@ -600,6 +601,7 @@ func collectTUNInfo(cfg *config.Config) *DiagTUN {
 		}
 		t.ResolvedSrc = di.ResolvedSrc
 		t.Capture = di.Capture
+		t.LocalOnly = di.LocalOnly
 		t.ReplyCapture = di.ReplyCapture
 		t.PacketsForwarded = di.PacketsForwarded
 		t.ForwardErrors = di.ForwardErrors

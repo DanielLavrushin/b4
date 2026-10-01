@@ -46,7 +46,8 @@ The same applies through the API and the web interface: what you read back is wh
       "skip_setup": false,
       "monitor_interval": 10,
       "engine": "",
-      "masquerade": { "enabled": false, "interfaces": [] }
+      "masquerade": { "enabled": false, "interfaces": [] },
+      "dscp": { "enabled": false, "value": 0, "interfaces": [] }
     },
     "logging": {
       "level": 1,

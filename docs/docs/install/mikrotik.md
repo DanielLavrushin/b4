@@ -194,6 +194,36 @@ A set can hand its traffic to a SOCKS5 proxy in another container on the same br
 
 In this mode b4 applies no DPI strategy to the set's traffic; the proxy reaches the destination. [Upstream SOCKS5 proxy](/docs/sets/routing#upstream-socks5-proxy) describes the diversion, UDP handling and the kernel modules it needs. Several sets can point at different proxies.
 
+## Routing chosen destinations through the container {#routing-by-destination}
+
+Step 4 picks the traffic by client. To pick it by destination, for example a site's subnets, the destinations go into an address list, and the marking rules match that list instead of `b4users`:
+
+```routeros
+/ip firewall address-list add list=via_b4 address=203.0.113.0/24
+
+/ip firewall mangle add chain=prerouting action=mark-connection \
+    new-connection-mark=b4_connections passthrough=yes connection-state=new \
+    dst-address-type=!local dst-address-list=via_b4 in-interface-list=LAN \
+    place-before=0
+
+/ip firewall mangle add chain=prerouting action=mark-routing \
+    new-routing-mark=to_b4 passthrough=no connection-mark=b4_connections \
+    in-interface-list=LAN log=no place-before=1
+```
+
+The route through the container stays in table `to_b4` from [Step 3](#step-3-routing). A route to the container in the main table does not work here: the container sends everything it processed back to RouterOS, its default gateway, and a main-table route by destination sends the same packets straight back to the container instead of out through the WAN.
+
+The marking rules, here and in Step 4, apply only to packets that arrive from the LAN interface list, so the packets the container sends back leave through the main table. `bridge-docker` is not in that list after Step 1. If it has been added, a rule above the marking rules keeps the container's packets out of them. It is added after them, so that `place-before=0` puts it on top:
+
+```routeros
+/ip firewall mangle add chain=prerouting action=accept \
+    in-interface=bridge-docker place-before=0
+```
+
+b4 on a separate Linux machine instead of a container needs the same layout: a subnet of its own on its own RouterOS port, VLAN or bridge, RouterOS as its default gateway, the route in `to_b4` pointing at the machine's address, NAT Masquerade on in b4 as in Step 8, and that interface kept out of the LAN interface list or exempted by the same accept rule with its name in place of `bridge-docker`. On the clients' own subnet the machine hands the server's replies straight to the client, so RouterOS sees only the client's half of each connection and treats the client's following TCP packets as invalid, which stalls or breaks its TCP connections.
+
+RouterOS tells b4's packets apart by the interface they arrive on, so these rules need nothing from b4 inside the packets. The marks b4 uses internally, the packet mark among them, never leave the container or the machine.
+
 ## Troubleshooting
 
 **Container will not start:**
@@ -212,6 +242,11 @@ In this mode b4 applies no DPI strategy to the set's traffic; the proxy reaches 
 1. The list: `/ip firewall address-list print where list=b4users`
 2. Mangle: `/ip firewall mangle print`
 3. The route: `/ip route print where routing-table=to_b4`
+
+**Destinations routed through the container do not open:**
+
+1. The route to the container has to be in table `to_b4`, not in the main table, see [Routing chosen destinations through the container](#routing-by-destination)
+2. `bridge-docker`, or the interface of a separate b4 machine, has to stay out of the LAN interface list, or its packets have to be exempted from the marking rules as shown there
 
 **Traffic reaches the container but the bypass has no effect:**
 

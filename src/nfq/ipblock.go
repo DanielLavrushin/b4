@@ -117,16 +117,22 @@ func dnsTypeName(qtype uint16) string {
 }
 
 func (w *Worker) applyPinnedAnswer(cfg *config.Config, set *config.SetConfig, clientIP net.IP, domain string, pinned []byte) string {
+	action, _ := w.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned)
+	return action
+}
+
+func (w *Worker) applyPinnedAnswerAwait(cfg *config.Config, set *config.SetConfig, clientIP net.IP, domain string, pinned []byte) (string, []<-chan struct{}) {
 	ips := dns.ParseResponseIPs(pinned)
 	if len(ips) == 0 {
-		return dnsActionPinEmpty
+		return dnsActionPinEmpty, nil
 	}
 	w.storeHostHints(clientIP, set, domain, ips)
+	var routeWaits []<-chan struct{}
 	if cfg != nil && set.Routing.Enabled && !set.Targets.DomainOnly && !cfg.Queue.IsDiscovery && routingHandleDNSAvailable() {
-		routingHandleDNSAsync(cfg, set, ips)
+		routeWaits = routingHandleDNSAwait(cfg, set, ips)
 	}
 	log.Infof("DNS pin: answering %s with %s (set: %s)", domain, ips[0], set.Name)
-	return dnsActionPin
+	return dnsActionPin, routeWaits
 }
 
 func synDetectEnabled(set *config.SetConfig) bool {

@@ -125,6 +125,8 @@ func mcpDeniedPathHint(path string) string {
 		return "the MCP server's own settings are never writable, so the AI cannot widen its own permissions"
 	case strings.HasPrefix(path, "system.web_server"):
 		return "changing the web server would move or lock the interface used to undo the change"
+	case strings.HasPrefix(path, "system.tables.dscp"):
+		return "the DSCP stamp is not writable: rules on the next router, which b4 cannot see, act on the value, and a wrong one can send every packet this host sends down another route"
 	case strings.HasPrefix(path, "system.tables"):
 		return "the firewall backend and rule installation are not writable: a wrong value leaves the machine with no rules at all"
 	case strings.HasPrefix(path, "queue.tun") || path == "queue.mode":
