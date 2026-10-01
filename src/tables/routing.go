@@ -786,6 +786,10 @@ func RoutingClearAll() {
 	routeMu.Lock()
 	defer routeMu.Unlock()
 	routeAsyncForgetAll()
+	routeInstallFailedAt.Range(func(setID, _ any) bool {
+		routeInstallFailedAt.Delete(setID)
+		return true
+	})
 
 	be := routeEngine
 	if be == nil {

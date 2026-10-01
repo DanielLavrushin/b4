@@ -421,6 +421,23 @@ func TestResyncQueuedBatchDoesNotReinstallAfterClearAll(t *testing.T) {
 	}
 }
 
+func TestResyncClearAllForgetsInstallFailures(t *testing.T) {
+	cfg, set, _ := awaitSetup(t, false)
+	stubRetryState(t)
+	routeNoteInstallFailed(set.Id)
+	if !routeInstallFailedRecently(set.Id) {
+		t.Fatal("the failed install was not remembered")
+	}
+
+	RoutingClearAll()
+	if routeInstallFailedRecently(set.Id) {
+		t.Fatal("a failed install from before the routing reset is still remembered, so the set's first answers after the reset go out unheld")
+	}
+	if waits := RoutingHandleDNSAwait(cfg, set, []net.IP{net.ParseIP("198.51.100.113")}); len(waits) != 1 {
+		t.Fatalf("the first answer after the reset got %d waits, want 1", len(waits))
+	}
+}
+
 func TestResyncDroppedTargetsAreNotAddedToTheNewSet(t *testing.T) {
 	cfg, set, be := awaitSetup(t, false)
 	stubRetryState(t)
