@@ -47,7 +47,7 @@ rule without a mask, such as nftables `meta mark set 0x00021546` or iptables
 | Bits | Mask | Used for | Value |
 | --- | --- | --- | --- |
 | 0-14, 17 | `0x27fff` | The route of a routing set | One per set; sets routed through the same interface with the same egress IP and kill switch share one. See [sets routed through an interface](#sets-routed-through-an-interface) and [proxy sets](#proxy-sets-and-telegram-over-websocket) |
-| 15 | `0x8000` | The queue mark: packets b4 sends from its raw sockets, except those toward a device in TUN mode, the DNS queries it sends for clients and for its sets, and its probes that bypass its own processing | **Packet Mark** under `Settings > Core`, `0x8000` (32768) by default |
+| 15 by default | `0x8000` by default | The queue mark: packets b4 sends from its raw sockets, except those toward a device in TUN mode, the DNS queries it sends for clients and for its sets, and its probes that bypass its own processing | **Packet Mark** under `Settings > Core`, `0x8000` (32768) by default |
 | 18 | `0x40000` | Connections b4 opens to the upstream of a proxy set, to Telegram, the Community Hub, ipinfo and RIPEstat, and its transparent listeners; see [socket marks](#socket-marks) | Fixed |
 | 21 | `0x200000` | b4's own connections whose outgoing packets packet processing leaves alone | Fixed, carried together with bit 18 as `0x240000` |
 | 24 | `0x1000000` | A proxy set's TCP packet that the router sent itself | Fixed, added to the set's mark |
@@ -67,7 +67,7 @@ them on the packets they take. Bit 16 is left free for XrayUI's `0x10000`.
 | --- | --- | --- |
 | 30 | `0x40000000` | The connection belongs to a set routed through an interface |
 | 0-14, 17 | `0x27fff` | The mark of that set, copied from the connection's first packet |
-| 15 | `0x8000`, the queue mark | NFQUEUE mode, on iptables when the connmark module is available: a packet carrying the queue mark left the router on this connection, including a fake or split segment b4 sent into a device's connection. b4's queue rules for packets entering the router skip such connections |
+| 15 by default | The queue mark, `0x8000` by default | NFQUEUE mode, on iptables when the connmark module is available: a packet carrying the queue mark left the router on this connection, including a fake or split segment b4 sent into a device's connection. b4's queue rules for packets entering the router skip such connections |
 | all | `0xffffffff` | Discovery's probe connections, while a run is active |
 
 ### Socket marks
@@ -163,8 +163,9 @@ b4 refuses a value that:
 - overlaps `0x70000000` in TUN mode;
 - has bit `0x20000000` in NFQUEUE mode while **NAT Masquerade** is on;
 - equals the flow or injected mark of Discovery;
-- is above `0xffffffff`, or, while the configuration holds no Discovery marks, is above
-  `0xfffffffd` or gives Discovery a mark (the value plus 1 or plus 2) with bit `0x200000`.
+- is above `0xffffffff`, or, while either Discovery mark is left out of the configuration, is
+  above `0xfffffffd` or gives that mark (the value plus 1 for the flow mark, plus 2 for the
+  injected mark) bit `0x200000` or the value of the other Discovery mark.
 
 A packet another service marks with every bit of the queue mark reads to b4 as one it sent
 itself. Proxy sets, Telegram over WebSocket and the QUIC refusal leave it alone. A set
@@ -190,7 +191,7 @@ agree on all three share both.
 
 | Item | Value |
 | --- | --- |
-| Mark | `0x100`-`0x7eff`, from a hash of the three; if every hashed candidate is taken, counted up from `0x66` |
+| Mark | From a hash of the three, in `0x100`-`0x7eff`; if every hashed candidate is taken, counted up from `0x66` instead |
 | Table | `100`-`249`, skipping tables named in `rt_tables`, looked up by another service's rule, or holding routes b4 did not add |
 | Rule | `ip rule add fwmark <mark>/0x27fff lookup <table> priority <10000 + table>`, for IPv4, and for IPv6 when **IPv6 support** is on |
 | Table contents | A default route through the interface, plus `blackhole default metric 4096` with the [kill switch](/docs/sets/routing#kill-switch) |
@@ -540,7 +541,7 @@ Where these meet b4:
 - **pbr.** `0x40000` is its fourth interface's mark, so with four or more interfaces pbr's
   rule routes b4's own connections that carry `0x40000` by that interface's table. A pbr
   policy that matches a packet a b4 interface set has marked adds its interface byte; when
-  that byte has bit 17, b4's rule no longer matches and pbr's routes the packet.
+  that byte has bit 17, b4's rule no longer matches and pbr's rule routes the packet.
 - **OpenClash, podkop.** Their writes replace b4's mark: whole values, and in OpenClash's
   default mode nat `REDIRECT` for TCP, so on destinations both cover, their route wins.
   OpenClash takes the router's own connections while router self-proxy is on, the default;
