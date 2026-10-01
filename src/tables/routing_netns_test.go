@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -91,6 +92,12 @@ func netnsSetupLinks(t *testing.T) {
 
 func netnsStartQueueListener(t *testing.T, qnum uint16) func() {
 	t.Helper()
+	_, stop := netnsMarkedQueueListener(t, qnum)
+	return stop
+}
+
+func netnsMarkedQueueListener(t *testing.T, qnum uint16) (func() map[uint32]int, func()) {
+	t.Helper()
 	nf, err := nfqueue.Open(&nfqueue.Config{
 		NfQueue:      qnum,
 		MaxPacketLen: 0xffff,
@@ -100,9 +107,18 @@ func netnsStartQueueListener(t *testing.T, qnum uint16) func() {
 	if err != nil {
 		t.Fatalf("bind queue %d: %v", qnum, err)
 	}
+	var mu sync.Mutex
+	seen := map[uint32]int{}
 	ctx, cancel := context.WithCancel(context.Background())
 	err = nf.RegisterWithErrorFunc(ctx,
 		func(a nfqueue.Attribute) int {
+			var mark uint32
+			if a.Mark != nil {
+				mark = *a.Mark
+			}
+			mu.Lock()
+			seen[mark]++
+			mu.Unlock()
 			if a.PacketID != nil {
 				_ = nf.SetVerdict(*a.PacketID, nfqueue.NfAccept)
 			}
@@ -115,7 +131,16 @@ func netnsStartQueueListener(t *testing.T, qnum uint16) func() {
 		_ = nf.Close()
 		t.Fatalf("register queue %d: %v", qnum, err)
 	}
-	return func() {
+	snapshot := func() map[uint32]int {
+		mu.Lock()
+		defer mu.Unlock()
+		out := make(map[uint32]int, len(seen))
+		for k, v := range seen {
+			out[k] = v
+		}
+		return out
+	}
+	return snapshot, func() {
 		cancel()
 		_ = nf.Close()
 	}

@@ -235,14 +235,14 @@ func (m *Monitor) checkRules(cfg *config.Config) bool {
 	if m.tun {
 		return m.checkTUNRules()
 	}
-	if m.backend == backendNFTables {
+	if m.firewallBackend() == backendNFTables {
 		return m.checkNFTablesRules(cfg)
 	}
 	return m.checkIPTablesRules(cfg)
 }
 
 func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
-	legacy := m.backend == backendIPTablesLegacy
+	legacy := m.firewallBackend() == backendIPTablesLegacy
 	ipt4 := backendIPTables
 	ipt6 := backendIP6Tables
 	if legacy {
@@ -469,9 +469,11 @@ func (m *Monitor) ensureRulesLocked(requested bool) (*config.Config, bool) {
 		m.pendingApply = nil
 		return cfg, false
 	}
-	if applied := rulesAppliedCfg; applied != nil && applied != cfg && m.pendingApply != cfg && config.FirewallRefreshNeeded(applied, cfg) && m.checkRules(applied) {
-		m.pendingApply = cfg
-		log.Infof("Tables rules still match the previous configuration while a newer one is being applied, leaving the rebuild to that apply")
+	if applied := rulesAppliedCfg; applied != nil && applied != cfg && (m.pendingApply != cfg || activeSteering != nil) && config.FirewallRefreshNeeded(applied, cfg) && m.checkRules(applied) {
+		if m.pendingApply != cfg {
+			m.pendingApply = cfg
+			log.Infof("Tables rules still match the previous configuration while a newer one is being applied, leaving the rebuild to that apply")
+		}
 		return cfg, true
 	}
 	m.pendingApply = nil
@@ -495,7 +497,25 @@ func (m *Monitor) restoreRules(cfg *config.Config) error {
 		return restoreTUNRules(m.backend, m.tunLost)
 	}
 	ReloadKernelModules()
+	if applied := rulesAppliedCfg; applied != nil && applied != cfg && !cfg.System.Tables.SkipSetup && config.FirewallRefreshNeeded(applied, cfg) {
+		if activeSteering != nil {
+			return addRulesFn(applied)
+		}
+		dscpKeepOnRefresh = true
+		err := clearRulesFn(applied)
+		dscpKeepOnRefresh = false
+		if err != nil {
+			log.Warnf("Tables: clearing the rules of the previous configuration before restoring failed: %v", err)
+		}
+	}
 	return addRulesFn(cfg)
+}
+
+func (m *Monitor) firewallBackend() string {
+	if rulesAppliedBackend != "" {
+		return rulesAppliedBackend
+	}
+	return m.backend
 }
 
 func (m *Monitor) ForceRestore() error {

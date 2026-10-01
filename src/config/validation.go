@@ -424,13 +424,19 @@ func (c *Config) Validate() error {
 	}
 
 	c.Queue.Mark = c.MainInjectedMark()
+	if uint64(c.System.Checker.DiscoveryFlowMark) == uint64(c.Queue.Mark)+1 {
+		c.System.Checker.DiscoveryFlowMark = 0
+	}
+	if uint64(c.System.Checker.DiscoveryInjectedMark) == uint64(c.Queue.Mark)+2 {
+		c.System.Checker.DiscoveryInjectedMark = 0
+	}
 
 	maxMark := uint(^uint32(0))
 	if c.Queue.Mark > maxMark {
 		v.addf("queue.mark", "out_of_range", map[string]any{"mark": fmt.Sprintf("0x%x", c.Queue.Mark)}, "mark value 0x%x exceeds uint32 max", c.Queue.Mark)
 		return v.result()
 	}
-	if c.Queue.Mark > maxMark-2 && c.System.Checker.DiscoveryFlowMark == 0 {
+	if c.Queue.Mark > maxMark-2 && (c.System.Checker.DiscoveryFlowMark == 0 || c.System.Checker.DiscoveryInjectedMark == 0) {
 		v.addf("queue.mark", "out_of_range", map[string]any{"mark": fmt.Sprintf("0x%x", c.Queue.Mark)}, "mark value 0x%x is too high for auto-derived discovery marks", c.Queue.Mark)
 		return v.result()
 	}
@@ -446,10 +452,10 @@ func (c *Config) Validate() error {
 		return v.result()
 	}
 
-	c.System.Checker.DiscoveryFlowMark = c.DiscoveryFlowMark()
-	c.System.Checker.DiscoveryInjectedMark = c.DiscoveryInjectedMark()
+	flowMark := c.DiscoveryFlowMark()
+	injectedMark := c.DiscoveryInjectedMark()
 
-	if c.System.Checker.DiscoveryFlowMark > maxMark || c.System.Checker.DiscoveryInjectedMark > maxMark {
+	if flowMark > maxMark || injectedMark > maxMark {
 		v.add("queue.mark", "out_of_range", "discovery mark values exceed uint32 max", nil)
 		return v.result()
 	}
@@ -457,8 +463,8 @@ func (c *Config) Validate() error {
 		path string
 		mark uint
 	}{
-		{"system.checker.discovery_flow_mark", c.System.Checker.DiscoveryFlowMark},
-		{"system.checker.discovery_injected_mark", c.System.Checker.DiscoveryInjectedMark},
+		{"system.checker.discovery_flow_mark", flowMark},
+		{"system.checker.discovery_injected_mark", injectedMark},
 	} {
 		if uint32(dm.mark)&SelfDialNoDPIBit != 0 {
 			v.addf(dm.path, "mark_conflict", map[string]any{"mark": fmt.Sprintf("0x%x", dm.mark)},
@@ -466,9 +472,7 @@ func (c *Config) Validate() error {
 			return v.result()
 		}
 	}
-	if c.Queue.Mark == c.System.Checker.DiscoveryFlowMark ||
-		c.Queue.Mark == c.System.Checker.DiscoveryInjectedMark ||
-		c.System.Checker.DiscoveryFlowMark == c.System.Checker.DiscoveryInjectedMark {
+	if c.Queue.Mark == flowMark || c.Queue.Mark == injectedMark || flowMark == injectedMark {
 		v.add("queue.mark", "mark_conflict", "queue marks must be unique: mark, discovery_flow_mark, discovery_injected_mark", nil)
 		return v.result()
 	}

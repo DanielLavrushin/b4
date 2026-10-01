@@ -395,7 +395,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 				tables.RevertConntrackSysctls()
 			}
 		} else if !c.System.Tables.SkipSetup && !engineDown.Load() {
-			tables.ClearRules(c)
+			tables.ClearAppliedRules(c)
 		}
 		tables.RoutingClearAll()
 	}()
@@ -798,7 +798,7 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 		go func() {
 			defer wg.Done()
 			log.Infof("Clearing iptables/nftables rules...")
-			if err := tables.ClearRules(cfg); err != nil {
+			if err := tables.ClearAppliedRules(cfg); err != nil {
 				log.Errorf("Failed to clear tables rules: %v", err)
 				metrics.RecordEvent("error", fmt.Sprintf("Failed to clear tables rules: %v", err))
 				shutdownErrors <- fmt.Errorf("tables cleanup: %w", err)

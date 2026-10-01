@@ -232,10 +232,10 @@ func TestRoutingPhaseFollowsTheLastCompletedSync(t *testing.T) {
 }
 
 func TestMonitorLeavesAPendingApplyToTheRefresh(t *testing.T) {
-	origRun, origAdd, origApplied := run, addRulesFn, rulesAppliedCfg
+	origRun, origAdd, origClear, origApplied := run, addRulesFn, clearRulesFn, rulesAppliedCfg
 	hasBinaryCache.Store(backendIPTables, true)
 	t.Cleanup(func() {
-		run, addRulesFn = origRun, origAdd
+		run, addRulesFn, clearRulesFn = origRun, origAdd, origClear
 		rulesMu.Lock()
 		rulesAppliedCfg = origApplied
 		rulesMu.Unlock()
@@ -254,6 +254,11 @@ func TestMonitorLeavesAPendingApplyToTheRefresh(t *testing.T) {
 	restores := 0
 	addRulesFn = func(*config.Config) error {
 		restores++
+		return nil
+	}
+	var cleared []*config.Config
+	clearRulesFn = func(c *config.Config) error {
+		cleared = append(cleared, c)
 		return nil
 	}
 
@@ -282,6 +287,9 @@ func TestMonitorLeavesAPendingApplyToTheRefresh(t *testing.T) {
 	if restores != 1 {
 		t.Fatalf("monitor did not rebuild the firewall on the second tick, restores=%d", restores)
 	}
+	if len(cleared) != 1 || cleared[0] != &applied {
+		t.Fatalf("the rebuild for a newer configuration must clear the applied one first, cleared %v", cleared)
+	}
 
 	calls = 0
 	devices := config.NewConfig()
@@ -294,5 +302,8 @@ func TestMonitorLeavesAPendingApplyToTheRefresh(t *testing.T) {
 	m.ensureRules(false)
 	if restores != 2 {
 		t.Fatalf("a change that no refresh will apply was deferred instead of restored, restores=%d", restores)
+	}
+	if len(cleared) != 1 {
+		t.Fatalf("a restore that changes no firewall rule must not clear first, cleared %v", cleared)
 	}
 }

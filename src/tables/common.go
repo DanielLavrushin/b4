@@ -26,11 +26,12 @@ const (
 )
 
 var (
-	modulesLoaded   sync.Once
-	rulesMu         sync.Mutex
-	rulesAppliedCfg *config.Config
-	addRulesFn      = addRules
-	clearRulesFn    = clearRules
+	modulesLoaded       sync.Once
+	rulesMu             sync.Mutex
+	rulesAppliedCfg     *config.Config
+	rulesAppliedBackend string
+	addRulesFn          = addRules
+	clearRulesFn        = clearRules
 )
 
 func AddRules(cfg *config.Config) error {
@@ -49,7 +50,7 @@ func RefreshRules(cfg *config.Config) error {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
 	dscpKeepOnRefresh = true
-	err := clearRulesFn(cfg)
+	err := clearRulesFn(appliedOr(cfg))
 	dscpKeepOnRefresh = false
 	if err != nil {
 		return err
@@ -57,21 +58,36 @@ func RefreshRules(cfg *config.Config) error {
 	return addRulesFn(cfg)
 }
 
+func ClearAppliedRules(fallback *config.Config) error {
+	rulesMu.Lock()
+	defer rulesMu.Unlock()
+	return clearRulesFn(appliedOr(fallback))
+}
+
+func appliedOr(cfg *config.Config) *config.Config {
+	if rulesAppliedCfg != nil {
+		return rulesAppliedCfg
+	}
+	return cfg
+}
+
 func addRules(cfg *config.Config) error {
-	rulesAppliedCfg = cfg
 	if cfg.System.Tables.SkipSetup {
 		return nil
 	}
+	rulesAppliedCfg = cfg
 
 	IPTablesLockBudgetReset()
 
 	backend := detectFirewallBackend(cfg)
+	rulesAppliedBackend = backend
 	log.Tracef("Detected firewall backend: %s", backend)
 
 	if backend == backendNFTables {
 		nft := NewNFTablesManager(cfg)
 		err := nft.Apply()
 		applyDSCPLogged(cfg, backend)
+		reapplyDiscoverySteering()
 		return err
 	}
 
@@ -80,6 +96,7 @@ func addRules(cfg *config.Config) error {
 	err := ipt.Apply()
 	RoutingEnsureJumpPrecedence(cfg)
 	applyDSCPLogged(cfg, backend)
+	reapplyDiscoverySteering()
 	return err
 }
 

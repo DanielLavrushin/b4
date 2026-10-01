@@ -46,6 +46,7 @@ type routeState struct {
 	domainOnly  bool
 	mode        string
 	mark        uint32
+	bypass      uint32
 	table       int
 	iface       string
 	egressIP    string
@@ -192,6 +193,13 @@ func routeHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP, sta
 
 	if stale != nil && stale() {
 		routeAddToInstalledSet(set, ips)
+		return
+	}
+	if st, ok := routeRuleCache[set.Id]; ok && st.bypass != 0 && routeSyncedCfg != nil && routeQueueBypassMark(cfg) != routeQueueBypassMark(routeSyncedCfg) {
+		if be := routeEngine; be != nil && !st.domainOnly {
+			failed := routeAddIPsToSets(be, st, routeSetTTL(set), ips, st.ipv4, st.ipv6)
+			routeAsyncStampExcept(set, ips, failed)
+		}
 		return
 	}
 
@@ -572,6 +580,9 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		st.routerOut = set.RoutingIncludesRouterTraffic()
 		st.killSwitch = set.Routing.KillSwitch
 	}
+	if !config.RoutingIsBlock(mode) {
+		st.bypass = routeQueueBypassMark(cfg)
+	}
 	return st
 }
 
@@ -579,6 +590,7 @@ func routeStateEqual(a, b routeState) bool {
 	return a.mode == b.mode &&
 		a.domainOnly == b.domainOnly &&
 		a.mark == b.mark &&
+		a.bypass == b.bypass &&
 		a.table == b.table &&
 		a.iface == b.iface &&
 		a.egressIP == b.egressIP &&
@@ -1334,8 +1346,9 @@ func routingSyncConfigLocked(cfg *config.Config) {
 	}
 
 	routeIfaceAuto = make(map[string]routeState)
+	own := map[uint32]struct{}{routeQueueBypassMark(cfg): {}, SelfDialMark: {}}
 	for _, st := range routeRuleCache {
-		if config.RoutingUsesTProxy(st.mode) || st.iface == "" {
+		if config.RoutingUsesTProxy(st.mode) || st.iface == "" || markOverlaps(st.mark, own) {
 			continue
 		}
 		key := routeIfaceAutoKey(st.iface, st.egressIP, st.killSwitch)
@@ -2577,7 +2590,8 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 		}
 	}
 	autoKey := routeIfaceAutoKey(set.Routing.EgressInterface, set.Routing.EgressIP, set.Routing.KillSwitch)
-	if st, ok := routeIfaceAuto[autoKey]; ok && st.mark > 0 && st.table > 0 {
+	own := map[uint32]struct{}{routeQueueBypassMark(cfg): {}, SelfDialMark: {}}
+	if st, ok := routeIfaceAuto[autoKey]; ok && st.mark > 0 && st.table > 0 && !markOverlaps(st.mark, own) {
 		return st.mark, st.table
 	}
 

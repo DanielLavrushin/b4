@@ -258,9 +258,12 @@ func TestMarshalSparse_OmitsDerivedDiscoveryMarks(t *testing.T) {
 		t.Fatalf("Validate failed: %v", err)
 	}
 
-	if cfg.System.Checker.DiscoveryFlowMark == 0 {
-		t.Fatal("expected Validate to populate DiscoveryFlowMark")
+	if cfg.System.Checker.DiscoveryFlowMark != 0 || cfg.System.Checker.DiscoveryInjectedMark != 0 {
+		t.Fatal("Validate must leave the derived discovery marks unset, so that they follow a changed queue mark")
 	}
+
+	cfg.System.Checker.DiscoveryFlowMark = cfg.Queue.Mark + 1
+	cfg.System.Checker.DiscoveryInjectedMark = cfg.Queue.Mark + 2
 
 	data, err := MarshalSparse(&cfg)
 	if err != nil {
