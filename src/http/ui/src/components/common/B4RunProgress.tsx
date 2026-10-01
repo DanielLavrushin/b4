@@ -13,7 +13,15 @@ interface B4RunHeaderProps {
 }
 
 export const B4RunHeader = ({ title, subtitle, onStop, stopping = false, stopLabel, stoppingLabel }: B4RunHeaderProps) => (
-  <Stack direction="row" justifyContent="space-between" alignItems="flex-start" flexWrap="wrap" useFlexGap spacing={2}>
+  <Stack
+    direction="row"
+    useFlexGap
+    spacing={2}
+    sx={{
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      flexWrap: "wrap"
+    }}>
     <Box>
       <Typography sx={{ fontSize: 18, fontWeight: 600 }}>{title}</Typography>
       {subtitle && (

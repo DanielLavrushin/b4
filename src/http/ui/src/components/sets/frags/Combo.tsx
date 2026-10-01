@@ -39,7 +39,9 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
       <B4Hint>{t("sets.tcp.splitting.combo.alert")}</B4Hint>
 
       <Grid size={{ xs: 12 }}>
-        <Stack spacing={2} mt={1} direction={"row"}>
+        <Stack spacing={2} direction={"row"} sx={{
+          mt: 1
+        }}>
           <B4Switch
             label={t("sets.tcp.splitting.combo.firstByte")}
             checked={combo.first_byte_split}
@@ -84,10 +86,11 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
         >
           <Typography
             variant="caption"
-            color="text.secondary"
             component="div"
-            sx={{ mb: 1 }}
-          >
+            sx={{
+              color: "text.secondary",
+              mb: 1
+            }}>
             {t("sets.tcp.splitting.combo.segmentViz")}
           </Typography>
           <Box
@@ -167,9 +170,11 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
           </Box>
           <Typography
             variant="caption"
-            color="text.secondary"
-            sx={{ mt: 1, display: "block" }}
-          >
+            sx={{
+              color: "text.secondary",
+              mt: 1,
+              display: "block"
+            }}>
             {enabledSplits.length > 0
               ? t("sets.tcp.splitting.combo.activeSplits", {
                   splits: enabledSplits.join(" → "),
@@ -203,10 +208,11 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
           >
             <Typography
               variant="caption"
-              color="text.secondary"
               component="div"
-              sx={{ mb: 1 }}
-            >
+              sx={{
+                color: "text.secondary",
+                mb: 1
+              }}>
               {t("sets.tcp.splitting.combo.decoyHow")}
             </Typography>
             <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>

@@ -39,10 +39,11 @@ export const DomainsControlBar = ({
       <Stack
         direction="row"
         spacing={2}
-        alignItems="center"
-        flexWrap="wrap"
         useFlexGap
-      >
+        sx={{
+          alignItems: "center",
+          flexWrap: "wrap"
+        }}>
         <TextField
           size="small"
           placeholder={t("connections.controlBar.filterPlaceholder")}
@@ -61,7 +62,9 @@ export const DomainsControlBar = ({
           }}
         />
         {(filter || sortColumn) && (
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack direction="row" spacing={1} sx={{
+            alignItems: "center"
+          }}>
             {filter && (
               <B4Badge label={t("core.matching", { count: filteredCount })} variant="outlined" />
             )}

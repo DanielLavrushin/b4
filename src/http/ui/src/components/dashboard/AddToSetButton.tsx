@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { IconButton, Tooltip, Menu, MenuItem } from "@mui/material";
-import { AddCircleOutline as AddIcon } from "@mui/icons-material";
+import { AddCircleOutlineOutlined as AddIcon } from "@mui/icons-material";
 import { colors } from "@design";
 import { B4SetConfig } from "@models/config";
 import { setsApi } from "@b4.sets";

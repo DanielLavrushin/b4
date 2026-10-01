@@ -89,12 +89,13 @@ export const ResultsPanel = ({
     <Stack spacing={2}>
       <Stack
         direction="row"
-        justifyContent="space-between"
-        alignItems="flex-start"
-        flexWrap="wrap"
         useFlexGap
         spacing={2}
-      >
+        sx={{
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          flexWrap: "wrap"
+        }}>
         <Box>
           <Typography sx={{ fontSize: 18, fontWeight: 600 }}>
             {headline}
@@ -338,7 +339,12 @@ const FoundCard = ({
             <B4Alert severity="warning">{t("discovery.results.noSet")}</B4Alert>
           )}
         </Box>
-        <Stack spacing={1} alignItems="flex-end" sx={{ flexShrink: 0 }}>
+        <Stack
+          spacing={1}
+          sx={{
+            alignItems: "flex-end",
+            flexShrink: 0
+          }}>
           <Button
             variant="contained"
             startIcon={

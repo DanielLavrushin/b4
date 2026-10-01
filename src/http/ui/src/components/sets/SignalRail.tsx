@@ -191,10 +191,11 @@ export const FacetDrawer = ({ facet, onEdit }: FacetDrawerProps) => {
     >
       <Stack
         direction="row"
-        alignItems="center"
         spacing={spacing.xs}
-        sx={{ mb: spacing.sm }}
-      >
+        sx={{
+          alignItems: "center",
+          mb: spacing.sm
+        }}>
         <Box
           sx={{
             display: "flex",
@@ -272,11 +273,12 @@ export const FacetDrawer = ({ facet, onEdit }: FacetDrawerProps) => {
       ) : (
         <Stack
           direction="row"
-          alignItems="center"
           spacing={spacing.sm}
-          flexWrap="wrap"
           useFlexGap
-        >
+          sx={{
+            alignItems: "center",
+            flexWrap: "wrap"
+          }}>
           <Typography sx={{ ...valueStyle, color: colors.text.disabled }}>
             {t("sets.card.f.notConfigured")}
           </Typography>
@@ -329,18 +331,17 @@ export const FacetCompareBar = ({
   return (
     <Stack
       direction="row"
-      alignItems="center"
-      flexWrap="wrap"
-      gap={spacing.sm}
       sx={{
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: spacing.sm,
         px: spacing.md,
         py: spacing.sm,
         mb: spacing.md,
         borderRadius: radius.md,
         border: `1px solid ${colors.border.light}`,
-        bgcolor: colors.background.paper,
-      }}
-    >
+        bgcolor: colors.background.paper
+      }}>
       <Typography
         sx={{
           ...labelStyle,

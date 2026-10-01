@@ -357,7 +357,12 @@ export const AddIpDialog = ({
             borderRadius: radius.sm,
           }}
         >
-          <Stack direction="row" alignItems="flex-start" gap={1.5}>
+          <Stack
+            direction="row"
+            sx={{
+              alignItems: "flex-start",
+              gap: 1.5
+            }}>
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <Typography sx={{ ...typography.recipes.metricLabel, mb: 0.5 }}>
                 {t("connections.addIp.address")}
@@ -521,7 +526,12 @@ export const AddIpDialog = ({
                   >
                     {t("connections.addIp.severalOrigins", { ip })}
                   </Typography>
-                  <Stack direction="row" gap={0.75} flexWrap="wrap">
+                  <Stack
+                    direction="row"
+                    sx={{
+                      gap: 0.75,
+                      flexWrap: "wrap"
+                    }}>
                     {origins.map((o) => (
                       <B4Badge
                         key={o.id}
@@ -569,7 +579,13 @@ const NetworkSummary = ({ loading, prefix, origins }: NetworkSummaryProps) => {
   const { t } = useTranslation();
   if (loading) {
     return (
-      <Stack direction="row" alignItems="center" gap={1} sx={{ mt: 1 }}>
+      <Stack
+        direction="row"
+        sx={{
+          alignItems: "center",
+          gap: 1,
+          mt: 1
+        }}>
         <CircularProgress size={14} sx={{ color: colors.secondary }} />
         <Typography variant="caption" sx={{ color: colors.text.secondary }}>
           {t("connections.addIp.lookupLoading")}
@@ -636,10 +652,13 @@ const IpInfoSummary = ({ info, onAddHostname }: IpInfoSummaryProps) => {
   return (
     <Stack
       direction="row"
-      alignItems="center"
-      gap={1.5}
-      sx={{ mt: 1.5, pt: 1.5, borderTop: `1px solid ${colors.border.light}` }}
-    >
+      sx={{
+        alignItems: "center",
+        gap: 1.5,
+        mt: 1.5,
+        pt: 1.5,
+        borderTop: `1px solid ${colors.border.light}`
+      }}>
       <Stack spacing={0.25} sx={{ flex: 1, minWidth: 0 }}>
         {info.org && <SummaryLine label={t("connections.addIp.org")} value={info.org} />}
         {info.hostname && (
@@ -683,7 +702,14 @@ const AsnDetails = ({
   const { t } = useTranslation();
   if (resolving) {
     return (
-      <Stack direction="row" alignItems="center" gap={1} sx={{ px: 2, pb: 1.5 }}>
+      <Stack
+        direction="row"
+        sx={{
+          alignItems: "center",
+          gap: 1,
+          px: 2,
+          pb: 1.5
+        }}>
         <CircularProgress size={14} sx={{ color: colors.secondary }} />
         <Typography variant="caption" sx={{ color: colors.text.secondary }}>
           {t("connections.addIp.asnResolving", { asn })}

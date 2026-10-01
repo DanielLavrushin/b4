@@ -428,10 +428,11 @@ const LookupResult = ({ lookup, busy, inSet, onAdd }: LookupResultProps) => {
               <Stack
                 key={origin.id}
                 direction="row"
-                alignItems="center"
-                justifyContent="space-between"
-                gap={1}
-              >
+                sx={{
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 1
+                }}>
                 <Box sx={{ minWidth: 0 }}>
                   <Typography
                     component="span"
@@ -519,9 +520,20 @@ const AsnRow = ({
         borderRadius: radius.sm,
       }}
     >
-      <Stack direction="row" alignItems="flex-start" gap={1}>
+      <Stack
+        direction="row"
+        sx={{
+          alignItems: "flex-start",
+          gap: 1
+        }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+          <Stack
+            direction="row"
+            sx={{
+              alignItems: "center",
+              gap: 1,
+              flexWrap: "wrap"
+            }}>
             <Typography
               sx={{
                 ...typography.recipes.monoSmall,
@@ -599,7 +611,12 @@ const AsnRow = ({
           )}
         </Box>
 
-        <Stack direction="row" alignItems="center" sx={{ flexShrink: 0 }}>
+        <Stack
+          direction="row"
+          sx={{
+            alignItems: "center",
+            flexShrink: 0
+          }}>
           <Tooltip title={t("sets.targets.asn.refresh")}>
             <span>
               <IconButton

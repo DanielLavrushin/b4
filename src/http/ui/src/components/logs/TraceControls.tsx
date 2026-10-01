@@ -37,12 +37,14 @@ export function TraceControls({
 
   if (tracing) {
     return (
-      <Stack direction="row" spacing={1.5} alignItems="center">
+      <Stack direction="row" spacing={1.5} sx={{
+        alignItems: "center"
+      }}>
         <Stack
           direction="row"
           spacing={1}
-          alignItems="center"
           sx={{
+            alignItems: "center",
             px: 1.25,
             py: 0.5,
             borderRadius: 1,
@@ -51,9 +53,8 @@ export function TraceControls({
             fontFamily: fonts.mono,
             fontSize: 12,
             color: colors.text.primary,
-            whiteSpace: "nowrap",
-          }}
-        >
+            whiteSpace: "nowrap"
+          }}>
           <Box
             sx={{
               width: 9,
@@ -90,7 +91,9 @@ export function TraceControls({
   }
 
   return (
-    <Stack direction="row" spacing={0.5} alignItems="center">
+    <Stack direction="row" spacing={0.5} sx={{
+      alignItems: "center"
+    }}>
       <Button
         size="small"
         variant="contained"

@@ -178,7 +178,9 @@ export const FlagBadges = ({ flags }: FlagBadgesProps) => {
     return null;
 
   return (
-    <Stack direction="row" spacing={0.5} alignItems="center">
+    <Stack direction="row" spacing={0.5} sx={{
+      alignItems: "center"
+    }}>
       {dnsVerdict && <DnsBadge verdict={dnsVerdict} />}
       {isMtproto && (
         <B4Badge
@@ -246,7 +248,9 @@ export const ProtocolChip = ({ protocol, flags }: ProtocolChipProps) => {
   const icon = protocol === "TCP" ? <TcpIcon /> : <UdpIcon />;
 
   return (
-    <Stack direction="row" spacing={0.5} alignItems="center">
+    <Stack direction="row" spacing={0.5} sx={{
+      alignItems: "center"
+    }}>
       <B4Badge
         icon={icon}
         label={protocol}

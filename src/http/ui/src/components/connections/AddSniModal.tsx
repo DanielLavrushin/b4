@@ -86,7 +86,12 @@ export const AddSniModal = ({
         <B4Alert severity="info" sx={{ mb: 2 }}>
           {t("connections.addDomain.alert")}
         </B4Alert>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        <Typography
+          variant="body2"
+          sx={{
+            color: "text.secondary",
+            mb: 1
+          }}>
           {t("connections.addDomain.originalDomain")} <B4Badge label={domain} color="primary" />
         </Typography>
         {!createNewSet && sets.length > 0 && (

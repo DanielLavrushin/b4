@@ -520,18 +520,20 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
           <Stack
             direction="row"
             spacing={4}
-            alignItems="center"
-            justifyContent="space-between"
-            flexWrap="wrap"
             useFlexGap
-          >
+            sx={{
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap"
+            }}>
             <Stack
               direction="row"
               spacing={4}
-              flexWrap="wrap"
               useFlexGap
-              sx={{ rowGap: 1.5 }}
-            >
+              sx={{
+                flexWrap: "wrap",
+                rowGap: 1.5
+              }}>
               <StatItem
                 value={summaryStats.total}
                 label={t("sets.manager.totalSets")}
@@ -554,10 +556,11 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
             <Stack
               direction="row"
               spacing={2}
-              alignItems="center"
-              flexWrap="wrap"
               useFlexGap
-            >
+              sx={{
+                alignItems: "center",
+                flexWrap: "wrap"
+              }}>
               {sets.length > 0 && !selectionMode && (
                 <Tooltip title={t("sets.manager.toggleAllTooltip")}>
                   <FormControlLabel
@@ -775,10 +778,14 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                   minWidth: 280,
                 }}
               >
-                <Typography variant="h6" fontWeight={600}>
+                <Typography variant="h6" sx={{
+                  fontWeight: 600
+                }}>
                   {activeSet.name}
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" sx={{
+                  color: "text.secondary"
+                }}>
                   {activeSet.fragmentation.strategy.toUpperCase()}
                 </Typography>
               </Box>
@@ -802,7 +809,11 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
             <Typography variant="h6" sx={{ mb: 1, color: colors.text.primary }}>
               {t("sets.manager.noSets")}
             </Typography>
-            <Typography color="text.secondary" sx={{ mb: 3 }}>
+            <Typography
+              sx={{
+                color: "text.secondary",
+                mb: 3
+              }}>
               {t("sets.manager.noSetsHint")}
             </Typography>
             <Button
@@ -825,7 +836,9 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
               borderRadius: radius.md,
             }}
           >
-            <Typography color="text.secondary">
+            <Typography sx={{
+              color: "text.secondary"
+            }}>
               {t("sets.manager.noMatch")} "{filterText}"
             </Typography>
           </Paper>
@@ -922,12 +935,21 @@ interface StatItemProps {
 }
 
 const StatItem = ({ value, label, color, icon }: StatItemProps) => (
-  <Stack direction="row" alignItems="center" spacing={1}>
+  <Stack direction="row" spacing={1} sx={{
+    alignItems: "center"
+  }}>
     {icon && <Box sx={{ color, display: "flex" }}>{icon}</Box>}
-    <Typography variant="h5" fontWeight={700} sx={{ color }}>
+    <Typography
+      variant="h5"
+      sx={{
+        fontWeight: 700,
+        color
+      }}>
       {value}
     </Typography>
-    <Typography variant="body2" color="text.secondary">
+    <Typography variant="body2" sx={{
+      color: "text.secondary"
+    }}>
       {label}
     </Typography>
   </Stack>

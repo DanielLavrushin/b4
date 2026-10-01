@@ -82,7 +82,12 @@ export function WatchdogMonitor() {
             {t("watchdog.project")}
           </B4Alert>
 
-          <Stack direction="row" justifyContent="space-between" alignItems="center">
+          <Stack
+            direction="row"
+            sx={{
+              justifyContent: "space-between",
+              alignItems: "center"
+            }}>
             <B4Badge
               label={state.enabled ? t("watchdog.enabled") : t("watchdog.disabled")}
               color={state.enabled ? "primary" : "default"}

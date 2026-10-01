@@ -78,7 +78,9 @@ const HonestyCell = ({ provider }: { provider: DNSProvider }) => {
   const groups = honestyGroups(provider);
   if (groups.length === 0) return <Typography variant="caption" sx={{ color: colors.text.disabled }}>-</Typography>;
   return (
-    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+    <Stack direction="row" spacing={0.5} useFlexGap sx={{
+      flexWrap: "wrap"
+    }}>
       {groups.map((g) => {
         const verdict = t(`detector.dns.honesty.${g.honesty}`);
         return (

@@ -173,7 +173,9 @@ export function SetsPage() {
   if (loading || !config) {
     return (
       <Backdrop open sx={{ zIndex: 9999 }}>
-        <Stack alignItems="center" spacing={2}>
+        <Stack spacing={2} sx={{
+          alignItems: "center"
+        }}>
           <CircularProgress sx={{ color: colors.secondary }} />
           <Typography sx={{ color: colors.text.primary }}>
             {t("core.loading")}

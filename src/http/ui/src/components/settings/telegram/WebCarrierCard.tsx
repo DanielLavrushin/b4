@@ -104,7 +104,12 @@ export const WebCarrierCard = ({ config, onChange }: WebCarrierCardProps) => {
       </Grid>
       {port > 0 && (
         <B4Accordion title={t("settings.MTProto.webProxyTlsTitle")}>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          <Typography
+            variant="body2"
+            sx={{
+              color: "text.secondary",
+              mb: 2
+            }}>
             {t("settings.MTProto.webProxyTlsDesc")}
           </Typography>
           <Grid container spacing={2}>

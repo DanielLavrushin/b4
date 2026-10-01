@@ -60,14 +60,13 @@ export const DeviceSidebar = memo<Props>(
     >
       <Stack
         direction="row"
-        alignItems="center"
         sx={{
+          alignItems: "center",
           px: 2,
           height: 32,
           borderBottom: `2px solid ${colors.border.default}`,
-          bgcolor: colors.background.paper,
-        }}
-      >
+          bgcolor: colors.background.paper
+        }}>
         <Typography sx={{ color: colors.secondary, fontWeight: 600, fontSize: 14, flex: 1 }}>
           {t("connections.aggregated.devices")}
         </Typography>
@@ -87,7 +86,13 @@ export const DeviceSidebar = memo<Props>(
             "&.Mui-selected:hover": { bgcolor: colors.accent.primaryHover },
           }}
         >
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ width: "100%" }}>
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{
+              alignItems: "center",
+              width: "100%"
+            }}>
             <DeviceIcon sx={{ fontSize: 16, color: colors.text.disabled }} />
             <Typography sx={{ flex: 1, fontSize: 13 }}>
               {t("connections.aggregated.allDevices")}
@@ -113,7 +118,9 @@ export const DeviceSidebar = memo<Props>(
               }}
             >
               <Stack sx={{ width: "100%" }} spacing={0.2}>
-                <Stack direction="row" spacing={1} alignItems="center">
+                <Stack direction="row" spacing={1} sx={{
+                  alignItems: "center"
+                }}>
                   <Typography
                     sx={{
                       flex: 1,
@@ -132,7 +139,9 @@ export const DeviceSidebar = memo<Props>(
                     {formatRelativeShort(t, d.lastSeen, now)}
                   </Typography>
                 </Stack>
-                <Stack direction="row" spacing={1} alignItems="center">
+                <Stack direction="row" spacing={1} sx={{
+                  alignItems: "center"
+                }}>
                   <Box sx={{ flex: 1, minWidth: 0 }}>
                     <Sparkline data={d.buckets} width={100} height={16} />
                   </Box>

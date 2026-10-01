@@ -179,21 +179,24 @@ export const SetEditorPage = ({
           {/* Action bar */}
           <Stack
             direction="row"
-            justifyContent="space-between"
-            alignItems="center"
-            flexWrap="wrap"
             useFlexGap
             spacing={1}
-            sx={{ mb: 2 }}
-          >
+            sx={{
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              mb: 2
+            }}>
             <Stack
               direction="row"
               spacing={2}
-              alignItems="center"
-              flexWrap="wrap"
               useFlexGap
-              sx={{ flex: 1, minWidth: 0 }}
-            >
+              sx={{
+                alignItems: "center",
+                flexWrap: "wrap",
+                flex: 1,
+                minWidth: 0
+              }}>
               <Button
                 startIcon={<ArrowBackIcon />}
                 onClick={handleBack}
@@ -233,7 +236,9 @@ export const SetEditorPage = ({
               )}
             </Stack>
 
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Stack direction="row" spacing={1} useFlexGap sx={{
+              flexWrap: "wrap"
+            }}>
               <Button
                 size="small"
                 variant="outlined"

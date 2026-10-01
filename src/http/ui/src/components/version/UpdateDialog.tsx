@@ -258,9 +258,11 @@ export const UpdateModal = ({
           <Stack
             direction="row"
             spacing={2}
-            alignItems="center"
-            sx={{ mb: 2, mt: 2 }}
-          >
+            sx={{
+              alignItems: "center",
+              mb: 2,
+              mt: 2
+            }}>
             <FormControl size="small" sx={{ minWidth: 220 }}>
               <InputLabel>{t("update.selectVersion")}</InputLabel>
               <Select
@@ -436,10 +438,11 @@ export const UpdateModal = ({
       <Stack
         direction="row"
         spacing={2}
-        justifyContent="center"
-        flexWrap="wrap"
         useFlexGap
-      >
+        sx={{
+          justifyContent: "center",
+          flexWrap: "wrap"
+        }}>
         <Button
           variant="outlined"
           startIcon={<DescriptionIcon />}

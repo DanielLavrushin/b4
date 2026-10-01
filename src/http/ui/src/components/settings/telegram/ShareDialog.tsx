@@ -271,7 +271,9 @@ export const ShareDialog = ({
 
         {candidates.length > 0 && (
           <Box>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" sx={{
+              color: "text.secondary"
+            }}>
               {t("settings.MTProto.shareCandidates")}
             </Typography>
             <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mt: 0.5 }}>
@@ -300,9 +302,16 @@ export const ShareDialog = ({
         )}
 
         {detecting && (
-          <Stack direction="row" alignItems="center" gap={1}>
+          <Stack
+            direction="row"
+            sx={{
+              alignItems: "center",
+              gap: 1
+            }}>
             <CircularProgress size={16} />
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" sx={{
+              color: "text.secondary"
+            }}>
               {t(
                 addresses.isLoading
                   ? "settings.MTProto.shareDetecting"

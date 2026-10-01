@@ -115,7 +115,9 @@ function DomainRow({
     >
       <TableCell>
         <Tooltip title={domain.domain === domain.display_domain ? "" : domain.domain}>
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack direction="row" spacing={1} sx={{
+            alignItems: "center"
+          }}>
             <StatusIcon status={domain.status} />
             <Typography variant="body2" sx={{ fontWeight: 500 }}>
               {domain.display_domain || domain.domain}
@@ -127,7 +129,9 @@ function DomainRow({
         {domain.matched_set ? (
           <B4Badge label={domain.matched_set} variant="outlined" />
         ) : (
-          <Typography variant="body2" color="text.secondary">-</Typography>
+          <Typography variant="body2" sx={{
+            color: "text.secondary"
+          }}>-</Typography>
         )}
       </TableCell>
       <TableCell>
@@ -147,7 +151,9 @@ function DomainRow({
       </TableCell>
       <TableCell>
         <Tooltip title={fullTime(domain.last_check)}>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" sx={{
+            color: "text.secondary"
+          }}>
             {timeAgo(t, domain.last_check)}
           </Typography>
         </Tooltip>
@@ -160,7 +166,9 @@ function DomainRow({
             variant="outlined"
           />
         ) : (
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" sx={{
+            color: "text.secondary"
+          }}>
             0
           </Typography>
         )}
@@ -176,16 +184,19 @@ function DomainRow({
             />
           </Tooltip>
         ) : (
-          <Typography variant="body2" color="text.secondary">-</Typography>
+          <Typography variant="body2" sx={{
+            color: "text.secondary"
+          }}>-</Typography>
         )}
       </TableCell>
       <TableCell align="right">
         <Stack
           direction="row"
           spacing={0.5}
-          justifyContent="flex-end"
-          alignItems="center"
-        >
+          sx={{
+            justifyContent: "flex-end",
+            alignItems: "center"
+          }}>
           {domain.owner_set_id && !watchedBy && (
             <Tooltip
               title={
@@ -306,12 +317,16 @@ export function DomainsSection({
       icon={<DomainIcon />}
     >
       <Stack spacing={2}>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" sx={{
+          color: "text.secondary"
+        }}>
           {t("watchdog.domains.explain")}
         </Typography>
 
         {enabled && domains.length > 0 && (
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          <Stack direction="row" spacing={1} useFlexGap sx={{
+            flexWrap: "wrap"
+          }}>
             {healthyCount > 0 && (
               <B4Badge
                 label={`${healthyCount} ${t("watchdog.status.healthy")}`}
@@ -337,7 +352,9 @@ export function DomainsSection({
         )}
 
         {enabled && (
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack direction="row" spacing={1} sx={{
+            alignItems: "center"
+          }}>
             <B4TextField
               size="small"
               value={newDomain}

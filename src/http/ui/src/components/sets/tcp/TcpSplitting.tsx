@@ -110,9 +110,11 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
             </Typography>
             <Typography
               variant="caption"
-              color="text.secondary"
-              sx={{ mb: 1, display: "block" }}
-            >
+              sx={{
+                color: "text.secondary",
+                mb: 1,
+                display: "block"
+              }}>
               {t("sets.tcp.splitting.strategyPoolDesc")}
             </Typography>
           </Box>

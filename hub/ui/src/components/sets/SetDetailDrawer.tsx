@@ -35,7 +35,9 @@ interface SetDetailDrawerProps {
 function VersionActions({ entry, moderation }: { entry: EntryView; moderation: Moderation }) {
   const { t } = useTranslation();
   return (
-    <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+    <Stack direction="row" spacing={1} useFlexGap sx={{
+      flexWrap: "wrap"
+    }}>
       {entry.status === "pending" && (
         <>
           <Button size="small" variant="contained" color="success" disabled={moderation.busy} onClick={() => moderation.approve(entry)}>

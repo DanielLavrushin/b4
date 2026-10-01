@@ -55,7 +55,12 @@ export const WebProxyPagePanel = ({
       <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
         {t("settings.MTProto.webProxyPageTitle")}
       </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+      <Typography
+        variant="body2"
+        sx={{
+          color: "text.secondary",
+          mb: 1
+        }}>
         {t("settings.MTProto.webProxyPageDesc")}
       </Typography>
       <Typography variant="body2" sx={{ mb: 1 }}>

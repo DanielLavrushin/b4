@@ -246,7 +246,9 @@ export const DiscoveryTab = ({
           </Typography>
         )}
 
-        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+        <Stack direction="row" spacing={1} useFlexGap sx={{
+          flexWrap: "wrap"
+        }}>
           <Button
             variant="outlined"
             startIcon={

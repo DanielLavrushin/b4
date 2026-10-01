@@ -117,7 +117,12 @@ export const RestartDialog = ({ open, onClose }: RestartDialogProps) => {
       case "restarting":
       case "waiting":
         return (
-          <Stack spacing={3} alignItems="center" sx={{ py: 4 }}>
+          <Stack
+            spacing={3}
+            sx={{
+              alignItems: "center",
+              py: 4
+            }}>
             <Box
               sx={{
                 p: 2,
@@ -162,7 +167,12 @@ export const RestartDialog = ({ open, onClose }: RestartDialogProps) => {
 
       case "success":
         return (
-          <Stack spacing={3} alignItems="center" sx={{ py: 4 }}>
+          <Stack
+            spacing={3}
+            sx={{
+              alignItems: "center",
+              py: 4
+            }}>
             <Box
               sx={{
                 p: 2,
@@ -191,7 +201,12 @@ export const RestartDialog = ({ open, onClose }: RestartDialogProps) => {
 
       case "error":
         return (
-          <Stack spacing={3} alignItems="center" sx={{ py: 4 }}>
+          <Stack
+            spacing={3}
+            sx={{
+              alignItems: "center",
+              py: 4
+            }}>
             <Box
               sx={{
                 p: 2,

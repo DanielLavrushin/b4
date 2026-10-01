@@ -21,7 +21,9 @@ export const ActiveSets = ({ sets }: ActiveSetsProps) => {
 
   return (
     <DashboardPanel eyebrow={t("dashboard.activeSets.title")} padded>
-      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+      <Stack direction="row" spacing={1} useFlexGap sx={{
+        flexWrap: "wrap"
+      }}>
         {sets.map((set) => {
           const domainCount =
             (set.targets.sni_domains?.length || 0) +

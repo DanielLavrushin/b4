@@ -185,7 +185,14 @@ export const VerdictPanel = ({ suite, running, onDiscovery, onCopy, onRunAgain }
           {body.join(" ")}
         </Typography>
         {counters.length > 0 && (
-          <Stack direction="row" spacing={3} sx={{ mt: 1.5 }} flexWrap="wrap" useFlexGap>
+          <Stack
+            direction="row"
+            spacing={3}
+            useFlexGap
+            sx={{
+              flexWrap: "wrap",
+              mt: 1.5
+            }}>
             {counters.map((c) => (
               <Box key={c.label}>
                 <Typography sx={{ fontSize: 22, fontWeight: 600, lineHeight: 1.1, color: c.color, fontVariantNumeric: "tabular-nums" }}>

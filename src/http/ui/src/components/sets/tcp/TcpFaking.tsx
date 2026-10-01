@@ -398,9 +398,11 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               </Typography>
               <Typography
                 variant="caption"
-                color="text.secondary"
-                sx={{ display: "block", mb: 1 }}
-              >
+                sx={{
+                  color: "text.secondary",
+                  display: "block",
+                  mb: 1
+                }}>
                 {t("sets.faking.fakeSni.tlsModDesc")}
               </Typography>
               <Stack direction="row" spacing={2}>
@@ -661,13 +663,17 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               <Typography variant="subtitle2" gutterBottom>
                 {t("sets.faking.window.customValues")}
               </Typography>
-              <Typography variant="caption" color="text.secondary" gutterBottom>
+              <Typography variant="caption" gutterBottom sx={{
+                color: "text.secondary"
+              }}>
                 {config.tcp.win.mode === "oscillate"
                   ? t("sets.faking.window.oscillateHint")
                   : t("sets.faking.window.randomHint")}
               </Typography>
 
-              <Grid container spacing={2} alignItems="center">
+              <Grid container spacing={2} sx={{
+                alignItems: "center"
+              }}>
                 <Grid size={{ xs: 12, md: 6 }}>
                   <Box
                     sx={{

@@ -334,12 +334,13 @@ export const MTProtoBridgeCard = ({
         <Stack spacing={1.5}>
           <Stack
             direction="row"
-            alignItems="center"
-            justifyContent="space-between"
             spacing={1}
             useFlexGap
-            flexWrap="wrap"
-          >
+            sx={{
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap"
+            }}>
             <Typography
               sx={{
                 fontFamily: fonts.mono,
@@ -351,7 +352,9 @@ export const MTProtoBridgeCard = ({
             >
               {t(K("statusTitle"))}
             </Typography>
-            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+            <Stack direction="row" spacing={1} useFlexGap sx={{
+              flexWrap: "wrap"
+            }}>
               <Button
                 size="small"
                 variant="outlined"
@@ -386,7 +389,9 @@ export const MTProtoBridgeCard = ({
           </Stack>
 
           {status.isLoading && !data && (
-            <Stack direction="row" spacing={1} alignItems="center">
+            <Stack direction="row" spacing={1} sx={{
+              alignItems: "center"
+            }}>
               <CircularProgress size={14} sx={{ color: colors.secondary }} />
               <Typography variant="body2" sx={{ color: colors.text.secondary }}>
                 {t("core.loading")}

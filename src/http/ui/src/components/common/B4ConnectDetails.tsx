@@ -43,10 +43,11 @@ export const B4ConnectDetails = ({
       <Stack spacing={1.25}>
         <Stack
           direction="row"
-          alignItems="center"
-          justifyContent="space-between"
           spacing={1}
-        >
+          sx={{
+            alignItems: "center",
+            justifyContent: "space-between"
+          }}>
           <Typography
             sx={{
               fontFamily: fonts.mono,

@@ -364,7 +364,12 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
           columns={1}
         >
           <Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            <Typography
+              variant="body2"
+              sx={{
+                color: "text.secondary",
+                mb: 1
+              }}>
               {t("settings.Feature.masqueradeInterfaceDesc")}
             </Typography>
             <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
@@ -412,7 +417,12 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
             aiTopic="system.tables.dscp.value"
           />
           <Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            <Typography
+              variant="body2"
+              sx={{
+                color: "text.secondary",
+                mb: 1
+              }}>
               {t("settings.Feature.dscpInterfacesDesc")}
             </Typography>
             <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
@@ -468,7 +478,12 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
           columns={1}
         >
           <Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            <Typography
+              variant="body2"
+              sx={{
+                color: "text.secondary",
+                mb: 1
+              }}>
               {t("settings.Feature.networkInterfacesDesc")}
             </Typography>
             <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>

@@ -54,7 +54,9 @@ interface SetsSectionProps {
 }
 
 const Muted = ({ children }: Readonly<{ children: React.ReactNode }>) => (
-  <Typography variant="body2" color="text.secondary">
+  <Typography variant="body2" sx={{
+    color: "text.secondary"
+  }}>
     {children}
   </Typography>
 );
@@ -150,7 +152,9 @@ function UrlTable({
               </TableCell>
               <TableCell>
                 <Tooltip title={fullTime(u.last_check)}>
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography variant="body2" sx={{
+                    color: "text.secondary"
+                  }}>
                     {timeAgo(t, u.last_check)}
                   </Typography>
                 </Tooltip>
@@ -247,7 +251,9 @@ function SetRow({
           <Stack spacing={0.25}>
             {reasonText && <Typography variant="body2">{reasonText}</Typography>}
             {entry.consecutive_failures > 0 && (
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" sx={{
+                color: "text.secondary"
+              }}>
                 {t("watchdog.sets.failedChecks", {
                   count: entry.consecutive_failures,
                 })}
@@ -271,14 +277,18 @@ function SetRow({
         </TableCell>
         <TableCell>
           <Tooltip title={fullTime(entry.last_check)}>
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" sx={{
+              color: "text.secondary"
+            }}>
               {timeAgo(t, entry.last_check)}
             </Typography>
           </Tooltip>
         </TableCell>
         <TableCell>
           <Tooltip title={fullTime(entry.last_heal)}>
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" sx={{
+              color: "text.secondary"
+            }}>
               {timeAgo(t, entry.last_heal)}
             </Typography>
           </Tooltip>
@@ -304,9 +314,10 @@ function SetRow({
             <Tooltip title={fullTime(entry.cooldown_until)}>
               <Typography
                 variant="body2"
-                color="text.secondary"
-                sx={{ whiteSpace: "nowrap" }}
-              >
+                sx={{
+                  color: "text.secondary",
+                  whiteSpace: "nowrap"
+                }}>
                 {t("watchdog.sets.until", {
                   time: clockTime(entry.cooldown_until),
                 })}
@@ -317,7 +328,9 @@ function SetRow({
           )}
         </TableCell>
         <TableCell align="right">
-          <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+          <Stack direction="row" spacing={0.5} sx={{
+            justifyContent: "flex-end"
+          }}>
             <Tooltip
               title={
                 enabled
@@ -419,7 +432,9 @@ export function SetsSection({
     >
       <Stack spacing={2}>
         {sets.length > 0 && (
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          <Stack direction="row" spacing={1} useFlexGap sx={{
+            flexWrap: "wrap"
+          }}>
             {healthy > 0 && (
               <B4Badge
                 label={`${healthy} ${t("watchdog.setStatus.healthy")}`}

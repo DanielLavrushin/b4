@@ -92,7 +92,14 @@ export function MirrorsPage() {
                   <TableCell sx={{ whiteSpace: "nowrap" }} title={formatStamp(m.last_seen)}>{formatAgo(t, m.last_seen)}</TableCell>
                   <TableCell><Health m={m} /></TableCell>
                   <TableCell align="right">
-                    <Stack direction="row" spacing={1} justifyContent="flex-end" useFlexGap flexWrap="wrap">
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      useFlexGap
+                      sx={{
+                        justifyContent: "flex-end",
+                        flexWrap: "wrap"
+                      }}>
                       {m.status !== "approved" && (
                         <Button size="small" variant="contained" color="success" disabled={moderation.busy} onClick={() => void moderation.approveMirror(m)}>
                           {t("mirrors.approve")}

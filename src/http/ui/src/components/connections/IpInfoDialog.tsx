@@ -103,7 +103,9 @@ export const IpInfoModal = ({
           <Stack spacing={2}>
             {ipInfo.org && (
               <Box>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" sx={{
+                  color: "text.secondary"
+                }}>
                   {t("connections.ipInfo.organization")}
                 </Typography>
                 <Typography variant="body1">
@@ -120,20 +122,28 @@ export const IpInfoModal = ({
 
             {ipInfo.hostname && (
               <Box>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" sx={{
+                  color: "text.secondary"
+                }}>
                   {t("connections.ipInfo.hostname")}
                 </Typography>
-                <Typography variant="body1" fontFamily="monospace">
+                <Typography variant="body1" sx={{
+                  fontFamily: "monospace"
+                }}>
                   <B4Badge label={ipInfo.hostname} color="secondary" />
                 </Typography>
               </Box>
             )}
 
             <Box>
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" sx={{
+                color: "text.secondary"
+              }}>
                 {t("connections.ipInfo.ipAddress")}
               </Typography>
-              <Typography variant="body1" fontFamily="monospace">
+              <Typography variant="body1" sx={{
+                fontFamily: "monospace"
+              }}>
                 <a
                   href={`https://ipinfo.io/${encodeURIComponent(ipInfo.ip)}`}
                   target="_blank"
@@ -146,7 +156,9 @@ export const IpInfoModal = ({
 
             {(ipInfo.city || ipInfo.region || ipInfo.country) && (
               <Box>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" sx={{
+                  color: "text.secondary"
+                }}>
                   {t("connections.ipInfo.location")}
                 </Typography>
                 <Typography variant="body1">{ipInfoLocation(ipInfo)}</Typography>
@@ -155,10 +167,14 @@ export const IpInfoModal = ({
 
             {ipInfo.loc && (
               <Box>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" sx={{
+                  color: "text.secondary"
+                }}>
                   {t("connections.ipInfo.coordinates")}
                 </Typography>
-                <Typography variant="body1" fontFamily="monospace">
+                <Typography variant="body1" sx={{
+                  fontFamily: "monospace"
+                }}>
                   {ipInfo.loc}
                 </Typography>
               </Box>
@@ -166,7 +182,9 @@ export const IpInfoModal = ({
 
             {ipInfo.timezone && (
               <Box>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" sx={{
+                  color: "text.secondary"
+                }}>
                   {t("connections.ipInfo.timezone")}
                 </Typography>
                 <Typography variant="body1">{ipInfo.timezone}</Typography>
@@ -175,7 +193,9 @@ export const IpInfoModal = ({
 
             {ipInfo.postal && (
               <Box>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" sx={{
+                  color: "text.secondary"
+                }}>
                   {t("connections.ipInfo.postalCode")}
                 </Typography>
                 <Typography variant="body1">{ipInfo.postal}</Typography>

@@ -121,7 +121,13 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
 
       {/* Packet Duplication */}
       <B4FormHeader label={t("sets.tcp.general.packetDuplication")} />
-      <Grid container spacing={3} mb={3} mt={2}>
+      <Grid
+        container
+        spacing={3}
+        sx={{
+          mb: 3,
+          mt: 2
+        }}>
         <Grid size={{ xs: 12, md: 4 }}>
           <B4Switch
             label={t("sets.tcp.general.dupEnable")}
@@ -154,7 +160,13 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
 
       {/* IP Block Detection */}
       <B4FormHeader label={t("sets.tcp.general.ipBlockDetect")} />
-      <Grid container spacing={3} mb={3} mt={2}>
+      <Grid
+        container
+        spacing={3}
+        sx={{
+          mb: 3,
+          mt: 2
+        }}>
         <Grid size={{ xs: 12, md: 4 }}>
           <B4Switch
             label={t("sets.tcp.general.ibdEnable")}
@@ -286,7 +298,9 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
 
       {/* RST Protection */}
       <B4FormHeader label={t("sets.tcp.general.rstProtection")} />
-      <Grid container spacing={3} mt={2}>
+      <Grid container spacing={3} sx={{
+        mt: 2
+      }}>
         <Grid size={{ xs: 12, md: 4 }}>
           <B4Switch
             label={t("sets.tcp.general.rstEnable")}
@@ -322,7 +336,9 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
       </Grid>
 
       <B4FormHeader label={t("sets.tcp.general.mssClamp")} />
-      <Grid container spacing={3} mt={2}>
+      <Grid container spacing={3} sx={{
+        mt: 2
+      }}>
         <Grid size={{ xs: 12, md: 4 }}>
           <B4Switch
             label={t("sets.tcp.general.mssEnable")}

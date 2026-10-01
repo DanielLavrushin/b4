@@ -18,7 +18,14 @@ const Throughput = ({ tp }: { tp: TelegramThroughput }) => {
     .filter(Boolean)
     .join(", ");
   return (
-    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+    <Stack
+      direction="row"
+      spacing={1}
+      useFlexGap
+      sx={{
+        alignItems: "center",
+        flexWrap: "wrap"
+      }}>
       <StatusChip label={t(`detector.telegram.${tp.verdict}`)} color={telegramColor(tp.verdict)} />
       <Typography variant="body2" sx={{ color: colors.text.secondary }}>{detail}</Typography>
     </Stack>
@@ -34,7 +41,14 @@ export const TelegramPanel = ({ result }: { result: TelegramResult }) => {
         <Typography variant="caption" sx={{ color: colors.text.secondary, textTransform: "uppercase", letterSpacing: "0.05em" }}>
           {t("detector.telegram.datacenters")}
         </Typography>
-        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+        <Stack
+          direction="row"
+          spacing={1}
+          useFlexGap
+          sx={{
+            alignItems: "center",
+            flexWrap: "wrap"
+          }}>
           <StatusChip label={t("detector.telegram.dcReachable", { ok: result.dc_reachable, total: result.dc_total })} color={dcColor} />
           <Typography variant="body2" sx={{ color: colors.text.secondary }}>
             {(result.dc_pings ?? []).map((p) => `DC${p.dc} ${p.ok ? `${p.rtt_ms} ms` : t("detector.telegram.dcDown")}`).join(" · ")}

@@ -124,15 +124,14 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
   const row = (label: string, value: React.ReactNode) => (
     <Stack
       direction="row"
-      justifyContent="space-between"
-      alignItems="center"
       sx={{
+        justifyContent: "space-between",
+        alignItems: "center",
         py: 0.5,
         px: 1,
         "&:nth-of-type(odd)": { bgcolor: `${colors.background.dark}88` },
-        borderRadius: 1,
-      }}
-    >
+        borderRadius: 1
+      }}>
       <Typography
         variant="caption"
         sx={{ color: colors.text.secondary, minWidth: 140 }}
@@ -155,15 +154,14 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
   const monoRow = (label: string, value: string) => (
     <Stack
       direction="row"
-      justifyContent="space-between"
-      alignItems="center"
       sx={{
+        justifyContent: "space-between",
+        alignItems: "center",
         py: 0.5,
         px: 1,
         "&:nth-of-type(odd)": { bgcolor: `${colors.background.dark}88` },
-        borderRadius: 1,
-      }}
-    >
+        borderRadius: 1
+      }}>
       <Typography
         variant="caption"
         sx={{ color: colors.text.secondary, minWidth: 100 }}
@@ -205,10 +203,12 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
   const listRow = (name: string, right: React.ReactNode) => (
     <Stack
       direction="row"
-      justifyContent="space-between"
-      alignItems="center"
-      sx={{ py: 0.3, px: 1 }}
-    >
+      sx={{
+        justifyContent: "space-between",
+        alignItems: "center",
+        py: 0.3,
+        px: 1
+      }}>
       <Typography
         variant="caption"
         sx={{ color: colors.text.primary, fontFamily: "monospace" }}
@@ -247,7 +247,11 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
       }
     >
       {loading && (
-        <Stack alignItems="center" sx={{ py: 4 }}>
+        <Stack
+          sx={{
+            alignItems: "center",
+            py: 4
+          }}>
           <CircularProgress size={32} sx={{ color: colors.secondary }} />
         </Stack>
       )}
@@ -376,9 +380,10 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
                 <Stack
                   direction="row"
                   spacing={spacing.sm}
-                  alignItems="center"
-                  justifyContent="flex-end"
-                >
+                  sx={{
+                    alignItems: "center",
+                    justifyContent: "flex-end"
+                  }}>
                   <Typography
                     variant="caption"
                     sx={{
@@ -596,10 +601,13 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
             <Stack key={iface.name} sx={{ py: 0.3, px: 1 }}>
               <Stack
                 direction="row"
-                justifyContent="space-between"
-                alignItems="center"
-              >
-                <Stack direction="row" spacing={spacing.sm} alignItems="center">
+                sx={{
+                  justifyContent: "space-between",
+                  alignItems: "center"
+                }}>
+                <Stack direction="row" spacing={spacing.sm} sx={{
+                  alignItems: "center"
+                }}>
                   <Typography
                     variant="caption"
                     sx={{
@@ -667,9 +675,10 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
                   <Stack key={cap.name} spacing={0.3} sx={{ py: 0.3, px: 1 }}>
                     <Stack
                       direction="row"
-                      justifyContent="space-between"
-                      alignItems="center"
-                    >
+                      sx={{
+                        justifyContent: "space-between",
+                        alignItems: "center"
+                      }}>
                       <Typography
                         variant="caption"
                         sx={{
@@ -726,7 +735,9 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
           {data.tools.firewall.map((tool) =>
             listRow(
               tool.name,
-              <Stack direction="row" spacing={spacing.sm} alignItems="center">
+              <Stack direction="row" spacing={spacing.sm} sx={{
+                alignItems: "center"
+              }}>
                 {tool.found && tool.detail && (
                   <Typography
                     variant="caption"
@@ -744,7 +755,9 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
           {data.tools.required.map((tool) =>
             listRow(
               tool.name,
-              <Stack direction="row" spacing={spacing.sm} alignItems="center">
+              <Stack direction="row" spacing={spacing.sm} sx={{
+                alignItems: "center"
+              }}>
                 {!tool.found && tool.detail && (
                   <Typography
                     variant="caption"
@@ -762,7 +775,9 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
           {data.tools.optional.map((tool) =>
             listRow(
               tool.name,
-              <Stack direction="row" spacing={spacing.sm} alignItems="center">
+              <Stack direction="row" spacing={spacing.sm} sx={{
+                alignItems: "center"
+              }}>
                 {!tool.found && tool.detail && (
                   <Typography
                     variant="caption"
@@ -785,7 +800,9 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
                   <Stack
                     direction="row"
                     spacing={spacing.sm}
-                    alignItems="center"
+                    sx={{
+                      alignItems: "center"
+                    }}
                   >
                     <Typography
                       variant="caption"

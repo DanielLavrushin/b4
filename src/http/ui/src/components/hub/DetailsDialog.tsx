@@ -152,7 +152,11 @@ export const DetailsDialog = ({
     >
       <DialogContent sx={{ p: 0 }}>
         {loading && !set && (
-          <Stack alignItems="center" sx={{ py: 4 }}>
+          <Stack
+            sx={{
+              alignItems: "center",
+              py: 4
+            }}>
             <CircularProgress sx={{ color: colors.secondary }} />
           </Stack>
         )}
@@ -175,7 +179,9 @@ export const DetailsDialog = ({
               </Typography>
             )}
 
-            <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
+            <Stack direction="row" spacing={0.75} useFlexGap sx={{
+              flexWrap: "wrap"
+            }}>
               <B4Badge
                 label={t(`hub.status.set.${set.status}`, {
                   defaultValue: set.status,
@@ -339,10 +345,11 @@ export const DetailsDialog = ({
             <Box>
               <Stack
                 direction="row"
-                alignItems="center"
-                justifyContent="space-between"
-                sx={{ mb: 0.75 }}
-              >
+                sx={{
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  mb: 0.75
+                }}>
                 <Typography variant="subtitle2">
                   {t("hub.details.json")}
                 </Typography>

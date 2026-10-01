@@ -229,10 +229,11 @@ export const TrafficRouting = ({
             >
               <Typography
                 variant="caption"
-                color="text.secondary"
                 component="div"
-                sx={{ mb: 1.5 }}
-              >
+                sx={{
+                  color: "text.secondary",
+                  mb: 1.5
+                }}>
                 {t("sets.routing.flowDiagramLabel")}
               </Typography>
               <Box
@@ -309,9 +310,12 @@ export const TrafficRouting = ({
               </Box>
               <Typography
                 variant="caption"
-                color="text.secondary"
-                sx={{ mt: 1.5, display: "block", textAlign: "center" }}
-              >
+                sx={{
+                  color: "text.secondary",
+                  mt: 1.5,
+                  display: "block",
+                  textAlign: "center"
+                }}>
                 {isProxy
                   ? t("sets.routing.flowProxyCaption")
                   : isMTProtoWS
@@ -337,7 +341,12 @@ export const TrafficRouting = ({
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
               {t("sets.routing.sourceInterfaces")}
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            <Typography
+              variant="body2"
+              sx={{
+                color: "text.secondary",
+                mb: 1
+              }}>
               {t("sets.routing.sourceInterfacesDesc")}
             </Typography>
 
@@ -627,9 +636,11 @@ export const TrafficRouting = ({
             />
             <Typography
               variant="caption"
-              color="text.secondary"
-              sx={{ mt: 1, display: "block" }}
-            >
+              sx={{
+                color: "text.secondary",
+                mt: 1,
+                display: "block"
+              }}>
               {t("sets.routing.ipTtlDesc")}
             </Typography>
           </Grid>
