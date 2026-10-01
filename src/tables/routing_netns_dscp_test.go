@@ -270,6 +270,23 @@ func dscpChainStampCount(t *testing.T) int {
 	return 0
 }
 
+func dscpJumpCount(t *testing.T) int {
+	t.Helper()
+	out := netnsRun(t, "iptables", "-w", "-t", "mangle", "-L", "POSTROUTING", "-v", "-x", "-n")
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) > 2 && f[2] == dscpChainName {
+			n, err := strconv.Atoi(f[0])
+			if err != nil {
+				t.Fatalf("unparsable counter in %q", line)
+			}
+			return n
+		}
+	}
+	t.Fatalf("no jump to %s in mangle POSTROUTING:\n%s", dscpChainName, out)
+	return 0
+}
+
 func dscpAssertGone(t *testing.T, why string) {
 	t.Helper()
 	if _, err := run("iptables", "-w", "-t", "mangle", "-S", dscpChainName); err == nil {
@@ -339,11 +356,15 @@ func TestNetnsDSCPStampReachesTheWire(t *testing.T) {
 				if stampedBefore == 0 {
 					t.Fatalf("the stamp rule counted no packets, so the refresh check proves nothing")
 				}
+				jumpedBefore := dscpJumpCount(t)
 				if err := RefreshRules(cfg); err != nil {
 					t.Fatalf("RefreshRules: %v", err)
 				}
 				if got := dscpChainStampCount(t); got < stampedBefore {
 					t.Errorf("a refresh with unchanged DSCP settings rebuilt the stamp chain (counter %d -> %d)", stampedBefore, got)
+				}
+				if got := dscpJumpCount(t); got < jumpedBefore {
+					t.Errorf("a refresh with unchanged DSCP settings replaced the jump to %s (counter %d -> %d), so the capture jump sat above the stamp until the re-seat", dscpChainName, jumpedBefore, got)
 				}
 				dscpAssertSeated(t, "after RefreshRules")
 

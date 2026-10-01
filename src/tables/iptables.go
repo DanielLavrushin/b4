@@ -180,12 +180,13 @@ func (im *IPTablesManager) delAll(ipt, table, chain string, spec []string) {
 }
 
 type Rule struct {
-	manager *IPTablesManager
-	IPT     string
-	Table   string
-	Chain   string
-	Spec    []string
-	Action  string
+	manager   *IPTablesManager
+	IPT       string
+	Table     string
+	Chain     string
+	Spec      []string
+	Action    string
+	BelowDSCP bool
 }
 
 func (r Rule) Apply() error {
@@ -193,10 +194,15 @@ func (r Rule) Apply() error {
 		return nil
 	}
 	op := "-A"
+	var slot []string
 	if strings.ToUpper(r.Action) == "I" {
 		op = "-I"
+		if r.BelowDSCP {
+			slot = dscpCaptureSlot(r.IPT)
+		}
 	}
-	_, err := run(append([]string{r.IPT, "-w", "-t", r.Table, op, r.Chain}, r.Spec...)...)
+	args := append([]string{r.IPT, "-w", "-t", r.Table, op, r.Chain}, slot...)
+	_, err := run(append(args, r.Spec...)...)
 	if err != nil {
 		return fmt.Errorf("failed to apply rule [%s %s %s %s]: %w", r.IPT, r.Table, r.Chain, strings.Join(r.Spec, " "), err)
 	}
@@ -705,7 +711,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string) Manifest {
 		} else {
 			rules = append(rules,
 				Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "POSTROUTING", Action: "I",
-					Spec: []string{"-j", chainName}},
+					Spec: []string{"-j", chainName}, BelowDSCP: true},
 			)
 		}
 

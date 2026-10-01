@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -166,13 +167,13 @@ func applyDSCPIpt(cfg *config.Config, backend string, value int, ifaces []string
 			wanted = append(wanted, bin)
 			continue
 		}
-		im.teardownDSCPChain(bin)
 		if permanent {
+			im.teardownDSCPChain(bin)
 			errs = append(errs, fmt.Errorf("%s, so %s packets go out without the DSCP value: %w", bin, iptFamilyLabel(bin), err))
 			continue
 		}
 		wanted = append(wanted, bin)
-		errs = append(errs, fmt.Errorf("%s, so %s packets go out without the DSCP value until the firewall monitor retries: %w", bin, iptFamilyLabel(bin), err))
+		errs = append(errs, fmt.Errorf("%s could not finish the DSCP rules for %s packets, the firewall monitor tries again: %w", bin, iptFamilyLabel(bin), err))
 	}
 	if len(wanted) == 0 {
 		dscpApplied.Store(nil)
@@ -198,14 +199,27 @@ func (im *IPTablesManager) dscpChainMatches(bin string, specs [][]string) bool {
 	return true
 }
 
+var iptAbsentMarkers = []string{
+	"No chain/target/match",
+	"does not exist",
+	"do you need to insmod",
+	"Address family not supported",
+	"Protocol not supported",
+}
+
 func iptChainPresence(bin, table, chain string) (present, known bool) {
 	out, err := run(bin, "-w", "-t", table, "-S", chain)
 	if err == nil {
 		return true, true
 	}
+	if dscpTransient(out, err) {
+		return false, false
+	}
 	msg := iptErrText(out, err)
-	if strings.Contains(msg, "No chain/target/match") || strings.Contains(msg, "does not exist") {
-		return false, true
+	for _, marker := range iptAbsentMarkers {
+		if strings.Contains(msg, marker) {
+			return false, true
+		}
 	}
 	return false, false
 }
@@ -214,8 +228,9 @@ func (im *IPTablesManager) applyDSCPChain(bin string, specs [][]string) (bool, e
 	if !im.dscpChainMatches(bin, specs) {
 		if !im.existsChain(bin, "mangle", dscpChainName) {
 			if out, err := run(bin, "-w", "-t", "mangle", "-N", dscpChainName); err != nil {
-				present, known := iptChainPresence(bin, "mangle", dscpChainName)
-				permanent := !dscpTransient(out, err) && known && !present
+				present, _ := iptChainPresence(bin, "mangle", dscpChainName)
+				exists := present || strings.Contains(iptErrText(out, err), "already exists")
+				permanent := !dscpTransient(out, err) && !exists
 				return permanent, fmt.Errorf("could not create the mangle chain %s: %s", dscpChainName, iptErrText(out, err))
 			}
 		} else if out, err := run(bin, "-w", "-t", "mangle", "-F", dscpChainName); err != nil {
@@ -275,6 +290,21 @@ func dscpJumpPlacement(listing string) (jump, capture, copies int) {
 func dscpJumpSeated(listing string) bool {
 	jump, capture, copies := dscpJumpPlacement(listing)
 	return copies == 1 && (capture == 0 || jump < capture)
+}
+
+func dscpCaptureSlot(bin string) []string {
+	st := dscpApplied.Load()
+	if st == nil || st.backend == backendNFTables || !slices.Contains(st.bins, bin) {
+		return nil
+	}
+	listing, err := run(bin, "-w", "-t", "mangle", "-L", "POSTROUTING", "-n", "--line-numbers")
+	if err != nil {
+		return nil
+	}
+	if rules := iptListedRules(listing); len(rules) > 0 && rules[0].n == 1 && rules[0].target == dscpChainName {
+		return []string{"2"}
+	}
+	return nil
 }
 
 func iptSeatDSCPJump(bin string) error {

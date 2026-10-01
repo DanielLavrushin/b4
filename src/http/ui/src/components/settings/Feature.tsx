@@ -416,6 +416,23 @@ export const FeatureSettings = ({ config, onChange }: FeatureSettingsProps) => {
               {t("settings.Feature.dscpInterfacesDesc")}
             </Typography>
             <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+              {dscpInterfaces
+                .filter(
+                  (iface) => !(config.available_ifaces ?? []).includes(iface),
+                )
+                .map((iface) => (
+                  <B4Badge
+                    key={iface}
+                    label={`${iface} (${t("settings.Feature.dscpMissingIface")})`}
+                    onClick={
+                      skipTables
+                        ? undefined
+                        : () => handleDscpInterfaceToggle(iface)
+                    }
+                    variant="filled"
+                    color="error"
+                  />
+                ))}
               {(config.available_ifaces ?? []).map((iface) => (
                 <B4Badge
                   key={iface}

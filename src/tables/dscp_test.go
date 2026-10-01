@@ -534,7 +534,7 @@ func TestDSCPUnreadableSweepOfNothingIsNotRetried(t *testing.T) {
 	realRun := run
 	run = func(args ...string) (string, error) {
 		if args[0] == backendIP6Tables && len(args) > 4 && args[4] == "-S" {
-			return "ip6tables: Protocol not supported.", errors.New("exit status 1")
+			return "ip6tables v1.8.7 (nf_tables): Could not fetch rule set generation id: Invalid argument", errors.New("exit status 4")
 		}
 		return realRun(args...)
 	}
@@ -545,6 +545,209 @@ func TestDSCPUnreadableSweepOfNothingIsNotRetried(t *testing.T) {
 	f.calls = nil
 	if ensureDSCPLocked(dscpTestConfig(false, 0), false) || len(f.calls) != 0 {
 		t.Errorf("the monitor ran commands for a stamp that was never installed: %v", f.calls)
+	}
+}
+
+func TestDSCPFamilyTheKernelCannotServeIsDroppedOnce(t *testing.T) {
+	cases := []struct {
+		name     string
+		out      string
+		absent   bool
+		exitCode string
+	}{
+		{"IPv6 disabled at boot", "ip6tables v1.8.7 (legacy): can't initialize ip6tables table `mangle': Address family not supported by protocol\nPerhaps ip6tables or your kernel needs to be upgraded.", true, "exit status 3"},
+		{"ip6_tables not loaded", "ip6tables v1.4.21: can't initialize ip6tables table `mangle': iptables who? (do you need to insmod?)\nPerhaps ip6tables or your kernel needs to be upgraded.", true, "exit status 3"},
+		{"no IPv6 protocol", "ip6tables: Protocol not supported.", true, "exit status 1"},
+		{"an unknown refusal", "ip6tables v1.8.7 (nf_tables): Could not fetch rule set generation id: Invalid argument", false, "exit status 4"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFakeMangle(backendIPTables, backendIP6Tables)
+			installFakeMangle(t, f)
+			realRun := run
+			run = func(args ...string) (string, error) {
+				if args[0] == backendIP6Tables {
+					return tc.out, errors.New(tc.exitCode)
+				}
+				return realRun(args...)
+			}
+
+			cfg := dscpTestConfig(true, 7)
+			err := applyDSCPFor(cfg, backendIPTables)
+			if err == nil || !strings.Contains(err.Error(), "IPv6") {
+				t.Fatalf("the refused family must be reported, got %v", err)
+			}
+			st := dscpApplied.Load()
+			if st == nil || !reflect.DeepEqual(st.bins, []string{backendIPTables}) || st.pending {
+				t.Fatalf("only the IPv4 stamp should be wanted, with nothing pending: %+v", st)
+			}
+			f.calls = nil
+			if ensureDSCPLocked(cfg, false) {
+				t.Errorf("the monitor retried a family the kernel cannot serve")
+			}
+			if m := f.mutations(); len(m) != 0 {
+				t.Errorf("the monitor check changed the firewall: %v", m)
+			}
+
+			clearDSCPFor(dscpTestConfig(false, 7), backendIPTables)
+			if _, ok := f.chains[backendIPTables][dscpChainName]; ok {
+				t.Errorf("switching off left the IPv4 chain behind")
+			}
+			if stale := dscpStale.Load() != nil; stale == tc.absent {
+				t.Errorf("stale record after switching off = %v, want %v", stale, !tc.absent)
+			}
+		})
+	}
+}
+
+func TestDSCPTransientSeatFailureKeepsAnIntactChain(t *testing.T) {
+	f := newFakeMangle(backendIPTables)
+	f.chains[backendIPTables]["POSTROUTING"] = []string{"-j B4"}
+	installFakeMangle(t, f)
+	cfg := dscpTestConfig(true, 7)
+	if err := applyDSCPFor(cfg, backendIPTables); err != nil {
+		t.Fatalf("applyDSCPFor: %v", err)
+	}
+	chain := append([]string(nil), f.chains[backendIPTables][dscpChainName]...)
+
+	realRun := run
+	stall := true
+	run = func(args ...string) (string, error) {
+		if stall && len(args) > 5 && args[4] == "-L" && args[5] == "POSTROUTING" {
+			stall = false
+			return "", fmt.Errorf("command [%s] gave up after 15s: %w", strings.Join(args, " "), context.DeadlineExceeded)
+		}
+		return realRun(args...)
+	}
+	if err := applyDSCPFor(cfg, backendIPTables); err == nil {
+		t.Fatalf("a timed-out read must be reported")
+	}
+	if got := f.chains[backendIPTables]["POSTROUTING"]; !reflect.DeepEqual(got, []string{"-j B4_DSCP", "-j B4"}) {
+		t.Errorf("a timed-out read tore the working jump down: POSTROUTING = %v", got)
+	}
+	if got := f.chains[backendIPTables][dscpChainName]; !reflect.DeepEqual(got, chain) {
+		t.Errorf("a timed-out read tore the working chain down: %v", got)
+	}
+	if st := dscpApplied.Load(); st == nil || !st.pending {
+		t.Fatalf("a timed-out read must leave the stamp pending for the monitor: %+v", st)
+	}
+	if !ensureDSCPLocked(cfg, false) {
+		t.Fatalf("the monitor did not retry the pending stamp")
+	}
+	if st := dscpApplied.Load(); st == nil || st.pending {
+		t.Errorf("a successful retry left the stamp pending: %+v", st)
+	}
+}
+
+func TestDSCPCaptureJumpGoesBelowTheStamp(t *testing.T) {
+	f := newFakeMangle(backendIPTables)
+	installFakeMangle(t, f)
+	cfg := dscpTestConfig(true, 7)
+	im := NewIPTablesManager(cfg, false)
+	capture := Rule{manager: im, IPT: backendIPTables, Table: "mangle", Chain: "POSTROUTING", Action: "I",
+		Spec: []string{"-j", dscpCaptureChain}, BelowDSCP: true}
+
+	f.calls = nil
+	if err := capture.Apply(); err != nil {
+		t.Fatalf("capture.Apply without a stamp: %v", err)
+	}
+	for _, c := range f.calls {
+		if strings.Contains(c, " -L ") {
+			t.Errorf("with no stamp recorded the capture insert read the chain: %s", c)
+		}
+	}
+	if got := f.chains[backendIPTables]["POSTROUTING"]; !reflect.DeepEqual(got, []string{"-j B4"}) {
+		t.Fatalf("POSTROUTING = %v", got)
+	}
+
+	if err := applyDSCPFor(cfg, backendIPTables); err != nil {
+		t.Fatalf("applyDSCPFor: %v", err)
+	}
+	f.chains[backendIPTables]["POSTROUTING"] = []string{"-j B4_DSCP"}
+	f.calls = nil
+	if err := capture.Apply(); err != nil {
+		t.Fatalf("capture.Apply under a stamp: %v", err)
+	}
+	if got := f.chains[backendIPTables]["POSTROUTING"]; !reflect.DeepEqual(got, []string{"-j B4_DSCP", "-j B4"}) {
+		t.Errorf("a capture jump put back under a kept stamp went above it: POSTROUTING = %v", got)
+	}
+	f.calls = nil
+	if err := applyDSCPFor(cfg, backendIPTables); err != nil {
+		t.Fatalf("applyDSCPFor after the capture insert: %v", err)
+	}
+	if m := f.mutations(); len(m) != 0 {
+		t.Errorf("the stamp needed re-seating after the capture insert: %v", m)
+	}
+
+	f.chains[backendIPTables]["POSTROUTING"] = []string{"-j FOREIGN", "-j B4_DSCP"}
+	if err := capture.Apply(); err != nil {
+		t.Fatalf("capture.Apply under a foreign rule: %v", err)
+	}
+	if got := f.chains[backendIPTables]["POSTROUTING"]; !reflect.DeepEqual(got, []string{"-j B4", "-j FOREIGN", "-j B4_DSCP"}) {
+		t.Errorf("with a foreign rule on top the capture jump must still go first: POSTROUTING = %v", got)
+	}
+}
+
+func TestDSCPOnlyTheCaptureJumpGoesBelowTheStamp(t *testing.T) {
+	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: true, "ipset": true})
+	cfg := dscpTestConfig(true, 7)
+	cfg.Queue.IPv4Enabled = true
+	cfg.Queue.IPv6Enabled = true
+	manager := NewIPTablesManager(cfg, false)
+	stubProbes(manager, backendIPTables, backendIP6Tables)
+	m, err := manager.buildManifest()
+	if err != nil {
+		t.Fatalf("buildManifest: %v", err)
+	}
+	below := map[string]int{}
+	for _, r := range m.Rules {
+		capture := r.Table == "mangle" && r.Chain == "POSTROUTING" && reflect.DeepEqual(r.Spec, []string{"-j", dscpCaptureChain})
+		if r.BelowDSCP != capture {
+			t.Errorf("%s %s %s %v: BelowDSCP = %v, want %v", r.IPT, r.Table, r.Chain, r.Spec, r.BelowDSCP, capture)
+		}
+		if r.BelowDSCP {
+			below[r.IPT]++
+		}
+	}
+	if below[backendIPTables] != 1 || below[backendIP6Tables] != 1 {
+		t.Errorf("capture jumps kept below the stamp = %v, want one per binary", below)
+	}
+}
+
+func TestDSCPChainThatAlreadyExistsIsNotARefusal(t *testing.T) {
+	f := newFakeMangle(backendIPTables)
+	installFakeMangle(t, f)
+	cfg := dscpTestConfig(true, 7)
+	if err := applyDSCPFor(cfg, backendIPTables); err != nil {
+		t.Fatalf("applyDSCPFor: %v", err)
+	}
+	realRun := run
+	stalls := 3
+	run = func(args ...string) (string, error) {
+		if stalls > 0 && len(args) > 5 && args[4] == "-S" && args[5] == dscpChainName {
+			stalls--
+			return "", fmt.Errorf("command [%s] gave up after 15s: %w", strings.Join(args, " "), context.DeadlineExceeded)
+		}
+		return realRun(args...)
+	}
+	err := applyDSCPFor(cfg, backendIPTables)
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("the unreadable chain must be reported, got %v", err)
+	}
+	if st := dscpApplied.Load(); st == nil || !st.pending {
+		t.Fatalf("a chain that already exists was taken as a refusal: %+v", st)
+	}
+	if _, ok := f.chains[backendIPTables][dscpChainName]; !ok {
+		t.Fatalf("a chain that already exists was torn down")
+	}
+	if !ensureDSCPLocked(cfg, false) {
+		t.Fatalf("the monitor did not retry the pending stamp")
+	}
+	if st := dscpApplied.Load(); st == nil || st.pending {
+		t.Errorf("a successful retry left the stamp pending: %+v", st)
+	}
+	if got := f.chains[backendIPTables]["POSTROUTING"]; !reflect.DeepEqual(got, []string{"-j B4_DSCP"}) {
+		t.Errorf("after the retry POSTROUTING = %v", got)
 	}
 }
 
