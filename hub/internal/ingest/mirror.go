@@ -93,6 +93,9 @@ func (s *Service) mirror(ctx context.Context, entry record) Response {
 	if err != nil {
 		return internalError(err)
 	}
+	if m.KeyHMAC != entry.keyHMAC {
+		return fail(http.StatusConflict, CodeMirrorKey, "this mirror address is "+m.Status+" for another key; a moderator has to remove it before another key can announce it")
+	}
 	if err := s.remember(ctx, entry, "", 0); err != nil {
 		return internalError(err)
 	}

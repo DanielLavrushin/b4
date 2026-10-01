@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
 	"os"
+	"os/user"
+	"slices"
 	"strings"
 	"time"
 
@@ -12,6 +15,8 @@ import (
 	"github.com/daniellavrushin/b4hub/internal/catalogue"
 	"github.com/daniellavrushin/b4hub/internal/geo"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
+	"github.com/daniellavrushin/b4hub/internal/moderation"
+	"github.com/daniellavrushin/b4hub/internal/notify"
 	"github.com/daniellavrushin/b4hub/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -38,6 +43,10 @@ const (
 	envUpstream       = "B4HUB_UPSTREAM"
 	envUpstreamKey    = "B4HUB_UPSTREAM_KEY"
 	envTrustedProxies = "B4HUB_TRUSTED_PROXIES"
+	envTelegramToken  = notify.EnvTelegramToken
+	envTelegramChat   = notify.EnvTelegramChat
+	envWebhookURL     = notify.EnvWebhookURL
+	envWebhookSecret  = notify.EnvWebhookSecret
 
 	shutdownGrace = 10 * time.Second
 )
@@ -59,7 +68,9 @@ Every flag has an environment variable counterpart used as its default:
   --upstream      ` + envUpstream + `
   --upstream-key  ` + envUpstreamKey + `
   --trusted-proxies ` + envTrustedProxies + `
-The moderation password is read only from ` + envAdminPassword + `.`,
+The moderation password is read only from ` + envAdminPassword + `.
+Notification credentials may come from ` + envTelegramToken + `, ` + envTelegramChat + `,
+` + envWebhookURL + ` and ` + envWebhookSecret + `; each one set there overrides the console setting.`,
 	Version:       versionString(),
 	SilenceUsage:  true,
 	SilenceErrors: true,
@@ -153,7 +164,39 @@ func (s *services) builder(publicURL string, sources []hubwire.GeoSource) *catal
 		PublicURL:  publicURL,
 		GeoSources: sources,
 		Mirrors:    &catalogue.MirrorHealth{Store: s.store, KeyID: s.identity.KeyID()},
+		BuiltinKey: slices.Contains(hubwire.BuiltinHubKeys, s.identity.KeyID()),
 	}
+}
+
+func bindNewDatabase(cmd *cobra.Command, target *bool) {
+	cmd.Flags().BoolVar(target, "new-database", false, "confirm that a database which has never published may replace the published catalogue")
+}
+
+type storeBuilds struct {
+	store *store.Store
+}
+
+func (b storeBuilds) Request(string) {
+	if err := b.store.RequestBuild(context.Background(), time.Now()); err != nil {
+		log.Printf("could not ask the running hub to publish: %v", err)
+	}
+}
+
+func (s *services) moderation(builds moderation.Builds) *moderation.Service {
+	if builds == nil {
+		builds = storeBuilds{store: s.store}
+	}
+	return &moderation.Service{Store: s.store, Builds: builds, HubKeyID: s.identity.KeyID()}
+}
+
+func cliActor() moderation.Actor {
+	name := strings.TrimSpace(os.Getenv("SUDO_USER"))
+	if name == "" {
+		if u, err := user.Current(); err == nil {
+			name = u.Username
+		}
+	}
+	return moderation.Actor{Kind: store.ActorCLI, Ref: name}
 }
 
 type geoFlags struct {

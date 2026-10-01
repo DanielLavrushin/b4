@@ -98,7 +98,7 @@ func (s *Store) Settings(ctx context.Context) (Settings, error) {
 	return out, nil
 }
 
-func (s *Store) SaveSettings(ctx context.Context, in Settings) error {
+func (s *Store) SaveSettings(ctx context.Context, in Settings, audit ...AuditEntry) error {
 	if err := in.Validate(); err != nil {
 		return err
 	}
@@ -109,6 +109,11 @@ func (s *Store) SaveSettings(ctx context.Context, in Settings) error {
 	defer tx.Rollback()
 	for _, f := range in.fields() {
 		if err := setMetaTx(ctx, tx, f.meta, strconv.Itoa(*f.value)); err != nil {
+			return err
+		}
+	}
+	for _, e := range audit {
+		if _, err := auditTx(ctx, tx, e); err != nil {
 			return err
 		}
 	}

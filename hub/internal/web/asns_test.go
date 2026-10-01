@@ -2,7 +2,6 @@ package web
 
 import (
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/daniellavrushin/b4/hubwire"
@@ -25,12 +24,8 @@ func TestTargetsDescribeASNs(t *testing.T) {
 	if targets.Empty() {
 		t.Fatalf("a set that targets ASNs is not empty")
 	}
-	summary := targets.Summary()
-	if !strings.Contains(summary, "ASNs: AS62041, AS44907, AS211157, AS59930 and 1 more") {
-		t.Errorf("the summary must name the ASNs, got %q", summary)
-	}
-	if strings.Contains(summary, "no targets") {
-		t.Errorf("the summary must not call an ASN set empty, got %q", summary)
+	if len(targets.FilterTerms()) != 0 {
+		t.Errorf("an ASN set has no target filters, got %v", targets.FilterTerms())
 	}
 	view := targetsView(targets)
 	if !reflect.DeepEqual(view.ASNs, []string{"62041", "44907", "211157", "59930", "15169"}) {

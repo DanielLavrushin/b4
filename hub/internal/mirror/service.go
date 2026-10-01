@@ -2,11 +2,14 @@ package mirror
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -16,6 +19,7 @@ import (
 	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4hub/internal/catalogue"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
+	"github.com/daniellavrushin/b4hub/internal/ingest"
 )
 
 const (
@@ -25,7 +29,16 @@ const (
 	CatalogueLimit   = 32 << 20
 	BlobLimit        = 4 << 20
 	fetchTimeout     = 2 * time.Minute
+	dialTimeout      = 5 * time.Second
 )
+
+var errSelfUpstream = errors.New("the upstream answers as this mirror, so this mirror would copy and relay to itself; point --upstream at the hub's own address")
+
+type upstreamDown struct{ err error }
+
+func (e upstreamDown) Error() string { return e.err.Error() }
+
+func (e upstreamDown) Unwrap() error { return e.err }
 
 type Options struct {
 	Upstream    string
@@ -36,6 +49,7 @@ type Options struct {
 	Announce    bool
 	Version     string
 	Refresh     time.Duration
+	QueueLimit  int
 	Client      *http.Client
 	Now         func() time.Time
 }
@@ -77,11 +91,36 @@ func announceState(answer *Answer, err error) string {
 }
 
 type Service struct {
-	opts  Options
-	relay *Relay
+	opts      Options
+	relay     *Relay
+	node      string
+	proxyNote sync.Once
 
 	mu     sync.Mutex
 	status Status
+}
+
+func newNodeID() string {
+	raw := make([]byte, 8)
+	_, _ = rand.Read(raw)
+	return hex.EncodeToString(raw)
+}
+
+func upstreamClient() *http.Client {
+	dialer := &net.Dialer{Timeout: dialTimeout, KeepAlive: 30 * time.Second}
+	return &http.Client{Transport: &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           dialer.DialContext,
+		TLSHandshakeTimeout:   dialTimeout,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          16,
+		IdleConnTimeout:       90 * time.Second,
+		ExpectContinueTimeout: time.Second,
+	}}
+}
+
+func sameBase(a, b string) bool {
+	return a != "" && strings.EqualFold(strings.TrimRight(a, "/"), strings.TrimRight(b, "/"))
 }
 
 func New(opts Options) (*Service, error) {
@@ -93,7 +132,7 @@ func New(opts Options) (*Service, error) {
 		opts.Refresh = DefaultRefresh
 	}
 	if opts.Client == nil {
-		opts.Client = &http.Client{}
+		opts.Client = upstreamClient()
 	}
 	if opts.Now == nil {
 		opts.Now = time.Now
@@ -104,11 +143,15 @@ func New(opts Options) (*Service, error) {
 	if opts.Announce && (opts.Identity == nil || opts.PublicURL == "") {
 		return nil, errors.New("announcing needs an identity and a public url")
 	}
+	if sameBase(opts.Upstream, opts.PublicURL) {
+		return nil, errors.New("the upstream is this mirror's own public url")
+	}
 	if err := opts.Layout.EnsureDirs(); err != nil {
 		return nil, err
 	}
-	s := &Service{opts: opts}
-	s.relay = &Relay{Upstream: opts.Upstream, Dir: filepath.Join(opts.Layout.Root, RelayDir), Client: opts.Client, Now: opts.Now}
+	s := &Service{opts: opts, node: newNodeID()}
+	s.relay = &Relay{Upstream: opts.Upstream, Dir: filepath.Join(opts.Layout.Root, RelayDir), Client: opts.Client, Now: opts.Now, QueueLimit: opts.QueueLimit, Node: s.node, Identity: opts.Identity}
+	s.relay.Prepare()
 	s.status = Status{Upstream: opts.Upstream, PublicURL: opts.PublicURL, Version: opts.Version, Queued: s.relay.Queued()}
 	if result, err := catalogue.ReadPublished(opts.Layout.Public()); err == nil {
 		s.status.Manifest = result.Manifest
@@ -142,13 +185,20 @@ func (s *Service) get(ctx context.Context, url string, limit int64) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "b4hub-mirror")
+	req.Header.Set("User-Agent", ingest.RelayAgent)
 	resp, err := s.opts.Client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, upstreamDown{err}
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	if resp.Header.Get(HeaderNode) == s.node {
+		return nil, errSelfUpstream
+	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return nil, upstreamDown{fmt.Errorf("%s returned %d", url, resp.StatusCode)}
+	default:
 		return nil, fmt.Errorf("%s returned %d", url, resp.StatusCode)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
@@ -162,7 +212,15 @@ func (s *Service) get(ctx context.Context, url string, limit int64) ([]byte, err
 }
 
 func (s *Service) Refresh(ctx context.Context) error {
+	start := s.opts.Now()
 	err := s.refresh(ctx)
+	var down upstreamDown
+	switch {
+	case err == nil:
+		s.relay.breaker.success()
+	case errors.As(err, &down):
+		s.relay.breaker.failure(start, s.opts.Now(), false)
+	}
 	s.mu.Lock()
 	s.status.LastRefresh = s.opts.Now().UTC()
 	if err != nil {
@@ -279,8 +337,12 @@ func (s *Service) tick(ctx context.Context) {
 	if err := s.relay.Retry(ctx); err != nil {
 		log.Printf("mirror: relay: %v", err)
 	}
+	queued := s.relay.Queued()
+	if queued > 0 {
+		log.Printf("mirror: relay: %d records waiting for the hub", queued)
+	}
 	s.mu.Lock()
-	s.status.Queued = s.relay.Queued()
+	s.status.Queued = queued
 	s.mu.Unlock()
 }
 

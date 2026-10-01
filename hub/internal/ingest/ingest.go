@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/daniellavrushin/b4/hubwire"
@@ -29,6 +30,7 @@ const (
 	CodeFingerprint       = "fp_mismatch"
 	CodeDuplicateStrategy = "duplicate_strategy"
 	CodeBadMirrorURL      = "bad_mirror_url"
+	CodeMirrorKey         = "mirror_key_mismatch"
 	CodeBanned            = "banned"
 	CodeRateLimited       = "rate_limited"
 	CodeTooLarge          = "too_large"
@@ -36,12 +38,18 @@ const (
 )
 
 type Service struct {
-	Store   *store.Store
-	Blobs   hubdata.Blobs
-	Secret  []byte
-	Limiter *ratelimit.Limiter
-	ASN     *asn.Resolver
-	Now     func() time.Time
+	Store      *store.Store
+	Blobs      hubdata.Blobs
+	Secret     []byte
+	Limiter    *ratelimit.Limiter
+	ASN        *asn.Resolver
+	Now        func() time.Time
+	OnAccepted func(kind string)
+	OnAutoHide func()
+
+	mirrorKeysMu sync.Mutex
+	mirrorKeys   map[string]bool
+	mirrorKeysAt time.Time
 }
 
 type Response struct {
@@ -124,7 +132,43 @@ func (s *Service) observe(ctx context.Context, peer net.IP) origin {
 	return origin{ASN: info.ASN, Country: info.Country}
 }
 
+const (
+	RelayRequestFactor = 10
+	RelayNewKeyFactor  = 20
+	MirrorKeysTTL      = time.Minute
+)
+
+type Source struct {
+	IP    net.IP
+	Relay string
+}
+
 func (s *Service) Handle(ctx context.Context, raw []byte, peer net.IP) Response {
+	return s.HandleFrom(ctx, raw, Source{IP: peer})
+}
+
+func (s *Service) approvedMirror(ctx context.Context, keyHMAC string, now time.Time) bool {
+	s.mirrorKeysMu.Lock()
+	defer s.mirrorKeysMu.Unlock()
+	if s.mirrorKeys == nil || now.Sub(s.mirrorKeysAt) >= MirrorKeysTTL || now.Before(s.mirrorKeysAt) {
+		if keys, err := s.Store.ApprovedMirrorKeys(ctx); err == nil {
+			s.mirrorKeys, s.mirrorKeysAt = keys, now
+		}
+	}
+	return s.mirrorKeys[keyHMAC]
+}
+
+func (s *Service) relayed(ctx context.Context, header string, raw []byte, now time.Time) bool {
+	keyID := hubdata.RelayKeyID(header)
+	if keyID == "" || !s.approvedMirror(ctx, hubdata.KeyHMAC(s.Secret, keyID), now) {
+		return false
+	}
+	_, ok := hubdata.VerifyRelay(header, raw, now)
+	return ok
+}
+
+func (s *Service) HandleFrom(ctx context.Context, raw []byte, src Source) Response {
+	peer := src.IP
 	now := s.now()
 	if len(raw) > MaxBodyBytes {
 		return fail(http.StatusRequestEntityTooLarge, CodeTooLarge, "record exceeds the message limit")
@@ -132,6 +176,11 @@ func (s *Service) Handle(ctx context.Context, raw []byte, peer net.IP) Response 
 	limits, err := s.Store.Settings(ctx)
 	if err != nil {
 		return internalError(err)
+	}
+	relayed := s.relayed(ctx, src.Relay, raw, now)
+	if relayed {
+		limits.RequestsPerHour *= RelayRequestFactor
+		limits.NewKeysPerDay *= RelayNewKeyFactor
 	}
 	addressKey := ""
 	if peer != nil {
@@ -149,6 +198,9 @@ func (s *Service) Handle(ctx context.Context, raw []byte, peer net.IP) Response 
 			return fail(http.StatusBadRequest, CodeBadSignature, err.Error())
 		}
 		return fail(http.StatusBadRequest, CodeBadRecord, err.Error())
+	}
+	if !CanonicalEncoding(&rec) {
+		return fail(http.StatusBadRequest, CodeBadSignature, "the key or the signature is not in its canonical encoding")
 	}
 	keyHMAC := hubdata.KeyHMAC(s.Secret, rec.Key)
 	key, err := s.Store.GetKey(ctx, keyHMAC)
@@ -194,11 +246,17 @@ func (s *Service) Handle(ctx context.Context, raw []byte, peer net.IP) Response 
 			return rateLimited(scope, limit, ratelimit.Day, retry)
 		}
 	}
-	observed := s.observe(ctx, peer)
+	observed := origin{}
+	if !relayed {
+		observed = s.observe(ctx, peer)
+	}
 	entry := record{rec: &rec, id: recordID, keyHMAC: keyHMAC, origin: observed, now: now}
 	resp := s.dispatch(ctx, entry)
 	if !key.Trusted && resp.Status >= http.StatusBadRequest {
 		s.Limiter.Refund(scope, keyHMAC, ratelimit.Day)
+	}
+	if resp.Status == http.StatusAccepted && s.OnAccepted != nil {
+		s.OnAccepted(rec.Kind)
 	}
 	return resp
 }

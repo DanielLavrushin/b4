@@ -20,7 +20,11 @@
     "reasonRequired": "A reason is required",
     "error": "Request failed: {{message}}",
     "documentation": "Documentation",
-    "typeToConfirm": "Type {{text}} to confirm"
+    "typeToConfirm": "Type {{text}} to confirm",
+    "retry": "Retry",
+    "staleData": "Showing the last loaded data. Refresh failed: {{message}}",
+    "andMore": "and {{count}} more",
+    "loadMore": "Load more"
   },
   "nav": {
     "overview": "Overview",
@@ -30,7 +34,9 @@
     "mirrors": "Mirrors",
     "feedback": "Feedback",
     "catalogue": "Catalogue",
-    "settings": "Settings"
+    "settings": "Settings",
+    "stats": "Statistics",
+    "audit": "Audit log"
   },
   "login": {
     "subtitle": "Moderation console",
@@ -49,15 +55,13 @@
     "keys": "Keys",
     "keysHint": "{{banned}} banned",
     "mirrors": "Mirrors",
-    "mirrorsHint": "{{approved}} approved, {{pending}} pending",
+    "mirrorsHint": "{{announced}} announced, {{pending}} waiting for approval",
     "votes": "Votes",
     "reports": "Reports",
     "catalogue": "Catalogue",
     "catalogueDesc": "What routers download right now",
     "hub": "This hub",
     "hubDesc": "Identity and build",
-    "geo": "Geo databases",
-    "geoDesc": "Files used to resolve categories and ASNs",
     "notPublished": "No catalogue has been published yet",
     "file": "File",
     "epoch": "Epoch / seq",
@@ -73,18 +77,18 @@
     "source": "b4 source tree",
     "publicUrl": "Public URL",
     "revoked": "Revoked keys",
-    "geoFile": "File",
-    "geoFetched": "Fetched",
-    "geoSize": "Size",
-    "geoSource": "Source",
-    "geoError": "Error",
-    "geoNone": "No geo file has been downloaded yet",
     "openQueue": "Open the queue",
     "moderation": "Moderation",
     "moderationDesc": "Decisions so far",
     "superseded": "Superseded",
     "hidden": "Hidden",
-    "rejected": "Rejected"
+    "rejected": "Rejected",
+    "withheld": "Withheld",
+    "reportsOpen": "Open reports",
+    "mirrorsAnnounced": "Mirrors announced",
+    "plusHub": "{{count}} plus this hub",
+    "devBuild": "development build",
+    "dirtySource": "uncommitted changes"
   },
   "queue": {
     "title": "Pending ({{count}})",
@@ -92,8 +96,9 @@
     "received": "received {{when}}",
     "lineage": {
       "first": "First version of a new set",
-      "replaces": "New version of a set currently listed as v{{version}}. Approving replaces it in the catalogue.",
-      "relists": "New version of a set with nothing currently listed. Approving lists it again."
+      "replaces": "New version of a set listed as v{{version}}. Approving lists it instead.",
+      "relists": "New version of a set with nothing currently listed. Approving lists it again.",
+      "older": "Older than the listed v{{version}}. Approving changes nothing in the catalogue: the newest active version stays listed."
     },
     "compare": "Compare with listed v{{version}}",
     "hideCompare": "Hide comparison",
@@ -101,19 +106,14 @@
     "reject": "Reject",
     "hide": "Hide",
     "banUploader": "Ban uploader",
-    "rejectTitle": "Reject {{ref}}",
-    "rejectText": "The author sees the reason on their router. Be specific.",
-    "hideTitle": "Hide {{ref}}",
-    "hideText": "The version leaves the catalogue on the next build. A reason is optional.",
-    "banTitle": "Ban uploader {{key}}",
-    "banText": "Every set by this key leaves the catalogue and new records from it are refused.",
-    "approveTitle": "Approve {{ref}}",
-    "approveText": "The version is listed in the catalogue on the next build, which starts right away.",
     "edit": "Edit",
     "edited": "Edited by a moderator {{when}}",
     "editedNote": "Note: {{note}}",
     "compareOriginal": "Compare with the received set",
-    "hideCompareOriginal": "Hide comparison"
+    "hideCompareOriginal": "Hide comparison",
+    "authorBanned": "author banned",
+    "setWithdrawn": "set withdrawn",
+    "selectAll": "Select all"
   },
   "edit": {
     "title": "Edit {{ref}}",
@@ -174,16 +174,26 @@
       "payload_missing": "A payload reference has no attached data",
       "custom_payload_large": "The custom payload is large",
       "block_regexp": "A block set matches by pattern",
-      "fingerprint_mismatch": "The fingerprint does not match the set"
+      "fingerprint_mismatch": "The fingerprint does not match the set",
+      "no_targets": "The set has no targets",
+      "payload_invalid": "An attached payload file does not parse",
+      "version_too_old": "The set needs a newer b4 than the one it is checked against"
     },
-    "emptyValue": "(empty)"
+    "emptyValue": "(empty)",
+    "strippedReasons": {
+      "private": "private field, never shared",
+      "not_shareable": "not shareable",
+      "pin_not_targeted": "pins a domain the set does not target",
+      "pin_private_address": "pins a private address",
+      "routing_not_shareable": "routing is not shared, except the block mode"
+    }
   },
   "sets": {
     "listed": "Listed",
     "superseded": "Superseded",
     "hidden": "Hidden",
     "rejected": "Rejected",
-    "searchPlaceholder": "Title, id, domain, author, family",
+    "searchPlaceholder": "Title, id, domain, author, technique",
     "empty": "No set in this group.",
     "noMatch": "No set matches the search.",
     "columns": {
@@ -194,12 +204,37 @@
       "author": "Author",
       "updated": "Updated",
       "reason": "Reason",
-      "supersededBy": "Superseded by"
+      "supersededBy": "Superseded by",
+      "techniques": "Techniques",
+      "score": "Score",
+      "evidence": "Votes",
+      "reports": "Reports"
     },
     "versions": "versions {{list}}",
     "restore": "Restore",
     "approveAfterAll": "Approve after all",
-    "recentOnly": "Only the {{count}} most recent decisions are shown."
+    "recentOnly": "Only the {{count}} most recent decisions are shown.",
+    "withheld": "Withheld",
+    "withheldReason": {
+      "set_withdrawn": "withdrawn by a moderator",
+      "author_banned": "author banned"
+    },
+    "withdraw": "Withdraw set",
+    "withdrawTitle": "Withdraw {{title}}",
+    "withdrawText": "The whole set leaves the catalogue at the next build. Versions keep their states, so reinstating brings back exactly what was listed. Its open reports are marked handled.",
+    "reinstate": "Reinstate",
+    "reinstateTitle": "Reinstate {{title}}",
+    "reinstateText": "The set is listed again at the next build, as it was before it was withdrawn.",
+    "withdrawnBanner": "Withdrawn from the catalogue {{when}}.",
+    "withdrawnReason": "Reason: {{reason}}",
+    "authorBannedBanner": "The author is banned. Nothing of this set is listed until the ban is lifted.",
+    "listedBanner": "Listed in the catalogue as v{{version}}.",
+    "notListedBanner": "Not listed: no version of this set is active.",
+    "awaitingReview": "awaiting review",
+    "reportsTip": "Open: {{open}} of {{total}}, independent: {{independent}}",
+    "needsAttention": "Needs attention ({{count}})",
+    "withReports": "With open reports",
+    "edited": "Edited"
   },
   "entry": {
     "targets": "Targets",
@@ -239,7 +274,8 @@
       "before": "Listed",
       "after": "Pending"
     },
-    "sharedFromVersion": "Shared from b4 {{version}}"
+    "sharedFromVersion": "Shared from b4 {{version}}",
+    "decodeErrorValue": "the stored set does not decode with this hub's b4 version"
   },
   "detail": {
     "title": "Set {{id}}",
@@ -263,50 +299,142 @@
     "delete": "Delete permanently",
     "deleteHint": "Removes the set with every version, its votes, reports and payloads no other set uses. Hiding is enough to take it out of the catalogue; deletion is for entries that should never have existed.",
     "deleteTitle": "Delete {{id}}",
-    "deleteText": "This cannot be undone. Routers that applied the set keep their local copy but lose the link."
+    "deleteText": "This cannot be undone. Routers that applied the set keep their local copy but lose the link.",
+    "heading": "Set",
+    "inCatalogue": "in the catalogue",
+    "hiddenFromPending": "hidden before approval"
   },
   "keys": {
     "title": "Keys ({{count}})",
     "empty": "No key has been seen yet.",
-    "searchPlaceholder": "Key HMAC",
+    "searchPlaceholder": "Key prefix, router key id, name or note",
     "columns": {
       "key": "Key",
       "firstSeen": "First seen",
       "sets": "Sets",
       "votes": "Votes",
       "reports": "Reports",
-      "status": "Status"
+      "status": "Status",
+      "lastSeen": "Last seen",
+      "origin": "Last network"
     },
     "ok": "ok",
     "banned": "banned {{when}}",
     "ban": "Ban",
     "unban": "Unban",
     "banTitle": "Ban {{key}}",
-    "banText": "Every set by this key leaves the catalogue and new records from it are refused.",
+    "banText": "New records from this key are refused. At the next build its sets leave the catalogue and its votes and reports stop counting. Nothing is deleted: unbanning restores everything.",
     "showBanned": "Banned only",
     "trusted": "trusted {{when}}",
     "trust": "Trust",
     "untrust": "Untrust",
     "trustTitle": "Trust {{key}}",
-    "trustText": "A trusted key is exempt from the per-key daily limits on shares, votes, reports and mirror announcements. Its records still go through moderation."
+    "trustText": "A trusted key is exempt from the per-key daily limits on shares, votes, reports and mirror announcements. Its records still go through moderation.",
+    "unbanTitle": "Unban {{key}}",
+    "unbanText": "The key can send records again. At the next build its sets return and its votes count again.",
+    "untrustTitle": "Stop trusting {{key}}",
+    "untrustText": "The key falls back under the per-key daily limits.",
+    "impact": {
+      "ban": {
+        "listed": "Listed sets that leave the catalogue: {{count}}",
+        "pending": "Pending shares that can no longer be approved without an override: {{count}}",
+        "votes": "Votes that stop counting: {{count}}, on strategies: {{sets}}",
+        "reports": "Open reports that stop counting toward the automatic hide: {{count}}"
+      },
+      "unban": {
+        "listed": "Sets that return to the catalogue: {{count}}",
+        "pending": "Pending shares: {{count}}",
+        "votes": "Votes that count again: {{count}}, on strategies: {{sets}}",
+        "reports": "Open reports that count again: {{count}}"
+      },
+      "mirrors": "Mirrors announced by this key: {{count}}. A ban does not stop announcing them; reject them on the Mirrors page for that."
+    },
+    "tags": {
+      "staff": "staff",
+      "test": "test",
+      "none": "No tag",
+      "noneHelp": "A regular key.",
+      "staffHelp": "A router of your own. Only a label: its votes count like any other.",
+      "testHelp": "A test router. Its votes do not count in published scores and its reports do not count toward the automatic hide.",
+      "testOn": "Its votes stop counting in published scores at the next build.",
+      "testOff": "Its votes count again in published scores at the next build."
+    },
+    "matchedByKeyId": "Found by the router key id: the hub stores only its HMAC.",
+    "noMatch": "No key matches the filters.",
+    "neverSent": "no accepted record",
+    "banReason": "Ban reason: {{reason}}",
+    "setsTip": "Listed: {{listed}} of {{total}}, pending versions: {{pending}}",
+    "votesTip": "Manual votes: {{manual}}; automatic votes from its own shares: {{uploads}}",
+    "filters": {
+      "all": "Any status",
+      "status": {
+        "banned": "Banned",
+        "trusted": "Trusted",
+        "ok": "Plain"
+      },
+      "anyTag": "Any tag",
+      "tag": {
+        "staff": "Staff",
+        "test": "Test",
+        "any": "Named or tagged"
+      },
+      "anySets": "Any sets",
+      "sets": {
+        "any": "Has sets",
+        "listed": "Has listed sets",
+        "pending": "Has pending shares",
+        "none": "No sets"
+      }
+    },
+    "kinds": {
+      "share": "shares",
+      "vote": "votes",
+      "report": "reports",
+      "mirror": "mirror announcements"
+    },
+    "detail": {
+      "heading": "Key",
+      "records": "Accepted records",
+      "reportsAgainst": "Reports against its sets",
+      "activity": "Activity, last 90 days",
+      "sets": "Sets ({{count}})",
+      "noSets": "This key has not shared any set.",
+      "reportsOn": "reports: {{count}}",
+      "votes": "Votes ({{count}})",
+      "allVotes": "All votes of this key ({{count}})",
+      "reports": "Reports filed ({{count}})",
+      "noReports": "This key has not reported anything.",
+      "origins": "Networks",
+      "noOrigins": "No network has been observed for this key.",
+      "clients": "b4 versions",
+      "mirrors": "Mirrors it announced"
+    },
+    "profile": {
+      "title": "Operator notes",
+      "name": "Name",
+      "nameHint": "Shown instead of the key prefix everywhere in this console.",
+      "note": "Note",
+      "noteHint": "Only you see this.",
+      "save": "Save"
+    }
   },
   "mirrors": {
     "title": "Mirrors ({{count}})",
     "empty": "No mirror has announced itself.",
     "columns": {
       "url": "URL",
-      "version": "Version",
-      "key": "Key",
       "status": "Status",
-      "firstSeen": "First seen",
-      "lastSeen": "Last seen",
-      "health": "Health"
+      "health": "Health",
+      "announced": "Announced",
+      "serving": "Serves",
+      "lastAnnounced": "Last announced"
     },
     "health": {
       "unchecked": "not checked yet",
       "ok": "ok at {{when}}",
       "failed": "failed at {{when}}",
-      "lastOk": "last ok {{when}}"
+      "lastOk": "last ok {{when}}",
+      "ms": "{{ms}} ms"
     },
     "approve": "Approve",
     "reject": "Reject",
@@ -316,7 +444,35 @@
     "removeTitle": "Remove mirror",
     "removeText": "The mirror is forgotten. It can announce itself again.",
     "versionUnknown": "not reported",
-    "listedHint": "Approved and healthy mirrors are announced in the manifest."
+    "approveTitle": "Approve mirror",
+    "approveText": "A health check runs right away; the mirror is announced to routers once it passes.",
+    "checkNow": "Check now",
+    "checkAll": "Check all",
+    "announced": {
+      "listed": "announced",
+      "kept": "kept while no mirror passes its check",
+      "leaving": "leaves at the next build",
+      "joining": "joins at the next build",
+      "notListed": "not announced",
+      "no": "not announced"
+    },
+    "dropsAt": "drops out at {{when}} without a passing check",
+    "lag": {
+      "unknown": "not known yet",
+      "current": "current",
+      "behind": "behind by {{count}}",
+      "stale": "stale",
+      "ahead": "ahead of this hub"
+    },
+    "checkCode": {
+      "health": "the health endpoint failed",
+      "manifest": "the manifest could not be fetched",
+      "decode": "the manifest does not decode",
+      "signature": "the manifest is not signed by this hub",
+      "unknown": "failed before the upgrade"
+    },
+    "orphans": "Announced in the published manifest but no longer known to the hub: {{list}}",
+    "summary": "Manifest {{epoch}}/{{seq}} announces this hub and {{count}} mirrors. Approved mirrors are checked every {{minutes}} min and stay announced for {{hours}} h after their last passing check."
   },
   "feedback": {
     "votes": "Votes",
@@ -333,7 +489,8 @@
       "key": "Key",
       "domain": "Domain",
       "b4": "b4",
-      "reason": "Reason"
+      "reason": "Reason",
+      "applied": "Applied weight"
     },
     "kinds": {
       "manual_works": "works (manual)",
@@ -346,6 +503,48 @@
       "watchdog_degraded": "watchdog: degraded",
       "discovery_confirmed": "discovery: confirmed",
       "discovery_failed": "discovery: failed"
+    },
+    "votesHint": "Every vote with the weight the last published build gave it. Votes pool by strategy fingerprint, so one vote can count toward several listed sets.",
+    "noMatch": "No vote matches the filters.",
+    "unverified": "network unknown",
+    "claims": "claims {{asn}} {{cc}}",
+    "authorVote": "The set's author voted on their own set.",
+    "authorShort": "author",
+    "applied": {
+      "now": "now",
+      "breakdown": "base {{base}} x origin {{origin}} x young key {{young}} x decay {{decay}} = {{weight}}, at {{at}}",
+      "state": {
+        "counted": "Counted in the published score.",
+        "not_published": "Not counted: no listed set uses this strategy.",
+        "after_build": "Not counted yet: received after the last build.",
+        "excluded": "Not counted: {{reason}}.",
+        "capped": "Not counted: automated votes may not outweigh manual ones."
+      },
+      "short": {
+        "not_published": "not published",
+        "after_build": "next build",
+        "excluded": "excluded",
+        "capped": "capped",
+        "counted": "counted"
+      },
+      "reason": {
+        "banned": "the key is banned",
+        "test": "the key is tagged as a test key"
+      }
+    },
+    "filters": {
+      "all": "All",
+      "works": "Works",
+      "broken": "Broken",
+      "anyone": "Anyone",
+      "notAuthor": "Not the author",
+      "onlyAuthor": "Only the author",
+      "anyOrigin": "Any network",
+      "verified": "Known network",
+      "unverified": "Unknown network",
+      "country": "Country",
+      "setChip": "set {{id}}",
+      "keyChip": "key {{key}}"
     }
   },
   "catalogue": {
@@ -353,20 +552,50 @@
     "status": "Published catalogue",
     "statusDesc": "The signed files routers download",
     "actions": "Operations",
-    "actionsDesc": "Each one rebuilds and re-signs the catalogue",
+    "actionsDesc": "Published by a background build; the status in the header shows its progress",
     "build": "Build now",
-    "buildText": "Rebuilds and publishes the catalogue from the store even when nothing changed.",
+    "buildText": "Queues a build that publishes the catalogue from the store even when nothing changed.",
     "epoch": "Start a new epoch",
     "epochText": "Resets the sequence. Routers treat the new epoch as authoritative and drop anything from the old one. Use after restoring the database from a backup.",
     "epochConfirm": "Start a new epoch? Every router will re-download the catalogue.",
-    "revoke": "Revoke a key",
-    "revokeText": "Adds a key id to the revoked list carried by every manifest. Routers stop trusting anything signed by it.",
+    "revoke": "Revoke a hub signing key",
+    "revokeText": "Adds an ed25519 hub signing key to the revoked list carried by every manifest. Routers stop trusting anything signed by it. This is unrelated to router keys on the Keys page.",
     "revokePlaceholder": "ed25519 key id",
     "revokeConfirm": "Revoke {{key}}? This cannot be undone from the console.",
     "revoked": "Revoked keys",
     "noRevoked": "No key has been revoked.",
     "mirrors": "Mirrors in the manifest",
-    "noMirrors": "No mirror is listed."
+    "noMirrors": "No mirror is listed.",
+    "size": "Size",
+    "thisHub": "this hub",
+    "thisHubKey": "This hub signs with",
+    "revokeForever": "Routers keep every revocation forever. Removing it from the hub later does not undo it.",
+    "revokeButton": "Revoke",
+    "revokeBuiltin": "This key is built into b4. Revoking it cuts off every router that trusts the built-in key.",
+    "revokeBuiltinAllow": "I understand, revoke the built-in key",
+    "history": {
+      "title": "Build history",
+      "desc": "What each build changed in the catalogue",
+      "onlyChanges": "Changes and failures",
+      "onlyFailed": "Failures",
+      "all": "All",
+      "empty": "No build has been recorded yet.",
+      "when": "When",
+      "trigger": "Trigger",
+      "result": "Result",
+      "changes": "Changes",
+      "ok": "seq {{seq}}, sets: {{sets}}, {{ms}} ms",
+      "added": "added: {{count}}",
+      "removed": "removed: {{count}}",
+      "updated": "new versions: {{count}}",
+      "edited": "text edited: {{count}}",
+      "rescored": "rescored: {{count}}",
+      "mirrors": "mirror list changed",
+      "revoked": "revoked keys: {{count}}",
+      "unchanged": "same content, scores decayed",
+      "textOnly": "(title or description)",
+      "revokedKey": "revoked"
+    }
   },
   "time": {
     "justNow": "just now",
@@ -402,5 +631,735 @@
     "notesWindow": "A day is the UTC calendar day and an hour is the clock hour, so a limit reached at 22:00 UTC clears at midnight. Counters live in memory and start over when the service restarts.",
     "notesTrusted": "A key marked as trusted on the Keys page skips every per-key limit. Per-network limits still apply to it.",
     "notesRefund": "A record the hub rejects, or a share that turns out to duplicate an existing set, does not spend the key's quota. Only accepted records count."
+  },
+  "table": {
+    "selected": "Selected: {{count}}",
+    "clearSelection": "Clear selection",
+    "shown": "Shown {{shown}} of {{total}}",
+    "rowsPerPage": "Rows per page",
+    "displayedRows": "{{from}}-{{to}} of {{count}}"
+  },
+  "status": {
+    "set": {
+      "pending": "pending",
+      "active": "active",
+      "hidden": "hidden",
+      "rejected": "rejected"
+    },
+    "mirror": {
+      "pending": "pending",
+      "approved": "approved",
+      "rejected": "rejected"
+    }
+  },
+  "reason": {
+    "none": "no reason given",
+    "reports": "hidden automatically after {{count}} independent reports"
+  },
+  "build": {
+    "idle": "Idle",
+    "queued": "Build queued",
+    "building": "Publishing",
+    "failed": "Build failed",
+    "dirty": "Changes waiting",
+    "published": "Published {{when}}",
+    "never": "Nothing has been published yet",
+    "busyHint": "Building and signing the catalogue. Trigger: {{trigger}}",
+    "failedHint": "The last build failed at {{when}}: {{message}}. Routers keep the previous catalogue.",
+    "dirtyHint": "Changes are waiting for the next build. Last published {{when}}.",
+    "publishedHint": "{{file}} with {{sets}} sets, published {{when}}",
+    "retry": "Build again",
+    "trigger": {
+      "manual": "build button",
+      "schedule": "scheduled check",
+      "startup": "service start",
+      "cli": "command line",
+      "mirrors": "mirror list changed",
+      "moderation": "moderation",
+      "revoke": "key revocation",
+      "epoch": "new epoch",
+      "autohide": "automatic hide"
+    }
+  },
+  "notices": {
+    "set": {
+      "approved": "Approved {{title}}",
+      "rejected": "Rejected {{title}}",
+      "hidden": "Hid {{title}}",
+      "restored": "Restored {{title}}",
+      "withdrawn": "Withdrew {{title}} from the catalogue",
+      "reinstated": "Reinstated {{title}}",
+      "deleted": "Deleted {{title}} permanently",
+      "edited": "Saved the edit of {{title}}",
+      "edited_approved": "Saved and approved {{title}}",
+      "text_edited": "Saved the new text of {{title}}"
+    },
+    "key": {
+      "banned": "Banned {{key}}",
+      "unbanned": "Unbanned {{key}}",
+      "trusted": "Trusted {{key}}",
+      "untrusted": "{{key}} is no longer trusted",
+      "profile": "Saved the notes for {{key}}"
+    },
+    "mirror": {
+      "approved": "Approved {{url}}. It is announced once a health check passes.",
+      "rejected": "Rejected {{url}}",
+      "removed": "Removed {{url}}",
+      "checked": "{{url}} is healthy",
+      "check_failed": "{{url}} failed the check"
+    },
+    "mirrors": {
+      "checked": "Checked {{checked}} mirrors, failed: {{failed}}"
+    },
+    "catalogue": {
+      "published": "Published {{file}} with {{sets}} sets",
+      "build_queued": "Build queued",
+      "epoch": "Started epoch {{epoch}}",
+      "revoked": "Revoked {{key_id}}",
+      "revoke_known": "{{key_id}} was already revoked"
+    },
+    "reports": {
+      "updated": "Reports changed: {{count}}"
+    },
+    "moderation": {
+      "batch": "Applied: {{applied}}, skipped: {{skipped}}"
+    },
+    "reason": {
+      "saved": "Preset saved",
+      "deleted": "Preset deleted",
+      "moved": "Preset moved"
+    }
+  },
+  "errors": {
+    "not_found": "It no longer exists. The page may be out of date.",
+    "invalid_transition": "This cannot be done to a {{from}} version.",
+    "stale": "The version changed since the page was loaded. Refresh and try again.",
+    "author_banned": "The author is banned. The version would stay out of the catalogue.",
+    "set_withdrawn": "The set is withdrawn. The version would stay out of the catalogue.",
+    "reason_required": "A reason is required.",
+    "confirm_mismatch": "The confirmation does not match.",
+    "own_key": "This is the key this hub signs with. Revoking it would make every router reject this hub.",
+    "builtin_key": "The key is built into b4. Revoking it needs the explicit override.",
+    "bad_key": "The key id is not valid.",
+    "unknown_key": "The hub has never seen key {{key}}.",
+    "unknown_action": "Unknown action.",
+    "not_withdrawn": "The set is not withdrawn.",
+    "batch_invalid": "Some items cannot be changed. Nothing was applied.",
+    "too_many": "Too many items at once, at most {{max}}.",
+    "nothing_to_do": "Nothing was selected.",
+    "not_pending": "Only a pending version can be edited.",
+    "duplicate_strategy": "The result duplicates another set version.",
+    "build_failed": "The build failed: {{message}}",
+    "unauthorized": "Sign in again.",
+    "forbidden": "The request was refused.",
+    "internal": "The hub failed to process the request: {{message}}",
+    "not_built": "This hub has no catalogue builder.",
+    "bad_request": "Invalid request: {{message}}",
+    "invalid_set": "The set is not valid: {{message}}",
+    "unchanged": "Nothing changed.",
+    "bad_tag": "Unknown tag.",
+    "ambiguous": "Several keys start like this. Type more characters.",
+    "title_required": "A set needs a title.",
+    "not_editable": "A rejected version cannot be edited.",
+    "would_change_strategy": "This change would alter the strategy fingerprint.",
+    "preset_exists": "This reason is already saved.",
+    "bad_scope": "Unknown reason type.",
+    "bad_chat_id": "The chat id must be a number or an @channel name.",
+    "bad_token": "This does not look like a Telegram bot token.",
+    "bad_url": "The webhook URL must be an absolute https URL of up to 500 characters; plain http only to a loopback or private address.",
+    "bad_secret": "The webhook secret is longer than 256 bytes.",
+    "bad_digest": "The digest interval must be between 30 and 3600 seconds.",
+    "bad_event": "Unknown notification event.",
+    "bad_language": "The message language must be English or Russian.",
+    "bad_channel": "Unknown notification channel.",
+    "notify_incomplete": "The channel is not set up: Telegram needs a bot token and a chat id, the webhook needs a URL.",
+    "notify_failed": "The message was not delivered: {{message}}",
+    "invalid": "This action cannot be applied here."
+  },
+  "moderation": {
+    "approve": {
+      "title": "Approve {{title}}",
+      "text": "The version becomes active. The catalogue is rebuilt in the background right away.",
+      "confirm": "Approve"
+    },
+    "reject": {
+      "title": "Reject {{title}}",
+      "text": "The reason stays on the hub and is shown only in this console; routers do not receive it.",
+      "confirm": "Reject"
+    },
+    "hide": {
+      "title": "Hide {{title}}",
+      "text": "A hidden version stays on the hub and can be restored. Later shares of the same strategy count as duplicates of it.",
+      "confirm": "Hide"
+    },
+    "restore": {
+      "title": "Restore {{title}}",
+      "text": "The version returns to the state it was hidden from. Its open reports are dismissed, so the automatic hide starts counting from zero.",
+      "confirm": "Restore"
+    },
+    "effect": {
+      "none": "No catalogue change: the set is not listed before or after.",
+      "unchanged": "No catalogue change: v{{version}} stays listed.",
+      "leaves": "The set leaves the catalogue: v{{version}} is no longer listed and nothing replaces it.",
+      "joins": "v{{version}} joins the catalogue.",
+      "replaces": "v{{version}} is listed instead of v{{previous}}.",
+      "withheld": {
+        "set_withdrawn": "The set is withdrawn, so nothing of it is listed.",
+        "author_banned": "The author is banned, so nothing of the set is listed."
+      },
+      "reportsDismissed": "Open reports that will be dismissed: {{count}}",
+      "reportsResolved": "Open reports that will be marked handled: {{count}}"
+    },
+    "force": {
+      "author_banned": "Approve anyway; the version stays out of the catalogue while the author is banned",
+      "set_withdrawn": "Approve anyway; the version stays out of the catalogue while the set is withdrawn",
+      "active": "Approve anyway"
+    },
+    "withdrawToo": "Also withdraw the whole set, so no other version is listed instead",
+    "keepReports": "Keep the open reports open",
+    "reasonHint": "Stored on the hub, never sent to routers."
+  },
+  "reports": {
+    "filter": {
+      "open": "Open",
+      "dismissed": "Dismissed",
+      "resolved": "Handled",
+      "all": "All"
+    },
+    "state": {
+      "open": "open",
+      "dismissed": "dismissed",
+      "resolved": "handled"
+    },
+    "resolution": {
+      "restored": "version restored",
+      "hidden": "version hidden",
+      "rejected": "version rejected",
+      "withdrawn": "set withdrawn"
+    },
+    "actions": {
+      "dismiss": "Dismiss",
+      "resolve": "Mark handled",
+      "reopen": "Reopen",
+      "dismissAll": "Dismiss open ({{count}})",
+      "resolveAll": "Mark handled ({{count}})"
+    },
+    "counting": "counting: {{count}} of 3",
+    "countingHint": "Open reports with a known network from keys that are neither banned nor tagged test. Three reports from independent keys and networks hide a listed version automatically.",
+    "inboxHint": "Dismiss a report that is unfounded; mark it handled once you acted on it. Only open reports count toward the automatic hide.",
+    "keyBanned": "key banned",
+    "noAsn": "network unknown, does not count",
+    "noReason": "(no reason given)",
+    "note": "Note",
+    "noteShown": "note: {{note}}",
+    "emptyOpen": "No open reports.",
+    "version": {
+      "dismiss": "Dismiss reports ({{count}})",
+      "resolve": "Mark reports handled ({{count}})",
+      "dismissTitle": "Dismiss the open reports of {{ref}}",
+      "dismissText": "Open reports: {{count}}. Dismissed reports stop counting toward the automatic hide.",
+      "resolveTitle": "Mark the open reports of {{ref}} as handled",
+      "resolveText": "Open reports: {{count}}. Handled reports stop counting toward the automatic hide."
+    },
+    "keyTest": "test key, does not count"
+  },
+  "ref": {
+    "deleted": "deleted set",
+    "banned": "banned",
+    "trusted": "trusted",
+    "authorLabel": "shown to routers as {{label}}",
+    "copyKey": "Copy the full key HMAC"
+  },
+  "similar": {
+    "title": "Similar sets: {{count}}",
+    "listed": "in the catalogue",
+    "relation": {
+      "same_targets": "same targets",
+      "same_strategy": "same strategy",
+      "shared_targets": "shared targets: {{count}}",
+      "covering_domains": "overlapping domains: {{count}}",
+      "same_title": "same title",
+      "similar_title": "similar title",
+      "same_author": "same author",
+      "same_set": "same set"
+    },
+    "reason": "decision: {{reason}}",
+    "rejectAsDuplicate": "Reject as duplicate",
+    "duplicateReason": "Duplicates {{title}} ({{ref}})",
+    "truncated": "Only the closest matches are shown.",
+    "checking": "Checking for similar sets",
+    "failed": "Similar sets could not be checked: {{message}}"
+  },
+  "bulk": {
+    "approve": {
+      "title": "Approve selected versions: {{count}}"
+    },
+    "reject": {
+      "title": "Reject selected versions: {{count}}"
+    },
+    "hide": {
+      "title": "Hide selected versions: {{count}}"
+    },
+    "restore": {
+      "title": "Restore selected versions: {{count}}"
+    },
+    "columns": {
+      "set": "Version",
+      "effect": "Catalogue effect"
+    },
+    "someRefused": "{{valid}} of {{total}} can be changed; the rest are skipped.",
+    "apply": "Apply to {{count}}"
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "next": "Next card",
+    "prev": "Previous card",
+    "open": "Open the set",
+    "approve": "Approve",
+    "reject": "Reject",
+    "edit": "Edit",
+    "hide": "Hide",
+    "compare": "Compare with the listed version",
+    "ban": "Ban the uploader",
+    "select": "Select the card",
+    "bulkApprove": "Approve the selected cards",
+    "bulkReject": "Reject the selected cards",
+    "help": "Show this list"
+  },
+  "targets": {
+    "more": "and {{count}} more",
+    "addresses": "addresses",
+    "none": "no targets"
+  },
+  "attention": {
+    "low_score": {
+      "label": "low score",
+      "hint": "At least 3 weighted votes and a score under 30%. Routers still list it; this is a console signal."
+    },
+    "stale": {
+      "label": "stale",
+      "hint": "No vote for 60 days and almost no remaining weight. Routers still list it."
+    },
+    "weak": {
+      "label": "under 50%",
+      "hint": "Enough independent votes to show a score, and the score is under 50%."
+    },
+    "reports": {
+      "label": "open reports",
+      "hint": "The listed version has open reports."
+    }
+  },
+  "score": {
+    "unrated": "unrated",
+    "next": "next: {{score}}",
+    "nDevices": "n {{n}} · devices {{devices}}",
+    "publishedTip": "Published: {{score}}, n {{n}}, devices {{devices}}",
+    "liveTip": "Next build: {{score}}, n {{n}}, devices {{devices}}",
+    "notPublished": "Not in the published catalogue",
+    "unratedTip": "Routers show a score once at least two devices voted."
+  },
+  "evidence": {
+    "devices": "{{count}} dev.",
+    "author": "author +{{works}}/-{{broken}}",
+    "pooled": "pooled from {{count}}",
+    "independentTip": "Independent: +{{works}} / -{{broken}} from {{devices}} devices, weighted {{positive}} / {{negative}}",
+    "authorTip": "The author's own: +{{works}} / -{{broken}}, counted like any other device",
+    "pooledTip": "The score pools votes by strategy fingerprint; {{count}} other sets share it"
+  },
+  "technique": {
+    "payload": {
+      "builtin1": "built-in payload 1",
+      "builtin2": "built-in payload 2",
+      "capture": "attached capture",
+      "generated": "generated ClientHello",
+      "custom": "custom payload",
+      "random": "random bytes",
+      "zero": "zero bytes",
+      "inverted": "inverted original",
+      "stun": "STUN payload",
+      "other": "other payload",
+      "quic_initial": "generated QUIC Initial",
+      "quic_preset": "bundled QUIC preset",
+      "quic_capture": "attached QUIC capture"
+    },
+    "fake": {
+      "chip": "fake {{strategy}}",
+      "text": "fake ClientHello: {{payloadLabel}}, {{strategy}}",
+      "domain": "for {{domain}}",
+      "ttl": "TTL {{ttl}}",
+      "copies": "copies: {{copies}}"
+    },
+    "sni_mutation": {
+      "chip": "SNI {{mode}}",
+      "text": "SNI mutation {{mode}}"
+    },
+    "tls_mod": {
+      "chip": "TLS mod",
+      "text": "TLS modifications: {{mods}}"
+    },
+    "frag": {
+      "chip": "frag {{strategy}}",
+      "text": "{{strategy}} fragmentation",
+      "pool": "pool {{pool}}",
+      "middle": "split inside the SNI",
+      "reverse": "reversed order"
+    },
+    "syn_fake": {
+      "chip": "SYN fake",
+      "text": "fake data in SYN"
+    },
+    "desync": {
+      "chip": "desync {{mode}}",
+      "text": "desync {{mode}}",
+      "count": "x{{count}}"
+    },
+    "incoming": {
+      "chip": "incoming {{mode}}",
+      "text": "incoming {{mode}}"
+    },
+    "window": {
+      "chip": "window {{mode}}",
+      "text": "window {{mode}}"
+    },
+    "duplicate": {
+      "chip": "dup x{{count}}",
+      "text": "duplicate segments x{{count}}"
+    },
+    "rst_protection": {
+      "chip": "RST guard",
+      "text": "RST protection"
+    },
+    "drop_sack": {
+      "chip": "drop SACK",
+      "text": "drop SACK"
+    },
+    "http_method_eol": {
+      "chip": "HTTP EOL",
+      "text": "HTTP method EOL"
+    },
+    "seg2_delay": {
+      "chip": "delay {{ms}} ms",
+      "text": "second segment delayed {{ms}} ms"
+    },
+    "udp": {
+      "chip": "UDP {{mode}}",
+      "text": "UDP {{mode}}",
+      "payloadLabel": "{{payloadLabel}}"
+    },
+    "dns": {
+      "chip": "DNS",
+      "text": "DNS redirect",
+      "host": "via {{host}}",
+      "strict": "strict",
+      "fragment": "fragmented queries",
+      "pins": "pinned domains: {{pins}}"
+    },
+    "block": {
+      "chip": "block",
+      "text": "blocks matched traffic",
+      "action": "{{action}}"
+    },
+    "mss_clamp": {
+      "chip": "MSS {{size}}",
+      "text": "MSS clamp {{size}}"
+    },
+    "passthrough": {
+      "chip": "passthrough",
+      "text": "no bypass, matched traffic passes unchanged"
+    }
+  },
+  "targetFilter": {
+    "tls_only": "TLS {{version}} only",
+    "ip_only": "IPv{{version}} only",
+    "domain_only": "domain-only matching"
+  },
+  "flag": {
+    "needs_payload": {
+      "label": "needs payload",
+      "hint": "The set carries payload files the router downloads with it."
+    },
+    "block": {
+      "label": "blocks traffic",
+      "hint": "A block set drops matched traffic instead of bypassing DPI."
+    },
+    "has_pins": {
+      "label": "pins addresses",
+      "hint": "The set pins domains to fixed addresses in DNS."
+    },
+    "blanket": {
+      "label": "categories only",
+      "hint": "No domains or addresses, only geosite categories. A router can match it only if its own geosite file has those categories."
+    },
+    "catch_all": {
+      "label": "pattern match",
+      "hint": "At least one domain entry is a regular expression."
+    }
+  },
+  "audit": {
+    "empty": "Nothing has been recorded yet.",
+    "history": "History",
+    "actor": {
+      "console": "console",
+      "basic": "password login",
+      "cli": "command line",
+      "system": "automatic"
+    },
+    "action": {
+      "set": {
+        "approve": "approved",
+        "reject": "rejected",
+        "hide": "hidden",
+        "restore": "restored",
+        "withdraw": "set withdrawn",
+        "reinstate": "set reinstated",
+        "delete": "set deleted",
+        "edit": "edited",
+        "text": "text edited",
+        "reports_dismiss": "reports dismissed",
+        "reports_resolve": "reports marked handled"
+      },
+      "key": {
+        "ban": "banned",
+        "unban": "unbanned",
+        "trust": "trusted",
+        "untrust": "trust removed",
+        "profile": "profile edited"
+      },
+      "mirror": {
+        "approve": "mirror approved",
+        "reject": "mirror rejected",
+        "remove": "mirror removed",
+        "check": "mirror checked"
+      },
+      "report": {
+        "dismiss": "report dismissed",
+        "resolve": "report marked handled",
+        "reopen": "report reopened"
+      },
+      "catalogue": {
+        "build": "build requested",
+        "epoch": "new epoch",
+        "revoke": "key revoked"
+      },
+      "settings": {
+        "save": "limits changed"
+      },
+      "notify": {
+        "save": "notifications changed",
+        "test": "test notification sent"
+      }
+    },
+    "all": "All",
+    "batch": "bulk",
+    "batchHint": "Part of a bulk action. Click to show the whole batch.",
+    "batchFilter": "Batch {{id}}",
+    "columns": {
+      "at": "When",
+      "action": "Action",
+      "target": "Target",
+      "actor": "Who",
+      "details": "Details"
+    },
+    "loadMore": "Load older entries",
+    "noMatch": "No entries match the filter.",
+    "searchPlaceholder": "Exact target id",
+    "fullLog": "Open the full log",
+    "kind": {
+      "set": "Set",
+      "key": "Key",
+      "mirror": "Mirror",
+      "report": "Report",
+      "catalogue": "Catalogue",
+      "settings": "Settings",
+      "notify": "Notifications"
+    }
+  },
+  "emitted": {
+    "unreadable": "(custom payload without a readable server name)",
+    "builtin_payload": "built-in payload",
+    "capture": "attached TLS capture",
+    "payload_domain": "generated for a domain",
+    "custom_payload": "custom payload",
+    "fake_snis": "SNI mutation list",
+    "quic_capture": "attached QUIC capture"
+  },
+  "editText": {
+    "button": "Edit title",
+    "title": "Edit the text of {{ref}}",
+    "intro": "Only the title and description change. The strategy, targets and version stay the same.",
+    "introListed": "Only the title and description change, so routers see no update and votes keep counting. Routers that already applied the set keep their local name; new ones get the new title after the next build."
+  },
+  "reasons": {
+    "saveAsPreset": "Save as a preset",
+    "title": "Saved reasons",
+    "desc": "Offered as one-click chips in the matching dialogs",
+    "empty": "Nothing saved yet.",
+    "uses": "used {{count}} times",
+    "delete": "Delete",
+    "label": "Short label",
+    "text": "Reason text",
+    "add": "Add",
+    "scope": {
+      "reject": "Rejecting a version",
+      "hide": "Hiding a version",
+      "withdraw": "Withdrawing a set",
+      "ban": "Banning a key",
+      "mirror_reject": "Rejecting a mirror",
+      "report_dismiss": "Dismissing a report"
+    }
+  },
+  "health": {
+    "title": "Health",
+    "desc": "What needs attention on this hub",
+    "ok": "Nothing needs attention.",
+    "open": "Open",
+    "none": "none",
+    "inDays": "in {{count}} d",
+    "waiting": "shared {{when}}",
+    "queueEmpty": "The queue is empty",
+    "mirrorsLine": "{{announced}} of {{approved}} announced, {{failing}} failing, {{stale}} behind",
+    "fact": {
+      "expires": "Manifest expires",
+      "lastBuild": "Last successful build",
+      "lastError": "Last build error",
+      "oldestPending": "Oldest pending",
+      "mirrors": "Mirrors"
+    },
+    "worst": {
+      "ok": "Healthy",
+      "info": "Notes",
+      "warning": "Needs attention",
+      "error": "Problems"
+    },
+    "issue": {
+      "not_published": "No catalogue has been published. Routers have nothing to download.",
+      "build_failed": "The last build failed: {{message}}. Routers keep the previous catalogue.",
+      "build_overdue": "No successful build for {{hours}} h. The scheduled rebuild has not run.",
+      "manifest_expiring": "The manifest expires in {{days}} d. The next build renews it.",
+      "queue_old": "Sets waiting for a decision: {{count}}. The oldest has waited {{hours}} h.",
+      "mirror_failing": "Mirrors failing the health check: {{count}}.",
+      "mirror_stale": "Mirrors serving an older catalogue: {{count}}.",
+      "mirror_pending": "Mirrors waiting for approval: {{count}}.",
+      "reports_open": "Open reports: {{count}}.",
+      "dev_build": "This hub runs a development build, not a release.",
+      "dirty_source": "The b4 source tree had uncommitted changes when this hub was built ({{source}})."
+    }
+  },
+  "stats": {
+    "range": "{{from}} to {{to}}, UTC days. Keys tagged test are left out.",
+    "days": "{{count}} d",
+    "tiles": {
+      "shares": "Shares",
+      "sharesHint": "new versions, plus {{duplicates}} duplicates",
+      "votes": "Votes",
+      "votesHint": "{{works}} works, {{broken}} broken",
+      "keys": "New keys",
+      "keysHint": "first seen in the range",
+      "reports": "Reports",
+      "reportsHint": "{{hidden}} sets hidden automatically"
+    },
+    "activity": "Activity",
+    "activityDesc": "What routers sent to the hub, per day",
+    "submissions": "Shares and new keys",
+    "feedback": "Votes and reports",
+    "moderation": "Moderation and publishing",
+    "moderationDesc": "Decisions and catalogue builds, per day",
+    "decisions": "Decisions",
+    "buildsTitle": "Builds: {{builds}}, failed: {{failed}}",
+    "series": {
+      "shares": "shares",
+      "duplicates": "duplicates",
+      "new_keys": "new keys",
+      "works": "works",
+      "broken": "broken",
+      "reports": "reports",
+      "approved": "approved",
+      "rejected": "rejected",
+      "hidden": "hidden",
+      "auto_hidden": "hidden by reports",
+      "withdrawn": "withdrawn",
+      "builds": "builds",
+      "build_failed": "failed builds",
+      "mirrors": "mirror announcements",
+      "rated": "rated",
+      "low_n": "too few devices"
+    },
+    "scores": "Published scores",
+    "scoresDesc": "Global score of each set in the current catalogue",
+    "binTip": "Score {{lo}} to {{hi}}: {{sets}} rated, {{low}} with too few devices",
+    "scoreLine": "{{rated}} of {{listed}} sets have votes from at least two devices. Median score: {{median}}.",
+    "demotedLine": "Flagged in the console: {{low}} with a low score, {{stale}} with stale votes. Routers still list them.",
+    "noCatalogue": "No catalogue has been published yet.",
+    "topSets": "Most voted sets",
+    "topSetsDesc": "Ranked by the number of keys that voted in the range",
+    "set": "Set",
+    "votes": "Votes",
+    "keys": "Keys",
+    "noVotes": "No votes in this range.",
+    "origin": "Where votes come from",
+    "originDesc": "{{votes}} votes from {{devices}} keys, {{unverified}} with an unverified origin",
+    "countries": "Countries",
+    "asns": "Networks (ASN)",
+    "clients": "b4 versions",
+    "unknown": "unknown",
+    "testExcluded": "Country and network come from the address a vote was sent from. b4 versions count each key once, by its latest report.",
+    "noOrigin": "No votes with a known origin in this range."
+  },
+  "notify": {
+    "title": "Notifications",
+    "desc": "A digest of what arrived, sent to Telegram or a webhook",
+    "enabled": "On",
+    "test": "Send a test",
+    "testSent": "Test message delivered.",
+    "saved": "Notification settings saved.",
+    "save": "Save",
+    "discard": "Discard changes",
+    "unsaved": "Unsaved changes. A test message uses the saved settings, so it is available after saving.",
+    "chat": "Chat id",
+    "chatHint": "A numeric chat id, or @name of a public channel. The bot has to be a member.",
+    "token": "Bot token",
+    "webhook": "Webhook",
+    "url": "URL",
+    "secret": "Signing secret",
+    "signatureHint": "With a secret, every request carries X-B4hub-Timestamp and X-B4hub-Signature: sha256= and the HMAC-SHA256 of the timestamp, a dot and the body.",
+    "fromEnv": "Set by {{name}} in the service environment, which overrides the console.",
+    "storedHint": "Stored {{hint}}. Type a new value to replace it.",
+    "notSet": "Not set.",
+    "willClear": "Removed when saved.",
+    "keepPlaceholder": "unchanged",
+    "remove": "Remove",
+    "events": "What to send",
+    "event": {
+      "share": {
+        "label": "New sets in the queue",
+        "hint": "Every accepted share that waits for a decision"
+      },
+      "report": {
+        "label": "Reports",
+        "hint": "Every accepted report, with its reason"
+      },
+      "auto_hide": {
+        "label": "Hidden by reports",
+        "hint": "A listed version hidden automatically"
+      },
+      "build_failed": {
+        "label": "Failed builds",
+        "hint": "A catalogue build that failed, with its error"
+      },
+      "mirror": {
+        "label": "New mirrors",
+        "hint": "A mirror that announced itself and waits for approval"
+      }
+    },
+    "digest": "Digest interval, seconds",
+    "digestHint": "The first event after a quiet period goes out at once, later ones are grouped into at most one message per interval. From {{min}} to {{max}}.",
+    "language": "Message language",
+    "testKeysHint": "Shares and reports from keys tagged test are not sent. Enabling a channel or an event does not replay what arrived before.",
+    "status": {
+      "never": "Nothing sent yet.",
+      "ok": "Last delivered {{when}}, sent in total: {{count}}",
+      "failing": "Failing, attempts: {{count}}, last {{when}}: {{error}}"
+    },
+    "stored": "Stored. Type a new value to replace it."
   }
 }

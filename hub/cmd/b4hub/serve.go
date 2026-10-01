@@ -10,12 +10,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4hub/internal/api"
 	"github.com/daniellavrushin/b4hub/internal/asn"
 	"github.com/daniellavrushin/b4hub/internal/catalogue"
 	"github.com/daniellavrushin/b4hub/internal/geo"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
 	"github.com/daniellavrushin/b4hub/internal/ingest"
+	"github.com/daniellavrushin/b4hub/internal/notify"
 	"github.com/daniellavrushin/b4hub/internal/ratelimit"
 	"github.com/daniellavrushin/b4hub/internal/web"
 	"github.com/spf13/cobra"
@@ -25,6 +27,7 @@ var serveFlags struct {
 	geoFlags
 	listen         string
 	trustedProxies string
+	newDatabase    bool
 }
 
 var serveCmd = &cobra.Command{
@@ -38,6 +41,7 @@ func init() {
 	serveCmd.Flags().StringVar(&serveFlags.listen, "listen", envOr(envListen, defaultListen), "listen address")
 	bindTrustedProxies(serveCmd, &serveFlags.trustedProxies)
 	bindGeoFlags(serveCmd, &serveFlags.geoFlags)
+	bindNewDatabase(serveCmd, &serveFlags.newDatabase)
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
@@ -56,10 +60,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	geoService := geo.New(geo.Options{Dir: svc.layout.Geo(), GeoSiteURL: serveFlags.geoSiteURL, GeoIPURL: serveFlags.geoIPURL})
 	builder := svc.builder(serveFlags.publicURL, geoService.Sources())
+	builder.NewDatabase = serveFlags.newDatabase
 	if err := builder.LoadPublished(); err != nil && !errors.Is(err, catalogue.ErrNotPublished) {
 		log.Printf("catalogue: published files ignored: %v", err)
 	}
 
+	notifier := &notify.Service{Store: svc.store, Secret: svc.secret, PublicURL: serveFlags.publicURL}
 	resolver := asn.New(nil, svc.store, nil)
 	server := &api.Server{
 		Store:     svc.store,
@@ -71,6 +77,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 			Secret:  svc.secret,
 			Limiter: ratelimit.New(nil),
 			ASN:     resolver,
+			OnAccepted: func(kind string) {
+				if kind == hubwire.RecordShare || kind == hubwire.RecordReport {
+					notifier.Nudge()
+				}
+			},
+			OnAutoHide: func() {
+				builder.Request(catalogue.TriggerAutoHide)
+			},
 		},
 		Catalogue: builder,
 	}
@@ -87,25 +101,36 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Source:        Source,
 		KeyID:         svc.identity.KeyID(),
 		PublicURL:     serveFlags.publicURL,
-		Rebuild: func() error {
-			result, built, err := builder.BuildIfNeeded(context.Background())
-			if built {
-				log.Printf("catalogue: published %s with %d sets after moderation", result.Manifest.Catalogue.File, len(result.Catalogue.Sets))
-			}
-			return err
-		},
+		Notify:        notifier,
 	}
 	mux := server.Router()
 	site.Mount(mux)
 
 	go geoService.RunDaily(ctx)
 	go builder.Run(ctx, catalogue.DefaultInterval)
-	go sweepBlobs(ctx, svc, hubdata.SweepMinAge)
+	go builder.Mirrors.Run(ctx, catalogue.DefaultMirrorCheckInterval, func() {
+		drift, err := builder.MirrorsDrift(ctx)
+		if err != nil || !drift {
+			return
+		}
+		if err := svc.store.MarkDirty(ctx); err != nil {
+			log.Printf("mirrors: %v", err)
+			return
+		}
+		builder.Request(catalogue.TriggerMirrors)
+	})
+	go maintain(ctx, svc, hubdata.SweepMinAge)
+	go notifier.Run(ctx)
 	serveUntilSignal(newHTTPServer(serveFlags.listen, mux), cancel)
 	return nil
 }
 
-func sweepBlobs(ctx context.Context, svc *services, interval time.Duration) {
+const (
+	unchangedBuildsKept = 14 * 24 * time.Hour
+	buildsKept          = 365 * 24 * time.Hour
+)
+
+func maintain(ctx context.Context, svc *services, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -125,6 +150,9 @@ func sweepBlobs(ctx context.Context, svc *services, interval time.Duration) {
 		}
 		if len(removed) > 0 {
 			log.Printf("blobs: removed %d unreferenced payload(s)", len(removed))
+		}
+		if err := svc.store.PruneBuilds(ctx, time.Now(), unchangedBuildsKept, buildsKept); err != nil {
+			log.Printf("builds: prune: %v", err)
 		}
 	}
 }

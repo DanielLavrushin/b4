@@ -21,6 +21,8 @@ type Set struct {
 	DerivedFromVersion int
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+	WithdrawnAt        time.Time
+	WithdrawReason     string
 }
 
 type Version struct {
@@ -54,6 +56,7 @@ type Version struct {
 	OriginalDescription string
 	EditedAt            time.Time
 	EditNote            string
+	HiddenFrom          string
 }
 
 var (
@@ -87,7 +90,7 @@ type VersionEdit struct {
 
 const versionColumns = `id, set_id, version, fp, targets_key, title, description, projection_json, payloads_json, flags_json, geo_json,
 	b4_min, b4_version, engine, family, status, status_reason, record_id, uploader_hmac, asn_observed, country_observed, asn_hint, country_hint, created_at, updated_at,
-	original_projection_json, edited_at, edit_note, original_title, original_description`
+	original_projection_json, edited_at, edit_note, original_title, original_description, hidden_from`
 
 type rowScanner interface {
 	Scan(dest ...interface{}) error
@@ -98,7 +101,7 @@ func scanVersion(row rowScanner) (*Version, error) {
 	var projection, payloads, flags, geo, createdAt, updatedAt, original, editedAt string
 	err := row.Scan(&v.RowID, &v.SetID, &v.Version, &v.FP, &v.TargetsKey, &v.Title, &v.Description, &projection, &payloads, &flags, &geo,
 		&v.B4Min, &v.B4Version, &v.Engine, &v.Family, &v.Status, &v.StatusReason, &v.RecordID, &v.UploaderHMAC, &v.ASNObserved, &v.CountryObserved, &v.ASNHint, &v.CountryHint, &createdAt, &updatedAt,
-		&original, &editedAt, &v.EditNote, &v.OriginalTitle, &v.OriginalDescription)
+		&original, &editedAt, &v.EditNote, &v.OriginalTitle, &v.OriginalDescription, &v.HiddenFrom)
 	if err != nil {
 		return nil, err
 	}
@@ -201,22 +204,30 @@ func insertVersionTx(ctx context.Context, tx *sql.Tx, v *Version) error {
 }
 
 func (s *Store) EditVersion(ctx context.Context, setID string, version int, edit VersionEdit, now time.Time) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	current, err := scanVersion(tx.QueryRowContext(ctx, `SELECT `+versionColumns+` FROM set_versions WHERE set_id = ? AND version = ?`, setID, version))
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNotFound
-	}
+	return s.Update(ctx, func(t *Tx) error {
+		if err := editVersionTx(ctx, t.tx, setID, version, edit, now); err != nil {
+			return err
+		}
+		if edit.Approve {
+			return setStatusTx(ctx, t.tx, setID, version, hubwire.SetStatusActive, "", now)
+		}
+		return nil
+	})
+}
+
+func (t *Tx) EditVersion(ctx context.Context, setID string, version int, edit VersionEdit, now time.Time) error {
+	return editVersionTx(ctx, t.tx, setID, version, edit, now)
+}
+
+func editVersionTx(ctx context.Context, tx querier, setID string, version int, edit VersionEdit, now time.Time) error {
+	current, err := getVersion(ctx, tx, setID, version)
 	if err != nil {
 		return err
 	}
 	if current.Status != hubwire.SetStatusPending {
 		return ErrNotPending
 	}
-	if !edit.Expect.IsZero() && !edit.Expect.Equal(current.UpdatedAt) {
+	if !edit.Expect.IsZero() && !edit.Expect.Equal(current.Revision()) {
 		return ErrStale
 	}
 	var dupSet string
@@ -262,12 +273,7 @@ func (s *Store) EditVersion(ctx context.Context, setID string, version int, edit
 			return err
 		}
 	}
-	if edit.Approve {
-		if err := setStatusTx(ctx, tx, setID, version, hubwire.SetStatusActive, "", now); err != nil {
-			return err
-		}
-	}
-	return tx.Commit()
+	return nil
 }
 
 func (s *Store) ReferencedBlobs(ctx context.Context) (map[string]struct{}, error) {
@@ -307,7 +313,7 @@ func (s *Store) CreateSet(ctx context.Context, set Set, v *Version) error {
 	if err := insertVersionTx(ctx, tx, v); err != nil {
 		return err
 	}
-	if err := setMetaTx(ctx, tx, metaDirty, "1"); err != nil {
+	if err := markDirtyTx(ctx, tx); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -333,7 +339,7 @@ func (s *Store) AddVersion(ctx context.Context, v *Version) error {
 	if _, err := tx.ExecContext(ctx, `UPDATE sets SET updated_at = ? WHERE id = ?`, formatTime(v.CreatedAt), v.SetID); err != nil {
 		return err
 	}
-	if err := setMetaTx(ctx, tx, metaDirty, "1"); err != nil {
+	if err := markDirtyTx(ctx, tx); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -341,38 +347,69 @@ func (s *Store) AddVersion(ctx context.Context, v *Version) error {
 
 func scanSet(row rowScanner) (*Set, error) {
 	var set Set
-	var createdAt, updatedAt string
-	if err := row.Scan(&set.ID, &set.AuthorHMAC, &set.CurrentVersion, &set.DerivedFromID, &set.DerivedFromVersion, &createdAt, &updatedAt); err != nil {
+	var createdAt, updatedAt, withdrawnAt string
+	if err := row.Scan(&set.ID, &set.AuthorHMAC, &set.CurrentVersion, &set.DerivedFromID, &set.DerivedFromVersion, &createdAt, &updatedAt, &withdrawnAt, &set.WithdrawReason); err != nil {
 		return nil, err
 	}
 	set.CreatedAt = parseTime(createdAt)
 	set.UpdatedAt = parseTime(updatedAt)
+	set.WithdrawnAt = parseTime(withdrawnAt)
 	return &set, nil
 }
 
-const setColumns = `id, author_hmac, current_version, derived_from_id, derived_from_version, created_at, updated_at`
+const setColumns = `id, author_hmac, current_version, derived_from_id, derived_from_version, created_at, updated_at, withdrawn_at, withdraw_reason`
+
+func getSet(ctx context.Context, q querier, id string) (*Set, error) {
+	set, err := scanSet(q.QueryRowContext(ctx, `SELECT `+setColumns+` FROM sets WHERE id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return set, err
+}
+
+func queryVersions(ctx context.Context, q querier, query string, args ...interface{}) ([]Version, error) {
+	rows, err := q.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]Version, 0)
+	for rows.Next() {
+		v, err := scanVersion(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *v)
+	}
+	return out, rows.Err()
+}
+
+func setVersions(ctx context.Context, q querier, id string) ([]Version, error) {
+	return queryVersions(ctx, q, `SELECT `+versionColumns+` FROM set_versions WHERE set_id = ? ORDER BY version`, id)
+}
 
 func (s *Store) GetSet(ctx context.Context, id string) (*Set, []Version, error) {
-	set, err := scanSet(s.db.QueryRowContext(ctx, `SELECT `+setColumns+` FROM sets WHERE id = ?`, id))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil, ErrNotFound
-	}
+	set, err := getSet(ctx, s.db, id)
 	if err != nil {
 		return nil, nil, err
 	}
-	versions, err := s.queryVersions(ctx, `SELECT `+versionColumns+` FROM set_versions WHERE set_id = ? ORDER BY version`, id)
+	versions, err := setVersions(ctx, s.db, id)
 	if err != nil {
 		return nil, nil, err
 	}
 	return set, versions, nil
 }
 
-func (s *Store) GetVersion(ctx context.Context, setID string, version int) (*Version, error) {
-	v, err := scanVersion(s.db.QueryRowContext(ctx, `SELECT `+versionColumns+` FROM set_versions WHERE set_id = ? AND version = ?`, setID, version))
+func getVersion(ctx context.Context, q querier, setID string, version int) (*Version, error) {
+	v, err := scanVersion(q.QueryRowContext(ctx, `SELECT `+versionColumns+` FROM set_versions WHERE set_id = ? AND version = ?`, setID, version))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	return v, err
+}
+
+func (s *Store) GetVersion(ctx context.Context, setID string, version int) (*Version, error) {
+	return getVersion(ctx, s.db, setID, version)
 }
 
 func (s *Store) LatestVersion(ctx context.Context, setID string) (*Version, error) {
@@ -393,20 +430,7 @@ func (s *Store) FindDuplicate(ctx context.Context, fp, targetsKey string) (*Vers
 }
 
 func (s *Store) queryVersions(ctx context.Context, query string, args ...interface{}) ([]Version, error) {
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := make([]Version, 0)
-	for rows.Next() {
-		v, err := scanVersion(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *v)
-	}
-	return out, rows.Err()
+	return queryVersions(ctx, s.db, query, args...)
 }
 
 func (s *Store) PendingVersions(ctx context.Context) ([]Version, error) {
@@ -421,10 +445,88 @@ func (s *Store) ActiveVersions(ctx context.Context) ([]Version, error) {
 	return s.queryVersions(ctx, `SELECT `+versionColumns+` FROM set_versions WHERE status = ? ORDER BY set_id, version`, hubwire.SetStatusActive)
 }
 
+const listedFilter = `v.status = 'active' AND v.version = (SELECT MAX(o.version) FROM set_versions o WHERE o.set_id = v.set_id AND o.status = 'active')`
+
+const withheldSets = `SELECT s.id FROM sets s LEFT JOIN keys k ON k.key_hmac = s.author_hmac WHERE s.withdrawn_at <> '' OR COALESCE(k.banned, 0) = 1`
+
 func (s *Store) ListedVersions(ctx context.Context) ([]Version, error) {
+	return s.queryVersions(ctx, `SELECT `+versionColumns+` FROM set_versions v WHERE `+listedFilter+` ORDER BY v.set_id`)
+}
+
+func (s *Store) CatalogueVersions(ctx context.Context) ([]Version, error) {
+	return s.queryVersions(ctx, `SELECT `+versionColumns+` FROM set_versions v WHERE `+listedFilter+`
+		AND v.set_id NOT IN (`+withheldSets+`) ORDER BY v.set_id`)
+}
+
+const (
+	WithheldWithdrawn    = "set_withdrawn"
+	WithheldAuthorBanned = "author_banned"
+)
+
+func (s *Store) Withheld(ctx context.Context) (map[string]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT s.id, s.withdrawn_at, COALESCE(k.banned, 0) FROM sets s LEFT JOIN keys k ON k.key_hmac = s.author_hmac
+		WHERE s.withdrawn_at <> '' OR COALESCE(k.banned, 0) = 1`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]string)
+	for rows.Next() {
+		var id, withdrawnAt string
+		var banned int
+		if err := rows.Scan(&id, &withdrawnAt, &banned); err != nil {
+			return nil, err
+		}
+		if withdrawnAt != "" {
+			out[id] = WithheldWithdrawn
+		} else {
+			out[id] = WithheldAuthorBanned
+		}
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) WithheldVersions(ctx context.Context) ([]Version, error) {
 	return s.queryVersions(ctx, `SELECT `+versionColumns+` FROM set_versions v
-		WHERE v.status = ? AND v.version = (SELECT MAX(o.version) FROM set_versions o WHERE o.set_id = v.set_id AND o.status = ?)
-		ORDER BY v.set_id`, hubwire.SetStatusActive, hubwire.SetStatusActive)
+		WHERE `+listedFilter+` AND v.set_id IN (`+withheldSets+`)
+		ORDER BY v.updated_at DESC`)
+}
+
+type VersionHead struct {
+	Title  string
+	Status string
+}
+
+func (s *Store) VersionHeads(ctx context.Context) (map[string]map[int]VersionHead, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT set_id, version, title, status FROM set_versions`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]map[int]VersionHead)
+	for rows.Next() {
+		var setID string
+		var version int
+		var h VersionHead
+		if err := rows.Scan(&setID, &version, &h.Title, &h.Status); err != nil {
+			return nil, err
+		}
+		if out[setID] == nil {
+			out[setID] = make(map[int]VersionHead)
+		}
+		out[setID][version] = h
+	}
+	return out, rows.Err()
+}
+
+func LatestHead(heads map[int]VersionHead) (int, VersionHead) {
+	best := 0
+	for v := range heads {
+		if v > best {
+			best = v
+		}
+	}
+	return best, heads[best]
 }
 
 func (s *Store) SetsByAuthor(ctx context.Context, authorHMAC string) ([]Set, error) {
@@ -445,19 +547,15 @@ func (s *Store) SetsByAuthor(ctx context.Context, authorHMAC string) ([]Set, err
 }
 
 func (s *Store) setStatus(ctx context.Context, setID string, version int, status, reason string, now time.Time) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if err := setStatusTx(ctx, tx, setID, version, status, reason, now); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return s.Update(ctx, func(t *Tx) error {
+		return setStatusTx(ctx, t.tx, setID, version, status, reason, now)
+	})
 }
 
-func setStatusTx(ctx context.Context, tx *sql.Tx, setID string, version int, status, reason string, now time.Time) error {
-	res, err := tx.ExecContext(ctx, `UPDATE set_versions SET status = ?, status_reason = ?, updated_at = ? WHERE set_id = ? AND version = ?`,
+func setStatusTx(ctx context.Context, q querier, setID string, version int, status, reason string, now time.Time) error {
+	res, err := q.ExecContext(ctx, `UPDATE set_versions SET
+		hidden_from = CASE WHEN ?1 = 'hidden' THEN (CASE WHEN status = 'hidden' THEN hidden_from ELSE status END) ELSE '' END,
+		status = ?1, status_reason = ?2, updated_at = ?3 WHERE set_id = ?4 AND version = ?5`,
 		status, reason, formatTime(now), setID, version)
 	if err != nil {
 		return err
@@ -466,11 +564,45 @@ func setStatusTx(ctx context.Context, tx *sql.Tx, setID string, version int, sta
 		return ErrNotFound
 	}
 	if status == hubwire.SetStatusActive {
-		if _, err := tx.ExecContext(ctx, `UPDATE sets SET current_version = MAX(current_version, ?), updated_at = ? WHERE id = ?`, version, formatTime(now), setID); err != nil {
+		if _, err := q.ExecContext(ctx, `UPDATE sets SET current_version = MAX(current_version, ?), updated_at = ? WHERE id = ?`, version, formatTime(now), setID); err != nil {
 			return err
 		}
 	}
-	return setMetaTx(ctx, tx, metaDirty, "1")
+	return markDirtyTx(ctx, q)
+}
+
+func restoreTx(ctx context.Context, q querier, setID string, version int, now time.Time) (string, error) {
+	v, err := getVersion(ctx, q, setID, version)
+	if err != nil {
+		return "", err
+	}
+	target := hubwire.SetStatusActive
+	if v.HiddenFrom == hubwire.SetStatusPending {
+		target = hubwire.SetStatusPending
+	}
+	return target, setStatusTx(ctx, q, setID, version, target, "", now)
+}
+
+func withdrawSetTx(ctx context.Context, q querier, setID, reason string, now time.Time) error {
+	res, err := q.ExecContext(ctx, `UPDATE sets SET withdrawn_at = ?, withdraw_reason = ? WHERE id = ?`, formatTime(now), reason, setID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return markDirtyTx(ctx, q)
+}
+
+func reinstateSetTx(ctx context.Context, q querier, setID string) error {
+	res, err := q.ExecContext(ctx, `UPDATE sets SET withdrawn_at = '', withdraw_reason = '' WHERE id = ?`, setID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return markDirtyTx(ctx, q)
 }
 
 func (s *Store) Approve(ctx context.Context, setID string, version int, now time.Time) error {
@@ -486,11 +618,16 @@ func (s *Store) Hide(ctx context.Context, setID string, version int, reason stri
 }
 
 func (s *Store) DeleteSet(ctx context.Context, setID string) ([]string, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
+	var orphaned []string
+	err := s.Update(ctx, func(t *Tx) error {
+		var err error
+		orphaned, err = deleteSetTx(ctx, t.tx, setID)
+		return err
+	})
+	return orphaned, err
+}
+
+func deleteSetTx(ctx context.Context, tx querier, setID string) ([]string, error) {
 	rows, err := tx.QueryContext(ctx, `SELECT payloads_json FROM set_versions WHERE set_id = ?`, setID)
 	if err != nil {
 		return nil, err
@@ -540,10 +677,7 @@ func (s *Store) DeleteSet(ctx context.Context, setID string) ([]string, error) {
 			orphaned = append(orphaned, hash)
 		}
 	}
-	if err := setMetaTx(ctx, tx, metaDirty, "1"); err != nil {
-		return nil, err
-	}
-	if err := tx.Commit(); err != nil {
+	if err := markDirtyTx(ctx, tx); err != nil {
 		return nil, err
 	}
 	sort.Strings(orphaned)
@@ -602,4 +736,60 @@ func (s *Store) Sets(ctx context.Context) (map[string]Set, error) {
 		out[set.ID] = *set
 	}
 	return out, rows.Err()
+}
+
+var ErrNotEditable = errors.New("a rejected version cannot be edited")
+
+func (v *Version) Revision() time.Time {
+	if v.EditedAt.After(v.UpdatedAt) {
+		return v.EditedAt
+	}
+	return v.UpdatedAt
+}
+
+type TextEdit struct {
+	Title       string
+	Description string
+	Note        string
+	Projection  map[string]interface{}
+	Expect      time.Time
+}
+
+func (t *Tx) EditText(ctx context.Context, setID string, version int, e TextEdit, now time.Time) (*Version, error) {
+	current, err := getVersion(ctx, t.tx, setID, version)
+	if err != nil {
+		return nil, err
+	}
+	if current.Status == hubwire.SetStatusRejected {
+		return current, ErrNotEditable
+	}
+	if !e.Expect.IsZero() && !e.Expect.Equal(current.Revision()) {
+		return current, ErrStale
+	}
+	v := *current
+	v.Title = e.Title
+	v.Description = e.Description
+	v.Projection = e.Projection
+	v.EditNote = e.Note
+	v.EditedAt = now
+	if v.OriginalProjection == nil {
+		v.OriginalProjection = current.Projection
+		v.OriginalTitle = current.Title
+		v.OriginalDescription = current.Description
+	}
+	enc, err := encodeVersion(&v)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := t.tx.ExecContext(ctx, `UPDATE set_versions SET title = ?, description = ?, projection_json = ?, original_projection_json = ?,
+		original_title = ?, original_description = ?, edited_at = ?, edit_note = ? WHERE id = ?`,
+		v.Title, v.Description, enc.projection, enc.original, v.OriginalTitle, v.OriginalDescription, formatTime(v.EditedAt), v.EditNote, v.RowID); err != nil {
+		return nil, err
+	}
+	if current.Status == hubwire.SetStatusActive {
+		if err := markDirtyTx(ctx, t.tx); err != nil {
+			return nil, err
+		}
+	}
+	return current, nil
 }

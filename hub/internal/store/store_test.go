@@ -371,8 +371,8 @@ func TestTrustKey(t *testing.T) {
 	if k, _ = st.GetKey(ctx, "k1"); k.Trusted || !k.TrustedAt.IsZero() {
 		t.Fatalf("untrust must clear the flag, got %+v", k)
 	}
-	summaries, err := st.Keys(ctx)
-	if err != nil || len(summaries) != 1 || summaries[0].Trusted {
-		t.Fatalf("keys: %+v %v", summaries, err)
+	rows, total, _, err := st.KeyList(ctx, KeyQuery{})
+	if err != nil || total != 1 || rows[0].Trusted {
+		t.Fatalf("keys: %+v %v", rows, err)
 	}
 }

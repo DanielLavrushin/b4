@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/hubwire"
+	"github.com/daniellavrushin/b4hub/internal/asn"
 	"github.com/daniellavrushin/b4hub/internal/catalogue"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
 	"github.com/daniellavrushin/b4hub/internal/ingest"
@@ -30,7 +32,7 @@ var templateFS embed.FS
 
 var page = template.Must(template.New("index.html").ParseFS(templateFS, "templates/index.html"))
 
-func (s *Service) Router() *http.ServeMux {
+func (s *Service) Router() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+hubwire.PathHealth, s.health)
 	mux.HandleFunc("GET "+hubwire.PathManifest, s.manifest)
@@ -38,7 +40,12 @@ func (s *Service) Router() *http.ServeMux {
 	mux.HandleFunc("GET "+hubwire.PathBlob+"{hash}", s.blob)
 	mux.HandleFunc("POST "+hubwire.PathMessage, s.message)
 	mux.HandleFunc("GET /{$}", s.index)
-	return mux
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/b4/") {
+			w.Header().Set(HeaderNode, s.node)
+		}
+		mux.ServeHTTP(w, r)
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, body interface{}) {
@@ -132,15 +139,42 @@ func (s *Service) message(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, ingest.CodeBadRecord, err.Error())
 		return
 	}
-	answer := s.relay.Handle(r.Context(), raw)
+	client := asn.ClientIP(r)
+	s.noteUntrustedProxy(r, client)
+	answer := s.relay.Handle(r.Context(), raw, client, r.Header.Get(HeaderVia))
 	contentType := answer.ContentType
 	if contentType == "" {
 		contentType = "application/json"
 	}
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", cacheNever)
+	if answer.RetryAfter != "" {
+		w.Header().Set("Retry-After", answer.RetryAfter)
+	}
 	w.WriteHeader(answer.Status)
 	_, _ = w.Write(answer.Body)
+}
+
+var forwardingHeaders = []string{"X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP"}
+
+func (s *Service) noteUntrustedProxy(r *http.Request, client net.IP) {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	peer := net.ParseIP(strings.Trim(host, "[]"))
+	if peer == nil || client == nil || !peer.Equal(client) {
+		return
+	}
+	for _, name := range forwardingHeaders {
+		if r.Header.Get(name) == "" {
+			continue
+		}
+		s.proxyNote.Do(func() {
+			log.Printf("mirror: requests from %s carry %s, but --trusted-proxies does not name that proxy, so every router behind it counts as one client for the per-client limits", peer, name)
+		})
+		return
+	}
 }
 
 func (s *Service) index(w http.ResponseWriter, r *http.Request) {
