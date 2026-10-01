@@ -299,7 +299,7 @@ The backend is chosen automatically. Systems with nftables use nftables, older s
 
 Each set routed through an output interface is assigned automatically:
 
-- **fwmark** - packet mark (range `0x100` to `0x7EFF`)
+- **fwmark** - packet mark, from a hash in the range `0x100` to `0x7EFF`, or counted up from `0x66` when every hashed value is taken
 - **routing table** - routing table number (range `100` to `249`)
 
 Values are computed from the interface name, the egress IP and the kill-switch setting, and stay stable across reboots. Sets that agree on all three share a `fwmark` and a table; a set that differs in any of them, including one with the kill switch on beside one without, gets its own.
