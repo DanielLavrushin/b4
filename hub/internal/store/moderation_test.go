@@ -1042,3 +1042,38 @@ func TestReportsFromTestKeysDoNotCount(t *testing.T) {
 		t.Fatalf("a test key's report must not count toward the automatic hide: %d", n)
 	}
 }
+
+func TestAutoHideReportedRecountsInsideItsTransaction(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	active := "01ARZ3NDEKTSV4RRFFQ69G5FA1"
+	addSetWith(t, st, active, "a", hubwire.SetStatusActive)
+	for i, asn := range []string{"64500", "64501", "64502"} {
+		if err := st.InsertReport(ctx, Report{RecordID: "record-" + asn, SetID: active, Version: 1, KeyHMAC: "reporter-" + asn, ASNObserved: asn, Reason: "steals traffic", ReceivedAt: testNow.Add(time.Duration(i) * time.Minute)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, err := st.IndependentReports(ctx, active, 1); err != nil || n != 3 {
+		t.Fatalf("three independent reports, got %d %v", n, err)
+	}
+	if err := st.BanKey(ctx, "reporter-64502", "spam", testNow); err != nil {
+		t.Fatal(err)
+	}
+	hidden, err := st.AutoHideReported(ctx, active, 1, "reports", 3, testNow)
+	if err != nil || hidden {
+		t.Fatalf("a count that fell below the threshold before the hide must not hide, got %v %v", hidden, err)
+	}
+	if v, _ := st.GetVersion(ctx, active, 1); v.Status != hubwire.SetStatusActive {
+		t.Fatalf("the version stays listed: %+v", v)
+	}
+	if err := st.UnbanKey(ctx, "reporter-64502"); err != nil {
+		t.Fatal(err)
+	}
+	if hidden, err = st.AutoHideReported(ctx, active, 1, "reports", 3, testNow); err != nil || !hidden {
+		t.Fatalf("three counting reports hide it, got %v %v", hidden, err)
+	}
+	entries, _, err := st.AuditLog(ctx, AuditQuery{TargetKind: TargetSet, TargetID: active})
+	if err != nil || len(entries) != 1 || entries[0].After["independent_reports"] != float64(3) {
+		t.Fatalf("the hide is audited with the count it was decided on: %+v %v", entries, err)
+	}
+}

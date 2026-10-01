@@ -128,7 +128,7 @@ func (s *Service) report(ctx context.Context, entry record) Response {
 			return internalError(err)
 		}
 		if independent >= ReportsToHide {
-			hidden, err := s.Store.AutoHide(ctx, v.SetID, v.Version, ReasonReports, independent, entry.now)
+			hidden, err := s.Store.AutoHideReported(ctx, v.SetID, v.Version, ReasonReports, ReportsToHide, entry.now)
 			if err != nil {
 				return internalError(err)
 			}

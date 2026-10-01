@@ -301,32 +301,54 @@ func parseCursor(raw string) (string, int64, bool) {
 func (s *Store) AutoHide(ctx context.Context, setID string, version int, reason string, independent int, now time.Time) (bool, error) {
 	hidden := false
 	err := s.Update(ctx, func(t *Tx) error {
-		v, err := getVersion(ctx, t.tx, setID, version)
-		if err != nil {
-			return err
-		}
-		if v.Status != "active" {
-			return nil
-		}
-		if err := setStatusTx(ctx, t.tx, setID, version, "hidden", reason, now); err != nil {
-			return err
-		}
-		hidden = true
-		_, err = auditTx(ctx, t.tx, AuditEntry{
-			At:         now,
-			Actor:      ActorSystem,
-			ActorRef:   reason,
-			Action:     "set.hide",
-			TargetKind: TargetSet,
-			TargetID:   setID,
-			Version:    version,
-			Reason:     reason,
-			Before:     map[string]interface{}{"status": v.Status},
-			After:      map[string]interface{}{"status": "hidden", "independent_reports": independent},
-		})
+		var err error
+		hidden, err = autoHideTx(ctx, t.tx, setID, version, reason, independent, now)
 		return err
 	})
 	return hidden, err
+}
+
+func (s *Store) AutoHideReported(ctx context.Context, setID string, version int, reason string, threshold int, now time.Time) (bool, error) {
+	hidden := false
+	err := s.Update(ctx, func(t *Tx) error {
+		reports, err := queryReports(ctx, t.tx, `SELECT `+reportColumns+reportFrom+` WHERE r.set_id = ? AND r.version = ?`, setID, version)
+		if err != nil {
+			return err
+		}
+		independent := IndependentOf(reports)
+		if independent < threshold {
+			return nil
+		}
+		hidden, err = autoHideTx(ctx, t.tx, setID, version, reason, independent, now)
+		return err
+	})
+	return hidden, err
+}
+
+func autoHideTx(ctx context.Context, q querier, setID string, version int, reason string, independent int, now time.Time) (bool, error) {
+	v, err := getVersion(ctx, q, setID, version)
+	if err != nil {
+		return false, err
+	}
+	if v.Status != "active" {
+		return false, nil
+	}
+	if err := setStatusTx(ctx, q, setID, version, "hidden", reason, now); err != nil {
+		return false, err
+	}
+	_, err = auditTx(ctx, q, AuditEntry{
+		At:         now,
+		Actor:      ActorSystem,
+		ActorRef:   reason,
+		Action:     "set.hide",
+		TargetKind: TargetSet,
+		TargetID:   setID,
+		Version:    version,
+		Reason:     reason,
+		Before:     map[string]interface{}{"status": v.Status},
+		After:      map[string]interface{}{"status": "hidden", "independent_reports": independent},
+	})
+	return err == nil, err
 }
 
 func resolveSetReportsTx(ctx context.Context, q querier, setID, state, resolution, note string, now time.Time) (int, error) {
