@@ -104,7 +104,16 @@ jobs:
           set -euo pipefail
           for TAG in $TAGS; do
             mkdir -p "staging/$TAG"
-            gh release download "$TAG" --dir "staging/$TAG" --clobber
+            ATTEMPT=1
+            until gh release download "$TAG" --dir "staging/$TAG" --clobber; do
+              if [ "$ATTEMPT" -ge 3 ]; then
+                echo "Failed to download assets for $TAG after $ATTEMPT attempts" >&2
+                exit 1
+              fi
+              echo "Download failed for $TAG; retrying in $((ATTEMPT * 5)) seconds ($ATTEMPT/3)" >&2
+              sleep "$((ATTEMPT * 5))"
+              ATTEMPT=$((ATTEMPT + 1))
+            done
             echo "== $TAG =="
             ls -la "staging/$TAG"
           done
