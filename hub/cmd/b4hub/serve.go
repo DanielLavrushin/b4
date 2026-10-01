@@ -27,7 +27,7 @@ var serveFlags struct {
 	geoFlags
 	listen         string
 	trustedProxies string
-	allowEmpty     bool
+	newDatabase    bool
 }
 
 var serveCmd = &cobra.Command{
@@ -41,7 +41,7 @@ func init() {
 	serveCmd.Flags().StringVar(&serveFlags.listen, "listen", envOr(envListen, defaultListen), "listen address")
 	bindTrustedProxies(serveCmd, &serveFlags.trustedProxies)
 	bindGeoFlags(serveCmd, &serveFlags.geoFlags)
-	bindAllowEmpty(serveCmd, &serveFlags.allowEmpty)
+	bindNewDatabase(serveCmd, &serveFlags.newDatabase)
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
@@ -60,7 +60,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	geoService := geo.New(geo.Options{Dir: svc.layout.Geo(), GeoSiteURL: serveFlags.geoSiteURL, GeoIPURL: serveFlags.geoIPURL})
 	builder := svc.builder(serveFlags.publicURL, geoService.Sources())
-	builder.AllowEmpty = serveFlags.allowEmpty
+	builder.NewDatabase = serveFlags.newDatabase
 	if err := builder.LoadPublished(); err != nil && !errors.Is(err, catalogue.ErrNotPublished) {
 		log.Printf("catalogue: published files ignored: %v", err)
 	}

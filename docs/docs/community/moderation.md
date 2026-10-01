@@ -300,7 +300,7 @@ Every hub that announced itself as a mirror of this one, pending first. The row 
 | **Remove** | It is forgotten, and can announce itself again |
 | **Check now** | Checks one mirror; **Check all** checks every approved one |
 
-The hub checks every approved mirror every 10 minutes, independently of builds. A check fetches the mirror's health endpoint and its manifest and verifies that the manifest is signed by this hub; a failure names the step that failed. An approved mirror stays in the manifest for 24 hours after its last passing check, and the row shows when it drops out without another one. When a round of checks changes the set of mirrors that should be announced, a build is requested.
+The hub checks every approved mirror every 10 minutes, and once more before the first build after it starts. A check fetches the mirror's health endpoint and its manifest and verifies that the manifest is signed by this hub; a failure names the step that failed. An approved mirror stays in the manifest for 24 hours after its last passing check, and the row shows when it drops out without another one. When every approved mirror fails at once, the ones the previous manifest listed stay in it until one passes again or a moderator rejects or removes them; their rows read **kept while no mirror passes its check** and show no drop-out time. When a round of checks changes the set of mirrors that should be announced, a build is requested.
 
 The **Serves** column compares the catalogue the mirror had at its last check with this hub's: **current**, **behind** by some sequence numbers, **stale** when it is still behind 15 minutes after the newer catalogue was published or holds an older epoch, or **ahead**.
 
@@ -325,7 +325,7 @@ The kinds are the works and broken votes made by hand, the upload counted as a w
 Each report carries when it arrived, the set and version, the network, the contributor, the reason typed in, and whether it counts. **Dismiss** and **Mark handled** take an optional note and apply to one report or to a selection; **Reopen** returns a report to the inbox. Hiding, rejecting, restoring and withdrawing close the open reports of what they touch and record why.
 
 :::info
-A listed version is hidden automatically once three open reports against it come from independent keys and networks. A report counts only while it is open, when its network is known, and when its key is neither banned nor tagged **test**. Restoring a version dismisses its open reports, so the count starts again from zero.
+A listed version is hidden automatically once three open reports against it come from independent keys and networks. A report counts only while it is open, when its network is known, and when its key is neither banned nor tagged **test**. A report an approved mirror passed on has no known network, so it never counts. Restoring a version dismisses its open reports, so the count starts again from zero.
 :::
 
 ## Catalogue
@@ -342,8 +342,10 @@ Three operations, each of which republishes:
 | **Start a new epoch** | Resets the sequence number. Every router treats the new epoch as authoritative and downloads again |
 | **Revoke a hub signing key** | Adds a key id to the list every manifest carries. Routers stop trusting anything signed by it |
 
+A build is refused, and the build history gives the cause, in two cases: when its sequence number would not be above the catalogue already published or the one an approved mirror serves, which is what a database restored from an older backup looks like, and when a database that has never published would replace the published catalogue with fewer sets or sign an empty one with a key built into b4. `--new-database` on `serve` or `build` confirms the second case.
+
 :::warning
-A new epoch is what makes routers accept a catalogue after the database was restored from a backup, because they refuse anything older than what they already hold. Outside that case it makes every router download the catalogue again for no gain.
+A new epoch is what publishes a catalogue after the database was restored from an older backup: routers refuse anything older than what they already hold, and the hub refuses to build it until the epoch changes. Outside that case it makes every router download the catalogue again for no gain.
 :::
 
 :::danger
@@ -365,7 +367,7 @@ Counts over the last 7, 30, 90 or 365 days, by UTC day. Keys tagged **test** are
 | Moderation and publishing | Approvals, rejections, hides, automatic hides and withdrawals per day; builds, failed builds and mirror announcements per day |
 | Published scores | The global score of every set in the current catalogue in ten bands, separating sets with votes from at least two devices from those with fewer; the median, and how many sets carry a low-score or stale mark |
 | Most voted sets | The sets the most keys voted on in the range |
-| Where votes come from | Votes and keys by country and by network, from the address each vote arrived from, and keys by the b4 version and engine of their latest record |
+| Where votes come from | Votes and keys by country and by network, from the address each vote arrived from, leaving out votes an approved mirror passed on, which carry no network; and keys by the b4 version and engine of their latest record |
 
 ## Audit log
 

@@ -15,35 +15,34 @@ type breaker struct {
 	mu        sync.Mutex
 	failures  int
 	backoff   time.Duration
+	openedAt  time.Time
 	openUntil time.Time
 	downSince time.Time
+	probing   bool
 }
 
-func (b *breaker) allow(now time.Time) bool {
+func (b *breaker) allow(now time.Time) (ok, probe bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.failures < breakerThreshold {
-		return true
+		return true, false
 	}
-	if now.Before(b.openUntil) {
-		return false
+	if b.probing || now.Before(b.openUntil) {
+		return false, false
 	}
-	b.openUntil = now.Add(b.backoff)
-	return true
+	b.probing = true
+	return true, true
 }
 
-func (b *breaker) open(now time.Time) bool {
+func (b *breaker) failure(start, now time.Time, probe bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.failures >= breakerThreshold && now.Before(b.openUntil)
-}
-
-func (b *breaker) failure(now time.Time) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	if probe {
+		b.probing = false
+	}
 	b.failures++
 	if b.downSince.IsZero() {
-		b.downSince = now
+		b.downSince = start
 	}
 	if b.failures < breakerThreshold {
 		return
@@ -51,13 +50,22 @@ func (b *breaker) failure(now time.Time) {
 	switch {
 	case b.backoff == 0:
 		b.backoff = breakerMinBackoff
-	case b.backoff < breakerMaxBackoff:
+	case probe || !start.Before(b.openedAt):
 		b.backoff *= 2
 		if b.backoff > breakerMaxBackoff {
 			b.backoff = breakerMaxBackoff
 		}
+	default:
+		return
 	}
+	b.openedAt = now
 	b.openUntil = now.Add(b.backoff)
+}
+
+func (b *breaker) release() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.probing = false
 }
 
 func (b *breaker) success() {
@@ -65,8 +73,10 @@ func (b *breaker) success() {
 	defer b.mu.Unlock()
 	b.failures = 0
 	b.backoff = 0
+	b.openedAt = time.Time{}
 	b.openUntil = time.Time{}
 	b.downSince = time.Time{}
+	b.probing = false
 }
 
 func (b *breaker) since() time.Time {

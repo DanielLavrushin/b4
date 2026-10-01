@@ -69,7 +69,7 @@ func (h *MirrorHealth) client(rawURL string) *http.Client {
 	}
 	allowPrivate := false
 	if u, err := neturl.Parse(rawURL); err == nil {
-		if ip := net.ParseIP(u.Hostname()); ip != nil && !routableIP(ip) {
+		if ip := net.ParseIP(u.Hostname()); ip != nil && !RoutableIP(ip) {
 			allowPrivate = true
 		}
 	}
@@ -86,7 +86,7 @@ var reservedRanges = func() []*net.IPNet {
 	return out
 }()
 
-func routableIP(ip net.IP) bool {
+func RoutableIP(ip net.IP) bool {
 	if ip.IsUnspecified() || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() {
 		return false
 	}
@@ -112,7 +112,7 @@ func guardedClient(timeout time.Duration, allowPrivate bool) *http.Client {
 			}
 			var lastErr error
 			for _, candidate := range addrs {
-				if !allowPrivate && !routableIP(candidate.IP) {
+				if !allowPrivate && !RoutableIP(candidate.IP) {
 					lastErr = fmt.Errorf("%s resolves to a non-routable address", host)
 					continue
 				}

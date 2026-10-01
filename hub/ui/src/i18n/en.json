@@ -450,6 +450,7 @@
     "checkAll": "Check all",
     "announced": {
       "listed": "announced",
+      "kept": "kept while no mirror passes its check",
       "leaving": "leaves at the next build",
       "joining": "joins at the next build",
       "notListed": "not announced",

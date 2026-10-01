@@ -1007,3 +1007,38 @@ func TestUnknownConsoleEndpointIsJSON404(t *testing.T) {
 		t.Fatalf("the fallback is guarded like every endpoint: %d", resp.status)
 	}
 }
+
+func TestAMirrorKeptWhileNoneIsPassingShowsAsKept(t *testing.T) {
+	f := newFixture(t, password)
+	ctx := context.Background()
+	f.builder.Mirrors = &catalogue.MirrorHealth{Store: f.store, KeyID: f.web.KeyID, Now: func() time.Time { return f.clock }}
+	m, err := f.store.AnnounceMirror(ctx, "https://kept.example", "mirror-key", "1.3.0", f.clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.SetMirrorStatus(ctx, m.ID, store.MirrorApproved, "", f.clock); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.RecordMirrorCheck(ctx, m.ID, store.MirrorCheck{At: f.clock, OK: true, Epoch: 1, Seq: 1}); err != nil {
+		t.Fatal(err)
+	}
+	f.build()
+
+	f.clock = f.clock.Add(catalogue.DefaultMirrorWindow + time.Hour)
+	if err := f.store.RecordMirrorCheck(ctx, m.ID, store.MirrorCheck{At: f.clock, Code: catalogue.CheckHealth, Error: "lookup failed"}); err != nil {
+		t.Fatal(err)
+	}
+	var view MirrorsView
+	f.admin(http.MethodGet, PathAPI+"/mirrors", nil).decode(t, &view)
+	if len(view.Mirrors) != 1 {
+		t.Fatalf("mirrors: %+v", view.Mirrors)
+	}
+	got := view.Mirrors[0]
+	if !got.Announced || !got.AnnounceNext || !got.Kept || got.DropsAt != nil {
+		t.Fatalf("a mirror the next build keeps must read as kept, with no drop time: %+v", got)
+	}
+	f.build()
+	if listed := f.builder.Latest().Manifest.Mirrors; len(listed) != 2 || listed[1] != m.URL {
+		t.Fatalf("and the next build does keep it: %v", listed)
+	}
+}

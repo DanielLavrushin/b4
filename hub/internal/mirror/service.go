@@ -91,9 +91,10 @@ func announceState(answer *Answer, err error) string {
 }
 
 type Service struct {
-	opts  Options
-	relay *Relay
-	node  string
+	opts      Options
+	relay     *Relay
+	node      string
+	proxyNote sync.Once
 
 	mu     sync.Mutex
 	status Status
@@ -149,7 +150,8 @@ func New(opts Options) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{opts: opts, node: newNodeID()}
-	s.relay = &Relay{Upstream: opts.Upstream, Dir: filepath.Join(opts.Layout.Root, RelayDir), Client: opts.Client, Now: opts.Now, QueueLimit: opts.QueueLimit, Node: s.node}
+	s.relay = &Relay{Upstream: opts.Upstream, Dir: filepath.Join(opts.Layout.Root, RelayDir), Client: opts.Client, Now: opts.Now, QueueLimit: opts.QueueLimit, Node: s.node, Identity: opts.Identity}
+	s.relay.Prepare()
 	s.status = Status{Upstream: opts.Upstream, PublicURL: opts.PublicURL, Version: opts.Version, Queued: s.relay.Queued()}
 	if result, err := catalogue.ReadPublished(opts.Layout.Public()); err == nil {
 		s.status.Manifest = result.Manifest
@@ -210,13 +212,14 @@ func (s *Service) get(ctx context.Context, url string, limit int64) ([]byte, err
 }
 
 func (s *Service) Refresh(ctx context.Context) error {
+	start := s.opts.Now()
 	err := s.refresh(ctx)
 	var down upstreamDown
 	switch {
 	case err == nil:
 		s.relay.breaker.success()
 	case errors.As(err, &down):
-		s.relay.breaker.failure(s.opts.Now())
+		s.relay.breaker.failure(start, s.opts.Now(), false)
 	}
 	s.mu.Lock()
 	s.status.LastRefresh = s.opts.Now().UTC()

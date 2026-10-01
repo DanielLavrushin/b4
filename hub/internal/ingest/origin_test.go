@@ -11,6 +11,7 @@ import (
 
 	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
+	"github.com/daniellavrushin/b4hub/internal/ratelimit"
 	"github.com/daniellavrushin/b4hub/internal/store"
 	"github.com/daniellavrushin/b4hub/internal/testkit"
 )
@@ -81,19 +82,38 @@ func TestCanonicalEncodingRejectsPaddedKeys(t *testing.T) {
 	}
 }
 
+func approvedMirror(t *testing.T, f *fixture) *hubwire.Identity {
+	t.Helper()
+	ctx := context.Background()
+	id := testkit.Identity(t)
+	m, err := f.store.AnnounceMirror(ctx, "https://relay.example", hubdata.KeyHMAC(f.svc.Secret, id.KeyID()), "1.3.0", f.clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.SetMirrorStatus(ctx, m.ID, store.MirrorApproved, "", f.clock); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func (f *fixture) relay(mirror *hubwire.Identity, raw []byte, peer net.IP) Response {
+	return f.svc.HandleFrom(context.Background(), raw, Source{IP: peer, Relay: hubdata.SignRelay(mirror, f.clock, raw)})
+}
+
 func TestRelayedRecordsCarryNoNetwork(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	author := testkit.Identity(t)
 	setID, fp := approvedSet(t, f, author)
-	vote := func(id *hubwire.Identity, src Source) Response {
+	mirror := approvedMirror(t, f)
+	vote := func(id *hubwire.Identity) []byte {
 		body := hubwire.VoteBody{SetID: setID, Version: 1, FP: fp, Kind: hubwire.VoteWorks}
-		return f.svc.HandleFrom(ctx, testkit.Sign(t, id, hubwire.RecordVote, body, f.clock), src)
+		return testkit.Sign(t, id, hubwire.RecordVote, body, f.clock)
 	}
 	direct := testkit.Identity(t)
 	relayed := testkit.Identity(t)
-	expect(t, vote(direct, Source{IP: peerB}), http.StatusAccepted, "")
-	expect(t, vote(relayed, Source{IP: peerC, Relayed: true}), http.StatusAccepted, "")
+	expect(t, f.post(t, vote(direct), peerB), http.StatusAccepted, "")
+	expect(t, f.relay(mirror, vote(relayed), peerC), http.StatusAccepted, "")
 
 	votes, err := f.store.VotesForFP(ctx, fp)
 	if err != nil {
@@ -109,7 +129,48 @@ func TestRelayedRecordsCarryNoNetwork(t *testing.T) {
 	}
 	r := byKey[hubdata.KeyHMAC(f.svc.Secret, relayed.KeyID())]
 	if r.ASNObserved != "" || r.CountryObserved != "" || r.OriginVerified {
-		t.Errorf("a relayed vote must not take the relay's network, got %+v", r)
+		t.Errorf("a vote passed on by an approved mirror must not take the mirror's network, got %+v", r)
+	}
+}
+
+func TestOnlyASignatureFromAnApprovedMirrorMarksARecordRelayed(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	author := testkit.Identity(t)
+	setID, fp := approvedSet(t, f, author)
+	mirror := approvedMirror(t, f)
+	stranger := testkit.Identity(t)
+	voter := testkit.Identity(t)
+	vote := func() []byte {
+		body := hubwire.VoteBody{SetID: setID, Version: 1, FP: fp, Kind: hubwire.VoteWorks}
+		return testkit.Sign(t, voter, hubwire.RecordVote, body, f.clock)
+	}
+	cases := map[string]func(raw []byte) string{
+		"no header":             func([]byte) string { return "" },
+		"unapproved key":        func(raw []byte) string { return hubdata.SignRelay(stranger, f.clock, raw) },
+		"another body":          func([]byte) string { return hubdata.SignRelay(mirror, f.clock, []byte("{}")) },
+		"stale signature":       func(raw []byte) string { return hubdata.SignRelay(mirror, f.clock.Add(-2*hubdata.RelayWindow), raw) },
+		"garbage":               func([]byte) string { return "1 nonsense 0 x" },
+		"user agent claim only": func([]byte) string { return "" },
+	}
+	for name, header := range cases {
+		raw := vote()
+		expect(t, f.svc.HandleFrom(ctx, raw, Source{IP: peerB, Relay: header(raw)}), http.StatusAccepted, "")
+		var rec hubwire.Record
+		_ = json.Unmarshal(raw, &rec)
+		votes, _ := f.store.VotesForFP(ctx, fp)
+		found := false
+		for _, v := range votes {
+			if v.KeyHMAC == hubdata.KeyHMAC(f.svc.Secret, rec.Key) {
+				found = true
+				if v.ASNObserved != "64501" || !v.OriginVerified {
+					t.Errorf("%s: a record without a valid approved-mirror signature keeps its sender's network, got %+v", name, v)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%s: the vote was not stored", name)
+		}
 	}
 }
 
@@ -117,10 +178,14 @@ func TestRelayedReportsDoNotHideAVersion(t *testing.T) {
 	f := newFixture(t)
 	author := testkit.Identity(t)
 	setID, _ := approvedSet(t, f, author)
+	mirror := approvedMirror(t, f)
 	report := func(peer net.IP, relayed bool) Response {
 		body := hubwire.ReportBody{SetID: setID, Version: 1, Reason: "steals traffic"}
 		raw := testkit.Sign(t, testkit.Identity(t), hubwire.RecordReport, body, f.clock)
-		return f.svc.HandleFrom(context.Background(), raw, Source{IP: peer, Relayed: relayed})
+		if relayed {
+			return f.relay(mirror, raw, peer)
+		}
+		return f.post(t, raw, peer)
 	}
 	expect(t, report(peerA, false), http.StatusAccepted, "")
 	expect(t, report(peerB, true), http.StatusAccepted, "")
@@ -134,12 +199,24 @@ func TestRelayedReportsDoNotHideAVersion(t *testing.T) {
 	}
 }
 
-func TestRelayedByMatchesTheMirrorAgent(t *testing.T) {
-	for agent, want := range map[string]bool{"b4hub-mirror": true, "b4hub-mirror/1.3.0": true, "b4/1.83.1": false, "": false, "curl/8.5": false} {
-		if got := RelayedBy(agent); got != want {
-			t.Errorf("%q: got %v, want %v", agent, got, want)
-		}
+func TestAnApprovedMirrorHasALargerNewKeyBudget(t *testing.T) {
+	f := newFixture(t)
+	author := testkit.Identity(t)
+	setID, fp := approvedSet(t, f, author)
+	mirror := approvedMirror(t, f)
+	vote := func() []byte {
+		body := hubwire.VoteBody{SetID: setID, Version: 1, FP: fp, Kind: hubwire.VoteWorks}
+		return testkit.Sign(t, testkit.Identity(t), hubwire.RecordVote, body, f.clock)
 	}
+	for i := 0; i < ratelimit.NewKeysPerDay*RelayNewKeyFactor; i++ {
+		expect(t, f.relay(mirror, vote(), peerC), http.StatusAccepted, "")
+	}
+	expect(t, f.relay(mirror, vote(), peerC), http.StatusTooManyRequests, CodeRateLimited)
+
+	for i := 0; i < ratelimit.NewKeysPerDay; i++ {
+		expect(t, f.post(t, vote(), peerB), http.StatusAccepted, "")
+	}
+	expect(t, f.post(t, vote(), peerB), http.StatusTooManyRequests, CodeRateLimited)
 }
 
 func TestAnApprovedMirrorKeepsItsKey(t *testing.T) {

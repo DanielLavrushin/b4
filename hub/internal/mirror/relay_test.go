@@ -195,8 +195,7 @@ func TestRelayRefusesBadRecordsWithoutForwardingThem(t *testing.T) {
 	expectRefused("tampered", edit(vote, func(r *hubwire.Record) { r.TS++ }), http.StatusBadRequest, ingest.CodeBadSignature)
 	expectRefused("newline in the signature", edit(vote, func(r *hubwire.Record) { r.Sig = r.Sig[:4] + "\n" + r.Sig[4:] }), http.StatusBadRequest, ingest.CodeBadSignature)
 
-	padded := testkit.Sign(t, voter, hubwire.RecordReport, hubwire.ReportBody{SetID: "01ARZ3NDEKTSV4RRFFQ69G5FAV", Version: 1, Reason: strings.Repeat("x", MaxSmallRecord)}, now)
-	expectRefused("oversized report", padded, http.StatusRequestEntityTooLarge, ingest.CodeTooLarge)
+	expectRefused("no wire version", []byte(`{"kind":"vote"}`), http.StatusBadRequest, ingest.CodeBadRecord)
 
 	if log.count() != 0 {
 		t.Fatalf("refused records must never reach the upstream, %d did", log.count())
@@ -281,8 +280,11 @@ func TestARouterHangingUpIsNotAHubFailure(t *testing.T) {
 	if answer.Status != http.StatusAccepted || log.count() != 1 || relay.Queued() != 0 {
 		t.Fatalf("the record must still reach the hub after the router hung up, got %d, %d forwarded, %d queued", answer.Status, log.count(), relay.Queued())
 	}
-	if relay.breaker.since() != (time.Time{}) {
-		t.Fatal("a hang-up must not count against the hub")
+	relay.breaker.mu.Lock()
+	failures := relay.breaker.failures
+	relay.breaker.mu.Unlock()
+	if failures != 0 {
+		t.Fatalf("a hang-up must not count against the hub, got %d failures", failures)
 	}
 }
 
@@ -478,5 +480,269 @@ func TestAMirrorRefusesToRelayToItself(t *testing.T) {
 	}
 	if svc.relay.Queued() != 0 {
 		t.Fatal("a loop must not fill the queue")
+	}
+}
+
+func TestAnOversizedReportIsPassedOnButNeverQueued(t *testing.T) {
+	var down atomic.Bool
+	log := &upstreamLog{}
+	upstream := acceptingUpstream(t, log)
+	relay := &Relay{Upstream: upstream.URL, Dir: filepath.Join(t.TempDir(), "relay"), Client: &http.Client{Transport: gate{down: &down, next: http.DefaultTransport}}}
+	ctx := context.Background()
+	big := testkit.Sign(t, testkit.Identity(t), hubwire.RecordReport, hubwire.ReportBody{SetID: "01ARZ3NDEKTSV4RRFFQ69G5FAV", Version: 1, Reason: strings.Repeat("x", MaxQueuedRecord)}, time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC))
+	if answer := relay.Handle(ctx, big, nil, ""); answer.Status != http.StatusAccepted || log.count() != 1 {
+		t.Fatalf("a large record goes to the hub, which decides, got %d after %d forwards", answer.Status, log.count())
+	}
+	down.Store(true)
+	if answer := relay.Handle(ctx, big, nil, ""); answer.Status != http.StatusBadGateway || relay.Queued() != 0 {
+		t.Fatalf("a record too large to queue is refused so the router keeps it, got %d with %d queued", answer.Status, relay.Queued())
+	}
+}
+
+func TestConcurrentFailuresDoNotStretchTheBackoff(t *testing.T) {
+	const inFlight = 8
+	c := &clock{now: time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)}
+	var arrived sync.WaitGroup
+	arrived.Add(inFlight)
+	release := make(chan struct{})
+	var once sync.Once
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		arrived.Done()
+		<-release
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(upstream.Close)
+	relay := &Relay{Upstream: upstream.URL, Dir: filepath.Join(t.TempDir(), "relay"), Now: c.Now}
+	var done sync.WaitGroup
+	for i := 0; i < inFlight; i++ {
+		done.Add(1)
+		go func() {
+			defer done.Done()
+			share := testkit.Sign(t, testkit.Identity(t), hubwire.RecordShare, hubwire.ShareBody{}, c.Now())
+			relay.Handle(context.Background(), share, nil, "")
+		}()
+	}
+	arrived.Wait()
+	c.Add(time.Second)
+	once.Do(func() { close(release) })
+	done.Wait()
+	relay.breaker.mu.Lock()
+	backoff := relay.breaker.backoff
+	relay.breaker.mu.Unlock()
+	if backoff != breakerMinBackoff {
+		t.Fatalf("failures of requests already in flight when the breaker opened must not stretch it, got %s", backoff)
+	}
+
+	var b breaker
+	t0 := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	b.failure(t0, t0.Add(time.Second), false)
+	b.failure(t0, t0.Add(time.Second), false)
+	if ok, _ := b.allow(t0.Add(10 * time.Second)); ok {
+		t.Fatal("two failures open the breaker")
+	}
+	ok, probe := b.allow(t0.Add(time.Second + breakerMinBackoff))
+	if !ok || !probe {
+		t.Fatal("after the backoff one request probes")
+	}
+	if again, _ := b.allow(t0.Add(time.Second + breakerMinBackoff)); again {
+		t.Fatal("only one probe at a time")
+	}
+	b.failure(t0.Add(time.Second+breakerMinBackoff), t0.Add(2*time.Second+breakerMinBackoff), true)
+	if b.backoff != 2*breakerMinBackoff {
+		t.Fatalf("a failed probe doubles the backoff, got %s", b.backoff)
+	}
+}
+
+func TestALoopThroughAnOlderMirrorStopsAtTheRepeatedRecord(t *testing.T) {
+	var target string
+	var hops atomic.Int32
+	older := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hops.Add(1)
+		raw, _ := io.ReadAll(r.Body)
+		req, _ := http.NewRequestWithContext(r.Context(), http.MethodPost, target+hubwire.PathMessage, strings.NewReader(string(raw)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", ingest.RelayAgent)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(resp.StatusCode)
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(older.Close)
+	svc, err := New(Options{Upstream: older.URL, Layout: hubdata.Layout{Root: t.TempDir()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	self := httptest.NewServer(svc.Router())
+	t.Cleanup(self.Close)
+	target = self.URL
+
+	answer := svc.relay.Handle(context.Background(), voteFor(t, testkit.Identity(t), time.Now()), nil, "")
+	if answer.Status != http.StatusLoopDetected || !strings.Contains(string(answer.Body), CodeRelayLoop) {
+		t.Fatalf("a record that comes back while it is still on its way must stop, got %d %s", answer.Status, answer.Body)
+	}
+	if hops.Load() != 1 || svc.relay.Queued() != 0 {
+		t.Fatalf("the loop must end after one round trip with nothing queued, got %d hops and %d queued", hops.Load(), svc.relay.Queued())
+	}
+}
+
+func TestAFutureWireVersionIsPassedOnUnchecked(t *testing.T) {
+	var down atomic.Bool
+	var forwarded atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		forwarded.Add(1)
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(upstream.Close)
+	relay := &Relay{Upstream: upstream.URL, Dir: filepath.Join(t.TempDir(), "relay"), Client: &http.Client{Transport: gate{down: &down, next: http.DefaultTransport}}}
+	future := []byte(`{"v":2,"kind":"vote","key":"k","ts":"2026-10-01T12:00:00Z","nonce":"n","body":{},"sig":"s"}`)
+	if answer := relay.Handle(context.Background(), future, nil, ""); answer.Status != http.StatusAccepted || forwarded.Load() != 1 {
+		t.Fatalf("a record of a later wire version goes to the hub unchecked, got %d after %d forwards", answer.Status, forwarded.Load())
+	}
+	down.Store(true)
+	if answer := relay.Handle(context.Background(), future, nil, ""); answer.Status != http.StatusBadGateway || relay.Queued() != 0 {
+		t.Fatalf("an unchecked record is never queued, got %d with %d queued", answer.Status, relay.Queued())
+	}
+}
+
+func TestTheHubsLimitOnTheMirrorQueuesVotesAndSendsSharesElsewhere(t *testing.T) {
+	var calls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"code":"rate_limited","scope":"request","retry_after":600}`))
+	}))
+	t.Cleanup(upstream.Close)
+	c := &clock{now: time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)}
+	relay := &Relay{Upstream: upstream.URL, Dir: filepath.Join(t.TempDir(), "relay"), Now: c.Now}
+	ctx := context.Background()
+	voter := testkit.Identity(t)
+
+	if answer := relay.Handle(ctx, voteFor(t, voter, c.Now()), nil, ""); answer.Status != http.StatusAccepted || decode(t, answer)["queued"] != true {
+		t.Fatalf("a vote waits in the queue while the hub refuses this mirror, got %d %s", answer.Status, answer.Body)
+	}
+	share := testkit.Sign(t, voter, hubwire.RecordShare, hubwire.ShareBody{}, c.Now())
+	answer := relay.Handle(ctx, share, nil, "")
+	if answer.Status != http.StatusServiceUnavailable || decode(t, answer)["code"] != CodeHubBusy || answer.RetryAfter != "600" {
+		t.Fatalf("a share gets a 5xx so the router tries its next address, got %d %s %q", answer.Status, answer.Body, answer.RetryAfter)
+	}
+	before := calls.Load()
+	if err := relay.Retry(ctx); err == nil || calls.Load() != before {
+		t.Fatalf("the drain waits out the hub's limit on this mirror, got %v after %d calls", err, calls.Load()-before)
+	}
+}
+
+func TestTheDrainSkipsNewKeysWhileTheHubRefusesThem(t *testing.T) {
+	refuse := ""
+	var mu sync.Mutex
+	var sent []string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var rec hubwire.Record
+		_ = json.Unmarshal(raw, &rec)
+		mu.Lock()
+		sent = append(sent, rec.Key)
+		refused := rec.Key == refuse
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if refused {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"code":"rate_limited","scope":"newkey","retry_after":3600}`))
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(upstream.Close)
+	c := &clock{now: time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)}
+	dir := filepath.Join(t.TempDir(), "relay")
+	relay := &Relay{Upstream: upstream.URL, Dir: dir, Now: c.Now}
+	ctx := context.Background()
+	fresh, other, regular := testkit.Identity(t), testkit.Identity(t), testkit.Identity(t)
+	if answer := relay.Handle(ctx, voteFor(t, regular, c.Now()), nil, ""); answer.Status != http.StatusAccepted {
+		t.Fatalf("a regular router's vote: %d", answer.Status)
+	}
+	refuse = fresh.KeyID()
+	mu.Lock()
+	sent = nil
+	mu.Unlock()
+	for i, id := range []*hubwire.Identity{fresh, other, regular} {
+		raw := voteFor(t, id, c.Now())
+		var rec hubwire.Record
+		_ = json.Unmarshal(raw, &rec)
+		if err := relay.enqueue(rec.ID(), raw); err != nil {
+			t.Fatal(err)
+		}
+		at := c.Now().Add(time.Duration(i-3) * time.Hour)
+		if err := os.Chtimes(filepath.Join(dir, rec.ID()+".json"), at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := relay.Retry(ctx); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	got := append([]string{}, sent...)
+	mu.Unlock()
+	if len(got) != 2 || got[0] != fresh.KeyID() || got[1] != regular.KeyID() {
+		t.Fatalf("after the hub refuses a new key, only keys it already accepted are sent, got %v", got)
+	}
+	if relay.Queued() != 2 {
+		t.Fatalf("the two new keys stay queued, got %d", relay.Queued())
+	}
+}
+
+func TestPrepareTightensAQueueLeftByAnOlderMirror(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "relay")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := filepath.Join(dir, "0123.json")
+	if err := os.WriteFile(old, []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	(&Relay{Dir: dir}).Prepare()
+	dirInfo, _ := os.Stat(dir)
+	fileInfo, _ := os.Stat(old)
+	if dirInfo.Mode().Perm() != 0o700 || fileInfo.Mode().Perm() != 0o600 {
+		t.Fatalf("an upgraded queue must be private, got dir %v file %v", dirInfo.Mode().Perm(), fileInfo.Mode().Perm())
+	}
+}
+
+func TestSpecialPurposeAddressesAreNotClients(t *testing.T) {
+	for addr, want := range map[string]bool{"203.0.113.9": true, "2001:db8::1": true, "100.64.1.1": false, "198.18.0.1": false, "10.84.0.1": false, "127.0.0.1": false} {
+		if got := publicClient(net.ParseIP(addr)); got != want {
+			t.Errorf("%s: got %v, want %v", addr, got, want)
+		}
+	}
+}
+
+func TestRelayedRecordsCarryTheMirrorSignature(t *testing.T) {
+	var header atomic.Value
+	var body atomic.Value
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		header.Store(r.Header.Get(hubdata.HeaderRelay))
+		body.Store(raw)
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(upstream.Close)
+	mirror := testkit.Identity(t)
+	relay := &Relay{Upstream: upstream.URL, Dir: filepath.Join(t.TempDir(), "relay"), Identity: mirror}
+	relay.Handle(context.Background(), voteFor(t, testkit.Identity(t), time.Now()), nil, "")
+	keyID, ok := hubdata.VerifyRelay(header.Load().(string), body.Load().([]byte), time.Now())
+	if !ok || keyID != mirror.KeyID() {
+		t.Fatalf("a mirror with an identity must sign what it passes on, got %q %v", keyID, ok)
 	}
 }

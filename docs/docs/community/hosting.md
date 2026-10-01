@@ -15,11 +15,11 @@ It runs in one of two shapes.
 | Catalogue | Built from the sets shared to it | Copied from an upstream hub |
 | Signing key | Its own, from `b4hub keygen` | None for the catalogue, which keeps the upstream signature; an announcing mirror holds a key only to sign its announcement |
 | Moderation | Its own moderators and console | None |
-| Records from routers | Stored and acted on | Forwarded upstream unchanged |
+| Records from routers | Stored and acted on | Checked and passed on upstream; reports and complaints wait in a capped queue while it is unreachable |
 | Database | SQLite in the data directory | None |
 | What a router has to be told | The address and the key id | Nothing, once the upstream hub has approved it |
 
-A hub of its own is a second catalogue. Its sets are the ones its own moderators approved, its reports are counted separately, and a router reaches it only after both its address and its key id have been entered by hand. A mirror is the same catalogue at a second address: it verifies the upstream signature, copies the files, and forwards everything a router sends to the hub that signed them.
+A hub of its own is a second catalogue. Its sets are the ones its own moderators approved, its reports are counted separately, and a router reaches it only after both its address and its key id have been entered by hand. A mirror is the same catalogue at a second address: it verifies the upstream signature, copies the files, and passes what routers send on to the hub that signed them.
 
 ```mermaid
 flowchart LR
@@ -53,7 +53,7 @@ One static binary with the console embedded in it. Every command takes `--data`,
 | `b4hub moderate` | Does most of what the console does from the command line: versions, sets, keys, reports, mirrors, the build history and the audit log. |
 | `b4hub version` | Prints the hub version and the b4 source tree it was built from. |
 
-The flags below have an environment variable counterpart, which is what a unit file or a container normally sets. The per-command flags `--new-epoch`, `--revoke`, `--announce` and `--refresh` are given on the command line only.
+The flags below have an environment variable counterpart, which is what a unit file or a container normally sets. The per-command flags `--new-epoch`, `--revoke`, `--new-database`, `--announce`, `--refresh` and `--queue-limit` are given on the command line only.
 
 | Flag | Variable | Default |
 | --- | --- | --- |
@@ -135,6 +135,12 @@ Nothing is published until a moderator approves it, so a new hub starts with an 
 
 A router accepts a manifest only when it is newer than the one it holds: a higher epoch, or the same epoch and a higher sequence number. An older one is refused and the router moves to the next address.
 
+The hub holds its own builds to the same rule. A build whose epoch and sequence number would not be above both the catalogue in `public/` and the newest one an approved mirror was serving at its last check is refused without using up a sequence number, and the build history gives the cause. Before its first build after a start the hub runs one round of mirror checks, so that this comparison and the mirror list describe the mirrors as they are, not as they were before the hub stopped.
+
+:::warning
+A database that has never published a catalogue does not publish over one. Its first build is refused when it would replace the catalogue in `public/` with fewer sets, or sign an empty catalogue with a key built into b4, which is what `serve` started on the wrong data directory with the production key looks like. `--new-database` on `serve` or `build` confirms that a new database is intended. A new epoch does not lift the refusal: the marker is the first successful publication, not the epoch.
+:::
+
 :::info
 A hub that stops building degrades rather than breaks. Routers keep the last catalogue they received, mark it expired after the two weeks the manifest is valid for, and go on running the sets already applied from it.
 :::
@@ -146,6 +152,8 @@ The hub resolves the ASN and country of the address a record arrives from, and t
 :::warning
 An untrusted proxy collapses the whole hub into one network. Every contribution is attributed to the proxy, per-network limits are shared by everyone at once, and a private proxy address means no ASN is recorded at all, so reports lose their per-ISP and per-country scores.
 :::
+
+Records a mirror passes on arrive from the mirror's address. A mirror that holds a key of its own signs everything it forwards, over the record and the time, and the hub checks that signature against the mirrors approved on its [Mirrors page](./moderation.md#mirrors). When it checks out, the hub stores the record without a network: a vote counts only in the overall score, at the weight of an unverified origin, a complaint never counts toward the automatic hide, and the per-network limits on the mirror's address are 10 times higher for requests and 20 times higher for new keys, because every router behind the mirror shares them. A record from a mirror without a key, from one that is not approved, or with a signature that does not check out is attributed to the address it arrived from, like any other.
 
 The lookup is a DNS query, not a local database, so the hub host needs working outbound DNS. The `geosite.dat` and `geoip.dat` files the service downloads daily are advertised in the manifest and are not used for this.
 
@@ -190,24 +198,33 @@ b4hub mirror --data /var/lib/b4hub-mirror \
 `--announce` needs both an identity of its own, so the announcement can be signed, and `--public-url`, which is the address being announced. The announcement is sent when the mirror starts and once a day after that. The URL must be `https://`, or `http://` on localhost, a loopback, a private or a link-local address, at most 200 characters, with no credentials, query or fragment.
 
 :::warning
-An announcement does not publish anything. It arrives at the upstream hub as **pending** and is never advertised until a moderator approves it on the [Mirrors page](./moderation.md#mirrors) of that hub's console. Announcing again refreshes when the mirror was last seen and never changes a decision already made, so a rejected mirror stays rejected.
+An announcement does not publish anything. It arrives at the upstream hub as **pending** and is never advertised until a moderator approves it on the [Mirrors page](./moderation.md#mirrors) of that hub's console. Announcing again refreshes when the mirror was last seen and never changes a decision already made, so a rejected mirror stays rejected. An approved or rejected mirror also keeps the key it was decided with: an announcement of its address signed by another key is refused with `mirror_key_mismatch`, and only removing the mirror on that page frees the address. While a mirror is pending, its latest announcement sets the key.
 :::
 
-Once approved, the mirror is checked every 10 minutes, independently of builds: its `/b4/health` must answer `ok` and its manifest must verify against the hub's own key. It is listed in the manifest while a check has succeeded within the last 24 hours, so a brief failure does not drop it, and a lasting one does.
+Once approved, the mirror is checked every 10 minutes, and once more before the first build after the hub starts: its `/b4/health` must answer `ok` and its manifest must verify against the hub's own key. It is listed in the manifest while a check has succeeded within the last 24 hours, so a brief failure does not drop it, and a lasting one does. The exception is every approved mirror failing at once, which more often means the hub cannot reach them than that all of them are gone: the hub then keeps listing the approved mirrors its previous manifest listed, and rejecting or removing one still takes it off.
 
 ### Records sent through a mirror
 
-A mirror has no database, so it decides nothing. It posts what it receives to the upstream hub and returns that hub's answer unchanged, including every refusal.
+A mirror has no database and makes no moderation decisions, but it checks what it passes on. A record must decode and carry a valid signature, with its key and signature in their canonical encoding; one that does not is refused with the same `bad_record` or `bad_signature` answer the hub would give, without reaching the hub. A record of a wire version or kind the mirror does not know goes to the hub unchecked. One client network, a /24 for IPv4 or a /48 for IPv6, may send 600 records an hour; past that it gets `429` until the hour is over.
 
-| When the upstream answers | What the router gets |
+| When the upstream | What the router gets |
 | --- | --- |
-| Normally, whatever the verdict | The hub's own answer, unchanged |
-| Not at all, or with 502, 503 or 504 | A works or broken report and a complaint are kept on disk, if their signature verifies, and retried; a shared set and a mirror announcement fail |
+| Answers within 15 seconds | The hub's own answer, unchanged |
+| Does not answer, or answers 502, 503 or 504 | A works or broken report and a complaint are queued and answered `202 queued`; a shared set and a mirror announcement get `502 hub_unreachable` |
+| Answers 429 for the mirror's own address | Reports and complaints are queued; anything else gets `503 hub_busy`, so the router tries its next address |
 
-The queue on disk is retried at every check and kept for 30 days. A shared set is never queued anywhere, so publishing through a mirror whose upstream is down fails and has to be repeated.
+After two failures in a row the mirror stops waiting on the upstream. For 30 seconds, doubling up to 5 minutes, it answers at once without trying it, then lets one record through to test it. A successful manifest check ends the pause.
+
+The queue holds at most `--queue-limit` records, 5,000 by default, with 0 keeping none; at most 200 a day from one client network and 40 a day from one key; and only records up to 8 KiB. Past a limit the answer is `502` or `503 queue_full`, and the router keeps the record in its own outbox for later. Queued records go upstream at every check, oldest first and at most 100 at a time, so a backlog does not use up the per-network limit at the hub that live records also need. A record the hub turns away with a per-key limit waits until that limit lifts. After the hub refuses a key it has never seen, queued records of other keys it has not seen wait as well, while keys it knows keep going. Queued files are kept for 30 days and readable only by the service user, and the mirror log prints how many are waiting at every check.
+
+A record that comes back to the same mirror while it is still on its way is refused with `508 relay_loop`, which also stops a mirror whose upstream leads back to it. The mirror refuses to start with `--upstream` equal to its `--public-url`, and a manifest check that reaches the mirror itself fails with a message naming the problem.
+
+:::warning
+The per-client limits count the address a request arrives from, and do not apply to private and special-purpose addresses. Behind a reverse proxy, a CDN or a load balancer that is not on loopback, that is the proxy's address unless `--trusted-proxies` names it, and every router behind it then shares the limits of one client. The mirror logs a warning when requests carry `X-Forwarded-For`, `X-Real-IP` or `CF-Connecting-IP` from a proxy it does not trust. A mirror whose upstream is another mirror counts there as one client as well.
+:::
 
 :::info
-The upstream hub sees the mirror's address, not the router's, because the relay forwards the record as it is. Reports relayed through a mirror are therefore counted on the mirror's network, and routers behind one mirror share its per-network limits. The ASN a router states about itself inside the report is unaffected.
+How the hub attributes a record a mirror passed on is described under [the network a contribution is attributed to](#the-network-a-contribution-is-attributed-to): with a valid signature from an approved mirror it carries no network, and the mirror's address gets larger per-network limits.
 :::
 
 A mirror also does not answer `/b4/hub/v1/network`, so a router synced only through mirrors never learns its network from the hub and falls back to what the [DPI detector](../detector.md) found.
@@ -233,7 +250,7 @@ The data directory moves as a unit. `hub.key`, `hub.db`, `secret`, `blobs/` and 
 :::
 
 :::warning
-Restoring an older database rolls the epoch and sequence number backwards, and routers refuse a catalogue older than the one they hold. **Start a new epoch**, on the console's Catalogue page or as `b4hub build --new-epoch`, is what makes them take it.
+Restoring an older database rolls the epoch and sequence number backwards, and routers refuse a catalogue older than the one they hold. The hub refuses to build it as well, as long as `public/` or an approved mirror still has the newer catalogue. **Start a new epoch**, on the console's Catalogue page or as `b4hub build --new-epoch --data <dir>`, is what publishes the restored database anyway.
 :::
 
 Losing `hub.key` cannot be repaired from the hub's side. There is no rotation path, so every router pointed at that hub would have to be given a new key id by hand.

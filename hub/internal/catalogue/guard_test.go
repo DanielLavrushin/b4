@@ -19,8 +19,8 @@ import (
 func TestANewDatabaseDoesNotSignAnEmptyCatalogueWithABuiltinKey(t *testing.T) {
 	b, st := testBuilder(t)
 	ctx := context.Background()
-	b.RefuseEmpty = true
-	if _, err := b.Build(ctx); !errors.Is(err, ErrEmptyNewHub) {
+	b.BuiltinKey = true
+	if _, err := b.Build(ctx); !errors.Is(err, ErrNewDatabase) {
 		t.Fatalf("an empty first build with a built-in key must be refused, got %v", err)
 	}
 	if epoch, seq, err := st.CurrentSeq(ctx); err != nil || epoch != 0 || seq != 0 {
@@ -29,13 +29,13 @@ func TestANewDatabaseDoesNotSignAnEmptyCatalogueWithABuiltinKey(t *testing.T) {
 	if b.Latest() != nil {
 		t.Fatal("nothing may be published")
 	}
-	b.AllowEmpty = true
+	b.NewDatabase = true
 	result, err := b.Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(result.Catalogue.Sets) != 0 || result.Manifest.Seq != 1 {
-		t.Fatalf("--allow-empty publishes the empty catalogue: %+v", result.Manifest)
+		t.Fatalf("--new-database publishes the empty catalogue: %+v", result.Manifest)
 	}
 }
 
@@ -56,8 +56,68 @@ func TestANewDatabaseDoesNotEmptyAPublishedCatalogue(t *testing.T) {
 	if err := restarted.LoadPublished(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := restarted.Build(ctx); !errors.Is(err, ErrEmptyNewHub) {
+	if _, err := restarted.Build(ctx); !errors.Is(err, ErrNewDatabase) {
 		t.Fatalf("a new database next to a published catalogue with sets must not replace it with nothing, got %v", err)
+	}
+}
+
+func TestANewEpochOrOneApprovalDoesNotLetANewDatabaseReplaceTheCatalogue(t *testing.T) {
+	b, st := testBuilder(t)
+	ctx := context.Background()
+	addActiveSet(t, st, "01ARZ3NDEKTSV4RRFFQ69G5FAV", "fp-a")
+	addActiveSet(t, st, "01ARZ3NDEKTSV4RRFFQ69G5FAW", "fp-b")
+	if _, err := b.Build(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	fresh, err := store.Open(hubdata.Layout{Root: t.TempDir()}.DBPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { fresh.Close() })
+	restarted := &Builder{Store: fresh, Identity: b.Identity, PublicDir: b.PublicDir, PublicURL: b.PublicURL, Now: b.Now, BuiltinKey: true}
+	if err := restarted.LoadPublished(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fresh.NewEpoch(ctx, b.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := restarted.Build(ctx); !errors.Is(err, ErrNewDatabase) {
+		t.Fatalf("a new epoch must not make a never-published database look published, got %v", err)
+	}
+	addActiveSet(t, fresh, "01ARZ3NDEKTSV4RRFFQ69G5FAX", "fp-c")
+	if _, err := restarted.Build(ctx); !errors.Is(err, ErrNewDatabase) {
+		t.Fatalf("one approved set must not replace a published catalogue of two, got %v", err)
+	}
+	if restarted.Latest().Manifest.Seq != 1 || len(restarted.Latest().Catalogue.Sets) != 2 {
+		t.Fatalf("the published catalogue stays: %+v", restarted.Latest().Manifest)
+	}
+	restarted.NewDatabase = true
+	if _, err := restarted.Build(ctx); err != nil {
+		t.Fatalf("--new-database lets the operator publish it: %v", err)
+	}
+}
+
+func TestABuildOneBehindIsRefusedInsteadOfReusingANumber(t *testing.T) {
+	b, st := testBuilder(t)
+	ctx := context.Background()
+	addActiveSet(t, st, "01ARZ3NDEKTSV4RRFFQ69G5FAV", "fp-a")
+	for i := 0; i < 2; i++ {
+		if _, err := b.Build(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	file := b.Latest().Manifest.Catalogue.File
+	if err := st.SetMeta(ctx, "seq", "1"); err != nil {
+		t.Fatal(err)
+	}
+	later := b.Now().Add(time.Minute)
+	b.Now = func() time.Time { return later }
+	if _, err := b.Build(ctx); !errors.Is(err, ErrBehind) {
+		t.Fatalf("a build that would reuse the published number must be refused, got %v", err)
+	}
+	if b.Latest().Manifest.Catalogue.File != file || b.Latest().Manifest.Seq != 2 {
+		t.Fatalf("the published file must stay, got %+v", b.Latest().Manifest)
 	}
 }
 

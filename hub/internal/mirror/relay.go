@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +23,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/hubwire"
+	"github.com/daniellavrushin/b4hub/internal/catalogue"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
 	"github.com/daniellavrushin/b4hub/internal/ingest"
 	"github.com/daniellavrushin/b4hub/internal/ratelimit"
@@ -32,12 +35,13 @@ const (
 	LiveTimeout           = 15 * time.Second
 	QueueMaxAge           = 30 * 24 * time.Hour
 	DefaultQueueLimit     = 5000
-	MaxSmallRecord        = 8 << 10
+	MaxQueuedRecord       = 8 << 10
 	ClientRequestsPerHour = 600
 	QueuedPerClientPerDay = 200
 	QueuedPerKeyPerDay    = 40
-	DrainBudget           = 500
+	DrainBudget           = 100
 	MaxHops               = 8
+	knownKeysLimit        = 100000
 	answerLimit           = 64 << 10
 	queueFileSuffix       = ".json"
 	deferDefault          = time.Hour
@@ -46,10 +50,12 @@ const (
 	HeaderNode = "B4hub-Node"
 
 	CodeHubUnreachable = "hub_unreachable"
+	CodeHubBusy        = "hub_busy"
 	CodeRelayLoop      = "relay_loop"
 	CodeQueueFull      = "queue_full"
 
 	scopeClient      = "relay-client"
+	scopeClientNote  = "relay-client-note"
 	scopeQueueClient = "queue-client"
 	scopeQueueKey    = "queue-key"
 )
@@ -89,6 +95,7 @@ type Relay struct {
 	MaxAge      time.Duration
 	QueueLimit  int
 	Node        string
+	Identity    *hubwire.Identity
 
 	once     sync.Once
 	limiter  *ratelimit.Limiter
@@ -98,7 +105,10 @@ type Relay struct {
 
 	mu          sync.Mutex
 	deferred    map[string]time.Time
+	inflight    map[string]int
+	known       map[string]struct{}
 	pausedUntil time.Time
+	newKeyWall  time.Time
 }
 
 func (r *Relay) init() {
@@ -107,6 +117,8 @@ func (r *Relay) init() {
 		r.secret = make([]byte, 32)
 		_, _ = rand.Read(r.secret)
 		r.deferred = make(map[string]time.Time)
+		r.inflight = make(map[string]int)
+		r.known = make(map[string]struct{})
 	})
 }
 
@@ -155,6 +167,21 @@ func (r *Relay) queueLimit() int {
 	return r.QueueLimit
 }
 
+func (r *Relay) Prepare() {
+	if err := os.Chmod(r.Dir, 0o700); err != nil {
+		return
+	}
+	entries, err := os.ReadDir(r.Dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), queueFileSuffix) {
+			_ = os.Chmod(filepath.Join(r.Dir, e.Name()), 0o600)
+		}
+	}
+}
+
 func (r *Relay) Forward(ctx context.Context, raw []byte) (*Answer, error) {
 	return r.forward(ctx, raw, "", r.timeout())
 }
@@ -170,6 +197,9 @@ func (r *Relay) forward(ctx context.Context, raw []byte, via string, timeout tim
 	req.Header.Set("User-Agent", ingest.RelayAgent)
 	if hops := joinVia(via, r.Node); hops != "" {
 		req.Header.Set(HeaderVia, hops)
+	}
+	if r.Identity != nil {
+		req.Header.Set(hubdata.HeaderRelay, hubdata.SignRelay(r.Identity, r.now(), raw))
 	}
 	resp, err := r.client().Do(req)
 	if err != nil {
@@ -209,6 +239,50 @@ func (r *Relay) looped(via string) bool {
 	return hops >= MaxHops
 }
 
+func bodyHash(raw []byte) string {
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+func (r *Relay) enter(hash string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.inflight[hash] > 0 {
+		return false
+	}
+	r.inflight[hash]++
+	return true
+}
+
+func (r *Relay) leave(hash string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.inflight[hash] <= 1 {
+		delete(r.inflight, hash)
+		return
+	}
+	r.inflight[hash]--
+}
+
+func (r *Relay) learn(key string) {
+	if key == "" {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.known) >= knownKeysLimit {
+		r.known = make(map[string]struct{})
+	}
+	r.known[key] = struct{}{}
+}
+
+func (r *Relay) knows(key string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, ok := r.known[key]
+	return ok
+}
+
 func unreachable(a *Answer, err error) (string, bool) {
 	if err != nil {
 		return err.Error(), true
@@ -225,21 +299,63 @@ func queueable(kind string) bool {
 }
 
 func publicClient(ip net.IP) bool {
-	return ip != nil && ip.IsGlobalUnicast() && !ip.IsPrivate()
+	return ip != nil && ip.IsGlobalUnicast() && catalogue.RoutableIP(ip)
+}
+
+func limitOf(a *Answer) (string, time.Duration) {
+	var body struct {
+		Scope      string `json:"scope"`
+		RetryAfter int    `json:"retry_after"`
+	}
+	_ = json.Unmarshal(a.Body, &body)
+	wait := time.Duration(body.RetryAfter) * time.Second
+	if wait <= 0 {
+		if seconds, err := strconv.Atoi(strings.TrimSpace(a.RetryAfter)); err == nil && seconds > 0 {
+			wait = time.Duration(seconds) * time.Second
+		}
+	}
+	if wait <= 0 {
+		wait = deferDefault
+	}
+	return body.Scope, wait
+}
+
+func addressScope(scope string) bool {
+	return scope == "" || scope == ratelimit.ScopeRequest
+}
+
+func (r *Relay) pauseDrain(until time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if until.After(r.pausedUntil) {
+		r.pausedUntil = until
+	}
+}
+
+func (r *Relay) wallNewKeys(until time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if until.After(r.newKeyWall) {
+		r.newKeyWall = until
+	}
 }
 
 func (r *Relay) limitClient(client net.IP, now time.Time) *Answer {
 	if !publicClient(client) {
 		if client != nil {
 			r.warnOnce.Do(func() {
-				log.Printf("relay: records arrive from %s, a private address; per-client limits apply only when --trusted-proxies names the reverse proxy in front of this mirror", client)
+				log.Printf("relay: records arrive from %s, which is not a public address; per-client limits apply only when --trusted-proxies names the reverse proxy in front of this mirror", client)
 			})
 		}
 		return nil
 	}
-	ok, wait := r.limiter.Allow(scopeClient, ratelimit.AddressKey(r.secret, client, now), ClientRequestsPerHour, ratelimit.Hour)
+	key := ratelimit.AddressKey(r.secret, client, now)
+	ok, wait := r.limiter.Allow(scopeClient, key, ClientRequestsPerHour, ratelimit.Hour)
 	if ok {
 		return nil
+	}
+	if first, _ := r.limiter.Allow(scopeClientNote, key, 1, ratelimit.Hour); first {
+		log.Printf("relay: %s sent more than %d records this hour and is refused for %s", ratelimit.Prefix(client), ClientRequestsPerHour, wait.Round(time.Second))
 	}
 	seconds := int(math.Ceil(wait.Seconds()))
 	return retryIn(jsonAnswer(http.StatusTooManyRequests, map[string]interface{}{
@@ -252,6 +368,46 @@ func (r *Relay) limitClient(client net.IP, now time.Time) *Answer {
 	}), wait)
 }
 
+type inspected struct {
+	rec   hubwire.Record
+	known bool
+}
+
+func inspect(raw []byte) (*inspected, *Answer) {
+	var head struct {
+		V json.RawMessage `json:"v"`
+	}
+	if err := json.Unmarshal(raw, &head); err != nil {
+		return nil, failAnswer(http.StatusBadRequest, ingest.CodeBadRecord, "record does not decode: "+err.Error())
+	}
+	version := strings.TrimSpace(string(head.V))
+	if version == "" || version == "null" {
+		return nil, failAnswer(http.StatusBadRequest, ingest.CodeBadRecord, "record carries no wire version")
+	}
+	if version != strconv.Itoa(hubwire.WireVersion) {
+		return &inspected{}, nil
+	}
+	out := &inspected{known: true}
+	if err := json.Unmarshal(raw, &out.rec); err != nil {
+		return nil, failAnswer(http.StatusBadRequest, ingest.CodeBadRecord, "record does not decode: "+err.Error())
+	}
+	if _, err := hubwire.VerifyRecord(&out.rec); err != nil {
+		switch {
+		case errors.Is(err, hubwire.ErrUnknownKind):
+			out.known = false
+			return out, nil
+		case errors.Is(err, hubwire.ErrBadSignature), errors.Is(err, hubwire.ErrBadKey):
+			return nil, failAnswer(http.StatusBadRequest, ingest.CodeBadSignature, err.Error())
+		default:
+			return nil, failAnswer(http.StatusBadRequest, ingest.CodeBadRecord, err.Error())
+		}
+	}
+	if !ingest.CanonicalEncoding(&out.rec) {
+		return nil, failAnswer(http.StatusBadRequest, ingest.CodeBadSignature, "the key or the signature is not in its canonical encoding")
+	}
+	return out, nil
+}
+
 func (r *Relay) Handle(ctx context.Context, raw []byte, client net.IP, via string) *Answer {
 	r.init()
 	if r.looped(via) {
@@ -261,52 +417,63 @@ func (r *Relay) Handle(ctx context.Context, raw []byte, client net.IP, via strin
 	if limited := r.limitClient(client, now); limited != nil {
 		return limited
 	}
-	var rec hubwire.Record
-	if err := json.Unmarshal(raw, &rec); err != nil {
-		return failAnswer(http.StatusBadRequest, ingest.CodeBadRecord, "record does not decode: "+err.Error())
+	seen, refused := inspect(raw)
+	if refused != nil {
+		return refused
 	}
-	known := true
-	if _, err := hubwire.VerifyRecord(&rec); err != nil {
-		switch {
-		case errors.Is(err, hubwire.ErrUnknownKind), errors.Is(err, hubwire.ErrWireVersion):
-			known = false
-		case errors.Is(err, hubwire.ErrBadSignature), errors.Is(err, hubwire.ErrBadKey):
-			return failAnswer(http.StatusBadRequest, ingest.CodeBadSignature, err.Error())
-		default:
-			return failAnswer(http.StatusBadRequest, ingest.CodeBadRecord, err.Error())
-		}
+	hash := bodyHash(raw)
+	if !r.enter(hash) {
+		return failAnswer(http.StatusLoopDetected, CodeRelayLoop, "the same record is already on its way through this mirror")
 	}
-	if known && !ingest.CanonicalEncoding(&rec) {
-		return failAnswer(http.StatusBadRequest, ingest.CodeBadSignature, "the key or the signature is not in its canonical encoding")
-	}
-	if known && rec.Kind != hubwire.RecordShare && len(raw) > MaxSmallRecord {
-		return failAnswer(http.StatusRequestEntityTooLarge, ingest.CodeTooLarge, "a "+rec.Kind+" record is never larger than "+strconv.Itoa(MaxSmallRecord)+" bytes")
-	}
-	hold := known && queueable(rec.Kind)
-	if !r.breaker.allow(now) {
-		return r.hold(&rec, raw, hold, client, now, "the hub has not been answering since "+r.breaker.since().UTC().Format(time.RFC3339))
+	defer r.leave(hash)
+	hold := seen.known && queueable(seen.rec.Kind)
+	ok, probe := r.breaker.allow(now)
+	if !ok {
+		return r.hold(seen, raw, hold, client, now, "the hub has not been answering since "+r.breaker.since().UTC().Format(time.RFC3339))
 	}
 	answer, err := r.forward(context.WithoutCancel(ctx), raw, via, r.liveTimeout())
 	if reason, down := unreachable(answer, err); down {
-		r.breaker.failure(r.now())
-		return r.hold(&rec, raw, hold, client, now, reason)
+		r.breaker.failure(now, r.now(), probe)
+		return r.hold(seen, raw, hold, client, now, reason)
 	}
 	r.breaker.success()
+	if answer.Status == http.StatusTooManyRequests {
+		scope, wait := limitOf(answer)
+		switch {
+		case addressScope(scope):
+			r.pauseDrain(r.now().Add(wait))
+			return r.busy(seen, raw, hold, client, now, wait)
+		case scope == ratelimit.ScopeNewKey:
+			r.wallNewKeys(r.now().Add(wait))
+		}
+	}
+	if seen.known && answer.Status >= 200 && answer.Status < 300 {
+		r.learn(seen.rec.Key)
+	}
 	return answer
 }
 
-func (r *Relay) hold(rec *hubwire.Record, raw []byte, queue bool, client net.IP, now time.Time, reason string) *Answer {
+func (r *Relay) hold(seen *inspected, raw []byte, queue bool, client net.IP, now time.Time, reason string) *Answer {
 	if queue {
-		if answer := r.queue(rec, raw, client, now, reason); answer != nil {
+		if answer := r.queue(&seen.rec, raw, client, now, reason); answer != nil {
 			return answer
 		}
 	}
 	return retryIn(failAnswer(http.StatusBadGateway, CodeHubUnreachable, "the hub cannot be reached: "+reason), breakerMinBackoff)
 }
 
+func (r *Relay) busy(seen *inspected, raw []byte, queue bool, client net.IP, now time.Time, wait time.Duration) *Answer {
+	if queue {
+		if answer := r.queue(&seen.rec, raw, client, now, "the hub limits this mirror for "+wait.Round(time.Second).String()); answer != nil {
+			return answer
+		}
+	}
+	return retryIn(failAnswer(http.StatusServiceUnavailable, CodeHubBusy, "the hub accepts no more records from this mirror for now; another address may still take them"), wait)
+}
+
 func (r *Relay) queue(rec *hubwire.Record, raw []byte, client net.IP, now time.Time, reason string) *Answer {
 	limit := r.queueLimit()
-	if limit == 0 {
+	if limit == 0 || len(raw) > MaxQueuedRecord {
 		return nil
 	}
 	id := rec.ID()
@@ -328,7 +495,7 @@ func (r *Relay) queue(rec *hubwire.Record, raw []byte, client net.IP, now time.T
 	if err := r.enqueue(id, raw); err != nil {
 		return failAnswer(http.StatusInternalServerError, ingest.CodeInternal, err.Error())
 	}
-	log.Printf("relay: hub unreachable (%s), queued %s %s", reason, rec.Kind, id[:12])
+	log.Printf("relay: %s, queued %s %s", reason, rec.Kind, id[:12])
 	return accepted
 }
 
@@ -391,24 +558,6 @@ func (r *Relay) Queued() int {
 	return n
 }
 
-func limitOf(a *Answer) (string, time.Duration) {
-	var body struct {
-		Scope      string `json:"scope"`
-		RetryAfter int    `json:"retry_after"`
-	}
-	_ = json.Unmarshal(a.Body, &body)
-	wait := time.Duration(body.RetryAfter) * time.Second
-	if wait <= 0 {
-		if seconds, err := strconv.Atoi(strings.TrimSpace(a.RetryAfter)); err == nil && seconds > 0 {
-			wait = time.Duration(seconds) * time.Second
-		}
-	}
-	if wait <= 0 {
-		wait = deferDefault
-	}
-	return body.Scope, wait
-}
-
 func (r *Relay) deferredUntil(name string) time.Time {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -425,17 +574,26 @@ func (r *Relay) setDeferred(name string, until time.Time) {
 	r.deferred[name] = until
 }
 
+func (r *Relay) walls() (time.Time, time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.pausedUntil, r.newKeyWall
+}
+
+func recordKey(raw []byte) string {
+	var head struct {
+		Key string `json:"key"`
+	}
+	_ = json.Unmarshal(raw, &head)
+	return head.Key
+}
+
 func (r *Relay) Retry(ctx context.Context) error {
 	r.init()
 	now := r.now()
-	r.mu.Lock()
-	paused := r.pausedUntil
-	r.mu.Unlock()
+	paused, wall := r.walls()
 	if now.Before(paused) {
-		return fmt.Errorf("delivery paused by the hub's request limit until %s, %d records queued", paused.UTC().Format(time.RFC3339), r.Queued())
-	}
-	if r.breaker.open(now) {
-		return fmt.Errorf("delivery paused, the hub has not been answering since %s, %d records queued", r.breaker.since().UTC().Format(time.RFC3339), r.Queued())
+		return fmt.Errorf("delivery paused by the hub's limit for this mirror until %s, %d records queued", paused.UTC().Format(time.RFC3339), r.Queued())
 	}
 	files, err := r.queuedFiles()
 	if errors.Is(err, os.ErrNotExist) {
@@ -445,6 +603,13 @@ func (r *Relay) Retry(ctx context.Context) error {
 		return err
 	}
 	sent := 0
+	probe := false
+	took := false
+	defer func() {
+		if took && probe && sent == 0 {
+			r.breaker.release()
+		}
+	}()
 	for i, f := range files {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -466,26 +631,48 @@ func (r *Relay) Retry(ctx context.Context) error {
 		if err != nil {
 			continue
 		}
+		key := recordKey(raw)
+		if now.Before(wall) && !r.knows(key) {
+			continue
+		}
+		if !took {
+			ok, p := r.breaker.allow(now)
+			if !ok {
+				return fmt.Errorf("delivery paused, the hub has not been answering since %s, %d records queued", r.breaker.since().UTC().Format(time.RFC3339), len(files)-i)
+			}
+			took, probe = true, p
+		}
+		hash := bodyHash(raw)
+		if !r.enter(hash) {
+			continue
+		}
+		start := r.now()
 		answer, err := r.forward(ctx, raw, "", r.timeout())
+		r.leave(hash)
 		sent++
 		if reason, down := unreachable(answer, err); down {
-			r.breaker.failure(r.now())
+			r.breaker.failure(start, r.now(), probe && sent == 1)
 			return fmt.Errorf("delivery paused (%s), %d records still queued", reason, len(files)-i)
 		}
 		r.breaker.success()
 		if answer.Status == http.StatusTooManyRequests {
 			scope, wait := limitOf(answer)
-			if scope == "" || scope == ratelimit.ScopeRequest {
-				r.mu.Lock()
-				r.pausedUntil = r.now().Add(wait)
-				r.mu.Unlock()
-				return fmt.Errorf("delivery paused by the hub's request limit for %s, %d records still queued", wait, len(files)-i)
+			switch {
+			case addressScope(scope):
+				r.pauseDrain(r.now().Add(wait))
+				return fmt.Errorf("delivery paused by the hub's limit for this mirror for %s, %d records still queued", wait.Round(time.Second), len(files)-i)
+			case scope == ratelimit.ScopeNewKey:
+				wall = r.now().Add(wait)
+				r.wallNewKeys(wall)
 			}
 			r.setDeferred(f.name, r.now().Add(wait))
 			continue
 		}
 		if answer.Status >= http.StatusInternalServerError {
 			return fmt.Errorf("delivery paused (upstream answered %d), %d records still queued", answer.Status, len(files)-i)
+		}
+		if answer.Status >= 200 && answer.Status < 300 {
+			r.learn(key)
 		}
 		_ = os.Remove(path)
 		r.setDeferred(f.name, time.Time{})

@@ -150,6 +150,7 @@ export interface MirrorView {
   served_generated_at?: string;
   announced: boolean;
   announce_next: boolean;
+  kept?: boolean;
   drops_at?: string;
   lag: MirrorLag;
   behind_by?: number;

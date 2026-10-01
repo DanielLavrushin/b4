@@ -17,6 +17,7 @@ import { useMirrorCheck, useMirrors, useMirrorsCheck } from "./api";
 function Announced({ m }: { m: MirrorView }) {
   const { t } = useTranslation();
   if (m.status !== "approved") return <Typography variant="caption" sx={{ color: colors.text.disabled }}>{t("mirrors.announced.no")}</Typography>;
+  if (m.kept) return <Chip size="small" color="warning" variant="outlined" label={t("mirrors.announced.kept")} />;
   if (m.announced && m.announce_next) return <Chip size="small" color="success" variant="outlined" label={t("mirrors.announced.listed")} />;
   if (m.announced) return <Chip size="small" color="warning" variant="outlined" label={t("mirrors.announced.leaving")} />;
   if (m.announce_next) return <Chip size="small" color="info" variant="outlined" label={t("mirrors.announced.joining")} />;

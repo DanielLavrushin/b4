@@ -52,7 +52,7 @@ var (
 	catalogueFilePattern = regexp.MustCompile(`^catalogue-([0-9]+)-([0-9]+)\.json\.gz$`)
 
 	ErrNotPublished = errors.New("no catalogue has been published yet")
-	ErrEmptyNewHub  = errors.New("refusing to sign an empty catalogue from a database that has never published one: this key already has a catalogue in use, so this is likely the wrong data directory; restore the hub's database, or pass --allow-empty to publish an empty catalogue")
+	ErrNewDatabase  = errors.New("this database has never published a catalogue")
 	ErrBehind       = errors.New("the database is behind the catalogue the network already has")
 )
 
@@ -75,8 +75,8 @@ type Builder struct {
 	Debounce   time.Duration
 	OnBuild    func(*Result)
 
-	RefuseEmpty bool
-	AllowEmpty  bool
+	BuiltinKey  bool
+	NewDatabase bool
 
 	mu     sync.Mutex
 	latest atomic.Pointer[Result]
@@ -444,24 +444,35 @@ func (b *Builder) publish(ctx context.Context, now time.Time) (*Result, error) {
 }
 
 func (b *Builder) guard(ctx context.Context, now time.Time, sets int) error {
+	latest := b.latest.Load()
+	if !b.NewDatabase {
+		builtAt, err := b.Store.BuiltAt(ctx)
+		if err != nil {
+			return err
+		}
+		if builtAt.IsZero() {
+			if latest != nil && len(latest.Catalogue.Sets) > sets {
+				return fmt.Errorf("%w, and its first build would replace the %d sets already published with %d; restore the hub's database, or confirm a new one with --new-database", ErrNewDatabase, len(latest.Catalogue.Sets), sets)
+			}
+			if b.BuiltinKey && sets == 0 {
+				return fmt.Errorf("%w, and its first build would sign an empty catalogue with a key built into b4; restore the hub's database, or confirm a new one with --new-database", ErrNewDatabase)
+			}
+		}
+	}
 	epoch, seq, err := b.Store.CurrentSeq(ctx)
 	if err != nil {
 		return err
 	}
-	latest := b.latest.Load()
-	if epoch == 0 && sets == 0 && !b.AllowEmpty && (b.RefuseEmpty || (latest != nil && len(latest.Catalogue.Sets) > 0)) {
-		return ErrEmptyNewHub
-	}
-	next := &hubwire.Manifest{Epoch: epoch, Seq: seq + 1, GeneratedAt: now.Format(time.RFC3339)}
 	if epoch == 0 {
-		next.Epoch = now.Unix()
+		epoch = now.Unix()
 	}
+	seq++
 	known, where, err := b.newestKnown(ctx, latest)
 	if err != nil {
 		return err
 	}
-	if known != nil && !next.Newer(known) {
-		return fmt.Errorf("%w: this build would be %d-%d while %s already has %d-%d, and routers and mirrors ignore a catalogue older than the one they hold; restore the newer database, or start a new epoch to publish this one", ErrBehind, next.Epoch, next.Seq, where, known.Epoch, known.Seq)
+	if known != nil && (epoch < known.Epoch || (epoch == known.Epoch && seq <= known.Seq)) {
+		return fmt.Errorf("%w: this build would be %d-%d while %s already has %d-%d, and a catalogue number is never reused or lowered; restore the newer database, or start a new epoch to publish this one", ErrBehind, epoch, seq, where, known.Epoch, known.Seq)
 	}
 	return nil
 }
@@ -615,6 +626,10 @@ func (b *Builder) mirrors(ctx context.Context) ([]string, error) {
 		return nil, nil
 	}
 	return out, nil
+}
+
+func (b *Builder) ListedMirrors(ctx context.Context) ([]string, error) {
+	return b.listedMirrors(ctx)
 }
 
 func (b *Builder) listedMirrors(ctx context.Context) ([]string, error) {

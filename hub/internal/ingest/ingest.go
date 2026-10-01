@@ -126,13 +126,30 @@ func (s *Service) observe(ctx context.Context, peer net.IP) origin {
 	return origin{ASN: info.ASN, Country: info.Country}
 }
 
+const (
+	RelayRequestFactor = 10
+	RelayNewKeyFactor  = 20
+)
+
 type Source struct {
-	IP      net.IP
-	Relayed bool
+	IP    net.IP
+	Relay string
 }
 
 func (s *Service) Handle(ctx context.Context, raw []byte, peer net.IP) Response {
 	return s.HandleFrom(ctx, raw, Source{IP: peer})
+}
+
+func (s *Service) relayed(ctx context.Context, header string, raw []byte, now time.Time) bool {
+	if header == "" {
+		return false
+	}
+	keyID, ok := hubdata.VerifyRelay(header, raw, now)
+	if !ok {
+		return false
+	}
+	approved, err := s.Store.ApprovedMirrorKey(ctx, hubdata.KeyHMAC(s.Secret, keyID))
+	return err == nil && approved
 }
 
 func (s *Service) HandleFrom(ctx context.Context, raw []byte, src Source) Response {
@@ -144,6 +161,11 @@ func (s *Service) HandleFrom(ctx context.Context, raw []byte, src Source) Respon
 	limits, err := s.Store.Settings(ctx)
 	if err != nil {
 		return internalError(err)
+	}
+	relayed := s.relayed(ctx, src.Relay, raw, now)
+	if relayed {
+		limits.RequestsPerHour *= RelayRequestFactor
+		limits.NewKeysPerDay *= RelayNewKeyFactor
 	}
 	addressKey := ""
 	if peer != nil {
@@ -210,7 +232,7 @@ func (s *Service) HandleFrom(ctx context.Context, raw []byte, src Source) Respon
 		}
 	}
 	observed := origin{}
-	if !src.Relayed {
+	if !relayed {
 		observed = s.observe(ctx, peer)
 	}
 	entry := record{rec: &rec, id: recordID, keyHMAC: keyHMAC, origin: observed, now: now}

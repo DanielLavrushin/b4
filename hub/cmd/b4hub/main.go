@@ -158,18 +158,18 @@ func openServices(data string) (*services, error) {
 
 func (s *services) builder(publicURL string, sources []hubwire.GeoSource) *catalogue.Builder {
 	return &catalogue.Builder{
-		Store:       s.store,
-		Identity:    s.identity,
-		PublicDir:   s.layout.Public(),
-		PublicURL:   publicURL,
-		GeoSources:  sources,
-		Mirrors:     &catalogue.MirrorHealth{Store: s.store, KeyID: s.identity.KeyID()},
-		RefuseEmpty: slices.Contains(hubwire.BuiltinHubKeys, s.identity.KeyID()),
+		Store:      s.store,
+		Identity:   s.identity,
+		PublicDir:  s.layout.Public(),
+		PublicURL:  publicURL,
+		GeoSources: sources,
+		Mirrors:    &catalogue.MirrorHealth{Store: s.store, KeyID: s.identity.KeyID()},
+		BuiltinKey: slices.Contains(hubwire.BuiltinHubKeys, s.identity.KeyID()),
 	}
 }
 
-func bindAllowEmpty(cmd *cobra.Command, target *bool) {
-	cmd.Flags().BoolVar(target, "allow-empty", false, "let a database that has never published sign an empty catalogue with a key built into b4")
+func bindNewDatabase(cmd *cobra.Command, target *bool) {
+	cmd.Flags().BoolVar(target, "new-database", false, "confirm that a database which has never published may replace the published catalogue")
 }
 
 type storeBuilds struct {

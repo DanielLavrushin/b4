@@ -259,6 +259,7 @@ type MirrorView struct {
 	ServedGeneratedAt string     `json:"served_generated_at,omitempty"`
 	Announced         bool       `json:"announced"`
 	AnnounceNext      bool       `json:"announce_next"`
+	Kept              bool       `json:"kept,omitempty"`
 	DropsAt           *time.Time `json:"drops_at,omitempty"`
 	Lag               string     `json:"lag"`
 	BehindBy          int64      `json:"behind_by,omitempty"`

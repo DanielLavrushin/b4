@@ -93,15 +93,31 @@ func (s *Server) mirrorViews(ctx context.Context, mirrors []store.Mirror) []Mirr
 	if h := s.health(); h != nil {
 		window = h.AnnounceWindow()
 	}
+	var next map[string]bool
+	if s.Catalogue != nil {
+		if urls, err := s.Catalogue.ListedMirrors(ctx); err == nil {
+			next = make(map[string]bool, len(urls))
+			for _, u := range urls {
+				next[u] = true
+			}
+		}
+	}
 	now := s.now().UTC()
 	out := make([]MirrorView, 0, len(mirrors))
 	for _, m := range mirrors {
 		v := mirrorView(m)
 		v.Announced = listed[m.URL]
 		if m.Status == store.MirrorApproved && !m.LastOK.IsZero() {
-			v.AnnounceNext = now.Sub(m.LastOK) <= window
-			drops := m.LastOK.Add(window)
-			v.DropsAt = &drops
+			passing := now.Sub(m.LastOK) <= window
+			v.AnnounceNext = passing
+			if next != nil {
+				v.AnnounceNext = next[m.URL]
+			}
+			v.Kept = v.AnnounceNext && !passing
+			if passing {
+				drops := m.LastOK.Add(window)
+				v.DropsAt = &drops
+			}
 		}
 		v.Lag, v.BehindBy = mirrorLag(m, manifest)
 		out = append(out, v)

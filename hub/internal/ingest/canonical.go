@@ -2,16 +2,11 @@ package ingest
 
 import (
 	"encoding/base64"
-	"strings"
 
 	"github.com/daniellavrushin/b4/hubwire"
 )
 
 const RelayAgent = "b4hub-mirror"
-
-func RelayedBy(userAgent string) bool {
-	return strings.HasPrefix(userAgent, RelayAgent)
-}
 
 func CanonicalEncoding(rec *hubwire.Record) bool {
 	pub, err := hubwire.DecodeKey(rec.Key)
