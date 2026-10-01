@@ -74,7 +74,7 @@ const generalTabRestartScope = (c: B4Config) => [
   c.system.web_server.bind_address,
   c.system.web_server.tls_cert,
   c.system.web_server.tls_key,
-  c.system.tables,
+  { ...c.system.tables, dscp: undefined },
   c.system.dns,
 ];
 

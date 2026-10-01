@@ -39,6 +39,7 @@ var kmodPackageTable = map[string]kmodPackageSet{
 	"xt_connmark":  {kernel: []string{"kmod-ipt-conntrack-extra"}, userspace: []string{"iptables-mod-conntrack-extra"}},
 	"xt_CONNMARK":  {kernel: []string{"kmod-ipt-conntrack-extra"}, userspace: []string{"iptables-mod-conntrack-extra"}},
 	"xt_addrtype":  {kernel: []string{"kmod-ipt-extra"}, userspace: []string{"iptables-mod-extra"}},
+	"xt_DSCP":      {kernel: []string{"kmod-ipt-ipopt"}, userspace: []string{"iptables-mod-ipopt"}},
 	"nft_fib_inet": {kernel: []string{"kmod-nft-fib"}},
 	"nft_fib":      {kernel: []string{"kmod-nft-fib"}},
 }

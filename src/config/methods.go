@@ -873,6 +873,28 @@ func (cfg *Config) HasGlobalMSSClamp() (bool, int) {
 	return false, 0
 }
 
+func (cfg *Config) DSCPStamp() (int, []string, bool) {
+	d := cfg.System.Tables.DSCP
+	if !d.Enabled || d.Value < 0 || d.Value > MaxDSCPValue {
+		return 0, nil, false
+	}
+	return d.Value, cleanIfaceList(d.Interfaces), true
+}
+
+func cleanIfaceList(names []string) []string {
+	out := make([]string, 0, len(names))
+	seen := make(map[string]bool, len(names))
+	for _, name := range names {
+		name = sanitizeIfaceName(name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	return out
+}
+
 // MSSClampFingerprint returns a string representation of the MSS clamp configuration for comparison.
 func (cfg *Config) MSSClampFingerprint() string {
 	parts := []string{}
@@ -1243,6 +1265,9 @@ func FirewallRefreshNeeded(oldCfg, newCfg *Config) bool {
 		return true
 	}
 	if !oldCfg.System.Tables.Masquerade.Equal(newCfg.System.Tables.Masquerade) {
+		return true
+	}
+	if !oldCfg.System.Tables.DSCP.Equal(newCfg.System.Tables.DSCP) {
 		return true
 	}
 	if !sameDuplicateIPs(oldCfg, newCfg) {
