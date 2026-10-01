@@ -194,8 +194,9 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 	cur := buildRouteState(cfg, set)
 	cur.set = set
 	if old, ok := routeRuleCache[set.Id]; ok && routeStateEqual(old, cur) {
-		routeAsyncStamp(set, ips)
-		routeAddIPsToSets(be, cur, routeSetTTL(set), ips, cur.ipv4, cur.ipv6)
+		routeNoteInstalled(set.Id)
+		failed := routeAddIPsToSets(be, cur, routeSetTTL(set), ips, cur.ipv4, cur.ipv6)
+		routeAsyncStampExcept(set, ips, failed)
 		return
 	}
 
@@ -258,8 +259,8 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 		routeReestablishJumpOrder(be, cfg, true)
 	}
 
-	routeAsyncStamp(set, ips)
-	routeAddIPsToSets(be, cur, routeSetTTL(set), ips, cur.ipv4, cur.ipv6)
+	failed := routeAddIPsToSets(be, cur, routeSetTTL(set), ips, cur.ipv4, cur.ipv6)
+	routeAsyncStampExcept(set, ips, failed)
 }
 
 func routeSetTTL(set *config.SetConfig) int {
@@ -610,7 +611,7 @@ func routeCleanupForRebuild(be routeBackend, old, cur routeState) func() {
 	}
 }
 
-func routeAddIPsToSets(be routeBackend, st routeState, ttl int, ips []net.IP, ipv4Enabled, ipv6Enabled bool) {
+func routeAddIPsToSets(be routeBackend, st routeState, ttl int, ips []net.IP, ipv4Enabled, ipv6Enabled bool) []string {
 	v4 := make([]string, 0, len(ips))
 	v6 := make([]string, 0, len(ips))
 	seen4 := make(map[string]struct{}, len(ips))
@@ -667,6 +668,7 @@ func routeAddIPsToSets(be routeBackend, st routeState, ttl int, ips []net.IP, ip
 	if ttl > 0 && len(failed) > 0 {
 		routeForgetLearnedEntries(st.setID, failed)
 	}
+	return failed
 }
 
 func routeCollectEntries(set *config.SetConfig) (v4, v6 []string) {

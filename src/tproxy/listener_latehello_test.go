@@ -248,3 +248,154 @@ func TestNamingConnNamesTheLineOnceFromTheFirstBytes(t *testing.T) {
 		t.Fatalf("names %v, want www.formula1.com exactly once", names)
 	}
 }
+
+func namesSeen(t *testing.T) (*proxyNamer, func() []string) {
+	t.Helper()
+	var mu sync.Mutex
+	var names []string
+	namer := &proxyNamer{log: func(host string, _ uint16) {
+		mu.Lock()
+		names = append(names, host)
+		mu.Unlock()
+	}}
+	return namer, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), names...)
+	}
+}
+
+func queued(t *testing.T, c net.Conn, n int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for len(peekClient(c, sniffMaxBytes)) < n {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d bytes never reached the socket", n)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestFirstWaitNamesAHelloTheRelayHasNotReadYet(t *testing.T) {
+	p := acceptedPair(t)
+	defer p.client.Close()
+	defer p.accepted.Close()
+	namer, names := namesSeen(t)
+	hello := realClientHello(t, "www.formula1.com")
+	if _, err := p.client.Write(hello); err != nil {
+		t.Fatal(err)
+	}
+	queued(t, p.accepted, len(hello))
+
+	wrapped := namer.wrap(p.accepted)
+	namer.deadline(p.accepted)
+	buf := make([]byte, len(hello))
+	_ = wrapped.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := io.ReadFull(wrapped, buf); err != nil {
+		t.Fatal(err)
+	}
+	if got := names(); len(got) != 1 || got[0] != "www.formula1.com" {
+		t.Fatalf("names %v, want www.formula1.com once from a hello that was queued when the relay started", got)
+	}
+}
+
+func TestFirstWaitLeavesAPartialHelloForLater(t *testing.T) {
+	p := acceptedPair(t)
+	defer p.client.Close()
+	defer p.accepted.Close()
+	namer, names := namesSeen(t)
+	hello := realClientHello(t, "api.formula1.com")
+	if _, err := p.client.Write(hello[:100]); err != nil {
+		t.Fatal(err)
+	}
+	queued(t, p.accepted, 100)
+
+	namer.deadline(p.accepted)
+	if got := names(); len(got) != 0 {
+		t.Fatalf("names %v after the first wait, want none while the hello is incomplete", got)
+	}
+	if _, err := p.client.Write(hello[100:]); err != nil {
+		t.Fatal(err)
+	}
+	queued(t, p.accepted, len(hello))
+	namer.expire(p.accepted)
+	if got := names(); len(got) != 1 || got[0] != "api.formula1.com" {
+		t.Fatalf("names %v, want api.formula1.com once the rest of the hello arrived", got)
+	}
+}
+
+func TestProxyLineNamesAHelloSplitAcrossTheFirstWait(t *testing.T) {
+	lines := watchConnLines(t)
+	hello := realClientHello(t, "www.formula1.com")
+	up := startMockSocks(t, len(hello), func(byte) byte { return 0 })
+	l := newTestListener(t, up.port(), fakeNames{})
+	l.SetName = "names-split-hello"
+	l.UseDomain = false
+	p := acceptedPair(t)
+	if _, err := p.client.Write(hello[:100]); err != nil {
+		t.Fatal(err)
+	}
+
+	handleInBackground(t, l, p)
+	time.Sleep(sniffFirstWait + 150*time.Millisecond)
+	if _, err := p.client.Write(hello[100:]); err != nil {
+		t.Fatal(err)
+	}
+	if line := nextConnLine(t, lines, l.SetName); line.domain != "www.formula1.com" {
+		t.Fatalf("connection line %+v, want the name from a ClientHello whose second part came after the first wait", line)
+	}
+	up.next(t)
+}
+
+func TestProxyLineWaitsForTheRestOfASplitHelloWhileTheUpstreamHangs(t *testing.T) {
+	lines := watchConnLines(t)
+	hello := realClientHello(t, "f1tv.formula1.com")
+	l := newTestListener(t, startSilentUpstream(t), fakeNames{})
+	l.SetName = "names-split-hanging"
+	l.UseDomain = false
+	p := acceptedPair(t)
+	if _, err := p.client.Write(hello[:100]); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	handleInBackground(t, l, p)
+	time.Sleep(sniffFirstWait + 150*time.Millisecond)
+	if _, err := p.client.Write(hello[100:]); err != nil {
+		t.Fatal(err)
+	}
+	line := nextConnLine(t, lines, l.SetName)
+	if waited := time.Since(start); waited > sniffTotalWait+500*time.Millisecond {
+		t.Fatalf("the line waited %s for an upstream that never answered", waited)
+	}
+	if line.domain != "f1tv.formula1.com" || line.meta != "proxy" {
+		t.Fatalf("connection line %+v, want f1tv.formula1.com marked proxy", line)
+	}
+}
+
+func TestProxyLineForAnIncompleteFirstMessageIsNotHeldBack(t *testing.T) {
+	lines := watchConnLines(t)
+	first := []byte("GET key\r\n")
+	up := startMockSocks(t, len(first), func(byte) byte { return 0 })
+	l := newTestListener(t, up.port(), fakeNames{})
+	l.SetName = "names-incomplete-first"
+	l.UseDomain = false
+	p := acceptedPair(t)
+
+	start := time.Now()
+	handleInBackground(t, l, p)
+	time.Sleep(20 * time.Millisecond)
+	if _, err := p.client.Write(first); err != nil {
+		t.Fatal(err)
+	}
+	line := nextConnLine(t, lines, l.SetName)
+	if waited := time.Since(start); waited > sniffTotalWait+500*time.Millisecond {
+		t.Fatalf("the line waited %s for the rest of a message that never came", waited)
+	}
+	if line.domain != "" || line.meta != "proxy" {
+		t.Fatalf("connection line %+v, want one without a name, marked proxy", line)
+	}
+	if r := up.next(t); string(r.payload) != string(first) {
+		t.Fatalf("the upstream got %q, want the client's bytes intact", r.payload)
+	}
+}

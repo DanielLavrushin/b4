@@ -130,6 +130,7 @@ func TestRouteAsyncSubmitRunsJobOffCaller(t *testing.T) {
 func TestRouteAsyncSubmitDropsWhenFull(t *testing.T) {
 	resetRouteAsync()
 	routeAsyncStart()
+	t.Cleanup(func() { drainAsync(t) })
 
 	block := make(chan struct{})
 	routeAsyncCh <- func() { <-block }

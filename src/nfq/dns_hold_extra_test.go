@@ -319,7 +319,8 @@ func TestPinnedDNSAnswerOverTCPWaitsForItsAddresses(t *testing.T) {
 	set.DNS.Pins = map[string][]string{"pin.example.com": {"203.0.113.19"}}
 	gate := make(chan struct{})
 	stubRouteAwait(t, gate)
-	s := &dnsTCPServer{worker: w}
+	s := newDNSTCPServer(w, 0)
+	t.Cleanup(s.cancel)
 
 	answered := make(chan []byte, 1)
 	go func() {
@@ -337,5 +338,187 @@ func TestPinnedDNSAnswerOverTCPWaitsForItsAddresses(t *testing.T) {
 		onlyAddress(t, resp, "203.0.113.19")
 	case <-time.After(5 * time.Second):
 		t.Fatal("the pinned TCP answer was never written")
+	}
+}
+
+func TestPinnedDNSAnswerOverTCPIsWrittenWhenItsServerStops(t *testing.T) {
+	w, set := holdWorker(t, false)
+	holdLimit(t, time.Minute)
+	set.DNS.Pins = map[string][]string{"pin.example.com": {"203.0.113.20"}}
+	stubRouteAwait(t, make(chan struct{}))
+	s := newDNSTCPServer(w, 0)
+	t.Cleanup(s.cancel)
+
+	answered := make(chan []byte, 1)
+	go func() {
+		resp, _ := s.answerVia(set, w.getConfig(), dns.BuildQuery("pin.example.com", 20, dnsTypeA), "pin.example.com", net.ParseIP("192.168.1.100"))
+		answered <- resp
+	}()
+	select {
+	case <-answered:
+		t.Fatal("the pinned TCP answer did not wait for its addresses")
+	case <-time.After(30 * time.Millisecond):
+	}
+	s.cancel()
+	select {
+	case resp := <-answered:
+		onlyAddress(t, resp, "203.0.113.20")
+	case <-time.After(time.Second):
+		t.Fatal("the pinned TCP answer kept its connection waiting after the server stopped")
+	}
+}
+
+func TestPinnedAnswerOnATCPConnectionWaitsForItsAddresses(t *testing.T) {
+	w, set := holdWorker(t, false)
+	set.DNS.Pins = map[string][]string{"pin.example.com": {"203.0.113.41"}}
+	gate := make(chan struct{})
+	stubRouteAwait(t, gate)
+	var srv *dnsTCPServer
+	for port := 45470; port < 45500; port++ {
+		srv = newDNSTCPServer(w, port)
+		if srv.Start() == nil {
+			break
+		}
+		srv = nil
+	}
+	if srv == nil {
+		t.Skip("no free port for dns tcp listener")
+	}
+	t.Cleanup(srv.Stop)
+
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", itoa(srv.port)), 3*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := writeDNSTCPMessage(conn, dns.BuildQuery("pin.example.com", 41, dnsTypeA), 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
+	if resp, err := readDNSTCPMessage(conn); err == nil {
+		t.Fatalf("the pinned answer (%d bytes) was written before its addresses were in the set", len(resp))
+	}
+	close(gate)
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	resp, err := readDNSTCPMessage(conn)
+	if err != nil {
+		t.Fatalf("the pinned answer never arrived: %v", err)
+	}
+	onlyAddress(t, resp, "203.0.113.41")
+}
+
+func TestEscalatedPinnedAnswerWaitsForItsAddresses(t *testing.T) {
+	cfg, _, backup := passiveDNSPair(t, 1)
+	backup.DNS.Pins = map[string][]string{"youtube.com": {"142.250.74.14"}}
+	backup.Routing.Enabled = true
+	backup.Routing.Mode = config.RoutingModeProxy
+	w := passiveDNSWorker(t, cfg)
+	gate := make(chan struct{})
+	calls := stubRouteAwait(t, gate)
+	r := watchReplies(t)
+	q := &orderedQueue{log: r, verdicts: make(chan int, 8)}
+
+	nx := dns.BuildBlockResponse(dns.BuildQuery("youtube.com", 0x1235, dnsTypeA))
+	w.processDnsPacket(&verdictCtx{id: 42, q: q}, answerPacket(), 53, 40000, nx)
+	select {
+	case v := <-q.verdicts:
+		if v != nfqueue.NfDrop {
+			t.Fatalf("verdict %d for the failed answer, want drop", v)
+		}
+	default:
+		t.Fatal("no verdict was given for the failed answer while it was being handled")
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("the escalated set was asked %d times, want once", calls.Load())
+	}
+	noReply(t, r, 30*time.Millisecond, "the escalated set's pinned answer was sent before its addresses were in the set")
+	close(gate)
+	onlyAddress(t, oneReply(t, r), "142.250.74.14")
+	holdsDone(t, w)
+}
+
+func TestEscalatedPinnedAnswerAfterARedirectWaitsForItsAddresses(t *testing.T) {
+	w, set := holdWorker(t, false)
+	set.DNS.Pins = map[string][]string{"pin.example.com": {"203.0.113.43"}}
+	gate := make(chan struct{})
+	stubRouteAwait(t, gate)
+	r := watchReplies(t)
+
+	answered := make(chan bool, 1)
+	go func() {
+		answered <- w.answerViaSetInline(IPv4, w.getConfig(), set, "pin.example.com", dns.BuildQuery("pin.example.com", 43, dnsTypeA), net.ParseIP("192.168.1.100"), 40000, net.ParseIP("192.168.1.1"))
+	}()
+	noReply(t, r, 30*time.Millisecond, "the pinned answer was sent before its addresses were in the set")
+	close(gate)
+	onlyAddress(t, oneReply(t, r), "203.0.113.43")
+	if !<-answered {
+		t.Fatal("the set with a pin did not answer")
+	}
+}
+
+func TestPoolReleasesTheHeldAnswersOfEveryWorker(t *testing.T) {
+	holdLimit(t, time.Minute)
+	stubRouteAwait(t, make(chan struct{}))
+	var none *Pool
+	none.ReleaseHolds()
+
+	pool := &Pool{}
+	var queues []*fakeQueue
+	for i := 0; i < 2; i++ {
+		w, _ := holdWorker(t, false)
+		w.holdStop = make(chan struct{})
+		q := newFakeQueue()
+		w.processDnsPacket(&verdictCtx{id: uint32(44 + i), q: q}, answerPacket(), 53, 40000, buildDNSResponse(uint16(44+i), "www.example.com", []net.IP{net.ParseIP("203.0.113.44")}))
+		pool.Workers = append(pool.Workers, w)
+		queues = append(queues, q)
+	}
+	q := queues[0]
+	q.none(t, 30*time.Millisecond)
+
+	pool.ReleaseHolds()
+	for i, q := range queues {
+		select {
+		case v := <-q.verdicts:
+			if v != nfqueue.NfAccept {
+				t.Fatalf("worker %d: verdict %d, want accept", i, v)
+			}
+		default:
+			t.Fatalf("worker %d still held its answer after the pool released them", i)
+		}
+	}
+}
+
+func TestWorkerFromTheConstructorAcceptsHeldAnswersBeforeLettingGoOfItsQueue(t *testing.T) {
+	w, _ := holdWorker(t, false)
+	holdLimit(t, time.Minute)
+	stubRouteAwait(t, make(chan struct{}))
+	built := NewWorkerWithQueue(w.getConfig(), 0)
+	q := &unbindingQueue{verdicts: make(chan int, 8)}
+	w.ctx, w.holdStop = built.ctx, built.holdStop
+	w.cancel = func() {
+		q.unbound.Store(true)
+		built.cancel()
+	}
+
+	w.processDnsPacket(&verdictCtx{id: 46, q: q}, answerPacket(), 53, 40000, buildDNSResponse(46, "www.example.com", []net.IP{net.ParseIP("203.0.113.46")}))
+	w.Stop()
+	select {
+	case v := <-q.verdicts:
+		if v != nfqueue.NfAccept {
+			t.Fatalf("verdict %d on stop, want accept", v)
+		}
+	default:
+		t.Fatal("a worker built by NewWorkerWithQueue let go of its queue before it accepted the held answer")
+	}
+}
+
+func TestNoHoldStartsOnceTheHoldsAreReleased(t *testing.T) {
+	w, _ := holdWorker(t, false)
+	w.holdStop = make(chan struct{})
+	w.releaseHolds()
+
+	if w.holdForRoutes(&verdictCtx{id: 47, q: newFakeQueue()}, []<-chan struct{}{make(chan struct{})}, "www.example.com", func() {}) {
+		holdsDone(t, w)
+		t.Fatal("a hold started after the worker released its holds, so its verdict would come after the queue is gone")
 	}
 }

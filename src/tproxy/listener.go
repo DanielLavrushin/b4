@@ -295,6 +295,7 @@ func (l *Listener) acceptLoop(ln net.Listener, family string) {
 }
 
 func (l *Listener) handle(client net.Conn) {
+	accepted := time.Now()
 	l.activeConns.Add(1)
 	defer l.activeConns.Add(-1)
 	defer client.Close()
@@ -385,9 +386,11 @@ func (l *Listener) handle(client net.Conn) {
 			log.LogConnectionStr("TCP", l.SetName, host, src, "", dest,
 				"", config.TLSVersionString(tlsVersion), "proxy")
 		}}
-		late := time.AfterFunc(sniffFirstWait, func() { namer.deadline(client) })
-		defer late.Stop()
-		defer func() { namer.name(peekClient(client, sniffMaxBytes)) }()
+		first := time.AfterFunc(max(0, sniffFirstWait-time.Since(accepted)), func() { namer.deadline(client) })
+		defer first.Stop()
+		total := time.AfterFunc(max(0, sniffTotalWait-time.Since(accepted)), func() { namer.expire(client) })
+		defer total.Stop()
+		defer namer.expire(client)
 	}
 
 	defer l.holdRelay(keys)()

@@ -33,6 +33,7 @@ func awaitSetup(t *testing.T, ipv6 bool) (*config.Config, *config.SetConfig, *mo
 	t.Cleanup(func() { run = origRun })
 	run = func(args ...string) (string, error) { return "", nil }
 
+	drainAsync(t)
 	routeAsyncSeenMu.Lock()
 	routeAsyncSeen = make(map[string]time.Time)
 	routeAsyncPending = make(map[string]chan struct{})
@@ -49,12 +50,13 @@ func awaitSetup(t *testing.T, ipv6 bool) (*config.Config, *config.SetConfig, *mo
 	be := &mockRouteBackend{}
 	routeEngine = be
 	routeRuleCache[set.Id] = buildRouteState(cfg, set)
+	t.Cleanup(func() { drainAsync(t) })
 	return cfg, set, be
 }
 
 func gateAdds(t *testing.T, be *mockRouteBackend) *awaitGate {
 	t.Helper()
-	g := &awaitGate{release: make(chan struct{}), adds: make(chan awaitAdd, 16)}
+	g := &awaitGate{release: make(chan struct{}), adds: make(chan awaitAdd, 256)}
 	be.addElementsFn = func(setName string, ips []string, ttlSec int) {
 		g.count.Add(1)
 		g.adds <- awaitAdd{setName: setName, ips: append([]string(nil), ips...)}
@@ -310,4 +312,142 @@ func TestRoutingHandleDNSStillRebuildsASetWhoseStateChanged(t *testing.T) {
 	if got := routeRuleCache[set.Id].iface; got != set.Routing.EgressInterface {
 		t.Fatalf("the rebuilt state points at %q, want %q", got, set.Routing.EgressInterface)
 	}
+}
+
+func TestAnAnswerDuringASynchronousAddWaitsForIt(t *testing.T) {
+	for _, installed := range []bool{true, false} {
+		name := "rules in place"
+		if !installed {
+			name = "rules being installed"
+		}
+		t.Run(name, func(t *testing.T) {
+			cfg, set, be := awaitSetup(t, false)
+			if !installed {
+				delete(routeRuleCache, set.Id)
+			}
+			reached, release := make(chan struct{}, 1), make(chan struct{})
+			var once sync.Once
+			open := func() { once.Do(func() { close(release) }) }
+			t.Cleanup(open)
+			be.addElementsFn = func(_ string, ips []string, _ int) {
+				if reflect.DeepEqual(ips, []string{"198.51.100.78"}) {
+					select {
+					case reached <- struct{}{}:
+					default:
+					}
+					<-release
+				}
+			}
+			ips := []net.IP{net.ParseIP("198.51.100.78")}
+
+			added := make(chan struct{})
+			go func() {
+				RoutingHandleDNS(cfg, set, ips)
+				close(added)
+			}()
+			awaitClosed(t, reached, "the synchronous add")
+			waits := RoutingHandleDNSAwait(cfg, set, ips)
+			if len(waits) != 1 {
+				t.Fatalf("an answer that came while its address was being added got %d waits, want 1", len(waits))
+			}
+			awaitOpen(t, waits[0], "the answer's wait")
+			open()
+			awaitClosed(t, added, "the synchronous add")
+			awaitClosed(t, waits[0], "the answer's wait")
+		})
+	}
+}
+
+func TestAnAddressTheFirewallRefusedIsNotTakenAsInTheSet(t *testing.T) {
+	cfg, set, be := awaitSetup(t, false)
+	be.addFails = true
+	ips := []net.IP{net.ParseIP("198.51.100.79")}
+
+	RoutingHandleDNS(cfg, set, ips)
+	be.addFails = false
+	g := gateAdds(t, be)
+	waits := RoutingHandleDNSAwait(cfg, set, ips)
+	if len(waits) != 1 {
+		t.Fatalf("an answer for an address the firewall refused got %d waits, want 1", len(waits))
+	}
+	if add := nextAdd(t, g); !reflect.DeepEqual(add.ips, []string{"198.51.100.79"}) {
+		t.Fatalf("added %v, want the refused address tried again", add.ips)
+	}
+	g.open()
+	awaitClosed(t, waits[0], "the second try")
+}
+
+func TestAnAnswerAfterADroppedUpdateQueuesItsOwn(t *testing.T) {
+	cfg, set, be := awaitSetup(t, false)
+	release := holdAsyncWorker(t)
+	for len(routeAsyncCh) < cap(routeAsyncCh) {
+		routeAsyncCh <- func() {}
+	}
+
+	dropped := RoutingHandleDNSAwait(cfg, set, []net.IP{net.ParseIP("198.51.100.70")})
+	if len(dropped) != 1 {
+		t.Fatalf("got %d waits, want 1", len(dropped))
+	}
+	awaitClosed(t, dropped[0], "the dropped update")
+	release()
+	drainAsync(t)
+
+	g := gateAdds(t, be)
+	g.open()
+	next := RoutingHandleDNSAwait(cfg, set, []net.IP{net.ParseIP("198.51.100.71")})
+	if len(next) != 1 {
+		t.Fatalf("the answer after a dropped update got %d waits, want 1", len(next))
+	}
+	if add := nextAdd(t, g); !reflect.DeepEqual(add.ips, []string{"198.51.100.71"}) {
+		t.Fatalf("added %v, want 198.51.100.71", add.ips)
+	}
+	awaitClosed(t, next[0], "the next update")
+}
+
+func TestAddressAddedWhileInstallingTheSetLetsTheRelayedAnswerPass(t *testing.T) {
+	cfg, set, _ := awaitSetup(t, false)
+	delete(routeRuleCache, set.Id)
+	ips := []net.IP{net.ParseIP("198.51.100.72")}
+
+	RoutingHandleDNS(cfg, set, ips)
+	if _, ok := routeRuleCache[set.Id]; !ok {
+		t.Fatal("the set was not installed")
+	}
+	if waits := RoutingHandleDNSAwait(cfg, set, ips); len(waits) != 0 {
+		t.Fatalf("an address b4 added itself while installing the set made the relayed answer wait: %d waits", len(waits))
+	}
+}
+
+func TestAnAnswerAfterTheSetIsForgottenQueuesItsOwnUpdate(t *testing.T) {
+	cfg, set, be := awaitSetup(t, false)
+	g := gateAdds(t, be)
+	ip := []net.IP{net.ParseIP("198.51.100.76")}
+
+	first := RoutingHandleDNSAwait(cfg, set, ip)
+	nextAdd(t, g)
+	routeAsyncForgetSet(set.Id)
+	second := RoutingHandleDNSAwait(cfg, set, ip)
+	if len(first) != 1 || len(second) != 1 || first[0] == second[0] {
+		t.Fatal("after the set's learned state was forgotten an answer joined the update that was under way")
+	}
+	g.open()
+	awaitClosed(t, first[0], "the first update")
+	awaitClosed(t, second[0], "the second update")
+}
+
+func TestAnAnswerAfterItsKeyIsForgottenQueuesItsOwnUpdate(t *testing.T) {
+	cfg, set, be := awaitSetup(t, false)
+	g := gateAdds(t, be)
+	ip := []net.IP{net.ParseIP("198.51.100.77")}
+
+	first := RoutingHandleDNSAwait(cfg, set, ip)
+	nextAdd(t, g)
+	routeAsyncForgetKeys([]string{set.Id + "|198.51.100.77"})
+	second := RoutingHandleDNSAwait(cfg, set, ip)
+	if len(first) != 1 || len(second) != 1 || first[0] == second[0] {
+		t.Fatal("after the address's learned state was forgotten an answer joined the update that was under way")
+	}
+	g.open()
+	awaitClosed(t, first[0], "the first update")
+	awaitClosed(t, second[0], "the second update")
 }

@@ -212,7 +212,8 @@ func (w *Worker) answerViaSetInline(ipVersion byte, cfg *config.Config, set *con
 	}
 
 	if pinned := w.pinnedAnswer(set, query, domain); pinned != nil {
-		w.applyPinnedAnswer(cfg, set, clientIP, domain, pinned)
+		_, routeWaits := w.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned)
+		w.waitRoutesInline(routeWaits, nil)
 		w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, pinned)
 		return true
 	}
@@ -227,14 +228,17 @@ func (w *Worker) answerViaSetInline(ipVersion byte, cfg *config.Config, set *con
 	return true
 }
 
-func (w *Worker) answerViaSet(ipVersion byte, cfg *config.Config, set *config.SetConfig, domain string, query []byte, clientIP net.IP, clientPort uint16, originalDst net.IP) bool {
+func (w *Worker) answerViaSet(vc *verdictCtx, ipVersion byte, cfg *config.Config, set *config.SetConfig, domain string, query []byte, clientIP net.IP, clientPort uint16, originalDst net.IP) bool {
 	if w == nil || cfg == nil || set == nil || len(query) == 0 {
 		return false
 	}
 
 	if pinned := w.pinnedAnswer(set, query, domain); pinned != nil {
-		w.applyPinnedAnswer(cfg, set, clientIP, domain, pinned)
-		w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, pinned)
+		_, routeWaits := w.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned)
+		send := func() { w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, pinned) }
+		if !w.holdForRoutes(vc, routeWaits, domain, send) {
+			send()
+		}
 		return true
 	}
 
@@ -490,7 +494,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					query := dns.BuildQuery(domain, txid, qtype)
 					client := append(net.IP(nil), clientIP...)
 					server := append(net.IP(nil), dnsServerIP...)
-					if w.answerViaSet(ipVersion, cfg, next, domain, query, client, dport, server) {
+					if w.answerViaSet(vc, ipVersion, cfg, next, domain, query, client, dport, server) {
 						if !vc.drop() {
 							return 0
 						}

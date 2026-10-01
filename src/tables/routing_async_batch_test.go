@@ -164,6 +164,62 @@ func TestRoutingHandleDNSAwaitDoesNotHoldASetThatFailedToInstall(t *testing.T) {
 	}
 }
 
+func failingChains(t *testing.T, be *mockRouteBackend) *atomic.Bool {
+	t.Helper()
+	fail := &atomic.Bool{}
+	fail.Store(true)
+	be.ensureChainFn = func(string, bool) error {
+		if fail.Load() {
+			return errors.New("module missing")
+		}
+		return nil
+	}
+	return fail
+}
+
+func TestASuccessfulInstallClearsTheFailureMemo(t *testing.T) {
+	cfg, set, be := awaitSetup(t, false)
+	delete(routeRuleCache, set.Id)
+	fail := failingChains(t, be)
+
+	RoutingHandleDNS(cfg, set, []net.IP{net.ParseIP("198.51.100.73")})
+	if !routeInstallFailedRecently(set.Id) {
+		t.Fatal("a failed install was not remembered")
+	}
+	fail.Store(false)
+	RoutingHandleDNS(cfg, set, []net.IP{net.ParseIP("198.51.100.74")})
+	if routeInstallFailedRecently(set.Id) {
+		t.Fatal("a set whose rules installed is still remembered as failed, so its answers go unheld for up to a minute")
+	}
+}
+
+func TestASuccessfulSyncClearsTheFailureMemo(t *testing.T) {
+	cfg, set, be := awaitSetup(t, false)
+	stubRetryState(t)
+	delete(routeRuleCache, set.Id)
+	fail := failingChains(t, be)
+
+	RoutingSyncConfig(cfg)
+	if !routeInstallFailedRecently(set.Id) {
+		t.Fatal("a sync that could not install the set was not remembered")
+	}
+	fail.Store(false)
+	RoutingSyncConfig(cfg)
+	if routeInstallFailedRecently(set.Id) {
+		t.Fatal("a set the sync installed is still remembered as failed")
+	}
+}
+
+func TestAnAnswerForASetWithRulesInPlaceClearsTheFailureMemo(t *testing.T) {
+	cfg, set, _ := awaitSetup(t, false)
+	routeNoteInstallFailed(set.Id)
+
+	RoutingHandleDNS(cfg, set, []net.IP{net.ParseIP("198.51.100.75")})
+	if routeInstallFailedRecently(set.Id) {
+		t.Fatal("a set whose rules are in place is still remembered as failed")
+	}
+}
+
 func TestRoutingHandleDNSAwaitAfterForgetAllQueuesItsOwnUpdate(t *testing.T) {
 	cfg, set, be := awaitSetup(t, false)
 	g := gateAdds(t, be)

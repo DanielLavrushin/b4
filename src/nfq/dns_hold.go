@@ -41,7 +41,7 @@ func (w *Worker) holdForRoutes(vc *verdictCtx, waits []<-chan struct{}, domain s
 		start := time.Now()
 		timer := time.NewTimer(limit)
 		defer timer.Stop()
-		landed := waitForRoutes(waits, timer.C, stop)
+		landed := waitForRoutes(waits, timer.C, stop, nil)
 		release()
 		held := time.Since(start).Round(time.Millisecond)
 		if landed {
@@ -53,13 +53,13 @@ func (w *Worker) holdForRoutes(vc *verdictCtx, waits []<-chan struct{}, domain s
 	return true
 }
 
-func (w *Worker) waitRoutesInline(waits []<-chan struct{}) {
+func (w *Worker) waitRoutesInline(waits []<-chan struct{}, cancel <-chan struct{}) {
 	if len(waits) == 0 {
 		return
 	}
 	timer := time.NewTimer(dnsRouteHoldMax)
 	defer timer.Stop()
-	waitForRoutes(waits, timer.C, w.holdStopSignal())
+	waitForRoutes(waits, timer.C, w.holdStopSignal(), cancel)
 }
 
 func (w *Worker) holdStopSignal() <-chan struct{} {
@@ -92,13 +92,15 @@ func (w *Worker) releaseHolds() {
 	}
 }
 
-func waitForRoutes(waits []<-chan struct{}, timeout <-chan time.Time, stop <-chan struct{}) bool {
+func waitForRoutes(waits []<-chan struct{}, timeout <-chan time.Time, stop, cancel <-chan struct{}) bool {
 	for _, ch := range waits {
 		select {
 		case <-ch:
 		case <-timeout:
 			return false
 		case <-stop:
+			return false
+		case <-cancel:
 			return false
 		}
 	}

@@ -3,7 +3,6 @@ package tproxy
 import (
 	"net"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -56,16 +55,15 @@ func peekClient(c net.Conn, limit int) []byte {
 	}
 	var buf []byte
 	n := 0
-	err = rc.Read(func(fd uintptr) bool {
+	err = rc.Control(func(fd uintptr) {
 		queued, qerr := unix.IoctlGetInt(int(fd), unix.SIOCINQ)
 		if qerr != nil || queued <= 0 {
-			return true
+			return
 		}
 		buf = make([]byte, min(queued, limit))
 		if m, _, rerr := unix.Recvfrom(int(fd), buf, unix.MSG_PEEK|unix.MSG_DONTWAIT); rerr == nil && m > 0 {
 			n = m
 		}
-		return true
 	})
 	if err != nil || n == 0 {
 		return nil
@@ -74,52 +72,89 @@ func peekClient(c net.Conn, limit int) []byte {
 }
 
 type proxyNamer struct {
-	once   sync.Once
-	log    func(host string, tlsVersion uint16)
-	piping atomic.Bool
-	seen   atomic.Bool
-}
-
-func (p *proxyNamer) name(first []byte) {
-	p.once.Do(func() {
-		host, tlsVersion := sniffedHost(first)
-		p.log(host, tlsVersion)
-	})
+	log   func(host string, tlsVersion uint16)
+	mu    sync.Mutex
+	head  []byte
+	seen  bool
+	named bool
 }
 
 func (p *proxyNamer) deadline(client net.Conn) {
-	switch {
-	case !p.piping.Load():
-		p.name(peekClient(client, sniffMaxBytes))
-	case !p.seen.Load():
-		p.name(nil)
+	p.settle(client, false)
+}
+
+func (p *proxyNamer) expire(client net.Conn) {
+	p.settle(client, true)
+}
+
+func (p *proxyNamer) settle(client net.Conn, final bool) {
+	p.mu.Lock()
+	named, seen := p.named, p.seen
+	p.mu.Unlock()
+	if named || (seen && !final) {
+		return
 	}
+	var peeked []byte
+	if !seen {
+		peeked = peekClient(client, sniffMaxBytes)
+		if !final && len(peeked) > 0 && len(peeked) < sniffMaxBytes && needsMoreBytes(peeked) {
+			return
+		}
+	}
+	p.mu.Lock()
+	if p.named || (p.seen && !final) {
+		p.mu.Unlock()
+		return
+	}
+	first := p.head
+	if len(peeked) > len(first) {
+		first = peeked
+	}
+	p.named, p.head = true, nil
+	p.mu.Unlock()
+	p.write(first)
+}
+
+func (p *proxyNamer) observe(b []byte, err error) bool {
+	p.mu.Lock()
+	if p.named {
+		p.mu.Unlock()
+		return true
+	}
+	if len(b) > 0 {
+		p.seen = true
+		p.head = append(p.head, b...)
+	}
+	if err == nil && (len(p.head) == 0 || (len(p.head) < sniffMaxBytes && needsMoreBytes(p.head))) {
+		p.mu.Unlock()
+		return false
+	}
+	first := p.head
+	p.named, p.head = true, nil
+	p.mu.Unlock()
+	p.write(first)
+	return true
+}
+
+func (p *proxyNamer) write(first []byte) {
+	host, tlsVersion := sniffedHost(first)
+	p.log(host, tlsVersion)
 }
 
 func (p *proxyNamer) wrap(c net.Conn) net.Conn {
-	p.piping.Store(true)
 	return &namingConn{Conn: c, namer: p}
 }
 
 type namingConn struct {
 	net.Conn
 	namer *proxyNamer
-	head  []byte
 	done  bool
 }
 
 func (c *namingConn) Read(b []byte) (int, error) {
 	n, err := c.Conn.Read(b)
 	if !c.done {
-		if n > 0 {
-			c.namer.seen.Store(true)
-			c.head = append(c.head, b[:n]...)
-		}
-		if err != nil || (len(c.head) > 0 && (!needsMoreBytes(c.head) || len(c.head) >= sniffMaxBytes)) {
-			c.done = true
-			c.namer.name(c.head)
-			c.head = nil
-		}
+		c.done = c.namer.observe(b[:n], err)
 	}
 	return n, err
 }

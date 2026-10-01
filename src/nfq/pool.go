@@ -183,7 +183,23 @@ func (p *Pool) DNSTCPReady() (v4 bool, v6 bool) {
 	return p.dnsTCP.ReadyV4(), p.dnsTCP.ReadyV6()
 }
 
+func (p *Pool) ReleaseHolds() {
+	if p == nil {
+		return
+	}
+	var wg sync.WaitGroup
+	for _, w := range p.Workers {
+		wg.Add(1)
+		go func(w *Worker) {
+			defer wg.Done()
+			w.releaseHolds()
+		}(w)
+	}
+	wg.Wait()
+}
+
 func (p *Pool) Stop() {
+	p.ReleaseHolds()
 	if p.dnsTCP != nil {
 		p.dnsTCP.Stop()
 		p.dnsTCP = nil

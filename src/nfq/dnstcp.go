@@ -268,7 +268,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		if pinned := s.worker.pinnedAnswer(set, query, domain); pinned != nil {
 			action, routeWaits := s.worker.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned)
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, action)
-			s.worker.waitRoutesInline(routeWaits)
+			s.worker.waitRoutesInline(routeWaits, s.ctx.Done())
 			if writeDNSTCPMessage(client, pinned, ioTimeout) != nil {
 				return
 			}
@@ -413,7 +413,7 @@ func (s *dnsTCPServer) resolve(set *config.SetConfig, cfg *config.Config, query 
 func (s *dnsTCPServer) answerVia(set *config.SetConfig, cfg *config.Config, query []byte, domain string, clientIP net.IP) ([]byte, error) {
 	if pinned := s.worker.pinnedAnswer(set, query, domain); pinned != nil {
 		_, routeWaits := s.worker.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned)
-		s.worker.waitRoutesInline(routeWaits)
+		s.worker.waitRoutesInline(routeWaits, s.ctx.Done())
 		return pinned, nil
 	}
 

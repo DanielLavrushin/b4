@@ -748,6 +748,8 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 		discoveryRT.Stop("")
 	}
 
+	pool.ReleaseHolds()
+
 	// Stop NFQueue pool
 	wg.Add(1)
 	go func() {

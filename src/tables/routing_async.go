@@ -151,13 +151,22 @@ func routeAsyncAbandon(setID string, ips []net.IP, done chan struct{}) {
 	close(done)
 }
 
-func routeAsyncStamp(set *config.SetConfig, ips []net.IP) {
+func routeAsyncStampExcept(set *config.SetConfig, ips []net.IP, failed []string) {
+	skip := make(map[string]struct{}, len(failed))
+	for _, entry := range failed {
+		skip[entry] = struct{}{}
+	}
 	now := time.Now()
 	routeAsyncSeenMu.Lock()
 	for _, ip := range ips {
-		if ip != nil {
-			routeAsyncSeen[set.Id+"|"+ip.String()] = now
+		if ip == nil {
+			continue
 		}
+		s := ip.String()
+		if _, bad := skip[s]; bad {
+			continue
+		}
+		routeAsyncSeen[set.Id+"|"+s] = now
 	}
 	routeAsyncSeenMu.Unlock()
 }
