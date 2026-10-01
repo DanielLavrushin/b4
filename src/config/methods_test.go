@@ -243,83 +243,6 @@ func TestValidate(t *testing.T) {
 }
 
 func TestValidateMarks(t *testing.T) {
-	t.Run("auto-derived discovery marks", func(t *testing.T) {
-		cfg := NewConfig()
-		if err := cfg.Validate(); err != nil {
-			t.Fatalf("default config should be valid: %v", err)
-		}
-		if cfg.DiscoveryFlowMark() != cfg.Queue.Mark+1 {
-			t.Errorf("expected DiscoveryFlowMark()=%d, got %d", cfg.Queue.Mark+1, cfg.DiscoveryFlowMark())
-		}
-		if cfg.DiscoveryInjectedMark() != cfg.Queue.Mark+2 {
-			t.Errorf("expected DiscoveryInjectedMark()=%d, got %d", cfg.Queue.Mark+2, cfg.DiscoveryInjectedMark())
-		}
-		if cfg.System.Checker.DiscoveryFlowMark != 0 || cfg.System.Checker.DiscoveryInjectedMark != 0 {
-			t.Errorf("Validate wrote the derived discovery marks 0x%x and 0x%x into the configuration; saved back, they no longer follow the queue mark",
-				cfg.System.Checker.DiscoveryFlowMark, cfg.System.Checker.DiscoveryInjectedMark)
-		}
-	})
-
-	t.Run("derived discovery marks follow a queue mark changed through the API", func(t *testing.T) {
-		cfg := NewConfig()
-		if err := cfg.Validate(); err != nil {
-			t.Fatalf("default config should be valid: %v", err)
-		}
-		data, err := json.Marshal(&cfg)
-		if err != nil {
-			t.Fatalf("marshal: %v", err)
-		}
-		var next Config
-		if err := json.Unmarshal(data, &next); err != nil {
-			t.Fatalf("unmarshal: %v", err)
-		}
-		next.Queue.Mark = 0x4000000
-		if err := next.Validate(); err != nil {
-			t.Fatalf("a moved queue mark should be valid: %v", err)
-		}
-		if next.DiscoveryFlowMark() != 0x4000001 || next.DiscoveryInjectedMark() != 0x4000002 {
-			t.Errorf("the web interface sends back the configuration it read; after a queue mark change Discovery must use 0x4000001 and 0x4000002, got 0x%x and 0x%x",
-				next.DiscoveryFlowMark(), next.DiscoveryInjectedMark())
-		}
-	})
-
-	t.Run("stored marks equal to the derived ones follow a changed queue mark", func(t *testing.T) {
-		cfg := NewConfig()
-		cfg.System.Checker.DiscoveryFlowMark = cfg.Queue.Mark + 1
-		cfg.System.Checker.DiscoveryInjectedMark = cfg.Queue.Mark + 2
-		if err := cfg.Validate(); err != nil {
-			t.Fatalf("default config should be valid: %v", err)
-		}
-		data, err := json.Marshal(&cfg)
-		if err != nil {
-			t.Fatalf("marshal: %v", err)
-		}
-		var next Config
-		if err := json.Unmarshal(data, &next); err != nil {
-			t.Fatalf("unmarshal: %v", err)
-		}
-		next.Queue.Mark = 0x4000000
-		if err := next.Validate(); err != nil {
-			t.Fatalf("a moved queue mark should be valid: %v", err)
-		}
-		if next.DiscoveryFlowMark() != 0x4000001 || next.DiscoveryInjectedMark() != 0x4000002 {
-			t.Errorf("a file holding the derived values 0x8001 and 0x8002, as 1.47.0 and 1.47.1 saved them, froze Discovery at 0x%x and 0x%x after the queue mark moved to 0x4000000",
-				next.DiscoveryFlowMark(), next.DiscoveryInjectedMark())
-		}
-	})
-
-	t.Run("queue mark too high for the one discovery mark left out", func(t *testing.T) {
-		for _, tc := range []struct{ flow, injected uint }{{0x10000, 0}, {0, 0x10000}} {
-			cfg := NewConfig()
-			cfg.Queue.Mark = 0xfffffffe
-			cfg.System.Checker.DiscoveryFlowMark = tc.flow
-			cfg.System.Checker.DiscoveryInjectedMark = tc.injected
-			if err := cfg.Validate(); err == nil {
-				t.Errorf("flow 0x%x, injected 0x%x: a derived discovery mark past uint32 must be refused; on 32-bit builds it wraps to 0 and Discovery's return then matches every unmarked packet", tc.flow, tc.injected)
-			}
-		}
-	})
-
 	t.Run("explicit discovery marks preserved", func(t *testing.T) {
 		cfg := NewConfig()
 		cfg.System.Checker.DiscoveryFlowMark = 0xAAAA
@@ -415,6 +338,75 @@ func TestValidateMarks(t *testing.T) {
 			t.Errorf("a queue mark that only contains the bit, with clean discovery marks, is not a conflict: %v", err)
 		}
 	})
+}
+
+func discoveryConfigAfterQueueMarkMove(t *testing.T, cfg *Config, mark uint) *Config {
+	t.Helper()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("the starting configuration should be valid: %v", err)
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var next Config
+	if err := json.Unmarshal(data, &next); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	next.Queue.Mark = mark
+	if err := next.Validate(); err != nil {
+		t.Fatalf("a moved queue mark should be valid: %v", err)
+	}
+	return &next
+}
+
+func TestDiscoveryMarksAreDerivedNotStored(t *testing.T) {
+	cfg := NewConfig()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("default config should be valid: %v", err)
+	}
+	if cfg.DiscoveryFlowMark() != cfg.Queue.Mark+1 || cfg.DiscoveryInjectedMark() != cfg.Queue.Mark+2 {
+		t.Errorf("expected the queue mark plus 1 and plus 2, got 0x%x and 0x%x", cfg.DiscoveryFlowMark(), cfg.DiscoveryInjectedMark())
+	}
+	if cfg.System.Checker.DiscoveryFlowMark != 0 || cfg.System.Checker.DiscoveryInjectedMark != 0 {
+		t.Errorf("Validate wrote the derived discovery marks 0x%x and 0x%x into the configuration; saved back, they no longer follow the queue mark",
+			cfg.System.Checker.DiscoveryFlowMark, cfg.System.Checker.DiscoveryInjectedMark)
+	}
+}
+
+func TestDiscoveryMarksFollowAQueueMarkChangedThroughTheAPI(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		stored bool
+		why    string
+	}{
+		{"derived", false, "the web interface sends back the configuration it read, so after a queue mark change Discovery must use 0x4000001 and 0x4000002"},
+		{"stored equal to the derived ones", true, "a file holding the derived values 0x8001 and 0x8002, as 1.47.0 and 1.47.1 saved them, froze Discovery after the queue mark moved to 0x4000000"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := NewConfig()
+			if tc.stored {
+				cfg.System.Checker.DiscoveryFlowMark = cfg.Queue.Mark + 1
+				cfg.System.Checker.DiscoveryInjectedMark = cfg.Queue.Mark + 2
+			}
+			next := discoveryConfigAfterQueueMarkMove(t, &cfg, 0x4000000)
+			if next.DiscoveryFlowMark() != 0x4000001 || next.DiscoveryInjectedMark() != 0x4000002 {
+				t.Errorf("%s; got 0x%x and 0x%x", tc.why, next.DiscoveryFlowMark(), next.DiscoveryInjectedMark())
+			}
+		})
+	}
+}
+
+func TestValidateRefusesANearMaxQueueMarkForALeftOutDiscoveryMark(t *testing.T) {
+	for _, tc := range []struct{ flow, injected uint }{{0x10000, 0}, {0, 0x10000}} {
+		cfg := NewConfig()
+		cfg.Queue.Mark = 0xfffffffe
+		cfg.System.Checker.DiscoveryFlowMark = tc.flow
+		cfg.System.Checker.DiscoveryInjectedMark = tc.injected
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("flow 0x%x, injected 0x%x: a derived discovery mark past uint32 must be refused; on 32-bit builds it wraps to 0 and Discovery's return then matches every unmarked packet", tc.flow, tc.injected)
+		}
+	}
 }
 
 func TestAppendIP(t *testing.T) {

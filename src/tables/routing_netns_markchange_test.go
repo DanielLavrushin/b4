@@ -160,54 +160,67 @@ func TestNetnsAChangedQueueMarkLeavesNoRuleOfTheOldOne(t *testing.T) {
 	for _, engine := range []string{backendIPTables, backendNFTables} {
 		t.Run(engine, func(t *testing.T) {
 			netnsRequireEngine(t, engine)
-			routeEngine = nil
-			defer func() { routeEngine = nil }()
-
-			before := netnsConfig(engine)
-			after := netnsConfig(engine)
-			after.Queue.Mark = 0x4000000
-			oldToken, newToken := "0x8000/", "0x4000000/"
-			if engine == backendNFTables {
-				oldToken, newToken = "0x00008000", "0x04000000"
-			}
-
-			if err := AddRules(before); err != nil {
-				t.Fatalf("AddRules: %v", err)
-			}
-			defer func() { _ = ClearRules(before); _ = ClearRules(after) }()
-			RoutingSyncConfig(before)
-			defer RoutingClearAll()
-
-			if !strings.Contains(netnsRulesetText(t, engine), oldToken) {
-				t.Fatalf("the first install carries no rule with %s, so the test proves nothing", oldToken)
-			}
-
-			if err := RefreshRules(after); err != nil {
-				t.Fatalf("RefreshRules: %v", err)
-			}
-			RoutingSyncConfig(after)
-
-			rules := netnsRulesetText(t, engine)
-			for _, line := range strings.Split(rules, "\n") {
-				if strings.Contains(line, oldToken) {
-					t.Errorf("a rule of the old queue mark survived the save of the new one: %s", strings.TrimSpace(line))
-				}
-			}
-			if !strings.Contains(rules, newToken) {
-				t.Errorf("the refresh installed no rule with the new queue mark")
-			}
-
-			if err := ClearRules(after); err != nil {
-				t.Fatalf("ClearRules: %v", err)
-			}
-			RoutingClearAll()
-			for _, line := range strings.Split(netnsRulesetText(t, engine), "\n") {
-				if strings.Contains(line, oldToken) || strings.Contains(line, newToken) {
-					t.Errorf("a queue-mark rule survived b4's cleanup: %s", strings.TrimSpace(line))
-				}
-			}
+			netnsAChangedQueueMarkLeavesNoRuleOfTheOldOne(t, engine)
 		})
 	}
+}
+
+func netnsAChangedQueueMarkLeavesNoRuleOfTheOldOne(t *testing.T, engine string) {
+	t.Helper()
+	routeEngine = nil
+	defer func() { routeEngine = nil }()
+
+	before := netnsConfig(engine)
+	after := netnsConfig(engine)
+	after.Queue.Mark = 0x4000000
+	oldToken, newToken := "0x8000/", "0x4000000/"
+	if engine == backendNFTables {
+		oldToken, newToken = "0x00008000", "0x04000000"
+	}
+
+	if err := AddRules(before); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	defer func() { _ = ClearRules(before); _ = ClearRules(after) }()
+	RoutingSyncConfig(before)
+	defer RoutingClearAll()
+
+	if len(netnsRulesetLinesWith(t, engine, oldToken)) == 0 {
+		t.Fatalf("the first install carries no rule with %s, so the test proves nothing", oldToken)
+	}
+
+	if err := RefreshRules(after); err != nil {
+		t.Fatalf("RefreshRules: %v", err)
+	}
+	RoutingSyncConfig(after)
+	for _, line := range netnsRulesetLinesWith(t, engine, oldToken) {
+		t.Errorf("a rule of the old queue mark survived the save of the new one: %s", line)
+	}
+	if len(netnsRulesetLinesWith(t, engine, newToken)) == 0 {
+		t.Errorf("the refresh installed no rule with the new queue mark")
+	}
+
+	if err := ClearRules(after); err != nil {
+		t.Fatalf("ClearRules: %v", err)
+	}
+	RoutingClearAll()
+	for _, line := range netnsRulesetLinesWith(t, engine, oldToken, newToken) {
+		t.Errorf("a queue-mark rule survived b4's cleanup: %s", line)
+	}
+}
+
+func netnsRulesetLinesWith(t *testing.T, engine string, tokens ...string) []string {
+	t.Helper()
+	var lines []string
+	for _, line := range strings.Split(netnsRulesetText(t, engine), "\n") {
+		for _, token := range tokens {
+			if strings.Contains(line, token) {
+				lines = append(lines, strings.TrimSpace(line))
+				break
+			}
+		}
+	}
+	return lines
 }
 
 func TestNetnsB4LeavesAnotherServicesMasqueradeRuleAlone(t *testing.T) {

@@ -20,69 +20,92 @@ func appliedResetGlobals(t *testing.T) {
 	})
 }
 
-func TestRefreshRulesClearsTheRulesThatWereApplied(t *testing.T) {
-	appliedResetGlobals(t)
+type appliedRuleCalls struct {
+	cleared, added []*config.Config
+}
 
-	var cleared, added []*config.Config
+func recordRuleCalls(recordApplied bool) *appliedRuleCalls {
+	calls := &appliedRuleCalls{}
 	clearRulesFn = func(c *config.Config) error {
-		cleared = append(cleared, c)
+		calls.cleared = append(calls.cleared, c)
 		return nil
 	}
 	addRulesFn = func(c *config.Config) error {
-		added = append(added, c)
-		rulesAppliedCfg = c
+		calls.added = append(calls.added, c)
+		if recordApplied {
+			rulesAppliedCfg = c
+		}
 		return nil
 	}
+	return calls
+}
 
-	before := config.NewConfig()
-	before.Queue.Mark = 0x8000
-	after := config.NewConfig()
-	after.Queue.Mark = 0x4000000
+func appliedTestConfig(mark uint) *config.Config {
+	cfg := config.NewConfig()
+	cfg.Queue.IPv4Enabled = true
+	cfg.Queue.Mark = mark
+	return &cfg
+}
+
+func appliedDuringDiscovery(t *testing.T, out string, runErr error) (*Monitor, *config.Config, *config.Config) {
+	t.Helper()
+	hasBinaryCache.Store(backendIPTables, true)
+	t.Cleanup(func() { hasBinaryCache.Delete(backendIPTables) })
+	run = func(args ...string) (string, error) {
+		return out, runErr
+	}
+	m, ptr := newLockTestMonitor(t)
+	rulesAppliedBackend = ""
+	applied, published := appliedTestConfig(0x8000), appliedTestConfig(0x4000000)
+	ptr.Store(published)
+	rulesMu.Lock()
+	rulesAppliedCfg = applied
+	rulesMu.Unlock()
+	activeSteering = &discoverySteering{}
+	return m, applied, published
+}
+
+func TestRefreshRulesClearsTheRulesThatWereApplied(t *testing.T) {
+	appliedResetGlobals(t)
+	calls := recordRuleCalls(true)
+	before, after := appliedTestConfig(0x8000), appliedTestConfig(0x4000000)
 
 	rulesAppliedCfg = nil
-	if err := RefreshRules(&before); err != nil {
+	if err := RefreshRules(before); err != nil {
 		t.Fatalf("refresh: %v", err)
 	}
-	if cleared[0] != &before {
+	if calls.cleared[0] != before {
 		t.Errorf("with nothing applied yet, the refresh has only the new configuration to clear with")
 	}
 
-	if err := RefreshRules(&after); err != nil {
+	if err := RefreshRules(after); err != nil {
 		t.Fatalf("refresh: %v", err)
 	}
-	if cleared[1] != &before {
+	if calls.cleared[1] != before {
 		t.Errorf("the refresh cleared with the new configuration, so rules built from the old one, such as the CONNMARK rule of the old queue mark, stay in the firewall for good")
 	}
-	if added[1] != &after {
+	if calls.added[1] != after {
 		t.Errorf("the refresh must apply the new configuration")
 	}
 }
 
 func TestClearAppliedRulesClearsWhatWasInstalled(t *testing.T) {
 	appliedResetGlobals(t)
+	calls := recordRuleCalls(false)
+	installed, live := appliedTestConfig(0x8000), appliedTestConfig(0x4000000)
 
-	var cleared []*config.Config
-	clearRulesFn = func(c *config.Config) error {
-		cleared = append(cleared, c)
-		return nil
-	}
-
-	installed := config.NewConfig()
-	live := config.NewConfig()
-	live.Queue.Mark = 0x4000000
-
-	rulesAppliedCfg = &installed
-	if err := ClearAppliedRules(&live); err != nil {
+	rulesAppliedCfg = installed
+	if err := ClearAppliedRules(live); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
 	rulesAppliedCfg = nil
-	if err := ClearAppliedRules(&live); err != nil {
+	if err := ClearAppliedRules(live); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
-	if cleared[0] != &installed {
+	if calls.cleared[0] != installed {
 		t.Errorf("stopping b4 cleared with the live configuration although its rules were never applied, so the installed ones stay after stop")
 	}
-	if cleared[1] != &live {
+	if calls.cleared[1] != live {
 		t.Errorf("with nothing recorded, stopping b4 has only the live configuration to clear with")
 	}
 }
@@ -119,91 +142,37 @@ func TestMonitorChecksTheBackendTheRulesWereAppliedWith(t *testing.T) {
 
 func TestMonitorLeavesTheRebuildToTheRefreshWhileDiscoveryRuns(t *testing.T) {
 	appliedResetGlobals(t)
-	hasBinaryCache.Store(backendIPTables, true)
-	t.Cleanup(func() { hasBinaryCache.Delete(backendIPTables) })
-
+	calls := recordRuleCalls(false)
 	present := "-A B4_PREROUTING -p udp --sport 53 -j NFQUEUE -p tcp --dport 53 -j NFQUEUE -m mark 0x8000 -j B4"
-	run = func(args ...string) (string, error) {
-		return present, nil
-	}
-	var cleared, added []*config.Config
-	clearRulesFn = func(c *config.Config) error {
-		cleared = append(cleared, c)
-		return nil
-	}
-	addRulesFn = func(c *config.Config) error {
-		added = append(added, c)
-		return nil
-	}
+	m, applied, published := appliedDuringDiscovery(t, present, nil)
 
-	m, ptr := newLockTestMonitor(t)
-	rulesAppliedBackend = ""
-	applied := config.NewConfig()
-	applied.Queue.IPv4Enabled = true
-	applied.Queue.Mark = 0x8000
-	published := config.NewConfig()
-	published.Queue.IPv4Enabled = true
-	published.Queue.Mark = 0x4000000
-	ptr.Store(&published)
-	rulesMu.Lock()
-	rulesAppliedCfg = &applied
-	rulesMu.Unlock()
-
-	activeSteering = &discoverySteering{}
 	for i := 0; i < 3; i++ {
 		m.ensureRules(false)
 	}
-	if len(added) != 0 || len(cleared) != 0 {
-		t.Fatalf("the monitor rebuilt the firewall while the refresh for the new queue mark waits for a Discovery run: added %d, cleared %d", len(added), len(cleared))
+	if len(calls.added) != 0 || len(calls.cleared) != 0 {
+		t.Fatalf("the monitor rebuilt the firewall while the refresh for the new queue mark waits for a Discovery run: added %d, cleared %d", len(calls.added), len(calls.cleared))
 	}
 
 	activeSteering = nil
 	m.ensureRules(false)
-	if len(added) != 1 || added[0] != &published {
-		t.Fatalf("once Discovery ended the monitor must apply the new configuration, added %v", added)
+	if len(calls.added) != 1 || calls.added[0] != published {
+		t.Fatalf("once Discovery ended the monitor must apply the new configuration, added %v", calls.added)
 	}
-	if len(cleared) != 1 || cleared[0] != &applied {
+	if len(calls.cleared) != 1 || calls.cleared[0] != applied {
 		t.Errorf("the monitor applied the new queue mark over the old rules without clearing them, so the old CONNMARK rule stays for good")
 	}
 }
 
 func TestMonitorRestoresTheAppliedRulesWhileDiscoveryRuns(t *testing.T) {
 	appliedResetGlobals(t)
-	hasBinaryCache.Store(backendIPTables, true)
-	t.Cleanup(func() { hasBinaryCache.Delete(backendIPTables) })
+	calls := recordRuleCalls(false)
+	m, applied, _ := appliedDuringDiscovery(t, "", errors.New("chain missing"))
 
-	run = func(args ...string) (string, error) {
-		return "", errors.New("chain missing")
-	}
-	var cleared, added []*config.Config
-	clearRulesFn = func(c *config.Config) error {
-		cleared = append(cleared, c)
-		return nil
-	}
-	addRulesFn = func(c *config.Config) error {
-		added = append(added, c)
-		return nil
-	}
-
-	m, ptr := newLockTestMonitor(t)
-	rulesAppliedBackend = ""
-	applied := config.NewConfig()
-	applied.Queue.IPv4Enabled = true
-	applied.Queue.Mark = 0x8000
-	published := config.NewConfig()
-	published.Queue.IPv4Enabled = true
-	published.Queue.Mark = 0x4000000
-	ptr.Store(&published)
-	rulesMu.Lock()
-	rulesAppliedCfg = &applied
-	rulesMu.Unlock()
-
-	activeSteering = &discoverySteering{}
 	m.ensureRules(false)
-	if len(added) != 1 || added[0] != &applied {
-		t.Fatalf("rules went missing during a Discovery run; the monitor must put back what is installed, the old queue mark, and leave the switch to the refresh after the run, added %v", added)
+	if len(calls.added) != 1 || calls.added[0] != applied {
+		t.Fatalf("rules went missing during a Discovery run; the monitor must put back what is installed, the old queue mark, and leave the switch to the refresh after the run, added %v", calls.added)
 	}
-	if len(cleared) != 0 {
+	if len(calls.cleared) != 0 {
 		t.Errorf("the monitor cleared b4's rules in the middle of a Discovery run")
 	}
 }

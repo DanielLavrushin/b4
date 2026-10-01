@@ -234,7 +234,7 @@ func TestRoutingSyncConfig_AQueueMarkCoveringAnAutoMarkMovesTheSet(t *testing.T)
 	routeEngine = &mockRouteBackend{}
 	RoutingSyncConfig(moved)
 
-	if got := routeRuleCache[set.Id].mark; got == auto {
+	if routeRuleCache[set.Id].mark == auto {
 		t.Errorf("the set kept route mark 0x%x, which queue mark 0x%x carries in its per-set bits, so every packet b4 injects follows the set's ip rule", auto, uint32(moved.Queue.Mark))
 	}
 }
