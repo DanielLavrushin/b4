@@ -92,8 +92,13 @@ func (s *Service) VersionReports(ctx context.Context, a Actor, setID string, ver
 		}
 		e := entry(a, now, "set.reports_"+action, store.TargetSet, setID, version, note)
 		e.After = map[string]interface{}{"state": state, "count": changed}
-		_, err = t.Audit(ctx, e)
-		return err
+		if _, err = t.Audit(ctx, e); err != nil {
+			return err
+		}
+		if action == ActionDismiss {
+			return t.TouchReason(ctx, store.ScopeReportDismiss, note, now)
+		}
+		return nil
 	})
 	if err != nil {
 		return Result{}, err

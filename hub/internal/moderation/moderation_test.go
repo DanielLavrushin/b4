@@ -875,3 +875,32 @@ func TestReportNamedTwiceChangesOnce(t *testing.T) {
 		t.Fatalf("one audit row per changed report: %+v", got)
 	}
 }
+
+func TestDismissingAVersionsReportsCountsTheSavedReason(t *testing.T) {
+	e := newEnv(t)
+	id := e.set(keyOf(1), hubwire.SetStatusActive)
+	e.report(id, 1, keyOf(10), "64500")
+	e.report(id, 1, keyOf(11), "64501")
+	if _, err := e.st.CreateReasonPreset(e.ctx, store.ReasonPreset{Scope: store.ScopeReportDismiss, Text: "noise"}, time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	uses := func() (int, bool) {
+		presets, err := e.st.ReasonPresets(e.ctx)
+		if err != nil || len(presets) != 1 {
+			t.Fatalf("presets: %+v %v", presets, err)
+		}
+		return presets[0].Uses, !presets[0].LastUsed.IsZero()
+	}
+	if _, err := e.svc.VersionReports(e.ctx, console, id, 1, ActionDismiss, "noise"); err != nil {
+		t.Fatal(err)
+	}
+	if n, used := uses(); n != 1 || !used {
+		t.Fatalf("dismissing a version's reports with a saved reason counts one use, got %d %v", n, used)
+	}
+	if _, err := e.svc.VersionReports(e.ctx, console, id, 1, ActionDismiss, "noise"); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := uses(); n != 1 {
+		t.Fatalf("a dismissal that changes nothing does not count, got %d", n)
+	}
+}
