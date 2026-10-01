@@ -565,7 +565,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 	if config.RoutingIsBlock(mode) {
 		st.blockAction = config.NormalizeBlockAction(set.Routing.BlockAction)
 	} else if config.RoutingUsesTProxy(mode) {
-		mark, port := proxyMarkAndPort(set)
+		mark, port := proxyMarkAndPort(cfg, set)
 		st.mark = mark
 		st.table = proxyTable()
 		st.tproxyPort = port

@@ -204,7 +204,7 @@ agree on all three share both.
 | Table | `100`-`249`, skipping tables named in `rt_tables`, looked up by another service's rule, or holding routes b4 did not add |
 | Rule | `ip rule add fwmark <mark>/0x27fff lookup <table> priority <10000 + table>`, for IPv4, and for IPv6 when **IPv6 support** is on |
 | Table contents | A default route through the interface, plus `blackhole default metric 4096` with the [kill switch](/docs/sets/routing#kill-switch) |
-| Pinned values | `routing.fwmark` and `routing.table` in the configuration file or through the API, used only when both are set, the mark lies within `0x27fff`, is not `0x24bab` and does not contain every bit of the queue mark |
+| Pinned values | `routing.fwmark` and `routing.table` in the configuration file or through the API, used only when both are set, the mark lies within `0x27fff`, is not `0x24bab`, does not contain every bit of the queue mark and does not equal its bits under `0x27fff` |
 
 The set marks the first packet of each connection to its destinations and saves the mark in
 the connection mark, with bit `0x40000000` as b4's claim. Later packets of that connection
@@ -257,7 +257,7 @@ port.
 
 | Item | Value |
 | --- | --- |
-| Mark | `0x20000`-`0x27dff`, from a hash of the set's ID; `routing.fwmark` replaces it when it lies within `0x27fff` and is not `0x24bab` |
+| Mark | `0x20000`-`0x27dff`, from a hash of the set's ID; `routing.fwmark` replaces it when it lies within `0x27fff`, is not `0x24bab` and does not equal the queue mark's bits under `0x27fff` |
 | Telegram over WebSocket switch | `0x24bab`, port `13443` |
 | Listener port | `13000 + mark % 50000` |
 | Rule, priority 3 | `fwmark <mark>/0x27fff lookup 252`, for IPv4, and for IPv6 when **IPv6 support** is on; table 252 holds `local default dev lo` and is shared by every proxy set. When 252 belongs to another service, b4 takes 251, 250, then 300-399 |

@@ -249,9 +249,14 @@ func proxyInputChain() (table, chain string, ok bool) {
 	return "", "", false
 }
 
-func proxyMarkAndPort(set *config.SetConfig) (uint32, int) {
-	mark := tproxy.MarkForSet(set.Id, set.Routing.FWMark)
-	if set.Routing.FWMark > 0 && mark != set.Routing.FWMark {
+func proxyMarkAndPort(cfg *config.Config, set *config.SetConfig) (uint32, int) {
+	pin := cfg.RoutingMarkPin(set)
+	if set.Routing.FWMark > 0 && pin == 0 {
+		log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which equals the bits of the queue mark 0x%x under the routing mark mask 0x%x, so every packet b4 injects would follow the set's ip rule; a mark is assigned instead",
+			set.Name, set.Routing.FWMark, cfg.MainInjectedMark(), routeSetMarkMask)
+	}
+	mark := tproxy.MarkForSet(set.Id, pin)
+	if pin > 0 && mark != pin {
 		log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which has bits outside the routing mark mask 0x%x that b4 cannot carry through its firewall rules, so a mark is assigned instead",
 			set.Name, set.Routing.FWMark, routeSetMarkMask)
 	}

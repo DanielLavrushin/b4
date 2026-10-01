@@ -15,7 +15,17 @@ type discoveryBackend interface {
 }
 
 func getDiscoveryBackend(cfg *config.Config) discoveryBackend {
-	backend := detectFirewallBackend(cfg)
+	return discoveryBackendFor(detectFirewallBackend(cfg))
+}
+
+func currentDiscoveryBackend(cfg *config.Config) discoveryBackend {
+	if rulesAppliedBackend != "" {
+		return discoveryBackendFor(rulesAppliedBackend)
+	}
+	return getDiscoveryBackend(cfg)
+}
+
+func discoveryBackendFor(backend string) discoveryBackend {
 	nft := &discoveryNftBackend{}
 	ipt := &discoveryIptBackend{legacy: backend == backendIPTablesLegacy}
 
@@ -41,6 +51,7 @@ func getDiscoveryBackend(cfg *config.Config) discoveryBackend {
 
 type discoverySteering struct {
 	cfg          *config.Config
+	backend      discoveryBackend
 	flowMark     uint
 	injectedMark uint
 	queueStart   int
@@ -52,22 +63,28 @@ var activeSteering *discoverySteering
 func ApplyDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark uint, queueStart int, threads int) error {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
-	be := getDiscoveryBackend(cfg)
+	be := currentDiscoveryBackend(cfg)
 	if be == nil {
 		return fmt.Errorf("no discovery firewall backend available")
 	}
 	if err := be.apply(flowMark, injectedMark, queueStart, threads); err != nil {
 		return err
 	}
-	activeSteering = &discoverySteering{cfg: cfg, flowMark: flowMark, injectedMark: injectedMark, queueStart: queueStart, threads: threads}
+	activeSteering = &discoverySteering{cfg: cfg, backend: be, flowMark: flowMark, injectedMark: injectedMark, queueStart: queueStart, threads: threads}
 	return nil
 }
 
 func ClearDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark uint) {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
+	var be discoveryBackend
+	if s := activeSteering; s != nil {
+		be = s.backend
+	}
 	activeSteering = nil
-	be := getDiscoveryBackend(cfg)
+	if be == nil {
+		be = currentDiscoveryBackend(cfg)
+	}
 	if be == nil {
 		return
 	}
@@ -79,10 +96,14 @@ func reapplyDiscoverySteering() {
 	if s == nil {
 		return
 	}
-	be := getDiscoveryBackend(s.cfg)
+	be := currentDiscoveryBackend(s.cfg)
 	if be == nil {
 		return
 	}
+	if s.backend != nil && s.backend.name() != be.name() {
+		s.backend.clear(s.flowMark, s.injectedMark)
+	}
+	s.backend = be
 	if err := be.apply(s.flowMark, s.injectedMark, s.queueStart, s.threads); err != nil {
 		log.Warnf("Discovery: putting the steering rules back after the firewall rules were rebuilt failed: %v", err)
 	}

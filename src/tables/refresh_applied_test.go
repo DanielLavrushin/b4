@@ -241,3 +241,42 @@ func TestClearRulesUsesTheBackendTheRulesWereAppliedWith(t *testing.T) {
 		t.Errorf("the rules were installed with iptables, but the clear detected the backend again and ran no iptables command: %v", calls)
 	}
 }
+
+func TestDiscoverySteeringMovesWithTheFirewallBackend(t *testing.T) {
+	appliedResetGlobals(t)
+	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: false, "nft": true})
+	calls := discoveryRecordRun(t, nil)
+	callsTo := func(prefix string) int {
+		n := 0
+		for _, c := range *calls {
+			if strings.HasPrefix(c, prefix) {
+				n++
+			}
+		}
+		return n
+	}
+
+	cfg := config.NewConfig()
+	rulesAppliedBackend = backendIPTables
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	*calls = nil
+	rulesAppliedBackend = backendNFTables
+	rulesMu.Lock()
+	reapplyDiscoverySteering()
+	rulesMu.Unlock()
+	if discoveryCallIndex(*calls, "iptables -w -t mangle -D OUTPUT -j B4_DISCOVERY") < 0 {
+		t.Errorf("the firewall moved to nftables during a run, but the steering on iptables was left in place: %v", *calls)
+	}
+	if callsTo("nft ") == 0 {
+		t.Errorf("the firewall moved to nftables during a run, but the steering was put back on iptables only, so Discovery's packets meet the main queue on nftables: %v", *calls)
+	}
+
+	*calls = nil
+	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
+	if callsTo("iptables ") != 0 || callsTo("nft ") == 0 {
+		t.Errorf("the end of the run must clear the steering where it was last put, on nftables: %v", *calls)
+	}
+}

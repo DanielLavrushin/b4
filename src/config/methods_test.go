@@ -1259,3 +1259,28 @@ func TestEscalateTo_RoundtripAndDefault(t *testing.T) {
 		t.Fatalf("EscalateTo default should be empty, got %q", got.Escalate.To)
 	}
 }
+
+func TestRoutingMarkPinDropsAPinEqualToTheQueueMarksSetBits(t *testing.T) {
+	cfg := NewConfig()
+	cfg.Queue.Mark = 0x8100
+	for _, tc := range []struct {
+		pin, want uint32
+	}{
+		{0x100, 0},
+		{0x101, 0x101},
+		{TelegramBridgeMark, TelegramBridgeMark},
+		{0, 0},
+	} {
+		set := NewSetConfig()
+		set.Routing.FWMark = tc.pin
+		if got := cfg.RoutingMarkPin(&set); got != tc.want {
+			t.Errorf("queue mark 0x8100, pin 0x%x: got 0x%x, want 0x%x", tc.pin, got, tc.want)
+		}
+	}
+	cfg.Queue.Mark = 0
+	set := NewSetConfig()
+	set.Routing.FWMark = 0x100
+	if got := cfg.RoutingMarkPin(&set); got != 0x100 {
+		t.Errorf("with the default queue mark 0x8000 the pin 0x100 is clear of it and must be kept, got 0x%x", got)
+	}
+}

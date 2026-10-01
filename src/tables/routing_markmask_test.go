@@ -174,7 +174,8 @@ func TestAProxySetNeverTakesAPinnedMarkTheRulesCannotCarry(t *testing.T) {
 		set.Routing.Mode = config.RoutingModeProxy
 		set.Routing.FWMark = pinned
 
-		mark, _ := proxyMarkAndPort(&set)
+		cfg := config.NewConfig()
+		mark, _ := proxyMarkAndPort(&cfg, &set)
 		if mark == pinned {
 			t.Errorf("set pinned fwmark 0x%x and kept it; the policy rule is written as %q, and the kernel compares the masked packet mark against the masked rule mark, so it claims every packet carrying no routing mark and sends the whole router into the proxy's local table", pinned, routeSetMarkRule(pinned))
 		}
@@ -185,20 +186,42 @@ func TestAProxySetNeverTakesAPinnedMarkTheRulesCannotCarry(t *testing.T) {
 }
 
 func TestTheRulesAndTheTProxyListenerAgreeOnAPinnedMark(t *testing.T) {
-	for _, pinned := range []uint32{0, 0x1b1d, 0x100000} {
-		set := config.NewSetConfig()
-		set.Id = "agree-set"
-		set.Name = "agree"
-		set.Routing.Mode = config.RoutingModeProxy
-		set.Routing.FWMark = pinned
+	for _, queueMark := range []uint{0x8000, 0x8100} {
+		cfg := config.NewConfig()
+		cfg.Queue.Mark = queueMark
+		for _, pinned := range []uint32{0, 0x1b1d, 0x100000, 0x100} {
+			set := config.NewSetConfig()
+			set.Id = "agree-set"
+			set.Name = "agree"
+			set.Routing.Mode = config.RoutingModeProxy
+			set.Routing.FWMark = pinned
 
-		mark, port := proxyMarkAndPort(&set)
-		if want := tproxy.MarkForSet(set.Id, set.Routing.FWMark); mark != want {
-			t.Errorf("the firewall rules use mark 0x%x for pinned 0x%x while the listener uses 0x%x, so the TPROXY rule diverts to a port nothing is bound to", mark, pinned, want)
+			mark, port := proxyMarkAndPort(&cfg, &set)
+			if want := tproxy.MarkForSet(set.Id, cfg.RoutingMarkPin(&set)); mark != want {
+				t.Errorf("queue mark 0x%x: the firewall rules use mark 0x%x for pinned 0x%x while the listener uses 0x%x, so the TPROXY rule diverts to a port nothing is bound to", queueMark, mark, pinned, want)
+			}
+			if want := tproxy.PortFor(mark); port != want {
+				t.Errorf("port %d does not follow from mark 0x%x, want %d", port, mark, want)
+			}
 		}
-		if want := tproxy.PortFor(mark); port != want {
-			t.Errorf("port %d does not follow from mark 0x%x, want %d", port, mark, want)
-		}
+	}
+}
+
+func TestAProxySetDropsAPinEqualToTheQueueMarksSetBits(t *testing.T) {
+	cfg := config.NewConfig()
+	cfg.Queue.Mark = 0x8100
+	set := config.NewSetConfig()
+	set.Id = "pinned-queue-bits"
+	set.Name = "pinnedqueuebits"
+	set.Routing.Mode = config.RoutingModeProxy
+	set.Routing.FWMark = 0x100
+
+	if mark, _ := proxyMarkAndPort(&cfg, &set); mark == 0x100 {
+		t.Errorf("pinned fwmark 0x100 equals queue mark 0x8100 under 0x%x, so its rule %q sends every packet b4 injects to the proxy's local table", routeSetMarkMask, routeSetMarkRule(0x100))
+	}
+	cfg.Queue.Mark = 0x8000
+	if mark, _ := proxyMarkAndPort(&cfg, &set); mark != 0x100 {
+		t.Errorf("a pin clear of the queue mark must be kept, got 0x%x", mark)
 	}
 }
 
