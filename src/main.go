@@ -672,6 +672,7 @@ const (
 	shutdownGrace     = 9 * time.Second
 	httpShutdownGrace = 3 * time.Second
 	shutdownHardLimit = 15 * time.Second
+	tunTeardownWait   = 3 * time.Second
 )
 
 func exposeListeningOnly(ports []config.ExposedPort, blocked []config.ExposeBlock, listening func(string) bool) ([]config.ExposedPort, []config.ExposeBlock) {
@@ -750,6 +751,8 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 
 	pool.ReleaseHolds()
 
+	tunDown := make(chan struct{})
+
 	// Stop NFQueue pool
 	wg.Add(1)
 	go func() {
@@ -763,6 +766,7 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 			if tunEngine != nil {
 				tunEngine.Stop()
 			}
+			close(tunDown)
 			pool.Stop()
 			close(stopDone)
 		}()
@@ -809,6 +813,11 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 	go func() {
 		defer wg.Done()
 		tables.ClearExposure()
+		select {
+		case <-tunDown:
+		case <-time.After(tunTeardownWait):
+			log.Warnf("TUN engine still stopping after %s, removing the routing rules without waiting for it", tunTeardownWait)
+		}
 		tables.RoutingClearAll()
 	}()
 

@@ -53,6 +53,9 @@ type routeManager struct {
 	snatAdded          bool
 	notrackAdded       bool
 	clientNotrackAdded bool
+	localOnly          bool
+	natGuardAdded      bool
+	noConnbytes        bool
 
 	captureTable int
 	tcpPorts     []string
@@ -85,11 +88,17 @@ type routeManager struct {
 	captureRestores    int
 	lastCaptureRestore time.Time
 	captureDirty       bool
+	rebuildPending     bool
 	gateDirty          bool
 	liveTCPPorts       atomic.Pointer[[]string]
 	capturePrio        int
 	conflicts          []steerConflict
 	captureExcl        []string
+	dupSetActive       bool
+	dupSetProbed       bool
+	dupSetMatchOK      bool
+	dupCaptureNote     string
+	quit               <-chan struct{}
 }
 
 func resolveDefaultEgress(skipDev string) (iface, gw, src string, ok bool) {
@@ -150,7 +159,7 @@ func (r *routeManager) installNotrack(markStr, label string) bool {
 		return true
 	}
 	if _, err := run(append([]string{"iptables", "-t", "raw", "-A", "OUTPUT"}, notrack...)...); err != nil {
-		log.Infof("TUN: NOTRACK not installed for mark %s (no raw table here); conntrack sysctls + SNAT cover it, so this is harmless: %v", markStr, err)
+		log.Infof("TUN: NOTRACK not installed for %s (mark %s): the kernel has no raw table or no CT target: %v", label, markStr, err)
 		return false
 	}
 	log.Infof("TUN: NOTRACK installed for %s (mark %s)", label, markStr)
@@ -179,6 +188,7 @@ func (r *routeManager) removeSNAT() {
 
 func (r *routeManager) teardownNAT() {
 	r.removeSNAT()
+	r.removeNatGuard()
 	if r.notrackAdded {
 		r.removeNotrack(reinjectMarkMatch())
 		r.notrackAdded = false
@@ -296,9 +306,12 @@ func (r *routeManager) setup() error {
 	if r.skipTables {
 		log.Infof("TUN: --skip-tables set; skipping rp_filter/FORWARD/SNAT/NOTRACK - manage NAT and forwarding yourself (b4 still sets up routing: device, capture, bypass table)")
 	} else {
-		r.loosenRPFilter()
 		r.setupForwarding()
 		r.setupNAT()
+		r.decideScope()
+		if !r.localOnly {
+			r.loosenRPFilter()
+		}
 	}
 
 	r.resolvedCapture = r.resolveCaptureMode()
@@ -459,11 +472,14 @@ func (r *routeManager) refreshEgress() bool {
 	}
 	log.Infof("TUN: default route changed; re-pointing egress %s(gw %q) -> %s(gw %q)", r.outIface, r.outGateway, iface, gw)
 
-	if !r.skipTables {
+	if !r.skipTables && !r.localOnly {
 		r.restoreRPFilter()
 	}
 	r.removeSNAT()
 	r.outIface = iface
+	if r.localOnly && gw != r.outGateway {
+		r.captureDirty = true
+	}
 	r.outGateway = gw
 	if src != "" {
 		r.srcIP = src
@@ -478,7 +494,7 @@ func (r *routeManager) refreshEgress() bool {
 			r.savedDefault += " src " + src
 		}
 	}
-	if !r.skipTables {
+	if !r.skipTables && !r.localOnly {
 		r.savedRPFilter = ""
 		r.loosenRPFilter()
 	}
@@ -510,6 +526,9 @@ func (r *routeManager) refreshEgress() bool {
 func (r *routeManager) reconcile() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.stopping() {
+		return
+	}
 
 	r.refreshEgress()
 
@@ -549,7 +568,9 @@ func (r *routeManager) reconcile() {
 }
 
 func (r *routeManager) ensureNAT() {
-	if r.srcIP != "" {
+	if r.localOnly {
+		r.ensureNatGuard()
+	} else if r.srcIP != "" {
 		snat := []string{"-o", r.tunName, "-j", "SNAT", "--to-source", r.srcIP}
 		if _, err := run(append([]string{"iptables", "-t", "nat", "-C", "POSTROUTING"}, snat...)...); err != nil {
 			if _, err := run(append([]string{"iptables", "-t", "nat", "-I", "POSTROUTING", "1"}, snat...)...); err == nil {
@@ -558,30 +579,34 @@ func (r *routeManager) ensureNAT() {
 			}
 		} else {
 			r.snatAdded = true
-			r.keepSNATAhead(snat)
+			r.keepNatRuleAhead(snat, "the SNAT")
 		}
 	}
 	r.ensureNotrack(&r.notrackAdded, reinjectMarkMatch())
 	r.ensureNotrack(&r.clientNotrackAdded, clientMarkMatch())
 }
 
-func (r *routeManager) keepSNATAhead(snat []string) {
+func (r *routeManager) keepNatRuleAhead(spec []string, label string) {
+	own := "-o " + r.tunName + " -j " + ruleFieldValue(strings.Join(spec, " "), "-j")
 	out, err := run("iptables", "-t", "nat", "-S", "POSTROUTING")
-	if err != nil || !snatShadowed(out, r.tunName) {
+	if err != nil || !natRuleShadowed(out, own, r.tunName) {
 		return
 	}
-	if _, err := run(append([]string{"iptables", "-t", "nat", "-D", "POSTROUTING"}, snat...)...); err != nil {
+	if _, err := run(append([]string{"iptables", "-t", "nat", "-D", "POSTROUTING"}, spec...)...); err != nil {
 		return
 	}
-	if _, err := run(append([]string{"iptables", "-t", "nat", "-I", "POSTROUTING", "1"}, snat...)...); err != nil {
-		log.Warnf("TUN: failed to move the SNAT for %s to the top of POSTROUTING: %v", r.tunName, err)
+	if _, err := run(append([]string{"iptables", "-t", "nat", "-I", "POSTROUTING", "1"}, spec...)...); err != nil {
+		log.Warnf("TUN: failed to move %s for %s to the top of POSTROUTING: %v", label, r.tunName, err)
 		return
 	}
-	log.Infof("TUN: moved the SNAT for %s above a masquerade rule that would have rewritten captured packets to the %s address", r.tunName, r.tunName)
+	log.Infof("TUN: moved %s for %s above a masquerade rule that would have rewritten captured packets to the %s address", label, r.tunName, r.tunName)
 }
 
 func snatShadowed(dump, tunName string) bool {
-	own := "-o " + tunName + " -j SNAT"
+	return natRuleShadowed(dump, "-o "+tunName+" -j SNAT", tunName)
+}
+
+func natRuleShadowed(dump, own, tunName string) bool {
 	for _, line := range strings.Split(dump, "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "-A POSTROUTING ") {
@@ -858,7 +883,9 @@ func extractGateway(routeLine string) string {
 	return extractField(routeLine, "via")
 }
 
-func run(args ...string) (string, error) {
+var run = runExec
+
+func runExec(args ...string) (string, error) {
 	if len(args) > 0 && (args[0] == "iptables" || args[0] == "ip6tables") {
 		if w := tables.WaitArgs(args[0]); len(w) > 0 {
 			newArgs := make([]string, 0, len(args)+len(w))

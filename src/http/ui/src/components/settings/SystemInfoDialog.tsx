@@ -422,6 +422,11 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
                   t("settings.SystemInfo.tunCapture"),
                   data.engine.tun.capture,
                 )}
+              {data.engine.tun.local_only &&
+                row(
+                  t("settings.SystemInfo.tunScope"),
+                  boolChip(false, "", t("settings.SystemInfo.tunScopeLocal")),
+                )}
               {!!data.engine.tun.route_table &&
                 row(
                   t("settings.SystemInfo.tunRouteTable"),
@@ -474,6 +479,7 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
                       }),
                     )}
                   {data.engine.tun.capture === "ports" &&
+                    !data.engine.tun.local_only &&
                     row(
                       t("settings.SystemInfo.tunSteerConflicts"),
                       data.engine.tun.steer_conflicts?.length
